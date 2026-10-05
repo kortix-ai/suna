@@ -65,7 +65,7 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
   '9 receipts chased and attached · 1 centre over plan': 'textc987fdc88a2b',
   'A change request to main': 'text01d5a2c6d0fd',
   'A folder with a SKILL.md': 'texte87266df82c3',
-  'A real permission tree, from a real agent that ships.': 'text89cfbcb8984a',
+  'A permission tree with glob rules, from an example agent.': 'text50963c5c7556',
   'A skill directory can carry scripts, references and assets beside the markdown. The instruction and the tool that executes it ship together, so a procedure does not rot away from the thing it drives.':
     'text4dbf4a82fcc8',
   'A skill is': 'text2f324899999b',
@@ -94,15 +94,13 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
     'text11c1a5b0fa54',
   'An agent decides whether to load a skill from its name and description alone. A vague description means the skill never fires — which is why the description reads like a list of the things a person would actually say.':
     'textf4b3042a5a94',
-  'An agent has exactly two homes. The markdown file carries how it thinks — its prompt, its mode, its model, its permission tree — and it is a stock OpenCode agent file, because Kortix adds no dialect to it. The manifest block carries what it may touch. Nothing about an agent lives in a database you cannot read.':
-    'text7b6762537105',
+  'An agent has exactly two homes. The markdown file carries how it thinks — its prompt, its mode, its model, its permission tree — and it is a stock OpenCode agent file that pi reads too, because Kortix adds no dialect to it. The manifest block carries what it may touch. Nothing about an agent lives in a database you cannot read.': 'text6bb3d0be4d85',
   'An agent is': 'text586ce9d865c1',
-  'An agent is an OpenCode agent: markdown at baseline, and past that your own tools, plugins, models and a per-capability permission tree. A grant in kortix.yaml decides what it reaches — its machine, its connectors and channels, its secrets, its skills. A skill encodes how your company does one specific job. Both are files in your repo. Both are reviewed like code.':
-    'texte1e906a3a02b',
+  'Build any agent, on OpenCode or pi. An agent is markdown at baseline, and past that your own tools, plugins, extensions, models and a per-capability permission tree. A grant in kortix.yaml decides what it reaches — its machine, its connectors and channels, its secrets, its skills. Give it to the whole team, a group or specific people. Agents and skills are files in your repo, reviewed like code.': 'text65068e1fa110',
   'An agent never exceeds its human': 'text467d579386a6',
   'An agent’s block lists the secrets it may use by name — identifiers, never values. A session receives only the intersection of that grant and the role of whoever started it.':
     'texta548eb412acd',
-  'An OpenCode agent, plus its grants': 'textc859e57c7ce7',
+  'An OpenCode or pi agent, plus its grants': 'text3ca70fecee5a',
   API: 'textc8e5998f6a39',
   ask: 'text2f2fc7f2e9ce',
   'Audit trail': 'textc1ada08ce138',
@@ -130,7 +128,7 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
   contacted: 'text943d10d61cf6',
   'Context & Connections': 'text7847decf864b',
   'Cost centre': 'text391fb7ff81a1',
-  'curates the project brain on a cron': 'textbb5f8be51296',
+  'refines the shared harness on a cron': 'text37d2ff5c693f',
   'Customize is deliberately read-only. Pressing “Create new” or “Edit” opens a session that edits the files on a branch and opens a change request you review and merge. There is no button that silently changes how an agent behaves tomorrow.':
     'text0ce6beab574f',
   'Data Science': 'textf25168f39ae8',
@@ -204,8 +202,7 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
   'Large Language Models': 'text0340bfb383fc',
   left: 'text360f84035942',
   Linear: 'texte6950b45d25c',
-  'Markdown is the floor, not the ceiling: the whole OpenCode surface sits beside it in the same repo — your own TypeScript tools, plugins that hook the runtime, the model and provider config. An agent can pin its own model, or inherit the project, account and platform default in that order.':
-    'text65c114ca4304',
+  'Markdown is the floor, not the ceiling: the whole harness sits beside it in the same repo. On OpenCode that is your own TypeScript tools, plugins that hook the runtime, and the model and provider config. On pi, which is experimental, it is extensions and pi packages. An agent can pin its own model, or inherit the project, account and platform default in that order.': 'textffe20be15690',
   Marketing: 'textf5904cf7a123',
   'marketing/seo-weekly.xlsx': 'text303a578ba016',
   Marketplace: 'textc608981d8d68',
@@ -224,7 +221,7 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
     'text8338ea9fb932',
   'one directory per skill': 'text3bf308e3b077',
   'One machine per session': 'text6590dfdb580e',
-  'one OpenCode agent per file': 'text18a59ffd5fa8',
+  'one agent per file': 'text7c9b009973cd',
   'One platform': 'text708bb99739ea',
   'One thing this is not: a package manager. There is no lockfile, no version pin and no automatic update — an item you add becomes your own files, exactly like code you wrote. That is a deliberate trade, and it is the one we would make again.':
     'textcd3fefb94c04',
@@ -235,7 +232,7 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
     'text1d9a8dde5629',
   OpenAI: 'text8b7d1a3187ab',
   OpenCode: 'text3af0e55ccc96',
-  'OpenCode-native · Versioned · Deny by default · Human-merged': 'textb82db800b29f',
+  'OpenCode or pi · Versioned · Deny by default · Human-merged': 'text1a2389aa8149',
   OpenRouter: 'texteb70c3bc14fa',
   'ops@northwind.example': 'text44c4865ba52b',
   'Outbound, error triage, the books, the Monday report — real jobs, on real machines, landing as changes you can read.':
@@ -333,8 +330,7 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
   'Thousands in parallel': 'text6643779e9647',
   Total: 'textc9b3c38247f7',
   'Turns what users say into what ships.': 'text5ec9729027c3',
-  'Two agents ship in every new project: kortix, the generalist, and memory-reflector, which curates the project brain.':
-    'textf475451ba670',
+  'Three agents ship in every new project: kortix, the generalist; harness-reflector, which refines the shared prompts, skills and memory from recent sessions; and session-reviewer, the subagent that reviews one session for it.': 'text907917cab570',
   'Two files: {skill} behind, and {agent} in front.': 'texta442c09ab113',
   'Two files. No hidden object behind them.': 'texte935b72cac56',
   'TYPE I': 'textd274f40a8a9a',
@@ -357,4 +353,5 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
   'Teams at that stage lose about a week a month to': 'text830ec669b118',
   'manual reconciliation. We built an agent that closes': 'text3685aac7952f',
   'that loop and shows its working. Worth twenty minutes?': 'textb38cb5e18525',
+  'Multiplayer AI for your whole team. Share agents, skills and company context in one git repo you own, and build any agent on OpenCode or pi, down to each tool it may call.': 'textaf1f4acf8ee1',
 };

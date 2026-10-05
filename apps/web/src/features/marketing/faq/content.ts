@@ -76,9 +76,14 @@
  *    true for the Platinum provider (Cloud Hypervisor) and not for the default.
  *    Never "container" in external copy. Never claim egress is controlled at the
  *    network; nothing implements it.
- *  - HARNESS. OpenCode only. pi is an experimental, opt-in harness
- *    (`pi_harness` flag or `runtime: pi`); brand decision D9 is open, so do
- *    not name it. No Claude Code or Codex harness exists. Never name them.
+ *  - HARNESS. OpenCode (default) and pi (experimental, `runtime: pi` or the
+ *    `pi_harness` flag), brand decision D11. Call pi experimental. No Claude
+ *    Code or Codex harness exists. Never name them.
+ *  - SHARING. Agents are closed by default and given to everyone in the
+ *    project, a group or specific people (`docs/accounts.mdx`). A session is
+ *    shared with specific people or the whole project, and everyone with
+ *    access reads and continues it (`docs/work/sessions.mdx`). Improvements
+ *    reach everyone only once merged: say "merges", never "teaches".
  *  - LICENCE. Say "open source" and stop. Never name one.
  *  - NO CUSTOMER NAMES. NO INVENTED METRICS. The live GitHub star count is the
  *    only sanctioned figure on the site and it belongs to the open-source
@@ -103,6 +108,19 @@ export const faq = {
      apology for the section. Each answer carries its own link where it needs
      one. */
   items: [
+    // The two lead pillars (brand decision D11) answer first.
+    {
+      id: 'multiplayer',
+      question: 'Can my whole team use the same agents?',
+      answer:
+        'Yes — Kortix is multiplayer. The agents, the skills and the company memory live in one repo the whole project shares, so an improvement one person merges reaches everyone. Give an agent to everyone in the project, a group or specific people, and share a session the same way: everyone with access reads it and continues it.',
+    },
+    {
+      id: 'custom-agents',
+      question: 'How far can I customize an agent?',
+      answer:
+        'Down to each tool it may call. An agent is a markdown file that sets its prompt, its model and allow, ask or deny for every tool, and its grant in kortix.yaml decides which connectors, secrets and skills it reaches. Past that, run it on OpenCode with your own TypeScript tools and plugins, or on pi, the experimental second harness, with extensions and pi packages.',
+    },
     {
       id: 'runs-on',
       question: 'What does an agent actually run on?',

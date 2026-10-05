@@ -37,7 +37,7 @@ Kortix is the open-source AI Operating System: your agents, their skills, your c
 **Rule.** Pick one of three approved lengths. Do not write a fourth. — *Why:* The lengths keep meta text, README and press consistent. The Short line is exactly 128 characters (counted 2026-10-04). — *Where:* marketing | docs | store listing | CLI package descriptions. — *When silent:* choose by the character limit of the field.
 
 - **Short (128 characters, GitHub About, meta description, manifest description, package descriptions):** Open-source AI Operating System: your agents, skills, memory, and connectors in one repo you own. Any model. Self-host or cloud.
-- **Standard (about 30 words, README subtitle, landing subhead, store subtitle):** Kortix is an open-source AI Operating System — your agents, skills, company memory, and connectors in one git repo you own. Any model, your keys, self-hosted or managed cloud.
+- **Standard (about 35 words, README subtitle, landing subhead, store subtitle):** Multiplayer AI for your whole team. Share agents, skills and company context in one git repo you own, and build any agent on OpenCode or pi, down to each tool it may call. (D11, 2026-10-05.)
 - **Long (about 70 words, press, docs, about, store description lead):** Agents that deliver finished work are now a product category. Every version of it runs inside a model lab, on that lab's model, with your company's brain on their side of the wall. Kortix is the one you own: an open-source AI Operating System where your agents, skills, memory, and connectors live in one git repo, and the agents work on real cloud computers, landing work through a change request a human approves.
 
 ### Which line goes on which surface

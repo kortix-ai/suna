@@ -10,6 +10,15 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ---
 
+## 2026-10-05
+
+### D11 Two lead pillars: multiplayer AI, and build any agent on OpenCode or pi
+- **Decision:** Under the category "AI Operating System", the copy leads with two ideas. (1) **Multiplayer AI.** A team shares one set of agents, skills and company context: one repo the whole project shares, agents given to everyone, a group or specific people, and sessions shared the same way. (2) **Build any agent.** An agent runs on OpenCode or on pi, and its author controls every part of it: prompt, model, a permission rule per tool, grants, skills, and the harness's own tools, plugins, extensions and packages. The message house pillars become "Multiplayer AI.", "Build any agent.", "Real work, not chat." and "Open and yours." This answers D9: marketing names both harnesses. pi is labelled experimental on any page that describes what it supports.
+- **Why:** The founder set the emphasis on 2026-10-05: "Multiplayer AI – share agents/skills/context" and "build very custom agents in opencode/pi framework, most granular control". Single-person chat assistants are the default in the category. Shared agents and full control over each agent are what a team cannot get there.
+- **Where:** `verbal/concepts.md` (message house), `verbal/positioning.md` (Standard line), `verbal/claims.md` (harness rule, two proof rows), the landing hero, `/agents-and-skills`, the FAQ, README, `llms.txt`, `docs/ai-operating-system`.
+- **Supersedes:** D9 (answered). The pillars "A workforce, not one assistant." and "Everything is code." fold into the two new pillars: parallel agents and shared memory are proof for "Multiplayer AI.", files in git are proof for "Build any agent.".
+- **Source:** founder message, 2026-10-05; branch `ai-os-pillars`.
+
 ## 2026-10-04
 
 ### D10 The category line is "AI Operating System"
@@ -21,8 +30,8 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ## 2026-10-02
 
-### D9 (OPEN) Harness naming when pi is the default
-- **Decision:** Open. The copy names OpenCode as the agent harness: "An agent is an OpenCode agent", "OpenCode-native". A second harness, pi, ships in the product. The plan is that pi replaces OpenCode. The founder has not decided what the copy says when a project's default harness is pi: name pi, name no harness, or keep OpenCode until it is removed.
+### D9 (ANSWERED by D11) Harness naming when pi is the default
+- **Decision:** Answered by D11 on 2026-10-05: name OpenCode and pi, and label pi experimental. The original entry follows. Open. The copy names OpenCode as the agent harness: "An agent is an OpenCode agent", "OpenCode-native". A second harness, pi, ships in the product. The plan is that pi replaces OpenCode. The founder has not decided what the copy says when a project's default harness is pi: name pi, name no harness, or keep OpenCode until it is removed.
 - **Why:** The old reason for the rule was false. It said that OpenCode is the only shipped harness and that the other harnesses are behind `KORTIX_ACP_RUNTIME`. No code reads that variable. The code has two harnesses (`registeredHarnesses` in `apps/kortix-sandbox-agent-server/src/harness/harness.ts`): OpenCode, the default, and pi, which a project selects with the experimental `pi_harness` flag or `runtime: pi` in `kortix.yaml`. No Claude Code or Codex harness exists in code. On 2026-10-02 pi does not have rewind, compaction, slash commands, MCP servers or a todo tool, so OpenCode stays the default and the OpenCode copy is true for a default project.
 - **Where:** `verbal/claims.md` (the harness rule), the accuracy gates in `apps/web/src/features/marketing/agents-and-skills/content.ts`, `faq/content.ts`, `how-it-work/how-it-works-content.ts` and `how-it-work/step/step-harness.tsx`. 11 marketing files name OpenCode.
 - **Supersedes:** the "Why" of the harness rule in `verbal/claims.md`. The rule itself stays.

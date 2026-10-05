@@ -13,6 +13,15 @@ company memory and connectors live in one git repo you own. Each session runs
 on its own cloud computer, and the work reaches `main` through a change
 request a person approves.
 
+Two things set it apart:
+
+- **Multiplayer AI.** The whole team works with one set of agents, skills and
+  company context. Give an agent to everyone in the project, a group or
+  specific people, and share a session the same way.
+- **Build any agent.** An agent runs on OpenCode or pi (experimental), and you
+  control every part of it: prompt, model, allow, ask or deny for every tool,
+  its grants, and the harness's own tools, plugins and extensions.
+
 ## AI tools, agent frameworks and an AI Operating System
 
 | | What it gives you | What it leaves to you |
@@ -36,6 +45,8 @@ agents. This is how Kortix implements each one.
 | **Processes** | Programs that run in isolation | **Sessions.** One isolated sandbox per session. Each session has its own isolated machine and branch. |
 | **File system** | Where state lives | **The project repo.** Agents, skills, memory, connectors and triggers are files in one git repo. |
 | **Programs** | What you install and run | **Agents and skills.** An agent is `agents/<name>.md` plus its block in `kortix.yaml`. A skill is the markdown that encodes how your company does one job. |
+| **Runtime** | What executes a program | **Harnesses.** OpenCode, the default, or pi, which is experimental. Both read the same agent files and skills. See [Harnesses](/docs/work/harnesses). |
+| **Users** | Many people on one machine | **Multiplayer.** Members, groups and roles. An agent is given to everyone in the project, a group or specific people. A session is shared with specific people or the whole project, and everyone with access continues it. |
 | **Drivers** | How the OS reaches hardware | **Connectors.** 3,000+ apps in a click, plus MCP, OpenAPI, Postman, GraphQL and raw HTTP. Connector credentials are brokered server-side and never enter the machine. |
 | **Scheduler** | What runs when | **Triggers.** A cron schedule or a signed webhook starts a session with nobody present. |
 | **Permissions** | Who may do what | **Roles and rules.** Per-resource permissions for people and agents. Roles, groups, and an audit trail. Set each tool to Allow, Ask or Block. |
@@ -55,6 +66,54 @@ on someone else's models. With Kortix:
   your own on-prem network. Self-host is free.
 - **You own the configuration.** It is files in a repo you own, versioned and
   reviewable like code.
+
+## Multiplayer: one set of agents for the whole team
+
+A single-person chat assistant keeps its context with one person. In an AI
+Operating System the context belongs to the team:
+
+- **One shared repo.** Agents, skills and company memory live in one repo the
+  whole project shares. An improvement one person merges reaches everyone.
+- **Shared agents.** Agents are closed by default. Give one to everyone in the
+  project, a group or specific people. See [Accounts](/docs/accounts).
+- **Shared sessions.** Share a session with specific people or the whole
+  project. Everyone with access reads it and continues it. A shared session
+  runs only on model keys shared with the project. See
+  [Sessions](/docs/work/sessions).
+- **Shared accounts.** Connector accounts, secrets and computers each carry
+  who can use them, from everyone in the project down to one person.
+
+## Build any agent, down to each tool
+
+An agent is a markdown file. Its frontmatter sets the prompt, the model, the
+mode and a permission rule for every tool: allow, ask or deny, with glob rules
+under a capability.
+
+```markdown
+---
+description: Drafts the weekly report from the CRM and opens one change request.
+mode: primary
+permission:
+  edit: allow
+  bash:
+    "git *": allow
+    "kortix cr *": allow
+    "*": ask
+---
+```
+
+Its block in `kortix.yaml` decides what it reaches: connectors, secrets,
+skills and Kortix permissions. A grant you leave out resolves to none.
+
+Past the markdown, each harness takes its own extensions:
+
+| | OpenCode (default) | pi (experimental) |
+| --- | --- | --- |
+| Select it | The default | `runtime: pi` in `kortix.yaml` |
+| Extend it | TypeScript tools, plugins and commands in `harnesses/opencode/` | Extensions in `harnesses/pi/` and pi packages |
+| MCP servers | Yes | No MCP client. Connectors work through the `kortix connectors` CLI. |
+
+See [Agents](/docs/project/agents) and [Harnesses](/docs/work/harnesses).
 
 ## What you can run on it
 
@@ -91,6 +150,16 @@ review in one place.
 Yes. Kortix is the open-source AI Operating System. Agents, skills, memory and
 connectors live in one git repo you own, and each session runs on its own
 cloud computer.
+
+**Can my whole team use the same agents?**
+Yes. Agents, skills and company memory live in one repo the project shares.
+Give an agent to everyone in the project, a group or specific people, and
+share a session the same way.
+
+**How far can I customize an agent?**
+Down to each tool it may call. Run it on OpenCode with your own TypeScript
+tools and plugins, or on pi, the experimental second harness, with
+extensions and pi packages.
 
 **Is Kortix open source?**
 Yes. Read it, fork it, audit it at

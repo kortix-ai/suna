@@ -104,7 +104,7 @@ export const openings = [
     ],
     /** Guards the coding-agent bullet: fluency in a candidate, never a claim
      *  about what Kortix runs. */
-    note: 'Kortix runs on the OpenCode harness. That bullet is about your fluency in the ecosystem, not about what the platform supports.',
+    note: 'Kortix runs on the OpenCode and pi harnesses. That bullet is about your fluency in the ecosystem, not about what the platform supports.',
   },
   {
     id: 'rnd',

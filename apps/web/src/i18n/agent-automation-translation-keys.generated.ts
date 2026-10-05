@@ -118,7 +118,7 @@ export const AGENT_AUTOMATION_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'One image per project, or a named image per agent.': 'text0dc3abbcb173',
   'One machine per session': 'text6590dfdb580e',
   'One machine per session · Pre-configured · Nothing runs on your laptop': 'text7a04f383ef22',
-  'one OpenCode agent per file': 'text18a59ffd5fa8',
+  'one agent per file': 'text7c9b009973cd',
   'One switch pauses everything': 'textfb2ab460e464',
   'Open source and self-hostable. Any model, your keys. Kortix Cloud, your own VPC, or fully on-prem.':
     'text1d9a8dde5629',
@@ -221,4 +221,5 @@ export const AGENT_AUTOMATION_TRANSLATION_KEYS: Readonly<Record<string, string>>
     'text4c07fb41dc84',
   'Your project, tools, and setup are ready before the agent begins.': 'text3242681b6564',
   'Your repo, tools, dependencies': 'text6e4b1d4137f6',
+  'OpenCode or pi': 'text4b32f18b9b59',
 };

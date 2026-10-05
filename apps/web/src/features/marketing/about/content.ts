@@ -27,7 +27,8 @@
  *    runtime secret is a real env value in the session. CONNECTOR credentials
  *    are the ones brokered server-side that never enter the machine.
  *  - Never claim egress is controlled at the network. Nothing implements it.
- *  - OpenCode is the agent harness. Name no other.
+ *  - OpenCode (default) and pi (experimental) are the harnesses. Name no
+ *    third (brand decision D11).
  *  - The GitHub star count is the only sanctioned number, read live from
  *    `/api/github-stars`. No funding, headcount, customers or other metrics.
  *  - Keep it short. Every sentence that restates the one above it comes out.

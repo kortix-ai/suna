@@ -31,9 +31,15 @@ import type { UiTranslator } from '@/i18n/translator';
  *    `secrets`, `skills`, `kortix_permissions`, `workspace`, `enabled`. Channels fall
  *    under `connectors` because a connected channel IS a connector with
  *    `provider: 'channel'` (`apps/api/src/projects/connectors.ts:61`).
- *  - Depth is not a harness menu. OpenCode is the default harness. pi is an
- *    experimental, opt-in harness (`pi_harness` flag or `runtime: pi`) and is
- *    not named here: brand decision D9 is open.
+ *  - TWO HARNESSES (brand decision D11, answering D9). OpenCode is the
+ *    default. pi is experimental and opt-in (`runtime: pi` or the `pi_harness`
+ *    flag) and lacks rewind, compaction, slash commands, MCP servers and the
+ *    todo tool (`docs/work/harnesses.mdx`). Name both; say "experimental"
+ *    wherever the copy describes what pi supports. The agent `.md` is the same
+ *    file on both; pi reads extensions and pi packages instead of OpenCode's
+ *    `tools/`, `plugins/` and `commands/`.
+ *  - SHARING. An agent is closed by default; an assignment gives it to
+ *    everyone in the project, a group or specific people (`docs/accounts.mdx`).
  *  - The scoping field is `permission`. It is NOT called `tools` —
  *    `packages/manifest-schema/src/index.v2.ts` raises a hard error on `tools`:
  *    "`tools` is not an agent setting — use `permission` instead."
@@ -47,7 +53,8 @@ import type { UiTranslator } from '@/i18n/translator';
  *    `name` + `description`; the directory name must equal `name`.
  *  - Counts: 10 skills committed into a new project repo, plus 10 platform
  *    skills injected into every session at boot (`kortix-cli` is in both lists,
- *    so 19 distinct). 2 agents ship: `kortix` and `memory-reflector`.
+ *    so 19 distinct). 3 agents ship: `kortix`, `harness-reflector` and
+ *    `session-reviewer` (`packages/starter/templates/base/kortix.yaml`).
  *  - MARKETPLACE: ships, labelled beta, ON by default. But the deterministic
  *    installer WAS REMOVED (`apps/api/src/projects/routes/marketplace-install-session.ts`): "The
  *    deterministic install/lock/update/remove engine … has been removed …
@@ -64,15 +71,15 @@ import type { UiTranslator } from '@/i18n/translator';
 export const hero = {
   eyebrow: 'Agents & skills',
   title: 'The workforce that compounds.',
-  sub: 'An agent is an OpenCode agent: markdown at baseline, and past that your own tools, plugins, models and a per-capability permission tree. A grant in kortix.yaml decides what it reaches — its machine, its connectors and channels, its secrets, its skills. A skill encodes how your company does one specific job. Both are files in your repo. Both are reviewed like code.',
+  sub: 'Build any agent, on OpenCode or pi. An agent is markdown at baseline, and past that your own tools, plugins, extensions, models and a per-capability permission tree. A grant in kortix.yaml decides what it reaches — its machine, its connectors and channels, its secrets, its skills. Give it to the whole team, a group or specific people. Agents and skills are files in your repo, reviewed like code.',
   ctaPrimary: 'Start a session',
   ctaPrimaryHref: '/auth',
   ctaSecondary: 'Read the docs',
   ctaSecondaryHref: '/docs/project/agents',
-  microline: 'OpenCode-native · Versioned · Deny by default · Human-merged',
+  microline: 'OpenCode or pi · Versioned · Deny by default · Human-merged',
   /** Four mono facts under the fold. Every value has to be defensible. */
   specs: [
-    { k: 'An agent is', v: 'An OpenCode agent, plus its grants', visual: 'grants' },
+    { k: 'An agent is', v: 'An OpenCode or pi agent, plus its grants', visual: 'grants' },
     { k: 'A skill is', v: 'A folder with a SKILL.md', visual: 'tree' },
     { k: 'Governance', v: 'Deny by default', visual: 'gate' },
     { k: 'Both land via', v: 'A change request to main', visual: 'diff' },
@@ -82,7 +89,7 @@ export const hero = {
 export const agent = {
   eyebrow: 'What an agent is',
   title: 'Two files. No hidden object behind them.',
-  sub: 'An agent has exactly two homes. The markdown file carries how it thinks — its prompt, its mode, its model, its permission tree — and it is a stock OpenCode agent file, because Kortix adds no dialect to it. The manifest block carries what it may touch. Nothing about an agent lives in a database you cannot read.',
+  sub: 'An agent has exactly two homes. The markdown file carries how it thinks — its prompt, its mode, its model, its permission tree — and it is a stock OpenCode agent file that pi reads too, because Kortix adds no dialect to it. The manifest block carries what it may touch. Nothing about an agent lives in a database you cannot read.',
   md: {
     title: 'agents/kortix.md',
     caption: 'Excerpt of the default agent in every new Kortix project.',
@@ -144,8 +151,8 @@ export const agent = {
    *  `sm:grid-cols-3` grid, so a fourth orphans onto its own row. */
   notes: [
     'The manifest rejects a behavioral field in the governance block, with an error pointing at the agent’s own .md file.',
-    'Markdown is the floor, not the ceiling: the whole OpenCode surface sits beside it in the same repo — your own TypeScript tools, plugins that hook the runtime, the model and provider config. An agent can pin its own model, or inherit the project, account and platform default in that order.',
-    'Two agents ship in every new project: kortix, the generalist, and memory-reflector, which curates the project brain.',
+    'Markdown is the floor, not the ceiling: the whole harness sits beside it in the same repo. On OpenCode that is your own TypeScript tools, plugins that hook the runtime, and the model and provider config. On pi, which is experimental, it is extensions and pi packages. An agent can pin its own model, or inherit the project, account and platform default in that order.',
+    'Three agents ship in every new project: kortix, the generalist; harness-reflector, which refines the shared prompts, skills and memory from recent sessions; and session-reviewer, the subagent that reviews one session for it.',
   ],
 } as const;
 
@@ -154,8 +161,8 @@ export const reach = {
   title: 'Deny by default. Never above the human.',
   sub: 'The grant block covers the whole surface, not just tools: which sandbox image the agent boots, which connectors and channels it may call, which secrets it may receive, which skills it may invoke, and what it may do to Kortix itself. An agent with no grants gets none of it. You grant explicitly, or the answer is no — and on top of that sits a ceiling nothing in the config can lift.',
   md: {
-    title: 'agents/memory-reflector.md',
-    caption: 'A real permission tree, from a real agent that ships.',
+    title: 'agents/memory-curator.md',
+    caption: 'A permission tree with glob rules, from an example agent.',
     lines: [
       '---',
       'description: "Reflects on recent project activity and',
@@ -272,9 +279,9 @@ export const repo = {
   tree: [
     { path: 'your-company/', note: '', depth: 0 },
     { path: 'kortix.yaml', note: 'governance: what each agent may touch', depth: 1 },
-    { path: 'agents/', note: 'one OpenCode agent per file', depth: 1 },
+    { path: 'agents/', note: 'one agent per file', depth: 1 },
     { path: 'kortix.md', note: 'the generalist, in every project', depth: 2 },
-    { path: 'memory-reflector.md', note: 'curates the project brain on a cron', depth: 2 },
+    { path: 'harness-reflector.md', note: 'refines the shared harness on a cron', depth: 2 },
     { path: 'skills/', note: 'one directory per skill', depth: 1 },
     { path: 'agent-browser/SKILL.md', note: 'how this company drives a browser', depth: 2 },
     { path: 'harnesses/opencode/', note: 'the runtime your agents think in', depth: 1 },
