@@ -355,7 +355,7 @@ export function registerApprovalsRoutes(): void {
         decision,
         note,
         actorUserId: loaded.userId,
-        auditSource: inferAuditSource(c, 'human'),
+        auditSource: inferAuditSource(c.get('authType'), 'human'),
         resume: 'queue',
         updateStaleCard: () =>
           markApprovalCardDecided({ projectId, row, decision, note, actorUserId: loaded.userId }),
