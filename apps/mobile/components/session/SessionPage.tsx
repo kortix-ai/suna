@@ -193,6 +193,8 @@ import { QuestionPrompt } from './QuestionPrompt';
 import { PermissionPromptCard } from './PermissionPromptCard';
 import { MarkdownActionsProvider } from '@/components/markdown/inline-code';
 import { ToolFilePreviewHost, useToolFilePreviewStore } from '@/components/session/tool/shared/navigation';
+import { useSessionFilesRequestStore } from '@/stores/session-files-request-store';
+import { SessionFilesSheet } from './SessionFilesSheet';
 import { SandboxPreviewSheet } from '@/components/session/SandboxPreviewSheet';
 import { ActivitySheetHost } from '@/components/session/turn/activity-sheet';
 import type { PermissionReply } from '@/components/session/tool/tool-part-renderer';
@@ -904,6 +906,24 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const handleFileMention = useCallback((path: string) => {
     useToolFilePreviewStore.getState().openPreview(path);
   }, []);
+
+  // Recent files lives here, outside the question/composer swap, so the
+  // actions sheet's Files row and the composer's Add sheet open it even
+  // while a question replaces the composer. "Add to chat" needs the composer.
+  // A request older than this page (made while the thread was still waking)
+  // is stale: it never opens the sheet unprompted.
+  const filesSheetRef = useRef<SheetRef>(null);
+  const filesRequest = useSessionFilesRequestStore((s) => s.request);
+  const staleFilesRequestId = useRef(useSessionFilesRequestStore.getState().request?.id);
+  useEffect(() => {
+    if (filesRequest?.sessionId !== sessionId || filesRequest.id === staleFilesRequestId.current) return;
+    if (useSessionFilesRequestStore.getState().take(sessionId)) filesSheetRef.current?.open();
+  }, [filesRequest, sessionId]);
+  const addToChat = useToolFilePreviewStore((s) => s.addToChat);
+  const addSessionFileToChat = useMemo(
+    () => (addToChat ? (file: { path: string }) => addToChat(file.path) : undefined),
+    [addToChat],
+  );
 
   // ── Edit a sent message ────────────────────────────────────────────────
   // Same mechanism as apps/web `session-chat.tsx` `handleEditSend`: rewind the
@@ -2176,6 +2196,9 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
 
       {/* File taps: tool rows (ToolNavigation.openFile), attachment tiles, file mentions */}
       <ToolFilePreviewHost />
+
+      {/* Recent files: the Files row and the composer's Add sheet request it */}
+      <SessionFilesSheet ref={filesSheetRef} sessionId={sessionId} sandboxUrl={sandboxUrl} onSelect={addSessionFileToChat} />
 
       {/* Show/preview taps (ToolNavigation.openPreview): in-session over the
           thread, so a one-tap close returns to the same position (KRTX-602). */}

@@ -1,7 +1,8 @@
 /**
  * SessionFilesSheet — "Recent files": the files this session produced, the
- * list behind web's Outputs card (`lib/session/session-files.ts`). Opens from
- * the thread's Add sheet at full height, with a search field.
+ * list behind web's Outputs card (`lib/session/session-files.ts`). Mounted by
+ * `SessionPage`; opens from the composer's Add sheet and the session actions
+ * sheet's Files row at full height, with a search field.
  *
  * Two groups: the files the user came for (shown, PDF, spreadsheet, document,
  * deck, page, image, media), then "Other files" (source, config). A row is
@@ -18,12 +19,13 @@
  * surface while the document scrolls under them: Download (fetches the file,
  * then saves it in a folder the user picks: remembered on Android, the Files
  * picker every time on iOS; `lib/files/save-to-device`) · "Add to chat",
- * which closes both sheets and picks the file. A failed load says why — a
+ * which closes both sheets and picks the file (only while the composer is
+ * mounted: a question prompt leaves Download alone). A failed load says why — a
  * stopped sandbox keeps its transcript but serves no file — with Try again.
  * Closing the preview returns to the list, search text kept.
  *
  * The body mounts only while the sheet is open: it subscribes to the session's
- * messages, which change on every streamed delta, and the composer around it
+ * messages, which change on every streamed delta, and the page around it
  * must not re-render with them.
  */
 import * as React from 'react';
@@ -57,11 +59,11 @@ export interface SessionFilesSheetProps {
   sessionId: string | null | undefined;
   /** The session's sandbox: where a file's preview loads from. */
   sandboxUrl: string | undefined;
-  /** "Add to chat" in a file's preview. */
-  onSelect: (file: SessionFile) => void;
+  /** "Add to chat" in a file's preview; without it the preview has no Add to chat. */
+  onSelect?: (file: SessionFile) => void;
 }
 
-/** Memoized: the composer around it re-renders on every keystroke and passes stable props. */
+/** Memoized: the page around it re-renders on every streamed delta and passes stable props. */
 export const SessionFilesSheet = React.memo(React.forwardRef<SheetRef, SessionFilesSheetProps>(
   ({ sessionId, sandboxUrl, onSelect }, ref) => {
     const modalRef = React.useRef<BottomSheetModal>(null);
@@ -114,10 +116,14 @@ export const SessionFilesSheet = React.memo(React.forwardRef<SheetRef, SessionFi
           file={previewFile}
           sandboxUrl={sandboxUrl}
           pushed
-          onAdd={() => {
-            modalRef.current?.dismiss();
-            if (previewFile) onSelect(previewFile);
-          }}
+          onAdd={
+            onSelect
+              ? () => {
+                  modalRef.current?.dismiss();
+                  if (previewFile) onSelect(previewFile);
+                }
+              : undefined
+          }
           onDismiss={() => setPreviewFile(null)}
         />
       </>

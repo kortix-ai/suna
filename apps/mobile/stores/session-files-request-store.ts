@@ -1,9 +1,11 @@
 /**
  * A request to open a thread's Recent files sheet — the session actions
- * sheet's Files row. The `SessionChatInput` of that thread takes the request
- * and opens its `SessionFilesSheet`. Keyed by the runtime session id (the tab
- * store's `activeSessionId`, which is also `SessionPage`'s `sessionId`). One
- * request at a time.
+ * sheet's Files row and the composer's Add sheet. The `SessionPage` of that
+ * thread takes the request and opens its `SessionFilesSheet`, also while a
+ * question replaces the composer. A request older than the page (made while
+ * the thread was still waking) is ignored. Keyed by the runtime session id
+ * (the tab store's `activeSessionId`, which is also `SessionPage`'s
+ * `sessionId`). One request at a time.
  */
 import { create } from 'zustand';
 

@@ -1,12 +1,12 @@
 /**
- * `SessionChatInput` gives its four sheets props that keep one identity while
- * the user types, so the memoized sheets (Add, Recent files, Model,
- * AutoContinue) skip every keystroke. The sheets are stand-ins wrapped in
+ * `SessionChatInput` gives its three sheets props that keep one identity while
+ * the user types, so the memoized sheets (Add, Model, AutoContinue) skip every
+ * keystroke. Recent files lives on `SessionPage`; the Add sheet's row requests it. The sheets are stand-ins wrapped in
  * `React.memo`, the way the real modules export them; a render count above
  * the mount means a prop changed.
  *
- * It also pins what typing must still do: the Recent files pick appends to the
- * text as typed, and Send sends the text as typed.
+ * It also pins what typing must still do: "Add to chat" (the mention writer the
+ * composer registers) appends to the text as typed, and Send sends the text as typed.
  */
 import { afterEach, beforeAll, beforeEach, expect, mock, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -24,13 +24,15 @@ const sheetRenders: Record<string, number> = {};
 const sheetProps: Record<string, any> = {};
 function memoSheet(name: string) {
   return React.memo(
-    React.forwardRef((props: any, _ref) => {
+    React.forwardRef((props: any, ref) => {
       sheetRenders[name] = (sheetRenders[name] ?? 0) + 1;
       sheetProps[name] = props;
+      React.useImperativeHandle(ref, () => ({ open() {}, close() {}, closeThen: (then: () => void) => then() }));
       return null;
     }),
   );
 }
+let addToChat: ((path: string) => void) | null = null;
 let composer: any;
 const sent: any[] = [];
 const NO_FILES: any[] = [];
@@ -45,7 +47,6 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/components/kortix/composer': { Composer: (props: any) => { composer = props; return null; }, COMPOSER_CONTROL_HIT_SLOP: 4 },
   './MentionSuggestions': { MentionSuggestions: (props: typeof suggestions) => { suggestions = props; return null; } },
   './AttachSheet': { AttachSheet: memoSheet('AttachSheet') },
-  './SessionFilesSheet': { SessionFilesSheet: memoSheet('SessionFilesSheet') },
   './ModelPickerSheet': { ModelPickerSheet: memoSheet('ModelPickerSheet') },
   './autocontinue': {
     AutoContinueSheet: memoSheet('AutoContinueSheet'),
@@ -59,7 +60,7 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/lib/session/use-composer-draft': { useComposerDraft() {} },
   '@/components/kortix/toast-provider': { useToast: () => toast },
   '@/lib/session/local-config': { useLocalConfigStore: (selector: any) => selector({ selectedAgent: null }) },
-  './tool/shared/navigation': { useToolFilePreviewStore: { getState: () => ({ setAddToChat() {} }) } },
+  './tool/shared/navigation': { useToolFilePreviewStore: { getState: () => ({ setAddToChat: (fn: typeof addToChat) => { addToChat = fn; } }) } },
   './use-mention-file-search': { useMentionFileSearch: () => ({ results: NO_FILES, loading: false, clear() {} }) },
 };
 // Pure logic stays real: what typing and sending decide.
@@ -72,6 +73,7 @@ const KEEP_REAL = new Set([
   '@/lib/session/session-files',
   '@/lib/session/composer-config',
   '@/lib/session/model-picker',
+  '@/stores/session-files-request-store',
 ]);
 
 // Type-only imports are erased; mocking them would hide the real module from the kept-real ones.
@@ -125,16 +127,16 @@ async function type(text: string) {
 test('typing, "@", "#" and "/" do not re-render the memoized sheets', async () => {
   await mount();
   const mounted = { ...sheetRenders };
-  expect(Object.keys(mounted).sort()).toEqual(['AttachSheet', 'AutoContinueSheet', 'ModelPickerSheet', 'SessionFilesSheet']);
+  expect(Object.keys(mounted).sort()).toEqual(['AttachSheet', 'AutoContinueSheet', 'ModelPickerSheet']);
 
   for (const text of ['h', 'he', 'hello', 'hello @', 'hello @ag', 'hello #', 'hello #rev', '/', '/re', '']) await type(text);
   expect(sheetRenders).toEqual(mounted);
 });
 
-test('Recent files appends to the text as typed, and Send sends the text as typed', async () => {
+test('Add to chat appends to the text as typed, and Send sends the text as typed', async () => {
   await mount();
   await type('look at');
-  await act(async () => sheetProps.SessionFilesSheet.onSelect({ path: '/workspace/notes.md' }));
+  await act(async () => addToChat?.('/workspace/notes.md'));
   expect(composer.value.startsWith('look at')).toBe(true);
   expect(composer.value).toContain('notes.md');
 
@@ -143,6 +145,17 @@ test('Recent files appends to the text as typed, and Send sends the text as type
   expect(sent).toHaveLength(1);
   expect(sent[0][0]).toBe('hello world');
   expect(composer.value).toBe('');
+});
+
+test("the Add sheet's Recent files row requests the session's Recent files sheet", async () => {
+  const { useSessionFilesRequestStore } = await import('@/stores/session-files-request-store');
+  useSessionFilesRequestStore.setState({ request: null });
+  await mount();
+  // The Add sheet stand-in renders nothing: read the row element it was given.
+  const row = sheetProps.AttachSheet.children.props.children;
+  expect(row.props.label).toBe('Recent files');
+  await act(async () => row.props.onPress());
+  expect(useSessionFilesRequestStore.getState().request?.sessionId).toBe('s1');
 });
 
 for (const trigger of ['@', '#']) {

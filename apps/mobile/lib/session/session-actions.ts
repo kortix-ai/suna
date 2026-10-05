@@ -9,7 +9,7 @@
  *      `/vcs/diff?mode=branch` (web `useSessionChanges`: the working tree plus
  *      every commit this branch carries over its base). Needs the live
  *      runtime, so only the open thread shows it.
- *   3. Files — the session's Recent files sheet in its composer
+ *   3. Files — the session's Recent files sheet on its thread page
  *      (`SessionFilesSheet`). The list derives from the thread's messages, so
  *      it needs no live runtime: shown for the open thread even when the
  *      sandbox is asleep.
@@ -203,7 +203,7 @@ export function sessionActionRows(input: SessionActionRowsInput): SessionActionR
     else viewChanges = { visible: true, enabled: true, value: changedFilesLabel(n) };
   }
 
-  // The files sheet lives in the open thread's composer; its list needs no runtime.
+  // The files sheet lives on the open thread's page; its list needs no runtime.
   const files: ActionRowState = input.isOpenThread ? { visible: true, enabled: true } : HIDDEN;
 
   let compact: ActionRowState = HIDDEN;

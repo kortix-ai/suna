@@ -37,7 +37,6 @@ import { useComposerAttachments } from './useComposerAttachments';
 import { useRecoverPendingPick } from './useRecoverPendingPick';
 import { useComposerDraft } from '@/lib/session/use-composer-draft';
 import { AttachSheet, type AttachSheetRef } from './AttachSheet';
-import { SessionFilesSheet } from './SessionFilesSheet';
 import { useSessionFilesRequestStore } from '@/stores/session-files-request-store';
 import { useToolFilePreviewStore } from './tool/shared/navigation';
 
@@ -242,13 +241,6 @@ function SessionChatInputImpl({
   const auto = useAutoContinue(commands, onCommand);
   const [showAutoSheet, setShowAutoSheet] = useState(false);
   const attachSheetRef = useRef<AttachSheetRef>(null);
-  const filesSheetRef = useRef<SheetRef>(null);
-  // The session actions sheet's Files row asks this thread to open Recent files.
-  const filesRequest = useSessionFilesRequestStore((s) => s.request);
-  useEffect(() => {
-    if (!currentSessionId || filesRequest?.sessionId !== currentSessionId) return;
-    if (useSessionFilesRequestStore.getState().take(currentSessionId)) filesSheetRef.current?.open();
-  }, [filesRequest, currentSessionId]);
 
   // ── File attachments ─────────────────────────────────────────────────────
 
@@ -531,11 +523,16 @@ function SessionChatInputImpl({
         <SettingsRow
           icon={StackIcon}
           label="Recent files"
-          onPress={() => attachSheetRef.current?.closeThen(() => filesSheetRef.current?.open())}
+          // `SessionPage` hosts the Recent files sheet; the request opens it.
+          onPress={() =>
+            attachSheetRef.current?.closeThen(() => {
+              if (currentSessionId) useSessionFilesRequestStore.getState().requestOpen(currentSessionId);
+            })
+          }
         />
       </SettingsGroup>
     ),
-    [],
+    [currentSessionId],
   );
 
   const { addFileMention } = mention;
@@ -676,14 +673,6 @@ function SessionChatInputImpl({
       <AttachSheet ref={attachSheetRef} onPick={attachments.add}>
         {attachSheetExtras}
       </AttachSheet>
-
-      {/* Recent files — the files this session produced; a row previews the file, "Add to chat" mentions it. */}
-      <SessionFilesSheet
-        ref={filesSheetRef}
-        sessionId={currentSessionId}
-        sandboxUrl={sandboxUrl}
-        onSelect={handleSelectSessionFile}
-      />
 
       {/* Model sheet — models by provider, thinking level of the active model */}
       <ModelPickerSheet

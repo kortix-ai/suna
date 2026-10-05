@@ -18,7 +18,7 @@
  *
  * COR-148 (Jay, 2026-09-24): four rows sit above Rename, in their own
  * untitled group — Open change request · View changes · Files · Compact.
- * Files (KRTX-1636) closes the sheet, then asks the thread's composer to open
+ * Files (KRTX-1636) closes the sheet, then asks the thread's page to open
  * its Recent files sheet (`session-files-request-store`); it shows for the
  * open thread even when the sandbox is asleep. Open change
  * request is web's "Propose changes": shown while the session has changes, it
@@ -294,7 +294,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
         haptics.success();
         toast.success('Asked your agent to propose these changes for review.');
       } else if (next === 'files') {
-        // The composer of the thread on screen opens its Recent files sheet.
+        // The page of the thread on screen opens its Recent files sheet.
         if (!liveSessionId) return;
         useSessionFilesRequestStore.getState().requestOpen(liveSessionId);
       } else if (next === 'compact') {
