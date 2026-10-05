@@ -15840,6 +15840,7 @@
       "textb9819d569c9a": "Esegui il provisioning di alcune sandbox: tempi ed esito verranno mostrati qui.",
       "textb99e1742613b": "- slug: morning-brief",
       "textb99fa6c06150": "Anteprima non disponibile",
+      "showPreviewUnavailableHint": "L’app non ha risposto. Avviala nella tua sessione, poi aggiorna.",
       "textb9acc1017895": "Crea un gruppo Kortix per ogni gruppo inviato dall'IdP — senza mappatura per gruppo.",
       "textb9ad2f00fba7": "richiedono modifiche",
       "textb9addc023078": "marko@kortix.com",

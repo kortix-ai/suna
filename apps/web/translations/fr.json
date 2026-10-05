@@ -15840,6 +15840,7 @@
       "textb9819d569c9a": "Mettez à disposition quelques sandbox : leur durée et leur résultat s’afficheront ici.",
       "textb99e1742613b": "- identifiant: morning-brief",
       "textb99fa6c06150": "Aperçu indisponible",
+      "showPreviewUnavailableHint": "L’app n’a pas répondu. Lancez-la dans votre session, puis actualisez.",
       "textb9acc1017895": "Créez un groupe Kortix pour chaque groupe envoyé par votre IdP — aucun mappage par groupe n’est nécessaire.",
       "textb9ad2f00fba7": "modifications requises",
       "textb9addc023078": "marko@kortix.com",

@@ -54,6 +54,16 @@ describe('every preview state renders a page a person can read', () => {
     expect(html).not.toContain(BASE.returnTo);
   });
 
+  // The card that embeds the page swaps its icon for the dot matrix while the
+  // app starts; it learns the state from this message, not from `load`.
+  test.each(['starting', 'not-listening', 'unreachable', 'unknown'] as const)(
+    '%s tells the embedding card its state',
+    (state) => {
+      const html = previewStatePage({ ...BASE, state, port: 8081 });
+      expect(html).toContain(`postMessage({ type: 'kortix:preview-state', state: "${state}" }, '*')`);
+    },
+  );
+
   test('unreachable drops the load line and offers a quiet Try again', () => {
     const html = previewStatePage({ ...BASE, state: 'unreachable', port: 8081 });
     expect(html).not.toContain('class="load"');

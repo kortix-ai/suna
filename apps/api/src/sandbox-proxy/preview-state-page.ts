@@ -40,6 +40,9 @@ import { escapeHtml } from '../shared/html';
  */
 export const PREVIEW_STATE_HEADER = 'x-kortix-preview-state';
 
+/** The `postMessage` type the page sends to the card that embeds it. */
+export const PREVIEW_STATE_MESSAGE = 'kortix:preview-state';
+
 /** Linear strip; the regex form backtracks on adversarial input. */
 function stripTrailingSlashes(value: string): string {
   let end = value.length;
@@ -174,6 +177,18 @@ export function previewStatePage(input: {
     })();`
     : '';
 
+  // Tell the card that embeds this page which state it shows, so the card can
+  // mark the preview as still starting instead of loaded. The payload is the
+  // state name only; the receiver checks the frame it came from.
+  const stateScript = `
+    (function () {
+      try {
+        if (window.parent !== window) {
+          window.parent.postMessage({ type: '${PREVIEW_STATE_MESSAGE}', state: ${JSON.stringify(input.state)} }, '*');
+        }
+      } catch (e) {}
+    })();`;
+
   const signInScript = copy.signIn
     ? `
     (function () {
@@ -255,7 +270,7 @@ export function previewStatePage(input: {
     <p id="body">${escapeHtml(copy.body)}</p>
     ${action}
   </main>
-  <script>${signInScript}${retryScript}</script>
+  <script>${stateScript}${signInScript}${retryScript}</script>
 </body>
 </html>`;
 }

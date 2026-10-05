@@ -3,6 +3,7 @@
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
+import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import {
   isShowContentUnavailable,
@@ -169,6 +170,14 @@ export function ShowTool({ part, sessionId }: ToolProps) {
     title: activeTitle,
   };
 
+  // While the app behind a website preview builds, binds or reconnects, the
+  // header shows the preview's own dot-matrix glyph in place of the desktop
+  // icon. The title or URL seeds it, so each preview keeps one glyph.
+  const startingIcon =
+    isWebsitePreview && preview.appStarting ? (
+      <SessionDotMatrix sessionId={preview.matrixSeed} size={14} className="shrink-0" />
+    ) : null;
+
   const headerIcon = isCarousel ? currentItem?.type || 'image' : isWebsitePreview ? 'url' : type;
 
   // Inline card header owns the toolbar. Panel keeps the actions inside the
@@ -234,24 +243,31 @@ export function ShowTool({ part, sessionId }: ToolProps) {
     // vanish — an invisible `show` reads as "the tool never ran". A quiet
     // one-line note keeps the action in the transcript without resurrecting
     // the big "File not found" card this gate was built to avoid (#3966).
-    const fallbackHref = safeHttpUrl(activeUrl);
+    // A website preview names its target in the header already, and the
+    // header owns refresh, so the body states the outcome and the next step.
+    // A plain link keeps "Open link": it is the only way to the target.
+    const fallbackHref = isWebsitePreview ? null : safeHttpUrl(activeUrl);
     body = (
       <div
         className={cn(
-          'text-muted-foreground flex items-center gap-2 px-4 py-3 text-xs',
-          fill && 'h-full items-center justify-center',
+          'flex flex-col items-start gap-0.5 px-3 py-3 text-xs',
+          fill && 'h-full justify-center px-6',
         )}
       >
-        <span className="truncate">
+        <span className="text-foreground font-medium">
           {tHardcodedUi.raw('i18nComplete.textb99fa6c06150')}
-          {displayTitle ? ` — ${displayTitle}` : ''}
         </span>
+        {isWebsitePreview ? (
+          <span className="text-muted-foreground">
+            {tHardcodedUi.raw('i18nComplete.showPreviewUnavailableHint')}
+          </span>
+        ) : null}
         {fallbackHref && (
           <a
             href={fallbackHref}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-foreground/70 hover:text-foreground shrink-0 underline underline-offset-2"
+            className="text-muted-foreground hover:text-foreground decoration-border hover:decoration-current mt-1 underline underline-offset-2 transition-colors"
           >
             {tHardcodedUi.raw('i18nComplete.textaab63f85c7f1')}
           </a>
@@ -339,6 +355,7 @@ export function ShowTool({ part, sessionId }: ToolProps) {
             activeIndex={activeIndex}
             onSelect={setCarouselIndex}
             label={title}
+            activeIcon={startingIcon}
           />
         ) : (
           <ShowHoverCard target={hoverTarget}>
@@ -346,7 +363,8 @@ export function ShowTool({ part, sessionId }: ToolProps) {
               {(running && !type && !items) || currentItem?.status === 'pending' ? (
                 <Loading className="text-muted-foreground size-4 shrink-0" />
               ) : (
-                showFileTypeIcon(headerIcon, activePath || undefined, undefined, activeUrl)
+                (startingIcon ??
+                showFileTypeIcon(headerIcon, activePath || undefined, undefined, activeUrl))
               )}
               {/* No native `title` when the hover card already names the target. */}
               <span
