@@ -425,6 +425,18 @@ describe('intelligence: episodes (L1/L2) and mining (L3)', () => {
     const owners = await db.select({ userId: captureEpisodesTable.userId }).from(captureEpisodesTable).where(sql`${captureEpisodesTable.episodeId} IN (${sql.join(listed.map((e) => sql`${e.episode_id}::uuid`), sql`, `)})`);
     expect(listed.length).toBeGreaterThan(0);
     expect(owners.every((o) => o.userId === MEMBER)).toBe(true);
+    expect((listed as unknown as Array<{ person: unknown }>).every((e) => e.person === 'you')).toBe(true);
+
+    // An admin's tools name people from the account's member directory; an id outside it is no one's name.
+    const { accountMemberships, captureWorkflows } = await import('@kortix/db');
+    await db.execute(sql`INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES (${MEMBER}::uuid, ${`member-${MEMBER.slice(0, 8)}@example.test`}, ${JSON.stringify({ full_name: 'Synthetic Member' })}::jsonb) ON CONFLICT (id) DO NOTHING`);
+    await db.insert(accountMemberships).values({ accountId: ACCOUNT, userId: MEMBER }).onConflictDoNothing();
+    const [refund] = await db.select().from(captureWorkflows).where(and(eq(captureWorkflows.accountId, ACCOUNT), sql`${captureWorkflows.peopleCount} = 2`));
+    const adminScope = { accountId: ACCOUNT, viewer: MEMBER, subject: null, accountWide: true };
+    const detail = (await runTool(adminScope, 'get_workflow', { workflow_id: refund!.workflowId }, (x) => ({ ...x, n: 1 }) as never)) as { people: Array<{ user_id: string; name: string; email: string | null }> };
+    const named = detail.people.find((p) => p.user_id === MEMBER)!;
+    expect([named.name, named.email]).toEqual(['Synthetic Member', `member-${MEMBER.slice(0, 8)}@example.test`]);
+    expect(detail.people.find((p) => p.user_id !== MEMBER)!.name).toBe('A former member');
   });
 });
 

@@ -20,6 +20,7 @@
 import { captureEpisodes, captureWorkflows } from '@kortix/db';
 import { and, desc, eq, gte, ilike, lt, or, type SQL } from 'drizzle-orm';
 import { episodeInAccount, episodeSteps, overview, workflowDetail, workflowInAccount } from './intelligence';
+import { accountPeople, type Person } from './people';
 import { config } from '../config';
 import { db } from '../shared/db';
 import { CaptureBudgetExceeded, recordSpend, withinBudget } from './budget';
@@ -121,6 +122,7 @@ const MAX_ROUNDS = 5;
 
 const SYSTEM = (accountWide: boolean) => `You answer questions about how people work, from what Kortix Capture recorded: workflows (procedures people repeat, with runs per week, duration, automatable hours), episodes (one task by one person, with steps) and moments (what was on screen, done, or said).
 You have tools to look things up${accountWide ? ' across the whole account' : " in the asker's own recordings"}. Use them when the numbered sources do not answer the question yet; call tools before you write the answer, not while writing it.
+Tool results name each person ("person"): refer to people by that name; "you" is the asker.
 Rules: use only numbered sources. Cite every claim with its source number in brackets, like [2]. If the sources do not answer the question, say so in one sentence. Be short and concrete: numbers, names of workflows and apps. No preamble.`;
 
 type Scope = { accountId: string; viewer: string; subject: string | null; accountWide: boolean };
@@ -157,6 +159,19 @@ const asDate = (v: unknown, fallback: Date) => {
   return d && !Number.isNaN(d.getTime()) ? d : fallback;
 };
 
+/**
+ * Who each user id is, as the asker may see it: an account-wide asker (admin, viewer) gets each
+ * member's name and email from the account's member directory; a member asking about themselves
+ * gets "you". Tool results carry `person`, never a bare id alone.
+ */
+async function peopleFor(scope: Scope, userIds: string[]): Promise<(userId: string) => Person | 'you'> {
+  if (!scope.accountWide) return () => 'you';
+  const known = await accountPeople(scope.accountId, userIds);
+  return (userId) => known.get(userId) ?? { name: 'A former member', email: null };
+}
+
+const personLabel = (p: Person | 'you') => (p === 'you' ? 'you' : p.name);
+
 /** Run one tool call in the asker's scope. Returns the JSON the model reads; new sources are pushed. */
 export async function runTool(scope: Scope, name: string, args: Record<string, unknown>, push: Push): Promise<unknown> {
   const now = new Date(Date.now() + 60_000);
@@ -167,10 +182,11 @@ export async function runTool(scope: Scope, name: string, args: Record<string, u
   const text = (v: unknown) => (typeof v === 'string' ? v.slice(0, 200) : '');
   switch (name) {
     case 'search_moments': {
-      const hits = await searchTimeline(scope.accountId, person, { q: text(args.query) || 'a', from, to, kinds: new Set(['screen', 'actions', 'audio']), app: text(args.app) || undefined, limit: 12 });
-      return (hits as Array<Record<string, any>>).map((h) => {
+      const hits = (await searchTimeline(scope.accountId, person, { q: text(args.query) || 'a', from, to, kinds: new Set(['screen', 'actions', 'audio']), app: text(args.app) || undefined, limit: 12 })) as Array<Record<string, any>>;
+      const who = await peopleFor(scope, hits.map((h) => h.user_id));
+      return hits.map((h) => {
         const s = push({ kind: 'moment', moment: h.kind, id: h.id, user_id: h.user_id, device_id: h.device_id, ts: new Date(h.ts).toISOString(), label: [h.app, h.title].filter(Boolean).join(' — ') || h.kind, detail: String(h.snippet ?? '').replace(/\s+/g, ' ').slice(0, 300) });
-        return { source: s.n, kind: h.kind, ts: s.kind === 'moment' ? s.ts : null, where: s.label, snippet: s.detail };
+        return { source: s.n, person: who(h.user_id), kind: h.kind, ts: s.kind === 'moment' ? s.ts : null, where: s.label, snippet: s.detail };
       });
     }
     case 'list_episodes': {
@@ -180,17 +196,19 @@ export async function runTool(scope: Scope, name: string, args: Record<string, u
       const terms = questionTerms(text(args.query));
       if (terms.length) filters.push(or(...terms.flatMap((t) => [ilike(captureEpisodes.label, `%${t}%`), ilike(captureEpisodes.goal, `%${t}%`)]))!);
       const rows = await db.select().from(captureEpisodes).where(and(...filters)).orderBy(desc(captureEpisodes.startAt)).limit(15);
+      const who = await peopleFor(scope, rows.map((e) => e.userId));
       return rows.map((e) => {
-        const s = push({ kind: 'episode', episode_id: e.episodeId, user_id: e.userId, label: e.label ?? 'Episode', start_at: e.startAt.toISOString(), detail: `${Math.round((e.endAt.getTime() - e.startAt.getTime()) / 1000)} s; apps ${e.apps.join(', ')}; goal: ${e.goal ?? '-'}; outcome: ${e.outcome ?? '-'}` });
-        return { source: s.n, episode_id: e.episodeId, label: e.label, start_at: e.startAt.toISOString(), duration_s: Math.round((e.endAt.getTime() - e.startAt.getTime()) / 1000), apps: e.apps, outcome_status: e.outcomeStatus, workflow_id: e.workflowId, variant: e.variantKey };
+        const s = push({ kind: 'episode', episode_id: e.episodeId, user_id: e.userId, label: e.label ?? 'Episode', start_at: e.startAt.toISOString(), detail: `by ${personLabel(who(e.userId))}; ${Math.round((e.endAt.getTime() - e.startAt.getTime()) / 1000)} s; apps ${e.apps.join(', ')}; goal: ${e.goal ?? '-'}; outcome: ${e.outcome ?? '-'}` });
+        return { source: s.n, person: who(e.userId), episode_id: e.episodeId, label: e.label, start_at: e.startAt.toISOString(), duration_s: Math.round((e.endAt.getTime() - e.startAt.getTime()) / 1000), apps: e.apps, outcome_status: e.outcomeStatus, workflow_id: e.workflowId, variant: e.variantKey };
       });
     }
     case 'get_episode': {
       const e = await episodeInAccount(scope.accountId, text(args.episode_id));
       if (!e || (person && e.userId !== person) || (!scope.accountWide && e.userId !== scope.subject)) return { error: 'not found' };
       const steps = await episodeSteps(e.episodeId);
+      const who = await peopleFor(scope, [e.userId]);
       const s = push({ kind: 'episode', episode_id: e.episodeId, user_id: e.userId, label: e.label ?? 'Episode', start_at: e.startAt.toISOString(), detail: steps.map((x) => `${x.verb} ${x.object}${x.app ? ` (${x.app})` : ''}`).join(' → ').slice(0, 400) });
-      return { source: s.n, label: e.label, goal: e.goal, outcome: e.outcome, steps: steps.map((x) => ({ verb: x.verb, app: x.app, object: x.object, variables: x.variables })) };
+      return { source: s.n, person: who(e.userId), label: e.label, goal: e.goal, outcome: e.outcome, steps: steps.map((x) => ({ verb: x.verb, app: x.app, object: x.object, variables: x.variables })) };
     }
     case 'list_workflows':
     case 'get_workflow':
@@ -204,7 +222,9 @@ export async function runTool(scope: Scope, name: string, args: Record<string, u
         const w = await workflowInAccount(scope.accountId, text(args.workflow_id));
         if (!w) return { error: 'not found' };
         const d = await workflowDetail(w);
-        return { source: pushWorkflow(push, d).n, name: d.name, goal: d.goal, steps: d.steps, variants: d.variants, people: d.people, runs_per_week: d.runs_per_week, duration_p50_s: d.duration_p50_s, automation_hours_per_week: d.automation_hours_per_week };
+        const who = await peopleFor(scope, d.people.map((p) => p.user_id));
+        const people = d.people.map((p) => ({ ...who(p.user_id) as Person, user_id: p.user_id, runs: p.runs, duration_p50_s: p.duration_p50_s }));
+        return { source: pushWorkflow(push, d).n, name: d.name, goal: d.goal, steps: d.steps, variants: d.variants, people, runs_per_week: d.runs_per_week, duration_p50_s: d.duration_p50_s, automation_hours_per_week: d.automation_hours_per_week };
       }
       const terms = questionTerms(text(args.query));
       const filters: SQL[] = [eq(captureWorkflows.accountId, scope.accountId)];

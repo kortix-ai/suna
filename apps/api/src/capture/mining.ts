@@ -180,10 +180,15 @@ export function changesSomething(a: string[], b: string[]): boolean {
   return diff.some((t) => MUTATING.has(t.split('@')[0]!));
 }
 
-/** The changing steps a path adds and skips against `a`, as one comparable key. */
-function changeKey(a: string[], b: string[]): string {
+/**
+ * What a path changes against `a`, as one comparable key: the changing steps of `a` it skips, and
+ * the apps it adds work in. The verb of an added step is left out on purpose: the model names the
+ * same step "Open" in one run and "Update" in the next (a carrier page, measured on the eval set).
+ */
+export function changeKey(a: string[], b: string[]): string {
   const changing = (t: string) => MUTATING.has(t.split('@')[0]!);
-  return `+${minus(b, a).filter(changing).sort().join(',')}|-${minus(a, b).filter(changing).sort().join(',')}`;
+  const apps = [...new Set(minus(b, a).map((t) => t.split('@')[1]!))].sort();
+  return `-${minus(a, b).filter(changing).sort().join(',')}|+${apps.join(',')}`;
 }
 
 /** Items of `a` left after removing one match per item of `b` (by verb@app for steps). */
@@ -277,7 +282,8 @@ export function describeCluster(runs: Run[], now: number): MinedWorkflow {
       return { runs: rs, tokens: mode.tokens, representative };
     })
     .sort((a, b) => b.runs.length - a.runs.length);
-  const minRuns = Math.max(2, Math.ceil(VARIANT_SHARE * finished.length));
+  // A variant, like a workflow, needs MIN_RUNS runs (and VARIANT_SHARE of them).
+  const minRuns = Math.max(MIN_RUNS, Math.ceil(VARIANT_SHARE * finished.length));
   // A path that differs from the most common one only in steps that change nothing (open, read,
   // copy, fill…) is the same way of working, traced at another grain: it folds into A.
   const folded: typeof sub = [];
@@ -308,14 +314,16 @@ export function describeCluster(runs: Run[], now: number): MinedWorkflow {
     // Until the model names it: a variant is named by the first step it adds, else by the step it skips.
     const added = minus(p.representative.steps, canonical.representative.steps);
     const skipped = minus(canonical.representative.steps, p.representative.steps);
-    const lead = added[0] ?? skipped[0];
+    const changing = (x: Run['steps'][number]) => MUTATING.has(x.verb.toLowerCase());
+    const lead = added.find(changing) ?? skipped.find(changing) ?? added[0] ?? skipped[0];
+    const leadAdded = !!lead && added.includes(lead);
     const phrase = (x: Run['steps'][number]) => `${x.verb.toLowerCase()} ${x.object}`;
     // A is named by what it does that the variants do not (else its last changing step).
     const own = paths.slice(1).flatMap((q) => minus(canonical.representative.steps, q.representative.steps));
-    const signature = own[0] ?? [...canonical.representative.steps].reverse().find((x) => MUTATING.has(x.verb.toLowerCase())) ?? canonical.representative.steps[canonical.representative.steps.length - 1];
+    const signature = own.find(changing) ?? own[0] ?? [...canonical.representative.steps].reverse().find((x) => MUTATING.has(x.verb.toLowerCase())) ?? canonical.representative.steps[canonical.representative.steps.length - 1];
     return {
       key: p.key,
-      name: p.key === 'A' ? `Standard: ${signature ? phrase(signature) : 'the usual steps'}` : lead ? `${added.length ? '' : 'Skip: '}${capitalize(phrase(lead))}` : `Path ${p.key}`,
+      name: p.key === 'A' ? `Standard: ${signature ? phrase(signature) : 'the usual steps'}` : lead ? `${leadAdded ? '' : 'Skip: '}${capitalize(phrase(lead))}` : `Path ${p.key}`,
       runs: p.runs.length,
       share: Math.round((p.runs.length / finished.length || 0) * 1000) / 1000,
       steps_count: p.tokens.length,
@@ -324,7 +332,7 @@ export function describeCluster(runs: Run[], now: number): MinedWorkflow {
         p.key === 'A'
           ? `The usual way, ${Math.round((p.runs.length / Math.max(1, finished.length)) * 100)}% of runs: ${canonical.representative.steps.map(phrase).join(' → ')}.`
           : [added.length && `Adds: ${added.map(phrase).join(' → ')}.`, skipped.length && `Skips: ${skipped.map(phrase).join(' → ')}.`].filter(Boolean).join(' '),
-      question: lead ? `the run needs to ${added.length ? phrase(lead) : `go without the step "${phrase(lead)}"`}` : `the case differs from path A`,
+      question: lead ? `the run needs to ${leadAdded ? phrase(lead) : `go without the step "${phrase(lead)}"`}` : `the case differs from path A`,
     };
   });
   for (const v of variants.slice(1)) {
@@ -551,9 +559,10 @@ export async function mineAccount(accountId: string, caller?: Caller, now = Date
         });
       }
     } catch (error) {
-      // No judgement this run (model busy or down): the clusters stay apart until the next run.
-      if (error instanceof CaptureBudgetExceeded) throw error;
-      logger.warn('[capture] mining equivalence judgement failed', { accountId, error: String(error) });
+      // Without the judgement a run would write workflows split apart, and a person would review
+      // them: fail instead, so the job retries with backoff (6 attempts) and the last result stays.
+      logger.warn('[capture] mining equivalence judgement failed; the run retries', { accountId, error: String(error) });
+      throw error;
     }
     const parent = mined.map((_, i) => i);
     const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i]!)));
