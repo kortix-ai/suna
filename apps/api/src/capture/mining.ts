@@ -7,7 +7,8 @@
  *             + 0.3 · Jaccard of the step objects' words
  *             + 0.2 · Jaccard of the labels' words
  *
- *   1. traced procedural episodes of the last MINE_DAYS, grouped by signature
+ *   1. traced procedural episodes of the last MINE_DAYS, grouped by signature;
+ *      abandoned runs wait for step 3b
  *   2. average-linkage clustering of the signature groups down to MERGE_AT;
  *      cluster pairs between ASK_FROM and MERGE_AT go to one model call that
  *      judges which are the same procedure
@@ -15,6 +16,8 @@
  *      canonical procedure (largest path), variants (paths with VARIANT_SHARE),
  *      decision points (where a variant leaves the canonical path), stats,
  *      and the automation score = runs/week × p50 hours × determinism
+ *   3b. each abandoned run joins the workflow it started: the one whose canonical
+ *      path holds most of its steps in order (PARTIAL_AT), most similar first
  *   4. one model call per new or changed workflow names it and its variants
  *   5. clusters keep the identity of the workflow most of their runs had:
  *      names, review state and skills survive re-mining (the incremental part)
@@ -26,6 +29,7 @@ import { captureEpisodeSteps, captureEpisodes, captureWorkflows } from '@kortix/
 import { and, asc, eq, gte, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { config } from '../config';
+import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { CaptureBudgetExceeded, recordSpend, withinBudget } from './budget';
 import { withCaptureGateway } from './gateway';
@@ -38,6 +42,7 @@ export const ASK_FROM = 0.4;
 export const PATH_AT = 0.8;
 export const MIN_RUNS = 3;
 export const VARIANT_SHARE = 0.08;
+export const PARTIAL_AT = 0.75;
 const MAX_JUDGEMENTS = 20;
 
 // ─── Similarity ──────────────────────────────────────────────────────────────
@@ -133,6 +138,39 @@ export function differingSteps(canonical: string[], path: string[]): number[] {
   return missing.length ? missing : [Math.max(1, firstInsert < 0 ? m : firstInsert + 1)];
 }
 
+export function commonSubsequence(a: string[], b: string[]): number {
+  let prev = new Array<number>(b.length + 1).fill(0);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [0];
+    for (let j = 1; j <= b.length; j++) cur[j] = a[i - 1] === b[j - 1] ? prev[j - 1]! + 1 : Math.max(prev[j]!, cur[j - 1]!);
+    prev = cur;
+  }
+  return prev[b.length]!;
+}
+
+/** A workflow as one group: its canonical path and the words most of its runs share. */
+export function workflowGroup(m: MinedWorkflow): Group {
+  return {
+    signature: m.signature,
+    tokens: m.paths[0]!.tokens,
+    objectWords: frequent(m.runs.map((r) => r.steps.flatMap((s) => words(s.object))), 0.3),
+    labelWords: frequent(m.runs.map((r) => words(r.label)), 0.3),
+    members: m.runs.length,
+  };
+}
+
+/** The workflow an abandoned run started: most of its steps in order on the canonical path, most similar first. */
+export function startedWorkflow(run: Group, workflows: Array<{ group: Group }>): number {
+  let best = -1;
+  let score = 0;
+  for (const [i, w] of workflows.entries()) {
+    if (commonSubsequence(run.tokens, w.group.tokens) / run.tokens.length < PARTIAL_AT) continue;
+    const sim = similarity(run, w.group);
+    if (sim > score) [best, score] = [i, sim];
+  }
+  return best;
+}
+
 export function percentile(sorted: number[], p: number): number {
   if (!sorted.length) return 0;
   const idx = (sorted.length - 1) * p;
@@ -198,7 +236,9 @@ export interface MinedWorkflow {
 
 /** Paths, canonical steps, variants and stats of one cluster of runs. `now` bounds the runs/week window. */
 export function describeCluster(runs: Run[], now: number): MinedWorkflow {
-  const groups = groupRuns(runs);
+  // Paths come from finished runs: an abandoned run is a prefix, not a way of doing the task.
+  const finished = runs.filter((r) => r.outcomeStatus !== 'abandoned');
+  const groups = groupRuns(finished.length ? finished : runs);
   const sim = groups.map((a) => groups.map((b) => sequenceSimilarity(a.tokens, b.tokens)));
   const sub = agglomerate(sim, groups.map((g) => g.members), PATH_AT).clusters
     .map((idx) => {
@@ -208,7 +248,7 @@ export function describeCluster(runs: Run[], now: number): MinedWorkflow {
       return { runs: rs, tokens: mode.tokens, representative };
     })
     .sort((a, b) => b.runs.length - a.runs.length);
-  const minRuns = Math.max(2, Math.ceil(VARIANT_SHARE * runs.length));
+  const minRuns = Math.max(2, Math.ceil(VARIANT_SHARE * finished.length));
   const named = sub.filter((p, i) => i === 0 || p.runs.length >= minRuns).slice(0, 5);
   const paths = named.map((p, i) => ({ ...p, key: String.fromCharCode(65 + i) }));
   const canonical = paths[0]!;
@@ -298,7 +338,7 @@ Return ONLY JSON: {"name":"…","goal":"…","outcome":"…","variants":[{"key":
 
 function judgePrompt(pairs: Array<[MinedWorkflow, MinedWorkflow]>): string {
   const lines = pairs.map(([a, b], i) => `${i + 1}. X: ${describeRun(a.paths[0]!.representative)}\n   Y: ${describeRun(b.paths[0]!.representative)}`).join('\n');
-  return `Each pair shows two recorded procedures. They are the same procedure when they pursue the same goal on the same kind of item, even if some steps differ (a variant of it). They differ when the goal differs.
+  return `Each pair shows two recorded procedures. They are the same procedure when they handle the same kind of request on the same kind of item, even if steps differ. One may be a branch of the other: the same trigger and opening steps, then a decision leads to another ending (for example approving or rejecting the same kind of request). They differ when the request they handle differs.
 
 ${lines}
 
@@ -351,8 +391,9 @@ export async function mineAccount(accountId: string, caller?: Caller, now = Date
       steps: stepsOf.get(e.episodeId)!,
     }));
 
-  // 1–2. Cluster the signature groups.
-  const groups = groupRuns(runs);
+  // 1–2. Cluster the signature groups of finished runs.
+  const abandoned = runs.filter((r) => r.outcomeStatus === 'abandoned');
+  const groups = groupRuns(runs.filter((r) => r.outcomeStatus !== 'abandoned'));
   const sim = groups.map((a) => groups.map((b) => similarity(a, b)));
   const { clusters, between } = agglomerate(sim, groups.map((g) => g.members), MERGE_AT);
   let mined = clusters.map((idx) => describeCluster(idx.flatMap((i) => groups[i]!.runs), now));
@@ -369,16 +410,22 @@ export async function mineAccount(accountId: string, caller?: Caller, now = Date
   };
 
   // Borderline pairs of real clusters: one model call judges them; the same ones merge.
-  const real = mined.map((m, i) => ({ m, i })).filter(({ m }) => m.runs.length >= MIN_RUNS);
+  const big = mined.map((m, i) => ({ m, i })).filter(({ m }) => m.runs.length >= MIN_RUNS);
   const borderline: Array<[number, number, number]> = [];
-  for (const a of real) for (const b of real) if (a.i < b.i && between(a.i, b.i) >= ASK_FROM) borderline.push([a.i, b.i, between(a.i, b.i)]);
+  for (const a of big) for (const b of big) if (a.i < b.i && between(a.i, b.i) >= ASK_FROM) borderline.push([a.i, b.i, between(a.i, b.i)]);
   borderline.sort((x, y) => y[2] - x[2]);
   const asked = borderline.slice(0, MAX_JUDGEMENTS);
   if (asked.length) {
     let same: number[] = [];
-    await spend(async (usage) => {
-      same = (await caller.call(judgeZod, judgePrompt(asked.map(([i, j]) => [mined[i]!, mined[j]!])), [], usage)).same;
-    });
+    try {
+      await spend(async (usage) => {
+        same = (await caller.call(judgeZod, judgePrompt(asked.map(([i, j]) => [mined[i]!, mined[j]!])), [], usage)).same;
+      });
+    } catch (error) {
+      // No judgement this run (model busy or down): the clusters stay apart until the next run.
+      if (error instanceof CaptureBudgetExceeded) throw error;
+      logger.warn('[capture] mining equivalence judgement failed', { accountId, error: String(error) });
+    }
     const parent = mined.map((_, i) => i);
     const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i]!)));
     for (const n of same) {
@@ -390,8 +437,17 @@ export async function mineAccount(accountId: string, caller?: Caller, now = Date
     if (merged.size < mined.length) mined = [...merged.values()].map((rs) => describeCluster(rs, now));
   }
 
+  // 3b. Abandoned runs join the workflow they started.
+  const real = mined.filter((m) => m.runs.length >= MIN_RUNS);
+  const joins = new Map<number, Run[]>();
+  const canon = real.map((m) => ({ group: workflowGroup(m) }));
+  for (const g of groupRuns(abandoned)) {
+    const at = startedWorkflow(g, canon);
+    if (at >= 0) joins.set(at, [...(joins.get(at) ?? []), ...g.runs]);
+  }
+  const workflows = real.map((m, i) => (joins.has(i) ? describeCluster([...m.runs, ...joins.get(i)!], now) : m));
+
   // 3–5. Keep identities, name what is new or changed, write.
-  const workflows = mined.filter((m) => m.runs.length >= MIN_RUNS);
   const existing = await db.select().from(captureWorkflows).where(eq(captureWorkflows.accountId, accountId));
   const byId = new Map(existing.map((w) => [w.workflowId, w]));
   const claimed = new Set<string>();
@@ -408,10 +464,17 @@ export async function mineAccount(accountId: string, caller?: Caller, now = Date
     });
   const names = new Map<MinedWorkflow, z.output<typeof nameZod>>();
   for (const p of plan) {
-    if (p.keep && (!p.changed || p.keep.status !== 'detected')) continue;
-    await spend(async (usage) => {
-      names.set(p.m, await caller.call(nameZod, namePrompt(p.m), [], usage));
-    });
+    const unnamed = p.keep?.name === 'Unnamed workflow';
+    if (p.keep && !unnamed && (!p.changed || p.keep.status !== 'detected')) continue;
+    try {
+      await spend(async (usage) => {
+        names.set(p.m, await caller.call(nameZod, namePrompt(p.m), [], usage));
+      });
+    } catch (error) {
+      // Unnamed for now: a new workflow is written as "Unnamed workflow" and named on the next run.
+      if (error instanceof CaptureBudgetExceeded) throw error;
+      logger.warn('[capture] mining naming failed', { accountId, error: String(error) });
+    }
   }
   const perWorkflowCost = plan.length ? costUsd / plan.length : 0;
   await db.transaction(async (tx) => {

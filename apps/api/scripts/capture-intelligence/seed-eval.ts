@@ -25,7 +25,8 @@ const OUT = process.env.CAPTURE_EVAL_OUT ?? 'output/capture-eval';
 const SB = { url: process.env.SUPABASE_URL!, anon: process.env.SUPABASE_ANON_KEY!, service: process.env.SUPABASE_SERVICE_ROLE_KEY! };
 if (!SB.url || !SB.anon || !SB.service) throw new Error('SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY are required');
 if (!/localhost|127\.0\.0\.1/.test(API + SB.url)) throw new Error('seed-eval runs against a local stack only');
-const PASSWORD = `Eval-${randomBytes(6).toString('hex')}`;
+// The eval users' password: CAPTURE_EVAL_PASSWORD (to share a local login), else a fresh random one.
+const PASSWORD = process.env.CAPTURE_EVAL_PASSWORD ?? `Eval-${randomBytes(6).toString('hex')}`;
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 
 async function http(method: string, path: string, token?: string, body?: unknown, okStatuses = [200, 201]) {

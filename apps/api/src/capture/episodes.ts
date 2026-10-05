@@ -34,8 +34,8 @@ export const MAX_MOMENTS = 80;
 const MAX_KEYFRAMES = 4;
 
 export const VERBS = [
-  'Open', 'Read', 'Review', 'Search', 'Select', 'Copy', 'Paste', 'Fill', 'Create', 'Update', 'Set', 'Send', 'Reply',
-  'Approve', 'Reject', 'Match', 'Export', 'Import', 'Upload', 'Download', 'Attach', 'Delete', 'Schedule', 'Submit', 'Check',
+  'Open', 'Read', 'Search', 'Select', 'Copy', 'Paste', 'Fill', 'Create', 'Update', 'Set', 'Send',
+  'Approve', 'Reject', 'Match', 'Export', 'Import', 'Upload', 'Download', 'Attach', 'Delete', 'Schedule', 'Submit',
 ] as const;
 
 // ─── Masking ─────────────────────────────────────────────────────────────────
@@ -52,6 +52,22 @@ export function maskText(text: string): string {
   let out = text;
   for (const [re, token] of MASKS) out = out.replace(re, token);
   return out;
+}
+
+/**
+ * Literal values out of what the model wrote: any word with a run of 3+ digits
+ * (`SO-905232`, `#41234`, `EXP-968`) and any mask token. Labels, goals and
+ * outcomes describe the kind of task, never one instance of it.
+ */
+export function scrubLiterals(text: string): string {
+  return text
+    .replace(/#?[\p{L}\d_/-]*\d{3,}(?:[.,]\d+)?[\p{L}\d_/-]*/gu, '')
+    .replace(/<(?:email|iban|phone|number)>/g, '')
+    .replace(/\(\s*\)/g, '')
+    .replace(/\s+([,.;:!?)])/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+    .replace(/[\s,;:-]+$/, '');
 }
 
 // ─── Moments ─────────────────────────────────────────────────────────────────
@@ -182,7 +198,8 @@ Rules:
 - Idle gaps and switches to unrelated work usually start a new task. Switching apps for the same goal does not.
 - "procedural": true when the task is a goal-directed procedure someone could hand to an assistant (processing a ticket, an invoice, an order); false for reading news, chatting, browsing, inbox triage.
 - Steps: one per meaningful action, in order, at the moment it happens. "verb" is one of: ${VERBS.join(', ')}. "app" is the app. "object" is what the verb acts on, in a few generic words (e.g. "refund with reason Damaged", "order by number"), no literal values. "params" (optional): where or how, e.g. "Orders › Search". "variables": snake_case names of the literal values the step reads or writes (e.g. ["order_id"]), never the values themselves.
-- "label": 3-7 words, imperative, generic (e.g. "Refund a damaged order"). "goal": one sentence. "outcome": one sentence on what was achieved. "outcome_status": succeeded, failed, abandoned (stopped before the end), or unknown.
+- "label": 3-7 words, imperative, generic (e.g. "Refund a damaged order"). "goal": one sentence. "outcome": one sentence on what was achieved. Never put literal values (ids, numbers, names, addresses) in label, goal, outcome, object or params: describe the kind of task, not this instance.
+- "outcome_status": succeeded, failed, abandoned (the task stopped before its end: no final send, save or status change), or unknown.
 
 Activity:
 ${lines}
@@ -192,8 +209,9 @@ Return ONLY JSON: {"episodes":[{"first":1,"last":9,"label":"…","goal":"…","o
 
 const VERB_SET = new Map(VERBS.map((v) => [v.toLowerCase(), v]));
 const VERB_SYNONYMS: Record<string, (typeof VERBS)[number]> = {
-  'look up': 'Search', 'fill in': 'Fill', 'fill out': 'Fill', 'sign off': 'Approve', 'write back': 'Reply',
-  view: 'Open', go: 'Open', navigate: 'Open', launch: 'Open', look: 'Read', inspect: 'Review', verify: 'Check', confirm: 'Check',
+  reply: 'Send', review: 'Read', check: 'Read', examine: 'Read', open: 'Open',
+  'look up': 'Search', 'fill in': 'Fill', 'fill out': 'Fill', 'sign off': 'Approve', 'write back': 'Send',
+  view: 'Open', go: 'Open', navigate: 'Open', launch: 'Open', look: 'Read', inspect: 'Read', verify: 'Read', confirm: 'Read',
   find: 'Search', lookup: 'Search', enter: 'Fill', type: 'Fill', input: 'Fill', edit: 'Update', change: 'Update', modify: 'Update',
   mark: 'Set', tag: 'Set', close: 'Set', resolve: 'Set', email: 'Send', message: 'Send', post: 'Send', write: 'Send',
   issue: 'Create', add: 'Create', new: 'Create', make: 'Create', book: 'Schedule', save: 'Update', compare: 'Match', reconcile: 'Match',
@@ -202,7 +220,7 @@ const VERB_SYNONYMS: Record<string, (typeof VERBS)[number]> = {
 /** One of VERBS for any verb the model wrote. */
 export function normalizeVerb(raw: string): string {
   const [word = '', next = ''] = raw.trim().toLowerCase().split(/\s+/);
-  return VERB_SYNONYMS[`${word} ${next}`] ?? VERB_SET.get(word) ?? VERB_SYNONYMS[word] ?? (word ? word[0]!.toUpperCase() + word.slice(1) : 'Do');
+  return VERB_SYNONYMS[`${word} ${next}`] ?? VERB_SYNONYMS[word] ?? VERB_SET.get(word) ?? (word ? word[0]!.toUpperCase() + word.slice(1) : 'Do');
 }
 
 export function signatureOf(steps: Array<{ verb: string; app: string | null }>): string {
@@ -237,7 +255,7 @@ export function placeEpisodes(chunk: Moment[], raw: ModelEpisode[]) {
       const first = clamp(Math.min(e.first, e.last));
       const last = clamp(Math.max(e.first, e.last));
       const steps = e.steps
-        .map((s) => ({ ...s, moment: clamp(s.moment), verb: normalizeVerb(s.verb), object: s.object.trim().slice(0, 200), variables: [...new Set(s.variables.map((v) => v.toLowerCase().replace(/[^a-z0-9_]/g, '_')).filter(Boolean))] }))
+        .map((s) => ({ ...s, moment: clamp(s.moment), verb: normalizeVerb(s.verb), object: scrubLiterals(s.object).slice(0, 200), params: s.params ? scrubLiterals(s.params) || null : null, variables: [...new Set(s.variables.map((v) => v.toLowerCase().replace(/[^a-z0-9_]/g, '_')).filter(Boolean))] }))
         .filter((s) => s.moment >= first && s.moment <= last && s.object)
         .sort((a, b) => a.moment - b.moment);
       return { ...e, first, last, start: byN.get(first)!.start, end: byN.get(last)!.end, steps: steps.map((s) => ({ ...s, at: byN.get(s.moment)! })) };
@@ -307,9 +325,9 @@ export async function traceRange(rangeId: string, caller?: Caller): Promise<{ ep
           source: 'detected',
           startAt: new Date(e.start),
           endAt: new Date(Math.max(e.end, e.start + 1000)),
-          label: e.label.slice(0, 200),
-          goal: e.goal,
-          outcome: e.outcome,
+          label: (scrubLiterals(e.label) || 'Task').slice(0, 200),
+          goal: e.goal ? scrubLiterals(e.goal) : null,
+          outcome: e.outcome ? scrubLiterals(e.outcome) : null,
           outcomeStatus: e.outcome_status,
           apps: [...new Set(steps.map((s) => s.app).filter((a): a is string => !!a))],
           // A non-procedural task is closed, not traced: mining reads traced episodes only.

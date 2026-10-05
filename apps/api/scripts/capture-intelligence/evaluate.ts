@@ -9,8 +9,19 @@
  * Writes `$CAPTURE_EVAL_OUT/report.json` and prints the summary.
  */
 import { join } from 'node:path';
-import { sequenceSimilarity } from '../../src/capture/mining';
 import { WORKFLOWS, type TruthRun } from './synthetic';
+
+// The same measure as mining.ts, inlined: importing the API module would load its config.
+function sequenceSimilarity<T>(a: T[], b: T[]): number {
+  if (!a.length && !b.length) return 1;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j]! + 1, cur[j - 1]! + 1, prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return 1 - prev[b.length]! / Math.max(a.length, b.length);
+}
 
 const OUT = process.env.CAPTURE_EVAL_OUT ?? 'output/capture-eval';
 const truthFile = await Bun.file(join(OUT, 'truth.json')).json();

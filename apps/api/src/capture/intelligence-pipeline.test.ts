@@ -1,7 +1,7 @@
 /** The pure parts of Capture Intelligence: masking, moments, episode placement, clustering, variants, stats. */
 import { describe, expect, test } from 'bun:test';
-import { buildMoments, chunkMoments, maskText, momentLines, normalizeVerb, placeEpisodes, signatureOf, type Moment } from './episodes';
-import { agglomerate, describeCluster, differingSteps, editDistance, percentile, sequenceSimilarity, words } from './mining';
+import { buildMoments, chunkMoments, maskText, scrubLiterals, momentLines, normalizeVerb, placeEpisodes, signatureOf, type Moment } from './episodes';
+import { agglomerate, commonSubsequence, describeCluster, differingSteps, editDistance, groupRuns, percentile, sequenceSimilarity, startedWorkflow, words, workflowGroup } from './mining';
 
 const t0 = Date.UTC(2026, 8, 1, 9);
 const frame = (s: number, app: string, title: string, text = '') => ({ frameId: `f${s}`, ts: new Date(t0 + s * 1000), app, title, url: null, text });
@@ -15,6 +15,16 @@ describe('maskText', () => {
     expect(maskText('call +49 30 1234 5678 today')).toBe('call <phone> today');
     expect(maskText('IBAN DE89 3704 0044 0532 0130 00 ok')).toBe('IBAN <iban> ok');
     expect(maskText('tracking TRK123456789')).toBe('tracking TRK<number>');
+  });
+});
+
+describe('scrubLiterals', () => {
+  test('labels, goals and outcomes keep the kind of task, never one instance of it', () => {
+    expect(scrubLiterals('Approve expense report EXP-968')).toBe('Approve expense report');
+    expect(scrubLiterals('Escalate late shipment for order SO-905232')).toBe('Escalate late shipment for order');
+    expect(scrubLiterals("Review the expense report EXP-968 and its receipts, then approve it.")).toBe('Review the expense report and its receipts, then approve it.');
+    expect(scrubLiterals('Reply to <email> about ticket #41234.')).toBe('Reply to about ticket.');
+    expect(scrubLiterals('Refund a damaged order')).toBe('Refund a damaged order');
   });
 });
 
@@ -97,7 +107,9 @@ describe('mining', () => {
       run(20, ['Open'], 'abandoned'),
     ];
     const w = describeCluster(runs, now);
+    // The abandoned run counts in the stats, never as a path.
     expect(w.paths.map((p) => [p.key, p.runs.length])).toEqual([['A', 8], ['B', 3]]);
+    expect(w.stats.runsTotal).toBe(12);
     expect(w.variants[1]!.differs).toEqual([3, 4]);
     expect(w.steps[1]!.decision).toMatchObject({ variant: 'B' });
     expect(w.stats.people).toBe(2);
@@ -106,5 +118,20 @@ describe('mining', () => {
     expect(w.stats.successRate).toBeCloseTo(11 / 12);
     // The first run is 21 days old: 12 runs in 3 weeks = 4/week × 10 min × determinism 1.
     expect(w.stats.hoursPerWeek).toBeCloseTo(4 / 6);
+  });
+
+  test('an abandoned run joins the workflow whose canonical path holds its steps in order', () => {
+    const now = Date.UTC(2026, 8, 29);
+    const run = (i: number, path: string[], label: string, status = 'succeeded') => ({
+      episodeId: `e${i}`, userId: 'u1', start: new Date(now - i * 3_600_000), end: new Date(now - i * 3_600_000 + 60_000), label, goal: null, outcome: null, outcomeStatus: status, workflowId: null,
+      signature: path.join(' '), steps: path.map((t) => ({ verb: t.split('@')[0]!, app: t.split('@')[1]!, object: label, params: null, variables: [] })),
+    });
+    const refund = describeCluster([1, 2, 3].map((i) => run(i, ['open@helpdesk', 'search@erp', 'create@erp', 'send@mail'], 'Refund a damaged order')), now);
+    const escalate = describeCluster([4, 5, 6].map((i) => run(i, ['open@helpdesk', 'search@erp', 'open@browser', 'send@mail'], 'Escalate a late shipment')), now);
+    const partial = groupRuns([run(7, ['open@helpdesk', 'search@erp', 'open@browser'], 'Escalate a late shipment', 'abandoned')])[0]!;
+    expect(commonSubsequence(['a', 'b', 'c'], ['a', 'x', 'c'])).toBe(2);
+    expect(startedWorkflow(partial, [{ group: workflowGroup(refund) }, { group: workflowGroup(escalate) }])).toBe(1);
+    const stray = groupRuns([run(8, ['read@chat', 'send@chat'], 'Chat', 'abandoned')])[0]!;
+    expect(startedWorkflow(stray, [{ group: workflowGroup(refund) }])).toBe(-1);
   });
 });
