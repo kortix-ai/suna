@@ -32,77 +32,79 @@ export function authVerifyBaseUrl(): string {
   return (config.SUPABASE_PUBLIC_URL || config.SUPABASE_URL || '').trim();
 }
 
-authEmailHookApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/send-email',
-    tags: ['auth'],
-    summary: 'Supabase Auth send-email hook (Standard Webhooks signature verified)',
-    request: {
-      body: { content: { 'application/json': { schema: z.any() } } },
+export function registerSendEmailHookRoutes(): void {
+  authEmailHookApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/send-email',
+      tags: ['auth'],
+      summary: 'Supabase Auth send-email hook (Standard Webhooks signature verified)',
+      request: {
+        body: { content: { 'application/json': { schema: z.any() } } },
+      },
+      responses: {
+        200: json(z.object({}), 'Email sent'),
+        ...errors(400, 401, 500, 503),
+      },
+    }),
+    async (c: any) => {
+      const secret = (config.AUTH_EMAIL_HOOK_SECRET || '').trim();
+      if (!secret) {
+        return c.json({ error: 'Auth email hook is not configured' }, 503);
+      }
+
+      const rawBody = await c.req.text();
+      const verified = verifyStandardWebhook({
+        rawBody,
+        secret,
+        headers: readStandardWebhookHeaders((name) => c.req.header(name)),
+      });
+      if (!verified) {
+        return c.json({ error: 'Invalid signature' }, 401);
+      }
+      bindIntegrationPrincipal('supabase_auth');
+
+      let payload: SendEmailHookPayload;
+      try {
+        payload = JSON.parse(rawBody) as SendEmailHookPayload;
+      } catch {
+        return c.json({ error: 'Invalid JSON' }, 400);
+      }
+
+      const parsed = parseSendEmailHookPayload(payload, authVerifyBaseUrl());
+      if (!parsed.ok) {
+        return c.json({ error: parsed.reason }, 400);
+      }
+
+      const content = renderAuthEmail({
+        actionType: parsed.email.actionType,
+        actionUrl: parsed.email.actionUrl,
+        token: parsed.email.token,
+      });
+
+      const result = await sendEmail({
+        to: [parsed.email.recipient],
+        subject: content.subject,
+        html: content.html,
+        text: content.text,
+        category: content.category,
+      });
+
+      if (result.ok) return c.json({}, 200);
+
+      // Surface the failure to GoTrue so the user is told the mail did not go out,
+      // rather than being left waiting for a link that will never arrive.
+      if ('skipped' in result && result.skipped) {
+        // A reserved test domain has no mailbox: nothing to deliver, so GoTrue
+        // proceeds as if the mail went out.
+        if (result.reason === 'reserved_recipient') return c.json({}, 200);
+        console.error('[auth-email-hook] no email provider configured — set EMAIL_URL');
+        return c.json({ error: 'Email delivery is not configured' }, 503);
+      }
+      console.error(
+        `[auth-email-hook] ${parsed.email.actionType} send failed via ${result.provider}: ${result.error}`,
+      );
+      return c.json({ error: 'Email delivery failed' }, 500);
     },
-    responses: {
-      200: json(z.object({}), 'Email sent'),
-      ...errors(400, 401, 500, 503),
-    },
-  }),
-  async (c: any) => {
-    const secret = (config.AUTH_EMAIL_HOOK_SECRET || '').trim();
-    if (!secret) {
-      return c.json({ error: 'Auth email hook is not configured' }, 503);
-    }
-
-    const rawBody = await c.req.text();
-    const verified = verifyStandardWebhook({
-      rawBody,
-      secret,
-      headers: readStandardWebhookHeaders((name) => c.req.header(name)),
-    });
-    if (!verified) {
-      return c.json({ error: 'Invalid signature' }, 401);
-    }
-    bindIntegrationPrincipal('supabase_auth');
-
-    let payload: SendEmailHookPayload;
-    try {
-      payload = JSON.parse(rawBody) as SendEmailHookPayload;
-    } catch {
-      return c.json({ error: 'Invalid JSON' }, 400);
-    }
-
-    const parsed = parseSendEmailHookPayload(payload, authVerifyBaseUrl());
-    if (!parsed.ok) {
-      return c.json({ error: parsed.reason }, 400);
-    }
-
-    const content = renderAuthEmail({
-      actionType: parsed.email.actionType,
-      actionUrl: parsed.email.actionUrl,
-      token: parsed.email.token,
-    });
-
-    const result = await sendEmail({
-      to: [parsed.email.recipient],
-      subject: content.subject,
-      html: content.html,
-      text: content.text,
-      category: content.category,
-    });
-
-    if (result.ok) return c.json({}, 200);
-
-    // Surface the failure to GoTrue so the user is told the mail did not go out,
-    // rather than being left waiting for a link that will never arrive.
-    if ('skipped' in result && result.skipped) {
-      // A reserved test domain has no mailbox: nothing to deliver, so GoTrue
-      // proceeds as if the mail went out.
-      if (result.reason === 'reserved_recipient') return c.json({}, 200);
-      console.error('[auth-email-hook] no email provider configured — set EMAIL_URL');
-      return c.json({ error: 'Email delivery is not configured' }, 503);
-    }
-    console.error(
-      `[auth-email-hook] ${parsed.email.actionType} send failed via ${result.provider}: ${result.error}`,
-    );
-    return c.json({ error: 'Email delivery failed' }, 500);
-  },
-);
+  );
+}

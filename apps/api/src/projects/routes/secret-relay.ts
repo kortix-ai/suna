@@ -48,110 +48,112 @@ import { loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { prepareRelayRequest, refuse, runRelayHops } from '../secrets/relay-hop';
 
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/secrets/{identifier}/relay',
-    tags: ['secrets'],
-    summary: 'Stream one policy-bound HTTPS request without exposing the secret',
-    description:
-      'The streaming sibling of /broker. The request body is the guest body verbatim; ' +
-      'url, method and headers ride in x-kortix-relay-meta. On success the response is ' +
-      'always 200 and the UPSTREAM status rides in x-kortix-relay-status — the presence ' +
-      'of that header is what distinguishes "Kortix refused" from "the upstream refused".',
-    ...auth,
-    request: {
-      // NO body schema, deliberately. A zod request body buffers and LOCKS the
-      // stream before this handler runs — measured — which is exactly why the
-      // buffered /broker route cannot be upgraded in place.
-      params: z.object({ projectId: z.string(), identifier: z.string() }),
-    },
-    responses: {
-      200: {
-        description: 'The upstream was reached. Body streams; status in x-kortix-relay-status.',
-        content: { 'application/octet-stream': { schema: z.any() } },
+export function registerSecretRelayRoutes(): void {
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{projectId}/secrets/{identifier}/relay',
+      tags: ['secrets'],
+      summary: 'Stream one policy-bound HTTPS request without exposing the secret',
+      description:
+        'The streaming sibling of /broker. The request body is the guest body verbatim; ' +
+        'url, method and headers ride in x-kortix-relay-meta. On success the response is ' +
+        'always 200 and the UPSTREAM status rides in x-kortix-relay-status — the presence ' +
+        'of that header is what distinguishes "Kortix refused" from "the upstream refused".',
+      ...auth,
+      request: {
+        // NO body schema, deliberately. A zod request body buffers and LOCKS the
+        // stream before this handler runs — measured — which is exactly why the
+        // buffered /broker route cannot be upgraded in place.
+        params: z.object({ projectId: z.string(), identifier: z.string() }),
       },
-      204: { description: 'Capability probe acknowledged.' },
-      ...errors(400, 403, 404, 409, 413, 502, 503, 504),
-    },
-  }),
-  async (c: any) => {
-    // The kill switch answers FIRST, so flipping it also fails the probe — which
-    // is what puts every newly-constructed shim back on /broker.
-    if (!config.KORTIX_SECRET_RELAY_STREAM_ENABLED) {
-      return refuse(c, 'relay_disabled', 'The streaming secret relay is disabled', 503);
-    }
-
-    const projectId = c.req.param('projectId');
-    const identifier = c.req.param('identifier')?.trim();
-    if (!identifier) {
-      return refuse(c, 'invalid_request', 'Invalid relay request', 400);
-    }
-
-    const agentGrant = getAgentGrant(c);
-    const sessionId = c.get('sessionId');
-    if (
-      c.get('authType') !== 'pat' ||
-      c.get('tokenProjectId') !== projectId ||
-      !sessionId ||
-      !agentGrant
-    ) {
-      c.header(RELAY_ERROR_HEADER, 'session_agent_token_required');
-      return c.json(
-        {
-          error: 'Secret relay requests require a session-scoped agent token',
-          code: 'session_agent_token_required',
+      responses: {
+        200: {
+          description: 'The upstream was reached. Body streams; status in x-kortix-relay-status.',
+          content: { 'application/octet-stream': { schema: z.any() } },
         },
-        403,
-      );
-    }
+        204: { description: 'Capability probe acknowledged.' },
+        ...errors(400, 403, 404, 409, 413, 502, 503, 504),
+      },
+    }),
+    async (c: any) => {
+      // The kill switch answers FIRST, so flipping it also fails the probe — which
+      // is what puts every newly-constructed shim back on /broker.
+      if (!config.KORTIX_SECRET_RELAY_STREAM_ENABLED) {
+        return refuse(c, 'relay_disabled', 'The streaming secret relay is disabled', 503);
+      }
 
-    // Same egress pin as /broker: this checks WHERE the token is being used
-    // from, not what it is. Unpinned sessions pass — see sandbox-egress-pin.ts.
-    const pin = await verifySandboxEgressIp(sessionId, requestEgressIp(c));
-    if (!pin.ok) {
-      console.warn('[secret-relay] refused an off-sandbox token use', {
-        sessionId,
+      const projectId = c.req.param('projectId');
+      const identifier = c.req.param('identifier')?.trim();
+      if (!identifier) {
+        return refuse(c, 'invalid_request', 'Invalid relay request', 400);
+      }
+
+      const agentGrant = getAgentGrant(c);
+      const sessionId = c.get('sessionId');
+      if (
+        c.get('authType') !== 'pat' ||
+        c.get('tokenProjectId') !== projectId ||
+        !sessionId ||
+        !agentGrant
+      ) {
+        c.header(RELAY_ERROR_HEADER, 'session_agent_token_required');
+        return c.json(
+          {
+            error: 'Secret relay requests require a session-scoped agent token',
+            code: 'session_agent_token_required',
+          },
+          403,
+        );
+      }
+
+      // Same egress pin as /broker: this checks WHERE the token is being used
+      // from, not what it is. Unpinned sessions pass — see sandbox-egress-pin.ts.
+      const pin = await verifySandboxEgressIp(sessionId, requestEgressIp(c));
+      if (!pin.ok) {
+        console.warn('[secret-relay] refused an off-sandbox token use', {
+          sessionId,
+          projectId,
+          pinned: pin.pinned,
+          seen: pin.seen,
+          enforced: config.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
+        });
+      }
+      if (!pin.ok && config.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED) {
+        c.header(RELAY_ERROR_HEADER, 'sandbox_egress_mismatch');
+        return c.json(
+          {
+            error: 'This session credential may only be used from its own sandbox',
+            code: 'sandbox_egress_mismatch',
+          },
+          403,
+        );
+      }
+
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+      // ── Capability probe ──────────────────────────────────────────────────
+      //
+      // Answered here: authenticated (so it is not an unauthenticated capability
+      // oracle) but BEFORE the secret is touched, so it costs one round trip per
+      // daemon lifetime and reveals nothing about which secrets exist.
+      if (c.req.header(RELAY_PROBE_HEADER)) {
+        c.header(RELAY_VERSION_HEADER, String(RELAY_VERSION));
+        return c.body(null, 204);
+      }
+
+      // The gate above is everything this route owns; the rest is the relay engine.
+      const prepared = await prepareRelayRequest(c, {
         projectId,
-        pinned: pin.pinned,
-        seen: pin.seen,
-        enforced: config.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
+        identifier,
+        sessionId,
+        userId: loaded.userId,
+        accountId: loaded.row.accountId,
+        agentGrantEnv: agentGrant.env ?? 'all',
       });
-    }
-    if (!pin.ok && config.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED) {
-      c.header(RELAY_ERROR_HEADER, 'sandbox_egress_mismatch');
-      return c.json(
-        {
-          error: 'This session credential may only be used from its own sandbox',
-          code: 'sandbox_egress_mismatch',
-        },
-        403,
-      );
-    }
-
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-    // ── Capability probe ──────────────────────────────────────────────────
-    //
-    // Answered here: authenticated (so it is not an unauthenticated capability
-    // oracle) but BEFORE the secret is touched, so it costs one round trip per
-    // daemon lifetime and reveals nothing about which secrets exist.
-    if (c.req.header(RELAY_PROBE_HEADER)) {
-      c.header(RELAY_VERSION_HEADER, String(RELAY_VERSION));
-      return c.body(null, 204);
-    }
-
-    // The gate above is everything this route owns; the rest is the relay engine.
-    const prepared = await prepareRelayRequest(c, {
-      projectId,
-      identifier,
-      sessionId,
-      userId: loaded.userId,
-      accountId: loaded.row.accountId,
-      agentGrantEnv: agentGrant.env ?? 'all',
-    });
-    if (prepared instanceof Response) return prepared;
-    return runRelayHops(prepared);
-  },
-);
+      if (prepared instanceof Response) return prepared;
+      return runRelayHops(prepared);
+    },
+  );
+}

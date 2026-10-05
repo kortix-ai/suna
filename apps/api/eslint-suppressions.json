@@ -242,7 +242,7 @@
   },
   "src/auth/send-email-hook/index.ts": {
     "kortix-api/layers": {
-      "count": 2
+      "count": 1
     }
   },
   "src/auth/send-email-hook/routes.ts": {

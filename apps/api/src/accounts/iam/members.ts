@@ -79,370 +79,6 @@ function probeObject(scope: unknown, id: unknown): Obj {
   return { type: 'account' };
 }
 
-// ─── Super-admin promotion ─────────────────────────────────────────────────
-
-iamRouter.openapi(
-  createRoute({
-    method: 'patch',
-    path: '/{accountId}/iam/members/{userId}/super-admin',
-    tags: ['iam'],
-    summary: 'Grant or revoke super-admin',
-    ...auth,
-    request: { params: MemberParams, body: { content: { 'application/json': { schema: z.object({ isSuperAdmin: z.boolean(), is_super_admin: z.boolean() }).partial() } } } },
-    responses: {
-      200: json(z.object({ user_id: z.string(), is_super_admin: z.boolean() }), 'Updated super-admin flag'),
-      ...errors(400, 401, 403, 404),
-    },
-  }),
-  async (c: any) => {
-  const callerId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  const targetUserId = c.req.param('userId');
-  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_SUPER_ADMIN_GRANT);
-
-  const body = await readJsonObject(c);
-  // Accept camelCase or snake_case, but the field MUST be present and an
-  // actual boolean. The previous `=== true` coercion meant a PATCH that
-  // omitted the field (or sent a non-boolean) silently set
-  // is_super_admin=false — i.e. a malformed/partial request could quietly
-  // REVOKE super-admin. Reject those with a 400 instead of acting on them.
-  const isSuperAdmin =
-    typeof body.isSuperAdmin === 'boolean'
-      ? body.isSuperAdmin
-      : typeof body.is_super_admin === 'boolean'
-        ? body.is_super_admin
-        : undefined;
-  if (isSuperAdmin === undefined) {
-    return c.json({ error: 'isSuperAdmin (boolean) is required' }, 400);
-  }
-
-  // The V1 two-person approval gate (requireApproval / NeedsApprovalError)
-  // was removed with the approvals workflow in PR5c. Super-admin grants
-  // now apply immediately, gated only by the caller's own
-  // member.super_admin.grant permission asserted above.
-
-  // Snapshot the prior flag so an audit reader can see "Alice already had
-  // super-admin → no-op" vs "Alice was promoted on March 5". Cheap query
-  // since the row is small and the update runs against the same key.
-  const [before] = await db
-    .select({ isSuperAdmin: accountMemberships.isSuperAdmin })
-    .from(accountMemberships)
-    .where(
-      and(
-        eq(accountMemberships.accountId, accountId),
-        eq(accountMemberships.userId, targetUserId),
-      ),
-    )
-    .limit(1);
-
-  // `is_super_admin` is IDENTITY, not a role (spec §1: a hard, audited bypass
-  // that 22,408 of 33,363 local rows carry), so it lives on
-  // `kortix.account_memberships` and is written there directly.
-  const [updated] = await db
-    .update(accountMemberships)
-    .set({ isSuperAdmin })
-    .where(
-      and(
-        eq(accountMemberships.accountId, accountId),
-        eq(accountMemberships.userId, targetUserId),
-      ),
-    )
-    .returning({
-      userId: accountMemberships.userId,
-      isSuperAdmin: accountMemberships.isSuperAdmin,
-    });
-
-  if (!updated) return c.json({ error: 'member not found' }, 404);
-  // Super-admin bypasses every gate — a revoke must take effect immediately.
-  invalidateIamCacheForUser(targetUserId);
-
-  await auditIam(c, {
-    accountId,
-    action: updated.isSuperAdmin
-      ? 'iam.member.super_admin.grant'
-      : 'iam.member.super_admin.revoke',
-    resourceType: 'account_member',
-    resourceId: targetUserId,
-    before: { is_super_admin: before?.isSuperAdmin ?? false },
-    after: { is_super_admin: updated.isSuperAdmin },
-  });
-
-  return c.json({
-    user_id: updated.userId,
-    is_super_admin: updated.isSuperAdmin,
-  });
-  },
-);
-
-// ─── Member's group memberships ────────────────────────────────────────────
-// Used by the member detail page so admins can see "this person inherits
-// these policies via these groups".
-
-iamRouter.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{accountId}/iam/members/{userId}/groups',
-    tags: ['iam'],
-    summary: 'List group memberships for a member',
-    ...auth,
-    request: { params: MemberParams },
-    responses: {
-      200: json(z.object({ groups: z.array(GroupSchema) }), 'Groups the member belongs to'),
-      ...errors(401, 403),
-    },
-  }),
-  async (c: any) => {
-  const callerId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  const targetUserId = c.req.param('userId');
-
-  // Users can always see their own group memberships; otherwise gate on
-  // member.read (same rule as the effective-permission probe).
-  if (callerId !== targetUserId) {
-    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
-  }
-
-  const rows = await listGroupsForMember(accountId, targetUserId);
-  return c.json({
-    groups: rows.map((r) => ({
-      group_id: r.groupId,
-      name: r.name,
-      added_at: r.addedAt.toISOString(),
-    })),
-  });
-  },
-);
-
-// V2-only: which projects does this member reach, and at what role?
-// Combines three sources, max-role per project:
-//   1. account_members.account_role of 'owner' or 'admin' → implicit
-//      Manager on every active project in the account
-//   2. direct project_members.project_role rows
-//   3. project_group_grants for any group the user belongs to
-// V1 callers can use the route too — the data is real either way — but
-// the V1 UI doesn't surface it (PoliciesTable is the equivalent V1 view).
-iamRouter.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{accountId}/iam/members/{userId}/project-access',
-    tags: ['iam'],
-    summary: 'List effective project access for a member',
-    ...auth,
-    request: { params: MemberParams },
-    responses: {
-      200: json(z.object({ projects: z.array(ProjectAccessSchema) }), 'Projects the member can reach'),
-      ...errors(401, 403),
-    },
-  }),
-  async (c: any) => {
-  const callerId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  const targetUserId = c.req.param('userId');
-
-  if (callerId !== targetUserId) {
-    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
-  }
-
-  type Role = 'manager' | 'member';
-  const rank: Record<Role, number> = { member: 1, manager: 2 };
-  const max = (a: Role, b: Role): Role => (rank[a] >= rank[b] ? a : b);
-
-  // Project info we'll need for every row in the response.
-  const allProjects = await db
-    .select({
-      projectId: projects.projectId,
-      name: projects.name,
-      status: projects.status,
-    })
-    .from(projects)
-    .where(eq(projects.accountId, accountId));
-  const projectMeta = new Map(allProjects.map((p) => [p.projectId, p] as const));
-
-  // 1) implicit manager via the account-scope assignment. Membership IS that
-  // assignment now — no account role, no access, and nothing to report.
-  const accountRole = await accountRoleFor(accountId, targetUserId);
-  if (!accountRole) {
-    return c.json({ projects: [], account_wide_policies: [] });
-  }
-
-  const byProject = new Map<
-    string,
-    { role: Role; sources: ('implicit' | 'direct' | 'group')[] }
-  >();
-  if (isAccountManagerRole(accountRole)) {
-    for (const p of allProjects) {
-      if (p.status !== 'active') continue;
-      byProject.set(p.projectId, { role: 'manager', sources: ['implicit'] });
-    }
-  }
-
-  // 2) direct project assignments
-  const directRows = await projectRoleGrants({ accountId, userId: targetUserId });
-  for (const r of directRows) {
-    const role = r.projectRole;
-    const cur = byProject.get(r.projectId);
-    if (cur) {
-      cur.role = max(cur.role, role);
-      if (!cur.sources.includes('direct')) cur.sources.push('direct');
-    } else {
-      byProject.set(r.projectId, { role, sources: ['direct'] });
-    }
-  }
-
-  // 3) group grants for any group this user belongs to
-  const groupMembershipRows = await db
-    .select({ groupId: accountGroupMembers.groupId })
-    .from(accountGroupMembers)
-    .where(eq(accountGroupMembers.userId, targetUserId));
-  const groupIds = groupMembershipRows.map((g) => g.groupId);
-  if (groupIds.length > 0) {
-    const grantRows = await groupProjectGrants({ accountId, groupIds });
-    for (const r of grantRows) {
-      const role = r.role;
-      const cur = byProject.get(r.projectId);
-      if (cur) {
-        cur.role = max(cur.role, role);
-        if (!cur.sources.includes('group')) cur.sources.push('group');
-      } else {
-        byProject.set(r.projectId, { role, sources: ['group'] });
-      }
-    }
-  }
-
-  // 4) custom-role iam_policies bound directly to this member, or to any
-  // group in `groupIds` (same array source 3 uses). These are DB-driven
-  // custom roles (see iam_policies / iam_roles in kortix.ts) — a wholly
-  // separate mechanism from the built-in manager/member tiers folded
-  // above, so they are surfaced as their own fields instead of being folded
-  // into `role`/`sources`. project-scoped policies (scope_type='project')
-  // attach to the matching entry already in `byProject`; account-scoped
-  // policies (scope_type='account') apply to every project and are
-  // reported once, top-level, instead of duplicated onto each entry.
-  type PolicySource = 'direct' | 'group';
-  interface CustomRolePolicy {
-    policy_id: string;
-    role_id: string;
-    role_key: string;
-    role_name: string;
-    source: PolicySource;
-    group_id: string | null;
-    group_name: string | null;
-    expires_at: string | null;
-  }
-
-  const groupNameById = new Map<string, string>();
-  if (groupIds.length > 0) {
-    const groupNameRows = await db
-      .select({ groupId: accountGroups.groupId, name: accountGroups.name })
-      .from(accountGroups)
-      .where(inArray(accountGroups.groupId, groupIds));
-    for (const g of groupNameRows) groupNameById.set(g.groupId, g.name);
-  }
-
-  const policyRows = await customRoleBindings({
-    accountId,
-    principals: [
-      { type: 'member', id: targetUserId },
-      ...groupIds.map((id) => ({ type: 'group' as const, id })),
-    ],
-  });
-
-  const customPolicyByProject = new Map<string, CustomRolePolicy[]>();
-  const accountWidePolicies: CustomRolePolicy[] = [];
-  for (const r of policyRows) {
-    const source: PolicySource = r.principalType === 'group' ? 'group' : 'direct';
-    const groupId = source === 'group' ? r.principalId : null;
-    const entry: CustomRolePolicy = {
-      policy_id: r.policyId,
-      role_id: r.roleId,
-      role_key: r.roleKey,
-      role_name: r.roleName,
-      source,
-      group_id: groupId,
-      group_name: groupId ? (groupNameById.get(groupId) ?? null) : null,
-      expires_at: r.expiresAt ? r.expiresAt.toISOString() : null,
-    };
-    if (r.scopeType === 'account') {
-      accountWidePolicies.push(entry);
-    } else if (r.scopeType === 'project' && r.scopeId) {
-      const list = customPolicyByProject.get(r.scopeId);
-      if (list) list.push(entry);
-      else customPolicyByProject.set(r.scopeId, [entry]);
-    }
-  }
-
-  const out: Array<{
-    project_id: string;
-    project_name: string;
-    role: Role;
-    sources: ('implicit' | 'direct' | 'group')[];
-    custom_role_policies: CustomRolePolicy[];
-  }> = [];
-  for (const [projectId, info] of byProject) {
-    const meta = projectMeta.get(projectId);
-    if (!meta || meta.status !== 'active') continue;
-    out.push({
-      project_id: projectId,
-      project_name: meta.name,
-      role: info.role,
-      sources: info.sources,
-      custom_role_policies: customPolicyByProject.get(projectId) ?? [],
-    });
-  }
-  out.sort((a, b) => a.project_name.localeCompare(b.project_name));
-  return c.json({ projects: out, account_wide_policies: accountWidePolicies });
-  },
-);
-
-// ─── Effective permissions probe ───────────────────────────────────────────
-// The UI uses this to render "what can this user actually do".
-
-iamRouter.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{accountId}/iam/members/{userId}/effective',
-    tags: ['iam'],
-    summary: 'Probe effective permission for a member',
-    ...auth,
-    request: { params: MemberParams, query: z.object({ action: z.string(), resourceType: z.string(), resourceId: z.string() }).partial() },
-    responses: {
-      200: json(EffectiveResultSchema, 'Effective-permission result'),
-      ...errors(400, 401, 403),
-    },
-  }),
-  async (c: any) => {
-  const callerId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  const targetUserId = c.req.param('userId');
-
-  // Anyone with member.read can probe anyone; users can always probe themselves.
-  if (callerId !== targetUserId) {
-    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
-  }
-
-  const action = c.req.query('action');
-  if (!action) {
-    return c.json({ error: 'action query parameter is required' }, 400);
-  }
-
-  const scope = c.req.query('resourceType');
-  const id = c.req.query('resourceId');
-
-  if (scope && isResourceType(scope) && scope !== 'account' && !id) {
-    return c.json({ error: 'resourceId required when resourceType is specified' }, 400);
-  }
-  const target = probeObject(scope, id);
-
-  const result = await authorize(await probeActor(c, callerId, targetUserId, accountId), action, target);
-  return c.json({
-    allowed: result.allowed,
-    reason: result.reason ?? null,
-    action,
-    resource_type: resourceTypeForAction(action),
-  });
-  },
-);
-
 // Batch variant. UIs that render N capability rows (the "what this member
 // can do" panel, multi-button gating on a single screen) should call this
 // instead of N separate /effective?action=... requests. Returns answers in
@@ -450,104 +86,470 @@ iamRouter.openapi(
 // the caller can rely on indices matching.
 const BATCH_MAX = 64;
 
-iamRouter.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{accountId}/iam/members/{userId}/effective:batch',
-    tags: ['iam'],
-    summary: 'Batch-probe effective permissions for a member',
-    ...auth,
-    request: { params: MemberParams, body: { content: { 'application/json': { schema: z.object({ probes: z.array(z.record(z.string(), z.any())).optional(), queries: z.array(z.record(z.string(), z.any())).optional() }) } } } },
-    responses: {
-      200: json(z.object({ results: z.array(EffectiveBatchResultSchema) }), 'Batch effective-permission results'),
-      ...errors(400, 401, 403),
+export function registerIamMembersRoutes(): void {
+  // ─── Super-admin promotion ─────────────────────────────────────────────────
+
+  iamRouter.openapi(
+    createRoute({
+      method: 'patch',
+      path: '/{accountId}/iam/members/{userId}/super-admin',
+      tags: ['iam'],
+      summary: 'Grant or revoke super-admin',
+      ...auth,
+      request: { params: MemberParams, body: { content: { 'application/json': { schema: z.object({ isSuperAdmin: z.boolean(), is_super_admin: z.boolean() }).partial() } } } },
+      responses: {
+        200: json(z.object({ user_id: z.string(), is_super_admin: z.boolean() }), 'Updated super-admin flag'),
+        ...errors(400, 401, 403, 404),
+      },
+    }),
+    async (c: any) => {
+    const callerId = c.get('userId') as string;
+    const accountId = c.req.param('accountId');
+    const targetUserId = c.req.param('userId');
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_SUPER_ADMIN_GRANT);
+
+    const body = await readJsonObject(c);
+    // Accept camelCase or snake_case, but the field MUST be present and an
+    // actual boolean. The previous `=== true` coercion meant a PATCH that
+    // omitted the field (or sent a non-boolean) silently set
+    // is_super_admin=false — i.e. a malformed/partial request could quietly
+    // REVOKE super-admin. Reject those with a 400 instead of acting on them.
+    const isSuperAdmin =
+      typeof body.isSuperAdmin === 'boolean'
+        ? body.isSuperAdmin
+        : typeof body.is_super_admin === 'boolean'
+          ? body.is_super_admin
+          : undefined;
+    if (isSuperAdmin === undefined) {
+      return c.json({ error: 'isSuperAdmin (boolean) is required' }, 400);
+    }
+
+    // The V1 two-person approval gate (requireApproval / NeedsApprovalError)
+    // was removed with the approvals workflow in PR5c. Super-admin grants
+    // now apply immediately, gated only by the caller's own
+    // member.super_admin.grant permission asserted above.
+
+    // Snapshot the prior flag so an audit reader can see "Alice already had
+    // super-admin → no-op" vs "Alice was promoted on March 5". Cheap query
+    // since the row is small and the update runs against the same key.
+    const [before] = await db
+      .select({ isSuperAdmin: accountMemberships.isSuperAdmin })
+      .from(accountMemberships)
+      .where(
+        and(
+          eq(accountMemberships.accountId, accountId),
+          eq(accountMemberships.userId, targetUserId),
+        ),
+      )
+      .limit(1);
+
+    // `is_super_admin` is IDENTITY, not a role (spec §1: a hard, audited bypass
+    // that 22,408 of 33,363 local rows carry), so it lives on
+    // `kortix.account_memberships` and is written there directly.
+    const [updated] = await db
+      .update(accountMemberships)
+      .set({ isSuperAdmin })
+      .where(
+        and(
+          eq(accountMemberships.accountId, accountId),
+          eq(accountMemberships.userId, targetUserId),
+        ),
+      )
+      .returning({
+        userId: accountMemberships.userId,
+        isSuperAdmin: accountMemberships.isSuperAdmin,
+      });
+
+    if (!updated) return c.json({ error: 'member not found' }, 404);
+    // Super-admin bypasses every gate — a revoke must take effect immediately.
+    invalidateIamCacheForUser(targetUserId);
+
+    await auditIam(c, {
+      accountId,
+      action: updated.isSuperAdmin
+        ? 'iam.member.super_admin.grant'
+        : 'iam.member.super_admin.revoke',
+      resourceType: 'account_member',
+      resourceId: targetUserId,
+      before: { is_super_admin: before?.isSuperAdmin ?? false },
+      after: { is_super_admin: updated.isSuperAdmin },
+    });
+
+    return c.json({
+      user_id: updated.userId,
+      is_super_admin: updated.isSuperAdmin,
+    });
     },
-  }),
-  async (c: any) => {
-  const callerId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  const targetUserId = c.req.param('userId');
-
-  if (callerId !== targetUserId) {
-    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
-  }
-
-  const body = await readJsonObject(c);
-  const rawProbes = body.probes ?? body.queries;
-  if (!Array.isArray(rawProbes)) {
-    return c.json({ error: 'probes must be an array' }, 400);
-  }
-  if (rawProbes.length === 0) {
-    return c.json({ results: [] });
-  }
-  if (rawProbes.length > BATCH_MAX) {
-    return c.json(
-      { error: `batch size must be ≤ ${BATCH_MAX} (got ${rawProbes.length})` },
-      400,
-    );
-  }
-
-  // Validate each probe BEFORE dispatching anything. Mixing valid and
-  // invalid in the same batch is rejected entirely so the caller doesn't
-  // get partial results that look successful at first glance.
-  type ParsedProbe = {
-    action: string;
-    target: Obj | undefined;
-  };
-  const parsed: ParsedProbe[] = [];
-  for (let i = 0; i < rawProbes.length; i++) {
-    const p = rawProbes[i];
-    if (!p || typeof p !== 'object') {
-      return c.json({ error: `probes[${i}] must be an object` }, 400);
-    }
-    const action = (p as { action?: unknown }).action;
-    if (typeof action !== 'string' || !action) {
-      return c.json({ error: `probes[${i}].action is required` }, 400);
-    }
-    const scope =
-      (p as { resourceType?: unknown; resource_type?: unknown }).resourceType ??
-      (p as { resource_type?: unknown }).resource_type;
-    const id =
-      (p as { resourceId?: unknown; resource_id?: unknown }).resourceId ??
-      (p as { resource_id?: unknown }).resource_id;
-    let target: Obj | undefined;
-    if (typeof scope === 'string' && isResourceType(scope) && scope !== 'account') {
-      if (typeof id !== 'string' || !id) {
-        return c.json(
-          { error: `probes[${i}].resourceId required when resourceType is set` },
-          400,
-        );
-      }
-      target = probeObject(scope, id);
-    } else if (scope !== undefined && scope !== 'account' && typeof scope === 'string') {
-      // Caller passed something for resourceType but it's not a valid enum.
-      return c.json(
-        { error: `probes[${i}].resourceType is not a known resource type` },
-        400,
-      );
-    } else {
-      target = { type: 'account' };
-    }
-    parsed.push({ action, target });
-  }
-
-  // Per-probe isolation: a transient `authorize` failure degrades to
-  // allowed:false (reason 'probe_error') instead of rejecting the whole
-  // batch as an opaque 500. See resolveBatchProbes. The structured log keeps
-  // the signal visible to ops without paging Sentry as an error pattern
-  // (mirrors the request-deadline 503 de-noise in PR #4524 / #4531).
-  const results = await resolveBatchProbes(
-    parsed,
-    authorize,
-    await probeActor(c, callerId, targetUserId, accountId),
-    accountId,
-    (ctx) =>
-      logger.error(
-        `effective:batch probe failed — degraded to allowed:false [${ctx.errorName}]`,
-        ctx,
-      ),
   );
 
-  return c.json({ results });
-  },
-);
+  // ─── Member's group memberships ────────────────────────────────────────────
+  // Used by the member detail page so admins can see "this person inherits
+  // these policies via these groups".
+
+  iamRouter.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{accountId}/iam/members/{userId}/groups',
+      tags: ['iam'],
+      summary: 'List group memberships for a member',
+      ...auth,
+      request: { params: MemberParams },
+      responses: {
+        200: json(z.object({ groups: z.array(GroupSchema) }), 'Groups the member belongs to'),
+        ...errors(401, 403),
+      },
+    }),
+    async (c: any) => {
+    const callerId = c.get('userId') as string;
+    const accountId = c.req.param('accountId');
+    const targetUserId = c.req.param('userId');
+
+    // Users can always see their own group memberships; otherwise gate on
+    // member.read (same rule as the effective-permission probe).
+    if (callerId !== targetUserId) {
+      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
+    }
+
+    const rows = await listGroupsForMember(accountId, targetUserId);
+    return c.json({
+      groups: rows.map((r) => ({
+        group_id: r.groupId,
+        name: r.name,
+        added_at: r.addedAt.toISOString(),
+      })),
+    });
+    },
+  );
+
+  // V2-only: which projects does this member reach, and at what role?
+  // Combines three sources, max-role per project:
+  //   1. account_members.account_role of 'owner' or 'admin' → implicit
+  //      Manager on every active project in the account
+  //   2. direct project_members.project_role rows
+  //   3. project_group_grants for any group the user belongs to
+  // V1 callers can use the route too — the data is real either way — but
+  // the V1 UI doesn't surface it (PoliciesTable is the equivalent V1 view).
+  iamRouter.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{accountId}/iam/members/{userId}/project-access',
+      tags: ['iam'],
+      summary: 'List effective project access for a member',
+      ...auth,
+      request: { params: MemberParams },
+      responses: {
+        200: json(z.object({ projects: z.array(ProjectAccessSchema) }), 'Projects the member can reach'),
+        ...errors(401, 403),
+      },
+    }),
+    async (c: any) => {
+    const callerId = c.get('userId') as string;
+    const accountId = c.req.param('accountId');
+    const targetUserId = c.req.param('userId');
+
+    if (callerId !== targetUserId) {
+      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
+    }
+
+    type Role = 'manager' | 'member';
+    const rank: Record<Role, number> = { member: 1, manager: 2 };
+    const max = (a: Role, b: Role): Role => (rank[a] >= rank[b] ? a : b);
+
+    // Project info we'll need for every row in the response.
+    const allProjects = await db
+      .select({
+        projectId: projects.projectId,
+        name: projects.name,
+        status: projects.status,
+      })
+      .from(projects)
+      .where(eq(projects.accountId, accountId));
+    const projectMeta = new Map(allProjects.map((p) => [p.projectId, p] as const));
+
+    // 1) implicit manager via the account-scope assignment. Membership IS that
+    // assignment now — no account role, no access, and nothing to report.
+    const accountRole = await accountRoleFor(accountId, targetUserId);
+    if (!accountRole) {
+      return c.json({ projects: [], account_wide_policies: [] });
+    }
+
+    const byProject = new Map<
+      string,
+      { role: Role; sources: ('implicit' | 'direct' | 'group')[] }
+    >();
+    if (isAccountManagerRole(accountRole)) {
+      for (const p of allProjects) {
+        if (p.status !== 'active') continue;
+        byProject.set(p.projectId, { role: 'manager', sources: ['implicit'] });
+      }
+    }
+
+    // 2) direct project assignments
+    const directRows = await projectRoleGrants({ accountId, userId: targetUserId });
+    for (const r of directRows) {
+      const role = r.projectRole;
+      const cur = byProject.get(r.projectId);
+      if (cur) {
+        cur.role = max(cur.role, role);
+        if (!cur.sources.includes('direct')) cur.sources.push('direct');
+      } else {
+        byProject.set(r.projectId, { role, sources: ['direct'] });
+      }
+    }
+
+    // 3) group grants for any group this user belongs to
+    const groupMembershipRows = await db
+      .select({ groupId: accountGroupMembers.groupId })
+      .from(accountGroupMembers)
+      .where(eq(accountGroupMembers.userId, targetUserId));
+    const groupIds = groupMembershipRows.map((g) => g.groupId);
+    if (groupIds.length > 0) {
+      const grantRows = await groupProjectGrants({ accountId, groupIds });
+      for (const r of grantRows) {
+        const role = r.role;
+        const cur = byProject.get(r.projectId);
+        if (cur) {
+          cur.role = max(cur.role, role);
+          if (!cur.sources.includes('group')) cur.sources.push('group');
+        } else {
+          byProject.set(r.projectId, { role, sources: ['group'] });
+        }
+      }
+    }
+
+    // 4) custom-role iam_policies bound directly to this member, or to any
+    // group in `groupIds` (same array source 3 uses). These are DB-driven
+    // custom roles (see iam_policies / iam_roles in kortix.ts) — a wholly
+    // separate mechanism from the built-in manager/member tiers folded
+    // above, so they are surfaced as their own fields instead of being folded
+    // into `role`/`sources`. project-scoped policies (scope_type='project')
+    // attach to the matching entry already in `byProject`; account-scoped
+    // policies (scope_type='account') apply to every project and are
+    // reported once, top-level, instead of duplicated onto each entry.
+    type PolicySource = 'direct' | 'group';
+    interface CustomRolePolicy {
+      policy_id: string;
+      role_id: string;
+      role_key: string;
+      role_name: string;
+      source: PolicySource;
+      group_id: string | null;
+      group_name: string | null;
+      expires_at: string | null;
+    }
+
+    const groupNameById = new Map<string, string>();
+    if (groupIds.length > 0) {
+      const groupNameRows = await db
+        .select({ groupId: accountGroups.groupId, name: accountGroups.name })
+        .from(accountGroups)
+        .where(inArray(accountGroups.groupId, groupIds));
+      for (const g of groupNameRows) groupNameById.set(g.groupId, g.name);
+    }
+
+    const policyRows = await customRoleBindings({
+      accountId,
+      principals: [
+        { type: 'member', id: targetUserId },
+        ...groupIds.map((id) => ({ type: 'group' as const, id })),
+      ],
+    });
+
+    const customPolicyByProject = new Map<string, CustomRolePolicy[]>();
+    const accountWidePolicies: CustomRolePolicy[] = [];
+    for (const r of policyRows) {
+      const source: PolicySource = r.principalType === 'group' ? 'group' : 'direct';
+      const groupId = source === 'group' ? r.principalId : null;
+      const entry: CustomRolePolicy = {
+        policy_id: r.policyId,
+        role_id: r.roleId,
+        role_key: r.roleKey,
+        role_name: r.roleName,
+        source,
+        group_id: groupId,
+        group_name: groupId ? (groupNameById.get(groupId) ?? null) : null,
+        expires_at: r.expiresAt ? r.expiresAt.toISOString() : null,
+      };
+      if (r.scopeType === 'account') {
+        accountWidePolicies.push(entry);
+      } else if (r.scopeType === 'project' && r.scopeId) {
+        const list = customPolicyByProject.get(r.scopeId);
+        if (list) list.push(entry);
+        else customPolicyByProject.set(r.scopeId, [entry]);
+      }
+    }
+
+    const out: Array<{
+      project_id: string;
+      project_name: string;
+      role: Role;
+      sources: ('implicit' | 'direct' | 'group')[];
+      custom_role_policies: CustomRolePolicy[];
+    }> = [];
+    for (const [projectId, info] of byProject) {
+      const meta = projectMeta.get(projectId);
+      if (!meta || meta.status !== 'active') continue;
+      out.push({
+        project_id: projectId,
+        project_name: meta.name,
+        role: info.role,
+        sources: info.sources,
+        custom_role_policies: customPolicyByProject.get(projectId) ?? [],
+      });
+    }
+    out.sort((a, b) => a.project_name.localeCompare(b.project_name));
+    return c.json({ projects: out, account_wide_policies: accountWidePolicies });
+    },
+  );
+
+  // ─── Effective permissions probe ───────────────────────────────────────────
+  // The UI uses this to render "what can this user actually do".
+
+  iamRouter.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{accountId}/iam/members/{userId}/effective',
+      tags: ['iam'],
+      summary: 'Probe effective permission for a member',
+      ...auth,
+      request: { params: MemberParams, query: z.object({ action: z.string(), resourceType: z.string(), resourceId: z.string() }).partial() },
+      responses: {
+        200: json(EffectiveResultSchema, 'Effective-permission result'),
+        ...errors(400, 401, 403),
+      },
+    }),
+    async (c: any) => {
+    const callerId = c.get('userId') as string;
+    const accountId = c.req.param('accountId');
+    const targetUserId = c.req.param('userId');
+
+    // Anyone with member.read can probe anyone; users can always probe themselves.
+    if (callerId !== targetUserId) {
+      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
+    }
+
+    const action = c.req.query('action');
+    if (!action) {
+      return c.json({ error: 'action query parameter is required' }, 400);
+    }
+
+    const scope = c.req.query('resourceType');
+    const id = c.req.query('resourceId');
+
+    if (scope && isResourceType(scope) && scope !== 'account' && !id) {
+      return c.json({ error: 'resourceId required when resourceType is specified' }, 400);
+    }
+    const target = probeObject(scope, id);
+
+    const result = await authorize(await probeActor(c, callerId, targetUserId, accountId), action, target);
+    return c.json({
+      allowed: result.allowed,
+      reason: result.reason ?? null,
+      action,
+      resource_type: resourceTypeForAction(action),
+    });
+    },
+  );
+
+  iamRouter.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{accountId}/iam/members/{userId}/effective:batch',
+      tags: ['iam'],
+      summary: 'Batch-probe effective permissions for a member',
+      ...auth,
+      request: { params: MemberParams, body: { content: { 'application/json': { schema: z.object({ probes: z.array(z.record(z.string(), z.any())).optional(), queries: z.array(z.record(z.string(), z.any())).optional() }) } } } },
+      responses: {
+        200: json(z.object({ results: z.array(EffectiveBatchResultSchema) }), 'Batch effective-permission results'),
+        ...errors(400, 401, 403),
+      },
+    }),
+    async (c: any) => {
+    const callerId = c.get('userId') as string;
+    const accountId = c.req.param('accountId');
+    const targetUserId = c.req.param('userId');
+
+    if (callerId !== targetUserId) {
+      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
+    }
+
+    const body = await readJsonObject(c);
+    const rawProbes = body.probes ?? body.queries;
+    if (!Array.isArray(rawProbes)) {
+      return c.json({ error: 'probes must be an array' }, 400);
+    }
+    if (rawProbes.length === 0) {
+      return c.json({ results: [] });
+    }
+    if (rawProbes.length > BATCH_MAX) {
+      return c.json(
+        { error: `batch size must be ≤ ${BATCH_MAX} (got ${rawProbes.length})` },
+        400,
+      );
+    }
+
+    // Validate each probe BEFORE dispatching anything. Mixing valid and
+    // invalid in the same batch is rejected entirely so the caller doesn't
+    // get partial results that look successful at first glance.
+    type ParsedProbe = {
+      action: string;
+      target: Obj | undefined;
+    };
+    const parsed: ParsedProbe[] = [];
+    for (let i = 0; i < rawProbes.length; i++) {
+      const p = rawProbes[i];
+      if (!p || typeof p !== 'object') {
+        return c.json({ error: `probes[${i}] must be an object` }, 400);
+      }
+      const action = (p as { action?: unknown }).action;
+      if (typeof action !== 'string' || !action) {
+        return c.json({ error: `probes[${i}].action is required` }, 400);
+      }
+      const scope =
+        (p as { resourceType?: unknown; resource_type?: unknown }).resourceType ??
+        (p as { resource_type?: unknown }).resource_type;
+      const id =
+        (p as { resourceId?: unknown; resource_id?: unknown }).resourceId ??
+        (p as { resource_id?: unknown }).resource_id;
+      let target: Obj | undefined;
+      if (typeof scope === 'string' && isResourceType(scope) && scope !== 'account') {
+        if (typeof id !== 'string' || !id) {
+          return c.json(
+            { error: `probes[${i}].resourceId required when resourceType is set` },
+            400,
+          );
+        }
+        target = probeObject(scope, id);
+      } else if (scope !== undefined && scope !== 'account' && typeof scope === 'string') {
+        // Caller passed something for resourceType but it's not a valid enum.
+        return c.json(
+          { error: `probes[${i}].resourceType is not a known resource type` },
+          400,
+        );
+      } else {
+        target = { type: 'account' };
+      }
+      parsed.push({ action, target });
+    }
+
+    // Per-probe isolation: a transient `authorize` failure degrades to
+    // allowed:false (reason 'probe_error') instead of rejecting the whole
+    // batch as an opaque 500. See resolveBatchProbes. The structured log keeps
+    // the signal visible to ops without paging Sentry as an error pattern
+    // (mirrors the request-deadline 503 de-noise in PR #4524 / #4531).
+    const results = await resolveBatchProbes(
+      parsed,
+      authorize,
+      await probeActor(c, callerId, targetUserId, accountId),
+      accountId,
+      (ctx) =>
+        logger.error(
+          `effective:batch probe failed — degraded to allowed:false [${ctx.errorName}]`,
+          ctx,
+        ),
+    );
+
+    return c.json({ results });
+    },
+  );
+}

@@ -310,25 +310,6 @@ async function visibleApp(projectId: string, appId: string, userId: string) {
   return (await appVisibleToUser(row, userId)) ? row : null;
 }
 
-projectsApp.openapi(
-  createRoute({
-    method: 'get', path: '/{projectId}/apps', tags: ['apps'], summary: 'List Apps', ...auth,
-    request: { params: z.object({ projectId: z.string().uuid() }) },
-    responses: { 200: json(z.object({ apps: z.array(AppObject) }), 'Apps'), ...errors(403, 404) },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await authorizedProject(c, projectId);
-    if (loaded instanceof Response) return loaded;
-    const rows = await db.select().from(apps)
-      .where(and(eq(apps.projectId, projectId), isNull(apps.deletedAt)))
-      .orderBy(desc(apps.createdAt));
-    const visible = await filterAppsVisibleToUser(rows, loaded.userId);
-    const openable = await appsOpenableByUser(visible, loaded.userId);
-    return c.json({ apps: visible.map((row) => serializeApp(row, openable.has(row.appId))) });
-  },
-);
-
 const AppAccessSchema = z.object({
   mode: z.enum(['private', 'project', 'restricted', 'public', 'password']),
   revision: z.number().int().positive(),
@@ -338,622 +319,699 @@ const AppAccessSchema = z.object({
   viewer_token_scope: z.enum(['off', 'identity', 'api']),
 });
 
-projectsApp.openapi(
-  createRoute({
-    method: 'get', path: '/{projectId}/apps/{appId}/access', tags: ['apps'], summary: 'Get App access policy', ...auth,
-    request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
-    responses: { 200: json(AppAccessSchema, 'App access policy'), ...errors(403, 404) },
-  }),
-  async (c: any) => {
-    const { projectId, appId } = c.req.param();
-    const loaded = await authorizedProject(c, projectId);
-    if (loaded instanceof Response) return loaded;
-    const row = await visibleApp(projectId, appId, loaded.userId);
-    return row ? c.json(await serializeAppAccessPolicy(row)) : c.json({ error: 'Not found' }, 404);
-  },
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'patch', path: '/{projectId}/apps/{appId}/access', tags: ['apps'], summary: 'Update App access policy', ...auth,
-    request: {
-      params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
-      body: { content: { 'application/json': { schema: z.object({
-        mode: z.enum(['private', 'project', 'restricted', 'public', 'password']),
-        member_ids: z.array(z.string().uuid()).max(100).optional(),
-        group_ids: z.array(z.string().uuid()).max(100).optional(),
-        password: z.string().min(8).max(256).optional(),
-        viewer_token_scope: z.enum(['off', 'identity', 'api']).optional(),
-      }) } } },
-    },
-    responses: { 200: json(AppAccessSchema, 'App access policy'), ...errors(400, 403, 404) },
-  }),
-  async (c: any) => {
-    const { projectId, appId } = c.req.param();
-    const loaded = await authorizedProject(c, projectId, 'write');
-    if (loaded instanceof Response) return loaded;
-    const current = await visibleApp(projectId, appId, loaded.userId);
-    if (!current) return c.json({ error: 'Not found' }, 404);
-    const body = c.req.valid('json');
-    if (body.mode === 'password' && !body.password && !current.accessPasswordHash) {
-      return c.json({ error: 'password is required when password access is enabled' }, 400);
-    }
-    const memberIds: string[] = [...new Set<string>((body.member_ids ?? []) as string[])];
-    const groupIds: string[] = [...new Set<string>((body.group_ids ?? []) as string[])];
-    if (body.mode === 'restricted' && memberIds.length + groupIds.length === 0) {
-      return c.json({ error: 'restricted access requires at least one member or group' }, 400);
-    }
-    if (body.mode === 'restricted') {
-      const validation = await validateAppAccessPrincipals(loaded.row.accountId, {
-        memberIds,
-        groupIds,
-      });
-      if (!validation.ok) {
-        return c.json({
-          error: `${validation.principalType} not found in this account`,
-          principal_id: validation.principalId,
-        }, 404);
-      }
-    }
-    const row = await persistAppAccessPolicy(current, {
-      mode: body.mode,
-      memberIds,
-      groupIds,
-      password: body.password,
-      viewerTokenScope: body.viewer_token_scope,
-    });
-    // Every viewer token this App minted dies with the old policy. Narrowing
-    // access has to take effect NOW, not in up to an hour: the cookie is
-    // revision-checked on the next request, and this closes the same door on
-    // the token an App is already holding.
-    await revokeAppViewerTokens(current.appId).catch((error) => {
-      console.warn(`[apps] viewer-token revoke failed for ${current.appId}:`, error);
-    });
-    return c.json(await serializeAppAccessPolicy(row));
-  },
-);
-
 export { agentsGrantingApp } from './agent-grants';
 
-projectsApp.openapi(
-  createRoute({
-    method: 'get', path: '/{projectId}/apps/{appId}/agents', tags: ['apps'], summary: 'List the agents granted this App in kortix.yaml', ...auth,
-    request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
-    responses: {
-      200: json(z.object({ agents: z.array(z.object({
-        agent_name: z.string(),
-        grant: z.enum(['all', 'listed']),
-        path: z.string(),
-      })) }), 'Agents whose apps grant names this App'),
-      ...errors(403, 404, 503),
+export function registerAppsRoutes(): void {
+  projectsApp.openapi(
+    createRoute({
+      method: 'get', path: '/{projectId}/apps', tags: ['apps'], summary: 'List Apps', ...auth,
+      request: { params: z.object({ projectId: z.string().uuid() }) },
+      responses: { 200: json(z.object({ apps: z.array(AppObject) }), 'Apps'), ...errors(403, 404) },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await authorizedProject(c, projectId);
+      if (loaded instanceof Response) return loaded;
+      const rows = await db.select().from(apps)
+        .where(and(eq(apps.projectId, projectId), isNull(apps.deletedAt)))
+        .orderBy(desc(apps.createdAt));
+      const visible = await filterAppsVisibleToUser(rows, loaded.userId);
+      const openable = await appsOpenableByUser(visible, loaded.userId);
+      return c.json({ apps: visible.map((row) => serializeApp(row, openable.has(row.appId))) });
     },
-  }),
-  async (c: any) => {
-    const { projectId, appId } = c.req.param();
-    const loaded = await authorizedProject(c, projectId);
-    if (loaded instanceof Response) return loaded;
-    const row = await visibleApp(projectId, appId, loaded.userId);
-    if (!row) return c.json({ error: 'Not found' }, 404);
-    const project = loaded.row;
-    if (!project.defaultBranch) return c.json({ agents: [] });
-    try {
-      const agents = await readAgentsGrantingApp({
-        projectId: project.projectId,
-        repoUrl: project.repoUrl,
-        defaultBranch: project.defaultBranch,
-        manifestPath: project.manifestPath ?? 'kortix.yaml',
-        gitAuthToken: null,
-      }, row.slug);
-      return c.json({ agents });
-    } catch (error) {
-      return c.json({ error: `kortix.yaml could not be read: ${(error as Error).message}` }, 503);
-    }
-  },
-);
+  );
 
-projectsApp.openapi(
-  createRoute({
-    method: 'post', path: '/{projectId}/apps/{appId}/access-session', tags: ['apps'], summary: 'Create an App browser access session', ...auth,
-    request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
-    responses: { 200: json(z.object({ url: z.string().url(), expires_at: z.string() }), 'App access session'), ...errors(403, 404) },
-  }),
-  async (c: any) => {
-    const { projectId, appId } = c.req.param();
-    const loaded = await authorizedProject(c, projectId);
-    if (loaded instanceof Response) return loaded;
-    const row = await visibleApp(projectId, appId, loaded.userId);
-    if (!row) return c.json({ error: 'Not found' }, 404);
-    if (row.accessMode !== 'public' && row.accessMode !== 'password' && !(await appAccessibleToUser(row, loaded.userId))) {
-      return c.json({ error: 'App access denied' }, 403);
-    }
-    // A PASSWORD App gets the bare URL: the door is the password prompt, and a
-    // Kortix session cannot stand in for knowing the secret.
-    if (row.accessMode === 'password') {
-      return c.json({ url: appPublicUrl(row), expires_at: new Date(Date.now() + 5 * 60_000).toISOString() });
-    }
-    // A PUBLIC App gets a real session URL, the same as a gated one.
-    //
-    // It used to get the bare URL, which meant a public App could never
-    // recognise anyone: no access link, so no identity cookie, so no viewer
-    // header — `public` silently also meant `anonymous`. Opening it from Kortix
-    // now carries who you are, while the bare URL underneath stays shareable
-    // with someone who has no Kortix account at all. The gate does not GATE a
-    // public App either way; this only decides whether it can greet you.
-    const session = appAccessSessionUrl(appPublicUrl(row), row, loaded.userId);
-    return c.json({ url: session.url, expires_at: session.expiresAt.toISOString() });
-  },
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post', path: '/{projectId}/apps', tags: ['apps'], summary: 'Create an App', ...auth,
-    request: {
-      params: z.object({ projectId: z.string().uuid() }),
-      body: { content: { 'application/json': { schema: z.object({
-        slug: z.string().min(1).max(63), name: z.string().min(1).max(200),
-        cpu: CpuSchema.default(1),
-        memory_gb: MemorySchema.default(2),
-        disk_gb: DiskSchema.default(10),
-        idle_timeout_seconds: z.number().int().min(120).max(86400).default(300),
-        monthly_budget_usd: z.number().min(0).max(100000).default(5),
-      }) } } },
+  projectsApp.openapi(
+    createRoute({
+      method: 'get', path: '/{projectId}/apps/{appId}/access', tags: ['apps'], summary: 'Get App access policy', ...auth,
+      request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
+      responses: { 200: json(AppAccessSchema, 'App access policy'), ...errors(403, 404) },
+    }),
+    async (c: any) => {
+      const { projectId, appId } = c.req.param();
+      const loaded = await authorizedProject(c, projectId);
+      if (loaded instanceof Response) return loaded;
+      const row = await visibleApp(projectId, appId, loaded.userId);
+      return row ? c.json(await serializeAppAccessPolicy(row)) : c.json({ error: 'Not found' }, 404);
     },
-    responses: { 201: json(AppObject, 'App'), ...errors(400, 402, 403, 404, 409) },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await authorizedProject(c, projectId, 'write');
-    if (loaded instanceof Response) return loaded;
-    const body = c.req.valid('json');
-    const slug = body.slug.toLowerCase();
-    if (!APP_SLUG.test(slug)) return c.json({ error: 'slug must contain lowercase letters, numbers, and single hyphens' }, 400);
-    try {
-      assertAppMachineWithinLimits({ cpu: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb });
-      assertAppBudgetWithinLimits(body.monthly_budget_usd);
-      await assertAppQuotaAvailable(loaded.row.accountId);
-    } catch (error) {
-      const refusal = appLimitResponse(c, error);
-      if (refusal) return refusal;
-      throw error;
-    }
-    try {
-      const [row] = await db.insert(apps).values({
-        accountId: loaded.row.accountId, projectId, slug, name: body.name.trim(),
-        routeKey: randomBytes(8).toString('hex'), createdBy: loaded.userId,
-        cpuCores: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb,
-        idleTimeoutSeconds: body.idle_timeout_seconds,
-        monthlyBudgetUsd: body.monthly_budget_usd.toFixed(2),
-      }).returning();
-      return c.json(serializeApp(row!), 201);
-    } catch (error) {
-      // Drizzle wraps the postgres.js error, so the SQLSTATE lives on
-      // error.cause.code, NOT error.code — reading error.code left this branch
-      // dead and a duplicate-slug create returned 500 instead of 409.
-      // inspectDatabaseError walks the .cause chain for the real pgCode.
-      if (inspectDatabaseError(error)?.pgCode === '23505')
-        return c.json({ error: 'An App with this slug already exists' }, 409);
-      throw error;
-    }
-  },
-);
+  );
 
-// Static artifact routes are registered before /apps/{appId}.
-projectsApp.openapi(
-  createRoute({
-    method: 'post', path: '/{projectId}/apps/artifacts', tags: ['apps'], summary: 'Register an App artifact', ...auth,
-    request: {
-      params: z.object({ projectId: z.string().uuid() }),
-      body: { content: { 'application/json': { schema: z.discriminatedUnion('kind', [
-        z.object({ kind: z.literal('archive'), media_type: z.string().optional() }),
-        z.object({ kind: z.literal('oci_image'), image: z.string().min(1).max(512) }),
-      ]) } } },
+  projectsApp.openapi(
+    createRoute({
+      method: 'patch', path: '/{projectId}/apps/{appId}/access', tags: ['apps'], summary: 'Update App access policy', ...auth,
+      request: {
+        params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
+        body: { content: { 'application/json': { schema: z.object({
+          mode: z.enum(['private', 'project', 'restricted', 'public', 'password']),
+          member_ids: z.array(z.string().uuid()).max(100).optional(),
+          group_ids: z.array(z.string().uuid()).max(100).optional(),
+          password: z.string().min(8).max(256).optional(),
+          viewer_token_scope: z.enum(['off', 'identity', 'api']).optional(),
+        }) } } },
+      },
+      responses: { 200: json(AppAccessSchema, 'App access policy'), ...errors(400, 403, 404) },
+    }),
+    async (c: any) => {
+      const { projectId, appId } = c.req.param();
+      const loaded = await authorizedProject(c, projectId, 'write');
+      if (loaded instanceof Response) return loaded;
+      const current = await visibleApp(projectId, appId, loaded.userId);
+      if (!current) return c.json({ error: 'Not found' }, 404);
+      const body = c.req.valid('json');
+      if (body.mode === 'password' && !body.password && !current.accessPasswordHash) {
+        return c.json({ error: 'password is required when password access is enabled' }, 400);
+      }
+      const memberIds: string[] = [...new Set<string>((body.member_ids ?? []) as string[])];
+      const groupIds: string[] = [...new Set<string>((body.group_ids ?? []) as string[])];
+      if (body.mode === 'restricted' && memberIds.length + groupIds.length === 0) {
+        return c.json({ error: 'restricted access requires at least one member or group' }, 400);
+      }
+      if (body.mode === 'restricted') {
+        const validation = await validateAppAccessPrincipals(loaded.row.accountId, {
+          memberIds,
+          groupIds,
+        });
+        if (!validation.ok) {
+          return c.json({
+            error: `${validation.principalType} not found in this account`,
+            principal_id: validation.principalId,
+          }, 404);
+        }
+      }
+      const row = await persistAppAccessPolicy(current, {
+        mode: body.mode,
+        memberIds,
+        groupIds,
+        password: body.password,
+        viewerTokenScope: body.viewer_token_scope,
+      });
+      // Every viewer token this App minted dies with the old policy. Narrowing
+      // access has to take effect NOW, not in up to an hour: the cookie is
+      // revision-checked on the next request, and this closes the same door on
+      // the token an App is already holding.
+      await revokeAppViewerTokens(current.appId).catch((error) => {
+        console.warn(`[apps] viewer-token revoke failed for ${current.appId}:`, error);
+      });
+      return c.json(await serializeAppAccessPolicy(row));
     },
-    responses: { 201: json(z.object({ artifact: ArtifactObject, upload: z.object({ url: z.string(), max_bytes: z.number() }).nullable() }), 'Artifact'), ...errors(400, 403, 404, 503) },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await authorizedProject(c, projectId, 'deploy');
-    if (loaded instanceof Response) return loaded;
-    const body = c.req.valid('json');
-    const artifactId = randomUUID();
-    if (body.kind === 'oci_image') {
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'get', path: '/{projectId}/apps/{appId}/agents', tags: ['apps'], summary: 'List the agents granted this App in kortix.yaml', ...auth,
+      request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
+      responses: {
+        200: json(z.object({ agents: z.array(z.object({
+          agent_name: z.string(),
+          grant: z.enum(['all', 'listed']),
+          path: z.string(),
+        })) }), 'Agents whose apps grant names this App'),
+        ...errors(403, 404, 503),
+      },
+    }),
+    async (c: any) => {
+      const { projectId, appId } = c.req.param();
+      const loaded = await authorizedProject(c, projectId);
+      if (loaded instanceof Response) return loaded;
+      const row = await visibleApp(projectId, appId, loaded.userId);
+      if (!row) return c.json({ error: 'Not found' }, 404);
+      const project = loaded.row;
+      if (!project.defaultBranch) return c.json({ agents: [] });
+      try {
+        const agents = await readAgentsGrantingApp({
+          projectId: project.projectId,
+          repoUrl: project.repoUrl,
+          defaultBranch: project.defaultBranch,
+          manifestPath: project.manifestPath ?? 'kortix.yaml',
+          gitAuthToken: null,
+        }, row.slug);
+        return c.json({ agents });
+      } catch (error) {
+        return c.json({ error: `kortix.yaml could not be read: ${(error as Error).message}` }, 503);
+      }
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'post', path: '/{projectId}/apps/{appId}/access-session', tags: ['apps'], summary: 'Create an App browser access session', ...auth,
+      request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
+      responses: { 200: json(z.object({ url: z.string().url(), expires_at: z.string() }), 'App access session'), ...errors(403, 404) },
+    }),
+    async (c: any) => {
+      const { projectId, appId } = c.req.param();
+      const loaded = await authorizedProject(c, projectId);
+      if (loaded instanceof Response) return loaded;
+      const row = await visibleApp(projectId, appId, loaded.userId);
+      if (!row) return c.json({ error: 'Not found' }, 404);
+      if (row.accessMode !== 'public' && row.accessMode !== 'password' && !(await appAccessibleToUser(row, loaded.userId))) {
+        return c.json({ error: 'App access denied' }, 403);
+      }
+      // A PASSWORD App gets the bare URL: the door is the password prompt, and a
+      // Kortix session cannot stand in for knowing the secret.
+      if (row.accessMode === 'password') {
+        return c.json({ url: appPublicUrl(row), expires_at: new Date(Date.now() + 5 * 60_000).toISOString() });
+      }
+      // A PUBLIC App gets a real session URL, the same as a gated one.
+      //
+      // It used to get the bare URL, which meant a public App could never
+      // recognise anyone: no access link, so no identity cookie, so no viewer
+      // header — `public` silently also meant `anonymous`. Opening it from Kortix
+      // now carries who you are, while the bare URL underneath stays shareable
+      // with someone who has no Kortix account at all. The gate does not GATE a
+      // public App either way; this only decides whether it can greet you.
+      const session = appAccessSessionUrl(appPublicUrl(row), row, loaded.userId);
+      return c.json({ url: session.url, expires_at: session.expiresAt.toISOString() });
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'post', path: '/{projectId}/apps', tags: ['apps'], summary: 'Create an App', ...auth,
+      request: {
+        params: z.object({ projectId: z.string().uuid() }),
+        body: { content: { 'application/json': { schema: z.object({
+          slug: z.string().min(1).max(63), name: z.string().min(1).max(200),
+          cpu: CpuSchema.default(1),
+          memory_gb: MemorySchema.default(2),
+          disk_gb: DiskSchema.default(10),
+          idle_timeout_seconds: z.number().int().min(120).max(86400).default(300),
+          monthly_budget_usd: z.number().min(0).max(100000).default(5),
+        }) } } },
+      },
+      responses: { 201: json(AppObject, 'App'), ...errors(400, 402, 403, 404, 409) },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await authorizedProject(c, projectId, 'write');
+      if (loaded instanceof Response) return loaded;
+      const body = c.req.valid('json');
+      const slug = body.slug.toLowerCase();
+      if (!APP_SLUG.test(slug)) return c.json({ error: 'slug must contain lowercase letters, numbers, and single hyphens' }, 400);
+      try {
+        assertAppMachineWithinLimits({ cpu: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb });
+        assertAppBudgetWithinLimits(body.monthly_budget_usd);
+        await assertAppQuotaAvailable(loaded.row.accountId);
+      } catch (error) {
+        const refusal = appLimitResponse(c, error);
+        if (refusal) return refusal;
+        throw error;
+      }
+      try {
+        const [row] = await db.insert(apps).values({
+          accountId: loaded.row.accountId, projectId, slug, name: body.name.trim(),
+          routeKey: randomBytes(8).toString('hex'), createdBy: loaded.userId,
+          cpuCores: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb,
+          idleTimeoutSeconds: body.idle_timeout_seconds,
+          monthlyBudgetUsd: body.monthly_budget_usd.toFixed(2),
+        }).returning();
+        return c.json(serializeApp(row!), 201);
+      } catch (error) {
+        // Drizzle wraps the postgres.js error, so the SQLSTATE lives on
+        // error.cause.code, NOT error.code — reading error.code left this branch
+        // dead and a duplicate-slug create returned 500 instead of 409.
+        // inspectDatabaseError walks the .cause chain for the real pgCode.
+        if (inspectDatabaseError(error)?.pgCode === '23505')
+          return c.json({ error: 'An App with this slug already exists' }, 409);
+        throw error;
+      }
+    },
+  );
+
+  // Static artifact routes are registered before /apps/{appId}.
+  projectsApp.openapi(
+    createRoute({
+      method: 'post', path: '/{projectId}/apps/artifacts', tags: ['apps'], summary: 'Register an App artifact', ...auth,
+      request: {
+        params: z.object({ projectId: z.string().uuid() }),
+        body: { content: { 'application/json': { schema: z.discriminatedUnion('kind', [
+          z.object({ kind: z.literal('archive'), media_type: z.string().optional() }),
+          z.object({ kind: z.literal('oci_image'), image: z.string().min(1).max(512) }),
+        ]) } } },
+      },
+      responses: { 201: json(z.object({ artifact: ArtifactObject, upload: z.object({ url: z.string(), max_bytes: z.number() }).nullable() }), 'Artifact'), ...errors(400, 403, 404, 503) },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await authorizedProject(c, projectId, 'deploy');
+      if (loaded instanceof Response) return loaded;
+      const body = c.req.valid('json');
+      const artifactId = randomUUID();
+      if (body.kind === 'oci_image') {
+        const [artifact] = await db.insert(appArtifacts).values({
+          artifactId, accountId: loaded.row.accountId, projectId, kind: body.kind,
+          status: 'ready', imageReference: body.image, createdBy: loaded.userId,
+        }).returning();
+        return c.json({ artifact: serializeArtifact(artifact!), upload: null }, 201);
+      }
+      let upload: Awaited<ReturnType<typeof createAppArtifactUploadUrl>>;
+      try {
+        upload = await createAppArtifactUploadUrl(loaded.row.accountId, projectId, artifactId);
+      } catch (error) {
+        if (error instanceof AppArtifactStorageUnavailableError) {
+          return c.json({ error: error.message }, 503);
+        }
+        throw error;
+      }
       const [artifact] = await db.insert(appArtifacts).values({
         artifactId, accountId: loaded.row.accountId, projectId, kind: body.kind,
-        status: 'ready', imageReference: body.image, createdBy: loaded.userId,
+        status: 'uploading', objectPath: upload.objectPath,
+        mediaType: body.media_type ?? 'application/gzip', createdBy: loaded.userId,
       }).returning();
-      return c.json({ artifact: serializeArtifact(artifact!), upload: null }, 201);
-    }
-    let upload: Awaited<ReturnType<typeof createAppArtifactUploadUrl>>;
-    try {
-      upload = await createAppArtifactUploadUrl(loaded.row.accountId, projectId, artifactId);
-    } catch (error) {
-      if (error instanceof AppArtifactStorageUnavailableError) {
-        return c.json({ error: error.message }, 503);
+      return c.json({ artifact: serializeArtifact(artifact!), upload: { url: upload.uploadUrl, max_bytes: upload.maxBytes } }, 201);
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'post', path: '/{projectId}/apps/artifacts/{artifactId}/finalize', tags: ['apps'], summary: 'Finalize an uploaded artifact', ...auth,
+      request: {
+        params: z.object({ projectId: z.string().uuid(), artifactId: z.string().uuid() }),
+        body: { content: { 'application/json': { schema: z.object({ sha256: z.string().regex(/^[a-f0-9]{64}$/), size_bytes: z.number().int().positive().max(MAX_ARCHIVE_BYTES) }) } } },
+      },
+      responses: { 200: json(ArtifactObject, 'Artifact'), ...errors(400, 403, 404, 409) },
+    }),
+    async (c: any) => {
+      const { projectId, artifactId } = c.req.param();
+      const gate = await authorizedProject(c, projectId, 'deploy');
+      if (gate instanceof Response) return gate;
+      const body = c.req.valid('json');
+      const [artifact] = await db.update(appArtifacts).set({
+        status: 'uploaded', sha256: body.sha256, sizeBytes: body.size_bytes, updatedAt: new Date(),
+      }).where(and(
+        eq(appArtifacts.artifactId, artifactId), eq(appArtifacts.projectId, projectId),
+        eq(appArtifacts.kind, 'archive'), eq(appArtifacts.status, 'uploading'),
+      )).returning();
+      if (!artifact) return c.json({ error: 'Artifact is not awaiting finalization' }, 409);
+      return c.json(serializeArtifact(artifact));
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'get', path: '/{projectId}/apps/{appId}', tags: ['apps'], summary: 'Get an App', ...auth,
+      request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
+      responses: { 200: json(AppObject, 'App'), ...errors(403, 404) },
+    }),
+    async (c: any) => {
+      const { projectId, appId } = c.req.param();
+      const loaded = await authorizedProject(c, projectId);
+      if (loaded instanceof Response) return loaded;
+      const row = await visibleApp(projectId, appId, loaded.userId);
+      return row ? c.json(serializeApp(row)) : c.json({ error: 'Not found' }, 404);
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'patch', path: '/{projectId}/apps/{appId}', tags: ['apps'], summary: 'Update an App', ...auth,
+      request: {
+        params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
+        body: { content: { 'application/json': { schema: z.object({
+          name: z.string().min(1).max(200).optional(), cpu: CpuSchema.optional(),
+          memory_gb: MemorySchema.optional(), disk_gb: DiskSchema.optional(),
+          idle_timeout_seconds: z.number().int().min(120).max(86400).optional(), monthly_budget_usd: z.number().min(0).max(100000).optional(),
+        }) } } },
+      },
+      responses: { 200: json(AppObject, 'App'), ...errors(400, 403, 404) },
+    }),
+    async (c: any) => {
+      const { projectId, appId } = c.req.param();
+      const loaded = await authorizedProject(c, projectId, 'write');
+      if (loaded instanceof Response) return loaded;
+      if (!(await visibleApp(projectId, appId, loaded.userId))) {
+        return c.json({ error: 'Not found' }, 404);
       }
-      throw error;
-    }
-    const [artifact] = await db.insert(appArtifacts).values({
-      artifactId, accountId: loaded.row.accountId, projectId, kind: body.kind,
-      status: 'uploading', objectPath: upload.objectPath,
-      mediaType: body.media_type ?? 'application/gzip', createdBy: loaded.userId,
-    }).returning();
-    return c.json({ artifact: serializeArtifact(artifact!), upload: { url: upload.uploadUrl, max_bytes: upload.maxBytes } }, 201);
-  },
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post', path: '/{projectId}/apps/artifacts/{artifactId}/finalize', tags: ['apps'], summary: 'Finalize an uploaded artifact', ...auth,
-    request: {
-      params: z.object({ projectId: z.string().uuid(), artifactId: z.string().uuid() }),
-      body: { content: { 'application/json': { schema: z.object({ sha256: z.string().regex(/^[a-f0-9]{64}$/), size_bytes: z.number().int().positive().max(MAX_ARCHIVE_BYTES) }) } } },
+      const body = c.req.valid('json');
+      try {
+        assertAppMachineWithinLimits({ cpu: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb });
+        assertAppBudgetWithinLimits(body.monthly_budget_usd);
+      } catch (error) {
+        const refusal = appLimitResponse(c, error);
+        if (refusal) return refusal;
+        throw error;
+      }
+      const [row] = await db.update(apps).set({
+        ...(body.name !== undefined ? { name: body.name.trim() } : {}),
+        ...(body.cpu !== undefined ? { cpuCores: body.cpu } : {}),
+        ...(body.memory_gb !== undefined ? { memoryGb: body.memory_gb } : {}),
+        ...(body.disk_gb !== undefined ? { diskGb: body.disk_gb } : {}),
+        ...(body.idle_timeout_seconds !== undefined ? { idleTimeoutSeconds: body.idle_timeout_seconds } : {}),
+        ...(body.monthly_budget_usd !== undefined ? { monthlyBudgetUsd: body.monthly_budget_usd.toFixed(2) } : {}),
+        updatedAt: new Date(),
+      }).where(and(eq(apps.appId, appId), eq(apps.projectId, projectId), isNull(apps.deletedAt))).returning();
+      return row ? c.json(serializeApp(row)) : c.json({ error: 'Not found' }, 404);
     },
-    responses: { 200: json(ArtifactObject, 'Artifact'), ...errors(400, 403, 404, 409) },
-  }),
-  async (c: any) => {
-    const { projectId, artifactId } = c.req.param();
-    const gate = await authorizedProject(c, projectId, 'deploy');
-    if (gate instanceof Response) return gate;
-    const body = c.req.valid('json');
-    const [artifact] = await db.update(appArtifacts).set({
-      status: 'uploaded', sha256: body.sha256, sizeBytes: body.size_bytes, updatedAt: new Date(),
-    }).where(and(
-      eq(appArtifacts.artifactId, artifactId), eq(appArtifacts.projectId, projectId),
-      eq(appArtifacts.kind, 'archive'), eq(appArtifacts.status, 'uploading'),
-    )).returning();
-    if (!artifact) return c.json({ error: 'Artifact is not awaiting finalization' }, 409);
-    return c.json(serializeArtifact(artifact));
-  },
-);
+  );
 
-projectsApp.openapi(
-  createRoute({
-    method: 'get', path: '/{projectId}/apps/{appId}', tags: ['apps'], summary: 'Get an App', ...auth,
-    request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
-    responses: { 200: json(AppObject, 'App'), ...errors(403, 404) },
-  }),
-  async (c: any) => {
-    const { projectId, appId } = c.req.param();
-    const loaded = await authorizedProject(c, projectId);
-    if (loaded instanceof Response) return loaded;
-    const row = await visibleApp(projectId, appId, loaded.userId);
-    return row ? c.json(serializeApp(row)) : c.json({ error: 'Not found' }, 404);
-  },
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'patch', path: '/{projectId}/apps/{appId}', tags: ['apps'], summary: 'Update an App', ...auth,
-    request: {
-      params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
-      body: { content: { 'application/json': { schema: z.object({
-        name: z.string().min(1).max(200).optional(), cpu: CpuSchema.optional(),
-        memory_gb: MemorySchema.optional(), disk_gb: DiskSchema.optional(),
-        idle_timeout_seconds: z.number().int().min(120).max(86400).optional(), monthly_budget_usd: z.number().min(0).max(100000).optional(),
-      }) } } },
-    },
-    responses: { 200: json(AppObject, 'App'), ...errors(400, 403, 404) },
-  }),
-  async (c: any) => {
-    const { projectId, appId } = c.req.param();
-    const loaded = await authorizedProject(c, projectId, 'write');
-    if (loaded instanceof Response) return loaded;
-    if (!(await visibleApp(projectId, appId, loaded.userId))) {
-      return c.json({ error: 'Not found' }, 404);
-    }
-    const body = c.req.valid('json');
-    try {
-      assertAppMachineWithinLimits({ cpu: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb });
-      assertAppBudgetWithinLimits(body.monthly_budget_usd);
-    } catch (error) {
-      const refusal = appLimitResponse(c, error);
-      if (refusal) return refusal;
-      throw error;
-    }
-    const [row] = await db.update(apps).set({
-      ...(body.name !== undefined ? { name: body.name.trim() } : {}),
-      ...(body.cpu !== undefined ? { cpuCores: body.cpu } : {}),
-      ...(body.memory_gb !== undefined ? { memoryGb: body.memory_gb } : {}),
-      ...(body.disk_gb !== undefined ? { diskGb: body.disk_gb } : {}),
-      ...(body.idle_timeout_seconds !== undefined ? { idleTimeoutSeconds: body.idle_timeout_seconds } : {}),
-      ...(body.monthly_budget_usd !== undefined ? { monthlyBudgetUsd: body.monthly_budget_usd.toFixed(2) } : {}),
-      updatedAt: new Date(),
-    }).where(and(eq(apps.appId, appId), eq(apps.projectId, projectId), isNull(apps.deletedAt))).returning();
-    return row ? c.json(serializeApp(row)) : c.json({ error: 'Not found' }, 404);
-  },
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'delete', path: '/{projectId}/apps/{appId}', tags: ['apps'], summary: 'Delete an App', ...auth,
-    request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
-    responses: { 200: json(z.object({ ok: z.boolean(), images: ImageReleaseObject }), 'Deleted'), ...errors(403, 404) },
-  }),
-  async (c: any) => {
-    const { projectId, appId } = c.req.param();
-    const loaded = await authorizedProject(c, projectId, 'write');
-    if (loaded instanceof Response) return loaded;
-    const row = await visibleApp(projectId, appId, loaded.userId);
-    if (!row) return c.json({ error: 'Not found' }, 404);
-    // Delete first, tear down second. A deleted App stops routing and leaves
-    // the idle reaper at once; if this request dies mid-teardown, project
-    // maintenance (`reclaimAppDeploymentImages`) removes what it left behind.
-    await db.update(apps).set({ deletedAt: new Date(), desiredState: 'stopped', activeDeploymentId: null, updatedAt: new Date() })
-      .where(eq(apps.appId, appId));
-    const deployments = await db
-      .select({
-        deploymentId: appDeployments.deploymentId,
-        hostingProvider: appDeployments.hostingProvider,
-        status: appDeployments.status,
-      })
-      .from(appDeployments)
-      .where(eq(appDeployments.appId, appId));
-    const runtimes = await db
-      .select({ runtimeId: appRuntimes.runtimeId, provider: appRuntimes.provider, externalId: appRuntimes.externalId })
-      .from(appRuntimes)
-      .innerJoin(appDeployments, eq(appRuntimes.deploymentId, appDeployments.deploymentId))
-      .where(and(eq(appDeployments.appId, appId), ne(appRuntimes.status, 'deleted')));
-    // A runtime's provider may since have been disabled or retired; removal
-    // then counts it gone (`removeAppRuntime`), so a dead provider never blocks
-    // the delete. Its compute meter closes either way.
-    await teardownAppRuntimes(runtimes);
-    // Each deployment build left one provider image. Platinum counts them
-    // against a per-org template cap, so the App is not gone until they are.
-    // A build still running may register its image after this request, so it
-    // is reported pending, never released; maintenance reclaims it once the
-    // worker stops (the worker refuses to start a runtime for a deleted App).
-    const building = deployments.filter((deployment) =>
-      deployment.hostingProvider && IN_PROGRESS_DEPLOYMENT_STATUSES.includes(deployment.status));
-    // A deployment its owner already deleted released (or queued) its image
-    // then; counting it again would report one image as freed twice. Any of
-    // those still pending is retried by maintenance.
-    const finished = deployments.filter((deployment) =>
-      deployment.status !== 'deleted' && !IN_PROGRESS_DEPLOYMENT_STATUSES.includes(deployment.status));
-    const released = await releaseDeploymentImages(finished);
-    const images = { released: released.released, pending: released.pending + building.length };
-    return c.json({ ok: true, images });
-  },
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post', path: '/{projectId}/apps/{appId}/deployments', tags: ['apps'], summary: 'Deploy an App', ...auth,
-    request: {
-      params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
-      body: { content: { 'application/json': { schema: z.object({
-        artifact_id: z.string().uuid(),
-        source: SourceSchema,
-        provider: z.enum(['daytona', 'platinum', 'e2b']).optional(),
-        environment: EnvironmentSchema.optional(),
-        secrets: SecretMappingsSchema.optional(),
-      }) } } },
-    },
-    responses: { 202: json(DeploymentObject, 'Deployment queued'), ...errors(400, 403, 404, 409) },
-  }),
-  async (c: any) => {
-    const { projectId, appId } = c.req.param();
-    const loaded = await authorizedProject(c, projectId, 'deploy');
-    if (loaded instanceof Response) return loaded;
-    const app = await visibleApp(projectId, appId, loaded.userId);
-    if (!app) return c.json({ error: 'Not found' }, 404);
-    const body = c.req.valid('json');
-    const [artifact] = await db.select().from(appArtifacts).where(and(
-      eq(appArtifacts.artifactId, body.artifact_id), eq(appArtifacts.projectId, projectId),
-    )).limit(1);
-    if (!artifact || !['uploaded', 'ready'].includes(artifact.status)) return c.json({ error: 'Artifact is not ready to deploy' }, 409);
-    if (artifact.kind === 'oci_image' && body.source.kind !== 'oci_image') return c.json({ error: 'OCI artifacts require an oci_image source' }, 400);
-    if (artifact.kind === 'archive' && body.source.kind === 'oci_image') return c.json({ error: 'Archive artifacts cannot use an oci_image source' }, 400);
-    if (body.source.kind === 'oci_image' && body.source.image !== artifact.imageReference) return c.json({ error: 'source.image must match the immutable artifact image' }, 400);
-    const source = sourceFromWire(body.source);
-    const deployment = await db.transaction(async (tx) => {
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${appId}))`);
-      const [versionRow] = await tx.select({ value: max(appDeployments.version) }).from(appDeployments)
+  projectsApp.openapi(
+    createRoute({
+      method: 'delete', path: '/{projectId}/apps/{appId}', tags: ['apps'], summary: 'Delete an App', ...auth,
+      request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
+      responses: { 200: json(z.object({ ok: z.boolean(), images: ImageReleaseObject }), 'Deleted'), ...errors(403, 404) },
+    }),
+    async (c: any) => {
+      const { projectId, appId } = c.req.param();
+      const loaded = await authorizedProject(c, projectId, 'write');
+      if (loaded instanceof Response) return loaded;
+      const row = await visibleApp(projectId, appId, loaded.userId);
+      if (!row) return c.json({ error: 'Not found' }, 404);
+      // Delete first, tear down second. A deleted App stops routing and leaves
+      // the idle reaper at once; if this request dies mid-teardown, project
+      // maintenance (`reclaimAppDeploymentImages`) removes what it left behind.
+      await db.update(apps).set({ deletedAt: new Date(), desiredState: 'stopped', activeDeploymentId: null, updatedAt: new Date() })
+        .where(eq(apps.appId, appId));
+      const deployments = await db
+        .select({
+          deploymentId: appDeployments.deploymentId,
+          hostingProvider: appDeployments.hostingProvider,
+          status: appDeployments.status,
+        })
+        .from(appDeployments)
         .where(eq(appDeployments.appId, appId));
-      const version = Number(versionRow?.value ?? 0) + 1;
-      const [row] = await tx.insert(appDeployments).values({
-        appId, artifactId: artifact.artifactId, version, status: 'queued',
-        sourceKind: source.kind, hostingProvider: body.provider ?? null,
-        createdBy: loaded.userId,
-        sourceSessionId: callerKortixSessionId(c),
-        actorType: appDeploymentActorType(c),
-        runtimeVersion: APP_RUNTIME_VERSION,
-        buildSpec: {
-          source,
-          environment: body.environment ?? {},
-          secrets: body.secrets ?? {},
-        },
-        runtimeSpec: {},
-      }).returning();
-      return row!;
-    });
-    triggerAppDeploymentWorker();
-    return c.json(serializeDeployment(deployment), 202);
-  },
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'get', path: '/{projectId}/apps/{appId}/deployments', tags: ['apps'], summary: 'List App deployments', ...auth,
-    request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
-    responses: { 200: json(z.object({ deployments: z.array(DeploymentObject) }), 'Deployments'), ...errors(403, 404) },
-  }),
-  async (c: any) => {
-    const { projectId, appId } = c.req.param();
-    const loaded = await authorizedProject(c, projectId);
-    if (loaded instanceof Response) return loaded;
-    if (!(await visibleApp(projectId, appId, loaded.userId))) {
-      return c.json({ error: 'Not found' }, 404);
-    }
-    const rows = await db.select().from(appDeployments)
-      .where(and(eq(appDeployments.appId, appId), ne(appDeployments.status, 'deleted')))
-      .orderBy(desc(appDeployments.version));
-    return c.json({ deployments: rows.map(serializeDeployment) });
-  },
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'get', path: '/{projectId}/apps/{appId}/deployments/{deploymentId}', tags: ['apps'], summary: 'Get App deployment', ...auth,
-    request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid(), deploymentId: z.string().uuid() }) },
-    responses: { 200: json(z.object({ deployment: DeploymentObject, events: z.array(z.object({}).passthrough()) }), 'Deployment'), ...errors(403, 404) },
-  }),
-  async (c: any) => {
-    const { projectId, appId, deploymentId } = c.req.param();
-    const loaded = await authorizedProject(c, projectId);
-    if (loaded instanceof Response) return loaded;
-    if (!(await visibleApp(projectId, appId, loaded.userId))) {
-      return c.json({ error: 'Not found' }, 404);
-    }
-    const [deployment] = await db.select().from(appDeployments).where(and(
-      eq(appDeployments.deploymentId, deploymentId),
-      eq(appDeployments.appId, appId),
-      ne(appDeployments.status, 'deleted'),
-    )).limit(1);
-    if (!deployment) return c.json({ error: 'Not found' }, 404);
-    const events = await db.select().from(appDeploymentEvents).where(eq(appDeploymentEvents.deploymentId, deploymentId)).orderBy(appDeploymentEvents.createdAt);
-    return c.json({ deployment: serializeDeployment(deployment), events: events.map((row) => ({
-      event_id: row.eventId, runtime_id: row.runtimeId, level: row.level, type: row.type,
-      message: row.message, data: row.data, created_at: row.createdAt.toISOString(),
-    })) });
-  },
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'get', path: '/{projectId}/apps/{appId}/deployments/{deploymentId}/logs', tags: ['apps'], summary: 'Get App runtime logs', ...auth,
-    request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid(), deploymentId: z.string().uuid() }), query: z.object({ after: z.string().optional(), limit: z.string().optional() }) },
-    responses: { 200: json(z.object({}).passthrough(), 'Logs'), ...errors(403, 404, 409, 503) },
-  }),
-  async (c: any) => {
-    const { projectId, appId, deploymentId } = c.req.param();
-    const loaded = await authorizedProject(c, projectId);
-    if (loaded instanceof Response) return loaded;
-    if (!(await visibleApp(projectId, appId, loaded.userId))) {
-      return c.json({ error: 'Not found' }, 404);
-    }
-    const [deployment] = await db.select().from(appDeployments).where(and(
-      eq(appDeployments.deploymentId, deploymentId),
-      eq(appDeployments.appId, appId),
-      ne(appDeployments.status, 'deleted'),
-    )).limit(1);
-    if (!deployment) return c.json({ error: 'Not found' }, 404);
-    const eventFallback = async () => {
-      const events = await db.select({
-        type: appDeploymentEvents.type,
-        message: appDeploymentEvents.message,
-        createdAt: appDeploymentEvents.createdAt,
-      }).from(appDeploymentEvents)
-        .where(eq(appDeploymentEvents.deploymentId, deploymentId))
-        .orderBy(appDeploymentEvents.createdAt);
-      return deploymentEventsAsLogs(
-        events,
-        Number(c.req.query('after')) || 0,
-        Number(c.req.query('limit')) || 200,
-      );
-    };
-    const [row] = await db.select().from(appRuntimes)
-      .where(eq(appRuntimes.deploymentId, deploymentId))
-      .orderBy(desc(appRuntimes.createdAt)).limit(1);
-    if (!row) return c.json(await eventFallback());
-    if (row.status === 'stopped' || row.status === 'error' || row.status === 'deleted') {
-      return c.json(await eventFallback());
-    }
-    try {
-      const logs = await new AppHostingProvider().logs(row.provider as SandboxProviderName, row.externalId, row.runtimeId, Number(c.req.query('after')) || 0, Number(c.req.query('limit')) || 200);
-      return c.json(logs);
-    } catch (error) {
-      console.warn(`[apps] logs unavailable for runtime ${row.runtimeId}:`, error);
-      return c.json(await eventFallback());
-    }
-  },
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'delete', path: '/{projectId}/apps/{appId}/deployments/{deploymentId}', tags: ['apps'], summary: 'Delete an App deployment', ...auth,
-    request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid(), deploymentId: z.string().uuid() }) },
-    responses: {
-      200: json(z.object({
-        ok: z.boolean(),
-        deployment_id: z.string().uuid(),
-        image: z.enum(['released', 'pending', 'none']),
-      }), 'Deleted'),
-      ...errors(403, 404, 409),
+      const runtimes = await db
+        .select({ runtimeId: appRuntimes.runtimeId, provider: appRuntimes.provider, externalId: appRuntimes.externalId })
+        .from(appRuntimes)
+        .innerJoin(appDeployments, eq(appRuntimes.deploymentId, appDeployments.deploymentId))
+        .where(and(eq(appDeployments.appId, appId), ne(appRuntimes.status, 'deleted')));
+      // A runtime's provider may since have been disabled or retired; removal
+      // then counts it gone (`removeAppRuntime`), so a dead provider never blocks
+      // the delete. Its compute meter closes either way.
+      await teardownAppRuntimes(runtimes);
+      // Each deployment build left one provider image. Platinum counts them
+      // against a per-org template cap, so the App is not gone until they are.
+      // A build still running may register its image after this request, so it
+      // is reported pending, never released; maintenance reclaims it once the
+      // worker stops (the worker refuses to start a runtime for a deleted App).
+      const building = deployments.filter((deployment) =>
+        deployment.hostingProvider && IN_PROGRESS_DEPLOYMENT_STATUSES.includes(deployment.status));
+      // A deployment its owner already deleted released (or queued) its image
+      // then; counting it again would report one image as freed twice. Any of
+      // those still pending is retried by maintenance.
+      const finished = deployments.filter((deployment) =>
+        deployment.status !== 'deleted' && !IN_PROGRESS_DEPLOYMENT_STATUSES.includes(deployment.status));
+      const released = await releaseDeploymentImages(finished);
+      const images = { released: released.released, pending: released.pending + building.length };
+      return c.json({ ok: true, images });
     },
-  }),
-  async (c: any) => {
-    const { projectId, appId, deploymentId } = c.req.param();
-    const loaded = await authorizedProject(c, projectId, 'write');
-    if (loaded instanceof Response) return loaded;
-    if (!(await visibleApp(projectId, appId, loaded.userId))) {
-      return c.json({ error: 'Not found' }, 404);
-    }
-    const decision = await db.transaction(async (tx) => {
-      // Deploy creation takes the same lock, and the App row lock orders this
-      // against an activation or rollback moving the live pointer.
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${appId}))`);
-      const [app] = await tx.select({ activeDeploymentId: apps.activeDeploymentId })
-        .from(apps)
-        .where(and(eq(apps.appId, appId), isNull(apps.deletedAt)))
-        .for('update')
-        .limit(1);
-      if (!app) return { kind: 'missing' as const };
-      const [deployment] = await tx.select().from(appDeployments).where(and(
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'post', path: '/{projectId}/apps/{appId}/deployments', tags: ['apps'], summary: 'Deploy an App', ...auth,
+      request: {
+        params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
+        body: { content: { 'application/json': { schema: z.object({
+          artifact_id: z.string().uuid(),
+          source: SourceSchema,
+          provider: z.enum(['daytona', 'platinum', 'e2b']).optional(),
+          environment: EnvironmentSchema.optional(),
+          secrets: SecretMappingsSchema.optional(),
+        }) } } },
+      },
+      responses: { 202: json(DeploymentObject, 'Deployment queued'), ...errors(400, 403, 404, 409) },
+    }),
+    async (c: any) => {
+      const { projectId, appId } = c.req.param();
+      const loaded = await authorizedProject(c, projectId, 'deploy');
+      if (loaded instanceof Response) return loaded;
+      const app = await visibleApp(projectId, appId, loaded.userId);
+      if (!app) return c.json({ error: 'Not found' }, 404);
+      const body = c.req.valid('json');
+      const [artifact] = await db.select().from(appArtifacts).where(and(
+        eq(appArtifacts.artifactId, body.artifact_id), eq(appArtifacts.projectId, projectId),
+      )).limit(1);
+      if (!artifact || !['uploaded', 'ready'].includes(artifact.status)) return c.json({ error: 'Artifact is not ready to deploy' }, 409);
+      if (artifact.kind === 'oci_image' && body.source.kind !== 'oci_image') return c.json({ error: 'OCI artifacts require an oci_image source' }, 400);
+      if (artifact.kind === 'archive' && body.source.kind === 'oci_image') return c.json({ error: 'Archive artifacts cannot use an oci_image source' }, 400);
+      if (body.source.kind === 'oci_image' && body.source.image !== artifact.imageReference) return c.json({ error: 'source.image must match the immutable artifact image' }, 400);
+      const source = sourceFromWire(body.source);
+      const deployment = await db.transaction(async (tx) => {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${appId}))`);
+        const [versionRow] = await tx.select({ value: max(appDeployments.version) }).from(appDeployments)
+          .where(eq(appDeployments.appId, appId));
+        const version = Number(versionRow?.value ?? 0) + 1;
+        const [row] = await tx.insert(appDeployments).values({
+          appId, artifactId: artifact.artifactId, version, status: 'queued',
+          sourceKind: source.kind, hostingProvider: body.provider ?? null,
+          createdBy: loaded.userId,
+          sourceSessionId: callerKortixSessionId(c),
+          actorType: appDeploymentActorType(c),
+          runtimeVersion: APP_RUNTIME_VERSION,
+          buildSpec: {
+            source,
+            environment: body.environment ?? {},
+            secrets: body.secrets ?? {},
+          },
+          runtimeSpec: {},
+        }).returning();
+        return row!;
+      });
+      triggerAppDeploymentWorker();
+      return c.json(serializeDeployment(deployment), 202);
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'get', path: '/{projectId}/apps/{appId}/deployments', tags: ['apps'], summary: 'List App deployments', ...auth,
+      request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
+      responses: { 200: json(z.object({ deployments: z.array(DeploymentObject) }), 'Deployments'), ...errors(403, 404) },
+    }),
+    async (c: any) => {
+      const { projectId, appId } = c.req.param();
+      const loaded = await authorizedProject(c, projectId);
+      if (loaded instanceof Response) return loaded;
+      if (!(await visibleApp(projectId, appId, loaded.userId))) {
+        return c.json({ error: 'Not found' }, 404);
+      }
+      const rows = await db.select().from(appDeployments)
+        .where(and(eq(appDeployments.appId, appId), ne(appDeployments.status, 'deleted')))
+        .orderBy(desc(appDeployments.version));
+      return c.json({ deployments: rows.map(serializeDeployment) });
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'get', path: '/{projectId}/apps/{appId}/deployments/{deploymentId}', tags: ['apps'], summary: 'Get App deployment', ...auth,
+      request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid(), deploymentId: z.string().uuid() }) },
+      responses: { 200: json(z.object({ deployment: DeploymentObject, events: z.array(z.object({}).passthrough()) }), 'Deployment'), ...errors(403, 404) },
+    }),
+    async (c: any) => {
+      const { projectId, appId, deploymentId } = c.req.param();
+      const loaded = await authorizedProject(c, projectId);
+      if (loaded instanceof Response) return loaded;
+      if (!(await visibleApp(projectId, appId, loaded.userId))) {
+        return c.json({ error: 'Not found' }, 404);
+      }
+      const [deployment] = await db.select().from(appDeployments).where(and(
         eq(appDeployments.deploymentId, deploymentId),
         eq(appDeployments.appId, appId),
         ne(appDeployments.status, 'deleted'),
       )).limit(1);
-      if (!deployment) return { kind: 'missing' as const };
-      if (app.activeDeploymentId === deploymentId) return { kind: 'live' as const };
-      if (IN_PROGRESS_DEPLOYMENT_STATUSES.includes(deployment.status)) {
-        return { kind: 'in_progress' as const, status: deployment.status };
-      }
-      await tx.update(appDeployments)
-        .set({ status: 'deleted', updatedAt: new Date() })
-        .where(and(
-          eq(appDeployments.deploymentId, deploymentId),
-          notInArray(appDeployments.status, [...IN_PROGRESS_DEPLOYMENT_STATUSES, 'deleted']),
-        ));
-      return { kind: 'deleted' as const, hostingProvider: deployment.hostingProvider };
-    });
-    if (decision.kind === 'missing') return c.json({ error: 'Not found' }, 404);
-    if (decision.kind === 'live') {
-      return c.json({
-        error: 'This deployment serves live traffic. Roll back to another deployment first, or delete the App.',
-        code: 'deployment_live',
-      }, 409);
-    }
-    if (decision.kind === 'in_progress') {
-      return c.json({
-        error: `This deployment is still in progress (status: ${decision.status}). Delete it after it finishes or fails.`,
-        code: 'deployment_in_progress',
-        status: decision.status,
-      }, 409);
-    }
+      if (!deployment) return c.json({ error: 'Not found' }, 404);
+      const events = await db.select().from(appDeploymentEvents).where(eq(appDeploymentEvents.deploymentId, deploymentId)).orderBy(appDeploymentEvents.createdAt);
+      return c.json({ deployment: serializeDeployment(deployment), events: events.map((row) => ({
+        event_id: row.eventId, runtime_id: row.runtimeId, level: row.level, type: row.type,
+        message: row.message, data: row.data, created_at: row.createdAt.toISOString(),
+      })) });
+    },
+  );
 
-    const runtimes = await db
-      .select({ runtimeId: appRuntimes.runtimeId, provider: appRuntimes.provider, externalId: appRuntimes.externalId })
-      .from(appRuntimes)
-      .where(and(eq(appRuntimes.deploymentId, deploymentId), ne(appRuntimes.status, 'deleted')));
-    // Platinum refuses to delete an image while a sandbox pins it, so the
-    // runtime goes first. Anything left `pending` is retried by maintenance.
-    await teardownAppRuntimes(runtimes);
-    const image = await releaseDeploymentImage({ deploymentId, hostingProvider: decision.hostingProvider });
-    await db.insert(appDeploymentEvents).values({
-      deploymentId,
-      type: 'deployment_deleted',
-      message: 'Deployment deleted by its owner',
-      data: { image, userId: loaded.userId },
-    });
-    return c.json({ ok: true, deployment_id: deploymentId, image });
-  },
-);
-
-for (const action of ['start', 'stop'] as const) {
   projectsApp.openapi(
     createRoute({
-      method: 'post', path: `/{projectId}/apps/{appId}/${action}`, tags: ['apps'], summary: `${action} an App`, ...auth,
-      request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
+      method: 'get', path: '/{projectId}/apps/{appId}/deployments/{deploymentId}/logs', tags: ['apps'], summary: 'Get App runtime logs', ...auth,
+      request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid(), deploymentId: z.string().uuid() }), query: z.object({ after: z.string().optional(), limit: z.string().optional() }) },
+      responses: { 200: json(z.object({}).passthrough(), 'Logs'), ...errors(403, 404, 409, 503) },
+    }),
+    async (c: any) => {
+      const { projectId, appId, deploymentId } = c.req.param();
+      const loaded = await authorizedProject(c, projectId);
+      if (loaded instanceof Response) return loaded;
+      if (!(await visibleApp(projectId, appId, loaded.userId))) {
+        return c.json({ error: 'Not found' }, 404);
+      }
+      const [deployment] = await db.select().from(appDeployments).where(and(
+        eq(appDeployments.deploymentId, deploymentId),
+        eq(appDeployments.appId, appId),
+        ne(appDeployments.status, 'deleted'),
+      )).limit(1);
+      if (!deployment) return c.json({ error: 'Not found' }, 404);
+      const eventFallback = async () => {
+        const events = await db.select({
+          type: appDeploymentEvents.type,
+          message: appDeploymentEvents.message,
+          createdAt: appDeploymentEvents.createdAt,
+        }).from(appDeploymentEvents)
+          .where(eq(appDeploymentEvents.deploymentId, deploymentId))
+          .orderBy(appDeploymentEvents.createdAt);
+        return deploymentEventsAsLogs(
+          events,
+          Number(c.req.query('after')) || 0,
+          Number(c.req.query('limit')) || 200,
+        );
+      };
+      const [row] = await db.select().from(appRuntimes)
+        .where(eq(appRuntimes.deploymentId, deploymentId))
+        .orderBy(desc(appRuntimes.createdAt)).limit(1);
+      if (!row) return c.json(await eventFallback());
+      if (row.status === 'stopped' || row.status === 'error' || row.status === 'deleted') {
+        return c.json(await eventFallback());
+      }
+      try {
+        const logs = await new AppHostingProvider().logs(row.provider as SandboxProviderName, row.externalId, row.runtimeId, Number(c.req.query('after')) || 0, Number(c.req.query('limit')) || 200);
+        return c.json(logs);
+      } catch (error) {
+        console.warn(`[apps] logs unavailable for runtime ${row.runtimeId}:`, error);
+        return c.json(await eventFallback());
+      }
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'delete', path: '/{projectId}/apps/{appId}/deployments/{deploymentId}', tags: ['apps'], summary: 'Delete an App deployment', ...auth,
+      request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid(), deploymentId: z.string().uuid() }) },
+      responses: {
+        200: json(z.object({
+          ok: z.boolean(),
+          deployment_id: z.string().uuid(),
+          image: z.enum(['released', 'pending', 'none']),
+        }), 'Deleted'),
+        ...errors(403, 404, 409),
+      },
+    }),
+    async (c: any) => {
+      const { projectId, appId, deploymentId } = c.req.param();
+      const loaded = await authorizedProject(c, projectId, 'write');
+      if (loaded instanceof Response) return loaded;
+      if (!(await visibleApp(projectId, appId, loaded.userId))) {
+        return c.json({ error: 'Not found' }, 404);
+      }
+      const decision = await db.transaction(async (tx) => {
+        // Deploy creation takes the same lock, and the App row lock orders this
+        // against an activation or rollback moving the live pointer.
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${appId}))`);
+        const [app] = await tx.select({ activeDeploymentId: apps.activeDeploymentId })
+          .from(apps)
+          .where(and(eq(apps.appId, appId), isNull(apps.deletedAt)))
+          .for('update')
+          .limit(1);
+        if (!app) return { kind: 'missing' as const };
+        const [deployment] = await tx.select().from(appDeployments).where(and(
+          eq(appDeployments.deploymentId, deploymentId),
+          eq(appDeployments.appId, appId),
+          ne(appDeployments.status, 'deleted'),
+        )).limit(1);
+        if (!deployment) return { kind: 'missing' as const };
+        if (app.activeDeploymentId === deploymentId) return { kind: 'live' as const };
+        if (IN_PROGRESS_DEPLOYMENT_STATUSES.includes(deployment.status)) {
+          return { kind: 'in_progress' as const, status: deployment.status };
+        }
+        await tx.update(appDeployments)
+          .set({ status: 'deleted', updatedAt: new Date() })
+          .where(and(
+            eq(appDeployments.deploymentId, deploymentId),
+            notInArray(appDeployments.status, [...IN_PROGRESS_DEPLOYMENT_STATUSES, 'deleted']),
+          ));
+        return { kind: 'deleted' as const, hostingProvider: deployment.hostingProvider };
+      });
+      if (decision.kind === 'missing') return c.json({ error: 'Not found' }, 404);
+      if (decision.kind === 'live') {
+        return c.json({
+          error: 'This deployment serves live traffic. Roll back to another deployment first, or delete the App.',
+          code: 'deployment_live',
+        }, 409);
+      }
+      if (decision.kind === 'in_progress') {
+        return c.json({
+          error: `This deployment is still in progress (status: ${decision.status}). Delete it after it finishes or fails.`,
+          code: 'deployment_in_progress',
+          status: decision.status,
+        }, 409);
+      }
+
+      const runtimes = await db
+        .select({ runtimeId: appRuntimes.runtimeId, provider: appRuntimes.provider, externalId: appRuntimes.externalId })
+        .from(appRuntimes)
+        .where(and(eq(appRuntimes.deploymentId, deploymentId), ne(appRuntimes.status, 'deleted')));
+      // Platinum refuses to delete an image while a sandbox pins it, so the
+      // runtime goes first. Anything left `pending` is retried by maintenance.
+      await teardownAppRuntimes(runtimes);
+      const image = await releaseDeploymentImage({ deploymentId, hostingProvider: decision.hostingProvider });
+      await db.insert(appDeploymentEvents).values({
+        deploymentId,
+        type: 'deployment_deleted',
+        message: 'Deployment deleted by its owner',
+        data: { image, userId: loaded.userId },
+      });
+      return c.json({ ok: true, deployment_id: deploymentId, image });
+    },
+  );
+
+  for (const action of ['start', 'stop'] as const) {
+    projectsApp.openapi(
+      createRoute({
+        method: 'post', path: `/{projectId}/apps/{appId}/${action}`, tags: ['apps'], summary: `${action} an App`, ...auth,
+        request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
+        responses: { 200: json(AppObject, 'App'), ...errors(402, 403, 404, 409, 429, 503) },
+      }),
+      async (c: any) => {
+        const { projectId, appId } = c.req.param();
+        const loaded = await authorizedProject(c, projectId, 'deploy');
+        if (loaded instanceof Response) return loaded;
+        const app = await visibleApp(projectId, appId, loaded.userId);
+        if (!app) return c.json({ error: 'Not found' }, 404);
+        if (!app.activeDeploymentId) return c.json({ error: 'App has no active deployment' }, 409);
+        const [row] = await db.update(apps).set({ desiredState: action === 'start' ? 'running' : 'stopped', updatedAt: new Date() }).where(eq(apps.appId, appId)).returning();
+        if (action === 'stop') {
+          const [runtime] = await db.select().from(appRuntimes).where(and(
+            eq(appRuntimes.deploymentId, app.activeDeploymentId),
+            inArray(appRuntimes.status, ['starting', 'running']),
+          )).orderBy(desc(appRuntimes.createdAt)).limit(1);
+          if (runtime) {
+            await new AppHostingProvider().stop(runtime.provider as SandboxProviderName, runtime.externalId);
+            const now = new Date();
+            await db.update(appRuntimes).set({
+              status: 'stopped',
+              stoppedAt: now,
+              activityLeaseUntil: null,
+              idleDeadlineAt: null,
+              wakeLeaseOwner: null,
+              wakeLeaseUntil: null,
+              updatedAt: now,
+            }).where(eq(appRuntimes.runtimeId, runtime.runtimeId));
+            await pauseComputeSession(runtime.runtimeId, now);
+          }
+        } else {
+          const loaded = await loadPublicApp(app.routeKey);
+          if (!loaded) return c.json({ error: 'Active deployment has no runtime' }, 409);
+          try {
+            await ensureAppRuntimeRunning(loaded, new AppHostingProvider());
+          } catch (error) {
+            await db.update(apps).set({ desiredState: app.desiredState, updatedAt: new Date() })
+              .where(eq(apps.appId, appId));
+            if (error instanceof Response) {
+              return c.json(await error.json(), error.status as 402 | 409 | 503);
+            }
+            const refusal = appLimitResponse(c, error);
+            if (refusal) return refusal;
+            return c.json({
+              error: 'App start failed',
+              detail: error instanceof Error ? error.message : String(error),
+            }, 503);
+          }
+        }
+        return c.json(serializeApp(row!));
+      },
+    );
+  }
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'post', path: '/{projectId}/apps/{appId}/rollback', tags: ['apps'], summary: 'Roll back an App', ...auth,
+      request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }), body: { content: { 'application/json': { schema: z.object({ deployment_id: z.string().uuid() }) } } } },
       responses: { 200: json(AppObject, 'App'), ...errors(402, 403, 404, 409, 429, 503) },
     }),
     async (c: any) => {
@@ -962,129 +1020,73 @@ for (const action of ['start', 'stop'] as const) {
       if (loaded instanceof Response) return loaded;
       const app = await visibleApp(projectId, appId, loaded.userId);
       if (!app) return c.json({ error: 'Not found' }, 404);
-      if (!app.activeDeploymentId) return c.json({ error: 'App has no active deployment' }, 409);
-      const [row] = await db.update(apps).set({ desiredState: action === 'start' ? 'running' : 'stopped', updatedAt: new Date() }).where(eq(apps.appId, appId)).returning();
-      if (action === 'stop') {
-        const [runtime] = await db.select().from(appRuntimes).where(and(
-          eq(appRuntimes.deploymentId, app.activeDeploymentId),
-          inArray(appRuntimes.status, ['starting', 'running']),
-        )).orderBy(desc(appRuntimes.createdAt)).limit(1);
-        if (runtime) {
-          await new AppHostingProvider().stop(runtime.provider as SandboxProviderName, runtime.externalId);
-          const now = new Date();
-          await db.update(appRuntimes).set({
-            status: 'stopped',
-            stoppedAt: now,
-            activityLeaseUntil: null,
-            idleDeadlineAt: null,
-            wakeLeaseOwner: null,
-            wakeLeaseUntil: null,
-            updatedAt: now,
-          }).where(eq(appRuntimes.runtimeId, runtime.runtimeId));
-          await pauseComputeSession(runtime.runtimeId, now);
-        }
-      } else {
-        const loaded = await loadPublicApp(app.routeKey);
-        if (!loaded) return c.json({ error: 'Active deployment has no runtime' }, 409);
-        try {
-          await ensureAppRuntimeRunning(loaded, new AppHostingProvider());
-        } catch (error) {
-          await db.update(apps).set({ desiredState: app.desiredState, updatedAt: new Date() })
-            .where(eq(apps.appId, appId));
-          if (error instanceof Response) {
-            return c.json(await error.json(), error.status as 402 | 409 | 503);
-          }
-          const refusal = appLimitResponse(c, error);
-          if (refusal) return refusal;
-          return c.json({
-            error: 'App start failed',
-            detail: error instanceof Error ? error.message : String(error),
-          }, 503);
+      const { deployment_id: deploymentId } = c.req.valid('json');
+      const [deployment] = await db.select().from(appDeployments).where(and(eq(appDeployments.deploymentId, deploymentId), eq(appDeployments.appId, appId), eq(appDeployments.status, 'ready'))).limit(1);
+      if (!deployment) return c.json({ error: 'Only a ready deployment can receive rollback traffic' }, 409);
+      const [targetRuntime] = await db.select().from(appRuntimes)
+        .where(eq(appRuntimes.deploymentId, deploymentId))
+        .orderBy(desc(appRuntimes.createdAt))
+        .limit(1);
+      if (!targetRuntime) return c.json({ error: 'Rollback deployment has no runtime' }, 409);
+
+      const [runningApp] = await db.update(apps)
+        .set({ desiredState: 'running', updatedAt: new Date() })
+        .where(eq(apps.appId, appId))
+        .returning();
+      const hosting = new AppHostingProvider();
+      try {
+        await ensureAppRuntimeRunning({ app: runningApp!, deployment, runtime: targetRuntime }, hosting);
+      } catch (error) {
+        await db.update(apps).set({ desiredState: app.desiredState, updatedAt: new Date() })
+          .where(eq(apps.appId, appId));
+        if (error instanceof Response) return c.json(await error.json(), error.status as 402 | 409 | 503);
+        const refusal = appLimitResponse(c, error);
+        if (refusal) return refusal;
+        return c.json({
+          error: 'Rollback runtime failed to start',
+          detail: error instanceof Error ? error.message : String(error),
+        }, 503);
+      }
+
+      const previousDeploymentId = app.activeDeploymentId;
+      // A concurrent `DELETE …/deployments/:id` can delete the target after the
+      // ready check above. Move traffic only while the target is still ready.
+      const [row] = await db.update(apps)
+        .set({ activeDeploymentId: deploymentId, desiredState: 'running', updatedAt: new Date() })
+        .where(and(
+          eq(apps.appId, appId),
+          exists(db.select({ deploymentId: appDeployments.deploymentId }).from(appDeployments).where(and(
+            eq(appDeployments.deploymentId, deploymentId),
+            eq(appDeployments.status, 'ready'),
+          ))),
+        ))
+        .returning();
+      if (!row) return c.json({ error: 'The rollback deployment was deleted' }, 409);
+      await db.insert(appDeploymentEvents).values({
+        deploymentId,
+        runtimeId: targetRuntime.runtimeId,
+        type: 'deployment_rollback',
+        message: 'Rollback deployment is serving traffic',
+        data: { previousDeploymentId },
+      });
+      if (previousDeploymentId && previousDeploymentId !== deploymentId) {
+        const [previousRuntime] = await db.select().from(appRuntimes)
+          .where(and(
+            eq(appRuntimes.deploymentId, previousDeploymentId),
+            inArray(appRuntimes.status, ['starting', 'running']),
+          ))
+          .orderBy(desc(appRuntimes.createdAt))
+          .limit(1);
+        if (previousRuntime) {
+          await hosting.stop(previousRuntime.provider as SandboxProviderName, previousRuntime.externalId);
+          const stoppedAt = new Date();
+          await db.update(appRuntimes)
+            .set({ status: 'stopped', stoppedAt, updatedAt: stoppedAt })
+            .where(eq(appRuntimes.runtimeId, previousRuntime.runtimeId));
+          await pauseComputeSession(previousRuntime.runtimeId, stoppedAt);
         }
       }
       return c.json(serializeApp(row!));
     },
   );
 }
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post', path: '/{projectId}/apps/{appId}/rollback', tags: ['apps'], summary: 'Roll back an App', ...auth,
-    request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }), body: { content: { 'application/json': { schema: z.object({ deployment_id: z.string().uuid() }) } } } },
-    responses: { 200: json(AppObject, 'App'), ...errors(402, 403, 404, 409, 429, 503) },
-  }),
-  async (c: any) => {
-    const { projectId, appId } = c.req.param();
-    const loaded = await authorizedProject(c, projectId, 'deploy');
-    if (loaded instanceof Response) return loaded;
-    const app = await visibleApp(projectId, appId, loaded.userId);
-    if (!app) return c.json({ error: 'Not found' }, 404);
-    const { deployment_id: deploymentId } = c.req.valid('json');
-    const [deployment] = await db.select().from(appDeployments).where(and(eq(appDeployments.deploymentId, deploymentId), eq(appDeployments.appId, appId), eq(appDeployments.status, 'ready'))).limit(1);
-    if (!deployment) return c.json({ error: 'Only a ready deployment can receive rollback traffic' }, 409);
-    const [targetRuntime] = await db.select().from(appRuntimes)
-      .where(eq(appRuntimes.deploymentId, deploymentId))
-      .orderBy(desc(appRuntimes.createdAt))
-      .limit(1);
-    if (!targetRuntime) return c.json({ error: 'Rollback deployment has no runtime' }, 409);
-
-    const [runningApp] = await db.update(apps)
-      .set({ desiredState: 'running', updatedAt: new Date() })
-      .where(eq(apps.appId, appId))
-      .returning();
-    const hosting = new AppHostingProvider();
-    try {
-      await ensureAppRuntimeRunning({ app: runningApp!, deployment, runtime: targetRuntime }, hosting);
-    } catch (error) {
-      await db.update(apps).set({ desiredState: app.desiredState, updatedAt: new Date() })
-        .where(eq(apps.appId, appId));
-      if (error instanceof Response) return c.json(await error.json(), error.status as 402 | 409 | 503);
-      const refusal = appLimitResponse(c, error);
-      if (refusal) return refusal;
-      return c.json({
-        error: 'Rollback runtime failed to start',
-        detail: error instanceof Error ? error.message : String(error),
-      }, 503);
-    }
-
-    const previousDeploymentId = app.activeDeploymentId;
-    // A concurrent `DELETE …/deployments/:id` can delete the target after the
-    // ready check above. Move traffic only while the target is still ready.
-    const [row] = await db.update(apps)
-      .set({ activeDeploymentId: deploymentId, desiredState: 'running', updatedAt: new Date() })
-      .where(and(
-        eq(apps.appId, appId),
-        exists(db.select({ deploymentId: appDeployments.deploymentId }).from(appDeployments).where(and(
-          eq(appDeployments.deploymentId, deploymentId),
-          eq(appDeployments.status, 'ready'),
-        ))),
-      ))
-      .returning();
-    if (!row) return c.json({ error: 'The rollback deployment was deleted' }, 409);
-    await db.insert(appDeploymentEvents).values({
-      deploymentId,
-      runtimeId: targetRuntime.runtimeId,
-      type: 'deployment_rollback',
-      message: 'Rollback deployment is serving traffic',
-      data: { previousDeploymentId },
-    });
-    if (previousDeploymentId && previousDeploymentId !== deploymentId) {
-      const [previousRuntime] = await db.select().from(appRuntimes)
-        .where(and(
-          eq(appRuntimes.deploymentId, previousDeploymentId),
-          inArray(appRuntimes.status, ['starting', 'running']),
-        ))
-        .orderBy(desc(appRuntimes.createdAt))
-        .limit(1);
-      if (previousRuntime) {
-        await hosting.stop(previousRuntime.provider as SandboxProviderName, previousRuntime.externalId);
-        const stoppedAt = new Date();
-        await db.update(appRuntimes)
-          .set({ status: 'stopped', stoppedAt, updatedAt: stoppedAt })
-          .where(eq(appRuntimes.runtimeId, previousRuntime.runtimeId));
-        await pauseComputeSession(previousRuntime.runtimeId, stoppedAt);
-      }
-    }
-    return c.json(serializeApp(row!));
-  },
-);

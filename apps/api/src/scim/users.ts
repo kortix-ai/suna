@@ -1,6 +1,6 @@
 import { userChanges, applyProfile } from './user-profile';
 // SCIM Users routes: GET (list + filter), GET/:id, POST, PATCH, DELETE.
-// Registers onto the shared scimRouter via side effect.
+// registerScimUsersRoutes() registers these onto the shared scimRouter.
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountInvitations, accountMembers, accountMemberships, accountScimUsers, accountGroups, accountGroupMembers, roleAssignments } from '@kortix/db';
@@ -294,79 +294,6 @@ async function applyDirectoryState(c: any, user: DirectoryUser, active: boolean,
 
 const userParams = z.object({ accountId: z.string().uuid(), userId: z.string().uuid() });
 
-scimRouter.openapi(createRoute({
-  method: 'get', path: '/accounts/{accountId}/Users', tags: ['scim'],
-  summary: 'List SCIM Users (filter by userName/id/externalId eq)',
-  request: { params: z.object({ accountId: z.string().uuid() }), query: ScimListQuery },
-  responses: { 200: json(ScimResource, 'SCIM ListResponse'), ...errors(400, 401, 403) },
-}), async (c: any) => {
-  const accountId = c.req.param('accountId');
-  const rawFilter = c.req.query('filter');
-  if (isUnsupportedFilter(rawFilter)) return scimError(c, 400, 'Unsupported filter');
-  const filter = parseFilter(rawFilter);
-  const recorded = await db.select().from(accountScimUsers).where(eq(accountScimUsers.accountId, accountId));
-  const members = await db.select({
-    userId: accountMembers.userId, scimExternalId: accountMembers.scimExternalId, joinedAt: accountMembers.joinedAt,
-  }).from(accountMembers).where(eq(accountMembers.accountId, accountId));
-  const emails = await emailsByUserId(members.map(m => m.userId));
-  const recordedEmails = new Set(recorded.map(u => u.userName));
-  const recordedIds = new Set(recorded.flatMap(u => [u.scimId, u.userId, u.invitationId]).filter(Boolean));
-  const memberEmails = new Set([...emails.values()].map(e => e.toLowerCase()));
-  const invites = await pendingInviteRows(accountId);
-  let resources: UserShape[] = [
-    ...recorded.filter(u => !u.deletedAt).map(buildDirectoryUser),
-    ...members.filter(m => emails.has(m.userId) && !recordedIds.has(m.userId) && !recordedEmails.has(emails.get(m.userId)!.toLowerCase()))
-      .map(m => buildUser(accountId, m, emails.get(m.userId)!)),
-    ...invites.filter(i => !recordedIds.has(i.inviteId) && !recordedEmails.has(i.email.toLowerCase()) && !memberEmails.has(i.email.toLowerCase()))
-      .map(i => buildInviteUser(accountId, i)),
-  ];
-  if (filter) resources = resources.filter(u => {
-    if (filter.attr.toLowerCase() === 'username') return u.userName.toLowerCase() === filter.value.toLowerCase();
-    if (filter.attr.toLowerCase() === 'id') return u.id === filter.value;
-    if (filter.attr.toLowerCase() === 'externalid') return u.externalId === filter.value;
-    return false;
-  });
-  return c.json(listResponse(resources.sort((a, b) => a.id.localeCompare(b.id)), c.req.valid('query')));
-});
-
-scimRouter.openapi(createRoute({
-  method: 'get', path: '/accounts/{accountId}/Users/{userId}', tags: ['scim'], summary: 'Get a SCIM User',
-  request: { params: userParams }, responses: { 200: json(ScimResource, 'SCIM User'), ...errors(400, 401, 403, 404) },
-}), async (c: any) => {
-  const user = await resolveDirectoryUser(c.req.param('accountId'), c.req.param('userId'));
-  return user && !user.deletedAt ? c.json(buildDirectoryUser(user)) : scimError(c, 404, 'User not found in this account');
-});
-
-scimRouter.openapi(createRoute({
-  method: 'post', path: '/accounts/{accountId}/Users', tags: ['scim'], summary: 'Create / provision a SCIM User',
-  request: { params: z.object({ accountId: z.string().uuid() }), body: { content: { 'application/json': { schema: ScimResource } } } },
-  responses: { 200: json(ScimResource, 'SCIM User (already provisioned)'), 201: json(ScimResource, 'SCIM User created / invited'), ...errors(400, 401, 403, 409) },
-}), async (c: any) => {
-  const accountId = c.req.param('accountId');
-  let changes: Map<string, unknown>;
-  try { changes = userChanges(await c.req.json()); } catch (error) { return scimError(c, 400, (error as Error).message); }
-  if (!changes.has('username')) return scimError(c, 400, 'userName is required');
-  const userName = (changes.get('username') as string).trim().toLowerCase();
-  const existing = await directoryUserByEmail(accountId, userName);
-  const userId = existing?.userId ?? await userIdByEmail(userName, accountId);
-  const member = userId ? await getMember(accountId, userId) : null;
-  const active = changes.get('active') !== false;
-  if (!active && member && await isLastOwner(accountId, member)) return scimError(c, 409, 'Cannot deactivate the last owner of this account');
-  let user = existing ?? await saveDirectoryUser({
-    accountId, scimId: userId ?? crypto.randomUUID(), userId, userName,
-    externalId: member?.scimExternalId ?? null, active,
-  });
-  user = applyProfile(user, changes);
-  const result = await applyDirectoryState(c, user, active);
-  if (result instanceof Response) return result;
-  await scimAudit(c, {
-    accountId, action: existing && !existing.deletedAt ? 'scim.user.update' : 'scim.user.create',
-    resourceType: 'account_member', resourceId: result.scimId,
-    after: { user_id: result.userId, email: result.userName, external_id: result.externalId, active },
-  });
-  return c.json(buildDirectoryUser(result), (existing && !existing.deletedAt) || member ? 200 : 201);
-});
-
 async function writeUser(c: any) {
   const accountId = c.req.param('accountId');
   const userId = c.req.param('userId');
@@ -383,21 +310,96 @@ async function writeUser(c: any) {
   return result instanceof Response ? result : c.json(buildDirectoryUser(result));
 }
 
-for (const method of ['patch', 'put'] as const) {
+export function registerScimUsersRoutes(): void {
   scimRouter.openapi(createRoute({
-    method, path: '/accounts/{accountId}/Users/{userId}', tags: ['scim'],
-    summary: method === 'patch' ? 'Patch a SCIM User' : 'Replace a SCIM User',
-    request: { params: userParams, body: { content: { 'application/json': { schema: ScimResource } } } },
-    responses: { 200: json(ScimResource, 'SCIM User'), 204: { description: 'Already absent' }, ...errors(400, 401, 403, 404, 409) },
-  }), writeUser);
-}
+    method: 'get', path: '/accounts/{accountId}/Users', tags: ['scim'],
+    summary: 'List SCIM Users (filter by userName/id/externalId eq)',
+    request: { params: z.object({ accountId: z.string().uuid() }), query: ScimListQuery },
+    responses: { 200: json(ScimResource, 'SCIM ListResponse'), ...errors(400, 401, 403) },
+  }), async (c: any) => {
+    const accountId = c.req.param('accountId');
+    const rawFilter = c.req.query('filter');
+    if (isUnsupportedFilter(rawFilter)) return scimError(c, 400, 'Unsupported filter');
+    const filter = parseFilter(rawFilter);
+    const recorded = await db.select().from(accountScimUsers).where(eq(accountScimUsers.accountId, accountId));
+    const members = await db.select({
+      userId: accountMembers.userId, scimExternalId: accountMembers.scimExternalId, joinedAt: accountMembers.joinedAt,
+    }).from(accountMembers).where(eq(accountMembers.accountId, accountId));
+    const emails = await emailsByUserId(members.map(m => m.userId));
+    const recordedEmails = new Set(recorded.map(u => u.userName));
+    const recordedIds = new Set(recorded.flatMap(u => [u.scimId, u.userId, u.invitationId]).filter(Boolean));
+    const memberEmails = new Set([...emails.values()].map(e => e.toLowerCase()));
+    const invites = await pendingInviteRows(accountId);
+    let resources: UserShape[] = [
+      ...recorded.filter(u => !u.deletedAt).map(buildDirectoryUser),
+      ...members.filter(m => emails.has(m.userId) && !recordedIds.has(m.userId) && !recordedEmails.has(emails.get(m.userId)!.toLowerCase()))
+        .map(m => buildUser(accountId, m, emails.get(m.userId)!)),
+      ...invites.filter(i => !recordedIds.has(i.inviteId) && !recordedEmails.has(i.email.toLowerCase()) && !memberEmails.has(i.email.toLowerCase()))
+        .map(i => buildInviteUser(accountId, i)),
+    ];
+    if (filter) resources = resources.filter(u => {
+      if (filter.attr.toLowerCase() === 'username') return u.userName.toLowerCase() === filter.value.toLowerCase();
+      if (filter.attr.toLowerCase() === 'id') return u.id === filter.value;
+      if (filter.attr.toLowerCase() === 'externalid') return u.externalId === filter.value;
+      return false;
+    });
+    return c.json(listResponse(resources.sort((a, b) => a.id.localeCompare(b.id)), c.req.valid('query')));
+  });
 
-scimRouter.openapi(createRoute({
-  method: 'delete', path: '/accounts/{accountId}/Users/{userId}', tags: ['scim'], summary: 'Delete / deprovision a SCIM User',
-  request: { params: userParams }, responses: { 204: { description: 'Deleted / idempotent' }, ...errors(400, 401, 403, 409) },
-}), async (c: any) => {
-  const user = await resolveDirectoryUser(c.req.param('accountId'), c.req.param('userId'));
-  if (!user || user.deletedAt) return c.body(null, 204);
-  const result = await applyDirectoryState(c, user, false, true);
-  return result instanceof Response ? result : c.body(null, 204);
-});
+  scimRouter.openapi(createRoute({
+    method: 'get', path: '/accounts/{accountId}/Users/{userId}', tags: ['scim'], summary: 'Get a SCIM User',
+    request: { params: userParams }, responses: { 200: json(ScimResource, 'SCIM User'), ...errors(400, 401, 403, 404) },
+  }), async (c: any) => {
+    const user = await resolveDirectoryUser(c.req.param('accountId'), c.req.param('userId'));
+    return user && !user.deletedAt ? c.json(buildDirectoryUser(user)) : scimError(c, 404, 'User not found in this account');
+  });
+
+  scimRouter.openapi(createRoute({
+    method: 'post', path: '/accounts/{accountId}/Users', tags: ['scim'], summary: 'Create / provision a SCIM User',
+    request: { params: z.object({ accountId: z.string().uuid() }), body: { content: { 'application/json': { schema: ScimResource } } } },
+    responses: { 200: json(ScimResource, 'SCIM User (already provisioned)'), 201: json(ScimResource, 'SCIM User created / invited'), ...errors(400, 401, 403, 409) },
+  }), async (c: any) => {
+    const accountId = c.req.param('accountId');
+    let changes: Map<string, unknown>;
+    try { changes = userChanges(await c.req.json()); } catch (error) { return scimError(c, 400, (error as Error).message); }
+    if (!changes.has('username')) return scimError(c, 400, 'userName is required');
+    const userName = (changes.get('username') as string).trim().toLowerCase();
+    const existing = await directoryUserByEmail(accountId, userName);
+    const userId = existing?.userId ?? await userIdByEmail(userName, accountId);
+    const member = userId ? await getMember(accountId, userId) : null;
+    const active = changes.get('active') !== false;
+    if (!active && member && await isLastOwner(accountId, member)) return scimError(c, 409, 'Cannot deactivate the last owner of this account');
+    let user = existing ?? await saveDirectoryUser({
+      accountId, scimId: userId ?? crypto.randomUUID(), userId, userName,
+      externalId: member?.scimExternalId ?? null, active,
+    });
+    user = applyProfile(user, changes);
+    const result = await applyDirectoryState(c, user, active);
+    if (result instanceof Response) return result;
+    await scimAudit(c, {
+      accountId, action: existing && !existing.deletedAt ? 'scim.user.update' : 'scim.user.create',
+      resourceType: 'account_member', resourceId: result.scimId,
+      after: { user_id: result.userId, email: result.userName, external_id: result.externalId, active },
+    });
+    return c.json(buildDirectoryUser(result), (existing && !existing.deletedAt) || member ? 200 : 201);
+  });
+
+  for (const method of ['patch', 'put'] as const) {
+    scimRouter.openapi(createRoute({
+      method, path: '/accounts/{accountId}/Users/{userId}', tags: ['scim'],
+      summary: method === 'patch' ? 'Patch a SCIM User' : 'Replace a SCIM User',
+      request: { params: userParams, body: { content: { 'application/json': { schema: ScimResource } } } },
+      responses: { 200: json(ScimResource, 'SCIM User'), 204: { description: 'Already absent' }, ...errors(400, 401, 403, 404, 409) },
+    }), writeUser);
+  }
+
+  scimRouter.openapi(createRoute({
+    method: 'delete', path: '/accounts/{accountId}/Users/{userId}', tags: ['scim'], summary: 'Delete / deprovision a SCIM User',
+    request: { params: userParams }, responses: { 204: { description: 'Deleted / idempotent' }, ...errors(400, 401, 403, 409) },
+  }), async (c: any) => {
+    const user = await resolveDirectoryUser(c.req.param('accountId'), c.req.param('userId'));
+    if (!user || user.deletedAt) return c.body(null, 204);
+    const result = await applyDirectoryState(c, user, false, true);
+    return result instanceof Response ? result : c.body(null, 204);
+  });
+}

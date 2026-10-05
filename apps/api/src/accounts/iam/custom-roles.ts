@@ -109,292 +109,6 @@ function serializeCustomRole(r: typeof iamRoles.$inferSelect) {
 const Any = z.any();
 const RoleIdParam = z.object({ accountId: z.string(), roleId: z.string() });
 
-// ─── Actions catalog ────────────────────────────────────────────────────────
-
-iamRouter.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{accountId}/iam/actions',
-    tags: ['iam'],
-    summary: 'List the action catalog (for the role permission matrix)',
-    ...auth,
-    request: { params: AccountIdParam },
-    responses: { 200: json(z.object({ actions: z.array(Any) }), 'Action catalog'), ...errors(401, 403) },
-  }),
-  async (c: any) => {
-    const userId = c.get('userId') as string;
-    const accountId = c.req.param('accountId');
-    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
-    return c.json({ actions: ACTION_CATALOG_WIRE });
-  },
-);
-
-// ─── Roles ────────────────────────────────────────────────────────────────
-
-iamRouter.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{accountId}/iam/roles',
-    tags: ['iam'],
-    summary: 'List built-in presets + custom roles',
-    ...auth,
-    request: { params: AccountIdParam },
-    responses: { 200: json(z.object({ roles: z.array(Any) }), 'Roles'), ...errors(401, 403) },
-  }),
-  async (c: any) => {
-    const userId = c.get('userId') as string;
-    const accountId = c.req.param('accountId');
-    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
-    // Both halves from `kortix.iam_roles`: the seeded system rows (account_id
-    // IS NULL) and this account's own. `is_system` is the column, not a
-    // hardcoded `true` beside a code constant that could drift from the seed.
-    const [system, custom] = await Promise.all([
-      listSystemRolesWithDescription(),
-      db.select().from(iamRoles).where(eq(iamRoles.accountId, accountId)),
-    ]);
-    return c.json({
-      roles: [...system.map(serializeSystemRole), ...custom.map(serializeCustomRole)],
-    });
-  },
-);
-
-iamRouter.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{accountId}/iam/roles',
-    tags: ['iam'],
-    summary: 'Create a custom role',
-    ...auth,
-    request: { params: AccountIdParam, body: { content: { 'application/json': { schema: Any } } } },
-    responses: { 201: json(Any, 'Created role'), ...errors(400, 401, 403, 409) },
-  }),
-  async (c: any) => {
-    const userId = c.get('userId') as string;
-    const accountId = c.req.param('accountId');
-    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_CREATE);
-    const denied = await requireEntitlement(c, accountId, 'rbac');
-    if (denied) return denied;
-
-    const body = await readJsonObject(c);
-    const key = typeof body.key === 'string' ? body.key.trim() : '';
-    const name = typeof body.name === 'string' ? body.name.trim() : '';
-    if (!/^[a-z0-9_]{2,64}$/.test(key)) {
-      return c.json({ error: 'key must be 2–64 chars of [a-z0-9_]' }, 400);
-    }
-    if (!name || name.length > 128) return c.json({ error: 'name is required (≤128 chars)' }, 400);
-    const resourceType = body.resourceType === 'account' ? 'account' : 'project';
-    const v = await validateActions(body.actions ?? [], resourceType);
-    if (!v.ok) return c.json({ error: v.error }, 400);
-
-    try {
-      const [role] = await db
-        .insert(iamRoles)
-        .values({
-          accountId,
-          key,
-          name,
-          description: typeof body.description === 'string' ? body.description : null,
-          scopeType: resourceType,
-          createdBy: userId,
-        })
-        .returning();
-      if (v.actions.length > 0) {
-        await db.insert(iamRoleActions).values(v.actions.map((action) => ({ roleId: role!.roleId, action })));
-      }
-      await auditIam(c, {
-        accountId,
-        action: 'iam.role.create',
-        resourceType: 'account',
-        resourceId: role!.roleId,
-        after: { key, name, scope_type: resourceType, action_count: v.actions.length },
-      });
-      return c.json(serializeCustomRole(role!), 201);
-    } catch (err: unknown) {
-      if (isUniqueViolation(err)) return c.json({ error: 'a role with this key already exists' }, 409);
-      throw err;
-    }
-  },
-);
-
-iamRouter.openapi(
-  createRoute({
-    method: 'patch',
-    path: '/{accountId}/iam/roles/{roleId}',
-    tags: ['iam'],
-    summary: 'Rename / describe a custom role',
-    ...auth,
-    request: { params: RoleIdParam, body: { content: { 'application/json': { schema: Any } } } },
-    responses: { 200: json(Any, 'Updated role'), ...errors(400, 401, 403, 404) },
-  }),
-  async (c: any) => {
-    const userId = c.get('userId') as string;
-    const accountId = c.req.param('accountId');
-    const roleId = c.req.param('roleId');
-    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_UPDATE);
-    const denied = await requireEntitlement(c, accountId, 'rbac');
-    if (denied) return denied;
-    if (await isSystemRoleId(roleId)) return c.json({ error: 'built-in roles cannot be edited' }, 400);
-    const role = await loadCustomRole(accountId, roleId);
-    if (!role) return c.json({ error: 'role not found' }, 404);
-
-    const body = await readJsonObject(c);
-    const patch: Record<string, unknown> = { updatedAt: new Date() };
-    if (typeof body.name === 'string') {
-      if (!body.name.trim() || body.name.length > 128) return c.json({ error: 'invalid name' }, 400);
-      patch.name = body.name.trim();
-    }
-    if (body.description === null || typeof body.description === 'string') {
-      patch.description = body.description;
-    }
-    const [updated] = await db
-      .update(iamRoles)
-      .set(patch)
-      .where(and(eq(iamRoles.roleId, roleId), eq(iamRoles.accountId, accountId)))
-      .returning();
-    return c.json(serializeCustomRole(updated!));
-  },
-);
-
-iamRouter.openapi(
-  createRoute({
-    method: 'delete',
-    path: '/{accountId}/iam/roles/{roleId}',
-    tags: ['iam'],
-    summary: 'Delete a custom role (cascades its policies)',
-    ...auth,
-    request: { params: RoleIdParam },
-    responses: { 200: json(z.object({ deleted: z.boolean() }), 'Deleted'), ...errors(400, 401, 403, 404) },
-  }),
-  async (c: any) => {
-    const userId = c.get('userId') as string;
-    const accountId = c.req.param('accountId');
-    const roleId = c.req.param('roleId');
-    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_DELETE);
-    // No entitlement gate: deleting a role is cleanup — a downgraded account
-    // must always be able to remove custom roles it can no longer manage.
-    if (await isSystemRoleId(roleId)) return c.json({ error: 'built-in roles cannot be deleted' }, 400);
-    const role = await loadCustomRole(accountId, roleId);
-    if (!role) return c.json({ error: 'role not found' }, 404);
-
-    // Bust caches for everyone holding this role BEFORE the cascade removes the
-    // policies we'd look them up from.
-    await invalidateIamCacheForRole(roleId);
-    await db.delete(iamRoles).where(and(eq(iamRoles.roleId, roleId), eq(iamRoles.accountId, accountId)));
-    await auditIam(c, {
-      accountId,
-      action: 'iam.role.delete',
-      resourceType: 'account',
-      resourceId: roleId,
-      before: { key: role.key, name: role.name },
-    });
-    return c.json({ deleted: true });
-  },
-);
-
-iamRouter.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{accountId}/iam/roles/{roleId}/permissions',
-    tags: ['iam'],
-    summary: 'Get a role’s action set',
-    ...auth,
-    request: { params: RoleIdParam },
-    responses: { 200: json(z.object({ role_id: z.string(), key: z.string(), actions: z.array(z.string()) }), 'Actions'), ...errors(401, 403, 404) },
-  }),
-  async (c: any) => {
-    const userId = c.get('userId') as string;
-    const accountId = c.req.param('accountId');
-    const roleId = c.req.param('roleId');
-    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
-
-    if (await isSystemRoleId(roleId)) {
-      // From `role_permissions`, not from the code preset: the seed is the
-      // source of truth for what a system role grants, and the engine expands
-      // the same rows.
-      const system = await systemRoleByWireId(roleId);
-      if (!system) return c.json({ error: 'role not found' }, 404);
-      return c.json({
-        role_id: roleId,
-        key: system.key,
-        actions: [...system.actions].sort(),
-      });
-    }
-
-    const role = await loadCustomRole(accountId, roleId);
-    if (!role) return c.json({ error: 'role not found' }, 404);
-    const rows = await db.select({ action: iamRoleActions.action }).from(iamRoleActions).where(eq(iamRoleActions.roleId, roleId));
-    return c.json({ role_id: roleId, key: role.key, actions: rows.map((r) => r.action) });
-  },
-);
-
-iamRouter.openapi(
-  createRoute({
-    method: 'put',
-    path: '/{accountId}/iam/roles/{roleId}/permissions',
-    tags: ['iam'],
-    summary: 'Replace a custom role’s action set (the capability matrix)',
-    ...auth,
-    request: { params: RoleIdParam, body: { content: { 'application/json': { schema: Any } } } },
-    responses: { 200: json(z.object({ role_id: z.string(), actions: z.array(z.string()) }), 'Updated'), ...errors(400, 401, 403, 404) },
-  }),
-  async (c: any) => {
-    const userId = c.get('userId') as string;
-    const accountId = c.req.param('accountId');
-    const roleId = c.req.param('roleId');
-    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_UPDATE);
-    const denied = await requireEntitlement(c, accountId, 'rbac');
-    if (denied) return denied;
-    if (await isSystemRoleId(roleId)) return c.json({ error: 'built-in role permissions are fixed' }, 400);
-    const role = await loadCustomRole(accountId, roleId);
-    if (!role) return c.json({ error: 'role not found' }, 404);
-
-    const body = await readJsonObject(c);
-    const v = await validateActions(body.actions ?? [], role.scopeType === 'account' ? 'account' : 'project');
-    if (!v.ok) return c.json({ error: v.error }, 400);
-
-    // Replace the set atomically, then bust everyone holding the role so the new
-    // capabilities (or deactivations) apply immediately.
-    await db.transaction(async (tx) => {
-      await tx.delete(iamRoleActions).where(eq(iamRoleActions.roleId, roleId));
-      if (v.actions.length > 0) {
-        await tx.insert(iamRoleActions).values(v.actions.map((action) => ({ roleId, action })));
-      }
-      await tx.update(iamRoles).set({ updatedAt: new Date() }).where(eq(iamRoles.roleId, roleId));
-    });
-    await invalidateIamCacheForRole(roleId);
-    await auditIam(c, {
-      accountId,
-      action: 'iam.role.permissions.set',
-      resourceType: 'account',
-      resourceId: roleId,
-      after: { action_count: v.actions.length },
-    });
-    return c.json({ role_id: roleId, actions: v.actions });
-  },
-);
-
-iamRouter.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{accountId}/iam/roles/{roleId}/usage',
-    tags: ['iam'],
-    summary: 'How many policies reference this role',
-    ...auth,
-    request: { params: RoleIdParam },
-    responses: { 200: json(z.object({ role_id: z.string(), policy_count: z.number() }), 'Usage'), ...errors(401, 403) },
-  }),
-  async (c: any) => {
-    const userId = c.get('userId') as string;
-    const accountId = c.req.param('accountId');
-    const roleId = c.req.param('roleId');
-    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
-    if (await isSystemRoleId(roleId)) return c.json({ role_id: roleId, policy_count: 0 });
-    return c.json({ role_id: roleId, policy_count: await countRoleBindings(accountId, roleId) });
-  },
-);
-
-registerPolicyListRoute();
-
 // ─── Auto-provisioned agent identities (picker principal source) ───────────
 //
 // EAGER provisioning: every agent in every active project is assignable
@@ -500,50 +214,338 @@ export async function eagerlyProvisionAgentIdentities(
   }
 }
 
-// Auto-provisioned agent identities — the principal picker for binding a role to
-// an agent (promoting it to a standing teammate). Read-gated like policies.
-iamRouter.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{accountId}/iam/agent-identities',
-    tags: ['iam'],
-    summary: 'List agent service-account identities (policy principal picker)',
-    ...auth,
-    request: { params: AccountIdParam },
-    responses: { 200: json(z.object({ agents: z.array(Any) }), 'Agent identities'), ...errors(401, 403) },
-  }),
-  async (c: any) => {
-    const userId = c.get('userId') as string;
-    const accountId = c.req.param('accountId');
-    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_READ);
+export function registerIamCustomRolesRoutes(): void {
+  // ─── Actions catalog ────────────────────────────────────────────────────────
 
-    const byKey = new Map<string, AgentIdentity>();
-    // Start from already-provisioned identities (the implicit `default` + any
-    // agent that has been launched). Keyed (project, agent) to dedupe.
-    for (const r of await listAgentServiceAccounts(accountId)) {
-      byKey.set(`${r.projectId}|${r.agentName}`, {
-        service_account_id: r.serviceAccountId,
-        name: r.name,
-        project_id: r.projectId,
-        agent_name: r.agentName,
+  iamRouter.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{accountId}/iam/actions',
+      tags: ['iam'],
+      summary: 'List the action catalog (for the role permission matrix)',
+      ...auth,
+      request: { params: AccountIdParam },
+      responses: { 200: json(z.object({ actions: z.array(Any) }), 'Action catalog'), ...errors(401, 403) },
+    }),
+    async (c: any) => {
+      const userId = c.get('userId') as string;
+      const accountId = c.req.param('accountId');
+      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
+      return c.json({ actions: ACTION_CATALOG_WIRE });
+    },
+  );
+
+  // ─── Roles ────────────────────────────────────────────────────────────────
+
+  iamRouter.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{accountId}/iam/roles',
+      tags: ['iam'],
+      summary: 'List built-in presets + custom roles',
+      ...auth,
+      request: { params: AccountIdParam },
+      responses: { 200: json(z.object({ roles: z.array(Any) }), 'Roles'), ...errors(401, 403) },
+    }),
+    async (c: any) => {
+      const userId = c.get('userId') as string;
+      const accountId = c.req.param('accountId');
+      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
+      // Both halves from `kortix.iam_roles`: the seeded system rows (account_id
+      // IS NULL) and this account's own. `is_system` is the column, not a
+      // hardcoded `true` beside a code constant that could drift from the seed.
+      const [system, custom] = await Promise.all([
+        listSystemRolesWithDescription(),
+        db.select().from(iamRoles).where(eq(iamRoles.accountId, accountId)),
+      ]);
+      return c.json({
+        roles: [...system.map(serializeSystemRole), ...custom.map(serializeCustomRole)],
       });
-    }
+    },
+  );
 
-    const projectRows = await db
-      .select()
-      .from(projects)
-      .where(and(eq(projects.accountId, accountId), ne(projects.status, 'archived')))
-      .limit(AGENT_IDENTITIES_PROJECT_CAP);
+  iamRouter.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{accountId}/iam/roles',
+      tags: ['iam'],
+      summary: 'Create a custom role',
+      ...auth,
+      request: { params: AccountIdParam, body: { content: { 'application/json': { schema: Any } } } },
+      responses: { 201: json(Any, 'Created role'), ...errors(400, 401, 403, 409) },
+    }),
+    async (c: any) => {
+      const userId = c.get('userId') as string;
+      const accountId = c.req.param('accountId');
+      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_CREATE);
+      const denied = await requireEntitlement(c, accountId, 'rbac');
+      if (denied) return denied;
 
-    await eagerlyProvisionAgentIdentities(accountId, projectRows, byKey);
+      const body = await readJsonObject(c);
+      const key = typeof body.key === 'string' ? body.key.trim() : '';
+      const name = typeof body.name === 'string' ? body.name.trim() : '';
+      if (!/^[a-z0-9_]{2,64}$/.test(key)) {
+        return c.json({ error: 'key must be 2–64 chars of [a-z0-9_]' }, 400);
+      }
+      if (!name || name.length > 128) return c.json({ error: 'name is required (≤128 chars)' }, 400);
+      const resourceType = body.resourceType === 'account' ? 'account' : 'project';
+      const v = await validateActions(body.actions ?? [], resourceType);
+      if (!v.ok) return c.json({ error: v.error }, 400);
 
-    const agents = [...byKey.values()].sort(
-      (a, b) =>
-        (a.agent_name ?? '').localeCompare(b.agent_name ?? '') ||
-        (a.project_id ?? '').localeCompare(b.project_id ?? ''),
-    );
-    return c.json({ agents });
-  },
-);
+      try {
+        const [role] = await db
+          .insert(iamRoles)
+          .values({
+            accountId,
+            key,
+            name,
+            description: typeof body.description === 'string' ? body.description : null,
+            scopeType: resourceType,
+            createdBy: userId,
+          })
+          .returning();
+        if (v.actions.length > 0) {
+          await db.insert(iamRoleActions).values(v.actions.map((action) => ({ roleId: role!.roleId, action })));
+        }
+        await auditIam(c, {
+          accountId,
+          action: 'iam.role.create',
+          resourceType: 'account',
+          resourceId: role!.roleId,
+          after: { key, name, scope_type: resourceType, action_count: v.actions.length },
+        });
+        return c.json(serializeCustomRole(role!), 201);
+      } catch (err: unknown) {
+        if (isUniqueViolation(err)) return c.json({ error: 'a role with this key already exists' }, 409);
+        throw err;
+      }
+    },
+  );
 
-registerPolicyWriteRoutes();
+  iamRouter.openapi(
+    createRoute({
+      method: 'patch',
+      path: '/{accountId}/iam/roles/{roleId}',
+      tags: ['iam'],
+      summary: 'Rename / describe a custom role',
+      ...auth,
+      request: { params: RoleIdParam, body: { content: { 'application/json': { schema: Any } } } },
+      responses: { 200: json(Any, 'Updated role'), ...errors(400, 401, 403, 404) },
+    }),
+    async (c: any) => {
+      const userId = c.get('userId') as string;
+      const accountId = c.req.param('accountId');
+      const roleId = c.req.param('roleId');
+      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_UPDATE);
+      const denied = await requireEntitlement(c, accountId, 'rbac');
+      if (denied) return denied;
+      if (await isSystemRoleId(roleId)) return c.json({ error: 'built-in roles cannot be edited' }, 400);
+      const role = await loadCustomRole(accountId, roleId);
+      if (!role) return c.json({ error: 'role not found' }, 404);
+
+      const body = await readJsonObject(c);
+      const patch: Record<string, unknown> = { updatedAt: new Date() };
+      if (typeof body.name === 'string') {
+        if (!body.name.trim() || body.name.length > 128) return c.json({ error: 'invalid name' }, 400);
+        patch.name = body.name.trim();
+      }
+      if (body.description === null || typeof body.description === 'string') {
+        patch.description = body.description;
+      }
+      const [updated] = await db
+        .update(iamRoles)
+        .set(patch)
+        .where(and(eq(iamRoles.roleId, roleId), eq(iamRoles.accountId, accountId)))
+        .returning();
+      return c.json(serializeCustomRole(updated!));
+    },
+  );
+
+  iamRouter.openapi(
+    createRoute({
+      method: 'delete',
+      path: '/{accountId}/iam/roles/{roleId}',
+      tags: ['iam'],
+      summary: 'Delete a custom role (cascades its policies)',
+      ...auth,
+      request: { params: RoleIdParam },
+      responses: { 200: json(z.object({ deleted: z.boolean() }), 'Deleted'), ...errors(400, 401, 403, 404) },
+    }),
+    async (c: any) => {
+      const userId = c.get('userId') as string;
+      const accountId = c.req.param('accountId');
+      const roleId = c.req.param('roleId');
+      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_DELETE);
+      // No entitlement gate: deleting a role is cleanup — a downgraded account
+      // must always be able to remove custom roles it can no longer manage.
+      if (await isSystemRoleId(roleId)) return c.json({ error: 'built-in roles cannot be deleted' }, 400);
+      const role = await loadCustomRole(accountId, roleId);
+      if (!role) return c.json({ error: 'role not found' }, 404);
+
+      // Bust caches for everyone holding this role BEFORE the cascade removes the
+      // policies we'd look them up from.
+      await invalidateIamCacheForRole(roleId);
+      await db.delete(iamRoles).where(and(eq(iamRoles.roleId, roleId), eq(iamRoles.accountId, accountId)));
+      await auditIam(c, {
+        accountId,
+        action: 'iam.role.delete',
+        resourceType: 'account',
+        resourceId: roleId,
+        before: { key: role.key, name: role.name },
+      });
+      return c.json({ deleted: true });
+    },
+  );
+
+  iamRouter.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{accountId}/iam/roles/{roleId}/permissions',
+      tags: ['iam'],
+      summary: 'Get a role’s action set',
+      ...auth,
+      request: { params: RoleIdParam },
+      responses: { 200: json(z.object({ role_id: z.string(), key: z.string(), actions: z.array(z.string()) }), 'Actions'), ...errors(401, 403, 404) },
+    }),
+    async (c: any) => {
+      const userId = c.get('userId') as string;
+      const accountId = c.req.param('accountId');
+      const roleId = c.req.param('roleId');
+      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
+
+      if (await isSystemRoleId(roleId)) {
+        // From `role_permissions`, not from the code preset: the seed is the
+        // source of truth for what a system role grants, and the engine expands
+        // the same rows.
+        const system = await systemRoleByWireId(roleId);
+        if (!system) return c.json({ error: 'role not found' }, 404);
+        return c.json({
+          role_id: roleId,
+          key: system.key,
+          actions: [...system.actions].sort(),
+        });
+      }
+
+      const role = await loadCustomRole(accountId, roleId);
+      if (!role) return c.json({ error: 'role not found' }, 404);
+      const rows = await db.select({ action: iamRoleActions.action }).from(iamRoleActions).where(eq(iamRoleActions.roleId, roleId));
+      return c.json({ role_id: roleId, key: role.key, actions: rows.map((r) => r.action) });
+    },
+  );
+
+  iamRouter.openapi(
+    createRoute({
+      method: 'put',
+      path: '/{accountId}/iam/roles/{roleId}/permissions',
+      tags: ['iam'],
+      summary: 'Replace a custom role’s action set (the capability matrix)',
+      ...auth,
+      request: { params: RoleIdParam, body: { content: { 'application/json': { schema: Any } } } },
+      responses: { 200: json(z.object({ role_id: z.string(), actions: z.array(z.string()) }), 'Updated'), ...errors(400, 401, 403, 404) },
+    }),
+    async (c: any) => {
+      const userId = c.get('userId') as string;
+      const accountId = c.req.param('accountId');
+      const roleId = c.req.param('roleId');
+      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_UPDATE);
+      const denied = await requireEntitlement(c, accountId, 'rbac');
+      if (denied) return denied;
+      if (await isSystemRoleId(roleId)) return c.json({ error: 'built-in role permissions are fixed' }, 400);
+      const role = await loadCustomRole(accountId, roleId);
+      if (!role) return c.json({ error: 'role not found' }, 404);
+
+      const body = await readJsonObject(c);
+      const v = await validateActions(body.actions ?? [], role.scopeType === 'account' ? 'account' : 'project');
+      if (!v.ok) return c.json({ error: v.error }, 400);
+
+      // Replace the set atomically, then bust everyone holding the role so the new
+      // capabilities (or deactivations) apply immediately.
+      await db.transaction(async (tx) => {
+        await tx.delete(iamRoleActions).where(eq(iamRoleActions.roleId, roleId));
+        if (v.actions.length > 0) {
+          await tx.insert(iamRoleActions).values(v.actions.map((action) => ({ roleId, action })));
+        }
+        await tx.update(iamRoles).set({ updatedAt: new Date() }).where(eq(iamRoles.roleId, roleId));
+      });
+      await invalidateIamCacheForRole(roleId);
+      await auditIam(c, {
+        accountId,
+        action: 'iam.role.permissions.set',
+        resourceType: 'account',
+        resourceId: roleId,
+        after: { action_count: v.actions.length },
+      });
+      return c.json({ role_id: roleId, actions: v.actions });
+    },
+  );
+
+  iamRouter.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{accountId}/iam/roles/{roleId}/usage',
+      tags: ['iam'],
+      summary: 'How many policies reference this role',
+      ...auth,
+      request: { params: RoleIdParam },
+      responses: { 200: json(z.object({ role_id: z.string(), policy_count: z.number() }), 'Usage'), ...errors(401, 403) },
+    }),
+    async (c: any) => {
+      const userId = c.get('userId') as string;
+      const accountId = c.req.param('accountId');
+      const roleId = c.req.param('roleId');
+      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
+      if (await isSystemRoleId(roleId)) return c.json({ role_id: roleId, policy_count: 0 });
+      return c.json({ role_id: roleId, policy_count: await countRoleBindings(accountId, roleId) });
+    },
+  );
+
+  registerPolicyListRoute();
+
+  // Auto-provisioned agent identities — the principal picker for binding a role to
+  // an agent (promoting it to a standing teammate). Read-gated like policies.
+  iamRouter.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{accountId}/iam/agent-identities',
+      tags: ['iam'],
+      summary: 'List agent service-account identities (policy principal picker)',
+      ...auth,
+      request: { params: AccountIdParam },
+      responses: { 200: json(z.object({ agents: z.array(Any) }), 'Agent identities'), ...errors(401, 403) },
+    }),
+    async (c: any) => {
+      const userId = c.get('userId') as string;
+      const accountId = c.req.param('accountId');
+      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_READ);
+
+      const byKey = new Map<string, AgentIdentity>();
+      // Start from already-provisioned identities (the implicit `default` + any
+      // agent that has been launched). Keyed (project, agent) to dedupe.
+      for (const r of await listAgentServiceAccounts(accountId)) {
+        byKey.set(`${r.projectId}|${r.agentName}`, {
+          service_account_id: r.serviceAccountId,
+          name: r.name,
+          project_id: r.projectId,
+          agent_name: r.agentName,
+        });
+      }
+
+      const projectRows = await db
+        .select()
+        .from(projects)
+        .where(and(eq(projects.accountId, accountId), ne(projects.status, 'archived')))
+        .limit(AGENT_IDENTITIES_PROJECT_CAP);
+
+      await eagerlyProvisionAgentIdentities(accountId, projectRows, byKey);
+
+      const agents = [...byKey.values()].sort(
+        (a, b) =>
+          (a.agent_name ?? '').localeCompare(b.agent_name ?? '') ||
+          (a.project_id ?? '').localeCompare(b.project_id ?? ''),
+      );
+      return c.json({ agents });
+    },
+  );
+
+  registerPolicyWriteRoutes();
+}

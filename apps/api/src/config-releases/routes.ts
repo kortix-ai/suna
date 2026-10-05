@@ -155,175 +155,176 @@ async function sandboxSession(
   };
 }
 
-
-// POST /v1/projects/:projectId/sessions/:sessionId/config-release
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/sessions/{sessionId}/config-release',
-    tags: ['sessions'],
-    summary: "A session's desired config release descriptor",
-    ...auth,
-    request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
-    responses: { 200: json(z.any(), 'Release descriptor'), ...errors(400, 403, 404, 409) },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const sessionId = c.req.param('sessionId');
-    if (!isUuid(projectId) || !isUuid(sessionId)) {
-      return c.json({ error: 'Invalid project or session id' }, 400);
-    }
-
-    let project: ProjectRow;
-    let session: SessionRow;
-    let humanMayReadFiles = true;
-    if (isSessionSandboxCredential(c)) {
-      const resolved = await sandboxSession(c, projectId, sessionId);
-      if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status);
-      ({ project, session } = resolved.value);
-    } else {
-      // A session-bound credential that is not a sandbox credential still acts
-      // for exactly one session.
-      const bound = callerKortixSessionId(c);
-      if (bound && bound !== sessionId) {
-        return c.json({ error: 'token is not scoped to this session' }, 403);
+export function registerConfigReleaseRoutes(): void {
+  // POST /v1/projects/:projectId/sessions/:sessionId/config-release
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{projectId}/sessions/{sessionId}/config-release',
+      tags: ['sessions'],
+      summary: "A session's desired config release descriptor",
+      ...auth,
+      request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
+      responses: { 200: json(z.any(), 'Release descriptor'), ...errors(400, 403, 404, 409) },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const sessionId = c.req.param('sessionId');
+      if (!isUuid(projectId) || !isUuid(sessionId)) {
+        return c.json({ error: 'Invalid project or session id' }, 400);
       }
-      const loaded = await loadProjectForUser(c, projectId, 'session');
-      if (!loaded) return c.json({ error: 'Not found' }, 404);
-      await assertProjectCapability(
-        c,
-        loaded.userId,
-        loaded.row.accountId,
-        projectId,
-        PROJECT_ACTIONS.PROJECT_SESSION_READ,
-      );
-      const visible = await loadVisibleSession(loaded, sessionId, bound, bound);
-      if (!visible) return c.json({ error: 'Not found' }, 404);
-      project = loaded.row;
-      session = visible.row;
-      // The descriptor lists file paths and blob IDs. A reader without file
-      // access gets governance only.
-      humanMayReadFiles = await projectCapabilityAllowed(
-        c,
-        loaded.userId,
-        loaded.row.accountId,
-        projectId,
-        PROJECT_ACTIONS.PROJECT_FILE_READ,
-      );
-    }
 
-    const disabled = configReleasesGate(c, project);
-    if (disabled) return disabled;
-
-    // The request has no inputs. The desired release is the base branch's
-    // current tip for this session's variant, full stop: nothing the caller
-    // sends can change which config it is assigned. Any body is ignored, so a
-    // daemon built against an older shape of this route still converges.
-    //
-    // EVERY session of this project is served, including one created before
-    // the project replaced its repository. A release is the project's CURRENT
-    // config; the session's own `/workspace` clone is untouched by it and
-    // stays on the repository it was cloned from. Nothing else refuses such a
-    // session either — `sameRepository` (projects/lib/git.ts) compares the
-    // project row against ITSELF across an authorization, to bust the 30 s
-    // memo when a replacement lands mid-request. What is left is physical:
-    // that clone and the new origin hold unrelated histories, so Git itself
-    // refuses a push without a rebase.
-    const baseRef = session.baseRef ?? project.defaultBranch;
-    try {
-      // THE ONE WRITER of `project_sessions.agent_name` after create
-      // (config-releases/repoint.ts). Only the daemon's own request persists:
-      // a human read decides and reports the same answer without writing, so
-      // `GET /config` and the descriptor never disagree about `stale`.
-      const subject = {
-        projectId,
-        accountId: project.accountId,
-        sessionId,
-        ownerUserId: session.createdBy,
-      };
-      const isDaemon = isSessionSandboxCredential(c);
-      const desired = await resolveDesiredRelease({
-        project: gitProject(project),
-        baseRef,
-        sessionAgent: session.agentName,
-        repositoryAccess: repositoryAccessFromSessionMetadata(session.metadata) && humanMayReadFiles,
-        // Only the daemon's own request is an assignment. A human read is not.
-        recordAssignment: isDaemon,
-        ownerMayUseAgent: (agent) => ownerMayUseAgent(subject, agent),
-        ...(isDaemon
-          ? { persistRepoint: (from: string, to: string) => repointSessionAgentToDeclaredDefault(subject, from, to) }
-          : {}),
-      });
-      return c.json(desired.descriptor);
-    } catch (error) {
-      if (error instanceof BaseRefUnresolvedError) return c.json({ error: error.message }, 409);
-      throw error;
-    }
-  },
-);
-
-// GET /v1/projects/:projectId/config-archives/:configTreeId
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/config-archives/{configTreeId}',
-    tags: ['sessions'],
-    summary: 'Download a config archive',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string(), configTreeId: z.string() }),
-      // Set on a composed release tree (config dir plus root skills): the
-      // commit it is rebuilt from when the store cannot serve it.
-      query: z.object({ commit: z.string().optional() }),
-    },
-    responses: {
-      200: { description: 'The config archive', content: { 'application/gzip': { schema: z.any() } } },
-      302: { description: 'Redirect to a signed store URL' },
-      ...errors(400, 403, 404, 409, 413),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const configTreeId = c.req.param('configTreeId');
-    if (!isUuid(projectId)) return c.json({ error: 'Not found' }, 404);
-    if (!HEX40.test(configTreeId)) return c.json({ error: 'Not found' }, 404);
-
-    let project: ProjectRow;
-    if (isSessionSandboxCredential(c)) {
-      const resolved = await sandboxSession(c, projectId, null);
-      if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status);
-      // A session without repository access never receives a config archive.
-      // A previous-repository session DOES: the archive is the project's
-      // config dir, which is what every session of the project runs.
-      if (!repositoryAccessFromSessionMetadata(resolved.value.session.metadata)) {
-        return c.json({ error: 'repository access withheld' }, 403);
+      let project: ProjectRow;
+      let session: SessionRow;
+      let humanMayReadFiles = true;
+      if (isSessionSandboxCredential(c)) {
+        const resolved = await sandboxSession(c, projectId, sessionId);
+        if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status);
+        ({ project, session } = resolved.value);
+      } else {
+        // A session-bound credential that is not a sandbox credential still acts
+        // for exactly one session.
+        const bound = callerKortixSessionId(c);
+        if (bound && bound !== sessionId) {
+          return c.json({ error: 'token is not scoped to this session' }, 403);
+        }
+        const loaded = await loadProjectForUser(c, projectId, 'session');
+        if (!loaded) return c.json({ error: 'Not found' }, 404);
+        await assertProjectCapability(
+          c,
+          loaded.userId,
+          loaded.row.accountId,
+          projectId,
+          PROJECT_ACTIONS.PROJECT_SESSION_READ,
+        );
+        const visible = await loadVisibleSession(loaded, sessionId, bound, bound);
+        if (!visible) return c.json({ error: 'Not found' }, 404);
+        project = loaded.row;
+        session = visible.row;
+        // The descriptor lists file paths and blob IDs. A reader without file
+        // access gets governance only.
+        humanMayReadFiles = await projectCapabilityAllowed(
+          c,
+          loaded.userId,
+          loaded.row.accountId,
+          projectId,
+          PROJECT_ACTIONS.PROJECT_FILE_READ,
+        );
       }
-      project = resolved.value.project;
-    } else {
-      const loaded = await loadProjectForUser(c, projectId, 'read');
-      if (!loaded) return c.json({ error: 'Not found' }, 404);
-      await assertProjectCapability(
-        c,
-        loaded.userId,
-        loaded.row.accountId,
-        projectId,
-        PROJECT_ACTIONS.PROJECT_FILE_READ,
+
+      const disabled = configReleasesGate(c, project);
+      if (disabled) return disabled;
+
+      // The request has no inputs. The desired release is the base branch's
+      // current tip for this session's variant, full stop: nothing the caller
+      // sends can change which config it is assigned. Any body is ignored, so a
+      // daemon built against an older shape of this route still converges.
+      //
+      // EVERY session of this project is served, including one created before
+      // the project replaced its repository. A release is the project's CURRENT
+      // config; the session's own `/workspace` clone is untouched by it and
+      // stays on the repository it was cloned from. Nothing else refuses such a
+      // session either — `sameRepository` (projects/lib/git.ts) compares the
+      // project row against ITSELF across an authorization, to bust the 30 s
+      // memo when a replacement lands mid-request. What is left is physical:
+      // that clone and the new origin hold unrelated histories, so Git itself
+      // refuses a push without a rebase.
+      const baseRef = session.baseRef ?? project.defaultBranch;
+      try {
+        // THE ONE WRITER of `project_sessions.agent_name` after create
+        // (config-releases/repoint.ts). Only the daemon's own request persists:
+        // a human read decides and reports the same answer without writing, so
+        // `GET /config` and the descriptor never disagree about `stale`.
+        const subject = {
+          projectId,
+          accountId: project.accountId,
+          sessionId,
+          ownerUserId: session.createdBy,
+        };
+        const isDaemon = isSessionSandboxCredential(c);
+        const desired = await resolveDesiredRelease({
+          project: gitProject(project),
+          baseRef,
+          sessionAgent: session.agentName,
+          repositoryAccess: repositoryAccessFromSessionMetadata(session.metadata) && humanMayReadFiles,
+          // Only the daemon's own request is an assignment. A human read is not.
+          recordAssignment: isDaemon,
+          ownerMayUseAgent: (agent) => ownerMayUseAgent(subject, agent),
+          ...(isDaemon
+            ? { persistRepoint: (from: string, to: string) => repointSessionAgentToDeclaredDefault(subject, from, to) }
+            : {}),
+        });
+        return c.json(desired.descriptor);
+      } catch (error) {
+        if (error instanceof BaseRefUnresolvedError) return c.json({ error: error.message }, 409);
+        throw error;
+      }
+    },
+  );
+
+  // GET /v1/projects/:projectId/config-archives/:configTreeId
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/config-archives/{configTreeId}',
+      tags: ['sessions'],
+      summary: 'Download a config archive',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), configTreeId: z.string() }),
+        // Set on a composed release tree (config dir plus root skills): the
+        // commit it is rebuilt from when the store cannot serve it.
+        query: z.object({ commit: z.string().optional() }),
+      },
+      responses: {
+        200: { description: 'The config archive', content: { 'application/gzip': { schema: z.any() } } },
+        302: { description: 'Redirect to a signed store URL' },
+        ...errors(400, 403, 404, 409, 413),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const configTreeId = c.req.param('configTreeId');
+      if (!isUuid(projectId)) return c.json({ error: 'Not found' }, 404);
+      if (!HEX40.test(configTreeId)) return c.json({ error: 'Not found' }, 404);
+
+      let project: ProjectRow;
+      if (isSessionSandboxCredential(c)) {
+        const resolved = await sandboxSession(c, projectId, null);
+        if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status);
+        // A session without repository access never receives a config archive.
+        // A previous-repository session DOES: the archive is the project's
+        // config dir, which is what every session of the project runs.
+        if (!repositoryAccessFromSessionMetadata(resolved.value.session.metadata)) {
+          return c.json({ error: 'repository access withheld' }, 403);
+        }
+        project = resolved.value.project;
+      } else {
+        const loaded = await loadProjectForUser(c, projectId, 'read');
+        if (!loaded) return c.json({ error: 'Not found' }, 404);
+        await assertProjectCapability(
+          c,
+          loaded.userId,
+          loaded.row.accountId,
+          projectId,
+          PROJECT_ACTIONS.PROJECT_FILE_READ,
+        );
+        project = loaded.row;
+      }
+
+      const disabled = configReleasesGate(c, project);
+      if (disabled) return disabled;
+
+      const repo = gitProject(project);
+      return serveConfigArchive(
+        repo,
+        configTreeId,
+        () => refreshMirror(repo),
+        () => refreshMirror(repo, true),
+        {},
+        c.req.query('commit') ?? null,
+        c.req.query('agent') ?? null,
       );
-      project = loaded.row;
-    }
-
-    const disabled = configReleasesGate(c, project);
-    if (disabled) return disabled;
-
-    const repo = gitProject(project);
-    return serveConfigArchive(
-      repo,
-      configTreeId,
-      () => refreshMirror(repo),
-      () => refreshMirror(repo, true),
-      {},
-      c.req.query('commit') ?? null,
-      c.req.query('agent') ?? null,
-    );
-  },
-);
+    },
+  );
+}

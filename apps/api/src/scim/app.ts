@@ -25,9 +25,8 @@ export const ScimResource = z.record(z.string(), z.any());
 export const scimRouter = makeOpenApiApp<any>();
 
 // Auth middleware in its original position: registered before any routes.
-// app.ts is imported first by every route module, so this `.use(...)` runs
-// before the route-module side-effect registrations regardless of ES module
-// import hoisting in the orchestrator.
+// This module body runs when the first route module imports it, so this
+// `.use(...)` runs before registerScimRoutes() registers any route.
 scimRouter.use('/accounts/:accountId/*', scimAuth);
 
 class ScimRollback extends Error {}

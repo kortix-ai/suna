@@ -83,7 +83,7 @@ mock.module('../shared/audit', () => ({
 }));
 
 const { projectsApp } = await import('../projects/lib/app');
-await import('../projects/routes/provider-oauth');
+(await import('../projects/routes/provider-oauth')).registerProviderOauthRoutes();
 
 function buildApp(userId: string) {
   const app = new Hono();

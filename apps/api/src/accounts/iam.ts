@@ -23,23 +23,48 @@
 // ─── Structure ──────────────────────────────────────────────────────────────
 // This file is a thin BARREL. The router instance + shared OpenAPI schemas
 // live in ./iam/app, shared helpers in ./iam/helpers, and the ~36 routes are
-// split across ./iam/<group> modules that register themselves on the shared
-// `iamRouter` via import side effect. The imports below run IN THE ORIGINAL
-// ROUTE-REGISTRATION ORDER — do not reorder them: OpenAPIHono registers
-// routes in import/execution order and that order is part of the contract.
+// split across ./iam/<group> modules; each exports a registerIam<Group>Routes()
+// function. registerIamRoutes() calls them in route-registration order.
+// OpenAPIHono dispatches in registration order, and that order is part of the
+// contract.
 
-import './iam/groups'; // groups, group members, group→project grants
-import './iam/members'; // super-admin, member groups / project-access / effective(+batch)
-import './iam/resource-grants'; // account-wide resource-grants rollup (agent/skill grants across every project)
-import './iam/mfa'; // account-wide MFA enforcement
-import './iam/scim-tokens'; // SCIM provisioning tokens
-import './iam/sso'; // SAML SSO provider + group mappings
-import './iam/enterprise-demo'; // self-serve enterprise-preview toggle
-import './iam/policies'; // session policy, active sessions / revoke, PAT policy
-import './iam/service-accounts'; // service accounts (non-human IAM principals)
-import './iam/oauth-clients'; // Sign in with Kortix: OAuth client registry
-import './iam/session-oversight'; // owner/admin access to every session (owner-only toggle)
-import './iam/custom-roles'; // IAM v1: custom roles + action sets + principal→role policies
-import './iam/assignments'; // canonical: role_assignments CRUD + the permission catalog
+import { iamRouter } from './iam/app';
+import { registerIamGroupsRoutes } from './iam/groups'; // groups, group members, group→project grants
+import { registerIamMembersRoutes } from './iam/members'; // super-admin, member groups / project-access / effective(+batch)
+import { registerIamResourceGrantsRoutes } from './iam/resource-grants'; // account-wide resource-grants rollup (agent/skill grants across every project)
+import { registerIamMfaRoutes } from './iam/mfa'; // account-wide MFA enforcement
+import { registerIamScimTokensRoutes } from './iam/scim-tokens'; // SCIM provisioning tokens
+import { registerIamSsoRoutes } from './iam/sso'; // SAML SSO provider + group mappings
+import { registerIamEnterpriseDemoRoutes } from './iam/enterprise-demo'; // self-serve enterprise-preview toggle
+import { registerIamPoliciesRoutes } from './iam/policies'; // session policy, active sessions / revoke, PAT policy
+import { registerIamServiceAccountsRoutes } from './iam/service-accounts'; // service accounts (non-human IAM principals)
+import { registerIamOauthClientsRoutes } from './iam/oauth-clients'; // Sign in with Kortix: OAuth client registry
+import { registerIamSessionOversightRoutes } from './iam/session-oversight'; // owner/admin access to every session (owner-only toggle)
+import { registerIamCustomRolesRoutes } from './iam/custom-roles'; // IAM v1: custom roles + action sets + principal→role policies
+import { registerIamAssignmentsRoutes } from './iam/assignments'; // canonical: role_assignments CRUD + the permission catalog
 
-export { iamRouter } from './iam/app';
+/**
+ * Registers every IAM route on `iamRouter`. accounts/index.ts calls it once,
+ * right before it mounts the router. Never call it at import time (see
+ * registerAllProjectRoutes in ../projects).
+ */
+export function registerIamRoutes(): void {
+  // custom-roles registers first. Before routes were registered explicitly, a
+  // project route imported ./iam/custom-roles, so its import side effect ran
+  // before this barrel's imports. The measured order is kept as is.
+  registerIamCustomRolesRoutes();
+  registerIamGroupsRoutes();
+  registerIamMembersRoutes();
+  registerIamResourceGrantsRoutes();
+  registerIamMfaRoutes();
+  registerIamScimTokensRoutes();
+  registerIamSsoRoutes();
+  registerIamEnterpriseDemoRoutes();
+  registerIamPoliciesRoutes();
+  registerIamServiceAccountsRoutes();
+  registerIamOauthClientsRoutes();
+  registerIamSessionOversightRoutes();
+  registerIamAssignmentsRoutes();
+}
+
+export { iamRouter };
