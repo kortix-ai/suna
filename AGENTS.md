@@ -660,6 +660,27 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   `Map`/`Set`, and no import into `projects/` from outside it except
   `projects/index.ts` or `projects/surface.ts`. Background timers are guarded by
   `apps/api/src/__tests__/unit-worker-scope-wiring.test.ts` instead.
+
+### API code conventions (`apps/api/src`)
+
+- **Routes register explicitly.** A route module exports
+  `register<Name>Routes()`. The module that mounts the router calls it right
+  before `app.route()` (`app.ts`, `accounts/index.ts`, `router/index.ts`).
+  Never register at import time. Call order is dispatch order.
+- **No service imports a route module.** Shared logic lives in a service file
+  next to the routes (for example `projects/session-open/`).
+- **Services take an `Actor`, never a Hono `Context`.** The route reads the
+  request through `middleware/` and `http-*.ts` helpers, builds the actor
+  (`middleware/actor.ts`, memoized per request), and calls the service with
+  plain values. Parse `Authorization: Bearer` with `shared/bearer-token.ts`.
+- **Every background loop lives in `workers/<name>-worker.ts`.** The worker
+  owns its timer, start/stop and `runWorkerTick` call. The tick stays an
+  exported service function. `bootstrap.ts` imports every loop from `workers/`.
+- **`iam/` reads the membership, group and role tables.** Use the read models
+  in `iam/membership-read.ts`, `iam/group-read.ts` and `iam/role-read.ts`.
+- **No function longer than 300 lines.** Split long functions into named steps.
+- **SQL trace:** `KORTIX_SQL_TRACE=<file>` appends every pool statement to the
+  file. Diff two traces to prove a refactor runs the same SQL.
 - `apps/api/eslint-suppressions.json` holds the violations that existed when
   each rule was added. A new violation fails. A fixed one fails until you run
   `pnpm --filter kortix-api lint:prune` and commit the smaller file. Never
