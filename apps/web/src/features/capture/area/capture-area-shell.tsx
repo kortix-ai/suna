@@ -1,12 +1,7 @@
 'use client';
 
 import { useSetCaptureEnabled } from '@kortix/sdk/react';
-import {
-  CalendarBlankIcon,
-  CaretDownIcon,
-  CheckIcon,
-  GearSixIcon,
-} from '@phosphor-icons/react';
+import { CalendarBlankIcon, CaretDownIcon, CheckIcon, GearSixIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { notFound, usePathname, useRouter } from 'next/navigation';
 import { useEffect, type ReactNode } from 'react';
@@ -50,7 +45,13 @@ import {
  * project sidebar. Gated on the account's Capture workspace: a non-member
  * gets the 404 the API gives; Capture switched off shows how to switch it on.
  */
-export function CaptureAreaShell({ accountId, children }: { accountId: string; children: ReactNode }) {
+export function CaptureAreaShell({
+  accountId,
+  children,
+}: {
+  accountId: string;
+  children: ReactNode;
+}) {
   const area = useCaptureArea(accountId);
   const t = useTranslations('capture.area');
 
@@ -97,9 +98,7 @@ function CaptureOff({
         <Button
           size="sm"
           disabled={setEnabled.isPending}
-          onClick={() =>
-            setEnabled.mutate(true, { onError: () => errorToast(t('off.failed')) })
-          }
+          onClick={() => setEnabled.mutate(true, { onError: () => errorToast(t('off.failed')) })}
         >
           {setEnabled.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
           {t('off.turnOn')}
@@ -131,7 +130,7 @@ function CaptureTopBar({ accountId }: { accountId: string }) {
           </Link>
         </Hint>
         <Link
-          href={captureHref(accountId)}
+          href={captureHref(accountId, area.readsEveryone ? 'overview' : 'devices')}
           className="text-foreground text-sm font-semibold whitespace-nowrap"
         >
           {t('wordmark')}
@@ -139,7 +138,9 @@ function CaptureTopBar({ accountId }: { accountId: string }) {
       </div>
       {area.enabled ? (
         <nav aria-label={t('wordmark')} className="flex flex-wrap items-center gap-0.5">
-          {CAPTURE_SECTIONS.map((item) => {
+          {CAPTURE_SECTIONS.filter(
+            (item) => area.readsEveryone || item === 'ask' || item === 'devices',
+          ).map((item) => {
             const active = section === item || (item === 'devices' && section === 'this-computer');
             return (
               <Link
@@ -230,8 +231,13 @@ function AccountSwitcher({ accountId }: { accountId: string }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="max-w-56 gap-1.5" aria-label={t('switchOrg')}>
-          <EntityAvatar label={area.accountName || "?"} size="xs" />
+        <Button
+          variant="outline"
+          size="sm"
+          className="max-w-56 gap-1.5"
+          aria-label={t('switchOrg')}
+        >
+          <EntityAvatar label={area.accountName || '?'} size="xs" />
           <span className="min-w-0 truncate">{area.accountName}</span>
           <CaretDownIcon className="text-muted-foreground size-3 shrink-0" />
         </Button>
@@ -245,9 +251,7 @@ function AccountSwitcher({ accountId }: { accountId: string }) {
           >
             <EntityAvatar label={account.name} size="xs" />
             <span className="min-w-0 flex-1 truncate">{account.name}</span>
-            {account.account_id === accountId ? (
-              <CheckIcon className="size-3.5 shrink-0" />
-            ) : null}
+            {account.account_id === accountId ? <CheckIcon className="size-3.5 shrink-0" /> : null}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

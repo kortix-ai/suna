@@ -1,6 +1,12 @@
 'use client';
 
-import { CursorClickIcon, KeyboardIcon, MicrophoneIcon, MonitorIcon, type Icon } from '@phosphor-icons/react';
+import {
+  CursorClickIcon,
+  KeyboardIcon,
+  MicrophoneIcon,
+  MonitorIcon,
+  type Icon,
+} from '@phosphor-icons/react';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -71,7 +77,12 @@ export function CapturePermissions({
             icon={ICONS[grant]}
             title={t(grant)}
             description={t(`${grant}Description`)}
-            trailing={<GrantState allowed={allowed} label={allowed ? t('allowed') : asked ? t('waiting') : t('needed')} />}
+            trailing={
+              <GrantState
+                allowed={allowed}
+                label={allowed ? t('allowed') : asked ? t('waiting') : t('needed')}
+              />
+            }
           />
         );
       })}

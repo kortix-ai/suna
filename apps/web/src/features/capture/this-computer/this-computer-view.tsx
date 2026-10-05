@@ -27,7 +27,10 @@ export function ThisComputerView({ accountId }: { accountId: string }) {
       description={t('browserDescription')}
       breadcrumb={
         <nav aria-label={t('breadcrumb')} className="flex items-center gap-2 text-xs">
-          <Link href={captureHref(accountId, 'devices')} className="text-muted-foreground hover:text-foreground">
+          <Link
+            href={captureHref(accountId, 'devices')}
+            className="text-muted-foreground hover:text-foreground"
+          >
             {tDevices('title')}
           </Link>
           <span aria-hidden className="text-muted-foreground">

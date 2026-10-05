@@ -38,7 +38,13 @@ export function CaptureDesktopHost() {
  * "Record this computer" on the Capture pages: opens the "This computer" page
  * and closes at once.
  */
-export function CaptureDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function CaptureDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   const go = useOpenThisComputer();
   useEffect(() => {
     if (!open) return;

@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import Loading from '@/components/ui/loading';
 import {
   Select,
   SelectContent,
@@ -22,14 +23,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { UserAvatar } from '@/components/ui/user-avatar';
-import { AccessList, AccessRow } from '@/features/workspace/shared/access/access-row';
-import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { AccessList, AccessRow } from '@/features/workspace/shared/access/access-row';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
 import { CapturePage } from '../area/capture-area-shell';
@@ -237,7 +237,6 @@ function PolicyForm({ accountId, record }: { accountId: string; record: CaptureP
   );
 }
 
-
 const ROLES: readonly CaptureRole[] = ['admin', 'viewer', 'member'];
 
 /** The account switch: Kortix Capture on or off for the whole organization. */
@@ -337,7 +336,11 @@ function RolesSection({ accountId }: { accountId: string }) {
                       change(member.user_id, value === 'default' ? null : (value as CaptureRole))
                     }
                   >
-                    <SelectTrigger size="sm" className="w-32" aria-label={t('roleFor', { name: label })}>
+                    <SelectTrigger
+                      size="sm"
+                      className="w-32"
+                      aria-label={t('roleFor', { name: label })}
+                    >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent align="end">
@@ -346,7 +349,9 @@ function RolesSection({ accountId }: { accountId: string }) {
                           {t(`role.${role}`)}
                         </SelectItem>
                       ))}
-                      {member.overridden ? <SelectItem value="default">{t('roleReset')}</SelectItem> : null}
+                      {member.overridden ? (
+                        <SelectItem value="default">{t('roleReset')}</SelectItem>
+                      ) : null}
                     </SelectContent>
                   </Select>
                 }

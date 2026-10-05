@@ -30,7 +30,6 @@ import {
   desktopCaptureOpenLogs,
   desktopCaptureSignInCancel,
   type DesktopCaptureLayer,
-  type DesktopCaptureStatus,
 } from '@/lib/desktop';
 
 import { CapturePermissions } from './capture-permissions';
@@ -95,7 +94,10 @@ export function ThisComputerPage({ accountId }: { accountId: string }) {
 
   const pausedUntil =
     view?.pausedUntilMs && view.pausedUntilMs > now
-      ? new Date(view.pausedUntilMs).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
+      ? new Date(view.pausedUntilMs).toLocaleTimeString(locale, {
+          hour: '2-digit',
+          minute: '2-digit',
+        })
       : null;
   const word =
     phase !== 'paused'
@@ -124,7 +126,9 @@ export function ThisComputerPage({ accountId }: { accountId: string }) {
     return (
       <Page header={<Header title={t('title')} status={statusLine} />}>
         <p className="text-muted-foreground text-sm text-pretty">
-          {phase === 'captureOff' ? t('orgOff', { org: org.name }) : view?.error || t('unavailable')}
+          {phase === 'captureOff'
+            ? t('orgOff', { org: org.name })
+            : view?.error || t('unavailable')}
         </p>
       </Page>
     );
@@ -137,7 +141,11 @@ export function ThisComputerPage({ accountId }: { accountId: string }) {
       onSettled: () => setWaitingOnPage(false),
     });
   };
-  const on = phase === 'needsPermission' || phase === 'paused' || phase === 'starting' || phase === 'recording';
+  const on =
+    phase === 'needsPermission' ||
+    phase === 'paused' ||
+    phase === 'starting' ||
+    phase === 'recording';
   const recording = activeLayers(view);
   const here = view.signedIn && view.accountId === accountId;
 
@@ -146,7 +154,9 @@ export function ThisComputerPage({ accountId }: { accountId: string }) {
       {view.signedIn || view.signInRequired ? (
         <MoreMenu
           canStop={on}
-          onStop={() => actions.set.mutate({ on: false }, { onSuccess: () => successToast(t('toast.stopped')) })}
+          onStop={() =>
+            actions.set.mutate({ on: false }, { onSuccess: () => successToast(t('toast.stopped')) })
+          }
           onSignOut={() => setConfirmSignOut(true)}
         />
       ) : null}
@@ -157,7 +167,9 @@ export function ThisComputerPage({ accountId }: { accountId: string }) {
       ) : null}
       {here && view.deviceId ? (
         <Button variant="outline" asChild>
-          <Link href={captureRoutes.device(accountId, view.deviceId)}>{t('actions.openTimeline')}</Link>
+          <Link href={captureRoutes.device(accountId, view.deviceId)}>
+            {t('actions.openTimeline')}
+          </Link>
         </Button>
       ) : null}
       <PrimaryAction
@@ -165,8 +177,12 @@ export function ThisComputerPage({ accountId }: { accountId: string }) {
         pausedByOrg={Boolean(view.policy?.paused)}
         busy={actions.pause.isPending || actions.resume.isPending}
         onStart={turnOn}
-        onPause={() => actions.pause.mutate(undefined, { onSuccess: () => successToast(t('toast.paused')) })}
-        onResume={() => actions.resume.mutate(undefined, { onSuccess: () => successToast(t('toast.resumed')) })}
+        onPause={() =>
+          actions.pause.mutate(undefined, { onSuccess: () => successToast(t('toast.paused')) })
+        }
+        onResume={() =>
+          actions.resume.mutate(undefined, { onSuccess: () => successToast(t('toast.resumed')) })
+        }
       />
     </>
   );
@@ -188,10 +204,14 @@ export function ThisComputerPage({ accountId }: { accountId: string }) {
       {phase === 'turningOn' ? (
         <p className="flex items-center gap-2 text-sm" role="status">
           <Loading className="size-4 shrink-0" />
-          {waitingOnPage ? t('turningOn.waitingOnPage') : t('turningOn.progress', { org: org.name })}
+          {waitingOnPage
+            ? t('turningOn.waitingOnPage')
+            : t('turningOn.progress', { org: org.name })}
         </p>
       ) : phase === 'paused' && view.policy?.paused ? (
-        <p className="text-muted-foreground text-sm text-pretty">{t('pausedByOrgHint', { org: org.name })}</p>
+        <p className="text-muted-foreground text-sm text-pretty">
+          {t('pausedByOrgHint', { org: org.name })}
+        </p>
       ) : on && recording.length === 0 ? (
         <p className="text-muted-foreground text-sm text-pretty">{t('noLayers')}</p>
       ) : !on ? (
@@ -208,7 +228,10 @@ export function ThisComputerPage({ accountId }: { accountId: string }) {
           view={view}
           requesting={actions.grants.isPending}
           onAllow={() =>
-            actions.grants.mutate({ audio: Boolean(view.layers?.audio), actions: Boolean(view.layers?.actions) })
+            actions.grants.mutate({
+              audio: Boolean(view.layers?.audio),
+              actions: Boolean(view.layers?.actions),
+            })
           }
         />
       ) : null}
@@ -278,7 +301,15 @@ function Page({ header, children }: { header: ReactNode; children: ReactNode }) 
   );
 }
 
-function Header({ title, status, actions }: { title: string; status?: ReactNode; actions?: ReactNode }) {
+function Header({
+  title,
+  status,
+  actions,
+}: {
+  title: string;
+  status?: ReactNode;
+  actions?: ReactNode;
+}) {
   const tProduct = useTranslations('capture.dialog');
   return (
     <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -289,7 +320,11 @@ function Header({ title, status, actions }: { title: string; status?: ReactNode;
         <div className="min-w-0 space-y-0.5">
           <p className="text-muted-foreground text-xs">{tProduct('product')}</p>
           <h1 className="text-foreground truncate text-xl font-medium">{title}</h1>
-          {status ? <p className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">{status}</p> : null}
+          {status ? (
+            <p className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
+              {status}
+            </p>
+          ) : null}
         </div>
       </div>
       {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
@@ -349,7 +384,15 @@ function PrimaryAction({
   }
 }
 
-function MoreMenu({ canStop, onStop, onSignOut }: { canStop: boolean; onStop: () => void; onSignOut: () => void }) {
+function MoreMenu({
+  canStop,
+  onStop,
+  onSignOut,
+}: {
+  canStop: boolean;
+  onStop: () => void;
+  onSignOut: () => void;
+}) {
   const t = useTranslations('capture.dialog');
   return (
     <DropdownMenu>
@@ -360,11 +403,15 @@ function MoreMenu({ canStop, onStop, onSignOut }: { canStop: boolean; onStop: ()
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-52">
         <DropdownMenuItem
-          onSelect={() => void desktopCaptureOpenLogs().catch((error: Error) => errorToast(error.message))}
+          onSelect={() =>
+            void desktopCaptureOpenLogs().catch((error: Error) => errorToast(error.message))
+          }
         >
           {t('actions.showLogs')}
         </DropdownMenuItem>
-        {canStop ? <DropdownMenuItem onSelect={onStop}>{t('actions.stop')}</DropdownMenuItem> : null}
+        {canStop ? (
+          <DropdownMenuItem onSelect={onStop}>{t('actions.stop')}</DropdownMenuItem>
+        ) : null}
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onSelect={onSignOut}>
           {t('actions.signOut')}

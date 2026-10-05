@@ -6,7 +6,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { errorToast } from '@/components/ui/toast';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
 import {
   desktopCapturePause,
   desktopCaptureRequestGrants,
@@ -21,6 +20,7 @@ import {
   openExternalRoute,
   type DesktopCaptureStatus,
 } from '@/lib/desktop';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
 
 import { connectDesktopCapture } from './connect-desktop-capture';
 
@@ -43,7 +43,8 @@ export function useDesktopCaptureStatus({ poll = false }: { poll?: boolean } = {
  */
 export function useCaptureOrganization(accountId: string | null) {
   const accounts = useAccountsList();
-  const account = (accounts.data ?? []).find((candidate) => candidate.account_id === accountId) ?? null;
+  const account =
+    (accounts.data ?? []).find((candidate) => candidate.account_id === accountId) ?? null;
   const workspace = useCaptureWorkspace(accountId);
   return {
     accountId,

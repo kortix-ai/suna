@@ -33,12 +33,12 @@ export interface TrackLayers {
 const AXIS_H = 18;
 const EPISODE_Y = 24;
 const EPISODE_H = 24;
-const TRACK_Y = 60.5;
+const TRACK_Y = 58.5;
 const TRACK_H = 7;
-const ACTIONS_Y = 88;
-const AUDIO_Y = 106;
+const ACTIONS_Y = 82;
+const AUDIO_Y = 104;
 const LANE_H = 8;
-export const TRACK_HEIGHT = 124;
+export const TRACK_HEIGHT = 122;
 export const LANES = {
   episodes: EPISODE_Y + EPISODE_H / 2,
   apps: TRACK_Y + TRACK_H / 2,
@@ -55,7 +55,17 @@ export interface TrackEpisode {
 }
 
 /** Axis tick steps in ms; the first that leaves at least 72 px between labels wins. */
-const TICKS = [60_000, 5 * 60_000, 15 * 60_000, 30 * 60_000, 3_600_000, 3 * 3_600_000, 6 * 3_600_000, 12 * 3_600_000, 86_400_000];
+const TICKS = [
+  60_000,
+  5 * 60_000,
+  15 * 60_000,
+  30 * 60_000,
+  3_600_000,
+  3 * 3_600_000,
+  6 * 3_600_000,
+  12 * 3_600_000,
+  86_400_000,
+];
 // Third-party apps get a white tile in both themes, like catalogue logos (color.md, escape hatch 1).
 const ICON_TILE = '#ffffff'; // audit:allow third-party app tile, white in both themes (color.md escape hatch 1)
 // Canvas cannot read the --shadow-* tokens; this is shadow-sm's ink.
@@ -66,6 +76,8 @@ const rgb = ([r, g, b]: Rgb, a = 1) => `rgb(${r} ${g} ${b} / ${a})`; // audit:al
 export const appInkCss = (app: string | null) =>
   rgb(brighter(runColor({ k: app, app }, false), -0.22));
 export const APP_TILE = ICON_TILE;
+/** An app's band color on the track, for the legend. */
+export const appBandCss = (app: string, dark: boolean) => rgb(runColor({ k: app, app }, dark));
 
 function roundRect(
   g: CanvasRenderingContext2D,

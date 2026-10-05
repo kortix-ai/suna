@@ -41,7 +41,7 @@ import {
 } from '../area/use-capture-area';
 import { relativeTime } from '../capture-time';
 import { useDesktopCaptureStatus } from '../desktop/use-desktop-capture';
-import { deviceStatus, type DeviceStatusKey, type DeviceLayer } from './device-status';
+import { deviceStatus, type DeviceLayer, type DeviceStatusKey } from './device-status';
 import { DeviceActionsMenu, StatusDot, useStatusNote } from './device-status-ui';
 
 type Scope = 'account' | 'mine';
@@ -72,7 +72,13 @@ export function DevicesView({ accountId }: { accountId: string }) {
     [query.data],
   );
   const counts = useMemo(() => {
-    const out: Record<Filter, number> = { all: 0, recording: 0, paused: 0, permission: 0, offline: 0 };
+    const out: Record<Filter, number> = {
+      all: 0,
+      recording: 0,
+      paused: 0,
+      permission: 0,
+      offline: 0,
+    };
     for (const device of devices) {
       out.all += 1;
       out[filterOf(deviceStatus(device).key)] += 1;
@@ -88,9 +94,7 @@ export function DevicesView({ accountId }: { accountId: string }) {
     <CapturePage
       title={t('title')}
       description={
-        scope === 'account'
-          ? t('descriptionAll', { name: area.accountName })
-          : t('descriptionMine')
+        scope === 'account' ? t('descriptionAll', { name: area.accountName }) : t('descriptionMine')
       }
       actions={
         <>
@@ -157,12 +161,18 @@ export function DevicesView({ accountId }: { accountId: string }) {
         <div className="bg-background rounded-md border px-4 py-12">
           <EmptyState
             size="sm"
-            title={scope === 'account' ? t('empty.allTitle', { name: area.accountName }) : t('empty.mineTitle')}
+            title={
+              scope === 'account'
+                ? t('empty.allTitle', { name: area.accountName })
+                : t('empty.mineTitle')
+            }
             description={t('empty.body')}
             action={
               onDesktop ? (
                 <Button asChild variant="outline" size="sm" className="gap-1.5">
-                  <Link href={captureHref(accountId, 'this-computer')}>{t('recordThisComputer')}</Link>
+                  <Link href={captureHref(accountId, 'this-computer')}>
+                    {t('recordThisComputer')}
+                  </Link>
                 </Button>
               ) : (
                 <Button asChild variant="outline" size="sm" className="gap-1.5">
@@ -175,21 +185,21 @@ export function DevicesView({ accountId }: { accountId: string }) {
           />
         </div>
       ) : (
-        <section aria-label={t('listLabel')} className="bg-background overflow-hidden rounded-md border">
-          <div className="overflow-x-auto">
-            <DeviceTable
-              accountId={accountId}
-              rows={rows}
-              showPerson={scope === 'account'}
-              canManage={area.isAdmin}
-              thisDeviceId={thisDeviceId}
-            />
-          </div>
+        <section aria-label={t('listLabel')} className="flex flex-col gap-3">
+          <DeviceTable
+            accountId={accountId}
+            rows={rows}
+            showPerson={scope === 'account'}
+            canManage={area.isAdmin}
+            thisDeviceId={thisDeviceId}
+          />
           {rows.length === 0 ? (
             <p className="text-muted-foreground px-3 py-6 text-center text-xs">{t('noMatch')}</p>
           ) : null}
-          <div className="text-muted-foreground flex flex-wrap justify-between gap-3 border-t px-4 py-3 text-xs">
-            <span className="tabular-nums">{t('showing', { shown: rows.length, total: devices.length })}</span>
+          <div className="text-muted-foreground flex flex-wrap justify-between gap-3 px-1 text-xs">
+            <span className="tabular-nums">
+              {t('showing', { shown: rows.length, total: devices.length })}
+            </span>
             <span>{t('layersNote')}</span>
           </div>
         </section>
@@ -284,7 +294,9 @@ function DeviceTable({
                       <span
                         key={layer}
                         className={cn(!on && 'text-muted-foreground line-through')}
-                        aria-label={on ? t(`layer.${layer}`) : t('layerOff', { layer: t(`layer.${layer}`) })}
+                        aria-label={
+                          on ? t(`layer.${layer}`) : t('layerOff', { layer: t(`layer.${layer}`) })
+                        }
                       >
                         {t(`layer.${layer}`)}
                       </span>

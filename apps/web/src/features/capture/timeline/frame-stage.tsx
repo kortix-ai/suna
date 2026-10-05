@@ -15,8 +15,11 @@ export function FrameStage({
   seconds,
   label,
   dimmed,
+  failedLabel,
   children,
 }: {
+  /** Shown when the browser cannot play the chunk (a broken or unsupported file). */
+  failedLabel: string;
   /** The chunk's signed video URL; null shows only `children`. */
   src: string | null;
   /** Seek position in the chunk's video. */
@@ -28,6 +31,7 @@ export function FrameStage({
 }) {
   const refs = [useRef<HTMLVideoElement>(null), useRef<HTMLVideoElement>(null)];
   const [active, setActive] = useState(0);
+  const [failed, setFailed] = useState<string | null>(null);
   const sources = useRef<[string | null, string | null]>([null, null]);
   const base = (url: string | null) => (url ? url.split('?')[0] : null);
 
@@ -85,6 +89,10 @@ export function FrameStage({
           preload="auto"
           aria-label={i === active ? label : undefined}
           aria-hidden={i !== active}
+          onError={(event) => {
+            const url = event.currentTarget.currentSrc || event.currentTarget.src;
+            if (url && base(url) === base(src)) setFailed(base(url));
+          }}
           className={
             i === active && src
               ? `duration-fast absolute inset-0 size-full object-contain transition-opacity ${dimmed ? 'opacity-40' : 'opacity-100'}`
@@ -92,6 +100,11 @@ export function FrameStage({
           }
         />
       ))}
+      {src && failed === base(src) ? (
+        <p className="text-muted-foreground absolute top-1/2 left-1/2 z-10 max-w-sm -translate-x-1/2 -translate-y-1/2 px-6 text-center text-sm text-balance">
+          {failedLabel}
+        </p>
+      ) : null}
       {children}
     </div>
   );

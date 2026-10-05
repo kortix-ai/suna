@@ -21,7 +21,8 @@ export function CaptureStart() {
   const list = accounts.data ?? [];
   const remembered = lastCaptureAccount();
   const direct =
-    list.find((account) => account.account_id === remembered) ?? (list.length === 1 ? list[0] : null);
+    list.find((account) => account.account_id === remembered) ??
+    (list.length === 1 ? list[0] : null);
   const workspaces = useQueries({
     queries: direct
       ? []

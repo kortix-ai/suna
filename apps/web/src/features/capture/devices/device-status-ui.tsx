@@ -21,7 +21,13 @@ import { relativeTime } from '../capture-time';
 import type { DeviceStatusView } from './device-status';
 
 /** The status dot: green records, orange needs a person, a ring is offline, grey is idle. */
-export function StatusDot({ view, className }: { view: DeviceStatusView | null; className?: string }) {
+export function StatusDot({
+  view,
+  className,
+}: {
+  view: DeviceStatusView | null;
+  className?: string;
+}) {
   return (
     <span
       aria-hidden
@@ -48,14 +54,19 @@ export function useStatusNote() {
     if (view.key === 'permission' && view.missingPermissions.length > 0) {
       return view.missingPermissions
         .map((p) =>
-          ['screen_recording', 'accessibility', 'microphone'].includes(p) ? t(`permission.${p}`) : p,
+          ['screen_recording', 'accessibility', 'microphone'].includes(p)
+            ? t(`permission.${p}`)
+            : p,
         )
         .join(', ');
     }
     if (view.key === 'offline' && view.reportedAtMs) return relativeTime(view.reportedAtMs, locale);
     if (view.key === 'paused' && view.pausedUntilMs) {
       return t('pausedUntil', {
-        time: new Date(view.pausedUntilMs).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }),
+        time: new Date(view.pausedUntilMs).toLocaleTimeString(locale, {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
       });
     }
     return '';
@@ -66,7 +77,8 @@ export function useStatusNote() {
 export function useStatusText() {
   const t = useTranslations('capture.devices');
   const note = useStatusNote();
-  return (view: DeviceStatusView) => [t(`status.${view.key}`), note(view)].filter(Boolean).join(' · ');
+  return (view: DeviceStatusView) =>
+    [t(`status.${view.key}`), note(view)].filter(Boolean).join(' · ');
 }
 
 /** Sync now and Revoke for one device (Revoke asks first). Admins only: the API refuses others. */

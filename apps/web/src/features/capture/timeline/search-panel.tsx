@@ -12,7 +12,6 @@ import {
   InputGroupSearchIcon,
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
-import { Kbd } from '@/components/ui/kbd';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
@@ -48,8 +47,12 @@ export function DeviceSearch({
   useEffect(() => {
     const onKey = (event: globalThis.KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      if (target?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"]')) return;
-      if (event.key === '/' || ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f')) {
+      if (target?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"]'))
+        return;
+      if (
+        event.key === '/' ||
+        ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f')
+      ) {
         event.preventDefault();
         inputRef.current?.focus();
         setOpen(true);
@@ -109,11 +112,7 @@ export function DeviceSearch({
             setOpen(true);
           }}
         />
-        {input ? (
-          <InputGroupSearchClear onClick={() => setInput('')} />
-        ) : (
-          <Kbd className="mr-2 max-sm:hidden">/</Kbd>
-        )}
+        {input ? <InputGroupSearchClear onClick={() => setInput('')} /> : null}
       </InputGroupSearch>
       {open && q ? (
         <div className="bg-popover absolute top-full right-0 z-40 mt-1 max-h-96 w-md max-w-[calc(100vw-2rem)] overflow-y-auto rounded-md border p-1 shadow-md">
@@ -124,7 +123,9 @@ export function DeviceSearch({
               ))}
             </div>
           ) : hits.length === 0 ? (
-            <p className="text-muted-foreground px-3 py-6 text-center text-xs">{t('search.none')}</p>
+            <p className="text-muted-foreground px-3 py-6 text-center text-xs">
+              {t('search.none')}
+            </p>
           ) : (
             <ul ref={listRef} aria-label={t('search.results')}>
               {hits.map((hit) => (
@@ -139,7 +140,8 @@ export function DeviceSearch({
                     </Badge>
                     <span className="min-w-0 flex-1">
                       <span className="text-foreground block truncate text-sm font-medium">
-                        {[hit.app, hit.title].filter(Boolean).join(' · ') || t(`search.kind.${hit.kind}`)}
+                        {[hit.app, hit.title].filter(Boolean).join(' · ') ||
+                          t(`search.kind.${hit.kind}`)}
                       </span>
                       <span className="text-muted-foreground line-clamp-2 block text-xs wrap-anywhere">
                         {hit.snippet}

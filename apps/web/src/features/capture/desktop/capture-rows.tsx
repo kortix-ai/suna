@@ -58,7 +58,9 @@ export function CaptureRow({
       </span>
       <div className={cn('min-w-0 flex-1 space-y-0.5', muted && 'opacity-60')}>
         <p className="text-sm">{title}</p>
-        {description ? <p className="text-muted-foreground truncate text-xs">{description}</p> : null}
+        {description ? (
+          <p className="text-muted-foreground truncate text-xs">{description}</p>
+        ) : null}
       </div>
       {trailing ? <div className="flex shrink-0 items-center">{trailing}</div> : null}
     </li>
@@ -68,7 +70,12 @@ export function CaptureRow({
 /** A grant's state at the end of a row: a green check when allowed, a muted word otherwise. */
 export function GrantState({ allowed, label }: { allowed: boolean; label: string }) {
   return (
-    <span className={cn('flex items-center gap-1 text-xs', allowed ? 'text-foreground' : 'text-muted-foreground')}>
+    <span
+      className={cn(
+        'flex items-center gap-1 text-xs',
+        allowed ? 'text-foreground' : 'text-muted-foreground',
+      )}
+    >
       {allowed ? <SolidCheckIcon className="text-kortix-green size-3.5" /> : null}
       {label}
     </span>
@@ -84,5 +91,7 @@ const TONE: Record<StatusTone, string> = {
   idle: 'bg-muted-foreground',
 };
 export function StatusDot({ tone }: { tone: StatusTone }) {
-  return <span aria-hidden className={cn('inline-block size-2 shrink-0 rounded-full', TONE[tone])} />;
+  return (
+    <span aria-hidden className={cn('inline-block size-2 shrink-0 rounded-full', TONE[tone])} />
+  );
 }

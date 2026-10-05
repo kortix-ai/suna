@@ -52,9 +52,7 @@ export function captureHref(accountId: string, section: CaptureSection = 'overvi
 /** The section of a `/capture/[accountId]/…` path. */
 export function sectionOf(pathname: string | null): CaptureSection {
   const part = pathname?.split('/capture/')[1]?.split('/')[1] ?? '';
-  return (
-    [...CAPTURE_SECTIONS, 'settings', 'this-computer'] as readonly string[]
-  ).includes(part)
+  return ([...CAPTURE_SECTIONS, 'settings', 'this-computer'] as readonly string[]).includes(part)
     ? (part as CaptureSection)
     : 'overview';
 }

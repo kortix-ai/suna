@@ -10,6 +10,7 @@ import {
   useCaptureChunkMedia,
   useCaptureDays,
   useCaptureDevices,
+  useCaptureEpisodes,
   useCaptureTimeline,
   useCaptureTimelineItems,
 } from '@kortix/sdk/react';
@@ -23,11 +24,11 @@ import {
   SkipBackIcon,
   SkipForwardIcon,
 } from '@phosphor-icons/react';
+import { useTheme } from 'next-themes';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import {
@@ -63,11 +64,19 @@ import {
   LANES,
   TRACK_HEIGHT,
   TrackCanvas,
+  appBandCss,
   appInkCss,
   type TrackEpisode,
   type TrackLayers,
 } from './track-canvas';
-import { foldRuns, gapAt, openingSpp, runJumpTarget, segCovers, type TrackRun } from './track-model';
+import {
+  foldRuns,
+  gapAt,
+  openingSpp,
+  runJumpTarget,
+  segCovers,
+  type TrackRun,
+} from './track-model';
 import { useScrubber } from './use-scrubber';
 
 const MINUTE = 60_000;
@@ -96,7 +105,13 @@ const MOD_KEY = () =>
  * track's interaction is a port of the Kortix Capture engine's local window:
  * drag with inertia, wheel, click a moment, Cmd/Ctrl+Left/Right between runs.
  */
-export function DeviceTimelineView({ accountId, deviceId }: { accountId: string; deviceId: string }) {
+export function DeviceTimelineView({
+  accountId,
+  deviceId,
+}: {
+  accountId: string;
+  deviceId: string;
+}) {
   const t = useTranslations('capture.timeline');
   const tDevices = useTranslations('capture.devices');
   const area = useCaptureArea(accountId);
@@ -146,9 +161,11 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
   const statusText = useStatusText();
   const tz = useMemo(() => localTimeZone(), []);
   const router = useRouter();
+  const { resolvedTheme } = useTheme();
   const pathname = usePathname();
   const search = useSearchParams();
-  const urlAt = search.get('at');
+  // `at` is the area's moment parameter; Ask cites moments as `t`.
+  const urlAt = search.get('at') ?? search.get('t');
 
   // ── Bounds and days ───────────────────────────────────────────────────────
   const days = useCaptureDays(accountId, { tz, userId, deviceId });
@@ -206,7 +223,12 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
     useCaptureTimeline(
       accountId,
       range[1] > range[0]
-        ? { from: new Date(range[0]).toISOString(), to: new Date(range[1]).toISOString(), userId, deviceId }
+        ? {
+            from: new Date(range[0]).toISOString(),
+            to: new Date(range[1]).toISOString(),
+            userId,
+            deviceId,
+          }
         : null,
     ).data,
   );
@@ -231,8 +253,33 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
         .map((c) => ({ s: Date.parse(c.start_at), e: Date.parse(c.end_at) }));
     return { audio: of('audio'), actions: of('actions') };
   }, [timeline, deviceId]);
-  // Episodes arrive with the intelligence pipeline (L1); until then the lane stays empty.
-  const episodes = useMemo<TrackEpisode[]>(() => [], []);
+  // Episodes (L1): one task each, the lane above the apps.
+  const episodeList = useLatest(
+    useCaptureEpisodes(range[1] > range[0] ? accountId : null, {
+      deviceId,
+      userId,
+      from: new Date(range[0]).toISOString(),
+      to: new Date(range[1]).toISOString(),
+      limit: 500,
+    }).data,
+  );
+  const episodeRows = useMemo(
+    () => (episodeList?.episodes ?? []).filter((ep) => ep.device_id === deviceId),
+    [episodeList, deviceId],
+  );
+  const episodes = useMemo<TrackEpisode[]>(
+    () =>
+      episodeRows.map((ep) => ({
+        id: ep.episode_id,
+        s: Date.parse(ep.start_at),
+        e: Date.parse(ep.end_at),
+        label: ep.label ?? ep.goal ?? ep.apps.join(', '),
+      })),
+    [episodeRows],
+  );
+  const episodeUnder = episodeRows.find(
+    (ep) => Date.parse(ep.start_at) <= view.T && view.T <= Date.parse(ep.end_at),
+  );
 
   // ── Frames, actions and transcript around the playhead ────────────────────
   const anchor = Math.floor(view.T / ITEMS_ALIGN) * ITEMS_ALIGN;
@@ -268,9 +315,14 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
   const media = useCaptureChunkMedia(accountId, frame?.chunk_id ?? null, { userId });
   const video = media.data?.chunk_id === frame?.chunk_id ? (media.data?.video ?? null) : null;
   // While the next chunk's URL loads, the stage keeps the last frame it showed: no blank flash mid-scrub.
-  const nextShown = video && !video.encrypted ? { src: video.url, seconds: frame?.frame_index ?? 0 } : null;
-  const [shown, setShown] = useState<{ src: string | null; seconds: number }>({ src: null, seconds: 0 });
-  if (nextShown && (nextShown.src !== shown.src || nextShown.seconds !== shown.seconds)) setShown(nextShown);
+  const nextShown =
+    video && !video.encrypted ? { src: video.url, seconds: frame?.frame_index ?? 0 } : null;
+  const [shown, setShown] = useState<{ src: string | null; seconds: number }>({
+    src: null,
+    seconds: 0,
+  });
+  if (nextShown && (nextShown.src !== shown.src || nextShown.seconds !== shown.seconds))
+    setShown(nextShown);
   const display = nextShown ?? (media.isFetching && frame ? shown : { src: null, seconds: 0 });
 
   // The opening scale, once the first runs land.
@@ -283,9 +335,12 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
 
   // ── Navigation ────────────────────────────────────────────────────────────
   // A run jump past the loaded runs reads the 24 hours that way, then lands on the nearest run start.
-  const [farJump, setFarJump] = useState<{ dir: -1 | 1; T: number; from: number; instant: boolean } | null>(
-    null,
-  );
+  const [farJump, setFarJump] = useState<{
+    dir: -1 | 1;
+    T: number;
+    from: number;
+    instant: boolean;
+  } | null>(null);
   const far = useCaptureTimeline(
     accountId,
     farJump
@@ -299,7 +354,9 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
   );
   useEffect(() => {
     if (!farJump || (!far.data && !far.isError)) return;
-    const starts = (far.data?.runs ?? []).filter((r) => r.device_id === deviceId).map((r) => Date.parse(r.start_at));
+    const starts = (far.data?.runs ?? [])
+      .filter((r) => r.device_id === deviceId)
+      .map((r) => Date.parse(r.start_at));
     const pick =
       farJump.dir < 0
         ? Math.max(...starts.filter((s) => s < farJump.from - 1000), -Infinity)
@@ -311,7 +368,8 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
         farJump.dir < 0
           ? dayList.find((d) => Date.parse(d.end_at) < farJump.T - DAY)
           : [...dayList].reverse().find((d) => Date.parse(d.start_at) > farJump.T + DAY);
-      if (day) scrubber.panTo(Date.parse(farJump.dir < 0 ? day.end_at : day.start_at), farJump.instant);
+      if (day)
+        scrubber.panTo(Date.parse(farJump.dir < 0 ? day.end_at : day.start_at), farJump.instant);
     }
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the far read answered; the jump is done
     setFarJump(null);
@@ -331,11 +389,24 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
     },
     [runs, pad, scrubber, interact],
   );
+  /** Previous / next episode start, else the previous / next app run. */
+  const episodeJump = (dir: -1 | 1) => {
+    const T = scrubber.get().T;
+    const target =
+      dir < 0
+        ? [...episodes].reverse().find((ep) => ep.s < T - 1000)
+        : episodes.find((ep) => ep.s > T + 1000);
+    if (target) jumpTo(target.s);
+    else runJump(dir);
+  };
   const step = useCallback(
     (dir: -1 | 1) => {
       interact();
       const T = scrubber.get().T;
-      const next = dir > 0 ? frames.find((f) => Date.parse(f.ts) > T + 1) : frames[indexAtOrBefore(frames, T - 1)];
+      const next =
+        dir > 0
+          ? frames.find((f) => Date.parse(f.ts) > T + 1)
+          : frames[indexAtOrBefore(frames, T - 1)];
       if (next) scrubber.setT(Date.parse(next.ts));
       else runJump(dir, true);
     },
@@ -361,8 +432,15 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
     const day =
       dir < 0
         ? dayList.find((d) => Date.parse(d.start_at) < T - MINUTE)
-        : [...dayList].reverse().find((d) => Date.parse(d.end_at) > T + MINUTE && Date.parse(d.start_at) > T);
-    if (day) jumpTo(Date.parse(dir < 0 ? (Date.parse(day.end_at) < T ? day.end_at : day.start_at) : day.start_at));
+        : [...dayList]
+            .reverse()
+            .find((d) => Date.parse(d.end_at) > T + MINUTE && Date.parse(d.start_at) > T);
+    if (day)
+      jumpTo(
+        Date.parse(
+          dir < 0 ? (Date.parse(day.end_at) < T ? day.end_at : day.start_at) : day.start_at,
+        ),
+      );
   };
 
   // ── Playback ──────────────────────────────────────────────────────────────
@@ -472,14 +550,21 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
     minute: '2-digit',
     second: '2-digit',
   });
-  const date = new Date(view.T).toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short' });
+  const date = new Date(view.T).toLocaleDateString(locale, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  });
 
   return (
     <main className="flex flex-col">
       {/* Who and which computer, its live status, and the tools of the page. */}
       <div className="flex flex-col gap-3 border-b px-4 pt-4 pb-3 sm:px-6">
         <nav aria-label={t('breadcrumb')} className="flex items-center gap-2 text-xs">
-          <Link href={captureHref(accountId, 'devices')} className="text-muted-foreground hover:text-foreground">
+          <Link
+            href={captureHref(accountId, 'devices')}
+            className="text-muted-foreground hover:text-foreground"
+          >
             {tDevices('title')}
           </Link>
           <span aria-hidden className="text-muted-foreground">
@@ -496,27 +581,49 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
               {name}
             </h1>
             <span className="text-muted-foreground text-xs">{deviceOs(device)}</span>
-            <Badge variant="outline" size="sm" className="gap-1.5" aria-live="polite">
+            <span
+              className="text-foreground flex items-center gap-1.5 rounded-sm border px-2 py-0.5 text-xs"
+              aria-live="polite"
+            >
               <StatusDot view={status} />
               {statusText(status)}
-            </Badge>
+            </span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1">
               <Hint label={t('previousDay')}>
-                <Button variant="outline" size="icon-sm" aria-label={t('previousDay')} onClick={() => dayJump(-1)}>
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  aria-label={t('previousDay')}
+                  onClick={() => dayJump(-1)}
+                >
                   <CaretLeftIcon className="size-3.5 shrink-0" />
                 </Button>
               </Hint>
               <JumpPopover T={view.T} days={dayList} bounds={bounds} onJump={jumpTo} />
               <Hint label={t('nextDay')}>
-                <Button variant="outline" size="icon-sm" aria-label={t('nextDay')} onClick={() => dayJump(1)}>
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  aria-label={t('nextDay')}
+                  onClick={() => dayJump(1)}
+                >
                   <CaretRightIcon className="size-3.5 shrink-0" />
                 </Button>
               </Hint>
             </div>
-            <DeviceSearch accountId={accountId} userId={userId} deviceId={deviceId} onPick={pickHit} />
-            <div role="group" aria-label={t('layers')} className="bg-muted flex items-center gap-0.5 rounded-md p-0.5">
+            <DeviceSearch
+              accountId={accountId}
+              userId={userId}
+              deviceId={deviceId}
+              onPick={pickHit}
+            />
+            <div
+              role="group"
+              aria-label={t('layers')}
+              className="bg-muted flex items-center gap-0.5 rounded-md p-0.5"
+            >
               {(['screen', 'actions', 'audio'] as const).map((layer) => (
                 <Toggle
                   key={layer}
@@ -530,7 +637,13 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
               ))}
             </div>
             <Hint label={t('liveHint')}>
-              <Button variant="outline" size="sm" className="gap-1.5" disabled={!bounds} onClick={goLive}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                disabled={!bounds}
+                onClick={goLive}
+              >
                 <span aria-hidden className="bg-kortix-green size-2 rounded-full" />
                 {t('live')}
               </Button>
@@ -553,28 +666,34 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
           aria-label={t('player')}
           className="flex min-w-0 grow-999 basis-xl flex-col gap-3"
         >
-          <div className="bg-muted relative flex aspect-16/10 max-h-[70vh] min-h-48 w-full overflow-hidden rounded-md border">
+          <div className="bg-muted relative flex aspect-16/10 max-h-[calc(100svh-24rem)] min-h-48 w-full overflow-hidden rounded-md border">
             {layers.screen ? (
               <FrameStage
                 src={display.src}
                 seconds={display.seconds}
                 label={t('frame.label', { app: metaApp ?? t('unknownApp') })}
                 dimmed={offFrame}
+                failedLabel={t('frame.failed')}
               >
                 {noData ? (
-                  <StageNotice title={t('empty.noDataTitle', { device: name })} body={statusText(status)} />
+                  <StageNotice
+                    title={t('empty.noDataTitle', { device: name })}
+                    body={statusText(status)}
+                  />
                 ) : video?.encrypted && !offFrame ? (
                   <StageNotice title={t('frame.encrypted')} />
                 ) : bounds && offFrame ? (
-                  <StageNotice title={gap ? t('track.gap', { shortcut: `${MOD_KEY()}←` }) : t('frame.none')} />
+                  <StageNotice
+                    title={gap ? t('track.gap', { shortcut: `${MOD_KEY()}←` }) : t('frame.none')}
+                  />
                 ) : null}
                 {bounds && !offFrame ? (
                   <div className="absolute bottom-3 left-3 z-10 flex flex-wrap gap-2">
-                    <Badge size="sm" className="bg-foreground text-background font-mono tabular-nums">
+                    <span className="bg-foreground text-background rounded-sm px-2 py-0.5 font-mono text-xs tabular-nums">
                       {time}
-                    </Badge>
+                    </span>
                     {metaApp ? (
-                      <Badge variant="outline" size="sm" className="bg-popover gap-1.5">
+                      <span className="bg-popover text-foreground flex items-center gap-1.5 rounded-sm border px-2 py-0.5 text-xs">
                         <span
                           aria-hidden
                           className="ring-border flex size-4 items-center justify-center rounded-sm text-xs font-semibold ring-1"
@@ -583,7 +702,7 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
                           {metaApp.charAt(0).toUpperCase()}
                         </span>
                         {metaApp}
-                      </Badge>
+                      </span>
                     ) : null}
                   </div>
                 ) : null}
@@ -595,13 +714,23 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
 
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-1.5">
-              <Hint label={t('previousRun', { shortcut: `${MOD_KEY()}←` })}>
+              <Hint
+                label={
+                  episodes.length
+                    ? t('previousEpisode')
+                    : t('previousRun', { shortcut: `${MOD_KEY()}←` })
+                }
+              >
                 <Button
                   variant="outline"
                   size="icon-sm"
-                  aria-label={t('previousRun', { shortcut: `${MOD_KEY()}←` })}
+                  aria-label={
+                    episodes.length
+                      ? t('previousEpisode')
+                      : t('previousRun', { shortcut: `${MOD_KEY()}←` })
+                  }
                   disabled={!bounds}
-                  onClick={() => runJump(-1)}
+                  onClick={() => episodeJump(-1)}
                 >
                   <SkipBackIcon className="size-3.5 shrink-0" />
                 </Button>
@@ -616,25 +745,40 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
                     setPlaying((p) => !p);
                   }}
                 >
-                  {playing ? <PauseIcon className="size-3.5 shrink-0" /> : <PlayIcon className="size-3.5 shrink-0" />}
+                  {playing ? (
+                    <PauseIcon className="size-3.5 shrink-0" />
+                  ) : (
+                    <PlayIcon className="size-3.5 shrink-0" />
+                  )}
                 </Button>
               </Hint>
-              <Hint label={t('nextRun', { shortcut: `${MOD_KEY()}→` })}>
+              <Hint
+                label={
+                  episodes.length ? t('nextEpisode') : t('nextRun', { shortcut: `${MOD_KEY()}→` })
+                }
+              >
                 <Button
                   variant="outline"
                   size="icon-sm"
-                  aria-label={t('nextRun', { shortcut: `${MOD_KEY()}→` })}
+                  aria-label={
+                    episodes.length ? t('nextEpisode') : t('nextRun', { shortcut: `${MOD_KEY()}→` })
+                  }
                   disabled={!bounds}
-                  onClick={() => runJump(1)}
+                  onClick={() => episodeJump(1)}
                 >
                   <SkipForwardIcon className="size-3.5 shrink-0" />
                 </Button>
               </Hint>
-              <span className="text-foreground ml-2 font-mono text-sm font-medium tabular-nums">{time}</span>
+              <span className="text-foreground ml-2 font-mono text-sm font-medium tabular-nums">
+                {time}
+              </span>
               <span className="text-muted-foreground text-xs">{date}</span>
             </div>
             <div className="flex items-center gap-2">
-              <Select value={String(speed)} onValueChange={(value) => setSpeed(Number(value) as (typeof SPEEDS)[number])}>
+              <Select
+                value={String(speed)}
+                onValueChange={(value) => setSpeed(Number(value) as (typeof SPEEDS)[number])}
+              >
                 <SelectTrigger size="sm" aria-label={t('speed')} className="w-20">
                   <SelectValue />
                 </SelectTrigger>
@@ -647,22 +791,36 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
                 </SelectContent>
               </Select>
               <Hint label={t('zoomOut')}>
-                <Button variant="outline" size="icon-sm" aria-label={t('zoomOut')} onClick={() => scrubber.zoomTween(1.6)}>
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  aria-label={t('zoomOut')}
+                  onClick={() => scrubber.zoomTween(1.6)}
+                >
                   <MinusIcon className="size-3.5 shrink-0" />
                 </Button>
               </Hint>
               <Hint label={t('zoomIn')}>
-                <Button variant="outline" size="icon-sm" aria-label={t('zoomIn')} onClick={() => scrubber.zoomTween(1 / 1.6)}>
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  aria-label={t('zoomIn')}
+                  onClick={() => scrubber.zoomTween(1 / 1.6)}
+                >
                   <PlusIcon className="size-3.5 shrink-0" />
                 </Button>
               </Hint>
             </div>
           </div>
 
-          <div className="bg-background relative flex overflow-hidden rounded-md border select-none" style={{ height: TRACK_HEIGHT }}>
+          <div
+            className="bg-background relative flex overflow-hidden rounded-md border select-none"
+            style={{ height: TRACK_HEIGHT }}
+          >
             <div aria-hidden className="bg-popover relative w-20 shrink-0 border-r">
               {(['episodes', 'apps', 'actions', 'audio'] as const).map((lane) =>
-                (lane === 'actions' && !layers.actions) || (lane === 'audio' && !layers.audio) ? null : (
+                (lane === 'actions' && !layers.actions) ||
+                (lane === 'audio' && !layers.audio) ? null : (
                   <span
                     key={lane}
                     className="text-muted-foreground absolute left-3 -translate-y-1/2 text-xs"
@@ -708,7 +866,7 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
                 <span
                   aria-hidden
                   className="ring-border flex size-3.5 items-center justify-center rounded-sm ring-1"
-                  style={{ background: appInkCss(app) }}
+                  style={{ background: appBandCss(app, resolvedTheme === 'dark') }}
                 />
                 {app}
               </span>
@@ -723,9 +881,13 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
           app={metaApp}
           title={offFrame ? null : (frame?.title ?? runUnder?.title ?? null)}
           url={offFrame ? null : (frame?.url ?? runUnder?.url ?? null)}
-          actions={layers.actions ? (items?.actions ?? []).filter((x) => x.device_id === deviceId) : []}
+          actions={
+            layers.actions ? (items?.actions ?? []).filter((x) => x.device_id === deviceId) : []
+          }
           audio={layers.audio ? (items?.audio ?? []).filter((x) => x.device_id === deviceId) : []}
           onJump={jumpTo}
+          accountId={accountId}
+          episode={episodeUnder ?? null}
         />
       </div>
     </main>
@@ -740,4 +902,3 @@ function StageNotice({ title, body }: { title: string; body?: string }) {
     </div>
   );
 }
-
