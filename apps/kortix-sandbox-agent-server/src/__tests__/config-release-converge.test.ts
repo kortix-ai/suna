@@ -844,6 +844,22 @@ describe('convergeConfigRelease — other sources', () => {
     expect(oc.state.reloads).toBe(0)
   })
 
+  // 2026-10-05: a composed release over the limit has no tree ID either. The
+  // box used to derive a governance-only ID from it and swap to the image
+  // default.
+  test('no release and no tree (composed release over the limit): running config kept, reason reported', async () => {
+    const release = baseRelease()
+    api.respond({
+      status: 200,
+      json: { ...release.descriptor, release_id: null, config_tree_id: null, archive: null, files: null, reason: 'over the limit' },
+    })
+    const oc = fakeOpencode()
+    const response = await converge(oc)
+    expect(response.outcome).toBe('failed')
+    expect(response.reason).toBe('over the limit')
+    expect(oc.state.reloads).toBe(0)
+  })
+
   test('the boot record seeds the running state the next convergence compares against', async () => {
     const release = baseRelease()
     serveRelease(api, release)
