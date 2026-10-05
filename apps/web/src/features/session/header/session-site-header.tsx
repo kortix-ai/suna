@@ -11,6 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -133,6 +134,7 @@ export function SessionSiteHeader({
   // opened; `onCloseAutoFocus` reads this and keeps focus in the field.
   const renameFromMenu = useRef(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [resetMachineOpen, setResetMachineOpen] = useState(false);
 
   // Lifecycle actions (Share / Restart / Delete) operate on the project-level
   // session, which is only addressable on the `/projects/:id/sessions/:id` route.
@@ -221,6 +223,21 @@ export function SessionSiteHeader({
     },
   });
 
+  // Persistent machines: discard the disk and boot a fresh one from the
+  // current image (the session's branch comes back, nothing else does).
+  const isPersistentMachine = projectSession?.metadata?.persistent_machine === true;
+  const resetMachineMutation = useMutation({
+    mutationFn: () => restartProjectSession(projectId!, projectSessionId!, { reset_machine: true }),
+    onSuccess: () => {
+      setResetMachineOpen(false);
+      successToast('Resetting the machine');
+      queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId ?? '') });
+    },
+    onError: (err) => {
+      errorToast(err instanceof Error ? err.message : 'Failed to reset the machine');
+    },
+  });
+
   const stopMutation = useMutation({
     mutationFn: () => stopProjectSession(projectId!, projectSessionId!),
     onSuccess: () => {
@@ -283,6 +300,16 @@ export function SessionSiteHeader({
             {restartMutation.isPending ? <Loading /> : <RotateCcw />}
             {tI18nHardcoded.raw('i18nComplete.text6b983a81e5e8')}
           </DropdownMenuItem>
+          {canManageLifecycle && isPersistentMachine && (
+            <DropdownMenuItem
+              className="cursor-pointer"
+              disabled={resetMachineMutation.isPending}
+              onClick={() => setResetMachineOpen(true)}
+            >
+              {resetMachineMutation.isPending ? <Loading /> : <RotateCcw />}
+              Reset machine
+            </DropdownMenuItem>
+          )}
           {canManageLifecycle && (
             <DropdownMenuItem
               className="cursor-pointer"
@@ -686,6 +713,16 @@ export function SessionSiteHeader({
                 queryKey: qk.project.sessionsScope(projectId ?? ''),
               })
             }
+          />
+          <ConfirmDialog
+            open={resetMachineOpen}
+            onOpenChange={setResetMachineOpen}
+            title="Reset machine?"
+            description="The machine is replaced with a fresh one from the current image. Its disk is discarded: installed packages, config and any file not pushed to the session's branch are lost. The session's branch is restored."
+            confirmLabel="Reset machine"
+            confirmVariant="destructive"
+            isPending={resetMachineMutation.isPending}
+            onConfirm={() => resetMachineMutation.mutate()}
           />
           <SessionDeleteModal
             projectId={projectId!}

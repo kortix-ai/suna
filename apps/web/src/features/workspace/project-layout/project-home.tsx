@@ -22,7 +22,8 @@ import {
   type SandboxTemplate,
 } from '@kortix/sdk';
 import type { AttachmentSubmission } from '@/features/session/composer/attachment-submission';
-import { contract, qk, type Command } from '@kortix/sdk/react';
+import { contract, qk, useFeatureFlag, type Command } from '@kortix/sdk/react';
+import { Switch } from '@/components/ui/switch';
 import { META_SANDBOX_SLUG, isMetaAgentName } from '@kortix/shared';
 import { AccessRequestsBell } from './home/access-requests-bell';
 import { FirstChat } from './home/first-chat';
@@ -36,6 +37,7 @@ export { ProjectHomeWelcomeBody } from './home/welcome-body';
 
 export interface ProjectHomeSendOptions extends ComposerOptions {
   sandbox_slug?: string;
+  persistent_machine?: boolean;
 }
 
 /**
@@ -77,6 +79,9 @@ export function ProjectHome({
 
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
+  // Persistent machine: offered where sessions run on Platinum (drives).
+  const persistentMachineAvailable = useFeatureFlag(projectId, 'drives').enabled;
+  const [persistentMachine, setPersistentMachine] = useState(false);
   const [prefill, setPrefill] = useState<{ text: string; id: number; submit?: boolean } | null>(
     null,
   );
@@ -96,7 +101,10 @@ export function ProjectHome({
   const metaSelected = isMetaAgentName(selectedAgent);
 
   useEffect(() => {
-    if (metaSelected) setSelectedSlug(null);
+    if (metaSelected) {
+      setSelectedSlug(null);
+      setPersistentMachine(false);
+    }
   }, [metaSelected]);
 
   const showSandboxPicker = sandboxItems.length >= 1;
@@ -154,12 +162,15 @@ export function ProjectHome({
             : selectedSlug
               ? { sandbox_slug: selectedSlug }
               : {}),
+          ...(persistentMachine && persistentMachineAvailable && !metaSelected
+            ? { persistent_machine: true }
+            : {}),
         },
         attachments,
       );
       return sent;
     },
-    [metaSelected, selectedSlug, onSend],
+    [metaSelected, selectedSlug, persistentMachine, persistentMachineAvailable, onSend],
   );
 
   const isMobile = useIsMobile();
@@ -202,19 +213,41 @@ export function ProjectHome({
   const sandboxSlot =
     !metaSelected && showSandboxPicker
       ? {
-          summary: selectedSlug
-            ? (sandboxItems.find((t) => t.slug === selectedSlug)?.name ?? selectedSlug)
-            : 'Agent default',
-          overridden: selectedSlug !== null,
+          summary:
+            (selectedSlug
+              ? (sandboxItems.find((t) => t.slug === selectedSlug)?.name ?? selectedSlug)
+              : 'Agent default') + (persistentMachine && persistentMachineAvailable ? ' · persistent' : ''),
+          overridden: selectedSlug !== null || (persistentMachine && persistentMachineAvailable),
           control: (
-            <SandboxPicker
-              items={sandboxItems}
-              activeSlug={activeSlug}
-              selectedSlug={selectedSlug}
-              onSelect={setSelectedSlug}
-            />
+            <div className="flex flex-col gap-3">
+              <SandboxPicker
+                items={sandboxItems}
+                activeSlug={activeSlug}
+                selectedSlug={selectedSlug}
+                onSelect={setSelectedSlug}
+              />
+              {persistentMachineAvailable ? (
+                <label className="flex cursor-pointer items-start justify-between gap-3">
+                  <span className="flex flex-col gap-0.5">
+                    <span className="text-foreground text-xs font-medium">Persistent machine</span>
+                    <span className="text-muted-foreground text-xs">
+                      The whole disk is kept between stops: installed packages, config and files. Running
+                      processes end on stop. It keeps its image until you reset the machine.
+                    </span>
+                  </span>
+                  <Switch
+                    checked={persistentMachine}
+                    onCheckedChange={setPersistentMachine}
+                    aria-label="Persistent machine"
+                  />
+                </label>
+              ) : null}
+            </div>
           ),
-          onReset: () => setSelectedSlug(null),
+          onReset: () => {
+            setSelectedSlug(null);
+            setPersistentMachine(false);
+          },
           resetLabel: 'Reset to agent default',
         }
       : undefined;
