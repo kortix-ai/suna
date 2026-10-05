@@ -125,7 +125,7 @@ export function ViewerPathPill({
   const crumbs = pathCrumbs(path);
   return (
     <span className="bg-muted flex h-8 min-w-0 flex-1 items-center gap-1 rounded-md px-1">
-      <span className="flex size-6 shrink-0 items-center justify-center">{icon}</span>
+      <span className="flex h-6 min-w-6 shrink-0 items-center justify-center">{icon}</span>
       <span className="flex min-w-0 flex-1 items-center gap-1.5 text-sm" title={path}>
         {crumbs.length > 0 && (
           <span className="text-muted-foreground min-w-0 shrink-[3] truncate">
