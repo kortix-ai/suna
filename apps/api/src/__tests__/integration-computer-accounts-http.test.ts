@@ -54,11 +54,11 @@ import { createAccountToken } from '../repositories/account-tokens';
 import { createServiceAccount } from '../repositories/service-accounts';
 import { db } from '../shared/db';
 import { relayOwnerPatch } from '../tunnel/core/cluster-forwarder';
+import { createConnectionsRouter } from '../tunnel/routes/connections';
 import {
-  createConnectionsRouter,
   retireStaleUnidentifiedRegistrations,
   retireSupersededRegistrations,
-} from '../tunnel/routes/connections';
+} from '../tunnel/connections-service';
 import { createRpcRouter } from '../tunnel/routes/rpc';
 import { deleteFromView, insertIntoView } from './helpers/compat-views';
 import { generateTunnelToken, hashSecretKey } from '../shared/crypto';

@@ -28,12 +28,12 @@ import { tunnelConnections, tunnelPermissions, tunnelDeviceAuthRequests } from '
 import { config } from '../config';
 import type { AppEnv } from '../types';
 import { makeOpenApiApp } from '../openapi';
+import { createConnectionsRouter } from './routes/connections';
 import {
-  createConnectionsRouter,
   retireStaleUnidentifiedRegistrations,
   retireSupersededRegistrations,
   UNIDENTIFIED_RETENTION_DAYS,
-} from './routes/connections';
+} from './connections-service';
 import { createRpcRouter } from './routes/rpc';
 import { createDeviceAuthRouter } from './routes/device-auth';
 import { tunnelRelay } from './core/relay';
