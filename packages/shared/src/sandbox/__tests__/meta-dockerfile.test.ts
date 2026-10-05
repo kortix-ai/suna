@@ -1,20 +1,19 @@
 import { describe, expect, test } from 'bun:test';
 
+import { PNPM_SHA256_AMD64, PNPM_SHA256_ARM64, PNPM_VERSION } from '../../runtime-versions';
 import { buildMetaSandboxDockerfile } from '../meta-dockerfile';
+
+const dockerfile = buildMetaSandboxDockerfile({
+  agentBinaryPath: 'artifacts/kortix-agent.gz',
+  cliBinaryPath: 'artifacts/kortix.gz',
+  entrypointScriptPath: 'artifacts/kortix-entrypoint.sh',
+  catalogPath: 'artifacts/llm-catalog.json',
+  managedSkillsPath: 'artifacts/managed-skills',
+});
 
 describe('buildMetaSandboxDockerfile', () => {
   test('contains only the platform coordination runtime', () => {
-    const dockerfile = buildMetaSandboxDockerfile({
-      agentBinaryPath: 'artifacts/kortix-agent.gz',
-      cliBinaryPath: 'artifacts/kortix.gz',
-      entrypointScriptPath: 'artifacts/kortix-entrypoint.sh',
-      catalogPath: 'artifacts/llm-catalog.json',
-      managedSkillsPath: 'artifacts/managed-skills',
-    });
-
     expect(dockerfile).toContain('FROM debian:bookworm-slim');
-    expect(dockerfile).toContain('https://get.pnpm.io/install.sh');
-    expect(dockerfile).toContain('PNPM_VERSION=11.15.1');
     expect(dockerfile).toContain('pnpm runtime set node 22.23.1 --global');
     expect(dockerfile).toContain('opencode-ai@1.18.23');
     expect(dockerfile).toContain(
@@ -28,12 +27,12 @@ describe('buildMetaSandboxDockerfile', () => {
       'ln -sfn /opt/kortix/opencode.current /usr/local/bin/opencode-kortix',
     );
     expect(dockerfile).toContain('PNPM_HOME=/home/kortix/.local/share/pnpm');
-    expect(dockerfile).toContain('PATH="/home/kortix/.local/share/pnpm/bin:${PATH}"');
+    expect(dockerfile).toContain('PATH="/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:${PATH}"');
     expect(dockerfile).toContain('/usr/local/bin/kortix-agent');
     expect(dockerfile).toContain('/usr/local/bin/kortix');
     expect(dockerfile).toContain('/workspace/AGENTS.md');
-    expect(dockerfile).toContain('# Kortix Meta Agent');
-    expect(dockerfile).toContain('You coordinate work. You do not perform project work in this sandbox.');
+    expect(dockerfile).toContain('# Meta\n');
+    expect(dockerfile).toContain('NEVER do project work in this sandbox.');
     expect(dockerfile).toContain(
       'Move files between sessions with `kortix sessions cp <session-id>:<path> <session-id>:<path>`.',
     );
@@ -75,5 +74,23 @@ describe('buildMetaSandboxDockerfile', () => {
     expect(dockerfile).not.toContain('codex-acp');
     expect(dockerfile).not.toContain('pi-acp');
     expect(dockerfile).not.toContain('pi-coding-agent');
+  });
+
+  test('installs pnpm from the checksum-verified release artifact, never the public installer script', () => {
+    // The toolchain layer's supply-chain rule (dockerfile-layer.ts) holds for
+    // every image, including the meta box: install pnpm from its versioned
+    // standalone release artifact after verifying the repository-controlled
+    // checksum. The public installer script is not part of the trust path.
+    // ponytail: install text duplicated from dockerfile-layer.ts per the issue;
+    // share a stage builder when the toolchain-stage split lands.
+    expect(dockerfile).not.toContain('get.pnpm.io');
+    expect(dockerfile).not.toMatch(/curl[^|\n]*\|\s*(?:sh|bash)/);
+    expect(dockerfile).toContain(
+      `"https://github.com/pnpm/pnpm/releases/download/v${PNPM_VERSION}/pnpm-linux-\${pnpm_arch}.tar.gz"`,
+    );
+    expect(dockerfile).toContain(`pnpm_sha=${PNPM_SHA256_AMD64}`);
+    expect(dockerfile).toContain(`pnpm_sha=${PNPM_SHA256_ARM64}`);
+    expect(dockerfile).toContain('echo "${pnpm_sha}  /tmp/pnpm.tar.gz" | sha256sum -c -');
+    expect(dockerfile).toContain(`test "$(HOME=/home/kortix pnpm --version)" = "${PNPM_VERSION}"`);
   });
 });

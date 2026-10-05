@@ -1,3 +1,4 @@
+import { SessionStartResultSchema } from '@kortix/api-contract';
 import { flow } from '../core/flow';
 import {
   configurePreviousRepositorySession,
@@ -40,9 +41,9 @@ flow(
       preserveRuntime: true,
     });
 
-    await ctx.step('ordinary start opens the preserved workspace without a bypass', async () => {
+    await ctx.step('ordinary start opens the preserved workspace without a bypass, in the contract shape', async () => {
       const response = await ctx.client.as(ctx.P.OWNER).post(path, {}, { params });
-      response.status(200).body().has('$.stage', 'stopped');
+      response.status(200).body().has('$.stage', 'stopped').schema(SessionStartResultSchema);
     });
 
     await ctx.step(

@@ -114,11 +114,14 @@ export function SupportHeader({
   lead,
   backTo,
   children,
+  as: Heading = 'h1',
 }: {
   title: string;
   lead?: ReactNode;
   backTo?: { href: string; label: string };
   children?: ReactNode;
+  /** `p` for a loading placeholder, so the page keeps one h1. */
+  as?: 'h1' | 'p';
 }) {
   return (
     <header className={cn('pt-28 sm:pt-36', children ? 'pb-10 sm:pb-14' : 'pb-12 sm:pb-16')}>
@@ -131,7 +134,7 @@ export function SupportHeader({
           {backTo.label}
         </Link>
       ) : null}
-      <h1 className="text-3xl font-medium text-balance md:text-4xl lg:tracking-tight">{title}</h1>
+      <Heading className="text-3xl font-medium text-balance md:text-4xl lg:tracking-tight">{title}</Heading>
       {lead ? (
         <p className="text-muted-foreground mt-5 max-w-xl text-base leading-relaxed text-pretty">
           {lead}

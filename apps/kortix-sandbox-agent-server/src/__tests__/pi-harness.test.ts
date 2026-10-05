@@ -134,12 +134,20 @@ function startFakeGateway() {
 
 let gateway: ReturnType<typeof startFakeGateway>
 let catalogDir: string
+let previousManagedSkills: string | undefined
 beforeAll(() => {
+  // The image's baked managed-skills overlay: the rigs pin exactly the skills
+  // they write, never the box's set. (The /etc/pt-env leak is neutralized by
+  // the runner: tests/bin/package-quality.ts sets KORTIX_PT_ENV_PATH.)
+  previousManagedSkills = process.env.KORTIX_MANAGED_SKILLS_DIR
+  process.env.KORTIX_MANAGED_SKILLS_DIR = join(tmpdir(), 'kortix-absent-managed-skills')
   gateway = startFakeGateway()
   catalogDir = mkdtempSync(join(tmpdir(), 'pi-catalog-'))
   writeFileSync(join(catalogDir, 'catalog.json'), JSON.stringify({ models: { [MODEL_ID]: { name: 'Test Model', limit: { context: 64_000, output: 4_096 } } } }))
 })
 afterAll(() => {
+  if (previousManagedSkills === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
+  else process.env.KORTIX_MANAGED_SKILLS_DIR = previousManagedSkills
   gateway.stop()
   rmSync(catalogDir, { recursive: true, force: true })
 })
@@ -246,10 +254,17 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<voi
  */
 let homeDir: string
 const realHome = process.env.HOME
+/** The image bakes managed skills and a host env file this box really has; a
+ *  rig that reads the machine is not a test, so point both at absent paths. */
+const absentBoxState = join(tmpdir(), 'pi-harness-absent-box-state')
+const realManagedSkillsDir = process.env.KORTIX_MANAGED_SKILLS_DIR
+const realPtEnvPath = process.env.KORTIX_PT_ENV_PATH
 beforeEach(() => {
   resetKortixEventBusForTests()
   homeDir = mkdtempSync(join(tmpdir(), 'pi-home-'))
   process.env.HOME = homeDir
+  process.env.KORTIX_MANAGED_SKILLS_DIR = absentBoxState
+  process.env.KORTIX_PT_ENV_PATH = absentBoxState
 })
 afterEach(async () => {
   for (const rig of rigs.splice(0)) {
@@ -259,6 +274,10 @@ afterEach(async () => {
   resetKortixEventBusForTests()
   if (realHome === undefined) delete process.env.HOME
   else process.env.HOME = realHome
+  if (realManagedSkillsDir === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
+  else process.env.KORTIX_MANAGED_SKILLS_DIR = realManagedSkillsDir
+  if (realPtEnvPath === undefined) delete process.env.KORTIX_PT_ENV_PATH
+  else process.env.KORTIX_PT_ENV_PATH = realPtEnvPath
   rmSync(homeDir, { recursive: true, force: true })
 })
 
@@ -961,6 +980,13 @@ describe('pi harness', () => {
   })
 
   test('skills in the project are loaded into the system prompt: root skills/, then the legacy dir', async () => {
+    // A hosted sandbox ships a real managed-skills dir; pin it to an empty one
+    // so only the two project skills below exist (same pattern as the
+    // managed-overlay test above).
+    const managed = mkdtempSync(join(tmpdir(), 'pi-managed-empty-'))
+    const previous = process.env.KORTIX_MANAGED_SKILLS_DIR
+    process.env.KORTIX_MANAGED_SKILLS_DIR = managed
+    try {
     const r = await boot({ script: [{ text: 'ok' }], start: false })
     const skill = (root: string, name: string, description: string) => {
       const dir = join(r.workspace, root, name)
@@ -977,6 +1003,10 @@ describe('pi harness', () => {
       ['deploy', 'Ship to prod'],
       ['review', 'Review a change'],
     ])
+    } finally {
+      if (previous === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
+      else process.env.KORTIX_MANAGED_SKILLS_DIR = previous
+    }
   })
 
   test.each([

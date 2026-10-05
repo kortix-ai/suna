@@ -14,11 +14,11 @@ import { sql } from 'drizzle-orm';
 import { QueryBuilder } from 'drizzle-orm/pg-core';
 import {
   __clearQuarantineMemoForTests,
-  MemoryConfigReleaseLedger,
   notFromMetaSession,
   PROJECT_QUARANTINE_SESSIONS,
   recordDaemonConfigReport,
 } from './quarantine';
+import { MemoryConfigReleaseLedger } from './__tests__/fakes';
 
 const PROJECT = '11111111-1111-4111-8111-111111111111';
 const S1 = '22222222-2222-4222-8222-222222222221';

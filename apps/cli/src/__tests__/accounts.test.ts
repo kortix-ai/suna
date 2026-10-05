@@ -346,6 +346,35 @@ describe('kortix projects use --host', () => {
     expect(requests).toEqual(['https://api.other/v1/projects/proj_other']);
   });
 
+  test('ignores the sandbox env file when --host names a logged-in host', async () => {
+    writeTwoHostConfig();
+    // The env-FILE variant of the same override: inside a sandbox the
+    // platform sources agent-env.sh into every shell, so the four env vars
+    // are unset on the process yet `sandboxEnvValue` still resolves them
+    // from the file. BASH_ENV pointing at a temp agent-env.sh takes
+    // priority over the real /dev/shm path (candidatePaths), which keeps
+    // this hermetic on machines that have the file.
+    delete process.env.KORTIX_DISABLE_SANDBOX_ENV_FILE;
+    const envFile = join(tmp, 'agent-env.sh');
+    writeFileSync(
+      envFile,
+      "export KORTIX_TOKEN='tok_sandbox'\nexport KORTIX_API_URL='https://api.sandbox'\n",
+      'utf8',
+    );
+    process.env.BASH_ENV = envFile;
+    mockOtherProject();
+
+    const code = await runProjects(['use', 'proj_other', '--host', 'other']);
+    expect(code).toBe(0);
+    expect(requests).toEqual(['https://api.other/v1/projects/proj_other']);
+    // The default binds on the named host's entry, not the ambient env host.
+    expect(loadConfig().hosts.other?.default_project).toEqual({
+      project_id: 'proj_other',
+      account_id: 'account_9',
+      name: 'Other',
+    });
+  });
+
   test('switches the named host active account, not the ambient one', async () => {
     writeTwoHostConfig();
     mockApi((url) => {

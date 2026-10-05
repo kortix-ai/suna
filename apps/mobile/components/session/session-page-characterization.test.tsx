@@ -22,6 +22,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from '
 import { configureKortix } from '@kortix/sdk';
 import { readFileSync } from 'node:fs';
 import React from 'react';
+import type { QuestionPrompt } from './QuestionPrompt';
 import { type ReactTestRenderer, act, create } from 'react-test-renderer';
 
 // One in-memory AsyncStorage for every store this file loads — the shared
@@ -67,6 +68,13 @@ let SessionPage: typeof import('./SessionPage').SessionPage;
 let SessionConnecting: typeof import('./SessionConnecting').SessionConnecting;
 
 // ── Captures the mocks feed the assertions ───────────────────────────────────
+let questionProps: React.ComponentProps<typeof QuestionPrompt> | undefined;
+let questionAction: () => Promise<void> = async () => {};
+const acknowledgeQuestion = async (name: string, requestId: string, answers?: string[][]) => {
+  calls.push({ name, args: [requestId, answers] });
+  await questionAction();
+  useRuntimePendingStore.getState().removeQuestion(requestId);
+};
 let listProps: any = null; // the FlatList's latest props
 let healthPillProps: { onSwitch?: () => void } | null = null;
 let composerProps: any = null; // SessionChatInput's latest props
@@ -364,7 +372,8 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/components/session/LiveUpdatesPausedPill': { LiveUpdatesPausedPill: Empty },
   '@/components/session/SandboxPreviewSheet': { SandboxPreviewSheet: Capture(() => {}) },
   '@/components/session/turn/activity-sheet': { ActivitySheetHost: Empty },
-  '@/components/session/QuestionPrompt': { QuestionPrompt: (props: any) => props.children ?? null },
+  '@/components/session/QuestionPrompt': { QuestionPrompt: (props: React.ComponentProps<typeof QuestionPrompt>) => { questionProps = props; return null; } },
+  './QuestionPrompt': { QuestionPrompt: (props: React.ComponentProps<typeof QuestionPrompt>) => { questionProps = props; return null; } },
   '@/components/session/PermissionPromptCard': { PermissionPromptCard: Empty },
   '@/components/session/ProjectHero': { ProjectHero: HeroLogo },
 
@@ -470,8 +479,8 @@ const mergedOverrides: Record<string, Record<string, any>> = {
     useRuntimeCommands: () => ({ data: NO_ROWS }),
     useQuestionSelfHeal: () => {},
     usePermissionSelfHeal: () => {},
-    answerQuestion: spy('answerQuestion'),
-    rejectQuestion: spy('rejectQuestion'),
+    answerQuestion: (requestId: string, answers: string[][]) => acknowledgeQuestion('answerQuestion', requestId, answers),
+    rejectQuestion: (requestId: string) => acknowledgeQuestion('rejectQuestion', requestId),
     answerPermission: spy('answerPermission'),
     abortRuntimeSession: spy('abortRuntimeSession'),
     promptRuntimeMessage: spy('promptRuntimeMessage'),
@@ -713,6 +722,8 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  questionProps = undefined;
+  questionAction = async () => {};
   calls.length = 0;
   timingStarts.length = 0;
   holdTimings = false;
@@ -1624,4 +1635,95 @@ describe('SessionConnecting saved thread', () => {
     });
     expect(seen('restart')).toHaveLength(1);
   });
+});
+
+
+describe('SessionPage question acknowledgement', () => {
+  const request = {
+    id: 'question-1', sessionID: SID,
+    questions: [{ header: 'Continue', question: 'Continue?', options: [] }],
+  };
+  const prompt = () => {
+    if (!questionProps) throw new Error('QuestionPrompt did not render');
+    return questionProps;
+  };
+  const pending = () => useRuntimePendingStore.getState().questions[request.id];
+  const seed = () => useRuntimePendingStore.getState().addQuestion(request);
+
+  for (const action of ['reply', 'reject']) {
+    const submit = () => action === 'reply'
+      ? prompt().onReply(request.id, [['Yes']])
+      : prompt().onReject(request.id);
+
+    test(`${action} propagates failure, preserves pending, and does not stop`, async () => {
+      seed();
+      const failure = new Error('question transport failed');
+      questionAction = async () => { throw failure; };
+      await renderPage();
+      await act(async () => {
+        await expect(Promise.resolve(submit())).rejects.toBe(failure);
+      });
+      expect(pending()).toEqual(request);
+      expect(seen('cancel')).toHaveLength(0);
+    });
+
+    test(`${action} waits for acknowledgement before removal or stop`, async () => {
+      seed();
+      let accept = () => {};
+      questionAction = () => new Promise<void>((resolve) => { accept = resolve; });
+      await renderPage();
+      let result: void | Promise<void>;
+      await act(async () => {
+        result = submit();
+        await Promise.resolve();
+      });
+      expect(pending()).toEqual(request);
+      expect(seen('cancel')).toHaveLength(0);
+      await act(async () => {
+        accept();
+        await result;
+      });
+      expect(pending()).toBeUndefined();
+      expect(seen(action === 'reply' ? 'answerQuestion' : 'rejectQuestion').map((call) => call.args)).toEqual([
+        [request.id, action === 'reply' ? [['Yes']] : undefined],
+      ]);
+      expect(seen('cancel')).toHaveLength(action === 'reject' ? 1 : 0);
+    });
+
+    test(`${action} throws when the runtime is unavailable without removing or stopping`, async () => {
+      seed();
+      runtimeValue = { ...runtimeValue, switched: false };
+      await renderPage();
+      await act(async () => {
+        await expect(Promise.resolve(submit())).rejects.toThrow('Runtime not ready');
+      });
+      expect(pending()).toEqual(request);
+      expect(seen('answerQuestion')).toHaveLength(0);
+      expect(seen('rejectQuestion')).toHaveLength(0);
+      expect(seen('cancel')).toHaveLength(0);
+    });
+  }
+});
+
+
+test('SessionPage accepted question rejection delegates stop failure to handleStop', async () => {
+  useRuntimePendingStore.getState().addQuestion({
+    id: 'question-stop', sessionID: SID,
+    questions: [{ header: 'Continue', question: 'Continue?', options: [] }],
+  });
+  setStatus({ type: 'busy' });
+  abortResponder = fail;
+  await renderPage();
+  const props = questionProps;
+  if (!props) throw new Error('QuestionPrompt did not render');
+  await act(async () => {
+    await props.onReject('question-stop');
+    await sleep(15);
+  });
+  expect(useRuntimePendingStore.getState().questions['question-stop']).toBeUndefined();
+  expect(seen('cancel')).toHaveLength(1);
+  expect(statusOf()).toEqual({ type: 'busy' });
+  expect(toastsOf('error')).toEqual([
+    { kind: 'error', message: "Couldn't stop. Kortix is still working." },
+  ]);
 });

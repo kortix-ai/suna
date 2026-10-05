@@ -154,6 +154,13 @@ function startServer(): string {
       const project = `/v1/projects/${PROJECT}`;
       const session = `${project}/sessions/${SESSION}`;
 
+      if (method === 'GET' && path === `${session}/config`) {
+        return Response.json({ running_etag: 'old', latest_etag: 'new', stale: true, sandbox_reachable: true });
+      }
+      if (method === 'POST' && path === `${session}/reload`) {
+        return Response.json({ applied: true, previous_etag: 'old', etag: 'new', repo_refreshed: true, detail: 'Config reloaded.' });
+      }
+
       // ── control plane ────────────────────────────────────────────────────
       if (method === 'GET' && path === `${project}/sessions/${SESSION}`) {
         return Response.json(sessionRow());
@@ -1008,5 +1015,30 @@ describe('kortix sessions rm (multiple ids)', () => {
     const r = await runCli(['sessions', 'rm', ...P], config);
     expect(r.code).toBe(2);
     expect(r.stderr).toContain('Pass a session id');
+  });
+});
+
+describe('kortix sessions reload', () => {
+  const cases: { options: string[] }[] = [{ options: [] }, { options: ['--status'] }, { options: ['--force', '--no-repo'] }];
+  test.each(cases)('preserves --json with options %j', async ({ options }) => {
+    const r = await runCli(['sessions', 'reload', SESSION, '--json', ...options, ...P], config);
+    expect(r.code).toBe(0);
+    expect(r.stderr).toBe('');
+    const statusOnly = options.includes('--status');
+    expect(JSON.parse(r.stdout)).toEqual(statusOnly
+      ? { running_etag: 'old', latest_etag: 'new', stale: true, sandbox_reachable: true }
+      : { applied: true, previous_etag: 'old', etag: 'new', repo_refreshed: true, detail: 'Config reloaded.' });
+    if (!statusOnly) {
+      expect(calls('POST', `/v1/projects/${PROJECT}/sessions/${SESSION}/reload`)).toEqual([
+        { method: 'POST', path: `/v1/projects/${PROJECT}/sessions/${SESSION}/reload`, body: { refresh_repo: !options.includes('--no-repo'), force: options.includes('--force') } },
+      ]);
+    }
+  });
+
+  test('keeps human output without --json', async () => {
+    const r = await runCli(['sessions', 'reload', SESSION, ...P], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('Config reloaded.');
+    expect(() => JSON.parse(r.stdout)).toThrow();
   });
 });

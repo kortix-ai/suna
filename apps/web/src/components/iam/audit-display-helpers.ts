@@ -638,17 +638,6 @@ export function describeAuditAction(
   };
 }
 
-/**
- * Return the compact shape used by existing audit consumers.
- */
-export function humanizeAuditAction(
-  action: string,
-  tI18nComplete: UiTranslator,
-): HumanizedAuditAction {
-  const { title, detail, kind } = describeAuditAction(action, tI18nComplete);
-  return detail ? { title, detail, kind } : { title, kind };
-}
-
 /** The kind a label action's verb names; its route's method otherwise. */
 const VERB_KIND: Readonly<Record<string, HumanizedAuditAction['kind']>> = {
   list: 'read',
@@ -724,21 +713,3 @@ export function formatResourcePill(
   const short = resourceId ? resourceId.slice(0, 8) : null;
   return short ? `${label} · ${short}` : label;
 }
-
-/**
- * Tailwind colour classes per action-kind. Used for the small leading
- * dot on each row. Kept in this module so the row component stays a
- * presentation shell.
- */
-export const KIND_DOT_CLASS: Record<HumanizedAuditAction['kind'], string> = {
-  create: 'bg-emerald-500/70',
-  update: 'bg-amber-500/70',
-  delete: 'bg-rose-500/70',
-  grant: 'bg-violet-500/70',
-  revoke: 'bg-rose-500/70',
-  attach: 'bg-sky-500/70',
-  detach: 'bg-zinc-400/70',
-  read: 'bg-zinc-300/60',
-  export: 'bg-sky-500/70',
-  other: 'bg-zinc-300/60',
-};

@@ -24,7 +24,7 @@ export const PUBLIC_METADATA_TRANSLATION_KEYS: Readonly<Record<string, string>> 
     'text3efe2d7294ba',
   'Every Kortix session gets its own computer: an isolated Linux machine that clones your repo, cuts a branch named after the session, and runs OpenCode. Work lands through a change request a person approves.':
     'textb57f2c70525f',
-  'Field notes on building, running, and governing AI agents that do real work — from the team building the Kortix command center.':
+  'Field notes on building, running, and governing AI agents that do real work — from the team building the Kortix AI Operating System.':
     'text3661bf7ae497',
   'Get Kortix for macOS, Windows, Linux, iOS, and Android.': 'textd587acccbf63',
   'How Kortix is built to survive a security review: an isolated machine per session, connector credentials brokered server-side that never enter that machine, permissions for people and agents, human approval gates, and a change request between an agent and main.':
@@ -65,4 +65,33 @@ export const PUBLIC_METADATA_TRANSLATION_KEYS: Readonly<Record<string, string>> 
     'textad70f35eaccc',
   'Field notes on building, running, and governing AI agents that do real work — from the team building Kortix.':
     'text66b6392a2418',
+  "Contact sales and book a demo": 'text228359b08506',
+  "About": 'text4efca0d10c5f',
+  "Legal": 'text4787eaf7c938',
+  "Marketplace: agents, skills and project templates": 'text9d2ac301f9b3',
+  "Developers: CLI, SDK and API for AI agents": 'text9673e23783ee',
+  "Careers": 'text7e658675b5ca',
+  "Changelog": 'textead07c84baac',
+  "Use cases: AI agents doing real company work": 'textb39694bde847',
+  "Download the desktop app and CLI": 'text2d077d6a915b',
+  "Enterprise AI agents: SSO, SCIM, audit, your VPC": 'texte5328779436c',
+  "Pricing": 'textdfe95783edfe',
+  "Support": 'textbe91940b79f4',
+  "Agent Computer: a cloud computer per session": 'text09aa31d75506',
+  "AI agents and skills as files in git": 'text3e8ba93514fa',
+  "AI agent automations on cron and webhooks": 'text81707b679d49',
+  "AI agents in Slack and Microsoft Teams": 'textd49c86c33af1',
+  "Company as Code: your company in one git repo": 'textab8ee7418b44',
+  "Connectors: 3,000+ apps for AI agents": 'text08c07aa26d80',
+  "AI agent security: isolation, permissions, audit": 'textb5ddb92c2667',
+  "Self-hosted AI agents on your infrastructure": 'text111f5fe94248',
+  "AI agents for every team": 'text3ed734962d72',
+  "AI agents for engineering teams": 'text1f66405c0804',
+  "AI agents for product teams": 'text68f3fc697c04',
+  "AI agents for IT teams": 'text1ab765e55460',
+  "AI agents for data science teams": 'texte74f82904cfe',
+  "AI agents for people and recruiting teams": 'text6a66bdc6dbb8',
+  "AI agents for sales teams": 'text09e71792c6c3',
+  "AI agents for marketing teams": 'textaaab3a59b808',
+  "AI agents for finance teams": 'text8f480bae8d16',
 };

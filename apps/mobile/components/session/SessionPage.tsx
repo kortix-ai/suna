@@ -101,7 +101,6 @@ import {
   useQuestionSelfHeal,
   useRuntimeCommands,
   useRuntimeConfig,
-  useRuntimePendingStore,
   useRuntimeSession,
   useRuntimeSessions,
   useSessionMessages,
@@ -1665,15 +1664,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // Question reply/reject handlers
   const handleQuestionReply = useCallback(
     async (requestId: string, answers: string[][]) => {
-      if (!runtimeReady) return;
-      // Optimistically remove it. The SDK's pending store remembers answered
-      // ids, so no later read of the runtime's list can bring it back.
-      useRuntimePendingStore.getState().removeQuestion(requestId);
-      try {
-        await answerQuestion(requestId, answers);
-      } catch (err: any) {
-        log.error('Failed to reply to question:', err?.message || err);
-      }
+      if (!runtimeReady) throw new Error('Runtime not ready');
+      await answerQuestion(requestId, answers);
     },
     [runtimeReady],
   );
@@ -1700,14 +1692,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
 
   const handleQuestionReject = useCallback(
     async (requestId: string) => {
-      if (!runtimeReady) return;
-      useRuntimePendingStore.getState().removeQuestion(requestId);
-      try {
-        await rejectQuestion(requestId);
-      } catch (err: any) {
-        log.error('Failed to reject question:', err?.message || err);
-      }
-      // Also abort the session (matches frontend behavior)
+      if (!runtimeReady) throw new Error('Runtime not ready');
+      await rejectQuestion(requestId);
       handleStop();
     },
     [runtimeReady, handleStop],

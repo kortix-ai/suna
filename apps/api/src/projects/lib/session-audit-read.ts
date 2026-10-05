@@ -27,22 +27,9 @@ import { approvalPageUrl } from '../../setup-links/token';
 import { lookupEmailsByUserIds } from '../lib/access';
 
 /** One governed action, in the exact wire shape `GET .../audit` returns. */
-export interface SessionAuditActionRow {
-  execution_id: string;
-  action: string;
-  connector_id: string | null;
-  connector: string | null;
-  status: string;
-  risk: string | null;
-  acted_by: string | null;
-  acted_by_email: string | null;
-  resolved_by: string | null;
-  resolved_by_email: string | null;
-  result_summary: unknown | null;
-  at: string;
-  resolved_at: string | null;
-  approval_url: string | null;
-}
+/** One row of the pending-approvals projection: `@kortix/api-contract`. */
+export type { SessionAuditAction as SessionAuditActionRow } from '@kortix/api-contract';
+import type { SessionAuditAction as SessionAuditActionRow } from '@kortix/api-contract';
 
 export interface SessionAuditActionsResult {
   session_id: string;

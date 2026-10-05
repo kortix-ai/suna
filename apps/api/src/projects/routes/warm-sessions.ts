@@ -1,3 +1,4 @@
+import type { Context } from 'hono';
 /**
  * Pre-create warm sessions and adopt them with a durable first prompt.
  * See ../lib/warm-sessions.ts.
@@ -35,8 +36,8 @@ import { resolveSessionSandboxRegion } from '../../platform/services/sandbox-reg
  * Warming is SPECULATIVE. The browser fires it on every project view and
  * ignores every failure, falling through to the ordinary create path, which
  * re-evaluates every gate and surfaces the real error to the user. So there is
- * exactly one failure response here, whatever went wrong: billing, the
- * concurrent-session cap, a missing connector connection, an unreadable repo.
+ * exactly one failure response here, whatever went wrong: billing, a missing
+ * connector connection, an unreadable repo.
  *
  * 409 rather than 5xx because none of those are server faults, and a 5xx on
  * every page view of a repo-less project is both wrong and noisy enough to fail
@@ -229,7 +230,7 @@ export async function dropWarmSessionMarkerOnAdopt(
   }
 }
 
-function warmSessionUnavailable(c: any) {
+function warmSessionUnavailable(c: Context) {
   return c.json(
     {
       error: 'This project cannot prepare a warm session right now.',
@@ -278,7 +279,7 @@ projectsApp.openapi(
       ...errors(400, 402, 403, 404, 409, 429, 500, 503),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -332,9 +333,6 @@ projectsApp.openapi(
         // session" click with no overrides. Nothing to keep in sync.
         body: {},
         metadata: { source: 'ui', [WARM_SESSION_METADATA_KEY]: true },
-        // A warm box is real, billed compute holding a concurrent-session slot.
-        // It must never take the LAST one and 429 the next genuine start.
-        reserveConcurrentSlots: 1,
         authType: c.get('authType') as string | undefined,
         apiKeyType: c.get('apiKeyType') as string | undefined,
         inSession: isProjectSessionPrincipal(c),
@@ -390,7 +388,7 @@ projectsApp.openapi(
       ...errors(400, 403, 404, 409),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const body = await readJsonObject(c);
     const sessionId = normalizeString(body.session_id);

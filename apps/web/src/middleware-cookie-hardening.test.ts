@@ -80,6 +80,37 @@ describe('kortix_auth_bounce: Secure on production HTTPS', () => {
   });
 });
 
+describe('__Secure-kortix_test_access: never minted on an open path', () => {
+  test('the exempted auth callback response sets no access cookie and no Basic challenge', async () => {
+    process.env.WEB_PROTECTION_ENABLED = 'true';
+    process.env.WEB_PROTECTION_PASSWORD = 'test-protection-pw';
+
+    const response = await middleware(
+      new NextRequest(new Request('https://dev.kortix.com/auth/callback?code=_some_code')),
+    );
+
+    // The callback path is exempt from the gate, so it must not 401 — and it
+    // must not hand out the access cookie either: the cookie value IS the
+    // gate credential, and minting it on an open path would open every other
+    // path.
+    expect(response.status).not.toBe(401);
+    expect(setCookieFor(response, ENVIRONMENT_ACCESS_COOKIE)).toBeUndefined();
+    expect(response.headers.get('www-authenticate')).toBeNull();
+  });
+
+  test('a gated path next to it still challenges', async () => {
+    process.env.WEB_PROTECTION_ENABLED = 'true';
+    process.env.WEB_PROTECTION_PASSWORD = 'test-protection-pw';
+
+    const response = await middleware(
+      new NextRequest(new Request('https://dev.kortix.com/projects')),
+    );
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get('www-authenticate')).toContain('Basic');
+  });
+});
+
 describe('__Secure-kortix_test_access: host-only, no Domain', () => {
   function basicAuthRequest(path: string): NextRequest {
     const credentials = Buffer.from(
