@@ -2158,12 +2158,6 @@ export function createOpencodeLifecycle(
     if (process.env.KORTIX_OPENCODE_DEBUG === '1') {
       env.OPENCODE_LOG_LEVEL = 'DEBUG'
     }
-    // The standalone binary already embeds a models.dev snapshot, and Kortix
-    // injects its managed provider catalog below. A remote catalog refresh adds
-    // network contention without adding a model that this session can use.
-    if (process.env.KORTIX_COMPILED_RUNTIME_FORMAT === 'kortix.compiled-runtime.v1') {
-      env.OPENCODE_DISABLE_MODELS_FETCH = '1'
-    }
 
     const configPath = await writeComposedConfig(baseEnv)
     let agentModelPatch: string | undefined

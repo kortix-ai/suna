@@ -578,14 +578,6 @@ const envSchema = z.object({
   // `false` restores the pre-2026-08-27 create-time contract. The daemon side
   // is additive and falls back to the clone path without these hints.
   KORTIX_FAST_GIT_BOOT_ENABLED: optBoolTrue,
-  // Experimental compiled boot path. The API builds a verified checkout and
-  // OpenCode launcher for one exact Git SHA. `off` preserves the clone and
-  // baked-agent path. `shadow` verifies both artifacts without using them.
-  // `prefer` uses both artifacts with legacy fallback. `required` fails closed.
-  KORTIX_COMPILED_BOOT_MODE: z
-    .enum(['off', 'shadow', 'prefer', 'required'])
-    .optional()
-    .default('off'),
   // ── Project snapshot archives (S3 config provider) ─────────────────────
   // A fresh session materializes its project from a prebuilt `.tar.gz` in S3
   // instead of a Git clone. `git` (default) never attempts S3 and is the
@@ -1361,7 +1353,6 @@ export const config = {
   DAYTONA_WEBHOOK_SECRET: env.DAYTONA_WEBHOOK_SECRET,
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
   KORTIX_FAST_GIT_BOOT_ENABLED: env.KORTIX_FAST_GIT_BOOT_ENABLED,
-  KORTIX_COMPILED_BOOT_MODE: env.KORTIX_COMPILED_BOOT_MODE,
   KORTIX_PROJECT_SNAPSHOT_MODE: env.KORTIX_PROJECT_SNAPSHOT_MODE,
   KORTIX_PROJECT_SNAPSHOT_S3_BUCKET: env.KORTIX_PROJECT_SNAPSHOT_S3_BUCKET,
   KORTIX_PROJECT_SNAPSHOT_S3_REGION: env.KORTIX_PROJECT_SNAPSHOT_S3_REGION,

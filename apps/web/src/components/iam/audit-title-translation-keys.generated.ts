@@ -194,8 +194,6 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Downloaded Microsoft Teams file': 'textea8e6c1cd541',
   'Downloaded Slack file': 'textff439a942536',
   'Downloaded a runtime-asset chunk': 'textd690dbbd64cb',
-  'Downloaded compiled project checkout': 'text018912e44371',
-  'Downloaded compiled session runtime': 'textf27e24caeef3',
   'Downloaded fast-boot Git bundle': 'text46bf87f15165',
   'Downloaded managed skills': 'texta0e1c6f7e876',
   'Downloaded project config archive': 'text7beaff63a7d3',

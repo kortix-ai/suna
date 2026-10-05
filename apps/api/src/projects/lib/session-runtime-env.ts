@@ -12,8 +12,6 @@ export interface SessionRuntimeEnvInput {
   opencodeModel?: string | null;
   /** Project file delivery mode selected by the session's agent. */
   repositoryAccess?: boolean;
-  /** Experimental compiled checkout and OpenCode launcher rollout mode. */
-  compiledBootMode?: 'off' | 'shadow' | 'prefer' | 'required';
   /** True only for a newly-created session branch that still equals base. */
   freshSession?: boolean;
   /** Replacement runtime must fetch the existing remote session branch once. */
@@ -99,8 +97,6 @@ export function auditRelayEnvPassthrough(
 
 export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<string, string> {
   const allowsFullRepository = input.repositoryAccess ?? true;
-  const compiledBootMode = input.compiledBootMode ?? 'off';
-  const compiledBootEnabled = compiledBootMode !== 'off';
   const projectGitEnv: Record<string, string> = allowsFullRepository
     ? {
         KORTIX_REPO_URL: input.repoUrl,
@@ -111,15 +107,12 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     : {};
   // A brand-new session's branch IS the base tip: the daemon creates it
   // locally and materializes from the baked scaffold + the API's delta, so no
-  // in-sandbox `git fetch` runs at all. This used to hide behind the
-  // compiled-boot experiment; measured 2026-08-27 on dev,
-  // the two proxied fetches it removes cost 5.4 s + 2.6 s of a 7.9 s
+  // in-sandbox `git fetch` runs at all. The two proxied fetches it removes cost 5.4 s + 2.6 s of a 7.9 s
   // `repo-materialized`, measured on dev 2026-08-27.
   const fastGitBootEnv: Record<string, string> =
     allowsFullRepository && input.freshSession
       ? {
           KORTIX_SESSION_FRESH: '1',
-          ...(compiledBootEnabled ? { KORTIX_COMPILED_BOOT_MODE: compiledBootMode } : {}),
           ...(input.baseSha ? { KORTIX_BASE_SHA: input.baseSha } : {}),
           ...(input.gitDeltaBundleBase64
             ? { KORTIX_GIT_DELTA_BUNDLE_BASE64: input.gitDeltaBundleBase64 }

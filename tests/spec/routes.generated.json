@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 720,
+  "count": 718,
   "routes": [
     {
       "method": "GET",
@@ -1157,14 +1157,6 @@
     {
       "method": "GET",
       "path": "/v1/generation"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/git/:project/compiled-checkout"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/git/:project/compiled-runtime"
     },
     {
       "method": "GET",

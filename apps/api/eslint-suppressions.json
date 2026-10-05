@@ -810,33 +810,12 @@
       "count": 1
     }
   },
-  "src/git-proxy/compiled-agent-bundle.ts": {
-    "no-restricted-properties": {
-      "count": 2
-    }
-  },
-  "src/git-proxy/compiled-checkout.ts": {
-    "kortix-api/replica-local": {
-      "count": 1
-    },
-    "no-restricted-properties": {
-      "count": 2
-    }
-  },
-  "src/git-proxy/compiled-runtime-artifact.ts": {
-    "kortix-api/replica-local": {
-      "count": 1
-    },
-    "no-restricted-properties": {
-      "count": 2
-    }
-  },
   "src/git-proxy/index.ts": {
     "kortix-api/replica-local": {
       "count": 2
     },
     "no-console": {
-      "count": 13
+      "count": 10
     },
     "no-restricted-properties": {
       "count": 2
@@ -1478,7 +1457,7 @@
   },
   "src/projects/lib/session-create.ts": {
     "no-console": {
-      "count": 8
+      "count": 6
     }
   },
   "src/projects/lib/session-reload.ts": {

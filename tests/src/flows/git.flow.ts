@@ -30,8 +30,6 @@ flow(
     domain: "git",
     routes: [
       "GET /v1/git/:project/info/refs",
-      "GET /v1/git/:project/compiled-checkout",
-      "GET /v1/git/:project/compiled-runtime",
       "GET /v1/git/:project/project-snapshot",
       "POST /v1/git/:project/git-upload-pack",
       "POST /v1/git/:project/git-receive-pack",
@@ -78,24 +76,6 @@ flow(
         .as(ctx.P.ANON)
         .post("/v1/git/:project/git-upload-pack", {}, { params: { project: p.id } });
       r.status([401, 403, 502]);
-    });
-    await ctx.step("compiled checkout without git auth → 401", async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .get("/v1/git/:project/compiled-checkout", {
-          params: { project: p.id },
-          query: { ref: "main", sha: "a".repeat(40) },
-        });
-      r.status([401, 403]);
-    });
-    await ctx.step("compiled runtime without git auth → 401", async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .get("/v1/git/:project/compiled-runtime", {
-          params: { project: p.id },
-          query: { ref: "main", sha: "a".repeat(40) },
-        });
-      r.status([401, 403]);
     });
     await ctx.step("git-receive-pack (push) without git auth → 401", async () => {
       const r = await ctx.client

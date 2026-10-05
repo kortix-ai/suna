@@ -416,7 +416,6 @@ export async function buildSessionSandboxEnvVars(input: {
       piPackages: manifestPackages,
       piPackagesBundle,
       repositoryAccess: input.repositoryAccess,
-      compiledBootMode: config.KORTIX_COMPILED_BOOT_MODE,
       freshSession: input.freshSession,
       restoreSessionBranch: input.restoreSessionBranch,
       baseSha: input.baseSha,

@@ -291,8 +291,6 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|docs",
   "GET|v1|edge|tls-check",
   "GET|v1|generation",
-  "GET|v1|git|:project|compiled-checkout",
-  "GET|v1|git|:project|compiled-runtime",
   "GET|v1|git|:project|fast-boot-bundle",
   "POST|v1|git|:project|git-receive-pack",
   "POST|v1|git|:project|git-upload-pack",

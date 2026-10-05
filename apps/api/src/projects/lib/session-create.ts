@@ -90,14 +90,13 @@ import { transitionSession } from '../session-lifecycle/status-transitions';
 import { mergeSessionSandboxEnv, parseSessionRuntimeContext } from './session-runtime-context';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { resolvePlatformMetaSandbox } from './platform-meta-agent';
-import { prebuildCompiledBootArtifacts } from '../../git-proxy/compiled-prebuild';
 
 import {
   resolveProjectSnapshotMode,
   resolveProjectSnapshotPinForSession,
 } from '../../git-proxy/project-snapshot';
 
-import { buildSessionSandboxEnvVars, deriveKortixApiBase, proxyGitUrl } from './session-sandbox-env-build';
+import { buildSessionSandboxEnvVars, deriveKortixApiBase } from './session-sandbox-env-build';
 import { sandboxCallbackUnreachableReason, sandboxCallbackDeadTunnelReason } from './session-callback-probe';
 /** Every status a failed create answers with. Routes that create a session
  *  declare these, so the published spec lists them. */
@@ -1178,38 +1177,6 @@ export async function createProjectSession(input: {
             if (fastBootHintTimeout) clearTimeout(fastBootHintTimeout);
           })
         : Promise.resolve(undefined);
-      if (config.KORTIX_COMPILED_BOOT_MODE !== 'off') {
-        void Promise.all([projectWithGitAuthPromise, fastBootGitHintPromise])
-          .then(([projectWithGitAuth, hint]) =>
-            hint?.baseSha
-              ? prebuildCompiledBootArtifacts(
-                  projectWithGitAuth,
-                  baseRef,
-                  hint.baseSha,
-                  proxyGitUrl(projectId),
-                )
-              : null,
-          )
-          .then((artifacts) => {
-            if (!artifacts) return;
-            console.info('[compiled-boot] session artifacts ready', {
-              projectId,
-              sessionId,
-              ref: baseRef,
-              sourceSha: artifacts.runtime.sourceSha,
-              checkoutCache: artifacts.checkout.cacheHit ? 'hit' : 'miss',
-              runtimeCache: artifacts.runtime.cacheHit ? 'hit' : 'miss',
-            });
-          })
-          .catch((error) => {
-            console.warn('[compiled-boot] session artifact prebuild failed', {
-              projectId,
-              sessionId,
-              ref: baseRef,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          });
-      }
       const envPromise = fastBootGitHintPromise
         .then(async (fastBootGitHint) => {
           // S3 config provider: pin a PREPARED archive for the exact base tip

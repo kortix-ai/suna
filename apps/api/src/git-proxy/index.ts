@@ -56,22 +56,6 @@ import { resolveFastBootGitHintWithCache } from '../projects/lib/fast-boot-git-h
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, rename, rm, stat, utimes } from 'node:fs/promises';
 import { join } from 'node:path';
-import {
-  COMPILED_CHECKOUT_CONTENT_TYPE,
-  COMPILED_CHECKOUT_FORMAT,
-  CompiledCheckoutSourceMovedError,
-  CompiledCheckoutTooLargeError,
-  buildCompiledCheckoutArtifact,
-} from './compiled-checkout';
-import {
-  CompiledRuntimeSourceMovedError,
-  buildCompiledRuntimeArtifact,
-} from './compiled-runtime-artifact';
-import {
-  COMPILED_RUNTIME_CONTENT_TYPE,
-  COMPILED_RUNTIME_FORMAT,
-} from './compiled-runtime';
-import { prebuildDefaultBranchArtifacts } from './compiled-prebuild';
 import { config } from '../config';
 import {
   buildProjectSnapshotDescriptor,
@@ -289,24 +273,16 @@ async function forwardAuthorized(
   // Build-on-push warming: a successful push (git-receive-pack) to the managed
   // git may have advanced the project's default-branch tip. Kick the
   // fire-and-forget warms that make the FIRST session on the new commit fast
-  // (the fast-boot git hint below, and the compiled-boot artifact
-  // prebuild) instead of cold ("starting agent…"). None of them blocks or
+  // (the fast-boot git hint below, the manifest tripwire and the project
+  // snapshot enqueue) instead of cold ("starting agent…"). None of them blocks or
   // fails the push, and each is idempotent, so a push that did not move the tip
   // costs nothing. Session-start remains the on-demand fallback for projects
   // that never push.
-  //
-  // The per-project provider PIN is read here so a prebuild targets the
-  // provider(s) a session on this project will actually use (pinned provider =>
-  // that one; no pin => every enabled provider).
   if (suffix === '/git-receive-pack' && res.status >= 200 && res.status < 300) {
     notifyPushedBranches(projectId, pushedRefs);
     void (async () => {
       try {
         const gitProject = await loadGitProject({ row: auth.project });
-        const projectPin =
-          typeof (auth.project.metadata as Record<string, unknown> | null)?.default_sandbox_provider === 'string'
-            ? ((auth.project.metadata as Record<string, unknown>).default_sandbox_provider as string)
-            : null;
         // Warm the fresh-session git hint (base tip + scaffold delta + OpenCode
         // config dir) right after the push that moved the tip, so the next
         // session create finds it cached instead of losing the 2 s create-time
@@ -375,19 +351,6 @@ async function forwardAuthorized(
               err instanceof Error ? err.message : err,
             );
           });
-        }
-        if (config.KORTIX_COMPILED_BOOT_MODE !== 'off') {
-          try {
-            await prebuildDefaultBranchArtifacts(
-              gitProject,
-              `${new URL(c.req.url).origin}/v1/git/${projectId}.git`,
-            );
-          } catch (err) {
-            console.warn(
-              `[git-proxy] compiled artifact prebuild skipped for ${projectId}:`,
-              err instanceof Error ? err.message : err,
-            );
-          }
         }
       } catch (err) {
         console.warn(
@@ -815,142 +778,6 @@ gitProxyApp.openapi(
         error: error instanceof Error ? error.message : String(error),
       });
       return c.json({ error: 'project snapshot descriptor unavailable' }, 503);
-    }
-  },
-);
-
-gitProxyApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{project}/compiled-checkout',
-    tags: ['git'],
-    summary: 'Download an exact compiled checkout for sandbox cold boot',
-    request: {
-      params: projectParam,
-      query: z.object({
-        ref: z.string().min(1),
-        sha: z.string().regex(/^[0-9a-f]{40}$/),
-      }),
-    },
-    responses: {
-      200: {
-        description: 'Gzip archive containing the exact shallow checkout and Git state',
-        content: { [COMPILED_CHECKOUT_CONTENT_TYPE]: { schema: z.any() } },
-      },
-      400: { description: 'Invalid project id, ref, or source SHA' },
-      401: gitResponses[401],
-      403: gitResponses[403],
-      404: gitResponses[404],
-      409: { description: 'The requested ref no longer points at the requested source SHA' },
-      413: { description: 'The compiled checkout exceeds the configured artifact limit' },
-      503: { description: 'The compiled checkout could not be generated' },
-    },
-  }),
-  async (c) => {
-    const projectId = validProjectIdOrResponse(c, c.req.param('project'));
-    if (projectId instanceof Response) return projectId;
-    const auth = await authorize(c, projectId, 'read');
-    if (!auth.ok) {
-      if (auth.status === 401) return unauthorized(c, auth.message);
-      return c.text(auth.message, auth.status === 404 ? 404 : 403);
-    }
-    const { ref, sha } = c.req.valid('query');
-    const runtimeRepoUrl = `${new URL(c.req.url).origin}/v1/git/${projectId}.git`;
-    try {
-      const project = await loadGitProject({ row: auth.project });
-      const artifact = await buildCompiledCheckoutArtifact(
-        project,
-        ref,
-        sha,
-        runtimeRepoUrl,
-      );
-      return new Response(Bun.file(artifact.path), {
-        status: 200,
-        headers: {
-          'cache-control': 'private, max-age=31536000, immutable',
-          'content-length': String(artifact.size),
-          'content-type': COMPILED_CHECKOUT_CONTENT_TYPE,
-          etag: `"sha256-${artifact.sha256}"`,
-          'x-kortix-artifact-format': COMPILED_CHECKOUT_FORMAT,
-          'x-kortix-artifact-sha256': artifact.sha256,
-          'x-kortix-artifact-source-sha': artifact.sourceSha,
-          'x-kortix-artifact-cache': artifact.cacheHit ? 'hit' : 'miss',
-        },
-      });
-    } catch (error) {
-      if (error instanceof CompiledCheckoutSourceMovedError) return c.text(error.message, 409);
-      if (error instanceof CompiledCheckoutTooLargeError) return c.text(error.message, 413);
-      console.warn('[git-proxy] compiled checkout unavailable', {
-        projectId,
-        ref,
-        sha,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return c.text('compiled checkout unavailable', 503);
-    }
-  },
-);
-
-gitProxyApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{project}/compiled-runtime',
-    tags: ['git'],
-    summary: 'Download an exact compiled OpenCode server for sandbox cold boot',
-    request: {
-      params: projectParam,
-      query: z.object({
-        ref: z.string().min(1),
-        sha: z.string().regex(/^[0-9a-f]{40}$/),
-      }),
-    },
-    responses: {
-      200: {
-        description: 'Executable server.mjs containing immutable project agent configuration',
-        content: { [COMPILED_RUNTIME_CONTENT_TYPE]: { schema: z.any() } },
-      },
-      400: { description: 'Invalid project id, ref, or source SHA' },
-      401: gitResponses[401],
-      403: gitResponses[403],
-      404: gitResponses[404],
-      409: { description: 'The requested ref no longer points at the requested source SHA' },
-      503: { description: 'The compiled runtime could not be generated' },
-    },
-  }),
-  async (c) => {
-    const projectId = validProjectIdOrResponse(c, c.req.param('project'));
-    if (projectId instanceof Response) return projectId;
-    const auth = await authorize(c, projectId, 'read');
-    if (!auth.ok) {
-      if (auth.status === 401) return unauthorized(c, auth.message);
-      return c.text(auth.message, auth.status === 404 ? 404 : 403);
-    }
-    const { ref, sha } = c.req.valid('query');
-    try {
-      const project = await loadGitProject({ row: auth.project });
-      const artifact = await buildCompiledRuntimeArtifact(project, ref, sha);
-      return new Response(Bun.file(artifact.path), {
-        status: 200,
-        headers: {
-          'cache-control': 'private, max-age=31536000, immutable',
-          'content-length': String(artifact.size),
-          'content-type': COMPILED_RUNTIME_CONTENT_TYPE,
-          etag: `"sha256-${artifact.sha256}"`,
-          'x-kortix-artifact-format': COMPILED_RUNTIME_FORMAT,
-          'x-kortix-artifact-sha256': artifact.sha256,
-          'x-kortix-artifact-source-sha': artifact.sourceSha,
-          'x-kortix-artifact-cache': artifact.cacheHit ? 'hit' : 'miss',
-        },
-      });
-    } catch (error) {
-      if (error instanceof CompiledRuntimeSourceMovedError) return c.text(error.message, 409);
-      console.warn('[git-proxy] compiled runtime unavailable', {
-        projectId,
-        ref,
-        sha,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return c.text('compiled runtime unavailable', 503);
     }
   },
 );

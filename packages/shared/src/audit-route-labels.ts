@@ -316,8 +316,6 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'GET /v1/docs': { action: 'system.api_docs.read', title: 'Viewed API reference docs' },
   'GET /v1/edge/tls-check': { action: 'system.edge_tls.check', title: 'Checked TLS certificate eligibility' },
   'GET /v1/generation': { action: 'gateway.generation.read', title: 'Viewed LLM generation details' },
-  'GET /v1/git/:project/compiled-checkout': { action: 'git.compiled_checkout.download', title: 'Downloaded compiled project checkout' },
-  'GET /v1/git/:project/compiled-runtime': { action: 'git.compiled_runtime.download', title: 'Downloaded compiled session runtime' },
   'GET /v1/git/:project/fast-boot-bundle': { action: 'git.fast_boot_bundle.download', title: 'Downloaded fast-boot Git bundle' },
   'POST /v1/git/:project/git-receive-pack': { action: 'git.push', title: 'Pushed to Git repository' },
   'POST /v1/git/:project/git-upload-pack': { action: 'git.clone', title: 'Cloned or fetched Git repository' },

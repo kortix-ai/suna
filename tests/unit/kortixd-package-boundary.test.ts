@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
 // `@types/node` for the whole repo until R3.6).
 //
 // Not covered on purpose: apps/api code that hashes or builds the daemon tree
-// (snapshots/, git-proxy/compiled-agent-bundle.ts) and Dockerfile reads. Those
+// (snapshots/) and Dockerfile reads. Those
 // treat the daemon as a build input, not as code.
 
 const REPO_ROOT = join(import.meta.dirname, '..', '..');

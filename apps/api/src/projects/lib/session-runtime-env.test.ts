@@ -155,57 +155,6 @@ describe('buildSessionRuntimeEnv — workspace mode', () => {
 });
 
 describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
-  test('enables compiled checkout for a fresh session', () => {
-    const env = buildSessionRuntimeEnv({
-      ...BASE_INPUT,
-      compiledBootMode: 'prefer',
-      freshSession: true,
-      baseSha: 'a'.repeat(40),
-    });
-
-    expect(env.KORTIX_COMPILED_BOOT_MODE).toBe('prefer');
-    expect(env.KORTIX_SESSION_FRESH).toBe('1');
-    expect(env.KORTIX_BASE_SHA).toBe('a'.repeat(40));
-  });
-
-  test('emits required mode for strict compiled runtime verification', () => {
-    const env = buildSessionRuntimeEnv({
-      ...BASE_INPUT,
-      compiledBootMode: 'required',
-      freshSession: true,
-      baseSha: 'a'.repeat(40),
-    });
-
-    expect(env.KORTIX_COMPILED_BOOT_MODE).toBe('required');
-    expect(env.KORTIX_BASE_SHA).toBe('a'.repeat(40));
-  });
-
-  test('keeps off, resumed, and repository-free sessions on the existing path', () => {
-    for (const env of [
-      buildSessionRuntimeEnv({
-        ...BASE_INPUT,
-        compiledBootMode: 'off',
-        freshSession: true,
-        baseSha: 'a'.repeat(40),
-      }),
-      buildSessionRuntimeEnv({
-        ...BASE_INPUT,
-        compiledBootMode: 'prefer',
-        freshSession: false,
-        baseSha: 'a'.repeat(40),
-      }),
-      buildSessionRuntimeEnv({
-        ...BASE_INPUT,
-        repositoryAccess: false,
-        compiledBootMode: 'prefer',
-        freshSession: true,
-        baseSha: 'a'.repeat(40),
-      }),
-    ]) {
-      expect(env).not.toHaveProperty('KORTIX_COMPILED_BOOT_MODE');
-    }
-  });
-
   test('marks replacement runtimes for remote session-branch restoration', () => {
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
@@ -228,8 +177,7 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
 
   test('sends fresh-session and base-tip hints for a fresh session', () => {
     // 2026-08-27: the fresh-session fast path is the default boot
-    // (KORTIX_FAST_GIT_BOOT_ENABLED, decided at create). Only the compiled-boot
-    // mode stays gated here (see the compiled-boot tests above).
+    // (KORTIX_FAST_GIT_BOOT_ENABLED, decided at create).
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
       freshSession: true,
@@ -244,7 +192,6 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
     expect(env.KORTIX_GIT_DELTA_BUNDLE_BASE64).toBe('R0lUIEJVTkRMRQ==');
     expect(env.KORTIX_GIT_DELTA_PARENT_SHA).toBe('b'.repeat(40));
     expect(env.KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64).toBe('dHJlZSBkZWFkYmVlZgo=');
-    expect(env).not.toHaveProperty('KORTIX_COMPILED_BOOT_MODE');
   });
 
   test('marks a remote delta for fresh sessions only; no config-dir hint (nothing reads it)', () => {

@@ -17,7 +17,7 @@ import { execFileAsync, runGitCapture, spawn } from '../projects/git/mirror';
 import { readManifestAtSha, resolveOpencodeConfigDirAtSha } from '../projects/git/opencode-config-dir';
 import type { GitBackedProject } from '../projects/git/types';
 
-/** Same limit as `MAX_OPENCODE_CONFIG_ARCHIVE_BYTES` in git-proxy/compiled-runtime-artifact.ts. */
+/** Cap on the compressed config archive. */
 export const MAX_CONFIG_ARCHIVE_BYTES = 4 * 1024 * 1024;
 /** Bound on the uncompressed tar, so a huge config dir cannot exhaust memory before the cap trips. */
 const MAX_CONFIG_TAR_BYTES = 64 * 1024 * 1024;
