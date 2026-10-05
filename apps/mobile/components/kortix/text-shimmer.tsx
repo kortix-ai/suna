@@ -203,8 +203,11 @@ function TextShimmerStill({ children, variant, style, numberOfLines, tone = 'def
 }
 
 function TextShimmerImpl(props: TextShimmerProps) {
-  const motion = useContext(ToolMotionContext) && useContext(LoopMotionContext) && !useReduceMotion();
-  return motion ? <TextShimmerSweep {...props} /> : <TextShimmerStill {...props} />;
+  // All hooks run every render: a mounted label's contexts flip when a turn ends or a segment is appended.
+  const toolMotion = useContext(ToolMotionContext);
+  const loopMotion = useContext(LoopMotionContext);
+  const reduceMotion = useReduceMotion();
+  return toolMotion && loopMotion && !reduceMotion ? <TextShimmerSweep {...props} /> : <TextShimmerStill {...props} />;
 }
 
 const styles = StyleSheet.create({

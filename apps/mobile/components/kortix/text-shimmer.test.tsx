@@ -92,7 +92,7 @@ describe('TextShimmer while motion is on', () => {
     });
   }
 
-  test('reduce motion draws the base text with no mask or gradient', () => {
+  test('OS reduce motion (live hook) draws the base text with no mask or gradient', () => {
     reduceMotion = true;
     act(() => {
       tree = create(render('Working'));
@@ -114,6 +114,35 @@ describe('a shimmer that does not own the turn (loop motion off)', () => {
     expect(types()).not.toContain('masked-view');
     expect(types()).not.toContain('linear-gradient');
     expect(tree!.root.findByType('text' as never).props.children).toBe('Running command');
+  });
+});
+
+describe('a mounted shimmer whose contexts flip', () => {
+  const withLoop = (value: boolean) =>
+    React.createElement(LoopMotionContext.Provider, { value }, render('Running command'));
+
+  test('loop motion true -> false -> true switches sweep and still without a hook-count crash', () => {
+    act(() => {
+      tree = create(withLoop(true));
+    });
+    measure();
+    expect(types()).toContain('masked-view');
+    act(() => tree!.update(withLoop(false)));
+    expect(types()).not.toContain('masked-view');
+    act(() => tree!.update(withLoop(true)));
+    measure();
+    expect(types()).toContain('masked-view');
+  });
+
+  test('tool motion true -> false on a mounted shimmer does not crash', () => {
+    const tool = (value: boolean) =>
+      React.createElement(ToolMotionContext.Provider, { value }, render('Running command'));
+    act(() => {
+      tree = create(tool(true));
+    });
+    measure();
+    act(() => tree!.update(tool(false)));
+    expect(types()).not.toContain('masked-view');
   });
 });
 
