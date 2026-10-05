@@ -5,9 +5,10 @@
  * timeline of everything the agent did in the burst (`activitySheetEntries`): a
  * thought is a small dot and the label "Thinking", never its content
  * (Jay, 2026-09-22); a tool call is a bordered icon tile and its step label. A
- * thin rail joins the markers. Tapping an entry pushes its detail inside the
- * same sheet: a thought shows its text, a tool call its body. Back returns to
- * the list.
+ * thin rail joins the markers. A running entry's title shimmers; with parallel
+ * calls only the last running one sweeps, the others hold still. Tapping an
+ * entry pushes its detail inside the same sheet: a thought shows its text, a
+ * tool call its body. Back returns to the list.
  *
  * The title row is the app's one (`SheetTitleRow`): close at the far left, the
  * title centred. In a detail, Back takes the close button's slot.
@@ -31,7 +32,7 @@ import { Text } from '@/components/ui/text';
 import { SelectableMarkdownText } from '@/components/kortix/selectable-markdown';
 import { KortixBottomSheetModal, SheetTitleRow } from '@/components/kortix/sheet';
 import { POP_IN, PUSH_IN, SheetBackButton } from '@/components/kortix/sheet-push';
-import { TextShimmer } from '@/components/kortix/text-shimmer';
+import { LoopMotionContext, TextShimmer } from '@/components/kortix/text-shimmer';
 import { CodeBlockFullHeightContext } from '@/components/markdown/code-block';
 import { MarkdownActionsProvider, type MarkdownActions } from '@/components/markdown/inline-code';
 import { usePendingPermissions } from '@/lib/session/session-store';
@@ -299,6 +300,7 @@ function ActivitySheetImpl({
   }, [selectedKey, back, close]);
 
   const selected = selectedKey ? entries.find((entry) => entry.key === selectedKey) : undefined;
+  const lastRunning = entries.map((entry) => entry.running).lastIndexOf(true);
   const contentStyle = {
     paddingHorizontal: SHEET.padX,
     paddingTop: SHEET.padTop,
@@ -330,7 +332,10 @@ function ActivitySheetImpl({
             <ActivitySheetHeader title="Activity" onClose={close} />
             <BottomSheetScrollView contentContainerStyle={contentStyle}>
               {entries.map((entry, index) => (
-                <TimelineEntry key={entry.key} entry={entry} next={entries[index + 1]} onOpen={open} />
+                // Parallel calls run together: only the last running entry sweeps.
+                <LoopMotionContext.Provider key={entry.key} value={index === lastRunning}>
+                  <TimelineEntry entry={entry} next={entries[index + 1]} onOpen={open} />
+                </LoopMotionContext.Provider>
               ))}
             </BottomSheetScrollView>
           </Animated.View>
