@@ -15840,6 +15840,7 @@
       "textb9819d569c9a": "配置几个沙箱后，相关耗时和结果会显示在这里。",
       "textb99e1742613b": "- 标识: morning-brief",
       "textb99fa6c06150": "无法预览",
+      "showPreviewUnavailableHint": "应用没有响应。请在会话中启动它，然后刷新。",
       "textb9acc1017895": "为 IdP 发送的每个群组创建一个 Kortix 群组——无需逐组映射。",
       "textb9ad2f00fba7": "项变更需要",
       "textb9addc023078": "marko@kortix.com",

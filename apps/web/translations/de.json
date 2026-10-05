@@ -15840,6 +15840,7 @@
       "textb9819d569c9a": "Stelle einige Sandboxes bereit. Ihre Dauer und Ergebnisse werden hier angezeigt.",
       "textb99e1742613b": "- slug: morning-brief",
       "textb99fa6c06150": "Vorschau nicht verfügbar",
+      "showPreviewUnavailableHint": "Die App hat nicht geantwortet. Starte sie in deiner Sitzung und lade dann neu.",
       "textb9acc1017895": "Erstelle für jede von deinem IdP gesendete Gruppe eine Kortix-Gruppe – ohne Zuordnung pro Gruppe.",
       "textb9ad2f00fba7": "Änderungen erfordern Genehmigung",
       "textb9addc023078": "marko@kortix.com",
