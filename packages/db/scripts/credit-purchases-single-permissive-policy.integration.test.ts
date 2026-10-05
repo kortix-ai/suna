@@ -56,7 +56,7 @@ async function permissiveViolations(): Promise<number> {
 async function probe(subject: string, role: string, sql = 'SELECT account_id FROM public.credit_purchases') {
   await client.query('BEGIN');
   try {
-    await client.query('SET LOCAL ROLE purchases_probe');
+    await client.query('SET LOCAL ROLE purchases_policy_probe');
     await client.query(
       "SELECT set_config('request.jwt.claim.sub', $1, true), set_config('request.jwt.claim.role', $2, true)",
       [subject, role],
@@ -75,7 +75,7 @@ async function fixture() {
     ALTER TABLE public.credit_purchases ENABLE ROW LEVEL SECURITY;
     INSERT INTO public.credit_purchases VALUES ('${own}'), ('${other}');
     GRANT SELECT, INSERT, UPDATE, DELETE ON public.credit_purchases
-      TO anon, authenticated, service_role, purchases_probe;
+      TO anon, authenticated, service_role, purchases_policy_probe;
     CREATE POLICY "Service role can manage all credit purchases" ON public.credit_purchases
       USING (( select auth.role()) = 'service_role'::text);
     CREATE POLICY "Service role manages credit purchases" ON public.credit_purchases
@@ -94,8 +94,8 @@ beforeAll(async () => {
   const { rows: me } = await client.query('SELECT current_user::text AS u');
   await setup.query(`
     DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'purchases_probe') THEN
-        CREATE ROLE purchases_probe NOLOGIN NOBYPASSRLS;
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'purchases_policy_probe') THEN
+        CREATE ROLE purchases_policy_probe NOLOGIN NOBYPASSRLS;
       END IF;
     END $$;
   `);
@@ -105,9 +105,9 @@ beforeAll(async () => {
          CREATE ROLE ${role} NOLOGIN NOBYPASSRLS; END IF; END $$;`,
     );
   }
-  await setup.query(`GRANT purchases_probe TO ${me[0].u}`);
-  await setup.query('GRANT anon, authenticated, service_role TO purchases_probe');
-  await setup.query('GRANT USAGE ON SCHEMA auth TO purchases_probe');
+  await setup.query(`GRANT purchases_policy_probe TO ${me[0].u}`);
+  await setup.query('GRANT anon, authenticated, service_role TO purchases_policy_probe');
+  await setup.query('GRANT USAGE ON SCHEMA auth TO purchases_policy_probe');
   await client.query(`
     CREATE SCHEMA IF NOT EXISTS auth;
     CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE
@@ -120,8 +120,8 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!url) return; // nothing was connected
   await client.query('DROP TABLE IF EXISTS public.credit_purchases');
-  await setup.query('DROP OWNED BY purchases_probe');
-  await setup.query('DROP ROLE IF EXISTS purchases_probe');
+  await setup.query('DROP OWNED BY purchases_policy_probe');
+  await setup.query('DROP ROLE IF EXISTS purchases_policy_probe');
   await client.end();
   await setup.end();
 });
