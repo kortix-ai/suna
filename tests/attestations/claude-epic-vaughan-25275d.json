@@ -1,0 +1,18 @@
+{
+  "source_hash": "8abb78dfbea90e3d4cf053dce93867d310e7a08fa0a8af44255487fc11dc1f6a",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-account-identity-email-index.test.ts",
+    "apps/api/src/iam/account-identity.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "tests/migration/kortix-yolo-profiles-unused-indexes.test.ts"
+  ],
+  "diff_hash": "c4f6fbe8d5d29203e0967d839e8642107fa59533632f8779084bf875e650abc0",
+  "head": "960577b4a63c343650694baed7f0445ec6ebd067",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-05T11:26:56.674Z"
+}
