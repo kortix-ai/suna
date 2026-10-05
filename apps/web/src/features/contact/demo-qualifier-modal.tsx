@@ -104,7 +104,7 @@ export interface DemoQualifierModalProps {
 function MeetingHeader({ meta }: { meta: string }) {
   const t = useTranslations('demoBooking');
   return (
-    <div className="bg-sidebar border-border flex items-center gap-3 border-b px-5 py-4">
+    <div className="bg-sidebar border-border flex items-center gap-3 border-b py-4 pr-4 pl-6">
       <div className={`flex size-8 shrink-0 items-center justify-center rounded-sm ${LOGO_TILE}`}>
         <KortixLogo variant="icon" size={16} />
       </div>
@@ -373,16 +373,16 @@ export function DemoQualifierModal({
           >
             <MeetingHeader meta={t('stepDetails')} />
 
-            <ModalHeader className="px-6 pt-5 pb-0">
+            <ModalHeader className="gap-1 px-6 pt-6 pb-0">
               <ModalTitle className="text-xl font-semibold tracking-tight">
                 {title ?? t('formTitle')}
               </ModalTitle>
               <ModalDescription>{description ?? t('formDescription')}</ModalDescription>
             </ModalHeader>
 
-            <ModalBody className="space-y-4 px-6 pt-5 pb-5">
-              <div className="flex gap-3">
-                <div className="flex-1 space-y-1.5">
+            <ModalBody className="space-y-5 px-6 pt-6 pb-6">
+              <div className="flex gap-4">
+                <div className="flex-1 space-y-2">
                   <Label htmlFor="dq-name">
                     {tI18nHardcoded.raw('i18nComplete.textdcd1d5223f73')}
                   </Label>
@@ -397,7 +397,7 @@ export function DemoQualifierModal({
                     required
                   />
                 </div>
-                <div className="flex-1 space-y-1.5">
+                <div className="flex-1 space-y-2">
                   <Label htmlFor="dq-company">
                     {tI18nHardcoded.raw(
                       'autoFeaturesContactDemoQualifierModalJsxTextCompanyName04d8fd10',
@@ -416,7 +416,7 @@ export function DemoQualifierModal({
                 </div>
               </div>
 
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Label htmlFor="dq-email">
                   {tI18nHardcoded.raw(
                     'autoFeaturesContactDemoQualifierModalJsxTextWorkEmailc15a71d1',
@@ -435,7 +435,7 @@ export function DemoQualifierModal({
                 />
               </div>
 
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Label htmlFor="dq-size">
                   {tI18nHardcoded.raw(
                     'autoFeaturesContactDemoQualifierModalJsxTextCompanySizee13e1fef',
@@ -463,7 +463,7 @@ export function DemoQualifierModal({
                 </Select>
               </div>
 
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Label htmlFor="dq-goal">
                   {tI18nHardcoded.raw(
                     'autoFeaturesContactDemoQualifierModalJsxTextWhatDoYoud0acfddd',
