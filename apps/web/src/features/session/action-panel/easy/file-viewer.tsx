@@ -9,17 +9,17 @@ import { useTranslations } from '@/i18n/use-translations';
  *
  *   - **HTML, SVG and Mermaid** render to something you can look at AND are code you
  *     might want to read. They are the file types that earn a Preview/Source
- *     toggle, so that toggle lives at the far left of their toolbar.
+ *     toggle, so that toggle sits before the address pill.
  *   - **Markdown** is meant to be read as a document. A non-technical user has
  *     no reason to see `##` and `**`, so there is no toggle — just the document.
  *   - **Everything else** is source. Showing it is the whole job; a toggle
  *     would have one meaningful position.
  *
- * So the toolbar is: what you're looking at (left) and what you can do with it
- * (right). The right side is one split button — `Copy`, with a caret holding
- * `Copy link` — then a visible Download button, full screen and close. Every file gets
- * the same right side, built by `ViewerActions`, so the actions never move and
- * this toolbar cannot drift from `PreviewShell`'s.
+ * So the toolbar is one address pill — the file's folders and name, with
+ * Refresh, Copy and Copy link at its trailing edge — then Download, full screen
+ * and close outside it. Every file gets the same pill and actions, built by
+ * `ViewerPathPill` and `ViewerActions`, so the actions never move and this
+ * toolbar cannot drift from `PreviewShell`'s.
  */
 
 import { HighlightedCode } from '@/components/markdown/code';
@@ -41,6 +41,8 @@ import {
   RefreshButton,
   type ShareContext,
   ViewerActions,
+  ViewerDownloadAction,
+  ViewerPathPill,
   fileShareInput,
 } from './viewer-actions';
 
@@ -124,57 +126,44 @@ export function FileViewer({
 
   return (
     <div className={cn('flex h-full min-h-0 min-w-0 flex-col', className)}>
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b px-2.5 py-2.5">
-        <span className="flex min-w-0 items-center gap-2.5">
-          <DetailSidebarToggle className="size-7" />
-          {renders ? (
-            // Only a file with both a rendered form and a source earns the
-            // toggle — and it sits at the far left, before the name, because it
-            // changes what the name is showing you.
-            <Tabs value={view} onValueChange={(next) => setView(next as View)}>
-              <TabsList size="sm" className="h-7">
-                <TabsTrigger
-                  size="xs"
-                  value="preview"
-                  aria-label={tI18nComplete.raw('text324b134f57c7')}
-                  className="w-6 px-0"
-                >
-                  <Eye className="size-3.5" />
-                </TabsTrigger>
-                <TabsTrigger
-                  size="xs"
-                  value="source"
-                  aria-label={tI18nComplete.raw('text0e570ca6fabe')}
-                  className="w-6 px-0"
-                >
-                  <Code2 className="size-3.5" />
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-          ) : (
-            <span className="flex size-5 shrink-0 items-center justify-center">
-              {getFileIcon(fileName, { className: 'size-4', variant: 'monochrome' })}
-            </span>
-          )}
-          <span className="text-foreground truncate text-sm font-medium">{fileName}</span>
-        </span>
+      <div className="flex shrink-0 items-center gap-1 border-b px-2.5 py-2">
+        <DetailSidebarToggle className="size-7" />
+        {renders && (
+          // Only a file with both a rendered form and a source earns the
+          // toggle — and it sits before the pill, because it changes what the
+          // pill's name is showing you.
+          <Tabs value={view} onValueChange={(next) => setView(next as View)}>
+            <TabsList size="sm" className="h-7">
+              <TabsTrigger
+                size="xs"
+                value="preview"
+                aria-label={tI18nComplete.raw('text324b134f57c7')}
+                className="w-6 px-0"
+              >
+                <Eye className="size-3.5" />
+              </TabsTrigger>
+              <TabsTrigger
+                size="xs"
+                value="source"
+                aria-label={tI18nComplete.raw('text0e570ca6fabe')}
+                className="w-6 px-0"
+              >
+                <Code2 className="size-3.5" />
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        )}
 
         {/* Same actions in the same place for every file — they never move.
             Text is the one kind whose content a clipboard can hold, so `Copy`
-            here copies the file itself and `Copy link` drops into the menu. */}
-        <span className="flex shrink-0 items-center gap-1">
+            here copies the file itself. */}
+        <ViewerPathPill
+          icon={getFileIcon(fileName, { className: 'size-4', variant: 'monochrome' })}
+          path={path}
+          fileName={fileName}
+        >
           {refresh && (
             <RefreshButton onRefresh={refresh.onRefresh} refreshing={refresh.refreshing} />
-          )}
-          {/* A file action like Refresh, so it sits with them before Download.
-              Download itself stays the raw `.md`. */}
-          {markdown && (
-            <SaveAsPdfButton
-              fileName={fileName}
-              content={content}
-              className="size-7"
-              iconClassName="size-3.5"
-            />
           )}
           <ViewerActions
             copy={{
@@ -183,8 +172,20 @@ export function FileViewer({
             }}
             shareContext={shareContext}
             shareInput={fileShareInput(path, fileName)}
-            download={path ? { path, fileName } : undefined}
           />
+        </ViewerPathPill>
+
+        <span className="flex shrink-0 items-center gap-1">
+          {/* Download stays the raw `.md`; Save as PDF is the rendered page. */}
+          {markdown && (
+            <SaveAsPdfButton
+              fileName={fileName}
+              content={content}
+              className="size-7"
+              iconClassName="size-3.5"
+            />
+          )}
+          <ViewerDownloadAction download={path ? { path, fileName } : undefined} />
           <PanelWidthButton isMobile={isMobile} />
           {onClose && <CloseButton onClose={onClose} />}
         </span>
