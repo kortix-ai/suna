@@ -488,7 +488,7 @@ export function DemoQualifierModal({
             </ModalBody>
 
             <div className="px-6 pb-6">
-              <Button type="submit" disabled={submitting} className="group/cta w-full">
+              <Button type="submit" size="lg" disabled={submitting} className="group/cta w-full">
                 {submitting ? (
                   <>
                     <Loading />
