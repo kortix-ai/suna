@@ -85,6 +85,8 @@ export interface ServeConfigArchiveDeps {
   store?: ConfigArchiveStore;
   publicOverride?: string | null;
   fetch?: (input: string) => Promise<Response>;
+  /** Tests only: a smaller archive cap, so the over-limit case needs no 32 MiB fixture. */
+  archiveLimit?: number;
 }
 
 function gzipResponse(bytes: Uint8Array, treeId: string, source: 'store' | 'mirror'): Response {
@@ -189,7 +191,7 @@ export async function serveConfigArchive(
 
   // Builds the archive when the store cannot serve it. A composed tree exists
   // only in a scratch repository, so it is rebuilt from its commit.
-  let build: () => Promise<Buffer> = () => buildConfigArchive(repo, treeId);
+  let build: () => Promise<Buffer> = () => buildConfigArchive(repo, treeId, deps.archiveLimit);
   if (!inMirror) {
     try {
       const served = await tryServeFromStore(store, key, treeId, publicOverride, fetchImpl);

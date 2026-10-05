@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MAX_CONFIG_ARCHIVE_BYTES, buildConfigArchive, readComposedRelease, resolveReleaseTreeSource } from './builder';
+import { buildConfigArchive, readComposedRelease, resolveReleaseTreeSource } from './builder';
 import { publicDownloadTarget, serveConfigArchive, storageOriginIsPublic } from './serve-archive';
 import { configArchiveKey } from './store';
 import { MemoryConfigArchiveStore } from './__tests__/fakes';
@@ -43,7 +43,8 @@ beforeAll(() => {
   tree = git('rev-parse', 'HEAD:.kortix/opencode');
   blob = git('rev-parse', 'HEAD:.kortix/opencode/opencode.json');
   mkdirSync(join(repo, 'huge'), { recursive: true });
-  writeFileSync(join(repo, 'huge/blob.bin'), randomBytes(MAX_CONFIG_ARCHIVE_BYTES + 4096));
+  // Random bytes do not compress: 64 KiB stays over the 32 KiB test cap.
+  writeFileSync(join(repo, 'huge/blob.bin'), randomBytes(64 * 1024));
   git('add', '-A');
   git('commit', '-qm', 'huge');
   hugeTree = git('rev-parse', 'HEAD:huge');
@@ -222,6 +223,7 @@ describe('serveConfigArchive', () => {
     const response = await serveConfigArchive(project, hugeTree, m.mirror, m.forced, {
       store: new MemoryConfigArchiveStore(),
       ...PRIVATE,
+      archiveLimit: 32 * 1024,
     });
     expect(response.status).toBe(413);
   });

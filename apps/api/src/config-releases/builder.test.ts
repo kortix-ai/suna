@@ -21,7 +21,6 @@ import {
   configReleaseId,
   isTreeObject,
   listConfigFiles,
-  MAX_CONFIG_ARCHIVE_BYTES,
   storeConfigArchive,
   toDescriptor,
 } from './builder';
@@ -466,19 +465,19 @@ describe('buildConfigRelease', () => {
       {
         'kortix.yaml': MANIFEST('first'),
         '.kortix/opencode/opencode.json': '{}\n',
-        // Random bytes do not compress: the gzip stays above the limit.
-        '.kortix/opencode/blob.bin': randomBytes(MAX_CONFIG_ARCHIVE_BYTES + 4096),
+        // Random bytes do not compress: 64 KiB stays over the 32 KiB test cap.
+        '.kortix/opencode/blob.bin': randomBytes(64 * 1024),
       },
       'huge',
     );
-    const release = await buildConfigRelease(project, sha, 'project', { store });
+    const release = await buildConfigRelease(project, sha, 'project', { store, archiveLimit: 32 * 1024 });
     expect(release.release_id).toBeNull();
     expect(release.config_tree_id).toMatch(/^[0-9a-f]{40}$/);
-    expect(release.reason).toContain(`exceeds the ${MAX_CONFIG_ARCHIVE_BYTES}-byte config archive limit`);
+    expect(release.reason).toContain(`exceeds the ${32 * 1024}-byte config archive limit`);
     expect(store.objects.size).toBe(0);
     // The answer is a fact of the commit: every box's descriptor request (one
     // per minute per box) must not rebuild and gzip the whole tree again.
-    expect(await buildConfigRelease(project, sha, 'project', { store })).toBe(release);
+    expect(await buildConfigRelease(project, sha, 'project', { store, archiveLimit: 32 * 1024 })).toBe(release);
 
     const mirror = await refreshMirror(project);
     await expect(buildConfigArchive(mirror, release.config_tree_id!, 1024)).rejects.toBeInstanceOf(

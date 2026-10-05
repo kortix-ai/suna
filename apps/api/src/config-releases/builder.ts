@@ -156,6 +156,8 @@ interface BuildConfigReleaseOptions {
   store?: ConfigArchiveStore;
   /** Tests only: skip the in-memory descriptor cache. */
   noCache?: boolean;
+  /** Tests only: a smaller archive cap, so the over-limit case needs no 32 MiB fixture. */
+  archiveLimit?: number;
 }
 
 /**
@@ -229,6 +231,7 @@ async function build(
   commit: string,
   variant: ConfigReleaseVariant,
   store: ConfigArchiveStore,
+  archiveLimit?: number,
 ): Promise<ConfigRelease> {
   let mirror = await refreshMirror(project);
   // A commit the warm mirror has not fetched yet: fetch once, then give up.
@@ -291,13 +294,14 @@ async function build(
       // The tree is only known once composed; the archive builds in the same
       // scratch repository, on an archive-size cache miss only.
       const read = await readComposedRelease(mirror, source, {
+        limit: archiveLimit,
         archive: (composedTreeId) => !archiveBytes.has(configArchiveKey(project.projectId, composedTreeId)),
       });
       treeId = read.treeId;
       files = read.files;
       freshArchive = read.archive;
     } else if (!archiveBytes.has(configArchiveKey(project.projectId, treeId))) {
-      freshArchive = await buildConfigArchive(mirror, treeId);
+      freshArchive = await buildConfigArchive(mirror, treeId, archiveLimit);
     }
   } catch (error) {
     if (error instanceof ConfigArchiveTooLargeError) {
@@ -305,7 +309,7 @@ async function build(
         ...withGovernance,
         config_dir: configDir,
         config_tree_id: composed ? null : treeId,
-        reason: `the repository at ${commit.slice(0, 12)} exceeds the ${MAX_CONFIG_ARCHIVE_BYTES}-byte config archive limit`,
+        reason: `the repository at ${commit.slice(0, 12)} exceeds the ${archiveLimit ?? MAX_CONFIG_ARCHIVE_BYTES}-byte config archive limit`,
       });
     }
     throw error;
@@ -340,14 +344,14 @@ export async function buildConfigRelease(
 ): Promise<ConfigRelease> {
   if (!HEX40.test(commit)) throw new Error(`invalid commit: ${commit}`);
   const store = options.store ?? getConfigArchiveStore();
-  if (options.noCache) return build(project, commit, variant, store);
+  if (options.noCache) return build(project, commit, variant, store, options.archiveLimit);
 
   const cacheKey = `${project.projectId}\0${commit}\0${variant}`;
   const cached = releases.get(cacheKey);
   if (cached) return cached.release;
   const running = inflight.get(cacheKey);
   if (running) return running;
-  const next = build(project, commit, variant, store)
+  const next = build(project, commit, variant, store, options.archiveLimit)
     .then((release) => {
       // A release with a reason can be transient (a compile read that failed).
       // Only complete releases, and the deterministic over-limit answer, are cached.
