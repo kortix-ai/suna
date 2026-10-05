@@ -8,7 +8,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
-import { AnyObject, TriggerSchema, projectsApp } from '../lib/app';
+import { OkSchema, TriggerFireResultSchema, TriggerListSchema, projectsApp } from '../lib/app';
 import { guardSession } from '../lib/session-access';
 import { withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
@@ -84,11 +84,11 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string() }),
     },
     responses: {
-      200: json(z.array(TriggerSchema), 'Triggers'),
+      200: json(TriggerListSchema, 'Triggers, the pause switch and manifest parse errors'),
       ...errors(404),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -141,11 +141,11 @@ projectsApp.openapi(
         }) } } },
     },
     responses: {
-      201: json(TriggerSchema, 'The created trigger'),
+      201: json(TriggerListSchema, 'Every trigger after the create'),
       ...errors(400, 404, 409, 502),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const body = await readJsonObject(c);
     const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -257,11 +257,11 @@ projectsApp.openapi(
         }) } } },
     },
     responses: {
-      200: json(AnyObject, 'Updated triggers (includes triggers_paused)'),
+      200: json(TriggerListSchema, 'Every trigger after the switch'),
       ...errors(400, 401, 403, 404),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const body = await readJsonObject(c);
     const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -325,11 +325,11 @@ projectsApp.openapi(
         }) } } },
     },
     responses: {
-      200: json(z.any(), 'OK'),
+      200: json(TriggerListSchema, 'Every trigger after the update'),
       ...errors(400, 404, 409, 502),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const slug = c.req.param('slug');
     const body = await readJsonObject(c);
@@ -452,11 +452,11 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string(), slug: z.string() }),
     },
     responses: {
-      200: json(z.any(), 'OK'),
+      200: json(OkSchema, 'Deleted'),
       ...errors(400, 404, 409, 502),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const slug = c.req.param('slug');
     const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -497,7 +497,7 @@ projectsApp.openapi(
         and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.slug, slug)),
       );
 
-    return c.json({ ok: true });
+    return c.json({ ok: true as const });
   },
 );
 
@@ -517,11 +517,11 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string(), slug: z.string() }),
     },
     responses: {
-      202: json(z.any(), 'OK'),
+      202: json(TriggerFireResultSchema, 'Queued or fired'),
       ...errors(404, 500),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const slug = c.req.param('slug');
     // Floor 'read' (membership); project.trigger.fire is the real gate. The floor
@@ -580,7 +580,7 @@ projectsApp.openapi(
       await markGitTriggerFired(projectId, slug, now);
       return c.json(
         {
-          status: 'queued',
+          status: 'queued' as const,
           command_id: result.commandId ?? null,
           session_id: result.sessionId ?? null,
           reason: result.reason ?? null,
@@ -595,7 +595,7 @@ projectsApp.openapi(
     await markGitTriggerFired(projectId, slug, now);
     return c.json(
       {
-        status: result.deduped ? 'deduped' : 'fired',
+        status: result.deduped ? ('deduped' as const) : ('fired' as const),
         command_id: result.commandId ?? null,
         session_id: result.sessionId ?? null,
         deduped: result.deduped ?? false,

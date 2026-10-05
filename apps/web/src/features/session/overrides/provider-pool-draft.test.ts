@@ -3,6 +3,7 @@ import {
   effectiveProviderPools,
   keysForSession,
   normalizePoolSelection,
+  sessionPersonalKeys,
   sessionPersonalUser,
   updateProviderPoolDraft,
 } from './provider-pool-draft';
@@ -53,6 +54,26 @@ describe('keys a session can use (spec 2026-09-22 §2.3)', () => {
     expect(sessionPersonalUser({ visibility: 'project', created_by: 'me' })).toBeNull();
     expect(sessionPersonalUser({ visibility: 'restricted', created_by: 'me' })).toBeNull();
     expect(sessionPersonalUser(undefined)).toBeUndefined();
+  });
+
+  // A private session can still act for nobody (its token predates
+  // on_behalf_of, it started unattended, or another member prompted it). The
+  // panel offered its owner their own keys, and the server refused the save.
+  test('the server`s answer narrows the session row`s and says why', () => {
+    const privateRow = { visibility: 'private', created_by: 'me' };
+    expect(sessionPersonalKeys(privateRow, { personal_user_id: 'me', personal_keys_reason: null }))
+      .toEqual({ user: 'me', reason: null });
+    expect(sessionPersonalKeys(privateRow, { personal_user_id: null, personal_keys_reason: 'no_person' }))
+      .toEqual({ user: null, reason: 'no_person' });
+    expect(sessionPersonalKeys(privateRow, { personal_user_id: null, personal_keys_reason: 'prompted_by_another_member' }))
+      .toEqual({ user: null, reason: 'prompted_by_another_member' });
+    // An older API without the fields keeps today's rule.
+    expect(sessionPersonalKeys(privateRow, {})).toEqual({ user: 'me', reason: null });
+    expect(sessionPersonalKeys(privateRow, undefined)).toEqual({ user: 'me', reason: null });
+    // It never widens: a shared row stays shared whatever the server reports.
+    expect(sessionPersonalKeys({ visibility: 'project', created_by: 'me' }, { personal_user_id: 'me', personal_keys_reason: null }))
+      .toEqual({ user: null, reason: 'shared' });
+    expect(sessionPersonalKeys(undefined, { personal_user_id: 'me' })).toEqual({ user: undefined, reason: null });
   });
 
   test('a shared session offers only keys shared with the whole project', () => {

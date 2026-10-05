@@ -26,7 +26,7 @@ let originalCwd: string;
 let stdout = '';
 let stderr = '';
 type RequestBody = Record<string, unknown> | string | undefined;
-let requests: Array<{ url: string; method: string; body: RequestBody }> = [];
+let requests: Array<{ url: string; method: string; body: RequestBody; auth: string }> = [];
 
 /** Shared secret rows the mocked GET returns; mutate per-test. */
 let secretItems: Array<{
@@ -159,7 +159,10 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
-function mockApi() {
+/** An optional first-hit handler, so a describe can serve URLs the shared
+ *  mock doesn't know (a second host's base). Returning undefined falls
+ *  through to the shared proj_1 responses. */
+function mockApi(extra?: (url: string, method: string) => Response | undefined) {
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = (init?.method ?? 'GET').toUpperCase();
@@ -171,7 +174,11 @@ function mockApi() {
         body = init.body;
       }
     }
-    requests.push({ url, method, body });
+    const auth = new Headers(init?.headers).get('authorization') ?? '';
+    requests.push({ url, method, body, auth: auth.replace(/^Bearer\s+/i, '') });
+
+    const custom = extra?.(url, method);
+    if (custom) return custom;
 
     if (url.endsWith('/accounts/me') && method === 'GET') {
       return json({ user_id: 'user_1', email: 'user@example.test' });
@@ -1435,5 +1442,111 @@ describe('kortix secrets — who can use a value', () => {
     const row = JSON.parse(stdout).secrets[0];
     expect(row.shared_with).toEqual(['user@example.test']);
     expect(row.usable).toBe(true);
+  });
+});
+
+describe('secrets set --host', () => {
+  /** Two logged-in hosts — `test` (active) and `other` — each with its own
+   *  API base and token, mirroring the cross-host setup a second
+   *  `kortix login --host` produces. */
+  function writeTwoHostConfig(): void {
+    const file = join(tmp, 'config.json');
+    writeFileSync(
+      file,
+      JSON.stringify({
+        active: 'test',
+        hosts: {
+          test: {
+            url: 'https://api.test',
+            token: 'tok_test',
+            user_id: 'user_1',
+            user_email: 'user@example.test',
+            account_id: 'account_1',
+            logged_in_at: '2026-01-01T00:00:00.000Z',
+          },
+          other: {
+            url: 'https://api.other',
+            token: 'tok_other',
+            user_id: 'user_9',
+            user_email: 'user9@example.test',
+            account_id: 'account_9',
+            logged_in_at: '2026-01-01T00:00:00.000Z',
+            default_project: { project_id: 'proj_on_other', account_id: 'account_9' },
+          },
+        },
+      }),
+      'utf8',
+    );
+    process.env.KORTIX_CONFIG_FILE = file;
+  }
+
+  /** Serve only the named host's write; anything else (an accidental ride on
+   *  the ambient base) answers 500 and fails the test. */
+  function serveOtherPost(): void {
+    mockApi((url, method) => {
+      if (url === 'https://api.other/v1/projects/proj_on_other/secrets' && method === 'POST') {
+        return json({ identifier: 'STRIPE_API_KEY', name: 'STRIPE_API_KEY' });
+      }
+      return undefined;
+    });
+  }
+
+  test('writes with the named host token, never the ambient session principal', async () => {
+    writeTwoHostConfig();
+    // The platform-injected session credential of a sandbox: with the
+    // pre-fix routing the write rode this token and 403'd cross-project.
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_API_URL = 'https://api.sandbox';
+    serveOtherPost();
+
+    const code = await runSecrets([
+      'set',
+      'STRIPE_API_KEY=sk_live_1',
+      '--host',
+      'other',
+      '--project',
+      'proj_on_other',
+    ]);
+    expect(code).toBe(0);
+    expect(requests).toHaveLength(1);
+    const [post] = posts();
+    expect(post?.url).toBe('https://api.other/v1/projects/proj_on_other/secrets');
+    expect(post?.auth).toBe('tok_other');
+    expect(stripAnsi(stdout)).toContain('1/1 set');
+  });
+
+  test('resolves the project from the named host default and writes with its token', async () => {
+    writeTwoHostConfig();
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_API_URL = 'https://api.sandbox';
+    serveOtherPost();
+
+    const code = await runSecrets(['set', 'STRIPE_API_KEY=sk_live_1', '--host', 'other']);
+    expect(code).toBe(0);
+    expect(requests).toHaveLength(1);
+    const [post] = posts();
+    expect(post?.url).toBe('https://api.other/v1/projects/proj_on_other/secrets');
+    expect(post?.auth).toBe('tok_other');
+    expect(stripAnsi(stdout)).toContain('1/1 set');
+  });
+
+  test('fails fast when --host names a host with no stored credentials', async () => {
+    writeTwoHostConfig();
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_API_URL = 'https://api.sandbox';
+
+    const code = await runSecrets([
+      'set',
+      'STRIPE_API_KEY=sk_live_1',
+      '--host',
+      'ghost',
+      '--project',
+      'proj_on_other',
+    ]);
+    expect(code).toBe(1);
+    expect(requests).toHaveLength(0);
+    const out = stripAnsi(stderr);
+    expect(out).toContain('Host "ghost" (--host) is not logged in');
+    expect(out).toContain('kortix login --host ghost');
   });
 });

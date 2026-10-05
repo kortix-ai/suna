@@ -124,7 +124,8 @@ import {
 import { configReleaseNoticePath } from '@/services/config-release/notice'
 import { bootLinkPath, readBootLinkTarget } from '@/services/config-release/boot-config'
 import { opencodeTurnInFlight } from './opencode-turn-state'
-import { MINIMAL_FALLBACK_MODELS, BUNDLED_MANAGED_MODELS, type KortixGatewayModel } from './fallback-models'
+import { CONNECTORS_MCP_COMMAND } from '@kortix/api-contract/sandbox-layout'
+import { MINIMAL_FALLBACK_MODELS, BUNDLED_MANAGED_MODELS, type KortixGatewayModel } from '@kortix/api-contract/fallback-models'
 import { SKILLS_DIR } from './project-layout'
 
 const READY_POLL_MS = 100
@@ -541,16 +542,9 @@ export async function buildOpencodeConfigContent(
       ...mcp,
       'kortix-connectors': {
         type: 'local',
-        // Use the absolute path so OpenCode's MCP launcher does not depend on
-        // PATH propagation. The normal agent path is still `kortix connectors`.
-        //
-        // `connectors`, plural — it must match a real CLI command. Between
-        // 2026-08-06 (e868be1d6c) and this fix it read `connector`, which the
-        // CLI router rejects with "unknown command", so OpenCode's launcher
-        // got exit 2 and the MCP server never started. The CLI now also
-        // accepts the singular as an alias, which recovers snapshots baked
-        // with the old string.
-        command: ['/usr/local/bin/kortix', 'connectors', 'mcp'],
+        // The absolute path, so OpenCode's MCP launcher does not depend on PATH
+        // propagation. apps/cli runs this argv in a test (connectors-mcp-handshake).
+        command: [...CONNECTORS_MCP_COMMAND],
         enabled: true,
         environment: {
           // Proxy mode: the MCP talks to the localhost connector proxy with a
@@ -840,7 +834,7 @@ const BAKED_LLM_CATALOG_PATH = '/opt/kortix/llm-catalog.json'
 /** The baked path THIS process reads. `KORTIX_BAKED_LLM_CATALOG_PATH` lets a test
  *  run on a box whose image already carries the real catalog, where the image
  *  file would otherwise answer for a missing one. */
-const bakedCatalogPath = () => process.env.KORTIX_BAKED_LLM_CATALOG_PATH ?? BAKED_LLM_CATALOG_PATH
+export const bakedCatalogPath = () => process.env.KORTIX_BAKED_LLM_CATALOG_PATH ?? BAKED_LLM_CATALOG_PATH
 
 /** Read + normalize a catalog JSON file ({models:{…}} or a bare id→model map).
  *  Returns null when missing, unreadable, or empty so callers can fall through. */

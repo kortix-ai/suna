@@ -78,7 +78,7 @@ mock.module('../projects/git', () => ({
 const followUpPlans: Array<Record<string, unknown>> = [];
 let unavailableModel: string | undefined;
 let accessibleAgents = true;
-let startResult: { status: 'created' | 'queued'; sessionId?: string; reason?: string; error?: { status: number; body: { code: string } } } | null = null;
+let startResult: { status: 'created' | 'queued'; sessionId?: string; reason?: string; error?: { status: 409 | 503; body: { code: string } } } | null = null;
 mock.module('../channels/model-access', () => ({
   agentGrantEnvFor: () => async () => null,
   projectChannelModelScope: async () => null,

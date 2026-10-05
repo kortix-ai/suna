@@ -374,9 +374,13 @@ export async function runConnectors(argv: string[]): Promise<number> {
   if (sub === 'show' && rest[0]?.includes('.')) {
     return runConnector(['show', ...rest]);
   }
-  if ((sub === 'ls' || sub === 'list') && rest.includes('--session')) {
+  if (
+    (sub === 'ls' || sub === 'list') &&
+    rest.some((arg) => arg === '--session' || arg.startsWith('--session='))
+  ) {
     const forwarded = rest.filter(
-      (arg, index) => arg !== '--session' && rest[index - 1] !== '--session',
+      (arg, index) =>
+        arg !== '--session' && !arg.startsWith('--session=') && rest[index - 1] !== '--session',
     );
     return runConnector(['ls', ...forwarded]);
   }
@@ -1947,21 +1951,20 @@ function parseOnOff(value: string | undefined): boolean | null {
  * an unparseable matcher, so a bad rule fails at write time rather than
  * compiling to a never-match that looks saved.
  */
-function parsePolicyConditions(
+export function parsePolicyConditions(
   raw: readonly string[],
 ): { conditions: PolicyCondition[] } | { error: string } {
   const conditions: PolicyCondition[] = [];
   for (const entry of raw) {
-    const negated = entry.includes('!=');
-    const separator = negated ? '!=' : '=';
-    const index = entry.indexOf(separator);
+    const index = entry.indexOf('=');
+    const negated = index > 0 && entry[index - 1] === '!';
     if (index <= 0) {
       return {
         error: `--condition must look like arg=value or arg!=value (got "${entry}")`,
       };
     }
-    const arg = entry.slice(0, index).trim();
-    const match = entry.slice(index + separator.length).trim();
+    const arg = entry.slice(0, negated ? index - 1 : index).trim();
+    const match = entry.slice(index + 1).trim();
     if (!arg) return { error: `--condition needs an argument path (got "${entry}")` };
     if (!match) return { error: `--condition needs a value to match (got "${entry}")` };
     conditions.push({ arg, match, ...(negated ? { negate: true } : {}) });

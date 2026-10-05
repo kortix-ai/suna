@@ -1,5 +1,6 @@
 import {
   DEFAULT_HOST_NAME,
+  DEFAULT_INTERNAL_DEV_API_BASE,
   type Host,
   activeHostName,
   getHost,
@@ -29,7 +30,7 @@ Built-in hosts (always exist):
   cloud                Kortix Cloud (https://api.kortix.com)
   selfhost             Your self-hosted stack (kortix self-host)
   local-dev            Local dev server (http://localhost:8008)
-  kortix-internal-dev  Kortix-internal hosted dev (http://dev-api.kortix.com)
+  kortix-internal-dev  Kortix-internal hosted dev (${DEFAULT_INTERNAL_DEV_API_BASE})
 
 Authentication:
   login [<name>]                      Sign in to a host (browser flow or

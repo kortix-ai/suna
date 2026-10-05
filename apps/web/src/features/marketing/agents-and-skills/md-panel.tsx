@@ -90,7 +90,7 @@ export function MdPanel({
 
   return (
     <figure
-      className={cn('border-border bg-card flex h-full flex-col rounded-xl border', className)}
+      className={cn('border-border bg-card flex h-full flex-col rounded-sm border', className)}
     >
       <div className="border-border flex items-center gap-3 border-b px-4 py-3">
         <span className="text-muted-foreground truncate font-mono text-xs">{title}</span>

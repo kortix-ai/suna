@@ -2,6 +2,17 @@ export const ENVIRONMENT_PROTECTION_USERNAME = 'kortix';
 export const ENVIRONMENT_HEALTH_PATH = '/api/health';
 export const ENVIRONMENT_ACCESS_COOKIE = '__Secure-kortix_test_access';
 
+/**
+ * The Supabase auth callback routes. The verify→callback hop is a cross-site
+ * top-level redirect whose request can arrive without the access cookie; a
+ * gate 401 there consumes the single-use code and the sign-in link burns with
+ * no session established. The routes carry their own boundary — the PKCE code
+ * is useless without the verifier only the requesting browser holds, and every
+ * page behind sign-in stays gated — so the environment gate adds nothing on
+ * them and must never interrupt the exchange.
+ */
+const ENVIRONMENT_CALLBACK_PATHS = ['/auth/callback', '/auth/mobile/callback'];
+
 export interface EnvironmentProtectionInput {
   enabled: string | undefined;
   password: string | undefined;
@@ -12,7 +23,7 @@ export interface EnvironmentProtectionInput {
 }
 
 export type EnvironmentProtectionResult =
-  | { allowed: true; source: 'disabled' | 'health' | 'cookie' | 'basic' }
+  | { allowed: true; source: 'disabled' | 'health' | 'auth-callback' | 'cookie' | 'basic' }
   | { allowed: false; reason: 'credentials_required' | 'configuration_error' };
 
 function safeEqual(left: string, right: string): boolean {
@@ -51,6 +62,9 @@ export function authorizeEnvironment(
 ): EnvironmentProtectionResult {
   if (input.pathname === ENVIRONMENT_HEALTH_PATH) {
     return { allowed: true, source: 'health' };
+  }
+  if (ENVIRONMENT_CALLBACK_PATHS.includes(input.pathname)) {
+    return { allowed: true, source: 'auth-callback' };
   }
   if (input.enabled !== 'true') {
     return { allowed: true, source: 'disabled' };

@@ -42,8 +42,12 @@ Done when `git branch --show-current` prints the canonical branch inside its wor
 - Use the Conventional Commits subject style that `git log` shows:
   `fix(sandbox): …`, `feat(web): …`, `refactor(api): …`, `docs(repo): …`.
 - `pnpm install` arms `.githooks`. The hooks encrypt staged `.env` files, block plaintext
-  secrets, and refuse blocked customer terms. When a hook fires, fix the content and commit
-  again. Keep the hooks on every commit (never `--no-verify`).
+  secrets, refuse blocked customer terms, and refuse a crash dump or a file over 20 MB. When a
+  hook fires, fix the content and commit again. Keep the hooks on every commit (never
+  `--no-verify`).
+- Stage files by name: `git add <path> <path>`. Never `git add -A`, `git add .`, or
+  `git commit -a` outside one named directory. A blanket add once committed a worker's core
+  dump, and a core dump holds every secret in the process environment.
 - Ship the tests with the behaviour change (the **testing** skill).
 
 Done when the commit exists and the hooks passed.

@@ -38,42 +38,21 @@ import { type NavLink, type NavSubLink, siteConfig } from '@/lib/site-config';
 import { cn } from '@/lib/utils';
 import {
   ArrowRightIcon,
-  DiscordLogoIcon,
-  GithubLogoIcon,
   StackIcon as Layers,
-  LinkedinLogoIcon,
   ListIcon as Menu,
   TextTIcon as Type,
   XIcon as X,
-  XLogoIcon,
 } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from '@/components/site-link';
 import { usePathname, useRouter } from 'next/navigation';
 import { type MouseEvent, useCallback, useEffect, useState } from 'react';
 import { Download } from '@/features/icon/icons/download';
-import { Announcement } from '@/features/marketing/os/hero';
 
 const SCROLL_THRESHOLD_DOWN = 50;
 const SCROLL_THRESHOLD_UP = 20;
 
 const CTA_LINK = '/auth';
-
-
-/**
- * Scroll compaction — height only.
- *
- * At the top of the page the bar breathes. Once the reader scrolls it tucks in:
- * the outer padding drops from 14.72px to 5.52px and the row from 52px to 40px,
- * taking the bar from 66.7px to 51.0px (-23.5%).
- *
- * Nothing moves horizontally. The measure, the logo/nav gap, and every button
- * size are identical in both states, so the only thing that animates is the
- * vertical rhythm — the bar tightens around its contents instead of rearranging
- * them.
- */
-const BAR_TOP_PAD = { rest: 'pt-4', compact: 'pt-1.5' } as const;
-const BAR_ROW_HEIGHT = { rest: 'h-[52px]', compact: 'h-[40px]' } as const;
 
 /**
  * The marketing sections all sit on `mx-auto max-w-7xl px-6`. The bar's surface
@@ -81,15 +60,6 @@ const BAR_ROW_HEIGHT = { rest: 'h-[52px]', compact: 'h-[40px]' } as const;
  * logo's left edge and the CTA's right edge line up with the section text below.
  */
 const CONTENT_MEASURE = 'mx-auto w-full max-w-7xl px-6';
-
-/**
- * The scrolled surface is a blur veil, not a bar with an edge. It extends 22px
- * past the header and its mask fades the blur out over that overhang, so the
- * frosted panel dissolves into the page instead of ending on a line. The row
- * content sits in the fully-opaque top of the mask, so nothing behind the logo
- * or the buttons is ever half-blurred.
- */
-const BAR_VEIL_MASK = '[mask-image:linear-gradient(to_bottom,#000_0%,#000_72%,transparent_100%)]';
 
 /** The links a drawer row expands to; empty for a row that simply navigates. */
 function drawerSubLinks(item: NavLink): NavSubLink[] {
@@ -104,13 +74,6 @@ function drawerSubLinks(item: NavLink): NavSubLink[] {
  */
 const DRAWER_ROW = 'flex items-center py-2 text-lg font-medium transition-colors';
 
-const DRAWER_SOCIALS = [
-  { label: 'X', href: 'https://x.com/kortix', icon: XLogoIcon },
-  { label: 'LinkedIn', href: 'https://linkedin.com/company/kortix', icon: LinkedinLogoIcon },
-  { label: 'Discord', href: 'https://discord.com/invite/RvFhXUdZ9H', icon: DiscordLogoIcon },
-  { label: 'GitHub', href: 'https://github.com/kortix-ai/suna', icon: GithubLogoIcon },
-] as const;
-
 interface NavbarProps {
   isAbsolute?: boolean;
 }
@@ -120,7 +83,6 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [hasScrolled, setHasScrolled] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [openDrawerMenu, setOpenDrawerMenu] = useState<number | null>(null);
   const { user } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -218,15 +180,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
     };
   }, [isDrawerOpen]);
 
-  // A page whose fold is a dark art pane marks it `data-kx-dark-hero`; the bar
-  // then sits on the pane, transparent, until the reader scrolls.
-  const [hasDarkHero, setHasDarkHero] = useState(false);
-  useEffect(() => {
-    setHasDarkHero(document.querySelector('[data-kx-dark-hero]') !== null);
-  }, [pathname]);
-
   const toggleDrawer = () => setIsDrawerOpen((prev) => !prev);
-  const overHero = hasDarkHero && !hasScrolled && !isDrawerOpen;
 
   // Anchor links scroll in place on the home page; everything else navigates.
   // Either way the sheet closes.
@@ -265,14 +219,16 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
     <>
       <header
         className={cn(
-          'text-foreground relative inset-x-0 top-0 z-50 flex w-full flex-col items-center border-b transition-colors duration-normal ease-out motion-reduce:transition-none',
-          // Over the home hero the bar is part of the dark art pane: no fill,
-          // no rule, dark tokens. Past the fold it becomes the solid bar.
-          overHero ? 'dark border-transparent bg-transparent' : 'border-border-default bg-background',
+          'border-border-default bg-background fixed relative inset-x-0 top-0 z-50 flex h-16 w-full flex-col items-center justify-between border-b transition-all duration-300 ease-out motion-reduce:transition-none',
         )}
       >
-        {overHero && pathname === '/' && <Announcement />}
-        <div className={cn(CONTENT_MEASURE, 'relative flex h-16 w-full items-center justify-between')}>
+        <div
+          className={cn(
+            CONTENT_MEASURE,
+            'relative flex h-full w-full items-center justify-between',
+            'transition-[height] duration-300 ease-out motion-reduce:transition-none',
+          )}
+        >
           <div className="flex flex-1 items-center gap-8">
             <ContextMenu>
               <ContextMenuTrigger asChild className="group/kortix-logo">
@@ -420,22 +376,17 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
             )}
 
             {user ? (
-              <Button size="sm" asChild className="rounded-full px-4">
+              <Button size="sm" asChild>
                 <Link href={projectsHref} prefetch>
                   {tHardcodedUi.raw('i18nComplete.text04e2a9728af7')}
                 </Link>
               </Button>
             ) : (
-              <>
-                <Button variant="ghost" size="sm" asChild className="text-muted-foreground hover:text-foreground hidden sm:flex">
-                  <Link href={CTA_LINK}>{tHardcodedUi.raw('componentsHomeNavbar.logIn')}</Link>
-                </Button>
-                <Button size="sm" asChild className="rounded-full px-4">
-                  <Link href={CTA_LINK} onClick={trackCtaSignup}>
-                    {tHardcodedUi.raw('componentsHomeNavbar.line312JsxTextGetStarted')}
-                  </Link>
-                </Button>
-              </>
+              <Button size="sm" asChild>
+                <Link href={CTA_LINK} onClick={trackCtaSignup}>
+                  {tHardcodedUi.raw('componentsHomeNavbar.line312JsxTextGetStarted')}
+                </Link>
+              </Button>
             )}
 
             <Button

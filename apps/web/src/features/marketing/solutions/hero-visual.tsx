@@ -42,7 +42,7 @@ export function SolutionsHeroVisual(): ReactNode {
       role="img"
       aria-label={tI18nComplete.raw('text30a034c0a1ed')}
     >
-      <div className="relative h-[24rem] w-full max-w-3xl overflow-hidden rounded-xl border border-border bg-background sm:h-[27rem]">
+      <div className="relative h-[24rem] w-full max-w-[38rem] overflow-hidden sm:h-[27rem]">
         {/* the hairline the column hangs off, bleeding both ends */}
         <m.span
           className="bg-border absolute inset-y-0 left-[3%] w-px mask-y-from-82% mask-y-to-100%"

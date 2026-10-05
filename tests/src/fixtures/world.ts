@@ -9,6 +9,7 @@
  * route contracts are pinned by the audit. OWNER/ANON/PAT_ACCT/APIKEY + the run
  * account are wired here.
  */
+import { ProjectSessionSchema, SessionCreateAcceptedSchema } from '@kortix/api-contract';
 import { Client, throwIfEdgeLaundered, type Identity } from '../core/client';
 import type { Env } from '../core/env';
 import { log } from '../core/log';
@@ -446,6 +447,10 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
         },
       );
       throwIfEdgeLaundered(res, 'session create');
+      // Every flow that creates a real session also checks the create body
+      // against the contract: the row on 201, the accepted envelope on 202.
+      if (res.statusCode === 201) res.body().schema(ProjectSessionSchema);
+      if (res.statusCode === 202) res.body().schema(SessionCreateAcceptedSchema);
       const body = res.json<any>();
       const id = body?.session_id ?? body?.sessionId ?? body?.id;
       if (!id) throw new Error(`session create returned no id: ${res.text()}`);
