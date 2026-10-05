@@ -20,7 +20,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const computer = require('./computer');
-const { composeTrayMenu } = require('./tray-menu');
 const { isApprovalDialogPath } = require('./nav-rules');
 
 const FULL_REFRESH_MS = 60_000;
@@ -41,7 +40,6 @@ const WATCHED_FILES = ['state.json', 'config.json', 'access.json', 'access-reque
  *   getMainWindow: () => import('electron').BrowserWindow | null,
  *   openMainWindow: () => void,
  *   backgroundColor: () => string,
- *   captureSection?: () => object | null,
  * }} deps
  */
 function setupComputer(deps) {
@@ -394,14 +392,7 @@ function setupComputer(deps) {
   };
 
   function renderTray() {
-    // One menu, one section per feature (tray-menu.js): the computer's section
-    // shows while it is paired, Capture's (capture-host.js) while it is set up.
-    const loginItemSupported = process.platform === 'darwin' || process.platform === 'win32';
-    const sections = [
-      computer.computerTraySection(status, access, { keepAwakeSupported: computer.keepAwakeSupported(process.platform) }, actions),
-      deps.captureSection?.() ?? null,
-    ];
-    if (!sections.some(Boolean)) {
+    if (!status?.paired) {
       tray?.destroy();
       tray = null;
       return;
@@ -411,9 +402,21 @@ function setupComputer(deps) {
       // Windows and Linux: a left click opens the app; the menu is on right click.
       if (process.platform !== 'darwin') tray.on('click', actions.open);
     }
-    tray.setToolTip(status?.paired ? `Kortix — ${computer.statusLabel(status)}` : 'Kortix');
-    const menu = composeTrayMenu({ sections, openAtLogin: app.getLoginItemSettings().openAtLogin, loginItemSupported, actions });
-    tray.setContextMenu(Menu.buildFromTemplate(menu));
+    tray.setToolTip(`Kortix — ${computer.statusLabel(status)}`);
+    tray.setContextMenu(
+      Menu.buildFromTemplate(
+        computer.trayMenuTemplate(
+          status,
+          access,
+          {
+            openAtLogin: app.getLoginItemSettings().openAtLogin,
+            loginItemSupported: process.platform === 'darwin' || process.platform === 'win32',
+            keepAwakeSupported: computer.keepAwakeSupported(process.platform),
+          },
+          actions,
+        ),
+      ),
+    );
   }
 
   function renderTraySafely() {
@@ -496,11 +499,12 @@ function setupComputer(deps) {
     }
     if (before.missing.includes('accessibility')) systemPreferences.isTrustedAccessibilityClient(true);
     if (before.missing.includes('screenRecording')) {
-      // The first capture attempt adds Kortix to Screen Recording and shows the
-      // prompt. After a "Don't Allow", only System Settings can grant it.
-      if (systemPreferences.getMediaAccessStatus('screen') === 'not-determined') {
-        await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } }).catch(() => []);
-      } else {
+      // A capture attempt is what adds Kortix to the Screen Recording list (and
+      // shows the prompt the first time). Always try it: macOS 11+ reports a
+      // never-asked app as denied, never as undetermined, so skipping the
+      // attempt opened System Settings on a list without Kortix in it.
+      await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } }).catch(() => []);
+      if (systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
         void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
       }
     }
@@ -781,10 +785,6 @@ function setupComputer(deps) {
     invoke,
     /** Closing the last window keeps the app in the tray while a computer is paired. */
     keepRunning: () => computer.keepRunningInTray(status),
-    /** The instance's backend: Kortix Capture signs in to the same one. */
-    backend: () => context(),
-    /** Redraws the tray; Kortix Capture calls it when its own menu group changes. */
-    renderTray: renderTraySafely,
   };
 }
 

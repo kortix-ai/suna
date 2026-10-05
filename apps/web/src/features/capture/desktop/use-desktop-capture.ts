@@ -7,6 +7,7 @@ import { errorToast } from '@/components/ui/toast';
 import { useMemo } from 'react';
 
 import { useProjectSelectorData } from '@/features/workspace/project-selector/use-project-selector-data';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
 import {
   desktopCapturePause,
   desktopCaptureRequestGrants,
@@ -37,25 +38,39 @@ export function useDesktopCaptureStatus({ poll = false }: { poll?: boolean } = {
   });
 }
 
-/** The project, when the person can see it and its `capture` feature flag is on. */
-export function useCaptureProject(projectId: string) {
+/**
+ * The organization Capture records this computer for: the selected account,
+ * else the first. Capture is organization-scoped; projects stay out of it.
+ *
+ * `projectId` bridges to today's device sign-in, which still names a project
+ * with capture on: the one this computer records into when it belongs to this
+ * organization, else its most recently opened one. It goes away when the
+ * account-scoped device grant lands (backend lane).
+ */
+export function useCaptureOrganization(recordingInto?: string | null) {
   const { sections, listsLoading } = useProjectSelectorData();
-  const project = useMemo(
-    () =>
-      sections
-        .flatMap((section) => section.projects)
-        .find(
-          (candidate) => candidate.project_id === projectId && candidate.experimental?.capture,
-        ) ?? null,
-    [sections, projectId],
-  );
-  return { project, loading: listsLoading };
+  const selected = useCurrentAccountStore((state) => state.selectedAccountId);
+  return useMemo(() => {
+    const section = sections.find((candidate) => candidate.accountId === selected) ?? sections[0] ?? null;
+    const captureProjects = (section?.projects ?? []).filter((project) => project.experimental?.capture);
+    const project =
+      captureProjects.find((candidate) => candidate.project_id === recordingInto) ?? captureProjects[0] ?? null;
+    return {
+      loading: listsLoading,
+      accountId: section?.accountId ?? null,
+      name: section?.accountName ?? '',
+      /** Capture is on for this organization. */
+      enabled: Boolean(project),
+      projectId: project?.project_id ?? null,
+    };
+  }, [sections, listsLoading, selected, recordingInto]);
 }
 
 /**
- * Every Capture action of the dialog. Turning on is the engine's own device
- * sign-in (`/v1/capture/device/*`), approved with this person's session and
- * this computer's machine id; it never touches the computer agent.
+ * Every Capture action of "This computer". Turning on is the engine's own
+ * device sign-in (`/v1/capture/device/*`), approved with this person's
+ * session; the device keeps its own identity and never touches the computer
+ * agent.
  */
 export function useDesktopCaptureActions(
   projectId: string,
@@ -78,14 +93,12 @@ export function useDesktopCaptureActions(
     // The dialog shows a failed start inline, with "Try again".
     onError: () => undefined,
     mutationFn: async (view: DesktopCaptureStatus) => {
-      // Signed in to this project already: only the switch.
+      // Signed in for this organization already: only the switch.
       if (view.signedIn && view.projectId === projectId && !view.signInRequired)
         return desktopCaptureSet({ on: true });
-      const machineId = view.machineId;
       const result = await connectDesktopCapture(projectId, {
         start: desktopCaptureSignInStart,
-        approve: (userCode, target) =>
-          approveCaptureDeviceGrant(userCode, target, machineId ? { machineId } : {}),
+        approve: approveCaptureDeviceGrant,
         finish: desktopCaptureSignInFinish,
         cancel: desktopCaptureSignInCancel,
         openApproval: (url) => {

@@ -155,35 +155,6 @@ function checkPageApiUrl(given, backendUrl) {
   return `apiUrl is not the backend of this Kortix instance (${backendUrl})`;
 }
 
-/**
- * This computer's id as the computer agent reports it (`machineInfo.machineId`
- * of a tunnel connection): sha256("kortix-machine:" + the OS machine id,
- * lowercased). Same formula as packages/agent-tunnel/src/agent/device-auth.ts
- * `machineId()`; computer.test.js asserts they agree. Capture sends it on
- * approval, so a capture device joins this computer. Null when the OS id is
- * unreadable.
- */
-function machineId({
-  os: osName = process.platform,
-  run = (command, args) => execFileSync(command, args, { encoding: 'utf8', timeout: 2_000, stdio: ['ignore', 'pipe', 'ignore'] }),
-  read = (file) => fs.readFileSync(file, 'utf8'),
-} = {}) {
-  const attempt = (source) => {
-    try {
-      return source()?.trim() || null;
-    } catch {
-      return null;
-    }
-  };
-  const raw =
-    osName === 'darwin'
-      ? attempt(() => /"IOPlatformUUID" = "([^"]+)"/.exec(run('ioreg', ['-rd1', '-c', 'IOPlatformExpertDevice']))?.[1])
-      : osName === 'win32'
-        ? attempt(() => /MachineGuid\s+REG_SZ\s+(\S+)/.exec(run('reg', ['query', 'HKLM\\SOFTWARE\\Microsoft\\Cryptography', '/v', 'MachineGuid']))?.[1])
-        : (attempt(() => read('/etc/machine-id')) ?? attempt(() => read('/var/lib/dbus/machine-id')));
-  return raw ? crypto.createHash('sha256').update(`kortix-machine:${raw.toLowerCase()}`).digest('hex') : null;
-}
-
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function isProjectId(value) {
@@ -540,22 +511,15 @@ function connectComputer({ cli, home, apiUrl, projectId, reauth, onChallenge, on
 }
 
 /** Tray status line. */
-/** The computer's state in a few words, for the tray section under "Your computer". */
-function statusWord(status) {
-  if (!status?.paired) return 'Not connected';
-  if (status.paused) return 'Access paused';
-  if (status.state === 'online') return 'Connected';
-  if (!status.serviceActive) return 'Service stopped';
-  if (status.state === 'connecting') return 'Connecting…';
-  if (status.state === 'rejected') return 'Needs to reconnect';
-  if (status.state === 'standby') return 'In use by another Kortix app or terminal';
-  return 'Offline';
-}
-
-/** The same, standing alone (the tray tooltip): "Computer connected". */
 function statusLabel(status) {
-  const word = statusWord(status);
-  return `Computer ${word[0].toLowerCase()}${word.slice(1)}`;
+  if (!status?.paired) return 'Computer not connected';
+  if (status.paused) return 'Computer access paused';
+  if (status.state === 'online') return 'Computer connected';
+  if (!status.serviceActive) return 'Computer service stopped';
+  if (status.state === 'connecting') return 'Computer connecting…';
+  if (status.state === 'rejected') return 'Computer needs to reconnect';
+  if (status.state === 'standby') return 'Computer in use by another Kortix app or terminal';
+  return 'Computer offline';
 }
 
 function clock(iso) {
@@ -563,44 +527,51 @@ function clock(iso) {
 }
 
 /**
- * The tray's "Your computer" section (A5), for tray-menu.js; null until this
- * computer is paired. `actions` are the click handlers; a plain template, so
- * the items are tested without Electron.
+ * Tray menu (A5). `actions` are the click handlers; this stays a plain
+ * template so the item list is tested without Electron.
  */
-function computerTraySection(status, access, { keepAwakeSupported: canKeepAwake, now = Date.now() }, actions) {
-  if (!status?.paired) return null;
-  const paused = Boolean(status.paused);
+function trayMenuTemplate(status, access, { openAtLogin, loginItemSupported, keepAwakeSupported: canKeepAwake, now = Date.now() }, actions) {
+  const paused = Boolean(status?.paired && status.paused);
   const granted = access.mode === 'ask' && access.grantedUntil && Date.parse(access.grantedUntil) > now;
   const mode = (id, label) => ({ label, type: 'radio', checked: access.mode === id, click: () => actions.setMode(id) });
-  return {
-    id: 'computer',
-    title: 'Your computer',
-    logs: actions.logs,
-    keepsRunning: !paused,
-    items: [
-      { id: 'status', label: statusWord(status), enabled: false },
-      {
-        id: 'access',
-        label: 'Access',
-        submenu: [mode('ask', 'Ask each time'), mode('always', 'Always allowed'), mode('off', 'Off')],
-      },
-      ...(granted
-        ? [
-            { id: 'grant', label: `Allowed until ${clock(access.grantedUntil)}`, enabled: false },
-            { id: 'revoke', label: 'Revoke now', click: actions.revoke },
-          ]
-        : []),
-      canKeepAwake
-        ? { id: 'keepAwake', label: 'Keep awake while plugged in', type: 'checkbox', checked: access.keepAwake, click: actions.toggleKeepAwake }
-        : { id: 'keepAwake', label: 'Keep awake: not available on Windows yet', enabled: false },
-      {
-        id: 'pause',
-        label: paused ? 'Resume computer access' : 'Pause computer access',
-        click: paused ? actions.resume : actions.pause,
-      },
-      { id: 'disconnect', label: 'Disconnect…', click: actions.disconnect },
-    ],
-  };
+  return [
+    { id: 'status', label: statusLabel(status), enabled: false },
+    { type: 'separator' },
+    { id: 'open', label: 'Open Kortix', click: actions.open },
+    { type: 'separator' },
+    {
+      id: 'access',
+      label: 'Access',
+      submenu: [mode('ask', 'Ask each time'), mode('always', 'Always allowed'), mode('off', 'Off')],
+    },
+    ...(granted
+      ? [
+          { id: 'grant', label: `Allowed until ${clock(access.grantedUntil)}`, enabled: false },
+          { id: 'revoke', label: 'Revoke now', click: actions.revoke },
+        ]
+      : []),
+    canKeepAwake
+      ? { id: 'keepAwake', label: 'Keep this computer awake while plugged in', type: 'checkbox', checked: access.keepAwake, click: actions.toggleKeepAwake }
+      : { id: 'keepAwake', label: 'Keep awake: not available on Windows yet', enabled: false },
+    {
+      id: 'pause',
+      label: paused ? 'Resume computer access' : 'Pause computer access',
+      enabled: Boolean(status?.paired),
+      click: paused ? actions.resume : actions.pause,
+    },
+    { id: 'logs', label: 'Show logs', click: actions.logs },
+    { type: 'separator' },
+    ...(loginItemSupported
+      ? [{ id: 'login', label: 'Open at login', type: 'checkbox', checked: openAtLogin, click: actions.toggleLogin }]
+      : []),
+    { id: 'disconnect', label: 'Disconnect this computer…', enabled: Boolean(status?.paired), click: actions.disconnect },
+    { type: 'separator' },
+    {
+      id: 'quit',
+      label: status?.paired && !paused ? 'Quit Kortix (your computer stays connected)' : 'Quit Kortix',
+      click: actions.quit,
+    },
+  ];
 }
 
 /** Keep the app alive in the tray, instead of quitting, when a computer is paired. */
@@ -632,7 +603,6 @@ module.exports = {
   isProjectId,
   keepAwakeSupported,
   keepRunningInTray,
-  machineId,
   ndjsonParser,
   nextAccess,
   readAccess,
@@ -640,8 +610,7 @@ module.exports = {
   runAgent,
   sha8,
   statusLabel,
-  statusWord,
-  computerTraySection,
+  trayMenuTemplate,
   unavailable,
   widenPrompt,
   writeAccess,

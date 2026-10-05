@@ -149,16 +149,12 @@ test('device sign-in approval: read, approve into a project, deny', async () => 
   expect(last()).toMatchObject({ method: 'POST', url: 'http://test.local/capture/device/grants/ABCD-1234/deny' });
 });
 
-test('approval names the computer: { machineId } goes out as machine_id; without it the body has none', async () => {
-  const machineId = 'a'.repeat(64);
-  await approveCaptureDeviceGrant('ABCD-1234', 'p1', { machineId });
-  expect(last()).toMatchObject({ method: 'POST', body: { project_id: 'p1', machine_id: machineId } });
+test('a capture device has its own identity: approval sends the project only, never a computer id', async () => {
   await approveCaptureDeviceGrant('ABCD-1234', 'p1');
   expect(last().body).toEqual({ project_id: 'p1' });
-  // A device row carries the computer it runs on.
-  nextBody = { devices: [{ device_id: 'd1', machine_id: machineId }] };
-  const devices: CaptureDevice[] = (await listCaptureDevices('p1')).devices;
-  expect(devices[0]?.machine_id).toBe(machineId);
+  // @ts-expect-error approval takes no computer id: a Capture device is not a computer-agent machine.
+  await approveCaptureDeviceGrant('ABCD-1234', 'p1', { machineId: 'a'.repeat(64) });
+  expect(last().body).toEqual({ project_id: 'p1' });
 });
 
 test('the facade binds capture to a project and exposes the sign-in approval at the top', async () => {

@@ -327,46 +327,45 @@ describe('tray', () => {
   const access = { mode: 'ask', grantedUntil: null, deniedUntil: null, keepAwake: false };
   const opts = { openAtLogin: true, loginItemSupported: true, keepAwakeSupported: true, now: Date.parse('2030-01-01T12:00:00.000Z') };
 
-  test('the "Your computer" section: status, access, keep awake, pause, disconnect (A5)', () => {
-    const section = computer.computerTraySection(online, access, opts, actions);
-    expect(section).toMatchObject({ id: 'computer', title: 'Your computer', keepsRunning: true });
-    expect(section.items.map((item) => item.label)).toEqual([
-      'Connected',
+  test('lists the computer and access controls in order (A5)', () => {
+    const items = computer.trayMenuTemplate(online, access, opts, actions);
+    expect(items.filter((item) => item.id).map((item) => item.label)).toEqual([
+      'Computer connected',
+      'Open Kortix',
       'Access',
-      'Keep awake while plugged in',
+      'Keep this computer awake while plugged in',
       'Pause computer access',
-      'Disconnect…',
+      'Show logs',
+      'Open at login',
+      'Disconnect this computer…',
+      'Quit Kortix (your computer stays connected)',
     ]);
-    const modes = section.items.find((item) => item.id === 'access').submenu;
+    const modes = items.find((item) => item.id === 'access').submenu;
     expect(modes.map((item) => [item.label, item.checked])).toEqual([
       ['Ask each time', true],
       ['Always allowed', false],
       ['Off', false],
     ]);
-  });
-
-  test('not paired: no section', () => {
-    expect(computer.computerTraySection({ paired: false }, access, opts, actions)).toBeNull();
-    expect(computer.computerTraySection(null, access, opts, actions)).toBeNull();
+    expect(items.find((item) => item.id === 'login').checked).toBe(true);
   });
 
   test('an active grant shows its end and a Revoke now item', () => {
     const granted = { ...access, grantedUntil: '2030-01-01T14:32:00.000Z' };
-    const items = computer.computerTraySection(online, granted, opts, actions).items;
+    const items = computer.trayMenuTemplate(online, granted, opts, actions);
     const grant = items.find((item) => item.id === 'grant');
     expect(grant.label).toMatch(/^Allowed until /);
     expect(items.find((item) => item.id === 'revoke').label).toBe('Revoke now');
-    expect(computer.computerTraySection(online, access, opts, actions).items.find((item) => item.id === 'revoke')).toBeUndefined();
+    expect(computer.trayMenuTemplate(online, access, opts, actions).find((item) => item.id === 'revoke')).toBeUndefined();
   });
 
-  test('a paused computer offers Resume and does not keep running; Windows says keep-awake is unavailable', () => {
+  test('a paused computer offers Resume; Linux has no login item; Windows says keep-awake is unavailable', () => {
     const paused = { ...online, paused: true, serviceActive: false, status: 'offline', state: 'offline' };
-    const section = computer.computerTraySection(paused, access, { ...opts, keepAwakeSupported: false }, actions);
-    expect(section.items[0].label).toBe('Access paused');
-    expect(section.keepsRunning).toBe(false);
-    expect(section.items.find((item) => item.id === 'pause').label).toBe('Resume computer access');
-    expect(section.items.find((item) => item.id === 'keepAwake')).toMatchObject({ label: 'Keep awake: not available on Windows yet', enabled: false });
-    expect(computer.statusLabel(paused)).toBe('Computer access paused');
+    const items = computer.trayMenuTemplate(paused, access, { ...opts, loginItemSupported: false, keepAwakeSupported: false }, actions);
+    expect(items[0].label).toBe('Computer access paused');
+    expect(items.find((item) => item.id === 'pause').label).toBe('Resume computer access');
+    expect(items.find((item) => item.id === 'login')).toBeUndefined();
+    expect(items.find((item) => item.id === 'keepAwake')).toMatchObject({ label: 'Keep awake: not available on Windows yet', enabled: false });
+    expect(items.find((item) => item.id === 'quit').label).toBe('Quit Kortix');
   });
 
   test('a refused credential reads as Needs reconnect', () => {
@@ -534,22 +533,13 @@ describe('computer setup (the macOS grants the approved access needs)', () => {
     expect(computer.computerSetupMissing(home, { accessibility: true, screenRecording: true, files: true })).toEqual([]);
     expect(computer.computerSetupMissing(home, null)).toEqual([]); // not macOS
   });
-});
 
-describe('machineId (the computer agent formula)', () => {
-  const tunnel = require('../../../packages/agent-tunnel/src/agent/device-auth');
-  const run = () => '| "IOPlatformUUID" = "ABCDEF01-2345-6789-ABCD-EF0123456789"\n';
-  const reg = () => '    MachineGuid    REG_SZ    1F2E3D4C-5B6A-7980-A1B2-C3D4E5F60718\n';
-  const read = () => '0123456789abcdef0123456789abcdef\n';
-  test('matches packages/agent-tunnel machineId() on macOS, Windows, Linux, and this machine', () => {
-    for (const [os, stub] of [['darwin', { run }], ['win32', { run: reg }], ['linux', { read }]]) {
-      const ours = computer.machineId({ os, ...stub });
-      expect(ours).toMatch(/^[0-9a-f]{64}$/);
-      expect(ours).toBe(tunnel.machineId({ os, ...stub }));
-    }
-    expect(computer.machineId()).toBe(tunnel.machineId());
-  });
-  test('an unreadable OS id gives null', () => {
-    expect(computer.machineId({ os: 'linux', read: () => { throw new Error('ENOENT'); } })).toBeNull();
+  test('Allow all always attempts a capture, so Kortix is listed under Screen Recording', () => {
+    const tray = fs.readFileSync(path.join(__dirname, 'computer-tray.js'), 'utf8');
+    const request = tray.slice(tray.indexOf("before.missing.includes('screenRecording')"), tray.indexOf('const needsRestart'));
+    // macOS 11+ never reports 'not-determined' for the screen, so no branch may gate the capture on it.
+    expect(request).not.toContain("'not-determined'");
+    expect(request.indexOf('desktopCapturer.getSources')).toBeGreaterThan(-1);
+    expect(request.indexOf('desktopCapturer.getSources')).toBeLessThan(request.indexOf('Privacy_ScreenCapture'));
   });
 });

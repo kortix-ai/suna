@@ -4,21 +4,21 @@
 // Scheduler) with this app's binary as Node and supervises it, so Capture
 // keeps recording while the app is quit and across reboots. This file
 // installs, pauses and removes that service, and reads the engine's and the
-// service's status. Rules live in capture.js; the tray is computer-tray.js.
+// service's status. Rules live in capture.js; Capture's tray is
+// capture-tray.js. Capture is its own product: no computer-agent module here.
 
-const { app, desktopCapturer, shell, systemPreferences } = require('electron');
+const { app, desktopCapturer, net, shell, systemPreferences } = require('electron');
 const { execFileSync, spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const capture = require('./capture');
-const { machineId } = require('./computer');
 
 const REFRESH_EVERY_MS = 30_000;
 /** The page polls capture_status; within this age the cached answer is reused. */
 const FRESH_MS = 2_000;
 const SIGN_IN_MARKER = 'sign-in.pending';
 
-/** Dev only: the service bundle from src (bun), like the computer agent's. */
+/** Dev only: the service bundle from src (bun). */
 function devServiceScript() {
   const root = path.join(__dirname, '..');
   const out = path.join(root, 'vendor', 'capture-service.js');
@@ -28,9 +28,9 @@ function devServiceScript() {
 
 /**
  * @param {{
- *   backend: () => Promise<{ backendUrl: string }>,
+ *   appUrl: () => string,
  *   onChange: () => void,
- *   openSettings: () => void,
+ *   openCapture: () => void,
  * }} deps
  */
 function setupCapture(deps) {
@@ -63,18 +63,43 @@ function setupCapture(deps) {
     return availability;
   }
 
-  /** @type {{ backendUrl: string, library: string, issuer: string, env: NodeJS.ProcessEnv } | null} */
+  const backendCacheFile = 'capture-backend.json';
+
+  /**
+   * The instance's backend, read from its own `/api/runtime-config` (never from
+   * the page). The last answer is kept on disk, so status works offline.
+   */
+  async function backendFor(appOrigin) {
+    try {
+      const response = await net.fetch(`${appOrigin}/api/runtime-config`, { cache: 'no-store' });
+      const parsed = capture.backendFromRuntimeConfig(response.ok ? await response.text() : '', appOrigin);
+      if (!parsed.ok) throw new Error(parsed.error);
+      capture.writePrivateJson(userData, backendCacheFile, { appOrigin, backendUrl: parsed.url });
+      return parsed.url;
+    } catch (error) {
+      try {
+        const cached = JSON.parse(fs.readFileSync(path.join(userData, backendCacheFile), 'utf8'));
+        if (cached.appOrigin === appOrigin && typeof cached.backendUrl === 'string') return cached.backendUrl;
+      } catch {
+        /* no cache */
+      }
+      throw error instanceof Error ? error : new Error(String(error));
+    }
+  }
+
+  /** @type {{ appOrigin: string, backendUrl: string, library: string, issuer: string, env: NodeJS.ProcessEnv } | null} */
   let ctx = null;
 
   async function context() {
-    const { backendUrl } = await deps.backend();
-    if (ctx?.backendUrl === backendUrl) return ctx;
+    const appOrigin = new URL(deps.appUrl()).origin;
+    if (ctx?.appOrigin === appOrigin) return ctx;
+    const backendUrl = await backendFor(appOrigin);
     // Another instance: its own library, sign-in and service. The other
     // instance's service keeps running; it does not belong to this window.
     const library = capture.libraryDir(userData, new URL(backendUrl).origin);
     fs.mkdirSync(path.join(library, 'logs'), { recursive: true, mode: 0o700 });
     fs.writeFileSync(path.join(library, 'engine-config.yaml'), capture.engineConfigYaml(library));
-    ctx = { backendUrl, library, issuer: capture.issuerFromBackend(backendUrl), env: capture.engineEnv({ library, paths }) };
+    ctx = { appOrigin, backendUrl, library, issuer: capture.issuerFromBackend(backendUrl), env: capture.engineEnv({ library, paths }) };
     return ctx;
   }
 
@@ -95,8 +120,6 @@ function setupCapture(deps) {
   let view = capture.captureStatusFrom({ available: false, error: 'Kortix Capture is starting.' });
   let viewAt = 0;
   let refreshing = null;
-  /** @type {string | null | undefined} */
-  let thisMachine;
 
   /**
    * Brings the service in line with the person's switch and the sign-in.
@@ -145,8 +168,6 @@ function setupCapture(deps) {
         serviceStopped: !heartbeat && !pending && (after.installed !== true || after.enabled === false),
       }),
       version: engineState.version,
-      // The computer agent's id for this machine: the page sends it on approval.
-      machineId: (thisMachine ??= machineId()),
       service: {
         installed: after.installed === true,
         enabled: after.enabled !== false,
@@ -329,7 +350,7 @@ function setupCapture(deps) {
     pause: () => void invoke('capture_pause', { minutes: 60 }).catch((e) => console.warn(`[kortix] capture pause: ${e}`)),
     resume: () => void invoke('capture_resume').catch((e) => console.warn(`[kortix] capture resume: ${e}`)),
     timeline: () => void openTimeline().catch((e) => console.warn(`[kortix] capture timeline: ${e}`)),
-    settings: () => deps.openSettings(),
+    open: () => deps.openCapture(),
     logs: () => void invoke('capture_open_logs').catch((e) => console.warn(`[kortix] capture logs: ${e}`)),
   };
 
@@ -343,7 +364,12 @@ function setupCapture(deps) {
   return {
     start,
     invoke,
-    traySection: () => capture.captureTraySection(view, trayActions),
+    /** This build ships the engine (the app menu shows Capture only then). */
+    bundled: () => fs.existsSync(paths.capture),
+    /** Capture's tray items (capture-tray.js); empty until Capture is set up here. */
+    trayItems: () => capture.captureTrayItems(view, trayActions),
+    /** Whether the service keeps recording after the app quits. */
+    keepsRunning: () => capture.captureKeepsRunning(view),
   };
 }
 

@@ -7,7 +7,7 @@ import type { DesktopCaptureLayer, DesktopCaptureStatus } from '@/lib/desktop';
  */
 export type CapturePhase =
   | 'unavailable' // no engine in this build, or it cannot run here
-  | 'projectOff' // the project's `capture` flag is off
+  | 'orgOff' // Capture is not on for the organization
   | 'off' // not recording into this project (signed out, another project, or switched off)
   | 'turningOn' // device sign-in and service install in progress
   | 'signInRequired' // Kortix refused this computer (revoked, or the flag went off): sign in again
@@ -49,20 +49,20 @@ export function capturePhase(
   view: DesktopCaptureStatus | null | undefined,
   {
     projectId,
-    projectHasCapture,
+    orgHasCapture,
     turningOn = false,
     failed = false,
     now = Date.now(),
   }: {
     projectId: string;
-    projectHasCapture: boolean;
+    orgHasCapture: boolean;
     turningOn?: boolean;
     failed?: boolean;
     now?: number;
   },
 ): CapturePhase {
   if (!view?.available) return 'unavailable';
-  if (!projectHasCapture) return 'projectOff';
+  if (!orgHasCapture) return 'orgOff';
   if (turningOn) return 'turningOn';
   const here = view.projectId === projectId;
   if (view.signInRequired && here) return 'signInRequired';

@@ -20564,6 +20564,8 @@
       "notAllowed": "Non consentito",
       "needsSetup": "Da configurare"
     },
+    "runInBackground": "Esegui in background",
+    "runInBackgroundDescription": "Se disattivato, la connessione resta in pausa anche dopo un riavvio.",
     "manageInProject": "Gestisci nel progetto",
     "disconnectEllipsis": "Disconnetti…",
     "yourComputersTitle": "I tuoi computer",
@@ -20586,6 +20588,7 @@
       "screenRecordingDescription": "Vedere cosa c’è sullo schermo",
       "needed": "Non ancora consentito",
       "waiting": "In attesa di te",
+      "allowAll": "Consenti tutto",
       "settingsHint": "Se si apre Impostazioni di Sistema, attiva Kortix nell’elenco. Questa vista si aggiorna da sola.",
       "doneTitle": "Il tuo computer è pronto",
       "doneHint": "Kortix ha tutte le autorizzazioni necessarie. Gli agenti possono usare questo computer."
@@ -20598,18 +20601,6 @@
       "removeAll": "Rimuovi tutte",
       "confirmTitle": "Rimuovere tutte le connessioni precedenti?",
       "confirmDescription": "Kortix le rimuove insieme ai loro account da tutti i progetti. Un computer che ne usa ancora una può riconnettersi."
-    },
-    "hub": {
-      "agents": "Agenti",
-      "capture": "Capture",
-      "tabAgents": "Accesso degli agenti",
-      "tabCapture": "Il mio Capture",
-      "thisComputer": "Questo computer",
-      "more": "Altre azioni",
-      "allowAccess": "Consenti accesso",
-      "pauseAccess": "Sospendi accesso",
-      "resumeAccess": "Riprendi accesso",
-      "pausedHint": "In pausa. Gli agenti non possono usare questo computer finché non riprendi, anche dopo un riavvio."
     }
   },
   "messageFrom": {
@@ -20893,6 +20884,7 @@
       "tryAgain": "Riprova"
     },
     "dialog": {
+      "title": "Registra questo computer",
       "status": {
         "off": "Disattivato",
         "turningOn": "Avvio",
@@ -20901,15 +20893,15 @@
         "needsPermission": "Serve un’autorizzazione",
         "paused": "In pausa",
         "pausedUntil": "In pausa fino alle {time}",
-        "pausedByProject": "Messo in pausa dal progetto",
+        "pausedByOrg": "In pausa per la tua organizzazione",
         "starting": "Avvio",
         "recording": "In registrazione",
         "unavailable": "Non disponibile",
-        "projectOff": "Disattivato per questo progetto"
+        "orgOff": "Disattivato per la tua organizzazione"
       },
       "unavailable": "Questa app desktop non include Kortix Capture. Aggiorna Kortix all’ultima versione.",
-      "projectOff": "Capture è disattivato per questo progetto. Chi lo gestisce può attivarlo in Impostazioni → Funzionalità sperimentali.",
-      "intro": "Registra questo computer in {project}, così tu e i tuoi agenti potete cercare ciò che hai fatto. Tu e chi gestisce il progetto potete vederlo.",
+      "orgOff": "Capture non è attivo per {org}. Chi lo gestisce può attivarlo.",
+      "intro": "Registra questo computer per {org}, così tu e i tuoi agenti potete cercare ciò che hai fatto. Tu e chi gestisce {org} potete vederlo.",
       "layersTitle": "Cosa viene registrato",
       "layers": {
         "screen": "Schermo",
@@ -20921,15 +20913,15 @@
       },
       "noLayers": "Non si registra niente: tutti i livelli sono disattivati.",
       "turningOn": {
-        "progress": "Collegamento di questo computer a {project}…",
+        "progress": "Accesso di questo computer a {org}…",
         "waitingOnPage": "Approva l’accesso nella pagina che si è aperta nel browser."
       },
-      "layerOffByPolicy": "Disattivato per questo progetto",
-      "notice": "Da chi gestisce {project}",
-      "otherProject": "Questo computer ora registra in un altro progetto. Avviarlo qui lo sposta in questo.",
+      "layerOffByPolicy": "Disattivato per la tua organizzazione",
+      "notice": "Da chi gestisce {org}",
+      "otherOrg": "Questo computer ora registra per un’altra organizzazione. Avviare qui lo sposta su {org}.",
       "signInRequired": {
         "title": "Questo computer è stato disconnesso",
-        "hint": "Capture potrebbe essere disattivato per il progetto, oppure qualcuno ha rimosso questo computer. Accedi di nuovo per registrare."
+        "hint": "Capture potrebbe essere disattivato per la tua organizzazione, oppure qualcuno ha rimosso questo computer. Accedi di nuovo per registrare."
       },
       "error": {
         "title": "Capture si è fermato",
@@ -20978,7 +20970,7 @@
         "resumed": "Registrazione ripresa",
         "signedOut": "Disconnesso da Capture"
       },
-      "pausedByProjectHint": "Chi gestisce il progetto ha messo in pausa la registrazione. Riprende quando toglie la pausa."
+      "pausedByOrgHint": "Chi gestisce {org} ha messo in pausa la registrazione. Riprende quando toglie la pausa."
     }
   }
 }

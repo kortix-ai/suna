@@ -1,6 +1,6 @@
 // The Kortix Capture service: an OS service (launchd LaunchAgent, systemd user
 // unit, Windows Scheduled Task) that runs THIS file with the Kortix app's own
-// binary as Node (ELECTRON_RUN_AS_NODE=1), like the computer agent. It keeps
+// binary as Node (ELECTRON_RUN_AS_NODE=1). It keeps
 // recording while the app is quit or crashed and across reboots. The service
 // supervises the engine as its own children, so the process macOS holds
 // responsible for Screen Recording, Accessibility and the Microphone is the
@@ -8,8 +8,7 @@
 //
 // Built into one file (scripts/ensure-runtime.js → vendor/capture-service.js)
 // and shipped outside the asar as Resources/capture-service/capture-service.js.
-// The installer is the agent tunnel's own driver table (launchd, systemd,
-// Task Scheduler), with Capture's label, logs and description.
+// The supervisors (launchd, systemd, Task Scheduler) are capture-os-service.js.
 //
 //   capture-service.js run                       the service itself
 //   capture-service.js install|uninstall|pause|resume|stop|status [--json]
@@ -25,8 +24,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const capture = require('./capture');
-const { sha8, writePrivateJson } = require('./computer');
-const drivers = require('../../../packages/agent-tunnel/src/agent/service-drivers');
+const { sha8, writePrivateJson } = capture;
+const supervisors = require('./capture-os-service');
 
 const TICK_MS = 30_000;
 const PROBE_EVERY_MS = 10 * 60_000;
@@ -36,18 +35,13 @@ const HEARTBEAT_STALE_MS = 90_000;
 const SIGN_IN_MARKER = 'sign-in.pending';
 const SIGN_IN_MAX_MS = 20 * 60_000;
 
-/** The tunnel's ServicePaths, for Capture: one service per library. */
+/** Where the service's unit and logs live: one service per library. */
 function servicePaths(library, home = os.homedir()) {
   const dir = path.resolve(library);
   const label = `ai.kortix.desktop.capture.${sha8(dir)}`;
   return {
     label,
-    logName: 'capture-service',
-    description: 'Kortix Capture',
-    configDir: dir,
     logDir: path.join(dir, 'logs'),
-    binDir: path.join(dir, 'bin'),
-    vendoredRunner: path.join(dir, 'bin', 'capture-service.js'),
     launchdPlist: path.join(home, 'Library', 'LaunchAgents', `${label}.plist`),
     systemdUnit: path.join(home, '.config', 'systemd', 'user', `${label}.service`),
     windowsScript: path.join(dir, 'capture-service.ps1'),
@@ -229,11 +223,11 @@ function readFileSafe(file) {
   }
 }
 
-/* ─── Install and control (the tunnel's drivers) ─────────────────────── */
+/* ─── Install and control ───────────────────────────────────────────── */
 
 function control(verb, { library, engineDir, script, execPath = process.execPath, appImage = process.env.APPIMAGE, platform = process.platform, home = os.homedir() }) {
-  const driver = drivers.serviceDriverFor(platform);
-  if (!driver) throw new Error(drivers.SUPPORTED_PLATFORMS_MESSAGE);
+  const driver = supervisors.driverFor(platform);
+  if (!driver) throw new Error(supervisors.UNSUPPORTED);
   const paths = servicePaths(library, home);
   const runner = runnerParts({ script, execPath, appImage, library, engineDir });
   const unit = driver.unitPath(paths);

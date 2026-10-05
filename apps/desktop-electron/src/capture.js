@@ -6,13 +6,57 @@
 // The engine owns recording, the library, sign-in (RFC 8628) and sync. This
 // module finds its binaries, builds its environment, parses its output, and
 // decides which of its processes run. The engine's own tray (`kortix-tray`)
-// is never shipped or started: the Kortix tray is the one icon, and only it
-// supervises the engine.
+// is never shipped or started: Capture's tray section is capture-tray.js.
+//
+// Capture is its own product: nothing here imports the computer agent's
+// modules (computer.js, computer-tray.js, packages/agent-tunnel).
 
 const { execFile, spawn } = require('node:child_process');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
-const { sha8, writePrivateJson } = require('./computer');
+
+const sha8 = (text) => crypto.createHash('sha256').update(text).digest('hex').slice(0, 8);
+
+/** `<dir>/<name>` as mode-0600 JSON, written atomically (temp file, then rename). */
+function writePrivateJson(dir, name, value) {
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const file = path.join(dir, name);
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
+  fs.renameSync(tmp, file);
+}
+
+const isLoopbackHost = (host) => host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1';
+
+/**
+ * The instance's backend URL from its `/api/runtime-config` script
+ * (`__KORTIX_RUNTIME_CONFIG={...BACKEND_URL...}`), resolved against the app
+ * origin: https, or http on localhost only; no credentials, query or fragment.
+ */
+function backendFromRuntimeConfig(script, appOrigin) {
+  const match = /__KORTIX_RUNTIME_CONFIG=(\{.*?\});/s.exec(String(script || ''));
+  let raw;
+  try {
+    raw = match && JSON.parse(match[1]).BACKEND_URL;
+  } catch {
+    raw = null;
+  }
+  if (typeof raw !== 'string' || !raw) return { ok: false, error: 'The Kortix instance does not publish its backend URL.' };
+  let api;
+  try {
+    api = new URL(raw, appOrigin);
+  } catch {
+    return { ok: false, error: 'The Kortix instance publishes an invalid backend URL.' };
+  }
+  if (api.username || api.password || api.search || api.hash) {
+    return { ok: false, error: 'The backend URL must not carry credentials, a query, or a fragment.' };
+  }
+  if (api.protocol !== 'https:' && !(api.protocol === 'http:' && isLoopbackHost(api.hostname))) {
+    return { ok: false, error: 'The backend URL must use https (http only on localhost).' };
+  }
+  return { ok: true, url: `${api.origin}${api.pathname.replace(/\/+$/, '')}` };
+}
 
 const exe = (name, platform) => (platform === 'win32' ? `${name}.exe` : name);
 
@@ -463,34 +507,34 @@ function captureLabel(view) {
   return `${word}${layers.length ? ` · ${layers.join(', ')}` : ''}`;
 }
 
+/** Capture keeps recording after Quit: it is on here and its service was not stopped. */
+function captureKeepsRunning(view) {
+  return Boolean(view?.available && view.on && view.signedIn && view.state !== 'stopped');
+}
+
 /**
- * The tray's "Capture" section, for tray-menu.js; null while this build has
- * no engine or Capture is not set up here. It keeps running after Quit while
- * it is on and its service was not stopped.
+ * Capture's own tray menu (capture-tray.js); empty while this build has no
+ * engine or Capture is not set up on this computer. Its own menu bar item,
+ * apart from the computer agent's.
  */
-function captureTraySection(view, actions) {
-  if (!view?.available || (!view.signedIn && !view.signInRequired)) return null;
+function captureTrayItems(view, actions) {
+  if (!view?.available || (!view.signedIn && !view.signInRequired)) return [];
   const paused = view.state === 'paused' || Boolean(view.pausedUntilMs && view.pausedUntilMs > Date.now());
-  const on = Boolean(view.on && view.signedIn);
-  return {
-    id: 'capture',
-    title: 'Capture',
-    logs: actions.logs,
-    keepsRunning: on && view.state !== 'stopped',
-    items: [
-      { id: 'capture-status', label: captureLabel(view), enabled: false },
-      ...(view.policy?.notice ? [{ id: 'capture-notice', label: `Policy: ${view.policy.notice}`.slice(0, 80), enabled: false }] : []),
-      ...(on && view.state !== 'stopped'
-        ? [
-            paused
-              ? { id: 'capture-resume', label: 'Resume', click: actions.resume }
-              : { id: 'capture-pause', label: 'Pause for 1 hour', click: actions.pause },
-            { id: 'capture-timeline', label: 'Open timeline', click: actions.timeline },
-          ]
-        : []),
-      { id: 'capture-settings', label: view.signInRequired ? 'Sign in again…' : 'Settings…', click: actions.settings },
-    ],
-  };
+  const on = Boolean(view.on && view.signedIn) && view.state !== 'stopped';
+  return [
+    { id: 'capture-status', label: captureLabel(view), enabled: false },
+    ...(view.policy?.notice ? [{ id: 'capture-notice', label: `Notice: ${view.policy.notice}`.slice(0, 80), enabled: false }] : []),
+    { type: 'separator' },
+    ...(on
+      ? [
+          paused
+            ? { id: 'capture-resume', label: 'Resume recording', click: actions.resume }
+            : { id: 'capture-pause', label: 'Pause for 1 hour', click: actions.pause },
+        ]
+      : []),
+    { id: 'capture-open', label: view.signInRequired ? 'Sign in again…' : 'Open Capture…', click: actions.open },
+    { id: 'capture-logs', label: 'Show logs', click: actions.logs },
+  ];
 }
 
 /** System Settings panes for the engine's permissions (macOS). */
@@ -502,12 +546,16 @@ const PERMISSION_PANES = {
 };
 
 module.exports = {
+  backendFromRuntimeConfig,
+  sha8,
+  writePrivateJson,
   CRASH_LOOP,
   GUARD,
   PERMISSION_PANES,
   captureLabel,
   captureStatusFrom,
-  captureTraySection,
+  captureKeepsRunning,
+  captureTrayItems,
   desiredChildren,
   policyOf,
   engineConfigYaml,

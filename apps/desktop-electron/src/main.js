@@ -38,7 +38,9 @@ const { setupCrashTelemetry } = require('./crash-telemetry');
 const { NAVIGATION_SHORTCUTS, historyTarget } = require('./navigation');
 const { DESKTOP_CHROME_JS, configureNativeWindowControls, macTrafficLightPosition } = require('./window-chrome');
 const { setupComputer } = require('./computer-tray');
+const capture = require('./capture');
 const { setupCapture } = require('./capture-host');
+const { setupCaptureTray } = require('./capture-tray');
 
 // Name comes from the bundle (productName): "Kortix" for prod, "Kortix Dev" for
 // dev builds. Per-name data dir so dev + prod coexist without sharing a session,
@@ -245,7 +247,7 @@ let mainWindow = null;
 let splashWindow = null;
 /** This computer as a Kortix account (computer-tray.js). Set once the app is ready. */
 let computerShell = null;
-/** Kortix Capture (capture-host.js). Set once the app is ready. */
+/** Kortix Capture (capture-host.js), its own product and tray. Set once the app is ready. */
 let captureShell = null;
 
 function launchSize() {
@@ -595,6 +597,20 @@ function sendDesktopCommand(command) {
   mainWindow.webContents.send('kortix:command', command);
 }
 
+/** This build ships the Capture engine (the app menu shows Capture only then). */
+function captureBundled() {
+  const dir = capture.engineDir({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
+  return fs.existsSync(capture.enginePaths(dir).capture);
+}
+
+/** App menu "Capture…" and Capture's tray: the page opens Capture's "This computer". */
+function openCapture() {
+  const opened = needsMainWindow(mainWindow);
+  openMainWindow();
+  if (opened) mainWindow?.webContents.once('did-finish-load', () => sendDesktopCommand('capture-open'));
+  else sendDesktopCommand('capture-open');
+}
+
 /**
  * Go ▸ Back (Cmd/Ctrl+[). The shell has no browser toolbar, so without this a
  * page with no in-app exit is a dead end.
@@ -899,6 +915,7 @@ function buildMenu() {
                 accelerator: 'CommandOrControl+,',
                 click: () => sendDesktopCommand('open-settings'),
               },
+              { id: 'kx-app-capture', label: 'Capture…', visible: captureBundled(), click: () => openCapture() },
               {
                 label: 'Check for Updates…',
                 click: () => checkForUpdatesInteractive(),
@@ -949,6 +966,7 @@ function buildMenu() {
                 accelerator: 'CommandOrControl+,',
                 click: () => sendDesktopCommand('open-settings'),
               },
+              { id: 'kx-file-capture', label: 'Capture…', visible: captureBundled(), click: () => openCapture() },
             ]
           : []),
       ],
@@ -1254,19 +1272,17 @@ if (!gotLock) {
       getMainWindow: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null),
       openMainWindow,
       backgroundColor: currentBackgroundColor,
-      captureSection: () => captureShell?.traySection() ?? null,
+    });
+    // Capture: its own controller and its own menu bar item, apart from the computer's.
+    const captureTray = setupCaptureTray({
+      items: () => captureShell?.trayItems() ?? [],
+      keepsRunning: () => captureShell?.keepsRunning() ?? false,
+      open: openCapture,
     });
     captureShell = setupCapture({
-      backend: () => computerShell.backend(),
-      onChange: () => computerShell.renderTray(),
-      // Tray "Capture…": the page opens its Capture dialog (not Your computer).
-      openSettings: () => {
-        const opened = needsMainWindow(mainWindow);
-        if (opened) openMainWindow();
-        revealMainWindow(mainWindow);
-        if (opened) mainWindow?.webContents.once('did-finish-load', () => sendDesktopCommand('capture-settings'));
-        else sendDesktopCommand('capture-settings');
-      },
+      appUrl: () => instanceStore.appUrl(),
+      onChange: () => captureTray.render(),
+      openCapture,
     });
     registerIpc();
     nativeTheme.themeSource = readTheme();

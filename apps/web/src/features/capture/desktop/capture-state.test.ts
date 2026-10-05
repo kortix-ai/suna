@@ -20,13 +20,13 @@ const recording: DesktopCaptureStatus = {
 const phase = (
   view: DesktopCaptureStatus | null,
   extra: Partial<Parameters<typeof capturePhase>[1]> = {},
-) => capturePhase(view, { projectId: P, projectHasCapture: true, now: 1_000, ...extra });
+) => capturePhase(view, { projectId: P, orgHasCapture: true, now: 1_000, ...extra });
 
 describe('capturePhase', () => {
   test('every phase, in priority order', () => {
     expect(phase(null)).toBe('unavailable');
     expect(phase({ available: false })).toBe('unavailable');
-    expect(phase(recording, { projectHasCapture: false })).toBe('projectOff');
+    expect(phase(recording, { orgHasCapture: false })).toBe('orgOff');
     expect(phase(recording, { turningOn: true })).toBe('turningOn');
     expect(phase({ ...recording, signedIn: false, signInRequired: true })).toBe('signInRequired');
     expect(phase(recording, { failed: true })).toBe('error');

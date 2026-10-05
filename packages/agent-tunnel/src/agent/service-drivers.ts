@@ -99,11 +99,11 @@ function launchdTarget(): string {
 // ── templates ────────────────────────────────────────────────────────────────
 
 function logPaths(paths: ServicePaths): { stdout: string; stderr: string } {
-  const name = paths.logName ?? 'agent-tunnel';
-  return { stdout: join(paths.logDir, `${name}.out.log`), stderr: join(paths.logDir, `${name}.err.log`) };
+  return {
+    stdout: join(paths.logDir, 'agent-tunnel.out.log'),
+    stderr: join(paths.logDir, 'agent-tunnel.err.log'),
+  };
 }
-
-const description = (paths: ServicePaths) => paths.description ?? 'Kortix Agent Tunnel';
 
 export function renderLaunchdPlist(command: string, paths: ServicePaths = getServicePaths()): string {
   const { stdout, stderr } = logPaths(paths);
@@ -148,7 +148,7 @@ export function renderLaunchdPlist(command: string, paths: ServicePaths = getSer
 export function renderSystemdUnit(command: string, paths: ServicePaths = getServicePaths()): string {
   const { stdout, stderr } = logPaths(paths);
   return `[Unit]
-Description=${description(paths)}
+Description=Kortix Agent Tunnel
 After=network-online.target
 Wants=network-online.target
 
@@ -344,7 +344,7 @@ function ensureLinger(): CommandResult {
 export function renderWindowsTaskXml(paths: ServicePaths, user: string): string {
   return `<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-  <RegistrationInfo><Description>${xmlEscape(description(paths))}</Description></RegistrationInfo>
+  <RegistrationInfo><Description>Kortix Agent Tunnel</Description></RegistrationInfo>
   <Triggers><LogonTrigger><Enabled>true</Enabled><UserId>${xmlEscape(user)}</UserId></LogonTrigger></Triggers>
   <Principals><Principal id="Author"><UserId>${xmlEscape(user)}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
   <Settings>

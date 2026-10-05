@@ -20564,6 +20564,8 @@
       "notAllowed": "許可なし",
       "needsSetup": "設定が必要"
     },
+    "runInBackground": "バックグラウンドで実行",
+    "runInBackgroundDescription": "オフにすると、再起動後も接続は一時停止のままです。",
     "manageInProject": "プロジェクトで管理",
     "disconnectEllipsis": "接続を解除…",
     "yourComputersTitle": "あなたのコンピューター",
@@ -20586,6 +20588,7 @@
       "screenRecordingDescription": "画面の内容を表示",
       "needed": "未許可",
       "waiting": "操作を待っています",
+      "allowAll": "すべて許可",
       "settingsHint": "システム設定が開いたら、一覧で Kortix をオンにしてください。この画面は自動で更新されます。",
       "doneTitle": "コンピューターの準備ができました",
       "doneHint": "Kortix に必要な権限がすべてそろいました。エージェントがこのコンピューターを使えます。"
@@ -20598,18 +20601,6 @@
       "removeAll": "すべて削除",
       "confirmTitle": "以前の接続をすべて削除しますか？",
       "confirmDescription": "Kortix はそれらとそのアカウントをすべてのプロジェクトから削除します。まだ使用しているコンピューターは再接続できます。"
-    },
-    "hub": {
-      "agents": "エージェント",
-      "capture": "Capture",
-      "tabAgents": "エージェントのアクセス",
-      "tabCapture": "マイ Capture",
-      "thisComputer": "このコンピュータ",
-      "more": "その他の操作",
-      "allowAccess": "アクセスを許可",
-      "pauseAccess": "アクセスを一時停止",
-      "resumeAccess": "アクセスを再開",
-      "pausedHint": "一時停止中です。再開するまで、再起動後もエージェントはこのコンピュータを使えません。"
     }
   },
   "messageFrom": {
@@ -20893,6 +20884,7 @@
       "tryAgain": "再試行"
     },
     "dialog": {
+      "title": "このコンピュータを記録",
       "status": {
         "off": "オフ",
         "turningOn": "起動中",
@@ -20901,15 +20893,15 @@
         "needsPermission": "権限が必要",
         "paused": "一時停止中",
         "pausedUntil": "{time} まで一時停止",
-        "pausedByProject": "プロジェクトにより一時停止",
+        "pausedByOrg": "組織が一時停止中",
         "starting": "起動中",
         "recording": "記録中",
         "unavailable": "利用できません",
-        "projectOff": "このプロジェクトではオフ"
+        "orgOff": "組織でオフ"
       },
       "unavailable": "このデスクトップアプリには Kortix Capture が含まれていません。Kortix を最新版に更新してください。",
-      "projectOff": "このプロジェクトでは Capture がオフです。管理者が「設定 → 機能フラグ」でオンにできます。",
-      "intro": "このコンピューターを {project} に記録し、あなたとエージェントがあなたの作業を検索できるようにします。あなたとプロジェクトの管理者が閲覧できます。",
+      "orgOff": "{org}では Capture がオンになっていません。管理者がオンにできます。",
+      "intro": "このコンピュータを{org}のために記録し、あなたとエージェントが行ったことを検索できるようにします。あなたと{org}の管理者が閲覧できます。",
       "layersTitle": "記録される内容",
       "layers": {
         "screen": "画面",
@@ -20921,15 +20913,15 @@
       },
       "noLayers": "何も記録されていません。すべてのレイヤーがオフです。",
       "turningOn": {
-        "progress": "このコンピューターを {project} にサインインしています…",
+        "progress": "このコンピュータを{org}にサインインしています…",
         "waitingOnPage": "ブラウザーで開いたページでサインインを承認してください。"
       },
-      "layerOffByPolicy": "このプロジェクトではオフ",
-      "notice": "{project} の管理者より",
-      "otherProject": "このコンピューターは別のプロジェクトに記録中です。ここで開始すると、このプロジェクトに切り替わります。",
+      "layerOffByPolicy": "組織でオフ",
+      "notice": "{org}の管理者より",
+      "otherOrg": "このコンピュータは現在、別の組織のために記録しています。ここで開始すると{org}に切り替わります。",
       "signInRequired": {
         "title": "このコンピューターはサインアウトされました",
-        "hint": "プロジェクトで Capture がオフになったか、誰かがこのコンピューターを削除した可能性があります。記録するにはもう一度サインインしてください。"
+        "hint": "組織で Capture がオフになっているか、誰かがこのコンピュータを削除した可能性があります。記録するにはもう一度サインインしてください。"
       },
       "error": {
         "title": "Capture が停止しました",
@@ -20978,7 +20970,7 @@
         "resumed": "記録を再開しました",
         "signedOut": "Capture からサインアウトしました"
       },
-      "pausedByProjectHint": "プロジェクトの管理者が記録を一時停止しました。管理者が一時停止を解除すると再開します。"
+      "pausedByOrgHint": "{org}の管理者が記録を一時停止しました。一時停止が解除されると再開します。"
     }
   }
 }

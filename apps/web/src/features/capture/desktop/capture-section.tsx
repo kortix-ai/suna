@@ -1,8 +1,16 @@
 'use client';
 
-import { CursorClickIcon, DotsThreeIcon, MicrophoneIcon, MonitorIcon, WarningIcon, type Icon } from '@phosphor-icons/react';
+import {
+  CursorClickIcon,
+  DotsThreeIcon,
+  MicrophoneIcon,
+  MonitorIcon,
+  RecordIcon,
+  WarningIcon,
+  type Icon,
+} from '@phosphor-icons/react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -15,18 +23,27 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
-import { ModalBody, ModalFooter } from '@/components/ui/modal';
+import { ModalBody, ModalDescription, ModalFooter, ModalHeader, ModalTitle } from '@/components/ui/modal';
 import { Switch } from '@/components/ui/switch';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { ComputerRow, ComputerSection, type StatusTone } from '@/features/tunnel/computer-rows';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
-import { desktopCaptureOpenLogs, desktopCaptureSignInCancel, type DesktopCaptureLayer, type DesktopCaptureStatus } from '@/lib/desktop';
+import {
+  desktopCaptureOpenLogs,
+  desktopCaptureSignInCancel,
+  type DesktopCaptureLayer,
+  type DesktopCaptureStatus,
+} from '@/lib/desktop';
 
 import { CapturePermissions } from './capture-permissions';
+import { CaptureRow, CaptureRowSection, StatusDot, type StatusTone } from './capture-rows';
 import { CAPTURE_LAYERS, activeLayers, capturePhase, type CapturePhase } from './capture-state';
-import { useCaptureProject, useDesktopCaptureActions, useDesktopCaptureStatus } from './use-desktop-capture';
+import { useCaptureOrganization, useDesktopCaptureActions, useDesktopCaptureStatus } from './use-desktop-capture';
 
-const LAYER_ICONS: Record<DesktopCaptureLayer, Icon> = { screen: MonitorIcon, actions: CursorClickIcon, audio: MicrophoneIcon };
+const LAYER_ICONS: Record<DesktopCaptureLayer, Icon> = {
+  screen: MonitorIcon,
+  actions: CursorClickIcon,
+  audio: MicrophoneIcon,
+};
 
 const TONES: Partial<Record<CapturePhase, StatusTone>> = {
   recording: 'good',
@@ -37,20 +54,44 @@ const TONES: Partial<Record<CapturePhase, StatusTone>> = {
 };
 
 /**
- * My Capture in "Your computer": shown when this desktop app bundles the
- * engine and the project has its `capture` flag on. `visible` gates the tab;
- * `tone` and `word` are the header's Capture status.
+ * Kortix Capture's "This computer", in the desktop app: records this computer
+ * for the person's organization. Its own surface, opened from the app menu
+ * and Capture's tray, never from a project or the computer agent's UI. One
+ * phase at a time (capture-state.ts), one primary action per phase. Renders
+ * the header, body and footer of a `Modal`.
  */
-export function useMyCapture(projectId: string, { poll = false }: { poll?: boolean } = {}) {
+export function CaptureThisComputer({ onClose }: { onClose: () => void }) {
   const t = useTranslations('capture.dialog');
   const locale = useLocale();
-  const status = useDesktopCaptureStatus({ poll });
-  const { project, loading } = useCaptureProject(projectId);
+  const status = useDesktopCaptureStatus({ poll: true });
   const view = status.data ?? null;
-  // The last status read is "now", so render stays pure.
+  const org = useCaptureOrganization(view?.projectId);
+  const [waitingOnPage, setWaitingOnPage] = useState(false);
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
+  const actions = useDesktopCaptureActions(org.projectId ?? '', {
+    onWaitingOnPage: () => setWaitingOnPage(true),
+  });
+  // The last status read (every 2 s) is "now", so render stays pure.
   const now = status.dataUpdatedAt;
-  const phase = capturePhase(view, { now, projectId, projectHasCapture: Boolean(project) });
-  const visible = !loading && Boolean(view?.available) && Boolean(project);
+  const phase = capturePhase(view, {
+    now,
+    projectId: org.projectId ?? '',
+    orgHasCapture: org.enabled,
+    turningOn: actions.turnOn.isPending,
+    failed: actions.turnOn.isError,
+  });
+
+  if (status.isPending || org.loading) {
+    return (
+      <>
+        <Header title={t('title')} />
+        <ModalBody>
+          <Loading className="size-4 shrink-0" />
+        </ModalBody>
+      </>
+    );
+  }
+
   const pausedUntil =
     view?.pausedUntilMs && view.pausedUntilMs > now
       ? new Date(view.pausedUntilMs).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
@@ -59,65 +100,56 @@ export function useMyCapture(projectId: string, { poll = false }: { poll?: boole
     phase !== 'paused'
       ? t(`status.${phase}`)
       : view?.policy?.paused
-        ? t('status.pausedByProject')
+        ? t('status.pausedByOrg')
         : pausedUntil
           ? t('status.pausedUntil', { time: pausedUntil })
           : t('status.paused');
-  return { visible, phase, tone: TONES[phase] ?? ('idle' as StatusTone), word };
-}
+  const header = (
+    <Header
+      title={t('title')}
+      status={
+        <>
+          {org.name ? (
+            <>
+              <span className="truncate">{org.name}</span>
+              <span aria-hidden>·</span>
+            </>
+          ) : null}
+          <span className="flex shrink-0 items-center gap-1.5">
+            <StatusDot tone={TONES[phase] ?? 'idle'} />
+            <span className="text-foreground">{word}</span>
+          </span>
+        </>
+      }
+    />
+  );
 
-/**
- * The My Capture section's body and footer. One phase at a time
- * (capture-state.ts), one primary action per phase. Turning it on is the
- * engine's own device sign-in; it never pairs the computer agent.
- */
-export function CaptureSection({ projectId, onClose }: { projectId: string; onClose: () => void }) {
-  const t = useTranslations('capture.dialog');
-  const status = useDesktopCaptureStatus({ poll: true });
-  const { project } = useCaptureProject(projectId);
-  const [waitingOnPage, setWaitingOnPage] = useState(false);
-  const [confirmSignOut, setConfirmSignOut] = useState(false);
-  const actions = useDesktopCaptureActions(projectId, { onWaitingOnPage: () => setWaitingOnPage(true) });
-  const view = status.data ?? null;
-  const now = status.dataUpdatedAt;
-  const phase = capturePhase(view, {
-    now,
-    projectId,
-    projectHasCapture: Boolean(project),
-    turningOn: actions.turnOn.isPending,
-    failed: actions.turnOn.isError,
-  });
+  if (!view || phase === 'unavailable' || phase === 'orgOff') {
+    return (
+      <>
+        {header}
+        <ModalBody>
+          <p className="text-muted-foreground text-sm text-pretty">
+            {phase === 'orgOff' ? t('orgOff', { org: org.name }) : view?.error || t('unavailable')}
+          </p>
+        </ModalBody>
+      </>
+    );
+  }
 
   const turnOn = () => {
-    if (!view) return;
     actions.turnOn.reset();
     actions.turnOn.mutate(view, {
       onSuccess: () => successToast(t('toast.started')),
       onSettled: () => setWaitingOnPage(false),
     });
   };
-
-  if (status.isPending) {
-    return (
-      <ModalBody>
-        <Loading className="size-4 shrink-0" />
-      </ModalBody>
-    );
-  }
-  if (!view || phase === 'unavailable' || phase === 'projectOff') {
-    return (
-      <ModalBody>
-        <p className="text-muted-foreground text-sm text-pretty">{phase === 'projectOff' ? t('projectOff') : view?.error || t('unavailable')}</p>
-      </ModalBody>
-    );
-  }
-
-  const projectName = project?.name ?? '';
   const on = phase === 'needsPermission' || phase === 'paused' || phase === 'starting' || phase === 'recording';
   const recording = activeLayers(view);
 
   return (
     <>
+      {header}
       <ModalBody className="min-h-0 space-y-5 overflow-y-auto">
         {phase === 'signInRequired' ? (
           <InfoBanner tone="warning" icon={WarningIcon} title={t('signInRequired.title')}>
@@ -134,15 +166,17 @@ export function CaptureSection({ projectId, onClose }: { projectId: string; onCl
         {phase === 'turningOn' ? (
           <p className="flex items-center gap-2 text-sm" role="status">
             <Loading className="size-4 shrink-0" />
-            {waitingOnPage ? t('turningOn.waitingOnPage') : t('turningOn.progress', { project: projectName })}
+            {waitingOnPage ? t('turningOn.waitingOnPage') : t('turningOn.progress', { org: org.name })}
           </p>
         ) : phase === 'paused' && view.policy?.paused ? (
-          <p className="text-muted-foreground text-sm text-pretty">{t('pausedByProjectHint')}</p>
+          <p className="text-muted-foreground text-sm text-pretty">{t('pausedByOrgHint', { org: org.name })}</p>
         ) : on && recording.length === 0 ? (
           <p className="text-muted-foreground text-sm text-pretty">{t('noLayers')}</p>
         ) : !on ? (
           <p className="text-muted-foreground text-sm text-pretty">
-            {phase === 'off' && view.signedIn && view.projectId !== projectId ? t('otherProject') : t('intro', { project: projectName })}
+            {phase === 'off' && view.signedIn && view.projectId !== org.projectId
+              ? t('otherOrg', { org: org.name })
+              : t('intro', { org: org.name })}
           </p>
         ) : null}
 
@@ -151,15 +185,17 @@ export function CaptureSection({ projectId, onClose }: { projectId: string; onCl
           <CapturePermissions
             view={view}
             requesting={actions.grants.isPending}
-            onAllow={() => actions.grants.mutate({ audio: Boolean(view.layers?.audio), actions: Boolean(view.layers?.actions) })}
+            onAllow={() =>
+              actions.grants.mutate({ audio: Boolean(view.layers?.audio), actions: Boolean(view.layers?.actions) })
+            }
           />
         ) : null}
 
-        <ComputerSection title={t('layersTitle')}>
+        <CaptureRowSection title={t('layersTitle')}>
           {CAPTURE_LAYERS.map((layer) => {
             const blocked = view.policy?.layers[layer] === false;
             return (
-              <ComputerRow
+              <CaptureRow
                 key={layer}
                 icon={LAYER_ICONS[layer]}
                 title={t(`layers.${layer}`)}
@@ -176,11 +212,11 @@ export function CaptureSection({ projectId, onClose }: { projectId: string; onCl
               />
             );
           })}
-        </ComputerSection>
+        </CaptureRowSection>
 
         {view.policy?.notice && (on || phase === 'signInRequired') ? (
           <section className="space-y-1">
-            <p className="text-muted-foreground text-xs">{t('notice', { project: projectName })}</p>
+            <p className="text-muted-foreground text-xs">{t('notice', { org: org.name })}</p>
             <p className="text-sm text-pretty">{view.policy.notice}</p>
           </section>
         ) : null}
@@ -202,14 +238,17 @@ export function CaptureSection({ projectId, onClose }: { projectId: string; onCl
           ) : null}
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" asChild>
-            <Link href={`/projects/${projectId}/capture`} onClick={onClose}>
-              {t('actions.openTimeline')}
-            </Link>
-          </Button>
+          {org.projectId ? (
+            // ponytail: the timeline is project-scoped until the web lane's top-level /capture area lands.
+            <Button variant="outline" asChild>
+              <Link href={`/projects/${org.projectId}/capture`} onClick={onClose}>
+                {t('actions.openTimeline')}
+              </Link>
+            </Button>
+          ) : null}
           <PrimaryAction
             phase={phase}
-            pausedByProject={Boolean(view.policy?.paused)}
+            pausedByOrg={Boolean(view.policy?.paused)}
             busy={actions.pause.isPending || actions.resume.isPending}
             onStart={turnOn}
             onPause={() => actions.pause.mutate(undefined, { onSuccess: () => successToast(t('toast.paused')) })}
@@ -239,17 +278,33 @@ export function CaptureSection({ projectId, onClose }: { projectId: string; onCl
   );
 }
 
+function Header({ title, status }: { title: string; status?: ReactNode }) {
+  return (
+    <ModalHeader className="flex-row items-center gap-3 pr-12">
+      <span className="bg-muted text-foreground flex size-9 shrink-0 items-center justify-center rounded-sm">
+        <RecordIcon className="size-5" />
+      </span>
+      <div className="min-w-0 space-y-0.5">
+        <ModalTitle className="truncate">{title}</ModalTitle>
+        {status ? (
+          <ModalDescription className="flex min-w-0 items-center gap-1.5 text-xs">{status}</ModalDescription>
+        ) : null}
+      </div>
+    </ModalHeader>
+  );
+}
+
 /** One primary action per phase. */
 function PrimaryAction({
   phase,
-  pausedByProject,
+  pausedByOrg,
   busy,
   onStart,
   onPause,
   onResume,
 }: {
   phase: CapturePhase;
-  pausedByProject: boolean;
+  pausedByOrg: boolean;
   busy: boolean;
   onStart: () => void;
   onPause: () => void;
@@ -272,7 +327,7 @@ function PrimaryAction({
     case 'error':
       return <Button onClick={onStart}>{t('actions.tryAgain')}</Button>;
     case 'paused':
-      return pausedByProject ? null : (
+      return pausedByOrg ? null : (
         <Button disabled={busy} onClick={onResume}>
           {pending}
           {t('actions.resume')}
@@ -301,7 +356,9 @@ function MoreMenu({ canStop, onStop, onSignOut }: { canStop: boolean; onStop: ()
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-52">
-        <DropdownMenuItem onSelect={() => void desktopCaptureOpenLogs().catch((error: Error) => errorToast(error.message))}>
+        <DropdownMenuItem
+          onSelect={() => void desktopCaptureOpenLogs().catch((error: Error) => errorToast(error.message))}
+        >
           {t('actions.showLogs')}
         </DropdownMenuItem>
         {canStop ? <DropdownMenuItem onSelect={onStop}>{t('actions.stop')}</DropdownMenuItem> : null}

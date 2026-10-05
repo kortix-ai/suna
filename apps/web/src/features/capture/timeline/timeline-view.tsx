@@ -12,7 +12,6 @@ import {
   useCaptureDevices,
   useCaptureTimeline,
   useCaptureTimelineItems,
-  useTunnelConnections,
 } from '@kortix/sdk/react';
 import {
   CaretLeftIcon,
@@ -39,7 +38,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { useOptionalSidebar } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
-import { computerDisplayName } from '@/features/tunnel/computer-connect';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { desktopDownloadUrl } from '@/lib/desktop';
@@ -47,7 +45,7 @@ import { desktopDownloadUrl } from '@/lib/desktop';
 import { dayWindow, indexAtOrBefore, localDayOf, localTimeZone } from '../capture-time';
 import { CaptureDialog } from '../desktop/capture-dialog';
 import { useDesktopCaptureStatus } from '../desktop/use-desktop-capture';
-import { computerForDevice, deviceStatus } from '../devices/device-status';
+import { deviceStatus } from '../devices/device-status';
 import { useCaptureMembers, useCaptureParams, useCaptureViewer } from '../use-capture-viewer';
 import { DevicePicker, StatusDot, useStatusText } from './device-picker';
 import { FrameStage } from './frame-stage';
@@ -119,18 +117,8 @@ export function TimelineView({ projectId }: { projectId: string }) {
     [devicesQuery.data],
   );
   const desktop = useDesktopCaptureStatus();
-  const computers = useTunnelConnections();
-  const nameOf = useCallback(
-    (d: CaptureDevice) => {
-      const computer = computerForDevice(d, computers.data);
-      return (
-        (computer && computerDisplayName(computer.name, computer.machineInfo)) ||
-        d.name ||
-        tDevices('unnamed')
-      );
-    },
-    [computers.data, tDevices],
-  );
+  // A Capture device has its own identity: its name, never a computer agent's.
+  const nameOf = useCallback((d: CaptureDevice) => d.name || tDevices('unnamed'), [tDevices]);
   const device =
     devices.find((d) => d.device_id === params.device) ??
     defaultDevice(devices, userId ? null : desktop.data?.deviceId);
@@ -777,7 +765,7 @@ export function TimelineView({ projectId }: { projectId: string }) {
         />
       ) : null}
       {desktop.data?.available ? (
-        <CaptureDialog projectId={projectId} open={recordOpen} onOpenChange={setRecordOpen} />
+        <CaptureDialog open={recordOpen} onOpenChange={setRecordOpen} />
       ) : null}
     </div>
   );

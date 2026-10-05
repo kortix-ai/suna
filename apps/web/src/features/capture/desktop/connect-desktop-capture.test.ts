@@ -111,8 +111,7 @@ describe('turning on Capture never touches the computer agent (tunnel)', () => {
             verificationUrl: 'http://app.test/capture/authorize?user_code=ABCD-1234',
           }
         ),
-        approve: (code, project) =>
-          approveCaptureDeviceGrant(code, project, { machineId: 'a'.repeat(64) }),
+        approve: approveCaptureDeviceGrant,
         finish: async () => (bridge.push('capture_sign_in_finish'), { ok: true }),
         cancel: async () => bridge.push('capture_sign_in_cancel'),
         openApproval: () => bridge.push('open-approval-page'),

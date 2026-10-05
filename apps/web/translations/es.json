@@ -20564,6 +20564,8 @@
       "notAllowed": "No permitido",
       "needsSetup": "Requiere configuración"
     },
+    "runInBackground": "Ejecutar en segundo plano",
+    "runInBackgroundDescription": "Desactivado pausa la conexión, incluso tras reiniciar.",
     "manageInProject": "Gestionar en el proyecto",
     "disconnectEllipsis": "Desconectar…",
     "yourComputersTitle": "Tus computadoras",
@@ -20586,6 +20588,7 @@
       "screenRecordingDescription": "Ver lo que hay en la pantalla",
       "needed": "Aún no permitido",
       "waiting": "Esperando tu respuesta",
+      "allowAll": "Permitir todo",
       "settingsHint": "Si se abre Configuración del Sistema, activa Kortix en la lista. Esto se actualiza solo.",
       "doneTitle": "Tu computadora está lista",
       "doneHint": "Kortix tiene todos los permisos que necesita. Los agentes ya pueden usar esta computadora."
@@ -20598,18 +20601,6 @@
       "removeAll": "Quitar todas",
       "confirmTitle": "¿Quitar todas las conexiones antiguas?",
       "confirmDescription": "Kortix las quita junto con sus cuentas de todos los proyectos. Una computadora que aún use una puede volver a conectarse."
-    },
-    "hub": {
-      "agents": "Agentes",
-      "capture": "Capture",
-      "tabAgents": "Acceso de agentes",
-      "tabCapture": "Mi Capture",
-      "thisComputer": "Este ordenador",
-      "more": "Más acciones",
-      "allowAccess": "Permitir acceso",
-      "pauseAccess": "Pausar acceso",
-      "resumeAccess": "Reanudar acceso",
-      "pausedHint": "En pausa. Los agentes no pueden usar este ordenador hasta que lo reanudes, también tras reiniciar."
     }
   },
   "messageFrom": {
@@ -20893,6 +20884,7 @@
       "tryAgain": "Reintentar"
     },
     "dialog": {
+      "title": "Grabar este ordenador",
       "status": {
         "off": "Desactivado",
         "turningOn": "Iniciando",
@@ -20901,15 +20893,15 @@
         "needsPermission": "Necesita un permiso",
         "paused": "En pausa",
         "pausedUntil": "En pausa hasta las {time}",
-        "pausedByProject": "En pausa por el proyecto",
+        "pausedByOrg": "Pausado por tu organización",
         "starting": "Iniciando",
         "recording": "Grabando",
         "unavailable": "No disponible",
-        "projectOff": "Desactivado en este proyecto"
+        "orgOff": "Desactivado para tu organización"
       },
       "unavailable": "Esta app de escritorio no incluye Kortix Capture. Actualiza Kortix a la versión más reciente.",
-      "projectOff": "Capture está desactivado en este proyecto. Quienes lo gestionan pueden activarlo en Ajustes → Funciones experimentales.",
-      "intro": "Graba este ordenador en {project}, para que tú y tus agentes podáis buscar lo que hiciste. Tú y quienes gestionan el proyecto podéis verlo.",
+      "orgOff": "Capture no está activado para {org}. Quienes lo gestionan pueden activarlo.",
+      "intro": "Graba este ordenador para {org}, para que tú y tus agentes podáis buscar lo que hiciste. Tú y quienes gestionan {org} podéis verlo.",
       "layersTitle": "Qué se graba",
       "layers": {
         "screen": "Pantalla",
@@ -20921,15 +20913,15 @@
       },
       "noLayers": "No se graba nada: todas las capas están desactivadas.",
       "turningOn": {
-        "progress": "Conectando este ordenador a {project}…",
+        "progress": "Iniciando sesión de este ordenador en {org}…",
         "waitingOnPage": "Aprueba el inicio de sesión en la página que se abrió en tu navegador."
       },
-      "layerOffByPolicy": "Desactivado en este proyecto",
-      "notice": "De quienes gestionan {project}",
-      "otherProject": "Este ordenador graba ahora en otro proyecto. Iniciar aquí lo pasa a este.",
+      "layerOffByPolicy": "Desactivado para tu organización",
+      "notice": "De quienes gestionan {org}",
+      "otherOrg": "Este ordenador graba ahora para otra organización. Empezar aquí lo pasa a {org}.",
       "signInRequired": {
         "title": "Se cerró la sesión de este ordenador",
-        "hint": "Puede que Capture esté desactivado en el proyecto o que alguien haya quitado este ordenador. Inicia sesión de nuevo para grabar."
+        "hint": "Puede que Capture esté desactivado para tu organización o que alguien haya quitado este ordenador. Vuelve a iniciar sesión para grabar."
       },
       "error": {
         "title": "Capture se detuvo",
@@ -20978,7 +20970,7 @@
         "resumed": "Grabación reanudada",
         "signedOut": "Sesión de Capture cerrada"
       },
-      "pausedByProjectHint": "Quienes gestionan el proyecto pausaron la grabación. Se reanuda cuando quiten la pausa."
+      "pausedByOrgHint": "Quienes gestionan {org} pausaron la grabación. Se reanuda cuando quiten la pausa."
     }
   }
 }

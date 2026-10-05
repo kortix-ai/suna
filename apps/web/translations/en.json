@@ -20564,6 +20564,8 @@
       "notAllowed": "Not allowed",
       "needsSetup": "Needs setup"
     },
+    "runInBackground": "Run in the background",
+    "runInBackgroundDescription": "Off pauses the connection, even after a restart.",
     "manageInProject": "Manage in project",
     "disconnectEllipsis": "Disconnect…",
     "yourComputersTitle": "Your computers",
@@ -20586,6 +20588,7 @@
       "screenRecordingDescription": "See what is on the screen",
       "needed": "Not allowed yet",
       "waiting": "Waiting for you",
+      "allowAll": "Allow all",
       "settingsHint": "If System Settings opens, turn on Kortix in the list. This updates by itself.",
       "doneTitle": "Your computer is ready",
       "doneHint": "Kortix has every permission it needs. Agents can use this computer now."
@@ -20598,18 +20601,6 @@
       "removeAll": "Remove all",
       "confirmTitle": "Remove all older connections?",
       "confirmDescription": "Kortix removes them and their accounts from every project. A computer that still uses one can connect again."
-    },
-    "hub": {
-      "agents": "Agents",
-      "capture": "Capture",
-      "tabAgents": "Agent access",
-      "tabCapture": "My Capture",
-      "thisComputer": "This computer",
-      "more": "More actions",
-      "allowAccess": "Allow access",
-      "pauseAccess": "Pause access",
-      "resumeAccess": "Resume access",
-      "pausedHint": "Paused. Agents cannot use this computer until you resume, also after a restart."
     }
   },
   "messageFrom": {
@@ -20893,6 +20884,7 @@
       "tryAgain": "Try again"
     },
     "dialog": {
+      "title": "Record this computer",
       "status": {
         "off": "Off",
         "turningOn": "Starting",
@@ -20901,15 +20893,15 @@
         "needsPermission": "Needs permission",
         "paused": "Paused",
         "pausedUntil": "Paused until {time}",
-        "pausedByProject": "Paused by the project",
+        "pausedByOrg": "Paused by your organization",
         "starting": "Starting",
         "recording": "Recording",
         "unavailable": "Not available",
-        "projectOff": "Off for this project"
+        "orgOff": "Off for your organization"
       },
       "unavailable": "This desktop app has no Kortix Capture. Update Kortix to the newest version.",
-      "projectOff": "Capture is off for this project. The people who manage it can turn it on in Settings → Feature flags.",
-      "intro": "Records this computer into {project}, so you and your agents can search what you did. You and the people who manage the project can see it.",
+      "orgOff": "Capture is not on for {org}. The people who manage it can turn it on.",
+      "intro": "Records this computer for {org}, so you and your agents can search what you did. You and the people who manage {org} can see it.",
       "layersTitle": "What is recorded",
       "layers": {
         "screen": "Screen",
@@ -20921,15 +20913,15 @@
       },
       "noLayers": "Nothing records: every layer is off.",
       "turningOn": {
-        "progress": "Signing this computer in to {project}…",
+        "progress": "Signing this computer in to {org}…",
         "waitingOnPage": "Approve the sign-in on the page that opened in your browser."
       },
-      "layerOffByPolicy": "Off for this project",
-      "notice": "From the people who manage {project}",
-      "otherProject": "This computer records into another project now. Starting here moves it to this one.",
+      "layerOffByPolicy": "Off for your organization",
+      "notice": "From the people who manage {org}",
+      "otherOrg": "This computer records for another organization now. Starting here moves it to {org}.",
       "signInRequired": {
         "title": "This computer was signed out",
-        "hint": "Capture may be off for the project, or someone removed this computer. Sign in again to record."
+        "hint": "Capture may be off for your organization, or someone removed this computer. Sign in again to record."
       },
       "error": {
         "title": "Capture stopped",
@@ -20978,7 +20970,7 @@
         "resumed": "Recording resumed",
         "signedOut": "Signed out of Capture"
       },
-      "pausedByProjectHint": "The people who manage the project paused recording. It resumes when they lift the pause."
+      "pausedByOrgHint": "The people who manage {org} paused recording. It resumes when they lift the pause."
     }
   }
 }

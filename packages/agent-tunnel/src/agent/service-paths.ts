@@ -50,10 +50,6 @@ const RETAINED_LOG_LINES = 500;
 export interface ServicePaths {
   /** launchd label, systemd unit stem, and Scheduled Task name. */
   label: string;
-  /** Log file stem (`<logName>.out.log`). Default `agent-tunnel`. */
-  logName?: string;
-  /** systemd and Task Scheduler description. Default `Kortix Agent Tunnel`. */
-  description?: string;
   configDir: string;
   logDir: string;
   binDir: string;
@@ -80,8 +76,10 @@ export function getServicePaths(configDir: string = agentTunnelHome()): ServiceP
 }
 
 export function serviceLogFiles(paths: ServicePaths = getServicePaths()): string[] {
-  const name = paths.logName ?? 'agent-tunnel';
-  return [join(paths.logDir, `${name}.out.log`), join(paths.logDir, `${name}.err.log`)];
+  return [
+    join(paths.logDir, 'agent-tunnel.out.log'),
+    join(paths.logDir, 'agent-tunnel.err.log'),
+  ];
 }
 
 /**

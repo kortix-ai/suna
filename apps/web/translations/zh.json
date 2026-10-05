@@ -20564,6 +20564,8 @@
       "notAllowed": "未允许",
       "needsSetup": "需要设置"
     },
+    "runInBackground": "在后台运行",
+    "runInBackgroundDescription": "关闭后连接会暂停，重启后也保持暂停。",
     "manageInProject": "在项目中管理",
     "disconnectEllipsis": "断开连接…",
     "yourComputersTitle": "你的电脑",
@@ -20586,6 +20588,7 @@
       "screenRecordingDescription": "查看屏幕上的内容",
       "needed": "尚未允许",
       "waiting": "等待你操作",
+      "allowAll": "全部允许",
       "settingsHint": "如果打开了系统设置，请在列表中开启 Kortix。此页面会自动更新。",
       "doneTitle": "你的电脑已准备就绪",
       "doneHint": "Kortix 已获得所需的全部权限。代理现在可以使用这台电脑。"
@@ -20598,18 +20601,6 @@
       "removeAll": "全部移除",
       "confirmTitle": "移除所有旧连接？",
       "confirmDescription": "Kortix 会将它们及其账户从所有项目中移除。仍在使用其中之一的电脑可以重新连接。"
-    },
-    "hub": {
-      "agents": "智能体",
-      "capture": "Capture",
-      "tabAgents": "智能体访问",
-      "tabCapture": "我的 Capture",
-      "thisComputer": "这台电脑",
-      "more": "更多操作",
-      "allowAccess": "允许访问",
-      "pauseAccess": "暂停访问",
-      "resumeAccess": "恢复访问",
-      "pausedHint": "已暂停。在你恢复之前，智能体无法使用这台电脑，重启后也一样。"
     }
   },
   "messageFrom": {
@@ -20893,6 +20884,7 @@
       "tryAgain": "重试"
     },
     "dialog": {
+      "title": "记录这台电脑",
       "status": {
         "off": "关闭",
         "turningOn": "正在启动",
@@ -20901,15 +20893,15 @@
         "needsPermission": "需要权限",
         "paused": "已暂停",
         "pausedUntil": "暂停至 {time}",
-        "pausedByProject": "项目已暂停",
+        "pausedByOrg": "你的组织已暂停",
         "starting": "正在启动",
         "recording": "正在记录",
         "unavailable": "不可用",
-        "projectOff": "此项目已关闭"
+        "orgOff": "你的组织已关闭"
       },
       "unavailable": "此桌面应用不包含 Kortix Capture。请将 Kortix 更新到最新版本。",
-      "projectOff": "此项目已关闭 Capture。项目管理者可在“设置 → 功能开关”中开启。",
-      "intro": "将这台电脑记录到 {project}，让你和你的智能体可以搜索你做过的事。你和项目管理者可以查看。",
+      "orgOff": "{org} 尚未开启 Capture。管理者可以开启它。",
+      "intro": "为 {org} 记录这台电脑，让你和你的智能体可以搜索你做过的事。你和 {org} 的管理者可以查看。",
       "layersTitle": "记录的内容",
       "layers": {
         "screen": "屏幕",
@@ -20921,15 +20913,15 @@
       },
       "noLayers": "没有记录任何内容：所有层都已关闭。",
       "turningOn": {
-        "progress": "正在将这台电脑登录到 {project}…",
+        "progress": "正在将这台电脑登录到 {org}…",
         "waitingOnPage": "请在浏览器中打开的页面上批准登录。"
       },
-      "layerOffByPolicy": "此项目已关闭",
-      "notice": "来自 {project} 的管理者",
-      "otherProject": "这台电脑正在记录到另一个项目。在这里开始会把它切换到此项目。",
+      "layerOffByPolicy": "你的组织已关闭",
+      "notice": "来自 {org} 的管理者",
+      "otherOrg": "这台电脑目前在为另一个组织记录。在这里开始会将它切换到 {org}。",
       "signInRequired": {
         "title": "这台电脑已退出",
-        "hint": "可能是项目关闭了 Capture，或有人移除了这台电脑。请重新登录以继续记录。"
+        "hint": "你的组织可能关闭了 Capture，或有人移除了这台电脑。重新登录即可记录。"
       },
       "error": {
         "title": "Capture 已停止",
@@ -20978,7 +20970,7 @@
         "resumed": "已继续记录",
         "signedOut": "已退出 Capture"
       },
-      "pausedByProjectHint": "项目管理者暂停了记录。管理者解除暂停后会继续记录。"
+      "pausedByOrgHint": "{org} 的管理者暂停了记录。解除暂停后会继续。"
     }
   }
 }

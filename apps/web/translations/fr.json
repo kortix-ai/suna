@@ -20564,6 +20564,8 @@
       "notAllowed": "Non autorisé",
       "needsSetup": "À configurer"
     },
+    "runInBackground": "Exécuter en arrière-plan",
+    "runInBackgroundDescription": "Désactivé, la connexion est suspendue, même après un redémarrage.",
     "manageInProject": "Gérer dans le projet",
     "disconnectEllipsis": "Déconnecter…",
     "yourComputersTitle": "Vos ordinateurs",
@@ -20586,6 +20588,7 @@
       "screenRecordingDescription": "Voir ce qui est à l’écran",
       "needed": "Pas encore autorisé",
       "waiting": "En attente de votre réponse",
+      "allowAll": "Tout autoriser",
       "settingsHint": "Si Réglages Système s’ouvre, activez Kortix dans la liste. Cette vue se met à jour seule.",
       "doneTitle": "Votre ordinateur est prêt",
       "doneHint": "Kortix a toutes les autorisations nécessaires. Les agents peuvent maintenant utiliser cet ordinateur."
@@ -20598,18 +20601,6 @@
       "removeAll": "Tout supprimer",
       "confirmTitle": "Supprimer toutes les anciennes connexions ?",
       "confirmDescription": "Kortix les supprime avec leurs comptes de tous les projets. Un ordinateur qui en utilise encore une peut se reconnecter."
-    },
-    "hub": {
-      "agents": "Agents",
-      "capture": "Capture",
-      "tabAgents": "Accès des agents",
-      "tabCapture": "Mon Capture",
-      "thisComputer": "Cet ordinateur",
-      "more": "Plus d’actions",
-      "allowAccess": "Autoriser l’accès",
-      "pauseAccess": "Suspendre l’accès",
-      "resumeAccess": "Reprendre l’accès",
-      "pausedHint": "En pause. Les agents ne peuvent pas utiliser cet ordinateur avant que vous ne repreniez, même après un redémarrage."
     }
   },
   "messageFrom": {
@@ -20893,6 +20884,7 @@
       "tryAgain": "Réessayer"
     },
     "dialog": {
+      "title": "Enregistrer cet ordinateur",
       "status": {
         "off": "Désactivé",
         "turningOn": "Démarrage",
@@ -20901,15 +20893,15 @@
         "needsPermission": "Autorisation requise",
         "paused": "En pause",
         "pausedUntil": "En pause jusqu’à {time}",
-        "pausedByProject": "Mis en pause par le projet",
+        "pausedByOrg": "En pause par votre organisation",
         "starting": "Démarrage",
         "recording": "Enregistrement",
         "unavailable": "Indisponible",
-        "projectOff": "Désactivé pour ce projet"
+        "orgOff": "Désactivé pour votre organisation"
       },
       "unavailable": "Cette app de bureau n’inclut pas Kortix Capture. Mettez Kortix à jour vers la dernière version.",
-      "projectOff": "Capture est désactivé pour ce projet. Les personnes qui le gèrent peuvent l’activer dans Réglages → Fonctionnalités expérimentales.",
-      "intro": "Enregistre cet ordinateur dans {project}, pour que vous et vos agents puissiez rechercher ce que vous avez fait. Vous et les personnes qui gèrent le projet pouvez le voir.",
+      "orgOff": "Capture n’est pas activé pour {org}. Les personnes qui le gèrent peuvent l’activer.",
+      "intro": "Enregistre cet ordinateur pour {org}, afin que vous et vos agents puissiez rechercher ce que vous avez fait. Vous et les personnes qui gèrent {org} pouvez le voir.",
       "layersTitle": "Ce qui est enregistré",
       "layers": {
         "screen": "Écran",
@@ -20921,15 +20913,15 @@
       },
       "noLayers": "Rien n’est enregistré : toutes les couches sont désactivées.",
       "turningOn": {
-        "progress": "Connexion de cet ordinateur à {project}…",
+        "progress": "Connexion de cet ordinateur à {org}…",
         "waitingOnPage": "Approuvez la connexion sur la page ouverte dans votre navigateur."
       },
-      "layerOffByPolicy": "Désactivé pour ce projet",
-      "notice": "De la part des personnes qui gèrent {project}",
-      "otherProject": "Cet ordinateur enregistre dans un autre projet. Démarrer ici le déplace vers celui-ci.",
+      "layerOffByPolicy": "Désactivé pour votre organisation",
+      "notice": "De la part des personnes qui gèrent {org}",
+      "otherOrg": "Cet ordinateur enregistre maintenant pour une autre organisation. Démarrer ici le passe à {org}.",
       "signInRequired": {
         "title": "Cet ordinateur a été déconnecté",
-        "hint": "Capture est peut-être désactivé pour le projet, ou quelqu’un a retiré cet ordinateur. Reconnectez-vous pour enregistrer."
+        "hint": "Capture est peut-être désactivé pour votre organisation, ou quelqu’un a retiré cet ordinateur. Reconnectez-vous pour enregistrer."
       },
       "error": {
         "title": "Capture s’est arrêté",
@@ -20978,7 +20970,7 @@
         "resumed": "Enregistrement repris",
         "signedOut": "Déconnecté de Capture"
       },
-      "pausedByProjectHint": "Les personnes qui gèrent le projet ont mis l’enregistrement en pause. Il reprend quand elles lèvent la pause."
+      "pausedByOrgHint": "Les personnes qui gèrent {org} ont mis l’enregistrement en pause. Il reprend quand elles lèvent la pause."
     }
   }
 }
