@@ -683,6 +683,25 @@ describe('resolveCandidates — codex + unknown provider', () => {
     expect(resolveCodexCredential).not.toHaveBeenCalled();
   });
 
+  // A rest longer than a rate limit is ChatGPT's plan limit (days). "Cooling
+  // down" and a 60 s retry told a prod Slack thread to try again in a minute.
+  test('a selected Codex pool resting for days says its usage limit and when it resets, with no retry', async () => {
+    pooledEnabled = true;
+    pooledSecrets = { configured: true, coolingDown: true, retryAfterSeconds: 414_374, secrets: [] };
+    const refusal = await resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-6.1-sol').catch((e) => e);
+    expect(refusal).toMatchObject({ code: 'provider_pool_rate_limited', retryAfterSeconds: undefined });
+    expect(refusal.message).toBe('All selected ChatGPT connections reached their usage limit. The first resets in 4 days.');
+    expect(refusal.suggestion).toBe('Choose another model, or connect another ChatGPT account.');
+  });
+
+  test('every shared ChatGPT account resting for hours names the hours', async () => {
+    pooledEnabled = true;
+    sharedSecrets = { coolingDown: true, retryAfterSeconds: 3 * 3600 + 100, secrets: [] };
+    const refusal = await resolveCandidates(principal({ sessionId: 's', personalUserId: null }), 'codex/gpt-6').catch((e) => e);
+    expect(refusal.message).toBe('All ChatGPT connections shared with this project reached their usage limit. The first resets in 3 hours.');
+    expect(refusal.retryAfterSeconds).toBeUndefined();
+  });
+
   test('selected Codex account descriptor retains its credential and pool references', async () => {
     pooledEnabled = true;
     pooledSecrets = { configured: true, coolingDown: false, secrets: [

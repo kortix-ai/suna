@@ -1,0 +1,35 @@
+{
+  "source_hash": "cdca136178a1273ced966b9a56ba6571fb544d8e1d326045a620b5598ee92b96",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-05T101914Z-treat-a-provider-pause-as-temporary-a-cooling-key-or-account.md",
+    "apps/api/src/__tests__/integration-usable-gateway-secrets.test.ts",
+    "apps/api/src/__tests__/unit-slack-error-classify.test.ts",
+    "apps/api/src/channels/slack/errors.ts",
+    "apps/api/src/llm-gateway/internal-routes.test.ts",
+    "apps/api/src/llm-gateway/internal-routes.ts",
+    "apps/api/src/llm-gateway/resolution/default-model.test.ts",
+    "apps/api/src/llm-gateway/resolution/default-model.ts",
+    "apps/api/src/llm-gateway/resolution/resolve-candidates.test.ts",
+    "apps/api/src/llm-gateway/resolution/resolve-candidates.ts",
+    "apps/api/src/secrets/account-resource.ts",
+    "apps/web/src/features/session/header/session-site-header.test.tsx",
+    "apps/web/src/features/session/persisted-turn-failure.test.ts",
+    "apps/web/src/features/session/persisted-turn-failure.ts",
+    "apps/web/src/features/session/session-chat.tsx",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/llm-gateway/src/pipeline/dispatch.test.ts",
+    "packages/llm-gateway/src/pipeline/dispatch.ts",
+    "packages/sdk/src/core/turns/errors.test.ts",
+    "packages/sdk/src/core/turns/errors.ts"
+  ],
+  "diff_hash": "274c242b0235c3b43b63b903e1b4d26040b284f2c4839f75c6cf57afceb9a85c",
+  "head": "c091b0a274b7c351b8eb1850a94f65fc4eaba4b7",
+  "passed": false,
+  "lanes": {
+    "core": "fail",
+    "packages": "fail",
+    "db-suites": "fail"
+  },
+  "at": "2026-10-05T11:18:34.352Z"
+}

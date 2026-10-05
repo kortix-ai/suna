@@ -175,6 +175,7 @@ import {
   groupMessagesIntoTurns,
 } from '@/ui';
 import { isAbortError, turnEndNotice } from '@kortix/sdk';
+import { failureShownByTurn, persistedFailureText } from '@/features/session/persisted-turn-failure';
 import {
   type AbortSettlement,
   type KortixSendError,
@@ -4423,7 +4424,7 @@ export function SessionChat({
                         : []),
                     ].filter((failure) =>
                       !isAbortError(failure.error) &&
-                      !turns.some((turn) => turn.userMessage.info.id === failure.message_id) &&
+                      !failureShownByTurn(failure, turns) &&
                       (!failure.error?.message || failure.error.message !== commandError?.message),
                     ).map((failure) => {
                       const messageId = failure.message_id ?? 'persisted-turn-failure';
@@ -4438,7 +4439,7 @@ export function SessionChat({
                           key={messageId}
                           errorText={notice.kind === 'unexplained'
                             ? tHardcodedUi.raw('i18nComplete.text73112526c03a')
-                            : failure.error?.message ?? undefined}
+                            : persistedFailureText(failure.error)}
                           className="mt-2"
                         />
                       ) : null;
