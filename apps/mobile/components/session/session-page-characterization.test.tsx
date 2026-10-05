@@ -1390,6 +1390,23 @@ describe('SessionPage render work', () => {
     expect(heroMounted()).toBe(false);
   });
 
+  test('pauses the working turn motion while its row is scrolled out of the viewport', async () => {
+    const user = userMsg('one');
+    seedRows([user, assistantMsg('partial', user.info.id)]);
+    runtimeValue = { ...runtimeValue, isBusy: true };
+    await renderPage();
+    const working = () => turnProps.findLast((p) => p.isWorkingTurn);
+    const id = user.info.id;
+    expect(working().onScreen).toBe(true);
+    expect(listProps.viewabilityConfig).toEqual({ itemVisiblePercentThreshold: 1 });
+    const handler = listProps.onViewableItemsChanged;
+    await act(async () => handler({ viewableItems: [] }));
+    expect(working().onScreen).toBe(false);
+    expect(listProps.onViewableItemsChanged).toBe(handler);
+    await act(async () => handler({ viewableItems: [{ key: id }] }));
+    expect(working().onScreen).toBe(true);
+  });
+
   test('a stream delta and a new runtime object keep renderItem and Stop, and a stranded prompt stays interrupted', async () => {
     const user = userMsg('one');
     const reply = assistantMsg('partial', user.info.id);

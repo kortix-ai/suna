@@ -6,7 +6,8 @@
  *
  *   1. user message
  *   (One text shimmer per turn: only the LAST segment, or the inline content when
- *   there is no segments block, may sweep; see `LoopMotionContext`.)
+ *   there is no segments block, may sweep; see `LoopMotionContext`. While the working
+ *   turn is off screen (`onScreen` false) nothing sweeps and the dot matrix holds.)
  *   2. segments (`space-y-3`) — bursts (`ActivityBurst`: thinking, tool rows,
  *      file chips), standalone tools (`ToolPartRenderer`: deliverables,
  *      sub-agents, calls with a pending permission), and prose between bursts
@@ -136,6 +137,11 @@ interface SessionTurnProps {
   uploadStatus?: UserMessageUploadStatus;
   /** Who sent this turn's prompt. Set only in a session with two or more people. */
   sender?: AvatarPerson | null;
+  /**
+   * False while the working turn is scrolled out of the list's viewport: its
+   * shimmer and busy dot matrix hold still (KRTX-1638). Defaults to on screen.
+   */
+  onScreen?: boolean;
 }
 
 const EMPTY_QUESTIONS: QuestionRequest[] = Object.freeze([]) as unknown as QuestionRequest[];
@@ -164,6 +170,7 @@ function SessionTurnImpl({
   queueState,
   uploadStatus,
   sender,
+  onScreen = true,
 }: SessionTurnProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -336,7 +343,7 @@ function SessionTurnImpl({
       <TurnLiveContext.Provider key="segments" value={working}>
         <View style={{ gap: SEGMENT_STACK_GAP }}>
           {segments.map((segment, index) => {
-            const shimmerSegment = index === segments.length - 1;
+            const shimmerSegment = onScreen && index === segments.length - 1;
             if (segment.kind === 'burst') {
               return (
                 <LoopMotionContext.Provider key={`burst-${segment.parts[0]?.id ?? 'empty'}`} value={shimmerSegment}>
@@ -410,7 +417,7 @@ function SessionTurnImpl({
       }
     }
     // Inline tools sweep only when no segments block already owns the turn's shimmer.
-    const inlineShimmer = body.length === 0;
+    const inlineShimmer = onScreen && body.length === 0;
     body.push(
       <LoopMotionContext.Provider key="inline" value={inlineShimmer}>
         <View style={{ gap: SEGMENT_STACK_GAP }}>
@@ -466,12 +473,14 @@ function SessionTurnImpl({
             details={retryInfo.details}
           />
         ) : null}
-        <SessionBusyIndicator
-          sessionId={sessionId}
-          statusText={statusText}
-          elapsedLabel={elapsedLabel}
-          retryLabel={retryInfo ? BUSY_RETRY_LABEL : undefined}
-        />
+        <LoopMotionContext.Provider value={onScreen}>
+          <SessionBusyIndicator
+            sessionId={sessionId}
+            statusText={statusText}
+            elapsedLabel={elapsedLabel}
+            retryLabel={retryInfo ? BUSY_RETRY_LABEL : undefined}
+          />
+        </LoopMotionContext.Provider>
       </View>,
     );
   }
