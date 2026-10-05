@@ -676,6 +676,8 @@ export async function provisionSessionSandbox(opts: {
     // provider drops them itself when Platinum refuses the create over them.
     let driveMounts: SessionDriveMounts | undefined;
     let driveMountsResolved = false;
+    let bootArtifacts: import('./boot-artifacts').BootArtifactsMount | null = null;
+    let bootArtifactsResolved = false;
     let sessionState:
       | { volume: string; mountPath: string; env: Record<string, string>; waitedMs: number; generation: number }
       | null = null;
@@ -772,6 +774,11 @@ export async function provisionSessionSandbox(opts: {
           );
           sessionStateResolved = true;
         }
+        // Boot artifacts take the first mount slot: drives get what is left.
+        if (!bootArtifactsResolved) {
+          bootArtifacts = await import('./boot-artifacts').then((m) => m.bootArtifactsMount());
+          bootArtifactsResolved = true;
+        }
         if (!driveMountsResolved) {
           driveMounts = await import('../../drives/service').then(({ sessionVolumeMounts }) =>
             sessionVolumeMounts({
@@ -780,12 +787,18 @@ export async function provisionSessionSandbox(opts: {
               sessionId: sandbox.sandboxId,
               bootingUserId: userId,
               agentName: opts.agentName ?? 'default',
-              reservedSlots: sessionState ? 1 : 0,
+              reservedSlots: (sessionState ? 1 : 0) + (bootArtifacts ? 1 : 0),
             }),
           );
           driveMountsResolved = true;
         }
         providerCreateInput.volumes = driveMounts?.volumes;
+        if (bootArtifacts) {
+          providerCreateInput.volumes = {
+            ...(providerCreateInput.volumes ?? {}),
+            [bootArtifacts.mountPath]: { volume: bootArtifacts.volume, read_only: true, ref: bootArtifacts.ref },
+          };
+        }
         if (sessionState) {
           providerCreateInput.volumes = {
             ...(providerCreateInput.volumes ?? {}),

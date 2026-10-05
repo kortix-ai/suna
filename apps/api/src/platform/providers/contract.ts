@@ -77,7 +77,7 @@ export interface CreateSandboxOpts {
    * Volumes mounted at create, keyed by guest mount path: the session's
    * drives. Platinum only; every other provider ignores it.
    */
-  volumes?: Record<string, { volume: string; read_only?: boolean }>;
+  volumes?: Record<string, { volume: string; read_only?: boolean; ref?: string }>;
   /**
    * An ephemeral session box: its state lives on a session volume and a stop
    * deletes the box. (A create refused over any `volumes` always fails: a
