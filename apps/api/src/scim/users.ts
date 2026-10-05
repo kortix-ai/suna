@@ -3,7 +3,7 @@ import { userChanges, applyProfile } from './user-profile';
 // registerScimUsersRoutes() registers these onto the shared scimRouter.
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountInvitations, accountMembers, accountMemberships, accountScimUsers, accountGroups, accountGroupMembers, roleAssignments } from '@kortix/db';
+import { accountInvitations, accountMemberships, accountScimUsers, accountGroupMembers, roleAssignments } from '@kortix/db';
 import { and, eq, gt, inArray, isNull, or } from 'drizzle-orm';
 import { invalidateIamCacheForUser } from '../iam/cache-invalidation';
 import { accountRoleFor, countAccountOwners } from '../iam/read-models';
@@ -18,6 +18,8 @@ import { errors, json } from '../openapi';
 import { revokeAllAccountTokensForUser } from '../repositories/account-tokens';
 import { onMemberRemoved } from '../billing/services/seat-management';
 import { db } from '../shared/db';
+import { scimMemberRow, scimMemberRows } from '../iam/membership-read';
+import { accountGroupIds, accountGroupsAmong, scimGroupIdsOfUser } from '../iam/group-read';
 import { buildDirectoryUser, directoryUserById, directoryUserByEmail, saveDirectoryUser, directoryGroupIds, type DirectoryUser } from './directory-users';
 import {
   ScimResource,
@@ -75,15 +77,7 @@ async function getMember(accountId: string, userId: string): Promise<MemberRow |
   // leaves the legacy column stale on purpose, so serializing it here would
   // report a role the IdP's own write did not produce.
   const [[member], accountRole] = await Promise.all([
-    db
-      .select({
-        userId: accountMembers.userId,
-        scimExternalId: accountMembers.scimExternalId,
-        joinedAt: accountMembers.joinedAt,
-      })
-      .from(accountMembers)
-      .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
-      .limit(1),
+    scimMemberRow(accountId, userId),
     accountRoleFor(accountId, userId),
   ]);
   return member ? { ...member, accountRole: accountRole ?? 'member' } : null;
@@ -231,9 +225,7 @@ async function applyDirectoryState(c: any, user: DirectoryUser, active: boolean,
   }
   let groupIds = directoryGroupIds(user);
   if (!active && userId) {
-    const currentGroups = await db.select({ groupId: accountGroups.groupId }).from(accountGroups)
-      .innerJoin(accountGroupMembers, eq(accountGroupMembers.groupId, accountGroups.groupId))
-      .where(and(eq(accountGroups.accountId, user.accountId), eq(accountGroups.source, 'scim'), eq(accountGroupMembers.userId, userId)));
+    const currentGroups = await scimGroupIdsOfUser(user.accountId, userId);
     groupIds = [...new Set([...groupIds, ...currentGroups.map(g => g.groupId)])];
   }
   if (deleted) groupIds = [];
@@ -244,10 +236,9 @@ async function applyDirectoryState(c: any, user: DirectoryUser, active: boolean,
   if (!active) {
     if (userId) {
       const revocationError = await deprovisionMember(user.accountId, userId);
-      const groups = await db.select({ id: accountGroups.groupId }).from(accountGroups)
-        .where(eq(accountGroups.accountId, user.accountId));
+      const groups = await accountGroupIds(user.accountId);
       if (groups.length) await db.delete(accountGroupMembers).where(and(
-        eq(accountGroupMembers.userId, userId), inArray(accountGroupMembers.groupId, groups.map(g => g.id)),
+        eq(accountGroupMembers.userId, userId), inArray(accountGroupMembers.groupId, groups.map(g => g.groupId)),
       ));
       invalidateIamCacheForUser(userId);
       await scimAudit(c, {
@@ -270,8 +261,7 @@ async function applyDirectoryState(c: any, user: DirectoryUser, active: boolean,
     });
     if (!member) await assignScimMembership(user.accountId, userId);
     if (groupIds.length) {
-      const groups = await db.select({ groupId: accountGroups.groupId }).from(accountGroups)
-        .where(and(eq(accountGroups.accountId, user.accountId), inArray(accountGroups.groupId, groupIds)));
+      const groups = await accountGroupsAmong(user.accountId, groupIds);
       if (groups.length) await db.insert(accountGroupMembers).values(groups.map(g => ({ groupId: g.groupId, userId }))).onConflictDoNothing();
     }
     invalidateIamCacheForUser(userId);
@@ -322,9 +312,7 @@ export function registerScimUsersRoutes(): void {
     if (isUnsupportedFilter(rawFilter)) return scimError(c, 400, 'Unsupported filter');
     const filter = parseFilter(rawFilter);
     const recorded = await db.select().from(accountScimUsers).where(eq(accountScimUsers.accountId, accountId));
-    const members = await db.select({
-      userId: accountMembers.userId, scimExternalId: accountMembers.scimExternalId, joinedAt: accountMembers.joinedAt,
-    }).from(accountMembers).where(eq(accountMembers.accountId, accountId));
+    const members = await scimMemberRows(accountId);
     const emails = await emailsByUserId(members.map(m => m.userId));
     const recordedEmails = new Set(recorded.map(u => u.userName));
     const recordedIds = new Set(recorded.flatMap(u => [u.scimId, u.userId, u.invitationId]).filter(Boolean));

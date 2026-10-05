@@ -1,8 +1,11 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq } from 'drizzle-orm';
-import { iamRoles, projects, serviceAccounts, accountMembers, accountGroups } from '@kortix/db';
+import { projects, serviceAccounts } from '@kortix/db';
 import { json, errors, auth } from '../../openapi';
 import { db } from '../../shared/db';
+import { groupInAccountRow } from '../../iam/group-read';
+import { userAccountMemberRow } from '../../iam/membership-read';
+import { accountCustomRoles, customRoleRow } from '../../iam/role-read';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import { assignRole, revokeAssignment, updateAssignment, type AssignmentRow } from '../../iam/assignments';
@@ -33,11 +36,7 @@ export async function systemRoleByWireId(wireId: string) {
 }
 
 export async function loadCustomRole(accountId: string, roleId: string) {
-  const [row] = await db
-    .select()
-    .from(iamRoles)
-    .where(and(eq(iamRoles.roleId, roleId), eq(iamRoles.accountId, accountId)))
-    .limit(1);
+  const [row] = await customRoleRow(roleId, accountId);
   return row ?? null;
 }
 
@@ -353,7 +352,7 @@ export function registerPolicyWriteRoutes() {
     const body = await readJsonObject(c);
     const entries = Array.isArray(body.policies) ? (body.policies as Array<Record<string, unknown>>) : [];
     // Resolve role keys → ids once (custom roles only; built-ins aren't bindable).
-    const customRoles = await db.select().from(iamRoles).where(eq(iamRoles.accountId, accountId));
+    const customRoles = await accountCustomRoles(accountId);
     const roleIdByKey = new Map(customRoles.map((r) => [r.key, r.roleId]));
 
     const importer = await actorOf(c, accountId);
@@ -466,19 +465,11 @@ async function parsePolicyInput(
   // creates an inert policy (the engine resolves by account membership) — reject
   // it with a clear error instead, matching the token + project ownership checks.
   if (validatePrincipal && principalType === 'member') {
-    const [m] = await db
-      .select({ id: accountMembers.userId })
-      .from(accountMembers)
-      .where(and(eq(accountMembers.userId, principalId), eq(accountMembers.accountId, accountId)))
-      .limit(1);
+    const [m] = await userAccountMemberRow(principalId, accountId);
     if (!m) return { ok: false, status: 404, error: 'principalId is not a member of this account' };
   }
   if (validatePrincipal && principalType === 'group') {
-    const [g] = await db
-      .select({ id: accountGroups.groupId })
-      .from(accountGroups)
-      .where(and(eq(accountGroups.groupId, principalId), eq(accountGroups.accountId, accountId)))
-      .limit(1);
+    const [g] = await groupInAccountRow(principalId, accountId);
     if (!g) return { ok: false, status: 404, error: 'principalId is not a group in this account' };
   }
 

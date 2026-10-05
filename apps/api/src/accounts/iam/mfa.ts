@@ -7,9 +7,10 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
-import { and, eq, sql } from 'drizzle-orm';
-import { accountMembers, accounts } from '@kortix/db';
+import { and, eq } from 'drizzle-orm';
+import { accounts } from '@kortix/db';
 import { db } from '../../shared/db';
+import { accountMemberMfaRows, accountMfaEnrolledMemberRow, accountSuperAdminRow } from '../../iam/membership-read';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import { invalidateIamCacheForAccount } from '../../iam/cache-invalidation';
@@ -71,23 +72,7 @@ export function registerIamMfaRoutes(): void {
 
     // Pull all members and the count of their verified MFA factors in one
     // round-trip. LEFT JOIN so members with zero factors still appear.
-    const rows = await db.execute<{
-      user_id: string;
-      account_role: string;
-      is_super_admin: boolean;
-      verified_factors: number;
-    }>(sql`
-    SELECT
-      am.user_id::text AS user_id,
-      am.account_role::text AS account_role,
-      am.is_super_admin,
-      COALESCE((
-        SELECT COUNT(*)::int FROM auth.mfa_factors mf
-        WHERE mf.user_id = am.user_id AND mf.status = 'verified'
-      ), 0) AS verified_factors
-    FROM kortix.account_members am
-    WHERE am.account_id = ${accountId}::uuid
-  `);
+    const rows = await accountMemberMfaRows(accountId);
 
     // Drizzle's .execute returns { rows: [...] } for raw SQL on pg.
     const dataRows = ((rows as unknown) as { rows: typeof rows }).rows ?? rows;
@@ -185,27 +170,9 @@ export function registerIamMfaRoutes(): void {
     // super-admin (always exempt) OR at least one member with verified
     // MFA — otherwise the flip would orphan the account.
     if (enabled) {
-      const [superAdmin] = await db
-        .select({ userId: accountMembers.userId })
-        .from(accountMembers)
-        .where(
-          and(
-            eq(accountMembers.accountId, accountId),
-            eq(accountMembers.isSuperAdmin, true),
-          ),
-        )
-        .limit(1);
+      const [superAdmin] = await accountSuperAdminRow(accountId);
       if (!superAdmin) {
-        const enrolled = await db.execute<{ user_id: string }>(sql`
-        SELECT am.user_id
-        FROM kortix.account_members am
-        WHERE am.account_id = ${accountId}::uuid
-          AND EXISTS (
-            SELECT 1 FROM auth.mfa_factors mf
-            WHERE mf.user_id = am.user_id AND mf.status = 'verified'
-          )
-        LIMIT 1
-      `);
+        const enrolled = await accountMfaEnrolledMemberRow(accountId);
         const enrolledRows = ((enrolled as unknown) as { rows: typeof enrolled }).rows ?? enrolled;
         if (!enrolledRows || (enrolledRows as unknown as unknown[]).length === 0) {
           return c.json(

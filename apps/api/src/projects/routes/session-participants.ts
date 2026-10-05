@@ -1,9 +1,8 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountGroupMembers } from '@kortix/db';
-import { inArray } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
+import { groupMemberRows } from '../../iam/group-read';
 import {
   assertProjectCapability,
   loadProjectForUser,
@@ -65,10 +64,7 @@ export function registerSessionParticipantsRoutes(): void {
         projectCapabilityAllowed(c, loaded.userId, accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_READ),
         visibility === 'private' ? null : buildProjectAccessView(loaded),
         visibility === 'restricted' && groupIds.length
-          ? db
-              .select({ groupId: accountGroupMembers.groupId, userId: accountGroupMembers.userId })
-              .from(accountGroupMembers)
-              .where(inArray(accountGroupMembers.groupId, groupIds))
+          ? groupMemberRows(groupIds)
           : [],
       ]);
       const groupMembers = new Map<string, string[]>();

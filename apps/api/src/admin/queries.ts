@@ -16,6 +16,7 @@ export async function listAdminAccountsPage(query: AdminAccountsListQuery) {
   const { and, asc, desc, eq, gte, lte, inArray, notInArray, isNotNull, isNull, or, sql } =
     await import('drizzle-orm');
   const { UNPAID_TIERS } = await import('./accounts-query');
+  const { accountMemberCountSql, accountPrimaryOwnerEmailSql } = await import('../iam/membership-read');
 
   const {
     search,
@@ -39,16 +40,8 @@ export async function listAdminAccountsPage(query: AdminAccountsListQuery) {
   // id), then the earliest-joined owner. The old tiebreak was `au.email ASC`,
   // which let a support operator added as a second owner displace the real
   // customer whenever their address sorted first alphabetically.
-  const ownerEmail = sql<string | null>`(
-      SELECT au.email FROM auth.users au
-      INNER JOIN kortix.account_members am ON am.user_id = au.id
-      WHERE am.account_id = ${qualifiedColumn(accounts.accountId)}
-      ORDER BY (am.user_id = ${qualifiedColumn(accounts.accountId)}) DESC,
-               CASE am.account_role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
-               am.joined_at ASC, au.email ASC
-      LIMIT 1)`;
-  const memberCount = sql<number>`(
-      SELECT count(*)::int FROM kortix.account_members am WHERE am.account_id = ${qualifiedColumn(accounts.accountId)})`;
+  const ownerEmail = accountPrimaryOwnerEmailSql(qualifiedColumn(accounts.accountId));
+  const memberCount = accountMemberCountSql(qualifiedColumn(accounts.accountId));
 
   const conds: any[] = [];
   // Exact-id lookup — the sheet's live row, immune to the list's filters.
@@ -135,22 +128,9 @@ export async function listAdminAccountsPage(query: AdminAccountsListQuery) {
 
 /** Members of one account with their auth identity, owners first. */
 export async function listAdminAccountMembers(accountId: string): Promise<unknown[]> {
-  const { db } = await import('../shared/db');
-  const { sql } = await import('drizzle-orm');
+  const { accountMemberAuthRows } = await import('../iam/membership-read');
 
-  const result: any = await db.execute(sql`
-      SELECT au.id AS user_id, au.email,
-             am.account_role AS account_role,
-             au.created_at AS signed_up_at,
-             au.last_sign_in_at AS last_sign_in_at,
-             au.email_confirmed_at AS email_confirmed_at,
-             au.banned_until AS banned_until,
-             au.raw_app_meta_data->>'provider' AS provider,
-             au.raw_app_meta_data->'providers' AS providers
-      FROM kortix.account_members am
-      INNER JOIN auth.users au ON au.id = am.user_id
-      WHERE am.account_id = ${accountId}
-      ORDER BY CASE am.account_role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, au.email ASC`);
+  const result: any = await accountMemberAuthRows(accountId);
   return Array.isArray(result) ? result : (result?.rows ?? []);
 }
 
@@ -194,6 +174,7 @@ export async function listAdminProjectsPage(query: AdminProjectsListQuery) {
   const { accounts, projects, projectSessions } = await import('@kortix/db');
   const { and, eq, ilike, inArray, or, sql } = await import('drizzle-orm');
   const { ACTIVE_SESSION_STATUSES } = await import('../projects/lib/session-status');
+  const { accountHasMemberEmailLikeSql, accountPrimaryOwnerEmailSql } = await import('../iam/membership-read');
 
   const { search, accountId, statusValues, sortBy, sortDir, limit, offset } = query;
 
@@ -203,14 +184,7 @@ export async function listAdminProjectsPage(query: AdminProjectsListQuery) {
   // id), then the earliest-joined owner. The old tiebreak was `au.email ASC`,
   // which let a support operator added as a second owner displace the real
   // customer whenever their address sorted first alphabetically.
-  const ownerEmail = sql<string | null>`(
-      SELECT au.email FROM auth.users au
-      INNER JOIN kortix.account_members am ON am.user_id = au.id
-      WHERE am.account_id = ${qualifiedColumn(accounts.accountId)}
-      ORDER BY (am.user_id = ${qualifiedColumn(accounts.accountId)}) DESC,
-               CASE am.account_role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
-               am.joined_at ASC, au.email ASC
-      LIMIT 1)`;
+  const ownerEmail = accountPrimaryOwnerEmailSql(qualifiedColumn(accounts.accountId));
   const sessionCount = sql<number>`(
       SELECT count(*)::int FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projects.projectId)})`;
   // Bound one-parameter-per-status: a bare `IN ${array}` binds the whole array
@@ -232,8 +206,7 @@ export async function listAdminProjectsPage(query: AdminProjectsListQuery) {
       or(
         ilike(projects.name, `%${search}%`),
         ilike(accounts.name, `%${search}%`),
-        sql`EXISTS (SELECT 1 FROM auth.users au INNER JOIN kortix.account_members am ON am.user_id = au.id
-                      WHERE am.account_id = ${qualifiedColumn(projects.accountId)} AND au.email ILIKE ${'%' + search + '%'})`,
+        accountHasMemberEmailLikeSql(qualifiedColumn(projects.accountId), '%' + search + '%'),
       ),
     );
   }

@@ -8,13 +8,15 @@
 // (the orchestrator) so the original ordering is preserved.
 
 import { z } from '@hono/zod-openapi';
-import { accountGroupMembers, accountInvitations, accountScimUsers } from '@kortix/db';
+import { accountInvitations, accountScimUsers } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { scimAuth } from '../middleware/scim-auth';
 import { makeOpenApiApp } from '../openapi';
 import { recordAuditEvent } from '../shared/audit';
 import { db } from '../shared/db';
+import { userIdByEmailRows } from '../iam/membership-read';
+import { groupMemberUserIds } from '../iam/group-read';
 import { withDirectoryTransaction } from '../iam/directory-transaction';
 import { emailTrustedSql } from '../iam/email-trust';
 import { getSupabase } from '../shared/supabase';
@@ -132,16 +134,7 @@ export async function emailsByUserId(userIds: string[]): Promise<Map<string, str
 export async function userIdByEmail(email: string, accountId?: string): Promise<string | null> {
   const normalized = email.trim().toLowerCase();
   if (!normalized) return null;
-  const rows = await db.execute(sql`
-    SELECT u.id::text AS id
-    FROM auth.users u
-    LEFT JOIN kortix.account_memberships m
-      ON m.user_id = u.id AND m.account_id = ${accountId ?? null}::uuid
-    WHERE u.email = ${normalized}
-      AND ${emailTrustedSql(sql`u`, accountId)}
-    ORDER BY (m.user_id IS NOT NULL) DESC, u.created_at, u.id
-    LIMIT 1
-  `);
+  const rows = await userIdByEmailRows(normalized, accountId, emailTrustedSql(sql`u`, accountId));
   return (rows[0] as { id: string } | undefined)?.id ?? null;
 }
 
@@ -254,10 +247,7 @@ export async function buildGroup(
     updatedAt: Date;
   },
 ): Promise<GroupShape> {
-  const memberRows = await db
-    .select({ userId: accountGroupMembers.userId })
-    .from(accountGroupMembers)
-    .where(eq(accountGroupMembers.groupId, group.groupId));
+  const memberRows = await groupMemberUserIds(group.groupId);
   const directoryUsers = await db.select().from(accountScimUsers)
     .where(eq(accountScimUsers.accountId, accountId));
   const byUserId = new Map(directoryUsers.filter(u => u.userId).map(u => [u.userId, u]));

@@ -1,9 +1,9 @@
 import { db } from '../../shared/db';
+import { accountMemberJoinRows } from '../../iam/membership-read';
+import { accountGroupNames, groupMemberRows } from '../../iam/group-read';
 import { isAccountManager, roleAllows, type AccountRole, type ProjectRole } from '../access';
 import { normalizeProjectRole } from '../../iam/roles';
 import { accountRoleMap, customRoleBindings, foldProjectAccess, groupProjectGrants, objectGrantRows, projectRoleGrants } from '../../iam/read-models';
-import { accountGroupMembers, accountGroups, accountMembers } from '@kortix/db';
-import { eq, inArray } from 'drizzle-orm';
 import { resolveUserIdentities } from './access';
 import { loadProjectForUser } from './access';
 type AwaitedProjectAccessLoad = NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>;
@@ -107,13 +107,7 @@ async function loadProjectAccessRows(loaded: AwaitedProjectAccessLoad) {
   // here for IDENTITY only — who is in the directory, and when they joined.
   const [identityRows, accountRoles, grantRows, groupGrantRows, customPolicyRows, objectGrants, accountGroupRows] =
     await Promise.all([
-      db
-        .select({
-          userId: accountMembers.userId,
-          joinedAt: accountMembers.joinedAt,
-        })
-        .from(accountMembers)
-        .where(eq(accountMembers.accountId, loaded.row.accountId)),
+      accountMemberJoinRows(loaded.row.accountId),
       accountRoleMap(loaded.row.accountId),
       projectRoleGrants({ accountId: loaded.row.accountId, projectId: loaded.row.projectId }),
       // Group grants attached to this project. Each row lifts everyone in the
@@ -136,10 +130,7 @@ async function loadProjectAccessRows(loaded: AwaitedProjectAccessLoad) {
       // All groups on this account, for name resolution below. Custom-role
       // bindings and object grants can target a group that never got a project
       // role grant, so this is the superset lookup.
-      db
-        .select({ groupId: accountGroups.groupId, name: accountGroups.name })
-        .from(accountGroups)
-        .where(eq(accountGroups.accountId, loaded.row.accountId)),
+      accountGroupNames(loaded.row.accountId),
     ]);
   return { identityRows, accountRoles, grantRows, groupGrantRows, customPolicyRows, objectGrants, accountGroupRows };
 }
@@ -161,13 +152,7 @@ async function loadGroupMembers(
     .map((r) => r.principalId);
   const allGroupIds = Array.from(new Set([...grantGroupIds, ...policyGroupIds, ...resourceGrantGroupIds]));
   return allGroupIds.length
-    ? await db
-        .select({
-          groupId: accountGroupMembers.groupId,
-          userId: accountGroupMembers.userId,
-        })
-        .from(accountGroupMembers)
-        .where(inArray(accountGroupMembers.groupId, allGroupIds))
+    ? await groupMemberRows(allGroupIds)
     : [];
 }
 

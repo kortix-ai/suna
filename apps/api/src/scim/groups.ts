@@ -3,12 +3,14 @@
 // registerScimGroupsRoutes() registers these onto the shared scimRouter.
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountGroupMembers, accountGroups, accountInvitations, accountMembers, accountScimUsers } from '@kortix/db';
+import { accountGroupMembers, accountGroups, accountInvitations, accountScimUsers } from '@kortix/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { invalidateIamCacheForGroup, invalidateIamCacheForUsers } from '../iam/cache-invalidation';
 import { scimError } from '../middleware/scim-auth';
 import { errors, json } from '../openapi';
 import { db } from '../shared/db';
+import { accountMemberRow, accountMembersAmong } from '../iam/membership-read';
+import { accountGroupFullRow, groupMemberUserIds, groupNameInAccountRow, scimGroupRow, scimGroupRowById, scimGroupRows } from '../iam/group-read';
 import { deleteGroup } from '../repositories/iam';
 import { directoryUserById, directoryGroupIds, saveDirectoryGroups } from './directory-users';
 import { groupChanges, memberValues, InvalidGroupMemberError, type GroupChange } from './group-patch';
@@ -50,12 +52,7 @@ async function addGroupMembersOrDeferInvites(
   memberValues = resolved.filter((value): value is string => value !== null);
   if (memberValues.length === 0) return;
 
-  const realMembers = await db
-    .select({ userId: accountMembers.userId })
-    .from(accountMembers)
-    .where(
-      and(eq(accountMembers.accountId, accountId), inArray(accountMembers.userId, memberValues)),
-    );
+  const realMembers = await accountMembersAmong(accountId, memberValues);
   const memberSet = new Set(realMembers.map((m) => m.userId));
 
   const rows = memberValues.filter((v) => memberSet.has(v)).map((v) => ({ groupId, userId: v }));
@@ -90,13 +87,7 @@ async function addGroupMembersOrDeferInvites(
     const resolvedUserId = await userIdByEmail(inv.email, accountId);
     let resolvedMemberUserId: string | null = null;
     if (resolvedUserId) {
-      const [member] = await db
-        .select({ userId: accountMembers.userId })
-        .from(accountMembers)
-        .where(
-          and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, resolvedUserId)),
-        )
-        .limit(1);
+      const [member] = await accountMemberRow(accountId, resolvedUserId);
       resolvedMemberUserId = member?.userId ?? null;
     }
 
@@ -284,15 +275,12 @@ export function parseGroupPut(body: Record<string, unknown>) {
 async function writeGroup(c: any) {
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
-  const [group] = await db.select().from(accountGroups).where(and(
-    eq(accountGroups.accountId, accountId), eq(accountGroups.groupId, groupId),
-  )).limit(1);
+  const [group] = await accountGroupFullRow(accountId, groupId);
   if (!group) return scimError(c, 404, 'Group not found');
   let changes: GroupChange[];
   try { changes = groupChanges(await c.req.json(), c.req.method === 'PATCH'); }
   catch (error) { return scimError(c, 400, (error as Error).message); }
-  const before = await db.select({ userId: accountGroupMembers.userId }).from(accountGroupMembers)
-    .where(eq(accountGroupMembers.groupId, groupId));
+  const before = await groupMemberUserIds(groupId);
   try {
     await applyGroupChanges(accountId, groupId, changes);
   } catch (error) {
@@ -339,16 +327,7 @@ export function registerScimGroupsRoutes(): void {
       }
       const filter = parseFilter(rawFilter);
 
-      const rows = await db
-        .select({
-          groupId: accountGroups.groupId,
-          name: accountGroups.name,
-          externalId: accountGroups.externalId,
-          createdAt: accountGroups.createdAt,
-          updatedAt: accountGroups.updatedAt,
-        })
-        .from(accountGroups)
-        .where(eq(accountGroups.accountId, accountId));
+      const rows = await scimGroupRows(accountId);
 
       let filteredRows = rows;
       if (filter) {
@@ -384,17 +363,7 @@ export function registerScimGroupsRoutes(): void {
       const accountId = c.req.param('accountId');
       const groupId = c.req.param('groupId');
 
-      const [row] = await db
-        .select({
-          groupId: accountGroups.groupId,
-          name: accountGroups.name,
-          externalId: accountGroups.externalId,
-          createdAt: accountGroups.createdAt,
-          updatedAt: accountGroups.updatedAt,
-        })
-        .from(accountGroups)
-        .where(and(eq(accountGroups.accountId, accountId), eq(accountGroups.groupId, groupId)))
-        .limit(1);
+      const [row] = await scimGroupRow(accountId, groupId);
       if (!row) return scimError(c, 404, 'Group not found');
 
       return c.json(await buildGroup(accountId, row));
@@ -474,17 +443,7 @@ export function registerScimGroupsRoutes(): void {
         after: { name: displayName, external_id: externalId },
       });
 
-      const [row] = await db
-        .select({
-          groupId: accountGroups.groupId,
-          name: accountGroups.name,
-          externalId: accountGroups.externalId,
-          createdAt: accountGroups.createdAt,
-          updatedAt: accountGroups.updatedAt,
-        })
-        .from(accountGroups)
-        .where(eq(accountGroups.groupId, groupId))
-        .limit(1);
+      const [row] = await scimGroupRowById(groupId);
 
       return c.json(await buildGroup(accountId, row!), 201);
     },
@@ -521,18 +480,11 @@ export function registerScimGroupsRoutes(): void {
       // Capture members before the cascade so we can bust their cached roles —
       // deleting the group drops every grant it conferred.
       const memberIds = (
-        await db
-          .select({ userId: accountGroupMembers.userId })
-          .from(accountGroupMembers)
-          .where(eq(accountGroupMembers.groupId, groupId))
+        await groupMemberUserIds(groupId)
       ).map((r) => r.userId);
 
       // Name first, for the audit event: the delete below takes the row with it.
-      const [existing] = await db
-        .select({ name: accountGroups.name })
-        .from(accountGroups)
-        .where(and(eq(accountGroups.accountId, accountId), eq(accountGroups.groupId, groupId)))
-        .limit(1);
+      const [existing] = await groupNameInAccountRow(accountId, groupId);
       if (!existing) return c.body(null, 204);
       await unparkGroupFromInvites(accountId, groupId);
       // `deleteGroup`, not a bare delete: it also drops the group's assignments in

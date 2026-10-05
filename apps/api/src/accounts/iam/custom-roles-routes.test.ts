@@ -41,9 +41,12 @@ describe('custom role and policy route registration', () => {
     const parser = policySource.slice(policySource.indexOf('async function parsePolicyInput('));
     expect(parser).toContain("['member', 'group', 'token'].includes(principalType)");
     expect(parser).toContain("['account', 'project'].includes(scopeType)");
-    for (const table of ['serviceAccounts', 'accountMembers', 'accountGroups', 'projects']) {
+    for (const table of ['serviceAccounts', 'projects']) {
       expect(parser).toContain(`.from(${table})`);
     }
+    // Member and group ownership go through the iam read models.
+    expect(parser).toContain('await userAccountMemberRow(principalId, accountId)');
+    expect(parser).toContain('await groupInAccountRow(principalId, accountId)');
     expect(parser).toContain("principalType === 'token' && scopeType === 'account'");
     expect(parser).toContain("scopeType === 'project' && !scopeId");
     expect(route('post', 'policies')).toContain('if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status)');

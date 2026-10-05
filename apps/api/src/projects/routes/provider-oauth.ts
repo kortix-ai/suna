@@ -5,6 +5,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { recordAuditEvent, runAuditedTransaction } from '../../shared/audit';
 import { db } from '../../shared/db';
+import { accountMemberRow } from '../../iam/membership-read';
 import { roleAllows } from '../access';
 import { pollCodexDeviceAuth, startCodexDeviceAuth } from '../codex-device-auth';
 import {
@@ -24,7 +25,7 @@ import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-syn
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountMembers, accountSecretGrants, accountSecretResources } from '@kortix/db';
+import { accountSecretGrants, accountSecretResources } from '@kortix/db';
 import { encryptAccountSecret, memberMayReadProject } from '../../secrets/account-resource';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { projectSecrets } from '@kortix/db';
@@ -362,8 +363,7 @@ export function registerProviderOauthRoutes(): void {
       return c.json({ error: 'Pooled OAuth connections require pooled provider secrets and the LLM gateway' }, 403);
     }
     if (named) {
-      const [member] = await db.select({ userId: accountMembers.userId }).from(accountMembers)
-        .where(and(eq(accountMembers.accountId, loaded.row.accountId), eq(accountMembers.userId, loaded.userId))).limit(1);
+      const [member] = await accountMemberRow(loaded.row.accountId, loaded.userId);
       if (!member) return c.json({ error: `An account member must own a ${cfg.label} connection` }, 403);
     }
     if (resourceId !== null) {
@@ -510,8 +510,7 @@ export function registerProviderOauthRoutes(): void {
       return c.json({ status: 'expired' });
     }
     if ((state.l || state.rc) && state.rid) {
-      const [member] = await db.select({ userId: accountMembers.userId }).from(accountMembers)
-        .where(and(eq(accountMembers.accountId, loaded.row.accountId), eq(accountMembers.userId, loaded.userId))).limit(1);
+      const [member] = await accountMemberRow(loaded.row.accountId, loaded.userId);
       if (!member) return c.json({ status: 'failed', error: 'Account membership is required' });
     }
 
