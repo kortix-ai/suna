@@ -280,6 +280,7 @@ const PULL_REFRESH_SPINNER_MS = 800;
 
 /** Keeps the first visible turn in place while older turns prepend (COR-144). */
 const MAINTAIN_FIRST_VISIBLE = { minIndexForVisible: 0 } as const;
+const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 1 } as const;
 /**
  * iOS: the list draws past its bottom edge. The keyboard is Liquid Glass and
  * shows what lies under it; the list ends at the composer, so without this
@@ -1733,6 +1734,31 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // The room follows the displayed order. Every turn gets `pendingQuestions`
   // (one stable store array) so a pending question tool part is hidden in
   // whichever turn holds it.
+  // Whether the working turn's row is inside the viewport: off screen, its
+  // shimmer and busy dot matrix stop looping (KRTX-1638). RN requires the
+  // callback to be one stable function, so it reads the id through a ref.
+  // ponytail: per turn, not per row. A tall working turn whose top is visible
+  // counts as on screen; go per row if that measurably costs frames.
+  const [workingTurnOnScreen, setWorkingTurnOnScreen] = useState(true);
+  const workingTurnIdRef = useRef(workingTurnId);
+  workingTurnIdRef.current = workingTurnId;
+  // The list re-checks viewability on a data change or the next scroll, but
+  // reports only when the viewable SET changes. This effect is the fallback
+  // for a working-turn change that leaves the set as it was (a turn appended
+  // below the viewport): recompute from the last reported set. Before the
+  // first report the set is unknown and the turn counts as on screen.
+  const viewableKeysRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const keys = viewableKeysRef.current;
+    setWorkingTurnOnScreen(keys == null || workingTurnId == null || keys.has(workingTurnId));
+  }, [workingTurnId]);
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: { key: string }[] }) => {
+    const keys = new Set(viewableItems.map((v) => v.key));
+    viewableKeysRef.current = keys;
+    const id = workingTurnIdRef.current;
+    setWorkingTurnOnScreen(id == null || keys.has(id));
+  }).current;
+
   const renderTurn = useCallback(
     ({ item, index }: { item: Turn; index: number }) => {
       const id = item.userMessage.info.id;
@@ -1778,12 +1804,13 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             queueState={interruptedIds.has(id) ? 'interrupted' : null}
             uploadStatus={failedSends[id] ? { state: 'failed', onRetry: () => handleRetrySend(id) } : undefined}
             sender={senderOf(id)}
+            onScreen={isWorkingTurn ? workingTurnOnScreen : true}
           />
           )}
         </View>
       );
     },
-    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend, senderOf],
+    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend, senderOf, workingTurnOnScreen],
   );
 
   const keyExtractor = useCallback((item: Turn) => item.userMessage.info.id, []);
@@ -1989,6 +2016,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
           data={turns}
           renderItem={renderTurn}
           keyExtractor={keyExtractor}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={VIEWABILITY_CONFIG}
           initialNumToRender={INITIAL_TURNS_TO_RENDER}
           maxToRenderPerBatch={5}
           windowSize={11}
