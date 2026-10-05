@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { Context, Next } from 'hono';
 import { config } from '../config';
-import { requestClientIp, requestClientKey } from '../shared/client-ip';
+import { requestClientIp, requestClientKey } from './client-ip';
 import { shareIdFromPublicRef } from '../shared/public-share-ref';
 import { recordAuditEvent } from '../shared/audit';
 import { RATE_LIMIT_EXCEEDED_ACTION } from '../shared/rate-limit-audit';

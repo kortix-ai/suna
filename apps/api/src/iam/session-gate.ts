@@ -17,7 +17,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import type { Context, MiddlewareHandler } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { auditSessionFirstSight } from '../middleware/auth-audit';
-import { requestClientIp } from '../shared/client-ip';
+import { requestClientIp } from '../middleware/client-ip';
 import { db } from '../shared/db';
 
 /** Skip the update query if last_seen_at was touched more recently than

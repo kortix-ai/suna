@@ -22,7 +22,7 @@ import {
   isTunnelToken,
   verifySecretKey,
 } from '../../shared/crypto';
-import { requestClientKey } from '../../shared/client-ip';
+import { requestClientKey } from '../../middleware/client-ip';
 import { isUuid } from '../../shared/validate';
 import { tunnelRateLimiter } from '../core/rate-limiter';
 import type { AppEnv } from '../../types';

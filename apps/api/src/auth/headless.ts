@@ -25,7 +25,7 @@ import { TokenBucketRateLimiter } from '../shared/rate-limit';
 import { auditLoginFail } from '../middleware/auth-audit';
 import { gotrue, gotrueAuthorizeUrl, sessionFrom, type GoTrueSession, type GoTrueUser } from './gotrue';
 import { ssoEnforcedForEmail } from '../repositories/sso';
-import { requestClientIp, requestClientKey } from '../shared/client-ip';
+import { requestClientIp, requestClientKey } from '../middleware/client-ip';
 import { config } from '../config';
 
 export const headlessAuthRouter = makeOpenApiApp<AppEnv>();

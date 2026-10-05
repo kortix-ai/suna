@@ -13,7 +13,7 @@
  */
 
 import { createRoute, z, type OpenAPIHono } from '@hono/zod-openapi';
-import { requestClientKey } from '../../shared/client-ip';
+import { requestClientKey } from '../../middleware/client-ip';
 import { createHash } from 'node:crypto';
 import { eq, and, desc, gt, sql } from 'drizzle-orm';
 import { tunnelConnections, tunnelDeviceAuthRequests, tunnelPermissions } from '@kortix/db';

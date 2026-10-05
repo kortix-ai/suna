@@ -14,7 +14,7 @@ import { isInconclusiveVerifyFailure } from '../shared/jwt-verify-outcome';
 import { setSentryUser } from '../lib/sentry';
 import { setContextField } from '../lib/request-context';
 import { auditLoginFail, auditLoginSuccess } from './auth-audit';
-import { requestClientKey } from '../shared/client-ip';
+import { requestClientKey } from './client-ip';
 import { isOAuthAccessToken, oauthScopeAllowsPath, validateOAuthAccessToken } from '../oauth/access-token';
 import { applyImpersonation } from './impersonation';
 import { withActor } from './auth-actor';

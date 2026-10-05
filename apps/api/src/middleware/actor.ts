@@ -6,7 +6,7 @@
  */
 import type { Context } from 'hono';
 import { tokenCredential, type Actor, type TokenBinding } from '../iam/actor';
-import { requestClientIp } from '../shared/client-ip';
+import { requestClientIp } from './client-ip';
 
 /**
  * Build the Actor for this request from the Hono context.

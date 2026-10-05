@@ -18,7 +18,7 @@ import type { Context } from 'hono';
 import { recordAuditEvent } from '../shared/audit';
 import { credentialFromContext } from '../shared/audit-credential';
 import { createFirstInWindow } from '../shared/audit-dedupe';
-import { requestClientIp } from '../shared/client-ip';
+import { requestClientIp } from './client-ip';
 
 function userAgent(c: Context): string | null {
   return c.req.header('user-agent') || null;

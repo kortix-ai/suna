@@ -9,7 +9,7 @@
  * is for. Same trust model as a magic link / a Pipedream connect URL.
  */
 import { createHash, randomUUID } from 'node:crypto';
-import { requestClientKey } from '../shared/client-ip';
+import { requestClientKey } from '../middleware/client-ip';
 import { connectorConnections, connectors, projectSessions, projects } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
