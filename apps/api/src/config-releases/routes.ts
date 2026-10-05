@@ -272,8 +272,8 @@ export function registerConfigReleaseRoutes(): void {
       ...auth,
       request: {
         params: z.object({ projectId: z.string(), configTreeId: z.string() }),
-        // Set on a composed release tree (config dir plus root skills): the
-        // commit it is rebuilt from when the store cannot serve it.
+        // Set on a composed release tree (an agent variant's plugin selection):
+        // the commit it is rebuilt from when the store cannot serve it.
         query: z.object({ commit: z.string().optional() }),
       },
       responses: {

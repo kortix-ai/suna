@@ -1974,8 +1974,8 @@ describe('config releases on pi', () => {
   test("the release's pi dir replaces the working tree's; a new extension reaches the session by an in-place restart", async () => {
     const extension = (marker: string) =>
       `export default (pi) => pi.on('before_agent_start', (event) => ({ systemPrompt: event.systemPrompt + '\\n${marker}' }))\n`
-    write(repo, '.kortix/opencode/pi/extensions/native.ts', extension('RELEASED-PI-V1'))
-    write(repo, '.kortix/opencode/pi/skills/released-native/SKILL.md', '---\nname: released-native\ndescription: pi skill from the base branch\n---\nDo it.\n')
+    write(repo, 'harnesses/pi/extensions/native.ts', extension('RELEASED-PI-V1'))
+    write(repo, 'harnesses/pi/skills/released-native/SKILL.md', '---\nname: released-native\ndescription: pi skill from the base branch\n---\nDo it.\n')
     const one = releaseWith('deploy', 'RELEASE-ONE')
     serveRelease(api, one)
     const r = await boot({
@@ -1996,13 +1996,13 @@ describe('config releases on pi', () => {
     expect(await names()).toContain('released-native')
     expect(await names()).not.toContain('workspace-native')
     const loaded = () => r.service.runtime()!.extensionStatus().loaded
-    expect(loaded().some((path) => path.startsWith(join(dir, 'store')) && path.endsWith('/pi/extensions/native.ts'))).toBe(true)
+    expect(loaded().some((path) => path.startsWith(join(dir, 'store')) && path.endsWith('/harnesses/pi/extensions/native.ts'))).toBe(true)
     expect(loaded().some((path) => path.includes('/.kortix/pi/'))).toBe(false)
     const first = await ask(r, 'first question')
     expect(first).toContain('RELEASED-PI-V1')
     expect(first).not.toContain('WORKSPACE-PI')
 
-    write(repo, '.kortix/opencode/pi/extensions/native.ts', extension('RELEASED-PI-V2'))
+    write(repo, 'harnesses/pi/extensions/native.ts', extension('RELEASED-PI-V2'))
     serveRelease(api, releaseWith('deploy', 'RELEASE-TWO'))
     const converged = await r.bearer('/kortix/config/converge', { method: 'POST' }).then((res) => res.json())
     expect(converged).toMatchObject({ ok: true, outcome: 'applied', reload: null })
