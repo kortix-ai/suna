@@ -41,6 +41,7 @@ import {
   sandboxMountPaths,
   type VolumeInfo,
 } from './volumes';
+import { isDriveSyncBox } from './sync';
 
 export type DriveRow = typeof drives.$inferSelect;
 
@@ -975,6 +976,65 @@ async function liveSandbox(sessionId: string) {
   return { ...row, externalId: row.externalId };
 }
 
+/** The live box of a session whose drives are synced in (a provider other than Platinum). */
+async function liveSyncSandbox(sessionId: string) {
+  const row = await sessionSandboxRow(sessionId);
+  if (!row || row.status !== 'active' || !isDriveSyncBox(row)) return null;
+  return row;
+}
+
+/**
+ * A synced box has nothing to attach: its record is what the box's daemon
+ * syncs and what the sync routes authorize, so rewriting it is the change.
+ * The daemon picks it up on its next poll (a few seconds).
+ */
+async function applyDriveToSyncedSandbox(
+  box: { sandboxId: string; externalId: string | null; provider: string; metadata: unknown },
+  input: Omit<Parameters<typeof planSessionDrives>[0], 'slots'> & { driveId: string },
+): Promise<{ live: boolean; flushed?: boolean }> {
+  const current = recordedDriveMounts(box.metadata);
+  // Synced boxes keep the same per-session drive count as mounted ones.
+  const slots = await driveSlotsFor({ externalId: null, metadata: box.metadata }, false);
+  const plan = await planSessionDrives({ ...input, slots });
+  const want = plan.mounts.filter((p) => p.drive.driveId === input.driveId);
+  const had = current.some((m) => m.driveId === input.driveId);
+  if (!had && plan.skipped.some((d) => d.driveId === input.driveId)) throw new DriveMountLimitError(slots);
+  let kept = current.filter((m) => m.driveId !== input.driveId);
+  if (want.length) {
+    if (kept.length + want.length > slots) throw new DriveMountLimitError(slots);
+    await openVolumeFor(want[0]!.drive, AbortSignal.timeout(OPEN_TIMEOUT_MS));
+    const used = new Set(kept.map((m) => m.mountPath));
+    for (const w of want) {
+      const mountPath = w.fromAgents ? FROM_AGENTS_MOUNT_PATH : freeMountPath(driveMountPath(w.drive, w.role), used);
+      used.add(mountPath);
+      kept = [...kept, toRecorded({ ...w, mountPath })];
+    }
+  }
+  // A writable copy of this drive is leaving the box or turning read-only:
+  // push what the box has not sent yet while the record still allows it. If
+  // the push does not complete, the daemon keeps the copy aside rather than
+  // delete it (drive-sync/index.ts), so nothing is lost either way.
+  const losesWrite = current.some(
+    (m) =>
+      m.driveId === input.driveId &&
+      !m.readOnly &&
+      !want.some((w) => !w.readOnly && (w.subdir ?? '') === (m.subdir ?? '')),
+  );
+  let flushed: boolean | undefined;
+  if (losesWrite && box.externalId) {
+    const { flushDriveSyncBeforeStop } = await import('../projects/reaping/stop-box');
+    flushed = await flushDriveSyncBeforeStop({
+      sandboxId: box.sandboxId,
+      externalId: box.externalId,
+      provider: box.provider,
+      metadata: box.metadata,
+      driveId: input.driveId,
+    });
+  }
+  await writeRecordedMounts(box.sandboxId, kept);
+  return { live: true, ...(flushed === undefined ? {} : { flushed }) };
+}
+
 function freeMountPath(base: string, used: Set<string>): string {
   let path = base;
   for (let n = 2; used.has(path); n++) path = `${base}-${n}`;
@@ -1017,6 +1077,8 @@ async function applyDriveToRunningSandbox(input: {
   bootingUserId: string | null;
   agentName: string;
 }): Promise<{ live: boolean }> {
+  const synced = await liveSyncSandbox(input.sessionId);
+  if (synced) return applyDriveToSyncedSandbox(synced, input);
   const box = await liveSandbox(input.sessionId);
   if (!box) return { live: false };
   const current = recordedDriveMounts(box.metadata);
@@ -1131,7 +1193,7 @@ export async function reconcileSessionDrives(sessionId: string): Promise<void> {
       .where(eq(projectSessions.sessionId, sessionId))
       .limit(1);
     if (!row || !(await sessionDrivesEnabled(row.projectId))) return;
-    const box = await liveSandbox(sessionId);
+    const box = (await liveSandbox(sessionId)) ?? (await liveSyncSandbox(sessionId));
     if (!box) return;
     const base = {
       accountId: row.accountId,
@@ -1198,28 +1260,34 @@ export function renderDriveNotes(
   return lines.join('\n');
 }
 
+/** The session's drives and the notes file that describes them. */
+export async function sessionDriveNotes(sessionId: string): Promise<{ mounts: SessionDriveView[]; text: string }> {
+  const mounts = await readSessionDriveMounts(sessionId);
+  const ids = [...new Set(mounts.map((m) => m.driveId))];
+  const open = ids.length
+    ? await db
+        .select({ driveId: driveConflicts.driveId, path: driveConflicts.path })
+        .from(driveConflicts)
+        .where(
+          and(inArray(driveConflicts.driveId, ids), isNull(driveConflicts.resolvedAt), isNull(driveConflicts.dismissedAt)),
+        )
+        .limit(50)
+    : [];
+  const conflicts = open.flatMap((c) => {
+    const m = mounts.find((x) => x.driveId === c.driveId && !x.subdir);
+    return m ? [{ mountPath: m.mountPath, path: c.path }] : [];
+  });
+  const { message: skippedMessage } = await readSkippedSessionDrives(sessionId);
+  return { mounts, text: renderDriveNotes(mounts, conflicts, skippedMessage) };
+}
+
 /** Rewrite the session's notes file; best effort. */
 export async function refreshDriveNotes(sessionId: string): Promise<void> {
   try {
     const box = await liveSandbox(sessionId);
     if (!box) return;
-    const mounts = await readSessionDriveMounts(sessionId);
-    const ids = [...new Set(mounts.map((m) => m.driveId))];
-    const open = ids.length
-      ? await db
-          .select({ driveId: driveConflicts.driveId, path: driveConflicts.path })
-          .from(driveConflicts)
-          .where(
-            and(inArray(driveConflicts.driveId, ids), isNull(driveConflicts.resolvedAt), isNull(driveConflicts.dismissedAt)),
-          )
-          .limit(50)
-      : [];
-    const conflicts = open.flatMap((c) => {
-      const m = mounts.find((x) => x.driveId === c.driveId && !x.subdir);
-      return m ? [{ mountPath: m.mountPath, path: c.path }] : [];
-    });
-    const { message: skippedMessage } = await readSkippedSessionDrives(sessionId);
-    const body = Buffer.from(renderDriveNotes(mounts, conflicts, skippedMessage)).toString('base64');
+    const { mounts, text } = await sessionDriveNotes(sessionId);
+    const body = Buffer.from(text).toString('base64');
     // Writable mounts belong to the runtime user. The image's drive-owner
     // helper keeps them so; this one-shot pass covers images built before it.
     const writable = mounts.filter((m) => !m.readOnly).map((m) => `'${m.mountPath.replace(/'/g, '')}'`);

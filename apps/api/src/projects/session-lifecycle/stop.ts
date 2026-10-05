@@ -5,7 +5,7 @@ import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from '../reaping/policy';
 import { applyStoppedState } from '../reaping/sandbox-state-sync';
-import { abortLiveTurnBeforeStop, retireEphemeralOnStop } from '../reaping/stop-box';
+import { abortLiveTurnBeforeStop, flushDriveSyncBeforeStop, retireEphemeralOnStop } from '../reaping/stop-box';
 import { RUNTIME_WAKE_LATE_START_GUARD_MS, runtimeWakeInProgress } from './runtime-wake-fence';
 
 /**
@@ -120,6 +120,12 @@ export async function stopSession(input: {
       externalId: sandbox.externalId,
       userId,
     });
+    // Drive sync: the daemon's final push, inside the request budget. Past it
+    // the stop goes ahead; the daemon still pushes on SIGTERM.
+    await within(
+      flushDriveSyncBeforeStop({ ...sandbox, externalId: sandbox.externalId }),
+      Math.max(0, budgetEndsAt - Date.now()),
+    );
     // The turn-end relay can still be in flight. Persist the transcript before
     // powering off the only live reader; capture failures never prevent stop.
     //

@@ -40,6 +40,7 @@ export const SERVICES = {
   'config-provider': [],
   // managedSkillsDir(): a release is sealed against the managed skill names.
   'config-release': ['skills'],
+  'drive-sync': [],
   'egress-shim': [],
   'event-bus': [],
   'llm-proxy': [],

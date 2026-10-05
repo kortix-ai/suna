@@ -37,6 +37,7 @@ shared layer.
 | `src/services/config-provider/` | services | Project acquisition: `git`, `prefer-s3`, `require-s3`. |
 | `src/services/config-release/` | services | The config-release store outside the repository, its descriptor, notice and API calls. |
 | `src/services/runtime-assets/` | services | CLI, agent, skill-overlay and harness-asset convergence (self-update); the runtime-truth ledger. `port.ts` is the contract a harness implements. |
+| `src/services/drive-sync/` | services | Kortix Drive sync for sessions off Platinum: copies the session's drives in, pushes changes back, and makes conflict copies. |
 | `src/services/egress-shim/` | services | The in-guest egress proxy that substitutes secret handles. |
 | `src/services/llm-proxy/` | services | Localhost credential-injecting proxies to the LLM gateway and connectors; the inline-image window. |
 | `src/services/sandbox-env/` | services | The project env store and the secret-capability instruction file. |
