@@ -43,7 +43,7 @@ async function anon<T>(
 }
 
 test.describe("38 — Capture UI", () => {
-  test("gates on the flag; the device timeline plays, jumps runs, searches, saves a range; the policy reads back", async ({
+  test("Kortix Capture at /capture/[accountId]: off until switched on; devices, the device timeline (run jump, search), overview, workflows, ask and settings", async ({
     page,
   }) => {
     test.skip(!databaseUrl, "KE2E_DATABASE_URL is required");
@@ -71,7 +71,8 @@ test.describe("38 — Capture UI", () => {
       });
       projectId = project.id;
 
-      // Capture off for the account: no sidebar entry, and the area answers 404 without a capture data request.
+      // Kortix Capture off for the account: its own area (no project sidebar) offers the
+      // switch to the account owner, and reads no Capture data before it is on.
       const captureRequests: string[] = [];
       page.on("request", (request) => {
         // The workspace read (`/capture`, the switch) is allowed; no Capture data request is.
@@ -85,20 +86,33 @@ test.describe("38 — Capture UI", () => {
         authOptions,
       );
       await selectAccountForUi(page, accountId);
-      await page.goto(`/projects/${projectId}/capture`, {
+      await page.goto(`/capture/${accountId}`, {
         waitUntil: "domcontentloaded",
       });
       await dismissOnboarding(page);
-      await expect(page.getByText("404")).toBeVisible({ timeout: 60_000 });
       await expect(
-        page.getByRole("link", { name: "Capture", exact: true }),
+        page.getByText("Kortix Capture is off for", { exact: false }),
+      ).toBeVisible({ timeout: 60_000 });
+      await expect(
+        page.getByRole("link", { name: "Customize", exact: true }),
       ).toHaveCount(0);
       expect(captureRequests).toEqual([]);
+      const switched = page.waitForResponse(
+        (r) =>
+          r.url().endsWith(`/v1/accounts/${accountId}/capture`) &&
+          r.request().method() === "PATCH",
+      );
+      await page
+        .getByRole("button", { name: "Turn on Kortix Capture" })
+        .click();
+      expect((await switched).status()).toBe(200);
+      await expect(
+        page
+          .getByRole("navigation", { name: "Kortix Capture" })
+          .getByRole("link", { name: "Devices" }),
+      ).toBeVisible({ timeout: 30_000 });
 
       // Capture on for the account; one device signs in and uploads the vendored day of the Kortix Capture format.
-      await api(session.access_token, "PATCH", `/accounts/${accountId}/capture`, {
-        enabled: true,
-      });
       await api(
         session.access_token,
         "PUT",
@@ -162,31 +176,24 @@ test.describe("38 — Capture UI", () => {
         )
         .toBe(day.expected.chunks);
 
-      // No sidebar entry even with the flag on: the timeline opens from its URL
-      // (the desktop app and the tray link here) on the device that recorded last, at its last moment.
-      await page.goto(`/projects/${projectId}`, {
+      // Devices lists the computer with its live status; its row opens the timeline
+      // at the newest recorded moment.
+      await page.goto(`/capture/${accountId}/devices`, {
         waitUntil: "domcontentloaded",
       });
-      await expect(
-        page.getByRole("link", { name: "Customize", exact: true }),
-      ).toBeVisible({ timeout: 60_000 });
-      await expect(
-        page.getByRole("link", { name: "Capture", exact: true }),
-      ).toHaveCount(0);
+      const row = page.getByRole("row").filter({ hasText: "Fixture Computer" });
+      await expect(row).toBeVisible({ timeout: 60_000 });
+      await expect(row).toContainText("Recording");
       const daysRead = page.waitForResponse(
         (r) =>
           r.url().includes(`/v1/accounts/${accountId}/capture/days?tz=`) &&
           r.status() === 200,
       );
-      await page.goto(`/projects/${projectId}/capture`, {
-        waitUntil: "domcontentloaded",
-      });
+      await row.getByRole("link", { name: /Fixture Computer/ }).click();
+      await expect(page).toHaveURL(
+        new RegExp(`/capture/${accountId}/devices/${device.device_id}`),
+      );
       await daysRead;
-      await expect(page.getByRole("tab")).toHaveCount(0);
-      const picker = page.getByRole("button", { name: "Choose a computer" });
-      await expect(picker).toContainText("Fixture Computer", {
-        timeout: 30_000,
-      });
       const track = page.getByRole("slider", {
         name: "Moment on the timeline",
       });
@@ -205,23 +212,14 @@ test.describe("38 — Capture UI", () => {
         .poll(async () => Number(await track.getAttribute("aria-valuenow")))
         .toBeLessThan(day.endMs);
 
-      // The device picker lists the computer with its live status.
-      await picker.click();
-      const row = page
-        .getByRole("list", { name: "Computers" })
-        .getByRole("listitem")
-        .filter({ hasText: "Fixture Computer" });
-      await expect(row).toBeVisible();
-      await expect(row).toContainText("Recording");
-      await page.keyboard.press("Escape");
-
-      // Search ("/"): one screen hit; picking it moves the playhead and closes the panel.
+      // Search ("/"): one screen hit; picking it moves the playhead and closes the results.
+      await track.focus();
       await page.keyboard.press("/");
       const searched = page.waitForResponse((r) =>
         r.url().includes("/capture/search?q=%22incident+review%22"),
       );
       await page
-        .getByRole("textbox", { name: "Search recordings" })
+        .getByRole("textbox", { name: "Search this device" })
         .fill('"incident review"');
       expect((await searched).status()).toBe(200);
       const hit = page
@@ -235,37 +233,44 @@ test.describe("38 — Capture UI", () => {
       ).toHaveCount(0);
       await expect(page).toHaveURL(/at=/);
 
-      // More → Save range: the POST carries the span, and the range page opens with its three tabs.
-      await page.getByRole("button", { name: "More", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Save range" }).click();
-      await page.getByLabel("Name").fill("Incident review");
-      const saved = page.waitForResponse(
+      // Overview and Workflows read the intelligence contract; nothing is clustered yet.
+      const overviewRead = page.waitForResponse(
         (r) =>
-          r.url().endsWith(`/v1/accounts/${accountId}/capture/ranges`) &&
-          r.request().method() === "POST",
+          r.url().includes(`/v1/accounts/${accountId}/capture/overview`) &&
+          r.request().method() === "GET",
       );
       await page
-        .getByRole("dialog")
-        .getByRole("button", { name: "Save range" })
+        .getByRole("navigation", { name: "Kortix Capture" })
+        .getByRole("link", { name: "Overview" })
         .click();
-      const savedResponse = await saved;
-      expect(savedResponse.status()).toBe(201);
-      expect(savedResponse.request().postDataJSON()).toMatchObject({
-        title: "Incident review",
+      expect((await overviewRead).status()).toBe(200);
+      await expect(
+        page.getByRole("heading", { name: "Overview" }),
+      ).toBeVisible();
+      await expect(page.getByText("Hours recorded")).toBeVisible();
+      await page
+        .getByRole("navigation", { name: "Kortix Capture" })
+        .getByRole("link", { name: "Workflows" })
+        .click();
+      await expect(
+        page.getByRole("heading", { name: "Workflows" }),
+      ).toBeVisible({
+        timeout: 30_000,
       });
-      await expect(page).toHaveURL(
-        new RegExp(`/capture/ranges/${(await savedResponse.json()).range_id}`),
+      await page
+        .getByRole("navigation", { name: "Kortix Capture" })
+        .getByRole("link", { name: "Ask" })
+        .click();
+      await expect(page.getByRole("textbox", { name: "Question" })).toBeVisible(
+        {
+          timeout: 30_000,
+        },
       );
-      for (const tab of ["Steps", "Transcript", "Summary"])
-        await expect(page.getByRole("tab", { name: tab })).toBeVisible();
 
-      // Back to the timeline, then More → Settings: turning audio off writes the policy and reads back.
-      await page.getByRole("link", { name: "Timeline", exact: true }).click();
-      await expect(track).toBeVisible({ timeout: 30_000 });
-      await page.getByRole("button", { name: "More", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Settings" }).click();
+      // Settings (Capture admins): turning audio off writes the policy and reads back.
+      await page.getByRole("link", { name: "Settings", exact: true }).click();
       await expect(page).toHaveURL(
-        new RegExp(`/projects/${projectId}/capture/settings`),
+        new RegExp(`/capture/${accountId}/settings`),
       );
       await page.getByRole("switch", { name: "Audio" }).click();
       const put = page.waitForResponse(
