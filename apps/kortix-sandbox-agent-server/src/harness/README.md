@@ -131,15 +131,16 @@ pi-only: `KORTIX_PI_STATE_DIR`.
 
 With the project's `config_releases` flag on, pi runs the base branch's
 current config release, exactly as OpenCode does (`pi/config-release.ts`,
-contract in `services/config-release/`). A release is the same archive under
-`/opt/kortix/config/<release_id>`, verified against its Git blob IDs and
-sealed read-only. pi reads three things from it: the compiled governance
-(`KORTIX_COMPILED_AGENT_CONFIG`, the agents), `skills/`, and `pi/`, its own
-config dir (`pi.config_dir`, else `harnesses/pi`, else `.kortix/pi`: skills,
-extensions, prompts, `settings.json`), which the API composes into the release.
-The rest of the archive (`opencode.json`, `tools/`, `plugins/`) is OpenCode's
-and pi ignores it, so a commit that breaks only those files is a working config
-on pi.
+contract in `services/config-release/`). A release is a checkout of the base
+branch under `/opt/kortix/config/<release_id>`, with the repository's own
+layout, verified against its Git blob IDs and sealed read-only. pi reads from
+it what it reads from `/workspace`: the compiled governance
+(`KORTIX_COMPILED_AGENT_CONFIG`, the agents), `skills/` (and the legacy
+`.kortix/opencode/skills`), and its own config dir (`pi.config_dir`, else
+`harnesses/pi`, else `.kortix/pi`: skills, extensions, prompts,
+`settings.json`), resolved inside the release by `resolvePiProjectConfigDir`.
+OpenCode's files (`harnesses/opencode`) are not pi's, so a commit that breaks
+only those files is a working config on pi.
 
 - **Boot.** `runPi` starts the choice beside the repository checkout, and
   `lifecycle.start()` waits for it: the desired release, then the last release
@@ -147,9 +148,9 @@ on pi.
   the provisioned governance). `/workspace` is read only while the flag is off.
 - **Convergence** (`POST /kortix/config/converge`, the 60 s runtime-truth tick,
   one pass after ready). pi applies a release in place: the governance goes
-  into the runtime's env, the skill directory moves to `<release>/skills`, and
+  into the runtime's env, the skill directories move into the release, and
   `PiRuntime.reconfigure()` re-reads both. A release that changes anything
-  under `pi/` other than its skills (extensions, prompts, settings, which only
+  in pi's config dir other than its skills (extensions, prompts, settings, which only
   a start reads) restarts the runtime in place instead: the same root, the
   transcript restored. Nothing else restarts, and the answer carries
   `reload: null` either way. A turn in flight, or one admitted behind it
