@@ -67,7 +67,7 @@ registerJobHandler(
   MINE_QUEUE,
   async (job) => {
     try {
-      await mineAccount(String(job.payload.accountId));
+      await mineAccount(String(job.payload.accountId), undefined, Date.now(), { rename: job.payload.rename === true });
     } catch (error) {
       if (!(error instanceof CaptureBudgetExceeded)) throw error;
       await enqueueJob(MINE_QUEUE, `${job.jobKey}:next-day`, job.payload, { runAt: nextUtcDay() });
@@ -105,7 +105,8 @@ export async function runIntelligence(accountId: string, opts: { miningOnly?: bo
     for (const range of ranges) if (await enqueueEpisodes(range, `:run-${stamp}`)) episodes++;
   }
   // With episodes queued, each finished range queues mining itself; else mine now.
-  const mining = episodes ? false : await enqueueJob(MINE_QUEUE, `${accountId}:run-${stamp}`, { accountId }, { maxAttempts: 6 });
+  // A "run now" also names every unreviewed workflow again from its standard path.
+  const mining = episodes ? false : await enqueueJob(MINE_QUEUE, `${accountId}:run-${stamp}`, { accountId, rename: true }, { maxAttempts: 6 });
   return { episodes_queued: episodes, mining_queued: mining || episodes > 0 };
 }
 

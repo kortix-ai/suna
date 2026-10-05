@@ -220,3 +220,24 @@ describe('ask stream', () => {
     expect(round).toEqual({ content: 'Look', cost: 0.0004, toolCalls: [{ id: 'c1', name: 'list_episodes', arguments: '{"query":"refund"}' }, { id: 'call_1', name: 'stats', arguments: '{}' }] });
   });
 });
+
+describe('naming', () => {
+  test('the workflow is named from its standard path: the prompt samples only path A, even when the latest runs are a variant', async () => {
+    const { namePrompt } = await import('./mining');
+    const now = Date.UTC(2026, 8, 29);
+    const run = (i: number, path: string[], label: string) => ({
+      episodeId: `n${i}`, userId: 'u1', start: new Date(now - (30 - i) * 3_600_000), end: new Date(now - (30 - i) * 3_600_000 + 600_000), label, goal: `${label}.`, outcome: null, outcomeStatus: 'succeeded', workflowId: null,
+      signature: path.map((p) => `${p.toLowerCase()}@erp`).join(' '), steps: path.map((verb) => ({ verb, app: 'ERP', object: verb.toLowerCase(), params: null, variables: [] })),
+    });
+    // 7 standard runs first, then 3 variant runs: the 6 latest runs are mostly the variant.
+    const runs = [
+      ...Array.from({ length: 7 }, (_, i) => run(i, ['Open', 'Search', 'Update', 'Send'], 'Update the order address')),
+      ...Array.from({ length: 3 }, (_, i) => run(10 + i, ['Open', 'Search', 'Submit', 'Send'], 'Redirect the parcel with the carrier')),
+    ];
+    const prompt = namePrompt(describeCluster(runs, now));
+    const samples = prompt.split('Sample runs of path A')[1]!.split('Paths (A')[0]!;
+    expect(samples).toContain('Update the order address');
+    expect(samples).not.toContain('Redirect the parcel');
+    expect(prompt).toContain('describe path A, the standard path, never a variant');
+  });
+});

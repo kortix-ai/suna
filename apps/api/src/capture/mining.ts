@@ -386,8 +386,13 @@ const nameZod = z.object({
 
 const describeRun = (r: Run) => `"${r.label}" — ${r.steps.map((s) => `${s.verb} ${s.object}${s.app ? ` (${s.app})` : ''}`).join(' → ')}`;
 
-function namePrompt(w: MinedWorkflow): string {
-  const samples = w.runs.slice(-6).map((r) => `- ${r.label}: ${r.goal ?? ''} → ${r.outcome ?? ''}`).join('\n');
+/**
+ * The naming prompt. The workflow's name, goal and outcome describe its standard path (A, the most
+ * runs): the samples are A's latest runs only, so a variant's wording (a denial, a redirect) never
+ * names the whole workflow. The variants are named by how they differ from A.
+ */
+export function namePrompt(w: MinedWorkflow): string {
+  const samples = w.paths[0]!.runs.slice(-6).map((r) => `- ${r.label}: ${r.goal ?? ''} → ${r.outcome ?? ''}`).join('\n');
   const paths = w.paths
     .map((p) => {
       const v = w.variants.find((x) => x.key === p.key);
@@ -396,13 +401,13 @@ function namePrompt(w: MinedWorkflow): string {
     .join('\n');
   return `These are runs of one procedure people repeat at work, mined from their recorded activity.
 
-Sample runs (label: goal → outcome):
+Sample runs of path A, the standard path (label: goal → outcome):
 ${samples}
 
 Paths (A = the most common; others are variants):
 ${paths}
 
-Name the procedure and each path. "name": 3-7 words, imperative, generic (e.g. "Refund a damaged-order claim"). "goal" and "outcome": one sentence each. For every path, A included: "name" (2-5 words, distinct per path; A by what it does, e.g. "Standard: refund to original payment"; the others by the case they handle, from the steps where they differ from A, e.g. "Outside the return window"), "note" (one sentence: what this path does; for the others, what differs from A). For each path except A also "question" (the decision that leads to it, as a condition, e.g. "the order is older than 30 days"). No literal values (names, numbers, emails).
+Name the procedure and each path. "name", "goal" and "outcome" describe path A, the standard path, never a variant: "name" 3-7 words, imperative, generic (e.g. "Refund a damaged-order claim"); "goal" and "outcome" one sentence each. For every path, A included: "name" (2-5 words, distinct per path; A by what it does, e.g. "Standard: refund to original payment"; the others by the case they handle, from the steps where they differ from A, e.g. "Outside the return window"), "note" (one sentence: what this path does; for the others, what differs from A). For each path except A also "question" (the decision that leads to it, as a condition, e.g. "the order is older than 30 days"). No literal values (names, numbers, emails).
 
 Return ONLY JSON: {"name":"…","goal":"…","outcome":"…","variants":[{"key":"A","name":"…","note":"…"},{"key":"B","name":"…","note":"…","question":"…"}]}`;
 }
@@ -497,7 +502,11 @@ export async function refreshWorkflows(workflowIds: string[], now = Date.now()):
 }
 
 /** Re-mine one account. Returns how many workflows it holds after the run, and the model spend. */
-export async function mineAccount(accountId: string, caller?: Caller, now = Date.now()): Promise<{ workflows: number; costUsd: number }> {
+/**
+ * `rename`: name every unreviewed workflow again (an admin's "run now"); else a kept workflow is
+ * named again only when its runs or standard path changed, so names stay stable between runs.
+ */
+export async function mineAccount(accountId: string, caller?: Caller, now = Date.now(), opts: { rename?: boolean } = {}): Promise<{ workflows: number; costUsd: number }> {
   if (!caller) {
     const [owner] = await db
       .select({ userId: captureEpisodes.userId })
@@ -506,7 +515,7 @@ export async function mineAccount(accountId: string, caller?: Caller, now = Date
       .limit(1);
     if (!owner) return { workflows: 0, costUsd: 0 };
     return withCaptureGateway({ accountId, userId: owner.userId }, (gateway) =>
-      mineAccount(accountId, gatewayCaller(gateway.authorization, config.KORTIX_CAPTURE_MODEL, gateway.url), now),
+      mineAccount(accountId, gatewayCaller(gateway.authorization, config.KORTIX_CAPTURE_MODEL, gateway.url), now, opts),
     );
   }
   const since = new Date(now - MINE_DAYS * 86_400_000);
@@ -604,7 +613,8 @@ export async function mineAccount(accountId: string, caller?: Caller, now = Date
   const names = new Map<MinedWorkflow, z.output<typeof nameZod>>();
   for (const p of plan) {
     const unnamed = p.keep?.name === 'Unnamed workflow' || (p.keep?.status === 'detected' && p.keep.model === null);
-    if (p.keep && !unnamed && (!p.changed || p.keep.status !== 'detected')) continue;
+    if (p.keep && p.keep.status !== 'detected') continue;
+    if (p.keep && !unnamed && !p.changed && !opts.rename) continue;
     try {
       await spend(async (usage) => {
         names.set(p.m, await caller.call(nameZod, namePrompt(p.m), [], usage));
