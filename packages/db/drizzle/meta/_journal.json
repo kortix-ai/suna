@@ -841,6 +841,13 @@
       "when": 1791207596805,
       "tag": "20261005133956_capture_timeline",
       "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1791213863729,
+      "tag": "20261005152423_capture_intelligence",
+      "breakpoints": true
     }
   ]
 }

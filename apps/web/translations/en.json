@@ -19275,7 +19275,19 @@
       "textc49fa88cff11": "Changed a Capture role",
       "text10a01973feb8": "Viewed the capture data of an account",
       "textab4c24c38193": "Turned Capture on",
-      "text6bdc49eed8c9": "Turned Capture off"
+      "text6bdc49eed8c9": "Turned Capture off",
+      "texte28a583b1293": "Viewed the Capture overview",
+      "textd402279bf8d8": "Listed Capture workflows",
+      "textc91b107b2f5a": "Viewed a Capture workflow",
+      "text4880ee371f99": "Reviewed a Capture workflow",
+      "text4a2030c7cc83": "Drafted a skill from a Capture workflow",
+      "textcc5a0f3f7095": "Published a skill from a Capture workflow",
+      "text913fe5e92f5a": "Listed Capture episodes",
+      "text6f890821403c": "Viewed a Capture episode",
+      "text92ec054263db": "Asked about Capture data",
+      "text8b5a8c88fad4": "Started a Capture export",
+      "text07d64b6f66e0": "Listed Capture exports",
+      "text8e17399853d5": "Viewed a Capture export"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 755,
+  "count": 767,
   "routes": [
     {
       "method": "GET",
@@ -271,6 +271,10 @@
       "path": "/v1/accounts/:accountId/capture"
     },
     {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/capture/ask"
+    },
+    {
       "method": "GET",
       "path": "/v1/accounts/:accountId/capture/chunks/:chunkId/media"
     },
@@ -300,6 +304,26 @@
     },
     {
       "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/episodes"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/episodes/:episodeId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/exports"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/capture/exports"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/exports/:exportId"
+    },
+    {
+      "method": "GET",
       "path": "/v1/accounts/:accountId/capture/frames/:frameId"
     },
     {
@@ -309,6 +333,10 @@
     {
       "method": "PUT",
       "path": "/v1/accounts/:accountId/capture/members/:userId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/overview"
     },
     {
       "method": "GET",
@@ -349,6 +377,26 @@
     {
       "method": "GET",
       "path": "/v1/accounts/:accountId/capture/timeline/items"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/workflows"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/workflows/:workflowId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/capture/workflows/:workflowId/review"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/capture/workflows/:workflowId/skill"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/capture/workflows/:workflowId/skill-draft"
     },
     {
       "method": "GET",

@@ -161,4 +161,6 @@ export const FRESHNESS = {
   captureWorkspace: 'config',
   captureMembers: 'directory',
   capturePeople: 'inventory',
+  /** Workflows and episodes change when the nightly and 5-minute pipelines run. */
+  captureIntelligence: 'inventory',
 } as const satisfies Record<string, FreshnessTier>;

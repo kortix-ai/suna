@@ -159,6 +159,20 @@ export {
   useSetCapturePolicy,
   useSyncCaptureDevice,
 } from './use-capture';
+export {
+  useCaptureAsk,
+  useCaptureEpisode,
+  useCaptureEpisodes,
+  useCaptureExport,
+  useCaptureOverview,
+  useCaptureWorkflow,
+  useCaptureWorkflows,
+  useCreateCaptureExport,
+  useDraftCaptureSkill,
+  useExportCaptureSkill,
+  useReviewCaptureWorkflow,
+  type CaptureAskTurn,
+} from './use-capture-intelligence';
 export { useSessionMessageAuthors } from './use-session-message-authors';
 export { useChangeRequests, changeRequestsKey } from './use-change-requests';
 export { useGatewayRoutingPolicy, gatewayRoutingPolicyKey } from './use-gateway-routing-policy';

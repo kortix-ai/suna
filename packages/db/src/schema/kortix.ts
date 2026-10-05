@@ -6893,6 +6893,161 @@ export const timelineRanges = kortixSchema.table(
   ],
 );
 
+// ─── Capture Intelligence (L1–L4 derived data; kept after raw media expires) ───
+
+/**
+ * L1: one coherent task of one person on one device: a start, an end, a goal.
+ * Detected by the episode pipeline from the timeline, or saved by a person.
+ */
+export const captureEpisodes = kortixSchema.table(
+  'capture_episodes',
+  {
+    episodeId: uuid('episode_id').default(sql`kortix.uuid_v7()`).primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    deviceId: uuid('device_id').references(() => captureDevices.deviceId, { onDelete: 'cascade' }),
+    source: text('source').default('detected').notNull(),
+    startAt: timestamp('start_at', { withTimezone: true }).notNull(),
+    endAt: timestamp('end_at', { withTimezone: true }).notNull(),
+    label: text('label'),
+    goal: text('goal'),
+    outcome: text('outcome'),
+    /** `succeeded`, `failed`, `abandoned` or null while unknown. */
+    outcomeStatus: text('outcome_status'),
+    apps: jsonb('apps').$type<string[]>().default([]).notNull(),
+    /** `open` (still growing), `closed`, `traced` (L2 done), `failed`. */
+    status: text('status').default('open').notNull(),
+    stepsCount: integer('steps_count').default(0).notNull(),
+    /** L2 structural signature of the step sequence (verbs + apps), for clustering. */
+    signature: text('signature'),
+    workflowId: uuid('workflow_id'),
+    variantKey: text('variant_key'),
+    model: text('model'),
+    costUsd: numeric('cost_usd', { precision: 12, scale: 6 }).default('0').notNull(),
+    error: text('error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_capture_episodes_account_user_start').on(table.accountId, table.userId, table.startAt),
+    index('idx_capture_episodes_account_workflow').on(table.accountId, table.workflowId),
+    index('idx_capture_episodes_device_start').on(table.deviceId, table.startAt),
+    check('capture_episodes_source', sql`${table.source} in ('detected', 'saved')`),
+    check('capture_episodes_status', sql`${table.status} in ('open', 'closed', 'traced', 'failed')`),
+  ],
+);
+
+/** L2: one normalized step of an episode, literal values lifted into variables. */
+export const captureEpisodeSteps = kortixSchema.table(
+  'capture_episode_steps',
+  {
+    stepId: uuid('step_id').default(sql`kortix.uuid_v7()`).primaryKey(),
+    episodeId: uuid('episode_id')
+      .notNull()
+      .references(() => captureEpisodes.episodeId, { onDelete: 'cascade' }),
+    accountId: uuid('account_id').notNull(),
+    index: integer('index').notNull(),
+    ts: timestamp('ts', { withTimezone: true }).notNull(),
+    verb: text('verb').notNull(),
+    app: text('app'),
+    object: text('object').notNull(),
+    /** Where in the app, e.g. `Orders › Search · exact match`. */
+    params: text('params'),
+    /** Variable names this step reads or writes, e.g. `["order_id"]`. Never the literal values. */
+    variables: jsonb('variables').$type<string[]>().default([]).notNull(),
+    keyframeFrameId: uuid('keyframe_frame_id'),
+    actionId: uuid('action_id'),
+  },
+  (table) => [uniqueIndex('idx_capture_episode_steps_order').on(table.episodeId, table.index)],
+);
+
+/** L3: a procedure people repeat, mined across episodes; status detected → reviewed → exported. */
+export const captureWorkflows = kortixSchema.table(
+  'capture_workflows',
+  {
+    workflowId: uuid('workflow_id').default(sql`kortix.uuid_v7()`).primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    goal: text('goal'),
+    outcome: text('outcome'),
+    status: text('status').default('detected').notNull(),
+    signature: text('signature').notNull(),
+    /** The canonical procedure: `CaptureWorkflowStep[]`. */
+    steps: jsonb('steps').$type<Record<string, unknown>[]>().default([]).notNull(),
+    /** `CaptureWorkflowVariant[]`: A = the canonical path. */
+    variants: jsonb('variants').$type<Record<string, unknown>[]>().default([]).notNull(),
+    apps: jsonb('apps').$type<string[]>().default([]).notNull(),
+    runsTotal: integer('runs_total').default(0).notNull(),
+    runsPerWeek: numeric('runs_per_week', { precision: 10, scale: 2 }).default('0').notNull(),
+    durationP50S: integer('duration_p50_s').default(0).notNull(),
+    durationP90S: integer('duration_p90_s').default(0).notNull(),
+    peopleCount: integer('people_count').default(0).notNull(),
+    successRate: numeric('success_rate', { precision: 5, scale: 4 }),
+    determinism: numeric('determinism', { precision: 5, scale: 4 }).default('0').notNull(),
+    /** runs/week × p50 duration × determinism, in hours a week. */
+    automationHoursPerWeek: numeric('automation_hours_per_week', { precision: 10, scale: 2 }).default('0').notNull(),
+    firstSeenAt: timestamp('first_seen_at', { withTimezone: true }),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+    reviewedBy: uuid('reviewed_by'),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+    /** The last published skill: `{ project_id, path, name, commit_sha, exported_at, exported_by }`. */
+    skill: jsonb('skill').$type<Record<string, unknown>>(),
+    model: text('model'),
+    costUsd: numeric('cost_usd', { precision: 12, scale: 6 }).default('0').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_capture_workflows_account_score').on(table.accountId, table.automationHoursPerWeek),
+    uniqueIndex('idx_capture_workflows_account_signature').on(table.accountId, table.signature),
+    check('capture_workflows_status', sql`${table.status} in ('detected', 'reviewed', 'exported')`),
+  ],
+);
+
+/** A bulk export of L1–L3 (JSONL or Parquet) written to the capture store; downloaded by signed URL. */
+export const captureExports = kortixSchema.table(
+  'capture_exports',
+  {
+    exportId: uuid('export_id').default(sql`kortix.uuid_v7()`).primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    requestedBy: uuid('requested_by').notNull(),
+    format: text('format').notNull(),
+    params: jsonb('params').$type<Record<string, unknown>>().default({}).notNull(),
+    status: text('status').default('queued').notNull(),
+    objectKey: text('object_key'),
+    rows: integer('rows'),
+    bytes: bigint('bytes', { mode: 'number' }),
+    error: text('error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_capture_exports_account').on(table.accountId, table.createdAt),
+    check('capture_exports_format', sql`${table.format} in ('jsonl', 'parquet')`),
+    check('capture_exports_status', sql`${table.status} in ('queued', 'running', 'done', 'failed')`),
+  ],
+);
+
+/** Model spend of the Capture pipelines per account per UTC day: the daily cost cap reads it. */
+export const captureAiUsage = kortixSchema.table(
+  'capture_ai_usage',
+  {
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    day: date('day').notNull(),
+    costUsd: numeric('cost_usd', { precision: 12, scale: 6 }).default('0').notNull(),
+    requests: integer('requests').default(0).notNull(),
+  },
+  (table) => [primaryKey({ name: 'capture_ai_usage_pkey', columns: [table.accountId, table.day] })],
+);
+
 /** One processing result for a range: `segmentation`, `transcript` or `annotation`. */
 export const rangeOutputs = kortixSchema.table(
   'range_outputs',

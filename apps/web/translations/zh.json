@@ -19264,7 +19264,19 @@
       "textc49fa88cff11": "更改了 Capture 角色",
       "text10a01973feb8": "查看了某个账户的 Capture 数据",
       "textab4c24c38193": "开启了 Capture",
-      "text6bdc49eed8c9": "关闭了 Capture"
+      "text6bdc49eed8c9": "关闭了 Capture",
+      "texte28a583b1293": "查看了 Capture 概览",
+      "textd402279bf8d8": "列出了 Capture 工作流",
+      "textc91b107b2f5a": "查看了一个 Capture 工作流",
+      "text4880ee371f99": "审核了一个 Capture 工作流",
+      "text4a2030c7cc83": "根据 Capture 工作流起草了技能",
+      "textcc5a0f3f7095": "根据 Capture 工作流发布了技能",
+      "text913fe5e92f5a": "列出了 Capture 片段",
+      "text6f890821403c": "查看了一个 Capture 片段",
+      "text92ec054263db": "询问了 Capture 数据",
+      "text8b5a8c88fad4": "开始了 Capture 导出",
+      "text07d64b6f66e0": "列出了 Capture 导出",
+      "text8e17399853d5": "查看了一个 Capture 导出"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

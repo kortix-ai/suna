@@ -19264,7 +19264,19 @@
       "textc49fa88cff11": "Cambió un rol de Capture",
       "text10a01973feb8": "Vio los datos de Capture de una cuenta",
       "textab4c24c38193": "Activó Capture",
-      "text6bdc49eed8c9": "Desactivó Capture"
+      "text6bdc49eed8c9": "Desactivó Capture",
+      "texte28a583b1293": "Vio el resumen de Capture",
+      "textd402279bf8d8": "Listó los flujos de trabajo de Capture",
+      "textc91b107b2f5a": "Vio un flujo de trabajo de Capture",
+      "text4880ee371f99": "Revisó un flujo de trabajo de Capture",
+      "text4a2030c7cc83": "Redactó una skill a partir de un flujo de trabajo de Capture",
+      "textcc5a0f3f7095": "Publicó una skill a partir de un flujo de trabajo de Capture",
+      "text913fe5e92f5a": "Listó los episodios de Capture",
+      "text6f890821403c": "Vio un episodio de Capture",
+      "text92ec054263db": "Preguntó sobre datos de Capture",
+      "text8b5a8c88fad4": "Inició una exportación de Capture",
+      "text07d64b6f66e0": "Listó las exportaciones de Capture",
+      "text8e17399853d5": "Vio una exportación de Capture"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

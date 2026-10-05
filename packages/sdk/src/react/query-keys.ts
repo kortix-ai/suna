@@ -91,6 +91,14 @@ export const qk = {
     range: (accountId: string, rangeId: string) => [...qk.capture.account(accountId), 'range', rangeId] as const,
     policy: (accountId: string) => [...qk.capture.account(accountId), 'policy'] as const,
     people: (accountId: string, query: unknown) => [...qk.capture.account(accountId), 'people', query] as const,
+    /** Intelligence: the overview, workflows, one workflow, episodes, one episode, exports. */
+    overview: (accountId: string, window: unknown) => [...qk.capture.account(accountId), 'overview', window] as const,
+    workflows: (accountId: string) => [...qk.capture.account(accountId), 'workflows'] as const,
+    workflowList: (accountId: string, query: unknown) => [...qk.capture.workflows(accountId), 'list', query] as const,
+    workflow: (accountId: string, workflowId: string) => [...qk.capture.workflows(accountId), 'one', workflowId] as const,
+    episodes: (accountId: string, query: unknown) => [...qk.capture.account(accountId), 'episodes', query] as const,
+    episode: (accountId: string, episodeId: string) => [...qk.capture.account(accountId), 'episode', episodeId] as const,
+    export: (accountId: string, exportId: string) => [...qk.capture.account(accountId), 'export', exportId] as const,
   },
   /**
    * The account LIST — `listAccounts()`, `GET /accounts`, `KortixAccount[]`.

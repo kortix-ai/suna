@@ -1,4 +1,5 @@
 import * as C from '../rest/platform-client/capture';
+import * as I from '../rest/platform-client/capture-intelligence';
 
 /**
  * `kortix.capture.account(id)` — Kortix Capture bound to one account, its
@@ -45,6 +46,26 @@ export function bindAccountCapture(accountId: string) {
     },
     /** Admins and viewers: per-member active time, time per app, ranges, devices. */
     people: (query?: Parameters<typeof C.getCapturePeople>[1]) => C.getCapturePeople(accountId, query),
+    /** Intelligence: hours recorded, automatable hours a week, top and new workflows, trend (admins, viewers). */
+    overview: (window?: { from?: string; to?: string }) => I.getCaptureOverview(accountId, window),
+    workflows: {
+      list: (query?: I.CaptureWorkflowQuery) => I.listCaptureWorkflows(accountId, query),
+      get: (workflowId: string) => I.getCaptureWorkflow(accountId, workflowId),
+      review: (workflowId: string, review: I.CaptureWorkflowReview) => I.reviewCaptureWorkflow(accountId, workflowId, review),
+      draftSkill: (workflowId: string, options?: { name?: string }) => I.draftCaptureSkill(accountId, workflowId, options),
+      exportSkill: (workflowId: string, input: I.CaptureSkillExportInput) => I.exportCaptureSkill(accountId, workflowId, input),
+    },
+    episodes: {
+      list: (query?: I.CaptureEpisodeQuery) => I.listCaptureEpisodes(accountId, query),
+      get: (episodeId: string) => I.getCaptureEpisode(accountId, episodeId),
+    },
+    /** Ask with citations; `onEvent` streams sources and answer text. */
+    ask: (input: I.CaptureAskInput, onEvent?: (event: I.CaptureAskEvent) => void) => I.askCapture(accountId, input, onEvent),
+    exports: {
+      create: (input: I.CaptureExportInput) => I.createCaptureExport(accountId, input),
+      list: () => I.listCaptureExports(accountId),
+      get: (exportId: string) => I.getCaptureExport(accountId, exportId),
+    },
   };
 }
 

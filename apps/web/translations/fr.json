@@ -19264,7 +19264,19 @@
       "textc49fa88cff11": "A modifié un rôle Capture",
       "text10a01973feb8": "A consulté les données Capture d’un compte",
       "textab4c24c38193": "A activé Capture",
-      "text6bdc49eed8c9": "A désactivé Capture"
+      "text6bdc49eed8c9": "A désactivé Capture",
+      "texte28a583b1293": "A consulté l’aperçu Capture",
+      "textd402279bf8d8": "A listé les workflows Capture",
+      "textc91b107b2f5a": "A consulté un workflow Capture",
+      "text4880ee371f99": "A révisé un workflow Capture",
+      "text4a2030c7cc83": "A rédigé un skill à partir d’un workflow Capture",
+      "textcc5a0f3f7095": "A publié un skill à partir d’un workflow Capture",
+      "text913fe5e92f5a": "A listé les épisodes Capture",
+      "text6f890821403c": "A consulté un épisode Capture",
+      "text92ec054263db": "A posé une question sur les données Capture",
+      "text8b5a8c88fad4": "A lancé un export Capture",
+      "text07d64b6f66e0": "A listé les exports Capture",
+      "text8e17399853d5": "A consulté un export Capture"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
