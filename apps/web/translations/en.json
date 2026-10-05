@@ -20524,5 +20524,20 @@
     "people": "People in this session: {names}",
     "peopleMore": "People in this session: {names} and {count} more",
     "more": "{count} more can open this session"
+  },
+  "demoBooking": {
+    "meetingTitle": "Kortix demo",
+    "stepDetails": "Your details",
+    "stepTime": "Pick a time",
+    "formTitle": "Before we pick a time",
+    "formDescription": "We'll use this to prep a walkthrough for your team.",
+    "seeTimes": "See available times",
+    "close": "Close",
+    "bookedLabel": "Booking confirmed",
+    "bookedMeta": "{minutes} min · Link in your invite",
+    "inviteSent": "Invite sent to {email}",
+    "reschedule": "Need another time? Use the link in the invite.",
+    "addToCalendar": "Add to calendar",
+    "done": "Done"
   }
 }

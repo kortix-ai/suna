@@ -20524,5 +20524,20 @@
     "people": "Personas en esta sesión: {names}",
     "peopleMore": "Personas en esta sesión: {names} y {count} más",
     "more": "{count} más pueden abrir esta sesión"
+  },
+  "demoBooking": {
+    "meetingTitle": "Demo de Kortix",
+    "stepDetails": "Tus datos",
+    "stepTime": "Elige una hora",
+    "formTitle": "Antes de elegir una hora",
+    "formDescription": "Lo usaremos para preparar una demostración para tu equipo.",
+    "seeTimes": "Ver horarios disponibles",
+    "close": "Cerrar",
+    "bookedLabel": "Reserva confirmada",
+    "bookedMeta": "{minutes} min · Enlace en tu invitación",
+    "inviteSent": "Invitación enviada a {email}",
+    "reschedule": "¿Necesitas otra hora? Usa el enlace de la invitación.",
+    "addToCalendar": "Añadir al calendario",
+    "done": "Listo"
   }
 }

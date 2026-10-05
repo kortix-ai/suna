@@ -20524,5 +20524,20 @@
     "people": "Personnes dans cette session : {names}",
     "peopleMore": "Personnes dans cette session : {names} et {count} de plus",
     "more": "{count} autres peuvent ouvrir cette session"
+  },
+  "demoBooking": {
+    "meetingTitle": "Démo Kortix",
+    "stepDetails": "Vos informations",
+    "stepTime": "Choisissez un créneau",
+    "formTitle": "Avant de choisir un créneau",
+    "formDescription": "Nous nous en servirons pour préparer une démonstration pour votre équipe.",
+    "seeTimes": "Voir les créneaux disponibles",
+    "close": "Fermer",
+    "bookedLabel": "Réservation confirmée",
+    "bookedMeta": "{minutes} min · Lien dans votre invitation",
+    "inviteSent": "Invitation envoyée à {email}",
+    "reschedule": "Besoin d’un autre créneau ? Utilisez le lien de l’invitation.",
+    "addToCalendar": "Ajouter au calendrier",
+    "done": "Terminé"
   }
 }
