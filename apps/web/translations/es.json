@@ -20564,8 +20564,6 @@
       "notAllowed": "No permitido",
       "needsSetup": "Requiere configuración"
     },
-    "runInBackground": "Ejecutar en segundo plano",
-    "runInBackgroundDescription": "Desactivado pausa la conexión, incluso tras reiniciar.",
     "manageInProject": "Gestionar en el proyecto",
     "disconnectEllipsis": "Desconectar…",
     "yourComputersTitle": "Tus computadoras",
@@ -20588,7 +20586,6 @@
       "screenRecordingDescription": "Ver lo que hay en la pantalla",
       "needed": "Aún no permitido",
       "waiting": "Esperando tu respuesta",
-      "allowAll": "Permitir todo",
       "settingsHint": "Si se abre Configuración del Sistema, activa Kortix en la lista. Esto se actualiza solo.",
       "doneTitle": "Tu computadora está lista",
       "doneHint": "Kortix tiene todos los permisos que necesita. Los agentes ya pueden usar esta computadora."
@@ -20601,6 +20598,18 @@
       "removeAll": "Quitar todas",
       "confirmTitle": "¿Quitar todas las conexiones antiguas?",
       "confirmDescription": "Kortix las quita junto con sus cuentas de todos los proyectos. Una computadora que aún use una puede volver a conectarse."
+    },
+    "hub": {
+      "agents": "Agentes",
+      "capture": "Capture",
+      "tabAgents": "Acceso de agentes",
+      "tabCapture": "Mi Capture",
+      "thisComputer": "Este ordenador",
+      "more": "Más acciones",
+      "allowAccess": "Permitir acceso",
+      "pauseAccess": "Pausar acceso",
+      "resumeAccess": "Reanudar acceso",
+      "pausedHint": "En pausa. Los agentes no pueden usar este ordenador hasta que lo reanudes, también tras reiniciar."
     }
   },
   "messageFrom": {
@@ -20884,7 +20893,6 @@
       "tryAgain": "Reintentar"
     },
     "dialog": {
-      "title": "Grabar este ordenador",
       "status": {
         "off": "Desactivado",
         "turningOn": "Iniciando",
@@ -20945,7 +20953,6 @@
         "microphoneDescription": "Grabar lo que se dice, solo con Audio activado"
       },
       "actions": {
-        "close": "Cerrar",
         "cancel": "Cancelar",
         "start": "Empezar a grabar",
         "starting": "Iniciando…",

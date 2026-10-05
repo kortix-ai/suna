@@ -20564,8 +20564,6 @@
       "notAllowed": "未允许",
       "needsSetup": "需要设置"
     },
-    "runInBackground": "在后台运行",
-    "runInBackgroundDescription": "关闭后连接会暂停，重启后也保持暂停。",
     "manageInProject": "在项目中管理",
     "disconnectEllipsis": "断开连接…",
     "yourComputersTitle": "你的电脑",
@@ -20588,7 +20586,6 @@
       "screenRecordingDescription": "查看屏幕上的内容",
       "needed": "尚未允许",
       "waiting": "等待你操作",
-      "allowAll": "全部允许",
       "settingsHint": "如果打开了系统设置，请在列表中开启 Kortix。此页面会自动更新。",
       "doneTitle": "你的电脑已准备就绪",
       "doneHint": "Kortix 已获得所需的全部权限。代理现在可以使用这台电脑。"
@@ -20601,6 +20598,18 @@
       "removeAll": "全部移除",
       "confirmTitle": "移除所有旧连接？",
       "confirmDescription": "Kortix 会将它们及其账户从所有项目中移除。仍在使用其中之一的电脑可以重新连接。"
+    },
+    "hub": {
+      "agents": "智能体",
+      "capture": "Capture",
+      "tabAgents": "智能体访问",
+      "tabCapture": "我的 Capture",
+      "thisComputer": "这台电脑",
+      "more": "更多操作",
+      "allowAccess": "允许访问",
+      "pauseAccess": "暂停访问",
+      "resumeAccess": "恢复访问",
+      "pausedHint": "已暂停。在你恢复之前，智能体无法使用这台电脑，重启后也一样。"
     }
   },
   "messageFrom": {
@@ -20884,7 +20893,6 @@
       "tryAgain": "重试"
     },
     "dialog": {
-      "title": "记录这台电脑",
       "status": {
         "off": "关闭",
         "turningOn": "正在启动",
@@ -20945,7 +20953,6 @@
         "microphoneDescription": "记录说话内容，仅在开启音频时"
       },
       "actions": {
-        "close": "关闭",
         "cancel": "取消",
         "start": "开始记录",
         "starting": "正在启动…",

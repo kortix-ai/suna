@@ -20564,8 +20564,6 @@
       "notAllowed": "Non consentito",
       "needsSetup": "Da configurare"
     },
-    "runInBackground": "Esegui in background",
-    "runInBackgroundDescription": "Se disattivato, la connessione resta in pausa anche dopo un riavvio.",
     "manageInProject": "Gestisci nel progetto",
     "disconnectEllipsis": "Disconnetti…",
     "yourComputersTitle": "I tuoi computer",
@@ -20588,7 +20586,6 @@
       "screenRecordingDescription": "Vedere cosa c’è sullo schermo",
       "needed": "Non ancora consentito",
       "waiting": "In attesa di te",
-      "allowAll": "Consenti tutto",
       "settingsHint": "Se si apre Impostazioni di Sistema, attiva Kortix nell’elenco. Questa vista si aggiorna da sola.",
       "doneTitle": "Il tuo computer è pronto",
       "doneHint": "Kortix ha tutte le autorizzazioni necessarie. Gli agenti possono usare questo computer."
@@ -20601,6 +20598,18 @@
       "removeAll": "Rimuovi tutte",
       "confirmTitle": "Rimuovere tutte le connessioni precedenti?",
       "confirmDescription": "Kortix le rimuove insieme ai loro account da tutti i progetti. Un computer che ne usa ancora una può riconnettersi."
+    },
+    "hub": {
+      "agents": "Agenti",
+      "capture": "Capture",
+      "tabAgents": "Accesso degli agenti",
+      "tabCapture": "Il mio Capture",
+      "thisComputer": "Questo computer",
+      "more": "Altre azioni",
+      "allowAccess": "Consenti accesso",
+      "pauseAccess": "Sospendi accesso",
+      "resumeAccess": "Riprendi accesso",
+      "pausedHint": "In pausa. Gli agenti non possono usare questo computer finché non riprendi, anche dopo un riavvio."
     }
   },
   "messageFrom": {
@@ -20884,7 +20893,6 @@
       "tryAgain": "Riprova"
     },
     "dialog": {
-      "title": "Registra questo computer",
       "status": {
         "off": "Disattivato",
         "turningOn": "Avvio",
@@ -20945,7 +20953,6 @@
         "microphoneDescription": "Registrare ciò che viene detto, solo con Audio attivo"
       },
       "actions": {
-        "close": "Chiudi",
         "cancel": "Annulla",
         "start": "Avvia registrazione",
         "starting": "Avvio…",

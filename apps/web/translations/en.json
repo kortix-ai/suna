@@ -20564,8 +20564,6 @@
       "notAllowed": "Not allowed",
       "needsSetup": "Needs setup"
     },
-    "runInBackground": "Run in the background",
-    "runInBackgroundDescription": "Off pauses the connection, even after a restart.",
     "manageInProject": "Manage in project",
     "disconnectEllipsis": "Disconnect…",
     "yourComputersTitle": "Your computers",
@@ -20588,7 +20586,6 @@
       "screenRecordingDescription": "See what is on the screen",
       "needed": "Not allowed yet",
       "waiting": "Waiting for you",
-      "allowAll": "Allow all",
       "settingsHint": "If System Settings opens, turn on Kortix in the list. This updates by itself.",
       "doneTitle": "Your computer is ready",
       "doneHint": "Kortix has every permission it needs. Agents can use this computer now."
@@ -20601,6 +20598,18 @@
       "removeAll": "Remove all",
       "confirmTitle": "Remove all older connections?",
       "confirmDescription": "Kortix removes them and their accounts from every project. A computer that still uses one can connect again."
+    },
+    "hub": {
+      "agents": "Agents",
+      "capture": "Capture",
+      "tabAgents": "Agent access",
+      "tabCapture": "My Capture",
+      "thisComputer": "This computer",
+      "more": "More actions",
+      "allowAccess": "Allow access",
+      "pauseAccess": "Pause access",
+      "resumeAccess": "Resume access",
+      "pausedHint": "Paused. Agents cannot use this computer until you resume, also after a restart."
     }
   },
   "messageFrom": {
@@ -20884,7 +20893,6 @@
       "tryAgain": "Try again"
     },
     "dialog": {
-      "title": "Record this computer",
       "status": {
         "off": "Off",
         "turningOn": "Starting",
@@ -20945,7 +20953,6 @@
         "microphoneDescription": "Record what is said, only while Audio is on"
       },
       "actions": {
-        "close": "Close",
         "cancel": "Cancel",
         "start": "Start recording",
         "starting": "Starting…",

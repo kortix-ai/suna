@@ -20564,8 +20564,6 @@
       "notAllowed": "Non autorisé",
       "needsSetup": "À configurer"
     },
-    "runInBackground": "Exécuter en arrière-plan",
-    "runInBackgroundDescription": "Désactivé, la connexion est suspendue, même après un redémarrage.",
     "manageInProject": "Gérer dans le projet",
     "disconnectEllipsis": "Déconnecter…",
     "yourComputersTitle": "Vos ordinateurs",
@@ -20588,7 +20586,6 @@
       "screenRecordingDescription": "Voir ce qui est à l’écran",
       "needed": "Pas encore autorisé",
       "waiting": "En attente de votre réponse",
-      "allowAll": "Tout autoriser",
       "settingsHint": "Si Réglages Système s’ouvre, activez Kortix dans la liste. Cette vue se met à jour seule.",
       "doneTitle": "Votre ordinateur est prêt",
       "doneHint": "Kortix a toutes les autorisations nécessaires. Les agents peuvent maintenant utiliser cet ordinateur."
@@ -20601,6 +20598,18 @@
       "removeAll": "Tout supprimer",
       "confirmTitle": "Supprimer toutes les anciennes connexions ?",
       "confirmDescription": "Kortix les supprime avec leurs comptes de tous les projets. Un ordinateur qui en utilise encore une peut se reconnecter."
+    },
+    "hub": {
+      "agents": "Agents",
+      "capture": "Capture",
+      "tabAgents": "Accès des agents",
+      "tabCapture": "Mon Capture",
+      "thisComputer": "Cet ordinateur",
+      "more": "Plus d’actions",
+      "allowAccess": "Autoriser l’accès",
+      "pauseAccess": "Suspendre l’accès",
+      "resumeAccess": "Reprendre l’accès",
+      "pausedHint": "En pause. Les agents ne peuvent pas utiliser cet ordinateur avant que vous ne repreniez, même après un redémarrage."
     }
   },
   "messageFrom": {
@@ -20884,7 +20893,6 @@
       "tryAgain": "Réessayer"
     },
     "dialog": {
-      "title": "Enregistrer cet ordinateur",
       "status": {
         "off": "Désactivé",
         "turningOn": "Démarrage",
@@ -20945,7 +20953,6 @@
         "microphoneDescription": "Enregistrer ce qui est dit, seulement quand Audio est activé"
       },
       "actions": {
-        "close": "Fermer",
         "cancel": "Annuler",
         "start": "Démarrer l’enregistrement",
         "starting": "Démarrage…",

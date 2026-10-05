@@ -20564,8 +20564,6 @@
       "notAllowed": "許可なし",
       "needsSetup": "設定が必要"
     },
-    "runInBackground": "バックグラウンドで実行",
-    "runInBackgroundDescription": "オフにすると、再起動後も接続は一時停止のままです。",
     "manageInProject": "プロジェクトで管理",
     "disconnectEllipsis": "接続を解除…",
     "yourComputersTitle": "あなたのコンピューター",
@@ -20588,7 +20586,6 @@
       "screenRecordingDescription": "画面の内容を表示",
       "needed": "未許可",
       "waiting": "操作を待っています",
-      "allowAll": "すべて許可",
       "settingsHint": "システム設定が開いたら、一覧で Kortix をオンにしてください。この画面は自動で更新されます。",
       "doneTitle": "コンピューターの準備ができました",
       "doneHint": "Kortix に必要な権限がすべてそろいました。エージェントがこのコンピューターを使えます。"
@@ -20601,6 +20598,18 @@
       "removeAll": "すべて削除",
       "confirmTitle": "以前の接続をすべて削除しますか？",
       "confirmDescription": "Kortix はそれらとそのアカウントをすべてのプロジェクトから削除します。まだ使用しているコンピューターは再接続できます。"
+    },
+    "hub": {
+      "agents": "エージェント",
+      "capture": "Capture",
+      "tabAgents": "エージェントのアクセス",
+      "tabCapture": "マイ Capture",
+      "thisComputer": "このコンピュータ",
+      "more": "その他の操作",
+      "allowAccess": "アクセスを許可",
+      "pauseAccess": "アクセスを一時停止",
+      "resumeAccess": "アクセスを再開",
+      "pausedHint": "一時停止中です。再開するまで、再起動後もエージェントはこのコンピュータを使えません。"
     }
   },
   "messageFrom": {
@@ -20884,7 +20893,6 @@
       "tryAgain": "再試行"
     },
     "dialog": {
-      "title": "このコンピューターを記録",
       "status": {
         "off": "オフ",
         "turningOn": "起動中",
@@ -20945,7 +20953,6 @@
         "microphoneDescription": "話された内容を記録する（音声がオンのときのみ）"
       },
       "actions": {
-        "close": "閉じる",
         "cancel": "キャンセル",
         "start": "記録を開始",
         "starting": "起動中…",
