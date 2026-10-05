@@ -19238,7 +19238,9 @@
       "text09e71792c6c3": "Agentes de IA para equipos de ventas",
       "textaaab3a59b808": "Agentes de IA para equipos de marketing",
       "text8f480bae8d16": "Agentes de IA para equipos de finanzas",
-      "text6243d930fc1c": "AI Operating System"
+      "text6243d930fc1c": "AI Operating System",
+      "textc959682e0398": "Vio los dispositivos con sesión iniciada",
+      "text976811d9540a": "Cerró la sesión de un dispositivo"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

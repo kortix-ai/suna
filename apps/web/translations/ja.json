@@ -19238,7 +19238,9 @@
       "text09e71792c6c3": "営業チーム向けAIエージェント",
       "textaaab3a59b808": "マーケティングチーム向けAIエージェント",
       "text8f480bae8d16": "経理・財務チーム向けAIエージェント",
-      "text6243d930fc1c": "AI Operating System"
+      "text6243d930fc1c": "AI Operating System",
+      "textc959682e0398": "サインイン中のデバイスを表示しました",
+      "text976811d9540a": "デバイスをサインアウトしました"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
