@@ -1,3 +1,4 @@
+import type { Context } from 'hono';
 import { resolveScopedAccountId } from '../middleware/resolve-account';
 import { assertAuthorized } from '../iam/authorize';
 import { actorOf } from '../iam/actor';
@@ -21,7 +22,7 @@ import { ACCOUNT_ACTIONS } from '../iam/actions';
  * billing." on denial.
  */
 export async function resolveBillingWriteAccountId(
-  c: any,
+  c: Context,
   source: 'query' | 'body' = 'body',
 ): Promise<string> {
   const accountId = await resolveScopedAccountId(c, source);

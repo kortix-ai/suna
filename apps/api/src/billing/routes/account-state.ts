@@ -15,7 +15,7 @@ export const accountStateRouter = makeOpenApiApp<AppEnv>();
 // owners only by default). Surfaced on account-state so the UI can disable the
 // "Subscribe" / "Manage billing" CTAs for members instead of letting them click
 // through to a 403. This is a UI hint only — the billing routes enforce the
-// same gate server-side (see require-billing-write.ts). Computed per-request
+// same gate server-side (see http-require-billing-write.ts). Computed per-request
 // (NOT inside the cached buildAccountState) so one user's verdict is never
 // served to another. Defaults to `true` on a probe error so a transient glitch
 // never hides the CTA from a legitimate owner.

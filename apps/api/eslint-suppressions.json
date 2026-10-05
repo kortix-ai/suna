@@ -253,11 +253,6 @@
       "count": 1
     }
   },
-  "src/billing/require-billing-write.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
   "src/billing/routes/account-deletion.ts": {
     "no-restricted-syntax": {
       "count": 5

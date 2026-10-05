@@ -16,7 +16,7 @@ import {
   createPerSeatCheckoutSession,
 } from '../services/subscriptions';
 import { resolveScopedAccountId } from '../../middleware/resolve-account';
-import { resolveBillingWriteAccountId } from '../require-billing-write';
+import { resolveBillingWriteAccountId } from '../http-require-billing-write';
 import { syncSeatQuantity } from '../services/seat-management';
 import { maybeMigrateLegacyAccount } from '../services/legacy-account-migration';
 import { makeOpenApiApp, json, auth, errors } from '../../openapi';
