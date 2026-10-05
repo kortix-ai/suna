@@ -18,9 +18,9 @@
  *
  * COR-148 (Jay, 2026-09-24): four rows sit above Rename, in their own
  * untitled group — Open change request · View changes · Files · Compact.
- * Files (KRTX-1636) closes the sheet, then asks the thread's page to open
- * its Recent files sheet (`session-files-request-store`); it shows for the
- * open thread even when the sandbox is asleep. Open change
+ * Files (KRTX-1636) closes the sheet, then opens the project's Files page
+ * as a sub-page over the thread (`onOpenFiles`), so back returns to that
+ * thread; it shows for the open thread even when the sandbox is asleep. Open change
  * request is web's "Propose changes": shown while the session has changes, it
  * closes the sheet and sends web's prompt to the thread (the agent commits and
  * runs `kortix cr open` into the session's base), queued if the agent works.
@@ -75,7 +75,6 @@ import { KortixBottomSheetModal, useCloseThen } from '@/components/kortix/sheet'
 import { POP_IN, PUSH_IN, SheetBackButton } from '@/components/kortix/sheet-push';
 import { useToast } from '@/components/kortix/toast-provider';
 import { useConfirmDialog } from '@/components/kortix/confirm-dialog';
-import { useSessionFilesRequestStore } from '@/stores/session-files-request-store';
 import { useSessionPromptRequestStore } from '@/stores/session-prompt-request-store';
 import { SessionChangeFileView, SessionChangesList } from '@/components/session/SessionChangesView';
 import { SessionRenameForm } from '@/components/session/SessionRenameForm';
@@ -154,10 +153,15 @@ export interface SessionActionsSheetRef {
 
 export interface SessionActionsSheetProps {
   projectId: string;
+  /**
+   * The Files row, after the sheet has closed: push the project's Files page
+   * over the thread (ProjectScreen, `openSubPage('page:files-nav')`).
+   */
+  onOpenFiles?: () => void;
 }
 
 export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, SessionActionsSheetProps>(
-  function SessionActionsSheet({ projectId }, ref) {
+  function SessionActionsSheet({ projectId, onOpenFiles }, ref) {
     const insets = useSafeAreaInsets();
     const toast = useToast();
     const queryClient = useQueryClient();
@@ -294,9 +298,8 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
         haptics.success();
         toast.success('Asked your agent to propose these changes for review.');
       } else if (next === 'files') {
-        // The page of the thread on screen opens its Recent files sheet.
-        if (!liveSessionId) return;
-        useSessionFilesRequestStore.getState().requestOpen(liveSessionId);
+        // Pushed only now, so the page animates over the thread, not under the sheet.
+        onOpenFiles?.();
       } else if (next === 'compact') {
         confirm({
           title: 'Compact session',
@@ -306,7 +309,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
           onConfirm: runCompact,
         });
       }
-    }, [menuSession, confirm, runCompact, liveSessionId, toast, takeAfterClose]);
+    }, [menuSession, confirm, runCompact, liveSessionId, toast, takeAfterClose, onOpenFiles]);
 
     const pushView = React.useCallback((view: Exclude<SheetView, 'options'>) => {
       haptics.tap();

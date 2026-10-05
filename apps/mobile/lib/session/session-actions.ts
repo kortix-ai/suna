@@ -9,10 +9,10 @@
  *      `/vcs/diff?mode=branch` (web `useSessionChanges`: the working tree plus
  *      every commit this branch carries over its base). Needs the live
  *      runtime, so only the open thread shows it.
- *   3. Files — the session's Recent files sheet on its thread page
- *      (`SessionFilesSheet`). The list derives from the thread's messages, so
- *      it needs no live runtime: shown for the open thread even when the
- *      sandbox is asleep.
+ *   3. Files — the project's Files page, pushed as a sub-page over the
+ *      thread (`page:files-nav`), so back returns to that thread. A project
+ *      API page, so it needs no live runtime: shown for the open thread even
+ *      when the sandbox is asleep.
  *   4. Compact — the runtime's summarize call (`useSummarizeRuntimeSession`). Needs the
  *      live runtime, one that serves `session.compact` (not pi), and never
  *      runs while the session works.
@@ -203,7 +203,7 @@ export function sessionActionRows(input: SessionActionRowsInput): SessionActionR
     else viewChanges = { visible: true, enabled: true, value: changedFilesLabel(n) };
   }
 
-  // The files sheet lives on the open thread's page; its list needs no runtime.
+  // Files is pushed over the open thread; the page needs no runtime.
   const files: ActionRowState = input.isOpenThread ? { visible: true, enabled: true } : HIDDEN;
 
   let compact: ActionRowState = HIDDEN;
