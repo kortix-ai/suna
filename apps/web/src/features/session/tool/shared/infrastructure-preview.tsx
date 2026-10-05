@@ -5,9 +5,6 @@ import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { framePolicy, serviceFrameContent } from '@/features/file-viewer/preview-policy';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
-import { prefersPreviewLink, safeHttpUrl } from '@kortix/shared';
-import { ToolSurfaceContext } from './surface';
-import { ToolActionBar } from './tool-action-bar';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useTranslations } from '@/i18n/use-translations';
@@ -17,8 +14,24 @@ import { isProxiableLocalhostUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-
 import { enrichPreviewMetadata, getActiveSessionContext } from '@/lib/utils/session-context';
 import { getActivePanelSessionId, sessionPreviewTabId } from '@/stores/session-browser-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
+import { prefersPreviewLink, safeHttpUrl } from '@kortix/shared';
+import {
+  PREVIEW_BUILDING_STATES,
+  PREVIEW_STATE_MESSAGE,
+  type PreviewState,
+} from '@kortix/shared/preview-state-page';
 import { ArrowClockwiseIcon, ArrowSquareOutIcon, GlobeIcon as Globe } from '@phosphor-icons/react';
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { ToolSurfaceContext } from './surface';
+import { ToolActionBar } from './tool-action-bar';
 
 export const MD_FLUSH_CLASSES =
   '[&_.relative.group]:my-0 [&_pre]:my-0 [&_pre]:border-0 [&_pre]:bg-transparent [&_pre]:p-0 [&_pre]:rounded-none [&_pre]:text-xs [&_code]:text-xs';
@@ -70,13 +83,6 @@ export function isLocalSandboxFilePath(value: string): boolean {
   return value.startsWith('/');
 }
 
-/** The `postMessage` type the API's preview state page sends to its card
- *  (`PREVIEW_STATE_MESSAGE` in `apps/api/src/sandbox-proxy/preview-state-page.ts`). */
-export const PREVIEW_STATE_MESSAGE = 'kortix:preview-state';
-
-/** States in which the app behind a preview is still coming up. */
-const STARTING_STATES = new Set(['starting', 'not-listening', 'unreachable']);
-
 /** How long after a frame load a state message still counts for that load.
  *  The state page posts while it parses, so its message lands around `load`. */
 const STATE_MESSAGE_GRACE_MS = 1000;
@@ -100,10 +106,16 @@ export function useServicePreview(url: string, label?: string, sessionId?: strin
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       if (!frameRef.current || event.source !== frameRef.current.contentWindow) return;
-      const data = event.data as { type?: unknown; state?: unknown } | null;
+      const data = event.data as { type?: unknown; state?: unknown; stalled?: unknown } | null;
       if (!data || data.type !== PREVIEW_STATE_MESSAGE) return;
       lastStateAt.current = Date.now();
-      setAppWaiting(typeof data.state === 'string' && STARTING_STATES.has(data.state));
+      // Only "still building" earns the busy glyph. `unreachable` is a page
+      // that says the app stopped answering; a busy glyph over it would
+      // contradict it.
+      // A page that gave up after its reloads (`stalled`) stopped waiting too.
+      setAppWaiting(
+        PREVIEW_BUILDING_STATES.has(data.state as PreviewState) && data.stalled !== true,
+      );
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
@@ -196,7 +208,8 @@ export function useServicePreview(url: string, label?: string, sessionId?: strin
     isLoading,
     hasError,
     /** Same condition as the viewport's "Loading preview…" overlay (no URL
-     *  yet, or the frame has not loaded), plus the proxy's waiting page. */
+     *  yet, or the frame has not loaded), plus the proxy page while the app
+     *  is still building (`PREVIEW_BUILDING_STATES`). */
     appStarting:
       !!(proxy || externalUrl) &&
       !prefersPreviewLink(previewUrl) &&

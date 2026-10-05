@@ -250,36 +250,12 @@ export function ShowTool({ part, sessionId }: ToolProps) {
     // vanish — an invisible `show` reads as "the tool never ran". A quiet
     // one-line note keeps the action in the transcript without resurrecting
     // the big "File not found" card this gate was built to avoid (#3966).
-    // A website preview names its target in the header already, and the
-    // header owns refresh, so the body states the outcome and the next step.
-    // A plain link keeps "Open link": it is the only way to the target.
-    const fallbackHref = isWebsitePreview ? null : safeHttpUrl(activeUrl);
     body = (
-      <div
-        className={cn(
-          'flex flex-col items-start gap-0.5 px-3 py-3 text-xs',
-          fill && 'h-full justify-center px-6',
-        )}
-      >
-        <span className="text-foreground font-medium">
-          {tHardcodedUi.raw('i18nComplete.textb99fa6c06150')}
-        </span>
-        {isWebsitePreview ? (
-          <span className="text-muted-foreground">
-            {tHardcodedUi.raw('i18nComplete.showPreviewUnavailableHint')}
-          </span>
-        ) : null}
-        {fallbackHref && (
-          <a
-            href={fallbackHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-muted-foreground hover:text-foreground decoration-border hover:decoration-current mt-1 underline underline-offset-2 transition-colors"
-          >
-            {tHardcodedUi.raw('i18nComplete.textaab63f85c7f1')}
-          </a>
-        )}
-      </div>
+      <ShowUnavailableNote
+        isWebsitePreview={isWebsitePreview}
+        href={isWebsitePreview ? null : safeHttpUrl(activeUrl)}
+        fill={fill}
+      />
     );
   } else {
     body = (
@@ -388,6 +364,51 @@ export function ShowTool({ part, sessionId }: ToolProps) {
         ) : null}
       </div>
       <div className="min-h-0 overflow-hidden">{body}</div>
+    </div>
+  );
+}
+
+/**
+ * The row a `show` keeps when its artifact did not load. A website preview
+ * names its target in the card header already, and the header owns refresh,
+ * so the row states the outcome and the next step. A plain link keeps
+ * "Open link": it is the only way to the target.
+ */
+export function ShowUnavailableNote({
+  isWebsitePreview,
+  href,
+  fill = false,
+}: {
+  isWebsitePreview: boolean;
+  href: string | null;
+  fill?: boolean;
+}) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  return (
+    <div
+      className={cn(
+        'flex flex-col items-start gap-0.5 px-3 py-3 text-xs',
+        fill && 'h-full justify-center px-6',
+      )}
+    >
+      <span className="text-foreground font-medium">
+        {tHardcodedUi.raw('i18nComplete.textb99fa6c06150')}
+      </span>
+      {isWebsitePreview ? (
+        <span className="text-muted-foreground">
+          {tHardcodedUi.raw('i18nComplete.showPreviewUnavailableHint')}
+        </span>
+      ) : null}
+      {href && (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-muted-foreground hover:text-foreground decoration-border mt-1 underline underline-offset-2 transition-colors hover:decoration-current"
+        >
+          {tHardcodedUi.raw('i18nComplete.textaab63f85c7f1')}
+        </a>
+      )}
     </div>
   );
 }

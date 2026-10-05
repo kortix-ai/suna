@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { previewStatePage, type PreviewState } from './preview-state-page';
+import { PREVIEW_BUILDING_STATES, previewStatePage, type PreviewState } from './preview-state-page';
 
 // Literal copy, not the helper's own answer: a changed title or a state that
 // starts offering sign-in is a product change this table must be edited for.
@@ -75,6 +75,7 @@ describe('every preview state renders a page a person can read', () => {
     const html = previewStatePage({ ...BASE, state: 'starting', port: 8081 });
     expect(html).toContain('n >= MAX');
     expect(html).toContain("load.hidden = true");
+    expect(html).toContain('stalled: true');
     expect(html).toContain('>Try again</button>');
   });
 
@@ -106,5 +107,11 @@ describe('every preview state renders a page a person can read', () => {
     const html = previewStatePage({ ...BASE, state: 'starting' });
     expect(html).not.toMatch(/<link[^>]+href="http/);
     expect(html).not.toMatch(/<script[^>]+src=/);
+  });
+
+  // The card's busy glyph means "still building". A page that says the app
+  // stopped answering, or an identity page, must not get it.
+  test('only starting and not-listening count as building', () => {
+    expect([...PREVIEW_BUILDING_STATES].sort()).toEqual(['not-listening', 'starting']);
   });
 });
