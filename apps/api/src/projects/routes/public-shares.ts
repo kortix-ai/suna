@@ -8,7 +8,7 @@ import {
 } from '../../shared/session-public-shares';
 import { loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { guardSession, guardSessionSharing, sessionAccessDenied } from '../lib/session-access';
+import { guardSession, guardSessionSharing, sessionAccessDenied } from '../lib/http-session-access';
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
 import { sessionHasPersonalConnectorBinding } from '../lib/session-connector-bindings';

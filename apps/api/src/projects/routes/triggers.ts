@@ -9,7 +9,7 @@ import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { OkSchema, TriggerFireResultSchema, TriggerListSchema, projectsApp } from '../lib/app';
-import { guardSession } from '../lib/session-access';
+import { guardSession } from '../lib/http-session-access';
 import { withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
 import { requestAuditContext } from '../lib/serializers';
