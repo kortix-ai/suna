@@ -47,11 +47,19 @@ export function FrameStage({
     const next = refs[nextIdx]!.current;
     if (!next) return;
     let cancelled = false;
-    const onLoaded = () => seek(next);
-    const onSeeked = () => {
-      if (cancelled) return;
+    let swapped = false;
+    const swap = () => {
+      if (cancelled || swapped) return;
+      swapped = true;
       setActive(nextIdx);
     };
+    // Seek once the metadata is in, then swap when that frame is decoded (seeked), or at once when no seek is needed.
+    const onLoaded = () => {
+      const target = seconds + 0.01;
+      if (Math.abs(next.currentTime - target) > 0.05) next.currentTime = target;
+      else next.addEventListener('loadeddata', swap, { once: true });
+    };
+    const onSeeked = swap;
     next.addEventListener('loadedmetadata', onLoaded, { once: true });
     next.addEventListener('seeked', onSeeked, { once: true });
     sources.current[nextIdx] = src;
@@ -60,6 +68,7 @@ export function FrameStage({
       cancelled = true;
       next.removeEventListener('loadedmetadata', onLoaded);
       next.removeEventListener('seeked', onSeeked);
+      next.removeEventListener('loadeddata', swap);
     };
     // `refs` are stable; `active` flips only after a swap.
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -140,7 +140,7 @@ export function TimelineView({ projectId }: { projectId: string }) {
 
   // ── Bounds and days ───────────────────────────────────────────────────────
   const days = useCaptureDays(deviceId ? projectId : null, { tz, userId, deviceId });
-  const dayList = days.data?.days ?? [];
+  const dayList = useMemo(() => days.data?.days ?? [], [days.data]);
   const bounds = useMemo(() => {
     const list = days.data?.days ?? [];
     if (!list.length) return null;
@@ -187,8 +187,9 @@ export function TimelineView({ projectId }: { projectId: string }) {
     const b = view.T + (trackW / 2) * view.spp;
     if (segCovers(range, a, b)) return;
     const span = b - a;
-    let from = Math.floor(a - span * 2);
-    let to = Math.ceil(b + span * 2);
+    // At least 6 hours each way, so a run jump and the gap hint see the neighbouring sessions.
+    let from = Math.floor(Math.min(a - span * 2, view.T - 6 * 3_600_000));
+    let to = Math.ceil(Math.max(b + span * 2, view.T + 6 * 3_600_000));
     if (to - from > MAX_SPAN) {
       from = Math.floor(view.T - MAX_SPAN / 2);
       to = from + MAX_SPAN;
@@ -269,7 +270,16 @@ export function TimelineView({ projectId }: { projectId: string }) {
   const frame = frameIdx >= 0 ? frames[frameIdx]! : null;
   const offFrame = !frame || view.T - Date.parse(frame.ts) > pad * 1.5;
   const media = useCaptureChunkMedia(projectId, frame?.chunk_id ?? null, { userId });
-  const video = media.data?.video ?? null;
+  const video = media.data?.chunk_id === frame?.chunk_id ? (media.data?.video ?? null) : null;
+  // While the next chunk's URL loads, the stage keeps the last frame it showed: no blank flash mid-scrub.
+  const shown = useRef<{ src: string | null; seconds: number }>({ src: null, seconds: 0 });
+  const nextShown =
+    video && !video.encrypted ? { src: video.url, seconds: frame?.frame_index ?? 0 } : null;
+  const display =
+    nextShown ?? (media.isFetching && frame ? shown.current : { src: null, seconds: 0 });
+  useEffect(() => {
+    if (nextShown) shown.current = nextShown;
+  });
 
   // The opening scale, once the first runs land for a device.
   const scaledFor = useRef<string | null>(null);
@@ -281,16 +291,57 @@ export function TimelineView({ projectId }: { projectId: string }) {
   }, [deviceId, trackW, runs, bounds, pad, scrubber]);
 
   // ── Navigation ────────────────────────────────────────────────────────────
+  // A run jump past the loaded runs reads the 24 hours that way, then lands on the nearest run start.
+  const [farJump, setFarJump] = useState<{
+    dir: -1 | 1;
+    T: number;
+    from: number;
+    instant: boolean;
+  } | null>(null);
+  const far = useCaptureTimeline(
+    projectId,
+    farJump && deviceId
+      ? {
+          from: new Date(farJump.dir < 0 ? farJump.T - 86_400_000 : farJump.T + 1).toISOString(),
+          to: new Date(farJump.dir < 0 ? farJump.T - 1 : farJump.T + 86_400_000).toISOString(),
+          userId,
+          deviceId,
+        }
+      : null,
+  );
+  useEffect(() => {
+    if (!farJump || (!far.data && !far.isError)) return;
+    const starts = (far.data?.runs ?? [])
+      .filter((r) => r.device_id === deviceId)
+      .map((r) => Date.parse(r.start_at));
+    const pick =
+      farJump.dir < 0
+        ? Math.max(...starts.filter((s) => s < farJump.from - 1000), -Infinity)
+        : Math.min(...starts.filter((s) => s > farJump.T + 1000), Infinity);
+    if (Number.isFinite(pick)) scrubber.panTo(pick, farJump.instant);
+    else {
+      // Nothing within a day: the nearest recorded day that way.
+      const day =
+        farJump.dir < 0
+          ? dayList.find((d) => Date.parse(d.end_at) < farJump.T - 86_400_000)
+          : [...dayList].reverse().find((d) => Date.parse(d.start_at) > farJump.T + 86_400_000);
+      if (day)
+        scrubber.panTo(Date.parse(farJump.dir < 0 ? day.end_at : day.start_at), farJump.instant);
+    }
+    setFarJump(null);
+  }, [farJump, far.data, far.isError, deviceId, dayList, scrubber]);
+
   const runJump = useCallback(
     (dir: -1 | 1, instant = false) => {
       interact();
-      const target = runJumpTarget(
-        foldRuns(runs, scrubber.get().spp, pad),
-        scrubber.get().T,
-        dir,
-        pad,
-      );
-      if (target != null) scrubber.panTo(target, instant);
+      const { T, spp } = scrubber.get();
+      const target = runJumpTarget(foldRuns(runs, spp, pad), T, dir, pad);
+      if (target != null && Math.abs(target - T) > 1000) {
+        scrubber.panTo(target, instant);
+        return;
+      }
+      const from = runs.find((r) => r.s <= T && T <= r.e + pad)?.s ?? T;
+      setFarJump({ dir, T, from, instant });
     },
     [runs, pad, scrubber, interact],
   );
@@ -439,10 +490,10 @@ export function TimelineView({ projectId }: { projectId: string }) {
     <div className="flex h-svh min-h-0 flex-col overflow-hidden">
       {/* Header: whose computer, what is on screen, and the tools. */}
       <header
-        className="kx-titlebar-row kx-capability-titlebar relative grid shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,auto)_minmax(0,1fr)] items-center gap-3 border-b px-2"
+        className="kx-titlebar-row kx-capability-titlebar relative flex shrink-0 items-center gap-3 border-b px-2"
         data-sidebar-collapsed={sidebar?.state === 'collapsed' || undefined}
       >
-        <div className="flex min-w-0 items-center gap-1">
+        <div className="flex min-w-0 flex-1 items-center gap-1">
           <SidebarToggle />
           <h1 className="sr-only">{t('title')}</h1>
           {loadingDevices ? (
@@ -464,7 +515,7 @@ export function TimelineView({ projectId }: { projectId: string }) {
             />
           )}
         </div>
-        <div className="flex max-w-md min-w-0 items-center gap-2.5 justify-self-center">
+        <div className="flex h-9 max-w-md min-w-0 shrink items-center gap-2.5 max-md:hidden">
           {metaApp || metaTitle ? (
             <>
               <span
@@ -485,7 +536,7 @@ export function TimelineView({ projectId }: { projectId: string }) {
             </>
           ) : null}
         </div>
-        <div className="flex min-w-0 items-center justify-end gap-1">
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-1">
           <Button
             variant="secondary"
             size="sm"
@@ -559,8 +610,8 @@ export function TimelineView({ projectId }: { projectId: string }) {
 
       <div ref={scrubAreaRef} className="relative flex min-h-0 flex-1 flex-col">
         <FrameStage
-          src={video && !video.encrypted ? video.url : null}
-          seconds={frame?.frame_index ?? 0}
+          src={display.src}
+          seconds={display.seconds}
           label={t('frame.label', { app: metaApp ?? t('unknownApp') })}
           dimmed={offFrame}
         >
@@ -594,8 +645,10 @@ export function TimelineView({ projectId }: { projectId: string }) {
             />
           ) : video?.encrypted && !offFrame ? (
             <StageNotice title={t('frame.encrypted')} />
-          ) : bounds && offFrame && !gap ? (
-            <StageNotice title={t('frame.none')} />
+          ) : bounds && offFrame ? (
+            <StageNotice
+              title={gap ? t('track.gap', { shortcut: `${MOD_KEY()}←` }) : t('frame.none')}
+            />
           ) : null}
           {bounds ? (
             <>

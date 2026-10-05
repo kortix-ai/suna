@@ -236,10 +236,11 @@ export function TrackCanvas({
     if (h) {
       const x0 = Math.max(0, xOf(h.start));
       const x1 = Math.min(W, xOf(h.end));
-      next =
-        x1 - mid >= mid - x0
-          ? { side: 'right', offset: mid + 20 }
-          : { side: 'left', offset: W - mid + 20 };
+      // Beside the playhead, on the side with more of the gap in view, only where the line fits clear of the runs.
+      const room = 300;
+      if (x1 - mid >= mid - x0)
+        next = x1 - (mid + 20) >= room ? { side: 'right', offset: mid + 20 } : null;
+      else next = mid - 20 - x0 >= room ? { side: 'left', offset: W - mid + 20 } : null;
     }
     const key = next ? `${next.side}${Math.round(next.offset)}` : '';
     if (key !== gapKey.current) {
