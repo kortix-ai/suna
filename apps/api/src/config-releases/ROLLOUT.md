@@ -136,9 +136,16 @@ request. The store is a cache; the Git mirror is always the source of truth.
 - Every commit to the base branch is a new release, because the tree changed.
   Running sessions converge to it in the background; a prompt on a box that is
   behind converges first.
-- A config file that points at another file of the repository by a relative
-  path (an `instructions` entry `../../rules/RULES.md`, a tool that imports
-  `../../../shared/x`) resolves inside the release exactly as in `/workspace`.
+- A tool that imports another file of the repository by a relative path
+  (`../../../shared/x`) resolves inside the release exactly as in `/workspace`.
+- OpenCode resolves a relative `instructions` entry against the session
+  directory (`/workspace`), not its config dir. While OpenCode serves a release,
+  the platform plugin `kortix-release-instructions.js`
+  (`harness/open-code/release-instructions.ts`) rewrites each relative entry to
+  the release root, so `"docs/RULES.md"` reads the base branch's file. URLs,
+  `~/`, absolute paths and globs in a directory part keep OpenCode's own
+  resolution. The project's `AGENTS.md` is OpenCode's own lookup from
+  `/workspace` and is not rewritten.
 - The descriptor format is `config-release-v2`. A daemon built for v1 (the
   composed layout) refuses it and keeps its running config until the
   runtime-assets swap gives it the current daemon.
