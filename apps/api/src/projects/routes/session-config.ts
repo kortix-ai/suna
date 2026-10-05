@@ -13,7 +13,7 @@ import { config } from '../../config';
 import { loadVisibleSession, assertProjectCapability } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { readJsonObject } from '../../shared/http-body';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { mayChangeSessionModel } from '../lib/session-model-change';
 import { resolveDesiredRelease } from '../../config-releases/desired';

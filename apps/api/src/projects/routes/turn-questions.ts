@@ -24,7 +24,7 @@ import {
   TurnQuestionRelayBodySchema,
 } from '@kortix/api-contract/runtime-relay';
 import { AnyObject, projectsApp } from '../lib/app';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { readJsonObject } from '../../shared/http-body';
 import { notifySessionEvent } from '../../notifications/session-push';

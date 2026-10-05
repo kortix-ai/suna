@@ -59,7 +59,7 @@ import {
   sessionIsTombstoned,
 } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 import { isUuid } from '../../shared/validate';
 import {
   CONTROL_EPOCH,

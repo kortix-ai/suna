@@ -29,7 +29,7 @@ import {
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { resolveChangeRequestBase, resolveChangeRequestOrigin } from '../change-request-policy';
 import { PROJECT_ACTIONS } from '../../iam';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { ChangeRequestListSchema, ChangeRequestSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';

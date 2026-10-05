@@ -7,7 +7,7 @@ import { resolveSessionBinding } from './lib/route-bindings';
 import { auth, errors, json } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
 import { loadVisibleSession, assertProjectCapability } from '../lib/access';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 import { AnyObject, projectsApp, SessionTranscriptReadSchema } from '../lib/app';
 import { parseBoundedPositiveInt } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';

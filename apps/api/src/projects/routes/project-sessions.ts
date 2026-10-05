@@ -44,7 +44,7 @@ import { accountMayUseManagedModels } from '../../billing/services/entitlements'
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { admitSessionSharingChange } from '../lib/session-model-keys';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 import type { ProjectSessionListScope } from '../lib/session-inventory';
 import { loadProjectSessionInventory, sessionRowMatchesSearch } from '../lib/session-list';
 import { SESSION_PAGE_MAX_LIMIT } from '../lib/session-inventory';

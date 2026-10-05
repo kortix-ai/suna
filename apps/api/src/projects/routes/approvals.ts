@@ -30,7 +30,7 @@ import {
   normalizeApprovalNote,
 } from '../lib/connector-approval-decision';
 import { markApprovalCardDecided } from '../../channels/approval-card-relay';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 
 export function registerApprovalsRoutes(): void {
   // GET /v1/projects/:projectId/approvals

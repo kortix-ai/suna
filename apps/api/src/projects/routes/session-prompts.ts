@@ -8,7 +8,7 @@ import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { promptModelOverride } from '../lib/prompt-model';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 import {
   CreateSessionPromptResultSchema,
   SessionPromptListSchema,

@@ -14,7 +14,7 @@ import {
   projectCapabilityAllowed,
 } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 import {
   type ConnectionAudienceReach,
   type ConnectionOwnerType,

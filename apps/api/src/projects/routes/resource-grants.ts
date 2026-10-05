@@ -28,7 +28,7 @@ import { normalizeString } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
 import { resolveEffectiveSessionConnectorBindings } from '../lib/session-connector-bindings';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { resolveSessionAgentGrant } from '../lib/secret-grant';
 

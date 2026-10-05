@@ -17,7 +17,7 @@
 import type { Context } from 'hono';
 import { PUBLIC_SHARE_OWNER_ONLY_ERROR } from '../../connectors/share';
 import { loadSessionForSharing, loadVisibleSession, sessionIsTombstoned } from './access';
-import { callerKortixSessionId } from './caller-session';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 
 type LoadedProject = Parameters<typeof loadVisibleSession>[0];
 type VisibleSession = NonNullable<Awaited<ReturnType<typeof loadVisibleSession>>>;
