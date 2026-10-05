@@ -5,6 +5,8 @@
  */
 import type { Context } from 'hono';
 import type { AgentGrant } from '@kortix/db';
+import type { Actor } from '../iam/actor';
+import { assertNoGrantEscalationBy, type GovernedAgentWriter } from '../iam/agent-grant-ceiling';
 import { assertAgentGrantAllows } from '../iam/agent-scope';
 
 /** Read the agent grant off the request context (set by the auth middleware). */
@@ -38,4 +40,32 @@ export function isBorrowedSessionPrincipal(c: Context): boolean {
  */
 export function assertAgentScope(c: Context, action: string): void {
   assertAgentGrantAllows(getAgentGrant(c), action);
+}
+
+/** A governed agent principal: authorizes as its own service account (agent_principal on, non-null grant). */
+export function isGovernedAgentWriter(c: Context): boolean {
+  const credential = (c.get('actor') as Actor | undefined)?.credential as
+    | { kind?: string; agentPrincipal?: boolean }
+    | undefined;
+  return credential?.kind === 'agent_session' && credential.agentPrincipal === true && getAgentGrant(c) !== null;
+}
+
+/** The governed writer `assertNoGrantEscalationBy` bounds, or null for every other caller. */
+export function governedAgentWriter(c: Context): GovernedAgentWriter | null {
+  if (!isGovernedAgentWriter(c)) return null;
+  return { actor: c.get('actor') as Actor, grant: getAgentGrant(c)! };
+}
+
+/**
+ * 403 `agent_grant_escalation` when a governed agent's write would give any
+ * agent a permission, connector, secret or App the writer does not hold. A
+ * no-op for every other caller.
+ */
+export async function assertNoGrantEscalation(
+  c: Context,
+  projectId: string,
+  before: Map<string, AgentGrant>,
+  after: Map<string, AgentGrant>,
+): Promise<void> {
+  await assertNoGrantEscalationBy(governedAgentWriter(c), projectId, before, after);
 }
