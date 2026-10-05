@@ -40,8 +40,8 @@ const DYNAMIC_IMPORT_PATTERNS = [
  * Whether the boundary's error is a failed script-chunk load: webpack's
  * `ChunkLoadError` (`Loading chunk <n> failed.`), a native dynamic-import
  * failure, or the stale webpack runtime lookup whose stack points at the
- * runtime chunk. A genuine app error that happens to contain one of these
- * substrings outside a chunk-load context is not matched.
+ * runtime chunk. A message that merely mentions a dynamic import names the
+ * same recovery class; the once-guard bounds any over-match to one reload.
  */
 export function isChunkLoadError(error: unknown): boolean {
   const err = error as { name?: unknown; message?: unknown; stack?: unknown } | null;
