@@ -95,7 +95,7 @@ describe('waitForActive — PHASE 2 poll error classification', () => {
   }, 10_000);
 });
 
-// The shape of a real failure (slopcore-demo, 2026-10-05): a project Dockerfile's
+// The shape of a real failure (a prod project, 2026-10-05): a project Dockerfile's
 // global ENV leaked into the appended Kortix layer, whose `uv python install`
 // then died at STEP 15/49. Platinum stored all of this in build_logs; Kortix
 // used to surface only "Platinum template … build failed".
