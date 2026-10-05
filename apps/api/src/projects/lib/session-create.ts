@@ -750,9 +750,27 @@ export async function createProjectSession(input: {
     };
   }
   const providerLocked = sessionProviderIsLocked(picked);
+  // A persistent machine boots from a Platinum root volume: it takes Platinum
+  // unless the request or the project pinned another provider.
+  const persistentMachine = body.persistent_machine === true;
+  if (persistentMachine && platformMetaAgent) {
+    return {
+      error: { status: 400, body: { error: 'The meta agent cannot run on a persistent machine', code: 'PERSISTENT_MACHINE_UNSUPPORTED' } },
+    };
+  }
   const providerName: SandboxProviderName = providerLocked
     ? (picked as { provider: string }).provider as SandboxProviderName
-    : await selectProvider();
+    : persistentMachine && config.isProviderEnabled('platinum' as SandboxProviderName)
+      ? ('platinum' as SandboxProviderName)
+      : await selectProvider();
+  if (persistentMachine && providerName !== 'platinum') {
+    return {
+      error: {
+        status: 400,
+        body: { error: 'A persistent machine needs the Platinum sandbox provider', code: 'PERSISTENT_MACHINE_UNSUPPORTED' },
+      },
+    };
+  }
 
   const callbackUnreachable =
     sandboxCallbackUnreachableReason() ?? (await sandboxCallbackDeadTunnelReason());
@@ -980,6 +998,7 @@ export async function createProjectSession(input: {
     // Rollback compatibility: older API replicas must also enforce this restriction.
     workspace_mode: repositoryAccess ? 'branch' : 'runtime',
     sandbox_slug: sandboxSlug,
+    ...(persistentMachine ? { persistent_machine: true } : {}),
     audit_v2: {
       actor_type: auditAttribution.actorType,
       authoritative_source: auditAttribution.authoritativeSource,

@@ -19,9 +19,11 @@ import { refreshSandboxRuntimeAssets } from '../lib/sandbox-runtime-refresh';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import {
   claimRetiredEphemeralRow,
+  isRetiredEphemeralRow,
   recordedSessionStateVolume,
   scheduleSessionStateVolumeDelete,
 } from '../../platform/services/ephemeral-sandbox';
+import { persistentMachineFromSessionMetadata } from '../../platform/services/persistent-machine';
 import {
   projectImageAllowedForSession,
   sandboxSlugFromSessionMetadata,
@@ -224,9 +226,17 @@ export async function restartSession(input: {
   };
   projectId: string;
   sessionId: string;
+  /** Persistent machines: discard the disk and boot a fresh box from the current image. */
+  resetMachine?: boolean;
 }): Promise<{ status: number; body: Record<string, unknown> }> {
   const { loaded, session, projectId, sessionId } = input;
   const providerName = session.sandboxProvider as SandboxProviderName;
+  if (input.resetMachine && !persistentMachineFromSessionMetadata(session.metadata)) {
+    return {
+      status: 400,
+      body: { error: 'Only a session on a persistent machine can reset its machine', code: 'NOT_A_PERSISTENT_MACHINE' },
+    };
+  }
   if (
     !(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(
       providerName,
@@ -324,6 +334,49 @@ export async function restartSession(input: {
         : undefined,
     });
   };
+
+  // Persistent machine reset: delete the box (its root volume goes with it),
+  // then provision a fresh one from the current image like a recovery. A plain
+  // restart of a persistent machine stays the in-place stop+start below: a
+  // cold boot of the same disk.
+  if (input.resetMachine) {
+    if (existingSandbox && !existingSandbox.externalId && !isRetiredEphemeralRow(existingSandbox)) {
+      return {
+        status: 409,
+        body: { error: 'The machine is starting; reset it once it is up', code: 'LIFECYCLE_TRANSITION_IN_PROGRESS' },
+      };
+    }
+    if (existingSandbox?.externalId) {
+      const { retirePersistentMachineBox } = await import('../reaping/stop-box');
+      try {
+        await retirePersistentMachineBox({
+          sandboxId: existingSandbox.sandboxId,
+          sessionId,
+          externalId: existingSandbox.externalId,
+          provider: existingSandbox.provider,
+          now: new Date(),
+        });
+      } catch (err) {
+        logger.warn('[projects] persistent machine reset: delete failed', {
+          session_id: sessionId,
+          external_id: existingSandbox.externalId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return { status: 502, body: { error: 'Failed to reset the machine; try again' } };
+      }
+    }
+    if (!existingSandbox || (await claimRetiredEphemeralRow(existingSandbox.sandboxId))) {
+      await provisionReplacementRuntime();
+      return {
+        status: 202,
+        body: { ok: true, session_id: sessionId, status: 'provisioning', reason: 'machine_reset' },
+      };
+    }
+    return {
+      status: 202,
+      body: { ok: true, session_id: sessionId, status: 'provisioning', reason: 'lifecycle_transition_in_progress' },
+    };
+  }
 
   // Ephemeral sandboxes: a restart is a new box from the current image. The
   // current one commits its session volume and is deleted; a box whose runtime

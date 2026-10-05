@@ -426,6 +426,12 @@ export async function provisionSessionSandbox(opts: {
     (await import('../../drives/service')
       .then((m) => m.sessionDrivesEnabled(projectId))
       .catch(() => false));
+  // Persistent machine: the box boots from its own Platinum root volume
+  // (persistent-machine.ts). Platinum only, never handed to another provider.
+  const persistentMachine =
+    slug !== META_SANDBOX_SLUG &&
+    slug !== PI_WORKER_SANDBOX_SLUG &&
+    (await import('./persistent-machine').then((m) => m.isPersistentMachineSession(sandboxId)));
   // Ephemeral sandboxes: set once a box booted an image that cannot keep the
   // session's state on its volume (the last ready image served while a newer
   // build bakes). The retry then waits for the current image instead.
@@ -724,6 +730,11 @@ export async function provisionSessionSandbox(opts: {
       };
       tl.mark(image.built ? 'image-built' : 'image-cached');
       providerCreateInput.snapshot = image.snapshotName;
+      if (persistentMachine && providerName !== 'platinum') {
+        throw new Error(
+          '[persistent-machine] This session runs on a persistent machine, which needs Platinum. Platinum is not available for this session right now, so it did not start.',
+        );
+      }
       if (drivesRequirePlatinum && providerName !== 'platinum') {
         const { DriveMountError } = await import('../../drives/service');
         throw new DriveMountError(
@@ -736,11 +747,25 @@ export async function provisionSessionSandbox(opts: {
         // Ephemeral sandboxes: the session's own state volume. Resolved once,
         // before the drives, whose mount slots it shares; a failure to open it fails this attempt (retried by
         // the loop) rather than booting a box that would lose the session.
-        if (!sessionStateResolved) {
+        // A persistent machine keeps everything on its root disk instead.
+        if (!sessionStateResolved && !persistentMachine) {
           sessionState = await import('./ephemeral-sandbox').then((m) =>
             m.resolveSessionStateMount({ projectId, sessionId: sandbox.sandboxId, provider: providerName }),
           );
           sessionStateResolved = true;
+        }
+        if (persistentMachine && !providerCreateInput.rootVolume) {
+          providerCreateInput.rootVolume = true;
+          // Each box of the session is a new create (a reset deletes the last
+          // one), and Platinum's create dedup keys on (sandbox id, template,
+          // attempt): same floor scheme as an ephemeral box.
+          const generation = await import('./ephemeral-sandbox').then((m) => m.nextBoxGeneration(sandbox.sandboxId));
+          const generationFloor = (generation - 1) * 100 + 1;
+          if (generationFloor > platinumCreateAttempt) {
+            platinumCreateAttempt = generationFloor;
+            providerCreateInput.createAttempt = platinumCreateAttempt;
+          }
+          tl.mark('root-volume');
         }
         if (!driveMountsResolved) {
           driveMounts = await import('../../drives/service').then(({ sessionVolumeMounts }) =>
@@ -750,7 +775,8 @@ export async function provisionSessionSandbox(opts: {
               sessionId: sandbox.sandboxId,
               bootingUserId: userId,
               agentName: opts.agentName ?? 'default',
-              reservedSlots: sessionState ? 1 : 0,
+              // The session volume, or a persistent machine's root disk, takes a slot.
+              reservedSlots: sessionState || persistentMachine ? 1 : 0,
             }),
           );
           driveMountsResolved = true;
@@ -1026,6 +1052,7 @@ export async function provisionSessionSandbox(opts: {
                 driveMounts: mountedDrives,
                 ...driveAdmission,
                 ...(sessionState ? { sessionStateVolume: sessionState.volume } : {}),
+                ...(persistentMachine ? { rootVolume: true } : {}),
               },
               attempts,
               lastProvisionMaxAttempts,
@@ -1089,6 +1116,7 @@ export async function provisionSessionSandbox(opts: {
             driveMounts: mountedDrives,
             ...driveAdmission,
             ...(sessionState ? { sessionStateVolume: sessionState.volume } : {}),
+            ...(persistentMachine ? { rootVolume: true } : {}),
             runtimeArtifact: {
               artifactType: providerName === 'daytona' ? 'daytona_snapshot' : `${providerName}_template`,
               providerArtifactRef: imageInfo!.snapshotName,
@@ -1244,7 +1272,7 @@ export async function provisionSessionSandbox(opts: {
       {
         const next = nextFailoverProvider({
           // Drives run on Platinum only: no hand-off to another provider.
-          providerLocked: providerWasExplicitlySelected || drivesRequirePlatinum,
+          providerLocked: providerWasExplicitlySelected || drivesRequirePlatinum || persistentMachine,
           fallbackAttempted,
           fallbackEnabled: providerFallbackSetting().enabled,
           current: providerName,

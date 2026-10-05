@@ -23,6 +23,7 @@ import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { endComputeSession } from '../../billing/services/compute-metering';
 import { db } from '../../shared/db';
 import { isPlatinumConfigured, platinumFetch } from '../../shared/platinum';
+import { isRootVolumeBox } from './persistent-machine';
 
 /** Where the session volume is mounted in the guest. */
 export const SESSION_STATE_MOUNT = '/mnt/kortix-session';
@@ -154,7 +155,7 @@ async function evictOrphanBoxes(sessionId: string, holders: VolumeMountRow[]): P
  * id: the attempt must move with each box, whichever path provisions it (a
  * wake, a Restart, a retry after a failed wake).
  */
-async function nextBoxGeneration(sessionId: string): Promise<number> {
+export async function nextBoxGeneration(sessionId: string): Promise<number> {
   const rows = (await db.execute(sql`
     UPDATE kortix.project_sessions
        SET metadata = coalesce(metadata, '{}'::jsonb)
@@ -185,6 +186,8 @@ export async function retireOnStopPlan(sandboxId: string): Promise<{ metadata: u
   const md = (row.metadata ?? {}) as Record<string, unknown>;
   const artifact = md.runtimeArtifact as { runtimeProfile?: string } | undefined;
   if (artifact?.runtimeProfile && artifact.runtimeProfile !== 'standard') return null;
+  // A persistent machine's disk is its root volume: a stop keeps the box.
+  if (isRootVolumeBox(md)) return null;
   if (recordedSessionStateVolume(md)) return { metadata: md, sessionId: row.sessionId };
   if (!(await ephemeralSandboxesEnabled(row.projectId, row.provider))) return null;
   return { metadata: md, sessionId: row.sessionId };

@@ -13,8 +13,10 @@
 import { randomUUID } from 'node:crypto';
 import { logger } from '../../lib/logger';
 import { getProvider } from '../../platform/providers';
+import { isProviderNotFound } from '../../platform/providers/status';
 import { resolveSandboxIngress, resolveServiceKey } from '../../sandbox-proxy/backend';
 import { encodeKortixUserContext, KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
+import type { SandboxProviderName } from '../../config';
 import type { StopReason } from '../stop-reason';
 import {
   type ReapCandidate,
@@ -182,6 +184,45 @@ export async function retireEphemeralOnStop(input: {
   });
   console.info(`[ephemeral] retired ${input.externalId} for session ${input.sessionId}`, timings);
   return 'retired';
+}
+
+/**
+ * Reset a persistent machine: delete its box (Platinum deletes the root volume
+ * with it) and leave the row stopped with no external id, marked retired, so
+ * the caller claims it and provisions a fresh box from the current image.
+ * Throws when the delete fails; the row is then untouched.
+ */
+export async function retirePersistentMachineBox(input: {
+  sandboxId: string;
+  sessionId: string;
+  externalId: string;
+  provider: string;
+  now: Date;
+}): Promise<{ deleteMs: number }> {
+  await abortLiveTurnBeforeStop({ sandboxId: input.sandboxId, externalId: input.externalId });
+  const t0 = Date.now();
+  try {
+    await getProvider(input.provider as SandboxProviderName).remove(input.externalId);
+  } catch (err) {
+    // Already gone counts as deleted.
+    if (!isProviderNotFound(err)) throw err;
+  }
+  const deleteMs = Date.now() - t0;
+  await applyStoppedState({
+    sandboxId: input.sandboxId,
+    sessionId: input.sessionId,
+    externalId: input.externalId,
+    stopReason: 'manual',
+    retiredExternalId: true,
+    metadata: {
+      [EPHEMERAL_RETIRED_KEY]: input.externalId,
+      machineResetAt: new Date().toISOString(),
+      machineResetDeleteMs: deleteMs,
+    },
+    now: input.now,
+  });
+  console.info(`[persistent-machine] reset: deleted ${input.externalId} for session ${input.sessionId} (${deleteMs}ms)`);
+  return { deleteMs };
 }
 
 /** The only fields an idle stop needs. */

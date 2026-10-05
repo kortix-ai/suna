@@ -502,6 +502,13 @@ export class PlatinumProvider implements SandboxProvider {
     if (opts.volumes && Object.keys(opts.volumes).length > 0) {
       createBody.volumes = opts.volumes;
     }
+    if (opts.rootVolume) {
+      // A persistent machine (services/persistent-machine.ts): the root disk
+      // is a volume of its own, kept in object storage while the box runs, so
+      // a whole-box backup would only copy it again.
+      createBody.root_volume = true;
+      createBody.backup_interval_min = 0;
+    }
     if (opts.volumesRequired) {
       // An ephemeral session box: its state lives on the session volume and a
       // stop deletes the box, so Platinum's periodic whole-box backup only
@@ -531,6 +538,19 @@ export class PlatinumProvider implements SandboxProvider {
     try {
       sandbox = await postCreate();
     } catch (err) {
+      if (opts.rootVolume) {
+        const { status, body } = platinumHttp(err);
+        // The org cannot boot from a root volume: say so, never boot without it.
+        if (status === 404 && /root volume/i.test(body ?? '')) {
+          throw new Error(
+            '[persistent-machine] Persistent machines are not available for this workspace (storage refused the root disk). The session did not start.',
+          );
+        }
+        // The template's root disk image is still being prepared: transient.
+        if (status === 503 && /root volume image/i.test(body ?? '')) {
+          throw new Error(`[persistent-machine] the machine's disk image is being prepared; retrying (${(body ?? '').slice(0, 200)})`);
+        }
+      }
       // A full fleet stays a capacity error (retried, "try again in a minute").
       if (createBody.volumes && isVolumeRejection(err) && !/no capacity/i.test(platinumHttp(err).body ?? '')) {
         // Mounts a session cannot run without (its drives, its state): fail

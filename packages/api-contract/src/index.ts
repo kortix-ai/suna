@@ -988,6 +988,13 @@ export const SessionCreateInputSchema = z
       )
       .optional(),
     provider: SandboxProviderSchema.optional(),
+    /**
+     * Run the session on a persistent machine: its whole root disk persists
+     * across stops (installed packages, config, files). Platinum only. A stop
+     * keeps the disk and ends running processes; the machine stays on the
+     * image it was created from until it is reset.
+     */
+    persistent_machine: z.boolean().optional(),
     branch_already_created: z.boolean().optional(),
     metadata: SessionMetadataInputSchema.optional(),
     runtime_context: SessionRuntimeContextSchema.optional(),

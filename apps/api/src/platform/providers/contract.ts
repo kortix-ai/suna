@@ -84,6 +84,11 @@ export interface CreateSandboxOpts {
    * session never boots without its drives or its state.)
    */
   volumesRequired?: boolean;
+  /**
+   * A persistent machine: the box boots from a new Platinum root volume made
+   * from the template, owned by the box (deleted with it). Platinum only.
+   */
+  rootVolume?: boolean;
 }
 
 export function sandboxWorkloadType(opts: CreateSandboxOpts): SandboxWorkloadType {
