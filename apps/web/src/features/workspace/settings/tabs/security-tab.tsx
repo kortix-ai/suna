@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * The Security tab — two-factor authentication and the other devices you are
+ * The Security tab — two-factor authentication and every device you are
  * signed in on.
  *
  * Split out of Profile on 2026-09-02 (Jay: "for security it should be a
@@ -28,11 +28,13 @@ import {
   PlusIcon as Plus,
   ShieldCheckIcon as ShieldCheck,
   ShieldWarningIcon as ShieldWarning,
+  DesktopIcon as Desktop,
   DeviceMobileIcon as Smartphone,
   TrashIcon as Trash2,
   WarningIcon as Warning,
 } from '@phosphor-icons/react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { listSignedInDevices, signOutDevice } from '@kortix/sdk';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -53,6 +55,10 @@ import { createClient } from '@/lib/supabase/client';
 import type { FactorInfo } from '@/lib/supabase/mfa';
 import { cn } from '@/lib/utils';
 import { SettingsTabHeader } from '../settings-tab-header';
+import { describeUserAgent } from './device-label';
+
+/** A QR code scans only dark-on-light, so its tile stays white in both themes. */
+const QR_TILE = 'bg-white';
 
 /** Supabase hands the TOTP QR back as an SVG data URL (or raw SVG in older
  *  versions) — normalize both into something an <img> can render. */
@@ -138,18 +144,27 @@ export interface SecurityTabViewProps {
   devicesError?: boolean;
   onRetryDevices?: () => void;
 
+  onSignOutDevice?: (id: string) => void;
+  /** The device whose sign-out is in flight. */
+  signingOutDeviceId?: string | null;
+
   // Other devices
   onSignOutOtherDevices?: () => void;
   isSigningOutOtherDevices?: boolean;
   copy?: Partial<SecurityTabCopy>;
 }
 
-/** One row in the Devices section. `detail` arrives as the finished,
- *  translated string — the container composes it, so the pure view holds no
- *  date formatting and no locale hook. */
+/** One row in the Devices section. `label` and `detail` arrive as finished,
+ *  translated strings — the container composes them, so the pure view holds
+ *  no date formatting and no locale hook. */
 export interface DeviceRow {
+  /** The auth session id; the sign-out target. */
+  id: string;
   label: string;
   detail?: string;
+  mobile?: boolean;
+  /** The browser this page runs in: badged, never signed out from its row. */
+  current?: boolean;
 }
 
 export interface SecurityTabCopy {
@@ -177,7 +192,7 @@ export interface SecurityTabCopy {
   removeFactor: string;
   devices: string;
   currentDevice: string;
-  deviceActive: string;
+  signOutDevice: string;
   noDevices: string;
   noDevicesDescription: string;
   devicesLoadFailed: string;
@@ -220,7 +235,7 @@ export const DEFAULT_SECURITY_TAB_COPY: SecurityTabCopy = {
   removeFactor: 'Remove factor',
   devices: 'Devices',
   currentDevice: 'This browser',
-  deviceActive: 'Active',
+  signOutDevice: 'Sign out',
   noDevices: 'No signed-in devices',
   noDevicesDescription: 'You are not signed in on any device right now.',
   devicesLoadFailed: 'Couldn’t load your signed-in devices',
@@ -260,6 +275,8 @@ export function SecurityTabView({
   devicesLoading = false,
   devicesError = false,
   onRetryDevices = () => {},
+  onSignOutDevice = () => {},
+  signingOutDeviceId = null,
   onSignOutOtherDevices = () => {},
   isSigningOutOtherDevices = false,
   copy: copyOverrides = {},
@@ -362,13 +379,13 @@ export function SecurityTabView({
               <img
                 src={totpQrSrc(enrolling.qr)}
                 alt={copy.qrAlt}
-                className="border-border/60 size-36 shrink-0 rounded-md border bg-white p-2"
+                className={cn('border-border/60 size-36 shrink-0 rounded-md border p-2', QR_TILE)}
               />
               <div className="min-w-0 flex-1 space-y-3">
                 {enrolling.secret && (
                   <div className="space-y-1">
                     <Label className="text-xs">{copy.manualSecret}</Label>
-                    <code className="border-border/60 bg-muted/30 block truncate rounded border px-2 py-1.5 font-mono text-xs">
+                    <code className="border-border/60 bg-muted/30 block truncate rounded-sm border px-2 py-1.5 font-mono text-xs">
                       {enrolling.secret}
                     </code>
                   </div>
@@ -429,24 +446,41 @@ export function SecurityTabView({
               <Skeleton className="h-8 w-full rounded-sm" />
             </div>
           ) : (
-            devices.map((device) => (
-              <div key={device.label} className="flex items-center justify-between gap-3 px-4 py-3">
-                <div className="flex min-w-0 items-center gap-3">
-                  <span className="bg-muted flex size-8 shrink-0 items-center justify-center rounded-sm">
-                    <Smartphone className="text-muted-foreground size-4" />
-                  </span>
-                  <div className="min-w-0">
-                    <div className="text-foreground truncate text-sm">{device.label}</div>
-                    {device.detail ? (
-                      <div className="text-muted-foreground text-xs">{device.detail}</div>
-                    ) : null}
+            devices.map((device) => {
+              const DeviceIcon = device.mobile ? Smartphone : Desktop;
+              return (
+                <div key={device.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="bg-muted flex size-8 shrink-0 items-center justify-center rounded-sm">
+                      <DeviceIcon className="text-muted-foreground size-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="text-foreground truncate text-sm">{device.label}</div>
+                      {device.detail ? (
+                        <div className="text-muted-foreground truncate text-xs">{device.detail}</div>
+                      ) : null}
+                    </div>
                   </div>
+                  {device.current ? (
+                    <Badge variant="success" size="xs">
+                      {copy.currentDevice}
+                    </Badge>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => onSignOutDevice(device.id)}
+                      disabled={signingOutDeviceId !== null}
+                    >
+                      {signingOutDeviceId === device.id ? (
+                        <Loading className="size-3.5 shrink-0" />
+                      ) : null}
+                      {copy.signOutDevice}
+                    </Button>
+                  )}
                 </div>
-                <Badge variant="success" size="xs">
-                  {copy.deviceActive}
-                </Badge>
-              </div>
-            ))
+              );
+            })
           )}
           <SettingsRow
             label={copy.signOutOtherDevices}
@@ -517,7 +551,7 @@ export function SecurityTab() {
     removeFactor: t('removeFactor'),
     devices: t('devices'),
     currentDevice: t('currentDevice'),
-    deviceActive: t('deviceActive'),
+    signOutDevice: t('signOutDevice'),
     noDevices: t('noDevices'),
     noDevicesDescription: t('noDevicesDescription'),
     devicesLoadFailed: t('devicesLoadFailed'),
@@ -532,38 +566,47 @@ export function SecurityTab() {
   const supabase = createClient();
   const mfa = useMfa();
 
-  // The devices signed in as you. GoTrue gives a client no way to enumerate
-  // the account's other sessions, so this list holds the one device it can
-  // vouch for — the browser this page runs on — backed by a real
-  // `GET /auth/v1/user` call; `last_sign_in_at` is the auth server's own
-  // record of when that session signed in. A session-less answer (the user
-  // is signed out) is the explicit empty state, not an error.
+  const queryClient = useQueryClient();
+
+  // Every device signed in as you: the account's live auth sessions, read by
+  // the API from `auth.sessions` (`GET /accounts/me/devices`) — GoTrue gives a
+  // browser no way to list sessions other than its own.
   const deviceQuery = useQuery({
-    queryKey: ['auth-current-device'],
-    queryFn: async () => {
-      const { data, error } = await supabase.auth.getUser();
-      if (error?.name === 'AuthSessionMissingError') return null;
-      if (error) throw error;
-      return data.user;
-    },
+    queryKey: ['auth-signed-in-devices'],
+    queryFn: listSignedInDevices,
     staleTime: 10_000,
   });
 
-  const signedInAt = deviceQuery.data?.last_sign_in_at ?? null;
-  const devices: DeviceRow[] = signedInAt
-    ? [
-        {
-          label: copy.currentDevice,
-          detail: t('deviceSignedInAt', {
-            date: new Intl.DateTimeFormat(locale, {
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric',
-            }).format(new Date(signedInAt)),
-          }),
-        },
-      ]
-    : [];
+  const dateFormat = new Intl.DateTimeFormat(locale, { dateStyle: 'long' });
+  const dateTimeFormat = new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' });
+  const devices: DeviceRow[] = (deviceQuery.data ?? []).map((device) => {
+    const { browser, os, mobile } = describeUserAgent(device.user_agent);
+    const label =
+      browser && os
+        ? t('deviceName', { browser, os })
+        : (browser ?? os ?? t('unknownDevice'));
+    const when = device.current
+      ? t('deviceSignedInAt', { date: dateFormat.format(new Date(device.signed_in_at)) })
+      : t('deviceLastActive', { date: dateTimeFormat.format(new Date(device.last_active_at)) });
+    return {
+      id: device.session_id,
+      label,
+      detail: device.ip ? `${when} · ${device.ip}` : when,
+      mobile,
+      current: device.current,
+    };
+  });
+  const refreshDevices = () =>
+    queryClient.invalidateQueries({ queryKey: ['auth-signed-in-devices'] });
+
+  const signOutOne = useMutation({
+    mutationFn: (id: string) => signOutDevice(id),
+    onSuccess: () => {
+      successToast(t('signedOutDevice'));
+      void refreshDevices();
+    },
+    onError: (error: Error) => errorToast(error.message || t('signOutDeviceFailed')),
+  });
 
   // `scope: 'others'` revokes every refresh token but this browser's, so the
   // person stays signed in where they pressed the button.
@@ -572,11 +615,14 @@ export function SecurityTab() {
       const { error } = await supabase.auth.signOut({ scope: 'others' });
       if (error) throw error;
     },
-    onSuccess: () => successToast(t('signedOutOtherDevices')),
+    onSuccess: () => {
+      successToast(t('signedOutOtherDevices'));
+      void refreshDevices();
+    },
     onError: (error: Error) => errorToast(error.message || t('signOutOtherDevicesFailed')),
   });
 
-  // Remove factor and sign-out-other-devices end a factor or sessions, so an
+  // Remove factor and both device sign-outs end a factor or sessions, so an
   // aal1 session with a verified TOTP factor asks for the code first
   // (KRTX-1386): requestMfaStepUp opens the global challenge dialog and runs
   // the action once the code verifies. A verified session runs the action
@@ -610,6 +656,8 @@ export function SecurityTab() {
       devicesLoading={deviceQuery.isLoading}
       devicesError={deviceQuery.isError}
       onRetryDevices={() => deviceQuery.refetch()}
+      onSignOutDevice={(id) => runWithStepUp(() => signOutOne.mutate(id))}
+      signingOutDeviceId={signOutOne.isPending ? (signOutOne.variables ?? null) : null}
       onSignOutOtherDevices={() => runWithStepUp(() => signOutOthers.mutate())}
       isSigningOutOtherDevices={signOutOthers.isPending}
       copy={copy}

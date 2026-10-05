@@ -643,10 +643,15 @@
       "signOutOtherDevicesFailed": "Andere Geräte konnten nicht abgemeldet werden",
       "currentDevice": "Dieser Browser",
       "deviceSignedInAt": "Angemeldet am {date}",
-      "deviceActive": "Aktiv",
       "noDevices": "Keine angemeldeten Geräte",
       "noDevicesDescription": "Du bist derzeit auf keinem Gerät angemeldet.",
-      "devicesLoadFailed": "Deine angemeldeten Geräte konnten nicht geladen werden"
+      "devicesLoadFailed": "Deine angemeldeten Geräte konnten nicht geladen werden",
+      "deviceName": "{browser} auf {os}",
+      "unknownDevice": "Unbekanntes Gerät",
+      "deviceLastActive": "Zuletzt aktiv {date}",
+      "signOutDevice": "Abmelden",
+      "signedOutDevice": "Gerät abgemeldet",
+      "signOutDeviceFailed": "Das Gerät konnte nicht abgemeldet werden"
     },
     "appearance": {
       "theme": "Design",

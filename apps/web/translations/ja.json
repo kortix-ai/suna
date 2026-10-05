@@ -643,10 +643,15 @@
       "signOutOtherDevicesFailed": "他のデバイスからサインアウトできませんでした",
       "currentDevice": "このブラウザー",
       "deviceSignedInAt": "{date}にサインイン",
-      "deviceActive": "アクティブ",
       "noDevices": "サインイン中のデバイスはありません",
       "noDevicesDescription": "現在どのデバイスでもサインインしていません。",
-      "devicesLoadFailed": "サインイン中のデバイスを読み込めませんでした"
+      "devicesLoadFailed": "サインイン中のデバイスを読み込めませんでした",
+      "deviceName": "{os} の {browser}",
+      "unknownDevice": "不明なデバイス",
+      "deviceLastActive": "最終アクティブ: {date}",
+      "signOutDevice": "サインアウト",
+      "signedOutDevice": "そのデバイスからサインアウトしました",
+      "signOutDeviceFailed": "そのデバイスからサインアウトできませんでした"
     },
     "appearance": {
       "theme": "テーマ",

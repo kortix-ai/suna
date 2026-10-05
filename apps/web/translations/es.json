@@ -643,10 +643,15 @@
       "signOutOtherDevicesFailed": "No se pudo cerrar sesión en otros dispositivos",
       "currentDevice": "Este navegador",
       "deviceSignedInAt": "Conectado el {date}",
-      "deviceActive": "Activo",
       "noDevices": "No hay dispositivos conectados",
       "noDevicesDescription": "No tienes sesión iniciada en ningún dispositivo en este momento.",
-      "devicesLoadFailed": "No se pudieron cargar tus dispositivos conectados"
+      "devicesLoadFailed": "No se pudieron cargar tus dispositivos conectados",
+      "deviceName": "{browser} en {os}",
+      "unknownDevice": "Dispositivo desconocido",
+      "deviceLastActive": "Última actividad: {date}",
+      "signOutDevice": "Cerrar sesión",
+      "signedOutDevice": "Se cerró la sesión en ese dispositivo",
+      "signOutDeviceFailed": "No se pudo cerrar la sesión en ese dispositivo"
     },
     "appearance": {
       "theme": "Tema",

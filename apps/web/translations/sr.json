@@ -643,10 +643,15 @@
       "signOutOtherDevicesFailed": "Није могуће одјавити се са других уређаја",
       "currentDevice": "Овај прегледач",
       "deviceSignedInAt": "Пријављен {date}",
-      "deviceActive": "Активан",
       "noDevices": "Нема пријављених уређаја",
       "noDevicesDescription": "Тренутно нисте пријављени ни на једном уређају.",
-      "devicesLoadFailed": "Пријављени уређаји се не могу учитати"
+      "devicesLoadFailed": "Пријављени уређаји се не могу учитати",
+      "deviceName": "{browser} на {os}",
+      "unknownDevice": "Непознат уређај",
+      "deviceLastActive": "Последња активност: {date}",
+      "signOutDevice": "Одјави",
+      "signedOutDevice": "Уређај је одјављен",
+      "signOutDeviceFailed": "Одјава уређаја није успела"
     },
     "appearance": {
       "theme": "Тема",

@@ -643,10 +643,15 @@
       "signOutOtherDevicesFailed": "Impossible de se déconnecter des autres appareils",
       "currentDevice": "Ce navigateur",
       "deviceSignedInAt": "Connecté le {date}",
-      "deviceActive": "Actif",
       "noDevices": "Aucun appareil connecté",
       "noDevicesDescription": "Vous n’êtes connecté sur aucun appareil pour le moment.",
-      "devicesLoadFailed": "Impossible de charger vos appareils connectés"
+      "devicesLoadFailed": "Impossible de charger vos appareils connectés",
+      "deviceName": "{browser} sur {os}",
+      "unknownDevice": "Appareil inconnu",
+      "deviceLastActive": "Dernière activité : {date}",
+      "signOutDevice": "Se déconnecter",
+      "signedOutDevice": "Appareil déconnecté",
+      "signOutDeviceFailed": "Impossible de déconnecter cet appareil"
     },
     "appearance": {
       "theme": "Thème",

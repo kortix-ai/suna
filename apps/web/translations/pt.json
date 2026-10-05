@@ -643,10 +643,15 @@
       "signOutOtherDevicesFailed": "Não foi possível desconectar outros dispositivos",
       "currentDevice": "Este navegador",
       "deviceSignedInAt": "Conectado em {date}",
-      "deviceActive": "Ativo",
       "noDevices": "Nenhum dispositivo conectado",
       "noDevicesDescription": "Você não está conectado em nenhum dispositivo neste momento.",
-      "devicesLoadFailed": "Não foi possível carregar seus dispositivos conectados"
+      "devicesLoadFailed": "Não foi possível carregar seus dispositivos conectados",
+      "deviceName": "{browser} em {os}",
+      "unknownDevice": "Dispositivo desconhecido",
+      "deviceLastActive": "Última atividade: {date}",
+      "signOutDevice": "Sair",
+      "signedOutDevice": "Sessão encerrada nesse dispositivo",
+      "signOutDeviceFailed": "Não foi possível encerrar a sessão nesse dispositivo"
     },
     "appearance": {
       "theme": "Tema",
