@@ -290,7 +290,6 @@ mock.module('./provider-balancer', () => ({
 
 mock.module('../../snapshots/builder', () => ({
   DEFAULT_SANDBOX_SLUG: 'default',
-  ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async (_gitProject: unknown, opts: Record<string, unknown>) => {
     imageRequests.push(opts);
     const queued = imageResolutionQueue.shift();
@@ -318,10 +317,10 @@ mock.module('../../snapshots/builder', () => ({
   deleteSandboxImage: async (_project: unknown, opts: { slug?: string; provider?: string }) => {
     standardImageDeleteCalls.push(opts);
   },
-  // The real resolver throws TemplateNotFoundError for `meta` / `pi-worker`:
-  // neither is a project template.
+  // The real resolver throws TemplateNotFoundError for `meta`: it is not a
+  // project template.
   resolveTemplate: async (_project: unknown, slug: unknown) => {
-    if (slug === 'meta' || slug === 'pi-worker') throw new Error(`template ${String(slug)} not found`);
+    if (slug === 'meta') throw new Error(`template ${String(slug)} not found`);
     return {};
   },
 }));
@@ -547,6 +546,45 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
         call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
     );
     expect(finishCall?.updates.config).toMatchObject({ serviceKey: 'exec-tok-1' });
+  });
+
+  // Session create passes the env build as a promise. The image check, the
+  // row insert and the token mint do not read it, so they run while it builds.
+  test('an env build still in flight does not hold the token mint; its values reach the provider', async () => {
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+    let finishEnvBuild!: (env: Record<string, string>) => void;
+    const envBuild = new Promise<Record<string, string>>((resolve) => {
+      finishEnvBuild = resolve;
+    });
+
+    const provisioning = provisionSessionSandbox({ ...baseOpts(), extraEnvVars: envBuild });
+    await waitFor((resolve) => {
+      const poll = () => (accountTokenCreateCalls.length > 0 ? resolve() : setTimeout(poll, 5));
+      poll();
+    });
+    // The token is minted and no provider call has been made: the env is pending.
+    expect(providerCreateOpts).toHaveLength(0);
+
+    finishEnvBuild({ KORTIX_PROJECT_BRANCH: 'main' });
+    await provisioning;
+    await opened;
+
+    const envVars = providerCreateOpts[0]?.envVars as Record<string, string>;
+    expect(envVars.KORTIX_PROJECT_BRANCH).toBe('main');
+    expect(envVars.KORTIX_TOKEN).toBe('exec-tok-1');
+  });
+
+  test('an env build that fails closes the sandbox row and fails the provision', async () => {
+    await expect(
+      provisionSessionSandbox({ ...baseOpts(), extraEnvVars: Promise.reject(new Error('env build failed')) }),
+    ).rejects.toThrow('env build failed');
+
+    expect(providerCreateOpts).toHaveLength(0);
+    expect(
+      updateCalls.some((call) => call.table === sessionSandboxes && call.updates.status === 'error'),
+    ).toBe(true);
   });
 
   test('a gateway project boots with the gateway env on any plan (the gateway enforces the plan per request)', async () => {
@@ -1031,60 +1069,5 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     );
     expect(preserved?.updates.externalId).toBe(EXTERNAL_ID);
     expect(mergedMetadata(preserved?.updates)).toMatchObject({ stoppedDuringProvisioning: true });
-  });
-});
-
-describe('pi worker pool claim (P1.8)', () => {
-  test('a pi boot tries the parked pool before provider create, gated to daytona', async () => {
-    const source = await Bun.file(new URL('./session-sandbox.ts', import.meta.url)).text();
-    const claim = source.indexOf('const pooledClaim =');
-    const create = source.indexOf('retrySandboxProvisionCreate(provider, providerCreateInput', claim);
-    const refill = source.indexOf('void maintainPiWorkerPool()', claim);
-    const externalId = source.indexOf('bgExternalId = result.externalId', claim);
-    expect(claim).toBeGreaterThan(-1);
-    // Claim sits BEFORE the provider create and only for pi worker boots on
-    // daytona; the refill kick fires after either path, before activation.
-    const gate = source.slice(claim, create);
-    expect(gate).toContain("opts.metadata?.pi_worker_boot === true && providerName === 'daytona'");
-    expect(gate).toContain('claimParkedPiWorkerBox(providerCreateInput.envVars ?? {})');
-    expect(create).toBeGreaterThan(claim);
-    expect(refill).toBeGreaterThan(create);
-    expect(externalId).toBeGreaterThan(refill);
-    // A claim failure must NEVER fail the session — it degrades to cold create.
-    expect(gate).toContain('return null');
-  });
-
-  test('a claimed box records the pool path in its provision timeline', async () => {
-    const source = await Bun.file(new URL('./session-sandbox.ts', import.meta.url)).text();
-    const claim = source.indexOf('if (pooledClaim) {');
-    const mark = source.indexOf("tl.mark('pool-claim')", claim);
-    const elseBranch = source.indexOf('} else {', claim);
-    expect(claim).toBeGreaterThan(-1);
-    expect(mark).toBeGreaterThan(claim);
-    expect(mark).toBeLessThan(elseBranch);
-  });
-});
-
-describe('pi worker pool — stale-label hazard', () => {
-  test('reap and claim both re-verify the park label on the direct object', async () => {
-    const source = await Bun.file(new URL('./pi-worker-pool.ts', import.meta.url)).text();
-    // Maintain: every listed box passes verifyStillParked BEFORE the
-    // dead/stale/over-age triage that feeds the reap list.
-    const verify = source.indexOf('async function verifyStillParked');
-    const maintain = source.indexOf('export function maintainPiWorkerPool');
-    const verifyCall = source.indexOf('await verifyStillParked(box.externalId)', maintain);
-    const triage = source.indexOf("state === 'stopped'", maintain);
-    expect(verify).toBeGreaterThan(-1);
-    expect(verifyCall).toBeGreaterThan(maintain);
-    expect(verifyCall).toBeLessThan(triage);
-    // An unknowable box is never reapable.
-    const verifyBody = source.slice(verify, source.indexOf('}', source.indexOf('catch', verify)));
-    expect(verifyBody).toContain('return false');
-    // Claim: the direct object's labels gate the dial.
-    const claim = source.indexOf('export async function claimParkedPiWorkerBox');
-    const gate = source.indexOf("liveLabels[PARK_LABEL] !== '1'", claim);
-    const dial = source.indexOf('/kortix/claim', claim);
-    expect(gate).toBeGreaterThan(claim);
-    expect(gate).toBeLessThan(dial);
   });
 });

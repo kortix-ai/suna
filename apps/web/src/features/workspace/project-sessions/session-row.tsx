@@ -2,6 +2,7 @@
 
 import {
   SESSION_STATUS_TRANSLATION_KEY,
+  sessionCanBeStopped,
   sessionDisplayStatus,
   sessionSource,
   type SessionDisplayStatus,
@@ -449,7 +450,7 @@ function SessionRowImpl({
                         {tI18nComplete.raw('text6b983a81e5e8')}
                       </DropdownMenuItem>
                     ) : null}
-                    {session.status === 'running' && hasLifecycleActions ? (
+                    {sessionCanBeStopped(session) && hasLifecycleActions ? (
                       <DropdownMenuItem
                         className="cursor-pointer"
                         disabled={stopping}

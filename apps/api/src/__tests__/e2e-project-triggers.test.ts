@@ -206,7 +206,6 @@ mock.module('../projects/git', () => ({
 }));
 
 mock.module("../snapshots/builder", () => ({
-  ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
   ensureMetaSandboxImage: async () => ({ snapshotName: "kortix-meta-test", slug: "meta", contentHash: "b".repeat(64), built: false, isDefault: false }),
   deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
@@ -308,8 +307,8 @@ mock.module('../projects/lib/git', () => ({
 
 mock.module('../platform/services/session-sandbox', () => ({
   provisionSessionSandbox: async (input: any) => {
+    lastProvisionEnv = await input.extraEnvVars;
     sandboxProvisionCalls += 1;
-    lastProvisionEnv = input.extraEnvVars;
   },
 }));
 
@@ -413,10 +412,13 @@ const triggerDbMock: any = {
               // both `await ...limit(n)` and `...limit(n).offset(m)` resolve.
               limit: (limit: number) => {
                 const limited = rows.slice(0, limit);
-                return {
+                const chain = {
                   offset: async (offset: number) => limited.slice(offset),
+                  // The lifecycle claim locks its picks: `.limit(n).for('update', …)`.
+                  for: () => chain,
                   then: (resolve: (rows: any[]) => unknown) => resolve(limited),
                 };
+                return chain;
               },
               then: (resolve: (rows: any[]) => unknown) => resolve(rows),
             };
@@ -608,7 +610,14 @@ const triggerDbMock: any = {
         where: () => ({
           returning: async () => {
             if (table === sessionLifecycleCommands) {
-              lifecycleCommandRows = lifecycleCommandRows.map((row) => ({ ...row, ...setValues }));
+              // The claim sets `attempts` and `result` with SQL expressions that
+              // Postgres evaluates against the row; apply the plain values.
+              const plain = Object.fromEntries(Object.entries(setValues).filter(([, v]) => !is(v, SQL)));
+              lifecycleCommandRows = lifecycleCommandRows.map((row) => ({
+                ...row,
+                ...plain,
+                ...(is(setValues.attempts, SQL) ? { attempts: row.attempts + 1 } : {}),
+              }));
               return lifecycleCommandRows;
             }
             return [];

@@ -4,7 +4,7 @@ import { projectSessionConnectorBindings, projectSessionGrants, projectSessionRu
 import { and, eq, isNull } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG, PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
+import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG } from '@kortix/shared';
 import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { type SandboxProviderName, config } from '../../config';
@@ -50,14 +50,13 @@ import {
   repositoryAccessFromLoadedAgents,
   legacyReadWorkspaceFromLoadedAgents,
 } from '../agents';
-import { createRemoteSessionBranch , resolveCommitSha } from '../git';
+import { createRemoteSessionBranch } from '../git';
 import { convertPendingPromptToInboxRow } from '../session-lifecycle/pending-prompt';
 
 import { validateNativeOpencodeModelRef } from './session-model-change';
 import { listResolvedProjectSecrets, parseSessionSecretsAllowlist, secretKeyCollisionInAllowlist } from '../secrets';
 
 
-import { resolveManifestRuntime } from './compile-agent-config';
 import { withProjectGitAuth } from './git';
 import { repositoryGeneration } from './repository-generation';
 import { resolveFastBootGitHintWithCache } from './fast-boot-git-hint';
@@ -90,27 +89,38 @@ import { projectSessionMetadataMerge } from './session-metadata-merge';
 import { transitionSession } from '../session-lifecycle/status-transitions';
 import { mergeSessionSandboxEnv, parseSessionRuntimeContext } from './session-runtime-context';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
-import { buildPiWorkerSessionEnvVars } from './session-runtime-env';
 import { resolvePlatformMetaSandbox } from './platform-meta-agent';
-import { prebuildCompiledBootArtifacts } from '../../git-proxy/compiled-prebuild';
 
 import {
   resolveProjectSnapshotMode,
   resolveProjectSnapshotPinForSession,
 } from '../../git-proxy/project-snapshot';
 
-import { checkConcurrentSessionCap } from './session-caps';
-import { buildSessionSandboxEnvVars, deriveKortixApiBase, proxyGitUrl } from './session-sandbox-env-build';
+import { buildSessionSandboxEnvVars, deriveKortixApiBase } from './session-sandbox-env-build';
 import { sandboxCallbackUnreachableReason, sandboxCallbackDeadTunnelReason } from './session-callback-probe';
+/** Every status a failed create answers with. Routes that create a session
+ *  declare these, so the published spec lists them. */
+export const SESSION_CREATE_ERROR_STATUSES = [400, 402, 403, 404, 409, 429, 500, 503] as const;
+export type SessionCreateErrorStatus = (typeof SESSION_CREATE_ERROR_STATUSES)[number];
+
+/** A status from an HTTPException thrown inside the create, narrowed to the
+ *  declared set. Nothing in the insert throws one outside it today; an
+ *  undeclared 4xx would answer 400 rather than a status the spec omits. */
+function sessionCreateErrorStatus(status: number): SessionCreateErrorStatus {
+  return (SESSION_CREATE_ERROR_STATUSES as readonly number[]).includes(status)
+    ? (status as SessionCreateErrorStatus)
+    : 400;
+}
+
 export type SessionCreateError = {
-  status: number;
+  status: SessionCreateErrorStatus;
   body: Record<string, unknown>;
   headers?: Record<string, string>;
 };
 
 export function sendSessionCreateError(c: Context, error: SessionCreateError) {
   for (const [key, value] of Object.entries(error.headers ?? {})) c.header(key, value);
-  return c.json(error.body, error.status as any);
+  return c.json(error.body, error.status);
 }
 
 /** The fields postgres.js attaches to a `Failed query:` error (pg error codes). */
@@ -233,13 +243,6 @@ export async function createProjectSession(input: {
   userId: string;
   requestingPrincipalType: 'human' | 'service_account';
   body: Record<string, unknown>;
-  enforceAccountCap?: boolean;
-  /**
-   * Concurrent-session slots this create must LEAVE FREE. Defaults to 0 — an
-   * ordinary create may take the last slot. Speculative creation passes 1; see
-   * `enforceConcurrentSessionCap`.
-   */
-  reserveConcurrentSlots?: number;
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
   request?: RequestAuditContext;
@@ -272,7 +275,6 @@ export async function createProjectSession(input: {
 }): Promise<{
   row?: ProjectSessionRow;
   error?: SessionCreateError;
-  headers?: Record<string, string>;
   pendingPromptIdempotencyKey?: string | null;
 }> {
   const { project, userId, body } = input;
@@ -411,7 +413,9 @@ export async function createProjectSession(input: {
 
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
   const loadedAgents = await loadProjectAgents(project, {
-    forceRefresh: true,
+    // The same freshness the per-prompt grant read asks for (`MirrorRefresh`):
+    // no `ls-remote` when the branch tip was proven inside the interval.
+    forceRefresh: 'tip-proof',
     rethrowReadErrors: true,
   });
   // The literal "default" is a non-binding legacy sentinel. It must not block
@@ -772,47 +776,10 @@ export async function createProjectSession(input: {
   // Validate the requested sandbox template up front so the user gets a clean
   // 400 instead of an async session-failed if they typed a slug that doesn't
   // exist. The platform default is always valid.
-  // Harness/worker split: with the project's pi_worker flag on AND the manifest
-  // declaring `runtime: pi`, the session boots the shared pi worker image and
-  // its compiled runtime artifact instead of the OpenCode stack. Both gates or
-  // nothing — the flag alone only compiles artifacts, the manifest alone is
-  // inert, and any resolution failure falls back to the OpenCode path.
-  let piWorkerBoot = false;
-  let piWorkerSha: string | null = null;
-  if (!platformMetaAgent && resolveFeatureFlag(project.metadata, 'pi_worker')) {
-    try {
-      const authedProject = await withProjectGitAuth(project);
-      const ref = (baseRef ?? '').trim() || project.defaultBranch;
-      // One round trip, not two: the runtime read and the tip resolution are
-      // independent, and both sit on the POST /sessions critical path. A
-      // non-pi manifest wastes one ls-remote-sized read; a pi manifest saves
-      // a full sequential git hop.
-      const [runtime, sha] = await Promise.all([
-        resolveManifestRuntime(authedProject, baseRef),
-        resolveCommitSha(authedProject, ref).catch(() => null),
-      ]);
-      if (runtime === 'pi' && sha) {
-        piWorkerSha = sha;
-        piWorkerBoot = true;
-        sandboxSlug = PI_WORKER_SANDBOX_SLUG;
-      } else if (runtime === 'pi') {
-        console.warn(
-          `[sessions] pi manifest on ${projectId} but tip resolution for '${ref}' failed; booting OpenCode path`,
-        );
-      }
-    } catch (err) {
-      console.warn(
-        `[sessions] pi worker resolution failed for ${projectId}; booting OpenCode path:`,
-        err instanceof Error ? err.message : err,
-      );
-    }
-  }
-
   if (
     !platformMetaAgent &&
     sandboxSlug &&
-    sandboxSlug !== DEFAULT_SANDBOX_SLUG &&
-    sandboxSlug !== PI_WORKER_SANDBOX_SLUG
+    sandboxSlug !== DEFAULT_SANDBOX_SLUG
   ) {
     try {
       await resolveTemplate(
@@ -836,29 +803,7 @@ export async function createProjectSession(input: {
     }
   }
 
-  let responseHeaders: Record<string, string> | undefined;
-
-  // The concurrency cap and the billing gate are independent read-only checks
-  // (`checkBillingAdmission` debits nothing; see its note on the hold leak) —
-  // run them concurrently so a warmed create pays a single DB round-trip instead
-  // of two serial ones. Error precedence is preserved exactly: the cap (429) is
-  // still evaluated/returned before billing (402).
-  const [capResult, billingCheck] = await Promise.all([
-    input.enforceAccountCap !== false
-      ? checkConcurrentSessionCap(
-          accountId,
-          userId,
-          input.request,
-          input.reserveConcurrentSlots ?? 0,
-          projectId,
-        )
-      : Promise.resolve(null),
-    checkBillingAdmission(accountId),
-  ]);
-  if (capResult) {
-    responseHeaders = capResult.headers;
-    if (capResult.error) return { error: capResult.error };
-  }
+  const billingCheck = await checkBillingAdmission(accountId);
   if (!billingCheck.ok) {
     return {
       error: {
@@ -1031,7 +976,9 @@ export async function createProjectSession(input: {
     // Session, context and connection bindings are one transaction. Nothing is
     // visible and provisioning never starts when any child insert fails.
     if (error instanceof HTTPException && error.status < 500) {
-      return { error: { status: error.status, body: await error.getResponse().json() } };
+      return {
+        error: { status: sessionCreateErrorStatus(error.status), body: await error.getResponse().json() },
+      };
     }
     // Never return `(error as Error).message`: postgres.js embeds the whole
     // statement and its parameters in it (see `resolveSessionInsertFailure`).
@@ -1211,10 +1158,8 @@ export async function createProjectSession(input: {
       // daemon boot with ZERO proxied git requests (scaffold + delta) and spawn
       // OpenCode before the checkout. Bounded by the 2 s race below; a miss
       // just means the daemon's fetch fallback.
-      // The worker path never clones: the scaffold/delta hint is pure waste
-      // there, and the hint alone holds the env build for up to 2 s.
       const fastBootGitHintPromise =
-        !piWorkerBoot && config.KORTIX_FAST_GIT_BOOT_ENABLED
+        config.KORTIX_FAST_GIT_BOOT_ENABLED
         ? Promise.race([
             projectWithGitAuthPromise
               .then((projectWithGitAuth) =>
@@ -1232,70 +1177,7 @@ export async function createProjectSession(input: {
             if (fastBootHintTimeout) clearTimeout(fastBootHintTimeout);
           })
         : Promise.resolve(undefined);
-      // OpenCode compiled-boot artifacts serve the daemon path only; a worker
-      // boot fetches its own per-commit pi artifact instead.
-      if (!piWorkerBoot && config.KORTIX_COMPILED_BOOT_MODE !== 'off') {
-        void Promise.all([projectWithGitAuthPromise, fastBootGitHintPromise])
-          .then(([projectWithGitAuth, hint]) =>
-            hint?.baseSha
-              ? prebuildCompiledBootArtifacts(
-                  projectWithGitAuth,
-                  baseRef,
-                  hint.baseSha,
-                  proxyGitUrl(projectId),
-                )
-              : null,
-          )
-          .then((artifacts) => {
-            if (!artifacts) return;
-            console.info('[compiled-boot] session artifacts ready', {
-              projectId,
-              sessionId,
-              ref: baseRef,
-              sourceSha: artifacts.runtime.sourceSha,
-              checkoutCache: artifacts.checkout.cacheHit ? 'hit' : 'miss',
-              runtimeCache: artifacts.runtime.cacheHit ? 'hit' : 'miss',
-            });
-          })
-          .catch((error) => {
-            console.warn('[compiled-boot] session artifact prebuild failed', {
-              projectId,
-              sessionId,
-              ref: baseRef,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          });
-      }
-      // Worker boots skip the OpenCode env build entirely: the compiled
-      // artifact already carries the agent map, v0 grants the worker no
-      // project secrets (the gateway resolves BYOK server-side per request),
-      // and nothing clones. Measured on dev 2026-08-27, the full chain
-      // (hint race + compiled config + secret grant + secrets snapshot) cost
-      // 1.1–2.4 s of every cold pi boot.
-      const envPromise = piWorkerBoot
-        ? Promise.resolve(
-            buildPiWorkerSessionEnvVars({
-              projectId,
-              sessionId,
-              agentName,
-              // Only an EXPLICIT session model may override the baked agent
-              // model — the platform/project fallback resolution exists for
-              // the OpenCode path and must not clobber the artifact's own
-              // model (KORTIX_MODEL wins over the bake inside the worker).
-              // Stripped to the native ref: the worker's env path takes the
-              // value verbatim, unlike the baked path which de-prefixes.
-              opencodeModel:
-                opencodeModelSource === 'explicit' && opencodeModel
-                  ? opencodeModel.replace(/^kortix\//, '')
-                  : null,
-              apiUrl: deriveKortixApiBase(),
-              frontendUrl: sandboxFrontendBaseUrl(),
-            }),
-          ).then((envVars) => {
-            tl.mark('env-vars');
-            return envVars;
-          })
-        : fastBootGitHintPromise
+      const envPromise = fastBootGitHintPromise
         .then(async (fastBootGitHint) => {
           // S3 config provider: pin a PREPARED archive for the exact base tip
           // and presign its download descriptor right here (local signing, no
@@ -1405,7 +1287,11 @@ export async function createProjectSession(input: {
         }).catch(() => {});
       });
 
-      const extraEnvVars = mergeSessionSandboxEnv(await envPromise, input.extraEnvVars);
+      // Not awaited here: provisioning reads it only when it builds the provider
+      // input, so the env build overlaps the image check and the token mint.
+      const extraEnvVars = envPromise.then((env) => {
+        return mergeSessionSandboxEnv(env, input.extraEnvVars);
+      });
 
       const provisionPromise = provisionSessionSandbox({
         sandboxId: sessionId,
@@ -1413,32 +1299,16 @@ export async function createProjectSession(input: {
         projectId,
         userId,
         agentName,
-        allowProjectImage: piWorkerBoot
-          ? false
-          : projectImageAllowedForSession(agentName, repositoryAccess),
-        // v0 pins the worker to Daytona: the entrypoint override in
-        // ensurePiWorkerImage is only exercised there so far. Lift once the
-        // other adapters' entrypoint handling is verified.
-        provider: piWorkerBoot ? 'daytona' : providerName,
-        providerLocked: piWorkerBoot ? true : providerLocked,
+        allowProjectImage: projectImageAllowedForSession(agentName, repositoryAccess),
+        provider: providerName,
+        providerLocked,
         metadata: {
           session_id: sessionId,
           project_id: projectId,
-          ...(piWorkerBoot ? { pi_worker_boot: true } : {}),
           ...(input.metadata ?? {}),
         },
         initialTurn,
-        extraEnvVars:
-          piWorkerBoot && piWorkerSha
-            ? {
-                ...extraEnvVars,
-                // The worker's entrypoint composes the artifact URL from these
-                // plus KORTIX_API_URL/KORTIX_PROJECT_ID/KORTIX_TOKEN it
-                // already receives.
-                KORTIX_PI_RUNTIME_REF: (baseRef ?? '').trim() || project.defaultBranch,
-                KORTIX_PI_RUNTIME_SHA: piWorkerSha,
-              }
-            : extraEnvVars,
+        extraEnvVars,
         projectMetadata: project.metadata,
         gitProject: {
           projectId,
@@ -1483,7 +1353,6 @@ export async function createProjectSession(input: {
 
   return {
     row: sessionRow,
-    headers: responseHeaders,
     pendingPromptIdempotencyKey:
       pendingPromptConversion?.rowValues?.idempotencyKey ?? null,
   };

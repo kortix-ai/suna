@@ -6,7 +6,6 @@ import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 
 import type { Config } from '../config/config'
-import { materializeCompiledCheckoutToStage } from './compiled-checkout'
 import { logger } from '../log/logger'
 
 type ExecResult = { code: number; stdout: string; stderr: string }
@@ -192,10 +191,18 @@ async function gitWithAuth(
 }
 
 async function resolveCloneCredential(cfg: Config): Promise<CloneCredential | undefined> {
-  if (!cfg.repoUrl || !/\/v1\/git\//.test(cfg.repoUrl)) {
-    if (cfg.repoUrl && (cfg.repoUrl.startsWith('/') || cfg.repoUrl.startsWith('file:'))) {
-      return undefined
-    }
+  // No configured remote: the caller works on the checkout's own origin, and
+  // buildGitAuthArgs only ever attaches a credential to the Kortix Git proxy,
+  // so there is nothing to resolve and nothing to refuse. This is the shape
+  // the refresh/pull routes rely on: a materialized repo with no repoUrl in
+  // env answers its own origin (or 409s when it is not materialized), it does
+  // not turn the credential boundary into a 500.
+  if (!cfg.repoUrl) return undefined
+  if (
+    !/\/v1\/git\//.test(cfg.repoUrl) &&
+    !cfg.repoUrl.startsWith('/') &&
+    !cfg.repoUrl.startsWith('file:')
+  ) {
     throw new Error('direct Git origins are refused; KORTIX_REPO_URL must use the Kortix Git proxy')
   }
   if (!cfg.apiUrl || !cfg.projectId || !cfg.sandboxToken) return undefined
@@ -662,9 +669,8 @@ async function ensureOriginRemote(target: string, repoUrl: string): Promise<void
  * transport (the S3 config provider): swap it into the target, reconnect the
  * session remote (the archive ships no remote — never a credential-bearing
  * one), create the local session branch, pin the repo identity, and mark the
- * checkout adopted. Exactly the contract the compiled-checkout branch of
- * acquireProjectViaGit delivers, so every later Git operation — credential
- * helper, refresh, config-dir sync, push — finds the workspace it expects.
+ * checkout adopted, so every later Git operation — credential helper,
+ * refresh, config-dir sync, push — finds the workspace a clone leaves.
  */
 export async function finalizeSnapshotStage(cfg: Config, stage: string): Promise<void> {
   const repoUrl = requireRepoUrl(cfg)
@@ -791,8 +797,7 @@ export async function adoptOrClearBakedCheckout(cfg: Config): Promise<boolean> {
 }
 
 /**
- * The acquisition half of the legacy Git path — compiled checkout, scaffold
- * delta, or clone — followed by the shared checkout finalization (session
+ * The acquisition half of the legacy Git path — scaffold delta or clone — followed by the shared checkout finalization (session
  * branch, identity, adoption marker). Expects an EMPTY target (see
  * adoptOrClearBakedCheckout). The config-provider coordinator calls this as
  * the Git transport and as the fallback after a failed S3 attempt.
@@ -803,33 +808,6 @@ export async function acquireProjectViaGit(cfg: Config): Promise<void> {
   const base = cfg.defaultBranch
   await mkdir(target, { recursive: true })
   {
-    if (cfg.compiledBootMode !== 'off' && cfg.sessionFresh) {
-      const stage = await createStagePath(target, 'compiled')
-      try {
-        const metrics = await materializeCompiledCheckoutToStage(cfg, stage, base)
-        if (cfg.compiledBootMode === 'shadow') {
-          logger.info('[git] compiled checkout verified in shadow mode; using clone path', metrics)
-          await rm(stage, { recursive: true, force: true })
-        } else {
-          await swapStageIntoTarget(stage, target)
-          const setUrl = await execGit(['-C', target, 'remote', 'set-url', 'origin', repoUrl])
-          if (setUrl.code !== 0) throw new Error(`git remote set-url failed: ${setUrl.stderr}`)
-          if (cfg.branchName) await checkoutLocalSessionBranch(target, cfg.branchName)
-          await configureRepoGitIdentity(cfg, target)
-          await markSessionCheckoutAdopted(target, cfg.branchName)
-          logger.info('[git] repo materialized from compiled checkout', metrics)
-          return
-        }
-      } catch (error) {
-        await rm(stage, { recursive: true, force: true }).catch(() => {})
-        if (cfg.compiledBootMode === 'required') throw error
-        logger.warn('[git] compiled checkout unavailable; using clone path', {
-          mode: cfg.compiledBootMode,
-          error: error instanceof Error ? error.message : String(error),
-        })
-      }
-    }
-
     // Scaffold fast path: the image bakes the canonical starter repo at
     // /opt/kortix/scaffold.git whose root commit is SHARED with every project
     // seeded from the starter (deterministic root — comp git-backends/seed.ts).

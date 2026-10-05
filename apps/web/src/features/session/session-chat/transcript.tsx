@@ -57,7 +57,10 @@ import { ConnectProviderDialog } from '@/features/session/model-selector';
 import { TurnOutcomes } from '@/features/session/outcomes/turn-outcomes';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { showTurnBusyIndicator } from '@/features/session/turn-busy-visibility';
-import type { AttachmentUploadStatus } from '@/features/session/turn/user-message';
+import type {
+  AttachmentUploadStatus,
+  NormalizedAttachment,
+} from '@/features/session/turn/user-message';
 import type { TurnServedModel } from '@/features/session/turn/served-model';
 import { SessionBusyIndicator } from '../session-busy-indicator';
 import { SessionTurnMeta } from '../session-turn-meta';
@@ -504,8 +507,8 @@ interface SessionTurnProps {
   /** The staged rewind + replacement send is in flight. */
   editPending?: boolean;
   onEditCancel?: () => void;
-  /** Commit the edit: rewind the session at `messageId` and send `text`. */
-  onEditSend?: (messageId: string, text: string) => void;
+  /** Commit the edit: rewind the session at `messageId`, send `text` and the `kept` attachments. */
+  onEditSend?: (messageId: string, text: string, kept: NormalizedAttachment[]) => void;
 }
 
 /**

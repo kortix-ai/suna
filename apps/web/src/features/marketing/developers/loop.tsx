@@ -9,7 +9,7 @@ import {
   TerminalWindowIcon,
 } from '@phosphor-icons/react';
 import { m, useReducedMotion } from 'motion/react';
-import { loop } from './content';
+import { useDevelopersCopy } from './use-developers-copy';
 import { SECTION_HEADING } from './shared';
 
 const ICONS = {
@@ -25,6 +25,7 @@ const ICONS = {
 const EASE = [0.23, 1, 0.32, 1] as const;
 
 export function DevelopersLoop() {
+  const { loop } = useDevelopersCopy();
   const reduce = useReducedMotion();
   return (
     <section id="loop" className="relative w-full">

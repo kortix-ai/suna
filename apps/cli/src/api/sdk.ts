@@ -2,7 +2,6 @@ import { type Kortix, type KortixPlatformConfig, createKortix } from '@kortix/sd
 import { runWithKortix } from '@kortix/sdk/server';
 
 import type { Auth } from './auth.ts';
-import { ApiError } from './client.ts';
 import { sdkBackendUrl } from '@kortix/shared/host-config';
 
 export { sdkBackendUrl } from '@kortix/shared/host-config';
@@ -19,6 +18,8 @@ export function sdkConfigFromAuth(auth: Auth): KortixPlatformConfig {
   return {
     backendUrl: sdkBackendUrl(auth.api_base),
     getToken: async () => token || null,
+    // Baked by the release build (`--define`); unset in a local `bun run`.
+    clientVersion: process.env.KORTIX_CLI_VERSION ? `cli/${process.env.KORTIX_CLI_VERSION}` : undefined,
   };
 }
 

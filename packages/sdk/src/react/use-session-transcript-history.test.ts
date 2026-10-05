@@ -3,6 +3,7 @@ import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { configureKortix } from '../core/http/config';
+import { claimOpenBundle, openSessionBundle, resetSessionOpenBundles } from '../core/session/open-bundle';
 import { useSessionTranscriptHistory } from './use-session-transcript-history';
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -14,6 +15,7 @@ afterEach(async () => {
   root = undefined;
   client?.clear();
   globalThis.fetch = originalFetch;
+  resetSessionOpenBundles();
 });
 
 function transcript(rootId = 'ses_history') {
@@ -172,4 +174,104 @@ test('only a complete, available copy that counts zero proves a conversation emp
     root = undefined;
     client.clear();
   }
+});
+
+// The session-open snapshot (`GET .../snapshot`) carries the same saved window.
+// An open used to download it twice: once in the snapshot, once here.
+function snapshot(overrides: Record<string, unknown> = {}) {
+  return {
+    observed_at: '2026-09-16T00:00:01Z',
+    session: { session_id: 's1', runtime_session_id: 'ses_history', opencode_session_id: 'ses_history' },
+    turn: { known: false, reason: 'test' },
+    queue: { known: false, reason: 'test' },
+    transcript: { known: true, requested: true, ...transcript() },
+    config: { known: true, base_ref: null, agent_name: null, llm_gateway_enabled: false },
+    models: { known: false, reason: 'llm_gateway_disabled' },
+    audit: { known: false, reason: 'test' },
+    ...overrides,
+  };
+}
+
+function serve(snapshotResponse: () => Promise<Response>) {
+  const requests: string[] = [];
+  globalThis.fetch = mock(async (url: unknown) => {
+    requests.push(String(url));
+    if (String(url).includes('/snapshot')) return snapshotResponse();
+    return Response.json(transcript());
+  }) as unknown as typeof fetch;
+  configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
+  return requests;
+}
+
+/** Open the session and wait for its snapshot to answer. */
+async function openAndSettle() {
+  openSessionBundle('p1', 's1');
+  await claimOpenBundle('p1', 's1');
+}
+
+const historyReads = (requests: string[]) =>
+  requests.filter((url) => url.includes('/transcript?shape=sync') && url.includes('history=true'));
+
+test('a snapshot that already answered serves the history read: the saved window is downloaded once', async () => {
+  const requests = serve(async () => Response.json(snapshot()));
+  await openAndSettle();
+  const hook = await mount(true);
+  expect(hook.value().rootSessionId).toBe('ses_history');
+  expect(hook.value().envelope?.messages[0].info.id).toBe('msg_history');
+  expect(hook.value().isLoading).toBe(false);
+  expect(requests).toHaveLength(1);
+  expect(requests[0]).toContain('/sessions/s1/snapshot');
+});
+
+test('a snapshot that answered "no copy is saved" serves the history read too', async () => {
+  const requests = serve(async () =>
+    Response.json(
+      snapshot({
+        transcript: { known: true, requested: true, ...transcript(), available: false, source: 'none', messages: [] },
+      }),
+    ),
+  );
+  await openAndSettle();
+  const hook = await mount(true);
+  expect(hook.value()).toEqual({ envelope: null, rootSessionId: null, emptyRootSessionId: null, isLoading: false });
+  expect(requests).toHaveLength(1);
+});
+
+test('a snapshot still in flight is never waited for: the history route answers', async () => {
+  const requests = serve(() => new Promise<Response>(() => {}));
+  openSessionBundle('p1', 's1');
+  const hook = await mount(true);
+  expect(hook.value().isLoading).toBe(false);
+  expect(hook.value().rootSessionId).toBe('ses_history');
+  expect(historyReads(requests)).toHaveLength(1);
+});
+
+test('a snapshot that cannot prove the current root leaves the answer to the history route', async () => {
+  const unproven = [
+    // The saved copy is from another root: the route answers "not available".
+    snapshot({ session: { session_id: 's1', runtime_session_id: 'ses_other', opencode_session_id: 'ses_other' } }),
+    // The session has no root yet.
+    snapshot({ session: { session_id: 's1', runtime_session_id: null, opencode_session_id: null } }),
+    // The leg could not answer, or only the pointer was asked for.
+    snapshot({ transcript: { known: false, reason: 'test' } }),
+    snapshot({ transcript: { known: true, requested: false } }),
+  ];
+  for (const body of unproven) {
+    const requests = serve(async () => Response.json(body));
+    await openAndSettle();
+    await mount(true);
+    expect(historyReads(requests)).toHaveLength(1);
+    if (root) await act(async () => root?.unmount());
+    root = undefined;
+    client.clear();
+    resetSessionOpenBundles();
+  }
+});
+
+test('a failed snapshot leaves the answer to the history route', async () => {
+  const requests = serve(async () => Response.json({ error: 'Not found' }, { status: 404 }));
+  await openAndSettle();
+  const hook = await mount(true);
+  expect(hook.value().rootSessionId).toBe('ses_history');
+  expect(historyReads(requests)).toHaveLength(1);
 });

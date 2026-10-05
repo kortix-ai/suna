@@ -1,8 +1,8 @@
 name: Deploy Dev
 
-# DEV pipeline. `main` is the dev branch: every push auto-deploys the surfaces
-# that changed vs what dev currently runs. Deploys QUEUE: an in-flight deploy
-# always finishes, and only the newest waiting push runs after it (see the
+# DEV pipeline. `main` is the dev branch. A deliberate `workflow_dispatch`
+# deploys the surfaces that changed vs what dev currently runs. Deploys QUEUE: an
+# in-flight deploy always finishes, and only the newest waiting run follows (see the
 # `on:` and `concurrency:` blocks). Every merged pull request gets one "Live on
 # dev" comment once /health serves its commit (the `announce-live` job). A manual
 # `workflow_dispatch` can force all/frontend on demand. Builds are versioned
@@ -23,21 +23,18 @@ name: Deploy Dev
 #
 # Desktop is intentionally NOT here — it's an Electron shell that changes
 # rarely and needs slow signed macOS/Windows runners, so it lives in its own
-# workflow (desktop.yml: only on apps/desktop-electron/** changes or manual
+# workflow (desktop.yml: only on manual
 # dispatch) and never blocks the CLI/API/frontend dev deploy.
 #
 # Promotion to production is a separate, manual workflow (promote.yml), which cuts
 # the single unified vX.Y.Z release bundling API + frontend + CLI + desktop.
 
 on:
-  # DEV auto-deploys the LATEST main commit on every push, building only the
-  # surfaces that actually changed vs what dev is currently running (detect-
-  # changes below diffs against dev-api's live SHA). A push that lands while a
-  # deploy runs waits for it; see `concurrency:` for why it no longer cancels.
-  push:
-    branches: [main]
-  # Manual override: force a full or frontend-only redeploy, or re-deploy on
-  # demand. `changed` (default) matches the push path — only stale surfaces.
+  # DEV deploys only on an explicit dispatch (since 2026-10-03: Actions minutes).
+  # A push to `main` does NOT deploy. Run `gh workflow run deploy-dev.yml -f
+  # surface=changed` (or `all`) to deploy main HEAD. `changed` diffs against
+  # dev-api's live SHA, so one dispatch ships every merge since the last deploy.
+  # A dispatch that lands while a deploy runs waits for it; see `concurrency:`.
   workflow_dispatch:
     inputs:
       surface:
@@ -123,10 +120,9 @@ jobs:
           echo "Latest release: ${LATEST:-none} → dev ${NEXT}-dev.${GITHUB_SHA::8}"
       - name: Resolve deploy base (what dev is actually running)
         id: base
-        # Runs for the change-diffing paths: an ordinary push, and an explicit
-        # dispatch with surface=changed. surface=all / surface=frontend force
+        # Runs for the change-diffing path: a dispatch with surface=changed. surface=all / surface=frontend force
         # their own set below and skip this.
-        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.surface == 'changed')
+        if: inputs.surface == 'changed'
         run: |
           # THE FLAKY-SKIP FIX. The old filter diffed `github.event.before..sha`
           # — the commits in THIS push only. But a superseded/cancelled deploy
@@ -156,14 +152,13 @@ jobs:
         uses: dorny/paths-filter@v4
         id: filter
         with:
-          # For a push, compare against what dev runs (empty = action's default).
+          # For `changed`, compare against what dev runs (empty = action's default).
           base: ${{ steps.base.outputs.base }}
           filters: |
             api:
               - 'apps/api/**'
               - 'apps/kortix-app-runtime/**'
               - 'apps/kortix-sandbox-agent-server/**'
-              - 'apps/kortix-worker/**'  # compiled into the API image (Dockerfile pi-worker stage)
               - 'apps/sandbox/**'
               - 'apps/cli/**'          # baked into the API image (sandbox kortix CLI)
               - 'packages/**'
@@ -605,7 +600,7 @@ jobs:
       # s3:DeleteObject, and expiry is safe because the archive is a cache the
       # API rebuilds from its Git mirror.
       KORTIX_ECS_ENV_OVERRIDES: >-
-        {"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PI_WORKER_POOL_TARGET":"2","KORTIX_PROJECT_SNAPSHOT_MODE":"prefer-s3","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-west-2","KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE":"false","AUDIT_ARCHIVE_BUCKET":"kortix-dev-audit-archive","AUDIT_ARCHIVE_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0","KORTIX_PLATINUM_US_REGION":"us-east"}
+        {"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PROJECT_SNAPSHOT_MODE":"prefer-s3","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-west-2","KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE":"false","AUDIT_ARCHIVE_BUCKET":"kortix-dev-audit-archive","AUDIT_ARCHIVE_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0","KORTIX_PLATINUM_US_REGION":"us-east"}
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)

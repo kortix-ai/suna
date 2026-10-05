@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
-import { chmod, lstat, mkdir, readFile, readdir, readlink, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { constants, existsSync } from 'node:fs'
+import { chmod, mkdir, open, readFile, readdir, readlink, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 import * as tar from 'tar'
@@ -49,8 +49,8 @@ export function bootConfigRoot(): string {
 const POINTER_FILE = 'current.json'
 const QUARANTINE_FILE = 'quarantine.json'
 
-/** Decompressed archive ceiling. The compressed archive is capped at 4 MiB. */
-const MAX_EXTRACTED_BYTES = 64 * 1024 * 1024
+/** Decompressed archive ceiling: the API's `MAX_CONFIG_TAR_BYTES`. The compressed archive is capped at `MAX_CONFIG_ARCHIVE_BYTES`. */
+const MAX_EXTRACTED_BYTES = 128 * 1024 * 1024
 
 const RELEASE_ID = /^[0-9a-f]{64}$/
 const OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
@@ -369,8 +369,8 @@ export async function materializeRelease(input: {
  *
  * The root and `skills/` used to stay writable so the installer and the
  * overlay could create entries there. That left a hole with a bad failure
- * mode, measured on a Daytona box on 2026-09-24 (release `7a60e568`, session
- * `1a685caf`): an agent's `write` tool answered "Wrote file successfully."
+ * mode, measured on a Daytona box on 2026-09-24 (release `7a60e568`, one
+ * session): an agent's `write` tool answered "Wrote file successfully."
  * for `<release>/skills/<name>/SKILL.md` and for a root-level file, and the
  * next convergence then failed `verifyRelease`, rebuilt the release and
  * respawned OpenCode. The user got a success message, the file vanished, and
@@ -431,6 +431,36 @@ export function verifyReleaseDetail(input: ReleaseVerifyInput): Promise<{ ok: tr
   return withReleaseStoreLock(() => verifyReleaseUnlocked(input))
 }
 
+/**
+ * The bytes of one release entry, or `null` when the entry has the wrong type.
+ * A symlink is compared by its target text and never followed: following it
+ * would let a swapped link point verification at any file on the box. A file
+ * opens once with `O_NOFOLLOW` and is typed and read through that descriptor,
+ * so there is no check-then-read gap.
+ */
+async function readEntry(onDisk: string, symlinkEntry: boolean): Promise<Buffer | null> {
+  if (symlinkEntry) {
+    try {
+      return Buffer.from(await readlink(onDisk))
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'EINVAL') return null // not a symlink
+      throw err
+    }
+  }
+  let fh
+  try {
+    fh = await open(onDisk, constants.O_RDONLY | constants.O_NOFOLLOW)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ELOOP') return null // is a symlink
+    throw err
+  }
+  try {
+    return (await fh.stat()).isFile() ? await fh.readFile() : null
+  } finally {
+    await fh.close()
+  }
+}
+
 async function verifyReleaseUnlocked(
   input: ReleaseVerifyInput,
 ): Promise<{ ok: true } | { ok: false; problem: string }> {
@@ -441,17 +471,7 @@ async function verifyReleaseUnlocked(
     for (const [path, mode, blob] of input.files) {
       if (isPlatformWritten(path, managed)) continue
       const onDisk = join(input.dir, path)
-      const stat = await lstat(onDisk)
-      // A symlink is compared by its target text and never followed: following
-      // it would let a swapped link point verification at any file on the box.
-      const content =
-        mode === '120000'
-          ? stat.isSymbolicLink()
-            ? Buffer.from(await readlink(onDisk))
-            : null
-          : stat.isFile()
-            ? await readFile(onDisk)
-            : null
+      const content = await readEntry(onDisk, mode === '120000')
       if (content === null) return { ok: false, problem: `${path} has the wrong type` }
       if (gitBlobId(content, blob.length) !== blob) return { ok: false, problem: `${path} does not match its blob ID` }
     }

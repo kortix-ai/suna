@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, test } from 'bun:test';
 
+import { within } from '@kortix/shared/tool-output/testing';
+
 import { parseFrontmatter } from './markdown-frontmatter';
 
 // Frontmatter is not decoration — if it is not lifted out BEFORE the markdown
@@ -109,9 +111,6 @@ describe('parseFrontmatter trims each line in linear time', () => {
     }
   });
 
-  test('a front-matter line holding 240k spaces', () => {
-    const started = performance.now();
-    parseFrontmatter(`---\ntitle: a${' '.repeat(240_000)}b\n---\nbody`);
-    expect(performance.now() - started).toBeLessThan(100);
-  });
+  within('a front-matter line holding 240k spaces', () =>
+    parseFrontmatter(`---\ntitle: a${' '.repeat(240_000)}b\n---\nbody`));
 });

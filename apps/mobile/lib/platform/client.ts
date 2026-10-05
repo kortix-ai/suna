@@ -119,24 +119,17 @@ function normalizeSessionStatus(status: string | undefined): string {
   return status || 'unknown';
 }
 
-function toSandboxInfo(
-  project: ProjectSummary,
-  session: ProjectSessionSummary,
-  runtime?: ProjectSessionSandbox | null
-): SandboxInfo {
-  const externalId =
-    runtime?.external_id || session.sandbox_url?.match(/\/p\/([^/]+)\//)?.[1] || session.sandbox_id;
-  const status = normalizeSessionStatus(runtime?.status || session.status);
+// Derived from the session row alone: the listing never calls /start (that would
+// wake every sandbox), so no runtime record exists here.
+function toSandboxInfo(project: ProjectSummary, session: ProjectSessionSummary): SandboxInfo {
   return {
-    sandbox_id: runtime?.sandbox_id || session.sandbox_id || session.session_id,
-    external_id: externalId,
+    sandbox_id: session.sandbox_id || session.session_id,
+    external_id:
+      session.sandbox_url?.match(/\/p\/([^/]+)\//)?.[1] || session.sandbox_id,
     name: session.name || `${project.name} session`,
-    provider: runtime?.provider || session.sandbox_provider || 'daytona',
-    base_url:
-      runtime?.base_url ||
-      session.sandbox_url ||
-      (runtime?.external_id ? getSandboxUrl(runtime.external_id) : ''),
-    status,
+    provider: session.sandbox_provider || 'daytona',
+    base_url: session.sandbox_url || '',
+    status: normalizeSessionStatus(session.status),
     version: null,
     metadata: {
       ...(session.metadata || {}),
@@ -144,10 +137,9 @@ function toSandboxInfo(
       session_id: session.session_id,
       project_name: project.name,
       error: session.error,
-      runtime_status: runtime?.status,
     },
-    created_at: runtime?.created_at || session.created_at,
-    updated_at: runtime?.updated_at || session.updated_at,
+    created_at: session.created_at,
+    updated_at: session.updated_at,
   };
 }
 
@@ -200,7 +192,7 @@ async function listProjectSessionSandboxes(): Promise<
         project,
         session,
         runtime,
-        sandbox: toSandboxInfo(project, session, runtime),
+        sandbox: toSandboxInfo(project, session),
       });
     }
   });

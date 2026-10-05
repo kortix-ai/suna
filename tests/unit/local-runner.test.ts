@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { resolveBrowserWorkers } from '../playwright.config';
-import { buildLocalTestPlan, waitForLocalWeb } from '../src/core/local-runner';
+import { buildLocalTestPlan, onKortixSandboxImage, waitForLocalWeb } from '../src/core/local-runner';
 
 describe('local test runner', () => {
+  it('keeps agentic tests opt-in and rejects combining them with another mode', () => {
+    const plan = buildLocalTestPlan(['--agentic-only', 'tests/example.e2e.ts', '--no-cache']);
+    expect(plan.mode).toBe('agentic');
+    expect(plan.lanes[0]?.command).toEqual(['bun', 'tests/bin/agentic.ts', 'tests/example.e2e.ts', '--no-cache']);
+    expect(buildLocalTestPlan([]).lanes.some((lane) => lane.name === 'agentic')).toBe(false);
+    expect(buildLocalTestPlan(['--agentic-only', '--tag', 'live-session']).lanes[0]?.command)
+      .toEqual(['bun', 'tests/bin/agentic.ts', '--tag', 'live-session']);
+    expect(() => buildLocalTestPlan(['--agentic-only', '--full'])).toThrow('choose only one');
+  });
   it('runs the REST flows, SDK, DB suites, runner unit tests, and route coverage concurrently by default', () => {
     const plan = buildLocalTestPlan([]);
 
@@ -14,8 +23,11 @@ describe('local test runner', () => {
       'flow-runner-unit',
       'route-coverage',
       'worktree-unit',
+      'package-quality',
     ]);
-    expect(plan.stages).toHaveLength(1);
+    // Package quality is its own stage: the attestation's `packages` lane.
+    expect(plan.stages).toHaveLength(2);
+    expect(plan.stages[1]?.map((lane) => lane.name)).toEqual(['package-quality']);
     expect(plan.lanes.find((lane) => lane.name === 'db-suites')?.command).toEqual([
       'bun',
       'tests/bin/db-suites.ts',
@@ -342,5 +354,10 @@ describe('local test runner', () => {
 
     expect(attempts).toBe(3);
     expect(sleeps).toEqual([250, 250]);
+  });
+
+  it('detects a Kortix sandbox image by its baked model catalog', () => {
+    expect(onKortixSandboxImage(new URL(import.meta.url).pathname)).toBe(true);
+    expect(onKortixSandboxImage('/nonexistent/kortix-test-llm-catalog.json')).toBe(false);
   });
 });

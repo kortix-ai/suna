@@ -22,6 +22,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from '
 import { configureKortix } from '@kortix/sdk';
 import { readFileSync } from 'node:fs';
 import React from 'react';
+import type { QuestionPrompt } from './QuestionPrompt';
 import { type ReactTestRenderer, act, create } from 'react-test-renderer';
 
 // One in-memory AsyncStorage for every store this file loads — the shared
@@ -67,7 +68,15 @@ let SessionPage: typeof import('./SessionPage').SessionPage;
 let SessionConnecting: typeof import('./SessionConnecting').SessionConnecting;
 
 // ── Captures the mocks feed the assertions ───────────────────────────────────
+let questionProps: React.ComponentProps<typeof QuestionPrompt> | undefined;
+let questionAction: () => Promise<void> = async () => {};
+const acknowledgeQuestion = async (name: string, requestId: string, answers?: string[][]) => {
+  calls.push({ name, args: [requestId, answers] });
+  await questionAction();
+  useRuntimePendingStore.getState().removeQuestion(requestId);
+};
 let listProps: any = null; // the FlatList's latest props
+let healthPillProps: { onSwitch?: () => void } | null = null;
 let composerProps: any = null; // SessionChatInput's latest props
 let wakingComposerProps: any = null; // the SavedThread Composer's latest props
 let markdownActionsValue: any = null; // MarkdownActionsProvider's value
@@ -359,11 +368,12 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/components/session/ConnectProviderSheet': { ConnectProviderSheet: Capture(() => {}) },
   '@/components/session/ConnectorAuthSheet': { ConnectorAuthSheet: Capture(() => {}) },
   '@/components/session/SessionChangeRequests': { SessionChangeRequests: Empty },
-  '@/components/session/SandboxHealthPill': { SandboxHealthPill: Empty },
+  '@/components/session/SandboxHealthPill': { SandboxHealthPill: Capture((props: { onSwitch?: () => void }) => { healthPillProps = props; }) },
   '@/components/session/LiveUpdatesPausedPill': { LiveUpdatesPausedPill: Empty },
   '@/components/session/SandboxPreviewSheet': { SandboxPreviewSheet: Capture(() => {}) },
   '@/components/session/turn/activity-sheet': { ActivitySheetHost: Empty },
-  '@/components/session/QuestionPrompt': { QuestionPrompt: (props: any) => props.children ?? null },
+  '@/components/session/QuestionPrompt': { QuestionPrompt: (props: React.ComponentProps<typeof QuestionPrompt>) => { questionProps = props; return null; } },
+  './QuestionPrompt': { QuestionPrompt: (props: React.ComponentProps<typeof QuestionPrompt>) => { questionProps = props; return null; } },
   '@/components/session/PermissionPromptCard': { PermissionPromptCard: Empty },
   '@/components/session/ProjectHero': { ProjectHero: HeroLogo },
 
@@ -469,8 +479,8 @@ const mergedOverrides: Record<string, Record<string, any>> = {
     useRuntimeCommands: () => ({ data: NO_ROWS }),
     useQuestionSelfHeal: () => {},
     usePermissionSelfHeal: () => {},
-    answerQuestion: spy('answerQuestion'),
-    rejectQuestion: spy('rejectQuestion'),
+    answerQuestion: (requestId: string, answers: string[][]) => acknowledgeQuestion('answerQuestion', requestId, answers),
+    rejectQuestion: (requestId: string) => acknowledgeQuestion('rejectQuestion', requestId),
     answerPermission: spy('answerPermission'),
     abortRuntimeSession: spy('abortRuntimeSession'),
     promptRuntimeMessage: spy('promptRuntimeMessage'),
@@ -712,6 +722,8 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  questionProps = undefined;
+  questionAction = async () => {};
   calls.length = 0;
   timingStarts.length = 0;
   holdTimings = false;
@@ -728,6 +740,7 @@ beforeEach(() => {
   viewProps.length = 0;
   listProps = null;
   spacerFired = null;
+  healthPillProps = null;
   composerProps = null;
   composerRenders = 0;
   gestureAreaProps = null;
@@ -796,6 +809,14 @@ afterEach(async () => {
 });
 
 // ── Scroll physics ───────────────────────────────────────────────────────────
+
+describe('inactive sandbox navigation', () => {
+  test('session health pill does not offer the legacy instance selector', async () => {
+    await renderPage();
+    expect(healthPillProps).not.toBeNull();
+    expect(healthPillProps?.onSwitch).toBeUndefined();
+  });
+});
 
 describe('SessionPage scroll physics', () => {
   test('follows layout changes to the end while follow is on, instantly on the first settle', async () => {
@@ -1186,6 +1207,35 @@ describe('SessionPage prompt-options assembly', () => {
     expect(fetchCalls.some((c) => c.url.endsWith('/prompt_async'))).toBe(false);
   });
 
+  test('an edit resends the kept attachments: a saved copy as a URL part, a path-only upload as its ref (KRTX-962)', async () => {
+    const [user, assistant] = makeTurn('original');
+    seedRows([user, assistant]);
+    await renderPage();
+    await act(async () => {
+      turnProps[0].onEditStart(user.info.id, 'edited');
+      await sleep(15);
+    });
+    const savedCopy =
+      'kortix-attachment://00000000-0000-4000-8000-000000000001/00000000-0000-4000-8000-000000000002/00000000-0000-4000-8000-000000000003';
+    // The editor removed a third tile; only these two are kept.
+    const kept = [
+      { key: 'u0', filename: 'a.png', mime: 'image/png', src: '/w/a.png', path: '/w/a.png', attachment: savedCopy },
+      { key: 'u1', filename: 'b.pdf', mime: 'application/pdf', src: '/w/b.pdf', path: '/w/b.pdf' },
+    ];
+    await act(async () => {
+      turnProps.at(-1).onEditSend(user.info.id, 'edited', kept);
+      await sleep(15);
+    });
+    const post = fetchCalls.find((c) => c.method === 'POST' && c.url.endsWith('/prompts'));
+    expect(post?.body.parts).toEqual([
+      {
+        type: 'text',
+        text: 'edited\n\n<file path="/w/b.pdf" mime="application/pdf" filename="b.pdf">\nThis file has been uploaded and is available at the path above.\n</file>',
+      },
+      { type: 'file', mime: 'image/png', url: savedCopy, filename: 'a.png' },
+    ]);
+  });
+
   test('a slash command posts the command with the resolved agent, model string and variant', async () => {
     await renderPage();
     await act(async () => {
@@ -1338,6 +1388,39 @@ describe('SessionPage render work', () => {
     seedTurns(['one']);
     await renderPage();
     expect(heroMounted()).toBe(false);
+  });
+
+  test('pauses the working turn motion while its row is scrolled out of the viewport', async () => {
+    const user = userMsg('one');
+    seedRows([user, assistantMsg('partial', user.info.id)]);
+    runtimeValue = { ...runtimeValue, isBusy: true };
+    await renderPage();
+    const working = () => turnProps.findLast((p) => p.isWorkingTurn);
+    const id = user.info.id;
+    expect(working().onScreen).toBe(true);
+    expect(listProps.viewabilityConfig).toEqual({ itemVisiblePercentThreshold: 1 });
+    const handler = listProps.onViewableItemsChanged;
+    await act(async () => handler({ viewableItems: [] }));
+    expect(working().onScreen).toBe(false);
+    expect(listProps.onViewableItemsChanged).toBe(handler);
+    await act(async () => handler({ viewableItems: [{ key: id }] }));
+    expect(working().onScreen).toBe(true);
+  });
+
+  test('a new working turn below the viewport stays paused without a new viewability event', async () => {
+    const first = userMsg('one');
+    seedRows([first, assistantMsg('done', first.info.id)]);
+    await renderPage();
+    await act(async () => listProps.onViewableItemsChanged({ viewableItems: [{ key: first.info.id }] }));
+    const next = userMsg('two');
+    runtimeValue = { ...runtimeValue, isBusy: true };
+    await act(async () => {
+      appendMessages([next, assistantMsg('partial', next.info.id)]);
+      await sleep(15);
+    });
+    const working = turnProps.findLast((p) => p.isWorkingTurn);
+    expect(working.turn.userMessage.info.id).toBe(next.info.id);
+    expect(working.onScreen).toBe(false);
   });
 
   test('a stream delta and a new runtime object keep renderItem and Stop, and a stranded prompt stays interrupted', async () => {
@@ -1585,4 +1668,95 @@ describe('SessionConnecting saved thread', () => {
     });
     expect(seen('restart')).toHaveLength(1);
   });
+});
+
+
+describe('SessionPage question acknowledgement', () => {
+  const request = {
+    id: 'question-1', sessionID: SID,
+    questions: [{ header: 'Continue', question: 'Continue?', options: [] }],
+  };
+  const prompt = () => {
+    if (!questionProps) throw new Error('QuestionPrompt did not render');
+    return questionProps;
+  };
+  const pending = () => useRuntimePendingStore.getState().questions[request.id];
+  const seed = () => useRuntimePendingStore.getState().addQuestion(request);
+
+  for (const action of ['reply', 'reject']) {
+    const submit = () => action === 'reply'
+      ? prompt().onReply(request.id, [['Yes']])
+      : prompt().onReject(request.id);
+
+    test(`${action} propagates failure, preserves pending, and does not stop`, async () => {
+      seed();
+      const failure = new Error('question transport failed');
+      questionAction = async () => { throw failure; };
+      await renderPage();
+      await act(async () => {
+        await expect(Promise.resolve(submit())).rejects.toBe(failure);
+      });
+      expect(pending()).toEqual(request);
+      expect(seen('cancel')).toHaveLength(0);
+    });
+
+    test(`${action} waits for acknowledgement before removal or stop`, async () => {
+      seed();
+      let accept = () => {};
+      questionAction = () => new Promise<void>((resolve) => { accept = resolve; });
+      await renderPage();
+      let result: void | Promise<void>;
+      await act(async () => {
+        result = submit();
+        await Promise.resolve();
+      });
+      expect(pending()).toEqual(request);
+      expect(seen('cancel')).toHaveLength(0);
+      await act(async () => {
+        accept();
+        await result;
+      });
+      expect(pending()).toBeUndefined();
+      expect(seen(action === 'reply' ? 'answerQuestion' : 'rejectQuestion').map((call) => call.args)).toEqual([
+        [request.id, action === 'reply' ? [['Yes']] : undefined],
+      ]);
+      expect(seen('cancel')).toHaveLength(action === 'reject' ? 1 : 0);
+    });
+
+    test(`${action} throws when the runtime is unavailable without removing or stopping`, async () => {
+      seed();
+      runtimeValue = { ...runtimeValue, switched: false };
+      await renderPage();
+      await act(async () => {
+        await expect(Promise.resolve(submit())).rejects.toThrow('Runtime not ready');
+      });
+      expect(pending()).toEqual(request);
+      expect(seen('answerQuestion')).toHaveLength(0);
+      expect(seen('rejectQuestion')).toHaveLength(0);
+      expect(seen('cancel')).toHaveLength(0);
+    });
+  }
+});
+
+
+test('SessionPage accepted question rejection delegates stop failure to handleStop', async () => {
+  useRuntimePendingStore.getState().addQuestion({
+    id: 'question-stop', sessionID: SID,
+    questions: [{ header: 'Continue', question: 'Continue?', options: [] }],
+  });
+  setStatus({ type: 'busy' });
+  abortResponder = fail;
+  await renderPage();
+  const props = questionProps;
+  if (!props) throw new Error('QuestionPrompt did not render');
+  await act(async () => {
+    await props.onReject('question-stop');
+    await sleep(15);
+  });
+  expect(useRuntimePendingStore.getState().questions['question-stop']).toBeUndefined();
+  expect(seen('cancel')).toHaveLength(1);
+  expect(statusOf()).toEqual({ type: 'busy' });
+  expect(toastsOf('error')).toEqual([
+    { kind: 'error', message: "Couldn't stop. Kortix is still working." },
+  ]);
 });

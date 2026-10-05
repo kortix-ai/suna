@@ -219,8 +219,8 @@ describe('legacySectionRedirect', () => {
         opensOverlay: false,
       });
     }
-    expect(legacySectionRedirect('p1', 'review')).toBe('/projects/p1/customize/review');
-    expect(resolveSettingsOverlayHref('/projects/p1/customize/review')).toEqual({ opensOverlay: false });
+    expect(legacySectionRedirect('p1', 'review')).toBe('/projects/p1/review');
+    expect(resolveSettingsOverlayHref('/projects/p1/review')).toEqual({ opensOverlay: false });
   });
 
   test('secrets, channels, and models graduated a SECOND time — off /config, onto their own top-level tab', () => {

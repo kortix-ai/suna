@@ -5,6 +5,13 @@
  * a full boot. Gated on the `daytona` capability, except SESS-36, which runs on
  * the local profile against a database session with a saved transcript.
  */
+import {
+  CreateSessionPromptResultSchema,
+  ProjectSessionSchema,
+  SessionPromptListSchema,
+  SessionTurnStatusSchema,
+  WarmProjectSessionResultSchema,
+} from '@kortix/api-contract';
 import { isKe2eRetryableError } from '../core/client';
 import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
@@ -1249,8 +1256,9 @@ flow(
     const owner = ctx.client.as(ctx.P.OWNER);
     let warmSessionId = '';
     let replacementId = '';
+    let replacementInsertedAt = '';
 
-    await ctx.step('warming creates an ordinary session marked unused', async () => {
+    await ctx.step('warming creates an ordinary session marked unused, in the contract shape', async () => {
       const r = await owner.post(
         '/v1/projects/:projectId/sessions/warm',
         {},
@@ -1260,7 +1268,8 @@ flow(
         .body()
         .has('$.reused', false)
         .has('$.session.metadata.warm', true)
-        .exists('$.session.session_id');
+        .exists('$.session.session_id')
+        .schema(WarmProjectSessionResultSchema);
       warmSessionId = r.json<any>().session.session_id;
       ctx.track('session', warmSessionId, { projectId: p.id });
     });
@@ -1274,15 +1283,20 @@ flow(
       r.status(200).body().has('$.reused', true).has('$.session.session_id', warmSessionId);
     });
 
-    await ctx.step('an unused warm session is hidden from the visible list', async () => {
+    // A warm session whose box is coming up or up bills compute from creation
+    // (warmPoolGrantMs), so it must STAY in the visible list and sidebar — a
+    // billed session its owner cannot see, open or stop is the KRTX-1068
+    // dogfood report. The marker only hides a warm row that is no longer
+    // active (reaped, failed, completed).
+    await ctx.step('an unused warm session that is provisioning or running stays in the visible list', async () => {
       const visible = await owner.get('/v1/projects/:projectId/sessions', {
         params: { projectId: p.id },
         query: { scope: 'visible' },
       });
       visible.status(200);
       const visibleIds = sessionRows(visible).map((s: any) => s.session_id);
-      if (visibleIds.includes(warmSessionId)) {
-        throw new Error('An unused warm session appeared in the visible session list');
+      if (!visibleIds.includes(warmSessionId)) {
+        throw new Error('A warm session whose box bills compute is hidden from the visible session list');
       }
     });
 
@@ -1339,6 +1353,7 @@ flow(
       );
       r.status(200).body().has('$.reused', false);
       replacementId = r.json<any>().session.session_id;
+      replacementInsertedAt = r.json<any>().session.created_at;
       if (replacementId === warmSessionId) {
         throw new Error('The replacement reused the used session id');
       }
@@ -1372,21 +1387,24 @@ flow(
       if (typeof (row.metadata ?? {}).last_activity_at !== 'string') {
         throw new Error('Adoption did not stamp last_activity_at — the session sorts at create time');
       }
-      // Adoption writes last_activity_at and updated_at in the same statement.
-      // Later lifecycle writes can advance updated_at before this read-back.
-      // Require monotonic ordering on this row instead of exact equality.
-      const updatedAtMs = Date.parse(row.updated_at);
+      // Adoption is the user-visible creation (#8953): one UPDATE stamps
+      // created_at and last_activity_at with the same moment, after the warm
+      // row's insert. updated_at is not asserted here: a concurrent lifecycle
+      // writer can land a timestamp it took before adoption (seen on staging,
+      // 1.85 s earlier). integration-warm-session-adopt.test.ts pins
+      // adoption's own updated_at write.
       const lastActivityAtMs = Date.parse(row.metadata.last_activity_at);
       const createdAtMs = Date.parse(row.created_at);
+      const insertedAtMs = Date.parse(replacementInsertedAt);
       if (
-        !Number.isFinite(updatedAtMs) ||
         !Number.isFinite(lastActivityAtMs) ||
-        lastActivityAtMs <= createdAtMs ||
-        updatedAtMs < lastActivityAtMs
+        !Number.isFinite(insertedAtMs) ||
+        createdAtMs !== lastActivityAtMs ||
+        lastActivityAtMs <= insertedAtMs
       ) {
         throw new Error(
-          `Adoption did not advance last_activity_at and updated_at monotonically ` +
-            `(created_at=${row.created_at}, updated_at=${row.updated_at}, ` +
+          `Adoption did not move created_at to the adoption moment ` +
+            `(inserted=${replacementInsertedAt}, created_at=${row.created_at}, ` +
             `last_activity_at=${row.metadata.last_activity_at})`,
         );
       }
@@ -1599,7 +1617,7 @@ flow(
           const held = await owner.post(`${promptPath}/hold`, { held: true }, { params });
           held.status(200);
           for (const response of [held, await owner.get(promptPath, { params })]) {
-            response.status(200);
+            response.status(200).body().schema(SessionPromptListSchema);
             const mine = response.json<any>().prompts.find((p: any) => p.prompt_id === commandId);
             if (mine?.state !== 'waiting' || mine?.reason !== 'held')
               throw new Error(`Stop state: ${JSON.stringify(mine)}`);
@@ -1628,7 +1646,7 @@ flow(
           // unconnected connector, because that refusal could not be cleared
           // from the product. The connector CALL denies instead and carries a
           // connect link.
-          accepted.status(202).body().has('$.state', 'queued');
+          accepted.status(202).body().has('$.state', 'queued').schema(CreateSessionPromptResultSchema);
           const queued = await db.query(
             `SELECT command_id FROM kortix.session_lifecycle_commands
              WHERE session_id = $1 AND payload->>'clientMessageId' = 'unconnected-connector'`,
@@ -1738,7 +1756,7 @@ flow(
     routes: ['GET /v1/projects/:projectId/sessions/:sessionId/turn'],
   },
   async (ctx) => {
-    // Session ad02e053: the sandbox memory guard stopped two turns and the
+    // A 2026-09-18 session: the sandbox memory guard stopped two turns and the
     // ledger dropped the reason, so the UI said nothing under four failed
     // sub-agent tasks. This pins what `/turn` reports about how turns died,
     // straight off seeded ledger rows: no runtime is needed to read history.
@@ -1802,9 +1820,9 @@ flow(
         }
       });
 
-      await ctx.step('the read lists the turns that died, newest first, and names the cause it has', async () => {
+      await ctx.step('the read lists the turns that died, newest first, names the cause it has, and matches the contract', async () => {
         const response = await owner.get(turnPath, { params });
-        response.status(200);
+        response.status(200).body().schema(SessionTurnStatusSchema);
         const body = response.json<TurnBody>();
         const listed = (body.recent_failures ?? []).map((f) => [f.message_id, f.error?.name ?? null]);
         const expected = [
@@ -2151,7 +2169,7 @@ flow(
     const patch = (as: typeof owner, sessionId: string, body: unknown) => as.patch(one, body, { params: { ...params, sessionId } });
     const ids = async (as: typeof owner, query: string) => {
       const r = await as.get(`${list}?${query}`, { params });
-      r.status(200);
+      r.status(200).body().schema(ProjectSessionSchema.array());
       return r.json<Row[]>().map((row) => row.session_id).sort();
     };
     const expectIds = (got: string[], want: string[], what: string) => {
@@ -2175,10 +2193,10 @@ flow(
       if (row.labels.length !== 3) throw new Error('labels changed by a metadata PATCH');
     });
 
-    await ctx.step('a null metadata value removes that key; GET reads back labels and metadata', async () => {
+    await ctx.step('a null metadata value removes that key; GET reads back labels and metadata in the contract shape', async () => {
       (await patch(owner, coordinator, { metadata: { priority: null } })).status(200);
       const r = await owner.get(one, { params: { ...params, sessionId: coordinator } });
-      r.status(200);
+      r.status(200).body().schema(ProjectSessionSchema);
       const row = r.json<Row>();
       if ('priority' in row.metadata) throw new Error(`priority kept: ${JSON.stringify(row.metadata)}`);
       if (row.metadata.ticket !== 'T-1') throw new Error('ticket lost');

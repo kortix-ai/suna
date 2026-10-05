@@ -76,7 +76,6 @@ export interface CreateSessionCommand {
   mayManageSystemConnections?: boolean;
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
-  enforceAccountCap?: boolean;
   request?: RequestAuditContext;
   idempotencyKey?: string | null;
   queuePolicy?: QueuePolicy;
@@ -100,7 +99,6 @@ export interface QueuedCreateSessionPayload {
   extraEnvVars?: Record<string, string>;
   visibility?: 'private' | 'project' | 'restricted';
   mayManageSystemConnections?: boolean;
-  enforceAccountCap?: boolean;
   postCreate?: SessionLifecyclePostCreateAction[];
   // Origin-derivation signals captured at ENQUEUE time. Without them a queued
   // backend create would replay as origin 'user'. Absent on rows queued before
@@ -249,6 +247,5 @@ export interface SessionLifecycleResult {
   deduped?: boolean;
   retryable?: boolean;
   reason?: string;
-  error?: SessionCreateError | { status: number; body: Record<string, unknown> };
-  headers?: Record<string, string>;
+  error?: SessionCreateError;
 }

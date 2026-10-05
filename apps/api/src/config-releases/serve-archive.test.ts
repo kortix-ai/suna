@@ -4,9 +4,10 @@ import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildConfigArchive, readComposedRelease, resolveReleaseTreeSource } from './builder';
+import { MAX_CONFIG_ARCHIVE_BYTES, buildConfigArchive, readComposedRelease, resolveReleaseTreeSource } from './builder';
 import { publicDownloadTarget, serveConfigArchive, storageOriginIsPublic } from './serve-archive';
-import { MemoryConfigArchiveStore, configArchiveKey } from './store';
+import { configArchiveKey } from './store';
+import { MemoryConfigArchiveStore } from './__tests__/fakes';
 
 let root = '';
 let repo = '';
@@ -42,7 +43,7 @@ beforeAll(() => {
   tree = git('rev-parse', 'HEAD:.kortix/opencode');
   blob = git('rev-parse', 'HEAD:.kortix/opencode/opencode.json');
   mkdirSync(join(repo, 'huge'), { recursive: true });
-  writeFileSync(join(repo, 'huge/blob.bin'), randomBytes(4 * 1024 * 1024 + 4096));
+  writeFileSync(join(repo, 'huge/blob.bin'), randomBytes(MAX_CONFIG_ARCHIVE_BYTES + 4096));
   git('add', '-A');
   git('commit', '-qm', 'huge');
   hugeTree = git('rev-parse', 'HEAD:huge');

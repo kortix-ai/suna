@@ -107,6 +107,8 @@ export interface ComposerToolbarProps {
   escCount: number;
   lockForQuestion: boolean;
   questionButtonLabel?: string | null;
+  /** See `SendStopControl`. */
+  submitLabel?: string | null;
   questionCanAct: boolean;
   hasText: boolean;
   canSubmit: boolean;
@@ -149,6 +151,7 @@ export function ComposerToolbar({
   escCount,
   lockForQuestion,
   questionButtonLabel,
+  submitLabel,
   questionCanAct,
   hasText,
   canSubmit,
@@ -238,6 +241,7 @@ export function ComposerToolbar({
           escCount={escCount}
           lockForQuestion={lockForQuestion}
           questionButtonLabel={questionButtonLabel}
+          submitLabel={submitLabel}
           questionCanAct={questionCanAct}
           hasText={hasText}
           canSubmit={canSubmit}

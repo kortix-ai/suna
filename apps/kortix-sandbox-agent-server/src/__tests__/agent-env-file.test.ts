@@ -34,6 +34,23 @@ describe('writeAgentEnvFile', () => {
     expect(statSync(sh).mode & 0o777).toBe(0o600)
   })
 
+  test('disables core dumps in every shell that sources it', () => {
+    const store = createProjectEnvStore({
+      KORTIX_PROJECT_SECRET_NAMES: 'API_KEY',
+      API_KEY: 'secret',
+    } as NodeJS.ProcessEnv)
+    const sh = shPath()
+
+    writeAgentEnvFile(store, { sh })
+
+    // Daytona starts sandboxes with an unlimited core size; raise it first.
+    const result = Bun.spawnSync(
+      ['bash', '-c', 'ulimit -c unlimited && BASH_ENV="$1" bash -c "ulimit -c"', '_', sh],
+      { env: { PATH: process.env.PATH ?? '/usr/bin:/bin' } },
+    )
+    expect(result.stdout.toString().trim()).toBe('0')
+  })
+
   test('injection-safe — values are single-quote escaped', () => {
     const store = createProjectEnvStore({
       KORTIX_PROJECT_SECRET_NAMES: 'EVIL',

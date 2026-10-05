@@ -2,7 +2,6 @@ import { logger as appLogger, isLoggingTransportError } from './lib/logger';
 import { captureException, flushSentry } from './lib/sentry';
 import { startAppDeploymentWorker, stopAppDeploymentWorker } from './apps/deployment-worker';
 import { startAppIdleReaper, stopAppIdleReaper } from './apps/idle-reaper';
-import { startPiWorkerPoolMaintenance, stopPiWorkerPoolMaintenance } from './platform/services/pi-worker-pool';
 import { stopModelPricing } from './router/config/model-pricing';
 import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
 import { warmPipedreamCatalog } from './connectors/pipedream';
@@ -40,8 +39,13 @@ import { startSessionLifecycleWorker, stopSessionLifecycleWorker } from './proje
 import { kickStartupPreBuild } from './snapshots/builder';
 import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
 import { startTunnelService, stopTunnelService } from './tunnel';
+import { startBillingRotation, stopBillingRotation } from './billing/rotation-schedule';
+import { startSlackTurnGc, stopSlackTurnGc } from './channels/slack/turn';
+import { startTeamsTurnGc, stopTeamsTurnGc } from './channels/teams/turn';
+import { startTeamsBotTokenRefresh, stopTeamsBotTokenRefresh } from './channels/teams-auth';
 import { warnIfPreviewOriginsMissing } from './sandbox-proxy/preview-hosts';
 import { maintenanceSetting } from './routes/platform-endpoints';
+import { startEventLoopLagSampler, stopEventLoopLagSampler } from './routes/system';
 
 // ─── Process-level crash guards ───────────────────────────────────────────────
 // A stray rejected promise or throw escaping any fire-and-forget path — the
@@ -117,6 +121,7 @@ export function markSchemaReady(): void {
 // must be live on each node behind the load balancer.
 async function startReplicaServices() {
   warnIfPreviewOriginsMissing(appLogger);
+  startEventLoopLagSampler();
   startAccessControlCache();
   startTunnelService();
   // Warm the runtime-settings cache BEFORE serving traffic so the admin-panel
@@ -146,6 +151,9 @@ async function startReplicaServices() {
   // trip DiskPressure evictions. Runs on all replicas (not leader-gated).
   startTmpReaper();
   startSessionLifecycleWorker();
+  // Keep the shared Teams bot token warm so the first message after a deploy
+  // does not wait on login.microsoftonline.com before its live card is posted.
+  startTeamsBotTokenRefresh();
   // Fill the Composio catalogue snapshot, the hidden-toolkit list, the toolkit
   // metadata and the first discovery page in the background, so the first
   // Customize → Connectors view on a fresh replica reads memory instead of
@@ -196,10 +204,6 @@ async function startSingletonWorkers() {
   startProviderTransitionWorker();
   startAppDeploymentWorker();
   startAppIdleReaper();
-  // Pi worker pool (P1.8): keep parked worker boxes at target so pi session
-  // creates claim instead of cold-creating. No-op unless
-  // KORTIX_PI_WORKER_POOL_TARGET > 0.
-  startPiWorkerPoolMaintenance();
   startAuditWebhookWorker();
   startAuditReconciliationWorker();
   // Weekly partitions of kortix.audit_events, 8 weeks ahead.
@@ -217,6 +221,12 @@ async function startSingletonWorkers() {
   // OAuth housekeeping: expired authorization requests, abandoned self-registered clients.
   const { startOAuthSweeper } = await import('./oauth/sweeper');
   startOAuthSweeper();
+  // Hourly trial expiry + credit rotations. Idempotent per account and month,
+  // so a leadership flap that runs one twice costs a scan, not money.
+  startBillingRotation();
+  // Close Slack/Teams live cards whose run ended without a reply.
+  startSlackTurnGc();
+  startTeamsTurnGc();
 }
 async function stopSingletonWorkers() {
   if (!singletonWorkersRunning) return;
@@ -228,7 +238,6 @@ async function stopSingletonWorkers() {
   stopProviderTransitionWorker();
   stopAppDeploymentWorker();
   stopAppIdleReaper();
-  stopPiWorkerPoolMaintenance();
   await stopAuditWebhookWorker();
   await stopAuditReconciliationWorker();
   stopAuditPartitionWorker();
@@ -238,6 +247,9 @@ async function stopSingletonWorkers() {
   stopGrantExpirySweeper();
   const { stopOAuthSweeper } = await import('./oauth/sweeper');
   stopOAuthSweeper();
+  stopBillingRotation();
+  stopSlackTurnGc();
+  stopTeamsTurnGc();
 }
 
 // Boot the per-node services, then begin leader election. The leader runs the
@@ -306,6 +318,8 @@ export async function shutdown(signal: string) {
   stopAccessControlCache();
   stopTmpReaper();
   stopSessionLifecycleWorker();
+  stopTeamsBotTokenRefresh();
+  stopEventLoopLagSampler();
   await import('./shared/pg-broadcast')
     .then((m) => m.stopConfigBaseMoveBroadcast())
     .catch(() => {});

@@ -239,7 +239,6 @@ mock.module('../projects/git', () => ({
 // resolves cleanly. We stub the helpers projects/index calls so the
 // fire-and-forget snapshot kickoff in the create paths is a no-op here.
 mock.module('../snapshots/builder', () => ({
-  ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async () => ({
     snapshotName: 'kortix-default-test',
     slug: 'default',

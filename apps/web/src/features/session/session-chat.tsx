@@ -44,8 +44,8 @@ import {
   SUGGESTION_MENU_SELECTOR,
   shouldCountEscape,
 } from './esc-to-stop';
-import { composeTakeBack, isFirstPromptRow, projectQueueRows } from './queue-projection';
-import { createQueueUndoAction, restoreQueuedMessage } from './queued-message-restore';
+import { isFirstPromptRow, projectQueueRows } from './queue-projection';
+import { createQueueUndoAction } from './queued-message-restore';
 import { CompactionMarker, CompactionSummaryBody } from './turn/compaction-card';
 import { compactionTurnInfo } from './turn/compaction-state';
 import { chatPlanAnchorId } from './turn/plan-anchor';
@@ -106,7 +106,11 @@ import {
 } from '@/features/session/composer/attachment-submission';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import { showTurnBusyIndicator } from '@/features/session/turn-busy-visibility';
-import type { AttachmentUploadStatus } from '@/features/session/turn/user-message';
+import {
+  editResendAttachments,
+  type AttachmentUploadStatus,
+  type NormalizedAttachment,
+} from '@/features/session/turn/user-message';
 import { SessionBusyIndicator } from './session-busy-indicator';
 import { useSessionBaseRef } from './session-changes-shared';
 import { resolveEffectiveBusy } from './session-chat-busy';
@@ -171,7 +175,8 @@ import {
   getWorkingState,
   groupMessagesIntoTurns,
 } from '@/ui';
-import { isAbortError } from '@kortix/sdk';
+import { isAbortError, turnEndNotice } from '@kortix/sdk';
+import { failureShownByTurn, persistedFailureText } from '@/features/session/persisted-turn-failure';
 import {
   type AbortSettlement,
   type KortixSendError,
@@ -795,7 +800,7 @@ export function SessionChat({
         text: sessionPrefill.text,
         id: sessionPrefill.id,
         ...(sessionPrefill.files ? { files: sessionPrefill.files } : {}),
-        mode: 'merge' as const,
+        mode: sessionPrefill.mode ?? ('merge' as const),
       };
     }
     return null;
@@ -2944,7 +2949,7 @@ export function SessionChat({
    * different control. Now the editor IS the confirmation.
    */
   const handleEditSend = useCallback(
-    async (messageId: string, text: string) => {
+    async (messageId: string, text: string, kept: NormalizedAttachment[] = []) => {
       if (!sessionState) return;
       setEditSendPending(true);
       try {
@@ -2991,7 +2996,10 @@ export function SessionChat({
         // This send commits the rewind staged above, so it POSTs at once: it never
         // waits behind an earlier Send still in the session's delivery chain.
         const editSend = { commitsRewind: true };
-        await handleSend(text, undefined, undefined, undefined, editSend).catch(() => {
+        // The kept attachments go again: a saved copy as a URL part, a path-only upload as its ref.
+        const { files, text: sendText } = editResendAttachments(kept, text);
+        const resend = files.length ? files : undefined;
+        await handleSend(sendText, resend, undefined, undefined, editSend).catch(() => {
           sendOk = false;
         });
         // Mirror the SDK's own send path (`use-session.ts` `sendParts`, which
@@ -3108,80 +3116,86 @@ export function SessionChat({
   }, [promptInbox.hold]);
 
   /**
-   * Edit takes the selected composer entry back. Up takes the latest eligible
-   * entry, preserving whatever is already typed.
+   * Edit opens a queued Queue List entry in the composer; Up opens the latest
+   * eligible one. Returns whether it acted, synchronously — the composer keeps
+   * Up as a caret move when there is nothing to edit.
    *
-   * Returns whether it acted, synchronously — the composer keeps Up as a caret
-   * move when there is nothing to take back. The removal itself is async: each
-   * row is DELETEd first, and only what the server actually removed comes back,
-   * so a row a turn already started (409) is never both sent and in the draft.
-   * A removed prompt that cannot come back losslessly (files, no local draft)
-   * is re-queued instead of dropped (`composeTakeBack`).
+   * No request: the row stays queued on the server, in its place, while it is
+   * edited, so the words reach the composer on the click. Submit saves the new
+   * text into that same row (`handleSaveQueueEdit`); it never sends it.
    */
-  const takeBackInFlightRef = useRef(false);
+  // The queued message the composer is editing. Written in event handlers
+  // only, so the ref is current when the composer's `onSend` reads it.
+  const [queueEdit, setQueueEditState] = useState<{
+    sessionId: string;
+    promptId: string;
+    clientMessageId?: string;
+    rawText: string;
+    editText: string;
+  } | null>(null);
+  const queueEditRef = useRef(queueEdit);
+  const setQueueEdit = useCallback((next: typeof queueEdit) => {
+    queueEditRef.current = next;
+    setQueueEditState(next);
+  }, []);
+  const activeQueueEdit = queueEdit?.sessionId === sessionId ? queueEdit : null;
   const handleTakeBackQueue = useCallback(
     (promptId?: string): boolean => {
-      const eligible = queueRowsRef.current
+      // One edit at a time: the composer holds one draft.
+      if (queueEditRef.current?.sessionId === sessionId) return false;
+      const target = queueRowsRef.current
         .filter((row) => row.takeBackEligible && (!promptId || row.id === promptId))
-        .slice(-1);
-      if (eligible.length === 0) return false;
-      if (takeBackInFlightRef.current) return true;
-      takeBackInFlightRef.current = true;
-      // Captured BEFORE the removals: removing a row prunes its draft.
-      const drafts = useQueuedDraftStore.getState().bySession[sessionId] ?? [];
-      void (async () => {
-        try {
-          const settled = await Promise.allSettled(
-            eligible.map((row) => promptInbox.remove(row.id)),
-          );
-          const removed = settled.flatMap((result) =>
-            result.status === 'fulfilled' && result.value ? [result.value] : [],
-          );
-          if (removed.length === 0) {
-            const failure = settled.find((result) => result.status === 'rejected');
-            if (failure?.status === 'rejected') throw failure.reason;
-            return;
-          }
-          const store = useSessionStateStore.getState();
-          for (const prompt of removed) {
-            for (const id of prompt.removed_message_ids ?? [prompt.message_id]) {
-              store.forgetControlPlaneMessage(sessionId, id);
-            }
-          }
-          const { text, files, requeue } = composeTakeBack({ removed, drafts });
-          useQueuedDraftStore.getState().remove(
-            sessionId,
-            removed.map((prompt) => prompt.client_message_id),
-          );
-          if (text || files.length > 0) {
-            const restored = removed[0].overrides;
-            if (restored?.agent) localAgentSet(restored.agent);
-            if (restored?.model) localModelSet(restored.model);
-            localVariantSet(restored?.variant ?? undefined);
-            useSessionComposerPrefillStore.getState().setPrefill(sessionId, text, files);
-          }
-          for (const prompt of requeue) {
-            void promptInbox
-              .enqueue(restoreQueuedMessage(prompt, () => mintSessionWireMessageId(sessionId)))
-              .catch(() => errorToast(tHardcodedUi.raw('i18nComplete.text8af21acebf14')));
-          }
-        } catch (error) {
-          errorToast(error instanceof Error ? error.message : String(error));
-        } finally {
-          takeBackInFlightRef.current = false;
-        }
-      })();
+        .at(-1);
+      if (!target?.editText) return false;
+      setQueueEdit({
+        sessionId,
+        promptId: target.id,
+        ...(target.clientMessageId ? { clientMessageId: target.clientMessageId } : {}),
+        rawText: target.rawText,
+        editText: target.editText,
+      });
+      useSessionComposerPrefillStore
+        .getState()
+        .setPrefill(sessionId, target.editText, undefined, 'replace');
       return true;
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     },
-    [
-      sessionId,
-      promptInbox.remove,
-      promptInbox.enqueue,
-      localAgentSet,
-      localModelSet,
-      localVariantSet,
-    ],
+    [sessionId, setQueueEdit],
+  );
+
+  /** Cancel the edit: the row was never touched, so only the composer empties. */
+  const handleCancelQueueEdit = useCallback(() => {
+    if (queueEditRef.current?.sessionId !== sessionId) return;
+    setQueueEdit(null);
+    useSessionComposerPrefillStore.getState().setPrefill(sessionId, '', undefined, 'replace');
+  }, [sessionId, setQueueEdit]);
+
+  /**
+   * Submit while editing: the new words replace the old ones inside the row's
+   * raw text, so a quote or reference around them survives, and the row is
+   * PATCHed in place. Nothing is sent — a re-POST would release a Stop hold
+   * and run at once on an idle session.
+   */
+  const handleSaveQueueEdit = useCallback(
+    async (edit: NonNullable<typeof queueEdit>, text: string) => {
+      setQueueEdit(null);
+      const next = edit.rawText.replace(edit.editText, () => text.trim());
+      if (next === edit.rawText) return;
+      // This tab's draft text outranks the server's in the row: drop it, so
+      // the row shows the edit.
+      if (edit.clientMessageId) {
+        useQueuedDraftStore.getState().remove(sessionId, [edit.clientMessageId]);
+      }
+      try {
+        await promptInbox.edit(edit.promptId, next);
+      } catch (error) {
+        // 409: the agent already has the old text. The new words go back to
+        // the composer, never lost.
+        useSessionComposerPrefillStore.getState().setPrefill(sessionId, text, undefined, 'replace');
+        errorToast(errorMessageOf(error));
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sessionId, promptInbox.edit, setQueueEdit],
   );
 
   // ---- Triple-ESC to stop ----
@@ -3658,9 +3672,13 @@ export function SessionChat({
         }}
         onRemove={(id) => void handleRemoveQueuedMessage(id)}
         onRetry={handleRetryQueuedMessage}
+        editing={activeQueueEdit}
+        onCancelEdit={handleCancelQueueEdit}
       />
     ),
     [
+      activeQueueEdit,
+      handleCancelQueueEdit,
       queueRows,
       resumePending,
       handleResumeQueue,
@@ -4427,6 +4445,39 @@ export function SessionChat({
                       </div>
                     )}
 
+                    {/* Persisted failures can precede any transcript message (for
+                        example, a marketplace install rejected at admission). */}
+                    {[
+                      ...(turnOutcome.recent_failures ?? []),
+                      ...(turnOutcome.last_ended?.end_reason === 'failed' &&
+                      !turnOutcome.recent_failures?.some(
+                        (failure) => failure.message_id === turnOutcome.last_ended?.message_id,
+                      )
+                        ? [turnOutcome.last_ended]
+                        : []),
+                    ].filter((failure) =>
+                      !isAbortError(failure.error) &&
+                      !failureShownByTurn(failure, turns) &&
+                      (!failure.error?.message || failure.error.message !== commandError?.message),
+                    ).map((failure) => {
+                      const messageId = failure.message_id ?? 'persisted-turn-failure';
+                      // Use the SDK's settle window for a cause that may arrive
+                      // one frame later, including an unnamed failed last turn.
+                      const notice = turnEndNotice({
+                        ...turnOutcome,
+                        recent_failures: [{ ...failure, message_id: messageId, error: failure.error ?? null }],
+                      }, messageId, { hasError: false, isAbort: false });
+                      return notice ? (
+                        <TurnErrorDisplay
+                          key={messageId}
+                          errorText={notice.kind === 'unexplained'
+                            ? tHardcodedUi.raw('i18nComplete.text73112526c03a')
+                            : persistedFailureText(failure.error)}
+                          className="mt-2"
+                        />
+                      ) : null;
+                    })}
+
                     {/* Busy indicator when no turns yet but session is busy */}
                     {commandError && (
                       <TurnErrorDisplay
@@ -4529,6 +4580,11 @@ export function SessionChat({
                 // focus onto a phone keyboard.
                 autoFocus={deferComposerFocus ? false : undefined}
                 onSend={async (text, files, mentions, attachments, placement) => {
+                  const edit = queueEditRef.current;
+                  if (edit?.sessionId === sessionId) {
+                    await handleSaveQueueEdit(edit, text);
+                    return;
+                  }
                   await handleSend(text, files, mentions, attachments, { placement });
                 }}
                 prefill={composerPrefill}
@@ -4541,6 +4597,9 @@ export function SessionChat({
                 hint={
                   canTakeBackQueue ? tHardcodedUi.raw('i18nComplete.text03a01dd53ffa') : undefined
                 }
+                // Editing a queued message: the send saves it back into the
+                // queue, so the control says Submit, never Stop.
+                submitLabel={activeQueueEdit ? tQueue('submitEdit') : null}
                 draftScope={composerDraftScope}
                 draftActive={!deferComposerFocus}
                 attachRequestId={attachRequestId}
@@ -4562,8 +4621,7 @@ export function SessionChat({
                 escCount={escCount}
                 agents={local.agent.list}
                 selectedAgent={composerAgentName}
-                onAgentChange={boundAgentName ? undefined : handleAgentChange}
-                agentSelectorLocked={!!boundAgentName}
+                onAgentChange={handleAgentChange}
                 noAccessibleAgents={noAccessibleAgents}
                 commands={chatCommands}
                 slashFiles={chatSlashFiles}

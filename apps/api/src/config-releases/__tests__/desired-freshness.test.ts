@@ -13,7 +13,7 @@ import { describe, expect, test } from 'bun:test';
 import type { GitBackedProject } from '../../projects/git/types';
 import type { ConfigRelease } from '../builder';
 import { type DesiredReleaseDeps, resolveDesiredRelease } from '../desired';
-import { MemoryConfigReleaseLedger } from '../quarantine';
+import { MemoryConfigReleaseLedger } from './fakes';
 import type { DeclaredAgentRoster } from '../session-agent';
 
 const PROJECT: GitBackedProject = {

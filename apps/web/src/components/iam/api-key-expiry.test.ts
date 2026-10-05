@@ -12,6 +12,7 @@ describe('expiryOptions', () => {
   test('with no rules set, every preset plus Never', () => {
     expect(expiryOptions(policy(), testUiTranslator).map((o) => o.value)).toEqual([
       NEVER_EXPIRES,
+      '1',
       '30',
       '90',
       '365',
@@ -21,12 +22,14 @@ describe('expiryOptions', () => {
   test('a missing policy behaves like no rules — the form still works while the query loads', () => {
     expect(expiryOptions(null, testUiTranslator).map((o) => o.value)).toEqual([
       NEVER_EXPIRES,
+      '1',
       '30',
       '90',
       '365',
     ]);
     expect(expiryOptions(undefined, testUiTranslator).map((o) => o.value)).toEqual([
       NEVER_EXPIRES,
+      '1',
       '30',
       '90',
       '365',
@@ -37,21 +40,21 @@ describe('expiryOptions', () => {
     const values = expiryOptions(policy({ require_expiry: true }), testUiTranslator).map(
       (o) => o.value,
     );
-    expect(values).toEqual(['30', '90', '365']);
+    expect(values).toEqual(['1', '30', '90', '365']);
   });
 
   test('a lifetime cap drops the presets beyond it', () => {
     const values = expiryOptions(policy({ max_lifetime_days: 90 }), testUiTranslator).map(
       (o) => o.value,
     );
-    expect(values).toEqual([NEVER_EXPIRES, '30', '90']);
+    expect(values).toEqual([NEVER_EXPIRES, '1', '30', '90']);
   });
 
-  test('a cap shorter than every preset becomes the only dated offer', () => {
+  test('a cap between presets keeps the cap and adds the shorter preset', () => {
     const values = expiryOptions(policy({ max_lifetime_days: 7 }), testUiTranslator).map(
       (o) => o.value,
     );
-    expect(values).toEqual([NEVER_EXPIRES, '7']);
+    expect(values).toEqual([NEVER_EXPIRES, '1', '7']);
   });
 
   test('a cap plus require_expiry leaves only dates within the cap', () => {
@@ -59,7 +62,7 @@ describe('expiryOptions', () => {
       policy({ max_lifetime_days: 7, require_expiry: true }),
       testUiTranslator,
     ).map((o) => o.value);
-    expect(values).toEqual(['7']);
+    expect(values).toEqual(['1', '7']);
   });
 
   test('a cap alone never forces an expiry — the backend checks the two rules separately', () => {
@@ -71,6 +74,7 @@ describe('expiryOptions', () => {
   test('labels read as time, not as numbers', () => {
     expect(expiryOptions(policy(), testUiTranslator).map((o) => o.label)).toEqual([
       'Never',
+      '1 day',
       '30 days',
       '90 days',
       '1 year',
@@ -111,6 +115,7 @@ describe('expiresAtIso', () => {
   });
 
   test('a day count becomes an instant that many days out', () => {
+    expect(expiresAtIso('1', now)).toBe('2026-08-13T00:00:00.000Z');
     expect(expiresAtIso('30', now)).toBe('2026-09-11T00:00:00.000Z');
     expect(expiresAtIso('365', now)).toBe('2027-08-12T00:00:00.000Z');
   });

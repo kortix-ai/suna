@@ -217,6 +217,38 @@ describe('writes that end a claim are fenced by the lease', () => {
     expect(persisted.attempts).toBe(2);
   });
 
+  test('two workers claiming a batch get every due row exactly once, in queue order', async () => {
+    const batchSession = crypto.randomUUID();
+    await db.execute(sql`
+      insert into kortix.project_sessions
+        (session_id, account_id, project_id, branch_name, agent_name, status, metadata)
+      values (${batchSession}, ${project.account_id}::uuid, ${project.project_id}::uuid,
+              ${batchSession}, 'default', 'running', '{}'::jsonb)`);
+    const queued: string[] = [];
+    for (let i = 0; i < 6; i += 1) queued.push((await enqueue(`batch-${i}`, batchSession)).commandId);
+    // Only this test's rows are due before the cutoff: push everything else out.
+    const now = new Date(Date.now() + 60_000);
+    await db.execute(sql`
+      update kortix.session_lifecycle_commands
+         set available_at = now() + interval '1 hour'
+       where status = 'queued' and session_id is distinct from ${batchSession}`);
+
+    const [a, b] = await Promise.all([
+      claimDueLifecycleCommands({ workerId: 'batch-a', limit: 4, now }),
+      claimDueLifecycleCommands({ workerId: 'batch-b', limit: 4, now }),
+    ]);
+
+    const ids = (claimed: SessionLifecycleCommandRow[]) => claimed.map((row) => row.commandId);
+    expect([...ids(a), ...ids(b)].sort()).toEqual([...queued].sort());
+    // Each worker's rows come back in the queue's order (send order here).
+    expect(ids(a)).toEqual(queued.filter((id) => ids(a).includes(id)));
+    expect(ids(b)).toEqual(queued.filter((id) => ids(b).includes(id)));
+    for (const row of [...a, ...b]) {
+      expect(row.status).toBe('running');
+      expect(row.attempts).toBe(1);
+    }
+  });
+
   test("a reclaimed row ignores the first worker's late failure", async () => {
     const { byA, byB } = await reclaimed('late-fail');
     await markCommandFailed(byA, 'drain failed: stale worker', { retryable: true, attempts: 1 });

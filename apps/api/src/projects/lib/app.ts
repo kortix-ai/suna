@@ -11,13 +11,22 @@ import {
   TriggerSchema as ContractTriggerSchema,
   WarmProjectSessionResultSchema as ContractWarmProjectSessionResultSchema,
   ClaimWarmProjectSessionInputSchema as ContractClaimWarmProjectSessionInputSchema,
+  ChangeRequestSchema as ContractChangeRequestSchema,
+  ChangeRequestListSchema as ContractChangeRequestListSchema,
+  CreateSessionPromptResultSchema as ContractCreateSessionPromptResultSchema,
+  SessionPromptListSchema as ContractSessionPromptListSchema,
+  SessionPromptSchema as ContractSessionPromptSchema,
+  SessionSnapshotSchema as ContractSessionSnapshotSchema,
+  SessionTranscriptSchema as ContractSessionTranscriptSchema,
+  SessionTranscriptSyncEnvelopeSchema as ContractSessionTranscriptSyncEnvelopeSchema,
+  SessionTurnStatusSchema as ContractSessionTurnStatusSchema,
+  TriggerListSchema as ContractTriggerListSchema,
 } from '@kortix/api-contract';
 import { z } from '@hono/zod-openapi';
-import { Hono } from 'hono';
 
 export const projectsApp = makeOpenApiApp<AppEnv>();
 
-export const projectWebhooksApp = new Hono<AppEnv>();
+export const projectWebhooksApp = makeOpenApiApp<AppEnv>();
 
 // ─── Reusable OpenAPI schemas (these power the docs, not runtime response
 // validation). Core project-domain surfaces come from @kortix/api-contract —
@@ -42,11 +51,45 @@ export const ClaimWarmProjectSessionInputSchema =
 
 export const OkSchema = ContractOkResponseSchema.openapi('Ok');
 
-export const ChangeRequestSchema = z.object({}).passthrough().openapi('ChangeRequest');
+export const ChangeRequestSchema = ContractChangeRequestSchema.openapi('ChangeRequest');
+
+export const ChangeRequestListSchema = ContractChangeRequestListSchema.openapi('ChangeRequestList');
 
 export const SecretSchema = ContractSecretSchema.openapi('Secret');
 
 export const TriggerSchema = ContractTriggerSchema.openapi('Trigger');
+
+export const TriggerListSchema = ContractTriggerListSchema.openapi('TriggerList');
+
+/** A manual fire or a webhook delivery: the run was queued (a session will
+ *  start) or fired, or the same delivery was already queued. */
+export const TriggerFireResultSchema = z
+  .object({
+    status: z.enum(['queued', 'fired', 'deduped']),
+    command_id: z.string().nullable(),
+    session_id: z.string().nullable(),
+    reason: z.string().nullable().optional(),
+    deduped: z.boolean(),
+  })
+  .openapi('TriggerFireResult');
+
+export const SessionTranscriptReadSchema = z
+  .union([
+    ContractSessionTranscriptSchema.openapi('SessionTranscript'),
+    ContractSessionTranscriptSyncEnvelopeSchema.openapi('SessionTranscriptSyncEnvelope'),
+  ])
+  .openapi('SessionTranscriptRead');
+
+export const SessionTurnStatusSchema = ContractSessionTurnStatusSchema.openapi('SessionTurnStatus');
+
+export const SessionPromptSchema = ContractSessionPromptSchema.openapi('SessionPrompt');
+
+export const SessionPromptListSchema = ContractSessionPromptListSchema.openapi('SessionPromptList');
+
+export const CreateSessionPromptResultSchema =
+  ContractCreateSessionPromptResultSchema.openapi('CreateSessionPromptResult');
+
+export const SessionSnapshotSchema = ContractSessionSnapshotSchema.openapi('SessionSnapshot');
 
 export const SnapshotSchema = z.object({}).passthrough().openapi('Snapshot');
 

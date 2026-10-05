@@ -7,8 +7,8 @@ import { z } from 'zod'
  * fetches, verifies, applies and reports.
  */
 
-/** The existing `MAX_OPENCODE_CONFIG_ARCHIVE_BYTES`: 4 MiB. */
-export const MAX_CONFIG_ARCHIVE_BYTES = 4 * 1024 * 1024
+/** The API's `MAX_CONFIG_ARCHIVE_BYTES` (apps/api/src/config-releases/release-tree.ts): 32 MiB. */
+export const MAX_CONFIG_ARCHIVE_BYTES = 32 * 1024 * 1024
 
 const HEX64 = /^[0-9a-f]{64}$/
 /** A Git object ID: SHA-1 (40 hex) or SHA-256 (64 hex). */

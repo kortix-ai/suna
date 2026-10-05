@@ -97,8 +97,7 @@ export class BillingGateError extends HTTPException {
 }
 
 async function resolveAdmissionState(accountId: string) {
-  await ensureFreeTierAccountReady(accountId);
-  const account = await getCreditAccount(accountId);
+  const account = (await ensureFreeTierAccountReady(accountId)) ?? (await getCreditAccount(accountId));
   const snapshot = billingSnapshotFromAccount(account);
   const state = resolveBillingState(snapshot);
   const billingModel: BillingModel = isPerSeatAccount(snapshot.billingModel)

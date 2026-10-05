@@ -444,7 +444,7 @@ describe('file proxy — token and drive authorization', () => {
 
   test('a non-channel conversation id can never select a drive', async () => {
     const r = await initiateTeamsUpload('proj-1', {
-      conversationId: 'a:1FQyR2jW1pEUK',
+      conversationId: 'a:1SyntheticPersonalChat_00000000000',
       conversationType: 'channel',
       teamGroupId: 'group-1',
       filename: 'report.pdf',

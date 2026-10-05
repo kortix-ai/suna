@@ -123,6 +123,23 @@ describe('audit event middleware', () => {
     expect(auditRows[0]).toMatchObject({ credentialKind: 'oauth_app', credentialId: 'client-1' });
   });
 
+  test('never copies the self-reported client version into the audit row', async () => {
+    const app = new Hono();
+    app.use('/v1/*', auditApiRequest);
+    app.get('/v1/projects/:projectId/detail', async (c) => {
+      (c as any).set('userId', '00000000-0000-4000-a000-000000000001');
+      (c as any).set('accountId', '00000000-0000-4000-a000-000000000101');
+      (c as any).set('authType', 'pat');
+      return c.json({ ok: true });
+    });
+
+    await app.request('/v1/projects/00000000-0000-4000-a000-000000000201/detail', {
+      headers: { 'X-Kortix-Client-Version': 'cli/0.13.42' },
+    });
+
+    expect(JSON.stringify(auditRows[0])).not.toContain('0.13.42');
+  });
+
   test('records failed mutations with a failure outcome', async () => {
     const app = new Hono();
     app.use('/v1/*', auditApiRequest);

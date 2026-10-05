@@ -9,12 +9,16 @@ import type { GitBackedProject } from '../projects/git/types';
 import type { ConfigRelease } from './builder';
 import { configReleaseId } from './builder';
 import { ledgerVariant, resolveDesiredRelease, type DesiredReleaseDeps } from './desired';
+import { configReleaseFailures, projectSessions } from '@kortix/db';
+import { sql } from 'drizzle-orm';
+import { QueryBuilder } from 'drizzle-orm/pg-core';
 import {
   __clearQuarantineMemoForTests,
-  MemoryConfigReleaseLedger,
+  notFromMetaSession,
   PROJECT_QUARANTINE_SESSIONS,
   recordDaemonConfigReport,
 } from './quarantine';
+import { MemoryConfigReleaseLedger } from './__tests__/fakes';
 
 const PROJECT = '11111111-1111-4111-8111-111111111111';
 const S1 = '22222222-2222-4222-8222-222222222221';
@@ -55,10 +59,14 @@ const idAt = (commit: string) => releaseAt(commit).release_id!;
 let ledger: MemoryConfigReleaseLedger;
 let tip = C1;
 const builds: string[] = [];
+/** Commits whose release the builder cannot build, with the builder's reason. */
+const unbuildable = new Map<string, string>();
 const deps = (): DesiredReleaseDeps => ({
   ledger,
   build: async (_project, commit) => {
     builds.push(commit);
+    const reason = unbuildable.get(commit);
+    if (reason) return { ...releaseAt(commit), release_id: null, config_tree_id: null, archive: null, files: null, reason };
     return releaseAt(commit);
   },
   resolveBase: async () => tip,
@@ -95,6 +103,7 @@ beforeEach(() => {
   ledger = new MemoryConfigReleaseLedger();
   tip = C1;
   builds.length = 0;
+  unbuildable.clear();
   __clearQuarantineMemoForTests();
 });
 
@@ -124,6 +133,42 @@ describe('project quarantine', () => {
     expect(third.descriptor.release_id).toBe(idAt(C1));
     expect(third.descriptor.source_commit).toBe(C1);
     expect(third.baseSha).toBe(C2);
+    // The quarantine is stated, with what the daemons reported, so a session
+    // running the older release does not read as up to date.
+    expect(third.fallbackReason).toContain(C2.slice(0, 12));
+    expect(third.fallbackReason).toContain('failed to load in 2 sessions');
+    expect(third.fallbackReason).toContain('replacement did not serve GET /agent within 90 s');
+    expect(third.fallbackReason).toContain(C1.slice(0, 12));
+  });
+
+  test('a healthy tip states no fallback', async () => {
+    expect((await desired()).fallbackReason).toBeNull();
+  });
+
+  // 2026-10-05: a tip the builder cannot build (archive over the limit, a
+  // missing plugin, a git error) used to reach the box as `release_id: null`
+  // plus governance. The daemon derived a governance-only ID from it and ran
+  // the image default: no project tools, skills or plugins, `fallback_reason:
+  // null`, and `stale: true` that no reload could clear.
+  test('an unbuildable tip assigns the last proven release and says why', async () => {
+    await desired();
+    await report(S1, { running: idAt(C1) });
+    tip = C2;
+    unbuildable.set(C2, 'config dir harnesses/opencode exceeds the 33554432-byte archive limit');
+    const result = await desired();
+    expect(result.descriptor.release_id).toBe(idAt(C1));
+    expect(result.descriptor.source_commit).toBe(C1);
+    expect(result.baseSha).toBe(C2);
+    expect(result.fallbackReason).toContain(C2.slice(0, 12));
+    expect(result.fallbackReason).toContain('exceeds the 33554432-byte archive limit');
+    expect(result.fallbackReason).toContain(C1.slice(0, 12));
+  });
+
+  test('an unbuildable tip with no proven release stays unassigned and says why', async () => {
+    unbuildable.set(C1, 'OpenCode plugin not found in harnesses/opencode/plugins: x.ts');
+    const result = await desired();
+    expect(result.descriptor.release_id).toBeNull();
+    expect(result.fallbackReason).toContain('OpenCode plugin not found');
   });
 
   test('the fallback is the newest proven release, never an unproven or quarantined one', async () => {
@@ -237,5 +282,41 @@ describe('recordDaemonConfigReport', () => {
       },
       broken,
     );
+  });
+});
+
+describe('the meta-session exclusion stays correlated', () => {
+  // INC-2026-09-15 shape: an outer column inside a raw subquery renders
+  // unqualified in a single-table selection, and Postgres then binds it to the
+  // inner project_sessions.session_id, turning the correlation into a tautology.
+  const OUTER = '"kortix"."config_release_failures"."session_id"::text';
+
+  test('the outer session column is fully qualified in a WHERE clause', () => {
+    const query = new QueryBuilder()
+      .select({ releaseId: configReleaseFailures.releaseId })
+      .from(configReleaseFailures)
+      .where(notFromMetaSession)
+      .toSQL().sql;
+    expect(query).toContain(`"kortix"."project_sessions"."session_id" = ${OUTER}`);
+  });
+
+  test('the outer session column stays qualified in a single-table selection', () => {
+    const query = new QueryBuilder()
+      .select({ fromMeta: notFromMetaSession })
+      .from(configReleaseFailures)
+      .toSQL().sql;
+    // Drizzle strips the inner column too; unqualified, it binds to the
+    // subquery's own FROM (project_sessions), which is the intended side.
+    expect(query).toContain(`"session_id" = ${OUTER}`);
+    expect(query).not.toContain('"session_id" = "session_id"');
+  });
+
+  test('control: the unqualified template collapses into the incident tautology there', () => {
+    const unqualified = sql`not exists (select 1 from ${projectSessions} where ${projectSessions.sessionId} = ${configReleaseFailures.sessionId}::text)`;
+    const query = new QueryBuilder()
+      .select({ fromMeta: unqualified })
+      .from(configReleaseFailures)
+      .toSQL().sql;
+    expect(query).toContain('"session_id" = "session_id"::text');
   });
 });

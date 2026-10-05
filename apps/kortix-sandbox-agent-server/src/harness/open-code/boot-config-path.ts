@@ -252,6 +252,10 @@ async function bootCandidates(
       manifest: null,
     })
     if (answer.descriptor.reason) reasons.push(answer.descriptor.reason)
+  } else if (answer.descriptor && desiredId === null) {
+    // The API could not build this session's release. The last proven copy or
+    // the image default serves, and says why.
+    reasons.push(answer.descriptor.reason ?? 'the API assigned no release')
   }
 
   // Valve B's floor: the previously available config on disk.

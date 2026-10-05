@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { BUNDLED_MANAGED_MODELS, MINIMAL_FALLBACK_MODELS } from '@/harness/open-code/fallback-models'
+import { BUNDLED_MANAGED_MODELS, MINIMAL_FALLBACK_MODELS } from '@kortix/api-contract/fallback-models'
 import {
   buildOpencodeConfigContent,
   catalogIsDegraded,
@@ -77,11 +77,16 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
+  // Settle the fire-and-forget prefetch while THIS test's fetch stub is still
+  // current. An attempt that outlives its test re-reads globalThis.fetch on
+  // every retry, so an unsettled prefetch fires its retries into the next
+  // test's stub (or the real network) after the restore below.
+  await settleManagedModelsPrefetch()
   globalThis.fetch = realFetch
   resetManagedModelsStateForTests()
   resetManagedReconcileForTests()
   await Promise.all(tempDirs.splice(0).map((d) => rm(d, { recursive: true, force: true })))
-})
+}, 15_000)
 
 describe('managed listing fetch', () => {
   test('asks the gateway for the picker scope only', async () => {
@@ -159,6 +164,28 @@ describe('boot config composition', () => {
     expect(models['openai/gpt-5.5']).toBeDefined()
   })
 
+  // The agent default moved to codex/gpt-6.1-sol on 2026-10-02. A prompt that
+  // names no model runs on the model the config names, so no API gate sees it.
+  test('every model the config names is registered, even when no catalog carries it', async () => {
+    const raw = await buildOpencodeConfigContent({
+      ...GATEWAY,
+      KORTIX_LLM_CATALOG_FILE: await bakedCatalogFile(),
+      KORTIX_MODEL: 'codex/gpt-6.1-sol',
+      KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({
+        model: 'openai/gpt-7',
+        small_model: 'kortix/new-small',
+        agent: { reviewer: { model: 'anthropic/claude-new' }, plain: {} },
+      }),
+    } as NodeJS.ProcessEnv)
+    const models = providerModels(raw) as Record<string, { name?: string; limit?: { context?: number } }>
+
+    for (const id of ['codex/gpt-6.1-sol', 'openai/gpt-7', 'new-small', 'anthropic/claude-new']) {
+      expect(models[id]?.limit?.context).toBeGreaterThan(0)
+    }
+    // A catalog record is never replaced by the placeholder.
+    expect(models['openai/gpt-5.5']?.name).toBe('GPT-5.5')
+  })
+
   test('a failed managed fetch still leaves the bundled managed floor', async () => {
     globalThis.fetch = (async () =>
       new Response('down', { status: 500 })) as unknown as typeof fetch
@@ -199,8 +226,16 @@ describe('boot config composition', () => {
   // cannot bind its port until this config is written, so the build must never
   // wait on a fetch — a hanging gateway has to cost ~0ms, not the fetch budget.
   test('a hanging gateway costs the config build no time at all', async () => {
-    globalThis.fetch = (async () => {
-      await new Promise((r) => setTimeout(r, 60_000))
+    // Honor the abort signal the real fetch honors, so the afterEach's settle
+    // is bounded by the per-try timeout instead of this 60 s sleep.
+    globalThis.fetch = (async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, 60_000)
+        init?.signal?.addEventListener('abort', () => {
+          clearTimeout(timer)
+          reject(new Error('aborted'))
+        }, { once: true })
+      })
       return new Response('{}', { status: 200 })
     }) as unknown as typeof fetch
 
@@ -223,6 +258,17 @@ describe('boot config composition', () => {
 })
 
 describe('the boot config never touches the network', () => {
+  // The image-baked catalog at the well-known path exists on a Kortix sandbox
+  // image and would answer for the absent fixture below; point the baked
+  // fallback at an absent path so this describe reads only its own disk.
+  const ABSENT_BAKED = join(tmpdir(), 'kortix-absent-baked-catalog.json')
+  beforeEach(() => {
+    process.env.KORTIX_BAKED_LLM_CATALOG_PATH = ABSENT_BAKED
+  })
+  afterEach(() => {
+    delete process.env.KORTIX_BAKED_LLM_CATALOG_PATH
+  })
+
   // `opencode serve` cannot bind until this config exists, so the build reads
   // only disk: a catalog file, else the bundled minimal set.
   const NO_FILE_ENV = {
@@ -655,15 +701,16 @@ describe('on-demand managed catalog converge (post-boot self-heal + wake/refresh
     return join(dir, 'kortix-llm-catalog.session.json')
   }
 
-  function fakeOpencode(swaps: { n: number }, opts: { swapOutcome?: 'swapped' | 'kept-old' } = {}): Opencode {
+  function fakeOpencode(
+    swaps: { n: number },
+    opts: { how?: 'disposed' | 'restarted' | 'kept-old' } = {},
+  ): Opencode {
     return {
       getInternalUrl: () => 'http://127.0.0.1:65535',
-      reloadVerified: async () => {
-        if (opts.swapOutcome === 'kept-old') {
-          return { outcome: 'kept-old', reason: 'the verified opencode exited before promotion' }
-        }
-        swaps.n++
-        return { outcome: 'swapped', port: 4096, pid: 4242, turnEnded: false, orphanedMessageId: null }
+      reloadConfig: async () => {
+        const how = opts.how ?? 'disposed'
+        if (how !== 'kept-old') swaps.n++
+        return { how, turnEnded: false }
       },
     } as unknown as Opencode
   }
@@ -681,7 +728,7 @@ describe('on-demand managed catalog converge (post-boot self-heal + wake/refresh
     } as NodeJS.ProcessEnv)
   }
 
-  test('fetches fresh (never the stale boot prefetch) and restarts when a managed id is missing', async () => {
+  test('fetches fresh (never the stale boot prefetch) and reloads in place when a managed id is missing', async () => {
     await bootOnStaleCatalogOnly()
     // Confirms the fixture: the config just booted with does NOT have these.
     expect(missingManagedModelIds(LIVE_MANAGED.models).sort()).toEqual(['grok-4.6', 'new-managed-9.9'])
@@ -698,7 +745,7 @@ describe('on-demand managed catalog converge (post-boot self-heal + wake/refresh
       turnProbe: async () => false,
     })
 
-    expect(result.outcome).toBe('restarted')
+    expect(result.outcome).toBe('reloaded')
     expect(result.missing.sort()).toEqual(['grok-4.6', 'new-managed-9.9'])
     expect(swaps.n).toBe(1)
     const written = JSON.parse(await readFile(target, 'utf8')) as { models: Record<string, unknown> }
@@ -777,21 +824,20 @@ describe('on-demand managed catalog converge (post-boot self-heal + wake/refresh
     }
   })
 
-  test('a verified swap that declines to boot is reported, not swallowed', async () => {
-    await bootOnStaleCatalogOnly()
-    globalThis.fetch = (async () =>
-      new Response(JSON.stringify(LIVE_MANAGED), { status: 200 })) as unknown as typeof fetch
+  test('a reload that fell back to a new process reports restarted; one that kept the old process reports declined', async () => {
+    for (const [how, outcome] of [['restarted', 'restarted'], ['kept-old', 'declined']] as const) {
+      resetManagedModelsStateForTests()
+      await bootOnStaleCatalogOnly()
+      globalThis.fetch = (async () =>
+        new Response(JSON.stringify(LIVE_MANAGED), { status: 200 })) as unknown as typeof fetch
 
-    const swaps = { n: 0 }
-    const target = await targetPath()
-    const result = await convergeManagedModelCatalog(
-      fakeOpencode(swaps, { swapOutcome: 'kept-old' }),
-      cfg,
-      { catalogTargetFile: target, turnProbe: async () => false },
-    )
+      const result = await convergeManagedModelCatalog(fakeOpencode({ n: 0 }, { how }), cfg, {
+        catalogTargetFile: await targetPath(),
+        turnProbe: async () => false,
+      })
 
-    expect(result.outcome).toBe('declined')
-    expect(result.reason).toContain('exited before promotion')
+      expect(result.outcome).toBe(outcome)
+    }
   })
 
   test('reports no-gateway when this box has no gateway credentials, without throwing', async () => {
@@ -815,8 +861,8 @@ describe('on-demand managed catalog converge (post-boot self-heal + wake/refresh
 
 // 2026-10-01 dev: a box created at 23:58 registered the 18:45 image catalog,
 // with codex/gpt-5.4 and without codex/gpt-6.1-sol, while the gateway served
-// gpt-6.1-sol. The managed-only converge never looked at a non-managed id, so
-// the picker offered a model the box would answer `Model not found` for.
+// gpt-6.1-sol. The gateway decides whether a model is served. The box registers
+// the id a turn names and reloads OpenCode's config in place.
 describe('on-demand converge for the ONE model a turn asks for (any provider)', () => {
   const cfg = loadConfig({ KORTIX_WORKSPACE: '/workspace' } as NodeJS.ProcessEnv)
   const REAL = {
@@ -824,8 +870,11 @@ describe('on-demand converge for the ONE model a turn asks for (any provider)', 
     KORTIX_LLM_BASE_URL: process.env.KORTIX_LLM_BASE_URL,
     KORTIX_TOKEN: process.env.KORTIX_TOKEN,
   }
-  const FULL_LIVE = {
-    models: { ...STALE_BAKED.models, 'codex/gpt-6.1-sol': { name: 'GPT-6.1 Sol (ChatGPT)', provider: 'codex' } },
+  const LISTING = {
+    models: {
+      ...LIVE_MANAGED.models,
+      'codex/gpt-6.1-sol': { name: 'GPT-6.1 Sol (ChatGPT)', provider: 'codex', limit: { context: 272_000 } },
+    },
   }
 
   beforeEach(() => {
@@ -839,29 +888,40 @@ describe('on-demand converge for the ONE model a turn asks for (any provider)', 
     }
   })
 
+  const bootEnv = () =>
+    ({ ...GATEWAY, KORTIX_LLM_CATALOG_FILE: process.env.KORTIX_LLM_CATALOG_FILE }) as NodeJS.ProcessEnv
+
   async function bootStale(): Promise<string> {
     process.env.KORTIX_LLM_CATALOG_FILE = await bakedCatalogFile()
-    await buildOpencodeConfigContent({ ...GATEWAY, KORTIX_LLM_CATALOG_FILE: process.env.KORTIX_LLM_CATALOG_FILE } as NodeJS.ProcessEnv)
+    await buildOpencodeConfigContent(bootEnv())
     const dir = await mkdtemp(join(tmpdir(), 'kortix-model-'))
     tempDirs.push(dir)
     return join(dir, 'kortix-llm-catalog.session.json')
   }
 
-  function opencode(swaps: { n: number }): Opencode {
+  /** `reloadConfig` rebuilds the config from the same env, as the lifecycle does. */
+  function opencode(reloads: { n: number }): Opencode {
     return {
       getInternalUrl: () => 'http://127.0.0.1:65535',
-      reloadVerified: async () => {
-        swaps.n++
-        return { outcome: 'swapped', port: 4096, pid: 4242, turnEnded: false, orphanedMessageId: null }
+      reloadConfig: async () => {
+        reloads.n++
+        await buildOpencodeConfigContent(bootEnv())
+        return { how: 'disposed', turnEnded: false }
       },
     } as unknown as Opencode
   }
 
-  const gateway = (full: unknown, status = 200) =>
-    (async (input: string) =>
-      String(input).includes('scope=picker')
-        ? new Response(JSON.stringify(LIVE_MANAGED), { status: 200 })
-        : new Response(JSON.stringify(full), { status })) as unknown as typeof fetch
+  const registered = async () =>
+    providerModels(await buildOpencodeConfigContent(bootEnv())) as Record<
+      string,
+      { name?: string; limit?: { context?: number } }
+    >
+
+  const listing = (body: unknown, status = 200) =>
+    (async (input: string) => {
+      expect(String(input)).toContain('scope=picker')
+      return new Response(JSON.stringify(body), { status })
+    }) as unknown as typeof fetch
 
   test('a registered model answers unchanged with no network call', async () => {
     const target = await bootStale()
@@ -870,69 +930,73 @@ describe('on-demand converge for the ONE model a turn asks for (any provider)', 
       calls++
       return new Response('{}')
     }) as unknown as typeof fetch
-    const swaps = { n: 0 }
-    const result = await convergeManagedModelCatalog(opencode(swaps), cfg, {
+    const reloads = { n: 0 }
+    const result = await convergeManagedModelCatalog(opencode(reloads), cfg, {
       model: 'openai/gpt-5.5',
       catalogTargetFile: target,
       turnProbe: async () => false,
     })
     expect(result).toMatchObject({ outcome: 'unchanged', modelPresent: true })
     expect(calls).toBe(0)
-    expect(swaps.n).toBe(0)
+    expect(reloads.n).toBe(0)
   })
 
-  test('a model the box lacks but the gateway serves lands in the file and one verified restart', async () => {
+  test('a model the box lacks is registered with the listing record by one in-place reload', async () => {
     const target = await bootStale()
-    globalThis.fetch = gateway(FULL_LIVE)
-    const swaps = { n: 0 }
-    const result = await convergeManagedModelCatalog(opencode(swaps), cfg, {
+    globalThis.fetch = listing(LISTING)
+    const reloads = { n: 0 }
+    const result = await convergeManagedModelCatalog(opencode(reloads), cfg, {
       model: 'codex/gpt-6.1-sol',
       catalogTargetFile: target,
       turnProbe: async () => false,
     })
-    expect(result).toMatchObject({ outcome: 'restarted', missing: ['codex/gpt-6.1-sol'], modelPresent: true })
-    expect(swaps.n).toBe(1)
-    const written = JSON.parse(await readFile(target, 'utf8')) as { models: Record<string, unknown> }
-    expect(written.models['codex/gpt-6.1-sol']).toBeDefined()
-    expect(process.env.KORTIX_LLM_CATALOG_FILE).toBe(target)
-  })
-
-  test('a model the gateway does not serve is not-served: no restart, the turn gets OpenCode\'s own error', async () => {
-    const target = await bootStale()
-    globalThis.fetch = gateway(FULL_LIVE)
-    const swaps = { n: 0 }
-    const result = await convergeManagedModelCatalog(opencode(swaps), cfg, {
-      model: 'codex/gpt-9-typo',
-      catalogTargetFile: target,
-      turnProbe: async () => false,
+    expect(result).toMatchObject({ outcome: 'reloaded', missing: ['codex/gpt-6.1-sol'], modelPresent: true })
+    expect(reloads.n).toBe(1)
+    expect((await registered())['codex/gpt-6.1-sol']).toMatchObject({
+      name: 'GPT-6.1 Sol (ChatGPT)',
+      limit: { context: 272_000 },
     })
-    expect(result).toMatchObject({ outcome: 'not-served', modelPresent: false })
-    expect(swaps.n).toBe(0)
+    // A second turn on the same model costs no fetch and no reload.
+    globalThis.fetch = (async () => {
+      throw new Error('no network call expected')
+    }) as unknown as typeof fetch
+    expect(
+      await convergeManagedModelCatalog(opencode(reloads), cfg, { model: 'codex/gpt-6.1-sol', turnProbe: async () => false }),
+    ).toMatchObject({ outcome: 'unchanged', modelPresent: true })
+    expect(reloads.n).toBe(1)
   })
 
-  test('a dead full-catalog fetch is no-gateway (retryable), never not-served', async () => {
+  // The picker listing is per project and per member. A Routing chain can serve
+  // an id it does not list, and the fetch can fail. The gateway answers for the
+  // model either way, so the box must not answer "Model not found" first.
+  test.each([
+    ['the listing does not carry it', () => listing(LIVE_MANAGED)],
+    ['the listing fetch fails', () => listing('boom', 500)],
+  ])('a model is registered when %s', async (_name, gateway) => {
     const target = await bootStale()
-    globalThis.fetch = gateway('boom', 500)
-    const swaps = { n: 0 }
-    const result = await convergeManagedModelCatalog(opencode(swaps), cfg, {
+    globalThis.fetch = gateway()
+    const reloads = { n: 0 }
+    const result = await convergeManagedModelCatalog(opencode(reloads), cfg, {
       model: 'codex/gpt-6.1-sol',
       catalogTargetFile: target,
       turnProbe: async () => false,
     })
-    expect(result).toMatchObject({ outcome: 'no-gateway', modelPresent: false })
-    expect(swaps.n).toBe(0)
+    expect(result).toMatchObject({ outcome: 'reloaded', modelPresent: true })
+    expect(reloads.n).toBe(1)
+    expect((await registered())['codex/gpt-6.1-sol']?.limit?.context).toBeGreaterThan(0)
   }, 20_000)
 
-  test('never restarts across a live turn', async () => {
+  test('never reloads across a live turn, and the next idle reload registers the model', async () => {
     const target = await bootStale()
-    globalThis.fetch = gateway(FULL_LIVE)
-    const swaps = { n: 0 }
-    const result = await convergeManagedModelCatalog(opencode(swaps), cfg, {
+    globalThis.fetch = listing(LISTING)
+    const reloads = { n: 0 }
+    const result = await convergeManagedModelCatalog(opencode(reloads), cfg, {
       model: 'codex/gpt-6.1-sol',
       catalogTargetFile: target,
       turnProbe: async () => true,
     })
     expect(result).toMatchObject({ outcome: 'declined', modelPresent: false })
-    expect(swaps.n).toBe(0)
+    expect(reloads.n).toBe(0)
+    expect((await registered())['codex/gpt-6.1-sol']).toBeDefined()
   })
 })

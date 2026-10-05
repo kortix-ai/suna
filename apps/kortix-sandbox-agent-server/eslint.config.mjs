@@ -51,19 +51,26 @@ export const SERVICES = {
   skills: [],
   'static-web': [],
 }
-// The relay wire contract is shared with apps/api through a tsconfig path
-// (see tsconfig.json). An aliased file outside the plugin root arrives as an
+// The wire contract is shared with apps/api through a tsconfig path (see
+// tsconfig.json). An aliased file outside the plugin root arrives as an
 // absolute path, one inside it (pnpm layout) as a root-relative path.
 const apiContract = resolve(import.meta.dirname, '../../packages/api-contract/src').split(sep).join('/')
 const API_CONTRACT = [`${apiContract}/**`, at('../../packages/api-contract/src/**')]
+// The SDK's import-free message-id codec, reached the same way (pi mints ids with it).
+const SDK_WIRE_MESSAGE_ID_FILE = 'packages/sdk/src/core/session/wire-message-id.ts'
+const SDK_WIRE_MESSAGE_ID = [resolve(import.meta.dirname, '../..', SDK_WIRE_MESSAGE_ID_FILE).split(sep).join('/'), at(`../../${SDK_WIRE_MESSAGE_ID_FILE}`)]
 /** @type {Record<string, string[]>} */
 const SERVICE_EXTERNALS = {
   'egress-shim': [...pkg('node-forge'), ...API_CONTRACT],
+  // MONITOR_INGEST_MAX_EVENTS and the ingest body.
+  monitor: API_CONTRACT,
+  // The image-baked paths (`@kortix/api-contract/sandbox-layout`).
+  'runtime-assets': API_CONTRACT,
 }
 /** Harness adapters and the packages only they may load. @type {Record<string, string[]>} */
 export const ADAPTERS = {
   'open-code': ['bun:sqlite'],
-  pi: [...pkg('@earendil-works/*'), ...pkg('typebox')],
+  pi: [...pkg('@earendil-works/*'), ...pkg('typebox'), ...SDK_WIRE_MESSAGE_ID],
 }
 
 const lib = at('src/lib/**')
@@ -97,7 +104,11 @@ const independentModules = createIndependentModules({
   // resolves `paths` against its root, which under pnpm is the monorepo root.
   pathAliases: {
     baseUrl: '.',
-    paths: { '@/*': [at('src/*')], '@kortix/api-contract/*': [at('../../packages/api-contract/src/*')] },
+    paths: {
+      '@/*': [at('src/*')],
+      '@kortix/api-contract/*': [at('../../packages/api-contract/src/*')],
+      '@kortix/sdk/wire-message-id': [at(`../../${SDK_WIRE_MESSAGE_ID_FILE}`)],
+    },
   },
   reusableImportPatterns: { sharedLayer: [lib, types] },
   modules: [
@@ -151,7 +162,7 @@ const independentModules = createIndependentModules({
       'app',
       [at('src/app/**'), at('src/main.ts')],
       [at('src/app/**'), at('src/routes/**'), ...harnessCore, ...services, SHARED, at('package.json')],
-      [...RUNTIME, ...pkg('hono')],
+      [...RUNTIME, ...pkg('hono'), ...API_CONTRACT],
       'app/ composes routes, the harness contract, services and the shared layer. Never an adapter.',
     ),
     // Last: a file no layer above matched is in no layer at all (a new

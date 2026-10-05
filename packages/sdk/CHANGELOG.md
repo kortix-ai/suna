@@ -166,6 +166,22 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   return type. `useSession().send` and `sendParts` post the same inbox prompt
   (the wire id is placed by the server, `remintOnDelivery`); a text part's
   `id` stays the host's local correlation key and no longer goes on the wire.
+- `openEventStream` / `session(pid, sid).stream()`: consecutive
+  `message.part.delta` events for one part field in the same 16 ms flush arrive
+  as one event. `properties.delta` is their text joined in order, `id` is the
+  last event's id, and `coalesced` lists the wire events it replaced. Appending
+  `delta` gives the same text. A consumer that dedupes deltas by event id reads
+  the ids from `coalesced` when it is present. The sync store applies the run in
+  one update.
+- Session open, `useSession`: a session-open snapshot that has already answered
+  serves the saved-history read (no second download of the transcript window),
+  and its `models` leg seeds `useModelDefaults`, which then needs no
+  `/model-defaults` request and no `/detail` answer first.
+- `SessionStartResult.capabilities` (optional): what the session's runtime
+  serves, listed by the API with `stage: 'ready'`. `useSession` records it when
+  the session becomes ready, so `useRuntimeSupports` is right before the first
+  `/kortix/health` probe answers. Absent on an older API: the capabilities stay
+  unknown until the probe answers, as before.
 
 ### Deprecated
 - `useSession` option `initialOpenCodeSessionId` (use

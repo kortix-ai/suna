@@ -143,11 +143,9 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       reminders: false,
       warm_sessions: false,
       secrets_egress: false,
-      pi_worker: false,
       pooled_provider_secrets: false,
       pi_harness: false,
       config_releases: true,
-      agent_principal: false,
       us_region: false,
     },
     experimental_features: [],
@@ -722,11 +720,9 @@ describe('envelopes', () => {
       'reminders',
       'warm_sessions',
       'secrets_egress',
-      'pi_worker',
       'pooled_provider_secrets',
       'pi_harness',
       'config_releases',
-      'agent_principal',
       'us_region',
     ]);
   });

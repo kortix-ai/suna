@@ -6,7 +6,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, mkdtempSync, chmodSync, existsSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
@@ -21,10 +21,12 @@ import {
   configReleaseId,
   isTreeObject,
   listConfigFiles,
+  MAX_CONFIG_ARCHIVE_BYTES,
   storeConfigArchive,
   toDescriptor,
 } from './builder';
-import { MemoryConfigArchiveStore, configArchiveKey } from './store';
+import { configArchiveKey } from './store';
+import { MemoryConfigArchiveStore } from './__tests__/fakes';
 
 let root = '';
 let work = '';
@@ -216,6 +218,37 @@ describe('buildConfigRelease on the root project layout', () => {
     expect(second.config_tree_id).toBe(first.config_tree_id);
     expect(second.release_id).toBe(first.release_id);
     expect(again.objects.get(configArchiveKey(project.projectId, second.config_tree_id!))!.equals(firstBytes)).toBe(true);
+  });
+
+  test('a composed release whose archive bytes are already cached does not build the archive again', async () => {
+    const sha = seedRootLayout();
+    const first = await buildConfigRelease(project, sha, 'project', { store });
+    expect(first.archive?.bytes).toBeGreaterThan(0);
+
+    // Count gzip runs: the archive pipeline is `git archive` piped through
+    // `gzip -n`, so a gzip run under a PATH shim means the archive was built.
+    const shimDir = join(root, 'gzip-shim');
+    mkdirSync(shimDir, { recursive: true });
+    const counter = join(root, 'gzip-runs');
+    const gzips = () => (existsSync(counter) ? readFileSync(counter, 'utf8').trim().split('\n').filter(Boolean).length : 0);
+    const realGzip = run('which', ['gzip'], root);
+    writeFileSync(join(shimDir, 'gzip'), `#!/bin/sh\necho run >> '${counter}'\nexec '${realGzip}' "$@"\n`);
+    chmodSync(join(shimDir, 'gzip'), 0o755);
+    const previousPath = process.env.PATH;
+    process.env.PATH = `${shimDir}:${previousPath}`;
+    try {
+      const again = new MemoryConfigArchiveStore();
+      const second = await buildConfigRelease(project, sha, 'project', { store: again, noCache: true });
+      expect(second.release_id).toBe(first.release_id);
+      expect(second.archive?.bytes).toBe(first.archive?.bytes);
+      // The size cache already held the tree's key: the second build runs no
+      // archive pipeline (the first build ran before the shim, so 0 is the
+      // count of shims-era gzip runs), and nothing is published again.
+      expect(gzips()).toBe(0);
+      expect(again.puts).toBe(0);
+    } finally {
+      process.env.PATH = previousPath;
+    }
   });
 
   test('a root skill replaces the config dir skill of the same name; the others stay', async () => {
@@ -459,6 +492,29 @@ describe('buildConfigRelease', () => {
     expect(release.compiled_governance).not.toBeNull();
   });
 
+  // 2026-10-05: a pi project with no OpenCode config dir got a governance-only
+  // release, and pi lost its root skills and its own config dir.
+  test('a commit with no OpenCode config dir still releases the root skills and the pi config dir', async () => {
+    const sha = commit(
+      {
+        'kortix.yaml': MANIFEST('first'),
+        'skills/demo/SKILL.md': '---\nname: demo\n---\nDemo skill.\n',
+        'harnesses/pi/skills/native/SKILL.md': '---\nname: native\n---\nA pi skill.\n',
+      },
+      'pi only',
+    );
+    const release = await buildConfigRelease(project, sha, 'project', { store });
+    expect(release.reason).toBeNull();
+    expect(release.release_id).toMatch(/^[0-9a-f]{64}$/);
+    expect(release.archive).not.toBeNull();
+    expect(release.config_dir).toBeString();
+    expect(release.files!.map(([path]) => path).sort()).toEqual(['pi/skills/native/SKILL.md', 'skills/demo/SKILL.md']);
+    expect(store.objects.size).toBe(1);
+    const tar = gunzipSync([...store.objects.values()][0]!).toString('latin1');
+    expect(tar).toContain('skills/demo/SKILL.md');
+    expect(tar).toContain('pi/skills/native/SKILL.md');
+  });
+
   // Prod 2026-10-02: the meta coordinator's box has no project checkout and its
   // image has no `bun`. It was assigned the `project` release, could not install
   // the tool dependencies, and its failures quarantined that release for every
@@ -483,16 +539,19 @@ describe('buildConfigRelease', () => {
       {
         'kortix.yaml': MANIFEST('first'),
         '.kortix/opencode/opencode.json': '{}\n',
-        // Random bytes do not compress: the gzip stays above 4 MiB.
-        '.kortix/opencode/blob.bin': randomBytes(4 * 1024 * 1024 + 4096),
+        // Random bytes do not compress: the gzip stays above the limit.
+        '.kortix/opencode/blob.bin': randomBytes(MAX_CONFIG_ARCHIVE_BYTES + 4096),
       },
       'huge',
     );
     const release = await buildConfigRelease(project, sha, 'project', { store });
     expect(release.release_id).toBeNull();
     expect(release.config_tree_id).toMatch(/^[0-9a-f]{40}$/);
-    expect(release.reason).toContain('exceeds the 4194304-byte archive limit');
+    expect(release.reason).toContain(`exceeds the ${MAX_CONFIG_ARCHIVE_BYTES}-byte archive limit`);
     expect(store.objects.size).toBe(0);
+    // The answer is a fact of the commit: every box's descriptor request (one
+    // per minute per box) must not rebuild and gzip the whole tree again.
+    expect(await buildConfigRelease(project, sha, 'project', { store })).toBe(release);
 
     const mirror = await refreshMirror(project);
     await expect(buildConfigArchive(mirror, release.config_tree_id!, 1024)).rejects.toBeInstanceOf(
