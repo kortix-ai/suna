@@ -36,7 +36,6 @@ import { TURN_GAP_PX, turnTopGap } from '@/lib/session/auto-scroll';
 import { useFailedSendStore } from '@/lib/session/failed-sends';
 import { mintWireMessageId } from '@/lib/session/wire-message-id';
 import { useSessionPromptRequestStore } from '@/stores/session-prompt-request-store';
-import { useSessionFilesRequestStore } from '@/stores/session-files-request-store';
 import { useTabStore } from '@/stores/tab-store';
 
 // The message-queue store pulls `expo-crypto` → react-native, so it may only
@@ -87,7 +86,6 @@ let messageAuthors: any; // what `useSessionMessageAuthors` reads
 const scrollToEndCalls: any[][] = [];
 const previewCalls: { path: string; line?: number }[] = [];
 let previewHostMounts = 0;
-let filesSheetOpens = 0; // Recent files sheet `open()` calls
 const toastCalls: { kind: string; message: string }[] = [];
 const fetchCalls: { url: string; method: string; body: any }[] = [];
 const scrollToCalls: { offset: number; animated: boolean }[] = [];
@@ -400,25 +398,19 @@ const moduleMocks: Record<string, Record<string, any>> = {
     },
   },
   './session-busy-indicator': { SessionBusyIndicator: Empty },
-  './SessionFilesSheet': {
-    SessionFilesSheet: React.forwardRef((_props: any, ref) => {
-      React.useImperativeHandle(ref, () => ({ open: () => { filesSheetOpens += 1; }, close() {} }));
-      return null;
-    }),
-  },
   './turn/compaction-divider': { CompactionMarker: Empty },
   '@/components/session/tool/shared/navigation': {
     ToolFilePreviewHost: () => {
       previewHostMounts += 1;
       return null;
     },
-    useToolFilePreviewStore: Object.assign((select: (state: { addToChat: null }) => unknown) => select({ addToChat: null }), {
+    useToolFilePreviewStore: {
       getState: () => ({
         openPreview: (path: string, line?: number) => previewCalls.push({ path, line }),
         closePreview: () => {},
         setAddToChat: () => {},
       }),
-    }),
+    },
   },
   // One object, as the real provider's context value is.
   '@/components/kortix/toast-provider': {
@@ -547,7 +539,6 @@ const KEEP_REAL = new Set([
   '@/stores/tab-store',
   '@/stores/message-queue-store',
   '@/stores/session-prompt-request-store',
-  '@/stores/session-files-request-store',
   '@/stores/composer-draft-store',
   '@/components/session/tool/shared/connector-handoff-context',
 ]);
@@ -742,8 +733,6 @@ beforeEach(() => {
   scrollToEndCalls.length = 0;
   previewCalls.length = 0;
   previewHostMounts = 0;
-  filesSheetOpens = 0;
-  useSessionFilesRequestStore.setState({ request: null });
   toastCalls.length = 0;
   fetchCalls.length = 0;
   scrollToCalls.length = 0;
@@ -1275,39 +1264,6 @@ describe('SessionPage file mentions', () => {
     expect(previewCalls).toEqual([{ path: 'src/app.ts', line: undefined }]);
     markdownActionsValue.onOpenFile?.('src/lib/x.ts');
     expect(previewCalls.at(-1)).toEqual({ path: 'src/lib/x.ts', line: undefined });
-  });
-});
-
-describe('SessionPage Recent files', () => {
-  test('the Files row opens Recent files while a question replaces the composer; the composer remount opens nothing', async () => {
-    const request = { id: 'question-files', sessionID: SID, questions: [{ header: 'Continue', question: 'Continue?', options: [] }] };
-    useRuntimePendingStore.getState().addQuestion(request);
-    await renderPage();
-    expect(questionProps).toBeDefined();
-    expect(composerProps).toBeNull();
-
-    await act(async () => useSessionFilesRequestStore.getState().requestOpen(SID));
-    expect(filesSheetOpens).toBe(1);
-    expect(useSessionFilesRequestStore.getState().request).toBeNull();
-
-    await act(async () => useRuntimePendingStore.getState().removeQuestion(request.id));
-    expect(composerProps).not.toBeNull();
-    expect(filesSheetOpens).toBe(1);
-  });
-
-  test('a request made before the page mounted (the thread was still waking) opens nothing', async () => {
-    useSessionFilesRequestStore.getState().requestOpen(SID);
-    await renderPage();
-    expect(filesSheetOpens).toBe(0);
-    await act(async () => useSessionFilesRequestStore.getState().requestOpen(SID));
-    expect(filesSheetOpens).toBe(1);
-  });
-
-  test("another session's request stays for that session", async () => {
-    await renderPage();
-    await act(async () => useSessionFilesRequestStore.getState().requestOpen('other-session'));
-    expect(filesSheetOpens).toBe(0);
-    expect(useSessionFilesRequestStore.getState().request?.sessionId).toBe('other-session');
   });
 });
 

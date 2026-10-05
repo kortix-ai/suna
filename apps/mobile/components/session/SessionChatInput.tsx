@@ -37,7 +37,7 @@ import { useComposerAttachments } from './useComposerAttachments';
 import { useRecoverPendingPick } from './useRecoverPendingPick';
 import { useComposerDraft } from '@/lib/session/use-composer-draft';
 import { AttachSheet, type AttachSheetRef } from './AttachSheet';
-import { useSessionFilesRequestStore } from '@/stores/session-files-request-store';
+import { SessionFilesSheet } from './SessionFilesSheet';
 import { useToolFilePreviewStore } from './tool/shared/navigation';
 
 import type { Agent, FlatModel, Command } from '@/lib/session/runtime-data';
@@ -241,6 +241,7 @@ function SessionChatInputImpl({
   const auto = useAutoContinue(commands, onCommand);
   const [showAutoSheet, setShowAutoSheet] = useState(false);
   const attachSheetRef = useRef<AttachSheetRef>(null);
+  const filesSheetRef = useRef<SheetRef>(null);
 
   // ── File attachments ─────────────────────────────────────────────────────
 
@@ -523,16 +524,11 @@ function SessionChatInputImpl({
         <SettingsRow
           icon={StackIcon}
           label="Recent files"
-          // `SessionPage` hosts the Recent files sheet; the request opens it.
-          onPress={() =>
-            attachSheetRef.current?.closeThen(() => {
-              if (currentSessionId) useSessionFilesRequestStore.getState().requestOpen(currentSessionId);
-            })
-          }
+          onPress={() => attachSheetRef.current?.closeThen(() => filesSheetRef.current?.open())}
         />
       </SettingsGroup>
     ),
-    [currentSessionId],
+    [],
   );
 
   const { addFileMention } = mention;
@@ -673,6 +669,14 @@ function SessionChatInputImpl({
       <AttachSheet ref={attachSheetRef} onPick={attachments.add}>
         {attachSheetExtras}
       </AttachSheet>
+
+      {/* Recent files — the files this session produced; a row previews the file, "Add to chat" mentions it. */}
+      <SessionFilesSheet
+        ref={filesSheetRef}
+        sessionId={currentSessionId}
+        sandboxUrl={sandboxUrl}
+        onSelect={handleSelectSessionFile}
+      />
 
       {/* Model sheet — models by provider, thinking level of the active model */}
       <ModelPickerSheet
