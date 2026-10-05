@@ -122,7 +122,7 @@ import {
   writeSecretCapabilitiesInstruction,
 } from '@/services/sandbox-env/secret-capabilities'
 import { configReleaseNoticePath } from '@/services/config-release/notice'
-import { bootLinkPath, readBootLinkTarget } from '@/services/config-release/boot-config'
+import { bootLinkPath, readBootLinkTarget, releaseRootOf } from '@/services/config-release/boot-config'
 import { opencodeTurnInFlight } from './opencode-turn-state'
 import { CONNECTORS_MCP_COMMAND } from '@kortix/api-contract/sandbox-layout'
 import { MINIMAL_FALLBACK_MODELS, BUNDLED_MANAGED_MODELS, type KortixGatewayModel } from '@kortix/api-contract/fallback-models'
@@ -2097,15 +2097,16 @@ export function createOpencodeLifecycle(
         err: err instanceof Error ? err.message : String(err),
       })
     }
-    // The project root's `skills/` joins only while the boot link names a dir
-    // in the working tree (config releases off). A release carries its own.
+    // The project root's `skills/` joins whenever the boot link names a config
+    // dir inside a project checkout: the working tree (config releases off), or
+    // a release, which is a checkout of the base branch with the same layout.
     const served = await readBootLinkTarget()
-    const projectRoot = currentCfg.projectTarget
-    const servesWorkingTree = !!served && !!projectRoot && served.startsWith(`${projectRoot}/`)
+    const projectRoot = served ? (releaseRootOf(served) ?? currentCfg.projectTarget) : null
+    const servesProject = !!served && !!projectRoot && served.startsWith(`${projectRoot}/`)
     return writeKortixOpencodeConfig(baseEnv, {
       configPath: options.configPathOverride,
       injectedSkillsDir: join(bootLinkPath(), 'skills'),
-      projectSkillsDir: servesWorkingTree ? join(projectRoot, SKILLS_DIR) : null,
+      projectSkillsDir: servesProject ? join(projectRoot, SKILLS_DIR) : null,
       secretCapabilitiesInstructionPath,
       configReleaseNoticePath: configReleaseNoticePath(),
     })
