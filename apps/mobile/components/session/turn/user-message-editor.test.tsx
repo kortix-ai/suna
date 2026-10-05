@@ -48,6 +48,7 @@ mock.module('@/components/ui/context-menu', () => ({
 mock.module('@/components/kortix/kortix-loader', () => ({ KortixLoader: Empty }));
 mock.module('@/components/kortix/toast-provider', () => ({ useToast: () => ({}) }));
 mock.module('@/components/icons/slack-icon', () => ({ SlackIcon: Empty }));
+mock.module('@/components/icons/teams-icon', () => ({ TeamsIcon: Empty }));
 mock.module('@/components/session/ParticipantAvatar', () => ({ ParticipantAvatar: Empty }));
 mock.module('@/components/session/mention-chip', () => ({ MentionChip: Empty }));
 mock.module('@/lib/icons', () => ({
