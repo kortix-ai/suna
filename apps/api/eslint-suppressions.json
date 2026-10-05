@@ -3088,7 +3088,17 @@
   },
   "src/tunnel/index.ts": {
     "no-console": {
-      "count": 12
+      "count": 4
+    }
+  },
+  "src/tunnel/registrations.ts": {
+    "no-console": {
+      "count": 2
+    }
+  },
+  "src/tunnel/relay-persistence.ts": {
+    "no-console": {
+      "count": 6
     }
   },
   "src/tunnel/routes/auth.ts": {
