@@ -1762,9 +1762,11 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const [workingTurnOnScreen, setWorkingTurnOnScreen] = useState(true);
   const workingTurnIdRef = useRef(workingTurnId);
   workingTurnIdRef.current = workingTurnId;
-  // The list reports only when the viewable SET changes, so a new working turn
-  // appended below the viewport fires no event: recompute from the last set.
-  // Before the first event the set is unknown and the turn counts as on screen.
+  // The list re-checks viewability on a data change or the next scroll, but
+  // reports only when the viewable SET changes. This effect is the fallback
+  // for a working-turn change that leaves the set as it was (a turn appended
+  // below the viewport): recompute from the last reported set. Before the
+  // first report the set is unknown and the turn counts as on screen.
   const viewableKeysRef = useRef<Set<string> | null>(null);
   useEffect(() => {
     const keys = viewableKeysRef.current;
