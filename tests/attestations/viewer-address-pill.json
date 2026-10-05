@@ -1,0 +1,30 @@
+{
+  "source_hash": "4da1475537eb50d236b25b38c9711ec263ae00a376a6c80ce82592a549b305ae",
+  "diff_files": [
+    "apps/web/src/components/projects/public-share-link-confirm.tsx",
+    "apps/web/src/features/file-renderers/shared/viewer-download-button.tsx",
+    "apps/web/src/features/session/action-panel/easy/app-preview.tsx",
+    "apps/web/src/features/session/action-panel/easy/detail-view.test.tsx",
+    "apps/web/src/features/session/action-panel/easy/detail-view.tsx",
+    "apps/web/src/features/session/action-panel/easy/file-preview.tsx",
+    "apps/web/src/features/session/action-panel/easy/file-viewer.test.tsx",
+    "apps/web/src/features/session/action-panel/easy/file-viewer.tsx",
+    "apps/web/src/features/session/action-panel/easy/viewer-actions.test.ts",
+    "apps/web/src/features/session/action-panel/easy/viewer-actions.tsx",
+    "apps/web/src/features/session/action-panel/shared/sandbox-browser-chrome.test.tsx",
+    "apps/web/src/features/session/action-panel/shared/sandbox-browser-chrome.tsx",
+    "apps/web/src/hooks/use-public-share-link.test.ts",
+    "apps/web/src/hooks/use-public-share-link.ts",
+    "apps/web/src/hooks/use-session-public-shares.test.ts",
+    "apps/web/src/hooks/use-session-public-shares.ts"
+  ],
+  "diff_hash": "9eba08ac31ea32248c97cff7bdaa5a51c8bafe52fe19b988c64f3b4d69eac9b7",
+  "head": "d7705de66e707c9d67b3f9f5cba1af7477644900",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "fail"
+  },
+  "at": "2026-10-05T10:35:48.480Z"
+}
