@@ -8,11 +8,10 @@ import {
   runGitCapture,
 } from './mirror';
 import { authGitPush } from './commit-writer';
-import { decodeStatusChar, resolveBranchTip } from './commits';
+import { parseGitFileChanges, resolveBranchTip } from './commits';
 import type {
   BranchDiffSummary,
   GitBackedProject,
-  GitCommitFile,
   MergeOptions,
   MergePreview,
   MergeResult,
@@ -123,65 +122,12 @@ async function computeDiffByRange(
     runGit(['diff', '--no-color', '-M', range], repoPath, false).catch(() => ({ stdout: '', stderr: '' })),
   ]);
 
-  const files = new Map<string, GitCommitFile>();
-  const tokens = nameStatus.stdout.split('\0');
-  for (let i = 0; i < tokens.length; i += 1) {
-    const code = tokens[i];
-    if (!code) continue;
-    if (code.startsWith('R') || code.startsWith('C')) {
-      const oldPath = tokens[i + 1];
-      const newPath = tokens[i + 2];
-      if (!oldPath || !newPath) break;
-      files.set(newPath, {
-        path: newPath,
-        old_path: oldPath,
-        status: decodeStatusChar(code),
-        additions: 0,
-        deletions: 0,
-      });
-      i += 2;
-    } else {
-      const path = tokens[i + 1];
-      if (!path) break;
-      files.set(path, {
-        path,
-        old_path: null,
-        status: decodeStatusChar(code),
-        additions: 0,
-        deletions: 0,
-      });
-      i += 1;
-    }
-  }
-
-  let totalAdditions = 0;
-  let totalDeletions = 0;
-  for (const line of numstat.stdout.split('\n')) {
-    if (!line.trim()) continue;
-    const parts = line.split('\t');
-    if (parts.length < 3) continue;
-    const [addStr, delStr, rawPath] = parts;
-    const destMatch = rawPath.match(/\{[^}]*=>\s*([^}]+)\}/);
-    const path = destMatch
-      ? rawPath.replace(/\{[^}]*=>\s*([^}]+)\}/, '$1')
-      : rawPath;
-    const additions = addStr === '-' ? 0 : Number(addStr) || 0;
-    const deletions = delStr === '-' ? 0 : Number(delStr) || 0;
-    totalAdditions += additions;
-    totalDeletions += deletions;
-    const existing = files.get(path);
-    if (existing) {
-      existing.additions = additions;
-      existing.deletions = deletions;
-    }
-  }
-
-  const fileList = Array.from(files.values());
+  const { files, additions, deletions } = parseGitFileChanges(nameStatus.stdout, numstat.stdout);
   return {
-    files: fileList,
-    files_changed: fileList.length,
-    additions: totalAdditions,
-    deletions: totalDeletions,
+    files,
+    files_changed: files.length,
+    additions,
+    deletions,
     patch: patch.stdout,
     base_sha: baseSha,
     head_sha: headSha,

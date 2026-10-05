@@ -51,7 +51,7 @@ import { fetchUpstreamBuffered } from './upstream';
 import { makeOpenApiApp } from '../openapi';
 import { loadGitProject } from '../projects/lib/git';
 import { refreshMirror, runGit } from '../projects/git/mirror';
-import { writeScaffoldDeltaBundle } from '../projects/git/commits';
+import { writeScaffoldDeltaBundle } from '../projects/git/fast-boot-bundle';
 import { resolveFastBootGitHintWithCache } from '../projects/lib/fast-boot-git-hint';
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, rename, rm, stat, utimes } from 'node:fs/promises';
