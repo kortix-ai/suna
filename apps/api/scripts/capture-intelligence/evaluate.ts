@@ -126,6 +126,17 @@ const perWorkflow = workflows.map((w) => {
 const best = new Map<string, (typeof perWorkflow)[number]>();
 for (const w of perWorkflow) if ((w.purity ?? 0) >= 0.8 && (!best.has(w.truth) || best.get(w.truth)!.labelled < w.labelled)) best.set(w.truth, w);
 const truthIds = [...new Set(truth.map((r) => r.workflow))];
+// Per truth workflow: of the runs in its best mined workflow, how many are its own (precision);
+// of its runs found as episodes, how many landed there (recall).
+const perTruth = Object.fromEntries(
+  truthIds.map((id) => {
+    const w = best.get(id);
+    const own = hits.filter((m) => m.run.workflow === id);
+    if (!w) return [id, { workflow: null, precision: 0, recall: 0, runs: own.length }];
+    const inW = hits.filter((m) => m.episode.workflow_id === w.workflow_id);
+    return [id, { workflow: w.name, precision: ratio(inW.filter((m) => m.run.workflow === id).length, inW.length), recall: ratio(own.filter((m) => m.episode.workflow_id === w.workflow_id).length, own.length), runs: own.length }];
+  }),
+);
 const variantTruth = truthIds.flatMap((id) => {
   const counts = new Map<string, number>();
   for (const r of truth.filter((x) => x.workflow === id && !x.abandoned)) counts.set(r.variant, (counts.get(r.variant) ?? 0) + 1);
@@ -173,6 +184,7 @@ const report = {
     variant_recall: ratio(variantsFound.length, variantTruth.length),
     pairwise: { precision: ratio(tp, tp + fp), recall: ratio(tp, tp + fn), f1: ratio(2 * tp, 2 * tp + fp + fn) },
     canonical_similarity: mean([...best.values()].map((w) => w.canonical_similarity ?? 0)),
+    per_truth_workflow: perTruth,
     list: perWorkflow.sort((a, b) => b.runs - a.runs),
   },
   model_cost_usd: { episodes: Math.round(episodes.reduce((s, e) => s + Number(e.cost_usd || 0), 0) * 1e4) / 1e4 },
