@@ -19264,7 +19264,19 @@
       "textc49fa88cff11": "Capture のロールを変更しました",
       "text10a01973feb8": "アカウントの Capture データを表示しました",
       "textab4c24c38193": "Capture をオンにしました",
-      "text6bdc49eed8c9": "Capture をオフにしました"
+      "text6bdc49eed8c9": "Capture をオフにしました",
+      "texte28a583b1293": "Capture の概要を表示しました",
+      "textd402279bf8d8": "Capture のワークフローを一覧表示しました",
+      "textc91b107b2f5a": "Capture のワークフローを表示しました",
+      "text4880ee371f99": "Capture のワークフローをレビューしました",
+      "text4a2030c7cc83": "Capture のワークフローからスキルの下書きを作成しました",
+      "textcc5a0f3f7095": "Capture のワークフローからスキルを公開しました",
+      "text913fe5e92f5a": "Capture のエピソードを一覧表示しました",
+      "text6f890821403c": "Capture のエピソードを表示しました",
+      "text92ec054263db": "Capture のデータについて質問しました",
+      "text8b5a8c88fad4": "Capture のエクスポートを開始しました",
+      "text07d64b6f66e0": "Capture のエクスポートを一覧表示しました",
+      "text8e17399853d5": "Capture のエクスポートを表示しました"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

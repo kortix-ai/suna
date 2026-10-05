@@ -28,10 +28,9 @@ import { and, asc, eq, gte, lte, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { config } from '../config';
 import { logger } from '../lib/logger';
-import { standaloneGatewayUrl } from '../llm-gateway/standalone-url';
-import { createAccountToken, revokeAccountToken } from '../repositories/account-tokens';
 import { db } from '../shared/db';
 import { accountPrefix } from './format';
+import { withCaptureGateway } from './gateway';
 import { captureStore } from './store';
 
 /** The image type of `bytes` by their magic number (PNG, JPEG, WebP), or null for anything else. */
@@ -50,7 +49,6 @@ const IDLE_GAP_SEC = 120;
 const GAP_EPSILON_SEC = 2;
 const MAX_TRANSCRIPT_WINDOWS = 12;
 const CALL_TIMEOUT_MS = 300_000;
-const TOKEN_NAME = 'internal-capture-processing';
 
 // ─── Input ───────────────────────────────────────────────────────────────────
 
@@ -242,9 +240,7 @@ export async function retryTransient(
   }
 }
 
-function gatewayCaller(authorization: string, model: string): Caller {
-  const url = standaloneGatewayUrl();
-  if (!url) throw new Error('the standalone LLM gateway is not configured');
+export function gatewayCaller(authorization: string, model: string, url: string): Caller {
   return {
     model,
     async call(schema, prompt, images, usage) {
@@ -812,19 +808,11 @@ export async function processRange(rangeId: string, caller?: Caller): Promise<vo
   const [range] = await db.select().from(timelineRanges).where(eq(timelineRanges.rangeId, rangeId)).limit(1);
   if (!range) return;
   await db.update(timelineRanges).set({ status: 'processing', updatedAt: sql`now()` }).where(eq(timelineRanges.rangeId, rangeId));
-  let tokenId: string | null = null;
   try {
     if (!caller) {
-      // An account token of the range's person, billed to the account. It
-      // outlives no run: 1 h at most, revoked in `finally`.
-      const token = await createAccountToken({
-        accountId: range.accountId,
-        userId: range.userId,
-        name: TOKEN_NAME,
-        expiresAt: new Date(Date.now() + 60 * 60_000),
-      });
-      tokenId = token.tokenId;
-      caller = gatewayCaller(`Bearer ${token.secretKey}`, config.KORTIX_CAPTURE_MODEL);
+      return await withCaptureGateway({ accountId: range.accountId, userId: range.userId }, (gateway) =>
+        processRange(rangeId, gatewayCaller(gateway.authorization, config.KORTIX_CAPTURE_MODEL, gateway.url)),
+      );
     }
     const input = await loadInput(range);
     const meta = {
@@ -854,7 +842,5 @@ export async function processRange(rangeId: string, caller?: Caller): Promise<vo
   } catch (error) {
     await db.update(timelineRanges).set({ status: 'failed', updatedAt: sql`now()` }).where(eq(timelineRanges.rangeId, rangeId));
     throw error;
-  } finally {
-    if (tokenId) await revokeAccountToken(tokenId, range.accountId).catch(() => {});
   }
 }

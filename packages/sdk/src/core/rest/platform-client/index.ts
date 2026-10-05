@@ -23,3 +23,4 @@ export * from './host-boundary';
 export * from './connector-setup';
 export * from './github-app';
 export * from './capture';
+export * from './capture-intelligence';

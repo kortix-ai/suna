@@ -19264,7 +19264,19 @@
       "textc49fa88cff11": "Eine Capture-Rolle geändert",
       "text10a01973feb8": "Capture-Daten eines Kontos angesehen",
       "textab4c24c38193": "Capture eingeschaltet",
-      "text6bdc49eed8c9": "Capture ausgeschaltet"
+      "text6bdc49eed8c9": "Capture ausgeschaltet",
+      "texte28a583b1293": "Capture-Übersicht angesehen",
+      "textd402279bf8d8": "Capture-Workflows aufgelistet",
+      "textc91b107b2f5a": "Einen Capture-Workflow angesehen",
+      "text4880ee371f99": "Einen Capture-Workflow geprüft",
+      "text4a2030c7cc83": "Einen Skill aus einem Capture-Workflow entworfen",
+      "textcc5a0f3f7095": "Einen Skill aus einem Capture-Workflow veröffentlicht",
+      "text913fe5e92f5a": "Capture-Episoden aufgelistet",
+      "text6f890821403c": "Eine Capture-Episode angesehen",
+      "text92ec054263db": "Eine Frage zu Capture-Daten gestellt",
+      "text8b5a8c88fad4": "Einen Capture-Export gestartet",
+      "text07d64b6f66e0": "Capture-Exporte aufgelistet",
+      "text8e17399853d5": "Einen Capture-Export angesehen"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

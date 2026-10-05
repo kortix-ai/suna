@@ -191,10 +191,11 @@ export function snippet(text: string | null, q: string): string {
 /** Newest first; one screen hit per (chunk, window title), so a still screen is one hit, not 15. */
 export async function searchTimeline(
   accountId: string,
-  userId: string,
+  /** null = every member of the account (Capture admins and viewers, Ask). */
+  userId: string | null,
   opts: { q: string; from: Date; to: Date; kinds: Set<SearchKind>; app?: string; deviceId?: string; limit: number },
 ) {
-  const scope = sql`account_id = ${accountId}::uuid AND user_id = ${userId}::uuid AND ts >= ${at(opts.from)} AND ts < ${at(opts.to)} ${onDevice(opts.deviceId)} ${opts.app ? sql` AND lower(app) = lower(${opts.app})` : sql``}`;
+  const scope = sql`account_id = ${accountId}::uuid ${userId ? sql`AND user_id = ${userId}::uuid` : sql``} AND ts >= ${at(opts.from)} AND ts < ${at(opts.to)} ${onDevice(opts.deviceId)} ${opts.app ? sql` AND lower(app) = lower(${opts.app})` : sql``}`;
   const query = sql`websearch_to_tsquery('simple', ${opts.q})`;
   const parts = [
     opts.kinds.has('screen') &&

@@ -25,6 +25,7 @@ import { runWorkerTick } from '../shared/audit-scope';
 import { db } from '../shared/db';
 import { enqueueJob, enqueueJobs, pruneFinishedJobs, registerJobHandler } from '../shared/job-queue';
 import { accountPrefix, deviceFields, foldIndex, jsonLines, PolicySchema, statusReportedAt, utcDay } from './format';
+import './exports';
 import { RANGE_GAP_MS, ingestManifest } from './ingest';
 import { readWorkspace } from './workspace';
 import { processRange } from './processing';

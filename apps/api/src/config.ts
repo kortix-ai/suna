@@ -713,6 +713,8 @@ const envSchema = z.object({
   KORTIX_CAPTURE_INDEX_POLL_SECONDS: optInt(60),
   /** Managed vision model the range pipelines call through the LLM gateway. */
   KORTIX_CAPTURE_MODEL: optStrDefault('glm-5.3-flash'),
+  /** Model spend cap of the Capture pipelines and Ask, per account per UTC day (USD). 0 = no cap. */
+  KORTIX_CAPTURE_DAILY_COST_CAP_USD: optNum(5),
 
   // ── Platinum — Sandbox provisioning (conditional: required if platinum provider enabled) ──
   // Platinum is our own Cloud Hypervisor microVM API. PLATINUM_API_KEY is a
@@ -1438,6 +1440,7 @@ export const config = {
   KORTIX_CAPTURE_SQS_QUEUE_URL: env.KORTIX_CAPTURE_SQS_QUEUE_URL,
   KORTIX_CAPTURE_INDEX_POLL_SECONDS: env.KORTIX_CAPTURE_INDEX_POLL_SECONDS,
   KORTIX_CAPTURE_MODEL: env.KORTIX_CAPTURE_MODEL,
+  KORTIX_CAPTURE_DAILY_COST_CAP_USD: env.KORTIX_CAPTURE_DAILY_COST_CAP_USD,
   KORTIX_CONFIG_ARCHIVE_S3_BUCKET: env.KORTIX_CONFIG_ARCHIVE_S3_BUCKET,
   KORTIX_CONFIG_ARCHIVE_S3_REGION: env.KORTIX_CONFIG_ARCHIVE_S3_REGION,
   KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: env.KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT,

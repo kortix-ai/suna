@@ -68,9 +68,9 @@ import {
   type CaptureRole,
 } from './workspace';
 
-type Ctx = Context<AppEnv>;
+export type Ctx = Context<AppEnv>;
 
-interface Access {
+export interface Access {
   accountId: string;
   /** The human the caller is (or acts for). */
   viewer: string;
@@ -84,9 +84,9 @@ interface Access {
 
 export const CAPTURE_DISABLED = { error: 'Capture is off for this account', code: 'capture_disabled' } as const;
 
-const refuse = <S extends 400 | 403 | 404 | 503>(c: Ctx, status: S, code: string, error: string) => c.json({ error, code }, status);
+export const refuse = <S extends 400 | 403 | 404 | 503>(c: Ctx, status: S, code: string, error: string) => c.json({ error, code }, status);
 
-function auditRead(c: Ctx, access: Pick<Access, 'accountId' | 'viewer' | 'sessionId'>, action: string, resourceId: string | null) {
+export function auditRead(c: Ctx, access: Pick<Access, 'accountId' | 'viewer' | 'sessionId'>, action: string, resourceId: string | null) {
   return recordAuditEvent({
     accountId: access.accountId,
     sessionId: access.sessionId,
@@ -118,7 +118,7 @@ async function viewerOf(c: Ctx, accountId: string): Promise<{ viewer: string | n
   return { viewer: null, sessionId: null };
 }
 
-async function captureAccessFor(
+export async function captureAccessFor(
   c: Ctx,
   accountId: string,
   opts: { userId?: string | null; accountWide?: boolean } = {},
@@ -143,14 +143,14 @@ async function captureAccessFor(
 }
 
 /** Access for an account route: the account is the `:accountId` path segment. */
-function captureAccess(c: Ctx, opts: { userId?: string | null; accountWide?: boolean } = {}) {
+export function captureAccess(c: Ctx, opts: { userId?: string | null; accountWide?: boolean } = {}) {
   return captureAccessFor(c, c.req.param('accountId') ?? '', opts);
 }
 
-const isResponse = (value: unknown): value is Response => value instanceof Response;
+export const isResponse = (value: unknown): value is Response => value instanceof Response;
 
 /** `[from, to)` from `day=YYYY-MM-DD` (UTC) or `from`/`to` ISO instants; default today. */
-function window(c: Ctx): { from: Date; to: Date } | null {
+export function window(c: Ctx): { from: Date; to: Date } | null {
   const day = c.req.query('day');
   if (day) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
@@ -165,7 +165,7 @@ function window(c: Ctx): { from: Date; to: Date } | null {
   if (to.getTime() - from.getTime() > 31 * 86_400_000) return null;
   return { from, to };
 }
-const BAD_WINDOW = 'Give day=YYYY-MM-DD, or from/to ISO instants at most 31 days apart';
+export const BAD_WINDOW = 'Give day=YYYY-MM-DD, or from/to ISO instants at most 31 days apart';
 
 /**
  * A device of this account the caller may act on. Someone else's device is

@@ -13,7 +13,7 @@ Every row in the [audit log](/docs/accounts#audit-log) carries an `action`: `dom
 - A route with two actions (`secret.strategy.update` or `secret.strategy.changed`) records the second when its handler records that event, for example only for a real change. That event, with its before and after state, is then the request's row.
 - Rows written before 2026-09-24 carry `METHOD /template` as their action. The web app and the CLI show them with the same titles.
 
-This page lists 731 route actions and 70 other events.
+This page lists 743 route actions and 70 other events.
 
 ## `account.`
 
@@ -190,6 +190,7 @@ This page lists 731 route actions and 70 other events.
 
 | Action | Title | Route |
 | --- | --- | --- |
+| `capture.ask` or `capture.member_view` or `capture.account_view` | Asked about Capture data | `POST /v1/accounts/:accountId/capture/ask` |
 | `capture.asset.read` or `capture.member_view` | Opened a capture screenshot | `GET /v1/accounts/:accountId/capture/devices/:deviceId/assets/:name` |
 | `capture.days.read` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Viewed the days of a capture timeline | `GET /v1/accounts/:accountId/capture/days` |
 | `capture.device.authorize` | Started a capture device sign-in | `POST /v1/capture/device/authorize` |
@@ -202,11 +203,17 @@ This page lists 731 route actions and 70 other events.
 | `capture.device.revoke` | Revoked a capture device | `DELETE /v1/accounts/:accountId/capture/devices/:deviceId` |
 | `capture.device.sync` | Synced a capture device | `POST /v1/accounts/:accountId/capture/devices/:deviceId/sync` |
 | `capture.device.token` | Polled a capture device sign-in | `POST /v1/capture/device/token` |
+| `capture.episode.list` or `capture.member_view` or `capture.account_view` | Listed Capture episodes | `GET /v1/accounts/:accountId/capture/episodes` |
+| `capture.episode.read` or `capture.member_view` | Viewed a Capture episode | `GET /v1/accounts/:accountId/capture/episodes/:episodeId` |
+| `capture.export.create` | Started a Capture export | `POST /v1/accounts/:accountId/capture/exports` |
+| `capture.export.list` | Listed Capture exports | `GET /v1/accounts/:accountId/capture/exports` |
+| `capture.export.read` | Viewed a Capture export | `GET /v1/accounts/:accountId/capture/exports/:exportId` |
 | `capture.frame.read` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Viewed a capture frame | `GET /v1/accounts/:accountId/capture/frames/:frameId` |
 | `capture.frame.read` or `capture.agent_read` | Viewed a capture frame | `GET /v1/capture/me/frames/:frameId` |
 | `capture.media.read` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Opened capture media | `GET /v1/accounts/:accountId/capture/chunks/:chunkId/media` |
 | `capture.member.list` or `capture.account_view` | Listed Capture roles | `GET /v1/accounts/:accountId/capture/members` |
 | `capture.member.update` or `capture.member_role` | Changed a Capture role | `PUT /v1/accounts/:accountId/capture/members/:userId` |
+| `capture.overview.read` or `capture.account_view` | Viewed the Capture overview | `GET /v1/accounts/:accountId/capture/overview` |
 | `capture.people.read` or `capture.account_view` | Viewed the capture people summary | `GET /v1/accounts/:accountId/capture/people` |
 | `capture.policy.read` | Viewed the capture policy | `GET /v1/accounts/:accountId/capture/policy` |
 | `capture.policy.update` | Updated the capture policy | `PUT /v1/accounts/:accountId/capture/policy` |
@@ -216,9 +223,14 @@ This page lists 731 route actions and 70 other events.
 | `capture.range.read` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Viewed a capture range | `GET /v1/accounts/:accountId/capture/ranges/:rangeId` |
 | `capture.search` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Searched a capture timeline | `GET /v1/accounts/:accountId/capture/search` |
 | `capture.search` or `capture.agent_read` | Searched a capture timeline | `GET /v1/capture/me/search` |
+| `capture.skill.draft` | Drafted a skill from a Capture workflow | `POST /v1/accounts/:accountId/capture/workflows/:workflowId/skill-draft` |
+| `capture.skill.publish` | Published a skill from a Capture workflow | `POST /v1/accounts/:accountId/capture/workflows/:workflowId/skill` |
 | `capture.timeline.items.read` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Viewed capture timeline items | `GET /v1/accounts/:accountId/capture/timeline/items` |
 | `capture.timeline.read` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Viewed a capture timeline | `GET /v1/accounts/:accountId/capture/timeline` |
 | `capture.timeline.read` or `capture.agent_read` | Viewed a capture timeline | `GET /v1/capture/me/timeline` |
+| `capture.workflow.list` or `capture.account_view` | Listed Capture workflows | `GET /v1/accounts/:accountId/capture/workflows` |
+| `capture.workflow.read` or `capture.account_view` | Viewed a Capture workflow | `GET /v1/accounts/:accountId/capture/workflows/:workflowId` |
+| `capture.workflow.review` | Reviewed a Capture workflow | `POST /v1/accounts/:accountId/capture/workflows/:workflowId/review` |
 | `capture.workspace.read` | Viewed the Capture workspace | `GET /v1/accounts/:accountId/capture` |
 | `capture.workspace.update` or `capture.enable` or `capture.disable` | Turned Capture on or off | `PATCH /v1/accounts/:accountId/capture` |
 
