@@ -20,6 +20,50 @@ import {
   sessionChannelConnectorSlugs,
 } from './db-deps-principal';
 
+/** The connector router's request authorizers: each reads who is calling from the Hono request. */
+export interface ConnectorRouterAuth {
+  /** Gateway auth: resolve the connector token → principal, or null for 401. */
+  resolvePrincipal(c: Context): Promise<ConnectorPrincipal | null>;
+  /**
+   * Gateway auth for the project-EXPLICIT routes (/projects/:id/{catalog,call}).
+   * Runs under combinedAuth; accepts ANY valid principal (session token OR a
+   * logged-in user token) and pins the project from the path. Null → 403.
+   */
+  resolveProjectPrincipal(c: Context, projectId: string): Promise<ConnectorPrincipal | null>;
+  /** Admin auth: resolve user + verify project access, or null for 401/403. */
+  resolveAdmin(
+    c: Context,
+    projectId: string,
+  ): Promise<{ accountId: string; userId: string } | null>;
+  /** Read-tier auth for the connectors LIST: `project.connector.read` is in the
+   *  member baseline (the Connectors/Channels rail sections gate on it), so the
+   *  list must not require connector.write like the mutations do. Falls back to
+   *  resolveAdmin when a deps implementation doesn't provide it. */
+  resolveReader?(
+    c: Context,
+    projectId: string,
+  ): Promise<{ accountId: string; userId: string } | null>;
+  /** Read-tier authorization for exact project secret identifiers. */
+  resolveSecretReader?(
+    c: Context,
+    projectId: string,
+  ): Promise<{ accountId: string; userId: string } | null>;
+  /** Secret binding requires both connector-write and secret-write. */
+  resolveSecretBindingAdmin?(
+    c: Context,
+    projectId: string,
+  ): Promise<{ accountId: string; userId: string } | null>;
+  /**
+   * Does this caller hold the connections-manage capability on the project?
+   * The same gate the project-owned connection create (routes/connections.ts) asserts — connecting an
+   * account the WHOLE project can then use is administration, not self-service.
+   */
+  resolveConnectionsManager?(
+    c: Context,
+    projectId: string,
+  ): Promise<{ accountId: string; userId: string } | null>;
+}
+
 export async function resolvePrincipal(c: Context): Promise<ConnectorPrincipal | null> {
   const header = c.req.header('Authorization');
   const token = header?.startsWith('Bearer ') ? header.slice(7) : null;
