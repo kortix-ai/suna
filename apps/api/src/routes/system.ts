@@ -2,10 +2,14 @@ import { timingSafeEqual } from 'node:crypto';
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { config } from '../config';
 import { metricsEnabled, renderMetrics } from '../lib/metrics';
-import { MAX_EVENT_LOOP_LAG_MS, eventLoopLagMs } from '../lib/event-loop-lag';
 import { json, mountOpenApiDocs } from '../openapi';
 import { mcpProtectedResourceMetadata, oauthAuthorizationServerMetadata } from '../oauth/discovery';
 import { draining, schemaReady } from '../bootstrap';
+import { eventLoopLagMs } from '../workers/event-loop-lag-worker';
+
+const MAX_EVENT_LOOP_LAG_MS = Number(process.env.HEALTH_MAX_EVENT_LOOP_LAG_MS || 5000);
+
+export { startEventLoopLagSampler, stopEventLoopLagSampler } from '../workers/event-loop-lag-worker';
 
 export function registerSystemRoutes(app: OpenAPIHono) {
 // === Top-Level Health Check (no auth) ===

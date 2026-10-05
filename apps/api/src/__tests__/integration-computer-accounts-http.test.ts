@@ -58,7 +58,7 @@ import { createConnectionsRouter } from '../tunnel/routes/connections';
 import {
   retireStaleUnidentifiedRegistrations,
   retireSupersededRegistrations,
-} from '../tunnel/connections-service';
+} from '../tunnel/registrations';
 import { createRpcRouter } from '../tunnel/routes/rpc';
 import { deleteFromView, insertIntoView } from './helpers/compat-views';
 import { generateTunnelToken, hashSecretKey } from '../shared/crypto';

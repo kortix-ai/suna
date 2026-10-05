@@ -1,8 +1,12 @@
-import { and, eq, inArray, ne, sql, type SQL } from 'drizzle-orm';
-import { connectorConnections, connectors, tunnelConnections } from '@kortix/db';
+// Tunnel registrations: unpairing, retiring superseded or silent machines, and
+// the periodic cleanup tick (workers/tunnel-worker.ts).
+
+import { and, eq, inArray, isNotNull, lt, ne, sql, type SQL } from 'drizzle-orm';
+import { connectorConnections, connectors, tunnelConnections, tunnelDeviceAuthRequests } from '@kortix/db';
 import { db } from '../shared/db';
 import { retryOnDeadlock } from '../shared/error-cause';
 import { isTunnelConnectionLive } from './core/cluster-forwarder';
+import { tunnelRateLimiter } from './core/rate-limiter';
 import { tunnelRelay } from './core/relay';
 
 /**
@@ -123,4 +127,46 @@ export async function retireStaleUnidentifiedRegistrations(limit = 100): Promise
     if (await unpairMachine(tunnelId)) retired.push(tunnelId);
   }
   return retired;
+}
+
+/** One tunnel cleanup pass: rate-limiter buckets, silent unidentified registrations, device auth. */
+export async function runTunnelCleanupOnce(): Promise<void> {
+  try {
+    tunnelRateLimiter.cleanup();
+
+    const retired = await retireStaleUnidentifiedRegistrations();
+    if (retired.length > 0) {
+      console.log(
+        `[tunnel-cleanup] removed ${retired.length} registration(s) without a hardware id, silent ${UNIDENTIFIED_RETENTION_DAYS}+ days`,
+      );
+    }
+
+    // Expire pending device auth requests
+    await db
+      .update(tunnelDeviceAuthRequests)
+      .set({ status: 'expired', updatedAt: new Date() })
+      .where(
+        and(
+          eq(tunnelDeviceAuthRequests.status, 'pending'),
+          lt(tunnelDeviceAuthRequests.expiresAt, new Date()),
+        ),
+      );
+    await db
+      .update(tunnelDeviceAuthRequests)
+      .set({ setupToken: null, updatedAt: new Date() })
+      .where(
+        and(
+          lt(tunnelDeviceAuthRequests.expiresAt, new Date()),
+          isNotNull(tunnelDeviceAuthRequests.setupToken),
+        ),
+      );
+    // Device-auth rows are a short credential handoff, not an audit log.
+    // Retain terminal metadata for one day for retry diagnostics, then remove
+    // the secret hash, hostname, and account association.
+    await db
+      .delete(tunnelDeviceAuthRequests)
+      .where(lt(tunnelDeviceAuthRequests.expiresAt, new Date(Date.now() - 24 * 60 * 60_000)));
+  } catch (err) {
+    console.warn('[TUNNEL] Cleanup error:', err);
+  }
 }

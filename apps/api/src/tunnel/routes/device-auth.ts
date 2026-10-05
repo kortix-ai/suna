@@ -40,7 +40,7 @@ import { readJsonObject } from '../../shared/http-body';
 import { isUuid } from '../../shared/validate';
 import { tunnelRelay } from '../core/relay';
 import { isTunnelConnectionLive } from '../core/cluster-forwarder';
-import { retireSupersededRegistrations } from '../connections-service';
+import { retireSupersededRegistrations } from '../registrations';
 
 const DEVICE_AUTH_TTL_MS = 5 * 60_000;
 /**

@@ -5,7 +5,6 @@ import { tickRunningComputeCharges } from '../billing/services/compute-metering'
 import { cleanupExpiredConnectorAttachments } from '../connectors/attachments';
 import { db } from '../shared/db';
 import { recordAuditEvent } from '../shared/audit';
-import { runWorkerTick } from '../shared/audit-scope';
 import { reconcileStaleBuilds } from '../snapshots/builder';
 import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
 import { EMPTY_APP_IMAGE_RECLAIM_RESULT, reclaimAppDeploymentImages } from '../apps/images';
@@ -38,13 +37,6 @@ const SWEEP_CONCURRENCY = 3;
 
 const TERMINAL_SESSION_STATUSES = ['stopped', 'completed', 'failed'] as const;
 
-type MaintenanceTimer = ReturnType<typeof setInterval>;
-
-const globalForProjectMaintenance = globalThis as typeof globalThis & {
-  __kortixProjectMaintenanceTimer?: MaintenanceTimer | null;
-};
-
-let maintenanceTimer: MaintenanceTimer | null = null;
 let maintenanceRunning = false;
 // Wall-clock time the current run acquired the lock, or null when idle. Used
 // solely by the stall watchdog below — never trust a boolean lock alone (see
@@ -68,7 +60,7 @@ function branchRetentionDays(): number {
   return positiveInt(process.env.KORTIX_BRANCH_RETENTION_DAYS, DEFAULT_BRANCH_RETENTION_DAYS);
 }
 
-function maintenanceIntervalMs(): number {
+export function maintenanceIntervalMs(): number {
   return positiveInt(
     process.env.KORTIX_PROJECT_MAINTENANCE_INTERVAL_MS,
     DEFAULT_MAINTENANCE_INTERVAL_MS,
@@ -677,26 +669,4 @@ async function checkBillingInvariants(): Promise<void> {
   }
 }
 
-export function startProjectMaintenance(): void {
-  if (process.env.KORTIX_PROJECT_MAINTENANCE_ENABLED === 'false') return;
-  if (globalForProjectMaintenance.__kortixProjectMaintenanceTimer) {
-    clearInterval(globalForProjectMaintenance.__kortixProjectMaintenanceTimer);
-  }
-  maintenanceTimer = setInterval(() => {
-    runWorkerTick('project-maintenance', runProjectMaintenance).catch((err) => {
-      console.error('[project-maintenance] run failed:', err);
-    });
-  }, maintenanceIntervalMs());
-  globalForProjectMaintenance.__kortixProjectMaintenanceTimer = maintenanceTimer;
-}
-
-export function stopProjectMaintenance(): void {
-  if (maintenanceTimer) {
-    clearInterval(maintenanceTimer);
-    maintenanceTimer = null;
-  }
-  if (globalForProjectMaintenance.__kortixProjectMaintenanceTimer) {
-    clearInterval(globalForProjectMaintenance.__kortixProjectMaintenanceTimer);
-    globalForProjectMaintenance.__kortixProjectMaintenanceTimer = null;
-  }
-}
+export { startProjectMaintenance, stopProjectMaintenance } from '../workers/project-maintenance-worker';

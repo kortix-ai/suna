@@ -11,10 +11,13 @@
  *  3. `startSingletonWorkers` / `startReplicaServices` in `bootstrap.ts` starts
  *     something that is neither;
  *  4. a module starts a timer at import time: it then runs on every replica
- *     (not leader-gated) and nothing can stop it.
+ *     (not leader-gated) and nothing can stop it;
+ *  5. `bootstrap.ts` starts a loop from a module outside `workers/`: each loop
+ *     has one owner of its timer, start/stop and `runWorkerTick` call.
  *
- * Adding a background job: wrap its tick in `runWorkerTick('<name>', …)` and
- * register it in WORKERS. A timer that only keeps a connection alive or
+ * Adding a background job: put its timer and start/stop in
+ * `workers/<name>-worker.ts`, keep the tick in its domain module, wrap the tick
+ * in `runWorkerTick('<name>', …)` and register it in WORKERS. A timer that only keeps a connection alive or
  * refreshes a cache goes in NOT_WORKERS with the reason.
  */
 import { describe, expect, test } from 'bun:test';
@@ -26,51 +29,52 @@ const read = (file: string) => readFileSync(join(SRC, file), 'utf8');
 
 /** Worker name → the file whose tick is wrapped in `runWorkerTick('<name>'`. */
 const WORKERS: Record<string, string> = {
-  'active-turn-renewal': 'projects/active-turn-renewal.ts',
-  'project-maintenance': 'projects/maintenance.ts',
-  'trigger-scheduler': 'projects/lib/trigger-scheduler.ts',
+  'active-turn-renewal': 'workers/active-turn-renewal-worker.ts',
+  'project-maintenance': 'workers/project-maintenance-worker.ts',
+  'trigger-scheduler': 'workers/trigger-scheduler-worker.ts',
   'startup-prebuild': 'snapshots/builder.ts',
-  'suna-migration': 'projects/suna-migration/suna-migration-worker.ts',
-  'provider-transition': 'projects/provider-transition/provider-transition-worker.ts',
+  'suna-migration': 'workers/suna-migration-worker.ts',
+  'provider-transition': 'workers/provider-transition-worker.ts',
   'app-deployments': 'apps/deployment-worker.ts',
-  'app-idle-reaper': 'apps/idle-reaper.ts',
-  'audit-webhooks': 'shared/audit-webhooks.ts',
-  'audit-reconciliation': 'shared/audit-reconciliation-worker.ts',
-  'audit-partitions': 'shared/audit-partition-worker.ts',
-  'audit-archive': 'shared/audit-archive/worker.ts',
-  'project-snapshots': 'git-proxy/project-snapshot-worker.ts',
-  'iam-grant-expiry': 'iam/expiry-sweeper.ts',
-  'oauth-sweep': 'oauth/sweeper.ts',
+  'app-idle-reaper': 'workers/app-idle-reaper-worker.ts',
+  'audit-webhooks': 'workers/audit-webhook-worker.ts',
+  'audit-reconciliation': 'workers/audit-reconciliation-worker.ts',
+  'audit-partitions': 'workers/audit-partition-worker.ts',
+  'audit-archive': 'workers/audit-archive-worker.ts',
+  'project-snapshots': 'workers/project-snapshot-worker.ts',
+  'iam-grant-expiry': 'workers/grant-expiry-worker.ts',
+  'oauth-sweep': 'workers/oauth-sweep-worker.ts',
   'session-lifecycle': 'projects/session-lifecycle/drain.ts',
-  'tunnel-cleanup': 'tunnel/index.ts',
+  'tunnel-cleanup': 'workers/tunnel-worker.ts',
   'tunnel-rpc-forwarder': 'tunnel/core/cluster-forwarder.ts',
-  'billing-trial-expiry': 'billing/rotation-schedule.ts',
-  'billing-yearly-rotation': 'billing/rotation-schedule.ts',
-  'billing-free-tier-rotation': 'billing/rotation-schedule.ts',
-  'slack-turn-gc': 'channels/slack/turn.ts',
-  'teams-turn-gc': 'channels/teams/turn.ts',
+  'billing-trial-expiry': 'workers/billing-rotation-worker.ts',
+  'billing-yearly-rotation': 'workers/billing-rotation-worker.ts',
+  'billing-free-tier-rotation': 'workers/billing-rotation-worker.ts',
+  'slack-turn-gc': 'workers/slack-turn-gc-worker.ts',
+  'teams-turn-gc': 'workers/teams-turn-gc-worker.ts',
 };
 
 /** Files with a `setInterval` that is not a background job over tenant state. */
 const NOT_WORKERS: Record<string, string> = {
   'apps/public-proxy-handler.ts': 'stamps app activity while one proxied request streams; runs inside that request',
   'apps/ws-proxy.ts': 'stamps app activity for one open WebSocket; runs inside that connection',
-  'channels/teams-auth.ts': 'refreshes the in-memory Teams bot token',
-  'lib/event-loop-lag.ts': 'measures event-loop lag',
   'llm-gateway/models/runtime-catalog.ts': 'refreshes the in-memory models.dev catalog',
   'projects/lib/session-control-reconciler.ts': 'read-only reconcile of one open session stream',
   'projects/provider-transition/provider-transition-service.ts': 'renews a lease inside the provider-transition tick',
   'projects/routes/session-stream.ts': 'heartbeat on one open session stream',
   'projects/session-lifecycle/command-lease.ts':
     'renews the lock of one claimed command while its drain lane or inline create runs',
-  'projects/session-lifecycle/worker.ts': 'timer that calls drainSessionLifecycleQueue, which wraps itself',
   'router/config/model-pricing.ts': 'refreshes the in-memory model pricing',
   'sandbox-proxy/ws-proxy.ts': 'keepalive ping on one open preview WebSocket',
-  'shared/access-control-cache.ts': 'refreshes the in-memory access-control cache',
-  'snapshots/tmp-reaper.ts': 'deletes stale local tmp directories; no database writes',
+  'workers/access-control-cache-worker.ts': 'refreshes the in-memory access-control cache',
+  'workers/app-deployment-worker.ts': 'timer that calls triggerAppDeploymentWorker, which wraps itself',
+  'workers/event-loop-lag-worker.ts': 'measures event-loop lag',
+  'workers/session-lifecycle-worker.ts': 'timer that calls drainSessionLifecycleQueue, which wraps itself',
+  'workers/teams-bot-token-refresh-worker.ts': 'refreshes the in-memory Teams bot token',
+  'workers/tmp-reaper-worker.ts': 'deletes stale local tmp directories; no database writes',
 };
 
-/** Start calls in index.ts → the worker they run, or why they are not one. */
+/** Start calls in bootstrap.ts → the worker they run, or why they are not one. */
 const STARTS: Record<string, string> = {
   startActiveTurnRenewal: 'active-turn-renewal',
   startProjectMaintenance: 'project-maintenance',
@@ -100,6 +104,12 @@ const STARTS: Record<string, string> = {
     'not a worker: one LISTEN connection, event-driven, no timer and no tick',
 };
 
+/** Start calls that are not a loop, so they stay outside workers/. */
+const NOT_LOOPS: Record<string, string> = {
+  kickStartupPreBuild: 'one-shot per leadership term; no timer',
+  startConfigBaseMoveBroadcast: 'one LISTEN connection; no timer',
+};
+
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((entry) => {
     const path = join(dir, entry);
@@ -118,6 +128,14 @@ function functionBody(source: string, name: string): string {
     else if (source[i] === '}' && --depth === 0) return source.slice(open, i + 1);
   }
   throw new Error(`unbalanced ${name}`);
+}
+
+/** Every start/kick call in startSingletonWorkers and startReplicaServices. */
+function bootstrapStarts(): string[] {
+  const bootstrap = read('bootstrap.ts');
+  return ['startSingletonWorkers', 'startReplicaServices'].flatMap((fn) =>
+    [...functionBody(bootstrap, fn).matchAll(/\b((?:start|kick)[A-Z]\w*)\(/g)].map((m) => m[1]!),
+  );
 }
 
 describe('background jobs run as named workers', () => {
@@ -144,13 +162,24 @@ describe('background jobs run as named workers', () => {
   });
 
   test('everything bootstrap.ts starts on the leader or every replica is classified', () => {
-    const bootstrap = read('bootstrap.ts');
-    const started = ['startSingletonWorkers', 'startReplicaServices'].flatMap((fn) =>
-      [...functionBody(bootstrap, fn).matchAll(/\b((?:start|kick)[A-Z]\w*)\(/g)].map((m) => m[1]!),
-    );
+    const started = bootstrapStarts();
     expect(started.filter((call) => !(call in STARTS))).toEqual([]);
     for (const worker of Object.values(STARTS)) {
       if (!worker.startsWith('not a worker')) expect(WORKERS[worker]).toBeDefined();
     }
+  });
+
+  test('bootstrap.ts imports every loop it starts from workers/', () => {
+    const bootstrap = read('bootstrap.ts');
+    const started = bootstrapStarts();
+    const outside = started
+      .filter((call) => !(call in NOT_LOOPS))
+      .filter((call) => {
+        const from = new RegExp(
+          `import \\{[^}]*\\b${call}\\b[^}]*\\} from '([^']+)'|\\{ ${call} \\} = await import\\('([^']+)'\\)`,
+        ).exec(bootstrap);
+        return !(from?.[1] ?? from?.[2])?.startsWith('./workers/');
+      });
+    expect(outside).toEqual([]);
   });
 });
