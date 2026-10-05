@@ -30,7 +30,7 @@ import { holdsEveryGrant } from '../iam/agent-grant-ceiling';
 import { getAgentGrant } from '../iam/agent-scope';
 import { actorForToken } from '../iam/actor';
 import { authorize } from '../iam/authorize';
-import { deriveRequestContext } from '../iam/cache';
+import { deriveRequestContext } from '../middleware/iam-request-context';
 import type { GitPrincipal, GitRefScope } from './ref-policy';
 
 /**

@@ -9,7 +9,7 @@
 import { describe, expect, test } from 'bun:test';
 import { Hono, type Context } from 'hono';
 import { buildActor } from '../iam/actor';
-import { deriveRequestContext } from '../iam/cache';
+import { deriveRequestContext } from '../middleware/iam-request-context';
 import { attachInboundAuditScope } from '../shared/audit-scope';
 import { requestClientIp } from '../middleware/client-ip';
 import { requestAuditContext } from '../projects/lib/serializers';

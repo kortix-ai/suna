@@ -27,7 +27,7 @@ import {
 import type { GitScope, UpstreamGit } from '../projects/git-backends';
 import type { ProjectRow } from '../projects/lib/serializers';
 import type { AppEnv } from '../types';
-import { deriveRequestContext } from '../iam/cache';
+import { deriveRequestContext } from '../middleware/iam-request-context';
 import {
   MAX_COMMAND_SECTION_BYTES,
   encodeReportStatus,
