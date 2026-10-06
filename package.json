@@ -73,8 +73,6 @@
       "@types/react-dom": "19.2.3",
       "axios@>=1.0.0 <1.20.0": "1.20.0",
       "devalue@<5.9.3": "5.9.3",
-      "seroval@<1.6.2": "1.6.2",
-      "seroval-plugins@<1.6.2": "1.6.2",
       "protobufjs@>=7.0.0 <7.6.5": "7.6.5",
       "protobufjs@>=8.0.0 <8.6.6": "8.6.6",
       "@protobufjs/utf8@>=1.0.0 <1.1.1": "1.1.1",
@@ -126,11 +124,12 @@
     "patchedDependencies": {
       "e2b@2.37.0": "patches/e2b@2.37.0.patch",
       "blume@1.5.3": "patches/blume@1.5.3.patch",
-      "shaders@2.5.135": "patches/shaders@2.5.135.patch"
+      "shaders@2.5.135": "patches/shaders@2.5.135.patch",
+      "dmg-builder@25.1.8": "patches/dmg-builder@25.1.8.patch"
     }
   },
   "version": "1.0.0",
-  "description": "<div align=\"center\">",
+  "description": "Open-source AI Operating System: your agents, skills, memory, and connectors in one repo you own. Any model. Self-host or cloud.",
   "main": "index.js",
   "directories": {
     "test": "tests"
