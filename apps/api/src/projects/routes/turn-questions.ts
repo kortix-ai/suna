@@ -9,7 +9,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
-import { continueSession } from '../session-lifecycle';
+import { deliverThroughQueue } from '../session-lifecycle';
 import {
   getOpenQuestion,
   recordPendingQuestion,
@@ -350,17 +350,18 @@ export function registerTurnQuestionsRoutes(): void {
         return c.json({ error: 'question was already answered', code: 'ALREADY_ANSWERED' }, 409);
       }
 
-      const outcome = await continueSession({
+      // The answer is a durable queue row from here: a parked box gets it when
+      // it is back (`queued`). The CAS above refuses a retry, so a direct call
+      // that came back `pending` used to strand the answer.
+      const outcome = await deliverThroughQueue({
         source: 'ui',
+        idempotencyKey: `question:${sessionId}:${requestId}`,
         sessionId,
         text: renderAnswerPrompt(open.questions, answers),
         userId: loaded.userId,
       });
 
-      // 'pending' is success: the box is parked and continueSession has queued the
-      // turn for when it is back. Reporting that as failure would invite a retry
-      // that the CAS above would refuse, stranding the answer.
-      return c.json({ ok: outcome === 'delivered' || outcome === 'pending', delivery: outcome });
+      return c.json({ ok: outcome === 'delivered' || outcome === 'queued', delivery: outcome });
     },
   );
 }
