@@ -1,5 +1,5 @@
 {
-  "source_hash": "31952bc61efc90f35429ada372dcbed204349bca8c69ea4da8daa371463ddd67",
+  "source_hash": "1baa66fd73b2b57727284a6a1d571e39aa5869aa3b9105f71c3f6095be6a3ccf",
   "diff_files": [
     "apps/api/src/__tests__/integration-session-model-repoint.test.ts",
     "apps/api/src/__tests__/unit-channel-model-access.test.ts",
@@ -35,12 +35,12 @@
     "packages/sdk/src/react/use-model-defaults.test.ts"
   ],
   "diff_hash": "7e278eb4fe0a137ca4d7e3fe4f34efe5a81aa71989ca90f7fc1ce797f4f5f3d8",
-  "head": "bff3582c6f16f8bd6a4bb8299cd00eb4998db24e",
+  "head": "14e2d17bd6e597489b9f2367258b9458e339b747",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-06T13:36:39.049Z"
+  "at": "2026-10-06T14:19:14.505Z"
 }
