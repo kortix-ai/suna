@@ -1308,6 +1308,7 @@ flow(
       "POST /v1/projects/:projectId/secret-requests",
       "GET /v1/setup-links/secret/:token",
       "POST /v1/setup-links/secret/:token",
+      "DELETE /v1/accounts/:accountId/members/:userId",
     ],
   },
   async (ctx) => {
@@ -1423,6 +1424,31 @@ flow(
           { params: { token: "ksl_bogus" } },
         );
       r.status(404);
+    });
+
+    await ctx.step("public: replaying the used link → 409, the value is not overwritten", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post("/v1/setup-links/secret/:token", { values: { SEC7_TEST_KEY: "replayed" } }, { params: { token } });
+      r.status(409);
+    });
+
+    await ctx.step("public: a link minted by a since-removed member → 410", async () => {
+      const team = await ctx.fixtures.team();
+      const tp = await team.project();
+      const minter = await team.addMember("admin");
+      const minted = await ctx.client
+        .as(minter)
+        .post("/v1/projects/:projectId/secret-requests", { names: ["SEC7_GONE_KEY"] }, { params: { projectId: tp.id } });
+      minted.status(200);
+      const gone = minted.json<{ url: string }>().url.split("/").pop() ?? "";
+      (await ctx.client.as(ctx.P.OWNER).del("/v1/accounts/:accountId/members/:userId", {
+        params: { accountId: team.id, userId: minter.userId! },
+      })).status(200);
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post("/v1/setup-links/secret/:token", { values: { SEC7_GONE_KEY: "x" } }, { params: { token: gone } });
+      r.status(410);
     });
   },
 );
