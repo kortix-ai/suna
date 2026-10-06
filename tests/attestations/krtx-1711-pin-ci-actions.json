@@ -1,0 +1,42 @@
+{
+  "source_hash": "b4160ace0ba7fb486eeccd3ff1390a87fd8cb98334c116bd96f13f4954e6eaef",
+  "diff_files": [
+    ".github/scripts/audit-actions.mjs",
+    ".github/workflows/build-staging.yml",
+    ".github/workflows/configure-apps-edge.yml",
+    ".github/workflows/configure-preview-edge.yml",
+    ".github/workflows/cutover-prod-us-east-2.yml",
+    ".github/workflows/db-drift.yml",
+    ".github/workflows/deploy-api-router-dev.yml",
+    ".github/workflows/deploy-dev.yml",
+    ".github/workflows/deploy-pi-js-router.yml",
+    ".github/workflows/deploy-preview.yml",
+    ".github/workflows/deploy-prod-us-east-2-shadow.yml",
+    ".github/workflows/deploy-prod.yml",
+    ".github/workflows/deploy-staging.yml",
+    ".github/workflows/desktop.yml",
+    ".github/workflows/drata-compliance.yml",
+    ".github/workflows/ecs-scale.yml",
+    ".github/workflows/mobile-ota.yml",
+    ".github/workflows/promote-self-host-stable.yml",
+    ".github/workflows/rollback-prod.yml",
+    ".github/workflows/terraform-apply.yml",
+    ".github/workflows/terraform-ci.yml",
+    ".github/workflows/tests-browser-nightly.yml",
+    ".github/workflows/tests-release.yml",
+    "tests/unit/cosign-sign-attest.test.ts",
+    "tests/unit/credential-actions-pinned.test.ts",
+    "tests/unit/image-build-speed-workflow.test.ts",
+    "tests/unit/sandbox-workflow.test.ts",
+    "tests/unit/web-ecs-workflow.test.ts"
+  ],
+  "diff_hash": "4cbe1e4413010997224977593d02194afbdd6b610f0ac79e3616cc4bbc28bbaa",
+  "head": "38f46ef1bb5e4168a7f3f27cf1fde04406c79dd7",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-06T19:33:49.429Z"
+}
