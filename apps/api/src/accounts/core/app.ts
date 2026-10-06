@@ -12,6 +12,7 @@ import { accountRoleFor, countAccountOwners } from '../../iam/read-models';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { trustedEmailForUser } from '../../iam/email-trust';
 import { resolveAccountId } from '../../shared/resolve-account';
+import { isUuid } from '../../shared/validate';
 import { suggestAccountName } from './account-name';
 import { lookupEmailsByUserIds } from './owner-emails';
 import type { AppEnv } from '../../types';
@@ -155,7 +156,12 @@ export const MeSchema = z
   })
   .openapi('AccountMe');
 
-export const AccountIdParam = z.object({ accountId: z.string() });
+// The path param is a uuid column's value: a malformed segment (a slug, a
+// truncated id, the literal `directory` a stray client aimed at a missing
+// route) reaches the `accounts.account_id` uuid cast, dies as SQLSTATE 22P02
+// and surfaces as an opaque 500 (Better Stack pattern 97669531, KRTX-211).
+// Let the OpenAPI validation answer 400 before any handler or DB read.
+export const AccountIdParam = z.object({ accountId: z.string().uuid() });
 
 // ─── Shared helpers ─────────────────────────────────────────────────────────
 
@@ -166,6 +172,10 @@ export async function resolveAccountForUser(
   override: string | undefined,
 ): Promise<string> {
   if (override) {
+    // A malformed id must not reach the uuid-typed account_members column:
+    // Postgres answers 22P02 and the request dies as an opaque 500 (Better
+    // Stack pattern 97669531, KRTX-211). A non-uuid is exactly a miss.
+    if (!isUuid(override)) throw new Error('not a member of the requested account');
     const [membership] = await db
       .select({ accountId: accountMembers.accountId })
       .from(accountMembers)

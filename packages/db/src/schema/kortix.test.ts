@@ -485,6 +485,27 @@ describe('billing precision', () => {
   test('gateway logs store cache-write tokens directly', () => {
     expect(columnNames(gatewayRequestLogs)).toContain('cache_write_tokens');
   });
+
+  test('serves the account cost rollups from a covering index', () => {
+    // The cost-explorer and session-cost rollups (apps/api/src/shared/
+    // cost-rollups.ts, session-costs.ts) read (account_id, created_at) windows
+    // and sum final_cost_precise / upstream_cost_precise / billing_mode over
+    // every row. The bare idx_gateway_logs_account_time made each sum a heap
+    // fetch per row; on an active account's 30-day slice (~10^6 rows) the
+    // statement blew the 25 s request-path statement_timeout (57014 → 503,
+    // Better Stack pattern 97669531, KRTX-211). idx_gateway_logs_account_cost
+    // keeps the same key columns and replaces the bare index (dropped by
+    // 20261005230000100) so the whole slice is one index-only scan; INCLUDE
+    // lives in the migration (drizzle cannot express it).
+    const indexes = indexNames(gatewayRequestLogs);
+    expect(indexes).toContain('idx_gateway_logs_account_cost');
+    expect(indexes).not.toContain('idx_gateway_logs_account_time');
+    const serving = getTableConfig(gatewayRequestLogs).indexes.find(
+      (i) => i.config.name === 'idx_gateway_logs_account_cost',
+    );
+    const cols = serving?.config.columns.map((c: any) => c.name as string | undefined);
+    expect(cols).toEqual(['account_id', 'created_at']);
+  });
 });
 
 describe('accounts table', () => {

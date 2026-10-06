@@ -3621,7 +3621,18 @@ export const gatewayRequestLogs = kortixSchema.table(
   },
   (table) => [
     uniqueIndex('idx_gateway_logs_request_id').on(table.requestId),
-    index('idx_gateway_logs_account_time').on(table.accountId, table.createdAt),
+    // Cost-explorer and session-cost rollups read (account_id, created_at)
+    // windows and sum money/model columns on the same rows
+    // (apps/api/src/shared/cost-rollups.ts, apps/api/src/shared/session-costs.ts).
+    // Built CONCURRENTLY in
+    // 20261005230000000_gateway_logs_account_cost_index.concurrent.ts, which
+    // also adds INCLUDE (project_id, session_id, provider, resolved_model,
+    // billing_mode, final_cost_precise, upstream_cost_precise) — drizzle-orm
+    // 0.45's index builder cannot express INCLUDE, and the schema contract only
+    // checks relation + uniqueness, so the declaration here (without INCLUDE)
+    // is enough to keep it in sync; see that migration for the real built
+    // definition.
+    index('idx_gateway_logs_account_cost').on(table.accountId, table.createdAt),
     index('idx_gateway_logs_project_time').on(table.projectId, table.createdAt),
     index('idx_gateway_logs_model').on(table.provider, table.resolvedModel),
     index('idx_gateway_logs_account_ok').on(table.accountId, table.ok),
