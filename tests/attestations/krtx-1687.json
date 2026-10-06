@@ -1,11 +1,24 @@
 {
-  "source_hash": "4fed8cf843e1acb01db2a3a470a4152fd83e1cf96ae0b4681087102f63c17c1c",
-  "head": "2098474f9999a4b1f80b84673e936ba469067ad3",
+  "source_hash": "f3713fd688785ca6f68c85b7cf12f7f2a4dbbdc4a15f7860e0d4f0856b25c749",
+  "diff_files": [
+    "apps/web/src/features/workspace/project-sidebar/project-session-list.tsx",
+    "apps/web/src/features/workspace/project-sidebar/session-brief-hover-card.stuck.test.tsx",
+    "apps/web/src/features/workspace/project-sidebar/session-brief-hover-card.tsx",
+    "apps/web/src/features/workspace/project-sidebar/session-status-mark.tsx",
+    "apps/web/src/features/workspace/project-sidebar/use-starting-stuck.test.ts",
+    "apps/web/src/features/workspace/project-sidebar/use-starting-stuck.ts",
+    "packages/sdk/src/core/session/status-vocabulary.test.ts",
+    "packages/sdk/src/core/session/status-vocabulary.ts",
+    "packages/sdk/src/public-surface.snapshot.json",
+    "packages/sdk/src/public-type-surface.snapshot.json"
+  ],
+  "diff_hash": "74449579a63bd70f2cf96be5e8e50851d78c4e1d65bda28731ce9f2d850644e2",
+  "head": "f18f01c0afea8ef4e8f61ab6df62afed9703d5df",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-06T12:31:29.269Z"
+  "at": "2026-10-06T13:37:01.484Z"
 }
