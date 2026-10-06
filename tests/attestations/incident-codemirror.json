@@ -1,0 +1,19 @@
+{
+  "source_hash": "1e4a8cc21d2665b4b9e45b94923122574e2863bb98ec8570fc1e97951298decf",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-06T121731Z-pin-every-identity-carrying-codemirror-package-to-one-versio.md",
+    "apps/web/scripts/single-codemirror-version.test.mjs",
+    "package.json",
+    "pnpm-lock.yaml"
+  ],
+  "diff_hash": "4e398b4f850f293699bfa33419595559254bf9701ce1ba543b5785aee8bf2aa3",
+  "head": "f653fc0c0b688259aebfe6a9745b160802cccd8a",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-06T12:59:21.014Z"
+}
