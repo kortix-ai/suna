@@ -1726,7 +1726,8 @@
     },
     "restart": {
       "label": "Riavvia sessione",
-      "pending": "Riavvio…"
+      "pending": "Riavvio…",
+      "ownerOnly": "Solo il proprietario della sessione o un responsabile del progetto può riavviare questa sessione."
     }
   },
   "modelSelector": {

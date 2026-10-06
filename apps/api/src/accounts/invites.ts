@@ -11,7 +11,7 @@ import type { AppEnv } from '../types';
 import { db } from '../shared/db';
 import { supabaseAuth } from '../middleware/auth';
 import { getSupabase } from '../shared/supabase';
-import { createInviteAcceptRateLimitMiddleware } from '../shared/rate-limit';
+import { createInviteAcceptRateLimitMiddleware } from '../middleware/rate-limit';
 import { onMemberAdded } from '../billing/services/seat-management';
 import { getMembership } from './core/app';
 import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';

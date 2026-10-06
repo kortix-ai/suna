@@ -1726,7 +1726,8 @@
     },
     "restart": {
       "label": "Restart session",
-      "pending": "Restarting…"
+      "pending": "Restarting…",
+      "ownerOnly": "Only the session owner or a project manager can restart this session."
     }
   },
   "modelSelector": {

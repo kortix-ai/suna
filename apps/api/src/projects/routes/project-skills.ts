@@ -77,7 +77,8 @@ function renderSkillMarkdown(skill: CreateSkillInput): string {
   return `---\n${header}\n---\n\n${body}`;
 }
 
-projectsApp.openapi(
+export function registerProjectSkillsRoutes(): void {
+  projectsApp.openapi(
   createRoute({
     method: 'post',
     path: '/{projectId}/skills',
@@ -179,3 +180,4 @@ projectsApp.openapi(
     return c.json({ ok: true as const, slug, path }, 201);
   },
 );
+}

@@ -6,11 +6,14 @@ const policySource = readFileSync(new URL('./custom-roles-policy.ts', import.met
 const barrel = readFileSync(new URL('../iam.ts', import.meta.url), 'utf8');
 
 function route(method: string, path: string): string {
-  const marker = `method: '${method}',\n    path: '/{accountId}/iam/${path}'`;
+  const escaped = path.replace(/[{}]/g, '\\$&');
+  const marker = new RegExp(`method: '${method}',\\n\\s+path: '/\\{accountId\\}/iam/${escaped}'`);
   const file = path.startsWith('policies') ? policySource : source;
-  const start = file.indexOf(marker);
+  const start = file.search(marker);
   expect(start).toBeGreaterThan(-1);
-  const end = file.indexOf('\n  iamRouter.openapi(', start + marker.length);
+  const next = /\n\s+iamRouter\.openapi\(/g;
+  next.lastIndex = start;
+  const end = next.exec(file)?.index ?? -1;
   return file.slice(start, end < 0 ? undefined : end);
 }
 
@@ -38,20 +41,25 @@ describe('custom role and policy route registration', () => {
     const parser = policySource.slice(policySource.indexOf('async function parsePolicyInput('));
     expect(parser).toContain("['member', 'group', 'token'].includes(principalType)");
     expect(parser).toContain("['account', 'project'].includes(scopeType)");
-    for (const table of ['serviceAccounts', 'accountMembers', 'accountGroups', 'projects']) {
+    for (const table of ['serviceAccounts', 'projects']) {
       expect(parser).toContain(`.from(${table})`);
     }
+    // Member and group ownership go through the iam read models.
+    expect(parser).toContain('await userAccountMemberRow(principalId, accountId)');
+    expect(parser).toContain('await groupInAccountRow(principalId, accountId)');
     expect(parser).toContain("principalType === 'token' && scopeType === 'account'");
     expect(parser).toContain("scopeType === 'project' && !scopeId");
     expect(route('post', 'policies')).toContain('if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status)');
   });
 
-  test('imports custom roles after principals and before canonical assignments', () => {
-    const imports = ['./iam/service-accounts', './iam/custom-roles', './iam/assignments'];
-    const positions = imports.map((name) => barrel.indexOf(`import '${name}'`));
-    expect(positions[0]).toBeGreaterThan(-1);
-    expect(positions[0]).toBeLessThan(positions[1]!);
-    expect(positions[1]).toBeLessThan(positions[2]!);
+  test('registers custom roles before every other IAM route group', () => {
+    // The effective order in production: a project route imported custom-roles
+    // early, so its routes registered first. The explicit calls keep that order.
+    const calls = [...barrel.matchAll(/^\s*(registerIam\w+Routes)\(\);/gm)].map((m) => m[1]);
+    expect(calls[0]).toBe('registerIamCustomRolesRoutes');
+    expect(calls).toContain('registerIamServiceAccountsRoutes');
+    expect(calls.at(-1)).toBe('registerIamAssignmentsRoutes');
+    expect(new Set(calls).size).toBe(calls.length);
   });
 
   test('registers each route once in the original effective order', () => {

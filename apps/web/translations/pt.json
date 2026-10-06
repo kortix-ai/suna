@@ -1726,7 +1726,8 @@
     },
     "restart": {
       "label": "Reiniciar sessão",
-      "pending": "Reiniciando…"
+      "pending": "Reiniciando…",
+      "ownerOnly": "Somente o proprietário da sessão ou um gerente do projeto pode reiniciar esta sessão."
     }
   },
   "modelSelector": {

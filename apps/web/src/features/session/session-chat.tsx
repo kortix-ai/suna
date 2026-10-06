@@ -45,6 +45,7 @@ import {
   shouldCountEscape,
 } from './esc-to-stop';
 import { isFirstPromptRow, projectQueueRows } from './queue-projection';
+import { useQueuedPromptEdit } from './queued-prompt-edit';
 import { createQueueUndoAction } from './queued-message-restore';
 import { CompactionMarker, CompactionSummaryBody } from './turn/compaction-card';
 import { compactionTurnInfo } from './turn/compaction-state';
@@ -1370,7 +1371,7 @@ export function SessionChat({
     }
     useQueuedDraftStore.getState().prune(sessionId, listed);
   }, [promptInbox.prompts, queuedDrafts, sessionId]);
-  // Read by `handleSend` and `handleTakeBackQueue`, which are stable callbacks.
+  // Read by `handleSend` and the queue edit, which are stable callbacks.
   // Written in an effect, never during render — the same rule as `isBusyRef`.
   const queueRowsRef = useRef(queueRows.rows);
   useEffect(() => {
@@ -3115,88 +3116,18 @@ export function SessionChat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [promptInbox.hold]);
 
-  /**
-   * Edit opens a queued Queue List entry in the composer; Up opens the latest
-   * eligible one. Returns whether it acted, synchronously — the composer keeps
-   * Up as a caret move when there is nothing to edit.
-   *
-   * No request: the row stays queued on the server, in its place, while it is
-   * edited, so the words reach the composer on the click. Submit saves the new
-   * text into that same row (`handleSaveQueueEdit`); it never sends it.
-   */
-  // The queued message the composer is editing. Written in event handlers
-  // only, so the ref is current when the composer's `onSend` reads it.
-  const [queueEdit, setQueueEditState] = useState<{
-    sessionId: string;
-    promptId: string;
-    clientMessageId?: string;
-    rawText: string;
-    editText: string;
-  } | null>(null);
-  const queueEditRef = useRef(queueEdit);
-  const setQueueEdit = useCallback((next: typeof queueEdit) => {
-    queueEditRef.current = next;
-    setQueueEditState(next);
-  }, []);
-  const activeQueueEdit = queueEdit?.sessionId === sessionId ? queueEdit : null;
-  const handleTakeBackQueue = useCallback(
-    (promptId?: string): boolean => {
-      // One edit at a time: the composer holds one draft.
-      if (queueEditRef.current?.sessionId === sessionId) return false;
-      const target = queueRowsRef.current
-        .filter((row) => row.takeBackEligible && (!promptId || row.id === promptId))
-        .at(-1);
-      if (!target?.editText) return false;
-      setQueueEdit({
-        sessionId,
-        promptId: target.id,
-        ...(target.clientMessageId ? { clientMessageId: target.clientMessageId } : {}),
-        rawText: target.rawText,
-        editText: target.editText,
-      });
-      useSessionComposerPrefillStore
-        .getState()
-        .setPrefill(sessionId, target.editText, undefined, 'replace');
-      return true;
-    },
-    [sessionId, setQueueEdit],
-  );
-
-  /** Cancel the edit: the row was never touched, so only the composer empties. */
-  const handleCancelQueueEdit = useCallback(() => {
-    if (queueEditRef.current?.sessionId !== sessionId) return;
-    setQueueEdit(null);
-    useSessionComposerPrefillStore.getState().setPrefill(sessionId, '', undefined, 'replace');
-  }, [sessionId, setQueueEdit]);
-
-  /**
-   * Submit while editing: the new words replace the old ones inside the row's
-   * raw text, so a quote or reference around them survives, and the row is
-   * PATCHed in place. Nothing is sent — a re-POST would release a Stop hold
-   * and run at once on an idle session.
-   */
-  const handleSaveQueueEdit = useCallback(
-    async (edit: NonNullable<typeof queueEdit>, text: string) => {
-      setQueueEdit(null);
-      const next = edit.rawText.replace(edit.editText, () => text.trim());
-      if (next === edit.rawText) return;
-      // This tab's draft text outranks the server's in the row: drop it, so
-      // the row shows the edit.
-      if (edit.clientMessageId) {
-        useQueuedDraftStore.getState().remove(sessionId, [edit.clientMessageId]);
-      }
-      try {
-        await promptInbox.edit(edit.promptId, next);
-      } catch (error) {
-        // 409: the agent already has the old text. The new words go back to
-        // the composer, never lost.
-        useSessionComposerPrefillStore.getState().setPrefill(sessionId, text, undefined, 'replace');
-        errorToast(errorMessageOf(error));
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sessionId, promptInbox.edit, setQueueEdit],
-  );
+  // Edit (the pencil) and Up open a queued message in the composer; Submit
+  // saves the new words into the same row. Shared with the boot shell, which
+  // may hand over an open edit: see `queued-prompt-edit.ts`.
+  const queueEdit = useQueuedPromptEdit({
+    key: projectSessionId ?? sessionId,
+    rows: () => queueRowsRef.current,
+    editPrompt: promptInbox.edit,
+    setComposerText: (text) =>
+      useSessionComposerPrefillStore.getState().setPrefill(sessionId, text, undefined, 'replace'),
+    forgetLocalDraft: (clientMessageId) =>
+      useQueuedDraftStore.getState().remove(sessionId, [clientMessageId]),
+  });
 
   // ---- Triple-ESC to stop ----
   // ESC 1 → show hint (2 more). ESC 2 → show hint (1 more). ESC 3 → stop.
@@ -3668,21 +3599,21 @@ export function SessionChat({
         resumePending={resumePending}
         onResume={() => void handleResumeQueue()}
         onEdit={(id) => {
-          handleTakeBackQueue(id);
+          queueEdit.takeBack(id);
         }}
         onRemove={(id) => void handleRemoveQueuedMessage(id)}
         onRetry={handleRetryQueuedMessage}
-        editing={activeQueueEdit}
-        onCancelEdit={handleCancelQueueEdit}
+        editing={queueEdit.editing}
+        onCancelEdit={queueEdit.cancel}
       />
     ),
     [
-      activeQueueEdit,
-      handleCancelQueueEdit,
+      queueEdit.editing,
+      queueEdit.cancel,
+      queueEdit.takeBack,
       queueRows,
       resumePending,
       handleResumeQueue,
-      handleTakeBackQueue,
       handleRemoveQueuedMessage,
       handleRetryQueuedMessage,
     ],
@@ -4580,11 +4511,7 @@ export function SessionChat({
                 // focus onto a phone keyboard.
                 autoFocus={deferComposerFocus ? false : undefined}
                 onSend={async (text, files, mentions, attachments, placement) => {
-                  const edit = queueEditRef.current;
-                  if (edit?.sessionId === sessionId) {
-                    await handleSaveQueueEdit(edit, text);
-                    return;
-                  }
+                  if (await queueEdit.save(text)) return;
                   await handleSend(text, files, mentions, attachments, { placement });
                 }}
                 prefill={composerPrefill}
@@ -4593,13 +4520,13 @@ export function SessionChat({
                 }}
                 // Up from the first row takes the queue back; the placeholder
                 // says so while there is something to take.
-                onArrowUpAtStart={() => handleTakeBackQueue()}
+                onArrowUpAtStart={() => queueEdit.takeBack()}
                 hint={
                   canTakeBackQueue ? tHardcodedUi.raw('i18nComplete.text03a01dd53ffa') : undefined
                 }
                 // Editing a queued message: the send saves it back into the
                 // queue, so the control says Submit, never Stop.
-                submitLabel={activeQueueEdit ? tQueue('submitEdit') : null}
+                submitLabel={queueEdit.editing ? tQueue('submitEdit') : null}
                 draftScope={composerDraftScope}
                 draftActive={!deferComposerFocus}
                 attachRequestId={attachRequestId}
