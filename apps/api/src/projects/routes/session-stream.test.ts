@@ -91,13 +91,17 @@ const { publishControlEvent, CONTROL_EPOCH, __resetControlEventsForTests } = con
 /** The reconciler is replaced with a hand-driven one: this file is about the
  *  ROUTE, and a real reconciler would put a DB poll on a 5 s timer inside it. */
 let reconcilerSnapshot: unknown[] = [];
+let reconcilerModes: unknown[] = [];
 mock.module('../lib/session-control-reconciler', () => ({
-  acquireControlReconciler: () => ({
+  acquireControlReconciler: (_sessionId: string, _projectId: string, mode: unknown) => {
+    reconcilerModes.push(mode);
+    return {
     ready: async () => {},
     snapshot: () => reconcilerSnapshot,
     poke: () => {},
     release: () => {},
-  }),
+    };
+  },
   publishRuntimeStateFrame: () => null,
 }));
 
@@ -560,5 +564,35 @@ describe('control replay and resync', () => {
     const frames = await readFrames(await openStream(), 4, 600);
     const queues = frames.filter((frame) => frame.event === 'kortix.control.queue');
     expect(queues).toHaveLength(1);
+  });
+});
+
+describe('?channels=control', () => {
+  test('serves control frames and heartbeats only: no sandbox read, no daemon attach', async () => {
+    const response = await openStream('?channels=control');
+    expect(response.status).toBe(200);
+    setTimeout(() => publishControlEvent(SESSION_ID, 'kortix.control.queue', { prompts: [] }), 30);
+    const frames = await readFrames(response, 2, 400);
+
+    expect(frames.map((frame) => frame.event)).toEqual(['kortix.stream.hello', 'kortix.control.queue']);
+    expect(frames[1]!.data).toMatchObject({ channel: 'control', cseq: 1 });
+    // The id still carries both cursors, with a blank runtime position.
+    expect(frames[1]!.id).toBe(`||${CONTROL_EPOCH}|1`);
+    expect(attachCalls).toHaveLength(0);
+    expect(frames.some((frame) => frame.event === 'kortix.runtime.status')).toBe(false);
+    // The queue is all it serves, so its reconciler reads the queue only.
+    expect(reconcilerModes.at(-1)).toBe('queue');
+  });
+
+  test('the default (no channels) still attaches the runtime', async () => {
+    const response = await openStream();
+    await readFrames(response, 2, 400);
+    expect(attachCalls.length).toBeGreaterThan(0);
+    expect(reconcilerModes.at(-1)).toBe('full');
+  });
+
+  test('an unknown channels value is a 400', async () => {
+    const response = await openStream('?channels=bogus');
+    expect(response.status).toBe(400);
   });
 });

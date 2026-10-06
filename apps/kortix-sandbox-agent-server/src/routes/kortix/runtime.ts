@@ -3,7 +3,7 @@ import { Hono, type Context } from 'hono'
 import { RUNTIME_NOT_READY_CODE } from '@kortix/api-contract/runtime-relay'
 import type { Config } from '@/lib/config/config'
 import { logger } from '@/lib/log/logger'
-import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '@/lib/kortix-api/kortix-user-context'
+import { KORTIX_SERVICE_CALL_HEADER, KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '@/lib/kortix-api/kortix-user-context'
 import type { KortixEvent } from '@/services/event-bus/kortix-event-bus'
 import { etagMatches, notModified, timedJson } from './kortix-http'
 import type { HarnessQueryService } from '@/harness/contract/queries'
@@ -135,6 +135,25 @@ export function createRuntimeRouter(
       const input = parseRuntimePromptBody(raw)
       if (typeof input === 'string') return c.json({ error: input }, 400)
       return answer(c, () => turns.prompt(c.req.param('sessionId'), input))
+    })
+
+    // The `/prompt` body; the running turn reads it at its next step boundary.
+    app.post('/sessions/:sessionId/steer', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      // Only apps/api may steer: its admission is where the turn's prompter
+      // is checked (D9.3). The user-facing proxy authenticates every relayed
+      // request with this same bearer but strips the service-call mark, so the
+      // mark proves a direct platform call and the bearer proves the caller.
+      if (bearerToken(c.req.header('Authorization')) !== cfg.sandboxToken || c.req.header(KORTIX_SERVICE_CALL_HEADER) !== '1') {
+        logger.warn('[kortix-runtime] rejected steer from a non-service caller')
+        return c.json({ error: 'steer requires the sandbox service credential', code: 'STEER_SERVICE_ONLY' }, 403)
+      }
+      const raw = await c.req.json().catch(() => undefined)
+      const input = parseRuntimePromptBody(raw)
+      if (typeof input === 'string') return c.json({ error: input }, 400)
+      if (!input.messageId) return c.json({ error: 'message_id is required' }, 400)
+      return answer(c, () => turns.steer(c.req.param('sessionId'), input))
     })
 
     app.post('/sessions/:sessionId/abort', async (c) => {

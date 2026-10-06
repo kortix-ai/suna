@@ -27,6 +27,7 @@ function row(overrides: Partial<QueueRow> = {}): QueueRow {
     attachmentCount: 1,
     state: 'queued',
     removable: true,
+    interruptible: true,
     takeBackEligible: true,
     rawText: RAW_WITH_FILE,
     editText: 'please review the attached report',

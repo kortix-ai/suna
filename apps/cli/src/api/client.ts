@@ -1,4 +1,4 @@
-import { backendApi } from '@kortix/sdk';
+import { ApiError as SdkApiError, backendApi } from '@kortix/sdk';
 
 import type { Auth } from './auth.ts';
 import { secureRemoteBase } from './config.ts';
@@ -16,8 +16,10 @@ export interface ApiErrorCredential {
   token: string;
 }
 
-export class ApiError extends Error {
-  status: number;
+/** The SDK's `ApiError` with the CLI's `(status, message, body)` constructor:
+ *  `err instanceof ApiError` from the SDK recognises it too. */
+export class ApiError extends SdkApiError {
+  declare status: number;
   body: unknown;
   /** The credential the failed request carried — host + token, memory only,
    *  attached NON-enumerable by `requestOnce` so no logger, spread or
@@ -27,8 +29,7 @@ export class ApiError extends Error {
    *  naming that sent the customer looking at the wrong token row. */
   credential?: ApiErrorCredential;
   constructor(status: number, message: string, body: unknown = null) {
-    super(message);
-    this.status = status;
+    super(message, { status, details: body });
     this.body = body;
   }
 }
