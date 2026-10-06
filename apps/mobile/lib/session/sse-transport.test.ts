@@ -32,6 +32,11 @@ class FakeEventSource implements SseEventSource {
   emit(type: string, event: unknown) {
     for (const listener of [...(this.listeners[type] ?? [])]) listener(event);
   }
+  /** The library's own dispatch: an event type with no listener is dropped. */
+  dispatch(type: string, event: unknown) {
+    if (!(type in this.listeners)) return;
+    this.emit(type, event);
+  }
   message(data: string, lastEventId: string | null = null) {
     this.emit('message', { type: 'message', data, lastEventId, url: this.url });
   }
@@ -70,6 +75,19 @@ describe('createSseTransport', () => {
     expect(await iterator.next()).toEqual({ done: true, value: undefined });
     expect(source().reopened).toBe(0);
     expect(source().closed).toBe(1);
+  });
+
+  test('a NAMED frame (the session stream names every frame) is delivered too', async () => {
+    // react-native-sse hands an `event: <name>` frame only to a listener for
+    // that exact name and drops it otherwise. The session stream names every
+    // frame (`kortix.control.turn`, `message.part.delta`, ...), so without this
+    // a phone received none of them.
+    const { first, source, iterator } = open();
+    source().dispatch('kortix.control.turn', { type: 'kortix.control.turn', data: '{"n":1}', lastEventId: '3|1|c|2', url: '' });
+    expect(await first).toEqual({ done: false, value: { data: '{"n":1}', id: '3|1|c|2' } });
+    // Lifecycle types keep their own meaning.
+    source().dispatch('error', { type: 'error', xhrStatus: 500 });
+    await expect(iterator.next()).rejects.toThrow('SSE failed: 500');
   });
 
   test('a frame without data is not a message', async () => {
