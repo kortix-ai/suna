@@ -10,7 +10,7 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { contextualDatabase } from '../../apps/api/src/shared/db-context';
 import { createDb } from '../../packages/db/src/client';
-import { type Ports, computePorts, repoRoot, runMigrate, sh, waitForPostgresReady } from '../../scripts/worktree/lib';
+import { type Ports, computePorts, repoRoot, runMigrate, sh } from '../../scripts/worktree/lib';
 
 const dockerOk = sh(['docker', 'info']).ok;
 const CONTAINER = 'kortix-wallet-ledger-test';
@@ -24,6 +24,15 @@ function psql(query: string): string {
   const res = sh(['psql', url, '-v', 'ON_ERROR_STOP=1', '-tAc', query]);
   if (!res.ok) throw new Error(`psql failed: ${res.stderr}\n${query}`);
   return res.stdout.trim();
+}
+
+function pgReady(): boolean {
+  // Host TCP probe: `docker exec pg_isready` answers over the unix socket,
+  // which initdb's temporary socket-only server satisfies while nothing serves
+  // TCP yet — the published port's proxy then accepts and closes the suite's
+  // first `psql` (`server closed the connection unexpectedly`). See
+  // worktree-migrate.test.ts for the full timeline and CI run 36153691220.
+  return sh(['psql', url, '-tAc', 'select 1']).ok;
 }
 
 type Buckets = { daily?: number; expiring?: number; nonExpiring?: number };
@@ -108,7 +117,11 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
       'postgres:16-alpine', '-c', 'fsync=off', '-c', 'synchronous_commit=off', '-c', 'full_page_writes=off',
     ]);
     if (!up.ok) throw new Error(`could not start test container: ${up.stderr}`);
-    await waitForPostgresReady(url);
+    for (let i = 0; i < 60; i++) {
+      if (pgReady()) break;
+      await Bun.sleep(1000);
+    }
+    if (!pgReady()) throw new Error('test Postgres never became ready');
     const code = await runMigrate(ROOT, ports);
     if (code !== 0) throw new Error('migrations failed');
 
@@ -592,6 +605,20 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
       });
       expect(row!.expires_at).not.toBeNull();
       expect(account(id)).toMatchObject({ balance: 54, expiring: 50, non_expiring: 4, daily: 1 });
+    });
+
+    // reset_expiring_credits used NUMERIC(10, 2) variables: a preserved
+    // non-expiring bucket of 12.3456 became 12.35 and a debt of -0.004 became 0.
+    test('keeps the preserved non-expiring bucket and a small debt at full precision', async () => {
+      const funded = newAccount({ expiring: 3, nonExpiring: 12.3456 });
+      await wallet.reset({ accountId: funded, amount: 50, description: 'Monthly renewal', key: { event: 'in_p1' } });
+      expect(account(funded)!.non_expiring).toBeCloseTo(12.3456, 6);
+      expect(account(funded)!.balance).toBeCloseTo(62.3456, 6);
+
+      const indebted = newAccount({ nonExpiring: -0.004 });
+      await wallet.reset({ accountId: indebted, amount: 50, description: 'Monthly renewal', key: { event: 'in_p2' } });
+      expect(account(indebted)!.non_expiring).toBeCloseTo(-0.004, 6);
+      expect(account(indebted)!.balance).toBeCloseTo(49.996, 6);
     });
 
     test('a replayed reset key is a silent no-op', async () => {

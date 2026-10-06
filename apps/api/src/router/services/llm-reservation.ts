@@ -1,10 +1,11 @@
 import { HTTPException } from 'hono/http-exception';
+import { logger } from '../../lib/logger';
 import { wallet } from '../../billing/wallet';
 import { recordUsageEvent } from '../../shared/usage-events';
 import type { ActorContext } from '../../shared/actor-context';
 import { requireModelPricing, type ModelConfig } from '../config/models';
 import { calculateCost } from './llm';
-import { deductLLMCredits } from './billing';
+import { deductLLMCredits, settleLLMCredits } from './billing';
 import { dollarsToCents, refundActorSpend, reserveActorSpend } from './member-spend';
 import { refundReservation, reserveActorCost } from './reservation';
 import {
@@ -102,7 +103,7 @@ export async function reserveEstimatedLlmCredits(
     });
   }
   if (!creditReservation.success) {
-    throw new HTTPException(402, {
+    throw new HTTPException(creditReservation.retryable ? 503 : 402, {
       message: creditReservation.error || 'Insufficient credits',
     });
   }
@@ -154,54 +155,31 @@ export async function settleLlmReservation(input: {
   const reservedActorCents = input.reservation?.actorReservedCents ?? 0;
   const actor = input.reservation?.actor ?? input.actor;
 
-  if (reservedCost <= 0) {
-    try {
-      const result = await deductLLMCredits(
-        input.accountId,
-        input.modelId,
-        input.promptTokens,
-        input.completionTokens,
-        actualCost,
-      );
-      if (!result.success) {
-        console.error(
-          `[LLM] ${input.logPrefix} deduction failed: ${result.error || 'unknown error'}`,
-        );
-      }
-    } catch (error) {
-      console.error(`[LLM] ${input.logPrefix} deduction failed:`, error);
+  // Settlement, not admission: the tokens are spent. The part of the cost the
+  // reservation does not cover is recorded even when the wallet cannot pay it.
+  const { toDeduct, toRefund } = reconcileBillingHold(actualCost, reservedCost);
+  if (toDeduct > 0) {
+    const result = await settleLLMCredits(
+      input.accountId,
+      input.modelId,
+      input.promptTokens,
+      input.completionTokens,
+      toDeduct,
+    );
+    if (!result.success) {
+      logger.error(`[LLM] ${input.logPrefix} settlement failed: ${result.error || 'unknown error'}`);
     }
-  } else {
-    const { toDeduct, toRefund } = reconcileBillingHold(actualCost, reservedCost);
-    if (toDeduct > 0) {
-      try {
-        const result = await deductLLMCredits(
-          input.accountId,
-          input.modelId,
-          input.promptTokens,
-          input.completionTokens,
-          toDeduct,
-        );
-        if (!result.success) {
-          console.error(
-            `[LLM] ${input.logPrefix} delta deduction failed: ${result.error || 'unknown error'}`,
-          );
-        }
-      } catch (error) {
-        console.error(`[LLM] ${input.logPrefix} delta deduction failed:`, error);
-      }
-    } else if (toRefund > 0) {
-      await wallet.grant({
-        accountId: input.accountId,
-        amount: toRefund,
-        kind: 'llm_reservation_refund',
-        description: `LLM reservation refund: ${input.modelId}`,
-        expiring: false,
-        key: null,
-      }).catch((error) => {
-        console.error(`[LLM] ${input.logPrefix} refund failed:`, error);
-      });
-    }
+  } else if (toRefund > 0) {
+    await wallet.grant({
+      accountId: input.accountId,
+      amount: toRefund,
+      kind: 'llm_reservation_refund',
+      description: `LLM reservation refund: ${input.modelId}`,
+      expiring: false,
+      key: null,
+    }).catch((error) => {
+      logger.error(`[LLM] ${input.logPrefix} refund failed:`, error);
+    });
   }
 
   if (actor) {
@@ -242,6 +220,36 @@ export async function settleLlmReservation(input: {
     },
   }).catch((error) => {
     console.error(`[LLM] ${input.logPrefix} usage event write failed:`, error);
+  });
+}
+
+/**
+ * Settle a delivered response that reported no usage. Fail closed: the amount
+ * already held is the charge. No wallet movement, one usage event. A null
+ * reservation (billing off) records nothing.
+ */
+export async function settleHeldLlmReservation(input: {
+  reservation: LlmCreditReservation | null;
+  accountId: string;
+  modelId: string;
+  actor: ActorContext | null;
+  logPrefix: string;
+  provider: string;
+  route: string;
+  streaming?: boolean;
+  upstreamStatus?: number;
+  sessionId?: string;
+}): Promise<void> {
+  const { reservation, ...rest } = input;
+  if (!reservation) return;
+  await settleLlmReservation({
+    ...rest,
+    promptTokens: reservation.promptTokens,
+    completionTokens: reservation.completionTokens,
+    actualCost: reservation.cost,
+    reservation,
+    logPrefix: `${input.logPrefix} (no usage reported, held amount)`,
+    upstreamStatus: input.upstreamStatus ?? 200,
   });
 }
 

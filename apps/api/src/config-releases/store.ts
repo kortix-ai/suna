@@ -117,44 +117,6 @@ export class S3ConfigArchiveStore implements ConfigArchiveStore {
   }
 }
 
-/** In-memory store for unit tests. It keeps the real store's first-write-wins rule. */
-export class MemoryConfigArchiveStore implements ConfigArchiveStore {
-  readonly objects = new Map<string, Buffer>();
-  /** When set, every call throws it. Simulates an unavailable store. */
-  failWith: Error | null = null;
-  puts = 0;
-
-  async putIfAbsent(key: string, body: Buffer): Promise<PutOutcome> {
-    if (this.failWith) throw this.failWith;
-    this.puts += 1;
-    if (this.objects.has(key)) return 'exists';
-    this.objects.set(key, Buffer.from(body));
-    return 'created';
-  }
-
-  async downloadUrl(key: string, ttlSeconds: number): Promise<string | null> {
-    if (this.failWith) throw this.failWith;
-    if (!this.objects.has(key)) return null;
-    return `memory://config-archives/${key}?expiresIn=${ttlSeconds}`;
-  }
-
-  async exists(key: string): Promise<boolean> {
-    if (this.failWith) throw this.failWith;
-    return this.objects.has(key);
-  }
-
-  async pruneProject(projectId: string, keep: number): Promise<string[]> {
-    if (this.failWith) throw this.failWith;
-    if (!Number.isInteger(keep) || keep < 1) throw new Error('keep must be at least 1');
-    const prefix = configArchiveProjectPrefix(projectId);
-    // Insertion order is write order, so the tail is the newest.
-    const mine = [...this.objects.keys()].filter((key) => key.startsWith(prefix));
-    const stale = mine.slice(0, Math.max(0, mine.length - keep));
-    for (const key of stale) this.objects.delete(key);
-    return stale;
-  }
-}
-
 /** The bucket, endpoint and credentials of the config archive store. */
 function configArchiveTarget() {
   return {
@@ -182,9 +144,4 @@ export function getConfigArchiveStore(): ConfigArchiveStore {
     store = new S3ConfigArchiveStore(new ObjectStore(configArchiveTarget), config.KORTIX_CONFIG_ARCHIVE_S3_PREFIX);
   }
   return store;
-}
-
-/** Tests only: replace the process store. `null` restores the default. */
-export function setConfigArchiveStoreForTests(next: ConfigArchiveStore | null): void {
-  store = next;
 }

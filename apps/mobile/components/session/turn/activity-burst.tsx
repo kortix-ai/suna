@@ -11,6 +11,8 @@
  * the summary line opens the activity sheet (`useActivitySheetStore`, shown by
  * `ActivitySheetHost`), a timeline of every step with a detail view per step.
  * While this row owns the open sheet it republishes its live view to the store.
+ * A running summary ("Working · N steps") shimmers on screen, also while it
+ * owns the sheet (Jay); Reduce Motion and an off-screen turn draw it still.
  *
  * - every burst is this line, even ONE thought or ONE call ("Completed 1
  *   step"): web shows those bare, mobile never expands a step inline

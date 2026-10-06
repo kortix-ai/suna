@@ -1,9 +1,10 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountMembers, accountSecretGrants, accountSecretResources, projects, sessionProviderSecretPools } from '@kortix/db';
+import { accountSecretGrants, accountSecretResources, projects, sessionProviderSecretPools } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { auth, errors, json } from '../openapi';
 import { db } from '../shared/db';
-import { encryptAccountSecret, memberMayReadProject, secretUsableInProject } from '../secrets/account-resource';
+import { accountMemberRow } from '../iam/membership-read';
+import { clearAccountSecretCooldown, encryptAccountSecret, memberMayReadProject, secretUsableInProject } from '../secrets/account-resource';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { actorOf, authorize, PROJECT_ACTIONS } from '../iam';
 import { resolveCatalogUpstream } from '../llm-gateway/models/provider-registry';
@@ -204,6 +205,23 @@ export function registerSecretResourceRoutes() {
     return c.json(await view(updated!, userId));
   });
 
+  // An owner's "retry now": a ChatGPT plan's usage can be reset before the reset
+  // the provider named; the rest ends now instead of on the next 15-min re-try.
+  accountsRouter.openapi(createRoute({
+    method: 'post', path: '/{accountId}/secret-resources/{secretId}/retry', tags: ['secrets'],
+    summary: 'End the rate-limit rest of one stored account', ...auth,
+    request: { params: SecretIdParam },
+    responses: { 200: json(View, 'Secret metadata with no cooldown'), ...errors(403, 404) },
+  }), async (c) => {
+    const { accountId, secretId } = c.req.valid('param');
+    const userId = c.get('userId') as string;
+    const row = await loadSecret(accountId, secretId);
+    if (!row) return c.json({ error: 'Not found' }, 404);
+    if (!(await mayManage(userId, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
+    await clearAccountSecretCooldown(row.secretId, accountId);
+    return c.json(await view({ ...row, cooldownUntil: null, cooldownProbeAt: null }, userId));
+  });
+
   accountsRouter.openapi(createRoute({
     method: 'delete', path: '/{accountId}/secret-resources/{secretId}', tags: ['secrets'],
     summary: 'Delete one secret resource and its grants', ...auth,
@@ -236,8 +254,7 @@ export function registerSecretResourceRoutes() {
     const row = await loadSecret(accountId, c.req.param('secretId'));
     if (!row) return c.json({ error: 'Not found' }, 404);
     if (!(await mayManage(actorId, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
-    const [member] = await db.select({ userId: accountMembers.userId }).from(accountMembers)
-      .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId))).limit(1);
+    const [member] = await accountMemberRow(accountId, userId);
     if (!member) return c.json({ error: 'Member not found' }, 404);
     await db.insert(accountSecretGrants).values({ accountId, secretId: row.secretId, userId, grantedBy: actorId }).onConflictDoNothing();
     return c.json(await view(row, actorId));

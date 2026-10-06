@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
+import { within } from '@kortix/shared/tool-output/testing';
+
 import type { UiTranslator } from '@/i18n/translator';
 
 import {
@@ -143,13 +145,6 @@ describe('kortixSystemElements', () => {
 });
 
 describe('no message can freeze the tab that parses it', () => {
-  const within = (label: string, run: () => unknown) =>
-    test(label, () => {
-      const started = performance.now();
-      run();
-      expect(performance.now() - started).toBeLessThan(100);
-    });
-
   // Quadratic: ~1 s here.
   within('strip: 16k openers that never close', () => stripKortixSystemTags('<kortix_system>'.repeat(16_000)));
   // Cubic: 6.6 s at 30k characters with Bun, 2.7 s with Node.

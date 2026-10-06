@@ -49,17 +49,18 @@ export function bootConfigRoot(): string {
 const POINTER_FILE = 'current.json'
 const QUARANTINE_FILE = 'quarantine.json'
 
-/** Decompressed archive ceiling. The compressed archive is capped at 4 MiB. */
-const MAX_EXTRACTED_BYTES = 64 * 1024 * 1024
+/** Decompressed archive ceiling: the API's `MAX_CONFIG_TAR_BYTES`. The compressed archive is capped at `MAX_CONFIG_ARCHIVE_BYTES`. */
+const MAX_EXTRACTED_BYTES = 128 * 1024 * 1024
 
 const RELEASE_ID = /^[0-9a-f]{64}$/
 const OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
 
 /**
- * Written by the platform INTO a release after extraction, so neither sealed
- * nor verified afterwards: OpenCode's installer rewrites the plugin pin and the
- * lockfile at spawn, and dependencies are linked in from the image's baked set.
- * Extraction itself verifies these files like every other file.
+ * Written by the platform INTO a release's OpenCode config dir after
+ * extraction, so neither sealed nor verified afterwards: OpenCode's installer
+ * rewrites the plugin pin and the lockfile at spawn, and dependencies are
+ * linked in from the image's baked set. Extraction itself verifies these files
+ * like every other file. At the repository root they are project files.
  */
 const PLATFORM_WRITTEN = new Set(['package.json', 'bun.lock', 'bun.lockb', 'package-lock.json'])
 const PLATFORM_WRITTEN_DIRS = new Set(['node_modules'])
@@ -68,7 +69,8 @@ const PLATFORM_WRITTEN_DIRS = new Set(['node_modules'])
 export interface ReleaseManifest {
   release_id: string
   source_commit: string
-  config_dir: string
+  /** The OpenCode config dir inside the release, or null when the repository has none. */
+  config_dir: string | null
   config_tree_id: string
   /** The API path of the archive, to rebuild a tampered copy. */
   archive_url: string
@@ -87,7 +89,8 @@ export interface ReleaseManifest {
 export interface BootConfigPointer {
   release_id: string
   source_commit: string
-  config_dir: string
+  config_dir: string | null
+  /** The release root: the repository checkout. */
   dir: string
   proven: boolean
 }
@@ -104,6 +107,24 @@ export function isReleaseId(value: unknown): value is string {
 export function releaseDir(root: string, releaseId: string): string {
   if (!isReleaseId(releaseId)) throw new Error('boot config: release_id must be 64 hex characters')
   return join(root, releaseId)
+}
+
+/**
+ * The release root `path` is in (a release is a checkout of the repository at
+ * one commit), or null when `path` is not inside a release in the store.
+ */
+export function releaseRootOf(path: string, root: string = bootConfigRoot()): string | null {
+  const rel = relative(resolve(root), resolve(path))
+  if (!rel || rel.startsWith('..') || isAbsolute(rel)) return null
+  const first = rel.split(sep)[0]!
+  return isReleaseId(first) ? join(resolve(root), first) : null
+}
+
+/** The release's files under its OpenCode config dir, relative to that dir. */
+export function configDirFiles(files: readonly ConfigReleaseFile[], configDir: string | null): ConfigReleaseFile[] {
+  if (!configDir) return []
+  const prefix = `${configDir}/`
+  return files.filter(([path]) => path.startsWith(prefix)).map(([path, mode, blob]) => [path.slice(prefix.length), mode, blob])
 }
 
 function manifestPath(root: string, releaseId: string): string {
@@ -149,13 +170,21 @@ export function isInReleaseStore(dir: string, root: string = bootConfigRoot()): 
   return insideRoot(root, dir)
 }
 
-/** A path inside a release the platform writes after extraction. */
-function isPlatformWritten(path: string, managed: Set<string>): boolean {
-  const [first, second] = path.split('/')
-  if (!first) return false
-  if (PLATFORM_WRITTEN_DIRS.has(first)) return true
-  if (path === first && PLATFORM_WRITTEN.has(first)) return true
-  return first === 'skills' && second !== undefined && managed.has(second)
+/**
+ * A path inside a release the platform writes after extraction: the
+ * dependencies and lockfiles of the OpenCode config dir, and the managed-skill
+ * overlay in the `skills/` it lands in (the root's, or the config dir's own).
+ */
+function isPlatformWritten(path: string, managed: Set<string>, configDir: string | null): boolean {
+  const inConfig = configDir && path.startsWith(`${configDir}/`) ? path.slice(configDir.length + 1) : null
+  for (const rel of inConfig === null ? [path] : [path, inConfig]) {
+    const [first, second] = rel.split('/')
+    if (!first) continue
+    if (rel === inConfig && PLATFORM_WRITTEN_DIRS.has(first)) return true
+    if (rel === inConfig && rel === first && PLATFORM_WRITTEN.has(first)) return true
+    if (first === 'skills' && second !== undefined && managed.has(second)) return true
+  }
+  return false
 }
 
 function gitBlobId(content: Buffer, idLength: number): string {
@@ -299,7 +328,7 @@ export async function readReleaseManifest(root: string, releaseId: string): Prom
     const parsed = JSON.parse(await readFile(manifestPath(root, releaseId), 'utf8')) as ReleaseManifest
     if (parsed.release_id !== releaseId) return null
     if (!OBJECT_ID.test(parsed.source_commit) || !OBJECT_ID.test(parsed.config_tree_id)) return null
-    if (typeof parsed.config_dir !== 'string' || !isPlainConfigDir(parsed.config_dir)) return null
+    if (parsed.config_dir !== null && (typeof parsed.config_dir !== 'string' || !isPlainConfigDir(parsed.config_dir))) return null
     if (typeof parsed.archive_url !== 'string' || !Array.isArray(parsed.files)) return null
     if (parsed.compiled_governance !== null && typeof parsed.compiled_governance !== 'string') return null
     if (parsed.compiled_governance_etag !== null && typeof parsed.compiled_governance_etag !== 'string') return null
@@ -341,7 +370,7 @@ export async function materializeRelease(input: {
     // The overlay injected by `prepare` and the names `seal` skips must be the same set.
     await withReleaseStoreLock(async () => {
       await input.prepare?.(staged)
-      await seal(staged, manifest.files, await managedSkillNames(input.managedSkillsDir))
+      await seal(staged, manifest.files, await managedSkillNames(input.managedSkillsDir), manifest.config_dir)
     })
     if (existsSync(dir)) await removeTree(dir)
     await rename(staged, dir)
@@ -395,10 +424,15 @@ export async function materializeRelease(input: {
  * of its own bookkeeping, and skips it silently when it cannot — no
  * `EACCES`/`EROFS` in the daemon log or OpenCode's own log.
  */
-async function seal(dir: string, files: readonly ConfigReleaseFile[], managed: Set<string>): Promise<void> {
+async function seal(
+  dir: string,
+  files: readonly ConfigReleaseFile[],
+  managed: Set<string>,
+  configDir: string | null,
+): Promise<void> {
   const sealedDirs = new Set<string>()
   for (const [path, mode] of files) {
-    if (isPlatformWritten(path, managed)) continue
+    if (isPlatformWritten(path, managed, configDir)) continue
     if (mode !== '120000') await chmod(join(dir, path), mode === '100755' ? 0o555 : 0o444)
     const parts = path.split('/')
     for (let depth = 1; depth < parts.length; depth++) sealedDirs.add(parts.slice(0, depth).join('/'))
@@ -413,8 +447,11 @@ async function seal(dir: string, files: readonly ConfigReleaseFile[], managed: S
 }
 
 export interface ReleaseVerifyInput {
+  /** The release root. */
   dir: string
   files: readonly ConfigReleaseFile[]
+  /** The release's OpenCode config dir, where the platform writes dependencies. */
+  configDir?: string | null
   managedSkillsDir?: string
 }
 
@@ -468,8 +505,9 @@ async function verifyReleaseUnlocked(
   try {
     assertFileList(input.files)
     managed = await managedSkillNames(input.managedSkillsDir)
+    const configDir = input.configDir ?? null
     for (const [path, mode, blob] of input.files) {
-      if (isPlatformWritten(path, managed)) continue
+      if (isPlatformWritten(path, managed, configDir)) continue
       const onDisk = join(input.dir, path)
       const content = await readEntry(onDisk, mode === '120000')
       if (content === null) return { ok: false, problem: `${path} has the wrong type` }
@@ -478,7 +516,7 @@ async function verifyReleaseUnlocked(
     // Nothing may be ADDED either: a new agent, tool or second `opencode.json`
     // beside the listed files would be loaded like any other.
     const listed = new Set(input.files.map(([path]) => path))
-    for (const path of await walkFiles(input.dir, managed)) {
+    for (const path of await walkFiles(input.dir, managed, configDir, listed)) {
       if (!listed.has(path)) {
         return { ok: false, problem: `${path} is not in the release (managed overlay names: ${managed.size})` }
       }
@@ -491,19 +529,34 @@ async function verifyReleaseUnlocked(
 
 /**
  * Every file in a release that the platform did not write, relative to `dir`.
- * Root-level dotfiles are left out: they are installer output
- * (`.package-lock.json` and the like) and OpenCode reads none of them.
+ * Dot entries at the root and at the top of the OpenCode config dir that hold
+ * no listed file are left out: they are installer and OpenCode output
+ * (`.package-lock.json`, `.gitignore`) that no harness reads as config. A
+ * tracked dot entry (`.kortix/`, a committed `.gitignore`) is walked like any other.
  */
-async function walkFiles(dir: string, managed: Set<string>, prefix = ''): Promise<string[]> {
+async function walkFiles(
+  dir: string,
+  managed: Set<string>,
+  configDir: string | null,
+  listed: ReadonlySet<string>,
+  prefix = '',
+): Promise<string[]> {
   const found: string[] = []
   for (const entry of await readdir(join(dir, prefix), { withFileTypes: true })) {
     const path = prefix ? `${prefix}/${entry.name}` : entry.name
-    if (isPlatformWritten(path, managed)) continue
-    if (!prefix && entry.name.startsWith('.')) continue
-    if (entry.isDirectory()) found.push(...(await walkFiles(dir, managed, path)))
+    if (isPlatformWritten(path, managed, configDir)) continue
+    if ((!prefix || prefix === configDir) && entry.name.startsWith('.') && !holdsListed(listed, path)) continue
+    if (entry.isDirectory()) found.push(...(await walkFiles(dir, managed, configDir, listed, path)))
     else found.push(path)
   }
   return found
+}
+
+function holdsListed(listed: ReadonlySet<string>, path: string): boolean {
+  if (listed.has(path)) return true
+  const prefix = `${path}/`
+  for (const file of listed) if (file.startsWith(prefix)) return true
+  return false
 }
 
 function insideRoot(root: string, dir: string): boolean {
@@ -517,7 +570,8 @@ export async function readBootConfigPointer(root: string = bootConfigRoot()): Pr
     const parsed = JSON.parse(await readFile(join(root, POINTER_FILE), 'utf8')) as Partial<BootConfigPointer>
     if (!isReleaseId(parsed.release_id)) return null
     if (typeof parsed.source_commit !== 'string' || !OBJECT_ID.test(parsed.source_commit)) return null
-    if (typeof parsed.config_dir !== 'string' || !isPlainConfigDir(parsed.config_dir)) return null
+    const configDir = parsed.config_dir ?? null
+    if (configDir !== null && (typeof configDir !== 'string' || !isPlainConfigDir(configDir))) return null
     if (typeof parsed.dir !== 'string' || typeof parsed.proven !== 'boolean') return null
     // The file sits in a directory the in-box agent can write. A pointer is only
     // honoured when it names the release's own directory inside the store, so it
@@ -526,7 +580,7 @@ export async function readBootConfigPointer(root: string = bootConfigRoot()): Pr
     return {
       release_id: parsed.release_id,
       source_commit: parsed.source_commit,
-      config_dir: parsed.config_dir,
+      config_dir: configDir,
       dir: resolve(parsed.dir),
       proven: parsed.proven,
     }

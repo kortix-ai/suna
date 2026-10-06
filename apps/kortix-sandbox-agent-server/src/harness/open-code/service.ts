@@ -133,5 +133,4 @@ export const openCodeDefinition: HarnessDefinition = {
   },
   run: async (context) => (await import('./boot')).runOpenCode({ ...context, cfg: requireOpenCodeConfig(context.cfg) }),
   runWarmSeed: async (context) => (await import('./boot')).runOpenCodeWarmSeed({ ...context, cfg: requireOpenCodeConfig(context.cfg) }),
-  installCompiledRuntime: async (cfg) => (await import('./compiled-runtime')).installCompiledRuntime(requireOpenCodeConfig(cfg)),
 }

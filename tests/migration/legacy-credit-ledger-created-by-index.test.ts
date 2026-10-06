@@ -32,7 +32,6 @@ import {
   run,
   runMigrate,
   sh,
-  waitForPostgresReady,
 } from '../../scripts/worktree/lib';
 
 const dockerOk = sh(['docker', 'info']).ok;
@@ -52,6 +51,10 @@ function psqlOn(url: string, query: string): string {
 }
 
 const psql = (query: string): string => psqlOn(URL, query);
+
+function pgReady(): boolean {
+  return sh(['psql', URL, '-tAc', 'select 1']).ok;
+}
 
 /**
  * The Supabase advisor's own predicate (unindexed_foreign_keys): the FK is
@@ -135,7 +138,11 @@ suite('legacy public.credit_ledger created_by FK index (throwaway Postgres)', ()
       'postgres:16-alpine', '-c', 'fsync=off', '-c', 'synchronous_commit=off', '-c', 'full_page_writes=off',
     ]);
     if (!up.ok) throw new Error(`could not start test container: ${up.stderr}`);
-    await waitForPostgresReady(URL);
+    for (let i = 0; i < 60; i++) {
+      if (pgReady()) break;
+      await Bun.sleep(1000);
+    }
+    if (!pgReady()) throw new Error('test Postgres never became ready');
 
     // Legacy path: the pre-baseline table exists BEFORE any migration runs.
     psql(LEGACY_TABLE_SQL);

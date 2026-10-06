@@ -38,21 +38,3 @@ export function portInUse(port: number): { inUse: boolean; pid?: string; cmd?: s
   const cmd = r.stdout.match(/^c(.+)$/m)?.[1];
   return { inUse: true, pid, cmd };
 }
-
-/**
- * Wait until a throwaway Postgres container serves the host endpoint the suite
- * will actually use. The probe is host-side `psql`, never `pg_isready` inside
- * the container: the postgres entrypoint runs initdb against a temporary
- * socket-only server, so the in-container probe answers while nothing serves
- * TCP yet (the incident behind the comment in tests/migration/
- * worktree-migrate.test.ts). The default budget is generous because the
- * db-suites lane starts six containers while the api-cli-flows lane boots the
- * Supabase stack, and a loaded host has crossed a 60 s budget.
- */
-export async function waitForPostgresReady(url: string, seconds = 150): Promise<void> {
-  for (let i = 0; i < seconds; i++) {
-    if (sh(['psql', url, '-tAc', 'select 1']).ok) return;
-    await Bun.sleep(1000);
-  }
-  throw new Error(`test Postgres never became ready: ${url}`);
-}

@@ -7,6 +7,7 @@ import {
   isMetaCoordinatorSession,
   matchesSourceFilters,
   matchesStatusFilters,
+  sessionCanBeStopped,
   sessionDisplayStatus,
   sessionIsShared,
   sessionSource,
@@ -89,10 +90,12 @@ import {
   type ChangeRequest,
   type ProjectSession,
 } from '@kortix/sdk';
-import { qk, useProjectSession, useProjectSessions, useSessionChildren } from '@kortix/sdk/react';
+import { qk, useForkSession, useProjectSession, useProjectSessions, useRuntimeSupports, useSessionChildren } from '@kortix/sdk/react';
 import {
   CaretRightIcon,
   DotsThreeIcon,
+  FolderSimpleIcon as MetaFolder,
+  GitForkIcon,
   SparkleIcon,
   PencilSimpleIcon,
   TagIcon,
@@ -358,6 +361,15 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     },
   });
 
+  // Fork the open session's conversation from its row: the runtime's own
+  // `session.fork`, same as the session header's item. Only the row of the
+  // session you are viewing gets it — the runtime client is bound to that
+  // session's box, so a fork fired from any other row would hit the wrong
+  // sandbox and fail (or worse, fork another box's conversation). The fork
+  // opens on the same row's route.
+  const runtimeForks = useRuntimeSupports('session.fork');
+  const forkSession = useForkSession();
+
   // Unsorted on purpose: nothing here reads the order. The two consumers are
   // `.length` and `.filter()`, and `groupSessions` sorts each section itself —
   // sorting twice per render bought nothing.
@@ -434,6 +446,27 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           onStop={(id, label) => stopMutation.mutate({ sessionId: id, label })}
           isStopping={
             stopMutation.isPending && stopMutation.variables?.sessionId === session.session_id
+          }
+          canFork={
+            runtimeForks &&
+            session.session_id === activeSessionId &&
+            !!(session.runtime_session_id ?? session.opencode_session_id)
+          }
+          isForking={
+            forkSession.isPending &&
+            forkSession.variables?.sessionId ===
+            (session.runtime_session_id ?? session.opencode_session_id)
+          }
+          onFork={(runtimeSessionId, href) =>
+            forkSession.mutate(
+              { sessionId: runtimeSessionId },
+              {
+                onSuccess: (fork) => router.push(childSessionHref(href, fork.id)),
+                onError: (err) => {
+                  errorToast(err instanceof Error ? err.message : tI18nComplete.raw('text32ad3abe4479'));
+                },
+              },
+            )
           }
         />
         {children.length > 0 && isActive && (
@@ -771,6 +804,7 @@ function SessionListSection({
     email: 'email',
     schedule: 'scheduled',
     webhook: 'webhook',
+    manual: 'manual',
     all: 'all',
   } as const;
   const sectionKey = sectionTranslationKeys[section.id as keyof typeof sectionTranslationKeys];
@@ -1077,6 +1111,13 @@ interface ProjectSessionRowProps {
   isRestarting: boolean;
   onStop: (sessionId: string, label: string) => void;
   isStopping: boolean;
+  /** Fork this row's conversation — offered only on the row of the session
+   *  you are viewing, whose box is the runtime the client is bound to. */
+  canFork?: boolean;
+  isForking?: boolean;
+  /** Fork a conversation — the first argument is the RUNTIME conversation id
+   *  (`session.runtime_session_id`), not the project-session id. */
+  onFork: (runtimeSessionId: string, href: string) => void;
   childCount?: number;
   /** Sessions this one spawned (`child_count`), and whether they are shown. */
   spawnedCount?: number;
@@ -1105,6 +1146,9 @@ function ProjectSessionRow({
   isRestarting,
   onStop,
   isStopping,
+  canFork = false,
+  isForking = false,
+  onFork,
   childCount = 0,
   spawnedCount = 0,
   spawnedOpen = false,
@@ -1129,6 +1173,10 @@ function ProjectSessionRow({
 
   const source = sessionSource(session, tI18nComplete);
   const isMeta = isMetaCoordinatorSession(session);
+  // The conversation the runtime can fork: the pinned root conversation id,
+  // not the project-session id — `POST /session/{id}/fork` addresses the
+  // runtime's own id space (`ses_…`). canFork already guarantees one.
+  const runtimeRootId = session.runtime_session_id ?? session.opencode_session_id;
   // The starter of the RUN, from the server's `initiator`. The viewer's own
   // runs show no mark: it is everyone else's and the automations' that need one.
   const starter = useSessionStarter(session);
@@ -1376,17 +1424,20 @@ function ProjectSessionRow({
                 ? 'Share'
                 : tI18nComplete.raw('textadc01d813da0')}
             </DropdownMenuItem>
-            <DropdownMenuItem
-              className="cursor-pointer"
-              disabled={isRestarting}
-              onSelect={() => deferAfterClose(() => onRestart(session.session_id, displayTitle))}
-            >
-              {isRestarting ? <Loading className="size-4 shrink-0" /> : <RotateCcw />}
-              {tI18nComplete.raw('text6b983a81e5e8')}
-            </DropdownMenuItem>
-            {/* Lifecycle, not sharing: a project manager keeps Stop on a
-                session they did not create. */}
-            {session.status === 'running' && session.can_manage_lifecycle !== false && (
+            {/* Lifecycle, not sharing: a project manager keeps Restart, Stop
+                and Delete on a session they did not create, and a member who
+                did not create it gets none of them (the server answers 403). */}
+            {session.can_manage_lifecycle !== false && (
+              <DropdownMenuItem
+                className="cursor-pointer"
+                disabled={isRestarting}
+                onSelect={() => deferAfterClose(() => onRestart(session.session_id, displayTitle))}
+              >
+                {isRestarting ? <Loading className="size-4 shrink-0" /> : <RotateCcw />}
+                {tI18nComplete.raw('text6b983a81e5e8')}
+              </DropdownMenuItem>
+            )}
+            {sessionCanBeStopped(session) && session.can_manage_lifecycle !== false && (
               <DropdownMenuItem
                 className="cursor-pointer"
                 disabled={isStopping}
@@ -1396,13 +1447,25 @@ function ProjectSessionRow({
                 {tI18nComplete.raw('textcae7d57bc067')}
               </DropdownMenuItem>
             )}
-            <DropdownMenuItem
-              className="cursor-pointer"
-              onSelect={() => deferAfterClose(() => onDelete(session.session_id, displayTitle))}
-            >
-              <TrashIcon />
-              {tI18nComplete.raw('texte2d0a54968ea')}
-            </DropdownMenuItem>
+            {canFork && runtimeRootId && (
+              <DropdownMenuItem
+                className="cursor-pointer"
+                disabled={isForking}
+                onSelect={() => deferAfterClose(() => onFork(runtimeRootId, href))}
+              >
+                {isForking ? <Loading className="size-4 shrink-0" /> : <GitForkIcon />}
+                {tI18nComplete.raw('text0e5f7f6732e0')}
+              </DropdownMenuItem>
+            )}
+            {session.can_manage_lifecycle !== false && (
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onSelect={() => deferAfterClose(() => onDelete(session.session_id, displayTitle))}
+              >
+                <TrashIcon />
+                {tI18nComplete.raw('texte2d0a54968ea')}
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

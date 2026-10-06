@@ -1,6 +1,6 @@
 import { getRole, ROLES } from '@/features/marketing/solutions/registry';
 import { RolePage } from '@/features/marketing/solutions/role-page';
-import { marketingMetadata } from '@/lib/seo/metadata';
+import { localizedMarketingMetadata } from '@/lib/seo/metadata';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
@@ -30,7 +30,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { role } = await params;
   if (!getRole(role)) return {};
-  return marketingMetadata(`/solutions/${role}`);
+  return localizedMarketingMetadata(`/solutions/${role}`);
 }
 
 export default async function SolutionRolePage({

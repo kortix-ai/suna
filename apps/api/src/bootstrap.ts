@@ -1,52 +1,45 @@
 import { logger as appLogger, isLoggingTransportError } from './lib/logger';
 import { captureException, flushSentry } from './lib/sentry';
-import { startAppDeploymentWorker, stopAppDeploymentWorker } from './apps/deployment-worker';
-import { startAppIdleReaper, stopAppIdleReaper } from './apps/idle-reaper';
-import { startPiWorkerPoolMaintenance, stopPiWorkerPoolMaintenance } from './platform/services/pi-worker-pool';
 import { stopModelPricing } from './router/config/model-pricing';
 import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
 import { warmPipedreamCatalog } from './connectors/pipedream';
 import { runtimeAssetsManifest, warmRuntimeChunkIndex } from './runtime-assets';
-import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
 import { shutdownAuditEvents } from './shared/audit';
-import {
-  startAuditReconciliationWorker,
-  stopAuditReconciliationWorker,
-} from './shared/audit-reconciliation-worker';
-import { startAuditPartitionWorker, stopAuditPartitionWorker } from './shared/audit-partition-worker';
-import { startAuditArchiveWorker, stopAuditArchiveWorker } from './shared/audit-archive/worker';
-import { startAuditWebhookWorker, stopAuditWebhookWorker } from './shared/audit-webhooks';
-import {
-  startProjectSnapshotWorker,
-  stopProjectSnapshotWorker,
-} from './git-proxy/project-snapshot-worker';
 import {
   runsSingletonWorkers,
   startLeaderElection,
   stopLeaderElection,
 } from './shared/leader-election';
-import { startProjectTriggerScheduler, stopProjectTriggerScheduler } from './projects';
-import { startActiveTurnRenewal, stopActiveTurnRenewal } from './projects/active-turn-renewal';
-import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
-import {
-  startProviderTransitionWorker,
-  stopProviderTransitionWorker,
-} from './projects/provider-transition/provider-transition-worker';
-import {
-  startSunaMigrationWorker,
-  stopSunaMigrationWorker,
-} from './projects/suna-migration/suna-migration-worker';
-import { startSessionLifecycleWorker, stopSessionLifecycleWorker } from './projects/session-lifecycle/worker';
 import { kickStartupPreBuild } from './snapshots/builder';
-import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
-import { startTunnelService, stopTunnelService } from './tunnel';
-import { startBillingRotation, stopBillingRotation } from './billing/rotation-schedule';
-import { startSlackTurnGc, stopSlackTurnGc } from './channels/slack/turn';
-import { startTeamsTurnGc, stopTeamsTurnGc } from './channels/teams/turn';
-import { startTeamsBotTokenRefresh, stopTeamsBotTokenRefresh } from './channels/teams-auth';
 import { warnIfPreviewOriginsMissing } from './sandbox-proxy/preview-hosts';
-import { maintenanceSetting } from './routes/platform-endpoints';
-import { startEventLoopLagSampler, stopEventLoopLagSampler } from './routes/system';
+import { maintenanceSetting } from './platform/services/maintenance-setting';
+// Every background loop: its timer, start/stop and runWorkerTick call live in workers/.
+import { startAccessControlCache, stopAccessControlCache } from './workers/access-control-cache-worker';
+import { startAccountDeletionSchedule, stopAccountDeletionSchedule } from './workers/account-deletion-worker';
+import { startActiveTurnRenewal, stopActiveTurnRenewal } from './workers/active-turn-renewal-worker';
+import { startAppDeploymentWorker, stopAppDeploymentWorker } from './workers/app-deployment-worker';
+import { startAppIdleReaper, stopAppIdleReaper } from './workers/app-idle-reaper-worker';
+import { startAuditArchiveWorker, stopAuditArchiveWorker } from './workers/audit-archive-worker';
+import { startAuditPartitionWorker, stopAuditPartitionWorker } from './workers/audit-partition-worker';
+import {
+  startAuditReconciliationWorker,
+  stopAuditReconciliationWorker,
+} from './workers/audit-reconciliation-worker';
+import { startAuditWebhookWorker, stopAuditWebhookWorker } from './workers/audit-webhook-worker';
+import { startBillingRotation, stopBillingRotation } from './workers/billing-rotation-worker';
+import { startEventLoopLagSampler, stopEventLoopLagSampler } from './workers/event-loop-lag-worker';
+import { startProjectMaintenance, stopProjectMaintenance } from './workers/project-maintenance-worker';
+import { startProjectSnapshotWorker, stopProjectSnapshotWorker } from './workers/project-snapshot-worker';
+import { startProviderTransitionWorker, stopProviderTransitionWorker } from './workers/provider-transition-worker';
+import { startSessionLifecycleWorker, stopSessionLifecycleWorker } from './workers/session-lifecycle-worker';
+import { handBackClaims } from './projects/surface';
+import { startSlackTurnGc, stopSlackTurnGc } from './workers/slack-turn-gc-worker';
+import { startSunaMigrationWorker, stopSunaMigrationWorker } from './workers/suna-migration-worker';
+import { startTeamsBotTokenRefresh, stopTeamsBotTokenRefresh } from './workers/teams-bot-token-refresh-worker';
+import { startTeamsTurnGc, stopTeamsTurnGc } from './workers/teams-turn-gc-worker';
+import { startTmpReaper, stopTmpReaper } from './workers/tmp-reaper-worker';
+import { startProjectTriggerScheduler, stopProjectTriggerScheduler } from './workers/trigger-scheduler-worker';
+import { startTunnelService, stopTunnelService } from './workers/tunnel-worker';
 
 // ─── Process-level crash guards ───────────────────────────────────────────────
 // A stray rejected promise or throw escaping any fire-and-forget path — the
@@ -205,10 +198,6 @@ async function startSingletonWorkers() {
   startProviderTransitionWorker();
   startAppDeploymentWorker();
   startAppIdleReaper();
-  // Pi worker pool (P1.8): keep parked worker boxes at target so pi session
-  // creates claim instead of cold-creating. No-op unless
-  // KORTIX_PI_WORKER_POOL_TARGET > 0.
-  startPiWorkerPoolMaintenance();
   startAuditWebhookWorker();
   startAuditReconciliationWorker();
   // Weekly partitions of kortix.audit_events, 8 weeks ahead.
@@ -221,10 +210,10 @@ async function startSingletonWorkers() {
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
   // that just transitioned to expired. Engine already filters expired rows out
   // of authorize() so correctness doesn't depend on this — it's the audit trail.
-  const { startGrantExpirySweeper } = await import('./iam/expiry-sweeper');
+  const { startGrantExpirySweeper } = await import('./workers/grant-expiry-worker');
   startGrantExpirySweeper();
   // OAuth housekeeping: expired authorization requests, abandoned self-registered clients.
-  const { startOAuthSweeper } = await import('./oauth/sweeper');
+  const { startOAuthSweeper } = await import('./workers/oauth-sweep-worker');
   startOAuthSweeper();
   // Hourly trial expiry + credit rotations. Idempotent per account and month,
   // so a leadership flap that runs one twice costs a scan, not money.
@@ -232,6 +221,10 @@ async function startSingletonWorkers() {
   // Close Slack/Teams live cards whose run ended without a reply.
   startSlackTurnGc();
   startTeamsTurnGc();
+  // Execute scheduled account deletions past their 14-day grace. The only
+  // processor of the managed table — its SQL never reached `kortix` before
+  // (KRTX-1260). First tick runs immediately to drain the inherited backlog.
+  startAccountDeletionSchedule();
 }
 async function stopSingletonWorkers() {
   if (!singletonWorkersRunning) return;
@@ -243,19 +236,19 @@ async function stopSingletonWorkers() {
   stopProviderTransitionWorker();
   stopAppDeploymentWorker();
   stopAppIdleReaper();
-  stopPiWorkerPoolMaintenance();
   await stopAuditWebhookWorker();
   await stopAuditReconciliationWorker();
   stopAuditPartitionWorker();
   stopAuditArchiveWorker();
   await stopProjectSnapshotWorker();
-  const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');
+  const { stopGrantExpirySweeper } = await import('./workers/grant-expiry-worker');
   stopGrantExpirySweeper();
-  const { stopOAuthSweeper } = await import('./oauth/sweeper');
+  const { stopOAuthSweeper } = await import('./workers/oauth-sweep-worker');
   stopOAuthSweeper();
   stopBillingRotation();
   stopSlackTurnGc();
   stopTeamsTurnGc();
+  await stopAccountDeletionSchedule();
 }
 
 // Boot the per-node services, then begin leader election. The leader runs the
@@ -324,6 +317,11 @@ export async function shutdown(signal: string) {
   stopAccessControlCache();
   stopTmpReaper();
   stopSessionLifecycleWorker();
+  // Rows this process still holds go back to the queue now, not after the
+  // 10-min lock and grace; the session's next prompt waits behind them.
+  await handBackClaims()
+    .then((count) => count > 0 && appLogger.info('Handed back lifecycle claims', { count }))
+    .catch((error) => appLogger.warn('Lifecycle claim hand-back failed', { error }));
   stopTeamsBotTokenRefresh();
   stopEventLoopLagSampler();
   await import('./shared/pg-broadcast')

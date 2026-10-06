@@ -6,7 +6,7 @@ import { config } from '../../config';
 import { filterAccessibleObjects } from '../../iam';
 import { actorForUser } from '../../iam/actor';
 import {
-  continueSession as continueLifecycleSession,
+  deliverThroughQueue,
   createSession as createLifecycleSession,
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
 } from '../../projects/session-lifecycle';
@@ -39,7 +39,7 @@ import {
 } from '../model-access';
 
 const defaultSlackSessionLifecycle = {
-  continueSession: continueLifecycleSession,
+  deliverFollowUp: deliverThroughQueue,
   createSession: createLifecycleSession,
   resolveProjectAutomationActor: resolveLifecycleAutomationActor,
 };
@@ -54,15 +54,22 @@ export function resetSlackSessionLifecycleForTest() {
   slackSessionLifecycle = defaultSlackSessionLifecycle;
 }
 
+/** One Slack message, whichever events (message, app_mention) carry it. */
+export function slackFollowUpKey(teamId: string, event: SlackEvent): string {
+  return `slack:${teamId}:${event.channel ?? ''}:${event.ts}`;
+}
+
 export async function deliverSlackFollowUpToSession(input: {
   sessionId: string;
   text: string;
   userId?: string | null;
   /** This turn only — see channels/vision-model.ts. */
   model?: string | null;
+  idempotencyKey: string;
 }) {
-  return slackSessionLifecycle.continueSession({
+  return slackSessionLifecycle.deliverFollowUp({
     source: 'slack',
+    idempotencyKey: input.idempotencyKey,
     sessionId: input.sessionId,
     text: input.text,
     userId: input.userId,
@@ -343,6 +350,7 @@ async function joinExistingThread(
   if (sessionId) {
     await deliverSlackFollowUpToSession({
       sessionId,
+      idempotencyKey: slackFollowUpKey(teamId ?? '', event),
       text: renderFollowUpPrompt(envelope, event, await slackMessageLabels({ projectId, teamId, event })),
       userId: actorUserId,
       model: await slackFollowUpModel({ project, userId: actorUserId, sessionId, event }),

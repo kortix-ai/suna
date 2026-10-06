@@ -1,5 +1,6 @@
 import { accounts } from '@kortix/db';
 import { type SQL, sql } from 'drizzle-orm';
+import { accountIdsWithMemberEmailLikeSql } from '../iam/membership-read';
 import { qualifiedColumn } from '../shared/sql-qualified-column';
 
 /**
@@ -22,8 +23,5 @@ import { qualifiedColumn } from '../shared/sql-qualified-column';
 export function adminAccountsSearchCondition(search: string): SQL {
   const pattern = `%${search}%`;
   return sql`(${qualifiedColumn(accounts.name)} ilike ${pattern} or ${qualifiedColumn(accounts.accountId)} IN (
-    SELECT m.account_id FROM auth.users au
-    JOIN LATERAL (SELECT am.account_id FROM kortix.account_members am
-                  WHERE am.user_id = au.id OFFSET 0) m ON true
-    WHERE au.email ILIKE ${pattern}))`;
+    ${accountIdsWithMemberEmailLikeSql(pattern)}))`;
 }

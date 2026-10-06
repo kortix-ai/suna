@@ -70,5 +70,9 @@ describe('the top-level documentation tree', () => {
       citation.test(readFileSync(join(REPO_ROOT, path), 'utf8')),
     );
     expect(offenders).toEqual([]);
-  }, 20_000);
+    // The runner runs this lane concurrently with the DB lane's 192 throwaway
+    // Postgres containers (CI gives each lane its own runner), and the
+    // whole-tree `git grep` then needs more than the 5 s default on a loaded
+    // box. The assertion is unchanged; only the budget is load-tolerant.
+  }, 30_000);
 });

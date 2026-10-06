@@ -1,5 +1,5 @@
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/marketing/button';
+import { cn } from '@/lib/utils';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from '@/components/site-link';
 
@@ -13,27 +13,11 @@ type CardRowBase = {
   Mark: React.ComponentType<{ className?: string }>;
 };
 
-/**
- * A row either has a build to hand over or it does not, and the type says which.
- *
- * `href` and `status` are mutually exclusive on purpose. A row carrying a live
- * store link AND a "Coming soon" chip is the one bug this page must never ship —
- * it sends a visitor to a store listing they cannot install from. Making the
- * pair unrepresentable beats catching it in review.
- */
-export type CardRow =
-  | (CardRowBase & {
-      href: string;
-      /** Store links leave the site; the internal platform redirects do not. */
-      external?: boolean;
-      status?: undefined;
-    })
-  | (CardRowBase & {
-      /** Shown instead of the Download button, e.g. "Coming soon". */
-      status: string;
-      href?: undefined;
-      external?: undefined;
-    });
+export type CardRow = CardRowBase & {
+  href: string;
+  /** Store links leave the site and read "Open"; the internal platform redirects read "Download". */
+  external?: boolean;
+};
 
 /**
  * One product card: full-bleed image, header, then a divided list of platform
@@ -60,16 +44,20 @@ export function PlatformCard({
   description,
   rows,
   filled,
+  className,
 }: {
   image: React.ReactNode;
   title: string;
   description: string;
   rows: CardRow[];
   filled: Platform | null;
+  className?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
-    <section className="bg-popover flex flex-col overflow-hidden rounded-md border">
+    <section
+      className={cn('bg-popover flex flex-col overflow-hidden rounded-md border', className)}
+    >
       {image}
 
       <div className="px-5 pt-5 pb-4">
@@ -94,39 +82,29 @@ export function PlatformCard({
               ) : null}
             </div>
 
-            {/* `!== undefined`, not truthiness: `status: ''` is falsy, so a
-                truthiness check leaves TS unable to prove the other arm has an
-                `href` — and would silently render a Download button for a row
-                that meant to say it has no build. */}
-            {row.status !== undefined ? (
-              // Height-matched to the `sm` button opposite it. Both cards
-              // share one grid row and `mt-auto` bottom-aligns their lists, so a
-              // shorter trailing slot here would knock every seam in this card
-              // out of line with the one beside it.
-              <span className="flex h-9 shrink-0 items-center sm:h-8">
-                <Badge variant="muted" size="sm">
-                  {row.status}
-                </Badge>
-              </span>
-            ) : (
-              <Button
-                asChild
-                size="sm"
-                variant={row.id === filled ? 'default' : 'outline'}
-                className="shrink-0 active:scale-[0.96]"
+            <Button
+              asChild
+              size="sm"
+              variant={row.id === filled ? 'default' : 'outline'}
+              className="shrink-0 active:scale-[0.96]"
+            >
+              <Link
+                href={row.href}
+                // Five buttons with one short label are useless to a screen
+                // reader. The accessible name keeps the visible label and adds
+                // the platform or the store.
+                aria-label={
+                  row.external
+                    ? `${tI18nComplete.raw('texted077f3d8125')} ${row.meta}`
+                    : tI18nComplete('text8d602d64e902', { value0: row.label })
+                }
+                {...(row.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
               >
-                <Link
-                  href={row.href}
-                  // Five buttons all reading "Download" is useless to a screen
-                  // reader. The visible label stays short; the accessible one says
-                  // which platform it is.
-                  aria-label={tI18nComplete('text8d602d64e902', { value0: row.label })}
-                  {...(row.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-                >
-                  {tI18nComplete.raw('textd6eafe823591')}
-                </Link>
-              </Button>
-            )}
+                {row.external
+                  ? tI18nComplete.raw('texted077f3d8125')
+                  : tI18nComplete.raw('textd6eafe823591')}
+              </Link>
+            </Button>
           </li>
         ))}
       </ul>

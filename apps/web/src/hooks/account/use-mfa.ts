@@ -29,7 +29,7 @@ import { useState } from 'react';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { invalidateTokenCache } from '@/lib/auth-token';
 import { createClient } from '@/lib/supabase/client';
-import { supabaseMFAService } from '@/lib/supabase/mfa';
+import { mfaChallengeRequired, supabaseMFAService } from '@/lib/supabase/mfa';
 
 export const MFA_FACTORS_QUERY_KEY = ['mfa-factors'] as const;
 export const MFA_AAL_QUERY_KEY = ['mfa-aal'] as const;
@@ -63,6 +63,15 @@ export function useMfa() {
 
   const startEnrollMutation = useMutation({
     mutationFn: async () => {
+      // An unverified factor is an enrollment someone walked away from (a
+      // closed tab, a reload). It can never sign anyone in, and it holds the
+      // friendly name the new one wants, so clear it before starting over.
+      const { data: listed } = await supabase.auth.mfa.listFactors();
+      for (const stale of listed?.all ?? []) {
+        if (stale.factor_type === 'totp' && stale.status === 'unverified') {
+          await supabase.auth.mfa.unenroll({ factorId: stale.id });
+        }
+      }
       const { data, error } = await supabase.auth.mfa.enroll({
         factorType: 'totp',
         friendlyName: `Authenticator (${new Date().toISOString().slice(0, 10)})`,
@@ -115,9 +124,17 @@ export function useMfa() {
 
   const cancelEnroll = () => {
     // Abandoning enrollment leaves an unverified factor behind — clean it up
-    // so the list doesn't accumulate ghosts.
-    if (enrolling) removeFactorMutation.mutate(enrolling.factorId);
+    // so the list doesn't accumulate ghosts. Silently: the person cancelled,
+    // they did not remove a factor, so no "Factor removed" toast. A failed
+    // cleanup is harmless — the next enrollment clears unverified factors.
+    if (enrolling) {
+      void supabaseMFAService
+        .unenrollFactor(enrolling.factorId)
+        .catch(() => {})
+        .finally(() => queryClient.invalidateQueries({ queryKey: MFA_FACTORS_QUERY_KEY }));
+    }
     setEnrolling(null);
+    setEnrollCode('');
   };
 
   return {
@@ -126,6 +143,11 @@ export function useMfa() {
     factorsError: factorsQuery.isError,
     onRetryFactors: () => factorsQuery.refetch(),
     sessionVerified: aalQuery.data?.current_level === 'aal2',
+    /** This session still owes a TOTP challenge before sensitive actions
+     *  (KRTX-1386): a verified TOTP factor is enrolled and the session is aal1.
+     *  `requestMfaStepUp` (mfa-step-up.tsx) turns it into "ask for the code
+     *  first". */
+    challengeRequired: mfaChallengeRequired(aalQuery.data),
 
     enrolling,
     enrollCode,

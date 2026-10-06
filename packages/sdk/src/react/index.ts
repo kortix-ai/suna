@@ -2,6 +2,16 @@
 
 export * from './use-prompt-attachments';
 
+// The connector setup-link flow: one phase machine, one link-info cache. The
+// host injects the popup opener and browser storage (see ConnectorSetupOptions).
+export {
+  useConnectorSetup,
+  useConnectorLinkInfo,
+  type ConnectorSetupOptions,
+  type ConnectorSetupPhase,
+  type ConnectorPopupOpener,
+} from './connector-setup';
+
 // The one call a host makes on every identity change (sign-out, a different
 // user signing in) to drop the SDK's per-user in-memory session state.
 export { resetIdentityState } from './reset-identity-state';
@@ -125,6 +135,7 @@ export { useAccountSecretResources, useSessionProviderSecretPools } from './use-
 export { useProjectTriggers, projectTriggersKey } from './use-project-triggers';
 export { useProjectReminders, useSessionReminders } from './use-reminders';
 export { useSessionMessageAuthors } from './use-session-message-authors';
+export { useSessionModelUsage } from './use-session-model-usage';
 export { useChangeRequests, changeRequestsKey } from './use-change-requests';
 export { useGatewayRoutingPolicy, gatewayRoutingPolicyKey } from './use-gateway-routing-policy';
 export {
@@ -141,6 +152,7 @@ export {
 // `instanceof`-match it without reaching into the hook's internal path.
 export { NoCompactionModelError } from './use-opencode-sessions/no-compaction-model-error';
 export * from './use-admin-accounts';
+export * from './use-admin-role';
 export * from './use-admin-projects';
 export * from './use-admin-analytics';
 export * from './use-admin-activity-analytics';

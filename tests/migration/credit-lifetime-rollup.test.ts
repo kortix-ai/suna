@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { type Ports, computePorts, repoRoot, runMigrate, sh, waitForPostgresReady } from '../../scripts/worktree/lib';
+import { type Ports, computePorts, repoRoot, runMigrate, sh } from '../../scripts/worktree/lib';
 
 const dockerOk = sh(['docker', 'info']).ok;
 const CONTAINER = 'kortix-lifetime-rollup-test';
@@ -18,6 +18,15 @@ function psql(sql: string): string {
   const res = sh(['psql', url, '-v', 'ON_ERROR_STOP=1', '-tAc', sql]);
   if (!res.ok) throw new Error(`psql failed: ${res.stderr}\n${sql}`);
   return res.stdout.trim();
+}
+
+function pgReady(): boolean {
+  // Host TCP probe: `docker exec pg_isready` answers over the unix socket,
+  // which initdb's temporary socket-only server satisfies while nothing serves
+  // TCP yet — the published port's proxy then accepts and closes the suite's
+  // first `psql` (`server closed the connection unexpectedly`). See
+  // worktree-migrate.test.ts for the full timeline and CI run 36153691220.
+  return sh(['psql', url, '-tAc', 'select 1']).ok;
 }
 
 function newAccount(): string {
@@ -80,7 +89,11 @@ suite('credit_accounts lifetime_* rollup (throwaway Postgres)', () => {
       'full_page_writes=off',
     ]);
     if (!up.ok) throw new Error(`could not start test container: ${up.stderr}`);
-    await waitForPostgresReady(url);
+    for (let i = 0; i < 60; i++) {
+      if (pgReady()) break;
+      await Bun.sleep(1000);
+    }
+    if (!pgReady()) throw new Error('test Postgres never became ready');
     const code = await runMigrate(ROOT, ports);
     if (code !== 0) throw new Error('migrations failed');
   }, 240_000);

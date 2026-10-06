@@ -5,11 +5,9 @@
 // - ./proxy/app      — the `proxy` Hono router instance + shared `services`/types (leaf)
 // - ./proxy/helpers  — auth, body/header, reservation & settlement helpers, key injection
 // - ./proxy/handlers — the three-mode request handlers + LLM/tool billing
-// - ./proxy/routes   — registers every `.all()` route on `proxy` (side effect, original order)
+// - ./proxy/routes   — registerProxyRoutes() registers every `.all()` route on `proxy`
 //
-// Import order below preserves route-registration order. `proxy` is created in app.ts
-// (a leaf with no route side effects), then ./proxy/routes registers the catch-alls.
-import { proxy } from './proxy/app';
-import './proxy/routes';
-
-export { proxy };
+// `proxy` is created in ./proxy/app (a leaf with no route side effects).
+// router/index.ts calls registerProxyRoutes() right before it mounts `proxy`.
+export { proxy } from './proxy/app';
+export { registerProxyRoutes } from './proxy/routes';

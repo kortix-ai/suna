@@ -1,4 +1,4 @@
-export interface SessionCost {
+interface SessionCost {
   session_id: string;
   llm_cost: number;
   compute_cost: number;

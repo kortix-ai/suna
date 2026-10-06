@@ -55,3 +55,15 @@ export function managedOverlayRoot(dir: string, projectRoot?: string): string {
   const rootKeepsSkills = !existsSync(join(dir, SKILLS_DIR)) && existsSync(join(projectRoot, SKILLS_DIR))
   return rootKeepsSkills ? projectRoot : dir
 }
+
+/**
+ * OpenCode's config dir inside a release, as `resolveOpencodeConfigDir` finds
+ * it in `/workspace`: the manifest's dir when it holds an `opencode.json[c]`.
+ * Null when the repository has none; OpenCode then runs the image default, as
+ * it does on the working tree.
+ */
+export function releaseConfigDir(releaseRoot: string, configDir: string | null): string | null {
+  if (!configDir) return null
+  const dir = join(releaseRoot, configDir)
+  return existsSync(join(dir, 'opencode.jsonc')) || existsSync(join(dir, 'opencode.json')) ? dir : null
+}
