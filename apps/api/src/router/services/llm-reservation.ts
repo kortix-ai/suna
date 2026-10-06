@@ -245,6 +245,36 @@ export async function settleLlmReservation(input: {
   });
 }
 
+/**
+ * Settle a delivered response that reported no usage. Fail closed: the amount
+ * already held is the charge. No wallet movement, one usage event. A null
+ * reservation (billing off) records nothing.
+ */
+export async function settleHeldLlmReservation(input: {
+  reservation: LlmCreditReservation | null;
+  accountId: string;
+  modelId: string;
+  actor: ActorContext | null;
+  logPrefix: string;
+  provider: string;
+  route: string;
+  streaming?: boolean;
+  upstreamStatus?: number;
+  sessionId?: string;
+}): Promise<void> {
+  const { reservation, ...rest } = input;
+  if (!reservation) return;
+  await settleLlmReservation({
+    ...rest,
+    promptTokens: reservation.promptTokens,
+    completionTokens: reservation.completionTokens,
+    actualCost: reservation.cost,
+    reservation,
+    logPrefix: `${input.logPrefix} (no usage reported, held amount)`,
+    upstreamStatus: input.upstreamStatus ?? 200,
+  });
+}
+
 export async function refundLlmReservation(
   reservation: LlmCreditReservation | null,
   description: string,

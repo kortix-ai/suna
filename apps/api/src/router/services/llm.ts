@@ -10,6 +10,7 @@ import {
 import type { ActorContext } from '../../shared/actor-context';
 import {
   refundLlmReservation,
+  settleHeldLlmReservation,
   settleLlmReservation,
   type LlmCreditReservation,
 } from './llm-reservation';
@@ -83,7 +84,13 @@ export async function proxyToOpenRouter(
   const openrouterId = resolveOpenRouterId(modelId);
 
   // Rewrite the model field to the actual OpenRouter model ID
-  const forwardBody = { ...body, model: openrouterId };
+  const forwardBody: Record<string, unknown> = { ...body, model: openrouterId };
+  if (isStreaming) {
+    forwardBody.stream_options = {
+      ...((body.stream_options as Record<string, unknown> | undefined) ?? {}),
+      include_usage: true,
+    };
+  }
 
   const url = `${config.OPENROUTER_API_URL}/chat/completions`;
 
@@ -153,13 +160,50 @@ export interface UsageAccumulator {
   usage: UsageInfo;
 }
 
+/**
+ * The object that carries `usage` in one SSE frame. Anthropic nests it under
+ * `message` on `message_start`. The OpenAI Responses API nests it under
+ * `response` on the terminal `response.completed` / `response.incomplete` /
+ * `response.failed` frames.
+ */
+function usageSource(chunk: any, provider: 'openai' | 'anthropic'): any {
+  if (provider === 'anthropic' && chunk?.type === 'message_start') return chunk.message;
+  if (typeof chunk?.type === 'string' && chunk.type.startsWith('response.') && chunk.response?.usage) {
+    return chunk.response;
+  }
+  return chunk;
+}
+
+/**
+ * Force the upstream to report token usage on an OpenAI-compatible chat
+ * completions stream. Without `stream_options.include_usage` OpenAI sends no
+ * usage frame, and the stream cannot be billed from the real count.
+ * Returns the body unchanged for any other request.
+ */
+export function forceStreamUsage(
+  body: ArrayBuffer | string | undefined,
+  headers?: Headers,
+): ArrayBuffer | string | undefined {
+  if (!body) return body;
+  try {
+    const text = typeof body === 'string' ? body : new TextDecoder().decode(body);
+    const json = JSON.parse(text);
+    if (json?.stream !== true || !Array.isArray(json.messages)) return body;
+    json.stream_options = { ...(json.stream_options ?? {}), include_usage: true };
+    const next = JSON.stringify(json);
+    headers?.set('Content-Length', new TextEncoder().encode(next).length.toString());
+    return next;
+  } catch {
+    return body;
+  }
+}
+
 export function accumulateUsageChunk(
   current: UsageAccumulator | null,
   chunk: any,
   provider: 'openai' | 'anthropic' = 'openai',
 ): UsageAccumulator | null {
-  const source =
-    provider === 'anthropic' && chunk?.type === 'message_start' ? chunk.message : chunk;
+  const source = usageSource(chunk, provider);
   const next = extractUsage(source, provider);
   const model = source?.model ?? chunk?.model ?? current?.model;
   if (!next) return current ? { ...current, ...(model ? { model } : {}) } : null;
@@ -184,6 +228,7 @@ export function accumulateUsageChunk(
 export async function consumeSseUsage(
   stream: ReadableStream<Uint8Array>,
   provider: 'openai' | 'anthropic' = 'openai',
+  progress?: { bytes: number },
 ): Promise<UsageAccumulator | null> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
@@ -193,6 +238,7 @@ export async function consumeSseUsage(
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
+    if (progress) progress.bytes += value.byteLength;
 
     buffer += decoder.decode(value, { stream: true });
 
@@ -211,6 +257,20 @@ export async function consumeSseUsage(
   }
 
   return usageState;
+}
+
+function settleHeld(options: Parameters<typeof settleStreamUsage>[0], modelId: string) {
+  return settleHeldLlmReservation({
+    reservation: options.reservation,
+    accountId: options.accountId,
+    modelId,
+    actor: options.actor,
+    logPrefix: options.logPrefix,
+    provider: options.pricingProvider,
+    route: options.route,
+    streaming: true,
+    sessionId: options.sessionId,
+  });
 }
 
 /**
@@ -238,7 +298,6 @@ export async function settleStreamUsage(options: {
   sessionId?: string;
   /** The labels below are kept verbatim from each call site. */
   noUsageWarning: string;
-  noUsageRefund: string;
   /** When set, a zero-token stream refunds instead of settling at cost 0. */
   zeroTokensWarning?: string;
   zeroTokensRefund?: string;
@@ -248,13 +307,16 @@ export async function settleStreamUsage(options: {
   successLog: (modelId: string, usage: UsageInfo, cost: number) => string;
 }): Promise<void> {
   let settlementStarted = false;
+  const progress = { bytes: 0 };
   try {
-    const usageState = await consumeSseUsage(options.stream, options.provider);
+    const usageState = await consumeSseUsage(options.stream, options.provider, progress);
     const modelId = options.modelId ?? usageState?.model ?? 'unknown';
 
     if (!usageState) {
+      // The client already received the stream. Fail closed: keep the held amount.
       console.warn(options.noUsageWarning);
-      await refundLlmReservation(options.reservation, options.noUsageRefund);
+      settlementStarted = true;
+      await settleHeld(options, modelId);
       return;
     }
 
@@ -304,7 +366,12 @@ export async function settleStreamUsage(options: {
     }
   } catch (err) {
     console.error(options.scanErrorLog, err);
-    if (!settlementStarted) {
+    if (!settlementStarted && progress.bytes > 0) {
+      // The stream broke after the client received bytes: keep the held amount.
+      await settleHeld(options, options.modelId ?? 'unknown').catch((settleError) =>
+        console.error(options.refundFailedLog, settleError),
+      );
+    } else if (!settlementStarted) {
       await refundLlmReservation(options.reservation, options.errorRefund).catch((refundError) =>
         console.error(options.refundFailedLog, refundError),
       );

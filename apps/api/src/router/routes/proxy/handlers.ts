@@ -6,6 +6,7 @@ import { requireModelPricing } from '../../config/models';
 import {
   calculateCost,
   extractUsage,
+  forceStreamUsage,
   settleStreamUsage,
 } from '../../services/llm';
 import { resolveActorFromRequest, type ActorContext } from '../../../shared/actor-context';
@@ -14,6 +15,7 @@ import type { ToolCreditReservation } from './app';
 import {
   refundLlmReservation,
   reserveEstimatedLlmCredits,
+  settleHeldLlmReservation,
   settleLlmReservation,
   type LlmCreditReservation,
 } from '../../services/llm-reservation';
@@ -182,6 +184,10 @@ async function handleKortixProxy(
 
   body = injectApiKey(service, headers, body, /* useKortixInjection */ true);
   body = maybeNormalizeOpenAIResponsesInput(service, method, subPath, body, headers);
+  // A managed OpenAI-compatible chat stream sends no usage frame unless asked.
+  if (service.isLlm === true && service.name !== 'anthropic' && subPath.endsWith('/chat/completions')) {
+    body = forceStreamUsage(body, headers);
+  }
   // Route-specific billing overrides service default.
   const billingToolName = matchedRoute.billingToolName || service.billingToolName;
   let reservation: LlmCreditReservation | null = null;
@@ -312,8 +318,7 @@ async function billLlmKortixProxy(
       pricingProvider: pricingProvider(service, true),
       route: usageRoute(service, subPath),
       logPrefix: 'LLM kortix stream billing',
-      noUsageWarning: `[PROXY] LLM kortix stream (${service.name}): no usage data — billing skipped`,
-      noUsageRefund: `LLM reservation refund after missing stream usage: ${service.name}`,
+      noUsageWarning: `[PROXY] LLM kortix stream (${service.name}): no usage data — settling at the held amount`,
       zeroTokensWarning: `[PROXY] LLM kortix stream (${service.name}): zero tokens — billing skipped`,
       zeroTokensRefund: `LLM reservation refund after zero stream usage: ${service.name}`,
       errorRefund: `LLM reservation refund after stream usage error: ${service.name}`,
@@ -384,12 +389,24 @@ async function billLlmKortixProxy(
     console.log(
       `[PROXY] LLM kortix ${modelId}: ${usage.promptTokens}/${usage.completionTokens} tokens, cost=$${cost.toFixed(6)} (${KORTIX_MARKUP}x)`,
     );
-  } else {
-    console.warn(`[PROXY] LLM kortix ${service.name}: no usage data in response — billing skipped`);
+  } else if (usage) {
+    // The upstream reported zero tokens: nothing was consumed.
     await refundLlmReservation(
       reservation,
-      `LLM reservation refund after missing usage: ${service.name}`,
+      `LLM reservation refund after zero usage: ${service.name}`,
     ).catch((err) => console.error('[PROXY] LLM reservation refund failed:', err));
+  } else {
+    console.warn(`[PROXY] LLM kortix ${service.name}: no usage data in response — settling at the held amount`);
+    await settleHeldLlmReservation({
+      reservation,
+      accountId,
+      modelId,
+      actor,
+      logPrefix: 'LLM kortix billing',
+      provider: pricingProvider(service, true),
+      route: usageRoute(service, subPath),
+      upstreamStatus: upstream.status,
+    }).catch((err) => console.error('[PROXY] LLM held settlement failed:', err));
   }
 
   return new Response(JSON.stringify(responseBody), {
