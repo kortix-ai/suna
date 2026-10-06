@@ -1546,6 +1546,7 @@
         "email": "Courriel",
         "scheduled": "Programmée",
         "webhook": "Webhook",
+        "manual": "Manuel",
         "all": "Tous"
       },
       "statusValue": {

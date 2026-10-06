@@ -20,6 +20,8 @@
 import type { sessionSandboxes } from '@kortix/db';
 import { describe, expect, test } from 'bun:test';
 import { stoppedWakeResult } from './index';
+import { sessionStartFailureFromSandbox } from './stopped-wake-result';
+import { SANDBOX_PROVIDER_STORAGE_FULL_MESSAGE } from '../../platform/services/sandbox-provisioning-error';
 
 const FAILED_AT = new Date('2026-08-26T03:37:09.000Z');
 const at = (ms: number) => new Date(FAILED_AT.getTime() + ms);
@@ -158,5 +160,27 @@ describe('stoppedWakeResult — a stamped failure is a cooldown, not a dead end'
   test('a row that is not stopped is never this projection', () => {
     const active = { ...stoppedRow(CAPTURED), status: 'active' as const };
     expect(stoppedWakeResult(active, 'default', null, at(1_000))).toBeNull();
+  });
+});
+
+// Prod 2026-10-06: sessions that failed on a full provider storage quota were
+// stored as `sandbox-provider` with "could not start this session. Try again."
+// Reading them re-classifies the stored provider text, so they now name the cause.
+describe('sessionStartFailureFromSandbox — a full provider storage quota', () => {
+  test('an already-failed session names the full storage, not a generic provider failure', () => {
+    const row = {
+      ...stoppedRow({
+        failureCategory: 'sandbox-provider',
+        errorMessage: 'The sandbox provider could not start this session. Try again.',
+        lastProvisioningError:
+          'Total disk limit exceeded. Maximum allowed: 40000GiB.\nConsider archiving your unused Sandboxes to free up available storage.',
+      }),
+      status: 'error' as const,
+    };
+    expect(sessionStartFailureFromSandbox(row)).toEqual({
+      category: 'provider-capacity',
+      message: SANDBOX_PROVIDER_STORAGE_FULL_MESSAGE,
+      retryable: true,
+    });
   });
 });
