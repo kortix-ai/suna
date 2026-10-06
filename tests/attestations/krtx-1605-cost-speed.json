@@ -1,5 +1,5 @@
 {
-  "source_hash": "7ae40dc918b3bf4655a8feadf391775efd71f3a1754a0cd84510b4c1fa1ecb29",
+  "source_hash": "210a4ea5953b0c3960a328706da2fbb5c3ecaef1e9ec05f309bf84ee313964fe",
   "diff_files": [
     "apps/api/src/shared/cost-rollups.test.ts",
     "apps/api/src/shared/cost-rollups.ts",
@@ -9,12 +9,12 @@
     "packages/db/src/schema/kortix.ts"
   ],
   "diff_hash": "c7ca190eda409b3c97c6126111768a342ce59dc191a504d62527e3c522a2b60f",
-  "head": "e6f7415d726fe6d03eca76c20cc4c01bbd4261aa",
+  "head": "d2401d09083fba8c5b78f37832f835eece76638c",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-06T23:32:53.983Z"
+  "at": "2026-10-06T23:47:25.269Z"
 }
