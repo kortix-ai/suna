@@ -1,7 +1,7 @@
 // Project files — list, search, read, and archive a project repo's files.
 
 import { backendApi } from '../../http/api-client';
-import { getSupabaseAccessTokenWithRetry } from '../../http/auth';
+import { sendChecked } from '../../http/transport';
 import { platformConfig } from '../../http/config';
 import { unwrap, type ProjectFileEntry } from './shared';
 
@@ -75,6 +75,9 @@ export async function readProjectFile(
   );
 }
 
+/** A large archive streams for minutes: the deadline is a hang detector, not a throughput cap. */
+const ARCHIVE_TIMEOUT_MS = 10 * 60_000;
+
 /**
  * Fetch a binary zip archive of a project repo (or subtree) as a Blob.
  *
@@ -91,15 +94,7 @@ export async function fetchProjectArchive(
   if (path) params.set('path', path);
   const query = params.toString() ? `?${params.toString()}` : '';
 
-  const token = await getSupabaseAccessTokenWithRetry();
   const url = `${platformConfig().backendUrl || ''}/projects/${projectId}/files/archive${query}`;
-  const res = await fetch(url, {
-    method: 'GET',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(text || `Failed to download (HTTP ${res.status})`);
-  }
+  const res = await sendChecked(url, { method: 'GET' }, { timeoutMs: ARCHIVE_TIMEOUT_MS }, 'Failed to download');
   return await res.blob();
 }

@@ -87,6 +87,8 @@ export function isPrivateIp(ip: string): boolean {
     if (a === 172 && b >= 16 && b <= 31) return true; // 172.16/12
     if (a === 192 && b === 168) return true; // 192.168/16
     if (a === 100 && b >= 64 && b <= 127) return true; // 100.64/10 CGNAT (not public-routable)
+    if (a === 192 && b === 0 && parts[2] === 0) return true; // 192.0.0/24 IETF protocol assignments
+    if (a === 192 && b === 88 && parts[2] === 99) return true; // 192.88.99/24 deprecated 6to4 relay anycast
     if (a === 192 && b === 0 && parts[2] === 2) return true; // 192.0.2/24 TEST-NET-1
     if (a === 198 && (b === 18 || b === 19)) return true; // 198.18/15 benchmark
     if (a === 198 && b === 51 && parts[2] === 100) return true; // 198.51.100/24 TEST-NET-2
@@ -103,6 +105,15 @@ export function isPrivateIp(ip: string): boolean {
   // (`::7f00:1`). Check the embedded address as v4.
   const embedded = embeddedIpv4(v);
   if (embedded) return isPrivateIp(embedded);
+  const groups = ipv6Groups(v);
+  if (groups) {
+    // 6to4 (2002::/16) carries an IPv4 address in groups 1-2: private v4 → private.
+    if (groups[0] === 0x2002) {
+      return isPrivateIp(`${groups[1] >> 8}.${groups[1] & 0xff}.${groups[2] >> 8}.${groups[2] & 0xff}`);
+    }
+    // Teredo (2001::/32) tunnels to an obfuscated v4 address; no public service answers there.
+    if (groups[0] === 0x2001 && groups[1] === 0) return true;
+  }
   if (v.startsWith('fc') || v.startsWith('fd')) return true; // fc00::/7 ULA (incl. AWS fd00:ec2::254 metadata)
   if (v.startsWith('fe8') || v.startsWith('fe9') || v.startsWith('fea') || v.startsWith('feb'))
     return true; // fe80::/10 link-local
@@ -146,11 +157,25 @@ function isAllowlistedHost(host: string, allow: readonly string[] | undefined): 
  * fully close it, a connect-time IP pin would be needed, which Bun's fetch does
  * not expose. This is the standard production SSRF posture and a strict
  * improvement over the prior hostname-string regex.
+ *
+ * `safeEgressFetch` closes that window: it connects to the address checked here
+ * (see `resolveEgressTarget`). A caller that fetches on its own gets only the
+ * resolve-time check.
  */
 export async function assertSafeEgressUrl(
   rawUrl: string,
   opts: SafeEgressUrlOptions = {},
 ): Promise<URL> {
+  return (await resolveEgressTarget(rawUrl, opts)).url;
+}
+
+/** A validated URL and the address its host resolved to, or null for an IP literal or an allowlisted host. */
+interface EgressTarget {
+  url: URL;
+  pinnedAddress: string | null;
+}
+
+async function resolveEgressTarget(rawUrl: string, opts: SafeEgressUrlOptions): Promise<EgressTarget> {
   let parsed: URL;
   try {
     parsed = new URL(rawUrl);
@@ -165,13 +190,13 @@ export async function assertSafeEgressUrl(
     throw new UnsafeEgressError('url must not contain credentials', rawUrl);
   }
   const host = parsed.hostname;
-  if (isAllowlistedHost(host, opts.allowPrivateHosts)) return parsed;
+  if (isAllowlistedHost(host, opts.allowPrivateHosts)) return { url: parsed, pinnedAddress: null };
   // Literal IP host → check directly without DNS. `URL.hostname` keeps the
   // brackets of an IPv6 literal (`[::1]`); strip them so `isIP` sees the address.
   const literal = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
   if (isIP(literal) !== 0) {
     if (isPrivateIp(literal)) throw new UnsafeEgressError(`blocked private ip host: ${host}`, rawUrl);
-    return parsed;
+    return { url: parsed, pinnedAddress: null };
   }
   let resolved: Array<{ address: string; family: number }>;
   try {
@@ -193,7 +218,21 @@ export async function assertSafeEgressUrl(
       );
     }
   }
-  return parsed;
+  return { url: parsed, pinnedAddress: resolved[0]!.address };
+}
+
+/**
+ * The request to send for a target: the checked address in the URL, the
+ * original host in `Host` and in the TLS server name. The fetch then cannot
+ * resolve the name a second time, so a record that changes between the check
+ * and the connect (DNS rebinding) has no effect. Certificate verification still
+ * runs against the original host name.
+ */
+function pinnedRequest(target: EgressTarget): { url: URL; headersHost: string | null; serverName: string | null } {
+  if (!target.pinnedAddress) return { url: target.url, headersHost: null, serverName: null };
+  const pinned = new URL(target.url);
+  pinned.hostname = target.pinnedAddress.includes(':') ? `[${target.pinnedAddress}]` : target.pinnedAddress;
+  return { url: pinned, headersHost: target.url.host, serverName: target.url.hostname };
 }
 
 interface SafeFetchInit extends RequestInit, SafeEgressUrlOptions {}
@@ -218,7 +257,8 @@ export async function safeEgressFetch(
 ): Promise<Response> {
   const { allowHttp, allowPrivateHosts, ...fetchInit } = init;
   const guard = { allowHttp, allowPrivateHosts };
-  let url = await assertSafeEgressUrl(rawUrl, guard);
+  let target = await resolveEgressTarget(rawUrl, guard);
+  let url = target.url;
   let hops = 0;
   // Caller-provided signal must propagate to every hop.
   const signal = fetchInit.signal;
@@ -226,7 +266,18 @@ export async function safeEgressFetch(
   let body = fetchInit.body;
   let headers = fetchInit.headers;
   for (;;) {
-    const res = await fetch(url, { ...fetchInit, method, body, headers, redirect: 'manual', signal });
+    const pinned = pinnedRequest(target);
+    const hopHeaders = new Headers(headers);
+    if (pinned.headersHost) hopHeaders.set('host', pinned.headersHost);
+    const res = await fetch(pinned.url, {
+      ...fetchInit,
+      method,
+      body,
+      headers: hopHeaders,
+      redirect: 'manual',
+      signal,
+      ...(pinned.serverName ? { tls: { ...(fetchInit as { tls?: object }).tls, serverName: pinned.serverName } } : {}),
+    } as RequestInit);
     if (res.status < 300 || res.status >= 400) return res;
     // 3xx — follow manually with re-validation.
     if (++hops > MAX_REDIRECTS) {
@@ -234,7 +285,8 @@ export async function safeEgressFetch(
     }
     const location = res.headers.get('location');
     if (!location) return res; // malformed 3xx with no Location → let caller see it
-    const next = await assertSafeEgressUrl(new URL(location, url).href, guard);
+    const nextTarget = await resolveEgressTarget(new URL(location, url).href, guard);
+    const next = nextTarget.url;
     if (
       (res.status === 303 && method !== 'HEAD') ||
       ((res.status === 301 || res.status === 302) && method === 'POST')
@@ -253,5 +305,6 @@ export async function safeEgressFetch(
       headers = stripped;
     }
     url = next;
+    target = nextTarget;
   }
 }

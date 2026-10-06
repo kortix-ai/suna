@@ -116,7 +116,8 @@ projectsApp.use('*', async (c, next) => {
   c.set('sandboxId', SESSION_ID);
   await next();
 });
-const { auditIngestChunkSize, boundChunkWrite } = await import('./project-audit');
+const { auditIngestChunkSize, boundChunkWrite, registerProjectAuditRoutes } = await import('./project-audit');
+registerProjectAuditRoutes();
 
 function hostileEvent() {
   return {

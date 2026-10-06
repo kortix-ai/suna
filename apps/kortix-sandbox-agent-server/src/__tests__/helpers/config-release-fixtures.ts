@@ -43,11 +43,14 @@ export interface BuiltRelease {
   archive: Buffer
 }
 
-/** The API's release builder, run against a real repository. */
+/**
+ * The API's release builder, run against a real repository: the commit's whole
+ * tree, with `configDir` naming OpenCode's config dir inside it.
+ */
 export function buildRelease(
   repo: string,
   commit: string,
-  configDir: string,
+  configDir: string | null,
   opts: {
     projectId?: string
     governance?: string | null
@@ -55,7 +58,7 @@ export function buildRelease(
     agentRepoint?: { from: string | null; to: string | null; applied: boolean; reason: string | null }
   } = {},
 ): BuiltRelease {
-  const tree = git(repo, 'rev-parse', `${commit}:${configDir}`)
+  const tree = git(repo, 'rev-parse', `${commit}^{tree}`)
   const listed = spawnSync('git', ['-C', repo, 'ls-tree', '-r', '-z', tree], { encoding: 'buffer' })
   const files: ConfigReleaseFile[] = []
   for (const row of listed.stdout.toString('utf8').split('\0').filter(Boolean)) {
@@ -73,7 +76,7 @@ export function buildRelease(
   const etag = governanceEtag(governance)
   const projectId = opts.projectId ?? 'proj-1'
   const descriptor: ConfigReleaseDescriptor = {
-    format: 'config-release-v1',
+    format: 'config-release-v2',
     release_id: createHash('sha256').update(`${tree}:${etag ?? ''}`).digest('hex'),
     mode: 'follow-base',
     source_commit: commit,

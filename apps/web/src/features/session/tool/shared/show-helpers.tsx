@@ -22,15 +22,16 @@ import {
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolActionBar } from '@/features/session/tool/shared/tool-action-bar';
 import { useTranslations } from '@/i18n/use-translations';
-import { safeHttpUrl } from '@kortix/shared';
 import { cn } from '@/lib/utils';
 import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import { enrichPreviewMetadata } from '@/lib/utils/session-context';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { safeHttpUrl } from '@kortix/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { type KeyboardEvent, type ReactElement, useEffect, useRef, useState } from 'react';
+import { type KeyboardEvent, type ReactElement, type ReactNode, useEffect, useRef, useState } from 'react';
 
+import { CopyButton } from '@/components/markdown/copy-button';
 import { STATUS_BORDER } from '@/components/ui/status';
 import { buildStaticFileLocalUrl } from '@kortix/sdk';
 import type { Icon as PhosphorIcon } from '@phosphor-icons/react';
@@ -327,20 +328,82 @@ export function ShowFileActions({
   );
 }
 
+/** What a `show` hover card names: the target the card renders. */
+export interface ShowHoverTarget {
+  path?: string;
+  url?: string;
+  title?: string;
+}
+
 /**
- * The file a `show` card renders, named on hover: the full file name, then
- * its full path. Nothing else — the card header already carries the title.
- * Wraps the single-item header and every carousel tab.
+ * Resolves a `show` target to what its hover card prints, or null when there
+ * is nothing to name (inline content with no path or URL). `copy` is the
+ * value the location row's copy button writes.
+ *
+ * - A running port: the site's title (else `localhost:<port>`), then the
+ *   address it serves on. Copy gives the full `http://localhost:<port>/…`.
+ * - A file: its file name, then its full path.
+ * - A web link: its title (else its domain), then the full URL.
  */
-export function ShowFileHoverCard({ path, children }: { path: string; children: ReactElement }) {
+export function showHoverDetails(target: ShowHoverTarget): {
+  name: string;
+  detail: string;
+  copy: string;
+  Icon: PhosphorIcon;
+} | null {
+  const title = target.title?.trim();
+  const local = target.url && !isAppRouteUrl(target.url) ? parseLocalhostUrl(target.url) : null;
+  if (local) {
+    const address = `localhost:${local.port}${local.path === '/' ? '' : local.path}`;
+    return {
+      name: title || `localhost:${local.port}`,
+      detail: address,
+      copy: local.originalUrl,
+      Icon: AppWindowIcon,
+    };
+  }
+  if (target.path) {
+    return {
+      name: target.path.split('/').pop() || target.path,
+      detail: target.path,
+      copy: target.path,
+      Icon: FolderSimpleIcon,
+    };
+  }
+  const external = target.url ? safeHttpUrl(target.url) : null;
+  if (external) {
+    return {
+      name: title || showDomain(external),
+      detail: external,
+      copy: external,
+      Icon: Globe,
+    };
+  }
+  return null;
+}
+
+/**
+ * The target a `show` card renders, named on hover: a name line, then the
+ * place it lives (folder path, port address, or URL) with a copy button. The card header already carries the
+ * type icon, so the name line has none. Wraps the single-item header and
+ * every carousel tab.
+ */
+export function ShowHoverCard({
+  target,
+  children,
+}: {
+  target: ShowHoverTarget;
+  children: ReactElement;
+}) {
   const [open, setOpen] = useState(false);
   // A press means "I am clicking", not "tell me about this file". Radix also
   // opens on focus, which a click gives the tab, so without this the card pops
   // up right after every tab switch. Cleared when the pointer leaves.
   const pressed = useRef(false);
 
-  if (!path) return children;
-  const name = path.split('/').pop() || path;
+  const details = showHoverDetails(target);
+  if (!details) return children;
+  const { name, detail, copy, Icon } = details;
 
   return (
     <HoverCard
@@ -370,13 +433,18 @@ export function ShowFileHoverCard({ path, children }: { path: string; children: 
         animated={false}
         className="flex w-max max-w-md flex-col gap-1 px-3 py-2 text-sm"
       >
-        {/* The name, then a folder row with the full path. The header already
-            shows the type icon, so the card carries none. Neither line wraps;
-            a path too long for the card truncates at its end. */}
+        {/* Neither the name nor the location wraps; a value too long for the
+            card truncates at its end. */}
         <span className="text-foreground truncate">{name}</span>
         <div className="text-muted-foreground flex min-w-0 items-center gap-2">
-          <FolderSimpleIcon className="size-4 shrink-0" />
-          <span className="truncate">{path}</span>
+          <Icon className="size-4 shrink-0" />
+          <span className="min-w-0 truncate">{detail}</span>
+          <CopyButton
+            code={copy}
+            size="sm"
+            hintSide="top"
+            className="text-muted-foreground -mr-1.5 ml-auto shrink-0"
+          />
         </div>
       </HoverCardContent>
     </HoverCard>
@@ -393,10 +461,14 @@ export function ShowCarouselTabs({
   activeIndex,
   onSelect,
   label,
+  tabIcon,
 }: {
   items: ShowCarouselItem[];
   activeIndex: number;
   onSelect: (index: number) => void;
+  /** Replaces a tab's type icon (the dot matrix while the previews load).
+   *  Return null to keep the type icon. */
+  tabIcon?: (item: ShowCarouselItem) => ReactNode;
   /** The call's own title. The tabs replace the visible header title, so it
    *  names the tablist for assistive tech instead. */
   label?: string;
@@ -442,7 +514,7 @@ export function ShowCarouselTabs({
         const active = i === activeIndex;
         const label = getShowCarouselItemLabel(item);
         return (
-          <ShowFileHoverCard key={i} path={item.path || ''}>
+          <ShowHoverCard key={i} target={item}>
             <button
               ref={(el) => {
                 tabRefs.current[i] = el;
@@ -451,8 +523,8 @@ export function ShowCarouselTabs({
               role="tab"
               aria-selected={active}
               tabIndex={active ? 0 : -1}
-              // A file tab is named by its hover card; a native title would stack on it.
-              title={item.path ? undefined : item.title || label}
+              // A tab with a hover card is named by it; a native title would stack on it.
+              title={showHoverDetails(item) ? undefined : item.title || label}
               onClick={() => onSelect(i)}
               className={cn(
                 'flex h-7 shrink-0 items-center gap-1.5 rounded-sm px-2 text-xs font-medium',
@@ -466,11 +538,12 @@ export function ShowCarouselTabs({
               {item.status === 'pending' ? (
                 <Loading className="size-3.5 shrink-0" />
               ) : (
-                showFileTypeIcon(item.type, item.path || undefined, 'size-3.5', item.url)
+                (tabIcon?.(item) ??
+                showFileTypeIcon(item.type, item.path || undefined, 'size-3.5', item.url))
               )}
               <span className={cn(label.startsWith(':') && 'tabular-nums')}>{label}</span>
             </button>
-          </ShowFileHoverCard>
+          </ShowHoverCard>
         );
       })}
     </div>

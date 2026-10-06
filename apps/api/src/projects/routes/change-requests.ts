@@ -29,13 +29,13 @@ import {
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { resolveChangeRequestBase, resolveChangeRequestOrigin } from '../change-request-policy';
 import { PROJECT_ACTIONS } from '../../iam';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { ChangeRequestListSchema, ChangeRequestSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { normalizeString } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
-import { continueSession } from '../session-lifecycle';
+import { deliverThroughQueue } from '../session-lifecycle';
 
 // ─── Change Requests ────────────────────────────────────────────────────────
 // Kortix-native PR layer. The CR is metadata stored alongside the project;
@@ -88,672 +88,675 @@ export async function refreshCrTips(input: {
   }
 }
 
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/change-requests',
-    tags: ['change-requests'],
-    summary: 'List change requests of a project',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-      query: z.object({}).passthrough(),
-    },
-    responses: {
-      200: json(ChangeRequestListSchema, 'Change requests'),
-      ...errors(400, 404),
-    },
-  }),
-  async (c) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
+export function registerChangeRequestsRoutes(): void {
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/change-requests',
+      tags: ['change-requests'],
+      summary: 'List change requests of a project',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        query: z.object({}).passthrough(),
+      },
+      responses: {
+        200: json(ChangeRequestListSchema, 'Change requests'),
+        ...errors(400, 404),
+      },
+    }),
+    async (c) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-    const statusFilter = normalizeString(c.req.query('status'))?.toLowerCase();
-    if (statusFilter && statusFilter !== 'all' && !['open', 'merged', 'closed'].includes(statusFilter)) {
-      return c.json({ error: 'Invalid status filter' }, 400);
-    }
-
-    // A session's "outcome" cards (apps/web session-outcomes-provider) used to
-    // fetch the WHOLE project's change requests — every open session thread,
-    // every 60s — just to filter client-side down to the 1-2 CRs that session
-    // actually opened. This scopes that at the source.
-    const originSessionId = normalizeString(c.req.query('origin_session_id'));
-
-    // `limit` is opt-in: omitted keeps the historical unbounded behavior every
-    // existing caller (the panel, the open-CR badge, `kortix cr list`) already
-    // depends on. A caller that adopts it gets a bounded, capped page.
-    // normalizeString answers null for an absent param: test nullish, or
-    // every plain list is refused as "Invalid limit" (Number(null) is 0).
-    const rawLimit = normalizeString(c.req.query('limit'));
-    let limit: number | undefined;
-    if (rawLimit != null) {
-      limit = Number(rawLimit);
-      if (!Number.isInteger(limit) || limit < 1) {
-        return c.json({ error: 'Invalid limit' }, 400);
+      const statusFilter = normalizeString(c.req.query('status'))?.toLowerCase();
+      if (statusFilter && statusFilter !== 'all' && !['open', 'merged', 'closed'].includes(statusFilter)) {
+        return c.json({ error: 'Invalid status filter' }, 400);
       }
-    }
 
-    const change_requests = await listChangeRequestsForProject(projectId, {
-      status: statusFilter as 'open' | 'merged' | 'closed' | 'all' | undefined,
-      originSessionId: originSessionId ?? undefined,
-      limit,
-    });
+      // A session's "outcome" cards (apps/web session-outcomes-provider) used to
+      // fetch the WHOLE project's change requests — every open session thread,
+      // every 60s — just to filter client-side down to the 1-2 CRs that session
+      // actually opened. This scopes that at the source.
+      const originSessionId = normalizeString(c.req.query('origin_session_id'));
 
-    return c.json({ change_requests });
-  },
-);
+      // `limit` is opt-in: omitted keeps the historical unbounded behavior every
+      // existing caller (the panel, the open-CR badge, `kortix cr list`) already
+      // depends on. A caller that adopts it gets a bounded, capped page.
+      // normalizeString answers null for an absent param: test nullish, or
+      // every plain list is refused as "Invalid limit" (Number(null) is 0).
+      const rawLimit = normalizeString(c.req.query('limit'));
+      let limit: number | undefined;
+      if (rawLimit != null) {
+        limit = Number(rawLimit);
+        if (!Number.isInteger(limit) || limit < 1) {
+          return c.json({ error: 'Invalid limit' }, 400);
+        }
+      }
 
-// POST /v1/projects/:projectId/change-requests
-// Body: { title, description?, head_ref, base_ref?, session_id? }
+      const change_requests = await listChangeRequestsForProject(projectId, {
+        status: statusFilter as 'open' | 'merged' | 'closed' | 'all' | undefined,
+        originSessionId: originSessionId ?? undefined,
+        limit,
+      });
 
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/change-requests',
-    tags: ['change-requests'],
-    summary: 'Open a change request',
-    description:
-      'Open a change request from a branch.',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: lenientBody({
-          title: z.string().openapi({ description: 'Change request title.' }),
-          head_ref: z.string().openapi({ description: 'Branch with the changes.' }),
-          description: z.string().optional().openapi({ description: 'Description, markdown.' }),
-          base_ref: z.string().optional().openapi({ description: 'Branch to merge into. Defaults to the session base or the project default branch.' }),
-          session_id: z.string().optional().openapi({ description: 'Session that made the changes. Set automatically for a session token.' }),
-        }) } } },
+      return c.json({ change_requests });
     },
-    responses: {
-      201: json(ChangeRequestSchema, 'The created change request'),
-      ...errors(400, 403, 404, 422, 500),
+  );
+
+  // POST /v1/projects/:projectId/change-requests
+  // Body: { title, description?, head_ref, base_ref?, session_id? }
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{projectId}/change-requests',
+      tags: ['change-requests'],
+      summary: 'Open a change request',
+      description:
+        'Open a change request from a branch.',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: lenientBody({
+            title: z.string().openapi({ description: 'Change request title.' }),
+            head_ref: z.string().openapi({ description: 'Branch with the changes.' }),
+            description: z.string().optional().openapi({ description: 'Description, markdown.' }),
+            base_ref: z.string().optional().openapi({ description: 'Branch to merge into. Defaults to the session base or the project default branch.' }),
+            session_id: z.string().optional().openapi({ description: 'Session that made the changes. Set automatically for a session token.' }),
+          }) } } },
+      },
+      responses: {
+        201: json(ChangeRequestSchema, 'The created change request'),
+        ...errors(400, 403, 404, 422, 500),
+      },
+    }),
+    async (c) => {
+      const projectId = c.req.param('projectId');
+      const body = await readJsonObject(c);
+      const loaded = await loadProjectForUser(c, projectId, 'write');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      // Human-side capability gate (Git Ops). Managers hold it; a custom
+      // role omits project.gitops.push to take Git-Ops away from a department.
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_GITOPS_PUSH,
+      );
+
+      // Per-agent gate: opening a CR is the agent's intended path to propose work.
+      // Default-deny — a scoped agent must be granted the leaf this route already
+      // gates the underlying commit on. `project.cr.open` was the SAME capability
+      // under a second name and is gone from the catalog (spec §2.4); a manifest
+      // still spelling it that way is rewritten on input by
+      // `canonicalizeGrantActions`, so the grant reaching here is always the leaf.
+      assertAgentScope(c, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
+
+      const title = normalizeString(body.title);
+      if (!title) return c.json({ error: 'title is required' }, 400);
+      const description = normalizeString(body.description) ?? '';
+      const headRef = normalizeString(body.head_ref ?? body.headRef);
+      if (!headRef) return c.json({ error: 'head_ref is required' }, 400);
+      // The session must be resolved BEFORE the base, because a session's own
+      // base is what the change request targets.
+      const actorIsSession = isProjectSessionPrincipal(c);
+      const originDecision = resolveChangeRequestOrigin({
+        actorIsSession,
+        actingSessionId: actorIsSession
+          ? ((c.get('sessionId') as string | null | undefined) ?? null)
+          : null,
+        requestedSessionId: normalizeString(body.session_id ?? body.sessionId),
+      });
+      if (!originDecision.ok) {
+        return c.json({ error: originDecision.error, code: originDecision.code }, 400);
+      }
+      let originSessionId = originDecision.originSessionId;
+      let sessionBaseRef: string | null = null;
+      if (originSessionId) {
+        const [sessionRow] = await db
+          .select({ sessionId: projectSessions.sessionId, baseRef: projectSessions.baseRef })
+          .from(projectSessions)
+          .where(
+            and(
+              eq(projectSessions.sessionId, originSessionId),
+              eq(projectSessions.projectId, projectId),
+            ),
+          )
+          .limit(1);
+        if (!sessionRow) {
+          if (actorIsSession) {
+            return c.json({ error: 'Authenticated session not found in this project', code: 'CR_SESSION_NOT_FOUND' }, 403);
+          }
+          originSessionId = null;
+        } else {
+          sessionBaseRef = normalizeString(sessionRow.baseRef);
+        }
+      }
+
+      const baseDecision = resolveChangeRequestBase({
+        requested: normalizeString(body.base_ref ?? body.baseRef),
+        sessionBase: sessionBaseRef,
+        projectDefault: loaded.row.defaultBranch,
+        actorIsSession,
+      });
+      if (!baseDecision.ok) {
+        return c.json({ error: baseDecision.error, code: baseDecision.code }, 400);
+      }
+      const baseRef = baseDecision.baseRef;
+      if (baseRef === headRef) {
+        return c.json({ error: 'head_ref and base_ref must differ' }, 400);
+      }
+
+      // Resolve current tips so the CR has anchored SHAs from the start, and
+      // refuse an EMPTY change request outright: a head with no commits ahead
+      // of base renders "No changes detected" in the dashboard and can never
+      // be applied (previewMerge reports it un-mergeable). The two shapes are
+      // a committed-but-never-pushed session branch (head tip == base tip) and
+      // a stale branch behind an advanced base (merge-base == head tip); both
+      // came up in the wild via agent flows on 2026-07-06. The resolver forces
+      // a mirror re-fetch before concluding "not ahead", so a push that landed
+      // moments ago never bounces.
+      let baseSha: string | null = null;
+      let headSha: string | null = null;
+      let headAhead: boolean;
+      try {
+        const projectForGit = await withProjectGitAuth(loaded.row);
+        const aheadState = await resolveBranchAheadState(projectForGit, baseRef, headRef);
+        baseSha = aheadState.baseSha;
+        headSha = aheadState.headSha;
+        headAhead = aheadState.ahead;
+      } catch (error) {
+        return c.json(
+          {
+            error: error instanceof Error ? error.message : 'Failed to resolve branches',
+          },
+          400,
+        );
+      }
+      if (!headAhead) {
+        return c.json(
+          {
+            error: `head_ref "${headRef}" has no commits ahead of "${baseRef}" — the change request would be empty and could never be applied. Commit your work and push the branch (git push origin HEAD), then retry. If your branch is behind an advanced base, rebase onto the latest base first.`,
+            code: 'CR_HEAD_NOT_AHEAD',
+          },
+          422,
+        );
+      }
+
+      // Atomically allocate the next per-project number and insert. Retry once on
+      // unique-constraint collision (only happens under racing opens).
+      let inserted: typeof changeRequests.$inferSelect | null = null;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const number = await getNextCrNumber(projectId);
+        try {
+          const [row] = await db
+            .insert(changeRequests)
+            .values({
+              accountId: loaded.row.accountId,
+              projectId,
+              number,
+              title,
+              description,
+              baseRef,
+              headRef,
+              headCommitSha: headSha,
+              baseCommitSha: baseSha,
+              originSessionId,
+              createdBy: loaded.userId,
+            })
+            .returning();
+          inserted = row;
+          break;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (!/duplicate key/.test(message)) throw error;
+        }
+      }
+      if (!inserted) return c.json({ error: 'Failed to allocate CR number' }, 500);
+
+      return c.json(serializeChangeRequest(inserted), 201);
     },
-  }),
-  async (c) => {
-    const projectId = c.req.param('projectId');
-    const body = await readJsonObject(c);
-    const loaded = await loadProjectForUser(c, projectId, 'write');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    // Human-side capability gate (Git Ops). Managers hold it; a custom
-    // role omits project.gitops.push to take Git-Ops away from a department.
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_GITOPS_PUSH,
-    );
+  );
 
-    // Per-agent gate: opening a CR is the agent's intended path to propose work.
-    // Default-deny — a scoped agent must be granted the leaf this route already
-    // gates the underlying commit on. `project.cr.open` was the SAME capability
-    // under a second name and is gone from the catalog (spec §2.4); a manifest
-    // still spelling it that way is rewritten on input by
-    // `canonicalizeGrantActions`, so the grant reaching here is always the leaf.
-    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
+  // POST /v1/projects/:projectId/sessions/:sessionId/commit-push
+  // Commits the session sandbox's working-tree changes and pushes them to the
+  // session branch — the host-driven path that lets the dashboard open a change
+  // request without routing through the agent. Idempotent: a clean tree with
+  // nothing left to push returns { nothing_to_do: true }.
+  //
+  // NOTE (2026-05-29): currently UNUSED by the UI. The shipped change-request
+  // flow lets the agent commit + open the CR from a single chat prompt instead.
+  // Kept (wired through to the daemon /kortix/git/commit-push route) as the
+  // host-driven primitive for a possible fully-UI flow. Remove together with the
+  // daemon route + web client/hook if that direction is dropped.
 
-    const title = normalizeString(body.title);
-    if (!title) return c.json({ error: 'title is required' }, 400);
-    const description = normalizeString(body.description) ?? '';
-    const headRef = normalizeString(body.head_ref ?? body.headRef);
-    if (!headRef) return c.json({ error: 'head_ref is required' }, 400);
-    // The session must be resolved BEFORE the base, because a session's own
-    // base is what the change request targets.
-    const actorIsSession = isProjectSessionPrincipal(c);
-    const originDecision = resolveChangeRequestOrigin({
-      actorIsSession,
-      actingSessionId: actorIsSession
-        ? ((c.get('sessionId') as string | null | undefined) ?? null)
-        : null,
-      requestedSessionId: normalizeString(body.session_id ?? body.sessionId),
-    });
-    if (!originDecision.ok) {
-      return c.json({ error: originDecision.error, code: originDecision.code }, 400);
-    }
-    let originSessionId = originDecision.originSessionId;
-    let sessionBaseRef: string | null = null;
-    if (originSessionId) {
-      const [sessionRow] = await db
-        .select({ sessionId: projectSessions.sessionId, baseRef: projectSessions.baseRef })
-        .from(projectSessions)
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{projectId}/sessions/{sessionId}/commit-push',
+      tags: ['sessions'],
+      summary: 'Commit and push a session\'s changes',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        body: { content: { 'application/json': { schema: lenientBody({
+            message: z.string().optional().openapi({ description: 'Commit message.' }),
+          }) } } },
+      },
+      responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(403, 404, 409, 502),
+      },
+    }),
+    async (c) => {
+      const projectId = c.req.param('projectId');
+      const sessionId = c.req.param('sessionId');
+      const loaded = await loadProjectForUser(c, projectId, 'write');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_GITOPS_PUSH,
+      );
+
+      // The capability check above is PROJECT-wide, and in Kortix-as-a-Backend the
+      // sandbox's own token holds it — every KaaB session shares the wrapper's
+      // credential, so "may push in this project" is true for every end-user's
+      // agent. Without this, end-user A's sandbox could commit and push end-user
+      // B's working tree to B's branch. A sandbox token acts for exactly one
+      // session (sandbox_id == session_id by construction); bind it to that one.
+      const callerSandboxSessionId = callerKortixSessionId(c);
+      if (
+        callerSandboxSessionId !== null &&
+        !sandboxTokenMayActOnSession(callerSandboxSessionId, sessionId)
+      ) {
+        return c.json({ error: 'sandbox token is not scoped to this session' }, 403);
+      }
+
+      const body = await readJsonObject(c);
+      const message = normalizeString(body.message) ?? undefined;
+
+      const [row] = await db
+        .select()
+        .from(sessionSandboxes)
         .where(
           and(
-            eq(projectSessions.sessionId, originSessionId),
-            eq(projectSessions.projectId, projectId),
+            eq(sessionSandboxes.sessionId, sessionId),
+            eq(sessionSandboxes.projectId, projectId),
+            eq(sessionSandboxes.accountId, loaded.row.accountId),
           ),
         )
         .limit(1);
-      if (!sessionRow) {
-        if (actorIsSession) {
-          return c.json({ error: 'Authenticated session not found in this project', code: 'CR_SESSION_NOT_FOUND' }, 403);
-        }
-        originSessionId = null;
-      } else {
-        sessionBaseRef = normalizeString(sessionRow.baseRef);
+      if (!row || !row.externalId) {
+        return c.json({ error: 'Session sandbox not found' }, 404);
       }
-    }
+      if (row.status !== 'active') {
+        return c.json({ error: 'Session sandbox is not running', status: row.status }, 409);
+      }
 
-    const baseDecision = resolveChangeRequestBase({
-      requested: normalizeString(body.base_ref ?? body.baseRef),
-      sessionBase: sessionBaseRef,
-      projectDefault: loaded.row.defaultBranch,
-      actorIsSession,
-    });
-    if (!baseDecision.ok) {
-      return c.json({ error: baseDecision.error, code: baseDecision.code }, 400);
-    }
-    const baseRef = baseDecision.baseRef;
-    if (baseRef === headRef) {
-      return c.json({ error: 'head_ref and base_ref must differ' }, 400);
-    }
+      const providerName = row.provider as SandboxProviderName;
+      if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) {
+        return c.json({ error: 'Unsupported sandbox provider' }, 409);
+      }
 
-    // Resolve current tips so the CR has anchored SHAs from the start, and
-    // refuse an EMPTY change request outright: a head with no commits ahead
-    // of base renders "No changes detected" in the dashboard and can never
-    // be applied (previewMerge reports it un-mergeable). The two shapes are
-    // a committed-but-never-pushed session branch (head tip == base tip) and
-    // a stale branch behind an advanced base (merge-base == head tip); both
-    // came up in the wild via agent flows on 2026-07-06. The resolver forces
-    // a mirror re-fetch before concluding "not ahead", so a push that landed
-    // moments ago never bounces.
-    let baseSha: string | null = null;
-    let headSha: string | null = null;
-    let headAhead: boolean;
-    try {
-      const projectForGit = await withProjectGitAuth(loaded.row);
-      const aheadState = await resolveBranchAheadState(projectForGit, baseRef, headRef);
-      baseSha = aheadState.baseSha;
-      headSha = aheadState.headSha;
-      headAhead = aheadState.ahead;
-    } catch (error) {
-      return c.json(
-        {
-          error: error instanceof Error ? error.message : 'Failed to resolve branches',
-        },
-        400,
-      );
-    }
-    if (!headAhead) {
-      return c.json(
-        {
-          error: `head_ref "${headRef}" has no commits ahead of "${baseRef}" — the change request would be empty and could never be applied. Commit your work and push the branch (git push origin HEAD), then retry. If your branch is behind an advanced base, rebase onto the latest base first.`,
-          code: 'CR_HEAD_NOT_AHEAD',
-        },
-        422,
-      );
-    }
-
-    // Atomically allocate the next per-project number and insert. Retry once on
-    // unique-constraint collision (only happens under racing opens).
-    let inserted: typeof changeRequests.$inferSelect | null = null;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const number = await getNextCrNumber(projectId);
+      // resolveEndpoint already injects the sandbox service key as a Bearer token
+      // (and the Daytona preview headers), which the daemon's /kortix/git route
+      // validates against KORTIX_TOKEN — same contract as /kortix/env.
+      let endpoint: { url: string; headers: Record<string, string> };
       try {
-        const [row] = await db
-          .insert(changeRequests)
-          .values({
-            accountId: loaded.row.accountId,
-            projectId,
-            number,
-            title,
-            description,
-            baseRef,
-            headRef,
-            headCommitSha: headSha,
-            baseCommitSha: baseSha,
-            originSessionId,
-            createdBy: loaded.userId,
-          })
-          .returning();
-        inserted = row;
-        break;
+        endpoint = await getProvider(providerName).resolveEndpoint(row.externalId);
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (!/duplicate key/.test(message)) throw error;
+        return c.json(
+          {
+            error: error instanceof Error ? error.message : 'Failed to reach sandbox',
+          },
+          502,
+        );
       }
-    }
-    if (!inserted) return c.json({ error: 'Failed to allocate CR number' }, 500);
 
-    return c.json(serializeChangeRequest(inserted), 201);
-  },
-);
-
-// POST /v1/projects/:projectId/sessions/:sessionId/commit-push
-// Commits the session sandbox's working-tree changes and pushes them to the
-// session branch — the host-driven path that lets the dashboard open a change
-// request without routing through the agent. Idempotent: a clean tree with
-// nothing left to push returns { nothing_to_do: true }.
-//
-// NOTE (2026-05-29): currently UNUSED by the UI. The shipped change-request
-// flow lets the agent commit + open the CR from a single chat prompt instead.
-// Kept (wired through to the daemon /kortix/git/commit-push route) as the
-// host-driven primitive for a possible fully-UI flow. Remove together with the
-// daemon route + web client/hook if that direction is dropped.
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/sessions/{sessionId}/commit-push',
-    tags: ['sessions'],
-    summary: 'Commit and push a session\'s changes',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string(), sessionId: z.string() }),
-      body: { content: { 'application/json': { schema: lenientBody({
-          message: z.string().optional().openapi({ description: 'Commit message.' }),
-        }) } } },
-    },
-    responses: {
-      200: json(z.any(), 'OK'),
-      ...errors(403, 404, 409, 502),
-    },
-  }),
-  async (c) => {
-    const projectId = c.req.param('projectId');
-    const sessionId = c.req.param('sessionId');
-    const loaded = await loadProjectForUser(c, projectId, 'write');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_GITOPS_PUSH,
-    );
-
-    // The capability check above is PROJECT-wide, and in Kortix-as-a-Backend the
-    // sandbox's own token holds it — every KaaB session shares the wrapper's
-    // credential, so "may push in this project" is true for every end-user's
-    // agent. Without this, end-user A's sandbox could commit and push end-user
-    // B's working tree to B's branch. A sandbox token acts for exactly one
-    // session (sandbox_id == session_id by construction); bind it to that one.
-    const callerSandboxSessionId = callerKortixSessionId(c);
-    if (
-      callerSandboxSessionId !== null &&
-      !sandboxTokenMayActOnSession(callerSandboxSessionId, sessionId)
-    ) {
-      return c.json({ error: 'sandbox token is not scoped to this session' }, 403);
-    }
-
-    const body = await readJsonObject(c);
-    const message = normalizeString(body.message) ?? undefined;
-
-    const [row] = await db
-      .select()
-      .from(sessionSandboxes)
-      .where(
-        and(
-          eq(sessionSandboxes.sessionId, sessionId),
-          eq(sessionSandboxes.projectId, projectId),
-          eq(sessionSandboxes.accountId, loaded.row.accountId),
-        ),
-      )
-      .limit(1);
-    if (!row || !row.externalId) {
-      return c.json({ error: 'Session sandbox not found' }, 404);
-    }
-    if (row.status !== 'active') {
-      return c.json({ error: 'Session sandbox is not running', status: row.status }, 409);
-    }
-
-    const providerName = row.provider as SandboxProviderName;
-    if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) {
-      return c.json({ error: 'Unsupported sandbox provider' }, 409);
-    }
-
-    // resolveEndpoint already injects the sandbox service key as a Bearer token
-    // (and the Daytona preview headers), which the daemon's /kortix/git route
-    // validates against KORTIX_TOKEN — same contract as /kortix/env.
-    let endpoint: { url: string; headers: Record<string, string> };
-    try {
-      endpoint = await getProvider(providerName).resolveEndpoint(row.externalId);
-    } catch (error) {
-      return c.json(
-        {
-          error: error instanceof Error ? error.message : 'Failed to reach sandbox',
-        },
-        502,
-      );
-    }
-
-    let daemonRes: Response;
-    try {
-      daemonRes = await fetch(`${endpoint.url.replace(/\/$/, '')}/kortix/git/commit-push`, {
-          method: 'POST',
-          headers: endpoint.headers,
-          body: JSON.stringify({ message }),
-          signal: AbortSignal.timeout(30_000),
-      });
-    } catch (error) {
-      return c.json(
-        {
-          error: error instanceof Error ? error.message : 'Sandbox unreachable',
-        },
-        502,
-      );
-    }
-
-    const result = (await daemonRes.json().catch(() => null)) as {
-      ok?: boolean;
-      committed?: boolean;
-      pushed?: boolean;
-      nothingToDo?: boolean;
-      branch?: string | null;
-      headSha?: string | null;
-      message?: string;
-    } | null;
-
-    if (!daemonRes.ok || !result?.ok) {
-      return c.json(
-        { error: result?.message || 'Failed to save changes' },
-        daemonRes.status === 409 ? 409 : 502,
-      );
-    }
-
-    // A fresh commit just landed on the session branch and was pushed to origin.
-    // Force the next mirror read to re-fetch so the CR we open immediately after
-    // sees the new tip (the mirror is otherwise refresh-throttled).
-    invalidateProjectMirror(projectId);
-
-    return c.json({
-      committed: Boolean(result.committed),
-      pushed: Boolean(result.pushed),
-      nothing_to_do: Boolean(result.nothingToDo),
-      branch: result.branch ?? null,
-      head_sha: result.headSha ?? null,
-    });
-  },
-);
-
-// GET /v1/projects/:projectId/change-requests/:crId
-// Auto-refreshes the cached head/base SHAs against the live git tips so the
-// UI never shows stale "X commits behind" state.
-
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/change-requests/{crId}',
-    tags: ['change-requests'],
-    summary: 'Get a change request',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string(), crId: z.string() }),
-    },
-    responses: {
-      200: json(z.object({ change_request: ChangeRequestSchema }), 'The change request'),
-      ...errors(404),
-    },
-  }),
-  async (c) => {
-    const projectId = c.req.param('projectId');
-    const crId = c.req.param('crId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-    let cr = await getCrById(crId, projectId);
-    if (!cr) return c.json({ error: 'Change request not found' }, 404);
-
-    await refreshCrTips({
-      cr,
-      project: await withProjectGitAuth(loaded.row),
-    });
-    cr = (await getCrById(crId, projectId))!;
-
-    return c.json({ change_request: serializeChangeRequest(cr) });
-  },
-);
-
-// PATCH /v1/projects/:projectId/change-requests/:crId
-// Body: { title?, description? }
-
-projectsApp.openapi(
-  createRoute({
-    method: 'patch',
-    path: '/{projectId}/change-requests/{crId}',
-    tags: ['change-requests'],
-    summary: 'Edit a change request title or description',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string(), crId: z.string() }),
-      body: { content: { 'application/json': { schema: lenientBody({
-          title: z.string().optional().openapi({ description: 'New title.' }),
-          description: z.string().optional().openapi({ description: 'New description.' }),
-        }) } } },
-    },
-    responses: {
-      200: json(ChangeRequestSchema, 'The updated change request'),
-      ...errors(404, 409),
-    },
-  }),
-  async (c) => {
-    const projectId = c.req.param('projectId');
-    const crId = c.req.param('crId');
-    const body = await readJsonObject(c);
-    const loaded = await loadProjectForUser(c, projectId, 'write');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    // Per-agent gate: editing a CR is part of the change-request capability,
-    // which is `project.gitops.push` (see the create route above).
-    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
-
-    const cr = await getCrById(crId, projectId);
-    if (!cr) return c.json({ error: 'Change request not found' }, 404);
-    if (cr.status !== 'open') {
-      return c.json({ error: `Cannot edit a ${cr.status} change request` }, 409);
-    }
-
-    const updates: Partial<typeof changeRequests.$inferInsert> = {
-      updatedAt: new Date(),
-    };
-    const title = normalizeString(body.title);
-    if (title) updates.title = title;
-    if (typeof body.description === 'string') updates.description = body.description;
-
-    const [row] = await db
-      .update(changeRequests)
-      .set(updates)
-      .where(eq(changeRequests.crId, crId))
-      .returning();
-    return c.json(serializeChangeRequest(row));
-  },
-);
-
-// POST /v1/projects/:projectId/change-requests/:crId/request-changes
-// Human "request changes" from the Review Center: persist the feedback on the CR
-// (CRs have no comment table — this is how the ask is remembered + shown back)
-// and deliver it to the agent that opened the change so it revises. Delivery is
-// fire-and-forget: continueSession boots the sandbox if it's asleep, resolves the
-// live session, and retries — so the HTTP response stays snappy.
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/change-requests/{crId}/request-changes',
-    tags: ['change-requests'],
-    summary: 'Request changes on a change request',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string(), crId: z.string() }),
-      body: { content: { 'application/json': { schema: lenientBody({
-          feedback: z.string().openapi({ description: 'What must change. text is accepted as an alias.' }),
-        }) } } },
-    },
-    responses: {
-      200: json(z.any(), 'OK'),
-      ...errors(400, 404, 409),
-    },
-  }),
-  async (c) => {
-    const projectId = c.req.param('projectId');
-    const crId = c.req.param('crId');
-    const body = await readJsonObject(c);
-    const loaded = await loadProjectForUser(c, projectId, 'write');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    // request-changes is a human review decision on a CR, not a code push —
-    // gate it on project.review.act (the same leaf as /review/items/{id}/act),
-    // not gitops.push. Manager holds both; a custom reviewer role with
-    // review.act but no gitops.push can now request changes.
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_REVIEW_ACT,
-    );
-
-    const feedback = normalizeString(body.feedback ?? body.text);
-    if (!feedback) return c.json({ error: 'feedback is required' }, 400);
-
-    const cr = await getCrById(crId, projectId);
-    if (!cr) return c.json({ error: 'Change request not found' }, 404);
-    if (cr.status !== 'open') {
-      return c.json({ error: `Cannot request changes on a ${cr.status} change request` }, 409);
-    }
-
-    // Persist first — the ask must survive even if delivery can't reach the agent.
-    const row = await recordRequestedChange(crId, projectId, {
-      text: feedback,
-      by: loaded.userId,
-      at: new Date().toISOString(),
-    });
-    if (!row) return c.json({ error: 'Change request not found' }, 404);
-
-    // Deliver to the originating session's agent (best-effort, background — a
-    // sandbox boot can take seconds, so we never block the response on it).
-    const willDeliver = Boolean(cr.originSessionId);
-    if (cr.originSessionId) {
-      void continueSession({
-        source: 'ui',
-        sessionId: cr.originSessionId,
-        text: `Please revise change request #${cr.number} ("${cr.title}") based on this feedback:\n\n${feedback}`,
-        userId: loaded.userId,
-      })
-        .then((outcome) => {
-          // The response already told the user willDeliver=true and nothing
-          // retries this — a non-delivered outcome (incl. 'pending') means the
-          // feedback silently never reached the agent. Make it loud.
-          if (outcome !== 'delivered') {
-            console.error('[change-requests] request-changes prompt not delivered', {
-              crId,
-              sessionId: cr.originSessionId,
-              outcome,
-            });
-          }
-        })
-        .catch((err) => {
-          console.warn('[change-requests] request-changes delivery failed', {
-            crId,
-            error: String(err),
-          });
+      let daemonRes: Response;
+      try {
+        daemonRes = await fetch(`${endpoint.url.replace(/\/$/, '')}/kortix/git/commit-push`, {
+            method: 'POST',
+            headers: endpoint.headers,
+            body: JSON.stringify({ message }),
+            signal: AbortSignal.timeout(30_000),
         });
-    }
+      } catch (error) {
+        return c.json(
+          {
+            error: error instanceof Error ? error.message : 'Sandbox unreachable',
+          },
+          502,
+        );
+      }
 
-    return c.json({ change_request: serializeChangeRequest(row), delivering: willDeliver });
-  },
-);
+      const result = (await daemonRes.json().catch(() => null)) as {
+        ok?: boolean;
+        committed?: boolean;
+        pushed?: boolean;
+        nothingToDo?: boolean;
+        branch?: string | null;
+        headSha?: string | null;
+        message?: string;
+      } | null;
 
-// GET /v1/projects/:projectId/change-requests/:crId/diff
-// For open / closed CRs: lives off the live branch tips (three-dot diff).
-// For merged CRs: uses the SHAs captured at merge time, so the diff still
-// renders even though the head branch is now fully reachable from base.
+      if (!daemonRes.ok || !result?.ok) {
+        return c.json(
+          { error: result?.message || 'Failed to save changes' },
+          daemonRes.status === 409 ? 409 : 502,
+        );
+      }
 
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/change-requests/{crId}/diff',
-    tags: ['change-requests'],
-    summary: 'Get the diff of a change request',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string(), crId: z.string() }),
-    },
-    responses: {
-      200: json(z.any(), 'OK'),
-      ...errors(400, 404),
-    },
-  }),
-  async (c) => {
-    const projectId = c.req.param('projectId');
-    const crId = c.req.param('crId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
+      // A fresh commit just landed on the session branch and was pushed to origin.
+      // Force the next mirror read to re-fetch so the CR we open immediately after
+      // sees the new tip (the mirror is otherwise refresh-throttled).
+      invalidateProjectMirror(projectId);
 
-    const cr = await getCrById(crId, projectId);
-    if (!cr) return c.json({ error: 'Change request not found' }, 404);
-
-    const projectForGit = await withProjectGitAuth(loaded.row);
-
-    try {
-      const useSnapshot = cr.status === 'merged' && cr.baseCommitSha && cr.headCommitSha;
-      const diff = useSnapshot
-        ? await getDiffBetweenShas(projectForGit, cr.baseCommitSha!, cr.headCommitSha!)
-        : await getBranchDiff(projectForGit, cr.baseRef, cr.headRef);
       return c.json({
-        cr_id: cr.crId,
-        base_ref: cr.baseRef,
-        head_ref: cr.headRef,
-        base_sha: diff.base_sha,
-        head_sha: diff.head_sha,
-        merge_base: diff.merge_base,
-        files: diff.files,
-        files_changed: diff.files_changed,
-        additions: diff.additions,
-        deletions: diff.deletions,
-        patch: diff.patch,
+        committed: Boolean(result.committed),
+        pushed: Boolean(result.pushed),
+        nothing_to_do: Boolean(result.nothingToDo),
+        branch: result.branch ?? null,
+        head_sha: result.headSha ?? null,
       });
-    } catch (error) {
-      return c.json(
-        {
-          error: error instanceof Error ? error.message : 'Failed to compute diff',
-        },
-        400,
-      );
-    }
-  },
-);
-
-// GET /v1/projects/:projectId/change-requests/:crId/merge-preview
-
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/change-requests/{crId}/merge-preview',
-    tags: ['change-requests'],
-    summary: 'Preview merging a change request',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string(), crId: z.string() }),
     },
-    responses: {
-      200: json(z.any(), 'OK'),
-      ...errors(400, 404),
+  );
+
+  // GET /v1/projects/:projectId/change-requests/:crId
+  // Auto-refreshes the cached head/base SHAs against the live git tips so the
+  // UI never shows stale "X commits behind" state.
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/change-requests/{crId}',
+      tags: ['change-requests'],
+      summary: 'Get a change request',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), crId: z.string() }),
+      },
+      responses: {
+        200: json(z.object({ change_request: ChangeRequestSchema }), 'The change request'),
+        ...errors(404),
+      },
+    }),
+    async (c) => {
+      const projectId = c.req.param('projectId');
+      const crId = c.req.param('crId');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+      let cr = await getCrById(crId, projectId);
+      if (!cr) return c.json({ error: 'Change request not found' }, 404);
+
+      await refreshCrTips({
+        cr,
+        project: await withProjectGitAuth(loaded.row),
+      });
+      cr = (await getCrById(crId, projectId))!;
+
+      return c.json({ change_request: serializeChangeRequest(cr) });
     },
-  }),
-  async (c) => {
-    const projectId = c.req.param('projectId');
-    const crId = c.req.param('crId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
+  );
 
-    const cr = await getCrById(crId, projectId);
-    if (!cr) return c.json({ error: 'Change request not found' }, 404);
+  // PATCH /v1/projects/:projectId/change-requests/:crId
+  // Body: { title?, description? }
 
-    try {
-      const preview = await previewMerge(
-        await withProjectGitAuth(loaded.row),
-        cr.baseRef,
-        cr.headRef,
+  projectsApp.openapi(
+    createRoute({
+      method: 'patch',
+      path: '/{projectId}/change-requests/{crId}',
+      tags: ['change-requests'],
+      summary: 'Edit a change request title or description',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), crId: z.string() }),
+        body: { content: { 'application/json': { schema: lenientBody({
+            title: z.string().optional().openapi({ description: 'New title.' }),
+            description: z.string().optional().openapi({ description: 'New description.' }),
+          }) } } },
+      },
+      responses: {
+        200: json(ChangeRequestSchema, 'The updated change request'),
+        ...errors(404, 409),
+      },
+    }),
+    async (c) => {
+      const projectId = c.req.param('projectId');
+      const crId = c.req.param('crId');
+      const body = await readJsonObject(c);
+      const loaded = await loadProjectForUser(c, projectId, 'write');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      // Per-agent gate: editing a CR is part of the change-request capability,
+      // which is `project.gitops.push` (see the create route above).
+      assertAgentScope(c, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
+
+      const cr = await getCrById(crId, projectId);
+      if (!cr) return c.json({ error: 'Change request not found' }, 404);
+      if (cr.status !== 'open') {
+        return c.json({ error: `Cannot edit a ${cr.status} change request` }, 409);
+      }
+
+      const updates: Partial<typeof changeRequests.$inferInsert> = {
+        updatedAt: new Date(),
+      };
+      const title = normalizeString(body.title);
+      if (title) updates.title = title;
+      if (typeof body.description === 'string') updates.description = body.description;
+
+      const [row] = await db
+        .update(changeRequests)
+        .set(updates)
+        .where(eq(changeRequests.crId, crId))
+        .returning();
+      return c.json(serializeChangeRequest(row));
+    },
+  );
+
+  // POST /v1/projects/:projectId/change-requests/:crId/request-changes
+  // Human "request changes" from the Review Center: persist the feedback on the CR
+  // (CRs have no comment table — this is how the ask is remembered + shown back)
+  // and deliver it to the agent that opened the change so it revises. Delivery is
+  // fire-and-forget: continueSession boots the sandbox if it's asleep, resolves the
+  // live session, and retries — so the HTTP response stays snappy.
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{projectId}/change-requests/{crId}/request-changes',
+      tags: ['change-requests'],
+      summary: 'Request changes on a change request',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), crId: z.string() }),
+        body: { content: { 'application/json': { schema: lenientBody({
+            feedback: z.string().openapi({ description: 'What must change. text is accepted as an alias.' }),
+          }) } } },
+      },
+      responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404, 409),
+      },
+    }),
+    async (c) => {
+      const projectId = c.req.param('projectId');
+      const crId = c.req.param('crId');
+      const body = await readJsonObject(c);
+      const loaded = await loadProjectForUser(c, projectId, 'write');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      // request-changes is a human review decision on a CR, not a code push —
+      // gate it on project.review.act (the same leaf as /review/items/{id}/act),
+      // not gitops.push. Manager holds both; a custom reviewer role with
+      // review.act but no gitops.push can now request changes.
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_REVIEW_ACT,
       );
-      return c.json(preview);
-    } catch (error) {
-      return c.json(
-        {
-          error: error instanceof Error ? error.message : 'Failed to preview merge',
-        },
-        400,
-      );
-    }
-  },
-);
+
+      const feedback = normalizeString(body.feedback ?? body.text);
+      if (!feedback) return c.json({ error: 'feedback is required' }, 400);
+
+      const cr = await getCrById(crId, projectId);
+      if (!cr) return c.json({ error: 'Change request not found' }, 404);
+      if (cr.status !== 'open') {
+        return c.json({ error: `Cannot request changes on a ${cr.status} change request` }, 409);
+      }
+
+      // Persist first — the ask must survive even if delivery can't reach the agent.
+      const at = new Date().toISOString();
+      const row = await recordRequestedChange(crId, projectId, {
+        text: feedback,
+        by: loaded.userId,
+        at,
+      });
+      if (!row) return c.json({ error: 'Change request not found' }, 404);
+
+      // Deliver to the originating session's agent (best-effort, background — a
+      // sandbox boot can take seconds, so we never block the response on it).
+      const willDeliver = Boolean(cr.originSessionId);
+      if (cr.originSessionId) {
+        void deliverThroughQueue({
+          source: 'ui',
+          idempotencyKey: `change-request:${crId}:${at}`,
+          sessionId: cr.originSessionId,
+          text: `Please revise change request #${cr.number} ("${cr.title}") based on this feedback:\n\n${feedback}`,
+          userId: loaded.userId,
+        })
+          .then((outcome) => {
+            // `queued` is durable and retried by the queue. Anything else means
+            // the feedback never reaches the agent. Make it loud.
+            if (outcome !== 'delivered' && outcome !== 'queued') {
+              console.error('[change-requests] request-changes prompt not delivered', {
+                crId,
+                sessionId: cr.originSessionId,
+                outcome,
+              });
+            }
+          })
+          .catch((err) => {
+            console.warn('[change-requests] request-changes delivery failed', {
+              crId,
+              error: String(err),
+            });
+          });
+      }
+
+      return c.json({ change_request: serializeChangeRequest(row), delivering: willDeliver });
+    },
+  );
+
+  // GET /v1/projects/:projectId/change-requests/:crId/diff
+  // For open / closed CRs: lives off the live branch tips (three-dot diff).
+  // For merged CRs: uses the SHAs captured at merge time, so the diff still
+  // renders even though the head branch is now fully reachable from base.
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/change-requests/{crId}/diff',
+      tags: ['change-requests'],
+      summary: 'Get the diff of a change request',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), crId: z.string() }),
+      },
+      responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404),
+      },
+    }),
+    async (c) => {
+      const projectId = c.req.param('projectId');
+      const crId = c.req.param('crId');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
+
+      const cr = await getCrById(crId, projectId);
+      if (!cr) return c.json({ error: 'Change request not found' }, 404);
+
+      const projectForGit = await withProjectGitAuth(loaded.row);
+
+      try {
+        const useSnapshot = cr.status === 'merged' && cr.baseCommitSha && cr.headCommitSha;
+        const diff = useSnapshot
+          ? await getDiffBetweenShas(projectForGit, cr.baseCommitSha!, cr.headCommitSha!)
+          : await getBranchDiff(projectForGit, cr.baseRef, cr.headRef);
+        return c.json({
+          cr_id: cr.crId,
+          base_ref: cr.baseRef,
+          head_ref: cr.headRef,
+          base_sha: diff.base_sha,
+          head_sha: diff.head_sha,
+          merge_base: diff.merge_base,
+          files: diff.files,
+          files_changed: diff.files_changed,
+          additions: diff.additions,
+          deletions: diff.deletions,
+          patch: diff.patch,
+        });
+      } catch (error) {
+        return c.json(
+          {
+            error: error instanceof Error ? error.message : 'Failed to compute diff',
+          },
+          400,
+        );
+      }
+    },
+  );
+
+  // GET /v1/projects/:projectId/change-requests/:crId/merge-preview
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/change-requests/{crId}/merge-preview',
+      tags: ['change-requests'],
+      summary: 'Preview merging a change request',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), crId: z.string() }),
+      },
+      responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404),
+      },
+    }),
+    async (c) => {
+      const projectId = c.req.param('projectId');
+      const crId = c.req.param('crId');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
+
+      const cr = await getCrById(crId, projectId);
+      if (!cr) return c.json({ error: 'Change request not found' }, 404);
+
+      try {
+        const preview = await previewMerge(
+          await withProjectGitAuth(loaded.row),
+          cr.baseRef,
+          cr.headRef,
+        );
+        return c.json(preview);
+      } catch (error) {
+        return c.json(
+          {
+            error: error instanceof Error ? error.message : 'Failed to preview merge',
+          },
+          400,
+        );
+      }
+    },
+  );
+}

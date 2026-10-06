@@ -632,14 +632,6 @@ async function readManifestV2(project: GitBackedProject, baseRef?: string | null
   }
 }
 
-export async function resolveManifestRuntime(
-  project: GitBackedProject,
-  baseRef?: string | null,
-): Promise<RuntimeV2 | null> {
-  const raw = await readManifestV2(project, baseRef);
-  return raw ? manifestRuntime(raw) : null;
-}
-
 export async function resolveManifestPiPackageLists(project: GitBackedProject, baseRef?: string | null): Promise<unknown[][]> {
   return manifestPiPackageLists(await readManifestV2(project, baseRef));
 }

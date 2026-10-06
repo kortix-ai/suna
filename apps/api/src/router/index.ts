@@ -4,7 +4,7 @@ import { makeOpenApiApp, json } from '../openapi';
 import { webSearch } from './routes/search-web';
 import { imageSearch } from './routes/search-image';
 import { llm } from './routes/llm';
-import { proxy } from './routes/proxy';
+import { proxy, registerProxyRoutes } from './routes/proxy';
 
 const router = makeOpenApiApp();
 
@@ -48,6 +48,7 @@ router.use('/models/*', apiKeyAuth);
 router.route('/', llm);
 
 // Proxy routes (auth handled internally — dual mode)
+registerProxyRoutes();
 router.route('/', proxy);
 
 export { router };

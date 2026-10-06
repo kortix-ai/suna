@@ -941,6 +941,9 @@ export const accountSecretResources = kortixSchema.table('account_secret_resourc
   strategy: projectSecretStrategyEnum('strategy').notNull(),
   active: boolean('active').default(true).notNull(),
   cooldownUntil: timestamp('cooldown_until', { withTimezone: true }),
+  /** When a cooling-down account may be re-tried: each limit sets it 15 min out; the first
+   *  resolve after it lifts `cooldownUntil` once (a reset before the provider's hinted reset). */
+  cooldownProbeAt: timestamp('cooldown_probe_at', { withTimezone: true }),
   /** First permanent failure of the stored login (a refresh the provider
    *  rejected, or a login that cannot be read). The account stays usable and
    *  in its pools; a successful refresh or a reconnect clears it. */
@@ -2168,6 +2171,11 @@ export const sessionSandboxes = kortixSchema.table(
  * its data path.
  *
  * One environment per session, enforced by the primary key.
+ *
+ * RETIRED: the pi worker split was removed and nothing reads or writes this
+ * table. It stays declared until a follow-up migration drops it, after every
+ * replica runs code with no reader (a drop under an old replica fails its
+ * account-deletion and orphan-reaper queries).
  */
 export const sessionEnvironments = kortixSchema.table(
   'session_environments',

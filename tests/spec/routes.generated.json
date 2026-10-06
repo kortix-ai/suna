@@ -591,12 +591,24 @@
       "path": "/v1/accounts/:accountId/secret-resources/:secretId/grants/:userId"
     },
     {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/secret-resources/:secretId/retry"
+    },
+    {
       "method": "PUT",
       "path": "/v1/accounts/:accountId/secret-resources/:secretId/value"
     },
     {
       "method": "GET",
       "path": "/v1/accounts/me"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/me/devices"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/me/devices/:sessionId"
     },
     {
       "method": "GET",
@@ -1157,18 +1169,6 @@
     {
       "method": "GET",
       "path": "/v1/generation"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/git/:project/compiled-checkout"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/git/:project/compiled-pi-runtime"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/git/:project/compiled-runtime"
     },
     {
       "method": "GET",
@@ -2007,6 +2007,10 @@
       "path": "/v1/projects/:projectId/gateway/sessions"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/gateway/sources"
+    },
+    {
       "method": "PUT",
       "path": "/v1/projects/:projectId/git-credential"
     },
@@ -2280,18 +2284,6 @@
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/environment"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/environment/ensure"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/environment/stop"
-    },
-    {
-      "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/events"
     },
     {
@@ -2301,6 +2293,10 @@
     {
       "method": "PUT",
       "path": "/v1/projects/:projectId/sessions/:sessionId/model"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/model-usage"
     },
     {
       "method": "GET",
@@ -2441,6 +2437,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/warm/claim"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/skills"
     },
     {
       "method": "GET",
