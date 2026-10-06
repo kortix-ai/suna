@@ -260,3 +260,63 @@ flow("PROJ-36", { domain: "projects", routes: ["PUT /v1/projects/:projectId/git/
     response.status(401);
   });
 });
+
+// PROJ-39 — the agents listing reflects every REGISTERED agent: a manifest whose
+// `agents:` live in an imported (nested YAML) file lists each declared agent,
+// the disabled one with `enabled: false`, anchored at the file that declares it.
+flow(
+  "PROJ-39",
+  { domain: "projects", routes: ["GET /v1/projects/:projectId/detail"] },
+  async (ctx) => {
+    if (ctx.env.target !== "local") return; // the manifest is pushed straight to the local bare repo; deployed targets push through the git proxy
+    const { execFileSync } = await import("node:child_process");
+    const { mkdtempSync, writeFileSync, mkdirSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join, dirname } = await import("node:path");
+    const { Client: PgClient } = await import("pg");
+
+    const project = await ctx.fixtures.project({ managedGit: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const databaseUrl = ctx.env.databaseUrl;
+    if (!databaseUrl) throw new Error("the local profile must expose a database URL");
+    const db = new PgClient({ connectionString: databaseUrl });
+    await db.connect();
+    const work = mkdtempSync(join(tmpdir(), "ke2e-proj39-"));
+    try {
+      const { rows } = await db.query("SELECT repo_url, default_branch FROM kortix.projects WHERE project_id = $1", [project.id]);
+      const repoUrl = String(rows[0]?.repo_url ?? "");
+      const base = String(rows[0]?.default_branch || "main");
+      await ctx.step("push a root manifest whose agents live in an imported (nested) file, one enabled and one disabled", async () => {
+        execFileSync("git", ["clone", "-q", "--branch", base, repoUrl, "."], { cwd: work, stdio: "pipe" });
+        writeFileSync(join(work, "kortix.yaml"), "kortix_version: 2\nimports:\n  - domains/kortix.yaml\n");
+        mkdirSync(dirname(join(work, "domains/kortix.yaml")), { recursive: true });
+        writeFileSync(
+          join(work, "domains/kortix.yaml"),
+          "agents:\n  builder:\n    connectors: all\n  observer:\n    enabled: false\n    connectors: all\n",
+        );
+        execFileSync("git", ["add", "-A"], { cwd: work, stdio: "pipe" });
+        execFileSync("git", ["-c", "user.name=KE2E", "-c", "user.email=ke2e@kortix.invalid", "commit", "-qm", "declare agents through an import"], { cwd: work, stdio: "pipe" });
+        execFileSync("git", ["push", "-q", "origin", `HEAD:refs/heads/${base}`], { cwd: work, stdio: "pipe" });
+      });
+      await ctx.step("GET detail lists every registered agent — the disabled one with enabled:false, attributed to its declaring file", async () => {
+        const r = await owner.get("/v1/projects/:projectId/detail", { params: { projectId: project.id } });
+        r.status(200);
+        const config =
+          r.json<{ config: { agent_discovery: string; agents?: Array<{ name: string; enabled?: boolean; path: string }> } }>().config;
+        if (config.agent_discovery !== "declarative") throw new Error(`agent_discovery ${config.agent_discovery}`);
+        const agents = config.agents ?? [];
+        if (agents.length !== 2) throw new Error(`expected 2 registered agents, got ${JSON.stringify(agents.map((a) => a.name))}`);
+        const byName = new Map(agents.map((a) => [a.name, a]));
+        const builder = byName.get("builder");
+        const observer = byName.get("observer");
+        if (!builder || builder.enabled === false) throw new Error(`builder missing or disabled: ${JSON.stringify(builder)}`);
+        if (!observer || observer.enabled !== false) throw new Error(`observer missing or not disabled: ${JSON.stringify(observer)}`);
+        if (builder.path !== "domains/kortix.yaml#agents.builder") throw new Error(`builder path ${builder.path}`);
+        if (observer.path !== "domains/kortix.yaml#agents.observer") throw new Error(`observer path ${observer.path}`);
+      });
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+      await db.end();
+    }
+  },
+);
