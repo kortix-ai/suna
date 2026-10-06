@@ -340,7 +340,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'pi_cell',
     name: 'Pi Cell Runtime',
     description:
-      "Run this project's sessions as a pi cell: the pi 1.0 agent as a Durable Object in a V8 isolate on celld, with its transcript, checkpoints and workspace in the object's own SQLite. A session is ready in seconds, survives losing its process mid-turn, and costs an isolate instead of a microVM. Its shell is a POSIX interpreter over the session's own files (node and npm run in the isolate); a full Linux machine attaches on demand through the `machine` tool. On ⇒ new sessions boot a cell. Off ⇒ sessions boot the ordinary sandbox. Requires the LLM gateway.",
+      "Run this project's sessions as a pi cell: the pi 1.0 agent as a Durable Object in a V8 isolate on celld, with its transcript, checkpoints and workspace in the object's own SQLite. A session is ready in seconds, survives losing its process mid-turn, and costs an isolate instead of a microVM. Its shell is a POSIX interpreter over the session's own files (node and npm run in the isolate); there is no Linux machine (no python, no builds, no dev server). On ⇒ new sessions boot a cell. Off ⇒ sessions boot the ordinary sandbox. Requires the LLM gateway.",
     stability: 'experimental',
     // Platinum must be the provider, and the operator must say its control
     // plane runs the cell runtime (KORTIX_PI_CELL_ENABLED): a Platinum without

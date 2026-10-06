@@ -15,7 +15,7 @@
 //
 // test/session-e2e.mjs drives the same contract through a real `celld dev`;
 // this suite is the fast half that needs no binary.
-// EXPECTED_PASSES=96
+// EXPECTED_PASSES=97
 import { createServer } from "node:http";
 import { DatabaseSync } from "node:sqlite";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
@@ -455,6 +455,19 @@ const h = makeCell(AgentCell, { KORTIX_SESSION_ID: S, KORTIX_PROJECT_ID: "proj-2
     res.status === 202 && list.at(-1).parts.some((p) => p.text === "still here"), String(res.status));
   check("and every id the new isolate minted sorts after every id the old one did — by id, as the client orders",
     JSON.stringify([...ids].sort()) === JSON.stringify(ids) && list.at(-1).info.id > before.at(-1).info.id, "");
+}
+{
+  // NO MACHINE ON OFFER BY DEFAULT. The machine comes from the API's
+  // environment/ensure route, which main removed (e60ed971f1, #9189). A tool
+  // that fails on every call must not be listed; CELL_MACHINE=1 opts back in.
+  const plain = makeCell(AgentCell, { KORTIX_SESSION_ID: "no-machine", CELL_MODEL: "faux" });
+  const opted = makeCell(AgentCell, { KORTIX_SESSION_ID: "machine-on", CELL_MODEL: "faux", CELL_MACHINE: "1" });
+  await plain.fetch("/kortix/health");
+  await opted.fetch("/kortix/health");
+  const ids = await (await plain.fetch("/tool/ids")).json();
+  const optedIds = await (await opted.fetch("/tool/ids")).json();
+  check("/tool/ids lists no `machine` by default, and lists it with CELL_MACHINE=1",
+    Array.isArray(ids) && ids.includes("bash") && !ids.includes("machine") && optedIds.includes("machine"), `${JSON.stringify(ids)} / ${JSON.stringify(optedIds)}`);
 }
 {
   // A DEAD ISOLATE'S HALF-WRITTEN MESSAGE. An eviction mid-stream leaves an

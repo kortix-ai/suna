@@ -60,6 +60,9 @@ of the process that runs it.
   (`api-dev.platinum.dev`) runs them: create to `/kortix/health` ready in
   4.6 s, a faux turn to `session.idle` in 241 ms. Deployed Kortix dev
   provisions on Platinum prod, so `pi_cell` cannot boot there yet.
+- **A cell has no machine by default.** The `machine` tool needs the API's
+  `…/sessions/:s/environment/ensure`, removed on main by `e60ed971f1`
+  (#9189). It is offered only with `CELL_MACHINE=1`.
 - **A worker version reaches a cell only at cell start.**
   `deploy-platinum.mjs` uploads and activates; `--roll` restarts the running
   cells the activation lists.

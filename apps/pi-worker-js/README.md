@@ -31,7 +31,7 @@ Platinum cell ── celld ── default export (src/worker.js)
                             │    model: the Kortix LLM gateway (openai-completions)
                             ├─ ExecutionEnv
                             │    cell: just-bash over a persisted InMemoryFs (src/execenv.cell.js)
-                            │    machine: kortixd /kortix/env-rpc/rpc (src/execenv.envrpc.js)
+                            │    machine (CELL_MACHINE=1 only): kortixd /kortix/env-rpc/rpc
                             └─ Kortix contract (src/kortix/*)
                                  DurableTurnEvents → KortixEventBus → /global/event
                                  TranscriptStore (kx_messages, kx_parts)
@@ -178,6 +178,10 @@ Platinum dev, worker version `d7f2ceef4033b343`, faux model, 2026-10-05:
   (`api-dev.platinum.dev`) runs them. `dev-api.kortix.com` provisions on
   Platinum prod, so the flag cannot boot a cell there until Platinum enables
   the cell runtime in prod.
+- **No machine.** The cell's `machine` tool attached a full Linux box through
+  the API's `POST …/sessions/:s/environment/ensure`. Main removed that route
+  with the pi worker split (`e60ed971f1`, #9189). The tool is off unless
+  `CELL_MACHINE=1`, and the shell note tells the model it has no machine.
 - **Not in this path:** `daemon/`, `deploy.sh`, `celldctl.mjs`,
   `build-images.mjs`, `Dockerfile.celld`, `pt-agent-daemon.spec.json` and
   `clean-store.mjs` belong to the earlier self-hosted cell (own bucket, own

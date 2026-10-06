@@ -346,7 +346,7 @@ export class AgentCell {
     const machine = await this.machineEnv();
     this.__prompt = {
       system: withSkills(agentSystemPrompt(this.agentConfig().agent, DEFAULT_SYSTEM_PROMPT), plugins ? pluginsSummary(plugins) : ""),
-      shell: machine ? "" : cellShellNote(),
+      shell: machine ? "" : cellShellNote({ machine: this.machineAvailable() }),
       instructions: await this.projectInstructions(),
       skills: block,
     };
@@ -366,7 +366,7 @@ export class AgentCell {
       fromAgentTool(grepTool(), { replay: "safe" }),
       ...todoTools(this.sql, (todos) => this.publish([{ type: "todo.updated", properties: { sessionID: this.rootId, todos } }]))
         .map((t) => fromAgentTool(t, { replay: "safe" })),
-      fromAgentTool(this.machineTool()),
+      ...(this.machineAvailable() ? [fromAgentTool(this.machineTool())] : []),
       ...pluginTools.map((t) => fromAgentTool(t)),
     ];
   }
@@ -413,6 +413,17 @@ export class AgentCell {
   }
 
   // ── the machine ────────────────────────────────────────────────────────
+
+  /**
+   * Whether the model is offered the machine tool. The machine comes from the
+   * API's `POST …/sessions/:s/environment/ensure`, which main removed with the
+   * pi worker split (e60ed971f1, #9189). Until an API can provision a machine
+   * for a cell again, the tool would fail on every call, so it is opt-in:
+   * CELL_MACHINE=1.
+   */
+  machineAvailable() {
+    return this.effectiveEnv().CELL_MACHINE === "1";
+  }
 
   machineTool() {
     this.__machine ??= machineTool({
@@ -755,7 +766,7 @@ export class AgentCell {
         const { skills } = await this.skills().catch(() => ({ skills: [] }));
         return json(200, skills.map((s) => ({ name: s.name, description: s.description ?? "", location: s.filePath })));
       }
-      if (path === "/tool/ids" || path === "/experimental/tool/ids") return json(200, ["read", "write", "edit", "bash", "glob", "grep", "todowrite", "todoread", "machine"]);
+      if (path === "/tool/ids" || path === "/experimental/tool/ids") return json(200, ["read", "write", "edit", "bash", "glob", "grep", "todowrite", "todoread", ...(this.machineAvailable() ? ["machine"] : [])]);
       if (path === "/tool" || path === "/experimental/tool") return json(200, []);
       if (path === "/mcp" || path === "/lsp") return json(200, {});
       if (path === "/vcs" || path === "/vcs/status" || path === "/vcs/diff") return json(200, []);

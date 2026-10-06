@@ -1,6 +1,6 @@
 // THE CELL'S OWN FILESYSTEM AND SHELL. In-process, no Docker, no daemon, no
 // microVM: the tree lives in the cell's SQLite and the shell is just-bash.
-// EXPECTED_PASSES=39
+// EXPECTED_PASSES=40
 import { DatabaseSync } from "node:sqlite";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
@@ -93,13 +93,19 @@ check("a recursive removal is persisted too — deleted rows do not come back", 
   // catalogue one `ls` discovers — and still left the model nowhere to go when
   // the task needed a machine. Now it says it is restricted and names the way
   // out (2026-09-11).
-  const note = cellShellNote();
+  const note = cellShellNote({ machine: true });
+  const bare = cellShellNote();
   check("the shell note says what this shell is NOT — a Linux machine — without cataloguing commands",
     /not a Linux machine/i.test(note) && !note.includes("jq") && !note.includes("docker") && note.length < 700,
     `${note.length} chars: ${note.slice(0, 100)}`);
-  check("and it names the way out: the machine tool, for runtimes, installs, builds and a dev server",
+  check("with a machine on offer it names the way out: the machine tool, for runtimes, installs, builds and a dev server",
     /machine tool/.test(note) && /node/.test(note) && /python/.test(note) && /dev server/.test(note),
     note.slice(-220));
+  // No API provisions a machine for a cell since e60ed971f1 (#9189): by
+  // default the note must not send the model to a tool it does not have.
+  check("without one (the default) it never mentions the machine tool, and tells the model to say what it cannot do",
+    !/machine tool/.test(bare) && /no Linux machine to attach/.test(bare) && /python/.test(bare),
+    bare.slice(-220));
   check("and says the working directory survives to the next turn",
     note.includes(CELL_CWD_EXPECTED) && /persists between turns/.test(note), note.slice(-200));
 
