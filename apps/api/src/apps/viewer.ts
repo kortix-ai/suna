@@ -30,8 +30,9 @@
  */
 import { createHmac, timingSafeEqual } from 'crypto';
 import { and, eq, isNull } from 'drizzle-orm';
-import { accountGroupMembers, oauthAccessTokens, oauthClients } from '@kortix/db';
+import { oauthAccessTokens, oauthClients } from '@kortix/db';
 import { db } from '../shared/db';
+import { groupIdsOfUser } from '../iam/group-read';
 import { hashSecretKey, randomAlphanumeric } from '../shared/crypto';
 import { validateOAuthAccessToken } from '../oauth/access-token';
 /*
@@ -174,10 +175,7 @@ export async function resolveAppViewerIdentity(userId: string): Promise<ViewerId
   if (hit && hit.expiresAt > Date.now()) return hit.value;
   const [emails, groups] = await Promise.all([
     lookupEmailsByUserIds([userId]).catch(() => new Map<string, string | null>()),
-    db
-      .select({ groupId: accountGroupMembers.groupId })
-      .from(accountGroupMembers)
-      .where(eq(accountGroupMembers.userId, userId))
+    groupIdsOfUser(userId)
       .catch(() => [] as { groupId: string }[]),
   ]);
   const value: ViewerIdentity = {

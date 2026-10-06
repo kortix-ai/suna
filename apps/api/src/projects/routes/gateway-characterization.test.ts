@@ -77,7 +77,7 @@ mock.module('../lib/access', () => ({
 }));
 
 const { projectsApp } = await import('../lib/app');
-await import('./gateway');
+(await import('./gateway')).registerGatewayRoutes();
 
 function buildApp() {
   const app = new Hono<{

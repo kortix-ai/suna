@@ -145,7 +145,8 @@ mock.module('../../../shared/db', () => ({
         where: () => {
           const limit = async () => {
             if (projection && 'result' in projection && 'payload' in projection) {
-              return [{ result: { held: pauseAfterPosts !== null && capturedBodies.length >= pauseAfterPosts }, payload: {} }];
+              // The claim `baseRow()` holds: still running under its lease.
+              return [{ status: 'running', lockedBy: null, result: { held: pauseAfterPosts !== null && capturedBodies.length >= pauseAfterPosts }, payload: {} }];
             }
             if (table === projectSessions) return sessionRow ? [sessionRow] : [];
             if (table === projects) return [{ projectId: PROJECT_ID, accountId: ACCOUNT_ID }];
@@ -194,7 +195,7 @@ mock.module('../../session-title-generate', () => ({
   generateSessionTitleFromFirstPrompt: async () => {},
 }));
 
-mock.module('../../routes/shared', () => ({
+mock.module('../../session-open', () => ({
   openSession: async (input: { sessionId: string }) => {
     events.push(`open:${input.sessionId}`);
     const delay = openDelayBySession[input.sessionId];
@@ -207,7 +208,7 @@ mock.module('../../routes/shared', () => ({
   },
 }));
 
-mock.module('../../../sandbox-proxy/routes/preview', () => ({
+mock.module('../../../sandbox-proxy/forward', () => ({
   forwardToSandbox: async (
     _externalId: string,
     _port: number,

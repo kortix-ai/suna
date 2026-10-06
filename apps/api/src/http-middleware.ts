@@ -25,7 +25,7 @@ import { createCorsMiddleware } from './middleware/cors';
 import { requestDeadline } from './middleware/request-deadline';
 import { PROXY_HOP_HEADER, PROXY_UPSTREAM_STATUS_HEADER } from './sandbox-proxy/proxy-hop';
 import { upstreamTiming } from './middleware/upstream-timing';
-import { auditApiRequest } from './shared/audit';
+import { auditApiRequest } from './middleware/audit';
 import { isUuid } from './shared/validate';
 
 // The global middleware chain, in the registration order the request sees it.

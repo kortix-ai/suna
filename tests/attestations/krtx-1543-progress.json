@@ -1,0 +1,30 @@
+{
+  "source_hash": "0962d9be9c520fd005d03edb76e9e874107738e121ffbd5bfb01a9f7b8904a29",
+  "diff_files": [
+    "apps/web/src/features/workspace/new/new-workspace-errors.test.ts",
+    "apps/web/src/features/workspace/new/new-workspace-page.test.ts",
+    "apps/web/src/features/workspace/new/new-workspace-page.tsx",
+    "apps/web/src/features/workspace/new/use-create-workspace.test.ts",
+    "apps/web/src/features/workspace/new/use-create-workspace.ts",
+    "apps/web/src/features/workspace/new/workspace-handoff.test.tsx",
+    "apps/web/src/features/workspace/new/workspace-handoff.tsx",
+    "apps/web/translations/de.json",
+    "apps/web/translations/en.json",
+    "apps/web/translations/es.json",
+    "apps/web/translations/fr.json",
+    "apps/web/translations/it.json",
+    "apps/web/translations/ja.json",
+    "apps/web/translations/pt.json",
+    "apps/web/translations/sr.json",
+    "apps/web/translations/zh.json"
+  ],
+  "diff_hash": "e61017ad6761d517170bc90e1cd5ac75c5f1d08d47ffa971700a760ecdc44e81",
+  "head": "b5e58d6b374e30d551bacc6c5fd3e8af8194cf6a",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-06T11:56:59.482Z"
+}

@@ -167,7 +167,7 @@ export async function pushVerifiedSeed(input: {
   sleep?: (ms: number) => Promise<void>;
 }): Promise<void> {
   const maxAttempts = Math.max(1, input.maxAttempts ?? MAX_SEED_ATTEMPTS);
-  const sleep = input.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const sleep = input.sleep ?? Bun.sleep;
   let lastDetail = 'the default branch was still absent after the seed push';
   let lastStage: ManagedRepoSeedStage = 'verify';
   let lastCause: unknown;

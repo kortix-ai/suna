@@ -1,8 +1,9 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountMembers, accountSecretGrants, accountSecretResources, projects, sessionProviderSecretPools } from '@kortix/db';
+import { accountSecretGrants, accountSecretResources, projects, sessionProviderSecretPools } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { auth, errors, json } from '../openapi';
 import { db } from '../shared/db';
+import { accountMemberRow } from '../iam/membership-read';
 import { encryptAccountSecret, memberMayReadProject, secretUsableInProject } from '../secrets/account-resource';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { actorOf, authorize, PROJECT_ACTIONS } from '../iam';
@@ -236,8 +237,7 @@ export function registerSecretResourceRoutes() {
     const row = await loadSecret(accountId, c.req.param('secretId'));
     if (!row) return c.json({ error: 'Not found' }, 404);
     if (!(await mayManage(actorId, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
-    const [member] = await db.select({ userId: accountMembers.userId }).from(accountMembers)
-      .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId))).limit(1);
+    const [member] = await accountMemberRow(accountId, userId);
     if (!member) return c.json({ error: 'Member not found' }, 404);
     await db.insert(accountSecretGrants).values({ accountId, secretId: row.secretId, userId, grantedBy: actorId }).onConflictDoNothing();
     return c.json(await view(row, actorId));

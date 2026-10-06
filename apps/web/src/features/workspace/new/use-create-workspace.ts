@@ -554,7 +554,25 @@ export async function runProvisionAttempt(
 export type CreateOrchestrationClient = {
   attemptKeyFor: (fingerprint: string, now: number) => string;
   clearAttemptKey: (fingerprint: string) => void;
-  runCreateAttempt: (payload: ProvisionProjectInput) => Promise<KortixProject>;
+  /**
+   * The managed provision attempt, `POST /projects/provision-stream` first.
+   * `onPhase` is the orchestration client's own `onPhase` sink (below) —
+   * the hook's phase state — handed through so every streamed phase, and the
+   * plain-POST fallback's `onPhase(null)`, reach the handoff UI.
+   */
+  runCreateAttempt: (
+    payload: ProvisionProjectInput,
+    onPhase: (phase: ProvisionPhase | null) => void,
+  ) => Promise<KortixProject>;
+  /**
+   * Receives every streamed provisioning phase — `validating`,
+   * `creating_repository`, `registering`, `seeding`, in the order
+   * `runProvision` emits them — and `null` when the stream falls back to the
+   * plain POST, so the UI never shows progress that stopped being true.
+   * The GitHub sources never fire it: neither of their routes streams
+   * phases (KRTX-1543).
+   */
+  onPhase: (phase: ProvisionPhase | null) => void;
   /**
    * `source: 'github-create'` — `POST /projects/create-repo`. A separate slot
    * rather than a branch inside `runCreateAttempt` because the three sources
@@ -648,6 +666,9 @@ async function runSourceAttempt(
       idempotencyKey,
       userId,
     ) as unknown as ProvisionProjectInput,
+    // Only the managed provision streams phases; the GitHub branches above
+    // never touch the sink, so their creates render the base handoff screen.
+    client.onPhase,
   );
 }
 
@@ -755,6 +776,13 @@ export function useCreateWorkspace(): {
    * cannot fix it; the page offers the upgrade dialog instead.
    */
   limitReached: boolean;
+  /**
+   * The latest streamed provisioning phase (KRTX-1543), or `null` while the
+   * create reports none — the GitHub sources, the plain-POST fallback, and
+   * the moment before the first frame. `WorkspaceHandoff` renders `null` as
+   * the base screen, so a host that cannot show steps needs no special case.
+   */
+  phase: ProvisionPhase | null;
 } {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -766,6 +794,11 @@ export function useCreateWorkspace(): {
   // the already-rendered string.
   const [lastError, setLastError] = useState<unknown>(null);
   const [lastState, setLastState] = useState<NewWorkspaceFormState | null>(null);
+  // The latest streamed provisioning phase (`runProvision`'s emits, plus
+  // `null` for "the plain POST took over"). `WorkspaceHandoff` renders it as
+  // the step list; `null` renders the base screen, which is also what the
+  // GitHub sources — whose routes stream nothing — show for the whole wait.
+  const [phase, setPhase] = useState<ProvisionPhase | null>(null);
 
   const accountsQuery = useAccountsList();
   const creatableAccounts = useCreatableAccounts(accountsQuery.data ?? []);
@@ -775,18 +808,19 @@ export function useCreateWorkspace(): {
       setLastState(state);
       setStatus('creating');
       setError(null);
+      // Reset with the attempt: a retry must not start on the previous
+      // attempt's last phase, and every source starts on the base screen.
+      setPhase(null);
 
       const result = await runCreate(state, creatableAccounts, user?.id, {
         attemptKeyFor,
         clearAttemptKey,
-        // `onPhase` is a no-op: `/new` shows `WorkspaceHandoff`, one mark held
-        // across the whole wait, and reports no per-phase progress. The
-        // parameter stays on `runProvisionAttempt` because that function's own
-        // fallback depends on it — `onPhase(null)` is how it marks the switch
-        // to the plain POST — and because it is what a host WOULD read to
-        // render progress. Nothing here consumes it, so nothing here holds
-        // state for it.
-        runCreateAttempt: (payload) => runProvisionAttempt(payload, () => {}),
+        // The phase sink is this hook's own state setter: every streamed
+        // phase lands in `phase`, and `runProvisionAttempt`'s fallback fires
+        // `onPhase(null)` through the same sink, clearing it — the handoff
+        // never shows progress that stopped being true.
+        onPhase: setPhase,
+        runCreateAttempt: (payload, onPhase) => runProvisionAttempt(payload, onPhase),
         // No stream and no idempotency retry on either GitHub route: neither
         // emits provisioning phases and neither accepts an `idempotency_key`,
         // so there is nothing for `runProvisionAttempt`'s machinery to do. A
@@ -858,5 +892,5 @@ export function useCreateWorkspace(): {
   const canRetry = status === 'error' && isRetryableError(lastError);
 
   const limitReached = status === 'error' && isProjectLimitError(lastError);
-  return { create, status, error, retry, canRetry, limitReached };
+  return { create, status, error, retry, canRetry, limitReached, phase };
 }

@@ -196,6 +196,12 @@
   "newWorkspace": {
     "title": "创建项目",
     "description": "项目用于存放您的智能体、文件和会话。",
+    "handoff": {
+      "validating": "正在验证",
+      "creating_repository": "正在创建仓库",
+      "registering": "正在注册项目",
+      "seeding": "正在准备初始文件"
+    },
     "templateSeed": "此项目将使用您选择的模板进行初始化。",
     "account": {
       "label": "账户",
@@ -1540,6 +1546,7 @@
         "email": "电子邮件",
         "scheduled": "已计划",
         "webhook": "Webhook",
+        "manual": "手动",
         "all": "全部"
       },
       "statusValue": {
@@ -1726,7 +1733,8 @@
     },
     "restart": {
       "label": "重启会话",
-      "pending": "正在重启…"
+      "pending": "正在重启…",
+      "ownerOnly": "只有会话所有者或项目管理员可以重启此会话。"
     }
   },
   "modelSelector": {

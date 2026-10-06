@@ -651,7 +651,8 @@ function parseAuth(
   ) {
     return err(
       slug,
-      '[connectors.auth] type="oauth1" is only supported for openapi/http connectors',
+      '[connectors.auth] type="oauth1" is only supported for openapi/postman/http connectors',
+      filename,
     );
   }
 

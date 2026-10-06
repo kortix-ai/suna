@@ -34,6 +34,7 @@ import { config, type SandboxProviderName } from '../config';
 import { logger } from '../lib/logger';
 import { getProvider, type SandboxProvider } from '../platform/providers';
 import { db } from '../shared/db';
+import { mapWithConcurrency } from '../shared/map-with-concurrency';
 import { getSandboxProvider } from '../snapshots/providers';
 import { SnapshotInUseError } from '../snapshots/providers/errors';
 import {
@@ -126,14 +127,11 @@ export async function releaseDeploymentImages(
 ): Promise<AppImageReleaseSummary> {
   const summary: AppImageReleaseSummary = { released: 0, pending: 0 };
   const queue = deployments.filter((deployment) => deployment.hostingProvider);
-  const workers = Array.from({ length: Math.min(RELEASE_CONCURRENCY, queue.length) }, async () => {
-    for (let next = queue.shift(); next; next = queue.shift()) {
-      const outcome = await releaseDeploymentImage(next, resolve);
-      if (outcome === 'released') summary.released += 1;
-      else if (outcome === 'pending') summary.pending += 1;
-    }
+  await mapWithConcurrency(queue, RELEASE_CONCURRENCY, async (next) => {
+    const outcome = await releaseDeploymentImage(next, resolve);
+    if (outcome === 'released') summary.released += 1;
+    else if (outcome === 'pending') summary.pending += 1;
   });
-  await Promise.all(workers);
   return summary;
 }
 

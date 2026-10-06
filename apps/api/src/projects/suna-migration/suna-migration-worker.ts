@@ -8,25 +8,17 @@
 import { and, inArray, isNull, lt, or } from 'drizzle-orm';
 import { sunaAccountMigrations } from '@kortix/db';
 import { db } from '../../shared/db';
-import { runWorkerTick } from '../../shared/audit-scope';
 import { logger as appLogger } from '../../lib/logger';
 import { driveSunaMigration, LEASE_TTL_MS } from './suna-migration-runner';
 
-type Timer = ReturnType<typeof setInterval>;
-const g = globalThis as unknown as { __kortixSunaMigrationTimer?: Timer | null };
-let timer: Timer | null = null;
 let running = false;
 
-function intervalMs(): number {
-  const raw = Number(process.env.KORTIX_SUNA_MIGRATION_WORKER_INTERVAL_MS);
-  return Number.isFinite(raw) && raw > 0 ? raw : 60_000;
-}
 function batchSize(): number {
   const raw = Number(process.env.KORTIX_SUNA_MIGRATION_WORKER_BATCH);
   return Number.isFinite(raw) && raw > 0 ? raw : 3;
 }
 
-async function tick(): Promise<void> {
+export async function runSunaMigrationTick(): Promise<void> {
   if (running) return;
   running = true;
   try {
@@ -53,16 +45,4 @@ async function tick(): Promise<void> {
   }
 }
 
-export function startSunaMigrationWorker(): void {
-  if (process.env.KORTIX_SUNA_MIGRATION_WORKER_ENABLED === 'false') return;
-  if (g.__kortixSunaMigrationTimer) clearInterval(g.__kortixSunaMigrationTimer);
-  timer = setInterval(() => {
-    runWorkerTick('suna-migration', tick).catch((err) => appLogger.error('[suna-migration-worker] tick failed', { error: err instanceof Error ? err.message : String(err) }));
-  }, intervalMs());
-  g.__kortixSunaMigrationTimer = timer;
-}
-
-export function stopSunaMigrationWorker(): void {
-  if (timer) { clearInterval(timer); timer = null; }
-  if (g.__kortixSunaMigrationTimer) { clearInterval(g.__kortixSunaMigrationTimer); g.__kortixSunaMigrationTimer = null; }
-}
+export { startSunaMigrationWorker, stopSunaMigrationWorker } from '../../workers/suna-migration-worker';
