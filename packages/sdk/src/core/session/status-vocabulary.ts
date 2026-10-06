@@ -66,6 +66,48 @@ export function isLegacyMigratedSession(session: Pick<ProjectSession, 'metadata'
 }
 
 /**
+ * How long a session may sit in the starting family before a host should stop
+ * reading the boot as young: five minutes, the chosen UX threshold for the
+ * whole starting family. The server's own stale-provisioning reconcile is the
+ * nearest reference, not a twin: a started provision goes stale at 5 minutes
+ * (`apps/api/src/projects/session-open/stopped-wake-result.ts`,
+ * `STALE_STARTED_PROVISIONING_MS`) while a provider-QUEUED box — the
+ * suspected cause of the stuck first sessions this threshold answers — is
+ * only reconciled at 10 minutes (`STALE_PENDING_PROVISIONING_MS`), so between
+ * minutes 5 and 10 this rule names a boot the server still calls young. That
+ * is the point: the list is the surface the customer watches, and five
+ * silent minutes is past what a boot should cost. Healthy boots finish well
+ * inside it.
+ */
+export const SESSION_STARTING_STUCK_MS = 5 * 60_000;
+
+/**
+ * Whether a session has sat in the starting family past
+ * {@link SESSION_STARTING_STUCK_MS} — the wedged boot a list should name
+ * instead of spinning forever.
+ *
+ * The clock is `updated_at`, not `created_at`: every status transition
+ * (`apps/api/src/projects/session-lifecycle/status-transitions.ts`) rewrites
+ * it, so a restart re-enters `provisioning` with a fresh clock, and any later
+ * row write can only make the status read YOUNGER — the predicate
+ * under-reports, never invents a stuck state over a live boot.
+ *
+ * A warm row (pre-created, never prompted) reports `provisioning` on purpose
+ * (KRTX-1466) and sits there until its first send, so it is excluded: it is
+ * ready, not wedged. A row without a readable clock never reads stuck.
+ */
+export function sessionStartingStuck(
+  session: Pick<ProjectSession, 'status' | 'updated_at' | 'metadata'>,
+  now: number,
+): boolean {
+  if (sessionListStatus(session) !== 'starting') return false;
+  if ((session.metadata ?? {} as Record<string, unknown>).warm === true) return false;
+  const updatedAt = Date.parse(session.updated_at);
+  if (!Number.isFinite(updatedAt)) return false;
+  return now - updatedAt >= SESSION_STARTING_STUCK_MS;
+}
+
+/**
  * The list status of a session. A pending review wins outright: a finished
  * session with items awaiting the human is actionable, and actionable outranks
  * finished.

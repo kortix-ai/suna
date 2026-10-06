@@ -6,15 +6,17 @@ import {
   type SessionDisplayStatus,
   type SessionSource,
 } from '@/components/projects/session-label';
+import { Button } from '@/components/ui/button';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 import { LocalTime } from '@/components/ui/local-time';
+import Loading from '@/components/ui/loading';
 import { menuRow } from '@/components/ui/menu-recipe';
 import { CR_ID_PREFIX } from '@/features/review-center/review-actions';
 import { reviewHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { useTranslations } from '@/i18n/use-translations';
 import { useSessionHoverStore } from '@/stores/session-hover-store';
 import type { ChangeRequest, ChangeRequestStatus } from '@kortix/sdk';
-import { GitDiffIcon } from '@phosphor-icons/react';
+import { ArrowCounterClockwiseIcon as RotateCcw, GitDiffIcon } from '@phosphor-icons/react';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { useEffect, type ReactElement } from 'react';
 import { shortRelative } from './project-session-list-helpers';
@@ -60,10 +62,20 @@ interface SessionBrief {
   changeRequests: readonly ChangeRequest[];
   /** The session's free-form labels; the sidebar row has no room for them. */
   labels?: readonly string[];
+  /**
+   * The session has sat in the starting family past the SDK's
+   * `SESSION_STARTING_STUCK_MS`. The brief then says so in words and offers
+   * the same escape hatch the boot loader does, instead of an indefinite
+   * spinner.
+   */
+  stuck?: boolean;
 }
 
 interface SessionBriefInteractionProps {
   projectId: string;
+  /** The row's own restart action, wired only when the boot is stuck. */
+  onRestart?: () => void;
+  restarting?: boolean;
 }
 
 function useStatusLabel(status: SessionDisplayStatus): string {
@@ -144,7 +156,7 @@ function ChangeRequestRow({
  * `px-2.5`, so 3.5 spacing steps is exactly where the row labels start. The
  * title and the change titles share one left edge.
  */
-function SessionBriefContent({
+export function SessionBriefContent({
   title,
   status,
   createdAt,
@@ -152,8 +164,12 @@ function SessionBriefContent({
   changeRequests,
   labels,
   projectId,
+  stuck,
+  onRestart,
+  restarting,
   onDismiss,
 }: SessionBrief & SessionBriefInteractionProps & { onDismiss: () => void }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const SourceIcon = source.kind === 'chat' ? null : SOURCE_ICONS[source.kind];
 
   return (
@@ -163,7 +179,7 @@ function SessionBriefContent({
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <p className="text-foreground truncate text-sm font-medium">{title}</p>
             <span className="shrink-0">
-              <SessionStatusMark status={status} />
+              <SessionStatusMark status={status} stuck={stuck} />
             </span>
           </div>
           <RelativeCreatedTime createdAt={createdAt} />
@@ -183,6 +199,35 @@ function SessionBriefContent({
 
         {labels?.length ? <SessionLabelBadges session={{ labels: [...labels] }} max={6} className="flex-wrap" /> : null}
       </div>
+
+      {stuck ? (
+        // The stuck boot says so in words and hands over the same escape
+        // hatch the boot loader does (same copy, same full-width secondary
+        // button). It sits behind the same hairline seam as the change
+        // requests: only the lower half of the brief is actionable.
+        <div className="border-border border-t px-3.5 py-2.5">
+          <p className="text-muted-foreground text-xs text-pretty">
+            {tI18nComplete.raw('textbeda94e911d3')}
+          </p>
+          {onRestart ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="mt-2 w-full active:scale-[0.96]"
+              disabled={restarting}
+              onClick={onRestart}
+            >
+              {restarting ? (
+                <Loading className="size-3.5 shrink-0 text-current motion-reduce:animate-none" />
+              ) : (
+                <RotateCcw className="size-3.5 shrink-0" />
+              )}
+              {restarting ? tI18nComplete.raw('text75d0f1469d16') : tI18nComplete.raw('textcb886371afc6')}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
 
       {changeRequests.length > 0 ? (
         <ul className="border-border max-h-64 overflow-y-auto overscroll-contain border-t p-1">
@@ -285,13 +330,16 @@ export function SessionBriefDescription({
   createdAt,
   source,
   changeRequests,
+  stuck,
 }: Omit<SessionBrief, 'title'> & { id: string }) {
   const t = useTranslations('sidebar.sessionList.brief');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const statusLabel = useStatusLabel(status);
 
   return (
     <span id={id} className="sr-only">
-      {t('status')}: {statusLabel}. {t('created')}: <SessionCreatedTime createdAt={createdAt} />.
+      {t('status')}: {statusLabel}.{stuck ? ` ${tI18nComplete.raw('textbeda94e911d3')}` : ''}{' '}
+      {t('created')}: <SessionCreatedTime createdAt={createdAt} />.
       {source.kind !== 'chat'
         ? ` ${t('source')}: ${source.label}${source.triggerSlug ? `, ${source.triggerSlug}` : ''}.`
         : null}{' '}

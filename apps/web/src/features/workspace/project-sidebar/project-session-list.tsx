@@ -54,6 +54,7 @@ import {
   SessionBriefDescription,
   SessionBriefHoverCard,
 } from '@/features/workspace/project-sidebar/session-brief-hover-card';
+import { useStartingStuck } from '@/features/workspace/project-sidebar/use-starting-stuck';
 import { SessionFilterMenu } from '@/features/workspace/project-sidebar/session-filter-menu';
 import {
   groupSessions,
@@ -1194,6 +1195,10 @@ function ProjectSessionRow({
   // listing the very change requests that made it `needs-you`. Both now read the
   // same `reviewCount` prop, so they agree by construction rather than by luck.
   const displayStatus = sessionDisplayStatus(session, reviewCount);
+  // One stuck read feeds the dot, the hover card and the screen-reader
+  // description, so all three name the wedged boot at the same moment
+  // (KRTX-1687).
+  const startingStuck = useStartingStuck(session);
 
   const sessionLink = (
     <HoverPrefetchLink
@@ -1207,7 +1212,7 @@ function ProjectSessionRow({
       className="focus-visible:ring-kortix-base flex min-w-0 flex-1 items-center gap-2 self-stretch rounded-md py-1 focus-visible:ring-[0.6px] focus-visible:outline-none"
     >
       <div className="size-4 shrink-0">
-        <SessionStatusDot session={session} reviewCount={reviewCount} />
+        <SessionStatusDot session={session} reviewCount={reviewCount} stuck={startingStuck} />
       </div>
 
       {isMeta && (
@@ -1340,6 +1345,17 @@ function ProjectSessionRow({
             changeRequests={changeRequests}
             labels={session.labels}
             projectId={session.project_id}
+            stuck={startingStuck}
+            onRestart={
+              // Same gate the row's own Stop entry reads: restart mutates
+              // someone else's session, and #9211 put every other Restart
+              // surface behind this verdict. Without it a member hovering a
+              // teammate's wedged boot gets a button the server answers 403.
+              session.can_manage_lifecycle !== false
+                ? () => onRestart(session.session_id, displayTitle)
+                : undefined
+            }
+            restarting={isRestarting}
           >
             {sessionLink}
           </SessionBriefHoverCard>
@@ -1353,6 +1369,7 @@ function ProjectSessionRow({
           createdAt={session.created_at}
           source={source}
           changeRequests={changeRequests}
+          stuck={startingStuck}
         />
 
         {/* Out of flow on purpose. This trigger is a sibling of the link (which
@@ -1563,14 +1580,16 @@ function ProjectSubsessionRow({
 function SessionStatusDot({
   session,
   reviewCount = 0,
+  stuck = false,
 }: {
   session: ProjectSession;
   reviewCount?: number;
+  stuck?: boolean;
 }) {
   const display = sessionDisplayStatus(session, reviewCount);
   return (
     <div className="flex size-4 shrink-0 items-center justify-center">
-      <SessionStatusMark status={display} />
+      <SessionStatusMark status={display} stuck={stuck} />
     </div>
   );
 }

@@ -4,9 +4,11 @@ import type { ProjectSession } from '../rest/projects-client/sessions';
 import {
   SESSION_LIST_STATUS,
   SESSION_NOTICE,
+  SESSION_STARTING_STUCK_MS,
   isLegacyMigratedSession,
   sessionConnectionLabel,
   sessionListStatus,
+  sessionStartingStuck,
   turnRetryLabel,
 } from './status-vocabulary';
 
@@ -48,6 +50,68 @@ describe('a session in a list', () => {
 
   test('a status this build has never seen is stopped, never failed', () => {
     expect(sessionListStatus(session('hibernating'))).toBe('stopped');
+  });
+
+  test('a session in the starting family past the stuck threshold reads stuck', () => {
+    const START = Date.parse('2026-10-06T10:00:00Z');
+    const row = (status: string, updatedAt: string, metadata: Record<string, unknown> = {}) =>
+      ({ session_id: 's1', status, metadata, updated_at: updatedAt }) as unknown as ProjectSession;
+    const at = (ms: number) => new Date(START + ms).toISOString();
+    // A boot younger than the threshold is starting, not stuck.
+    expect(
+      sessionStartingStuck(row('provisioning', at(0)), START + SESSION_STARTING_STUCK_MS - 1),
+    ).toBe(false);
+    // At the threshold it flips. Five minutes is the chosen UX threshold for
+    // the whole starting family — the server's stale-provisioning reconcile
+    // is 5 min for a started provision, 10 min for a provider-queued box —
+    // so minutes 5–10 can name a boot the server still calls young. That is
+    // the point of a customer-facing threshold.
+    expect(sessionStartingStuck(row('provisioning', at(0)), START + SESSION_STARTING_STUCK_MS)).toBe(
+      true,
+    );
+    // The other starting-family members carry the same clock.
+    expect(sessionStartingStuck(row('queued', at(0)), START + SESSION_STARTING_STUCK_MS)).toBe(true);
+    expect(sessionStartingStuck(row('branching', at(0)), START + SESSION_STARTING_STUCK_MS)).toBe(
+      true,
+    );
+  });
+
+  test('stuck reads false for everything that is not a wedged boot', () => {
+    const START = Date.parse('2026-10-06T10:00:00Z');
+    const stale = new Date(START).toISOString();
+    const row = (status: string, metadata: Record<string, unknown> = {}) =>
+      ({ session_id: 's1', status, metadata, updated_at: stale }) as unknown as ProjectSession;
+    // Running, done, stopped, failed: the clock does not apply.
+    expect(sessionStartingStuck(row('running'), START + SESSION_STARTING_STUCK_MS)).toBe(false);
+    expect(sessionStartingStuck(row('completed'), START + SESSION_STARTING_STUCK_MS)).toBe(false);
+    expect(sessionStartingStuck(row('failed'), START + SESSION_STARTING_STUCK_MS)).toBe(false);
+    // A warm row (pre-created, never prompted) reports `provisioning` on
+    // purpose (KRTX-1466) and sits there until its first send. It is ready,
+    // not wedged.
+    expect(
+      sessionStartingStuck(row('provisioning', { warm: true }), START + SESSION_STARTING_STUCK_MS),
+    ).toBe(false);
+    // A missing or malformed clock never invents a stuck state.
+    expect(
+      sessionStartingStuck(
+        { session_id: 's1', status: 'provisioning', metadata: {} } as unknown as ProjectSession,
+        START + SESSION_STARTING_STUCK_MS,
+      ),
+    ).toBe(false);
+  });
+
+  test('a restart resets the stuck clock, because the transition rewrites updated_at', () => {
+    const START = Date.parse('2026-10-06T10:00:00Z');
+    // An old session restarted now re-enters `provisioning` with a fresh
+    // `updatedAt` (status-transitions.ts writes `updatedAt: new Date()`), so
+    // the row must read young again, not stuck on its birth date.
+    const restarted = {
+      session_id: 's1',
+      status: 'provisioning',
+      metadata: {},
+      updated_at: new Date(START).toISOString(),
+    } as unknown as ProjectSession;
+    expect(sessionStartingStuck(restarted, START)).toBe(false);
   });
 
   test('every status has a label and a tone; green means live or actionable only', () => {

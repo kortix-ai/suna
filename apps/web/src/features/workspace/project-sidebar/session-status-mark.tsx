@@ -17,11 +17,24 @@ const STATUS_MARK_STYLE: Record<
   legacy: { color: 'var(--muted-foreground)', glyph: 'ring', fill: false },
 };
 
-/** A status glyph with stable 16px geometry across every session state. */
-export function SessionStatusMark({ status }: { status: SessionDisplayStatus }) {
+/** A status glyph with stable 16px geometry across every session state.
+ *
+ *  `stuck` (a starting session past the SDK's `SESSION_STARTING_STUCK_MS`)
+ *  swaps the spinner for the same ring without motion: the boot has sat past
+ *  every healthy bound, so the mark stops claiming progress. The words and
+ *  the retry affordance live on the surfaces that carry text (the hover
+ *  card, the screen-reader description).
+ */
+export function SessionStatusMark({
+  status,
+  stuck = false,
+}: {
+  status: SessionDisplayStatus;
+  stuck?: boolean;
+}) {
   const style = STATUS_MARK_STYLE[status];
 
-  if (status === 'starting') {
+  if (status === 'starting' && !stuck) {
     return <Loading className="text-kortix-yellow size-3.5" aria-hidden />;
   }
 
