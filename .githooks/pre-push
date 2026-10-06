@@ -53,7 +53,7 @@ bad=$(printf '%s\n' "$push_refs" | while read -r _ local_sha remote_ref _; do
   [ "${remote_ref#refs/heads/}" != "$remote_ref" ] || continue
   [ "${remote_ref#refs/heads/scratch/}" = "$remote_ref" ] || continue
   strict=""
-  [ "$remote_ref" = refs/heads/main ] && strict="--strict"
+  [ "$remote_ref" = refs/heads/dev ] && strict="--strict"
   node "$root/tests/verify-attestation.mjs" verify --rev "$local_sha" \
     --branch "${remote_ref#refs/heads/}" $strict >&2 || echo "$remote_ref"
 done)

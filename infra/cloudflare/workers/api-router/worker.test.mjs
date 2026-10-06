@@ -24,12 +24,12 @@ afterEach(() => {
 });
 
 describe('api-router worker', () => {
-  test('deploys the dev router from main and verifies its commit and SCIM boundary', () => {
+  test('deploys the dev router from dev and verifies its commit and SCIM boundary', () => {
     const workflow = Bun.YAML.parse(readFileSync(new URL('../../../../.github/workflows/deploy-api-router-dev.yml', import.meta.url), 'utf8'));
-    expect(workflow.on.push.branches).toEqual(['main']);
+    expect(workflow.on.push.branches).toEqual(['dev']);
     expect(workflow.on.push.paths).toContain('infra/cloudflare/workers/api-router/**');
     const job = workflow.jobs.deploy;
-    expect(job.if).toBe("github.ref == 'refs/heads/main'");
+    expect(job.if).toBe("github.ref == 'refs/heads/dev'");
     expect(job['continue-on-error']).toBeUndefined();
     const commands = job.steps.map((step) => step.run ?? '').join('\n');
     expect(commands).toContain('deploy --env dev');
