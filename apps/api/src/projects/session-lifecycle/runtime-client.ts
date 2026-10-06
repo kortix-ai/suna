@@ -25,6 +25,7 @@ import type { SandboxRecord } from '../../sandbox-proxy/backend';
 import { forwardToSandbox } from '../../sandbox-proxy/forward';
 import { sandboxOpencodeEndpoint } from '../opencode-mapping';
 import { STEER_NO_ACTIVE_TURN_CODE } from '@kortix/api-contract/runtime-relay';
+import { KORTIX_SERVICE_CALL_HEADER } from '../../shared/kortix-user-context';
 import {
   WORKSPACE,
   forgetRuntimeCapabilities,
@@ -696,6 +697,10 @@ export async function postPrompt(
       ),
     );
     prompt?.onBodyBytes?.(body.byteLength);
+    // A steer goes to the box DIRECTLY with the service-call mark: kortixd
+    // refuses `/steer` without it, and the user-facing proxy strips it, so no
+    // member can steer around admission's prompter check (D9.3).
+    if (prompt?.steer) return postSteerDirect(externalId, userId, target.path, new TextDecoder().decode(body));
     return forwardToSandbox(
       externalId,
       DAEMON_PORT,
@@ -785,4 +790,11 @@ async function throwIfSteerNotTaken(externalId: string, res: Response): Promise<
   if (res.status !== 409) return;
   const body = (await res.clone().json().catch(() => null)) as { code?: unknown } | null;
   if (body?.code === STEER_NO_ACTIVE_TURN_CODE) throw new SteerNotTaken('turn_ended');
+}
+
+/** `POST .../steer` straight to the box, as the platform (see `postPrompt`). No endpoint: 503. */
+async function postSteerDirect(externalId: string, userId: string, path: string, body: string): Promise<Response> {
+  const endpoint = await sandboxOpencodeEndpoint(externalId, userId);
+  if (!endpoint) return new Response(null, { status: 503 });
+  return sessionRuntimeFetch(endpoint, 'POST', path, { headers: { [KORTIX_SERVICE_CALL_HEADER]: '1' }, body }, 30_000);
 }

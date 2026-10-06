@@ -45,6 +45,9 @@ let capabilities: string[] = [];
 const fetched: string[] = [];
 let pages: Record<string, unknown> = {};
 let healthReads = 0;
+/** Direct steer POSTs: the box answers what `steerAnswer` returns. */
+const steered: Array<{ headers: Record<string, string>; body: unknown }> = [];
+let steerAnswer: () => Response = () => Response.json({ message_id: 'msg_s', steered: true }, { status: 202 });
 /** A daemon rolled back in place: its catch-all answers a Kortix route it no longer has. */
 const routeMissing = () => Response.json({ error: 'not found' }, { status: 404 });
 /** A Kortix verb that exists and answers 404 for the resource. */
@@ -61,8 +64,14 @@ beforeEach(() => {
   forwardAnswers = {};
   pages = {};
   healthReads = 0;
-  globalThis.fetch = (async (url: unknown, init?: { method?: string }) => {
+  steered.length = 0;
+  steerAnswer = () => Response.json({ message_id: 'msg_s', steered: true }, { status: 202 });
+  globalThis.fetch = (async (url: unknown, init?: { method?: string; headers?: Record<string, string>; body?: string }) => {
     const target = String(url);
+    if (target.endsWith('/steer')) {
+      steered.push({ headers: init?.headers ?? {}, body: JSON.parse(init?.body ?? 'null') });
+      return steerAnswer();
+    }
     if (target.endsWith('/kortix/health')) {
       healthReads++;
       return Response.json({ capabilities });
@@ -218,34 +227,28 @@ describe('postPrompt steer (R10)', () => {
     return 'taken';
   };
 
-  test('posts the prompt body to the Kortix steer route, never a turn start', async () => {
+  test('posts the prompt body straight to the box with the service-call mark, never through the proxy', async () => {
     capabilities = ['runtime.turns.v1', 'session.steer'];
-    forwardBody = { message_id: 'msg_s', steered: true };
     expect(await steer()).toBe('accepted');
-    expect(forwarded).toHaveLength(1);
-    expect(forwarded[0]).toMatchObject({
-      method: 'POST',
-      path: '/kortix/runtime/sessions/ses_1/steer',
-      body: { message_id: 'msg_s', parts: [{ type: 'text', text: 'also this' }] },
-    });
-    forwardStatus = 200;
-    forwardBody = { deduplicated: true };
+    expect(forwarded).toHaveLength(0);
+    expect(steered).toHaveLength(1);
+    expect(steered[0]!.headers['X-Kortix-Service-Call']).toBe('1');
+    expect(steered[0]!.body).toMatchObject({ message_id: 'msg_s', parts: [{ type: 'text', text: 'also this' }] });
+    steerAnswer = () => Response.json({ deduplicated: true }, { status: 200 });
     expect(await steer()).toBe('deduplicated');
   });
 
   test('409 no_active_turn is turn_ended; any other 409 is a plain failure', async () => {
     capabilities = ['runtime.turns.v1', 'session.steer'];
-    forwardStatus = 409;
-    forwardBody = { code: 'no_active_turn' };
+    steerAnswer = () => Response.json({ code: 'no_active_turn' }, { status: 409 });
     expect(await notTaken()).toBe('turn_ended');
-    forwardBody = { error: 'busy' };
+    steerAnswer = () => Response.json({ error: 'busy' }, { status: 409 });
     expect(await notTaken()).toBe('taken');
   });
 
   test('501 is unsupported and forgets the capability memo', async () => {
     capabilities = ['runtime.turns.v1', 'session.steer'];
-    forwardStatus = 501;
-    forwardBody = { code: 'feature_not_supported' };
+    steerAnswer = () => Response.json({ code: 'feature_not_supported' }, { status: 501 });
     expect(await notTaken()).toBe('unsupported');
     await notTaken();
     expect(healthReads).toBe(2);
@@ -253,11 +256,12 @@ describe('postPrompt steer (R10)', () => {
 
   test('a daemon without the Kortix turn routes cannot steer: nothing is posted', async () => {
     expect(await notTaken()).toBe('unsupported');
-    expect(forwarded).toHaveLength(0);
+    expect(steered).toHaveLength(0);
     capabilities = ['runtime.turns.v1'];
     __resetRuntimeTurnVerbsMemo();
-    forwardAnswers['/kortix/runtime/sessions/ses_1/steer'] = routeMissing;
+    steerAnswer = routeMissing;
     expect(await notTaken()).toBe('unsupported');
-    expect(forwarded.map((f) => f.path)).toEqual(['/kortix/runtime/sessions/ses_1/steer']);
+    expect(steered).toHaveLength(1);
+    expect(forwarded).toHaveLength(0);
   });
 });

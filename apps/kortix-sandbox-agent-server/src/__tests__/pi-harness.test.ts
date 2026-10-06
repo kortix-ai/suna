@@ -2343,8 +2343,11 @@ describe('pi slash commands', () => {
 describe('pi steering', () => {
   const post = (r: Rig, path: string, body: unknown) =>
     r.user(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  /** As apps/api sends it: the service bearer plus the service-call mark the user proxy strips. */
+  const service = (r: Rig, path: string, body: unknown) =>
+    r.bearer(path, { method: 'POST', headers: { 'content-type': 'application/json', 'X-Kortix-Service-Call': '1' }, body: JSON.stringify(body) })
   const steer = (r: Rig, messageId: string, text: string) =>
-    post(r, `/kortix/runtime/sessions/${r.service.runtime()!.rootId}/steer`, { message_id: messageId, parts: [{ type: 'text', text }] })
+    service(r, `/kortix/runtime/sessions/${r.service.runtime()!.rootId}/steer`, { message_id: messageId, parts: [{ type: 'text', text }] })
   const page = async (r: Rig) =>
     (await r.bearer(`/kortix/runtime/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
   /** An id the client mints at send time: above every id it has seen, as the SDK does. */
@@ -2516,7 +2519,14 @@ describe('pi steering', () => {
     const { seen, hooks } = relays()
     const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 0.6' } }, { text: 'done' }, { text: 'idle prompt' }], hooks })
     const root = r.service.runtime()!.rootId
-    expect((await post(r, `/kortix/runtime/sessions/${root}/steer`, { parts: [{ type: 'text', text: 'no id' }] })).status).toBe(400)
+    expect((await service(r, `/kortix/runtime/sessions/${root}/steer`, { parts: [{ type: 'text', text: 'no id' }] })).status).toBe(400)
+    // Only the platform may steer (D9.3 is checked there): a user through the
+    // proxy, and the bearer without the service-call mark, are refused.
+    const body = { message_id: await sendTimeId(r), parts: [{ type: 'text', text: 'around admission' }] }
+    expect((await post(r, `/kortix/runtime/sessions/${root}/steer`, body)).status).toBe(403)
+    const unmarked = await r.bearer(`/kortix/runtime/sessions/${root}/steer`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    expect(unmarked.status).toBe(403)
+    expect(await unmarked.json()).toMatchObject({ code: 'STEER_SERVICE_ONLY' })
 
     const idle = await sendTimeId(r)
     const refused = await steer(r, idle, 'nobody reads this')
