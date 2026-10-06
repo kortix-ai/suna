@@ -3230,7 +3230,7 @@
   },
   "src/shared/preview-ownership.ts": {
     "kortix-api/layers": {
-      "count": 5
+      "count": 4
     },
     "kortix-api/replica-local": {
       "count": 4
