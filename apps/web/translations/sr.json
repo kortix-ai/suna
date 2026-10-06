@@ -1546,6 +1546,7 @@
         "email": "Е-пошта",
         "scheduled": "Заказано",
         "webhook": "Webhook",
+        "manual": "Ручно",
         "all": "Све"
       },
       "statusValue": {
