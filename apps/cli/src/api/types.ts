@@ -216,6 +216,8 @@ export interface ProjectTrigger {
   last_status?: string | null;
   /** Why the last fire or run failed. */
   last_error?: string | null;
+  /** ISO time of the last fire attempt or run outcome. */
+  last_attempt_at?: string | null;
   webhook_url: string | null;
 }
 

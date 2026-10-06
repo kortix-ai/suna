@@ -1,5 +1,11 @@
-import { formatDurationSeconds } from '@kortix/manifest-schema';
-import type { ProjectTrigger, ProjectTriggersResponse, TriggerFireResponse } from '../api/types.ts';
+import { formatDurationSeconds, parseDurationSeconds } from '@kortix/manifest-schema';
+import type { ApiClient } from '../api/client.ts';
+import type {
+  ProjectSession,
+  ProjectTrigger,
+  ProjectTriggersResponse,
+  TriggerFireResponse,
+} from '../api/types.ts';
 import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
@@ -40,7 +46,13 @@ Subcommands:
                            written. Always applies now — there is no local form.
   rm <slug> [--apply]      Remove a trigger from kortix.yaml (or from the cloud
                            project now).
-  fire <slug>              Manually fire a trigger now.
+  fire <slug>              Manually fire a trigger now, wait for the run
+                           outcome, and exit non-zero with the failure text
+                           when the run fails. The fired session is cleaned up
+                           on failure, so its API key does not outlive the run.
+                           [--wait <dur>]  How long to watch for the outcome
+                           (default 90s; 0 returns as soon as the fire is
+                           accepted).
   enable <slug> [--apply]  Set enabled = true on a trigger.
   disable <slug> [--apply] Set enabled = false on a trigger.
   pause                    Deactivate ALL of this project's triggers server-side
@@ -137,6 +149,7 @@ export async function runTriggers(argv: string[]): Promise<number> {
     tf.mode = takeFlagValue(rest, ['--mode']);
     tf.interval = takeFlagValue(rest, ['--interval']);
     tf.expectEventWithin = takeFlagValue(rest, ['--expect-event-within']);
+    tf.wait = takeFlagValue(rest, ['--wait']);
     tf.name = takeFlagValue(rest, ['--name']);
     disabled = (() => {
       const i = rest.indexOf('--disabled');
@@ -172,7 +185,7 @@ export async function runTriggers(argv: string[]): Promise<number> {
         ? triggersRmLive(positional[0], ctxOpts, json)
         : triggersRmLocal(positional[0]);
     case 'fire':
-      return triggersFire(positional[0], ctxOpts);
+      return triggersFire(positional[0], tf.wait, ctxOpts);
     case 'enable':
       return applyRemote
         ? triggersToggleLive(positional[0], true, ctxOpts, json)
@@ -253,7 +266,15 @@ async function triggersLs(opts: CtxOpts, json = false): Promise<number> {
   return 0;
 }
 
-async function triggersFire(slug: string | undefined, opts: CtxOpts): Promise<number> {
+/** How long `triggers fire` watches for the run outcome when --wait is not given. */
+const FIRE_DEFAULT_WAIT_SECONDS = 90;
+const FIRE_POLL_INTERVAL_MS = 1_000;
+
+async function triggersFire(
+  slug: string | undefined,
+  waitFlag: string | undefined,
+  opts: CtxOpts,
+): Promise<number> {
   if (!slug) return missing('a trigger slug');
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
@@ -267,18 +288,124 @@ async function triggersFire(slug: string | undefined, opts: CtxOpts): Promise<nu
     return surfaceApiError(err);
   }
 
-  if (resp.status === 'fired' && resp.session_id) {
-    process.stdout.write(
-      `${status.ok(`Fired ${C.bold}${slug}${C.reset} → session ${C.dim}${resp.session_id}${C.reset}`)}\n`,
+  const fired = resp.status === 'fired';
+  // The printed session id must be one the caller can open. The API hands one
+  // back only after the session row exists, so a read that fails here is worth
+  // failing on, not printing green over.
+  if (resp.session_id) {
+    try {
+      await ctx.client.get<ProjectSession>(
+        `/projects/${ctx.projectId}/sessions/${resp.session_id}`,
+      );
+    } catch (err) {
+      process.stderr.write(
+        `${status.err(
+          `The fired session ${C.bold}${resp.session_id}${C.reset} could not be read (${(err as Error).message}). Its run outcome is on the trigger: \`kortix triggers ls\`.`,
+        )}\n`,
+      );
+      return 1;
+    }
+  }
+
+  const waitSeconds =
+    waitFlag === undefined
+      ? FIRE_DEFAULT_WAIT_SECONDS
+      : waitFlag === '0'
+        ? 0
+        : parseDurationSeconds(waitFlag);
+  if (waitSeconds === null) {
+    return fail(`--wait must be a duration like 30s or 5m (got "${waitFlag}")`);
+  }
+
+  const outcome = waitSeconds > 0 ? await triggerRunOutcome(ctx, slug, waitSeconds) : null;
+  if (outcome) {
+    process.stderr.write(
+      `${status.err(`Trigger ${C.bold}${slug}${C.reset} run failed: ${outcome.error}`)}\n`,
     );
-  } else if (resp.status === 'queued') {
+    if (fired && resp.session_id) {
+      // The dead session's per-session API key only dies with the session
+      // (deleteSession revokes it), so the failed run's fresh session is
+      // cleaned up here instead of leaking a live bearer.
+      try {
+        await ctx.client.delete(`/projects/${ctx.projectId}/sessions/${resp.session_id}`);
+        process.stdout.write(
+          `${C.dim}Cleaned up the failed run's session ${resp.session_id}.${C.reset}\n`,
+        );
+      } catch {
+        process.stdout.write(
+          `${C.dim}The failed run's session ${resp.session_id} could not be deleted — remove it with \`kortix sessions rm ${resp.session_id}\`.${C.reset}\n`,
+        );
+      }
+    }
+    return 1;
+  }
+
+  if (fired && resp.session_id) {
     process.stdout.write(
-      `${status.info(`Queued ${C.bold}${slug}${C.reset}${resp.reason ? `${C.dim} — ${resp.reason}${C.reset}` : ''}`)}\n`,
+      `${status.ok(`Fired ${C.bold}${slug}${C.reset} → session ${C.dim}${resp.session_id}${C.reset}`)} ${C.dim}— no failure within ${formatDurationSeconds(waitSeconds)}; the run is still going or finished clean. \`kortix triggers ls\` shows the outcome.${C.reset}\n`,
+    );
+  } else if (!fired) {
+    process.stdout.write(
+      `${status.info(`Queued ${C.bold}${slug}${C.reset}${resp.reason ? `${C.dim} — ${resp.reason}${C.reset}` : ''}`)} ${C.dim}— no failure within ${formatDurationSeconds(waitSeconds)}.${C.reset}\n`,
     );
   } else {
     process.stdout.write(`${status.ok(`Fired ${C.bold}${slug}${C.reset}`)}\n`);
   }
   return 0;
+}
+
+/**
+ * Watch the trigger's runtime row for the run's outcome. The fire's own write
+ * stamps `last_attempt_at`; any later write is a run end, so a `failed` row
+ * with a later attempt is THIS run's failure — never the stale one a fire over
+ * a failing trigger keeps (keepRunFailure keeps the old failure under the
+ * fire's own attempt stamp). A healthy run writes nothing, so the window
+ * expiring means "no failure observed", never "succeeded".
+ */
+async function triggerRunOutcome(
+  ctx: { client: ApiClient; projectId: string },
+  slug: string,
+  waitSeconds: number,
+): Promise<{ error: string } | null> {
+  const readTrigger = async (): Promise<ProjectTrigger | undefined> => {
+    const resp = await ctx.client.get<ProjectTriggersResponse>(`/projects/${ctx.projectId}/triggers`);
+    return resp.triggers.find((t) => t.slug === slug);
+  };
+  // The anchor is the fire's own attempt stamp: without it no later write can
+  // be told apart from the fire, so a transient read failure gets retried
+  // before the watch starts rather than silently disabling it.
+  let anchor: ProjectTrigger | undefined;
+  for (let attempt = 0; attempt < 3 && !anchor?.last_attempt_at; attempt += 1) {
+    try {
+      anchor = await readTrigger();
+    } catch {
+      if (attempt < 2) await Bun.sleep(500);
+    }
+  }
+  if (!anchor?.last_attempt_at) return null;
+  if (anchor.last_status === 'failed' && anchor.last_error) {
+    // A fire over a failing trigger keeps the old failure until a run finishes.
+    process.stdout.write(`${C.dim}Previous run failed: ${anchor.last_error}${C.reset}\n`);
+  }
+  const deadline = Date.now() + waitSeconds * 1000;
+  while (Date.now() < deadline) {
+    await Bun.sleep(Math.min(FIRE_POLL_INTERVAL_MS, Math.max(1, deadline - Date.now())));
+    let row: ProjectTrigger | undefined;
+    try {
+      row = await readTrigger();
+    } catch {
+      continue; // a transient read error is not a run outcome
+    }
+    if (
+      row?.last_status === 'failed' &&
+      row.last_error &&
+      row.last_attempt_at &&
+      row.last_attempt_at > anchor.last_attempt_at
+    ) {
+      return { error: row.last_error };
+    }
+  }
+  return null;
 }
 
 // Server-side activation switch (cloud state in projects.metadata, NOT the
