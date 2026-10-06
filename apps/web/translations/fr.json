@@ -19250,7 +19250,12 @@
       "text6243d930fc1c": "AI Operating System",
       "textc959682e0398": "A consulté les appareils connectés",
       "text976811d9540a": "A déconnecté un appareil",
-      "text6f417aa88601": "Dépenses de la passerelle LLM par source répertoriées"
+      "text6f417aa88601": "Dépenses de la passerelle LLM par source répertoriées",
+      "text010d6ae1c6f3": "Backends listés",
+      "text974ed31ef006": "Backend créé",
+      "texta09d5b41a6e5": "Backend supprimé",
+      "text3e5ef2a7483e": "Backend consulté",
+      "text59db25d6a41f": "Identifiants d'administrateur du backend lus"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

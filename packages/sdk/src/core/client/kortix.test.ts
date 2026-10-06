@@ -51,6 +51,17 @@ test('project(id) handle binds the id and hits the right endpoint', async () => 
   expect(last().method).toBe('GET');
 });
 
+test('project(id).backends binds the project id on every call', async () => {
+  const backends = kortix.project('PID123').backends;
+  for (const fn of ['list', 'create', 'get', 'credentials', 'remove'] as const) {
+    expect(typeof backends[fn]).toBe('function');
+  }
+  await backends.list().catch(() => undefined);
+  expect(last().url).toContain('/projects/PID123/backends');
+  await backends.credentials('B1').catch(() => undefined);
+  expect(last().url).toContain('/projects/PID123/backends/B1/credentials');
+});
+
 test('project(id).apps exposes the complete App lifecycle with the project id bound', async () => {
   const apps = kortix.project('PID123').apps;
 

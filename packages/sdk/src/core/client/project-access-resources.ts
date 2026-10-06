@@ -45,6 +45,16 @@ export function bindProjectAccessResources(projectId: string) {
         P.rollbackApp(projectId, ...a),
     },
 
+    backends: {
+      list: () => P.listBackends(projectId),
+      create: (input: Parameters<typeof P.createBackend>[1]) => P.createBackend(projectId, input),
+      get: (backendId: string) => P.getBackend(projectId, backendId),
+      waitUntilRunning: (backendId: string, options?: P.WaitForBackendOptions) =>
+        P.waitForBackend(projectId, backendId, options),
+      credentials: (backendId: string) => P.getBackendCredentials(projectId, backendId),
+      remove: (backendId: string) => P.deleteBackend(projectId, backendId),
+    },
+
     /** Project-scoped CLI PATs (auto-minted at session-create as `KORTIX_TOKEN`; can also be minted by hand). */
   };
 }

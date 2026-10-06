@@ -19250,7 +19250,12 @@
       "text6243d930fc1c": "AI Operating System",
       "textc959682e0398": "查看了已登录的设备",
       "text976811d9540a": "已将一台设备退出登录",
-      "text6f417aa88601": "已按来源列出 LLM 网关支出"
+      "text6f417aa88601": "已按来源列出 LLM 网关支出",
+      "text010d6ae1c6f3": "已列出后端",
+      "text974ed31ef006": "已创建后端",
+      "texta09d5b41a6e5": "已删除后端",
+      "text3e5ef2a7483e": "已查看后端",
+      "text59db25d6a41f": "已读取后端管理员凭据"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

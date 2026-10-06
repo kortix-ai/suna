@@ -1,0 +1,112 @@
+---
+title: Backends
+description: Create and manage self-hosted Convex backends from the SDK and from React.
+---
+
+A Backend is a self-hosted Convex deployment that runs in its own machine. A
+project owns up to 3. This page covers the SDK surface: the `backends` facade
+on a project handle, the exported types, and the React hook.
+
+```ts
+const backends = kortix.project(projectId).backends;
+```
+
+:::info[Backends is a feature flag]
+Every Backends route answers `403` with `{ error, code: "feature_disabled", feature: "backends" }`
+until the project turns Backends on. Use `isFeatureDisabledError(error)` to
+branch on it. See [Feature flags](/docs/feature-flags).
+:::
+
+## The backends facade
+
+| Method | Wraps | What it does |
+|---|---|---|
+| `backends.list()` | `GET /projects/:pid/backends` | Lists the project's backends |
+| `backends.create({ name })` | `POST …/backends` | Creates and boots a backend. Returns when it runs |
+| `backends.get(backendId)` | `GET …/backends/:id` | Reads one backend |
+| `backends.credentials(backendId)` | `GET …/backends/:id/credentials` | Reads `url`, `site_url`, `admin_key`, and `env` |
+| `backends.remove(backendId)` | `DELETE …/backends/:id` | Deletes the backend and its machine |
+
+`create` is synchronous. It takes about 3 to 5 seconds, and up to a few
+minutes the first time the Convex image builds. Set a long client timeout.
+
+A `name` is lowercase letters, digits, and dashes, starts with a letter, and
+is at most 63 characters.
+
+## Deploy Convex functions to a backend
+
+`credentials().env` holds the two variables the Convex CLI reads for a
+self-hosted deployment.
+
+```ts
+const backends = kortix.project(projectId).backends;
+
+const backend = await backends.create({ name: 'main' });
+const { env } = await backends.credentials(backend.backend_id);
+// env.CONVEX_SELF_HOSTED_URL, env.CONVEX_SELF_HOSTED_ADMIN_KEY
+```
+
+From a terminal, `kortix backends deploy main` does this and runs
+`npx convex deploy`. See the [CLI](/docs/cli).
+
+`credentials` answers `409` with `backend_not_running` until the backend runs.
+The admin key grants full access to the backend. Do not log it or ship it to a
+browser.
+
+## Types
+
+Every type below is exported from `@kortix/sdk`.
+
+| Type | What it holds |
+|---|---|
+| `ProjectBackend` | `backend_id`, `project_id`, `name`, `status`, `url`, `site_url`, `cpu`, `memory_gb`, `disk_gb`, `error`, `created_at`, `updated_at` |
+| `ProjectBackendStatus` | `'provisioning' \| 'running' \| 'error' \| 'deleted'` |
+| `CreateProjectBackendInput` | `name` |
+| `ProjectBackendCredentials` | `url`, `site_url`, `admin_key`, `env` |
+
+`url` and `site_url` are `null` until the backend runs.
+
+## React hooks
+
+### useProjectBackends(projectId)
+
+The backend inventory plus create and delete mutations.
+
+```tsx
+import { useProjectBackends } from '@kortix/sdk/react';
+
+function BackendList({ projectId }: { projectId: string }) {
+  const backends = useProjectBackends(projectId);
+  if (!backends.data) return null;
+
+  return (
+    <ul>
+      {backends.data.map((backend) => (
+        <li key={backend.backend_id}>
+          {backend.name} · {backend.status}
+          <button onClick={() => backends.remove.mutate(backend.backend_id)}>Delete</button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+```
+
+It returns the query fields plus `create` and `remove`. Both mutations
+invalidate the list. `projectBackendsKey(projectId)` is the query key.
+
+## Errors
+
+```ts
+import { isFeatureDisabledError } from '@kortix/sdk';
+
+try {
+  await kortix.project(projectId).backends.create({ name: 'main' });
+} catch (error) {
+  if (isFeatureDisabledError(error)) console.log('Backends is off for this project');
+}
+```
+
+Other answers you should handle: `409` with `backend_limit` (3 backends per
+project), `409` with `backend_name_taken`, and `502` with
+`backend_create_failed`.

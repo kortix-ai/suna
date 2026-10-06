@@ -5,7 +5,7 @@ has one stable URL. Each deployment is immutable. The active deployment pointer
 changes only after the new runtime passes readiness.
 
 Apps is experimental and off by default. Enable **Apps** for the selected
-project under Project Settings → Experimental. The API returns `404`, the
+project under Project Settings → Feature flags. The API returns `404`, the
 public URL does not resolve, and App operations remain unavailable while the
 feature is disabled. The CLI and web inventory stay visible and label Apps as
 experimental.

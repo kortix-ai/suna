@@ -19250,7 +19250,12 @@
       "text6243d930fc1c": "AI Operating System",
       "textc959682e0398": "Visualizou os dispositivos conectados",
       "text976811d9540a": "Desconectou um dispositivo",
-      "text6f417aa88601": "Gastos do gateway LLM por origem listados"
+      "text6f417aa88601": "Gastos do gateway LLM por origem listados",
+      "text010d6ae1c6f3": "Backends listados",
+      "text974ed31ef006": "Backend criado",
+      "texta09d5b41a6e5": "Backend excluído",
+      "text3e5ef2a7483e": "Backend visualizado",
+      "text59db25d6a41f": "Credenciais de administrador do backend lidas"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

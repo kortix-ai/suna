@@ -1,0 +1,150 @@
+---
+title: Backends
+description: Give a project full backends with a database, server functions, realtime queries, file storage, and schedules, powered by Convex.
+---
+
+A Kortix backend is a full backend for one project: a database, server
+functions, realtime queries, file storage, and schedules, powered by Convex.
+Each backend is a self-hosted Convex instance in its own Platinum machine. A
+project owns up to 3 backends.
+
+Backends is a [feature flag](/docs/feature-flags). Its stability is
+**experimental**, and it is off by default. It is available only where
+Platinum is configured.
+
+Building on backends from TypeScript? See [SDK → Backends](/docs/sdk/backends)
+for the client surface and the React hooks.
+
+## Turn Backends on
+
+Open **Settings → Feature flags** and switch **Backends** on for the project.
+You need `project.settings.write`.
+
+While the flag is off, or where Platinum is not configured:
+
+- Every backends route answers `403` with
+  `{ error, code: "feature_disabled", feature: "backends" }`.
+- `kortix backends <subcommand>` prints the same sentence and exits `1`.
+
+Turning the flag on where Platinum is not configured changes nothing. The flag
+is `available` only when `PLATINUM_API_KEY` is set. See
+[Feature flags](/docs/feature-flags).
+
+## What a backend is
+
+| Property | Value |
+|---|---|
+| Runtime | Self-hosted Convex, one instance per machine |
+| Storage | SQLite on the machine disk |
+| Machine | 1 vCPU, 1 GB memory, 10 GB disk. Not configurable. |
+| Uptime | Always on. The machine never idles to a stop. |
+| Limit | 3 backends per project |
+| Name | Lowercase letters, digits, and dashes. Starts with a letter. 63 characters at most. |
+
+Your data lives on the machine disk. Kortix backs it up with the machine disk.
+
+A backend has two public URLs:
+
+| Field | Use it for |
+|---|---|
+| `url` | The Convex client (`CONVEX_URL`). It is public, not secret. |
+| `site_url` | Convex HTTP actions. |
+
+The admin key is secret. It controls the backend's code and data.
+
+## Create and deploy from the CLI
+
+The Convex code lives in your project repo. A common layout is
+`backends/main/`, with a `package.json` and a `convex/` directory.
+
+```bash
+kortix backends deploy main --dir backends/main
+```
+
+`deploy` creates the backend if it does not exist, waits until it is
+`running`, then runs `npx convex deploy` in `--dir` with the backend's
+credentials. The default for `--dir` is the current directory.
+
+The full subcommand list:
+
+| Command | What it does |
+|---|---|
+| `kortix backends list` | List the project's backends. `--json`. |
+| `kortix backends create <name>` | Create a backend without deploying to it. |
+| `kortix backends get <name>` | Show one backend and its status. `--json`. |
+| `kortix backends env <name>` | Print the Convex CLI variables for the backend. |
+| `kortix backends deploy <name> [--dir <path>]` | Create if missing, then deploy the Convex code. |
+| `kortix backends delete <name>` | Delete the backend, its machine, and all its data. |
+
+`--project`, `--host`, and `--json` work on every subcommand.
+
+A new backend starts in `provisioning`. It usually becomes `running` in a few
+seconds. The first create in a region also builds the machine image and takes
+longer. A failed create ends in `error` and releases the machine. Delete it and
+create it again.
+
+## Read and write data
+
+Print the Convex CLI variables, then use the Convex CLI:
+
+```bash
+eval "$(kortix backends env main)"
+npx convex data
+npx convex run messages:list '{}'
+```
+
+`kortix backends env` prints `CONVEX_SELF_HOSTED_URL` and
+`CONVEX_SELF_HOSTED_ADMIN_KEY`. Reading them needs `project.backend.write`.
+Kortix audits every read as `backend.credentials.read`.
+
+:::warning[Never commit or print the admin key]
+Keep the admin key out of the repo, chat, and logs. Export it into the shell
+with `eval`, as shown above. To read it for yourself, run
+`kortix backends env main`.
+:::
+
+## Use a backend from an App
+
+Set the backend `url` as an environment variable of the
+[App](/docs/feature-flags/apps), for example `VITE_CONVEX_URL`,
+`NEXT_PUBLIC_CONVEX_URL`, or `CONVEX_URL`. The URL is public. The App needs no
+admin key.
+
+```ts
+import { ConvexReactClient } from "convex/react";
+
+const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL);
+```
+
+## Roles and audit
+
+| Permission | Allows |
+|---|---|
+| `project.backend.read` | List and view backends. |
+| `project.backend.write` | Create and delete backends. Read the admin credentials. |
+
+Reading the credentials writes a `backend.credentials.read` audit event. See
+[Audit actions](/docs/audit-actions).
+
+## Limits
+
+- Backends are not metered. A project is capped at 3.
+- Backends are always on. A backend does not stop when idle.
+- The size is fixed at 1 vCPU, 1 GB memory, and 10 GB disk.
+- Kortix has no dashboard for a backend yet. Use the CLI or MCP.
+  `npx convex dashboard` does not work against a self-hosted backend.
+- Convex Auth needs manual setup. Custom JWT or OIDC authentication through
+  `auth.config.ts` works.
+- Convex cloud features are absent: preview deployments, the AI gateway for
+  `@convex-dev/agent`, and audit logs.
+- `npx convex export` covers data and files. It does not cover environment
+  variables or pending scheduled jobs.
+
+## Delete a backend
+
+```bash
+kortix backends delete main
+```
+
+Delete removes the machine and every document and file in it. You cannot undo
+it. Export first with `npx convex export` when you need the data.

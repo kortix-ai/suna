@@ -12,11 +12,12 @@ another project, and nothing for other accounts.
 
 <CardGroup>
   <Card icon="app-window" title="Apps" href="/docs/feature-flags/apps">Deploy static sites, bundles, Dockerfiles, and OCI images to stable URLs.</Card>
+  <Card icon="database" title="Backends" href="/docs/feature-flags/backends">Give a project a database, server functions, realtime queries, files, and schedules, powered by Convex.</Card>
 </CardGroup>
 
 ## Turn a flag on
 
-1. Open **Settings → Experimental**. The tab lists every flag the platform
+1. Open **Settings → Feature flags**. The tab lists every flag the platform
    supports.
 2. Read the row: the flag name, its stability badge, one sentence of
    description, and its origin — `Default on`, `Default off`, or
@@ -61,11 +62,12 @@ Each flag has two gates. They answer different questions.
 AND-gated by `available`. `enabled` therefore always implies `available`.
 
 `available` is an operator decision, made by the environment the API runs in.
-Two flags read it from configuration; every other flag is always available:
+Some flags read it from configuration; every other flag is always available:
 
 | Flag | Available when |
 |---|---|
 | `llm_gateway` | `LLM_GATEWAY_ENABLED` is on |
+| `backends` | `PLATINUM_API_KEY` is set |
 | `monitors` | `PLATINUM_API_KEY` is set |
 
 ## Stability badges
@@ -118,6 +120,7 @@ Registry order — the same order **Settings → Feature flags** shows.
 | `llm_gateway` | LLM Gateway | Experimental | On (operator can default off) | `behavioral` |
 | `meta_agent` | Meta Agent | Experimental | Off | `behavioral` |
 | `apps` | Apps | Stable | Off | `routes` |
+| `backends` | Backends | Experimental | Off | `routes` |
 | `monitors` | Monitors | Experimental | Off | `routes` |
 | `reminders` | Reminders | Beta | Off | `routes` |
 | `warm_sessions` | Warm Sessions | Beta | On | `routes` |
@@ -145,6 +148,9 @@ refs). An explicit project choice always wins.
   manages specialized sessions.
 - **`apps`** — deploy static sites, bundles, Dockerfiles, and OCI images to
   stable serverless URLs. See [Apps](/docs/feature-flags/apps).
+- **`backends`** — give a project up to 3 full backends: a database, server
+  functions, realtime queries, file storage, and schedules, powered by Convex.
+  See [Backends](/docs/feature-flags/backends).
 - **`monitors`** — run 24/7 watchers from your repo that fire trigger events
   into sessions. See [Triggers](/docs/connect/triggers).
 - **`reminders`** — scheduled check-ins that re-prompt one session, once or

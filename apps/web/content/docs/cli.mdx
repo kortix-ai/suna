@@ -674,6 +674,27 @@ Pinning a provider needs `project.settings.write`.
 
 `add`/`update` options: `--name <label>`, `--cpu <n>`, `--memory <n>` (GiB), `--disk <n>` (GiB).
 
+### Backends
+
+Manages the project's self-hosted Convex backends. Each backend runs in its own machine. A project owns up to 3. Needs the `backends` project feature. SDK: [Backends](/docs/sdk/backends).
+
+| Command | Effect |
+| --- | --- |
+| `kortix backends list [--json]` | List backends with status and URL. |
+| `kortix backends create <name> [--json]` | Create and boot a backend. Takes seconds, or minutes on the first image build. |
+| `kortix backends get <name\|id> [--json]` | Show one backend. |
+| `kortix backends env <name\|id> [--format shell\|dotenv\|json]` | Print the Convex CLI credentials. `shell` (default) prints `export CONVEX_SELF_HOSTED_URL=…` and `export CONVEX_SELF_HOSTED_ADMIN_KEY=…`. `dotenv` prints `KEY=value` lines for `.env.local`. `json` prints the credentials object. |
+| `kortix backends deploy <name> [--dir <path>] [-- <convex args>]` | Create the backend when it does not exist, then run `npx convex deploy` in `--dir` (default: the current directory) against it. Needs a `convex/` folder or `convex.json`. Exits with the Convex exit code. |
+| `kortix backends delete <name\|id> [--yes]` | Delete the backend and its machine. Asks first unless `--yes`. |
+
+```bash
+kortix backends deploy main                  # create if missing, then deploy ./convex
+eval "$(kortix backends env main)"           # point the Convex CLI at it in this shell
+kortix backends env main --format dotenv >> .env.local
+```
+
+`deploy` removes `CONVEX_DEPLOY_KEY` and `CONVEX_DEPLOYMENT` from the Convex process, so neither can redirect the deploy. A `CONVEX_DEPLOYMENT` line in `.env.local` can still conflict. Remove it. The admin key grants full access to the backend. Do not commit it.
+
 ### Marketplace
 
 Browse the Kortix marketplace, and install an item into a project.

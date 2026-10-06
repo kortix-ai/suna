@@ -19250,7 +19250,12 @@
       "text6243d930fc1c": "AI Operating System",
       "textc959682e0398": "Pregledao prijavljene uređaje",
       "text976811d9540a": "Odjavio uređaj",
-      "text6f417aa88601": "Потрошња LLM гејтвеја по извору излистана"
+      "text6f417aa88601": "Потрошња LLM гејтвеја по извору излистана",
+      "text010d6ae1c6f3": "Izlistani backendi",
+      "text974ed31ef006": "Backend kreiran",
+      "texta09d5b41a6e5": "Backend obrisan",
+      "text3e5ef2a7483e": "Backend pregledan",
+      "text59db25d6a41f": "Pročitani administratorski pristupni podaci backenda"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

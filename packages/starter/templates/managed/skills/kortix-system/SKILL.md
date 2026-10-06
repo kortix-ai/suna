@@ -347,7 +347,7 @@ timeout. `stop` suspends compute immediately. The next public request resumes
 the App and returns the original request after readiness.
 
 Apps is experimental and off by default. Enable **Apps** for the selected
-project under Project Settings → Experimental before using the CLI or SDK. The
+project under Project Settings → Feature flags before using the CLI or SDK. The
 CLI labels Apps as experimental. App operations remain gated by the selected
 project feature.
 
@@ -383,6 +383,21 @@ selection, manifest fields, every lifecycle command, ignore rules, secrets,
 cold starts, rollback, limits, and failure handling. Load it before deploying
 or operating an App.
 </apps>
+
+<backends>
+A **Kortix backend** is a full backend for the project: a database, server
+functions, realtime queries, file storage, and schedules, powered by Convex.
+Each backend is a self-hosted Convex instance in its own always-on machine. A
+project holds up to 3. The Convex code lives in the project repo, for example
+`backends/main/` with `package.json` and `convex/`. Deploy it with
+`kortix backends deploy main --dir backends/main`. Apps read the backend through
+its public URL. Backends is experimental and off by default.
+
+**Full reference:**
+`references/kortix/backends.md` — the deploy loop, schema, functions, HTTP
+actions, crons, file storage, wiring an App, reading data as an agent, secret
+handling, and limits. Load it before you create or change a backend.
+</backends>
 
 <marketplace>
 The **Kortix Marketplace** is the project skill library and the normal way to
@@ -810,6 +825,14 @@ to see the full enum.
   rules; environment and secret mappings; stable URLs; cold wake and idle
   stop; lifecycle commands; rollback; resource and budget limits; and current
   first-release boundaries. Load before deploying or operating an App.
+</reference>
+
+<reference path="references/kortix/backends.md">
+  Kortix Backends reference. Covers when to use a backend, the repo layout, the
+  `kortix backends deploy` loop, Convex schema, queries, mutations, actions,
+  HTTP actions, crons, file storage, search, wiring an App to the backend URL,
+  reading and writing data as an agent, admin key handling, and limits. Load
+  before creating or changing a backend.
 </reference>
 
 <reference path="references/kortix/marketplace.md">

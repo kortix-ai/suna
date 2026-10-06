@@ -19250,7 +19250,12 @@
       "text6243d930fc1c": "AI Operating System",
       "textc959682e0398": "Angemeldete Geräte angezeigt",
       "text976811d9540a": "Ein Gerät abgemeldet",
-      "text6f417aa88601": "LLM-Gateway-Ausgaben nach Quelle aufgelistet"
+      "text6f417aa88601": "LLM-Gateway-Ausgaben nach Quelle aufgelistet",
+      "text010d6ae1c6f3": "Backends aufgelistet",
+      "text974ed31ef006": "Backend erstellt",
+      "texta09d5b41a6e5": "Backend gelöscht",
+      "text3e5ef2a7483e": "Backend angezeigt",
+      "text59db25d6a41f": "Admin-Zugangsdaten des Backends gelesen"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

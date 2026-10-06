@@ -364,6 +364,8 @@ export const qk = {
 
     /** Stable App inventory for `GET /projects/:id/apps`. */
     apps: (id: string) => [...qk.project.scope(id), 'apps'] as const,
+    /** Backend inventory for `GET /projects/:id/backends`. */
+    backends: (id: string) => [...qk.project.scope(id), 'backends'] as const,
     /** Access policy and short-lived browser session for one App. */
     appAccess: (id: string, appId: string) => [...qk.project.apps(id), appId, 'access'] as const,
     /** Short-lived browser exchange URL for one App. */

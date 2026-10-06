@@ -19261,7 +19261,12 @@
       "text6243d930fc1c": "AI Operating System",
       "textc959682e0398": "Viewed signed-in devices",
       "text976811d9540a": "Signed a device out",
-      "text6f417aa88601": "Listed LLM gateway spend by source"
+      "text6f417aa88601": "Listed LLM gateway spend by source",
+      "text010d6ae1c6f3": "Listed backends",
+      "text974ed31ef006": "Created backend",
+      "texta09d5b41a6e5": "Deleted backend",
+      "text3e5ef2a7483e": "Viewed backend",
+      "text59db25d6a41f": "Read backend admin credentials"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

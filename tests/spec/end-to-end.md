@@ -1443,6 +1443,27 @@ a trigger run. Every denial is `403 {code, action}` (spec §4).
 `AGP-11` Audit. On an enterprise team, a correlated `GET /projects/:id/files` from a human's private `reader` run records `actor_type: agent`, `agent_name: reader`, `on_behalf_of_user_id` = the human, and `initiator_actor_type: human` with the human's id. The same request from a trigger run records `initiator_actor_type: trigger`, `on_behalf_of_user_id: null`, and no human id in `actor_user_id`, `initiator_actor_id`, or `on_behalf_of_user_id`. A human's private `shipper` run that clones and pushes its own branch through the Git proxy (real `git` processes) records one `git.clone` and one `git.push` row for the session (`resource_type: git_repository`, `outcome: success`) with the same agent, on-behalf-of, and initiator fields; the `git.push` row's `metadata.refs` names `refs/heads/<session>` as a `create` from the zero sha to the pushed commit.
 `AGP-12` Denial bodies. Each denial carries `code` and `action`: `project_role_insufficient` (member JWT, files), `agent_scope_insufficient` (secrets outside the list), `agent_ceiling_insufficient` (files under a `member` ceiling), `agent_not_accessible` (spawning an agent the human may not run). The real CLI chooses its hint from the code: `kortix secrets ls` names `agents.scoped.kortix_permissions` and `project.secret.read`; `kortix files ls` under the ceiling asks an admin, names `capped`, and does not name `kortix_permissions`.
 
+## 33. Kortix Backends
+
+A project owns up to 3 backends. Each backend is a self-hosted Convex instance
+in its own always-on Platinum machine (1 vCPU, 1 GB, 10 GB). `backends` is an
+experimental per-project flag, off by default, available only where Platinum is
+configured. Routes: `GET/POST /projects/:projectId/backends`,
+`GET/DELETE /projects/:projectId/backends/:backendId`,
+`GET /projects/:projectId/backends/:backendId/credentials`.
+
+`BKD-1` Closed surface. The local profile has no Platinum, so the flag is
+unavailable. Flag off: list, create, get, credentials and delete answer `403
+{code:'feature_disabled', feature:'backends'}`. `PATCH /projects/:projectId/features`
+with `backends: true` answers 200, and every backends route still answers the
+same 403, because an unavailable flag resolves off. `NONMEMBER` → 403/404.
+`ANON` → 401. Not asserted locally: create (`202 provisioning`), the 3-backend
+cap (`409 backend_limit`), a duplicate name (`409 backend_name_taken`), the
+credentials read and its `backend.credentials.read` audit row, and delete. They
+need a Platinum machine and are verified on a deployed environment.
+
+---
+
 ## Browser-agent pilot (opt-in)
 
 The experimental browser contract **AGENTIC-1** lives in

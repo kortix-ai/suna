@@ -145,6 +145,7 @@ export {
   projectAppsKey,
   appDeploymentsKey,
 } from './use-project-apps';
+export { useProjectBackends, projectBackendsKey } from './use-project-backends';
 
 // The expected "no compaction model configured" configuration state thrown by
 // `useSummarizeRuntimeSession`'s mutation when every model-resolution fallback
