@@ -749,9 +749,21 @@ jobs:
       - name: Read credentials from AWS Secrets Manager
         uses: ./.aws-env/.github/actions/aws-env
         with:
-          aws-region: eu-west-2
+          # kortix-ci-env lives in us-west-2 (the action default).
           keys: |
             VERCEL_BYPASS=kortix-ci-env:VERCEL_AUTOMATION_BYPASS_SECRET
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read the staging web password from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          aws-region: eu-west-2
+          keys: |
             WEB_PROTECTION_PASSWORD=kortix-staging-euw2-web-env:WEB_PROTECTION_PASSWORD
       - name: Verify API and both web deployment paths
         env:
