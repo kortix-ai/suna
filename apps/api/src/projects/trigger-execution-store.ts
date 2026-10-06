@@ -6,6 +6,7 @@ import { nextTriggerScheduleSlot } from './trigger-schedule';
 import type { GitTriggerSpec } from './triggers';
 import { exponentialBackoffMs } from '../shared/backoff';
 import { mapWithConcurrency } from '../shared/map-with-concurrency';
+import { cronSlotFields } from './lib/trigger-payload';
 
 export type TriggerExecutionRow = typeof projectTriggerExecutions.$inferSelect;
 
@@ -27,6 +28,7 @@ function triggerPayload(input: {
       scheduled_for: input.scheduledFor.toISOString(),
       claimed_at: input.claimedAt.toISOString(),
       last_scheduled_for: input.lastScheduledFor?.toISOString() ?? null,
+      ...cronSlotFields(input.scheduledFor),
     },
     trigger: { slug: input.spec.slug, type: input.spec.type, kind: 'git' },
   };
