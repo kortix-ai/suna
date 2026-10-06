@@ -1953,6 +1953,12 @@
     "queuedFiles": "{count, plural, one {#個のファイル} other {#個のファイル}}",
     "queuedCount": "{count} 件キュー中",
     "editingQueued": "編集中",
+    "steerNextStep": "次のステップで読み取り",
+    "steerFallbackUnsupported": "このターンの終了を待ちます。このセッションはターン中にメッセージを受け取れません。",
+    "steerFallbackNotPrompter": "このターンの終了を待ちます。別のメンバーが開始したターンです。",
+    "steerFallbackTurnEnded": "独立したターンとして実行します。先にターンが終了しました。",
+    "stopAndSend": "停止して送信",
+    "stopAndSendFailed": "停止して送信できませんでした",
     "submitEdit": "送信",
     "collapseQueue": "キューを折りたたむ",
     "expandQueue": "キューを展開"
