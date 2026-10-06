@@ -1,21 +1,21 @@
 {
-  "source_hash": "f9323a1d7c2750fe06a6e329b5388c575c6a1da8200c6d16892ca732c25ef685",
+  "source_hash": "b5f255319cf88fe68e068bd3829d1fed44530e5b58ea80b765e6e218784e978a",
   "diff_files": [
     "apps/api/src/__tests__/unit-account-deletion-schedule.test.ts",
     "apps/api/src/__tests__/unit-worker-scope-wiring.test.ts",
-    "apps/api/src/billing/account-deletion-schedule.ts",
     "apps/api/src/billing/services/account-deletion-scheduled.integration.test.ts",
     "apps/api/src/bootstrap.ts",
+    "apps/api/src/workers/account-deletion-worker.ts",
     "packages/db/migrations/20261004173000006_retire_scheduled_account_deletions_cron.sql",
     "packages/db/scripts/retire-scheduled-account-deletions.integration.test.ts"
   ],
-  "diff_hash": "9cbce4ac05ac1a0db142669e3ad35e0d8ffddb0374cb7c6da52956b3619a7962",
-  "head": "092dfb672d9890e60b083b856b9d7a6027075c5d",
+  "diff_hash": "9ca190d3379bb83ef362cf741b61c751d8c3440fa8c35b83d6551940eb6342a9",
+  "head": "220e6443ce63cbda1d9b93fa4e356d45d9c9a449",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-04T17:28:29.436Z"
+  "at": "2026-10-06T12:45:26.658Z"
 }
