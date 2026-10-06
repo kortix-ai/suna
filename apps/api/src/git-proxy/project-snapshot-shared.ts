@@ -10,7 +10,7 @@
  * which re-exports them — that back-edge was a runtime import cycle.
  */
 import { config } from '../config';
-import { validateRef } from '../projects/git-ref';
+import { validateRef } from '../shared/git-ref';
 import { PROJECT_SNAPSHOT_FORMAT, type ProjectSnapshotRepository } from './project-snapshot-store';
 
 export const PROJECT_SNAPSHOT_MODES = ['git', 'prefer-s3', 'require-s3'] as const;
