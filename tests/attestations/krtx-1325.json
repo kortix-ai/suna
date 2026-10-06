@@ -1,30 +1,11 @@
 {
-  "source_hash": "7c95ccc7837459dfc312b2486cea75115ea6474a19aeb367302cacd20802f2f9",
-  "diff_files": [
-    "apps/cli/src/commands/self-host.ts",
-    "apps/cli/src/self-host/__tests__/self-host-cli.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-runtime-routes.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/refresh-route.test.ts",
-    "packages/sdk/src/react/use-model-defaults.test.ts",
-    "packages/sdk/src/react/use-session-render.test.ts",
-    "scripts/worktree/lib/exec.ts",
-    "tests/migration/basejump-accounts-rls-initplan.test.ts",
-    "tests/migration/credit-lifetime-rollup.test.ts",
-    "tests/migration/credit-rpc-overloads.test.ts",
-    "tests/migration/legacy-credit-ledger-created-by-index.test.ts",
-    "tests/migration/usage-breakdown-ledger-type.test.ts",
-    "tests/migration/user-roles-legacy-fk-index.test.ts",
-    "tests/migration/wallet-ledger.test.ts",
-    "tests/migration/worktree-migrate.test.ts",
-    "tests/unit/no-docs-tree.test.ts"
-  ],
-  "diff_hash": "04296232d56e98d6a0bbc9b3638d62a0054a346e8c60cb5436bc1c479e3398eb",
-  "head": "47683326da49929fd8fade3393197353aa9f8f75",
+  "source_hash": "3f9a87668c790e682e3960d9441a1a788fd0fced3454b3e5139bcd6e198c1b39",
+  "head": "020171f14e9ce214164435c5a9623f30ad442059",
   "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "pass",
-    "db-suites": "pass"
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-04T07:43:38.252Z"
+  "at": "2026-10-06T18:54:50.204Z"
 }
