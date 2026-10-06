@@ -1,17 +1,17 @@
 {
-  "source_hash": "62d2bd619fd60ac2845cac9ccd94f07cd423a1aac50eb6ede6021038800d5fdc",
+  "source_hash": "91e840a1dd4188471809ce4a9e43981ca80d695536221437ddca6a6c59a9cd89",
   "diff_files": [
     "apps/api/src/__tests__/integration-session-transcript-capture.test.ts",
     "apps/api/src/projects/lib/session-transcript-mirror.test.ts",
     "apps/api/src/projects/lib/session-transcript-mirror.ts"
   ],
   "diff_hash": "5952b077fb05f271112de8f2cd5dfd78cb92670bdebeb1b54672e110b28af28a",
-  "head": "3825baf7042b593dc70f6943efb9d42ab15f74a2",
+  "head": "eddeaa802df4b98382bdcb3673190582ac6e12a8",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-06T14:25:39.399Z"
+  "at": "2026-10-06T14:33:40.682Z"
 }
