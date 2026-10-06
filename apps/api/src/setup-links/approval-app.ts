@@ -33,7 +33,7 @@ import { summarizeArgsPreview } from '../connectors/args-preview';
 import { PROJECT_ACTIONS } from '../iam';
 import { assertProjectCapability, loadProjectForUser } from '../projects/lib/access';
 import { mayResolveApproval } from '../projects/lib/approval-authority';
-import { callerKortixSessionId } from '../projects/lib/caller-session';
+import { callerKortixSessionId } from '../middleware/caller-session';
 import { db } from '../shared/db';
 import { resolveSetupLink } from './token';
 

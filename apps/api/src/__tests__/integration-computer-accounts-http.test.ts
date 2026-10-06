@@ -54,11 +54,11 @@ import { createAccountToken } from '../repositories/account-tokens';
 import { createServiceAccount } from '../repositories/service-accounts';
 import { db } from '../shared/db';
 import { relayOwnerPatch } from '../tunnel/core/cluster-forwarder';
+import { createConnectionsRouter } from '../tunnel/routes/connections';
 import {
-  createConnectionsRouter,
   retireStaleUnidentifiedRegistrations,
   retireSupersededRegistrations,
-} from '../tunnel/routes/connections';
+} from '../tunnel/registrations';
 import { createRpcRouter } from '../tunnel/routes/rpc';
 import { deleteFromView, insertIntoView } from './helpers/compat-views';
 import { generateTunnelToken, hashSecretKey } from '../shared/crypto';
@@ -424,6 +424,24 @@ describe('a private computer stays private', () => {
       body: JSON.stringify({ method: 'fs.read', params: { path: '/etc/hosts' } }),
     });
     expect(rpc.status).toBe(404);
+  });
+
+  test('a malformed JSON body without a JSON content-type answers 400, not a parse error', async () => {
+    const rpc = await tunnelAppFor(ALICE).request(`/rpc/${aliceTunnel}`, {
+      method: 'POST',
+      body: '{not json',
+    });
+    expect(rpc.status).toBe(400);
+    expect(await rpc.json()).toEqual({ error: 'method is required' });
+  });
+
+  test('a JSON null body answers 400, not a parse error', async () => {
+    const rpc = await tunnelAppFor(ALICE).request(`/rpc/${aliceTunnel}`, {
+      method: 'POST',
+      body: 'null',
+    });
+    expect(rpc.status).toBe(400);
+    expect(await rpc.json()).toEqual({ error: 'method is required' });
   });
 
   test('another member cannot name it, even with --account', async () => {

@@ -3,10 +3,12 @@
 // in PR5d together with the V1 engine.
 // Pure CRUD; route handlers do their own assertAuthorized() calls.
 
-import { accountGroupMembers, accountGroups, accountMembers, roleAssignments } from '@kortix/db';
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { accountGroupMembers, accountGroups, roleAssignments } from '@kortix/db';
+import { and, eq } from 'drizzle-orm';
 import { invalidateIamCacheForUser, invalidateIamCacheForUsers } from '../iam/cache-invalidation';
 import { db } from '../shared/db';
+import { accountMembersAmong } from '../iam/membership-read';
+import { accountGroupFullRow, accountGroupListRows, accountGroupRow, groupMemberListRows, groupsForMemberRows } from '../iam/group-read';
 
 // ─── Groups ────────────────────────────────────────────────────────────────
 
@@ -30,35 +32,7 @@ export async function listGroups(accountId: string): Promise<
     }
   >
 > {
-  const rows = await db
-    .select({
-      groupId: accountGroups.groupId,
-      accountId: accountGroups.accountId,
-      name: accountGroups.name,
-      description: accountGroups.description,
-      source: accountGroups.source,
-      externalId: accountGroups.externalId,
-      createdAt: accountGroups.createdAt,
-      updatedAt: accountGroups.updatedAt,
-      // IMPORTANT: hard-code the outer table reference in these correlated
-      // subqueries. Drizzle's ${accountGroups.groupId} interpolation emits
-      // the bare "group_id" without a table prefix, so Postgres resolves
-      // both sides of `WHERE x.group_id = "group_id"` to the inner alias
-      // and the filter degenerates to `WHERE TRUE` — counts come back as
-      // table-wide totals. Aliasing the inner table doesn't help; we need
-      // the OUTER reference to be unambiguously kortix.account_groups.
-      memberCount: sql<number>`(
-        SELECT COUNT(*)::int FROM kortix.account_group_members agm
-        WHERE agm.group_id = kortix.account_groups.group_id
-      )`,
-      projectCount: sql<number>`(
-        SELECT COUNT(*)::int FROM kortix.project_group_grants pgg
-        WHERE pgg.group_id = kortix.account_groups.group_id
-      )`,
-    })
-    .from(accountGroups)
-    .where(eq(accountGroups.accountId, accountId))
-    .orderBy(asc(accountGroups.name));
+  const rows = await accountGroupListRows(accountId);
 
   return rows.map((r) => ({
     ...r,
@@ -67,11 +41,7 @@ export async function listGroups(accountId: string): Promise<
 }
 
 export async function getGroup(accountId: string, groupId: string): Promise<AccountGroup | null> {
-  const [row] = await db
-    .select()
-    .from(accountGroups)
-    .where(and(eq(accountGroups.accountId, accountId), eq(accountGroups.groupId, groupId)))
-    .limit(1);
+  const [row] = await accountGroupFullRow(accountId, groupId);
   if (!row) return null;
   return { ...row, source: row.source as 'manual' | 'scim' };
 }
@@ -161,24 +131,10 @@ export const GROUP_MEMBER_LIST_CAP = 10_000;
 
 export async function listGroupMembers(accountId: string, groupId: string): Promise<GroupMember[]> {
   // Ensure the group belongs to the account before returning members.
-  const [group] = await db
-    .select({ groupId: accountGroups.groupId })
-    .from(accountGroups)
-    .where(and(eq(accountGroups.accountId, accountId), eq(accountGroups.groupId, groupId)))
-    .limit(1);
+  const [group] = await accountGroupRow(accountId, groupId);
   if (!group) return [];
 
-  return db
-    .select({
-      groupId: accountGroupMembers.groupId,
-      userId: accountGroupMembers.userId,
-      addedAt: accountGroupMembers.addedAt,
-      addedBy: accountGroupMembers.addedBy,
-    })
-    .from(accountGroupMembers)
-    .where(eq(accountGroupMembers.groupId, groupId))
-    .orderBy(asc(accountGroupMembers.addedAt))
-    .limit(GROUP_MEMBER_LIST_CAP);
+  return groupMemberListRows(groupId, GROUP_MEMBER_LIST_CAP);
 }
 
 export async function addGroupMembers(args: {
@@ -190,15 +146,7 @@ export async function addGroupMembers(args: {
   if (args.userIds.length === 0) return { added: 0 };
 
   // All requested users must be members of the account; silently drop the rest.
-  const validRows = await db
-    .select({ userId: accountMembers.userId })
-    .from(accountMembers)
-    .where(
-      and(
-        eq(accountMembers.accountId, args.accountId),
-        inArray(accountMembers.userId, args.userIds),
-      ),
-    );
+  const validRows = await accountMembersAmong(args.accountId, args.userIds);
   const valid = new Set(validRows.map((r) => r.userId));
   const filtered = args.userIds.filter((u) => valid.has(u));
   if (filtered.length === 0) return { added: 0 };
@@ -238,14 +186,5 @@ export async function listGroupsForMember(
   accountId: string,
   userId: string,
 ): Promise<Array<{ groupId: string; name: string; addedAt: Date }>> {
-  return db
-    .select({
-      groupId: accountGroups.groupId,
-      name: accountGroups.name,
-      addedAt: accountGroupMembers.addedAt,
-    })
-    .from(accountGroupMembers)
-    .innerJoin(accountGroups, eq(accountGroups.groupId, accountGroupMembers.groupId))
-    .where(and(eq(accountGroups.accountId, accountId), eq(accountGroupMembers.userId, userId)))
-    .orderBy(asc(accountGroups.name));
+  return groupsForMemberRows(accountId, userId);
 }

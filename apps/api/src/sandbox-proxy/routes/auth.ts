@@ -14,6 +14,7 @@ import { validateSecretKey } from '../../repositories/api-keys';
 import { isKortixToken } from '../../shared/crypto';
 import { getSupabase } from '../../shared/supabase';
 import { makeOpenApiApp, json, auth, ErrorSchema } from '../../openapi';
+import { bearerToken } from '../../shared/bearer-token';
 
 const PREVIEW_SESSION_COOKIE = '__preview_session';
 const COOKIE_MAX_AGE = 3600; // 1 hour
@@ -40,11 +41,7 @@ getAuthToken.openapi(
   // request body — keep the original header parsing + error contract verbatim.
   async (c) => {
     const authHeader = c.req.header('Authorization');
-    let token: string | undefined;
-
-    if (authHeader?.startsWith('Bearer ')) {
-      token = authHeader.slice(7);
-    }
+    const token: string | undefined = bearerToken(authHeader) ?? undefined;
 
     if (!token) {
       return c.json({ error: 'Missing Authorization header' }, 401);
