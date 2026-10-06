@@ -1,5 +1,5 @@
 {
-  "source_hash": "d45cede2f3ca9cdc11d100457556456e82e5bff837542584bb1b1c4e504b8e13",
+  "source_hash": "d9e3a49529fe6df4bd669737d559c7ba5f731171808ecdd613df73762a18332a",
   "diff_files": [
     "AGENTS.md",
     "apps/api/src/__tests__/integration-prompt-inbox.test.ts",
@@ -71,6 +71,7 @@
     "apps/web/src/features/session/queued-prompt-edit.test.ts",
     "apps/web/src/features/session/session-chat-queued-retry-id.test.ts",
     "apps/web/src/features/session/session-chat.tsx",
+    "apps/web/src/lib/seo/content-timestamps.json",
     "apps/web/src/stores/queued-draft-store.ts",
     "apps/web/translations/de.json",
     "apps/web/translations/en.json",
@@ -99,13 +100,13 @@
     "packages/sdk/src/react/use-session-prompts.test.ts",
     "packages/sdk/src/react/use-session-prompts.ts"
   ],
-  "diff_hash": "451b8762dc72079118e71a859e5596ee045ef87202124eb67ab0c49c55ea76c7",
-  "head": "ff47474e4189d43327b68041d6d66a9017f5010c",
+  "diff_hash": "c88c01c03c38212ebf25fbe41251585329751fa342af629272a42de8e85a11ec",
+  "head": "814683741fee50f44e4b2c68c1e1d2316a43d23d",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-06T16:29:48.130Z"
+  "at": "2026-10-06T17:44:36.815Z"
 }
