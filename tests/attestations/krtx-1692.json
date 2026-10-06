@@ -1,11 +1,35 @@
 {
-  "source_hash": "a9754e13d47ec7195981f07844128ea990e9d4a939a461893fd334b0c9ce4d8e",
-  "head": "0cfeab0d53516b2ad65cf4a41e1cafb816cde572",
+  "source_hash": "98c02094f047cdb5f066ac40d07e24c88a67b2904a564d99f8985b6007b1c532",
+  "diff_files": [
+    "apps/api/src/__tests__/e2e-projects-contract.test.ts",
+    "apps/api/src/projects/routes/project-settings.ts",
+    "apps/cli/scripts/e2e-cli.sh",
+    "apps/cli/src/__tests__/cli-blackbox.test.ts",
+    "apps/cli/src/commands/projects.ts",
+    "apps/web/content/docs/cli.mdx",
+    "apps/web/src/features/workspace/settings/tabs/general-tab.delete-copy.test.ts",
+    "apps/web/src/features/workspace/settings/tabs/general-tab.tsx",
+    "apps/web/translations/de.json",
+    "apps/web/translations/en.json",
+    "apps/web/translations/es.json",
+    "apps/web/translations/fr.json",
+    "apps/web/translations/it.json",
+    "apps/web/translations/ja.json",
+    "apps/web/translations/pt.json",
+    "apps/web/translations/sr.json",
+    "apps/web/translations/zh.json",
+    "tests/session-prompt.e2e.ts",
+    "tests/spec/end-to-end.md",
+    "tests/src/fixtures/registry.ts",
+    "tests/src/flows/cli-resources.flow.ts"
+  ],
+  "diff_hash": "764e60eb722589ad91affb02e1d356506fadc6082c68c4244622a45c241b78f2",
+  "head": "1af873c53cd2cb4ea81c004d74e61a792fc5df6e",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-06T14:03:12.925Z"
+  "at": "2026-10-06T14:28:14.713Z"
 }
