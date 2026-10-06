@@ -2,7 +2,7 @@
 
 import type { CaptureDevice } from '@kortix/sdk';
 import { useCaptureDevices } from '@kortix/sdk/react';
-import { DesktopIcon, LaptopIcon, PlusIcon } from '@phosphor-icons/react';
+import { DesktopIcon, LaptopIcon, PlugsConnectedIcon, PlusIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
@@ -31,6 +31,7 @@ import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { desktopDownloadUrl, isDesktop } from '@/lib/desktop';
 import { cn } from '@/lib/utils';
 
+import { CaptureAgentModal } from '../agent/capture-agent-modal';
 import { CapturePage } from '../area/capture-area-shell';
 import {
   captureHref,
@@ -89,6 +90,7 @@ export function DevicesView({ accountId }: { accountId: string }) {
     (device) => filter === 'all' || filterOf(deviceStatus(device).key) === filter,
   );
   const onDesktop = isDesktop();
+  const [agentOpen, setAgentOpen] = useState(false);
 
   return (
     <CapturePage
@@ -204,6 +206,23 @@ export function DevicesView({ accountId }: { accountId: string }) {
           </div>
         </section>
       )}
+      <div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-muted-foreground gap-1.5"
+          onClick={() => setAgentOpen(true)}
+        >
+          <PlugsConnectedIcon className="size-3.5 shrink-0" />
+          {t('agentLink')}
+        </Button>
+      </div>
+      <CaptureAgentModal
+        open={agentOpen}
+        onOpenChange={setAgentOpen}
+        accountName={area.accountName}
+        own={!area.readsEveryone}
+      />
     </CapturePage>
   );
 }

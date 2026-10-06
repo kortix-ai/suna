@@ -43,7 +43,7 @@ import {
 
 /**
  * The frame of Kortix Capture: its own top bar (wordmark, Overview /
- * Workflows / Ask / Devices, the date range, the organization switcher), no
+ * Workflows / Devices, the date range, the organization switcher), no
  * project sidebar. Gated on the account's Capture workspace: a non-member
  * gets the 404 the API gives; Capture switched off shows how to switch it on.
  */
@@ -159,26 +159,27 @@ function CaptureTopBar({ accountId }: { accountId: string }) {
       </div>
       {area.enabled ? (
         <nav aria-label={t('wordmark')} className="flex flex-wrap items-center gap-0.5">
-          {CAPTURE_SECTIONS.filter(
-            (item) => area.readsEveryone || item === 'ask' || item === 'devices',
-          ).map((item) => {
-            const active = section === item || (item === 'devices' && section === 'this-computer');
-            return (
-              <Link
-                key={item}
-                href={captureHref(accountId, item)}
-                aria-current={active ? 'page' : undefined}
-                className={cn(
-                  'flex h-8 items-center rounded-md px-3 text-sm font-medium transition-colors',
-                  active
-                    ? 'bg-active text-foreground'
-                    : 'text-muted-foreground hover:bg-hover hover:text-foreground',
-                )}
-              >
-                {t(`nav.${item}`)}
-              </Link>
-            );
-          })}
+          {CAPTURE_SECTIONS.filter((item) => area.readsEveryone || item === 'devices').map(
+            (item) => {
+              const active =
+                section === item || (item === 'devices' && section === 'this-computer');
+              return (
+                <Link
+                  key={item}
+                  href={captureHref(accountId, item)}
+                  aria-current={active ? 'page' : undefined}
+                  className={cn(
+                    'flex h-8 items-center rounded-md px-3 text-sm font-medium transition-colors',
+                    active
+                      ? 'bg-active text-foreground'
+                      : 'text-muted-foreground hover:bg-hover hover:text-foreground',
+                  )}
+                >
+                  {t(`nav.${item}`)}
+                </Link>
+              );
+            },
+          )}
         </nav>
       ) : null}
       <div className="flex flex-1 flex-wrap items-center justify-end gap-2">

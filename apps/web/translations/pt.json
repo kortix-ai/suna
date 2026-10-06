@@ -20778,7 +20778,8 @@
       },
       "layerOff": "{layer} desativada",
       "never": "Nunca",
-      "pausedUntil": "até {time}"
+      "pausedUntil": "até {time}",
+      "agentLink": "Usar o Kortix Capture em um agente"
     },
     "settings": {
       "title": "Configurações",
@@ -20940,7 +20941,6 @@
       "nav": {
         "overview": "Visão geral",
         "workflows": "Workflows",
-        "ask": "Perguntar",
         "devices": "Dispositivos",
         "settings": "Configurações",
         "timeline": "Linha do tempo",
@@ -20998,14 +20998,14 @@
       "trendEmpty": "Nenhum tempo automatizável encontrado ainda.",
       "thisWeek": "Esta sem.",
       "quickLinks": "Links rápidos",
-      "linkAsk": "Pergunte sobre seus workflows",
-      "linkAskHint": "As respostas citam workflows, episódios e momentos",
       "linkReview": "{count, plural, one {Revisar # workflow detectado} other {Revisar # workflows detectados}}",
       "linkReviewHint": "Encontrados nas gravações, ainda não revisados",
       "linkDevices": "Dispositivos",
       "linkDevicesHint": "Todo computador que grava e seu status",
       "linkExport": "Exportar dados",
-      "linkExportHint": "Episódios, etapas e workflows em JSONL ou Parquet"
+      "linkExportHint": "Episódios, etapas e workflows em JSONL ou Parquet",
+      "linkAgent": "Usar o Kortix Capture em um agente",
+      "linkAgentHint": "Conecte o servidor MCP da Kortix; agentes leem fluxos de trabalho, episódios e momentos"
     },
     "workflows": {
       "title": "Workflows",
@@ -21151,60 +21151,6 @@
       "table": "Tabela",
       "tableHint": "Um arquivo Parquet contém uma tabela. Exporte de novo para outra."
     },
-    "ask": {
-      "title": "Pergunte sobre o trabalho gravado",
-      "intro": "As respostas citam workflows, episódios e momentos. Escolha abaixo o trabalho de quem consultar.",
-      "example1": "Quais workflows levam mais tempo e quais estão prontos para virar skills?",
-      "example2": "Quem faz mais trabalho com faturas e quanto tempo leva?",
-      "example3": "No que a equipe trabalhou ontem?",
-      "exampleMine1": "No que trabalhei ontem?",
-      "exampleMine2": "Quais tarefas repito com mais frequência?",
-      "questions": "Perguntas",
-      "newQuestion": "Nova pergunta",
-      "thisConversation": "Esta conversa",
-      "conversation": "Conversa",
-      "label": "Pergunta",
-      "placeholder": "Pergunte sobre workflows, pessoas, apps ou um dia",
-      "send": "Enviar",
-      "answerFrom": "Resposta de: {scope}",
-      "scope": {
-        "org": "{name}",
-        "me": "Meus computadores",
-        "person": "{name}",
-        "device": "{name}",
-        "people": "Pessoas",
-        "devices": "Computadores"
-      },
-      "unnamed": "Computador sem nome",
-      "aMember": "Um membro",
-      "searching": "Pesquisando nas gravações…",
-      "writing": "{count, plural, one {Lendo # fonte…} other {Lendo # fontes…}}",
-      "cited": "{count, plural, =0 {Nenhuma fonte citada} one {# fonte citada} other {# fontes citadas}}",
-      "failed": "Não foi possível responder",
-      "citation": "Fonte {n}",
-      "sources": "Fontes",
-      "sourcesCount": "{count, plural, one {# citada} other {# citadas}}",
-      "sourcesEmpty": "As fontes de uma resposta aparecem aqui.",
-      "kind": {
-        "workflow": "Workflow",
-        "episode": "Episódio",
-        "moment": "Momento"
-      },
-      "openWorkflow": "Abrir workflow",
-      "openTimeline": "Abrir na linha do tempo",
-      "lookedAt": "Consultado: {list}",
-      "looking": "Consultando {what}…",
-      "tool": {
-        "searchMoments": "momentos",
-        "searchMomentsFor": "momentos sobre “{query}”",
-        "listWorkflows": "fluxos de trabalho",
-        "listWorkflowsFor": "fluxos de trabalho sobre “{query}”",
-        "getWorkflow": "um fluxo de trabalho",
-        "listEpisodes": "episódios",
-        "getEpisode": "um episódio",
-        "stats": "estatísticas"
-      }
-    },
     "thisComputer": {
       "title": "Este computador",
       "breadcrumb": "Caminho de navegação",
@@ -21212,6 +21158,31 @@
       "browserTitle": "Abra o Kortix desktop para gravar este computador",
       "browserBody": "O Kortix Capture grava pelo app desktop. Instale, entre e abra Kortix Capture › Este computador.",
       "getDesktop": "Baixar o app desktop da Kortix"
+    },
+    "agent": {
+      "title": "Usar o Kortix Capture em um agente",
+      "description": "O Kortix Capture não tem chat próprio. Qualquer agente com o servidor MCP da Kortix lê os dados, com as suas permissões.",
+      "step1": "1. Adicione o servidor MCP da Kortix",
+      "step1Hint": "Ele entra como você no primeiro uso. Uma URL para todas as organizações das quais você participa.",
+      "step2": "2. As ferramentas do Capture que ele recebe",
+      "tool": {
+        "capture_accounts": "Organizações com o Kortix Capture ativado",
+        "capture_search": "Pesquisar texto na tela, ações e transcrições",
+        "capture_timeline": "O que um dispositivo gravou em um intervalo",
+        "capture_frame": "Um quadro: app, janela, texto na tela",
+        "capture_episodes": "Tarefas que as pessoas fizeram, com objetivo e resultado",
+        "capture_episode": "Uma tarefa com seus passos",
+        "capture_workflows": "Procedimentos repetidos e seu tempo automatizável",
+        "capture_workflow": "Um procedimento: passos, variantes, pessoas",
+        "capture_export": "Exportação em massa em JSONL ou Parquet"
+      },
+      "step3": "3. Pergunte ao agente",
+      "example": "Quais fluxos de trabalho em {name} tomam mais tempo e quem os executa?",
+      "scopeNote": "O agente vê o que você vê aqui: administradores e leitores leem todos os membros; membros, apenas os próprios dados. Cada leitura de outro membro vai para o log de auditoria.",
+      "docs": "Documentação do Kortix Capture",
+      "connect": "Conectar um cliente",
+      "exampleOwn": "No que trabalhei ontem e quais tarefas repito mais?",
+      "scopeNoteOwn": "O agente vê apenas as suas próprias gravações, como esta página."
     }
   }
 }

@@ -121,7 +121,7 @@ export function ConnectMcpModal({
   );
 }
 
-function CommandBlock({ text }: { text: string }) {
+export function CommandBlock({ text }: { text: string }) {
   const t = useTranslations('connectMcp');
   const { copy, copied } = useCopy();
   return (

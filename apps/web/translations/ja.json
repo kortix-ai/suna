@@ -20778,7 +20778,8 @@
       },
       "layerOff": "{layer} オフ",
       "never": "なし",
-      "pausedUntil": "{time} まで"
+      "pausedUntil": "{time} まで",
+      "agentLink": "エージェントで Kortix Capture を使う"
     },
     "settings": {
       "title": "設定",
@@ -20940,7 +20941,6 @@
       "nav": {
         "overview": "概要",
         "workflows": "ワークフロー",
-        "ask": "質問",
         "devices": "デバイス",
         "settings": "設定",
         "timeline": "タイムライン",
@@ -20998,14 +20998,14 @@
       "trendEmpty": "自動化可能な時間はまだ見つかっていません。",
       "thisWeek": "今週",
       "quickLinks": "クイックリンク",
-      "linkAsk": "ワークフローについて質問",
-      "linkAskHint": "回答にはワークフロー、エピソード、時点が引用されます",
       "linkReview": "{count, plural, other {検出された#件のワークフローを確認}}",
       "linkReviewHint": "録画から見つかり、未確認です",
       "linkDevices": "デバイス",
       "linkDevicesHint": "録画しているすべてのコンピュータとそのステータス",
       "linkExport": "データをエクスポート",
-      "linkExportHint": "エピソード、ステップ、ワークフローを JSONL または Parquet で"
+      "linkExportHint": "エピソード、ステップ、ワークフローを JSONL または Parquet で",
+      "linkAgent": "エージェントで Kortix Capture を使う",
+      "linkAgentHint": "Kortix MCP サーバーを接続すると、エージェントがワークフロー、エピソード、モーメントを読めます"
     },
     "workflows": {
       "title": "ワークフロー",
@@ -21151,60 +21151,6 @@
       "table": "テーブル",
       "tableHint": "Parquet ファイルには 1 つのテーブルが入ります。別のテーブルはもう一度エクスポートしてください。"
     },
-    "ask": {
-      "title": "録画された作業について質問",
-      "intro": "回答にはワークフロー、エピソード、時点が引用されます。下で、誰の作業について質問するか選んでください。",
-      "example1": "最も時間がかかるワークフローはどれで、スキルにできるのはどれですか。",
-      "example2": "請求書の作業が最も多いのは誰で、どれくらい時間がかかっていますか。",
-      "example3": "昨日、チームは何に取り組みましたか。",
-      "exampleMine1": "昨日、私は何に取り組みましたか。",
-      "exampleMine2": "私が最もよく繰り返す作業は何ですか。",
-      "questions": "質問",
-      "newQuestion": "新しい質問",
-      "thisConversation": "この会話",
-      "conversation": "会話",
-      "label": "質問",
-      "placeholder": "ワークフロー、ユーザー、アプリ、特定の日について質問",
-      "send": "送信",
-      "answerFrom": "回答の対象: {scope}",
-      "scope": {
-        "org": "{name}",
-        "me": "自分のコンピュータ",
-        "person": "{name}",
-        "device": "{name}",
-        "people": "ユーザー",
-        "devices": "コンピュータ"
-      },
-      "unnamed": "名前のないコンピュータ",
-      "aMember": "メンバー",
-      "searching": "録画を検索中…",
-      "writing": "{count, plural, other {#件のソースを読み込み中…}}",
-      "cited": "{count, plural, =0 {引用したソースなし} other {#件のソースを引用}}",
-      "failed": "回答できませんでした",
-      "citation": "ソース {n}",
-      "sources": "ソース",
-      "sourcesCount": "{count, plural, other {#件を引用}}",
-      "sourcesEmpty": "回答のソースがここに表示されます。",
-      "kind": {
-        "workflow": "ワークフロー",
-        "episode": "エピソード",
-        "moment": "時点"
-      },
-      "openWorkflow": "ワークフローを開く",
-      "openTimeline": "タイムラインで開く",
-      "lookedAt": "参照したもの: {list}",
-      "looking": "{what}を確認中…",
-      "tool": {
-        "searchMoments": "モーメント",
-        "searchMomentsFor": "「{query}」のモーメント",
-        "listWorkflows": "ワークフロー",
-        "listWorkflowsFor": "「{query}」のワークフロー",
-        "getWorkflow": "ワークフロー 1 件",
-        "listEpisodes": "エピソード",
-        "getEpisode": "エピソード 1 件",
-        "stats": "統計"
-      }
-    },
     "thisComputer": {
       "title": "このコンピュータ",
       "breadcrumb": "パンくずリスト",
@@ -21212,6 +21158,31 @@
       "browserTitle": "このコンピュータを録画するには Kortix デスクトップを開いてください",
       "browserBody": "Kortix Capture はデスクトップアプリから録画します。インストールしてサインインし、Kortix Capture › このコンピュータ を開いてください。",
       "getDesktop": "Kortix デスクトップアプリを入手"
+    },
+    "agent": {
+      "title": "エージェントで Kortix Capture を使う",
+      "description": "Kortix Capture には独自のチャットはありません。Kortix MCP サーバーを持つエージェントが、あなたの権限でデータを読みます。",
+      "step1": "1. Kortix MCP サーバーを追加する",
+      "step1Hint": "初回利用時にあなたとしてサインインします。所属するすべての組織で同じ URL です。",
+      "step2": "2. 利用できる Capture ツール",
+      "tool": {
+        "capture_accounts": "Kortix Capture が有効な組織",
+        "capture_search": "画面のテキスト、操作、文字起こしを検索",
+        "capture_timeline": "デバイスが期間内に記録した内容",
+        "capture_frame": "1 フレーム：アプリ、ウィンドウ、画面のテキスト",
+        "capture_episodes": "人が行ったタスク（目的と結果つき）",
+        "capture_episode": "1 つのタスクとそのステップ",
+        "capture_workflows": "繰り返される手順と自動化できる時間",
+        "capture_workflow": "1 つの手順：ステップ、バリアント、担当者",
+        "capture_export": "JSONL または Parquet で一括エクスポート"
+      },
+      "step3": "3. エージェントに質問する",
+      "example": "{name} で最も時間がかかっているワークフローは何で、誰が実行していますか？",
+      "scopeNote": "エージェントが見られるのはここであなたが見られる範囲です。管理者と閲覧者は全メンバー、メンバーは自分のデータのみ。他のメンバーの閲覧はすべて監査ログに記録されます。",
+      "docs": "Kortix Capture のドキュメント",
+      "connect": "クライアントを接続",
+      "exampleOwn": "昨日は何に取り組みましたか？最もよく繰り返しているタスクは何ですか？",
+      "scopeNoteOwn": "エージェントが見られるのは、このページと同じくあなた自身の録画だけです。"
     }
   }
 }

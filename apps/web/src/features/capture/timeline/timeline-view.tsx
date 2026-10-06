@@ -164,7 +164,7 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
   const { resolvedTheme } = useTheme();
   const pathname = usePathname();
   const search = useSearchParams();
-  // `at` is the area's moment parameter; Ask cites moments as `t`.
+  // `at` is the area's moment parameter; `t` (a moment link from the Capture API) works too.
   const urlAt = search.get('at') ?? search.get('t');
 
   // ── Bounds and days ───────────────────────────────────────────────────────

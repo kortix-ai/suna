@@ -20778,7 +20778,8 @@
       },
       "layerOff": "{layer} désactivé",
       "never": "Jamais",
-      "pausedUntil": "jusqu’à {time}"
+      "pausedUntil": "jusqu’à {time}",
+      "agentLink": "Utiliser Kortix Capture dans un agent"
     },
     "settings": {
       "title": "Paramètres",
@@ -20940,7 +20941,6 @@
       "nav": {
         "overview": "Vue d’ensemble",
         "workflows": "Workflows",
-        "ask": "Demander",
         "devices": "Appareils",
         "settings": "Réglages",
         "timeline": "Chronologie",
@@ -20998,14 +20998,14 @@
       "trendEmpty": "Aucun temps automatisable trouvé pour l’instant.",
       "thisWeek": "Cette sem.",
       "quickLinks": "Accès rapides",
-      "linkAsk": "Poser des questions sur vos workflows",
-      "linkAskHint": "Les réponses citent des workflows, des épisodes et des moments",
       "linkReview": "{count, plural, one {Examiner # workflow détecté} other {Examiner # workflows détectés}}",
       "linkReviewHint": "Trouvés dans les enregistrements, pas encore examinés",
       "linkDevices": "Appareils",
       "linkDevicesHint": "Chaque ordinateur qui enregistre, et son statut",
       "linkExport": "Exporter les données",
-      "linkExportHint": "Épisodes, étapes et workflows en JSONL ou Parquet"
+      "linkExportHint": "Épisodes, étapes et workflows en JSONL ou Parquet",
+      "linkAgent": "Utiliser Kortix Capture dans un agent",
+      "linkAgentHint": "Connectez le serveur MCP Kortix ; les agents lisent workflows, épisodes et moments"
     },
     "workflows": {
       "title": "Workflows",
@@ -21151,60 +21151,6 @@
       "table": "Table",
       "tableHint": "Un fichier Parquet contient une table. Exportez à nouveau pour une autre."
     },
-    "ask": {
-      "title": "Poser des questions sur le travail enregistré",
-      "intro": "Les réponses citent des workflows, des épisodes et des moments. Choisissez ci-dessous le travail de qui interroger.",
-      "example1": "Quels workflows prennent le plus de temps, et lesquels sont prêts à devenir des skills ?",
-      "example2": "Qui traite le plus de factures, et combien de temps cela lui prend-il ?",
-      "example3": "Sur quoi l’équipe a-t-elle travaillé hier ?",
-      "exampleMine1": "Sur quoi ai-je travaillé hier ?",
-      "exampleMine2": "Quelles tâches est-ce que je répète le plus souvent ?",
-      "questions": "Questions",
-      "newQuestion": "Nouvelle question",
-      "thisConversation": "Cette conversation",
-      "conversation": "Conversation",
-      "label": "Question",
-      "placeholder": "Posez une question sur des workflows, des personnes, des apps ou un jour",
-      "send": "Envoyer",
-      "answerFrom": "Réponse issue de : {scope}",
-      "scope": {
-        "org": "{name}",
-        "me": "Mes ordinateurs",
-        "person": "{name}",
-        "device": "{name}",
-        "people": "Personnes",
-        "devices": "Ordinateurs"
-      },
-      "unnamed": "Ordinateur sans nom",
-      "aMember": "Un membre",
-      "searching": "Recherche dans les enregistrements…",
-      "writing": "{count, plural, one {Lecture de # source…} other {Lecture de # sources…}}",
-      "cited": "{count, plural, =0 {Aucune source citée} one {# source citée} other {# sources citées}}",
-      "failed": "Impossible de répondre",
-      "citation": "Source {n}",
-      "sources": "Sources",
-      "sourcesCount": "{count, plural, one {# citée} other {# citées}}",
-      "sourcesEmpty": "Les sources d’une réponse s’affichent ici.",
-      "kind": {
-        "workflow": "Workflow",
-        "episode": "Épisode",
-        "moment": "Moment"
-      },
-      "openWorkflow": "Ouvrir le workflow",
-      "openTimeline": "Ouvrir dans la chronologie",
-      "lookedAt": "Consulté : {list}",
-      "looking": "Consultation de {what}…",
-      "tool": {
-        "searchMoments": "moments",
-        "searchMomentsFor": "moments pour « {query} »",
-        "listWorkflows": "workflows",
-        "listWorkflowsFor": "workflows pour « {query} »",
-        "getWorkflow": "un workflow",
-        "listEpisodes": "épisodes",
-        "getEpisode": "un épisode",
-        "stats": "statistiques"
-      }
-    },
     "thisComputer": {
       "title": "Cet ordinateur",
       "breadcrumb": "Fil d’Ariane",
@@ -21212,6 +21158,31 @@
       "browserTitle": "Ouvrez Kortix desktop pour enregistrer cet ordinateur",
       "browserBody": "Kortix Capture enregistre depuis l’app de bureau. Installez-la, connectez-vous, puis ouvrez Kortix Capture › Cet ordinateur.",
       "getDesktop": "Obtenir l’app de bureau Kortix"
+    },
+    "agent": {
+      "title": "Utiliser Kortix Capture dans un agent",
+      "description": "Kortix Capture n’a pas de chat. Tout agent doté du serveur MCP Kortix lit ses données, avec vos autorisations.",
+      "step1": "1. Ajoutez le serveur MCP Kortix",
+      "step1Hint": "Il se connecte en votre nom à la première utilisation. Une URL pour toutes vos organisations.",
+      "step2": "2. Les outils Capture qu’il reçoit",
+      "tool": {
+        "capture_accounts": "Organisations où Kortix Capture est activé",
+        "capture_search": "Chercher dans le texte à l’écran, les actions et les transcriptions",
+        "capture_timeline": "Ce qu’un appareil a enregistré sur une période",
+        "capture_frame": "Une image : app, fenêtre, texte à l’écran",
+        "capture_episodes": "Tâches effectuées, avec objectif et résultat",
+        "capture_episode": "Une tâche et ses étapes",
+        "capture_workflows": "Procédures répétées et leur temps automatisable",
+        "capture_workflow": "Une procédure : étapes, variantes, personnes",
+        "capture_export": "Export en masse en JSONL ou Parquet"
+      },
+      "step3": "3. Posez la question à l’agent",
+      "example": "Quels workflows de {name} prennent le plus de temps, et qui les exécute ?",
+      "scopeNote": "L’agent voit ce que vous voyez ici : administrateurs et lecteurs voient tous les membres, les membres leurs propres données. Chaque lecture d’un autre membre est inscrite au journal d’audit.",
+      "docs": "Documentation Kortix Capture",
+      "connect": "Connecter un client",
+      "exampleOwn": "Sur quoi ai-je travaillé hier, et quelles tâches est-ce que je répète le plus ?",
+      "scopeNoteOwn": "L’agent ne voit que vos propres enregistrements, comme cette page."
     }
   }
 }
