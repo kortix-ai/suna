@@ -16,6 +16,11 @@ let backendsEnabled = true;
 let existing: boolean;
 
 let createdName = 'main';
+let size = { cpu: 1, memory_gb: 2, disk_gb: 10 };
+let resizePolls = 0;
+let snapshots: Array<{ snapshot_id: string; created_at: string; size_bytes: number | null }> = [];
+let resizeFailure: string | null = null;
+let failResize = false;
 
 function backend(overrides: Record<string, unknown> = {}) {
   return {
@@ -25,9 +30,9 @@ function backend(overrides: Record<string, unknown> = {}) {
     status: 'running',
     url: 'https://main.backends.test',
     site_url: 'https://main-site.backends.test',
-    cpu: 1,
-    memory_gb: 2,
-    disk_gb: 10,
+    ...size,
+    operation: resizePolls > 0 ? 'resizing' : null,
+    last_operation_error: resizeFailure,
     error: null,
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
@@ -48,7 +53,7 @@ function startServer(): string {
     port: 0,
     fetch: async (req) => {
       const path = new URL(req.url).pathname;
-      const body = req.method === 'POST' ? await req.json().catch(() => null) : null;
+      const body = req.method === 'POST' || req.method === 'PATCH' ? await req.json().catch(() => null) : null;
       calls.push({ method: req.method, path, body });
       if (path === base && req.method === 'GET') {
         return Response.json({
@@ -78,7 +83,30 @@ function startServer(): string {
         );
       }
       if (path === `${base}/backends/${BACKEND_ID}` && req.method === 'GET') {
+        if (resizePolls > 0) resizePolls -= 1;
+        if (resizePolls === 0 && failResize) resizeFailure = 'out of capacity';
         return Response.json({ backend: backend({ name: createdName }) });
+      }
+      if (path === `${base}/backends/${BACKEND_ID}` && req.method === 'PATCH') {
+        const want = body as Record<string, number>;
+        if (want.disk_gb !== undefined && want.disk_gb < size.disk_gb) {
+          return Response.json({ error: 'no shrink', code: 'disk_shrink_unsupported' }, { status: 400 });
+        }
+        size = { ...size, ...want } as typeof size;
+        resizePolls = 2;
+        return Response.json({ backend: backend({ operation: 'resizing' }) }, { status: 202 });
+      }
+      if (path === `${base}/backends/${BACKEND_ID}/backups`) {
+        return Response.json({
+          automatic: { state: 'ok', last_backup_at: '2026-01-01T00:00:00.000Z', size_bytes: 2048, interval_minutes: 60 },
+          snapshots,
+        });
+      }
+      if (path === `${base}/backends/${BACKEND_ID}/snapshots` && req.method === 'POST') {
+        return Response.json({ snapshot_id: 'snap-new', created_at: '2026-01-02T00:00:00.000Z' }, { status: 201 });
+      }
+      if (path === `${base}/backends/${BACKEND_ID}/restore` && req.method === 'POST') {
+        return Response.json({ backend: backend() });
       }
       if (path === `${base}/backends/${BACKEND_ID}/credentials`) return Response.json(credentials());
       if (path === `${base}/backends/${BACKEND_ID}/token` && req.method === 'POST') {
@@ -173,6 +201,11 @@ beforeEach(() => {
   calls = [];
   backendsEnabled = true;
   existing = true;
+  size = { cpu: 1, memory_gb: 2, disk_gb: 10 };
+  resizePolls = 0;
+  resizeFailure = null;
+  failResize = false;
+  snapshots = [{ snapshot_id: 'snap-1', created_at: '2026-01-01T00:00:00.000Z', size_bytes: 1048576 }];
 });
 
 afterEach(() => {
@@ -203,7 +236,7 @@ describe('kortix backends', () => {
   test('--help lists every subcommand', async () => {
     const r = await runCli(['backends', '--help'], join(tmp, 'none.json'));
     expect(r.code).toBe(0);
-    for (const sub of ['list | ls', 'create <name>', 'get <name|id>', 'env <name|id>', 'deploy <name>', 'delete <name|id>']) {
+    for (const sub of ['list | ls', 'create <name>', 'resize <name|id>', 'backups <name|id>', 'snapshot <name|id>', 'restore <name|id> <snapshot-id>', 'get <name|id>', 'env <name|id>', 'deploy <name>', 'delete <name|id>']) {
       expect(r.stdout).toContain(sub);
     }
   });
@@ -342,5 +375,97 @@ describe('kortix backends', () => {
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('Backends is not enabled');
     expect(calls.some((c) => c.path.endsWith('/backends'))).toBe(false);
+  });
+
+  test('create passes --cpu, --memory and --disk; a bad value never reaches the API', async () => {
+    existing = false;
+    const config = writeConfig(startServer());
+    const r = await runCli(
+      ['backends', 'create', 'big', '--cpu', '4', '--memory', '8', '--disk', '40', '--project', PROJECT, '--json'],
+      config,
+    );
+    expect(r.code).toBe(0);
+    expect(calls.find((c) => c.method === 'POST' && c.path.endsWith('/backends'))?.body).toEqual({
+      name: 'big',
+      cpu: 4,
+      memory_gb: 8,
+      disk_gb: 40,
+    });
+    calls = [];
+    const bad = await runCli(['backends', 'create', 'x', '--cpu', '99', '--project', PROJECT], config);
+    expect(bad.code).toBe(2);
+    expect(calls).toEqual([]);
+  });
+
+  test('resize PATCHes only the given fields, waits for the operation, prints the new size', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['backends', 'resize', 'main', '--cpu', '2', '--memory', '4', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ cpu: 2, memory_gb: 4 });
+    expect(calls.filter((c) => c.method === 'GET' && c.path.endsWith(BACKEND_ID)).length).toBeGreaterThan(1);
+    expect(r.stdout).toContain('2 vCPU · 4 GB · 10 GB disk');
+  });
+
+  test('resize --no-wait returns at once; resize without a size or with a bad size fails before the API', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['backends', 'resize', 'main', '--disk', '20', '--no-wait', '--project', PROJECT, '--json'], config);
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.stdout).backend.operation).toBe('resizing');
+    expect(calls.filter((c) => c.method === 'GET' && c.path.endsWith(BACKEND_ID))).toHaveLength(0);
+    calls = [];
+    const none = await runCli(['backends', 'resize', 'main', '--project', PROJECT], config);
+    expect(none.code).toBe(2);
+    const bad = await runCli(['backends', 'resize', 'main', '--memory', 'lots', '--project', PROJECT], config);
+    expect(bad.code).toBe(2);
+    expect(calls.some((c) => c.method === 'PATCH')).toBe(false);
+  });
+
+  test('resize shows the API error code for a disk shrink', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['backends', 'resize', 'main', '--disk', '5', '--project', PROJECT], config);
+    expect(r.code).not.toBe(0);
+  });
+
+  test('resize exits 1 with last_operation_error when the operation fails', async () => {
+    const config = writeConfig(startServer());
+    failResize = true;
+    const r = await runCli(['backends', 'resize', 'main', '--cpu', '2', '--project', PROJECT], config);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('out of capacity');
+  });
+
+  test('backups prints the automatic backup line and a snapshot table; --json is the raw payload', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['backends', 'backups', 'main', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('automatic');
+    expect(r.stdout).toContain('every 60 min');
+    expect(r.stdout).toContain('snap-1');
+    expect(r.stdout).toContain('1.0 MB');
+    const json = await runCli(['backends', 'backups', 'main', '--project', PROJECT, '--json'], config);
+    expect(JSON.parse(json.stdout).snapshots[0].snapshot_id).toBe('snap-1');
+  });
+
+  test('snapshot POSTs and prints the snapshot id', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['backends', 'snapshot', 'main', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('snap-new');
+    expect(calls.find((c) => c.method === 'POST' && c.path.endsWith('/snapshots'))).toBeDefined();
+    const json = await runCli(['backends', 'snapshot', 'main', '--project', PROJECT, '--json'], config);
+    expect(JSON.parse(json.stdout).snapshot_id).toBe('snap-new');
+  });
+
+  test('restore --yes POSTs the snapshot id; without --yes and no terminal it restores nothing', async () => {
+    const config = writeConfig(startServer());
+    const refused = await runCli(['backends', 'restore', 'main', 'snap-1', '--project', PROJECT], config);
+    expect(refused.code).not.toBe(0);
+    expect(calls.some((c) => c.path.endsWith('/restore'))).toBe(false);
+    const r = await runCli(['backends', 'restore', 'main', 'snap-1', '--yes', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('restored main');
+    expect(calls.find((c) => c.path.endsWith('/restore'))?.body).toEqual({ snapshot_id: 'snap-1' });
+    const missing = await runCli(['backends', 'restore', 'main', '--yes', '--project', PROJECT], config);
+    expect(missing.code).toBe(2);
   });
 });

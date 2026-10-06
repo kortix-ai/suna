@@ -43,7 +43,7 @@ import type { UiTranslator } from '@/i18n/translator';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { relativeTime } from '@/lib/relative-time';
 import { useProjectCan } from '@/lib/use-project-can';
-import { getBackendCredentials, type ProjectBackend } from '@kortix/sdk';
+import { getBackendCredentials, type ProjectBackend, type ProjectBackendSize } from '@kortix/sdk';
 import { useFeatureFlag, useProjectBackends } from '@kortix/sdk/react';
 import {
   ArrowUpRightIcon,
@@ -53,6 +53,12 @@ import {
   TrashIcon,
 } from '@phosphor-icons/react';
 import { useState } from 'react';
+import {
+  BackendBackupsDialog,
+  BackendOperationBadge,
+  ResizeBackendDialog,
+  backendSizeLabel,
+} from './backend-dialogs';
 
 const NAME_PLACEHOLDER = 'my-backend';
 
@@ -149,6 +155,10 @@ export function BackendsView({ projectId }: { projectId: string }) {
                 canWrite={canWrite}
                 onDelete={(id) => backends.remove.mutateAsync(id)}
                 deleting={backends.remove.isPending}
+                onResize={(backendId, size) => backends.resize.mutateAsync({ backendId, ...size })}
+                resizing={backends.resize.isPending}
+                onRestore={(backendId, snapshotId) => backends.restore.mutateAsync({ backendId, snapshotId })}
+                restoring={backends.restore.isPending}
               />
             </>
           ) : (
@@ -293,15 +303,28 @@ function BackendsTable({
   canWrite,
   onDelete,
   deleting,
+  onResize,
+  resizing,
+  onRestore,
+  restoring,
 }: {
   projectId: string;
   backends: ProjectBackend[];
   canWrite: boolean;
   onDelete: (backendId: string) => Promise<unknown>;
   deleting: boolean;
+  onResize: (backendId: string, size: ProjectBackendSize) => Promise<unknown>;
+  resizing: boolean;
+  onRestore: (backendId: string, snapshotId: string) => Promise<unknown>;
+  restoring: boolean;
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
   const [pendingDelete, setPendingDelete] = useState<ProjectBackend | null>(null);
+  // Hold the id, not the row: the dialog reads the live row, which the list polls.
+  const [resizeId, setResizeId] = useState<string | null>(null);
+  const [backupsId, setBackupsId] = useState<string | null>(null);
+  const resizeTarget = backends.find((row) => row.backend_id === resizeId);
+  const backupsTarget = backends.find((row) => row.backend_id === backupsId);
 
   return (
     <>
@@ -310,6 +333,7 @@ function BackendsTable({
           <TableRow>
             <TableHead>{t.raw('textdcd1d5223f73')}</TableHead>
             <TableHead>{t.raw('text920e413c7d41')}</TableHead>
+            <TableHead>{t.raw('text1af851907331')}</TableHead>
             <TableHead>{t.raw('texte7a241debad5')}</TableHead>
             <TableHead>{t.raw('textd70b9e24bca2')}</TableHead>
             <TableHead className="w-12">
@@ -325,10 +349,31 @@ function BackendsTable({
               backend={backend}
               canWrite={canWrite}
               onDelete={() => setPendingDelete(backend)}
+              onResize={() => setResizeId(backend.backend_id)}
+              onBackups={() => setBackupsId(backend.backend_id)}
             />
           ))}
         </TableBody>
       </Table>
+
+      {resizeTarget ? (
+        <ResizeBackendDialog
+          backend={resizeTarget}
+          isPending={resizing}
+          onOpenChange={(open) => !open && setResizeId(null)}
+          onResize={(size) => onResize(resizeTarget.backend_id, size)}
+        />
+      ) : null}
+      {backupsTarget ? (
+        <BackendBackupsDialog
+          projectId={projectId}
+          backend={backupsTarget}
+          canWrite={canWrite}
+          restoring={restoring}
+          onOpenChange={(open) => !open && setBackupsId(null)}
+          onRestore={(snapshotId) => onRestore(backupsTarget.backend_id, snapshotId)}
+        />
+      ) : null}
 
       <ConfirmDialog
         open={pendingDelete !== null}
@@ -358,6 +403,7 @@ function BackendsTable({
 
 function BackendStatusBadge({ backend }: { backend: ProjectBackend }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
+  if (backend.operation) return <BackendOperationBadge />;
   if (backend.status === 'provisioning')
     return (
       <Badge variant="warning" className="gap-1.5">
@@ -376,11 +422,15 @@ function BackendRow({
   backend,
   canWrite,
   onDelete,
+  onResize,
+  onBackups,
 }: {
   projectId: string;
   backend: ProjectBackend;
   canWrite: boolean;
   onDelete: () => void;
+  onResize: () => void;
+  onBackups: () => void;
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
 
@@ -412,7 +462,15 @@ function BackendRow({
           {backend.status === 'error' && backend.error ? (
             <span className="text-destructive max-w-xs text-xs break-words">{backend.error}</span>
           ) : null}
+          {!backend.operation && backend.last_operation_error ? (
+            <span className="text-destructive max-w-xs text-xs break-words" role="alert">
+              {backend.last_operation_error}
+            </span>
+          ) : null}
         </div>
+      </TableCell>
+      <TableCell className="text-muted-foreground whitespace-nowrap">
+        {backendSizeLabel(backend, t)}
       </TableCell>
       <TableCell>
         {backend.url ? (
@@ -438,6 +496,17 @@ function BackendRow({
                 {t.raw('text3f044da00a6f')}
               </DropdownMenuItem>
             ) : null}
+            {canWrite ? (
+              <DropdownMenuItem
+                disabled={backend.status !== 'running' || backend.operation !== null}
+                onClick={onResize}
+              >
+                {t.raw('text5ad9ba3657f2')}
+              </DropdownMenuItem>
+            ) : null}
+            <DropdownMenuItem disabled={backend.status !== 'running'} onClick={onBackups}>
+              {t.raw('textf0e800ed571e')}
+            </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() =>
                 copy(backendDeployCommand(backend.name), t.raw('text5c3fa6a80824'))

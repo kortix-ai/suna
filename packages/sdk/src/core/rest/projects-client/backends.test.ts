@@ -3,7 +3,12 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
   createBackend,
+  createBackendSnapshot,
   deleteBackend,
+  getBackendBackups,
+  resizeBackend,
+  restoreBackendSnapshot,
+  waitForBackendOperation,
   getBackend,
   getBackendCredentials,
   getBackendToken,
@@ -51,6 +56,8 @@ const backend: ProjectBackend = {
   memory_gb: 2,
   disk_gb: 10,
   error: null,
+  operation: null,
+  last_operation_error: null,
   created_at: '2026-10-06T00:00:00.000Z',
   updated_at: '2026-10-06T00:00:00.000Z',
 };
@@ -131,4 +138,63 @@ test('getBackendToken POSTs to the token route and returns the JWT', async () =>
   expect(minted).toEqual({ token: 'h.p.s', expires_at: '2026-10-06T01:00:00.000Z' });
   expect(last().method).toBe('POST');
   expect(last().url).toEndWith(`/projects/project-1/backends/${backend.backend_id}/token`);
+});
+
+const base = `http://backend.test/v1/projects/project-1/backends/${backend.backend_id}`;
+
+test('resizeBackend PATCHes the size and returns the resizing backend', async () => {
+  responses = [{ status: 202, body: { backend: { ...backend, operation: 'resizing' } } }];
+  const result = await resizeBackend('project-1', backend.backend_id, { cpu: 2, memory_gb: 4 });
+  expect(result.operation).toBe('resizing');
+  expect(last()).toMatchObject({ method: 'PATCH', url: base, body: { cpu: 2, memory_gb: 4 } });
+});
+
+test('resizeBackend surfaces the API error code', async () => {
+  responses = [{ status: 400, body: { error: 'same', code: 'size_unchanged' } }];
+  await expect(resizeBackend('project-1', backend.backend_id, { cpu: 1 })).rejects.toMatchObject({
+    code: 'size_unchanged',
+  });
+});
+
+test('getBackendBackups, createBackendSnapshot and restoreBackendSnapshot use the backup routes', async () => {
+  const backups = {
+    automatic: { state: 'ok', last_backup_at: null, size_bytes: null, interval_minutes: 60 },
+    snapshots: [{ snapshot_id: 's1', created_at: '2026-10-06T00:00:00.000Z', size_bytes: 10 }],
+  };
+  responses = [
+    { body: backups },
+    { status: 201, body: { snapshot_id: 's2', created_at: '2026-10-06T00:01:00.000Z' } },
+    { body: { backend } },
+  ];
+  expect(await getBackendBackups('project-1', backend.backend_id)).toEqual(backups);
+  expect(last()).toMatchObject({ method: 'GET', url: `${base}/backups` });
+  expect((await createBackendSnapshot('project-1', backend.backend_id)).snapshot_id).toBe('s2');
+  expect(last()).toMatchObject({ method: 'POST', url: `${base}/snapshots` });
+  expect(await restoreBackendSnapshot('project-1', backend.backend_id, 's1')).toEqual(backend);
+  expect(last()).toMatchObject({ method: 'POST', url: `${base}/restore`, body: { snapshot_id: 's1' } });
+});
+
+test('waitForBackendOperation polls until the operation clears', async () => {
+  const busy = { ...backend, operation: 'resizing' };
+  responses = [{ body: { backend: busy } }, { body: { backend: { ...backend, cpu: 2 } } }];
+  const result = await waitForBackendOperation('project-1', backend.backend_id, { intervalMs: 1 });
+  expect(result.cpu).toBe(2);
+  expect(calls).toHaveLength(2);
+});
+
+test('waitForBackendOperation rejects with last_operation_error when the operation failed', async () => {
+  responses = [
+    { body: { backend: { ...backend, operation: 'resizing' } } },
+    { body: { backend: { ...backend, last_operation_error: 'out of capacity' } } },
+  ];
+  await expect(
+    waitForBackendOperation('project-1', backend.backend_id, { intervalMs: 1 }),
+  ).rejects.toThrow('out of capacity');
+});
+
+test('waitForBackendOperation gives up after its timeout', async () => {
+  responses = Array.from({ length: 50 }, () => ({ body: { backend: { ...backend, operation: 'resizing' } } }));
+  await expect(
+    waitForBackendOperation('project-1', backend.backend_id, { intervalMs: 5, timeoutMs: 20 }),
+  ).rejects.toThrow(/still resizing/);
 });

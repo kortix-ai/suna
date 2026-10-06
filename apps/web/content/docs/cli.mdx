@@ -681,7 +681,11 @@ Manages the project's self-hosted Convex backends. Each backend runs in its own 
 | Command | Effect |
 | --- | --- |
 | `kortix backends list [--json]` | List backends with status and URL. |
-| `kortix backends create <name> [--json]` | Create and boot a backend. Takes seconds, or minutes on the first image build. |
+| `kortix backends create <name> [--cpu <1-16>] [--memory <1-32>] [--disk <10-100>] [--json]` | Create and boot a backend. Memory and disk are in GB. Default size: 1 vCPU, 2 GB, 10 GB. Takes seconds, or minutes on the first image build. |
+| `kortix backends resize <name\|id> [--cpu N] [--memory GB] [--disk GB] [--no-wait] [--json]` | Change the machine size. Needs at least one size flag. A disk never shrinks. Waits until the resize ends and prints the new size. `--no-wait` returns when it starts. |
+| `kortix backends backups <name\|id> [--json]` | Show the automatic backup (last time, size, interval) and the snapshots, newest first. |
+| `kortix backends snapshot <name\|id> [--json]` | Take a snapshot now. The backend keeps the newest 5. |
+| `kortix backends restore <name\|id> <snapshot-id> [--yes] [--json]` | Roll the backend back to a snapshot. Every change after the snapshot is lost. Asks first unless `--yes`. |
 | `kortix backends get <name\|id> [--json]` | Show one backend. |
 | `kortix backends token <name\|id> [--json]` | Print a one-hour Kortix sign-in token naming you. Convex functions read you with `ctx.auth.getUserIdentity()`. |
 | `kortix backends env <name\|id> [--format shell\|dotenv\|json]` | Print the Convex CLI credentials. `shell` (default) prints `export CONVEX_SELF_HOSTED_URL=…` and `export CONVEX_SELF_HOSTED_ADMIN_KEY=…`. `dotenv` prints `KEY=value` lines for `.env.local`. `json` prints the credentials object. |
@@ -690,6 +694,9 @@ Manages the project's self-hosted Convex backends. Each backend runs in its own 
 
 ```bash
 kortix backends deploy main                  # create if missing, then deploy ./convex
+kortix backends resize main --cpu 2 --memory 4   # restart on 2 vCPU, 4 GB
+kortix backends snapshot main                # keep a restore point before a risky deploy
+kortix backends restore main <snapshot-id>   # roll back to it
 eval "$(kortix backends env main)"           # point the Convex CLI at it in this shell
 kortix backends env main --format dotenv >> .env.local
 ```

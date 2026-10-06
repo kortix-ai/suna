@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import type { ProjectBackend, ProjectBackendCredentials, ProjectHandle } from '@kortix/sdk';
+import type { ProjectBackend, ProjectBackendCredentials, ProjectBackendSize, ProjectHandle } from '@kortix/sdk';
 
 import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
 import { splitHelp } from '../command-argv.ts';
@@ -25,6 +25,21 @@ Subcommands:
   list | ls                         List backends. --json.
   create <name>                     Create and boot a backend. Takes seconds, or
                                     minutes on the first image build. --json.
+    --cpu <1-16>                    vCPUs. Default 1.
+    --memory <1-32>                 Memory in GB. Default 2.
+    --disk <10-100>                 Disk in GB. Default 10.
+  resize <name|id>                  Change the machine size. Give at least one of
+                                    --cpu, --memory, --disk. A disk never shrinks.
+                                    Waits until the resize ends, then prints the
+                                    new size. --json.
+    --no-wait                       Return as soon as the resize starts.
+  backups <name|id>                 Show the automatic backup and the snapshots,
+                                    newest first. --json.
+  snapshot <name|id>                Take a snapshot now. The backend keeps the
+                                    newest 5. --json.
+  restore <name|id> <snapshot-id>   Roll the backend back to a snapshot. Every
+                                    change after it is lost. --json.
+    --yes                           Skip the confirmation.
   get <name|id>                     Show one backend. --json.
   env <name|id>                     Print the Convex CLI credentials.
     --format shell|dotenv|json      shell (default): export lines for
@@ -139,6 +154,14 @@ export async function runBackends(argv: string[]): Promise<number> {
       case 'create':
       case 'new':
         return await createCommand(rest, common.options, common.json);
+      case 'resize':
+        return await resizeCommand(rest, common.options, common.json);
+      case 'backups':
+        return await backupsCommand(rest, common.options, common.json);
+      case 'snapshot':
+        return await snapshotCommand(rest, common.options, common.json);
+      case 'restore':
+        return await restoreCommand(rest, common.options, common.json);
       case 'get':
       case 'show':
         return await getCommand(rest, common.options, common.json);
@@ -201,14 +224,40 @@ function validName(name: string): string | null {
     : `backend name "${name}" must be lowercase letters, digits and dashes, starting with a letter (max 63)`;
 }
 
-async function createBackend(ctx: Ctx, name: string, quiet: boolean): Promise<ProjectBackend> {
+const SIZE_FLAGS = [
+  { key: 'cpu', flag: '--cpu', min: 1, max: 16 },
+  { key: 'memory_gb', flag: '--memory', min: 1, max: 32 },
+  { key: 'disk_gb', flag: '--disk', min: 10, max: 100 },
+] as const;
+
+/** Takes `--cpu`, `--memory` and `--disk` off `rest`. Returns the size, or the message to fail with. */
+function takeSize(rest: string[]): { size: ProjectBackendSize } | { error: string } {
+  const size: ProjectBackendSize = {};
+  for (const { key, flag, min, max } of SIZE_FLAGS) {
+    const raw = takeFlagValue(rest, [flag]);
+    if (raw === undefined) continue;
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value < min || value > max) {
+      return { error: `${flag} must be a whole number from ${min} to ${max}` };
+    }
+    size[key] = value;
+  }
+  return { size };
+}
+
+async function createBackend(
+  ctx: Ctx,
+  name: string,
+  quiet: boolean,
+  size: ProjectBackendSize = {},
+): Promise<ProjectBackend> {
   if (!quiet) {
     process.stderr.write(
       `${C.dim}Creating backend ${name}. This takes seconds, or minutes on the first image build.${C.reset}\n`,
     );
   }
   return scoped(ctx, async () => {
-    const created = await ctx.backends.create({ name });
+    const created = await ctx.backends.create({ name, ...size });
     return ctx.backends.waitUntilRunning(created.backend_id);
   });
 }
@@ -218,13 +267,15 @@ async function createCommand(
   options: ContextOptions,
   json: boolean,
 ): Promise<number> {
+  const sized = takeSize(rest);
+  if ('error' in sized) return fail(sized.error);
   const name = rest.find((value) => !value.startsWith('-'));
   if (!name) return fail('create needs a backend name');
   const invalid = validName(name);
   if (invalid) return fail(invalid);
   const ctx = await context(options);
   if (!ctx) return 1;
-  const backend = await createBackend(ctx, name, json);
+  const backend = await createBackend(ctx, name, json, sized.size);
   if (json) emitJson({ backend });
   else process.stdout.write(`\n  ${status.ok(`created ${backend.name}`)}\n${backendLines(backend)}\n`);
   return 0;
@@ -238,6 +289,119 @@ async function getCommand(rest: string[], options: ContextOptions, json: boolean
   const backend = await scoped(ctx, () => resolveBackend(ctx.backends, target));
   if (json) emitJson({ backend });
   else process.stdout.write(`\n  ${C.bold}${backend.name}${C.reset}\n${backendLines(backend)}\n`);
+  return 0;
+}
+
+function formatBytes(bytes: number | null): string {
+  if (bytes === null) return '-';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return unit === 0 ? `${value} B` : `${value.toFixed(1)} ${units[unit]}`;
+}
+
+const formatTime = (iso: string | null): string =>
+  iso ? `${new Date(iso).toISOString().slice(0, 16).replace('T', ' ')} UTC` : 'never';
+
+async function resizeCommand(rest: string[], options: ContextOptions, json: boolean): Promise<number> {
+  const wait = !takeFlagBool(rest, ['--no-wait']);
+  const sized = takeSize(rest);
+  if ('error' in sized) return fail(sized.error);
+  const target = rest.find((value) => !value.startsWith('-'));
+  if (!target) return fail('resize needs a backend name or id');
+  if (Object.keys(sized.size).length === 0) return fail('resize needs at least one of --cpu, --memory, --disk');
+  const ctx = await context(options);
+  if (!ctx) return 1;
+  const backend = await scoped(ctx, async () => {
+    const found = await resolveBackend(ctx.backends, target);
+    const started = await ctx.backends.resize(found.backend_id, sized.size);
+    if (!wait) return started;
+    if (!json) {
+      process.stderr.write(`${C.dim}Resizing ${found.name}. The backend restarts on the new size.${C.reset}\n`);
+    }
+    return ctx.backends.waitForOperation(found.backend_id);
+  });
+  if (json) emitJson({ backend });
+  else if (backend.operation) {
+    process.stdout.write(`\n  ${status.ok(`resizing ${backend.name}`)}\n\n`);
+  } else {
+    process.stdout.write(
+      `\n  ${status.ok(`resized ${backend.name}`)}\n${backendLines(backend)}\n`,
+    );
+  }
+  return 0;
+}
+
+async function backupsCommand(rest: string[], options: ContextOptions, json: boolean): Promise<number> {
+  const target = rest.find((value) => !value.startsWith('-'));
+  if (!target) return fail('backups needs a backend name or id');
+  const ctx = await context(options);
+  if (!ctx) return 1;
+  const backups = await scoped(ctx, async () =>
+    ctx.backends.backups((await resolveBackend(ctx.backends, target)).backend_id),
+  );
+  if (json) {
+    emitJson(backups);
+    return 0;
+  }
+  const { automatic, snapshots } = backups;
+  const every = automatic.interval_minutes ? ` · every ${automatic.interval_minutes} min` : '';
+  process.stdout.write(
+    `\n  ${C.bold}automatic${C.reset}  last ${formatTime(automatic.last_backup_at)} · ${formatBytes(automatic.size_bytes)}${every}\n`,
+  );
+  if (snapshots.length === 0) {
+    process.stdout.write(`\n  ${C.dim}No snapshots. Take one with kortix backends snapshot ${target}.${C.reset}\n\n`);
+    return 0;
+  }
+  const width = Math.max(11, ...snapshots.map((row) => row.snapshot_id.length));
+  process.stdout.write(`\n  ${C.bold}${pad('SNAPSHOT', width)}  ${pad('CREATED', 20)}  SIZE${C.reset}\n`);
+  for (const row of snapshots) {
+    process.stdout.write(
+      `  ${pad(row.snapshot_id, width)}  ${pad(formatTime(row.created_at), 20)}  ${formatBytes(row.size_bytes)}\n`,
+    );
+  }
+  process.stdout.write('\n');
+  return 0;
+}
+
+async function snapshotCommand(rest: string[], options: ContextOptions, json: boolean): Promise<number> {
+  const target = rest.find((value) => !value.startsWith('-'));
+  if (!target) return fail('snapshot needs a backend name or id');
+  const ctx = await context(options);
+  if (!ctx) return 1;
+  const snapshot = await scoped(ctx, async () =>
+    ctx.backends.snapshot((await resolveBackend(ctx.backends, target)).backend_id),
+  );
+  if (json) emitJson(snapshot);
+  else process.stdout.write(`\n  ${status.ok(`snapshot ${snapshot.snapshot_id} taken`)}\n\n`);
+  return 0;
+}
+
+async function restoreCommand(rest: string[], options: ContextOptions, json: boolean): Promise<number> {
+  const yes = takeFlagBool(rest, ['--yes', '-y']);
+  const [target, snapshotId] = rest.filter((value) => !value.startsWith('-'));
+  if (!target || !snapshotId) return fail('restore needs a backend name or id and a snapshot id');
+  const ctx = await context(options);
+  if (!ctx) return 1;
+  const backend = await scoped(ctx, () => resolveBackend(ctx.backends, target));
+  if (!yes) {
+    const ok = await confirm(
+      `Restore backend ${C.bold}${backend.name}${C.reset} to snapshot ${snapshotId}? Every change after the snapshot is lost.`,
+      false,
+      { onEndOfInput: false },
+    );
+    if (!ok) {
+      process.stdout.write(`${C.dim}Cancelled.${C.reset}\n`);
+      return 0;
+    }
+  }
+  const restored = await scoped(ctx, () => ctx.backends.restore(backend.backend_id, snapshotId));
+  if (json) emitJson({ backend: restored });
+  else process.stdout.write(`\n  ${status.ok(`restored ${restored.name} to ${snapshotId}`)}\n\n`);
   return 0;
 }
 

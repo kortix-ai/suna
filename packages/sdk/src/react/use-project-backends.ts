@@ -1,7 +1,15 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createBackend, deleteBackend, listBackends } from '../core/rest/projects-client';
+import {
+  createBackend,
+  createBackendSnapshot,
+  deleteBackend,
+  getBackendBackups,
+  listBackends,
+  resizeBackend,
+  restoreBackendSnapshot,
+} from '../core/rest/projects-client';
 import { contract } from './query-contracts';
 import { qk } from './query-keys';
 
@@ -17,9 +25,9 @@ export function useProjectBackends(projectId: string | null | undefined) {
     queryFn: () => listBackends(projectId as string),
     enabled: !!projectId,
     ...contract('inventory'),
-    // A new backend answers `provisioning`; poll until every backend settles.
+    // Poll while a backend provisions or runs an operation (a resize).
     refetchInterval: (q) =>
-      q.state.data?.some((backend) => backend.status === 'provisioning') ? 2_000 : false,
+      q.state.data?.some((backend) => backend.status === 'provisioning' || backend.operation) ? 2_000 : false,
   });
   const invalidate = () => queryClient.invalidateQueries({ queryKey });
 
@@ -33,5 +41,37 @@ export function useProjectBackends(projectId: string | null | undefined) {
     onSuccess: invalidate,
   });
 
-  return { ...query, create, remove };
+  const resize = useMutation({
+    mutationFn: ({ backendId, ...size }: { backendId: string } & Parameters<typeof resizeBackend>[2]) =>
+      resizeBackend(projectId as string, backendId, size),
+    onSuccess: invalidate,
+  });
+  const restore = useMutation({
+    mutationFn: ({ backendId, snapshotId }: { backendId: string; snapshotId: string }) =>
+      restoreBackendSnapshot(projectId as string, backendId, snapshotId),
+    onSuccess: invalidate,
+  });
+
+  return { ...query, create, remove, resize, restore };
+}
+
+/** Automatic backup state and snapshots of one backend, plus a take-snapshot mutation. */
+export function useProjectBackendBackups(
+  projectId: string | null | undefined,
+  backendId: string | null | undefined,
+  enabled = true,
+) {
+  const queryClient = useQueryClient();
+  const queryKey = qk.project.backendBackups(projectId ?? '', backendId ?? '');
+  const query = useQuery({
+    queryKey,
+    queryFn: () => getBackendBackups(projectId as string, backendId as string),
+    enabled: !!projectId && !!backendId && enabled,
+    ...contract('inventory'),
+  });
+  const snapshot = useMutation({
+    mutationFn: () => createBackendSnapshot(projectId as string, backendId as string),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+  });
+  return { ...query, snapshot };
 }
