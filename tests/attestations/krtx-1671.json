@@ -1,0 +1,17 @@
+{
+  "source_hash": "28c251d4ff30ac350ffeb2225f7b697de4cdfc3257d938bd065735650042c24b",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    "apps/web/src/features/session/session-starting-loader.test.tsx",
+    "apps/web/src/features/session/session-starting-loader.tsx"
+  ],
+  "diff_hash": "d1440d8be5d3dc5302a45bd67d1f72396c402deee3b1fc04a84a44306b7b36a8",
+  "head": "c131ac39e1c1f25ddcf40234c15110ef71493653",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-06T20:03:10.969Z"
+}
