@@ -133,6 +133,11 @@ request. The store is a cache; the Git mirror is always the source of truth.
   `boot-config.ts`). The company project measured 248 files, 2.6 MB
   (2026-10-05). A repository over the cap gets no release; its sessions keep
   the last proven one and `fallback_reason` names the cap.
+- `git archive` honors `export-ignore` in `.gitattributes`, so a tracked path
+  no agent reads can stay out of the release. `kortix validate` and
+  `kortix ship` warn (never fail) when one file is 10 MiB or more or the files
+  Git stores total more than 32 MiB (`apps/cli/src/project-lint.ts`, which
+  repeats the cap). The too-large `reason` names both remedies.
 - Every commit to the base branch is a new release, because the tree changed.
   Running sessions converge to it in the background; a prompt on a box that is
   behind converges first.
