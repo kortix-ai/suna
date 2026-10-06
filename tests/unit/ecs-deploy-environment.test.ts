@@ -78,6 +78,8 @@ describe('ECS task environment overrides', () => {
       staging: 'https://gateway-staging-ecs-fargate.kortix.com',
       prod: 'https://gateway-ecs-fargate.kortix.com',
       'prod-use2-shadow': 'https://gateway-use2-shadow.kortix.com',
+      'dev-use2': 'https://gateway-dev-use2.kortix.com',
+      'staging-euw2': 'https://gateway-staging-euw2.kortix.com',
     };
     const gatewayTarget = (environment: string) =>
       spawnSync(
@@ -91,6 +93,35 @@ describe('ECS task environment overrides', () => {
       expect(result.stdout).toBe(target);
     }
     expect(gatewayTarget('unknown').status).toBe(2);
+  });
+
+  it('places each environment in its region, its stack, and its secret', () => {
+    const coordinates = (environment: string) =>
+      spawnSync(
+        'bash',
+        [
+          '-c',
+          'source infra/scripts/ecs-deploy.sh; configure_env_coordinates "$1" && printf "%s %s %s" "$REGION" "$SERVICE_PREFIX" "$SECRET_NAME"',
+          'bash',
+          environment,
+        ],
+        { cwd: root, encoding: 'utf8', env: { ...process.env, KORTIX_ECS_DEPLOY_LIB: '1' } },
+      );
+    const expected = {
+      dev: 'us-west-2 kortix-dev kortix-dev-env',
+      staging: 'us-west-2 kortix-staging kortix-staging-env',
+      prod: 'eu-west-2 kortix-prod kortix-prod-env',
+      'prod-use2-shadow': 'us-east-2 kortix-prod-use2 kortix-prod-us-east-2-env',
+      // The region-consolidation stacks keep the secret NAME and differ by region.
+      'dev-use2': 'us-east-2 kortix-dev-use2 kortix-dev-env',
+      'staging-euw2': 'eu-west-2 kortix-staging-euw2 kortix-staging-env',
+    };
+    for (const [environment, line] of Object.entries(expected)) {
+      const result = coordinates(environment);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toBe(line);
+    }
+    expect(coordinates('unknown').status).toBe(2);
   });
 
   it('carries no fast cold boot activation path', () => {
