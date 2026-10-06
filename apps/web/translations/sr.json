@@ -19250,7 +19250,8 @@
       "text6243d930fc1c": "AI Operating System",
       "textc959682e0398": "Pregledao prijavljene uređaje",
       "text976811d9540a": "Odjavio uređaj",
-      "text6f417aa88601": "Потрошња LLM гејтвеја по извору излистана"
+      "text6f417aa88601": "Потрошња LLM гејтвеја по извору излистана",
+      "textc96cd610ba08": "Ponovo pokušan deljeni ključ provajdera nakon ograničenja korišćenja"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
