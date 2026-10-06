@@ -237,6 +237,12 @@ export async function startProjectSession(
    * runs the project's current config release and converges without it.
    */
     repositoryMode?: "previous";
+    /**
+     * A keep-alive poll of a session the tab already shows as ready. The API
+     * reports a box the user stopped, or the idle policy parked, as `stopped`
+     * instead of waking it. Leave it off for an explicit open or resume.
+     */
+    keepStopped?: boolean;
   },
 ): Promise<SessionStartResult | null> {
   const waitMs = typeof options === "number" ? options : options?.waitMs;
@@ -244,6 +250,7 @@ export async function startProjectSession(
   const search = new URLSearchParams();
   if (waitMs && waitMs > 0) search.set("wait_ms", String(Math.floor(waitMs)));
   if (repositoryMode) search.set("repository_mode", repositoryMode);
+  if (typeof options === "object" && options?.keepStopped) search.set("keep_stopped", "1");
   const qs = search.size > 0 ? `?${search.toString()}` : "";
   const response = await backendApi.post<SessionStartResult>(
     `/projects/${projectId}/sessions/${sessionId}/start${qs}`,
