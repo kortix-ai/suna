@@ -13,7 +13,7 @@
 # (iam-gha-prod-use2-terraform.tf). The environment name alone is not enough,
 # because it says nothing about which branch ran: terraform-apply.yml therefore
 # refuses to mint credentials unless the checked-out commit is reachable from
-# its required `trusted_branch` (dev -> main, staging -> staging, prod -> prod,
+# its required `trusted_branch` (dev -> dev, staging -> staging, prod -> prod,
 # infra-global -> main). Set the matching deployment-branch restriction on each
 # environment as well.
 #
