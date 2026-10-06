@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from 'node:crypto'
 import type { Context } from 'hono'
 import type { Config } from '@/lib/config/config'
 import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '@/lib/kortix-api/kortix-user-context'
@@ -6,6 +7,19 @@ import { logger } from '@/lib/log/logger'
 export function bearerToken(header: string | undefined): string | null {
   if (!header?.startsWith('Bearer ')) return null
   return header.slice('Bearer '.length).trim() || null
+}
+
+/**
+ * Does the request's bearer equal `secret`? Constant time: both sides are
+ * hashed first, so neither the compare nor the length leaks. The sandbox token
+ * is also the HMAC key of the user context, so a timing oracle on it is worth
+ * more than the check looks.
+ */
+export function bearerMatches(header: string | undefined, secret: string): boolean {
+  const presented = bearerToken(header)
+  if (presented === null) return false
+  const digest = (value: string) => createHash('sha256').update(value).digest()
+  return timingSafeEqual(digest(presented), digest(secret))
 }
 
 /**
@@ -24,7 +38,7 @@ export function authorizeControl(
       serviceAuthenticated: false,
     }
   }
-  if (bearerToken(c.req.header('Authorization')) === cfg.sandboxToken) {
+  if (bearerMatches(c.req.header('Authorization'), cfg.sandboxToken)) {
     return { response: null, serviceAuthenticated: true }
   }
   const auth = verifyKortixUserContext(c.req.header(KORTIX_USER_CONTEXT_HEADER), cfg.sandboxToken)
