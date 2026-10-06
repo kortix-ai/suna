@@ -5,7 +5,7 @@ export const finance: RoleContent = {
   slug: 'finance',
   name: 'Finance',
   navDescription: 'The close, the reconciliation and the variance note',
-  seoTitle: 'Kortix for finance teams',
+  seoTitle: 'AI agents for finance teams',
   seoDescription:
     'Reconciliation, variance analysis and the schedules behind the close, run on a machine that shows its working. Every figure traces to a source, and nothing posts to a system of record without approval.',
 

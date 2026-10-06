@@ -1027,7 +1027,7 @@ describe('managed models present as Kortix (descriptor.publicProvider)', () => {
       '"message":"Upstream error from Decart: Requested token count exceeds the model\'s maximum context length of 1048576 tokens."}}\n\n';
     const { response, text, calls } = await runManaged(
       (url) =>
-        url.startsWith('https://morph.example')
+        new URL(url).hostname === 'morph.example'
           ? new Response('{"error":{"message":"Invalid request","type":"invalid_request_error"}}', { status: 400 })
           : new Response(`: OPENROUTER PROCESSING\n\n${overflow}data: [DONE]\n\n`, {
               status: 200, headers: { 'content-type': 'text/event-stream' },

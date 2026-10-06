@@ -1,6 +1,7 @@
 import { CareersPage as CareersPageContent } from '@/features/marketing/careers/careers-page';
 import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
 import type { Metadata } from 'next';
+import { languageAlternates, localePath, metaDescription, requestLocale } from '@/lib/seo/metadata';
 import { getTranslations } from '@/i18n/get-translations';
 
 const DESCRIPTION =
@@ -10,7 +11,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('hardcodedUi.i18nComplete');
   const title = t.raw('text7e658675b5ca');
   const socialTitle = t.raw('text47f57c0ab829');
-  const description = t.raw('text0f4827ef74ea');
+  const description = metaDescription(t.raw('text0f4827ef74ea'));
   return {
     title,
     description,
@@ -36,7 +37,8 @@ export async function generateMetadata(): Promise<Metadata> {
       images: ['/images/careers/shackleton.png'],
     },
     alternates: {
-      canonical: `${CANONICAL_ORIGIN}/careers`,
+      canonical: `${CANONICAL_ORIGIN}${localePath(await requestLocale(), '/careers')}`,
+      languages: languageAlternates('/careers'),
     },
   };
 }

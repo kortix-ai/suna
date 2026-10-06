@@ -1,6 +1,6 @@
 // End-to-end (module-level) proof of the fix for the 2026-09-27 dev
 // benchmark: a 2-replica API meant `syncSandboxEnvForPrompt`'s in-process
-// memo (`lastPromptModelSignature`/`lastPromptEnvPushAt`) missed on roughly
+// memo (`lastPromptModelSignature`) missed on roughly
 // half of every session's turns, so a session's second and later prompts
 // re-pushed `/kortix/env` and re-triggered a full OpenCode respawn almost
 // every turn instead of only the first.
@@ -154,13 +154,14 @@ const {
   __resetBackgroundEnvRefreshForTests,
   __pendingBackgroundEnvRefreshesForTests,
   ENV_SYNC_BACKGROUND_REFRESH_STALE_MS,
+  PROMPT_MODEL_SIGNATURE_CACHE_MAX,
 } = await import('./sandbox-env-sync');
 
-function prompt() {
+function prompt(externalId = 'ext-1') {
   return syncSandboxEnvForPrompt({
     projectId: 'proj-1',
     sessionId: 'sess-1',
-    externalId: 'ext-1',
+    externalId,
     serviceKey: 'svc-key',
     previewUrl: 'https://sandbox.test',
     providerHeaders: {},
@@ -228,6 +229,41 @@ describe('syncSandboxEnvForPrompt — durable cross-replica skip', () => {
 
     expect(posted).toHaveLength(2);
     expect(posted[1]!.refreshModels).toBe(true);
+  });
+
+  test('the memo stays at its cap across more than a cap-worth of skip-path writes', async () => {
+    // The bound probe. The memo is module-private, so the cap is observed
+    // through its one visible consequence: eviction of the oldest entry. The
+    // flood below writes MORE than `PROMPT_MODEL_SIGNATURE_CACHE_MAX` NEW
+    // keys on the skip path — the path that historically hand-set the maps
+    // with no eviction — and then re-prompts the sandbox whose entry was
+    // written first.
+    //
+    // Bounded memo: the first entry was evicted, so its re-prompt misses
+    // memory and consults the durable record again (+1 read), still skipping.
+    // Unbounded memo (the old skip path): the first entry survives every
+    // skip-path write, so the re-prompt answers from memory alone and pays no
+    // durable read — this assertion is what goes red.
+    await prompt('ext-1');
+    expect(posted).toHaveLength(1);
+
+    for (let i = 2; i <= PROMPT_MODEL_SIGNATURE_CACHE_MAX + 1; i++) {
+      await prompt(`ext-${i}`); // cold memo, durable match → a NEW skip-path key each time
+    }
+    expect(posted).toHaveLength(1); // the flood itself never pushed
+
+    const readsBeforeOldest = sandboxConfigReads;
+    await prompt('ext-1');
+    expect(posted).toHaveLength(1); // still a skip — the decision never changed
+    expect(sandboxConfigReads).toBe(readsBeforeOldest + 1); // memory miss → durable consult
+    await Promise.all(__pendingBackgroundEnvRefreshesForTests());
+    expect(posted).toHaveLength(1); // and no background refresh either: the record is fresh
+
+    // A recent entry survives the eviction and still answers from memory alone.
+    const readsBeforeRecent = sandboxConfigReads;
+    await prompt('ext-2001');
+    expect(posted).toHaveLength(1);
+    expect(sandboxConfigReads).toBe(readsBeforeRecent);
   });
 
   test('a stale-but-unchanged durable record skips synchronously and self-heals in the background', async () => {

@@ -7,7 +7,6 @@ import {
   docRailItem,
   useActiveSection,
 } from '@/features/marketing/doc-rail';
-import { PageHero } from '@/features/marketing/component/page-hero';
 import { cn } from '@/lib/utils';
 import { ArrowLeftIcon, ArrowRightIcon, ArrowUpRightIcon, type Icon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
@@ -48,7 +47,7 @@ export const LINK =
  * hub come from the marketing `FaqSection` styling and are already `rounded-lg`.
  * Mixing both radii on one page reads worse than picking the one already there.
  */
-const CARD_RADIUS = 'rounded-xl';
+const CARD_RADIUS = 'rounded-lg';
 
 /**
  * The affordance arrow on a card.
@@ -115,31 +114,34 @@ export function SupportHeader({
   lead,
   backTo,
   children,
+  as: Heading = 'h1',
 }: {
   title: string;
   lead?: ReactNode;
   backTo?: { href: string; label: string };
   children?: ReactNode;
+  /** `p` for a loading placeholder, so the page keeps one h1. */
+  as?: 'h1' | 'p';
 }) {
   return (
-    <>
-      <PageHero size="band"
-        title={title}
-        sub={lead}
-        eyebrow={
-          backTo ? (
-            <Link
-              href={backTo.href}
-              className="hover:text-foreground group inline-flex items-center gap-1.5 transition-colors"
-            >
-              <ArrowLeftIcon className="size-3.5 shrink-0 transition-transform group-hover:-translate-x-0.5" />
-              {backTo.label}
-            </Link>
-          ) : undefined
-        }
-      />
-      {children ? <div className={cn(SUPPORT_CONTAINER, 'pt-10 pb-10 sm:pb-14')}>{children}</div> : null}
-    </>
+    <header className={cn('pt-28 sm:pt-36', children ? 'pb-10 sm:pb-14' : 'pb-12 sm:pb-16')}>
+      {backTo ? (
+        <Link
+          href={backTo.href}
+          className="text-muted-foreground hover:text-foreground group mb-6 inline-flex items-center gap-1.5 text-sm transition-colors"
+        >
+          <ArrowLeftIcon className="size-3.5 shrink-0 transition-transform group-hover:-translate-x-0.5" />
+          {backTo.label}
+        </Link>
+      ) : null}
+      <Heading className="text-3xl font-medium text-balance md:text-4xl lg:tracking-tight">{title}</Heading>
+      {lead ? (
+        <p className="text-muted-foreground mt-5 max-w-xl text-base leading-relaxed text-pretty">
+          {lead}
+        </p>
+      ) : null}
+      {children}
+    </header>
   );
 }
 
@@ -212,7 +214,7 @@ export function ChannelCard({
       className={cn(
         'group bg-popover relative flex flex-col gap-3 border p-4',
         CARD_RADIUS,
-        'hover:border-foreground/20 transition-[color,border-color]',
+        'hover:border-foreground/20 transition-[color,box-shadow,border-color] hover:shadow-sm',
         'focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-2',
         'focus-visible:ring-offset-background focus-visible:outline-none',
       )}

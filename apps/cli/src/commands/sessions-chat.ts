@@ -1,5 +1,11 @@
 import { createInterface } from 'node:readline';
-import { findSessionAttachments, type MessageWithParts, type Part } from '@kortix/sdk';
+import {
+  extractGatewayErrorDetails,
+  findSessionAttachments,
+  unwrapError,
+  type MessageWithParts,
+  type Part,
+} from '@kortix/sdk';
 import { formatRelative } from '@kortix/shared';
 
 import type { Auth } from '../api/auth.ts';
@@ -130,12 +136,16 @@ export function printMessage(msg: MessageWithParts): void {
       process.stdout.write(`  ${line}\n`);
     }
   }
-  if (
-    msg.info.role === 'assistant' &&
-    (msg.info as { error?: { message?: string } | null }).error
-  ) {
-    const e = (msg.info as { error?: { message?: string } | null }).error;
-    process.stdout.write(`  ${C.red}error: ${e?.message ?? 'unknown'}${C.reset}\n`);
+  if (msg.info.role === 'assistant' && msg.info.error) {
+    const error = msg.info.error;
+    const name = typeof error.name === 'string' && error.name ? `${error.name}: ` : '';
+    // The transcript contract carries the failure reason on `error.data.*` — never a
+    // top-level `message` — and an LLM-gateway rejection puts its own sentence in a
+    // JSON body (`data.responseBody`, or that body re-serialized into `data.message`).
+    // Same extraction as the web's turn renderer: the gateway's own sentence wins
+    // over the HTTP status text an `APIError` carries as its message.
+    const reason = extractGatewayErrorDetails(error)?.message || unwrapError(error);
+    process.stdout.write(`  ${C.red}error: ${name}${reason}${C.reset}\n`);
   }
 }
 

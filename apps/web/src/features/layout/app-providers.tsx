@@ -1,8 +1,6 @@
 'use client';
 
-import { SidebarRight } from '@/components/sidebar/sidebar-right';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
-import { RightSidebarProvider } from '@/components/ui/sidebar-right-provider';
 import { SIDEBAR_MAX_WIDTH_PX } from '@/components/ui/sidebar-width';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { ConnectorConnectionGateDialog } from '@/features/connectors/connector-connection-gate-dialog';
@@ -91,13 +89,6 @@ function SidebarLeftSlot({ sidebarContent }: { sidebarContent?: React.ReactNode 
 interface AppProvidersProps {
   children: React.ReactNode;
   showSidebar?: boolean;
-  /**
-   * Right rail control. `true` (default) mounts the legacy `<SidebarRight />`
-   * with all the dashboard nav (Files, Terminal, Secrets, Triggers, etc.).
-   * Project routes pass `false` so the session view is just the conversation
-   * inside the project's own chrome — no extra dashboard noise.
-   */
-  showRightSidebar?: boolean;
   defaultSidebarOpen?: boolean;
   sidebarContent?: React.ReactNode;
   sidebarSiblings?: React.ReactNode;
@@ -110,7 +101,6 @@ interface AppProvidersProps {
 export function AppProviders({
   children,
   showSidebar = true,
-  showRightSidebar = true,
   defaultSidebarOpen,
   sidebarContent,
   sidebarSiblings,
@@ -141,10 +131,7 @@ export function AppProviders({
     <SidebarProvider defaultOpen={defaultSidebarOpen}>
       <SidebarLeftSlot sidebarContent={sidebarContent} />
       <SidebarInset>
-        <RightSidebarProvider>
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{content}</div>
-          {showRightSidebar && <SidebarRight />}
-        </RightSidebarProvider>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{content}</div>
       </SidebarInset>
       {sidebarSiblings}
     </SidebarProvider>

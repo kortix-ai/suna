@@ -219,16 +219,6 @@ export interface ConnectingScreenProps {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Toast hook — kept as a no-op compatibility export for older shells.
-// ─────────────────────────────────────────────────────────────────────────────
-
-export function useConnectionToasts() {
-  // Mid-session connection state now stays in the background and is surfaced
-  // exclusively via the reconnect pill in the bottom-right corner. Avoid
-  // duplicate toast noise for transient drops and recoveries.
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Shared shell
 // ─────────────────────────────────────────────────────────────────────────────
 

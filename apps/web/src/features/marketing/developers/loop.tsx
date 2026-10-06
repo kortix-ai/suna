@@ -46,7 +46,7 @@ export function DevelopersLoop() {
                 transition={{ duration: 0.5, delay: i * 0.06, ease: EASE }}
               >
                 <Icon className="text-muted-foreground size-5 sm:size-6" aria-hidden />
-                <h3 className="text-foreground mt-3 text-lg font-normal sm:mt-8 sm:text-xl md:text-2xl">
+                <h3 className="text-foreground mt-3 text-lg font-medium sm:mt-8 sm:text-xl md:text-2xl">
                   {item.title}
                 </h3>
                 <p className="text-muted-foreground mt-1.5 max-w-sm text-pretty sm:mt-4">{item.body}</p>

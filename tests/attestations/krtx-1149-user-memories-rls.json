@@ -1,0 +1,16 @@
+{
+  "source_hash": "16bac8554cc3b96c00be30537c11dfa60fe53731d94234da687a5a7026ded9e7",
+  "diff_files": [
+    "packages/db/migrations/20261004062759204_user_memories_rls_auth_initplan.sql",
+    "packages/db/scripts/user-memories-rls-auth-initplan.integration.test.ts"
+  ],
+  "diff_hash": "37c9418d91c437bc65f2a8542d79f001700f89ce573c752e36e1fc4cf9be3d1c",
+  "head": "c07b70b009d4c40e1142208459057d8452c4aca7",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T06:53:34.569Z"
+}
