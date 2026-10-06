@@ -90,7 +90,7 @@ mock.module('../repositories/compute-sessions', () => ({
 /** Whether the ledger holds the debit key after a failed settle. */
 let ledgerHasKey = false;
 let settleError: Error | null = null;
-mock.module('../repositories/transactions', () => ({
+mock.module('../repositories/ledger-keys', () => ({
   ledgerRequestKeyExists: async () => ledgerHasKey,
 }));
 

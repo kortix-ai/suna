@@ -48,7 +48,7 @@ import {
   releaseComputeWindow,
 } from '../repositories/compute-sessions';
 import { getCreditAccount } from '../repositories/credit-accounts';
-import { ledgerRequestKeyExists } from '../repositories/transactions';
+import { ledgerRequestKeyExists } from '../repositories/ledger-keys';
 import { resolveAccountBilling } from './billing-cache';
 import {
   billableWindowEnd,

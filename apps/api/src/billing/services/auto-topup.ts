@@ -9,6 +9,7 @@ import type Stripe from 'stripe';
 import { getStripe } from '../../shared/stripe';
 import { config } from '../../config';
 import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
+import { claimAutoTopupCharge } from '../repositories/auto-topup-claim';
 import { getCustomerByAccountId } from '../repositories/customers';
 import {
   type PaymentMethodResolution,
@@ -276,9 +277,17 @@ async function tryAutoTopup(accountId: string): Promise<void> {
     return;
   }
 
+  // One replica wins the claim; every other replica that read the same
+  // `auto_topup_last_charged` skips. The claim timestamp keys the Stripe call,
+  // so a retry of THIS attempt replays and a later attempt is a new key.
+  const claimedAt = await claimAutoTopupCharge(accountId, fresh.autoTopupLastCharged ?? null);
+  if (!claimedAt) {
+    console.log(`[AutoTopup] ${accountId}: another replica holds the charge claim; skipping`);
+    return;
+  }
+
   try {
-    const chargeWindow = Math.floor(Date.now() / CHARGE_COOLDOWN_MS);
-    const idempotencyKey = `auto-topup:${accountId}:${amount.toFixed(2)}:${chargeWindow}`;
+    const idempotencyKey = `auto-topup:${accountId}:${amount.toFixed(2)}:${claimedAt}`;
 
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(amount * 100),
