@@ -61,11 +61,15 @@ routes = [
 ]
 
 [env.staging.vars]
-# ECS Fargate is the ONLY staging backend. EKS was decommissioned 2026-08-02.
-ACTIVE_BACKEND = "ecs-fargate"
+# Staging runs in eu-west-2, next to its database (infra/terraform/environments/
+# staging-eu-west-2). "ecs-fargate" is the old us-west-2 stack, kept until it is
+# destroyed. Deploy Staging writes these same bindings (deploy-staging.yml).
+ACTIVE_BACKEND = "eu-west-2"
 BACKEND_ECS_FARGATE = "https://staging-api-ecs-fargate.kortix.com"
-GATEWAY_ACTIVE_BACKEND = "ecs-fargate"
+BACKEND_EU_WEST_2 = "https://staging-api-euw2.kortix.com"
+GATEWAY_ACTIVE_BACKEND = "eu-west-2"
 GATEWAY_BACKEND_ECS_FARGATE = "https://gateway-staging-ecs-fargate.kortix.com"
+GATEWAY_BACKEND_EU_WEST_2 = "https://gateway-staging-euw2.kortix.com"
 
 # ── DEV: dev-api.kortix.com + gateway-dev.kortix.com ──────────────────────────
 [env.dev]

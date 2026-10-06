@@ -1,7 +1,7 @@
 // Kortix API + gateway router — the blue/green cutover switch in front of both
 // public services. One worker per env handles BOTH hostnames:
 //
-//   api.kortix.com          → API      → EKS | EU ECS | US ECS   (ACTIVE_BACKEND)
+//   api.kortix.com          → API      → EKS | EU ECS | US ECS | eu-west-2 ECS   (ACTIVE_BACKEND)
 //   gateway.kortix.com      → gateway  → EKS | EU ECS | US ECS   (GATEWAY_ACTIVE_BACKEND)
 //   (staging-/dev- variants route to the "staging"/"dev" worker envs)
 //
@@ -277,11 +277,13 @@ export default {
           eks: env.GATEWAY_BACKEND_EKS,
           'ecs-fargate': env.GATEWAY_BACKEND_ECS_FARGATE,
           'us-east-2': env.GATEWAY_BACKEND_US_EAST_2,
+          'eu-west-2': env.GATEWAY_BACKEND_EU_WEST_2,
         }
       : {
           eks: env.BACKEND_EKS,
           'ecs-fargate': env.BACKEND_ECS_FARGATE,
           'us-east-2': env.BACKEND_US_EAST_2,
+          'eu-west-2': env.BACKEND_EU_WEST_2,
         };
 
     const backendUrl = backends[active];
