@@ -790,9 +790,11 @@ const {
   drainTriggerExecutionQueue,
   projectsApp,
   projectWebhooksApp,
+  registerAllProjectRoutes,
   runProjectTriggerSweep,
 } = await import('../projects/index');
-const { resetRateLimiters } = await import('../shared/rate-limit');
+registerAllProjectRoutes();
+const { resetRateLimiters } = await import('../middleware/rate-limit');
 
 function createApp() {
   const app = new Hono();

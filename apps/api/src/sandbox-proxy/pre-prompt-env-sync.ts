@@ -18,7 +18,8 @@
  * So this module holds the pure predicates and the injectable turn-start block,
  * and imports NOTHING that a proxy suite mocks as a value:
  *  - the four collaborators are `import type` only (erased at runtime) and are
- *    passed in as `PrePromptEnvSyncDeps` — the real set lives in the route;
+ *    passed in as `PrePromptEnvSyncDeps` — the real set lives in
+ *    `forward/turn-start.ts`;
  *  - `secret-grant`, `session-token-grant` (the error classes) and
  *    `session-title-generate` (`extractPromptInfo`) are imported for real, and
  *    no proxy suite mocks any of them.
@@ -318,7 +319,7 @@ export function secretGrantErrorResponse(err: unknown, origin?: string): Respons
  * There is deliberately NO default value: a default would have to name the four
  * real modules here, and evaluating this file would then cache them before a
  * sibling suite's `mock.module` could replace them — the very contamination the
- * split exists to prevent. The REAL set is built in `routes/preview.ts`, which
+ * split exists to prevent. The REAL set is built in `forward/turn-start.ts`, which
  * every sibling re-evaluates under its own mocks.
  *
  * `extractPromptInfo` is deliberately NOT here. Whether a body yields prompt text

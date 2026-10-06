@@ -1,0 +1,38 @@
+{
+  "source_hash": "fc331012f0a5267b3f90afb89a8a9b9f9fd2cd0871588f2193343cafae3b7b5f",
+  "diff_files": [
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "infra/scripts/copy-env-secret.sh",
+    "infra/scripts/ecs-deploy.sh",
+    "infra/terraform/compliance-monitoring/monitoring.tf",
+    "infra/terraform/compliance-monitoring/use2-security.tf",
+    "infra/terraform/environments/dev-us-east-2/README.md",
+    "infra/terraform/environments/dev-us-east-2/main.tf",
+    "infra/terraform/environments/dev-us-east-2/outputs.tf",
+    "infra/terraform/environments/dev-us-east-2/variables.tf",
+    "infra/terraform/environments/dev-web-us-east-2/README.md",
+    "infra/terraform/environments/dev-web-us-east-2/backend.tf",
+    "infra/terraform/environments/dev-web-us-east-2/main.tf",
+    "infra/terraform/environments/dev-web-us-east-2/outputs.tf",
+    "infra/terraform/environments/dev-web-us-east-2/variables.tf",
+    "infra/terraform/environments/staging-eu-west-2/README.md",
+    "infra/terraform/environments/staging-eu-west-2/main.tf",
+    "infra/terraform/environments/staging-eu-west-2/variables.tf",
+    "infra/terraform/environments/staging-web-eu-west-2/README.md",
+    "infra/terraform/environments/staging-web-eu-west-2/backend.tf",
+    "infra/terraform/environments/staging-web-eu-west-2/main.tf",
+    "infra/terraform/environments/staging-web-eu-west-2/outputs.tf",
+    "infra/terraform/environments/staging-web-eu-west-2/variables.tf",
+    "tests/unit/copy-env-secret.test.ts",
+    "tests/unit/ecs-deploy-environment.test.ts"
+  ],
+  "diff_hash": "69846f21ca89206685488624763a5d4e94c8f1814165e84490492b06791db45e",
+  "head": "e4d2c22048205b50c2ea6091eaf00c1a6ca7d6d9",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-05T23:48:58.915Z"
+}

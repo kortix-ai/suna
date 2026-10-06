@@ -9,9 +9,9 @@
  * is for. Same trust model as a magic link / a Pipedream connect URL.
  */
 import { createHash, randomUUID } from 'node:crypto';
-import { requestClientKey } from '../shared/client-ip';
+import { requestClientKey } from '../middleware/client-ip';
 import { connectorConnections, connectors, projectSessions, projects } from '@kortix/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
 import { type Context, type Next } from 'hono';
 import { errors, json, lenientBody, makeOpenApiApp } from '../openapi';
@@ -30,7 +30,9 @@ import { isValidSecretName, writeSharedProjectSecret } from '../projects/secrets
 import { clearSecretAudience, setSecretAudience } from '../projects/lib/secret-audience';
 import { resolveUserIdentities } from '../projects/lib/user-identity';
 import { db, withDbTransaction } from '../shared/db';
-import { TokenBucketRateLimiter, enforceRateLimit } from '../shared/rate-limit';
+import { projectAccountMembershipRows } from '../iam/membership-read';
+import { TokenBucketRateLimiter } from '../shared/rate-limit';
+import { enforceRateLimit } from '../middleware/rate-limit';
 import { RATE_LIMIT_EXCEEDED_ACTION } from '../shared/rate-limit-audit';
 import { resolveSetupLink } from './token';
 import { watchConnectorCompletion } from './connector-completion-watch';
@@ -153,11 +155,7 @@ async function linkRequester(
 }
 
 async function lookupLinkRequester(projectId: string, uid: string): Promise<{ id: string; label: string | null } | null> {
-  const result = await db.execute<{ found: number }>(sql`
-    select 1 as found from kortix.account_memberships m
-      join kortix.projects p on p.account_id = m.account_id
-     where p.project_id = ${projectId}::uuid and m.user_id::text = ${uid}
-     limit 1`);
+  const result = await projectAccountMembershipRows(projectId, uid);
   const rows = (result as unknown as { rows?: Array<{ found: number }> }).rows ?? result;
   if ((rows as Array<{ found: number }>).length === 0) return null;
   const identity = (await resolveUserIdentities([uid])).get(uid);

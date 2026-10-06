@@ -1,5 +1,5 @@
 output "alb_dns_name" {
-  description = "ALB DNS name behind dev-api-use2-shadow.kortix.com."
+  description = "ALB DNS name behind dev-api-use2.kortix.com."
   value       = module.api.alb_dns_name
 }
 

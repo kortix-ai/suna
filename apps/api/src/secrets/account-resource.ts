@@ -1,8 +1,9 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
-import { accountMembers, accountSecretGrants, accountSecretResources, sessionProviderSecretPools } from '@kortix/db';
+import { accountSecretGrants, accountSecretResources, sessionProviderSecretPools } from '@kortix/db';
 import { config } from '../config';
 import { db } from '../shared/db';
+import { accountMemberJoin } from '../iam/membership-read';
 
 const envelopeVersion = 'v1';
 
@@ -212,7 +213,7 @@ export async function listUsableGatewaySecrets(input: Omit<GatewaySecretQuery, '
   const q = { ...input, grantUserId: input.grantUserId === undefined ? input.userId : input.grantUserId };
   if (!(await memberMayReadProject(input.accountId, input.projectId, input.userId))) return [];
   return usableRows(q, await gatewaySecretRows(q)
-    .innerJoin(accountMembers, and(eq(accountMembers.accountId, input.accountId), eq(accountMembers.userId, input.userId))));
+    .innerJoin(...accountMemberJoin(input.accountId, input.userId)));
 }
 
 /** A stored ChatGPT login, read again when the provider refused its token. */
@@ -253,7 +254,7 @@ export async function resolveDefaultCodexAccountSecret(accountId: string, projec
     updatedAt: accountSecretResources.updatedAt,
   }).from(accountSecretResources)
     .innerJoin(accountSecretGrants, and(eq(accountSecretGrants.secretId, accountSecretResources.secretId), eq(accountSecretGrants.accountId, accountId)))
-    .innerJoin(accountMembers, and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
+    .innerJoin(...accountMemberJoin(accountId, userId))
     .where(and(
       eq(accountSecretResources.accountId, accountId),
       eq(accountSecretResources.providerId, 'codex'),
@@ -364,7 +365,7 @@ export async function resolveSessionProviderSecrets(input: {
       eq(accountSecretGrants.secretId, accountSecretResources.secretId),
       grantUserId ? eq(accountSecretGrants.userId, grantUserId) : sql`false`,
     ))
-    .innerJoin(accountMembers, and(eq(accountMembers.accountId, input.accountId), eq(accountMembers.userId, input.userId)))
+    .innerJoin(...accountMemberJoin(input.accountId, input.userId))
     .where(and(
       eq(accountSecretResources.accountId, input.accountId),
       eq(accountSecretResources.providerId, input.providerId),

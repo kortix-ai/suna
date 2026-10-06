@@ -1,0 +1,28 @@
+{
+  "source_hash": "33c2549003a83686a50ba31e8da3fa3c9b7b05523d733e111d736cc2a056af79",
+  "diff_files": [
+    "apps/web/src/app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx",
+    "apps/web/src/features/session/header/session-site-header.tsx",
+    "apps/web/src/features/workspace/project-sessions/session-row.tsx",
+    "apps/web/src/features/workspace/project-sidebar/project-session-list.tsx",
+    "apps/web/translations/de.json",
+    "apps/web/translations/en.json",
+    "apps/web/translations/es.json",
+    "apps/web/translations/fr.json",
+    "apps/web/translations/it.json",
+    "apps/web/translations/ja.json",
+    "apps/web/translations/pt.json",
+    "apps/web/translations/sr.json",
+    "apps/web/translations/zh.json",
+    "tests/e2e/specs/40-session-lifecycle-permissions.spec.ts"
+  ],
+  "diff_hash": "fc76f78916b9018ae20d144f27c5cb46e80598abe6a768dbd1a2ae6f46885adb",
+  "head": "027ba34f9b09a652cb53eae5549876477c0f501f",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-06T11:39:48.309Z"
+}

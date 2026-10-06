@@ -1732,7 +1732,8 @@
     },
     "restart": {
       "label": "Redémarrer la session",
-      "pending": "Redémarrage…"
+      "pending": "Redémarrage…",
+      "ownerOnly": "Seul le propriétaire de la session ou un responsable du projet peut redémarrer cette session."
     }
   },
   "modelSelector": {

@@ -1732,7 +1732,8 @@
     },
     "restart": {
       "label": "Sitzung neu starten",
-      "pending": "Wird neu gestartet…"
+      "pending": "Wird neu gestartet…",
+      "ownerOnly": "Nur der Sitzungsinhaber oder ein Projektmanager kann diese Sitzung neu starten."
     }
   },
   "modelSelector": {

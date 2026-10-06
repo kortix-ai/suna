@@ -171,8 +171,8 @@ mock.module('../../shared/db', () => ({ db: {
     for (const p of paramsOf(condition)) pools.delete(p as string);
   } }),
 } }));
-await import('./provider-secret-pools');
-await import('./session-scope');
+(await import('./provider-secret-pools')).registerProviderSecretPoolsRoutes();
+(await import('./session-scope')).registerSessionScopeRoutes();
 const { MAX_KEYS_PER_PROVIDER } = await import('../../secrets/provider-key-selection');
 
 const putModel = (model: string) => app.request(`/${projectId}/sessions/${sessionId}/model`, {
