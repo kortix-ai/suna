@@ -196,6 +196,12 @@
   "newWorkspace": {
     "title": "Направи пројекат",
     "description": "Пројекат садржи ваше агенте, датотеке и сесије.",
+    "handoff": {
+      "validating": "Провера",
+      "creating_repository": "Креирање репозиторијума",
+      "registering": "Регистровање пројекта",
+      "seeding": "Припрема почетних датотека"
+    },
     "templateSeed": "Овај пројекат ће бити постављен из изабраног шаблона.",
     "account": {
       "label": "Налог",
@@ -1540,6 +1546,7 @@
         "email": "Е-пошта",
         "scheduled": "Заказано",
         "webhook": "Webhook",
+        "manual": "Ручно",
         "all": "Све"
       },
       "statusValue": {
@@ -19236,7 +19243,8 @@
       "text8f480bae8d16": "AI агенти за финансијске тимове",
       "text6243d930fc1c": "AI Operating System",
       "textc959682e0398": "Pregledao prijavljene uređaje",
-      "text976811d9540a": "Odjavio uređaj"
+      "text976811d9540a": "Odjavio uređaj",
+      "text6f417aa88601": "Потрошња LLM гејтвеја по извору излистана"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

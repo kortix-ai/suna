@@ -196,6 +196,12 @@
   "newWorkspace": {
     "title": "プロジェクトを作成",
     "description": "プロジェクトにはエージェント、ファイル、セッションが保存されます。",
+    "handoff": {
+      "validating": "検証中",
+      "creating_repository": "リポジトリを作成中",
+      "registering": "プロジェクトを登録中",
+      "seeding": "スターターファイルを準備中"
+    },
     "templateSeed": "このプロジェクトは選択したテンプレートからセットアップされます。",
     "account": {
       "label": "アカウント",
@@ -1540,6 +1546,7 @@
         "email": "電子メール",
         "scheduled": "スケジュール済み",
         "webhook": "Webhook",
+        "manual": "手動",
         "all": "すべて"
       },
       "statusValue": {
@@ -19236,7 +19243,8 @@
       "text8f480bae8d16": "経理・財務チーム向けAIエージェント",
       "text6243d930fc1c": "AI Operating System",
       "textc959682e0398": "サインイン中のデバイスを表示しました",
-      "text976811d9540a": "デバイスをサインアウトしました"
+      "text976811d9540a": "デバイスをサインアウトしました",
+      "text6f417aa88601": "ソース別の LLM ゲートウェイ支出を一覧表示しました"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

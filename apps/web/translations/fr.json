@@ -196,6 +196,12 @@
   "newWorkspace": {
     "title": "Créer un projet",
     "description": "Un projet contient vos agents, fichiers et sessions.",
+    "handoff": {
+      "validating": "Validation",
+      "creating_repository": "Création du dépôt",
+      "registering": "Enregistrement du projet",
+      "seeding": "Préparation des fichiers de démarrage"
+    },
     "templateSeed": "Cet projet sera initialisé à partir du modèle choisi.",
     "account": {
       "label": "Compte",
@@ -1540,6 +1546,7 @@
         "email": "Courriel",
         "scheduled": "Programmée",
         "webhook": "Webhook",
+        "manual": "Manuel",
         "all": "Tous"
       },
       "statusValue": {
@@ -19236,7 +19243,8 @@
       "text8f480bae8d16": "Agents IA pour les équipes finance",
       "text6243d930fc1c": "AI Operating System",
       "textc959682e0398": "A consulté les appareils connectés",
-      "text976811d9540a": "A déconnecté un appareil"
+      "text976811d9540a": "A déconnecté un appareil",
+      "text6f417aa88601": "Dépenses de la passerelle LLM par source répertoriées"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

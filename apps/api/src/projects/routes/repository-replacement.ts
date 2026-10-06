@@ -4,7 +4,8 @@ import { auth, errors, json } from '../../openapi';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import { projectsApp, ProjectSchema } from '../lib/app';
-import { RepositoryChangedError, RepositoryManifestMissingError, RepositorySecretCopyError, RepositoryValidationError, replaceProjectRepository } from '../lib/repository-replacement';
+import { RepositoryChangedError, RepositoryManifestMissingError, RepositoryValidationError, replaceProjectRepository } from '../lib/repository-replacement';
+import { RepositorySecretCopyError } from '../lib/repository-secret-copy';
 import { serializeProject, serializeProjectGitConnection } from '../lib/serializers';
 
 const Body = z.object({
