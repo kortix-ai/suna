@@ -3,7 +3,7 @@
 // account with no boxes, the Stripe subscription is cancelled, the remaining
 // balance is forfeited, the billing status is torn down) and the request row
 // is marked completed, while future and cancelled requests are left alone and
-// the requester's auth identity is preserved. The seeded-due-row acceptance
+// the requester's auth identity is deleted. The seeded-due-row acceptance
 // proof for KRTX-1260: before this change no processor read the managed
 // `kortix.account_deletion_requests` table at all.
 import { describe, expect, mock, test } from 'bun:test';
@@ -116,10 +116,9 @@ withDb('scheduled account deletions — real PostgreSQL', () => {
       expect(forfeiture).toEqual([{ amount: '-5.0000000000', type: 'forfeiture' }]);
 
       expect(cancelledSubscriptions).toEqual(['sub_test_1']);
-      // The pinned scheduled-path semantic: the historical requester's auth
-      // identity survives the scheduled deletion (only the immediate path
-      // deletes it).
-      expect(deletedAuthUsers).toEqual([]);
+      // The scheduled path runs the same routine as the immediate one: the
+      // requester's auth identity goes after the account data.
+      expect(deletedAuthUsers).toEqual([userDue]);
     } finally {
       await db.delete(creditLedger).where(eq(creditLedger.accountId, accDue));
       await db.delete(creditAccounts).where(eq(creditAccounts.accountId, accDue));
