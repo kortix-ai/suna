@@ -18,11 +18,23 @@
  * optimisation, and nothing is built on top of it.
  *
  * ─── THE COST, STATED ──────────────────────────────────────────────────────
- * Four subsystem reads per {@link CONTROL_RECONCILE_MS} per session that has at
- * least one stream open — and ZERO for a session nobody is watching. It
- * replaces the per-tab `GET .../prompts` timer. The client keeps one owner
- * polling `GET .../turn` as a recovery path because transport presence does
- * not prove that control frames are arriving.
+ * Two kinds of holder. A FULL holder (the multiplexed stream) gets every
+ * subsystem: five reads (9 queries on an idle session) per
+ * {@link CONTROL_RECONCILE_MS}. A QUEUE holder (`?channels=control`, the SDK's
+ * prompt queue) gets the queue only: one query per {@link CONTROL_REFRESH_MS},
+ * because the NOTIFY below drives every queue change and the cadence is only a
+ * backstop. A session with at least one full holder pays the full price; a
+ * session nobody is watching pays ZERO. Each prompt-inbox write adds one pass.
+ * The client keeps one owner polling `GET .../turn` as a recovery path because
+ * transport presence does not prove that control frames are arriving.
+ *
+ * ─── A PROMPT WRITE IS A FRAME NOW, ON EVERY REPLICA ───────────────────────
+ * A database trigger NOTIFYs `kortix_session_prompts_changed` with the session
+ * id for every write of a `continue_session` row (migration
+ * 20261006151556632). Each replica that watches the session runs a pass at
+ * once ({@link pokeControlReconciler}), so a queue change reaches every client
+ * in one round trip, whichever replica served the write. Without the LISTEN
+ * the cadence above is the ceiling, as before.
  *
  * ─── EVERY EMISSION IS A FULL SNAPSHOT ─────────────────────────────────────
  * See `session-control-events.ts`. A frame carries its subsystem's whole state,
@@ -35,6 +47,7 @@ import { serializePrompt } from './session-prompt-view';
 import { readSessionTurnState } from './session-turn-read';
 import { readRuntimeControlState, readMirrorWatermark, readSessionAuditWatermark } from './session-control-readers';
 export type { RuntimeControlState, MirrorWatermark, AuditWatermark } from './session-control-readers';
+import { onSessionPromptsChanged } from '../../shared/pg-broadcast';
 import {
   publishControlEvent,
   type ControlEvent,
@@ -76,9 +89,15 @@ export const RECONCILER_IDLE_TTL_MS = 5 * 60_000;
  */
 export const CONTROL_REFRESH_MS = 20_000;
 
+/** `full`: every subsystem. `queue`: the prompt queue only, at the slow cadence. */
+export type ControlReconcilerMode = 'full' | 'queue';
+
 interface Reconciler {
   refs: number;
+  /** Holders that need every subsystem. Zero means a queue-only pass. */
+  fullRefs: number;
   timer: ReturnType<typeof setInterval> | null;
+  timerMs: number | null;
   /** The last frame published for each subsystem — what a new stream replays. */
   latest: Map<ControlEventType, ControlEvent>;
   /** Serialized form of each subsystem's last state, for change detection. */
@@ -87,6 +106,9 @@ interface Reconciler {
   ready: Promise<void>;
   resolveReady: (() => void) | null;
   ticking: boolean;
+  /** A pass was asked for while one ran. The running pass started its reads
+   *  before that write, so one more pass runs when it ends. */
+  tickAgain: boolean;
   /** When the last handle was released, or null while one is held. */
   idleSince: number | null;
   /**
@@ -117,6 +139,7 @@ export interface ControlReconcilerHandle {
 export function acquireControlReconciler(
   sessionId: string,
   projectId: string | null = null,
+  mode: ControlReconcilerMode = 'full',
 ): ControlReconcilerHandle {
   sweepIdleReconcilers();
   let reconciler = reconcilers.get(sessionId);
@@ -127,12 +150,15 @@ export function acquireControlReconciler(
     });
     reconciler = {
       refs: 0,
+      fullRefs: 0,
       timer: null,
+      timerMs: null,
       latest: new Map(),
       fingerprints: new Map(),
       ready,
       resolveReady,
       ticking: false,
+      tickAgain: false,
       idleSince: null,
       projectId,
     };
@@ -140,15 +166,15 @@ export function acquireControlReconciler(
   }
   const target = reconciler;
   target.projectId ??= projectId;
+  const full = mode === 'full';
+  // A first holder, or the first FULL holder of a queue-only reconciler, needs
+  // a pass now: the subsystems it asks for have not been read at this cadence.
+  const needsPass = !target.timer || (full && target.fullRefs === 0);
   target.refs += 1;
+  if (full) target.fullRefs += 1;
   target.idleSince = null;
-
-  if (!target.timer) {
-    target.timer = setInterval(() => void tick(sessionId, target), CONTROL_RECONCILE_MS);
-    // Never hold the process open for a poll. Bun/Node both honour unref here.
-    (target.timer as unknown as { unref?: () => void }).unref?.();
-    void tick(sessionId, target);
-  }
+  schedule(sessionId, target);
+  if (needsPass) void tick(sessionId, target);
 
   let released = false;
   return {
@@ -160,6 +186,8 @@ export function acquireControlReconciler(
       if (released) return;
       released = true;
       target.refs -= 1;
+      if (full) target.fullRefs -= 1;
+      if (target.refs > 0) schedule(sessionId, target);
       if (target.refs <= 0) {
         // Stop the timer immediately — a session nobody is watching must cost
         // nothing. But KEEP the fingerprints and the latest frames for a grace
@@ -171,10 +199,33 @@ export function acquireControlReconciler(
         // reconnecting client work it does not need.
         if (target.timer) clearInterval(target.timer);
         target.timer = null;
+        target.timerMs = null;
         target.idleSince = Date.now();
       }
     },
   };
+}
+
+/**
+ * Run a pass now for a session this replica watches. A no-op for any other
+ * session. Wired to the prompts-changed NOTIFY below.
+ */
+export function pokeControlReconciler(sessionId: string): void {
+  const reconciler = reconcilers.get(sessionId);
+  if (reconciler && reconciler.refs > 0) void tick(sessionId, reconciler);
+}
+
+onSessionPromptsChanged(pokeControlReconciler);
+
+/** Run the timer at the cadence the holders need. A no-op when it already does. */
+function schedule(sessionId: string, reconciler: Reconciler): void {
+  const ms = reconciler.fullRefs > 0 ? CONTROL_RECONCILE_MS : CONTROL_REFRESH_MS;
+  if (reconciler.timer && reconciler.timerMs === ms) return;
+  if (reconciler.timer) clearInterval(reconciler.timer);
+  reconciler.timer = setInterval(() => void tick(sessionId, reconciler), ms);
+  reconciler.timerMs = ms;
+  // Never hold the process open for a poll. Bun/Node both honour unref here.
+  (reconciler.timer as unknown as { unref?: () => void }).unref?.();
 }
 
 /** Forget reconcilers nobody has watched for a while. Lazy, so this module
@@ -194,11 +245,15 @@ function sweepIdleReconcilers(): void {
  *
  * Never throws and never lets one failing subsystem suppress the others: a
  * `/turn` read that fails must not also stop the queue from being reported.
- * Overlapping ticks are dropped rather than queued — a slow DB must not build
- * a backlog of reads that all describe the same instant.
+ * Overlapping ticks fold into ONE follow-up pass — a slow DB must not build a
+ * backlog of reads that all describe the same instant, but a write that landed
+ * after the running pass began its reads must still be reported.
  */
 async function tick(sessionId: string, reconciler: Reconciler): Promise<void> {
-  if (reconciler.ticking) return;
+  if (reconciler.ticking) {
+    reconciler.tickAgain = true;
+    return;
+  }
   reconciler.ticking = true;
   try {
     // Captured BEFORE the reads: the queue frame ranks against GET/POST/bundle
@@ -207,15 +262,17 @@ async function tick(sessionId: string, reconciler: Reconciler): Promise<void> {
     // an OLD empty queue under a NEW instant and erased a newer confirmed row
     // (JAY-728).
     const observedAt = new Date().toISOString();
+    // No full holder: the queue is the only subsystem anyone reads.
+    const full = reconciler.fullRefs > 0;
     const [turn, queue, runtime, mirror, audit] = await Promise.allSettled([
-      readSessionTurnState(sessionId),
+      full ? readSessionTurnState(sessionId) : null,
       listInboxPrompts(sessionId, PROMPT_LIST_LIMIT),
-      readRuntimeControlState(sessionId),
-      readMirrorWatermark(sessionId),
-      readSessionAuditWatermark(sessionId, reconciler),
+      full ? readRuntimeControlState(sessionId) : null,
+      full ? readMirrorWatermark(sessionId) : null,
+      full ? readSessionAuditWatermark(sessionId, reconciler) : null,
     ]);
 
-    if (turn.status === 'fulfilled') {
+    if (full && turn.status === 'fulfilled') {
       emit(sessionId, reconciler, 'kortix.control.turn', { known: true, ...turn.value });
     }
     if (queue.status === 'fulfilled') {
@@ -236,13 +293,13 @@ async function tick(sessionId: string, reconciler: Reconciler): Promise<void> {
         { observed_at: observedAt },
       );
     }
-    if (runtime.status === 'fulfilled') {
+    if (full && runtime.status === 'fulfilled') {
       emit(sessionId, reconciler, 'kortix.control.runtime', runtime.value);
     }
-    if (mirror.status === 'fulfilled') {
+    if (full && mirror.status === 'fulfilled') {
       emit(sessionId, reconciler, 'kortix.control.mirror', mirror.value);
     }
-    if (audit.status === 'fulfilled') {
+    if (full && audit.status === 'fulfilled') {
       emit(sessionId, reconciler, 'kortix.control.audit', audit.value);
     }
   } catch {
@@ -252,6 +309,10 @@ async function tick(sessionId: string, reconciler: Reconciler): Promise<void> {
     reconciler.ticking = false;
     reconciler.resolveReady?.();
     reconciler.resolveReady = null;
+    if (reconciler.tickAgain) {
+      reconciler.tickAgain = false;
+      if (reconciler.refs > 0) void tick(sessionId, reconciler);
+    }
   }
 }
 

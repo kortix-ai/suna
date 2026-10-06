@@ -86,9 +86,13 @@ mock.module('../session-lifecycle/runtime-wake-fence', () => ({
 
 const { __resetControlEventsForTests, subscribeControlEvents, controlChannelState } =
   await import('./session-control-events');
-const { acquireControlReconciler, __resetControlReconcilersForTests } = await import(
-  './session-control-reconciler'
-);
+const {
+  acquireControlReconciler,
+  pokeControlReconciler,
+  __resetControlReconcilersForTests,
+  CONTROL_RECONCILE_MS,
+  CONTROL_REFRESH_MS,
+} = await import('./session-control-reconciler');
 
 const SESSION = 'sess-reconcile';
 
@@ -414,5 +418,187 @@ describe('reference counting', () => {
     const readsAtRelease = turnReads;
     await new Promise((resolve) => setTimeout(resolve, 60));
     expect(turnReads).toBe(readsAtRelease);
+  });
+});
+
+describe('a prompts-changed notification', () => {
+  /** Holds every inbox read open until `open()`, so a test can act DURING a tick. */
+  function gateInboxReads(): { open: () => void } {
+    let release = () => {};
+    let gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mock.module('../session-lifecycle/inbox-rows', () => ({
+      listInboxPrompts: async () => {
+        inboxReads += 1;
+        await gate;
+        return inboxRows;
+      },
+    }));
+    return {
+      open: () => {
+        release();
+        gate = Promise.resolve();
+      },
+    };
+  }
+
+  function restoreInboxReads(): void {
+    mock.module('../session-lifecycle/inbox-rows', () => ({
+      listInboxPrompts: async () => {
+        inboxReads += 1;
+        return inboxRows;
+      },
+    }));
+  }
+
+  test('re-reads a watched session now and publishes the changed queue', async () => {
+    const handle = acquireControlReconciler(`${SESSION}-notify`);
+    await handle.ready();
+    const reads = inboxReads;
+    const received: string[] = [];
+    const sub = subscribeControlEvents(`${SESSION}-notify`, {}, (event) => received.push(event.type));
+
+    inboxRows = [{ id: 'p-notify', state: 'queued' }];
+    pokeControlReconciler(`${SESSION}-notify`);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(inboxReads).toBe(reads + 1);
+    expect(received).toEqual(['kortix.control.queue']);
+    sub.unsubscribe();
+    handle.release();
+  });
+
+  test('reads nothing for a session this replica does not watch', async () => {
+    pokeControlReconciler(`${SESSION}-unwatched`);
+    const handle = acquireControlReconciler(`${SESSION}-released`);
+    await handle.ready();
+    handle.release();
+    const reads = inboxReads;
+
+    pokeControlReconciler(`${SESSION}-released`);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(inboxReads).toBe(reads);
+  });
+
+  test('a burst during a tick runs ONE follow-up tick, and that tick sees the last write', async () => {
+    const handle = acquireControlReconciler(`${SESSION}-burst`);
+    await handle.ready();
+    const gate = gateInboxReads();
+    try {
+      const reads = inboxReads;
+      pokeControlReconciler(`${SESSION}-burst`);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(inboxReads).toBe(reads + 1);
+
+      // Three writes land while the first read is still open. The read
+      // started before them, so it cannot report them.
+      inboxRows = [{ id: 'p-late', state: 'queued' }];
+      pokeControlReconciler(`${SESSION}-burst`);
+      pokeControlReconciler(`${SESSION}-burst`);
+      pokeControlReconciler(`${SESSION}-burst`);
+      expect(inboxReads).toBe(reads + 1);
+
+      gate.open();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      // One follow-up, not three, and not zero.
+      expect(inboxReads).toBe(reads + 2);
+      const queue = handle.snapshot().find((event) => event.type === 'kortix.control.queue');
+      expect((queue!.payload as { prompts: unknown[] }).prompts).toEqual([{ id: 'p-late', state: 'queued' }]);
+    } finally {
+      restoreInboxReads();
+      handle.release();
+    }
+  });
+
+  test('no follow-up runs once the last stream has gone', async () => {
+    const handle = acquireControlReconciler(`${SESSION}-gone`);
+    await handle.ready();
+    const gate = gateInboxReads();
+    try {
+      const reads = inboxReads;
+      pokeControlReconciler(`${SESSION}-gone`);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      pokeControlReconciler(`${SESSION}-gone`);
+      handle.release();
+      gate.open();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(inboxReads).toBe(reads + 1);
+    } finally {
+      restoreInboxReads();
+    }
+  });
+});
+
+describe('queue-only holders (`?channels=control`)', () => {
+  test('a queue-only pass reads the queue and nothing else', async () => {
+    auditWhere.length = 0;
+    const handle = acquireControlReconciler(`${SESSION}-q`, 'project-owner', 'queue');
+    await handle.ready();
+    expect(inboxReads).toBe(1);
+    expect(turnReads).toBe(0);
+    expect(auditWhere).toHaveLength(0);
+    expect(handle.snapshot().map((event) => event.type)).toEqual(['kortix.control.queue']);
+
+    pokeControlReconciler(`${SESSION}-q`);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(inboxReads).toBe(2);
+    expect(turnReads).toBe(0);
+    handle.release();
+  });
+
+  test('a full holder joining a queue-only session reads every subsystem at once', async () => {
+    const queueOnly = acquireControlReconciler(`${SESSION}-mixed`, 'project-owner', 'queue');
+    await queueOnly.ready();
+    auditWhere.length = 0;
+    const full = acquireControlReconciler(`${SESSION}-mixed`, 'project-owner');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(turnReads).toBe(1);
+    expect(auditWhere).toHaveLength(2);
+    expect(full.snapshot().map((event) => event.type).sort()).toEqual([
+      'kortix.control.audit',
+      'kortix.control.mirror',
+      'kortix.control.queue',
+      'kortix.control.runtime',
+      'kortix.control.turn',
+    ]);
+
+    // Mixed holders: every pass still reads everything.
+    pokeControlReconciler(`${SESSION}-mixed`);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(turnReads).toBe(2);
+    full.release();
+
+    // The last full holder left: back to the queue alone.
+    pokeControlReconciler(`${SESSION}-mixed`);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(turnReads).toBe(2);
+    queueOnly.release();
+  });
+
+  test('the cadence is 5 s with a full holder and 20 s without one', async () => {
+    const realSetInterval = globalThis.setInterval;
+    const cadences: number[] = [];
+    globalThis.setInterval = ((handler: () => void, ms?: number) => {
+      cadences.push(ms ?? 0);
+      return realSetInterval(handler, ms);
+    }) as typeof setInterval;
+    try {
+      const queueOnly = acquireControlReconciler(`${SESSION}-cadence`, 'project-owner', 'queue');
+      expect(cadences).toEqual([CONTROL_REFRESH_MS]);
+      const full = acquireControlReconciler(`${SESSION}-cadence`, 'project-owner');
+      expect(cadences).toEqual([CONTROL_REFRESH_MS, CONTROL_RECONCILE_MS]);
+      // A second queue holder changes nothing.
+      const second = acquireControlReconciler(`${SESSION}-cadence`, 'project-owner', 'queue');
+      expect(cadences).toHaveLength(2);
+      full.release();
+      expect(cadences).toEqual([CONTROL_REFRESH_MS, CONTROL_RECONCILE_MS, CONTROL_REFRESH_MS]);
+      second.release();
+      queueOnly.release();
+      expect(cadences).toHaveLength(3);
+      expect([CONTROL_RECONCILE_MS, CONTROL_REFRESH_MS]).toEqual([5_000, 20_000]);
+    } finally {
+      globalThis.setInterval = realSetInterval;
+    }
   });
 });

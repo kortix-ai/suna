@@ -14,6 +14,7 @@ flow(
       "POST /v1/accounts/:accountId/secret-resources",
       "GET /v1/accounts/:accountId/secret-resources",
       "PUT /v1/accounts/:accountId/secret-resources/:secretId/value",
+      "POST /v1/accounts/:accountId/secret-resources/:secretId/retry",
       "DELETE /v1/accounts/:accountId/secret-resources/:secretId",
     ],
   },
@@ -47,6 +48,12 @@ flow(
         { value: "rotated-test-value" }, { params: { ...params, secretId: ids[0]! } });
       response.status(200).body().has("$.secret_id", ids[0]!);
       if ("value" in response.json<any>()) throw new Error("secret value leaked in rotation response");
+    });
+    await ctx.step("retry ends a key's cooldown for its manager; a nonmember is denied", async () => {
+      const response = await ctx.client.as(ctx.P.OWNER).post(`${path}/:secretId/retry`, {}, { params: { ...params, secretId: ids[1]! } });
+      response.status(200).body().has("$.secret_id", ids[1]!).has("$.cooldown_until", null);
+      if ("value" in response.json<any>()) throw new Error("secret value leaked in retry response");
+      (await ctx.client.as(ctx.P.NONMEMBER).post(`${path}/:secretId/retry`, {}, { params: { ...params, secretId: ids[1]! } })).status([403, 404]);
     });
     await ctx.step("delete primary; backup remains", async () => {
       (await ctx.client.as(ctx.P.OWNER).del(`${path}/:secretId`, { params: { ...params, secretId: ids[0]! } })).status(200);

@@ -13,6 +13,7 @@ const row = (over: Partial<QueueRow> & { id: string }): QueueRow => ({
   attachmentCount: 0,
   state: 'queued',
   removable: true,
+  interruptible: true,
   takeBackEligible: true,
   rawText: over.text ?? `text ${over.id}`,
   editText: over.text ?? `text ${over.id}`,
@@ -127,4 +128,35 @@ test('Queue List rows carry no waiting or sending caption', () => {
   expect(markup).not.toContain('Waiting');
   expect(markup).not.toContain('Sending');
   expect(markup).not.toContain('role="status"');
+});
+
+describe('steering rows', () => {
+  test('a steer row says the agent reads it at its next step', () => {
+    const markup = render({ rows: [row({ id: 's', steer: true }), row({ id: 'q' })] });
+    expect(count(markup, 'Read at next step')).toBe(1);
+  });
+
+  test('a fallen-back row says why it waits, not the steer caption', () => {
+    const markup = render({
+      rows: [
+        row({ id: 'u', steerFallback: 'unsupported' }),
+        row({ id: 'n', steerFallback: 'not_prompter' }),
+        row({ id: 't', steerFallback: 'turn_ended' }),
+      ],
+    });
+    expect(markup).toContain('This session cannot take messages mid-turn.');
+    expect(markup).toContain('Another member started it.');
+    expect(markup).toContain('The turn ended first.');
+    expect(markup).not.toContain('Read at next step');
+  });
+
+  test('Stop and send shows on waiting rows only, and only while a turn runs', () => {
+    const rows = [
+      row({ id: 'waiting' }),
+      row({ id: 'delivering', state: 'delivering', removable: false, interruptible: false }),
+      row({ id: 'sending', state: 'sending', removable: false, interruptible: false }),
+    ];
+    expect(count(render({ rows, onStopAndSend: () => {} }), 'Stop and send')).toBe(1);
+    expect(render({ rows })).not.toContain('Stop and send');
+  });
 });
