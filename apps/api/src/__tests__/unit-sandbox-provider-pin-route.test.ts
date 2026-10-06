@@ -84,7 +84,8 @@ mock.module('../projects/provider-transition/provider-transition-service', () =>
 }));
 
 const { projectsApp } = await import('../projects/lib/app');
-await import('../projects/routes/project-settings');
+// R4 explicit routes: the routes register on call, not at import.
+(await import('../projects/routes/project-settings')).registerProjectSettingsRoutes();
 
 type Principal = {
   authType: 'supabase' | 'pat' | 'service_account';
