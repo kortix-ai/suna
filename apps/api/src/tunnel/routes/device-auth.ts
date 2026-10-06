@@ -233,7 +233,9 @@ export function createDeviceAuthPublicRouter() {
         return c.json({ error: 'device auth secret required' }, 400);
       }
 
-      const rl = tunnelRateLimiter.check('deviceAuthPoll', devicePollRateLimitKey(c, secret));
+      const rl = tunnelRateLimiter.check('deviceAuthPollIp', requestClientKey(c)).allowed
+        ? tunnelRateLimiter.check('deviceAuthPoll', devicePollRateLimitKey(c, secret))
+        : { allowed: false, retryAfterMs: 60_000 };
       if (!rl.allowed) {
         return c.json({ error: 'Too many requests', retryAfterMs: rl.retryAfterMs }, 429);
       }

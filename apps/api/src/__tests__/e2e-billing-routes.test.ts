@@ -218,7 +218,10 @@ mock.module('../billing/repositories/account-deletion', () => ({
   createDeletionRequest: async () => null,
   cancelDeletionRequest: async () => {},
   markDeletionCompleted: async () => {},
+  countOverdueBacklog: async () => 0,
   getScheduledDeletions: async () => [],
+  claimDeletionRequest: async () => null,
+  releaseDeletionRequest: async () => {},
 }));
 
 // ─── Import billing app AFTER mocks ──────────────────────────────────────────
