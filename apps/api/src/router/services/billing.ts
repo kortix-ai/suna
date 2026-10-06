@@ -3,7 +3,7 @@ import { config, getToolCost } from '../../config';
 
 import { creditGateExemptEnv } from './credit-gate-env';
 
-import { InsufficientCreditsError } from '../../errors';
+import { InsufficientCreditsError, WalletUnavailableError } from '../../errors';
 import { wallet, type LedgerDebitType } from '../../billing/wallet';
 import type { BillingCheckResult, BillingDeductResult } from '../../types';
 
@@ -45,12 +45,13 @@ async function debitForRouter(
   amount: number,
   description: string,
   kind: LedgerDebitType,
-): Promise<{ ok: true; amount: number; balance: number; transactionId: string } | { ok: false; error: string }> {
+): Promise<{ ok: true; amount: number; balance: number; transactionId: string } | { ok: false; error: string; retryable?: boolean }> {
   try {
     const result = await debitAndCheckAutoTopup({ accountId, amount, description, kind, key: null });
     return { ok: true, ...result };
   } catch (err) {
     if (err instanceof InsufficientCreditsError) return { ok: false, error: err.reason };
+    if (err instanceof WalletUnavailableError) return { ok: false, error: err.message, retryable: true };
     console.error('[BILLING] router debit failed:', err);
     return { ok: false, error: 'Deduction error' };
   }
@@ -92,7 +93,7 @@ export async function deductToolCredits(
   const result = await debitForRouter(accountId, cost, deductDescription, 'usage');
 
   if (!result.ok) {
-    return { success: false, cost: 0, newBalance: 0, error: result.error };
+    return { success: false, cost: 0, newBalance: 0, error: result.error, retryable: result.retryable };
   }
 
   console.info(`[BILLING] Deducted $${cost.toFixed(4)}. New balance: $${result.balance.toFixed(2)}`);
@@ -135,7 +136,7 @@ export async function deductLLMCredits(
   const result = await debitForRouter(accountId, calculatedCost, description, 'llm_debit');
 
   if (!result.ok) {
-    return { success: false, cost: 0, newBalance: 0, error: result.error };
+    return { success: false, cost: 0, newBalance: 0, error: result.error, retryable: result.retryable };
   }
 
   console.info(`[BILLING] Deducted $${calculatedCost.toFixed(6)}. New balance: $${result.balance.toFixed(2)}`);

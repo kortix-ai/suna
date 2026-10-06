@@ -102,7 +102,7 @@ export async function reserveEstimatedLlmCredits(
     });
   }
   if (!creditReservation.success) {
-    throw new HTTPException(402, {
+    throw new HTTPException(creditReservation.retryable ? 503 : 402, {
       message: creditReservation.error || 'Insufficient credits',
     });
   }

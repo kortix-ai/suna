@@ -258,7 +258,9 @@ export async function reserveToolProxyCredits(
     });
   }
   if (!creditReservation.success) {
-    throw new HTTPException(402, { message: creditReservation.error || 'Insufficient credits' });
+    throw new HTTPException(creditReservation.retryable ? 503 : 402, {
+      message: creditReservation.error || 'Insufficient credits',
+    });
   }
 
   const actorReservedCents = await reserveActorCost(
