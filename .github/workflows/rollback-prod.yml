@@ -65,13 +65,13 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     steps:
       - name: Checkout prod (full history + tags)
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: prod
           fetch-depth: 0
 
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -136,7 +136,7 @@ jobs:
 
       - name: Configure AWS credentials for ECS rollback
         if: steps.plan.outputs.roll_api == 'yes' || steps.plan.outputs.roll_gw == 'yes' || steps.plan.outputs.roll_fe == 'yes'
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
           aws-region: eu-west-2
