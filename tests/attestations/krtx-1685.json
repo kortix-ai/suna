@@ -1,11 +1,16 @@
 {
-  "source_hash": "87e7c0b280c401232464ff22742ce553e58cb678866d7a7495a45c808ea0b0f2",
-  "head": "2098474f9999a4b1f80b84673e936ba469067ad3",
+  "source_hash": "df6a413c6012b82ce0d27e59513486bd118ff06f7738eda5be49894a91821875",
+  "diff_files": [
+    "apps/web/src/app/[locale]/(auth)/auth/page.tsx",
+    "apps/web/src/app/[locale]/(auth)/auth/stale-bundle-recovery.test.tsx"
+  ],
+  "diff_hash": "c5f13c3804c87125a8b90f71f8156812606e04ff414e6d667744c576edd88c5a",
+  "head": "ce15a5ede0456fe8d3e0057e83ce027fc26a47a9",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-06T13:27:07.690Z"
+  "at": "2026-10-06T14:13:27.015Z"
 }
