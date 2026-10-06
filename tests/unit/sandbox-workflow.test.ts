@@ -213,8 +213,8 @@ describe('native test-lane workflow', () => {
 
   test('runs the local suite on a schedule, on a release pull request, or when a person adds `test`', () => {
     // 2026-09-28. Labels ran the suite on nearly every pull request into
-    // `main`: every agent PR carried `preview`, and each push re-ran six lanes.
-    // Into `main`, only the act of adding `test` runs it, once; a push does not.
+    // `dev`: every agent PR carried `preview`, and each push re-ran six lanes.
+    // Into `dev`, only the act of adding `test` runs it, once; a push does not.
     expect(testWorkflow).toContain('branches: [dev, staging]');
     expect(testWorkflow).toContain('types: [opened, reopened, synchronize, ready_for_review, labeled]');
     expect(testWorkflow).not.toContain('labels.*.name');
@@ -241,10 +241,10 @@ describe('native test-lane workflow', () => {
     expect(testWorkflow).not.toMatch(/^  decide:/m);
   });
 
-  test('no workflow runs a job on a pull request into main by itself', () => {
-    // A pull request into `main` is mergeable the moment it opens. CI runs on
-    // pull requests into `staging` and `prod`, and after the merge on `main`.
-    // Two workflows listen to pull requests into `main`, and each runs a job
+  test('no workflow runs a job on a pull request into dev by itself', () => {
+    // A pull request into `dev` is mergeable the moment it opens. CI runs on
+    // pull requests into `staging` and `prod`, and after the merge on `dev`.
+    // Two workflows listen to pull requests into `dev`, and each runs a job
     // only when a person adds its label: tests.yml (`test`) and
     // deploy-preview.yml (`preview`). Both gates are pinned above.
     const labelGated = new Set(['tests.yml', 'deploy-preview.yml']);
@@ -253,7 +253,7 @@ describe('native test-lane workflow', () => {
       .filter((file) => /\.ya?ml$/.test(file) && !labelGated.has(file))
       .filter((file) => {
         // Walk the top-level `on:` block line by line: a pull request trigger
-        // is an offender unless its `branches:` list exists and omits `main`.
+        // is an offender unless its `branches:` list exists and omits `dev`.
         const lines = readFileSync(resolve(dir, file), 'utf8').split('\n');
         const on = lines.indexOf('on:');
         if (on < 0) return false;
@@ -270,9 +270,9 @@ describe('native test-lane workflow', () => {
     expect(offenders).toEqual([]);
   });
 
-  test('a push to main runs no suite: the trunk is tested on a daily schedule and cannot block anything', () => {
+  test('a push to dev runs no suite: the trunk is tested on a daily schedule and cannot block anything', () => {
     // 2026-10-03 (Actions minutes). The per-merge gate is the local attestation
-    // and the pre-push hook. A scheduled run on `main` HEAD is the safety net.
+    // and the pre-push hook. A scheduled run on `dev` HEAD is the safety net.
     const on = testWorkflow.slice(testWorkflow.indexOf('\non:'), testWorkflow.indexOf('\nconcurrency:'));
     expect(on).not.toMatch(/^ {2}push:/m);
     expect(on).toMatch(/^ {2}schedule:\n(?: {4}#.*\n)* {4}- cron: '/m);
@@ -296,12 +296,12 @@ describe('native test-lane workflow', () => {
     // Top level is `contents: read`; the commit comment 403s without this.
     expect(report).toContain('contents: write');
 
-    // A red trunk has to reach someone, or nobody learns main is broken.
+    // A red trunk has to reach someone, or nobody learns dev is broken.
     expect(testWorkflow).toContain('repos/$REPO/commits/$SHA/comments');
-    expect(testWorkflow).toContain('::error::main is red at $SHA');
+    expect(testWorkflow).toContain('::error::dev is red at $SHA');
   });
 
-  test('a push to main triggers only the cheap guards and path-gated infra applies', () => {
+  test('a push to dev triggers only the cheap guards and path-gated infra applies', () => {
     // 2026-10-03 (Actions minutes). Dev deploy, Tests, CI, CodeQL, Drata and the
     // desktop build are dispatch, schedule, or release-branch only.
     const dir = resolve(root, '.github/workflows');

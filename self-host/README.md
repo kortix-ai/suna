@@ -22,7 +22,7 @@ for real use) running Linux, and a domain you control.
 2. **Run the bootstrap command** on the box (as root, or a user with sudo):
 
    ```sh
-   curl -fsSL https://raw.githubusercontent.com/kortix-ai/suna/main/scripts/kortix-selfhost-up.sh \
+   curl -fsSL https://raw.githubusercontent.com/kortix-ai/suna/dev/scripts/kortix-selfhost-up.sh \
      | bash -s -- --domain kortix.example.com --email ops@example.com
    ```
 

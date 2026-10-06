@@ -242,6 +242,11 @@ export async function openRuntimeEventStream(
   options.signal.addEventListener('abort', onCallerAbort, { once: true });
   connectTimeout.addEventListener('abort', onConnectTimeout, { once: true });
 
+  // The caller-abort link must outlive this function on success: the live body
+  // is bound to `connectGuard.signal`, so removing the listener here would
+  // detach it and leave a read blocked on a silent daemon with nothing to end
+  // it. It is removed only when the attach FAILS.
+  let attached = false;
   try {
     const response = await fetchRuntimeApi(target.externalId, url, {
       headers: {
@@ -271,6 +276,7 @@ export async function openRuntimeEventStream(
         status: response.status,
       };
     }
+    attached = true;
     return {
       ok: true,
       body: response.body,
@@ -279,7 +285,7 @@ export async function openRuntimeEventStream(
   } catch (error) {
     return { ok: false, reason: reasonOf(error), status: null };
   } finally {
-    options.signal.removeEventListener('abort', onCallerAbort);
+    if (!attached) options.signal.removeEventListener('abort', onCallerAbort);
     connectTimeout.removeEventListener('abort', onConnectTimeout);
   }
 }

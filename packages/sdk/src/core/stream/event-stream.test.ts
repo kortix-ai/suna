@@ -1706,3 +1706,136 @@ describe('openEventStream close()', () => {
     await tick();
   });
 });
+
+// ── 05#6: a greeting is not work; backoff is jittered ────────────────────────
+
+const serverConnected = () => ({ type: 'server.connected', properties: {} }) as unknown as RuntimeEvent;
+
+describe('openEventStream greeting-only streams (05#6)', () => {
+  test('a stream that sends only the server.connected greeting rides the exponential backoff, not 250 ms', async () => {
+    const clock = createFakeClock();
+    const { timers, log } = createLoggingTimers(clock);
+    const { client, channels } = createConnectableClient(() => log.push('connect'));
+    const handle = openEventStream({ client, onEvent: () => {}, timers });
+    await tick();
+
+    channels[0].push(serverConnected());
+    await tick();
+    channels[0].end();
+    await clock.advance(250);
+    expect(channels.length).toBe(1);
+    await clock.advance(750);
+    expect(channels.length).toBe(2);
+
+    channels[1].push(serverConnected());
+    await tick();
+    channels[1].end();
+    await clock.advance(2000);
+    expect(channels.length).toBe(3);
+
+    expect(reconnectDelaysFromLog(log)).toEqual([1000, 2000]);
+    handle.close();
+  });
+
+  test('repeated greeting-then-close cycles park the stream like any other hard failure', async () => {
+    const clock = createFakeClock();
+    const { client, channels } = createConnectableClient();
+    const parked: number[] = [];
+    const handle = openEventStream({
+      client,
+      onEvent: () => {},
+      onParked: (r) => parked.push(r.consecutiveFailures),
+      timers: clock,
+    });
+    await tick();
+    // Each attempt dies at once; the wait is exactly the backoff ladder.
+    for (const wait of [1000, 2000, 4000, 8000, 16_000, 30_000, 30_000, 30_000]) {
+      channels[channels.length - 1].push(serverConnected());
+      await tick();
+      channels[channels.length - 1].end();
+      await clock.advance(wait);
+    }
+    expect(parked).toEqual([8]);
+    handle.close();
+  });
+
+  test('a server that delivers one real event then closes, repeatedly, falls off the fast path', async () => {
+    const clock = createFakeClock();
+    const { timers, log } = createLoggingTimers(clock);
+    const { client, channels } = createConnectableClient(() => log.push('connect'));
+    const handle = openEventStream({ client, onEvent: () => {}, timers });
+    await tick();
+    // Four fast reconnects, then the fifth rides the ladder (1 s, then 2 s).
+    for (const wait of [250, 250, 250, 250, 1000, 2000]) {
+      channels[channels.length - 1].push(partUpdated('p'));
+      await tick();
+      await clock.advance(16);
+      channels[channels.length - 1].end();
+      await clock.advance(wait);
+    }
+    expect(reconnectDelaysFromLog(log)).toEqual([250, 250, 250, 250, 1000, 2000]);
+    handle.close();
+  });
+});
+
+describe('openEventStream backoff jitter (05#6)', () => {
+  test('a reconnect delay is stretched by up to 50% so clients do not reconnect in lockstep', async () => {
+    const clock = createFakeClock();
+    const { client, channels } = createConnectableClient();
+    const handle = openEventStream({ client, onEvent: () => {}, timers: { ...clock, random: () => 1 } });
+    await tick();
+    channels[0].end();
+    await clock.advance(1000);
+    expect(channels.length).toBe(1);
+    await clock.advance(500);
+    expect(channels.length).toBe(2);
+    handle.close();
+  });
+});
+
+// ── 05#5: a joiner to a parked shared stream gets a live one ─────────────────
+
+describe('openEventStream joining a parked stream (05#5)', () => {
+  test('a later subscriber replaces the parked connection instead of joining a dead one', async () => {
+    const clock = createFakeClock();
+    let attempts = 0;
+    const channels: FakeEventChannel[] = [];
+    let dead = true;
+    const client: EventStreamClient = {
+      global: {
+        event: async (opts) => {
+          attempts++;
+          if (dead) throw new Error('GET /global/event → 503', { cause: { status: 503 } });
+          const channel = new FakeEventChannel();
+          opts.signal.addEventListener('abort', () => channel.end(), { once: true });
+          channels.push(channel);
+          return { stream: channel };
+        },
+      },
+    };
+    const parkedA: number[] = [];
+    const a = openEventStream({ client, onEvent: () => {}, onParked: (r) => parkedA.push(r.consecutiveFailures), timers: clock });
+    await tick();
+    await clock.advance(200_000);
+    expect(parkedA).toEqual([8]);
+    const attemptsAtPark = attempts;
+
+    dead = false;
+    const got: RuntimeEvent[] = [];
+    const b = openEventStream({ client, onEvent: (e) => got.push(e), timers: clock });
+    await tick();
+    expect(attempts).toBe(attemptsAtPark + 1);
+    channels[0].push(partUpdated('late'));
+    await tick();
+    await clock.advance(16);
+    expect(got).toHaveLength(1);
+
+    // A's own close must not tear B's live connection down.
+    a.close();
+    channels[0].push(partUpdated('after-a-closed'));
+    await tick();
+    await clock.advance(16);
+    expect(got).toHaveLength(2);
+    b.close();
+  });
+});

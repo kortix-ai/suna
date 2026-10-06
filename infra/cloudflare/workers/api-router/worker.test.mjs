@@ -24,12 +24,12 @@ afterEach(() => {
 });
 
 describe('api-router worker', () => {
-  test('deploys the dev router from main and verifies its commit and SCIM boundary', () => {
+  test('deploys the dev router from dev and verifies its commit and SCIM boundary', () => {
     const workflow = Bun.YAML.parse(readFileSync(new URL('../../../../.github/workflows/deploy-api-router-dev.yml', import.meta.url), 'utf8'));
-    expect(workflow.on.push.branches).toEqual(['main']);
+    expect(workflow.on.push.branches).toEqual(['dev']);
     expect(workflow.on.push.paths).toContain('infra/cloudflare/workers/api-router/**');
     const job = workflow.jobs.deploy;
-    expect(job.if).toBe("github.ref == 'refs/heads/main'");
+    expect(job.if).toBe("github.ref == 'refs/heads/dev'");
     expect(job['continue-on-error']).toBeUndefined();
     const commands = job.steps.map((step) => step.run ?? '').join('\n');
     expect(commands).toContain('deploy --env dev');
@@ -1015,5 +1015,37 @@ describe('api-router worker', () => {
     expect(proxiedUpgrade).toBe('websocket');
     expect(response).toBe(upgradeResponse);
     expect(response.webSocket).toBe(webSocket);
+  });
+
+  describe('/internal edge gate', () => {
+    const gated = { ...env, INTERNAL_EDGE_KEY: 'edge-key-1' };
+    const call = (path, headers = {}, e = gated, host = 'api.kortix.com') => {
+      const seen = [];
+      globalThis.fetch = async (input) => {
+        seen.push(input.headers.get('x-kortix-internal-edge-key'));
+        return new Response('{"principal":null}', { status: 200 });
+      };
+      return worker
+        .fetch(new Request(`https://${host}${path}`, { method: 'POST', headers }), e)
+        .then((response) => ({ response, seen }));
+    };
+
+    test('public caller without the key gets 404 and never reaches the origin', async () => {
+      const { response, seen } = await call('/internal/gateway/authenticate');
+      expect(response.status).toBe(404);
+      expect(seen).toEqual([]);
+      expect((await call('/internal/gateway/authenticate', { 'x-kortix-internal-edge-key': 'nope' })).response.status).toBe(404);
+    });
+
+    test('gateway with the key is forwarded and the key is stripped', async () => {
+      const { response, seen } = await call('/internal/gateway/authenticate', { 'x-kortix-internal-edge-key': 'edge-key-1' });
+      expect(response.status).toBe(200);
+      expect(seen).toEqual([null]);
+    });
+
+    test('non-internal paths and an unset key are unaffected', async () => {
+      expect((await call('/v1/health')).response.status).toBe(200);
+      expect((await call('/internal/gateway/authenticate', {}, env)).response.status).toBe(200);
+    });
   });
 });

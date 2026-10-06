@@ -17,6 +17,7 @@ export async function startSession(command: StartSessionCommand) {
     visible: command.visible,
     projectId: command.projectId,
     sessionId: command.sessionId,
+    keepStopped: command.keepStopped,
   });
   // Optional long-poll: re-resolve (re-reading the live session row each tick,
   // like continueSession) until ready/terminal or the bounded deadline, so the
@@ -45,9 +46,10 @@ export async function startSession(command: StartSessionCommand) {
         visible: { row: fresh },
         projectId: command.projectId,
         sessionId: command.sessionId,
+        keepStopped: command.keepStopped,
       });
     },
-    { waitMs: command.waitMs ?? 0 },
+    { waitMs: command.waitMs ?? 0, signal: command.signal },
   );
   return {
     status: start.stage === 'ready' ? 'ready' : 'pending',
