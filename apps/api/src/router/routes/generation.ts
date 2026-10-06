@@ -6,7 +6,7 @@ import { combinedAuth } from '../../middleware/auth';
 import { rejectSandboxTokens } from '../../middleware/reject-sandbox-tokens';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import { db } from '../../shared/db';
-import { resolveScopedAccountId } from '../../shared/resolve-account';
+import { resolveScopedAccountId } from '../../middleware/resolve-account';
 import type { AppEnv } from '../../types';
 import { mapGatewayLogToGeneration } from './generation-mapper';
 

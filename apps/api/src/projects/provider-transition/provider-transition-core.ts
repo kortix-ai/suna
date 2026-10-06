@@ -7,6 +7,8 @@
  * (provider-transition-worker.ts) call into these.
  */
 
+import { exponentialBackoffMs } from '../../shared/backoff';
+
 export type ProviderTransitionStatus =
   | 'pending'
   | 'building'
@@ -298,8 +300,7 @@ export function transitionBackoffMs(
 ): number {
   const baseMs = opts.baseMs ?? 5_000;
   const maxMs = opts.maxMs ?? 5 * 60_000;
-  const exp = baseMs * 2 ** Math.max(0, attempts - 1);
-  return Math.min(exp, maxMs);
+  return exponentialBackoffMs({ attempt: attempts, baseMs, capMs: maxMs });
 }
 
 /**

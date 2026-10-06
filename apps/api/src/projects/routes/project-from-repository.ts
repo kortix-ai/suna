@@ -43,109 +43,164 @@ import {
 import { readJsonObject } from '../../shared/http-body';
 import { getCatalogItemDetail } from '../../marketplace/catalog';
 
-// POST /v1/projects/link-repository
-// Import an existing GitHub repo through the account GitHub App installation.
-// This validates repo access up front and stores a typed project_git_connection.
+export function registerProjectFromRepositoryRoutes(): void {
+  // POST /v1/projects/link-repository
+  // Import an existing GitHub repo through the account GitHub App installation.
+  // This validates repo access up front and stores a typed project_git_connection.
 
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/link-repository',
-    tags: ['github'],
-    summary: 'Link an existing repository as a project',
-    ...auth,
-      request: {
-        body: { content: { 'application/json': { schema: lenientBody({
-            repo_full_name: z.string().optional().openapi({ description: 'GitHub repository as owner/name. Send this or repo_url.' }),
-            repo_url: z.string().optional().openapi({ description: 'Repository URL. Send this or repo_full_name.' }),
-            installation_id: z.string().optional().openapi({ description: 'GitHub App installation id that can read the repository.' }),
-            github_token: z.string().optional().openapi({ description: 'GitHub token to link with instead of an App installation.' }),
-            source: z.string().optional().openapi({ description: 'Set to managed to import through the instance Git backend (self-host operators only).' }),
-            name: z.string().optional().openapi({ description: 'Project name. Defaults to the repository name.' }),
-            default_branch: z.string().optional().openapi({ description: 'Branch to track.' }),
-            manifest_path: z.string().optional().openapi({ description: 'Manifest path in the repository. Default kortix.yaml.' }),
-            icon: z.string().optional().openapi({ description: 'Project icon name.' }),
-            icon_glyph: z.string().optional().openapi({ description: 'Project icon glyph.' }),
-            account_id: z.string().optional().openapi({ description: 'Account to create the project in. Defaults to the caller\'s account.' }),
-          }) } } },
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/link-repository',
+      tags: ['github'],
+      summary: 'Link an existing repository as a project',
+      ...auth,
+        request: {
+          body: { content: { 'application/json': { schema: lenientBody({
+              repo_full_name: z.string().optional().openapi({ description: 'GitHub repository as owner/name. Send this or repo_url.' }),
+              repo_url: z.string().optional().openapi({ description: 'Repository URL. Send this or repo_full_name.' }),
+              installation_id: z.string().optional().openapi({ description: 'GitHub App installation id that can read the repository.' }),
+              github_token: z.string().optional().openapi({ description: 'GitHub token to link with instead of an App installation.' }),
+              source: z.string().optional().openapi({ description: 'Set to managed to import through the instance Git backend (self-host operators only).' }),
+              name: z.string().optional().openapi({ description: 'Project name. Defaults to the repository name.' }),
+              default_branch: z.string().optional().openapi({ description: 'Branch to track.' }),
+              manifest_path: z.string().optional().openapi({ description: 'Manifest path in the repository. Default kortix.yaml.' }),
+              icon: z.string().optional().openapi({ description: 'Project icon name.' }),
+              icon_glyph: z.string().optional().openapi({ description: 'Project icon glyph.' }),
+              account_id: z.string().optional().openapi({ description: 'Account to create the project in. Defaults to the caller\'s account.' }),
+            }) } } },
+        },
+      responses: {
+          201: json(z.any(), 'OK'),
+          ...errors(400, 403, 409),
       },
-    responses: {
-        201: json(z.any(), 'OK'),
-        ...errors(400, 403, 409),
-    },
-  }),
-  async (c: any) => {
-  const body = await readJsonObject(c);
-  const scope = await resolveProjectAccount(c, body);
-  await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE);
+    }),
+    async (c: any) => {
+    const body = await readJsonObject(c);
+    const scope = await resolveProjectAccount(c, body);
+    await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE);
 
-  const repoFullName = normalizeString(body.repo_full_name ?? body.repoFullName);
-  const repoUrlInput = normalizeString(body.repo_url ?? body.repoUrl);
-  const repoUrl = repoFullName
-    ? `https://github.com/${repoFullName.replace(/\.git$/i, '')}.git`
-    : repoUrlInput;
-  if (!repoUrl) return c.json({ error: 'repo_url or repo_full_name is required' }, 400);
+    const repoFullName = normalizeString(body.repo_full_name ?? body.repoFullName);
+    const repoUrlInput = normalizeString(body.repo_url ?? body.repoUrl);
+    const repoUrl = repoFullName
+      ? `https://github.com/${repoFullName.replace(/\.git$/i, '')}.git`
+      : repoUrlInput;
+    if (!repoUrl) return c.json({ error: 'repo_url or repo_full_name is required' }, 400);
 
-  const installationIdInput = normalizeString(body.installation_id ?? body.installationId);
-  // `source: 'managed'` imports through the INSTANCE git backend instead of an
-  // account connection. It is the one place the instance backend meets an
-  // account flow, and it is self-host-operator gated: the backend owner on
-  // cloud is the shared `managed-kortix` org, and `isPlatformAdmin` admits
-  // staff, so that gate once let one customer import another's repository.
-  const managedImport = normalizeString(body.source) === 'managed';
-  if (managedImport && installationIdInput) {
-    return c.json({ error: 'source: managed and installation_id are mutually exclusive' }, 400);
-  }
-  if (managedImport && !(await isSelfHostOperator(scope.userId))) {
-    return c.json(
-      { error: 'Managed GitHub repository import is only available to a self-host operator' },
-      403,
-    );
-  }
+    const installationIdInput = normalizeString(body.installation_id ?? body.installationId);
+    // `source: 'managed'` imports through the INSTANCE git backend instead of an
+    // account connection. It is the one place the instance backend meets an
+    // account flow, and it is self-host-operator gated: the backend owner on
+    // cloud is the shared `managed-kortix` org, and `isPlatformAdmin` admits
+    // staff, so that gate once let one customer import another's repository.
+    const managedImport = normalizeString(body.source) === 'managed';
+    if (managedImport && installationIdInput) {
+      return c.json({ error: 'source: managed and installation_id are mutually exclusive' }, 400);
+    }
+    if (managedImport && !(await isSelfHostOperator(scope.userId))) {
+      return c.json(
+        { error: 'Managed GitHub repository import is only available to a self-host operator' },
+        403,
+      );
+    }
 
-  const quota = await enforceProjectQuota(c, scope.accountId);
-  if (quota) return quota;
+    const quota = await enforceProjectQuota(c, scope.accountId);
+    if (quota) return quota;
 
-  const manifestPath = normalizeString(body.manifest_path ?? body.manifestPath) ?? 'kortix.yaml';
+    const manifestPath = normalizeString(body.manifest_path ?? body.manifestPath) ?? 'kortix.yaml';
 
-  // Token path: link an existing repo with a token, no GitHub App install
-  // needed — either a caller-supplied token (the seamless `kortix ship` flow
-  // for a repo you already own, and the App-free fallback in environments
-  // where the App can't be installed), or the INSTANCE git backend's own token
-  // when the caller selects it with `source: 'managed'` (operator-gated
-  // above). Everything downstream (`resolveProjectGitAuth` →
-  // `project_credential`) consumes the stored token either way.
-  const githubToken = normalizeString(body.github_token ?? body.githubToken);
-  const managedPatToken = !githubToken && managedImport ? managedGithubToken() : null;
-  if (!githubToken && managedImport && !managedPatToken) {
-    return c.json(
-      { error: 'This server has no token-backed instance git backend configured' },
-      409,
-    );
-  }
-  const patToken = githubToken ?? managedPatToken;
-  if (patToken) {
-    let patImport: Awaited<ReturnType<typeof resolveGitHubImportWithPat>>;
-    try {
-      patImport = await resolveGitHubImportWithPat({
-        repoUrl,
+    // Token path: link an existing repo with a token, no GitHub App install
+    // needed — either a caller-supplied token (the seamless `kortix ship` flow
+    // for a repo you already own, and the App-free fallback in environments
+    // where the App can't be installed), or the INSTANCE git backend's own token
+    // when the caller selects it with `source: 'managed'` (operator-gated
+    // above). Everything downstream (`resolveProjectGitAuth` →
+    // `project_credential`) consumes the stored token either way.
+    const githubToken = normalizeString(body.github_token ?? body.githubToken);
+    const managedPatToken = !githubToken && managedImport ? managedGithubToken() : null;
+    if (!githubToken && managedImport && !managedPatToken) {
+      return c.json(
+        { error: 'This server has no token-backed instance git backend configured' },
+        409,
+      );
+    }
+    const patToken = githubToken ?? managedPatToken;
+    if (patToken) {
+      let patImport: Awaited<ReturnType<typeof resolveGitHubImportWithPat>>;
+      try {
+        patImport = await resolveGitHubImportWithPat({
+          repoUrl,
+          token: patToken,
+          defaultBranch: normalizeString(body.default_branch ?? body.defaultBranch),
+        });
+      } catch (error) {
+        return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
+      }
+      // Same "degrade, never fail the create" rationale as projects.ts's provision
+      // handler — see the comment there.
+      const icon = normalizeProjectIcon(body.icon);
+      const iconGlyph = normalizeProjectGlyph(body.icon_glyph);
+      const row = await registerPatLinkedProject({
+        accountId: scope.accountId,
+        userId: scope.userId,
+        repo: patImport.repo,
         token: patToken,
+        name: normalizeString(body.name),
+        defaultBranch: patImport.defaultBranch,
+        manifestPath,
+        ...(iconGlyph
+          ? { projectMetadata: { icon_glyph: iconGlyph } }
+          : icon
+            ? { projectMetadata: { icon } }
+            : {}),
+      });
+      kickProjectTemplatePrebuilds(
+        { projectId: row.projectId, repoUrl: row.repoUrl, defaultBranch: row.defaultBranch, manifestPath: row.manifestPath, gitAuthToken: patToken },
+        { accountId: scope.accountId, source: 'project-create' },
+      );
+      return c.json({
+        project: serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
+        git_connection: serializeProjectGitConnection(await getProjectGitConnection(row.projectId)),
+      }, 201);
+    }
+
+    let imported: Awaited<ReturnType<typeof resolveGitHubImport>>;
+    try {
+      imported = await resolveGitHubImport({
+        accountId: scope.accountId,
+        repoUrl,
+        installationId: installationIdInput,
         defaultBranch: normalizeString(body.default_branch ?? body.defaultBranch),
       });
     } catch (error) {
+      if (error instanceof GitHubInstallationRequiredError) {
+        return c.json({
+          error: error.message,
+          install_url: await createGitHubInstallationInstallUrl(error.accountId, scope.userId),
+        }, 409);
+      }
+      // A dead connection is a reconnect prompt, never a raw GitHub string.
+      if (isGitHubInstallationUnreachable(error)) {
+        return c.json(
+          githubInstallationUnreachableBody(
+            installationIdInput ?? '',
+            await createGitHubInstallationInstallUrl(scope.accountId, scope.userId),
+          ),
+          409,
+        );
+      }
       return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
     }
-    // Same "degrade, never fail the create" rationale as projects.ts's provision
-    // handler — see the comment there.
+
     const icon = normalizeProjectIcon(body.icon);
     const iconGlyph = normalizeProjectGlyph(body.icon_glyph);
-    const row = await registerPatLinkedProject({
+    const row = await registerGitHubLinkedProject({
       accountId: scope.accountId,
       userId: scope.userId,
-      repo: patImport.repo,
-      token: patToken,
+      repo: imported.repo,
+      installation: imported.installation,
       name: normalizeString(body.name),
-      defaultBranch: patImport.defaultBranch,
+      defaultBranch: imported.defaultBranch,
       manifestPath,
       ...(iconGlyph
         ? { projectMetadata: { icon_glyph: iconGlyph } }
@@ -153,350 +208,297 @@ projectsApp.openapi(
           ? { projectMetadata: { icon } }
           : {}),
     });
+
     kickProjectTemplatePrebuilds(
-      { projectId: row.projectId, repoUrl: row.repoUrl, defaultBranch: row.defaultBranch, manifestPath: row.manifestPath, gitAuthToken: patToken },
+      {
+        projectId: row.projectId,
+        repoUrl: row.repoUrl,
+        defaultBranch: row.defaultBranch,
+        manifestPath: row.manifestPath,
+        gitAuthToken: imported.auth.token,
+      },
       { accountId: scope.accountId, source: 'project-create' },
     );
+
     return c.json({
       project: serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
       git_connection: serializeProjectGitConnection(await getProjectGitConnection(row.projectId)),
     }, 201);
-  }
-
-  let imported: Awaited<ReturnType<typeof resolveGitHubImport>>;
-  try {
-    imported = await resolveGitHubImport({
-      accountId: scope.accountId,
-      repoUrl,
-      installationId: installationIdInput,
-      defaultBranch: normalizeString(body.default_branch ?? body.defaultBranch),
-    });
-  } catch (error) {
-    if (error instanceof GitHubInstallationRequiredError) {
-      return c.json({
-        error: error.message,
-        install_url: await createGitHubInstallationInstallUrl(error.accountId, scope.userId),
-      }, 409);
-    }
-    // A dead connection is a reconnect prompt, never a raw GitHub string.
-    if (isGitHubInstallationUnreachable(error)) {
-      return c.json(
-        githubInstallationUnreachableBody(
-          installationIdInput ?? '',
-          await createGitHubInstallationInstallUrl(scope.accountId, scope.userId),
-        ),
-        409,
-      );
-    }
-    return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
-  }
-
-  const icon = normalizeProjectIcon(body.icon);
-  const iconGlyph = normalizeProjectGlyph(body.icon_glyph);
-  const row = await registerGitHubLinkedProject({
-    accountId: scope.accountId,
-    userId: scope.userId,
-    repo: imported.repo,
-    installation: imported.installation,
-    name: normalizeString(body.name),
-    defaultBranch: imported.defaultBranch,
-    manifestPath,
-    ...(iconGlyph
-      ? { projectMetadata: { icon_glyph: iconGlyph } }
-      : icon
-        ? { projectMetadata: { icon } }
-        : {}),
-  });
-
-  kickProjectTemplatePrebuilds(
-    {
-      projectId: row.projectId,
-      repoUrl: row.repoUrl,
-      defaultBranch: row.defaultBranch,
-      manifestPath: row.manifestPath,
-      gitAuthToken: imported.auth.token,
-    },
-    { accountId: scope.accountId, source: 'project-create' },
+  },
   );
 
-  return c.json({
-    project: serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
-    git_connection: serializeProjectGitConnection(await getProjectGitConnection(row.projectId)),
-  }, 201);
-},
-);
+  // POST /v1/projects/create-repo
+  // Creates a new GitHub repository using the account's GitHub App installation,
+  // then registers it as a Kortix project.
 
-// POST /v1/projects/create-repo
-// Creates a new GitHub repository using the account's GitHub App installation,
-// then registers it as a Kortix project.
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/create-repo',
-    tags: ['github'],
-    summary: 'Create a project with a new Git repository',
-    description:
-      'Create a project with a new GitHub repository under your GitHub App installation.',
-    ...auth,
-      request: {
-        body: { content: { 'application/json': { schema: lenientBody({
-            name: z.string().openapi({ description: 'Repository name: letters, numbers, hyphens, underscores or dots.' }),
-            private: z.boolean().optional().openapi({ description: 'Create a private repository. Default true.' }),
-            description: z.string().optional().openapi({ description: 'Repository description.' }),
-            source_item_id: z.string().optional().openapi({ description: 'Marketplace project item id to clone into the repository.' }),
-            starter_template: z.string().optional().openapi({ description: 'Starter template id to seed the repository.' }),
-            installation_id: z.string().optional().openapi({ description: 'GitHub App installation id to create the repository under.' }),
-            account_id: z.string().optional().openapi({ description: 'Account to create the project in. Defaults to the caller\'s account.' }),
-            icon: z.string().optional().openapi({ description: 'Project icon name.' }),
-            icon_glyph: z.string().optional().openapi({ description: 'Project icon glyph.' }),
-          }) } } },
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/create-repo',
+      tags: ['github'],
+      summary: 'Create a project with a new Git repository',
+      description:
+        'Create a project with a new GitHub repository under your GitHub App installation.',
+      ...auth,
+        request: {
+          body: { content: { 'application/json': { schema: lenientBody({
+              name: z.string().openapi({ description: 'Repository name: letters, numbers, hyphens, underscores or dots.' }),
+              private: z.boolean().optional().openapi({ description: 'Create a private repository. Default true.' }),
+              description: z.string().optional().openapi({ description: 'Repository description.' }),
+              source_item_id: z.string().optional().openapi({ description: 'Marketplace project item id to clone into the repository.' }),
+              starter_template: z.string().optional().openapi({ description: 'Starter template id to seed the repository.' }),
+              installation_id: z.string().optional().openapi({ description: 'GitHub App installation id to create the repository under.' }),
+              account_id: z.string().optional().openapi({ description: 'Account to create the project in. Defaults to the caller\'s account.' }),
+              icon: z.string().optional().openapi({ description: 'Project icon name.' }),
+              icon_glyph: z.string().optional().openapi({ description: 'Project icon glyph.' }),
+            }) } } },
+        },
+      responses: {
+          201: json(z.any(), 'OK'),
+          ...errors(400, 409, 502, 503),
       },
-    responses: {
-        201: json(z.any(), 'OK'),
-        ...errors(400, 409, 502, 503),
-    },
-  }),
-  async (c: any) => {
-  const body = await readJsonObject(c);
-  const scope = await resolveProjectAccount(c, body);
-  await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE);
+    }),
+    async (c: any) => {
+    const body = await readJsonObject(c);
+    const scope = await resolveProjectAccount(c, body);
+    await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE);
 
-  const name = normalizeString(body.name);
-  if (!name) return c.json({ error: 'name is required' }, 400);
-  if (!/^[a-zA-Z0-9._-]+$/.test(name)) {
-    return c.json({ error: 'name must contain only letters, numbers, hyphens, underscores or dots' }, 400);
-  }
-
-  // Resolve through the public marketplace detail gate before creating
-  // anything upstream. Hidden/support items remain internal even when a caller
-  // knows their catalog id.
-  const sourceItemId = normalizeString(body.source_item_id ?? body.sourceItemId);
-  if (sourceItemId) {
-    const sourceItem = await getCatalogItemDetail(sourceItemId);
-    if (!sourceItem || sourceItem.type !== 'registry:project') {
-      return c.json({ error: `Unknown or non-cloneable project item "${sourceItemId}"` }, 400);
+    const name = normalizeString(body.name);
+    if (!name) return c.json({ error: 'name is required' }, 400);
+    if (!/^[a-zA-Z0-9._-]+$/.test(name)) {
+      return c.json({ error: 'name must contain only letters, numbers, hyphens, underscores or dots' }, 400);
     }
-  }
-  const starterTemplate = normalizeStarterTemplateId(
-    body.starter_template ?? body.starterTemplate,
-  );
 
-  const isPrivate = typeof body.private === 'boolean' ? body.private : true;
-  const description = normalizeString(body.description);
+    // Resolve through the public marketplace detail gate before creating
+    // anything upstream. Hidden/support items remain internal even when a caller
+    // knows their catalog id.
+    const sourceItemId = normalizeString(body.source_item_id ?? body.sourceItemId);
+    if (sourceItemId) {
+      const sourceItem = await getCatalogItemDetail(sourceItemId);
+      if (!sourceItem || sourceItem.type !== 'registry:project') {
+        return c.json({ error: `Unknown or non-cloneable project item "${sourceItemId}"` }, 400);
+      }
+    }
+    const starterTemplate = normalizeStarterTemplateId(
+      body.starter_template ?? body.starterTemplate,
+    );
 
-  let githubAuth: Awaited<ReturnType<typeof resolveGitHubRepoAuth>>;
-  try {
-    githubAuth = await resolveGitHubRepoAuth(scope.accountId, normalizeString(body.installation_id ?? body.installationId));
-  } catch (error) {
-    if (error instanceof GitHubInstallationRequiredError) {
+    const isPrivate = typeof body.private === 'boolean' ? body.private : true;
+    const description = normalizeString(body.description);
+
+    let githubAuth: Awaited<ReturnType<typeof resolveGitHubRepoAuth>>;
+    try {
+      githubAuth = await resolveGitHubRepoAuth(scope.accountId, normalizeString(body.installation_id ?? body.installationId));
+    } catch (error) {
+      if (error instanceof GitHubInstallationRequiredError) {
+        return c.json({
+          error: error.message,
+          install_url: await createGitHubInstallationInstallUrl(error.accountId, scope.userId),
+        }, 409);
+      }
+      // The account's connection no longer mints tokens — it was made against a
+      // different App identity, or somebody uninstalled it.
+      if (isGitHubInstallationUnreachable(error)) {
+        return c.json(
+          githubInstallationUnreachableBody(
+            normalizeString(body.installation_id ?? body.installationId) ?? '',
+            await createGitHubInstallationInstallUrl(scope.accountId, scope.userId),
+          ),
+          409,
+        );
+      }
+      // Several connections and no `installation_id`: refuse rather than create
+      // the repository under whichever connection happened to sort first.
+      if (error instanceof GitHubInstallationAmbiguousError) {
+        return c.json({
+          error: 'installation_id_required',
+          message: error.message,
+          installation_ids: error.installationIds,
+        }, 409);
+      }
+      const message = (error as Error).message || 'GitHub is not configured on the server';
+      return c.json({ error: message }, 503);
+    }
+    if (!githubAuth.installation || !githubAuth.auth) {
       return c.json({
-        error: error.message,
-        install_url: await createGitHubInstallationInstallUrl(error.accountId, scope.userId),
+        error: 'Install the Kortix GitHub App before creating GitHub-backed projects',
+        install_url: await createGitHubInstallationInstallUrl(scope.accountId, scope.userId),
       }, 409);
     }
-    // The account's connection no longer mints tokens — it was made against a
-    // different App identity, or somebody uninstalled it.
-    if (isGitHubInstallationUnreachable(error)) {
+    // A PERSONAL owner needs `POST /user/repos`, which GitHub refuses for an App
+    // installation token and accepts for a USER access token. Use the caller's
+    // stored one; without it, ask for authorization instead of failing upstream.
+    // An organization keeps the installation token, which is narrower and needs
+    // no human.
+    let createAuth = githubAuth.auth;
+    if (githubAuth.auth.ownerType === 'User') {
+      const ownerLogin = githubAuth.auth.owner ?? githubAuth.installation.ownerLogin;
+      const userToken = await resolveGitHubUserToken({
+        accountId: scope.accountId,
+        userId: scope.userId,
+        ownerLogin,
+      });
+      if (!userToken) {
+        return c.json({
+          error:
+            `Authorize Kortix on GitHub as ${ownerLogin} to create a repository in that personal account. ` +
+            'You can also create the repository on GitHub and import it.',
+          code: 'github_user_authorization_required',
+          owner_login: ownerLogin,
+        }, 409);
+      }
+      createAuth = {
+        token: userToken.token,
+        source: 'user_token',
+        owner: ownerLogin,
+        ownerType: 'User',
+      };
+    }
+
+    // create-repo always provisions a fresh GitHub repo, so block before we
+    // create anything upstream — a straight count, no idempotent re-link.
+    const createRepoQuota = await enforceProjectQuota(c, scope.accountId);
+    if (createRepoQuota) return createRepoQuota;
+
+    // Auto-dedupe name collisions: GitHub 422s when the repo name is taken, so
+    // try "name", then "name-2", "name-3", … until one is free (up to 12 tries).
+    let repo: Awaited<ReturnType<typeof createRepo>> | undefined;
+    let lastRepoError: unknown = null;
+    for (let attempt = 0; attempt < 12 && !repo; attempt += 1) {
+      const candidate = attempt === 0 ? name : `${name}-${attempt + 1}`;
+      try {
+        repo = await createRepo({
+          name: candidate,
+          isPrivate,
+          description: description ?? undefined,
+          autoInit: true,
+          auth: createAuth,
+        });
+      } catch (error) {
+        lastRepoError = error;
+        if (isRepoNameTakenError(error)) continue; // name taken — try the next suffix
+        // A personal owner on an installation token: `createRepo` refuses before
+        // it calls GitHub. Deterministic for this owner, so it is a 409 the
+        // client can branch on, not the retryable 502 an upstream fault gets.
+        if (error instanceof GitHubPersonalAccountCreateUnsupportedError) {
+          return c.json({ error: error.message, code: error.code }, 409);
+        }
+        return c.json({ error: (error as Error).message || 'Failed to create GitHub repository' }, 502);
+      }
+    }
+    if (!repo) {
       return c.json(
-        githubInstallationUnreachableBody(
-          normalizeString(body.installation_id ?? body.installationId) ?? '',
-          await createGitHubInstallationInstallUrl(scope.accountId, scope.userId),
-        ),
+        {
+          error:
+            `Could not find an available repository name near "${name}" — too many already exist. ` +
+            `Pick a different name. ${(lastRepoError as Error)?.message ?? ''}`.trim(),
+        },
         409,
       );
     }
-    // Several connections and no `installation_id`: refuse rather than create
-    // the repository under whichever connection happened to sort first.
-    if (error instanceof GitHubInstallationAmbiguousError) {
-      return c.json({
-        error: 'installation_id_required',
-        message: error.message,
-        installation_ids: error.installationIds,
-      }, 409);
+
+    // An installation with `repository_selection: 'selected'` cannot see a
+    // repository created a second ago, and the starter commits below run on the
+    // installation token. Grant it access first, with the same user token that
+    // created the repository. `all` needs nothing.
+    if (createAuth.source === 'user_token' && githubAuth.installation.repositorySelection === 'selected') {
+      try {
+        await addRepositoryToInstallation({
+          installationId: githubAuth.installation.installationId,
+          repositoryId: repo.id,
+          auth: createAuth,
+        });
+      } catch (error) {
+        // The repository exists but Kortix cannot write to it, so there is no
+        // usable project to hand back. Say which step failed.
+        return c.json({
+          error:
+            `Created ${repo.full_name}, but could not give Kortix access to it: ` +
+            `${(error as Error).message || 'GitHub refused the request'}. ` +
+            'Grant the Kortix app access to that repository on GitHub, then import it.',
+          code: 'github_installation_repository_grant_failed',
+        }, 502);
+      }
     }
-    const message = (error as Error).message || 'GitHub is not configured on the server';
-    return c.json({ error: message }, 503);
-  }
-  if (!githubAuth.installation || !githubAuth.auth) {
-    return c.json({
-      error: 'Install the Kortix GitHub App before creating GitHub-backed projects',
-      install_url: await createGitHubInstallationInstallUrl(scope.accountId, scope.userId),
-    }, 409);
-  }
-  // A PERSONAL owner needs `POST /user/repos`, which GitHub refuses for an App
-  // installation token and accepts for a USER access token. Use the caller's
-  // stored one; without it, ask for authorization instead of failing upstream.
-  // An organization keeps the installation token, which is narrower and needs
-  // no human.
-  let createAuth = githubAuth.auth;
-  if (githubAuth.auth.ownerType === 'User') {
-    const ownerLogin = githubAuth.auth.owner ?? githubAuth.installation.ownerLogin;
-    const userToken = await resolveGitHubUserToken({
+
+    const projectName = normalizeString(body.project_name ?? body.projectName) ?? deriveProjectName(repo.full_name);
+    const defaultBranch = repo.default_branch || 'main';
+
+    // Commit the Kortix starter into the fresh repo so users land with a
+    // working project shape on first session boot. A partial starter is not a
+    // usable project, so it lands as one commit or not at all.
+    const [ownerLogin, repoSlug] = repo.full_name.split('/');
+    const starter = sourceItemId
+      ? (await buildProjectSeedFilesFromItem({
+          id: sourceItemId,
+          projectName,
+          repoFullName: repo.full_name,
+          extraMarketplaceItems: [],
+          now: new Date().toISOString(),
+        })).files
+      : buildStarterFiles({
+      projectName,
+      repoFullName: repo.full_name,
+      template: starterTemplate,
+    });
+    // One commit for the whole starter (`commitFiles`): ~180 files, one tree,
+    // five requests. A per-file Contents-API loop ran past the 25 s request
+    // deadline. The tree overwrites the `auto_init` README in the same commit.
+    try {
+      await commitFiles({
+        owner: ownerLogin,
+        repo: repoSlug,
+        branch: defaultBranch,
+        files: starter.map((file) => ({ path: file.path, content: file.content })),
+        message: 'chore: scaffold the Kortix starter',
+        auth: githubAuth.auth,
+      });
+    } catch (err) {
+      const message = (err as Error).message || 'Failed to scaffold the starter';
+      console.warn(`[projects/create-repo] Failed to scaffold the starter into ${repo.full_name}:`, message);
+      return c.json({ error: `Failed to scaffold the starter: ${message}` }, 502);
+    }
+
+    const icon = normalizeProjectIcon(body.icon);
+    const iconGlyph = normalizeProjectGlyph(body.icon_glyph);
+    const row = await registerGitHubLinkedProject({
       accountId: scope.accountId,
       userId: scope.userId,
-      ownerLogin,
+      repo,
+      installation: githubAuth.installation,
+      name: projectName,
+      defaultBranch,
+      // The repository is the account's, reached through the account's own
+      // installation — not the Kortix managed-git backend. `managed: true` made
+      // the mirror clone it with the managed-org PAT (503 git_mirror_unavailable)
+      // and made project deletion delete the user's repository.
+      managed: false,
+      // The starter just committed above (buildStarterFiles) ships kortix.yaml
+      // (kortix_version 2) — record that path so it's never stale from birth.
+      manifestPath: 'kortix.yaml',
+      ...(iconGlyph
+        ? { projectMetadata: { icon_glyph: iconGlyph } }
+        : icon
+          ? { projectMetadata: { icon } }
+          : {}),
     });
-    if (!userToken) {
-      return c.json({
-        error:
-          `Authorize Kortix on GitHub as ${ownerLogin} to create a repository in that personal account. ` +
-          'You can also create the repository on GitHub and import it.',
-        code: 'github_user_authorization_required',
-        owner_login: ownerLogin,
-      }, 409);
-    }
-    createAuth = {
-      token: userToken.token,
-      source: 'user_token',
-      owner: ownerLogin,
-      ownerType: 'User',
-    };
-  }
 
-  // create-repo always provisions a fresh GitHub repo, so block before we
-  // create anything upstream — a straight count, no idempotent re-link.
-  const createRepoQuota = await enforceProjectQuota(c, scope.accountId);
-  if (createRepoQuota) return createRepoQuota;
-
-  // Auto-dedupe name collisions: GitHub 422s when the repo name is taken, so
-  // try "name", then "name-2", "name-3", … until one is free (up to 12 tries).
-  let repo: Awaited<ReturnType<typeof createRepo>> | undefined;
-  let lastRepoError: unknown = null;
-  for (let attempt = 0; attempt < 12 && !repo; attempt += 1) {
-    const candidate = attempt === 0 ? name : `${name}-${attempt + 1}`;
-    try {
-      repo = await createRepo({
-        name: candidate,
-        isPrivate,
-        description: description ?? undefined,
-        autoInit: true,
-        auth: createAuth,
-      });
-    } catch (error) {
-      lastRepoError = error;
-      if (isRepoNameTakenError(error)) continue; // name taken — try the next suffix
-      // A personal owner on an installation token: `createRepo` refuses before
-      // it calls GitHub. Deterministic for this owner, so it is a 409 the
-      // client can branch on, not the retryable 502 an upstream fault gets.
-      if (error instanceof GitHubPersonalAccountCreateUnsupportedError) {
-        return c.json({ error: error.message, code: error.code }, 409);
-      }
-      return c.json({ error: (error as Error).message || 'Failed to create GitHub repository' }, 502);
-    }
-  }
-  if (!repo) {
-    return c.json(
+    kickProjectTemplatePrebuilds(
       {
-        error:
-          `Could not find an available repository name near "${name}" — too many already exist. ` +
-          `Pick a different name. ${(lastRepoError as Error)?.message ?? ''}`.trim(),
+        projectId: row.projectId,
+        repoUrl: row.repoUrl,
+        defaultBranch: row.defaultBranch,
+        manifestPath: row.manifestPath,
+        gitAuthToken: githubAuth.auth?.token ?? null,
       },
-      409,
+      { accountId: scope.accountId, source: 'project-create' },
     );
-  }
 
-  // An installation with `repository_selection: 'selected'` cannot see a
-  // repository created a second ago, and the starter commits below run on the
-  // installation token. Grant it access first, with the same user token that
-  // created the repository. `all` needs nothing.
-  if (createAuth.source === 'user_token' && githubAuth.installation.repositorySelection === 'selected') {
-    try {
-      await addRepositoryToInstallation({
-        installationId: githubAuth.installation.installationId,
-        repositoryId: repo.id,
-        auth: createAuth,
-      });
-    } catch (error) {
-      // The repository exists but Kortix cannot write to it, so there is no
-      // usable project to hand back. Say which step failed.
-      return c.json({
-        error:
-          `Created ${repo.full_name}, but could not give Kortix access to it: ` +
-          `${(error as Error).message || 'GitHub refused the request'}. ` +
-          'Grant the Kortix app access to that repository on GitHub, then import it.',
-        code: 'github_installation_repository_grant_failed',
-      }, 502);
-    }
-  }
 
-  const projectName = normalizeString(body.project_name ?? body.projectName) ?? deriveProjectName(repo.full_name);
-  const defaultBranch = repo.default_branch || 'main';
-
-  // Commit the Kortix starter into the fresh repo so users land with a
-  // working project shape on first session boot. A partial starter is not a
-  // usable project, so it lands as one commit or not at all.
-  const [ownerLogin, repoSlug] = repo.full_name.split('/');
-  const starter = sourceItemId
-    ? (await buildProjectSeedFilesFromItem({
-        id: sourceItemId,
-        projectName,
-        repoFullName: repo.full_name,
-        extraMarketplaceItems: [],
-        now: new Date().toISOString(),
-      })).files
-    : buildStarterFiles({
-    projectName,
-    repoFullName: repo.full_name,
-    template: starterTemplate,
-  });
-  // One commit for the whole starter (`commitFiles`): ~180 files, one tree,
-  // five requests. A per-file Contents-API loop ran past the 25 s request
-  // deadline. The tree overwrites the `auto_init` README in the same commit.
-  try {
-    await commitFiles({
-      owner: ownerLogin,
-      repo: repoSlug,
-      branch: defaultBranch,
-      files: starter.map((file) => ({ path: file.path, content: file.content })),
-      message: 'chore: scaffold the Kortix starter',
-      auth: githubAuth.auth,
-    });
-  } catch (err) {
-    const message = (err as Error).message || 'Failed to scaffold the starter';
-    console.warn(`[projects/create-repo] Failed to scaffold the starter into ${repo.full_name}:`, message);
-    return c.json({ error: `Failed to scaffold the starter: ${message}` }, 502);
-  }
-
-  const icon = normalizeProjectIcon(body.icon);
-  const iconGlyph = normalizeProjectGlyph(body.icon_glyph);
-  const row = await registerGitHubLinkedProject({
-    accountId: scope.accountId,
-    userId: scope.userId,
-    repo,
-    installation: githubAuth.installation,
-    name: projectName,
-    defaultBranch,
-    // The repository is the account's, reached through the account's own
-    // installation — not the Kortix managed-git backend. `managed: true` made
-    // the mirror clone it with the managed-org PAT (503 git_mirror_unavailable)
-    // and made project deletion delete the user's repository.
-    managed: false,
-    // The starter just committed above (buildStarterFiles) ships kortix.yaml
-    // (kortix_version 2) — record that path so it's never stale from birth.
-    manifestPath: 'kortix.yaml',
-    ...(iconGlyph
-      ? { projectMetadata: { icon_glyph: iconGlyph } }
-      : icon
-        ? { projectMetadata: { icon } }
-        : {}),
-  });
-
-  kickProjectTemplatePrebuilds(
-    {
-      projectId: row.projectId,
-      repoUrl: row.repoUrl,
-      defaultBranch: row.defaultBranch,
-      manifestPath: row.manifestPath,
-      gitAuthToken: githubAuth.auth?.token ?? null,
-    },
-    { accountId: scope.accountId, source: 'project-create' },
+    // The creator owns the project outright — manager, not the removed middle
+    // tier. (Was 'editor' until 2026-08-18; both folded to the same permissions
+    // for the creator, who is always an account owner/admin here.)
+    return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
+  },
   );
-
-
-  // The creator owns the project outright — manager, not the removed middle
-  // tier. (Was 'editor' until 2026-08-18; both folded to the same permissions
-  // for the creator, who is always an account owner/admin here.)
-  return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
-},
-);
+}

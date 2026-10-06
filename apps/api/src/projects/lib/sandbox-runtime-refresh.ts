@@ -69,7 +69,7 @@ const defaultDeps: SandboxRuntimeRefreshDeps = {
   resolveIngress: (externalId) =>
     resolveSandboxIngress(externalId, { port: SANDBOX_SERVICE_PORT, transport: 'http' }),
   fetch: globalThis.fetch,
-  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  sleep: Bun.sleep,
 };
 
 export type SandboxRuntimeRefreshOutcome = 'refreshed' | 'unreachable' | 'no_sandbox';

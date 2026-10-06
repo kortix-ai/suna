@@ -1423,16 +1423,19 @@ function ProjectSessionRow({
                 ? 'Share'
                 : tI18nComplete.raw('textadc01d813da0')}
             </DropdownMenuItem>
-            <DropdownMenuItem
-              className="cursor-pointer"
-              disabled={isRestarting}
-              onSelect={() => deferAfterClose(() => onRestart(session.session_id, displayTitle))}
-            >
-              {isRestarting ? <Loading className="size-4 shrink-0" /> : <RotateCcw />}
-              {tI18nComplete.raw('text6b983a81e5e8')}
-            </DropdownMenuItem>
-            {/* Lifecycle, not sharing: a project manager keeps Stop on a
-                session they did not create. */}
+            {/* Lifecycle, not sharing: a project manager keeps Restart, Stop
+                and Delete on a session they did not create, and a member who
+                did not create it gets none of them (the server answers 403). */}
+            {session.can_manage_lifecycle !== false && (
+              <DropdownMenuItem
+                className="cursor-pointer"
+                disabled={isRestarting}
+                onSelect={() => deferAfterClose(() => onRestart(session.session_id, displayTitle))}
+              >
+                {isRestarting ? <Loading className="size-4 shrink-0" /> : <RotateCcw />}
+                {tI18nComplete.raw('text6b983a81e5e8')}
+              </DropdownMenuItem>
+            )}
             {sessionCanBeStopped(session) && session.can_manage_lifecycle !== false && (
               <DropdownMenuItem
                 className="cursor-pointer"
@@ -1453,13 +1456,15 @@ function ProjectSessionRow({
                 {tI18nComplete.raw('text0e5f7f6732e0')}
               </DropdownMenuItem>
             )}
-            <DropdownMenuItem
-              className="cursor-pointer"
-              onSelect={() => deferAfterClose(() => onDelete(session.session_id, displayTitle))}
-            >
-              <TrashIcon />
-              {tI18nComplete.raw('texte2d0a54968ea')}
-            </DropdownMenuItem>
+            {session.can_manage_lifecycle !== false && (
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onSelect={() => deferAfterClose(() => onDelete(session.session_id, displayTitle))}
+              >
+                <TrashIcon />
+                {tI18nComplete.raw('texte2d0a54968ea')}
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

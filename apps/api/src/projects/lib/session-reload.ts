@@ -414,7 +414,7 @@ function defaultReloadDeps(): SessionReloadDeps {
     fetch: (url, init) => fetch(url, init),
     pushGovernance: pushSessionAgentConfigToSandbox,
     latestEtag: latestAgentConfigEtag,
-    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    sleep: Bun.sleep,
     recordReport: recordDaemonConfigReport,
     configReleasesEnabled: projectConfigReleasesEnabled,
     repairOrphanedTurn: repairTurnOrphanedBySwap,

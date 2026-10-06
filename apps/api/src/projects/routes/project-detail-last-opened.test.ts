@@ -81,7 +81,7 @@ mock.module('../lib/access', () => ({
 // projects.ts (which attaches the `supabaseAuth` middleware) is deliberately
 // NOT imported, so this request needs no Authorization header.
 const { projectsApp } = await import('../lib/app');
-await import('./project-detail');
+(await import('./project-detail')).registerProjectDetailRoutes();
 
 function get() {
   return projectsApp.request(`/${PROJECT_ID}`, { method: 'GET' });
