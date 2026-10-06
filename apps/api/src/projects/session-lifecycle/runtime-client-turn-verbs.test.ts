@@ -38,7 +38,7 @@ mock.module('../opencode-mapping', () => ({
   sandboxOpencodeEndpoint: async () => ({ url: 'https://daemon.test', headers: {} }),
 }));
 
-const { postPrompt, readSessionMessageTip, removeRuntimeMessage } = await import('./runtime-client');
+const { SteerNotTaken, postPrompt, readSessionMessageTip, removeRuntimeMessage } = await import('./runtime-client');
 const { __resetRuntimeTurnVerbsMemo } = await import('./runtime-fetch');
 
 let capabilities: string[] = [];
@@ -199,5 +199,65 @@ describe('a daemon that stops serving the Kortix routes (an in-place rollback)',
     forwardAnswers['/kortix/runtime/sessions/ses_1/prompt'] = resourceMissing;
     expect(await deliver()).toBe('failed');
     expect(forwarded.map((f) => f.path)).toEqual(['/kortix/runtime/sessions/ses_1/prompt']);
+  });
+});
+
+describe('postPrompt steer (R10)', () => {
+  const steer = () =>
+    postPrompt('ext-1', 'ses_1', 'also this', 'user-1', 'sess-1', 'idem-1:steer', {
+      parts: [{ type: 'text', text: 'also this' }],
+      wireMessageId: 'msg_s',
+      steer: true,
+    });
+  const notTaken = async () => {
+    try {
+      await steer();
+    } catch (error) {
+      return error instanceof SteerNotTaken ? error.reason : error;
+    }
+    return 'taken';
+  };
+
+  test('posts the prompt body to the Kortix steer route, never a turn start', async () => {
+    capabilities = ['runtime.turns.v1', 'session.steer'];
+    forwardBody = { message_id: 'msg_s', steered: true };
+    expect(await steer()).toBe('accepted');
+    expect(forwarded).toHaveLength(1);
+    expect(forwarded[0]).toMatchObject({
+      method: 'POST',
+      path: '/kortix/runtime/sessions/ses_1/steer',
+      body: { message_id: 'msg_s', parts: [{ type: 'text', text: 'also this' }] },
+    });
+    forwardStatus = 200;
+    forwardBody = { deduplicated: true };
+    expect(await steer()).toBe('deduplicated');
+  });
+
+  test('409 no_active_turn is turn_ended; any other 409 is a plain failure', async () => {
+    capabilities = ['runtime.turns.v1', 'session.steer'];
+    forwardStatus = 409;
+    forwardBody = { code: 'no_active_turn' };
+    expect(await notTaken()).toBe('turn_ended');
+    forwardBody = { error: 'busy' };
+    expect(await notTaken()).toBe('taken');
+  });
+
+  test('501 is unsupported and forgets the capability memo', async () => {
+    capabilities = ['runtime.turns.v1', 'session.steer'];
+    forwardStatus = 501;
+    forwardBody = { code: 'feature_not_supported' };
+    expect(await notTaken()).toBe('unsupported');
+    await notTaken();
+    expect(healthReads).toBe(2);
+  });
+
+  test('a daemon without the Kortix turn routes cannot steer: nothing is posted', async () => {
+    expect(await notTaken()).toBe('unsupported');
+    expect(forwarded).toHaveLength(0);
+    capabilities = ['runtime.turns.v1'];
+    __resetRuntimeTurnVerbsMemo();
+    forwardAnswers['/kortix/runtime/sessions/ses_1/steer'] = routeMissing;
+    expect(await notTaken()).toBe('unsupported');
+    expect(forwarded.map((f) => f.path)).toEqual(['/kortix/runtime/sessions/ses_1/steer']);
   });
 });
