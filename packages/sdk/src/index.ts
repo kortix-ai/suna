@@ -526,6 +526,8 @@ export {
   savedCopyEmptyRoot,
 } from './core/session-sync/saved-transcript';
 export * from './core/session/url';
+/** The authenticated `/p/{externalId}/{port}` proxy URL of a session's sandbox port. */
+export { getSandboxUrlForExternalId } from './core/session/server-store/url-helpers';
 /** How this deployment addresses previews (`GET /v1/p/config`), cached per backend. */
 export { loadPreviewUrlTemplate } from './core/session/preview-config';
 export * from './core/stream/event-stream';

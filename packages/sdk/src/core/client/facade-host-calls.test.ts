@@ -44,3 +44,9 @@ test('notifications register and unregister a push device token', async () => {
     'DELETE http://test.local/notifications/device-token/t',
   ]);
 });
+
+test('the root builds a sandbox proxy URL from an external id (mobile: no SandboxInfo in hand)', async () => {
+  const root = await import('../../index');
+  expect(root.getSandboxUrlForExternalId('ext-1', 6080)).toBe('http://test.local/p/ext-1/6080');
+  expect(root.getSandboxUrlForExternalId('ext-1')).toBe('http://test.local/p/ext-1/8000');
+});

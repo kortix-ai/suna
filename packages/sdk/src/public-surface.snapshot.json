@@ -483,6 +483,7 @@
     "getSandboxProvisionStreamUrl",
     "getSandboxUpdateStatus",
     "getSandboxUrl",
+    "getSandboxUrlForExternalId",
     "getSecretSetupLink",
     "getServerHealth",
     "getServiceLogs",
