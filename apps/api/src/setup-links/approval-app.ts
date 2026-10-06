@@ -27,7 +27,8 @@ import { composioToolkitLogo } from '../connectors/composio';
  * subtly-weaker door to it.
  */
 import { and, eq } from 'drizzle-orm';
-import { Hono } from 'hono';
+import { createRoute, z } from '@hono/zod-openapi';
+import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { summarizeArgsPreview } from '../connectors/args-preview';
 import { PROJECT_ACTIONS } from '../iam';
 import { assertProjectCapability, loadProjectForUser } from '../projects/lib/access';
@@ -39,10 +40,43 @@ import type { AppEnv } from '../types';
 
 // AppEnv: every route here is authenticated and the project gate reads the
 // auth variables the middleware sets (authType, accountId, ...).
-const approvalLinksApp = new Hono<AppEnv>();
+const approvalLinksApp = makeOpenApiApp<AppEnv>();
+
+/** What an approval link asks the signed-in human to decide. */
+const ApprovalLinkSchema = z.object({
+  kind: z.literal('approval'),
+  project_id: z.string(),
+  project_name: z.string(),
+  execution_id: z.string(),
+  session_id: z.string().nullable(),
+  action: z.string(),
+  connector: z.string().nullable(),
+  connector_name: z.string().nullable(),
+  connector_icon_url: z.string().nullable(),
+  risk: z.string().nullable(),
+  status: z.string(),
+  /** Only `pending_approval` is actionable; every other status is an outcome. */
+  pending: z.boolean(),
+  args_preview: z.record(z.string(), z.unknown()).nullable(),
+  review_complete: z.boolean(),
+  args_summary: z.string().nullable(),
+  approval_context: z.string().nullable(),
+  policy_source: z.string().nullable(),
+  requested_at: z.string(),
+  resolved_at: z.string().nullable(),
+  expires_at: z.string(),
+});
 
 /** GET /v1/approval-links/:token — what am I being asked to approve? */
-approvalLinksApp.get('/:token', async (c) => {
+approvalLinksApp.openapi(createRoute({
+  method: 'get',
+  path: '/{token}',
+  tags: ['approvals'],
+  summary: 'Read the decision an approval link asks for',
+  ...auth,
+  request: { params: z.object({ token: z.string() }) },
+  responses: { 200: json(ApprovalLinkSchema, 'The pending decision'), ...errors(400, 403, 404, 410) },
+}), async (c) => {
   const resolved = resolveSetupLink(c.req.param('token'));
   if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status);
   if (resolved.payload.kind !== 'approval') return c.json({ error: 'Wrong link type' }, 400);
@@ -175,7 +209,7 @@ approvalLinksApp.get('/:token', async (c) => {
       : null;
 
   return c.json({
-    kind: 'approval',
+    kind: 'approval' as const,
     project_id: projectId,
     project_name: project?.name ?? 'this project',
     execution_id: row.executionId,

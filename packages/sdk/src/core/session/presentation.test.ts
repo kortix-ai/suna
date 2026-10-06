@@ -1,19 +1,30 @@
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { ApiError } from '../http/api/errors';
 import {
   buildPresentationTemplateImageUrl,
   buildPresentationTemplatePdfUrl,
   buildRuntimePresentationConversionUrl,
 } from './presentation';
 
-test('presentation URL helpers own platform and runtime routes', () => {
-  expect(buildPresentationTemplatePdfUrl('https://api.example.test/v1/', 'tpl 1')).toBe(
-    'https://api.example.test/v1/presentation-templates/tpl%201/pdf#toolbar=0&navpanes=0&scrollbar=0&view=FitH',
-  );
-  expect(buildPresentationTemplateImageUrl('https://api.example.test/v1', 'tpl 1')).toBe(
-    'https://api.example.test/v1/presentation-templates/tpl%201/image.png',
-  );
+test('the presentation-template URL builders are retired: the API serves no /presentation-templates route', () => {
+  for (const build of [buildPresentationTemplatePdfUrl, buildPresentationTemplateImageUrl]) {
+    let error: unknown;
+    try {
+      build('https://api.example.test/v1/', 'tpl 1');
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).code).toBe('ENDPOINT_RETIRED');
+    expect((error as ApiError).message).toBe(
+      `${build.name}() is retired: the Kortix API no longer serves this endpoint.`,
+    );
+  }
+});
+
+test('the runtime presentation conversion URL is built on the runtime base', () => {
   expect(buildRuntimePresentationConversionUrl('https://runtime.example.test/', 'pdf')).toBe(
     'https://runtime.example.test/presentation/convert-to-pdf',
   );

@@ -56,7 +56,6 @@ import './routes/project-invites';
 import './routes/group-grants';
 import './routes/warm-sessions';
 import './routes/project-sessions';
-import './routes/session-environment';
 import './routes/session-transcripts';
 import './routes/session-attachments';
 import './routes/session-open-bundle';
@@ -120,7 +119,6 @@ export {
   resolveGitTriggerActor,
   startProjectTriggerScheduler,
   stopProjectTriggerScheduler,
-  getTriggerSchedulerHealth,
   schedulerSweepIsStale,
   loadManifestForEdit,
   commitManifest,

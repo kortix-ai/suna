@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 
 import { loadAuthForHost } from '../api/auth.ts';
-import { locateSessionAnywhere, takeFlagValue } from '../command-helpers.ts';
+import { locateSessionAnywhere, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { confirm } from '../prompts.ts';
 import { C, help, status } from '../style.ts';
 import { SUPERVISED_NOTICE, isSupervised } from '../supervised.ts';
@@ -107,7 +107,7 @@ function label(version: string): string {
   return isValidTuiVersion(version) ? `v${version}` : version;
 }
 
-export interface TuiFlags {
+interface TuiFlags {
   host?: string;
   project?: string;
   session?: string;
@@ -127,47 +127,28 @@ export interface TuiFlags {
   help: boolean;
 }
 
-/** `kortix tui` takes flags only — a bare positional is a typo, not an id. */
+/**
+ * `kortix tui` takes flags only — a bare positional is a typo, not an id.
+ * Flags come from the shared take* helpers (so `--flag=value` works); this
+ * stays a throwing parser because the launcher reports through its injected
+ * `deps.stderr`, not the process streams `takeFlags` writes to.
+ */
 export function parseTuiFlags(argv: string[]): TuiFlags {
-  const rest = [...argv];
+  // Help args go first, from anywhere in argv — same order as takeFlags.
+  const rest = argv.filter((arg) => arg !== '-h' && arg !== '--help');
   const flags: TuiFlags = {
-    help: false,
-    install: false,
-    uninstall: false,
-    newSession: false,
-    terminal: false,
-    noSidebar: false,
-    mouse: false,
+    help: rest.length < argv.length,
+    install: takeFlagBool(rest, ['--install']),
+    uninstall: takeFlagBool(rest, ['--uninstall']),
+    newSession: takeFlagBool(rest, ['--new']),
+    terminal: takeFlagBool(rest, ['--terminal']),
+    noSidebar: takeFlagBool(rest, ['--no-sidebar']),
+    mouse: takeFlagBool(rest, ['--mouse']),
+    host: takeFlagValue(rest, ['--host']),
+    project: takeFlagValue(rest, ['--project']),
+    session: takeFlagValue(rest, ['--session']),
+    agent: takeFlagValue(rest, ['--agent']),
   };
-  for (let i = rest.length - 1; i >= 0; i -= 1) {
-    const arg = rest[i];
-    if (arg === '-h' || arg === '--help') {
-      flags.help = true;
-      rest.splice(i, 1);
-    } else if (arg === '--install') {
-      flags.install = true;
-      rest.splice(i, 1);
-    } else if (arg === '--uninstall') {
-      flags.uninstall = true;
-      rest.splice(i, 1);
-    } else if (arg === '--new') {
-      flags.newSession = true;
-      rest.splice(i, 1);
-    } else if (arg === '--terminal') {
-      flags.terminal = true;
-      rest.splice(i, 1);
-    } else if (arg === '--no-sidebar') {
-      flags.noSidebar = true;
-      rest.splice(i, 1);
-    } else if (arg === '--mouse') {
-      flags.mouse = true;
-      rest.splice(i, 1);
-    }
-  }
-  flags.host = takeFlagValue(rest, ['--host']);
-  flags.project = takeFlagValue(rest, ['--project']);
-  flags.session = takeFlagValue(rest, ['--session']);
-  flags.agent = takeFlagValue(rest, ['--agent']);
   const left = rest[0];
   if (left !== undefined) {
     throw new Error(

@@ -1,0 +1,19 @@
+{
+  "source_hash": "b41d6dff84fe165c3bb2b7207e6b996c9e3f5ac7b3ecaff493085431e9d409e9",
+  "diff_files": [
+    "apps/api/src/config-releases/ROLLOUT.md",
+    "apps/kortix-sandbox-agent-server/src/__tests__/release-instructions.test.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/lifecycle.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/release-instructions.ts",
+    "apps/web/src/lib/seo/content-timestamps.json"
+  ],
+  "diff_hash": "f3e1e986d02ee7287b81c1362f4051ae46d2de8f8f078cb0fd94b46d5a964f35",
+  "head": "42d1cde840ec28d6464e50edcae8cd24537b6c52",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-05T22:49:05.399Z"
+}

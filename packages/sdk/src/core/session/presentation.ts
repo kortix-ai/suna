@@ -1,3 +1,5 @@
+import { retiredEndpointError } from '../http/api/errors';
+
 export type RuntimePresentationFormat = 'pdf' | 'pptx';
 
 function trimTrailingSlashes(value: string): string {
@@ -6,18 +8,20 @@ function trimTrailingSlashes(value: string): string {
   return trimmed;
 }
 
-export function buildPresentationTemplatePdfUrl(
-  backendUrl: string,
-  templateId: string,
-): string {
-  return `${trimTrailingSlashes(backendUrl)}/presentation-templates/${encodeURIComponent(templateId)}/pdf#toolbar=0&navpanes=0&scrollbar=0&view=FitH`;
+/**
+ * @deprecated The API serves no `/v1/presentation-templates` route. Always
+ * throws `ENDPOINT_RETIRED`. Removed in the next major.
+ */
+export function buildPresentationTemplatePdfUrl(_backendUrl: string, _templateId: string): string {
+  throw retiredEndpointError('buildPresentationTemplatePdfUrl');
 }
 
-export function buildPresentationTemplateImageUrl(
-  backendUrl: string,
-  templateId: string,
-): string {
-  return `${trimTrailingSlashes(backendUrl)}/presentation-templates/${encodeURIComponent(templateId)}/image.png`;
+/**
+ * @deprecated The API serves no `/v1/presentation-templates` route. Always
+ * throws `ENDPOINT_RETIRED`. Removed in the next major.
+ */
+export function buildPresentationTemplateImageUrl(_backendUrl: string, _templateId: string): string {
+  throw retiredEndpointError('buildPresentationTemplateImageUrl');
 }
 
 export function buildRuntimePresentationConversionUrl(

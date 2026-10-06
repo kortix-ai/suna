@@ -117,7 +117,7 @@ Summarize the conversation so far and continue from the summary — what the
 dashboard's "Compact" does. Use it when a long session starts losing the
 thread or hits its context ceiling. The model is the session's own; the
 runtime's configured default is the fallback. A session whose runtime cannot
-compact on demand (a pi session) exits 1 and nothing changes.
+compact on demand exits 1 and nothing changes.
 
 Options:
   --project <id>   Operate on this project id (default: linked).

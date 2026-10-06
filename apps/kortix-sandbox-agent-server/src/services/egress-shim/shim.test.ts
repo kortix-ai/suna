@@ -12,7 +12,7 @@ import type http from 'node:http'
 import net from 'node:net'
 import zlib from 'node:zlib'
 import { createEphemeralCa } from './ca'
-import { parseShimRules, resolveShimConfig, shimUnavailableReason } from './rules'
+import { parseShimRules, resolveShimConfig, shimUnavailableReason } from '@kortix/api-contract/egress-shim-rules'
 import { createEgressShim } from './shim'
 
 const CA = createEphemeralCa('test')

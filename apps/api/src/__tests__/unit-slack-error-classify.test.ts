@@ -27,6 +27,24 @@ describe('classifyTurnError', () => {
     expect(r.text.toLowerCase()).toContain('usage limit');
   });
 
+  // A prod thread was told "give it a minute" while its only ChatGPT account
+  // was out for 4 more days. The gateway names the reset; the card repeats it.
+  test('usage limit — a ChatGPT plan limit names its reset and the model command, not "a minute"', () => {
+    const body = JSON.stringify({
+      message: 'All selected ChatGPT connections reached their usage limit. The first resets in 4 days.',
+      code: 'provider_pool_rate_limited',
+      suggestion: 'Choose another model, or connect another ChatGPT account.',
+    });
+    const info = { name: 'UnknownError', statusCode: 429, code: 'rate_limit' as const, message: `429: ${body}` };
+    const slack = classifyTurnError(info);
+    expect(slack.title).toBe('Usage limit reached');
+    expect(slack.text).toContain('ChatGPT usage limit');
+    expect(slack.text).toContain('resets in 4 days');
+    expect(slack.text).toContain('`/kortix models`');
+    expect(slack.text).not.toContain('minute');
+    expect(classifyTurnError(info, TEAMS_TURN_ERROR_COMMANDS).text).toContain('`/models`');
+  });
+
   test('usage limit — "usage limit has been reached" message', () => {
     const r = classifyTurnError({ message: 'The usage limit has been reached' });
     expect(r.title).toBe('Usage limit reached');

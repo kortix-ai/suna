@@ -1,15 +1,16 @@
 import { Reveal } from '@/components/home/reveal';
+import { Button } from '@/components/ui/marketing/button';
+import { SectionDivider } from '@/features/marketing/component/public-route-helpers';
 import { CodePanel } from '@/features/marketing/agent-computer/code-panel';
 import { getLocalizedAgentsAndSkillsContent } from '@/features/marketing/agents-and-skills/content';
 import { AgentsAndSkillsHeroVisual } from '@/features/marketing/agents-and-skills/hero-visual';
 import { MdPanel } from '@/features/marketing/agents-and-skills/md-panel';
 import { RepoTree } from '@/features/marketing/agents-and-skills/repo-tree';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
-import { SectionDivider } from '@/features/marketing/component/public-route-helpers';
 import SectionHeader from '@/features/marketing/component/section-header';
-import { PillLink } from '@/features/marketing/os/primitives';
-import { getTranslations } from '@/i18n/get-translations';
 import { cn } from '@/lib/utils';
+import { getTranslations } from '@/i18n/get-translations';
+import Link from '@/components/site-link';
 import type { ReactNode } from 'react';
 
 /**
@@ -24,6 +25,7 @@ const GRID_4_RULES = [
   'border-t lg:border-t-0 lg:border-l',
   'border-t sm:border-l lg:border-t-0',
 ] as const;
+
 
 /**
  * `/agents-and-skills` — the part of the product that compounds.
@@ -48,11 +50,7 @@ export default async function AgentsAndSkillsPage(): Promise<ReactNode> {
         ctaPrimaryHref={hero.ctaPrimaryHref}
         ctaSecondary={hero.ctaSecondary}
         ctaSecondaryHref={hero.ctaSecondaryHref}
-        visual={
-          <div className="dark bg-background text-foreground border-border w-full rounded-xl border p-6 sm:p-10">
-            <AgentsAndSkillsHeroVisual />
-          </div>
-        }
+        visual={<AgentsAndSkillsHeroVisual />}
       />
 
       {/* ── 1 · an agent is two files ───────────────────────────────────── */}
@@ -92,7 +90,7 @@ export default async function AgentsAndSkillsPage(): Promise<ReactNode> {
           </Reveal>
 
           <Reveal delay={0.1} className="lg:col-span-5">
-            <div className="border-border bg-card flex h-full flex-col rounded-xl border p-6 sm:p-7">
+            <div className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-7">
               <dl className="grid gap-5">
                 {reach.actions.map((action) => (
                   <div key={action.k}>
@@ -111,7 +109,7 @@ export default async function AgentsAndSkillsPage(): Promise<ReactNode> {
         </div>
 
         <Reveal delay={0.14}>
-          <dl className="border-border bg-card mt-4 overflow-hidden rounded-xl border">
+          <dl className="border-border bg-card mt-4 overflow-hidden rounded-sm border">
             {reach.rows.map((row, i) => (
               <div
                 key={row.id}
@@ -148,7 +146,7 @@ export default async function AgentsAndSkillsPage(): Promise<ReactNode> {
               {skill.points.map((point) => (
                 <div
                   key={point.id}
-                  className="border-border bg-card flex h-full flex-col rounded-xl border p-6"
+                  className="border-border bg-card flex h-full flex-col rounded-sm border p-6"
                 >
                   <h3 className="text-foreground text-base leading-tight font-medium">
                     {point.title}
@@ -161,7 +159,7 @@ export default async function AgentsAndSkillsPage(): Promise<ReactNode> {
         </div>
 
         <Reveal delay={0.14}>
-          <dl className="border-border bg-card mt-4 grid overflow-hidden rounded-xl border sm:grid-cols-3">
+          <dl className="border-border bg-card mt-4 grid overflow-hidden rounded-sm border sm:grid-cols-3">
             {skill.counts.map((count, i) => (
               <div
                 key={count.v}
@@ -191,7 +189,7 @@ export default async function AgentsAndSkillsPage(): Promise<ReactNode> {
         </Reveal>
 
         <Reveal delay={0.1}>
-          <dl className="border-border bg-card mt-4 overflow-hidden rounded-xl border">
+          <dl className="border-border bg-card mt-4 overflow-hidden rounded-sm border">
             {repo.rows.map((row, i) => (
               <div
                 key={row.id}
@@ -223,7 +221,7 @@ export default async function AgentsAndSkillsPage(): Promise<ReactNode> {
         />
 
         <Reveal delay={0.06}>
-          <ol className="border-border mt-10 grid overflow-hidden rounded-xl border sm:grid-cols-2 lg:grid-cols-4">
+          <ol className="border-border mt-10 grid overflow-hidden rounded-sm border sm:grid-cols-2 lg:grid-cols-4">
             {marketplace.steps.map((step, i) => (
               <li
                 key={step.n}
@@ -245,9 +243,9 @@ export default async function AgentsAndSkillsPage(): Promise<ReactNode> {
           <p className="border-border text-muted-foreground mt-6 max-w-3xl border-t pt-4 text-sm leading-relaxed">
             {marketplace.footnote}
           </p>
-          <PillLink tone="outline" href={marketplace.ctaHref} className="mt-6 w-fit">
-            {marketplace.ctaLabel}
-          </PillLink>
+          <Button size="lg" variant="secondary" asChild className="mt-6 w-fit">
+            <Link href={marketplace.ctaHref}>{marketplace.ctaLabel}</Link>
+          </Button>
         </Reveal>
       </section>
     </div>

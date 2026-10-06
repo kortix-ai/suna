@@ -51,9 +51,15 @@ export interface ResolvedAccountSecret {
   updatedAt: Date;
 }
 
-/** Record a provider limit across gateway replicas. A concurrent limit never shortens the cooldown. */
+/** The longest rest: ChatGPT's weekly plan limit, plus a day. */
+export const MAX_ACCOUNT_SECRET_REST_SECONDS = 8 * 24 * 60 * 60;
+
+/**
+ * Record a provider limit across gateway replicas: seconds for a rate limit,
+ * days for a plan's usage limit. A concurrent limit never shortens the cooldown.
+ */
 export async function coolDownAccountSecret(secretId: string, accountId: string, seconds: number): Promise<void> {
-  const until = new Date(Date.now() + Math.max(1, Math.min(60, Math.floor(seconds))) * 1000);
+  const until = new Date(Date.now() + Math.max(1, Math.min(MAX_ACCOUNT_SECRET_REST_SECONDS, Math.floor(seconds))) * 1000);
   await db.update(accountSecretResources).set({
     cooldownUntil: sql`greatest(coalesce(${accountSecretResources.cooldownUntil}, '-infinity'::timestamptz), ${until.toISOString()}::timestamptz)`,
   }).where(and(eq(accountSecretResources.secretId, secretId), eq(accountSecretResources.accountId, accountId)));
