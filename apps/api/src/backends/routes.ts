@@ -1,31 +1,34 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { projectBackends } from '@kortix/db';
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import type { Context } from 'hono';
 import { PROJECT_ACTIONS } from '../iam';
 import { auth, errors, json } from '../openapi';
-import { db } from '../shared/db';
-import { inspectDatabaseError } from '../shared/database-errors';
 import { recordAuditEvent } from '../shared/audit';
-import { assertProjectCapability, loadProjectForUser } from '../projects/lib/access';
-import { projectsApp } from '../projects/lib/app';
+import { inspectDatabaseError } from '../shared/database-errors';
+import { logger } from '../lib/logger';
+import { assertProjectCapability, loadProjectForUser, projectsApp } from '../projects/surface';
 import { requireFeatureFlag } from '../feature-flags/gate';
-import { decryptProjectSecret } from '../projects/secrets/envelope';
 import { resolveSessionSandboxRegion } from '../platform/services/sandbox-region';
+import type { AppEnv } from '../types';
 import {
   BackendLimitError,
   type BackendRow,
+  backendAdminKey,
   deleteBackend,
   effectiveStatus,
+  getLiveBackend,
   insertBackend,
+  listProjectBackends,
   provisionBackend,
 } from './provision';
+
+const STATUSES = ['provisioning', 'running', 'error', 'deleted'] as const;
 
 const BackendObject = z
   .object({
     backend_id: z.string().uuid(),
     project_id: z.string().uuid(),
     name: z.string(),
-    status: z.enum(['provisioning', 'running', 'error', 'deleted']),
+    status: z.enum(STATUSES),
     url: z.string().nullable().openapi({ description: 'Convex client URL (CONVEX_URL).' }),
     site_url: z.string().nullable().openapi({ description: 'Convex HTTP actions URL.' }),
     cpu: z.number().int(),
@@ -56,14 +59,16 @@ const ProjectParams = z.object({ projectId: z.string().uuid() });
 const BackendParams = z.object({ projectId: z.string().uuid(), backendId: z.string().uuid() });
 
 function serialize(row: BackendRow) {
-  const status = effectiveStatus(row);
+  const status = effectiveStatus(row) as (typeof STATUSES)[number];
   const lastError =
-    status !== row.status ? 'Provisioning was interrupted. Delete this backend and create it again.' : (row.metadata as { lastError?: unknown }).lastError;
+    status !== row.status
+      ? 'Provisioning was interrupted. Delete this backend and create it again.'
+      : (row.metadata as { lastError?: unknown }).lastError;
   return {
     backend_id: row.backendId,
     project_id: row.projectId,
     name: row.name,
-    status: status as 'provisioning' | 'running' | 'error' | 'deleted',
+    status,
     url: row.url,
     site_url: row.siteUrl,
     cpu: row.cpu,
@@ -75,10 +80,13 @@ function serialize(row: BackendRow) {
   };
 }
 
-/** Membership, then capability, then the `backends` flag — the Apps order (apps/routes.ts). */
-async function authorizedProject(c: any, projectId: string, write = false) {
+/**
+ * Membership, then capability, then the `backends` flag — the Apps order
+ * (apps/routes.ts). Returns the loaded project, or the Response to answer.
+ */
+async function authorizedProject(c: Context<AppEnv>, projectId: string, write = false) {
   const loaded = await loadProjectForUser(c, projectId, write ? 'write' : 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404) as Response;
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(
     c,
     loaded.userId,
@@ -86,24 +94,7 @@ async function authorizedProject(c: any, projectId: string, write = false) {
     projectId,
     write ? PROJECT_ACTIONS.PROJECT_BACKEND_WRITE : PROJECT_ACTIONS.PROJECT_BACKEND_READ,
   );
-  const gate = requireFeatureFlag(c, loaded.row.metadata, 'backends');
-  if (gate) return gate;
-  return loaded;
-}
-
-async function liveBackend(projectId: string, backendId: string): Promise<BackendRow | null> {
-  const [row] = await db
-    .select()
-    .from(projectBackends)
-    .where(
-      and(
-        eq(projectBackends.backendId, backendId),
-        eq(projectBackends.projectId, projectId),
-        isNull(projectBackends.deletedAt),
-      ),
-    )
-    .limit(1);
-  return row ?? null;
+  return requireFeatureFlag(c, loaded.row.metadata, 'backends') ?? loaded;
 }
 
 export function registerBackendsRoutes(): void {
@@ -113,15 +104,11 @@ export function registerBackendsRoutes(): void {
       request: { params: ProjectParams },
       responses: { 200: json(z.object({ backends: z.array(BackendObject) }), 'Backends'), ...errors(403, 404) },
     }),
-    async (c: any) => {
-      const projectId = c.req.param('projectId');
+    async (c) => {
+      const { projectId } = c.req.valid('param');
       const loaded = await authorizedProject(c, projectId);
       if (loaded instanceof Response) return loaded;
-      const rows = await db
-        .select()
-        .from(projectBackends)
-        .where(and(eq(projectBackends.projectId, projectId), isNull(projectBackends.deletedAt)))
-        .orderBy(asc(projectBackends.createdAt));
+      const rows = await listProjectBackends(projectId);
       return c.json({ backends: rows.map(serialize) }, 200);
     },
   );
@@ -142,18 +129,14 @@ export function registerBackendsRoutes(): void {
         ...errors(400, 403, 404, 409),
       },
     }),
-    async (c: any) => {
-      const projectId = c.req.param('projectId');
+    async (c) => {
+      const { projectId } = c.req.valid('param');
+      const { name } = c.req.valid('json');
       const loaded = await authorizedProject(c, projectId, true);
       if (loaded instanceof Response) return loaded;
-      const { name } = c.req.valid('json') as { name: string };
+      let row: BackendRow;
       try {
-        const row = await insertBackend({ projectId, accountId: loaded.row.accountId, userId: loaded.userId, name });
-        // Outlives the response; failures land on the row as status `error`.
-        void provisionBackend(row, resolveSessionSandboxRegion(loaded.row.metadata)).catch((error) =>
-          console.error('[backends] provision failed', { projectId, backendId: row.backendId, error }),
-        );
-        return c.json({ backend: serialize(row) }, 202);
+        row = await insertBackend({ projectId, accountId: loaded.row.accountId, userId: loaded.userId, name });
       } catch (error) {
         if (error instanceof BackendLimitError) {
           return c.json({ error: error.message, code: 'backend_limit' }, 409);
@@ -163,6 +146,11 @@ export function registerBackendsRoutes(): void {
         }
         throw error;
       }
+      // Outlives the response; a failure lands on the row as status `error`.
+      void provisionBackend(row, resolveSessionSandboxRegion(loaded.row.metadata)).catch((error) =>
+        logger.error('[backends] provision failed', { projectId, backendId: row.backendId, error: String(error) }),
+      );
+      return c.json({ backend: serialize(row) }, 202);
     },
   );
 
@@ -172,11 +160,11 @@ export function registerBackendsRoutes(): void {
       request: { params: BackendParams },
       responses: { 200: json(z.object({ backend: BackendObject }), 'Backend'), ...errors(403, 404) },
     }),
-    async (c: any) => {
-      const { projectId, backendId } = c.req.param();
+    async (c) => {
+      const { projectId, backendId } = c.req.valid('param');
       const loaded = await authorizedProject(c, projectId);
       if (loaded instanceof Response) return loaded;
-      const row = await liveBackend(projectId, backendId);
+      const row = await getLiveBackend(projectId, backendId);
       if (!row) return c.json({ error: 'Not found' }, 404);
       return c.json({ backend: serialize(row) }, 200);
     },
@@ -190,16 +178,17 @@ export function registerBackendsRoutes(): void {
       request: { params: BackendParams },
       responses: { 200: json(BackendCredentials, 'Credentials'), ...errors(403, 404, 409) },
     }),
-    async (c: any) => {
-      const { projectId, backendId } = c.req.param();
+    async (c) => {
+      const { projectId, backendId } = c.req.valid('param');
       const loaded = await authorizedProject(c, projectId, true);
       if (loaded instanceof Response) return loaded;
-      const row = await liveBackend(projectId, backendId);
+      const row = await getLiveBackend(projectId, backendId);
       if (!row) return c.json({ error: 'Not found' }, 404);
-      if (row.status !== 'running' || !row.url || !row.siteUrl || !row.adminKeyEnc) {
+      const { url, siteUrl, adminKeyEnc } = row;
+      if (row.status !== 'running' || !url || !siteUrl || !adminKeyEnc) {
         return c.json({ error: `backend is ${effectiveStatus(row)}`, code: 'backend_not_running' }, 409);
       }
-      const adminKey = decryptProjectSecret(projectId, row.adminKeyEnc);
+      const adminKey = backendAdminKey({ ...row, adminKeyEnc });
       await recordAuditEvent({
         accountId: loaded.row.accountId,
         projectId,
@@ -209,12 +198,15 @@ export function registerBackendsRoutes(): void {
         resourceId: row.backendId,
         metadata: { name: row.name },
       });
-      return c.json({
-        url: row.url,
-        site_url: row.siteUrl,
-        admin_key: adminKey,
-        env: { CONVEX_SELF_HOSTED_URL: row.url, CONVEX_SELF_HOSTED_ADMIN_KEY: adminKey },
-      }, 200);
+      return c.json(
+        {
+          url,
+          site_url: siteUrl,
+          admin_key: adminKey,
+          env: { CONVEX_SELF_HOSTED_URL: url, CONVEX_SELF_HOSTED_ADMIN_KEY: adminKey },
+        },
+        200,
+      );
     },
   );
 
@@ -226,16 +218,16 @@ export function registerBackendsRoutes(): void {
       request: { params: BackendParams },
       responses: { 204: { description: 'Deleted' }, ...errors(403, 404, 502) },
     }),
-    async (c: any) => {
-      const { projectId, backendId } = c.req.param();
+    async (c) => {
+      const { projectId, backendId } = c.req.valid('param');
       const loaded = await authorizedProject(c, projectId, true);
       if (loaded instanceof Response) return loaded;
-      const row = await liveBackend(projectId, backendId);
+      const row = await getLiveBackend(projectId, backendId);
       if (!row) return c.json({ error: 'Not found' }, 404);
       try {
         await deleteBackend(row);
       } catch (error) {
-        console.error('[backends] delete failed', { projectId, backendId, error });
+        logger.error('[backends] delete failed', { projectId, backendId, error: String(error) });
         return c.json({ error: 'The backend machine could not be deleted. Try again.', code: 'backend_delete_failed' }, 502);
       }
       return c.body(null, 204);

@@ -19,13 +19,12 @@
  */
 
 import { projectBackends } from '@kortix/db';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import { config } from '../config';
 import { db } from '../shared/db';
 import { platinumJson } from '../shared/platinum';
 import { sandboxOwnershipMarker } from '../platform/sandbox-ownership';
-import { currentInstanceId } from '../projects/instance-scope';
-import { encryptProjectSecret } from '../projects/secrets/envelope';
+import { currentInstanceId, decryptProjectSecret, encryptProjectSecret } from '../projects/surface';
 import {
   CONVEX_API_PORT,
   CONVEX_IMAGE_SPEC,
@@ -98,6 +97,35 @@ async function mintAdminKey(externalId: string): Promise<string> {
 
 async function deleteMachine(externalId: string): Promise<void> {
   await platinumJson(`/v1/sandboxes/${externalId}`, { method: 'DELETE' });
+}
+
+export async function listProjectBackends(projectId: string): Promise<BackendRow[]> {
+  return db
+    .select()
+    .from(projectBackends)
+    .where(and(eq(projectBackends.projectId, projectId), isNull(projectBackends.deletedAt)))
+    .orderBy(asc(projectBackends.createdAt));
+}
+
+/** A live (not deleted) backend of this project, or null. */
+export async function getLiveBackend(projectId: string, backendId: string): Promise<BackendRow | null> {
+  const [row] = await db
+    .select()
+    .from(projectBackends)
+    .where(
+      and(
+        eq(projectBackends.backendId, backendId),
+        eq(projectBackends.projectId, projectId),
+        isNull(projectBackends.deletedAt),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+/** The admin key of a running backend. */
+export function backendAdminKey(row: BackendRow & { adminKeyEnc: string }): string {
+  return decryptProjectSecret(row.projectId, row.adminKeyEnc);
 }
 
 export async function insertBackend(input: {

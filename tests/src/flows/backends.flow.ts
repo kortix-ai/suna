@@ -70,17 +70,27 @@ flow(
       );
     });
 
-    await ctx.step("enable the flag where no Platinum exists: the surface stays closed → 403", async () => {
+    await ctx.step("enable the flag: open where Platinum is configured, closed (403) where not; never creates a machine", async () => {
       const enable = await owner.patch(
         "/v1/projects/:projectId/features",
         { feature: "backends", enabled: true },
         { params },
       );
       enable.status(200);
-      expectDisabled(await owner.get("/v1/projects/:projectId/backends", { params }));
-      expectDisabled(
-        await owner.post("/v1/projects/:projectId/backends", { name: "main" }, { params }),
-      );
+      // An unavailable flag resolves off, so the effective value says which world this is.
+      const effective = (enable.json() as { experimental?: { backends?: boolean } }).experimental?.backends;
+      if (effective) {
+        const list = await owner.get("/v1/projects/:projectId/backends", { params });
+        list.status(200);
+        if (!Array.isArray((list.json() as { backends?: unknown }).backends)) throw new Error("list has no backends array");
+        // Validation answers before any machine is requested.
+        (await owner.post("/v1/projects/:projectId/backends", { name: "Bad_Name" }, { params })).status(400);
+      } else {
+        expectDisabled(await owner.get("/v1/projects/:projectId/backends", { params }));
+        expectDisabled(
+          await owner.post("/v1/projects/:projectId/backends", { name: "main" }, { params }),
+        );
+      }
     });
 
     await ctx.step("NONMEMBER learns nothing: list and create → 403/404", async () => {

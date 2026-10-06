@@ -45,3 +45,9 @@ export {
   loadManifestForEdit,
   commitManifest,
 } from './lib/triggers';
+
+// Project access, the route app and the secret envelope (consumed by ../backends).
+export { assertProjectCapability, loadProjectForUser } from './lib/access';
+export { projectsApp } from './lib/app';
+export { decryptProjectSecret, encryptProjectSecret } from './secrets/envelope';
+export { currentInstanceId } from './instance-scope';

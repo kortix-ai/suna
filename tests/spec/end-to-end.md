@@ -1452,14 +1452,16 @@ configured. Routes: `GET/POST /projects/:projectId/backends`,
 `GET/DELETE /projects/:projectId/backends/:backendId`,
 `GET /projects/:projectId/backends/:backendId/credentials`.
 
-`BKD-1` Closed surface. The local profile has no Platinum, so the flag is
-unavailable. Flag off: list, create, get, credentials and delete answer `403
-{code:'feature_disabled', feature:'backends'}`. `PATCH /projects/:projectId/features`
-with `backends: true` answers 200, and every backends route still answers the
-same 403, because an unavailable flag resolves off. `NONMEMBER` → 403/404.
-`ANON` → 401. Not asserted locally: create (`202 provisioning`), the 3-backend
-cap (`409 backend_limit`), a duplicate name (`409 backend_name_taken`), the
-credentials read and its `backend.credentials.read` audit row, and delete. They
+`BKD-1` Gated surface. Flag off: list, create, get, credentials and delete
+answer `403 {code:'feature_disabled', feature:'backends'}`. `PATCH
+/projects/:projectId/features` with `backends: true` answers 200. Where Platinum
+is configured the flag resolves on: list answers 200 with a `backends` array, and
+an invalid name answers 400 before any machine is requested. Where it is not, the
+flag resolves off and every route keeps the same 403. A `NONMEMBER` gets 403/404
+and an `ANON` caller gets 401. Not asserted locally: create (`202 provisioning`),
+the 3-backend cap (`409 backend_limit`), a duplicate name (`409
+backend_name_taken`), the credentials read and its `backend.credentials.read`
+audit row, and delete. They
 need a Platinum machine and are verified on a deployed environment.
 
 ---
