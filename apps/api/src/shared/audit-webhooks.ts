@@ -105,6 +105,20 @@ function retryDelayMs(attempts: number): number {
   return exponentialBackoffMs({ attempt: attempts, baseMs: 30_000, capMs: 3_600_000 });
 }
 
+/** The row update for a delivery whose entitlement lookup threw: retry, or dead-letter at the cap. */
+export function entitlementLookupFailure(attempts: number, message: string, now = Date.now()) {
+  const dead = attempts >= MAX_DELIVERY_ATTEMPTS;
+  return {
+    status: dead ? ('dead_letter' as const) : ('retry' as const),
+    attempts,
+    nextAttemptAt: new Date(now + retryDelayMs(attempts)),
+    lastError: `entitlement lookup failed: ${message}`.slice(0, 1000),
+    lockedBy: null,
+    lockedUntil: null,
+    updatedAt: new Date(now),
+  };
+}
+
 async function processDelivery(deliveryId: string): Promise<void> {
   const [row] = await db
     .select({ delivery: auditWebhookDeliveries, hook: auditWebhooks, event: getViewSelectedFields(auditEventsAll) })
@@ -124,8 +138,20 @@ async function processDelivery(deliveryId: string): Promise<void> {
   try {
     entitled =
       !!row.event.accountId && (await accountHasEntitlement(row.event.accountId, 'auditAccess'));
-  } catch {
-    entitled = false;
+  } catch (error) {
+    // A lookup error is not "not entitled". Dead-lettering here lost a SIEM
+    // customer's events for any billing-layer blip; retry on the delivery backoff.
+    const attempts = row.delivery.attempts + 1;
+    await db
+      .update(auditWebhookDeliveries)
+      .set(entitlementLookupFailure(attempts, error instanceof Error ? error.message : String(error)))
+      .where(
+        and(
+          eq(auditWebhookDeliveries.deliveryId, deliveryId),
+          eq(auditWebhookDeliveries.lockedBy, WORKER_ID),
+        ),
+      );
+    return;
   }
   if (!entitled || !row.hook.enabled) {
     await db

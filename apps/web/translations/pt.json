@@ -1953,6 +1953,12 @@
     "queuedFiles": "{count, plural, one {# arquivo} other {# arquivos}}",
     "queuedCount": "{count} na fila",
     "editingQueued": "Editando",
+    "steerNextStep": "Lido no próximo passo",
+    "steerFallbackUnsupported": "Aguarda este turno. Esta sessão não aceita mensagens durante um turno.",
+    "steerFallbackNotPrompter": "Aguarda este turno. Outro membro o iniciou.",
+    "steerFallbackTurnEnded": "Executa como um turno próprio. O turno terminou antes.",
+    "stopAndSend": "Parar e enviar",
+    "stopAndSendFailed": "Não foi possível parar e enviar essa mensagem",
     "submitEdit": "Enviar",
     "collapseQueue": "Recolher fila",
     "expandQueue": "Expandir fila"
@@ -9424,7 +9430,9 @@
     "i18nComplete": {
       "authEmailRateLimit": "Não foi possível enviar o e-mail. Tente novamente em cerca de uma hora.",
       "authRequestRateLimit": "Muitas solicitações. Tente novamente em alguns minutos.",
+      "text1a9030082a20": "Criar habilidade",
       "text25ab55af92b1": "Envio do anexo iniciado",
+      "text38e64d6a8162": "Faz commit de um SKILL.md no branch padrão do projeto. Não precisa de modelo nem de chat.",
       "text40078a553439": "Bloco do anexo enviado",
       "text4c7f8000aabd": "Envio do anexo concluído",
       "text91420d2587c2": "Envio do anexo removido",
@@ -9898,6 +9906,9 @@
       "text0e498a7ede47": "{value0} ativado",
       "text0e52f6b9d025": "Markdown",
       "text4cab70e9226b": "Salvar como PDF",
+      "text9bf06a86c934": "Nova habilidade",
+      "texta38668224f1a": "Criar com um formulário",
+      "textb25ab5d5e2a5": "Habilidade criada",
       "textce87352f1102": "Este arquivo é grande demais para salvar como PDF. Baixe o arquivo Markdown.",
       "text3b0c86f182b0": "Não foi possível preparar o PDF.",
       "text0e570ca6fabe": "Fonte",
@@ -14454,6 +14465,7 @@
       "text895ce927db2e": "Chat pessoal",
       "text28c7d3f8b75d": "Chat em grupo",
       "text72b5b0c53de9": "Respondeu no Microsoft Teams",
+      "textedac6130dac7": "Faz commit de um SKILL.md no repositório sem uma sessão de chat.",
       "textfc73e9ad2dae": "Respondeu no Slack",
       "text8faf56a14a8d": "Respondeu no Telegram",
       "text8ccfe10f2f2d": "Publicar no seu catálogo do Teams",
@@ -19244,7 +19256,8 @@
       "text6243d930fc1c": "AI Operating System",
       "textc959682e0398": "Visualizou os dispositivos conectados",
       "text976811d9540a": "Desconectou um dispositivo",
-      "text6f417aa88601": "Gastos do gateway LLM por origem listados"
+      "text6f417aa88601": "Gastos do gateway LLM por origem listados",
+      "textc96cd610ba08": "Chave de provedor compartilhada tentada novamente após o limite de uso"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

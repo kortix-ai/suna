@@ -1,3 +1,4 @@
+import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json } from '../../openapi';
 import { PROJECT_ACTIONS } from '../../iam/actions';
@@ -23,6 +24,9 @@ export function registerGatewayKeysRoutes(): void {
       responses: { 200: json(z.any(), 'Gateway API keys'), ...errors(403, 404) },
     }),
     async (c: any) => {
+      // Same escalation guard as project-credentials: a durable `kgw_` key minted
+      // or revoked by an agent session outlives the session and carries no grant.
+      if (isProjectSessionPrincipal(c)) return c.json({ error: 'Agent-session tokens cannot manage gateway keys' }, 403);
       const projectId = c.req.param('projectId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -72,6 +76,9 @@ export function registerGatewayKeysRoutes(): void {
     async (c: any) => {
       // A connected app's revocable `kortix_oat_` token must not mint a durable one.
       if (c.get('authType') === 'oauth') return c.json({ error: 'Connected apps cannot mint gateway keys.' }, 403);
+      // Same escalation guard as project-credentials: a durable `kgw_` key minted
+      // or revoked by an agent session outlives the session and carries no grant.
+      if (isProjectSessionPrincipal(c)) return c.json({ error: 'Agent-session tokens cannot manage gateway keys' }, 403);
       const projectId = c.req.param('projectId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -110,6 +117,7 @@ export function registerGatewayKeysRoutes(): void {
       responses: { 200: json(z.any(), 'Gateway API key revoked'), ...errors(403, 404) },
     }),
     async (c: any) => {
+      if (isProjectSessionPrincipal(c)) return c.json({ error: 'Agent-session tokens cannot manage gateway keys' }, 403);
       const projectId = c.req.param('projectId');
       const keyId = c.req.param('keyId');
       const loaded = await loadProjectForUser(c, projectId, 'read');

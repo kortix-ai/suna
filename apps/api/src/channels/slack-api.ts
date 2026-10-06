@@ -120,6 +120,11 @@ async function slackApiCall(
   return last;
 }
 
+/** files.info: the file and the conversations it is shared in. */
+export async function getFileInfo(token: string, fileId: string): Promise<SlackApiResult> {
+  return slackApiCall(token, 'files.info', { file: fileId });
+}
+
 // Posts a plain message. Returns the message ts (needed to delete it later).
 export async function postMessage(
   token: string,

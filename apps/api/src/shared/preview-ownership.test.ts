@@ -40,6 +40,9 @@ let projectSessionReads = 0;
 let projectSessionGate: Promise<void> | null = null;
 let projectSessionFailure: Error | null = null;
 let shareSubjectReads = 0;
+// The project IAM verdict (`project.read`) the preview gate asks after account membership.
+let projectReadAllowed = true;
+let projectReadAsks: Array<{ userId: string; action: string; objId: string }> = [];
 
 // `canAccessSandboxSession` awaits two of its reads without a `.limit()`.
 async function unlimitedRows(table: unknown): Promise<unknown[]> {
@@ -86,6 +89,15 @@ mock.module('./db', () => ({
   },
 }));
 
+const realIam = await import('../iam');
+mock.module('../iam', () => ({
+  ...realIam,
+  authorize: async (actor: { userId: string }, action: string, obj: { id: string }) => {
+    projectReadAsks.push({ userId: actor.userId, action, objId: obj.id });
+    return { allowed: projectReadAllowed, reason: projectReadAllowed ? 'role' : 'no_project_membership' };
+  },
+}));
+
 mock.module('./resolve-account', () => ({
   resolveAccountId: async (userId: string) => {
     resolveAccountCalls += 1;
@@ -100,6 +112,7 @@ mock.module('./platform-roles', () => ({
   },
 }));
 
+const { invalidateIamCacheForUser } = await import('../iam/cache-invalidation');
 const {
   resolvePreviewUserContext,
   canAccessPreviewSandbox,
@@ -139,6 +152,8 @@ beforeEach(() => {
   projectSessionGate = null;
   projectSessionFailure = null;
   shareSubjectReads = 0;
+  projectReadAllowed = true;
+  projectReadAsks = [];
   clearPreviewOwnershipCache();
 });
 
@@ -157,7 +172,7 @@ describe('resolvePreviewUserContext — service-account attributed sessions', ()
   });
 
   test('an agent service account of the SAME account gets a signed context', async () => {
-    serviceAccountRow = { serviceAccountId: 'sa-agent-1' };
+    serviceAccountRow = { serviceAccountId: 'sa-agent-1', projectId: 'proj-1' };
 
     const context = await resolvePreviewUserContext('sbx-1', 'sa-agent-1');
 
@@ -170,7 +185,7 @@ describe('resolvePreviewUserContext — service-account attributed sessions', ()
   });
 
   test('before the fix this returned null for a service-account-attributed session — now it must not', async () => {
-    serviceAccountRow = { serviceAccountId: 'sa-agent-1' };
+    serviceAccountRow = { serviceAccountId: 'sa-agent-1', projectId: 'proj-1' };
 
     expect(await resolvePreviewUserContext('sbx-1', 'sa-agent-1')).not.toBeNull();
     expect(await canAccessPreviewSandbox({ previewSandboxId: 'sbx-1', userId: 'sa-agent-1' })).toBe(
@@ -178,11 +193,62 @@ describe('resolvePreviewUserContext — service-account attributed sessions', ()
     );
   });
 
+  test('an agent service account of ANOTHER project of the account is refused', async () => {
+    serviceAccountRow = { serviceAccountId: 'sa-agent-2', projectId: 'proj-other' };
+
+    expect(await resolvePreviewUserContext('sbx-1', 'sa-agent-2')).toBeNull();
+  });
+
   test('neither a member nor a service account row (e.g. disabled, or a different account) is refused', async () => {
     accountMemberRow = null;
     serviceAccountRow = null;
 
     expect(await resolvePreviewUserContext('sbx-1', 'stranger')).toBeNull();
+  });
+});
+
+// Account membership is not project access (audit 01#8, 02#2): the proxy asks
+// the same `project.read` question the REST routes ask.
+describe('project access on the sandbox proxy', () => {
+  test('an account member with no role on the sandbox project is refused', async () => {
+    accountMemberRow = { accountId: 'acct-1' };
+    projectReadAllowed = false;
+
+    expect(await canAccessPreviewSandbox({ previewSandboxId: 'sbx-1', userId: 'guest-of-q' })).toBe(false);
+    expect(await resolvePreviewUserContext('sbx-1', 'guest-of-q')).toBeNull();
+    expect(projectReadAsks).toEqual([{ userId: 'guest-of-q', action: 'project.read', objId: 'proj-1' }]);
+  });
+
+  test('a project member passes, asked about the sandbox project', async () => {
+    accountMemberRow = { accountId: 'acct-1' };
+
+    expect(await canAccessPreviewSandbox({ previewSandboxId: 'sbx-1', userId: 'proj-member' })).toBe(true);
+    expect(projectReadAsks).toEqual([{ userId: 'proj-member', action: 'project.read', objId: 'proj-1' }]);
+  });
+
+  test('a manual service account goes through IAM; a denied one is refused', async () => {
+    serviceAccountRow = { serviceAccountId: 'sa-manual', projectId: null };
+    expect(await canAccessPreviewSandbox({ previewSandboxId: 'sbx-1', userId: 'sa-manual' })).toBe(true);
+    clearPreviewOwnershipCache();
+    projectReadAllowed = false;
+    expect(await canAccessPreviewSandbox({ previewSandboxId: 'sbx-1', userId: 'sa-manual' })).toBe(false);
+  });
+
+  test('invalidateIamCacheForUser drops the cached verdict, so a removed member loses the proxy at once', async () => {
+    accountMemberRow = { accountId: 'acct-1' };
+    expect(await canAccessPreviewSandbox({ previewSandboxId: 'sbx-1', userId: 'leaver' })).toBe(true);
+    accountMemberRow = null;
+    expect(await canAccessPreviewSandbox({ previewSandboxId: 'sbx-1', userId: 'leaver' })).toBe(true); // cached
+    invalidateIamCacheForUser('leaver');
+    expect(await canAccessPreviewSandbox({ previewSandboxId: 'sbx-1', userId: 'leaver' })).toBe(false);
+  });
+
+  test('a platform admin skips the project check', async () => {
+    platformAdmins = new Set(['staff']);
+    projectReadAllowed = false;
+
+    expect(await canAccessPreviewSandbox({ previewSandboxId: 'sbx-1', userId: 'staff' })).toBe(true);
+    expect(projectReadAsks).toEqual([]);
   });
 });
 

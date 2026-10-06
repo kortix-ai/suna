@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 722,
+  "count": 724,
   "routes": [
     {
       "method": "GET",
@@ -589,6 +589,10 @@
     {
       "method": "PUT",
       "path": "/v1/accounts/:accountId/secret-resources/:secretId/grants/:userId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/secret-resources/:secretId/retry"
     },
     {
       "method": "PUT",
@@ -2433,6 +2437,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/warm/claim"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/skills"
     },
     {
       "method": "GET",

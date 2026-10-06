@@ -3,7 +3,7 @@
 // account with no boxes, the Stripe subscription is cancelled, the remaining
 // balance is forfeited, the billing status is torn down) and the request row
 // is marked completed, while future and cancelled requests are left alone and
-// the requester's auth identity is preserved. The seeded-due-row acceptance
+// the requester's auth identity is deleted. The seeded-due-row acceptance
 // proof for KRTX-1260: before this change no processor read the managed
 // `kortix.account_deletion_requests` table at all.
 import { describe, expect, mock, test } from 'bun:test';
@@ -26,6 +26,8 @@ mock.module('../../shared/stripe', () => ({
 }));
 
 mock.module('../../shared/supabase', () => ({
+  // apps/artifacts.ts imports it; a partial mock without it fails at load.
+  toPublicStorageUrl: (url: string) => url,
   getSupabase: () => ({
     auth: {
       admin: {
@@ -49,11 +51,14 @@ const withDb = confirmed ? describe : describe.skip;
 
 const DAY = 24 * 3600 * 1000;
 const past = new Date(Date.now() - DAY).toISOString();
+// Past MAX_OVERDUE (2 days): a backlog row waits for a person.
+const longOverdue = new Date(Date.now() - 3 * DAY).toISOString();
 const future = new Date(Date.now() + 14 * DAY).toISOString();
 
 withDb('scheduled account deletions — real PostgreSQL', () => {
-  test('executes a due pending request and leaves future and cancelled ones alone', async () => {
+  test('executes a due pending request and leaves future, cancelled and long-overdue ones alone', async () => {
     const accDue = crypto.randomUUID();
+    const accStale = crypto.randomUUID();
     const accFuture = crypto.randomUUID();
     const accCancelled = crypto.randomUUID();
     const userDue = crypto.randomUUID();
@@ -72,6 +77,7 @@ withDb('scheduled account deletions — real PostgreSQL', () => {
       .values([
         { accountId: accDue, userId: userDue, scheduledFor: past, status: 'pending' },
         { accountId: accFuture, userId: userDue, scheduledFor: future, status: 'pending' },
+        { accountId: accStale, userId: userDue, scheduledFor: longOverdue, status: 'pending' },
         {
           accountId: accCancelled,
           userId: userDue,
@@ -96,6 +102,7 @@ withDb('scheduled account deletions — real PostgreSQL', () => {
       expect(due.status).toBe('completed');
       expect(due.completedAt).not.toBeNull();
       expect(byAccount.get(accFuture)!.status).toBe('pending');
+      expect(byAccount.get(accStale)!.status).toBe('pending');
       expect(byAccount.get(accCancelled)!.status).toBe('cancelled');
 
       const [account] = await db
@@ -114,10 +121,9 @@ withDb('scheduled account deletions — real PostgreSQL', () => {
       expect(forfeiture).toEqual([{ amount: '-5.0000000000', type: 'forfeiture' }]);
 
       expect(cancelledSubscriptions).toEqual(['sub_test_1']);
-      // The pinned scheduled-path semantic: the historical requester's auth
-      // identity survives the scheduled deletion (only the immediate path
-      // deletes it).
-      expect(deletedAuthUsers).toEqual([]);
+      // The scheduled path runs the same routine as the immediate one: the
+      // requester's auth identity goes after the account data.
+      expect(deletedAuthUsers).toEqual([userDue]);
     } finally {
       await db.delete(creditLedger).where(eq(creditLedger.accountId, accDue));
       await db.delete(creditAccounts).where(eq(creditAccounts.accountId, accDue));

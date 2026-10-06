@@ -23,14 +23,18 @@ billingApp.route('/webhooks', webhooksRouter);
 // Alias: /webhook → /webhooks (some providers send to singular form)
 billingApp.route('/webhook', webhooksRouter);
 
-// Auth for all billing routes except webhooks
+// Auth-skip is an exact prefix match on the mounted path. A substring test
+// (`includes('/webhook')`) would skip auth on any future param route whose
+// value contains the word.
+const UNAUTHENTICATED_BILLING_PATH = /^\/v1\/billing\/(webhooks?|cron)(\/|$)/;
+const BILLING_GATE_EXEMPT_PATH = /^\/v1\/billing\/(account-state|webhooks|cron)(\/|$)/;
+export const isUnauthenticatedBillingPath = (path: string) => UNAUTHENTICATED_BILLING_PATH.test(path);
+export const isBillingGateExemptPath = (path: string) => BILLING_GATE_EXEMPT_PATH.test(path);
+
+// Auth for all billing routes except webhooks and the cron endpoints (they
+// verify a signature or the internal bearer themselves).
 billingApp.use('*', async (c, next) => {
-  if (c.req.path.includes('/webhook')) {
-    return next();
-  }
-  if (c.req.path.includes('/cron/')) {
-    return next();
-  }
+  if (isUnauthenticatedBillingPath(c.req.path)) return next();
   return supabaseAuth(c, next);
 });
 
@@ -42,7 +46,7 @@ billingApp.route('/account-state', accountStateRouter);
 // never hit Stripe, never get blocked by credits, never see subscription UI.
 // Account-state (above) already returns the "Local (Unlimited)" mock.
 billingApp.use('*', async (c, next) => {
-  if (c.req.path.includes('/account-state') || c.req.path.includes('/webhooks') || c.req.path.includes('/cron/')) {
+  if (isBillingGateExemptPath(c.req.path)) {
     return next();
   }
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {

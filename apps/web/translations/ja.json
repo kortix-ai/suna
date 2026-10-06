@@ -1953,6 +1953,12 @@
     "queuedFiles": "{count, plural, one {#個のファイル} other {#個のファイル}}",
     "queuedCount": "{count} 件キュー中",
     "editingQueued": "編集中",
+    "steerNextStep": "次のステップで読み取り",
+    "steerFallbackUnsupported": "このターンの終了を待ちます。このセッションはターン中にメッセージを受け取れません。",
+    "steerFallbackNotPrompter": "このターンの終了を待ちます。別のメンバーが開始したターンです。",
+    "steerFallbackTurnEnded": "独立したターンとして実行します。先にターンが終了しました。",
+    "stopAndSend": "停止して送信",
+    "stopAndSendFailed": "停止して送信できませんでした",
     "submitEdit": "送信",
     "collapseQueue": "キューを折りたたむ",
     "expandQueue": "キューを展開"
@@ -9424,7 +9430,9 @@
     "i18nComplete": {
       "authEmailRateLimit": "メールを送信できませんでした。約1時間後にもう一度お試しください。",
       "authRequestRateLimit": "リクエストが多すぎます。数分後にもう一度お試しください。",
+      "text1a9030082a20": "スキルを作成",
       "text25ab55af92b1": "添付ファイルのアップロードを開始しました",
+      "text38e64d6a8162": "プロジェクトのデフォルトブランチに SKILL.md をコミットします。モデルもチャットも不要です。",
       "text40078a553439": "添付ファイルのチャンクをアップロードしました",
       "text4c7f8000aabd": "添付ファイルのアップロードが完了しました",
       "text91420d2587c2": "添付ファイルのアップロードを削除しました",
@@ -9898,6 +9906,9 @@
       "text0e498a7ede47": "{value0}を有効にしました",
       "text0e52f6b9d025": "Markdown",
       "text4cab70e9226b": "PDFとして保存",
+      "text9bf06a86c934": "新しいスキル",
+      "texta38668224f1a": "フォームで作成",
+      "textb25ab5d5e2a5": "スキルを作成しました",
       "textce87352f1102": "このファイルは大きすぎるため PDF として保存できません。代わりに Markdown をダウンロードしてください。",
       "text3b0c86f182b0": "PDF を準備できませんでした。",
       "text0e570ca6fabe": "ソース",
@@ -14454,6 +14465,7 @@
       "text895ce927db2e": "個人チャット",
       "text28c7d3f8b75d": "グループチャット",
       "text72b5b0c53de9": "Microsoft Teams で返信しました",
+      "textedac6130dac7": "チャットセッションを使わずに SKILL.md をリポジトリへコミットします。",
       "textfc73e9ad2dae": "Slack で返信しました",
       "text8faf56a14a8d": "Telegram で返信しました",
       "text8ccfe10f2f2d": "Teams カタログに公開",
@@ -19244,7 +19256,8 @@
       "text6243d930fc1c": "AI Operating System",
       "textc959682e0398": "サインイン中のデバイスを表示しました",
       "text976811d9540a": "デバイスをサインアウトしました",
-      "text6f417aa88601": "ソース別の LLM ゲートウェイ支出を一覧表示しました"
+      "text6f417aa88601": "ソース別の LLM ゲートウェイ支出を一覧表示しました",
+      "textc96cd610ba08": "レート制限後に共有プロバイダーキーを再試行しました"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

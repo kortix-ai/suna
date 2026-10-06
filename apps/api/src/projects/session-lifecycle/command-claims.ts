@@ -5,6 +5,7 @@ import { db } from '../../shared/db';
 import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { compareInboxSendOrder, inboxOrderBy } from './inbox-order';
 import { LIFECYCLE_CLAIM_LOCK_MS } from './command-lease';
+import { notHeldSql } from './delivery-state';
 type SessionLifecycleCommandRow = typeof sessionLifecycleCommands.$inferSelect;
 
 /**
@@ -69,7 +70,7 @@ export async function claimDueLifecycleCommands(input: {
             // admission requeue — and each claim of it looped once per drain
             // tick. An automation row has no such check; its hold still ends
             // at `available_at`.
-            sql`(COALESCE(${sessionLifecycleCommands.result}->>'held', '') <> 'true'
+            sql`(${notHeldSql}
               OR ${sessionLifecycleCommands.payload}->>'clientMessageId' IS NULL)`,
           ),
           // ABANDONED CLAIM. A `running` row whose lock expired a full grace
