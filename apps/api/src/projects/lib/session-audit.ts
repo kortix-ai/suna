@@ -41,7 +41,7 @@ function authoritativeSource(input: SessionCreatedAuditInput, actor: AuditActorT
   return 'human';
 }
 
-export interface SessionCreatedAuditAttribution {
+interface SessionCreatedAuditAttribution {
   actorType: AuditActorType;
   authoritativeSource: string;
   initiatorActorType: 'agent' | null;

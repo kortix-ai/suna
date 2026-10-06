@@ -28,7 +28,7 @@ import { sessionPendingQuestions } from '@kortix/db';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 
-export interface PendingQuestion {
+interface PendingQuestion {
   id: string;
   session_id: string;
   request_id: string;

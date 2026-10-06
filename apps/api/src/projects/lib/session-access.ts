@@ -36,9 +36,9 @@ export type SessionNeed = 'read' | 'lifecycle';
  * `mint` is owner-governed (see `mayManageSessionSharing`): a public link is
  * unauthenticated, so it is never a way around the visibility gate.
  */
-export type SessionShareNeed = 'list' | 'mint' | 'revoke';
+type SessionShareNeed = 'list' | 'mint' | 'revoke';
 
-export interface SessionAccessDenial {
+interface SessionAccessDenial {
   ok: false;
   status: 403 | 404;
   error: string;

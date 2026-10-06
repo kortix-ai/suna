@@ -183,7 +183,7 @@ export function sessionRowMatchesSearch(row: ProjectSessionRow, q: string, owner
   return snapshot.some((entry) => hit((entry as Record<string, unknown> | null)?.title));
 }
 
-export interface ProjectSessionInventory {
+interface ProjectSessionInventory {
   /** False when `scope: 'project'` was asked for without manager standing. */
   authorized: boolean;
   /** The rows the viewer may see, already folded for visibility. */

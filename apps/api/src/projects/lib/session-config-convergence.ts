@@ -59,7 +59,7 @@ const RETRY_SOON_MS = [5_000, 10_000, 15_000, 30_000] as const;
  */
 const RETRY_LATER_MS = [6 * 60_000, 60_000, 20 * 60_000] as const;
 
-export interface SessionConfigConvergenceTarget {
+interface SessionConfigConvergenceTarget {
   projectId: string;
   accountId: string;
   sessionId: string;
@@ -213,7 +213,7 @@ function classify(result: SessionReloadResult): Attempt {
  * Awaitable core — exported so tests can assert the schedule without a timer.
  * Production call sites use `scheduleSessionConfigConvergence`.
  */
-export interface ConvergeSessionConfigOptions {
+interface ConvergeSessionConfigOptions {
   /**
    * `wake` (default): the resume and restart schedule, both clocks.
    * `trigger`: one attempt plus the quick ladder for a box that is not

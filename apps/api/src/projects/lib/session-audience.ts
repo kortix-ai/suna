@@ -8,7 +8,7 @@ export const SESSION_PARTICIPANT_LIMIT = 20;
  * Who can open a session: the audience behind the participants route.
  * (`./session-participants` is the other thing: people an agent addresses.)
  */
-export interface SessionAudienceMember {
+interface SessionAudienceMember {
   user_id: string;
   name: string | null;
   email: string | null;
@@ -16,7 +16,7 @@ export interface SessionAudienceMember {
   is_viewer: boolean;
 }
 
-export interface SessionParticipantsView {
+interface SessionParticipantsView {
   /** Who can open the session now, owner first. At most SESSION_PARTICIPANT_LIMIT. */
   participants: SessionAudienceMember[];
   /** How many people can open the session now. */

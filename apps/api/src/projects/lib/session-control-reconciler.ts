@@ -49,7 +49,7 @@ import {
  * on how late a control fact can be, not the typical latency: a same-instance
  * `publishControlEvent` still lands immediately.
  */
-export const CONTROL_RECONCILE_MS = 5_000;
+const CONTROL_RECONCILE_MS = 5_000;
 
 /** Same ceiling `GET .../prompts` and the bundle use. The inbox is a queue. */
 const PROMPT_LIST_LIMIT = 200;
@@ -61,7 +61,7 @@ const PROMPT_LIST_LIMIT = 200;
  * de-duplicated the frames is gone too, so keeping the fingerprints buys
  * nothing.
  */
-export const RECONCILER_IDLE_TTL_MS = 5 * 60_000;
+const RECONCILER_IDLE_TTL_MS = 5 * 60_000;
 
 /**
  * How long a retained control frame may go un-restamped.
@@ -74,7 +74,7 @@ export const RECONCILER_IDLE_TTL_MS = 5 * 60_000;
  * A frame is a snapshot, not an event, so re-sending an identical one is
  * idempotent. Must stay comfortably under half the client's 45s bound.
  */
-export const CONTROL_REFRESH_MS = 20_000;
+const CONTROL_REFRESH_MS = 20_000;
 
 interface Reconciler {
   refs: number;
@@ -99,7 +99,7 @@ interface Reconciler {
 
 const reconcilers = new Map<string, Reconciler>();
 
-export interface ControlReconcilerHandle {
+interface ControlReconcilerHandle {
   /** Resolves once every subsystem has been read at least once. */
   ready(): Promise<void>;
   /** The current snapshot frames, newest per subsystem, in cseq order. */

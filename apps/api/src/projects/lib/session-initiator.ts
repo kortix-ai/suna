@@ -8,7 +8,7 @@
 // carry. The backfill 20260929125453896_session_initiator_backfill mirrors
 // `resolveRootSessionInitiator` in SQL; change both together.
 
-export type SessionInitiatorType = 'member' | 'trigger' | 'channel' | 'api' | 'system';
+type SessionInitiatorType = 'member' | 'trigger' | 'channel' | 'api' | 'system';
 
 export interface SessionInitiator {
   type: SessionInitiatorType;
@@ -41,7 +41,6 @@ export function resolveRootSessionInitiator(input: {
 
 export type SessionStartedByFilter = 'me' | 'others' | 'automated';
 
-export const SESSION_STARTED_BY_FILTERS: readonly SessionStartedByFilter[] = ['me', 'others', 'automated'];
 
 const CHANNEL_LABELS: Record<string, string> = {
   slack: 'Slack',

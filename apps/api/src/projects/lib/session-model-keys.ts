@@ -106,7 +106,7 @@ export async function admitSessionModelChange(input: {
   return isModelServableForAccount(probe);
 }
 
-export type SessionSharingChange =
+type SessionSharingChange =
   | { ok: true }
   | {
       ok: false;

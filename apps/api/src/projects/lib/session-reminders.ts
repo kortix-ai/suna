@@ -27,7 +27,7 @@ import {
 import type { GitTriggerSpec } from '../triggers';
 
 /** A recurring reminder fires at most once per 5 minutes. Each fire is a model turn. */
-export const REMINDER_MIN_INTERVAL_SECONDS = 300;
+const REMINDER_MIN_INTERVAL_SECONDS = 300;
 /** Active (scheduled) reminders one session may hold. */
 export const REMINDER_MAX_ACTIVE_PER_SESSION = 20;
 /** Active reminders one project may hold, across all its sessions. */
@@ -35,7 +35,7 @@ export const REMINDER_MAX_ACTIVE_PER_PROJECT = 200;
 /** No first fire, `at`, or `every` beyond a year: a larger value overflows `Date` (HTTP 500). */
 const REMINDER_MAX_HORIZON_SECONDS = 366 * 86400;
 const HORIZON_LIMIT = `must be at most ${formatDurationSeconds(REMINDER_MAX_HORIZON_SECONDS)}`;
-export const REMINDER_PROMPT_MAX_LENGTH = 10_000;
+const REMINDER_PROMPT_MAX_LENGTH = 10_000;
 const REMINDER_NAME_MAX_LENGTH = 120;
 
 export interface ReminderDraft {
@@ -179,7 +179,7 @@ export function reminderPromptText(spec: GitTriggerSpec): string {
 
 type RuntimeRow = typeof projectTriggerRuntime.$inferSelect;
 
-export type ReminderState = 'active' | 'paused' | 'done';
+type ReminderState = 'active' | 'paused' | 'done';
 
 export function serializeSessionReminder(row: RuntimeRow) {
   const spec = row.scheduleSpec as unknown as GitTriggerSpec;
@@ -225,7 +225,7 @@ export async function listSessionReminders(projectId: string, sessionId: string)
 }
 
 /** Rows the project page reads. Callers filter by session visibility. */
-export const PROJECT_REMINDER_LIST_LIMIT = 200;
+const PROJECT_REMINDER_LIST_LIMIT = 200;
 
 /**
  * Every reminder in a project: active by next fire, then paused, then done by

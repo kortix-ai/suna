@@ -39,7 +39,7 @@ import { accountMayUseManagedModels } from '../../billing/services/entitlements'
 import { logger } from '../../lib/logger';
 import { pushSessionModelToSandbox } from './sandbox-env-sync';
 
-export interface SessionModelRepairInput {
+interface SessionModelRepairInput {
   projectId: string;
   sessionId: string;
   accountId: string;
@@ -49,7 +49,7 @@ export interface SessionModelRepairInput {
   metadata: Record<string, unknown> | null;
 }
 
-export interface SessionModelRepairResult {
+interface SessionModelRepairResult {
   /** The replacement pin, or null when nothing was re-pointed. */
   repointed: string | null;
   /** True only when a RUNNING box took the replacement. */

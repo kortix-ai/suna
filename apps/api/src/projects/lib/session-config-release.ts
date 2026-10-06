@@ -12,9 +12,9 @@ export const CONFIG_RELEASE_CAPABILITY = 'config.release.v1';
  * release; `/workspace` is an editable clone, never a config source. One
  * member on purpose.
  */
-export type ConfigReleaseMode = 'follow-base';
+type ConfigReleaseMode = 'follow-base';
 /** The fallback chain: the desired release, the last proven one, the image default. */
-export type ConfigReleaseSource = 'release' | 'image-default';
+type ConfigReleaseSource = 'release' | 'image-default';
 export type ConvergeOutcome = 'applied' | 'unchanged' | 'declined' | 'quarantined' | 'failed';
 
 const CONVERGE_OUTCOMES: readonly ConvergeOutcome[] = [

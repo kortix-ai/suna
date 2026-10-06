@@ -227,7 +227,7 @@ export function selectSessionRowsForViewer(input: {
  */
 
 /** One row's position in the `(updated_at DESC, session_id DESC)` order. */
-export interface SessionListCursor {
+interface SessionListCursor {
   updatedAt: Date;
   sessionId: string;
 }

@@ -827,13 +827,6 @@ export function serializeTemplate(t: Awaited<ReturnType<typeof listSandboxTempla
   };
 }
 
-const PROJECT_ROLES = ['manager', 'member'] as const;
-
-export type ProjectGroupGrantRole = (typeof PROJECT_ROLES)[number];
-
-export function isProjectRole(v: unknown): v is ProjectGroupGrantRole {
-  return typeof v === 'string' && (PROJECT_ROLES as readonly string[]).includes(v);
-}
 
 /**
  * Parse a bounded positive integer query parameter, or report why it is invalid.

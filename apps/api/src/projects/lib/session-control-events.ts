@@ -96,9 +96,9 @@ export interface ControlEvent {
   payload: unknown;
 }
 
-export type ControlResyncReason = 'gap-too-old' | 'epoch-changed' | 'ahead-of-head';
+type ControlResyncReason = 'gap-too-old' | 'epoch-changed' | 'ahead-of-head';
 
-export interface ControlResync {
+interface ControlResync {
   channel: 'control';
   type: 'kortix.control.resync';
   reason: ControlResyncReason;
@@ -190,14 +190,14 @@ export function publishControlEvent(
   return event;
 }
 
-export interface ControlSubscribeOptions {
+interface ControlSubscribeOptions {
   /** The `cseq` the client last applied, or null for "I hold nothing". */
   sinceCseq?: number | null;
   /** The `cepoch` that `sinceCseq` belongs to. A mismatch invalidates it. */
   cepoch?: string | null;
 }
 
-export interface ControlSubscription {
+interface ControlSubscription {
   /** Frames the client missed, oldest first. Empty when it missed nothing. */
   replay: ControlEvent[];
   /** Present when the gap could not be replayed exactly. Never silent. */

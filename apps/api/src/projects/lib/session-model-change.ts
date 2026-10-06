@@ -16,7 +16,7 @@ import { toWireModel } from '../../llm-gateway/resolution/effective';
  *  re-read the row anyway, so a change here is meaningless rather than harmful. */
 const UNCHANGEABLE_STATUSES = new Set(['failed', 'completed', 'stopped']);
 
-export type ModelChangeRejection =
+type ModelChangeRejection =
   | { code: 'INVALID_SESSION_MODEL'; message: string }
   | { code: 'SESSION_NOT_RUNNING'; message: string };
 

@@ -153,10 +153,10 @@ export function configNeedsPush(input: {
  *  • `not-requested`   — the caller passed `refresh_repo: false`.
  *  • `refused`         — the box declined the pull (local changes, no remote).
  */
-export type WorkspaceCheckout = 'updated' | 'already-current' | 'not-requested' | 'refused';
+type WorkspaceCheckout = 'updated' | 'already-current' | 'not-requested' | 'refused';
 
 /** Classify the checkout half of a reload from the commits before and after. */
-export function classifyWorkspaceCheckout(input: {
+function classifyWorkspaceCheckout(input: {
   requested: boolean;
   ok: boolean;
   before: string | null;
@@ -304,7 +304,7 @@ function fallbackRunsSentence(source: string | undefined): string {
  * `detail`: `kortix sessions reload`, the web's "Reload config" toast, and the
  * streamed reload. One sentence, one place.
  */
-export function checkoutSentence(result: SessionReloadResult): string {
+function checkoutSentence(result: SessionReloadResult): string {
   const at = result.commit_sha ? ` at ${result.commit_sha.slice(0, 12)}` : '';
   switch (result.workspace_checkout) {
     case 'updated':

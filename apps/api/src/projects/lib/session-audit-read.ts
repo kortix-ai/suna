@@ -28,10 +28,9 @@ import { lookupEmailsByUserIds } from '../lib/access';
 
 /** One governed action, in the exact wire shape `GET .../audit` returns. */
 /** One row of the pending-approvals projection: `@kortix/api-contract`. */
-export type { SessionAuditAction as SessionAuditActionRow } from '@kortix/api-contract';
 import type { SessionAuditAction as SessionAuditActionRow } from '@kortix/api-contract';
 
-export interface SessionAuditActionsResult {
+interface SessionAuditActionsResult {
   session_id: string;
   agent: string | null;
   audit_access: boolean;
@@ -39,7 +38,7 @@ export interface SessionAuditActionsResult {
   actions: SessionAuditActionRow[];
 }
 
-export interface ReadSessionAuditActionsParams {
+interface ReadSessionAuditActionsParams {
   projectId: string;
   sessionId: string;
   /** `visible.row.agentName` — passed through untouched into the response. */
