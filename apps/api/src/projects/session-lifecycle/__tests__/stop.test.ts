@@ -1,6 +1,7 @@
-import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import * as realComputeMetering from '../../../billing/services/compute-metering';
+import * as realLogger from '../../../lib/logger';
 import * as realProviders from '../../../platform/providers';
 import * as realSandboxProxyBackend from '../../../sandbox-proxy/backend';
 
@@ -30,9 +31,30 @@ let abortFetchImpl: (url: string, init: Record<string, unknown>) => Promise<Resp
   new Response(JSON.stringify({ ok: true }), { status: 200 });
 const originalFetch = globalThis.fetch;
 
-mock.module('../../../config', () => ({
-  config: { ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'platinum'] },
+// KRTX-520 rate-limit ride-out knobs. The object is shared with the
+// `mock.module` factory below, so a test shrinks a knob by assigning it —
+// the same per-test control `STOP_SYNC_BUDGET_MS` gets through process.env.
+const configMock = {
+  ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'platinum'],
+  STOP_RATE_LIMIT_WINDOW_MS: 120_000,
+  STOP_RATE_LIMIT_BACKOFF_MS: 2_000,
+};
+
+// The give-up line of the ride-out goes through `logger.warn` (new code must
+// not add a `console.*` violation), so capture the logger instead of stdout.
+const warnLogs: Array<{ message: string; context?: Record<string, unknown> }> = [];
+
+mock.module('../../../lib/logger', () => ({
+  ...realLogger,
+  logger: {
+    ...realLogger.logger,
+    warn: (message: string, context?: Record<string, unknown>) => {
+      warnLogs.push({ message, context });
+    },
+  },
 }));
+
+mock.module('../../../config', () => ({ config: configMock }));
 
 const updater = (table: unknown) => ({
   set: (updates: Record<string, unknown>) => ({
@@ -152,6 +174,9 @@ beforeEach(() => {
   stopGate = null;
   captureGate = null;
   process.env.STOP_SYNC_BUDGET_MS = '5000';
+  configMock.STOP_RATE_LIMIT_WINDOW_MS = 120_000;
+  configMock.STOP_RATE_LIMIT_BACKOFF_MS = 2_000;
+  warnLogs.length = 0;
   stopErrors = [];
   pausedCompute = [];
   cacheInvalidations = [];
@@ -175,6 +200,27 @@ afterAll(() => {
 });
 
 describe('stopSession', () => {
+  // The shape Daytona's org-wide throttler surfaces through the SDK
+  // (`DaytonaRateLimitError: ThrottlerException: Too Many Requests`). The name
+  // alone is the classifier's second signal, so the test needs no SDK import.
+  const throttlerError = () => {
+    const err = new Error('ThrottlerException: Too Many Requests');
+    err.name = 'DaytonaRateLimitError';
+    return err;
+  };
+  /** Capture `console.warn` while `run` executes; restored on every exit path. */
+  const captureWarns = async <T>(run: () => Promise<T>): Promise<{ value: T; warns: string[] }> => {
+    const warns: string[] = [];
+    const spy = spyOn(console, 'warn').mockImplementation((...args: unknown[]) => {
+      warns.push(args.map((a) => String(a)).join(' '));
+    });
+    try {
+      return { value: await run(), warns };
+    } finally {
+      spy.mockRestore();
+    }
+  };
+
   test('404s when the session has no sandbox row', async () => {
     const result = await stopSession(baseInput);
     expect(result.status).toBe(404);
@@ -355,6 +401,111 @@ describe('stopSession', () => {
         'Platinum stop for sbx_synth did not reach stopped within 10000ms (last state: running)',
     });
     expect(stopCalls).toEqual(['ext-1', 'ext-1']);
+    expect(updateCalls).toEqual([]);
+    expect(pausedCompute).toEqual([]);
+  });
+
+  // KRTX-520 (2026-10 recurrence): Daytona's org-wide throttler 429s bursts of
+  // stop calls for tens of seconds. The one-shot retry lands inside the same
+  // throttle window, so a rate-limited stop must ride the throttle out with
+  // backoff instead of 502ing a stop the provider was really saying "later" to.
+  test('rides out a Daytona rate limit and commits the stop when the throttle clears', async () => {
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'daytona',
+      status: 'active',
+      metadata: {},
+    };
+    configMock.STOP_RATE_LIMIT_BACKOFF_MS = 1;
+    stopErrors = [throttlerError(), throttlerError()];
+
+    const { value: result, warns } = await captureWarns(() => stopSession(baseInput));
+
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({ ok: true, session_id: 'sess-1', status: 'stopped' });
+    expect(stopCalls).toEqual(['ext-1', 'ext-1', 'ext-1']);
+    expect(pausedCompute).toEqual(['sess-1']);
+    expect(
+      updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'stopped'),
+    ).toBe(true);
+    // One line for the whole ride, not one per attempt (KRTX-614): the first
+    // throttled attempt logs through the existing failure line — its message
+    // carries the `ThrottlerException` signature — and the ride-out is silent.
+    expect(warns).toHaveLength(1);
+    expect(warns[0]).toContain('provider.stop failed for sandbox sess-1: ThrottlerException');
+  });
+
+  test('a rate limit does not consume the one-shot genuine-failure retry', async () => {
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'daytona',
+      status: 'active',
+      metadata: {},
+    };
+    configMock.STOP_RATE_LIMIT_BACKOFF_MS = 1;
+    stopErrors = [throttlerError(), new Error('internal provider error: connection refused')];
+
+    const { value: result } = await captureWarns(() => stopSession(baseInput));
+
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({ ok: true, session_id: 'sess-1', status: 'stopped' });
+    expect(stopCalls).toEqual(['ext-1', 'ext-1', 'ext-1']);
+    expect(
+      updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'stopped'),
+    ).toBe(true);
+  });
+
+  test('gives a still-rate-limited stop to the reaper after the bounded window', async () => {
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'daytona',
+      status: 'active',
+      metadata: {},
+    };
+    configMock.STOP_RATE_LIMIT_WINDOW_MS = 200;
+    configMock.STOP_RATE_LIMIT_BACKOFF_MS = 1;
+    stopError = throttlerError();
+
+    await captureWarns(() => stopSession(baseInput));
+
+    expect(stopCalls.length).toBeGreaterThan(2);
+    // Never claimed stopped: the provider never confirmed.
+    expect(updateCalls).toEqual([]);
+    expect(pausedCompute).toEqual([]);
+    // One give-up line names the handover instead of a silent abandonment.
+    expect(warnLogs.some((w) => w.message.includes('still rate-limited'))).toBe(true);
+  });
+
+  test('answers `stopping` under a sustained throttle and leaves the stop to the reaper', async () => {
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'daytona',
+      status: 'active',
+      metadata: {},
+    };
+    process.env.STOP_SYNC_BUDGET_MS = '100';
+    configMock.STOP_RATE_LIMIT_WINDOW_MS = 250;
+    configMock.STOP_RATE_LIMIT_BACKOFF_MS = 1;
+    stopError = throttlerError();
+
+    const { value: result } = await captureWarns(() => stopSession(baseInput));
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({ ok: true, session_id: 'sess-1', status: 'stopping' });
+    // Nothing is claimed stopped while the provider has not confirmed.
+    expect(updateCalls).toEqual([]);
+    expect(pausedCompute).toEqual([]);
+    // The background loop must give up inside its window instead of
+    // retrying forever: wait for the give-up line (3 s cap keeps a red run
+    // bounded and keeps the loop inside this test).
+    const giveUpDeadline = Date.now() + 3_000;
+    while (Date.now() < giveUpDeadline && !warnLogs.some((w) => w.message.includes('still rate-limited'))) {
+      await Bun.sleep(50);
+    }
+    expect(warnLogs.some((w) => w.message.includes('still rate-limited'))).toBe(true);
     expect(updateCalls).toEqual([]);
     expect(pausedCompute).toEqual([]);
   });

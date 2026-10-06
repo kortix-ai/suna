@@ -1,7 +1,9 @@
 import { sessionSandboxes } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { type SandboxProviderName, config } from '../../config';
+import { logger } from '../../lib/logger';
 import { getProvider } from '../../platform/providers';
+import { isDaytonaRateLimitError } from '../../shared/daytona-rate-limit';
 import { db } from '../../shared/db';
 import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from '../reaping/policy';
 import { applyStoppedState } from '../reaping/sandbox-state-sync';
@@ -19,6 +21,24 @@ import { RUNTIME_WAKE_LATE_START_GUARD_MS, runtimeWakeInProgress } from './runti
 function stopSyncBudgetMs(): number {
   return Number(process.env.STOP_SYNC_BUDGET_MS) || 17_000;
 }
+/**
+ * How long a rate-limited stop keeps retrying before it gives the stop to the
+ * reaper. Daytona's org-wide throttler 429s stop bursts for tens of seconds
+ * (the 2026-10-05 burst turned the one-shot retry below into 22 5xx in one
+ * hour against a 0/h baseline), and a retry that outlasts the throttle lands
+ * the stop. Read per call so tests can shrink it, like the sync budget above.
+ * The `||` is load-bearing, not decoration: a wholesale-mocked config leaves
+ * the property undefined, and a NaN window end would never compare true, so
+ * the ride-out would never give up.
+ */
+function stopRateLimitWindowMs(): number {
+  return config.STOP_RATE_LIMIT_WINDOW_MS || 120_000;
+}
+/** First rate-limit backoff; each further rate-limited attempt doubles it. */
+function stopRateLimitBackoffMs(): number {
+  return config.STOP_RATE_LIMIT_BACKOFF_MS || 2_000;
+}
+const STOP_RATE_LIMIT_BACKOFF_MAX_MS = 30_000;
 /** The transcript tail is best-effort; it never holds a stop for more than this. */
 const TRANSCRIPT_TAIL_MAX_MS = 3_000;
 
@@ -149,19 +169,55 @@ export async function stopSession(input: {
     // 0/h baseline). Stop is idempotent and the classifiers below still guard
     // every attempt, so one attempt a second later lands the stop instead of
     // returning a 502 for a stop the reaper's next pass settles anyway.
-    for (let attempt = 1; ; attempt++) {
+    //
+    // A Daytona org-wide throttler 429 outlasts that one retry (the 2026-10-04
+    // and 2026-10-05 throttle bursts turned it into a 22-in-one-hour 502 run),
+    // so a rate-limited attempt does not consume it: the loop rides the
+    // throttle out with exponential backoff inside a bounded window, the
+    // request deadline answers `stopping` meanwhile, and a throttle that never
+    // clears gives the stop to the reaper past the bound — a rate-limited stop
+    // never 5xxes a stop the provider was really saying "later" to.
+    const rateLimitWindowEndsAt = Date.now() + stopRateLimitWindowMs();
+    const rateLimitBackoffMs = stopRateLimitBackoffMs();
+    let failedAttempts = 0;
+    let rateLimitedAttempts = 0;
+    for (;;) {
       try {
         await provider.stop(externalId);
         break;
       } catch (err) {
         if (isAlreadyNotRunning(err) || isLifecycleTransitionInProgress(err)) break;
+        const rateLimited = isDaytonaRateLimitError(err);
+        const message = err instanceof Error ? err.message : String(err);
         // The provider failure used to vanish here: the 502 body reached only
         // the client, and no log carried the cause (this is what made the
         // incident burst above diagnosable only from response durations). Name
-        // every failed attempt.
-        const message = err instanceof Error ? err.message : String(err);
-        console.warn(`[stop] provider.stop failed for sandbox ${sandbox.sandboxId}: ${message}`);
-        if (attempt > 1) {
+        // the first attempt of every failure kind; a throttle ride-out stays
+        // silent after it — one line per stop, not one per attempt, or a
+        // fleet-wide throttle is the next log-pattern spike (KRTX-614).
+        if (!rateLimited || rateLimitedAttempts === 0) {
+          console.warn(`[stop] provider.stop failed for sandbox ${sandbox.sandboxId}: ${message}`);
+        }
+        if (rateLimited) {
+          if (Date.now() >= rateLimitWindowEndsAt) {
+            logger.warn(
+              `[stop] provider.stop still rate-limited for sandbox ${sandbox.sandboxId}; leaving the stop to the reaper`,
+              { attempts: rateLimitedAttempts },
+            );
+            return {
+              status: 502,
+              body: { error: err instanceof Error ? err.message : 'Failed to stop sandbox' },
+            };
+          }
+          const backoff = Math.min(
+            STOP_RATE_LIMIT_BACKOFF_MAX_MS,
+            rateLimitBackoffMs * 2 ** rateLimitedAttempts,
+          );
+          rateLimitedAttempts += 1;
+          await Bun.sleep(backoff);
+          continue;
+        }
+        if (++failedAttempts > 1) {
           return {
             status: 502,
             body: { error: err instanceof Error ? err.message : 'Failed to stop sandbox' },

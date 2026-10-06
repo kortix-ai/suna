@@ -733,6 +733,18 @@ const envSchema = z.object({
   // request while running.
   KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES: optInt(720), // 12 hours
 
+  // ── Session stop rate-limit ride-out (KRTX-520) ─────────────────────────────
+  // Daytona's org-wide throttler 429s bursts of stop calls (ThrottlerException)
+  // for tens of seconds. A rate-limited stop retries with exponential backoff
+  // inside this window instead of 502ing (the 2026-10-05 throttle burst turned
+  // the one-shot retry into 22 5xx in one hour against a 0/h baseline); the
+  // request deadline answers `stopping` meanwhile, and a throttle that never
+  // clears hands the stop to the reaper past the bound.
+  STOP_RATE_LIMIT_WINDOW_MS: optInt(120_000),
+  // First backoff of the ride-out; each further rate-limited attempt doubles
+  // it, capped at 30 s in stop.ts.
+  STOP_RATE_LIMIT_BACKOFF_MS: optInt(2_000),
+
   // ── Internal Service Key (auto-generated if missing — never fails) ───────
   INTERNAL_SERVICE_KEY: optStr,
 
@@ -1389,6 +1401,8 @@ export const config = {
   KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: env.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
   KORTIX_SANDBOX_AUTODELETE_MINUTES: env.KORTIX_SANDBOX_AUTODELETE_MINUTES,
   KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES,
+  STOP_RATE_LIMIT_WINDOW_MS: env.STOP_RATE_LIMIT_WINDOW_MS,
+  STOP_RATE_LIMIT_BACKOFF_MS: env.STOP_RATE_LIMIT_BACKOFF_MS,
 
   PLATINUM_API_KEY: env.PLATINUM_API_KEY,
   PLATINUM_API_URL: env.PLATINUM_API_URL,
