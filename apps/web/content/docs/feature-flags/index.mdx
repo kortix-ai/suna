@@ -23,7 +23,7 @@ another project, and nothing for other accounts.
    `Overridden for this project`.
 3. Use the switch. The change applies to the current project immediately.
 
-You need the project's `project.customize.write` permission. The route answers
+You need the project's `project.settings.write` permission. The route answers
 `403` for any other caller.
 
 ### From the CLI
@@ -122,7 +122,6 @@ Registry order — the same order **Settings → Feature flags** shows.
 | `reminders` | Reminders | Beta | Off | `routes` |
 | `warm_sessions` | Warm Sessions | Beta | On | `routes` |
 | `secrets_egress` | Network-Enforced Secrets | Experimental | On | `behavioral` |
-| `pi_worker` | Pi Worker Runtime (compiled) | Experimental | Off | `routes` |
 | `pi_harness` | Pi Harness (in-sandbox) | Experimental | Off | `behavioral` |
 
 `llm_gateway` reads its per-project default from
@@ -156,9 +155,6 @@ refs). An explicit project choice always wins.
 - **`secrets_egress`** — offer network enforcement for a secret: the sandbox
   holds a handle, and Kortix substitutes the real value only on requests to
   approved hosts. See [Secrets](/docs/project/secrets).
-- **`pi_worker`** — compile a pi-based worker runtime and the OpenCode
-  compiled-boot artifacts on every push. Sessions boot on the split
-  worker/environment topology only when the manifest also sets `runtime: pi`.
 - **`pi_harness`** — run this project's sessions on the pi agent harness
   inside the ordinary session sandbox (`KORTIX_HARNESS=pi`). On: every new or
   restarted session boots pi, whatever the manifest says. Off: the manifest

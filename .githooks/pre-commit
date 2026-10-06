@@ -124,6 +124,10 @@ sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-worktree-branch.sh"
 # (3) No customer data: refuse added lines with a blocked term (AGENTS.md).
 sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-blocked-terms.sh" staged
 
+# No crash dumps or files over 20 MB: a core dump carries every secret in the
+# process environment.
+sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-binary-dumps.sh" staged
+
 # (4) Backstop: block any remaining unencrypted, committable .env.
 #
 # `dotenvx protect`, not the deprecated `ext precommit` (dotenvx 2.29.0 prints

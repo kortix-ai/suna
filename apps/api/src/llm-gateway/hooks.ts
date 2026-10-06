@@ -483,6 +483,10 @@ export async function persistGatewayTrace(trace: GatewayTrace): Promise<void> {
     metadata: {
       ...trace.metadata,
       ...(trace.attemptFailures?.length ? { attemptFailures: trace.attemptFailures } : {}),
+      // Read by `sessionModelUsage`: the session screen names the model that
+      // answered, and the model it stood in for.
+      ...(trace.servedModel ? { servedModel: trace.servedModel } : {}),
+      ...(trace.fallbackFrom ? { fallbackFrom: trace.fallbackFrom } : {}),
     },
   });
   // Non-blocking: never let telemetry delay the caller or affect the trace write.

@@ -295,7 +295,7 @@ A command resolves "the project" in this order:
 A project shows one icon, so writing `--icon` clears the glyph and writing
 `--glyph` clears the emoji; passing both is refused. Glyph colors: `grey`,
 `red`, `orange`, `yellow`, `lime`, `blue`, `purple`, `magenta`. `set` and
-`features` need `project.customize.write`. A flag the platform marks
+`features` need `project.settings.write`. A flag the platform marks
 unavailable stays off regardless of the project override.
 
 A project CLI token is bound to one project — the API rejects it everywhere
@@ -392,7 +392,7 @@ Each session runs in one sandbox on its own branch.
 | `kortix sessions start <id> [--wait] [--json]` | Wake a session: provision a missing sandbox, resume a stopped one, and resolve its runtime. Idempotent. Alias: `wake`. `--wait` blocks until ready (up to ~5 min) and exits `1` if the session ends up failed or stopped. |
 | `kortix sessions warm [--exclude <id>] [--json]` | Pre-create the session you are about to use, so the sandbox is already up. Reuses an existing unused warm session. A warm session stays hidden from `sessions ls` until its first prompt. |
 | `kortix sessions model <id> <model-id> [--json]` | Change the model a session runs, mid-session. A live sandbox is re-pointed and its runtime restarts, which ends the turn running right now; a stopped session stores the value for its next start. A session with no keys selected for the new model's provider gets every key you may use there. |
-| `kortix sessions compact <id> [--json]` | Summarize the conversation so far and continue from the summary. A pi session does not support it: the command exits `1` with the reason. |
+| `kortix sessions compact <id> [--json]` | Summarize the conversation so far and continue from the summary. A session whose runtime does not list `session.compact` exits `1` with the reason. |
 | `kortix sessions queue <id> [ls] [--json]` | List the prompts still waiting in the session's durable inbox. |
 | `kortix sessions queue <id> rm <prompt-id>` | Drop one queued prompt. Refused (`409`) once a model step has started answering it. |
 | `kortix sessions queue <id> now <prompt-id>` | Run one queued prompt next: re-queue it ahead of the ordering rule and release the session's hold. |
@@ -554,7 +554,7 @@ Every scope option replaces; none merge. A `--set` value is parsed as JSON when
 it parses, and kept as a string otherwise. Model pins and `scope` apply
 instantly, with no `kortix.yaml` commit; `default` and `config` commit to
 `kortix.yaml` on the project's default branch. `scope` needs
-`project.agent.write`; `default` and `config` need `project.customize.write`.
+`project.agent.write`, and so do `default` and `config`.
 
 ### Models
 
@@ -576,7 +576,7 @@ it decides what pickers offer, never what the gateway serves.
 Model ids are gateway wire ids — a bare managed id (`glm-5.3-flash`) or a BYOK
 `provider/model`. Copy one from `kortix models ls --json`. Per-agent pins live
 on `kortix agents model <agent> <model-id>`. Writes need
-`project.customize.write`.
+`project.model.write`.
 
 ### Channels
 
@@ -670,7 +670,7 @@ Manages the project's sandbox images. A template defines an image or Dockerfile 
 | `kortix sandboxes provider --clear` | Drop the pin and follow the platform default. Alias: `--unpin`. |
 | `kortix sandboxes provider status [--json]` | Show the latest provider transition and its history. Alias: `transition`. |
 
-Pinning a provider needs `project.customize.write`.
+Pinning a provider needs `project.settings.write`.
 
 `add`/`update` options: `--name <label>`, `--cpu <n>`, `--memory <n>` (GiB), `--disk <n>` (GiB).
 

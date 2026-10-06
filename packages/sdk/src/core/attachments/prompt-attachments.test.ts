@@ -379,18 +379,22 @@ test('an expired upload reports attachment_expired, from Retry and from the read
   });
   stale.dispose();
 
-  // A 30 ms window lost to event-loop stalls under a loaded suite (the ready
-  // upload flipped to attachment_expired before settle() observed it). 300 ms
-  // keeps the same semantics — ready lands first, the timer still fires —
-  // without racing the scheduler.
-  const expiresAt = new Date(Date.now() + 300).toISOString();
   configureKortix({
     backendUrl: 'https://api.test',
     getToken: async () => 'token',
     fetch: async (url, init) => {
       if (init?.method === 'PUT') return Response.json({ received_bytes: 3, size: 3 });
       if (String(url).endsWith('/complete'))
-        return Response.json({ ...metadata, expires_at: expiresAt });
+        // The 30 ms expiry window starts when the server stamps the upload, not
+        // when the test starts: computing it at test start raced the scheduler —
+        // under load the upload completed after the window had already passed
+        // and the controller flipped to attachment_expired before the 'ready'
+        // assertion below ran. 30 ms after completion is the same contract with
+        // no race between the two statements.
+        return Response.json({
+          ...metadata,
+          expires_at: new Date(Date.now() + 30).toISOString(),
+        });
       return Response.json({ ...metadata, upload: { kind: 'chunked', chunk_size: 65536 } });
     },
   });
@@ -398,7 +402,7 @@ test('an expired upload reports attachment_expired, from Retry and from the read
   ready.add(new File(['abc'], 'a.txt'));
   await settle();
   expect(ready.getSnapshot().attachments[0]?.status).toBe('ready');
-  await new Promise((resolve) => setTimeout(resolve, 400));
+  await new Promise((resolve) => setTimeout(resolve, 60));
   expect(ready.getSnapshot().attachments[0]).toMatchObject({
     status: 'error',
     error: { code: 'attachment_expired' },

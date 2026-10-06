@@ -1,12 +1,13 @@
 /**
  * Projects — authenticated CRUD + access. Maps to spec §13 (PROJ-1..8).
  */
+import { ProjectSchema } from "@kortix/api-contract";
 import { flow } from "../core/flow";
 
 flow("PROJ-1", { domain: "projects", tags: ["smoke"], routes: ["GET /v1/projects"] }, async (ctx) => {
-  await ctx.step("OWNER lists projects", async () => {
+  await ctx.step("OWNER lists projects; every row matches the contract Project", async () => {
     const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects");
-    r.status(200);
+    r.status(200).body().schema(ProjectSchema.array());
   });
   await ctx.step("ANON → 401", async () => {
     const r = await ctx.client.as(ctx.P.ANON).get("/v1/projects");
@@ -81,9 +82,9 @@ flow(
 
 flow("PROJ-5", { domain: "projects", routes: ["GET /v1/projects/:projectId"] }, async (ctx) => {
   const p = await ctx.fixtures.project();
-  await ctx.step("OWNER reads project", async () => {
+  await ctx.step("OWNER reads project; the body matches the contract Project", async () => {
     const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId", { params: { projectId: p.id } });
-    r.status(200).body().has("$.project_id", p.id);
+    r.status(200).body().has("$.project_id", p.id).schema(ProjectSchema);
   });
   await ctx.step("NONMEMBER → 403/404", async () => {
     const r = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/projects/:projectId", { params: { projectId: p.id } });

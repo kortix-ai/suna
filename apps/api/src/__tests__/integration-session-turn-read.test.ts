@@ -39,7 +39,7 @@ mock.module('../projects/lib/access', () => ({
 }));
 
 const { projectsApp } = await import('../projects/lib/app');
-await import('../projects/routes/session-runtime');
+(await import('../projects/routes/session-runtime')).registerSessionRuntimeRoutes();
 
 const app = new Hono<{ Variables: { userId: string; authType: string } }>();
 app.use('*', async (c, next) => {

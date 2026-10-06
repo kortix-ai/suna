@@ -16,7 +16,7 @@ import { accountMembers, accountSecretGrants, accountSecretResources, accounts, 
 import { eq } from 'drizzle-orm';
 import { db } from '../shared/db';
 import {
-  encryptAccountSecret, listUsableGatewaySecrets, memberMayReadProject, queryUsableGatewaySecrets,
+  coolDownAccountSecret, encryptAccountSecret, listUsableGatewaySecrets, memberMayReadProject, queryUsableGatewaySecrets,
   resolveProjectSharedProviderSecrets,
 } from '../secrets/account-resource';
 import { mayUseProviderKeys, providerEnvVarOf } from '../secrets/provider-key-selection';
@@ -305,5 +305,25 @@ describe('resolveProjectSharedProviderSecrets: the ChatGPT accounts an unconfigu
     expect(onlyCooling.coolingDown).toBe(true);
     expect(onlyCooling.retryAfterSeconds).toBeGreaterThan(0);
     expect(onlyCooling.retryAfterSeconds).toBeLessThanOrEqual(60);
+  });
+
+  // ChatGPT's weekly plan limit names its reset. The account rests until then;
+  // a later, shorter limit from another replica never shortens the rest.
+  test('a usage limit rests an account until its reset, and a shorter limit after it does not shorten it', async () => {
+    // Last in this block, so the earlier listings never see it.
+    await seedCodex('usage-limited');
+    const id = codex['usage-limited']!;
+    await coolDownAccountSecret(id, accountId, 414_374);
+    await coolDownAccountSecret(id, accountId, 30);
+    const [row] = await db.select({ until: accountSecretResources.cooldownUntil })
+      .from(accountSecretResources).where(eq(accountSecretResources.secretId, id));
+    expect(Math.abs(row!.until!.getTime() - (Date.now() + 414_374_000))).toBeLessThan(15_000);
+
+    const rested = await resolveProjectSharedProviderSecrets({
+      accountId, projectId, userId: READER, grantUserId: null, providerId: 'codex', name: CODEX,
+      ids: [id],
+    });
+    expect(rested.coolingDown).toBe(true);
+    expect(rested.retryAfterSeconds).toBeGreaterThan(414_000);
   });
 });

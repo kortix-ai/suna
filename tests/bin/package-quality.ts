@@ -12,9 +12,8 @@ const skipSdkTests = process.env.KORTIX_PACKAGE_SKIP_SDK_TESTS === '1';
  * environment (KORTIX_TOKEN, KORTIX_PROJECT_ID, KORTIX_SUPERVISED, …) and
  * writes it to /dev/shm/kortix/agent-env.sh, which the CLI reads through
  * `sandboxEnvValue()`. Workspace suites inherit that identity and then fail
- * on tests that need a CI-shaped env (a compiled runtime rejects a foreign
- * KORTIX_PROJECT_ID; a supervised box refuses binary downloads; a direct
- * KORTIX_REPO_URL is refused). On a laptop or a GitHub runner none of these
+ * on tests that need a CI-shaped env (a supervised box refuses binary
+ * downloads; a direct KORTIX_REPO_URL is refused). On a laptop or a GitHub runner none of these
  * vars exist, so dropping them here reproduces exactly what CI sees. Suites
  * that need a value set it themselves (apps/api/scripts/test.env, per-test
  * setup); the Kortix-shared `sandboxEnvValue()` path is cut off with
@@ -31,9 +30,19 @@ function hermeticWorkspaceEnv(): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = {};
   for (const [name, value] of Object.entries(process.env)) {
     if (name.startsWith('KORTIX_') && !RUNNER_CONTROLS.has(name)) continue;
+    // The session also exports BASH_ENV=/dev/shm/kortix/agent-env.sh. A bash
+    // script started while the stack under test has written that file sources
+    // it at startup and injects the host's project identity into every test
+    // worker. Dropping it here reproduces CI, where BASH_ENV is unset.
+    if (name === 'BASH_ENV') continue;
     env[name] = value;
   }
   env.KORTIX_DISABLE_SANDBOX_ENV_FILE = '1';
+  // The platform points BASH_ENV at its agent-env file; every bash a lane
+  // spawns (apps/api/scripts/test.sh) would source it and re-export the
+  // ambient platform env right back. ENV covers the same hook for /bin/sh.
+  delete env.BASH_ENV;
+  delete env.ENV;
   // The same CI-shape rule for the two host files a Kortix sandbox image bakes:
   // the session env file the daemon's readiness gate reads, and the image's
   // baked model catalog. Neither exists on a laptop or a GitHub runner, so the
@@ -190,9 +199,16 @@ await runAll([
   run(['node', 'scripts/stage-npm-publish.test.mjs']),
   run(['node', 'scripts/publish-npm-package.test.mjs']),
   run(['node', '--test', 'scripts/check-blocked-terms.test.mjs']),
+  run(['node', '--test', 'scripts/dev-local.test.mjs']),
   run(['node', '--test', 'scripts/prod-us-east-2/*.test.mjs']),
 ]);
 await rejectFocusedTests();
+// apps/web's download-layout test launches Playwright Chromium. CI installs
+// the browser in the workflow before this lane; a worker sandbox that runs the
+// lane bare does not, and the test then fails with "Executable doesn't exist".
+// `playwright install` is idempotent (near-instant when the browser is
+// present) and honors PLAYWRIGHT_BROWSERS_PATH, so a CI cache still hits.
+await run(['pnpm', '--dir', 'tests', 'run', 'playwright:install']);
 await runAll([
   run(['pnpm', '--filter', '@kortix/sdk', 'typecheck']),
   run(['pnpm', '--filter', '@kortix/sdk', 'run', 'smoke:install']),
@@ -238,9 +254,3 @@ await runAll([
     2,
   ),
 ]);
-// apps/kortix-worker sits outside the pnpm workspace (own bun.lock, supply-chain
-// cooldown), so the workspace fan-out above cannot reach it. Install its deps
-// the way the sandbox-agent job does in ci.yml, then run its tests here — no
-// lane ran them before this.
-await run(['bun', 'install', '--frozen-lockfile'], { cwd: resolve(root, 'apps/kortix-worker') });
-await run(['bun', 'test', 'src/'], { cwd: resolve(root, 'apps/kortix-worker') });

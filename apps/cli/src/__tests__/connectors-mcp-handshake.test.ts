@@ -1,14 +1,15 @@
-import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { describe, expect, test } from 'bun:test';
+// Relative: apps/cli does not depend on the contract package. This file is
+// import-free, and kortixd bundles the same one.
+import { CONNECTORS_MCP_COMMAND } from '../../../../packages/api-contract/src/sandbox-layout';
 
 /**
  * Guards the contract between the sandbox daemon and this CLI.
  *
  * The daemon registers an OpenCode MCP server whose command is an argv array
- * pointing at this binary. Nothing type-checks that pairing: the daemon is a
- * standalone bun package with no workspace dependency on the CLI, and its own
- * unit tests only assert the argv *literal* it just produced.
+ * pointing at this binary (`CONNECTORS_MCP_COMMAND`). Nothing type-checks that
+ * the argv names a real command.
  *
  * That gap shipped a real outage. Commit e868be1d6c (2026-08-06) renamed the
  * CLI command `executor` -> `connectors` but pointed the daemon at `connector`,
@@ -17,40 +18,15 @@ import { describe, expect, test } from 'bun:test';
  * for six days, with every daemon unit test green, because they were updated
  * to match the typo.
  *
- * So this file asserts behaviour, not spelling: take the argv the daemon
- * actually registers, run it, and require a clean JSON-RPC handshake.
+ * So this file asserts behaviour, not spelling: run the argv the daemon
+ * registers and require a clean JSON-RPC handshake.
  */
 
 const CLI_ROOT = resolve(import.meta.dir, '..', '..');
 const CLI_ENTRY = join(CLI_ROOT, 'src', 'index.ts');
-const DAEMON_OPENCODE = resolve(
-  CLI_ROOT,
-  '..',
-  'kortix-sandbox-agent-server',
-  'src',
-  'harness',
-  'open-code',
-  'lifecycle.ts',
-);
 
-/**
- * Read the argv the daemon registers straight out of its source.
- *
- * Deliberately not an import: the daemon is a separate package (hono + zod,
- * no workspace deps) and pulling its module graph into a CLI test would couple
- * their installs. A tolerant regex over one literal is the cheap half of the
- * guard; running the result is the half that matters.
- */
 function daemonMcpArgv(): string[] {
-  const source = readFileSync(DAEMON_OPENCODE, 'utf8');
-  const match = source.match(/command:\s*\[([^\]]*)\]/);
-  if (!match) {
-    throw new Error(
-      `Could not find the MCP \`command:\` array in ${DAEMON_OPENCODE}. ` +
-        'If the daemon changed shape, update this guard — do not delete it.',
-    );
-  }
-  return [...match[1].matchAll(/'([^']*)'/g)].map((entry) => entry[1]);
+  return [...CONNECTORS_MCP_COMMAND];
 }
 
 async function runMcp(argv: string[], stdin: string) {

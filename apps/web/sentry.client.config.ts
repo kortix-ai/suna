@@ -104,6 +104,12 @@ if (SENTRY_DSN) {
       'invalid group specifier name',
       // Browser extension/runtime bridge noise
       'Invalid call to runtime.sendMessage(). Tab not found.',
+      // A third-party injected script's `chrome: call method` window-message
+      // RPC (page world → extension world) rejects when no receiver answers
+      // in time. Extension noise, never app code — `browser-error-noise.ts`
+      // drops it from `beforeSend` too; this string gate covers frame-less
+      // onerror/onunhandledrejection captures.
+      'Window message "chrome: call method" timed out.',
       // Firefox: an extension set `window.onerror` before this SDK loaded, and
       // the SDK's chained `_oldOnErrorHandler.apply(...)` is refused across the
       // extension compartment. The frame is the SDK in our bundle, so only

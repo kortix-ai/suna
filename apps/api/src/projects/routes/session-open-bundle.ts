@@ -45,7 +45,7 @@
 
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
-import { createRoute, z } from '@hono/zod-openapi';
+import { createRoute, z, type RouteHandler } from '@hono/zod-openapi';
 
 import { accountHasEntitlement, accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
@@ -58,11 +58,12 @@ import {
   loadVisibleSession,
   sessionIsTombstoned,
 } from '../lib/access';
-import { AnyObject, projectsApp } from '../lib/app';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { projectsApp, SessionSnapshotSchema } from '../lib/app';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 import { serializeSession } from '../lib/serializers';
 import { parseBoundedPositiveInt } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
+import type { AppEnv } from '../../types';
 import { readSessionAuditActions } from '../lib/session-audit-read';
 import { serializePrompt } from '../lib/session-prompt-view';
 import { buildSessionTranscriptSyncEnvelope } from '../lib/session-transcript';
@@ -107,18 +108,17 @@ const sessionSnapshotRoute = (path: string, summary: string) =>
       query: z.object({ transcript: z.string().optional() }),
     },
     responses: {
-      200: json(AnyObject, 'Everything the session view needs to paint and arm'),
+      200: json(SessionSnapshotSchema, 'Everything the session view needs to paint and arm'),
       ...errors(400, 404),
     },
   });
 
-const handleSessionSnapshot = async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const sessionId = c.req.param('sessionId');
+const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute>, AppEnv> = async (c) => {
+    const { projectId, sessionId } = c.req.valid('param');
     if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const transcriptLimit = parseBoundedPositiveInt(
-      c.req.query('transcript'),
+      c.req.valid('query').transcript,
       TRANSCRIPT_DEFAULT,
       0,
       TRANSCRIPT_MAX,
@@ -335,21 +335,24 @@ const handleSessionSnapshot = async (c: any) => {
     });
   };
 
-projectsApp.openapi(
-  sessionSnapshotRoute(
-    '/{projectId}/sessions/{sessionId}/snapshot',
-    'Get the session snapshot (state, prompts, audit) in one read',
-  ),
-  handleSessionSnapshot,
-);
-// The path every published `@kortix/sdk` requests (`getSessionOpenBundle`).
-// The #6987 rename to `/snapshot` left shipped clients 404ing here — the
-// bundle degraded silently to 6-8 serial reads on every session open. Same
-// handler, same contract; keep until no supported SDK requests it.
-projectsApp.openapi(
-  sessionSnapshotRoute(
-    '/{projectId}/sessions/{sessionId}/open-bundle',
-    'Get the session snapshot (legacy open-bundle path)',
-  ),
-  handleSessionSnapshot,
-);
+export function registerSessionOpenBundleRoutes(): void {
+  projectsApp.openapi(
+    sessionSnapshotRoute(
+      '/{projectId}/sessions/{sessionId}/snapshot',
+      'Get the session snapshot (state, prompts, audit) in one read',
+    ),
+    handleSessionSnapshot,
+  );
+
+  // The path every published `@kortix/sdk` requests (`getSessionOpenBundle`).
+  // The #6987 rename to `/snapshot` left shipped clients 404ing here — the
+  // bundle degraded silently to 6-8 serial reads on every session open. Same
+  // handler, same contract; keep until no supported SDK requests it.
+  projectsApp.openapi(
+    sessionSnapshotRoute(
+      '/{projectId}/sessions/{sessionId}/open-bundle',
+      'Get the session snapshot (legacy open-bundle path)',
+    ),
+    handleSessionSnapshot,
+  );
+}

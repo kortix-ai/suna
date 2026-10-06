@@ -37,7 +37,7 @@ import { runSessionsChat } from './commands/sessions-chat.ts';
 import { runSessionsConnect } from './commands/sessions-connect.ts';
 import { runSessions } from './commands/sessions.ts';
 import { runShip } from './commands/ship.ts';
-import { SYSTEM_SKILLS_COMMAND, runSystemSkills } from './commands/system-skills.ts';
+import { runSystemSkills } from './commands/system-skills.ts';
 import { runTokens } from './commands/tokens.ts';
 import { runTriggers } from './commands/triggers.ts';
 import { runReminders } from './commands/reminders.ts';
@@ -179,6 +179,83 @@ async function offerInteractiveUpdate(): Promise<boolean> {
   return true;
 }
 
+/**
+ * argv[0] → handler for every routed command. Aliases point at the same
+ * handler (`deploy`→ship, `attach`→sessions connect, `t`→tui,
+ * `perms`→permissions, `session`→sessions); the token-only, remind and
+ * skills adapters keep their extra arguments; `registry` keeps its stderr
+ * warning. `help`, `version`, `git-credential` and bare `kortix` stay
+ * special-cased in main() — they are landing-screen or protocol verbs, not
+ * subcommand dispatch.
+ *
+ * The record's KEY ORDER is load-bearing: the did-you-mean suggestion keeps
+ * the first best match on an edit-distance tie, and this order is the
+ * pre-1341 KNOWN_COMMANDS candidate order, with `perms` (dispatched before
+ * but never listed as a suggestion candidate) added after `permissions`.
+ */
+type RootCommandHandler = (argv: string[], invoked: string) => number | Promise<number>;
+
+const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
+  init: (rest) => runInit(rest),
+  ship: (rest) => runShip(rest),
+  deploy: (rest) => runShip(rest),
+  validate: (rest) => runValidate(rest),
+  schema: (rest) => runSchema(rest),
+  'self-host': (rest) => runSelfHost(rest),
+  login: (rest) => runLogin(rest),
+  logout: (rest) => runLogout(rest),
+  whoami: (rest) => runWhoami(rest),
+  doctor: (rest) => runDoctor(rest),
+  token: (rest) => runWhoami(['--token-only', ...rest]),
+  hosts: (rest) => runHosts(rest),
+  accounts: (rest) => runAccounts(rest),
+  members: (rest) => runMembers(rest),
+  groups: (rest) => runGroups(rest),
+  tokens: (rest) => runTokens(rest),
+  billing: (rest) => runBilling(rest),
+  projects: (rest) => runProjects(rest),
+  sessions: (rest) => runSessions(rest),
+  session: (rest) => runSessions(rest),
+  chat: (rest) => runSessionsChat(rest),
+  connect: (rest) => runSessionsConnect(rest),
+  attach: (rest) => runSessionsConnect(rest),
+  tui: (rest) => runTui(rest),
+  t: (rest) => runTui(rest),
+  files: (rest) => runFiles(rest),
+  cr: (rest) => runCr(rest),
+  review: (rest) => runReview(rest),
+  triggers: (rest) => runTriggers(rest),
+  reminders: (rest) => runReminders(rest),
+  remind: (rest) => runReminders(rest, true),
+  connectors: (rest) => runConnectors(rest),
+  secrets: (rest) => runSecrets(rest),
+  providers: (rest) => runProviders(rest),
+  env: (rest) => runEnv(rest),
+  gateway: (rest) => runGateway(rest),
+  apps: (rest) => runApps(rest),
+  channels: (rest) => runChannels(rest),
+  sandboxes: (rest) => runSandboxes(rest),
+  marketplace: (rest) => runMarketplace(rest),
+  'system-skills': (rest, invoked) => runSystemSkills(rest, invoked),
+  skills: (rest, invoked) => runSystemSkills(rest, invoked),
+  registry: (rest) => {
+    process.stderr.write(
+      `${C.yellow}developer command:${C.reset} registry is an internal marketplace authoring format; use ${C.cyan}kortix marketplace${C.reset} for normal install/search.\n`,
+    );
+    return runRegistry(rest);
+  },
+  agents: (rest) => runAgents(rest),
+  models: (rest) => runModels(rest),
+  access: (rest) => runAccess(rest),
+  roles: (rest) => runRoles(rest),
+  permissions: (rest) => runPermissions(rest),
+  perms: (rest) => runPermissions(rest),
+  audit: (rest) => runAudit(rest),
+  grants: (rest) => runGrants(rest),
+  update: (rest) => runUpdate(rest),
+  uninstall: (rest) => runUninstall(rest),
+};
+
 async function main(argv: string[]): Promise<number> {
   // Only the LEADING `--version`/`-v` is the global "print the CLI's own
   // version" flag. Scanning the whole argv used to hijack any subcommand's
@@ -212,166 +289,23 @@ async function main(argv: string[]): Promise<number> {
     argv[0] === 'connectors' &&
     (['call', 'discover', 'upload', 'mcp'].includes(argv[1] ?? '') ||
       (argv[1] === 'show' && (argv[2] ?? '').includes('.')) ||
-      ((argv[1] === 'ls' || argv[1] === 'list') && argv.includes('--session')));
+      ((argv[1] === 'ls' || argv[1] === 'list') &&
+        argv.some((arg) => arg === '--session' || arg.startsWith('--session='))));
   if (!connectorMachineCommand && !isMachineOutput(argv)) {
     printActiveHostNotice(argv);
     await printUpdateNoticeForCommand(argv[0]);
   }
-  if (argv[0] === 'init') {
-    return runInit(argv.slice(1));
-  }
-  // `deploy` is kept as a familiar alias for `ship`.
-  if (argv[0] === 'ship' || argv[0] === 'deploy') {
-    return runShip(argv.slice(1));
-  }
-  if (argv[0] === 'validate') {
-    return runValidate(argv.slice(1));
-  }
-  if (argv[0] === 'schema') {
-    return runSchema(argv.slice(1));
-  }
-  if (argv[0] === 'login') {
-    return runLogin(argv.slice(1));
-  }
-  if (argv[0] === 'logout') {
-    return runLogout(argv.slice(1));
-  }
-  if (argv[0] === 'whoami') {
-    return runWhoami(argv.slice(1));
-  }
-  if (argv[0] === 'doctor') {
-    return runDoctor(argv.slice(1));
-  }
-  if (argv[0] === 'token') {
-    return runWhoami(['--token-only', ...argv.slice(1)]);
-  }
-  if (argv[0] === 'projects') {
-    return runProjects(argv.slice(1));
-  }
-  if (argv[0] === 'hosts') {
-    return runHosts(argv.slice(1));
-  }
-  if (argv[0] === 'accounts') {
-    return runAccounts(argv.slice(1));
-  }
-  if (argv[0] === 'members') {
-    return runMembers(argv.slice(1));
-  }
-  if (argv[0] === 'groups') {
-    return runGroups(argv.slice(1));
-  }
-  // Exact match only — the singular `token` (whoami --token-only) stays.
-  if (argv[0] === 'tokens') {
-    return runTokens(argv.slice(1));
-  }
-  if (argv[0] === 'billing') {
-    return runBilling(argv.slice(1));
-  }
-  if (argv[0] === 'secrets') {
-    return runSecrets(argv.slice(1));
-  }
-  if (argv[0] === 'providers') {
-    return runProviders(argv.slice(1));
-  }
-  if (argv[0] === 'agents') {
-    return runAgents(argv.slice(1));
-  }
-  if (argv[0] === 'models') {
-    return runModels(argv.slice(1));
-  }
-  if (argv[0] === 'gateway') {
-    return runGateway(argv.slice(1));
-  }
-  if (argv[0] === 'apps') {
-    return runApps(argv.slice(1));
-  }
-  if (argv[0] === 'self-host') {
-    return runSelfHost(argv.slice(1));
-  }
-  if (argv[0] === 'env') {
-    return runEnv(argv.slice(1));
-  }
-  // Singular `session` is a permanent alias — `kortix session new` is typed
-  // often enough that a "did you mean" round-trip is pure friction.
-  if (argv[0] === 'sessions' || argv[0] === 'session') {
-    return runSessions(argv.slice(1));
-  }
-  if (argv[0] === 'chat') {
-    return runSessionsChat(argv.slice(1));
-  }
-  // Top-level aliases for `sessions connect` — the flagship "land me in the
-  // TUI" verb deserves a first-class name.
-  if (argv[0] === 'connect' || argv[0] === 'attach') {
-    return runSessionsConnect(argv.slice(1));
-  }
-  // `kortix t` is the everyday spelling; `tui` stays the documented name.
-  if (argv[0] === 'tui' || argv[0] === 't') {
-    return runTui(argv.slice(1));
-  }
-  if (argv[0] === 'files') {
-    return runFiles(argv.slice(1));
-  }
-  if (argv[0] === 'triggers') {
-    return runTriggers(argv.slice(1));
-  }
-  if (argv[0] === 'reminders') {
-    return runReminders(argv.slice(1));
-  }
-  // `remind` is the verb spelling of `reminders add`.
-  if (argv[0] === 'remind') {
-    return runReminders(argv.slice(1), true);
-  }
-  if (argv[0] === 'channels') {
-    return runChannels(argv.slice(1));
-  }
-  if (argv[0] === 'connectors') {
-    return runConnectors(argv.slice(1));
-  }
-  if (argv[0] === 'marketplace') {
-    return runMarketplace(argv.slice(1));
-  }
-  // `system-skills` is the canonical name; `skills` stays a permanent alias
-  // because every already-baked sandbox image seeds a kortix-system skill whose
-  // live pointer says `kortix skills get <name>`. Both hand the invoked name
-  // down so every hint the command prints matches how it was called.
-  if (argv[0] === SYSTEM_SKILLS_COMMAND || argv[0] === 'skills') {
-    return runSystemSkills(argv.slice(1), argv[0]);
-  }
-  if (argv[0] === 'registry') {
-    process.stderr.write(
-      `${C.yellow}developer command:${C.reset} registry is an internal marketplace authoring format; use ${C.cyan}kortix marketplace${C.reset} for normal install/search.\n`,
-    );
-    return runRegistry(argv.slice(1));
-  }
-  if (argv[0] === 'sandboxes') {
-    return runSandboxes(argv.slice(1));
-  }
-  if (argv[0] === 'cr') {
-    return runCr(argv.slice(1));
-  }
-  if (argv[0] === 'review') {
-    return runReview(argv.slice(1));
-  }
-  if (argv[0] === 'access') {
-    return runAccess(argv.slice(1));
-  }
-  if (argv[0] === 'roles') {
-    return runRoles(argv.slice(1));
-  }
-  if (argv[0] === 'permissions' || argv[0] === 'perms') {
-    return runPermissions(argv.slice(1));
-  }
-  if (argv[0] === 'audit') {
-    return runAudit(argv.slice(1));
-  }
-  if (argv[0] === 'grants') {
-    return runGrants(argv.slice(1));
-  }
-  if (argv[0] === 'update') {
-    return runUpdate(argv.slice(1));
-  }
-  if (argv[0] === 'uninstall') {
-    return runUninstall(argv.slice(1));
+  // argv[0] → handler. One exact-match dispatch replaces the old 47-branch
+  // if-chain. Aliases point at the same handler (`deploy`→ship, `attach`→
+  // sessions connect, `t`→tui, `perms`→permissions, `session`→sessions);
+  // the token-only, remind and skills adapters keep their extra arguments.
+  //
+  // The record's KEY ORDER is load-bearing for behavior, not cosmetics: the
+  // did-you-mean suggestion keeps the first best match on an edit-distance
+  // tie, so this order must match the old KNOWN_COMMANDS list exactly.
+  const handler = COMMAND_HANDLERS[argv[0]];
+  if (handler) {
+    return handler(argv.slice(1), argv[0]);
   }
   // Anything else is an unknown command. This must NEVER fall through to a
   // project scaffold — `kortix <new-project-name>` used to, which turned
@@ -387,62 +321,15 @@ async function main(argv: string[]): Promise<number> {
   return 2;
 }
 
-const KNOWN_COMMANDS = [
-  'init',
-  'ship',
-  'deploy',
-  'validate',
-  'schema',
-  'self-host',
-  'login',
-  'logout',
-  'whoami',
-  'doctor',
-  'token',
-  'hosts',
-  'accounts',
-  'members',
-  'groups',
-  'tokens',
-  'billing',
-  'projects',
-  'sessions',
-  'session',
-  'chat',
-  'connect',
-  'attach',
-  'tui',
-  't',
-  'files',
-  'cr',
-  'review',
-  'triggers',
-  'reminders',
-  'remind',
-  'connectors',
-  'secrets',
-  'providers',
-  'env',
-  'gateway',
-  'apps',
-  'channels',
-  'sandboxes',
-  'marketplace',
-  'system-skills',
-  'skills',
-  'registry',
-  'agents',
-  'models',
-  'access',
-  'roles',
-  'permissions',
-  'audit',
-  'grants',
-  'update',
-  'uninstall',
+/** Suggestion candidates for an unknown argv[0]: every dispatch key, plus the
+ *  two landing-screen verbs. Kept in the handler record's order, so a tie in
+ *  edit distance still resolves to the first candidate — the exact behavior
+ *  of the pre-1341 KNOWN_COMMANDS list. */
+const SUGGESTION_CANDIDATES: readonly string[] = [
+  ...Object.keys(COMMAND_HANDLERS),
   'help',
   'version',
-] as const;
+];
 
 function editDistance(a: string, b: string): number {
   const prev = Array.from({ length: b.length + 1 }, (_, i) => i);
@@ -465,7 +352,7 @@ function editDistance(a: string, b: string): number {
 function closestCommand(input: string): string | undefined {
   const needle = input.toLowerCase();
   let best: { name: string; distance: number } | undefined;
-  for (const name of KNOWN_COMMANDS) {
+  for (const name of SUGGESTION_CANDIDATES) {
     const distance = editDistance(needle, name);
     // The distance cap alone lets tiny inputs match anything short ("us" →
     // "cr"), so also require most of the input to survive the edit.

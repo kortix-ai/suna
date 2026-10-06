@@ -44,9 +44,9 @@ test('platinumJson gives up on a stalled connection instead of hanging forever',
     port: 0,
     fetch: () => new Promise<Response>(() => {}),
   });
-  // Explicit loopback: a host without a `localhost` resolver entry (a
-  // container without /etc/hosts) must not turn this transport test into a
-  // DNS test. The server is this test's own.
+  // `localhost` does not resolve on a platform sandbox, which answers
+  // ConnectionRefused instead of the stall this row simulates. Loopback by
+  // address connects on every host.
   mockPlatinumApiUrl = `http://127.0.0.1:${server.port}`;
 
   const { platinumJson } = await import('./platinum');
@@ -64,9 +64,8 @@ test('platinumJson respects an explicit caller-provided signal instead of the de
     port: 0,
     fetch: () => new Promise<Response>(() => {}),
   });
-  // Explicit loopback: a host without a `localhost` resolver entry (a
-  // container without /etc/hosts) must not turn this transport test into a
-  // DNS test. The server is this test's own.
+  // Same platform-sandbox resolution as the row above: the stall must reach
+  // the AbortSignal, not die as ConnectionRefused.
   mockPlatinumApiUrl = `http://127.0.0.1:${server.port}`;
 
   const { platinumJson } = await import('./platinum');

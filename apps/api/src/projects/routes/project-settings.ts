@@ -79,136 +79,6 @@ function pickOnboardingProfile(input: unknown): Record<string, string> | null {
   return Object.keys(out).length > 0 ? out : null;
 }
 
-projectsApp.openapi(
-  createRoute({
-    method: 'patch',
-    path: '/{projectId}/onboarding',
-    tags: ['projects'],
-    summary: 'Update project onboarding state',
-    ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: lenientBody({
-            completed: z.boolean().optional().openapi({ description: 'true marks onboarding complete; false clears it.' }),
-            profile: z.record(z.string(), z.any()).optional().openapi({ description: 'Onboarding answers to merge.' }),
-          }) } } },
-      },
-    responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(404),
-    },
-  }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const body = await readJsonObject(c);
-  const loaded = await loadProjectForUser(c, projectId, 'write');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  // Two independent writes share this route. `completed` is a TOP-LEVEL
-  // lifecycle flag; `profile` is a NESTED object written answer-by-answer as
-  // the user moves through the onboarding wizard. A request carries one or the
-  // other, never both.
-  const profile = pickOnboardingProfile(body.profile);
-
-  let metadataExpr;
-  if (profile) {
-    // Nested → metadataMergeSubtree, which re-reads `metadata->'onboarding'`
-    // inside the statement. A top-level `||` of the whole sub-object would let
-    // two concurrent writers into DIFFERENT sub-keys lose each other's update
-    // one level down.
-    metadataExpr = metadataMergeSubtree('onboarding', profile);
-  } else if ('completed' in body) {
-    // FIX-J: SQL-side atomic merge of ONLY `onboarding_completed_at` (set /
-    // delete) so this write can't revert a routing pin written concurrently.
-    metadataExpr =
-      body.completed === true
-        ? metadataMerge({ onboarding_completed_at: new Date().toISOString() })
-        : metadataMerge({}, ['onboarding_completed_at']);
-  } else {
-    // Nothing survived the allowlist and no completion flag was sent. Return
-    // the project unchanged rather than issue a no-op UPDATE that would still
-    // bump `updated_at` and reorder project lists for no reason.
-    return c.json(
-      serializeProject(loaded.row, {
-        projectRole: loaded.projectRole,
-        effectiveRole: loaded.effectiveRole,
-      }),
-    );
-  }
-
-  const [row] = await db
-    .update(projects)
-    .set({ metadata: metadataExpr, updatedAt: new Date() })
-    .where(eq(projects.projectId, projectId))
-    .returning();
-
-  if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
-  return c.json(serializeProject(row, {
-    projectRole: loaded.projectRole,
-    effectiveRole: loaded.effectiveRole,
-  }));
-},
-);
-
-// DELETE /v1/projects/:projectId
-
-projectsApp.openapi(
-  createRoute({
-    method: 'delete',
-    path: '/{projectId}',
-    tags: ['projects'],
-    summary: 'Delete a project',
-    ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-        query: z.object({ purge: z.enum(['true', 'false']).optional() }),
-      },
-    responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(404, 502),
-    },
-  }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // Deletion is admin-only. The floor `member` role explicitly excludes
-  // project.delete; loadProjectForUser('manage') would otherwise let
-  // members through via project.write.
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DELETE);
-
-  // Release prompt attachments first. After the irreversible purge below, a
-  // failed release would leave an active project without its repository; after
-  // the archive, the project answers 404, so a release could never be retried.
-  const { releasePromptAttachmentsForProject } = await import('../prompt-attachments');
-  await releasePromptAttachmentsForProject(projectId);
-
-  // Archiving is recoverable by default. Only an explicit purge permanently
-  // deletes a Kortix-managed upstream; user-connected/BYO repositories are
-  // always left untouched. Delete before hiding the project so provider
-  // failures remain visible and retryable.
-  const purge = c.req.query('purge') === 'true';
-  let repoDeleted = false;
-  if (purge) {
-    try {
-      repoDeleted = await deleteManagedProjectRepo(loaded.row);
-    } catch (error) {
-      console.error(`[projects] failed to delete managed repo for ${projectId}:`, error);
-      return c.json({ error: 'Failed to delete managed project repository' }, 502);
-    }
-  }
-
-  const [row] = await db
-    .update(projects)
-    .set({ status: 'archived', updatedAt: new Date() })
-    .where(eq(projects.projectId, projectId))
-    .returning();
-
-  if (!row) return c.json({ error: 'Not found' }, 404);
-  return c.json({ ok: true, archived: true, repo_deleted: repoDeleted });
-},
-);
-
 // PATCH /:projectId/features (canonical) and /:projectId/experimental
 // (compat alias — published SDKs call it) — set or clear a per-project
 // feature-flag override. Auth-first (matches the other project routes), then
@@ -229,14 +99,13 @@ const patchFeatureFlagHandler = async (c: any) => {
   }
   const feature = body.feature;
   const enabled = body.enabled;
-  // Floor 'read' (membership); project.customize.write is the human gate below
-  // (was 'manage' → project.write, so unchecking customize.write did nothing).
+  // Floor 'read' (membership); project.settings.write is the gate below.
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
   // Per-agent gate: toggling feature flags is project config. A scoped agent
-  // token must hold project.customize.write (no-op for humans/PATs).
-  assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  // token must hold project.settings.write (no-op for humans/PATs).
+  assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
   if (!isFeatureFlagKey(feature)) {
     return c.json({ error: `Unknown feature flag '${feature}'` }, 400);
   }
@@ -275,129 +144,260 @@ const patchFeatureFlagHandler = async (c: any) => {
   return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
 };
 
-for (const path of ['/{projectId}/features', '/{projectId}/experimental'] as const) {
+export function registerProjectSettingsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'patch',
-      path,
+      path: '/{projectId}/onboarding',
       tags: ['projects'],
-      summary:
-        path === '/{projectId}/features'
-          ? 'Set or clear a per-project feature-flag override'
-          : 'Set or clear a per-project feature-flag override (deprecated alias of /features)',
+      summary: 'Update project onboarding state',
+      ...auth,
+        request: {
+          params: z.object({ projectId: z.string() }),
+          body: { content: { 'application/json': { schema: lenientBody({
+              completed: z.boolean().optional().openapi({ description: 'true marks onboarding complete; false clears it.' }),
+              profile: z.record(z.string(), z.any()).optional().openapi({ description: 'Onboarding answers to merge.' }),
+            }) } } },
+        },
+      responses: {
+          200: json(z.any(), 'OK'),
+          ...errors(404),
+      },
+    }),
+    async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const body = await readJsonObject(c);
+    const loaded = await loadProjectForUser(c, projectId, 'write');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+    // Two independent writes share this route. `completed` is a TOP-LEVEL
+    // lifecycle flag; `profile` is a NESTED object written answer-by-answer as
+    // the user moves through the onboarding wizard. A request carries one or the
+    // other, never both.
+    const profile = pickOnboardingProfile(body.profile);
+
+    let metadataExpr;
+    if (profile) {
+      // Nested → metadataMergeSubtree, which re-reads `metadata->'onboarding'`
+      // inside the statement. A top-level `||` of the whole sub-object would let
+      // two concurrent writers into DIFFERENT sub-keys lose each other's update
+      // one level down.
+      metadataExpr = metadataMergeSubtree('onboarding', profile);
+    } else if ('completed' in body) {
+      // FIX-J: SQL-side atomic merge of ONLY `onboarding_completed_at` (set /
+      // delete) so this write can't revert a routing pin written concurrently.
+      metadataExpr =
+        body.completed === true
+          ? metadataMerge({ onboarding_completed_at: new Date().toISOString() })
+          : metadataMerge({}, ['onboarding_completed_at']);
+    } else {
+      // Nothing survived the allowlist and no completion flag was sent. Return
+      // the project unchanged rather than issue a no-op UPDATE that would still
+      // bump `updated_at` and reorder project lists for no reason.
+      return c.json(
+        serializeProject(loaded.row, {
+          projectRole: loaded.projectRole,
+          effectiveRole: loaded.effectiveRole,
+        }),
+      );
+    }
+
+    const [row] = await db
+      .update(projects)
+      .set({ metadata: metadataExpr, updatedAt: new Date() })
+      .where(eq(projects.projectId, projectId))
+      .returning();
+
+    if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
+    return c.json(serializeProject(row, {
+      projectRole: loaded.projectRole,
+      effectiveRole: loaded.effectiveRole,
+    }));
+  },
+  );
+
+  // DELETE /v1/projects/:projectId
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'delete',
+      path: '/{projectId}',
+      tags: ['projects'],
+      summary: 'Delete a project',
+      ...auth,
+        request: {
+          params: z.object({ projectId: z.string() }),
+          query: z.object({ purge: z.enum(['true', 'false']).optional() }),
+        },
+      responses: {
+          200: json(z.any(), 'OK'),
+          ...errors(404, 502),
+      },
+    }),
+    async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Deletion is admin-only. The floor `member` role explicitly excludes
+    // project.delete; loadProjectForUser('manage') would otherwise let
+    // members through via project.write.
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DELETE);
+
+    // Release prompt attachments first. After the irreversible purge below, a
+    // failed release would leave an active project without its repository; after
+    // the archive, the project answers 404, so a release could never be retried.
+    const { releasePromptAttachmentsForProject } = await import('../prompt-attachments');
+    await releasePromptAttachmentsForProject(projectId);
+
+    // Archiving is recoverable by default. Only an explicit purge permanently
+    // deletes a Kortix-managed upstream; user-connected/BYO repositories are
+    // always left untouched. Delete before hiding the project so provider
+    // failures remain visible and retryable.
+    const purge = c.req.query('purge') === 'true';
+    let repoDeleted = false;
+    if (purge) {
+      try {
+        repoDeleted = await deleteManagedProjectRepo(loaded.row);
+      } catch (error) {
+        console.error(`[projects] failed to delete managed repo for ${projectId}:`, error);
+        return c.json({ error: 'Failed to delete managed project repository' }, 502);
+      }
+    }
+
+    const [row] = await db
+      .update(projects)
+      .set({ status: 'archived', updatedAt: new Date() })
+      .where(eq(projects.projectId, projectId))
+      .returning();
+
+    if (!row) return c.json({ error: 'Not found' }, 404);
+    return c.json({ ok: true, archived: true, repo_deleted: repoDeleted });
+  },
+  );
+
+  for (const path of ['/{projectId}/features', '/{projectId}/experimental'] as const) {
+    projectsApp.openapi(
+      createRoute({
+        method: 'patch',
+        path,
+        tags: ['projects'],
+        summary:
+          path === '/{projectId}/features'
+            ? 'Set or clear a per-project feature-flag override'
+            : 'Set or clear a per-project feature-flag override (deprecated alias of /features)',
+        ...auth,
+        request: {
+          params: z.object({ projectId: z.string() }),
+          body: { content: { 'application/json': { schema: AnyObject } } },
+        },
+        responses: {
+          200: json(AnyObject, 'Updated project (with feature-flag state)'),
+          ...errors(400, 401, 403, 404),
+        },
+      }),
+      patchFeatureFlagHandler,
+    );
+  }
+
+  // PATCH /:projectId/sandbox-provider — set or clear the per-project sandbox-provider
+  // pin (Customize → Settings). The value must be an ENABLED provider
+  // (in ALLOWED_SANDBOX_PROVIDERS and with its API key configured), or null/'' to clear
+  // (follow the platform default/distribution). Bypasses the distribution weights by
+  // design — pin a project to platinum even when platinum's weight is 0. Same auth as
+  // the experimental toggle (project 'manage' + project.settings.write for agents).
+  projectsApp.openapi(
+    createRoute({
+      method: 'patch',
+      path: '/{projectId}/sandbox-provider',
+      tags: ['projects'],
+      summary: 'Set or clear the per-project sandbox provider override',
       ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
         body: { content: { 'application/json': { schema: AnyObject } } },
       },
       responses: {
-        200: json(AnyObject, 'Updated project (with feature-flag state)'),
+        // FIX-L: EITHER the updated project (immediate) OR a preparation object
+        // (prepare branch), discriminated by `kind`. Both are HTTP 200 (clients may
+        // hard-check === 200); `kind` disambiguates without shape-sniffing.
+        200: json(SandboxProviderPatchResultSchema, 'Updated project or preparation'),
         ...errors(400, 401, 403, 404),
       },
     }),
-    patchFeatureFlagHandler,
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const body = await readJsonObject(c);
+      const raw = body.provider ?? body.sandbox_provider;
+      // Floor 'read'; project.settings.write is the gate below.
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
+      assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
+
+      // Route the change through the durable prepare→verify→activate workflow.
+      // Switching to a safe target (null clear, the platform-default provider, or
+      // the already-active provider) is applied immediately and returns the
+      // updated project (back-compat). Switching to a DIFFERENT enabled provider
+      // (the Daytona→Platinum case) does NOT flip the active provider now — it
+      // records a durable transition, keeps the source active for new sessions,
+      // and returns a PREPARATION object the UI polls until the target image is
+      // built + verified, then activated.
+      try {
+        const result = await requestProviderTransition({ projectId, targetRaw: raw });
+        if (result.kind === 'immediate') {
+          if (result.projectRow.status === 'archived') return c.json({ error: 'Not found' }, 404);
+          // FIX-L: tag the immediate body with the `kind:'project'` discriminant so
+          // the client can branch on it without shape-sniffing (the prepare body
+          // already carries `kind:'preparation'` via serializeTransition).
+          return c.json({
+            kind: 'project' as const,
+            ...serializeProject(result.projectRow, {
+              projectRole: loaded.projectRole,
+              effectiveRole: loaded.effectiveRole,
+            }),
+          });
+        }
+        // The prepare branch's view is `serializeTransition(...)`, which already
+        // carries `kind:'preparation'`.
+        return c.json(result.view);
+      } catch (err) {
+        if (err instanceof ProviderTransitionError) {
+          return c.json({ error: err.message }, err.code === 'bad_provider' ? 400 : 404);
+        }
+        throw err;
+      }
+    },
+  );
+
+  // GET /:projectId/sandbox-provider/transition — poll the durable provider-migration
+  // transition for this project. The PATCH prepare branch (Daytona→Platinum) returns
+  // a `kind:'preparation'` body but does NOT flip the active provider; the client
+  // polls this endpoint until the transition reaches a terminal status. Project-scoped
+  // (loadProjectForUser rejects cross-project/non-member with a 404, same scoping as
+  // the PATCH). The body is a PUBLIC projection (see readPublicProjectTransitionState):
+  // status / provider / generation / timestamps / user-safe error class only — never
+  // the lease epoch, lease holder, raw provider error strings, image names, or template
+  // ids.
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/sandbox-provider/transition',
+      tags: ['projects'],
+      summary: 'Poll the per-project sandbox-provider migration transition',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+      responses: {
+        200: json(SandboxProviderTransitionStateSchema, 'Public provider-transition state'),
+        ...errors(401, 403, 404),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      return c.json(await readPublicProjectTransitionState(projectId));
+    },
   );
 }
-
-// PATCH /:projectId/sandbox-provider — set or clear the per-project sandbox-provider
-// pin (Customize → Settings). The value must be an ENABLED provider
-// (in ALLOWED_SANDBOX_PROVIDERS and with its API key configured), or null/'' to clear
-// (follow the platform default/distribution). Bypasses the distribution weights by
-// design — pin a project to platinum even when platinum's weight is 0. Same auth as
-// the experimental toggle (project 'manage' + project.customize.write for agents).
-projectsApp.openapi(
-  createRoute({
-    method: 'patch',
-    path: '/{projectId}/sandbox-provider',
-    tags: ['projects'],
-    summary: 'Set or clear the per-project sandbox provider override',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
-    },
-    responses: {
-      // FIX-L: EITHER the updated project (immediate) OR a preparation object
-      // (prepare branch), discriminated by `kind`. Both are HTTP 200 (clients may
-      // hard-check === 200); `kind` disambiguates without shape-sniffing.
-      200: json(SandboxProviderPatchResultSchema, 'Updated project or preparation'),
-      ...errors(400, 401, 403, 404),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const body = await readJsonObject(c);
-    const raw = body.provider ?? body.sandbox_provider;
-    // Floor 'read'; project.customize.write is the human gate below (was
-    // 'manage' → project.write, so unchecking customize.write did nothing here).
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
-    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
-
-    // Route the change through the durable prepare→verify→activate workflow.
-    // Switching to a safe target (null clear, the platform-default provider, or
-    // the already-active provider) is applied immediately and returns the
-    // updated project (back-compat). Switching to a DIFFERENT enabled provider
-    // (the Daytona→Platinum case) does NOT flip the active provider now — it
-    // records a durable transition, keeps the source active for new sessions,
-    // and returns a PREPARATION object the UI polls until the target image is
-    // built + verified, then activated.
-    try {
-      const result = await requestProviderTransition({ projectId, targetRaw: raw });
-      if (result.kind === 'immediate') {
-        if (result.projectRow.status === 'archived') return c.json({ error: 'Not found' }, 404);
-        // FIX-L: tag the immediate body with the `kind:'project'` discriminant so
-        // the client can branch on it without shape-sniffing (the prepare body
-        // already carries `kind:'preparation'` via serializeTransition).
-        return c.json({
-          kind: 'project' as const,
-          ...serializeProject(result.projectRow, {
-            projectRole: loaded.projectRole,
-            effectiveRole: loaded.effectiveRole,
-          }),
-        });
-      }
-      // The prepare branch's view is `serializeTransition(...)`, which already
-      // carries `kind:'preparation'`.
-      return c.json(result.view);
-    } catch (err) {
-      if (err instanceof ProviderTransitionError) {
-        return c.json({ error: err.message }, err.code === 'bad_provider' ? 400 : 404);
-      }
-      throw err;
-    }
-  },
-);
-
-// GET /:projectId/sandbox-provider/transition — poll the durable provider-migration
-// transition for this project. The PATCH prepare branch (Daytona→Platinum) returns
-// a `kind:'preparation'` body but does NOT flip the active provider; the client
-// polls this endpoint until the transition reaches a terminal status. Project-scoped
-// (loadProjectForUser rejects cross-project/non-member with a 404, same scoping as
-// the PATCH). The body is a PUBLIC projection (see readPublicProjectTransitionState):
-// status / provider / generation / timestamps / user-safe error class only — never
-// the lease epoch, lease holder, raw provider error strings, image names, or template
-// ids.
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/sandbox-provider/transition',
-    tags: ['projects'],
-    summary: 'Poll the per-project sandbox-provider migration transition',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-    },
-    responses: {
-      200: json(SandboxProviderTransitionStateSchema, 'Public provider-transition state'),
-      ...errors(401, 403, 404),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    return c.json(await readPublicProjectTransitionState(projectId));
-  },
-);

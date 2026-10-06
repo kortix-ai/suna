@@ -4,6 +4,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 
 import { Button } from '@/components/ui/button';
+import { sessionCanBeStopped } from '@/components/projects/session-label';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,7 +30,9 @@ import {
 import { SessionPendingApprovalsIndicator } from '@/features/session/header/session-pending-approvals-indicator';
 import { SessionRemindersIndicator } from './session-reminders-indicator';
 import { SessionTitleInput } from '@/features/session/header/session-title-input';
+import { childSessionHref } from '@/features/session/tool/tools/session-spawn-urls';
 import { SubagentHoverCard, subagentTitle } from '@/features/session/header/subagent-hover-card';
+import { Copy } from '@/features/icon/icons/copy';
 import { Home } from '@/features/icon/icons/home';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
@@ -49,6 +52,7 @@ import {
 import { directSubsessions, restartProjectSession, stopProjectSession } from '@kortix/sdk';
 import {
   qk,
+  useForkSession,
   useProjectSession,
   useRuntimeSupports,
   useSessionParticipants,
@@ -56,7 +60,7 @@ import {
 import {
   ArrowsClockwiseIcon,
   CaretDoubleLeftIcon,
-  CopyIcon,
+  GitForkIcon,
   LinkSimpleIcon,
   CaretDownIcon,
   CodeSimpleIcon as Code2,
@@ -83,10 +87,10 @@ const DEV_TOOLS: {
   label: string;
   Icon: React.ComponentType<{ className?: string }>;
 }[] = [
-  { view: 'terminal', label: 'Terminal', Icon: TerminalIcon },
-  { view: 'browser', label: 'Browser', Icon: GlobeSimpleIcon },
-  { view: 'files', label: 'Files', Icon: FolderSimpleIcon },
-];
+    { view: 'terminal', label: 'Terminal', Icon: TerminalIcon },
+    { view: 'browser', label: 'Browser', Icon: GlobeSimpleIcon },
+    { view: 'files', label: 'Files', Icon: FolderSimpleIcon },
+  ];
 
 interface SessionSiteHeaderProps {
   sessionId: string;
@@ -233,7 +237,13 @@ export function SessionSiteHeader({
       );
     },
   });
-  const canStop = !!projectSession && projectSession.status === 'running' && canManageLifecycle;
+  const canStop = !!projectSession && sessionCanBeStopped(projectSession) && canManageLifecycle;
+
+  // Fork this conversation into a new one in the same sandbox: the runtime's
+  // own `session.fork` (a capability, so a pi session shows no item). The fork
+  // carries the copied history; open it on the same project-session route.
+  const canFork = useRuntimeSupports('session.fork') && isProjectSession;
+  const forkSession = useForkSession();
 
   // Hoisted so the chip and the ⋯ item share one pending state and one confirm
   // dialog. `canManageLifecycle` is the client mirror of the reload route's own
@@ -275,60 +285,97 @@ export function SessionSiteHeader({
             </>
           )}
 
-          <DropdownMenuItem
-            className="cursor-pointer"
-            disabled={restartMutation.isPending}
-            onClick={() => restartMutation.mutate()}
-          >
-            {restartMutation.isPending ? <Loading /> : <RotateCcw />}
-            {tI18nHardcoded.raw('i18nComplete.text6b983a81e5e8')}
-          </DropdownMenuItem>
+          {/* Restart, Reload, Stop and Delete belong to the session owner or
+              a project manager: the server answers anyone else 403. */}
           {canManageLifecycle && (
-            <DropdownMenuItem
-              className="cursor-pointer"
-              disabled={reloadConfig.isPending}
-              onClick={() => reloadConfig.reload()}
-            >
-              {reloadConfig.isPending ? <Loading /> : <ArrowsClockwiseIcon />}
-              {tI18nHardcoded.raw('i18nComplete.textb4b21a20cc58')}
-            </DropdownMenuItem>
-          )}
-          {canStop && (
-            <DropdownMenuItem
-              className="cursor-pointer"
-              disabled={stopMutation.isPending}
-              onClick={() => stopMutation.mutate()}
-            >
-              {stopMutation.isPending ? <Loading /> : <Square />}
-              {tI18nHardcoded.raw('i18nComplete.textcae7d57bc067')}
-            </DropdownMenuItem>
-          )}
+            <>
+              <DropdownMenuItem
+                className="cursor-pointer"
+                disabled={restartMutation.isPending}
+                onClick={() => restartMutation.mutate()}
+              >
+                {restartMutation.isPending ? <Loading /> : <RotateCcw />}
+                {tI18nHardcoded.raw('i18nComplete.text6b983a81e5e8')}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="cursor-pointer"
+                disabled={reloadConfig.isPending}
+                onClick={() => reloadConfig.reload()}
+              >
+                {reloadConfig.isPending ? <Loading /> : <ArrowsClockwiseIcon />}
+                {tI18nHardcoded.raw('i18nComplete.textb4b21a20cc58')}
+              </DropdownMenuItem>
+              {canStop && (
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  disabled={stopMutation.isPending}
+                  onClick={() => stopMutation.mutate()}
+                >
+                  {stopMutation.isPending ? <Loading /> : <Square />}
+                  {tI18nHardcoded.raw('i18nComplete.textcae7d57bc067')}
+                </DropdownMenuItem>
+              )}
 
-          <DropdownMenuSeparator />
+              <DropdownMenuSeparator />
+            </>
+          )}
         </>
       )}
 
       {isProjectSession && (
         <>
           <DropdownMenuItem
-            className="text-muted-foreground hover:text-foreground/90 cursor-pointer [&_svg]:opacity-70"
+            className="cursor-pointer"
             onClick={() => copyValue(tPalette('copySessionId'), projectSessionId!)}
           >
-            <CopyIcon />
+            <Copy />
             {tPalette('copyAction', { label: tPalette('copySessionId') })}
           </DropdownMenuItem>
           <DropdownMenuItem
-            className="text-muted-foreground hover:text-foreground/90 cursor-pointer [&_svg]:opacity-70"
+            className="cursor-pointer"
             onClick={() => copyValue(tPalette('copySessionLink'), window.location.href)}
           >
             <LinkSimpleIcon />
             {tPalette('copyAction', { label: tPalette('copySessionLink') })}
           </DropdownMenuItem>
+          {canFork && (
+            <DropdownMenuItem
+              className="cursor-pointer"
+              disabled={forkSession.isPending}
+              onClick={() =>
+                forkSession.mutate(
+                  { sessionId },
+                  {
+                    onSuccess: (fork) => {
+                      if (projectId && projectSessionId) {
+                        router.push(
+                          childSessionHref(
+                            `/projects/${projectId}/sessions/${projectSessionId}`,
+                            fork.id,
+                          ),
+                        );
+                      }
+                    },
+                    onError: (err) => {
+                      errorToast(
+                        err instanceof Error
+                          ? err.message
+                          : tI18nHardcoded.raw('i18nComplete.text32ad3abe4479'),
+                      );
+                    },
+                  },
+                )
+              }
+            >
+              {forkSession.isPending ? <Loading /> : <GitForkIcon />}
+              {tI18nHardcoded.raw('i18nComplete.text0e5f7f6732e0')}
+            </DropdownMenuItem>
+          )}
         </>
       )}
 
       <DropdownMenuItem
-        className="text-muted-foreground hover:text-foreground/90 cursor-pointer [&_svg]:opacity-70"
+        className="cursor-pointer"
         onClick={() => setExportOpen(true)}
       >
         <FileDown />
@@ -337,7 +384,7 @@ export function SessionSiteHeader({
 
       {canCompact && (
         <DropdownMenuItem
-          className="text-muted-foreground hover:text-foreground/90 cursor-pointer [&_svg]:opacity-70"
+          className="cursor-pointer"
           onClick={() => setCompactOpen(true)}
         >
           <Layers />
@@ -345,7 +392,7 @@ export function SessionSiteHeader({
         </DropdownMenuItem>
       )}
 
-      {isProjectSession && (
+      {isProjectSession && canManageLifecycle && (
         <>
           <DropdownMenuSeparator />
 

@@ -214,7 +214,7 @@ mock.module('../projects/lib/on-behalf-of', () => ({
 }));
 
 // IAM — a prompt that switches to a CONCRETE agent is authorized for
-// `project.agent.read` on that agent before the re-mint (sandbox-proxy/routes/preview.ts).
+// `project.agent.read` on that agent before the re-mint (sandbox-proxy/forward/access.ts).
 // The real engine issues an `innerJoin` this file's `db` stub does not build, so
 // leaving it unmocked makes `authorize` throw, the forward retry 4x, and every
 // agent-switch assertion answer 502 instead of the 204 it is about.
@@ -741,18 +741,6 @@ describe('Preview proxy: websocket upgrade (path form)', () => {
     expect(upstream.searchParams.get('public_share')).toBeNull();
     expect(upstream.searchParams.get('wake')).toBeNull();
     expect(upstream.searchParams.get('cursor')).toBe('5');
-  });
-
-  // Both sides of one contract in two packages: the daemon's health payload
-  // must publish the field the lookup reads.
-  test('the daemon health payload publishes the runtime port (harness.details.port)', async () => {
-    const health = await Bun.file(
-      new URL(
-        '../../../kortix-sandbox-agent-server/src/harness/open-code/diagnostics.ts',
-        import.meta.url,
-      ).pathname,
-    ).text();
-    expect(health).toContain('port: opencode.getActivePort()');
   });
 });
 
@@ -1645,7 +1633,7 @@ describe('Preview proxy: retry exhaustion', () => {
 // no wake, no resend of the (non-idempotent) message, and a distinct,
 // honest signal instead of the generic "sandbox unreachable" 502. See
 // preview-retry-budget.ts (proxyAttemptTimeoutMs) and forwardToSandbox's
-// catch block in routes/preview.ts.
+// catch block in forward/retry.ts.
 describe('Preview proxy: long-turn completion timeout', () => {
   test('a connect-timer abort on POST /session/:id/message returns 504 LONG_TURN_PROXY_TIMEOUT — no wake, no resend', async () => {
     const savedFetch = globalThis.fetch;

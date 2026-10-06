@@ -12,7 +12,7 @@ import { logger } from '../log/logger'
  * projects — mostly `POST turn-stream`, also `audit/events` and
  * `runtime-assets/manifest` — one box posting for a full 12h after its lease
  * closed. Every call site retries a transient failure on its own schedule
- * (`opencode-audit-relay.ts`'s exponential backoff, `claimInitialTurnFromApi`'s
+ * (`opencode-audit-relay.ts`'s exponential backoff, `claimInitialTurn`'s
  * 3-attempt ladder, …) because most 401/5xx responses ARE transient. A dead
  * session token never recovers — no retry schedule, however patient, is the
  * right answer — so this is a SEPARATE signal, orthogonal to each call site's

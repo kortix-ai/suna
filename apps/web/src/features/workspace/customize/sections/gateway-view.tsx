@@ -383,7 +383,7 @@ export function LlmManagementView({
   // visible, but the project-default model picker is hidden so a read-only
   // user cannot trigger a forbidden write.
   const canWrite =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE).allowed === true;
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MODEL_WRITE).allowed === true;
 
   // Follow an external deep-link (e.g. openCustomize('llm-providers')) to its
   // tab. Plain in-view tab clicks stay local and never move the main rail.

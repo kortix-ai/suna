@@ -20,7 +20,7 @@ import { matchesInternalToken, weakInternalTokenWarnings } from './internal-auth
 import { gatewayModelCatalog } from './models/catalog-models';
 import { servableProjectCatalog } from './models/servable-catalog';
 import { resolveCandidates } from './resolution/resolve-candidates';
-import { coolDownAccountSecret } from '../secrets/account-resource';
+import { MAX_ACCOUNT_SECRET_REST_SECONDS, coolDownAccountSecret } from '../secrets/account-resource';
 import { refreshRefusedCodexAccountLogin } from './credentials/codex';
 import { refreshRefusedOpencodeLogin } from './credentials/opencode-console';
 import { codexDescriptor } from './resolution/descriptors';
@@ -103,7 +103,7 @@ export function createInternalGatewayRoutes() {
   app.post('/pool-rate-limit', async (c) => {
     const parsed = z.object({
       principal: z.object({ accountId: z.string().uuid(), sessionId: z.string().uuid() }),
-      secretId: z.string().uuid(), seconds: z.number().int().min(1).max(60),
+      secretId: z.string().uuid(), seconds: z.number().int().min(1).max(MAX_ACCOUNT_SECRET_REST_SECONDS),
     }).safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'Invalid pool rate limit' }, 400);
     await coolDownAccountSecret(parsed.data.secretId, parsed.data.principal.accountId, parsed.data.seconds);

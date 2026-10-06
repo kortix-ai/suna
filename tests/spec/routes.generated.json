@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 701,
+  "count": 721,
   "routes": [
     {
       "method": "GET",
@@ -600,6 +600,14 @@
     },
     {
       "method": "GET",
+      "path": "/v1/accounts/me/devices"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/me/devices/:sessionId"
+    },
+    {
+      "method": "GET",
       "path": "/v1/accounts/tokens"
     },
     {
@@ -1160,18 +1168,6 @@
     },
     {
       "method": "GET",
-      "path": "/v1/git/:project/compiled-checkout"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/git/:project/compiled-pi-runtime"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/git/:project/compiled-runtime"
-    },
-    {
-      "method": "GET",
       "path": "/v1/git/:project/fast-boot-bundle"
     },
     {
@@ -1201,6 +1197,14 @@
     {
       "method": "GET",
       "path": "/v1/health/ready"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/llm-gateway/*"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/llm/*"
     },
     {
       "method": "GET",
@@ -1303,6 +1307,10 @@
       "path": "/v1/ops/overview"
     },
     {
+      "method": "ALL",
+      "path": "/v1/p/:sandboxId/:port/*"
+    },
+    {
       "method": "OPTIONS",
       "path": "/v1/p/auth"
     },
@@ -1317,6 +1325,22 @@
     {
       "method": "GET",
       "path": "/v1/p/public-share/:token"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/p/public-share/:token/:port"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/p/public-share/:token/:port/*"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/p/public-share/:token/file"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/p/public-share/:token/file/*"
     },
     {
       "method": "GET",
@@ -2252,18 +2276,6 @@
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/environment"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/environment/ensure"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/environment/stop"
-    },
-    {
-      "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/events"
     },
     {
@@ -2273,6 +2285,10 @@
     {
       "method": "PUT",
       "path": "/v1/projects/:projectId/sessions/:sessionId/model"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/model-usage"
     },
     {
       "method": "GET",
@@ -2559,6 +2575,38 @@
       "path": "/v1/router/chat/completions"
     },
     {
+      "method": "ALL",
+      "path": "/v1/router/context7"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/context7/*"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/firecrawl"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/firecrawl/*"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/gemini"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/gemini/*"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/groq"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/groq/*"
+    },
+    {
       "method": "GET",
       "path": "/v1/router/health"
     },
@@ -2575,8 +2623,40 @@
       "path": "/v1/router/models/:model"
     },
     {
+      "method": "ALL",
+      "path": "/v1/router/openai"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/openai/*"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/serper"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/serper/*"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/tavily"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/tavily/*"
+    },
+    {
       "method": "POST",
       "path": "/v1/router/web-search"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/xai"
+    },
+    {
+      "method": "ALL",
+      "path": "/v1/router/xai/*"
     },
     {
       "method": "GET",

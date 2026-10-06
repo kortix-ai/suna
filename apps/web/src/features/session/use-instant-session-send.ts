@@ -512,6 +512,8 @@ interface UseInstantSessionSendResult {
     options: ComposerOptions,
     attachments?: AttachmentSubmission,
   ) => Promise<void>;
+  /** Drop this tab's copy of a sent message, whose text outranks the row's. */
+  forgetExtraSend: (clientMessageId: string) => void;
 }
 
 /**
@@ -596,5 +598,13 @@ export function useInstantSessionSend(
     ],
   );
 
-  return { submitted, effectiveSubmission, extraSends, handleSend };
+  // An edited queued message (`queued-prompt-edit.ts`) must show the server's
+  // new text, not this tab's copy of the old one.
+  const forgetExtraSend = useCallback(
+    (clientMessageId: string) =>
+      setExtraSends((prev) => prev.filter((extra) => extra.id !== clientMessageId)),
+    [setExtraSends],
+  );
+
+  return { submitted, effectiveSubmission, extraSends, handleSend, forgetExtraSend };
 }

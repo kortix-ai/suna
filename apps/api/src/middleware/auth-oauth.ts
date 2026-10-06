@@ -1,7 +1,7 @@
 import { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { validateOAuthAccessToken, oauthScopeAllowsPath } from '../oauth/access-token';
-import { auditLoginFail, auditLoginSuccess } from '../shared/auth-audit';
+import { auditLoginFail, auditLoginSuccess } from './auth-audit';
 import { setSentryUser } from '../lib/sentry';
 import { setContextField } from '../lib/request-context';
 
