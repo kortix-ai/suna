@@ -4,6 +4,7 @@
 import { flow } from "../core/flow";
 import { createDatabaseSession } from '../fixtures/database-project';
 import { subscribe } from '../fixtures/billing';
+import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
 
 flow(
   "SEC-POOL-1",
@@ -13,6 +14,7 @@ flow(
       "POST /v1/accounts/:accountId/secret-resources",
       "GET /v1/accounts/:accountId/secret-resources",
       "PUT /v1/accounts/:accountId/secret-resources/:secretId/value",
+      "POST /v1/accounts/:accountId/secret-resources/:secretId/retry",
       "DELETE /v1/accounts/:accountId/secret-resources/:secretId",
     ],
   },
@@ -46,6 +48,12 @@ flow(
         { value: "rotated-test-value" }, { params: { ...params, secretId: ids[0]! } });
       response.status(200).body().has("$.secret_id", ids[0]!);
       if ("value" in response.json<any>()) throw new Error("secret value leaked in rotation response");
+    });
+    await ctx.step("retry ends a key's cooldown for its manager; a nonmember is denied", async () => {
+      const response = await ctx.client.as(ctx.P.OWNER).post(`${path}/:secretId/retry`, {}, { params: { ...params, secretId: ids[1]! } });
+      response.status(200).body().has("$.secret_id", ids[1]!).has("$.cooldown_until", null);
+      if ("value" in response.json<any>()) throw new Error("secret value leaked in retry response");
+      (await ctx.client.as(ctx.P.NONMEMBER).post(`${path}/:secretId/retry`, {}, { params: { ...params, secretId: ids[1]! } })).status([403, 404]);
     });
     await ctx.step("delete primary; backup remains", async () => {
       (await ctx.client.as(ctx.P.OWNER).del(`${path}/:secretId`, { params: { ...params, secretId: ids[0]! } })).status(200);
@@ -1793,5 +1801,81 @@ flow('SEC-AUD-3', {
       { values: { LINK_TEAM_KEY: 'link-team-value' } }, { params: { token } })).status(200);
     const shares = await shareOf('LINK_TEAM_KEY');
     if (!shares || shares.length !== 0) throw new Error(`audience: ${JSON.stringify(shares)}`);
+  });
+});
+
+// ── SEC-AUD-4 — an audience outlives the people and groups it names ───────
+// A value with no audience grant is usable by everyone, so removing its last
+// grant shared an "Only you" value with the whole project. Promoting the holder
+// to admin, removing them from the account, and deleting the only group in the
+// audience all did that. The value now stays restricted to who it named.
+flow('SEC-AUD-4', {
+  domain: 'secrets',
+  requires: ['database'],
+  routes: [
+    'POST /v1/projects/:projectId/secrets',
+    'GET /v1/projects/:projectId/secrets',
+    'PATCH /v1/accounts/:accountId/members/:userId',
+    'DELETE /v1/accounts/:accountId/members/:userId',
+    'POST /v1/accounts/:accountId/iam/groups',
+    'POST /v1/accounts/:accountId/iam/groups/:groupId/members',
+    'DELETE /v1/accounts/:accountId/iam/groups/:groupId',
+  ],
+}, async (ctx) => {
+  const team = await ctx.fixtures.team();
+  const project = await team.project({ seed: true, allowAllSecrets: true });
+  const holder = await team.addMember('member');
+  await team.grantProjectRole(project.id, holder.userId!, 'manager');
+  const leaver = await team.addMember('member');
+  await team.grantProjectRole(project.id, leaver.userId!, 'manager');
+  const teammate = await team.addMember('member');
+  await team.grantProjectRole(project.id, teammate.userId!, 'manager');
+  const params = { projectId: project.id };
+  const asOwner = ctx.client.as(ctx.P.OWNER);
+  const store = (as: typeof holder, name: string, shared_with: unknown[]) =>
+    ctx.client.as(as).post('/v1/projects/:projectId/secrets', { name, value: `${name.toLowerCase()}-value`, shared_with }, { params });
+  // What a manager outside the audience sees: the value, restricted, not usable.
+  const restrictedForTeammate = async (identifier: string, principalId: string) => {
+    const r = await ctx.client.as(teammate).get('/v1/projects/:projectId/secrets', { params });
+    r.status(200);
+    const row = r.json<{ items: Array<Record<string, any>> }>().items.find((item) => item.identifier === identifier);
+    if (!row || row.usable !== false || row.shared_with?.length !== 1 || row.shared_with[0].principal_id !== principalId) {
+      throw new Error(`${identifier} is no longer restricted to ${principalId}: ${JSON.stringify(row)}`);
+    }
+  };
+
+  await ctx.step('a manager saves a value as "Only you" → a teammate lists it, restricted and not usable', async () => {
+    (await store(holder, 'HOLDER_ONLY', [{ principal_type: 'user', principal_id: holder.userId }])).status(200);
+    await restrictedForTeammate('HOLDER_ONLY', holder.userId!);
+  });
+
+  await ctx.step('the account owner promotes the holder to admin → 200; the value stays restricted to the holder', async () => {
+    (await asOwner.patch('/v1/accounts/:accountId/members/:userId', { role: 'admin' }, {
+      params: { accountId: team.id, userId: holder.userId! },
+    })).status(200);
+    await restrictedForTeammate('HOLDER_ONLY', holder.userId!);
+  });
+
+  await ctx.step('the owner removes a member → a value only they could use stays closed to everyone else', async () => {
+    (await store(leaver, 'LEAVER_ONLY', [{ principal_type: 'user', principal_id: leaver.userId }])).status(200);
+    (await asOwner.del('/v1/accounts/:accountId/members/:userId', {
+      params: { accountId: team.id, userId: leaver.userId! },
+    })).status(200);
+    await restrictedForTeammate('LEAVER_ONLY', leaver.userId!);
+  });
+
+  await ctx.step('the owner deletes the only group in an audience → the value stays closed', async () => {
+    // Groups are an rbac entitlement; the platform admin unlocks it for this account.
+    await enableEnterpriseDemo(ctx, team.id);
+    const created = await asOwner.post('/v1/accounts/:accountId/iam/groups',
+      { name: ctx.fixtures.name('grp'), description: 'e2e' }, { params: { accountId: team.id } });
+    created.status(201);
+    const groupId = created.json<{ group_id: string }>().group_id;
+    (await asOwner.post('/v1/accounts/:accountId/iam/groups/:groupId/members',
+      { userIds: [holder.userId!] }, { params: { accountId: team.id, groupId } })).status(200);
+    (await store(holder, 'GROUP_ONLY', [{ principal_type: 'group', principal_id: groupId }])).status(200);
+    (await asOwner.del('/v1/accounts/:accountId/iam/groups/:groupId', { params: { accountId: team.id, groupId } }))
+      .status(200).body().has('$.deleted', true);
+    await restrictedForTeammate('GROUP_ONLY', groupId);
   });
 });

@@ -138,7 +138,8 @@ describe('daemon file write routes', () => {
     expect(body).toMatchObject({
       daemon: 'ok',
       opencode: 'ok',
-      capabilities: ['file.import', 'file.append', 'runtime.turns.v1', 'config.release.v1', ...RUNTIME_CAPABILITIES],
+      // The fake OpenCode reports no version, so steering (1.18.15 and later) is not listed.
+      capabilities: ['file.import', 'file.append', 'runtime.turns.v1', 'config.release.v1', ...RUNTIME_CAPABILITIES.filter((capability) => capability !== 'session.steer')],
     })
     // The config block and the legacy config_dir_sha field.
     expect(Object.keys(body.config as object).sort()).toEqual([

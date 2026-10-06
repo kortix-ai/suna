@@ -10,7 +10,7 @@ name: i18n-catalogs
 # This job compares the pull request, merged into its base, with the base: every
 # catalog must be canonical and must keep the base's key order. The logic is the
 # script, so the same check runs locally:
-#   node apps/web/scripts/i18n-catalogs.mjs check --base=origin/main
+#   node apps/web/scripts/i18n-catalogs.mjs check --base=origin/dev
 # An intentional reorder (for example STARTER_PROMPTS changed order) is allowed
 # by the `i18n-reorder` label on a release pull request, and on a push by the
 # commit trailer `I18n-Reorder: intentional`; the canonical check still runs.
@@ -21,7 +21,7 @@ on:
   # their box. The push to `main` is the non-blocking post-merge check; release
   # pull requests (`staging`, `prod`) are the gate.
   push:
-    branches: [main]
+    branches: [dev]
     paths:
       - 'apps/web/translations/**'
       - 'apps/web/scripts/i18n-catalogs.mjs'

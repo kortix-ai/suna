@@ -5,6 +5,7 @@ import type { GitBackedProject } from '../projects/git/types';
 import { db } from '../shared/db';
 import { PROJECT_SNAPSHOT_FORMAT, type ProjectSnapshotRepository } from './project-snapshot-store';
 import { buildProjectSnapshotArchive, publishProjectSnapshot, ProjectSnapshotTooLargeError, type BuiltProjectSnapshot } from './project-snapshot-build';
+import { exponentialBackoffMs } from '../shared/backoff';
 
 // ── Worker claim / settle ───────────────────────────────────────────────────
 
@@ -12,7 +13,7 @@ export const PROJECT_SNAPSHOT_MAX_ATTEMPTS = 5;
 const BUILD_LEASE_MINUTES = 15;
 
 export function projectSnapshotRetryDelayMs(attempts: number): number {
-  return Math.min(3_600_000, 30_000 * 2 ** Math.max(0, attempts - 1));
+  return exponentialBackoffMs({ attempt: attempts, baseMs: 30_000, capMs: 3_600_000 });
 }
 
 interface ClaimedRow extends Record<string, unknown> {

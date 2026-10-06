@@ -34,7 +34,7 @@ import {
   manifestHashForConnector,
 } from '../projects/connectors';
 import { type GitBackedProject, isRepoFileNotFoundError, readRepoFile } from '../projects/git';
-import { withProjectGitAuth } from '../projects/index';
+import { withProjectGitAuth } from '../projects/surface';
 import { extractProjectPolicies } from '../projects/policies';
 import {
   confineSharedProjectSecretToConnector,

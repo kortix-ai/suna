@@ -3,7 +3,7 @@ import { chatEventDedup, chatThreads, projectSessions, projects } from '@kortix/
 import { db } from '../../shared/db';
 import { config } from '../../config';
 import {
-  continueSession as continueLifecycleSession,
+  deliverThroughQueue,
   createSession as createLifecycleSession,
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
 } from '../../projects/session-lifecycle';
@@ -58,7 +58,7 @@ import { describeTeamsConversation, isPersonalChat, stripTeamsMentions, teamsMes
 import { ensureTeamsThreadParticipant, normalizeConversationPolicy, rememberTeamsThreadOwner } from './participants';
 
 const defaultTeamsSessionLifecycle = {
-  continueSession: continueLifecycleSession,
+  deliverFollowUp: deliverThroughQueue,
   createSession: createLifecycleSession,
   resolveProjectAutomationActor: resolveLifecycleAutomationActor,
   holdsLiveTurn: sessionHoldsLiveTurn,
@@ -148,9 +148,12 @@ export async function deliverTeamsFollowUpToSession(input: {
   userId?: string | null;
   /** This turn only — see channels/vision-model.ts. */
   model?: string | null;
+  /** One Teams activity: a redelivered webhook dedupes on it. */
+  idempotencyKey: string;
 }) {
-  return teamsSessionLifecycle.continueSession({
+  return teamsSessionLifecycle.deliverFollowUp({
     source: 'teams',
+    idempotencyKey: input.idempotencyKey,
     sessionId: input.sessionId,
     text: input.text,
     userId: input.userId,
@@ -403,27 +406,19 @@ async function deliverFollowUp(input: {
     hasImage && !turnModel && !modelReadsImages(projectId, currentModel || undefined);
   const outcome = await deliverTeamsFollowUpToSession({
     sessionId,
+    idempotencyKey: `teams:${tenantId}:${conversationId}:${activity.id ?? crypto.randomUUID()}`,
     text: renderFollowUpPrompt(activity, imagesUnavailable),
     userId,
     model: turnModel,
   });
 
-  if (outcome === 'delivered') {
+  // `queued`: durable; the queue delivers it once the box is up.
+  if (outcome === 'delivered' || outcome === 'queued') {
     await touchChatThread(conversationThread(tenantId, conversationId));
     return 'done';
   }
 
-  if (outcome === 'pending' || outcome === 'not-landed') {
-    if (handle) {
-      await deleteTurn(sessionId);
-      await finalizeTurn(handle, {
-        error: "Still waking this conversation's session back up — send that again in a moment.",
-      });
-    }
-    return 'done';
-  }
-
-  if (outcome === 'failed' || outcome === 'unreachable') {
+  if (outcome === 'failed') {
     if (handle) {
       await deleteTurn(sessionId);
       if (await claimConversationErrorNotice(tenantId, conversationId)) {
