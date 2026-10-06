@@ -1,0 +1,32 @@
+{
+  "source_hash": "0f25736dfd19a635fd6d4ef2308aae2a20577d827a479e76205e20695722f076",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-revoked-token-auth.test.ts",
+    "apps/api/src/http-errors.ts",
+    "apps/api/src/repositories/account-tokens-revoked.test.ts",
+    "apps/api/src/repositories/account-tokens.ts",
+    "apps/api/src/shared/dead-credential-log.test.ts",
+    "apps/api/src/shared/dead-credential-log.ts",
+    "apps/cli/src/__tests__/token-identity.test.ts",
+    "apps/cli/src/__tests__/token-rejected.blackbox.test.ts",
+    "apps/cli/src/api/client.ts",
+    "apps/cli/src/command-helpers.ts",
+    "apps/cli/src/commands/accounts.ts",
+    "apps/cli/src/commands/login.ts",
+    "apps/cli/src/commands/projects.ts",
+    "apps/cli/src/commands/ship.ts",
+    "apps/cli/src/commands/whoami.ts",
+    "apps/cli/src/token-denial.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/session-token-health.test.ts",
+    "apps/kortix-sandbox-agent-server/src/lib/kortix-api/session-token-health.ts"
+  ],
+  "diff_hash": "207e4f1ffd7c5c0d77b19f82250d4981135f9cbd4ea42a3ae36608a8960ea5e8",
+  "head": "2175b306c7c247d9e427f9c5428f6d0b122dd2c2",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-06T12:38:18.686Z"
+}

@@ -22,6 +22,7 @@ import {
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
+  tokenRejectedLine,
 } from '../command-helpers.ts';
 import { appendGitExcludeEntries } from '../git-exclude.ts';
 import { authHeaderArgs } from '../git-ops.ts';
@@ -1689,9 +1690,7 @@ async function projectsRm(args: string[]): Promise<number> {
 function surface(err: unknown): number {
   if (err instanceof ApiError) {
     if (err.status === 401) {
-      process.stderr.write(
-        `${status.err('Token rejected. Run `kortix login` to re-authenticate.')}\n`,
-      );
+      process.stderr.write(`${status.err(tokenRejectedLine(err.message))}\n`);
     } else {
       process.stderr.write(`${status.err(`HTTP ${err.status}: ${err.message}`)}\n`);
     }
