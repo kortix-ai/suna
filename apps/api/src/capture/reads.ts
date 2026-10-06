@@ -199,11 +199,11 @@ export async function searchTimeline(
   const query = sql`websearch_to_tsquery('simple', ${opts.q})`;
   const parts = [
     opts.kinds.has('screen') &&
-      sql`(SELECT * FROM (SELECT DISTINCT ON (chunk_id, title) 'screen' AS kind, frame_id AS id, ts, device_id, chunk_id, app, title, url, ocr_text AS text FROM kortix.timeline_frames WHERE ${scope} AND ${FRAME_DOC} @@ ${query} ORDER BY chunk_id, title, ts DESC) per_window ORDER BY ts DESC LIMIT ${opts.limit})`,
+      sql`(SELECT * FROM (SELECT DISTINCT ON (chunk_id, title) 'screen' AS kind, frame_id AS id, ts, user_id, device_id, chunk_id, app, title, url, ocr_text AS text FROM kortix.timeline_frames WHERE ${scope} AND ${FRAME_DOC} @@ ${query} ORDER BY chunk_id, title, ts DESC) per_window ORDER BY ts DESC LIMIT ${opts.limit})`,
     opts.kinds.has('actions') &&
-      sql`(SELECT 'actions' AS kind, action_id AS id, ts, device_id, chunk_id, app, window_title AS title, NULL AS url, description AS text FROM kortix.timeline_actions WHERE ${scope} AND ${ACTION_DOC} @@ ${query} ORDER BY ts DESC LIMIT ${opts.limit})`,
+      sql`(SELECT 'actions' AS kind, action_id AS id, ts, user_id, device_id, chunk_id, app, window_title AS title, NULL AS url, description AS text FROM kortix.timeline_actions WHERE ${scope} AND ${ACTION_DOC} @@ ${query} ORDER BY ts DESC LIMIT ${opts.limit})`,
     opts.kinds.has('audio') &&
-      sql`(SELECT 'audio' AS kind, line_id AS id, ts, device_id, chunk_id, NULL AS app, NULL AS title, NULL AS url, text FROM kortix.timeline_audio WHERE ${scope} AND ${AUDIO_DOC} @@ ${query} ORDER BY ts DESC LIMIT ${opts.limit})`,
+      sql`(SELECT 'audio' AS kind, line_id AS id, ts, user_id, device_id, chunk_id, NULL AS app, NULL AS title, NULL AS url, text FROM kortix.timeline_audio WHERE ${scope} AND ${AUDIO_DOC} @@ ${query} ORDER BY ts DESC LIMIT ${opts.limit})`,
   ].filter(Boolean) as ReturnType<typeof sql>[];
   if (parts.length === 0) return [];
   const rows = isoRows(
@@ -260,6 +260,18 @@ export async function mediaUrl(chunk: Chunk, role: string) {
   if (!key) return null;
   const signed = await captureStore.presignDownload(key, MEDIA_TTL_SECONDS);
   return { url: signed.url, expires_at: signed.expiresAt.toISOString(), encrypted: isEncrypted(chunk.manifest as Manifest) };
+}
+
+/** The action screenshot nearest a moment on one device (within `withinMs`), as a still of what was on screen. */
+export async function nearestScreenshot(accountId: string, userId: string, deviceId: string, ts: Date, withinMs = 30_000): Promise<{ name: string; ts: string } | null> {
+  const [row] = isoRows(
+    await db.execute<Record<string, unknown>>(sql`
+      SELECT screenshot AS name, ts FROM kortix.timeline_actions
+       WHERE account_id = ${accountId}::uuid AND user_id = ${userId}::uuid AND device_id = ${deviceId}::uuid AND screenshot IS NOT NULL
+         AND ts BETWEEN ${new Date(ts.getTime() - withinMs).toISOString()}::timestamptz AND ${new Date(ts.getTime() + withinMs).toISOString()}::timestamptz
+       ORDER BY abs(extract(epoch FROM ts - ${ts.toISOString()}::timestamptz)) LIMIT 1`),
+  );
+  return row ? { name: String(row.name), ts: String(row.ts) } : null;
 }
 
 export async function assetUrl(accountId: string, deviceId: string, name: string) {

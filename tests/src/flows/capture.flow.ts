@@ -76,6 +76,10 @@ const R = {
   exportGet: `GET ${A}/exports/:exportId`,
   run: `POST ${A}/intelligence/run`,
   fileContent: 'GET /v1/projects/:projectId/files/content',
+  mcp: 'POST /v1/mcp',
+  tokens: 'POST /v1/accounts/tokens',
+  accounts: 'GET /v1/accounts',
+  accountMembers: 'GET /v1/accounts/:accountId/members',
   meSearch: 'GET /v1/capture/me/search',
   meTimeline: 'GET /v1/capture/me/timeline',
   meFrame: 'GET /v1/capture/me/frames/:frameId',
@@ -648,5 +652,148 @@ flow(
       if (!listed.some((e) => e.export_id === created.export_id)) throw new Error('export not listed');
     });
 
+  },
+);
+
+/**
+ * CAP-5: Kortix Capture data reaches a Kortix agent through the hosted MCP
+ * server. A member and the account owner (a Capture admin) each connect with
+ * their own token; every capture_* tool runs against the ingested fixture day
+ * and two seeded episodes (one each) plus one workflow, and the member never
+ * sees the owner's data.
+ */
+flow(
+  'CAP-5',
+  {
+    domain: 'capture',
+    requires: ['database'],
+    timeoutMs: 180_000,
+    routes: [R.mcp, R.tokens, R.accounts, R.accountMembers, R.workspace, R.setEnabled, R.search, R.items, R.frame, R.episodes, R.episode, R.workflows, R.workflow, R.exportsCreate, R.exportGet],
+  },
+  async (ctx) => {
+    const { team, member, day, asMember } = await ingestedWorld(ctx, 'cap5');
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const rpc = (id: number, name: string, args: Record<string, unknown>) => ({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } });
+    const tokens: Record<'member' | 'owner', string> = { member: '', owner: '' };
+    const call = async (who: 'member' | 'owner', name: string, args: Record<string, unknown> = {}) => {
+      const r = await ctx.client.as(ctx.P.ANON).post(path(R.mcp), rpc(1, name, args), { headers: { Authorization: `Bearer ${tokens[who]}` } });
+      r.status(200);
+      const result = r.json<{ result: { content: Array<{ type: string; text?: string; mimeType?: string }>; isError?: boolean } }>().result;
+      const text = result.content.find((c) => c.type === 'text')?.text ?? '';
+      return { result, text, json: () => JSON.parse(text) as any };
+    };
+    const ownerId = ctx.P.OWNER.userId!;
+    let ownerEpisode = '';
+    let memberEpisode = '';
+    let workflowId = '';
+
+    await ctx.step('each person connects to the hosted MCP with their own token; tools/list holds the nine capture tools, all read-only but the export', async () => {
+      for (const [who, client] of [['member', asMember], ['owner', owner]] as const) {
+        const created = await client.post(path(R.tokens), { name: `CAP-5 ${who}` });
+        created.status(201);
+        tokens[who] = created.json<{ secret_key: string }>().secret_key;
+      }
+      const r = await ctx.client.as(ctx.P.ANON).post(path(R.mcp), { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }, { headers: { Authorization: `Bearer ${tokens.member}` } });
+      const tools = r.status(200).json<{ result: { tools: Array<{ name: string; annotations: { readOnlyHint: boolean } }> } }>().result.tools.filter((t) => t.name.startsWith('capture_'));
+      const names = tools.map((t) => t.name).sort().join(',');
+      if (names !== 'capture_accounts,capture_episode,capture_episodes,capture_export,capture_frame,capture_search,capture_timeline,capture_workflow,capture_workflows') throw new Error(names);
+      if (tools.some((t) => t.annotations.readOnlyHint !== (t.name !== 'capture_export'))) throw new Error('annotations');
+    });
+
+    await ctx.step('seed one episode each (member, owner) and a workflow both run, as the pipelines write them', async () => {
+      const db = await openDb(ctx);
+      try {
+        const add = async (userId: string, label: string) =>
+          (await db.query<{ episode_id: string }>(
+            `INSERT INTO kortix.capture_episodes (account_id, user_id, start_at, end_at, label, goal, status, outcome_status, steps_count, signature)
+             VALUES ($1, $2, now() - interval '2 hours', now() - interval '1 hour', $3, 'Close the books', 'traced', 'succeeded', 2, 'open@sheets update@sheets') RETURNING episode_id`,
+            [team.id, userId, label],
+          )).rows[0]!.episode_id;
+        memberEpisode = await add(member.userId!, 'Member quarterly close');
+        ownerEpisode = await add(ownerId, 'Owner quarterly close');
+        for (const e of [memberEpisode, ownerEpisode]) {
+          await db.query(`INSERT INTO kortix.capture_episode_steps (episode_id, account_id, index, ts, verb, app, object, variables) VALUES ($1, $2, 0, now() - interval '2 hours', 'Open', 'Sheets', 'budget sheet', '[]'), ($1, $2, 1, now() - interval '119 minutes', 'Update', 'Sheets', 'forecast row', '["amount"]')`, [e, team.id]);
+        }
+        workflowId = (await db.query<{ workflow_id: string }>(
+          `INSERT INTO kortix.capture_workflows (account_id, name, goal, signature, steps, variants, apps, runs_total, runs_per_week, duration_p50_s, duration_p90_s, people_count, determinism, automation_hours_per_week)
+           VALUES ($1, 'Close the quarter', 'Update the forecast', 'open@sheets update@sheets', '[{"index":1,"verb":"Open","object":"budget sheet","app":"Sheets"},{"index":2,"verb":"Update","object":"forecast row","app":"Sheets"}]',
+                   '[{"key":"A","name":"Standard: update forecast row","runs":2,"share":1,"steps_count":2,"differs":[],"note":"The usual way."}]', '["Sheets"]', 2, 2, 3600, 3600, 2, 1, 2) RETURNING workflow_id`,
+          [team.id],
+        )).rows[0]!.workflow_id;
+        await db.query(`UPDATE kortix.capture_episodes SET workflow_id = $1, variant_key = 'A' WHERE episode_id = ANY($2::uuid[])`, [workflowId, [memberEpisode, ownerEpisode]]);
+      } finally {
+        await db.end();
+      }
+    });
+
+    await ctx.step('capture_accounts: the member sees the account with Capture on and role member; the owner sees role admin', async () => {
+      const mine = (await call('member', 'capture_accounts')).json() as Array<{ account_id: string; capture_enabled: boolean; capture_role: string }>;
+      const row = mine.find((a) => a.account_id === team.id);
+      if (!row?.capture_enabled || row.capture_role !== 'member') throw new Error(JSON.stringify(mine));
+      const theirs = (await call('owner', 'capture_accounts')).json() as Array<{ account_id: string; capture_role: string }>;
+      if (theirs.find((a) => a.account_id === team.id)?.capture_role !== 'admin') throw new Error(JSON.stringify(theirs));
+    });
+
+    await ctx.step('capture_search: the member finds their own screen, action and audio hits (every hit theirs); scope account → an error naming the fix; the owner searches the account and gets the member\'s hits, audited as capture.account_view', async () => {
+      const mine = (await call('member', 'capture_search', { account_id: team.id, query: 'quarterly or roadmap' })).json() as { hits: Array<{ kind: string; user_id: string; id: string }> };
+      if (!mine.hits.length || mine.hits.some((h) => h.user_id !== member.userId)) throw new Error(JSON.stringify(mine).slice(0, 300));
+      if (!['screen', 'actions', 'audio'].every((k) => mine.hits.some((h) => h.kind === k))) throw new Error(`kinds: ${mine.hits.map((h) => h.kind)}`);
+      const refused = await call('member', 'capture_search', { account_id: team.id, query: 'quarterly', scope: 'account' });
+      if (!refused.result.isError || !refused.text.includes('omit user_id and scope')) throw new Error(refused.text);
+      const all = (await call('owner', 'capture_search', { account_id: team.id, query: 'quarterly', scope: 'account' })).json() as { hits: Array<{ user_id: string }> };
+      if (!all.hits.some((h) => h.user_id === member.userId)) throw new Error('the owner does not see the member');
+      const db = await openDb(ctx);
+      try {
+        const n = Number((await db.query<{ n: string }>(`SELECT count(*) AS n FROM kortix.audit_events WHERE account_id = $1 AND action = 'capture.account_view' AND actor_user_id = $2`, [team.id, ownerId])).rows[0]!.n);
+        if (n < 1) throw new Error('no capture.account_view row');
+      } finally {
+        await db.end();
+      }
+    });
+
+    await ctx.step('capture_timeline and capture_frame: the member reads their own day (frames with on-screen text, actions, audio) and opens a frame; the member naming the owner → an error', async () => {
+      const t = (await call('member', 'capture_timeline', { account_id: team.id, from: new Date(day.startMs - 60_000).toISOString(), to: new Date(day.endMs + 60_000).toISOString() })).json() as { frames: Array<{ frame_id: string; text: string }>; actions: unknown[]; audio: unknown[] };
+      if (t.frames.length !== day.expected.frames || !t.actions.length || !t.audio.length) throw new Error(`timeline: ${t.frames.length}/${day.expected.frames} frames`);
+      const frame = (await call('member', 'capture_frame', { account_id: team.id, frame_id: t.frames[0]!.frame_id })).json() as { frame: { ocr_text: string }; video: { url: string; offset_ms: number } | null };
+      if (!frame.frame.ocr_text || !frame.video?.url) throw new Error(JSON.stringify(frame).slice(0, 300));
+      const other = await call('member', 'capture_timeline', { account_id: team.id, from: new Date(day.startMs).toISOString(), to: new Date(day.endMs).toISOString(), user_id: ownerId });
+      if (!other.result.isError) throw new Error('a member read the owner timeline');
+    });
+
+    await ctx.step('capture_episodes / capture_episode: the member lists only their episode and cannot open the owner\'s (not found); the owner lists both account-wide, each with the person\'s email', async () => {
+      const mine = (await call('member', 'capture_episodes', { account_id: team.id })).json() as { episodes: Array<{ episode_id: string; user_id: string }> };
+      if (mine.episodes.some((e) => e.user_id !== member.userId) || !mine.episodes.some((e) => e.episode_id === memberEpisode)) throw new Error(JSON.stringify(mine).slice(0, 300));
+      const one = (await call('member', 'capture_episode', { account_id: team.id, episode_id: memberEpisode })).json() as { steps: Array<{ verb: string; variables: string[] }> };
+      if (one.steps.map((s) => s.verb).join() !== 'Open,Update' || one.steps[1]!.variables[0] !== 'amount') throw new Error(JSON.stringify(one));
+      const foreign = await call('member', 'capture_episode', { account_id: team.id, episode_id: ownerEpisode });
+      if (!foreign.result.isError || !foreign.text.includes('404')) throw new Error(foreign.text);
+      const all = (await call('owner', 'capture_episodes', { account_id: team.id, scope: 'account' })).json() as { episodes: Array<{ episode_id: string; email: string | null }> };
+      const both = all.episodes.filter((e) => e.episode_id === memberEpisode || e.episode_id === ownerEpisode);
+      if (both.length !== 2 || both.some((e) => !e.email)) throw new Error(JSON.stringify(both));
+    });
+
+    await ctx.step('capture_workflows / capture_workflow: the member → an error (admins and viewers); the owner reads the workflow with its steps, variant and both people with their emails', async () => {
+      const refused = await call('member', 'capture_workflows', { account_id: team.id });
+      if (!refused.result.isError) throw new Error('a member listed workflows');
+      const list = (await call('owner', 'capture_workflows', { account_id: team.id })).json() as { workflows: Array<{ workflow_id: string }> };
+      if (!list.workflows.some((w) => w.workflow_id === workflowId)) throw new Error(JSON.stringify(list).slice(0, 300));
+      const w = (await call('owner', 'capture_workflow', { account_id: team.id, workflow_id: workflowId })).json() as { steps: unknown[]; variants: Array<{ name: string }>; people: Array<{ user_id: string; email: string | null }> };
+      if (w.steps.length !== 2 || w.variants[0]?.name !== 'Standard: update forecast row' || w.people.length !== 2 || w.people.some((p) => !p.email)) throw new Error(JSON.stringify(w).slice(0, 400));
+    });
+
+    await ctx.step('capture_export: the owner exports JSONL and gets a signed download holding the workflow; the member → an error', async () => {
+      const exp = (await call('owner', 'capture_export', { account_id: team.id, include: ['workflows'] })).json() as { status: string; download: { url: string } | null };
+      if (exp.status !== 'done' || !exp.download?.url) throw new Error(JSON.stringify(exp));
+      if (!(await (await fetch(exp.download.url)).text()).includes(workflowId)) throw new Error('export lacks the workflow');
+      const refused = await call('member', 'capture_export', { account_id: team.id });
+      if (!refused.result.isError) throw new Error('a member exported');
+    });
+
+    await ctx.step('Capture off: every tool answers "Kortix Capture is off for this account"', async () => {
+      (await owner.patch(path(R.setEnabled), { enabled: false }, { params: { accountId: team.id } })).status(200);
+      const off = await call('member', 'capture_search', { account_id: team.id, query: 'quarterly' });
+      if (!off.result.isError || !off.text.includes('Kortix Capture is off for this account')) throw new Error(off.text);
+      (await owner.patch(path(R.setEnabled), { enabled: true }, { params: { accountId: team.id } })).status(200);
+    });
   },
 );

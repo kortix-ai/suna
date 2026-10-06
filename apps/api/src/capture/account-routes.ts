@@ -32,6 +32,7 @@ import { PolicySchema } from './format';
 import { readAccountPolicy, writeAccountPolicy, writeDevicePolicy } from './policy';
 import {
   assetUrl,
+  nearestScreenshot,
   chunkOf,
   closeRangeForReprocess,
   deviceInAccount,
@@ -191,6 +192,7 @@ const subjectQuery = z.object({
 });
 const searchQuery = subjectQuery.extend({
   q: z.string().min(1),
+  scope: z.enum(['mine', 'account']).optional().describe('account: every member (Capture admins and viewers; audited as capture.account_view)'),
   kinds: z.string().optional().describe('Comma list of screen, actions, audio (default all)'),
   app: z.string().optional(),
   limit: z.string().optional(),
@@ -240,7 +242,10 @@ async function frameResponse(c: Ctx, access: Access, frameId: string) {
     if (!found) return c.json({ error: 'Not found' }, 404);
     const video = found.chunk ? await mediaUrl(found.chunk, 'video') : null;
     const offset = await frameVideoOffsetMs(found.frame);
-    return c.json({ frame: found.frame, video: video && { ...video, offset_ms: offset } }, 200);
+    // A still of the moment: the action screenshot nearest the frame on its device (within 30 s).
+    const shot = await nearestScreenshot(access.accountId, access.subject!, String(found.frame.device_id), new Date(String(found.frame.ts)));
+    const screenshot = shot ? { ...shot, ...(await assetUrl(access.accountId, String(found.frame.device_id), shot.name)) } : null;
+    return c.json({ frame: found.frame, video: video && { ...video, offset_ms: offset }, screenshot }, 200);
 }
 
 // ─── Workspace: the account switch, your role, the members ──────────────────
@@ -610,7 +615,7 @@ accountsRouter.openapi(
     method: 'get',
     path: '/{accountId}/capture/search',
     tags,
-    summary: 'Full-text search of one person’s timeline: screen (app, window, URL, on-screen text; one hit per chunk and window), actions and audio',
+    summary: 'Full-text search of one person’s timeline, or the account’s (`scope=account`, admins and viewers): screen (app, window, URL, on-screen text; one hit per chunk and window), actions and audio',
     ...auth,
     request: {
       params,
@@ -620,7 +625,7 @@ accountsRouter.openapi(
   }),
   async (c) => {
     const query = c.req.valid('query');
-    const access = await captureAccess(c, { userId: query.user_id });
+    const access = await captureAccess(c, query.scope === 'account' && !query.user_id ? { accountWide: true } : { userId: query.user_id });
     if (isResponse(access)) return access as never;
     return searchResponse(c, access, query);
   },
@@ -844,7 +849,7 @@ export function registerCaptureAgentRoutes(app: OpenAPIHono<AppEnv>) {
       summary: 'Search your timeline (or the person your session acts for) in your token’s account',
       ...auth,
       middleware: [supabaseAuth] as const,
-      request: { query: searchQuery.omit({ user_id: true }) },
+      request: { query: searchQuery.omit({ user_id: true, scope: true }) },
       responses: ok('Hits, newest first'),
     }),
     async (c) => {
