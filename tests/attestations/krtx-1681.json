@@ -1,5 +1,5 @@
 {
-  "source_hash": "76814e71fbe914a10ace5e2ab5263c5f767c4cc6cbb670b1c6fd488ba370c1f9",
+  "source_hash": "c1f34dd231d3c6e3784fc57db80b24f5f5500e0e5819a17903add9304d119870",
   "diff_files": [
     "apps/api/src/__tests__/integration-project-write-leaf-gates-http.test.ts",
     "apps/api/src/__tests__/unit-sandbox-provider-pin-route.test.ts",
@@ -7,13 +7,13 @@
     "apps/cli/src/__tests__/sandboxes-provider.test.ts",
     "apps/cli/src/commands/sandboxes.ts"
   ],
-  "diff_hash": "ec738312bc77fc0379586218fd6a9a752c2ab8006e7949bd61731bfc6f3edc15",
-  "head": "5aa2e28dc6bbe6ea6d564d92b73cae4f90f47682",
+  "diff_hash": "78827b4f96d841b294e89a1717f39b8bca513631c8b61ac398fc55a8b5793eaf",
+  "head": "a2f22941e231925de3c68940aeecbf26757ee598",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-06T11:32:24.448Z"
+  "at": "2026-10-06T11:51:27.010Z"
 }
