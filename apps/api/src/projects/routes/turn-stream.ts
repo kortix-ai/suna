@@ -16,6 +16,7 @@ import {
   beginTurn,
   claimInitialTurn,
   pinOpencodeSession,
+  readSteer,
   relayContent,
   settleTurnEnd,
 } from './turn-stream-handlers';
@@ -186,6 +187,8 @@ export function registerTurnStreamRoutes(): void {
           return acceptTurn(c, body, authenticatedSandboxId);
         case 'turn_begin':
           return beginTurn(c, body, authenticatedSandboxId);
+        case 'steer_read':
+          return readSteer(c, body, sessionId, authenticatedSandboxId);
         case 'end':
         case 'turn_end':
           return settleTurnEnd(c, body, {

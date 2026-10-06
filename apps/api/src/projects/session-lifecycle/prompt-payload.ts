@@ -1,5 +1,6 @@
 import { sessionLifecycleCommands } from '@kortix/db';
 import { type SQL, sql } from 'drizzle-orm';
+import type { SessionPromptDelivery, SessionPromptSteerFallback } from '@kortix/api-contract';
 
 /**
  * `payload.deliveryAttempt + 1`, merged into the payload expression given.
@@ -171,6 +172,15 @@ export interface QueuedContinueSessionPayload {
    *  POSTs race (boot shell vs chat during the crossfade). */
   clientSentAtMs?: number;
   placement?: 'transcript' | 'composer';
+  /**
+   * How the prompt reaches a running turn (`SessionPromptDelivery`). Absent on
+   * rows from before steering: `placement` implies it. `placement` is stored
+   * beside it, derived (`interrupt` → `transcript`, else `composer`), so an
+   * older API task treats a `steer` row as a Queue List row.
+   */
+  delivery?: SessionPromptDelivery;
+  /** Why a `steer` row went out as `queue` instead. Written once, with `delivery: 'queue'`. */
+  steerFallback?: SessionPromptSteerFallback;
   parts?: PromptPartWire[];
   overrides?: PromptOverridesWire;
   /** The row's `actor_user_id` is the person who sent it — see

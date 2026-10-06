@@ -13,7 +13,7 @@ import { queueSessionPrompt } from './sessions-queue.ts';
 describe('queueSessionPrompt', () => {
   const session = { session_id: 'sess-1', agent_name: null, metadata: {} } as unknown as ProjectSession;
 
-  async function posted(): Promise<Record<string, unknown>> {
+  async function posted(delivery?: 'steer'): Promise<Record<string, unknown>> {
     let body: Record<string, unknown> = {};
     const client = {
       post: async (_path: string, sent: Record<string, unknown>) => {
@@ -21,7 +21,7 @@ describe('queueSessionPrompt', () => {
         return { prompt_id: 'p', state: 'queued', message_id: String(sent.message_id), deduped: false };
       },
     } as unknown as ApiClient;
-    await queueSessionPrompt(client, 'proj-1', session, 'hi');
+    await queueSessionPrompt(client, 'proj-1', session, 'hi', delivery);
     return body;
   }
 
@@ -38,5 +38,15 @@ describe('queueSessionPrompt', () => {
 
   test('asks the server to place the id against the live transcript', async () => {
     expect((await posted()).remint_on_delivery).toBe(true);
+  });
+
+  test('--queue sends no delivery mode: the API keeps it on Queue List', async () => {
+    const body = await posted();
+    expect(body).not.toHaveProperty('delivery');
+    expect(body).not.toHaveProperty('placement');
+  });
+
+  test('--steer sends delivery steer with the composer placement an older API reads as Queue List', async () => {
+    expect(await posted('steer')).toMatchObject({ delivery: 'steer', placement: 'composer' });
   });
 });
