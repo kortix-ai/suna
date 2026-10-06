@@ -1,6 +1,8 @@
 {
-  "source_hash": "713d2e7ec76a45ae0978f04dbbf9c090d7eeffae9f794c2716984172ce1bbfe1",
+  "source_hash": "f9f4dcb14c268f1d1a09c0e1bbff0031a1749405f846f04d0646c7916f1fc08a",
   "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-06T131757Z-probe-a-throwaway-postgres-on-the-tcp-endpoint-the-suite-use.md",
     "apps/api/scripts/test.sh",
     "apps/cli/package.json",
     "apps/cli/scripts/test.sh",
@@ -13,15 +15,16 @@
     "tests/migration/legacy-credit-ledger-created-by-index.test.ts",
     "tests/migration/usage-breakdown-ledger-type.test.ts",
     "tests/migration/wallet-ledger.test.ts",
+    "tests/unit/kortixd-package-boundary.test.ts",
     "tests/unit/test-runner-contract.test.ts"
   ],
-  "diff_hash": "77e4849c00bb48dec5486f383bab70e2fdf32dd41f31b5342f9869f1ce8183c9",
-  "head": "ad5f72c2975854e8ddb163f72739d1e63a546065",
+  "diff_hash": "fbdd517b636b4f462012482b2d9e7684bddb5367ece438805f17d1b974a8aa5e",
+  "head": "5026bab252abe5a3c9d83f46a8513c6cecebcf40",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-06T12:50:26.540Z"
+  "at": "2026-10-06T13:52:09.453Z"
 }
