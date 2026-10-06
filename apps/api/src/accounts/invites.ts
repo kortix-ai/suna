@@ -430,6 +430,11 @@ accountInvitesRouter.openapi(
   // written. Only blocks a NEW member: a re-entering existing member must
   // still pass to heal grants below.
   const existingMembership = await getMembership(userId, invite.accountId);
+  // An accepted invite only heals grants for a CURRENT member. After removal or
+  // leave it must not re-create the membership: the owner sends a new invite.
+  if (alreadyAccepted && !existingMembership) {
+    return c.json({ error: 'This invite was already used. Ask the owner to send a new one.' }, 410);
+  }
   if (!existingMembership) {
     const { trialSeatLimitBlocksNewMember } = await import(
       '../billing/services/seat-management'
@@ -461,13 +466,16 @@ accountInvitesRouter.openapi(
     .onConflictDoNothing({
       target: [accountMemberships.userId, accountMemberships.accountId],
     });
-  await assignRole(SYSTEM_ACTOR, invite.accountId, {
-    principal: { type: 'user', id: userId },
-    roleKey: invite.initialRole,
-    scope: { type: 'account' },
-    source: 'invite',
-    exclusive: true,
-  });
+  // Re-entry of a current member never rewrites their role (an admin demotion sticks).
+  if (!alreadyAccepted) {
+    await assignRole(SYSTEM_ACTOR, invite.accountId, {
+      principal: { type: 'user', id: userId },
+      roleKey: invite.initialRole,
+      scope: { type: 'account' },
+      source: 'invite',
+      exclusive: true,
+    });
+  }
 
   // Stamp accepted_at on first accept. The isNull guard makes concurrent
   // accepts collapse to a single write without us caring who won — both
