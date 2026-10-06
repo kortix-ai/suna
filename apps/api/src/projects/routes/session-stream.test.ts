@@ -33,6 +33,15 @@ let visibleSession: Record<string, unknown> | null = null;
 /** The sandbox row the pump reads before every attach attempt. */
 let sandboxRow: { externalId: string | null; status: string } | null = null;
 let sandboxQueryThrows = false;
+let sandboxSelects = 0;
+
+/** The LISTEN this process holds, driven by hand. */
+const sessionChangeWaiters = new Set<{ sessionId: string; wake: () => void }>();
+function notifySessionChanged(sessionId: string): void {
+  for (const waiter of [...sessionChangeWaiters]) {
+    if (waiter.sessionId === sessionId) waiter.wake();
+  }
+}
 
 /** What the fake daemon does when the route tries to attach. */
 let daemonAttach: () => Promise<
@@ -47,6 +56,7 @@ mock.module('../../shared/db', () => ({
       from: () => ({
         where: () => ({
           limit: async () => {
+            sandboxSelects += 1;
             if (sandboxQueryThrows) throw new Error('pool exhausted');
             return sandboxRow ? [sandboxRow] : [];
           },
@@ -55,6 +65,24 @@ mock.module('../../shared/db', () => ({
     }),
   },
   hasDatabase: true,
+}));
+
+mock.module('../../shared/pg-broadcast', () => ({
+  isPgBroadcastListening: () => true,
+  waitForSessionChange: (sessionId: string, ms: number, signal: AbortSignal) =>
+    new Promise<void>((resolve) => {
+      const waiter = {
+        sessionId,
+        wake: () => {
+          clearTimeout(timer);
+          sessionChangeWaiters.delete(waiter);
+          resolve();
+        },
+      };
+      const timer = setTimeout(waiter.wake, ms);
+      sessionChangeWaiters.add(waiter);
+      signal.addEventListener('abort', waiter.wake, { once: true });
+    }),
 }));
 
 mock.module('../lib/access', () => ({
@@ -184,8 +212,17 @@ function daemonStream(frames: string[], keepOpenMs = 0): ReadableStream<Uint8Arr
   return new ReadableStream<Uint8Array>({
     start(controller) {
       for (const frame of frames) controller.enqueue(encoder.encode(frame));
-      if (keepOpenMs > 0) setTimeout(() => controller.close(), keepOpenMs);
-      else controller.close();
+      // The route cancels this body when its client hangs up; a close after
+      // that is a no-op on a real stream, so the fake tolerates it too.
+      const close = () => {
+        try {
+          controller.close();
+        } catch {
+          // Already cancelled by the route.
+        }
+      };
+      if (keepOpenMs > 0) setTimeout(close, keepOpenMs);
+      else close();
     },
   });
 }
@@ -195,6 +232,8 @@ beforeEach(() => {
   attachCalls = [];
   reconcilerSnapshot = [];
   sandboxQueryThrows = false;
+  sandboxSelects = 0;
+  sessionChangeWaiters.clear();
   loadedProject = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID }, userId: USER_ID };
   visibleSession = { row: { sessionId: SESSION_ID }, grants: [], canManageProject: true };
   sandboxRow = { externalId: 'box-1', status: 'active' };
@@ -545,5 +584,100 @@ describe('?channels=control', () => {
   test('an unknown channels value is a 400', async () => {
     const response = await openStream('?channels=bogus');
     expect(response.status).toBe(400);
+  });
+});
+
+describe('R5.1: a production-grade stream', () => {
+  test('a stopped box is re-read when its row changes, not on a 5 s timer', async () => {
+    sandboxRow = { externalId: 'box-1', status: 'stopped' };
+    const response = await openStream();
+    const reader = response.body!.getReader();
+    try {
+      await Bun.sleep(300);
+      // One read at open, then the pump waits for the row to change.
+      expect(sandboxSelects).toBe(1);
+      expect(attachCalls).toHaveLength(0);
+
+      sandboxRow = { externalId: 'box-1', status: 'active' };
+      daemonAttach = async () => ({
+        ok: true,
+        epoch: 'ep-wake',
+        body: daemonStream([], 2_000),
+      });
+      notifySessionChanged(SESSION_ID);
+      await Bun.sleep(100);
+      expect(sandboxSelects).toBe(2);
+      expect(attachCalls).toHaveLength(1);
+    } finally {
+      await reader.cancel().catch(() => {});
+    }
+  });
+
+  test('a client disconnect cancels the daemon body at once, not at the next daemon frame', async () => {
+    let daemonCancelledAt: number | null = null;
+    daemonAttach = async () => ({
+      ok: true,
+      epoch: 'ep-quiet',
+      // A quiet box: no frame after attach, so only an explicit cancel ends it.
+      body: new ReadableStream<Uint8Array>({
+        cancel() {
+          daemonCancelledAt = Date.now();
+        },
+      }),
+    });
+    const response = await openStream();
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let text = '';
+    const deadline = Date.now() + 2_000;
+    while (!text.includes('"state":"up"') && Date.now() < deadline) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+    expect(text).toContain('"state":"up"');
+    const hungUpAt = Date.now();
+    await reader.cancel();
+    await Bun.sleep(200);
+    expect(daemonCancelledAt).not.toBeNull();
+    expect(daemonCancelledAt! - hungUpAt).toBeLessThan(200);
+  });
+
+  test('a client that stops reading pauses the daemon read (backpressure)', async () => {
+    let pulled = 0;
+    const encoder = new TextEncoder();
+    const filler = 'x'.repeat(1_000);
+    daemonAttach = async () => ({
+      ok: true,
+      epoch: 'ep-fast',
+      body: new ReadableStream<Uint8Array>({
+        pull(controller) {
+          pulled += 1;
+          controller.enqueue(
+            encoder.encode(
+              `event: message.part.delta\nid: ${pulled}\ndata: {"seq":${pulled},"type":"message.part.delta","at":1,"payload":{"delta":"${filler}"}}\n\n`,
+            ),
+          );
+        },
+      }),
+    });
+    const response = await openStream();
+    const reader = response.body!.getReader();
+    try {
+      // Take the first bytes, then stop reading without hanging up.
+      await reader.read();
+      await Bun.sleep(400);
+      const paused = pulled;
+      // A bounded buffer: well under 1 MB of 1 KB frames is in flight.
+      expect(paused).toBeLessThan(1_000);
+      await Bun.sleep(200);
+      expect(pulled - paused).toBeLessThan(5);
+      // Reading again resumes the daemon read.
+      for (let i = 0; i < 50; i += 1) await reader.read();
+      await Bun.sleep(50);
+      expect(pulled).toBeGreaterThan(paused);
+    } finally {
+      await reader.cancel().catch(() => {});
+    }
   });
 });

@@ -4,7 +4,17 @@
  * Adapter code owns event interpretation and supplies resync recovery routes.
  * Payloads pass through unchanged; the ring is bounded and is not durable.
  */
-export const DEFAULT_RING_CAPACITY = 2_000
+/**
+ * Envelopes kept for replay. A reconnect inside the ring resumes exactly; one
+ * outside it costs every open session a resync and a transcript refetch. 2,000
+ * was a few seconds of token deltas on a busy box with subagents (the cause of
+ * the 2026-08-28 client revert ef43d7f851), so the ring now holds 20,000 and is
+ * bounded by bytes instead ({@link DEFAULT_RING_MAX_BYTES}).
+ */
+export const DEFAULT_RING_CAPACITY = 20_000
+
+/** Bytes of serialized envelopes the ring keeps, oldest dropped first. */
+export const DEFAULT_RING_MAX_BYTES = 32 * 1024 * 1024
 
 /** One envelope on the wire. */
 export interface KortixEvent {
@@ -58,12 +68,19 @@ export interface KortixResync {
 export class KortixEventBus {
   private seq = 0
   private ring: KortixEvent[] = []
+  /** Serialized size of each ring entry, same index as `ring`. */
+  private sizes: number[] = []
+  private bytes = 0
+  /** Index of the oldest live entry. Dropped entries before it are compacted
+   *  away in batches, so a full ring costs O(1) per publish, not a shift. */
+  private head = 0
   private readonly listeners = new Set<KortixEventListener>()
 
   constructor(
     readonly epoch: string = `b${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
     private readonly capacity: number = DEFAULT_RING_CAPACITY,
     private readonly now: () => number = () => Date.now(),
+    private readonly maxBytes: number = DEFAULT_RING_MAX_BYTES,
   ) {}
 
   get headSeq(): number {
@@ -72,7 +89,7 @@ export class KortixEventBus {
 
   /** Oldest seq still replayable. `headSeq` when the ring is empty. */
   get firstSeq(): number {
-    return this.ring.length > 0 ? this.ring[0]!.seq : this.seq
+    return this.ring.length > this.head ? this.ring[this.head]!.seq : this.seq
   }
 
   get subscriberCount(): number {
@@ -88,8 +105,23 @@ export class KortixEventBus {
       payload,
       ...(session ? { session } : {}),
     }
+    const size = JSON.stringify(event).length
     this.ring.push(event)
-    if (this.ring.length > this.capacity) this.ring.splice(0, this.ring.length - this.capacity)
+    this.sizes.push(size)
+    this.bytes += size
+    // Drop the oldest past either bound, but always keep the newest envelope.
+    while (
+      this.ring.length - this.head > 1 &&
+      (this.ring.length - this.head > this.capacity || this.bytes > this.maxBytes)
+    ) {
+      this.bytes -= this.sizes[this.head]!
+      this.head += 1
+    }
+    if (this.head > 0 && this.head >= this.ring.length / 2) {
+      this.ring = this.ring.slice(this.head)
+      this.sizes = this.sizes.slice(this.head)
+      this.head = 0
+    }
     for (const listener of this.listeners) {
       try {
         listener(event)
@@ -141,7 +173,7 @@ export class KortixEventBus {
       } else if (since < this.firstSeq - 1) {
         resync = makeResync('gap-too-old')
       } else {
-        replay = this.ring.filter((event) => event.seq > since)
+        replay = this.ring.slice(this.head).filter((event) => event.seq > since)
       }
     }
 

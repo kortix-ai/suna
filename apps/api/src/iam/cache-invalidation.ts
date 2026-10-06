@@ -22,17 +22,13 @@ import { eq } from 'drizzle-orm';
 import { accountGroupMembers, accountMemberships, roleAssignments } from '@kortix/db';
 import * as database from '../shared/db';
 const { db } = database;
+import {
+  principalScopedMemoList,
+  registerPrincipalScopedMemo,
+  type PrincipalScopedMemo,
+} from '../shared/principal-memo-registry';
 
-interface PrincipalScopedMemo {
-  invalidateByPrefix: (prefix: string) => void;
-}
-
-const principalScopedMemos: PrincipalScopedMemo[] = [];
-
-/** A memo keyed `${userId}|…` registers so it can be busted per principal. */
-export function registerPrincipalScopedMemo(memo: PrincipalScopedMemo): void {
-  principalScopedMemos.push(memo);
-}
+export { registerPrincipalScopedMemo };
 
 // ── Project-scoped memos (keyed `${projectId}|…`) ──────────────────────────
 // The object-grant memo (`loadObjectGrants` in iam/authorize.ts) is keyed by
@@ -60,9 +56,9 @@ export function invalidateIamCacheForProjectResources(projectId: string | null |
 export function invalidateIamCacheForUser(userId: string | null | undefined): void {
   if (!userId) return;
   const prefix = `${userId}|`;
-  for (const memo of principalScopedMemos) memo.invalidateByPrefix(prefix);
+  for (const memo of principalScopedMemoList()) memo.invalidateByPrefix(prefix);
   database.afterDbCommit?.(() => {
-    for (const memo of principalScopedMemos) memo.invalidateByPrefix(prefix);
+    for (const memo of principalScopedMemoList()) memo.invalidateByPrefix(prefix);
   });
 }
 

@@ -23,7 +23,7 @@ import {
 } from '../connectors/share';
 import { authorize } from '../iam';
 import { actorForServiceAccount, actorForUser } from '../iam/actor';
-import { registerPrincipalScopedMemo } from '../iam/cache-invalidation';
+import { registerPrincipalScopedMemo } from './principal-memo-registry';
 import { hasAccountSessionOversight } from '../iam/session-oversight';
 import { accountMembers, projectSessions, serviceAccounts, sessionSandboxes } from '@kortix/db';
 import { and, eq, or, sql } from 'drizzle-orm';

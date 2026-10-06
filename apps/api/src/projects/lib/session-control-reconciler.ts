@@ -36,6 +36,11 @@
  * in one round trip, whichever replica served the write. Without the LISTEN
  * the cadence above is the ceiling, as before.
  *
+ * The same holds for the box row and the title: a trigger NOTIFYs
+ * `kortix_session_changed` on every client-visible write (status, live turns,
+ * wake fields, title; migration 20261006182246238), so turn, runtime and
+ * session frames follow the write on every replica too.
+ *
  * ─── EVERY EMISSION IS A FULL SNAPSHOT ─────────────────────────────────────
  * See `session-control-events.ts`. A frame carries its subsystem's whole state,
  * so a client that missed one is corrected by the next rather than corrupted by
@@ -47,7 +52,7 @@ import { serializePrompt } from './session-prompt-view';
 import { readSessionTurnState } from './session-turn-read';
 import { readRuntimeControlState, readMirrorWatermark, readSessionAuditWatermark } from './session-control-readers';
 export type { RuntimeControlState, MirrorWatermark, AuditWatermark } from './session-control-readers';
-import { onSessionPromptsChanged } from '../../shared/pg-broadcast';
+import { onSessionChanged, onSessionPromptsChanged } from '../../shared/pg-broadcast';
 import {
   publishControlEvent,
   type ControlEvent,
@@ -216,6 +221,8 @@ export function pokeControlReconciler(sessionId: string): void {
 }
 
 onSessionPromptsChanged(pokeControlReconciler);
+// A box, live-turn, wake or title write (migration 20261006182246238).
+onSessionChanged(pokeControlReconciler);
 
 /** Run the timer at the cadence the holders need. A no-op when it already does. */
 function schedule(sessionId: string, reconciler: Reconciler): void {

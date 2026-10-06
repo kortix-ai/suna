@@ -304,10 +304,17 @@ export interface SseFrame {
  */
 export async function* parseSseFrames(
   body: ReadableStream<Uint8Array>,
+  /** Ends the read at once when aborted, even while no frame arrives. */
+  signal?: AbortSignal,
 ): AsyncGenerator<SseFrame> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  // A quiet box sends a frame every 15 s at most. Without this, a caller that
+  // hangs up keeps the upstream body open until that frame arrives.
+  const stop = () => void reader.cancel().catch(() => {});
+  signal?.addEventListener('abort', stop, { once: true });
+  if (signal?.aborted) stop();
   try {
     for (;;) {
       const { done, value } = await reader.read();
@@ -324,6 +331,7 @@ export async function* parseSseFrames(
       }
     }
   } finally {
+    signal?.removeEventListener('abort', stop);
     reader.releaseLock();
     await body.cancel().catch(() => {});
   }

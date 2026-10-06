@@ -1,5 +1,5 @@
 /**
- * GET /v1/projects/:projectId/sessions/:sessionId/stream
+ * GET /v1/projects/:projectId/sessions/:sessionId/events
  *
  * ONE client connection for everything that MOVES in a session.
  *
@@ -44,6 +44,14 @@
  * at the slow cadence (`ControlReconcilerMode`). The SDK's prompt queue reads
  * it (`openSessionControlStream`). The default serves both channels.
  *
+ * ─── BOUNDED, AND QUIET ON A STOPPED BOX ───────────────────────────────────
+ * A slow client gets backpressure: past {@link STREAM_BUFFER_BYTES} unread, the
+ * pump stops reading the daemon, whose ring holds the rest. A client that stops
+ * reading entirely is cut at {@link STREAM_MAX_BACKLOG_BYTES} and resumes at its
+ * cursor. A hang-up cancels the daemon body at once. A stream on a stopped box
+ * reads the box row once and then waits for its `kortix_session_changed`
+ * NOTIFY, not on a 5 s poll.
+ *
  * ─── THIS ROUTE NEVER WAKES A BOX ──────────────────────────────────────────
  * It attaches only when the sandbox row ALREADY says `active`. Waking is
  * `POST .../start`'s job and only its job; a read that could start a sandbox
@@ -67,6 +75,7 @@ import {
 import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { isUuid } from '../../shared/validate';
+import { isPgBroadcastListening, waitForSessionChange } from '../../shared/pg-broadcast';
 import {
   CONTROL_EPOCH,
   subscribeControlEvents,
@@ -90,8 +99,28 @@ export const STREAM_HEARTBEAT_MS = 15_000;
 /** Backoff ladder for re-attaching to the daemon, in ms. Capped, never zero. */
 export const RUNTIME_ATTACH_BACKOFF_MS = [1_000, 2_000, 5_000, 10_000, 20_000, 30_000];
 
-/** How long to wait before re-checking a sandbox that is not `active`. */
+/** How long to wait before re-checking a sandbox that is not `active`, when
+ *  this process holds no LISTEN (no NOTIFY can wake the wait). */
 export const RUNTIME_IDLE_RECHECK_MS = 5_000;
+
+/** The same wait with the LISTEN held: a `kortix_session_changed` NOTIFY
+ *  (migration 20261006182246238) ends it the moment the box row changes, so
+ *  this is only the backstop for a lost NOTIFY. */
+export const RUNTIME_IDLE_BACKSTOP_MS = 60_000;
+
+/**
+ * Bytes this stream buffers for a client that reads slower than the box
+ * writes. Past it, the runtime pump stops reading the daemon until the client
+ * catches up: the daemon's ring holds what the client has not read yet.
+ */
+export const STREAM_BUFFER_BYTES = 256 * 1024;
+
+/**
+ * Bytes a client may fall behind before this stream ends. Only control and
+ * meta frames can still grow the buffer while the pump waits, so reaching it
+ * means the client stopped reading. It reconnects with its cursor.
+ */
+export const STREAM_MAX_BACKLOG_BYTES = 8 * 1024 * 1024;
 
 /** Frames the daemon may send that mean the projection changed underneath us. */
 const PROJECTION_INVALIDATING_EVENTS = new Set([
@@ -225,10 +254,31 @@ export function registerSessionStreamRoutes(): void {
         if (closed || !controllerRef) return;
         try {
           controllerRef.enqueue(encoder.encode(payload));
+          if ((controllerRef.desiredSize ?? 0) < STREAM_BUFFER_BYTES - STREAM_MAX_BACKLOG_BYTES) {
+            // A client this far behind has stopped reading. End the stream;
+            // its reconnect resumes at its cursor.
+            closed = true;
+            abort.abort();
+            controllerRef.error(new Error('slow consumer'));
+          }
         } catch {
           closed = true;
           abort.abort();
         }
+      };
+
+      // Backpressure: the runtime pump awaits this before it reads the next
+      // daemon frame. `pull` fires when the client has drained the buffer.
+      let roomWaiters: Array<() => void> = [];
+      const wakeRoomWaiters = (): void => {
+        const waiters = roomWaiters;
+        roomWaiters = [];
+        for (const wake of waiters) wake();
+      };
+      abort.signal.addEventListener('abort', wakeRoomWaiters, { once: true });
+      const room = (): Promise<void> => {
+        if (closed || !controllerRef || (controllerRef.desiredSize ?? 1) > 0) return Promise.resolve();
+        return new Promise<void>((resolve) => roomWaiters.push(resolve));
       };
 
       /** A frame that advances neither cursor (status, hello, our heartbeat). */
@@ -347,6 +397,7 @@ export function registerSessionStreamRoutes(): void {
             controlCseq: () => lastControlCseq,
             writeMeta,
             writeRaw,
+            room,
           });
 
           abort.signal.addEventListener('abort', () => {
@@ -365,10 +416,16 @@ export function registerSessionStreamRoutes(): void {
             }
           });
         },
+        pull() {
+          wakeRoomWaiters();
+        },
         cancel() {
           closed = true;
           abort.abort();
         },
+      }, {
+        highWaterMark: STREAM_BUFFER_BYTES,
+        size: (chunk) => chunk?.byteLength ?? 0,
       });
 
       return new Response(stream, {
@@ -400,6 +457,8 @@ interface PumpArgs {
   controlCseq: () => number | null;
   writeMeta: (event: string, data: Record<string, unknown>) => void;
   writeRaw: (payload: string) => void;
+  /** Resolves when the client buffer has room (backpressure). */
+  room: () => Promise<void>;
 }
 
 /**
@@ -462,7 +521,12 @@ async function pumpRuntime(args: PumpArgs): Promise<void> {
     const attachable = sandbox?.status === 'active' || sandbox?.status === 'provisioning';
     if (!sandbox?.externalId || !attachable) {
       announceDown(sandbox ? `sandbox_${sandbox.status}` : 'no_sandbox');
-      await sleep(RUNTIME_IDLE_RECHECK_MS, args.abort.signal);
+      // No poll: the row's next client-visible write wakes this wait.
+      await waitForSessionChange(
+        args.sessionId,
+        isPgBroadcastListening() ? RUNTIME_IDLE_BACKSTOP_MS : RUNTIME_IDLE_RECHECK_MS,
+        args.abort.signal,
+      );
       continue;
     }
 
@@ -475,7 +539,8 @@ async function pumpRuntime(args: PumpArgs): Promise<void> {
       const delay =
         RUNTIME_ATTACH_BACKOFF_MS[Math.min(attempt, RUNTIME_ATTACH_BACKOFF_MS.length - 1)]!;
       attempt += 1;
-      await sleep(delay, args.abort.signal);
+      // A box that stops while it is unreachable ends the backoff early.
+      await waitForSessionChange(args.sessionId, delay, args.abort.signal);
       continue;
     }
 
@@ -496,9 +561,10 @@ async function pumpRuntime(args: PumpArgs): Promise<void> {
     void refreshProjection(args, 'attach');
 
     try {
-      for await (const frame of parseSseFrames(opened.body)) {
+      for await (const frame of parseSseFrames(opened.body, args.abort.signal)) {
         if (args.isClosed() || args.abort.signal.aborted) break;
         forwardRuntimeFrame(args, frame.event, frame.data);
+        await args.room();
       }
       announceDown('stream_ended');
     } catch (error) {
