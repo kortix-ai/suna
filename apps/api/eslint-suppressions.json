@@ -1455,9 +1455,19 @@
       "count": 1
     }
   },
+  "src/projects/lib/session-create-plan.ts": {
+    "no-console": {
+      "count": 1
+    }
+  },
+  "src/projects/lib/session-create-provision.ts": {
+    "no-console": {
+      "count": 4
+    }
+  },
   "src/projects/lib/session-create.ts": {
     "no-console": {
-      "count": 6
+      "count": 1
     }
   },
   "src/projects/lib/session-reload.ts": {
@@ -1490,7 +1500,7 @@
       "count": 1
     }
   },
-  "src/projects/lib/session-sandbox-env-build.ts": {
+  "src/projects/lib/session-sandbox-env-sources.ts": {
     "no-console": {
       "count": 4
     }
