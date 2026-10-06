@@ -9,7 +9,12 @@ case "$ENVIRONMENT" in
     AWS_REGION="us-east-2"
     SECRET_NAME="kortix-dev-use2-web-env"
     ;;
-  preview|staging)
+  staging)
+    # infra/terraform/environments/staging-web-eu-west-2 reads this secret.
+    AWS_REGION="eu-west-2"
+    SECRET_NAME="kortix-staging-euw2-web-env"
+    ;;
+  preview)
     AWS_REGION="us-west-2"
     ;;
   prod)
