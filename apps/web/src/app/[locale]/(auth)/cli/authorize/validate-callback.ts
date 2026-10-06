@@ -51,11 +51,15 @@ export function validateCallback(raw: string | null): CallbackValidation {
 }
 
 /**
- * `127.0.0.1`, `localhost`, or any `*.localhost` subdomain — every name RFC
- * 6761 guarantees resolves to loopback. Anything else is refused.
+ * `127.0.0.1`, `[::1]`, `localhost`, or a `*.localhost` subdomain — every name
+ * RFC 6761 guarantees resolves to loopback. `URL.hostname` keeps the brackets
+ * of an IPv6 literal. The local API serves sandbox content on
+ * `p<port>-<sandbox>.localhost`, so that shape is refused. Anything else is
+ * refused too.
  */
 function isLoopbackHostname(hostname: string): boolean {
   const host = hostname.toLowerCase();
-  if (host === '127.0.0.1' || host === '::1' || host === 'localhost') return true;
+  if (host === '127.0.0.1' || host === '[::1]' || host === 'localhost') return true;
+  if (/^p\d+-/.test(host)) return false;
   return host.endsWith('.localhost') && host.length > '.localhost'.length;
 }

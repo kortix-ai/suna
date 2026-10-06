@@ -67,7 +67,7 @@ describe('web ECS migration', () => {
     expect(workflow).toContain('cli: ${{ steps.outputs.outputs.cli }}');
     expect(workflow).toContain('gateway=false');
     expect(workflow).toContain('cli=false');
-    expect(workflow).toContain('Vercel is disabled for main');
+    expect(workflow).toContain('Vercel is disabled for dev');
   });
 
   it('defines the Dev web service and canonical DNS record', () => {

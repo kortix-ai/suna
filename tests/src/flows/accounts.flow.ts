@@ -443,6 +443,8 @@ flow(
       'POST /v1/accounts/:accountId/members',
       'GET /v1/projects/:projectId/access',
       'POST /v1/account-invites/:inviteId/accept',
+      'DELETE /v1/accounts/:accountId/members/:userId',
+      'GET /v1/accounts/:accountId',
     ],
   },
   async (ctx) => {
@@ -554,6 +556,26 @@ flow(
         if (!row) throw new Error('accepted invitee missing from project access list');
         if (row.effective_project_role !== 'manager')
           throw new Error(`expected manager, got ${row.effective_project_role}`);
+
+        // A current member re-accepting the same invite still heals (200).
+        const again = await ctx.client
+          .as(addressee)
+          .post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } });
+        again.status(200);
+
+        // After removal the accepted invite must not re-create the membership.
+        const removed = await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/:accountId/members/:userId', {
+          params: { accountId: team.id, userId: addressee.userId },
+        });
+        removed.status(200);
+        const replay = await ctx.client
+          .as(addressee)
+          .post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } });
+        replay.status(410);
+        const after = await ctx.client
+          .as(addressee)
+          .get('/v1/accounts/:accountId', { params: { accountId: team.id } });
+        after.status([403, 404]);
       },
     );
 

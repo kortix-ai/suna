@@ -99,6 +99,16 @@ class PermanentAppDeploymentError extends Error {
   }
 }
 
+/**
+ * A worker that dies mid-drive (OOM, SIGKILL) never reaches `recordDeploymentFailure`,
+ * so the cap there cannot count that attempt. The claim counts it instead: once the
+ * lease lapses the row is claimed again with `attemptCount` past the cap, and the
+ * drive fails it for good rather than building a fourth time.
+ */
+export function attemptsExhausted(attemptCount: number): boolean {
+  return attemptCount > MAX_ATTEMPTS;
+}
+
 function retryDelayMs(attempt: number): number {
   return exponentialBackoffMs({ attempt, baseMs: 2_000, capMs: 60_000 });
 }
@@ -348,6 +358,29 @@ export async function driveAppDeployment(
     auditRef: null,
   };
   try {
+    if (attemptsExhausted(claimed.attemptCount)) {
+      // The dead attempt may have left a live runtime; the failure path below
+      // closes its compute window and removes it.
+      const [orphan] = await db
+        .select()
+        .from(appRuntimes)
+        .where(
+          and(
+            eq(appRuntimes.deploymentId, claimed.deploymentId),
+            inArray(appRuntimes.status, ['provisioning', 'starting', 'running']),
+          ),
+        )
+        .limit(1);
+      if (orphan) {
+        state.runtimeId = orphan.runtimeId;
+        state.runtimeExternalId = orphan.externalId;
+        state.runtimeProvider = orphan.provider as SandboxProviderName;
+      }
+      throw new PermanentAppDeploymentError(
+        `The deployment worker stopped ${MAX_ATTEMPTS} times while driving this deployment`,
+        'attempts_exhausted',
+      );
+    }
     const context = await deploymentContext(claimed.deploymentId);
     const auditRef: DeploymentAuditRef = {
       appId: context.app.appId,

@@ -2,7 +2,7 @@
 #
 # Kortix self-host bootstrap — "get a box, run this, done."
 #
-#   curl -fsSL https://raw.githubusercontent.com/kortix-ai/suna/main/scripts/kortix-selfhost-up.sh | bash -s -- --domain kortix.example.com --email ops@example.com
+#   curl -fsSL https://raw.githubusercontent.com/kortix-ai/suna/dev/scripts/kortix-selfhost-up.sh | bash -s -- --domain kortix.example.com --email ops@example.com
 #   bash kortix-selfhost-up.sh --domain kortix.example.com --email ops@example.com
 #
 # Kortix self-host is VPS-first: --domain (a persistent domain, DNS pointed at
