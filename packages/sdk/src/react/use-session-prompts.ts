@@ -181,13 +181,16 @@ export function releaseHeldPrompts(prompts: readonly SessionPrompt[]): SessionPr
 }
 
 /** The rows with ONE row's text replaced — `edit`'s optimistic write, so the
- *  queue shows the new words on the click instead of after the PATCH. */
+ *  queue shows the new words on the click instead of after the PATCH. Both
+ *  fields: a queue draws `full_text` and falls back to `text`. */
 export function withEditedPromptText(
   prompts: readonly SessionPrompt[],
   promptId: string,
   text: string,
 ): SessionPrompt[] {
-  return prompts.map((prompt) => (prompt.prompt_id === promptId ? { ...prompt, text } : prompt));
+  return prompts.map((prompt) =>
+    prompt.prompt_id === promptId ? { ...prompt, text, full_text: text } : prompt,
+  );
 }
 
 /**

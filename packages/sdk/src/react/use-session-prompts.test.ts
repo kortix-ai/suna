@@ -803,6 +803,13 @@ describe('withEditedPromptText', () => {
     expect(before[1].text).toBe('two');
   });
 
+  test('replaces the full text too: a queue draws `full_text`, so the old words would show until the read after the PATCH', () => {
+    const before = [{ ...row('a', 'one'), full_text: 'one, in full' }];
+    const [after] = withEditedPromptText(before, 'a', 'ONE, in full');
+    expect(after).toMatchObject({ text: 'ONE, in full', full_text: 'ONE, in full' });
+    expect(before[0].full_text).toBe('one, in full');
+  });
+
   test('a row that is gone stays gone', () => {
     expect(withEditedPromptText([row('a', 'one')], 'zz', 'x')).toEqual([row('a', 'one')]);
   });
