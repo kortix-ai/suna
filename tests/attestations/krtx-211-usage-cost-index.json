@@ -1,0 +1,25 @@
+{
+  "source_hash": "ceab94c5b6ddc1a09c658be1805bf4df6d82b185ad6beeae997bbb840fc4a655",
+  "diff_files": [
+    "apps/api/src/__tests__/unit-account-id-param.test.ts",
+    "apps/api/src/__tests__/unit-resolve-account.test.ts",
+    "apps/api/src/accounts/core/app.ts",
+    "apps/api/src/shared/resolve-account.ts",
+    "packages/db/drizzle/meta/20261006000003_snapshot.json",
+    "packages/db/drizzle/meta/_journal.json",
+    "packages/db/migrations/20261005230000000_gateway_logs_account_cost_index.concurrent.ts",
+    "packages/db/migrations/20261005230000100_gateway_logs_account_time_index_drop.concurrent.ts",
+    "packages/db/src/schema/kortix.test.ts",
+    "packages/db/src/schema/kortix.ts",
+    "tests/migration/gateway-logs-account-cost-index.test.ts"
+  ],
+  "diff_hash": "d571e9ad4afea9059d2fc2f6547a57687cd2383e0242d118a89262b86248cebd",
+  "head": "f7478fec5e0a9aab23414cdce57ad6ac5d3260ac",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-06T01:47:24.254Z"
+}

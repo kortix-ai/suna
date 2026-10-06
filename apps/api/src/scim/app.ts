@@ -18,6 +18,7 @@ import { db } from '../shared/db';
 import { withDirectoryTransaction } from '../iam/directory-transaction';
 import { emailTrustedSql } from '../iam/email-trust';
 import { getSupabase } from '../shared/supabase';
+import { isUuid } from '../shared/validate';
 
 // SCIM payloads are large/dynamic — model permissively.
 export const ScimResource = z.record(z.string(), z.any());
@@ -29,6 +30,20 @@ export const scimRouter = makeOpenApiApp<any>();
 // before the route-module side-effect registrations regardless of ES module
 // import hoisting in the orchestrator.
 scimRouter.use('/accounts/:accountId/*', scimAuth);
+
+// A malformed :accountId must never reach a uuid-typed column: Postgres answers
+// 22P02 and the IdP's request dies as an opaque 500 (Better Stack pattern
+// 97669531, KRTX-211). One guard here covers every SCIM route's accountId.
+scimRouter.use('/accounts/:accountId/*', async (c, next) => {
+  const accountId = c.req.param('accountId');
+  if (accountId && !isUuid(accountId)) {
+    return c.json(
+      { error: `"${accountId}" is not a valid account id (an account id is a UUID)` },
+      400,
+    );
+  }
+  await next();
+});
 
 class ScimRollback extends Error {}
 

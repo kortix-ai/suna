@@ -208,6 +208,12 @@ export function parseRole(value: unknown, allowed: AccountRole[]): AccountRole |
 }
 
 export async function getMembership(userId: string, accountId: string) {
+  // A malformed account id (a slug, a stray literal segment) is never a
+  // membership, and letting it reach the uuid-typed casts in the read model
+  // ends the request as SQLSTATE 22P02 → an opaque 500 (Better Stack pattern
+  // 97669531, KRTX-211). Answer the same "not a member" every caller already
+  // maps to 403/404, without a DB read.
+  if (!isUuid(accountId)) return null;
   // ACT-AS: an operator with a live grant on this account reads as its owner.
   // Only ever widens the OPERATOR's own id — `impersonatedAccountFor` compares
   // against the grant's admin_user_id, so the several call sites that pass a

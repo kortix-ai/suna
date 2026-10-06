@@ -112,7 +112,16 @@ mock.module('../middleware/auth', () => ({
   },
 }));
 
-mockIamReadModels({ members: () => [] });
+// The membership read model is the funnel getMembership reaches for a valid
+// uuid; counting its calls proves the malformed-id guard short-circuits
+// before it.
+let readModelCalls = 0;
+mockIamReadModels({
+  members: () => {
+    readModelCalls += 1;
+    return [];
+  },
+});
 mockIamAssignments({ onGrant: () => {} });
 
 mock.module('../iam/authorize', () => ({
@@ -160,6 +169,7 @@ mock.module('../shared/resolve-account', () => ({
 }));
 
 const { accountsRouter } = await import('../accounts/index');
+const { getMembership } = await import('../accounts/core/app');
 
 function createApp() {
   const app = new Hono();
@@ -177,6 +187,7 @@ function createApp() {
 
 beforeEach(() => {
   dbReads = [];
+  readModelCalls = 0;
 });
 
 describe('accounts route uuid params (KRTX-211)', () => {
@@ -207,5 +218,17 @@ describe('accounts route uuid params (KRTX-211)', () => {
     const body = await res.json();
     expect(body.error).toBe('not a member of the requested account');
     expect(dbReads).toEqual([]);
+  });
+
+  test('getMembership answers "not a member" for a malformed id without a read', async () => {
+    // Every account sub-route handler resolves the caller's membership by the
+    // raw :accountId param first (members, invites, devices, branding). A
+    // malformed segment must short-circuit in the funnel — never reach the
+    // read model's uuid casts.
+    expect(await getMembership(USER_ID, 'directory')).toBeNull();
+    expect(readModelCalls).toBe(0);
+    // A valid uuid still flows through to the read model.
+    expect(await getMembership(USER_ID, ACCOUNT_ID)).toBeNull();
+    expect(readModelCalls).toBe(1);
   });
 });

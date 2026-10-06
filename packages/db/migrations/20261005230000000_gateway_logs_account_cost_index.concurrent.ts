@@ -1,12 +1,11 @@
 // Migration: gateway_logs_account_cost_index  (NON-TRANSACTIONAL -- CONCURRENTLY escape hatch)
 //
-// Builds idx_gateway_logs_account_cost for the cost-explorer and session-cost
-// rollups. GET /v1/usage/cost-summary + GET /v1/usage/cost-by-project run five
-// and two same-slice 30-day aggregates over kortix.gateway_request_logs per
-// call (apps/api/src/shared/cost-rollups.ts getCostSummary / listCostByProject;
-// apps/api/src/shared/session-costs.ts the per-session aggregates). Each filters
-// `account_id = $1 AND created_at >= $2 AND created_at < $3` and sums
-// final_cost_precise / upstream_cost_precise / billing_mode, grouping by
+// Builds idx_gateway_logs_account_cost for the cost-explorer rollups.
+// GET /v1/usage/cost-summary + GET /v1/usage/cost-by-project run five and two
+// same-slice 30-day aggregates over kortix.gateway_request_logs per call
+// (apps/api/src/shared/cost-rollups.ts getCostSummary / listCostByProject).
+// Each filters `account_id = $1 AND created_at >= $2 AND created_at < $3` and
+// sums final_cost_precise / upstream_cost_precise / billing_mode, grouping by
 // project_id or session_id.
 //
 // The only account-led index was idx_gateway_logs_account_time
@@ -19,9 +18,16 @@
 // 97669531..., KRTX-211). The 40-100 ms baseline of the same routes proves the
 // DB was not saturated - the scan itself is the outlier.
 //
-// The INCLUDE columns are exactly what those aggregates read, so the whole
-// slice becomes an index-only scan: no heap fetch, no 25 s risk. The key
-// columns are unchanged from the index this replaces
+// The INCLUDE columns are exactly what the cost-rollup aggregates read, so
+// that whole slice becomes an index-only scan. The per-session aggregates in
+// apps/api/src/shared/session-costs.ts (llmAggregateFields) also read ok and
+// the token-count columns, which stay outside the INCLUDE on purpose: every
+// extra included column widens every leaf tuple, and those aggregates read a
+// single session's rows (session_id equality filters first), so their heap
+// share is already small. They keep the same key columns as before - no
+// regression, no index-only gain.
+//
+// The key columns are unchanged from the index this replaces
 // (20261005230000100 drops idx_gateway_logs_account_time): the planner kept
 // picking the narrower index while both existed, so the drop is load-bearing.
 //

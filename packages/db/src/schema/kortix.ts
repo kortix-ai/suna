@@ -3621,9 +3621,10 @@ export const gatewayRequestLogs = kortixSchema.table(
   },
   (table) => [
     uniqueIndex('idx_gateway_logs_request_id').on(table.requestId),
-    // Cost-explorer and session-cost rollups read (account_id, created_at)
-    // windows and sum money/model columns on the same rows
-    // (apps/api/src/shared/cost-rollups.ts, apps/api/src/shared/session-costs.ts).
+    // Cost-explorer rollups read (account_id, created_at) windows and sum
+    // money/model columns on the same rows (apps/api/src/shared/cost-rollups.ts;
+    // the per-session aggregates in session-costs.ts also read ok and the
+    // token-count columns, which stay outside the INCLUDE — see the migration).
     // Built CONCURRENTLY in
     // 20261005230000000_gateway_logs_account_cost_index.concurrent.ts, which
     // also adds INCLUDE (project_id, session_id, provider, resolved_model,

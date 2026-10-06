@@ -37,8 +37,7 @@ const ports: Ports = { ...computePorts(0), sbDb: PORT };
 const URL = `postgresql://postgres:postgres@127.0.0.1:${PORT}/postgres`;
 const CREATE_MIGRATION = '20261005230000000_gateway_logs_account_cost_index';
 const DROP_MIGRATION = '20261005230000100_gateway_logs_account_time_index_drop';
-// 200 synthetic accounts so the probed account's slice is ~0.5% of the table
-// and the planner organically picks the index (no enable_* forcing).
+// 200 synthetic accounts so the probed account's slice is ~0.5% of the table.
 const ACCOUNTS = 200;
 const ROWS = 200_000;
 
@@ -208,9 +207,6 @@ suite('gateway_request_logs account cost covering index (throwaway Postgres)', (
     // keys plus every summed/grouped column — without touching the heap.
     // Whether prod's planner picks it at multi-GB scale is the post-merge
     // signal check's question, not this fixture's.
-    // A spread wide enough that the probed account's 30-day slice is ~0.5% of
-    // the table, so the planner picks the index with default settings — the
-    // question the prod planner faces on a multi-GB heap.
     psql(`
       insert into kortix.accounts (account_id, name)
       select ('00000000-0000-4000-a000-' || lpad(n::text, 12, '0'))::uuid, 'Spread Account ' || n
