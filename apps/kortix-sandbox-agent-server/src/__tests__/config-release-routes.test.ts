@@ -95,7 +95,7 @@ describe('config routes with a fake control', () => {
     const res = await router.request('/converge', {
       method: 'POST',
       headers: { ...bearer, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ format: 'config-release-v1', release_id: 'e'.repeat(64), archive: { url: 'https://evil' } }),
+      body: JSON.stringify({ format: 'config-release-v2', release_id: 'e'.repeat(64), archive: { url: 'https://evil' } }),
     })
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual(converged)
@@ -275,7 +275,7 @@ describe('POST /kortix/config/converge end to end through the OpenCode control s
     expect(api.archiveRequests.map((request) => request.path)).toEqual([release.descriptor.archive!.url])
     const serving = (await readBootLinkTarget(store))!
     expect(readFileSync(join(serving, 'agents/kortix.md'), 'utf8')).toBe('FROM THE API\n')
-    expect(serving).toBe(join(store, release.descriptor.release_id!))
+    expect(serving).toBe(join(store, release.descriptor.release_id!, '.kortix/opencode'))
     expect(git(work, 'status', '--porcelain')).toBe('')
   })
 })

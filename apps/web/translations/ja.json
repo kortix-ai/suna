@@ -1726,7 +1726,8 @@
     },
     "restart": {
       "label": "セッションを再起動",
-      "pending": "再起動中…"
+      "pending": "再起動中…",
+      "ownerOnly": "このセッションを再起動できるのは、セッションの所有者またはプロジェクト管理者のみです。"
     }
   },
   "modelSelector": {
@@ -19110,6 +19111,10 @@
       "textda4bd8bdfe42": "他の人が参加するには、セッションのオーナーの承認が必要です。",
       "text5dae52a3f448": "{count, plural, one {# チャンネル} other {# チャンネル}}",
       "text5097881a690f": "スレッド: {title}",
+      "servedModelRow": "モデル",
+      "servedModelInPlaceOf": "代替元",
+      "servedModelBadge": "{model} で実行中",
+      "servedModelBarDescription": "{requested} は直前のリクエストに応答しませんでした",
       "text414cc580557b": "キューに入ったセッションプロンプトを編集しました",
       "text52867b778586": "kortix.yaml ひとつ。",
       "textd0dfd435b2f4": "AI の労働力を、コードとして。",

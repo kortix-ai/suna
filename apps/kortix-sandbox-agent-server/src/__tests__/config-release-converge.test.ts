@@ -312,7 +312,7 @@ describe('convergeConfigRelease — follow-base', () => {
       reload: { how: 'restarted', turn_ended: false, orphaned_message_id: null },
       reason: null,
     })
-    expect(await servingDir()).toBe(releaseDir(store, id))
+    expect(await servingDir()).toBe(join(releaseDir(store, id), DIR))
     expect(readFileSync(join((await servingDir())!, 'agents/kortix.md'), 'utf8')).toBe('PROMPT v1\n')
     expect(oc.state.governanceAtSpawn).toEqual([GOV_V1])
     expect(process.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG).toBe(release.descriptor.compiled_governance_etag!)
@@ -324,7 +324,7 @@ describe('convergeConfigRelease — follow-base', () => {
       proven: true,
     })
     expect(runningSourceCommit()).toBe(release.descriptor.source_commit!)
-    expect(prepared).toEqual([expect.stringMatching(new RegExp(`${id}\\.[0-9a-f-]+\\.tmp$`))])
+    expect(prepared).toEqual([expect.stringMatching(new RegExp(`${id}\\.[0-9a-f-]+\\.tmp/\\.kortix/opencode$`))])
     expect(git(work, 'status', '--porcelain')).toBe('')
     // The descriptor request has no inputs at all.
     expect(api.descriptorRequests.at(-1)!.body).toEqual({})
@@ -730,14 +730,14 @@ describe('convergeConfigRelease — other sources', () => {
     const oc = fakeOpencode()
     await converge(oc)
     const dir = releaseDir(store, good.descriptor.release_id!)
-    expect(await servingDir()).toBe(dir)
+    expect(await servingDir()).toBe(join(dir, DIR))
 
     write(work, `${DIR}/agents/kortix.md`, 'SESSION EDIT\n')
     const response = await converge(oc)
 
     expect(response.outcome).toBe('unchanged')
     expect(response.config).toMatchObject({ source: 'release', mode: 'follow-base', proven: true })
-    expect(await servingDir()).toBe(dir)
+    expect(await servingDir()).toBe(join(dir, DIR))
     // The descriptor request carries no inputs at all.
     expect(api.descriptorRequests.at(-1)!.body).toEqual({})
 
@@ -748,7 +748,7 @@ describe('convergeConfigRelease — other sources', () => {
     const after = await converge(oc)
     expect(after.outcome).toBe('applied')
     expect(after.config.release_id).toBe(pushed.descriptor.release_id!)
-    expect(await servingDir()).toBe(releaseDir(store, pushed.descriptor.release_id!))
+    expect(await servingDir()).toBe(join(releaseDir(store, pushed.descriptor.release_id!), DIR))
   })
 
   test('repository access withheld: the image default dir runs with the governance', async () => {
@@ -958,7 +958,7 @@ describe('config_releases off: the box reverts to its workspace config dir', () 
     serveRelease(api, release)
     const oc = fakeOpencode()
     await converge(oc)
-    expect(await servingDir()).toBe(releaseDir(store, release.descriptor.release_id!))
+    expect(await servingDir()).toBe(join(releaseDir(store, release.descriptor.release_id!), DIR))
     expect(await readBootConfigPointer(store)).not.toBeNull()
 
     api.respond(FEATURE_DISABLED)
@@ -1040,7 +1040,7 @@ describe('config_releases off: the box reverts to its workspace config dir', () 
       mode: 'follow-base',
       proven: true,
     })
-    expect(await servingDir()).toBe(releaseDir(store, release.descriptor.release_id!))
+    expect(await servingDir()).toBe(join(releaseDir(store, release.descriptor.release_id!), DIR))
     expect((await readBootConfigPointer(store))!.release_id).toBe(release.descriptor.release_id!)
   })
 })

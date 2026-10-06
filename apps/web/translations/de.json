@@ -1726,7 +1726,8 @@
     },
     "restart": {
       "label": "Sitzung neu starten",
-      "pending": "Wird neu gestartet…"
+      "pending": "Wird neu gestartet…",
+      "ownerOnly": "Nur der Sitzungsinhaber oder ein Projektmanager kann diese Sitzung neu starten."
     }
   },
   "modelSelector": {
@@ -19110,6 +19111,10 @@
       "textda4bd8bdfe42": "Andere Personen brauchen zum Beitreten die Genehmigung des Sitzungseigentümers.",
       "text5dae52a3f448": "{count, plural, one {# Kanal} other {# Kanäle}}",
       "text5097881a690f": "Thread: {title}",
+      "servedModelRow": "Modell",
+      "servedModelInPlaceOf": "Anstelle von",
+      "servedModelBadge": "Läuft auf {model}",
+      "servedModelBarDescription": "{requested} hat die letzte Anfrage nicht beantwortet",
       "text414cc580557b": "Sitzungsaufforderung in der Warteschlange bearbeitet",
       "text52867b778586": "Eine kortix.yaml.",
       "textd0dfd435b2f4": "Deine KI-Belegschaft als Code.",

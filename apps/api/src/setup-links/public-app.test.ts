@@ -43,6 +43,8 @@ mock.module('../shared/db', () => ({
 
 mock.module('../shared/rate-limit', () => ({
   TokenBucketRateLimiter: class {},
+}));
+mock.module('../middleware/rate-limit', () => ({
   enforceRateLimit: async () => null,
   createProjectSecretWriteRateLimitMiddleware: () => async (_c: any, next: any) => next(),
 }));

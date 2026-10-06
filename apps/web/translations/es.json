@@ -1726,7 +1726,8 @@
     },
     "restart": {
       "label": "Reiniciar sesión",
-      "pending": "Reiniciando…"
+      "pending": "Reiniciando…",
+      "ownerOnly": "Solo el propietario de la sesión o un administrador del proyecto puede reiniciar esta sesión."
     }
   },
   "modelSelector": {
@@ -19110,6 +19111,10 @@
       "textda4bd8bdfe42": "Las demás personas necesitan la aprobación del propietario de la sesión para unirse.",
       "text5dae52a3f448": "{count, plural, one {# canal} other {# canales}}",
       "text5097881a690f": "Hilo: {title}",
+      "servedModelRow": "Modelo",
+      "servedModelInPlaceOf": "En lugar de",
+      "servedModelBadge": "Ejecutándose en {model}",
+      "servedModelBarDescription": "{requested} no respondió a la última solicitud",
       "text414cc580557b": "Solicitud de sesión en cola editada",
       "text52867b778586": "Un kortix.yaml.",
       "textd0dfd435b2f4": "Tu plantilla de IA, como código.",

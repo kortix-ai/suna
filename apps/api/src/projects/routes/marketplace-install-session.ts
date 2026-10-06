@@ -194,29 +194,31 @@ async function handleMarketplaceInstallSession(c: any) {
   return c.json({ session_id: result.row.sessionId }, 201);
 }
 
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/marketplace/install-session',
-    tags: ['marketplace'],
-    summary: 'Start a session that installs a marketplace item',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-      body: {
-        content: {
-          'application/json': {
-            schema: lenientBody({
-              id: z.string().openapi({ description: 'Marketplace item id to install.' }),
-            }),
+export function registerMarketplaceInstallSessionRoutes(): void {
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{projectId}/marketplace/install-session',
+      tags: ['marketplace'],
+      summary: 'Start a session that installs a marketplace item',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: {
+          content: {
+            'application/json': {
+              schema: lenientBody({
+                id: z.string().openapi({ description: 'Marketplace item id to install.' }),
+              }),
+            },
           },
         },
       },
-    },
-    responses: {
-      201: json(z.any(), 'Session started'),
-      ...errors(400, 402, 403, 404),
-    },
-  }),
-  handleMarketplaceInstallSession,
-);
+      responses: {
+        201: json(z.any(), 'Session started'),
+        ...errors(400, 402, 403, 404),
+      },
+    }),
+    handleMarketplaceInstallSession,
+  );
+}

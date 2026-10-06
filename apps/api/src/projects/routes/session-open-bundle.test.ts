@@ -121,7 +121,7 @@ mock.module('../lib/serializers', () => ({
 }));
 
 const { projectsApp } = await import('../lib/app');
-await import('./session-open-bundle');
+(await import('./session-open-bundle')).registerSessionOpenBundleRoutes();
 
 function buildApp() {
   const app = new Hono<{ Variables: { userId: string; authType: string } }>();

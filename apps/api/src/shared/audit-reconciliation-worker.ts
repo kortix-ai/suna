@@ -6,15 +6,12 @@ import {
   reconcileAuditEvents,
 } from './audit-reconciliation';
 import { db } from './db';
-import { runWorkerTick } from './audit-scope';
 
 const PAGE_SIZE = 1_000;
 // An account is revisited at most this often. The visit is cheap (it reads
 // only rows newer than the account's high-water mark), but 45k accounts at a
 // 60s idle loop was ~750 visits/s across the fleet for no new data.
 const RECHECK_HOURS = 6;
-const ACTIVE_DELAY_MS = 100;
-const IDLE_DELAY_MS = 60_000;
 // Escalating retry delay for a page that keeps failing: 5s, 30s, 120s, then
 // capped at 300s. A flat 5s retry forever burns I/O on every replica (the
 // query is the same expensive scan every time) without ever making progress.
@@ -23,12 +20,6 @@ const ERROR_DELAYS_MS = [5_000, 30_000, 120_000, 300_000];
 // and advance the cursor past it. One permanently broken account must not
 // stall reconciliation for every account after it forever.
 const MAX_CONSECUTIVE_ACCOUNT_FAILURES = 3;
-
-let timer: ReturnType<typeof setTimeout> | null = null;
-let stopped = true;
-let active: Promise<void> | null = null;
-let lastScannedAccountId: string | null = null;
-let failureState: AuditReconciliationFailureState = { consecutiveFailures: 0, failingAccountId: null };
 
 /** Raised by {@link runAuditReconciliationPage} so the caller knows which
  * account was being reconciled when the page failed, without changing the
@@ -156,69 +147,4 @@ export async function runAuditReconciliationPage(
     });
   }
   return { accountId, result };
-}
-
-async function tick(): Promise<void> {
-  if (stopped) return;
-  try {
-    const previousAccountId = lastScannedAccountId;
-    const page = await runAuditReconciliationPage(previousAccountId);
-    failureState = { consecutiveFailures: 0, failingAccountId: null };
-    if (page.accountId) {
-      // Do not advance past an account while it still has another bounded
-      // source-ledger page. Advancing here limited a large backfill to one
-      // page per full account scan (and one scan per idle interval).
-      lastScannedAccountId = nextAuditReconciliationCursor(previousAccountId, page);
-      schedule(ACTIVE_DELAY_MS);
-    } else {
-      lastScannedAccountId = null;
-      schedule(IDLE_DELAY_MS);
-    }
-  } catch (error) {
-    const failedAccountId = error instanceof AuditReconciliationPageError ? error.accountId : null;
-    const decision = nextAuditReconciliationFailureDecision(failureState, failedAccountId);
-    failureState = decision.state;
-    if (decision.skipToAccountId) {
-      console.warn(
-        '[audit-reconciliation] skipping account after repeated failures',
-        decision.skipToAccountId,
-      );
-      lastScannedAccountId = decision.skipToAccountId;
-    }
-    console.warn(
-      '[audit-reconciliation] page failed',
-      error instanceof Error ? error.message : String(error),
-    );
-    schedule(decision.delayMs);
-  }
-}
-
-function schedule(delay: number): void {
-  if (stopped || timer) return;
-  timer = setTimeout(() => {
-    timer = null;
-    const run = runWorkerTick('audit-reconciliation', tick);
-    active = run;
-    void run.finally(() => {
-      if (active === run) active = null;
-    });
-  }, delay);
-  timer.unref?.();
-}
-
-export function startAuditReconciliationWorker(): void {
-  if (!stopped) return;
-  stopped = false;
-  lastScannedAccountId = null;
-  failureState = { consecutiveFailures: 0, failingAccountId: null };
-  schedule(0);
-}
-
-export async function stopAuditReconciliationWorker(): Promise<void> {
-  stopped = true;
-  if (timer) clearTimeout(timer);
-  timer = null;
-  lastScannedAccountId = null;
-  failureState = { consecutiveFailures: 0, failingAccountId: null };
-  await active;
 }
