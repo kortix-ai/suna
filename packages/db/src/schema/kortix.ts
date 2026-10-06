@@ -1700,6 +1700,8 @@ export const projectBackends = kortixSchema.table(
     siteUrl: text('site_url'),
     /** Convex admin key, sealed with the project secret envelope. */
     adminKeyEnc: text('admin_key_enc'),
+    /** ES256 private key that signs Kortix sign-in tokens for this backend, sealed like the admin key. */
+    authKeyEnc: text('auth_key_enc'),
     /** The backend image the machine boots, by template id. */
     template: text('template'),
     cpu: integer('cpu').notNull(),

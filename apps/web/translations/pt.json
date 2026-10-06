@@ -19285,7 +19285,8 @@
       "texta593a9f33e01": "Isso exclui {value0}, sua máquina e todos os seus dados. Não é possível desfazer.",
       "textd784a0fa435a": "Este projeto atingiu o limite de 3 backends. Exclua um para criar outro.",
       "texte7a241debad5": "URL",
-      "textbf8026b9f2ff": "backends convex banco de dados tempo real funções de servidor armazenamento agendamentos"
+      "textbf8026b9f2ff": "backends convex banco de dados tempo real funções de servidor armazenamento agendamentos",
+      "text74d0f7d5e755": "Emitir um token de login do backend"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

@@ -52,6 +52,7 @@ export function bindProjectAccessResources(projectId: string) {
       waitUntilRunning: (backendId: string, options?: P.WaitForBackendOptions) =>
         P.waitForBackend(projectId, backendId, options),
       credentials: (backendId: string) => P.getBackendCredentials(projectId, backendId),
+      token: (backendId: string) => P.getBackendToken(projectId, backendId),
       remove: (backendId: string) => P.deleteBackend(projectId, backendId),
     },
 

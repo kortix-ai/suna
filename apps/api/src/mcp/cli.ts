@@ -43,6 +43,7 @@ export const DENY_SUBCOMMANDS: { path: [string, string]; denial: Denial }[] = [
   { path: ['env', 'push'], denial: { reason: 'it reads a local file', use: '`secrets set KEY=value`' } },
   { path: ['apps', 'deploy'], denial: { reason: 'it deploys a local directory, and this server has none', use: 'run_command in a session sandbox, where the source lives: `kortix apps deploy <path>` there' } },
   { path: ['backends', 'deploy'], denial: { reason: 'it deploys a local directory, and this server has none', use: 'run_command in a session sandbox, where the source lives: `kortix backends deploy <name> --dir <path>` there' } },
+  { path: ['backends', 'token'], denial: { reason: 'it prints a sign-in token for a backend into this conversation', use: 'run_command in a session sandbox: `kortix backends token <name>` there' } },
   { path: ['backends', 'env'], denial: { reason: 'it prints a backend admin key into this conversation', use: 'run_command in a session sandbox: `eval "$(kortix backends env <name>)"` keeps the key in the shell' } },
   { path: ['connectors', 'mcp'], denial: { reason: 'it starts a stdio MCP server', use: 'list_connectors, search_connector_actions, call_connector' } },
   ...['connect', 'attach', 'shell', 'terminal', 'ssh', 'forward', 'ports'].flatMap((sub) =>

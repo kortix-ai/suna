@@ -26,6 +26,13 @@ import { PlatinumHttpError, platinumJson } from '../shared/platinum';
 import { sandboxOwnershipMarker } from '../platform/sandbox-ownership';
 import { currentInstanceId, decryptProjectSecret, encryptProjectSecret } from '../projects/surface';
 import {
+  type BackendTokenSubject,
+  backendAuthEnv,
+  generateBackendAuthKey,
+  mintBackendToken,
+  setBackendEnv,
+} from './auth';
+import {
   CONVEX_API_PORT,
   CONVEX_IMAGE_SPEC,
   CONVEX_ORIGINS_FILE,
@@ -144,6 +151,29 @@ export async function getLiveBackend(projectId: string, backendId: string): Prom
   return row ?? null;
 }
 
+/** Mints a Kortix sign-in token for this member, or null when the backend predates sign-in. */
+export function backendMemberToken(row: BackendRow, subject: BackendTokenSubject) {
+  if (!row.authKeyEnc) return null;
+  return mintBackendToken(row.backendId, decryptProjectSecret(row.projectId, row.authKeyEnc), subject);
+}
+
+/** A live, running backend of this project by name, or null. */
+export async function getRunningBackendByName(projectId: string, name: string): Promise<BackendRow | null> {
+  const [row] = await db
+    .select()
+    .from(projectBackends)
+    .where(
+      and(
+        eq(projectBackends.projectId, projectId),
+        eq(projectBackends.name, name),
+        eq(projectBackends.status, 'running'),
+        isNull(projectBackends.deletedAt),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
 /** The admin key of a running backend. */
 export function backendAdminKey(row: BackendRow & { adminKeyEnc: string }): string {
   return decryptProjectSecret(row.projectId, row.adminKeyEnc);
@@ -230,6 +260,9 @@ export async function provisionBackend(row: BackendRow, region?: string): Promis
     await writeOriginsFile(externalId, `CONVEX_CLOUD_ORIGIN=${url}\nCONVEX_SITE_ORIGIN=${siteUrl}\n`);
     await waitHealthy(url);
     const adminKey = await mintAdminKey(externalId);
+    // Kortix sign-in: the backend verifies member tokens with this key's public half.
+    const authKey = generateBackendAuthKey();
+    await setBackendEnv(url, adminKey, backendAuthEnv(backendId, authKey));
 
     const [ready] = await db
       .update(projectBackends)
@@ -238,6 +271,7 @@ export async function provisionBackend(row: BackendRow, region?: string): Promis
         url,
         siteUrl,
         adminKeyEnc: encryptProjectSecret(projectId, adminKey),
+        authKeyEnc: encryptProjectSecret(projectId, authKey),
         updatedAt: new Date(),
       })
       // Only a row nobody deleted meanwhile may become `running`.

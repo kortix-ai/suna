@@ -31,6 +31,10 @@ Subcommands:
                                     eval "$(kortix backends env main)".
                                     dotenv: KEY=value lines for .env.local.
                                     json: the full credentials object.
+  token <name|id>                   Print a one-hour Kortix sign-in token naming
+                                    you. Convex functions read you with
+                                    ctx.auth.getUserIdentity(). --json adds
+                                    expires_at.
   deploy <name> [-- <convex args>]  Deploy ./convex to the backend with
                                     npx convex deploy. Creates the backend when
                                     it does not exist.
@@ -140,6 +144,8 @@ export async function runBackends(argv: string[]): Promise<number> {
         return await getCommand(rest, common.options, common.json);
       case 'env':
         return await envCommand(rest, common.options);
+      case 'token':
+        return await tokenCommand(rest, common.options, common.json);
       case 'deploy':
         return await deployCommand(rest, extra, common.options);
       case 'delete':
@@ -232,6 +238,17 @@ async function getCommand(rest: string[], options: ContextOptions, json: boolean
   const backend = await scoped(ctx, () => resolveBackend(ctx.backends, target));
   if (json) emitJson({ backend });
   else process.stdout.write(`\n  ${C.bold}${backend.name}${C.reset}\n${backendLines(backend)}\n`);
+  return 0;
+}
+
+async function tokenCommand(rest: string[], options: ContextOptions, json: boolean): Promise<number> {
+  const target = rest.find((value) => !value.startsWith('-'));
+  if (!target) return fail('token needs a backend name or id');
+  const ctx = await context(options);
+  if (!ctx) return 1;
+  const minted = await scoped(ctx, async () => ctx.backends.token((await resolveBackend(ctx.backends, target)).backend_id));
+  if (json) emitJson(minted);
+  else process.stdout.write(`${minted.token}\n`);
   return 0;
 }
 

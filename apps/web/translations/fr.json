@@ -19285,7 +19285,8 @@
       "texta593a9f33e01": "Cela supprime {value0}, sa machine et toutes ses données. Cette action est irréversible.",
       "textd784a0fa435a": "Ce projet a atteint sa limite de 3 backends. Supprimez-en un pour en créer un autre.",
       "texte7a241debad5": "URL",
-      "textbf8026b9f2ff": "backends convex base de données temps réel fonctions serveur stockage planifications"
+      "textbf8026b9f2ff": "backends convex base de données temps réel fonctions serveur stockage planifications",
+      "text74d0f7d5e755": "Émettre un jeton de connexion du backend"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

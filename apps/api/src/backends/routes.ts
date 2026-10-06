@@ -9,10 +9,12 @@ import { assertProjectCapability, loadProjectForUser, projectsApp } from '../pro
 import { requireFeatureFlag } from '../feature-flags/gate';
 import { resolveSessionSandboxRegion } from '../platform/services/sandbox-region';
 import type { AppEnv } from '../types';
+import { resolveAppViewerIdentity } from '../apps/viewer';
 import {
   BackendLimitError,
   type BackendRow,
   backendAdminKey,
+  backendMemberToken,
   deleteBackend,
   effectiveStatus,
   getLiveBackend,
@@ -50,6 +52,13 @@ const BackendCredentials = z
     }),
   })
   .openapi('BackendCredentials');
+
+const BackendToken = z
+  .object({
+    token: z.string().openapi({ description: 'ES256 JWT the backend accepts as `ctx.auth`. Send it with `client.setAuth`.' }),
+    expires_at: z.string(),
+  })
+  .openapi('BackendToken');
 
 const NameSchema = z
   .string()
@@ -207,6 +216,34 @@ export function registerBackendsRoutes(): void {
         },
         200,
       );
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'post', path: '/{projectId}/backends/{backendId}/token', tags: ['backends'],
+      summary: 'Mint a Kortix sign-in token for the backend', ...auth,
+      description:
+        'A one-hour JWT naming the caller (`subject` = Kortix user id, `email`). The backend verifies it ' +
+        'with the key Kortix wrote into its environment; read it in a function with `ctx.auth.getUserIdentity()`.',
+      request: { params: BackendParams },
+      responses: { 200: json(BackendToken, 'Token'), ...errors(403, 404, 409) },
+    }),
+    async (c) => {
+      const { projectId, backendId } = c.req.valid('param');
+      const loaded = await authorizedProject(c, projectId);
+      if (loaded instanceof Response) return loaded;
+      const row = await getLiveBackend(projectId, backendId);
+      if (!row) return c.json({ error: 'Not found' }, 404);
+      if (row.status !== 'running') {
+        return c.json({ error: `backend is ${effectiveStatus(row)}`, code: 'backend_not_running' }, 409);
+      }
+      const identity = await resolveAppViewerIdentity(loaded.userId);
+      const minted = backendMemberToken(row, { userId: loaded.userId, email: identity.email });
+      if (!minted) {
+        return c.json({ error: 'this backend predates Kortix sign-in; create a new backend', code: 'backend_auth_unavailable' }, 409);
+      }
+      return c.json({ token: minted.token, expires_at: minted.expiresAt.toISOString() }, 200);
     },
   );
 

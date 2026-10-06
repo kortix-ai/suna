@@ -19285,7 +19285,8 @@
       "texta593a9f33e01": "Questo elimina {value0}, la sua macchina e tutti i suoi dati. L’operazione non può essere annullata.",
       "textd784a0fa435a": "Questo progetto ha raggiunto il limite di 3 backend. Eliminane uno per crearne un altro.",
       "texte7a241debad5": "URL",
-      "textbf8026b9f2ff": "backend convex database realtime funzioni server archiviazione pianificazioni"
+      "textbf8026b9f2ff": "backend convex database realtime funzioni server archiviazione pianificazioni",
+      "text74d0f7d5e755": "Emettere un token di accesso del backend"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

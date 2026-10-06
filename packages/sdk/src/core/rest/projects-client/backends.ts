@@ -106,6 +106,23 @@ export async function getBackendCredentials(
   );
 }
 
+export interface ProjectBackendToken {
+  /** ES256 JWT the backend accepts as `ctx.auth`; pass it to the Convex client's `setAuth`. */
+  token: string;
+  expires_at: string;
+}
+
+/**
+ * A one-hour Kortix sign-in token for the backend, naming the caller. Inside a
+ * Convex function, `ctx.auth.getUserIdentity()` returns that member.
+ */
+export async function getBackendToken(projectId: string, backendId: string): Promise<ProjectBackendToken> {
+  return unwrap(
+    await backendApi.post<ProjectBackendToken>(`/projects/${projectId}/backends/${backendId}/token`, {}),
+    'Failed to mint a backend token',
+  );
+}
+
 export async function deleteBackend(projectId: string, backendId: string): Promise<void> {
   const response = await backendApi.delete(`/projects/${projectId}/backends/${backendId}`);
   if (!response.success) throw response.error ?? new Error('Failed to delete backend');

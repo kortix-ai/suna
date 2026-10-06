@@ -81,6 +81,9 @@ function startServer(): string {
         return Response.json({ backend: backend({ name: createdName }) });
       }
       if (path === `${base}/backends/${BACKEND_ID}/credentials`) return Response.json(credentials());
+      if (path === `${base}/backends/${BACKEND_ID}/token` && req.method === 'POST') {
+        return Response.json({ token: 'h.p.s', expires_at: '2026-10-06T01:00:00.000Z' });
+      }
       if (path === `${base}/backends/${BACKEND_ID}` && req.method === 'DELETE') {
         return new Response(null, { status: 204 });
       }
@@ -284,6 +287,16 @@ describe('kortix backends', () => {
     expect(lines).toContain('deployment=unset');
     expect(lines).toMatch(/cwd=.*\/app/);
     expect(calls.some((c) => c.method === 'POST')).toBe(false);
+  });
+
+  test('token prints the JWT alone, and --json adds expires_at', async () => {
+    existing = true;
+    const config = writeConfig(startServer());
+    const plain = await runCli(['backends', 'token', 'main', '--project', PROJECT], config);
+    expect(plain.code).toBe(0);
+    expect(plain.stdout.trim()).toBe('h.p.s');
+    const asJson = await runCli(['backends', 'token', 'main', '--project', PROJECT, '--json'], config);
+    expect(JSON.parse(asJson.stdout)).toEqual({ token: 'h.p.s', expires_at: '2026-10-06T01:00:00.000Z' });
   });
 
   test('deploy creates the backend when it does not exist', async () => {

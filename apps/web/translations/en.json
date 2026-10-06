@@ -19296,7 +19296,8 @@
       "texta593a9f33e01": "This deletes {value0}, its machine and all of its data. This cannot be undone.",
       "textd784a0fa435a": "This project has reached its limit of 3 backends. Delete one to create another.",
       "texte7a241debad5": "URL",
-      "textbf8026b9f2ff": "backends convex database realtime server functions storage schedules"
+      "textbf8026b9f2ff": "backends convex database realtime server functions storage schedules",
+      "text74d0f7d5e755": "Mint a backend sign-in token"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

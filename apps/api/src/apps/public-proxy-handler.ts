@@ -8,7 +8,8 @@ import { AppBudgetExceededError } from './budget';
 import { AppAccountUnfundedError, AppLimitError } from './limits';
 import { AppHostingProvider } from './hosting';
 import { enqueueCurrentAppRuntime } from './deployment-worker';
-import { authorizeAppRequest, resolveAppViewerUserId, bindAppViewerSession, appViewerEndpointResponse, appViewerContextHeader } from './public-proxy-access';
+import { authorizeAppRequest, resolveAppViewerUserId, bindAppViewerSession, appViewerEndpointResponse,
+  appBackendTokenResponse, appViewerContextHeader } from './public-proxy-access';
 import { resolveAppRequest, verifyAppEdgeRequest } from './public-proxy-edge';
 import { appPublicStatusResponse, publicDeploymentStatus, appPublicBudgetResponse, appPublicUnavailableResponse, appProviderStoppedResponse, appColdStartUpstreamResponse } from './public-proxy-status';
 import { loadPublicAppState, loadPublicApp, ensureAppRuntimeRunning, appRuntimeNeedsWake } from './public-proxy-runtime';
@@ -34,6 +35,9 @@ export async function handleAppPublicRequest(request: Request): Promise<Response
   // must never wake a sleeping sandbox.
   if (url.pathname === '/_kortix/viewer') {
     return appViewerEndpointResponse(request, url, gateApp);
+  }
+  if (url.pathname === '/_kortix/backend-token') {
+    return appBackendTokenResponse(request, url, gateApp);
   }
   const viewer = await appViewerContextHeader(request, url, state.app);
   if (

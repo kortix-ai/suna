@@ -353,6 +353,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Merged change request': 'textff5ebd26b10f',
   'Migrated sandbox to another provider': 'textd45033f1240d',
   'Migrated to per-seat pricing': 'text1347495aa04f',
+  'Mint a backend sign-in token': 'text74d0f7d5e755',
   'Opened Kortix App WebSocket': 'text466d6c658ef8',
   'Opened Slack login link': 'texta982f7e34f86',
   'Opened Teams login link': 'text0ed4cc8a83d2',

@@ -433,6 +433,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/projects/:projectId/backends': { action: 'backend.create', title: 'Created backend' },
   'DELETE /v1/projects/:projectId/backends/:backendId': { action: 'backend.delete', title: 'Deleted backend' },
   'GET /v1/projects/:projectId/backends/:backendId': { action: 'backend.read', title: 'Viewed backend' },
+  'POST /v1/projects/:projectId/backends/:backendId/token': { action: 'backend.token.mint', title: 'Mint a backend sign-in token' },
   'GET /v1/projects/:projectId/backends/:backendId/credentials': { action: 'backend.credentials.view', title: 'Read backend admin credentials', events: ['backend.credentials.read'] },
   'GET /v1/projects/:projectId/branches': { action: 'git.branch.list', title: 'Listed Git branches' },
   'GET /v1/projects/:projectId/change-requests': { action: 'change_request.list', title: 'Listed change requests' },

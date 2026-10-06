@@ -6,6 +6,7 @@ import {
   deleteBackend,
   getBackend,
   getBackendCredentials,
+  getBackendToken,
   listBackends,
   waitForBackend,
   type ProjectBackend,
@@ -122,4 +123,12 @@ test('waitForBackend gives up after its timeout', async () => {
   await expect(
     waitForBackend('project-1', backend.backend_id, { intervalMs: 5, timeoutMs: 20 }),
   ).rejects.toThrow(/still provisioning/);
+});
+
+test('getBackendToken POSTs to the token route and returns the JWT', async () => {
+  responses = [{ body: { token: 'h.p.s', expires_at: '2026-10-06T01:00:00.000Z' } }];
+  const minted = await getBackendToken('project-1', backend.backend_id);
+  expect(minted).toEqual({ token: 'h.p.s', expires_at: '2026-10-06T01:00:00.000Z' });
+  expect(last().method).toBe('POST');
+  expect(last().url).toEndWith(`/projects/project-1/backends/${backend.backend_id}/token`);
 });
