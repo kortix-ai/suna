@@ -50,6 +50,10 @@ Platinum cell ── celld ── default export (src/worker.js)
 | `src/kortix/bus.js`, `transcript.js`, `ids.js` | Event bus and SSE, the `kortix.transcript.v1` store, root and message ids. |
 | `src/kortix/prompt.js` | `CELL_VERSION` and the prompt body parser. Not in `worker.js`: see [celld rules](#celld-rules). |
 | `src/vendor/pi-skills.js` | pi 0.84.4 skill loader (MIT). pi-durable 1.0 does not ship one. |
+| `src/skills.js`, `src/managed-skills.js` | kortixd's skill directories and order; the managed `kortix-*` overlay, fetched from `/v1/runtime-assets/managed-skills` and kept in SQLite. |
+| `src/commands.js` | Slash commands: pi prompt templates from `<pi config dir>/prompts` (vendored pi 1.0.3 expansion, MIT). |
+| `src/permissions.js`, `src/interactions.js` | The agent's `permission` block before every tool call (pi-durable `beforeTool` hook); durable `ask` requests and the `question` tool. |
+| `src/kortix-tools/` | kortixd's `web_search`, `image_search`, `scrape_webpage`, `memory`, `show`. |
 | `build.mjs` | esbuild bundle to `dist/worker.js`. Stubs pi-ai's variable `import()` in `auth/context.js`. |
 | `wrangler.json` | celld deployment config. Holds no credential. |
 | `deploy-platinum.mjs` | Uploads `dist/worker.js` as a Platinum worker version and activates it. |
@@ -205,6 +209,27 @@ Platinum dev, worker version `d7f2ceef4033b343`, faux model, 2026-10-05:
 | `POST /v1/sandboxes` (`runtime: cell`) → running | 1.3 s |
 | create → `/kortix/health` ready | 4.6 s |
 | prompt (write + bash + text) → `session.idle` | 241 ms |
+
+## Parity with kortixd's pi harness
+
+Verified on pi-js 2026-10-06 (`55ec8b7bcf`, live probe) and by `test/all.sh`.
+
+| Surface | kortixd pi | pi cell |
+| --- | --- | --- |
+| Tools | bash, read, write, edit, glob, grep, web_search, image_search, scrape_webpage, memory, show, question, task | All except `task`. Plus `todowrite`, `todoread`. |
+| Skills | managed overlay, `skills/`, `<pi config dir>/skills`, `.kortix/opencode/skills`; `permission.skill` deny hides one | Same order and rules. `/skill:name` expands. |
+| Slash commands | `<pi config dir>/prompts`, `GET /command`, `POST /session/:id/command` | Same. `session.commands` advertised. |
+| Permissions | `deny`, `ask` (once, always, reject), `tools: {x: false}` | Same. A request survives an eviction. |
+| Compaction | `POST /session/:id/summarize` | Same. |
+| Secrets in the shell | project env and session env | Same; `KORTIX_*` never reaches the shell. |
+| Subagents (`task`, `session.subagents`) | Yes | **No.** |
+| Config releases (`config.release.v1`) | Yes | **No.** The cell reads the working tree. |
+| Shell | Ubuntu: git, python, npx, pnpm, bun, tar, sqlite3, `kortix` CLI | just-bash: node 22 shim and npm (no lifecycle scripts, no sockets, no child processes), curl, wget, jq, rg. **No** git, python, npx, pnpm, tar, zip, sqlite3, `kortix` CLI. |
+| Ports, `/proxy/:port`, dev servers | Yes | **No** (501). |
+
+`web_search`, `image_search` and `scrape_webpage` call the API's router
+(`/v1/router/tavily|serper|firecrawl`). An API without those keys answers
+`503 … not configured`, on a VM session and a cell alike.
 
 ## Known gaps
 
