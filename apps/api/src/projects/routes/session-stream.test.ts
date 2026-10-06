@@ -35,7 +35,7 @@ let sandboxRow: { externalId: string | null; status: string } | null = null;
 let sandboxQueryThrows = false;
 
 /** What the fake daemon does when the route tries to attach. */
-let daemonAttach: () => Promise<
+let daemonAttach: (signal: AbortSignal) => Promise<
   | { ok: true; body: ReadableStream<Uint8Array>; epoch: string | null }
   | { ok: false; reason: string; status: number | null }
 >;
@@ -67,10 +67,10 @@ mock.module('../lib/access', () => ({
 mock.module('../lib/session-runtime-transport', () => ({
   openRuntimeEventStream: async (
     _target: unknown,
-    options: { since?: number | null; epoch?: string | null },
+    options: { since?: number | null; epoch?: string | null; signal: AbortSignal },
   ) => {
     attachCalls.push({ since: options.since ?? null, epoch: options.epoch ?? null });
-    return daemonAttach();
+    return daemonAttach(options.signal);
   },
   parseSseFrames: realParseSseFrames,
 }));
@@ -246,6 +246,53 @@ describe('the stream opens, always', () => {
     expect((hello!.data.runtime as Record<string, unknown>).requested_since).toBe(41);
     expect((hello!.data.runtime as Record<string, unknown>).requested_epoch).toBe('ep_1');
     expect((hello!.data.control as Record<string, unknown>).cepoch).toBe(CONTROL_EPOCH);
+  });
+});
+
+/** A daemon body that sends one hello frame, then goes silent but for the abort. */
+function silentDaemonBody(signal: AbortSignal): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(
+        encoder.encode(
+          'event: kortix.hello\ndata: {"type":"kortix.hello","epoch":"ep-s","head_seq":0,"first_seq":0,"since":null,"at":1}\n\n',
+        ),
+      );
+      // A real fetch body errors when its request signal aborts.
+      signal.addEventListener('abort', () => controller.error(new Error('aborted')), { once: true });
+    },
+  });
+}
+
+describe('a live attachment that goes silent (05#3)', () => {
+  test('no frame inside the stall budget aborts the attempt and says why', async () => {
+    process.env.RUNTIME_STREAM_STALL_MS = '150';
+    try {
+      daemonAttach = async (signal) => ({ ok: true, epoch: 'ep-s', body: silentDaemonBody(signal) });
+      const response = await openStream();
+      const frames = await readFrames(response, 5, 2_500);
+      expect(
+        frames.some(
+          (f) => f.event === 'kortix.runtime.status' && f.data.state === 'down' && f.data.reason === 'runtime_stream_stalled',
+        ),
+      ).toBe(true);
+    } finally {
+      delete process.env.RUNTIME_STREAM_STALL_MS;
+    }
+  });
+
+  test('a client that disconnects aborts the daemon attachment even though no frame arrives', async () => {
+    let attachSignal: AbortSignal | null = null;
+    daemonAttach = async (signal) => {
+      attachSignal = signal;
+      return { ok: true, epoch: 'ep-s', body: silentDaemonBody(signal) };
+    };
+    const response = await openStream();
+    await readFrames(response, 2, 500); // reads, then cancels the reader = disconnect
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(attachSignal).not.toBeNull();
+    expect((attachSignal as unknown as AbortSignal).aborted).toBe(true);
   });
 });
 

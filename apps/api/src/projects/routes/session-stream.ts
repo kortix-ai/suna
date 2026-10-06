@@ -86,6 +86,14 @@ export const RUNTIME_ATTACH_BACKOFF_MS = [1_000, 2_000, 5_000, 10_000, 20_000, 3
 
 /** How long to wait before re-checking a sandbox that is not `active`. */
 export const RUNTIME_IDLE_RECHECK_MS = 5_000;
+/**
+ * A live daemon attachment that yields no frame for this long is dead: the
+ * daemon heartbeats every 15 s, so 45 s is three missed beats. Read per call so
+ * a test can shrink it.
+ */
+function runtimeStreamStallMs(): number {
+  return Number(process.env.RUNTIME_STREAM_STALL_MS) || 45_000;
+}
 
 /** Frames the daemon may send that mean the projection changed underneath us. */
 const PROJECTION_INVALIDATING_EVENTS = new Set([
@@ -453,11 +461,30 @@ async function pumpRuntime(args: PumpArgs): Promise<void> {
       continue;
     }
 
+    // One controller per attachment: the caller's abort and the stall watchdog
+    // both end THIS attempt, and the next loop pass re-attaches on the ladder.
+    const attachment = new AbortController();
+    const onCallerAbort = (): void => attachment.abort(args.abort.signal.reason);
+    args.abort.signal.addEventListener('abort', onCallerAbort, { once: true });
+    let stallTimer: ReturnType<typeof setTimeout> | undefined;
+    const armStallWatchdog = (): void => {
+      clearTimeout(stallTimer);
+      stallTimer = setTimeout(
+        () => attachment.abort(new Error('runtime_stream_stalled')),
+        runtimeStreamStallMs(),
+      );
+    };
+    const endAttachment = (): void => {
+      clearTimeout(stallTimer);
+      args.abort.signal.removeEventListener('abort', onCallerAbort);
+    };
+
     const opened = await openRuntimeEventStream(
       { externalId: sandbox.externalId, userId: args.userId },
-      { since: args.runtime.seq, epoch: args.runtime.epoch, signal: args.abort.signal },
+      { since: args.runtime.seq, epoch: args.runtime.epoch, signal: attachment.signal },
     );
     if (!opened.ok) {
+      endAttachment();
       announceDown(opened.reason);
       const delay =
         RUNTIME_ATTACH_BACKOFF_MS[Math.min(attempt, RUNTIME_ATTACH_BACKOFF_MS.length - 1)]!;
@@ -482,16 +509,27 @@ async function pumpRuntime(args: PumpArgs): Promise<void> {
     // request's response path.
     void refreshProjection(args, 'attach');
 
+    armStallWatchdog();
     try {
       for await (const frame of parseSseFrames(opened.body)) {
         if (args.isClosed() || args.abort.signal.aborted) break;
+        armStallWatchdog();
         forwardRuntimeFrame(args, frame.event, frame.data);
       }
       announceDown('stream_ended');
     } catch (error) {
+      // The watchdog aborted the attempt (the caller did not): name it, whatever
+      // text the transport put on the resulting read error.
+      const stalled = attachment.signal.aborted && !args.abort.signal.aborted;
       announceDown(
-        error instanceof Error && error.message ? error.message.slice(0, 200) : 'stream_error',
+        stalled
+          ? 'runtime_stream_stalled'
+          : error instanceof Error && error.message
+            ? error.message.slice(0, 200)
+            : 'stream_error',
       );
+    } finally {
+      endAttachment();
     }
     await sleep(RUNTIME_ATTACH_BACKOFF_MS[0]!, args.abort.signal);
   }
