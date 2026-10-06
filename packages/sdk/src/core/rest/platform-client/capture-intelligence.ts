@@ -11,7 +11,7 @@
 // exports need a Capture admin or viewer (writes: admin). Episodes and Ask
 // default to your own data; an admin or viewer may widen them (audited).
 
-import { ApiError, type ApiClientOptions, backendApi } from '../../http/api-client';
+import { backendApi } from '../../http/api-client';
 import { unwrap } from '../projects-client/shared';
 
 export type CaptureWorkflowStatus = 'detected' | 'reviewed' | 'exported';
@@ -208,47 +208,6 @@ export interface CaptureEpisodeList {
   next_before: string | null;
 }
 
-export type CaptureAskSource =
-  | { n: number; kind: 'workflow'; workflow_id: string; label: string; detail: string }
-  | { n: number; kind: 'episode'; episode_id: string; user_id: string; label: string; start_at: string; detail: string }
-  | {
-      n: number;
-      kind: 'moment';
-      moment: 'screen' | 'actions' | 'audio';
-      /** A frame, action or audio line id (`frame(id)` for a screen moment). */
-      id: string;
-      user_id?: string;
-      device_id: string;
-      ts: string;
-      label: string;
-      detail: string;
-    };
-
-export interface CaptureAskInput {
-  question: string;
-  /** Earlier turns, oldest first. */
-  history?: { role: 'user' | 'assistant'; content: string }[];
-  /** A member (admins and viewers), a device, a time span. Without `user_id`, admins and viewers ask about the account. */
-  scope?: { user_id?: string; device_id?: string; from?: string; to?: string };
-}
-
-export interface CaptureAskResult {
-  answer: string;
-  /** The sources the answer cites as `[n]`. */
-  citations: CaptureAskSource[];
-  model: string;
-  cost_usd: number;
-}
-
-export type CaptureAskEvent =
-  /** Every numbered source so far: first a seed retrieval, then again after each tool round. */
-  | { type: 'sources'; sources: CaptureAskSource[] }
-  /** The agent called one of its tools (search_moments, list_episodes, get_episode, list_workflows, get_workflow, stats). */
-  | { type: 'tool'; name: string; args: Record<string, unknown> }
-  | { type: 'delta'; text: string }
-  | ({ type: 'done' } & CaptureAskResult)
-  | { type: 'error'; code: string; error: string };
-
 export interface CaptureIntelligenceRunInput {
   /** Only re-mine workflows; skip re-tracing ranges. */
   mining_only?: boolean;
@@ -349,55 +308,6 @@ export async function listCaptureEpisodes(accountId: string, q: CaptureEpisodeQu
 
 export async function getCaptureEpisode(accountId: string, episodeId: string) {
   return unwrap(await backendApi.get<CaptureEpisodeDetail>(`${base(accountId)}/episodes/${episodeId}`));
-}
-
-/**
- * Ask about recorded work. `onEvent` receives the sources, each piece of the
- * answer as it streams, and the end. Resolves with the cited answer; an error
- * (Capture off, the daily model budget spent, …) rejects with an `ApiError`
- * carrying its `code`. Needs a `fetch` with streaming bodies.
- */
-export async function askCapture(
-  accountId: string,
-  input: CaptureAskInput,
-  onEvent: (event: CaptureAskEvent) => void = () => {},
-  options: ApiClientOptions = {},
-): Promise<CaptureAskResult> {
-  const response = await backendApi.postStream(`${base(accountId)}/ask`, input, { timeout: 300_000, ...options });
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { error?: string; code?: string } | null;
-    throw new ApiError(body?.error || `Ask failed: HTTP ${response.status}`, { status: response.status, code: body?.code });
-  }
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error('Ask needs a fetch with a streaming response body on this runtime');
-  const decoder = new TextDecoder();
-  let buffer = '';
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let boundary = buffer.indexOf('\n\n');
-      while (boundary !== -1) {
-        const frame = buffer.slice(0, boundary);
-        buffer = buffer.slice(boundary + 2);
-        boundary = buffer.indexOf('\n\n');
-        const data = frame
-          .split('\n')
-          .filter((line) => line.startsWith('data:'))
-          .map((line) => line.slice(5).trim())
-          .join('');
-        if (!data) continue;
-        const event = JSON.parse(data) as CaptureAskEvent;
-        onEvent(event);
-        if (event.type === 'error') throw new ApiError(event.error, { status: 200, code: event.code });
-        if (event.type === 'done') return { answer: event.answer, citations: event.citations, model: event.model, cost_usd: event.cost_usd };
-      }
-    }
-  } finally {
-    reader.cancel().catch(() => {});
-  }
-  throw new Error('The ask stream ended without an answer');
 }
 
 /** Start a bulk export (Capture admins). Poll `getCaptureExport` until `done`, then download. */

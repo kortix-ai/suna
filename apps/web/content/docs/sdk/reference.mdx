@@ -639,7 +639,6 @@ another member writes `capture.member_view`; an account-wide read
 | `workflows.list({ status?, q?, app?, userId?, sort?, limit?, offset? })` · `workflows.get(workflowId)` | admins and viewers: mined workflows with runs/week, p50/p90 duration, people, success rate, determinism and `automation_hours_per_week` (counts per status) · one with its standard path, variants (each with `name`, `note`, `question` = its condition) and people |
 | `workflows.review(workflowId, { name?, goal?, outcome?, steps? })` · `workflows.draftSkill(workflowId, { name? })` · `workflows.exportSkill(workflowId, { project_id, name, markdown })` | admins: edit and mark reviewed · a `SKILL.md` draft with `inputs`, `checks` and `workflow_updated_at` (re-draft when the workflow's `updated_at` moves past it) · commit it to `skills/<name>/SKILL.md` in a project of the account; the workflow reads `exported` |
 | `episodes.list({ scope?, userId?, deviceId?, workflowId?, from?, to?, before?, limit? })` · `episodes.get(episodeId)` | your episodes, or a member's or the account's for admins and viewers (audited), newest first, paged by `next_before` · one with its ordered steps |
-| `ask({ question, history?, scope? }, onEvent?)` | a cited answer from a tool-calling agent; `onEvent` receives `sources` (the numbered sources so far), `tool` (each tool call), `delta` (answer text) and `done`; the promise resolves to `{ answer, citations, model, cost_usd }` |
 | `exports.create({ format, from?, to?, include? })` · `exports.list()` · `exports.get(exportId)` | admins: a background export; JSONL holds any of `episodes`, `steps`, `workflows`, Parquet exactly one (`400 capture_export_one_table` otherwise) · poll it; when `done`, `download.url` is valid for 1 hour |
 | `runIntelligence({ mining_only? })` | admins: queue the pipelines now; `{ episodes_queued, mining_queued }` |
 
@@ -663,9 +662,9 @@ account id first), and `useCaptureDeviceGrant`, `useApproveCaptureDevice`,
 Intelligence hooks: `useCaptureOverview`, `useCaptureWorkflows`,
 `useCaptureWorkflow`, `useReviewCaptureWorkflow`, `useDraftCaptureSkill`,
 `useExportCaptureSkill`, `useCaptureEpisodes`, `useCaptureEpisode`,
-`useCreateCaptureExport`, `useCaptureExport` (polls until the export is done or
-failed) and `useCaptureAsk` (a conversation: each turn holds the question, the
-streamed answer, its sources, the tools the agent called, and its citations).
+`useCreateCaptureExport` and `useCaptureExport` (polls until the export is done
+or failed). To let an agent read and process Capture data, attach the hosted
+Kortix MCP server (`/v1/mcp`): its `capture_*` tools read the same routes.
 
 React hooks for the account surface (`@kortix/sdk/react`), one per read and
 write above: `useCaptureDevices` (polls every 10 s for live status),

@@ -61,8 +61,6 @@ export function bindAccountCapture(accountId: string) {
       list: (query?: I.CaptureEpisodeQuery) => I.listCaptureEpisodes(accountId, query),
       get: (episodeId: string) => I.getCaptureEpisode(accountId, episodeId),
     },
-    /** Ask with citations; `onEvent` streams sources and answer text. */
-    ask: (input: I.CaptureAskInput, onEvent?: (event: I.CaptureAskEvent) => void) => I.askCapture(accountId, input, onEvent),
     exports: {
       create: (input: I.CaptureExportInput) => I.createCaptureExport(accountId, input),
       list: () => I.listCaptureExports(accountId),

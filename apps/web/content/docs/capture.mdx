@@ -31,9 +31,9 @@ Capture admin can set a different one per person.
 
 | Capture role | Default for | Reads | Writes |
 |---|---|---|---|
-| `admin` | account owners and admins | every member's devices, timeline and episodes, **People**, **Overview**, **Workflows**, Ask over the account | the policy, device overrides, Capture roles, workflow review, skill export, bulk export, run now |
-| `viewer` | nobody (set it per person) | every member's devices, timeline and episodes, **People**, **Overview**, **Workflows**, Ask over the account | nothing |
-| `member` | account members | their own devices, timeline and episodes; Ask over their own recordings | their own ranges |
+| `admin` | account owners and admins | every member's devices, timeline and episodes, **People**, **Overview**, **Workflows**, the `capture_*` MCP tools over the account | the policy, device overrides, Capture roles, workflow review, skill export, bulk export, run now |
+| `viewer` | nobody (set it per person) | every member's devices, timeline and episodes, **People**, **Overview**, **Workflows**, the `capture_*` MCP tools over the account | nothing |
+| `member` | account members | their own devices, timeline and episodes, also through the `capture_*` MCP tools | their own ranges |
 | an agent | — | only the timeline of the person its private session acts for | nothing |
 
 Every read of another member's data writes a `capture.member_view` entry to the
@@ -96,11 +96,9 @@ every variant covered and named, no literal customer values. Publishing commits
 `skills/<name>/SKILL.md` to the project's default branch. This is the only
 place Capture touches a project.
 
-**Ask.** Ask a question in plain words. An agent looks things up with tools
-(search the timeline, list and open episodes, and for admins and viewers also
-workflows and account stats), then answers with every claim cited. A member
-asks about their own recordings only; an admin or viewer about a member or the
-whole account, audited as `capture.member_view` or `capture.account_view`.
+**Ask questions with a Kortix agent.** Capture has no chat of its own. Its
+data is open to any Kortix agent through the hosted Kortix MCP server; see
+[Use Kortix Capture data from a Kortix agent](#use-kortix-capture-data-from-a-kortix-agent).
 
 **Bulk export.** Admins export episodes, steps and workflows as JSONL (any
 tables in one file) or Parquet (one table per file). The export runs in the

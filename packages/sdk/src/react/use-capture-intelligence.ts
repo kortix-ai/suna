@@ -1,9 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useState } from 'react';
 import {
-  askCapture,
   createCaptureExport,
   draftCaptureSkill,
   exportCaptureSkill,
@@ -14,8 +12,6 @@ import {
   listCaptureEpisodes,
   listCaptureWorkflows,
   reviewCaptureWorkflow,
-  type CaptureAskInput,
-  type CaptureAskSource,
   type CaptureEpisodeQuery,
   type CaptureExportInput,
   type CaptureSkillExportInput,
@@ -113,59 +109,4 @@ export function useCaptureExport(accountId: Id, exportId: Id, { pollMs = 2_000 }
     enabled: !!accountId && !!exportId,
     refetchInterval: (query) => (query.state.data && ['done', 'failed'].includes(query.state.data.status) ? false : pollMs),
   });
-}
-
-export interface CaptureAskTurn {
-  question: string;
-  /** The answer so far, then the whole answer. */
-  answer: string;
-  sources: CaptureAskSource[];
-  /** The tools the agent called for this turn, in order. */
-  tools: Array<{ name: string; args: Record<string, unknown> }>;
-  citations: CaptureAskSource[];
-  status: 'streaming' | 'done' | 'error';
-  error?: string;
-}
-
-/**
- * A conversation with Ask: each `ask(question)` appends a turn whose answer
- * streams in, with the earlier turns sent as history. `reset()` starts over.
- */
-export function useCaptureAsk(accountId: Id, scope?: CaptureAskInput['scope']) {
-  const [turns, setTurns] = useState<CaptureAskTurn[]>([]);
-  const update = (index: number, patch: Partial<CaptureAskTurn>) =>
-    setTurns((all) => all.map((turn, i) => (i === index ? { ...turn, ...patch, answer: patch.answer ?? turn.answer } : turn)));
-  const ask = useCallback(
-    async (question: string) => {
-      if (!accountId) return;
-      const history = turns
-        .filter((t) => t.status === 'done')
-        .flatMap((t) => [
-          { role: 'user' as const, content: t.question },
-          { role: 'assistant' as const, content: t.answer },
-        ]);
-      const index = turns.length;
-      setTurns((all) => [...all, { question, answer: '', sources: [], tools: [], citations: [], status: 'streaming' }]);
-      let text = '';
-      const tools: CaptureAskTurn['tools'] = [];
-      try {
-        const result = await askCapture(accountId, { question, history, scope }, (event) => {
-          if (event.type === 'sources') update(index, { sources: event.sources });
-          if (event.type === 'tool') {
-            tools.push({ name: event.name, args: event.args });
-            update(index, { tools: [...tools] });
-          }
-          if (event.type === 'delta') {
-            text += event.text;
-            update(index, { answer: text });
-          }
-        });
-        update(index, { answer: result.answer, citations: result.citations, status: 'done' });
-      } catch (error) {
-        update(index, { status: 'error', error: error instanceof Error ? error.message : String(error) });
-      }
-    },
-    [accountId, scope, turns],
-  );
-  return { turns, ask, reset: () => setTurns([]), streaming: turns.some((t) => t.status === 'streaming') };
 }

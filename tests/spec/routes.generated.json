@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 764,
+  "count": 763,
   "routes": [
     {
       "method": "GET",
@@ -269,10 +269,6 @@
     {
       "method": "PATCH",
       "path": "/v1/accounts/:accountId/capture"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/accounts/:accountId/capture/ask"
     },
     {
       "method": "GET",

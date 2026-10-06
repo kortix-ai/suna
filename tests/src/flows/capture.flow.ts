@@ -71,7 +71,6 @@ const R = {
   skill: `POST ${A}/workflows/:workflowId/skill`,
   episodes: `GET ${A}/episodes`,
   episode: `GET ${A}/episodes/:episodeId`,
-  ask: `POST ${A}/ask`,
   exportsCreate: `POST ${A}/exports`,
   exportsList: `GET ${A}/exports`,
   exportGet: `GET ${A}/exports/:exportId`,
@@ -534,7 +533,7 @@ flow(
     domain: 'capture',
     requires: ['database'],
     timeoutMs: 180_000,
-    routes: [R.overview, R.workflows, R.workflow, R.review, R.skillDraft, R.skill, R.episodes, R.episode, R.ask, R.exportsCreate, R.exportsList, R.exportGet, R.run, R.saveRange, R.fileContent],
+    routes: [R.overview, R.workflows, R.workflow, R.review, R.skillDraft, R.skill, R.episodes, R.episode, R.exportsCreate, R.exportsList, R.exportGet, R.run, R.saveRange, R.fileContent],
   },
   async (ctx) => {
     const { team, member, day, asMember } = await ingestedWorld(ctx, 'cap4');
@@ -649,14 +648,5 @@ flow(
       if (!listed.some((e) => e.export_id === created.export_id)) throw new Error('export not listed');
     });
 
-    await ctx.step('ask streams server-sent events: the sources event first (the pinned episode among them), then done or a typed error (this profile has no model); a member cannot ask account-wide', async () => {
-      const res = (await asMember.post(path(R.ask), { question: 'What did I do in the quarterly close?' }, { params })).status(200);
-      if (!res.header('content-type')?.includes('text/event-stream')) throw new Error(`content-type ${res.header('content-type')}`);
-      const events = res.text().split('\n\n').filter((f) => f.startsWith('data: ')).map((f) => JSON.parse(f.slice(6)) as { type: string; sources?: Array<{ kind: string; episode_id?: string }>; code?: string });
-      if (events[0]?.type !== 'sources' || !events[0].sources?.some((s) => s.kind === 'episode' && s.episode_id === episodeId)) throw new Error(`first event: ${JSON.stringify(events[0]).slice(0, 300)}`);
-      const last = events[events.length - 1]!;
-      if (last.type !== 'done' && !(last.type === 'error' && last.code)) throw new Error(`last event: ${JSON.stringify(last)}`);
-      (await asMember.post(path(R.ask), { question: 'Who works on what?', scope: { user_id: ctx.P.OWNER.userId! } }, { params })).status(403);
-    });
   },
 );

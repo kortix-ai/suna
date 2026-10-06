@@ -204,22 +204,7 @@ describe('variants', () => {
   });
 });
 
-describe('ask stream', () => {
-  test('a streamed round yields its text and its tool calls assembled by index', async () => {
-    const { readRound } = await import('./ask');
-    const frames = [
-      { choices: [{ delta: { content: 'Look' } }] },
-      { choices: [{ delta: { tool_calls: [{ index: 0, id: 'c1', function: { name: 'list_', arguments: '{"que' } }] } }] },
-      { choices: [{ delta: { tool_calls: [{ index: 0, function: { name: 'episodes', arguments: 'ry":"refund"}' } }, { index: 1, function: { name: 'stats', arguments: '{}' } }] } }] },
-      { usage: { cost: 0.0004 } },
-    ];
-    const body = new Response(frames.map((f) => `data: ${JSON.stringify(f)}\n\n`).join('') + 'data: [DONE]\n\n').body!;
-    const seen: string[] = [];
-    const round = await readRound(body, (t) => seen.push(t));
-    expect(seen).toEqual(['Look']);
-    expect(round).toEqual({ content: 'Look', cost: 0.0004, toolCalls: [{ id: 'c1', name: 'list_episodes', arguments: '{"query":"refund"}' }, { id: 'call_1', name: 'stats', arguments: '{}' }] });
-  });
-});
+
 
 describe('naming', () => {
   test('the workflow is named from its standard path: the prompt samples only path A, even when the latest runs are a variant', async () => {

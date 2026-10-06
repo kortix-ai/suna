@@ -39,7 +39,7 @@ mock.module('../capture/store', () => ({
     objects.has(key) ? { status: 'ok', body: objects.get(key)!, etag: createHash('md5').update(objects.get(key)!).digest('hex') } : { status: 'missing' },
 }));
 
-const { accounts, captureDevices, captureEpisodes: captureEpisodesTable, captureWorkspaces, rangeOutputs, timelineChunks, timelineRanges } = await import('@kortix/db');
+const { accounts, captureDevices, captureWorkspaces, rangeOutputs, timelineChunks, timelineRanges } = await import('@kortix/db');
 const { and, eq, sql } = await import('drizzle-orm');
 const { db } = await import('../shared/db');
 const { ingestManifest, extendDetectedRange } = await import('../capture/ingest');
@@ -398,46 +398,6 @@ describe('intelligence: episodes (L1/L2) and mining (L3)', () => {
     expect(episodes.rows).toBeGreaterThan(0);
   });
 
-  test('Ask is a tool-calling agent: it calls a tool in the asker\'s scope, gets numbered sources, and answers with citations; a member\'s tools see only the member', async () => {
-    const { ask, runTool } = await import('../capture/ask');
-    const bodies: Array<Record<string, any>> = [];
-    const sse = (frames: unknown[]) => new Response(`${frames.map((f) => `data: ${JSON.stringify(f)}`).join('\n\n')}\n\ndata: [DONE]\n\n`, { headers: { 'content-type': 'text/event-stream' } });
-    const transport = async (body: Record<string, unknown>) => {
-      bodies.push(body);
-      if (bodies.length === 1) return sse([{ choices: [{ delta: { tool_calls: [{ index: 0, id: 'c1', function: { name: 'list_workflows', arguments: '{"sort":"runs"}' } }] } }] }, { usage: { cost: 0.0001 } }]);
-      const tool = JSON.parse(String((body.messages as Array<{ role: string; content: string }>).at(-1)!.content)) as Array<{ source: number; name: string }>;
-      return sse([{ choices: [{ delta: { content: `${tool[0]!.name} runs most [${tool[0]!.source}].` } }] }, { usage: { cost: 0.0002 } }]);
-    };
-    const events: Array<Record<string, any>> = [];
-    await ask({ accountId: ACCOUNT, viewer: MEMBER, subject: null, accountWide: true }, { question: 'Which workflow runs most?' }, (e) => events.push(e), transport);
-    expect(events.map((e) => e.type)).toEqual(['sources', 'tool', 'sources', 'delta', 'done']);
-    expect(bodies[0]!.tools.map((t: { function: { name: string } }) => t.function.name)).toEqual(['search_moments', 'list_episodes', 'get_episode', 'list_workflows', 'get_workflow', 'stats']);
-    expect(bodies[1]!.messages.at(-1).role).toBe('tool');
-    const done = events.at(-1)!;
-    expect(done.citations.length).toBe(1);
-    expect(done.citations[0].kind).toBe('workflow');
-    expect(done.answer).toContain(`[${done.citations[0].n}]`);
-    expect(done.cost_usd).toBeCloseTo(0.0003);
-    // A member's agent has no workflow tools, and its episode tool reads the member only.
-    const memberScope = { accountId: ACCOUNT, viewer: MEMBER, subject: MEMBER, accountWide: false };
-    expect(await runTool(memberScope, 'list_workflows', {}, (x) => ({ ...x, n: 0 }) as never)).toEqual({ error: 'workflows and stats are for Capture admins and viewers' });
-    const listed = (await runTool(memberScope, 'list_episodes', { user_id: crypto.randomUUID() }, (x) => ({ ...x, n: 1 }) as never)) as Array<{ episode_id: string }>;
-    const owners = await db.select({ userId: captureEpisodesTable.userId }).from(captureEpisodesTable).where(sql`${captureEpisodesTable.episodeId} IN (${sql.join(listed.map((e) => sql`${e.episode_id}::uuid`), sql`, `)})`);
-    expect(listed.length).toBeGreaterThan(0);
-    expect(owners.every((o) => o.userId === MEMBER)).toBe(true);
-    expect((listed as unknown as Array<{ person: unknown }>).every((e) => e.person === 'you')).toBe(true);
-
-    // An admin's tools name people from the account's member directory; an id outside it is no one's name.
-    const { accountMemberships, captureWorkflows } = await import('@kortix/db');
-    await db.execute(sql`INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES (${MEMBER}::uuid, ${`member-${MEMBER.slice(0, 8)}@example.test`}, ${JSON.stringify({ full_name: 'Synthetic Member' })}::jsonb) ON CONFLICT (id) DO NOTHING`);
-    await db.insert(accountMemberships).values({ accountId: ACCOUNT, userId: MEMBER }).onConflictDoNothing();
-    const [refund] = await db.select().from(captureWorkflows).where(and(eq(captureWorkflows.accountId, ACCOUNT), sql`${captureWorkflows.peopleCount} = 2`));
-    const adminScope = { accountId: ACCOUNT, viewer: MEMBER, subject: null, accountWide: true };
-    const detail = (await runTool(adminScope, 'get_workflow', { workflow_id: refund!.workflowId }, (x) => ({ ...x, n: 1 }) as never)) as { people: Array<{ user_id: string; name: string; email: string | null }> };
-    const named = detail.people.find((p) => p.user_id === MEMBER)!;
-    expect([named.name, named.email]).toEqual(['Synthetic Member', `member-${MEMBER.slice(0, 8)}@example.test`]);
-    expect(detail.people.find((p) => p.user_id !== MEMBER)!.name).toBe('A former member');
-  });
 });
 
 describe('forget', () => {
@@ -476,11 +436,10 @@ describe('forget', () => {
 });
 
 describe('forget reaches every derived artifact', () => {
-  test('a forgotten item\'s unique marker appears nowhere afterwards: episodes, steps, workflows, exports (old and new), Ask sources', async () => {
+  test('a forgotten item\'s unique marker appears nowhere afterwards: episodes, steps, workflows, exports (old and new), search', async () => {
     const { traceRange } = await import('../capture/episodes');
     const { mineAccount } = await import('../capture/mining');
     const { exportJsonl } = await import('../capture/exports');
-    const { retrieve } = await import('../capture/ask');
     const { captureEpisodes, captureEpisodeSteps, captureExports, captureWorkflows } = await import('@kortix/db');
     const MARK = 'Zebraquartz';
     const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
@@ -557,8 +516,10 @@ describe('forget reaches every derived artifact', () => {
     const [expired] = await db.select().from(captureExports).where(eq(captureExports.exportId, exp!.exportId));
     expect([expired!.status, expired!.objectKey, objects.has(oldKey)]).toEqual(['failed', null, false]);
     expect((await exportJsonl(ACCOUNT, {})).body).not.toContain(MARK);
-    const sources = await retrieve(ACCOUNT, null, true, { question: `What happened with ${MARK} invoices?`, scope: { from: '2026-08-01T00:00:00Z', to: '2026-10-01T00:00:00Z' } });
-    expect(JSON.stringify(sources)).not.toContain(MARK);
+    // The search the MCP tools read (account-wide, the forgotten window) finds nothing of it either.
+    const { searchTimeline } = await import('../capture/reads');
+    const found = await searchTimeline(ACCOUNT, null, { q: MARK, from: new Date('2026-08-01T00:00:00Z'), to: new Date('2026-10-01T00:00:00Z'), kinds: new Set(['screen', 'actions', 'audio']), limit: 20 });
+    expect(found).toEqual([]);
   });
 });
 

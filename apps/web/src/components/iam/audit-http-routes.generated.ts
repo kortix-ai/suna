@@ -69,7 +69,6 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|accounts|:accountId|branding|assets|:kind",
   "GET|v1|accounts|:accountId|capture",
   "PATCH|v1|accounts|:accountId|capture",
-  "POST|v1|accounts|:accountId|capture|ask",
   "GET|v1|accounts|:accountId|capture|chunks|:chunkId|media",
   "GET|v1|accounts|:accountId|capture|days",
   "GET|v1|accounts|:accountId|capture|devices",

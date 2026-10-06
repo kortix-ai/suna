@@ -160,7 +160,6 @@ export {
   useSyncCaptureDevice,
 } from './use-capture';
 export {
-  useCaptureAsk,
   useCaptureEpisode,
   useCaptureEpisodes,
   useCaptureExport,
@@ -171,7 +170,6 @@ export {
   useDraftCaptureSkill,
   useExportCaptureSkill,
   useReviewCaptureWorkflow,
-  type CaptureAskTurn,
 } from './use-capture-intelligence';
 export { useSessionMessageAuthors } from './use-session-message-authors';
 export { useChangeRequests, changeRequestsKey } from './use-change-requests';
