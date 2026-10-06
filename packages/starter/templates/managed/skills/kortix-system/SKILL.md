@@ -760,6 +760,7 @@ project.model.read  project.model.write
 project.gitops.read  project.gitops.push  project.gitops.merge
 project.secret.read  project.secret.write
 project.connector.read  project.connector.write  project.connector.connections.manage   # channels (Slack/meet/email) send + connect are gated here
+project.backend.read  project.backend.write
 project.review.read  project.review.submit  project.review.act
 ```
 

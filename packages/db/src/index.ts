@@ -62,6 +62,7 @@ export {
   projectTriggerExecutions,
   projectMonitorEvents,
   projectMonitorBoxes,
+  projectBackends,
   sessionLifecycleCommands,
   chatChannelBindings,
   chatInstalls,

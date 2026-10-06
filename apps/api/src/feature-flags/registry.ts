@@ -202,6 +202,18 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcement: 'routes',
   },
   {
+    key: 'backends',
+    name: 'Backends',
+    description:
+      'Give the project full backends: a database, server functions, realtime queries, file storage, scheduling, and search. Each backend is a self-hosted Convex instance in its own machine. Agents create one with `kortix backends create` and deploy to it with the Convex CLI.',
+    stability: 'experimental',
+    // A backend is a persistent per-backend machine. Only Platinum runs one
+    // (same reason as `monitors` below), so the surface stays dark without it.
+    available: () => Boolean(config.PLATINUM_API_KEY),
+    platformDefault: () => false,
+    enforcement: 'routes',
+  },
+  {
     key: 'monitors',
     name: 'Monitors',
     description:

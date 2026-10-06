@@ -51,6 +51,7 @@ export type FeatureFlagKey =
   | 'review_center'
   | 'meta_agent'
   | 'apps'
+  | 'backends'
   | 'monitors'
   | 'reminders'
   | 'warm_sessions'
@@ -92,6 +93,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'llm_gateway',
   'meta_agent',
   'apps',
+  'backends',
   'monitors',
   'reminders',
   'warm_sessions',

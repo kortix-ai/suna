@@ -83,6 +83,7 @@ import { registerGatewayRoutes } from './routes/gateway';
 import { registerChannelBindingsRoutes } from './routes/channel-bindings';
 import { registerMonitorsRoutes } from './routes/monitors';
 import { registerAppsRoutes } from '../apps/routes';
+import { registerBackendsRoutes } from '../backends/routes';
 
 /**
  * Registers every project route on `projectsApp` / `projectWebhooksApp`.
@@ -162,6 +163,7 @@ export function registerAllProjectRoutes(): void {
   registerChannelBindingsRoutes();
   registerMonitorsRoutes();
   registerAppsRoutes();
+  registerBackendsRoutes();
 }
 
 // The Hono app instances. app.ts registers their routes and mounts them.

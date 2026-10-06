@@ -1674,6 +1674,52 @@ export const projectMonitorBoxes = kortixSchema.table(
 );
 
 /**
+ * Kortix Backends: one self-hosted Convex backend per row, each in its own
+ * persistent Platinum machine. A project owns any number of them, named
+ * uniquely among its live rows.
+ */
+export const projectBackends = kortixSchema.table(
+  'project_backends',
+  {
+    backendId: uuid('backend_id').defaultRandom().primaryKey().notNull(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    accountId: uuid('account_id').notNull(),
+    name: varchar('name', { length: 63 }).notNull(),
+    status: varchar('status', { length: 20 }).default('provisioning').notNull(),
+    provider: varchar('provider', { length: 32 }).notNull(),
+    /** The provider's sandbox id. Null until the create call returns. */
+    externalId: text('external_id'),
+    /** Convex client URL (CONVEX_CLOUD_ORIGIN). Null until provisioned. */
+    url: text('url'),
+    /** Convex HTTP-actions URL (CONVEX_SITE_ORIGIN). */
+    siteUrl: text('site_url'),
+    /** Convex admin key, sealed with the project secret envelope. */
+    adminKeyEnc: text('admin_key_enc'),
+    /** The backend image the machine boots, by template id. */
+    template: text('template'),
+    cpu: integer('cpu').notNull(),
+    memoryGb: integer('memory_gb').notNull(),
+    diskGb: integer('disk_gb').notNull(),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    metadata: jsonb('metadata').default({}).notNull().$type<Record<string, unknown>>(),
+  },
+  (table) => [
+    check(
+      'project_backends_status_check',
+      sql`${table.status} IN ('provisioning', 'running', 'error', 'deleted')`,
+    ),
+    uniqueIndex('project_backends_live_name_uniq')
+      .on(table.projectId, table.name)
+      .where(sql`${table.deletedAt} IS NULL`),
+  ],
+);
+
+/**
  * Durable execution queue for materialized cron slots.
  *
  * A unique project/slug/revision/slot key prevents duplicate execution across
