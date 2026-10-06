@@ -36,6 +36,9 @@ jobs:
   scale:
     name: scale ${{ inputs.service }} to ${{ inputs.desired_count }}
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    # A prod cluster needs the prod role, which trusts only `environment: prod`
+    # (branch `prod`). Dispatch with `--ref prod` to scale a prod service.
+    environment: ${{ startsWith(inputs.cluster, 'kortix-prod') && 'prod' || 'dev' }}
     # Inputs reach the shell only through env, never through `${{ }}` in `run:`.
     env:
       CLUSTER: ${{ inputs.cluster }}
@@ -55,7 +58,7 @@ jobs:
           [[ "$DESIRED_COUNT" =~ ^[0-9]+$ ]] || { echo "::error::bad desired_count '$DESIRED_COUNT'"; exit 1; }
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+          role-to-assume: ${{ startsWith(inputs.cluster, 'kortix-prod') && 'arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy-prod' || 'arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy' }}
           aws-region: ${{ inputs.region }}
       - name: Update desired count
         run: |

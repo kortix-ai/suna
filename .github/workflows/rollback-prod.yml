@@ -62,6 +62,9 @@ permissions:
 jobs:
   rollback:
     name: Roll prod back to the target version
+    # Dispatch with `--ref prod`. `environment: prod` admits branch `prod` only and
+    # puts `environment:prod` in the OIDC subject the prod role trusts.
+    environment: prod
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     steps:
       - name: Checkout prod (full history + tags)
@@ -138,7 +141,7 @@ jobs:
         if: steps.plan.outputs.roll_api == 'yes' || steps.plan.outputs.roll_gw == 'yes' || steps.plan.outputs.roll_fe == 'yes'
         uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+          role-to-assume: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy-prod
           aws-region: eu-west-2
 
       - name: Backend — roll ECS services to vTARGET images

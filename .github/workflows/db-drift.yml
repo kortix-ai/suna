@@ -115,8 +115,14 @@ jobs:
   # deliberate gaps listed in packages/db/scripts/verify-live-schema-waivers.ts).
   # The deploy-prod verify-schema gate was removed (it never gated the roll),
   # so this is the only prod schema check; it catches drift introduced out-of-band BETWEEN deploys.
+  #
+  # Runs only from the `prod` branch (dispatch with `--ref prod`): the prod blob is
+  # readable only through the prod role, which needs `environment: prod`. The
+  # nightly schedule runs on `main` and so skips this job.
   prod-presence:
     name: Prod has every object the migrations define
+    if: github.ref == 'refs/heads/prod'
+    environment: prod
     runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     services:
       postgres:
@@ -143,6 +149,7 @@ jobs:
       - name: Read credentials from AWS Secrets Manager
         uses: ./.aws-env/.github/actions/aws-env
         with:
+          role-to-assume: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy-prod
           keys: |
             LIVE_DB_URL=kortix-prod-env:DATABASE_URL
       - name: Skip if prod is not configured

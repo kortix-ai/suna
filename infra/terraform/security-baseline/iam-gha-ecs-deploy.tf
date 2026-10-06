@@ -6,11 +6,8 @@
 #                               (sub = repo:kortix-ai/suna:environment:prod).
 #                               Prod ECS, prod PassRole, prod blobs. The `prod`
 #                               GitHub environment admits branch `prod` only.
-# PHASE 1 (this file): the prod role exists and every workflow on dev uses it.
-# The broad role KEEPS its prod permissions, because the workflow copies on the
-# `prod` branch (rollback-prod.yml) still assume it until the next release.
-# PHASE 2 (after that release): delete the prod ECS, prod PassRole, and
-# kortix-prod-* secret grants from the broad role. Until then the hole is open.
+# PHASE 2 (done): the broad role holds NO prod permission. Prod ECS, prod
+# PassRole, and kortix-prod-* secrets are reachable only through the prod role.
 # ════════════════════════════════════════════════════════════════════════════
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -88,13 +85,13 @@ resource "aws_iam_role_policy" "gha_ecs_deploy" {
         Action = ["ecs:UpdateService"]
         # Region-wildcarded: dev/staging ECS run in us-west-2, prod in eu-west-2.
         # cluster name == service name for every kortix ECS service.
-        Resource = ["arn:aws:ecs:*:${local.account_id}:service/kortix-*/kortix-*"]
+        Resource = ["arn:aws:ecs:*:${local.account_id}:service/kortix-dev*/kortix-dev*", "arn:aws:ecs:*:${local.account_id}:service/kortix-staging*/kortix-staging*"]
       },
       {
         Sid      = "DescribeKortixServices"
         Effect   = "Allow"
         Action   = ["ecs:DescribeServices"]
-        Resource = ["arn:aws:ecs:*:${local.account_id}:service/kortix-*/kortix-*"]
+        Resource = ["arn:aws:ecs:*:${local.account_id}:service/kortix-dev*/kortix-dev*", "arn:aws:ecs:*:${local.account_id}:service/kortix-staging*/kortix-staging*"]
       },
       {
         Sid    = "DescribeKortixTasks"
@@ -103,12 +100,17 @@ resource "aws_iam_role_policy" "gha_ecs_deploy" {
         # Tasks/list are scoped by cluster through the task/container-instance
         # ARN path; kortix clusters all match kortix-*.
         Resource = [
-          "arn:aws:ecs:*:${local.account_id}:task/kortix-*/*",
-          "arn:aws:ecs:*:${local.account_id}:container-instance/kortix-*/*",
+          "arn:aws:ecs:*:${local.account_id}:task/kortix-dev*/*",
+          "arn:aws:ecs:*:${local.account_id}:container-instance/kortix-dev*/*",
+          "arn:aws:ecs:*:${local.account_id}:task/kortix-staging*/*",
+          "arn:aws:ecs:*:${local.account_id}:container-instance/kortix-staging*/*",
         ]
         Condition = {
           ArnLike = {
-            "ecs:cluster" = "arn:aws:ecs:*:${local.account_id}:cluster/kortix-*"
+            "ecs:cluster" = [
+              "arn:aws:ecs:*:${local.account_id}:cluster/kortix-dev*",
+              "arn:aws:ecs:*:${local.account_id}:cluster/kortix-staging*",
+            ]
           }
         }
       },
@@ -165,16 +167,6 @@ resource "aws_iam_role_policy" "gha_ecs_deploy" {
           "arn:aws:iam::${local.account_id}:role/kortix-staging-euw2-gateway-exec",
           "arn:aws:iam::${local.account_id}:role/kortix-staging-euw2-web-task",
           "arn:aws:iam::${local.account_id}:role/kortix-staging-euw2-web-exec",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-task",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-exec",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-gateway-task",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-gateway-exec",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-web-task",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-web-exec",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-task",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-exec",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-gateway-task",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-gateway-exec",
         ]
       },
     ]
@@ -199,7 +191,12 @@ resource "aws_iam_role_policy" "gha_ecs_deploy_secrets" {
           "secretsmanager:GetSecretValue",
           "secretsmanager:DescribeSecret",
         ]
-        Resource = "arn:aws:secretsmanager:*:${local.account_id}:secret:kortix-*-env-*"
+        Resource = [
+          "arn:aws:secretsmanager:*:${local.account_id}:secret:kortix-ci-env-*",
+          "arn:aws:secretsmanager:*:${local.account_id}:secret:kortix-dev*-env-*",
+          "arn:aws:secretsmanager:*:${local.account_id}:secret:kortix-preview-env-*",
+          "arn:aws:secretsmanager:*:${local.account_id}:secret:kortix-staging*-env-*",
+        ]
       },
       {
         Sid    = "WriteStagingSecret"
@@ -220,7 +217,10 @@ resource "aws_iam_role_policy" "gha_ecs_deploy_secrets" {
           "secretsmanager:CreateSecret",
           "secretsmanager:PutSecretValue",
         ]
-        Resource = "arn:aws:secretsmanager:*:${local.account_id}:secret:kortix-*-web-env-*"
+        Resource = [
+          "arn:aws:secretsmanager:*:${local.account_id}:secret:kortix-dev*-web-env-*",
+          "arn:aws:secretsmanager:*:${local.account_id}:secret:kortix-staging*-web-env-*",
+        ]
       },
     ]
   })
