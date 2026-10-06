@@ -1,6 +1,6 @@
 /** Project settings: onboarding, deletion, feature flags, and the sandbox provider override. */
 import { PROJECT_ACTIONS } from '../../iam';
-import { assertAgentScope } from '../../iam/agent-scope';
+import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -302,8 +302,10 @@ for (const path of ['/{projectId}/features', '/{projectId}/experimental'] as con
 // pin (Customize → Settings). The value must be an ENABLED provider
 // (in ALLOWED_SANDBOX_PROVIDERS and with its API key configured), or null/'' to clear
 // (follow the platform default/distribution). Bypasses the distribution weights by
-// design — pin a project to platinum even when platinum's weight is 0. Same auth as
-// the experimental toggle (project 'manage' + project.settings.write for agents).
+// design — pin a project to platinum even when platinum's weight is 0. Human callers
+// only: project 'manage' + project.settings.write, and never a session principal —
+// the pin routes EVERY new session in the project (KRTX-1681: a security-audit
+// agent pinned its whole project to daytona to unblock its own task).
 projectsApp.openapi(
   createRoute({
     method: 'patch',
@@ -330,8 +332,21 @@ projectsApp.openapi(
     // Floor 'read'; project.settings.write is the gate below.
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // A session-bound or agent-grant token may not flip a project-wide
+    // provider pin, whatever its kortix_permissions: it reroutes every new
+    // session in the project, and the agent that wants a different runtime has
+    // the per-request `provider` on session create instead. No grant unlocks
+    // this (agent_session_forbidden); the web UI and a human's PAT pass.
+    if (isProjectSessionPrincipal(c)) {
+      return c.json(
+        {
+          error: 'Agent sessions cannot change the project sandbox provider — ask a person to change it in Customize → Settings → Sandbox',
+          code: 'agent_session_forbidden',
+        },
+        403,
+      );
+    }
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
-    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
 
     // Route the change through the durable prepare→verify→activate workflow.
     // Switching to a safe target (null clear, the platform-default provider, or
