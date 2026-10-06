@@ -1,0 +1,17 @@
+{
+  "source_hash": "7800f40fbd1a605045d76b7fe84daa21d1d62e3054ab1ac7a56559267f73f412",
+  "diff_files": [
+    "apps/cli/src/__tests__/sessions-model.test.ts",
+    "apps/cli/src/commands/sessions-chat.ts",
+    "apps/cli/src/commands/sessions.ts"
+  ],
+  "diff_hash": "45d83f12bb22f770554280b9ca493fc576f4ab633de3e8cdbc63ac806f9efade",
+  "head": "12cb64ab275425560e3754c9c7cd1f3f05f5c0f0",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-06T14:18:52.793Z"
+}
