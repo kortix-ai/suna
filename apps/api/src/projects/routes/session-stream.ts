@@ -87,13 +87,11 @@ export const RUNTIME_ATTACH_BACKOFF_MS = [1_000, 2_000, 5_000, 10_000, 20_000, 3
 /** How long to wait before re-checking a sandbox that is not `active`. */
 export const RUNTIME_IDLE_RECHECK_MS = 5_000;
 /**
- * A live daemon attachment that yields no frame for this long is dead: the
- * daemon heartbeats every 15 s, so 45 s is three missed beats. Read per call so
- * a test can shrink it.
+ * A live daemon attachment that yields no frame for `stallMs` is dead: the
+ * daemon heartbeats every 15 s, so 45 s is three missed beats. Mutable so a
+ * test can shrink it.
  */
-function runtimeStreamStallMs(): number {
-  return Number(process.env.RUNTIME_STREAM_STALL_MS) || 45_000;
-}
+export const runtimeStreamTimings = { stallMs: 45_000 };
 
 /** Frames the daemon may send that mean the projection changed underneath us. */
 const PROJECTION_INVALIDATING_EVENTS = new Set([
@@ -471,7 +469,7 @@ async function pumpRuntime(args: PumpArgs): Promise<void> {
       clearTimeout(stallTimer);
       stallTimer = setTimeout(
         () => attachment.abort(new Error('runtime_stream_stalled')),
-        runtimeStreamStallMs(),
+        runtimeStreamTimings.stallMs,
       );
     };
     const endAttachment = (): void => {

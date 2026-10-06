@@ -84,6 +84,7 @@ mock.module('../lib/session-runtime-projection', () => ({
   readRuntimeLeg: async () => ({ known: false, reason: 'no_projection' }),
 }));
 
+const { runtimeStreamTimings } = await import('./session-stream');
 const controlEvents = await import('../lib/session-control-events');
 const { publishControlEvent, CONTROL_EPOCH, __resetControlEventsForTests } = controlEvents;
 
@@ -267,7 +268,8 @@ function silentDaemonBody(signal: AbortSignal): ReadableStream<Uint8Array> {
 
 describe('a live attachment that goes silent (05#3)', () => {
   test('no frame inside the stall budget aborts the attempt and says why', async () => {
-    process.env.RUNTIME_STREAM_STALL_MS = '150';
+    const original = runtimeStreamTimings.stallMs;
+    runtimeStreamTimings.stallMs = 150;
     try {
       daemonAttach = async (signal) => ({ ok: true, epoch: 'ep-s', body: silentDaemonBody(signal) });
       const response = await openStream();
@@ -278,7 +280,7 @@ describe('a live attachment that goes silent (05#3)', () => {
         ),
       ).toBe(true);
     } finally {
-      delete process.env.RUNTIME_STREAM_STALL_MS;
+      runtimeStreamTimings.stallMs = original;
     }
   });
 
