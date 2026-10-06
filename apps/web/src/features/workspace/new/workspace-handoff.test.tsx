@@ -229,7 +229,6 @@ describe('WorkspaceHandoff: the streamed provisioning steps', () => {
         if (typeof label !== 'string' || label.length === 0) {
           throw new Error(`${locale}: empty or missing handoff label for ${step}`);
         }
-        expect(typeof label).toBe('string');
       }
     }
   });
