@@ -1,0 +1,17 @@
+{
+  "source_hash": "e5825d91bbc3fa309492e01e6e564b49e20a87345ae1b73178cf92140cb0544f",
+  "diff_files": [
+    "apps/api/src/config.ts",
+    "apps/api/src/projects/session-lifecycle/__tests__/stop.test.ts",
+    "apps/api/src/projects/session-lifecycle/stop.ts"
+  ],
+  "diff_hash": "b1469bbc37531b4198306fefe3ff6b9b94efa62abcadec3f99f1872f4278bf4a",
+  "head": "fcf7e60333d7a7ea694ad49a82339071d53a9d3b",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-06T11:45:02.334Z"
+}
