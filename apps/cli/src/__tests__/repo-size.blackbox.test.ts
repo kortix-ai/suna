@@ -77,6 +77,14 @@ describe('kortix validate — repository size', () => {
     expect(validate(cwd).size).toBeUndefined();
   }, SPAWN_TEST_MS);
 
+  test('a Git LFS file counts as its pointer, the bytes git archive ships', () => {
+    const cwd = project();
+    mkdirSync(join(cwd, 'assets'));
+    writeFileSync(join(cwd, 'assets/demo.mp4'), Buffer.alloc(11 * MiB));
+    writeFileSync(join(cwd, '.gitattributes'), 'assets/** filter=lfs diff=lfs merge=lfs -text\n');
+    expect(validate(cwd).size).toBeUndefined();
+  }, SPAWN_TEST_MS);
+
   test('a folder that is not a git repository skips the check', () => {
     const cwd = project(false);
     writeFileSync(join(cwd, 'big.bin'), Buffer.alloc(11 * MiB));

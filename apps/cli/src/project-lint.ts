@@ -23,6 +23,7 @@ const REPO_WARN_BYTES = 32 * 1024 * 1024;
 /** One file this large is a static asset that belongs outside Git. */
 const FILE_WARN_BYTES = 10 * 1024 * 1024;
 const LISTED_FILES = 5;
+const LFS_POINTER_BYTES = 200;
 
 export function lintProject(
   parsed: Record<string, unknown> | null,
@@ -82,7 +83,7 @@ const mib = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
  * Warn when the files Git stores are large: tracked files plus the untracked,
  * not-ignored ones `kortix ship` (`git add -A`) commits next, minus the paths
  * `.gitattributes` marks `export-ignore` (`git archive` leaves them out of the
- * release). A warning, never an error: the push still works, only the agent
+ * release). A Git LFS file counts as its pointer. A warning, never an error: the push still works, only the agent
  * config build and every session clone pay for it. Not a Git repository → no
  * check.
  */
@@ -93,10 +94,15 @@ export function lintRepoSize(dir: string): ManifestIssue[] {
   if (!listed) return [];
   const paths = [...new Set(listed.split('\0').filter(Boolean))];
 
-  // `check-attr -z` prints `<path>\0<attribute>\0<value>\0` per path.
+  // `check-attr -z` prints `<path>\0<attribute>\0<value>\0` per path and attribute.
   const ignored = new Set<string>();
-  const attrs = git(root, ['check-attr', '-z', '--stdin', 'export-ignore'], paths.join('\0'))?.split('\0') ?? [];
-  for (let i = 0; i + 2 < attrs.length; i += 3) if (attrs[i + 2] === 'set') ignored.add(attrs[i]!);
+  const lfs = new Set<string>();
+  const attrs =
+    git(root, ['check-attr', '-z', '--stdin', 'export-ignore', 'filter'], paths.join('\0'))?.split('\0') ?? [];
+  for (let i = 0; i + 2 < attrs.length; i += 3) {
+    if (attrs[i + 1] === 'export-ignore' && attrs[i + 2] === 'set') ignored.add(attrs[i]!);
+    if (attrs[i + 1] === 'filter' && attrs[i + 2] === 'lfs') lfs.add(attrs[i]!);
+  }
 
   let total = 0;
   const files: { path: string; bytes: number }[] = [];
@@ -107,7 +113,8 @@ export function lintRepoSize(dir: string): ManifestIssue[] {
       const stat = lstatSync(join(root, path));
       // A directory is a submodule: `git archive` does not include its files.
       if (stat.isDirectory()) continue;
-      bytes = stat.size;
+      // Git LFS stores a pointer of ~130 bytes; that is what `git archive` ships.
+      bytes = lfs.has(path) ? Math.min(stat.size, LFS_POINTER_BYTES) : stat.size;
     } catch {
       continue; // tracked but deleted in the working tree
     }

@@ -942,7 +942,7 @@ See [Manifest reference](/docs/project/manifest).
 
 #### Repository size
 
-A session builds its [agent config](/docs/work/runtime) from every file Git tracks at the base commit. A build over 32 MiB compressed or 128 MiB uncompressed fails, and the session runs the platform default config. `kortix validate` counts the files Git stores, plus the untracked files `kortix ship` commits next, and prints a warning when one file is 10 MiB or more or the total is over 32 MiB. The warning names the largest files. It never fails the command.
+A session builds its [agent config](/docs/work/runtime) from every file Git tracks at the base commit. A build over 32 MiB compressed or 128 MiB uncompressed fails, and the session runs the platform default config. `kortix validate` counts the files Git stores, plus the untracked files `kortix ship` commits next, and prints a warning when one file is 10 MiB or more or the total is over 32 MiB. A Git LFS file counts as its pointer, because the release holds only the pointer. The warning names the largest files. It never fails the command.
 
 To clear it:
 - Move big static assets (video, images, datasets, model weights) to object storage such as S3, R2, or GCS, or a CDN, and download them at runtime.
