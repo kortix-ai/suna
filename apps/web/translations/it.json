@@ -20783,7 +20783,7 @@
       "layerOff": "{layer} disattivato",
       "never": "Mai",
       "pausedUntil": "fino alle {time}",
-      "agentLink": "Usa Kortix Capture in un agente"
+      "apiLink": "API di Kortix Capture"
     },
     "settings": {
       "title": "Impostazioni",
@@ -21008,8 +21008,8 @@
       "linkDevicesHint": "Ogni computer che registra e il suo stato",
       "linkExport": "Esporta dati",
       "linkExportHint": "Episodi, passaggi e workflow in JSONL o Parquet",
-      "linkAgent": "Usa Kortix Capture in un agente",
-      "linkAgentHint": "Collega il server MCP di Kortix; gli agenti leggono workflow, episodi e momenti"
+      "linkApi": "API di Kortix Capture",
+      "linkApiHint": "Porta i dati di Capture in script, agenti o dove vuoi"
     },
     "workflows": {
       "title": "Workflow",
@@ -21163,30 +21163,28 @@
       "browserBody": "Kortix Capture registra dall’app desktop. Installala, accedi, poi apri Kortix Capture › Questo computer.",
       "getDesktop": "Scarica l’app desktop di Kortix"
     },
-    "agent": {
-      "title": "Usa Kortix Capture in un agente",
-      "description": "Kortix Capture non ha una chat propria. Qualsiasi agente con il server MCP di Kortix ne legge i dati, con i tuoi permessi.",
-      "step1": "1. Aggiungi il server MCP di Kortix",
-      "step1Hint": "Al primo utilizzo accede come te. Un solo URL per tutte le tue organizzazioni.",
-      "step2": "2. Gli strumenti di Capture che riceve",
-      "tool": {
-        "capture_accounts": "Organizzazioni con Kortix Capture attivo",
-        "capture_search": "Cerca testo a schermo, azioni e trascrizioni",
-        "capture_timeline": "Cosa ha registrato un dispositivo in un intervallo",
-        "capture_frame": "Un fotogramma: app, finestra, testo a schermo",
-        "capture_episodes": "Attività svolte, con obiettivo ed esito",
-        "capture_episode": "Un’attività con i suoi passaggi",
-        "capture_workflows": "Procedure ripetute e il loro tempo automatizzabile",
-        "capture_workflow": "Una procedura: passaggi, varianti, persone",
-        "capture_export": "Esportazione in blocco in JSONL o Parquet"
+    "api": {
+      "title": "API di Kortix Capture",
+      "description": "Porta i tuoi dati di Capture via HTTPS in script, agenti o dove vuoi. L’API restituisce ciò che quest’area ti mostra.",
+      "baseUrl": "URL di base",
+      "auth": "Autenticazione",
+      "authBody": "Invia una chiave API di Kortix come token bearer. La chiave agisce per tuo conto.",
+      "createKey": "Crea una chiave API",
+      "endpoints": "Endpoint dei dati",
+      "endpoint": {
+        "account": "Kortix Capture per questa organizzazione: attivo o no, e il tuo ruolo",
+        "search": "Cerca testo a schermo, azioni e trascrizioni",
+        "timeline": "Cosa ha registrato un dispositivo: tratti di app, fotogrammi, azioni, righe di trascrizione",
+        "frames": "Un fotogramma con il suo testo a schermo; un URL video firmato",
+        "episodes": "Attività svolte, con obiettivo, esito e passaggi",
+        "workflows": "Procedure ripetute: passaggi, varianti, persone, tempo automatizzabile",
+        "exports": "Esportazione in blocco in JSONL o Parquet, poi un URL di download"
       },
-      "step3": "3. Chiedi all’agente",
-      "example": "Quali workflow di {name} richiedono più tempo e chi li esegue?",
-      "scopeNote": "L’agente vede ciò che vedi qui: amministratori e lettori leggono tutti i membri, i membri solo i propri dati. Ogni lettura di un altro membro finisce nel registro di audit.",
-      "docs": "Documentazione di Kortix Capture",
-      "connect": "Collega un client",
-      "exampleOwn": "Su cosa ho lavorato ieri e quali attività ripeto più spesso?",
-      "scopeNoteOwn": "L’agente vede solo le tue registrazioni, come questa pagina."
+      "example": "Esempio",
+      "scopeOwn": "Sei un membro: l’API restituisce solo le tue registrazioni.",
+      "scopeAll": "Sei amministratore o lettore: l’API restituisce tutti i membri di questa organizzazione. Ogni lettura di un altro membro finisce nel registro di audit.",
+      "docs": "Documentazione dell’API",
+      "done": "Fatto"
     }
   }
 }
