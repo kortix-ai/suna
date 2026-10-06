@@ -305,10 +305,26 @@ export const search = query({
 
 ## Wire an App to the backend
 
-The backend URL is public, not secret. Set it as an App environment variable.
-Pick the name your framework exposes to the browser: `VITE_CONVEX_URL` (Vite),
-`NEXT_PUBLIC_CONVEX_URL` (Next.js), or `CONVEX_URL` (server code). Get the value
-with `kortix backends get main --json`, field `url`.
+The backend URL is public, not secret. Get it with
+`kortix backends get main --json`, field `url`. Pick the variable name your
+framework exposes to the browser: `VITE_CONVEX_URL` (Vite),
+`NEXT_PUBLIC_CONVEX_URL` (Next.js), or `CONVEX_URL` (server code).
+
+A static or SPA frontend reads the URL **at build time**. Commit it in the App's
+`.env.production` (for example `VITE_CONVEX_URL=https://3210-….sbx.platinum.dev`),
+build, and deploy the built directory:
+
+```sh
+cd apps/web && npm run build
+kortix apps deploy ./apps/web/dist --app web --type static --spa
+```
+
+A server-rendered App reads it at runtime: list it under the App's
+`env` in `kortix.yaml` (apps.md) instead.
+
+Verify from your sandbox through the backend, not through the App URL: on a
+local Kortix stack the App hostname resolves only on the developer's machine.
+`npx convex run` and `npx convex data` prove the data path the App uses.
 
 ```tsx
 import { ConvexProvider, ConvexReactClient, useMutation, useQuery } from "convex/react";
