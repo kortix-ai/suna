@@ -202,9 +202,11 @@ test('40 — a member sees no session lifecycle action the server would refuse',
 
     await test.step('the sessions list row offers no Restart, Stop or Delete', async () => {
       await page.goto(`/projects/${projectId}/sessions`, { waitUntil: 'commit' });
-      // The sidebar row comes first in the page; the list row is the last one.
-      const trigger = page.getByRole('button', { name: `Actions for ${TITLE}`, exact: true }).last();
-      await expect(trigger).toBeVisible({ timeout: 60_000 });
+      // The list row is the disclosure "Show details for <title>"; its actions
+      // button sits inside it (the sidebar row has the same button name).
+      const row = page.getByRole('button', { name: `Show details for ${TITLE}`, exact: true });
+      await expect(row).toBeVisible({ timeout: 60_000 });
+      const trigger = row.getByRole('button', { name: `Actions for ${TITLE}`, exact: true });
       const items = await rowMenuItems(page, trigger);
       for (const action of ['Restart', 'Stop', 'Delete']) {
         expect(items).not.toContain(action);
