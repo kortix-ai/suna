@@ -59,7 +59,7 @@ import {
   sessionIsTombstoned,
 } from '../lib/access';
 import { projectsApp, SessionSnapshotSchema } from '../lib/app';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 import { serializeSession } from '../lib/serializers';
 import { parseBoundedPositiveInt } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
@@ -333,21 +333,24 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
     });
   };
 
-projectsApp.openapi(
-  sessionSnapshotRoute(
-    '/{projectId}/sessions/{sessionId}/snapshot',
-    'Get the session snapshot (state, prompts, audit) in one read',
-  ),
-  handleSessionSnapshot,
-);
-// The path every published `@kortix/sdk` requests (`getSessionOpenBundle`).
-// The #6987 rename to `/snapshot` left shipped clients 404ing here — the
-// bundle degraded silently to 6-8 serial reads on every session open. Same
-// handler, same contract; keep until no supported SDK requests it.
-projectsApp.openapi(
-  sessionSnapshotRoute(
-    '/{projectId}/sessions/{sessionId}/open-bundle',
-    'Get the session snapshot (legacy open-bundle path)',
-  ),
-  handleSessionSnapshot,
-);
+export function registerSessionOpenBundleRoutes(): void {
+  projectsApp.openapi(
+    sessionSnapshotRoute(
+      '/{projectId}/sessions/{sessionId}/snapshot',
+      'Get the session snapshot (state, prompts, audit) in one read',
+    ),
+    handleSessionSnapshot,
+  );
+
+  // The path every published `@kortix/sdk` requests (`getSessionOpenBundle`).
+  // The #6987 rename to `/snapshot` left shipped clients 404ing here — the
+  // bundle degraded silently to 6-8 serial reads on every session open. Same
+  // handler, same contract; keep until no supported SDK requests it.
+  projectsApp.openapi(
+    sessionSnapshotRoute(
+      '/{projectId}/sessions/{sessionId}/open-bundle',
+      'Get the session snapshot (legacy open-bundle path)',
+    ),
+    handleSessionSnapshot,
+  );
+}

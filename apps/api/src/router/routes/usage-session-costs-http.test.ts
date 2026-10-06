@@ -79,7 +79,7 @@ mock.module('../../middleware/auth', () => ({
   },
 }));
 
-mock.module('../../shared/resolve-account', () => ({
+mock.module('../../middleware/resolve-account', () => ({
   resolveScopedAccountId: async (c: TestContext) => c.req.query('account_id') || ACCOUNT_ID,
 }));
 
