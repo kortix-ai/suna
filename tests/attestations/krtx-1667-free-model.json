@@ -4,13 +4,13 @@
     "apps/web/src/features/session/session-chat-model-gate.test.ts",
     "apps/web/src/features/session/session-chat.tsx"
   ],
-  "diff_hash": "2a481180b6fbbff6d61b3c28f2fef52dbe087c16624678108dc7a9e64d9c413e",
-  "head": "da2d7b3d0c606d1e3c8540617519460bf6add582",
+  "diff_hash": "26e1d85efdf4d1d3966e0786836836afd0ad403df723b9555f0d9d96595d24f8",
+  "head": "1e4c8cc35c738a46798dee9c189b7f988b8a96c7",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-06T13:53:51.577Z"
+  "at": "2026-10-06T13:56:29.241Z"
 }
