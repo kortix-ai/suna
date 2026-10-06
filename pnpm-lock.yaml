@@ -775,8 +775,8 @@ importers:
         specifier: 19.2.3
         version: 19.2.3(react@19.2.3)
       sharp:
-        specifier: ^0.35.4
-        version: 0.35.4(@types/node@20.19.43)
+        specifier: ^0.35.5
+        version: 0.35.5(@types/node@20.19.43)
       typescript:
         specifier: ~5.9.2
         version: 5.9.3
@@ -861,46 +861,46 @@ importers:
         version: 6.43.13
       '@embedpdf/core':
         specifier: ^2.14.4
-        version: 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+        version: 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       '@embedpdf/engines':
         specifier: ^2.14.4
-        version: 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+        version: 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       '@embedpdf/models':
         specifier: ^2.14.4
         version: 2.15.0
       '@embedpdf/plugin-document-manager':
         specifier: ^2.14.4
-        version: 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+        version: 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       '@embedpdf/plugin-interaction-manager':
         specifier: ^2.14.4
-        version: 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+        version: 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       '@embedpdf/plugin-render':
         specifier: ^2.14.4
-        version: 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+        version: 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       '@embedpdf/plugin-rotate':
         specifier: ^2.14.4
-        version: 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+        version: 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       '@embedpdf/plugin-scroll':
         specifier: ^2.14.4
-        version: 2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-viewport@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+        version: 2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-viewport@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       '@embedpdf/plugin-search':
         specifier: ^2.14.4
-        version: 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+        version: 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       '@embedpdf/plugin-selection':
         specifier: ^2.14.4
-        version: 2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-interaction-manager@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+        version: 2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-interaction-manager@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       '@embedpdf/plugin-thumbnail':
         specifier: ^2.14.4
-        version: 2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-render@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+        version: 2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-render@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       '@embedpdf/plugin-tiling':
         specifier: ^2.14.4
-        version: 2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-render@2.15.0)(@embedpdf/plugin-scroll@2.15.0)(@embedpdf/plugin-viewport@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+        version: 2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-render@2.15.0)(@embedpdf/plugin-scroll@2.15.0)(@embedpdf/plugin-viewport@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       '@embedpdf/plugin-viewport':
         specifier: ^2.14.4
-        version: 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+        version: 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       '@embedpdf/plugin-zoom':
         specifier: ^2.14.4
-        version: 2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-scroll@2.15.0)(@embedpdf/plugin-viewport@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+        version: 2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-scroll@2.15.0)(@embedpdf/plugin-viewport@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       '@extend-ai/react-docx':
         specifier: ^0.7.5
         version: 0.7.6(react-dom@19.3.0)(react@19.3.0)
@@ -1002,7 +1002,7 @@ importers:
         version: 9.7.0(@types/react@19.2.18)(react-dom@19.3.0)(react@19.3.0)(three@0.185.1)
       '@sentry/nextjs':
         specifier: ^10.69.0
-        version: 10.74.0(@opentelemetry/core@2.8.0)(@opentelemetry/sdk-trace-base@2.11.0)(next@16.3.6)(react@19.3.0)(webpack@5.111.1)
+        version: 10.74.0(@opentelemetry/core@2.8.0)(@opentelemetry/sdk-trace-base@2.12.0)(next@16.3.6)(react@19.3.0)(webpack@5.111.1)
       '@supabase/ssr':
         specifier: latest
         version: 0.12.7(@supabase/supabase-js@2.116.0)
@@ -1068,13 +1068,13 @@ importers:
         version: 4.25.11(@babel/runtime@8.0.5)(@codemirror/autocomplete@6.20.3)(@codemirror/language@6.12.4)(@codemirror/lint@6.9.7)(@codemirror/search@6.7.2)(@codemirror/state@6.7.6)(@codemirror/theme-one-dark@6.1.3)(@codemirror/view@6.43.13)(codemirror@6.0.2)(react-dom@19.3.0)(react@19.3.0)
       '@vercel/analytics':
         specifier: ^1.5.0
-        version: 1.6.1(next@16.3.6)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+        version: 1.6.1(next@16.3.6)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       '@vercel/edge-config':
         specifier: ^1.4.0
         version: 1.5.1(@opentelemetry/api@1.9.0)(next@16.3.6)
       '@vercel/speed-insights':
         specifier: ^1.2.0
-        version: 1.3.1(next@16.3.6)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+        version: 1.3.1(next@16.3.6)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       '@xterm/addon-fit':
         specifier: ^0.10.0
         version: 0.10.0(@xterm/xterm@5.5.0)
@@ -1092,7 +1092,7 @@ importers:
         version: 35.3.1(react-dom@19.3.0)(react@19.3.0)
       blume:
         specifier: 1.5.3
-        version: 1.5.3(patch_hash=e2lihfsjc4kvtdhxezjuaintza)(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)(@types/node@20.19.43)(@types/react-dom@19.2.3)(@types/react@19.2.18)(csstype@3.2.3)(next@16.3.6)(preact@10.29.8)(prettier@3.9.7)(svelte@5.57.1)(vite@8.3.2)(vue@3.5.43)
+        version: 1.5.3(patch_hash=e2lihfsjc4kvtdhxezjuaintza)(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)(@types/node@20.19.43)(@types/react-dom@19.2.3)(@types/react@19.2.18)(csstype@3.2.3)(next@16.3.6)(preact@10.29.8)(prettier@3.9.7)(svelte@5.57.2)(vite@8.3.3)(vue@3.5.43)
       cannon-es:
         specifier: ^0.20.0
         version: 0.20.0
@@ -1137,10 +1137,10 @@ importers:
         version: 0.3.0(react@19.3.0)(typescript@5.9.3)
       fumadocs-core:
         specifier: 16.14.0
-        version: 16.14.0(@types/react@19.2.18)(lucide-react@1.51.0)(next@16.3.6)(react-dom@19.3.0)(react@19.3.0)(zod@3.25.76)
+        version: 16.14.0(@types/react@19.2.18)(lucide-react@1.52.0)(next@16.3.6)(react-dom@19.3.0)(react@19.3.0)(zod@3.25.76)
       fumadocs-mdx:
         specifier: 15.2.1
-        version: 15.2.1(@types/react@19.2.18)(fumadocs-core@16.14.0)(next@16.3.6)(react@19.3.0)(vite@8.3.2)
+        version: 15.2.1(@types/react@19.2.18)(fumadocs-core@16.14.0)(next@16.3.6)(react@19.3.0)(vite@8.3.3)
       heic2any:
         specifier: 0.0.4
         version: 0.0.4
@@ -1197,7 +1197,7 @@ importers:
         version: 1.433.5(@types/react@19.2.18)(react@19.3.0)
       pptx-react-viewer:
         specifier: ^1.15.0
-        version: 1.25.5(fast-xml-parser@5.11.1)(framer-motion@12.43.0)(i18next@26.4.2)(jspdf@4.2.1)(jszip@3.10.2)(lucide-react@1.51.0)(react-dom@19.3.0)(react-i18next@17.0.14)(react-icons@5.7.0)(react@19.3.0)
+        version: 1.25.5(fast-xml-parser@5.11.1)(framer-motion@12.43.0)(i18next@26.4.2)(jspdf@4.2.1)(jszip@3.10.2)(lucide-react@1.52.0)(react-dom@19.3.0)(react-i18next@17.0.14)(react-icons@5.7.0)(react@19.3.0)
       pptx-viewer-core:
         specifier: ^1.2.8
         version: 1.6.10(node-forge@1.4.0)(xml-crypto@6.1.2)
@@ -1257,7 +1257,7 @@ importers:
         version: 0.0.1
       shaders:
         specifier: ^2.5.94
-        version: 2.5.135(patch_hash=eaej5q3lhsnrsoz6e7zxio5l2e)(react-dom@19.3.0)(react@19.3.0)(solid-js@1.9.15)(svelte@5.57.1)(vue@3.5.43)
+        version: 2.5.135(patch_hash=eaej5q3lhsnrsoz6e7zxio5l2e)(react-dom@19.3.0)(react@19.3.0)(solid-js@1.9.15)(svelte@5.57.2)(vue@3.5.43)
       sonner:
         specifier: ^2.0.3
         version: 2.0.8(@types/react@19.2.18)(react-dom@19.3.0)(react@19.3.0)
@@ -1969,7 +1969,7 @@ packages:
     cpu: [wasm32]
     requiresBuild: true
     dependencies:
-      '@napi-rs/wasm-runtime': 1.2.4(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)
+      '@napi-rs/wasm-runtime': 1.2.5(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)
     transitivePeerDependencies:
       - '@emnapi/core'
       - '@emnapi/runtime'
@@ -2224,13 +2224,13 @@ packages:
       package-manager-detector: 1.8.0
     dev: false
 
-  /@astrojs/vercel@11.0.10(astro@7.3.2)(next@16.3.6)(react@19.2.3)(svelte@5.57.1)(vue@3.5.43):
+  /@astrojs/vercel@11.0.10(astro@7.3.2)(next@16.3.6)(react@19.2.3)(svelte@5.57.2)(vue@3.5.43):
     resolution: {integrity: sha512-QqqG24F0D2Ho3zgleio5KImcE335HxnUjtSJX92FGPbg7DKiTk3urno2aqmBGIpVOq3AKtx6r1r7DudOK3xwnA==}
     peerDependencies:
       astro: ^7.0.0
     dependencies:
       '@astrojs/internal-helpers': 0.11.0
-      '@vercel/analytics': 2.0.1(next@16.3.6)(react@19.2.3)(svelte@5.57.1)(vue@3.5.43)
+      '@vercel/analytics': 2.0.1(next@16.3.6)(react@19.2.3)(svelte@5.57.2)(vue@3.5.43)
       '@vercel/functions': 3.9.8
       '@vercel/nft': 1.11.0
       '@vercel/routing-utils': 6.6.0
@@ -3645,7 +3645,7 @@ packages:
     dependencies:
       '@emnapi/core': 1.11.1
       '@emnapi/runtime': 1.11.1
-      '@napi-rs/wasm-runtime': 1.2.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@napi-rs/wasm-runtime': 1.2.5(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
     dev: false
     optional: true
 
@@ -3657,7 +3657,7 @@ packages:
     dependencies:
       '@emnapi/core': 1.11.1
       '@emnapi/runtime': 1.11.1
-      '@napi-rs/wasm-runtime': 1.2.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@napi-rs/wasm-runtime': 1.2.5(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
     dev: false
     optional: true
 
@@ -4448,7 +4448,7 @@ packages:
       - supports-color
     dev: true
 
-  /@embedpdf/core@2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43):
+  /@embedpdf/core@2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43):
     resolution: {integrity: sha512-0yaPCgvbE5/cBf+5rHBUsRUm8i6hSl894xjC19HTOmb8DqrhxOxbOQSyjiTbJTQK52zZrNL79SigsPgGHPrYWA==}
     peerDependencies:
       preact: ^10.26.4
@@ -4457,16 +4457,16 @@ packages:
       svelte: '>=5 <6'
       vue: '>=3.2.0'
     dependencies:
-      '@embedpdf/engines': 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/engines': 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       '@embedpdf/models': 2.15.0
       preact: 10.29.8
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
-      svelte: 5.57.1
+      svelte: 5.57.2
       vue: 3.5.43(typescript@5.9.3)
     dev: false
 
-  /@embedpdf/engines@2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43):
+  /@embedpdf/engines@2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43):
     resolution: {integrity: sha512-fW5UoqpDRkAWDbGMl3y6ril3l2qXzoYz+klt4O2P8gWzYzhG3fmr0L2+qzjD+BPO+QfYMNNvmBI+teT/nYjm/g==}
     peerDependencies:
       preact: ^10.26.4
@@ -4487,7 +4487,7 @@ packages:
       preact: 10.29.8
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
-      svelte: 5.57.1
+      svelte: 5.57.2
       vue: 3.5.43(typescript@5.9.3)
     dev: false
 
@@ -4531,7 +4531,7 @@ packages:
     resolution: {integrity: sha512-KgpRND2MYcdbhzb2EMb4WzWcJYrR0A6JXvhMv4WthEHKt6qmNo2v/MC68bpYvpveYT9GNnUnY/+TG5MpXY3pRw==}
     dev: false
 
-  /@embedpdf/plugin-document-manager@2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43):
+  /@embedpdf/plugin-document-manager@2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43):
     resolution: {integrity: sha512-M8EwOuonICSHfOklTMwk0XfyPhG9v9EMDRU9Pvz0zAe1DJzUPtIxUh+CgxtFSSnUeKSfxE7JpTRryrbUW0XcGg==}
     peerDependencies:
       '@embedpdf/core': 2.15.0
@@ -4541,16 +4541,16 @@ packages:
       svelte: '>=5 <6'
       vue: '>=3.2.0'
     dependencies:
-      '@embedpdf/core': 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/core': 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       '@embedpdf/models': 2.15.0
       preact: 10.29.8
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
-      svelte: 5.57.1
+      svelte: 5.57.2
       vue: 3.5.43(typescript@5.9.3)
     dev: false
 
-  /@embedpdf/plugin-interaction-manager@2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43):
+  /@embedpdf/plugin-interaction-manager@2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43):
     resolution: {integrity: sha512-YCMvTvu4Fm1KNuEhj+CftzG+T6F1+/QhI7eaYft9Lp5xm3CYSXdR3pNfGwNFy5XkDUDwB1IscLTiU0q75viMCw==}
     peerDependencies:
       '@embedpdf/core': 2.15.0
@@ -4560,16 +4560,16 @@ packages:
       svelte: '>=5 <6'
       vue: '>=3.2.0'
     dependencies:
-      '@embedpdf/core': 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/core': 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       '@embedpdf/models': 2.15.0
       preact: 10.29.8
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
-      svelte: 5.57.1
+      svelte: 5.57.2
       vue: 3.5.43(typescript@5.9.3)
     dev: false
 
-  /@embedpdf/plugin-render@2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43):
+  /@embedpdf/plugin-render@2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43):
     resolution: {integrity: sha512-EVfn8XsdU10VgrSs9qKo8nqjfUyt2/NWFJtlW3nX4sZ74Pi9xSvEa7/B99/LYZZMa0ENzi+4HKAXiQ6NUXisDg==}
     peerDependencies:
       '@embedpdf/core': 2.15.0
@@ -4579,16 +4579,16 @@ packages:
       svelte: '>=5 <6'
       vue: '>=3.2.0'
     dependencies:
-      '@embedpdf/core': 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/core': 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       '@embedpdf/models': 2.15.0
       preact: 10.29.8
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
-      svelte: 5.57.1
+      svelte: 5.57.2
       vue: 3.5.43(typescript@5.9.3)
     dev: false
 
-  /@embedpdf/plugin-rotate@2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43):
+  /@embedpdf/plugin-rotate@2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43):
     resolution: {integrity: sha512-mhfDC8NCQ8H6ati3O6smA6ZxZoMgPGtloEeY6gs61+zoxPKyXiuCpxZKJctRfYdrTdoRgXpFa3fKflwStMcgFg==}
     peerDependencies:
       '@embedpdf/core': 2.15.0
@@ -4598,16 +4598,16 @@ packages:
       svelte: '>=5 <6'
       vue: '>=3.2.0'
     dependencies:
-      '@embedpdf/core': 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/core': 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       '@embedpdf/models': 2.15.0
       preact: 10.29.8
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
-      svelte: 5.57.1
+      svelte: 5.57.2
       vue: 3.5.43(typescript@5.9.3)
     dev: false
 
-  /@embedpdf/plugin-scroll@2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-viewport@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43):
+  /@embedpdf/plugin-scroll@2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-viewport@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43):
     resolution: {integrity: sha512-UqjLH3lafrpqN1qcxIpfd1MfWW5Fdf6/4LjneUabHt+3gxy1qd2KU9oPR5wwinsh3vmjn90qURsnqIHL5jnaOg==}
     peerDependencies:
       '@embedpdf/core': 2.15.0
@@ -4618,17 +4618,17 @@ packages:
       svelte: '>=5 <6'
       vue: '>=3.2.0'
     dependencies:
-      '@embedpdf/core': 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/core': 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       '@embedpdf/models': 2.15.0
-      '@embedpdf/plugin-viewport': 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/plugin-viewport': 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       preact: 10.29.8
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
-      svelte: 5.57.1
+      svelte: 5.57.2
       vue: 3.5.43(typescript@5.9.3)
     dev: false
 
-  /@embedpdf/plugin-search@2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43):
+  /@embedpdf/plugin-search@2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43):
     resolution: {integrity: sha512-mMzy8uo3xvDMjSc+xuBMgdI/mmmpgbZ6xKTmNxpF0d8BcaWu6Zp9a4ewamfjBwg8WF/qUW49U6HYZsiRr3NUEQ==}
     peerDependencies:
       '@embedpdf/core': 2.15.0
@@ -4638,16 +4638,16 @@ packages:
       svelte: '>=5 <6'
       vue: '>=3.2.0'
     dependencies:
-      '@embedpdf/core': 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/core': 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       '@embedpdf/models': 2.15.0
       preact: 10.29.8
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
-      svelte: 5.57.1
+      svelte: 5.57.2
       vue: 3.5.43(typescript@5.9.3)
     dev: false
 
-  /@embedpdf/plugin-selection@2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-interaction-manager@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43):
+  /@embedpdf/plugin-selection@2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-interaction-manager@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43):
     resolution: {integrity: sha512-iEnhx0jeQrbze7WHkHhZtF21yfGBuqF2B+V2efLHT2O0a2fnof+PEVaQQRgERSfrwRvLvyEJL9ud54E41ahsRQ==}
     peerDependencies:
       '@embedpdf/core': 2.15.0
@@ -4658,18 +4658,18 @@ packages:
       svelte: '>=5 <6'
       vue: '>=3.2.0'
     dependencies:
-      '@embedpdf/core': 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/core': 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       '@embedpdf/models': 2.15.0
-      '@embedpdf/plugin-interaction-manager': 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
-      '@embedpdf/utils': 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/plugin-interaction-manager': 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
+      '@embedpdf/utils': 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       preact: 10.29.8
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
-      svelte: 5.57.1
+      svelte: 5.57.2
       vue: 3.5.43(typescript@5.9.3)
     dev: false
 
-  /@embedpdf/plugin-thumbnail@2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-render@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43):
+  /@embedpdf/plugin-thumbnail@2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-render@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43):
     resolution: {integrity: sha512-39EojqobHmvSvk2ejKeh58m43ApGS3cie/sVZP+pkXr6MRogX6+ivMa5GfoqBzh9wdZAZ3l4XTd+RQ4kFZ4aqQ==}
     peerDependencies:
       '@embedpdf/core': 2.15.0
@@ -4680,17 +4680,17 @@ packages:
       svelte: '>=5 <6'
       vue: '>=3.2.0'
     dependencies:
-      '@embedpdf/core': 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/core': 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       '@embedpdf/models': 2.15.0
-      '@embedpdf/plugin-render': 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/plugin-render': 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       preact: 10.29.8
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
-      svelte: 5.57.1
+      svelte: 5.57.2
       vue: 3.5.43(typescript@5.9.3)
     dev: false
 
-  /@embedpdf/plugin-tiling@2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-render@2.15.0)(@embedpdf/plugin-scroll@2.15.0)(@embedpdf/plugin-viewport@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43):
+  /@embedpdf/plugin-tiling@2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-render@2.15.0)(@embedpdf/plugin-scroll@2.15.0)(@embedpdf/plugin-viewport@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43):
     resolution: {integrity: sha512-zBjKCToAkL1tYvkIjFCjsbfUzZ0QBPczL3wRy/IdNZ9CQuZrqqqp3xEFrI4Nz2o9XQd9heBlMA9Zo/yieuazqA==}
     peerDependencies:
       '@embedpdf/core': 2.15.0
@@ -4703,19 +4703,19 @@ packages:
       svelte: '>=5 <6'
       vue: '>=3.2.0'
     dependencies:
-      '@embedpdf/core': 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/core': 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       '@embedpdf/models': 2.15.0
-      '@embedpdf/plugin-render': 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
-      '@embedpdf/plugin-scroll': 2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-viewport@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
-      '@embedpdf/plugin-viewport': 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/plugin-render': 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
+      '@embedpdf/plugin-scroll': 2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-viewport@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
+      '@embedpdf/plugin-viewport': 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       preact: 10.29.8
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
-      svelte: 5.57.1
+      svelte: 5.57.2
       vue: 3.5.43(typescript@5.9.3)
     dev: false
 
-  /@embedpdf/plugin-viewport@2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43):
+  /@embedpdf/plugin-viewport@2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43):
     resolution: {integrity: sha512-MXNBQOitr1cAoCoBKwAR3O78eLtHBbIngOkWqgm6EpWTdoYDBVhZlvVcmwmjheZKjMJFnU3sFr98w6Qwix3Cjg==}
     peerDependencies:
       '@embedpdf/core': 2.15.0
@@ -4725,16 +4725,16 @@ packages:
       svelte: '>=5 <6'
       vue: '>=3.2.0'
     dependencies:
-      '@embedpdf/core': 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/core': 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       '@embedpdf/models': 2.15.0
       preact: 10.29.8
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
-      svelte: 5.57.1
+      svelte: 5.57.2
       vue: 3.5.43(typescript@5.9.3)
     dev: false
 
-  /@embedpdf/plugin-zoom@2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-scroll@2.15.0)(@embedpdf/plugin-viewport@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43):
+  /@embedpdf/plugin-zoom@2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-scroll@2.15.0)(@embedpdf/plugin-viewport@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43):
     resolution: {integrity: sha512-d+YhwqcQNZaaHczVGe4pbaAYQXWO4MEoivcW7jOpE31VnKqEAdjCMye8F0ctcF5OjgbXeb6AKCk4L4fDdLF4mg==}
     peerDependencies:
       '@embedpdf/core': 2.15.0
@@ -4746,18 +4746,18 @@ packages:
       svelte: '>=5 <6'
       vue: '>=3.2.0'
     dependencies:
-      '@embedpdf/core': 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/core': 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       '@embedpdf/models': 2.15.0
-      '@embedpdf/plugin-scroll': 2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-viewport@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
-      '@embedpdf/plugin-viewport': 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/plugin-scroll': 2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-viewport@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
+      '@embedpdf/plugin-viewport': 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43)
       preact: 10.29.8
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
-      svelte: 5.57.1
+      svelte: 5.57.2
       vue: 3.5.43(typescript@5.9.3)
     dev: false
 
-  /@embedpdf/utils@2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43):
+  /@embedpdf/utils@2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43):
     resolution: {integrity: sha512-13UEMPpu5XrxmYI/MPiLtJC3R3b1g8ii3zfhQ3g1WpECybnwTuhBgwqaOvqw3rVCKCnXEgNMs4PBCzLyFpZZTw==}
     peerDependencies:
       preact: ^10.26.4
@@ -4769,7 +4769,7 @@ packages:
       preact: 10.29.8
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
-      svelte: 5.57.1
+      svelte: 5.57.2
       vue: 3.5.43(typescript@5.9.3)
     dev: false
 
@@ -5471,7 +5471,7 @@ packages:
       '@expo/router-server': 56.0.19(@expo/metro-runtime@56.0.21)(expo-constants@56.0.26)(expo-font@56.0.7)(expo-router@56.2.21)(expo-server@56.0.6)(expo@56.0.22)(react-dom@19.2.3)(react@19.2.3)
       '@expo/schema-utils': 56.0.2
       '@expo/spawn-async': 1.8.0
-      '@expo/ws-tunnel': 2.0.0(ws@8.21.3)
+      '@expo/ws-tunnel': 2.0.0(ws@8.22.0)
       '@expo/xcpretty': 4.4.5
       '@react-native/dev-middleware': 0.85.3
       accepts: 1.3.8
@@ -5511,7 +5511,7 @@ packages:
       terminal-link: 2.1.1
       toqr: 0.1.1
       wrap-ansi: 7.0.0
-      ws: 8.21.3
+      ws: 8.22.0
       zod: 3.25.76
     transitivePeerDependencies:
       - '@expo/dom-webview'
@@ -5931,12 +5931,12 @@ packages:
       - '@types/react'
       - '@types/react-dom'
 
-  /@expo/ws-tunnel@2.0.0(ws@8.21.3):
+  /@expo/ws-tunnel@2.0.0(ws@8.22.0):
     resolution: {integrity: sha512-j+JfTRdCk820J9dU0sA2SqshQIKFOMo7ED84w9MJFcebfbNQgsLztEY/SABDkGnjatrW4xGqnUhVRxSBVyCkXw==}
     peerDependencies:
       ws: ^8.0.0
     dependencies:
-      ws: 8.21.3
+      ws: 8.22.0
 
   /@expo/xcpretty@4.4.5:
     resolution: {integrity: sha512-J3eL4n4h5QTwfD0SIz8OIk6/+sOL/hFZAMacgCM07UNlxBQfJipEpIC2AQxvGkbYeStByJ0TVhQAJo+DeNgaSQ==}
@@ -6235,16 +6235,6 @@ packages:
     engines: {node: '>=18'}
     requiresBuild: true
 
-  /@img/sharp-darwin-arm64@0.35.4:
-    resolution: {integrity: sha512-Uhfl4V4lhP2nbUVF9+hyH1+luj86f1gUFeo8ALYxFoULoU+G87D43BfeMP8XHsk9boxAnCY/bf2EHwhA7MuGsA==}
-    engines: {node: '>=20.9.0'}
-    cpu: [arm64]
-    os: [darwin]
-    requiresBuild: true
-    optionalDependencies:
-      '@img/sharp-libvips-darwin-arm64': 1.3.3
-    optional: true
-
   /@img/sharp-darwin-arm64@0.35.5:
     resolution: {integrity: sha512-QRUlFQ0WxvdWyqqG/WtI3iupfD5rBzmCHXSdPsY91sAtVtTo7Q4cb6zOccZ3gqEqkr0f1As1ehLqmEpDsRf+lg==}
     engines: {node: '>=20.9.0'}
@@ -6253,17 +6243,6 @@ packages:
     requiresBuild: true
     optionalDependencies:
       '@img/sharp-libvips-darwin-arm64': 1.3.4
-    dev: false
-    optional: true
-
-  /@img/sharp-darwin-x64@0.35.4:
-    resolution: {integrity: sha512-hWniXY3bG5qKpkKrAwPe4y+VTPmf086YQAnkxWh7uA1YrlRouWGa0M0Mxj3ZjnXFkv7/TD1bTy9lGUK26vRvWw==}
-    engines: {node: '>=20.9.0'}
-    cpu: [x64]
-    os: [darwin]
-    requiresBuild: true
-    optionalDependencies:
-      '@img/sharp-libvips-darwin-x64': 1.3.3
     optional: true
 
   /@img/sharp-darwin-x64@0.35.5:
@@ -6274,16 +6253,6 @@ packages:
     requiresBuild: true
     optionalDependencies:
       '@img/sharp-libvips-darwin-x64': 1.3.4
-    dev: false
-    optional: true
-
-  /@img/sharp-freebsd-wasm32@0.35.4:
-    resolution: {integrity: sha512-lIsKw/BU+kjB4eZjxrYrZmwOJYi3Ajrv66iAlBmUPyKc3HpnloevB1g3wxGD9P/5BbQ1brBGl65VRRrCvQDEqA==}
-    engines: {node: '>=20.9.0'}
-    os: [freebsd]
-    requiresBuild: true
-    dependencies:
-      '@img/sharp-wasm32': 0.35.4
     optional: true
 
   /@img/sharp-freebsd-wasm32@0.35.5:
@@ -6293,27 +6262,11 @@ packages:
     requiresBuild: true
     dependencies:
       '@img/sharp-wasm32': 0.35.5
-    dev: false
-    optional: true
-
-  /@img/sharp-libvips-darwin-arm64@1.3.3:
-    resolution: {integrity: sha512-suTBPTDGrI9WodccaDdwZItTSaBYASlBk1NSfElSHrUfzu3szG6lvIF58+WiFvnfzuK8ZBFS5zE00PxqxnRiPg==}
-    cpu: [arm64]
-    os: [darwin]
-    requiresBuild: true
     optional: true
 
   /@img/sharp-libvips-darwin-arm64@1.3.4:
     resolution: {integrity: sha512-5R89nBYiRdUlSWJxPhO+GVtaXzXSxKnRu/xqMn3KTA3L9EB9Oy/P+Nn2f2vlhPuUdy/Zusb2DarbyTpGCfEDuw==}
     cpu: [arm64]
-    os: [darwin]
-    requiresBuild: true
-    dev: false
-    optional: true
-
-  /@img/sharp-libvips-darwin-x64@1.3.3:
-    resolution: {integrity: sha512-FVJZ5mITMobmXIz/hPDTw0EintTW5H3WfrxwLqEqjiIihlu+hVRyGrFQ60xl0Lxn7Bt3zdpevPaQi0HEzqz9fw==}
-    cpu: [x64]
     os: [darwin]
     requiresBuild: true
     optional: true
@@ -6323,27 +6276,11 @@ packages:
     cpu: [x64]
     os: [darwin]
     requiresBuild: true
-    dev: false
-    optional: true
-
-  /@img/sharp-libvips-linux-arm64@1.3.3:
-    resolution: {integrity: sha512-0DaL0A6Xu6sQSQFwe4iVCrKWU2cCTItnRsYsCdxAMm9NF6twAA9BKnoqy4hqz4+azQ0JHuA26qiUKsf1XJ/v5A==}
-    cpu: [arm64]
-    os: [linux]
-    requiresBuild: true
     optional: true
 
   /@img/sharp-libvips-linux-arm64@1.3.4:
     resolution: {integrity: sha512-Y3dgX/6lE2QhQb+Gxy0WZxfg9MEm/JBjamZpS2IklP7xIQoKN4hzAm7KcMVGtaVDt3neE9OKBC7vAfonA/Lr1A==}
     cpu: [arm64]
-    os: [linux]
-    requiresBuild: true
-    dev: false
-    optional: true
-
-  /@img/sharp-libvips-linux-arm@1.3.3:
-    resolution: {integrity: sha512-3rbU4vqXXc3hY/OiXdl52xZvT0F1yEngWfvqudtPJg/KkyiaQw2DRsFrNzpmLvfavbwOq3qXn36GP8obHRULQA==}
-    cpu: [arm]
     os: [linux]
     requiresBuild: true
     optional: true
@@ -6353,27 +6290,11 @@ packages:
     cpu: [arm]
     os: [linux]
     requiresBuild: true
-    dev: false
-    optional: true
-
-  /@img/sharp-libvips-linux-ppc64@1.3.3:
-    resolution: {integrity: sha512-cdn1OvUBwsXhbC0zSzJnNzf5MZ/mTrobawDvNXBTxe8VtqKAm0sRuEY2Evzovb/w9JMk4TvRxqt1mekSuJz64w==}
-    cpu: [ppc64]
-    os: [linux]
-    requiresBuild: true
     optional: true
 
   /@img/sharp-libvips-linux-ppc64@1.3.4:
     resolution: {integrity: sha512-Le6boB8Tai0Nis+gIxIpKx68UDVVIqdR8Tin5Yf1z2LJJQLDJvCDRqRu+jC2qCoD+eIomonmOwB4smBRxfVpYQ==}
     cpu: [ppc64]
-    os: [linux]
-    requiresBuild: true
-    dev: false
-    optional: true
-
-  /@img/sharp-libvips-linux-riscv64@1.3.3:
-    resolution: {integrity: sha512-HjPVx7yKz+0lqdhDlTw1tt90wamBoxhiXpvl1XZpJLiHH4RCJ5yDTqH+VlYPv2fwFs89JFw4c1IexYOcQUi4IQ==}
-    cpu: [riscv64]
     os: [linux]
     requiresBuild: true
     optional: true
@@ -6383,27 +6304,11 @@ packages:
     cpu: [riscv64]
     os: [linux]
     requiresBuild: true
-    dev: false
-    optional: true
-
-  /@img/sharp-libvips-linux-s390x@1.3.3:
-    resolution: {integrity: sha512-neWLh+3yCNThxnfy3c4BbVBeGgt9aftno+XbT56iK28RgeDs3UOFWviLWlUu0bArYVYJaFDK+RRohbicUNCm8Q==}
-    cpu: [s390x]
-    os: [linux]
-    requiresBuild: true
     optional: true
 
   /@img/sharp-libvips-linux-s390x@1.3.4:
     resolution: {integrity: sha512-ra/mB6MikESDUO7Yg+Mi95bFBb9GsObURuhnOv3OqknjGe9sZrG8tCe9q0xSIGrtLgvgw0gKnFWcK4blSgQOuQ==}
     cpu: [s390x]
-    os: [linux]
-    requiresBuild: true
-    dev: false
-    optional: true
-
-  /@img/sharp-libvips-linux-x64@1.3.3:
-    resolution: {integrity: sha512-4vKmvAst9nrowcqquKFAyZJUDolUaIp8uRiN0mWFguJ1IplC9/pitXtlnnlU4aa/eJw3J7i67V+pwUL+wZGdsA==}
-    cpu: [x64]
     os: [linux]
     requiresBuild: true
     optional: true
@@ -6413,27 +6318,11 @@ packages:
     cpu: [x64]
     os: [linux]
     requiresBuild: true
-    dev: false
-    optional: true
-
-  /@img/sharp-libvips-linuxmusl-arm64@1.3.3:
-    resolution: {integrity: sha512-Y9kQaLMuNoB0bPYOOdcZMaseNrFpPodIWWMrx+CZyydf2xn68j9WYc6sWWRrDwNkzCQjKYfc68L7jKjGlHMibw==}
-    cpu: [arm64]
-    os: [linux]
-    requiresBuild: true
     optional: true
 
   /@img/sharp-libvips-linuxmusl-arm64@1.3.4:
     resolution: {integrity: sha512-hvulFwtjUcagsis6BBxHwGFwWoNZjgYmULGVrZcyfNbjA8hKILbRxGg15/7w5HDyXHXUos/j6baAWqnCyQ2DWA==}
     cpu: [arm64]
-    os: [linux]
-    requiresBuild: true
-    dev: false
-    optional: true
-
-  /@img/sharp-libvips-linuxmusl-x64@1.3.3:
-    resolution: {integrity: sha512-fj8Mv0HHfD1Rr+4I68+3agJynxDWtBFgicTbSOb9Bke6pIwzGcJ+RX/yHjmiEGFMCavY/dxvem7MyNaJF+wDiw==}
-    cpu: [x64]
     os: [linux]
     requiresBuild: true
     optional: true
@@ -6443,17 +6332,6 @@ packages:
     cpu: [x64]
     os: [linux]
     requiresBuild: true
-    dev: false
-    optional: true
-
-  /@img/sharp-linux-arm64@0.35.4:
-    resolution: {integrity: sha512-De4jpEnAU8Hd5oT0j1G3uL4ZvTuipVMn7YC6vPaJhy6/7EwEae0SVAoBrUMYQbkLGDm85taVWwuPc1a44LTzCQ==}
-    engines: {node: '>=20.9.0'}
-    cpu: [arm64]
-    os: [linux]
-    requiresBuild: true
-    optionalDependencies:
-      '@img/sharp-libvips-linux-arm64': 1.3.3
     optional: true
 
   /@img/sharp-linux-arm64@0.35.5:
@@ -6464,17 +6342,6 @@ packages:
     requiresBuild: true
     optionalDependencies:
       '@img/sharp-libvips-linux-arm64': 1.3.4
-    dev: false
-    optional: true
-
-  /@img/sharp-linux-arm@0.35.4:
-    resolution: {integrity: sha512-7OAS8gI0EReKGVN2HssHlM6umJgxF5VI3xN0p9FA91p/YO+ou5hiNghLdZ5BEHztwaaK5+bLKRf8x/o2L2nk9A==}
-    engines: {node: '>=20.9.0'}
-    cpu: [arm]
-    os: [linux]
-    requiresBuild: true
-    optionalDependencies:
-      '@img/sharp-libvips-linux-arm': 1.3.3
     optional: true
 
   /@img/sharp-linux-arm@0.35.5:
@@ -6485,17 +6352,6 @@ packages:
     requiresBuild: true
     optionalDependencies:
       '@img/sharp-libvips-linux-arm': 1.3.4
-    dev: false
-    optional: true
-
-  /@img/sharp-linux-ppc64@0.35.4:
-    resolution: {integrity: sha512-2oYZJeIl4kCcMGk4ouZVjnkCtFrpQFlNEtJ6GbxzhHQchwH0NH/qEb9ykmOl29dqwMq+JhFdZn+1ak2FKhI9fQ==}
-    engines: {node: '>=20.9.0'}
-    cpu: [ppc64]
-    os: [linux]
-    requiresBuild: true
-    optionalDependencies:
-      '@img/sharp-libvips-linux-ppc64': 1.3.3
     optional: true
 
   /@img/sharp-linux-ppc64@0.35.5:
@@ -6506,17 +6362,6 @@ packages:
     requiresBuild: true
     optionalDependencies:
       '@img/sharp-libvips-linux-ppc64': 1.3.4
-    dev: false
-    optional: true
-
-  /@img/sharp-linux-riscv64@0.35.4:
-    resolution: {integrity: sha512-cPbNChoRURAWdebDIHSenxRpgEdy7JkPydSnUxRm9VvKD7m0/xVaR/8Fzlu81pk5nHEvHH87UZUA7cTtwnbJSA==}
-    engines: {node: '>=20.9.0'}
-    cpu: [riscv64]
-    os: [linux]
-    requiresBuild: true
-    optionalDependencies:
-      '@img/sharp-libvips-linux-riscv64': 1.3.3
     optional: true
 
   /@img/sharp-linux-riscv64@0.35.5:
@@ -6527,17 +6372,6 @@ packages:
     requiresBuild: true
     optionalDependencies:
       '@img/sharp-libvips-linux-riscv64': 1.3.4
-    dev: false
-    optional: true
-
-  /@img/sharp-linux-s390x@0.35.4:
-    resolution: {integrity: sha512-RY0JFY8Fd6RonCBtHz+DvadaPkXDSI1AUn6yWL9TipqkZ1vY8w8evqdgyDFnkm4/K1ve1TvZiaePP5oSd4+WVQ==}
-    engines: {node: '>=20.9.0'}
-    cpu: [s390x]
-    os: [linux]
-    requiresBuild: true
-    optionalDependencies:
-      '@img/sharp-libvips-linux-s390x': 1.3.3
     optional: true
 
   /@img/sharp-linux-s390x@0.35.5:
@@ -6548,17 +6382,6 @@ packages:
     requiresBuild: true
     optionalDependencies:
       '@img/sharp-libvips-linux-s390x': 1.3.4
-    dev: false
-    optional: true
-
-  /@img/sharp-linux-x64@0.35.4:
-    resolution: {integrity: sha512-9qvvEAuk8k89TfWUoX2htWjbAMX8p+NxCppjpcg5k6xMsjhBQPTsoIh36h9Qde4WRuGpJeYnOjdosDn/cnv+OA==}
-    engines: {node: '>=20.9.0'}
-    cpu: [x64]
-    os: [linux]
-    requiresBuild: true
-    optionalDependencies:
-      '@img/sharp-libvips-linux-x64': 1.3.3
     optional: true
 
   /@img/sharp-linux-x64@0.35.5:
@@ -6569,17 +6392,6 @@ packages:
     requiresBuild: true
     optionalDependencies:
       '@img/sharp-libvips-linux-x64': 1.3.4
-    dev: false
-    optional: true
-
-  /@img/sharp-linuxmusl-arm64@0.35.4:
-    resolution: {integrity: sha512-KB5jxpfWQTr0nc3xdHtWChdbifHrBGsd2SM62Eyxrl8afikm+f5qGBU75SJIZBT/S1MC8XyacdlXBMSWq6OURA==}
-    engines: {node: '>=20.9.0'}
-    cpu: [arm64]
-    os: [linux]
-    requiresBuild: true
-    optionalDependencies:
-      '@img/sharp-libvips-linuxmusl-arm64': 1.3.3
     optional: true
 
   /@img/sharp-linuxmusl-arm64@0.35.5:
@@ -6590,17 +6402,6 @@ packages:
     requiresBuild: true
     optionalDependencies:
       '@img/sharp-libvips-linuxmusl-arm64': 1.3.4
-    dev: false
-    optional: true
-
-  /@img/sharp-linuxmusl-x64@0.35.4:
-    resolution: {integrity: sha512-f+eZJZIQNEEd26RPSW+76chwOf1XtA2Y/O+5ocVyLliHkeih3e+jhLVBdNTd2rS3IbNXK8+ug93Vf5ZXtF5Lxg==}
-    engines: {node: '>=20.9.0'}
-    cpu: [x64]
-    os: [linux]
-    requiresBuild: true
-    optionalDependencies:
-      '@img/sharp-libvips-linuxmusl-x64': 1.3.3
     optional: true
 
   /@img/sharp-linuxmusl-x64@0.35.5:
@@ -6611,15 +6412,6 @@ packages:
     requiresBuild: true
     optionalDependencies:
       '@img/sharp-libvips-linuxmusl-x64': 1.3.4
-    dev: false
-    optional: true
-
-  /@img/sharp-wasm32@0.35.4:
-    resolution: {integrity: sha512-zQnl4Kwp7Q6NHsENtU2T/00Zi+w3AQNwz3+UaTyVBy2FpXrzXzGjndpK61onhZjRtRpQXxCTeqw19bVyXOh7jA==}
-    engines: {node: '>=20.9.0'}
-    requiresBuild: true
-    dependencies:
-      '@emnapi/runtime': 1.11.3
     optional: true
 
   /@img/sharp-wasm32@0.35.5:
@@ -6628,16 +6420,6 @@ packages:
     requiresBuild: true
     dependencies:
       '@emnapi/runtime': 1.11.3
-    dev: false
-    optional: true
-
-  /@img/sharp-webcontainers-wasm32@0.35.4:
-    resolution: {integrity: sha512-ESfNkywmCfPNyaZjxooddJQiQ+l/nTpGEOGthxiLnIHXC/CmcBixnfwUleX9mCz9ovrUUvKMap/pm8RYbzfwaA==}
-    engines: {node: '>=20.9.0'}
-    cpu: [wasm32]
-    requiresBuild: true
-    dependencies:
-      '@img/sharp-wasm32': 0.35.4
     optional: true
 
   /@img/sharp-webcontainers-wasm32@0.35.5:
@@ -6647,30 +6429,12 @@ packages:
     requiresBuild: true
     dependencies:
       '@img/sharp-wasm32': 0.35.5
-    dev: false
-    optional: true
-
-  /@img/sharp-win32-arm64@0.35.4:
-    resolution: {integrity: sha512-iNdlBX9gLVvqe2I3uIJSIKTq6wckP/DYxZtcqxm09x5Gi24DnFBmPAWZmr60ZyYMG0xlzo6goG3670ar+RXvRw==}
-    engines: {node: '>=20.9.0'}
-    cpu: [arm64]
-    os: [win32]
-    requiresBuild: true
     optional: true
 
   /@img/sharp-win32-arm64@0.35.5:
     resolution: {integrity: sha512-X4t7g+7ZA5DKblCBEXGjUqqemj4vczING/5viFwAL8h4N3qYeyjwdCvRLHi4EdOUI+2Z7UFlp1VM+p/AuEtm6Q==}
     engines: {node: '>=20.9.0'}
     cpu: [arm64]
-    os: [win32]
-    requiresBuild: true
-    dev: false
-    optional: true
-
-  /@img/sharp-win32-ia32@0.35.4:
-    resolution: {integrity: sha512-kqRsbaa5CS6KHlpxnN7WhE6vAAugXyZButpRdvDWetlv6Qv4N9WTcrWzF7tXfB9T7MsoadqdI8hmwLq6UlLvtw==}
-    engines: {node: ^20.9.0}
-    cpu: [ia32]
     os: [win32]
     requiresBuild: true
     optional: true
@@ -6681,15 +6445,6 @@ packages:
     cpu: [ia32]
     os: [win32]
     requiresBuild: true
-    dev: false
-    optional: true
-
-  /@img/sharp-win32-x64@0.35.4:
-    resolution: {integrity: sha512-XtmnYhBcrORsJ4XJngyzr/EWP0hRZLAZRFaApdKuviyqF78+ylxh2y06ZmtULAMOnObJ3ucpN0AcwSWnMowTRg==}
-    engines: {node: '>=20.9.0'}
-    cpu: [x64]
-    os: [win32]
-    requiresBuild: true
     optional: true
 
   /@img/sharp-win32-x64@0.35.5:
@@ -6698,7 +6453,6 @@ packages:
     cpu: [x64]
     os: [win32]
     requiresBuild: true
-    dev: false
     optional: true
 
   /@internationalized/number@3.6.8:
@@ -7217,8 +6971,8 @@ packages:
     requiresBuild: true
     optional: true
 
-  /@napi-rs/wasm-runtime@1.2.4(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0):
-    resolution: {integrity: sha512-AJxoUD2/15ESHbvpcyjU274nsAPLuOtPHCk0vKJM5pj//Fg/B1FXNWjPnXTT9PymCYYiHo4zPj0ZomXBKhoy7g==}
+  /@napi-rs/wasm-runtime@1.2.5(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0):
+    resolution: {integrity: sha512-HshSvXzmBxNzqejd3k/KemgQ3hdREUYFRRrgxOZ+gPljDIsO2SDZrVZMd4Z/HsxudQbE62OVyVFE8z9BCurfjA==}
     engines: {node: ^20.19.0 || ^22.13.0 || >=23.5.0}
     requiresBuild: true
     peerDependencies:
@@ -7230,8 +6984,8 @@ packages:
       '@tybys/wasm-util': 0.10.4
     optional: true
 
-  /@napi-rs/wasm-runtime@1.2.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1):
-    resolution: {integrity: sha512-AJxoUD2/15ESHbvpcyjU274nsAPLuOtPHCk0vKJM5pj//Fg/B1FXNWjPnXTT9PymCYYiHo4zPj0ZomXBKhoy7g==}
+  /@napi-rs/wasm-runtime@1.2.5(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1):
+    resolution: {integrity: sha512-HshSvXzmBxNzqejd3k/KemgQ3hdREUYFRRrgxOZ+gPljDIsO2SDZrVZMd4Z/HsxudQbE62OVyVFE8z9BCurfjA==}
     engines: {node: ^20.19.0 || ^22.13.0 || >=23.5.0}
     requiresBuild: true
     peerDependencies:
@@ -7244,8 +6998,8 @@ packages:
     dev: false
     optional: true
 
-  /@napi-rs/wasm-runtime@1.2.4(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3):
-    resolution: {integrity: sha512-AJxoUD2/15ESHbvpcyjU274nsAPLuOtPHCk0vKJM5pj//Fg/B1FXNWjPnXTT9PymCYYiHo4zPj0ZomXBKhoy7g==}
+  /@napi-rs/wasm-runtime@1.2.5(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3):
+    resolution: {integrity: sha512-HshSvXzmBxNzqejd3k/KemgQ3hdREUYFRRrgxOZ+gPljDIsO2SDZrVZMd4Z/HsxudQbE62OVyVFE8z9BCurfjA==}
     engines: {node: ^20.19.0 || ^22.13.0 || >=23.5.0}
     requiresBuild: true
     peerDependencies:
@@ -7480,6 +7234,16 @@ packages:
 
   /@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.0):
     resolution: {integrity: sha512-7YP44XH0tV6+Mb54x2YGf84i7yi+31MBZlE8JwvozkxyTvXbSp10X7cI7YE49ChJ3shMJoBmCJF3+1QFBJctGA==}
+    engines: {node: ^18.19.0 || >=20.6.0}
+    peerDependencies:
+      '@opentelemetry/api': 1.9.0
+    dependencies:
+      '@opentelemetry/api': 1.9.0
+      '@opentelemetry/semantic-conventions': 1.43.0
+    dev: false
+
+  /@opentelemetry/core@2.12.0(@opentelemetry/api@1.9.0):
+    resolution: {integrity: sha512-1HsSAuvT4/my0QrXWsyXFdWjKaPeCHsismKZgEEIb8NK13LP6DrMRlsUbvD/0F9mDWK3xDom9AMv3IscxgOnOQ==}
     engines: {node: ^18.19.0 || >=20.6.0}
     peerDependencies:
       '@opentelemetry/api': 1.9.0
@@ -7783,6 +7547,17 @@ packages:
       '@opentelemetry/semantic-conventions': 1.43.0
     dev: false
 
+  /@opentelemetry/resources@2.12.0(@opentelemetry/api@1.9.0):
+    resolution: {integrity: sha512-+rSRoOdln6NhXTVcBdHSlZxJDNzwxadeweK2ltZO3tVtfp6aklABc06xclDk6ovRR+EiGgIcSbh/6NgjFhnb3A==}
+    engines: {node: ^18.19.0 || >=20.6.0}
+    peerDependencies:
+      '@opentelemetry/api': 1.9.0
+    dependencies:
+      '@opentelemetry/api': 1.9.0
+      '@opentelemetry/core': 2.12.0(@opentelemetry/api@1.9.0)
+      '@opentelemetry/semantic-conventions': 1.43.0
+    dev: false
+
   /@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.0):
     resolution: {integrity: sha512-DeT6KKolmC4e/dRQvMQ/RwlnzhaqeiFOXY5ngoOPJ07GgVVKxZOg9EcrNZb5aTzUn+iCrJldAgOfQm1O/QfPAQ==}
     engines: {node: ^18.19.0 || >=20.6.0}
@@ -7867,6 +7642,19 @@ packages:
       '@opentelemetry/semantic-conventions': 1.43.0
     dev: false
 
+  /@opentelemetry/sdk-trace-base@2.12.0(@opentelemetry/api@1.9.0):
+    resolution: {integrity: sha512-JOERgZCxRM06FEJ5kEWxlSRChah6MmXDx3KwCruqEv/iEyLkTokCSemf2y1w8oIHtfrr8EVTpzebq/31vn2Cpg==}
+    engines: {node: ^18.19.0 || >=20.6.0}
+    peerDependencies:
+      '@opentelemetry/api': 1.9.0
+    dependencies:
+      '@opentelemetry/api': 1.9.0
+      '@opentelemetry/core': 2.12.0(@opentelemetry/api@1.9.0)
+      '@opentelemetry/resources': 2.12.0(@opentelemetry/api@1.9.0)
+      '@opentelemetry/sdk-trace': 2.12.0(@opentelemetry/api@1.9.0)
+      '@opentelemetry/semantic-conventions': 1.43.0
+    dev: false
+
   /@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0):
     resolution: {integrity: sha512-NAYIlsF8MPUsKqJMiDQJTMPOmlbawC1Iz/omMLygZ1C9am8fTKYjTaI+OZM+WTY3t3Glo0wnOg/6/pac6RGPPw==}
     engines: {node: ^18.19.0 || >=20.6.0}
@@ -7900,6 +7688,18 @@ packages:
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/core': 2.11.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/resources': 2.11.0(@opentelemetry/api@1.9.0)
+      '@opentelemetry/semantic-conventions': 1.43.0
+    dev: false
+
+  /@opentelemetry/sdk-trace@2.12.0(@opentelemetry/api@1.9.0):
+    resolution: {integrity: sha512-ImVuRQ6faOsTi1Wna88s2avgrrf/iDgXPigIeynkUhjstMuoQUDOJXgkez2j1mlU4btjXcXBGa+q7qKFYR3GsA==}
+    engines: {node: ^18.19.0 || >=20.6.0}
+    peerDependencies:
+      '@opentelemetry/api': 1.9.0
+    dependencies:
+      '@opentelemetry/api': 1.9.0
+      '@opentelemetry/core': 2.12.0(@opentelemetry/api@1.9.0)
+      '@opentelemetry/resources': 2.12.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/semantic-conventions': 1.43.0
     dev: false
 
@@ -12207,7 +12007,7 @@ packages:
       '@sentry/core': 10.75.0
     dev: false
 
-  /@sentry/nextjs@10.74.0(@opentelemetry/core@2.8.0)(@opentelemetry/sdk-trace-base@2.11.0)(next@16.3.6)(react@19.3.0)(webpack@5.111.1):
+  /@sentry/nextjs@10.74.0(@opentelemetry/core@2.8.0)(@opentelemetry/sdk-trace-base@2.12.0)(next@16.3.6)(react@19.3.0)(webpack@5.111.1):
     resolution: {integrity: sha512-+UH7eoUua9DK/g7V8xn0cDKDDz5ZVoJ06MWhOC9yN7LQXHSJIK0vgWuOZeg6hE5bIJHmceUKD5+KQRDDolVhcg==}
     engines: {node: '>=18'}
     peerDependencies:
@@ -12220,7 +12020,7 @@ packages:
       '@sentry/conventions': 0.16.0
       '@sentry/core': 10.74.0
       '@sentry/node': 10.74.0(@opentelemetry/core@2.8.0)
-      '@sentry/opentelemetry': 10.74.0(@opentelemetry/api@1.9.0)(@opentelemetry/core@2.8.0)(@opentelemetry/sdk-trace-base@2.11.0)
+      '@sentry/opentelemetry': 10.74.0(@opentelemetry/api@1.9.0)(@opentelemetry/core@2.8.0)(@opentelemetry/sdk-trace-base@2.12.0)
       '@sentry/react': 10.74.0(react@19.3.0)
       '@sentry/server-utils': 10.74.0
       '@sentry/vercel-edge': 10.74.0
@@ -12349,6 +12149,21 @@ packages:
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/core': 2.8.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/sdk-trace-base': 2.11.0(@opentelemetry/api@1.9.0)
+      '@sentry/conventions': 0.16.0
+      '@sentry/core': 10.74.0
+    dev: false
+
+  /@sentry/opentelemetry@10.74.0(@opentelemetry/api@1.9.0)(@opentelemetry/core@2.8.0)(@opentelemetry/sdk-trace-base@2.12.0):
+    resolution: {integrity: sha512-ua5mt0NDBfye+/ACKjAw9Ad2i+y42lOLvhxXZepZXjszblMz80MEsIZflMB7uLZUCTNH7MbZN8tlzCy8KsJKmQ==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      '@opentelemetry/api': 1.9.0
+      '@opentelemetry/core': 2.8.0
+      '@opentelemetry/sdk-trace-base': ^1.30.1 || ^2.1.0
+    dependencies:
+      '@opentelemetry/api': 1.9.0
+      '@opentelemetry/core': 2.8.0(@opentelemetry/api@1.9.0)
+      '@opentelemetry/sdk-trace-base': 2.12.0(@opentelemetry/api@1.9.0)
       '@sentry/conventions': 0.16.0
       '@sentry/core': 10.74.0
     dev: false
@@ -13168,12 +12983,12 @@ packages:
       '@supabase/storage-js': 2.116.0
     dev: false
 
-  /@sveltejs/acorn-typescript@1.0.13(acorn@8.18.0):
+  /@sveltejs/acorn-typescript@1.0.13(acorn@8.19.0):
     resolution: {integrity: sha512-wgKggnhZVL9Bfx1OaKKTrYY9BFRk6C8UAkQNUcIv1+llzYrIqy+RZm5HPKzn0NpEBvTVhTqB4kQyllZywsRBRQ==}
     peerDependencies:
       acorn: ^8.9.0
     dependencies:
-      acorn: 8.18.0
+      acorn: 8.19.0
     dev: false
 
   /@svgr/babel-plugin-add-jsx-attribute@8.0.0(@babel/core@7.29.7):
@@ -13623,7 +13438,7 @@ packages:
       tailwindcss: 4.3.3
     dev: false
 
-  /@tailwindcss/vite@4.3.3(vite@8.3.2):
+  /@tailwindcss/vite@4.3.3(vite@8.3.3):
     resolution: {integrity: sha512-yYU8cogLeSh/ms2jh8Fj7jaba/EWa7Ja6GoUqYZaraEuCI5YS6ms6ObZgjjedm+jm6XZjdNRWBpPP6Z86oOxcw==}
     peerDependencies:
       vite: ^5.2.0 || ^6 || ^7 || ^8
@@ -13631,7 +13446,7 @@ packages:
       '@tailwindcss/node': 4.3.3
       '@tailwindcss/oxide': 4.3.3
       tailwindcss: 4.3.3
-      vite: 8.3.2(@types/node@20.19.43)
+      vite: 8.3.3(@types/node@20.19.43)
     dev: false
 
   /@takumi-rs/core-darwin-arm64@2.14.0:
@@ -14912,7 +14727,7 @@ packages:
     dependencies:
       '@emnapi/core': 1.10.0
       '@emnapi/runtime': 1.10.0
-      '@napi-rs/wasm-runtime': 1.2.4(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)
+      '@napi-rs/wasm-runtime': 1.2.5(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)
     optional: true
 
   /@unrs/resolver-binding-win32-arm64-msvc@1.12.2:
@@ -14942,7 +14757,7 @@ packages:
       d3-selection: 3.0.0
       d3-transition: 3.0.1(d3-selection@3.0.0)
 
-  /@vercel/analytics@1.6.1(next@16.3.6)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43):
+  /@vercel/analytics@1.6.1(next@16.3.6)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43):
     resolution: {integrity: sha512-oH9He/bEM+6oKlv3chWuOOcp8Y6fo6/PSro8hEkgCW3pu9/OiCXiUpRUogDh3Fs3LH2sosDrx8CxeOLBEE+afg==}
     peerDependencies:
       '@remix-run/react': ^2
@@ -14970,11 +14785,11 @@ packages:
     dependencies:
       next: 16.3.6(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@playwright/test@1.63.0)(@types/node@20.19.43)(react-dom@19.3.0)(react@19.3.0)
       react: 19.3.0
-      svelte: 5.57.1
+      svelte: 5.57.2
       vue: 3.5.43(typescript@5.9.3)
     dev: false
 
-  /@vercel/analytics@2.0.1(next@16.3.6)(react@19.2.3)(svelte@5.57.1)(vue@3.5.43):
+  /@vercel/analytics@2.0.1(next@16.3.6)(react@19.2.3)(svelte@5.57.2)(vue@3.5.43):
     resolution: {integrity: sha512-MTQG6V9qQrt1tsDeF+2Uoo5aPjqbVPys1xvnIftXSJYG2SrwXRHnqEvVoYID7BTruDz4lCd2Z7rM1BdkUehk2g==}
     peerDependencies:
       '@remix-run/react': ^2
@@ -15005,7 +14820,7 @@ packages:
     dependencies:
       next: 16.3.6(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@playwright/test@1.63.0)(@types/node@20.19.43)(react-dom@19.3.0)(react@19.3.0)
       react: 19.2.3
-      svelte: 5.57.1
+      svelte: 5.57.2
       vue: 3.5.43(typescript@5.9.3)
     dev: false
 
@@ -15104,7 +14919,7 @@ packages:
       ajv: 6.15.0
     dev: false
 
-  /@vercel/speed-insights@1.3.1(next@16.3.6)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43):
+  /@vercel/speed-insights@1.3.1(next@16.3.6)(react@19.3.0)(svelte@5.57.2)(vue@3.5.43):
     resolution: {integrity: sha512-PbEr7FrMkUrGYvlcLHGkXdCkxnylCWePx7lPxxq36DNdfo9mcUjLOmqOyPDHAOgnfqgGGdmE3XI9L/4+5fr+vQ==}
     peerDependencies:
       '@sveltejs/kit': ^1 || ^2
@@ -15129,7 +14944,7 @@ packages:
     dependencies:
       next: 16.3.6(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@playwright/test@1.63.0)(@types/node@20.19.43)(react-dom@19.3.0)(react@19.3.0)
       react: 19.3.0
-      svelte: 5.57.1
+      svelte: 5.57.2
       vue: 3.5.43(typescript@5.9.3)
     dev: false
 
@@ -15337,7 +15152,7 @@ packages:
       '@vue/shared': 3.5.43
       estree-walker: 2.0.2
       magic-string: 0.30.21
-      postcss: 8.5.28
+      postcss: 8.5.29
       source-map-js: 1.2.2
     dev: false
 
@@ -15725,6 +15540,12 @@ packages:
     resolution: {integrity: sha512-lGq+9yr1/GuAWaVYIHRjvvySG5/4VfKIvC8EWxStPdcDh/Ka7FG3twP6v4d5BkravUilhIAsG4Qj83t02LWUPQ==}
     engines: {node: '>=0.4.0'}
     hasBin: true
+
+  /acorn@8.19.0:
+    resolution: {integrity: sha512-oJlA3XiRm7Cyk6qFD2Jn8ak9B7jSy0qy00ADO3+8dpT0LSjFihQYv4C02LFCSYJV3Q37xYwwRy5m+IpIiUzqWw==}
+    engines: {node: '>=0.4.0'}
+    hasBin: true
+    dev: false
 
   /ag-charts-types@13.3.1:
     resolution: {integrity: sha512-m37eUe4g//swvGh8PWMlYQH3gknjSsPeW4sQwBhM3/auGAHmN0wvxEWlrdAn98pBPg4HoKbtOy+yf7gPCYsnvQ==}
@@ -16663,7 +16484,7 @@ packages:
     resolution: {integrity: sha512-XpNj6GDQzdfW+r2Wnn7xiSAd7TM3jzkxGXBGTtWKuSXv1xUV+azxAm8jdWZN06QTQk+2N2XB9jRDkvbmQmcRtg==}
     dev: true
 
-  /blume@1.5.3(patch_hash=e2lihfsjc4kvtdhxezjuaintza)(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)(@types/node@20.19.43)(@types/react-dom@19.2.3)(@types/react@19.2.18)(csstype@3.2.3)(next@16.3.6)(preact@10.29.8)(prettier@3.9.7)(svelte@5.57.1)(vite@8.3.2)(vue@3.5.43):
+  /blume@1.5.3(patch_hash=e2lihfsjc4kvtdhxezjuaintza)(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)(@types/node@20.19.43)(@types/react-dom@19.2.3)(@types/react@19.2.18)(csstype@3.2.3)(next@16.3.6)(preact@10.29.8)(prettier@3.9.7)(svelte@5.57.2)(vite@8.3.3)(vue@3.5.43):
     resolution: {integrity: sha512-8oaUwDtMcEWdCxnUmnPnw6SJol93EAavUq7ihFcr6ur2mCPcdkMjMzphM5Y3qIAexwy2J/bsQKRzAWKqHqIUSw==}
     engines: {node: '>=22.12.0'}
     hasBin: true
@@ -16714,7 +16535,7 @@ packages:
       '@astrojs/mdx': 7.0.8(@astrojs/markdown-satteri@0.3.8)(astro@7.3.2)
       '@astrojs/node': 11.1.5(astro@7.3.2)
       '@astrojs/react': 6.0.5(@types/node@20.19.43)(@types/react-dom@19.2.3)(@types/react@19.2.18)(jiti@2.7.0)(react-dom@19.2.3)(react@19.2.3)
-      '@astrojs/vercel': 11.0.10(astro@7.3.2)(next@16.3.6)(react@19.2.3)(svelte@5.57.1)(vue@3.5.43)
+      '@astrojs/vercel': 11.0.10(astro@7.3.2)(next@16.3.6)(react@19.2.3)(svelte@5.57.2)(vue@3.5.43)
       '@asyncapi/converter': 2.0.2
       '@clack/prompts': 1.8.1
       '@iconify-json/lucide': 1.2.132
@@ -16729,9 +16550,9 @@ packages:
       '@shikijs/transformers': 4.4.3
       '@shikijs/twoslash': 4.4.3(typescript@6.0.3)
       '@tailwindcss/typography': 0.5.20(tailwindcss@4.3.3)
-      '@tailwindcss/vite': 4.3.3(vite@8.3.2)
+      '@tailwindcss/vite': 4.3.3(vite@8.3.3)
       '@types/mdast': 4.0.4
-      '@vercel/analytics': 2.0.1(next@16.3.6)(react@19.2.3)(svelte@5.57.1)(vue@3.5.43)
+      '@vercel/analytics': 2.0.1(next@16.3.6)(react@19.2.3)(svelte@5.57.2)(vue@3.5.43)
       ai: 7.0.102(zod@4.6.5)
       astro: 7.3.2(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)(@types/node@20.19.43)(jiti@2.7.0)
       babel-plugin-react-compiler: 1.0.0
@@ -16775,7 +16596,7 @@ packages:
       robots-parser: 3.0.1
       satteri: 0.9.5
       semver: 7.8.5
-      sharp: 0.35.4(@types/node@20.19.43)
+      sharp: 0.35.5(@types/node@20.19.43)
       shiki: 4.4.3
       simple-icons: 13.21.0
       string-width: 8.2.2
@@ -16935,7 +16756,7 @@ packages:
     dependencies:
       baseline-browser-mapping: 2.11.27
       caniuse-lite: 1.0.30001814
-      electron-to-chromium: 1.5.444
+      electron-to-chromium: 1.5.445
       node-releases: 2.0.57
       update-browserslist-db: 1.3.3(browserslist@4.29.3)
     dev: false
@@ -18888,8 +18709,8 @@ packages:
   /electron-to-chromium@1.5.430:
     resolution: {integrity: sha512-e1QEj72Y4zd8RlNZVmoTg+iCOSVwpk05IOiiQwdrkwCSVlZfPthevErhE+nckGd2YbsXfp1SkisznhGVIXP2NQ==}
 
-  /electron-to-chromium@1.5.444:
-    resolution: {integrity: sha512-5ss/uJfoDYDHT0lfJzT6FbcskIzROIOPf0BbbFkGcvDzoJU7i//9GDrwwIHQVmIsrAGiF3ihpADBRIsrEFt1rQ==}
+  /electron-to-chromium@1.5.445:
+    resolution: {integrity: sha512-iX7o1nF+qNb3Bv5mLYgqfgF9Znh9e/8MKXdmbb8Gv2Q47OKIzTwEPD1oda1HrgEwYatTLJj0wQjHvIFt8Db53Q==}
     dev: false
 
   /electron-updater@6.8.9:
@@ -21020,7 +20841,7 @@ packages:
     requiresBuild: true
     optional: true
 
-  /fumadocs-core@16.14.0(@types/react@19.2.18)(lucide-react@1.51.0)(next@16.3.6)(react-dom@19.3.0)(react@19.3.0)(zod@3.25.76):
+  /fumadocs-core@16.14.0(@types/react@19.2.18)(lucide-react@1.52.0)(next@16.3.6)(react-dom@19.3.0)(react@19.3.0)(zod@3.25.76):
     resolution: {integrity: sha512-CQBsVm2XoxytoK5iTxd2Q3L76XBXY9yrWdThH9iJxZPcZ4aHED7YJCYuHPHZDIWg80fy1UAgVc6ogfE+24jTDA==}
     peerDependencies:
       '@mdx-js/mdx': '*'
@@ -21084,7 +20905,7 @@ packages:
       github-slugger: 2.0.0
       hast-util-to-estree: 3.1.3
       hast-util-to-jsx-runtime: 2.3.6
-      lucide-react: 1.51.0(@types/react@19.2.18)(react@19.3.0)
+      lucide-react: 1.52.0(@types/react@19.2.18)(react@19.3.0)
       mdast-util-mdx: 3.0.0
       mdast-util-to-markdown: 2.1.2
       next: 16.3.6(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@playwright/test@1.63.0)(@types/node@20.19.43)(react-dom@19.3.0)(react@19.3.0)
@@ -21107,7 +20928,7 @@ packages:
       - supports-color
     dev: false
 
-  /fumadocs-mdx@15.2.1(@types/react@19.2.18)(fumadocs-core@16.14.0)(next@16.3.6)(react@19.3.0)(vite@8.3.2):
+  /fumadocs-mdx@15.2.1(@types/react@19.2.18)(fumadocs-core@16.14.0)(next@16.3.6)(react@19.3.0)(vite@8.3.3):
     resolution: {integrity: sha512-lyx35MAFAj9yuLPudNoRGGvauZlT1xRLLw17P0jnvhXikrJNC8mAeg/4WIity5K+3V6ZetBQ2PYIcnli450vMg==}
     hasBin: true
     peerDependencies:
@@ -21150,7 +20971,7 @@ packages:
       chokidar: 5.0.0
       esbuild: 0.28.2
       estree-util-value-to-estree: 3.5.0
-      fumadocs-core: 16.14.0(@types/react@19.2.18)(lucide-react@1.51.0)(next@16.3.6)(react-dom@19.3.0)(react@19.3.0)(zod@3.25.76)
+      fumadocs-core: 16.14.0(@types/react@19.2.18)(lucide-react@1.52.0)(next@16.3.6)(react-dom@19.3.0)(react@19.3.0)(zod@3.25.76)
       github-slugger: 2.0.0
       magic-string: 1.4.1
       mdast-util-mdx: 3.0.0
@@ -21164,7 +20985,7 @@ packages:
       unist-util-remove-position: 5.0.0
       unist-util-visit: 5.1.0
       vfile: 6.0.3
-      vite: 8.3.2(@types/node@20.19.43)
+      vite: 8.3.3(@types/node@20.19.43)
       yaml: 2.9.1
       yuku-analyzer: 0.8.7
       zod: 4.6.5
@@ -23521,8 +23342,8 @@ packages:
       react: 19.3.0
     dev: false
 
-  /lucide-react@1.51.0(@types/react@19.2.18)(react@19.3.0):
-    resolution: {integrity: sha512-9929jimol5y7VbXUlVKcgURMSeIxFJB7dtWCkRAaNnF7KiCRkSkhmqWPUmAmUFYPezNawFk6qvz3Mu0gEnfI4g==}
+  /lucide-react@1.52.0(@types/react@19.2.18)(react@19.3.0):
+    resolution: {integrity: sha512-TUgPtl5ZI9WgxOcbu4ckaC5B3l1qxPQrCMgb6OfUB9owx/OvSJfcf93SMgUWAxRw5/1XDfh9uI5F5iNGXCcGDQ==}
     peerDependencies:
       '@types/react': 19.2.18
       react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
@@ -25337,6 +25158,12 @@ packages:
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
+  /nanoid@3.3.20:
+    resolution: {integrity: sha512-uKdg2G3GNCKQn9byYOpxbGqrT2fGO5KRt5J/8b3pok8rT6qxGWF6hxMyJiEYtAf+FVyYuD9hRaDqX5uPFYJ4ZQ==}
+    engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
+    hasBin: true
+    dev: false
+
   /nanoid@5.1.16:
     resolution: {integrity: sha512-kVrnsrJqMR8+oLJnGEmSWw9BivK5mt7H3FZatVRjrc5wGqFYuBxX1yG7+A7Gi5AefkX6t/oCkizcQgpu0cY1dQ==}
     engines: {node: ^18 || >=20}
@@ -26607,6 +26434,15 @@ packages:
       source-map-js: 1.2.2
     dev: false
 
+  /postcss@8.5.29:
+    resolution: {integrity: sha512-49cGhUbXj8Qenv0iTMxA1cFBzxXoctpC9Ujd77t1WcbJIr6nF/eI7g/8MgxrYldFRuAXvja7xQRwavoW7kgrxQ==}
+    engines: {node: ^10 || ^12 || >=14}
+    dependencies:
+      nanoid: 3.3.20
+      picocolors: 1.1.1
+      source-map-js: 1.2.2
+    dev: false
+
   /postgres-array@2.0.0:
     resolution: {integrity: sha512-VpZrUqU5A69eQyW2c5CA1jtLecCsN2U/bD6VilrFDWq5+5UIEVO7nazS3TEcHf1zuPYO/sqGvUvW62g86RXZuA==}
     engines: {node: '>=4'}
@@ -26657,7 +26493,7 @@ packages:
       - preact-render-to-string
     dev: false
 
-  /pptx-react-viewer@1.25.5(fast-xml-parser@5.11.1)(framer-motion@12.43.0)(i18next@26.4.2)(jspdf@4.2.1)(jszip@3.10.2)(lucide-react@1.51.0)(react-dom@19.3.0)(react-i18next@17.0.14)(react-icons@5.7.0)(react@19.3.0):
+  /pptx-react-viewer@1.25.5(fast-xml-parser@5.11.1)(framer-motion@12.43.0)(i18next@26.4.2)(jspdf@4.2.1)(jszip@3.10.2)(lucide-react@1.52.0)(react-dom@19.3.0)(react-i18next@17.0.14)(react-icons@5.7.0)(react@19.3.0):
     resolution: {integrity: sha512-IZCohWVwcYlxQ3qD351lFs8QdpY2CQvMwwiy4eiBzek2svVh31XXSxNsvfyYP/6oY/UNhQdqpZvPb+d0JIMbvw==}
     peerDependencies:
       fast-xml-parser: ^5.10.1
@@ -26679,7 +26515,7 @@ packages:
       i18next: 26.4.2(typescript@5.9.3)
       jspdf: 4.2.1
       jszip: 3.10.2
-      lucide-react: 1.51.0(@types/react@19.2.18)(react@19.3.0)
+      lucide-react: 1.52.0(@types/react@19.2.18)(react@19.3.0)
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
       react-i18next: 17.0.14(i18next@26.4.2)(react-dom@19.3.0)(react@19.3.0)(typescript@5.9.3)
@@ -29068,7 +28904,7 @@ packages:
     resolution: {integrity: sha512-TPbeg0b7ylrswdGCji8FRGFAKuqbpQlLbL8SOle3j1iHSs5Ob5mhvMAxWN2UItOjgALAB5Zp3fmMfj8mbWvXKw==}
     engines: {node: '>=10'}
 
-  /shaders@2.5.135(patch_hash=eaej5q3lhsnrsoz6e7zxio5l2e)(react-dom@19.3.0)(react@19.3.0)(solid-js@1.9.15)(svelte@5.57.1)(vue@3.5.43):
+  /shaders@2.5.135(patch_hash=eaej5q3lhsnrsoz6e7zxio5l2e)(react-dom@19.3.0)(react@19.3.0)(solid-js@1.9.15)(svelte@5.57.2)(vue@3.5.43):
     resolution: {integrity: sha512-1Fb68wq9I5yJMkpfeiestXNbb1NT0tgcXIuiQCEUzyTgNR/kVq5mzw25BmK5MTHZGjye6o5O8W9iprjPDHphwg==}
     hasBin: true
     peerDependencies:
@@ -29095,7 +28931,7 @@ packages:
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
       solid-js: 1.9.15
-      svelte: 5.57.1
+      svelte: 5.57.2
       three: 0.185.1
       vue: 3.5.43(typescript@5.9.3)
     dev: false
@@ -29103,46 +28939,6 @@ packages:
 
   /shallowequal@1.1.0:
     resolution: {integrity: sha512-y0m1JoUZSlPAjXVtPPW70aZWfIL/dSP7AFkRnniLCrK/8MDKog3TySTBmckD+RObVxH0v4Tox67+F14PdED2oQ==}
-
-  /sharp@0.35.4(@types/node@20.19.43):
-    resolution: {integrity: sha512-n++8XWcj+jCOr2IOl7h8LbKnGBDY4aPbmprMONBNFdn0ImXqpGVv5zliDs0V9HbmbCQLpbuo2ej9rAoOQTvMDA==}
-    engines: {node: '>=20.9.0'}
-    peerDependencies:
-      '@types/node': '*'
-    peerDependenciesMeta:
-      '@types/node':
-        optional: true
-    dependencies:
-      '@img/colour': 1.1.0
-      '@types/node': 20.19.43
-      detect-libc: 2.1.2
-      semver: 7.8.5
-    optionalDependencies:
-      '@img/sharp-darwin-arm64': 0.35.4
-      '@img/sharp-darwin-x64': 0.35.4
-      '@img/sharp-freebsd-wasm32': 0.35.4
-      '@img/sharp-libvips-darwin-arm64': 1.3.3
-      '@img/sharp-libvips-darwin-x64': 1.3.3
-      '@img/sharp-libvips-linux-arm': 1.3.3
-      '@img/sharp-libvips-linux-arm64': 1.3.3
-      '@img/sharp-libvips-linux-ppc64': 1.3.3
-      '@img/sharp-libvips-linux-riscv64': 1.3.3
-      '@img/sharp-libvips-linux-s390x': 1.3.3
-      '@img/sharp-libvips-linux-x64': 1.3.3
-      '@img/sharp-libvips-linuxmusl-arm64': 1.3.3
-      '@img/sharp-libvips-linuxmusl-x64': 1.3.3
-      '@img/sharp-linux-arm': 0.35.4
-      '@img/sharp-linux-arm64': 0.35.4
-      '@img/sharp-linux-ppc64': 0.35.4
-      '@img/sharp-linux-riscv64': 0.35.4
-      '@img/sharp-linux-s390x': 0.35.4
-      '@img/sharp-linux-x64': 0.35.4
-      '@img/sharp-linuxmusl-arm64': 0.35.4
-      '@img/sharp-linuxmusl-x64': 0.35.4
-      '@img/sharp-webcontainers-wasm32': 0.35.4
-      '@img/sharp-win32-arm64': 0.35.4
-      '@img/sharp-win32-ia32': 0.35.4
-      '@img/sharp-win32-x64': 0.35.4
 
   /sharp@0.35.5(@types/node@20.19.43):
     resolution: {integrity: sha512-Ywn4OnzGukp7CDMrp08RQ50YKmuwG47brZgIVPTvBaaAfQlRlygrRqSrxdCiL9M+LlzLBiJ68IR1QqvzHyjC7g==}
@@ -29184,8 +28980,6 @@ packages:
       '@img/sharp-win32-arm64': 0.35.5
       '@img/sharp-win32-ia32': 0.35.5
       '@img/sharp-win32-x64': 0.35.5
-    dev: false
-    optional: true
 
   /shebang-command@2.0.0:
     resolution: {integrity: sha512-kHxr2zZpYtdmrN1qDjrrX/Z1rR1kG8Dx+gkpK1G4eXmvXswmcE1hTWBWYUzlraYw1/yZp6YuDY77YtvbN0dmDA==}
@@ -29964,15 +29758,15 @@ packages:
       react: 19.3.0
     dev: false
 
-  /svelte@5.57.1:
-    resolution: {integrity: sha512-Uqj49lWKB+iSSnneuwiYYJ7MZgkB+eXr0LXBhv4uDuAkXqnWmq65Sxflfvp0Lc6MdKjMUxGaeOKWJqz5SNiVIA==}
+  /svelte@5.57.2:
+    resolution: {integrity: sha512-1YiPCAXT0Ct6g1vOMmSLa0Nsc3QRMvtDF32ihgglGVrugIuIK38RyDiFNXVDhtQ81TJjSO57NdMw6DyYLqSGDQ==}
     engines: {node: '>=18'}
     dependencies:
       '@jridgewell/remapping': 2.3.5
       '@jridgewell/sourcemap-codec': 1.6.0
-      '@sveltejs/acorn-typescript': 1.0.13(acorn@8.18.0)
+      '@sveltejs/acorn-typescript': 1.0.13(acorn@8.19.0)
       '@types/estree': 1.0.9
-      acorn: 8.18.0
+      acorn: 8.19.0
       aria-query: 5.3.1
       axobject-query: 4.1.0
       clsx: 2.1.1
@@ -31289,8 +31083,8 @@ packages:
       fsevents: 2.3.3
     dev: false
 
-  /vite@8.3.2(@types/node@20.19.43):
-    resolution: {integrity: sha512-SQr1x6W5vVSbROg7vsyXIaxK9b0G7zsT68acdWWRmnBUsgDieLCRG+Rep9WdZgcposvv/GSnr4GUUBqB3vXq6w==}
+  /vite@8.3.3(@types/node@20.19.43):
+    resolution: {integrity: sha512-cTAldKPImjg6c+gk48U19POPn3GCBzZwpdsN8ZMEEcbpes+6/wvfqUd0C2y3qYY4wsj8PwgFwrZ/1jBPVttMSg==}
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
     peerDependencies:
@@ -31335,7 +31129,7 @@ packages:
       '@types/node': 20.19.43
       lightningcss: 1.33.0
       picomatch: 4.0.7
-      postcss: 8.5.28
+      postcss: 8.5.29
       rolldown: 1.2.12
       tinyglobby: 0.2.17
     optionalDependencies:
@@ -31900,6 +31694,18 @@ packages:
 
   /ws@8.21.3:
     resolution: {integrity: sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
+  /ws@8.22.0:
+    resolution: {integrity: sha512-Ydggc987+RO0AnWtZ/7Wq9FtNvcrL1b/RO0ud9mWjUPgDrsAAwQSF51sm2hm1XofbU/4jkpGEsLFsZZxU+1DOg==}
     engines: {node: '>=10.0.0'}
     peerDependencies:
       bufferutil: ^4.0.1
