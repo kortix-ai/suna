@@ -26,11 +26,11 @@ name: DB Migrations
 # See packages/db/MIGRATIONS.md.
 
 on:
-  # A pull request into `main` runs no CI: the developer runs `pnpm test` in
-  # their box. The push to `main` is the non-blocking post-merge check; release
+  # A pull request into `dev` runs no CI: the developer runs `pnpm test` in
+  # their box. The push to `dev` is the non-blocking post-merge check; release
   # pull requests (`staging`, `prod`) are the gate.
   push:
-    branches: [main]
+    branches: [dev]
     paths:
       - 'packages/db/**'
       - '.github/workflows/db-migrations.yml'

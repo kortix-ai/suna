@@ -8,11 +8,11 @@ name: Promote to Production
 #      ephemeral `release/vX.Y.Z` branch, stamping `VERSION` + `RELEASE_NOTES.md`,
 #   3. opens a PR into the protected `prod` branch.
 #
-# No tag, no GitHub Release, no image retag, no deploy, and `main` is untouched.
+# No tag, no GitHub Release, no image retag, no deploy, and `dev` is untouched.
 # A second person reviews and MERGES the PR — that merge is the ONLY thing that
 # advances `prod`, and its push event triggers deploy-prod.yml, which is what
 # actually creates the tag `vX.Y.Z`, cuts the Release, and deploys. So a version
-# only ever comes into existence when code lands on `prod`. `main` (dev) stays
+# only ever comes into existence when code lands on `prod`. `dev` (dev) stays
 # push-friendly; staging is the pre-prod source of truth.
 #
 # The release branch does a `merge -s ours origin/prod` so `prod` is always an

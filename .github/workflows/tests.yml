@@ -4,17 +4,17 @@ name: Tests
 # runners. Each lane is the unchanged root command `pnpm test -- <args>`.
 #
 # It runs when ANY of these holds:
-#   1. a daily `schedule` on `main`        — safety-net trunk signal
+#   1. a daily `schedule` on `dev`        — safety-net trunk signal
 #   2. a pull request into `staging`       — the release candidate
 #   3. someone adds the `test` label       — one explicit run on that PR
 #   4. a `workflow_dispatch`               — manual
 #
-# Nothing else runs it. A pull request into `main` runs no lane unless a person
+# Nothing else runs it. A pull request into `dev` runs no lane unless a person
 # adds `test`; that runs the suite ONCE, at the head SHA of that moment. A later
 # push does not re-run it: re-add the label. The developer's box is the
-# pre-merge gate (`pnpm test`). No run blocks a merge into `main`.
+# pre-merge gate (`pnpm test`). No run blocks a merge into `dev`.
 #
-# A push to `main` does NOT run it (since 2026-10-03: Actions minutes). The
+# A push to `dev` does NOT run it (since 2026-10-03: Actions minutes). The
 # per-merge gate is the local attestation plus the pre-push hook. The schedule
 # only catches drift the attestation missed.
 #
@@ -23,15 +23,15 @@ name: Tests
 
 on:
   pull_request:
-    branches: [main, staging]
+    branches: [dev, staging]
     types: [opened, reopened, synchronize, ready_for_review, labeled]
   schedule:
     # Off the top of the hour: GitHub drops congested top-of-hour crons.
-    - cron: '41 5 * * *' # 05:41 UTC daily, runs on main HEAD
+    - cron: '41 5 * * *' # 05:41 UTC daily, runs on dev HEAD
   workflow_dispatch:
 
 # A pull request cancels its superseded run: only its newest commit matters.
-# A scheduled or manual run on `main` QUEUES instead, so it always ends with a
+# A scheduled or manual run on `dev` QUEUES instead, so it always ends with a
 # verdict.
 #
 # A labelled run has its own group: a later push (whose lanes skip) must not
@@ -47,7 +47,7 @@ jobs:
   lane:
     name: ${{ matrix.lane }} lane
     # A release pull request runs on every update except a label change. Into
-    # `main`, only the act of adding `test` runs it.
+    # `dev`, only the act of adding `test` runs it.
     if: >-
       github.event_name != 'pull_request'
       || (github.base_ref == 'staging' && github.event.action != 'labeled')
@@ -56,7 +56,7 @@ jobs:
     # 20, not 60. Over 57 measured runs the slowest lane (`packages`) had
     # p50 370s and max 570s, so 20 min is ~2x the worst run seen. The cap is a
     # hang detector: on 2026-09-21 `@kortix/cli` hung and the lane burned the
-    # full 60 min before `trunk-report` could say `main` was red.
+    # full 60 min before `trunk-report` could say `dev` was red.
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -135,7 +135,7 @@ jobs:
         # 2. Remove by PUBLISHED PORT — catches a stack another checkout left.
         # 3. WAIT for the kernel to release the port. Removing a container does
         #    not free its binding instantly. On run 35630898515 (browser-1,
-        #    main @ 3c67a5e0b6) steps 1 and 2 both ran clean, `docker ps`
+        #    dev @ 3c67a5e0b6) steps 1 and 2 both ran clean, `docker ps`
         #    matched nothing, 54322 then bound fine — and 54324 still refused.
         #    Nothing was left to delete; the binding simply had not been given
         #    back yet.
@@ -262,7 +262,7 @@ jobs:
           # Merges land faster than the suite and queued runs supersede each
           # other, so the red commit is often not the culprit. Name every
           # commit since the last green scheduled run: those are the suspects.
-          green="$(gh api "repos/$REPO/actions/workflows/tests.yml/runs?branch=main&event=schedule&status=success&per_page=1" \
+          green="$(gh api "repos/$REPO/actions/workflows/tests.yml/runs?branch=dev&event=schedule&status=success&per_page=1" \
             --jq '.workflow_runs[0].head_sha // empty' || true)"
           suspects=""
           if [ -n "$green" ]; then
@@ -271,7 +271,7 @@ jobs:
           fi
 
           {
-            echo "## \`main\` @ \`${SHA:0:8}\`: failure"
+            echo "## \`dev\` @ \`${SHA:0:8}\`: failure"
             echo
             echo "Full local suite (\`core\`, \`browser-1..4\`, \`packages\`)."
             if [ -n "$failed" ]; then
@@ -283,7 +283,7 @@ jobs:
           # Built line by line: every line of this script must stay indented
           # inside the YAML block scalar, so no embedded multi-line literal.
           {
-            echo "\`main\` is red at this commit."
+            echo "\`dev\` is red at this commit."
             echo
             echo "Failing lanes: \`${failed:-see the run}\`"
             echo
@@ -295,11 +295,11 @@ jobs:
               echo "$suspects"
               echo
             fi
-            echo "The author whose commit broke it fixes forward. If \`main\` is still"
+            echo "The author whose commit broke it fixes forward. If \`dev\` is still"
             echo "red 1 hour after this comment, anyone may revert the culprit PR."
             echo
             echo "This is the scheduled trunk suite (\`tests.yml\`). It did not"
-            echo "block the merge — \`main\` is the dev trunk. Reproduce locally with"
+            echo "block the merge — \`dev\` is the dev trunk. Reproduce locally with"
             echo "\`pnpm test -- --full\`, or one lane at a time:"
             echo
             echo '```'
@@ -313,5 +313,5 @@ jobs:
           } > /tmp/trunk-verdict.md
 
           gh api "repos/$REPO/commits/$SHA/comments" -F body=@/tmp/trunk-verdict.md --jq '.html_url'
-          echo "::error::main is red at $SHA (lanes: ${failed:-unknown})"
+          echo "::error::dev is red at $SHA (lanes: ${failed:-unknown})"
           exit 1

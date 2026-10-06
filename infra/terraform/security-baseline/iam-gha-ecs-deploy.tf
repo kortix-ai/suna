@@ -6,7 +6,7 @@
 #                               (sub = repo:kortix-ai/suna:environment:prod).
 #                               Prod ECS, prod PassRole, prod blobs. The `prod`
 #                               GitHub environment admits branch `prod` only.
-# PHASE 1 (this file): the prod role exists and every workflow on main uses it.
+# PHASE 1 (this file): the prod role exists and every workflow on dev uses it.
 # The broad role KEEPS its prod permissions, because the workflow copies on the
 # `prod` branch (rollback-prod.yml) still assume it until the next release.
 # PHASE 2 (after that release): delete the prod ECS, prod PassRole, and
@@ -46,7 +46,7 @@ data "aws_iam_openid_connect_provider" "github_actions" {
 resource "aws_iam_role" "gha_ecs_deploy" {
   name = "kortix-gha-ecs-deploy"
   # Any ref of the canonical repo may assume the role: dev deploys run from
-  # `main` and `gateway`, staging from `staging`, prod from `prod`.
+  # `dev` and `gateway`, staging from `staging`, prod from `prod`.
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{

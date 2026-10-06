@@ -2,7 +2,7 @@ name: Deploy Preview (PR)
 
 on:
   pull_request_target:
-    branches: [main]
+    branches: [dev]
     # `closed` is deliberately absent. A preview environment lives until its
     # BRANCH is deleted, not until the pull request is closed — closing one is
     # routine (superseded, reopened later, split into two) and used to destroy a
@@ -769,7 +769,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: main
+          ref: dev
           persist-credentials: false
       - name: Check out the aws-env action
         uses: actions/checkout@v7

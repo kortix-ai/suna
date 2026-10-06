@@ -1635,14 +1635,14 @@ jobs:
             --attempts 30 \
             --interval-ms 20000
 
-  # ── Keep main's VERSION honest (post-publish, never premature) ──────────────
-  # promote.yml does NOT bump main's VERSION (publishing is gated on the prod
-  # merge). After a release publishes, advance main's VERSION to the NEXT dev
+  # ── Keep dev's VERSION honest (post-publish, never premature) ──────────────
+  # promote.yml does NOT bump dev's VERSION (publishing is gated on the prod
+  # merge). After a release publishes, advance dev's VERSION to the NEXT dev
   # target (released patch + 1) so the single source of truth tracks prod: this
   # is what the Vercel dev frontend, desktop builds, and the API image default
   # read. `[skip ci]` keeps it from re-triggering the dev pipeline.
   sync-main-version:
-    name: Sync main VERSION → next dev target
+    name: Sync dev VERSION → next dev target
     needs: [version, github-release]
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     permissions:
@@ -1651,15 +1651,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: main
+          ref: dev
           fetch-depth: 0
-      # `main` is branch-protected (require PR), so a direct push is rejected
+      # `dev` is branch-protected (require PR), so a direct push is rejected
       # (GH006) — which used to fail this job and make Deploy Prod show red even
       # though the release fully shipped. Route the bump through an
       # auto-merged PR instead. Non-fatal: a hiccup here must never fail a
-      # successful production deploy (the version is derived from prod, not main's
+      # successful production deploy (the version is derived from prod, not dev's
       # VERSION, so a lagging bump is cosmetic).
-      - name: Advance main's VERSION via auto-merged PR
+      - name: Advance dev's VERSION via auto-merged PR
         continue-on-error: true
         env:
           RELEASED: ${{ needs.version.outputs.version }}
@@ -1669,32 +1669,32 @@ jobs:
           IFS='.' read -r MA MI PA <<< "$RELEASED"
           NEXT="${MA}.${MI}.$((PA + 1))"
           cur="$(tr -d '[:space:]' < VERSION 2>/dev/null || true)"
-          if [ "$cur" = "$NEXT" ]; then echo "main already at $NEXT — nothing to do."; exit 0; fi
+          if [ "$cur" = "$NEXT" ]; then echo "dev already at $NEXT — nothing to do."; exit 0; fi
           BR="chore/version-bump-$NEXT"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BR"
           printf '%s\n' "$NEXT" > VERSION
           git add VERSION
-          git commit -m "chore(release): main VERSION → $NEXT (dev target after $RELEASED) [skip ci]"
+          git commit -m "chore(release): dev VERSION → $NEXT (dev target after $RELEASED) [skip ci]"
           git push -u origin "$BR" --force-with-lease
-          gh pr create --base main --head "$BR" \
+          gh pr create --base dev --head "$BR" \
             --title "chore(release): VERSION → $NEXT [skip ci]" \
-            --body "Auto-bump main's VERSION to the next dev target after the v$RELEASED prod release." || true
-          # [skip ci] in the squash subject so merging to main doesn't kick off a
+            --body "Auto-bump dev's VERSION to the next dev target after the v$RELEASED prod release." || true
+          # [skip ci] in the squash subject so merging to dev doesn't kick off a
           # full dev build/deploy just for a one-line VERSION bump.
-          SUBJ="chore(release): main VERSION → $NEXT (dev target after $RELEASED) [skip ci]"
+          SUBJ="chore(release): dev VERSION → $NEXT (dev target after $RELEASED) [skip ci]"
           gh pr merge "$BR" --squash --delete-branch --subject "$SUBJ" --body "" --admin \
             || gh pr merge "$BR" --squash --delete-branch --subject "$SUBJ" --body "" \
             || true
 
   # ── Keep staging's VERSION honest too (post-publish) ────────────────────────
   # promote.yml cuts releases FROM `staging` (the pre-prod source of truth) but
-  # never bumps its VERSION, and — until this job — only `main` was advanced
+  # never bumps its VERSION, and — until this job — only `dev` was advanced
   # after publish. So staging's VERSION drifted far behind prod: frozen at
-  # whatever `main VERSION →` bump last happened to be synced into it, while
-  # prod and main climbed release after release. Advance staging to the SAME
-  # next dev target as main so the branch releases are cut from stays
+  # whatever `dev VERSION →` bump last happened to be synced into it, while
+  # prod and dev climbed release after release. Advance staging to the SAME
+  # next dev target as dev so the branch releases are cut from stays
   # version-coherent with prod. Cosmetic (promote derives the release version
   # from prod's VERSION, not staging's), non-fatal, and `[skip ci]` in the
   # squash subject avoids kicking a staging rebuild for a one-line bump.
