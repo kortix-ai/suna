@@ -63,7 +63,9 @@ export function isLongLivedStream(url: string, headers: Headers): boolean {
   );
 }
 
-const STREAMING_TYPES = ['text/event-stream', 'application/x-ndjson', 'application/x-git-'];
+// Only bodies that stay open for a long time are wrapped. A wrapped body is a copy
+// through a pull stream, which is not worth its cost for a bulk download.
+const STREAMING_TYPES = ['text/event-stream', 'application/x-ndjson'];
 
 function isStreamed(headers: Headers): boolean {
   const type = headers.get('content-type') ?? '';
