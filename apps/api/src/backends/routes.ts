@@ -22,6 +22,15 @@ import {
   listProjectBackends,
   provisionBackend,
 } from './provision';
+import {
+  BackendOperationError,
+  backendOperation,
+  beginResize,
+  createBackendSnapshot,
+  listBackendBackups,
+  restoreBackendSnapshot,
+  runResize,
+} from './operations';
 
 const STATUSES = ['provisioning', 'running', 'error', 'deleted'] as const;
 
@@ -37,10 +46,30 @@ const BackendObject = z
     memory_gb: z.number().int(),
     disk_gb: z.number().int(),
     error: z.string().nullable(),
+    operation: z.enum(['resizing']).nullable().openapi({ description: 'A day-two operation in flight.' }),
+    last_operation_error: z.string().nullable(),
     created_at: z.string(),
     updated_at: z.string(),
   })
   .openapi('Backend');
+
+const SizeFields = {
+  cpu: z.number().int().min(1).max(16).optional(),
+  memory_gb: z.number().int().min(1).max(32).optional(),
+  disk_gb: z.number().int().min(10).max(100).optional(),
+};
+
+const BackendBackups = z
+  .object({
+    automatic: z.object({
+      state: z.string().nullable(),
+      last_backup_at: z.string().nullable(),
+      size_bytes: z.number().nullable(),
+      interval_minutes: z.number().nullable(),
+    }),
+    snapshots: z.array(z.object({ snapshot_id: z.string(), created_at: z.string(), size_bytes: z.number().nullable() })),
+  })
+  .openapi('BackendBackups');
 
 const BackendCredentials = z
   .object({
@@ -84,6 +113,8 @@ function serialize(row: BackendRow) {
     memory_gb: row.memoryGb,
     disk_gb: row.diskGb,
     error: status === 'error' && typeof lastError === 'string' ? lastError : null,
+    operation: backendOperation(row),
+    last_operation_error: ((row.metadata as { lastOperationError?: unknown }).lastOperationError as string | undefined) ?? null,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
   };
@@ -131,7 +162,7 @@ export function registerBackendsRoutes(): void {
         'Usually a few seconds; the first create in a region also builds the image.',
       request: {
         params: ProjectParams,
-        body: { content: { 'application/json': { schema: z.object({ name: NameSchema }) } }, required: true },
+        body: { content: { 'application/json': { schema: z.object({ name: NameSchema, ...SizeFields }) } }, required: true },
       },
       responses: {
         202: json(z.object({ backend: BackendObject }), 'Provisioning'),
@@ -140,12 +171,18 @@ export function registerBackendsRoutes(): void {
     }),
     async (c) => {
       const { projectId } = c.req.valid('param');
-      const { name } = c.req.valid('json');
+      const { name, cpu, memory_gb: memoryGb, disk_gb: diskGb } = c.req.valid('json');
       const loaded = await authorizedProject(c, projectId, true);
       if (loaded instanceof Response) return loaded;
       let row: BackendRow;
       try {
-        row = await insertBackend({ projectId, accountId: loaded.row.accountId, userId: loaded.userId, name });
+        row = await insertBackend({
+          projectId,
+          accountId: loaded.row.accountId,
+          userId: loaded.userId,
+          name,
+          size: { cpu, memoryGb, diskGb },
+        });
       } catch (error) {
         if (error instanceof BackendLimitError) {
           return c.json({ error: error.message, code: 'backend_limit' }, 409);
@@ -244,6 +281,128 @@ export function registerBackendsRoutes(): void {
         return c.json({ error: 'this backend predates Kortix sign-in; create a new backend', code: 'backend_auth_unavailable' }, 409);
       }
       return c.json({ token: minted.token, expires_at: minted.expiresAt.toISOString() }, 200);
+    },
+  );
+
+  const operationError = (c: Context<AppEnv>, error: unknown) =>
+    error instanceof BackendOperationError ? c.json({ error: error.message, code: error.code }, error.status) : null;
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'patch', path: '/{projectId}/backends/{backendId}', tags: ['backends'],
+      summary: 'Resize a backend', ...auth,
+      description:
+        'Takes a safety snapshot, stops the machine, resizes it and waits until the backend answers again ' +
+        '(seconds of downtime). Answers 202 with `operation: "resizing"`; poll the backend until it clears. ' +
+        'Disk only grows.',
+      request: {
+        params: BackendParams,
+        body: { content: { 'application/json': { schema: z.object(SizeFields) } }, required: true },
+      },
+      responses: { 202: json(z.object({ backend: BackendObject }), 'Resizing'), ...errors(400, 403, 404, 409) },
+    }),
+    async (c) => {
+      const { projectId, backendId } = c.req.valid('param');
+      const body = c.req.valid('json');
+      const loaded = await authorizedProject(c, projectId, true);
+      if (loaded instanceof Response) return loaded;
+      const row = await getLiveBackend(projectId, backendId);
+      if (!row) return c.json({ error: 'Not found' }, 404);
+      try {
+        const next = await beginResize(row, { cpu: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb });
+        // Outlives the response; the result lands on the row.
+        void runResize(row, next);
+      } catch (error) {
+        const answer = operationError(c, error);
+        if (answer) return answer;
+        throw error;
+      }
+      const fresh = (await getLiveBackend(projectId, backendId))!;
+      return c.json({ backend: serialize(fresh) }, 202);
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'get', path: '/{projectId}/backends/{backendId}/backups', tags: ['backends'],
+      summary: 'List backups and snapshots', ...auth,
+      description:
+        '`automatic`: Kortix copies the backend machine to object storage on a schedule, for recovery from a ' +
+        'host loss. `snapshots`: point-in-time copies you take and can restore, newest first (the newest 5 are kept).',
+      request: { params: BackendParams },
+      responses: { 200: json(BackendBackups, 'Backups'), ...errors(400, 403, 404, 409) },
+    }),
+    async (c) => {
+      const { projectId, backendId } = c.req.valid('param');
+      const loaded = await authorizedProject(c, projectId);
+      if (loaded instanceof Response) return loaded;
+      const row = await getLiveBackend(projectId, backendId);
+      if (!row) return c.json({ error: 'Not found' }, 404);
+      try {
+        return c.json(await listBackendBackups(row), 200);
+      } catch (error) {
+        const answer = operationError(c, error);
+        if (answer) return answer;
+        throw error;
+      }
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'post', path: '/{projectId}/backends/{backendId}/snapshots', tags: ['backends'],
+      summary: 'Take a snapshot', ...auth,
+      description: 'A point-in-time copy of the running backend (data, files, functions). Keeps the newest 5.',
+      request: { params: BackendParams },
+      responses: {
+        201: json(z.object({ snapshot_id: z.string(), created_at: z.string() }), 'Snapshot'),
+        ...errors(400, 403, 404, 409),
+      },
+    }),
+    async (c) => {
+      const { projectId, backendId } = c.req.valid('param');
+      const loaded = await authorizedProject(c, projectId, true);
+      if (loaded instanceof Response) return loaded;
+      const row = await getLiveBackend(projectId, backendId);
+      if (!row) return c.json({ error: 'Not found' }, 404);
+      try {
+        return c.json(await createBackendSnapshot(row), 201);
+      } catch (error) {
+        const answer = operationError(c, error);
+        if (answer) return answer;
+        throw error;
+      }
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'post', path: '/{projectId}/backends/{backendId}/restore', tags: ['backends'],
+      summary: 'Restore a snapshot', ...auth,
+      description:
+        'Rolls the backend back to one of its snapshots: every change after it is lost. Answers when the backend ' +
+        'is healthy again (seconds).',
+      request: {
+        params: BackendParams,
+        body: { content: { 'application/json': { schema: z.object({ snapshot_id: z.string().min(1) }) } }, required: true },
+      },
+      responses: { 200: json(z.object({ backend: BackendObject }), 'Restored'), ...errors(400, 403, 404, 409) },
+    }),
+    async (c) => {
+      const { projectId, backendId } = c.req.valid('param');
+      const { snapshot_id: snapshotId } = c.req.valid('json');
+      const loaded = await authorizedProject(c, projectId, true);
+      if (loaded instanceof Response) return loaded;
+      const row = await getLiveBackend(projectId, backendId);
+      if (!row) return c.json({ error: 'Not found' }, 404);
+      try {
+        await restoreBackendSnapshot(row, snapshotId);
+      } catch (error) {
+        const answer = operationError(c, error);
+        if (answer) return answer;
+        throw error;
+      }
+      return c.json({ backend: serialize(row) }, 200);
     },
   );
 

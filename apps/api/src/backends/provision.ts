@@ -42,6 +42,13 @@ import {
 export const BACKEND_PROVIDER = 'platinum';
 export const MAX_BACKENDS_PER_PROJECT = 3;
 export const BACKEND_MACHINE = { cpu: 1, memoryGb: 1, diskGb: 10 } as const;
+/** Platinum's per-machine ceilings (POST /v1/sandboxes/:id/resize). Disk only grows. */
+export const BACKEND_MACHINE_LIMITS = {
+  cpu: { min: 1, max: 16 },
+  memoryGb: { min: 1, max: 32 },
+  diskGb: { min: 10, max: 100 },
+} as const;
+export type BackendSize = { cpu: number; memoryGb: number; diskGb: number };
 
 /** First build of the image in a region runs inside the create call. */
 const CREATE_WAIT_MS = 10 * 60_000;
@@ -73,7 +80,7 @@ function exposedOrigin(created: PlatinumCreated, port: number): string {
   return url.split('?')[0]!.replace(/\/+$/, '');
 }
 
-async function waitHealthy(url: string): Promise<void> {
+export async function waitHealthy(url: string): Promise<void> {
   const deadline = Date.now() + HEALTH_WAIT_MS;
   let last = '';
   while (Date.now() < deadline) {
@@ -184,6 +191,7 @@ export async function insertBackend(input: {
   accountId: string;
   userId: string;
   name: string;
+  size?: Partial<BackendSize>;
 }): Promise<BackendRow> {
   const live = await db
     .select({ id: projectBackends.backendId })
@@ -202,9 +210,9 @@ export async function insertBackend(input: {
       accountId: input.accountId,
       name: input.name,
       provider: BACKEND_PROVIDER,
-      cpu: BACKEND_MACHINE.cpu,
-      memoryGb: BACKEND_MACHINE.memoryGb,
-      diskGb: BACKEND_MACHINE.diskGb,
+      cpu: input.size?.cpu ?? BACKEND_MACHINE.cpu,
+      memoryGb: input.size?.memoryGb ?? BACKEND_MACHINE.memoryGb,
+      diskGb: input.size?.diskGb ?? BACKEND_MACHINE.diskGb,
       template: CONVEX_IMAGE_SPEC.base_image,
       createdBy: input.userId,
     })
@@ -229,9 +237,9 @@ export async function provisionBackend(row: BackendRow, region?: string): Promis
           type: 'persistent',
           auto_stop_minutes: 0,
           auto_resume: true,
-          cpu: BACKEND_MACHINE.cpu,
-          ram_mb: BACKEND_MACHINE.memoryGb * 1024,
-          disk_gb: BACKEND_MACHINE.diskGb,
+          cpu: row.cpu,
+          ram_mb: row.memoryGb * 1024,
+          disk_gb: row.diskGb,
           ...(region ? { region } : {}),
           // Convex clients cannot send Platinum's preview token, so both ports
           // are public; the admin key guards the admin API, as on Convex Cloud.
