@@ -24,7 +24,7 @@ import type { AppEnv } from '../../types';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { auth, errors, json } from '../../openapi';
 import { GitFileRevisionConflictError, commitFileToBranch } from '../git/branches';
-import { readRepoFile } from '../git/files';
+import { isRepoFileNotFoundError, readRepoFile } from '../git/files';
 import { isRemotePushPolicyRejection } from '../git/mirror';
 import {
   assertAgentSessionWorkspaceAllowsRepository,
@@ -137,7 +137,19 @@ projectsApp.openapi(
         { error: `A skill named "${slug}" already exists`, code: 'skill_exists' },
         409,
       );
-    } catch {
+    } catch (err) {
+      // Only a missing file means the slug is free. Any other read error is a
+      // repo problem: failing open here would let a transient mirror error
+      // turn the create into a silent overwrite of an existing skill.
+      if (!isRepoFileNotFoundError(err)) {
+        return c.json(
+          {
+            error: `Failed to read the project repo: ${(err as Error).message || String(err)}`,
+            code: 'repo_read',
+          },
+          502,
+        );
+      }
       // Not there — the normal case.
     }
 
