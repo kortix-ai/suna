@@ -112,7 +112,6 @@ describe('canCreateInAccount — the probe is the authority once it answers; the
   test('a settled yes grants a member — the custom-role case the probe exists for', () => {
     expect(canCreateInAccount(member, true)).toBe(true);
   });
-
 });
 
 describe('resolveDefaultCreatableAccountId', () => {
