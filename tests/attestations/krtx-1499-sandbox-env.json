@@ -1,8 +1,10 @@
 {
-  "source_hash": "771827ce8356b68273bec20a1fef9bd38d7027725c21e8266991e66042dcfe8c",
+  "source_hash": "1204166500052ece929645ad33d468ded4f9983d6d785577078843f718722524",
   "diff_files": [
     "apps/api/src/__tests__/unit-monitor-box.test.ts",
     "apps/api/src/projects/lib/connection-audience.ts",
+    "apps/api/src/projects/lib/http-personal-resources.ts",
+    "apps/api/src/projects/lib/http-project-access.ts",
     "apps/api/src/projects/lib/legacy-runtime-bootstrap-wiring.ts",
     "apps/api/src/projects/lib/model-catalog-turn-start.ts",
     "apps/api/src/projects/lib/monitor-box-core.ts",
@@ -10,7 +12,6 @@
     "apps/api/src/projects/lib/personal-resources.owner.characterization.test.ts",
     "apps/api/src/projects/lib/personal-resources.test.ts",
     "apps/api/src/projects/lib/personal-resources.ts",
-    "apps/api/src/projects/lib/project-access.ts",
     "apps/api/src/projects/lib/project-resources.denier.characterization.test.ts",
     "apps/api/src/projects/lib/project-resources.ts",
     "apps/api/src/projects/lib/repository-replacement.integration.test.ts",
@@ -32,13 +33,13 @@
     "apps/api/src/projects/routes/repository-replacement.ts",
     "apps/api/src/setup-links/approval-app.ts"
   ],
-  "diff_hash": "70c1520029becd2e1a03a936ab30fdde019ec10c96791309273b512517f82e8a",
-  "head": "9cff490261828796f890c673393d2d132dc59304",
+  "diff_hash": "c3b280180b448261ff8b740900915bfb6d318bb66a0d9536fbf0c888b16bd1c1",
+  "head": "8b4b70d4d827ffa7d140582f2edbc9e0acf9fb4e",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-06T10:30:01.651Z"
+  "at": "2026-10-06T12:33:24.642Z"
 }
