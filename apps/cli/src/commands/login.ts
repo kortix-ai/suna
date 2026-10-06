@@ -18,7 +18,7 @@ import {
 } from '../api/config.ts';
 import type { AccountMembership, MeResponse } from '../api/types.ts';
 import { takeFlags } from '../command-argv.ts';
-import { takeFlagBool, takeFlagValue, fail } from '../command-helpers.ts';
+import { takeFlagBool, takeFlagValue, fail, tokenRejectedLine } from '../command-helpers.ts';
 import { ensureDefaultProjectBinding } from '../project-bind.ts';
 import { C, help, status } from '../style.ts';
 import { selectFromList } from '../tui-select.ts';
@@ -148,7 +148,10 @@ export async function performLogin(opts: PerformLoginOptions): Promise<number> {
     me = await client.get<MeResponse>('/accounts/me');
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) {
-      process.stderr.write(`${status.err('Token rejected by the API. Try again.')}\n`);
+      // The server's verdict names the credential ("project token <id> is
+      // revoked") — the token was pasted moments ago, so name it inline.
+      const why = err.message ? ` — ${err.message}` : '';
+      process.stderr.write(`${status.err(`Token rejected by the API${why}. Try again.`)}\n`);
     } else {
       process.stderr.write(`${status.err(`Failed to verify token: ${(err as Error).message}`)}\n`);
     }

@@ -562,6 +562,18 @@ function featureDisabledMessage(err: unknown): string | null {
     : null;
 }
 
+/** The 401 line every rejected-credential surface prints. The server's verdict
+ *  (e.g. `project token <id> is revoked`) names the credential the caller
+ *  passed; without it every rejection reads the same and the customer cannot
+ *  tell WHICH token the API refused (KRTX-1564). */
+export function tokenRejectedLine(
+  reason?: string | null,
+  remedy = 'Run `kortix login` to re-authenticate.',
+): string {
+  const why = reason ? ` — ${reason}` : '';
+  return `Token rejected${why}. ${remedy}`;
+}
+
 /** Print an HTTP error in a consistent style + return exit code 1. */
 export function surfaceApiError(err: unknown): number {
   // The feature-flag gate is actionable on its own — never let it fall through
@@ -576,11 +588,11 @@ export function surfaceApiError(err: unknown): number {
     // Both codes are identity verdicts. Note it so the CLI's tail can name the
     // token that was refused (see token-denial.ts) — the message itself only
     // ever names the action.
-    recordPermissionDenial(err.status, undefined, denialDetailFromBody(err.body));
+    recordPermissionDenial(err.status, denialDetailFromBody(err.body), err.credential);
     if (err.status === 401) {
-      process.stderr.write(
-        `${status.err('Token rejected. Run `kortix login` to re-authenticate.')}\n`,
-      );
+      // The server's reason names the credential ("project token <id> is
+      // revoked") when it has one; the bare line otherwise.
+      process.stderr.write(`${status.err(tokenRejectedLine(err.message))}\n`);
     } else if (err.status === 403) {
       // Surface the server's specific reason when it has one (e.g. the
       // backend-only secrets 403 tells you to use an API key or PAT);
