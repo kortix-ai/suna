@@ -308,7 +308,12 @@ export async function reconcileAuditEvents(
            WHERE a.source_ledger = c.source_ledger
              AND a.source_record_id = c.source_record_id
              AND a.phase = c.phase
-             AND a.source_revision IS NOT DISTINCT FROM c.source_revision
+             -- Compare the revision through the SAME expression the unique
+             -- dedupe index carries (coalesce(source_revision,'')). A raw
+             -- IS-NOT-DISTINCT-FROM comparison cannot be an index condition
+             -- against an expression index and degrades every probe to a full
+             -- co-key scan (heavy keys hold hundreds of revisions; KRTX-618).
+             AND coalesce(a.source_revision, '') = coalesce(c.source_revision, '')
            LIMIT 1
         ) a ON true
        WHERE a.event_id IS NULL
