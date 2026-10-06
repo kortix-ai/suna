@@ -20,7 +20,6 @@
  */
 
 import { createPrivateKey, createPublicKey, generateKeyPairSync, sign } from 'node:crypto';
-import { config } from '../config';
 
 export const BACKEND_TOKEN_TTL_SECONDS = 60 * 60;
 
@@ -36,9 +35,13 @@ function keyId(backendId: string): string {
   return `kortix-backend-${backendId}`;
 }
 
-/** The issuer a backend's tokens carry. Stable for the backend's life. */
+/**
+ * The issuer a backend's tokens carry. Compared as a string only (the JWKS is
+ * inline), so it must never move: an issuer built from KORTIX_URL would break
+ * every backend the day that URL changes.
+ */
 export function backendIssuer(backendId: string): string {
-  return `${config.KORTIX_URL.replace(/\/+$/, '')}/v1/backends/${backendId}`;
+  return `https://kortix.com/backends/${backendId}`;
 }
 
 /** The three variables the backend's `auth.config.ts` reads. */
