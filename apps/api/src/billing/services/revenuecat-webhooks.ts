@@ -1,4 +1,5 @@
 import { isWebhookEventProcessed, recordWebhookEvent } from './webhook-concurrency';
+import { logger } from '../../lib/logger';
 import { WebhookError } from '../../errors';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { applyStripeSync } from './account-write-owner';
@@ -47,7 +48,7 @@ export async function processRevenueCatWebhook(body: any) {
   // spends no real money. Production credit must never follow it: every new
   // sandbox event id would otherwise grant again.
   if (event.environment === 'SANDBOX' && config.INTERNAL_KORTIX_ENV === 'prod') {
-    console.warn(`[RevenueCat] Ignoring SANDBOX ${eventType} (${eventId}) on production`);
+    logger.warn(`[RevenueCat] Ignoring SANDBOX ${eventType} (${eventId}) on production`);
     return { received: true, event_type: eventType, skipped: true };
   }
 
@@ -138,7 +139,7 @@ async function handleRevenueCatPurchase(accountId: string, event: any, dedupeKey
   // A free trial paid nothing. The credit comes with the first paid RENEWAL.
   const isTrial = event.period_type === 'TRIAL';
   if (isTrial) {
-    console.log(`[RevenueCat] Trial INITIAL_PURCHASE for ${accountId}: no credit granted`);
+    logger.info(`[RevenueCat] Trial INITIAL_PURCHASE for ${accountId}: no credit granted`);
   }
 
   if (!isTrial && tier.monthlyCredits > 0) {
@@ -344,5 +345,5 @@ async function clawBackRevenueCatRefund(accountId: string, event: any, dedupeKey
     expiring: false,
     key: { event: `revenuecat-refund:${event.transaction_id ?? event.original_transaction_id ?? dedupeKey}` },
   });
-  console.log(`[RevenueCat] Refund clawback: -$${dollars} for ${accountId}`);
+  logger.info(`[RevenueCat] Refund clawback: -$${dollars} for ${accountId}`);
 }

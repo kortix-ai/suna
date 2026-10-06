@@ -1,4 +1,5 @@
 import { debitAndCheckAutoTopup, settleAndCheckAutoTopup } from '../../billing/services/wallet-debits';
+import { logger } from '../../lib/logger';
 import { config, getToolCost } from '../../config';
 
 import { creditGateExemptEnv } from './credit-gate-env';
@@ -176,7 +177,7 @@ export async function settleLLMCredits(
     });
     return { success: true, cost: result.amount, newBalance: result.balance, transactionId: result.transactionId };
   } catch (err) {
-    console.error('[BILLING] router settlement failed:', err);
+    logger.error('[BILLING] router settlement failed', { error: String(err) });
     return { success: false, cost: 0, newBalance: 0, error: 'Settlement error' };
   }
 }

@@ -1,4 +1,5 @@
 import { HTTPException } from 'hono/http-exception';
+import { logger } from '../../lib/logger';
 import { wallet } from '../../billing/wallet';
 import { recordUsageEvent } from '../../shared/usage-events';
 import type { ActorContext } from '../../shared/actor-context';
@@ -166,7 +167,7 @@ export async function settleLlmReservation(input: {
       toDeduct,
     );
     if (!result.success) {
-      console.error(`[LLM] ${input.logPrefix} settlement failed: ${result.error || 'unknown error'}`);
+      logger.error(`[LLM] ${input.logPrefix} settlement failed: ${result.error || 'unknown error'}`);
     }
   } else if (toRefund > 0) {
     await wallet.grant({
@@ -177,7 +178,7 @@ export async function settleLlmReservation(input: {
       expiring: false,
       key: null,
     }).catch((error) => {
-      console.error(`[LLM] ${input.logPrefix} refund failed:`, error);
+      logger.error(`[LLM] ${input.logPrefix} refund failed:`, error);
     });
   }
 

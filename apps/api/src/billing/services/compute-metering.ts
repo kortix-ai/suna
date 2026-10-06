@@ -20,6 +20,7 @@ import { settleAndCheckAutoTopup } from './wallet-debits';
 // partially bills any session whose last_billed_at is at least 5 minutes old,
 // so a missed close hook can never silently accrue uncharged compute.
 
+import { logger } from '../../lib/logger';
 import {
   appDeployments,
   appRuntimes,
@@ -313,9 +314,9 @@ async function settleComputeWindow(
     // bills the same seconds under a later window end (a different key), and
     // the customer pays twice. Ask the ledger before releasing.
     if (await ledgerRequestKeyExists(debitKey).catch(() => false)) {
-      console.warn(
-        `[compute-metering] debit for session ${row.id} committed despite an error; window kept:`,
-        err instanceof Error ? err.message : String(err),
+      logger.warn(
+        `[compute-metering] debit for session ${row.id} committed despite an error; window kept`,
+        { error: err instanceof Error ? err.message : String(err) },
       );
       return 'settled';
     }

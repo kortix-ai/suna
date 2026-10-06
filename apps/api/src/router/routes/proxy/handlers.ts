@@ -1,4 +1,5 @@
 import { HTTPException } from 'hono/http-exception';
+import { logger } from '../../../lib/logger';
 import { type ProxyServiceConfig } from '../../config/proxy-services';
 import { timeUpstream } from '../../../middleware/upstream-timing';
 import { config, KORTIX_MARKUP } from '../../../config';
@@ -398,7 +399,7 @@ async function billLlmKortixProxy(
       `LLM reservation refund after zero usage: ${service.name}`,
     ).catch((err) => console.error('[PROXY] LLM reservation refund failed:', err));
   } else {
-    console.warn(`[PROXY] LLM kortix ${service.name}: no usage data in response — settling at the held amount`);
+    logger.warn(`[PROXY] LLM kortix ${service.name}: no usage data in response — settling at the held amount`);
     await settleHeldLlmReservation({
       reservation,
       accountId,
@@ -408,7 +409,7 @@ async function billLlmKortixProxy(
       provider: pricingProvider(service, true),
       route: usageRoute(service, subPath),
       upstreamStatus: upstream.status,
-    }).catch((err) => console.error('[PROXY] LLM held settlement failed:', err));
+    }).catch((err) => logger.error('[PROXY] LLM held settlement failed:', err));
   }
 
   return new Response(JSON.stringify(responseBody), {

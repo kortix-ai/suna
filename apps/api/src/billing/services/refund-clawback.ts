@@ -1,4 +1,5 @@
 import type Stripe from 'stripe';
+import { logger } from '../../lib/logger';
 import { getStripe } from '../../shared/stripe';
 import { wallet } from '../wallet';
 
@@ -54,7 +55,7 @@ async function clawBack(
     expiring: false,
     key: { event: key },
   });
-  console.log(
+  logger.info(
     `[Webhook] ${description}: -$${dollars.toFixed(2)} for ${accountId}${result.replayed ? ' (replay)' : ''}`,
   );
 }
@@ -69,7 +70,7 @@ export async function handleChargeRefunded(
 
   const credit = await resolvePaidCredit(paymentIntentId(charge.payment_intent));
   if (!credit) {
-    console.log(`[Webhook] charge.refunded ${charge.id}: not a credit payment, no clawback`);
+    logger.info(`[Webhook] charge.refunded ${charge.id}: not a credit payment, no clawback`);
     return;
   }
   // The key is the cumulative refunded total, so a redelivered event replays and
@@ -86,7 +87,7 @@ export async function handleChargeRefunded(
 export async function handleDisputeCreated(dispute: Stripe.Dispute): Promise<void> {
   const credit = await resolvePaidCredit(paymentIntentId(dispute.payment_intent));
   if (!credit) {
-    console.log(`[Webhook] charge.dispute.created ${dispute.id}: not a credit payment, no clawback`);
+    logger.info(`[Webhook] charge.dispute.created ${dispute.id}: not a credit payment, no clawback`);
     return;
   }
   await clawBack(

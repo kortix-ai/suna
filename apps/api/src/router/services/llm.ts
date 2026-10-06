@@ -1,4 +1,5 @@
 import { config, KORTIX_MARKUP } from '../../config';
+import { logger } from '../../lib/logger';
 import { OPENROUTER_APP_REFERER, OPENROUTER_APP_TITLE } from '../../openrouter-attribution';
 import {
   getModel,
@@ -369,7 +370,7 @@ export async function settleStreamUsage(options: {
     if (!settlementStarted && progress.bytes > 0) {
       // The stream broke after the client received bytes: keep the held amount.
       await settleHeld(options, options.modelId ?? 'unknown').catch((settleError) =>
-        console.error(options.refundFailedLog, settleError),
+        logger.error(options.refundFailedLog, { error: String(settleError) }),
       );
     } else if (!settlementStarted) {
       await refundLlmReservation(options.reservation, options.errorRefund).catch((refundError) =>

@@ -5,6 +5,7 @@
  * we charge their Stripe default payment method off-session and grant credits.
  */
 
+import { logger } from '../../lib/logger';
 import type Stripe from 'stripe';
 import { getStripe } from '../../shared/stripe';
 import { config } from '../../config';
@@ -282,7 +283,7 @@ async function tryAutoTopup(accountId: string): Promise<void> {
   // so a retry of THIS attempt replays and a later attempt is a new key.
   const claimedAt = await claimAutoTopupCharge(accountId, fresh.autoTopupLastCharged ?? null);
   if (!claimedAt) {
-    console.log(`[AutoTopup] ${accountId}: another replica holds the charge claim; skipping`);
+    logger.info(`[AutoTopup] ${accountId}: another replica holds the charge claim; skipping`);
     return;
   }
 
