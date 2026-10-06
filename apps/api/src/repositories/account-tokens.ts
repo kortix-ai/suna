@@ -456,6 +456,22 @@ export async function validateAccountTokenById(
   return validateAccountTokenMatching(() => eq(accountTokens.tokenId, tokenId));
 }
 
+/** The re-read row is genuinely dead: revoked by column OR by status. Anything
+ *  else (a row that flipped back to active between the two reads) is a race,
+ *  not a naming case, and keeps the generic refusal. */
+function isRevokedRow(row: { status: string; revokedAt: Date | null }): boolean {
+  return row.status === 'revoked' || row.revokedAt != null;
+}
+
+/** The refusal prose for a dead row: the id its token list shows, prefixed by
+ *  the scope that tells the customer WHICH list to look in. A session token is
+ *  also project-scoped, so sessionId decides first. */
+function deadTokenReason(row: { tokenId: string; projectId: string | null; sessionId: string | null }): string {
+  if (row.sessionId) return `session token ${row.tokenId} is revoked`;
+  if (row.projectId) return `project token ${row.tokenId} is revoked`;
+  return `token ${row.tokenId} is revoked`;
+}
+
 async function validateAccountTokenMatching(
   match: () => SQL,
 ): Promise<AccountTokenValidationResult> {
@@ -507,7 +523,29 @@ async function validateAccountTokenMatching(
       .limit(1);
 
     if (!row) {
-      return { isValid: false, error: 'PAT not found or revoked', credentialDead: true };
+      // KRTX-1564: name the dead row when there is one. A revoked project CLI
+      // token used to draw the kind-blind `PAT not found or revoked`, and the
+      // customer could not tell WHICH token the API rejected — the CLI's
+      // denial footer even named an unrelated session credential. One indexed
+      // re-read WITHOUT the active filters above answers it: the row the
+      // caller's secret hashes to, dead, named by the id its token list shows.
+      // Still dead for the caller either way — only the prose gets sharper.
+      const [dead] = await db
+        .select({
+          tokenId: accountTokens.tokenId,
+          projectId: accountTokens.projectId,
+          sessionId: accountTokens.sessionId,
+          status: accountTokens.status,
+          revokedAt: accountTokens.revokedAt,
+        })
+        .from(accountTokens)
+        .where(match())
+        .limit(1);
+      return {
+        isValid: false,
+        error: dead && isRevokedRow(dead) ? deadTokenReason(dead) : 'PAT not found or revoked',
+        credentialDead: true,
+      };
     }
 
     if (row.expiresAt && row.expiresAt < new Date()) {
