@@ -196,6 +196,12 @@
   "newWorkspace": {
     "title": "Crear un proyecto",
     "description": "Un proyecto contiene tus agentes, archivos y sesiones.",
+    "handoff": {
+      "validating": "Validando",
+      "creating_repository": "Creando el repositorio",
+      "registering": "Registrando el proyecto",
+      "seeding": "Preparando los archivos iniciales"
+    },
     "templateSeed": "Este proyecto se iniciará con la plantilla que elegiste.",
     "account": {
       "label": "Cuenta",

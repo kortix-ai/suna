@@ -491,6 +491,7 @@ describe('runCreate: the full create() orchestration', () => {
       attemptKeyFor,
       clearAttemptKey,
       runCreateAttempt: async () => fakeProject('created'),
+      onPhase: () => {},
       createGitHubRepoProject: async () => fakeProject('created-github'),
       importGitHubRepoProject: async () => fakeProject('imported-github'),
       primeProjectCache: () => {},
@@ -534,6 +535,7 @@ describe('runCreate: the full create() orchestration', () => {
         clearAttemptKey(fingerprint);
       },
       runCreateAttempt: async () => fakeProject('created-order'),
+      onPhase: () => {},
       createGitHubRepoProject: async () => fakeProject('created-order'),
       importGitHubRepoProject: async () => fakeProject('created-order'),
       primeProjectCache: () => order.push('primeCache'),
@@ -604,7 +606,7 @@ describe('runCreate: the full create() orchestration', () => {
       // Composes the REAL retry engine (already covered by its own suite
       // above) with a fake low-level provisionProject/wait, so this proves
       // genuine retry behaviour, not a restated assumption.
-      runCreateAttempt: (payload) =>
+      runCreateAttempt: (payload, onPhase) =>
         runCreateAttempt(payload, {
           provisionProject: async (input) => {
             provisionCalls += 1;
@@ -956,6 +958,130 @@ describe('runCreate: the full create() orchestration', () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toBe(err);
+  });
+
+  /**
+   * The streamed provisioning phases (KRTX-1543). The managed create reports
+   * `validating -> creating_repository -> registering -> seeding` live over
+   * `POST /projects/provision-stream`, and `/new`'s handoff renders them as
+   * they arrive. The sink is the orchestration client's `onPhase` field: the
+   * managed source forwards every streamed phase to it, the GitHub sources
+   * never fire it (neither of their routes streams phases), and the
+   * plain-POST fallback clears it through the `onPhase(null)`
+   * `runProvisionAttempt` already owns.
+   */
+  describe('the phase sink (KRTX-1543)', () => {
+    test('MANDATORY: the managed source forwards every streamed phase to the onPhase sink, in stream order', async () => {
+      const phases: (ProvisionPhase | null)[] = [];
+
+      const result = await runCreate(
+        { ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'acct-owner' },
+        [OWNER_ACCOUNT],
+        'user-1',
+        {
+          ...noopClient(),
+          onPhase: (phase) => phases.push(phase),
+          runCreateAttempt: async (_payload, onPhase) => {
+            onPhase('validating');
+            onPhase('creating_repository');
+            onPhase('registering');
+            onPhase('seeding');
+            return fakeProject('created-phases');
+          },
+        },
+      );
+
+      expect(result.ok).toBe(true);
+      expect(phases).toEqual(['validating', 'creating_repository', 'registering', 'seeding']);
+    });
+
+    test('the onPhase sink reaches runCreateAttempt itself, not a private copy of it', async () => {
+      // The forwarding must hand THE client's own sink to runCreateAttempt —
+      // `runProvisionAttempt(payload, onPhase)` — so the fallback's
+      // `onPhase(null)` clears the same state the phases filled. A sink that
+      // dead-ends inside runCreate leaves the UI frozen on the last streamed
+      // phase after the stream falls back.
+      const phases: (ProvisionPhase | null)[] = [];
+      const sink = (phase: ProvisionPhase | null) => phases.push(phase);
+
+      const result = await runCreate(
+        { ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'acct-owner' },
+        [OWNER_ACCOUNT],
+        'user-1',
+        {
+          ...noopClient(),
+          onPhase: sink,
+          runCreateAttempt: async (_payload, onPhase) => {
+            expect(onPhase).toBe(sink);
+            onPhase('validating');
+            return fakeProject('created-sink-identity');
+          },
+        },
+      );
+
+      expect(result.ok).toBe(true);
+      expect(phases).toEqual(['validating']);
+    });
+
+    test('a GitHub source fires no phase — neither route streams', async () => {
+      const phases: (ProvisionPhase | null)[] = [];
+      const result = await runCreate(
+        {
+          ...INITIAL_FORM_STATE,
+          name: 'Portal',
+          accountId: 'acct-owner',
+          source: 'github-import' as const,
+          installationId: '84',
+          repoFullName: 'acme/portal',
+        },
+        [OWNER_ACCOUNT],
+        'user-1',
+        {
+          ...noopClient(),
+          onPhase: (phase) => phases.push(phase),
+        },
+      );
+
+      expect(result.ok).toBe(true);
+      expect(phases).toEqual([]);
+    });
+
+    test('a managed import fires no phase — link-repository does not stream', async () => {
+      const phases: (ProvisionPhase | null)[] = [];
+      const result = await runCreate(
+        {
+          ...INITIAL_FORM_STATE,
+          name: 'Portal',
+          accountId: 'acct-owner',
+          repoFullName: 'owner/portal',
+        },
+        [OWNER_ACCOUNT],
+        'user-1',
+        {
+          ...noopClient(),
+          onPhase: (phase) => phases.push(phase),
+        },
+      );
+
+      expect(result.ok).toBe(true);
+      expect(phases).toEqual([]);
+    });
+
+    test('the hook wiring: holds the phase in state, resets it per create, and hands the setter to the orchestration', () => {
+      // The hook cannot render in this harness (no jsdom; `mock.module` is
+      // process-wide across a non-isolated run — see the stamp-wiring test
+      // above for the same technique), so the wiring lines are pinned by scan.
+      const hook = readFileSync(join(import.meta.dir, 'use-create-workspace.ts'), 'utf8');
+      expect(hook).toContain('useState<ProvisionPhase | null>(null)');
+      // Reset per create: a retry must not start on the previous attempt's
+      // last phase.
+      expect(hook).toContain('setPhase(null)');
+      // The hook's own setter is the orchestration sink.
+      expect(hook).toContain('onPhase: setPhase');
+      // ...and it is threaded to the streaming attempt, so the fallback's
+      // `onPhase(null)` clears it.
+      expect(hook).toContain('runProvisionAttempt(payload, onPhase)');
+    });
   });
 });
 
