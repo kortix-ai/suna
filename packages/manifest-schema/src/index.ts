@@ -90,9 +90,7 @@ export {
   serializeManifestObject,
 } from './format';
 
-export {
-  slugifySlug,
-} from './slug';
+export { slugifySlug } from './slug';
 
 export {
   type ImportableKey,

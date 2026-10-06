@@ -20,14 +20,11 @@ import { slugifySlug } from '@kortix/manifest-schema';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus } from '@/features/icon/icons/plus';
 import { qk } from '@kortix/sdk/react';
-import { FormEvent, useState } from 'react';
+import { useState } from 'react';
 
 /**
- * The model-free way to create a skill: a form that commits
- * `skills/<slug>/SKILL.md` straight onto the project's default branch
- * (`POST /v1/projects/:projectId/skills`). The Skills "New" control offers it
- * beside "Create in chat" because the chat path needs a model — on a fresh
- * free account it was a dead end ("requires a paid plan", no model to pick).
+ * The Skills "New" form path: commits `skills/<slug>/SKILL.md` onto the
+ * project's default branch — no model needed, unlike "Create in chat".
  *
  * The folder preview derives from the name with the SAME `slugifySlug` the
  * API uses, so it never lies about where the file will land.
@@ -65,12 +62,6 @@ export function NewSkillModal({
     onError: (error: Error) => errorToast(error.message),
   });
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!name.trim()) return;
-    mutation.mutate();
-  }
-
   return (
     <Modal
       open={open}
@@ -86,7 +77,10 @@ export function NewSkillModal({
             {tI18nComplete.raw('text38e64d6a8162')}
           </ModalDescription>
         </ModalHeader>
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={(event) => {
+          event.preventDefault();
+          if (name.trim()) mutation.mutate();
+        }}>
           <ModalBody>
             <div className="space-y-1.5">
               <Label htmlFor="new-skill-name">{tI18nComplete.raw('textdcd1d5223f73')}</Label>

@@ -1,8 +1,4 @@
-// Project skills — create a skill file on the project repo's default branch.
-//
-// The dashboard's Skills "New" control has two ways in: a configure chat
-// session (needs a model) and this direct form path (needs no model), so a
-// free account without a paid model can still create a skill.
+// Project skills — the model-free form path behind POST /v1/projects/:projectId/skills.
 
 import { type ApiClientOptions, backendApi } from '../../http/api-client';
 import { unwrap } from './shared';

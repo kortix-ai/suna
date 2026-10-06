@@ -34,7 +34,7 @@ import { withProjectGitAuth } from '../lib/git';
 const SKILL_NAME_MAX = 100;
 const SKILL_DESCRIPTION_MAX = 1024;
 
-export const CreateSkillSchema = z.object({
+const CreateSkillSchema = z.object({
   name: z.string().trim().min(1).max(SKILL_NAME_MAX),
   description: z
     .string()
@@ -51,7 +51,7 @@ export type CreateSkillInput = z.infer<typeof CreateSkillSchema>;
  *  `serializeAgentMarkdown` uses) plus a starter body. `lineWidth: 0` keeps
  *  every scalar on one line, which is what the summary's frontmatter reader
  *  parses. */
-export function renderSkillMarkdown(skill: CreateSkillInput): string {
+function renderSkillMarkdown(skill: CreateSkillInput): string {
   const frontmatter: Record<string, string> = { name: skill.name };
   if (skill.description) frontmatter.description = skill.description;
   const header = stringifyYaml(frontmatter, { lineWidth: 0 }).trimEnd();
