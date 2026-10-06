@@ -1,5 +1,5 @@
 {
-  "source_hash": "98c02094f047cdb5f066ac40d07e24c88a67b2904a564d99f8985b6007b1c532",
+  "source_hash": "60957c14532cacd07c758a3135d188e93a300a250b4182f3170d68488890152c",
   "diff_files": [
     "apps/api/src/__tests__/e2e-projects-contract.test.ts",
     "apps/api/src/projects/routes/project-settings.ts",
@@ -23,13 +23,13 @@
     "tests/src/fixtures/registry.ts",
     "tests/src/flows/cli-resources.flow.ts"
   ],
-  "diff_hash": "764e60eb722589ad91affb02e1d356506fadc6082c68c4244622a45c241b78f2",
-  "head": "1af873c53cd2cb4ea81c004d74e61a792fc5df6e",
+  "diff_hash": "6d710a81309eff22053a28a0297c481a195f0268b4a6887e8f558c5c51b4144a",
+  "head": "57b1b1d25a69dce3aa53e4bd696650f177a6dbec",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-06T14:28:14.713Z"
+  "at": "2026-10-06T14:33:06.482Z"
 }
