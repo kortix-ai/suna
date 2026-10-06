@@ -1,9 +1,0 @@
-{
-  "source_hash": "92828ddfe4ba68e1f7eafc59fe767ff1a67aa3480b4de7248ecbfbfef28ffe38",
-  "head": "1b22629b5268fa3b86b0127e5152355abff84c38",
-  "passed": true,
-  "lanes": {
-    "browser": "pass"
-  },
-  "at": "2026-10-06T18:23:36.210Z"
-}
