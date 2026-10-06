@@ -253,4 +253,20 @@ description: "Runs deploys: say \\"go\\""
     expect(skill?.name).toBe('Quoted "Skill"');
     expect(skill?.description).toBe('Runs deploys: say "go"');
   });
+
+  // A plain scalar (the writer emits one when the text needs no quoting) may
+  // end in a quote character; the reader must not eat it as a closing quote.
+  test('reads a plain scalar that ends in a quote back intact', async () => {
+    await push(
+      {
+        'skills/plain/SKILL.md': '---\nname: Deploy "v1"\ndescription: Covers the don\'t path\n---\n',
+      },
+      'add the plain skill',
+    );
+    const config = await loadProjectConfig(project);
+
+    const skill = config.skills.find((s) => s.path === 'skills/plain/SKILL.md');
+    expect(skill?.name).toBe('Deploy "v1"');
+    expect(skill?.description).toBe("Covers the don't path");
+  });
 });
