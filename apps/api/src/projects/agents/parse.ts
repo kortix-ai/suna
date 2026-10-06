@@ -6,9 +6,11 @@ import {
   DEPRECATED_KORTIX_PERMISSION_ALIASES,
   resolveGrantSet,
   safeAgentFile,
+  SANDBOX_TYPES,
   SLUG_RE,
   WORKSPACE_MODES_V2,
   type GrantSetV2,
+  type SandboxType,
 } from '@kortix/manifest-schema';
 import { normalizeRequiredConnectorAliases } from '../lib/agent-config-v2';
 import {
@@ -169,6 +171,14 @@ function extractAgentsV2(raw: unknown, manifest: ParsedManifest, filename: strin
  * gap — a blank project's very first session-create with no agent forced now
  * resolves the same declared default the write path already promises.
  */
+/** The manifest's `sandbox.type`, when it names one of the known types. The
+ *  validator rejects any other value; an unvalidated manifest reads as `null`. */
+export function sandboxTypeOf(manifest: ParsedManifest): SandboxType | null {
+  const sandbox = manifest.raw.sandbox;
+  const type = sandbox && typeof sandbox === 'object' ? (sandbox as Record<string, unknown>).type : undefined;
+  return typeof type === 'string' && (SANDBOX_TYPES as readonly string[]).includes(type) ? (type as SandboxType) : null;
+}
+
 export async function loadProjectAgents(
   project: GitBackedProject,
   opts?: { forceRefresh?: MirrorRefresh; rethrowReadErrors?: boolean },
@@ -208,6 +218,7 @@ export async function loadProjectAgents(
   return {
     ...extractAgents(manifest),
     manifest: { revision: manifest.revision ?? null, commit: manifest.commit ?? null },
+    sandboxType: sandboxTypeOf(manifest),
   };
 }
 

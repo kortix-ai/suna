@@ -1176,6 +1176,10 @@
           "name": "Pi 运行框架（沙箱内）",
           "description": "在会话沙箱内使用 Pi 运行框架而不是 OpenCode 来运行会话。关闭时，清单中的 `runtime: pi` 仍会选择 Pi。"
         },
+        "pi_cell": {
+          "name": "Pi 单元",
+          "description": "以 Pi 单元运行会话：Pi 智能体作为 Durable Object 运行在 Platinum 上的 V8 隔离环境中。会话几秒内即可就绪；其 shell 在会话自身的文件上运行 node 和 npm，没有 Linux 机器。需要 LLM 网关。"
+        },
         "config_releases": {
           "name": "配置发布",
           "description": "使用基础分支当前的智能体配置运行会话，以只读方式提供，让已合并的智能体、技能或工具到达每个运行中的会话。关闭时，会话读取自己工作区的配置目录。"

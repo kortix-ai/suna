@@ -23,6 +23,12 @@
  *      (consumed here, never forwarded); with neither the Worker answers 503,
  *      not an open door a cleared secret can fall into (Strix on #7125, CWE-306).
  *
+ * The same Worker fronts a full Kortix branch environment when the deploy says
+ * so (deploy-pi-js-router.yml `target_kind=stack`): that sandbox's 8080 is
+ * exposed PUBLIC and the stack authenticates its own users, so the deploy
+ * stores no PT_PREVIEW_TOKEN (nothing is injected) and sets OPEN_ACCESS=true —
+ * pi-router's posture. No code path below changes; only what is stored does.
+ *
  * The upstream URL is built from the TARGET origin and then given the incoming
  * path and query — never by resolving the incoming path against the origin. A
  * path that starts with `//` is a scheme-relative reference, and
@@ -35,8 +41,64 @@
 
 /** Hop-by-hop headers must not be forwarded; `host` is set by the target URL. */
 const STRIPPED = ['host', 'connection', 'keep-alive', 'transfer-encoding', 'upgrade-insecure-requests'];
-/** Never forwarded: the caller's own credential to THIS name. */
-const CONSUMED = ['authorization', 'x-kortix-access'];
+/** Response headers that describe a body this Worker no longer passes through verbatim. */
+export const PASSTHROUGH_STRIPPED = ['content-encoding', 'content-length'];
+
+/**
+ * WHO MAY FRAME WHAT, decided for the wrong name.
+ *
+ * The origin behind this name is a Platinum sandbox, and Platinum's edge adds
+ * `Content-Security-Policy: frame-ancestors https://platinum.dev …` to every
+ * response from one (infra/caddy/Caddyfile, `security_headers_frameable`) —
+ * a true statement about framing a RAW sandbox preview, and a false one here,
+ * where the origin is a whole Kortix stack served as pi-js.kortix.com. The
+ * browser applies it to the page it names, so the session UI could not frame
+ * its own same-origin HTML preview: measured 2026-09-10, `Framing
+ * 'https://pi-js.kortix.com/' violates … frame-ancestors https://platinum.dev`,
+ * and the file viewer sat on "Starting preview server…" until it gave up.
+ *
+ * Only the frame-ancestors DIRECTIVE is dropped; every other directive the
+ * origin set survives, and a policy that had nothing else left is removed.
+ * Kortix's own sandbox proxy does exactly this to a preview's upstream headers
+ * (apps/api/src/sandbox-proxy/routes/preview.ts `clientResponseHeaders`) for
+ * the same reason, and `x-frame-options` — which cannot name an origin at all
+ * — goes with it.
+ */
+export function withoutFrameAncestors(policy) {
+  const kept = String(policy ?? '')
+    .split(';')
+    .map((directive) => directive.trim())
+    .filter((directive) => directive && !/^frame-ancestors(\s|$)/i.test(directive));
+  return kept.length ? kept.join('; ') : null;
+}
+
+/** Apply that to a response's headers, in place. */
+export function allowFraming(headers) {
+  headers.delete('x-frame-options');
+  for (const name of ['content-security-policy', 'content-security-policy-report-only']) {
+    const policy = headers.get(name);
+    if (!policy || !/frame-ancestors/i.test(policy)) continue;
+    const next = withoutFrameAncestors(policy);
+    if (next) headers.set(name, next);
+    else headers.delete(name);
+  }
+}
+/**
+ * Never forwarded: the caller's own credential to THIS name — but ONLY when this
+ * name asked for one. In ACCESS_TOKEN mode the bearer that opened the door is
+ * consumed here. With OPEN_ACCESS=true nothing was asked for, so an
+ * Authorization header belongs to the ORIGIN: the Kortix stack behind
+ * pi-js.kortix.com authenticates its own users with a Supabase JWT in exactly
+ * that header, and deleting it unconditionally turned every signed-in call into
+ * the API's "Missing or invalid Authorization header" (2026-09-05, the owner
+ * could not sign in with email). `x-kortix-access` is this Worker's own header
+ * and is never meaningful upstream, so it is always dropped.
+ */
+const ALWAYS_CONSUMED = ['x-kortix-access'];
+export function consumedHeaders(env) {
+  const openAccess = (env.OPEN_ACCESS || '').trim() === 'true';
+  return openAccess ? ALWAYS_CONSUMED : [...ALWAYS_CONSUMED, 'authorization'];
+}
 
 /** Constant-time-ish comparison; both sides are short ASCII secrets. */
 function sameSecret(a, b) {
@@ -115,7 +177,19 @@ export default {
 
     const headers = new Headers(request.headers);
     for (const name of STRIPPED) headers.delete(name);
-    for (const name of CONSUMED) headers.delete(name);
+    for (const name of consumedHeaders(env)) headers.delete(name);
+    // ASK THE ORIGIN FOR PLAIN BYTES. This Worker rebuilds the response
+    // (`new Response(response.body, …)`), and a rebuilt body is one Cloudflare
+    // may compress on its way to the client — on top of the origin's own gzip,
+    // while `content-encoding: gzip` still says "compressed once". The client
+    // then gunzips once and reads compressed bytes: `Decompression error:
+    // ZlibError`, which is what every agent turn on pi-js.kortix.com hit
+    // (2026-09-05, sandbox pt-app.log; the turn retried three times and gave
+    // up, so a message got no answer). A plain browser GET survived it, which
+    // is why the name looked healthy. Identity upstream + no encoding headers
+    // below leaves exactly one party compressing: Cloudflare, for the client
+    // that asked.
+    headers.set('accept-encoding', 'identity');
     headers.set('x-forwarded-host', new URL(request.url).host);
     headers.set('x-forwarded-proto', 'https');
     // The Platinum edge's exposure token. Accepted as a header so it is never
@@ -130,6 +204,11 @@ export default {
           method: request.method,
           headers,
           body: request.body,
+          // A streaming request body needs this on every runtime but
+          // Cloudflare's, which ignores it. Without it the same code refuses a
+          // POST under Node/undici, so the LLM path — the only POST that
+          // matters here — could not be claimed off-platform.
+          duplex: 'half',
           redirect: 'manual',
         }),
       );
@@ -149,6 +228,12 @@ export default {
       statusText: response.statusText,
       headers: response.headers,
     });
+    // The body leaving here is what the origin sent under `accept-encoding:
+    // identity`: not encoded, and its length is Cloudflare's to state once it
+    // has chosen an encoding for the client. Carrying either header forward
+    // describes a body that no longer exists.
+    for (const name of PASSTHROUGH_STRIPPED) output.headers.delete(name);
+    allowFraming(output.headers);
     output.headers.set('x-kortix-environment', 'pi-js');
     return output;
   },

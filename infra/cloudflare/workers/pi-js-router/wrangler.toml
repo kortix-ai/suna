@@ -23,9 +23,19 @@
 # public name itself requires `Authorization: Bearer <ACCESS_TOKEN>` (or the
 # `x-kortix-access` header); unset, the name is open — pi.kortix.com parity.
 #
-# TARGET_ORIGIN is a plain var: the cell's origin is derived from its sandbox
+# The same Worker can front a full Kortix branch environment instead of the bare
+# cell — deploy-pi-js-router.yml `target_kind=stack`, the `pi-worker-js` branch
+# deployed by deploy-preview.yml with PREVIEW_PUBLIC_ORIGINS entry
+# `pi-worker-js=https://pi-js.kortix.com`. That sandbox's 8080 is exposed PUBLIC
+# and the stack has its own (Supabase) auth, so the deploy stores NO
+# PT_PREVIEW_TOKEN and sets OPEN_ACCESS=true: pi-router's posture exactly.
+#
+# TARGET_ORIGIN is a plain var: the target's origin is derived from its sandbox
 # id, which survives stop/start (scale-to-zero) but not a delete + recreate.
-# .github/workflows/deploy-pi-js-router.yml re-publishes it on demand.
+# .github/workflows/deploy-pi-js-router.yml re-publishes it on demand. It is NOT
+# in deploy-preview.yml's re-point list (the third PREVIEW_PUBLIC_ORIGINS field)
+# on purpose: that step publishes TARGET_ORIGIN alone, which would drop
+# OPEN_ACCESS and shut the name. Default OPEN_ACCESS here first if that changes.
 
 main = "worker.mjs"
 compatibility_date = "2026-08-01"

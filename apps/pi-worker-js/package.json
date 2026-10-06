@@ -1,0 +1,44 @@
+{
+  "name": "pt-agent-cell",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "daemon": "node daemon/server.js",
+    "spec": "node build-images.mjs",
+    "images": "node build-images.mjs",
+    "clean-store": "node clean-store.mjs",
+    "test": "./test/all.sh",
+    "test:live": "./test/all.sh --live",
+    "conformance": "node --experimental-sqlite --no-warnings test/conformance.mjs",
+    "session-e2e": "node build.mjs && node --no-warnings test/session-e2e.mjs",
+    "contract": "node build.mjs && node --experimental-sqlite --no-warnings test/kortix-contract-logic.mjs",
+    "skills": "node build.mjs && node --experimental-sqlite --no-warnings test/skills-logic.mjs",
+    "atob": "node build.mjs && node --no-warnings test/atob-shim.mjs",
+    "tools": "node test/tools-logic.mjs",
+    "safety": "node test/daemon-safety.mjs",
+    "persist": "node --experimental-sqlite --no-warnings test/daemon-persist.mjs",
+    "ctl": "node test/celldctl-logic.mjs",
+    "deploy-contract": "node test/deploy-contract.mjs",
+    "conditions": "node test/mutate-conditions.mjs",
+    "guards": "node test/mutate-guards.mjs",
+    "bounds": "node test/mutate-bounds.mjs"
+  },
+  "dependencies": {
+    "@earendil-works/chord": "1.0.3",
+    "@earendil-works/pi-ai": "1.0.3",
+    "@earendil-works/pi-durable": "1.0.3",
+    "diff": "8.0.4",
+    "ignore": "7.0.5",
+    "isomorphic-git": "1.41.9",
+    "just-bash": "3.6.0",
+    "typebox": "1.3.27",
+    "yaml": "2.9.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  },
+  "overrides": {
+    "undici": "7.30.0"
+  }
+}

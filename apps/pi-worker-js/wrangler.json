@@ -1,0 +1,9 @@
+{
+  "name": "pi-cell",
+  "main": "dist/worker.js",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": { "bindings": [{ "name": "AGENT", "class_name": "AgentCell" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AgentCell"] }],
+  "vars": {}
+}

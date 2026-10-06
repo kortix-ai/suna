@@ -1,0 +1,167 @@
+{
+  "name": "pi-agent",
+  "_comment": [
+    "ONE CONFIG FOR THE WHOLE AGENT, in the same paradigm as a template spec.",
+    "",
+    "Before this, running a cell meant a docker line with nine flags, repeated in",
+    "e2e.sh, bench.sh and by hand \u2014 and every one of them was a place for the node",
+    "id, the bucket or the endpoint to drift apart. A cell is not a container and",
+    "should not be launched like one; this file is what celldctl.mjs reads, and it",
+    "is the only place any of it is written down.",
+    "",
+    "`target` picks where the same config runs:",
+    "  local     celld in docker against MinIO \u2014 what the tests use",
+    "  platinum  the real thing: templates from spec, sandboxes, the org's bucket"
+  ],
+  "cell": {
+    "spec": "../pt-celld.spec.json",
+    "_spec": "The IMAGE. celld and nothing else \u2014 the agent is not in it.",
+    "node": "agent-node-0",
+    "_node": [
+      "STABLE and unique per org fleet. celld routes a cell to its owner BY NODE",
+      "ID: a node that returns with a fresh identity is not the owner and every",
+      "request answers DurableObjectRoutingError until the old lease expires.",
+      "Under Platinum the host derives this from the sandbox id; run it by hand",
+      "and you have to say it yourself."
+    ],
+    "listen": 8080,
+    "internal_listen": 8090,
+    "memory_mb": 2048,
+    "_memory_mb": [
+      "HARD CAP on the celld container, and the reason is not tidiness.",
+      "celld keeps cells resident until memory pressure (CELLD_IDLE_EVICT_S is",
+      "disabled by default), so a few hundred sessions grow without limit. On a",
+      "16 GB laptop that OOM-killed the Docker VM mid-suite, repeatedly, which",
+      "then looked like a bug in whichever claim was running at the time.",
+      "",
+      "celldctl also sets CELLD_MAX_RSS_MB to 80% of this, so celld sheds cells",
+      "itself instead of being killed: a shed cell is a cold start, a killed node",
+      "is an incident."
+    ]
+  },
+  "workspace": {
+    "spec": "pt-agent-daemon.spec.json",
+    "_spec": "Generated from daemon/server.js by `npm run spec`. Never edit it.",
+    "port": 7070
+  },
+  "worker": {
+    "config": "wrangler.json",
+    "_config": [
+      "The agent bundle's own configuration \u2014 bindings, new_sqlite_classes,",
+      "string vars. celld reads this file directly during `celld deploy`.",
+      "Shipping new agent code writes to the BUCKET; it does not rebuild an",
+      "image, and it does not reach a cell that is already running."
+    ]
+  },
+  "targets": {
+    "local": {
+      "image": "pt-celld:0.3.0",
+      "bucket": "s3://cells/orgs/demo",
+      "endpoint": "http://host.docker.internal:19000",
+      "region": "us-east-1",
+      "host_ports": {
+        "cell": 18080,
+        "minio": 19000
+      },
+      "credentials": {
+        "access_key": "celldev",
+        "secret_key": "celldev123"
+      },
+      "_image": [
+        "Which celld the LOCAL target runs. Set to pt-celld:0.4.0 to test the newer",
+        "one; ../pt-celld.spec.json is what Platinum actually builds and still pins",
+        "0.3.0.",
+        "",
+        "The difference is not cosmetic. MEASURED, by flipping a marker in the worker",
+        "and polling a RUNNING node:",
+        "  0.3.0  60s, still the old bundle. `celld --help`: 'Nodes load a deployment",
+        "         at startup; restart them to serve this version.'",
+        "  0.4.0  adopted after ~20s, no restart. Its help: 'A running node polls the",
+        "         deployment pointer and adopts the new version in place; nothing",
+        "         restarts.'",
+        "",
+        "So RUNBOOK.md's 'a redeploy does not reach a running cell' is true of the",
+        "pinned version and false of the next one."
+      ]
+    },
+    "platinum": {
+      "_comment": [
+        "PLATINUM ALREADY HAS AN OBJECT-STORAGE STORY, and this uses it rather than",
+        "inventing a second one. The variable names are the canonical ones from",
+        "apps/api/src/s3.ts \u2014 the module that exists because casGC.ts, reconciler.ts",
+        "and api/sandboxes.ts had each grown their own copy of this block and had",
+        "already drifted. A fourth copy here would be the same mistake.",
+        "",
+        "THE PREFIX IS NOT OURS TO CHOOSE. A cell's namespace is orgs/<org_id>/,",
+        "and hosts/host-agent/.../cell_s3_gateway.go cellS3Prefix() calls itself",
+        "'the one place an org's storage namespace is decided' \u2014 derived from the",
+        "sandbox row, never from anything the guest sends. The host mints the",
+        "sandbox its own scoped S3 identity and points CELLD_ENDPOINT at the on-host",
+        "gateway, which holds the provider key. So a cell never receives AWS_*, and",
+        "deploy-time tooling must not pin a prefix the platform owns.",
+        "",
+        "See ../CREDENTIALS.md: passing raw AWS_* in envVars hands the sandbox the",
+        "whole bucket, which is exactly what that gateway exists to stop."
+      ],
+      "api_url": "${PT_API_URL}",
+      "token": "${PT_TOKEN}",
+      "bucket": "${PT_S3_BUCKET}",
+      "endpoint": "${PT_S3_ENDPOINT}",
+      "region": "${PT_S3_REGION:-us-east-1}",
+      "prefix": "${PT_S3_PREFIX}",
+      "_prefix": "The FLEET prefix from s3.ts, not the org namespace. orgs/<org>/ is appended by the host."
+    }
+  },
+  "model": {
+    "_comment": [
+      "WHICH PROVIDERS ARE COMPILED INTO THE BUNDLE. Measured, not guessed:",
+      "  slim  3 APIs      2051 KB   first cell ~116 ms",
+      "  all   39 providers 2819 KB   first cell ~127 ms   (default)",
+      "",
+      "768 KB and 11 ms apart, and that cost is per NODE, paid once: a second cold",
+      "cell is 34 ms either way. 36 extra providers for 11 ms is why `all` is the",
+      "default rather than a careful minimum.",
+      "",
+      "slim is not three vendors, it is three APIs: any OpenAI-compatible endpoint",
+      "(OpenRouter, Groq, DeepSeek, Together, Fireworks, Cerebras, xAI, Azure, a",
+      "local gateway) works under either set with provider 'openai' and base_url.",
+      "",
+      "With no api_key the cell runs the scripted model, so tests need no",
+      "credentials and cost nothing."
+    ],
+    "providers": "all",
+    "provider": "openai-codex",
+    "id": "gpt-5.6-luna",
+    "base_url": "",
+    "api_key_env": "MODEL_API_KEY",
+    "_auth": [
+      "openai-codex authenticates with a CHATGPT SUBSCRIPTION, not an API key:",
+      "its auth record is {oauth: {name: \"OpenAI (ChatGPT Plus/Pro)\", isSubscription: true}}.",
+      "",
+      "Log in once, in this directory:",
+      "  npx @earendil-works/pi-ai login openai-codex     (choose 2, device code)",
+      "That writes auth.json HERE (the CLI resolves it relative to the cwd).",
+      "celldctl reads it automatically; auth.json is gitignored."
+    ]
+  },
+  "tools": {
+    "_comment": [
+      "WHICH TOOL BACKEND the cell uses.",
+      "",
+      "platinum  the platform own sandbox API (/exec, /files, /files/list,",
+      "          /files/grep) with a sandbox:<id>-scoped key. sandboxScope.ts:",
+      "          \"a key confined to ONE sandbox and its children, so you can hand",
+      "          an agent running inside a sandbox a credential that cannot touch",
+      "          the rest of the org.\" That is this, already built.",
+      "daemon    the standalone HTTP service in daemon/. For local runs where",
+      "          there is no control plane to call.",
+      "",
+      "Selection is by PRESENCE of PT_API_URL + PT_SANDBOX_KEY + PT_WORKSPACE_ID,",
+      "not by this field: a deployment that has a scoped key must not keep talking",
+      "to a daemon that is not there."
+    ],
+    "backend": "platinum",
+    "workspace_env": "PT_WORKSPACE_ID",
+    "key_env": "PT_SANDBOX_KEY"
+  }
+}

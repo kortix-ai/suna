@@ -679,6 +679,27 @@ const envSchema = z.object({
   // Per-webhook HMAC-SHA-256 secret from Platinum's `POST /v1/webhooks` (shown
   // once at registration). Optional — same backstop story as Daytona's.
   PLATINUM_WEBHOOK_SECRET: optStr,
+  // ── The pi cell (apps/pi-worker-js) ──
+  // A session of a project with the `pi_cell` flag runs its agent as a Durable
+  // Object on celld, inside a Platinum `runtime: cell` sandbox, instead of a
+  // microVM with kortixd. The control plane's Platinum must have the cell
+  // runtime enabled (Platinum dev does; prod answers 501 runtime_not_enabled),
+  // so the flag is offered only where an operator turns this on.
+  KORTIX_PI_CELL_ENABLED: optBoolFalse,
+  // Where cells are available, whether a project with no choice of its own
+  // (no `pi_cell` flag, no kortix.yaml `sandbox.type`) runs its sessions as
+  // cells. Off by default; an environment built to show cells turns it on.
+  KORTIX_PI_CELL_DEFAULT_ENABLED: optBoolFalse,
+  // The celld template a cell sandbox boots, and the Platinum worker whose
+  // active version celld serves (deployed by apps/pi-worker-js/deploy-platinum.mjs).
+  KORTIX_PI_CELL_TEMPLATE: optStrDefault('pt-celld'),
+  KORTIX_PI_CELL_WORKER: optStrDefault('kortix-pi-cell'),
+  // What one cell reserves on a Platinum host. A cell is one celld process
+  // holding an isolate and the session's files in memory; it inherited the
+  // pt-celld template's 4 GB until five cells filled a 25 GB host (Platinum dev
+  // answered 503 no capacity, 2026-10-06).
+  KORTIX_PI_CELL_RAM_MB: optInt(1024),
+  KORTIX_PI_CELL_CPU: optInt(1),
 
   // ── E2B — sandbox provisioning (conditional: required if enabled) ────────
   // E2B_DOMAIN is the base E2B domain without a protocol. The default uses
@@ -1402,6 +1423,12 @@ export const config = {
   PLATINUM_API_URL: env.PLATINUM_API_URL,
   PLATINUM_TEMPLATE: env.PLATINUM_TEMPLATE,
   PLATINUM_WEBHOOK_SECRET: env.PLATINUM_WEBHOOK_SECRET,
+  KORTIX_PI_CELL_ENABLED: env.KORTIX_PI_CELL_ENABLED,
+  KORTIX_PI_CELL_DEFAULT_ENABLED: env.KORTIX_PI_CELL_DEFAULT_ENABLED,
+  KORTIX_PI_CELL_TEMPLATE: env.KORTIX_PI_CELL_TEMPLATE,
+  KORTIX_PI_CELL_WORKER: env.KORTIX_PI_CELL_WORKER,
+  KORTIX_PI_CELL_RAM_MB: env.KORTIX_PI_CELL_RAM_MB,
+  KORTIX_PI_CELL_CPU: env.KORTIX_PI_CELL_CPU,
   E2B_API_KEY: env.E2B_API_KEY,
   E2B_DOMAIN: env.E2B_DOMAIN,
   E2B_TEMPLATE: env.E2B_TEMPLATE,

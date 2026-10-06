@@ -1,5 +1,10 @@
 packages:
   - 'apps/*'
+  # The pi cell (apps/pi-worker-js) is a standalone npm app: esbuild bundles it
+  # for celld, deploy-platinum.mjs ships it, and it keeps its own
+  # package-lock.json. In the workspace, `pnpm install --frozen-lockfile`
+  # refused every image build (ERR_PNPM_OUTDATED_LOCKFILE on its package.json).
+  - '!apps/pi-worker-js'
   - 'packages/*'
   - 'tests'
 

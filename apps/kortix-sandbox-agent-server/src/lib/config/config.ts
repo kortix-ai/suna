@@ -62,6 +62,7 @@ const Schema = z.object({
   // fetches one from the Git proxy with KORTIX_TOKEN.
   KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR: z.string().optional(),
   KORTIX_TOKEN: z.string().optional(),
+  KORTIX_ENV_RPC_SECRET: z.string().optional(),
   KORTIX_GIT_USER_NAME: z.string().default('Kortix Agent'),
   KORTIX_GIT_USER_EMAIL: z.string().default('agent@kortix.ai'),
   // Depth of the boot-time `git clone`. 1 (the default) is a SHALLOW clone:
@@ -145,6 +146,8 @@ export type Config = {
   /** The sandbox credential (HMAC key + sandbox-identity route bearer). NOT the
    *  session/user token — see the module doc. */
   sandboxToken: string | undefined
+  /** Purpose-bound HMAC key for worker-to-environment RPC. */
+  envRpcSecret?: string
   gitUserName: string
   gitUserEmail: string
   cloneFilter: string
@@ -186,6 +189,7 @@ export function loadHostConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_PROJECT_SNAPSHOT_PIN: env.KORTIX_PROJECT_SNAPSHOT_PIN,
     KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR: env.KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR,
     KORTIX_TOKEN: env.KORTIX_TOKEN,
+    KORTIX_ENV_RPC_SECRET: env.KORTIX_ENV_RPC_SECRET,
     KORTIX_GIT_USER_NAME: env.KORTIX_GIT_USER_NAME,
     KORTIX_GIT_USER_EMAIL: env.KORTIX_GIT_USER_EMAIL,
     KORTIX_CLONE_FILTER: env.KORTIX_CLONE_FILTER,
@@ -222,6 +226,7 @@ export function loadHostConfig(env: NodeJS.ProcessEnv = process.env): Config {
     projectSnapshotPin: parsed.KORTIX_PROJECT_SNAPSHOT_PIN?.trim() || undefined,
     projectSnapshotDescriptor: parsed.KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR?.trim() || undefined,
     sandboxToken: parsed.KORTIX_TOKEN,
+    envRpcSecret: parsed.KORTIX_ENV_RPC_SECRET,
     gitUserName: parsed.KORTIX_GIT_USER_NAME,
     gitUserEmail: parsed.KORTIX_GIT_USER_EMAIL,
     cloneFilter: parsed.KORTIX_CLONE_FILTER,

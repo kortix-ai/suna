@@ -3,7 +3,7 @@ import { SessionCreateInputSchema } from '@kortix/api-contract';
 import { projectSessionConnectorBindings, projectSessionGrants, projectSessionRuntimeContexts, projectSessions, sessionLifecycleCommands, sessionProviderSecretPools } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
-import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG } from '@kortix/shared';
+import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG, PI_CELL_SANDBOX_SLUG } from '@kortix/shared';
 import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { type SandboxProviderName, config } from '../../config';
@@ -18,6 +18,7 @@ import {
   type SecretGrant,
   type SessionVisibility,
 } from '../../connectors/share';
+import { logger } from '../../lib/logger';
 import { setContextField } from '../../lib/request-context';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import {
@@ -40,6 +41,7 @@ import { WARM_SESSION_LOCATION_KEY, WARM_SESSION_METADATA_KEY } from './warm-ses
 import { db } from '../../shared/db';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
 import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
+import type { SandboxType } from '@kortix/manifest-schema';
 import {
   grantFromLoadedAgents,
   loadProjectAgents,
@@ -87,7 +89,7 @@ import {
 import { projectSessionMetadataMerge } from './session-metadata-merge';
 import { transitionSession } from '../session-lifecycle/status-transitions';
 import { mergeSessionSandboxEnv, parseSessionRuntimeContext } from './session-runtime-context';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { featureFlagDef, resolveFeatureFlag } from '../../feature-flags/registry';
 import { resolvePlatformMetaSandbox } from './platform-meta-agent';
 
 import {
@@ -748,6 +750,39 @@ async function validateSessionConnectorsForAgent(params: {
 }
 
 /** Pick the sandbox template slug and the sandbox provider for the session. */
+/**
+ * Whether a new session runs as a pi cell. kortix.yaml `sandbox.type` decides
+ * when it says (`vm` never, `worker` yes); otherwise the project's `pi_cell`
+ * flag, whose default is the platform's KORTIX_PI_CELL_DEFAULT_ENABLED. A cell
+ * boots no image, so a session that resolved a custom template stays a VM. A
+ * cell also needs the platform to run cells and the LLM gateway, its only model
+ * path; without either the session boots a VM rather than failing. Pure: the
+ * sandbox-health poll asks it too, so the reason is returned, not logged.
+ */
+export function cellDecision(params: {
+  project: ProjectRow;
+  sandboxSlug: string;
+  declared: SandboxType | null;
+}): { cell: boolean; fallback: string | null } {
+  const { project, sandboxSlug, declared } = params;
+  if (declared === 'vm' || sandboxSlug !== DEFAULT_SANDBOX_SLUG) return { cell: false, fallback: null };
+  if (declared !== 'worker' && !resolveFeatureFlag(project.metadata, 'pi_cell')) return { cell: false, fallback: null };
+  if (!featureFlagDef('pi_cell').available()) {
+    return { cell: false, fallback: 'kortix.yaml asks for sandbox.type worker, but this platform runs no cells; booting a VM' };
+  }
+  if (!projectLlmGatewayEnabled(project.metadata)) {
+    return { cell: false, fallback: 'the session asks for a pi cell but the LLM gateway is off; booting a VM' };
+  }
+  return { cell: true, fallback: null };
+}
+
+/** `cellDecision` at session creation, where a fallback is worth one log line. */
+export function sessionRunsInCell(params: { project: ProjectRow; sandboxSlug: string; declared: SandboxType | null }): boolean {
+  const decision = cellDecision(params);
+  if (decision.fallback) logger.warn(`[sessions] ${decision.fallback}`, { projectId: params.project.projectId });
+  return decision.cell;
+}
+
 async function resolveSessionSandboxPlacement(params: {
   project: ProjectRow;
   body: Record<string, unknown>;
@@ -787,6 +822,20 @@ async function resolveSessionSandboxPlacement(params: {
       agent: sandboxFromLoadedAgents(agentName, loadedAgents),
       project: projectDefaultSandboxSlug,
     });
+    // The pi cell: the session's agent runs as a Durable Object on celld
+    // (apps/pi-worker-js) in a Platinum `runtime: cell` sandbox and serves the
+    // same daemon contract a kortixd pi box does. The flag's availability
+    // already requires Platinum; the cell's only model path is the LLM
+    // gateway, so a gateway-off project keeps its ordinary sandbox. The slug
+    // is reserved: nothing else may select it.
+    if (sandboxSlug === PI_CELL_SANDBOX_SLUG) {
+      return {
+        error: { status: 400, body: { error: `Sandbox "${PI_CELL_SANDBOX_SLUG}" is reserved`, code: 'SANDBOX_SLUG_RESERVED' } },
+      };
+    }
+    if (sessionRunsInCell({ project, sandboxSlug, declared: loadedAgents.sandboxType ?? null })) {
+      return { sandboxSlug: PI_CELL_SANDBOX_SLUG, providerLocked: true, providerName: 'platinum' };
+    }
   }
   // Sandbox provider: explicit request › per-project pin (Customize → Settings) ›
   // weighted balancer. The pin lets you put ONE project on e.g. platinum regardless
@@ -826,7 +875,8 @@ async function validateSessionSandboxTemplate(params: {
   if (
     !platformMetaAgent &&
     sandboxSlug &&
-    sandboxSlug !== DEFAULT_SANDBOX_SLUG
+    sandboxSlug !== DEFAULT_SANDBOX_SLUG &&
+    sandboxSlug !== PI_CELL_SANDBOX_SLUG
   ) {
     try {
       await resolveTemplate(
@@ -1458,13 +1508,15 @@ async function provisionCreatedSession(params: {
       projectId,
       userId,
       agentName,
-      allowProjectImage: projectImageAllowedForSession(agentName, repositoryAccess),
+      // A pi cell boots the celld template; there is no project image to use.
+      allowProjectImage: projectImageAllowedForSession(agentName, repositoryAccess) && sandboxSlug !== PI_CELL_SANDBOX_SLUG,
       provider: providerName,
       providerLocked,
       metadata: {
         session_id: sessionId,
         project_id: projectId,
         ...(input.metadata ?? {}),
+        ...(sandboxSlug === PI_CELL_SANDBOX_SLUG ? { pi_cell_boot: true } : {}),
       },
       initialTurn,
       extraEnvVars,

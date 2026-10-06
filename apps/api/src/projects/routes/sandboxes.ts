@@ -20,6 +20,10 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import { AnyObject, SnapshotSchema, projectsApp } from '../lib/app';
 import { loadGitProject } from '../lib/git';
+import { loadProjectAgents } from '../agents';
+import { cellDecision } from '../lib/session-create';
+import { DEFAULT_SANDBOX_SLUG } from '../../snapshots/builder';
+import type { SandboxType } from '@kortix/manifest-schema';
 import { allowStaleMirrorReads } from '../git/mirror';
 import {
   normalizeString,
@@ -151,12 +155,18 @@ async function buildSandboxHealth(
   // own catch so one degrading independently never blocks the other.
   const buildsPromise = listSnapshotBuilds(projectId, { limit: 10 }).catch(() => []);
   let templates: Awaited<ReturnType<typeof listSandboxTemplates>> = [];
+  let declaredType: SandboxType | null = null;
   try {
     // Repo unreachable / manifest broken / provider slow — render as "no
     // templates" rather than failing the whole poll. Each adapter owns its
     // provider-call timeout.
     const project = await loadGitProject(loaded);
-    templates = await listSandboxTemplates(project, observation.listOptions);
+    const [listed, agents] = await Promise.all([
+      listSandboxTemplates(project, observation.listOptions),
+      loadProjectAgents(project).catch(() => null),
+    ]);
+    templates = listed;
+    declaredType = agents?.sandboxType ?? null;
   } catch {
     /* no templates */
   }
@@ -170,6 +180,34 @@ async function buildSandboxHealth(
   const { primary, templateBuilds, status } = resolved;
   const latest = templateBuilds[0] ?? null;
   const latestFailure = templateBuilds.find((build) => build.status === 'failed') ?? null;
+
+  // A project whose sessions run as pi cells boots no image, so its build log
+  // describes nothing a session uses: a failed image build (on pi-js:
+  // "Snapshot quota reached") would alert forever about a sandbox nobody
+  // starts. The history stays in /snapshots.
+  if (cellDecision({ project: loaded.row, sandboxSlug: primary?.slug ?? DEFAULT_SANDBOX_SLUG, declared: declaredType }).cell) {
+    return {
+      primary_slug: primary?.slug ?? DEFAULT_SANDBOX_SLUG,
+      primary_template: primary ? serializeTemplate(primary) : null,
+      ready: true,
+      building: false,
+      latest_build: latest ? serializeBuildSummary(latest) : null,
+      latest_failure: null,
+      status: {
+        state: 'ready',
+        snapshot_name: null,
+        current_failure: null,
+        stale_failure: null,
+        stale_reason: null,
+        ready_providers: [],
+        building_providers: [],
+        failed_providers: [],
+        fix_with_agent_available: false,
+      },
+      provider_mode: observation.providerMode,
+      selected_provider: observation.selectedProvider,
+    };
+  }
 
   return {
     primary_slug: primary?.slug ?? null,

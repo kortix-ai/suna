@@ -16,15 +16,15 @@ import { logger } from '@/lib/log/logger'
  * as the session (the box exists for exactly one session and holds its
  * credential). The API's MCP tools (apps/api/src/mcp/index.ts) call it.
  *
- * Wire contract:
+ * Wire contract (apps/pi-worker-js/src/execenv.envrpc.js is a client):
  *   POST { op, args, cwd }  →  { ok: true, value } | { ok: false, error: { code, message, path? } }
  * The route never throws wire-level errors for filesystem failures — a missing
  * file is a Result, not a 500. HTTP errors are reserved for auth and malformed
  * requests.
  *
  * Auth: `/kortix/*` is exempt from the daemon's global gate, so — exactly like
- * the sibling pty router — every request verifies X-Kortix-User-Context signed
- * with this box's own KORTIX_TOKEN.
+ * the sibling pty router — every request verifies X-Kortix-User-Context. The
+ * key is KORTIX_ENV_RPC_SECRET when set, else this box's own KORTIX_TOKEN.
  */
 
 const EXEC_TIMEOUT_DEFAULT_MS = 120_000
@@ -40,6 +40,34 @@ interface EnvRpcError {
 
 const ok = (value: unknown) => ({ ok: true as const, value })
 const err = (error: EnvRpcError) => ({ ok: false as const, error })
+
+type FileStat = Awaited<ReturnType<typeof fs.lstat>>
+
+function fileInfoValue(addressedPath: string, stat: FileStat) {
+  const kind = stat.isFile()
+    ? 'file'
+    : stat.isDirectory()
+      ? 'directory'
+      : stat.isSymbolicLink()
+        ? 'symlink'
+        : undefined
+  if (!kind) {
+    return err({ code: 'EINVAL', message: 'Unsupported file type', path: addressedPath })
+  }
+  return ok({
+    name: path.basename(addressedPath),
+    path: addressedPath,
+    kind,
+    size: stat.size,
+    mtimeMs: stat.mtimeMs,
+  })
+}
+
+export function environmentRpcSecret(
+  cfg: Pick<Config, 'envRpcSecret' | 'sandboxToken'>,
+): string | undefined {
+  return cfg.envRpcSecret ?? cfg.sandboxToken
+}
 
 function fsError(e: unknown, fallbackPath?: string) {
   const errno = e as NodeJS.ErrnoException
@@ -65,6 +93,10 @@ async function runExec(input: {
       cwd: input.cwd,
       env: { ...process.env, ...(input.env ?? {}) },
       stdio: ['ignore', 'pipe', 'pipe'],
+      // A tool command can fork grandchildren. Give the command its own
+      // process group so a timeout stops the complete tree, including children
+      // that still hold stdout/stderr open after the shell exits.
+      detached: process.platform !== 'win32',
     })
     let stdout: Buffer = Buffer.alloc(0)
     let stderr: Buffer = Buffer.alloc(0)
@@ -90,6 +122,14 @@ async function runExec(input: {
       })
     })
     const timer = setTimeout(() => {
+      if (process.platform !== 'win32' && child.pid) {
+        try {
+          process.kill(-child.pid, 'SIGKILL')
+          return
+        } catch {
+          // The group may have exited between the timer and the signal.
+        }
+      }
       child.kill('SIGKILL')
     }, input.timeoutMs)
     child.on('close', (code, signal) => {
@@ -113,12 +153,16 @@ async function runExec(input: {
 
 export function createEnvRpcRouter(cfg: Config): Hono {
   const app = new Hono()
+  const rpcSecret = environmentRpcSecret(cfg)
 
   app.use('*', async (c, next) => {
-    if (!cfg.sandboxToken) {
-      return c.json({ error: 'daemon not configured', detail: 'KORTIX_TOKEN unset' }, 503)
+    if (!rpcSecret) {
+      return c.json(
+        { error: 'daemon not configured', detail: 'KORTIX_ENV_RPC_SECRET unset' },
+        503,
+      )
     }
-    const auth = verifyKortixUserContext(c.req.header(KORTIX_USER_CONTEXT_HEADER), cfg.sandboxToken)
+    const auth = verifyKortixUserContext(c.req.header(KORTIX_USER_CONTEXT_HEADER), rpcSecret)
     if (!auth.ok) {
       logger.warn('[env-rpc] reject', { reason: auth.reason })
       return c.json({ error: 'unauthorized', reason: auth.reason }, 401)
@@ -157,10 +201,11 @@ export function createEnvRpcRouter(cfg: Config): Hono {
           return c.json(ok(path.join(...((args.parts as string[]) ?? []))))
         case 'exists': {
           try {
-            await fs.access(p())
+            await fs.lstat(p())
             return c.json(ok(true))
-          } catch {
-            return c.json(ok(false))
+          } catch (e) {
+            if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return c.json(ok(false))
+            return c.json(fsError(e, p()))
           }
         }
         case 'readTextFile': {
@@ -173,9 +218,10 @@ export function createEnvRpcRouter(cfg: Config): Hono {
         case 'readTextLines': {
           try {
             const text = await fs.readFile(p(), 'utf8')
-            const lines = text.split('\n')
+            const lines = text.split(/\r\n|\n|\r/)
+            if (lines.at(-1) === '') lines.pop()
             const max = typeof args.maxLines === 'number' ? args.maxLines : undefined
-            return c.json(ok(max ? lines.slice(0, max) : lines))
+            return c.json(ok(max === undefined ? lines : lines.slice(0, Math.max(0, max))))
           } catch (e) {
             return c.json(fsError(e, p()))
           }
@@ -215,31 +261,24 @@ export function createEnvRpcRouter(cfg: Config): Hono {
         }
         case 'fileInfo': {
           try {
-            const st = await fs.stat(p())
-            return c.json(
-              ok({
-                size: st.size,
-                isFile: st.isFile(),
-                isDirectory: st.isDirectory(),
-                modifiedAt: st.mtime.toISOString(),
-              }),
-            )
+            const addressedPath = p()
+            return c.json(fileInfoValue(addressedPath, await fs.lstat(addressedPath)))
           } catch (e) {
             return c.json(fsError(e, p()))
           }
         }
         case 'listDir': {
           try {
-            const entries = await fs.readdir(p(), { withFileTypes: true })
-            return c.json(
-              ok(
-                entries.map((entry) => ({
-                  name: entry.name,
-                  isDirectory: entry.isDirectory(),
-                  isFile: entry.isFile(),
-                })),
-              ),
-            )
+            const directoryPath = p()
+            const entries = await fs.readdir(directoryPath, { withFileTypes: true })
+            const infos: unknown[] = []
+            for (const entry of entries) {
+              const entryPath = path.join(directoryPath, entry.name)
+              const info = fileInfoValue(entryPath, await fs.lstat(entryPath))
+              if (!info.ok) return c.json(info)
+              infos.push(info.value)
+            }
+            return c.json(ok(infos))
           } catch (e) {
             return c.json(fsError(e, p()))
           }

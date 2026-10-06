@@ -2,10 +2,42 @@
 // Worker's two guards are claimed here: the upstream origin can never be moved
 // by the incoming path, and the name fails closed without an access policy.
 // Both were findings on #7125 (Strix: CWE-918, CWE-306).
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { accessRefusal, presentedAccess, upstreamUrl } from '../../infra/cloudflare/workers/pi-js-router/worker.mjs';
+import worker, { accessRefusal, allowFraming, consumedHeaders, presentedAccess, upstreamUrl, withoutFrameAncestors, PASSTHROUGH_STRIPPED } from '../../infra/cloudflare/workers/pi-js-router/worker.mjs';
 
 const TARGET = 'https://8080-01m1s178mtjdff5gst7jqvc735.eu-west.sbx-dev.platinum.dev';
+const workflow = readFileSync(
+  resolve(import.meta.dirname, '../../.github/workflows/deploy-pi-js-router.yml'),
+  'utf8',
+);
+
+describe('deploy-pi-js-router.yml — the name fronts the bare cell OR a full Kortix branch environment', () => {
+  it('offers target_kind=cell|stack and defaults to the cell', () => {
+    expect(workflow).toMatch(/target_kind:\n\s+description:/);
+    expect(workflow).toMatch(/options:\n\s+- cell\n\s+- stack/);
+    expect(workflow).toContain("TARGET_KIND: ${{ inputs.target_kind || 'cell' }}");
+  });
+
+  it('a stack is a Platinum branch-environment origin, proven by /v1/health, run open, with no exposure token stored', () => {
+    // deploy-preview.yml exposes the sandbox's 8080 public on Platinum PROD
+    // (`8080-<sandbox>.eu-west.sbx.platinum.dev`) and the stack has its own auth.
+    expect(workflow).toContain('https://8080-*.sbx.platinum.dev|https://8080-*.sbx.platinum.dev/');
+    expect(workflow).toContain(`"\${TARGET_ORIGIN%/}/v1/health"`);
+    expect(workflow).toContain("jq -e '.status == \"ok\"'");
+    expect(workflow).toContain('target_kind=stack requires open_access=true');
+    // The DEV cell's exposure token must not ride along to a PROD stack.
+    expect(workflow).toMatch(/if \[ "\$TARGET_KIND" = stack \]; then\n\s+#[^\n]*\n\s+#[^\n]*\n\s+npx --yes wrangler@4 secret delete PT_PREVIEW_TOKEN --force/);
+  });
+
+  it('a cell still needs its DEV origin, the exposure token, and an access policy', () => {
+    expect(workflow).toContain('https://8080-*.sbx-dev.platinum.dev|https://8080-*.sbx-dev.platinum.dev/) ;;');
+    expect(workflow).toContain('PI_JS_PREVIEW_TOKEN is not set');
+    expect(workflow).toContain('PI_JS_ACCESS_TOKEN is not set and open_access was not chosen');
+    expect(workflow).toContain('-H "x-pt-preview-token: $PT_PREVIEW_TOKEN" "${TARGET_ORIGIN%/}/health"');
+  });
+});
 
 describe('upstreamUrl — the origin is always the configured target', () => {
   it('copies path and query onto the target origin', () => {
@@ -65,5 +97,131 @@ describe('accessRefusal — the name fails closed', () => {
     expect(presentedAccess(new Headers({ authorization: 'bearer  abc ' }))).toBe('abc');
     expect(presentedAccess(new Headers({ 'x-kortix-access': ' xyz' }))).toBe('xyz');
     expect(presentedAccess(new Headers({ authorization: 'Basic zzz' }))).toBe('');
+  });
+});
+
+describe('the caller\'s Authorization header is consumed ONLY when this name asked for it', () => {
+  // With OPEN_ACCESS=true the Worker asked for nothing, so an Authorization
+  // header belongs to the origin: the Kortix stack behind pi-js.kortix.com
+  // authenticates its own users with a Supabase JWT in that header. Deleting it
+  // unconditionally made every signed-in call answer the API's "Missing or
+  // invalid Authorization header" (2026-09-05: the owner could not sign in with
+  // email). Claimed at the fetch handler itself, with the upstream fetch
+  // captured, not only at the helper.
+  const upstreamOf = async (env: Record<string, string>, headers: Record<string, string>) => {
+    let seen: Request | null = null;
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: Request) => { seen = input; return new Response('ok', { status: 200 }); }) as any;
+    try {
+      await worker.fetch(new Request('https://pi-js.kortix.com/api/agents', { headers }), { TARGET_ORIGIN: TARGET, ...env });
+    } finally { globalThis.fetch = realFetch; }
+    return seen!;
+  };
+
+  it('OPEN_ACCESS=true forwards the caller\'s bearer to the origin untouched — the stack authenticates its own users', async () => {
+    expect(consumedHeaders({ OPEN_ACCESS: 'true' })).not.toContain('authorization');
+    const up = await upstreamOf({ OPEN_ACCESS: 'true' }, { authorization: 'Bearer supabase-jwt', 'x-kortix-access': 'nope' });
+    expect(up.headers.get('authorization')).toBe('Bearer supabase-jwt');
+    expect(up.headers.get('x-kortix-access')).toBeNull();   // this Worker's own header never means anything upstream
+    expect(up.url.startsWith(TARGET)).toBe(true);
+  });
+
+  it('ACCESS_TOKEN mode consumes the bearer that opened the door — the origin never sees this name\'s credential', async () => {
+    expect(consumedHeaders({ ACCESS_TOKEN: 'k-secret-1' })).toContain('authorization');
+    const up = await upstreamOf({ ACCESS_TOKEN: 'k-secret-1' }, { authorization: 'Bearer k-secret-1' });
+    expect(up.headers.get('authorization')).toBeNull();
+  });
+});
+
+describe('exactly one party compresses — the agent\'s LLM stream is not gzipped twice', () => {
+  // The Worker rebuilds every response (`new Response(response.body, …)`), and a
+  // rebuilt body is one Cloudflare may compress on its way to the client — over
+  // the origin's own gzip, while `content-encoding: gzip` still claims one pass.
+  // The client gunzips once and reads compressed bytes: `Decompression error:
+  // ZlibError`, which every agent turn on pi-js.kortix.com hit on 2026-09-05
+  // (sandbox pt-app.log: three auto-resumes, then a message with no answer). A
+  // browser GET survived it, so the name looked healthy.
+  const roundTrip = async (originHeaders: Record<string, string>) => {
+    let seen: Request | null = null;
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: Request) => {
+      seen = input;
+      return new Response('data: hi\n\n', { status: 200, headers: originHeaders });
+    }) as any;
+    let out: Response;
+    try {
+      out = await worker.fetch(
+        new Request('https://pi-js.kortix.com/v1/llm/chat', { method: 'POST', headers: { 'accept-encoding': 'gzip, br, zstd' }, body: '{}' }),
+        { TARGET_ORIGIN: TARGET, OPEN_ACCESS: 'true' },
+      );
+    } finally { globalThis.fetch = realFetch; }
+    return { upstream: seen!, out };
+  };
+
+  it('asks the origin for identity and forwards no encoding or length of its own', async () => {
+    const { upstream, out } = await roundTrip({ 'content-encoding': 'gzip', 'content-length': '123', 'content-type': 'text/event-stream' });
+    expect(upstream.headers.get('accept-encoding')).toBe('identity');
+    expect(out.headers.get('content-encoding')).toBeNull();
+    expect(out.headers.get('content-length')).toBeNull();
+    expect(out.headers.get('content-type')).toBe('text/event-stream');   // everything else still passes through
+    expect(PASSTHROUGH_STRIPPED).toEqual(['content-encoding', 'content-length']);
+  });
+
+  it('the client\'s own accept-encoding never reaches the origin — it decides nothing here', async () => {
+    const { upstream } = await roundTrip({ 'content-type': 'application/json' });
+    expect(upstream.headers.get('accept-encoding')).toBe('identity');
+  });
+});
+
+describe("the origin's framing policy is Platinum's, and it is about the wrong name", () => {
+  // Platinum's edge adds `frame-ancestors https://platinum.dev …` to every
+  // sandbox response. Under this name the parent IS pi-js.kortix.com, so the
+  // session UI could not frame its own HTML preview — measured 2026-09-10.
+  const PLATINUM = 'frame-ancestors https://platinum.dev https://www.platinum.dev https://app.platinum.dev';
+
+  it('drops a policy that says nothing else', () => {
+    expect(withoutFrameAncestors(PLATINUM)).toBeNull();
+  });
+
+  it('keeps every other directive the origin set', () => {
+    expect(withoutFrameAncestors(`default-src 'self'; ${PLATINUM}; img-src *`)).toBe(
+      "default-src 'self'; img-src *",
+    );
+  });
+
+  it('leaves a policy with no frame-ancestors untouched, matching case-insensitively', () => {
+    const headers = new Headers({ 'content-security-policy': "default-src 'self'" });
+    allowFraming(headers);
+    expect(headers.get('content-security-policy')).toBe("default-src 'self'");
+    const upper = new Headers({ 'content-security-policy': 'FRAME-ANCESTORS https://platinum.dev' });
+    allowFraming(upper);
+    expect(upper.get('content-security-policy')).toBeNull();
+  });
+
+  it('also drops x-frame-options and the report-only twin — neither can name this origin', () => {
+    const headers = new Headers({
+      'x-frame-options': 'DENY',
+      'content-security-policy-report-only': `script-src 'self'; ${PLATINUM}`,
+    });
+    allowFraming(headers);
+    expect(headers.get('x-frame-options')).toBeNull();
+    expect(headers.get('content-security-policy-report-only')).toBe("script-src 'self'");
+  });
+
+  it('a proxied response reaches the browser framable', async () => {
+    const env = { TARGET_ORIGIN: 'https://8080-sbx.eu-west.sbx-dev.platinum.dev', OPEN_ACCESS: 'true' };
+    const original = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response('<html><body>page</body></html>', {
+        headers: { 'content-type': 'text/html', 'content-security-policy': PLATINUM, 'x-frame-options': 'SAMEORIGIN' },
+      });
+    try {
+      const response = await worker.fetch(new Request('https://pi-js.kortix.com/v1/p/s/3211/open?path=/workspace/x.html'), env);
+      expect(response.headers.get('content-security-policy')).toBeNull();
+      expect(response.headers.get('x-frame-options')).toBeNull();
+      expect(response.headers.get('x-kortix-environment')).toBe('pi-js');
+    } finally {
+      globalThis.fetch = original;
+    }
   });
 });

@@ -73,6 +73,12 @@ export interface CreateSandboxOpts {
   };
   /** Ports that the provider must make reachable through resolveIngress(). */
   publishedPorts?: number[];
+  /**
+   * Run the session as a pi cell (apps/pi-worker-js): a Platinum
+   * `runtime: cell` sandbox whose celld serves `worker`'s active version on
+   * the agent port. Only the Platinum provider supports it.
+   */
+  cell?: { worker: string };
 }
 
 export function sandboxWorkloadType(opts: CreateSandboxOpts): SandboxWorkloadType {

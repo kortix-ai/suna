@@ -35,7 +35,11 @@ describe('ephemeral self-host preview stack', () => {
     expect(caddy).toContain('reverse_proxy llm-gateway:8090');
     expect(caddy).toContain('handle_path /_tests/*');
     expect(caddy).toContain('root * /reports');
-    expect(caddy).toContain('handle_path /_mailpit/*');
+    // Mailpit's UI loads /dist/app.js relative to its webroot. Stripping the
+    // prefix sent those requests to the frontend and left a blank page, so the
+    // prefix stays and Mailpit serves under it (MP_WEBROOT).
+    expect(caddy).toContain('handle /_mailpit*');
+    expect(caddy).not.toContain('handle_path /_mailpit/*');
     expect(caddy).toContain('reverse_proxy mailpit:8025');
     expect(caddy).toContain('reverse_proxy frontend:3000');
   });
@@ -115,6 +119,7 @@ describe('ephemeral self-host preview stack', () => {
     const overlay = buildPreviewComposeOverlay('/workspace/suna/tests/test-results');
     expect(overlay).toContain('preview-edge:');
     expect(overlay).toContain('mailpit:');
+    expect(overlay).toContain('MP_WEBROOT: "_mailpit"');
     expect(overlay).toContain('127.0.0.1:15432:5432');
     expect(overlay).toContain('/workspace/suna/tests/test-results:/reports:ro');
     expect(overlay).toContain('GOTRUE_RATE_LIMIT_TOKEN_REFRESH: "10000"');
@@ -213,6 +218,7 @@ describe('ephemeral self-host preview stack', () => {
     expect(configured.runtimeEnv).toContain('PROMPT_ATTACHMENT_UPLOAD_MODE=chunked');
     expect(configured.runtimeEnv).toContain('KORTIX_FRONTEND_MEMORY_LIMIT=2048m');
     expect(configured.runtimeEnv).toContain('EMAIL_PROVIDER_ORDER=mailpit');
+    expect(configured.runtimeEnv).toContain('MAILPIT_API_URL=http://mailpit:8025/_mailpit');
     expect(configured.runtimeEnv).toContain('MANAGED_GIT_PROVIDER=github');
     expect(configured.runtimeEnv).toContain('KORTIX_GITHUB_APP_PRIVATE_KEY=line-one\\nline-two');
     expect(configured.runtimeEnv).not.toContain('E2E_AGENTMAIL_API_KEY');

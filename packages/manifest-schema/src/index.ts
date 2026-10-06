@@ -42,6 +42,7 @@ import {
   SANDBOX_CPU_BOUNDS,
   SANDBOX_DISK_BOUNDS,
   SANDBOX_MEMORY_BOUNDS,
+  SANDBOX_TYPES,
   SLUG_RE,
   TRIGGER_TYPES,
   parseDurationSeconds,
@@ -160,6 +161,8 @@ export {
   reservedEnvNameReason,
   RESERVED_SANDBOX_SLUG,
   RESERVED_SLUG_PROVIDERS,
+  SANDBOX_TYPES,
+  type SandboxType,
   MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
   MONITOR_MIN_INTERVAL_SECONDS,
   MONITOR_MODES,
@@ -753,6 +756,25 @@ function validateSandbox(node: unknown, path: string, issues: ManifestIssue[], f
     });
   }
   validateSandboxTemplates(node.templates, `${path}.templates`, issues, format);
+
+  // `type` chooses what sessions run in: a pi cell (`worker`) or a microVM
+  // from a template (`vm`). A cell boots no image, so a custom `default`
+  // template under `worker` is dead configuration.
+  if (node.type !== undefined) {
+    if (typeof node.type !== 'string' || !(SANDBOX_TYPES as readonly string[]).includes(node.type)) {
+      issues.push({
+        path: `${path}.type`,
+        message: `\`type\` must be one of ${SANDBOX_TYPES.map((t) => `"${t}"`).join(', ')}: "worker" runs sessions as pi cells, "vm" as microVMs from a template.`,
+        severity: 'error',
+      });
+    } else if (node.type === 'worker' && typeof node.default === 'string' && node.default.trim() && node.default.trim() !== RESERVED_SANDBOX_SLUG) {
+      issues.push({
+        path: `${path}.type`,
+        message: `\`type\` = "worker" runs sessions as pi cells, which boot no image, so \`default\` = "${node.default.trim()}" is not used. Use \`type\` = "vm" to boot that template.`,
+        severity: 'warning',
+      });
+    }
+  }
 
   // `default` selects which template EVERY session in the project boots
   // (UI, triggers, channels) without passing `sandbox_slug`. It must name a

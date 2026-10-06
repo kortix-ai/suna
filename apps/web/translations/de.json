@@ -1176,6 +1176,10 @@
           "name": "Pi-Harness (in der Sandbox)",
           "description": "Sitzungen mit dem Pi-Harness in der Sitzungs-Sandbox statt mit OpenCode ausführen. Bei Aus wählt `runtime: pi` im Manifest weiterhin Pi."
         },
+        "pi_cell": {
+          "name": "Pi-Zelle",
+          "description": "Sitzungen als Pi-Zelle ausführen: der Pi-Agent als Durable Object in einem V8-Isolate auf Platinum. Eine Sitzung ist in Sekunden bereit; ihre Shell führt node und npm über die eigenen Dateien der Sitzung aus, ohne Linux-Maschine. Erfordert das LLM-Gateway."
+        },
         "config_releases": {
           "name": "Config-Releases",
           "description": "Sitzungen mit der aktuellen Agent-Konfiguration des Basis-Branch ausführen, schreibgeschützt bereitgestellt, damit ein gemergter Agent, Skill oder Tool jede laufende Sitzung erreicht. Bei Aus liest eine Sitzung ihren eigenen Workspace-Konfigurationsordner."

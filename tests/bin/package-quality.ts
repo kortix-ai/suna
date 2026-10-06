@@ -195,6 +195,19 @@ async function runWorkspaceTests(
   );
 }
 
+// apps/pi-worker-js (the `pi_cell` runtime) has its own package-lock.json and
+// sits outside the pnpm workspace. test/all.sh builds the bundle, runs every
+// cell suite, and boots the bundle on the pinned `celld dev` that
+// test/fetch-celld.mjs downloads and verifies. It takes ~3 min and shares
+// nothing with the steps below, so it starts first and is awaited last: this
+// lane is the binding one (`.github/workflows/tests.yml`).
+const piCellSuites = (async () => {
+  await run(['npm', 'ci', '--no-audit', '--no-fund'], { cwd: resolve(root, 'apps/pi-worker-js') });
+  await run(['./test/all.sh'], { cwd: resolve(root, 'apps/pi-worker-js') });
+})();
+// Awaited at the end; a failure before then must not surface as an unhandled rejection.
+piCellSuites.catch(() => {});
+
 await runAll([
   run(['node', 'scripts/stage-npm-publish.test.mjs']),
   run(['node', 'scripts/publish-npm-package.test.mjs']),
@@ -254,3 +267,5 @@ await runAll([
     2,
   ),
 ]);
+// The cell suites, started at the top of this lane.
+await piCellSuites;
