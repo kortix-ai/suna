@@ -1,16 +1,16 @@
 {
-  "source_hash": "c0eeb35bb66e00287b27bdf77b306812281ed99f537f052c4f22bbfec263bdfa",
+  "source_hash": "ff949952a9ead8395f1b7294afe5768c8c98c645cd5ffac9cea18e56ca48abd1",
   "diff_files": [
     "apps/cli/src/__tests__/projects-link-host-credential.blackbox.test.ts",
     "apps/cli/src/commands/projects.ts"
   ],
   "diff_hash": "a2f462aa638d97a3143ff0fef03b6fd90e334fd6dc0c111d8cbff882861c78cf",
-  "head": "87286f2a04879bb5105a1a76c4891fcc5bb4a3ad",
+  "head": "fcc32e293e1a9173aff4c4f5f000283032783638",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-06T11:20:34.806Z"
+  "at": "2026-10-06T11:31:32.171Z"
 }
