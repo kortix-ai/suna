@@ -212,7 +212,7 @@ export function registerGatewaySpendRoutes(): void {
       },
       responses: { 200: json(z.any(), 'Gateway spend by source'), ...errors(404) },
     }),
-    async (c: any) => {
+    async (c) => {
       const projectId = c.req.param('projectId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
