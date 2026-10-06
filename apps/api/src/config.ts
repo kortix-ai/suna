@@ -686,6 +686,10 @@ const envSchema = z.object({
   // runtime enabled (Platinum dev does; prod answers 501 runtime_not_enabled),
   // so the flag is offered only where an operator turns this on.
   KORTIX_PI_CELL_ENABLED: optBoolFalse,
+  // Where cells are available, whether a project with no choice of its own
+  // (no `pi_cell` flag, no kortix.yaml `sandbox.type`) runs its sessions as
+  // cells. Off by default; an environment built to show cells turns it on.
+  KORTIX_PI_CELL_DEFAULT_ENABLED: optBoolFalse,
   // The celld template a cell sandbox boots, and the Platinum worker whose
   // active version celld serves (deployed by apps/pi-worker-js/deploy-platinum.mjs).
   KORTIX_PI_CELL_TEMPLATE: optStrDefault('pt-celld'),
@@ -1410,6 +1414,7 @@ export const config = {
   PLATINUM_TEMPLATE: env.PLATINUM_TEMPLATE,
   PLATINUM_WEBHOOK_SECRET: env.PLATINUM_WEBHOOK_SECRET,
   KORTIX_PI_CELL_ENABLED: env.KORTIX_PI_CELL_ENABLED,
+  KORTIX_PI_CELL_DEFAULT_ENABLED: env.KORTIX_PI_CELL_DEFAULT_ENABLED,
   KORTIX_PI_CELL_TEMPLATE: env.KORTIX_PI_CELL_TEMPLATE,
   KORTIX_PI_CELL_WORKER: env.KORTIX_PI_CELL_WORKER,
   E2B_API_KEY: env.E2B_API_KEY,

@@ -41,6 +41,7 @@ import { WARM_SESSION_LOCATION_KEY, WARM_SESSION_METADATA_KEY } from './warm-ses
 import { db } from '../../shared/db';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
 import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
+import type { SandboxType } from '@kortix/manifest-schema';
 import {
   grantFromLoadedAgents,
   loadProjectAgents,
@@ -88,7 +89,7 @@ import {
 import { projectSessionMetadataMerge } from './session-metadata-merge';
 import { transitionSession } from '../session-lifecycle/status-transitions';
 import { mergeSessionSandboxEnv, parseSessionRuntimeContext } from './session-runtime-context';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { featureFlagDef, resolveFeatureFlag } from '../../feature-flags/registry';
 import { resolvePlatformMetaSandbox } from './platform-meta-agent';
 
 import {
@@ -749,6 +750,29 @@ async function validateSessionConnectorsForAgent(params: {
 }
 
 /** Pick the sandbox template slug and the sandbox provider for the session. */
+/**
+ * Whether a new session runs as a pi cell. kortix.yaml `sandbox.type` decides
+ * when it says (`vm` never, `worker` yes); otherwise the project's `pi_cell`
+ * flag, whose default is the platform's KORTIX_PI_CELL_DEFAULT_ENABLED. A cell
+ * boots no image, so a session that resolved a custom template stays a VM. A
+ * cell also needs the platform to run cells and the LLM gateway, its only model
+ * path; without either the session boots a VM rather than failing.
+ */
+export function sessionRunsInCell(params: { project: ProjectRow; sandboxSlug: string; declared: SandboxType | null }): boolean {
+  const { project, sandboxSlug, declared } = params;
+  if (declared === 'vm' || sandboxSlug !== DEFAULT_SANDBOX_SLUG) return false;
+  if (declared !== 'worker' && !resolveFeatureFlag(project.metadata, 'pi_cell')) return false;
+  if (!featureFlagDef('pi_cell').available()) {
+    logger.warn('[sessions] kortix.yaml asks for sandbox.type worker, but this platform runs no cells; booting a VM', { projectId: project.projectId });
+    return false;
+  }
+  if (!projectLlmGatewayEnabled(project.metadata)) {
+    logger.warn('[sessions] the session asks for a pi cell but the LLM gateway is off; booting a VM', { projectId: project.projectId });
+    return false;
+  }
+  return true;
+}
+
 async function resolveSessionSandboxPlacement(params: {
   project: ProjectRow;
   body: Record<string, unknown>;
@@ -799,11 +823,8 @@ async function resolveSessionSandboxPlacement(params: {
         error: { status: 400, body: { error: `Sandbox "${PI_CELL_SANDBOX_SLUG}" is reserved`, code: 'SANDBOX_SLUG_RESERVED' } },
       };
     }
-    if (resolveFeatureFlag(project.metadata, 'pi_cell')) {
-      if (projectLlmGatewayEnabled(project.metadata)) {
-        return { sandboxSlug: PI_CELL_SANDBOX_SLUG, providerLocked: true, providerName: 'platinum' };
-      }
-      logger.warn('[sessions] pi_cell is on but the LLM gateway is off; booting the ordinary sandbox', { projectId: project.projectId });
+    if (sessionRunsInCell({ project, sandboxSlug, declared: loadedAgents.sandboxType ?? null })) {
+      return { sandboxSlug: PI_CELL_SANDBOX_SLUG, providerLocked: true, providerName: 'platinum' };
     }
   }
   // Sandbox provider: explicit request › per-project pin (Customize → Settings) ›

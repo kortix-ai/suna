@@ -68,6 +68,7 @@ import {
   SANDBOX_CPU_BOUNDS,
   SANDBOX_DISK_BOUNDS,
   SANDBOX_MEMORY_BOUNDS,
+  SANDBOX_TYPES,
   SLUG_RE,
   TRIGGER_TYPES,
   V2_RUNTIME_VALUES,
@@ -349,6 +350,7 @@ function sandboxSchema(): JsonSchemaFragment {
       // Cross-field: must name a declared template slug — dynamic, left to
       // the imperative validator (see module doc "deliberate scope limits").
       default: { type: 'string', minLength: 1 },
+      type: { type: 'string', enum: [...SANDBOX_TYPES] },
     },
     additionalProperties: true,
   };

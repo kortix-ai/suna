@@ -11,6 +11,14 @@
 /** The slug reserved for the platform-shared default sandbox template. */
 export const RESERVED_SANDBOX_SLUG = 'default';
 
+/**
+ * What a session's agent runs in (`sandbox.type`): `worker` is a pi cell, a
+ * Durable Object on Platinum with no machine; `vm` is a microVM booted from a
+ * sandbox template. The platform decides whether cells exist at all.
+ */
+export const SANDBOX_TYPES = ['worker', 'vm'] as const;
+export type SandboxType = (typeof SANDBOX_TYPES)[number];
+
 /** Regex matching every user-defined slug (triggers, sandboxes, apps, connectors). */
 export const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 

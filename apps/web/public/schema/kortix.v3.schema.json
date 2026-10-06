@@ -864,6 +864,13 @@
         "default": {
           "type": "string",
           "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "worker",
+            "vm"
+          ]
         }
       },
       "additionalProperties": true

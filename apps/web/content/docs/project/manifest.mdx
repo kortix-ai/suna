@@ -117,6 +117,7 @@ triggers:
 | `project.name` / `project.description`              | no       | display metadata; the platform does not read `project.name` for the project's display name |
 | `env.required` / `env.optional`                     | no       | env var names; `required` is advisory only, never enforced at session start                |
 | `sandbox` / `sandbox.templates` / `sandbox.default` | no       | sandbox image(s) and hardware                                                              |
+| `sandbox.type`                                      | no       | `"worker"` (a pi cell) or `"vm"` (a microVM from a template); see [`sandbox.type`](#sandboxtype) |
 | `opencode.config_dir`                               | no       | default `harnesses/opencode`, then the legacy `.kortix/opencode`                           |
 | `triggers`                                          | no       | list of cron, webhook, and monitor triggers                                                |
 | `connectors`                                        | no       | list of connector definitions                                                              |
@@ -265,6 +266,24 @@ Session template resolution uses this order:
 Cron triggers, webhook triggers, schedules, and channels use the selected agent's template.
 
 A spec change (`cpu`, `memory`, `disk`, `container_runtime`, or the image itself) rebuilds the project's snapshot. The new size applies on the next session, not a running one.
+
+### `sandbox.type`
+
+`type` chooses what a session's agent runs in:
+
+- `worker` — a **pi cell**: the pi agent as a Durable Object in a V8 isolate on Platinum. A session is ready in seconds and survives losing its process mid-turn. Its shell runs `node` and `npm` over the session's own files; there is no Linux machine, so no `python`, builds, or dev servers.
+- `vm` — a microVM booted from the session's sandbox template. Use it when the agent needs a real machine or a custom image.
+
+```yaml
+sandbox:
+  type: worker
+```
+
+Without `type`, the project's **Pi Cell Runtime** feature flag decides, and the platform sets that flag's default.
+
+- A session that resolves a custom template (a `sandbox.default`, an agent `sandbox`, or a session `sandbox_slug`) always boots a microVM: a cell boots no image.
+- A cell needs the LLM gateway, and a platform that runs cells. Where either is missing, a `worker` session boots a microVM instead of failing.
+- `type: worker` with a custom `sandbox.default` is a validation warning: the template is never used.
 
 ## `opencode:`
 

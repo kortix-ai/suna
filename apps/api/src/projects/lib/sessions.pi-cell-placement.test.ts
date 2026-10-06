@@ -8,12 +8,13 @@ import { config } from '../../config';
 // Run alone: Bun module mocks are process-global.
 let inserted: Record<string, unknown> | undefined;
 let provisioned: Record<string, unknown> | undefined;
+let manifestSandboxType: 'worker' | 'vm' | null = null;
 
 mock.module('../../billing/services/billing-gate', () => ({ checkBillingAdmission: async () => ({ ok: true }) }));
 mock.module('../../billing/services/entitlements', () => ({ accountMayUseManagedModels: async () => true }));
 mock.module('../../shared/audit', () => ({ recordAuditEvent: async () => {} }));
 mock.module('../agents', () => ({
-  loadProjectAgents: async () => ({ defaultAgent: 'default' }),
+  loadProjectAgents: async () => ({ defaultAgent: 'default', sandboxType: manifestSandboxType }),
   repositoryAccessFromLoadedAgents: () => true,
   legacyReadWorkspaceFromLoadedAgents: () => false,
   sandboxFromLoadedAgents: () => null,
@@ -53,6 +54,7 @@ mock.module('./session-runtime-context', () => ({
 }));
 
 import { createProjectSession } from './sessions';
+import { sessionRunsInCell } from './session-create';
 
 type Project = Parameters<typeof createProjectSession>[0]['project'];
 const projectWith = (experimental: Record<string, boolean>): Project => ({
@@ -65,6 +67,7 @@ const saved = {
   KORTIX_PI_CELL_ENABLED: config.KORTIX_PI_CELL_ENABLED,
   PLATINUM_API_KEY: config.PLATINUM_API_KEY,
   LLM_GATEWAY_ENABLED: config.LLM_GATEWAY_ENABLED,
+  KORTIX_PI_CELL_DEFAULT_ENABLED: config.KORTIX_PI_CELL_DEFAULT_ENABLED,
 };
 beforeEach(() => {
   inserted = undefined;
@@ -73,6 +76,8 @@ beforeEach(() => {
   config.KORTIX_PI_CELL_ENABLED = true;
   config.PLATINUM_API_KEY = 'pt_synthetic';
   config.LLM_GATEWAY_ENABLED = true;
+  config.KORTIX_PI_CELL_DEFAULT_ENABLED = false;
+  manifestSandboxType = null;
 });
 afterAll(() => { Object.assign(config, saved); });
 
@@ -119,4 +124,52 @@ test('caller metadata cannot make a cell: pi_cell_boot from the caller leaves th
   const result = await create(projectWith({}), {}, { pi_cell_boot: true });
   expect(result.error).toBeUndefined();
   expect(provisioned?.sandboxSlug).toBe('default');
+});
+
+// ── Who decides: kortix.yaml `sandbox.type`, else the flag (whose default is
+// the platform's KORTIX_PI_CELL_DEFAULT_ENABLED). ──────────────────────────
+
+test('where the platform defaults to cells, a project with no choice of its own gets a cell', async () => {
+  config.KORTIX_PI_CELL_DEFAULT_ENABLED = true;
+  const result = await create(projectWith({ llm_gateway: true }));
+  expect(result.error).toBeUndefined();
+  expect(provisioned?.sandboxSlug).toBe('pi-cell');
+});
+
+test('the project switch still opts out where the platform defaults to cells', async () => {
+  config.KORTIX_PI_CELL_DEFAULT_ENABLED = true;
+  const result = await create(projectWith({ llm_gateway: true, pi_cell: false }));
+  expect(result.error).toBeUndefined();
+  expect(provisioned?.sandboxSlug).toBe('default');
+});
+
+test('kortix.yaml sandbox.type: worker gets a cell with the switch off', async () => {
+  manifestSandboxType = 'worker';
+  const result = await create(projectWith({ llm_gateway: true, pi_cell: false }));
+  expect(result.error).toBeUndefined();
+  expect(provisioned?.sandboxSlug).toBe('pi-cell');
+  expect((provisioned?.metadata as Record<string, unknown>).pi_cell_boot).toBe(true);
+});
+
+test('kortix.yaml sandbox.type: vm gets a microVM even with the switch on and cells the default', async () => {
+  manifestSandboxType = 'vm';
+  config.KORTIX_PI_CELL_DEFAULT_ENABLED = true;
+  const result = await create(projectWith({ llm_gateway: true, pi_cell: true }));
+  expect(result.error).toBeUndefined();
+  expect(provisioned?.sandboxSlug).toBe('default');
+});
+
+test('kortix.yaml sandbox.type: worker where the platform runs no cells boots a microVM, not an error', async () => {
+  manifestSandboxType = 'worker';
+  config.KORTIX_PI_CELL_ENABLED = false;
+  const result = await create(projectWith({ llm_gateway: true }));
+  expect(result.error).toBeUndefined();
+  expect(provisioned?.sandboxSlug).toBe('default');
+});
+
+test('a session that resolved a custom template stays a microVM: a cell boots no image', () => {
+  const project = projectWith({ llm_gateway: true, pi_cell: true });
+  expect(sessionRunsInCell({ project, sandboxSlug: 'default', declared: null })).toBe(true);
+  expect(sessionRunsInCell({ project, sandboxSlug: 'py', declared: null })).toBe(false);
+  expect(sessionRunsInCell({ project, sandboxSlug: 'py', declared: 'worker' })).toBe(false);
 });

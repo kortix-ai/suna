@@ -89,6 +89,8 @@ PREVIEW_INSTANCE_DIR="$INST" PREVIEW_STATE_DIR="$STATE" PREVIEW_ORIGIN=https://p
   PLATINUM_API_URL=https://api-dev.platinum.dev PREVIEW_INSTANCE_ID=kortix-env-pi-worker-js \
   bun tests/bin/preview-stack.ts
 set_env KORTIX_PI_CELL_ENABLED true
+# Every session here is a cell unless its project or kortix.yaml says `vm`.
+set_env KORTIX_PI_CELL_DEFAULT_ENABLED true
 set_env KORTIX_PI_CELL_TEMPLATE pt-celld
 set_env KORTIX_PI_CELL_WORKER kortix-pi-cell
 set_env KORTIX_BILLING_INTERNAL_ENABLED false

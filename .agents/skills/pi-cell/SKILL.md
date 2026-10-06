@@ -15,7 +15,7 @@ of the process that runs it.
 | --- | --- |
 | `apps/pi-worker-js/` | The cell: worker bundle, tests, `wrangler.json`, `deploy-platinum.mjs`. Standalone npm app, excluded from the pnpm workspace. Its `README.md` is the architecture doc. |
 | `apps/api/src/feature-flags/registry.ts` | The `pi_cell` project flag. Available only with `KORTIX_PI_CELL_ENABLED=true` and a `PLATINUM_API_KEY`. |
-| `apps/api/src/projects/lib/session-create.ts` | `piCellBoot`: a `pi_cell` session gets slug `pi-cell`, provider Platinum (locked), no project image, metadata `pi_cell_boot: true`. Requires the LLM gateway. |
+| `apps/api/src/projects/lib/session-create.ts` | `sessionRunsInCell`: kortix.yaml `sandbox.type` (`worker`/`vm`), else the `pi_cell` flag (default `KORTIX_PI_CELL_DEFAULT_ENABLED`). A cell gets slug `pi-cell`, provider Platinum (locked), no project image, metadata `pi_cell_boot: true`. Default sandbox only; requires the LLM gateway. |
 | `apps/api/src/platform/providers/platinum.ts` | `buildCellCreateBody`: the `runtime: "cell"` create body. Tested in `platinum-cell.test.ts`. |
 | `apps/pt-celld.spec.json` | Platinum template spec for the celld runtime image. The agent is not in the image: it is a bundle in the bucket. |
 | `apps/tools/` | Mutation and rail tools the cell suites run (`mutate.mjs`, `cell-rails.mjs`). |

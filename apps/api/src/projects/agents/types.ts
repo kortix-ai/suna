@@ -1,3 +1,4 @@
+import type { SandboxType } from '@kortix/manifest-schema';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 
 export const MANIFEST_FILENAME = 'kortix.toml';
@@ -71,4 +72,11 @@ export interface LoadedAgents {
    * behavior — see `grantFromLoadedAgents` (spec §2.1).
    */
   defaultAgent?: string | null;
+  /**
+   * The manifest's `sandbox.type`: what this project's sessions run in —
+   * `worker` (a pi cell) or `vm` (a microVM from a template). `null` = the
+   * manifest does not say (or could not be read); the project's `pi_cell` flag
+   * and the platform default decide (projects/lib/session-create.ts).
+   */
+  sandboxType?: SandboxType | null;
 }

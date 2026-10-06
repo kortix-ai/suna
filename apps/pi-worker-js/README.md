@@ -126,10 +126,17 @@ API environment (machine-local overrides go in the gitignored
 | `PLATINUM_API_URL` | Platinum prod | Must point at a Platinum that runs cells. See [Known gaps](#known-gaps). |
 | `KORTIX_PI_CELL_TEMPLATE` | `pt-celld` | Platinum template for the cell. |
 | `KORTIX_PI_CELL_WORKER` | `kortix-pi-cell` | Platinum worker the cell boots. Must match the deployed worker. |
+| `KORTIX_PI_CELL_DEFAULT_ENABLED` | `false` | Projects with no choice of their own run as cells. |
 
-Then set `pi_cell: true` in the project's experimental flags. A session in
-that project boots as a cell when the project uses the Kortix LLM gateway.
-The session's provider is locked to Platinum and the project image is ignored.
+Which sessions are cells, in order:
+
+1. kortix.yaml `sandbox.type: vm` → never a cell; `sandbox.type: worker` → a cell.
+2. Otherwise the project's `pi_cell` flag, whose default is `KORTIX_PI_CELL_DEFAULT_ENABLED`.
+3. Only on the default sandbox: a session that resolves a custom template boots a microVM.
+4. Only with the LLM gateway on and cells available; otherwise a microVM, never an error.
+
+A cell's provider is locked to Platinum and the project image is ignored
+(`sessionRunsInCell`, `apps/api/src/projects/lib/session-create.ts`).
 
 ## Build, test, deploy
 
