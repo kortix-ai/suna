@@ -5,6 +5,7 @@
 
 import { accountGroupMembers, accountGroups, roleAssignments } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
+import { notAnAudienceGrant } from '../iam/audience-grants';
 import { invalidateIamCacheForUser, invalidateIamCacheForUsers } from '../iam/cache-invalidation';
 import { db } from '../shared/db';
 import { accountMembersAmong } from '../iam/membership-read';
@@ -100,6 +101,8 @@ export async function deleteGroup(accountId: string, groupId: string): Promise<b
       .where(and(eq(accountGroups.accountId, accountId), eq(accountGroups.groupId, groupId)))
       .returning({ groupId: accountGroups.groupId });
     if (rows.length === 0) return false;
+    // A deleted group's audience grants stay and reach nobody: deleting a
+    // value's last one would share it with the whole project.
     await tx
       .delete(roleAssignments)
       .where(
@@ -107,6 +110,7 @@ export async function deleteGroup(accountId: string, groupId: string): Promise<b
           eq(roleAssignments.accountId, accountId),
           eq(roleAssignments.principalType, 'group'),
           eq(roleAssignments.principalId, groupId),
+          notAnAudienceGrant(),
         ),
       );
     return true;

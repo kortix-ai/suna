@@ -196,6 +196,12 @@
   "newWorkspace": {
     "title": "Criar um projeto",
     "description": "Um projeto reúne seus agentes, arquivos e sessões.",
+    "handoff": {
+      "validating": "A validar",
+      "creating_repository": "A criar o repositório",
+      "registering": "A registar o projeto",
+      "seeding": "A preparar os ficheiros iniciais"
+    },
     "templateSeed": "Este projeto será iniciado com o modelo escolhido.",
     "account": {
       "label": "Conta",
@@ -1540,6 +1546,7 @@
         "email": "E-mail",
         "scheduled": "Agendado",
         "webhook": "Webhook",
+        "manual": "Manual",
         "all": "Todos"
       },
       "statusValue": {
@@ -19236,7 +19243,8 @@
       "text8f480bae8d16": "Agentes de IA para equipes de finanças",
       "text6243d930fc1c": "AI Operating System",
       "textc959682e0398": "Visualizou os dispositivos conectados",
-      "text976811d9540a": "Desconectou um dispositivo"
+      "text976811d9540a": "Desconectou um dispositivo",
+      "text6f417aa88601": "Gastos do gateway LLM por origem listados"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
