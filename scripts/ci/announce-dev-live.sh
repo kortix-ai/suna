@@ -76,7 +76,7 @@ fi
 prs=()
 for c in "${commits[@]}"; do
   number="$(gh api "repos/${repo}/commits/${c}/pulls" 2>/dev/null \
-    | jq -r '[.[] | select(.merged_at != null and .base.ref == "main")][0].number // empty' 2>/dev/null || true)"
+    | jq -r '[.[] | select(.merged_at != null and .base.ref == "dev")][0].number // empty' 2>/dev/null || true)"
   [ -n "$number" ] || continue
   case " ${prs[*]:-} " in *" ${number} "*) continue ;; esac
   prs+=("$number")
@@ -110,7 +110,7 @@ for number in "${prs[@]}"; do
     lead="\`${short}\` serves on every surface this deploy changed, checked on \`/health\`."
   else
     title='### Not live on dev yet'
-    lead="\`${short}\` did not reach every surface this deploy changed. The next deploy from \`main\` retries every surface that is still stale, and edits this comment."
+    lead="\`${short}\` did not reach every surface this deploy changed. The next deploy from \`dev\` retries every surface that is still stale, and edits this comment."
   fi
   others=()
   for other in "${prs[@]}"; do [ "$other" = "$number" ] || others+=("#${other}"); done

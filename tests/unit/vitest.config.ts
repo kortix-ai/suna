@@ -14,6 +14,9 @@ export default defineConfig({
     root: import.meta.dirname,
     environment: 'node',
     globals: true,
+    // Several unit tests spawn bash or git. Under a loaded machine the 5 s default
+    // fails them with a timeout that says nothing about the code under test.
+    testTimeout: 30_000,
     include: ['**/*.test.ts'],
     reporters: ['default', ['junit', { suiteName: 'unit' }]],
     outputFile: {

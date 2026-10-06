@@ -1,6 +1,6 @@
 name: Deploy Dev
 
-# DEV pipeline. `main` is the dev branch. A deliberate `workflow_dispatch`
+# DEV pipeline. `dev` is the dev branch. A deliberate `workflow_dispatch`
 # deploys the surfaces that changed vs what dev currently runs. Deploys QUEUE: an
 # in-flight deploy always finishes, and only the newest waiting run follows (see the
 # `on:` and `concurrency:` blocks). Every merged pull request gets one "Live on
@@ -8,7 +8,7 @@ name: Deploy Dev
 # `workflow_dispatch` can force all/frontend on demand. Builds are versioned
 # `<next>-dev.<sha8>`, where <next> is one patch above the latest published release
 # tag (see detect-changes). So dev tracks prod's version line automatically
-# and `main` carries no release-version bump.
+# and `dev` carries no release-version bump.
 #
 #   - API image   → kortix/kortix-api:dev-<sha8> + :dev-latest, deployed to dev
 #                   via ECS Fargate. dev-api.kortix.com
@@ -16,7 +16,7 @@ name: Deploy Dev
 #                   (see infra/cloudflare/workers/api-router).
 #   - Frontend    → kortix/kortix-frontend:dev-<sha8> + :dev-latest, deployed to
 #                   the dedicated kortix-dev-use2-web ECS Fargate service at
-#                   dev.kortix.com. Vercel is disabled for main.
+#                   dev.kortix.com. Vercel is disabled for dev.
 #   - CLI         → 4 cross-compiled binaries published to the mutable
 #                   `dev-latest` GitHub prerelease (default API base dev-api),
 #                   plus the 4 `kortix-tui` binaries `kortix tui` downloads.
@@ -31,14 +31,14 @@ name: Deploy Dev
 
 on:
   # DEV deploys only on an explicit dispatch (since 2026-10-03: Actions minutes).
-  # A push to `main` does NOT deploy. Run `gh workflow run deploy-dev.yml -f
-  # surface=changed` (or `all`) to deploy main HEAD. `changed` diffs against
+  # A push to `dev` does NOT deploy. Run `gh workflow run deploy-dev.yml -f
+  # surface=changed` (or `all`) to deploy dev HEAD. `changed` diffs against
   # dev-api's live SHA, so one dispatch ships every merge since the last deploy.
   # A dispatch that lands while a deploy runs waits for it; see `concurrency:`.
   workflow_dispatch:
     inputs:
       surface:
-        description: What to deploy (main HEAD)
+        description: What to deploy (dev HEAD)
         type: choice
         required: true
         default: changed
@@ -99,7 +99,7 @@ jobs:
       # Dev builds are a pre-release of the UPCOMING version, derived from the
       # latest published release tag (vX.Y.Z tags are created only when a
       # release lands on `prod`). So dev always tracks prod: prod 0.9.6 → dev
-      # `0.9.7-dev.<sha8>`. No VERSION-file bump on `main` is needed. This was
+      # `0.9.7-dev.<sha8>`. No VERSION-file bump on `dev` is needed. This was
       # its own job; computing it here removes one runner hand-off (~30 s) from
       # every surface's critical path.
       - name: Derive dev version from the latest release tag
@@ -275,7 +275,7 @@ jobs:
   #
   # The `github.ref` condition keeps the documented "manual branch run" of this
   # workflow working: terraform-apply.yml refuses any commit that is not on
-  # `main`, so on a branch dispatch these jobs would fail and block the image
+  # `dev`, so on a branch dispatch these jobs would fail and block the image
   # deploys. Skipping is the correct outcome there — a branch run deploys
   # images, never infrastructure.
 
