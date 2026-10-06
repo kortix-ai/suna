@@ -30,6 +30,7 @@ import {
   wireIdClockDelta,
 } from '../wire-message-id';
 import { type InboxTranscriptState, readInboxTranscriptState } from './runtime-client';
+import { forwardedSql } from './delivery-state';
 
 /**
  * How far back the inbox's own delivered ids are worth reading.
@@ -259,7 +260,7 @@ export async function hasLaterForwardedSibling(row: SessionLifecycleCommandRow):
           inboxFollowsRow(row),
           or(
             inArray(sessionLifecycleCommands.status, ['queued', 'running']),
-            sql`${sessionLifecycleCommands.result}->>'status' = 'forwarded'`,
+            forwardedSql,
           ),
         ),
       )
@@ -322,7 +323,7 @@ export async function recordRepairedForward(commandId: string, wireMessageId: st
       and(
         eq(sessionLifecycleCommands.commandId, commandId),
         eq(sessionLifecycleCommands.status, 'succeeded'),
-        sql`${sessionLifecycleCommands.result}->>'status' = 'forwarded'`,
+        forwardedSql,
       ),
     );
 }

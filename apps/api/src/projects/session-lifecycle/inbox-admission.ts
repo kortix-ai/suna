@@ -5,6 +5,7 @@ import { RUNNING_SANDBOX_STATUSES, storedSandboxTurns } from '../session-turn-le
 import { inboxFollowsRow, inboxPrecedesRow } from './inbox-order';
 import { reconcileInboxTurn } from './inbox-turn-recovery';
 import type { InboxAdmissionReason, SessionLifecycleCommandRow } from './store';
+import { notHeldSql } from './delivery-state';
 
 /**
  * The inbox's admission gate.
@@ -164,7 +165,7 @@ const liveDeps: InboxAdmissionDeps = {
           // A HELD row is deliberately out of the line — the user stopped it.
           // Counting it would wedge every prompt they send afterwards behind a
           // row that is, by construction, never due.
-          sql`COALESCE(${sessionLifecycleCommands.result}->>'held', '') <> 'true'`,
+          notHeldSql,
           inboxPrecedesRow(row),
           // Explicitly not itself. The tuple predicate already excludes this
           // row, but a row that blocks on itself waits for ever if a concurrent
@@ -308,7 +309,7 @@ export async function hasLaterReleasedSibling(row: SessionLifecycleCommandRow): 
         eq(sessionLifecycleCommands.sessionId, row.sessionId),
         eq(sessionLifecycleCommands.commandType, 'continue_session'),
         inArray(sessionLifecycleCommands.status, ['queued', 'running']),
-        sql`COALESCE(${sessionLifecycleCommands.result}->>'held', '') <> 'true'`,
+        notHeldSql,
         sql`${sessionLifecycleCommands.payload}->>'releasedBatchId' = ${batchId}`,
         inboxFollowsRow(row),
         ne(sessionLifecycleCommands.commandId, row.commandId),

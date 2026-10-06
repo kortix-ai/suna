@@ -7,6 +7,7 @@ import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { LIFECYCLE_CLAIM_LOCK_MS } from './command-lease';
 import { compareInboxSendOrder, inboxOrderBy } from './inbox-order';
 import { type EnqueuedContinueSessionCommand, type SessionLifecycleCommandRow, withNextDeliveryAttempt } from './store';
+import { forwardedSql, heldSql, isStopPaused, notHeldSql, stopPausedOnDeliverySql, stopPausedSql, stoppedByUserSql } from './delivery-state';
 
 /**
  * The inbox's row operations — everything `GET/DELETE/retry/hold …/prompts`
@@ -68,7 +69,7 @@ export async function listInboxPrompts(
         inboxScope(sessionId),
         or(
           ne(sessionLifecycleCommands.status, 'succeeded'),
-          sql`${sessionLifecycleCommands.result}->>'status' = 'forwarded'`,
+          forwardedSql,
         ),
       ),
     )
@@ -122,7 +123,7 @@ export async function deleteInboxPrompt(
         eq(sessionLifecycleCommands.commandId, promptId),
         inboxScope(sessionId),
         eq(sessionLifecycleCommands.status, 'succeeded'),
-        sql`COALESCE(${sessionLifecycleCommands.result}->>'stop_paused', '') = 'true'`,
+        stopPausedSql,
       ),
     );
   if (stopPaused[0]) return { outcome: 'deleted', row: stopPaused[0] };
@@ -311,7 +312,7 @@ export async function retryInboxPrompt(
             eq(sessionLifecycleCommands.commandId, promptId),
             inboxScope(sessionId),
             eq(sessionLifecycleCommands.status, 'succeeded'),
-            sql`COALESCE(${sessionLifecycleCommands.result}->>'stop_paused', '') = 'true'`,
+            stopPausedSql,
           ),
         )
         .returning();
@@ -415,7 +416,7 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
         and(
           inboxScope(sessionId),
           eq(sessionLifecycleCommands.status, 'succeeded'),
-          sql`${sessionLifecycleCommands.result}->>'status' = 'forwarded'`,
+          forwardedSql,
         ),
       )
       .returning({ commandId: sessionLifecycleCommands.commandId });
@@ -463,7 +464,7 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
       .where(
         and(
           inboxScope(sessionId),
-          sql`COALESCE(${sessionLifecycleCommands.payload}->>'stopPausedOnDelivery', '') = 'true'`,
+          stopPausedOnDeliverySql,
         ),
       );
 
@@ -478,7 +479,7 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
         and(
           inboxScope(sessionId),
           inArray(sessionLifecycleCommands.status, ['queued', 'running']),
-          sql`COALESCE(${sessionLifecycleCommands.result}->>'held', '') = 'true'`,
+          heldSql,
         ),
       )
       .returning({ commandId: sessionLifecycleCommands.commandId });
@@ -537,8 +538,8 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
         and(
           inboxScope(sessionId),
           eq(sessionLifecycleCommands.status, 'succeeded'),
-          sql`${sessionLifecycleCommands.result}->>'status' = 'forwarded'`,
-          sql`COALESCE(${sessionLifecycleCommands.result}->>'stop_paused', '') = 'true'`,
+          forwardedSql,
+          stopPausedSql,
         ),
       )
       .returning({ commandId: sessionLifecycleCommands.commandId });
@@ -569,7 +570,7 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
           and(
             inboxScope(sessionId),
             eq(sessionLifecycleCommands.status, 'queued'),
-            sql`COALESCE(${sessionLifecycleCommands.result}->>'held', '') <> 'true'`,
+            notHeldSql,
           ),
         );
     }
@@ -580,9 +581,7 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
 
 /** A row a Stop marked: held, stop-paused, or claimed with a pending stop mark. */
 function holdMarked(): SQL {
-  return sql`(COALESCE(${sessionLifecycleCommands.payload}->>'stopPausedOnDelivery', '') = 'true'
-    OR COALESCE(${sessionLifecycleCommands.result}->>'held', '') = 'true'
-    OR COALESCE(${sessionLifecycleCommands.result}->>'stop_paused', '') = 'true')`;
+  return stoppedByUserSql;
 }
 
 /**
@@ -696,7 +695,7 @@ export async function enqueueReleasingHold(
 /** Was this row's delivery stopped by the user AFTER it reached OpenCode?
  *  `requeueAbandonedPrompt` reads it to bring the repair back HELD. */
 export function isStopPausedInboxRow(result: unknown): boolean {
-  return (result as { stop_paused?: unknown } | null)?.stop_paused === true;
+  return isStopPaused(result as Record<string, unknown> | null);
 }
 
 /**
@@ -722,7 +721,7 @@ export async function claimDueSessionInboxSiblings(input: {
         eq(sessionLifecycleCommands.commandType, 'continue_session'),
         eq(sessionLifecycleCommands.status, 'queued'),
         sql`${sessionLifecycleCommands.payload}->>'clientMessageId' IS NOT NULL`,
-        sql`COALESCE(${sessionLifecycleCommands.result}->>'held', '') <> 'true'`,
+        notHeldSql,
         or(
           isNull(sessionLifecycleCommands.lockedUntil),
           lte(sessionLifecycleCommands.lockedUntil, now),

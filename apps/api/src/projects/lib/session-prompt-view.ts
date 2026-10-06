@@ -14,6 +14,7 @@ import type { SessionPrompt } from '@kortix/api-contract';
 import { sessionLifecycleCommands } from '@kortix/db';
 import { DELIVERY_FAILURE_COPY } from '../session-lifecycle/types';
 import { PROMPT_TEXT_PREVIEW_CHARS } from '../session-lifecycle/prompt-parts';
+import { isForwarded, isHeld } from '../session-lifecycle/delivery-state';
 
 export type PromptRow = typeof sessionLifecycleCommands.$inferSelect;
 
@@ -49,11 +50,11 @@ export function promptState(row: Pick<PromptRow, 'status' | 'result'>): {
   // button put it there, and only an explicit send or "send now" takes it out.
   // It outranks the markers below: a held row is not in line at all, and that
   // is true of a forwarded row Stop paused just as much as of a queued one.
-  if (result.held === true) return { state: 'waiting', reason: 'held' };
+  if (isHeld(result)) return { state: 'waiting', reason: 'held' };
   // Then FORWARDED, above `running`: this is a `succeeded` row, so every branch
   // below would otherwise fall through to `queued` and show a prompt that is
   // already at OpenCode as if it had never been sent.
-  if (result.status === 'forwarded') return { state: 'delivering', reason: 'forwarded' };
+  if (isForwarded(result)) return { state: 'delivering', reason: 'forwarded' };
   // A claim only checks admission. It must not flash Sending during a live turn.
   if (row.status === 'running' && typeof result.delivery_started_at === 'string') {
     return { state: 'delivering', reason: null };

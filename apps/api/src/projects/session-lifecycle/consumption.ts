@@ -6,6 +6,7 @@ import { ORPHANED_PROMPT_MIN_AGE_MS } from '../reaper-constants';
 import { db } from '../../shared/db';
 import { PROMPT_NEVER_RAN_END_REASONS } from './redelivery';
 import { wireMessageIdMatches } from './wire-id-match';
+import { forwardedSql, notStopPausedSql } from './delivery-state';
 
 /**
  * The other end of a FORWARDED prompt.
@@ -122,7 +123,7 @@ const liveDeps: ConsumptionDeps = {
           // and a row already `delivered` is finished, so both are no-ops —
           // which is what makes the call idempotent under two witnesses.
           eq(sessionLifecycleCommands.status, 'succeeded'),
-          sql`${sessionLifecycleCommands.result}->>'status' = 'forwarded'`,
+          forwardedSql,
           // The SAME id predicate every other reader matches on
           // (`wire-id-match.ts`), so none of them can disagree about which row
           // a wire id names. It was NOT the same until 2026-08-20: this one
@@ -180,12 +181,12 @@ const liveDeps: ConsumptionDeps = {
         and(
           eq(sessionLifecycleCommands.commandType, 'continue_session'),
           eq(sessionLifecycleCommands.status, 'succeeded'),
-          sql`${sessionLifecycleCommands.result}->>'status' = 'forwarded'`,
+          forwardedSql,
           // A STOP-PAUSED row is parked by the user, not stranded by a missing
           // witness. Force-closing it would make the prompt they stopped
           // disappear from their queue instead of waiting there for them to
           // send it again.
-          sql`COALESCE(${sessionLifecycleCommands.result}->>'stop_paused', '') <> 'true'`,
+          notStopPausedSql,
           lte(sessionLifecycleCommands.updatedAt, olderThan),
         ),
       )
