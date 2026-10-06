@@ -35,6 +35,10 @@ export const DENY_COMMANDS: Record<string, Denial> = {
   connect: { reason: 'it attaches an interactive terminal to a session', use: 'start_session and send_message' },
   attach: { reason: 'it attaches an interactive terminal to a session', use: 'start_session and send_message' },
   token: { reason: 'it prints the raw access token', use: '`whoami --json` names the user' },
+  capture: {
+    reason: 'Kortix Capture is not on the hosted MCP server; its data is its own API',
+    use: 'the Capture API with a Kortix API key: GET /v1/accounts/<account_id>/capture/… (search, timeline/items, frames, episodes, workflows, exports)',
+  },
 };
 
 /** [command, subcommand] → refusal. */
@@ -51,7 +55,7 @@ export const DENY_SUBCOMMANDS: { path: [string, string]; denial: Denial }[] = [
 /** Top-level commands that run. `whoami --token-only`, `chat` without `--prompt` and `--host` are refused by `denial()`. */
 export const CLI_ALLOWED = [
   'whoami', 'doctor', 'validate', 'schema', 'accounts', 'members', 'groups', 'tokens', 'billing', 'projects',
-  'sessions', 'session', 'chat', 'files', 'cr', 'review', 'triggers', 'reminders', 'remind', 'capture', 'connectors',
+  'sessions', 'session', 'chat', 'files', 'cr', 'review', 'triggers', 'reminders', 'remind', 'connectors',
   'secrets', 'providers', 'env', 'gateway', 'apps', 'channels', 'sandboxes', 'marketplace', 'system-skills',
   'skills', 'registry', 'agents', 'models', 'access', 'roles', 'permissions', 'perms', 'audit', 'grants', 'help', 'version',
 ];

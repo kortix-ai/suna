@@ -516,7 +516,7 @@ describe('forget reaches every derived artifact', () => {
     const [expired] = await db.select().from(captureExports).where(eq(captureExports.exportId, exp!.exportId));
     expect([expired!.status, expired!.objectKey, objects.has(oldKey)]).toEqual(['failed', null, false]);
     expect((await exportJsonl(ACCOUNT, {})).body).not.toContain(MARK);
-    // The search the MCP tools read (account-wide, the forgotten window) finds nothing of it either.
+    // An account-wide search of the forgotten window (the data API) finds nothing of it either.
     const { searchTimeline } = await import('../capture/reads');
     const found = await searchTimeline(ACCOUNT, null, { q: MARK, from: new Date('2026-08-01T00:00:00Z'), to: new Date('2026-10-01T00:00:00Z'), kinds: new Set(['screen', 'actions', 'audio']), limit: 20 });
     expect(found).toEqual([]);
