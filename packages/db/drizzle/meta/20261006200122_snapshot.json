@@ -1,5 +1,5 @@
 {
-  "id": "6f504733-f466-42cd-9a8d-19aa37443c69",
+  "id": "89ccb871-81ed-4c72-8201-80292ab4eb24",
   "prevId": "837652ab-7fa7-482c-961a-1c32ac0c814f",
   "version": "7",
   "dialect": "postgresql",
@@ -14192,6 +14192,40 @@
           ],
           "isUnique": false,
           "where": "\"kortix\".\"project_sessions\".\"origin_ref\" is not null and \"kortix\".\"project_sessions\".\"status\" in ('queued','branching','provisioning','running')",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_project_sessions_trigger_key": {
+          "name": "idx_project_sessions_trigger_key",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "(\"metadata\" ->> 'trigger_slug')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "(\"metadata\" ->> 'trigger_session_key')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "(\"kortix\".\"project_sessions\".\"metadata\" ->> 'trigger_slug') is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}
