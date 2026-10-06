@@ -346,6 +346,42 @@ describe('extractGatewayErrorDetails — a gateway body serialized into data.mes
     expect(details?.code).toBe('provider_not_connected');
     expect(details?.requestId).toBe('req_abc123');
   });
+
+  // The daemon stores a failed turn as `{ name, code, data }`; its `code` is the
+  // daemon's own class (`rate_limit`), not the gateway's. A prod session showed
+  // the whole `429: {…}` body as its error row because that outer `code` was
+  // taken for the envelope.
+  test('the gateway envelope in data.message wins over the daemon code beside it', () => {
+    const body = {
+      message: 'All selected ChatGPT connections are cooling down.',
+      type: 'provider_pool_rate_limited',
+      code: 'provider_pool_rate_limited',
+      provider: '',
+      requested_model: 'codex/gpt-6.1-sol',
+      resolved_model: 'codex/gpt-6.1-sol',
+      request_id: 'req_pool429',
+      suggestion: 'Select a granted ChatGPT connection in session settings.',
+    };
+    const details = extractGatewayErrorDetails({
+      name: 'UnknownError',
+      code: 'rate_limit',
+      data: { message: `429: ${JSON.stringify(body)}`, statusCode: 429 },
+    });
+    expect(details?.message).toBe('All selected ChatGPT connections are cooling down.');
+    expect(details?.code).toBe('provider_pool_rate_limited');
+    expect(details?.suggestion).toBe('Select a granted ChatGPT connection in session settings.');
+    expect(details?.requestId).toBe('req_pool429');
+  });
+
+  test('a daemon error with no envelope inside still reports its own code', () => {
+    const details = extractGatewayErrorDetails({
+      name: 'UnknownError',
+      code: 'rate_limit',
+      data: { message: 'Too many requests', statusCode: 429 },
+    });
+    expect(details?.code).toBe('rate_limit');
+    expect(details?.message).toBe('Too many requests');
+  });
 });
 
 // The AI SDK's `JSONParseError` text when a streamed chunk fails to parse —

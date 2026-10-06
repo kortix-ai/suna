@@ -176,6 +176,7 @@ export function NewWorkspacePage() {
     retry,
     canRetry,
     limitReached,
+    phase,
   } = useCreateWorkspace();
   const openUpgradeDialog = useUpgradeDialogStore((store) => store.openUpgradeDialog);
   const submitting = status === 'creating';
@@ -332,8 +333,11 @@ export function NewWorkspacePage() {
             exit={{ opacity: 0, transition: SWAP_OUT }}
           >
             {/* `state.name` is the form's own state, so the name shown is the
-                one submitted. */}
-            <WorkspaceHandoff workspaceName={state.name.trim()} />
+                one submitted. `phase` is the latest streamed provisioning
+                phase (KRTX-1543): the managed create reports its steps over
+                `/projects/provision-stream` and the handoff renders them;
+                `null` (GitHub sources, fallback) renders the base screen. */}
+            <WorkspaceHandoff workspaceName={state.name.trim()} phase={phase} />
           </m.div>
         ) : (
           <m.div

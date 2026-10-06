@@ -403,109 +403,18 @@ export async function driveProviderTransition(
       leased.baseRuntimeIdentity === current.baseRuntimeIdentity
         ? leased.snapshotName
         : current.snapshotName;
-    // FIX-B: the EXACT external template id a FRESH build proved, threaded from
-    // the provider build (Platinum's requireExternalTemplateId) through
-    // ensureWarmImage. Stays null on the existing-image-reuse path (no build ran)
-    // so the name-list fallback below still covers reuse.
-    let builtExternalTemplateId: string | null = null;
-
-    // ── Build / adopt phase ──────────────────────────────────────────────────
-    let readiness = interpretImageReadiness(await provider.getSnapshotState(snapshotName));
-
-    if (readiness === 'indeterminate') {
-      // Provider couldn't confirm — NEVER read as "missing". Bounded retry.
-      return await recordFailure(deps, leased, new Error('provider state indeterminate (unknown)'), myEpoch);
-    }
-
-    // BUILDING ≠ FAILURE: the image is ALREADY building on the target (a prior
-    // drive, another replica, or an on-push ppwarm bake kicked the same
-    // content-addressed name). Do NOT call ensureWarmImage again (that would
-    // duplicate the build) and do NOT increment attempts — persist `building`
-    // and poll THIS exact image later.
-    if (isHealthyBuildingReadiness(readiness)) {
-      return await recordBuildingOrTimeout(
-        deps,
-        { ...leased, startedAt: leased.startedAt ?? deps.now() },
-        snapshotName,
-        'image already building on target',
-        myEpoch,
-      );
-    }
-
-    const buildStartedAt = leased.startedAt ?? deps.now();
-    if (readiness !== 'ready') {
-      // Persist intent BEFORE the external build call; the content-addressed
-      // snapshot_name is the idempotency key the builder re-checks internally.
-      await mustOwn(updateTransition(deps.db, transitionId, {
-        status: 'building',
-        startedAt: buildStartedAt,
-      }, myEpoch));
-      await writeMarker(deps, leased, 'building', snapshotName);
-      const queueSeconds = (deps.now().getTime() - leased.requestedAt.getTime()) / 1000;
-      emitProviderTransitionEvent('build_started', {
-        target: leased.targetProvider,
-        projectId: leased.projectId,
-        transitionId,
-        snapshotName,
-        queueSeconds,
-      });
-      const buildStart = deps.now().getTime();
-      try {
-        const buildResult = await deps.ensureWarmImage(project, {
-          provider: leased.targetProvider,
-          accountId: leased.accountId,
-          heartbeat: heartbeatCb,
-          snapshotName,
-        });
-        // FIX-B: keep the id the build PROVED (never re-derive it by name below).
-        builtExternalTemplateId = buildResult.externalTemplateId ?? null;
-      } catch (err) {
-        // A heartbeat inside the build wait detected a lost lease → cease silently.
-        if (err instanceof LeaseLostError) throw err;
-        return await recordFailure(deps, leased, err, myEpoch);
-      }
-      const buildSeconds = (deps.now().getTime() - buildStart) / 1000;
-      // Confirm the provider actually has it now (never trust the builder's word
-      // alone — GET the truth).
-      readiness = interpretImageReadiness(await provider.getSnapshotState(snapshotName));
-      // A provider still reporting `building` after ensureWarmImage returned is a
-      // HEALTHY async build in flight (Platinum registers a build then completes
-      // it out of band, well past this drive's deadline). Persist `building` and
-      // poll the exact image WITHOUT consuming an attempt — the whole point of
-      // BUILDING ≠ FAILURE. Only absent/failed/indeterminate count as failures.
-      if (isHealthyBuildingReadiness(readiness)) {
-        return await recordBuildingOrTimeout(
-          deps,
-          { ...leased, startedAt: buildStartedAt },
-          snapshotName,
-          `build in progress (state=${readiness})`,
-          myEpoch,
-        );
-      }
-      if (readiness !== 'ready') {
-        return await recordFailure(
-          deps,
-          leased,
-          new Error(`image ${snapshotName} not ready after build (state=${readiness})`),
-          myEpoch,
-        );
-      }
-      emitProviderTransitionEvent('build_succeeded', {
-        target: leased.targetProvider,
-        projectId: leased.projectId,
-        transitionId,
-        snapshotName,
-        buildSeconds,
-      });
-    } else {
-      // Image already active on the provider → no rebuild (scenario 2).
-      emitProviderTransitionEvent('existing_image_reused', {
-        target: leased.targetProvider,
-        projectId: leased.projectId,
-        transitionId,
-        snapshotName,
-      });
-    }
+    const drive: LeasedDrive = {
+      deps,
+      transitionId,
+      leased,
+      myEpoch,
+      project,
+      provider,
+      snapshotName,
+    };
+    const prepared = await prepareTargetImage(drive, heartbeatCb);
+    if ('outcome' in prepared) return prepared.outcome;
+    const { builtExternalTemplateId } = prepared;
 
     // Record the exact external template id + mark ready.
     // FIX-B: consume the id the FRESH build proved (threaded from the provider
@@ -548,144 +457,7 @@ export async function driveProviderTransition(
       return 'prebuilt';
     }
 
-    // ── Verify (re-read the world) + activate ────────────────────────────────
-    const fresh = await getTransition(deps.db, transitionId);
-    if (!fresh || fresh.status !== 'ready' && fresh.status !== 'activating') return 'superseded';
-    const current2 = await deps.resolvePrepIdentity(project, leased.targetProvider);
-    const maxLive2 = await maxLiveSwitchGeneration(deps.db, leased.projectId);
-    // Red-team #5: verify the EXACT external template id we captured, immediately
-    // before activation. Reading the exact provider row BY ID can't be fooled by
-    // the truncated name-list pagination getSnapshotState relies on, so a GC'd
-    // image or a wrong/idempotently-reused name surfaces as 'absent' ⇒ rebuild,
-    // never a stale-name activation. Fall back to the name-based state only for
-    // providers (or fakes) without the by-id method, or when we hold no id yet.
-    const verifyReadiness: ImageReadiness =
-      externalTemplateId && provider.getSnapshotStateByExternalId
-        ? interpretImageReadiness(
-            await provider.getSnapshotStateByExternalId(externalTemplateId).catch(() => 'unknown'),
-          )
-        : interpretImageReadiness(await provider.getSnapshotState(snapshotName));
-    const decision = decideActivation({
-      cancelled: false,
-      supersededByNewer:
-        leased.generation != null && isSupersededByGeneration(leased.generation, maxLive2),
-      tipMatches: current2.commitSha === leased.commitSha,
-      runtimeMatches: current2.baseRuntimeIdentity === leased.baseRuntimeIdentity,
-      imageReadiness: verifyReadiness,
-    });
-
-    if (decision === 'rebuild') return await forkNewIdentity(deps, leased, current2, myEpoch);
-    if (decision === 'supersede') {
-      await mustOwn(updateTransition(deps.db, transitionId, { status: 'superseded', heartbeatAt: null }, myEpoch));
-      emitProviderTransitionEvent('stale_build_superseded', {
-        target: leased.targetProvider,
-        projectId: leased.projectId,
-        transitionId,
-      });
-      return 'superseded';
-    }
-    if (decision === 'wait' || decision === 'cancelled') {
-      // A `building` image at verify is a HEALTHY async build still completing —
-      // re-poll it (bounded by the wall-clock), NEVER consume an attempt. Only an
-      // indeterminate / cancelled verify falls back to a bounded retry.
-      if (verifyReadiness === 'building') {
-        return await recordBuildingOrTimeout(
-          deps,
-          { ...leased, startedAt: leased.startedAt ?? deps.now() },
-          snapshotName,
-          'image still building at verify',
-          myEpoch,
-        );
-      }
-      return await recordFailure(deps, leased, new Error('image not confirmed ready at verify'), myEpoch);
-    }
-
-    // decision === 'activate' — pin the EXACT id we just verified, NOT a
-    // name-re-resolved one (which could resolve to a different/newer row).
-    await mustOwn(updateTransition(deps.db, transitionId, { status: 'activating' }, myEpoch));
-    const result = await activateWithCas(deps.db, {
-      projectId: leased.projectId,
-      transitionId,
-      targetProvider: leased.targetProvider,
-      generation: leased.generation!,
-      snapshotName,
-      externalTemplateId,
-      now: deps.now(),
-      leaseEpoch: myEpoch,
-    });
-    if (result.activated) {
-      emitProviderTransitionEvent('activation_completed', {
-        target: leased.targetProvider,
-        source: leased.sourceProvider,
-        projectId: leased.projectId,
-        transitionId,
-        generation: leased.generation!,
-        snapshotName,
-        externalTemplateId,
-        timeToReadySeconds,
-      });
-      // FIX-M1: the switch just activated on the DEFAULT template's warm image.
-      // If this project also declares custom (non-default-slug) templates, those
-      // were deliberately NOT pre-baked for the target (Fable REJECTS a blocking
-      // prepare-all — a broken/unused custom template would wedge the project
-      // forever). Their first boot after the switch is a known COLD boot; emit a
-      // distinct event so it's observable. Best-effort — never fail an already-
-      // committed activation on the visibility check. (Async best-effort custom
-      // bakes are a documented FOLLOW-UP; see resolvePrepIdentity's TODO.)
-      if (deps.hasCustomTemplates) {
-        const custom = await deps.hasCustomTemplates(project).catch(() => false);
-        if (custom) {
-          emitProviderTransitionEvent('custom_template_cold_boot', {
-            target: leased.targetProvider,
-            source: leased.sourceProvider,
-            projectId: leased.projectId,
-            transitionId,
-            generation: leased.generation!,
-          });
-        }
-      }
-      return 'activated';
-    }
-    if (result.reason === 'lost_cas') {
-      emitProviderTransitionEvent('activation_lost_cas', {
-        target: leased.targetProvider,
-        projectId: leased.projectId,
-        transitionId,
-        generation: leased.generation!,
-      });
-      return 'lost_cas';
-    }
-    // Fenced out at activation (a newer owner re-acquired at the SAME generation) —
-    // the pin was NOT touched. Cease silently; the current owner activates.
-    if (result.reason === 'lost_lease') return 'not_leased';
-    if (result.reason === 'project_archived') {
-      await provider.deleteSnapshot(snapshotName).catch((error) =>
-        console.warn(
-          `[provider-transition] could not delete ${snapshotName} after project ` +
-            `${leased.projectId} was archived during activation:`,
-          error instanceof Error ? error.message : String(error),
-        ),
-      );
-      await mustOwn(
-        failTransition(
-          deps.db,
-          transitionId,
-          {
-            attempts: leased.attempts ?? 0,
-            lastError: 'project archived during activation',
-            errorClass: 'gone',
-          },
-          myEpoch,
-        ),
-      );
-      return 'gone';
-    }
-    await mustOwn(failTransition(deps.db, transitionId, {
-      attempts: (leased.attempts ?? 0) + 1,
-      lastError: 'project missing at activation',
-      errorClass: 'gone',
-    }, myEpoch));
-    return 'gone';
+    return await verifyAndActivate(drive, externalTemplateId, timeToReadySeconds);
   } catch (err) {
     // Lost the lease mid-drive (a fenced write matched 0 rows, or a build-wait
     // heartbeat detected revocation) → cease SILENTLY: no error, no failTransition.
@@ -696,6 +468,282 @@ export async function driveProviderTransition(
     const fresh = (await getTransition(deps.db, transitionId).catch(() => null)) ?? leased;
     return await recordFailure(deps, fresh, err, myEpoch);
   }
+}
+
+/** One leased drive, once its project and the target image name are resolved. */
+interface LeasedDrive {
+  deps: TransitionDeps;
+  transitionId: string;
+  leased: ProviderTransitionRow;
+  myEpoch: number;
+  project: NonNullable<Awaited<ReturnType<TransitionDeps['loadProject']>>>;
+  provider: ReturnType<TransitionDeps['getProvider']>;
+  snapshotName: string;
+}
+
+/**
+ * Build or adopt the target image. Returns the external template id a fresh
+ * build proved, or the drive's outcome when the image is not ready yet.
+ */
+async function prepareTargetImage(
+  { deps, transitionId, leased, myEpoch, project, provider, snapshotName }: LeasedDrive,
+  heartbeatCb: () => Promise<void>,
+): Promise<{ outcome: DriveOutcome } | { builtExternalTemplateId: string | null }> {
+  // FIX-B: the EXACT external template id a FRESH build proved, threaded from
+  // the provider build (Platinum's requireExternalTemplateId) through
+  // ensureWarmImage. Stays null on the existing-image-reuse path (no build ran)
+  // so the name-list fallback below still covers reuse.
+  let builtExternalTemplateId: string | null = null;
+
+  // ── Build / adopt phase ──────────────────────────────────────────────────
+  let readiness = interpretImageReadiness(await provider.getSnapshotState(snapshotName));
+
+  if (readiness === 'indeterminate') {
+    // Provider couldn't confirm — NEVER read as "missing". Bounded retry.
+    return { outcome: await recordFailure(deps, leased, new Error('provider state indeterminate (unknown)'), myEpoch) };
+  }
+
+  // BUILDING ≠ FAILURE: the image is ALREADY building on the target (a prior
+  // drive, another replica, or an on-push ppwarm bake kicked the same
+  // content-addressed name). Do NOT call ensureWarmImage again (that would
+  // duplicate the build) and do NOT increment attempts — persist `building`
+  // and poll THIS exact image later.
+  if (isHealthyBuildingReadiness(readiness)) {
+    return {
+      outcome: await recordBuildingOrTimeout(
+        deps,
+        { ...leased, startedAt: leased.startedAt ?? deps.now() },
+        snapshotName,
+        'image already building on target',
+        myEpoch,
+      ),
+    };
+  }
+
+  const buildStartedAt = leased.startedAt ?? deps.now();
+  if (readiness !== 'ready') {
+    // Persist intent BEFORE the external build call; the content-addressed
+    // snapshot_name is the idempotency key the builder re-checks internally.
+    await mustOwn(updateTransition(deps.db, transitionId, {
+      status: 'building',
+      startedAt: buildStartedAt,
+    }, myEpoch));
+    await writeMarker(deps, leased, 'building', snapshotName);
+    const queueSeconds = (deps.now().getTime() - leased.requestedAt.getTime()) / 1000;
+    emitProviderTransitionEvent('build_started', {
+      target: leased.targetProvider,
+      projectId: leased.projectId,
+      transitionId,
+      snapshotName,
+      queueSeconds,
+    });
+    const buildStart = deps.now().getTime();
+    try {
+      const buildResult = await deps.ensureWarmImage(project, {
+        provider: leased.targetProvider,
+        accountId: leased.accountId,
+        heartbeat: heartbeatCb,
+        snapshotName,
+      });
+      // FIX-B: keep the id the build PROVED (never re-derive it by name below).
+      builtExternalTemplateId = buildResult.externalTemplateId ?? null;
+    } catch (err) {
+      // A heartbeat inside the build wait detected a lost lease → cease silently.
+      if (err instanceof LeaseLostError) throw err;
+      return { outcome: await recordFailure(deps, leased, err, myEpoch) };
+    }
+    const buildSeconds = (deps.now().getTime() - buildStart) / 1000;
+    // Confirm the provider actually has it now (never trust the builder's word
+    // alone — GET the truth).
+    readiness = interpretImageReadiness(await provider.getSnapshotState(snapshotName));
+    // A provider still reporting `building` after ensureWarmImage returned is a
+    // HEALTHY async build in flight (Platinum registers a build then completes
+    // it out of band, well past this drive's deadline). Persist `building` and
+    // poll the exact image WITHOUT consuming an attempt — the whole point of
+    // BUILDING ≠ FAILURE. Only absent/failed/indeterminate count as failures.
+    if (isHealthyBuildingReadiness(readiness)) {
+      return {
+        outcome: await recordBuildingOrTimeout(
+          deps,
+          { ...leased, startedAt: buildStartedAt },
+          snapshotName,
+          `build in progress (state=${readiness})`,
+          myEpoch,
+        ),
+      };
+    }
+    if (readiness !== 'ready') {
+      return {
+        outcome: await recordFailure(
+          deps,
+          leased,
+          new Error(`image ${snapshotName} not ready after build (state=${readiness})`),
+          myEpoch,
+        ),
+      };
+    }
+    emitProviderTransitionEvent('build_succeeded', {
+      target: leased.targetProvider,
+      projectId: leased.projectId,
+      transitionId,
+      snapshotName,
+      buildSeconds,
+    });
+  } else {
+    // Image already active on the provider → no rebuild (scenario 2).
+    emitProviderTransitionEvent('existing_image_reused', {
+      target: leased.targetProvider,
+      projectId: leased.projectId,
+      transitionId,
+      snapshotName,
+    });
+  }
+  return { builtExternalTemplateId };
+}
+
+/** Re-read the world, then activate the verified image or settle why it cannot be. */
+async function verifyAndActivate(
+  { deps, transitionId, leased, myEpoch, project, provider, snapshotName }: LeasedDrive,
+  externalTemplateId: string | null,
+  timeToReadySeconds: number,
+): Promise<DriveOutcome> {
+  const fresh = await getTransition(deps.db, transitionId);
+  if (!fresh || fresh.status !== 'ready' && fresh.status !== 'activating') return 'superseded';
+  const current2 = await deps.resolvePrepIdentity(project, leased.targetProvider);
+  const maxLive2 = await maxLiveSwitchGeneration(deps.db, leased.projectId);
+  // Red-team #5: verify the EXACT external template id we captured, immediately
+  // before activation. Reading the exact provider row BY ID can't be fooled by
+  // the truncated name-list pagination getSnapshotState relies on, so a GC'd
+  // image or a wrong/idempotently-reused name surfaces as 'absent' ⇒ rebuild,
+  // never a stale-name activation. Fall back to the name-based state only for
+  // providers (or fakes) without the by-id method, or when we hold no id yet.
+  const verifyReadiness: ImageReadiness =
+    externalTemplateId && provider.getSnapshotStateByExternalId
+      ? interpretImageReadiness(
+          await provider.getSnapshotStateByExternalId(externalTemplateId).catch(() => 'unknown'),
+        )
+      : interpretImageReadiness(await provider.getSnapshotState(snapshotName));
+  const decision = decideActivation({
+    cancelled: false,
+    supersededByNewer:
+      leased.generation != null && isSupersededByGeneration(leased.generation, maxLive2),
+    tipMatches: current2.commitSha === leased.commitSha,
+    runtimeMatches: current2.baseRuntimeIdentity === leased.baseRuntimeIdentity,
+    imageReadiness: verifyReadiness,
+  });
+
+  if (decision === 'rebuild') return await forkNewIdentity(deps, leased, current2, myEpoch);
+  if (decision === 'supersede') {
+    await mustOwn(updateTransition(deps.db, transitionId, { status: 'superseded', heartbeatAt: null }, myEpoch));
+    emitProviderTransitionEvent('stale_build_superseded', {
+      target: leased.targetProvider,
+      projectId: leased.projectId,
+      transitionId,
+    });
+    return 'superseded';
+  }
+  if (decision === 'wait' || decision === 'cancelled') {
+    // A `building` image at verify is a HEALTHY async build still completing —
+    // re-poll it (bounded by the wall-clock), NEVER consume an attempt. Only an
+    // indeterminate / cancelled verify falls back to a bounded retry.
+    if (verifyReadiness === 'building') {
+      return await recordBuildingOrTimeout(
+        deps,
+        { ...leased, startedAt: leased.startedAt ?? deps.now() },
+        snapshotName,
+        'image still building at verify',
+        myEpoch,
+      );
+    }
+    return await recordFailure(deps, leased, new Error('image not confirmed ready at verify'), myEpoch);
+  }
+
+  // decision === 'activate' — pin the EXACT id we just verified, NOT a
+  // name-re-resolved one (which could resolve to a different/newer row).
+  await mustOwn(updateTransition(deps.db, transitionId, { status: 'activating' }, myEpoch));
+  const result = await activateWithCas(deps.db, {
+    projectId: leased.projectId,
+    transitionId,
+    targetProvider: leased.targetProvider,
+    generation: leased.generation!,
+    snapshotName,
+    externalTemplateId,
+    now: deps.now(),
+    leaseEpoch: myEpoch,
+  });
+  if (result.activated) {
+    emitProviderTransitionEvent('activation_completed', {
+      target: leased.targetProvider,
+      source: leased.sourceProvider,
+      projectId: leased.projectId,
+      transitionId,
+      generation: leased.generation!,
+      snapshotName,
+      externalTemplateId,
+      timeToReadySeconds,
+    });
+    // FIX-M1: the switch just activated on the DEFAULT template's warm image.
+    // If this project also declares custom (non-default-slug) templates, those
+    // were deliberately NOT pre-baked for the target (Fable REJECTS a blocking
+    // prepare-all — a broken/unused custom template would wedge the project
+    // forever). Their first boot after the switch is a known COLD boot; emit a
+    // distinct event so it's observable. Best-effort — never fail an already-
+    // committed activation on the visibility check. (Async best-effort custom
+    // bakes are a documented FOLLOW-UP; see resolvePrepIdentity's TODO.)
+    if (deps.hasCustomTemplates) {
+      const custom = await deps.hasCustomTemplates(project).catch(() => false);
+      if (custom) {
+        emitProviderTransitionEvent('custom_template_cold_boot', {
+          target: leased.targetProvider,
+          source: leased.sourceProvider,
+          projectId: leased.projectId,
+          transitionId,
+          generation: leased.generation!,
+        });
+      }
+    }
+    return 'activated';
+  }
+  if (result.reason === 'lost_cas') {
+    emitProviderTransitionEvent('activation_lost_cas', {
+      target: leased.targetProvider,
+      projectId: leased.projectId,
+      transitionId,
+      generation: leased.generation!,
+    });
+    return 'lost_cas';
+  }
+  // Fenced out at activation (a newer owner re-acquired at the SAME generation) —
+  // the pin was NOT touched. Cease silently; the current owner activates.
+  if (result.reason === 'lost_lease') return 'not_leased';
+  if (result.reason === 'project_archived') {
+    await provider.deleteSnapshot(snapshotName).catch((error) =>
+      console.warn(
+        `[provider-transition] could not delete ${snapshotName} after project ` +
+          `${leased.projectId} was archived during activation:`,
+        error instanceof Error ? error.message : String(error),
+      ),
+    );
+    await mustOwn(
+      failTransition(
+        deps.db,
+        transitionId,
+        {
+          attempts: leased.attempts ?? 0,
+          lastError: 'project archived during activation',
+          errorClass: 'gone',
+        },
+        myEpoch,
+      ),
+    );
+    return 'gone';
+  }
+  await mustOwn(failTransition(deps.db, transitionId, {
+    attempts: (leased.attempts ?? 0) + 1,
+    lastError: 'project missing at activation',
+    errorClass: 'gone',
+  }, myEpoch));
+  return 'gone';
 }
 
 async function writeMarker(

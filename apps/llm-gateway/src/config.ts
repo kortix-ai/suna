@@ -32,6 +32,7 @@ export const config = {
   port: optionalInt('PORT', 8090),
   apiUrl: required('KORTIX_API_URL'),
   apiToken: requiredApiToken(),
+  internalEdgeKey: process.env.KORTIX_INTERNAL_EDGE_KEY || undefined,
   langfuse: {
     publicKey: process.env.LANGFUSE_PUBLIC_KEY,
     secretKey: process.env.LANGFUSE_SECRET_KEY,

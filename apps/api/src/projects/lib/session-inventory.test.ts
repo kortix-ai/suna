@@ -596,6 +596,13 @@ describe('session list cursor', () => {
     expect(decoded?.updatedAt.toISOString()).toBe(updatedAt.toISOString());
   });
 
+  test('keeps the microsecond position the database printed', () => {
+    const updatedAt = new Date('2026-09-16T10:11:12.345Z');
+    const updatedAtIso = '2026-09-16T10:11:12.345678Z';
+    const decoded = decodeSessionCursor(encodeSessionCursor({ updatedAt, updatedAtIso, sessionId: 'S1' }, SCOPE), SCOPE);
+    expect(decoded?.updatedAtIso).toBe(updatedAtIso);
+  });
+
   test('is URL-safe — it travels in a query string', () => {
     const encoded = encodeSessionCursor(
       { updatedAt: new Date('2026-09-16T10:11:12.345Z'), sessionId: 'S1' },

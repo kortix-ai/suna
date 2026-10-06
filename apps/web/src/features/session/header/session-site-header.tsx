@@ -285,36 +285,40 @@ export function SessionSiteHeader({
             </>
           )}
 
-          <DropdownMenuItem
-            className="cursor-pointer"
-            disabled={restartMutation.isPending}
-            onClick={() => restartMutation.mutate()}
-          >
-            {restartMutation.isPending ? <Loading /> : <RotateCcw />}
-            {tI18nHardcoded.raw('i18nComplete.text6b983a81e5e8')}
-          </DropdownMenuItem>
+          {/* Restart, Reload, Stop and Delete belong to the session owner or
+              a project manager: the server answers anyone else 403. */}
           {canManageLifecycle && (
-            <DropdownMenuItem
-              className="cursor-pointer"
-              disabled={reloadConfig.isPending}
-              onClick={() => reloadConfig.reload()}
-            >
-              {reloadConfig.isPending ? <Loading /> : <ArrowsClockwiseIcon />}
-              {tI18nHardcoded.raw('i18nComplete.textb4b21a20cc58')}
-            </DropdownMenuItem>
-          )}
-          {canStop && (
-            <DropdownMenuItem
-              className="cursor-pointer"
-              disabled={stopMutation.isPending}
-              onClick={() => stopMutation.mutate()}
-            >
-              {stopMutation.isPending ? <Loading /> : <Square />}
-              {tI18nHardcoded.raw('i18nComplete.textcae7d57bc067')}
-            </DropdownMenuItem>
-          )}
+            <>
+              <DropdownMenuItem
+                className="cursor-pointer"
+                disabled={restartMutation.isPending}
+                onClick={() => restartMutation.mutate()}
+              >
+                {restartMutation.isPending ? <Loading /> : <RotateCcw />}
+                {tI18nHardcoded.raw('i18nComplete.text6b983a81e5e8')}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="cursor-pointer"
+                disabled={reloadConfig.isPending}
+                onClick={() => reloadConfig.reload()}
+              >
+                {reloadConfig.isPending ? <Loading /> : <ArrowsClockwiseIcon />}
+                {tI18nHardcoded.raw('i18nComplete.textb4b21a20cc58')}
+              </DropdownMenuItem>
+              {canStop && (
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  disabled={stopMutation.isPending}
+                  onClick={() => stopMutation.mutate()}
+                >
+                  {stopMutation.isPending ? <Loading /> : <Square />}
+                  {tI18nHardcoded.raw('i18nComplete.textcae7d57bc067')}
+                </DropdownMenuItem>
+              )}
 
-          <DropdownMenuSeparator />
+              <DropdownMenuSeparator />
+            </>
+          )}
         </>
       )}
 
@@ -388,7 +392,7 @@ export function SessionSiteHeader({
         </DropdownMenuItem>
       )}
 
-      {isProjectSession && (
+      {isProjectSession && canManageLifecycle && (
         <>
           <DropdownMenuSeparator />
 

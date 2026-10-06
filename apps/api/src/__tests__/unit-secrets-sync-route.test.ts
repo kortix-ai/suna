@@ -82,7 +82,7 @@ mock.module('../projects/lib/session-token-grant', () => ({
 }));
 
 const { projectsApp } = await import('../projects/lib/app');
-await import('../projects/routes/secrets');
+(await import('../projects/routes/secrets')).registerSecretsRoutes();
 
 type Caller = { sessionId?: string; agentGrant?: Record<string, unknown> | null; authType?: string };
 
