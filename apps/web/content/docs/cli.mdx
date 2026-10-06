@@ -338,7 +338,7 @@ The local coding-tool selection does not change the cloud OpenCode runtime.
 `kortix ship` stages, commits, and pushes your current branch to the project's git repo. Run it once to create the project. Run it again any time to sync. Alias: `kortix deploy`.
 
 Each run:
-- Parses and validates `kortix.yaml`, merged with every file it lists under [`imports:`](/docs/project/manifest#imports) (skip with `--no-verify`).
+- Runs the [`kortix validate`](#manifest-validation) checks: `kortix.yaml` merged with every file it lists under [`imports:`](/docs/project/manifest#imports), sandbox Dockerfiles, agent wiring, and repository size (skip with `--no-verify`). An error stops the ship. A warning never does.
 - Commits any dirty working tree (skip with `--no-commit`).
 - Prompts for any missing `env` secret (skip with `--no-env`).
 - Pushes the current branch to the same-named remote branch.
@@ -939,10 +939,19 @@ an assignment names them or one of their groups. `kortix access grant --agent
 
 | Command | Effect |
 | --- | --- |
-| `kortix validate [--file <path>] [--json] [--scopes]` | Validate the manifest against the canonical schema. Resolves `kortix.yaml` first, then `kortix.toml`. Exit codes: `0` valid, `1` errors, `2` file missing. |
+| `kortix validate [--file <path>] [--json] [--scopes] [--no-dockerfile-lint]` | Validate the manifest against the canonical schema, lint every sandbox Dockerfile and the agent wiring, and check the repository size. Resolves `kortix.yaml` first, then `kortix.toml`. Exit codes: `0` valid (warnings may be present), `1` errors, `2` file missing. `kortix ship` runs the same checks. |
 | `kortix schema [--version 1\|2] [--url]` | Print the manifest's JSON Schema. `--url` prints the schema URL instead. |
 
 See [Manifest reference](/docs/project/manifest).
+
+#### Repository size
+
+A session builds its [agent config](/docs/work/runtime) from every file Git tracks at the base commit. A build over 32 MiB compressed or 128 MiB uncompressed fails, and the session runs the platform default config. `kortix validate` counts the files Git stores, plus the untracked files `kortix ship` commits next, and prints a warning when one file is 10 MiB or more or the total is over 32 MiB. A Git LFS file counts as its pointer, because the release holds only the pointer. The warning names the largest files. It never fails the command.
+
+To clear it:
+- Move big static assets (video, images, datasets, model weights) to object storage such as S3, R2, or GCS, or a CDN, and download them at runtime.
+- Add build output (`dist/`, `out/`) to `.gitignore`.
+- For a path that must stay in Git but that no agent reads, add `<path> export-ignore` to `.gitattributes`. The release leaves it out, and so does the check.
 
 ### Self-host
 
