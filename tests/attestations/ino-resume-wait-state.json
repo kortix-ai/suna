@@ -1,6 +1,10 @@
 {
-  "source_hash": "6f64c8e244b4401bc3da2cbde4e61eaf2f60cc29cb6ceba85c3a0da525eb23d8",
+  "source_hash": "a334f83d453b5e9bd7c586a9caa76e553140956b2a15c01fc9d5d10d5b456713",
   "diff_files": [
+    "apps/api/src/iam/cache-invalidation.ts",
+    "apps/api/src/shared/preview-ownership.ts",
+    "apps/api/src/shared/principal-scoped-memos.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/kortix-namespace-auth-boundary.test.ts",
     "apps/web/src/app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx",
     "apps/web/src/app/[locale]/(system)/debug/session-wake/page.tsx",
     "apps/web/src/features/session/session-resume.test.ts",
@@ -10,13 +14,13 @@
     "apps/web/src/lib/seo/content-timestamps.json",
     "tests/unit/vitest.config.ts"
   ],
-  "diff_hash": "55c466d42bebaf95540403a39d3fbbdc2853b93db0a4b386a8b8b53a2480295a",
-  "head": "8f0af5ed33f289560c7c73dd7fc933f1b4f93058",
+  "diff_hash": "5a825950a8f2003a110b4e41346bd2d121f9c092655a57f19aad256db8c469a1",
+  "head": "e5c77b8c9a5cea87a111b63e0f373c9f90ee0728",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-06T18:05:29.890Z"
+  "at": "2026-10-06T19:29:45.539Z"
 }
