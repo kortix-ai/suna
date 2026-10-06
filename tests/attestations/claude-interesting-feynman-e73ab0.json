@@ -1,0 +1,19 @@
+{
+  "source_hash": "10f6465732c41db82bd21e58982bf2f77207a027b76559220ec1e74dfd9451fa",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-06T131737Z-verify-an-environment-s-web-gate-with-that-environment-s-own.md",
+    ".github/workflows/deploy-dev.yml",
+    "infra/GITOPS.md",
+    "tests/unit/web-ecs-workflow.test.ts"
+  ],
+  "diff_hash": "57e445a8b05de4d20227f715b39fa7916515bac34a798c8d942fdb880f7611e5",
+  "head": "17e6884b6d108960fa8eb50a2231d29e7e82b0d2",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-06T13:35:22.598Z"
+}
