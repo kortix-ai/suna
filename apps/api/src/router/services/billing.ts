@@ -1,4 +1,4 @@
-import { debitAndCheckAutoTopup } from '../../billing/services/wallet-debits';
+import { debitAndCheckAutoTopup, settleAndCheckAutoTopup } from '../../billing/services/wallet-debits';
 import { config, getToolCost } from '../../config';
 
 import { creditGateExemptEnv } from './credit-gate-env';
@@ -146,4 +146,36 @@ export async function deductLLMCredits(
     newBalance: result.balance || 0,
     transactionId: result.transactionId,
   };
+}
+
+/**
+ * Record LLM spend that already happened upstream. SETTLEMENT, not admission:
+ * the wallet takes the amount even when the balance cannot cover it (the
+ * balance goes negative). An admission debit would refuse it on a drained
+ * wallet and the spend would leave no ledger row. Used for the amount above
+ * the reservation, and for the whole charge when nothing was reserved.
+ */
+export async function settleLLMCredits(
+  accountId: string,
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+  amount: number,
+): Promise<BillingDeductResult> {
+  if (amount <= 0 || !config.KORTIX_BILLING_INTERNAL_ENABLED || creditGateExemptEnv()) {
+    return { success: true, cost: 0, newBalance: 0 };
+  }
+  try {
+    const result = await settleAndCheckAutoTopup({
+      accountId,
+      amount,
+      description: `LLM: ${model} (${inputTokens}/${outputTokens} tokens)`,
+      kind: 'llm_debit',
+      key: null,
+    });
+    return { success: true, cost: result.amount, newBalance: result.balance, transactionId: result.transactionId };
+  } catch (err) {
+    console.error('[BILLING] router settlement failed:', err);
+    return { success: false, cost: 0, newBalance: 0, error: 'Settlement error' };
+  }
 }

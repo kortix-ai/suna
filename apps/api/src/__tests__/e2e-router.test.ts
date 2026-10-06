@@ -147,6 +147,7 @@ mock.module('../router/services/billing', () => ({
   checkCredits: async (accountId: string, min?: number, opts?: any) => mockCheckCreditsResult,
   deductToolCredits: async (...args: any[]) => mockDeductResult,
   deductLLMCredits: async (...args: any[]) => mockDeductResult,
+  settleLLMCredits: async (...args: any[]) => mockDeductResult,
 }));
 
 mock.module('../router/services/llm-reservation', () => ({
@@ -164,6 +165,7 @@ mock.module('../router/services/llm-reservation', () => ({
   },
   settleLlmReservation: async () => undefined,
   refundLlmReservation: async () => undefined,
+  settleHeldLlmReservation: async () => undefined,
 }));
 
 mock.module('../router/services/llm', () => ({
