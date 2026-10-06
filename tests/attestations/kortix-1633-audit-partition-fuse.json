@@ -1,11 +1,19 @@
 {
-  "source_hash": "e9447d5e3c41d4c6ab45f692a1453221fc43fca188844dc86cc52a220d0f5658",
-  "head": "57f676ae0c22b84ab970ddaae59e03c03aed8d85",
+  "source_hash": "c27d67e2fda5d141e63637127019b89a334387202767952562842b9099e96428",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-06T204658Z-key-a-cached-migrated-database-on-every-clock-input-its-migr.md",
+    "apps/api/src/shared/audit-partition-worker.integration.test.ts",
+    "tests/src/core/db-suites.ts",
+    "tests/unit/db-suites.test.ts"
+  ],
+  "diff_hash": "788466db511b7be8d0a8d08e72cdf50fc26003c306670dba30bef7e2a0b016f1",
+  "head": "37022cea2da6452deedd16a043c3aa1df93a0f28",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-06T20:53:12.938Z"
+  "at": "2026-10-06T20:58:46.797Z"
 }
