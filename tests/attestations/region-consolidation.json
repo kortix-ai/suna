@@ -1,26 +1,25 @@
 {
-  "source_hash": "7f4e8e974563dd6270eac6231c2fa0a0b1274f69d68f730bc2f8e0cdc0810ff4",
+  "source_hash": "2506eb7e95e2a32b994d91d3a8644e636586df5ea5dba24d5ad912d58051e6f3",
   "diff_files": [
-    ".github/workflows/deploy-dev.yml",
-    "apps/api/eslint-suppressions.json",
-    "apps/api/src/git-proxy/project-snapshot-build.ts",
-    "apps/api/src/git-proxy/project-snapshot-ledger.ts",
-    "apps/api/src/git-proxy/project-snapshot-shared.ts",
-    "apps/api/src/projects/git-ref.ts",
-    "apps/api/src/shared/git-ref.ts",
+    ".github/workflows/deploy-staging.yml",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "infra/cloudflare/workers/api-router/worker.mjs",
     "infra/cloudflare/workers/api-router/worker.test.mjs",
     "infra/cloudflare/workers/api-router/wrangler.toml",
     "infra/scripts/sync-web-env.sh",
-    "infra/terraform/environments/dev-us-east-2/README.md",
-    "infra/terraform/security-baseline/iam-gha-ecs-deploy.tf"
+    "infra/terraform/environments/staging-eu-west-2/README.md",
+    "infra/terraform/environments/staging-eu-west-2/main.tf",
+    "infra/terraform/environments/staging-eu-west-2/variables.tf",
+    "infra/terraform/security-baseline/iam-gha-ecs-deploy.tf",
+    "tests/unit/staging-secret-workflow.test.ts"
   ],
-  "diff_hash": "1b1c36c08cea1e64926b8ba3f48a021ca9e219841aa3063280183973c54390e8",
-  "head": "9f6d24bae0dc998136a52e879da656d1f8fbb6f6",
+  "diff_hash": "aa471bf3106fe61b5c2be51d81196c13c1fb3a97b076e0e1a75cbbbd3a95dd46",
+  "head": "520618d4b86564a93cac7f0d46f9fbf0f6b6a832",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-06T13:21:09.899Z"
+  "at": "2026-10-06T14:35:04.320Z"
 }
