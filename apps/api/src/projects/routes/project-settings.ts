@@ -227,7 +227,6 @@ export function registerProjectSettingsRoutes(): void {
       ...auth,
         request: {
           params: z.object({ projectId: z.string() }),
-          query: z.object({ purge: z.enum(['true', 'false']).optional() }),
         },
       responses: {
           200: json(z.any(), 'OK'),
@@ -243,25 +242,22 @@ export function registerProjectSettingsRoutes(): void {
     // members through via project.write.
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DELETE);
 
-    // Release prompt attachments first. After the irreversible purge below, a
+    // Release prompt attachments first. After the repository deletion below, a
     // failed release would leave an active project without its repository; after
     // the archive, the project answers 404, so a release could never be retried.
     const { releasePromptAttachmentsForProject } = await import('../prompt-attachments');
     await releasePromptAttachmentsForProject(projectId);
 
-    // Archiving is recoverable by default. Only an explicit purge permanently
-    // deletes a Kortix-managed upstream; user-connected/BYO repositories are
-    // always left untouched. Delete before hiding the project so provider
-    // failures remain visible and retryable.
-    const purge = c.req.query('purge') === 'true';
-    let repoDeleted = false;
-    if (purge) {
-      try {
-        repoDeleted = await deleteManagedProjectRepo(loaded.row);
-      } catch (error) {
-        console.error(`[projects] failed to delete managed repo for ${projectId}:`, error);
-        return c.json({ error: 'Failed to delete managed project repository' }, 502);
-      }
+    // Deleting the project deletes the Kortix-managed upstream with it; the
+    // helper no-ops for user-connected/BYO repositories and never touches
+    // them. Delete before hiding the project so provider failures remain
+    // visible and retryable.
+    let repoDeleted: boolean;
+    try {
+      repoDeleted = await deleteManagedProjectRepo(loaded.row);
+    } catch (error) {
+      console.error(`[projects] failed to delete managed repo for ${projectId}:`, error);
+      return c.json({ error: 'Failed to delete managed project repository' }, 502);
     }
 
     const [row] = await db

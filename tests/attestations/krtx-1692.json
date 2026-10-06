@@ -1,0 +1,11 @@
+{
+  "source_hash": "a9754e13d47ec7195981f07844128ea990e9d4a939a461893fd334b0c9ce4d8e",
+  "head": "0cfeab0d53516b2ad65cf4a41e1cafb816cde572",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-06T14:03:12.925Z"
+}

@@ -70,8 +70,9 @@ Subcommands:
   open [<id>]          Open the dashboard URL for one project
   clone [<id>] [dir]   Clone through the authenticated Kortix git proxy. Falls
                        back to your local Git credentials for direct BYO repos.
-  rm [<id>]            Archive a project (defaults to the linked one).
-                       --purge also deletes its managed git repo (irreversible).
+  rm [<id>]            Delete a project and its Kortix-managed git repo
+                       (defaults to the linked one). Repositories you
+                       connected yourself are never touched.
                        -y / --yes skips the confirmation.
   features [ls]        List every feature flag with its effective state for the
                        project (Settings → Feature flags). (--json)
@@ -1625,7 +1626,6 @@ interface RmResult {
 
 async function projectsRm(args: string[]): Promise<number> {
   const rest = [...args];
-  const purge = takeFlagBool(rest, ['--purge']);
   const yes = takeFlagBool(rest, ['-y', '--yes']);
   let hostArg: string | undefined;
   try {
@@ -1651,9 +1651,7 @@ async function projectsRm(args: string[]): Promise<number> {
   const { client, project } = located.located;
 
   if (!yes) {
-    const msg = purge
-      ? `Archive ${C.bold}${project.name}${C.reset} AND permanently delete its managed git repo? ${C.red}This cannot be undone.${C.reset}`
-      : `Archive ${C.bold}${project.name}${C.reset}? (the git repo is kept; pass --purge to delete it)`;
+    const msg = `Delete ${C.bold}${project.name}${C.reset} and its Kortix-managed git repo? ${C.red}This cannot be undone.${C.reset}`;
     const ok = await confirm(msg, false);
     if (!ok) {
       process.stdout.write(`${C.dim}Cancelled.${C.reset}\n`);
@@ -1663,7 +1661,7 @@ async function projectsRm(args: string[]): Promise<number> {
 
   let result: RmResult;
   try {
-    result = await client.delete<RmResult>(`/projects/${id}${purge ? '?purge=true' : ''}`);
+    result = await client.delete<RmResult>(`/projects/${id}`);
   } catch (err) {
     return surface(err);
   }
@@ -1672,15 +1670,11 @@ async function projectsRm(args: string[]): Promise<number> {
   if (loadLink()?.project_id === id) clearLink();
 
   process.stdout.write(
-    `${status.ok(`${purge ? 'Purged' : 'Archived'} ${C.bold}${project.name}${C.reset}`)}\n`,
-  );
-  if (purge) {
-    process.stdout.write(
-      result.repo_deleted
+    `${status.ok(`Deleted ${C.bold}${project.name}${C.reset}`)}\n` +
+      (result.repo_deleted
         ? `  ${C.dim}managed git repo deleted${C.reset}\n`
-        : `  ${C.dim}no managed repo to delete (bring-your-own repos are left untouched)${C.reset}\n`,
-    );
-  }
+        : `  ${C.dim}no managed repo to delete (bring-your-own repos are left untouched)${C.reset}\n`),
+  );
   return 0;
 }
 
