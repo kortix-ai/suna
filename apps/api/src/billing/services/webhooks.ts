@@ -36,7 +36,16 @@ export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) 
   }
 
   if (session.mode === 'subscription') {
-    await withAccountLock(accountId, () => handleSubscriptionCheckout(session, accountId));
+    // Read the subscription BEFORE the lock. The lock pins a pooled connection
+    // for its whole body (2 holders per process); a Stripe round trip inside it
+    // queues every other webhook during a renewal burst.
+    const subscriptionId = typeof session.subscription === 'string'
+      ? session.subscription
+      : session.subscription?.id;
+    const subscription = subscriptionId
+      ? await getStripe().subscriptions.retrieve(subscriptionId)
+      : null;
+    await withAccountLock(accountId, () => handleSubscriptionCheckout(session, accountId, subscription));
   }
 }
 
@@ -94,17 +103,18 @@ export async function handleCheckoutAsyncPaymentFailed(session: Stripe.Checkout.
   );
 }
 
-async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, accountId: string) {
+async function handleSubscriptionCheckout(
+  session: Stripe.Checkout.Session,
+  accountId: string,
+  subscription: Stripe.Subscription | null,
+) {
   const tierKey = planKeyFromMetadata(session.metadata);
   if (!tierKey) return;
 
   const subscriptionId = typeof session.subscription === 'string'
     ? session.subscription
     : session.subscription?.id;
-  if (!subscriptionId) return;
-
-  const stripe = getStripe();
-  const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+  if (!subscriptionId || !subscription) return;
 
   if (session.payment_status !== 'paid') {
     await applyStripeSync(
