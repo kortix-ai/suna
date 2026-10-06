@@ -196,6 +196,12 @@
   "newWorkspace": {
     "title": "Create a project",
     "description": "A project is where your agents, files and sessions live.",
+    "handoff": {
+      "validating": "Validating",
+      "creating_repository": "Creating repository",
+      "registering": "Registering workspace",
+      "seeding": "Seeding starter files"
+    },
     "templateSeed": "This project will be seeded from the template you picked.",
     "account": {
       "label": "Account",
@@ -1540,6 +1546,7 @@
         "email": "Email",
         "scheduled": "Scheduled",
         "webhook": "Webhook",
+        "manual": "Manual",
         "all": "All"
       },
       "statusValue": {

@@ -36,8 +36,11 @@ import { mayResolveApproval } from '../projects/lib/approval-authority';
 import { callerKortixSessionId } from '../middleware/caller-session';
 import { db } from '../shared/db';
 import { resolveSetupLink } from './token';
+import type { AppEnv } from '../types';
 
-const approvalLinksApp = makeOpenApiApp();
+// AppEnv: every route here is authenticated and the project gate reads the
+// auth variables the middleware sets (authType, accountId, ...).
+const approvalLinksApp = makeOpenApiApp<AppEnv>();
 
 /** What an approval link asks the signed-in human to decide. */
 const ApprovalLinkSchema = z.object({
