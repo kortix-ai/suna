@@ -364,6 +364,7 @@ flow('SEC-POOL-4', {
     'PUT /v1/accounts/:accountId/secret-resources/:secretId/access',
     'POST /v1/projects/:projectId/sessions',
     'DELETE /v1/accounts/:accountId/secret-resources/:secretId',
+    'PUT /v1/accounts/:accountId/secret-resources/:secretId/grants/:userId',
   ],
 }, async (ctx) => {
   const team = await ctx.fixtures.team();
@@ -429,6 +430,20 @@ flow('SEC-POOL-4', {
     if (!(granted.json<any>().secrets as any[]).some((secret) => secret.secret_id === secretId && secret.can_use)) throw new Error('member grant did not restore access');
     (await owner.put(accessPath, { mode: 'project', user_ids: [] }, { params: accessParams })).status(200)
       .body().has('$.access_mode', 'project');
+  });
+  await ctx.step('the grants route shares a project key only with the same checks as the access route', async () => {
+    const peer = await team.addMember('member');
+    await team.grantProjectRole(project.id, peer.userId!, 'user');
+    const outsider = await team.addMember('member');
+    const own = await ctx.client.as(member).post(path, { ...input, label: 'Member key', access_mode: 'members', user_ids: [member.userId] }, { params });
+    own.status(201);
+    const ownId = own.json<any>().secret_id as string;
+    const grant = (userId: string, as = ctx.client.as(member)) =>
+      as.put(`${path}/:secretId/grants/:userId`, {}, { params: { ...params, secretId: ownId, userId } });
+    (await grant(peer.userId!)).status(403);
+    (await grant(peer.userId!, owner)).status(200);
+    (await grant(outsider.userId!, owner)).status(400);
+    (await owner.del(`${path}/:secretId`, { params: { ...params, secretId: ownId } })).status(200);
   });
   await ctx.step('delete removes the scoped key', async () => {
     (await owner.del(`${path}/:secretId`, { params: { ...params, secretId } })).status(200);
@@ -1315,6 +1330,7 @@ flow(
       "POST /v1/projects/:projectId/secret-requests",
       "GET /v1/setup-links/secret/:token",
       "POST /v1/setup-links/secret/:token",
+      "DELETE /v1/accounts/:accountId/members/:userId",
     ],
   },
   async (ctx) => {
@@ -1430,6 +1446,31 @@ flow(
           { params: { token: "ksl_bogus" } },
         );
       r.status(404);
+    });
+
+    await ctx.step("public: replaying the used link → 409, the value is not overwritten", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post("/v1/setup-links/secret/:token", { values: { SEC7_TEST_KEY: "replayed" } }, { params: { token } });
+      r.status(409);
+    });
+
+    await ctx.step("public: a link minted by a since-removed member → 410", async () => {
+      const team = await ctx.fixtures.team();
+      const tp = await team.project();
+      const minter = await team.addMember("admin");
+      const minted = await ctx.client
+        .as(minter)
+        .post("/v1/projects/:projectId/secret-requests", { names: ["SEC7_GONE_KEY"] }, { params: { projectId: tp.id } });
+      minted.status(200);
+      const gone = minted.json<{ url: string }>().url.split("/").pop() ?? "";
+      (await ctx.client.as(ctx.P.OWNER).del("/v1/accounts/:accountId/members/:userId", {
+        params: { accountId: team.id, userId: minter.userId! },
+      })).status(200);
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post("/v1/setup-links/secret/:token", { values: { SEC7_GONE_KEY: "x" } }, { params: { token: gone } });
+      r.status(410);
     });
   },
 );

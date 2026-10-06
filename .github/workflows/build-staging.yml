@@ -1,7 +1,7 @@
 name: Build Staging Artifacts
 
 # Staging is the pre-prod branch. Human/code changes advance it by PR only:
-# either `main` -> `staging` for the full dev candidate, or a targeted branch
+# either `dev` -> `staging` for the full dev candidate, or a targeted branch
 # -> `staging` for a selective release candidate.
 #
 # Build every releasable container on every staging push and tag it with the
@@ -496,5 +496,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh workflow run deploy-staging.yml --repo "${{ github.repository }}" --ref main -f sha="${{ needs.version.outputs.sha }}"
+          gh workflow run deploy-staging.yml --repo "${{ github.repository }}" --ref dev -f sha="${{ needs.version.outputs.sha }}"
           echo "Deploy Staging dispatched for ${{ needs.version.outputs.sha }}."

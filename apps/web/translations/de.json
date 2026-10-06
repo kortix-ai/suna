@@ -1957,6 +1957,12 @@
     "queuedFiles": "{count, plural, one {# Datei} other {# Dateien}}",
     "queuedCount": "{count} in Warteschlange",
     "editingQueued": "Wird bearbeitet",
+    "steerNextStep": "Wird beim nächsten Schritt gelesen",
+    "steerFallbackUnsupported": "Wartet auf diesen Durchlauf. Diese Sitzung nimmt während eines Durchlaufs keine Nachrichten an.",
+    "steerFallbackNotPrompter": "Wartet auf diesen Durchlauf. Ein anderes Mitglied hat ihn gestartet.",
+    "steerFallbackTurnEnded": "Läuft als eigener Durchlauf. Der Durchlauf war zuerst beendet.",
+    "stopAndSend": "Stoppen und senden",
+    "stopAndSendFailed": "Diese Nachricht konnte nicht gestoppt und gesendet werden",
     "submitEdit": "Absenden",
     "collapseQueue": "Warteschlange einklappen",
     "expandQueue": "Warteschlange ausklappen"

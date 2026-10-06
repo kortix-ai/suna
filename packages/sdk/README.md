@@ -1035,6 +1035,31 @@ current tool call. `composer` waits for the active response to finish. Each
 placement keeps submission order. A row without placement keeps its submission
 order ahead of `composer` entries and is presented as `composer`.
 
+### Prompt delivery: steer, queue, interrupt
+
+`createSessionPrompt` and `enqueue` also accept `delivery: 'steer' | 'queue' |
+'interrupt'`. It decides how a prompt reaches a running turn:
+
+- `steer`: the running turn reads the prompt at its next step boundary. The
+  turn does not stop.
+- `queue` (Queue List): the prompt waits for the turn to end.
+- `interrupt` (Quick Queue): the turn ends after its running tool, then the
+  prompt runs.
+
+With no turn running, every mode starts a turn. When only `delivery` is given,
+the SDK also sends the placement it implies (`interrupt` → `transcript`, the
+others → `composer`), so an API built before steering treats a steer prompt as
+a Queue List entry.
+
+A steer prompt falls back to `queue` when the runtime cannot take messages
+mid-turn, when another member's turn is running, or when the turn ended first.
+The row then reads `delivery: 'queue'` and `steer_fallback: 'unsupported' |
+'not_prompter' | 'turn_ended'`.
+
+`interruptSessionPrompt` (`session.prompts.interrupt`,
+`useSessionPrompts().interrupt`) is "Stop and send": it turns a row still
+waiting in the queue into Quick Queue. A row already on the wire answers `409`.
+
 `SessionPrompt.full_text` preserves complete text for rendering after reload;
 `text` remains the bounded preview. List responses expose attachment names and
 MIME types without attachment bytes. Removal responses retain the complete
@@ -1051,8 +1076,9 @@ after admission succeeds. A confirmed active turn clears the pending presentatio
 even if the previous inbox snapshot still lists that prompt. Runtime activity
 preserves the active turn's message ID during this handoff.
 
-Web calls Enter **Quick Queue** and Command/Ctrl+Enter **Queue List**. Both
-advance automatically; Quick Queue entries run first. Queue List entries stay editable
+Web sends Enter while a turn runs as **steer**, Command/Ctrl+Enter as **Queue
+List**, and "Stop and send" on a queued row as **Quick Queue**. Enter on an idle
+session starts a turn. Queued entries advance automatically; Quick Queue entries run first. Queue List entries stay editable
 until delivery begins. Stop pauses pending entries; Resume releases that hold.
 
 Pass the inbox IDs, in queue order, as `pendingMessageIds` to
@@ -1064,6 +1090,12 @@ Queue acceptance and runtime execution are separate states. Each distinct submis
 appears immediately, including while a previous POST is pending. The working hook
 updates `pendingDelivery` when the same turn becomes active, without waiting for
 a different turn ID or timestamp.
+
+`useSessionPrompts` reads queue changes from the session's control stream
+(`GET .../sessions/:id/events?channels=control`, one connection per session per
+client). Every write of an inbox row arrives as a `kortix.control.queue` frame,
+whichever API replica served the write. The `GET .../prompts` poll runs only
+while that stream is not connected, and a reconnect reads the list once.
 
 
 ### Why a turn ended

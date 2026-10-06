@@ -1957,6 +1957,12 @@
     "queuedFiles": "{count, plural, one {# fichier} other {# fichiers}}",
     "queuedCount": "{count} en file",
     "editingQueued": "En cours de modification",
+    "steerNextStep": "Lu à la prochaine étape",
+    "steerFallbackUnsupported": "Attend ce tour. Cette session n'accepte pas de messages pendant un tour.",
+    "steerFallbackNotPrompter": "Attend ce tour. Un autre membre l'a lancé.",
+    "steerFallbackTurnEnded": "S'exécute comme son propre tour. Le tour s'est terminé avant.",
+    "stopAndSend": "Arrêter et envoyer",
+    "stopAndSendFailed": "Impossible d'arrêter et d'envoyer ce message",
     "submitEdit": "Valider",
     "collapseQueue": "Réduire la file",
     "expandQueue": "Développer la file"

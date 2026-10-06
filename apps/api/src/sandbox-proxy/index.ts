@@ -6,6 +6,7 @@ import { previewConfig } from './routes/preview-config';
 import { publicShareApp } from './routes/public-share';
 import { shareApp } from './routes/share';
 import { invalidateSandbox, loadSandbox } from './backend';
+import { isCookieCsrfRefused } from './cookie-csrf';
 import { prefetchSandbox } from './http-prefetch';
 import { createSandboxProxyRateLimitMiddleware } from '../middleware/rate-limit';
 import { makeOpenApiApp } from '../openapi';
@@ -41,12 +42,23 @@ sandboxProxyApp.route('/public-share', publicShareApp);
 // unauthenticated or over-limit caller. Started here, the read overlaps the
 // rest of the request before `forwardToSandbox` needs it (the body read).
 // Auth middleware accepts Supabase JWT, kortix_ tokens, and cookies.
+// Before authentication: a write that rides only the ambient cookie from another
+// origin is refused (cookie-csrf.ts).
+sandboxProxyApp.use('/:sandboxId/:port/*', cookieCsrfGate);
+sandboxProxyApp.use('/:sandboxId/:port', cookieCsrfGate);
 sandboxProxyApp.use('/:sandboxId/:port/*', combinedAuth);
 sandboxProxyApp.use('/:sandboxId/:port', combinedAuth);
 sandboxProxyApp.use('/:sandboxId/:port/*', createSandboxProxyRateLimitMiddleware());
 sandboxProxyApp.use('/:sandboxId/:port', createSandboxProxyRateLimitMiddleware());
 sandboxProxyApp.use('/:sandboxId/:port/*', prefetchSandboxRow);
 sandboxProxyApp.use('/:sandboxId/:port', prefetchSandboxRow);
+
+async function cookieCsrfGate(c: Context, next: Next) {
+  if (isCookieCsrfRefused(c.req.raw)) {
+    return c.json({ error: 'cross-origin write with an ambient preview cookie', code: 'CSRF_REFUSED' }, 403);
+  }
+  await next();
+}
 
 async function prefetchSandboxRow(c: Context, next: Next) {
   const sandboxId = c.req.param('sandboxId');

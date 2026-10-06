@@ -1957,6 +1957,12 @@
     "queuedFiles": "{count, plural, one {# file} other {# file}}",
     "queuedCount": "{count} in coda",
     "editingQueued": "In modifica",
+    "steerNextStep": "Letto al passo successivo",
+    "steerFallbackUnsupported": "Attende questo turno. Questa sessione non accetta messaggi durante un turno.",
+    "steerFallbackNotPrompter": "Attende questo turno. Lo ha avviato un altro membro.",
+    "steerFallbackTurnEnded": "Viene eseguito come turno a sé. Il turno è terminato prima.",
+    "stopAndSend": "Interrompi e invia",
+    "stopAndSendFailed": "Impossibile interrompere e inviare quel messaggio",
     "submitEdit": "Invia",
     "collapseQueue": "Comprimi coda",
     "expandQueue": "Espandi coda"

@@ -153,6 +153,7 @@ export { useProjectBackends, useProjectBackendBackups, projectBackendsKey } from
 // `instanceof`-match it without reaching into the hook's internal path.
 export { NoCompactionModelError } from './use-opencode-sessions/no-compaction-model-error';
 export * from './use-admin-accounts';
+export * from './use-admin-role';
 export * from './use-admin-projects';
 export * from './use-admin-analytics';
 export * from './use-admin-activity-analytics';

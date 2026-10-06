@@ -1203,6 +1203,10 @@ export const config = {
 
   // ─── Internal Deployment Controls ─────────────────────────────────────────
   INTERNAL_KORTIX_ENV: env.INTERNAL_KORTIX_ENV as InternalKortixEnv,
+  // True only when the deploy set the variable. An unset variable falls back to
+  // 'dev' above, and the router credit gate must not read that fallback as a
+  // dev exemption (see router/services/credit-gate-env.ts).
+  INTERNAL_KORTIX_ENV_EXPLICIT: Boolean(process.env.INTERNAL_KORTIX_ENV),
   // Empty string reads as unset: the launchers always export the var, and a
   // blank value must not turn into an instance called "".
   KORTIX_INSTANCE_ID: env.KORTIX_INSTANCE_ID || undefined,
@@ -1617,6 +1621,12 @@ const TOOL_PRICING: Record<string, ToolPricing> = {
     baseCost: 0.01,
     perResultCost: 0,
     markupMultiplier: 1.5,
+  },
+  // Crawl status polls cost nothing upstream, so they cost nothing here.
+  proxy_firecrawl_status: {
+    baseCost: 0,
+    perResultCost: 0,
+    markupMultiplier: 1,
   },
   proxy_context7: {
     baseCost: 0.001,

@@ -616,6 +616,20 @@ handle: Dockerfile/image/warm-pool templates and their snapshot builds.
 | `createTemplate(input)` · `updateTemplate(...)` · `removeTemplate(...)` · `buildTemplate(...)` | add · edit · delete · build a template |
 | `setProvider(provider)` | request a provider switch. `null` (or the platform default / the already-active provider) applies immediately; switching to a different enabled provider starts a durable prepare→verify→activate transition — the current provider keeps serving while the target warm image is built and verified, then activated. The return is a tagged union: `kind:'project'` (immediate) or `kind:'preparation'` (poll `getProjectSandboxProviderTransition()` until `activated`/`failed`) |
 
+### Platform admin hooks (`@kortix/sdk/react`)
+
+These hooks serve the admin console. The API answers them only for a platform
+admin. Each mutation invalidates the `['admin', 'accounts']` queries.
+
+| Hook | What it does |
+| --- | --- |
+| `useAdminRole(userId, options?)` | read the caller's role from `GET /user-roles` → `{ isAdmin, role }`. `userId` keys the cache. A missing `userId` disables the query. Refetches on mount and focus, so a revoked role stops gating within one navigation. |
+| `useAdminGrantCredits()` | mutation `{ accountId, amount, description, isExpiring }`: add wallet credit. `POST /admin/api/accounts/:id/credits`. Moves money: confirm in the UI first. |
+| `useAdminDebitCredits()` | mutation `{ accountId, amount, description }`: remove wallet credit. `POST /admin/api/accounts/:id/credits/debit`. Moves money: confirm in the UI first. |
+| `useAdminSetTier()` | mutation `{ accountId, tier }`: set the plan tier. |
+| `useAdminGrantTrial()` | mutation `{ accountId, tierKey, seats, durationDays, creditGrant?, note? }`: grant or replace a trial. The account behaves as `tierKey` until the window ends. `creditGrant` also adds wallet credit. |
+| `useAdminRevokeTrial()` | mutation `{ accountId }`: end an active trial now. Answers `400` when none is active. |
+
 ### Escape hatch
 
 `kortix.runtime()` returns the typed OpenCode REST client for the active
@@ -678,6 +692,14 @@ await files.upload(file, '/workspace/uploads', file.name, {
 
 Uploads larger than 64 KiB cross the sandbox edge in verified chunks. The
 progress callback runs after each chunk reaches the session filesystem.
+
+`uploadNativeFile({ uri, name, type? }, targetPath, baseUrl)` uploads a device
+file from React Native in one request. The runtime streams the bytes from
+`uri`, so they never enter the JS heap. It uses the same auth, deadline and
+`401` replay as `files.upload`. It does not chunk.
+
+`fetchProjectArchive`, `fetchCostExportCsv` and the sandbox version calls send
+through the same transport. A failure throws an `ApiError` with `status`.
 
 `files.write(path, blob)` replaces the file at `path` and fails if `path` is a
 folder. `files.create(path)` creates an empty file and never overwrites: when a
