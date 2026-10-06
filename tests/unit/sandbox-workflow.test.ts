@@ -462,7 +462,7 @@ describe('the preview label is one fast deploy, and a superseded run never deplo
   const previewWorkflow = readFileSync(resolve(root, '.github/workflows/deploy-preview.yml'), 'utf8');
   const revalidate = previewWorkflow.slice(
     previewWorkflow.indexOf('- name: Revalidate exact preview approval'),
-    previewWorkflow.indexOf('- uses: actions/download-artifact@v8'),
+    previewWorkflow.indexOf('- uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c'),
   );
 
   test('only an explicit act starts a run, and only a dispatch runs the suite', () => {
