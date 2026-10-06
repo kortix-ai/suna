@@ -216,6 +216,40 @@ export async function editInboxPrompt(
 }
 
 /**
+ * "Stop and send" on a waiting row (R10): it becomes a Quick Queue row —
+ * `delivery: 'interrupt'`, `placement: 'transcript'` — promoted and due now,
+ * so admission arms the interrupt of the running turn. Only a `queued` row:
+ * a claimed or forwarded row is already on its way (`delivering`, a 409). A
+ * Stop hold stays on the row; the next send releases it.
+ */
+export async function interruptInboxPrompt(sessionId: string, promptId: string): Promise<InboxPromptEdit> {
+  const [row] = await db
+    .update(sessionLifecycleCommands)
+    .set({
+      payload: sql`${sessionLifecycleCommands.payload} || '{"delivery": "interrupt", "placement": "transcript", "remintOnDelivery": true}'::jsonb`,
+      result: sql`(COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) - 'admission_reason' - 'admission_refusals') || '{"promoted": true}'::jsonb`,
+      availableAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(sessionLifecycleCommands.commandId, promptId),
+        inboxScope(sessionId),
+        eq(sessionLifecycleCommands.status, 'queued'),
+      ),
+    )
+    .returning();
+  if (row) return { outcome: 'edited', row };
+  // Any other state of an existing row (claimed, on the wire, failed) is a 409.
+  const [existing] = await db
+    .select({ commandId: sessionLifecycleCommands.commandId })
+    .from(sessionLifecycleCommands)
+    .where(and(eq(sessionLifecycleCommands.commandId, promptId), inboxScope(sessionId)))
+    .limit(1);
+  return existing ? { outcome: 'delivering' } : { outcome: 'missing' };
+}
+
+/**
  * Put one row at the front of the queue and make it due NOW.
  *
  * This is both "retry" and "send now" — one primitive, because they are one

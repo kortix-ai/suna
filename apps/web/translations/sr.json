@@ -1953,6 +1953,12 @@
     "queuedFiles": "{count, plural, one {# датотека} few {# датотеке} other {# датотека}}",
     "queuedCount": "{count} u redu",
     "editingQueued": "Уређивање",
+    "steerNextStep": "Чита се у следећем кораку",
+    "steerFallbackUnsupported": "Чека овај потез. Ова сесија не прима поруке током потеза.",
+    "steerFallbackNotPrompter": "Чека овај потез. Покренуо га је други члан.",
+    "steerFallbackTurnEnded": "Покреће се као засебан потез. Потез се завршио раније.",
+    "stopAndSend": "Заустави и пошаљи",
+    "stopAndSendFailed": "Није могуће зауставити и послати ту поруку",
     "submitEdit": "Pošalji",
     "collapseQueue": "Skupi red",
     "expandQueue": "Proširi red"

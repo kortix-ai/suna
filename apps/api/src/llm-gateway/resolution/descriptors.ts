@@ -212,6 +212,10 @@ function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor 
 // the managed price table bills it. The caller adds `x-opencode-session`.
 function zenManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
   if (!config.OPENCODE_ZEN_MANAGED_MODELS?.includes(managed.id) || !config.OPENCODE_ZEN_API_KEY) return null;
+  // Zen reports no cost, so the price table is the only price. A credit-billed
+  // route with no price would settle at $0: do not offer it.
+  const pricing = managedPricing(managed);
+  if (!pricing) return null;
   return {
     provider: 'opencode',
     kind: 'openai-compat',
@@ -220,7 +224,7 @@ function zenManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null 
     billingMode: 'credits',
     markup: llmPriceMarkup(),
     resolvedModel: managed.id,
-    pricing: managedPricing(managed),
+    pricing,
     strictChatSchema: true,
     failover: true,
     publicProvider: 'kortix',

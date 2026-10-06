@@ -38,6 +38,12 @@
  * which is precisely the state a user watching a waking box needs to see. The
  * response is 200 from the first byte in every one of those cases.
  *
+ * ─── `?channels=control` ───────────────────────────────────────────────────
+ * Serves the control channel and the stream's own hello/heartbeat, and nothing
+ * else: no sandbox read, no daemon attach. Its reconciler reads the queue only,
+ * at the slow cadence (`ControlReconcilerMode`). The SDK's prompt queue reads
+ * it (`openSessionControlStream`). The default serves both channels.
+ *
  * ─── THIS ROUTE NEVER WAKES A BOX ──────────────────────────────────────────
  * It attaches only when the sandbox row ALREADY says `active`. Waking is
  * `POST .../start`'s job and only its job; a read that could start a sandbox
@@ -163,6 +169,8 @@ export function registerSessionStreamRoutes(): void {
           epoch: z.string().optional(),
           since_control: z.string().optional(),
           cepoch: z.string().optional(),
+          /** `control`: the control channel only, no daemon attach. Default: both. */
+          channels: z.enum(['all', 'control']).optional(),
         }),
       },
       responses: {
@@ -202,6 +210,7 @@ export function registerSessionStreamRoutes(): void {
       if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
 
       const cursor = parseCursorQuery(c);
+      const controlOnly = c.req.query('channels') === 'control';
       const userId = String(c.get('userId') ?? loaded.userId ?? '');
       const accountId = String(loaded.row.accountId);
 
@@ -252,7 +261,11 @@ export function registerSessionStreamRoutes(): void {
         start(controller) {
           controllerRef = controller;
 
-          const reconciler = acquireControlReconciler(sessionId, projectId);
+          const reconciler = acquireControlReconciler(
+            sessionId,
+            projectId,
+            controlOnly ? 'queue' : 'full',
+          );
           let heartbeat: ReturnType<typeof setInterval> | null = null;
 
           // Replay + live listener in the SAME synchronous tick — the handoff
@@ -323,7 +336,7 @@ export function registerSessionStreamRoutes(): void {
           }, STREAM_HEARTBEAT_MS);
           (heartbeat as unknown as { unref?: () => void }).unref?.();
 
-          void pumpRuntime({
+          if (!controlOnly) void pumpRuntime({
             sessionId,
             projectId,
             accountId,

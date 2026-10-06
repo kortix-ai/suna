@@ -417,8 +417,9 @@ these as standing rules whenever you touch the data/runtime layer:
   process. A feature one harness lacks is a capability, not a harness check:
   `GET /kortix/health` lists `capabilities` (`RUNTIME_CAPABILITIES` in
   `packages/api-contract/src/runtime-relay.ts`), and a client gates the
-  control with `runtimeSupports`. OpenCode lists all ten; pi lists
-  `session.subagents`, `session.compact` and `session.commands`. pi does not
+  control with `runtimeSupports`. OpenCode lists all eleven (`session.steer`
+  only on OpenCode 1.18.15 or later); pi lists `session.subagents`,
+  `session.compact`, `session.commands` and `session.steer`. pi does not
   serve rewind, MCP servers, the todo list, shell turns, part edits or
   `session.attach`.
   The harness rules and the pi gap list are in
