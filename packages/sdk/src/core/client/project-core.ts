@@ -31,6 +31,5 @@ export function bindProjectCore(projectId: string) {
     sandboxHealth: () => P.getProjectSandboxHealth(projectId),
     onboardingComplete: (...a: DropFirst<Parameters<typeof P.setProjectOnboardingComplete>>) =>
       P.setProjectOnboardingComplete(projectId, ...a),
-
   };
 }

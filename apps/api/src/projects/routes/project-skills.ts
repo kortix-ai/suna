@@ -18,6 +18,8 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { slugifySlug } from '@kortix/manifest-schema';
 import { stringify as stringifyYaml } from 'yaml';
+import type { Context } from 'hono';
+import type { AppEnv } from '../../types';
 
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { auth, errors, json } from '../../openapi';
@@ -87,8 +89,9 @@ projectsApp.openapi(
       ...errors(400, 403, 404, 409, 502),
     },
   }),
-  async (c: any) => {
+  async (c: Context<AppEnv>) => {
     const projectId = c.req.param('projectId');
+    if (!projectId) return c.json({ error: 'Not found' }, 404);
     const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(
