@@ -6,13 +6,14 @@
 # already eu-west-2 API / eu-west-2 DB) — staging becomes a truer release
 # candidate for prod's latency profile, not just a colocation fix.
 #
-#   staging-api-euw2-shadow.kortix.com    → Cloudflare (proxied) → ALB
-#   gateway-staging-euw2-shadow.kortix.com → Cloudflare (proxied) → ALB
+#   staging-api-euw2.kortix.com     → Cloudflare (proxied) → ALB → API
+#   gateway-staging-euw2.kortix.com → Cloudflare (proxied) → ALB → gateway
 #
-# Shadow verification hostnames only — ../staging keeps serving
-# staging-api-ecs-fargate.kortix.com / gateway-staging-ecs-fargate.kortix.com
-# until the runbook's cutover step. See
-# the apply runbook in PR #7844.
+# These are this stack's origin hostnames. The staging-api Worker picks the
+# live origin: ../staging while its ACTIVE_BACKEND is "ecs-fargate", this root
+# once it is "eu-west-2". Until the switch, this API runs with
+# KORTIX_WORKERS_ENABLED=false in its copy of kortix-staging-env. README.md in
+# this directory has the apply and switch-over steps.
 #
 # Naming: local.name is "kortix-staging-euw2", not "kortix-staging" — IAM
 # roles/policies are account-global and the project-snapshots S3 bucket name
@@ -50,8 +51,8 @@ provider "cloudflare" {
 
 locals {
   name           = "kortix-staging-euw2"
-  api_domain     = "staging-api-euw2-shadow.kortix.com"
-  gateway_domain = "gateway-staging-euw2-shadow.kortix.com"
+  api_domain     = "staging-api-euw2.kortix.com"
+  gateway_domain = "gateway-staging-euw2.kortix.com"
   cloudflare_ip_ranges = [
     "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22",
     "141.101.64.0/18", "108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20",
@@ -189,7 +190,7 @@ module "gateway" {
   container_port    = 8090
   health_check_path = "/health/live"
   certificate_arn   = one(module.acm_gateway[*].certificate_arn)
-  environment       = merge(var.gateway_environment, { KORTIX_API_URL = "https://${local.api_domain}" })
+  environment       = merge(var.gateway_environment, { KORTIX_API_URL = "https://staging-api.kortix.com" })
   secrets           = var.api_secrets
   secrets_blob_arn  = data.aws_secretsmanager_secret.env.arn
 
@@ -208,22 +209,24 @@ module "gateway" {
   tags                       = local.tags
 }
 
-# ── DNS: shadow verification hostnames only ────────────────────────────────────
+# ── DNS: this stack's origin hostnames ────────────────────────────────────────
+# The staging-api Worker decides which origin serves staging-api.kortix.com, so
+# these records never change at the switch-over.
 module "dns" {
   source  = "../../modules/cloudflare-dns"
   count   = var.manage_dns ? 1 : 0
   zone_id = var.cloudflare_zone_id
 
   records = {
-    staging-api-euw2-shadow = {
-      name    = "staging-api-euw2-shadow"
+    staging-api-euw2 = {
+      name    = "staging-api-euw2"
       type    = "CNAME"
       value   = module.api.alb_dns_name
       proxied = true
       ttl     = 1
     }
-    gateway-staging-euw2-shadow = {
-      name    = "gateway-staging-euw2-shadow"
+    gateway-staging-euw2 = {
+      name    = "gateway-staging-euw2"
       type    = "CNAME"
       value   = module.gateway.alb_dns_name
       proxied = true

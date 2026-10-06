@@ -44,6 +44,11 @@ locals {
       dimension = replace(arn, "/^.*:loadbalancer\\//", "")
     }
   }
+  # environments/dev-web-us-east-2 associates its own ALB with this WAF.
+  use2_compliance_waf_albs = {
+    for arn, alb in local.use2_albs : arn => alb
+    if alb.name != "kortix-dev-use2-web-alb"
+  }
 }
 
 # ── Regional alert delivery ──────────────────────────────────────────────────
@@ -381,7 +386,7 @@ resource "aws_wafv2_web_acl" "use2" {
 
 resource "aws_wafv2_web_acl_association" "use2" {
   provider     = aws.use2
-  for_each     = local.use2_albs
+  for_each     = local.use2_compliance_waf_albs
   resource_arn = each.key
   web_acl_arn  = aws_wafv2_web_acl.use2.arn
 }
