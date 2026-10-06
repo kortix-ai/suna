@@ -234,111 +234,6 @@ async function serializeBinding(
   };
 }
 
-// GET /v1/projects/:projectId/channels/bindings
-// Every channel bound to this project, with the effective agent resolved
-// (explicit binding override || the project's declared default) so the UI
-// never has to reimplement chooseEffectiveAgent's precedence.
-projectsApp.openapi(
-  createRoute({
-    method: "get",
-    path: "/{projectId}/channels/bindings",
-    tags: ["channels"],
-    summary: "List channel bindings of a project",
-    ...auth,
-    request: { params: z.object({ projectId: z.string() }) },
-    responses: { 200: json(z.any(), "OK"), ...errors(404) },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
-    // Listing channel↔agent bindings exposes which connectors the project's
-    // channels talk through — connector-read info. Gate on connector.read so
-    // unchecking it in a custom role is denied. Every built-in role holds it.
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_READ);
-
-    const accountId = loaded.row.accountId as string;
-    const projectDefaultAgent = projectDefaultAgentOf(loaded.row.metadata);
-    const bindings = await listChannelBindingsForProject(projectId);
-    // A Slack row without a stored name is named on read, and the name is
-    // stored, so the settings page shows `#general` or a person's name on the
-    // very next load. The bot token is the SAME for every Slack binding in
-    // this project: load it once (each load decrypts a project secret). Five
-    // lookups at a time keep a first load with many DMs under Slack's rate
-    // limits.
-    const needsBackfill = bindings.filter(needsSlackNameBackfill);
-    const unavailable = new Set<string>();
-    if (needsBackfill.length > 0) {
-      const slackToken = await loadSlackTokenForProject(projectId);
-      for (let i = 0; i < needsBackfill.length; i += 5) {
-        await Promise.all(
-          needsBackfill.slice(i, i + 5).map(async (b) => {
-            const label = await backfillSlackBindingLabel(b.workspaceId, b.channelId, projectId, slackToken);
-            b.channelName = label.name;
-            b.channelType = label.type ?? b.channelType;
-            if (label.unavailable) unavailable.add(b.bindingId);
-          }),
-        );
-      }
-    }
-    // A Teams channel thread whose name does not say its team is named on read
-    // when its id does: the General channel's id is the team's id. The name is
-    // stored, and one Teams read per team serves every thread in it. A cold
-    // read is ~1.4 s (token + connector, measured); the list waits for names
-    // at most TEAMS_NAMING_BUDGET_MS, and a lookup still running stores its
-    // name for the next load.
-    const teamsUnnamed = bindings.filter(needsTeamsNameBackfill);
-    const teamsServiceUrl = teamsUnnamed.length > 0 ? await loadTeamsServiceUrlForProject(projectId).catch(() => null) : null;
-    if (teamsServiceUrl) {
-      const naming = (async () => {
-        for (let i = 0; i < teamsUnnamed.length; i += 5) {
-          await Promise.all(
-            teamsUnnamed.slice(i, i + 5).map(async (b) => {
-              const name = await backfillTeamsBindingLabel(b, projectId, teamsServiceUrl);
-              if (name) {
-                b.channelName = name;
-                b.channelType = "channel";
-              }
-            }),
-          );
-        }
-      })();
-      await withTimeout(naming, TEAMS_NAMING_BUDGET_MS).catch(() => {});
-    }
-    const [modelDefaults, mayUseManagedModels, threadTitles] = await Promise.all([
-      getAccountModelDefaults(accountId, projectId),
-      accountMayUseManagedModels(accountId),
-      teamsThreadTitles(
-        projectId,
-        bindings.filter((b) => b.platform === "teams" && isTeamsChannelThreadId(b.channelId)).map((b) => b.channelId),
-      ),
-    ]);
-    const modelCtx: ModelResolutionCtx = {
-      userId: loaded.userId,
-      accountId,
-      projectId,
-      modelDefaults,
-      freeModelsOnly: !mayUseManagedModels,
-      llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
-      pooledEnabled: resolveFeatureFlag(loaded.row.metadata, "pooled_provider_secrets"),
-    };
-    return c.json({
-      projectDefaultAgent,
-      bindings: await Promise.all(
-        bindings.map((b) =>
-          serializeBinding(
-            b,
-            projectDefaultAgent,
-            modelCtx,
-            unavailable.has(b.bindingId),
-            threadTitles.get(b.channelId) ?? null,
-          ),
-        ),
-      ),
-    });
-  },
-);
-
 const ChannelBindingPatchBody = z.object({
   // null resets the override to the project default; omit to leave unchanged.
   agentName: z.string().max(128).nullable().optional(),
@@ -346,161 +241,268 @@ const ChannelBindingPatchBody = z.object({
   conversationPolicy: z.enum(CONVERSATION_POLICIES).optional(),
 });
 
-// PATCH /v1/projects/:projectId/channels/bindings/:bindingId
-projectsApp.openapi(
-  createRoute({
-    method: "patch",
-    path: "/{projectId}/channels/bindings/{bindingId}",
-    tags: ["channels"],
-    summary: "Update a channel binding",
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string(), bindingId: z.string() }),
-      body: { content: { "application/json": { schema: ChannelBindingPatchBody } } },
-    },
-    responses: { 200: json(z.any(), "OK"), ...errors(400, 403, 404, 409) },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const bindingId = c.req.param("bindingId");
-    // Floor 'read'; project.connector.write below is the real gate (was 'manage'
-    // → project.write, which over-gated a custom connector.write-only role).
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
-    // No dedicated "channel binding write" leaf exists yet (the channel.* actions
-    // in iam/actions.ts are scoped to resource_type='channel' and aren't wired
-    // through assertProjectCapability's project-scoped fold, and nothing uses them
-    // today). Editing which agent/model a channel talks to is the same connector
-    // capability that already gates connecting/disconnecting the channel itself
-    // (see channels/slack connect|disconnect above) — reuse it rather than invent
-    // a parallel gate for the same resource.
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
-    );
+export function registerChannelBindingsRoutes(): void {
+  // GET /v1/projects/:projectId/channels/bindings
+  // Every channel bound to this project, with the effective agent resolved
+  // (explicit binding override || the project's declared default) so the UI
+  // never has to reimplement chooseEffectiveAgent's precedence.
+  projectsApp.openapi(
+    createRoute({
+      method: "get",
+      path: "/{projectId}/channels/bindings",
+      tags: ["channels"],
+      summary: "List channel bindings of a project",
+      ...auth,
+      request: { params: z.object({ projectId: z.string() }) },
+      responses: { 200: json(z.any(), "OK"), ...errors(404) },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param("projectId");
+      const loaded = await loadProjectForUser(c, projectId, "read");
+      if (!loaded) return c.json({ error: "Not found" }, 404);
+      // Listing channel↔agent bindings exposes which connectors the project's
+      // channels talk through — connector-read info. Gate on connector.read so
+      // unchecking it in a custom role is denied. Every built-in role holds it.
+      await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_READ);
 
-    const binding = await getChannelBindingById(projectId, bindingId);
-    if (!binding) return c.json({ error: "Not found" }, 404);
-
-    const parsed = ChannelBindingPatchBody.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: "Invalid body", code: "invalid_body" }, 400);
-    const body = parsed.data;
-    if (
-      body.agentName === undefined &&
-      body.opencodeModel === undefined &&
-      body.conversationPolicy === undefined
-    ) {
-      return c.json({ error: "No fields to update", code: "empty_patch" }, 400);
-    }
-
-    const ctx = { teamId: binding.workspaceId, channelId: binding.channelId, platform: binding.platform };
-
-    if (body.agentName !== undefined) {
-      let nextAgent: string | null = null;
-      if (body.agentName !== null) {
-        const trimmed = body.agentName.trim();
-        if (!trimmed) {
-          return c.json({ error: "agentName cannot be blank — pass null to reset", code: "invalid_agent" }, 400);
+      const accountId = loaded.row.accountId as string;
+      const projectDefaultAgent = projectDefaultAgentOf(loaded.row.metadata);
+      const bindings = await listChannelBindingsForProject(projectId);
+      // A Slack row without a stored name is named on read, and the name is
+      // stored, so the settings page shows `#general` or a person's name on the
+      // very next load. The bot token is the SAME for every Slack binding in
+      // this project: load it once (each load decrypts a project secret). Five
+      // lookups at a time keep a first load with many DMs under Slack's rate
+      // limits.
+      const needsBackfill = bindings.filter(needsSlackNameBackfill);
+      const unavailable = new Set<string>();
+      if (needsBackfill.length > 0) {
+        const slackToken = await loadSlackTokenForProject(projectId);
+        for (let i = 0; i < needsBackfill.length; i += 5) {
+          await Promise.all(
+            needsBackfill.slice(i, i + 5).map(async (b) => {
+              const label = await backfillSlackBindingLabel(b.workspaceId, b.channelId, projectId, slackToken);
+              b.channelName = label.name;
+              b.channelType = label.type ?? b.channelType;
+              if (label.unavailable) unavailable.add(b.bindingId);
+            }),
+          );
         }
-        if (trimmed.toLowerCase() !== "default") {
-          // Validate against the declared manifest catalog ONLY when the project
-          // has adopted `[[agents]]` — a legacy (undeclared) project has no fixed
-          // catalog to check against, so any name is accepted there (same
-          // permissiveness as the Slack `/kortix agent <name>` command).
-          const governance = await loadProjectAgentGovernance(projectId);
-          if (governance.declared && !governance.agents.some((a) => a.name === trimmed)) {
+      }
+      // A Teams channel thread whose name does not say its team is named on read
+      // when its id does: the General channel's id is the team's id. The name is
+      // stored, and one Teams read per team serves every thread in it. A cold
+      // read is ~1.4 s (token + connector, measured); the list waits for names
+      // at most TEAMS_NAMING_BUDGET_MS, and a lookup still running stores its
+      // name for the next load.
+      const teamsUnnamed = bindings.filter(needsTeamsNameBackfill);
+      const teamsServiceUrl = teamsUnnamed.length > 0 ? await loadTeamsServiceUrlForProject(projectId).catch(() => null) : null;
+      if (teamsServiceUrl) {
+        const naming = (async () => {
+          for (let i = 0; i < teamsUnnamed.length; i += 5) {
+            await Promise.all(
+              teamsUnnamed.slice(i, i + 5).map(async (b) => {
+                const name = await backfillTeamsBindingLabel(b, projectId, teamsServiceUrl);
+                if (name) {
+                  b.channelName = name;
+                  b.channelType = "channel";
+                }
+              }),
+            );
+          }
+        })();
+        await withTimeout(naming, TEAMS_NAMING_BUDGET_MS).catch(() => {});
+      }
+      const [modelDefaults, mayUseManagedModels, threadTitles] = await Promise.all([
+        getAccountModelDefaults(accountId, projectId),
+        accountMayUseManagedModels(accountId),
+        teamsThreadTitles(
+          projectId,
+          bindings.filter((b) => b.platform === "teams" && isTeamsChannelThreadId(b.channelId)).map((b) => b.channelId),
+        ),
+      ]);
+      const modelCtx: ModelResolutionCtx = {
+        userId: loaded.userId,
+        accountId,
+        projectId,
+        modelDefaults,
+        freeModelsOnly: !mayUseManagedModels,
+        llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
+        pooledEnabled: resolveFeatureFlag(loaded.row.metadata, "pooled_provider_secrets"),
+      };
+      return c.json({
+        projectDefaultAgent,
+        bindings: await Promise.all(
+          bindings.map((b) =>
+            serializeBinding(
+              b,
+              projectDefaultAgent,
+              modelCtx,
+              unavailable.has(b.bindingId),
+              threadTitles.get(b.channelId) ?? null,
+            ),
+          ),
+        ),
+      });
+    },
+  );
+
+  // PATCH /v1/projects/:projectId/channels/bindings/:bindingId
+  projectsApp.openapi(
+    createRoute({
+      method: "patch",
+      path: "/{projectId}/channels/bindings/{bindingId}",
+      tags: ["channels"],
+      summary: "Update a channel binding",
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), bindingId: z.string() }),
+        body: { content: { "application/json": { schema: ChannelBindingPatchBody } } },
+      },
+      responses: { 200: json(z.any(), "OK"), ...errors(400, 403, 404, 409) },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param("projectId");
+      const bindingId = c.req.param("bindingId");
+      // Floor 'read'; project.connector.write below is the real gate (was 'manage'
+      // → project.write, which over-gated a custom connector.write-only role).
+      const loaded = await loadProjectForUser(c, projectId, "read");
+      if (!loaded) return c.json({ error: "Not found" }, 404);
+      // No dedicated "channel binding write" leaf exists yet (the channel.* actions
+      // in iam/actions.ts are scoped to resource_type='channel' and aren't wired
+      // through assertProjectCapability's project-scoped fold, and nothing uses them
+      // today). Editing which agent/model a channel talks to is the same connector
+      // capability that already gates connecting/disconnecting the channel itself
+      // (see channels/slack connect|disconnect above) — reuse it rather than invent
+      // a parallel gate for the same resource.
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+      );
+
+      const binding = await getChannelBindingById(projectId, bindingId);
+      if (!binding) return c.json({ error: "Not found" }, 404);
+
+      const parsed = ChannelBindingPatchBody.safeParse(await c.req.json().catch(() => null));
+      if (!parsed.success) return c.json({ error: "Invalid body", code: "invalid_body" }, 400);
+      const body = parsed.data;
+      if (
+        body.agentName === undefined &&
+        body.opencodeModel === undefined &&
+        body.conversationPolicy === undefined
+      ) {
+        return c.json({ error: "No fields to update", code: "empty_patch" }, 400);
+      }
+
+      const ctx = { teamId: binding.workspaceId, channelId: binding.channelId, platform: binding.platform };
+
+      if (body.agentName !== undefined) {
+        let nextAgent: string | null = null;
+        if (body.agentName !== null) {
+          const trimmed = body.agentName.trim();
+          if (!trimmed) {
+            return c.json({ error: "agentName cannot be blank — pass null to reset", code: "invalid_agent" }, 400);
+          }
+          if (trimmed.toLowerCase() !== "default") {
+            // Validate against the declared manifest catalog ONLY when the project
+            // has adopted `[[agents]]` — a legacy (undeclared) project has no fixed
+            // catalog to check against, so any name is accepted there (same
+            // permissiveness as the Slack `/kortix agent <name>` command).
+            const governance = await loadProjectAgentGovernance(projectId);
+            if (governance.declared && !governance.agents.some((a) => a.name === trimmed)) {
+              return c.json(
+                {
+                  error: `"${trimmed}" is not a declared agent in this project's manifest`,
+                  code: "unknown_agent",
+                },
+                400,
+              );
+            }
+            nextAgent = trimmed;
+          }
+        }
+        const result = await setChannelAgent(ctx, nextAgent);
+        if (!result.ok) {
+          if (result.reason === "unknown_agent") {
             return c.json(
               {
-                error: `"${trimmed}" is not a declared agent in this project's manifest`,
+                error: `"${nextAgent}" is not a declared agent in this project's manifest`,
                 code: "unknown_agent",
               },
               400,
             );
           }
-          nextAgent = trimmed;
+          return c.json({ error: "Not found" }, 404);
         }
       }
-      const result = await setChannelAgent(ctx, nextAgent);
-      if (!result.ok) {
-        if (result.reason === "unknown_agent") {
-          return c.json(
-            {
-              error: `"${nextAgent}" is not a declared agent in this project's manifest`,
-              code: "unknown_agent",
-            },
-            400,
-          );
-        }
-        return c.json({ error: "Not found" }, 404);
-      }
-    }
 
-    if (body.opencodeModel !== undefined) {
-      let stored: string | null = null;
-      if (body.opencodeModel !== null) {
-        const trimmed = body.opencodeModel.trim();
-        if (!trimmed || /\s/.test(trimmed)) {
-          return c.json(
-            { error: `"${trimmed}" doesn't look like a model id`, code: "invalid_model" },
-            400,
-          );
-        }
-        // Same two-path gate as session create (lib/sessions.ts): gateway ON
-        // validates via the gateway resolver and stores the wire id;
-        // gateway OFF (native OpenCode) enforces the native `provider/model`
-        // shape and stores the ref verbatim.
-        if (!projectLlmGatewayEnabled(loaded.row.metadata)) {
-          const nativeShapeError = validateNativeOpencodeModelRef(trimmed);
-          if (nativeShapeError) {
-            return c.json({ error: nativeShapeError.message, code: "invalid_model" }, 400);
+      if (body.opencodeModel !== undefined) {
+        let stored: string | null = null;
+        if (body.opencodeModel !== null) {
+          const trimmed = body.opencodeModel.trim();
+          if (!trimmed || /\s/.test(trimmed)) {
+            return c.json(
+              { error: `"${trimmed}" doesn't look like a model id`, code: "invalid_model" },
+              400,
+            );
           }
-          stored = trimmed;
-        } else {
-        const freeModelsOnly = !(await accountMayUseManagedModels(loaded.row.accountId as string));
-        const servable = await conversationCanRun({
-          userId: loaded.userId,
-          accountId: loaded.row.accountId as string,
-          projectId,
-          freeModelsOnly,
-          pooledEnabled: resolveFeatureFlag(loaded.row.metadata, "pooled_provider_secrets"),
-          model: trimmed,
-        });
-        if (!servable) {
-          return c.json(
-            {
-              error: `Model "${trimmed}" is not available to this conversation. A conversation is shared: it can run Kortix models and keys shared with the whole project, not anyone's own key or ChatGPT subscription.`,
-              code: "model_not_servable",
-            },
-            409,
-          );
+          // Same two-path gate as session create (lib/sessions.ts): gateway ON
+          // validates via the gateway resolver and stores the wire id;
+          // gateway OFF (native OpenCode) enforces the native `provider/model`
+          // shape and stores the ref verbatim.
+          if (!projectLlmGatewayEnabled(loaded.row.metadata)) {
+            const nativeShapeError = validateNativeOpencodeModelRef(trimmed);
+            if (nativeShapeError) {
+              return c.json({ error: nativeShapeError.message, code: "invalid_model" }, 400);
+            }
+            stored = trimmed;
+          } else {
+          const freeModelsOnly = !(await accountMayUseManagedModels(loaded.row.accountId as string));
+          const servable = await conversationCanRun({
+            userId: loaded.userId,
+            accountId: loaded.row.accountId as string,
+            projectId,
+            freeModelsOnly,
+            pooledEnabled: resolveFeatureFlag(loaded.row.metadata, "pooled_provider_secrets"),
+            model: trimmed,
+          });
+          if (!servable) {
+            return c.json(
+              {
+                error: `Model "${trimmed}" is not available to this conversation. A conversation is shared: it can run Kortix models and keys shared with the whole project, not anyone's own key or ChatGPT subscription.`,
+                code: "model_not_servable",
+              },
+              409,
+            );
+          }
+          stored = toWireModel(trimmed);
+          }
         }
-        stored = toWireModel(trimmed);
-        }
+        const ok = await setChannelModel(ctx, stored);
+        if (!ok) return c.json({ error: "Not found" }, 404);
       }
-      const ok = await setChannelModel(ctx, stored);
-      if (!ok) return c.json({ error: "Not found" }, 404);
-    }
 
-    if (body.conversationPolicy !== undefined) {
-      const ok = await setChannelConversationPolicy(ctx, body.conversationPolicy);
-      if (!ok) return c.json({ error: "Not found" }, 404);
-    }
+      if (body.conversationPolicy !== undefined) {
+        const ok = await setChannelConversationPolicy(ctx, body.conversationPolicy);
+        if (!ok) return c.json({ error: "Not found" }, 404);
+      }
 
-    const updated = await getChannelBindingById(projectId, bindingId);
-    if (!updated) return c.json({ error: "Not found" }, 404);
-    const accountId = loaded.row.accountId as string;
-    const modelCtx: ModelResolutionCtx = {
-      userId: loaded.userId,
-      accountId,
-      projectId,
-      modelDefaults: await getAccountModelDefaults(accountId, projectId),
-      freeModelsOnly: !(await accountMayUseManagedModels(accountId)),
-      llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
-      pooledEnabled: resolveFeatureFlag(loaded.row.metadata, "pooled_provider_secrets"),
-    };
-    return c.json(await serializeBinding(updated, projectDefaultAgentOf(loaded.row.metadata), modelCtx));
-  },
-);
+      const updated = await getChannelBindingById(projectId, bindingId);
+      if (!updated) return c.json({ error: "Not found" }, 404);
+      const accountId = loaded.row.accountId as string;
+      const modelCtx: ModelResolutionCtx = {
+        userId: loaded.userId,
+        accountId,
+        projectId,
+        modelDefaults: await getAccountModelDefaults(accountId, projectId),
+        freeModelsOnly: !(await accountMayUseManagedModels(accountId)),
+        llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
+        pooledEnabled: resolveFeatureFlag(loaded.row.metadata, "pooled_provider_secrets"),
+      };
+      return c.json(await serializeBinding(updated, projectDefaultAgentOf(loaded.row.metadata), modelCtx));
+    },
+  );
+}

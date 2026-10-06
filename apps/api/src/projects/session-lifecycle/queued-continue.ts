@@ -25,13 +25,15 @@ import { DELIVERY_FAILURE_COPY } from './types';
 import {
   remintWireMessageId,
 } from './inbox-placement';
-import { deliverQueuedContinue } from './queued-continue-delivery';
+import { deliverQueuedContinue, deliverSteer } from './queued-continue-delivery';
 import { drainSessionLifecycleQueue } from './drain';
 
 const ANSWER_CHECK_RETRY_BASE_MS = 5_000;
 const MAX_ANSWER_CHECK_FAILURES = 3;
 
-async function admitQueuedContinue(row: SessionLifecycleCommandRow, tl: ProvisionTimeline): Promise<'admitted' | 'queued' | 'failed'> {
+async function admitQueuedContinue(row: SessionLifecycleCommandRow, tl: ProvisionTimeline): Promise<'admitted' | 'queued' | 'failed' | { steerInto: string }> {
+  // The direct `continueSession` call this row replaced had no admission.
+  if ((row.payload as { directFollowUp?: unknown } | null)?.directFollowUp === true) return 'admitted';
   let admission: Awaited<ReturnType<typeof admitInboxPrompt>>;
   try {
     admission = await admitInboxPrompt(row);
@@ -43,7 +45,7 @@ async function admitQueuedContinue(row: SessionLifecycleCommandRow, tl: Provisio
     });
     return 'failed';
   }
-  if (admission.admit) return 'admitted';
+  if (admission.admit) return admission.steerInto ? { steerInto: admission.steerInto } : 'admitted';
   // Arm BEFORE the requeue: the arm's result picks the requeue's clock. A
   // runtime that will not serve the interrupt cannot end the turn this row
   // waits behind — re-arming it every 2 s is the unreachable-ladder's
@@ -99,6 +101,7 @@ export async function executeQueuedContinue(
   }
   const tl = new ProvisionTimeline(row.commandId, 'deliver');
   const admitted = await admitQueuedContinue(row, tl);
+  if (typeof admitted === 'object') return deliverSteer(row, payload, text, admitted.steerInto, tl);
   if (admitted !== 'admitted') return admitted;
   // A non-final prompt of a released Stop batch (KRTX-683) goes out without
   // starting a turn, and once it lands hands off to the batch's next row

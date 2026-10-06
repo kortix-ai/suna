@@ -941,6 +941,9 @@ export const accountSecretResources = kortixSchema.table('account_secret_resourc
   strategy: projectSecretStrategyEnum('strategy').notNull(),
   active: boolean('active').default(true).notNull(),
   cooldownUntil: timestamp('cooldown_until', { withTimezone: true }),
+  /** When a cooling-down account may be re-tried: each limit sets it 15 min out; the first
+   *  resolve after it lifts `cooldownUntil` once (a reset before the provider's hinted reset). */
+  cooldownProbeAt: timestamp('cooldown_probe_at', { withTimezone: true }),
   /** First permanent failure of the stored login (a refresh the provider
    *  rejected, or a login that cannot be read). The account stays usable and
    *  in its pools; a successful refresh or a reconnect clears it. */
@@ -4413,6 +4416,8 @@ export const accountDeletionRequests = kortixSchema.table(
     cancelledAt: timestamp('cancelled_at', { withTimezone: true, mode: 'string' }),
     isCancelled: boolean('is_cancelled').default(false),
     isDeleted: boolean('is_deleted').default(false),
+    /** Set while a worker holds the `processing` claim; a stale one is reclaimable. */
+    processingStartedAt: timestamp('processing_started_at', { withTimezone: true, mode: 'string' }),
   },
   (table) => [
     // At most one pending deletion request per account. The application

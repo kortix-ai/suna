@@ -179,7 +179,8 @@ mock.module('../shared/stripe', () => ({
   }),
 }));
 
-const { resolveAccountId, resolveScopedAccountId } = await import('../shared/resolve-account');
+const { resolveAccountId } = await import('../shared/resolve-account');
+const { resolveScopedAccountId } = await import('../middleware/resolve-account');
 const { runWithContext } = await import('../lib/request-context');
 const { setImpersonationContext } = await import('../shared/impersonation');
 

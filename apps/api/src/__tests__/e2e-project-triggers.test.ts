@@ -790,9 +790,11 @@ const {
   drainTriggerExecutionQueue,
   projectsApp,
   projectWebhooksApp,
+  registerAllProjectRoutes,
   runProjectTriggerSweep,
 } = await import('../projects/index');
-const { resetRateLimiters } = await import('../shared/rate-limit');
+registerAllProjectRoutes();
+const { resetRateLimiters } = await import('../middleware/rate-limit');
 
 function createApp() {
   const app = new Hono();
@@ -1635,7 +1637,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(manifestReadCalls).toBe(2);
   });
 
-  test('webhook reports a connector delivery mismatch without creating a session', async () => {
+  test('webhook rejects a connector delivery mismatch as a plain 401 without creating a session', async () => {
     seedManifest(webhookEntry({
       slug: 'hook',
       name: 'Hook',
@@ -1656,11 +1658,40 @@ describe('git-backed triggers — runtime fire paths', () => {
       body: rawBody,
     });
 
-    expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({
-      code: 'webhook_secret_delivery_mismatch',
-    });
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'Invalid webhook signature' });
     expect(sandboxProvisionCalls).toBe(0);
+  });
+
+  test('an unknown slug answers the same 401 as a bad signature (no existence oracle)', async () => {
+    seedManifest(webhookEntry({ slug: 'hook', name: 'Hook', secretEnv: 'HOOK_SECRET', prompt: 'x' }));
+    secretValues.set('HOOK_SECRET', 'shhh');
+    const app = createApp();
+    const rawBody = JSON.stringify({ a: 1 });
+    const res = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/no-such-slug`, {
+      method: 'POST',
+      headers: { 'X-Kortix-Signature': sign(rawBody, 'shhh') },
+      body: rawBody,
+    });
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'Invalid webhook signature' });
+  });
+
+  test('a timestamped delivery signs <timestamp>.<body> and a stale one is refused', async () => {
+    seedManifest(webhookEntry({ slug: 'hook', name: 'Hook', secretEnv: 'HOOK_SECRET', prompt: 'x' }));
+    secretValues.set('HOOK_SECRET', 'shhh');
+    const app = createApp();
+    const rawBody = JSON.stringify({ a: 1 });
+    const send = (timestamp: number) =>
+      app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+        method: 'POST',
+        headers: { 'X-Kortix-Timestamp': String(timestamp), 'X-Kortix-Signature': sign(`${timestamp}.${rawBody}`, 'shhh') },
+        body: rawBody,
+      });
+    const now = Math.floor(Date.now() / 1000);
+    expect((await send(now - 3600)).status).toBe(401);
+    expect((await send(now + 3600)).status).toBe(401);
+    expect((await send(now)).status).toBe(202);
   });
 
   test('webhook fires with a valid HMAC spawn a session', async () => {

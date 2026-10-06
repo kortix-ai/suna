@@ -92,12 +92,16 @@ export function getProxyServices(): Record<string, ProxyServiceConfig> {
       keyInjection: { type: 'header', headerName: 'Authorization', prefix: 'Bearer ' },
       allowedRoutes: [
         { path: '/v1/scrape', methods: ['POST'] },
-        { path: '/v1/crawl', methods: ['POST', 'GET'], prefixMatch: true },
+        // Starting a crawl is billed once. A status poll is free upstream, so
+        // it is not billed (`proxy_firecrawl_status` has a zero price).
+        { path: '/v1/crawl', methods: ['POST'] },
+        { path: '/v1/crawl', methods: ['GET'], prefixMatch: true, billingToolName: 'proxy_firecrawl_status' },
         { path: '/v1/map', methods: ['POST'] },
         { path: '/v1/search', methods: ['POST'] },
         // Firecrawl JS SDK v2+ uses /v2 endpoints
         { path: '/v2/scrape', methods: ['POST'] },
-        { path: '/v2/crawl', methods: ['POST', 'GET'], prefixMatch: true },
+        { path: '/v2/crawl', methods: ['POST'] },
+        { path: '/v2/crawl', methods: ['GET'], prefixMatch: true, billingToolName: 'proxy_firecrawl_status' },
         { path: '/v2/map', methods: ['POST'] },
         { path: '/v2/search', methods: ['POST'] },
       ],

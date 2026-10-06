@@ -4,6 +4,8 @@ import { describe, expect, test } from 'bun:test';
 // `sandbox-env-sync` entry module. Every name below was exported by the
 // original single-file implementation; the split into sibling modules must
 // keep every one of them resolving through this same import path.
+// (KRTX-1499 removed `llmGatewayBaseUrlForProvider`: it ignored its only
+// argument, so the push paths now call the boot resolver directly.)
 import {
   ENV_SYNC_BACKGROUND_REFRESH_STALE_MS,
   type ProjectSecretPropagationResult,
@@ -14,7 +16,6 @@ import {
   __resetNetworkBoundaryArmCacheForTests,
   __resetPromptModelSignatureCacheForTests,
   daemonHasConfigReleases,
-  llmGatewayBaseUrlForProvider,
   propagateLlmGatewayModeToActiveSandboxes,
   propagateProjectSecretsToActiveSandboxes,
   pushSessionAgentConfigToSandbox,
@@ -28,7 +29,6 @@ import {
 describe('sandbox-env-sync export surface', () => {
   test('every historical export still resolves through the entry path', () => {
     for (const fn of [
-      llmGatewayBaseUrlForProvider,
       __resetNetworkBoundaryArmCacheForTests,
       __resetPromptModelSignatureCacheForTests,
       __pendingBackgroundEnvRefreshesForTests,
