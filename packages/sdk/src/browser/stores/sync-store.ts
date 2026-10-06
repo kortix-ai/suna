@@ -21,7 +21,6 @@ import { ascendingId } from "./sync-store/ascending-id";
 import { Binary } from "./sync-store/binary";
 import { DELTA_EVENT_TAIL_LIMIT } from "./sync-store/delta-event-window";
 import { reconcileHydratedParts } from "./sync-store/reconcile-parts";
-import { writeStreamCache } from "./sync-store/stream-cache";
 import type {
 	FileDiff,
 	MessageError,
@@ -2581,19 +2580,6 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// and the deltaActiveParts guard in upsertPart must not silently
 				// no-op just because that field is missing.
 				store.upsertPart(part.messageID, part, resolvedSessionID);
-				if (isTextLikePart(part)) {
-					if (!resolvedSessionID) return;
-					const msgInfo = get().messages[resolvedSessionID]?.find(
-						(m) => m.id === part.messageID,
-					);
-					writeStreamCache(
-						resolvedSessionID,
-						part.messageID,
-						part.id,
-						part.text,
-						msgInfo?.role === "assistant" ? msgInfo.parentID : undefined,
-					);
-				}
 				return;
 			}
 			case "message.part.removed": {
@@ -2671,23 +2657,6 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 						delta: (e.properties as { delta: string }).delta,
 					})),
 				);
-				if (props.field === "text") {
-					const updated = get().parts[props.messageID]?.find(
-						(p) => p.id === props.partID,
-					);
-					if (updated && isTextLikePart(updated) && updated.text.length > 0) {
-						const msgInfo = get().messages[props.sessionID]?.find(
-							(m) => m.id === props.messageID,
-						);
-						writeStreamCache(
-							props.sessionID,
-							props.messageID,
-							props.partID,
-							updated.text,
-							msgInfo?.role === "assistant" ? msgInfo.parentID : undefined,
-						);
-					}
-				}
 				return;
 			}
 			case "session.status": {
