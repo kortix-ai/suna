@@ -5,12 +5,51 @@
  * the adapter's own proxy forward so the instance guard and the stop record
  * run exactly as for a client's request.
  */
+import { STEER_NO_ACTIVE_TURN_CODE } from '@kortix/api-contract/runtime-relay'
 import { logger } from '@/lib/log/logger'
 import type { HarnessProxyService } from '../contract/proxy'
-import type { HarnessTurnResponse, HarnessTurnService } from '../contract/turns'
+import type { HarnessTurnResponse, HarnessTurnService, RuntimePromptInput } from '../contract/turns'
+import { relaySteerRead } from '../shared/turn-relay'
+import { runtimeStateStore } from './runtime-state-projection'
 
 /** How many forwarded message ids the daemon remembers; OpenCode's own store covers older ones. */
 const RECENT_PROMPT_IDS = 512
+
+/**
+ * The first OpenCode whose loop reads a user message sent during a turn at
+ * the next step and does not end while one is unanswered (parent link).
+ * An older loop runs it as its own turn, after the running one.
+ */
+const STEER_MIN_OPENCODE_VERSION = '1.18.15'
+
+/** True when this OpenCode release can steer, null when the version is unknown. */
+export function opencodeSupportsSteer(version: string | null): boolean | null {
+  return version ? Bun.semver.satisfies(version, `>=${STEER_MIN_OPENCODE_VERSION}`) : null
+}
+
+/** The running OpenCode's version (`GET /global/health`, memoised by the state store). */
+export const runningOpencodeVersion = async (): Promise<string | null> => (await runtimeStateStore()?.opencodeVersion()) ?? null
+
+/**
+ * Steered message ids not yet read. The first assistant message whose
+ * `parentID` names one is the read: the loop answers that message now.
+ * Process-wide because the event loop (boot.ts) and the turn verbs share it.
+ */
+const unreadSteers = new Set<string>()
+
+/** Test seam. */
+export function resetSteerWitnessForTests(): void {
+  unreadSteers.clear()
+}
+
+/** Relay `steer_read` once per steered id, on its first answering assistant message. */
+export function observeSteerRead(event: { type?: string; properties?: unknown }): void {
+  if (event.type !== 'message.updated' || unreadSteers.size === 0) return
+  const info = (event.properties as { info?: { role?: unknown; parentID?: unknown; sessionID?: unknown } } | undefined)?.info
+  if (info?.role !== 'assistant' || typeof info.parentID !== 'string' || typeof info.sessionID !== 'string') return
+  if (!unreadSteers.delete(info.parentID)) return
+  void relaySteerRead(info.sessionID, info.parentID)
+}
 
 async function call(
   proxy: Pick<HarnessProxyService, 'forward'>,
@@ -41,6 +80,7 @@ const segment = encodeURIComponent
 export function createOpenCodeTurnService(
   proxy: Pick<HarnessProxyService, 'forward'>,
   workspace: () => string,
+  version: () => Promise<string | null> = runningOpencodeVersion,
 ): HarnessTurnService {
   // A repeated messageID is the same prompt sent twice (a retry, a second
   // replica, a reclaimed delivery). OpenCode does not refuse it, so answer it
@@ -63,38 +103,73 @@ export function createOpenCodeTurnService(
     }
   }
 
+  /** True when the id was sent before; otherwise it is recorded as sent now. */
+  const duplicate = async (sessionId: string, input: RuntimePromptInput, directory: string): Promise<boolean> => {
+    const key = input.messageId ? `${sessionId}:${input.messageId}` : null
+    if (!key) return false
+    if (recent.has(key) || (await alreadyHeld(sessionId, input.messageId!, directory)) || recent.has(key)) return true
+    recent.add(key)
+    if (recent.size > RECENT_PROMPT_IDS) recent.delete(recent.values().next().value!)
+    return false
+  }
+
+  const send = async (sessionId: string, input: RuntimePromptInput, directory: string): Promise<HarnessTurnResponse> => {
+    const key = input.messageId ? `${sessionId}:${input.messageId}` : null
+    let result: { status: number; body: unknown }
+    try {
+      result = await call(proxy, 'POST', `/session/${segment(sessionId)}/prompt_async`, directory, {
+        ...(input.messageId ? { messageID: input.messageId } : {}),
+        parts: input.parts,
+        ...(input.agent ? { agent: input.agent } : {}),
+        ...(input.model ? { model: input.model } : {}),
+        ...(input.variant ? { variant: input.variant } : {}),
+        ...(input.noReply ? { noReply: true } : {}),
+      })
+    } catch (err) {
+      if (key) recent.delete(key)
+      throw err
+    }
+    // `prompt_async` answers 204: accepted, the turn runs on the event stream.
+    if (result.status >= 200 && result.status < 300) {
+      return { status: 202, body: { message_id: input.messageId ?? null } }
+    }
+    // Refused: the prompt did not go in, so a retry under the same id may.
+    if (key) recent.delete(key)
+    return result
+  }
+
   return {
     async prompt(sessionId, input): Promise<HarnessTurnResponse> {
       const directory = input.directory ?? workspace()
-      const key = input.messageId ? `${sessionId}:${input.messageId}` : null
-      if (key) {
-        if (recent.has(key) || (await alreadyHeld(sessionId, input.messageId!, directory)) || recent.has(key)) {
-          return { status: 200, body: { deduplicated: true } }
-        }
-        recent.add(key)
-        if (recent.size > RECENT_PROMPT_IDS) recent.delete(recent.values().next().value!)
+      if (await duplicate(sessionId, input, directory)) return { status: 200, body: { deduplicated: true } }
+      return send(sessionId, input, directory)
+    },
+
+    // The prompt path, only while the session runs a turn: OpenCode's loop
+    // reads the message at its next step (parent link, 1.18.15 and later).
+    async steer(sessionId, input): Promise<HarnessTurnResponse> {
+      if (opencodeSupportsSteer(await version()) === false) return { status: 501, body: { code: 'feature_not_supported' } }
+      const directory = input.directory ?? workspace()
+      if (await duplicate(sessionId, input, directory)) return { status: 200, body: { deduplicated: true } }
+      // OpenCode's own answer (`/session/status`): busy or retry runs a turn, absent is idle.
+      const status = await call(proxy, 'GET', '/session/status', directory).catch(() => null)
+      const type = (status?.body as Record<string, { type?: unknown } | undefined> | null)?.[sessionId]?.type
+      if (status?.status !== 200 || (type !== 'busy' && type !== 'retry')) {
+        recent.delete(`${sessionId}:${input.messageId}`)
+        return { status: 409, body: { code: STEER_NO_ACTIVE_TURN_CODE } }
       }
-      let result: { status: number; body: unknown }
-      try {
-        result = await call(proxy, 'POST', `/session/${segment(sessionId)}/prompt_async`, directory, {
-          ...(input.messageId ? { messageID: input.messageId } : {}),
-          parts: input.parts,
-          ...(input.agent ? { agent: input.agent } : {}),
-          ...(input.model ? { model: input.model } : {}),
-          ...(input.variant ? { variant: input.variant } : {}),
-          ...(input.noReply ? { noReply: true } : {}),
-        })
-      } catch (err) {
-        if (key) recent.delete(key)
+      // Recorded before the send: the answering assistant message can follow at once.
+      unreadSteers.add(input.messageId!)
+      if (unreadSteers.size > RECENT_PROMPT_IDS) unreadSteers.delete(unreadSteers.values().next().value!)
+      const result = await send(sessionId, input, directory).catch((err) => {
+        unreadSteers.delete(input.messageId!)
         throw err
+      })
+      if (result.status !== 202) {
+        unreadSteers.delete(input.messageId!)
+        return result
       }
-      // `prompt_async` answers 204: accepted, the turn runs on the event stream.
-      if (result.status >= 200 && result.status < 300) {
-        return { status: 202, body: { message_id: input.messageId ?? null } }
-      }
-      // Refused: the prompt did not go in, so a retry under the same id may.
-      if (key) recent.delete(key)
-      return result
+      return { status: 202, body: { message_id: input.messageId, steered: true } }
     },
     abort: (sessionId) => call(proxy, 'POST', `/session/${segment(sessionId)}/abort`, workspace()),
     readMessage: (sessionId, messageId) =>

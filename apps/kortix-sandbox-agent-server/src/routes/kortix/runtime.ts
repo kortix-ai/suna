@@ -130,6 +130,17 @@ export function createRuntimeRouter(
       return answer(c, () => turns.prompt(c.req.param('sessionId'), input))
     })
 
+    // The `/prompt` body; the running turn reads it at its next step boundary.
+    app.post('/sessions/:sessionId/steer', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      const raw = await c.req.json().catch(() => undefined)
+      const input = parseRuntimePromptBody(raw)
+      if (typeof input === 'string') return c.json({ error: input }, 400)
+      if (!input.messageId) return c.json({ error: 'message_id is required' }, 400)
+      return answer(c, () => turns.steer(c.req.param('sessionId'), input))
+    })
+
     app.post('/sessions/:sessionId/abort', async (c) => {
       const auth = authorize(cfg, c)
       if (!auth.ok) return auth.response
