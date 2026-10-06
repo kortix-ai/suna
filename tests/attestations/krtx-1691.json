@@ -1,15 +1,18 @@
 {
-  "source_hash": "63b2720a93af7e56b0b55b7e78dc7f9e798e289e56c6500fe078a08aa708b862",
+  "source_hash": "2c7e5b1204cbefb207955897208fe63d02a809358ecd605f5834c1511be10908",
   "diff_files": [
+    "apps/web/src/components/diff/diff-view.test.ts",
+    "apps/web/src/components/diff/diff-view.tsx",
+    "apps/web/src/features/changes/change-list.test.tsx",
     "apps/web/src/features/changes/diff-layout-toggle.test.tsx"
   ],
-  "diff_hash": "8decc084b65130f6935a59d3f32bb0bf1504d216fd4b8a5c44144ec22ae922c1",
-  "head": "d04293ae85a26ff1b5d3c3e526a9ce8ff2b8edc7",
+  "diff_hash": "1c540d4f3884a834acabddf099dec19f69441aab2ed3dffdbe4b46085ca1e4ee",
+  "head": "20389295606bd7fa92d3c5a2eb0c55ed711e2b42",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-06T21:15:39.412Z"
+  "at": "2026-10-06T23:37:23.996Z"
 }
