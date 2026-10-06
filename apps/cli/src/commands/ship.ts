@@ -167,7 +167,9 @@ export async function runShip(argv: string[]): Promise<number> {
   }
   const auth = hostName ? loadAuthForHost(hostName) : null;
   if (!auth?.token) {
-    if (hostName) {
+    // Name the host only when the workspace itself named it (--host or the
+    // link); a config-active host without a login keeps the generic message.
+    if (flags.host ?? link?.host) {
       process.stderr.write(
         `${status.err(`Host "${hostName}" is not logged in.`)} Run ` +
           `${C.cyan}kortix login --host ${hostName}${C.reset}.\n`,
