@@ -63,6 +63,14 @@ export const LIFECYCLE_COMMAND_SETTLED_CHANNEL = 'kortix_lifecycle_command_settl
  */
 export const LIFECYCLE_COMMAND_DUE_CHANNEL = 'kortix_lifecycle_command_due';
 
+/**
+ * A fifth channel: "this session's prompt inbox changed". A database trigger
+ * (migration 20261006151556632) sends it for every writer of a
+ * `continue_session` row, so the payload is one session id. The control
+ * reconciler re-reads that session's queue now; see `onSessionPromptsChanged`.
+ */
+export const SESSION_PROMPTS_CHANGED_CHANNEL = 'kortix_session_prompts_changed';
+
 type Handler = (projectId: string) => void;
 
 let listener: postgres.Sql | null = null;
@@ -70,6 +78,7 @@ let handlers: Handler[] = [];
 let publish: ((projectId: string) => void) | null = null;
 let tunnelForwardHandler: ((payload: string) => void) | null = null;
 let commandDueHandler: ((dueAtMs: number) => void) | null = null;
+let promptsChangedHandler: ((sessionId: string) => void) | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 const LISTEN_RETRY_MS = 60_000;
 
@@ -115,6 +124,21 @@ function deliverCommandDue(payload: string): void {
   if (!Number.isFinite(dueAtMs)) return;
   try {
     commandDueHandler?.(dueAtMs);
+  } catch {
+    // A subscriber must not take the listener down.
+  }
+}
+
+/** The control reconciler registers once, at import. Kept across stop/start. */
+export function onSessionPromptsChanged(handler: ((sessionId: string) => void) | null): void {
+  promptsChangedHandler = handler;
+}
+
+function deliverPromptsChanged(payload: string): void {
+  // The payload is a session id and nothing else.
+  if (!isUuid(payload)) return;
+  try {
+    promptsChangedHandler?.(payload);
   } catch {
     // A subscriber must not take the listener down.
   }
@@ -193,6 +217,7 @@ export async function startConfigBaseMoveBroadcast(): Promise<boolean> {
     });
     await sql.listen(LIFECYCLE_COMMAND_SETTLED_CHANNEL, wakeSettleWaiters);
     await sql.listen(LIFECYCLE_COMMAND_DUE_CHANNEL, deliverCommandDue);
+    await sql.listen(SESSION_PROMPTS_CHANGED_CHANNEL, deliverPromptsChanged);
     listener = sql;
     publish = (projectId: string) => {
       // Fire-and-forget on the LISTEN connection's own pool: it runs no other
@@ -201,7 +226,7 @@ export async function startConfigBaseMoveBroadcast(): Promise<boolean> {
       void sql.notify(BASE_MOVE_CHANNEL, projectId).catch(() => {});
     };
     console.log(
-      `[config-releases] base-move broadcast listening on ${BASE_MOVE_CHANNEL}, ${TUNNEL_FORWARD_CHANNEL}, ${LIFECYCLE_COMMAND_SETTLED_CHANNEL}, ${LIFECYCLE_COMMAND_DUE_CHANNEL}`,
+      `[config-releases] base-move broadcast listening on ${BASE_MOVE_CHANNEL}, ${TUNNEL_FORWARD_CHANNEL}, ${LIFECYCLE_COMMAND_SETTLED_CHANNEL}, ${LIFECYCLE_COMMAND_DUE_CHANNEL}, ${SESSION_PROMPTS_CHANGED_CHANNEL}`,
     );
     return true;
   } catch (error) {

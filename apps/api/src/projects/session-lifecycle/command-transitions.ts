@@ -157,6 +157,25 @@ export async function requeueForAdmission(
 }
 
 /**
+ * A `steer` row that cannot steer becomes a Queue List row for good (R10):
+ * `payload.delivery = 'queue'` and the reason in `payload.steerFallback`. The
+ * predicate on `delivery` writes it once. The claim is kept; the caller
+ * admits or requeues the row as a queue row.
+ */
+export async function recordSteerFallback(
+  lease: CommandLease,
+  reason: 'unsupported' | 'not_prompter' | 'turn_ended',
+): Promise<void> {
+  await db
+    .update(sessionLifecycleCommands)
+    .set({
+      payload: sql`${sessionLifecycleCommands.payload} || ${JSON.stringify({ delivery: 'queue', steerFallback: reason })}::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(and(ownedByLease(lease), sql`${sessionLifecycleCommands.payload}->>'delivery' = 'steer'`));
+}
+
+/**
  * Make the session's NEXT queued inbox row due now.
  *
  * Called after the terminal relay or reaper proves the current turn ended.
@@ -285,7 +304,7 @@ export async function markCommandForwarded(
   lease: CommandLease,
   sessionId: string,
   wireMessageId: string,
-  opts?: { noReply?: boolean },
+  opts?: { noReply?: boolean; steeredIntoMessageId?: string },
 ): Promise<boolean> {
   const forwarded = {
     status: 'forwarded',
@@ -294,6 +313,9 @@ export async function markCommandForwarded(
     // row alone, without re-deriving which of the payload's two ids this
     // attempt actually used.
     forwarded_message_id: wireMessageId,
+    // A steer: the message of the running turn that reads it. A turn end
+    // that names this row's id closes that turn (`steerTargetAtTurnEnd`).
+    ...(opts?.steeredIntoMessageId ? { steered_into_message_id: opts.steeredIntoMessageId } : {}),
   };
   const rows = await db
     .update(sessionLifecycleCommands)

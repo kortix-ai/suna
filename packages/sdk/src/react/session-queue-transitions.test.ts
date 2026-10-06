@@ -66,3 +66,26 @@ test('the same turn changes from sending to running on its first active observat
   expect(working!.state).toBe('working');
   expect(working!.pendingDelivery).toBeUndefined();
 });
+
+test('Stop and send moves the row to the transcript on the click, before the PATCH answers', async () => {
+  setup();
+  const key = qk.project.sessionPrompts('p1', 's1');
+  const at = new Date().toISOString();
+  client.setQueryData(key, [
+    { prompt_id: 'p-1', client_message_id: 'c1', message_id: 'm1', placement: 'composer', delivery: 'queue', state: 'queued', reason: 'turn_active', text: 'next', attempts: 0, last_error: null, created_at: at, available_at: at },
+  ]);
+  const requests: { method: string; body: unknown }[] = [];
+  globalThis.fetch = ((_url: unknown, init: { method?: string; body?: string } = {}) => {
+    requests.push({ method: init.method ?? 'GET', body: init.body ? JSON.parse(init.body) : undefined });
+    return new Promise<Response>(() => {});
+  }) as unknown as typeof fetch;
+  let queue: UseSessionPromptsResult;
+  function Probe() { queue = useSessionPrompts('p1', 's1'); return null; }
+  await act(async () => { root = create(createElement(QueryClientProvider, { client }, createElement(Probe))); });
+  await act(async () => {
+    void queue!.interrupt('p-1');
+    await Bun.sleep(10);
+  });
+  expect(queue!.prompts[0]).toMatchObject({ placement: 'transcript', delivery: 'interrupt' });
+  expect(requests.find((r) => r.method === 'PATCH')?.body).toEqual({ delivery: 'interrupt' });
+});

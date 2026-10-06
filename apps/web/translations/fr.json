@@ -1953,6 +1953,12 @@
     "queuedFiles": "{count, plural, one {# fichier} other {# fichiers}}",
     "queuedCount": "{count} en file",
     "editingQueued": "En cours de modification",
+    "steerNextStep": "Lu à la prochaine étape",
+    "steerFallbackUnsupported": "Attend ce tour. Cette session n'accepte pas de messages pendant un tour.",
+    "steerFallbackNotPrompter": "Attend ce tour. Un autre membre l'a lancé.",
+    "steerFallbackTurnEnded": "S'exécute comme son propre tour. Le tour s'est terminé avant.",
+    "stopAndSend": "Arrêter et envoyer",
+    "stopAndSendFailed": "Impossible d'arrêter et d'envoyer ce message",
     "submitEdit": "Valider",
     "collapseQueue": "Réduire la file",
     "expandQueue": "Développer la file"
@@ -19250,7 +19256,8 @@
       "text6243d930fc1c": "AI Operating System",
       "textc959682e0398": "A consulté les appareils connectés",
       "text976811d9540a": "A déconnecté un appareil",
-      "text6f417aa88601": "Dépenses de la passerelle LLM par source répertoriées"
+      "text6f417aa88601": "Dépenses de la passerelle LLM par source répertoriées",
+      "textc96cd610ba08": "Clé fournisseur mutualisée réessayée après la limite d’utilisation"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

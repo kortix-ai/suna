@@ -1953,6 +1953,12 @@
     "queuedFiles": "{count, plural, one {# датотека} few {# датотеке} other {# датотека}}",
     "queuedCount": "{count} u redu",
     "editingQueued": "Уређивање",
+    "steerNextStep": "Чита се у следећем кораку",
+    "steerFallbackUnsupported": "Чека овај потез. Ова сесија не прима поруке током потеза.",
+    "steerFallbackNotPrompter": "Чека овај потез. Покренуо га је други члан.",
+    "steerFallbackTurnEnded": "Покреће се као засебан потез. Потез се завршио раније.",
+    "stopAndSend": "Заустави и пошаљи",
+    "stopAndSendFailed": "Није могуће зауставити и послати ту поруку",
     "submitEdit": "Pošalji",
     "collapseQueue": "Skupi red",
     "expandQueue": "Proširi red"
@@ -19250,7 +19256,8 @@
       "text6243d930fc1c": "AI Operating System",
       "textc959682e0398": "Pregledao prijavljene uređaje",
       "text976811d9540a": "Odjavio uređaj",
-      "text6f417aa88601": "Потрошња LLM гејтвеја по извору излистана"
+      "text6f417aa88601": "Потрошња LLM гејтвеја по извору излистана",
+      "textc96cd610ba08": "Ponovo pokušan deljeni ključ provajdera nakon ograničenja korišćenja"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
