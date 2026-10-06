@@ -1975,6 +1975,8 @@ function TurnFooter(
         Gated on `!working` for the same reason the action bar is — an
         outcome is a settled fact, and a card that appears mid-stream would
         claim a change request exists before the server has one. */}
+      {!working && <TurnOutcomes turnKey={turn.userMessage.info.id} />}
+
       {/* ── Action bar (copy + turn meta) ──
           Gated on `!working` only. A turn that ends in tool calls has no closing
           prose, but its finished-at / duration / cost are still turn facts —
