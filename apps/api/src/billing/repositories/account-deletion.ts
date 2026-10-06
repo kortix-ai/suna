@@ -69,8 +69,10 @@ const STALE_CLAIM_INTERVAL = sql`interval '1 hour'`;
  * one is a backlog: prod held 410 never-executed requests from 2026-04-25 on
  * (5 accounts active after their request, 17 on a paid tier) when the worker
  * shipped. Deleting those is an irreversible product decision, so they stay
- * `pending` for a person (`countOverdueBacklog`). An auth-user delete makes
- * its request due now, so it is never in the backlog.
+ * `pending` for a person (`countOverdueBacklog`). An auth-user delete
+ * inserts a request due now, which runs; it sets an existing pending request
+ * to `least(scheduled_for, now())`, so a backlog row keeps its old date and
+ * still waits for a person.
  */
 const MAX_OVERDUE = sql`interval '2 days'`;
 
