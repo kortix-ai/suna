@@ -13,8 +13,9 @@ members in to it.
 
 Backends is an experimental project feature flag (`backends`), off by default
 and available only where Kortix runs Platinum machines. While it is off, every
-`kortix backends` command says so and exits `1`. Ask a project admin to enable
-**Backends** in Settings → Feature flags.
+`kortix backends` command says so and exits `1`. Backends is enabled per
+project by Kortix (it is not listed in Settings): tell the user to contact
+Kortix, and stop.
 
 ## When to use one
 

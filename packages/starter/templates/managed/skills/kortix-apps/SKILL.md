@@ -18,8 +18,8 @@ supported sandbox provider and should remain omitted unless an operator asks.
 1. Run `pwd` and inspect the intended source directory before deploying.
 2. Run `kortix projects info --json` to confirm the selected project. Read its
    identifier from `project_id`.
-3. If Apps is disabled, ask a project manager to enable the Experimental Apps
-   feature. API and CLI execution are project-gated.
+3. If Apps is disabled, stop and tell the user to contact Kortix: Kortix
+   enables Apps per project, and Settings does not list it.
 4. Do not create an empty App identity first. `kortix apps deploy` creates the
    identity when `--app` is omitted.
 5. Never run `kortix apps deploy` from an uninspected workspace root. It can

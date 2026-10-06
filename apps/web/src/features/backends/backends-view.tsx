@@ -118,6 +118,7 @@ export function BackendsView({ projectId }: { projectId: string }) {
           ) : !gate.enabled ? (
             <FeatureGateScreen
               featureName="Backends"
+              internalOnly
               description={t.raw(
                 'text8dd10daddd77',
               )}

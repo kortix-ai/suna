@@ -19,7 +19,8 @@ member's browser ──▶ Kortix App (static UI, access: project)
 ## Prerequisites
 
 `kortix projects features` must show `apps` and `backends` enabled. If either
-is off, stop and ask a project admin to enable it in Settings → Feature flags.
+is off, stop and tell the user to contact Kortix to enable it for the project
+(neither is listed in Settings).
 Do not work around a disabled feature.
 
 ## Layout (project repo)
@@ -62,8 +63,12 @@ memory/<app>.md                # what you built, URLs, how to redeploy
 6. **UI.** Vite + React + TypeScript (`npm create vite@latest apps/<app> -- --template react-ts`),
    `npm install convex`. Wire `src/convex.ts` exactly as kortix-backends
    references/sign-in.md shows and wrap the app in `ConvexProvider`. Import the
-   API types from `../../../backends/main/convex/_generated/api`. Use npm in
-   the App directory (pnpm 11 skips esbuild's build script and Vite fails).
+   API types from `backends/main/convex/_generated/api` with a relative path
+   (count the levels from the importing file). Package managers now block
+   install scripts by default and Vite then fails on esbuild: with npm 12 run
+   `npm install-scripts approve esbuild` in each package directory (it records
+   `allowScripts` in `package.json`); with pnpm 11 add `allowBuilds:
+   { esbuild: true }` to `pnpm-workspace.yaml`.
 7. **Quality bar.** It must feel like a product, not a demo:
    - navigation for every entity; create, edit, delete for each; confirmation
      before destructive actions;
@@ -73,6 +78,8 @@ memory/<app>.md                # what you built, URLs, how to redeploy
    - realtime by default (`useQuery` re-renders on change), no reload buttons;
    - every input has a `<label>`, every icon button an `aria-label`, so people
      and test agents can drive it;
+   - every drag-and-drop action also has a click path (a status menu or
+     buttons): `agent-browser drag` does not fire native HTML5 drag events;
    - responsive down to a laptop at 1280 px; consistent spacing and type.
 8. **Build and deploy the App.**
    ```sh
@@ -106,9 +113,11 @@ Report nothing as done until each check passed. Paste the evidence.
    and anything you could not verify.
 
 If the App hostname does not resolve from your sandbox (a developer's local
-Kortix stack serves Apps on `*.apps.localhost`), say so in the report, verify
-steps 1 and the build output instead, and give the user the URL and the flows
-to click.
+Kortix stack serves Apps on `*.apps.localhost`), serve the built `dist/` from a
+tiny local server that answers `GET /_kortix/backend-token` with
+`kortix backends token <name> --json`, and run steps 2–3 against it: that is the
+same build, backend, Kortix token and realtime path. Say in the report that you
+verified this way, and give the user the App URL and the flows to click.
 
 ## Redeploy after a change
 

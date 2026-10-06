@@ -19286,7 +19286,8 @@
       "textd784a0fa435a": "此项目已达到 3 个后端的上限。请先删除一个再创建新的。",
       "texte7a241debad5": "URL",
       "textbf8026b9f2ff": "后端 convex 数据库 实时 服务器函数 存储 计划任务",
-      "text74d0f7d5e755": "签发后端登录令牌"
+      "text74d0f7d5e755": "签发后端登录令牌",
+      "text1c41abcc2fff": "请联系 Kortix 启用。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

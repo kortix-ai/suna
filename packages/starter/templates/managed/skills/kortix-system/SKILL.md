@@ -347,8 +347,8 @@ keeps it running while requests arrive, and stops it after the configured idle
 timeout. `stop` suspends compute immediately. The next public request resumes
 the App and returns the original request after readiness.
 
-Apps is experimental and off by default. Enable **Apps** for the selected
-project under Project Settings → Feature flags before using the CLI or SDK. The
+Apps is off by default and enabled per project by Kortix (it is not listed in
+Project Settings → Feature flags; the user contacts Kortix). The
 CLI labels Apps as experimental. App operations remain gated by the selected
 project feature.
 

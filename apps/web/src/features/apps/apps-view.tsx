@@ -152,6 +152,7 @@ export function AppsView({ projectId }: { projectId: string }) {
           ) : !appsGate.enabled ? (
             <FeatureGateScreen
               featureName="Apps"
+              internalOnly
               description={tI18nComplete.raw('text3387c31a18b3')}
             />
           ) : apps.isLoading ? (

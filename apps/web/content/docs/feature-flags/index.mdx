@@ -95,7 +95,7 @@ A `routes` rejection is identical everywhere:
 
 ```json
 {
-  "error": "Apps is not enabled for this project. Enable it in Settings → Feature flags.",
+  "error": "Apps is not enabled for this project. Contact Kortix to enable it.",
   "code": "feature_disabled",
   "feature": "apps"
 }
@@ -110,7 +110,10 @@ this.
 
 ## Every flag
 
-Registry order — the same order **Settings → Feature flags** shows.
+Registry order — the same order **Settings → Feature flags** shows. `apps` and
+`backends` are internal-only: Settings does not list them, their `403` says
+"Contact Kortix to enable it.", and Kortix enables them per project with the
+same `PATCH`.
 
 | Key | Name | Stability | Default | Enforcement |
 |---|---|---|---|---|

@@ -66,6 +66,11 @@
  * A hidden flag is a DATED state, not a parking spot: hide it in the release
  * that makes it the default, delete it in the next one. The comment on the
  * entry names the release and the spec section that ends it.
+ *
+ * The same state also serves an INTERNAL-ONLY surface (`apps`, `backends`):
+ * not offered in Settings, enabled per project by Kortix on request through
+ * the same PATCH. Its 403 says "contact Kortix" instead of naming a toggle the
+ * caller cannot see (gate.ts).
  */
 import { config } from '../config';
 import { platinumUsRegion } from '../shared/platinum-region';
@@ -200,6 +205,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
     available: () => true,
     platformDefault: () => false,
     enforcement: 'routes',
+    // Internal-only (2026-10-06, kortix-backends PR): not offered in Settings.
+    // Projects already on keep it; Kortix enables others on request.
+    catalogHidden: true,
   },
   {
     key: 'backends',
@@ -212,6 +220,8 @@ const FLAGS: readonly FeatureFlagDef[] = [
     available: () => Boolean(config.PLATINUM_API_KEY),
     platformDefault: () => false,
     enforcement: 'routes',
+    // Internal-only dark launch: Kortix enables it per project on request.
+    catalogHidden: true,
   },
   {
     key: 'monitors',

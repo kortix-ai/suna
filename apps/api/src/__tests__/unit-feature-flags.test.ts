@@ -108,11 +108,11 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(resolveFeatureFlag({}, 'apps')).toBe(false);
     expect(resolveFeatureFlag({ experimental: { apps: true } }, 'apps')).toBe(true);
     expect(resolveFeatureFlag({ experimental: { apps: false } }, 'apps')).toBe(false);
-    expect(findCatalogFlag('apps')).toMatchObject({
+    // Internal-only since the kortix-backends PR: resolvable, never offered in Settings.
+    expect(REGISTERED_FEATURE_FLAGS.find((f) => f.key === 'apps')).toMatchObject({
       name: 'Apps',
       stability: 'stable',
-      available: true,
-      enabled: false,
+      catalogHidden: true,
     });
   });
 
@@ -296,8 +296,8 @@ describe('buildFeatureFlagCatalog', () => {
  * the support escape hatch with it.
  */
 describe('catalogHidden', () => {
-  test('no flag is hidden this release (agent_principal graduated)', () => {
-    expect(HIDDEN_KEYS).toEqual([]);
+  test('only the internal-only surfaces are hidden: apps and backends', () => {
+    expect(HIDDEN_KEYS).toEqual(['apps', 'backends']);
   });
 
   for (const key of HIDDEN_KEYS) {
@@ -334,14 +334,15 @@ describe('catalogHidden', () => {
 });
 
 describe('featureDisabledBody', () => {
-  test('carries the machine-readable code, the flag key, and points at Settings', () => {
+  test('carries the machine-readable code and the flag key; points at Settings, or at Kortix for a hidden flag', () => {
     for (const key of FEATURE_FLAG_KEYS) {
       const body = featureDisabledBody(key);
       expect(body.code).toBe(FEATURE_DISABLED_CODE);
       expect(body.code).toBe('feature_disabled');
       expect(body.feature).toBe(key);
       expect(typeof body.error).toBe('string');
-      expect(body.error).toContain('Settings');
+      // A hidden flag has no toggle in Settings to point at.
+      expect(body.error).toContain(HIDDEN_KEYS.includes(key) ? 'Contact Kortix' : 'Settings');
     }
   });
 });
