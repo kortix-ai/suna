@@ -2,6 +2,7 @@
 
 import { type ApiClientOptions, ApiError, backendApi } from '../../http/api-client';
 import { markSessionFresh } from '../../http/fresh-sessions';
+import { noteSessionStopped } from '../../http/session-stopped';
 import type { AuditEvent } from './audit';
 import { type ConnectorSharing, unwrap } from './shared';
 
@@ -1511,12 +1512,14 @@ export async function restartProjectSession(projectId: string, sessionId: string
 
 /** Manual pause: stops the running sandbox in place, resumable via start(). */
 export async function stopProjectSession(projectId: string, sessionId: string) {
-  return unwrap(
+  const stopped = unwrap(
     await backendApi.post<{ ok: boolean; session_id: string; status: string }>(
       `/projects/${projectId}/sessions/${sessionId}/stop`,
       {},
     ),
   );
+  noteSessionStopped(sessionId);
+  return stopped;
 }
 
 /**

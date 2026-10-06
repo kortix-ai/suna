@@ -1,6 +1,7 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import { clearSessionFresh, isSessionFresh } from '../../http/fresh-sessions';
+import { onSessionStopped } from '../../http/session-stopped';
 import type {
   CreateProjectSessionInput,
   ProjectSession,
@@ -1184,6 +1185,21 @@ test('stopProjectSession POSTs to /stop', async () => {
   expect(last().url).toContain('/projects/P1/sessions/S1/stop');
   expect(last().method).toBe('POST');
   expect(result.status).toBe('stopped');
+});
+
+test('stopProjectSession tells the open session hook, but only when the stop succeeded (05#1)', async () => {
+  const heard: string[] = [];
+  const off = onSessionStopped((id) => heard.push(id));
+  try {
+    nextResponse = { status: 409, body: { error: 'Session is not running' } };
+    await stopProjectSession('P1', 'S-fail').catch(() => {});
+    expect(heard).toEqual([]);
+    nextResponse = { status: 200, body: { ok: true, session_id: 'S-ok', status: 'stopped' } };
+    await stopProjectSession('P1', 'S-ok');
+    expect(heard).toEqual(['S-ok']);
+  } finally {
+    off();
+  }
 });
 
 test('getProjectSessionScope reads canonical session scope', async () => {
