@@ -186,7 +186,11 @@ export function buildPreviewCaddyfile(publicHost: string): string {
     file_server browse
   }
 
-  handle_path /_mailpit/* {
+  # Mailpit serves under its own prefix (MP_WEBROOT=_mailpit in the overlay).
+  # Its UI loads /dist/app.js and calls /api/v1 relative to that webroot; with
+  # the prefix stripped those requests reached the frontend and the inbox
+  # rendered blank.
+  handle /_mailpit* {
     reverse_proxy mailpit:8025 {
       import swap_tolerant
     }
@@ -255,6 +259,8 @@ export function buildPreviewComposeOverlay(
     restart: unless-stopped
   mailpit:
     image: axllent/mailpit:v1.27.8@sha256:6abc8e633df15eaf785cfcf38bae48e66f64beecdc03121e249d0f9ec15f0707
+    environment:
+      MP_WEBROOT: "_mailpit"
     restart: unless-stopped
   supabase-auth:
     environment:
@@ -388,7 +394,7 @@ export function applyPreviewEnvironment(
     SCHEDULER_ENABLED: 'false',
     KORTIX_TRIGGER_SCHEDULER_ENABLED: 'false',
     EMAIL_PROVIDER_ORDER: 'mailpit',
-    MAILPIT_API_URL: 'http://mailpit:8025',
+    MAILPIT_API_URL: 'http://mailpit:8025/_mailpit',
     SMTP_HOST: 'mailpit',
     SMTP_PORT: '1025',
     SMTP_USER: 'unused',
