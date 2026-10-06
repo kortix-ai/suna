@@ -20779,7 +20779,7 @@
       "layerOff": "{layer} aus",
       "never": "Nie",
       "pausedUntil": "bis {time}",
-      "agentLink": "Kortix Capture in einem Agenten nutzen"
+      "apiLink": "Kortix Capture API"
     },
     "settings": {
       "title": "Einstellungen",
@@ -21004,8 +21004,8 @@
       "linkDevicesHint": "Jeder aufnehmende Computer und sein Status",
       "linkExport": "Daten exportieren",
       "linkExportHint": "Episoden, Schritte und Workflows als JSONL oder Parquet",
-      "linkAgent": "Kortix Capture in einem Agenten nutzen",
-      "linkAgentHint": "Kortix-MCP-Server verbinden; Agenten lesen Workflows, Episoden und Momente"
+      "linkApi": "Kortix Capture API",
+      "linkApiHint": "Capture-Daten in Skripte, Agenten oder andere Tools holen"
     },
     "workflows": {
       "title": "Workflows",
@@ -21159,30 +21159,28 @@
       "browserBody": "Kortix Capture nimmt über die Desktop-App auf. Installiere sie, melde dich an und öffne dann Kortix Capture › Dieser Computer.",
       "getDesktop": "Kortix Desktop-App herunterladen"
     },
-    "agent": {
-      "title": "Kortix Capture in einem Agenten nutzen",
-      "description": "Kortix Capture hat keinen eigenen Chat. Jeder Agent mit dem Kortix-MCP-Server liest die Daten, mit deinen Berechtigungen.",
-      "step1": "1. Kortix-MCP-Server hinzufügen",
-      "step1Hint": "Bei der ersten Nutzung meldet er sich als du an. Eine URL für jede Organisation, in der du bist.",
-      "step2": "2. Die Capture-Tools, die er erhält",
-      "tool": {
-        "capture_accounts": "Organisationen mit aktivem Kortix Capture",
-        "capture_search": "Bildschirmtext, Aktionen und Transkripte durchsuchen",
-        "capture_timeline": "Was ein Gerät in einem Zeitraum aufgenommen hat",
-        "capture_frame": "Ein Bild: App, Fenster, Text auf dem Bildschirm",
-        "capture_episodes": "Aufgaben von Personen, mit Ziel und Ergebnis",
-        "capture_episode": "Eine Aufgabe mit ihren Schritten",
-        "capture_workflows": "Wiederkehrende Abläufe und ihre Automatisierungszeit",
-        "capture_workflow": "Ein Ablauf: Schritte, Varianten, Personen",
-        "capture_export": "Massenexport als JSONL oder Parquet"
+    "api": {
+      "title": "Kortix Capture API",
+      "description": "Hol deine Capture-Daten per HTTPS in Skripte, Agenten oder andere Tools. Die API liefert, was dir dieser Bereich zeigt.",
+      "baseUrl": "Basis-URL",
+      "auth": "Authentifizierung",
+      "authBody": "Sende einen Kortix-API-Schlüssel als Bearer-Token. Ein Schlüssel handelt in deinem Namen.",
+      "createKey": "API-Schlüssel erstellen",
+      "endpoints": "Daten-Endpunkte",
+      "endpoint": {
+        "account": "Kortix Capture für diese Organisation: an oder aus, und deine Rolle",
+        "search": "Bildschirmtext, Aktionen und Transkripte durchsuchen",
+        "timeline": "Was ein Gerät aufgenommen hat: App-Abschnitte, Bilder, Aktionen, Transkriptzeilen",
+        "frames": "Ein Bild mit seinem Bildschirmtext; eine signierte Video-URL",
+        "episodes": "Aufgaben von Personen, mit Ziel, Ergebnis und Schritten",
+        "workflows": "Wiederkehrende Abläufe: Schritte, Varianten, Personen, Automatisierungszeit",
+        "exports": "Massenexport als JSONL oder Parquet, danach eine Download-URL"
       },
-      "step3": "3. Frag den Agenten",
-      "example": "Welche Workflows in {name} kosten die meiste Zeit, und wer führt sie aus?",
-      "scopeNote": "Der Agent sieht, was du hier siehst: Admins und Betrachter lesen alle Mitglieder, Mitglieder nur ihre eigenen Daten. Jeder Zugriff auf ein anderes Mitglied wird im Audit-Log erfasst.",
-      "docs": "Kortix-Capture-Dokumentation",
-      "connect": "Client verbinden",
-      "exampleOwn": "Woran habe ich gestern gearbeitet, und welche Aufgaben wiederhole ich am häufigsten?",
-      "scopeNoteOwn": "Der Agent sieht nur deine eigenen Aufnahmen, genau wie diese Seite."
+      "example": "Beispiel",
+      "scopeOwn": "Du bist Mitglied: Die API liefert nur deine eigenen Aufnahmen.",
+      "scopeAll": "Du bist Admin oder Betrachter: Die API liefert alle Mitglieder dieser Organisation. Jeder Zugriff auf ein anderes Mitglied wird im Audit-Log erfasst.",
+      "docs": "API-Dokumentation",
+      "done": "Fertig"
     }
   }
 }

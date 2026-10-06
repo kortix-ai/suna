@@ -20779,7 +20779,7 @@
       "layerOff": "{layer} désactivé",
       "never": "Jamais",
       "pausedUntil": "jusqu’à {time}",
-      "agentLink": "Utiliser Kortix Capture dans un agent"
+      "apiLink": "API Kortix Capture"
     },
     "settings": {
       "title": "Paramètres",
@@ -21004,8 +21004,8 @@
       "linkDevicesHint": "Chaque ordinateur qui enregistre, et son statut",
       "linkExport": "Exporter les données",
       "linkExportHint": "Épisodes, étapes et workflows en JSONL ou Parquet",
-      "linkAgent": "Utiliser Kortix Capture dans un agent",
-      "linkAgentHint": "Connectez le serveur MCP Kortix ; les agents lisent workflows, épisodes et moments"
+      "linkApi": "API Kortix Capture",
+      "linkApiHint": "Récupérez vos données Capture dans des scripts, des agents ou ailleurs"
     },
     "workflows": {
       "title": "Workflows",
@@ -21159,30 +21159,28 @@
       "browserBody": "Kortix Capture enregistre depuis l’app de bureau. Installez-la, connectez-vous, puis ouvrez Kortix Capture › Cet ordinateur.",
       "getDesktop": "Obtenir l’app de bureau Kortix"
     },
-    "agent": {
-      "title": "Utiliser Kortix Capture dans un agent",
-      "description": "Kortix Capture n’a pas de chat. Tout agent doté du serveur MCP Kortix lit ses données, avec vos autorisations.",
-      "step1": "1. Ajoutez le serveur MCP Kortix",
-      "step1Hint": "Il se connecte en votre nom à la première utilisation. Une URL pour toutes vos organisations.",
-      "step2": "2. Les outils Capture qu’il reçoit",
-      "tool": {
-        "capture_accounts": "Organisations où Kortix Capture est activé",
-        "capture_search": "Chercher dans le texte à l’écran, les actions et les transcriptions",
-        "capture_timeline": "Ce qu’un appareil a enregistré sur une période",
-        "capture_frame": "Une image : app, fenêtre, texte à l’écran",
-        "capture_episodes": "Tâches effectuées, avec objectif et résultat",
-        "capture_episode": "Une tâche et ses étapes",
-        "capture_workflows": "Procédures répétées et leur temps automatisable",
-        "capture_workflow": "Une procédure : étapes, variantes, personnes",
-        "capture_export": "Export en masse en JSONL ou Parquet"
+    "api": {
+      "title": "API Kortix Capture",
+      "description": "Récupérez vos données Capture en HTTPS dans des scripts, des agents ou ailleurs. L’API renvoie ce que cet espace vous montre.",
+      "baseUrl": "URL de base",
+      "auth": "Authentification",
+      "authBody": "Envoyez une clé API Kortix comme jeton bearer. Une clé agit en votre nom.",
+      "createKey": "Créer une clé API",
+      "endpoints": "Points d’accès aux données",
+      "endpoint": {
+        "account": "Kortix Capture pour cette organisation : activé ou non, et votre rôle",
+        "search": "Chercher dans le texte à l’écran, les actions et les transcriptions",
+        "timeline": "Ce qu’un appareil a enregistré : plages d’apps, images, actions, lignes de transcription",
+        "frames": "Une image et son texte à l’écran ; une URL vidéo signée",
+        "episodes": "Tâches effectuées, avec objectif, résultat et étapes",
+        "workflows": "Procédures répétées : étapes, variantes, personnes, temps automatisable",
+        "exports": "Export en masse en JSONL ou Parquet, puis une URL de téléchargement"
       },
-      "step3": "3. Posez la question à l’agent",
-      "example": "Quels workflows de {name} prennent le plus de temps, et qui les exécute ?",
-      "scopeNote": "L’agent voit ce que vous voyez ici : administrateurs et lecteurs voient tous les membres, les membres leurs propres données. Chaque lecture d’un autre membre est inscrite au journal d’audit.",
-      "docs": "Documentation Kortix Capture",
-      "connect": "Connecter un client",
-      "exampleOwn": "Sur quoi ai-je travaillé hier, et quelles tâches est-ce que je répète le plus ?",
-      "scopeNoteOwn": "L’agent ne voit que vos propres enregistrements, comme cette page."
+      "example": "Exemple",
+      "scopeOwn": "Vous êtes membre : l’API ne renvoie que vos propres enregistrements.",
+      "scopeAll": "Vous êtes administrateur ou lecteur : l’API renvoie tous les membres de cette organisation. Chaque lecture d’un autre membre est inscrite au journal d’audit.",
+      "docs": "Documentation de l’API",
+      "done": "Terminé"
     }
   }
 }

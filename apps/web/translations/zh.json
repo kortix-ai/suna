@@ -20779,7 +20779,7 @@
       "layerOff": "{layer}已关闭",
       "never": "从未",
       "pausedUntil": "至 {time}",
-      "agentLink": "在智能体中使用 Kortix Capture"
+      "apiLink": "Kortix Capture API"
     },
     "settings": {
       "title": "设置",
@@ -21004,8 +21004,8 @@
       "linkDevicesHint": "所有正在录制的电脑及其状态",
       "linkExport": "导出数据",
       "linkExportHint": "以 JSONL 或 Parquet 导出片段、步骤和工作流",
-      "linkAgent": "在智能体中使用 Kortix Capture",
-      "linkAgentHint": "连接 Kortix MCP 服务器，智能体即可读取工作流、片段和时刻"
+      "linkApi": "Kortix Capture API",
+      "linkApiHint": "将 Capture 数据接入脚本、智能体或任何工具"
     },
     "workflows": {
       "title": "工作流",
@@ -21159,30 +21159,28 @@
       "browserBody": "Kortix Capture 通过桌面应用录制。安装并登录后，打开 Kortix Capture › 此电脑。",
       "getDesktop": "获取 Kortix 桌面应用"
     },
-    "agent": {
-      "title": "在智能体中使用 Kortix Capture",
-      "description": "Kortix Capture 没有自己的聊天。任何连接了 Kortix MCP 服务器的智能体都能以你的权限读取其数据。",
-      "step1": "1. 添加 Kortix MCP 服务器",
-      "step1Hint": "首次使用时会以你的身份登录。你所在的所有组织共用一个 URL。",
-      "step2": "2. 它获得的 Capture 工具",
-      "tool": {
-        "capture_accounts": "已开启 Kortix Capture 的组织",
-        "capture_search": "搜索屏幕文字、操作和转录",
-        "capture_timeline": "设备在某段时间内录制的内容",
-        "capture_frame": "单帧：应用、窗口、屏幕文字",
-        "capture_episodes": "人们完成的任务，含目标和结果",
-        "capture_episode": "单个任务及其步骤",
-        "capture_workflows": "重复的流程及其可自动化时间",
-        "capture_workflow": "单个流程：步骤、变体、人员",
-        "capture_export": "以 JSONL 或 Parquet 批量导出"
+    "api": {
+      "title": "Kortix Capture API",
+      "description": "通过 HTTPS 将你的 Capture 数据接入脚本、智能体或任何工具。API 返回的内容与本区域向你展示的一致。",
+      "baseUrl": "基础 URL",
+      "auth": "身份验证",
+      "authBody": "以 Bearer 令牌发送 Kortix API 密钥。密钥以你的身份执行操作。",
+      "createKey": "创建 API 密钥",
+      "endpoints": "数据端点",
+      "endpoint": {
+        "account": "本组织的 Kortix Capture：是否开启及你的角色",
+        "search": "搜索屏幕文字、操作和转录",
+        "timeline": "设备录制的内容：应用片段、帧、操作、转录行",
+        "frames": "单帧及其屏幕文字；签名视频 URL",
+        "episodes": "人们完成的任务，含目标、结果和步骤",
+        "workflows": "重复的流程：步骤、变体、人员、可自动化时间",
+        "exports": "以 JSONL 或 Parquet 批量导出，然后获取下载 URL"
       },
-      "step3": "3. 向智能体提问",
-      "example": "{name} 中哪些工作流最耗时，由谁执行？",
-      "scopeNote": "智能体看到的与你在这里看到的相同：管理员和查看者可读取所有成员，成员只能读取自己的数据。每次读取其他成员的数据都会记入审计日志。",
-      "docs": "Kortix Capture 文档",
-      "connect": "连接客户端",
-      "exampleOwn": "我昨天做了什么？我最常重复哪些任务？",
-      "scopeNoteOwn": "智能体只能看到你自己的录制内容，与本页面相同。"
+      "example": "示例",
+      "scopeOwn": "你是成员：API 只返回你自己的录制内容。",
+      "scopeAll": "你是管理员或查看者：API 返回本组织所有成员的数据。每次读取其他成员的数据都会记入审计日志。",
+      "docs": "API 文档",
+      "done": "完成"
     }
   }
 }

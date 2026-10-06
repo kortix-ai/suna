@@ -20779,7 +20779,7 @@
       "layerOff": "{layer} desactivado",
       "never": "Nunca",
       "pausedUntil": "hasta {time}",
-      "agentLink": "Usar Kortix Capture en un agente"
+      "apiLink": "API de Kortix Capture"
     },
     "settings": {
       "title": "Configuración",
@@ -21004,8 +21004,8 @@
       "linkDevicesHint": "Todos los equipos que graban y su estado",
       "linkExport": "Exportar datos",
       "linkExportHint": "Episodios, pasos y workflows como JSONL o Parquet",
-      "linkAgent": "Usar Kortix Capture en un agente",
-      "linkAgentHint": "Conecta el servidor MCP de Kortix; los agentes leen flujos de trabajo, episodios y momentos"
+      "linkApi": "API de Kortix Capture",
+      "linkApiHint": "Lleva tus datos de Capture a scripts, agentes o lo que quieras"
     },
     "workflows": {
       "title": "Workflows",
@@ -21159,30 +21159,28 @@
       "browserBody": "Kortix Capture graba desde la app de escritorio. Instálala, inicia sesión y abre Kortix Capture › Este equipo.",
       "getDesktop": "Obtener la app de escritorio de Kortix"
     },
-    "agent": {
-      "title": "Usar Kortix Capture en un agente",
-      "description": "Kortix Capture no tiene chat propio. Cualquier agente con el servidor MCP de Kortix lee sus datos, con tus permisos.",
-      "step1": "1. Añade el servidor MCP de Kortix",
-      "step1Hint": "Inicia sesión como tú la primera vez. Una URL para todas las organizaciones a las que perteneces.",
-      "step2": "2. Las herramientas de Capture que obtiene",
-      "tool": {
-        "capture_accounts": "Organizaciones con Kortix Capture activado",
-        "capture_search": "Busca texto en pantalla, acciones y transcripciones",
-        "capture_timeline": "Lo que grabó un dispositivo en un intervalo",
-        "capture_frame": "Un fotograma: app, ventana, texto en pantalla",
-        "capture_episodes": "Tareas que hizo la gente, con objetivo y resultado",
-        "capture_episode": "Una tarea con sus pasos",
-        "capture_workflows": "Procedimientos repetidos y su tiempo automatizable",
-        "capture_workflow": "Un procedimiento: pasos, variantes, personas",
-        "capture_export": "Exportación masiva en JSONL o Parquet"
+    "api": {
+      "title": "API de Kortix Capture",
+      "description": "Lleva tus datos de Capture por HTTPS a scripts, agentes o lo que quieras. La API devuelve lo que te muestra esta área.",
+      "baseUrl": "URL base",
+      "auth": "Autenticación",
+      "authBody": "Envía una clave de API de Kortix como token bearer. La clave actúa en tu nombre.",
+      "createKey": "Crear una clave de API",
+      "endpoints": "Endpoints de datos",
+      "endpoint": {
+        "account": "Kortix Capture en esta organización: activado o no, y tu rol",
+        "search": "Busca texto en pantalla, acciones y transcripciones",
+        "timeline": "Lo que grabó un dispositivo: tramos de apps, fotogramas, acciones, líneas de transcripción",
+        "frames": "Un fotograma con su texto en pantalla; una URL de vídeo firmada",
+        "episodes": "Tareas que hizo la gente, con objetivo, resultado y pasos",
+        "workflows": "Procedimientos repetidos: pasos, variantes, personas, tiempo automatizable",
+        "exports": "Exportación masiva en JSONL o Parquet y luego una URL de descarga"
       },
-      "step3": "3. Pregunta al agente",
-      "example": "¿Qué flujos de trabajo de {name} llevan más tiempo y quién los realiza?",
-      "scopeNote": "El agente ve lo que ves aquí: administradores y lectores ven a todos los miembros; los miembros, solo lo suyo. Cada lectura de otro miembro queda en el registro de auditoría.",
-      "docs": "Documentación de Kortix Capture",
-      "connect": "Conectar un cliente",
-      "exampleOwn": "¿En qué trabajé ayer y qué tareas repito más?",
-      "scopeNoteOwn": "El agente solo ve tus propias grabaciones, igual que esta página."
+      "example": "Ejemplo",
+      "scopeOwn": "Eres miembro: la API solo devuelve tus propias grabaciones.",
+      "scopeAll": "Eres administrador o lector: la API devuelve todos los miembros de esta organización. Cada lectura de otro miembro queda en el registro de auditoría.",
+      "docs": "Documentación de la API",
+      "done": "Listo"
     }
   }
 }

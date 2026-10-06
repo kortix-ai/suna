@@ -20779,7 +20779,7 @@
       "layerOff": "{layer} オフ",
       "never": "なし",
       "pausedUntil": "{time} まで",
-      "agentLink": "エージェントで Kortix Capture を使う"
+      "apiLink": "Kortix Capture API"
     },
     "settings": {
       "title": "設定",
@@ -21004,8 +21004,8 @@
       "linkDevicesHint": "録画しているすべてのコンピュータとそのステータス",
       "linkExport": "データをエクスポート",
       "linkExportHint": "エピソード、ステップ、ワークフローを JSONL または Parquet で",
-      "linkAgent": "エージェントで Kortix Capture を使う",
-      "linkAgentHint": "Kortix MCP サーバーを接続すると、エージェントがワークフロー、エピソード、モーメントを読めます"
+      "linkApi": "Kortix Capture API",
+      "linkApiHint": "Capture のデータをスクリプトやエージェントなどに取り込む"
     },
     "workflows": {
       "title": "ワークフロー",
@@ -21159,30 +21159,28 @@
       "browserBody": "Kortix Capture はデスクトップアプリから録画します。インストールしてサインインし、Kortix Capture › このコンピュータ を開いてください。",
       "getDesktop": "Kortix デスクトップアプリを入手"
     },
-    "agent": {
-      "title": "エージェントで Kortix Capture を使う",
-      "description": "Kortix Capture には独自のチャットはありません。Kortix MCP サーバーを持つエージェントが、あなたの権限でデータを読みます。",
-      "step1": "1. Kortix MCP サーバーを追加する",
-      "step1Hint": "初回利用時にあなたとしてサインインします。所属するすべての組織で同じ URL です。",
-      "step2": "2. 利用できる Capture ツール",
-      "tool": {
-        "capture_accounts": "Kortix Capture が有効な組織",
-        "capture_search": "画面のテキスト、操作、文字起こしを検索",
-        "capture_timeline": "デバイスが期間内に記録した内容",
-        "capture_frame": "1 フレーム：アプリ、ウィンドウ、画面のテキスト",
-        "capture_episodes": "人が行ったタスク（目的と結果つき）",
-        "capture_episode": "1 つのタスクとそのステップ",
-        "capture_workflows": "繰り返される手順と自動化できる時間",
-        "capture_workflow": "1 つの手順：ステップ、バリアント、担当者",
-        "capture_export": "JSONL または Parquet で一括エクスポート"
+    "api": {
+      "title": "Kortix Capture API",
+      "description": "Capture のデータを HTTPS でスクリプトやエージェントなどに取り込めます。API はこの画面で見られるものと同じ範囲を返します。",
+      "baseUrl": "ベース URL",
+      "auth": "認証",
+      "authBody": "Kortix の API キーを Bearer トークンとして送信します。キーはあなたとして動作します。",
+      "createKey": "API キーを作成",
+      "endpoints": "データのエンドポイント",
+      "endpoint": {
+        "account": "この組織の Kortix Capture：オン／オフとあなたのロール",
+        "search": "画面のテキスト、操作、文字起こしを検索",
+        "timeline": "デバイスが記録した内容：アプリの区間、フレーム、操作、文字起こし行",
+        "frames": "1 フレームと画面のテキスト、署名付き動画 URL",
+        "episodes": "人が行ったタスク（目的、結果、ステップつき）",
+        "workflows": "繰り返される手順：ステップ、バリアント、担当者、自動化できる時間",
+        "exports": "JSONL または Parquet で一括エクスポートし、ダウンロード URL を取得"
       },
-      "step3": "3. エージェントに質問する",
-      "example": "{name} で最も時間がかかっているワークフローは何で、誰が実行していますか？",
-      "scopeNote": "エージェントが見られるのはここであなたが見られる範囲です。管理者と閲覧者は全メンバー、メンバーは自分のデータのみ。他のメンバーの閲覧はすべて監査ログに記録されます。",
-      "docs": "Kortix Capture のドキュメント",
-      "connect": "クライアントを接続",
-      "exampleOwn": "昨日は何に取り組みましたか？最もよく繰り返しているタスクは何ですか？",
-      "scopeNoteOwn": "エージェントが見られるのは、このページと同じくあなた自身の録画だけです。"
+      "example": "例",
+      "scopeOwn": "あなたはメンバーです。API が返すのはあなた自身の録画だけです。",
+      "scopeAll": "あなたは管理者または閲覧者です。API はこの組織の全メンバーのデータを返します。他のメンバーの閲覧はすべて監査ログに記録されます。",
+      "docs": "API ドキュメント",
+      "done": "完了"
     }
   }
 }

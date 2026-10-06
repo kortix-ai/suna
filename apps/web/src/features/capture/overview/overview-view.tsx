@@ -2,12 +2,7 @@
 
 import type { CaptureWorkflowSummary } from '@kortix/sdk';
 import { useCaptureOverview } from '@kortix/sdk/react';
-import {
-  CheckIcon,
-  DesktopIcon,
-  DownloadSimpleIcon,
-  PlugsConnectedIcon,
-} from '@phosphor-icons/react';
+import { CheckIcon, CodeIcon, DesktopIcon, DownloadSimpleIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -17,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
-import { CaptureAgentModal } from '../agent/capture-agent-modal';
+import { CaptureApiModal } from '../api/capture-api-modal';
 import { CapturePage } from '../area/capture-area-shell';
 import { captureHref, useCaptureArea, useCaptureRange } from '../area/use-capture-area';
 import { ExportModal } from '../intelligence/export-modal';
@@ -56,7 +51,7 @@ function Overview({ accountId }: { accountId: string }) {
   const hours = useHours();
   const percent = usePercent();
   const [exportOpen, setExportOpen] = useState(false);
-  const [agentOpen, setAgentOpen] = useState(false);
+  const [apiOpen, setApiOpen] = useState(false);
   const data = overview.data;
   const span = `${new Date(range.window.from).toLocaleDateString(locale, { day: 'numeric', month: 'short' })} – ${new Date(Date.parse(range.window.to) - 1).toLocaleDateString(locale, { day: 'numeric', month: 'short' })}`;
   const change =
@@ -278,15 +273,15 @@ function Overview({ accountId }: { accountId: string }) {
               />
               <button
                 type="button"
-                onClick={() => setAgentOpen(true)}
+                onClick={() => setApiOpen(true)}
                 className="hover:bg-hover flex items-center gap-3 border-t px-4 py-3 text-left transition-colors last:rounded-b-md"
               >
                 <span className="text-muted-foreground">
-                  <PlugsConnectedIcon className="size-4 shrink-0" />
+                  <CodeIcon className="size-4 shrink-0" />
                 </span>
                 <span className="flex min-w-0 flex-col">
-                  <span className="text-foreground text-sm font-medium">{t('linkAgent')}</span>
-                  <span className="text-muted-foreground text-xs">{t('linkAgentHint')}</span>
+                  <span className="text-foreground text-sm font-medium">{t('linkApi')}</span>
+                  <span className="text-muted-foreground text-xs">{t('linkApiHint')}</span>
                 </span>
               </button>
               {area.isAdmin ? (
@@ -308,11 +303,11 @@ function Overview({ accountId }: { accountId: string }) {
           </div>
         </>
       )}
-      <CaptureAgentModal
-        open={agentOpen}
-        onOpenChange={setAgentOpen}
-        accountName={area.accountName}
-        own={false}
+      <CaptureApiModal
+        open={apiOpen}
+        onOpenChange={setApiOpen}
+        accountId={accountId}
+        own={!area.readsEveryone}
       />
       {area.isAdmin ? (
         <ExportModal

@@ -2,7 +2,7 @@
 
 import type { CaptureDevice } from '@kortix/sdk';
 import { useCaptureDevices } from '@kortix/sdk/react';
-import { DesktopIcon, LaptopIcon, PlugsConnectedIcon, PlusIcon } from '@phosphor-icons/react';
+import { CodeIcon, DesktopIcon, LaptopIcon, PlusIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
@@ -31,7 +31,7 @@ import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { desktopDownloadUrl, isDesktop } from '@/lib/desktop';
 import { cn } from '@/lib/utils';
 
-import { CaptureAgentModal } from '../agent/capture-agent-modal';
+import { CaptureApiModal } from '../api/capture-api-modal';
 import { CapturePage } from '../area/capture-area-shell';
 import {
   captureHref,
@@ -90,7 +90,7 @@ export function DevicesView({ accountId }: { accountId: string }) {
     (device) => filter === 'all' || filterOf(deviceStatus(device).key) === filter,
   );
   const onDesktop = isDesktop();
-  const [agentOpen, setAgentOpen] = useState(false);
+  const [apiOpen, setApiOpen] = useState(false);
 
   return (
     <CapturePage
@@ -211,16 +211,16 @@ export function DevicesView({ accountId }: { accountId: string }) {
           variant="ghost"
           size="sm"
           className="text-muted-foreground gap-1.5"
-          onClick={() => setAgentOpen(true)}
+          onClick={() => setApiOpen(true)}
         >
-          <PlugsConnectedIcon className="size-3.5 shrink-0" />
-          {t('agentLink')}
+          <CodeIcon className="size-3.5 shrink-0" />
+          {t('apiLink')}
         </Button>
       </div>
-      <CaptureAgentModal
-        open={agentOpen}
-        onOpenChange={setAgentOpen}
-        accountName={area.accountName}
+      <CaptureApiModal
+        open={apiOpen}
+        onOpenChange={setApiOpen}
+        accountId={accountId}
         own={!area.readsEveryone}
       />
     </CapturePage>

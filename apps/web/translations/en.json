@@ -20779,7 +20779,7 @@
       "layerOff": "{layer} off",
       "never": "Never",
       "pausedUntil": "until {time}",
-      "agentLink": "Use Kortix Capture in an agent"
+      "apiLink": "Kortix Capture API"
     },
     "settings": {
       "title": "Settings",
@@ -21004,8 +21004,8 @@
       "linkDevicesHint": "Every computer that records, and its status",
       "linkExport": "Export data",
       "linkExportHint": "Episodes, steps and workflows as JSONL or Parquet",
-      "linkAgent": "Use Kortix Capture in an agent",
-      "linkAgentHint": "Connect the Kortix MCP server; agents read workflows, episodes and moments"
+      "linkApi": "Kortix Capture API",
+      "linkApiHint": "Pull your Capture data into scripts, agents or anything else"
     },
     "workflows": {
       "title": "Workflows",
@@ -21159,30 +21159,28 @@
       "browserBody": "Kortix Capture records from the desktop app. Install it, sign in, then open Kortix Capture › This computer.",
       "getDesktop": "Get the Kortix desktop app"
     },
-    "agent": {
-      "title": "Use Kortix Capture in an agent",
-      "description": "Kortix Capture has no chat of its own. Any agent with the Kortix MCP server reads its data, with your permissions.",
-      "step1": "1. Add the Kortix MCP server",
-      "step1Hint": "It signs in as you on first use. One URL for every organization you are in.",
-      "step2": "2. The Capture tools it gets",
-      "tool": {
-        "capture_accounts": "Organizations with Kortix Capture on",
-        "capture_search": "Search screen text, actions and transcripts",
-        "capture_timeline": "What a device recorded in a time range",
-        "capture_frame": "One frame: app, window, on-screen text",
-        "capture_episodes": "Tasks people did, with goal and outcome",
-        "capture_episode": "One task with its steps",
-        "capture_workflows": "Repeated procedures and their automation time",
-        "capture_workflow": "One procedure: steps, variants, people",
-        "capture_export": "Bulk export as JSONL or Parquet"
+    "api": {
+      "title": "Kortix Capture API",
+      "description": "Pull your Capture data into scripts, agents or anything else over HTTPS. The API returns what this area shows you.",
+      "baseUrl": "Base URL",
+      "auth": "Authentication",
+      "authBody": "Send a Kortix API key as a bearer token. A key acts as you.",
+      "createKey": "Create an API key",
+      "endpoints": "Data endpoints",
+      "endpoint": {
+        "account": "Kortix Capture for this organization: on or off, and your role",
+        "search": "Search screen text, actions and transcripts",
+        "timeline": "What a device recorded: app runs, frames, actions, transcript lines",
+        "frames": "One frame with its on-screen text; a signed video URL",
+        "episodes": "Tasks people did, with goal, outcome and steps",
+        "workflows": "Repeated procedures: steps, variants, people, automation time",
+        "exports": "Bulk export as JSONL or Parquet, then a download URL"
       },
-      "step3": "3. Ask the agent",
-      "example": "Which workflows in {name} take the most time, and who runs them?",
-      "scopeNote": "The agent sees what you see here: admins and viewers read every member, members their own. Every read of another member goes into the audit log.",
-      "docs": "Kortix Capture docs",
-      "connect": "Connect a client",
-      "exampleOwn": "What did I work on yesterday, and which tasks do I repeat most?",
-      "scopeNoteOwn": "The agent sees only your own recordings, the same as this page."
+      "example": "Example",
+      "scopeOwn": "You are a member: the API returns only your own recordings.",
+      "scopeAll": "You are an admin or viewer: the API returns every member of this organization. Every read of another member goes into the audit log.",
+      "docs": "API docs",
+      "done": "Done"
     }
   }
 }
