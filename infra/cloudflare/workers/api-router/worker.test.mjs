@@ -65,6 +65,23 @@ describe('api-router worker', () => {
     );
   });
 
+  test('routes dev to its us-east-2 stack and keeps the us-west-2 origins as the undo', () => {
+    const wrangler = readFileSync(
+      new URL('./wrangler.toml', import.meta.url),
+      'utf8',
+    );
+    const devVars = wrangler.match(
+      /\[env\.dev\.vars\]([\s\S]*?)(?=\n\[env\.|\s*$)/,
+    )?.[1];
+
+    expect(devVars).toContain('ACTIVE_BACKEND = "us-east-2"');
+    expect(devVars).toContain('GATEWAY_ACTIVE_BACKEND = "us-east-2"');
+    expect(devVars).toContain('BACKEND_US_EAST_2 = "https://dev-api-use2.kortix.com"');
+    expect(devVars).toContain('GATEWAY_BACKEND_US_EAST_2 = "https://gateway-dev-use2.kortix.com"');
+    expect(devVars).toContain('BACKEND_ECS_FARGATE = "https://dev-api-ecs-fargate.kortix.com"');
+    expect(devVars).toContain('GATEWAY_BACKEND_ECS_FARGATE = "https://gateway-dev-ecs-fargate.kortix.com"');
+  });
+
   test('keeps the prepared US East 2 origins inactive in production config', () => {
     const wrangler = readFileSync(
       new URL('./wrangler.toml', import.meta.url),

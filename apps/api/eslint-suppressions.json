@@ -1116,7 +1116,7 @@
   },
   "src/git-proxy/project-snapshot-build.ts": {
     "kortix-api/projects-surface": {
-      "count": 3
+      "count": 2
     },
     "no-restricted-properties": {
       "count": 2
@@ -1124,15 +1124,10 @@
   },
   "src/git-proxy/project-snapshot-ledger.ts": {
     "kortix-api/projects-surface": {
-      "count": 4
+      "count": 3
     },
     "no-console": {
       "count": 4
-    }
-  },
-  "src/git-proxy/project-snapshot-shared.ts": {
-    "kortix-api/projects-surface": {
-      "count": 1
     }
   },
   "src/git-proxy/project-snapshot-worker-operations.ts": {
