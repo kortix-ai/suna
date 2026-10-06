@@ -1,5 +1,5 @@
 {
-  "source_hash": "aff96456af665967e3f74e5f494b84c598451d06c6abd9b0d426ecf2a8598b5f",
+  "source_hash": "689cfd5339962729e32e3e5b2ae510a72ed427387aee281aba2bdda5281d2d0c",
   "diff_files": [
     ".agents/skills/kortix-brand/references/decisions.md",
     ".agents/skills/kortix-brand/references/verbal/voice-and-tone.md",
@@ -12,6 +12,7 @@
     "apps/api/src/projects/index.ts",
     "apps/api/src/projects/reaping/orphan-box-references.ts",
     "apps/api/src/projects/reaping/orphan-boxes.ts",
+    "apps/api/src/projects/surface.ts",
     "apps/cli/src/__tests__/backends.test.ts",
     "apps/cli/src/__tests__/leaf-help.test.ts",
     "apps/cli/src/command-table.ts",
@@ -90,13 +91,13 @@
     "tests/spec/routes.generated.json",
     "tests/src/flows/backends.flow.ts"
   ],
-  "diff_hash": "c121657f3a6c3ed337039abcad3a409e5bde72754de62227656a4034b557092d",
-  "head": "653906eaf3440f6058f89aae68f81a1f17a75a02",
+  "diff_hash": "376ebeaa18eb5e9d2265cfc8d53c87df1d30cfaf029920b92e5642a74029d31f",
+  "head": "8d39796f299c9bb898916138e2207663a0daa4a2",
   "passed": false,
   "lanes": {
-    "core": "fail",
+    "core": "pass",
     "packages": "fail",
-    "db-suites": "fail"
+    "db-suites": "pass"
   },
-  "at": "2026-10-06T16:30:16.585Z"
+  "at": "2026-10-06T16:43:00.315Z"
 }
