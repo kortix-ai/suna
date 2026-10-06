@@ -28,6 +28,10 @@ type CtxOpts = { projectArg?: string; hostArg?: string };
  *  the transcript. */
 export interface SessionPrompt {
   prompt_id: string;
+  /** `steer`, `queue` or `interrupt`. Absent from an API built before steering. */
+  delivery?: 'steer' | 'queue' | 'interrupt';
+  /** Why a `steer` prompt waits as `queue`: `unsupported`, `not_prompter`, `turn_ended`. */
+  steer_fallback?: 'unsupported' | 'not_prompter' | 'turn_ended' | null;
   client_message_id: string;
   message_id: string;
   state: 'queued' | 'delivering' | 'waiting' | 'failed';
@@ -50,7 +54,13 @@ const QUEUE_HELP = help`Usage: kortix sessions queue <session-id> [<subcommand>]
 
 The session's durable prompt inbox — messages the server still owes the agent.
 A queued prompt survives a closed terminal and is delivered when the session
-can take it. Put one there with \`kortix sessions chat <id> -p "…" --queue\`.
+can take it. Put one there with \`kortix sessions chat <id> -p "…" --queue\`,
+or steer a running turn with \`--steer\`.
+
+DELIVERY is how a prompt reaches a running turn: \`steer\` (read at the
+turn's next step), \`queue\` (waits for the turn to end) or \`interrupt\`
+(ends the turn after its running tool). A steer prompt that cannot steer runs
+as \`queue\` and shows why.
 
 Subcommands:
   ls                   List everything still waiting (default). --json.
@@ -97,6 +107,8 @@ export async function queueSessionPrompt(
   projectId: string,
   session: ProjectSession,
   text: string,
+  /** `steer`: the running turn reads it at its next step. Omitted: Queue List. */
+  delivery?: 'steer',
 ): Promise<CreateSessionPromptResult> {
   const defaults = sessionPromptDefaults(session);
   const body: Record<string, unknown> = {
@@ -105,6 +117,8 @@ export async function queueSessionPrompt(
     parts: [{ type: 'text', text }],
     client_sent_at_ms: Date.now(),
     remint_on_delivery: true,
+    // `placement: 'composer'` keeps an API built before steering on Queue List.
+    ...(delivery ? { delivery, placement: 'composer' } : {}),
   };
   if (defaults.agent || defaults.model) {
     body.overrides = {
@@ -235,12 +249,17 @@ function printQueue(prompts: SessionPrompt[], json: boolean): number {
   const idW = Math.max(...prompts.map((p) => p.prompt_id.length), 8);
   process.stdout.write('\n');
   process.stdout.write(
-    `  ${C.dim}${pad('PROMPT', idW)}   STATE        REASON               TEXT${C.reset}\n`,
+    `  ${C.dim}${pad('PROMPT', idW)}   STATE        DELIVERY    REASON               TEXT${C.reset}\n`,
   );
   for (const p of prompts) {
     process.stdout.write(
-      `  ${pad(p.prompt_id, idW)}   ${stateColor(p.state)}${pad(p.state, 11)}${C.reset}  ${pad(p.reason ?? '-', 19)}  ${oneLine(p.text)}\n`,
+      `  ${pad(p.prompt_id, idW)}   ${stateColor(p.state)}${pad(p.state, 11)}${C.reset}  ${pad(p.delivery ?? '-', 10)}  ${pad(p.reason ?? '-', 19)}  ${oneLine(p.text)}\n`,
     );
+    if (p.steer_fallback) {
+      process.stdout.write(
+        `  ${C.faded}${pad('', idW)}   Not steered (${p.steer_fallback}): ${STEER_FALLBACK_TEXT[p.steer_fallback]}.${C.reset}\n`,
+      );
+    }
     if (p.last_error) {
       process.stdout.write(`  ${C.faded}${pad('', idW)}   ${p.last_error}${C.reset}\n`);
     }
@@ -250,6 +269,12 @@ function printQueue(prompts: SessionPrompt[], json: boolean): number {
   );
   return 0;
 }
+
+const STEER_FALLBACK_TEXT = {
+  unsupported: 'this session cannot take messages mid-turn',
+  not_prompter: "another member's turn is running",
+  turn_ended: 'the turn ended first',
+} as const;
 
 function stateColor(state: SessionPrompt['state']): string {
   if (state === 'failed') return C.red;

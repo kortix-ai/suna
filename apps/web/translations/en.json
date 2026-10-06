@@ -1930,6 +1930,12 @@
     "queuedFiles": "{count, plural, one {# file} other {# files}}",
     "queuedCount": "{count} Queued",
     "editingQueued": "Editing",
+    "steerNextStep": "Read at next step",
+    "steerFallbackUnsupported": "Waits for this turn. This session cannot take messages mid-turn.",
+    "steerFallbackNotPrompter": "Waits for this turn. Another member started it.",
+    "steerFallbackTurnEnded": "Runs as its own turn. The turn ended first.",
+    "stopAndSend": "Stop and send",
+    "stopAndSendFailed": "Could not stop and send that message",
     "submitEdit": "Submit",
     "collapseQueue": "Collapse queue",
     "expandQueue": "Expand queue",
@@ -19261,7 +19267,8 @@
       "text6243d930fc1c": "AI Operating System",
       "textc959682e0398": "Viewed signed-in devices",
       "text976811d9540a": "Signed a device out",
-      "text6f417aa88601": "Listed LLM gateway spend by source"
+      "text6f417aa88601": "Listed LLM gateway spend by source",
+      "textc96cd610ba08": "Retried pooled provider key after rate limit"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

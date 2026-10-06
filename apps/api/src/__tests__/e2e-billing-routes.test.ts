@@ -39,6 +39,7 @@ let mockDeletionCancelResult: any = null;
 let mockDeletionDeleteResult: any = null;
 let mockDeletionError: Error | null = null;
 let mockAccountDeleteAllowed = true;
+let mockBillingWriteAllowed = true;
 
 // ─── Register mocks ──────────────────────────────────────────────────────────
 
@@ -84,6 +85,17 @@ mock.module('../iam', () => ({
   assertAuthorized: async (_actor: unknown, action: string) => {
     if (action === 'account.delete' && !mockAccountDeleteAllowed) {
       throw new HTTPException(403, { message: "You don't have permission to delete accounts." });
+    }
+  },
+}));
+
+// /deduct and /deduct-usage take client-supplied amounts: `billing.write` only.
+const realIamAuthorize = await import('../iam/authorize');
+mock.module('../iam/authorize', () => ({
+  ...realIamAuthorize,
+  assertAuthorized: async (_actor: unknown, action: string) => {
+    if (action === 'billing.write' && !mockBillingWriteAllowed) {
+      throw new HTTPException(403, { message: "You don't have permission to change billing." });
     }
   },
 }));
@@ -393,6 +405,28 @@ describe('Billing: deduct', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
+  });
+});
+
+describe('Billing: deduct requires billing.write', () => {
+  test('a member without billing.write cannot debit the wallet via /deduct or /deduct-usage', async () => {
+    mockBillingWriteAllowed = false;
+    try {
+      const app = createBillingTestApp();
+      for (const [path, body] of [
+        ['/v1/billing/deduct', { prompt_tokens: 1000, completion_tokens: 500, model: 'claude-sonnet-4.6' }],
+        ['/v1/billing/deduct-usage', { amount: 5 }],
+      ] as const) {
+        const res = await app.request(path, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
+          body: JSON.stringify(body),
+        });
+        expect(res.status).toBe(403);
+      }
+    } finally {
+      mockBillingWriteAllowed = true;
+    }
   });
 });
 

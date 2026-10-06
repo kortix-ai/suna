@@ -1953,6 +1953,12 @@
     "queuedFiles": "{count, plural, one {# file} other {# file}}",
     "queuedCount": "{count} in coda",
     "editingQueued": "In modifica",
+    "steerNextStep": "Letto al passo successivo",
+    "steerFallbackUnsupported": "Attende questo turno. Questa sessione non accetta messaggi durante un turno.",
+    "steerFallbackNotPrompter": "Attende questo turno. Lo ha avviato un altro membro.",
+    "steerFallbackTurnEnded": "Viene eseguito come turno a sé. Il turno è terminato prima.",
+    "stopAndSend": "Interrompi e invia",
+    "stopAndSendFailed": "Impossibile interrompere e inviare quel messaggio",
     "submitEdit": "Invia",
     "collapseQueue": "Comprimi coda",
     "expandQueue": "Espandi coda"
@@ -19250,7 +19256,8 @@
       "text6243d930fc1c": "AI Operating System",
       "textc959682e0398": "Ha visualizzato i dispositivi connessi",
       "text976811d9540a": "Ha disconnesso un dispositivo",
-      "text6f417aa88601": "Spesa del gateway LLM per origine elencata"
+      "text6f417aa88601": "Spesa del gateway LLM per origine elencata",
+      "textc96cd610ba08": "Chiave del provider condivisa riprovata dopo il limite di utilizzo"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

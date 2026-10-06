@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   type CreateSessionPromptInput,
   type CreateSessionPromptResult,
@@ -15,11 +15,13 @@ import {
   listSessionPrompts,
   retrySessionPrompt,
   editSessionPrompt,
+  interruptSessionPrompt,
 } from '../core/rest/projects-client/sessions';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { countLiveInboxPrompts, inboxObservationSupersedes } from '../core/session/working';
 import { claimOpenBundle, openBundleQueue } from '../core/session/open-bundle';
 import { createTickSingleFlight } from '../core/session/single-flight';
+import { openSessionControlStream } from '../core/session/control-stream';
 import { qk } from './query-keys';
 import { usePollOwner } from './use-poll-owner';
 import { mintSessionWireMessageId } from './use-opencode-sessions/messages';
@@ -43,11 +45,21 @@ import { mintSessionWireMessageId } from './use-opencode-sessions/messages';
  * sending something or pressing "send now" on it, which they can only do if
  * they can SEE it. Not polling an empty list meant only a full page load ever
  * showed those rows — and the same gap hid a prompt queued from a second tab.
+ *
+ * Both cadences run ONLY while the session's control stream is not connected.
+ * While it is, every write of an inbox row arrives as a `kortix.control.queue`
+ * frame (a database trigger pokes the stream's reconciler on every API
+ * replica), so the poll is the fallback for a gap in that stream, not the
+ * source. See `core/session/control-stream.ts`.
  */
 export const SESSION_PROMPTS_POLL_MS = 1_000;
 /** The floor for an EMPTY list. Slow enough to be free, fast enough that a
  *  prompt handed back by the server appears while the user is still looking. */
 export const SESSION_PROMPTS_IDLE_POLL_MS = 15_000;
+
+/** How often a connected stream's last queue frame is re-noted: three times
+ *  inside one observation's life (`INBOX_OBSERVATION_MAX_MS`, 10 s). */
+const SESSION_PROMPTS_STREAM_RENOTE_MS = 3_000;
 
 /**
  * The cadence for a list of `count` prompts. Pure, so the floor is testable.
@@ -193,6 +205,20 @@ export function withEditedPromptText(
   );
 }
 
+/** The rows with ONE row turned into Quick Queue — "Stop and send"'s
+ *  optimistic write, so the row leaves the list and paints in the transcript
+ *  on the click. */
+export function withInterruptedPrompt(
+  prompts: readonly SessionPrompt[],
+  promptId: string,
+): SessionPrompt[] {
+  return prompts.map((prompt) =>
+    prompt.prompt_id === promptId
+      ? { ...prompt, placement: 'transcript', delivery: 'interrupt' }
+      : prompt,
+  );
+}
+
 /**
  * How long an edit this tab sent outranks the words a read lists.
  *
@@ -334,7 +360,12 @@ export function optimisticSessionPrompt(
   const at = new Date(nowMs).toISOString();
   return {
     prompt_id: `${OPTIMISTIC_PROMPT_PREFIX}${input.clientMessageId}`,
-    placement: input.placement,
+    // The placement `createSessionPrompt` sends: `interrupt` paints in the
+    // transcript, `steer` and `queue` wait in the composer list.
+    placement:
+      input.placement ??
+      (input.delivery ? (input.delivery === 'interrupt' ? 'transcript' : 'composer') : undefined),
+    ...(input.delivery ? { delivery: input.delivery } : {}),
     full_text: text,
     client_message_id: input.clientMessageId,
     message_id: input.messageId,
@@ -509,6 +540,10 @@ export interface UseSessionPromptsResult {
   /** Replace a waiting row's text in place. Sends nothing, keeps its place
    *  and any hold. Throws 409 for a row already on the wire. */
   edit: (promptId: string, text: string) => Promise<SessionPrompt>;
+  /** "Stop and send": a waiting row becomes Quick Queue. The running turn
+   *  ends after its running tool, then this row runs. Throws 409 for a row
+   *  already on the wire. */
+  interrupt: (promptId: string) => Promise<SessionPrompt>;
   /** Hold, or release, the whole queue. The Stop button holds; any new send,
    *  and `retry`, release. */
   hold: (held: boolean) => Promise<{ prompts: SessionPrompt[] }>;
@@ -530,6 +565,71 @@ export function useSessionPrompts(
   );
 
   const pollOwner = usePollOwner(`prompts:${projectId ?? ''}/${sessionId ?? ''}`, enabled);
+  const [streamConnected, setStreamConnected] = useState(false);
+
+  // The queue's push source: one control-only stream per session, shared by
+  // every mount of this hook. Each frame goes through the same freshness rule
+  // as a list read, so a late frame cannot erase a row a newer POST confirmed.
+  useEffect(() => {
+    if (!enabled) return;
+    let hadConnection = false;
+    const stream = openSessionControlStream({
+      projectId: projectId!,
+      sessionId: sessionId!,
+      onQueue: (queue) => {
+        const serverAtMs = queue.observed_at ? Date.parse(queue.observed_at) : Number.NaN;
+        queryClient.setQueryData<SessionPrompt[]>(key, (cached) =>
+          applyInboxObservation(
+            sessionId!,
+            cached,
+            withEditedPromptOverlays(sessionId!, withoutRemovedPrompts(sessionId!, queue.prompts)),
+            Date.now(),
+            Number.isFinite(serverAtMs) ? serverAtMs : undefined,
+          ),
+        );
+      },
+      onConnectionChange: (connected) => {
+        setStreamConnected(connected);
+        // A RE-connect reads the list once: it closes the window between the
+        // last fallback poll and the stream. The first connect needs no read;
+        // the mount already made one and the server sends a snapshot on open.
+        if (connected && hadConnection) void queryClient.invalidateQueries({ queryKey: key });
+        hadConnection ||= connected;
+      },
+    });
+    setStreamConnected(stream.connected());
+    return () => {
+      stream.close();
+      setStreamConnected(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, projectId, sessionId, queryClient]);
+
+  // An inbox reading decides the composer for `INBOX_OBSERVATION_MAX_MS` (10 s)
+  // only, and an unchanged queue sends no frame. While the stream is alive the
+  // last frame IS the current queue — a change would have arrived — so the
+  // owner re-notes it. The bound is the stream's liveness watchdog (45 s,
+  // `STREAM_OBSERVATION_MAX_MS`): past it the stream counts as lost, the poll
+  // resumes, and its first read decides.
+  useEffect(() => {
+    if (!enabled || !pollOwner || !streamConnected) return;
+    const stream = openSessionControlStream({ projectId: projectId!, sessionId: sessionId! });
+    const timer = setInterval(() => {
+      const last = stream.lastQueue();
+      if (!last || !stream.connected()) return;
+      const serverAtMs = last.observed_at ? Date.parse(last.observed_at) : Number.NaN;
+      noteInboxObservation(
+        sessionId!,
+        withoutRemovedPrompts(sessionId!, last.prompts),
+        Date.now(),
+        Number.isFinite(serverAtMs) ? serverAtMs : undefined,
+      );
+    }, SESSION_PROMPTS_STREAM_RENOTE_MS);
+    return () => {
+      clearInterval(timer);
+      stream.close();
+    };
+  }, [enabled, pollOwner, streamConnected, projectId, sessionId]);
 
   const query = useQuery({
     queryKey: key,
@@ -546,7 +646,7 @@ export function useSessionPrompts(
     // route: two timers on one key polled the inbox at twice its cadence. Every
     // observer still reads the entry the owner refreshes.
     refetchInterval: (q) =>
-      pollOwner
+      pollOwner && !streamConnected
         ? sessionPromptsPollMs(q.state.data?.length ?? 0, options?.pollMs, believedPending)
         : false,
     // Per-query, because the host disables focus refetching globally. Coming
@@ -667,6 +767,18 @@ export function useSessionPrompts(
       releaseEditedPromptOverlay(sessionId!, promptId);
     },
   });
+  const interruptMutation = useMutation({
+    // The row leaves the list and paints in the transcript on the click.
+    onMutate: async (promptId: string) => {
+      await queryClient.cancelQueries({ queryKey: key });
+      queryClient.setQueryData<SessionPrompt[]>(key, (prev) =>
+        withInterruptedPrompt(prev ?? [], promptId),
+      );
+    },
+    mutationFn: (promptId: string) => interruptSessionPrompt(projectId!, sessionId!, promptId),
+    onError: () => {},
+    onSettled: invalidate,
+  });
   const holdMutation = useMutation({
     // Releasing answers on the click: the paused state leaves the screen now,
     // not one GET later (`releaseHeldPrompts`).
@@ -701,6 +813,7 @@ export function useSessionPrompts(
     remove: removeMutation.mutateAsync,
     retry: retryMutation.mutateAsync,
     edit: (promptId: string, text: string) => editMutation.mutateAsync({ promptId, text }),
+    interrupt: interruptMutation.mutateAsync,
     hold: holdMutation.mutateAsync,
     refetch,
   };

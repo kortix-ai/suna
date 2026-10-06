@@ -1218,9 +1218,43 @@ export interface SessionPromptOverrides {
  */
 export type SessionPromptState = 'queued' | 'delivering' | 'waiting' | 'failed';
 
+/**
+ * How a prompt reaches a session whose turn is running.
+ * - `steer`: the running turn reads it at its next step boundary. The turn
+ *   does not stop.
+ * - `queue` (Queue List): waits for the turn to end, then runs as its own turn.
+ * - `interrupt` (Quick Queue, "Stop and send"): ends the turn after the
+ *   running tool, then runs as its own turn.
+ * With no turn running, all three start a turn.
+ */
+export type SessionPromptDelivery = 'steer' | 'queue' | 'interrupt';
+
+/**
+ * Why a `steer` prompt was delivered as `queue` instead:
+ * - `unsupported`: the session's runtime cannot take a message mid-turn.
+ * - `not_prompter`: the running turn belongs to another member.
+ * - `turn_ended`: the turn ended before the message reached it.
+ */
+export type SessionPromptSteerFallback = 'unsupported' | 'not_prompter' | 'turn_ended';
+
+/** The placement a delivery mode implies: `interrupt` paints in the
+ *  transcript, `steer` and `queue` wait in the composer list. */
+function placementForDelivery(
+  delivery: SessionPromptDelivery | undefined,
+): 'transcript' | 'composer' | undefined {
+  if (!delivery) return undefined;
+  return delivery === 'interrupt' ? 'transcript' : 'composer';
+}
+
 export interface SessionPrompt {
   /** Pending presentation only; both placements use the same automatic FIFO. */
   placement?: 'transcript' | 'composer';
+  /** Absent from servers built before steering: read it as `placement`
+   *  implies (`transcript` = `interrupt`, `composer` = `queue`). */
+  delivery?: SessionPromptDelivery;
+  /** Set when a `steer` prompt fell back to `queue`; `delivery` then reads
+   *  `queue`. Null or absent otherwise. */
+  steer_fallback?: SessionPromptSteerFallback | null;
   /** Full accepted text for pending messages after reload. Absent on older servers. */
   full_text?: string;
   prompt_id: string;
@@ -1277,8 +1311,12 @@ export interface CreateSessionPromptResult {
 }
 
 export interface CreateSessionPromptInput {
-  /** Pending presentation; omitted preserves the legacy composer queue. */
+  /** Pending presentation; omitted preserves the legacy composer queue. When
+   *  only `delivery` is given, the placement it implies is sent. */
   placement?: 'transcript' | 'composer';
+  /** How the prompt reaches a running turn. Omitted: `placement` decides, as
+   *  before steering (`transcript` = `interrupt`, `composer` = `queue`). */
+  delivery?: SessionPromptDelivery;
   clientMessageId: string;
   messageId: string;
   parts: SessionPromptPart[];
@@ -1315,6 +1353,8 @@ export async function createSessionPrompt(
   sessionId: string,
   input: CreateSessionPromptInput,
 ): Promise<CreateSessionPromptResult> {
+  // An API built before steering ignores `delivery` and reads `placement`.
+  const placement = input.placement ?? placementForDelivery(input.delivery);
   return unwrap(
     await backendApi.post<CreateSessionPromptResult>(
       `/projects/${projectId}/sessions/${sessionId}/prompts`,
@@ -1322,7 +1362,8 @@ export async function createSessionPrompt(
         client_message_id: input.clientMessageId,
         message_id: input.messageId,
         parts: input.parts,
-        ...(input.placement ? { placement: input.placement } : {}),
+        ...(placement ? { placement } : {}),
+        ...(input.delivery ? { delivery: input.delivery } : {}),
         ...(input.overrides ? { overrides: input.overrides } : {}),
         ...(input.remintOnDelivery ? { remint_on_delivery: true } : {}),
         ...(typeof input.clientSentAtMs === 'number'
@@ -1410,6 +1451,26 @@ export async function editSessionPrompt(
     await backendApi.patch<SessionPrompt>(
       `/projects/${projectId}/sessions/${sessionId}/prompts/${promptId}`,
       { text },
+      // The caller toasts its own message; the host sink would add a second.
+      { showErrors: false },
+    ),
+  );
+}
+
+/**
+ * "Stop and send": turn a prompt still waiting in the queue into Quick Queue
+ * (`delivery: 'interrupt'`). The running turn ends after its running tool,
+ * then this prompt runs. A row already on the wire answers `409`.
+ */
+export async function interruptSessionPrompt(
+  projectId: string,
+  sessionId: string,
+  promptId: string,
+): Promise<SessionPrompt> {
+  return unwrap(
+    await backendApi.patch<SessionPrompt>(
+      `/projects/${projectId}/sessions/${sessionId}/prompts/${promptId}`,
+      { delivery: 'interrupt' },
       // The caller toasts its own message; the host sink would add a second.
       { showErrors: false },
     ),
