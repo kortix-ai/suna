@@ -291,6 +291,27 @@ describe('forwardToSandbox refusal branches', () => {
     expect(fetchCalls).toBe(0);
   });
 
+  test('an encoded spelling of /kortix/env or the base reset is refused like the plain one', async () => {
+    const env = await forward({ method: 'POST', path: '/kortix/%65nv', port: 8000, body: bodyOf({ FOO: 'bar' }) });
+    expect(env.status).toBe(404);
+    const reset = await forward({ path: '/kortix/r%65fresh', query: '?base=1', port: 8000 });
+    expect(reset.status).toBe(403);
+    expect(fetchCalls).toBe(0);
+  });
+
+  test('an ambiguous path on the daemon port is a 400; an app port keeps its escapes', async () => {
+    for (const path of ['/kortix/a%2Fb', '/kortix/%zz', '/kortix/%2e%2e/env']) {
+      const res = await forward({ path, port: 8000 });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'invalid request path', code: 'INVALID_PATH' });
+    }
+    expect(fetchCalls).toBe(0);
+    queueFetch(new Response('app', { status: 200 }));
+    const app = await forward({ path: '/a%2Fb', port: 3000 });
+    expect(app.status).toBe(200);
+    expect(String(lastFetch?.url)).toContain('/a%2Fb');
+  });
+
   test('the destructive base reset is refused with its code; a plain refresh is not', async () => {
     const refused = await forward({ path: '/kortix/refresh', query: '?base=1', port: 8000 });
     expect(refused.status).toBe(403);
