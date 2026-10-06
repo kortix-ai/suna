@@ -134,3 +134,17 @@ test('the fallback tick drains when no NOTIFY came for the fallback window', asy
   while (drains < 2 && Date.now() < deadline) await Bun.sleep(50);
   expect(drains).toBe(2);
 }, 15_000);
+
+test('a later due time keeps its own wake after an earlier one drains', async () => {
+  listening = true;
+  drains = 0;
+  startSessionLifecycleWorker();
+  const t0 = Date.now();
+  dueHandler?.(t0 + 1_500);
+  dueHandler?.(t0 + 3_000);
+  // Both wakes fire long before the 5 s fallback tick could.
+  const deadline = t0 + 4_500;
+  while (drains < 3 && Date.now() < deadline) await Bun.sleep(25);
+  expect(drains).toBe(3);
+  expect(Date.now() - t0).toBeLessThan(4_000);
+}, 10_000);

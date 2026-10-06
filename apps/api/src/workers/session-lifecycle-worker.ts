@@ -21,6 +21,8 @@ export const DRAIN_FALLBACK_MS = 5_000;
 export const MIN_DRAIN_GAP_MS = 1_000;
 /** A due time further out than this is left to the fallback tick. */
 const MAX_WAKE_DELAY_MS = 10 * 60_000;
+/** Pending due times kept per process; past this the fallback tick covers the rest. */
+const MAX_PENDING_WAKES = 1_000;
 
 const state = globalThis as typeof globalThis & {
   __kortixLifecycleWorker?: ReturnType<typeof setInterval>;
@@ -28,6 +30,8 @@ const state = globalThis as typeof globalThis & {
   __kortixLifecycleDrainRerun?: boolean;
   __kortixLifecycleLastDrainAt?: number;
   __kortixLifecycleWake?: { at: number; timer: ReturnType<typeof setTimeout> };
+  /** Every due time heard and not yet drained, ascending. One timer serves the earliest. */
+  __kortixLifecycleDue?: number[];
 };
 
 /** When a wake for a row due at `dueAtMs` should fire, or null to leave it to the tick. */
@@ -58,15 +62,31 @@ function drainNow(): void {
 
 function scheduleWake(dueAtMs: number): void {
   if (!state.__kortixLifecycleWorker) return;
+  const due = (state.__kortixLifecycleDue ??= []);
+  if (wakeAt(dueAtMs, 0, Date.now()) === null) return;
+  // Keep every due time: a later row must not lose its wake to an earlier one.
+  if (due.length < MAX_PENDING_WAKES && !due.includes(dueAtMs)) {
+    due.splice(due.findIndex((at) => at > dueAtMs) >>> 0, 0, dueAtMs);
+  }
+  armWake();
+}
+
+/** One timer, for the earliest pending due time. */
+function armWake(): void {
+  const due = state.__kortixLifecycleDue ?? [];
   const now = Date.now();
-  const at = wakeAt(dueAtMs, state.__kortixLifecycleLastDrainAt ?? 0, now);
-  if (at === null) return;
+  if (due.length === 0) return;
+  const at = wakeAt(due[0]!, state.__kortixLifecycleLastDrainAt ?? 0, now)!;
   const pending = state.__kortixLifecycleWake;
   if (pending && pending.at <= at) return;
   if (pending) clearTimeout(pending.timer);
   const timer = setTimeout(() => {
     state.__kortixLifecycleWake = undefined;
+    // This drain claims every row due by now; the later ones keep their wake.
+    const cutoff = Date.now();
+    state.__kortixLifecycleDue = due.filter((dueAt) => dueAt > cutoff);
     drainNow();
+    armWake();
   }, at - now);
   timer.unref?.();
   state.__kortixLifecycleWake = { at, timer };
@@ -91,5 +111,6 @@ export function stopSessionLifecycleWorker(): void {
   state.__kortixLifecycleWorker = undefined;
   if (state.__kortixLifecycleWake) clearTimeout(state.__kortixLifecycleWake.timer);
   state.__kortixLifecycleWake = undefined;
+  state.__kortixLifecycleDue = [];
   onLifecycleCommandDue(null);
 }
