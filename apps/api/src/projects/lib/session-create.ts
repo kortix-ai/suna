@@ -18,6 +18,7 @@ import {
   type SecretGrant,
   type SessionVisibility,
 } from '../../connectors/share';
+import { logger } from '../../lib/logger';
 import { setContextField } from '../../lib/request-context';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import {
@@ -802,7 +803,7 @@ async function resolveSessionSandboxPlacement(params: {
       if (projectLlmGatewayEnabled(project.metadata)) {
         return { sandboxSlug: PI_CELL_SANDBOX_SLUG, providerLocked: true, providerName: 'platinum' };
       }
-      console.warn(`[sessions] pi_cell on ${project.projectId} but the LLM gateway is off; booting the ordinary sandbox`);
+      logger.warn('[sessions] pi_cell is on but the LLM gateway is off; booting the ordinary sandbox', { projectId: project.projectId });
     }
   }
   // Sandbox provider: explicit request › per-project pin (Customize → Settings) ›
