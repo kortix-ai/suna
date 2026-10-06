@@ -31,6 +31,17 @@ export function templateValue(value: unknown): string {
   return JSON.stringify(value);
 }
 
+/**
+ * UTC calendar fields of a cron slot, for `session_key` templates. A keyed
+ * trigger with `{{ cron.scheduled_date }}` in its key gets one session per UTC
+ * day, so a frequent coordinator's history is bounded to one day of passes
+ * instead of growing until the model's context limit.
+ */
+export function cronSlotFields(scheduledFor: Date) {
+  const iso = scheduledFor.toISOString();
+  return { scheduled_date: iso.slice(0, 10), scheduled_hour: iso.slice(0, 13) };
+}
+
 export function renderPromptTemplate(template: string, payload: Record<string, unknown>) {
   return template.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_match, token: string) => {
     const [root, ...path] = token.split('.');

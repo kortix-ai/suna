@@ -38,6 +38,7 @@
  */
 
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
+import { SANDBOX_SERVICE_PORT } from './sandbox-env-transport';
 import { loadActiveSandbox } from './sandbox-runtime-refresh';
 import {
   lastKnownManagedCatalog,
@@ -66,7 +67,6 @@ export interface ModelCatalogConvergeDeps {
   fetch: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 }
 
-const SANDBOX_SERVICE_PORT = 8000;
 
 const defaultConvergeDeps: ModelCatalogConvergeDeps = {
   loadActiveSandbox,

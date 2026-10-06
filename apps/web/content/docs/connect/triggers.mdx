@@ -246,6 +246,8 @@ sandbox can retain the previous value.
 
 A `reuse` or `keyed` session whose history no longer fits the model, even after automatic compaction, is retired. The next fire starts a fresh session. Any other failure keeps the session for the next fire.
 
+A frequent cron trigger that should not re-send an ever-growing history can roll its session over on a calendar boundary: `session_key: "merge-{{ cron.scheduled_date }}"` keeps one serialized session per UTC day, and `{{ cron.scheduled_hour }}` one per UTC hour.
+
 ## Failed runs
 
 When a run that a trigger started ends with an error, Kortix records it on the trigger:
@@ -296,7 +298,7 @@ Every fire also gets `{{ trigger.slug }}`, `{{ trigger.type }}`, and `{{ trigger
 
 | Source | Variables |
 | --- | --- |
-| cron | `{{ cron.schedule }}`, `{{ cron.timezone }}`, `{{ cron.scheduled_for }}` (the slot the fire is for), `{{ cron.claimed_at }}` (when the scheduler picked it up), `{{ cron.last_scheduled_for }}` (the previous slot; empty on the first fire). No top-level `fired_at`. |
+| cron | `{{ cron.schedule }}`, `{{ cron.timezone }}`, `{{ cron.scheduled_for }}` (the slot the fire is for), `{{ cron.claimed_at }}` (when the scheduler picked it up), `{{ cron.last_scheduled_for }}` (the previous slot; empty on the first fire), `{{ cron.scheduled_date }}` (UTC `YYYY-MM-DD` of the slot), `{{ cron.scheduled_hour }}` (UTC `YYYY-MM-DDTHH`). No top-level `fired_at`. |
 | webhook | `{{ fired_at }}`, `{{ body.* }}` (JSON-parsed; falls back to `{{ body.raw }}` if the body does not parse), `{{ headers.content_type }}`, `{{ headers.user_agent }}`, `{{ headers.forwarded_for }}`. |
 | monitor | `{{ line.* }}` — the stdout line, JSON-parsed; a line that does not parse renders as `{{ line.raw }}`. Plus `{{ monitor.slug }}`, `{{ monitor.seq }}`, `{{ monitor.emitted_at }}`, and `{{ monitor.kind }}` (`event` or `lifecycle`). |
 | manual (dashboard "fire now" or the `fire` endpoint) | `{{ fired_at }}`, `{{ source }}` (`manual`), `{{ actor }}`, `{{ message.text }}`, `{{ message.source }}`. |
