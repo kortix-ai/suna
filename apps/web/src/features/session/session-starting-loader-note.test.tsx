@@ -33,7 +33,7 @@ describe('escalation note reaches the pixels', () => {
     },
   };
 
-  test('the loader shows the failed wake and next automatic attempt', () => {
+  test('the loader shows a waiting state and the next automatic attempt', () => {
     const html = render(
       <SessionStartingLoader
         stage="starting"
@@ -43,13 +43,14 @@ describe('escalation note reaches the pixels', () => {
         failure={cooldown}
       />,
     );
-    expect(html).toContain('Computer did not start');
-    expect(html).toContain('Retrying automatically');
+    expect(html).toContain('Still starting your computer');
+    expect(html).toContain('Trying again automatically');
     expect(html).toContain('attempt 2');
+    expect(html).not.toContain('did not start');
     expect(html).not.toContain(NOTE);
   });
 
-  test('the conversation banner shows the same failed wake', () => {
+  test('the conversation banner shows the same waiting state', () => {
     const html = render(
       <SessionConnectingBanner
         stage="starting"
@@ -58,7 +59,7 @@ describe('escalation note reaches the pixels', () => {
         failure={cooldown}
       />,
     );
-    expect(html).toContain('Computer did not start');
+    expect(html).toContain('Still starting your computer');
     expect(html).toContain('attempt 2');
     expect(html).not.toContain(NOTE);
   });
@@ -109,17 +110,50 @@ describe('session starting loader treatment', () => {
         failure,
         now: Date.parse('2026-09-26T10:21:34.520Z'),
       }),
-    ).toBe('Computer did not start. Retrying automatically in 2m 0s (attempt 2).');
+    ).toBe('Still starting your computer. Trying again in 2m 0s (attempt 2).');
     expect(
       sessionWakeStatusNote({
         reason: 'runtime_wake_cooldown',
         failure,
         now: Date.parse('2026-09-26T10:23:34.520Z'),
       }),
-    ).toBe('Computer did not start. Retrying automatically now (attempt 2).');
+    ).toBe('Still starting your computer. Trying again now (attempt 2).');
     expect(sessionWakeStatusNote({ reason: 'runtime_waking', failure, note: NOTE, now: 0 })).toBe(
       NOTE,
     );
+  });
+
+  test('a retry clock that is unknown or out of range shows no countdown', () => {
+    // The server's cooldown is 2, 5 or 10 minutes. A clock hours or decades
+    // away (a skewed client clock, an epoch-0 `now`, a malformed stamp) is not
+    // a wait to count down: it rendered as tens of millions of minutes.
+    const failure = (next_retry_at: string | null) => ({
+      category: 'sandbox-provider' as const,
+      message: 'The runtime did not start.',
+      retryable: true,
+      evidence: { check: 'start_timeout', observed_at: null, error: null, attempts: 1, next_retry_at },
+    });
+    const now = Date.parse('2026-10-05T00:18:00.000Z');
+    const plain = 'Still starting your computer. Trying again automatically (attempt 2).';
+    for (const [retryAt, at] of [
+      ['2026-10-05T00:20:00.000Z', 0],
+      ['2125-10-05T00:18:00.000Z', now],
+      ['2026-10-05T01:18:01.000Z', now],
+      ['not a date', now],
+      [null, now],
+      ['2026-10-05T00:20:00.000Z', Number.NaN],
+    ] as const) {
+      expect(
+        sessionWakeStatusNote({ reason: 'runtime_wake_cooldown', failure: failure(retryAt), now: at }),
+      ).toBe(plain);
+    }
+    expect(
+      sessionWakeStatusNote({
+        reason: 'runtime_wake_cooldown',
+        failure: failure('2026-10-05T00:28:00.000Z'),
+        now,
+      }),
+    ).toBe('Still starting your computer. Trying again in 10m 0s (attempt 2).');
   });
 
   test('renders quiet progress without prototype or legacy motion', () => {
