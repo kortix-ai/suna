@@ -1,14 +1,17 @@
 {
-  "source_hash": "689cfd5339962729e32e3e5b2ae510a72ed427387aee281aba2bdda5281d2d0c",
+  "source_hash": "5e199bcac5c0053dc1f6cc6f260b84bc0921f5fda94f214c2e65a9ce98072ea7",
   "diff_files": [
     ".agents/skills/kortix-brand/references/decisions.md",
     ".agents/skills/kortix-brand/references/verbal/voice-and-tone.md",
     "apps/api/src/__tests__/integration-iam-role-catalog-parity.test.ts",
+    "apps/api/src/__tests__/unit-agents-parse.test.ts",
     "apps/api/src/backends/convex-image.ts",
     "apps/api/src/backends/provision.ts",
     "apps/api/src/backends/routes.ts",
     "apps/api/src/feature-flags/registry.ts",
     "apps/api/src/iam/actions.ts",
+    "apps/api/src/mcp/cli.test.ts",
+    "apps/api/src/mcp/cli.ts",
     "apps/api/src/projects/index.ts",
     "apps/api/src/projects/reaping/orphan-box-references.ts",
     "apps/api/src/projects/reaping/orphan-boxes.ts",
@@ -91,13 +94,13 @@
     "tests/spec/routes.generated.json",
     "tests/src/flows/backends.flow.ts"
   ],
-  "diff_hash": "376ebeaa18eb5e9d2265cfc8d53c87df1d30cfaf029920b92e5642a74029d31f",
-  "head": "8d39796f299c9bb898916138e2207663a0daa4a2",
-  "passed": false,
+  "diff_hash": "59ad03fef7f06ae48a6fa2989fe999f2f0e025af43f38cc4b23c22c943f74238",
+  "head": "8dbadca1d44b1c5edace9d75aedf289d37721b51",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
+    "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-06T16:43:00.315Z"
+  "at": "2026-10-06T16:53:54.499Z"
 }
