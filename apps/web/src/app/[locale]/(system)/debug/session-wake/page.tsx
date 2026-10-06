@@ -35,7 +35,7 @@ export default function DebugSessionWakePage() {
         <section id="loader-far" className="border-border h-48 rounded-md border">
           <SessionStartingLoader stage="starting" delayMs={0} reason="runtime_wake_cooldown" failure={cooldown(far)} />
         </section>
-        <section id="banner-near">
+        <section id="banner-near" className="border-border relative h-16 rounded-md border">
           <SessionConnectingBanner stage="starting" reason="runtime_wake_cooldown" failure={cooldown(near)} />
         </section>
       </main>

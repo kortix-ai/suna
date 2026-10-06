@@ -110,7 +110,7 @@ describe('session starting loader treatment', () => {
         failure,
         now: Date.parse('2026-09-26T10:21:34.520Z'),
       }),
-    ).toBe('Still starting your computer. Trying again in 2m 0s (attempt 2).');
+    ).toBe('Still starting your computer. Trying again in 2m\u00a00s (attempt 2).');
     expect(
       sessionWakeStatusNote({
         reason: 'runtime_wake_cooldown',
@@ -153,7 +153,7 @@ describe('session starting loader treatment', () => {
         failure: failure('2026-10-05T00:28:00.000Z'),
         now,
       }),
-    ).toBe('Still starting your computer. Trying again in 10m 0s (attempt 2).');
+    ).toBe('Still starting your computer. Trying again in 10m\u00a00s (attempt 2).');
   });
 
   test('renders quiet progress without prototype or legacy motion', () => {

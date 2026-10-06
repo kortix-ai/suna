@@ -78,7 +78,8 @@ export function sessionWakeStatusNote(input: {
   if (seconds === 0) return `Still starting your computer. Trying again now (attempt ${nextAttempt}).`;
   const minutes = Math.floor(seconds / 60);
   const remainder = seconds % 60;
-  const duration = minutes > 0 ? `${minutes}m ${remainder}s` : `${remainder}s`;
+  // One unit: a line break never falls between the minutes and the seconds.
+  const duration = minutes > 0 ? `${minutes}m\u00a0${remainder}s` : `${remainder}s`;
   return `Still starting your computer. Trying again in ${duration} (attempt ${nextAttempt}).`;
 }
 
