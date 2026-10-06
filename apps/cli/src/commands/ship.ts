@@ -161,17 +161,19 @@ export async function runShip(argv: string[]): Promise<number> {
   const hostName = flags.host ?? link?.host ?? activeHostName() ?? undefined;
   if (!flags.project && flags.host && link?.host && flags.host !== link.host) {
     process.stderr.write(
-      `${status.err(`This folder is linked to host "${link.host}", not "${flags.host}".`)} ` +
-        'Pass --project or run projects link --host to rebind it.\n',
+      `${status.err(`This folder is linked to host "${link.host}", not "${flags.host}".`)} Pass --project or run projects link --host to rebind it.\n`,
     );
     return 1;
   }
   const auth = hostName ? loadAuthForHost(hostName) : null;
   if (!auth?.token) {
-    if (hostName) {
+    // Name the host only when the workspace itself named it (--host or the
+    // link); the config-active host keeps the generic login line.
+    const namedHost = flags.host ?? link?.host;
+    if (namedHost) {
       process.stderr.write(
-        `${status.err(`Host "${hostName}" is not logged in.`)} Run ` +
-          `${C.cyan}kortix login --host ${hostName}${C.reset}.\n`,
+        `${status.err(`Host "${namedHost}" is not logged in.`)} Run ` +
+          `${C.cyan}kortix login --host ${namedHost}${C.reset}.\n`,
       );
     } else {
       process.stderr.write(
@@ -591,7 +593,9 @@ function reportShipped(auth: Auth, project: ProjectSummary, repoUrl: string): vo
 function surface(err: unknown): number {
   if (err instanceof ApiError) {
     if (err.status === 401) {
-      process.stderr.write(`${status.err(tokenRejectedLine(err.message, 'Run `kortix login`.'))}\n`);
+      process.stderr.write(
+        `${status.err(tokenRejectedLine(err.message, 'Run `kortix login`.'))}\n`,
+      );
     } else if (err.status === 503) {
       // Don't diagnose — the server owns the reason. The one thing we DO know
       // is that a stale CLI is a common cause (older builds pushed to the raw
