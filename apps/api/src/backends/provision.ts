@@ -22,7 +22,7 @@ import { projectBackends } from '@kortix/db';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import { config } from '../config';
 import { db } from '../shared/db';
-import { platinumJson } from '../shared/platinum';
+import { PlatinumHttpError, platinumJson } from '../shared/platinum';
 import { sandboxOwnershipMarker } from '../platform/sandbox-ownership';
 import { currentInstanceId, decryptProjectSecret, encryptProjectSecret } from '../projects/surface';
 import {
@@ -93,6 +93,27 @@ async function mintAdminKey(externalId: string): Promise<string> {
     throw new Error(`admin key generation failed: ${out.error ?? out.result?.stderr ?? 'empty output'}`);
   }
   return key;
+}
+
+/**
+ * The supervisor waits for this file, so it must survive a crash: the guest
+ * rootfs has no ext4 journal (kortix-ai/platinum#1450) and an in-place write
+ * can come back empty after a hard reset. `/files/atomic` fsyncs a temp file
+ * and renames it. A control plane without that route answers 404.
+ */
+async function writeOriginsFile(externalId: string, body: string): Promise<void> {
+  const write = (route: string) =>
+    platinumJson(`/v1/sandboxes/${externalId}/${route}?path=${encodeURIComponent(CONVEX_ORIGINS_FILE)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body,
+    });
+  try {
+    await write('files/atomic');
+  } catch (err) {
+    if (!(err instanceof PlatinumHttpError && err.status === 404 && !err.body.includes('sandbox_not_found'))) throw err;
+    await write('files');
+  }
 }
 
 async function deleteMachine(externalId: string): Promise<void> {
@@ -206,11 +227,7 @@ export async function provisionBackend(row: BackendRow, region?: string): Promis
 
     const url = exposedOrigin(created, CONVEX_API_PORT);
     const siteUrl = exposedOrigin(created, CONVEX_SITE_PORT);
-    await platinumJson(`/v1/sandboxes/${externalId}/files?path=${encodeURIComponent(CONVEX_ORIGINS_FILE)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/octet-stream' },
-      body: `CONVEX_CLOUD_ORIGIN=${url}\nCONVEX_SITE_ORIGIN=${siteUrl}\n`,
-    });
+    await writeOriginsFile(externalId, `CONVEX_CLOUD_ORIGIN=${url}\nCONVEX_SITE_ORIGIN=${siteUrl}\n`);
     await waitHealthy(url);
     const adminKey = await mintAdminKey(externalId);
 
