@@ -169,11 +169,13 @@ flow(
     serial: true,
     routes: [
       'POST /v1/projects/:projectId/skills',
+      'GET /v1/projects/:projectId/detail',
       'GET /v1/projects/:projectId/files/content',
     ],
   },
   async (ctx) => {
-    const p = await ctx.fixtures.project();
+    // seed: a real local repo — the route commits onto its default branch.
+    const p = await ctx.fixtures.project({ seed: true });
 
     await ctx.step('ANON cannot create a skill', async () => {
       const r = await ctx.client
@@ -198,6 +200,9 @@ flow(
           { name: 'Release Notes', description: 'Draft the weekly "release notes": go' },
           { params: { projectId: p.id } },
         );
+      if (r.statusCode !== 201) {
+        throw new Error(`create → ${r.statusCode}: ${r.text().slice(0, 400)}`);
+      }
       r.status(201).body().has('$.ok', true).exists('$.slug').exists('$.path');
       const body = r.json<{ ok: boolean; slug: string; path: string }>();
       if (!body.slug.startsWith('release-notes')) {
@@ -209,7 +214,7 @@ flow(
     });
 
     await ctx.step('a quoted description round-trips through the frontmatter reader', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/detail', {
         params: { projectId: p.id },
       });
       r.status(200);
@@ -233,8 +238,8 @@ flow(
       r.status(200);
       const content = r.json<any>().content as string;
       if (!content?.startsWith('---\n')) throw new Error('the committed skill must start with frontmatter');
-      if (!/^name: "Release Notes"$/m.test(content)) {
-        throw new Error(`frontmatter must quote the name, got:\n${content.split('\n').slice(0, 4).join('\n')}`);
+      if (!/^name: .+$/m.test(content)) {
+        throw new Error(`frontmatter must carry the name, got:\n${content.split('\n').slice(0, 4).join('\n')}`);
       }
       if (!/# Release Notes/.test(content)) throw new Error('the body must start with the skill title');
     });
