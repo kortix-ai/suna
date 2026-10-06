@@ -1,0 +1,20 @@
+{
+  "source_hash": "0682404246e9f942128a97670e05700e3743a400d8627b5ec27004fec18fd9cc",
+  "diff_files": [
+    "apps/web/src/features/session/instant-session-shell.tsx",
+    "apps/web/src/features/session/optimistic-turn.tsx",
+    "apps/web/src/features/session/session-chat/transcript.tsx",
+    "apps/web/src/features/session/turn/user-message.test.tsx",
+    "apps/web/src/features/session/turn/user-message.tsx",
+    "apps/web/src/lib/seo/content-timestamps.json"
+  ],
+  "diff_hash": "cf3a848bd54acde1b3388eac823b1107a5ce9e5a6ab2c647faca6e80573b48fb",
+  "head": "3836fc8b196d27c631ef3be7717c39b1028c6db5",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-06T23:15:58.514Z"
+}
