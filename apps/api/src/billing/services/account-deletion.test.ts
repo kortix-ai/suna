@@ -264,6 +264,7 @@ mock.module('../repositories/account-deletion', () => ({
   createDeletionRequest: async () => ({ id: 'req-1' }),
   cancelDeletionRequest: async () => undefined,
   markDeletionCompleted: async (id: string) => { completedRequests.push(id); },
+  countOverdueBacklog: async () => 0,
   getScheduledDeletions: async () => scheduledRequests,
   claimDeletionRequest: async (id: string) => scheduledRequests.find((r: { id: string }) => r.id === id) ?? null,
   releaseDeletionRequest: async () => undefined,

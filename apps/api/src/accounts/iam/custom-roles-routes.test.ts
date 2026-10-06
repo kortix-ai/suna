@@ -6,7 +6,7 @@ const policySource = readFileSync(new URL('./custom-roles-policy.ts', import.met
 const barrel = readFileSync(new URL('../iam.ts', import.meta.url), 'utf8');
 
 function route(method: string, path: string): string {
-  const escaped = path.replace(/[{}]/g, '\\$&');
+  const escaped = path.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
   const marker = new RegExp(`method: '${method}',\\n\\s+path: '/\\{accountId\\}/iam/${escaped}'`);
   const file = path.startsWith('policies') ? policySource : source;
   const start = file.search(marker);

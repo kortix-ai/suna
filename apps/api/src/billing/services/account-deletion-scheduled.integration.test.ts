@@ -51,11 +51,14 @@ const withDb = confirmed ? describe : describe.skip;
 
 const DAY = 24 * 3600 * 1000;
 const past = new Date(Date.now() - DAY).toISOString();
+// Past MAX_OVERDUE (2 days): a backlog row waits for a person.
+const longOverdue = new Date(Date.now() - 3 * DAY).toISOString();
 const future = new Date(Date.now() + 14 * DAY).toISOString();
 
 withDb('scheduled account deletions — real PostgreSQL', () => {
-  test('executes a due pending request and leaves future and cancelled ones alone', async () => {
+  test('executes a due pending request and leaves future, cancelled and long-overdue ones alone', async () => {
     const accDue = crypto.randomUUID();
+    const accStale = crypto.randomUUID();
     const accFuture = crypto.randomUUID();
     const accCancelled = crypto.randomUUID();
     const userDue = crypto.randomUUID();
@@ -74,6 +77,7 @@ withDb('scheduled account deletions — real PostgreSQL', () => {
       .values([
         { accountId: accDue, userId: userDue, scheduledFor: past, status: 'pending' },
         { accountId: accFuture, userId: userDue, scheduledFor: future, status: 'pending' },
+        { accountId: accStale, userId: userDue, scheduledFor: longOverdue, status: 'pending' },
         {
           accountId: accCancelled,
           userId: userDue,
@@ -98,6 +102,7 @@ withDb('scheduled account deletions — real PostgreSQL', () => {
       expect(due.status).toBe('completed');
       expect(due.completedAt).not.toBeNull();
       expect(byAccount.get(accFuture)!.status).toBe('pending');
+      expect(byAccount.get(accStale)!.status).toBe('pending');
       expect(byAccount.get(accCancelled)!.status).toBe('cancelled');
 
       const [account] = await db
