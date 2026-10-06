@@ -1,5 +1,5 @@
 import { roleAssignments } from '@kortix/db';
-import { isNull, notInArray, or } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 
 /**
  * Object types whose grants are an AUDIENCE. A secret value or a shared
@@ -13,13 +13,17 @@ import { isNull, notInArray, or } from 'drizzle-orm';
  * for. Only the object's own audience setting, or deleting the object, removes
  * an audience grant.
  */
-export const AUDIENCE_OBJECT_TYPES = ['secret', 'connection'];
+export const AUDIENCE_OBJECT_TYPES = ['secret', 'connection'] as const;
 
 export function isAudienceObjectType(objectType: string | null | undefined): boolean {
-  return !!objectType && AUDIENCE_OBJECT_TYPES.includes(objectType);
+  return !!objectType && (AUDIENCE_OBJECT_TYPES as readonly string[]).includes(objectType);
 }
 
-/** A `role_assignments` filter: every row except an audience grant. */
+/**
+ * A `role_assignments` filter: every row except an audience grant. One `sql`
+ * fragment, because unit suites stub `drizzle-orm` with explicit export lists.
+ */
 export function notAnAudienceGrant() {
-  return or(isNull(roleAssignments.objectType), notInArray(roleAssignments.objectType, AUDIENCE_OBJECT_TYPES));
+  const [secret, connection] = AUDIENCE_OBJECT_TYPES;
+  return sql`(${roleAssignments.objectType} is null or ${roleAssignments.objectType} not in (${secret}, ${connection}))`;
 }
