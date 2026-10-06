@@ -1,5 +1,5 @@
 {
-  "source_hash": "736b59b2ba93a37728140caee6f2c85ac065171c033cae265ab89e3b5f924963",
+  "source_hash": "771827ce8356b68273bec20a1fef9bd38d7027725c21e8266991e66042dcfe8c",
   "diff_files": [
     "apps/api/src/__tests__/unit-monitor-box.test.ts",
     "apps/api/src/projects/lib/connection-audience.ts",
@@ -32,13 +32,13 @@
     "apps/api/src/projects/routes/repository-replacement.ts",
     "apps/api/src/setup-links/approval-app.ts"
   ],
-  "diff_hash": "0e8347094a0613bb67913e5ec996118c2266c1e022bcc418ac1a67bd54183055",
-  "head": "1524b0b016828b145564e20888b4cd14ecc5bcf0",
+  "diff_hash": "70c1520029becd2e1a03a936ab30fdde019ec10c96791309273b512517f82e8a",
+  "head": "9cff490261828796f890c673393d2d132dc59304",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
-    "db-suites": "pass"
+    "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-04T06:27:25.989Z"
+  "at": "2026-10-06T10:30:01.651Z"
 }
