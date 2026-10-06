@@ -1,41 +1,28 @@
-Fork a conversation, cancel from billing, and one permission per topic
+See the model behind each answer, pi 1.0, and config releases that follow your repository
 
 ## New
 
-- **Fork a conversation.** A session's conversation offers a Fork action, so you can branch from any point.
-- **Cancel a subscription from the billing pane.**
-- **One permission per topic.** The broad `project.customize.*` permissions are replaced by `project.settings.write`, `project.sandbox.write`, and `project.model.read`/`.write`. Agent changes use `project.agent.write`. Every role keeps exactly what it had. Project members can now open Agents and Triggers read-only.
+- **See the model behind each answer.** A session shows which model answered and what the answer cost.
+- **pi 1.0.** The pi harness is on pi 1.0. It brings compaction and slash commands, and pi now runs only inside the sandbox.
+- **Config releases follow your repository.** A release is a checkout of the base branch with the repository's own layout. An unbuildable or quarantined tip no longer drops a session's configuration without notice.
+- **Security settings:** a redesigned authenticator-app enrollment, and a list of every signed-in device. Signing a device out stops its access at once.
+- **Viewers:** the session file and App viewers show an address bar. App previews show calmer loading and build states, and hover cards name running ports and links as well as files.
+- **Mobile:** an updated app, with JavaScript changes now delivered as over-the-air updates. It adds channel cards for Slack and Teams prompts and one progress indicator per running turn. The Files row opens the Files page, and the project's Apps are listed.
+- **Downloads:** the desktop installer has a drag-to-install window, and /download links to the App Store and Google Play listings.
+- **The website** describes Kortix as the open-source AI Operating System.
 
 ## Improved
 
-- **Sign-in:** an existing account opens on the password form, and the email link is one click away. After you enroll in two-factor authentication, sign-in asks for the code. A magic link still completes when its verifier cookie is lost. A failed server sign-out is reported on the sign-in page.
-- **Security settings** list the devices that are signed in.
-- **Account deletion:** "Delete immediately" deletes the account, and the dialog reads as a choice.
-- **Creating a project** lands you on the project page.
-- **The session key panel** says whose keys a session reaches, and why a key is not available.
-- **Connectors:** Computers appear under Connected only after a machine is paired, and connector notes display the same way on every surface.
-- **The audit log:** reconciliation catches up on accounts with very large histories.
-- **The API** returns 400 for a malformed account id, and a marketplace install fails clearly when no model can serve its import.
-- **Database health:** more RLS policies evaluate the signed-in user once per query, and legacy tables gain primary keys and missing indexes.
+- When a ChatGPT usage limit is reached, the gateway falls back to the project's model chain and says when the limit resets.
+- A failed sandbox template build names its cause.
+- Adding a member by email is faster.
+- Sandbox shells no longer write core dumps.
 
 ## Fixed
 
-- The CLI:
-  - `sessions log` and `chat` show the real stop or failure reason.
-  - Trigger schedule updates keep their time zone.
-  - Policy conditions keep their operators.
-  - `--json` output and session listings stay stable.
-  - `projects rm --purge` reports "Purged".
-  - Project-scoped commands reach projects that have no session.
-  - The empty models state points to providers.
-- Mobile:
-  - Question answers can be retried until they are accepted.
-  - Mermaid diagrams render.
-  - Teams mentions are stripped from session titles.
-  - Diff stats keep literal escapes.
-  - App previews refresh their credentials when opened.
-- Desktop: "Allow all" adds Kortix to the macOS Screen Recording list.
-- A warm session that has not been prompted reads as starting, not running.
-- The sandbox agent's dependencies are patched against two `undici` vulnerabilities.
-- Customize tabs appear immediately, and only the page body waits for permissions.
+- Editing a sent prompt keeps its attachments, and so does editing a prompt queued while the session boots.
+- A manual trigger run no longer fails when it races a new session that creates the same agent identity.
+- Relative OpenCode instructions read from the release, not from the workspace.
+- The demo booking confirmation stays open until you close it.
+- The Kortix web app is patched against three new vulnerabilities in its dependencies.
 

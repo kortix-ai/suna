@@ -6,7 +6,7 @@ import { useTranslations } from '@/i18n/use-translations';
 export interface PublicShareLinkConfirmation {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onConfirm: () => void;
+  onConfirm: (expiresAt?: string | null) => void;
   isPending: boolean;
 }
 
@@ -28,7 +28,7 @@ export function PublicShareLinkConfirm({
       title={tHardcodedUi.raw('publicShareConfirm.title')}
       description={tHardcodedUi.raw('publicShareConfirm.description')}
       confirmLabel={tHardcodedUi.raw('publicShareConfirm.confirm')}
-      onConfirm={confirmation.onConfirm}
+      onConfirm={() => confirmation.onConfirm()}
       isPending={confirmation.isPending}
     />
   );

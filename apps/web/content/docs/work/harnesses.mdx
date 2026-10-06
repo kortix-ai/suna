@@ -55,6 +55,8 @@ array of `GET /kortix/health`. A client hides a control when the session's
 | Skills (`skills/` and the managed `kortix-*` skills), with the agent's `skills` grant | Yes. The agent loads a skill with the `skill` tool. | Yes. The system prompt lists each granted skill; the agent reads the file. |
 | `web_search`, `image_search`, `scrape_webpage`, `memory`, `show` tools | Yes, from the tool files in the project's OpenCode config directory (`tools/`). | Yes, built into the sandbox daemon. The names, arguments, and output are the same. |
 | [Config releases](/docs/work/runtime#config-convergence), `config.release.v1` | Yes | Yes |
+| Compact (summarize) the conversation, on demand and by itself near the model's context window, `session.compact` | Yes | Yes. A model request that overflows the window compacts and retries once. |
+| Project slash commands, `session.commands` | Yes, from `commands/` in the OpenCode config directory. | Yes, from the prompt templates in `prompts/` in the pi config directory and in pi packages. pi does not read OpenCode's `commands/`. |
 | Terminal in the sandbox (PTY) | Yes | Yes |
 | `bash`, `read`, `write`, `edit`, `glob`, `grep` tools; [secrets](/docs/project/secrets) in the shell; the `kortix` CLI | Yes | Yes |
 
@@ -70,8 +72,6 @@ the tool.
 | Feature | Capability | OpenCode | pi |
 | --- | --- | --- | --- |
 | Rewind to a message and restore it. Edit-and-resend uses rewind. | `session.rewind` | Yes | No |
-| Compact (summarize) the conversation | `session.compact` | Yes | No. A turn that exceeds the model's context window ends with `ContextOverflowError`. |
-| Project slash commands (`commands/` in the OpenCode config directory) | `session.commands` | Yes | No command list. pi reads prompt templates from `prompts/` in its config directory. |
 | MCP servers (`mcp` in `opencode.jsonc`) | `session.mcp` | Yes | No MCP client. [Connectors](/docs/connect/connectors) work on both harnesses through the `kortix connectors` CLI. |
 | Todo list (`todowrite` tool) and the plan card | `session.todo` | Yes | No. The plan card stays empty. |
 | Attach the harness's own terminal client (`kortix connect`, TUI `Alt+o`) | `session.attach` | Yes | No. See [TUI](/docs/tui). |
@@ -83,7 +83,7 @@ the tool.
 
 A pi session answers a request for a feature it does not serve with
 `501 feature_not_supported`, or `404` for a document it does not have
-(`/command`, `/global/config`). It does not ignore the request.
+(`/global/config`). It does not ignore the request.
 
 ## Harness configuration files
 

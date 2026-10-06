@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { readComposedRelease, resolveReleaseTreeSource, selectedOpenCodePlugins, configArchiveRoute } from './builder';
 import { serveConfigArchive } from './serve-archive';
-import { MemoryConfigArchiveStore } from './store';
+import { MemoryConfigArchiveStore } from './__tests__/fakes';
 
 describe('OpenCode plugin selection', () => {
   test('global plus agent opt-in/out; legacy remains auto-discovered', () => {
@@ -34,11 +34,11 @@ describe('OpenCode plugin selection', () => {
       const b = await resolveReleaseTreeSource(repo, project, commit, 'agent:b');
       if (!('source' in a) || !('source' in b)) throw new Error('missing source');
       const files = async (source: typeof a.source) => (await readComposedRelease(repo, source, { archive: false })).files.map(([path]) => path);
-      expect(await files(a.source)).toContain('plugins/base.ts');
-      expect(await files(a.source)).not.toContain('plugins/other.ts');
-      expect(await files(b.source)).toContain('plugins/other.ts');
-      expect(await files(b.source)).not.toContain('plugins/base.ts');
-      expect(await files(b.source)).toContain('plugins/lib/helper.ts');
+      expect(await files(a.source)).toContain('harnesses/opencode/plugins/base.ts');
+      expect(await files(a.source)).not.toContain('harnesses/opencode/plugins/other.ts');
+      expect(await files(b.source)).toContain('harnesses/opencode/plugins/other.ts');
+      expect(await files(b.source)).not.toContain('harnesses/opencode/plugins/base.ts');
+      expect(await files(b.source)).toContain('harnesses/opencode/plugins/lib/helper.ts');
       const archive = await readComposedRelease(repo, b.source, { archive: false });
       const url = new URL(configArchiveRoute('00000000-0000-4000-8000-000000000001', archive.treeId, commit, 'agent:b'), 'http://localhost');
       expect(url.searchParams.get('agent')).toBe('b');
@@ -49,7 +49,7 @@ describe('OpenCode plugin selection', () => {
       expect(await resolveReleaseTreeSource(repo, project, commit, 'project')).toHaveProperty('source');
     } finally { rmSync(repo, { recursive: true, force: true }); }
   });
-  test('a per-agent release selects its plugins and still carries the pi config dir as pi/', async () => {
+  test('a per-agent release selects its plugins and keeps every other file at its repository path', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'agent-plugins-pi-'));
     const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
     try {
@@ -68,7 +68,7 @@ describe('OpenCode plugin selection', () => {
       const a = await resolveReleaseTreeSource(repo, project, commit, 'agent:a');
       if (!('source' in a)) throw new Error('missing source');
       const release = await readComposedRelease(repo, a.source, { archive: false });
-      expect(release.files.map(([path]) => path)).toEqual(['opencode.jsonc', 'pi/extensions/guard.ts', 'plugins/base.ts']);
+      expect(release.files.map(([path]) => path)).toEqual(['harnesses/opencode/opencode.jsonc', 'harnesses/opencode/plugins/base.ts', 'harnesses/pi/extensions/guard.ts', 'kortix.yaml']);
       // The archive route rebuilds the same tree from the commit and the agent.
       const response = await serveConfigArchive(project as Parameters<typeof serveConfigArchive>[0], release.treeId, async () => repo, async () => repo, { store: new MemoryConfigArchiveStore(), publicOverride: null }, commit, 'a');
       expect(response.status).toBe(200);

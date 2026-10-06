@@ -3,11 +3,11 @@ import { S3Client } from '@aws-sdk/client-s3';
 import { ObjectStore } from '../object-store/s3';
 import {
   CONFIG_ARCHIVE_CONTENT_TYPE,
-  MemoryConfigArchiveStore,
   S3ConfigArchiveStore,
   configArchiveKey,
   configArchiveProjectPrefix,
 } from './store';
+import { MemoryConfigArchiveStore } from './__tests__/fakes';
 
 const PROJECT = '5f0c2f36-6a1b-4c1e-9d3a-8a1f3b2c4d5e';
 const TREE = 'a'.repeat(40);

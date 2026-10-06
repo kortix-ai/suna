@@ -36,6 +36,7 @@ import {
   getSessionTranscript,
   getSessionTranscriptSync,
   getSessionTurn,
+  getSessionModelUsage,
   holdSessionPrompts,
   listProjectSessions,
   listProjectSessionsPage,
@@ -1669,6 +1670,21 @@ test('getSessionMessageAuthors reads members and sessions keyed by message id', 
   nextResponse = { status: 200, body };
   expect(await getSessionMessageAuthors('P1', 'S1')).toEqual(body as never);
   expect(new URL(last().url).pathname).toBe('/projects/P1/sessions/S1/message-authors');
+});
+
+test('getSessionModelUsage reads the model that answered, the billed cost and each turn', async () => {
+  const body = {
+    latest: { served_model: 'glm-5.3-flash', fallback_from: 'codex/gpt-6.1-sol', at: '2026-10-02T15:02:50.697Z' },
+    billed_cost: 0.875,
+    turns: {
+      msg_a: { served_models: ['glm-5.3-flash', 'codex/gpt-6.1-sol'], fallback_from: 'codex/gpt-6.1-sol', billed_cost: 0.75 },
+      msg_b: { served_models: ['codex/gpt-6.1-sol'], fallback_from: null, billed_cost: 0 },
+    },
+  };
+  nextResponse = { status: 200, body };
+  expect(await getSessionModelUsage('P1', 'S1')).toEqual(body);
+  expect(new URL(last().url).pathname).toBe('/projects/P1/sessions/S1/model-usage');
+  expect(last().method).toBe('GET');
 });
 
 // ── resolvePublicShareUrl ────────────────────────────────────────────────────
