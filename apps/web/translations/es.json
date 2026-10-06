@@ -19250,7 +19250,8 @@
       "text6243d930fc1c": "AI Operating System",
       "textc959682e0398": "Vio los dispositivos con sesión iniciada",
       "text976811d9540a": "Cerró la sesión de un dispositivo",
-      "text6f417aa88601": "Gasto de la pasarela de LLM por origen consultado"
+      "text6f417aa88601": "Gasto de la pasarela de LLM por origen consultado",
+      "textc96cd610ba08": "Clave de proveedor compartida reintentada tras el límite de uso"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
