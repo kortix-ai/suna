@@ -154,6 +154,13 @@ function startServer(): string {
       const project = `/v1/projects/${PROJECT}`;
       const session = `${project}/sessions/${SESSION}`;
 
+      if (method === 'GET' && path === `${session}/config`) {
+        return Response.json({ running_etag: 'old', latest_etag: 'new', stale: true, sandbox_reachable: true });
+      }
+      if (method === 'POST' && path === `${session}/reload`) {
+        return Response.json({ applied: true, previous_etag: 'old', etag: 'new', repo_refreshed: true, detail: 'Config reloaded.' });
+      }
+
       // ── control plane ────────────────────────────────────────────────────
       if (method === 'GET' && path === `${project}/sessions/${SESSION}`) {
         return Response.json(sessionRow());
@@ -234,7 +241,19 @@ function startServer(): string {
         });
       }
       if (method === 'GET' && path === `${session}/prompts`) {
-        return Response.json({ prompts: [queuedPrompt()] });
+        return Response.json({
+          prompts: [
+            queuedPrompt(),
+            {
+              ...queuedPrompt(),
+              prompt_id: 'prompt-steer-fallback',
+              delivery: 'queue',
+              steer_fallback: 'not_prompter',
+              reason: 'turn_active',
+              text: 'also check the logs',
+            },
+          ],
+        });
       }
       if (method === 'POST' && path === `${session}/prompts`) {
         return Response.json(
@@ -267,13 +286,15 @@ function startServer(): string {
         return Response.json({ opencode_model: model, applied_live: true });
       }
       if (method === 'GET' && path === `${session}/audit`) {
+        // Real wire shape: `action` is connectorCalls.action_path, stored WITH
+        // the slug prefix (`<slug>.<action>`, see recordExecution in gateway.ts).
         return Response.json({
           session_id: SESSION,
           count: 2,
           actions: [
             {
               execution_id: EXECUTION,
-              action: 'send_message',
+              action: 'slack.send_message',
               connector: 'slack',
               connector_id: 'conn-1',
               status: 'pending_approval',
@@ -284,7 +305,7 @@ function startServer(): string {
             },
             {
               execution_id: 'other',
-              action: 'read',
+              action: 'slack.read',
               connector: 'slack',
               connector_id: 'conn-1',
               status: 'ok',
@@ -719,6 +740,51 @@ describe('kortix sessions chat --queue', () => {
   });
 });
 
+describe('kortix sessions chat --steer', () => {
+  test('posts to the durable inbox with delivery steer and says where it went', async () => {
+    const r = await runCli(['sessions', 'chat', SESSION, '-p', 'also check the logs', '--steer', ...P], config);
+    expect(r.code).toBe(0);
+    const post = calls('POST', `/v1/projects/${PROJECT}/sessions/${SESSION}/prompts`)[0];
+    expect(post?.body).toMatchObject({
+      delivery: 'steer',
+      placement: 'composer',
+      parts: [{ type: 'text', text: 'also check the logs' }],
+    });
+    expect(r.stdout).toContain('to steer the running turn');
+    expect(r.stdout).toContain('reads it at its next step');
+  });
+
+  test('--steer never touches the runtime (no /start, no daemon call)', async () => {
+    await runCli(['sessions', 'chat', SESSION, '-p', 'x', '--steer', ...P], config);
+    expect(calls('POST', `/v1/projects/${PROJECT}/sessions/${SESSION}/start`)).toEqual([]);
+    expect(seen.filter((s) => s.path.startsWith(`/v1/p/${EXTERNAL}`))).toEqual([]);
+  });
+
+  test('--steer --json prints the stored row', async () => {
+    const r = await runCli(['sessions', 'chat', SESSION, '-p', 'x', '--steer', '--json', ...P], config);
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.stdout).prompt_id).toBe(PROMPT_ROW);
+  });
+
+  test('--steer without --prompt, or with --queue, exits 2', async () => {
+    const alone = await runCli(['sessions', 'chat', SESSION, '--steer', ...P], config);
+    expect(alone.code).toBe(2);
+    expect(alone.stderr).toContain('--steer needs --prompt');
+    const both = await runCli(['sessions', 'chat', SESSION, '-p', 'x', '--steer', '--queue', ...P], config);
+    expect(both.code).toBe(2);
+    expect(both.stderr).toContain('Pass --steer or --queue, not both.');
+  });
+
+  test('queue ls shows the delivery mode and why a steer prompt waits', async () => {
+    const r = await runCli(['sessions', 'queue', SESSION, 'ls', ...P], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('DELIVERY');
+    expect(r.stdout).toContain("Not steered (not_prompter): another member's turn is running.");
+    const json = await runCli(['sessions', 'queue', SESSION, 'ls', '--json', ...P], config);
+    expect(JSON.parse(json.stdout)[1]).toMatchObject({ delivery: 'queue', steer_fallback: 'not_prompter' });
+  });
+});
+
 describe('kortix sessions model', () => {
   test('PUTs the model and reports the live application', async () => {
     const r = await runCli(['sessions', 'model', SESSION, 'kortix/glm-5.3-flash', ...P], config);
@@ -1008,5 +1074,30 @@ describe('kortix sessions rm (multiple ids)', () => {
     const r = await runCli(['sessions', 'rm', ...P], config);
     expect(r.code).toBe(2);
     expect(r.stderr).toContain('Pass a session id');
+  });
+});
+
+describe('kortix sessions reload', () => {
+  const cases: { options: string[] }[] = [{ options: [] }, { options: ['--status'] }, { options: ['--force', '--no-repo'] }];
+  test.each(cases)('preserves --json with options %j', async ({ options }) => {
+    const r = await runCli(['sessions', 'reload', SESSION, '--json', ...options, ...P], config);
+    expect(r.code).toBe(0);
+    expect(r.stderr).toBe('');
+    const statusOnly = options.includes('--status');
+    expect(JSON.parse(r.stdout)).toEqual(statusOnly
+      ? { running_etag: 'old', latest_etag: 'new', stale: true, sandbox_reachable: true }
+      : { applied: true, previous_etag: 'old', etag: 'new', repo_refreshed: true, detail: 'Config reloaded.' });
+    if (!statusOnly) {
+      expect(calls('POST', `/v1/projects/${PROJECT}/sessions/${SESSION}/reload`)).toEqual([
+        { method: 'POST', path: `/v1/projects/${PROJECT}/sessions/${SESSION}/reload`, body: { refresh_repo: !options.includes('--no-repo'), force: options.includes('--force') } },
+      ]);
+    }
+  });
+
+  test('keeps human output without --json', async () => {
+    const r = await runCli(['sessions', 'reload', SESSION, ...P], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('Config reloaded.');
+    expect(() => JSON.parse(r.stdout)).toThrow();
   });
 });

@@ -1,6 +1,7 @@
 export { createSession } from './create-session';
 export { startSession } from './start-session';
 export { continueSession } from './continue-session';
+export { deliverThroughQueue, type FollowUpOutcome } from './follow-up-delivery';
 export { drainSessionLifecycleQueue } from './drain';
 export { buildContinueSessionCommandValues, enqueueContinueSessionCommand } from './store';
 export {
@@ -9,6 +10,7 @@ export {
   enqueueReleasingHold,
   holdInboxPrompts,
   inboxSendState,
+  interruptInboxPrompt,
   listInboxPrompts,
   releaseInboxHold,
   retryInboxPrompt,

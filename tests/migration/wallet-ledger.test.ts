@@ -27,7 +27,12 @@ function psql(query: string): string {
 }
 
 function pgReady(): boolean {
-  return sh(['docker', 'exec', CONTAINER, 'pg_isready', '-U', 'postgres', '-d', 'postgres']).ok;
+  // Host TCP probe: `docker exec pg_isready` answers over the unix socket,
+  // which initdb's temporary socket-only server satisfies while nothing serves
+  // TCP yet — the published port's proxy then accepts and closes the suite's
+  // first `psql` (`server closed the connection unexpectedly`). See
+  // worktree-migrate.test.ts for the full timeline and CI run 36153691220.
+  return sh(['psql', url, '-tAc', 'select 1']).ok;
 }
 
 type Buckets = { daily?: number; expiring?: number; nonExpiring?: number };
@@ -600,6 +605,20 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
       });
       expect(row!.expires_at).not.toBeNull();
       expect(account(id)).toMatchObject({ balance: 54, expiring: 50, non_expiring: 4, daily: 1 });
+    });
+
+    // reset_expiring_credits used NUMERIC(10, 2) variables: a preserved
+    // non-expiring bucket of 12.3456 became 12.35 and a debt of -0.004 became 0.
+    test('keeps the preserved non-expiring bucket and a small debt at full precision', async () => {
+      const funded = newAccount({ expiring: 3, nonExpiring: 12.3456 });
+      await wallet.reset({ accountId: funded, amount: 50, description: 'Monthly renewal', key: { event: 'in_p1' } });
+      expect(account(funded)!.non_expiring).toBeCloseTo(12.3456, 6);
+      expect(account(funded)!.balance).toBeCloseTo(62.3456, 6);
+
+      const indebted = newAccount({ nonExpiring: -0.004 });
+      await wallet.reset({ accountId: indebted, amount: 50, description: 'Monthly renewal', key: { event: 'in_p2' } });
+      expect(account(indebted)!.non_expiring).toBeCloseTo(-0.004, 6);
+      expect(account(indebted)!.balance).toBeCloseTo(49.996, 6);
     });
 
     test('a replayed reset key is a silent no-op', async () => {

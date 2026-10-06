@@ -292,8 +292,11 @@ async function enqueueTriggerPrompt(input: {
     overrides: triggerModelOverride(input.model, projectLlmGatewayEnabled(input.project.metadata)),
     ...(input.bindTurnIdentity ? { bindTurnIdentity: true } : {}),
   });
-  // Fast path only — the scheduler's 60s drain tick is the delivery guarantee.
-  drainSessionLifecycleQueue({ limit: 1 }).catch(() => {});
+  // Fast path only — the 1 s lifecycle worker is the delivery guarantee. Targeted
+  // when the fire has a key: an untargeted kick delivers whichever row is oldest.
+  drainSessionLifecycleQueue(
+    input.idempotencyKey ? { idempotencyKey: input.idempotencyKey, burst: false } : { limit: 1 },
+  ).catch(() => {});
   return 'queued';
 }
 

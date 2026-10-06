@@ -1,12 +1,11 @@
 import { eq } from 'drizzle-orm';
-import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { accountMemberships, projects } from '@kortix/db';
 // Straight from the engine + the actor builder, not the barrel: the barrel is
 // replaced wholesale by `mock.module` in several route tests, so every name
 // imported from it is a name those stubs must also declare.
-import { authorize, assertAuthorized, type Verdict } from '../../iam/authorize';
-import { actorOf, isAgentPrincipalActor, type Actor } from '../../iam/actor';
+import { authorize, type Verdict } from '../../iam/authorize';
+import { isAgentPrincipalActor, type Actor } from '../../iam/actor';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { ttlMemo } from '../../shared/ttl-memo';
 import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
@@ -24,8 +23,6 @@ import { resolveAccountId } from '../../shared/resolve-account';
 import { isUuid } from '../../shared/validate';
 import { setContextField } from '../../lib/request-context';
 import { effectiveProjectRole, type AccountRole, type ProjectAccessAction, type ProjectRole } from '../access';
-import { normalizeString } from './serializers';
-import { isRepositoryProjectAction, sessionWorkspaceAllowsRepositoryAccess } from './session-workspace-access';
 import { getAccountMembership } from './user-identity';
 
 // Memoized briefly (positive hits only) — same rationale and trade-off as
@@ -153,14 +150,31 @@ export async function ensureOrgMembership(
   return 'member';
 }
 
-export async function resolveProjectAccount(c: Context, body?: Record<string, unknown>) {
-  const userId = c.get('userId') as string;
-  const requested = normalizeString(
-    c.req.query('account_id') ??
-    c.req.query('accountId') ??
-    body?.account_id ??
-    body?.accountId,
-  );
+/**
+ * The account a project request targets: `requested` (the caller's
+ * `account_id`, already normalized) when the caller is a member of it, else
+ * the caller's own account. Throws the 400/403 the request answers with. The
+ * HTTP reader is `resolveProjectAccount` (`http-project-access.ts`).
+ */
+export async function resolveRequestedProjectAccount(userId: string, requested: string | null) {
+  // A malformed account_id is caller input, not a lookup miss: past this point
+  // it reaches the account-membership query, whose account_id comparison is a
+  // uuid column, and Postgres answers SQLSTATE 22P02 — a 500. Refuse the shape
+  // before any lookup (see shared/validate.ts for the shape contract).
+  if (requested && !isUuid(requested)) {
+    throw new HTTPException(400, {
+      message: 'account_id must be a valid id',
+      res: new Response(
+        JSON.stringify({
+          error: true,
+          message: 'account_id must be a valid id',
+          status: 400,
+          code: 'invalid_account_id',
+        }),
+        { status: 400, headers: { 'content-type': 'application/json' } },
+      ),
+    });
+  }
   // ACT-AS: the grant, not the query string, decides the account. Defense in
   // depth — under impersonation `/v1/accounts` returns only the target, so a
   // correct client already sends the target id. A stale one that still holds
@@ -186,7 +200,6 @@ export async function resolveProjectAccount(c: Context, body?: Record<string, un
   if (!membership) {
     throw new HTTPException(403, { message: 'You do not have access to this account' });
   }
-  (c as any).set('accountId', membership.accountId);
   setContextField('accountId', membership.accountId);
 
   return {
@@ -211,7 +224,7 @@ export async function resolveProjectAccount(c: Context, body?: Record<string, un
  *
  * `manage` KEEPS mapping to project.write on purpose: all 31 remaining `manage`
  * call sites stack their own explicit leaf assert immediately after
- * (project.customize.write, project.connector.write, project.secret.write, …),
+ * (project.settings.write, project.connector.write, project.secret.write, …),
  * so the coarse gate is the membership-tier question and the leaf gate is the
  * capability question. The two sites where that stack was MISSING are the ones
  * routes.md §5.2 named — `POST|DELETE /projects/:id/cli-token` — and they now
@@ -240,91 +253,6 @@ export function iamActionForProjectAccess(action: ProjectAccessAction): string {
   }
 }
 
-
-/**
- * Assert a SPECIFIC project capability (a leaf action like project.gitops.push)
- * for the current request. 403s on denial.
- *
- * The acting credential no longer has to be threaded by hand: it is part of the
- * `Actor` that `middleware/auth.ts` built, so the agent-grant fold and the token
- * project-scope check cannot be skipped by forgetting an argument. `userId` is
- * kept in the signature (194 call sites pass it) but is only used to assert that
- * the caller and the request agree.
- */
-export async function assertProjectCapability(
-  c: Context,
-  userId: string,
-  accountId: string,
-  projectId: string,
-  action: string,
-  // Optional per-OBJECT narrowing: when supplied, the verdict is additionally
-  // intersected with the object grants for this specific agent/skill.
-  resource?: { type: 'agent' | 'skill'; id: string },
-): Promise<void> {
-  if (isRepositoryProjectAction(action)) {
-    await assertAgentSessionWorkspaceAllowsRepository(c, accountId, projectId);
-  }
-  const actor = await actorOf(c, accountId);
-  await assertAuthorized(actor, action, {
-    type: 'project',
-    id: projectId,
-    ...(resource ? { resource } : {}),
-  });
-}
-
-/**
- * Non-throwing sibling of assertProjectCapability: returns WHETHER the leaf is
- * allowed for the current request (threading the acting token so the agent-grant
- * fold fires), instead of 403-ing. For response-level filtering where a coarse
- * gate already passed but individual sections must be hidden per-capability —
- * e.g. GET /detail returns the project shell to any member but omits the file
- * list / a config sub-section the caller can't read, rather than denying the
- * whole bundle (which would lock a plain `member`, who lacks file.read, out of
- * the workspace entirely).
- */
-export async function projectCapabilityAllowed(
-  c: Context,
-  userId: string,
-  accountId: string,
-  projectId: string,
-  action: string,
-): Promise<boolean> {
-  if (
-    isRepositoryProjectAction(action) &&
-    !(await agentSessionWorkspaceAllowsRepository(c, accountId, projectId))
-  ) {
-    return false;
-  }
-  const verdict = await authorize(await actorOf(c, accountId), action, { type: 'project', id: projectId });
-  return verdict.allowed;
-}
-
-function agentSessionIdFromRequest(c: Context): string | null {
-  if (c.get('authType') !== 'pat') return null;
-  const sessionId = c.get('sessionId');
-  return typeof sessionId === 'string' && sessionId.length > 0 ? sessionId : null;
-}
-
-export async function agentSessionWorkspaceAllowsRepository(
-  c: Context,
-  accountId: string,
-  projectId: string,
-): Promise<boolean> {
-  const sessionId = agentSessionIdFromRequest(c);
-  if (!sessionId) return true;
-  return sessionWorkspaceAllowsRepositoryAccess({ sessionId, accountId, projectId });
-}
-
-export async function assertAgentSessionWorkspaceAllowsRepository(
-  c: Context,
-  accountId: string,
-  projectId: string,
-): Promise<void> {
-  if (await agentSessionWorkspaceAllowsRepository(c, accountId, projectId)) return;
-  throw new HTTPException(403, {
-    message: 'session workspace does not allow repository access',
-  });
-}
 
 /**
  * The full platform-admin-bypass decision — pure (the DB/header lookups are
@@ -384,7 +312,7 @@ export function deriveEffectiveRole(input: {
  * account-membership 403.
  */
 async function resolveProjectGate(
-  c: Context,
+  request: { isServiceAccount: boolean; bypassHeaderPresent: boolean },
   userId: string,
   projectId: string,
   accountId: string,
@@ -417,7 +345,7 @@ async function resolveProjectGate(
   // iam_policies, already evaluated by the engine `verdict` above. Don't apply
   // the human membership hard-gate to it (that would 403 every SA before its
   // standing role is ever consulted); fall through to the verdict check.
-  const isServiceAccount = ((c as unknown as { get(k: string): unknown }).get('authType') as string | undefined) === 'service_account';
+  const { isServiceAccount } = request;
 
   // Platform-admin READ-ONLY bypass: an explicit `x-kortix-admin-bypass`
   // header from a real `platform_user_roles` admin/super_admin lets support
@@ -428,7 +356,7 @@ async function resolveProjectGate(
   // the PROJECT'S OWN account so the customer's own audit trail (and any
   // configured audit webhook) sees the access, not just ours.
   let adminBypass = false;
-  const bypassHeaderPresent = c.req.header('x-kortix-admin-bypass') === '1';
+  const { bypassHeaderPresent } = request;
   if (isAdminBypassEligible({ action, isServiceAccount, bypassHeaderPresent })) {
     adminBypass = shouldApplyAdminBypass({
       action,
@@ -511,8 +439,12 @@ async function denyProjectAccess(input: {
   throw buildDenialError(iamAction, verdict.reason, 'You do not have access to this project');
 }
 
-export async function loadProjectForUser(c: Context, projectId: string, action: ProjectAccessAction) {
-  const userId = c.get('userId') as string;
+/**
+ * The project row a project request names, or null when the id is malformed,
+ * the project does not exist, or it is archived. Binds the request context's
+ * account and project.
+ */
+export async function loadProjectRow(projectId: string) {
   if (!isUuid(projectId)) return null;
   const [row] = await db
     .select()
@@ -522,15 +454,33 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
   if (!row || row.status === 'archived') return null;
   setContextField('accountId', row.accountId);
   setContextField('projectId', row.projectId);
+  return row;
+}
 
-  // ONE structured principal for the whole request, built from the credential
-  // that authenticated it. Rebuilt here only when the project's account differs
-  // from the one auth resolved (the dashboard case).
-  const actor = await actorOf(c, row.accountId);
+/**
+ * THE project gate: may `actor` do `action` on the loaded project? Answers
+ * the caller's labels (account role, project role, effective role) or throws
+ * the 403 the request answers with. The HTTP gate is `loadProjectForUser`
+ * (`http-project-access.ts`).
+ */
+export async function authorizeProjectAccess(input: {
+  userId: string;
+  /** The id the request named (not re-read from `row`). */
+  projectId: string;
+  row: NonNullable<Awaited<ReturnType<typeof loadProjectRow>>>;
+  action: ProjectAccessAction;
+  /** The request's canonical principal, asked about the project's account. */
+  actor: Actor;
+  /** The request authenticated with a direct service-account bearer. */
+  isServiceAccount: boolean;
+  /** The request carried `x-kortix-admin-bypass: 1`. */
+  bypassHeaderPresent: boolean;
+}) {
+  const { userId, projectId, row, action, actor } = input;
   const iamAction = iamActionForProjectAccess(action);
 
   const gate = await resolveProjectGate(
-    c, userId, projectId, row.accountId, action, iamAction, actor,
+    input, userId, projectId, row.accountId, action, iamAction, actor,
   );
   const { accountRole, projectRole, adminBypass } = gate;
   if (!gate.verdict.allowed && !adminBypass) {
@@ -558,7 +508,6 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
       : false,
     callerRole: callerRole as ProjectRole,
   });
-  (c as any).set('accountId', row.accountId);
 
   return {
     row,

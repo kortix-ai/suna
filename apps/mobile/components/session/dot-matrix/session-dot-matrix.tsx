@@ -12,9 +12,10 @@
  * and a `useFrameCallback` on the UI thread only advances a sample index;
  * every dot reads its own cell in a `useAnimatedStyle`. No per-frame JS work,
  * no React render. Reduce Motion → web's idle frame, no loop.
+ * `LoopMotionContext` false → the glyph holds its current frame.
  */
 
-import { memo, useEffect, useMemo, useRef } from 'react';
+import { memo, useContext, useEffect, useMemo, useRef } from 'react';
 import { View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
   useAnimatedStyle,
@@ -23,6 +24,7 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 
+import { LoopMotionContext } from '@/components/kortix/text-shimmer';
 import { useTurnPalette } from '@/components/session/tool/shared/styles';
 import {
   dotMatrixTrack,
@@ -47,6 +49,8 @@ export interface SessionDotMatrixProps {
 function SessionDotMatrixImpl({ sessionId, size = 14, color, style }: SessionDotMatrixProps) {
   const palette = useTurnPalette();
   const still = useReduceMotion();
+  const loopMotion = useContext(LoopMotionContext);
+  const looping = !still && loopMotion;
   const entry = useMemo(() => sessionDotMatrixVariant(sessionId), [sessionId]);
   const layout = dotMatrixLayout(entry, size);
   // Hidden cells are a fixed mask per glyph (pinned by dot-matrix.test.ts),
@@ -73,10 +77,10 @@ function SessionDotMatrixImpl({ sessionId, size = 14, color, style }: SessionDot
     clock.value += info.timeSincePreviousFrame ?? 0;
     const next = trackSampleIndex(track.value.periodMs, clock.value);
     if (next !== sample.value) sample.value = next;
-  }, !still);
+  }, looping);
   useEffect(() => {
-    loop.setActive(!still);
-  }, [loop, still]);
+    loop.setActive(looping);
+  }, [loop, looping]);
 
   const dotColor = color ?? palette.mutedForeground;
   const pitch = layout.track + layout.gap;

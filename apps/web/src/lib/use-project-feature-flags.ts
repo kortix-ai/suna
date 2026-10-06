@@ -37,11 +37,9 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const reminders = useFeatureFlag(projectId, 'reminders');
   const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
   const secretsEgress = useFeatureFlag(projectId, 'secrets_egress');
-  const piWorker = useFeatureFlag(projectId, 'pi_worker');
   const pooledProviderSecrets = useFeatureFlag(projectId, 'pooled_provider_secrets');
   const piHarness = useFeatureFlag(projectId, 'pi_harness');
   const configReleases = useFeatureFlag(projectId, 'config_releases');
-  const agentPrincipal = useFeatureFlag(projectId, 'agent_principal');
   const usRegion = useFeatureFlag(projectId, 'us_region');
 
   return {
@@ -56,11 +54,9 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       reminders: reminders.enabled,
       warm_sessions: warmSessions.enabled,
       secrets_egress: secretsEgress.enabled,
-      pi_worker: piWorker.enabled,
       pooled_provider_secrets: pooledProviderSecrets.enabled,
       pi_harness: piHarness.enabled,
       config_releases: configReleases.enabled,
-      agent_principal: agentPrincipal.enabled,
       us_region: usRegion.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.

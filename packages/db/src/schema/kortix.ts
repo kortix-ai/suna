@@ -941,6 +941,9 @@ export const accountSecretResources = kortixSchema.table('account_secret_resourc
   strategy: projectSecretStrategyEnum('strategy').notNull(),
   active: boolean('active').default(true).notNull(),
   cooldownUntil: timestamp('cooldown_until', { withTimezone: true }),
+  /** When a cooling-down account may be re-tried: each limit sets it 15 min out; the first
+   *  resolve after it lifts `cooldownUntil` once (a reset before the provider's hinted reset). */
+  cooldownProbeAt: timestamp('cooldown_probe_at', { withTimezone: true }),
   /** First permanent failure of the stored login (a refresh the provider
    *  rejected, or a login that cannot be read). The account stays usable and
    *  in its pools; a successful refresh or a reconnect clears it. */
@@ -1891,6 +1894,11 @@ export const chatPendingAuthMessages = kortixSchema.table(
       table.expiresAt,
     ),
     index('idx_chat_pending_auth_messages_expiry').on(table.expiresAt),
+    // Covers the project_id FK (chat_pending_auth_messages_project_id_fkey, built
+    // by the chat_pending_auth_messages_project_index migration): a project
+    // delete cascades here by project_id, and that lookup otherwise seq-scans
+    // the table (Supabase advisor: unindexed_foreign_keys, KRTX-1097).
+    index('idx_chat_pending_auth_messages_project').on(table.projectId),
   ],
 );
 
@@ -2129,6 +2137,22 @@ export const sessionSandboxes = kortixSchema.table(
     index('idx_session_sandboxes_account').on(table.accountId),
     index('idx_session_sandboxes_status').on(table.status),
     index('idx_session_sandboxes_external_id').on(table.externalId),
+    // The parked-runtime verification sweep (apps/api/src/projects/reaping/
+    // parked-runtime-verification.ts `verifyParkedRuntimes`) reads the batch
+    // as `WHERE status = <param> AND external_id IS NOT NULL ORDER BY
+    // metadata->>'parkedVerifiedAt' ASC NULLS FIRST LIMIT 60`. On prod this
+    // scanned ~45k stopped rows and sorted them for every pass (mean 3027 ms,
+    // 1704 calls — pg_stat_statements via the Supabase collector). `status` is
+    // the leading key, NOT a partial-index predicate: the app binds it as a
+    // query parameter, and a generic plan cannot prove `status = $1` implies
+    // `status = 'stopped'`, so a partial index would drop out of the plan
+    // after the first few executions. `external_id IS NOT NULL` is static in
+    // the statement, so it can stay a partial predicate. The expression is
+    // declared ASC NULLS FIRST to match the query's `asc nulls first` exactly
+    // (Postgres's ASC default is NULLS LAST, which would leave a sort).
+    index('idx_session_sandboxes_parked_verified')
+      .on(table.status, sql`(${table.metadata} ->> 'parkedVerifiedAt') ASC NULLS FIRST`)
+      .where(sql`${table.externalId} is not null`),
   ],
 );
 
@@ -2147,6 +2171,11 @@ export const sessionSandboxes = kortixSchema.table(
  * its data path.
  *
  * One environment per session, enforced by the primary key.
+ *
+ * RETIRED: the pi worker split was removed and nothing reads or writes this
+ * table. It stays declared until a follow-up migration drops it, after every
+ * replica runs code with no reader (a drop under an old replica fails its
+ * account-deletion and orphan-reaper queries).
  */
 export const sessionEnvironments = kortixSchema.table(
   'session_environments',

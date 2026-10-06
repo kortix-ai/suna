@@ -90,6 +90,8 @@ export {
   serializeManifestObject,
 } from './format';
 
+export { slugifySlug } from './slug';
+
 export {
   type ImportableKey,
   type ManifestImportReader,
@@ -480,7 +482,7 @@ export function validateGrantList(
         // every capability it holds rather than the one line that is outdated.
         issues.push({
           path: `${where}[${k}]`,
-          message: `"${s}" was renamed to "${renamedTo}" — the grant still applies, but update the manifest.`,
+          message: `"${s}" was renamed to "${renamedTo.join('", "')}" — the grant still applies, but update the manifest.`,
           severity: 'warning',
         });
       } else if (LEGACY_TOLERATED_KORTIX_PERMISSIONS.includes(s)) {

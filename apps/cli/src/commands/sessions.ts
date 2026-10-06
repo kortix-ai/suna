@@ -125,7 +125,9 @@ Subcommands:
                                     one-shot with --prompt). --new starts one.
                                     --queue stores the prompt in the session's
                                     durable inbox instead of handing it to the
-                                    runtime.
+                                    runtime. --steer stores it the same way and
+                                    hands it to the running turn at its next
+                                    step.
   queue <session-id> [<sub>]        The durable prompt inbox: ls (default), rm
                                     <prompt-id>, now <prompt-id>, hold,
                                     release. --json.
@@ -413,7 +415,7 @@ export async function runSessions(argv: string[]): Promise<number> {
     case 'restart':
       return sessionsRestart(rest[0], ctxOpts);
     case 'reload':
-      return sessionsReload(rest[0], rest.slice(1), ctxOpts);
+      return sessionsReload(rest[0], rest.slice(1), ctxOpts, json);
     case 'rename':
       return sessionsRename(rest[0], rest[1], ctxOpts);
     case 'rm':
@@ -1046,12 +1048,12 @@ async function sessionsReload(
   sessionId: string | undefined,
   args: string[],
   opts: CtxOpts,
+  json: boolean,
 ): Promise<number> {
   if (!sessionId) {
     process.stderr.write(`${status.err('Pass a session id.')}\n`);
     return 2;
   }
-  const json = args.includes('--json');
   const statusOnly = args.includes('--status');
   const force = args.includes('--force');
   const assumeYes = args.includes('--yes') || args.includes('-y');

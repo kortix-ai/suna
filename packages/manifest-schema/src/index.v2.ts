@@ -61,9 +61,8 @@ export type AgentModeV2 = 'primary' | 'subagent' | 'all';
 export type WorkspaceModeV2 = 'runtime' | 'read' | 'branch';
 
 /** Session runtimes — which agent harness a session boots inside its sandbox.
- *  `pi` runs pi-agent-core in-process in the sandbox daemon (`KORTIX_HARNESS=pi`);
- *  with the project's `pi_worker` feature flag it instead boots the split
- *  worker/environment topology. Anything else — including absence — keeps the
+ *  `pi` runs pi-agent-core in-process in the sandbox daemon (`KORTIX_HARNESS=pi`).
+ *  Anything else — including absence — keeps the
  *  OpenCode path byte-for-byte. Reserved room for `claude` later. */
 export type RuntimeV2 = 'opencode' | 'pi';
 
@@ -179,8 +178,7 @@ export interface AgentBlockV2 {
    *  (slugs | "all" | "none"), deny-by-default when omitted. A `project`-mode
    *  App needs only `project.app.read` in `kortix_permissions`; a `public` App
    *  admits everyone; a `password` App never admits a Kortix credential.
-   *  Enforced by the App gate only while the project's `agent_principal`
-   *  flag is on. The validator cannot see whether the project has Apps
+   *  Enforced by the App gate. The validator cannot see whether the project has Apps
    *  enabled (a DB feature flag), so it checks shape only. */
   apps?: GrantSetV2;
   /** The project permissions (`project.*` IAM actions) this agent's session

@@ -55,6 +55,7 @@ Access:
 
 Observability:
   usage [--days N]                  Request/error/cost totals + by-model. --json.
+  sources [--hours N]               Spend by source: trigger, member, channel, API (default 24h). --json.
   logs [--limit N] [--failed]       Recent gateway requests. --json.
   logs <logId|requestId>            One request's full detail (JSON).
   test <model…> [--prompt <text>]   Run a prompt through one or more models.
@@ -98,6 +99,9 @@ export async function runGateway(argv: string[]): Promise<number> {
     case 'usage':
     case 'overview':
       return gatewayUsage(rest, ctxOpts, json);
+    case 'sources':
+    case 'source':
+      return gatewaySources(rest, ctxOpts, json);
     case 'logs':
     case 'log':
       return gatewayLogs(rest, ctxOpts, json);
@@ -152,11 +156,7 @@ interface RoutingPolicyDoc {
   capabilities: { write: boolean };
 }
 
-export async function gatewayRouting(
-  rest: string[],
-  opts: CtxOpts,
-  json: boolean,
-): Promise<number> {
+async function gatewayRouting(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
   const action = takeAction(rest, 'get');
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
@@ -279,7 +279,7 @@ function renderRouting(doc: RoutingPolicyDoc): number {
 
 // ── Budgets ─────────────────────────────────────────────────────────────────
 
-export async function gatewayBudget(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
+async function gatewayBudget(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
   const action = takeAction(rest, 'ls');
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
@@ -351,7 +351,7 @@ export async function gatewayBudget(rest: string[], opts: CtxOpts, json: boolean
 
 // ── External gateway API keys ───────────────────────────────────────────────
 
-export async function gatewayKeys(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
+async function gatewayKeys(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
   const action = takeAction(rest, 'ls');
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
@@ -406,7 +406,7 @@ export async function gatewayKeys(rest: string[], opts: CtxOpts, json: boolean):
 
 // ── Usage / analytics ───────────────────────────────────────────────────────
 
-export async function gatewayUsage(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
+async function gatewayUsage(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
   let days: string | undefined;
@@ -442,7 +442,42 @@ export async function gatewayUsage(rest: string[], opts: CtxOpts, json: boolean)
   }
 }
 
-export async function gatewayLogs(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
+async function gatewaySources(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
+  let hours: string | undefined;
+  try {
+    hours = takeFlagValue(rest, ['--hours']);
+  } catch (err) {
+    return fail((err as Error).message);
+  }
+  const ctx = await resolveProjectContext(opts);
+  if (!ctx) return 1;
+  const q = hours ? `?hours=${encodeURIComponent(hours)}` : '';
+  try {
+    const data = await ctx.client.get<any>(`/projects/${ctx.projectId}/gateway/sources${q}`);
+    if (json) return outJson(data);
+    const t = data.total ?? {};
+    process.stdout.write(
+      `\n  ${C.dim}LAST ${data.window_hours}h${C.reset}  ` +
+        `${t.requests ?? 0} req · ${t.sessions ?? 0} sessions · ${money(t.cost)} · ` +
+        `avg ${Number(t.avg_input_tokens ?? 0).toLocaleString('en-US')} input tok/req\n`,
+    );
+    if (data.sources?.length) {
+      process.stdout.write(`\n  ${C.dim}BY SOURCE${C.reset}\n`);
+      for (const s of data.sources) {
+        process.stdout.write(
+          `  ${pad(s.source, 40)} ${money(s.cost).padStart(10)}  ${String(s.sessions).padStart(4)} sess  ` +
+            `${String(s.requests).padStart(6)} req  ${C.dim}avg ${Number(s.avg_input_tokens).toLocaleString('en-US')} tok${C.reset}\n`,
+        );
+      }
+    }
+    process.stdout.write('\n');
+    return 0;
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+}
+
+async function gatewayLogs(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
   // Pull flags off FIRST so a flag VALUE (e.g. the `3` in `--limit 3`) is never
   // mistaken for a positional logId.
   let limit: string | undefined;
@@ -494,7 +529,7 @@ export async function gatewayLogs(rest: string[], opts: CtxOpts, json: boolean):
 
 // ── Playground (test a model end-to-end through the gateway) ─────────────────
 
-export async function gatewayTest(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
+async function gatewayTest(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
   let prompt: string | undefined;
   try {
     prompt = takeFlagValue(rest, ['--prompt', '-p']);

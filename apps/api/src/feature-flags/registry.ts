@@ -40,7 +40,7 @@
  * a time. `unit-feature-flag-drift.test.ts` compares contract <-> SDK <->
  * registry and catches 1/3/5 only. List every holder before you start:
  *
- *   rg -l "meta_agent" --glob '!node_modules' . | xargs rg -l "pi_worker"
+ *   rg -l "meta_agent" --glob '!node_modules' . | xargs rg -l "pi_harness"
  *
  * The UI renders straight from {@link buildFeatureFlagCatalog}, so a new entry
  * lights up in Settings automatically. `unit-feature-flags.test.ts` pins the
@@ -283,22 +283,10 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcementNote: 'Session selection and provider credential resolution reject or ignore resource secrets while disabled.',
   },
   {
-    key: 'pi_worker',
-    name: 'Pi Worker Runtime (compiled)',
-    description:
-      'Compile boot artifacts for every push: a pi-based worker runtime .mjs per commit (agent config from kortix.yaml baked in at that exact sha, downloadable per ref+sha) plus the OpenCode compiled-boot artifacts for this project even where KORTIX_COMPILED_BOOT_MODE is off. Harness/worker split experiment. Sessions boot ON the worker when the manifest also sets `runtime: pi`; without that manifest line sessions keep the OpenCode path.',
-    stability: 'experimental',
-    available: () => true,
-    // Explicit opt-in per project. Off ⇒ no artifact is compiled on push and
-    // the download route answers 403.
-    platformDefault: () => false,
-    enforcement: 'routes',
-  },
-  {
     key: 'pi_harness',
     name: 'Pi Harness (in-sandbox)',
     description:
-      'Run sessions on the pi agent harness inside the ordinary session sandbox instead of OpenCode (KORTIX_HARNESS=pi in kortixd). Same repo layout, same agents and skills, same wire to the UI; pi starts in-process in ~100 ms after the checkout. On ⇒ every new or restarted session of this project boots pi. Off ⇒ the manifest decides: `runtime: pi` still boots pi, anything else boots OpenCode. pi calls models only through the LLM gateway: with `llm_gateway` off, sessions boot OpenCode. Distinct from `pi_worker`, which is the split worker/environment topology.',
+      'Run sessions on the pi agent harness inside the ordinary session sandbox instead of OpenCode (KORTIX_HARNESS=pi in kortixd). Same repo layout, same agents and skills, same wire to the UI; pi starts in-process in ~100 ms after the checkout. On ⇒ every new or restarted session of this project boots pi. Off ⇒ the manifest decides: `runtime: pi` still boots pi, anything else boots OpenCode. pi calls models only through the LLM gateway: with `llm_gateway` off, sessions boot OpenCode.',
     stability: 'experimental',
     available: () => true,
     platformDefault: () => false,
@@ -331,34 +319,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'and GET /config omits the `release` block (routes/session-config.ts). Off ⇒ ' +
       'no release is built, no archive is stored, and no kortix.config_releases ' +
       'row is written.',
-  },
-  {
-    key: 'agent_principal',
-    name: 'Agents as Principals',
-    description:
-      'A governed agent session acts as the agent itself, not as the person who started it. Its authority is its kortix_permissions list, capped by the IAM role bound to the agent and never including member management, project deletion, or credential issue. Running an agent, firing its trigger, or starting it from another agent requires permission to run that agent.',
-    stability: 'experimental',
-    available: () => true,
-    // Default ON. An agent's authority is a property of the AGENT, not of
-    // whoever pressed start: the launcher-∩-grant model gave the same agent
-    // different power per person, let an owner-launched agent ignore its own
-    // grant entirely (super-admin short-circuit), and ran every unattended
-    // trigger as the account owner. Switching a project OFF restores that old
-    // model as an escape hatch for one release; the switch is then deleted.
-    platformDefault: () => true,
-    // Not listed in Settings → Feature flags. An agent acting as itself is how
-    // Kortix works, not a choice we offer, so presenting a switch would invite
-    // a project to turn the governance model off. Support can still put ONE
-    // project back with `PATCH /projects/:id/features {agent_principal:false}`
-    // while it migrates. Delete the flag — and this line — in the release after
-    // the one that shipped the default (spec §5).
-    catalogHidden: true,
-    enforcement: 'behavioral',
-    enforcementNote:
-      'Read by the authorization engine for every agent-session credential ' +
-      '(iam/agent-principal.ts agentPrincipalModeFor → iam/actor.ts actingPrincipal, ' +
-      'iam/authorize.ts), the manual trigger fire and child-session run gates, and ' +
-      'the change-request merge governance guard.',
   },
   {
     key: 'us_region',

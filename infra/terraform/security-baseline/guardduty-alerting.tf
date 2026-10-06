@@ -1,6 +1,8 @@
 # GuardDuty findings from every enabled region fan into the existing central
 # operations alert topic. Regional EventBridge rules satisfy Drata test 105
 # without requiring a separate human-confirmed SNS subscription in each region.
+# Only Medium and higher (severity >= 4) page. Low findings (for example a new
+# teammate's first console login) stay in GuardDuty for review, not email.
 
 data "aws_sns_topic" "operations_alerts" {
   name = "suna-api-alerts"
@@ -10,6 +12,7 @@ locals {
   guardduty_finding_event_pattern = jsonencode({
     source        = ["aws.guardduty"]
     "detail-type" = ["GuardDuty Finding"]
+    detail        = { severity = [{ numeric = [">=", 4] }] }
   })
   central_event_bus_arn = "arn:aws:events:us-west-2:${local.account_id}:event-bus/default"
 }
@@ -46,7 +49,7 @@ resource "aws_iam_role_policy" "guardduty_event_forwarder" {
 
 resource "aws_cloudwatch_event_rule" "guardduty_usw2" {
   name          = "kortix-guardduty-failures"
-  description   = "Route all GuardDuty findings to the operations alert topic"
+  description   = "Route Medium+ GuardDuty findings to the operations alert topic"
   event_pattern = local.guardduty_finding_event_pattern
   state         = "ENABLED"
   tags          = local.tags

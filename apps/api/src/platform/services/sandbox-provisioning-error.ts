@@ -18,6 +18,10 @@ export const SANDBOX_PROVIDER_CAPACITY_MESSAGE =
 export const SANDBOX_PROVIDER_FAILURE_MESSAGE =
   'The sandbox provider could not start this session. Try again.';
 
+export const SANDBOX_PROVIDER_STORAGE_FULL_MESSAGE =
+  'The sandbox provider is out of storage, so no new session can start on it. ' +
+  'Try again later, or ask a project admin to switch the sandbox provider in Customize → Settings → Sandbox.';
+
 export const INVALID_SECRET_BOUNDARY_POLICY_MESSAGE =
   "A network-boundary secret in this project has an invalid outbound policy, so no session can start. " +
   'Two secrets cannot inject the same header for the same host. Fix the secret delivery settings — retrying will not help.';
@@ -40,6 +44,15 @@ export const SNAPSHOT_TOO_LARGE_MESSAGE =
  */
 const SNAPSHOT_TOO_LARGE_PATTERN =
   /exceeds maximum allowed size|snapshot size .* exceeds|image (?:size )?too large|exceeds the maximum snapshot size/i;
+
+/**
+ * The provider organization's storage quota is full. Capacity, but not "a
+ * minute": it frees only as the provider archives stopped boxes. Prod
+ * 2026-10-06: Daytona answered "Total disk limit exceeded. Maximum allowed:
+ * 40000GiB." to a pinned project for 13 hours, and every failed session said
+ * "could not start this session. Try again."
+ */
+const STORAGE_FULL_PATTERN = /total disk limit exceeded|disk quota exceeded|storage quota exceeded/i;
 
 const CAPACITY_PATTERN =
   /no available runner|no runners available|no capacity|out of capacity|capacity exceeded|failed to place sandbox|rate ?limit|too many requests|maximum number of concurrent (?:e2b )?sandboxes|max(?:imum)? number of running sandboxes(?: on node)? reached|too many sandboxes starting on this node/i;
@@ -71,7 +84,8 @@ const INVALID_SECRET_BOUNDARY_POLICY_PATTERN =
  */
 export function classifySandboxProvisioningFailure(error: unknown): SandboxProvisioningFailure {
   const rawMessage = error instanceof Error ? error.message : String(error);
-  const isCapacity = CAPACITY_PATTERN.test(rawMessage);
+  const isStorageFull = STORAGE_FULL_PATTERN.test(rawMessage);
+  const isCapacity = isStorageFull || CAPACITY_PATTERN.test(rawMessage);
   const isGitAuth = !isCapacity && GIT_AUTH_PATTERN.test(rawMessage);
 
   if (INVALID_SECRET_BOUNDARY_POLICY_PATTERN.test(rawMessage)) {
@@ -98,7 +112,7 @@ export function classifySandboxProvisioningFailure(error: unknown): SandboxProvi
   if (isCapacity) {
     return {
       category: 'provider-capacity',
-      userMessage: SANDBOX_PROVIDER_CAPACITY_MESSAGE,
+      userMessage: isStorageFull ? SANDBOX_PROVIDER_STORAGE_FULL_MESSAGE : SANDBOX_PROVIDER_CAPACITY_MESSAGE,
       isCapacity: true,
       isGitAuth: false,
     };

@@ -206,7 +206,6 @@ mock.module('../projects/git', () => ({
 }));
 
 mock.module("../snapshots/builder", () => ({
-  ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
   ensureMetaSandboxImage: async () => ({ snapshotName: "kortix-meta-test", slug: "meta", contentHash: "b".repeat(64), built: false, isDefault: false }),
   deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
@@ -791,9 +790,11 @@ const {
   drainTriggerExecutionQueue,
   projectsApp,
   projectWebhooksApp,
+  registerAllProjectRoutes,
   runProjectTriggerSweep,
 } = await import('../projects/index');
-const { resetRateLimiters } = await import('../shared/rate-limit');
+registerAllProjectRoutes();
+const { resetRateLimiters } = await import('../middleware/rate-limit');
 
 function createApp() {
   const app = new Hono();

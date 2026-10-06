@@ -165,6 +165,8 @@ class KortixResourceLoader extends DefaultResourceLoader {
 
 export interface PiSessionInput {
   agent: Agent
+  /** pi's session store; the agent's messages are already its projection. */
+  sessionManager: SessionManager
   ref: RunnerRef
   cwd: string
   agentDir: string
@@ -181,6 +183,8 @@ export interface PiSessionInput {
   skillAllowed: (name: string) => boolean
   /** The provider the agent streams through; pi checks it has auth before a prompt. */
   provider: Provider | undefined
+  /** pi `compaction` settings from the runtime (per-model reserves: model.ts `compactionSettings`). */
+  compaction?: object
 }
 
 export interface PiSession {
@@ -311,10 +315,16 @@ export async function createPiSession(input: PiSessionInput): Promise<PiSession>
   const system = installedPackages(systemEntries, join(input.agentDir, 'npm'))
   const settingsManager = SettingsManager.fromStorage(
     new ScopedSettingsStorage({
-      // Kortix owns compaction and retry: the transcript has no compaction yet, and a failed
-      // turn is the product's to retry (a silent pi retry would double-bill and reorder the wire).
-      // They live in storage, not `applyOverrides`: `loader.reload()` re-reads storage and drops overrides.
-      global: JSON.stringify({ ...globalSettings, packages: system.kept, compaction: { enabled: false }, retry: { enabled: false } }),
+      // Kortix owns retry: a failed turn is the product's to retry (a silent pi retry would
+      // double-bill and reorder the wire). pi's compaction is on (its own default), and the
+      // runtime puts it on the wire, at the runtime's token budget. `retry` and `compaction` live in
+      // storage, not `applyOverrides`: `loader.reload()` re-reads storage and drops overrides.
+      global: JSON.stringify({
+        ...globalSettings,
+        packages: system.kept,
+        retry: { enabled: false },
+        compaction: { ...(globalSettings.compaction as object | undefined), ...input.compaction },
+      }),
       project: JSON.stringify({ ...projectSettings, packages: project.kept }),
     }),
     { projectTrusted: true },
@@ -349,7 +359,7 @@ export async function createPiSession(input: PiSessionInput): Promise<PiSession>
 
   const session = new AgentSession({
     agent: input.agent,
-    sessionManager: SessionManager.inMemory(input.cwd),
+    sessionManager: input.sessionManager,
     settingsManager,
     cwd: input.cwd,
     resourceLoader: loader,

@@ -1,3 +1,4 @@
+import { SessionSnapshotSchema, SessionTranscriptSyncEnvelopeSchema } from "@kortix/api-contract";
 import { Client } from "pg";
 import { flow } from "../core/flow";
 import { CliSandbox, throwIfCliInfraFailure } from "../fixtures/cli";
@@ -17,6 +18,7 @@ flow(
       "GET /v1/accounts/me",
       // `kortix sessions log` locates the session, then reads its saved copy.
       "GET /v1/projects/:projectId/sessions/:sessionId",
+      "GET /v1/projects/:projectId/sessions/:sessionId/snapshot",
     ],
   },
   async (ctx) => {
@@ -39,14 +41,33 @@ flow(
     };
     const owner = ctx.client.as(ctx.P.OWNER);
     await ctx.step(
-      "a stopped session's saved messages read from PostgreSQL without waking it",
+      "a stopped session's saved messages read from PostgreSQL without waking it, in the contract shape",
       async () => {
         (await owner.get(route, options))
           .status(200)
           .body()
           .has("$.source", "mirror")
           .has("$.available", true)
-          .has("$.message_count", 2);
+          .has("$.message_count", 2)
+          .schema(SessionTranscriptSyncEnvelopeSchema);
+      },
+    );
+    await ctx.step(
+      "the session snapshot answers the same saved window in one read, every leg in the contract shape",
+      async () => {
+        (
+          await owner.get("/v1/projects/:projectId/sessions/:sessionId/snapshot", {
+            params: { projectId: project.id, sessionId },
+          })
+        )
+          .status(200)
+          .body()
+          .has("$.session.session_id", sessionId)
+          .has("$.transcript.known", true)
+          .has("$.transcript.message_count", 2)
+          .has("$.turn.known", true)
+          .has("$.queue.known", true)
+          .schema(SessionSnapshotSchema);
       },
     );
     await ctx.step(

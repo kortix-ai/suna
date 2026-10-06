@@ -19,7 +19,6 @@ import {
   type NewWorkspaceFormState,
 } from '@/features/workspace/new/new-workspace-form';
 import { createRepoWithGitHubAuthorization } from '@/features/workspace/new/github-user-authorization';
-import { onboardingPath } from '@/features/workspace/new/onboarding-param';
 import { useCreatableAccounts } from '@/features/workspace/new/use-creatable-accounts';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import {
@@ -35,6 +34,7 @@ import {
   PROVISION_IN_FLIGHT_CODE,
   provisionProject,
   provisionProjectStream,
+  setProjectOnboardingComplete,
   type CreateProjectRepoInput,
   type KortixAccount,
   type KortixProject,
@@ -543,17 +543,36 @@ export async function runProvisionAttempt(
  *
  * `attemptKeyFor`/`clearAttemptKey`/`writeLastProjectId`/`now` don't depend on
  * React and could be given real module-level defaults ; the other
- * three (`primeProjectCache`, `invalidateProjects`, `enterOnboarding`) are
- * inherently render-scoped — they close over the live `queryClient`/`router`
- * a hook only has inside a component — so there is no single "no-args"
- * default here. `useCreateWorkspace` below always supplies the whole object
- * explicitly; tests supply their own fakes for the render-scoped three and
- * the REAL functions (with a fake `localStorage`) for the rest.
+ * four (`primeProjectCache`, `invalidateProjects`, `completeOnboarding`,
+ * `enterProject`) are inherently render-scoped — they close over the live
+ * `queryClient`/`router` a hook only has inside a component — so there is no
+ * single "no-args" default here. `useCreateWorkspace` below always supplies
+ * the whole object explicitly; tests supply their own fakes for the
+ * render-scoped four and the REAL functions (with a fake `localStorage`) for
+ * the rest.
  */
 export type CreateOrchestrationClient = {
   attemptKeyFor: (fingerprint: string, now: number) => string;
   clearAttemptKey: (fingerprint: string) => void;
-  runCreateAttempt: (payload: ProvisionProjectInput) => Promise<KortixProject>;
+  /**
+   * The managed provision attempt, `POST /projects/provision-stream` first.
+   * `onPhase` is the orchestration client's own `onPhase` sink (below) —
+   * the hook's phase state — handed through so every streamed phase, and the
+   * plain-POST fallback's `onPhase(null)`, reach the handoff UI.
+   */
+  runCreateAttempt: (
+    payload: ProvisionProjectInput,
+    onPhase: (phase: ProvisionPhase | null) => void,
+  ) => Promise<KortixProject>;
+  /**
+   * Receives every streamed provisioning phase — `validating`,
+   * `creating_repository`, `registering`, `seeding`, in the order
+   * `runProvision` emits them — and `null` when the stream falls back to the
+   * plain POST, so the UI never shows progress that stopped being true.
+   * The GitHub sources never fire it: neither of their routes streams
+   * phases (KRTX-1543).
+   */
+  onPhase: (phase: ProvisionPhase | null) => void;
   /**
    * `source: 'github-create'` — `POST /projects/create-repo`. A separate slot
    * rather than a branch inside `runCreateAttempt` because the three sources
@@ -567,20 +586,29 @@ export type CreateOrchestrationClient = {
   invalidateProjects: () => void;
   writeLastProjectId: (userId: string | null | undefined, projectId: string) => void;
   /**
-   * Hand off to the guided onboarding, which runs on `/new` itself rather
-   * than on the new workspace's page.
+   * Stamp the created project onboarded — the same `PATCH /projects/:id/onboarding`
+   * the wizard's own exits run. A create that lands the user directly on the
+   * project page (see `enterProject`) is an implicit skip: the wizard must not
+   * mount full-screen over the workspace they just asked for, and the project
+   * shell's copy has no skip control, so an unstamped project would trap them
+   * there. This is why the stamp lives in the flow and not on the server's
+   * provision route: it reuses an existing endpoint instead of growing the
+   * create contract.
+   */
+  completeOnboarding: (projectId: string) => Promise<unknown>;
+  /**
+   * Hand off to the created workspace's page (`/projects/:id`), the one
+   * destination the journey and the user both expect right after Create.
    *
-   * This replaced a `navigate('/projects/:id')`. Onboarding cannot run there:
-   * the wizard is mounted on the project shell but self-gates on
-   * `metadata.onboarding_completed_at`, and this function used to stamp that
-   * field before navigating — so the wizard rendered `null` every time. The
-   * stamp now comes from the wizard's own `complete()` instead, which means
-   * the project shell's copy correctly renders nothing once the user arrives.
+   * This replaced the `/new?onboarding=<id>` redirect: the wizard held the
+   * page full-screen from the moment the create succeeded until the user
+   * completed three steps or clicked "Skip for now", so the app never landed
+   * on the project by itself (KRTX-1419).
    *
    * Implemented as `router.replace`, never `push`: the form state this
    * replaces is not somewhere the user may navigate back into.
    */
-  enterOnboarding: (projectId: string) => void;
+  enterProject: (projectId: string) => void;
   now: () => number;
 };
 
@@ -638,6 +666,9 @@ async function runSourceAttempt(
       idempotencyKey,
       userId,
     ) as unknown as ProvisionProjectInput,
+    // Only the managed provision streams phases; the GitHub branches above
+    // never touch the sink, so their creates render the base handoff screen.
+    client.onPhase,
   );
 }
 
@@ -647,23 +678,28 @@ async function runSourceAttempt(
  * ```
  * mint/reuse key -> provision (with retry) ->
  *   [on success only] clear key -> prime cache -> invalidate -> write cookie
- *   -> enter onboarding on /new
+ *   -> stamp onboarded -> hand off to /projects/:id
  * ```
  *
- * **No onboarding gate.** An earlier version read the account's project count
- * here and pre-stamped the new project onboarded unless it was the account's
- * first. The pre-stamp made the wizard render `null` on arrival for every
- * project after the first.
- * Every `/new` create now runs onboarding, and the only thing that stamps the
- * project is the wizard finishing.
+ * **No onboarding wizard in the create flow.** The redirect used to go to
+ * `/new?onboarding=<id>`, which mounted the full-screen three-step wizard over
+ * the page; the app never landed on the project by itself (KRTX-1419). The
+ * stamp (below) is what keeps the project shell's own copy of that wizard from
+ * mounting over the landing page instead.
+ *
+ * The stamp is best-effort and precedes the handoff: a failed PATCH must not
+ * keep the user off the project that already exists (the same policy as the
+ * wizard's own exits, `completeThenNotify`), but it must be attempted BEFORE
+ * the navigation so the shell's project-detail read cannot race it and mount
+ * the wizard over the landing.
  *
  * The key is cleared FIRST among the success-path steps, before any of the
- * other four. The API's own contract (`projects.ts`) is that the key identifies the
+ * others. The API's own contract (`projects.ts`) is that the key identifies the
  * ATTEMPT, not the payload — once the server has confirmed this attempt
  * succeeded, the key must never be replayed, or a LATER, genuinely different
  * create with the same name would silently return THIS project instead of
  * making a new one. Clearing it first, rather than last, also means that if
- * cache priming or entering onboarding ever throws, the key is already gone
+ * cache priming or the handoff ever throws, the key is already gone
  * and cannot be resurrected by a subsequent retry.
  *
  * On any failure — including exhausting `runCreateAttempt`'s retry budget —
@@ -700,7 +736,12 @@ export async function runCreate(
     client.primeProjectCache(project.account_id, project);
     client.invalidateProjects();
     client.writeLastProjectId(userId, project.project_id);
-    client.enterOnboarding(project.project_id);
+    // Best-effort: a failed stamp must not keep the user off the project that
+    // already exists. The accepted failure mode is the wizard running the next
+    // time they open the workspace — the same one `completeThenNotify` accepts
+    // for the wizard's own exits.
+    await client.completeOnboarding(project.project_id).catch(() => {});
+    client.enterProject(project.project_id);
     return { ok: true, project };
   } catch (error) {
     return { ok: false, error };
@@ -710,10 +751,10 @@ export async function runCreate(
 /**
  * Drives the `/new` submit button: mints/reuses the idempotency key, POSTs
  * the create (with retry-on-in-flight via `runCreateAttempt`), primes the
- * workspace caches, and enters the guided onboarding for the new project on
- * success. All of that sequencing lives in `runCreate`, above — this hook
- * only wires it to the live `queryClient`/`router`/`user` and to component
- * state.
+ * workspace caches, stamps the project onboarded, and lands the user on the
+ * new project's page on success. All of that sequencing lives in `runCreate`,
+ * above — this hook only wires it to the live `queryClient`/`router`/`user`
+ * and to component state.
  *
  * Reads the account list itself — the same user-scoped cache entry
  * `new-workspace-page.tsx`,
@@ -735,6 +776,13 @@ export function useCreateWorkspace(): {
    * cannot fix it; the page offers the upgrade dialog instead.
    */
   limitReached: boolean;
+  /**
+   * The latest streamed provisioning phase (KRTX-1543), or `null` while the
+   * create reports none — the GitHub sources, the plain-POST fallback, and
+   * the moment before the first frame. `WorkspaceHandoff` renders `null` as
+   * the base screen, so a host that cannot show steps needs no special case.
+   */
+  phase: ProvisionPhase | null;
 } {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -746,6 +794,11 @@ export function useCreateWorkspace(): {
   // the already-rendered string.
   const [lastError, setLastError] = useState<unknown>(null);
   const [lastState, setLastState] = useState<NewWorkspaceFormState | null>(null);
+  // The latest streamed provisioning phase (`runProvision`'s emits, plus
+  // `null` for "the plain POST took over"). `WorkspaceHandoff` renders it as
+  // the step list; `null` renders the base screen, which is also what the
+  // GitHub sources — whose routes stream nothing — show for the whole wait.
+  const [phase, setPhase] = useState<ProvisionPhase | null>(null);
 
   const accountsQuery = useAccountsList();
   const creatableAccounts = useCreatableAccounts(accountsQuery.data ?? []);
@@ -755,18 +808,19 @@ export function useCreateWorkspace(): {
       setLastState(state);
       setStatus('creating');
       setError(null);
+      // Reset with the attempt: a retry must not start on the previous
+      // attempt's last phase, and every source starts on the base screen.
+      setPhase(null);
 
       const result = await runCreate(state, creatableAccounts, user?.id, {
         attemptKeyFor,
         clearAttemptKey,
-        // `onPhase` is a no-op: `/new` shows `WorkspaceHandoff`, one mark held
-        // across the whole wait, and reports no per-phase progress. The
-        // parameter stays on `runProvisionAttempt` because that function's own
-        // fallback depends on it — `onPhase(null)` is how it marks the switch
-        // to the plain POST — and because it is what a host WOULD read to
-        // render progress. Nothing here consumes it, so nothing here holds
-        // state for it.
-        runCreateAttempt: (payload) => runProvisionAttempt(payload, () => {}),
+        // The phase sink is this hook's own state setter: every streamed
+        // phase lands in `phase`, and `runProvisionAttempt`'s fallback fires
+        // `onPhase(null)` through the same sink, clearing it — the handoff
+        // never shows progress that stopped being true.
+        onPhase: setPhase,
+        runCreateAttempt: (payload, onPhase) => runProvisionAttempt(payload, onPhase),
         // No stream and no idempotency retry on either GitHub route: neither
         // emits provisioning phases and neither accepts an `idempotency_key`,
         // so there is nothing for `runProvisionAttempt`'s machinery to do. A
@@ -808,7 +862,11 @@ export function useCreateWorkspace(): {
         invalidateProjects: () =>
           void queryClient.invalidateQueries({ queryKey: qk.projects.scope() }),
         writeLastProjectId,
-        enterOnboarding: (projectId) => router.replace(onboardingPath(projectId)),
+        // The same PATCH the wizard's own exits run — the create landing
+        // directly on the project page is an implicit skip, and the shell's
+        // copy of the wizard has no skip control to fall back on.
+        completeOnboarding: (projectId) => setProjectOnboardingComplete(projectId, true),
+        enterProject: (projectId) => router.replace(`/projects/${encodeURIComponent(projectId)}`),
         now: Date.now,
       });
 
@@ -834,5 +892,5 @@ export function useCreateWorkspace(): {
   const canRetry = status === 'error' && isRetryableError(lastError);
 
   const limitReached = status === 'error' && isProjectLimitError(lastError);
-  return { create, status, error, retry, canRetry, limitReached };
+  return { create, status, error, retry, canRetry, limitReached, phase };
 }

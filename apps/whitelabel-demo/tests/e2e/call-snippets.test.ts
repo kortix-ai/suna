@@ -9,10 +9,7 @@ import {
   isCopyableHttp,
   renderHttp,
 } from '../../src/lib/call-snippets';
-import {
-  NO_OVERRIDES,
-  buildSessionCreateInput,
-} from '../../src/lib/session-overrides';
+import { NO_OVERRIDES, buildSessionCreateInput } from '../../src/lib/session-overrides';
 
 const PROJECT_ID = '11111111-1111-4111-8111-111111111111';
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';
@@ -21,10 +18,7 @@ const REMOVED_ATTRIBUTION_PATTERN = new RegExp(
 );
 
 /** Everything one snippet renders, as one string — the shape a screenshot has. */
-function rendered(
-  id: (typeof CALL_SNIPPET_IDS)[number],
-  ctx: SnippetContext = {},
-): string {
+function rendered(id: (typeof CALL_SNIPPET_IDS)[number], ctx: SnippetContext = {}): string {
   const snippet = callSnippet(id, ctx);
   return [
     snippet.title,
@@ -93,15 +87,11 @@ describe('call snippets never render credentials', () => {
 
 describe('attribution data is absent', () => {
   test('no snippet contains an upstream customer attribution field', () => {
-    expect(renderedAll({ projectId: PROJECT_ID })).not.toMatch(
-      REMOVED_ATTRIBUTION_PATTERN,
-    );
+    expect(renderedAll({ projectId: PROJECT_ID })).not.toMatch(REMOVED_ATTRIBUTION_PATTERN);
   });
 
   test('no snippet claims the server injects product data', () => {
-    expect(
-      callSnippets().filter((snippet) => snippet.serverInjected.length > 0),
-    ).toEqual([]);
+    expect(callSnippets().filter((snippet) => snippet.serverInjected.length > 0)).toEqual([]);
   });
 });
 
@@ -141,9 +131,7 @@ describe('the create snippet is the request the dialog would send', () => {
 
   test('the path is the project the screen is on', () => {
     const snippet = callSnippet('session.create', { projectId: PROJECT_ID });
-    expect(renderHttp(snippet.http)).toContain(
-      `POST /v1/projects/${PROJECT_ID}/sessions`,
-    );
+    expect(renderHttp(snippet.http)).toContain(`POST /v1/projects/${PROJECT_ID}/sessions`);
   });
 });
 
@@ -151,19 +139,18 @@ describe('the other calls', () => {
   test('a prompt has no REST path to copy — the SDK owns the runtime transport', () => {
     const snippet = callSnippet('session.prompt', { agent: 'support' });
     expect(isCopyableHttp(snippet.http)).toBe(false);
-    expect(snippet.sdk).toContain(
-      ".send('Refund order 4182', { agent: 'support' })",
-    );
+    expect(snippet.sdk).toContain(".send('Refund order 4182', { agent: 'support' })");
     // Printing a runtime path here is exactly what scripts/sdk-boundary.mjs
     // forbids client code from constructing.
     expect(rendered('session.prompt')).not.toContain('/v1/p/');
   });
 
   test('the model change shows both hops and neither spells the runtime field', () => {
+    // The model text is the module's own placeholder — no caller names a model,
+    // so `SnippetContext` has no `model` field to pass one through.
     const snippet = callSnippet('session.model', {
       projectId: PROJECT_ID,
       sessionId: SESSION_ID,
-      model: 'anthropic/claude-sonnet-4-5',
     });
     expect(snippet.sdk).toContain("changeModel('anthropic/claude-sonnet-4-5')");
     expect(snippet.sdk).toContain('/api/session-model');
@@ -174,9 +161,9 @@ describe('the other calls', () => {
   });
 
   test('session costs are read for the current project', () => {
-    expect(
-      renderHttp(callSnippet('session.costs', { projectId: PROJECT_ID }).http),
-    ).toContain(`GET /v1/usage/session-costs?project_id=${PROJECT_ID}`);
+    expect(renderHttp(callSnippet('session.costs', { projectId: PROJECT_ID }).http)).toContain(
+      `GET /v1/usage/session-costs?project_id=${PROJECT_ID}`,
+    );
   });
 
   test('an approval resolves by execution id, and carries no widening scope', () => {
@@ -250,9 +237,7 @@ describe('the create snippet cannot drift from what the app sends', () => {
     const expected = buildSessionCreateInput(overrides, { sessionId: 'SID' });
     for (const key of Object.keys(expected)) {
       if (key === 'session_id') continue;
-      expect(`${snippet?.sdk ?? ''}${renderHttp(snippet!.http)}`).toContain(
-        key,
-      );
+      expect(`${snippet?.sdk ?? ''}${renderHttp(snippet!.http)}`).toContain(key);
     }
   });
 });

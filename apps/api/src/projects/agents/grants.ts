@@ -3,14 +3,16 @@ import { isMetaAgentName } from '@kortix/shared';
 import { canonicalizeGrantActions, canonicalizeGrantConnectors } from '../../iam/agent-scope';
 import type { GitBackedProject } from '../git';
 import { platformMetaAgentGrant } from '../lib/platform-meta-agent';
-import { loadProjectAgents } from './parse';
+import type { ManifestFormat } from '@kortix/manifest-schema';
+import { parseManifestString } from '../manifest-io';
+import { extractAgents, loadProjectAgents } from './parse';
 import type { AgentSpec, LoadedAgents } from './types';
 
 /**
  * The non-binding agent sentinel. `project_sessions.agent_name` defaults to this
  * literal and NO agent is ever named `default` — the runtime resolves it to
  * OpenCode's configured `default_agent` (a general-purpose agent). Kept in sync
- * with the proxy's copy (sandbox-proxy/routes/preview.ts).
+ * with the proxy's copy (sandbox-proxy/pre-prompt-env-sync.ts).
  */
 export const DEFAULT_AGENT_SENTINEL = 'default';
 
@@ -119,6 +121,34 @@ function grantFromSpec(agentName: string, spec: AgentSpec): AgentGrant | null {
       ...appsGrantOf(spec),
     }),
   );
+}
+
+/**
+ * Every declared, enabled agent's grant, by name: what each agent's sessions
+ * would receive. The non-escalation check (iam/agent-grant-ceiling.ts) diffs
+ * this before and after a manifest write.
+ */
+export function grantsByAgent(loaded: LoadedAgents): Map<string, AgentGrant> {
+  const out = new Map<string, AgentGrant>();
+  for (const spec of loaded.specs) {
+    const grant = spec.enabled ? grantFromSpec(spec.name, spec) : null;
+    if (grant) out.set(spec.name, grant);
+  }
+  return out;
+}
+
+/**
+ * `grantsByAgent` of a manifest's text (the file at some ref). An absent or
+ * unparseable manifest declares no grants: the runtime default-denies every
+ * agent of an unparseable manifest, so reading it as empty never widens.
+ */
+export function grantsOfManifestText(text: string | null, format: ManifestFormat): Map<string, AgentGrant> {
+  if (!text?.trim()) return new Map();
+  try {
+    return grantsByAgent(extractAgents(parseManifestString(text, format)));
+  } catch {
+    return new Map();
+  }
 }
 
 /** Pure resolution rule (no I/O) — see `resolveAgentGrant`. Exported for tests. */

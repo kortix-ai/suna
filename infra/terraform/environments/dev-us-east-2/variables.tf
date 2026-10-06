@@ -113,15 +113,9 @@ variable "enable_https" {
 
 variable "manage_dns" {
   description = <<-EOT
-    Manage the SHADOW verification Cloudflare records (dev-api-use2-shadow /
-    gateway-dev-use2-shadow) that point at this root's ALBs. false = leave DNS
-    untouched.
-
-    This does NOT touch dev-api-ecs-fargate.kortix.com or
-    gateway-dev-ecs-fargate.kortix.com (../dev still owns those, and the
-    dev-api Worker still routes to ../dev's ALB) until the runbook's cutover
-    step explicitly repoints them — see
-    the apply runbook in PR #7844.
+    Manage this stack's origin records (dev-api-use2 / gateway-dev-use2),
+    which point at this root's ALBs. false = leave DNS untouched. The records
+    for ../dev (dev-api-ecs-fargate / gateway-dev-ecs-fargate) stay in ../dev.
   EOT
   type        = bool
   default     = true
