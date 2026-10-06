@@ -273,6 +273,8 @@ export function registerChannelSlackRoutes(): void {
   // Server-side download proxy: fetch a Slack-hosted file with the bot token
   // (SSRF-guarded to *.slack.com) so the sandbox never holds the token. Backs
   // `slack download` once the token is out of the box (KORTIX-206 Phase C2).
+  // 403: the file is shared only outside this project's conversations.
+  // 413: the file is past the 50 MB download limit.
   projectsApp.openapi(
     createRoute({
       method: 'get',
@@ -289,7 +291,7 @@ export function registerChannelSlackRoutes(): void {
           description: 'File bytes',
           content: { 'application/octet-stream': { schema: z.any() } },
         },
-        ...errors(400, 404),
+        ...errors(400, 403, 404, 413),
       },
     }),
     async (c: any) => {
@@ -297,7 +299,7 @@ export function registerChannelSlackRoutes(): void {
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       const result = await downloadSlackFile(projectId, c.req.query('url') ?? '');
-      if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404);
+      if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 403 | 404 | 413);
       c.header('Content-Type', result.contentType);
       return c.body(result.body);
     },
