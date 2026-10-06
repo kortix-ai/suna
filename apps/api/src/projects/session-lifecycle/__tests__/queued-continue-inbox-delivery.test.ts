@@ -145,7 +145,8 @@ mock.module('../../../shared/db', () => ({
         where: () => {
           const limit = async () => {
             if (projection && 'result' in projection && 'payload' in projection) {
-              return [{ result: { held: pauseAfterPosts !== null && capturedBodies.length >= pauseAfterPosts }, payload: {} }];
+              // The claim `baseRow()` holds: still running under its lease.
+              return [{ status: 'running', lockedBy: null, result: { held: pauseAfterPosts !== null && capturedBodies.length >= pauseAfterPosts }, payload: {} }];
             }
             if (table === projectSessions) return sessionRow ? [sessionRow] : [];
             if (table === projects) return [{ projectId: PROJECT_ID, accountId: ACCOUNT_ID }];
