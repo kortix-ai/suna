@@ -134,7 +134,7 @@ const originals = new WeakMap<HTMLLinkElement, { href: string; media: string | n
  * trade-off (host-based tenancy would be the way to remove it).
  *
  * Title: Next writes `<title>` on every navigation from the route's metadata:
- * the site default (`Kortix – The AI Command Center for Your Company`) on
+ * the site default (`Kortix – The open-source AI Operating System`) on
  * routes with no title of their own, `<page> | Kortix` elsewhere. A
  * `MutationObserver` on `<head>` rewrites whatever Next just wrote, so the
  * swap survives navigation without touching every page's metadata: the site

@@ -166,10 +166,6 @@ async function readOpenCodeHealth(
         // API's PTY proxy reaches opencode directly (the daemon cannot carry a
         // WebSocket), so it must not assume 4096.
         port: opencode.getActivePort(),
-        // Only the OpenCode lifecycle consumes the compiled runtime.
-        compiled_runtime: process.env.KORTIX_COMPILED_RUNTIME_FORMAT === 'kortix.compiled-runtime.v1',
-        compiled_runtime_format: process.env.KORTIX_COMPILED_RUNTIME_FORMAT || null,
-        compiled_runtime_source_sha: process.env.KORTIX_COMPILED_RUNTIME_SOURCE_SHA || null,
         // How often the periodic reconcile floor runs, so "why hasn't this
         // healed yet" has an answer bound to a number.
         runtime_truth_tick_interval_ms: runtimeTruthTickIntervalMs(),

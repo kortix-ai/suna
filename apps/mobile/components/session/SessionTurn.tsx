@@ -75,7 +75,7 @@ import {
   type TurnBodyTurn,
 } from '@/lib/session/turn-body';
 import { BUSY_RETRY_LABEL } from '@/lib/session/busy-status';
-import { webSpace, type QueuedPromptState } from '@/lib/session/user-message';
+import { webSpace, type MessageAttachment, type QueuedPromptState } from '@/lib/session/user-message';
 import { SessionBusyIndicator, useTurnBusyStatus } from './session-busy-indicator';
 import { SessionRetryDisplay, useRetrySecondsLeft } from './session-retry-display';
 import { TurnErrorDisplay } from './SessionErrorBanner';
@@ -132,7 +132,7 @@ interface SessionTurnProps {
   editPending?: boolean;
   onEditStart?: (messageId: string, text: string) => void;
   onEditCancel?: () => void;
-  onEditSend?: (messageId: string, text: string) => void;
+  onEditSend?: (messageId: string, text: string, kept: MessageAttachment[]) => void;
   rewindDisabled?: boolean;
   queueState?: QueuedPromptState | null;
   uploadStatus?: UserMessageUploadStatus;
