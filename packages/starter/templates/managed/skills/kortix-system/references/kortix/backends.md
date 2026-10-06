@@ -51,6 +51,53 @@ Minimal `package.json`:
 
 Run `npm install` in `backends/main/` once.
 
+## Convex references: read these before you write Convex code
+
+Convex publishes its own guidance for coding agents. It overrides what you
+remember about Convex. Install it once per backend directory:
+
+```sh
+cd backends/main
+npx convex ai-files install
+```
+
+This writes:
+
+- `convex/_generated/ai/guidelines.md`: the Convex coding rules. **Read it
+  before the first change** and again when a deploy fails on something you do
+  not understand.
+- `.agents/skills/convex*/SKILL.md`: Convex task skills (`convex-design`,
+  `convex-auth`, `convex-crons`, `convex-migrate`, `convex-test`,
+  `convex-reviewer`, `convex-optimize`, `convex-seed`, `convex-agent` and more).
+  Read the one that matches the task.
+- `AGENTS.md` and `CLAUDE.md` pointers. Commit all of these with the backend.
+
+Refresh with `npx convex ai-files update` when the `convex` package changes.
+
+Official documentation (fetch the page you need):
+
+| Topic | URL |
+| --- | --- |
+| Index for agents | https://docs.convex.dev/llms.txt |
+| Schemas and validators | https://docs.convex.dev/database/schemas |
+| Queries, mutations, actions | https://docs.convex.dev/functions |
+| Indexes and query performance | https://docs.convex.dev/database/reading-data/indexes |
+| HTTP actions | https://docs.convex.dev/functions/http-actions |
+| Scheduling and crons | https://docs.convex.dev/scheduling |
+| File storage | https://docs.convex.dev/file-storage |
+| Full-text and vector search | https://docs.convex.dev/search |
+| Auth (custom JWT, OIDC) | https://docs.convex.dev/auth/advanced/custom-jwt |
+| React client | https://docs.convex.dev/client/react |
+| Components | https://www.convex.dev/components |
+| Self-hosting | https://github.com/get-convex/convex-backend/tree/main/self-hosted |
+
+A Kortix backend is **self-hosted** Convex. Skip anything in those files that
+needs Convex Cloud: `npx convex dev` login, deploy keys and preview
+deployments, the Convex dashboard at dashboard.convex.dev, custom domains
+(`convex-domains`), log streams, and the Convex AI gateway. Use the Kortix
+commands in this file instead. Where a Convex file and this file disagree on
+deploying or credentials, this file wins.
+
 ## The deploy loop
 
 ```sh
