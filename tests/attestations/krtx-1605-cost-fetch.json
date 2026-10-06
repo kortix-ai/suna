@@ -1,16 +1,16 @@
 {
-  "source_hash": "491d3cb136ed4eecd110e1dd2ffd029d2727e2ccb197cc022fc17d841d7bbd29",
+  "source_hash": "785a5e641a2fb234b52d905f901cd78474381de9fcf811bbdf92666b3ce815ae",
   "diff_files": [
     "apps/api/src/shared/cost-rollups.test.ts",
     "apps/api/src/shared/cost-rollups.ts"
   ],
   "diff_hash": "4da2482571d61b54b7c18036bd92accf055434e3e2daa317275a1b6949368fe8",
-  "head": "6d484b73d989d8b93ed79d41b0fe621b2c2a1823",
+  "head": "747c15aeb441925b47f0a0953142683fefec7428",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-06T23:13:59.667Z"
+  "at": "2026-10-06T23:21:25.313Z"
 }
