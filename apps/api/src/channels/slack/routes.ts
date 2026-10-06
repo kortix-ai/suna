@@ -25,6 +25,7 @@ import { handleSlashCommand } from './commands';
 import { CANONICAL_SLACK_INBOUND, inboundProjectId, scopeProjectSlackRequest, type SlackInbound } from './inbound';
 import type { SlackInteractionPayload, SlashResponse } from './types';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';
+import { runWebhookWork, type WebhookOutcome } from '../webhook-work';
 
 // ── Shared slash + interactivity processing ───────────────────────────────────
 // The canonical OAuth app and per-project (BYO) apps run the SAME logic. They
@@ -106,35 +107,35 @@ async function runSlashCommandBody(
 }
 
 /**
- * Parse an interactivity form body and fire the right handler (best-effort).
+ * Parse an interactivity form body and run the right handler.
  *
  * Returns the payload type, because the ACK Slack expects differs by it. For a
  * `view_submission` the 200 body is read as a `response_action`: anything that
  * is not one — `{"ok":true"}` included — shows the reviewer an error instead of
  * closing the modal. An empty body is the "accepted, close it" answer.
+ *
+ * A handler that fails inside the ack window answers 500: Slack shows the user
+ * a warning, so the click is not lost without a trace. Slower work finishes in
+ * the background and the shutdown drain waits for it.
  */
-function runInteractivityBody(
+async function runInteractivityBody(
   rawBody: string,
   inbound: SlackInbound = CANONICAL_SLACK_INBOUND,
-): string | null {
+): Promise<{ type: string | null; outcome: WebhookOutcome }> {
   const payload = interactionPayload(rawBody);
-  if (!payload) return null;
-  if (payload.type === 'block_actions') {
-    void handleBlockAction(payload, inbound).catch((err) =>
-      console.error('[slack-webhook] block action failed', err),
-    );
-  } else if (payload.type === 'message_action') {
-    void handleMessageShortcut(payload, inbound).catch((err) =>
-      console.error('[slack-webhook] message shortcut failed', err),
-    );
-  } else if (payload.type === 'view_submission') {
-    // Without this the "Request changes" modal's Send button closes the view
-    // and drops the reviewer's note on the floor.
-    void handleViewSubmission(payload, inbound).catch((err) =>
-      console.error('[slack-webhook] view submission failed', err),
-    );
-  }
-  return payload.type ?? null;
+  if (!payload) return { type: null, outcome: 'done' };
+  const work =
+    payload.type === 'block_actions'
+      ? () => handleBlockAction(payload, inbound)
+      : payload.type === 'message_action'
+        ? () => handleMessageShortcut(payload, inbound)
+        : // Without this the "Request changes" modal's Send button closes the view
+          // and drops the reviewer's note on the floor.
+          payload.type === 'view_submission'
+          ? () => handleViewSubmission(payload, inbound)
+          : null;
+  const outcome = work ? await runWebhookWork('slack-interactivity', async () => void (await work())) : 'done';
+  return { type: payload.type ?? null, outcome };
 }
 
 export function registerSlackWebhookRoutes(): void {
@@ -173,9 +174,8 @@ export function registerSlackWebhookRoutes(): void {
     if (!envelope) return c.json({ error: 'Invalid JSON' }, 400);
     if (envelope.type === 'url_verification') return c.json({ challenge: envelope.challenge });
     if (envelope.type !== 'event_callback' || !envelope.event) return c.json({ ok: true });
-    if (await alreadyHandled(envelope.event_id)) return c.json({ ok: true });
-
-    void (async () => {
+    const outcome = await runWebhookWork('slack-oauth-event', async () => {
+      if (await alreadyHandled(envelope.event_id)) return;
       const teamId = envelope.team_id ?? envelope.event?.team ?? '';
       if (!teamId) return;
       if (envelope.event?.type === 'member_joined_channel') {
@@ -216,7 +216,8 @@ export function registerSlackWebhookRoutes(): void {
           await maybePostPicker(teamId, installs.map((i) => i.projectId), envelope);
         }
       }
-    })().catch((err) => console.error('[slack-webhook] oauth handler failed', err));
+    });
+    if (outcome === 'failed') return c.json({ error: 'processing failed' }, 500);
 
     return c.json({ ok: true });
   },
@@ -250,7 +251,9 @@ export function registerSlackWebhookRoutes(): void {
     bindIntegrationPrincipal('slack');
     // An empty body closes a modal; `{ok:true}` would be read as a malformed
     // `response_action` and show the reviewer an error.
-    if (runInteractivityBody(rawBody) === 'view_submission') return c.body('', 200);
+    const { type, outcome } = await runInteractivityBody(rawBody);
+    if (outcome === 'failed') return c.json({ error: 'processing failed' }, 500);
+    if (type === 'view_submission') return c.body('', 200);
     return c.json({ ok: true });
   },
   );
@@ -321,15 +324,15 @@ export function registerSlackWebhookRoutes(): void {
     bindIntegrationPrincipal('slack', { projectId });
 
     if (envelope.type !== 'event_callback' || !envelope.event) return c.json({ ok: true });
-    if (await alreadyHandled(envelope.event_id)) return c.json({ ok: true });
-
-    void (async () => {
+    const outcome = await runWebhookWork('slack-byo-event', async () => {
+      if (await alreadyHandled(envelope.event_id)) return;
       const teamId = inbound.kind === 'project' ? inbound.teamId : '';
       if (envelope.event && (await maybeHandleDmCommand(teamId, envelope.event, projectId))) {
         return;
       }
       await dispatchSlackEvent(projectId, envelope, { ownThreadsOnly: true });
-    })().catch((err) => console.error('[slack-webhook] byo handler failed', err));
+    });
+    if (outcome === 'failed') return c.json({ error: 'processing failed' }, 500);
     return c.json({ ok: true });
   },
   );
@@ -390,7 +393,8 @@ export function registerSlackWebhookRoutes(): void {
     bindIntegrationPrincipal('slack', { projectId });
     // The project scope travels with the payload: every handler behind this
     // route stays inside this project and its proven workspace.
-    runInteractivityBody(rawBody, verified.inbound);
+    const { outcome } = await runInteractivityBody(rawBody, verified.inbound);
+    if (outcome === 'failed') return c.json({ error: 'processing failed' }, 500);
     return c.body('', 200);
   },
   );

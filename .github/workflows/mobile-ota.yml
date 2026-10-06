@@ -9,13 +9,13 @@ name: Mobile OTA
 #   workflow_dispatch      -> the chosen channel: `dev` for dev-backend builds,
 #                             or a production hotfix or re-run
 #
-# No push trigger: since 2026-10-03 a push to main starts only cheap guards and
+# No push trigger: since 2026-10-03 a push to dev starts only cheap guards and
 # path-gated infra (tests/unit/sandbox-workflow.test.ts, Actions minutes).
 #
 # Rollback and the full runbook: apps/mobile/BUILD_GUIDE.md.
 
 on:
-  # workflow_run loads THIS file from main, then checks out the deployed commit.
+  # workflow_run loads THIS file from dev, then checks out the deployed commit.
   workflow_run:
     workflows: [Deploy Prod]
     types: [completed]

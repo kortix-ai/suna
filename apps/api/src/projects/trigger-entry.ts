@@ -1,3 +1,4 @@
+import { BoundedMap } from '../shared/bounded-map';
 import {
   MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
   MONITOR_MIN_INTERVAL_SECONDS,
@@ -200,7 +201,7 @@ function forcedTriggerRefreshCooldownMs(): number {
   return Number.isFinite(value) && value >= 0 ? value : 60_000;
 }
 
-const lastForcedTriggerRefreshAt = new Map<string, number>();
+const lastForcedTriggerRefreshAt = new BoundedMap<string, number>(5_000);
 
 /**
  * Resolve one trigger for an action endpoint. A trigger can be absent from one

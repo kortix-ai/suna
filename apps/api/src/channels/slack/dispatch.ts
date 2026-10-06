@@ -860,22 +860,28 @@ async function deliverToExistingThread(
     handle.sessionId = existing.sessionId;
     await saveTurn(handle);
   }
+  const plan = await slackFollowUpModel({
+    project: { projectId, accountId: project.accountId, metadata: project.metadata },
+    userId: actorUserId,
+    sessionId: existing.sessionId,
+    event,
+    session: {
+      createdBy: existing.createdBy ?? null,
+      metadata: existing.metadata,
+      agentName: existing.agentName ?? null,
+    },
+  });
   const outcome = await deliverSlackFollowUpToSession({
     sessionId: existing.sessionId,
     idempotencyKey: slackFollowUpKey(teamId, event),
-    text: renderFollowUpPrompt(envelope, event, await slackMessageLabels({ projectId, teamId, event })),
-    userId: actorUserId,
-    model: await slackFollowUpModel({
-      project: { projectId, accountId: project.accountId, metadata: project.metadata },
-      userId: actorUserId,
-      sessionId: existing.sessionId,
+    text: renderFollowUpPrompt(
+      envelope,
       event,
-      session: {
-        createdBy: existing.createdBy ?? null,
-        metadata: existing.metadata,
-        agentName: existing.agentName ?? null,
-      },
-    }),
+      await slackMessageLabels({ projectId, teamId, event }),
+      plan.imagesUnavailable,
+    ),
+    userId: actorUserId,
+    model: plan.model,
   });
 
   // `queued`: the reply is durable and the queue delivers it once the box is
