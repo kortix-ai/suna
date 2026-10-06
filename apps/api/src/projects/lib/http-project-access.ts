@@ -5,6 +5,7 @@
  * `project-access.ts` and `project-quota.ts`. Re-exported by `./access`.
  */
 import type { Context } from 'hono';
+import type { AppEnv } from '../../types';
 import { HTTPException } from 'hono/http-exception';
 // Straight from the engine + the actor builder, not the barrel: the barrel is
 // replaced wholesale by `mock.module` in several route tests, so every name
@@ -17,7 +18,7 @@ import { projectQuotaDenial } from './project-quota';
 import { normalizeString } from './serializers';
 import { isRepositoryProjectAction, sessionWorkspaceAllowsRepositoryAccess } from './session-workspace-access';
 
-export async function resolveProjectAccount(c: Context, body?: Record<string, unknown>) {
+export async function resolveProjectAccount(c: Context<AppEnv>, body?: Record<string, unknown>) {
   const userId = c.get('userId') as string;
   const requested = normalizeString(
     c.req.query('account_id') ??
@@ -26,7 +27,7 @@ export async function resolveProjectAccount(c: Context, body?: Record<string, un
     body?.accountId,
   );
   const scope = await resolveRequestedProjectAccount(userId, requested);
-  (c as any).set('accountId', scope.accountId);
+  c.set('accountId', scope.accountId);
   return scope;
 }
 
@@ -115,7 +116,7 @@ export async function assertAgentSessionWorkspaceAllowsRepository(
   });
 }
 
-export async function loadProjectForUser(c: Context, projectId: string, action: ProjectAccessAction) {
+export async function loadProjectForUser(c: Context<AppEnv>, projectId: string, action: ProjectAccessAction) {
   const userId = c.get('userId') as string;
   const row = await loadProjectRow(projectId);
   if (!row) return null;
@@ -132,11 +133,11 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
     actor,
     // A service account has NO account_members row: the gate skips the human
     // membership hard-gate for it.
-    isServiceAccount: ((c as unknown as { get(k: string): unknown }).get('authType') as string | undefined) === 'service_account',
+    isServiceAccount: c.get('authType') === 'service_account',
     // The platform-admin READ-ONLY bypass header (see `resolveProjectGate`).
     bypassHeaderPresent: c.req.header('x-kortix-admin-bypass') === '1',
   });
-  (c as any).set('accountId', row.accountId);
+  c.set('accountId', row.accountId);
 
   return access;
 }

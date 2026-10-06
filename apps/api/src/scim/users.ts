@@ -5,6 +5,7 @@ import { userChanges, applyProfile } from './user-profile';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountInvitations, accountMemberships, accountScimUsers, accountGroupMembers, roleAssignments } from '@kortix/db';
 import { and, eq, gt, inArray, isNull, or } from 'drizzle-orm';
+import { isAudienceObjectType, notAnAudienceGrant } from '../iam/audience-grants';
 import { invalidateIamCacheForUser } from '../iam/cache-invalidation';
 import { accountRoleFor, countAccountOwners } from '../iam/read-models';
 import {
@@ -126,14 +127,19 @@ async function revokeScimMembership(accountId: string, userId: string): Promise<
       liveOnly: false,
     });
     if (rows.length === 0) return;
+    // Audience grants stay: deleting a value's last one would share it with
+    // the whole project (`iam/audience-grants.ts`).
     await db.delete(roleAssignments).where(
       and(
         eq(roleAssignments.accountId, accountId),
         eq(roleAssignments.principalType, 'user'),
         eq(roleAssignments.principalId, userId),
+        notAnAudienceGrant(),
       ),
     );
-    for (const row of rows) await auditAssignmentRevoked(SYSTEM_ACTOR, accountId, row);
+    for (const row of rows) {
+      if (!isAudienceObjectType(row.objectType)) await auditAssignmentRevoked(SYSTEM_ACTOR, accountId, row);
+    }
   } catch (err) {
     console.warn('[scim] canonical membership revoke failed', {
       accountId,

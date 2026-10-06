@@ -361,8 +361,9 @@ export function registerResourceGrantsRoutes(): void {
         PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
       );
 
-      // The id belongs to an agent/skill grant (iam_resource_grants). Secrets no
-      // longer have a resource grant to remove — secret sharing was retired.
+      // An agent or skill grant only. A secret's or a connector account's
+      // audience grant is refused (404): it changes through that object's own
+      // audience setting.
       const removed = await deleteResourceGrant(grantId, projectId, loaded.row.accountId);
       if (!removed) return c.json({ error: 'grant not found' }, 404);
       return c.json({ ok: true });

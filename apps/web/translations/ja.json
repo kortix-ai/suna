@@ -196,6 +196,12 @@
   "newWorkspace": {
     "title": "プロジェクトを作成",
     "description": "プロジェクトにはエージェント、ファイル、セッションが保存されます。",
+    "handoff": {
+      "validating": "検証中",
+      "creating_repository": "リポジトリを作成中",
+      "registering": "プロジェクトを登録中",
+      "seeding": "スターターファイルを準備中"
+    },
     "templateSeed": "このプロジェクトは選択したテンプレートからセットアップされます。",
     "account": {
       "label": "アカウント",
@@ -1544,6 +1550,7 @@
         "email": "電子メール",
         "scheduled": "スケジュール済み",
         "webhook": "Webhook",
+        "manual": "手動",
         "all": "すべて"
       },
       "statusValue": {
@@ -1730,7 +1737,8 @@
     },
     "restart": {
       "label": "セッションを再起動",
-      "pending": "再起動中…"
+      "pending": "再起動中…",
+      "ownerOnly": "このセッションを再起動できるのは、セッションの所有者またはプロジェクト管理者のみです。"
     }
   },
   "modelSelector": {
