@@ -6,6 +6,7 @@
 import { sessionSandboxes } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { getProvider, type ProviderName } from '../../platform/providers';
+import { SANDBOX_SERVICE_PORT } from './sandbox-env-transport';
 import { readFileSync } from 'node:fs';
 import { RUNTIME_VERSIONS as runtimeVersions } from '@kortix/shared/runtime-versions';
 import { runtimeAssetsManifest, runtimeEntrypointPath } from '../../runtime-assets/manifest';
@@ -29,7 +30,6 @@ import {
   type RuntimeClassification,
 } from './legacy-runtime-bootstrap';
 
-const SANDBOX_SERVICE_PORT = 8000;
 const HEALTH_TIMEOUT_MS = 8_000;
 
 export interface LegacyBootstrapRow {

@@ -42,8 +42,8 @@
  * A hold is lifted by an ACTION, never by a timer: sending anything new
  * (`POST .../prompts` → `enqueueReleasingHold`), "send now" on one row
  * (`retryInboxPrompt`), or Resume (`POST .../prompts/hold {held:false}`).
- * `INBOX_HOLD_MS` (24 h) is a horizon, not a scheduler — it exists so a browser
- * that never comes back cannot hold a prompt for ever.
+ * The drain never claims a held inbox prompt, so `INBOX_HOLD_MS` (24 h) does
+ * not lift the hold either (see `INBOX_HOLD_MS`).
  *
  * "Delivers at most once more" is what step 3 below buys. Without it a held
  * forwarded row is released straight back onto the queue while OpenCode still

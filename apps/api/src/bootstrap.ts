@@ -15,6 +15,7 @@ import { warnIfPreviewOriginsMissing } from './sandbox-proxy/preview-hosts';
 import { maintenanceSetting } from './platform/services/maintenance-setting';
 // Every background loop: its timer, start/stop and runWorkerTick call live in workers/.
 import { startAccessControlCache, stopAccessControlCache } from './workers/access-control-cache-worker';
+import { startAccountDeletionSchedule, stopAccountDeletionSchedule } from './workers/account-deletion-worker';
 import { startActiveTurnRenewal, stopActiveTurnRenewal } from './workers/active-turn-renewal-worker';
 import { startAppDeploymentWorker, stopAppDeploymentWorker } from './workers/app-deployment-worker';
 import { startAppIdleReaper, stopAppIdleReaper } from './workers/app-idle-reaper-worker';
@@ -31,6 +32,7 @@ import { startProjectMaintenance, stopProjectMaintenance } from './workers/proje
 import { startProjectSnapshotWorker, stopProjectSnapshotWorker } from './workers/project-snapshot-worker';
 import { startProviderTransitionWorker, stopProviderTransitionWorker } from './workers/provider-transition-worker';
 import { startSessionLifecycleWorker, stopSessionLifecycleWorker } from './workers/session-lifecycle-worker';
+import { handBackClaims } from './projects/surface';
 import { startSlackTurnGc, stopSlackTurnGc } from './workers/slack-turn-gc-worker';
 import { startSunaMigrationWorker, stopSunaMigrationWorker } from './workers/suna-migration-worker';
 import { startTeamsBotTokenRefresh, stopTeamsBotTokenRefresh } from './workers/teams-bot-token-refresh-worker';
@@ -219,6 +221,10 @@ async function startSingletonWorkers() {
   // Close Slack/Teams live cards whose run ended without a reply.
   startSlackTurnGc();
   startTeamsTurnGc();
+  // Execute scheduled account deletions past their 14-day grace. The only
+  // processor of the managed table — its SQL never reached `kortix` before
+  // (KRTX-1260). First tick runs immediately to drain the inherited backlog.
+  startAccountDeletionSchedule();
 }
 async function stopSingletonWorkers() {
   if (!singletonWorkersRunning) return;
@@ -242,6 +248,7 @@ async function stopSingletonWorkers() {
   stopBillingRotation();
   stopSlackTurnGc();
   stopTeamsTurnGc();
+  await stopAccountDeletionSchedule();
 }
 
 // Boot the per-node services, then begin leader election. The leader runs the
@@ -310,6 +317,11 @@ export async function shutdown(signal: string) {
   stopAccessControlCache();
   stopTmpReaper();
   stopSessionLifecycleWorker();
+  // Rows this process still holds go back to the queue now, not after the
+  // 10-min lock and grace; the session's next prompt waits behind them.
+  await handBackClaims()
+    .then((count) => count > 0 && appLogger.info('Handed back lifecycle claims', { count }))
+    .catch((error) => appLogger.warn('Lifecycle claim hand-back failed', { error }));
   stopTeamsBotTokenRefresh();
   stopEventLoopLagSampler();
   await import('./shared/pg-broadcast')
