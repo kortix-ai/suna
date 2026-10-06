@@ -321,9 +321,6 @@
   "src/billing/services/account-deletion.ts": {
     "kortix-api/projects-surface": {
       "count": 2
-    },
-    "no-console": {
-      "count": 14
     }
   },
   "src/billing/services/account-write-owner.ts": {

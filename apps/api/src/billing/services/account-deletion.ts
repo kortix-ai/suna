@@ -37,6 +37,7 @@ import { getSupabase } from '../../shared/supabase';
 import { forgetUserJwtLiveness } from '../../shared/jwt-liveness';
 import { getStripe } from '../../shared/stripe';
 import { db } from '../../shared/db';
+import { logger } from '../../lib/logger';
 import { ownedAccountRows } from '../../iam/membership-read';
 import { BillingError } from '../../errors';
 import { isUniqueViolation } from '../../shared/postgres-errors';
@@ -194,16 +195,16 @@ export async function processScheduledDeletions(): Promise<{
       processed++;
     } catch (err) {
       const msg = `Error deleting account ${request.accountId}: ${(err as Error).message}`;
-      console.error(`[AccountDeletion] ${msg}`);
+      logger.error(`[AccountDeletion] ${msg}`);
       errors.push(msg);
       // Back to `pending`: the next tick retries the failed step.
       await releaseDeletionRequest(request.id).catch((releaseErr) =>
-        console.error(`[AccountDeletion] release failed for ${request.id}:`, releaseErr),
+        logger.error(`[AccountDeletion] release failed for ${request.id}:`, { error: String(releaseErr) }),
       );
     }
   }
 
-  console.log(`[AccountDeletion] Processed: ${processed}, Errors: ${errors.length}`);
+  logger.info(`[AccountDeletion] Processed: ${processed}, Errors: ${errors.length}`);
   return { processed, errors };
 }
 
@@ -264,9 +265,8 @@ export async function reclaimableAccountIds(
     for (const row of owned) if (row.accountId) ids.add(row.accountId);
   } catch (err) {
     // Degrade to the single account rather than skipping teardown entirely.
-    console.error(
-      `[AccountDeletion] owned-account lookup failed for user ${userId}:`,
-      err instanceof Error ? err.message : err,
+    logger.error(
+      `[AccountDeletion] owned-account lookup failed for user ${userId}:`, { error: err instanceof Error ? err.message : err },
     );
   }
   return [...ids];
@@ -347,9 +347,8 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
           // arrive before this request settles the row, and must not read as a
           // lost runtime.
           await markRemovalIntent(row.sandboxId).catch((err) =>
-            console.warn(
-              `[AccountDeletion] failed to stamp removal intent for sandbox ${row.sandboxId}:`,
-              err instanceof Error ? err.message : err,
+            logger.warn(
+              `[AccountDeletion] failed to stamp removal intent for sandbox ${row.sandboxId}:`, { error: err instanceof Error ? err.message : err },
             ),
           );
 
@@ -360,9 +359,8 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
             } catch (err) {
               if (!isAlreadyNotRunning(err)) {
                 summary.errors++;
-                console.error(
-                  `[AccountDeletion] Failed to stop sandbox ${row.sandboxId}:`,
-                  err instanceof Error ? err.message : err,
+                logger.error(
+                  `[AccountDeletion] Failed to stop sandbox ${row.sandboxId}:`, { error: err instanceof Error ? err.message : err },
                 );
               } else {
                 summary.stopped++;
@@ -377,9 +375,8 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
             } catch (err) {
               if (!isAlreadyNotRunning(err)) {
                 summary.errors++;
-                console.error(
-                  `[AccountDeletion] Failed to remove sandbox ${row.sandboxId}:`,
-                  err instanceof Error ? err.message : err,
+                logger.error(
+                  `[AccountDeletion] Failed to remove sandbox ${row.sandboxId}:`, { error: err instanceof Error ? err.message : err },
                 );
               } else {
                 summary.removed++;
@@ -387,7 +384,7 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
             }
           } else {
             summary.errors++;
-            console.error(
+            logger.error(
               `[AccountDeletion] No provider client for ${row.provider}; settling sandbox ${row.sandboxId} without a provider call`,
             );
           }
@@ -400,15 +397,13 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
           try {
             await reconcileSandboxRemovedByExternalId(externalId);
           } catch (err) {
-            console.warn(
-              `[AccountDeletion] removed-reconcile failed for sandbox ${row.sandboxId}:`,
-              err instanceof Error ? err.message : err,
+            logger.warn(
+              `[AccountDeletion] removed-reconcile failed for sandbox ${row.sandboxId}:`, { error: err instanceof Error ? err.message : err },
             );
             await reconcileSandboxStoppedByExternalId(externalId).catch((fallbackErr) => {
               summary.errors++;
-              console.warn(
-                `[AccountDeletion] stopped-reconcile also failed for sandbox ${row.sandboxId}:`,
-                fallbackErr instanceof Error ? fallbackErr.message : fallbackErr,
+              logger.warn(
+                `[AccountDeletion] stopped-reconcile also failed for sandbox ${row.sandboxId}:`, { error: fallbackErr instanceof Error ? fallbackErr.message : fallbackErr },
               );
             });
           }
@@ -417,9 +412,8 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
     }
   } catch (err) {
     summary.errors++;
-    console.error(
-      `[AccountDeletion] sandbox teardown failed for ${accountIds.join(', ')}:`,
-      err instanceof Error ? err.message : err,
+    logger.error(
+      `[AccountDeletion] sandbox teardown failed for ${accountIds.join(', ')}:`, { error: err instanceof Error ? err.message : err },
     );
   }
 
@@ -441,13 +435,12 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
     summary.sessionsSettled = settled.length;
   } catch (err) {
     summary.errors++;
-    console.error(
-      `[AccountDeletion] session settle failed for ${accountIds.join(', ')}:`,
-      err instanceof Error ? err.message : err,
+    logger.error(
+      `[AccountDeletion] session settle failed for ${accountIds.join(', ')}:`, { error: err instanceof Error ? err.message : err },
     );
   }
 
-  console.log(
+  logger.info(
     `[AccountDeletion] reclaim: accounts=${summary.accounts} boxes=${summary.boxes} stopped=${summary.stopped} removed=${summary.removed} sessions=${summary.sessionsSettled} errors=${summary.errors}`,
   );
   return summary;
@@ -466,7 +459,7 @@ async function performDeletion(accountId: string, userId?: string) {
     } catch (err) {
       // Already gone at Stripe: the state we want.
       if ((err as { code?: string }).code !== 'resource_missing') {
-        console.error(`[AccountDeletion] Failed to cancel Stripe subscription for ${accountId}:`, err);
+        logger.error(`[AccountDeletion] Failed to cancel Stripe subscription for ${accountId}:`, { error: String(err) });
         throw err;
       }
     }
@@ -481,7 +474,7 @@ async function performDeletion(accountId: string, userId?: string) {
     paymentStatus: 'deleted',
   } as any);
 
-  console.log(`[AccountDeletion] Account deleted: ${accountId}`);
+  logger.info(`[AccountDeletion] Account deleted: ${accountId}`);
 }
 
 const DELETE_CHUNK_ROWS = 5_000;

@@ -53,6 +53,9 @@ export async function markDeletionCompleted(requestId: string) {
     .set({
       status: 'completed',
       completedAt: new Date().toISOString(),
+      // The row outlives the account as the deletion receipt; the user's
+      // free-text reason does not.
+      reason: null,
     })
     .where(eq(accountDeletionRequests.id, requestId));
 }
