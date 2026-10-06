@@ -41,17 +41,24 @@ export type PersonalSessionVisibility = 'private' | 'project' | 'restricted';
 /**
  * The user whose personal resources this caller may reach, or null for none.
  *
+ * The two modes have disjoint inputs: a legacy caller answers with the user id
+ * it already used; an agent principal answers from the session's on_behalf_of
+ * human and visibility alone — there is no legacy answer to pass.
+ *
  * - `agentPrincipal` false: the legacy answer, unchanged.
  * - `agentPrincipal` true: `onBehalfOfUserId` when the session is private,
  *   otherwise null. A missing visibility (no session in scope) is not
  *   `private`: an agent credential without a session never reaches a person.
  */
-export function personalResourceOwner(input: {
-  agentPrincipal: boolean;
-  legacyUserId: string | null;
-  onBehalfOfUserId: string | null;
-  visibility: PersonalSessionVisibility | null;
-}): string | null {
+export function personalResourceOwner(
+  input:
+    | { agentPrincipal: false; legacyUserId: string | null }
+    | {
+        agentPrincipal: true;
+        onBehalfOfUserId: string | null;
+        visibility: PersonalSessionVisibility | null;
+      },
+): string | null {
   if (!input.agentPrincipal) return input.legacyUserId;
   if (!input.onBehalfOfUserId) return null;
   return input.visibility === 'private' ? input.onBehalfOfUserId : null;
@@ -142,25 +149,19 @@ export async function resolveSessionPersonalOwner(input: {
     // before 2026-09-22, never re-minted) or was cleared by a foreign prompt.
     // Every clear stamps ON_BEHALF_OF_CLEARED_KEY, which the mint rule below
     // reads, so the mint rule answers both exactly as a re-mint would.
-    if (token && !(input.strict && !token.onBehalfOfUserId)) {
-      const grant = readStoredAgentGrant(token.agentGrant);
-      if (!input.strict && !isGovernedAgentGrant(grant)) return input.legacyUserId;
-      return personalResourceOwner({
-        agentPrincipal: true,
-        legacyUserId: input.legacyUserId,
-        onBehalfOfUserId: token.onBehalfOfUserId ?? null,
-        visibility,
+    if (!token || (input.strict && !token.onBehalfOfUserId)) {
+      const minted = await resolveSessionOnBehalfOf({
+        accountId: input.accountId ?? session.accountId,
+        sessionId: input.sessionId,
+        userId: session.createdBy ?? input.legacyUserId ?? '',
       });
+      return personalResourceOwner({ agentPrincipal: true, onBehalfOfUserId: minted, visibility });
     }
-    const minted = await resolveSessionOnBehalfOf({
-      accountId: input.accountId ?? session.accountId,
-      sessionId: input.sessionId,
-      userId: session.createdBy ?? input.legacyUserId ?? '',
-    });
+    const grant = readStoredAgentGrant(token.agentGrant);
+    if (!input.strict && !isGovernedAgentGrant(grant)) return input.legacyUserId;
     return personalResourceOwner({
       agentPrincipal: true,
-      legacyUserId: input.legacyUserId,
-      onBehalfOfUserId: minted,
+      onBehalfOfUserId: token.onBehalfOfUserId ?? null,
       visibility,
     });
   } catch (err) {
@@ -232,3 +233,4 @@ export async function agentPrincipalReach(
     .limit(1);
   return { onBehalfOfUserId: scope.onBehalfOfUserId, visibility: session?.visibility ?? null, agentId };
 }
+

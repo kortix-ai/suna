@@ -30,6 +30,9 @@ export {
   resolveProjectAutomationActor,
 } from './session-lifecycle';
 
+// The shutdown hand-back of lifecycle claims (consumed by bootstrap.ts).
+export { handBackClaims } from './session-lifecycle/claim-handover';
+
 // Trigger + manifest helpers (consumed by channels / connector / the boot
 // sequence in src/index.ts).
 export {

@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as tar from 'tar';
 import { config } from '../config';
-import { validateSha } from '../projects/git-ref';
+import { validateSha } from '../shared/git-ref';
 import { refreshMirror, runGit } from '../projects/git/mirror';
 import type { GitBackedProject } from '../projects/git/types';
 import { normalizeSnapshotRef, PROJECT_SNAPSHOT_MARKER_PATH, type ProjectSnapshotMarker } from './project-snapshot-shared';

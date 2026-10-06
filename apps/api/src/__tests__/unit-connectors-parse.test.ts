@@ -599,6 +599,46 @@ connectors:
     expect(errors[0]!.error).toContain('connected account');
   });
 
+  test('oauth1 on an unsupported provider names the manifest the user wrote (yaml)', () => {
+    const { errors } = parseAndExtract(`
+connectors:
+  - slug: x
+    provider: mcp
+    url: https://m
+    auth:
+      type: oauth1
+`);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.path).toBe('kortix.yaml#connectors.x');
+    expect(errors[0]!.error).toContain('openapi/postman/http');
+  });
+
+  test('oauth1 rejection keeps naming kortix.toml for a TOML project', () => {
+    const { errors } = extractConnectors(
+      parseManifestString(
+        [
+          `kortix_version = ${KNOWN_SCHEMA_VERSION}`,
+          '',
+          '[project]',
+          'name = "test"',
+          '',
+          '[[connectors]]',
+          'slug = "x"',
+          'provider = "mcp"',
+          'url = "https://m"',
+          '',
+          '[connectors.auth]',
+          'type = "oauth1"',
+          '',
+        ].join('\n'),
+        'toml',
+        'kortix.toml',
+      ),
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.path).toBe('kortix.toml#connectors.x');
+  });
+
   test('duplicate slugs', () => {
     const { specs, errors } = parseAndExtract(`
 connectors:

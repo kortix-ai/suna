@@ -8,6 +8,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { onMemberRemoved } from '../../billing/services/seat-management';
 import { ACCOUNT_ACTIONS, assertAuthorized, authorize } from '../../iam';
 import { actorOf } from '../../iam/actor';
+import { isAudienceObjectType } from '../../iam/audience-grants';
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 import { accountGroupIds, accountGroupMembershipRows } from '../../iam/group-read';
 import { accountDirectoryRows, verifiedMfaMemberIds } from '../../iam/membership-read';
@@ -91,7 +92,10 @@ async function auditProjectAssignmentsRevoked(
       scopeType: 'project',
       liveOnly: false,
     });
-    for (const row of rows) await auditAssignmentRevoked(writer, accountId, row);
+    // Audience grants stay (`deleteProjectScopeAssignments`), so they are not revoked.
+    for (const row of rows) {
+      if (!isAudienceObjectType(row.objectType)) await auditAssignmentRevoked(writer, accountId, row);
+    }
   } catch (err) {
     console.warn('[members] canonical project-assignment revoke audit failed', {
       accountId,

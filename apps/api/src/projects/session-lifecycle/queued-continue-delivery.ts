@@ -6,7 +6,7 @@ import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { markTriggerRuntimeDelivered } from '../trigger-execution-store';
 import { continueSession } from './continue-session';
 import { PromptDeliveryRefused } from './prompt-delivery-refusal';
-import { assertInboxDeliveryActive, InboxDeliveryPaused, releasePausedInboxDelivery } from './inbox-delivery-hold';
+import { assertInboxDeliveryActive, InboxDeliveryPaused, returnClaimToQueue } from './inbox-delivery-hold';
 import { removeStrandedOpencodeMessage } from './runtime-client';
 import { MAX_LIVE_PLACEMENT_REPAIRS, hasLaterForwardedSibling, remintForRepair, verifyLivePlacement } from './inbox-placement';
 import { MAX_RUNTIME_UNREACHABLE_RETRIES, markCommandFailed, parkPromptForUnreachableRuntime, markCommandForwarded, requeueUnlandedPrompt, markCommandSucceeded, type SessionLifecycleCommandRow, type QueuedContinueSessionPayload } from './store';
@@ -135,7 +135,7 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
         ...(noReply ? { noReply } : {}),
         ...(payload.bindTurnIdentity ? { bindTurnIdentity: true } : {}),
       }, attempt > 0 ? `${row.commandId}:r${attempt}` : row.commandId, tl,
-      payload.clientMessageId ? () => assertInboxDeliveryActive(row.commandId) : undefined);
+      payload.clientMessageId ? () => assertInboxDeliveryActive(row) : undefined);
       tl.mark('delivered');
       if (delivery !== 'delivered') break;
       await markDelivered(row, payload, wireMessageId, tl, noReply);
@@ -154,7 +154,7 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
     return delivery === 'delivered' ? 'succeeded' : settleDelivery(row, delivery);
   } catch (e) {
     if (e instanceof InboxDeliveryPaused) {
-      await releasePausedInboxDelivery(row);
+      await returnClaimToQueue(row);
       return 'queued';
     }
     const retryable = !(e instanceof PromptDeliveryRefused);
