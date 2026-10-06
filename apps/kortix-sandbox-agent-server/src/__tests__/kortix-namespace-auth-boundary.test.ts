@@ -34,7 +34,9 @@ function hasCredentialCheck(source: string): boolean {
   return (
     /authorizeControl\s*\(/.test(source) ||
     /verifyKortixUserContext\s*\(/.test(source) ||
-    /[=!]==\s*cfg\.sandboxToken\b/.test(source)
+    /[=!]==\s*cfg\.sandboxToken\b/.test(source) ||
+    // The timing-safe form (#9258): bearerMatches(header, cfg.sandboxToken).
+    /bearerMatches\s*\([^;]*?,\s*cfg\.sandboxToken\b/.test(source)
   )
 }
 
