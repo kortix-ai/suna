@@ -1,9 +1,8 @@
 'use client';
 
 import { HighlightedCode } from '@/components/markdown/code';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { PillLink } from '@/features/marketing/os/primitives';
-import { BeamsBackdrop } from '@/components/ui/paper-wallpaper-shaders';
+import SiteLink from '@/components/site-link';
+import { Button } from '@/components/ui/marketing/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ARROW_RIGHT_GROUP_CLASS, ArrowRightIcon } from '@/features/icon/arrow-right';
 import { Copy } from '@/features/icon/icons/copy';
@@ -58,7 +57,7 @@ function InstallRow({ audience }: { audience: Audience }) {
   return (
     <div className="flex w-full max-w-3xl flex-col gap-2 sm:flex-row">
       {/* Fixed one-line height: the command and the agent prompt render at the same size. */}
-      <div className="border-border bg-card flex h-11 w-full min-w-0 shrink-0 items-center gap-3 rounded-full border px-4 text-left sm:w-auto sm:flex-1 sm:px-4">
+      <div className="border-border bg-card flex h-11 w-full min-w-0 shrink-0 items-center gap-3 rounded-lg border px-3 text-left sm:h-12 sm:w-auto sm:flex-1 sm:px-4">
         <code
           aria-live="polite"
           title={text}
@@ -76,10 +75,12 @@ function InstallRow({ audience }: { audience: Audience }) {
           {copied ? <SolidCheckIcon className="size-4" /> : <Copy className="size-4" />}
         </button>
       </div>
-      <PillLink href={DOCS_URL} className={cn(ARROW_RIGHT_GROUP_CLASS, 'w-full shrink-0 sm:w-auto')}>
-        {hero.docsCta}
-        <ArrowRightIcon size={16} />
-      </PillLink>
+      <Button asChild size="lg" className={cn(ARROW_RIGHT_GROUP_CLASS, 'h-11 w-full shrink-0 px-5 sm:h-12 sm:w-auto')}>
+        <SiteLink href={DOCS_URL}>
+          {hero.docsCta}
+          <ArrowRightIcon size={16} />
+        </SiteLink>
+      </Button>
     </div>
   );
 }
@@ -91,7 +92,7 @@ function FileWindow() {
   const tab = hero.fileTabs[active];
 
   return (
-    <div className="border-border bg-card w-full max-w-3xl overflow-hidden rounded-lg border text-left">
+    <div className="border-border bg-card w-full max-w-3xl overflow-hidden rounded-lg border text-left shadow-xl">
       <div className="border-border flex overflow-x-auto border-b">
         <div className="border-border flex shrink-0 items-center gap-1 border-r px-4" aria-hidden>
           {[0, 1, 2].map((i) => (
@@ -130,44 +131,34 @@ export function DevelopersHero() {
   const { hero } = useDevelopersCopy();
   const [audience, setAudience] = useState<Audience>('humans');
   return (
-    <>
-      <section
-        id="hero"
-        data-kx-dark-hero=""
-        className="dark bg-background text-foreground relative isolate flex min-h-[80svh] items-center overflow-hidden px-6 pt-40 pb-48"
-      >
-        <div className="kx-hero-veil absolute inset-0 -z-10" aria-hidden>
-          <BeamsBackdrop fade="hero" />
-        </div>
-        <div className="mx-auto flex w-full max-w-4xl flex-col items-center gap-6 text-center">
-          <Stagger index={0} className="flex flex-col items-center gap-6">
-            <KortixLogo size={16} />
-            <Tabs value={audience} onValueChange={(v) => setAudience(v as Audience)}>
-              <TabsList variant="segmented">
-                <TabsTrigger value="humans">{hero.installTabs.humans}</TabsTrigger>
-                <TabsTrigger value="agents">{hero.installTabs.agents}</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </Stagger>
-          <Stagger index={2}>
-            <h1 className="text-foreground text-4xl font-normal tracking-tight text-balance sm:text-6xl">
-              <span className="block">{hero.headline.muted}</span>
-              <span className="block">{hero.headline.ink}</span>
-            </h1>
-          </Stagger>
-          <Stagger index={3} className="max-w-2xl">
-            <p className="text-foreground/75 text-lg leading-relaxed text-pretty">{hero.description}</p>
-          </Stagger>
-          <Stagger index={4} className="flex w-full justify-center">
-            <InstallRow audience={audience} />
-          </Stagger>
-        </div>
-      </section>
-      <div className="relative z-10 mx-auto -mt-32 flex w-full max-w-5xl justify-center px-6 pb-12">
-        <Stagger index={5} className="flex w-full justify-center">
+    <section id="hero" className="relative w-full overflow-clip">
+      {/* Decorative: behind the file window, fades out into the page background. */}
+      <DitherField className="inset-x-0 top-auto bottom-0 h-3/5 mask-[radial-gradient(ellipse_at_center,black_35%,transparent_72%)] opacity-25" />
+      <div className="relative mx-auto flex max-w-7xl flex-col items-center px-4 pt-28 pb-16 text-center sm:px-6 sm:pt-40 sm:pb-24 md:pt-52 md:pb-30">
+        <Stagger index={0}>
+          <Tabs value={audience} onValueChange={(v) => setAudience(v as Audience)}>
+            <TabsList variant="segmented">
+              <TabsTrigger value="humans">{hero.installTabs.humans}</TabsTrigger>
+              <TabsTrigger value="agents">{hero.installTabs.agents}</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </Stagger>
+        <Stagger index={2} className="mt-6">
+          <h1 className="text-foreground text-3xl/[1.1] font-medium tracking-tighter text-balance sm:text-4xl md:text-6xl">
+            <span className="block">{hero.headline.muted}</span>
+            <span className="block">{hero.headline.ink}</span>
+          </h1>
+        </Stagger>
+        <Stagger index={3} className="mt-4 max-w-xl sm:mt-6">
+          <p className="text-muted-foreground text-base text-balance sm:text-lg">{hero.description}</p>
+        </Stagger>
+        <Stagger index={4} className="mt-8 flex w-full justify-center sm:mt-10">
+          <InstallRow audience={audience} />
+        </Stagger>
+        <Stagger index={5} className="mt-4 flex w-full justify-center sm:mt-6">
           <FileWindow />
         </Stagger>
       </div>
-    </>
+    </section>
   );
 }

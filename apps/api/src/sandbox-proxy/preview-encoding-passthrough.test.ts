@@ -89,7 +89,7 @@ describe('what a gzipped daemon response does to the proxy\'s `fetch` (measured)
 
     try {
       const url = `http://127.0.0.1:${server.port}/kortix/runtime/state`;
-      // The options `routes/preview.ts` passes to its upstream fetch.
+      // The options `forward/upstream.ts` passes to its upstream fetch.
       const proxyFetch = (acceptEncoding: string) =>
         fetch(url, { headers: { 'accept-encoding': acceptEncoding }, redirect: 'manual', decompress: false, duplex: 'half' } as RequestInit);
 
@@ -112,7 +112,7 @@ describe('what a gzipped daemon response does to the proxy\'s `fetch` (measured)
       expect(new TextDecoder().decode(gunzipSync(compressedBody))).toBe(raw);
       expect(new TextDecoder().decode(plainBody)).toBe(raw);
 
-      // Hence `routes/preview.ts` forwards `content-encoding` and
+      // Hence `forward/upstream.ts` forwards `content-encoding` and
       // `content-length` untouched on this namespace, and the API's compress
       // middleware leaves an already-encoded body alone.
       expect(seenAcceptEncoding).toEqual(['gzip', 'identity']);

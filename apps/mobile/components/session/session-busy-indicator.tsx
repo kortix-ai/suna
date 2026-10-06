@@ -4,13 +4,14 @@
  * Mirrors apps/web `features/session/session-busy-indicator.tsx`:
  * - row `flex w-full min-w-0 items-center gap-1.5 py-0.5 text-xs text-muted-foreground`;
  * - a 14px `SessionDotMatrix` keyed by the session id;
- * - the label `text-sm leading-5`, shimmering: "Thinking", then the live status;
+ * - the label `text-sm leading-5`, static (the dot matrix is the row's only
+ *   motion): "Thinking", then the live status;
  * - a label change rolls in — new label from `translateY(100%)`, old label out
  *   to `translateY(-100%)`, both with a 0.4s bounce-free spring; Reduce Motion
  *   → a 0.2s ease-out cross-fade;
  * - `elapsedLabel` in its own non-animated `text-muted-foreground/70
  *   tabular-nums` text, so a ticking clock never replays the roll;
- * - `retryLabel` replaces the shimmer with a static muted/70 line.
+ * - `retryLabel` replaces the label with a static muted/70 line.
  *
  * `useTurnBusyStatus` and `useRetrySecondsLeft` (session-retry-display.tsx)
  * are web session-chat.tsx's status throttle, stall clock, and countdown.
@@ -28,7 +29,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import { getTurnStatus, type PartLike } from '@kortix/sdk';
 
-import { TextShimmer } from '@/components/kortix/text-shimmer';
 import { Text } from '@/components/ui/text';
 import { SessionDotMatrix } from '@/components/session/dot-matrix/session-dot-matrix';
 import { useReduceMotion } from '@/components/session/dot-matrix/use-reduce-motion';
@@ -80,7 +80,7 @@ export interface SessionBusyIndicatorProps {
   statusText?: string;
   /** Time on the current status, e.g. "24s". Never fold it into `statusText`. */
   elapsedLabel?: string;
-  /** Set while a retry is scheduled ("Waiting to retry"); replaces the shimmer. */
+  /** Set while a retry is scheduled ("Waiting to retry"); replaces the label. */
   retryLabel?: string;
   /** Keys the dot-matrix glyph. */
   sessionId?: string;
@@ -137,12 +137,13 @@ function SessionBusyIndicatorImpl({ statusText, elapsedLabel, retryLabel, sessio
 }
 
 /**
- * Web `AnimatePresence initial={false} mode="popLayout"` around the shimmer,
+ * Web `AnimatePresence initial={false} mode="popLayout"` around the label,
  * keyed by the label: the first label renders in place (`skipEntering`); each
  * change mounts the new label with the roll-in and unmounts the old one with
  * the roll-out, taken out of layout while it leaves.
  */
 function RollingLabel({ label, reduceMotion }: { label: string; reduceMotion: boolean }) {
+  const palette = useTurnPalette();
   return (
     <View style={{ flex: 1, minWidth: 0, height: LINE, overflow: 'hidden' }}>
       <LayoutAnimationConfig skipEntering>
@@ -151,9 +152,9 @@ function RollingLabel({ label, reduceMotion }: { label: string; reduceMotion: bo
           entering={reduceMotion ? FADE_IN : rollIn}
           exiting={reduceMotion ? FADE_OUT : rollOut}
         >
-          <TextShimmer variant="muted" style={TURN_TYPE.sm} numberOfLines={1}>
+          <Text variant="muted" style={[TURN_TYPE.sm, { color: palette.mutedForeground }]} numberOfLines={1}>
             {label}
-          </TextShimmer>
+          </Text>
         </Animated.View>
       </LayoutAnimationConfig>
     </View>

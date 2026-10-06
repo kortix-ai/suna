@@ -1,0 +1,21 @@
+{
+  "source_hash": "714c2d1f25c2738c43cadc067280013ac6c2a441b4333bad5a800704c329a334",
+  "diff_files": [
+    "apps/cli/src/__tests__/cr-principal.test.ts",
+    "apps/cli/src/__tests__/sandbox-auth.test.ts",
+    "apps/cli/src/__tests__/support/arg-grammar-golden.json",
+    "apps/cli/src/command-helpers.ts",
+    "apps/cli/src/commands/cr.ts",
+    "apps/cli/src/project-link.ts",
+    "tests/unit/learnings-ledger.test.ts"
+  ],
+  "diff_hash": "87a157e5e168433cbac20d09233cf28d306bd0c2708e9e351ef3e6caf67e5c29",
+  "head": "6a85ac727c41fda6a02045c50816322b81cccc8c",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T19:03:05.707Z"
+}

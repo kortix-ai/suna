@@ -104,7 +104,7 @@ mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   acceptSandboxTurn: async () => true,
   abandonSandboxTurn: async () => true,
 }));
-mock.module('../../projects/routes/shared', () => ({
+mock.module('../../projects/session-open', () => ({
   resumeStoppedSandboxByExternalId: async () => true,
 }));
 mock.module('../backend', () => ({

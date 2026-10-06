@@ -37,7 +37,7 @@ function manifestOf(release: BuiltRelease): ReleaseManifest {
   return {
     release_id: d.release_id!,
     source_commit: d.source_commit!,
-    config_dir: d.config_dir!,
+    config_dir: d.config_dir,
     config_tree_id: d.config_tree_id!,
     archive_url: d.archive!.url,
     archive_bytes: d.archive!.bytes,
@@ -61,7 +61,8 @@ async function oldStarterRelease() {
     archive: built.archive,
     managedSkillsDir: overlay, // absent: the project image bakes none
   })
-  return { built, dir }
+  // `dir` is the OpenCode config dir inside the release; `releaseRoot` is the checkout.
+  return { built, dir: join(dir, REL), releaseRoot: dir }
 }
 
 function stubApi() {
@@ -102,22 +103,22 @@ function overlayAssets(
 
 describe('DEF-5: the overlay pass and release verification', () => {
   test('a verification failure names the file and the overlay names it used', async () => {
-    const { built, dir } = await oldStarterRelease()
+    const { built, dir, releaseRoot } = await oldStarterRelease()
     // `seal` now closes the release root and `skills/`, so only the overlay
     // pass can create an entry there (it unseals and reseals). This test is
     // about the verification MESSAGE, so it opens the same doors the overlay
     // does to reach the state DEF-5 described.
     spawnSync('chmod', ['u+w', dir, join(dir, 'skills')])
     write(dir, 'skills/kortix-apps/SKILL.md', 'INJECTED\n')
-    const detail = await verifyReleaseDetail({ dir, files: built.descriptor.files!, managedSkillsDir: overlay })
+    const detail = await verifyReleaseDetail({ dir: releaseRoot, files: built.descriptor.files!, configDir: REL, managedSkillsDir: overlay })
     expect(detail).toEqual({
       ok: false,
-      problem: 'skills/kortix-apps/SKILL.md is not in the release (managed overlay names: 0)',
+      problem: `${REL}/skills/kortix-apps/SKILL.md is not in the release (managed overlay names: 0)`,
     })
   })
 
   test('a verification never observes a half-applied overlay pass', async () => {
-    const { built, dir } = await oldStarterRelease()
+    const { built, dir, releaseRoot } = await oldStarterRelease()
     let releaseGate!: () => void
     const gate = new Promise<void>((resolve) => (releaseGate = resolve))
     let injected!: () => void
@@ -138,7 +139,7 @@ describe('DEF-5: the overlay pass and release verification', () => {
     })
     await injectedOnce
     let settled = false
-    const verification = verifyRelease({ dir, files: built.descriptor.files!, managedSkillsDir: overlay }).then((ok) => {
+    const verification = verifyRelease({ dir: releaseRoot, files: built.descriptor.files!, configDir: REL, managedSkillsDir: overlay }).then((ok) => {
       settled = true
       return ok
     })
@@ -150,7 +151,7 @@ describe('DEF-5: the overlay pass and release verification', () => {
   })
 
   test('the overlay replaces a sealed tracked copy and injects every managed skill', async () => {
-    const { built, dir } = await oldStarterRelease()
+    const { built, dir, releaseRoot } = await oldStarterRelease()
     const result = await reconcileRuntimeAssets({
       apiUrl: 'https://api.test.invalid',
       token: 'kortix_pat_test',
@@ -166,7 +167,7 @@ describe('DEF-5: the overlay pass and release verification', () => {
     expect(result.skills).toBe('updated')
     expect(readFileSync(join(dir, 'skills/kortix-cli/SKILL.md'), 'utf8')).toBe('CLI v2\n')
     expect(existsSync(join(dir, 'skills/kortix-system/SKILL.md'))).toBe(true)
-    expect(await verifyRelease({ dir, files: built.descriptor.files!, managedSkillsDir: overlay })).toBe(true)
+    expect(await verifyRelease({ dir: releaseRoot, files: built.descriptor.files!, configDir: REL, managedSkillsDir: overlay })).toBe(true)
     // A project file outside the managed names stays sealed.
     const pdf = spawnSync('stat', ['-f', '%Lp', join(dir, 'skills/pdf/SKILL.md')]).stdout.toString().trim()
     const pdfLinux = spawnSync('stat', ['-c', '%a', join(dir, 'skills/pdf/SKILL.md')]).stdout.toString().trim()

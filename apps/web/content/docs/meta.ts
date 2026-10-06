@@ -17,7 +17,9 @@ export default defineMeta({
   title: 'Documentation',
   pages: [
     'index',
+    'ai-operating-system',
     'quickstart',
+    'compare',
     'accounts',
     'audit-actions',
     'credits',

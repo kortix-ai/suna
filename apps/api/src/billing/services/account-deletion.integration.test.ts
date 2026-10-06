@@ -99,8 +99,6 @@ async function seed(): Promise<void> {
       VALUES (${SANDBOX_ID}, ${ACCOUNT_ID}, 'deletion-test-box', 'https://example.test/box')`,
     sql`INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id)
       VALUES (${SANDBOX_ID}, ${SESSION_ID}, ${ACCOUNT_ID}, ${PROJECT_ID})`,
-    sql`INSERT INTO kortix.session_environments (session_id, account_id, project_id)
-      VALUES (${SESSION_ID}, ${ACCOUNT_ID}, ${PROJECT_ID})`,
     sql`INSERT INTO kortix.session_turns (turn_token, session_id, sandbox_id, project_id, account_id)
       VALUES ('del-test-turn', ${SESSION_ID}, ${SANDBOX_ID}, ${PROJECT_ID}, ${ACCOUNT_ID})`,
     sql`INSERT INTO kortix.session_pending_questions (account_id, project_id, session_id, request_id, questions)

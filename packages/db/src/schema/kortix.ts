@@ -2181,6 +2181,11 @@ export const sessionSandboxes = kortixSchema.table(
  * its data path.
  *
  * One environment per session, enforced by the primary key.
+ *
+ * RETIRED: the pi worker split was removed and nothing reads or writes this
+ * table. It stays declared until a follow-up migration drops it, after every
+ * replica runs code with no reader (a drop under an old replica fails its
+ * account-deletion and orphan-reaper queries).
  */
 export const sessionEnvironments = kortixSchema.table(
   'session_environments',

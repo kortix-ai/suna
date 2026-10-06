@@ -144,6 +144,9 @@ const envSchema = z.object({
 
   // ── Database (REQUIRED) ──────────────────────────────────────────────────
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required — cannot start without a database'),
+  // Debug only: append each SQL statement the API pool sends (whitespace-normalized
+  // text, no params) as one line to this file. Empty = off.
+  KORTIX_SQL_TRACE: optStr,
 
   // ── Supabase (REQUIRED) ──────────────────────────────────────────────────
   SUPABASE_URL: z
@@ -572,30 +575,12 @@ const envSchema = z.object({
   // template row still references. On by default; boot auto-heal covers the rare
   // cross-env race where another env's row pointed at the reaped (identical) name.
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: optBoolTrue,
-  // Pi worker pool (harness/worker split P1.8): keep this many PARKED boxes of
-  // the shared pi-worker snapshot per environment, claimed at session create
-  // (a claim skips provider create + box boot, ~4s of the cold path measured
-  // on dev 2026-08-27). 0 = off. Pure accelerator: claim failure falls back to
-  // an ordinary cold create.
-  KORTIX_PI_WORKER_POOL_TARGET: optInt(0),
-  // Parked boxes older than this are reaped and replaced; also the Daytona
-  // auto-stop backstop a parked box is created with, so an orphaned box
-  // reclaims itself even if every API instance dies.
-  KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES: optInt(60),
   // The fresh-session Git fast path: KORTIX_SESSION_FRESH, the base-tip +
   // scaffold-delta hint (inline or remote bundle), and the OpenCode config-dir
   // hint that lets the daemon spawn OpenCode before the checkout. Default ON;
   // `false` restores the pre-2026-08-27 create-time contract. The daemon side
   // is additive and falls back to the clone path without these hints.
   KORTIX_FAST_GIT_BOOT_ENABLED: optBoolTrue,
-  // Experimental compiled boot path. The API builds a verified checkout and
-  // OpenCode launcher for one exact Git SHA. `off` preserves the clone and
-  // baked-agent path. `shadow` verifies both artifacts without using them.
-  // `prefer` uses both artifacts with legacy fallback. `required` fails closed.
-  KORTIX_COMPILED_BOOT_MODE: z
-    .enum(['off', 'shadow', 'prefer', 'required'])
-    .optional()
-    .default('off'),
   // ── Project snapshot archives (S3 config provider) ─────────────────────
   // A fresh session materializes its project from a prebuilt `.tar.gz` in S3
   // instead of a Git clone. `git` (default) never attempts S3 and is the
@@ -1244,6 +1229,7 @@ export const config = {
 
   // ─── Database ──────────────────────────────────────────────────────────────
   DATABASE_URL: env.DATABASE_URL,
+  KORTIX_SQL_TRACE: env.KORTIX_SQL_TRACE,
 
   // ─── Supabase ──────────────────────────────────────────────────────────────
   SUPABASE_URL: env.SUPABASE_URL,
@@ -1370,10 +1356,7 @@ export const config = {
   DAYTONA_TARGET: env.DAYTONA_TARGET,
   DAYTONA_WEBHOOK_SECRET: env.DAYTONA_WEBHOOK_SECRET,
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
-  KORTIX_PI_WORKER_POOL_TARGET: env.KORTIX_PI_WORKER_POOL_TARGET,
-  KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES: env.KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES,
   KORTIX_FAST_GIT_BOOT_ENABLED: env.KORTIX_FAST_GIT_BOOT_ENABLED,
-  KORTIX_COMPILED_BOOT_MODE: env.KORTIX_COMPILED_BOOT_MODE,
   KORTIX_PROJECT_SNAPSHOT_MODE: env.KORTIX_PROJECT_SNAPSHOT_MODE,
   KORTIX_PROJECT_SNAPSHOT_S3_BUCKET: env.KORTIX_PROJECT_SNAPSHOT_S3_BUCKET,
   KORTIX_PROJECT_SNAPSHOT_S3_REGION: env.KORTIX_PROJECT_SNAPSHOT_S3_REGION,

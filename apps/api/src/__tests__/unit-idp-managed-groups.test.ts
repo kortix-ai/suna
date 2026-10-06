@@ -88,7 +88,7 @@ mock.module('../repositories/iam', () => ({
 }));
 
 const { iamRouter } = await import('../accounts/iam/app');
-await import('../accounts/iam/groups');
+(await import('../accounts/iam/groups')).registerIamGroupsRoutes();
 
 function buildApp() {
   const app = new Hono();

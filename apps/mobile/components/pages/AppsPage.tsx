@@ -83,7 +83,7 @@ export function AppsPage({ page, projectId, onOpenDrawer, isDrawerOpen }: AppsPa
           }
           onRetry={() => void refetch()}
           onRefresh={() => refetch()}
-          emptyLabel="No apps yet"
+          emptyLabel={apps.length === 0 ? 'No apps yet' : null}
           header={<View className="h-1" />}
           data={apps}
           keyExtractor={(app) => app.app_id}

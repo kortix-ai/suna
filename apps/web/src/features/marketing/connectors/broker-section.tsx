@@ -77,7 +77,7 @@ function FlowDiagram() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { broker } = getLocalizedConnectorsContent(tI18nComplete);
   return (
-    <div className="border-border bg-card overflow-hidden rounded-xl border">
+    <div className="border-border bg-card overflow-hidden rounded-sm border">
       {/* which side of the wall you are on */}
       <div className="border-border grid border-b lg:grid-cols-3">
         <div className="border-border/70 px-6 py-3 lg:border-r lg:border-dashed">
@@ -107,7 +107,7 @@ function FlowDiagram() {
               <h3 className="text-foreground text-base font-medium tracking-tight">{step.title}</h3>
             </div>
 
-            <p className="border-border bg-background text-foreground mt-4 overflow-x-auto rounded-xl border px-3 py-2 font-mono text-[11px] whitespace-nowrap">
+            <p className="border-border bg-background text-foreground mt-4 overflow-x-auto rounded-sm border px-3 py-2 font-mono text-[11px] whitespace-nowrap">
               {step.mono}
             </p>
 
@@ -153,7 +153,7 @@ export function BrokerSection() {
       <SectionHeader eyebrow={broker.eyebrow} title={broker.title} description={broker.sub} />
 
       <Reveal delay={0.06}>
-        <div className="border-border mt-10 grid overflow-hidden rounded-xl border md:grid-cols-2">
+        <div className="border-border mt-10 grid overflow-hidden rounded-sm border md:grid-cols-2">
           <EnvPanel
             label={broker.before.label}
             title={broker.before.title}

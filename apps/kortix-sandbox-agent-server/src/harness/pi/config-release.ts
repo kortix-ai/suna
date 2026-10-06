@@ -15,15 +15,16 @@
  * restart, so no turn ends. A turn in flight still defers the apply, because a
  * reconfigure mid-turn would change the model, policy and prompt under it.
  *
- * pi reads agents from the compiled governance, skills from `skills/`, and its
- * own config dir from `pi/` (the repository's `pi.config_dir`, `harnesses/pi`
- * or `.kortix/pi`: skills, extensions, prompts, `settings.json`). The rest of a
- * release (`opencode.json`, `tools/`, `plugins/`) is OpenCode's and pi ignores
- * it. Extensions, prompts and settings are read when the runtime starts, so a
+ * A release is a checkout of the base branch with the repository's own layout.
+ * pi reads agents from the compiled governance, and inside the release the
+ * same dirs it reads in `/workspace`: `skills/` (and the legacy
+ * `.kortix/opencode/skills`), and its own config dir (the repository's
+ * `pi.config_dir`, `harnesses/pi` or `.kortix/pi`: skills, extensions, prompts,
+ * `settings.json`). OpenCode's files in the release are not pi's. Extensions, prompts and settings are read when the runtime starts, so a
  * release that changes them restarts the runtime in place, while it is idle.
  */
 import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import {
   activateBootConfig,
   bootConfigRoot,
@@ -62,6 +63,8 @@ import {
 import { sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import { logger } from '@/lib/log/logger'
 import type { Config } from '@/lib/config/config'
+import type { Config as HostConfig } from '@/lib/config/config'
+import { resolvePiProjectConfigDir } from './config'
 import type { ConfigReleaseReport } from '@/types/config-release'
 import { MAX_SWAP_DELAY_MS, type HarnessConfigConvergeResult } from '../contract/control'
 import { parseCompiledAgentConfig } from './runtime'
@@ -80,8 +83,10 @@ export interface PiReleaseRuntime {
 
 interface RunningConfig extends ConfigReleaseReport {
   source_commit: string | null
-  /** The release directory pi reads `skills/` from; null off the release source. */
+  /** The release root (a checkout of the repository); null off the release source. */
   dir: string | null
+  /** pi's own config dir inside the release, resolved as in `/workspace`; null when it has none. */
+  piDir: string | null
 }
 
 const WORKSPACE: RunningConfig = {
@@ -94,6 +99,7 @@ const WORKSPACE: RunningConfig = {
   failed_release_id: null,
   source_commit: null,
   dir: null,
+  piDir: null,
 }
 
 const MAX_FALLBACK_REASON = 1_000
@@ -121,7 +127,8 @@ export interface PiConfigReleases {
    */
   skillDirs(): string[] | null
   /**
-   * The pi-native config dir the running config decides: `<release>/pi`, or
+   * The pi-native config dir the running config decides (resolved inside the
+   * release as in the working tree: `pi.config_dir`, `harnesses/pi`, `.kortix/pi`), or
    * null when the running config has none. Undefined while releases are not
    * in play: pi then resolves the working tree's.
    */
@@ -149,10 +156,17 @@ export function piReleaseSourcePaths(configDir: string | null): string[] {
   return configDir === '.kortix/opencode' ? [configDir] : ['agents', 'skills']
 }
 
-/** The release's pi-native files that only a runtime start reads: everything under `pi/` except its skills. */
-function startOnlyFiles(files: readonly (readonly string[])[] | null): string {
+/** pi's own config dir inside a release root, resolved exactly as in the working tree. */
+function piDirIn(releaseRoot: string): Promise<string | null> {
+  return resolvePiProjectConfigDir({ projectTarget: releaseRoot } as HostConfig)
+}
+
+/** The release's pi-native files that only a runtime start reads: everything in pi's own config dir except its skills. */
+function startOnlyFiles(files: readonly (readonly string[])[] | null, releaseRoot: string | null, piDir: string | null): string {
+  if (!releaseRoot || !piDir) return ''
+  const prefix = `${relative(releaseRoot, piDir)}/`
   return (files ?? [])
-    .filter(([path]) => path!.startsWith('pi/') && !path!.startsWith('pi/skills/'))
+    .filter(([path]) => path!.startsWith(prefix) && !path!.startsWith(`${prefix}skills/`))
     .map(([path, , blob]) => `${path}:${blob}`)
     .sort()
     .join('\n')
@@ -192,7 +206,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
   let booted: Promise<void> | null = null
 
   const report = (): ConfigReleaseReport => {
-    const { source_commit: _commit, dir: _dir, ...rest } = current
+    const { source_commit: _commit, dir: _dir, piDir: _piDir, ...rest } = current
     return { ...rest }
   }
   const respond = (outcome: ConvergeOutcome, reason: string | null = null): HarnessConfigConvergeResult => ({
@@ -232,7 +246,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
   const materialize = async (manifest: ReleaseManifest, from: ConfigReleaseApi): Promise<string> => {
     const dir = releaseDir(root, manifest.release_id)
     const intact =
-      existsSync(dir) && (await verifyRelease({ dir, files: manifest.files, managedSkillsDir: options.managedSkillsDir }))
+      existsSync(dir) && (await verifyRelease({ dir, files: manifest.files, configDir: manifest.config_dir, managedSkillsDir: options.managedSkillsDir }))
     if (intact) {
       await writeReleaseManifest(root, manifest)
       return dir
@@ -308,6 +322,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
             failed_release_id: null,
             source_commit: null,
             dir: null,
+            piDir: null,
           })
           logger.info('[pi-config] pi runs a governance-only release', { releaseId: desiredId })
           return
@@ -341,7 +356,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
       const manifest = pointer.proven ? await readReleaseManifest(root, pointer.release_id) : null
       const intact =
         manifest !== null &&
-        (await verifyRelease({ dir: pointer.dir, files: manifest.files, managedSkillsDir: options.managedSkillsDir }))
+        (await verifyRelease({ dir: pointer.dir, files: manifest.files, configDir: manifest.config_dir, managedSkillsDir: options.managedSkillsDir }))
       if (intact && manifest && !governanceProblem(manifest.compiled_governance)) {
         await useRelease(pointer.release_id, desiredId, manifest, pointer.dir, reasons, failedReleaseId)
         return
@@ -362,6 +377,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
       failed_release_id: failedReleaseId,
       source_commit: null,
       dir: null,
+      piDir: null,
     })
     logger.warn('[pi-config] pi runs the image default config', { desiredId, reason: current.fallback_reason })
   }
@@ -387,6 +403,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
       failed_release_id: failedReleaseId,
       source_commit: manifest.source_commit,
       dir,
+      piDir: await piDirIn(dir),
     })
     logger.info('[pi-config] pi runs this release', { releaseId, desiredId, dir, sourceCommit: manifest.source_commit })
   }
@@ -423,7 +440,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
   /** The start-only pi files the runtime loaded: the running release's, or the working tree's pi dir. */
   async function loadedStartOnlyFiles(): Promise<string | null> {
     if (current.source === 'release' && current.release_id) {
-      return startOnlyFiles((await readReleaseManifest(root, current.release_id))?.files ?? null)
+      return startOnlyFiles((await readReleaseManifest(root, current.release_id))?.files ?? null, current.dir, current.piDir)
     }
     // Off the release path the working tree's pi dir may hold extensions: unknown, so restart.
     return current.source === 'workspace' ? null : ''
@@ -501,6 +518,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
           failed_release_id: null,
           source_commit: null,
           dir: null,
+          piDir: null,
         },
         governance,
         loaded !== '',
@@ -518,7 +536,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
     const manifest = manifestFromDescriptor(descriptor, releaseId)
     const dir = releaseDir(root, releaseId)
     if (current.source === 'release' && current.release_id === releaseId) {
-      const check = await verifyReleaseDetail({ dir, files: manifest.files, managedSkillsDir: options.managedSkillsDir })
+      const check = await verifyReleaseDetail({ dir, files: manifest.files, configDir: manifest.config_dir, managedSkillsDir: options.managedSkillsDir })
       if (check.ok) return met()
       logger.warn('[pi-config] the running release no longer verifies; rebuilding', { releaseId, problem: check.problem })
     }
@@ -553,7 +571,8 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
     // The download took time; a prompt may have arrived. Ask again right before the swap.
     if (!runtime.idle()) return busy()
 
-    const restart = (await loadedStartOnlyFiles()) !== startOnlyFiles(manifest.files)
+    const piDir = await piDirIn(dir)
+    const restart = (await loadedStartOnlyFiles()) !== startOnlyFiles(manifest.files, dir, piDir)
     writeNotice(manifest, dir)
     const refused = await swap(
       runtime,
@@ -567,6 +586,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
         failed_release_id: null,
         source_commit: manifest.source_commit,
         dir,
+        piDir,
       },
       governance,
       restart,
@@ -591,12 +611,12 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
     sourceCommit: () => (current.source === 'release' ? current.source_commit : null),
     skillDirs: () => {
       if (current.source === 'workspace') return null
-      return current.dir ? [join(current.dir, 'skills')] : []
+      // The same dirs pi reads in the working tree (`resolvePiSkillDirectories`).
+      return current.dir ? [join(current.dir, 'skills'), join(current.dir, '.kortix', 'opencode', 'skills')] : []
     },
     piConfigDir: () => {
       if (current.source === 'workspace') return undefined
-      const dir = current.dir ? join(current.dir, 'pi') : null
-      return dir && existsSync(dir) ? dir : null
+      return current.piDir && existsSync(current.piDir) ? current.piDir : null
     },
     notice: () => {
       if (current.source !== 'release') return null
