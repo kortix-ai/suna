@@ -1,5 +1,5 @@
 {
-  "source_hash": "fe10e52eaf8a92482effae88d9df52ea0f61cf1977edaaa81c11598d708f65be",
+  "source_hash": "5e6b1e82488e6037f773f929a521ed01b97902b5318906666fee29b4f7e50108",
   "diff_files": [
     "apps/api/src/__tests__/integration-follow-up-delivery.test.ts",
     "apps/api/src/__tests__/integration-inbox-pause-and-handover.test.ts",
@@ -8,6 +8,7 @@
     "apps/api/src/__tests__/unit-slack-dispatch-session.test.ts",
     "apps/api/src/__tests__/unit-slack-session-selection.test.ts",
     "apps/api/src/__tests__/unit-teams-session.test.ts",
+    "apps/api/src/billing/services/account-deletion-scheduled.integration.test.ts",
     "apps/api/src/channels/email/session.ts",
     "apps/api/src/channels/slack/dispatch.ts",
     "apps/api/src/channels/slack/session.ts",
@@ -48,13 +49,13 @@
     "apps/web/src/lib/seo/content-timestamps.json",
     "packages/db/migrations/20261006135526223_lifecycle_command_due_notify.sql"
   ],
-  "diff_hash": "d17ef6d84d7c71d6c8098c0e4483b496e2ce9c9eb84b131dfbfc9a12dd66306a",
-  "head": "12677d996e8817e3b23a71f677e1ae47b571d090",
+  "diff_hash": "f8e0da87908d7c0c1c87777ce658f13df925d0871b609fde768439ff7e2296d6",
+  "head": "8db44d31e037299658a49308dfc2ee95a3e63d97",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-06T14:26:03.227Z"
+  "at": "2026-10-06T14:58:20.564Z"
 }
