@@ -26,7 +26,11 @@ import { auth, errors, json } from '../../openapi';
 import { GitFileRevisionConflictError, commitFileToBranch } from '../git/branches';
 import { readRepoFile } from '../git/files';
 import { isRemotePushPolicyRejection } from '../git/mirror';
-import { assertProjectCapability, loadProjectForUser } from '../lib/access';
+import {
+  assertAgentSessionWorkspaceAllowsRepository,
+  assertProjectCapability,
+  loadProjectForUser,
+} from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 
@@ -35,7 +39,14 @@ const SKILL_NAME_MAX = 100;
 const SKILL_DESCRIPTION_MAX = 1024;
 
 const CreateSkillSchema = z.object({
-  name: z.string().trim().min(1).max(SKILL_NAME_MAX),
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(SKILL_NAME_MAX)
+    // One YAML line, like the description: a newline would turn the name into
+    // a block scalar the summary reader cannot parse.
+    .transform((value) => value.replace(/\r?\n/g, ' ')),
   description: z
     .string()
     .trim()
@@ -45,7 +56,7 @@ const CreateSkillSchema = z.object({
     .transform((value) => value.replace(/\r?\n/g, ' '))
     .optional(),
 });
-export type CreateSkillInput = z.infer<typeof CreateSkillSchema>;
+type CreateSkillInput = z.infer<typeof CreateSkillSchema>;
 
 /** The committed file's full text: frontmatter (real YAML, the same writer
  *  `serializeAgentMarkdown` uses) plus a starter body. `lineWidth: 0` keeps
@@ -94,6 +105,10 @@ projectsApp.openapi(
     if (!projectId) return c.json({ error: 'Not found' }, 404);
     const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // A session whose workspace denies repository access must not reach the
+    // repo, even with project.skill.write — the same gate every other
+    // repo-writing route folds in before its capability check.
+    await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
     await assertProjectCapability(
       c,
       loaded.userId,

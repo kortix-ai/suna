@@ -16,12 +16,15 @@ export function slugifySlug(title: string, fallback: string): string {
   const slug = title
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9._-]/g, '-')
+    .replace(/[^a-z0-9_-]/g, '-')
     .replace(/-{2,}/g, '-')
     // SLUG_RE's first character must be a letter or digit, so leading
-    // separators (`.hidden`, `_foo`, `--x`) are dropped, not just dashes.
+    // separators (`_foo`, `--x`) are dropped, not just dashes.
     .replace(/^[._-]+/, '')
     .replace(/[._-]+$/, '')
-    .slice(0, SLUG_MAX_LENGTH);
+    .slice(0, SLUG_MAX_LENGTH)
+    // The cap can end mid-run: a 130-character name keeps its first 128
+    // characters, and a trailing separator would break SLUG_RE's tail.
+    .replace(/[._-]+$/, '');
   return slug || fallback;
 }

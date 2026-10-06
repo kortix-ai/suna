@@ -12,16 +12,16 @@ describe('slugifySlug', () => {
     expect(slugifySlug('  Weekly -- Digest!!  ', 'skill')).toBe('weekly-digest');
   });
 
-  test('keeps digits, dots and underscores that SLUG_RE allows', () => {
-    expect(slugifySlug('Deploy_v2.0', 'skill')).toBe('deploy_v2.0');
+  test('keeps underscores and drops characters SLUG_RE forbids, dots included', () => {
+    expect(slugifySlug('Deploy_v2.0', 'skill')).toBe('deploy_v2-0');
   });
 
   test('drops characters SLUG_RE forbids', () => {
     expect(slugifySlug('a/b c:d', 'skill')).toBe('a-b-c-d');
   });
 
-  test('caps at 128 characters so the result matches SLUG_RE', () => {
-    const slug = slugifySlug('x'.repeat(300), 'skill');
+  test('caps at 128 characters without a trailing separator', () => {
+    const slug = slugifySlug(`${'x'.repeat(127)}.`, 'skill');
     expect(slug.length).toBeLessThanOrEqual(128);
     expect(SLUG_RE.test(slug)).toBe(true);
   });
