@@ -1,5 +1,5 @@
 {
-  "source_hash": "f9f4dcb14c268f1d1a09c0e1bbff0031a1749405f846f04d0646c7916f1fc08a",
+  "source_hash": "adf14a712d3f182b852226ce789bb9b2a7014d79019a2c2bf06955eef0c91f45",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-06T131757Z-probe-a-throwaway-postgres-on-the-tcp-endpoint-the-suite-use.md",
@@ -18,13 +18,13 @@
     "tests/unit/kortixd-package-boundary.test.ts",
     "tests/unit/test-runner-contract.test.ts"
   ],
-  "diff_hash": "fbdd517b636b4f462012482b2d9e7684bddb5367ece438805f17d1b974a8aa5e",
-  "head": "5026bab252abe5a3c9d83f46a8513c6cecebcf40",
+  "diff_hash": "dfb5b2459ad19d0aa6b860ca68265e97990523b24b61e9dbad25a17a60eaff64",
+  "head": "8a2b5823b0f72d5cf4ccdbab8568abf9ce590d21",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-06T13:52:09.453Z"
+  "at": "2026-10-06T13:59:32.081Z"
 }
