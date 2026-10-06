@@ -427,6 +427,43 @@ describe('listCostByProject', () => {
     ]);
   });
 
+  test('a project with disjoint LLM-only and compute-only sessions counts max, not the union', async () => {
+    // The old count(distinct session_id) aggregates counted each source's
+    // distinct sessions separately and mergeProjectCostRows took the larger;
+    // pooling both sources' sessions into one set would report 2 here.
+    resultForQuery = (_fields, table) => {
+      if (table === gatewayRequestLogs) {
+        return [
+          { projectId: 'p1', sessionId: 's-llm-only', llmCost: '1', llmProviderCost: '0', lastAt: null },
+        ];
+      }
+      if (table === sandboxComputeSessions) {
+        return [
+          { projectId: 'p1', sessionId: 's-compute-only', computeCost: '2', lastAt: null },
+        ];
+      }
+      if (table === projects) {
+        return [{ projectId: 'p1', name: 'Alpha' }];
+      }
+      return [];
+    };
+
+    const page = await listCostByProject({
+      accountId,
+      window: costWindow,
+      sort: 'total_desc',
+      limit: 25,
+      offset: 0,
+    });
+    expect(page.projects[0]).toMatchObject({
+      project_id: 'p1',
+      llm_cost: 1,
+      compute_cost: 2,
+      total_cost: 3,
+      session_count: 1,
+    });
+  });
+
   test('a NULL session_id spends money but never counts as a session', async () => {
     resultForQuery = (_fields, table) => {
       if (table === gatewayRequestLogs) {

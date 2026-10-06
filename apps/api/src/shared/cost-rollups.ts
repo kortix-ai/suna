@@ -11,6 +11,7 @@ import {
   rowProviderBilledSpendSql,
 } from './llm-spend';
 import { billedComputeSecondsExpression } from './session-costs';
+import { ttlMemo } from './ttl-memo';
 
 export interface ProjectCostRow {
   project_id: string;
@@ -185,7 +186,13 @@ export function collapseProjectPairRows(
     llmCost: number;
     llmProviderCost: number;
     computeCost: number;
-    sessions: Set<string>;
+    // Per-source session sets: mergeProjectCostRows takes the LARGER of the
+    // two sources' distinct session counts for a project, not their union —
+    // one session with LLM-only spend and another with compute-only spend
+    // count once each side, so Math.max picks 1, the same number the old
+    // count(distinct) aggregates reported.
+    llmSessions: Set<string>;
+    computeSessions: Set<string>;
     lastAt: string | null;
   }
   const entries = new Map<string, PairEntry>();
@@ -196,7 +203,8 @@ export function collapseProjectPairRows(
       llmCost: 0,
       llmProviderCost: 0,
       computeCost: 0,
-      sessions: new Set<string>(),
+      llmSessions: new Set<string>(),
+      computeSessions: new Set<string>(),
       lastAt: null,
     };
     entries.set(projectId, created);
@@ -213,7 +221,7 @@ export function collapseProjectPairRows(
     entry.llmProviderCost = Number(
       (entry.llmProviderCost + numberValue(row.llmProviderCost)).toFixed(10),
     );
-    if (row.sessionId) entry.sessions.add(row.sessionId);
+    if (row.sessionId) entry.llmSessions.add(row.sessionId);
     entry.lastAt = laterIso(entry.lastAt, isoValue(row.lastAt));
   }
   for (const row of computePairs) {
@@ -221,7 +229,7 @@ export function collapseProjectPairRows(
     const entry = entryOf(row.projectId);
     computeProjects.add(row.projectId);
     entry.computeCost = Number((entry.computeCost + numberValue(row.computeCost)).toFixed(10));
-    if (row.sessionId) entry.sessions.add(row.sessionId);
+    if (row.sessionId) entry.computeSessions.add(row.sessionId);
     entry.lastAt = laterIso(entry.lastAt, isoValue(row.lastAt));
   }
 
@@ -236,7 +244,7 @@ export function collapseProjectPairRows(
         llmCost: entry.llmCost,
         llmKortixCost: entry.llmCost,
         llmProviderCost: entry.llmProviderCost,
-        sessionCount: entry.sessions.size,
+        sessionCount: entry.llmSessions.size,
         lastAt: entry.lastAt,
       });
     }
@@ -244,7 +252,7 @@ export function collapseProjectPairRows(
       compute.push({
         projectId,
         computeCost: entry.computeCost,
-        sessionCount: entry.sessions.size,
+        sessionCount: entry.computeSessions.size,
         lastAt: entry.lastAt,
       });
     }
@@ -252,38 +260,11 @@ export function collapseProjectPairRows(
   return { llm, compute };
 }
 
-export async function listCostByProject(input: {
-  accountId: string;
-  projectId?: string;
-  window: CostWindow;
-  sort: CostSort;
-  limit: number;
-  offset: number;
-}): Promise<ProjectCostPage> {
-  const { accountId, window } = input;
-  return withCache(
-    costByProjectCache,
-    `by-project:${JSON.stringify({
-      accountId,
-      projectId: input.projectId ?? null,
-      from: window.from.toISOString(),
-      to: window.to.toISOString(),
-      sort: input.sort,
-      limit: input.limit,
-      offset: input.offset,
-    })}`,
-    () => loadCostByProject(input),
-  );
+export function listCostByProject(input: CostByProjectInput): Promise<ProjectCostPage> {
+  return costByProjectMemo(input);
 }
 
-async function loadCostByProject(input: {
-  accountId: string;
-  projectId?: string;
-  window: CostWindow;
-  sort: CostSort;
-  limit: number;
-  offset: number;
-}): Promise<ProjectCostPage> {
+async function loadCostByProject(input: CostByProjectInput): Promise<ProjectCostPage> {
   const { accountId, window } = input;
 
   const [llmPairs, computePairs, projectRows] = await Promise.all([
@@ -446,39 +427,70 @@ export interface CostSummary {
 // busy account each response costs hundreds of ms of database work. The
 // explorer refetches whenever a visit is older than the client's 30 s
 // staleTime, so most loads repeat a recent computation. A small per-process
-// TTL cache turns those into a Map hit. Spend rows are insert-only and the
+// TTL memo turns those into a cache hit — and collapses concurrent duplicate
+// loads into one in-flight computation. Spend rows are insert-only and the
 // windows are analytics-scale, so a 60 s-old aggregate stays inside the
 // staleness the client already accepts. The key is the full resolved input —
 // the accountId is derived from the caller's token before this point, so
 // entries are never shared across accounts.
 const COST_CACHE_TTL_MS = 60_000;
-const COST_CACHE_MAX_ENTRIES = 500;
-// replica-local: per-instance cache, deliberately not shared across replicas
-const costSummaryCache = new Map<string, { at: number; value: CostSummary }>();
-// replica-local: per-instance cache, deliberately not shared across replicas
-const costByProjectCache = new Map<string, { at: number; value: ProjectCostPage }>();
 
-async function withCache<T>(
-  cache: Map<string, { at: number; value: T }>,
-  key: string,
-  load: () => Promise<T>,
-): Promise<T> {
-  const hit = cache.get(key);
-  const now = Date.now();
-  if (hit && now - hit.at < COST_CACHE_TTL_MS) return hit.value;
-  const value = await load();
-  if (cache.size >= COST_CACHE_MAX_ENTRIES) {
-    const oldest = cache.keys().next().value;
-    if (oldest !== undefined) cache.delete(oldest);
-  }
-  cache.set(key, { at: now, value });
-  return value;
+/** The scope inputs `getCostSummary` aggregates over. */
+export interface CostSummaryInput {
+  accountId: string;
+  projectId?: string;
+  sessionId?: string;
+  window: CostWindow;
 }
+
+/** The scope inputs `listCostByProject` aggregates over. */
+export interface CostByProjectInput {
+  accountId: string;
+  projectId?: string;
+  window: CostWindow;
+  sort: CostSort;
+  limit: number;
+  offset: number;
+}
+
+// replica-local: per-instance memo, deliberately not shared across replicas
+const costSummaryMemo = ttlMemo({
+  ttlMs: COST_CACHE_TTL_MS,
+  maxEntries: 500,
+  enableInTests: true,
+  keyFn: (input: CostSummaryInput) =>
+    `summary:${JSON.stringify({
+      accountId: input.accountId,
+      projectId: input.projectId ?? null,
+      sessionId: input.sessionId ?? null,
+      from: input.window.from.toISOString(),
+      to: input.window.to.toISOString(),
+    })}`,
+  loader: (input) => loadCostSummary(input),
+});
+
+// replica-local: per-instance memo, deliberately not shared across replicas
+const costByProjectMemo = ttlMemo({
+  ttlMs: COST_CACHE_TTL_MS,
+  maxEntries: 500,
+  enableInTests: true,
+  keyFn: (input: CostByProjectInput) =>
+    `by-project:${JSON.stringify({
+      accountId: input.accountId,
+      projectId: input.projectId ?? null,
+      from: input.window.from.toISOString(),
+      to: input.window.to.toISOString(),
+      sort: input.sort,
+      limit: input.limit,
+      offset: input.offset,
+    })}`,
+  loader: (input) => loadCostByProject(input),
+});
 
 /** Drops every cached cost response — the test seam for deterministic suites. */
 export function resetCostCaches(): void {
-  costSummaryCache.clear();
-  costByProjectCache.clear();
+  costSummaryMemo.clear();
+  costByProjectMemo.clear();
 }
 
 // ── Summary ────────────────────────────────────────────────────────────────
@@ -516,32 +528,11 @@ const LLM_DAY_EXPRESSION = sql<string>`to_char(date_trunc('day', ${gatewayReques
 // mode, so `at time zone 'UTC'` on the raw column is valid the same way.
 const COMPUTE_DAY_EXPRESSION = sql<string>`to_char(date_trunc('day', ${sandboxComputeSessions.startedAt} at time zone 'UTC'), 'YYYY-MM-DD')`;
 
-export async function getCostSummary(input: {
-  accountId: string;
-  projectId?: string;
-  sessionId?: string;
-  window: CostWindow;
-}): Promise<CostSummary> {
-  const { accountId, projectId, sessionId, window } = input;
-  return withCache(
-    costSummaryCache,
-    `summary:${JSON.stringify({
-      accountId,
-      projectId: projectId ?? null,
-      sessionId: sessionId ?? null,
-      from: window.from.toISOString(),
-      to: window.to.toISOString(),
-    })}`,
-    () => loadCostSummary({ accountId, projectId, sessionId, window }),
-  );
+export function getCostSummary(input: CostSummaryInput): Promise<CostSummary> {
+  return costSummaryMemo(input);
 }
 
-async function loadCostSummary(input: {
-  accountId: string;
-  projectId?: string;
-  sessionId?: string;
-  window: CostWindow;
-}): Promise<CostSummary> {
+async function loadCostSummary(input: CostSummaryInput): Promise<CostSummary> {
   const { accountId, projectId, sessionId, window } = input;
   const previous = previousWindow(window);
 
