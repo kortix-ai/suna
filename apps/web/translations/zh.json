@@ -19250,7 +19250,8 @@
       "text6243d930fc1c": "AI Operating System",
       "textc959682e0398": "查看了已登录的设备",
       "text976811d9540a": "已将一台设备退出登录",
-      "text6f417aa88601": "已按来源列出 LLM 网关支出"
+      "text6f417aa88601": "已按来源列出 LLM 网关支出",
+      "textc96cd610ba08": "在速率限制后重试了共享提供商密钥"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

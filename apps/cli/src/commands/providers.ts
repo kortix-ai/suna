@@ -14,6 +14,7 @@ import {
   emitJson,
   fail,
   missing,
+  resolveAccountContext,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
@@ -47,6 +48,13 @@ Subcommands:
                                     bedrock also needs --region <region>.
   rm <provider>                     Remove the OAuth credential and/or
                                     the matching API-key secret(s).
+  retry [<provider>]                End the rate-limit rest of the account's
+                                    stored provider accounts now (e.g. after
+                                    resetting ChatGPT usage). openai, chatgpt
+                                    and codex name ChatGPT connections. With no
+                                    provider, every account still cooling down.
+                                    Otherwise the gateway re-tries one every
+                                    15 min on its own. --account <id>.
 
 Known API-key providers (provider → project secret(s)):
   anthropic       → ANTHROPIC_API_KEY
@@ -137,12 +145,14 @@ export async function runProviders(argv: string[]): Promise<number> {
   let hostFlag: string | undefined;
   let enterpriseFlag: string | undefined;
   let regionFlag: string | undefined;
+  let accountFlag: string | undefined;
   let json = false;
   try {
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
     enterpriseFlag = takeFlagValue(rest, ['--enterprise']);
     regionFlag = takeFlagValue(rest, ['--region']);
+    accountFlag = takeFlagValue(rest, ['--account']);
     json = takeFlagBool(rest, ['--json']);
   } catch (err) {
     return fail((err as Error).message);
@@ -162,10 +172,56 @@ export async function runProviders(argv: string[]): Promise<number> {
     case 'remove':
     case 'unset':
       return providersRm(rest[0], ctxOpts);
+    case 'retry':
+      return providersRetry(rest[0], accountFlag, hostFlag, json);
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;
   }
+}
+
+/** A stored account as `GET /accounts/:id/secret-resources` lists it (no value). */
+interface StoredAccount { secret_id: string; label: string; provider_id: string | null; cooldown_until: string | null }
+
+/** ChatGPT connections are stored under the `codex` provider id. */
+const RETRY_ALIASES: Record<string, string> = { openai: 'codex', chatgpt: 'codex' };
+
+/** The stored accounts still resting after a provider limit, optionally of one provider. */
+export function coolingSecrets<T extends StoredAccount>(rows: T[], provider: string | undefined, now = Date.now()): T[] {
+  const want = provider ? (RETRY_ALIASES[provider] ?? provider) : undefined;
+  return rows.filter((row) => row.cooldown_until && Date.parse(row.cooldown_until) > now && (!want || row.provider_id === want));
+}
+
+async function providersRetry(provider: string | undefined, accountArg: string | undefined, hostArg: string | undefined, json: boolean): Promise<number> {
+  const ctx = resolveAccountContext({ accountArg, hostArg });
+  if (!ctx) return 1;
+  const base = `/accounts/${encodeURIComponent(ctx.accountId)}/secret-resources`;
+  let rows: StoredAccount[];
+  try {
+    rows = (await ctx.client.get<{ secrets: StoredAccount[] }>(base)).secrets;
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+  const cooling = coolingSecrets(rows, provider);
+  const retried: string[] = [];
+  for (const row of cooling) {
+    try {
+      await ctx.client.post(`${base}/${encodeURIComponent(row.secret_id)}/retry`, {});
+      retried.push(row.secret_id);
+    } catch (err) {
+      return surfaceApiError(err);
+    }
+  }
+  if (json) {
+    emitJson({ retried });
+    return 0;
+  }
+  if (!cooling.length) {
+    process.stdout.write(`${status.ok(`No ${provider ? `${provider} ` : ''}account is cooling down.`)}\n`);
+    return 0;
+  }
+  for (const row of cooling) process.stdout.write(`${status.ok(`${row.label} (${row.provider_id}) is usable again.`)}\n`);
+  return 0;
 }
 
 async function providersLs(opts: CtxOpts, json = false): Promise<number> {
