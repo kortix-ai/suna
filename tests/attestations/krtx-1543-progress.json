@@ -1,5 +1,5 @@
 {
-  "source_hash": "06782fc97e269054eab6da2a2bdc151baeef9700e4ac45eb5134b43501f2d3db",
+  "source_hash": "0962d9be9c520fd005d03edb76e9e874107738e121ffbd5bfb01a9f7b8904a29",
   "diff_files": [
     "apps/web/src/features/workspace/new/new-workspace-errors.test.ts",
     "apps/web/src/features/workspace/new/new-workspace-page.test.ts",
@@ -18,13 +18,13 @@
     "apps/web/translations/sr.json",
     "apps/web/translations/zh.json"
   ],
-  "diff_hash": "2833ba61d1cfdb1d1d0ed4ffed470206f8e1652ee692415b0320e720532b44fc",
-  "head": "0e26017ac41ef752b08938e7b5ec9bdefc2385ed",
+  "diff_hash": "e61017ad6761d517170bc90e1cd5ac75c5f1d08d47ffa971700a760ecdc44e81",
+  "head": "b5e58d6b374e30d551bacc6c5fd3e8af8194cf6a",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-06T11:49:17.063Z"
+  "at": "2026-10-06T11:56:59.482Z"
 }
