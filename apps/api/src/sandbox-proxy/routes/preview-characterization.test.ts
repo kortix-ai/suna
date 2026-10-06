@@ -306,7 +306,7 @@ describe('forwardToSandbox refusal branches', () => {
       expect(await res.json()).toEqual({ error: 'invalid request path', code: 'INVALID_PATH' });
     }
     expect(fetchCalls).toBe(0);
-    queueFetch(new Response('app', { status: 200 }));
+    recordingFetch(new Response('app', { status: 200 }));
     const app = await forward({ path: '/a%2Fb', port: 3000 });
     expect(app.status).toBe(200);
     expect(String(lastFetch?.url)).toContain('/a%2Fb');
