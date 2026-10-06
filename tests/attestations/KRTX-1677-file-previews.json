@@ -1,5 +1,5 @@
 {
-  "source_hash": "cfdbf353792e01d495481b48af20877226b141fe5db577029e68ff2e680ae476",
+  "source_hash": "7c9ac53c56310a8291a2d49e402225e54914c27953b6152ecdc8ed3998f6829b",
   "diff_files": [
     "apps/api/src/projects/git.ts",
     "apps/api/src/projects/git/files.test.ts",
@@ -19,13 +19,13 @@
     "tests/spec/routes.generated.json",
     "tests/src/flows/files.flow.ts"
   ],
-  "diff_hash": "41b0a1ac92abe0f8b868a1c7dc242a4005cdcbe8d205aea078a9d4832d731e73",
-  "head": "d9aa5c38536fa54992f358df898f56b7ef788162",
+  "diff_hash": "731a51eb9c1bc866bb098a4929f53d078e5667cbb271ec5552165324cb90bf1f",
+  "head": "4c075c4353510fecc2739fadd00329559c13ba29",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-06T13:44:01.501Z"
+  "at": "2026-10-06T14:13:18.354Z"
 }
