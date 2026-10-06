@@ -19,13 +19,9 @@
 
 import type { sessionSandboxes } from '@kortix/db';
 import { describe, expect, test } from 'bun:test';
-<<<<<<< HEAD:apps/api/src/projects/routes/stopped-wake-result.test.ts
-import { stoppedWakeResult } from './shared';
+import { stoppedWakeResult } from './index';
 import { sessionStartFailureFromSandbox } from './stopped-wake-result';
 import { SANDBOX_PROVIDER_STORAGE_FULL_MESSAGE } from '../../platform/services/sandbox-provisioning-error';
-=======
-import { stoppedWakeResult } from './index';
->>>>>>> origin/main:apps/api/src/projects/session-open/stopped-wake-result.test.ts
 
 const FAILED_AT = new Date('2026-08-26T03:37:09.000Z');
 const at = (ms: number) => new Date(FAILED_AT.getTime() + ms);
