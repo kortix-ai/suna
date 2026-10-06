@@ -102,3 +102,16 @@ describe('GET /tls-check', () => {
     expect((await app.request('/tls-check?domain=dev-p8081-sbx-nope.p.acme.com')).status).toBe(404);
   });
 });
+
+describe('GET /tls-check rate limit', () => {
+  test('one client address is refused with 429 past 120 asks a minute', async () => {
+    const app = createEdgeApp({ appExists: async () => true, sandboxExists: exists });
+    const ask = () => app.request('/tls-check?domain=evil.com', { headers: { 'x-forwarded-for': '203.0.113.7' } });
+    for (let i = 0; i < 120; i++) expect((await ask()).status).toBe(403);
+    const refused = await ask();
+    expect(refused.status).toBe(429);
+    expect(refused.headers.get('retry-after')).not.toBeNull();
+    const other = await app.request('/tls-check?domain=evil.com', { headers: { 'x-forwarded-for': '203.0.113.8' } });
+    expect(other.status).toBe(403);
+  });
+});

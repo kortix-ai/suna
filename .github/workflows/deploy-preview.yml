@@ -769,7 +769,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: dev
+          ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
       - name: Check out the aws-env action
         uses: actions/checkout@v7
