@@ -564,12 +564,6 @@ flow(
       (await asMember.get(path(R.episodes), { params, query: { scope: 'account' } })).status(403);
     });
 
-    await ctx.step('run the pipelines: the member → 403; the owner → 202, mining queued (the open range has nothing to trace yet)', async () => {
-      (await asMember.post(path(R.run), {}, { params })).status(403);
-      (await owner.post(path(R.run), {}, { params })).status(202).body().has('$.episodes_queued', 0).has('$.mining_queued', true);
-      (await owner.post(path(R.run), { mining_only: true }, { params })).status(202).body().has('$.mining_queued', true);
-    });
-
     await ctx.step('a mined workflow (as the miner writes it) lists with its stats; the detail has steps, variants and people; the member → 403', async () => {
       const db = await openDb(ctx);
       try {
@@ -651,6 +645,12 @@ flow(
       if (!listed.some((e) => e.export_id === created.export_id)) throw new Error('export not listed');
     });
 
+
+    await ctx.step('last, run the pipelines: the member → 403; the owner → 202, mining queued (the open range has nothing to trace yet; a run re-mines and may drop a workflow no episode supports, so it goes after the workflow steps)', async () => {
+      (await asMember.post(path(R.run), {}, { params })).status(403);
+      (await owner.post(path(R.run), {}, { params })).status(202).body().has('$.episodes_queued', 0).has('$.mining_queued', true);
+      (await owner.post(path(R.run), { mining_only: true }, { params })).status(202).body().has('$.mining_queued', true);
+    });
   },
 );
 
