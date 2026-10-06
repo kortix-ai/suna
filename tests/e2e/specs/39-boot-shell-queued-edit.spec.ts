@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 
 import { loadEnv } from "../../src/core/env";
-import { mergeDatabaseProjectMetadata } from "../../src/fixtures/database-project";
+import {
+  createDatabaseSession,
+  mergeDatabaseProjectMetadata,
+} from "../../src/fixtures/database-project";
+import { runDatabaseSql } from "../helpers/database";
 import { createApiJsonClient } from "../helpers/http";
 import {
   createManifestProject,
@@ -29,15 +33,22 @@ const FIRST = "Set up the release checklist";
 const QUEUED = "Then compare it with the attached notes";
 const EDITED = "Then compare it with the attached notes and list the gaps";
 
+type ListedPrompt = {
+  full_text: string;
+  state: string;
+  placement: string;
+  attachments: Array<{ filename: string; mime: string }>;
+};
+
 // While a new session's computer boots, the instant shell is the session page:
 // the first prompt waits in it and later messages queue above its composer.
 // Edit on a queued row used to DELETE the row and refill the composer with its
 // text parts only, so every file on the message was lost. Edit now opens the
 // row in place and Submit PATCHes its text, which keeps the row's files.
 test("39 — editing a message queued during boot keeps its files", async ({ page }, testInfo) => {
-  // The journey holds the session in boot by answering `/start` itself. A
-  // deployed target would boot a real computer and swap the shell for the chat.
-  test.skip(isDeployedTarget(), "local profile only: /start is held at provisioning");
+  // The journey seeds the session in the database and holds it in boot by
+  // answering `/start` itself. A deployed target provisions real sessions.
+  test.skip(isDeployedTarget(), "local profile only: the session is seeded and held in boot");
   test.setTimeout(180_000);
   const env = loadEnv();
   const user = await createAuthUser(
@@ -100,17 +111,45 @@ test("39 — editing a message queued during boot keeps its files", async ({ pag
       defaultModel: modelId,
     };
 
-    // A new session whose first prompt is already durable: the page opens it
-    // on the instant shell.
-    const session = await api<{ session_id: string }>(
-      auth.access_token,
-      "POST",
-      `/projects/${project.id}/sessions`,
-      { pending_prompt: { text: FIRST, parts: [{ type: "text", text: FIRST }] } },
-      201,
+    // The local profile provisions no sessions: `POST /sessions` answers 503
+    // KORTIX_URL_UNREACHABLE. Seed what a create with a first prompt writes —
+    // the session row, and the prompt as the durable inbox row the server
+    // builds from `pending_prompt` (`pending:<session_id>`). The page opens it
+    // on the instant shell, as after a reload during boot.
+    const sessionId = await createDatabaseSession(env, {
+      projectId: project.id,
+      accountId: account.account_id,
+      userId: user.id,
+    });
+    await runDatabaseSql(
+      `INSERT INTO kortix.session_lifecycle_commands
+         (command_type, source, status, project_id, session_id, account_id,
+          actor_user_id, idempotency_key, payload)
+       VALUES ('continue_session', 'ui', 'queued', $1, $2, $3, $4, $5, $6::jsonb)`,
+      [
+        project.id,
+        sessionId,
+        account.account_id,
+        user.id,
+        `prompt:${sessionId}:pending-first`,
+        JSON.stringify({
+          text: FIRST,
+          clientMessageId: `pending:${sessionId}`,
+          remintOnDelivery: true,
+          parts: [{ type: "text", text: FIRST }],
+        }),
+      ],
+      env.databaseUrl,
     );
-    const sessionId = session.session_id;
     const promptsPath = `/v1/projects/${project.id}/sessions/${sessionId}/prompts`;
+    const listPrompts = async () =>
+      (
+        await api<{ prompts: ListedPrompt[] }>(
+          auth.access_token,
+          "GET",
+          `/projects/${project.id}/sessions/${sessionId}/prompts`,
+        )
+      ).prompts;
 
     await page.route("**/*", async (route) => {
       const request = route.request();
@@ -137,6 +176,7 @@ test("39 — editing a message queued during boot keeps its files", async ({ pag
             retriable: true,
             sandbox: null,
             opencode_session_id: null,
+            failure: null,
           }),
         });
         return;
@@ -153,7 +193,7 @@ test("39 — editing a message queued during boot keeps its files", async ({ pag
     await dismissOnboarding(page);
     const input = page.getByRole("textbox", { name: "Message input" });
     await expect(input).toBeVisible({ timeout: 60_000 });
-    // The shell draws the first prompt from the server's inbox row.
+    // The shell draws the first prompt from its inbox row.
     await expect(
       page.getByText(FIRST, { exact: true }).filter({ visible: true }).first(),
     ).toBeVisible({ timeout: 30_000 });
@@ -176,10 +216,25 @@ test("39 — editing a message queued during boot keeps its files", async ({ pag
       // Ctrl+Enter is the explicit queue intent: the row joins the list above
       // the composer, where Edit lives.
       await input.press("Control+Enter");
-      expect((await queued).status()).toBe(202);
+      const accepted = await queued;
+      expect(accepted.status()).toBe(202);
+      expect(accepted.request().postDataJSON()).toMatchObject({
+        placement: "composer",
+        parts: [
+          { type: "text", text: QUEUED },
+          expect.objectContaining({ attachment_id: expect.any(String) }),
+        ],
+      });
       const row = page.locator("[data-queued-prompt-id]").filter({ hasText: QUEUED });
       await expect(row).toHaveAttribute("data-queued-state", "queued", { timeout: 30_000 });
       await expect(row).toContainText("1 file");
+      // The POST's drain hands the first prompt to the (booting) runtime and
+      // puts this row back behind it. Edit once it waits there.
+      await expect
+        .poll(async () => (await listPrompts()).find((p) => p.full_text === QUEUED)?.state, {
+          timeout: 30_000,
+        })
+        .toBe("waiting");
     });
 
     await test.step("Edit opens the row in place and sends nothing", async () => {
@@ -227,22 +282,13 @@ test("39 — editing a message queued during boot keeps its files", async ({ pag
     });
 
     await test.step("the server row holds the new text and the file", async () => {
-      const listed = await api<{
-        prompts: Array<{
-          full_text: string;
-          placement: string;
-          attachments: Array<{ filename: string; mime: string }>;
-        }>;
-      }>(auth.access_token, "GET", `/projects/${project.id}/sessions/${sessionId}/prompts`);
-      expect(listed.prompts).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            placement: "composer",
-            full_text: EDITED,
-            attachments: [{ filename: "notes.txt", mime: "text/plain" }],
-          }),
-        ]),
-      );
+      const prompts = await listPrompts();
+      expect(prompts.filter((p) => p.placement === "composer")).toEqual([
+        expect.objectContaining({
+          full_text: EDITED,
+          attachments: [{ filename: "notes.txt", mime: "text/plain" }],
+        }),
+      ]);
     });
   } finally {
     try {
