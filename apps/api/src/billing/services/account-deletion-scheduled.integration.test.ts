@@ -36,6 +36,9 @@ mock.module('../../shared/supabase', () => ({
       },
     },
   }),
+  // mock.module replaces the module for the whole process: every export that
+  // another loaded module imports must exist, or the file fails to load.
+  toPublicStorageUrl: (url: string) => url,
 }));
 
 const { processScheduledDeletions } = await import('./account-deletion');
