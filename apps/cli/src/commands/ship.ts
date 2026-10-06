@@ -5,7 +5,7 @@ import { type ApiClient, ApiError, clientFromAuth } from '../api/client.ts';
 import { activeHostName, hasEnvTokenHost } from '../api/config.ts';
 import type { ProjectSecretsResponse, ProjectSummary } from '../api/types.ts';
 import { takeFlags } from '../command-argv.ts';
-import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import { takeFlagBool, takeFlagValue, tokenRejectedLine } from '../command-helpers.ts';
 import {
   commitIfNeeded,
   currentBranch,
@@ -574,7 +574,7 @@ function reportShipped(auth: Auth, project: ProjectSummary, repoUrl: string): vo
 function surface(err: unknown): number {
   if (err instanceof ApiError) {
     if (err.status === 401) {
-      process.stderr.write(`${status.err('Token rejected. Run `kortix login`.')}\n`);
+      process.stderr.write(`${status.err(tokenRejectedLine(err.message, 'Run `kortix login`.'))}\n`);
     } else if (err.status === 503) {
       // Don't diagnose — the server owns the reason. The one thing we DO know
       // is that a stale CLI is a common cause (older builds pushed to the raw
