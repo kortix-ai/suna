@@ -9,7 +9,7 @@ import {
   type SandboxUpdateStatus,
   type UpdatePhase,
 } from '@/lib/platform/client';
-import { getAuthToken } from '@/api/config';
+import { getSessionHealth } from '@kortix/sdk';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 
 function isNewerVersion(current: string, latest: string): boolean {
@@ -169,12 +169,8 @@ export function useGlobalSandboxUpdate() {
     let cancelled = false;
     (async () => {
       try {
-        const token = await getAuthToken();
-        const headers: Record<string, string> = {};
-        if (token) headers.Authorization = `Bearer ${token}`;
-        const res = await fetch(`${sandboxUrl}/kortix/health`, { headers });
-        if (!res.ok) return;
-        const data = await res.json();
+        const { ok, health: data } = await getSessionHealth(sandboxUrl);
+        if (!ok) return;
         // Only accept a concrete version; ignore "unknown" or empty so
         // consumers can cleanly fall back to a DB-cached value instead of
         // rendering "vunknown".
