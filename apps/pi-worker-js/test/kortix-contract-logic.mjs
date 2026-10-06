@@ -15,7 +15,7 @@
 //
 // test/session-e2e.mjs drives the same contract through a real `celld dev`;
 // this suite is the fast half that needs no binary.
-// EXPECTED_PASSES=97
+// EXPECTED_PASSES=98
 import { createServer } from "node:http";
 import { DatabaseSync } from "node:sqlite";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
@@ -137,6 +137,10 @@ const relaysFor = (session) => relays.filter((r) => r.body.session_id === sessio
   const own = await router.fetch(new Request("http://box/session"), { AGENT: ns, KORTIX_SESSION_ID: "sess-c" });
   check("a box whose env names its session routes an unaddressed request there",
     own.status === 200 && (await own.json())[0]?.id === rootIdOf("sess-c"), String(own.status));
+  const child = "ses_pi0123456789abcdef01234567";
+  await router.fetch(new Request(`http://box/session/${child}/message`), { AGENT: ns, KORTIX_SESSION_ID: "sess-c" });
+  check("and on such a box another ses_pi id in the path (a subagent child) reaches the box's own object, not a new one",
+    (() => { try { return cell(child).cell.rootId; } catch { return null; } })() == null, "a child id created its own object");
 }
 
 // ── boot: the root is pinned, the initial turn is claimed and run ────────────

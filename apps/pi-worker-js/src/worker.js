@@ -1542,9 +1542,15 @@ export default {
     if (url.pathname === "/health") return Response.json({ ok: true, runtime: "pi-cell", version: CELL_VERSION });
     const c = url.searchParams.get("c");
     const fromPath = ROOT_IN_PATH.exec(url.pathname)?.[1] ?? null;
-    const root = fromPath
+    const own = await rootOfSession(env.KORTIX_SESSION_ID);
+    // A BOX THAT NAMES ITS SESSION SERVES THAT ONE SESSION. A `ses_pi` id in
+    // its paths is its root or one of the root's subagent children, and the
+    // children live in the root's object (subagents.js). Routing a child's id
+    // as a root reached a new, empty object: measured on pi-js 2026-10-06,
+    // GET /session/<child>/message answered [] for a child that had worked.
+    const root = (fromPath && own ? own : fromPath)
       ?? (c ? (ROOT_ID.test(c) ? c : await rootOfSession(c)) : null)
-      ?? (await rootOfSession(env.KORTIX_SESSION_ID))
+      ?? own
       ?? (knownRoots.size === 1 ? [...knownRoots][0] : null);
     if (!root) {
       // FINAL, NOT COLD: the API's sandbox proxy retries a 503 as a port still
