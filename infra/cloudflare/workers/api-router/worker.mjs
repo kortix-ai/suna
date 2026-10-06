@@ -249,6 +249,22 @@ function maintenanceConfigResponse(config, source) {
   );
 }
 
+const INTERNAL_EDGE_HEADER = 'x-kortix-internal-edge-key';
+
+// `/internal/*` is the gateway-to-API control plane. The public API host must
+// not serve it to anyone but the gateway. When INTERNAL_EDGE_KEY is set, the
+// gateway proves itself with that key (KORTIX_INTERNAL_EDGE_KEY on the gateway)
+// and every other caller gets 404. Unset keeps the pre-key behaviour so the
+// worker can ship before the gateway env does: set the gateway env first.
+function internalEdgeDenied(env, request, url) {
+  if (!env.INTERNAL_EDGE_KEY || !url.pathname.startsWith('/internal/')) return false;
+  const given = request.headers.get(INTERNAL_EDGE_HEADER) ?? '';
+  const want = env.INTERNAL_EDGE_KEY;
+  let diff = given.length ^ want.length;
+  for (let i = 0; i < want.length; i++) diff |= (given.charCodeAt(i) || 0) ^ want.charCodeAt(i);
+  return diff !== 0;
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -284,6 +300,10 @@ export default {
           Location: url.toString(),
         },
       });
+    }
+
+    if (!isGateway && internalEdgeDenied(env, request, url)) {
+      return addSecurityHeaders(Response.json({ error: 'not found' }, { status: 404 }));
     }
 
     const targetUrl = new URL(url.pathname + url.search, backendUrl);
@@ -357,6 +377,7 @@ export default {
     // /auth, and the worker returned that /auth HTML as a 200, so the browser
     // never saw the redirect (blank page, URL stuck on the callback).
     const originHeaders = new Headers(request.headers);
+    originHeaders.delete(INTERNAL_EDGE_HEADER);
     // AWSManagedRulesCommonRuleSet rejects a missing User-Agent before the API
     // can verify the webhook signature. External webhook providers are not
     // required to send this informational header. Supply a relay identity only

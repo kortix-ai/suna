@@ -1001,4 +1001,36 @@ describe('api-router worker', () => {
     expect(response).toBe(upgradeResponse);
     expect(response.webSocket).toBe(webSocket);
   });
+
+  describe('/internal edge gate', () => {
+    const gated = { ...env, INTERNAL_EDGE_KEY: 'edge-key-1' };
+    const call = (path, headers = {}, e = gated, host = 'api.kortix.com') => {
+      const seen = [];
+      globalThis.fetch = async (input) => {
+        seen.push(input.headers.get('x-kortix-internal-edge-key'));
+        return new Response('{"principal":null}', { status: 200 });
+      };
+      return worker
+        .fetch(new Request(`https://${host}${path}`, { method: 'POST', headers }), e)
+        .then((response) => ({ response, seen }));
+    };
+
+    test('public caller without the key gets 404 and never reaches the origin', async () => {
+      const { response, seen } = await call('/internal/gateway/authenticate');
+      expect(response.status).toBe(404);
+      expect(seen).toEqual([]);
+      expect((await call('/internal/gateway/authenticate', { 'x-kortix-internal-edge-key': 'nope' })).response.status).toBe(404);
+    });
+
+    test('gateway with the key is forwarded and the key is stripped', async () => {
+      const { response, seen } = await call('/internal/gateway/authenticate', { 'x-kortix-internal-edge-key': 'edge-key-1' });
+      expect(response.status).toBe(200);
+      expect(seen).toEqual([null]);
+    });
+
+    test('non-internal paths and an unset key are unaffected', async () => {
+      expect((await call('/v1/health')).response.status).toBe(200);
+      expect((await call('/internal/gateway/authenticate', {}, env)).response.status).toBe(200);
+    });
+  });
 });
