@@ -1,5 +1,5 @@
--- Snapshot companion for 20261006152614129_project_backends.sql and
--- 20261006194749570_backend_auth_key.sql.
+-- Snapshot companion for 20261006210000000_project_backends.sql and
+-- 20261006210000002_backend_auth_key.sql.
 --
 -- Those migrations create `kortix.project_backends` (with `auth_key_enc`). The
 -- branch that added them and `dev` each generated drizzle snapshots, so the
