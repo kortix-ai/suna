@@ -38,13 +38,16 @@ mock.module('../opencode-mapping', () => ({
   sandboxOpencodeEndpoint: async () => ({ url: 'https://daemon.test', headers: {} }),
 }));
 
-const { postPrompt, readSessionMessageTip, removeRuntimeMessage } = await import('./runtime-client');
+const { SteerNotTaken, postPrompt, readSessionMessageTip, removeRuntimeMessage } = await import('./runtime-client');
 const { __resetRuntimeTurnVerbsMemo } = await import('./runtime-fetch');
 
 let capabilities: string[] = [];
 const fetched: string[] = [];
 let pages: Record<string, unknown> = {};
 let healthReads = 0;
+/** Direct steer POSTs: the box answers what `steerAnswer` returns. */
+const steered: Array<{ headers: Record<string, string>; body: unknown }> = [];
+let steerAnswer: () => Response = () => Response.json({ message_id: 'msg_s', steered: true }, { status: 202 });
 /** A daemon rolled back in place: its catch-all answers a Kortix route it no longer has. */
 const routeMissing = () => Response.json({ error: 'not found' }, { status: 404 });
 /** A Kortix verb that exists and answers 404 for the resource. */
@@ -61,8 +64,14 @@ beforeEach(() => {
   forwardAnswers = {};
   pages = {};
   healthReads = 0;
-  globalThis.fetch = (async (url: unknown, init?: { method?: string }) => {
+  steered.length = 0;
+  steerAnswer = () => Response.json({ message_id: 'msg_s', steered: true }, { status: 202 });
+  globalThis.fetch = (async (url: unknown, init?: { method?: string; headers?: Record<string, string>; body?: string }) => {
     const target = String(url);
+    if (target.endsWith('/steer')) {
+      steered.push({ headers: init?.headers ?? {}, body: JSON.parse(init?.body ?? 'null') });
+      return steerAnswer();
+    }
     if (target.endsWith('/kortix/health')) {
       healthReads++;
       return Response.json({ capabilities });
@@ -199,5 +208,60 @@ describe('a daemon that stops serving the Kortix routes (an in-place rollback)',
     forwardAnswers['/kortix/runtime/sessions/ses_1/prompt'] = resourceMissing;
     expect(await deliver()).toBe('failed');
     expect(forwarded.map((f) => f.path)).toEqual(['/kortix/runtime/sessions/ses_1/prompt']);
+  });
+});
+
+describe('postPrompt steer (R10)', () => {
+  const steer = () =>
+    postPrompt('ext-1', 'ses_1', 'also this', 'user-1', 'sess-1', 'idem-1:steer', {
+      parts: [{ type: 'text', text: 'also this' }],
+      wireMessageId: 'msg_s',
+      steer: true,
+    });
+  const notTaken = async () => {
+    try {
+      await steer();
+    } catch (error) {
+      return error instanceof SteerNotTaken ? error.reason : error;
+    }
+    return 'taken';
+  };
+
+  test('posts the prompt body straight to the box with the service-call mark, never through the proxy', async () => {
+    capabilities = ['runtime.turns.v1', 'session.steer'];
+    expect(await steer()).toBe('accepted');
+    expect(forwarded).toHaveLength(0);
+    expect(steered).toHaveLength(1);
+    expect(steered[0]!.headers['X-Kortix-Service-Call']).toBe('1');
+    expect(steered[0]!.body).toMatchObject({ message_id: 'msg_s', parts: [{ type: 'text', text: 'also this' }] });
+    steerAnswer = () => Response.json({ deduplicated: true }, { status: 200 });
+    expect(await steer()).toBe('deduplicated');
+  });
+
+  test('409 no_active_turn is turn_ended; any other 409 is a plain failure', async () => {
+    capabilities = ['runtime.turns.v1', 'session.steer'];
+    steerAnswer = () => Response.json({ code: 'no_active_turn' }, { status: 409 });
+    expect(await notTaken()).toBe('turn_ended');
+    steerAnswer = () => Response.json({ error: 'busy' }, { status: 409 });
+    expect(await notTaken()).toBe('taken');
+  });
+
+  test('501 is unsupported and forgets the capability memo', async () => {
+    capabilities = ['runtime.turns.v1', 'session.steer'];
+    steerAnswer = () => Response.json({ code: 'feature_not_supported' }, { status: 501 });
+    expect(await notTaken()).toBe('unsupported');
+    await notTaken();
+    expect(healthReads).toBe(2);
+  });
+
+  test('a daemon without the Kortix turn routes cannot steer: nothing is posted', async () => {
+    expect(await notTaken()).toBe('unsupported');
+    expect(steered).toHaveLength(0);
+    capabilities = ['runtime.turns.v1'];
+    __resetRuntimeTurnVerbsMemo();
+    steerAnswer = routeMissing;
+    expect(await notTaken()).toBe('unsupported');
+    expect(steered).toHaveLength(1);
+    expect(forwarded).toHaveLength(0);
   });
 });
