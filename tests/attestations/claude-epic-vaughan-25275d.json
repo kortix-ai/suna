@@ -1,0 +1,28 @@
+{
+  "source_hash": "4ef9d681b835ea6cb60a38a85f365c361ce5ec30f2955ae099ea4e7afea08e88",
+  "diff_files": [
+    "apps/web/src/features/session/composer-chat-input.tsx",
+    "apps/web/src/features/session/instant-session-shell.tsx",
+    "apps/web/src/features/session/queued-prompt-edit.test.ts",
+    "apps/web/src/features/session/queued-prompt-edit.ts",
+    "apps/web/src/features/session/session-chat-inbox-queue.test.ts",
+    "apps/web/src/features/session/session-chat.tsx",
+    "apps/web/src/features/session/use-instant-session-send.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/sdk/src/react/use-session-prompts.edit.test.ts",
+    "packages/sdk/src/react/use-session-prompts.test.ts",
+    "packages/sdk/src/react/use-session-prompts.ts",
+    "tests/e2e/specs/39-boot-shell-queued-edit.spec.ts",
+    "tests/migration/kortix-yolo-profiles-unused-indexes.test.ts",
+    "tests/unit/migration-test-ports.test.ts"
+  ],
+  "diff_hash": "4c6de3c7163f3e48a29cdbcb117a0463e4abd8cd24b19d2033580e4b148db995",
+  "head": "bbbe825d21e1cb8dd00a669e7a4ed0e23025f056",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-06T10:04:46.186Z"
+}
