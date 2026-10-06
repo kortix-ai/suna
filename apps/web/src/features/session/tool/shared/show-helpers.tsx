@@ -29,7 +29,7 @@ import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { safeHttpUrl } from '@kortix/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { type KeyboardEvent, type ReactElement, useEffect, useRef, useState } from 'react';
+import { type KeyboardEvent, type ReactElement, type ReactNode, useEffect, useRef, useState } from 'react';
 
 import { CopyButton } from '@/components/markdown/copy-button';
 import { STATUS_BORDER } from '@/components/ui/status';
@@ -461,10 +461,14 @@ export function ShowCarouselTabs({
   activeIndex,
   onSelect,
   label,
+  tabIcon,
 }: {
   items: ShowCarouselItem[];
   activeIndex: number;
   onSelect: (index: number) => void;
+  /** Replaces a tab's type icon (the dot matrix while the previews load).
+   *  Return null to keep the type icon. */
+  tabIcon?: (item: ShowCarouselItem) => ReactNode;
   /** The call's own title. The tabs replace the visible header title, so it
    *  names the tablist for assistive tech instead. */
   label?: string;
@@ -534,7 +538,8 @@ export function ShowCarouselTabs({
               {item.status === 'pending' ? (
                 <Loading className="size-3.5 shrink-0" />
               ) : (
-                showFileTypeIcon(item.type, item.path || undefined, 'size-3.5', item.url)
+                (tabIcon?.(item) ??
+                showFileTypeIcon(item.type, item.path || undefined, 'size-3.5', item.url))
               )}
               <span className={cn(label.startsWith(':') && 'tabular-nums')}>{label}</span>
             </button>

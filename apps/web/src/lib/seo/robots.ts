@@ -22,7 +22,7 @@ const CANONICAL_ROBOTS = `# Kortix Robots.txt
 User-agent: *
 Allow: /
 Allow: /api/ai
-Content-Signal: ai-train=no, search=yes, ai-input=yes
+Content-Signal: ai-train=yes, search=yes, ai-input=yes
 
 # Sitemap
 Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml

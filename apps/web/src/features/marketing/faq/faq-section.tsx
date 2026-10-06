@@ -10,6 +10,7 @@ import {
 import SectionHeader from '@/features/marketing/component/section-header';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import type { ReactNode } from 'react';
+import { safeJsonForHtml } from '@/lib/security/safe-json';
 import { faq, type FaqItem } from './content';
 
 type FaqSectionProps = {
@@ -36,6 +37,23 @@ export function FaqSection({ eyebrow, title, items, titleClassName }: FaqSection
           titleClassName={titleClassName}
         />
       </div>
+
+      {/* The answers sit in a collapsed accordion; this states every one for
+          search and answer engines, in the reader's locale. */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: safeJsonForHtml({
+            '@context': 'https://schema.org',
+            '@type': 'FAQPage',
+            mainEntity: resolvedItems.map((item) => ({
+              '@type': 'Question',
+              name: item.question,
+              acceptedAnswer: { '@type': 'Answer', text: item.answer },
+            })),
+          }),
+        }}
+      />
 
       <Reveal delay={0.06} className="mt-10 w-full min-w-0 lg:mt-0">
         <Accordion type="single" collapsible className="flex w-full flex-col gap-1 border-0">

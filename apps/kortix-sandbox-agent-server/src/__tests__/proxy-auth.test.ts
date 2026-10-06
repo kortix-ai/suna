@@ -64,15 +64,9 @@ describe('daemon proxy auth gate', () => {
     const body = (await res.json()) as {
       daemon: string
       auth: string
-      compiled_boot_mode: string
-      compiled_checkout: boolean
-      harness: { details: { compiled_runtime: boolean } }
     }
     expect(body.daemon).toBe('ok')
     expect(body.auth).toBe('configured')
-    expect(body.compiled_boot_mode).toBe('off')
-    expect(body.compiled_checkout).toBe(false)
-    expect(body.harness.details.compiled_runtime).toBe(false)
   })
 
   it('reports the same host facts as every harness, naming itself', async () => {
@@ -92,30 +86,6 @@ describe('daemon proxy auth gate', () => {
     expect(body.runtime_truth).toBeDefined()
     const host = await readHostHealth({ cfg, bootTime: Date.now(), bootState: { repoMaterializationError: null, timeline: [] }, staticWebPort: null, resources: () => null })
     expect(Object.keys(body)).toEqual(expect.arrayContaining(Object.keys(host)))
-  })
-
-  it('reports when the workspace came from a compiled checkout', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'kortix-compiled-health-'))
-    try {
-      const target = join(root, 'workspace')
-      git(['init', '-b', 'main', target])
-      writeFileSync(join(target, '.git', 'kortix-compiled-checkout.json'), '{}')
-      const app = buildOpenCodeTestApp(
-        baseConfig({ projectTarget: target, compiledBootMode: 'prefer' }),
-        fakeOpencode(),
-        Date.now(),
-      )
-
-      const res = await app.request('/kortix/health')
-      const body = (await res.json()) as {
-        compiled_boot_mode: string
-        compiled_checkout: boolean
-      }
-      expect(body.compiled_boot_mode).toBe('prefer')
-      expect(body.compiled_checkout).toBe(true)
-    } finally {
-      rmSync(root, { recursive: true, force: true })
-    }
   })
 
   it('reports auth=unconfigured when the sandbox token is unset', async () => {

@@ -11,10 +11,10 @@ export const CANONICAL_ORIGIN = 'https://kortix.com';
 
 export const siteMetadata = {
   name: 'Kortix',
-  title: 'Kortix – The open-source AI Management System',
+  title: 'Kortix – The open-source AI Operating System',
   description:
-    'Open-source AI Management System: your agents, skills, memory, and connectors in one repo you own. Any model. Self-host or cloud.',
+    'Open-source AI Operating System: your agents, skills, memory, and connectors in one repo you own. Any model. Self-host or cloud.',
   url: CANONICAL_ORIGIN,
   keywords:
-    'Kortix, AI Management System, open-source AI Management System, open-source alternative to Claude Cowork, ChatGPT Work alternative, company as a git repo, agents skills and memory as files, shared AI agents, scoped access, self-hosted AI agents, connect 3000 tools, agent orchestration, AI-native company, AI operations',
+    'Kortix, AI Operating System, open-source AI Operating System, AI OS, open-source AI OS, AI Operating System for companies, what is an AI Operating System, open-source alternative to Claude Cowork, ChatGPT Work alternative, company as a git repo, agents skills and memory as files, shared AI agents, scoped access, self-hosted AI agents, connect 3000 tools, agent orchestration, AI-native company, AI operations',
 };
