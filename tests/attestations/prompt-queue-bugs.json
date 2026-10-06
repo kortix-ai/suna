@@ -1,0 +1,31 @@
+{
+  "source_hash": "8bcaffa20a66b0dcc711c66edffde659fc189a93112c4eabaa96230c914f445c",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-06T122404Z-never-leave-a-row-claimable-that-its-own-delivery-will-refus.md",
+    ".agents/skills/learnings/entries/2026-10-06T122405Z-hand-back-every-lifecycle-claim-on-sigterm-a-dead-process-s.md",
+    "apps/api/src/__tests__/integration-inbox-pause-and-handover.test.ts",
+    "apps/api/src/bootstrap.ts",
+    "apps/api/src/projects/session-lifecycle/__tests__/instance-scope-release.test.ts",
+    "apps/api/src/projects/session-lifecycle/__tests__/queued-continue-inbox-delivery.test.ts",
+    "apps/api/src/projects/session-lifecycle/__tests__/queued-continue-staged-revert.test.ts",
+    "apps/api/src/projects/session-lifecycle/claim-handover.ts",
+    "apps/api/src/projects/session-lifecycle/command-claims.ts",
+    "apps/api/src/projects/session-lifecycle/continue-session.ts",
+    "apps/api/src/projects/session-lifecycle/drain.ts",
+    "apps/api/src/projects/session-lifecycle/inbox-delivery-hold.ts",
+    "apps/api/src/projects/session-lifecycle/inbox-hold-settle.ts",
+    "apps/api/src/projects/session-lifecycle/inbox-rows.ts",
+    "apps/api/src/projects/session-lifecycle/queued-continue-delivery.ts",
+    "apps/api/src/projects/surface.ts"
+  ],
+  "diff_hash": "f04b96d006a8b8742536744e098f7f0de1da51b11557958a88216e6a87143314",
+  "head": "77a421b59cb909a924767b6569ca448d0156d382",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-06T12:37:10.301Z"
+}
