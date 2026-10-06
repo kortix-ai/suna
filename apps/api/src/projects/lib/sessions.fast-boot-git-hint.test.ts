@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 
+// The create path spans four sibling modules; these source contracts pin the
+// wiring wherever it lives in the family.
 async function sessionsSource(): Promise<string> {
-  return Bun.file(new URL('./session-create.ts', import.meta.url)).text();
+  const parts = await Promise.all(
+    ['./session-create.ts', './session-create-plan.ts', './session-create-launch.ts', './session-create-provision.ts'].map((rel) => Bun.file(new URL(rel, import.meta.url)).text()),
+  );
+  return parts.join('\n');
 }
 
 async function monitorBoxProvisionSource(): Promise<string> {

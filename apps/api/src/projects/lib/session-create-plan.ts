@@ -167,7 +167,7 @@ async function loadParentSessionGrants(
   return { visibility: parent.visibility, grants };
 }
 
-export type SessionCreateInheritance = {
+type SessionCreateInheritance = {
   parentSession: {
     sessionId: string;
     visibility: SessionVisibility;
@@ -176,7 +176,7 @@ export type SessionCreateInheritance = {
   } | null;
   visibility: SessionVisibility;
   inheritedGrants: SecretGrant[];
-  parsedRuntimeContext: { ok: true; context: SessionRuntimeContext | undefined };
+  runtimeContext: SessionRuntimeContext | undefined;
   parsedConnectorBindings: { ok: true; bindings: SessionConnectorBindings | undefined };
   inheritUnbound: boolean;
   connectorBindingsConfigured: boolean;
@@ -352,7 +352,7 @@ export async function resolveSessionCreateInheritance(
       parentSession,
       visibility,
       inheritedGrants,
-      parsedRuntimeContext,
+      runtimeContext: parsedRuntimeContext.context,
       parsedConnectorBindings,
       inheritUnbound,
       connectorBindingsConfigured,
@@ -362,7 +362,7 @@ export async function resolveSessionCreateInheritance(
   };
 }
 
-export type SessionCreateAgentPlan = {
+type SessionCreateAgentPlan = {
   baseRef: string;
   agentName: string;
   platformMetaAgent: boolean;
@@ -459,7 +459,7 @@ export async function resolveSessionCreateAgent(
   };
 }
 
-export type SessionCreateModelPlan = {
+type SessionCreateModelPlan = {
   llmGatewayEnabled: boolean;
   providerSecretPools: Record<string, string[]> | undefined;
   opencodeModel: string | null;
@@ -635,8 +635,8 @@ export async function resolveSessionCreateModel(
   };
 }
 
-export type SessionCreateConnectorPlan = {
-  validatedConnectorBindings: { ok: true; bindings: ValidatedSessionConnectorBinding[] };
+type SessionCreateConnectorPlan = {
+  connectorBindings: ValidatedSessionConnectorBinding[];
 };
 
 /** Connector bindings: the agent's grant check and the reachability and
@@ -710,7 +710,7 @@ export async function resolveSessionCreateConnectors(
       },
     };
   }
-  return { ok: true, value: { validatedConnectorBindings } };
+  return { ok: true, value: { connectorBindings: validatedConnectorBindings.bindings } };
 }
 
 /** MANDATORY DECLARED AGENTS enforcement — the undeclared-agent 400 fires
@@ -745,7 +745,7 @@ export function enforceSessionDeclaredAgents(
   return { ok: true };
 }
 
-export type SessionCreateSandboxPlan = {
+type SessionCreateSandboxPlan = {
   sandboxSlug: string;
   providerName: SandboxProviderName;
   providerLocked: boolean;
@@ -895,7 +895,7 @@ export async function checkSessionCreateBilling(
   return { ok: true };
 }
 
-export type SessionCreateIdentityPlan = {
+type SessionCreateIdentityPlan = {
   sessionId: string;
   initialTurn: ReturnType<typeof prepareInitialSandboxTurn> | null;
   pendingPromptConversion: ReturnType<typeof convertPendingPromptToInboxRow> | null;
@@ -916,11 +916,19 @@ export function buildSessionCreateIdentity(
   const { project, userId, body } = input;
   const projectId = project.projectId;
   const accountId = project.accountId;
-  const { agentName, repositoryAccess } = resolved;
-  const { providerName, sandboxSlug } = resolved;
-  const { validatedConnectorBindings } = resolved;
-  const { secretsAllowlist, origin, visibility, parentSession } = resolved;
-  const { opencodeModel, opencodeModelSource } = resolved;
+  const {
+    agentName,
+    repositoryAccess,
+    providerName,
+    sandboxSlug,
+    connectorBindings,
+    secretsAllowlist,
+    origin,
+    visibility,
+    parentSession,
+    opencodeModel,
+    opencodeModelSource,
+  } = resolved;
   const requestedSessionId = normalizeString(body.session_id ?? body.sessionId);
   if (requestedSessionId && !isUuid(requestedSessionId)) {
     return { ok: false, error: { status: 400, body: { error: 'Invalid session id' } } };
@@ -994,7 +1002,7 @@ export function buildSessionCreateIdentity(
     agentName,
     visibility,
     sandboxProvider: providerName,
-    connectorBindingCount: validatedConnectorBindings.bindings.length,
+    connectorBindingCount: connectorBindings.length,
     secretAllowlistCount: secretsAllowlist?.length ?? 0,
   });
   // The surface the create came through. The route stamps every HTTP create
@@ -1062,32 +1070,20 @@ export function buildSessionCreateIdentity(
 
 /** Everything the hoisted insert transaction and the fire-and-forget
  *  provisioning need, resolved. */
-export interface SessionCreatePlan {
+/**
+ * Everything the hoisted insert transaction and the fire-and-forget
+ * provisioning need, resolved: the phase slices minus their internal-only
+ * fields, plus the caller identity and the two values the orchestrator maps
+ * out of the parsed envelopes.
+ */
+export interface SessionCreatePlan
+  extends Omit<SessionCreateInheritance, 'parsedRuntimeContext'>,
+    Omit<SessionCreateAgentPlan, 'loadedAgents' | 'projectDefaultAgent'>,
+    Omit<SessionCreateModelPlan, 'opencodeModelSource'>,
+    SessionCreateConnectorPlan,
+    SessionCreateSandboxPlan,
+    SessionCreateIdentityPlan {
   accountId: string;
   projectId: string;
-  sessionId: string;
   userId: string;
-  baseRef: string;
-  agentName: string;
-  visibility: SessionVisibility;
-  origin: SessionOrigin;
-  parentSession: SessionCreateInheritance['parentSession'];
-  initiator: SessionInitiator;
-  secretsAllowlist: string[] | null;
-  inheritedGrants: SecretGrant[];
-  connectorBindingsConfigured: boolean;
-  inheritUnbound: boolean;
-  metadata: Record<string, unknown>;
-  providerName: SandboxProviderName;
-  providerLocked: boolean;
-  sandboxSlug: string;
-  opencodeModel: string | null;
-  llmGatewayEnabled: boolean;
-  platformMetaAgent: boolean;
-  repositoryAccess: boolean;
-  providerSecretPools: Record<string, string[]> | undefined;
-  runtimeContext: SessionRuntimeContext | undefined;
-  connectorBindings: ValidatedSessionConnectorBinding[];
-  pendingPromptConversion: ReturnType<typeof convertPendingPromptToInboxRow> | null;
-  initialTurn: ReturnType<typeof prepareInitialSandboxTurn> | null;
 }

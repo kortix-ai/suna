@@ -102,7 +102,7 @@ export function modelChangeNeedsLivePush(input: {
 }
 
 /** The 200 body of `PUT /projects/:p/sessions/:s/model`. */
-export interface ModelChangeResult {
+interface ModelChangeResult {
   model: string;
   /** @deprecated The pre-W4 name of `model`. Same value. */
   opencode_model: string;

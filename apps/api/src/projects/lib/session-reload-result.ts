@@ -1,5 +1,13 @@
 import type { ConvergeOutcome, SessionConfigRelease } from './session-config-release';
 
+/**
+ * What happened to the agent `.md` files opencode actually reads.
+ *
+ * Six outcomes and not a boolean, because three of them are successes, one is a
+ * deliberate refusal, and two are "we did not find out" for different reasons.
+ * Collapsing any of those together is how a reload ends up warning about a
+ * success — or, worse, calling a no-op a success.
+ */
 export type ReloadAgentFiles =
   /** Brought forward from base. The agent WILL behave differently. */
   | 'updated'

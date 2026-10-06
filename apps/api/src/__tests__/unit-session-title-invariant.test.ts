@@ -48,7 +48,8 @@ describe('session-title invariant', () => {
     expect(
       offenders(/\.insert\(\s*projectSessions\b/, [
         'projects/lib/sessions.ts',
-        'projects/lib/session-create.ts',
+        // The create transaction moved to its own module (KRTX-1473 split).
+        'projects/lib/session-create-launch.ts',
         'projects/suna-migration/suna-migration-phases.ts',
       ]),
     ).toEqual([]);

@@ -140,8 +140,6 @@ export async function createProjectSession(input: SessionCreateInput): Promise<{
     ...connectors.value,
     ...sandbox.value,
     ...identity.value,
-    runtimeContext: inheritance.value.parsedRuntimeContext.context,
-    connectorBindings: connectors.value.validatedConnectorBindings.bindings,
   };
 
   let sessionRow: ProjectSessionRow | null = null;

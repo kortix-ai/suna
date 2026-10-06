@@ -307,15 +307,13 @@ export async function loadProjectSessionInventory(input: {
 
   await appendInventoryAncestors(input, filter, foldRows, items, scannedRows);
 
-  const childCounts = new Map<string, number>();
-  if (filter.parent === 'root' && items.length > 0) {
-    for (const [parentId, count] of await loadRootChildCounts(
-      input,
-      items.map((item) => item.row.sessionId),
-    )) {
-      childCounts.set(parentId, count);
-    }
-  }
+  const childCounts =
+    filter.parent === 'root' && items.length > 0
+      ? await loadRootChildCounts(
+          input,
+          items.map((item) => item.row.sessionId),
+        )
+      : new Map<string, number>();
   const initiatorNames = new Map<string, string>();
   for (const [id, identity] of foldContext.ownerIdentities) {
     const name = identity.name ?? identity.email ?? null;

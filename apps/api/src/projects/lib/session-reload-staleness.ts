@@ -54,7 +54,7 @@ export type SandboxEndpoint = { baseUrl: string; headers: Record<string, string>
  * The two daemon calls `readSandboxConfigState` makes. The orchestrator's
  * `SessionReloadDeps` satisfies this structurally; tests may stub just these.
  */
-export interface SandboxStateReadDeps {
+interface SandboxStateReadDeps {
   endpoint: (sessionId: string) => Promise<SandboxEndpoint | null>;
   fetch: (url: string, init?: RequestInit) => Promise<Response>;
 }

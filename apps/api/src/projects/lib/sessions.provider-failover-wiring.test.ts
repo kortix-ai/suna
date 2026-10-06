@@ -12,12 +12,17 @@ import { describe, expect, test } from 'bun:test';
 //
 // These assertions fail the moment the two ends stop agreeing.
 
-const read = (rel: string): Promise<string> =>
-  Bun.file(new URL(rel, import.meta.url)).text();
+const read = async (rel: string | string[]): Promise<string> => {
+  const rels = Array.isArray(rel) ? rel : [rel];
+  const parts = await Promise.all(
+    rels.map((r) => Bun.file(new URL(r, import.meta.url)).text()),
+  );
+  return parts.join('\n');
+};
 
 describe('provider failover wiring', () => {
   test('createProjectSession marks a balancer pick as UNLOCKED and forwards it', async () => {
-    const source = await read('./session-create.ts');
+    const source = await read(['./session-create.ts', './session-create-plan.ts', './session-create-launch.ts', './session-create-provision.ts']);
     const locked = source.indexOf('const providerLocked = sessionProviderIsLocked(picked)');
     const provision = source.indexOf('provisionSessionSandbox({', locked);
     expect(locked).toBeGreaterThan(-1);

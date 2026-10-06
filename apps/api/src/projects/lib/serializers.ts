@@ -334,7 +334,7 @@ export function serializeProject(
   };
 }
 
-export function publicProjectMetadata(metadata: unknown): Record<string, unknown> {
+function publicProjectMetadata(metadata: unknown): Record<string, unknown> {
   if (!metadata || typeof metadata !== 'object') return {};
   const source = metadata as Record<string, unknown>;
   if (!source.git || typeof source.git !== 'object') return source;

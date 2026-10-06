@@ -144,7 +144,6 @@ export async function resolveSessionSandboxHarness(
   input: SessionSandboxEnvInput,
   manifestHarness: 'opencode' | 'pi' | null,
 ): Promise<'opencode' | 'pi'> {
-  {
     // One indexed read for the flag: the callers hold the project row in
     // different shapes (or not at all on the reload paths), and the flag must
     // apply on every provisioning path, not only create.
@@ -163,12 +162,11 @@ export async function resolveSessionSandboxHarness(
       // (harness/pi/config.ts:19-22), so the compiled agent prompt is unchanged.
       return llmGateway ? 'pi' : 'opencode';
     }
-    return selectSessionHarness({
-      piHarnessFlag: resolveFeatureFlag(projectRow?.metadata, 'pi_harness'),
-      runtime: manifestHarness,
-      llmGateway,
-    });
-  }
+  return selectSessionHarness({
+    piHarnessFlag: resolveFeatureFlag(projectRow?.metadata, 'pi_harness'),
+    runtime: manifestHarness,
+    llmGateway,
+  });
 }
 
 /**

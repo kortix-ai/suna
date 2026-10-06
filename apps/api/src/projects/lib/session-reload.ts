@@ -89,14 +89,6 @@ const REFRESH_BUSY_DELAY_MS = 3_000;
 const CONVERGE_BUSY_RETRIES = 40;
 
 /**
- * What happened to the agent `.md` files opencode actually reads.
- *
- * Six outcomes and not a boolean, because three of them are successes, one is a
- * deliberate refusal, and two are "we did not find out" for different reasons.
- * Collapsing any of those together is how a reload ends up warning about a
- * success — or, worse, calling a no-op a success.
- */
-/**
  * Seams for tests. Production uses the defaults: the session's active sandbox
  * row, the global `fetch`, the compiled-governance push, and the etag compile.
  */
