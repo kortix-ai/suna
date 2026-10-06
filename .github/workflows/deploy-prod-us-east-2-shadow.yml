@@ -273,6 +273,8 @@ jobs:
     name: Deploy API and gateway to US shadow
     runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     needs: infrastructure
+    # Reads the prod blob: only `environment: prod` (branch `prod`) can assume the prod role.
+    environment: prod
     # Hard ceiling so a wedged shadow can never sit `in_progress` and block
     # "re-run failed jobs" on the calling release run — the v0.12.7 failure
     # mode, where the whole run had to be cancelled. Individual slow steps
@@ -280,7 +282,7 @@ jobs:
     timeout-minutes: 75
     env:
       AWS_REGION: us-east-2
-      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy-prod
       VERSION: ${{ inputs.version }}
       IMAGE_TAG: ${{ inputs.image_tag || inputs.version }}
       SOURCE_SHA: ${{ inputs.source_sha }}

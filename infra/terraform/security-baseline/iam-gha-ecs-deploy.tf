@@ -1,4 +1,19 @@
 # ════════════════════════════════════════════════════════════════════════════
+# TWO ROLES (audit finding "any ref can assume the prod-capable deploy role"):
+#   kortix-gha-ecs-deploy       any ref of the repo (CI on every branch and pull
+#                               request reads kortix-ci-env through it).
+#   kortix-gha-ecs-deploy-prod  only a job with `environment: prod`
+#                               (sub = repo:kortix-ai/suna:environment:prod).
+#                               Prod ECS, prod PassRole, prod blobs. The `prod`
+#                               GitHub environment admits branch `prod` only.
+# PHASE 1 (this file): the prod role exists and every workflow on main uses it.
+# The broad role KEEPS its prod permissions, because the workflow copies on the
+# `prod` branch (rollback-prod.yml) still assume it until the next release.
+# PHASE 2 (after that release): delete the prod ECS, prod PassRole, and
+# kortix-prod-* secret grants from the broad role. Until then the hole is open.
+# ════════════════════════════════════════════════════════════════════════════
+
+# ════════════════════════════════════════════════════════════════════════════
 # kortix-gha-ecs-deploy — the GitHub Actions OIDC role every CI ECS roll assumes
 # (infra/scripts/ecs-deploy.sh via deploy-dev.yml / deploy-gateway-dev.yml /
 # deploy-staging.yml / deploy-prod.yml).
@@ -197,6 +212,129 @@ resource "aws_iam_role_policy" "gha_ecs_deploy_secrets" {
           "secretsmanager:PutSecretValue",
         ]
         Resource = "arn:aws:secretsmanager:*:${local.account_id}:secret:kortix-*-web-env-*"
+      },
+    ]
+  })
+}
+
+# ── kortix-gha-ecs-deploy-prod — prod only, reachable only from `environment: prod` ──
+# The OIDC subject of a job that declares `environment: prod` is
+# `repo:kortix-ai/suna:environment:prod`. A job without it (any branch, any pull
+# request, any workflow_dispatch ref) gets a ref subject and cannot assume this
+# role. The `prod` environment's deployment-branch policy admits branch `prod`
+# only, so GitHub refuses to start the job from any other ref. Same containment
+# as iam-gha-tf-apply.tf.
+resource "aws_iam_role" "gha_ecs_deploy_prod" {
+  name = "kortix-gha-ecs-deploy-prod"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Federated = data.aws_iam_openid_connect_provider.github_actions.arn
+      }
+      Action = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+          "token.actions.githubusercontent.com:sub" = "repo:kortix-ai/suna:environment:prod"
+        }
+      }
+    }]
+  })
+  tags = {
+    ManagedBy  = "terraform"
+    Name       = "kortix-gha-ecs-deploy-prod"
+    Stack      = "security-baseline"
+    Compliance = "soc2"
+  }
+}
+
+resource "aws_iam_role_policy" "gha_ecs_deploy_prod" {
+  # checkov:skip=CKV_AWS_355: TaskDefinitionLifecycle and
+  # DescribeLoadBalancers require "*" because these APIs do not support
+  # resource-level permissions; every other statement is ARN-scoped.
+  name = "ecs-deploy-prod"
+  role = aws_iam_role.gha_ecs_deploy_prod.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "ManageProdServices"
+        Effect = "Allow"
+        Action = ["ecs:UpdateService", "ecs:DescribeServices"]
+        # prod = eu-west-2; kortix-prod-use2* are the us-east-2 shadow services.
+        Resource = ["arn:aws:ecs:*:${local.account_id}:service/kortix-prod*/kortix-prod*"]
+      },
+      {
+        Sid    = "DescribeProdTasks"
+        Effect = "Allow"
+        Action = ["ecs:DescribeTasks", "ecs:ListTasks"]
+        Resource = [
+          "arn:aws:ecs:*:${local.account_id}:task/kortix-prod*/*",
+          "arn:aws:ecs:*:${local.account_id}:container-instance/kortix-prod*/*",
+        ]
+        Condition = {
+          ArnLike = {
+            "ecs:cluster" = "arn:aws:ecs:*:${local.account_id}:cluster/kortix-prod*"
+          }
+        }
+      },
+      {
+        Sid      = "TaskDefinitionLifecycle"
+        Effect   = "Allow"
+        Action   = ["ecs:DescribeTaskDefinition", "ecs:RegisterTaskDefinition"]
+        Resource = "*"
+      },
+      {
+        Sid      = "DescribeLoadBalancers"
+        Effect   = "Allow"
+        Action   = ["elasticloadbalancing:DescribeLoadBalancers"]
+        Resource = "*"
+      },
+      {
+        Sid    = "PassProdTaskRoles"
+        Effect = "Allow"
+        Action = ["iam:PassRole"]
+        Resource = [
+          "arn:aws:iam::${local.account_id}:role/kortix-prod-task",
+          "arn:aws:iam::${local.account_id}:role/kortix-prod-exec",
+          "arn:aws:iam::${local.account_id}:role/kortix-prod-gateway-task",
+          "arn:aws:iam::${local.account_id}:role/kortix-prod-gateway-exec",
+          "arn:aws:iam::${local.account_id}:role/kortix-prod-web-task",
+          "arn:aws:iam::${local.account_id}:role/kortix-prod-web-exec",
+          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-task",
+          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-exec",
+          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-gateway-task",
+          "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-gateway-exec",
+        ]
+      },
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "gha_ecs_deploy_prod_secrets" {
+  name = "ecs-deploy-prod-secrets"
+  role = aws_iam_role.gha_ecs_deploy_prod.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        # kortix-ci-env stays readable so a prod job that reuses the job's AWS
+        # credentials (aws-env role-to-assume: '') still reads its CI keys.
+        Sid    = "ReadProdAndCiSecrets"
+        Effect = "Allow"
+        Action = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
+        Resource = [
+          "arn:aws:secretsmanager:*:${local.account_id}:secret:kortix-ci-env-*",
+          "arn:aws:secretsmanager:*:${local.account_id}:secret:kortix-prod*-env-*",
+        ]
+      },
+      {
+        Sid      = "WriteProdWebSecret"
+        Effect   = "Allow"
+        Action   = ["secretsmanager:CreateSecret", "secretsmanager:PutSecretValue"]
+        Resource = "arn:aws:secretsmanager:*:${local.account_id}:secret:kortix-prod*-web-env-*"
       },
     ]
   })

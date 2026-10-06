@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Local test attestation: `pnpm test` proves it ran by writing
-// tests/attestations/<branch>.json; the pre-push hook and the merge gate check it.
+// tests/attestations/<branch>.json; the pre-push hook checks it (no CI job does).
 // One file per branch, so two PRs never edit the same path and never conflict.
 // A write deletes every other branch's file (and the legacy
 // tests/test-attestation.json): a merged PR's file is never edited again, so
@@ -162,6 +162,12 @@ export function evaluate(attestation, current, required = REQUIRED_LANES, strict
   const ok = (l) => lanes[l] === 'pass' || (l in SKIPS && lanes[l] === SKIPS[l]);
   const bad = [...new Set([...required, ...Object.keys(lanes)])].filter((l) => !ok(l));
   if (bad.length) return { code: 1, reason: `lane not run or not green: ${bad.join(',')}` };
+  // A diff that changes the schema package must have run the DB suites. The
+  // skipped-no-db escape is for diffs the DB cannot affect.
+  const touchesDb = (current.changed?.files ?? []).some((p) => p.startsWith('packages/db/'));
+  if (touchesDb && lanes['db-suites'] !== 'pass') {
+    return { code: 1, reason: 'db-suites must pass: this diff changes packages/db and skipped-no-db is not accepted' };
+  }
   const skipped = Object.keys(SKIPS).filter((l) => lanes[l] === SKIPS[l]);
   if (skipped.length) {
     return { code: strict ? 3 : 0, reason: `green, skipped: ${skipped.map((l) => `${l} ${SKIPS[l]}`).join(', ')}` };
