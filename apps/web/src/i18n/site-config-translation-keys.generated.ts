@@ -30,7 +30,7 @@ export const SITE_CONFIG_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   GitHub: 'textf911e414cf6b',
   'Isolation, credentials, permissions and audit': 'text1493d5e5a577',
   IT: 'textf415bf7b07a9',
-  'Kortix – the open AI command center for your company.': 'text75f8cf60c514',
+  'Kortix – the open-source AI Operating System for your company.': 'text75f8cf60c514',
   Legal: 'text4787eaf7c938',
   License: 'textc011d6097bfb',
   LinkedIn: 'textdd84425b72da',
@@ -58,5 +58,5 @@ export const SITE_CONFIG_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'The close, the reconciliation and the variance note': 'textaab4e49e9274',
   X: 'text4b68ab3847fe',
   'Your own VPC or your own on-prem network': 'textfe7fcc4818d3',
-  'Kortix – the open-source AI Management System.': 'textdcb3e70ce4dc',
+  'Kortix – the open-source AI Operating System.': 'textdcb3e70ce4dc',
 };

@@ -83,11 +83,15 @@ ab() { agent-browser --session "$SESSION" "$@"; }
 # Sign in before recording, so the video never shows an auth form.
 .agents/skills/contributing/scripts/preview-sign-in.sh "$S" "$SESSION"   # prints the synthetic email
 
-mkdir -p output/pr
+# Absolute paths only: the agent-browser daemon is shared by every session on
+# the machine and resolves a relative path against the cwd of whichever
+# session started it, which can be another worktree.
+OUT="$PWD/output/pr"
+mkdir -p "$OUT"
 ab set viewport 1440 900
 ab open "$S/<changed route>"
 ab wait --load networkidle          # record a rendered page, not a hydrating one
-ab record start output/pr/demo.mp4 --cursor
+ab record start "$OUT/demo.mp4" --cursor
 #   Drive the change: `ab snapshot -i`, then `ab click @eN`, `ab fill @eN …`.
 #   Put `ab wait 800` between actions so a person can follow.
 ab record stop

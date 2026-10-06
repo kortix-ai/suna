@@ -1,3 +1,4 @@
+import { metaDescription } from '@/lib/seo/metadata';
 import type { Metadata } from 'next';
 import { getTranslations } from '@/i18n/get-translations';
 import Link from '@/components/site-link';
@@ -74,15 +75,17 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
     : `${siteMetadata.url}/banner.png`;
   const author = resolveAuthor(data.author);
 
+  const description = metaDescription(data.description);
+
   return {
     title: data.title,
-    description: data.description,
+    description,
     keywords: data.tags?.length ? data.tags : undefined,
     authors: [{ name: author.name }],
     openGraph: {
       type: 'article',
       title: data.title,
-      description: data.description,
+      description,
       url,
       siteName: 'Kortix',
       publishedTime: data.date,
@@ -94,7 +97,7 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
     twitter: {
       card: 'summary_large_image',
       title: data.title,
-      description: data.description,
+      description,
       images: [ogImage],
     },
     alternates: {

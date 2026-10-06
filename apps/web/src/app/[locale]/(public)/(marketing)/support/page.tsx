@@ -286,7 +286,7 @@ function SupportPageFallback() {
   return (
     <main className="bg-background min-h-screen">
       <div className={SUPPORT_CONTAINER}>
-        <SupportHeader title={t('title')} lead={t('lead')} />
+        <SupportHeader as="p" title={t('title')} lead={t('lead')} />
       </div>
     </main>
   );

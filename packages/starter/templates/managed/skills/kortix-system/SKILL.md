@@ -105,14 +105,14 @@ Rules for both harnesses:
   (`<change-requests>` below).
 - `web_search`, `image_search`, `scrape_webpage`, `memory` and `show` exist
   on both harnesses, with the same names and arguments.
-- pi does not have rewind, compaction, slash commands, MCP servers or a todo
-  tool. `references/pi/overview.md` lists the differences.
+- pi does not have rewind, MCP servers or a todo tool.
+  `references/pi/overview.md` lists the differences.
 </harnesses>
 
 <capabilities>
 ## What Kortix can do
 
-Kortix is an open-source AI Management System. Your agents, skills, memory,
+Kortix is an open-source AI Operating System. Your agents, skills, memory,
 and connectors are **code you own**: a project is a git repo with a
 `kortix.yaml` at its root; a session is one unit of agent work on its own
 cloud computer and branch; work becomes permanent only via a

@@ -39,7 +39,7 @@ import {
 export {
   currentRuntimeArtifactFingerprint,
   currentNonAgentRuntimeFingerprint,
-  runtimeArtifactsForBootMode,
+  RUNTIME_ARTIFACTS,
 } from './template-runtime-fingerprint';
 import { getSandboxProvider, type SandboxProviderAdapter } from './providers';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
