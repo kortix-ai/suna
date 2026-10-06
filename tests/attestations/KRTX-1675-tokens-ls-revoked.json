@@ -1,0 +1,18 @@
+{
+  "source_hash": "27218416929ed81d724bf0b1b084013b155c71f6f0654ec7a25aa0f5d8ea2457",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-account-tokens-listing.test.ts",
+    "apps/api/src/__tests__/integration-personal-tokens.test.ts",
+    "apps/api/src/repositories/account-tokens.ts",
+    "tests/spec/end-to-end.md"
+  ],
+  "diff_hash": "c093e7421a79bb593d588056168d9c1412955a1e4afb85f5137295d5919bb18b",
+  "head": "c854bba955a13f2f7fae17200a3a53c954082b3b",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-06T13:38:51.025Z"
+}
