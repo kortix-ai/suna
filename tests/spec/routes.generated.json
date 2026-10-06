@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 721,
+  "count": 722,
   "routes": [
     {
       "method": "GET",
@@ -2001,6 +2001,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/gateway/sessions"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/gateway/sources"
     },
     {
       "method": "PUT",
