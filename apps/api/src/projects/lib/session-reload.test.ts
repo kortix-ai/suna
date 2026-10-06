@@ -79,7 +79,12 @@ describe('isConfigStale', () => {
  * `db`, `resolveSandboxIngress` and `fetch` with no injection seam. That is a
  * real limit: this pins the query and the response field, not the round trip.
  */
-const SOURCE = readFileSync(join(import.meta.dir, 'session-reload.ts'), 'utf8');
+// The reload family spans three sibling modules (orchestrator + result model
+// + staleness readers); the source contracts below pin functions wherever
+// they live in the family.
+const SOURCE = ['session-reload.ts', 'session-reload-result.ts', 'session-reload-staleness.ts']
+  .map((name) => readFileSync(join(import.meta.dir, name), 'utf8'))
+  .join('\n');
 
 function refreshBody(): string {
   // `\n}\n`, not `\n}` — the function's multi-line return type closes with

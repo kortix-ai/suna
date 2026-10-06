@@ -103,7 +103,7 @@ describe('the config etag read stays fresh without a whole-mirror fetch', () => 
     // bound the wait (the 30s-per-op, 3-attempt mirror fetch must not outrun
     // the 25s request deadline), and it must not drop the mirror stamp — that
     // made every later unforced read of the same request pay its own fetch.
-    const src = await Bun.file(new URL('./session-reload.ts', import.meta.url).pathname).text();
+    const src = await Bun.file(new URL('./session-reload-staleness.ts', import.meta.url).pathname).text();
     const body = src.split('export async function latestAgentConfigEtag(')[1]?.split('\n}\n')[0];
     expect(body).toBeTruthy();
     expect(body).toContain('forceRefresh: true');

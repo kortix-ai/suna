@@ -28,45 +28,60 @@
  *   - It cannot rewrite a session's identity: its branch, its tokens, its
  *     `runtime_context` are create-time and stay create-time.
  */
-
 import { and, eq } from 'drizzle-orm';
-import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
+import { sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
-import { logger } from '../../lib/logger';
-import { TimeoutError, withTimeout } from '../../shared/with-timeout';
-import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
-import { invalidateProjectMirror, type GitBackedProject } from '../git';
-import { resolveCommitSha } from '../git/commits';
-import { refreshMirror } from '../git/mirror';
-import { opencodeConfigDirChangedBetween } from '../git/opencode-config-dir';
-import {
-  agentConfigEtag,
-  resolveCompiledAgentConfigForSession,
-  resolveSelectedAgentConfigForSession,
-} from './compile-agent-config';
+import { invalidateProjectMirror } from '../git';
 import { projectConfigReleasesEnabled } from '../../config-releases/enabled';
 import { recordDaemonConfigReport } from '../../config-releases/quarantine';
 import { pushSessionAgentConfigToSandbox } from './sandbox-env-sync';
 import {
-  hasConfigReleaseCapability,
   parseConvergeResponse,
-  parseDaemonConfigReport,
   toSessionConfigRelease,
   type ConvergeOutcome,
-  type DaemonConfigReport,
   type DaemonConvergeResponse,
   type SessionConfigRelease,
 } from './session-config-release';
 import {
-  parseDaemonRuntimeReport,
-  type DaemonRuntimeReport,
-} from '../../runtime-assets/daemon-runtime-report';
+  type SandboxEndpoint,
+  sandboxServiceEndpoint,
+  combineConfigStaleness,
+  isSessionConfigDirStale,
+  latestAgentConfigEtag,
+  readSandboxConfigState,
+} from './session-reload-staleness';
 import {
-  repositoryAccessFromSessionMetadata,
-} from './session-sandbox-metadata';
-import { parseActualRuntime, UNREPORTED_ACTUAL_RUNTIME, type ActualRuntimeDocument } from '../../runtime-convergence/actual';
+  type ReloadAgentFiles,
+  type SessionReloadPhase,
+  type SessionReloadResult,
+  type WorkspaceCheckout,
+  classifyAgentFiles,
+  classifyWorkspaceCheckout,
+  configNeedsPush,
+} from './session-reload-result';
 
-const SANDBOX_SERVICE_PORT = 8000;
+// The result/sentence model and the staleness readers live in sibling modules;
+// this path re-exports their public surface so every existing importer resolves
+// unchanged.
+export {
+  type ReloadAgentFiles,
+  type SessionReloadPhase,
+  type SessionReloadResult,
+  classifyAgentFiles,
+  configNeedsPush,
+  reloadDetail,
+  reloadNeedsAttention,
+} from './session-reload-result';
+export {
+  type SandboxConfigState,
+  LATEST_ETAG_BUDGET_MS,
+  latestAgentConfigEtag,
+  isConfigStale,
+  combineConfigStaleness,
+  isSessionConfigDirStale,
+  readSandboxConfigState,
+} from './session-reload-staleness';
+
 /** A competing refresh is a fetch plus a fast-forward: seconds, not minutes. */
 const REFRESH_BUSY_RETRIES = 5;
 const REFRESH_BUSY_DELAY_MS = 3_000;
@@ -81,305 +96,6 @@ const CONVERGE_BUSY_RETRIES = 40;
  * Collapsing any of those together is how a reload ends up warning about a
  * success — or, worse, calling a no-op a success.
  */
-export type ReloadAgentFiles =
-  /** Brought forward from base. The agent WILL behave differently. */
-  | 'updated'
-  /** Nothing to do — they already matched base. */
-  | 'already-current'
-  /** Refused: this session has its own edits or commits there. Kept. */
-  | 'kept-yours'
-  /** The project keeps no agent files in the repo. */
-  | 'not-applicable'
-  /** `refresh_repo: false` — never attempted. */
-  | 'not-requested'
-  /** A daemon built before the sync shipped could not say. */
-  | 'unknown';
-
-/** Map the daemon's raw answer onto the outcome the surfaces branch on. */
-export function classifyAgentFiles(input: {
-  requested: boolean;
-  synced: boolean | null;
-  reason?: string;
-}): ReloadAgentFiles {
-  if (!input.requested) return 'not-requested';
-  if (input.synced === true) return 'updated';
-  if (input.synced === null) return 'unknown';
-  switch (input.reason) {
-    case 'already matches base':
-      return 'already-current';
-    case 'local changes':
-    case 'local commits':
-      return 'kept-yours';
-    case 'no tracked config dir':
-    case 'not in base':
-      return 'not-applicable';
-    default:
-      // fetch failed / checkout failed / anything new: we cannot claim the agent
-      // changed, and we must not claim the user's version was deliberately kept.
-      return 'unknown';
-  }
-}
-
-/**
- * Does the box need the push — and the opencode restart that comes with it?
- *
- * Two independent reasons, because the config has two homes. Files that were
- * just brought forward are read only at opencode's spawn, so they need the
- * restart even when the compiled etag did not move (a skill body is not part of
- * it). And a moved etag needs the push even when the files were kept: governance
- * — connectors, secrets, scope — lives in the compiled config alone.
- *
- * An unknown etag on either side is NOT a reason. "Could not tell" is not
- * permission to restart a runtime nobody asked to restart.
- */
-export function configNeedsPush(input: {
-  agentFiles: ReloadAgentFiles;
-  runningEtag: string | null;
-  latestEtag: string | null;
-}): boolean {
-  if (input.agentFiles === 'updated') return true;
-  return (
-    input.runningEtag !== null &&
-    input.latestEtag !== null &&
-    input.runningEtag !== input.latestEtag
-  );
-}
-
-/**
- * The session's own `/workspace` checkout, after a reload.
- *
- *  • `updated`         — fast-forwarded to a new commit.
- *  • `already-current` — nothing to pull.
- *  • `not-requested`   — the caller passed `refresh_repo: false`.
- *  • `refused`         — the box declined the pull (local changes, no remote).
- */
-type WorkspaceCheckout = 'updated' | 'already-current' | 'not-requested' | 'refused';
-
-/** Classify the checkout half of a reload from the commits before and after. */
-function classifyWorkspaceCheckout(input: {
-  requested: boolean;
-  ok: boolean;
-  before: string | null;
-  after: string | null;
-}): WorkspaceCheckout {
-  if (!input.requested) return 'not-requested';
-  if (!input.ok) return 'refused';
-  if (input.before && input.after && input.before !== input.after) return 'updated';
-  return 'already-current';
-}
-
-export interface SessionReloadResult {
-  /** True when the agent config the box runs was actually replaced. */
-  applied: boolean;
-  /** What the box was running before, as reported by the box itself. */
-  previous_etag: string | null;
-  /** What it runs now (or would run — see `applied`). */
-  etag: string | null;
-  /** Whether the workspace was pulled, and to what. */
-  repo_refreshed: boolean;
-  commit_sha: string | null;
-  /**
-   * What happened to the agent files opencode ACTUALLY reads.
-   *
-   * This, not `applied`, decides whether the agent behaves differently: opencode
-   * is spawned with `OPENCODE_CONFIG_DIR` pointing into the working tree, and
-   * the `.md` files there beat the compiled config this pushes as JSON. So
-   * `applied: true` with anything but `updated` means the etag moved and the
-   * agent did not.
-   *
-   * A boolean was not enough. `false` conflated a deliberate refusal with two
-   * outcomes that are plain successes (nothing to do, project keeps no agent
-   * files), and `null` conflated "an old daemon could not say" with "we never
-   * tried because refresh_repo was false" — so both the CLI and the web toast
-   * classified real successes as warnings and vice versa.
-   */
-  agent_files: ReloadAgentFiles;
-  /**
-   * How the box applied the new config, when it said.
-   *
-   * `kept-old` is the verified swap declining: the daemon booted the new
-   * opencode, it never started serving, so the previous one was left running.
-   * The push landed and the config did NOT take — which is a FAILED reload with
-   * a healthy session, a combination `applied` alone cannot express.
-   *
-   * `null` means the box did not say (a daemon older than the verified swap, or
-   * no reload was needed) — never "it worked".
-   */
-  opencode_reload: 'disposed' | 'restarted' | 'kept-old' | null;
-  /**
-   * Did the reload stop a turn the user was waiting on?
-   *
-   * Reported by the box AFTER the fact — it is true only when the finalize
-   * actually aborted an incomplete turn. A pre-flight "is a turn running?"
-   * check would race the turn finishing and tell people their work was
-   * interrupted when it completed normally.
-   *
-   * `null` = the box did not say. Never render that as "nothing was
-   * interrupted"; say nothing instead.
-   */
-  turn_ended: boolean | null;
-  /** Present when nothing was applied. */
-  reason?: string;
-  /**
-   * The config release state after the reload (spec, "`GET /config`,
-   * extended"). Present only for a daemon with `config.release.v1`. Same
-   * shape as `SessionConfigRelease` in `@kortix/sdk`.
-   */
-  release?: SessionConfigRelease;
-  /** The converge `outcome`, or null when the daemon did not answer. Present with `release`. */
-  release_outcome?: ConvergeOutcome | null;
-  /**
-   * Which path the reload took: `release` sent `POST /kortix/config/converge`;
-   * `legacy` sent only `POST /kortix/refresh?restart=0` plus the compiled
-   * governance push. Absent when the box was not reached.
-   */
-  config_path?: 'release' | 'legacy';
-  /**
-   * What happened to the session's own `/workspace` checkout — the OTHER half
-   * of a reload. A reload does two things and must report both: it
-   * fast-forwards the checkout, and it converges the config the box runs.
-   * Absent when the box was not reached at all.
-   */
-  workspace_checkout?: WorkspaceCheckout;
-}
-
-/** Server-observed boundaries emitted by the streamed reload route. */
-export type SessionReloadPhase =
-  | 'checking-session'
-  | 'refreshing-workspace'
-  | 'compiling-config'
-  | 'applying-config'
-  | 'confirming-config';
-
-/**
- * One sentence for the reload, and the only place that decides whether we are
- * allowed to say the agent changed.
- *
- * The old copy — "Reloaded. The next prompt runs the new config." — was
- * unconditional, and measurably false whenever the agent's `.md` files were not
- * brought forward: the etag moved, opencode kept reading the working tree, and
- * the user was told the opposite.
- */
-/**
- * The sentence appended when the reload STOPPED work someone was waiting on.
- *
- * The reload restarts the runtime, so the command has to report when it ends a
- * turn. Until now the turn simply ended —
- * cleanly, so nothing spun, but silently, so it looked like the agent gave up.
- *
- * Only appended on a definite `true`. `null` means the box could not tell, and
- * inventing "your turn was stopped" for a turn that finished normally is worse
- * than saying nothing.
- */
-const TURN_ENDED_SENTENCE =
-  'The turn that was running was stopped — send a message to continue.';
-
-function withTurnNotice(sentence: string, result: SessionReloadResult): string {
-  return result.turn_ended === true ? `${sentence} ${TURN_ENDED_SENTENCE}` : sentence;
-}
-
-/**
- * A fallback outranks every other sentence: the box runs a config other than
- * the one it was assigned, and the CLI prints only this text.
- */
-function fallbackSentence(result: SessionReloadResult): string | null {
-  const reason = result.release?.fallback_reason;
-  if (!reason) return null;
-  return `The new config failed to load: ${reason.replace(/\.$/, '')}. ${fallbackRunsSentence(result.release?.source)}`;
-}
-
-/** What serves the session after a fallback, named the way the web header names it. */
-function fallbackRunsSentence(source: string | undefined): string {
-  if (source === 'image-default') return 'The platform default config runs this session.';
-  return 'An earlier config still runs this session.';
-}
-
-/**
- * A reload does TWO things: it fast-forwards the session's `/workspace`
- * checkout, and it converges the config the box runs. Both are reported, in
- * one sentence each, so a half-sync is never silent. Empty when the API did
- * not run the checkout half at all.
- *
- * The wording lives here, server-side, because every surface renders
- * `detail`: `kortix sessions reload`, the web's "Reload config" toast, and the
- * streamed reload. One sentence, one place.
- */
-function checkoutSentence(result: SessionReloadResult): string {
-  const at = result.commit_sha ? ` at ${result.commit_sha.slice(0, 12)}` : '';
-  switch (result.workspace_checkout) {
-    case 'updated':
-      return `The /workspace checkout was updated${at}.`;
-    case 'already-current':
-      return `The /workspace checkout was already current${at}.`;
-    case 'not-requested':
-      return 'The /workspace checkout was left alone; this call did not ask for it.';
-    case 'refused':
-      return 'The /workspace checkout was NOT updated: the sandbox declined the pull.';
-    default:
-      return '';
-  }
-}
-
-export function reloadDetail(result: SessionReloadResult): string {
-  const checkout = checkoutSentence(result);
-  const withCheckout = (text: string) => (checkout ? `${text} ${checkout}` : text);
-  const fallback = fallbackSentence(result);
-  if (fallback) return withCheckout(withTurnNotice(fallback, result));
-  if (!result.applied) return withCheckout(`Nothing to apply: ${result.reason ?? 'unchanged'}.`);
-  return withCheckout(withTurnNotice(reloadOutcomeSentence(result), result));
-}
-
-function reloadOutcomeSentence(result: SessionReloadResult): string {
-  switch (result.agent_files) {
-    case 'updated':
-      return 'Reloaded. The next prompt runs the new config.';
-    case 'already-current':
-      return 'Reloaded. The agent files were already current.';
-    case 'not-applicable':
-      return 'Reloaded. This project keeps no agent files in the repo, so only the compiled config changed.';
-    case 'kept-yours':
-      return 'Config pushed, but this session has its own changes to its agent files — those were kept, so the agent still runs YOUR version.';
-    case 'not-requested':
-      return 'Compiled config pushed. Agent files were left alone because the repo refresh was skipped.';
-    default:
-      return 'Config pushed, but this sandbox could not confirm its agent files were updated — restart the session if the agent still behaves the old way.';
-  }
-}
-
-/**
- * Is this an outcome the user should be nudged about?
- *
- * Only two are: their own version was kept, or we could not confirm. Everything
- * else — including the two cases where nothing needed doing — is a success, and
- * warning on those was the first thing the review caught.
- */
-export function reloadNeedsAttention(result: SessionReloadResult): boolean {
-  if (result.release?.fallback_reason) return true;
-  if (!result.applied) return true;
-  return result.agent_files === 'kept-yours' || result.agent_files === 'unknown';
-}
-
-/** The daemon's service endpoint for a session's active sandbox, or null. */
-async function sandboxServiceEndpoint(sessionId: string): Promise<SandboxEndpoint | null> {
-  const [row] = await db
-    .select({ externalId: sessionSandboxes.externalId, config: sessionSandboxes.config })
-    .from(sessionSandboxes)
-    .where(and(eq(sessionSandboxes.sessionId, sessionId), eq(sessionSandboxes.status, 'active')))
-    .limit(1);
-  const serviceKey = (row?.config as Record<string, unknown> | null)?.serviceKey;
-  if (!row?.externalId || typeof serviceKey !== 'string') return null;
-  const { url, headers } = await resolveSandboxIngress(row.externalId, {
-    port: SANDBOX_SERVICE_PORT,
-    transport: 'http',
-  });
-  return {
-    baseUrl: url.replace(/\/$/, ''),
-    headers: { ...(headers as Record<string, string>), Authorization: `Bearer ${serviceKey}` },
-  };
-}
-
-type SandboxEndpoint = { baseUrl: string; headers: Record<string, string> };
-
 /**
  * Seams for tests. Production uses the defaults: the session's active sandbox
  * row, the global `fetch`, the compiled-governance push, and the etag compile.
@@ -457,269 +173,6 @@ async function repairTurnOrphanedBySwap(input: {
     redelivered: result.redeliveries.length,
   });
 }
-
-export interface SandboxConfigState {
-  etag: string | null;
-  commitSha: string | null;
-  /** Base commit the box's config dir represents; null before its first sync. */
-  configDirSha: string | null;
-  reachable: boolean;
-  /** `null` when the box could not tell us — see the reload gate. */
-  turnInFlight: boolean | null;
-  /** The daemon lists `config.release.v1` in `capabilities`. */
-  configReleases: boolean;
-  /** The health `config` block. Null for a daemon without config releases. */
-  release: DaemonConfigReport | null;
-  /**
-   * The health `runtime` block — which runtime-asset bytes this box has on disk,
-   * and whether the supervisor latched updates off after a rollback.
-   *
-   * NOT gated on `configReleases`: the two are independent. A daemon can serve
-   * `runtime` without `config.release.v1`, and `pinned: true` — a box that
-   * crash-looped an update and will not self-heal — must reach the control plane
-   * regardless of which config path the project is on.
-   */
-  runtime: DaemonRuntimeReport | null;
-  /**
-   * The health `runtime_truth` block (Rule 1, the runtime-convergence contract (PR #7785))
-   * — the box's ACTUAL runtime document. Tolerant of a daemon that predates it
-   * entirely: {@link UNREPORTED_ACTUAL_RUNTIME}, never null and never a crash,
-   * because "this box reports nothing" is itself a diff (`unknown`), not the
-   * absence of one. Independent of `configReleases`/`runtime` above for the
-   * same reason those two are independent of each other.
-   */
-  runtimeTruth: ActualRuntimeDocument;
-}
-
-const UNREACHABLE_STATE: SandboxConfigState = {
-  etag: null,
-  commitSha: null,
-  configDirSha: null,
-  reachable: false,
-  turnInFlight: null,
-  configReleases: false,
-  release: null,
-  runtime: null,
-  runtimeTruth: UNREPORTED_ACTUAL_RUNTIME,
-};
-
-/** What the sandbox says it is running right now. */
-export async function readSandboxConfigState(
-  input: {
-    sessionId: string;
-    /** Also ask whether a turn is running. Costs a call into opencode, so opt-in. */
-    includeTurnState?: boolean;
-  },
-  deps: SessionReloadDeps = defaultReloadDeps(),
-): Promise<SandboxConfigState> {
-  try {
-    const endpoint = await deps.endpoint(input.sessionId);
-    if (!endpoint) return UNREACHABLE_STATE;
-    const res = await deps.fetch(`${endpoint.baseUrl}/kortix/health${input.includeTurnState ? '?turn=1' : ''}`, {
-      headers: endpoint.headers,
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!res.ok) return UNREACHABLE_STATE;
-    const body = (await res.json()) as {
-      agent_config_etag?: unknown;
-      commit_sha?: unknown;
-      config_dir_sha?: unknown;
-      turn_in_flight?: unknown;
-      capabilities?: unknown;
-      config?: unknown;
-      runtime?: unknown;
-      runtime_truth?: unknown;
-    };
-    const configReleases = hasConfigReleaseCapability(body.capabilities);
-    return {
-      etag: typeof body.agent_config_etag === 'string' ? body.agent_config_etag : null,
-      commitSha: typeof body.commit_sha === 'string' ? body.commit_sha : null,
-      configDirSha: typeof body.config_dir_sha === 'string' ? body.config_dir_sha : null,
-      reachable: true,
-      // Tri-state on purpose: `true` busy, `false` idle, `null` could not tell.
-      // Absent (the caller did not ask) is also null.
-      turnInFlight:
-        body.turn_in_flight === true ? true : body.turn_in_flight === false ? false : null,
-      configReleases,
-      release: configReleases ? parseDaemonConfigReport(body.config) : null,
-      runtime: parseDaemonRuntimeReport(body.runtime),
-      runtimeTruth: parseActualRuntime(body.runtime_truth),
-    };
-  } catch {
-    return UNREACHABLE_STATE;
-  }
-}
-
-/**
- * Wall-clock budget for one `latestAgentConfigEtag` resolution, and for the
- * other mirror-reading stages of the same GET /config request. The mirror fetch
- * it can block on has a 30s per-op timeout and retries 3 times, so an unbounded
- * wait outran the 25s request deadline on every poll against a slow mirror
- * (KRTX-818). The budget must stay comfortably under that deadline; GET /config
- * spends it across its stages, so a slow fetch degrades to `stale: null`
- * ("could not tell") instead of a 503.
- */
-export const LATEST_ETAG_BUDGET_MS = 20_000;
-
-/**
- * The etag this session WOULD get if it were reloaded right now.
- *
- * Recompiles from the session's own ref; delivers nothing.
- *
- * "Latest" has to mean latest. The git mirror is TTL-cached (60s by default)
- * and every read through `readRepoFile` / `resolveCommitSha` takes the warm
- * hit. On an ordinary endpoint that is right. On THIS one it is self-defeating:
- * the whole feature is "I merged a change, get it into my session", and the
- * merge is by definition seconds old. A TTL-served read recompiled the
- * PRE-merge manifest and answered "already up to date" — the exact confusion
- * the reload exists to end, moved one layer up.
- *
- * So the compile reads force a REF-scoped refresh
- * (`CompileReadOptions.forceRefresh`): `readManifestFromRepo` proves the
- * session's ref against the remote with one `git ls-remote` (~1s) and only runs
- * the whole-mirror fetch when the branch actually moved. That is exact
- * freshness for every read this request makes (they all read the session's base
- * ref) at a fraction of the old cost, which paid a full `git fetch --prune` on
- * every poll.
- *
- * The whole resolution is bounded (`LATEST_ETAG_BUDGET_MS`): on a mirror whose
- * fetch is slow the old unbounded wait outran the request deadline and 503'd
- * the poll; the bounded wait answers `null` and `stale` reads null ("could not
- * tell") — the state every client of this route already handles.
- */
-export async function latestAgentConfigEtag(
-  input: {
-    projectId: string;
-    accountId: string;
-    sessionId?: string;
-    baseRef?: string | null;
-  },
-  /**
-   * Wall-clock budget for the whole resolution. Callers that coordinate several
-   * mirror-reading stages under one request deadline (GET /config) pass the
-   * budget that is left; everyone else takes the default.
-   */
-  opts?: { budgetMs?: number },
-): Promise<string | null> {
-  // The ref-scoped force replaces the old `invalidateProjectMirror` here:
-  // invalidating dropped the mirror's freshness stamp, which made the LATER
-  // unforced reads in the same request (agent files, the config-dir compare,
-  // the desired release) pay their own full fetch. The proof keeps the stamp
-  // intact, so one request does at most one network op.
-  // The WHOLE resolution — the row reads and the compile — races the budget:
-  // a slow database or a slow mirror both mean "cannot be told", and either
-  // one unbounded is a 503 on the next poll.
-  const compiled = await withTimeout(
-    (async () => {
-      const [[project], [session]] = await Promise.all([
-        db
-          .select({
-            repoUrl: projects.repoUrl,
-            defaultBranch: projects.defaultBranch,
-            manifestPath: projects.manifestPath,
-          })
-          .from(projects)
-          .where(and(eq(projects.projectId, input.projectId), eq(projects.accountId, input.accountId)))
-          .limit(1),
-        input.sessionId
-          ? db
-              .select({
-                agentName: projectSessions.agentName,
-                metadata: projectSessions.metadata,
-              })
-              .from(projectSessions)
-              .where(eq(projectSessions.sessionId, input.sessionId))
-              .limit(1)
-          : Promise.resolve([]),
-      ]);
-      if (!project?.defaultBranch) return null;
-      const gitProject: GitBackedProject = {
-        projectId: input.projectId,
-        repoUrl: project.repoUrl,
-        defaultBranch: project.defaultBranch,
-        manifestPath: project.manifestPath ?? 'kortix.yaml',
-        gitAuthToken: null,
-      };
-      return (
-        !repositoryAccessFromSessionMetadata(session?.metadata) && session?.agentName
-          ? resolveSelectedAgentConfigForSession(gitProject, session.agentName, input.baseRef, {
-              forceRefresh: true,
-            })
-          : resolveCompiledAgentConfigForSession(gitProject, input.baseRef, { forceRefresh: true })
-      ).catch(() => null);
-    })(),
-    opts?.budgetMs ?? LATEST_ETAG_BUDGET_MS,
-    'latest agent-config etag',
-  ).catch((error) => {
-    if (error instanceof TimeoutError) {
-      logger.warn(
-        '[session-config] latest etag unresolved within its budget; answering unknown',
-        { budget_ms: opts?.budgetMs ?? LATEST_ETAG_BUDGET_MS },
-      );
-      return null;
-    }
-    throw error;
-  });
-  return agentConfigEtag(compiled);
-}
-
-/**
- * Is this session behind?
- *
- * `null` when it cannot be told — the box is unreachable, or the project has no
- * compiled config to compare against. Deliberately not `false`: reporting
- * "up to date" because we failed to ask is the failure mode this exists to
- * prevent.
- */
-export function isConfigStale(runningEtag: string | null, latestEtag: string | null): boolean | null {
-  if (!latestEtag || !runningEtag) return null;
-  return runningEtag !== latestEtag;
-}
-
-/**
- * One verdict from the two things a session's config is made of.
- *
- * `etagStale` is the compiled agent config (governance, agent frontmatter).
- * `filesStale` is the config dir on disk (skills, tools, plugins, agent bodies).
- * Either one alone is enough to be stale.
- *
- * An unknown `filesStale` does NOT poison a known etag: a daemon built before
- * `config_dir_sha` shipped never reports it, and those boxes must keep the
- * answer they had. An unknown etag still yields `null` unless the files are
- * known to be stale — never `false`, which would read as "up to date".
- */
-export function combineConfigStaleness(
-  etagStale: boolean | null,
-  filesStale: boolean | null,
-): boolean | null {
-  if (etagStale === true || filesStale === true) return true;
-  return etagStale;
-}
-
-/**
- * Has the base branch's config dir moved past what this box holds?
- *
- * `configDirSha` when the box has synced at least once, else the commit it
- * booted from. `null` when the mirror cannot answer — most often a session that
- * committed without pushing, whose HEAD only the box has.
- */
-export async function isSessionConfigDirStale(input: {
-  project: GitBackedProject;
-  baseRef: string;
-  configDirSha: string | null;
-  commitSha: string | null;
-}): Promise<boolean | null> {
-  const boxSha = input.configDirSha ?? input.commitSha;
-  if (!boxSha) return null;
-  try {
-    const mirror = await refreshMirror(input.project);
-    const tipSha = await resolveCommitSha(input.project, input.baseRef);
-    return await opencodeConfigDirChangedBetween(mirror, input.project, boxSha, tipSha);
-  } catch {
-    return null;
-  }
-}
-
 export async function reloadSessionConfig(input: {
   projectId: string;
   accountId: string;
