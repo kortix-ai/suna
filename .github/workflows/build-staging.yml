@@ -1,7 +1,7 @@
 name: Build Staging Artifacts
 
 # Staging is the pre-prod branch. Human/code changes advance it by PR only:
-# either `main` -> `staging` for the full dev candidate, or a targeted branch
+# either `dev` -> `staging` for the full dev candidate, or a targeted branch
 # -> `staging` for a selective release candidate.
 #
 # Build every releasable container on every staging push and tag it with the

@@ -35,8 +35,8 @@ function hasCredentialCheck(source: string): boolean {
     /authorizeControl\s*\(/.test(source) ||
     /verifyKortixUserContext\s*\(/.test(source) ||
     /[=!]==\s*cfg\.sandboxToken\b/.test(source) ||
-    // The timing-safe form (#9258): bearerMatches(header, cfg.sandboxToken).
-    /bearerMatches\s*\([^;]*?,\s*cfg\.sandboxToken\b/.test(source)
+    // The constant-time compare (control-auth.ts) that replaced `!== cfg.sandboxToken`.
+    (/bearerMatches\s*\(/.test(source) && /cfg\.sandboxToken\b/.test(source))
   )
 }
 

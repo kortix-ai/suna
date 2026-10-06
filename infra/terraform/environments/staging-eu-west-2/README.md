@@ -64,7 +64,7 @@ Order:
 
 1. Apply with `api_task_count=2`, roll the current staging images with
    `ecs-deploy.sh staging-euw2`, verify on the origin hostnames.
-2. Merge the switch code into `main` (Worker `eu-west-2` slot, Deploy Staging
+2. Merge the switch code into `dev` (Worker `eu-west-2` slot, Deploy Staging
    targets `staging-euw2`, IAM for the `kortix-staging-euw2-*` roles and the
    eu-west-2 `kortix-staging-env` write).
 3. Switch by hand: `--workers on` for the eu-west-2 copy and roll the new API;
@@ -72,7 +72,7 @@ Order:
    `https://staging-api-euw2.kortix.com` (gateway: `gateway-staging-euw2`);
    scale `kortix-staging`, `kortix-staging-gateway` and `kortix-staging-web`
    (us-west-2) to 0.
-4. Promote `main` to `staging` (release gate, needs approval). Deploy Staging
+4. Promote `dev` to `staging` (release gate, needs approval). Deploy Staging
    then applies these roots at `api_task_count` 6 and writes the `eu-west-2`
    binding.
 

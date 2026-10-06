@@ -55,6 +55,17 @@ flow(
       r.status(200).body().has('$.status', 'pending');
     });
 
+    await ctx.step('one requester is capped at 10 new requests an hour → 429 on the 11th', async () => {
+      const spammer = await ctx.fixtures.user({ label: 'IAM-27-SPAM' });
+      for (let i = 0; i < 11; i++) {
+        const p = await team.project();
+        const r = await ctx.client
+          .as(spammer)
+          .post('/v1/projects/:projectId/access-requests', {}, { params: { projectId: p.id } });
+        r.status(i < 10 ? 201 : 429);
+      }
+    });
+
     await ctx.step('a project manager lists pending access requests → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)

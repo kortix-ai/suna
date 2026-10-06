@@ -415,7 +415,7 @@ describe('workflows read credentials from AWS, not GitHub', () => {
       expect(job.text, job.name).not.toContain('aws-env');
     }
     for (const job of jobsOf(text).filter((j) => j.text.includes(USES))) {
-      expect(job.text, job.name).toMatch(/ref: (\$\{\{ github\.event\.repository\.default_branch \}\}|main)\n/);
+      expect(job.text, job.name).toMatch(/ref: (\$\{\{ github\.event\.repository\.default_branch \}\}|dev)\n/);
     }
   });
 });
