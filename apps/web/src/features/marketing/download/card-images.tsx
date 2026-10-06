@@ -26,40 +26,36 @@ export function DesktopCardImage() {
   );
 }
 
-/** The six iOS App Store screenshots, exported from the Paper file at 640w. */
+/** iOS App Store screenshots 01-03, exported from the Paper file at 640w. */
 const MOBILE_SHOTS = [
   '/images/mobile-app/store-01.webp',
   '/images/mobile-app/store-02.webp',
   '/images/mobile-app/store-03.webp',
-  '/images/mobile-app/store-04.webp',
-  '/images/mobile-app/store-05.webp',
-  '/images/mobile-app/store-06.webp',
 ];
 
 /**
- * The six store screenshots as a filmstrip in the same 16:10 box the desktop
- * art occupies, so both cards' headers are the same height and their first row
- * seams line up.
+ * Three phones in the same 16:10 box the desktop poster occupies, so both cards'
+ * headers are the same height and their first row seams line up.
  *
- * Each shot is HEIGHT-bound (`h-full w-auto` against the 1284x2778 ratio) and
- * `shrink-0`, so it is never squeezed. Six do not fit the card's width; the row
- * stays centered and the slot's `overflow-hidden` crops the outer shots at the
- * card edges. That reads as a strip that continues, not as a broken layout.
+ * Each phone is HEIGHT-bound (`h-full w-auto` against the 1284x2778 ratio), not
+ * width-bound. At a third of the card's width a width-bound phone computes
+ * taller than the slot and clips mid-screenshot. Height-bound shows every phone
+ * whole.
  *
  * Borders, never shadows.
  */
 export function MobileCardImage() {
   return (
-    <div className={cn(SLOT, 'flex items-center justify-center gap-3 py-6')}>
+    <div className={cn(SLOT, 'flex items-center justify-center gap-3 px-6 py-6')}>
       {MOBILE_SHOTS.map((src, i) => (
         <div
           key={src}
           className={cn(
-            'border-border bg-background relative aspect-[1284/2778] h-full w-auto shrink-0',
+            'border-border bg-background relative aspect-[1284/2778] h-full w-auto',
             'overflow-hidden rounded-md border',
-            // Alternate shots lift and drop. Enough to read as a deliberate
-            // arrangement, not enough to look scattered.
-            i % 2 === 1 ? '-translate-y-2' : 'translate-y-2',
+            // The middle phone lifts, the outer two drop. Enough to read as a
+            // deliberate arrangement, not enough to look scattered.
+            i === 1 ? '-translate-y-2' : 'translate-y-2',
           )}
         >
           <Image
