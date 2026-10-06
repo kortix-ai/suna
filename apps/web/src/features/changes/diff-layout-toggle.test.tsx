@@ -2,11 +2,15 @@
  * The changes-view layout toggle, end to end, through a real click.
  *
  * The regression this pins (KRTX-1691): a workspace report said the
- * side-by-side toggle in the changes view "does nothing" on prod. The wiring —
+ * side-by-side toggle in the changes view "does nothing". The wiring —
  * `DiffLayoutToggle` → controlled `layout` state → `ChangeList` → `DiffView` →
- * Pierre's `diffStyle` — reads correct, so the defense is a test that executes
- * the whole chain the way a user does: it clicks the real button and asserts
- * the real diff re-renders in the other layout, and back.
+ * Pierre's `diffStyle` — was correct, which is why the first pin here used a
+ * two-sided patch and saw the toggle work. The defect was in the DATA shape:
+ * Pierre renders a one-sided diff (a new file: only `+` lines; a deleted one:
+ * only `−` lines) as the same single column in BOTH layouts, so a change set
+ * of new files made the toggle look dead. `DiffView` now normalizes those
+ * patches (`splitablePatch`), and the second test below clicks the toggle
+ * against exactly that one-sided fixture — it fails without the fix.
  *
  * `apps/web` has no jsdom/testing-library (the doctrine in the sibling tests),
  * but it does run `createRoot` against `happy-dom` — see `navbar.test.tsx` and
@@ -52,18 +56,35 @@ const PATCH = [
   ' const c = 3;',
 ].join('\n');
 
+/** A new file: the patch is one-sided, the shape the report hit. */
+const NEW_FILE_PATCH = [
+  'diff --git a/src/new-file.ts b/src/new-file.ts',
+  'new file mode 100644',
+  'index 0000000..2222222',
+  '--- /dev/null',
+  '+++ b/src/new-file.ts',
+  '@@ -0,0 +1,3 @@',
+  '+const a = 1;',
+  '+const b = 2;',
+  '+const c = 3;',
+].join('\n');
+
 const ENTRIES: ChangeEntry[] = [
   { path: 'src/app.ts', kind: 'modified', additions: 1, deletions: 0, patch: PATCH },
 ];
 
+const NEW_FILE_ENTRIES: ChangeEntry[] = [
+  { path: 'src/new-file.ts', kind: 'added', additions: 3, deletions: 0, patch: NEW_FILE_PATCH },
+];
+
 /** One controlled mount, exactly like the session panel and the proposal dialog. */
-function Harness() {
+function Harness({ entries = ENTRIES }: { entries?: ChangeEntry[] }) {
   const [layout, setLayout] = useState<DiffLayout>('unified');
-  const { expanded, setRow } = useChangeExpansion(ENTRIES);
+  const { expanded, setRow } = useChangeExpansion(entries);
   return (
     <div>
       <DiffLayoutToggle layout={layout} onChange={setLayout} />
-      <ChangeList entries={ENTRIES} layout={layout} expanded={expanded} onRowOpenChange={setRow} />
+      <ChangeList entries={entries} layout={layout} expanded={expanded} onRowOpenChange={setRow} />
     </div>
   );
 }
@@ -164,6 +185,54 @@ describe('DiffLayoutToggle through a real click', () => {
     await waitFor(host, () => columns(host)[0] === 'data-unified', 'unified column again');
 
     root?.unmount();
+    },
+    30_000,
+  );
+
+  test(
+    'a new file (a one-sided patch) also switches to side by side, and back',
+    async () => {
+      const host = win.document.createElement('div');
+      win.document.body.appendChild(host);
+      let root: Root | null = null;
+      await act(async () => {
+        root = createRoot(host);
+        root.render(<Harness entries={NEW_FILE_ENTRIES} />);
+      });
+
+      const sideBySide = toggleButton(host, 'Side by side');
+      // Pierre paints the new file asynchronously; the stacked layout always
+      // renders one unified column, whatever the patch's shape.
+      await waitFor(host, () => columns(host)[0] === 'data-unified', 'the initial new-file column');
+
+      // The reported regression: Pierre used to keep the same single column
+      // here, so the click visibly did nothing. Split must show both columns —
+      // the deletions side stays empty, which is the GitHub layout.
+      await act(async () => {
+        click(sideBySide);
+        await new Promise((r) => setTimeout(r, 100));
+      });
+      expect(sideBySide.getAttribute('aria-pressed')).toBe('true');
+      await waitFor(
+        host,
+        () => columns(host)[0] === 'data-deletions|data-additions',
+        'the new-file split columns',
+      );
+
+      // And back to the single stacked column.
+      const stacked = toggleButton(host, 'Stacked');
+      await act(async () => {
+        click(stacked);
+        await new Promise((r) => setTimeout(r, 100));
+      });
+      expect(stacked.getAttribute('aria-pressed')).toBe('true');
+      await waitFor(
+        host,
+        () => columns(host)[0] === 'data-unified',
+        'the new-file unified column again',
+      );
+
+      root?.unmount();
     },
     30_000,
   );
