@@ -10,7 +10,12 @@
  * Pure. No database, no auth: the caller owns both.
  */
 
-import type { SessionPrompt } from '@kortix/api-contract';
+import {
+  type SessionPrompt,
+  type SessionPromptDelivery,
+  SessionPromptDeliverySchema,
+  SessionPromptSteerFallbackSchema,
+} from '@kortix/api-contract';
 import { sessionLifecycleCommands } from '@kortix/db';
 import { DELIVERY_FAILURE_COPY } from '../session-lifecycle/types';
 import { PROMPT_TEXT_PREVIEW_CHARS } from '../session-lifecycle/prompt-parts';
@@ -106,12 +111,25 @@ function promptAttachments(payload: Record<string, unknown>): Array<{
   return attachments;
 }
 
+/**
+ * The row's delivery mode. A row from before steering has none: `transcript`
+ * is `interrupt` (Quick Queue), everything else `queue`.
+ */
+export function promptDelivery(payload: Record<string, unknown>): SessionPromptDelivery {
+  const parsed = SessionPromptDeliverySchema.safeParse(payload.delivery);
+  if (parsed.success) return parsed.data;
+  return payload.placement === 'transcript' ? 'interrupt' : 'queue';
+}
+
 export function serializePrompt(row: PromptRow): SessionPrompt {
   const payload = (row.payload ?? {}) as Record<string, unknown>;
   const result = (row.result ?? {}) as Record<string, unknown>;
   const { state, reason } = promptState(row);
+  const steerFallback = SessionPromptSteerFallbackSchema.safeParse(payload.steerFallback);
   return {
     placement: payload.placement === 'transcript' ? 'transcript' as const : 'composer' as const,
+    delivery: promptDelivery(payload),
+    steer_fallback: steerFallback.success ? steerFallback.data : null,
     full_text: typeof payload.text === 'string' ? payload.text : '',
     prompt_id: row.commandId,
     client_message_id: typeof payload.clientMessageId === 'string' ? payload.clientMessageId : '',

@@ -2792,7 +2792,7 @@
   },
   "src/router/routes/proxy/handlers.ts": {
     "no-console": {
-      "count": 13
+      "count": 12
     },
     "no-restricted-syntax": {
       "count": 5
@@ -2831,7 +2831,7 @@
   },
   "src/router/services/llm-reservation.ts": {
     "no-console": {
-      "count": 9
+      "count": 4
     }
   },
   "src/router/services/llm.ts": {

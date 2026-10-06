@@ -7,9 +7,11 @@ import { markTriggerRuntimeDelivered } from '../trigger-execution-store';
 import { continueSession } from './continue-session';
 import { PromptDeliveryRefused } from './prompt-delivery-refusal';
 import { assertInboxDeliveryActive, InboxDeliveryPaused, returnClaimToQueue } from './inbox-delivery-hold';
-import { removeStrandedOpencodeMessage } from './runtime-client';
+import { SteerNotTaken, postPrompt, removeStrandedOpencodeMessage } from './runtime-client';
+import { awakeDeliveryTarget } from './deliver';
+import { recordSteerFallback } from './command-transitions';
 import { MAX_LIVE_PLACEMENT_REPAIRS, hasLaterForwardedSibling, recordRepairedForward, remintForRepair, verifyLivePlacement } from './inbox-placement';
-import { MAX_RUNTIME_UNREACHABLE_RETRIES, markCommandFailed, parkPromptForUnreachableRuntime, markCommandForwarded, requeueUnlandedPrompt, markCommandSucceeded, type SessionLifecycleCommandRow, type QueuedContinueSessionPayload } from './store';
+import { MAX_RUNTIME_UNREACHABLE_RETRIES, markCommandFailed, parkPromptForUnreachableRuntime, markCommandForwarded, requeueForAdmission, requeueUnlandedPrompt, markCommandSucceeded, type SessionLifecycleCommandRow, type QueuedContinueSessionPayload } from './store';
 import type { PromptOverridesWire } from './prompt-payload';
 import { DELIVERY_FAILURE_COPY, type SessionDeliveryOutcome, type SessionInvocationSource } from './types';
 
@@ -163,6 +165,67 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
     const retryable = !(e instanceof PromptDeliveryRefused);
     await markCommandFailed(row, (e as Error).message || 'continue_session threw', {
       retryable, attempts: row.attempts, sessionId: row.sessionId,
+    });
+    return retryable ? 'queued' : 'failed';
+  }
+}
+
+/**
+ * Hand one admitted `steer` row to the running turn (R10): `POST .../steer`
+ * on the awake box, under the client's wire id. 202 or a deduplicated 200
+ * marks the row forwarded with `steered_into_message_id`; the `steer_read`
+ * relay or the turn end closes it.
+ *
+ * What it leaves out of `deliverQueuedContinue`, on purpose:
+ * - No wake and no slow path: a steer is only for a turn that runs now. A box
+ *   that is not awake is `turn_ended`.
+ * - No landing proof: pi writes a steered message only when the turn reads
+ *   it, so a read-back right after the POST reports it missing.
+ * - No placement repair: a steer sits below the running step's assistant
+ *   until the next step reads it. That is the strand shape the repair removes.
+ * - No turn-identity bind: admission proved the sender is the turn's prompter.
+ *
+ * `turn_ended` (409 `no_active_turn`) and `unsupported` (501) fall back to
+ * `queue` and requeue the row due now, with the claim's attempt given back.
+ */
+export async function deliverSteer(row: SessionLifecycleCommandRow, payload: QueuedContinueSessionPayload,
+  text: string, steerInto: string, tl: ProvisionTimeline): Promise<Status> {
+  const sessionId = row.sessionId!;
+  const wireMessageId = payload.wireMessageId!;
+  const attempt = Number(payload.deliveryAttempt ?? 0);
+  try {
+    if (payload.clientMessageId) await assertInboxDeliveryActive(row);
+    const target = await awakeDeliveryTarget(sessionId);
+    if (!target?.externalId || !target.opencodeSessionId) throw new SteerNotTaken('turn_ended');
+    const delivery = await postPrompt(target.externalId, target.opencodeSessionId, text, row.actorUserId!, sessionId,
+      `${attempt > 0 ? `${row.commandId}:r${attempt}` : row.commandId}:steer`, {
+        ...(payload.parts?.length ? { parts: payload.parts } : {}),
+        wireMessageId, materializationKey: row.commandId,
+        accountId: row.accountId, projectId: row.projectId, sandboxRecord: target.record, steer: true,
+      });
+    tl.mark('delivered');
+    tl.log({ sessionId, source: row.source, outcome: `steer:${delivery}` });
+    if (delivery === 'accepted' || delivery === 'deduplicated') {
+      await markCommandForwarded(row, sessionId, wireMessageId, { steeredIntoMessageId: steerInto });
+      return 'succeeded';
+    }
+    return settleDelivery(row, delivery);
+  } catch (e) {
+    if (e instanceof SteerNotTaken) {
+      logger.info('[session-lifecycle] steer not taken — sending it as a queued prompt', {
+        session_id: sessionId, command_id: row.commandId, reason: e.reason,
+      });
+      await recordSteerFallback(row, e.reason);
+      await requeueForAdmission(row, 'turn_active', new Date());
+      return 'queued';
+    }
+    if (e instanceof InboxDeliveryPaused) {
+      await returnClaimToQueue(row);
+      return 'queued';
+    }
+    const retryable = !(e instanceof PromptDeliveryRefused);
+    await markCommandFailed(row, (e as Error).message || 'steer threw', {
+      retryable, attempts: row.attempts, sessionId,
     });
     return retryable ? 'queued' : 'failed';
   }

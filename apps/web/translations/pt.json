@@ -1953,6 +1953,12 @@
     "queuedFiles": "{count, plural, one {# arquivo} other {# arquivos}}",
     "queuedCount": "{count} na fila",
     "editingQueued": "Editando",
+    "steerNextStep": "Lido no próximo passo",
+    "steerFallbackUnsupported": "Aguarda este turno. Esta sessão não aceita mensagens durante um turno.",
+    "steerFallbackNotPrompter": "Aguarda este turno. Outro membro o iniciou.",
+    "steerFallbackTurnEnded": "Executa como um turno próprio. O turno terminou antes.",
+    "stopAndSend": "Parar e enviar",
+    "stopAndSendFailed": "Não foi possível parar e enviar essa mensagem",
     "submitEdit": "Enviar",
     "collapseQueue": "Recolher fila",
     "expandQueue": "Expandir fila"
