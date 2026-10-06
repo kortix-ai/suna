@@ -25,6 +25,18 @@ scheduled jobs, or search. Use an App (kortix-apps) for the UI, project secrets
 for credentials, and the repo for files that are source. The backend is the
 data and logic behind the App.
 
+**The split is strict:** the App is frontend only (a static build); every piece
+of server logic lives in the backend — queries, mutations, actions (external
+APIs, npm, Node), HTTP actions (REST endpoints, webhooks, public APIs on
+`site_url`), crons and scheduled jobs. Do not put server code in an App that has
+a backend.
+
+A Kortix backend is plain self-hosted Convex. Everything Convex works against it
+directly with its URL and admin key (`kortix backends env`) or a member token:
+the Convex CLI, the Convex MCP server (`npx convex mcp start` with the admin
+env loaded), the JS, React and Python clients, the HTTP API, and Convex
+components. Kortix adds provisioning, credentials, sign-in, sizing and backups.
+
 ## Where the code lives
 
 A backend does not know about repositories. A deploy pushes code with the admin
@@ -64,6 +76,8 @@ the session branch like any other code.
 | `kortix backends env <name>` | Shell exports for the Convex CLI (admin). Use with `eval`. |
 | `kortix backends token <name>` | A one-hour sign-in token naming you (see Sign-in). |
 | `kortix backends deploy <name> --dir <path>` | Create if missing, then deploy. |
+| `kortix backends resize <name> --cpu N --memory GB --disk GB` | Resize (see Size, backups and restore). |
+| `kortix backends backups <name>` · `snapshot <name>` · `restore <name> <id>` | Backups and point-in-time restore. |
 | `kortix backends delete <name> --yes` | Delete the machine and every document and file. |
 
 A name is lowercase letters, digits and dashes, starting with a letter. A
@@ -174,10 +188,33 @@ against a Kortix backend.
   the admin key; put third-party credentials there only when an action needs
   them.
 
+## Size, backups and restore
+
+A backend is one machine. Size it for the load, and keep snapshots before risky
+changes.
+
+```sh
+kortix backends create main --cpu 2 --memory 4 --disk 20   # default 1 vCPU / 1 GB / 10 GB
+kortix backends resize main --cpu 4 --memory 8             # seconds of downtime; disk only grows
+kortix backends backups main                                # automatic backup + snapshots
+kortix backends snapshot main                               # point-in-time copy (newest 5 kept)
+kortix backends restore main <snapshot-id> --yes            # roll back; later changes are lost
+```
+
+- **Automatic backup:** Kortix copies the machine to object storage every hour.
+  It recovers the backend after a host loss. Nothing to configure.
+- **Snapshot:** data, files, functions and env vars at one moment. Take one
+  before a migration, a bulk import, or anything you might want to undo. A
+  resize takes one for you.
+- **Restore:** rolls the running backend back in place, in seconds. Every
+  change after the snapshot is gone, so confirm with the user first.
+- Limits: 1–16 vCPU, 1–32 GB memory, 10–100 GB disk (disk can only grow).
+- For portable copies outside Kortix, `npx convex export` (data and files).
+
 ## Limits
 
-- Up to 3 backends per project; fixed machine size 1 vCPU / 1 GB / 10 GB;
-  always on; not metered while experimental.
+- Up to 3 backends per project; one machine each (single node: scale up with
+  resize, not out); always on; not metered while experimental.
 - Data is SQLite on the machine disk, backed up with the disk. Writes are capped
   by Convex at about 4 MiB/s.
 - No preview deployments, no AI gateway for `@convex-dev/agent` (call a model

@@ -36,7 +36,7 @@ is `available` only when `PLATINUM_API_KEY` is set. See
 |---|---|
 | Runtime | Self-hosted Convex, one instance per machine |
 | Storage | SQLite on the machine disk |
-| Machine | 1 vCPU, 1 GB memory, 10 GB disk. Not configurable. |
+| Machine | One per backend. Default 1 vCPU, 1 GB memory, 10 GB disk; resizable to 16 vCPU, 32 GB, 100 GB. |
 | Uptime | Always on. The machine never idles to a stop. |
 | Limit | 3 backends per project |
 | Name | Lowercase letters, digits, and dashes. Starts with a letter. 63 characters at most. |
@@ -166,6 +166,35 @@ write Convex code, and `kortix-internal-apps` when they build a complete app.
 Both tell the agent to install Convex's own agent rules and skills at runtime
 (`npx convex ai-files install`).
 
+## Size, backups and restore
+
+Each backend is one machine. Pick its size at creation and change it later.
+
+```bash
+kortix backends create main --cpu 2 --memory 4 --disk 20
+kortix backends resize main --cpu 4 --memory 8      # seconds of downtime; disk only grows
+kortix backends backups main                         # automatic backup + snapshots
+kortix backends snapshot main                        # keeps the newest 5
+kortix backends restore main <snapshot-id> --yes     # rolls back; later changes are lost
+```
+
+| | What it is |
+|---|---|
+| Automatic backup | Kortix copies the machine to object storage every hour, to recover from a host loss. |
+| Snapshot | A point-in-time copy of the running backend: data, files, functions and environment variables. A resize takes one first. |
+| Restore | Rolls the running backend back to a snapshot in place, in seconds. |
+
+Limits: 1–16 vCPU, 1–32 GB memory, 10–100 GB disk. API: `PATCH
+/v1/projects/:id/backends/:backendId`, `GET …/backups`, `POST …/snapshots`,
+`POST …/restore`.
+
+## Use Convex directly
+
+A backend is plain self-hosted Convex. With its URL and admin key
+(`kortix backends env main`), or a member token, everything Convex works
+against it: the Convex CLI, the Convex MCP server, the JavaScript, React and
+Python clients, the HTTP API, and Convex components.
+
 ## Roles and audit
 
 | Permission | Allows |
@@ -180,7 +209,7 @@ Reading the credentials writes a `backend.credentials.read` audit event. See
 
 - Backends are not metered. A project is capped at 3.
 - Backends are always on. A backend does not stop when idle.
-- The size is fixed at 1 vCPU, 1 GB memory, and 10 GB disk.
+- One machine per backend: it scales up (resize), not out.
 - Kortix has no dashboard for a backend yet. Use the CLI or MCP.
   `npx convex dashboard` does not work against a self-hosted backend.
 - Convex Auth needs manual setup. Custom JWT or OIDC authentication through

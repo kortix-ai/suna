@@ -6,7 +6,8 @@ description: "Recipe for building and shipping a complete internal business app 
 # Internal apps on Kortix
 
 An internal app is a **Kortix Backend** for data and logic plus a **Kortix App**
-for the UI. Kortix signs the team in: the App knows who is looking, and every
+for the UI. The App is frontend only: every server function — APIs, webhooks
+(HTTP actions), integrations (actions), schedules — lives in the backend. Kortix signs the team in: the App knows who is looking, and every
 backend function knows who is calling. You ship both from the project repo, and
 you verify the deployed app yourself before you report.
 
@@ -120,6 +121,11 @@ same build, backend, Kortix token and realtime path. Say in the report that you
 verified this way, and give the user the App URL and the flows to click.
 
 ## Redeploy after a change
+
+Before a risky change (a schema migration, a bulk import, a destructive
+backfill) take a snapshot: `kortix backends snapshot main`. If it goes wrong,
+`kortix backends restore main <snapshot-id> --yes` (after the user agrees). If
+the app gets slow under real use, `kortix backends resize main --cpu 2 --memory 4`.
 
 ```sh
 kortix backends deploy main --dir backends/main                     # backend code
