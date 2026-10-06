@@ -10,7 +10,8 @@
  *   project/account switcher, not a navigation.
  *   The drawer's own gear button is gone: the project Settings page is
  *   reached from Settings (drawer avatar) → project row.
- * - Nav rows: Search (→ Sessions, its search field auto-focused), Files
+ * - Nav rows, the first rows of the scrolling list (they scroll away with
+ *   it, so a new pill never shrinks the list): Search (→ Sessions, its search field auto-focused), Files
  *   (→ /projects/[id]/files), Review (→ the Review page, a trailing count
  *   pill while items wait), and Apps (→ the Apps page, the project's
  *   deployed apps). Connectors moved to project Settings → Customize
@@ -18,6 +19,7 @@
  * - Three sections of top-level sessions, by who started the run (KRTX-639):
  *   "Sessions" (yours, open), "Shared" (other members', collapsed, no header
  *   while empty) and "Automated" (triggers, channels, API keys; collapsed).
+ *   No section renders while the viewer's own list still loads.
  *   Each is its own paged query (`parent=root`), newest activity first
  *   (status mark · title; the session on screen is highlighted). A parent
  *   shows its child count and a caret, collapsed by default: a tap loads its
@@ -120,7 +122,7 @@ const LIST_END_GAP = 16;
 /**
  * Height of the fade at the top of the session list. It also is the scroll
  * distance over which the fade appears: invisible at rest, so the first row is
- * never dimmed, fully shown once a row has scrolled under the pills.
+ * never dimmed, fully shown once a row has scrolled under the switcher row.
  */
 const LIST_TOP_FADE_HEIGHT = 24;
 /** The open refetch waits out the drawer's 420ms slide (`DRAWER_OPEN`). */
@@ -349,42 +351,48 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
       }),
     [choices, projectId, activeParentSessionId]
   );
+  // While the viewer's own list loads, no section renders: Shared (a smaller
+  // page, often first back) and Automated (always shown) read as an empty
+  // drawer under the loader.
+  const sessionsLoading = projectSessionsPending;
   const items = useMemo(
     () =>
-      buildDrawerItems(
-        [
-          {
-            id: 'sessions',
-            title: 'Sessions',
-            rows: withoutNeedsYou(mineRoots),
-            open: sectionOpen('sessions'),
-            // No bare heading over nothing: the state block below (loading,
-            // error, empty) speaks for an empty list, and Needs you for a
-            // list whose every row waits on the user.
-            hidden: withoutNeedsYou(mineRoots).length === 0,
-            hasMore: hasNextPage,
-          },
-          {
-            id: 'shared',
-            title: 'Shared',
-            rows: withoutNeedsYou(sharedRoots),
-            open: sharedOpen,
-            hidden: sharedRoots.length === 0,
-            hasMore: shared.hasNextPage,
-          },
-          {
-            id: 'automated',
-            title: 'Automated',
-            rows: withoutNeedsYou(automatedRoots),
-            open: automatedOpen,
-            hidden: false,
-            hasMore: automated.hasNextPage,
-          },
-        ],
-        isExpanded
-      ),
+      sessionsLoading
+        ? []
+        : buildDrawerItems(
+            [
+              {
+                id: 'sessions',
+                title: 'Sessions',
+                rows: withoutNeedsYou(mineRoots),
+                open: sectionOpen('sessions'),
+                // No bare heading over nothing: the state block below (loading,
+                // error, empty) speaks for an empty list, and Needs you for a
+                // list whose every row waits on the user.
+                hidden: withoutNeedsYou(mineRoots).length === 0,
+                hasMore: hasNextPage,
+              },
+              {
+                id: 'shared',
+                title: 'Shared',
+                rows: withoutNeedsYou(sharedRoots),
+                open: sharedOpen,
+                hidden: sharedRoots.length === 0,
+                hasMore: shared.hasNextPage,
+              },
+              {
+                id: 'automated',
+                title: 'Automated',
+                rows: withoutNeedsYou(automatedRoots),
+                open: automatedOpen,
+                hidden: false,
+                hasMore: automated.hasNextPage,
+              },
+            ],
+            isExpanded
+          ),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sectionOpen reads `choices`
-    [mineRoots, sharedRoots, automatedRoots, withoutNeedsYou, sharedOpen, automatedOpen, choices, projectId, hasNextPage, shared.hasNextPage, automated.hasNextPage, isExpanded]
+    [sessionsLoading, mineRoots, sharedRoots, automatedRoots, withoutNeedsYou, sharedOpen, automatedOpen, choices, projectId, hasNextPage, shared.hasNextPage, automated.hasNextPage, isExpanded]
   );
   // loading / error / empty / rows — shared with the Sessions page
   // (lib/session/session-pages) so a failed fetch, or a first load paused
@@ -655,9 +663,23 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
       ) : null}
     </View>
   );
+  // The nav pills scroll with the list, as its first rows: pinned above it,
+  // every new pill took list height away for good.
   const listHeader = useMemo(
     () => (
       <View>
+        <View className="px-2 -mx-1 space-y-1">
+          <NavPill icon={MagnifyingGlassIcon} label="Search" onPress={goToSearch} />
+          <NavPill icon={FoldersIcon} label="Files" onPress={goToFiles} />
+          <NavPill
+            icon={SealCheckIcon}
+            label="Review"
+            accessibilityLabel={reviewNeedsYouCount > 0 ? `Review, ${reviewNeedsYouCount} pending` : 'Review'}
+            onPress={goToReview}
+            trailing={<ReviewCountPill count={reviewNeedsYouCount} />}
+          />
+          <NavPill icon={SquaresFourIcon} label="Apps" onPress={goToApps} />
+        </View>
         {needsYouSessions.length > 0 ? (
           <View className="px-2 -mx-1">
             <Text variant="muted" className="px-4 pb-1 pt-3">
@@ -682,6 +704,11 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- stateBlock is derived from the deps below
     [
+      goToSearch,
+      goToFiles,
+      goToReview,
+      goToApps,
+      reviewNeedsYouCount,
       needsYouSessions,
       needsYouBySession,
       sessionsListState,
@@ -739,7 +766,7 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
   // fade out under the bottom bar instead of stopping at a hard edge.
   const chrome = isDark ? THEME.dark.chromeBackground : THEME.light.chromeBackground;
   const fadeColors = [withAlpha(chrome, 0), withAlpha(chrome, 0.85), withAlpha(chrome, 1)] as const;
-  // The same fade, reversed, where rows scroll up under the nav pills.
+  // The same fade, reversed, where rows scroll up under the switcher row.
   const topFadeColors = [withAlpha(chrome, 1), withAlpha(chrome, 0)] as const;
 
   return (
@@ -755,19 +782,6 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
         ringColor={chrome}
         onPress={openSwitcher}
       />
-
-      <View className="px-2 -mx-1 space-y-1">
-        <NavPill icon={MagnifyingGlassIcon} label="Search" onPress={goToSearch} />
-        <NavPill icon={FoldersIcon} label="Files" onPress={goToFiles} />
-        <NavPill
-          icon={SealCheckIcon}
-          label="Review"
-          accessibilityLabel={reviewNeedsYouCount > 0 ? `Review, ${reviewNeedsYouCount} pending` : 'Review'}
-          onPress={goToReview}
-          trailing={<ReviewCountPill count={reviewNeedsYouCount} />}
-        />
-        <NavPill icon={SquaresFourIcon} label="Apps" onPress={goToApps} />
-      </View>
 
       <View className="flex-1">
         <DrawerOpenContext.Provider value={open}>
@@ -794,7 +808,7 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
         />
         </SubsessionTreeMemory>
         </DrawerOpenContext.Provider>
-        {/* Top fade: rows fade out under the nav pills instead of a hard edge. */}
+        {/* Top fade: rows fade out under the switcher row instead of a hard edge. */}
         <Animated.View
           pointerEvents="none"
           style={[{ position: 'absolute', top: 0, left: 0, right: 0, height: LIST_TOP_FADE_HEIGHT }, topFadeStyle]}>

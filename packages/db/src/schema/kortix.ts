@@ -941,6 +941,9 @@ export const accountSecretResources = kortixSchema.table('account_secret_resourc
   strategy: projectSecretStrategyEnum('strategy').notNull(),
   active: boolean('active').default(true).notNull(),
   cooldownUntil: timestamp('cooldown_until', { withTimezone: true }),
+  /** When a cooling-down account may be re-tried: each limit sets it 15 min out; the first
+   *  resolve after it lifts `cooldownUntil` once (a reset before the provider's hinted reset). */
+  cooldownProbeAt: timestamp('cooldown_probe_at', { withTimezone: true }),
   /** First permanent failure of the stored login (a refresh the provider
    *  rejected, or a login that cannot be read). The account stays usable and
    *  in its pools; a successful refresh or a reconnect clears it. */
@@ -1124,6 +1127,18 @@ export const projectSessions = kortixSchema.table(
       .where(
         sql`${table.originRef} is not null and ${table.status} in ('queued','branching','provisioning','running')`,
       ),
+    // A trigger fire looks its session up by `(project, slug, key)` in the
+    // metadata, newest first (projects/lib/trigger-fire.ts). Without this the
+    // lookup read every session of the project. Partial: only trigger-created
+    // rows carry a slug.
+    index('idx_project_sessions_trigger_key')
+      .on(
+        table.projectId,
+        sql`(${table.metadata} ->> 'trigger_slug')`,
+        sql`(${table.metadata} ->> 'trigger_session_key')`,
+        table.createdAt.desc(),
+      )
+      .where(sql`(${table.metadata} ->> 'trigger_slug') is not null`),
     uniqueIndex('idx_project_sessions_project_branch').on(table.projectId, table.branchName),
     uniqueIndex('idx_project_sessions_tenant_identity').on(
       table.accountId,
@@ -2168,6 +2183,11 @@ export const sessionSandboxes = kortixSchema.table(
  * its data path.
  *
  * One environment per session, enforced by the primary key.
+ *
+ * RETIRED: the pi worker split was removed and nothing reads or writes this
+ * table. It stays declared until a follow-up migration drops it, after every
+ * replica runs code with no reader (a drop under an old replica fails its
+ * account-deletion and orphan-reaper queries).
  */
 export const sessionEnvironments = kortixSchema.table(
   'session_environments',
@@ -4408,6 +4428,8 @@ export const accountDeletionRequests = kortixSchema.table(
     cancelledAt: timestamp('cancelled_at', { withTimezone: true, mode: 'string' }),
     isCancelled: boolean('is_cancelled').default(false),
     isDeleted: boolean('is_deleted').default(false),
+    /** Set while a worker holds the `processing` claim; a stale one is reclaimable. */
+    processingStartedAt: timestamp('processing_started_at', { withTimezone: true, mode: 'string' }),
   },
   (table) => [
     // At most one pending deletion request per account. The application

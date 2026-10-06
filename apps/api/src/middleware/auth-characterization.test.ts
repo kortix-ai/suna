@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import * as crypto from '../shared/crypto';
 import * as ownership from '../shared/preview-ownership';
-import * as audit from '../shared/auth-audit';
+import * as audit from './auth-audit';
 import * as sentry from '../lib/sentry';
 import * as context from '../lib/request-context';
 import * as sso from '../iam/sso-sync';
@@ -45,7 +45,7 @@ mock.module('../shared/jwt-verify', () => ({
   decodeSupabaseJwtPayload: () => null,
 }));
 mock.module('../shared/preview-ownership', () => ({ ...ownership, canAccessPreviewSandbox: async () => true }));
-mock.module('../shared/auth-audit', () => ({ ...audit, auditLoginSuccess: () => {}, auditLoginFail: () => {} }));
+mock.module('./auth-audit', () => ({ ...audit, auditLoginSuccess: () => {}, auditLoginFail: () => {} }));
 mock.module('../lib/sentry', () => ({ ...sentry, setSentryUser: () => {} }));
 mock.module('../lib/request-context', () => ({ ...context, setContextField: () => {} }));
 mock.module('../iam/sso-sync', () => ({ ...sso, syncSsoMembership: async () => {} }));

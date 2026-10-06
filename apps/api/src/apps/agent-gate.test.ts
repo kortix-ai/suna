@@ -164,6 +164,17 @@ describe('header carriage', () => {
     expect(appUpstreamHeaders(basic, {}, host).get('authorization')).toBe('Basic abc');
   });
 
+  test('upstream never receives X-Kortix-Token or a Kortix key in X-Api-Key; the App keeps its own key', () => {
+    const request = new Request(`https://${host}/`, {
+      headers: { 'x-kortix-token': 'kortix_pat_abc', 'x-api-key': 'kortix_sa_abc' },
+    });
+    const headers = appUpstreamHeaders(request, {}, host);
+    expect(headers.get('x-kortix-token')).toBeNull();
+    expect(headers.get('x-api-key')).toBeNull();
+    const own = new Request(`https://${host}/`, { headers: { 'x-api-key': 'app-own-key' } });
+    expect(appUpstreamHeaders(own, {}, host).get('x-api-key')).toBe('app-own-key');
+  });
+
   test('upstream never receives Kortix cookies; the App keeps its own cookies', () => {
     const request = new Request(`https://${host}/`, {
       headers: {

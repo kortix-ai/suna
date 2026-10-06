@@ -10,20 +10,20 @@ const git = (cwd: string, ...args: string[]) => {
   return r.stdout.toString().trim();
 };
 
-/** A clone with one local branch (`main`) and one remote-only branch (`origin/feature`). */
+/** A clone with one local branch (`dev`) and one remote-only branch (`origin/feature`). */
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'wt-git-'));
   const origin = join(dir, 'origin.git');
   const seed = join(dir, 'seed');
   git(dir, 'init', '-q', '--bare', origin);
-  git(dir, 'init', '-q', '-b', 'main', seed);
+  git(dir, 'init', '-q', '-b', 'dev', seed);
   git(seed, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'root');
   git(seed, 'branch', 'feature');
   git(seed, 'remote', 'add', 'origin', origin);
-  git(seed, 'push', '-q', 'origin', 'main', 'feature');
+  git(seed, 'push', '-q', 'origin', 'dev', 'feature');
   const clone = join(dir, 'clone');
   git(dir, 'clone', '-q', origin, clone);
-  git(clone, 'checkout', '-q', 'main');
+  git(clone, 'checkout', '-q', 'dev');
   return clone;
 }
 
@@ -38,15 +38,15 @@ describe('worktreeAddArgs', () => {
   });
   test('a local branch is checked out as-is', () => {
     const root = fixture();
-    const { args, mode } = worktreeAddArgs(root, '/tmp/wt', 'main', 'HEAD');
+    const { args, mode } = worktreeAddArgs(root, '/tmp/wt', 'dev', 'HEAD');
     expect(mode).toBe('local');
-    expect(args.slice(3)).toEqual(['worktree', 'add', '/tmp/wt', 'main']);
+    expect(args.slice(3)).toEqual(['worktree', 'add', '/tmp/wt', 'dev']);
   });
   test('an unknown branch is created from --from, with no upstream', () => {
     const root = fixture();
-    const { args, mode } = worktreeAddArgs(root, '/tmp/wt', 'brand-new', 'main');
+    const { args, mode } = worktreeAddArgs(root, '/tmp/wt', 'brand-new', 'dev');
     expect(mode).toBe('new');
-    expect(args.slice(3)).toEqual(['worktree', 'add', '--no-track', '-b', 'brand-new', '/tmp/wt', 'main']);
+    expect(args.slice(3)).toEqual(['worktree', 'add', '--no-track', '-b', 'brand-new', '/tmp/wt', 'dev']);
   });
   test('the remote argv really checks out the remote tip', () => {
     const root = fixture();
@@ -106,38 +106,38 @@ describe('removeWorktree', () => {
   });
 })
 
-/** The fixture, after someone else pushed a commit to origin/main. Local `main` is now stale. */
+/** The fixture, after someone else pushed a commit to origin/dev. Local `dev` is now stale. */
 function staleMainFixture() {
   const clone = fixture();
   const other = join(clone, '..', 'other');
   git(join(clone, '..'), 'clone', '-q', join(clone, '..', 'origin.git'), other);
-  git(other, 'checkout', '-q', 'main');
+  git(other, 'checkout', '-q', 'dev');
   git(other, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'newer');
-  git(other, 'push', '-q', 'origin', 'main');
+  git(other, 'push', '-q', 'origin', 'dev');
   return { clone, other };
 }
 
 describe('freshBase', () => {
-  test('main resolves to the fetched origin/main, never the stale local main', () => {
+  test('dev resolves to the fetched origin/dev, never the stale local dev', () => {
     // A worktree cut from a primary checkout 455 commits behind carried a
     // tree #7843 had deleted. The new branch must start at origin's tip.
     const { clone, other } = staleMainFixture();
-    expect(freshBase(clone, 'main')).toBe('origin/main');
-    expect(git(clone, 'rev-parse', 'origin/main')).toBe(git(other, 'rev-parse', 'HEAD'));
-    expect(git(clone, 'rev-parse', 'main')).not.toBe(git(other, 'rev-parse', 'HEAD'));
+    expect(freshBase(clone, 'dev')).toBe('origin/dev');
+    expect(git(clone, 'rev-parse', 'origin/dev')).toBe(git(other, 'rev-parse', 'HEAD'));
+    expect(git(clone, 'rev-parse', 'dev')).not.toBe(git(other, 'rev-parse', 'HEAD'));
   });
   test('an explicit base is kept as given', () => {
     const { clone } = staleMainFixture();
     expect(freshBase(clone, 'feature-x')).toBe('feature-x');
     expect(freshBase(clone, 'HEAD')).toBe('HEAD');
   });
-  test('a new worktree from main starts at origin/main and pushes to its own name', () => {
+  test('a new worktree from dev starts at origin/dev and pushes to its own name', () => {
     const { clone, other } = staleMainFixture();
     const wt = join(clone, '..', 'wt-new');
-    const { args } = worktreeAddArgs(clone, wt, 'brand-new', freshBase(clone, 'main'));
+    const { args } = worktreeAddArgs(clone, wt, 'brand-new', freshBase(clone, 'dev'));
     expect(Bun.spawnSync(args, { stdout: 'pipe', stderr: 'pipe' }).exitCode).toBe(0);
     expect(git(wt, 'rev-parse', 'HEAD')).toBe(git(other, 'rev-parse', 'HEAD'));
-    // No upstream: a bare `git push` must never target main.
+    // No upstream: a bare `git push` must never target dev.
     const upstream = Bun.spawnSync(['git', '-C', wt, 'rev-parse', '--abbrev-ref', '@{upstream}'], { stdout: 'pipe', stderr: 'pipe' });
     expect(upstream.exitCode).not.toBe(0);
   });
