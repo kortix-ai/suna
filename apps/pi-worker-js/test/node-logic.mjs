@@ -11,7 +11,7 @@
 // actually reaches for, console formatting a human has to read, the bounds
 // (output, exit code, a throw), and the one thing a cell cannot do — block on
 // a promise — being said out loud rather than returning an empty string.
-// EXPECTED_PASSES=70
+// EXPECTED_PASSES=71
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 let bad = 0;
 const check = watchClaims((n, c, d = "") => { if (c) console.log(`  ok    ${n}`); else { console.log(`  FAIL  ${n}${d ? `\n          ${d}` : ""}`); bad++; } });
@@ -58,6 +58,14 @@ check("bytes print as a Buffer preview, functions by name, errors as name: messa
 check("a key that is not an identifier is quoted", formatValue({ "a-b": 1 }) === "{ 'a-b': 1 }", formatValue({ "a-b": 1 }));
 
 // ── running real scripts ──
+{
+  // `npm install x && node -e "require('x')"`: Node resolves an eval's
+  // requires from the working directory. Measured on pi-js 2026-10-06, the
+  // cell resolved from "/" and answered "Cannot find module 'is-odd' from '/'".
+  const r = await rt({ "/workspace/node_modules/is-odd/index.js": "module.exports = (n) => n % 2 === 1;" })
+    .run('console.log(require("is-odd")(3))', "[eval]");
+  check("node -e requires from the working directory, not from /", r.stdout === "true\n" && r.exitCode === 0, JSON.stringify(r));
+}
 {
   const r = await run('console.log("hello", 1 + 1);');
   check("a script's console.log reaches stdout, with a newline and no exit code", r.stdout === "hello 2\n" && r.exitCode === 0 && r.stderr === "", JSON.stringify(r));

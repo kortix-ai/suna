@@ -43,6 +43,12 @@ export const ALL_SUITES = [
   "envrpc-logic.mjs", "environment-logic.mjs", "machine-logic.mjs", "machine-fs-logic.mjs",
   // The runtime inside the isolate: node, TypeScript, npm and plugins.
   "node-logic.mjs", "plugins-logic.mjs", "typescript-logic.mjs", "npm-logic.mjs",
+  // kortixd's Kortix tools: web_search, image_search, scrape_webpage, memory, show.
+  "kortix-tools-logic.mjs",
+  // kortixd's permission policy (deny, ask, always) and the question tool.
+  "interactions-logic.mjs",
+  // The live stream: pi-durable's events as the client renders them.
+  "turn-events-logic.mjs",
 ];
 
 /** The suites test/all.sh runs under node's SQLite — they open a DatabaseSync
@@ -50,7 +56,7 @@ export const ALL_SUITES = [
 const NEEDS_SQLITE = new Set([
   "kortix-contract-logic.mjs", "agent-config-logic.mjs", "skills-logic.mjs", "plan-logic.mjs", "files-logic.mjs",
   "git-logic.mjs", "pty-logic.mjs", "static-logic.mjs", "manifest-logic.mjs", "conformance.mjs", "cellfs-logic.mjs",
-  "environment-logic.mjs", "daemon-persist.mjs",
+  "environment-logic.mjs", "daemon-persist.mjs", "kortix-tools-logic.mjs", "interactions-logic.mjs",
 ]);
 export const nodeArgsFor = (suite) => (NEEDS_SQLITE.has(suite) ? ["--experimental-sqlite"] : []);
 

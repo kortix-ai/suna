@@ -185,7 +185,7 @@ export function cellFs(sql) {
 export function cellShellNote({ machine = false } = {}) {
   return [
     `Your bash tool is a small POSIX shell over this session's own tree at ${CELL_CWD}, which persists between turns.`,
-    "It is not a Linux machine: no package manager, no processes. curl and wget work over HTTP(S).",
+    "It is not a Linux machine: no apt or pip, no python, no git, and nothing keeps running or listens on a port after a command ends. curl and wget work over HTTP(S).",
     "node works here and is real — require, ESM, TypeScript, fs/path/crypto/zlib/http — and `npm install <pkg>` fetches from the registry into node_modules. There are no sockets, no child processes and no lifecycle scripts.",
     machine
       ? "When a task needs a real machine — installs, python, builds, a dev server, git — use the machine tool: it attaches a full Linux environment with the project checked out and runs your command there."

@@ -12,15 +12,15 @@
 // question — which directory — from either syntax, and about the two ways the
 // cell can get it wrong: not reading it, and caching the answer it got before
 // the checkout arrived.
-// EXPECTED_PASSES=33
+// EXPECTED_PASSES=39
 import { DatabaseSync } from "node:sqlite";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 installWorkerGlobals();
 let bad = 0;
 const check = watchClaims((n, c, d = "") => { if (c) console.log(`  ok    ${n}`); else { console.log(`  FAIL  ${n}${d ? `\n          ${d}` : ""}`); bad++; } });
-const { readManifest, configDirOf, defaultConfigDir, workspaceConfigDir, MANIFEST_FILES } = await import("../src/manifest.js");
-const { skillDirs, DEFAULT_SKILLS_DIR } = await import("../src/skills.js");
+const { readManifest, configDirOf, defaultConfigDir, workspaceConfigDir, workspacePiConfigDir, MANIFEST_FILES } = await import("../src/manifest.js");
+const { skillDirs } = await import("../src/skills.js");
 const { CELL_CWD } = await import("../src/execenv.cell.js");
 const { AgentCell } = await import("../dist/worker.js");
 
@@ -105,16 +105,34 @@ check("the manifest filenames are the control plane's, in its resolution order",
     (await workspaceConfigDir({ readTextFile: async (n) => (n === "kortix.yaml" ? { ok: true, value: "  \n" } : { ok: false }) })) === null, "");
 }
 
-// ── what the skills loader is then told to read ──
-check("with no manifest the cell keeps its own two conventions",
-  JSON.stringify(skillDirs({}, null)) === JSON.stringify(DEFAULT_SKILLS_DIR.split(",")), JSON.stringify(skillDirs({}, null)));
-check("with a manifest the project's own dir replaces the guessed one, and `.pi/skills` stays",
-  JSON.stringify(skillDirs({}, ".kortix/pi")) === JSON.stringify([".kortix/pi/skills", ".pi/skills"]), JSON.stringify(skillDirs({}, ".kortix/pi")));
-check("an explicit SKILLS_DIR still wins over the manifest — an operator who names the directory means it",
+// ── what the skills loader is then told to read (kortixd `resolvePiSkillDirectories`) ──
+check("with no pi config dir: the managed overlay, skills/, then the legacy OpenCode dir",
+  JSON.stringify(skillDirs({}, null)) === JSON.stringify(["/opt/kortix/managed-skills", "skills", ".kortix/opencode/skills"]), JSON.stringify(skillDirs({}, null)));
+check("pi's config dir sits between skills/ and the legacy dir",
+  JSON.stringify(skillDirs({}, "harnesses/pi")) === JSON.stringify(["/opt/kortix/managed-skills", "skills", "harnesses/pi/skills", ".kortix/opencode/skills"]), JSON.stringify(skillDirs({}, "harnesses/pi")));
+check("an explicit SKILLS_DIR still wins — an operator who names the directory means it",
   JSON.stringify(skillDirs({ SKILLS_DIR: "/opt/s" }, ".kortix/pi")) === JSON.stringify(["/opt/s"]), JSON.stringify(skillDirs({ SKILLS_DIR: "/opt/s" }, ".kortix/pi")));
-check("and an EMPTY SKILLS_DIR still means NO skills — that is how they are turned off, and the manifest must not undo it",
+check("and an EMPTY SKILLS_DIR still means NO skills — that is how they are turned off",
   JSON.stringify(skillDirs({ SKILLS_DIR: "" }, ".kortix/pi")) === "[]" && JSON.stringify(skillDirs({ SKILLS_DIR: "  " }, ".kortix/pi")) === "[]",
   JSON.stringify(skillDirs({ SKILLS_DIR: "" }, ".kortix/pi")));
+
+// ── pi's own config dir (kortixd `resolvePiProjectConfigDir`) ──
+{
+  const fakeEnv = (manifest, dirs) => ({
+    readTextFile: async (n) => (n === "kortix.yaml" && manifest !== null ? { ok: true, value: manifest } : { ok: false }),
+    fileInfo: async (p) => (dirs.includes(p) ? { ok: true, value: { kind: "directory", path: p } } : { ok: false, error: { code: "not_found" } }),
+  });
+  check("no manifest and no pi dir: null", (await workspacePiConfigDir(fakeEnv(null, []))) === null, "");
+  check("harnesses/pi when it exists", (await workspacePiConfigDir(fakeEnv(null, ["harnesses/pi", ".kortix/pi"]))) === "harnesses/pi", "");
+  check(".kortix/pi when only it exists", (await workspacePiConfigDir(fakeEnv("kortix_version: 3\n", [".kortix/pi"]))) === ".kortix/pi", "");
+  check("a declared `pi.config_dir` that exists is the answer",
+    (await workspacePiConfigDir(fakeEnv("pi:\n  config_dir: custom/pi\n", ["custom/pi", "harnesses/pi"]))) === "custom/pi", "");
+  check("a declared one that does not exist is null — it is the only candidate, harnesses/pi is not tried",
+    (await workspacePiConfigDir(fakeEnv("pi:\n  config_dir: custom/pi\n", ["harnesses/pi"]))) === null, "");
+  check("a declared path that climbs out (`../x`, `/etc`) is ignored and the defaults apply",
+    (await workspacePiConfigDir(fakeEnv("pi:\n  config_dir: ../outside\n", ["harnesses/pi"]))) === "harnesses/pi"
+      && (await workspacePiConfigDir(fakeEnv("pi:\n  config_dir: /etc\n", [".kortix/pi"]))) === ".kortix/pi", "");
+}
 
 // ── in a cell, across the checkout that arrives late ──
 {

@@ -421,11 +421,11 @@ const h = makeCell(AgentCell, { KORTIX_SESSION_ID: S, KORTIX_PROJECT_ID: "proj-2
   // ── what a cell does not do, said plainly ──
   check("revert, fork, share and the rest are 501 feature_not_supported — 'not possible' is not 'not here'",
     (await Promise.all(["revert", "unrevert", "fork", "share", "shell", "init"].map((v) => post(h, `/session/${ROOT}/${v}`, {})))).every((r) => r.status === 501), "");
-  check("a slash command is 400: the pi cell has no slash commands", (await post(h, `/session/${ROOT}/command`, { command: "x" })).status === 400, "");
+  check("an unknown slash command is 400 (this workspace has no prompt templates)", (await post(h, `/session/${ROOT}/command`, { command: "x" })).status === 400, "");
   check("a port, web or deck proxy is 501 with the reason — a cell has no processes and no ports",
     (await Promise.all(["/proxy/3000/", "/web-proxy/x", "/presentation/x"].map((p) => h.fetch(p)))).every((r) => r.status === 501), "");
-  check("a permission or question reply is 404 — nothing is ever asked in a cell",
-    (await post(h, "/permission/p1/reply", {})).status === 404 && (await post(h, "/question/q1/reply", {})).status === 404, "");
+  check("a reply to a permission or question nobody asked is 404",
+    (await post(h, "/permission/p1/reply", { reply: "once" })).status === 404 && (await post(h, "/question/q1/reply", { answers: [] })).status === 404, "");
   check("POST /log and /global/dispose are accepted the way OpenCode answers them (true)",
     (await (await post(h, "/log", {})).json()) === true && (await (await post(h, "/global/dispose", {})).json()) === true, "");
   const unknown = await h.fetch("/definitely/not/a/route");

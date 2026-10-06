@@ -121,3 +121,46 @@ export async function workspaceConfigDir(env) {
   }
   return null;
 }
+
+/** The pi config dirs a project gets when its manifest names none (packages/manifest-schema layout.ts `piConfigDirCandidates`). */
+export const PI_CONFIG_DIR_CANDIDATES = ["harnesses/pi", ".kortix/pi"];
+
+/**
+ * A literal repo-relative path, or null: no leading `/` or `-`, no empty, `.`
+ * or `..` segment, nothing outside `[A-Za-z0-9_ .-]`. A manifest must never
+ * make the harness read outside the workspace (kortixd harness/pi/config.ts).
+ */
+export function safeRepoPath(value) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim().replace(/\/+$/, "");
+  if (!trimmed || trimmed.startsWith("/") || trimmed.startsWith("-")) return null;
+  return trimmed.split("/").every((s) => s && s !== "." && s !== ".." && /^[\w .-]+$/.test(s)) ? trimmed : null;
+}
+
+const isDir = async (env, path) => {
+  try {
+    const info = await env.fileInfo(path);
+    return !!(info?.ok && info.value?.kind === "directory");
+  } catch { return false; }
+};
+
+/**
+ * pi's own config dir in the workspace: skills/, prompts/, extensions/.
+ * kortixd's `resolvePiProjectConfigDir`, rule for rule: a safe `pi.config_dir`
+ * is the only candidate and counts only when it exists; otherwise the first
+ * existing of `harnesses/pi`, `.kortix/pi`; otherwise null.
+ */
+export async function workspacePiConfigDir(env) {
+  let manifest = null;
+  for (const name of MANIFEST_FILES) {
+    let read;
+    try { read = await env.readTextFile(name); } catch { continue; }
+    if (!read?.ok || !String(read.value ?? "").trim()) continue;
+    manifest = readManifest(String(read.value));
+    break;
+  }
+  const declared = safeRepoPath(manifest?.configDir?.pi);
+  if (declared) return (await isDir(env, declared)) ? declared : null;
+  for (const dir of PI_CONFIG_DIR_CANDIDATES) if (await isDir(env, dir)) return dir;
+  return null;
+}

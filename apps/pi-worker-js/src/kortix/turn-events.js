@@ -107,6 +107,7 @@ export class DurableTurnEvents {
     this.accum = new Map();
     this.partStartedAt = new Map();
     this.toolIndex = new Map();
+    this.callArgs = new Map();
     this.lastError = null;
     this.retrying = false;
   }
@@ -136,11 +137,23 @@ export class DurableTurnEvents {
         this.accum.clear();
         this.partStartedAt.clear();
         this.toolIndex.clear();
+        this.callArgs.clear();
         this.partCount = 0;
         this.currentMessageId = this.opts.mintMessageId();
         this.currentParentId = this.opts.parentMessageId();
         this.currentCreatedAt = this.now();
-        return [{ type: "message.updated", properties: { sessionID, info: this.#info(event.message?.usage) } }];
+        // THE PARTIAL ALREADY HOLDS THE FIRST TOKENS. pi-durable reports a
+        // message's start from the first commit that carries it, and that
+        // commit is made after the first chunk arrived. Later updates are
+        // deltas on top of it, so dropping this content dropped the opening
+        // characters of every block from the live stream: measured on pi-js
+        // 2026-10-06, replies read ", let me re-read." and "'s node and npm."
+        const opening = [];
+        for (const [i, block] of (event.message?.content ?? []).entries()) {
+          const text = block?.type === "text" ? block.text : block?.type === "thinking" ? block.thinking : "";
+          if (typeof text === "string" && text) opening.push(...this.#change({ type: "block", contentIndex: i, block, opening: true }));
+        }
+        return [{ type: "message.updated", properties: { sessionID, info: this.#info(event.message?.usage) } }, ...opening];
       }
 
       case "message_update": {
@@ -176,6 +189,13 @@ export class DurableTurnEvents {
       }
 
       case "tool_execution_end": {
+        // A call that never started still ends: one the permission policy
+        // blocked, one naming no offered tool, one with invalid arguments.
+        // pi-durable reports only its end, and without a part the client
+        // showed nothing at all for it.
+        if (!this.toolIndex.has(event.toolCallId) && this.currentMessageId && event.entry) {
+          this.toolIndex.set(event.toolCallId, { partId: partId(this.currentMessageId, this.partCount++), name: event.toolName, input: objectOr(this.callArgs.get(event.toolCallId)), startedAt: this.now(), output: "" });
+        }
         const t = this.toolIndex.get(event.toolCallId);
         if (!t) return [];
         const endedAt = this.now();
@@ -202,6 +222,9 @@ export class DurableTurnEvents {
         // provider's message even if a change was coalesced.
         for (const [i, block] of (assistant.content ?? []).entries()) {
           if (block?.type === "text" || block?.type === "thinking") out.push(...this.#change({ type: "block", contentIndex: i, block }));
+        }
+        for (const block of assistant.content ?? []) {
+          if (block?.type === "toolCall" && block.id) this.callArgs.set(block.id, block.arguments);
         }
         const failure = assistantMessageError(assistant);
         this.lastError = failure && failure.code !== "aborted" ? failure : null;
@@ -286,7 +309,7 @@ export class DurableTurnEvents {
     if (kind === "reasoning") {
       const start = this.partStartedAt.get(id) ?? this.now();
       this.partStartedAt.set(id, start);
-      time = { start, ...(change.type === "block" ? { end: this.now() } : {}) };
+      time = { start, ...(change.type === "block" && !change.opening ? { end: this.now() } : {}) };
     }
     return this.#textFrames({ id, partType: kind, full: next, delta: delta || null, time });
   }

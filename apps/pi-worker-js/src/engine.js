@@ -17,7 +17,7 @@
 // tree or an attached machine, plus glob, todo, machine and the project's
 // plugins), what the system prompt says, which model the gateway serves, and
 // the Kortix wire (kortix/turn-events.js) that every client renders.
-import { Harness, createRegistry, defineExtension, defineTool, section, watchEvents, UserEntry } from "@earendil-works/pi-durable";
+import { Harness, ToolTask, createRegistry, defineExtension, defineTool, hook, section, watchEvents, UserEntry } from "@earendil-works/pi-durable";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
 import { InMemoryCredentialStore, createModels, createProvider, envApiKeyAuth } from "@earendil-works/pi-ai";
@@ -130,6 +130,8 @@ export class CellEngine {
    * @param {() => string} o.agentName
    * @param {(turn: object) => void} o.onTurnEnd
    * @param {(frame: object) => void} [o.onFrame]
+   * @param {(call: {id: string, name: string, arguments: object}, signal?: AbortSignal) => Promise<{block?: string}|undefined>} [o.gate]
+   *        the project's permission policy, asked before every tool call
    * @param {(...a: unknown[]) => void} [o.log]
    */
   constructor(o) {
@@ -148,6 +150,13 @@ export class CellEngine {
     this.registry = createRegistry();
     this.registry.install(CodingTools);
     this.registry.install(defineExtension({ name: "kortix-prompt", sections: this.#sections() }));
+    // The permission policy runs before every tool call, pi's and the cell's.
+    // pi-durable re-runs this hook when it resumes an interrupted call, so a
+    // call that waits on a person resumes the same wait (interactions.js).
+    this.registry.install(defineExtension({
+      name: "kortix-permissions",
+      hooks: [hook(ToolTask, { beforeTool: (call, _api, context) => this.o.gate?.(call, context?.abortSignal) })],
+    }));
     this.gatewayModels = new Map();
     this.faux = null;
   }

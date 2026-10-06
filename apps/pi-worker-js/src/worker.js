@@ -43,8 +43,14 @@ import { turnErrorCode } from "./kortix/turn-events.js";
 import { CELL_VERSION, parsePromptBody } from "./kortix/prompt.js";
 import { filesAnswer } from "./cell-files.js";
 import { STATIC_PREFIX, staticAnswer } from "./cell-static.js";
+import { formatSkillInvocation } from "./vendor/pi-skills.js";
 import { loadWorkspaceSkills, withSkills } from "./skills.js";
-import { workspaceConfigDir } from "./manifest.js";
+import { workspaceConfigDir, workspacePiConfigDir } from "./manifest.js";
+import { commandList, commandPromptBody, expandPromptTemplate, loadPromptTemplates } from "./commands.js";
+import { MANAGED_SKILLS_TABLE_SQL, MANAGED_SKILLS_TTL_MS, fetchOverlay, materializeOverlay, storeOverlay, storedOverlay, touchOverlay } from "./managed-skills.js";
+import { callRule, compilePermissionPolicy, permissionSubject, skillGranted, toolCapability } from "./permissions.js";
+import { CellInteractions, questionTool } from "./interactions.js";
+import { KORTIX_TOOL_NAMES, kortixTools } from "./kortix-tools/index.js";
 import { ENVIRONMENT_TABLE_SQL, attachEnvironment, readCached as readEnvironment, waitForRepo } from "./environment.js";
 import { machineTool } from "./machine-tool.js";
 import { machineFs, machineGit } from "./machine-fs.js";
@@ -68,7 +74,7 @@ const DEFAULT_SYSTEM_PROMPT = [
 const PROJECT_INSTRUCTIONS_MAX = 16_000;
 
 /** kortixd's runtime capability names a pi session advertises; one `session.*` is required. */
-const CAPABILITIES = ["file.import", "file.append", "runtime.turns.v1", "session.compact"];
+const CAPABILITIES = ["file.import", "file.append", "runtime.turns.v1", "session.compact", "session.commands"];
 
 /** The longest one alarm waits on pi; a longer run is waited on across several alarms. */
 const ALARM_WAIT_MS = 10 * 60_000;
@@ -99,6 +105,7 @@ export class AgentCell {
     this.sql.exec("CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT)");
     this.sql.exec("CREATE TABLE IF NOT EXISTS session_env (k TEXT PRIMARY KEY, v TEXT NOT NULL)");
     this.sql.exec("CREATE TABLE IF NOT EXISTS userenv (k TEXT PRIMARY KEY, v TEXT NOT NULL)");
+    this.sql.exec(MANAGED_SKILLS_TABLE_SQL);
     this.sessionEnv = {};
     for (const row of this.sql.exec("SELECT k, v FROM session_env")) this.sessionEnv[String(row.k)] = String(row.v);
     this.transcript = new TranscriptStore(this.sql);
@@ -190,9 +197,53 @@ export class AgentCell {
       agentName: () => this.agentName(),
       onTurnEnd: () => { this.relayPending().catch(() => {}); },
       onCompaction: (phase) => this.compactionFrames(phase),
+      gate: (call, signal) => this.gate(call, signal),
       log: (...a) => this.log(...a),
     });
     return this.__engine;
+  }
+
+  // ── permissions and questions ──────────────────────────────────────────
+
+  interactions() {
+    this.__interactions ??= new CellInteractions({
+      sql: this.sql,
+      sessionId: () => this.rootId,
+      publish: (frames) => this.publish(frames),
+      // A reply stored while no isolate waited: the alarm opens the engine,
+      // pi-durable resumes the call, and its hook reads the stored reply.
+      onReplied: () => this.state.storage.setAlarm(Date.now() + 1),
+    });
+    return this.__interactions;
+  }
+
+  /** The selected agent's compiled `permission` block (OpenCode's PermissionConfig). */
+  policy() {
+    return compilePermissionPolicy(this.agentConfig().agent?.permission);
+  }
+
+  /**
+   * The project's permission policy, before every tool call: kortixd's
+   * `toolGate` (harness/pi/runtime.ts). A tool the agent switches off and a
+   * `deny` rule block; an `ask` rule waits for the user's reply.
+   */
+  async gate(call, signal) {
+    const tool = String(call?.name ?? "");
+    const args = call?.arguments && typeof call.arguments === "object" ? call.arguments : {};
+    const denied = { block: `The project policy denies this ${tool} call.` };
+    if (this.agentConfig().agent?.tools?.[tool] === false) return denied;
+    const rule = callRule(this.policy(), tool, args, this.interactions().alwaysAllowed());
+    if (rule === "deny") return denied;
+    if (rule === "ask") {
+      const reply = await this.interactions().askPermission({
+        callId: String(call.id),
+        permission: toolCapability(tool, args),
+        patterns: [permissionSubject(tool, args) ?? "*"],
+        metadata: args,
+      }, signal);
+      if (reply === "reject") return { block: "The user rejected this tool call." };
+    }
+    return undefined;
   }
 
   log(...parts) {
@@ -314,13 +365,83 @@ export class AgentCell {
     return this.__configDir;
   }
 
+  /** pi's own config dir (`pi.config_dir`, `harnesses/pi`, `.kortix/pi`), as kortixd resolves it. */
+  async piConfigDir() {
+    if (this.__piConfigDir !== undefined) return this.__piConfigDir;
+    let dir = null;
+    try { dir = await workspacePiConfigDir(cellExecutionEnv(this.cell())); } catch { dir = null; }
+    // Only a found dir is cached: before the checkout lands there is none yet.
+    if (dir) this.__piConfigDir = dir;
+    return dir;
+  }
+
   async skills({ reload = false } = {}) {
-    const configDir = await this.configDir();
-    if (this.__skills && !reload && this.__skills.configDir === configDir) return this.__skills;
-    const loaded = await loadWorkspaceSkills(this.effectiveEnv(), () => cellExecutionEnv(this.cell()), configDir);
-    loaded.configDir = configDir;
+    const piDir = await this.piConfigDir();
+    const policy = this.policy();
+    const policyKey = JSON.stringify(policy.skill ?? policy["*"] ?? null);
+    if (this.__skills && !reload && this.__skills.piDir === piDir && this.__skills.policyKey === policyKey) return this.__skills;
+    await this.managedSkills().catch((e) => this.log("managed-skills", errorText(e)));
+    const loaded = await loadWorkspaceSkills(this.effectiveEnv(), () => cellExecutionEnv(this.cell()), piDir, (name) => skillGranted(policy, name));
+    loaded.piDir = piDir;
+    loaded.policyKey = policyKey;
     this.__skills = loaded;
     return loaded;
+  }
+
+  /**
+   * The managed `kortix-*` overlay in the tree at /opt/kortix/managed-skills,
+   * from SQLite, refreshed from the API when older than its TTL. Only a cell
+   * with no overlay yet waits for the fetch (bounded by its timeout); a
+   * refresh after that runs in the background and drops the skills cache.
+   */
+  async managedSkills() {
+    const cell = this.cell();
+    await cell.ready;
+    const stored = storedOverlay(this.sql);
+    if (stored) await materializeOverlay(cell.fs, stored);
+    const fresh = stored && Date.now() - stored.fetchedAt < MANAGED_SKILLS_TTL_MS;
+    const backingOff = this.__managedFailedAt && Date.now() - this.__managedFailedAt < MANAGED_SKILLS_TTL_MS / 2;
+    if (fresh || backingOff) return;
+    this.__managedFetch ??= (async () => {
+      const r = await fetchOverlay({ env: this.effectiveEnv(), etag: stored?.hash ?? null });
+      if (r.status === "same") touchOverlay(this.sql);
+      else if (r.status === "new") {
+        storeOverlay(this.sql, r);
+        if (await materializeOverlay(cell.fs, r)) { this.__skills = null; this.__prompt = null; }
+      } else {
+        this.__managedFailedAt = Date.now();
+        this.log("managed-skills", r.error);
+      }
+      this.log("managed-skills", r.status, r.status === "new" ? `${r.files.length} files` : "");
+    })().finally(() => { this.__managedFetch = null; });
+    if (!stored) await this.__managedFetch;
+  }
+
+  /** pi's prompt templates from `<pi config dir>/prompts`: the session's slash commands. */
+  async commands({ reload = false } = {}) {
+    const piDir = await this.piConfigDir();
+    if (this.__commands && !reload && this.__commands.piDir === piDir) return this.__commands.templates;
+    const env = cellExecutionEnv(this.cell());
+    const { templates, diagnostics } = piDir ? await loadPromptTemplates(env, [`${CELL_CWD}/${piDir}/prompts`]) : { templates: [], diagnostics: [] };
+    for (const d of diagnostics) this.log("commands", d.message, d.path);
+    this.__commands = { piDir, templates };
+    return templates;
+  }
+
+  /**
+   * `/skill:name args` and `/template args`, expanded as pi's AgentSession
+   * does before a prompt reaches the model. Any other text is unchanged.
+   */
+  expandSlash(text) {
+    if (typeof text !== "string" || !text.startsWith("/")) return text;
+    if (text.startsWith("/skill:")) {
+      const space = text.indexOf(" ");
+      const name = space === -1 ? text.slice(7) : text.slice(7, space);
+      const args = space === -1 ? "" : text.slice(space + 1).trim();
+      const skill = (this.__skills?.skills ?? []).find((s) => s.name === name);
+      return skill ? formatSkillInvocation(skill, args || undefined) : text;
+    }
+    return expandPromptTemplate(text, this.__commands?.templates ?? []);
   }
 
   async projectInstructions() {
@@ -340,7 +461,9 @@ export class AgentCell {
   /** The system prompt's parts, prepared once per prompt and read by pi before each request. */
   async preparePrompt() {
     await this.ensureCheckout().catch(() => null);
-    const { block } = await this.skills({ reload: !this.__skillsAfterCheckout }).catch(() => ({ block: "" }));
+    const reload = !this.__skillsAfterCheckout;
+    const { block } = await this.skills({ reload }).catch(() => ({ block: "" }));
+    await this.commands({ reload }).catch(() => []);
     this.__skillsAfterCheckout = true;
     const plugins = await this.plugins().catch(() => null);
     const machine = await this.machineEnv();
@@ -357,7 +480,12 @@ export class AgentCell {
     return this.__prompt ?? this.preparePrompt();
   }
 
-  /** glob, grep, todo, machine and the project's plugin tools, for pi-durable. */
+  /** The tool names a client lists: pi's coding tools, then the cell's own. */
+  toolIds() {
+    return ["read", "write", "edit", "bash", "glob", "grep", "todowrite", "todoread", ...KORTIX_TOOL_NAMES, "question", ...(this.machineAvailable() ? ["machine"] : [])];
+  }
+
+  /** glob, grep, todo, question, machine and the project's plugin tools, for pi-durable. */
   async extraTools() {
     const plugins = await this.plugins().catch(() => null);
     const pluginTools = (plugins?.tools ?? []).map((t) => toPiTool(t, { onError: (p, n, e) => this.log("plugin", `${p}.${n} threw: ${e?.message ?? e}`) }));
@@ -366,6 +494,10 @@ export class AgentCell {
       fromAgentTool(grepTool(), { replay: "safe" }),
       ...todoTools(this.sql, (todos) => this.publish([{ type: "todo.updated", properties: { sessionID: this.rootId, todos } }]))
         .map((t) => fromAgentTool(t, { replay: "safe" })),
+      // "safe": a call interrupted while it waits re-runs and finds its stored answer.
+      // web_search, image_search, scrape_webpage, memory, show: kortixd's own (kortix-tools/).
+      ...kortixTools({ env: () => this.effectiveEnv(), fsEnv: () => cellExecutionEnv(this.cell()) }).map((t) => fromAgentTool(t)),
+      fromAgentTool(questionTool(this.interactions()), { replay: "safe" }),
       ...(this.machineAvailable() ? [fromAgentTool(this.machineTool())] : []),
       ...pluginTools.map((t) => fromAgentTool(t)),
     ];
@@ -553,7 +685,8 @@ export class AgentCell {
       if (decoded) images.push({ type: "image", data: f.url.slice(f.url.indexOf(",") + 1), mimeType: f.mime });
       else others.push(`${f.filename ?? "attachment"} (${f.mime})`);
     }
-    const text = others.length ? `${input.text}\n\n[attachments not shown to the model: ${others.join(", ")}]` : input.text;
+    const typed = this.expandSlash(input.text);
+    const text = others.length ? `${typed}\n\n[attachments not shown to the model: ${others.join(", ")}]` : typed;
     return images.length ? [{ type: "text", text }, ...images] : text;
   }
 
@@ -732,11 +865,14 @@ export class AgentCell {
     if (path === "/kortix/health" && method === "GET") return this.health(url);
     if (path === "/kortix/env" && method === "POST") return this.applyEnv(req);
     if (path === "/kortix/refresh" && method === "POST") {
+      this.__piConfigDir = undefined;
       await this.skills({ reload: true }).catch(() => null);
+      await this.commands({ reload: true }).catch(() => null);
       this.__prompt = null;
       return json(200, { ok: true, repo: { before: null, after: null }, runtime: "ok", runtime_pid: null, opencode: "ok", opencode_pid: null });
     }
     if (path === "/kortix/abort" && method === "POST") {
+      this.interactions().rejectAll();
       const aborted = await this.engine().abort().catch(() => false);
       return json(200, { ok: true, aborted, runtime_session_id: root, opencode_session_id: root });
     }
@@ -766,7 +902,10 @@ export class AgentCell {
         const { skills } = await this.skills().catch(() => ({ skills: [] }));
         return json(200, skills.map((s) => ({ name: s.name, description: s.description ?? "", location: s.filePath })));
       }
-      if (path === "/tool/ids" || path === "/experimental/tool/ids") return json(200, ["read", "write", "edit", "bash", "glob", "grep", "todowrite", "todoread", ...(this.machineAvailable() ? ["machine"] : [])]);
+      if (path === "/tool/ids" || path === "/experimental/tool/ids") return json(200, this.toolIds());
+      if (path === "/command") return json(200, commandList(await this.commands().catch(() => [])));
+      if (path === "/permission") return json(200, this.interactions().list("permission"));
+      if (path === "/question") return json(200, this.interactions().list("question"));
       if (path === "/tool" || path === "/experimental/tool") return json(200, []);
       if (path === "/mcp" || path === "/lsp") return json(200, {});
       if (path === "/vcs" || path === "/vcs/status" || path === "/vcs/diff") return json(200, []);
@@ -779,8 +918,25 @@ export class AgentCell {
       const boot = bootAnswer(method, path, { sessionId: root, agentName: this.agentName(), projectId: this.effectiveEnv().KORTIX_PROJECT_ID, provider: ref.providerID, modelId: ref.modelID, cwd: CELL_CWD, createdAt: Number(this.meta("created_at")) || this.bornAt, version: CELL_VERSION, checkedOut: !!this.__checkoutOk });
       if (boot) return json(boot.status, boot.body);
     }
-    if (/^\/permission\/[^/]+\/reply$/.test(path) && method === "POST") return json(404, { error: "permission request not found" });
-    if (/^\/question\/[^/]+\/(reply|reject)$/.test(path) && method === "POST") return json(404, { error: "question request not found" });
+    const permissionReply = /^\/permission\/([^/]+)\/reply$/.exec(path);
+    if (permissionReply && method === "POST") {
+      const id = decodeSegment(permissionReply[1]);
+      if (id === null) return json(400, { error: "path contains malformed percent-encoding" });
+      const body = await req.json().catch(() => undefined);
+      if (body === undefined) return json(400, { error: "invalid json body" });
+      if (body?.reply !== "once" && body?.reply !== "always" && body?.reply !== "reject") return json(400, { error: "reply must be once, always, or reject" });
+      return this.interactions().replyPermission(id, body.reply) ? json(200, true) : json(404, { error: "permission request not found" });
+    }
+    const questionReply = /^\/question\/([^/]+)\/(reply|reject)$/.exec(path);
+    if (questionReply && method === "POST") {
+      const id = decodeSegment(questionReply[1]);
+      if (id === null) return json(400, { error: "path contains malformed percent-encoding" });
+      if (questionReply[2] === "reject") return this.interactions().rejectQuestion(id) ? json(200, true) : json(404, { error: "question request not found" });
+      const body = await req.json().catch(() => undefined);
+      if (body === undefined) return json(400, { error: "invalid json body" });
+      if (!Array.isArray(body?.answers)) return json(400, { error: "answers must be an array" });
+      return this.interactions().replyQuestion(id, body.answers) ? json(200, true) : json(404, { error: "question request not found" });
+    }
     if (path === "/log" && method === "POST") return json(200, true);
     if (path === "/global/dispose") return json(200, true);
 
@@ -1092,8 +1248,25 @@ export class AgentCell {
       const reply = this.transcript.all().filter((m) => m.info.role === "assistant" && m.info.parentID === admitted.messageId).at(-1);
       return json(200, reply ? this.#strip(reply) : { info: { id: admitted.messageId, role: "user", sessionID: this.rootId }, parts: [] });
     }
-    if (sub === "command" && method === "POST") return json(400, { error: "the pi cell has no slash commands" });
+    if (sub === "command" && method === "POST") {
+      const r = this.readiness();
+      if (!r.ready) return json(503, { code: "runtime_not_ready", error: r.error ?? "the pi cell is starting", phase: r.phase });
+      let input;
+      try {
+        const templates = await this.commands();
+        input = parsePromptBody(commandPromptBody(await req.json(), templates));
+        // The user message shows what the model is sent, as kortixd's pi does.
+        input.text = expandPromptTemplate(input.text, templates);
+      } catch (e) { return json(400, { error: errorText(e) }); }
+      let admitted;
+      try { admitted = await this.admit(input); } catch (e) { return json(503, { error: errorText(e) }); }
+      if (admitted.deduplicated) return json(200, { deduplicated: true });
+      await this.engine().waitForIdle(10 * 60_000);
+      const reply = this.transcript.all().filter((m) => m.info.role === "assistant" && m.info.parentID === admitted.messageId).at(-1);
+      return json(200, reply ? this.#strip(reply) : { info: { id: admitted.messageId, role: "user", sessionID: this.rootId }, parts: [] });
+    }
     if (sub === "abort" && method === "POST") {
+      this.interactions().rejectAll();
       await this.engine().abort().catch(() => false);
       return json(200, true);
     }

@@ -618,7 +618,11 @@ export function createNodeRuntime({ fs, cwd = CELL_CWD, argv = [], env = {}, fet
   // exports had not been assigned yet, which is worse than refusing.
   const TOP_LEVEL_AWAIT = /await is only valid|await is only valid in async functions/;
   function runSource(source, filename, module, { topLevelAwait = false } = {}) {
-    const dir = dirnameOf(filename);
+    // `node -e` resolves its requires from the working directory, as Node
+    // does. "[eval]" has no directory, and resolving from "/" made
+    // `npm install x && node -e "require('x')"` fail with "Cannot find module
+    // 'x' from '/'" (measured on pi-js 2026-10-06).
+    const dir = filename === "[eval]" ? cwd : dirnameOf(filename);
     // AN ESM FILE IS REWRITTEN, not refused. `new Function` compiles a script,
     // and a script cannot hold `import` — so the source becomes CommonJS first
     // (esmToCjs). Only when it really is ESM: the test skips `import(` and
