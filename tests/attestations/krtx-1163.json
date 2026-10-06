@@ -1,0 +1,16 @@
+{
+  "source_hash": "874d86a20845cfe3b827ee2060384dd59174f4213a0f6867567a6ddedd4f024e",
+  "diff_files": [
+    "packages/db/migrations/20261004003004704_credit_purchases_single_permissive_policy.sql",
+    "packages/db/scripts/credit-purchases-single-permissive-policy.integration.test.ts"
+  ],
+  "diff_hash": "6cf14d1f0a8c7b36d4260fd99d288e00065b786c9d789fc28df902203a1a668c",
+  "head": "573dde929b90712a6542e2fcd98e069e8a3f50a2",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-04T03:37:51.114Z"
+}

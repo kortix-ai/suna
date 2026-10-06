@@ -9,7 +9,7 @@ import { SettingsNavProvider } from '@/features/workspace/shared/settings-nav-co
  * project Settings sub-nav into its own top-level Customize tab. It is the
  * one section editor-tier (`project.secret.read/write`, deliberately not
  * member baseline — see `lib/project-actions.ts`'s header comment) rather
- * than reusing `project.customize.write`, and that gate travels with the
+ * than reusing a broader settings leaf, and that gate travels with the
  * component itself, unchanged by this move.
  *
  * `SecretsView` calls `useSettingsNav()` internally (e.g. a cross-link to

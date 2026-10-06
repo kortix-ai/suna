@@ -99,7 +99,7 @@ import {
   type IamPolicy,
 } from '@kortix/sdk';
 import { contract, invalidatePermissionProbes, qk } from '@kortix/sdk/react';
-import { areaLabel, permissionLabel } from './role-capability-matrix';
+import { areaLabel, permissionLabel } from './role-capability-model';
 
 const PANEL = 'bg-popover rounded-md border';
 

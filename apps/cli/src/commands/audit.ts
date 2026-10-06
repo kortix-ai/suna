@@ -1,9 +1,20 @@
 import { writeFileSync } from 'node:fs';
 import { downloadAccountAudit, type AuditEvent, type AuditEventList } from '@kortix/sdk';
 import { splitHelp } from '../command-argv.ts';
-import { resolveAccountContext, emitJson, surfaceApiError, takeFlagValue, takeFlagBool, fail, missing } from '../command-helpers.ts';
-import { C, help, pad, status } from '../style.ts';
+import {
+  emitJson,
+  fail,
+  missing,
+  resolveAccountContext,
+  resolveSpanInstant,
+  surfaceApiError,
+  takeFlagBool,
+  takeFlagValue,
+  type AccountContext,
+} from '../command-helpers.ts';
+import { trim, C, help, pad, status } from '../style.ts';
 import { auditLabelForAction, auditLabelForHttpAction } from '@kortix/shared/audit-labels';
+import { printEvents } from './audit-render.ts';
 
 // The account audit trail — the CLI face of `kortix.audit_events`, which the
 // dashboard already reads. Reads are gated server-side on `audit.read` plus the
@@ -105,14 +116,6 @@ interface AuditWebhook {
   test?: { ok: boolean; status?: number; error?: string };
 }
 
-const RELATIVE_SPAN = /^(\d+)\s*(m|h|d|w)$/i;
-const SPAN_MS: Record<string, number> = {
-  m: 60_000,
-  h: 3_600_000,
-  d: 86_400_000,
-  w: 604_800_000,
-};
-
 /**
  * Accept `24h` / `7d` as well as ISO-8601.
  *
@@ -121,17 +124,7 @@ const SPAN_MS: Record<string, number> = {
  * is unambiguous and shows up in `--json` output as the instant it really used.
  */
 export function resolveInstant(input: string, now: Date = new Date()): string | null {
-  const value = input.trim();
-  if (!value) return null;
-  const relative = RELATIVE_SPAN.exec(value);
-  if (relative) {
-    const amount = Number(relative[1]);
-    const unit = relative[2]!.toLowerCase();
-    if (!Number.isFinite(amount) || amount <= 0) return null;
-    return new Date(now.getTime() - amount * SPAN_MS[unit]!).toISOString();
-  }
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  return resolveSpanInstant(input, now, -1);
 }
 
 /** Query string shared by `ls` and `export`, so the two can never drift. */
@@ -196,112 +189,84 @@ function surfaceAuditError(err: unknown): number {
   return surfaceApiError(err);
 }
 
-function shortTime(iso: string): string {
-  // `2026-08-05T11:14:20.123Z` → `08-05 11:14:20`. The year is noise in a log
-  // you are scanning; the seconds are not.
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso.slice(0, 19).replace('T', ' ');
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`;
-}
-
-/** Longest ACTION cell before the table starts pushing RESOURCE off-screen.
- *  Rows written before audit labels carry raw HTTP lines, ~70 chars of
- *  mostly-identical path. Full values are always in `--json`. */
-const ACTION_MAX = 40;
-/** Longest EVENT cell: a catalog title is at most 7 words. */
-const EVENT_MAX = 44;
-
 /**
- * What a row's action reads as: its title in the shared audit catalog
- * (`gateway.key.revoke` → `Revoked LLM gateway key`), the title of the route a
- * pre-label `METHOD /route` row names, or the action itself.
- */
-export function auditEventTitle(action: string): string {
-  return (auditLabelForAction(action) ?? auditLabelForHttpAction(action))?.title ?? action;
-}
-
-export function truncate(value: string, max: number): string {
-  return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
-}
-
-function outcomeCell(outcome: AuditEvent['outcome']): string {
-  const label = outcome ?? '—';
-  if (outcome === 'failure' || outcome === 'denied') return `${C.red}${pad(label, 8)}${C.reset}`;
-  if (outcome === 'pending') return `${C.yellow}${pad(label, 8)}${C.reset}`;
-  return `${C.faded}${pad(label, 8)}${C.reset}`;
-}
-
-function actorCell(event: AuditEvent): string {
-  if (event.actor_type && event.actor_type !== 'human') return event.actor_type;
-  return event.actor_user_id ? event.actor_user_id.slice(0, 8) : '—';
-}
-
-function printEvents(events: AuditEvent[]): void {
-  if (events.length === 0) {
-    process.stdout.write(`\n  ${C.dim}No audit events match.${C.reset}\n\n`);
-    return;
-  }
-  const eventW = Math.min(
-    Math.max(...events.map((e) => auditEventTitle(e.action).length), 5),
-    EVENT_MAX,
-  );
-  const actionW = Math.min(Math.max(...events.map((e) => e.action.length), 6), ACTION_MAX);
-  const actorW = Math.max(...events.map((e) => actorCell(e).length), 5);
-  process.stdout.write('\n');
-  process.stdout.write(
-    `  ${C.dim}${pad('WHEN (UTC)', 15)}   ${pad('ACTOR', actorW)}   ${pad('EVENT', eventW)}   ${pad('ACTION', actionW)}   ${pad('OUTCOME', 8)}   RESOURCE${C.reset}\n`,
-  );
-  for (const e of events) {
-    const resource = e.resource_type
-      ? `${e.resource_type}${e.resource_id ? ` ${C.faded}${e.resource_id.slice(0, 8)}${C.reset}` : ''}`
-      : `${C.faded}—${C.reset}`;
-    process.stdout.write(
-      `  ${pad(shortTime(e.occurred_at), 15)}   ${pad(actorCell(e), actorW)}   ${pad(truncate(auditEventTitle(e.action), EVENT_MAX), eventW)}   ${C.faded}${pad(truncate(e.action, ACTION_MAX), actionW)}${C.reset}   ${outcomeCell(e.outcome)}   ${resource}\n`,
-    );
-  }
-}
-
-/**
- * Read an export response body as text.
+ * One paged audit read, shared by `ls`, `project` and `session`: the query
+ * build and its refusal of an unparseable time bound, the --limit/--cursor
+ * flags, the pagination loop (a repeated continuation cursor aborts), the
+ * `--json` shape, and the table + footer.
  *
- * The shared HTTP client parses `application/json`, passes `text/*` through,
- * and returns a **Blob** for everything else. The CSV export is `text/csv` so
- * it arrives as a string; the JSONL export is `application/x-ndjson`, which
- * matches neither branch and arrives as a Blob. `JSON.stringify` on a Blob
- * yields `"{}"` — which is exactly what `--format jsonl` printed before this:
- * an empty object where the export should be.
- *
- * Handled here rather than in the SDK because widening that content-type check
- * changes what every other caller receives. The SDK bug is real and worth
- * fixing separately.
+ * `url` turns the (cursor-mutated) query into the request URL, so each
+ * subcommand owns only its route — `session` appends the query string only
+ * when there is one. The footer differs per subcommand, and `session`'s route
+ * takes no filters, so it also skips the shared query build: that build REFUSES
+ * an unparseable --since, which the session route silently ignores.
  */
-export async function exportBodyText(body: unknown): Promise<string> {
-  if (typeof body === 'string') return body;
-  if (body instanceof Blob) return await body.text();
-  return JSON.stringify(body);
-}
+async function listAuditEvents(
+  ctx: AccountContext,
+  url: (search: URLSearchParams) => string,
+  f: Record<string, string | undefined>,
+  all: boolean,
+  json: boolean,
+  footer: 'ls' | 'project' | 'session',
+): Promise<number> {
+  let search: URLSearchParams;
+  if (footer === 'session') {
+    search = new URLSearchParams();
+  } else {
+    const built = buildAuditQuery(f);
+    if ('error' in built) return fail(built.error);
+    search = built.search;
+  }
+  if (f.limit) search.set('limit', f.limit);
+  if (f.cursor) search.set('cursor', f.cursor);
 
-async function collectAuditPages(
-  fetchPage: (cursor: string | null) => Promise<AuditPage>,
-  initialCursor: string | null,
-  followAll: boolean,
-): Promise<{ events: AuditEvent[]; nextCursor: string | null }> {
   const events: AuditEvent[] = [];
-  let cursor = initialCursor;
+  let cursor = f.cursor ?? null;
   const seen = new Set<string>();
   if (cursor) seen.add(cursor);
+  let nextCursor: string | null = null;
   for (;;) {
-    const page = await fetchPage(cursor);
+    if (cursor) search.set('cursor', cursor);
+    else search.delete('cursor');
+    const page = await ctx.client.get<AuditPage>(url(search));
     events.push(...page.events);
-    const nextCursor = page.next_cursor;
-    if (!followAll || !nextCursor) return { events, nextCursor };
+    nextCursor = page.next_cursor;
+    if (!all || !nextCursor) break;
     if (seen.has(nextCursor)) {
       throw new Error('audit pagination returned a repeated continuation cursor');
     }
     seen.add(nextCursor);
     cursor = nextCursor;
   }
+
+  if (json) {
+    emitJson({ events, next_cursor: all ? null : nextCursor });
+    return 0;
+  }
+  printEvents(events);
+  if (footer === 'session') {
+    // An empty session timeline ends at the table's own closing blank line.
+    if (events.length === 0) return 0;
+    if (nextCursor && !all) {
+      process.stdout.write(
+        `\n  ${C.dim}more available — use --all, or --cursor ${nextCursor}${C.reset}`,
+      );
+    }
+    process.stdout.write('\n');
+    return 0;
+  }
+  process.stdout.write(
+    `\n  ${C.dim}${events.length} event${events.length === 1 ? '' : 's'}${C.reset}`,
+  );
+  if (nextCursor && !all) {
+    process.stdout.write(
+      footer === 'project'
+        ? `  ${C.dim}more available — use --all${C.reset}`
+        : `  ${C.dim}more available — use --all, or --cursor ${nextCursor}${C.reset}`,
+    );
+  }
+  process.stdout.write('\n\n');
+  return 0;
 }
 
 export async function runAudit(argv: string[]): Promise<number> {
@@ -351,79 +316,20 @@ export async function runAudit(argv: string[]): Promise<number> {
   try {
     switch (sub) {
       case 'ls':
-      case 'list': {
-        const built = buildAuditQuery(f);
-        if ('error' in built) return fail(built.error);
-        const { search } = built;
-        if (f.limit) search.set('limit', f.limit);
-        if (f.cursor) search.set('cursor', f.cursor);
-
-        const collected = await collectAuditPages(
-          async (cursor) => {
-            if (cursor) search.set('cursor', cursor);
-            else search.delete('cursor');
-            return ctx.client.get<AuditPage>(`${base}?${search.toString()}`);
-          },
-          f.cursor ?? null,
-          all,
-        );
-
-        if (json) {
-          emitJson({
-            events: collected.events,
-            next_cursor: all ? null : collected.nextCursor,
-          });
-          return 0;
-        }
-        printEvents(collected.events);
-        const count = `${collected.events.length} event${collected.events.length === 1 ? '' : 's'}`;
-        process.stdout.write(`\n  ${C.dim}${count}${C.reset}`);
-        if (collected.nextCursor && !all) {
-          process.stdout.write(
-            `  ${C.dim}more available — use --all, or --cursor ${collected.nextCursor}${C.reset}`,
-          );
-        }
-        process.stdout.write('\n\n');
-        return 0;
-      }
+      case 'list':
+        return await listAuditEvents(ctx, (search) => `${base}?${search}`, f, all, json, 'ls');
 
       case 'project': {
         const projectId = positional[0] ?? f.project;
-        if (!projectId) {
-          process.stderr.write(`${status.err('Missing a project id.')}` + '\n');
-          return 2;
-        }
-        const built = buildAuditQuery({ ...f, project: undefined });
-        if ('error' in built) return fail(built.error);
-        const { search } = built;
-        if (f.limit) search.set('limit', f.limit);
-        if (f.cursor) search.set('cursor', f.cursor);
-        const collected = await collectAuditPages(
-          async (cursor) => {
-            if (cursor) search.set('cursor', cursor);
-            else search.delete('cursor');
-            return ctx.client.get<AuditPage>(
-              `/projects/${encodeURIComponent(projectId)}/audit?${search.toString()}`,
-            );
-          },
-          f.cursor ?? null,
+        if (!projectId) return fail('Missing a project id.');
+        return await listAuditEvents(
+          ctx,
+          (search) => `/projects/${encodeURIComponent(projectId)}/audit?${search}`,
+          { ...f, project: undefined },
           all,
+          json,
+          'project',
         );
-        if (json) {
-          emitJson({
-            events: collected.events,
-            next_cursor: all ? null : collected.nextCursor,
-          });
-          return 0;
-        }
-        printEvents(collected.events);
-        process.stdout.write(
-          `\n  ${C.dim}${collected.events.length} event${collected.events.length === 1 ? '' : 's'}${C.reset}`,
-        );
-        if (collected.nextCursor && !all)
-          process.stdout.write(`  ${C.dim}more available — use --all${C.reset}`);
-        process.stdout.write('\n\n');
-        return 0;
       }
 
       case 'export': {
@@ -498,42 +404,17 @@ export async function runAudit(argv: string[]): Promise<number> {
         const sessionId = positional[0];
         if (!sessionId) return fail('Missing a session id.');
         const projectId = f.project;
-        if (!projectId) return missing('--project <id> — the session audit route is project-scoped');
-        const sessionSearch = new URLSearchParams();
-        if (f.limit) sessionSearch.set('limit', f.limit);
-        if (f.cursor) sessionSearch.set('cursor', f.cursor);
-        const collected = await collectAuditPages(
-          async (cursor) => {
-            if (cursor) sessionSearch.set('cursor', cursor);
-            else sessionSearch.delete('cursor');
-            const query = sessionSearch.size ? `?${sessionSearch.toString()}` : '';
-            return ctx.client.get<AuditPage>(
-              `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/audit${query}`,
-            );
-          },
-          f.cursor ?? null,
+        if (!projectId)
+          return missing('--project <id> — the session audit route is project-scoped');
+        return await listAuditEvents(
+          ctx,
+          (search) =>
+            `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/audit${search.size ? `?${search}` : ''}`,
+          f,
           all,
+          json,
+          'session',
         );
-        if (json) {
-          emitJson({
-            events: collected.events,
-            next_cursor: all ? null : collected.nextCursor,
-          });
-          return 0;
-        }
-        const events = collected.events;
-        if (events.length === 0) {
-          printEvents(events);
-          return 0;
-        }
-        printEvents(events);
-        if (collected.nextCursor && !all) {
-          process.stdout.write(
-            `\n  ${C.dim}more available — use --all, or --cursor ${collected.nextCursor}${C.reset}`,
-          );
-        }
-        process.stdout.write('\n');
-        return 0;
       }
 
       case 'webhooks': {
@@ -566,12 +447,12 @@ export async function runAudit(argv: string[]): Promise<number> {
             for (const w of webhooks) {
               const state = w.enabled ? 'enabled' : `${C.yellow}disabled${C.reset}`;
               process.stdout.write(
-                `  ${pad(w.name, nameW)}   ${pad(truncate(w.url, urlW), urlW)}   ${pad(state, 8)}   ` +
+                `  ${pad(w.name, nameW)}   ${pad(trim(w.url, urlW), urlW)}   ${pad(state, 8)}   ` +
                   `${pad(w.action_prefix ?? 'all', 12)}   ${C.faded}${w.webhook_id}${C.reset}\n`,
               );
               if (w.last_error) {
                 process.stdout.write(
-                  `  ${C.red}└ last error${C.reset} ${C.dim}${w.last_error_at?.slice(0, 19).replace('T', ' ') ?? ''}${C.reset} ${truncate(w.last_error, 80)}\n`,
+                  `  ${C.red}└ last error${C.reset} ${C.dim}${w.last_error_at?.slice(0, 19).replace('T', ' ') ?? ''}${C.reset} ${trim(w.last_error, 80)}\n`,
                 );
               }
             }

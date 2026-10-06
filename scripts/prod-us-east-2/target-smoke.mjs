@@ -47,7 +47,8 @@ let originalWebhookUrl = null;
 let signupWebhookSuppressed = false;
 
 function sql(input, variables = {}) {
-  const args = [databaseUrl, '-X', '-qAt', '-v', 'ON_ERROR_STOP=1'];
+  // Explicit tab separator: psql's default `|` also occurs inside object names.
+  const args = [databaseUrl, '-X', '-qAt', '-F', '\t', '-v', 'ON_ERROR_STOP=1'];
   for (const [name, value] of Object.entries(variables)) {
     args.push('-v', `${name}=${value}`);
   }
@@ -520,7 +521,7 @@ WHERE storage.objects.bucket_id = 'avatars'
 ORDER BY storage.objects.name COLLATE "C"
 LIMIT 1;
 `);
-    const [objectName, bucketPublic] = objectRow.split('|');
+    const [objectName, bucketPublic] = objectRow.split('\t');
     if (!objectName) throw new Error('The target avatars bucket is empty');
     const encodedObjectName = objectName
       .split('/')

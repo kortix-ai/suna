@@ -64,7 +64,12 @@ test('project access and member restriction use one scoped request', async () =>
 });
 
 test('list preserves an empty configured pool after its last resource disappears', async () => {
-  const result = { pools: [{ provider_id: 'anthropic', configured: true, secret_ids: [] }], can_edit: false };
+  const result = {
+    pools: [{ provider_id: 'anthropic', configured: true, secret_ids: [] }],
+    can_edit: false,
+    personal_user_id: null,
+    personal_keys_reason: 'no_person' as const,
+  };
   globalThis.fetch = mock(async (url: unknown, init: RequestInit = {}) => {
     calls.push({ url: String(url), method: init.method ?? 'GET', body: null });
     return Response.json(result);

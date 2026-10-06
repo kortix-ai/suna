@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname } from 'node:path';
-import type { RuntimeAuditBatch } from '@kortix/api-contract/runtime-relay';
+import type { RuntimeAuditBatch, RuntimeAuditEvent } from '@kortix/api-contract/runtime-relay';
 import { logger } from '@/lib/log/logger';
 import { sandboxRelayContext } from '@/lib/kortix-api/relay-context';
 import {
@@ -27,32 +27,7 @@ import {
  * until E2 gives Kortix its own.
  */
 
-export interface RuntimeAuditEvent {
-  event_id: string;
-  /** Stable identity for one observed emission. Retries preserve it. */
-  source_revision: string;
-  type: string;
-  occurred_at: string;
-  runtime_session_id: string | null;
-  turn_id: string | null;
-  message_id: string | null;
-  tool_call_id: string | null;
-  execution_id: string | null;
-  agent_id: string | null;
-  agent_name: string | null;
-  correlation_id: string | null;
-  causation_id: string | null;
-  delegation_depth: number;
-  outcome: 'success' | 'failure' | 'denied' | 'pending';
-  phase: string;
-  input_summary: Record<string, unknown>;
-  output_summary: Record<string, unknown> | null;
-  input_sha256: string;
-  output_sha256: string | null;
-  error_code: string | null;
-  error_message: string | null;
-  metadata: Record<string, unknown>;
-}
+export type { RuntimeAuditEvent };
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 

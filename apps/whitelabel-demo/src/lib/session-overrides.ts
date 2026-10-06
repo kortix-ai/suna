@@ -13,7 +13,7 @@ import type { CreateProjectSessionInput } from '@kortix/sdk';
  */
 
 /** Which project secrets a session may read. `null` = don't narrow at all. */
-export type SecretsAllowlist = string[] | null;
+type SecretsAllowlist = string[] | null;
 
 export interface SessionOverrides {
   /** Agent name; null = the project's default agent. */
@@ -40,7 +40,7 @@ export const NO_OVERRIDES: SessionOverrides = {
   runtimeContext: null,
 };
 
-export interface SessionCreateExtras {
+interface SessionCreateExtras {
   sessionId: string;
   name?: string;
   sandboxSlug?: string;
@@ -64,17 +64,13 @@ export function buildSessionCreateInput(
     ...(overrides.secrets ? { secrets: overrides.secrets } : {}),
     // Omitted entirely when unset, so a session that declines to pass context is
     // byte-identical to one from before this existed.
-    ...(overrides.runtimeContext &&
-    Object.keys(overrides.runtimeContext).length > 0
+    ...(overrides.runtimeContext && Object.keys(overrides.runtimeContext).length > 0
       ? { runtime_context: overrides.runtimeContext }
       : {}),
     ...(aliases.length > 0
       ? {
           connector_bindings: Object.fromEntries(
-            aliases.map((alias) => [
-              alias,
-              { connection_id: overrides.bindings[alias]! },
-            ]),
+            aliases.map((alias) => [alias, { connection_id: overrides.bindings[alias]! }]),
           ),
           // Binding ANY alias otherwise switches every other alias off its
           // project default ("all-or-nothing"). Picking one connection in this

@@ -24,10 +24,11 @@ describe('marketplace HTTP contract', () => {
     const { marketplaceApp } = await import('../marketplace');
     const app = new Hono();
     app.route('/v1/marketplace', marketplaceApp);
-    // A literal loopback IP: the resolved name of `localhost` is environment
-    // (hosts-file/DNS) dependent; the contract under test is the HTTP surface.
-    server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: app.fetch });
-    baseUrl = `http://${server.hostname}:${server.port}/v1`;
+    server = Bun.serve({ port: 0, fetch: app.fetch });
+    // server.hostname reports `localhost`; on a platform sandbox that name does
+    // not resolve (or resolves to ::1, which the all-interfaces listener never
+    // answers) and the fetch dies with ConnectionRefused. Loopback by address.
+    baseUrl = `http://127.0.0.1:${server.port}/v1`;
   });
 
   afterAll(() => {

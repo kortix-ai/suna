@@ -3,13 +3,12 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { projectTriggerRuntime, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { mutateManifestWithRetry } from '../../connectors/manifest-mutation';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { assertMayRunAgent } from '../lib/agent-access';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
-import { AnyObject, TriggerSchema, projectsApp } from '../lib/app';
+import { OkSchema, TriggerFireResultSchema, TriggerListSchema, projectsApp } from '../lib/app';
 import { guardSession } from '../lib/session-access';
 import { withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
@@ -85,11 +84,11 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string() }),
     },
     responses: {
-      200: json(z.array(TriggerSchema), 'Triggers'),
+      200: json(TriggerListSchema, 'Triggers, the pause switch and manifest parse errors'),
       ...errors(404),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -120,7 +119,7 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string() }),
       body: { content: { 'application/json': { schema: lenientBody({
           name: z.string().openapi({ description: 'Trigger name. The slug derives from it.' }),
-          type: z.enum(['cron,webhook,monitor']).openapi({ description: 'cron runs on a schedule, webhook runs on an HTTP call, monitor supervises a command.' }),
+          type: z.enum(['cron', 'webhook', 'monitor']).openapi({ description: 'cron runs on a schedule, webhook runs on an HTTP call, monitor supervises a command.' }),
           prompt_template: z.string().openapi({ description: 'Prompt the agent receives on each fire. Webhook payload templates like {{ body.x }} are allowed.' }),
           slug: z.string().optional().openapi({ description: 'Explicit slug (a-z, 0-9, _, -). Defaults to a slug of name.' }),
           agent: z.string().optional().openapi({ description: 'Agent to run. Default "default".' }),
@@ -131,10 +130,10 @@ projectsApp.openapi(
           timezone: z.string().optional().openapi({ description: 'IANA timezone for cron. Default UTC.' }),
           secret_env: z.string().optional().openapi({ description: 'Project secret holding the webhook signing secret. Required for a webhook trigger.' }),
           run: z.string().optional().openapi({ description: 'Repo-relative command a monitor supervises. Required for a monitor.' }),
-          mode: z.enum(['poll,stream']).optional().openapi({ description: 'Monitor mode. Required for a monitor.' }),
+          mode: z.enum(['poll', 'stream']).optional().openapi({ description: 'Monitor mode. Required for a monitor.' }),
           interval: z.string().optional().openapi({ description: 'Poll period such as 5m. Monitors with mode poll only.' }),
           expect_event_within: z.string().optional().openapi({ description: 'Silence watchdog such as 1h. Monitors only.' }),
-          session_mode: z.enum(['fresh,reuse,pinned,keyed']).optional().openapi({ description: 'Whether each fire starts a new session, reuses one, pins one, or keys by session_key.' }),
+          session_mode: z.enum(['fresh', 'reuse', 'pinned', 'keyed']).optional().openapi({ description: 'Whether each fire starts a new session, reuses one, pins one, or keys by session_key.' }),
           session_id: z.string().optional().openapi({ description: 'Session to pin when session_mode is pinned.' }),
           session_key: z.string().optional().openapi({ description: 'Template deriving one session per key when session_mode is keyed.' }),
           filter: z.record(z.string(), z.any()).optional().openapi({ description: 'Payload path to expected value; a delivery fires only if all match.' }),
@@ -142,11 +141,11 @@ projectsApp.openapi(
         }) } } },
     },
     responses: {
-      201: json(TriggerSchema, 'The created trigger'),
+      201: json(TriggerListSchema, 'Every trigger after the create'),
       ...errors(400, 404, 409, 502),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const body = await readJsonObject(c);
     const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -258,11 +257,11 @@ projectsApp.openapi(
         }) } } },
     },
     responses: {
-      200: json(AnyObject, 'Updated triggers (includes triggers_paused)'),
+      200: json(TriggerListSchema, 'Every trigger after the switch'),
       ...errors(400, 401, 403, 404),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const body = await readJsonObject(c);
     const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -318,7 +317,7 @@ projectsApp.openapi(
           run_at: z.string().optional().openapi({ description: 'ISO-8601 instant for a one-off trigger.' }),
           timezone: z.string().optional().openapi({ description: 'IANA timezone.' }),
           secret_env: z.string().optional().openapi({ description: 'Webhook signing secret name.' }),
-          session_mode: z.enum(['fresh,reuse,pinned,keyed']).optional().openapi({ description: 'Session reuse mode.' }),
+          session_mode: z.enum(['fresh', 'reuse', 'pinned', 'keyed']).optional().openapi({ description: 'Session reuse mode.' }),
           session_id: z.string().optional().openapi({ description: 'Session to pin.' }),
           session_key: z.string().optional().openapi({ description: 'Session key template.' }),
           filter: z.record(z.string(), z.any()).optional().openapi({ description: 'Payload filter.' }),
@@ -326,11 +325,11 @@ projectsApp.openapi(
         }) } } },
     },
     responses: {
-      200: json(z.any(), 'OK'),
+      200: json(TriggerListSchema, 'Every trigger after the update'),
       ...errors(400, 404, 409, 502),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const slug = c.req.param('slug');
     const body = await readJsonObject(c);
@@ -453,11 +452,11 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string(), slug: z.string() }),
     },
     responses: {
-      200: json(z.any(), 'OK'),
+      200: json(OkSchema, 'Deleted'),
       ...errors(400, 404, 409, 502),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const slug = c.req.param('slug');
     const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -498,7 +497,7 @@ projectsApp.openapi(
         and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.slug, slug)),
       );
 
-    return c.json({ ok: true });
+    return c.json({ ok: true as const });
   },
 );
 
@@ -518,11 +517,11 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string(), slug: z.string() }),
     },
     responses: {
-      202: json(z.any(), 'OK'),
+      202: json(TriggerFireResultSchema, 'Queued or fired'),
       ...errors(404, 500),
     },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const slug = c.req.param('slug');
     // Floor 'read' (membership); project.trigger.fire is the real gate. The floor
@@ -544,22 +543,19 @@ projectsApp.openapi(
     if (!spec) return c.json({ error: 'Not found' }, 404);
     // Agents as principals (spec 2026-09-22 §2.2, closes V2): the fired run
     // acts as the trigger's agent, so the FIRER must be allowed to run that
-    // agent. Under the legacy model (flag off) the fire keeps today's gate.
-    if (resolveFeatureFlag(loaded.row.metadata, 'agent_principal')) {
-      // `default` selects the project's default agent; ask about that agent.
-      const mirroredDefault = (loaded.row.metadata as Record<string, unknown> | null)?.default_agent;
-      const firedAgent =
-        spec.agent === 'default' && typeof mirroredDefault === 'string' && mirroredDefault.trim()
-          ? mirroredDefault.trim()
-          : spec.agent;
-      await assertMayRunAgent(
-        c,
-        loaded.row.accountId,
-        projectId,
-        firedAgent,
-        PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE,
-      );
-    }
+    // agent. `default` selects the project's default agent; ask about that one.
+    const mirroredDefault = (loaded.row.metadata as Record<string, unknown> | null)?.default_agent;
+    const firedAgent =
+      spec.agent === 'default' && typeof mirroredDefault === 'string' && mirroredDefault.trim()
+        ? mirroredDefault.trim()
+        : spec.agent;
+    await assertMayRunAgent(
+      c,
+      loaded.row.accountId,
+      projectId,
+      firedAgent,
+      PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE,
+    );
 
     const now = new Date();
     const payload = {
@@ -584,7 +580,7 @@ projectsApp.openapi(
       await markGitTriggerFired(projectId, slug, now);
       return c.json(
         {
-          status: 'queued',
+          status: 'queued' as const,
           command_id: result.commandId ?? null,
           session_id: result.sessionId ?? null,
           reason: result.reason ?? null,
@@ -599,7 +595,7 @@ projectsApp.openapi(
     await markGitTriggerFired(projectId, slug, now);
     return c.json(
       {
-        status: result.deduped ? 'deduped' : 'fired',
+        status: result.deduped ? ('deduped' as const) : ('fired' as const),
         command_id: result.commandId ?? null,
         session_id: result.sessionId ?? null,
         deduped: result.deduped ?? false,

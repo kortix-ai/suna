@@ -22,6 +22,7 @@ import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { and, desc, eq, inArray, isNotNull, isNull, notInArray, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
+import { bumpBounded } from '../shared/ttl-memo';
 import type { DaemonConfigReport } from '../projects/lib/session-config-release';
 import { noteRunningRelease } from './running-release';
 import { isUuid } from '../shared/validate';
@@ -31,7 +32,7 @@ export const PROJECT_QUARANTINE_SESSIONS = 2;
 
 const HEX64 = /^[0-9a-f]{64}$/;
 
-export interface ProvenRelease {
+interface ProvenRelease {
   releaseId: string;
   sourceCommit: string;
 }
@@ -136,53 +137,6 @@ export const dbConfigReleaseLedger: ConfigReleaseLedger = {
   },
 };
 
-/** An in-memory ledger for tests. Same semantics as the DB one, except that it knows no session's agent, so it counts every failure. */
-export class MemoryConfigReleaseLedger implements ConfigReleaseLedger {
-  assigned: Array<{ projectId: string; releaseId: string; variant: string; sourceCommit: string; order: number; provenAt: number | null }> = [];
-  failures: Array<{ projectId: string; releaseId: string; sessionId: string; reason: string | null }> = [];
-  private clock = 0;
-
-  async recordAssigned(input: { projectId: string; releaseId: string; variant: string; sourceCommit: string }) {
-    const exists = this.assigned.some(
-      (row) => row.projectId === input.projectId && row.releaseId === input.releaseId && row.variant === input.variant,
-    );
-    if (!exists) this.assigned.push({ ...input, order: ++this.clock, provenAt: null });
-  }
-  async recordProof(input: { projectId: string; releaseId: string; sessionId: string }) {
-    for (const row of this.assigned) {
-      if (row.projectId === input.projectId && row.releaseId === input.releaseId && row.provenAt === null) {
-        row.provenAt = ++this.clock;
-      }
-    }
-  }
-  async recordFailure(input: { projectId: string; releaseId: string; sessionId: string; reason: string | null }) {
-    const exists = this.failures.some(
-      (row) => row.projectId === input.projectId && row.releaseId === input.releaseId && row.sessionId === input.sessionId,
-    );
-    if (!exists) this.failures.push(input);
-  }
-  private failingSessions(projectId: string, releaseId: string): number {
-    return new Set(
-      this.failures.filter((row) => row.projectId === projectId && row.releaseId === releaseId).map((row) => row.sessionId),
-    ).size;
-  }
-  async quarantined(projectId: string, releaseIds: string[], threshold: number) {
-    return new Set(releaseIds.filter((id) => this.failingSessions(projectId, id) >= threshold));
-  }
-  async lastProven(projectId: string, variant: string, threshold: number) {
-    const rows = this.assigned
-      .filter(
-        (row) =>
-          row.projectId === projectId &&
-          row.variant === variant &&
-          row.provenAt !== null &&
-          this.failingSessions(projectId, row.releaseId) < threshold,
-      )
-      .sort((a, b) => b.order - a.order);
-    return rows[0] ? { releaseId: rows[0].releaseId, sourceCommit: rows[0].sourceCommit } : null;
-  }
-}
-
 /**
  * Suppresses repeated writes of the same fact. `GET /config` is polled; a
  * failure or a proof reported on every poll is written once per 10 minutes
@@ -196,9 +150,7 @@ const recent = new Map<string, number>();
 function firstTimeRecently(key: string, now = Date.now()): boolean {
   const at = recent.get(key);
   if (at !== undefined && now - at < RECENT_TTL_MS) return false;
-  recent.delete(key);
-  recent.set(key, now);
-  while (recent.size > MAX_RECENT) recent.delete(recent.keys().next().value as string);
+  bumpBounded(recent, key, now, MAX_RECENT);
   return true;
 }
 

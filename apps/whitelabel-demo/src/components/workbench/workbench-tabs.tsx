@@ -7,26 +7,23 @@ import { Composer } from '@/components/chat/composer';
 import { MessageView } from '@/components/chat/message-view';
 import { ModelPicker } from '@/components/chat/model-picker';
 import { PermissionPrompt } from '@/components/chat/permission-prompt';
-import { ScopeBar } from '@/components/chat/scope-bar';
 import { QuestionPrompt } from '@/components/chat/question-prompt';
+import { ScopeBar } from '@/components/chat/scope-bar';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Button } from '@/components/ui/button';
 import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker';
 import { Message } from '@/components/ui/message';
-import { SessionScope } from '@/components/workbench/session-scope';
-import { sendFailureTitle } from '@/lib/send-failure';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ChangesPanel } from '@/components/workbench/changes-panel';
 import { FilesPanel } from '@/components/workbench/files-panel';
 import { PreviewPanel } from '@/components/workbench/preview-panel';
-import { kortix } from '@/lib/kortix';
-import { qk } from '@/lib/query-keys';
+import { SessionScope } from '@/components/workbench/session-scope';
+import { useRuntimeRecovery } from '@/components/workbench/use-runtime-recovery';
+import { sendFailureTitle } from '@/lib/send-failure';
 import { cn } from '@/lib/utils';
 import type { UseSessionResult } from '@kortix/sdk/react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, RotateCw, Sparkles } from 'lucide-react';
 import { useEffect, useRef } from 'react';
-import { toast } from 'sonner';
 
 /** The workbench tabs: Chat + the SDK-powered Files / Changes / Preview panels. */
 export function WorkbenchTabs({
@@ -84,47 +81,10 @@ export function WorkbenchTabs({
  * The chat thread. Reads everything off the single `useSession` result — messages,
  * optimistic send, interactive prompts, the model/agent picks, and the runtime
  * phase. No second chat hook, provider-session resolver, or infrastructure wiring.
+ * The restart/down-recovery plumbing lives in `useRuntimeRecovery`.
  */
 function Thread({ session: c }: { session: UseSessionResult }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-  }, [c.messages, c.isBusy, c.hasPending]);
-
-  // ── Runtime recovery ──────────────────────────────────────────────────────
-  // Sandboxes idle-stop (and die) in the real world. Rather than silently
-  // disabling the composer (so Enter "does nothing"), surface the state and
-  // recover: restart() wakes the box and re-arms useSession's /start poll.
-  const qc = useQueryClient();
-  const restart = useMutation({
-    mutationFn: () => kortix.session(c.projectId, c.sessionId).restart(),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.sessionStart(c.projectId, c.sessionId) });
-      toast.success('Reconnecting the runtime…');
-    },
-    onError: () => toast.error('Could not reconnect the runtime'),
-  });
-
-  const runtimeReady = c.runtimePhase === 'ready';
-  // "Down" = was connected, now confirmed unreachable (a drop, not the initial boot).
-  const runtimeDown = c.switched && c.runtimePhase === 'unreachable';
-
-  // Auto-reconnect ONCE per down-episode. The ref guard prevents a restart loop
-  // on a box that can't recover; the flag resets when the runtime comes back, so
-  // a later drop is retried again.
-  const autoTriedRef = useRef(false);
-  useEffect(() => {
-    if (!runtimeDown) {
-      autoTriedRef.current = false;
-      return;
-    }
-    if (autoTriedRef.current || restart.isPending) return;
-    autoTriedRef.current = true;
-    restart.mutate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runtimeDown]);
+  const { restart, runtimeReady, runtimeDown } = useRuntimeRecovery(c);
 
   // No stall watchdog here any more. `c.isBusy` is the working projection
   // (bounded, fed by GET .../turn), and the server closes wedged turns itself
@@ -134,62 +94,7 @@ function Thread({ session: c }: { session: UseSessionResult }) {
 
   return (
     <>
-      <div ref={scrollRef} className="scroll-fade flex-1 overflow-y-auto scrollbar-thin">
-        <div className="mx-auto max-w-3xl space-y-4 px-5 py-6">
-          {c.isLoading && (
-            <div className="flex items-center gap-2.5 py-10 text-sm text-muted-foreground">
-              <Loading className="size-4" /> Loading conversation…
-            </div>
-          )}
-          {!c.isLoading && c.messages.length === 0 && !c.hasPending && !c.pending && (
-            <div className="grid place-items-center py-16 text-center">
-              <Sparkles className="size-6 text-muted-foreground" />
-              <p className="mt-3 text-sm text-muted-foreground">
-                Send a message to get the agent working.
-              </p>
-            </div>
-          )}
-
-          {c.messages.map((m) => (
-            <MessageView key={m.info.id} message={m} />
-          ))}
-
-          {c.pending && (
-            <Message align="end">
-              <Bubble variant="secondary" align="end" className="opacity-70">
-                <BubbleContent>{c.pending}</BubbleContent>
-              </Bubble>
-            </Message>
-          )}
-
-          {c.permissions.map((p) => (
-            <PermissionPrompt
-              key={(p as { id: string }).id}
-              request={p}
-              onAnswer={c.answerPermission}
-            />
-          ))}
-          {c.questions.map((q) => (
-            <QuestionPrompt
-              key={(q as { id: string }).id}
-              request={q}
-              onAnswer={c.answerQuestion}
-              onCancel={c.cancel}
-            />
-          ))}
-
-          {c.isBusy && !c.hasPending && (
-            <Marker className="py-1">
-              <MarkerIcon>
-                <Loading />
-              </MarkerIcon>
-              <MarkerContent className="shimmer text-sm">
-                {c.pending ? 'Sending…' : 'Agent is working…'}
-              </MarkerContent>
-            </Marker>
-          )}
-        </div>
-      </div>
+      <MessageList session={c} />
 
       <div className="shrink-0 px-5 pb-5">
         <div className="mx-auto max-w-3xl">
@@ -256,5 +161,64 @@ function Thread({ session: c }: { session: UseSessionResult }) {
         </div>
       </div>
     </>
+  );
+}
+
+function MessageList({ session: c }: { session: UseSessionResult }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  }, [c.messages, c.isBusy, c.hasPending]);
+
+  return (
+    <div ref={scrollRef} className="scroll-fade flex-1 overflow-y-auto scrollbar-thin">
+      <div className="mx-auto max-w-3xl space-y-4 px-5 py-6">
+        {c.isLoading && (
+          <div className="flex items-center gap-2.5 py-10 text-sm text-muted-foreground">
+            <Loading className="size-4" /> Loading conversation…
+          </div>
+        )}
+        {!c.isLoading && c.messages.length === 0 && !c.hasPending && !c.pending && (
+          <div className="grid place-items-center py-16 text-center">
+            <Sparkles className="size-6 text-muted-foreground" />
+            <p className="mt-3 text-sm text-muted-foreground">
+              Send a message to get the agent working.
+            </p>
+          </div>
+        )}
+
+        {c.messages.map((m) => (
+          <MessageView key={m.info.id} message={m} />
+        ))}
+
+        {c.pending && (
+          <Message align="end">
+            <Bubble variant="secondary" align="end" className="opacity-70">
+              <BubbleContent>{c.pending}</BubbleContent>
+            </Bubble>
+          </Message>
+        )}
+
+        {c.permissions.map((p) => (
+          <PermissionPrompt key={p.id} request={p} onAnswer={c.answerPermission} />
+        ))}
+        {c.questions.map((q) => (
+          <QuestionPrompt key={q.id} request={q} onAnswer={c.answerQuestion} onCancel={c.cancel} />
+        ))}
+
+        {c.isBusy && !c.hasPending && (
+          <Marker className="py-1">
+            <MarkerIcon>
+              <Loading />
+            </MarkerIcon>
+            <MarkerContent className="shimmer text-sm">
+              {c.pending ? 'Sending…' : 'Agent is working…'}
+            </MarkerContent>
+          </Marker>
+        )}
+      </div>
+    </div>
   );
 }

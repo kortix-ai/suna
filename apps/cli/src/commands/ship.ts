@@ -1,29 +1,37 @@
-import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { basename } from 'node:path';
 
 import { loadAuthForHost, type Auth } from '../api/auth.ts';
+import { type ApiClient, ApiError, clientFromAuth } from '../api/client.ts';
 import { activeHostName } from '../api/config.ts';
-import { ApiError, clientFromAuth, type ApiClient } from '../api/client.ts';
-import { isKortixProject, loadLink, saveLink } from '../project-link.ts';
+import type { ProjectSecretsResponse, ProjectSummary } from '../api/types.ts';
 import { takeFlags } from '../command-argv.ts';
-import { takeFlagValue, takeFlagBool } from '../command-helpers.ts';
-import { selectFromList } from '../tui-select.ts';
-import { confirm, prompt, promptSecret } from '../prompts.ts';
-import { loadLocalManifest, lintManifest, type EnvSpec, type LocalManifest } from '../manifest.ts';
+import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import {
-  configureProjectGitAuth,
-  projectIsManaged,
-  resolveProjectGitTarget,
+  commitIfNeeded,
+  currentBranch,
+  detectOrigin,
+  ensureOrigin,
+  explainLinkedProjectError,
+  isGitHubUrl,
+  linkGitHubBackedProject,
+  manifestProjectName,
+  pushProjectBranch,
+  resolvePushCredential,
+  resolveShipAccount,
+  run,
+  setOrigin,
+} from '../git-ops.ts';
+import { type EnvSpec, type LocalManifest, lintManifest, loadLocalManifest } from '../manifest.ts';
+import {
   type ProjectGitTarget,
+  configureProjectGitAuth,
+  resolveProjectGitTarget,
 } from '../project-git.ts';
+import { isKortixProject, loadLink, saveLink } from '../project-link.ts';
+import { promptSecret } from '../prompts.ts';
 import { C, help, status } from '../style.ts';
 import { projectWebUrl } from '../web-url.ts';
-import type {
-  ProjectSummary,
-  MeResponse,
-  AccountMembership,
-  ProjectSecretsResponse,
-} from '../api/types.ts';
+import { ensureConnectorsConnected, reconcileShippedManifest } from './ship-connectors.ts';
 
 const HELP = help`Usage: kortix ship [options]
 
@@ -109,40 +117,26 @@ interface ProvisionResponse extends ProjectSummary {
   repo_id: string;
 }
 
-interface GitTokenResponse {
-  push_token: string;
-  git_username?: string | null;
-  repo_id: string;
-  repo_url: string;
-}
-
-/** Both ship paths use the shared resolver (see ../project-git.ts) so ship,
- *  clone, and the git credential helper can never disagree about how to reach
- *  a project's repo again. */
-export function resolveProvisionShipGitTarget(project: ProvisionResponse): ProjectGitTarget {
-  return resolveProjectGitTarget(project);
-}
-
-export function resolveExistingShipGitTarget(project: ProjectSummary): ProjectGitTarget {
-  return resolveProjectGitTarget(project);
-}
-
 export async function runShip(argv: string[]): Promise<number> {
-  const flags = takeFlags(argv, HELP, (rest): ShipFlags => ({
-    name: takeFlagValue(rest, ['--name']),
-    account: takeFlagValue(rest, ['--account']),
-    origin: takeFlagValue(rest, ['--origin']),
-    githubToken: takeFlagValue(rest, ['--github-token']),
-    message: takeFlagValue(rest, ['--message', '-m']),
-    project: takeFlagValue(rest, ['--project']),
-    host: takeFlagValue(rest, ['--host']),
-    noCommit: takeFlagBool(rest, ['--no-commit']),
-    noVerify: takeFlagBool(rest, ['--no-verify']),
-    noEnv: takeFlagBool(rest, ['--no-env']),
-    noConnect: takeFlagBool(rest, ['--no-connect']),
-    yes: takeFlagBool(rest, ['-y', '--yes']),
-    dryRun: takeFlagBool(rest, ['-n', '--dry-run']),
-  }));
+  const flags = takeFlags(
+    argv,
+    HELP,
+    (rest): ShipFlags => ({
+      name: takeFlagValue(rest, ['--name']),
+      account: takeFlagValue(rest, ['--account']),
+      origin: takeFlagValue(rest, ['--origin']),
+      githubToken: takeFlagValue(rest, ['--github-token']),
+      message: takeFlagValue(rest, ['--message', '-m']),
+      project: takeFlagValue(rest, ['--project']),
+      host: takeFlagValue(rest, ['--host']),
+      noCommit: takeFlagBool(rest, ['--no-commit']),
+      noVerify: takeFlagBool(rest, ['--no-verify']),
+      noEnv: takeFlagBool(rest, ['--no-env']),
+      noConnect: takeFlagBool(rest, ['--no-connect']),
+      yes: takeFlagBool(rest, ['-y', '--yes']),
+      dryRun: takeFlagBool(rest, ['-n', '--dry-run']),
+    }),
+  );
   if (typeof flags === 'number') return flags;
 
   // ── Guards ───────────────────────────────────────────────────────────────
@@ -179,7 +173,9 @@ export async function runShip(argv: string[]): Promise<number> {
           `${C.cyan}kortix login --host ${hostName}${C.reset}.\n`,
       );
     } else {
-      process.stderr.write(`${status.err('Not logged in.')} Run ${C.cyan}kortix login${C.reset}.\n`);
+      process.stderr.write(
+        `${status.err('Not logged in.')} Run ${C.cyan}kortix login${C.reset}.\n`,
+      );
     }
     return 1;
   }
@@ -311,7 +307,9 @@ async function ensureProjectEnv(
 
   if (missing.length === 0) {
     const total = spec.required.length + spec.optional.length;
-    process.stdout.write(`  ${C.dim}env  ${total} declared secret${total === 1 ? '' : 's'} set${C.reset}\n`);
+    process.stdout.write(
+      `  ${C.dim}env  ${total} declared secret${total === 1 ? '' : 's'} set${C.reset}\n`,
+    );
     return;
   }
 
@@ -363,243 +361,6 @@ async function ensureProjectEnv(
   }
 }
 
-// ── Connectors: guided connect on ship ──────────────────────────────────────
-
-/**
- * Say so when the connector routes are simply not there.
- *
- * Both connector steps below swallow their errors, and correctly so: a transient
- * reconcile failure does not invalidate a completed git push, and the server's
- * rotating discovery sweep retries the project anyway. But `404` is not
- * transient — it means this binary is calling a route the API no longer has, and
- * no amount of retrying fixes it. That is exactly the failure that went
- * unnoticed for weeks after `/executor/*` became `/connectors/*`: every sandbox
- * CLI 404ed on every connector call and printed nothing at all.
- *
- * So: surface a 404 and name the fix, keep swallowing everything else. Written
- * to STDERR so it cannot be mistaken for ship output a script is parsing.
- */
-function warnIfConnectorRouteMissing(err: unknown): void {
-  if (!(err instanceof ApiError) || err.status !== 404) return;
-  process.stderr.write(
-    `${status.warn('connector routes returned 404 — this `kortix` CLI looks out of date')}\n` +
-      `  ${C.dim}Update it with ${C.reset}${C.cyan}kortix update${C.reset}${C.dim}, then re-run ship. ` +
-      `Connectors were NOT reconciled.${C.reset}\n`,
-  );
-}
-
-
-interface ShipConnector {
-  slug: string;
-  name: string;
-  provider: 'pipedream' | 'mcp' | 'openapi' | 'postman' | 'graphql' | 'http';
-  status: 'active' | 'disabled' | 'needs_auth' | 'error';
-  authSecret: string | null;
-  secretSet: boolean;
-}
-
-/**
- * After a successful push, reconcile the connector catalog from the just-shipped
- * manifest and walk the user through connecting anything that still needs auth —
- * Pipedream apps via an auto-finalizing one-click connection URL, and
- * HTTP/OpenAPI/GraphQL/MCP connectors via their credential secret. Mirrors
- * `ensureProjectEnv` so a single `kortix ship` leaves the project ready to run.
- * Skipped with --no-connect; non-interactive / --yes only nags with the slugs
- * left to connect. Never hard-fails the ship.
- */
-async function ensureConnectorsConnected(
-  client: ApiClient,
-  projectId: string,
-  flags: ShipFlags,
-): Promise<void> {
-  if (flags.noConnect) return;
-  const ex = `/connectors/projects/${projectId}`;
-
-  let connectors: ShipConnector[];
-  try {
-    const resp = await client.get<{ connectors: ShipConnector[] }>(`${ex}/connectors`);
-    connectors = resp.connectors;
-  } catch (err) {
-    warnIfConnectorRouteMissing(err);
-    return; // don't block the ship over connector setup
-  }
-  if (connectors.length === 0) return;
-
-  const pending = connectors.filter(
-    (c) => c.status === 'needs_auth' || (!!c.authSecret && !c.secretSet),
-  );
-  if (pending.length === 0) {
-    process.stdout.write(
-      `  ${C.dim}connectors  ${connectors.length} declared, all connected${C.reset}\n`,
-    );
-    return;
-  }
-
-  const interactive = process.stdin.isTTY === true && process.stdout.isTTY === true;
-  if (!interactive || flags.yes) {
-    const slugs = pending.map((c) => c.slug).join(', ');
-    process.stdout.write(
-      `  ${status.warn(`${pending.length} connector${pending.length === 1 ? '' : 's'} not connected: ${slugs}`)}\n` +
-        `  ${C.dim}Connect ${pending.length === 1 ? 'it' : 'them'} with ${C.reset}${C.cyan}kortix connectors connect <slug>${C.reset}${C.dim} (or re-run ship interactively).${C.reset}\n`,
-    );
-    return;
-  }
-
-  process.stdout.write(
-    `\n  ${C.bold}connectors${C.reset}  ${C.dim}${pending.length} need setup — connect ${pending.length === 1 ? 'it' : 'them'} now (blank = skip):${C.reset}\n`,
-  );
-  let connected = 0;
-  let connectionLinks = 0;
-  for (const c of pending) {
-    if (c.provider === 'pipedream') {
-      if (await connectPipedreamApp(client, projectId, c)) connectionLinks += 1;
-    } else if (c.authSecret) {
-      if (await setConnectorCredential(client, ex, c)) connected += 1;
-    } else {
-      process.stdout.write(`    ${C.dim}${c.slug}: no auth flow to run — skipped${C.reset}\n`);
-    }
-  }
-  if (connected > 0) {
-    process.stdout.write(
-      `  ${C.dim}${connected} connector${connected === 1 ? '' : 's'} connected.${C.reset}\n`,
-    );
-  }
-  if (connectionLinks > 0) {
-    process.stdout.write(
-      `  ${C.dim}${connectionLinks} auto-finalizing connection URL${connectionLinks === 1 ? '' : 's'} created.${C.reset}\n`,
-    );
-  }
-}
-
-/**
- * Reconcile the pushed manifest into the server runtime catalog.
- *
- * This step always runs. The --no-connect flag only skips credential prompts.
- */
-export async function reconcileShippedManifest(
-  client: ApiClient,
-  projectId: string,
-): Promise<void> {
-  try {
-    await client.post(`/connectors/projects/${projectId}/connectors/sync`);
-  } catch (err) {
-    // A reconcile failure does not invalidate the completed git push.
-    // The rotating server discovery sweep retries the project — except on a
-    // 404, which no retry can fix. See warnIfConnectorRouteMissing.
-    warnIfConnectorRouteMissing(err);
-  }
-}
-
-/** Mint one auto-finalizing Pipedream connection URL for the user. */
-async function connectPipedreamApp(
-  client: ApiClient,
-  projectId: string,
-  c: ShipConnector,
-): Promise<boolean> {
-  try {
-    const resp = await client.post<{ url: string; expires_at: string }>(
-      `/projects/${projectId}/connect-requests`,
-      { slug: c.slug },
-    );
-    process.stdout.write(`\n    ${C.bold}${c.slug}${C.reset} ${C.faded}(${c.name})${C.reset}\n`);
-    process.stdout.write(
-      `    ${C.dim}Authorize:${C.reset} ${C.cyan}${resp.url}${C.reset}\n` +
-        `    ${C.dim}Expires ${resp.expires_at}. The connection finalizes automatically.${C.reset}\n`,
-    );
-    return true;
-  } catch (err) {
-    const msg = err instanceof ApiError ? err.message : (err as Error).message;
-    process.stderr.write(`    ${status.err(`connect ${c.slug} failed: ${msg}`)}\n`);
-    return false;
-  }
-}
-
-/** HTTP/OpenAPI/GraphQL/MCP: store the bearer/basic credential secret value. */
-async function setConnectorCredential(
-  client: ApiClient,
-  ex: string,
-  c: ShipConnector,
-): Promise<boolean> {
-  const value = await promptSecret(`    ${c.slug} ${C.dim}(credential → ${c.authSecret})${C.reset}`);
-  if (!value) {
-    process.stdout.write(`    ${C.dim}skipped ${c.slug}${C.reset}\n`);
-    return false;
-  }
-  try {
-    await client.put(`${ex}/connectors/${encodeURIComponent(c.slug)}/credential`, { value });
-    process.stdout.write(`    ${status.ok(`${C.bold}${c.slug}${C.reset} credential set`)}\n`);
-    return true;
-  } catch (err) {
-    const msg = err instanceof ApiError ? err.message : (err as Error).message;
-    process.stderr.write(`    ${status.err(`couldn't set ${c.slug}: ${msg}`)}\n`);
-    return false;
-  }
-}
-
-function isGitHubUrl(url: string): boolean {
-  return /(^https?:\/\/github\.com\/)|(^git@github\.com:)/i.test(url);
-}
-
-interface LinkRepoResponse {
-  project: ProjectSummary;
-}
-
-/**
- * Link an existing GitHub repo to a new cloud project — the same import the
- * web UI does, from your terminal. Default path is the one-click GitHub App
- * install (no secret to manage): if the app isn't installed yet, we print the
- * install link, you authorize, and we retry. `--github-token <PAT>` skips the
- * app entirely (the App-free fallback — handy where the app can't be installed,
- * e.g. local dev whose callback points at prod).
- */
-export async function linkGitHubBackedProject(
-  client: ApiClient,
-  opts: { repoUrl: string; name: string; accountId: string; githubToken?: string; yes: boolean },
-): Promise<ProjectSummary> {
-  const body = (token?: string) => ({
-    repo_url: opts.repoUrl,
-    name: opts.name,
-    account_id: opts.accountId,
-    ...(token ? { github_token: token } : {}),
-  });
-
-  // PAT path: one shot, no app needed.
-  if (opts.githubToken) {
-    const res = await client.post<LinkRepoResponse>(
-      '/projects/link-repository',
-      body(opts.githubToken),
-    );
-    return res.project;
-  }
-
-  // App path: retry around the one-click install.
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    try {
-      const res = await client.post<LinkRepoResponse>('/projects/link-repository', body());
-      return res.project;
-    } catch (err) {
-      const installUrl =
-        err instanceof ApiError && err.status === 409
-          ? ((err.body as { install_url?: string } | null)?.install_url ?? null)
-          : null;
-      if (!installUrl) throw err;
-
-      process.stdout.write(
-        `\n  ${status.warn('Kortix GitHub App not installed for this repo yet.')}\n` +
-          `  ${C.dim}One-click install (authorize access to your repo):${C.reset}\n` +
-          `  ${C.cyan}${installUrl}${C.reset}\n\n` +
-          `  ${C.dim}Or skip the app with a token: ${C.reset}${C.cyan}kortix ship --github-token <PAT>${C.reset}\n\n`,
-      );
-      if (opts.yes) {
-        throw new Error('GitHub App install required — re-run without -y after installing, or pass --github-token <PAT>.');
-      }
-      const again = await confirm('Installed it? Retry the link', true);
-      if (!again) throw new Error('Aborted — install the Kortix GitHub App (or use --github-token) then run `kortix ship` again.');
-    }
-  }
-  throw new Error('GitHub App still not detected after several tries — install it, or use --github-token <PAT>.');
-}
-
 // ── First ship: create the cloud project, wire the remote, push ─────────────
 async function shipFirstTime(
   client: ApiClient,
@@ -615,17 +376,17 @@ async function shipFirstTime(
 
   // Decide origin without asking: explicit flag → existing remote → managed.
   const explicitUrl =
-    flags.origin && flags.origin !== 'managed' && flags.origin !== 'github'
-      ? flags.origin
-      : null;
+    flags.origin && flags.origin !== 'managed' && flags.origin !== 'github' ? flags.origin : null;
   const forceManaged = flags.origin === 'managed';
   const existingOrigin = forceManaged ? null : detectOrigin();
   const byoUrl = explicitUrl ?? existingOrigin;
 
   let project: ProjectSummary;
   let gitTarget: ProjectGitTarget;
-  let pushToken: string | null = null;
-  let pushUsername = 'x-access-token';
+  let cred: { pushToken: string | null; pushUsername: string } = {
+    pushToken: null,
+    pushUsername: 'x-access-token',
+  };
 
   if (byoUrl) {
     const github = isGitHubUrl(byoUrl);
@@ -643,8 +404,18 @@ async function shipFirstTime(
     // GitHub origin → the seamless import (one-click App install, or --github-token).
     // Non-GitHub remote → the generic project link.
     project = github
-      ? await linkGitHubBackedProject(client, { repoUrl: byoUrl, name, accountId, githubToken: flags.githubToken, yes: flags.yes })
-      : await client.post<ProjectSummary>('/projects', { repo_url: byoUrl, name, account_id: accountId });
+      ? await linkGitHubBackedProject(client, {
+          repoUrl: byoUrl,
+          name,
+          accountId,
+          githubToken: flags.githubToken,
+          yes: flags.yes,
+        })
+      : await client.post<ProjectSummary>('/projects', {
+          repo_url: byoUrl,
+          name,
+          account_id: accountId,
+        });
     bindShippedFolder(project, hostName, auth);
     // BYO stays BYO: push with the user's own git credentials, to their remote.
     gitTarget = { repoUrl: project.repo_url, credentialMode: 'none' };
@@ -681,44 +452,15 @@ async function shipFirstTime(
     // the retry provisioned a SECOND one, silently burning the account's
     // project quota until creation started 403ing on the limit.
     bindShippedFolder(project, hostName, auth);
-    gitTarget = resolveProvisionShipGitTarget(prov);
-    if (gitTarget.credentialMode === 'kortix-token') {
-      // Proxy origin — we push with our own Kortix token; the API resolves the
-      // upstream + host credential server-side. No provider token is exported.
-      pushToken = auth.token;
-    } else {
-      pushToken = prov.push_token;
-      pushUsername = prov.git_username ?? pushUsername;
-      // Proxy-less host: fall back to a repo-scoped provider token. Older
-      // provision responses may omit it even though /git-token can mint one.
-      // Never fall back to a server-global PAT (the server refuses to export it).
-      if (!pushToken) {
-        const tok = await client.post<GitTokenResponse>(
-          `/projects/${project.project_id}/git-token`,
-        );
-        pushToken = tok.push_token;
-        pushUsername = tok.git_username ?? pushUsername;
-      }
-    }
+    gitTarget = resolveProjectGitTarget(prov);
+    cred = await resolvePushCredential(client, auth, project.project_id, gitTarget, prov);
     setOrigin(gitTarget.repoUrl);
     if (gitTarget.credentialMode === 'kortix-token') {
       configureProjectGitAuth(process.cwd(), gitTarget.repoUrl);
     }
   }
 
-  const committed = commitIfNeeded(flags);
-  if (committed === 'error') return 1;
-
-  await ensureProjectEnv(client, project.project_id, env, flags);
-
-  const pushed = await pushProjectBranch(client, project, gitTarget, pushToken, pushUsername);
-  if (!pushed) return 1;
-
-  await reconcileShippedManifest(client, project.project_id);
-  await ensureConnectorsConnected(client, project.project_id, flags);
-
-  reportShipped(auth, project, gitTarget.repoUrl);
-  return 0;
+  return finishShip(client, auth, project, project.project_id, gitTarget, cred, env, flags);
 }
 
 // ── Subsequent ship: commit + push to the linked project ────────────────────
@@ -737,7 +479,7 @@ async function shipExisting(
     if (handled !== null) return handled;
     throw err;
   }
-  const target = resolveExistingShipGitTarget(project);
+  const target = resolveProjectGitTarget(project);
   const mintsProviderToken = target.credentialMode === 'managed-git-token';
   const kortixOwnsOrigin = target.credentialMode !== 'none';
   const repoUrl = target.repoUrl;
@@ -758,15 +500,7 @@ async function shipExisting(
   // Push credential: through the proxy we authenticate with our own Kortix
   // token; a proxy-less host mints a fresh repo-scoped provider token per ship
   // (never persisted in .git/config).
-  let pushToken: string | null = null;
-  let pushUsername = 'x-access-token';
-  if (target.credentialMode === 'kortix-token') {
-    pushToken = auth.token;
-  } else if (mintsProviderToken) {
-    const tok = await client.post<GitTokenResponse>(`/projects/${projectId}/git-token`);
-    pushToken = tok.push_token;
-    pushUsername = tok.git_username ?? pushUsername;
-  }
+  const cred = await resolvePushCredential(client, auth, projectId, target);
   // Kortix owns the remote URL for proxy + managed projects, so keep origin
   // aligned with the target the credential above matches. BYO repos may have
   // lost their remote (fresh clone of a linked repo); heal only when missing so
@@ -778,18 +512,42 @@ async function shipExisting(
   // without ever writing one into .git/config.
   if (target.credentialMode === 'kortix-token') configureProjectGitAuth(process.cwd(), repoUrl);
 
+  return finishShip(client, auth, project, projectId, target, cred, env, flags);
+}
+
+/**
+ * The shared ship tail — commit, set declared env secrets, push, reconcile
+ * connectors, report. Both ship paths end here so their output stays
+ * byte-identical by construction. Returns the exit code.
+ */
+async function finishShip(
+  client: ApiClient,
+  auth: Auth,
+  project: ProjectSummary,
+  projectId: string,
+  target: ProjectGitTarget,
+  cred: { pushToken: string | null; pushUsername: string },
+  env: EnvSpec,
+  flags: ShipFlags,
+): Promise<number> {
   const committed = commitIfNeeded(flags);
   if (committed === 'error') return 1;
 
   await ensureProjectEnv(client, projectId, env, flags);
 
-  const pushed = await pushProjectBranch(client, project, target, pushToken, pushUsername);
+  const pushed = await pushProjectBranch(
+    client,
+    project,
+    target,
+    cred.pushToken,
+    cred.pushUsername,
+  );
   if (!pushed) return 1;
 
   await reconcileShippedManifest(client, projectId);
   await ensureConnectorsConnected(client, projectId, flags);
 
-  reportShipped(auth, project, repoUrl);
+  reportShipped(auth, project, target.repoUrl);
   return 0;
 }
 
@@ -810,193 +568,6 @@ function bindShippedFolder(
   });
 }
 
-// ── git helpers ─────────────────────────────────────────────────────────────
-
-/** The display name from kortix.yaml's project.name, if present. Lets a
- *  first ship honor the manifest instead of defaulting to the folder name. */
-function manifestProjectName(): string | undefined {
-  try {
-    const m = loadLocalManifest();
-    const project = m?.data?.project as { name?: unknown } | undefined;
-    const name = typeof project?.name === 'string' ? project.name.trim() : '';
-    return name || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function detectOrigin(): string | null {
-  const r = run('git', ['remote', 'get-url', 'origin']);
-  const url = r.stdout.trim();
-  return r.ok && url ? url : null;
-}
-
-function setOrigin(url: string): void {
-  if (detectOrigin()) {
-    run('git', ['remote', 'set-url', 'origin', url]);
-  } else {
-    run('git', ['remote', 'add', 'origin', url]);
-  }
-}
-
-/** Add `origin` only if it's missing — don't clobber an existing remote. */
-function ensureOrigin(url: string): void {
-  if (!detectOrigin()) run('git', ['remote', 'add', 'origin', url]);
-}
-
-/** Returns 'ok' (committed or clean) or 'error'. */
-function commitIfNeeded(flags: ShipFlags): 'ok' | 'error' {
-  const dirty =
-    !run('git', ['diff', '--quiet']).ok || !run('git', ['diff', '--cached', '--quiet']).ok;
-  const untracked = run('git', ['ls-files', '--others', '--exclude-standard']);
-  const hasUntracked = untracked.ok && untracked.stdout.trim().length > 0;
-  const hasHead = run('git', ['rev-parse', '--verify', 'HEAD']).ok;
-
-  if (!dirty && !hasUntracked && hasHead) {
-    process.stdout.write(`  ${C.dim}clean working tree${C.reset}\n`);
-    return 'ok';
-  }
-  if (flags.noCommit) {
-    process.stderr.write(
-      `${status.err('Working tree is dirty and --no-commit was passed.')}\n` +
-        `  ${C.dim}Commit or stash first.${C.reset}\n`,
-    );
-    return 'error';
-  }
-  const msg = flags.message ?? 'kortix: ship';
-  const add = run('git', ['add', '-A']);
-  if (!add.ok) {
-    const detail = (add.stderr || add.stdout).trim();
-    process.stderr.write(`${status.err('git add -A failed.')}\n`);
-    if (detail) {
-      process.stderr.write(`  ${C.dim}${detail.split('\n').join('\n  ')}${C.reset}\n`);
-    }
-    if (/index\.lock/i.test(detail)) {
-      process.stderr.write(
-        `  ${C.dim}A stale git lock is blocking it. If no other git process is running here, remove it and retry:${C.reset}\n` +
-          `    ${C.cyan}rm -f .git/index.lock${C.reset}\n`,
-      );
-    }
-    return 'error';
-  }
-  const commit = run('git', ['commit', '-m', msg]);
-  if (!commit.ok && !/nothing to commit/i.test(commit.stdout + commit.stderr)) {
-    process.stderr.write(`${status.err('git commit failed.')}\n${commit.stderr || commit.stdout}\n`);
-    return 'error';
-  }
-  if (commit.ok) process.stdout.write(`${status.ok(`Committed: ${C.bold}${msg}${C.reset}`)}\n`);
-  return 'ok';
-}
-
-/** Current branch name, robust to unborn branches (fresh `git init`). */
-function currentBranch(): string {
-  const sym = run('git', ['symbolic-ref', '--short', 'HEAD']);
-  if (sym.ok && sym.stdout.trim()) return sym.stdout.trim();
-  const ref = run('git', ['rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim();
-  return ref && ref !== 'HEAD' ? ref : 'main';
-}
-
-/**
- * Push the *current* branch to the same-named branch on origin — so whatever
- * branch you're on (main, a feature branch, a test branch) goes to the
- * matching remote branch. For managed repos we inject the scoped token via an
- * http.extraHeader so it never lands in .git/config; for BYO repos we rely on
- * the user's own git credentials. Returns the pushed branch, or null on error.
- */
-function pushCurrentBranch(
-  repoUrl: string,
-  pushToken: string | null,
-  gitUsername = 'x-access-token',
-  opts: { quietOnFailure?: boolean } = {},
-): string | null {
-  const branch = run('git', ['rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim();
-  if (!branch || branch === 'HEAD') {
-    process.stderr.write(
-      `${status.err('Not on a branch (detached HEAD?) — check out a branch and retry.')}\n`,
-    );
-    return null;
-  }
-  const refspec = `${branch}:refs/heads/${branch}`;
-  const args = pushToken ? [...authHeaderArgs(repoUrl, pushToken, gitUsername), 'push'] : ['push'];
-  args.push('-u', 'origin', refspec);
-
-  const push = run('git', args, { inheritStdio: true });
-  if (!push.ok) {
-    if (!opts.quietOnFailure) {
-      process.stderr.write(`\n${status.err(`git push failed (exit ${push.code}).`)}\n`);
-    }
-    return null;
-  }
-  process.stdout.write(
-    `\n${status.ok(`Pushed ${C.bold}${branch}${C.reset} → ${C.bold}origin/${branch}${C.reset}`)}\n`,
-  );
-  return branch;
-}
-
-/**
- * Push the current branch, with ONE fallback transport.
- *
- * The proxy origin is the right default — it works whatever a host's managed
- * git is configured with, and no provider credential ever reaches the client.
- * But the CLI talks to hosts it wasn't shipped with: an older API authorizes
- * the proxy on ACCOUNT OWNERSHIP alone, so a token bound to a different account
- * of the same user is refused there while POST /git-token (which gates on the
- * per-project `gitops.push` capability) would still serve it. So when a proxy
- * push fails on a managed repo, retry once against the raw upstream with a
- * minted repo-scoped token before giving up: either transport being unavailable
- * is survivable, only both failing is a real error. Returns the branch, or null.
- */
-async function pushProjectBranch(
-  client: ApiClient,
-  project: ProjectSummary,
-  target: ProjectGitTarget,
-  pushToken: string | null,
-  pushUsername: string,
-): Promise<string | null> {
-  const canRetry = target.credentialMode === 'kortix-token' && projectIsManaged(project);
-  const pushed = pushCurrentBranch(target.repoUrl, pushToken, pushUsername, {
-    quietOnFailure: canRetry,
-  });
-  if (pushed || !canRetry) return pushed;
-
-  let minted: GitTokenResponse;
-  try {
-    minted = await client.post<GitTokenResponse>(`/projects/${project.project_id}/git-token`);
-  } catch {
-    // No second transport available — report the push failure we swallowed.
-    process.stderr.write(`\n${status.err('git push failed.')}\n`);
-    return null;
-  }
-  process.stdout.write(
-    `  ${status.warn('Proxy push rejected — retrying against the managed upstream.')}\n`,
-  );
-  const upstreamUrl = minted.repo_url || project.repo_url;
-  setOrigin(upstreamUrl);
-  return pushCurrentBranch(upstreamUrl, minted.push_token, minted.git_username || pushUsername);
-}
-
-/** `-c http.<scheme>://<host>/.extraheader=AUTHORIZATION: basic <b64>` —
- *  mirrors the backend's git auth scheme (projects/git.ts). The extraheader
- *  key MUST carry the remote's actual scheme (http for a localhost proxy,
- *  https in prod) or git won't apply it (scheme-scoped config). */
-export function authHeaderArgs(
-  repoUrl: string,
-  token: string,
-  gitUsername = 'x-access-token',
-): string[] {
-  let origin = 'https://github.com';
-  try {
-    const u = new URL(repoUrl);
-    origin = `${u.protocol}//${u.host}`;
-  } catch {
-    /* keep default */
-  }
-  const enc = Buffer.from(`${gitUsername}:${token}`).toString('base64');
-  // RFC 7617 treats the auth scheme case-insensitively, but Code Storage's
-  // Git endpoint currently requires the canonical `Basic` spelling.
-  return ['-c', `http.${origin}/.extraheader=Authorization: Basic ${enc}`];
-}
-
 function reportShipped(auth: Auth, project: ProjectSummary, repoUrl: string): void {
   // Prefer the server-provided dashboard URL; only fall back to guessing from
   // the API host for older backends that don't return one.
@@ -1008,95 +579,7 @@ function reportShipped(auth: Auth, project: ProjectSummary, repoUrl: string): vo
   );
 }
 
-/**
- * Resolve which account a new project should belong to:
- *   --account flag (id or slug) → exact match
- *   single account               → that one
- *   multiple accounts            → prompt (unless -y / non-interactive / dry-run,
- *                                  which fall back to the active account)
- */
-async function resolveShipAccount(
-  client: ApiClient,
-  auth: Auth,
-  flags: ShipFlags,
-): Promise<string> {
-  let accounts: AccountMembership[] = [];
-  try {
-    accounts = (await client.get<MeResponse>('/accounts/me')).accounts ?? [];
-  } catch {
-    // Couldn't list accounts — fall back to the active one.
-    return auth.account_id;
-  }
-
-  if (flags.account) {
-    const match = accounts.find(
-      (a) => a.account_id === flags.account || a.slug === flags.account,
-    );
-    if (!match) {
-      const known = accounts.map((a) => a.slug).join(', ') || '(none)';
-      throw new Error(`No account "${flags.account}" — you belong to: ${known}`);
-    }
-    return match.account_id;
-  }
-
-  if (accounts.length <= 1) return accounts[0]?.account_id ?? auth.account_id;
-
-  // Multiple accounts: only prompt in an interactive run.
-  if (flags.yes || flags.dryRun || process.stdout.isTTY !== true) {
-    return auth.account_id;
-  }
-  const picked = await selectFromList<AccountMembership>({
-    title: 'Ship to which account?',
-    items: accounts.map((a) => ({
-      value: a,
-      label: a.name,
-      sublabel: `${a.slug} · ${a.role}`,
-    })),
-  });
-  if (!picked) throw new Error('No account selected.');
-  return picked.account_id;
-}
-
-// ── plumbing ────────────────────────────────────────────────────────────────
-
-/**
- * When the linked project can't be fetched, explain *why* in terms of the
- * link — the common case is "you shipped under account A, then logged in as
- * account B that can't see it." Returns an exit code if it handled the error,
- * or null to let the generic handler take over.
- */
-function explainLinkedProjectError(err: unknown, projectId: string, auth: Auth): number | null {
-  if (!(err instanceof ApiError)) return null;
-  const link = loadLink();
-  const host = link?.host ?? 'default';
-
-  if (err.status === 403) {
-    const linkedAccount = link?.account_id ? ` ${C.faded}(account ${link.account_id.slice(0, 8)})${C.reset}` : '';
-    process.stderr.write(
-      `\n${status.err("This folder is linked to a project on an account you can't access.")}\n` +
-        `  ${C.dim}linked project ${C.reset}${projectId}${linkedAccount}\n` +
-        `  ${C.dim}logged in as   ${C.reset}account ${auth.account_id.slice(0, 8)} ${C.faded}(host "${host}")${C.reset} — no access to that account\n\n` +
-        `  ${C.dim}The link lives in ${C.reset}.kortix/link.json${C.dim}. Fix it one way:${C.reset}\n` +
-        `    ${C.dim}• Log in with the account that has access:${C.reset}  ${C.cyan}kortix logout && kortix login${C.reset}\n` +
-        `    ${C.dim}• Or get invited / granted access to that project, then retry.${C.reset}\n` +
-        `    ${C.dim}• Or register this folder as a new project:${C.reset}  ${C.cyan}kortix projects unlink${C.reset}${C.dim} then ${C.reset}${C.cyan}kortix ship${C.reset}\n\n`,
-    );
-    return 1;
-  }
-
-  if (err.status === 404) {
-    process.stderr.write(
-      `\n${status.err('The linked project no longer exists (or was archived).')}\n` +
-        `  ${C.dim}linked project ${C.reset}${projectId} ${C.faded}(host "${host}")${C.reset}\n\n` +
-        `  ${C.dim}Re-point this folder:${C.reset}\n` +
-        `    ${C.dim}• New project under your account:${C.reset}  ${C.cyan}kortix projects unlink${C.reset}${C.dim} then ${C.reset}${C.cyan}kortix ship${C.reset}\n` +
-        `    ${C.dim}• Existing project:${C.reset}  ${C.cyan}kortix projects link <id>${C.reset}\n\n`,
-    );
-    return 1;
-  }
-
-  return null;
-}
+// ── plumbing ─────────────────────────────────────────────────────────────────
 
 function surface(err: unknown): number {
   if (err instanceof ApiError) {
@@ -1119,26 +602,4 @@ function surface(err: unknown): number {
   }
   process.stderr.write(`${status.err((err as Error).message)}\n`);
   return 1;
-}
-
-interface RunResult {
-  ok: boolean;
-  code: number;
-  stdout: string;
-  stderr: string;
-}
-
-function run(cmd: string, args: string[], opts?: { inheritStdio?: boolean }): RunResult {
-  let result: SpawnSyncReturns<Buffer | string>;
-  if (opts?.inheritStdio) {
-    result = spawnSync(cmd, args, { stdio: 'inherit' });
-    return { ok: result.status === 0, code: result.status ?? 1, stdout: '', stderr: '' };
-  }
-  result = spawnSync(cmd, args, { encoding: 'utf8' });
-  return {
-    ok: result.status === 0,
-    code: result.status ?? 1,
-    stdout: (result.stdout as string) ?? '',
-    stderr: (result.stderr as string) ?? '',
-  };
 }

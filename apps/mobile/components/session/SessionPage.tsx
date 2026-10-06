@@ -101,7 +101,6 @@ import {
   useQuestionSelfHeal,
   useRuntimeCommands,
   useRuntimeConfig,
-  useRuntimePendingStore,
   useRuntimeSession,
   useRuntimeSessions,
   useSessionMessages,
@@ -150,9 +149,11 @@ import { optimisticUserParts } from '@/lib/session/optimistic-parts';
 import { draftKey } from '@/lib/session/composer-draft';
 import {
   buildSessionRefsBlock,
+  editResendAttachments,
   interruptedTurnIds,
   rewindHiddenMessageIds,
   webSpace,
+  type MessageAttachment,
 } from '@/lib/session/user-message';
 import {
   hasCompactionTurn as findCompactionTurn,
@@ -922,7 +923,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   }, []);
 
   const handleEditSend = useCallback(
-    async (messageId: string, text: string) => {
+    async (messageId: string, text: string, kept: MessageAttachment[] = []) => {
       const current = runtimeRef.current;
       if (!current || !runtimeReady || editPendingRef.current) return;
       editPendingRef.current = true;
@@ -951,7 +952,9 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       if (agent?.name) options.agent = agent.name;
       if (modelKey) options.model = modelKey;
       if (variant) options.variant = variant;
-      await handleSend(text, options);
+      // The kept attachments go again: a saved copy as a URL part, a path-only upload as its ref.
+      const { fileParts, text: sendText } = editResendAttachments(kept, text);
+      await handleSend(sendText, options, undefined, { fileParts, files: [] });
     },
     [runtimeReady, sessionId, handleSend, toast],
   );
@@ -1661,15 +1664,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // Question reply/reject handlers
   const handleQuestionReply = useCallback(
     async (requestId: string, answers: string[][]) => {
-      if (!runtimeReady) return;
-      // Optimistically remove it. The SDK's pending store remembers answered
-      // ids, so no later read of the runtime's list can bring it back.
-      useRuntimePendingStore.getState().removeQuestion(requestId);
-      try {
-        await answerQuestion(requestId, answers);
-      } catch (err: any) {
-        log.error('Failed to reply to question:', err?.message || err);
-      }
+      if (!runtimeReady) throw new Error('Runtime not ready');
+      await answerQuestion(requestId, answers);
     },
     [runtimeReady],
   );
@@ -1696,14 +1692,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
 
   const handleQuestionReject = useCallback(
     async (requestId: string) => {
-      if (!runtimeReady) return;
-      useRuntimePendingStore.getState().removeQuestion(requestId);
-      try {
-        await rejectQuestion(requestId);
-      } catch (err: any) {
-        log.error('Failed to reject question:', err?.message || err);
-      }
-      // Also abort the session (matches frontend behavior)
+      if (!runtimeReady) throw new Error('Runtime not ready');
+      await rejectQuestion(requestId);
       handleStop();
     },
     [runtimeReady, handleStop],

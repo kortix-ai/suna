@@ -153,41 +153,52 @@ function ChangeRequestDetail({
     queryFn: () => kortix.project(projectId).changeRequests.mergePreview(crId),
   });
 
+  const keys = [
+    ['change-requests', projectId],
+    ['change-request', projectId, crId],
+    ['change-request-diff', projectId, crId],
+    ['change-request-merge-preview', projectId, crId],
+  ] as const;
+
   function invalidate() {
-    qc.invalidateQueries({ queryKey: ['change-requests', projectId] });
-    qc.invalidateQueries({ queryKey: ['change-request', projectId, crId] });
-    qc.invalidateQueries({ queryKey: ['change-request-diff', projectId, crId] });
-    qc.invalidateQueries({
-      queryKey: ['change-request-merge-preview', projectId, crId],
+    for (const key of keys) qc.invalidateQueries({ queryKey: key });
+  }
+
+  // merge / close / reopen differ only in the call and the copy; the mutation
+  // wiring around them is written once.
+  const ACTIONS = {
+    merge: {
+      run: () => kortix.project(projectId).changeRequests.merge(crId),
+      done: 'Change request merged',
+      failed: 'Could not merge change request',
+    },
+    close: {
+      run: () => kortix.project(projectId).changeRequests.close(crId),
+      done: 'Change request closed',
+      failed: 'Could not close change request',
+    },
+    reopen: {
+      run: () => kortix.project(projectId).changeRequests.reopen(crId),
+      done: 'Change request reopened',
+      failed: 'Could not reopen change request',
+    },
+  } as const;
+  function useCrAction(action: keyof typeof ACTIONS) {
+    return useMutation({
+      mutationFn: async () => {
+        await ACTIONS[action].run();
+      },
+      onSuccess: () => {
+        toast.success(ACTIONS[action].done);
+        invalidate();
+      },
+      onError: () => toast.error(ACTIONS[action].failed),
     });
   }
 
-  const merge = useMutation({
-    mutationFn: () => kortix.project(projectId).changeRequests.merge(crId),
-    onSuccess: () => {
-      toast.success('Change request merged');
-      invalidate();
-    },
-    onError: () => toast.error('Could not merge change request'),
-  });
-
-  const close = useMutation({
-    mutationFn: () => kortix.project(projectId).changeRequests.close(crId),
-    onSuccess: () => {
-      toast.success('Change request closed');
-      invalidate();
-    },
-    onError: () => toast.error('Could not close change request'),
-  });
-
-  const reopen = useMutation({
-    mutationFn: () => kortix.project(projectId).changeRequests.reopen(crId),
-    onSuccess: () => {
-      toast.success('Change request reopened');
-      invalidate();
-    },
-    onError: () => toast.error('Could not reopen change request'),
-  });
+  const merge = useCrAction('merge');
+  const close = useCrAction('close');
+  const reopen = useCrAction('reopen');
 
   // changeRequests.get() returns { change_request: ChangeRequest } — unwrap it.
   const cr = detail.data?.change_request;
@@ -288,6 +299,44 @@ function ChangeRequestDetail({
   );
 }
 
+/** The head/base ref inputs of the open form. */
+function OpenCrRefs({
+  headRef,
+  baseRef,
+  setHeadRef,
+  setBaseRef,
+}: {
+  headRef: string;
+  baseRef: string;
+  setHeadRef: (value: string) => void;
+  setBaseRef: (value: string) => void;
+}) {
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <label className="px-0.5 text-[0.7rem] text-muted-foreground">Head ref</label>
+          <Input
+            value={headRef}
+            onChange={(e) => setHeadRef(e.target.value)}
+            placeholder="head branch"
+            className="font-mono text-xs"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="px-0.5 text-[0.7rem] text-muted-foreground">Base ref</label>
+          <Input
+            value={baseRef}
+            onChange={(e) => setBaseRef(e.target.value)}
+            placeholder="default branch"
+            className="font-mono text-xs"
+          />
+        </div>
+      </div>
+    </>
+  );
+}
+
 /** The "Open change request" form (`changeRequests.open`) in a dialog. */
 function OpenChangeRequestDialog({
   projectId,
@@ -349,26 +398,12 @@ function OpenChangeRequestDialog({
             rows={3}
             className="resize-none"
           />
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1">
-              <label className="px-0.5 text-[0.7rem] text-muted-foreground">Head ref</label>
-              <Input
-                value={headRef}
-                onChange={(e) => setHeadRef(e.target.value)}
-                placeholder="head branch"
-                className="font-mono text-xs"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="px-0.5 text-[0.7rem] text-muted-foreground">Base ref</label>
-              <Input
-                value={baseRef}
-                onChange={(e) => setBaseRef(e.target.value)}
-                placeholder="default branch"
-                className="font-mono text-xs"
-              />
-            </div>
-          </div>
+          <OpenCrRefs
+            headRef={headRef}
+            baseRef={baseRef}
+            setHeadRef={setHeadRef}
+            setBaseRef={setBaseRef}
+          />
         </div>
         <DialogFooter>
           <Button

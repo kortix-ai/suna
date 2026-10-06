@@ -266,7 +266,7 @@ describe('stop reaches the queue that actually holds the messages', () => {
     // of behind an earlier Send still waiting in the session's delivery chain.
     expect(rewind).toContain('const editSend = { commitsRewind: true };');
     const sendAt = rewind.indexOf(
-      'await handleSend(text, undefined, undefined, undefined, editSend)',
+      'await handleSend(sendText, resend, undefined, undefined, editSend)',
     );
     const commitAt = rewind.indexOf('.commitSessionRevert(');
     expect(sendAt).toBeGreaterThan(-1);
