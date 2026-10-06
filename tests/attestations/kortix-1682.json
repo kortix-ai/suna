@@ -1,0 +1,17 @@
+{
+  "source_hash": "39a1993de8092299536bbec11185ccf6053110947dfca9ede655821e511f6006",
+  "diff_files": [
+    "apps/api/src/__tests__/billing/subscriptions.test.ts",
+    "apps/api/src/billing/routes/subscriptions.ts",
+    "apps/api/src/billing/services/subscriptions.ts"
+  ],
+  "diff_hash": "59d71c9f841ad1bbdc73704ccc03e8ab5ab4a4dea4022a07e7de6bbd1b470ddd",
+  "head": "6323873a63e25a8f8f532f55d87152faed502365",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-06T12:12:03.061Z"
+}
