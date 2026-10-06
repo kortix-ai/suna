@@ -481,6 +481,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Resolved session config release': 'text5176d59f25fd',
   'Restarted session': 'text0d5e651911b7',
   'Retried a queued session prompt': 'text094af2a71a42',
+  'Retried pooled provider key after rate limit': 'textc96cd610ba08',
   'Revoked LLM gateway key': 'text60954a626cee',
   'Revoked SCIM token': 'textaba314822529',
   'Revoked SCIM user invitation': 'text56185876d445',

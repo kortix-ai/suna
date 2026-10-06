@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 728,
+  "count": 729,
   "routes": [
     {
       "method": "GET",
@@ -589,6 +589,10 @@
     {
       "method": "PUT",
       "path": "/v1/accounts/:accountId/secret-resources/:secretId/grants/:userId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/secret-resources/:secretId/retry"
     },
     {
       "method": "PUT",

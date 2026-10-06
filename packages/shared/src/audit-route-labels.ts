@@ -172,6 +172,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/accounts/:accountId/secret-resources': { action: 'secret.account_resource.create', title: 'Added pooled provider key' },
   'DELETE /v1/accounts/:accountId/secret-resources/:secretId': { action: 'secret.account_resource.delete', title: 'Deleted pooled provider key' },
   'PUT /v1/accounts/:accountId/secret-resources/:secretId/access': { action: 'secret.account_resource.access.set', title: 'Set pooled provider key access' },
+  'POST /v1/accounts/:accountId/secret-resources/:secretId/retry': { action: 'secret.account_resource.retry', title: 'Retried pooled provider key after rate limit' },
   'DELETE /v1/accounts/:accountId/secret-resources/:secretId/grants/:userId': { action: 'secret.account_resource.revoke', title: 'Revoked pooled provider key grant' },
   'PUT /v1/accounts/:accountId/secret-resources/:secretId/grants/:userId': { action: 'secret.account_resource.grant', title: 'Granted pooled provider key' },
   'PUT /v1/accounts/:accountId/secret-resources/:secretId/value': { action: 'secret.account_resource.rotate', title: 'Rotated pooled provider key' },

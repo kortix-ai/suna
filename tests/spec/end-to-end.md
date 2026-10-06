@@ -593,7 +593,7 @@ GitHub is **outbound only** (repo create, Contents API commits, installation-tok
 `SHIP-4` first ship `--origin managed` → force managed even if origin exists.
 `SHIP-5` multiple accounts + no `--account`/`-y` → interactive pick; `--account <id|slug>` mismatch → error listing slugs.
 `SHIP-6` subsequent ship (linked) → `GET /projects/:id` (403→access guidance, 404→gone guidance); managed → `POST /projects/:id/git-token` (fresh token per ship) → commit + push; BYO → `ensureOrigin` only if missing.
-`SHIP-7` `kortix ship -n/--dry-run` → prints would-be calls, **no side effects**.
+`SHIP-7` `kortix ship -n/--dry-run` → prints would-be calls, **no side effects** Ship runs the `kortix validate` checks first: a file of 10 MiB or more in Git, or more than 32 MiB of files in total, prints a repository size warning that names the largest files and never blocks the ship.
 `SHIP-8` `kortix ship` outside a git repo or non-Kortix dir → error; not logged in → "run kortix login"; 503 → "managed git not configured; pass --origin <git-url>".
 `SHIP-9` `--no-commit` with dirty tree → error; clean tree + HEAD → skip commit, push only.
 
