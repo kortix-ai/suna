@@ -296,6 +296,7 @@ describe('kortix backends', () => {
       PATH: `${bin}:${process.env.PATH}`,
       FAKE_NPX_LOG: log,
     });
+    if (r.code !== 0) console.error(`deploy exited ${r.code}\nstdout: ${r.stdout}\nstderr: ${r.stderr}`);
     expect(r.code).toBe(0);
     expect(r.stderr).toContain('created backend main');
     expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ name: 'main' });
