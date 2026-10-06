@@ -34,6 +34,8 @@ describe('the Kortix turn verbs on OpenCode (W5 E4)', () => {
     if (typeof input === 'string') throw new Error(input)
     expect(await turns.prompt('ses_1', input)).toEqual({ status: 202, body: { message_id: 'msg_1' } })
     expect(seen).toEqual([
+      // The dedupe read: OpenCode answers no message under that id.
+      { method: 'GET', path: '/session/ses_1/message/msg_1', search: '?directory=%2Fworkspace', body: null },
       {
         method: 'POST',
         path: '/session/ses_1/prompt_async',
@@ -80,6 +82,79 @@ describe('the Kortix turn verbs on OpenCode (W5 E4)', () => {
       'DELETE /session/ses_1/message/msg_1?directory=%2Fworkspace',
       'GET /agent?directory=%2Fworkspace',
     ])
+  })
+})
+
+describe('a repeated messageID on OpenCode is answered as a duplicate, like pi (R9.4)', () => {
+  const prompt = (id?: string) => ({ ...(id ? { messageId: id } : {}), parts: [{ type: 'text', text: 'hi' }] })
+  const forwards = (seen: Array<{ method: string; path: string }>) => seen.filter((c) => c.path.endsWith('/prompt_async')).length
+
+  test('an id OpenCode already holds is not sent again', async () => {
+    const { proxy, seen } = fakeProxy((input) =>
+      input.method === 'GET' ? { status: 200, body: { info: { id: 'msg_1' }, parts: [] } } : { status: 204, body: null },
+    )
+    const turns = createOpenCodeTurnService(proxy, () => '/workspace')
+    expect(await turns.prompt('ses_1', prompt('msg_1'))).toEqual({ status: 200, body: { deduplicated: true } })
+    expect(forwards(seen)).toBe(0)
+  })
+
+  test('two concurrent sends of one id forward once', async () => {
+    const { proxy, seen } = fakeProxy((input) => (input.method === 'GET' ? { status: 404, body: { error: 'not found' } } : { status: 204, body: null }))
+    const turns = createOpenCodeTurnService(proxy, () => '/workspace')
+    const [a, b] = await Promise.all([turns.prompt('ses_1', prompt('msg_1')), turns.prompt('ses_1', prompt('msg_1'))])
+    expect([a.status, b.status].sort()).toEqual([200, 202])
+    expect(forwards(seen)).toBe(1)
+  })
+
+  test('a send of an id this daemon already forwarded is a duplicate, before OpenCode lists it', async () => {
+    const { proxy, seen } = fakeProxy((input) => (input.method === 'GET' ? { status: 404, body: null } : { status: 204, body: null }))
+    const turns = createOpenCodeTurnService(proxy, () => '/workspace')
+    await turns.prompt('ses_1', prompt('msg_1'))
+    expect(await turns.prompt('ses_1', prompt('msg_1'))).toEqual({ status: 200, body: { deduplicated: true } })
+    expect(forwards(seen)).toBe(1)
+  })
+
+  test('a send that OpenCode refused may be sent again', async () => {
+    let refuse = true
+    const { proxy, seen } = fakeProxy((input) =>
+      input.method === 'GET' ? { status: 404, body: null } : refuse ? { status: 500, body: { error: 'busy' } } : { status: 204, body: null },
+    )
+    const turns = createOpenCodeTurnService(proxy, () => '/workspace')
+    expect((await turns.prompt('ses_1', prompt('msg_1'))).status).toBe(500)
+    refuse = false
+    expect((await turns.prompt('ses_1', prompt('msg_1'))).status).toBe(202)
+    expect(forwards(seen)).toBe(2)
+  })
+
+  test('a message the API removed may be sent again under its id', async () => {
+    const { proxy, seen } = fakeProxy((input) => (input.method === 'GET' ? { status: 404, body: null } : { status: 204, body: null }))
+    const turns = createOpenCodeTurnService(proxy, () => '/workspace')
+    await turns.prompt('ses_1', prompt('msg_1'))
+    await turns.removeMessage('ses_1', 'msg_1')
+    expect((await turns.prompt('ses_1', prompt('msg_1'))).status).toBe(202)
+    expect(forwards(seen)).toBe(2)
+  })
+
+  test('a failed existence read does not block the prompt', async () => {
+    const forwardsSeen: string[] = []
+    const proxy = {
+      async forward(input: HarnessForwardInput) {
+        if (input.method === 'GET') throw new Error('socket hang up')
+        forwardsSeen.push(input.path)
+        return { status: 204, statusText: '', headers: new Headers(), body: null }
+      },
+    }
+    const turns = createOpenCodeTurnService(proxy, () => '/workspace')
+    expect(await turns.prompt('ses_1', prompt('msg_1'))).toEqual({ status: 202, body: { message_id: 'msg_1' } })
+    expect(forwardsSeen).toEqual(['/session/ses_1/prompt_async'])
+  })
+
+  test('a prompt without an id is forwarded with no read, as before', async () => {
+    const { proxy, seen } = fakeProxy(() => ({ status: 204, body: null }))
+    const turns = createOpenCodeTurnService(proxy, () => '/workspace')
+    await turns.prompt('ses_1', prompt())
+    await turns.prompt('ses_1', prompt())
+    expect(seen.map((c) => c.method)).toEqual(['POST', 'POST'])
   })
 })
 
