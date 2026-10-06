@@ -19287,7 +19287,11 @@
       "texte7a241debad5": "URL",
       "textbf8026b9f2ff": "backend convex database realtime funzioni server archiviazione pianificazioni",
       "text74d0f7d5e755": "Emettere un token di accesso del backend",
-      "text1c41abcc2fff": "Contatta Kortix per attivarlo."
+      "text1c41abcc2fff": "Contatta Kortix per attivarlo.",
+      "text4e4fe2b97da8": "Ridimensionare un backend",
+      "textae77cbb56d91": "Elencare i backup del backend",
+      "textb8b9473b40b1": "Creare uno snapshot del backend",
+      "text086a3b1807d2": "Ripristinare uno snapshot del backend"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

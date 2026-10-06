@@ -19287,7 +19287,11 @@
       "texte7a241debad5": "URL",
       "textbf8026b9f2ff": "backends convex base de datos tiempo real funciones de servidor almacenamiento programaciones",
       "text74d0f7d5e755": "Emitir un token de inicio de sesión del backend",
-      "text1c41abcc2fff": "Contacta con Kortix para activarlo."
+      "text1c41abcc2fff": "Contacta con Kortix para activarlo.",
+      "text4e4fe2b97da8": "Redimensionar un backend",
+      "textae77cbb56d91": "Listar copias de seguridad del backend",
+      "textb8b9473b40b1": "Crear una instantánea del backend",
+      "text086a3b1807d2": "Restaurar una instantánea del backend"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

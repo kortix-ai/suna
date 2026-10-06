@@ -19298,7 +19298,11 @@
       "texte7a241debad5": "URL",
       "textbf8026b9f2ff": "backends convex database realtime server functions storage schedules",
       "text74d0f7d5e755": "Mint a backend sign-in token",
-      "text1c41abcc2fff": "Contact Kortix to enable it."
+      "text1c41abcc2fff": "Contact Kortix to enable it.",
+      "text4e4fe2b97da8": "Resize a backend",
+      "textae77cbb56d91": "List backend backups",
+      "textb8b9473b40b1": "Take a backend snapshot",
+      "text086a3b1807d2": "Restore a backend snapshot"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

@@ -19287,7 +19287,11 @@
       "texte7a241debad5": "URL",
       "textbf8026b9f2ff": "backends convex datenbank echtzeit serverfunktionen speicher zeitpläne",
       "text74d0f7d5e755": "Anmeldetoken für ein Backend ausstellen",
-      "text1c41abcc2fff": "Wenden Sie sich an Kortix, um es zu aktivieren."
+      "text1c41abcc2fff": "Wenden Sie sich an Kortix, um es zu aktivieren.",
+      "text4e4fe2b97da8": "Backend skalieren",
+      "textae77cbb56d91": "Backend-Sicherungen auflisten",
+      "textb8b9473b40b1": "Backend-Snapshot erstellen",
+      "text086a3b1807d2": "Backend-Snapshot wiederherstellen"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
