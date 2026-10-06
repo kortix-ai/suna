@@ -8,9 +8,24 @@ import { rememberTokenIdentity, type AccountsMeBody } from './token-identity.ts'
 // Re-exported for callers/tests that reach it via the client module.
 export { secureRemoteBase };
 
+/** The credential a failed request carried — what `ApiError.credential`
+ *  holds. Defined once here so token-denial.ts can type the record without
+ *  widening the field. */
+export interface ApiErrorCredential {
+  host: string;
+  token: string;
+}
+
 export class ApiError extends Error {
   status: number;
   body: unknown;
+  /** The credential the failed request carried — host + token, memory only,
+   *  attached NON-enumerable by `requestOnce` so no logger, spread or
+   *  JSON dump can carry the secret. The denial footer (token-denial.ts)
+   *  resolves the refused identity from it: the active host's identity is a
+   *  DIFFERENT credential (inside a sandbox, the injected session token), and
+   *  naming that sent the customer looking at the wrong token row. */
+  credential?: ApiErrorCredential;
   constructor(status: number, message: string, body: unknown = null) {
     super(message);
     this.status = status;
@@ -159,33 +174,47 @@ async function requestOnce<T>(
   body: unknown,
   opts: { auth: Auth; accountId?: string; signal?: AbortSignal },
 ): Promise<T> {
-  const endpoint = withAccountId(toEndpoint(path), opts.accountId);
-  const options = { showErrors: false as const, timeout: CLI_REQUEST_TIMEOUT_MS, signal: opts.signal, deadlineCoversBody: Boolean(opts.signal) };
-  return withKortixScope(opts.auth, async () => {
-    switch (method) {
-      case 'GET': {
-        const data = unwrap<T>(await backendApi.get<T>(endpoint, options));
-        captureIdentity(endpoint, opts.auth.token, data);
-        return data;
+  try {
+    const endpoint = withAccountId(toEndpoint(path), opts.accountId);
+    const options = { showErrors: false as const, timeout: CLI_REQUEST_TIMEOUT_MS, signal: opts.signal, deadlineCoversBody: Boolean(opts.signal) };
+    return await withKortixScope(opts.auth, async () => {
+      switch (method) {
+        case 'GET': {
+          const data = unwrap<T>(await backendApi.get<T>(endpoint, options));
+          captureIdentity(endpoint, opts.auth.token, data);
+          return data;
+        }
+        case 'POST':
+          return unwrap<T>(await backendApi.post<T>(endpoint, body, options));
+        case 'PUT':
+          return unwrap<T>(await backendApi.put<T>(endpoint, body, options));
+        case 'PATCH':
+          return unwrap<T>(await backendApi.patch<T>(endpoint, body, options));
+        case 'DELETE':
+          // Bounded per-attempt deadline (not the 600s ceiling) so a stalled
+          // delete aborts inside the caller's contract window and the SDK replays
+          // it. See CLI_DELETE_TIMEOUT_MS.
+          return unwrap<T>(
+            await backendApi.delete<T>(endpoint, {
+              ...options,
+              timeout: CLI_DELETE_TIMEOUT_MS,
+            }),
+          );
       }
-      case 'POST':
-        return unwrap<T>(await backendApi.post<T>(endpoint, body, options));
-      case 'PUT':
-        return unwrap<T>(await backendApi.put<T>(endpoint, body, options));
-      case 'PATCH':
-        return unwrap<T>(await backendApi.patch<T>(endpoint, body, options));
-      case 'DELETE':
-        // Bounded per-attempt deadline (not the 600s ceiling) so a stalled
-        // delete aborts inside the caller's contract window and the SDK replays
-        // it. See CLI_DELETE_TIMEOUT_MS.
-        return unwrap<T>(
-          await backendApi.delete<T>(endpoint, {
-            ...options,
-            timeout: CLI_DELETE_TIMEOUT_MS,
-          }),
-        );
+    });
+  } catch (err) {
+    if (err instanceof ApiError && opts.auth.token) {
+      // Non-enumerable: the field rides the error object in memory only, and
+      // never reaches a log line, a spread or a JSON dump.
+      Object.defineProperty(err, 'credential', {
+        value: { host: opts.auth.api_base, token: opts.auth.token },
+        enumerable: false,
+        writable: true,
+        configurable: true,
+      });
     }
-  });
+    throw err;
+  }
 }
 
 export function createApiClient(opts: ClientOptions): ApiClient {
