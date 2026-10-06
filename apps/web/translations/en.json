@@ -996,6 +996,10 @@
           "name": "Pi Harness (in-sandbox)",
           "description": "Run sessions on the pi harness inside the session sandbox instead of OpenCode. Off, `runtime: pi` in the manifest still selects pi."
         },
+        "pi_cell": {
+          "name": "Pi Cell",
+          "description": "Run sessions as a pi cell: the pi agent as a Durable Object in a V8 isolate on Platinum. A session is ready in seconds; its shell runs node and npm over the session's own files, with no Linux machine. Requires the LLM gateway."
+        },
         "config_releases": {
           "name": "Config Releases",
           "description": "Run sessions on the base branch's current agent config, served read-only, so a merged agent, skill, or tool reaches every running session. Off, a session reads its own workspace config folder."

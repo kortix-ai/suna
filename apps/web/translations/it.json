@@ -1170,6 +1170,10 @@
           "name": "Harness Pi (nella sandbox)",
           "description": "Esegue le sessioni con l'harness Pi all'interno della sandbox della sessione invece di OpenCode. Disattivato, `runtime: pi` nel manifest seleziona comunque Pi."
         },
+        "pi_cell": {
+          "name": "Cella Pi",
+          "description": "Esegue le sessioni come cella Pi: l'agente Pi come Durable Object in un isolato V8 su Platinum. Una sessione è pronta in pochi secondi; la sua shell esegue node e npm sui file della sessione, senza una macchina Linux. Richiede il gateway LLM."
+        },
         "config_releases": {
           "name": "Release di configurazione",
           "description": "Esegue le sessioni con la configurazione agente corrente del branch di base, servita in sola lettura, così un agente, skill o strumento unito raggiunge ogni sessione attiva. Disattivato, una sessione legge la propria cartella di configurazione nel workspace."
