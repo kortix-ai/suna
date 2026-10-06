@@ -19,6 +19,23 @@ export const DRAIN_FALLBACK_MS = 5_000;
 /** The least time between two drain starts in one process. A row given back
  *  due now NOTIFYs again; without this gap that loop would spin unthrottled. */
 export const MIN_DRAIN_GAP_MS = 1_000;
+/**
+ * Drains running at once in one process. A normal drain (~1.3 s per prompt) is
+ * never overlapped: stacked drains starved the DB pool. A drain that waits on a
+ * cold box runs up to 5 min (`READY_DEADLINE_MS`), and with one slot every other
+ * queued row waited behind that boot. Past `DRAIN_STALL_MS` a drain no longer
+ * blocks the next one; `MAX_CONCURRENT_DRAINS` bounds the pile. Claims are CAS,
+ * so overlapping drains never take the same row.
+ */
+export const MAX_CONCURRENT_DRAINS = 3;
+export const DRAIN_STALL_MS = 15_000;
+
+/** True when a new drain may start, given the start times of the drains running now. */
+export function canStartDrain(runningSince: readonly number[], now: number): boolean {
+  if (runningSince.length === 0) return true;
+  if (runningSince.length >= MAX_CONCURRENT_DRAINS) return false;
+  return runningSince.every((startedAt) => now - startedAt >= DRAIN_STALL_MS);
+}
 /** A due time further out than this is left to the fallback tick. */
 const MAX_WAKE_DELAY_MS = 10 * 60_000;
 /** Pending due times kept per process; past this the fallback tick covers the rest. */
@@ -26,7 +43,8 @@ const MAX_PENDING_WAKES = 1_000;
 
 const state = globalThis as typeof globalThis & {
   __kortixLifecycleWorker?: ReturnType<typeof setInterval>;
-  __kortixLifecycleDrainInFlight?: boolean;
+  /** Start time of every drain running now. */
+  __kortixLifecycleDrains?: number[];
   __kortixLifecycleDrainRerun?: boolean;
   __kortixLifecycleLastDrainAt?: number;
   __kortixLifecycleWake?: { at: number; timer: ReturnType<typeof setTimeout> };
@@ -41,21 +59,21 @@ export function wakeAt(dueAtMs: number, lastDrainAt: number, now: number): numbe
 }
 
 function drainNow(): void {
-  // One drain per process at a time. A drain delivers prompts over the network
-  // (~1.3 s each), so stacked drains starved the DB pool under load.
-  if (state.__kortixLifecycleDrainInFlight) {
+  const running = (state.__kortixLifecycleDrains ??= []);
+  if (!canStartDrain(running, Date.now())) {
     state.__kortixLifecycleDrainRerun = true;
     return;
   }
-  state.__kortixLifecycleDrainInFlight = true;
+  const startedAt = Date.now();
+  running.push(startedAt);
   state.__kortixLifecycleDrainRerun = false;
-  state.__kortixLifecycleLastDrainAt = Date.now();
+  state.__kortixLifecycleLastDrainAt = startedAt;
   void drainSessionLifecycleQueue({ limit: 10 })
     .catch((error) => {
       console.error('[session-lifecycle] queue drain failed', error);
     })
     .finally(() => {
-      state.__kortixLifecycleDrainInFlight = false;
+      running.splice(running.indexOf(startedAt), 1);
       if (state.__kortixLifecycleDrainRerun) scheduleWake(Date.now());
     });
 }

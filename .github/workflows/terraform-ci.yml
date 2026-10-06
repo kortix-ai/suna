@@ -6,7 +6,7 @@ name: Terraform CI
 # variable TF_PLAN_ROLE_ARN is set, so it can't fail before that role is provisioned.
 
 on:
-  # A pull request into `main` runs no CI. Release pull requests are the gate.
+  # A pull request into `dev` runs no CI. Release pull requests are the gate.
   pull_request:
     branches: [staging, prod]
     paths:
@@ -296,7 +296,7 @@ jobs:
           run_ids="$(
             gh api -X GET \
               "repos/${GITHUB_REPOSITORY}/actions/workflows/terraform-ci.yml/runs" \
-              -f branch=main -f per_page=15 \
+              -f branch=dev -f per_page=15 \
               --jq '.workflow_runs[] | select(.status == "completed") | .id'
           )"
           for id in $run_ids; do
@@ -315,7 +315,7 @@ jobs:
           done
 
           if [ "$newest" = "0" ]; then
-            echo "::error::No successful \`drift detection\` job in the last 15 terraform-ci runs on main. Drift detection is not running."
+            echo "::error::No successful \`drift detection\` job in the last 15 terraform-ci runs on dev. Drift detection is not running."
             exit 1
           fi
 

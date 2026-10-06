@@ -416,6 +416,8 @@ flow(
     routes: [
       'POST /v1/projects/:projectId/cli-token',
       'DELETE /v1/projects/:projectId/cli-token/:tokenId',
+      'POST /v1/projects/:projectId/gateway/keys',
+      'DELETE /v1/projects/:projectId/gateway/keys/:keyId',
     ],
   },
   async (ctx) => {
@@ -458,6 +460,22 @@ flow(
               params: { projectId: project.id, tokenId: humanTokenId },
             })
         ).status(403);
+      });
+
+      await ctx.step('the session-bound credential cannot mint or revoke a gateway key; the owner can → 403 / 200', async () => {
+        const session = ctx.client.withBearer(bound!.token, 'SESSION_TOKEN');
+        (await session.post('/v1/projects/:projectId/gateway/keys', { name: 'from-session' }, { params: { projectId: project.id } }))
+          .status(403)
+          .body()
+          .has('$.error', 'Agent-session tokens cannot manage gateway keys');
+        const made = await owner.post('/v1/projects/:projectId/gateway/keys', { name: 'scope-5' }, { params: { projectId: project.id } });
+        made.status(200).body().exists('$.secret_key');
+        const keyId = made.json<{ key_id: string }>().key_id;
+        (await session.del('/v1/projects/:projectId/gateway/keys/:keyId', { params: { projectId: project.id, keyId } })).status(403);
+        (await owner.del('/v1/projects/:projectId/gateway/keys/:keyId', { params: { projectId: project.id, keyId } }))
+          .status(200)
+          .body()
+          .has('$.ok', true);
       });
 
       await ctx.step('an account that requires PAT expiry refuses a project CLI token without one → 400', async () => {

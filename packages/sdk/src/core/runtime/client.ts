@@ -76,6 +76,10 @@ export * from "./kortix-master";
  * its own runtime at the same time. Keyed by absolute base URL.
  */
 const clientsByUrl = new Map<string, RuntimeClient>();
+/** One client per sandbox URL; a window that cycles hundreds of sessions
+ *  forgets the least recently used. A forgotten client in use is simply
+ *  recreated on its next `getClientForUrl`. */
+const MAX_CLIENTS_BY_URL = 256;
 
 /**
  * Thrown when the active runtime's sandbox URL hasn't resolved yet (e.g. a
@@ -129,7 +133,12 @@ export function getClientForUrl(url: string): RuntimeClient {
 		throw new Error('[opencode-sdk] getClientForUrl called without a url');
 	}
 	const existing = clientsByUrl.get(url);
-	if (existing) return existing;
+	if (existing) {
+		// Touch: Map order is the LRU order.
+		clientsByUrl.delete(url);
+		clientsByUrl.set(url, existing);
+		return existing;
+	}
 
 	if (!isConfigured()) {
 		throw new Error(
@@ -143,6 +152,9 @@ export function getClientForUrl(url: string): RuntimeClient {
 		eventTransport: platformEventTransport,
 	});
 	clientsByUrl.set(url, client);
+	if (clientsByUrl.size > MAX_CLIENTS_BY_URL) {
+		clientsByUrl.delete(clientsByUrl.keys().next().value as string);
+	}
 	return client;
 }
 

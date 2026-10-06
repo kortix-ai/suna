@@ -2,7 +2,7 @@ name: Deploy Dev API Router
 
 on:
   push:
-    branches: [main]
+    branches: [dev]
     paths:
       - 'infra/cloudflare/workers/api-router/**'
       - '.github/workflows/deploy-api-router-dev.yml'
@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/dev'
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     timeout-minutes: 10
     env:

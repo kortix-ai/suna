@@ -113,8 +113,8 @@ jobs:
   # every table, column, enum value, index definition and constraint definition
   # the migrations build must EXIST on prod (extras reported, never failed;
   # deliberate gaps listed in packages/db/scripts/verify-live-schema-waivers.ts).
-  # This is the nightly counterpart to the deploy-prod verify-schema gate; it also
-  # catches drift introduced out-of-band BETWEEN deploys.
+  # The deploy-prod verify-schema gate was removed (it never gated the roll),
+  # so this is the only prod schema check; it catches drift introduced out-of-band BETWEEN deploys.
   prod-presence:
     name: Prod has every object the migrations define
     runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
