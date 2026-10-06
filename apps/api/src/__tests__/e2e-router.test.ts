@@ -189,6 +189,7 @@ mock.module('../router/services/llm', () => ({
       headers: { 'Content-Type': 'application/json' },
     });
   },
+  forceStreamUsage: (body: unknown) => body,
   extractUsage: (responseBody: any) => {
     if (!responseBody?.usage) return null;
     return {
