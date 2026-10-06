@@ -144,6 +144,9 @@ const envSchema = z.object({
 
   // ── Database (REQUIRED) ──────────────────────────────────────────────────
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required — cannot start without a database'),
+  // Debug only: append each SQL statement the API pool sends (whitespace-normalized
+  // text, no params) as one line to this file. Empty = off.
+  KORTIX_SQL_TRACE: optStr,
 
   // ── Supabase (REQUIRED) ──────────────────────────────────────────────────
   SUPABASE_URL: z
@@ -1226,6 +1229,7 @@ export const config = {
 
   // ─── Database ──────────────────────────────────────────────────────────────
   DATABASE_URL: env.DATABASE_URL,
+  KORTIX_SQL_TRACE: env.KORTIX_SQL_TRACE,
 
   // ─── Supabase ──────────────────────────────────────────────────────────────
   SUPABASE_URL: env.SUPABASE_URL,

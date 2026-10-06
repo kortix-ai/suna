@@ -3,7 +3,8 @@ import { projectsApp } from '../projects/lib/app';
 // Importing the routes module registers the account-scoped GitHub routes on
 // `projectsApp`. No mocks: the request must die at the guard, before any
 // database access.
-import '../projects/routes/github-installations';
+import { registerGithubInstallationsRoutes } from '../projects/routes/github-installations';
+registerGithubInstallationsRoutes();
 
 // A malformed `account_id` used to flow from the query string through
 // `resolveProjectAccount` into the account-membership lookup, whose

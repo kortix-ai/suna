@@ -1726,7 +1726,8 @@
     },
     "restart": {
       "label": "重启会话",
-      "pending": "正在重启…"
+      "pending": "正在重启…",
+      "ownerOnly": "只有会话所有者或项目管理员可以重启此会话。"
     }
   },
   "modelSelector": {

@@ -1,10 +1,10 @@
-import { accountMembers, accountMemberships, accounts } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { accountMemberships, accounts } from '@kortix/db';
 
 import { initializeFreeTierAccount } from '../../billing/services/free-tier';
 import { config } from '../../config';
 import { syncSignupContactToMailtrap } from '../mailtrap-contacts';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
+import { anyAccountMembershipOf } from '../../iam/membership-read';
 import { db } from '../../shared/db';
 import { getSupabase } from '../../shared/supabase';
 import { profileNameFromMetadata } from './account-name';
@@ -87,11 +87,7 @@ export async function bootstrapPersonalAccount(
     return { accountId: userId, created: true };
   }
 
-  const [membership] = await db
-    .select({ accountId: accountMembers.accountId })
-    .from(accountMembers)
-    .where(eq(accountMembers.userId, userId))
-    .limit(1);
+  const [membership] = await anyAccountMembershipOf(userId);
 
   return { accountId: membership?.accountId ?? userId, created: false };
 }

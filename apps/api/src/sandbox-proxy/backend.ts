@@ -2,7 +2,7 @@
  * Sandbox backend resolution — the single source of truth for "where does this
  * sandbox live, how do I authenticate to it, and is it healthy".
  *
- * Both proxy data paths (HTTP forward in routes/preview.ts and the WebSocket
+ * Both proxy data paths (HTTP forward in forward/ and the WebSocket
  * upstream resolver) used to duplicate this: each loaded the session-sandbox
  * row, resolved the service key, fetched the Daytona preview link, and built
  * the signed X-Kortix-User-Context header with slightly different code. The
