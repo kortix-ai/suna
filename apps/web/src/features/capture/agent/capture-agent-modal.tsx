@@ -41,10 +41,13 @@ export function CaptureAgentModal({
   open,
   onOpenChange,
   accountName,
+  own,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   accountName: string;
+  /** A member: the agent reads only their own recordings. */
+  own: boolean;
 }) {
   const t = useTranslations('capture.agent');
   const [connectOpen, setConnectOpen] = useState(false);
@@ -77,9 +80,11 @@ export function CaptureAgentModal({
             <section className="space-y-2">
               <h3 className="text-sm font-medium">{t('step3')}</h3>
               <p className="bg-muted text-foreground rounded-md border px-3 py-2.5 text-sm">
-                {t('example', { name: accountName })}
+                {own ? t('exampleOwn') : t('example', { name: accountName })}
               </p>
-              <p className="text-muted-foreground text-xs text-pretty">{t('scopeNote')}</p>
+              <p className="text-muted-foreground text-xs text-pretty">
+                {own ? t('scopeNoteOwn') : t('scopeNote')}
+              </p>
             </section>
           </ModalBody>
           <ModalFooter className="sm:justify-between">

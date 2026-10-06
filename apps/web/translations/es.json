@@ -20778,7 +20778,8 @@
       },
       "layerOff": "{layer} desactivado",
       "never": "Nunca",
-      "pausedUntil": "hasta {time}"
+      "pausedUntil": "hasta {time}",
+      "agentLink": "Usar Kortix Capture en un agente"
     },
     "settings": {
       "title": "Configuración",
@@ -21179,7 +21180,9 @@
       "example": "¿Qué flujos de trabajo de {name} llevan más tiempo y quién los realiza?",
       "scopeNote": "El agente ve lo que ves aquí: administradores y lectores ven a todos los miembros; los miembros, solo lo suyo. Cada lectura de otro miembro queda en el registro de auditoría.",
       "docs": "Documentación de Kortix Capture",
-      "connect": "Conectar un cliente"
+      "connect": "Conectar un cliente",
+      "exampleOwn": "¿En qué trabajé ayer y qué tareas repito más?",
+      "scopeNoteOwn": "El agente solo ve tus propias grabaciones, igual que esta página."
     }
   }
 }

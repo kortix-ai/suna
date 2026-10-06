@@ -20778,7 +20778,8 @@
       },
       "layerOff": "{layer}已关闭",
       "never": "从未",
-      "pausedUntil": "至 {time}"
+      "pausedUntil": "至 {time}",
+      "agentLink": "在智能体中使用 Kortix Capture"
     },
     "settings": {
       "title": "设置",
@@ -21179,7 +21180,9 @@
       "example": "{name} 中哪些工作流最耗时，由谁执行？",
       "scopeNote": "智能体看到的与你在这里看到的相同：管理员和查看者可读取所有成员，成员只能读取自己的数据。每次读取其他成员的数据都会记入审计日志。",
       "docs": "Kortix Capture 文档",
-      "connect": "连接客户端"
+      "connect": "连接客户端",
+      "exampleOwn": "我昨天做了什么？我最常重复哪些任务？",
+      "scopeNoteOwn": "智能体只能看到你自己的录制内容，与本页面相同。"
     }
   }
 }

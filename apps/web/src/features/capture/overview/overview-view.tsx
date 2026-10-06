@@ -312,6 +312,7 @@ function Overview({ accountId }: { accountId: string }) {
         open={agentOpen}
         onOpenChange={setAgentOpen}
         accountName={area.accountName}
+        own={false}
       />
       {area.isAdmin ? (
         <ExportModal

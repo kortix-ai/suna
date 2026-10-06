@@ -20778,7 +20778,8 @@
       },
       "layerOff": "{layer} off",
       "never": "Never",
-      "pausedUntil": "until {time}"
+      "pausedUntil": "until {time}",
+      "agentLink": "Use Kortix Capture in an agent"
     },
     "settings": {
       "title": "Settings",
@@ -21179,7 +21180,9 @@
       "example": "Which workflows in {name} take the most time, and who runs them?",
       "scopeNote": "The agent sees what you see here: admins and viewers read every member, members their own. Every read of another member goes into the audit log.",
       "docs": "Kortix Capture docs",
-      "connect": "Connect a client"
+      "connect": "Connect a client",
+      "exampleOwn": "What did I work on yesterday, and which tasks do I repeat most?",
+      "scopeNoteOwn": "The agent sees only your own recordings, the same as this page."
     }
   }
 }

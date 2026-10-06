@@ -20778,7 +20778,8 @@
       },
       "layerOff": "{layer} aus",
       "never": "Nie",
-      "pausedUntil": "bis {time}"
+      "pausedUntil": "bis {time}",
+      "agentLink": "Kortix Capture in einem Agenten nutzen"
     },
     "settings": {
       "title": "Einstellungen",
@@ -21179,7 +21180,9 @@
       "example": "Welche Workflows in {name} kosten die meiste Zeit, und wer führt sie aus?",
       "scopeNote": "Der Agent sieht, was du hier siehst: Admins und Betrachter lesen alle Mitglieder, Mitglieder nur ihre eigenen Daten. Jeder Zugriff auf ein anderes Mitglied wird im Audit-Log erfasst.",
       "docs": "Kortix-Capture-Dokumentation",
-      "connect": "Client verbinden"
+      "connect": "Client verbinden",
+      "exampleOwn": "Woran habe ich gestern gearbeitet, und welche Aufgaben wiederhole ich am häufigsten?",
+      "scopeNoteOwn": "Der Agent sieht nur deine eigenen Aufnahmen, genau wie diese Seite."
     }
   }
 }
