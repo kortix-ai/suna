@@ -32,6 +32,7 @@ const REMINDER = {
 };
 
 const DONE = { ...REMINDER, id: 'reminder.done00000000', every: null, every_seconds: null, state: 'done', next_fire_at: null, last_fired_at: '2026-09-29T08:30:12.000Z', last_status: 'fired' };
+const NAMED = { ...REMINDER, id: 'reminder.named0000000', name: 'standup' };
 
 function startServer(): string {
   server = Bun.serve({
@@ -52,7 +53,7 @@ function startServer(): string {
         }
         return Response.json(REMINDER, { status: 201 });
       }
-      if (url.pathname === BASE && req.method === 'GET') return Response.json({ reminders: [REMINDER, DONE] });
+      if (url.pathname === BASE && req.method === 'GET') return Response.json({ reminders: [REMINDER, DONE, NAMED] });
       if (url.pathname === `${BASE}/${DONE.id}` && req.method === 'PATCH') return Response.json(DONE);
       if (url.pathname === `${BASE}/${REMINDER.id}` && req.method === 'PATCH') {
         const enabled = (body as { enabled: boolean }).enabled;
@@ -157,6 +158,15 @@ describe('kortix reminders — inside a session', () => {
       `PATCH ${BASE}/reminder.0123456789ab {"enabled":true}`,
       `DELETE ${BASE}/reminder.0123456789ab null`,
     ]);
+  }, 60_000);
+
+  test('a named reminder lists its prompt in TEXT and its name in NAME', async () => {
+    const ls = await runCli(['reminders', 'ls']);
+    expect(ls.code).toBe(0);
+    expect(ls.stdout).toContain('NAME');
+    const row = ls.stdout.split('\n').find((l) => l.includes('reminder.named0000000')) ?? '';
+    expect(row).toContain('standup');
+    expect(row).toContain('Did the email arrive?');
   }, 60_000);
 
   test('resume of a fired one-shot says it stays done instead of claiming it resumed', async () => {
