@@ -43,7 +43,7 @@ describe('api-router worker', () => {
     expect(commands).toContain('urn:ietf:params:scim:api:messages:2.0:Error');
   });
 
-  test('keeps the staging API on EKS in config and deployment metadata', () => {
+  test('routes staging to its eu-west-2 stack in config and deployment metadata', () => {
     const wrangler = readFileSync(
       new URL('./wrangler.toml', import.meta.url),
       'utf8',
@@ -59,10 +59,34 @@ describe('api-router worker', () => {
     const stagingVars = wrangler.match(
       /\[env\.staging\.vars\]([\s\S]*?)(?=\n\[env\.|\s*$)/,
     )?.[1];
-    expect(stagingVars).toContain('ACTIVE_BACKEND = "ecs-fargate"');
-    expect(deployWorkflow).toContain(
-      '{type:"plain_text", name:"ACTIVE_BACKEND", text:"ecs-fargate"}',
+    expect(stagingVars).toContain('ACTIVE_BACKEND = "eu-west-2"');
+    expect(stagingVars).toContain('GATEWAY_ACTIVE_BACKEND = "eu-west-2"');
+    expect(stagingVars).toContain('BACKEND_EU_WEST_2 = "https://staging-api-euw2.kortix.com"');
+    for (const binding of [
+      '{type:"plain_text", name:"ACTIVE_BACKEND", text:"eu-west-2"}',
+      '{type:"plain_text", name:"BACKEND_EU_WEST_2", text:"https://staging-api-euw2.kortix.com"}',
+      '{type:"plain_text", name:"GATEWAY_ACTIVE_BACKEND", text:"eu-west-2"}',
+      '{type:"plain_text", name:"GATEWAY_BACKEND_EU_WEST_2", text:"https://gateway-staging-euw2.kortix.com"}',
+    ]) {
+      expect(deployWorkflow).toContain(binding);
+    }
+  });
+
+  test('routes dev to its us-east-2 stack and keeps the us-west-2 origins as the undo', () => {
+    const wrangler = readFileSync(
+      new URL('./wrangler.toml', import.meta.url),
+      'utf8',
     );
+    const devVars = wrangler.match(
+      /\[env\.dev\.vars\]([\s\S]*?)(?=\n\[env\.|\s*$)/,
+    )?.[1];
+
+    expect(devVars).toContain('ACTIVE_BACKEND = "us-east-2"');
+    expect(devVars).toContain('GATEWAY_ACTIVE_BACKEND = "us-east-2"');
+    expect(devVars).toContain('BACKEND_US_EAST_2 = "https://dev-api-use2.kortix.com"');
+    expect(devVars).toContain('GATEWAY_BACKEND_US_EAST_2 = "https://gateway-dev-use2.kortix.com"');
+    expect(devVars).toContain('BACKEND_ECS_FARGATE = "https://dev-api-ecs-fargate.kortix.com"');
+    expect(devVars).toContain('GATEWAY_BACKEND_ECS_FARGATE = "https://gateway-dev-ecs-fargate.kortix.com"');
   });
 
   test('keeps the prepared US East 2 origins inactive in production config', () => {
@@ -179,11 +203,11 @@ describe('api-router worker', () => {
 
   test('keeps staging sized for the release gate, with an on-demand floor', () => {
     const stagingTerraform = readFileSync(
-      new URL('../../../terraform/environments/staging/main.tf', import.meta.url),
+      new URL('../../../terraform/environments/staging-eu-west-2/main.tf', import.meta.url),
       'utf8',
     );
     const devTerraform = readFileSync(
-      new URL('../../../terraform/environments/dev/main.tf', import.meta.url),
+      new URL('../../../terraform/environments/dev-us-east-2/main.tf', import.meta.url),
       'utf8',
     );
 
@@ -204,9 +228,17 @@ describe('api-router worker', () => {
     expect(num(stagingApi, 'task_memory')).toBeGreaterThanOrEqual(
       num(devApi, 'task_memory'),
     );
-    expect(num(stagingApi, 'min_capacity')).toBeGreaterThanOrEqual(
-      num(devApi, 'min_capacity'),
+    // staging's floor is var.api_task_count (2 only while the old stack still
+    // holds database connections), so read the variable's default.
+    const stagingVariables = readFileSync(
+      new URL('../../../terraform/environments/staging-eu-west-2/variables.tf', import.meta.url),
+      'utf8',
     );
+    expect(stagingApi).toMatch(/min_capacity\s*=\s*var\.api_task_count/);
+    const stagingFloor = Number(
+      stagingVariables.match(/variable "api_task_count"[\s\S]*?default\s*=\s*(\d+)/)?.[1],
+    );
+    expect(stagingFloor).toBeGreaterThanOrEqual(num(devApi, 'min_capacity'));
 
     // A Spot-only service with no on-demand base goes to zero tasks on one
     // reclaim, and the edge then reports that as MAINTENANCE_MODE.
@@ -983,5 +1015,37 @@ describe('api-router worker', () => {
     expect(proxiedUpgrade).toBe('websocket');
     expect(response).toBe(upgradeResponse);
     expect(response.webSocket).toBe(webSocket);
+  });
+
+  describe('/internal edge gate', () => {
+    const gated = { ...env, INTERNAL_EDGE_KEY: 'edge-key-1' };
+    const call = (path, headers = {}, e = gated, host = 'api.kortix.com') => {
+      const seen = [];
+      globalThis.fetch = async (input) => {
+        seen.push(input.headers.get('x-kortix-internal-edge-key'));
+        return new Response('{"principal":null}', { status: 200 });
+      };
+      return worker
+        .fetch(new Request(`https://${host}${path}`, { method: 'POST', headers }), e)
+        .then((response) => ({ response, seen }));
+    };
+
+    test('public caller without the key gets 404 and never reaches the origin', async () => {
+      const { response, seen } = await call('/internal/gateway/authenticate');
+      expect(response.status).toBe(404);
+      expect(seen).toEqual([]);
+      expect((await call('/internal/gateway/authenticate', { 'x-kortix-internal-edge-key': 'nope' })).response.status).toBe(404);
+    });
+
+    test('gateway with the key is forwarded and the key is stripped', async () => {
+      const { response, seen } = await call('/internal/gateway/authenticate', { 'x-kortix-internal-edge-key': 'edge-key-1' });
+      expect(response.status).toBe(200);
+      expect(seen).toEqual([null]);
+    });
+
+    test('non-internal paths and an unset key are unaffected', async () => {
+      expect((await call('/v1/health')).response.status).toBe(200);
+      expect((await call('/internal/gateway/authenticate', {}, env)).response.status).toBe(200);
+    });
   });
 });

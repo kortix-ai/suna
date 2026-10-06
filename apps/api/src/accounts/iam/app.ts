@@ -3,8 +3,8 @@
 // This is the LEAF module of the accounts/iam/ split: it imports only the
 // openapi foundation, db types, and the IAM engine type used by the shared
 // schemas. Route modules import `iamRouter` (and these schemas) from here
-// and register their routes via side effect. The barrel at ../iam.ts wires
-// them all in the original order.
+// and export a registerIam<Group>Routes() function. registerIamRoutes() in
+// ../iam.ts calls them all in the original order.
 
 import { z } from '@hono/zod-openapi';
 import { makeOpenApiApp } from '../../openapi';

@@ -13,12 +13,8 @@ import {
   syncProviderNetworkBoundary,
   type SandboxEnvSnapshot,
 } from './sandbox-env-snapshot';
-import {
-  FANOUT_CONCURRENCY,
-  SANDBOX_SERVICE_PORT,
-  postEnvToDaemon,
-  runBounded,
-} from './sandbox-env-push';
+import { runBounded, FANOUT_CONCURRENCY } from './sandbox-env-push';
+import { SANDBOX_SERVICE_PORT, postEnvToDaemon } from './sandbox-env-transport';
 
 export interface ProjectSecretPropagationTarget {
   session_id: string;

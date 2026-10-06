@@ -94,8 +94,11 @@ A session runs on its own branch; the **only** sanctioned path to `main` is a
 change request, and you open it — the user reviews and merges:
 
 ```bash
+kortix validate                                   # schema + repository size warnings
 git add . && git commit -m "…" && git push origin HEAD
 kortix cr open --title "…" --description "…"     # head + session auto-detected in a sandbox
 ```
 
-Never merge your own CR. Full CR lifecycle: `kortix skills get kortix-system`.
+Never commit big static assets (video, datasets, build output): a session's
+agent config build fails when the repository is over 32 MiB compressed. Put
+them in object storage instead. Never merge your own CR. Full CR lifecycle: `kortix skills get kortix-system`.

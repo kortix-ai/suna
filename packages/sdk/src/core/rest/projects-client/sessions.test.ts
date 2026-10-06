@@ -24,6 +24,7 @@ import {
   deleteSessionPrompt,
   editSessionPrompt,
   ensureWarmProjectSession,
+  interruptSessionPrompt,
   findActiveTranscriptShare,
   getProjectSession,
   getProjectSessionConfigState,
@@ -36,6 +37,7 @@ import {
   getSessionTranscript,
   getSessionTranscriptSync,
   getSessionTurn,
+  getSessionModelUsage,
   holdSessionPrompts,
   listProjectSessions,
   listProjectSessionsPage,
@@ -1325,6 +1327,60 @@ test('createSessionPrompt preserves explicit queue placement on the wire', async
   }
 });
 
+test('createSessionPrompt sends the delivery mode with the placement it implies', async () => {
+  // An API built before steering reads only `placement`, so the derived
+  // placement keeps its meaning there: `interrupt` paints in the transcript,
+  // `steer` and `queue` wait in the composer list (a steer row is a plain
+  // Queue List row on an older API).
+  const cases = [
+    ['steer', 'composer'],
+    ['queue', 'composer'],
+    ['interrupt', 'transcript'],
+  ] as const;
+  for (const [delivery, placement] of cases) {
+    nextResponse = {
+      status: 202,
+      body: { prompt_id: 'cmd-d', state: 'queued', message_id: 'msg_a', deduped: false },
+    };
+    await createSessionPrompt('P1', 'S1', {
+      clientMessageId: `delivery-${delivery}`,
+      messageId: 'msg_a',
+      parts: [{ type: 'text', text: 'look at the logs too' }],
+      delivery,
+    });
+    expect(last().body).toMatchObject({ delivery, placement });
+  }
+});
+
+test('createSessionPrompt keeps an explicit placement beside the delivery mode', async () => {
+  nextResponse = {
+    status: 202,
+    body: { prompt_id: 'cmd-d', state: 'queued', message_id: 'msg_a', deduped: false },
+  };
+  await createSessionPrompt('P1', 'S1', {
+    clientMessageId: 'explicit',
+    messageId: 'msg_a',
+    parts: [{ type: 'text', text: 'x' }],
+    placement: 'composer',
+    delivery: 'steer',
+  });
+  expect(last().body).toMatchObject({ delivery: 'steer', placement: 'composer' });
+});
+
+test('createSessionPrompt sends no delivery field when the caller names none', async () => {
+  nextResponse = {
+    status: 202,
+    body: { prompt_id: 'cmd-d', state: 'queued', message_id: 'msg_a', deduped: false },
+  };
+  await createSessionPrompt('P1', 'S1', {
+    clientMessageId: 'plain',
+    messageId: 'msg_a',
+    parts: [{ type: 'text', text: 'x' }],
+  });
+  expect(last().body).not.toHaveProperty('delivery');
+  expect(last().body).not.toHaveProperty('placement');
+});
+
 test('createSessionPrompt asks for a server re-mint only when the caller says its id is stale', async () => {
   // A caller that minted its id somewhere the live transcript was unreadable
   // (the one-time localStorage migration) says so, and the server re-mints
@@ -1469,6 +1525,35 @@ test('editSessionPrompt PATCHes the row text in place and returns the row', asyn
   expect(last().body).toEqual({ text: 'say hello' });
   expect(result.text).toBe('say hello');
   expect(result.message_id).toBe('msg_a');
+});
+
+test('interruptSessionPrompt PATCHes the row to interrupt delivery and returns the row', async () => {
+  // "Stop and send": a row still waiting in the queue becomes Quick Queue. The
+  // running turn ends after its running tool, then this row runs.
+  nextResponse = {
+    status: 200,
+    body: {
+      prompt_id: 'cmd-1',
+      placement: 'transcript',
+      delivery: 'interrupt',
+      steer_fallback: null,
+      client_message_id: 'q_1',
+      message_id: 'msg_a',
+      state: 'queued',
+      reason: null,
+      text: 'stop and do this',
+      attempts: 0,
+      last_error: null,
+      created_at: '2026-08-18T00:00:00.000Z',
+      available_at: '2026-08-18T00:00:00.000Z',
+    },
+  };
+  const result = await interruptSessionPrompt('P1', 'S1', 'cmd-1');
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/prompts/cmd-1');
+  expect(last().method).toBe('PATCH');
+  expect(last().body).toEqual({ delivery: 'interrupt' });
+  expect(result.delivery).toBe('interrupt');
+  expect(result.placement).toBe('transcript');
 });
 
 test('holdSessionPrompts POSTs .../prompts/hold with the flag and returns the queue', async () => {
@@ -1669,6 +1754,21 @@ test('getSessionMessageAuthors reads members and sessions keyed by message id', 
   nextResponse = { status: 200, body };
   expect(await getSessionMessageAuthors('P1', 'S1')).toEqual(body as never);
   expect(new URL(last().url).pathname).toBe('/projects/P1/sessions/S1/message-authors');
+});
+
+test('getSessionModelUsage reads the model that answered, the billed cost and each turn', async () => {
+  const body = {
+    latest: { served_model: 'glm-5.3-flash', fallback_from: 'codex/gpt-6.1-sol', at: '2026-10-02T15:02:50.697Z' },
+    billed_cost: 0.875,
+    turns: {
+      msg_a: { served_models: ['glm-5.3-flash', 'codex/gpt-6.1-sol'], fallback_from: 'codex/gpt-6.1-sol', billed_cost: 0.75 },
+      msg_b: { served_models: ['codex/gpt-6.1-sol'], fallback_from: null, billed_cost: 0 },
+    },
+  };
+  nextResponse = { status: 200, body };
+  expect(await getSessionModelUsage('P1', 'S1')).toEqual(body);
+  expect(new URL(last().url).pathname).toBe('/projects/P1/sessions/S1/model-usage');
+  expect(last().method).toBe('GET');
 });
 
 // ── resolvePublicShareUrl ────────────────────────────────────────────────────

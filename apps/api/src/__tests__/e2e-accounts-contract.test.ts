@@ -362,7 +362,7 @@ mock.module('../accounts/email', () => ({
   },
 }));
 
-mock.module('../shared/rate-limit', () => ({
+mock.module('../middleware/rate-limit', () => ({
   createInviteAcceptRateLimitMiddleware: () => async (_c: any, next: any) => next(),
   createProjectSecretWriteRateLimitMiddleware: () => async (_c: any, next: any) => next(),
 }));

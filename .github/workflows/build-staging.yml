@@ -496,5 +496,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh workflow run deploy-staging.yml --repo "${{ github.repository }}" --ref main -f sha="${{ needs.version.outputs.sha }}"
+          gh workflow run deploy-staging.yml --repo "${{ github.repository }}" --ref dev -f sha="${{ needs.version.outputs.sha }}"
           echo "Deploy Staging dispatched for ${{ needs.version.outputs.sha }}."

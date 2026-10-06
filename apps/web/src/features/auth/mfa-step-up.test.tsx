@@ -124,6 +124,7 @@ mock.module('@phosphor-icons/react', () => ({
 
 const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
 const { MfaStepUpProvider, MfaGate, requestMfaStepUp } = await import('./mfa-step-up');
+const { clearPendingMfaAction } = await import('./mfa-pending-action');
 
 // ─── Render helpers ─────────────────────────────────────────────────────────
 // bun test has no `window`; the repo pattern installs a minimal shim. A fresh
@@ -403,5 +404,14 @@ describe('requestMfaStepUp', () => {
     // The listener is once-only: a second verified event runs nothing.
     window.dispatchEvent(new CustomEvent('kortix:mfa-verified'));
     expect(ran).toEqual(['after']);
+  });
+
+  test('a cancelled action never runs at a later verification', () => {
+    const ran: string[] = [];
+    requestMfaStepUp(true, () => ran.push('remove-factor'));
+    clearPendingMfaAction(); // the dialog was cancelled
+    requestMfaStepUp(true, () => ran.push('sign-out-others'));
+    window.dispatchEvent(new CustomEvent('kortix:mfa-verified'));
+    expect(ran).toEqual(['sign-out-others']);
   });
 });

@@ -10,6 +10,7 @@ import {
   accountGroups,
 } from '@kortix/db';
 import { db } from '../shared/db';
+import { accountGroupNameRow, ssoGroupByNameRow } from '../iam/group-read';
 
 export type SsoProvider = {
   ssoProviderId: string;
@@ -250,13 +251,7 @@ export async function createSsoGroupMapping(args: {
 }): Promise<SsoGroupMapping | null> {
   // Verify group belongs to the account first — guard against pointing
   // a mapping at a group from a different tenant.
-  const [grp] = await db
-    .select({ groupId: accountGroups.groupId, name: accountGroups.name })
-    .from(accountGroups)
-    .where(
-      and(eq(accountGroups.accountId, args.accountId), eq(accountGroups.groupId, args.groupId)),
-    )
-    .limit(1);
+  const [grp] = await accountGroupNameRow(args.accountId, args.groupId);
   if (!grp) return null;
 
   const [row] = await db
@@ -340,17 +335,7 @@ export async function ensureAutoProvisionedGroup(args: {
     .returning({ groupId: accountGroups.groupId });
   let groupId = created?.groupId;
   if (!groupId) {
-    const [existing] = await db
-      .select({ groupId: accountGroups.groupId })
-      .from(accountGroups)
-      .where(
-        and(
-          eq(accountGroups.accountId, args.accountId),
-          eq(accountGroups.name, claimValue),
-          eq(accountGroups.source, 'sso'),
-        ),
-      )
-      .limit(1);
+    const [existing] = await ssoGroupByNameRow(args.accountId, claimValue);
     groupId = existing?.groupId;
   }
   if (!groupId) return null;

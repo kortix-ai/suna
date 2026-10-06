@@ -75,7 +75,7 @@ describe('POST question route', () => {
   });
 
   test('rejects the agent BEFORE the answer can start a turn', () => {
-    expect(src.indexOf('isProjectSessionPrincipal(c)')).toBeLessThan(src.indexOf('continueSession'));
+    expect(src.indexOf('isProjectSessionPrincipal(c)')).toBeLessThan(src.indexOf('deliverThroughQueue'));
   });
 
   test('the guard is a denial, not a scope check', () => {

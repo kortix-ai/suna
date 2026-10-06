@@ -1273,6 +1273,15 @@ function RestartSessionButton({
   pendingLabel?: string;
 }) {
   const t = useTranslations('sessionPage');
+  // Restart is the session owner's or a project manager's; the server answers
+  // anyone else 403. The row is the page's own cached read of this session.
+  const params = useParams<{ id: string; sessionId: string }>();
+  const { data: session } = useProjectSession(params?.id, params?.sessionId, {
+    enabled: !!params?.id && !!params?.sessionId,
+  });
+  if (session?.can_manage_lifecycle === false) {
+    return <p className="text-muted-foreground text-sm">{t('restart.ownerOnly')}</p>;
+  }
   return (
     <Button
       type="button"

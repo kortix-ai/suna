@@ -28,7 +28,7 @@ import {
   sandboxCallbackUnreachableReason,
 } from '../lib/sessions';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
-import { isMissingRuntimeError } from '../routes/shared';
+import { isMissingRuntimeError } from '../session-open';
 import { invalidateProviderCache } from '../../sandbox-proxy';
 import {
   claimInPlaceRuntimeRecovery,
@@ -195,7 +195,7 @@ export async function deleteSession(input: {
   return { ok: true };
 }
 
-export async function restartSession(input: {
+type RestartSessionInput = {
   loaded: {
     row: {
       accountId: string;
@@ -216,8 +216,12 @@ export async function restartSession(input: {
   };
   projectId: string;
   sessionId: string;
-}): Promise<{ status: number; body: Record<string, unknown> }> {
-  const { loaded, session, projectId, sessionId } = input;
+};
+
+export async function restartSession(
+  input: RestartSessionInput,
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  const { session, sessionId } = input;
   const providerName = session.sandboxProvider as SandboxProviderName;
   if (
     !(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(
@@ -246,463 +250,13 @@ export async function restartSession(input: {
     .where(eq(sessionSandboxes.sandboxId, sessionId))
     .limit(1);
 
-  const provisionReplacementRuntime = async () => {
-    const initialPrompt = session.runtimeSessionId
-      ? null
-      : typeof session.metadata?.initial_prompt === 'string'
-        ? (session.metadata.initial_prompt as string)
-        : null;
-    const initialTurn = initialPrompt ? prepareInitialSandboxTurn() : null;
-    const opencodeModel =
-      typeof session.metadata?.opencode_model === 'string'
-        ? (session.metadata.opencode_model as string)
-        : null;
-
-    await transitionSession('provision', sessionId, { error: null, sandboxUrl: null });
-
-    const runtimeMetadata = { restarted_at: new Date().toISOString() };
-    const rehydrate = legacyRehydrateSpec(
-      session.metadata,
-      loaded.row.metadata,
-      loaded.row.projectId,
-    );
-    allocateSessionRuntime({
-      sessionId,
-      accountId: loaded.row.accountId,
-      projectId,
-      userId: loaded.userId,
-      project: loaded.row as any,
-      providerName,
-      baseRef: session.baseRef ?? loaded.row.defaultBranch,
-      agentName: session.agentName ?? 'default',
-      allowProjectImage: projectImageAllowedForSession(
-        session.agentName,
-        repositoryAccessFromSessionMetadata(session.metadata),
-      ),
-      sandboxSlug: sandboxSlugFromSessionMetadata(session.metadata),
-      runtimeMetadata,
-      initialTurn,
-      sessionMetadata: { ...(session.metadata ?? {}), ...runtimeMetadata },
-      buildEnvVars: () =>
-        buildSessionSandboxEnvVars({
-          accountId: loaded.row.accountId,
-          projectId,
-          sessionId,
-          userId: loaded.userId,
-          repoUrl: loaded.row.repoUrl,
-          baseRef: session.baseRef ?? loaded.row.defaultBranch,
-          agentName: session.agentName ?? 'default',
-          opencodeModel,
-          defaultBranch: loaded.row.defaultBranch,
-          manifestPath: loaded.row.manifestPath,
-          llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
-          // A restarted meta coordinator must keep its meta runtime: without
-          // this the rebuilt env loses KORTIX_PROJECT_AUTO_CLONE=0 and the
-          // meta agent config, so the daemon clones the project over the meta
-          // workspace and wipes /workspace/AGENTS.md.
-          platformMetaAgent: isMetaAgentName(session.agentName ?? ''),
-          repositoryAccess: repositoryAccessFromSessionMetadata(session.metadata),
-          restoreSessionBranch: true,
-        }),
-      resolveGitProject: async () => withProjectGitAuth(loaded.row as any),
-      beforeActive: rehydrate
-        ? (externalId) =>
-            rehydrateSessionChat({
-              sessionId,
-              externalId,
-              provider: providerName,
-              spec: rehydrate,
-            })
-        : undefined,
-    });
-  };
-
   if (
     existingSandbox?.externalId &&
     (config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(
       existingSandbox.provider,
     )
   ) {
-    const externalId = existingSandbox.externalId;
-    const provider = getProvider(
-      existingSandbox.provider as SandboxProviderName,
-    );
-    const providerStatus = await provider
-      .getStatus(externalId)
-      .catch(() => 'unknown' as const);
-    if (providerStatus === 'removed') {
-      const claim = await claimInPlaceRuntimeRecovery(existingSandbox);
-      if (!claim) {
-        return {
-          status: 202,
-          body: {
-            ok: true,
-            session_id: sessionId,
-            status: 'provisioning',
-            reason: 'runtime_recovery_in_progress',
-          },
-        };
-      }
-      const recovery = await provider
-        .recoverInPlace?.(externalId)
-        .catch(() => 'unavailable' as const);
-      if (recovery === 'running' || recovery === 'recovering') {
-        const accepted = await markInPlaceRuntimeRecoveryAccepted(
-          claim,
-          recovery,
-        );
-        if (!accepted) {
-          return {
-            status: 409,
-            body: {
-              error: RUNTIME_IDENTITY_ERROR,
-              code: 'SESSION_RUNTIME_RECOVERY_CANCELLED',
-              session_id: sessionId,
-              external_id: externalId,
-              reason: 'runtime_recovery_cancelled',
-            },
-          };
-        }
-        return {
-          status: 202,
-          body: {
-            ok: true,
-            session_id: sessionId,
-            status: 'provisioning',
-            reason:
-              recovery === 'running'
-                ? 'runtime_recovered_in_place'
-                : 'runtime_restoring_in_place',
-          },
-        };
-      }
-      await preserveEstablishedRuntime(
-        claim.row,
-        'restart_removed_runtime',
-        'restart_failed',
-      );
-      return {
-        status: 409,
-        body: {
-          error: RUNTIME_IDENTITY_ERROR,
-          code: 'SESSION_RUNTIME_IDENTITY_UNAVAILABLE',
-          session_id: sessionId,
-          external_id: externalId,
-          reason: RUNTIME_IDENTITY_UNAVAILABLE,
-        },
-      };
-    }
-
-    const restartStartedAt = new Date();
-    const restartId = crypto.randomUUID();
-    const restartLeaseExpiresAt = new Date(
-      restartStartedAt.getTime() + RUNTIME_RESTART_LEASE_MS,
-    );
-    const claimedRestart = await claimInPlaceRestart({
-      sandboxId: sessionId,
-      externalId,
-      claim: {
-        id: restartId,
-        startedAt: restartStartedAt,
-        leaseExpiresAt: restartLeaseExpiresAt,
-      },
-    });
-    if (!claimedRestart) {
-      const [current] = await db
-        .select({ metadata: sessionSandboxes.metadata })
-        .from(sessionSandboxes)
-        .where(eq(sessionSandboxes.sandboxId, sessionId))
-        .limit(1);
-      const metadata = (current?.metadata ?? {}) as Record<string, unknown>;
-      return {
-        status: 202,
-        body: {
-          ok: true,
-          session_id: sessionId,
-          status: 'provisioning',
-          reason: restartClaimIsActive(metadata, restartStartedAt)
-            ? 'restart_in_progress'
-            : 'lifecycle_transition_in_progress',
-          operation_id:
-            typeof metadata.runtimeRestartId === 'string'
-              ? metadata.runtimeRestartId
-              : undefined,
-        },
-      };
-    }
-    await transitionSession('provision', sessionId, { error: null });
-
-    // Every abandon is logged. A restart that silently lost its claim left the
-    // row in `provisioning` with nothing in the logs: SESS-9 sat there ~350 s
-    // on every preview because the egress pin overwrote the claim (2026-09).
-    const ownsRestart = async (step: string) => {
-      const [current] = await db
-        .select({ metadata: sessionSandboxes.metadata })
-        .from(sessionSandboxes)
-        .where(eq(sessionSandboxes.sandboxId, sessionId))
-        .limit(1);
-      const holder = (current?.metadata as Record<string, unknown> | null)
-        ?.runtimeRestartId;
-      if (holder === restartId) return true;
-      logger.warn('[projects] restart abandoned: lost the restart claim', {
-        session_id: sessionId,
-        project_id: projectId,
-        external_id: externalId,
-        restart_id: restartId,
-        step,
-        row_found: Boolean(current),
-        current_restart_id: typeof holder === 'string' ? holder : null,
-      });
-      return false;
-    };
-
-    void (async () => {
-      try {
-        if (!(await ownsRestart('before_stop'))) return;
-        await provider.stop(externalId).catch(() => {});
-        if (!(await ownsRestart('after_stop'))) return;
-        invalidateProviderCache(externalId);
-        await db
-          .update(sessionSandboxes)
-          .set({
-            metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({ runtimeRestartPhase: 'starting' })}::jsonb`,
-            updatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(sessionSandboxes.sandboxId, sessionId),
-              sql`${sessionSandboxes.metadata}->>'runtimeRestartId' = ${restartId}`,
-            ),
-          );
-        await provider.start(externalId, {
-          // A restore from cold storage runs inside start() and can outlast
-          // the restart lease; keep it, fenced to this restart.
-          onProgress: async () => {
-            const leaseExpiresAt = new Date(Date.now() + RUNTIME_RESTART_LEASE_MS);
-            await db
-              .update(sessionSandboxes)
-              .set({
-                metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({ runtimeRestartLeaseExpiresAt: leaseExpiresAt.toISOString() })}::jsonb`,
-              })
-              .where(
-                and(
-                  eq(sessionSandboxes.sandboxId, sessionId),
-                  sql`${sessionSandboxes.metadata}->>'runtimeRestartId' = ${restartId}`,
-                ),
-              );
-          },
-        });
-        if (!(await ownsRestart('after_start'))) return;
-        // Provider ingress credentials can change on every stop/start cycle.
-        // Remove any link resolved while the sandbox was stopped.
-        invalidateProviderCache(externalId);
-        // A provider may acknowledge start before discovering that the backing
-        // runtime is gone. A confirmed `removed` status starts recovery.
-        // `unknown` remains non-terminal because it does not prove runtime loss.
-        let verifiedStatus = await provider
-          .getStatus(externalId)
-          .catch(() => 'unknown' as const);
-        if (
-          verifiedStatus === 'unknown' &&
-          (await inspectSandboxRuntime(externalId, loaded.userId))
-        ) {
-          verifiedStatus = 'running';
-        }
-        for (
-          let attempt = 1;
-          verifiedStatus !== 'running' &&
-          verifiedStatus !== 'removed' &&
-          attempt < 15;
-          attempt += 1
-        ) {
-          await Bun.sleep(1_000);
-          verifiedStatus = await provider
-            .getStatus(externalId)
-            .catch(() => 'unknown' as const);
-          if (
-            verifiedStatus === 'unknown' &&
-            (await inspectSandboxRuntime(externalId, loaded.userId))
-          ) {
-            verifiedStatus = 'running';
-          }
-        }
-        if (verifiedStatus === 'removed') {
-          if (!(await ownsRestart('before_recovery'))) return;
-          const claim = await claimInPlaceRuntimeRecovery(existingSandbox);
-          if (!claim) return;
-          const recovery = await provider
-            .recoverInPlace?.(externalId)
-            .catch(() => 'unavailable' as const);
-          if (recovery === 'running' || recovery === 'recovering') {
-            await markInPlaceRuntimeRecoveryAccepted(claim, recovery).catch(
-              () => null,
-            );
-          } else {
-            await preserveEstablishedRuntime(
-              claim.row,
-              'restart_post_start_removed',
-              'restart_failed',
-            ).catch(() => null);
-          }
-          return;
-        }
-        if (verifiedStatus !== 'running' && verifiedStatus !== 'unknown') {
-          throw new Error(
-            `Sandbox ${externalId} did not reach running after restart (provider status: ${verifiedStatus})`,
-          );
-        }
-        if (verifiedStatus === 'unknown') {
-          logger.warn(
-            '[projects] restart provider status stayed unknown; runtime polling continues',
-            {
-              session_id: sessionId,
-              project_id: projectId,
-              external_id: externalId,
-            },
-          );
-        }
-        // A session deleted during the restart stays deleted: its row is
-        // archived, and `activate` never leaves `archived`.
-        const finalized = await transitionSandbox('activate', sessionId, {
-          metadata: { strip: RESTART_CLAIM_KEYS },
-          guard: sql`${sessionSandboxes.metadata}->>'runtimeRestartId' = ${restartId}`,
-        });
-        if (!finalized) {
-          logger.warn('[projects] restart abandoned: lost the restart claim', {
-            session_id: sessionId,
-            project_id: projectId,
-            external_id: externalId,
-            restart_id: restartId,
-            step: 'finalize',
-          });
-          return;
-        }
-        await transitionSession('resume', sessionId);
-        // A restart is a stop/start of the SAME box: the provider hands back the
-        // env it was created with, so this used to cost a full boot and return
-        // byte-identical stale config. People restarted precisely to pick up a
-        // merged agent change and got the old agents back, which is most of why
-        // "there is no way to reload" felt true.
-        //
-        // Converge on the session's base ref. Best-effort and after the
-        // session is already marked running: a box that is up with old config
-        // beats one parked because a git read failed.
-        //
-        // This used to push the compiled config alone. That moved the etag and
-        // left the agent unchanged, because opencode reads the agent `.md` files
-        // from the working tree and a restart never touched them. The
-        // convergence syncs those files first, and skips the second opencode
-        // restart entirely when the box is already current.
-        //
-        // A restart resumes the SAME VM, so the daemon's boot-time reconcile
-        // never re-runs and the box keeps whatever `kortix` binary its image was
-        // built with — the exact reason production sandboxes ran a CLI that
-        // predated the routes it calls. Poke the daemon to re-converge. Detached
-        // and after the session is already marked running: this must not extend
-        // the restart the user is waiting on.
-        //
-        // AWAITED here, not fire-and-forget (`scheduleSandboxRuntimeRefresh`'s
-        // usual form) — still inside this already-detached block, so the 202
-        // sent long ago is unaffected. `POST /kortix/refresh?restart=0` is what
-        // now also fetches the live managed-model lineup and rewrites the
-        // overlay file (see `convergeManagedModelCatalog`, `allowRestart:
-        // false`), and config convergence right below is what actually
-        // RESPAWNS opencode. Racing the two left a real dev box restarting
-        // straight back onto its stale managed lineup 2026-09-26: the config
-        // convergence's respawn read whatever catalog file was on disk at THAT
-        // instant, and the runtime-asset refresh's write had not landed yet.
-        // Awaiting closes that race — the file is current before anything
-        // that reads it from disk gets a chance to spawn.
-        await refreshSandboxRuntimeAssets(sessionId).catch(() => 'unreachable' as const);
-        scheduleSessionConfigConvergence(sessionId, 'restart');
-      } catch (err) {
-        // Detached from the request (the 202 already went out) — a structured
-        // error is the only trace the reboot died and the session was parked.
-        logger.error(
-          '[projects] restart-in-place failed — session parked stopped',
-          {
-            session_id: sessionId,
-            project_id: projectId,
-            external_id: externalId,
-            error: err instanceof Error ? err.message : String(err),
-          },
-        );
-        if (isMissingRuntimeError(err)) {
-          const claim = await claimInPlaceRuntimeRecovery(existingSandbox);
-          if (!claim) return;
-          const recovery = await provider
-            .recoverInPlace?.(externalId)
-            .catch(() => 'unavailable' as const);
-          if (recovery === 'running' || recovery === 'recovering') {
-            await markInPlaceRuntimeRecoveryAccepted(claim, recovery).catch(
-              () => null,
-            );
-          } else {
-            // Incident 2026-08-14: a loss verdict requires a fresh, definitive
-            // provider `removed` — nothing else may reach the terminal "computer
-            // was lost" state. Neither condition that got us here is evidence of
-            // one. `isMissingRuntimeError` was a message heuristic that matched
-            // any error whose text merely contained "not found" (it is now a
-            // provider 404), and `recoverInPlace` is OPTIONAL: `?.` yields `undefined` for a
-            // provider that does not implement it, which is indistinguishable
-            // here from a provider that tried and failed. The sibling restart
-            // paths above both gate on `getStatus() === 'removed'` before they
-            // preserve; this one is reached from a catch block and did not, so
-            // an unrelated "not found" thrown mid-restart reported a live box as
-            // lost — unrecoverable and non-retriable to the user, a false
-            // `runtime.lost` page, and the box left running because only a park
-            // stops it. Ask the provider, then let the shared gate decide.
-            const status = await (async () => {
-              try {
-                return await provider.getStatus(externalId);
-              } catch {
-                return 'unknown' as const;
-              }
-            })();
-            if (runtimeLossVerdict(status) === 'preserve') {
-              await preserveEstablishedRuntime(
-                claim.row,
-                'restart_missing_runtime',
-                'restart_failed',
-              ).catch(() => null);
-            } else {
-              await parkEstablishedRuntime(
-                claim.row,
-                'restart_missing_runtime',
-                'restart_failed',
-              ).catch(() => null);
-            }
-          }
-          return;
-        }
-        const failedRestart = await transitionSandbox('stop', sessionId, {
-          metadata: {
-            strip: RESTART_CLAIM_KEYS,
-            merge: {
-              runtimeRestartFailedAt: new Date().toISOString(),
-              runtimeRestartError: err instanceof Error ? err.message : String(err),
-            },
-          },
-          guard: and(
-            eq(sessionSandboxes.externalId, externalId),
-            sql`${sessionSandboxes.metadata}->>'runtimeRestartId' = ${restartId}`,
-          ),
-        }).catch(() => null);
-        if (!failedRestart) return;
-        await transitionSession('park', sessionId).catch(() => false);
-      }
-    })();
-
-    return {
-      status: 202,
-      body: {
-        ok: true,
-        session_id: sessionId,
-        status: 'provisioning',
-        reason: 'restart_started',
-        operation_id: restartId,
-      },
-    };
+    return restartInPlace(input, existingSandbox, existingSandbox.externalId);
   }
 
   if (existingSandbox) {
@@ -721,9 +275,508 @@ export async function restartSession(input: {
     );
   }
 
-  await provisionReplacementRuntime();
+  await provisionReplacementRuntime(input, providerName);
   return {
     status: 202,
     body: { ok: true, session_id: sessionId, status: 'provisioning' },
   };
+}
+
+/** Allocate a fresh runtime for a session that has no provider sandbox to restart. */
+async function provisionReplacementRuntime(
+  { loaded, session, projectId, sessionId }: RestartSessionInput,
+  providerName: SandboxProviderName,
+): Promise<void> {
+  const initialPrompt = session.runtimeSessionId
+    ? null
+    : typeof session.metadata?.initial_prompt === 'string'
+      ? (session.metadata.initial_prompt as string)
+      : null;
+  const initialTurn = initialPrompt ? prepareInitialSandboxTurn() : null;
+  const opencodeModel =
+    typeof session.metadata?.opencode_model === 'string'
+      ? (session.metadata.opencode_model as string)
+      : null;
+
+  await transitionSession('provision', sessionId, { error: null, sandboxUrl: null });
+
+  const runtimeMetadata = { restarted_at: new Date().toISOString() };
+  const rehydrate = legacyRehydrateSpec(
+    session.metadata,
+    loaded.row.metadata,
+    loaded.row.projectId,
+  );
+  allocateSessionRuntime({
+    sessionId,
+    accountId: loaded.row.accountId,
+    projectId,
+    userId: loaded.userId,
+    project: loaded.row as any,
+    providerName,
+    baseRef: session.baseRef ?? loaded.row.defaultBranch,
+    agentName: session.agentName ?? 'default',
+    allowProjectImage: projectImageAllowedForSession(
+      session.agentName,
+      repositoryAccessFromSessionMetadata(session.metadata),
+    ),
+    sandboxSlug: sandboxSlugFromSessionMetadata(session.metadata),
+    runtimeMetadata,
+    initialTurn,
+    sessionMetadata: { ...(session.metadata ?? {}), ...runtimeMetadata },
+    buildEnvVars: () =>
+      buildSessionSandboxEnvVars({
+        accountId: loaded.row.accountId,
+        projectId,
+        sessionId,
+        userId: loaded.userId,
+        repoUrl: loaded.row.repoUrl,
+        baseRef: session.baseRef ?? loaded.row.defaultBranch,
+        agentName: session.agentName ?? 'default',
+        opencodeModel,
+        defaultBranch: loaded.row.defaultBranch,
+        manifestPath: loaded.row.manifestPath,
+        llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
+        // A restarted meta coordinator must keep its meta runtime: without
+        // this the rebuilt env loses KORTIX_PROJECT_AUTO_CLONE=0 and the
+        // meta agent config, so the daemon clones the project over the meta
+        // workspace and wipes /workspace/AGENTS.md.
+        platformMetaAgent: isMetaAgentName(session.agentName ?? ''),
+        repositoryAccess: repositoryAccessFromSessionMetadata(session.metadata),
+        restoreSessionBranch: true,
+      }),
+    resolveGitProject: async () => withProjectGitAuth(loaded.row as any),
+    beforeActive: rehydrate
+      ? (externalId) =>
+          rehydrateSessionChat({
+            sessionId,
+            externalId,
+            provider: providerName,
+            spec: rehydrate,
+          })
+      : undefined,
+  });
+}
+
+/** Stop and start the session's existing provider sandbox. The work runs detached after the 202. */
+async function restartInPlace(
+  input: RestartSessionInput,
+  existingSandbox: typeof sessionSandboxes.$inferSelect,
+  externalId: string,
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  const { loaded, projectId, sessionId } = input;
+  const provider = getProvider(
+    existingSandbox.provider as SandboxProviderName,
+  );
+  const providerStatus = await provider
+    .getStatus(externalId)
+    .catch(() => 'unknown' as const);
+  if (providerStatus === 'removed') {
+    const claim = await claimInPlaceRuntimeRecovery(existingSandbox);
+    if (!claim) {
+      return {
+        status: 202,
+        body: {
+          ok: true,
+          session_id: sessionId,
+          status: 'provisioning',
+          reason: 'runtime_recovery_in_progress',
+        },
+      };
+    }
+    const recovery = await provider
+      .recoverInPlace?.(externalId)
+      .catch(() => 'unavailable' as const);
+    if (recovery === 'running' || recovery === 'recovering') {
+      const accepted = await markInPlaceRuntimeRecoveryAccepted(
+        claim,
+        recovery,
+      );
+      if (!accepted) {
+        return {
+          status: 409,
+          body: {
+            error: RUNTIME_IDENTITY_ERROR,
+            code: 'SESSION_RUNTIME_RECOVERY_CANCELLED',
+            session_id: sessionId,
+            external_id: externalId,
+            reason: 'runtime_recovery_cancelled',
+          },
+        };
+      }
+      return {
+        status: 202,
+        body: {
+          ok: true,
+          session_id: sessionId,
+          status: 'provisioning',
+          reason:
+            recovery === 'running'
+              ? 'runtime_recovered_in_place'
+              : 'runtime_restoring_in_place',
+        },
+      };
+    }
+    await preserveEstablishedRuntime(
+      claim.row,
+      'restart_removed_runtime',
+      'restart_failed',
+    );
+    return {
+      status: 409,
+      body: {
+        error: RUNTIME_IDENTITY_ERROR,
+        code: 'SESSION_RUNTIME_IDENTITY_UNAVAILABLE',
+        session_id: sessionId,
+        external_id: externalId,
+        reason: RUNTIME_IDENTITY_UNAVAILABLE,
+      },
+    };
+  }
+
+  const restartStartedAt = new Date();
+  const restartId = crypto.randomUUID();
+  const restartLeaseExpiresAt = new Date(
+    restartStartedAt.getTime() + RUNTIME_RESTART_LEASE_MS,
+  );
+  const claimedRestart = await claimInPlaceRestart({
+    sandboxId: sessionId,
+    externalId,
+    claim: {
+      id: restartId,
+      startedAt: restartStartedAt,
+      leaseExpiresAt: restartLeaseExpiresAt,
+    },
+  });
+  if (!claimedRestart) {
+    const [current] = await db
+      .select({ metadata: sessionSandboxes.metadata })
+      .from(sessionSandboxes)
+      .where(eq(sessionSandboxes.sandboxId, sessionId))
+      .limit(1);
+    const metadata = (current?.metadata ?? {}) as Record<string, unknown>;
+    return {
+      status: 202,
+      body: {
+        ok: true,
+        session_id: sessionId,
+        status: 'provisioning',
+        reason: restartClaimIsActive(metadata, restartStartedAt)
+          ? 'restart_in_progress'
+          : 'lifecycle_transition_in_progress',
+        operation_id:
+          typeof metadata.runtimeRestartId === 'string'
+            ? metadata.runtimeRestartId
+            : undefined,
+      },
+    };
+  }
+  await transitionSession('provision', sessionId, { error: null });
+
+  void runRestartInPlace({
+    loaded,
+    projectId,
+    sessionId,
+    existingSandbox,
+    externalId,
+    provider,
+    restartId,
+  });
+
+  return {
+    status: 202,
+    body: {
+      ok: true,
+      session_id: sessionId,
+      status: 'provisioning',
+      reason: 'restart_started',
+      operation_id: restartId,
+    },
+  };
+}
+
+interface InPlaceRestart {
+  loaded: RestartSessionInput['loaded'];
+  projectId: string;
+  sessionId: string;
+  existingSandbox: typeof sessionSandboxes.$inferSelect;
+  externalId: string;
+  provider: ReturnType<typeof getProvider>;
+  restartId: string;
+}
+
+  // Every abandon is logged. A restart that silently lost its claim left the
+  // row in `provisioning` with nothing in the logs: SESS-9 sat there ~350 s
+  // on every preview because the egress pin overwrote the claim (2026-09).
+async function ownsRestart(
+  { sessionId, projectId, externalId, restartId }: InPlaceRestart,
+  step: string,
+): Promise<boolean> {
+  const [current] = await db
+    .select({ metadata: sessionSandboxes.metadata })
+    .from(sessionSandboxes)
+    .where(eq(sessionSandboxes.sandboxId, sessionId))
+    .limit(1);
+  const holder = (current?.metadata as Record<string, unknown> | null)
+    ?.runtimeRestartId;
+  if (holder === restartId) return true;
+  logger.warn('[projects] restart abandoned: lost the restart claim', {
+    session_id: sessionId,
+    project_id: projectId,
+    external_id: externalId,
+    restart_id: restartId,
+    step,
+    row_found: Boolean(current),
+    current_restart_id: typeof holder === 'string' ? holder : null,
+  });
+  return false;
+}
+
+/** The detached half of an in-place restart. The 202 has already gone out. */
+async function runRestartInPlace(restart: InPlaceRestart): Promise<void> {
+  try {
+    await restartProviderBox(restart);
+  } catch (err) {
+    await settleFailedRestart(restart, err);
+  }
+}
+
+/** Stop, start and verify the box, then finalize the restart claim and converge config. */
+async function restartProviderBox(restart: InPlaceRestart): Promise<void> {
+  const { loaded, projectId, sessionId, existingSandbox, externalId, provider, restartId } = restart;
+  if (!(await ownsRestart(restart, 'before_stop'))) return;
+  await provider.stop(externalId).catch(() => {});
+  if (!(await ownsRestart(restart, 'after_stop'))) return;
+  invalidateProviderCache(externalId);
+  await db
+    .update(sessionSandboxes)
+    .set({
+      metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({ runtimeRestartPhase: 'starting' })}::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(sessionSandboxes.sandboxId, sessionId),
+        sql`${sessionSandboxes.metadata}->>'runtimeRestartId' = ${restartId}`,
+      ),
+    );
+  await provider.start(externalId, {
+    // A restore from cold storage runs inside start() and can outlast
+    // the restart lease; keep it, fenced to this restart.
+    onProgress: async () => {
+      const leaseExpiresAt = new Date(Date.now() + RUNTIME_RESTART_LEASE_MS);
+      await db
+        .update(sessionSandboxes)
+        .set({
+          metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({ runtimeRestartLeaseExpiresAt: leaseExpiresAt.toISOString() })}::jsonb`,
+        })
+        .where(
+          and(
+            eq(sessionSandboxes.sandboxId, sessionId),
+            sql`${sessionSandboxes.metadata}->>'runtimeRestartId' = ${restartId}`,
+          ),
+        );
+    },
+  });
+  if (!(await ownsRestart(restart, 'after_start'))) return;
+  // Provider ingress credentials can change on every stop/start cycle.
+  // Remove any link resolved while the sandbox was stopped.
+  invalidateProviderCache(externalId);
+  // A provider may acknowledge start before discovering that the backing
+  // runtime is gone. A confirmed `removed` status starts recovery.
+  // `unknown` remains non-terminal because it does not prove runtime loss.
+  let verifiedStatus = await provider
+    .getStatus(externalId)
+    .catch(() => 'unknown' as const);
+  if (
+    verifiedStatus === 'unknown' &&
+    (await inspectSandboxRuntime(externalId, loaded.userId))
+  ) {
+    verifiedStatus = 'running';
+  }
+  for (
+    let attempt = 1;
+    verifiedStatus !== 'running' &&
+    verifiedStatus !== 'removed' &&
+    attempt < 15;
+    attempt += 1
+  ) {
+    await Bun.sleep(1_000);
+    verifiedStatus = await provider
+      .getStatus(externalId)
+      .catch(() => 'unknown' as const);
+    if (
+      verifiedStatus === 'unknown' &&
+      (await inspectSandboxRuntime(externalId, loaded.userId))
+    ) {
+      verifiedStatus = 'running';
+    }
+  }
+  if (verifiedStatus === 'removed') {
+    if (!(await ownsRestart(restart, 'before_recovery'))) return;
+    const claim = await claimInPlaceRuntimeRecovery(existingSandbox);
+    if (!claim) return;
+    const recovery = await provider
+      .recoverInPlace?.(externalId)
+      .catch(() => 'unavailable' as const);
+    if (recovery === 'running' || recovery === 'recovering') {
+      await markInPlaceRuntimeRecoveryAccepted(claim, recovery).catch(
+        () => null,
+      );
+    } else {
+      await preserveEstablishedRuntime(
+        claim.row,
+        'restart_post_start_removed',
+        'restart_failed',
+      ).catch(() => null);
+    }
+    return;
+  }
+  if (verifiedStatus !== 'running' && verifiedStatus !== 'unknown') {
+    throw new Error(
+      `Sandbox ${externalId} did not reach running after restart (provider status: ${verifiedStatus})`,
+    );
+  }
+  if (verifiedStatus === 'unknown') {
+    logger.warn(
+      '[projects] restart provider status stayed unknown; runtime polling continues',
+      {
+        session_id: sessionId,
+        project_id: projectId,
+        external_id: externalId,
+      },
+    );
+  }
+  // A session deleted during the restart stays deleted: its row is
+  // archived, and `activate` never leaves `archived`.
+  const finalized = await transitionSandbox('activate', sessionId, {
+    metadata: { strip: RESTART_CLAIM_KEYS },
+    guard: sql`${sessionSandboxes.metadata}->>'runtimeRestartId' = ${restartId}`,
+  });
+  if (!finalized) {
+    logger.warn('[projects] restart abandoned: lost the restart claim', {
+      session_id: sessionId,
+      project_id: projectId,
+      external_id: externalId,
+      restart_id: restartId,
+      step: 'finalize',
+    });
+    return;
+  }
+  await transitionSession('resume', sessionId);
+  // A restart is a stop/start of the SAME box: the provider hands back the
+  // env it was created with, so this used to cost a full boot and return
+  // byte-identical stale config. People restarted precisely to pick up a
+  // merged agent change and got the old agents back, which is most of why
+  // "there is no way to reload" felt true.
+  //
+  // Converge on the session's base ref. Best-effort and after the
+  // session is already marked running: a box that is up with old config
+  // beats one parked because a git read failed.
+  //
+  // This used to push the compiled config alone. That moved the etag and
+  // left the agent unchanged, because opencode reads the agent `.md` files
+  // from the working tree and a restart never touched them. The
+  // convergence syncs those files first, and skips the second opencode
+  // restart entirely when the box is already current.
+  //
+  // A restart resumes the SAME VM, so the daemon's boot-time reconcile
+  // never re-runs and the box keeps whatever `kortix` binary its image was
+  // built with — the exact reason production sandboxes ran a CLI that
+  // predated the routes it calls. Poke the daemon to re-converge. Detached
+  // and after the session is already marked running: this must not extend
+  // the restart the user is waiting on.
+  //
+  // AWAITED here, not fire-and-forget (`scheduleSandboxRuntimeRefresh`'s
+  // usual form) — still inside this already-detached block, so the 202
+  // sent long ago is unaffected. `POST /kortix/refresh?restart=0` is what
+  // now also fetches the live managed-model lineup and rewrites the
+  // overlay file (see `convergeManagedModelCatalog`, `allowRestart:
+  // false`), and config convergence right below is what actually
+  // RESPAWNS opencode. Racing the two left a real dev box restarting
+  // straight back onto its stale managed lineup 2026-09-26: the config
+  // convergence's respawn read whatever catalog file was on disk at THAT
+  // instant, and the runtime-asset refresh's write had not landed yet.
+  // Awaiting closes that race — the file is current before anything
+  // that reads it from disk gets a chance to spawn.
+  await refreshSandboxRuntimeAssets(sessionId).catch(() => 'unreachable' as const);
+  scheduleSessionConfigConvergence(sessionId, 'restart');
+}
+
+/** A restart that threw: recover a missing runtime, or park the session stopped. */
+async function settleFailedRestart(restart: InPlaceRestart, err: unknown): Promise<void> {
+  const { projectId, sessionId, existingSandbox, externalId, provider, restartId } = restart;
+  // Detached from the request (the 202 already went out) — a structured
+  // error is the only trace the reboot died and the session was parked.
+  logger.error(
+    '[projects] restart-in-place failed — session parked stopped',
+    {
+      session_id: sessionId,
+      project_id: projectId,
+      external_id: externalId,
+      error: err instanceof Error ? err.message : String(err),
+    },
+  );
+  if (isMissingRuntimeError(err)) {
+    const claim = await claimInPlaceRuntimeRecovery(existingSandbox);
+    if (!claim) return;
+    const recovery = await provider
+      .recoverInPlace?.(externalId)
+      .catch(() => 'unavailable' as const);
+    if (recovery === 'running' || recovery === 'recovering') {
+      await markInPlaceRuntimeRecoveryAccepted(claim, recovery).catch(
+        () => null,
+      );
+    } else {
+      // Incident 2026-08-14: a loss verdict requires a fresh, definitive
+      // provider `removed` — nothing else may reach the terminal "computer
+      // was lost" state. Neither condition that got us here is evidence of
+      // one. `isMissingRuntimeError` was a message heuristic that matched
+      // any error whose text merely contained "not found" (it is now a
+      // provider 404), and `recoverInPlace` is OPTIONAL: `?.` yields `undefined` for a
+      // provider that does not implement it, which is indistinguishable
+      // here from a provider that tried and failed. The sibling restart
+      // paths above both gate on `getStatus() === 'removed'` before they
+      // preserve; this one is reached from a catch block and did not, so
+      // an unrelated "not found" thrown mid-restart reported a live box as
+      // lost — unrecoverable and non-retriable to the user, a false
+      // `runtime.lost` page, and the box left running because only a park
+      // stops it. Ask the provider, then let the shared gate decide.
+      const status = await (async () => {
+        try {
+          return await provider.getStatus(externalId);
+        } catch {
+          return 'unknown' as const;
+        }
+      })();
+      if (runtimeLossVerdict(status) === 'preserve') {
+        await preserveEstablishedRuntime(
+          claim.row,
+          'restart_missing_runtime',
+          'restart_failed',
+        ).catch(() => null);
+      } else {
+        await parkEstablishedRuntime(
+          claim.row,
+          'restart_missing_runtime',
+          'restart_failed',
+        ).catch(() => null);
+      }
+    }
+    return;
+  }
+  const failedRestart = await transitionSandbox('stop', sessionId, {
+    metadata: {
+      strip: RESTART_CLAIM_KEYS,
+      merge: {
+        runtimeRestartFailedAt: new Date().toISOString(),
+        runtimeRestartError: err instanceof Error ? err.message : String(err),
+      },
+    },
+    guard: and(
+      eq(sessionSandboxes.externalId, externalId),
+      sql`${sessionSandboxes.metadata}->>'runtimeRestartId' = ${restartId}`,
+    ),
+  }).catch(() => null);
+  if (!failedRestart) return;
+  await transitionSession('park', sessionId).catch(() => false);
 }

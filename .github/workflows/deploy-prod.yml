@@ -1695,7 +1695,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: main
+          ref: dev
           fetch-depth: 0
       # `main` is branch-protected (require PR), so a direct push is rejected
       # (GH006) — which used to fail this job and make Deploy Prod show red even
@@ -1722,7 +1722,7 @@ jobs:
           git add VERSION
           git commit -m "chore(release): main VERSION → $NEXT (dev target after $RELEASED) [skip ci]"
           git push -u origin "$BR" --force-with-lease
-          gh pr create --base main --head "$BR" \
+          gh pr create --base dev --head "$BR" \
             --title "chore(release): VERSION → $NEXT [skip ci]" \
             --body "Auto-bump main's VERSION to the next dev target after the v$RELEASED prod release." || true
           # [skip ci] in the squash subject so merging to main doesn't kick off a

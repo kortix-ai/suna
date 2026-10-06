@@ -22,9 +22,10 @@ import {
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
+  tokenRejectedLine,
 } from '../command-helpers.ts';
 import { appendGitExcludeEntries } from '../git-exclude.ts';
-import { authHeaderArgs } from '../git-ops.ts';
+import { authGitEnv } from '../git-ops.ts';
 import { configureProjectGitAuth, resolveProjectGitTarget } from '../project-git.ts';
 import {
   clearLink,
@@ -64,7 +65,8 @@ Subcommands:
   unset                Clear the global default project. --host <name> clears
                        that host's instead.
   link [<id>]          Bind cwd to a remote project (writes .kortix/link.json).
-                       --host <name> uses that logged-in host's credential.
+                       --host <name> binds a project on that logged-in host,
+                       authenticating with its stored key.
   unlink               Remove .kortix/link.json from cwd
   open [<id>]          Open the dashboard URL for one project
   clone [<id>] [dir]   Clone through the authenticated Kortix git proxy. Falls
@@ -188,7 +190,7 @@ export async function runProjects(argv: string[]): Promise<number> {
       try {
         hostArg = takeFlagValue(restCopy, ['--host']);
       } catch (err) {
-        process.stderr.write(`${status.err(err instanceof Error ? err.message : String(err))}\n`);
+        process.stderr.write(`${status.err((err as Error).message)}\n`);
         return 2;
       }
       return projectsLink(restCopy.find((a) => !a.startsWith('-')), hostArg);
@@ -1116,12 +1118,16 @@ async function projectsClone(
     }
   }
 
-  const args = target.token
-    ? [...authHeaderArgs(target.repoUrl, target.token, target.username), 'clone', target.repoUrl]
-    : ['clone', target.repoUrl];
+  const args = ['clone', target.repoUrl];
   if (destination) args.push(destination);
 
-  const cloned = spawnSync('git', args, { stdio: 'inherit' });
+  const cloned = spawnSync('git', args, {
+    stdio: 'inherit',
+    // The token travels in the environment, never in argv (see `authGitEnv`).
+    env: target.token
+      ? { ...process.env, ...authGitEnv(target.repoUrl, target.token, target.username) }
+      : undefined,
+  });
   if (cloned.error) {
     process.stderr.write(`${status.err(`Could not start git: ${cloned.error.message}`)}\n`);
     return 1;
@@ -1497,6 +1503,11 @@ async function projectsUnset(hostArg?: string): Promise<number> {
 }
 
 async function projectsLink(arg?: string, hostArg?: string): Promise<number> {
+  // --host names a logged-in host other than the active one: its stored
+  // credential serves the request, like `projects use` — never the ambient
+  // session token (the sandbox env token is scoped to the session's own
+  // project, which turned `link <id> --host <other>` into a 403 about a
+  // cross-project principal).
   const auth = hostArg ? loadAuthForHost(hostArg) : requireAuth();
   if (!auth?.token) {
     if (hostArg) {
@@ -1560,6 +1571,8 @@ async function projectsLink(arg?: string, hostArg?: string): Promise<number> {
     return 1;
   }
 
+  // A --host link binds that host: the link record must name it so later
+  // commands in this directory reach the project through its credential.
   const hostName = hostArg ?? activeHostName() ?? 'default';
   saveLink({
     project_id: target.project_id,
@@ -1681,9 +1694,7 @@ async function projectsRm(args: string[]): Promise<number> {
 function surface(err: unknown): number {
   if (err instanceof ApiError) {
     if (err.status === 401) {
-      process.stderr.write(
-        `${status.err('Token rejected. Run `kortix login` to re-authenticate.')}\n`,
-      );
+      process.stderr.write(`${status.err(tokenRejectedLine(err.message))}\n`);
     } else {
       process.stderr.write(`${status.err(`HTTP ${err.status}: ${err.message}`)}\n`);
     }

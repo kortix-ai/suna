@@ -163,6 +163,49 @@ describe('downloadTeamsFile', () => {
     expect(fetchCalls).toHaveLength(1);
   });
 
+  test('a redirect to a non-Microsoft host is refused and never fetched; the bearer stays on its own host', async () => {
+    const real = globalThis.fetch;
+    const seen: Array<{ url: string; auth?: string; redirect?: string }> = [];
+    globalThis.fetch = (async (url: string, init: { headers?: Record<string, string>; redirect?: string }) => {
+      seen.push({ url: String(url), auth: init?.headers?.Authorization, redirect: init?.redirect });
+      return { ok: false, status: 302, headers: { get: () => 'https://evil.example.com/steal' } };
+    }) as unknown as typeof fetch;
+    try {
+      const r = await downloadTeamsFile(
+        'proj-1',
+        'https://smba.trafficmanager.net/emea/36009a52/v3/attachments/0-abc/views/original',
+      );
+      expect(r.ok).toBe(false);
+      expect(seen).toHaveLength(1);
+      expect(seen[0].redirect).toBe('manual');
+    } finally {
+      globalThis.fetch = real;
+    }
+  });
+
+  test('a redirect to another allowed host is followed without the bearer', async () => {
+    const real = globalThis.fetch;
+    const seen: Array<{ url: string; auth?: string }> = [];
+    globalThis.fetch = (async (url: string, init: { headers?: Record<string, string> }) => {
+      seen.push({ url: String(url), auth: init?.headers?.Authorization });
+      return seen.length === 1
+        ? { ok: false, status: 302, headers: { get: () => 'https://contoso.sharepoint.com/f/x.png' } }
+        : { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(4), headers: { get: () => 'image/png' } };
+    }) as unknown as typeof fetch;
+    try {
+      const r = await downloadTeamsFile(
+        'proj-1',
+        'https://smba.trafficmanager.net/emea/36009a52/v3/attachments/0-abc/views/original',
+      );
+      expect(r.ok).toBe(true);
+      expect(seen[0].auth).toBe('Bearer bot-tok');
+      expect(seen[1].url).toBe('https://contoso.sharepoint.com/f/x.png');
+      expect(seen[1].auth).toBeUndefined();
+    } finally {
+      globalThis.fetch = real;
+    }
+  });
+
   test('a Bot Framework attachment URL (pasted image) is fetched with the bot connector token', async () => {
     const r = await downloadTeamsFile(
       'proj-1',

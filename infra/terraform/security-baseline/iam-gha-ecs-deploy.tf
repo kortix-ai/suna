@@ -132,12 +132,24 @@ resource "aws_iam_role_policy" "gha_ecs_deploy" {
           "arn:aws:iam::${local.account_id}:role/kortix-dev-gateway-exec",
           "arn:aws:iam::${local.account_id}:role/kortix-dev-web-task",
           "arn:aws:iam::${local.account_id}:role/kortix-dev-web-exec",
+          "arn:aws:iam::${local.account_id}:role/kortix-dev-use2-task",
+          "arn:aws:iam::${local.account_id}:role/kortix-dev-use2-exec",
+          "arn:aws:iam::${local.account_id}:role/kortix-dev-use2-gateway-task",
+          "arn:aws:iam::${local.account_id}:role/kortix-dev-use2-gateway-exec",
+          "arn:aws:iam::${local.account_id}:role/kortix-dev-use2-web-task",
+          "arn:aws:iam::${local.account_id}:role/kortix-dev-use2-web-exec",
           "arn:aws:iam::${local.account_id}:role/kortix-staging-task",
           "arn:aws:iam::${local.account_id}:role/kortix-staging-exec",
           "arn:aws:iam::${local.account_id}:role/kortix-staging-gateway-task",
           "arn:aws:iam::${local.account_id}:role/kortix-staging-gateway-exec",
           "arn:aws:iam::${local.account_id}:role/kortix-staging-web-task",
           "arn:aws:iam::${local.account_id}:role/kortix-staging-web-exec",
+          "arn:aws:iam::${local.account_id}:role/kortix-staging-euw2-task",
+          "arn:aws:iam::${local.account_id}:role/kortix-staging-euw2-exec",
+          "arn:aws:iam::${local.account_id}:role/kortix-staging-euw2-gateway-task",
+          "arn:aws:iam::${local.account_id}:role/kortix-staging-euw2-gateway-exec",
+          "arn:aws:iam::${local.account_id}:role/kortix-staging-euw2-web-task",
+          "arn:aws:iam::${local.account_id}:role/kortix-staging-euw2-web-exec",
           "arn:aws:iam::${local.account_id}:role/kortix-prod-task",
           "arn:aws:iam::${local.account_id}:role/kortix-prod-exec",
           "arn:aws:iam::${local.account_id}:role/kortix-prod-gateway-task",
@@ -181,7 +193,10 @@ resource "aws_iam_role_policy" "gha_ecs_deploy_secrets" {
           "secretsmanager:CreateSecret",
           "secretsmanager:PutSecretValue",
         ]
-        Resource = "arn:aws:secretsmanager:us-west-2:${local.account_id}:secret:kortix-staging-env-*"
+        Resource = [
+          "arn:aws:secretsmanager:us-west-2:${local.account_id}:secret:kortix-staging-env-*",
+          "arn:aws:secretsmanager:eu-west-2:${local.account_id}:secret:kortix-staging-env-*",
+        ]
       },
       {
         Sid    = "WriteWebEnvironmentSecrets"

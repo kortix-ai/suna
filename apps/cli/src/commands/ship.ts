@@ -5,7 +5,7 @@ import { type ApiClient, ApiError, clientFromAuth } from '../api/client.ts';
 import { activeHostName } from '../api/config.ts';
 import type { ProjectSecretsResponse, ProjectSummary } from '../api/types.ts';
 import { takeFlags } from '../command-argv.ts';
-import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import { takeFlagBool, takeFlagValue, tokenRejectedLine } from '../command-helpers.ts';
 import {
   commitIfNeeded,
   currentBranch,
@@ -28,6 +28,7 @@ import {
   resolveProjectGitTarget,
 } from '../project-git.ts';
 import { isKortixProject, loadLink, saveLink } from '../project-link.ts';
+import { lintProject } from '../project-lint.ts';
 import { promptSecret } from '../prompts.ts';
 import { C, help, status } from '../style.ts';
 import { projectWebUrl } from '../web-url.ts';
@@ -40,7 +41,7 @@ repo — in one command. Run it once to create the project, then run it again
 any time to sync. It's the everyday "save my work to the cloud" command.
 
 Every run:
-  1. verify kortix.yaml parses + validates   (skip with --no-verify)
+  1. run the kortix validate checks          (skip with --no-verify)
   2. git add -A + commit                      (skipped if nothing changed)
   3. offer to set any [env] secret not yet set (prompts you; skip with --no-env)
   4. push the branch you're on → the same-named branch on the project's repo
@@ -85,7 +86,7 @@ Options:
                        GitHub App (App-free import; needs repo Contents R/W).
   -m, --message <msg>  Commit message for the sync (default: "kortix: ship").
   --no-commit          Don't commit. Fail if the working tree is dirty.
-  --no-verify          Skip the kortix.yaml validation (compile) check.
+  --no-verify          Skip the kortix validate checks.
   --no-env             Skip the [env] secret check + prompts.
   --no-connect         Skip the connector connect/credential prompts.
   -y, --yes            Don't prompt; use the active account, skip secret prompts.
@@ -203,7 +204,7 @@ export async function runShip(argv: string[]): Promise<number> {
 }
 
 /**
- * Parse + statically validate the local kortix.yaml (the "compile" check).
+ * Parse the local kortix.yaml and run the `kortix validate` checks on it.
  * Returns `ok:false` to abort the ship, plus the parsed `env:` spec so the
  * caller can reconcile required secrets. A YAML syntax error or a schema
  * error blocks the ship unless `--no-verify` is passed; warnings never block.
@@ -253,7 +254,13 @@ function prepareManifest(flags: ShipFlags): { ok: boolean; env: EnvSpec } {
   }
 
   if (!flags.noVerify) {
-    const { errors, warnings } = lintManifest(manifest.data, manifest.format);
+    // The same checks as `kortix validate`: schema, sandbox Dockerfiles,
+    // agent wiring, and the repository size warning.
+    const { errors, warnings } = lintManifest(
+      manifest.data,
+      manifest.format,
+      lintProject(manifest.data, manifest.path),
+    );
     for (const w of warnings) process.stdout.write(`  ${status.warn(w)}\n`);
     if (errors.length > 0) {
       process.stderr.write(
@@ -586,7 +593,7 @@ function reportShipped(auth: Auth, project: ProjectSummary, repoUrl: string): vo
 function surface(err: unknown): number {
   if (err instanceof ApiError) {
     if (err.status === 401) {
-      process.stderr.write(`${status.err('Token rejected. Run `kortix login`.')}\n`);
+      process.stderr.write(`${status.err(tokenRejectedLine(err.message, 'Run `kortix login`.'))}\n`);
     } else if (err.status === 503) {
       // Don't diagnose — the server owns the reason. The one thing we DO know
       // is that a stale CLI is a common cause (older builds pushed to the raw
