@@ -1,4 +1,9 @@
 import { formatDurationSeconds } from '@kortix/manifest-schema';
+import {
+  WEBHOOK_SIGNATURE_ALGORITHM,
+  WEBHOOK_SIGNATURE_HEADER,
+  buildWebhookSampleRequest,
+} from '@kortix/shared';
 import type { ProjectTrigger, ProjectTriggersResponse, TriggerFireResponse } from '../api/types.ts';
 import { splitHelp } from '../command-argv.ts';
 import {
@@ -326,7 +331,18 @@ async function triggersInfo(
   }
 
   if (json) {
-    emitJson(t);
+    emitJson(
+      t.type === 'webhook' && t.webhook_url
+        ? {
+            ...t,
+            webhook_signing: {
+              header: WEBHOOK_SIGNATURE_HEADER,
+              algorithm: WEBHOOK_SIGNATURE_ALGORITHM,
+              sample_request: buildWebhookSampleRequest(t.webhook_url),
+            },
+          }
+        : t,
+    );
     return 0;
   }
 
@@ -351,6 +367,7 @@ async function triggersInfo(
   } else {
     rows.push(['secret_env', t.secret_env ?? '—']);
     if (t.webhook_url) rows.push(['webhook_url', t.webhook_url]);
+    rows.push(['signature', `${WEBHOOK_SIGNATURE_HEADER}: ${WEBHOOK_SIGNATURE_ALGORITHM}`]);
   }
   rows.push(['last_fired', t.last_fired_at ?? 'never']);
   if (t.last_status)
@@ -366,6 +383,12 @@ async function triggersInfo(
   process.stdout.write(`  ${C.bold}${t.name}${C.reset} ${C.faded}(${t.slug})${C.reset}\n`);
   for (const [label, value] of rows) {
     process.stdout.write(`  ${C.dim}${pad(label, labelW)} ${C.reset}${value}\n`);
+  }
+  if (t.type === 'webhook' && t.webhook_url) {
+    process.stdout.write(`\n  ${C.dim}Sample request${C.reset}\n\n`);
+    for (const line of buildWebhookSampleRequest(t.webhook_url).split('\n')) {
+      process.stdout.write(line ? `    ${line}\n` : '\n');
+    }
   }
   process.stdout.write('\n');
   return 0;
