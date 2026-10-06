@@ -54,6 +54,14 @@ describe('web ECS migration', () => {
     );
     expect(webVerify).toContain('if: ${{ always()');
     expect(webVerify).toContain("needs.publish-web-ecs-dns.result == 'success'");
+    // The check uses the password the dev task reads: the blob deploy-web-ecs
+    // just synced from this commit's apps/web/.env.dev. The staging blob is
+    // synced from the `staging` branch, which lags a rotation on `main`
+    // (2026-10-04 and 2026-10-05: protected=401 on a correct deploy).
+    expect(webVerify).toContain(
+      'WEB_PROTECTION_PASSWORD=kortix-dev-web-env:WEB_PROTECTION_PASSWORD',
+    );
+    expect(webVerify).not.toContain('kortix-staging-web-env');
     expect(workflow).toContain('node infra/scripts/sync-web-dns.mjs dev "$alb"');
     expect(workflow).not.toContain('detach-web-dev-vercel-domain');
     expect(workflow).not.toContain('detach-vercel-web-domain.mjs');

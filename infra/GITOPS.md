@@ -63,7 +63,10 @@ Manager. `infra/scripts/ecs-deploy.sh` injects the document through
 Dev and staging use the same `WEB_PROTECTION_USERNAME` and
 `WEB_PROTECTION_PASSWORD` values. The password value is never committed in
 plaintext. It lives in dotenvx-encrypted environment files, GitHub Actions
-secrets, and AWS Secrets Manager.
+secrets, and AWS Secrets Manager. Each deploy check reads the password from
+the web blob of the host it checks (`kortix-dev-web-env` for Deploy Dev). A
+rotation reaches `kortix-staging-web-env` only when it reaches the `staging`
+branch.
 
 ### Sandbox compute placement
 
