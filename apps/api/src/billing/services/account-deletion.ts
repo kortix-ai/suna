@@ -1,4 +1,5 @@
-import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, ne, sql, type SQL } from 'drizzle-orm';
+import type { AnyPgColumn, PgTable } from 'drizzle-orm/pg-core';
 import {
   accountDeletionRequests,
   accounts,
@@ -54,6 +55,8 @@ import {
   cancelDeletionRequest,
   markDeletionCompleted,
   getScheduledDeletions,
+  claimDeletionRequest,
+  releaseDeletionRequest,
 } from '../repositories/account-deletion';
 
 const GRACE_PERIOD_DAYS = 14;
@@ -123,6 +126,37 @@ export async function cancelAccountDeletion(accountId: string) {
 }
 
 /**
+ * The one deletion routine. The immediate path and the scheduled worker both
+ * run it, in this order, so neither can leave a login or data behind:
+ *
+ *   1. `performDeletion`: sandboxes, Stripe cancel, wallet forfeit.
+ *   2. `deleteAccountData`: the account's rows. Data goes before the auth
+ *      identity: a failure here must not sign a user out of an account whose
+ *      data survived (the browser signs out only when the route answered
+ *      success).
+ *   3. The Supabase auth user.
+ *
+ * Every step is idempotent and throws on failure, so the caller can retry the
+ * whole routine. The caller owns the request row (`completed` only after this
+ * returns).
+ */
+async function runAccountDeletion(accountId: string, userId?: string, requestId?: string) {
+  await performDeletion(accountId, userId);
+  await deleteAccountData(accountId, requestId);
+  if (userId) {
+    const { error } = await getSupabase().auth.admin.deleteUser(userId);
+    // A user the auth schema no longer has (an admin-side delete, or a retry
+    // after step 3 already ran) is the state this step produces.
+    if (error && !isAuthUserNotFound(error)) throw error;
+    forgetUserJwtLiveness(userId);
+  }
+}
+
+function isAuthUserNotFound(error: { status?: number; code?: string }): boolean {
+  return error.status === 404 || error.code === 'user_not_found';
+}
+
+/**
  * `userId` widens the sandbox sweep to every account this user OWNS, not just
  * the one the route resolved. Optional so existing callers keep compiling, but
  * the route should always pass it — without it a user's team-account sandboxes
@@ -130,17 +164,7 @@ export async function cancelAccountDeletion(accountId: string) {
  */
 export async function deleteAccountImmediately(accountId: string, userId?: string) {
   const request = await getActiveDeletionRequest(accountId);
-  await performDeletion(accountId, userId ?? request?.userId);
-  // The account's data goes before the auth identity: a failure here must not
-  // sign a user out of an account whose data survived (the browser signs out
-  // only when the route answered success).
-  await deleteAccountData(accountId);
-  const deletingUserId = userId ?? request?.userId;
-  if (deletingUserId) {
-    const { error } = await getSupabase().auth.admin.deleteUser(deletingUserId);
-    if (error) throw error;
-    forgetUserJwtLiveness(deletingUserId);
-  }
+  await runAccountDeletion(accountId, userId ?? request?.userId, request?.id);
   if (request) {
     await markDeletionCompleted(request.id);
   }
@@ -156,17 +180,26 @@ export async function processScheduledDeletions(): Promise<{
   let processed = 0;
   const errors: string[] = [];
 
-  for (const request of requests) {
+  for (const candidate of requests) {
+    // Claim each request atomically right before its irreversible work: the
+    // batch was loaded earlier, so a cancel or another replica's claim since
+    // then must win.
+    const request = await claimDeletionRequest(candidate.id);
+    if (!request) continue;
     try {
       // The request row carries the requester, so the scheduled path gets the
       // same owner-wide sweep as the immediate one.
-      await performDeletion(request.accountId, request.userId);
+      await runAccountDeletion(request.accountId, request.userId, request.id);
       await markDeletionCompleted(request.id);
       processed++;
     } catch (err) {
       const msg = `Error deleting account ${request.accountId}: ${(err as Error).message}`;
       console.error(`[AccountDeletion] ${msg}`);
       errors.push(msg);
+      // Back to `pending`: the next tick retries the failed step.
+      await releaseDeletionRequest(request.id).catch((releaseErr) =>
+        console.error(`[AccountDeletion] release failed for ${request.id}:`, releaseErr),
+      );
     }
   }
 
@@ -425,13 +458,17 @@ async function performDeletion(accountId: string, userId?: string) {
 
   const account = await getCreditAccount(accountId);
 
-  // Cancel Stripe subscription if active
-  if (account?.stripeSubscriptionId) {
+  // Cancel the Stripe subscription. A failure aborts the deletion: the request
+  // must not read `completed` while the customer is still billed.
+  if (account?.stripeSubscriptionId && account.stripeSubscriptionStatus !== 'canceled') {
     try {
-      const stripe = getStripe();
-      await stripe.subscriptions.cancel(account.stripeSubscriptionId);
+      await getStripe().subscriptions.cancel(account.stripeSubscriptionId);
     } catch (err) {
-      console.error(`[AccountDeletion] Failed to cancel Stripe subscription for ${accountId}:`, err);
+      // Already gone at Stripe: the state we want.
+      if ((err as { code?: string }).code !== 'resource_missing') {
+        console.error(`[AccountDeletion] Failed to cancel Stripe subscription for ${accountId}:`, err);
+        throw err;
+      }
     }
   }
 
@@ -447,43 +484,79 @@ async function performDeletion(accountId: string, userId?: string) {
   console.log(`[AccountDeletion] Account deleted: ${accountId}`);
 }
 
+const DELETE_CHUNK_ROWS = 5_000;
+
 /**
- * Delete the account row and every row the database cascade cannot reach, in
- * one transaction: either the account and all of its data go, or nothing does.
+ * Delete the rows of `table` matching `where`, `DELETE_CHUNK_ROWS` at a time,
+ * each chunk its own statement and transaction. A single statement over
+ * millions of rows exceeds the statement timeout, bloats WAL and holds row
+ * locks against the account's live writers. Idempotent: a retry deletes what
+ * is left.
+ */
+async function deleteInChunks(table: PgTable, where: SQL): Promise<void> {
+  for (;;) {
+    const rows = (await db.execute(sql`
+      WITH gone AS (
+        DELETE FROM ${table}
+         WHERE ctid IN (SELECT ctid FROM ${table} WHERE ${where} LIMIT ${DELETE_CHUNK_ROWS})
+        RETURNING 1
+      )
+      SELECT count(*)::int AS n FROM gone
+    `)) as unknown as Array<{ n: number }>;
+    if (!rows[0] || rows[0].n < DELETE_CHUNK_ROWS) return;
+  }
+}
+
+/**
+ * Delete the account row and every row the database cascade cannot reach.
  *
  * A bare `DELETE FROM accounts` aborts the moment its cascade fires a
  * non-cascading FK edge (ON DELETE NO ACTION / RESTRICT) against rows that
  * still exist — e.g. `project_session_connector_bindings` RESTRICTs the
  * connector deletes, a `usage_events` row NO-ACTIONs the project deletes. The
- * sweep therefore runs three ordered passes inside one transaction:
+ * sweep therefore runs ordered passes:
  *
- *   1. child rows whose non-cascading edges would abort the cascade, each
- *      edge's child before its parent;
+ *   0. the unbounded tables (gateway logs, usage, calls, turns, ...) in
+ *      bounded chunks OUTSIDE the transaction, so the largest accounts do not
+ *      fail on every retry;
+ *   1. in one transaction, child rows whose non-cascading edges would abort
+ *      the cascade, each edge's child before its parent;
  *   2. the pure orphans — tables keyed by `account_id` with no foreign key to
  *      `accounts` at all;
  *   3. the accounts row itself, whose FK cascade takes the 90+ remaining
  *      tables (projects, sessions, memberships, IAM, PATs, OAuth, chat
  *      threads, gateway state…) with it.
  *
+ * Every pass is idempotent: a failure leaves a partial account that the next
+ * run finishes.
+ *
  * Retained on purpose, matching `performDeletion`'s `paymentStatus='deleted'`
  * marker: the audit trail (`audit_events` with its partitions, legacy store
- * and reconciliation state) and the financial records (`billing_customers`,
- * `credit_accounts`, `credit_ledger`, `credit_purchases`, `credit_usage`)
- * outlive the account. `prompt_attachments` and `connector_attachments` stay
- * with their existing TTL sweeps, which own both their rows and their Storage
+ * and reconciliation state), the financial records (`billing_customers`,
+ * `credit_accounts`, `credit_ledger`, `credit_purchases`, `credit_usage`) and
+ * the deletion request row (`keepRequestId`, the completion receipt) outlive
+ * the account. `prompt_attachments` and `connector_attachments` stay with
+ * their existing TTL sweeps, which own both their rows and their Storage
  * objects — deleting the rows here would orphan their objects forever.
  */
-async function deleteAccountData(accountId: string): Promise<void> {
+async function deleteAccountData(accountId: string, keepRequestId?: string): Promise<void> {
+  // Pass 0 — bounded chunks. Children before parents, as in pass 1.
+  const inAccountSessions = (sessionIdColumn: AnyPgColumn) =>
+    sql`${sessionIdColumn} IN (SELECT ${projectSessions.sessionId} FROM ${projectSessions} WHERE ${eq(projectSessions.accountId, accountId)})`;
+  await deleteInChunks(connectorCalls, eq(connectorCalls.accountId, accountId));
+  await deleteInChunks(gatewayRequestLogs, eq(gatewayRequestLogs.accountId, accountId));
+  await deleteInChunks(usageEvents, eq(usageEvents.accountId, accountId));
+  await deleteInChunks(sandboxComputeSessions, eq(sandboxComputeSessions.accountId, accountId));
+  await deleteInChunks(sessionLifecycleCommands, eq(sessionLifecycleCommands.accountId, accountId));
+  await deleteInChunks(sessionTurns, inAccountSessions(sessionTurns.sessionId));
+  await deleteInChunks(sessionPendingQuestions, inAccountSessions(sessionPendingQuestions.sessionId));
+
   await db.transaction(async (tx) => {
     // Scopes for the child rows that carry no account_id of their own.
     const accountProjects = tx
       .select({ projectId: projects.projectId })
       .from(projects)
       .where(eq(projects.accountId, accountId));
-    const accountSessions = tx
-      .select({ sessionId: projectSessions.sessionId })
-      .from(projectSessions)
-      .where(eq(projectSessions.accountId, accountId));
     const accountApps = tx.select({ appId: apps.appId }).from(apps).where(eq(apps.accountId, accountId));
     const accountDeployments = tx
       .select({ deploymentId: appDeployments.deploymentId })
@@ -496,16 +569,11 @@ async function deleteAccountData(accountId: string): Promise<void> {
     // keeps their NO ACTION / RESTRICT edges into projects, project_sessions,
     // connectors and connector_connections from aborting the final DELETE.)
     await tx.delete(projectSessionConnectorBindings).where(eq(projectSessionConnectorBindings.accountId, accountId));
-    await tx.delete(connectorCalls).where(eq(connectorCalls.accountId, accountId));
     await tx.delete(connectorConnections).where(eq(connectorConnections.accountId, accountId));
     await tx.delete(changeRequests).where(eq(changeRequests.accountId, accountId));
-    await tx.delete(gatewayRequestLogs).where(eq(gatewayRequestLogs.accountId, accountId));
-    await tx.delete(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.accountId, accountId));
-    await tx.delete(usageEvents).where(eq(usageEvents.accountId, accountId));
     await tx.delete(reviewItems).where(inArray(reviewItems.projectId, accountProjects));
     await tx.delete(projectTriggerExecutions).where(inArray(projectTriggerExecutions.projectId, accountProjects));
     await tx.delete(projectTriggerRuntime).where(inArray(projectTriggerRuntime.projectId, accountProjects));
-    await tx.delete(sandboxComputeSessions).where(eq(sandboxComputeSessions.accountId, accountId));
     await tx.delete(appDeploymentEvents).where(inArray(appDeploymentEvents.deploymentId, accountDeployments));
     await tx.delete(appDeployments).where(inArray(appDeployments.appId, accountApps));
 
@@ -518,14 +586,19 @@ async function deleteAccountData(accountId: string): Promise<void> {
     await tx.delete(sandboxes).where(eq(sandboxes.accountId, accountId));
     await tx.delete(kortixApiKeys).where(eq(kortixApiKeys.accountId, accountId));
     await tx.delete(sessionSandboxes).where(eq(sessionSandboxes.accountId, accountId));
-    await tx.delete(sessionTurns).where(inArray(sessionTurns.sessionId, accountSessions));
-    await tx.delete(sessionPendingQuestions).where(inArray(sessionPendingQuestions.sessionId, accountSessions));
     await tx.delete(providerEvents).where(eq(providerEvents.accountId, accountId));
     await tx.delete(legacySandboxMigrations).where(eq(legacySandboxMigrations.accountId, accountId));
     await tx.delete(sunaAccountMigrations).where(eq(sunaAccountMigrations.accountId, accountId));
     await tx.delete(platformUserRoles).where(eq(platformUserRoles.accountId, accountId));
     await tx.delete(impersonationGrants).where(eq(impersonationGrants.targetAccountId, accountId));
-    await tx.delete(accountDeletionRequests).where(eq(accountDeletionRequests.accountId, accountId));
+    await tx
+      .delete(accountDeletionRequests)
+      .where(
+        and(
+          eq(accountDeletionRequests.accountId, accountId),
+          keepRequestId ? ne(accountDeletionRequests.id, keepRequestId) : undefined,
+        ),
+      );
 
     // Pass 3 — the row itself: the FK cascade takes every remaining table.
     await tx.delete(accounts).where(eq(accounts.accountId, accountId));
