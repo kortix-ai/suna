@@ -115,6 +115,18 @@ test('search: query, kinds, app and limit are sent; hits come back newest first'
   expect(result.hits[0]?.kind).toBe('screen');
 });
 
+test('search: an admin searches the whole account (scope=account); each hit names its person; a frame carries its nearest screenshot', async () => {
+  nextBody = { user_id: null, q: 'refund', hits: [{ kind: 'actions', id: 'a1', user_id: 'u2', snippet: 'Type refund' }] };
+  const result = await searchCapture('a1', { q: 'refund', scope: 'account' });
+  expect(last().url).toBe(`${P}/search?q=refund&scope=account`);
+  const who: string = result.hits[0]!.user_id;
+  expect(who).toBe('u2');
+  nextBody = { frame: { frame_id: 'f1' }, video: null, screenshot: { name: 'sha256-x.jpg', ts: 't', url: 'https://s3.test/s', expires_at: 'e' } };
+  const frame = await getCaptureFrame('a1', 'f1');
+  const shot: string | undefined = frame.screenshot?.url;
+  expect(shot).toBe('https://s3.test/s');
+});
+
 test('media: a frame with its video URL, an item’s media, an asset URL', async () => {
   nextBody = { frame: { frame_id: 'f1' }, video: { url: 'https://s3.test/v', offset_ms: 1000, expires_at: 'x', encrypted: false } };
   expect((await getCaptureFrame('a1', 'f1')).video?.offset_ms).toBe(1000);

@@ -76,7 +76,6 @@ const R = {
   exportGet: `GET ${A}/exports/:exportId`,
   run: `POST ${A}/intelligence/run`,
   fileContent: 'GET /v1/projects/:projectId/files/content',
-  mcp: 'POST /v1/mcp',
   tokens: 'POST /v1/accounts/tokens',
   accounts: 'GET /v1/accounts',
   accountMembers: 'GET /v1/accounts/:accountId/members',
@@ -656,11 +655,11 @@ flow(
 );
 
 /**
- * CAP-5: Kortix Capture data reaches a Kortix agent through the hosted MCP
- * server. A member and the account owner (a Capture admin) each connect with
- * their own token; every capture_* tool runs against the ingested fixture day
- * and two seeded episodes (one each) plus one workflow, and the member never
- * sees the owner's data.
+ * CAP-5: the Kortix Capture data API with a Kortix API key (`kortix_pat_`), as
+ * a script or an agent would use it. A member and the account owner (a Capture
+ * admin) each mint their own key; every data route runs against the ingested
+ * fixture day, two seeded episodes (one each) and one workflow. The member never
+ * sees the owner's data; the owner's account-wide reads are audited.
  */
 flow(
   'CAP-5',
@@ -668,36 +667,28 @@ flow(
     domain: 'capture',
     requires: ['database'],
     timeoutMs: 180_000,
-    routes: [R.mcp, R.tokens, R.accounts, R.accountMembers, R.workspace, R.setEnabled, R.search, R.items, R.frame, R.episodes, R.episode, R.workflows, R.workflow, R.exportsCreate, R.exportGet],
+    routes: [R.tokens, R.accounts, R.accountMembers, R.workspace, R.setEnabled, R.search, R.items, R.frame, R.media, R.episodes, R.episode, R.workflows, R.workflow, R.exportsCreate, R.exportGet],
   },
   async (ctx) => {
     const { team, member, day, asMember } = await ingestedWorld(ctx, 'cap5');
     const owner = ctx.client.as(ctx.P.OWNER);
-    const rpc = (id: number, name: string, args: Record<string, unknown>) => ({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } });
-    const tokens: Record<'member' | 'owner', string> = { member: '', owner: '' };
-    const call = async (who: 'member' | 'owner', name: string, args: Record<string, unknown> = {}) => {
-      const r = await ctx.client.as(ctx.P.ANON).post(path(R.mcp), rpc(1, name, args), { headers: { Authorization: `Bearer ${tokens[who]}` } });
-      r.status(200);
-      const result = r.json<{ result: { content: Array<{ type: string; text?: string; mimeType?: string }>; isError?: boolean } }>().result;
-      const text = result.content.find((c) => c.type === 'text')?.text ?? '';
-      return { result, text, json: () => JSON.parse(text) as any };
-    };
+    const params = { accountId: team.id };
+    const keys: Record<'member' | 'owner', string> = { member: '', owner: '' };
+    const as = (who: 'member' | 'owner') => ctx.client.withBearer(keys[who], `${who}-api-key`);
     const ownerId = ctx.P.OWNER.userId!;
     let ownerEpisode = '';
     let memberEpisode = '';
     let workflowId = '';
 
-    await ctx.step('each person connects to the hosted MCP with their own token; tools/list holds the nine capture tools, all read-only but the export', async () => {
+    await ctx.step('each person mints a Kortix API key; with it, GET /v1/accounts/:id/capture answers Capture on and their role (member, admin)', async () => {
       for (const [who, client] of [['member', asMember], ['owner', owner]] as const) {
         const created = await client.post(path(R.tokens), { name: `CAP-5 ${who}` });
         created.status(201);
-        tokens[who] = created.json<{ secret_key: string }>().secret_key;
+        keys[who] = created.json<{ secret_key: string }>().secret_key;
+        if (!keys[who].startsWith('kortix_pat_')) throw new Error(`${who} key`);
       }
-      const r = await ctx.client.as(ctx.P.ANON).post(path(R.mcp), { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }, { headers: { Authorization: `Bearer ${tokens.member}` } });
-      const tools = r.status(200).json<{ result: { tools: Array<{ name: string; annotations: { readOnlyHint: boolean } }> } }>().result.tools.filter((t) => t.name.startsWith('capture_'));
-      const names = tools.map((t) => t.name).sort().join(',');
-      if (names !== 'capture_accounts,capture_episode,capture_episodes,capture_export,capture_frame,capture_search,capture_timeline,capture_workflow,capture_workflows') throw new Error(names);
-      if (tools.some((t) => t.annotations.readOnlyHint !== (t.name !== 'capture_export'))) throw new Error('annotations');
+      (await as('member').get(path(R.workspace), { params })).status(200).body().has('$.enabled', true).has('$.role', 'member');
+      (await as('owner').get(path(R.workspace), { params })).status(200).body().has('$.role', 'admin');
     });
 
     await ctx.step('seed one episode each (member, owner) and a workflow both run, as the pipelines write them', async () => {
@@ -726,21 +717,13 @@ flow(
       }
     });
 
-    await ctx.step('capture_accounts: the member sees the account with Capture on and role member; the owner sees role admin', async () => {
-      const mine = (await call('member', 'capture_accounts')).json() as Array<{ account_id: string; capture_enabled: boolean; capture_role: string }>;
-      const row = mine.find((a) => a.account_id === team.id);
-      if (!row?.capture_enabled || row.capture_role !== 'member') throw new Error(JSON.stringify(mine));
-      const theirs = (await call('owner', 'capture_accounts')).json() as Array<{ account_id: string; capture_role: string }>;
-      if (theirs.find((a) => a.account_id === team.id)?.capture_role !== 'admin') throw new Error(JSON.stringify(theirs));
-    });
-
-    await ctx.step('capture_search: the member finds their own screen, action and audio hits (every hit theirs); scope account → an error naming the fix; the owner searches the account and gets the member\'s hits, audited as capture.account_view', async () => {
-      const mine = (await call('member', 'capture_search', { account_id: team.id, query: 'quarterly or roadmap' })).json() as { hits: Array<{ kind: string; user_id: string; id: string }> };
+    await ctx.step('search: the member finds their own screen, action and audio hits (each names the member); scope=account → 403 capture_forbidden; the owner searches the account, sees the member\'s hits, and the read is audited as capture.account_view', async () => {
+      type Hits = { hits: Array<{ kind: string; user_id: string }> };
+      const mine = (await as('member').get(path(R.search), { params, query: { q: 'quarterly or roadmap' } })).status(200).json<Hits>();
       if (!mine.hits.length || mine.hits.some((h) => h.user_id !== member.userId)) throw new Error(JSON.stringify(mine).slice(0, 300));
       if (!['screen', 'actions', 'audio'].every((k) => mine.hits.some((h) => h.kind === k))) throw new Error(`kinds: ${mine.hits.map((h) => h.kind)}`);
-      const refused = await call('member', 'capture_search', { account_id: team.id, query: 'quarterly', scope: 'account' });
-      if (!refused.result.isError || !refused.text.includes('omit user_id and scope')) throw new Error(refused.text);
-      const all = (await call('owner', 'capture_search', { account_id: team.id, query: 'quarterly', scope: 'account' })).json() as { hits: Array<{ user_id: string }> };
+      (await as('member').get(path(R.search), { params, query: { q: 'quarterly', scope: 'account' } })).status(403).body().has('$.code', 'capture_forbidden');
+      const all = (await as('owner').get(path(R.search), { params, query: { q: 'quarterly', scope: 'account' } })).status(200).json<Hits>();
       if (!all.hits.some((h) => h.user_id === member.userId)) throw new Error('the owner does not see the member');
       const db = await openDb(ctx);
       try {
@@ -751,49 +734,55 @@ flow(
       }
     });
 
-    await ctx.step('capture_timeline and capture_frame: the member reads their own day (frames with on-screen text, actions, audio) and opens a frame; the member naming the owner → an error', async () => {
-      const t = (await call('member', 'capture_timeline', { account_id: team.id, from: new Date(day.startMs - 60_000).toISOString(), to: new Date(day.endMs + 60_000).toISOString() })).json() as { frames: Array<{ frame_id: string; text: string }>; actions: unknown[]; audio: unknown[] };
-      if (t.frames.length !== day.expected.frames || !t.actions.length || !t.audio.length) throw new Error(`timeline: ${t.frames.length}/${day.expected.frames} frames`);
-      const frame = (await call('member', 'capture_frame', { account_id: team.id, frame_id: t.frames[0]!.frame_id })).json() as { frame: { ocr_text: string }; video: { url: string; offset_ms: number } | null };
-      if (!frame.frame.ocr_text || !frame.video?.url) throw new Error(JSON.stringify(frame).slice(0, 300));
-      const other = await call('member', 'capture_timeline', { account_id: team.id, from: new Date(day.startMs).toISOString(), to: new Date(day.endMs).toISOString(), user_id: ownerId });
-      if (!other.result.isError) throw new Error('a member read the owner timeline');
+    await ctx.step('timeline items, a frame (with its signed video and screenshot fields) and chunk media: the member reads their own day; naming the owner → 403', async () => {
+      const window = { from: new Date(day.startMs - 60_000).toISOString(), to: new Date(day.endMs + 60_000).toISOString() };
+      const t = (await as('member').get(path(R.items), { params, query: window })).status(200).json<{ frames: Array<{ frame_id: string; chunk_id: string }>; actions: unknown[]; audio: unknown[] }>();
+      if (t.frames.length !== day.expected.frames || !t.actions.length || !t.audio.length) throw new Error(`items: ${t.frames.length}/${day.expected.frames} frames`);
+      const frame = (await as('member').get(path(R.frame), { params: { ...params, frameId: t.frames[0]!.frame_id } })).status(200).json<{ frame: { ocr_text: string }; video: { url: string } | null; screenshot: unknown }>();
+      if (!frame.frame.ocr_text || !frame.video?.url || !('screenshot' in frame)) throw new Error(JSON.stringify(frame).slice(0, 300));
+      (await as('member').get(path(R.media), { params: { ...params, chunkId: t.frames[0]!.chunk_id } })).status(200).body().exists('$.video.url');
+      (await as('member').get(path(R.items), { params, query: { ...window, user_id: ownerId } })).status(403);
     });
 
-    await ctx.step('capture_episodes / capture_episode: the member lists only their episode and cannot open the owner\'s (not found); the owner lists both account-wide, each with the person\'s email', async () => {
-      const mine = (await call('member', 'capture_episodes', { account_id: team.id })).json() as { episodes: Array<{ episode_id: string; user_id: string }> };
+    await ctx.step('episodes: the member lists only their own, opens it with its steps, and gets 404 for the owner\'s; the owner lists both with scope=account (paged by next_before)', async () => {
+      const mine = (await as('member').get(path(R.episodes), { params })).status(200).json<{ episodes: Array<{ episode_id: string; user_id: string }> }>();
       if (mine.episodes.some((e) => e.user_id !== member.userId) || !mine.episodes.some((e) => e.episode_id === memberEpisode)) throw new Error(JSON.stringify(mine).slice(0, 300));
-      const one = (await call('member', 'capture_episode', { account_id: team.id, episode_id: memberEpisode })).json() as { steps: Array<{ verb: string; variables: string[] }> };
-      if (one.steps.map((s) => s.verb).join() !== 'Open,Update' || one.steps[1]!.variables[0] !== 'amount') throw new Error(JSON.stringify(one));
-      const foreign = await call('member', 'capture_episode', { account_id: team.id, episode_id: ownerEpisode });
-      if (!foreign.result.isError || !foreign.text.includes('404')) throw new Error(foreign.text);
-      const all = (await call('owner', 'capture_episodes', { account_id: team.id, scope: 'account' })).json() as { episodes: Array<{ episode_id: string; email: string | null }> };
-      const both = all.episodes.filter((e) => e.episode_id === memberEpisode || e.episode_id === ownerEpisode);
-      if (both.length !== 2 || both.some((e) => !e.email)) throw new Error(JSON.stringify(both));
+      const one = (await as('member').get(path(R.episode), { params: { ...params, episodeId: memberEpisode } })).status(200).json<{ steps: Array<{ verb: string; variables: string[] }> }>();
+      if (one.steps.map((x) => x.verb).join() !== 'Open,Update' || one.steps[1]!.variables[0] !== 'amount') throw new Error(JSON.stringify(one));
+      (await as('member').get(path(R.episode), { params: { ...params, episodeId: ownerEpisode } })).status(404);
+      const first = (await as('owner').get(path(R.episodes), { params, query: { scope: 'account', limit: 1 } })).status(200).json<{ episodes: Array<{ episode_id: string }>; next_before: string | null }>();
+      if (first.episodes.length !== 1 || !first.next_before) throw new Error(JSON.stringify(first));
+      const next = (await as('owner').get(path(R.episodes), { params, query: { scope: 'account', limit: 1, before: first.next_before } })).status(200).json<{ episodes: Array<{ episode_id: string }> }>();
+      const both = new Set([first.episodes[0]!.episode_id, next.episodes[0]!.episode_id]);
+      if (!both.has(memberEpisode) || !both.has(ownerEpisode)) throw new Error(`pages: ${[...both]}`);
     });
 
-    await ctx.step('capture_workflows / capture_workflow: the member → an error (admins and viewers); the owner reads the workflow with its steps, variant and both people with their emails', async () => {
-      const refused = await call('member', 'capture_workflows', { account_id: team.id });
-      if (!refused.result.isError) throw new Error('a member listed workflows');
-      const list = (await call('owner', 'capture_workflows', { account_id: team.id })).json() as { workflows: Array<{ workflow_id: string }> };
+    await ctx.step('workflows: the member → 403; the owner lists it and reads it with its steps, variant and both people; the member directory gives their emails', async () => {
+      (await as('member').get(path(R.workflows), { params })).status(403);
+      const list = (await as('owner').get(path(R.workflows), { params })).status(200).json<{ workflows: Array<{ workflow_id: string }> }>();
       if (!list.workflows.some((w) => w.workflow_id === workflowId)) throw new Error(JSON.stringify(list).slice(0, 300));
-      const w = (await call('owner', 'capture_workflow', { account_id: team.id, workflow_id: workflowId })).json() as { steps: unknown[]; variants: Array<{ name: string }>; people: Array<{ user_id: string; email: string | null }> };
-      if (w.steps.length !== 2 || w.variants[0]?.name !== 'Standard: update forecast row' || w.people.length !== 2 || w.people.some((p) => !p.email)) throw new Error(JSON.stringify(w).slice(0, 400));
+      const w = (await as('owner').get(path(R.workflow), { params: { ...params, workflowId } })).status(200).json<{ steps: unknown[]; variants: Array<{ name: string }>; people: Array<{ user_id: string }> }>();
+      if (w.steps.length !== 2 || w.variants[0]?.name !== 'Standard: update forecast row' || w.people.length !== 2) throw new Error(JSON.stringify(w).slice(0, 400));
+      const directory = (await as('owner').get(path(R.accountMembers), { params })).status(200).json<Array<{ user_id: string; email: string | null }>>();
+      if (!w.people.every((p) => directory.some((m) => m.user_id === p.user_id && m.email))) throw new Error('people not in the member directory');
     });
 
-    await ctx.step('capture_export: the owner exports JSONL and gets a signed download holding the workflow; the member → an error', async () => {
-      const exp = (await call('owner', 'capture_export', { account_id: team.id, include: ['workflows'] })).json() as { status: string; download: { url: string } | null };
-      if (exp.status !== 'done' || !exp.download?.url) throw new Error(JSON.stringify(exp));
-      if (!(await (await fetch(exp.download.url)).text()).includes(workflowId)) throw new Error('export lacks the workflow');
-      const refused = await call('member', 'capture_export', { account_id: team.id });
-      if (!refused.result.isError) throw new Error('a member exported');
+    await ctx.step('exports: the owner starts a JSONL export with the API key, polls it to done, and the signed download holds the workflow; the member → 403', async () => {
+      const created = (await as('owner').post(path(R.exportsCreate), { format: 'jsonl', include: ['workflows'] }, { params })).status(202).json<{ export_id: string }>();
+      const done = await waitFor(
+        async () => (await as('owner').get(path(R.exportGet), { params: { ...params, exportId: created.export_id } })).json<{ status: string; download: { url: string } | null }>(),
+        { until: (e) => e.status === 'done' || e.status === 'failed', timeoutMs: 60_000, intervalMs: 1_000, description: 'the export job' },
+      );
+      if (done.status !== 'done' || !done.download?.url) throw new Error(JSON.stringify(done));
+      if (!(await (await fetch(done.download.url)).text()).includes(workflowId)) throw new Error('export lacks the workflow');
+      (await as('member').post(path(R.exportsCreate), { format: 'jsonl' }, { params })).status(403);
     });
 
-    await ctx.step('Capture off: every tool answers "Kortix Capture is off for this account"', async () => {
-      (await owner.patch(path(R.setEnabled), { enabled: false }, { params: { accountId: team.id } })).status(200);
-      const off = await call('member', 'capture_search', { account_id: team.id, query: 'quarterly' });
-      if (!off.result.isError || !off.text.includes('Kortix Capture is off for this account')) throw new Error(off.text);
-      (await owner.patch(path(R.setEnabled), { enabled: true }, { params: { accountId: team.id } })).status(200);
+    await ctx.step('Capture off: the data routes answer 403 capture_disabled to the API key', async () => {
+      (await owner.patch(path(R.setEnabled), { enabled: false }, { params })).status(200);
+      (await as('member').get(path(R.search), { params, query: { q: 'quarterly' } })).status(403).body().has('$.code', 'capture_disabled');
+      (await as('owner').get(path(R.episodes), { params, query: { scope: 'account' } })).status(403).body().has('$.code', 'capture_disabled');
+      (await owner.patch(path(R.setEnabled), { enabled: true }, { params })).status(200);
     });
   },
 );

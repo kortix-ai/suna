@@ -35,7 +35,6 @@ import {
 } from './jobs';
 import { KORTIX_TOOL, parseArgs, runCli } from './cli';
 import { CONNECTOR_TOOLS, isConnectorTool, runConnectorTool, type Host } from './connectors';
-import { CAPTURE_TOOLS, isCaptureTool, runCaptureTool } from './capture';
 import { blockedPath, canonicalPath, requestBodyShape, searchOperations, shapeTranscript, type Operation } from './shape';
 
 type Dispatch = (request: Request) => Promise<Response>;
@@ -1054,7 +1053,6 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
     }
     default:
       if (isConnectorTool(name)) return runConnectorTool(name, input, connectorHost(ctx));
-      if (isCaptureTool(name)) return runCaptureTool(name, input, connectorHost(ctx));
       throw Object.assign(new Error(`Unknown tool: ${name}`), { rpcCode: -32602 });
   }
 }
@@ -1090,7 +1088,6 @@ function instructions(): string {
     'Platform knowledge: read_skill lists the Kortix guides; read_skill name=kortix-system is the complete reference.',
     'Connectors (Gmail, Slack, GitHub, MCP servers, APIs a project connected): list_connectors shows what is connected and its accounts → search_connector_actions finds an action by intent → describe_connector_action reads its arguments → call_connector runs it as you (pass `reason` for a write whose args are only ids; a `pending_approval` result carries a link the human opens, then call again). A connector that is not connected: connect_connector returns the url the human opens. upload_connector_attachment stages a file for a call; search_connector_apps and add_connector add one to the project.',
     'The kortix CLI itself: the `kortix` tool runs any CLI command as you, e.g. args ["secrets","ls","--json"] (discover with ["--help"] and ["<group>","--help"]; project_id and session_id set the context). Login, hosts, ship, tui and other machine-local commands are refused with the alternative. read_skill with project_id also lists the project\'s own skills.',
-    'Kortix Capture (what people did on their computers, recorded per Kortix account): capture_accounts lists your accounts with Capture and your role → capture_search finds moments (screen text, actions, speech) → capture_frame opens one with its screenshot; capture_timeline reads a time window; capture_episodes / capture_episode read tasks with their steps; capture_workflows / capture_workflow read the procedures people repeat, with variants and automation hours; capture_export starts a bulk JSONL/Parquet export. You read your own recordings; a Capture admin or viewer may pass user_id or scope "account".',
     'Everything else the web app and the kortix CLI can do is the Kortix API: search_api finds a route, describe_api reads it, call_api runs it (project_id fills {projectId}).',
   ].join('\n');
 }
@@ -1111,7 +1108,7 @@ async function handleRpc(ctx: ToolContext, method: string, params: Record<string
     case 'ping':
       return {};
     case 'tools/list':
-      return { tools: [...TOOLS, ...CONNECTOR_TOOLS, ...CAPTURE_TOOLS, KORTIX_TOOL] };
+      return { tools: [...TOOLS, ...CONNECTOR_TOOLS, KORTIX_TOOL] };
     case 'tools/call': {
       if (typeof params.name !== 'string') throw Object.assign(new Error('Invalid params: name must be a tool name'), { rpcCode: -32602 });
       try {

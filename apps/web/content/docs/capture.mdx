@@ -31,9 +31,9 @@ Capture admin can set a different one per person.
 
 | Capture role | Default for | Reads | Writes |
 |---|---|---|---|
-| `admin` | account owners and admins | every member's devices, timeline and episodes, **People**, **Overview**, **Workflows**, the `capture_*` MCP tools over the account | the policy, device overrides, Capture roles, workflow review, skill export, bulk export, run now |
-| `viewer` | nobody (set it per person) | every member's devices, timeline and episodes, **People**, **Overview**, **Workflows**, the `capture_*` MCP tools over the account | nothing |
-| `member` | account members | their own devices, timeline and episodes, also through the `capture_*` MCP tools | their own ranges |
+| `admin` | account owners and admins | every member's devices, timeline and episodes, **People**, **Overview**, **Workflows**, the data API over the account | the policy, device overrides, Capture roles, workflow review, skill export, bulk export, run now |
+| `viewer` | nobody (set it per person) | every member's devices, timeline and episodes, **People**, **Overview**, **Workflows**, the data API over the account | nothing |
+| `member` | account members | their own devices, timeline and episodes, also through the data API | their own ranges |
 | an agent | — | only the timeline of the person its private session acts for | nothing |
 
 Every read of another member's data writes a `capture.member_view` entry to the
@@ -96,9 +96,9 @@ every variant covered and named, no literal customer values. Publishing commits
 `skills/<name>/SKILL.md` to the project's default branch. This is the only
 place Capture touches a project.
 
-**Ask questions with a Kortix agent.** Capture has no chat of its own. Its
-data is open to any Kortix agent through the hosted Kortix MCP server; see
-[Use Kortix Capture data from a Kortix agent](#use-kortix-capture-data-from-a-kortix-agent).
+**Use the data anywhere.** Capture has no chat of its own. Its data is an API:
+see [Kortix Capture API](#kortix-capture-api). A script, a notebook or an agent
+with a Kortix API key reads it and does the analysis.
 
 **Bulk export.** Admins export episodes, steps and workflows as JSONL (any
 tables in one file) or Parquet (one table per file). The export runs in the
@@ -143,7 +143,58 @@ real gateway (`apps/api/scripts/capture-intelligence/`):
 | Step sequence vs. truth (verb@app) | 0.89 |
 | Model cost | 0.0015 USD per person-day |
 
-## Agents
+## Kortix Capture API
+
+Everything Capture records and learns is readable with a Kortix API key, from a
+script, a notebook, a BI tool or an agent.
+
+**Auth.** Create a key in Kortix (Settings → API keys) or with
+`POST /v1/accounts/tokens`. Send it as `Authorization: Bearer kortix_pat_…`.
+The key acts as you: the same Capture role, the same scoping, the same audit.
+
+**Base URL.** `https://<your Kortix API>/v1/accounts/<account_id>/capture`.
+`GET /v1/accounts` lists your accounts; `GET …/capture` answers
+`{ "enabled": true, "role": "member" | "viewer" | "admin", "can_manage": false }`.
+
+**Scoping.** A member reads only their own recordings. A Capture admin or viewer
+may pass `user_id=<member>` (audited as `capture.member_view`) or, where the
+route takes it, `scope=account` for every member (audited as
+`capture.account_view`). A read outside your role answers `403`
+`capture_forbidden`; while Capture is off, every route answers `403`
+`capture_disabled`.
+
+| Endpoint | Returns |
+|---|---|
+| `GET search?q=refund or invoice&kinds=screen,actions,audio&app=&from=&to=&limit=20&scope=account` | hits, newest first: `{ kind, id, ts, user_id, device_id, chunk_id, app, title, url, snippet }` (one screen hit per chunk and window; `limit` up to 100) |
+| `GET timeline/items?from=&to=&user_id=&device_id=` | `{ frames, actions, audio }` in a window of at most 31 days, oldest first, at most 500 of each |
+| `GET frames/<frame_id>` | `{ frame, video: { url, expires_at, offset_ms }, screenshot: { name, ts, url, expires_at } }`: the full on-screen text, the 1 fps chunk video to seek, the nearest action screenshot (signed URLs, 5 minutes) |
+| `GET chunks/<chunk_id>/media` | signed URLs of an item's video or audio |
+| `GET episodes?scope=account&workflow_id=&from=&to=&limit=50&before=` | `{ episodes, next_before }`: tasks with label, goal, outcome, apps, duration, `workflow_id`, `variant_key`; pass `next_before` back as `before` |
+| `GET episodes/<episode_id>` | one episode with its ordered `steps` (`verb`, `app`, `object`, `params`, `variables`) |
+| `GET workflows?status=&q=&app=&sort=hours&limit=20&offset=` | admins and viewers: workflows with runs/week, p50/p90 duration, people, success rate, determinism, `automation_hours_per_week` |
+| `GET workflows/<workflow_id>` | the standard steps, variants (`name`, `share`, `differs`, `question`), and `people` (`user_id`, runs, typical duration) |
+| `GET overview?from=&to=` | admins and viewers: hours recorded, people, devices, automatable hours a week, top and new workflows, 12-week trend |
+| `POST exports` `{ "format": "jsonl" \| "parquet", "include": ["episodes","steps","workflows"], "from", "to" }` · `GET exports/<export_id>` | admins: a background export (Parquet holds one table); when `status` is `done`, `download.url` is valid for 1 hour |
+
+People: `user_id` resolves to a name and email through `GET /v1/accounts/<account_id>/members`, which every member of the account may read.
+
+Example:
+
+```bash
+curl -s -H "Authorization: Bearer $KORTIX_API_KEY" \
+  "https://<your Kortix API>/v1/accounts/$ACCOUNT/capture/workflows?sort=hours&limit=5"
+```
+
+```json
+{ "workflows": [ { "workflow_id": "…", "name": "Refund a damaged-order claim", "runs_per_week": 46.1,
+  "duration_p50_s": 198, "people_count": 3, "automation_hours_per_week": 2.45, "status": "detected" } ],
+  "counts": { "all": 7, "detected": 7, "reviewed": 0, "exported": 0 } }
+```
+
+The TypeScript SDK wraps the same routes: `kortix.capture.account(accountId)`
+(see [SDK → reference](/docs/sdk/reference)).
+
+## Agents in a session
 
 An agent in a member's private session can search that member's timeline with
 `kortix capture search`, `timeline` and `frame`. It reads only that person, in

@@ -631,8 +631,8 @@ another member writes `capture.member_view`; an account-wide read
 | `devices.setPolicy(deviceId, policy \| null)` · `devices.assetUrl(deviceId, name)` | a Capture admin's per-device policy override (null clears it) · a 5-minute signed URL of an action screenshot |
 | `policy.get()` · `policy.set(policy)` | the account policy (`layers`, `privacy`, `retention`, `recording`, `notice`); a Capture admin's write also publishes `orgs/<account_id>/policy.json` for devices |
 | `timeline.get({ day?, from?, to?, userId?, deviceId? })` · `timeline.items(query)` · `timeline.days({ tz?, userId?, deviceId? })` | activity runs (app and window), indexed items and ranges for a UTC day or a window up to 31 days · frames, actions and audio lines in a window (500 of each) · the days with recorded items, newest first |
-| `search({ q, kinds?, app?, from?, to?, limit?, userId? })` | full-text search over screen, actions and audio, newest first, one screen hit per window |
-| `frame(frameId)` · `media(chunkId)` | one frame with its on-screen text and a 5-minute signed URL of its video chunk (`offset_ms` = `frame_index` × 1000; the chunk video is 1 fps) · signed URLs of an item's video or audio |
+| `search({ q, kinds?, app?, from?, to?, limit?, userId?, scope? })` | full-text search over screen, actions and audio, newest first, one screen hit per window; each hit names its `user_id`; `scope: 'account'` searches every member (admins and viewers) |
+| `frame(frameId)` · `media(chunkId)` | one frame with its on-screen text, a 5-minute signed URL of its video chunk (`offset_ms` = `frame_index` × 1000; the chunk video is 1 fps) and `screenshot`, the nearest action screenshot within 30 s (signed URL) · signed URLs of an item's video or audio |
 | `ranges.list(query)` · `ranges.save({ start_at, end_at, title?, device_id? })` · `ranges.get(rangeId)` · `ranges.process(rangeId)` | detected activity sessions and saved spans · save your own span (at most 24 h) · a range with its outputs (`segmentation`, `transcript`, `annotation`, each with `model` and `usage.cost_usd`) · run its pipelines again |
 | `people({ day?, from?, to? })` | admins and viewers: per member, active seconds, seconds per app, ranges and devices |
 | `overview({ from?, to? })` | admins and viewers: hours recorded (and the span before), people recording, devices, workflows by status, automatable hours a week, top opportunities, new this week, a 12-week trend |
@@ -663,8 +663,8 @@ Intelligence hooks: `useCaptureOverview`, `useCaptureWorkflows`,
 `useCaptureWorkflow`, `useReviewCaptureWorkflow`, `useDraftCaptureSkill`,
 `useExportCaptureSkill`, `useCaptureEpisodes`, `useCaptureEpisode`,
 `useCreateCaptureExport` and `useCaptureExport` (polls until the export is done
-or failed). To let an agent read and process Capture data, attach the hosted
-Kortix MCP server (`/v1/mcp`): its `capture_*` tools read the same routes.
+or failed). Any other client reads the same routes with a Kortix API key: see
+[Capture → Kortix Capture API](/docs/capture#kortix-capture-api).
 
 React hooks for the account surface (`@kortix/sdk/react`), one per read and
 write above: `useCaptureDevices` (polls every 10 s for live status),

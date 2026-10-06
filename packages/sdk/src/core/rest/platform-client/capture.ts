@@ -216,6 +216,8 @@ export interface CaptureSearchQuery extends Omit<CaptureWindowQuery, 'day'> {
   app?: string;
   /** 1–100, default 20. */
   limit?: number;
+  /** `account`: every member (Capture admins and viewers; audited as `capture.account_view`). */
+  scope?: 'mine' | 'account';
 }
 
 export interface CaptureSearchHit {
@@ -223,6 +225,8 @@ export interface CaptureSearchHit {
   /** frame_id, action_id or line_id. */
   id: string;
   ts: string;
+  /** Whose recording the hit is. */
+  user_id: string;
   device_id: string;
   chunk_id: string;
   app: string | null;
@@ -252,6 +256,8 @@ export interface CaptureFrameDetail {
   frame: CaptureFrame;
   /** The frame's video chunk; seek to `offset_ms` (`frame_index` seconds: the chunk video is 1 fps). */
   video: (CaptureMediaUrl & { offset_ms: number }) | null;
+  /** The action screenshot nearest the frame on its device (within 30 s): a still of the moment. */
+  screenshot?: (CaptureMediaUrl & { name: string; ts: string }) | null;
 }
 
 export interface CaptureChunkMedia {
@@ -362,6 +368,7 @@ const searchParams = (query: CaptureSearchQuery) =>
     to: query.to,
     user_id: query.userId,
     device_id: query.deviceId,
+    scope: query.scope,
   });
 
 const windowParams = (query: CaptureWindowQuery = {}) => ({
