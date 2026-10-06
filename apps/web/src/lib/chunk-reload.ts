@@ -20,12 +20,17 @@ const IMPORT_HANG_TIMEOUT_MS = 15_000;
 const RELOAD_GUARD_KEY = 'kortix.staleChunkReloadAt';
 
 /** A stale-deploy chunk failure: webpack's ChunkLoadError, or the browser's
- *  native message for a dynamic import it could not fetch. */
+ *  native message for a dynamic import it could not fetch — each engine words
+ *  it differently (Chrome, Firefox, Safari), and a turbopack build has no
+ *  ChunkLoadError class, so the native wording is what the rejection carries. */
 export function isChunkLoadError(error: unknown): boolean {
   if (error instanceof Error) {
     if (error.name === 'ChunkLoadError') return true;
-    return /failed to fetch dynamically imported module|loading chunk \d+ failed/i.test(
-      error.message,
+    return (
+      /failed to fetch dynamically imported module/i.test(error.message) || // Chrome
+      /error loading dynamically imported module/i.test(error.message) || // Firefox
+      /importing a module script failed/i.test(error.message) || // Safari
+      /loading chunk \d+ failed/i.test(error.message) // webpack
     );
   }
   return false;

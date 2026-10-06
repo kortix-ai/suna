@@ -59,8 +59,18 @@ describe('isChunkLoadError', () => {
     expect(isChunkLoadError(error)).toBe(true);
   });
 
-  test('matches the failed-to-fetch dynamic import message', () => {
+  test('matches the failed-to-fetch dynamic import message (Chrome)', () => {
     expect(isChunkLoadError(chunkFetchError)).toBe(true);
+  });
+
+  test('matches the Firefox native import error message', () => {
+    expect(
+      isChunkLoadError(new TypeError('error loading dynamically imported module /_next/x.js')),
+    ).toBe(true);
+  });
+
+  test('matches the Safari native import error message', () => {
+    expect(isChunkLoadError(new TypeError("Importing a module script failed."))).toBe(true);
   });
 
   test('rejects an ordinary module error', () => {
