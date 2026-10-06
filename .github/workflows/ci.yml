@@ -4,10 +4,10 @@ name: CI
 # (SOC 2 CC8.1 — automated checks run on every change before review/merge).
 
 on:
-  # A push or pull request into `main` runs no CI (Actions minutes, 2026-10-03):
+  # A push or pull request into `dev` runs no CI (Actions minutes, 2026-10-03):
   # the developer runs `pnpm test` in their box. Release pull requests
   # (`staging`, `prod`) are the gate. A weekly schedule runs every job as a
-  # safety net on `main`.
+  # safety net on `dev`.
   pull_request:
     branches: [staging, prod]
   schedule:
@@ -375,7 +375,7 @@ jobs:
 
   desktop-installer-smoke:
     name: Desktop installer smoke
-    # Skip on PRs that don't touch desktop code. Push-to-main builds (desktop.yml)
+    # Skip on PRs that don't touch desktop code. Push-to-dev builds (desktop.yml)
     # still cover the full signed release artifacts.
     needs: changes
     if: needs.changes.outputs.desktop == 'true' || github.event_name != 'pull_request'

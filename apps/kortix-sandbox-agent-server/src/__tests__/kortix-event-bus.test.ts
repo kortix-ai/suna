@@ -118,6 +118,14 @@ describe('resync — the daemon says so instead of pretending', () => {
     expect(sub.replay).toEqual([])
   })
 
+  test('a cursor with no epoch cannot be tied to this boot, so it resyncs instead of replaying', () => {
+    const bus = new KortixEventBus('e1', 100)
+    for (let i = 0; i < 5; i++) bus.publish('x', {})
+    const sub = bus.subscribe(() => {}, { since: 3 })
+    expect(sub.resync).toMatchObject({ reason: 'epoch-changed', epoch: 'e1', requested_since: 3 })
+    expect(sub.replay).toEqual([])
+  })
+
   test('a cursor ahead of head is refused — it can only come from another epoch', () => {
     const bus = new KortixEventBus('e1')
     bus.publish('x', {})

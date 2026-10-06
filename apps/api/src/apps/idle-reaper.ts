@@ -8,10 +8,26 @@ import { AppHostingProvider } from './hosting';
 
 let running = false;
 
+/**
+ * A reaper that died between claiming a runtime (`stopping`) and finishing the
+ * stop (a deploy, a leader flap) leaves the row `stopping`. Nothing reads that
+ * state, so the box kept running and billing. Past this age the row is handed
+ * back to `running`; the next selection stops it again, and `hosting.stop` is
+ * idempotent.
+ */
+export const STALE_STOPPING_MS = 3 * 60_000;
+
 export async function runAppIdleReaper(now = new Date()): Promise<{ candidates: number; stopped: number; errors: number }> {
   if (running) return { candidates: 0, stopped: 0, errors: 0 };
   running = true;
   try {
+    await db
+      .update(appRuntimes)
+      .set({ status: 'running', updatedAt: now })
+      .where(and(
+        eq(appRuntimes.status, 'stopping'),
+        lt(appRuntimes.updatedAt, new Date(now.getTime() - STALE_STOPPING_MS)),
+      ));
     const rows = await db
       .select({ runtime: appRuntimes, app: apps })
       .from(appRuntimes)

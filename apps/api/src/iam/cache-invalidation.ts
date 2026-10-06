@@ -21,12 +21,12 @@
 import { eq } from 'drizzle-orm';
 import { accountGroupMembers, accountMemberships, roleAssignments } from '@kortix/db';
 import * as database from '../shared/db';
-const { db } = database;
 import {
-  principalScopedMemoList,
-  registerPrincipalScopedMemo,
   type PrincipalScopedMemo,
-} from '../shared/principal-memo-registry';
+  principalScopedMemos,
+  registerPrincipalScopedMemo,
+} from '../shared/principal-scoped-memos';
+const { db } = database;
 
 export { registerPrincipalScopedMemo };
 
@@ -56,9 +56,9 @@ export function invalidateIamCacheForProjectResources(projectId: string | null |
 export function invalidateIamCacheForUser(userId: string | null | undefined): void {
   if (!userId) return;
   const prefix = `${userId}|`;
-  for (const memo of principalScopedMemoList()) memo.invalidateByPrefix(prefix);
+  for (const memo of principalScopedMemos) memo.invalidateByPrefix(prefix);
   database.afterDbCommit?.(() => {
-    for (const memo of principalScopedMemoList()) memo.invalidateByPrefix(prefix);
+    for (const memo of principalScopedMemos) memo.invalidateByPrefix(prefix);
   });
 }
 

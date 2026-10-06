@@ -517,7 +517,7 @@ describe('GET /events (SSE)', () => {
     const bus = kortixEventBus()
     for (let i = 1; i <= 5; i++) publishOpenCodeEvent(bus, { type: 'message.part.delta', properties: { i } })
 
-    const res = await app.request('http://d/events?since=2', { headers: auth })
+    const res = await app.request(`http://d/events?since=2&epoch=${bus.epoch}`, { headers: auth })
     // hello + replay(3,4,5) + live(6,7)
     const framesPromise = readFrames(res, 6)
     await Bun.sleep(20)
@@ -557,6 +557,30 @@ describe('GET /events (SSE)', () => {
     expect(events[0].type).toBe('kortix.hello')
     expect(events[1]).toMatchObject({ type: 'kortix.resync', reason: 'epoch-changed' })
     expect(events[2]).toMatchObject({ type: 'session.idle', seq: 6 })
+  })
+
+  test('a consumer that never reads is dropped once its queue passes the cap, never buffered forever', async () => {
+    const { app } = makeRouter()
+    const bus = kortixEventBus()
+    const res = await app.request('http://d/events', { headers: auth })
+    // Nothing reads the body: every frame queues in the stream.
+    for (let i = 0; i < 1_500; i++) publishOpenCodeEvent(bus, { type: 'message.part.delta', properties: { i } })
+    const reader = res.body!.getReader()
+    let frames = 0
+    const deadline = Date.now() + 2_000
+    for (;;) {
+      const chunk = await Promise.race([
+        reader.read(),
+        new Promise<{ done: true; value: undefined }>((r) => setTimeout(() => r({ done: true, value: undefined }), Math.max(0, deadline - Date.now()))),
+      ])
+      if (chunk.done) break
+      frames += 1
+    }
+    // The stream ENDED (client reconnects with its cursor) and queued at most the cap + hello.
+    expect(Date.now()).toBeLessThan(deadline)
+    expect(frames).toBeLessThan(1_100)
+    // A later event reaches no listener of the dropped stream: publish must not grow its queue.
+    publishOpenCodeEvent(bus, { type: 'x', properties: {} })
   })
 
   test('the heartbeat is a TYPED event every 15 s and carries no seq', async () => {

@@ -41,6 +41,7 @@ import { getBackendUrl } from '../core/session/server-store/url-helpers';
 import { ascendingId, useSyncStore } from '../browser/stores/sync-store';
 import { BillingError, parseBillingError } from '../core/http/api/errors';
 import { isSessionFresh } from '../core/http/fresh-sessions';
+import { onSessionStopped } from '../core/http/session-stopped';
 import { formatRuntimeError } from '../core/http/runtime-errors';
 import {
   type CreateSessionPromptInput,
@@ -56,7 +57,7 @@ import { setCurrentRuntime } from '../core/session/current-runtime';
 import { openSessionBundle } from '../core/session/open-bundle';
 import { messagesBeforeRewind } from '../core/session/rewind';
 import { extractGatewayErrorDetails, unwrapError } from '../core/turns/errors';
-import { holdLiveStart } from './hold-live-start';
+import { holdLiveStart, liveStartPollMode } from './hold-live-start';
 import { clearStartStash, readStartStash } from './session-start-stash';
 import { reconcileHydratedSessionTitle } from './session-title-sync';
 import { seedModelDefaultsFromOpenBundle } from './prefetch-session-open';
@@ -1118,11 +1119,25 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const start = useQuery({
     queryKey: sessionStartKey(projectId, sessionId),
     // Once live, only a lifecycle fact leaves live (hold-live-start.ts).
-    queryFn: async () =>
-      holdLiveStart(
-        queryClient.getQueryData<SessionStartResult | null>(sessionStartKey(projectId, sessionId)),
-        await startProjectSession(projectId, sessionId, { waitMs, repositoryMode }),
-      ),
+    queryFn: async () => {
+      const previous = queryClient.getQueryData<SessionStartResult | null>(
+        sessionStartKey(projectId, sessionId),
+      );
+      const mode = liveStartPollMode(previous, typeof document !== 'undefined' && document.hidden);
+      // A background tab that shows the session ready does not poll: the poll
+      // only keeps a box alive for nobody. The next visible fetch revalidates.
+      if (mode === 'skip' && previous) return previous;
+      return holdLiveStart(
+        previous,
+        await startProjectSession(projectId, sessionId, {
+          waitMs,
+          repositoryMode,
+          // The keep-alive poll must report a user Stop or an idle park, never
+          // undo it. An open (no ready answer cached yet) wakes the box as before.
+          keepStopped: mode === 'keep-stopped',
+        }),
+      );
+    },
     enabled: startEnabled,
     retry: (failureCount, error) => shouldRetrySessionStart(failureCount, error, sessionId),
     retryDelay: (failureCount, error) =>
@@ -1138,6 +1153,15 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
         ? false
         : SESSION_START_POLL_OPTIONS.refetchInterval(query),
   });
+  // A user Stop (any host, via `stopProjectSession`) re-reads `/start` at once:
+  // the poll answers `stopped` (keep_stopped) instead of waiting up to 60 s.
+  useEffect(() => {
+    if (!startEnabled) return;
+    return onSessionStopped((stoppedId) => {
+      if (stoppedId !== sessionId) return;
+      void queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId, sessionId) });
+    });
+  }, [startEnabled, projectId, sessionId, queryClient]);
   const startData = start.data ?? null;
   const startError = isSessionStartError(start.error) ? start.error : null;
   const stage = startData?.stage ?? null;

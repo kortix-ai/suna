@@ -854,7 +854,7 @@ for (const runtime of runtimes) {
       }
     });
 
-    test("Enter and Command+Enter keep distinct pending prompt placements", async ({
+    test("Enter steers the running turn and Command+Enter queues behind it", async ({
       page,
       baseURL,
       desktopApp,
@@ -1079,20 +1079,25 @@ for (const runtime of runtimes) {
           request: Promise<import("@playwright/test").Request>,
           text: string,
           placement: string,
+          delivery: string,
         ) => {
           const sent = await request;
           const outgoing = sent.postDataJSON();
           expect(outgoing.placement).toBe(placement);
+          expect(outgoing.delivery).toBe(delivery);
           expect(outgoing.parts).toContainEqual(
             expect.objectContaining({ type: "text", text }),
           );
           await expect(input).toBeEmpty();
           expect([200, 202]).toContain((await sent.response())?.status());
         };
-        const transcriptText = "Enter pending placement";
-        const composerText = "Command pending placement";
+        // #9260 (R10): Enter while a turn runs steers it. The row waits in the
+        // Queue List as "Read at next step" until the turn reads it.
+        // Cmd/Ctrl+Enter is a plain Queue List row behind the turn.
+        const transcriptText = "Enter steers the running turn";
+        const composerText = "Command queues behind the turn";
         const pending = page
-          .locator("[data-pending-prompt-id]")
+          .locator("[data-queued-prompt-id]")
           .filter({ hasText: transcriptText });
         // Keep the first real API acceptance in flight. A second Enter must
         // paint at once. Its POST leaves after the first POST settles: the
@@ -1106,7 +1111,7 @@ for (const runtime of runtimes) {
           const request = route.request();
           const body = request.postData() ?? "";
           if (request.method() === "POST") {
-            postOrder.push(body.includes(transcriptText) ? "transcript" : body.includes(composerText) ? "composer" : "other");
+            postOrder.push(body.includes(transcriptText) ? "steer" : body.includes(composerText) ? "queue" : "other");
           }
           if (request.method() !== "POST" || !body.includes(transcriptText)) {
             await route.continue();
@@ -1119,7 +1124,7 @@ for (const runtime of runtimes) {
         const firstRequest = promptRequest();
         await input.fill(transcriptText);
         await input.press("Enter");
-        const firstSend = verifySend(firstRequest, transcriptText, "transcript");
+        const firstSend = verifySend(firstRequest, transcriptText, "composer", "steer");
         let nextRequest: Promise<import("@playwright/test").Request> | undefined;
         try {
           await expect(pending).toBeVisible({ timeout: 1_000 });
@@ -1131,22 +1136,20 @@ for (const runtime of runtimes) {
           await expect(page.locator("[data-queued-prompt-id]").filter({ hasText: composerText }))
             .toBeVisible({ timeout: 1_000 });
           // Painted, and still waiting behind the first POST.
-          expect(postOrder).toEqual(["transcript"]);
+          expect(postOrder).toEqual(["steer"]);
         } finally {
           releaseAcceptance();
           await firstSend;
         }
         expect(nextRequest).toBeDefined();
-        expect((await nextRequest!).postDataJSON().placement).toBe("composer");
+        expect((await nextRequest!).postDataJSON()).toMatchObject({ placement: "composer", delivery: "queue" });
         // The request event resolves `waitForRequest` before the route handler
         // records the POST, so wait for the handler.
-        await expect.poll(() => postOrder).toEqual(["transcript", "composer"]);
+        await expect.poll(() => postOrder).toEqual(["steer", "queue"]);
         await page.unroute(promptsUrl);
-        await expect(pending).toHaveAttribute("data-queue-tone", "pending");
-        // KRTX-494: a prompt waiting in the inbox says "Queued" inline on the
-        // message. The retired Quick Queue / Waiting chrome stays gone.
-        await expect(pending.locator("[data-queued-status]")).toHaveText("Queued");
-        await expect(pending).not.toContainText(/Quick Queue|Waiting/);
+        // The local box reports no active turn, so the steer waits and stays a
+        // steer (`admitSteer` → turn_active), drawn as "Read at next step".
+        await expect(pending.locator("[data-queued-delivery]")).toHaveText("Read at next step");
         await expectThinkingMatchesStop(page);
         if (!isDeployedTarget()) {
           await expect(page.getByText(/This session is idle/)).toHaveCount(0);
@@ -1155,11 +1158,8 @@ for (const runtime of runtimes) {
           .locator("[data-queued-prompt-id]")
           .filter({ hasText: composerText });
         await expect(row).toBeVisible();
-        await expect(
-          page
-            .locator("[data-queued-prompt-id]")
-            .filter({ hasText: transcriptText }),
-        ).toHaveCount(0);
+        // A Queue List row carries no steer note.
+        await expect(row.locator("[data-queued-delivery]")).toHaveCount(0);
         await expect(
           row.getByRole("button", { name: "Edit", exact: true }),
         ).toBeEnabled();
@@ -1209,18 +1209,25 @@ for (const runtime of runtimes) {
         page.off("request", countRepost);
         expect(reposts).toEqual([]);
         const persisted = await api<{
-          prompts: Array<{ placement: string; full_text: string }>;
+          prompts: Array<{ placement: string; delivery?: string; full_text: string }>;
         }>(
           auth.access_token,
           "GET",
           `/projects/${project.id}/sessions/${sessionId}/prompts`,
         );
+        // A deployed box reads the steer at the running turn's next step, so
+        // only the local profile still holds that row here.
         expect(persisted.prompts).toEqual(
           expect.arrayContaining([
-            expect.objectContaining({
-              placement: "transcript",
-              full_text: transcriptText,
-            }),
+            ...(isDeployedTarget()
+              ? []
+              : [
+                  expect.objectContaining({
+                    placement: "composer",
+                    delivery: "steer",
+                    full_text: transcriptText,
+                  }),
+                ]),
             expect.objectContaining({
               placement: "composer",
               full_text: editedText,
@@ -1250,7 +1257,7 @@ for (const runtime of runtimes) {
           });
         }
         await page.reload();
-        await expect(pending).toBeVisible({ timeout: 60_000 });
+        if (!isDeployedTarget()) await expect(pending).toBeVisible({ timeout: 60_000 });
         await expect(row).toBeVisible();
         await row.locator("summary").click();
         await expect(row.locator("pre")).toHaveText(editedText);

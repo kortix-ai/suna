@@ -296,7 +296,7 @@ jobs:
           node-version: 22
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.3.14
       - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile --filter "@kortix/db..." --filter "kortix"
         env:
@@ -642,14 +642,28 @@ jobs:
           path: .aws-env
           sparse-checkout: .github/actions
           persist-credentials: false
-      - name: Read credentials from AWS Secrets Manager
+      # Two reads: the Vercel credentials live in the shared CI blob
+      # `kortix-ci-env` in us-west-2 (the action's default, as in deploy-prod);
+      # staging's own values live in `kortix-staging-env` in eu-west-2 since #9254.
+      - name: Read Vercel credentials from AWS Secrets Manager
         uses: ./.aws-env/.github/actions/aws-env
         with:
-          aws-region: eu-west-2
           keys: |
             VERCEL_TOKEN
             VERCEL_PROJECT_ID
             VERCEL_TEAM_ID
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read staging Supabase values from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          aws-region: eu-west-2
+          keys: |
             NEXT_PUBLIC_SUPABASE_URL=kortix-staging-env:SUPABASE_URL
             NEXT_PUBLIC_SUPABASE_ANON_KEY=kortix-staging-env:SUPABASE_ANON_KEY
       - uses: actions/setup-node@v7

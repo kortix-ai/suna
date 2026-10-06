@@ -172,6 +172,12 @@ export class KortixEventBus {
         resync = makeResync('ahead-of-head')
       } else if (since < this.firstSeq - 1) {
         resync = makeResync('gap-too-old')
+      } else if (clientEpoch === null && since > 0) {
+        // A cursor with no epoch cannot be tied to THIS boot: a `since` from an
+        // earlier boot that still falls inside the ring would replay unrelated
+        // events as if they closed the gap. Resync instead. `since=0` names no
+        // boot ("everything"), so it replays.
+        resync = makeResync('epoch-changed')
       } else {
         replay = this.ring.slice(this.head).filter((event) => event.seq > since)
       }

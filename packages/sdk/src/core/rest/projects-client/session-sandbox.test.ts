@@ -183,6 +183,19 @@ test("startProjectSession explicitly requests the preserved previous-repository 
   );
 });
 
+test("startProjectSession keepStopped asks the API to report a stopped box, never wake it", async () => {
+  nextResponse = {
+    status: 200,
+    body: { stage: "stopped", agent_name: "default", retriable: false, sandbox: null, opencode_session_id: null },
+  };
+  await startProjectSession(PROJECT, SESSION, { waitMs: 15_000, keepStopped: true });
+  expect(last().url).toBe(
+    `http://test.local/v1/projects/${PROJECT}/sessions/${SESSION}/start?wait_ms=15000&keep_stopped=1`,
+  );
+  await startProjectSession(PROJECT, SESSION, { waitMs: 15_000 });
+  expect(last().url).not.toContain("keep_stopped");
+});
+
 test("startProjectSession omits the query string for a zero or negative waitMs", async () => {
   nextResponse = {
     status: 200,

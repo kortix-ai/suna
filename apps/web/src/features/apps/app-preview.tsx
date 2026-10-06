@@ -4,7 +4,8 @@ import Loading from '@/components/ui/loading';
 
 import { useTranslations } from '@/i18n/use-translations';
 
-import { CLIPBOARD_IFRAME_ALLOW, INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
+import { CLIPBOARD_IFRAME_ALLOW } from '@/lib/security/iframe-sandbox';
+import { framePolicy } from '@/features/file-viewer/preview-policy';
 
 import { cn } from '@/lib/utils';
 import { type App } from '@kortix/sdk';
@@ -307,7 +308,7 @@ export function AppPreview({
         // instant.
         loading={interactive ? 'eager' : 'lazy'}
         allow={CLIPBOARD_IFRAME_ALLOW}
-        sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
+        sandbox={framePolicy('app', url).sandbox}
         className={cn(
           'bg-background absolute border-0',
           interactive

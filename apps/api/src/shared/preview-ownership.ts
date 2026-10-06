@@ -23,12 +23,12 @@ import {
 } from '../connectors/share';
 import { authorize } from '../iam';
 import { actorForServiceAccount, actorForUser } from '../iam/actor';
-import { registerPrincipalScopedMemo } from './principal-memo-registry';
 import { hasAccountSessionOversight } from '../iam/session-oversight';
 import { accountMembers, projectSessions, serviceAccounts, sessionSandboxes } from '@kortix/db';
 import { and, eq, or, sql } from 'drizzle-orm';
 import type { KortixUserContext } from './kortix-user-context';
 import { setBounded } from './bounded-cache';
+import { registerPrincipalScopedMemo } from './principal-scoped-memos';
 import { isUuid } from './validate';
 
 const CACHE_TTL_MS = 5 * 60 * 1000;

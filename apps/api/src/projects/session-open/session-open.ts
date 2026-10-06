@@ -28,7 +28,7 @@ import {
 } from './session-open-readiness';
 import { openNotRunningBox, openRemovedBox, syncRecoveredRunningRow } from './session-open-recovery';
 import { enforceAdmission, enforceRuntimeGuarantee } from './session-open-guarantee';
-import { resumeHibernatedOnOpen } from './resume-stopped-sandbox';
+import { keepStoppedRefusesWake, resumeHibernatedOnOpen } from './resume-stopped-sandbox';
 import {
   serializeSandboxRow,
   sessionRuntimeUrlPath,
@@ -128,6 +128,17 @@ async function runOpenSession(
   if (existingWake) {
     log.did(existingWake.reason === 'runtime_wake_cooldown' ? 'cooling_down' : 'awaited_wake');
     return existingWake;
+  }
+
+  if (row?.status === 'stopped' && row.externalId && keepStoppedRefusesWake(args.keepStopped, row)) {
+    return {
+      stage: 'stopped',
+      agent_name: visible.row.agentName ?? 'default',
+      retriable: false,
+      sandbox: null,
+      opencode_session_id: null,
+      failure: null,
+    };
   }
 
   ({ row, stoppedProviderStatus } = await resumeHibernatedOnOpen(log, row));

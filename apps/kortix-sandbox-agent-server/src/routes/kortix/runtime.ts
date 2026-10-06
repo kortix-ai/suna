@@ -16,11 +16,12 @@ export const MAX_MESSAGE_PAGE = 200
 /** Heartbeat cadence on `/events`. Three of these fit in a 60 s client budget. */
 const EVENT_HEARTBEAT_MS = 15_000
 /**
- * Frames one `/events` reader may leave unread before the stream ends. The API
- * pauses its read while its own client is slow; past this the reader has
- * stopped, and the ring (not this queue) holds what it missed.
+ * Frames one `/events` consumer may leave unread. The ring holds 20,000; a
+ * consumer further behind than this is dropped, and reconnects with its cursor
+ * (replay, or a typed resync), instead of buffering every event for the life of
+ * the connection.
  */
-const EVENT_STREAM_MAX_QUEUED = 4_096
+const EVENT_STREAM_MAX_QUEUED_FRAMES = 1_000
 export const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context'
 
 function bearerToken(header: string | undefined): string | null {
@@ -251,22 +252,31 @@ export function createRuntimeRouter(
         let lastSent = -1
         const pending: KortixEvent[] = []
 
+        // The same teardown `cancel()` runs: stop the heartbeat, leave the bus.
+        const teardown = () => {
+          closed = true
+          if (heartbeat) clearInterval(heartbeat)
+          heartbeat = null
+          unsubscribe?.()
+          unsubscribe = null
+        }
         const write = (payload: string) => {
           if (closed) return
           try {
             controller.enqueue(encoder.encode(payload))
-            if ((controller.desiredSize ?? 0) < -EVENT_STREAM_MAX_QUEUED) {
-              // The reader stopped reading. End the stream so this queue stays
-              // bounded; it reconnects with its cursor and the ring replays.
-              closed = true
-              if (heartbeat) clearInterval(heartbeat)
-              heartbeat = null
-              unsubscribe?.()
-              unsubscribe = null
-              controller.close()
-            }
           } catch {
-            closed = true
+            teardown()
+            return
+          }
+          // desiredSize = highWaterMark (1) - queued frames, so this is "more
+          // than the cap queued": the consumer is not draining.
+          if (controller.desiredSize !== null && controller.desiredSize < -EVENT_STREAM_MAX_QUEUED_FRAMES) {
+            teardown()
+            try {
+              controller.close()
+            } catch {
+              // already closed
+            }
           }
         }
         const send = (event: KortixEvent) => {
