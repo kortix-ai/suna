@@ -10,7 +10,8 @@ const realAssignments = await import('../../iam/assignments');
 mock.module('./user-identity', () => ({ ...realIdentity, getAccountMembership: async () => null }));
 mock.module('../../shared/db', () => ({
   ...realDb,
-  db: { insert: () => ({ values: (v: unknown) => ({ onConflictDoNothing: async () => void inserted.push(v) }) }) },
+  withDbTransaction: async (fn: () => Promise<unknown>) => fn(),
+  db: { execute: async () => {}, insert: () => ({ values: (v: unknown) => ({ onConflictDoNothing: async () => void inserted.push(v) }) }) },
 }));
 mock.module('../../iam/assignments', () => ({ ...realAssignments, assignRole: async () => {} }));
 const realSeats = await import('../../billing/services/seat-management');

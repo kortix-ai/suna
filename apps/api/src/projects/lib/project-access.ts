@@ -22,6 +22,7 @@ import { isPlatformAdmin } from '../../shared/platform-roles';
 import { resolveAccountId } from '../../shared/resolve-account';
 import { isUuid } from '../../shared/validate';
 import { logger } from '../../lib/logger';
+import { withAccountSeatLock } from '../../accounts/seat-lock';
 import { setContextField } from '../../lib/request-context';
 import { effectiveProjectRole, type AccountRole, type ProjectAccessAction, type ProjectRole } from '../access';
 import { getAccountMembership } from './user-identity';
@@ -131,7 +132,17 @@ export async function ensureOrgMembership(
   const { trialSeatLimitBlocksNewMember, onMemberAdded } = await import(
     '../../billing/services/seat-management'
   );
-  const seatBlock = await trialSeatLimitBlocksNewMember(accountId);
+  const seatBlock = await withAccountSeatLock(accountId, async () => {
+    const block = await trialSeatLimitBlocksNewMember(accountId);
+    if (block) return block;
+    // Membership is two facts in two stores now. IDENTITY (the row that says this
+    // user belongs to this account, and carries is_super_admin / scim_external_id)
+    // is `kortix.account_memberships`; the ROLE is an account-scope assignment.
+    // Writing the identity row first is what lets `assignRole`'s principal check
+    // resolve without falling back to auth.users.
+    await db.insert(accountMemberships).values({ userId, accountId }).onConflictDoNothing();
+    return null;
+  });
   if (seatBlock) {
     const message = `This team's trial includes ${seatBlock.limit} ${seatBlock.limit === 1 ? 'seat' : 'seats'} and all are in use. Ask the owner to contact the Kortix team.`;
     throw new HTTPException(403, {
@@ -139,15 +150,6 @@ export async function ensureOrgMembership(
       res: Response.json({ error: message, code: 'trial_seat_limit_reached', limit: seatBlock.limit, members: seatBlock.members }, { status: 403 }),
     });
   }
-  // Membership is two facts in two stores now. IDENTITY (the row that says this
-  // user belongs to this account, and carries is_super_admin / scim_external_id)
-  // is `kortix.account_memberships`; the ROLE is an account-scope assignment.
-  // Writing the identity row first is what lets `assignRole`'s principal check
-  // resolve without falling back to auth.users.
-  await db
-    .insert(accountMemberships)
-    .values({ userId, accountId })
-    .onConflictDoNothing();
   // The grant, through the ONE write path, so joining an account emits
   // `iam.assignment.granted` like every other grant. `SYSTEM_ACTOR`: the two
   // callers (accepting a project invite, approving an access request) were
