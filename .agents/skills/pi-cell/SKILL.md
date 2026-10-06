@@ -88,6 +88,15 @@ of the process that runs it.
    id makes every request answer `DurableObjectRoutingError`; a duplicated one
    makes nodes evict each other.
 
+## The branch environment
+
+`https://pi-js.kortix.com` is this branch's own stack on Platinum dev, with
+cells on. Deploy it with `node apps/pi-worker-js/env/pi-js-deploy.mjs
+[--sha <sha>] [--fresh]`; the README section "The branch environment" has
+the VM, the key and what the host script changes. A fresh database races
+Supabase storage grants once (`permission denied for table buckets`); the
+host script retries `up` for that.
+
 ## Verify
 
 ```bash

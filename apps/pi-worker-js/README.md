@@ -161,6 +161,34 @@ PT_API_URL=https://api-dev.platinum.dev PT_TOKEN=… node deploy-platinum.mjs [-
 A running cell keeps its version until it restarts. `--roll` restarts the
 cells the activation reports, one at a time.
 
+## The branch environment: pi-js.kortix.com
+
+`https://pi-js.kortix.com` runs this branch's whole stack (API, web, gateway,
+Supabase) with `pi_cell` on, so its sessions are cells on Platinum dev.
+
+| What | Where |
+| --- | --- |
+| VM | Platinum dev microVM `kortix-env-pi-worker-js` (`sbx_01M1SJ00XFM1AXHQ1YA1E296G6`), port 8080 |
+| Public name | `infra/cloudflare/workers/pi-js-router`, target kind `stack` |
+| Stack | self-host instance `pr-7117` in `/workspace/kortix-preview/self-host/pr-7117` |
+| Secrets | `/workspace/kortix-preview/runtime-secrets.json` on the VM. Its Platinum key is the dedicated dev key `key_01M48V76C8P78BW23S7BM54WHP` ("pi-js branch env"), expiring 2027-01-04. |
+| Cells | worker `kortix-pi-cell` on Platinum dev, shipped by `deploy-platinum.mjs` |
+
+Deploy a commit (its `pr-<sha>` images must be on Docker Hub; the PR's
+`preview` label builds them):
+
+```bash
+node apps/pi-worker-js/env/pi-js-deploy.mjs                 # origin/pi-worker-js, upgrade in place
+node apps/pi-worker-js/env/pi-js-deploy.mjs --sha <sha> --fresh   # new instance and database
+```
+
+`env/pi-js-host.sh` runs on the VM. It follows the CI preview host script
+with four differences: sessions on Platinum dev, `pi_cell` on, internal
+billing off (no live Stripe key), and the managed provider on (default models
+go through `OPENROUTER_API_KEY`). An `upgrade` backs up `.env`, the compose
+files and a `pg_dump` of `postgres` first, and restores them if the new stack
+does not come up.
+
 ## Measured
 
 Platinum dev, worker version `d7f2ceef4033b343`, faux model, 2026-10-05:
