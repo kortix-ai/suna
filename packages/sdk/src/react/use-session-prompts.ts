@@ -181,13 +181,67 @@ export function releaseHeldPrompts(prompts: readonly SessionPrompt[]): SessionPr
 }
 
 /** The rows with ONE row's text replaced — `edit`'s optimistic write, so the
- *  queue shows the new words on the click instead of after the PATCH. */
+ *  queue shows the new words on the click instead of after the PATCH. Both
+ *  fields: a queue draws `full_text` and falls back to `text`. */
 export function withEditedPromptText(
   prompts: readonly SessionPrompt[],
   promptId: string,
   text: string,
 ): SessionPrompt[] {
-  return prompts.map((prompt) => (prompt.prompt_id === promptId ? { ...prompt, text } : prompt));
+  return prompts.map((prompt) =>
+    prompt.prompt_id === promptId ? { ...prompt, text, full_text: text } : prompt,
+  );
+}
+
+/**
+ * How long an edit this tab sent outranks the words a read lists.
+ *
+ * `edit` paints the new words on the click, then PATCHes. A read that reached
+ * the server before the PATCH lists the old words and would put them back
+ * until the read after the PATCH. The overlay is released once the save is
+ * answered (`useSessionPrompts`); the expiry only bounds a save that never
+ * settles.
+ */
+export const EDITED_PROMPT_OVERLAY_MS = 15_000;
+
+const editedPromptOverlays = new Map<string, Map<string, { text: string; expiresAtMs: number }>>();
+
+export function overlayEditedPrompt(
+  sessionId: string,
+  promptId: string,
+  text: string,
+  nowMs: number = Date.now(),
+): void {
+  let session = editedPromptOverlays.get(sessionId);
+  if (!session) {
+    session = new Map();
+    editedPromptOverlays.set(sessionId, session);
+  }
+  session.set(promptId, { text, expiresAtMs: nowMs + EDITED_PROMPT_OVERLAY_MS });
+}
+
+export function releaseEditedPromptOverlay(sessionId: string, promptId: string): void {
+  const session = editedPromptOverlays.get(sessionId);
+  if (!session) return;
+  session.delete(promptId);
+  if (session.size === 0) editedPromptOverlays.delete(sessionId);
+}
+
+/** `prompts` with the words of the edits this tab has in flight. Expired overlays are pruned. */
+export function withEditedPromptOverlays(
+  sessionId: string,
+  prompts: readonly SessionPrompt[],
+  nowMs: number = Date.now(),
+): SessionPrompt[] {
+  const session = editedPromptOverlays.get(sessionId);
+  if (!session) return [...prompts];
+  let edited = [...prompts];
+  for (const [promptId, overlay] of session) {
+    if (overlay.expiresAtMs <= nowMs) session.delete(promptId);
+    else edited = withEditedPromptText(edited, promptId, overlay.text);
+  }
+  if (session.size === 0) editedPromptOverlays.delete(sessionId);
+  return edited;
 }
 
 /**
@@ -386,7 +440,9 @@ export async function readSessionPromptsInbox(
   if (claimed) {
     const bundle = await claimed;
     const bundledRows = bundle ? openBundleQueue(bundle) : null;
-    const bundled = bundledRows ? withoutRemovedPrompts(sessionId, bundledRows) : null;
+    const bundled = bundledRows
+      ? withEditedPromptOverlays(sessionId, withoutRemovedPrompts(sessionId, bundledRows))
+      : null;
     if (bundled) {
       // TWO stamps, two clocks. Age is this tab's clock at receive time — the
       // bundle's `observed_at` is the API's clock, and ageing it against
@@ -424,9 +480,10 @@ export async function readSessionPromptsInbox(
   return applyInboxObservation(
     sessionId,
     cached,
-    // A row this tab removed stays removed, even from a read that left before
-    // the DELETE landed — see `REMOVED_PROMPT_TOMBSTONE_MS`.
-    withoutRemovedPrompts(sessionId, prompts),
+    // A row this tab removed stays removed, and a row it is editing keeps the
+    // new words, even in a read that left before the DELETE or PATCH landed —
+    // see `REMOVED_PROMPT_TOMBSTONE_MS` and `EDITED_PROMPT_OVERLAY_MS`.
+    withEditedPromptOverlays(sessionId, withoutRemovedPrompts(sessionId, prompts)),
     atMs,
     Number.isFinite(serverAtMs) ? serverAtMs : undefined,
   );
@@ -590,7 +647,10 @@ export function useSessionPrompts(
     onSettled: invalidate,
   });
   const editMutation = useMutation({
+    // The new words answer on the click, and a read already on its way cannot
+    // put the old ones back (`overlayEditedPrompt`).
     onMutate: async ({ promptId, text }: { promptId: string; text: string }) => {
+      overlayEditedPrompt(sessionId!, promptId, text);
       await queryClient.cancelQueries({ queryKey: key });
       queryClient.setQueryData<SessionPrompt[]>(key, (prev) =>
         withEditedPromptText(prev ?? [], promptId, text),
@@ -598,9 +658,14 @@ export function useSessionPrompts(
     },
     mutationFn: ({ promptId, text }: { promptId: string; text: string }) =>
       editSessionPrompt(projectId!, sessionId!, promptId, text),
-    // A refusal leaves the old text on the server; the settle read shows it.
-    onError: () => {},
-    onSettled: invalidate,
+    // A refusal leaves the old text on the server: release the overlay first,
+    // so the settle read shows it.
+    onError: (_error, { promptId }) => releaseEditedPromptOverlay(sessionId!, promptId),
+    // A saved edit keeps its overlay until the read after the save has landed.
+    onSettled: async (_data, _error, { promptId }) => {
+      await invalidate();
+      releaseEditedPromptOverlay(sessionId!, promptId);
+    },
   });
   const holdMutation = useMutation({
     // Releasing answers on the click: the paused state leaves the screen now,
@@ -619,7 +684,7 @@ export function useSessionPrompts(
         applyInboxObservation(
           sessionId!,
           prev,
-          withoutRemovedPrompts(sessionId!, result.prompts),
+          withEditedPromptOverlays(sessionId!, withoutRemovedPrompts(sessionId!, result.prompts)),
           Date.now(),
           Number.isFinite(serverAtMs) ? serverAtMs : undefined,
         ),

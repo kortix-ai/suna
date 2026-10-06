@@ -1,14 +1,9 @@
 packages:
   - 'apps/*'
-  # Standalone bun package (own bun.lock, installed by its Docker build stage
-  # and dev tooling). Excluded from pnpm because its pinned @earendil-works/pi
-  # release is younger than the workspace's 72h minimumReleaseAge cooldown;
-  # fold it into the workspace once the pin ages past the window.
-  - '!apps/kortix-worker'
   # The pi cell (apps/pi-worker-js) is a standalone npm app: esbuild bundles it
-  # for celld, celldctl deploys it, and it keeps its own package-lock.json. In
-  # the workspace, `pnpm install --frozen-lockfile` refused every image build
-  # (ERR_PNPM_OUTDATED_LOCKFILE on apps/pi-worker-js/package.json).
+  # for celld, deploy-platinum.mjs ships it, and it keeps its own
+  # package-lock.json. In the workspace, `pnpm install --frozen-lockfile`
+  # refused every image build (ERR_PNPM_OUTDATED_LOCKFILE on its package.json).
   - '!apps/pi-worker-js'
   - 'packages/*'
   - 'tests'

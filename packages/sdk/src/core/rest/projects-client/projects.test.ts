@@ -971,7 +971,6 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'monitors',
     'reminders',
     'secrets_egress',
-    'pi_worker',
     'pooled_provider_secrets',
     'pi_harness',
     'pi_cell',
@@ -1024,6 +1023,13 @@ test('teams graduated: Microsoft Teams needs no flag, the key still typechecks',
   // Every project can connect Teams. The API no longer serves `teams`.
   const graduated: FeatureFlagKey = 'teams';
   expect(FEATURE_FLAG_KEYS).not.toContain(graduated);
+});
+
+test('pi_worker withdrawn: sessions run pi only in the sandbox, the key still typechecks', () => {
+  // The worker/environment split left the product. The API no longer lists,
+  // resolves, or accepts `pi_worker`; `pi_harness` is the pi path.
+  const withdrawn: FeatureFlagKey = 'pi_worker';
+  expect(FEATURE_FLAG_KEYS).not.toContain(withdrawn);
 });
 
 test('FeatureFlagView stability accepts stable, beta, and experimental', () => {

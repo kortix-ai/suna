@@ -12,7 +12,7 @@ export * from "./constants/auto-topup";
 export * from "./runtime-versions";
 export * from "./project-glyphs";
 export * from "./meta-agent";
-export * from "./pi-worker";
+export * from "./pi-cell";
 export * from "./environment-secret";
 export * from "./utils/format-relative";
 export * from './prompt-attachments';

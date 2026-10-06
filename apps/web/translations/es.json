@@ -643,10 +643,17 @@
       "signOutOtherDevicesFailed": "No se pudo cerrar sesión en otros dispositivos",
       "currentDevice": "Este navegador",
       "deviceSignedInAt": "Conectado el {date}",
-      "deviceActive": "Activo",
       "noDevices": "No hay dispositivos conectados",
       "noDevicesDescription": "No tienes sesión iniciada en ningún dispositivo en este momento.",
-      "devicesLoadFailed": "No se pudieron cargar tus dispositivos conectados"
+      "devicesLoadFailed": "No se pudieron cargar tus dispositivos conectados",
+      "deviceName": "{browser} en {os}",
+      "unknownDevice": "Dispositivo desconocido",
+      "deviceLastActive": "Última actividad: {date}",
+      "signOutDevice": "Cerrar sesión",
+      "signedOutDevice": "Se cerró la sesión en ese dispositivo",
+      "signOutDeviceFailed": "No se pudo cerrar la sesión en ese dispositivo",
+      "copyIp": "Copiar dirección IP",
+      "ipCopied": "Dirección IP copiada"
     },
     "appearance": {
       "theme": "Tema",
@@ -1158,10 +1165,6 @@
         "pooled_provider_secrets": {
           "name": "Secretos de proveedor compartidos",
           "description": "Los miembros conectan sus propias suscripciones de ChatGPT y claves de proveedor, las comparten cuando hace falta y eligen cuáles usa cada sesión."
-        },
-        "pi_worker": {
-          "name": "Entorno del worker Pi (compilado)",
-          "description": "Ejecuta sesiones con el entorno experimental del worker Pi."
         },
         "pi_harness": {
           "name": "Harness Pi (en el sandbox)",
@@ -9466,7 +9469,6 @@
       "text016cec7c484d": "Conector revocado",
       "text017245d54fdb": "en Slack.",
       "text018069eabbfd": "La definición",
-      "text018912e44371": "Checkout de proyecto compilado descargado",
       "text019929eebb12": "Asigna roles desde Miembros (cuenta) o Proyectos (por proyecto). Los roles personalizados aparecen en el mismo selector de roles que los integrados.",
       "text01a556bb9792": "Tanto el rol de la persona como el permiso declarado del agente deben autorizarlo.",
       "text01b50fe973da": "Actualizar estado del aprovisionamiento",
@@ -15833,6 +15835,7 @@
       "textb9819d569c9a": "Aprovisiona algunos sandboxes y aquí aparecerán su duración y resultado.",
       "textb99e1742613b": "- slug: informe-matutino",
       "textb99fa6c06150": "Vista previa no disponible",
+      "showPreviewUnavailableHint": "La app no respondió. Iníciala en tu sesión y luego actualiza.",
       "textb9acc1017895": "Crea un grupo de Kortix para cada grupo que envíe tu IdP; no necesitas asignaciones por grupo.",
       "textb9ad2f00fba7": "cambios necesitan",
       "textb9addc023078": "marko@kortix.com",
@@ -17685,7 +17688,6 @@
       "texted13dee8f1f7": "El repositorio es la empresa. Hazle fork, crea ramas, revierte cambios o entrégalo a una máquina nueva: toda la configuración va incluida.",
       "texted1596a9787f": "Usar un token de acceso",
       "texted1d87390f65": "Emite un atributo de grupo (por ejemplo, llamado groups) que contenga los grupos del usuario.",
-      "texted21e91b4d87": "Runtime compilado del trabajador pi descargado",
       "texted26c1af81cf": "Herramientas de escritura",
       "texted2d94ab1136": "Inicia sesión en el centro de administración de Microsoft Entra (entra.microsoft.com) como administrador de tu tenant.",
       "texted2e59c337d0": "Narrativa",
@@ -17864,7 +17866,6 @@
       "textf27a58a42762": "No se pudo cargar el archivo",
       "textf27bcbb5e1e2": "Descartable",
       "textf27c4fdb823a": "Cloudflare Access pasa el email de forma predeterminada. Añade los demás atributos que Kortix lee — id, firstName, lastName — como «SAML attribute statements»: cada uno consta de un Name y el claim del IdP ascendente al que se asigna (un menú desplegable con los claims de tu método de inicio de sesión).",
-      "textf27e24caeef3": "Runtime de sesión compilado descargado",
       "textf29674479db4": "Conectando con OpenAI…",
       "textf297f631ba78": "Reúne lo que escribió cada entrevistador, organizado según la matriz de evaluación y no según quién escribió más, y destaca dónde discreparon dos entrevistadores. El objetivo es hacer visibles las discrepancias. Resolverlas es tarea del panel.",
       "textf29ad8b8092c": "El nombre del atributo (groups) debe coincidir con la declaración de grupos de Kortix, que se completa previamente durante la conexión. Cloudflare transmite los NOMBRES de grupos que envía el IdP ascendente.",
@@ -18828,9 +18829,7 @@
       "textb0f59e5a2722": "Inicio de sesión OAuth del proveedor de modelos iniciado",
       "text0dd455816ef6": "Reconstrucción de la instantánea del sandbox iniciada",
       "text40cef5fd1dbd": "Compilación de la plantilla de sandbox iniciada",
-      "text09917783e494": "Entorno de la sesión iniciado",
       "text18065b39fc81": "Kortix App detenida",
-      "textb88830cc18af": "Entorno de la sesión detenido",
       "text464b0b69fd48": "Eventos del túnel de equipo transmitidos",
       "text970caaaceccc": "Solicitud transmitida mediante el relé de secretos",
       "text64a93d38e11a": "Respuesta del relé de secretos transmitida",
@@ -18989,7 +18988,6 @@
       "text5ed3e15fac9f": "Transición de proveedor de sandbox consultada",
       "text70a61d85334a": "Sesión consultada",
       "textd7aa05eaf609": "Libro de costes de la sesión consultado",
-      "text4e22b3354b8f": "Entorno de la sesión consultado",
       "text48b65bbc9863": "Política de sesión consultada",
       "text7c649f4bf685": "Grupo de secretos de proveedor de la sesión consultado",
       "text3fd349f95ce2": "Ámbito de la sesión consultado",
@@ -19112,6 +19110,10 @@
       "textda4bd8bdfe42": "Las demás personas necesitan la aprobación del propietario de la sesión para unirse.",
       "text5dae52a3f448": "{count, plural, one {# canal} other {# canales}}",
       "text5097881a690f": "Hilo: {title}",
+      "servedModelRow": "Modelo",
+      "servedModelInPlaceOf": "En lugar de",
+      "servedModelBadge": "Ejecutándose en {model}",
+      "servedModelBarDescription": "{requested} no respondió a la última solicitud",
       "text414cc580557b": "Solicitud de sesión en cola editada",
       "text52867b778586": "Un kortix.yaml.",
       "textd0dfd435b2f4": "Tu plantilla de IA, como código.",
@@ -19231,7 +19233,9 @@
       "text09e71792c6c3": "Agentes de IA para equipos de ventas",
       "textaaab3a59b808": "Agentes de IA para equipos de marketing",
       "text8f480bae8d16": "Agentes de IA para equipos de finanzas",
-      "text6243d930fc1c": "AI Operating System"
+      "text6243d930fc1c": "AI Operating System",
+      "textc959682e0398": "Vio los dispositivos con sesión iniciada",
+      "text976811d9540a": "Cerró la sesión de un dispositivo"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
 // `@types/node` for the whole repo until R3.6).
 //
 // Not covered on purpose: apps/api code that hashes or builds the daemon tree
-// (snapshots/, git-proxy/compiled-agent-bundle.ts) and Dockerfile reads. Those
+// (snapshots/) and Dockerfile reads. Those
 // treat the daemon as a build input, not as code.
 
 const REPO_ROOT = join(import.meta.dirname, '..', '..');
@@ -20,13 +20,7 @@ const DAEMON = 'apps/kortix-sandbox-agent-server';
 const DAEMON_SRC = `${DAEMON}/src`;
 
 /** Each entry is `<file> -> <target>` with the reason it stays. Remove it with the reason. */
-const ALLOWED: Record<string, string> = {
-  // apps/kortix-worker is workspace-excluded and has no test lane. This is the
-  // only proof that its env-rpc client speaks the daemon's user-context codec.
-  // It goes away with apps/kortix-worker (refactor plan R6.6).
-  [`${DAEMON}/src/__tests__/env-rpc-worker-integration.test.ts -> apps/kortix-worker/src/lazy-env.ts`]:
-    'kortix-worker has no test lane of its own',
-};
+const ALLOWED: Record<string, string> = {};
 
 const SOURCE = /\.(?:[cm]?[jt]sx?)$/;
 const TEST = /(?:\.test\.[cm]?[jt]sx?$|\/__tests__\/)/;

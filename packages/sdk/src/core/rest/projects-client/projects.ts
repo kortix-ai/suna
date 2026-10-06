@@ -55,6 +55,7 @@ export type FeatureFlagKey =
   | 'reminders'
   | 'warm_sessions'
   | 'secrets_egress'
+  /** @deprecated Withdrawn — the pi worker split left the product; `pi_harness` runs pi in the session sandbox. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'pi_worker'
   /** @deprecated Graduated — every session saves its transcript. Removed in the next major. */
   | 'session_transcript_history'
@@ -75,7 +76,8 @@ type GraduatedFeatureFlagKey =
   | 'review_center'
   | 'session_transcript_history'
   | 'agent_principal'
-  | 'human_messaging';
+  | 'human_messaging'
+  | 'pi_worker';
 /** The keys `KortixProject.experimental` carries on every response. */
 type ServedFeatureFlagKey = Exclude<FeatureFlagKey, GraduatedFeatureFlagKey>;
 
@@ -95,7 +97,6 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'reminders',
   'warm_sessions',
   'secrets_egress',
-  'pi_worker',
   'pooled_provider_secrets',
   'pi_harness',
   'config_releases',

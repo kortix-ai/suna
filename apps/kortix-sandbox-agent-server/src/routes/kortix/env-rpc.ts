@@ -12,23 +12,19 @@ import {
 import { logger } from '@/lib/log/logger'
 
 /**
- * `/kortix/env-rpc` — the environment half of the harness/worker split (P1.7).
+ * `/kortix/env-rpc` — direct filesystem + shell access on THIS box, executed
+ * as the session (the box exists for exactly one session and holds its
+ * credential). The API's MCP tools (apps/api/src/mcp/index.ts) call it.
  *
- * The pi worker's six workspace tools run against an ExecutionEnv. File tools
- * call their matching operations here. Glob and grep execute remote `rg`
- * through this route's exec operation. The box exists for one session and
- * holds that session's workspace credential.
- *
- * Wire contract (mirrors apps/kortix-worker/src/kortix-env.ts):
+ * Wire contract (apps/pi-worker-js/src/execenv.envrpc.js is a client):
  *   POST { op, args, cwd }  →  { ok: true, value } | { ok: false, error: { code, message, path? } }
  * The route never throws wire-level errors for filesystem failures — a missing
  * file is a Result, not a 500. HTTP errors are reserved for auth and malformed
  * requests.
  *
- * Auth: `/kortix/*` is exempt from the daemon's global gate. Every request
- * verifies X-Kortix-User-Context with KORTIX_ENV_RPC_SECRET. The secret is
- * purpose-bound to this environment and cannot call the control-plane API.
- * KORTIX_TOKEN remains the environment's independent API principal.
+ * Auth: `/kortix/*` is exempt from the daemon's global gate, so — exactly like
+ * the sibling pty router — every request verifies X-Kortix-User-Context. The
+ * key is KORTIX_ENV_RPC_SECRET when set, else this box's own KORTIX_TOKEN.
  */
 
 const EXEC_TIMEOUT_DEFAULT_MS = 120_000

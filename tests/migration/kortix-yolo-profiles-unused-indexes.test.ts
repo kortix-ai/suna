@@ -23,7 +23,7 @@ const CONTAINER = 'kortix-yolo-profiles-index-test';
 // ephemeral range is 32768-60999 (`/proc/sys/net/ipv4/ip_local_port_range`), and
 // an outbound socket from the suite can transiently own a port in it — Docker
 // then fails the run with `bind: address already in use`.
-const PORT = Number(process.env.YOLO_PROFILES_INDEX_TEST_PORT || 5449);
+const PORT = Number(process.env.YOLO_PROFILES_INDEX_TEST_PORT || 5450);
 const ROOT = repoRoot();
 const ports: Ports = { ...computePorts(0), sbDb: PORT };
 const URL = `postgresql://postgres:postgres@127.0.0.1:${PORT}/postgres`;

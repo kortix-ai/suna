@@ -9,7 +9,7 @@
  * `apps/api/src/projects/session-lifecycle/runtime-wake-fence.ts:10`), after
  * which maintenance stamps `stopReason: 'runtime_wake_failed'` and every
  * subsequent `/start` short-circuits to a terminal payload
- * (`apps/api/src/projects/routes/shared.ts:672-694`)
+ * (`apps/api/src/projects/session-open/index.ts:672-694`)
  *
  *     "Couldn't start session <id> — The session runtime did not become
  *      reachable. Restart the session to try again."

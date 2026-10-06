@@ -5,9 +5,6 @@ import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { framePolicy, serviceFrameContent } from '@/features/file-viewer/preview-policy';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
-import { prefersPreviewLink, safeHttpUrl } from '@kortix/shared';
-import { ToolSurfaceContext } from './surface';
-import { ToolActionBar } from './tool-action-bar';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useTranslations } from '@/i18n/use-translations';
@@ -17,8 +14,24 @@ import { isProxiableLocalhostUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-
 import { enrichPreviewMetadata, getActiveSessionContext } from '@/lib/utils/session-context';
 import { getActivePanelSessionId, sessionPreviewTabId } from '@/stores/session-browser-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
+import { prefersPreviewLink, safeHttpUrl } from '@kortix/shared';
+import {
+  PREVIEW_BUILDING_STATES,
+  PREVIEW_STATE_MESSAGE,
+  type PreviewState,
+} from '@kortix/shared/preview-state-page';
 import { ArrowClockwiseIcon, ArrowSquareOutIcon, GlobeIcon as Globe } from '@phosphor-icons/react';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { ToolSurfaceContext } from './surface';
+import { ToolActionBar } from './tool-action-bar';
 
 export const MD_FLUSH_CLASSES =
   '[&_.relative.group]:my-0 [&_pre]:my-0 [&_pre]:border-0 [&_pre]:bg-transparent [&_pre]:p-0 [&_pre]:rounded-none [&_pre]:text-xs [&_code]:text-xs';
@@ -70,6 +83,10 @@ export function isLocalSandboxFilePath(value: string): boolean {
   return value.startsWith('/');
 }
 
+/** How long after a frame load a state message still counts for that load.
+ *  The state page posts while it parses, so its message lands around `load`. */
+const STATE_MESSAGE_GRACE_MS = 1000;
+
 export function useServicePreview(url: string, label?: string, sessionId?: string) {
   const { enabled: navigationEnabled, openTab, openExternal } = useToolNavigation();
   const proxy = useProxyUrl(url);
@@ -79,6 +96,30 @@ export function useServicePreview(url: string, label?: string, sessionId?: strin
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  // The proxy serves a state page (HTTP 200) while the app starts, so `load`
+  // alone cannot tell "the app answered" from "the proxy is still waiting".
+  // The page reports its state; `frameRef` pins the message to THIS frame.
+  const frameRef = useRef<HTMLIFrameElement | null>(null);
+  const [appWaiting, setAppWaiting] = useState(false);
+  const lastStateAt = useRef(0);
+
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (!frameRef.current || event.source !== frameRef.current.contentWindow) return;
+      const data = event.data as { type?: unknown; state?: unknown; stalled?: unknown } | null;
+      if (!data || data.type !== PREVIEW_STATE_MESSAGE) return;
+      lastStateAt.current = Date.now();
+      // Only "still building" earns the busy glyph. `unreachable` is a page
+      // that says the app stopped answering; a busy glyph over it would
+      // contradict it.
+      // A page that gave up after its reloads (`stalled`) stopped waiting too.
+      setAppWaiting(
+        PREVIEW_BUILDING_STATES.has(data.state as PreviewState) && data.stalled !== true,
+      );
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, []);
 
   const handleRefresh = useCallback(() => {
     setIsLoading(true);
@@ -148,6 +189,10 @@ export function useServicePreview(url: string, label?: string, sessionId?: strin
   const onLoad = useCallback(() => {
     setIsLoading(false);
     setHasError(false);
+    // A load with no state message is the app itself: it stopped waiting.
+    setTimeout(() => {
+      if (Date.now() - lastStateAt.current > STATE_MESSAGE_GRACE_MS) setAppWaiting(false);
+    }, 300);
   }, []);
   const onError = useCallback(() => {
     setIsLoading(false);
@@ -162,6 +207,16 @@ export function useServicePreview(url: string, label?: string, sessionId?: strin
     frameContent: serviceFrameContent(proxy?.port),
     isLoading,
     hasError,
+    /** Same condition as the viewport's "Loading preview…" overlay (no URL
+     *  yet, or the frame has not loaded), plus the proxy page while the app
+     *  is still building (`PREVIEW_BUILDING_STATES`). */
+    appStarting:
+      !!(proxy || externalUrl) &&
+      !prefersPreviewLink(previewUrl) &&
+      (isLoading || !previewUrl || appWaiting),
+    /** Seeds the dot-matrix glyph, so one preview keeps one glyph. */
+    matrixSeed: label || url,
+    frameRef,
     refreshKey,
     handleRefresh,
     displayLabel,
@@ -305,6 +360,7 @@ export function ServicePreviewViewport({
     refreshKey,
     onLoad,
     onError,
+    frameRef,
   } = preview;
   const linkOnlyPreview = prefersPreviewLink(previewUrl);
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -319,7 +375,7 @@ export function ServicePreviewViewport({
       {(isLoading || !previewUrl) && !linkOnlyPreview && (
         <div className="bg-background/60 absolute inset-0 z-10 flex items-center justify-center">
           <div className="text-muted-foreground flex items-center gap-2">
-            <Loading />
+            <Loading variant="spokes" />
             <span className="text-xs">
               {tHardcodedUi.raw('componentsSessionToolRenderers.line380JsxTextLoadingPreview')}
             </span>
@@ -330,6 +386,7 @@ export function ServicePreviewViewport({
       {previewUrl && !linkOnlyPreview && (
         <iframe
           key={refreshKey}
+          ref={frameRef}
           src={previewUrl}
           title={displayLabel}
           className="bg-secondary absolute inset-0 h-full w-full border-0"

@@ -1,4 +1,4 @@
-import type { AdminConnectorView } from './router';
+import type { AdminConnectorView } from './router-contract';
 
 export interface AdminConnectorCandidate {
   slug: string;

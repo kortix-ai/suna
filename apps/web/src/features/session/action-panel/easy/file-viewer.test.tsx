@@ -171,6 +171,18 @@ describe('FileViewer toolbar', () => {
     expect(html).toContain('aria-label="Source"');
   });
 
+  test('the Preview/Source switch takes the type glyph slot inside the pill', () => {
+    // One radiogroup, two radios, placed before the file name, and selected
+    // on Preview by default.
+    const html = render('page.html', '<p>hi</p>');
+    expect(count(html, 'role="radiogroup"')).toBe(1);
+    expect(count(html, 'role="radio"')).toBe(2);
+    expect(html.indexOf('role="radiogroup"')).toBeLessThan(html.indexOf('>page.html<'));
+    expect(html).toMatch(/aria-checked="true" aria-label="Preview"/);
+    // No separate segmented Tabs control before the pill any more.
+    expect(html).not.toContain('role="tablist"');
+  });
+
   test('a file with only one form gets no toggle — it would have one position', () => {
     // Markdown is the other no-toggle kind, but `UnifiedMarkdown` can't be rendered
     // by this effect-free harness, so plain source stands in for both.

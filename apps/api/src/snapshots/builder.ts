@@ -47,7 +47,7 @@ export type { SandboxTemplateView } from './template-prebuilds';
 export { resolveTemplateBySlug as resolveTemplate };
 export { listSnapshotBuilds, reconcileStaleBuilds, buildLogProviderCandidates, shouldReconcileProviderState, recentlyBuiltStrict } from './builder-log';
 export type { ProjectSnapshotBuildSummary } from './builder-log';
-export { META_RUNTIME_SPEC, PI_WORKER_RUNTIME_SPEC, ensureMetaSandboxImage, ensurePiWorkerImage, metaSnapshotName, piWorkerSnapshotName, reapSupersededMetaSnapshots, reapSupersededPiWorkerSnapshots } from './runtime-images';
+export { META_RUNTIME_SPEC, ensureMetaSandboxImage, metaSnapshotName, reapSupersededMetaSnapshots } from './runtime-images';
 export { kickPreBuild, kickRoutedPreBuild, templateBuildProviders, kickProjectTemplatePrebuilds } from './template-prebuilds';
 
 export type SnapshotBuildSource =
@@ -71,7 +71,7 @@ export interface EnsureSandboxImageResult {
   contentHash: string;
   built: boolean;
   isDefault: boolean;
-  runtimeProfile?: 'standard' | 'meta' | 'pi-worker';
+  runtimeProfile?: 'standard' | 'meta';
   /**
    * The size this image was built with, which is the size the box boots with.
    * Compute metering bills from it. Absent only for a result constructed
