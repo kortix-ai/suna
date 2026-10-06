@@ -17,13 +17,17 @@ import Stripe from 'stripe';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 import { logger } from '../../lib/logger';
 
-/** True for Stripe's "No such customer" (resource_missing). */
-function isStripeNoSuchCustomer(err: unknown): boolean {
+/**
+ * True for Stripe's "No such <object>" (resource_missing): the id does not
+ * exist in the CURRENT Stripe account — a stale mapping, a repointed key, or
+ * arbitrary client input. An expected state, never a 500.
+ */
+function isStripeNoSuchResource(err: unknown): boolean {
   const e = err as { statusCode?: number; code?: string; raw?: { code?: string }; message?: string };
   return e?.statusCode === 404
     || e?.code === 'resource_missing'
     || e?.raw?.code === 'resource_missing'
-    || /no such customer/i.test(e?.message ?? '');
+    || /no such (customer|checkout\.session)/i.test(e?.message ?? '');
 }
 
 /**
@@ -41,7 +45,7 @@ export async function resolveLiveStripeCustomerId(accountId: string): Promise<st
     const cust = await getStripe().customers.retrieve(existing.id);
     if (!('deleted' in cust) || !cust.deleted) return existing.id;
   } catch (err) {
-    if (!isStripeNoSuchCustomer(err)) throw err;
+    if (!isStripeNoSuchResource(err)) throw err;
   }
   console.warn(
     `[billing] Stripe customer ${existing.id} for ${accountId} not found in the current Stripe account; dropping stale mapping`,
@@ -889,12 +893,25 @@ export async function syncSubscription(accountId: string) {
   return { success: true, message: 'Subscription synced' };
 }
 
-export async function getCheckoutSessionDetails(accountId: string, sessionId: string) {
-  const stripe = getStripe();
+/**
+ * Retrieve a checkout session by a CLIENT-SUPPLIED id. The id can be stale,
+ * belong to a different Stripe account (the key was repointed), or be
+ * arbitrary input; Stripe then answers `resource_missing`
+ * ("No such checkout.session"), which used to fall through the typed-error
+ * ladder to the generic 500 + Sentry path. Map it to the 404 the routes
+ * already declare. Only a non-missing (transient) Stripe error rethrows.
+ */
+async function retrieveCheckoutSession(sessionId: string, expand: string[]) {
+  try {
+    return await getStripe().checkout.sessions.retrieve(sessionId, { expand });
+  } catch (err) {
+    if (!isStripeNoSuchResource(err)) throw err;
+    throw new BillingError('Checkout session not found', 404);
+  }
+}
 
-  const session = await stripe.checkout.sessions.retrieve(sessionId, {
-    expand: ['total_details.breakdown'],
-  });
+export async function getCheckoutSessionDetails(accountId: string, sessionId: string) {
+  const session = await retrieveCheckoutSession(sessionId, ['total_details.breakdown']);
 
   const sessionAccountId = session.metadata?.account_id;
   if (!sessionAccountId || sessionAccountId !== accountId) {
@@ -926,11 +943,8 @@ export async function confirmCheckoutSession(params: {
   sessionId: string;
 }) {
   const { accountId, sessionId } = params;
-  const stripe = getStripe();
 
-  const session = await stripe.checkout.sessions.retrieve(sessionId, {
-    expand: ['subscription', 'customer'],
-  });
+  const session = await retrieveCheckoutSession(sessionId, ['subscription', 'customer']);
 
   if (session.mode !== 'subscription') {
     throw new BillingError('Checkout session is not a subscription session');

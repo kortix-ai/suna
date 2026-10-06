@@ -365,7 +365,7 @@ subscriptionsRouter.openapi(
     request: { body: { content: { 'application/json': { schema: AnyBody } } } },
     responses: {
       200: json(OpaqueSchema, 'Confirmation result'),
-      ...errors(400),
+      ...errors(400, 404),
     },
   }),
   async (c: any) => {
