@@ -1,10 +1,12 @@
 import { sessionSandboxes } from '@kortix/db';
+import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { type SandboxProviderName, config } from '../../config';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from '../reaping/policy';
 import { applyStoppedState } from '../reaping/sandbox-state-sync';
+import { claimManualSandboxStop, releaseSandboxStopClaim } from '../reaping/box-queries';
 import { abortLiveTurnBeforeStop } from '../reaping/stop-box';
 import { RUNTIME_WAKE_LATE_START_GUARD_MS, runtimeWakeInProgress } from './runtime-wake-fence';
 
@@ -111,6 +113,17 @@ export async function stopSession(input: {
       now,
     });
   }
+  // Claim the row BEFORE the abort. The abort, the transcript tail and
+  // provider.stop span 3 to 7 s, and a prompt that lands in that window (a
+  // second tab, a trigger, a channel message) would otherwise start a turn the
+  // power-off then kills with no requeue. While the claim is live,
+  // `beginSandboxTurn` refuses new prompts; `applyStoppedState` strips it.
+  // `cancellingWake` rows are already `stopped`: nothing to claim.
+  const claimToken = randomUUID();
+  if (!cancellingWake && !(await claimManualSandboxStop(sandbox.sandboxId, claimToken, now))) {
+    // Another stop (the idle reaper's, or a second click) owns the row.
+    return { status: 200, body: { ok: true, session_id: sessionId, status: 'stopping' } };
+  }
   // Close the live turn before powering the box off, but only when the box is
   // actually running one: `cancellingWake` means the row is already stopped
   // (a wake was mid-flight), so there is no live opencode process to abort.
@@ -140,6 +153,14 @@ export async function stopSession(input: {
   }
 
   const settle = async (): Promise<{ status: number; body: Record<string, unknown> }> => {
+    try {
+      return await settleStop();
+    } catch (err) {
+      if (!cancellingWake) await releaseSandboxStopClaim(sandbox.sandboxId, claimToken);
+      throw err;
+    }
+  };
+  const settleStop = async (): Promise<{ status: number; body: Record<string, unknown> }> => {
     // A transient provider failure gets ONE bounded retry (KRTX-520). The user
     // is holding a Stop button. A degraded platform edge intermittently answers
     // the stop request with a 502/503/504 (an HTML error page), and a backlog
@@ -162,6 +183,7 @@ export async function stopSession(input: {
         const message = err instanceof Error ? err.message : String(err);
         console.warn(`[stop] provider.stop failed for sandbox ${sandbox.sandboxId}: ${message}`);
         if (attempt > 1) {
+          if (!cancellingWake) await releaseSandboxStopClaim(sandbox.sandboxId, claimToken);
           return {
             status: 502,
             body: { error: err instanceof Error ? err.message : 'Failed to stop sandbox' },
@@ -177,7 +199,7 @@ export async function stopSession(input: {
     // and had drifted — it assigned `{...sandbox.metadata, stoppedAt, ...}`, a
     // whole-object write built from the SELECT above, so anything a concurrent
     // writer put in that column in between was silently dropped. Two live writers
-    // do exactly that (projects/routes/shared.ts clears and sets the
+    // do exactly that (projects/session-open/index.ts clears and sets the
     // `runtimeWakeId` wake fence), and the compute clamp's `lastAliveAt` stamp
     // lives one table over for the same reason. Merged, never assigned.
     if (!cancellingWake) {

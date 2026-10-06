@@ -170,6 +170,7 @@ export function ComposerCard({
   onVariantChange,
   projectId,
   toolbarSlot,
+  servedModel,
   rewind,
   selectedAgent = null,
   onAgentChange,
@@ -205,7 +206,8 @@ export function ComposerCard({
         'motion-reduce:transition-none',
         cardClassName,
         isDragOver && 'border-kortix-blue/80 ring-primary/40 border ring',
-        notice && 'rounded-t-none',
+        // A strip above (`ComposerAboveCard`) owns the top corners.
+        (notice || (onModelChange && servedModel)) && 'rounded-t-none',
       )}
     >
       {/* What the dimmed card is asking for. Without it the drag state said

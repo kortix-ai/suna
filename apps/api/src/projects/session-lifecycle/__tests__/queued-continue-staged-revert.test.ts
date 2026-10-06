@@ -62,7 +62,7 @@ mock.module('../../../shared/db', () => ({
           // turn that named a model; none here, so the prompt goes out as sent.
           orderBy: () => ({ limit: async () => [] }),
           limit: async () => {
-            if (projection && 'result' in projection && 'payload' in projection) return [{ result: {}, payload: {} }];
+            if (projection && 'result' in projection && 'payload' in projection) return [{ status: 'running', lockedBy: null, result: {}, payload: {} }];
             if (table === projectSessions) return sessionRow ? [sessionRow] : [];
             if (table === projects) return [{ projectId: PROJECT_ID, accountId: ACCOUNT_ID }];
             return [];
@@ -78,7 +78,7 @@ mock.module('../../session-title-generate', () => ({
   generateSessionTitleFromFirstPrompt: async () => {},
 }));
 
-mock.module('../../routes/shared', () => ({
+mock.module('../../session-open', () => ({
   openSession: async () => {
     events.push('open');
     return {
@@ -89,7 +89,7 @@ mock.module('../../routes/shared', () => ({
   },
 }));
 
-mock.module('../../../sandbox-proxy/routes/preview', () => ({
+mock.module('../../../sandbox-proxy/forward', () => ({
   forwardToSandbox: async () => {
     events.push('prompt');
     return new Response(null, { status: 204 });

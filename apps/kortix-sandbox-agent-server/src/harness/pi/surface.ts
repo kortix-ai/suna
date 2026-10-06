@@ -197,10 +197,11 @@ export function createPiSurface(runtime: () => PiRuntime | null): PiSurface {
         if (sub === '' && method === 'PATCH') return json(200, rt.sessionObject())
         if (sub === '' && method === 'DELETE') return json(200, true)
 
-        if ((sub === 'prompt_async' || sub === 'message') && method === 'POST') {
+        if ((sub === 'prompt_async' || sub === 'message' || sub === 'command') && method === 'POST') {
           let prompt
           try {
-            prompt = parsePromptBody(await readJsonBody(input.body))
+            const body = await readJsonBody(input.body)
+            prompt = sub === 'command' ? rt.commandPrompt(body) : parsePromptBody(body)
           } catch (err) {
             return json(400, { error: err instanceof Error ? err.message : String(err) })
           }
@@ -233,7 +234,15 @@ export function createPiSurface(runtime: () => PiRuntime | null): PiSurface {
         if ((sub === 'revert' || sub === 'unrevert') && method === 'POST') {
           return json(501, { code: 'feature_not_supported', error: 'session rewind is not supported by the pi harness' })
         }
-        if ((sub === 'command' || sub === 'summarize' || sub === 'init' || sub === 'fork' || sub === 'share' || sub === 'shell') && method === 'POST') {
+        if (sub === 'summarize' && method === 'POST') {
+          try {
+            rt.compact()
+          } catch (err) {
+            return json(503, { error: err instanceof Error ? err.message : String(err) })
+          }
+          return json(200, true)
+        }
+        if ((sub === 'init' || sub === 'fork' || sub === 'share' || sub === 'shell') && method === 'POST') {
           return json(501, { code: 'feature_not_supported', error: `${sub} is not supported by the pi harness` })
         }
 
@@ -263,6 +272,7 @@ export function createPiSurface(runtime: () => PiRuntime | null): PiSurface {
         if (path === '/question') return json(200, rt.questions.list())
         if (path === '/lsp/diagnostics' || path === '/lsp') return json(200, {})
         if (path === '/mcp') return json(200, {})
+        if (path === '/command') return json(200, rt.commandList())
         if (path === '/path') {
           return json(200, { home: process.env.HOME ?? '/home/kortix', state: '', config: '', worktree: rt.workspace, directory: rt.workspace })
         }

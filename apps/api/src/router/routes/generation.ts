@@ -6,7 +6,7 @@ import { combinedAuth } from '../../middleware/auth';
 import { rejectSandboxTokens } from '../../middleware/reject-sandbox-tokens';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import { db } from '../../shared/db';
-import { resolveScopedAccountId } from '../../shared/resolve-account';
+import { resolveAccountWideUsageAccountId } from './usage';
 import type { AppEnv } from '../../types';
 import { mapGatewayLogToGeneration } from './generation-mapper';
 
@@ -74,7 +74,7 @@ generationApp.openapi(
       throw new HTTPException(400, { message: 'Missing required query parameter: id' });
     }
 
-    const accountId = c.get('accountId') ?? (await resolveScopedAccountId(c, 'query'));
+    const accountId = await resolveAccountWideUsageAccountId(c);
 
     const [row] = await db
       .select()

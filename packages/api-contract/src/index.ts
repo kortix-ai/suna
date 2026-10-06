@@ -60,7 +60,6 @@ export const FeatureFlagMapSchema = z.object({
   reminders: z.boolean(),
   warm_sessions: z.boolean(),
   secrets_egress: z.boolean(),
-  pi_worker: z.boolean(),
   pooled_provider_secrets: z.boolean(),
   pi_harness: z.boolean(),
   config_releases: z.boolean(),
@@ -1586,6 +1585,30 @@ export type SessionTurnStatus = z.infer<typeof SessionTurnStatusSchema>;
 export const SessionPromptPlacementSchema = z.enum(['transcript', 'composer']);
 export type SessionPromptPlacement = z.infer<typeof SessionPromptPlacementSchema>;
 
+/**
+ * How a prompt reaches a session whose turn is running.
+ * - `steer`: the running turn reads it at its next step boundary; the turn
+ *   does not stop. Needs the runtime capability `session.steer` and the
+ *   turn's own prompter; otherwise the row falls back to `queue`.
+ * - `queue` (Queue List): waits for the turn to end, then runs as its own turn.
+ * - `interrupt` (Quick Queue, "Stop and send"): ends the turn after the
+ *   running tool, then runs as its own turn.
+ * With no turn running, all three start a turn. `placement` is derived:
+ * `interrupt` is `transcript`, the other two are `composer`.
+ */
+export const SessionPromptDeliverySchema = z.enum(['steer', 'queue', 'interrupt']);
+export type SessionPromptDelivery = z.infer<typeof SessionPromptDeliverySchema>;
+
+/**
+ * Why a `steer` row was delivered as `queue` instead:
+ * - `unsupported`: the session's runtime does not list `session.steer`
+ *   (OpenCode 1.18.14 or earlier, or an older daemon).
+ * - `not_prompter`: the running turn belongs to another member.
+ * - `turn_ended`: the turn ended before the message reached it.
+ */
+export const SessionPromptSteerFallbackSchema = z.enum(['unsupported', 'not_prompter', 'turn_ended']);
+export type SessionPromptSteerFallback = z.infer<typeof SessionPromptSteerFallbackSchema>;
+
 /** A delivered prompt has no state: it is in the transcript. */
 export const SessionPromptStateSchema = z.enum(['queued', 'delivering', 'waiting', 'failed']);
 export type SessionPromptState = z.infer<typeof SessionPromptStateSchema>;
@@ -1593,6 +1616,10 @@ export type SessionPromptState = z.infer<typeof SessionPromptStateSchema>;
 /** One row of the durable prompt inbox, as `serializePrompt` emits it. */
 export const SessionPromptSchema = z.object({
   placement: SessionPromptPlacementSchema,
+  /** Absent from an API built before steering: read it as `placement` implies. */
+  delivery: SessionPromptDeliverySchema.optional(),
+  /** Set when a `steer` row fell back to `queue`; `delivery` then reads `queue`. */
+  steer_fallback: SessionPromptSteerFallbackSchema.nullable().optional(),
   /** Full accepted text. `text` is the capped preview. */
   full_text: z.string(),
   prompt_id: z.string(),
