@@ -43,7 +43,7 @@ async function anon<T>(
 }
 
 test.describe("38 — Capture UI", () => {
-  test("Kortix Capture at /capture/[accountId]: off until switched on; devices, the device timeline (run jump, search), overview, workflows, ask and settings", async ({
+  test("Kortix Capture at /capture/[accountId]: off until switched on; devices, the device timeline (run jump, search), overview, workflows and settings", async ({
     page,
   }) => {
     test.skip(!databaseUrl, "KE2E_DATABASE_URL is required");
@@ -257,15 +257,12 @@ test.describe("38 — Capture UI", () => {
       ).toBeVisible({
         timeout: 30_000,
       });
-      await page
-        .getByRole("navigation", { name: "Kortix Capture" })
-        .getByRole("link", { name: "Ask" })
-        .click();
-      await expect(page.getByRole("textbox", { name: "Question" })).toBeVisible(
-        {
-          timeout: 30_000,
-        },
-      );
+      // No Ask in Kortix Capture: agents read it through the Kortix MCP server.
+      await expect(
+        page
+          .getByRole("navigation", { name: "Kortix Capture" })
+          .getByRole("link", { name: "Ask" }),
+      ).toHaveCount(0);
 
       // Settings (Capture admins): turning audio off writes the policy and reads back.
       await page.getByRole("link", { name: "Settings", exact: true }).click();

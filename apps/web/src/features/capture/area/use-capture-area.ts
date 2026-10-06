@@ -42,7 +42,7 @@ export function useCaptureArea(accountId: string) {
 }
 
 /** The pages of the area, in the header's order. */
-export const CAPTURE_SECTIONS = ['overview', 'workflows', 'ask', 'devices'] as const;
+export const CAPTURE_SECTIONS = ['overview', 'workflows', 'devices'] as const;
 export type CaptureSection = (typeof CAPTURE_SECTIONS)[number] | 'settings' | 'this-computer';
 
 export function captureHref(accountId: string, section: CaptureSection = 'overview', rest = '') {

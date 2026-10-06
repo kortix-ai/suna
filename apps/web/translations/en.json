@@ -20941,7 +20941,6 @@
       "nav": {
         "overview": "Overview",
         "workflows": "Workflows",
-        "ask": "Ask",
         "devices": "Devices",
         "settings": "Settings",
         "timeline": "Timeline",
@@ -20999,14 +20998,14 @@
       "trendEmpty": "No automatable time found yet.",
       "thisWeek": "This wk",
       "quickLinks": "Quick links",
-      "linkAsk": "Ask about your workflows",
-      "linkAskHint": "Answers cite workflows, episodes and moments",
       "linkReview": "{count, plural, one {Review # detected workflow} other {Review # detected workflows}}",
       "linkReviewHint": "Found in recordings, not reviewed yet",
       "linkDevices": "Devices",
       "linkDevicesHint": "Every computer that records, and its status",
       "linkExport": "Export data",
-      "linkExportHint": "Episodes, steps and workflows as JSONL or Parquet"
+      "linkExportHint": "Episodes, steps and workflows as JSONL or Parquet",
+      "linkAgent": "Use Kortix Capture in an agent",
+      "linkAgentHint": "Connect the Kortix MCP server; agents read workflows, episodes and moments"
     },
     "workflows": {
       "title": "Workflows",
@@ -21152,60 +21151,6 @@
       "table": "Table",
       "tableHint": "A Parquet file holds one table. Export again for another."
     },
-    "ask": {
-      "title": "Ask about recorded work",
-      "intro": "Answers cite workflows, episodes and moments. Pick whose work to ask about below.",
-      "example1": "Which workflows take the most time, and which are ready to become skills?",
-      "example2": "Who runs the most invoice work, and how long does it take them?",
-      "example3": "What did the team work on yesterday?",
-      "exampleMine1": "What did I work on yesterday?",
-      "exampleMine2": "Which tasks do I repeat most often?",
-      "questions": "Questions",
-      "newQuestion": "New question",
-      "thisConversation": "This conversation",
-      "conversation": "Conversation",
-      "label": "Question",
-      "placeholder": "Ask about workflows, people, apps or a day",
-      "send": "Send",
-      "answerFrom": "Answer from: {scope}",
-      "scope": {
-        "org": "{name}",
-        "me": "My computers",
-        "person": "{name}",
-        "device": "{name}",
-        "people": "People",
-        "devices": "Computers"
-      },
-      "unnamed": "Unnamed computer",
-      "aMember": "A member",
-      "searching": "Searching recordings…",
-      "writing": "{count, plural, one {Reading # source…} other {Reading # sources…}}",
-      "cited": "{count, plural, =0 {No sources cited} one {# source cited} other {# sources cited}}",
-      "failed": "Could not answer",
-      "citation": "Source {n}",
-      "sources": "Sources",
-      "sourcesCount": "{count, plural, one {# cited} other {# cited}}",
-      "sourcesEmpty": "The sources of an answer show here.",
-      "kind": {
-        "workflow": "Workflow",
-        "episode": "Episode",
-        "moment": "Moment"
-      },
-      "openWorkflow": "Open workflow",
-      "openTimeline": "Open in timeline",
-      "lookedAt": "Looked at: {list}",
-      "looking": "Looking at {what}…",
-      "tool": {
-        "searchMoments": "moments",
-        "searchMomentsFor": "moments for “{query}”",
-        "listWorkflows": "workflows",
-        "listWorkflowsFor": "workflows for “{query}”",
-        "getWorkflow": "a workflow",
-        "listEpisodes": "episodes",
-        "getEpisode": "an episode",
-        "stats": "statistics"
-      }
-    },
     "thisComputer": {
       "title": "This computer",
       "breadcrumb": "Breadcrumb",
@@ -21213,6 +21158,29 @@
       "browserTitle": "Open Kortix desktop to record this computer",
       "browserBody": "Kortix Capture records from the desktop app. Install it, sign in, then open Kortix Capture › This computer.",
       "getDesktop": "Get the Kortix desktop app"
+    },
+    "agent": {
+      "title": "Use Kortix Capture in an agent",
+      "description": "Kortix Capture has no chat of its own. Any agent with the Kortix MCP server reads its data, with your permissions.",
+      "step1": "1. Add the Kortix MCP server",
+      "step1Hint": "It signs in as you on first use. One URL for every organization you are in.",
+      "step2": "2. The Capture tools it gets",
+      "tool": {
+        "capture_accounts": "Organizations with Kortix Capture on",
+        "capture_search": "Search screen text, actions and transcripts",
+        "capture_timeline": "What a device recorded in a time range",
+        "capture_frame": "One frame: app, window, on-screen text",
+        "capture_episodes": "Tasks people did, with goal and outcome",
+        "capture_episode": "One task with its steps",
+        "capture_workflows": "Repeated procedures and their automation time",
+        "capture_workflow": "One procedure: steps, variants, people",
+        "capture_export": "Bulk export as JSONL or Parquet"
+      },
+      "step3": "3. Ask the agent",
+      "example": "Which workflows in {name} take the most time, and who runs them?",
+      "scopeNote": "The agent sees what you see here: admins and viewers read every member, members their own. Every read of another member goes into the audit log.",
+      "docs": "Kortix Capture docs",
+      "connect": "Connect a client"
     }
   }
 }

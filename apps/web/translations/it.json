@@ -20941,7 +20941,6 @@
       "nav": {
         "overview": "Panoramica",
         "workflows": "Workflow",
-        "ask": "Chiedi",
         "devices": "Dispositivi",
         "settings": "Impostazioni",
         "timeline": "Timeline",
@@ -20999,14 +20998,14 @@
       "trendEmpty": "Nessun tempo automatizzabile trovato finora.",
       "thisWeek": "Questa sett.",
       "quickLinks": "Link rapidi",
-      "linkAsk": "Fai domande sui tuoi workflow",
-      "linkAskHint": "Le risposte citano workflow, episodi e momenti",
       "linkReview": "{count, plural, one {Rivedi # workflow rilevato} other {Rivedi # workflow rilevati}}",
       "linkReviewHint": "Trovati nelle registrazioni, non ancora rivisti",
       "linkDevices": "Dispositivi",
       "linkDevicesHint": "Ogni computer che registra e il suo stato",
       "linkExport": "Esporta dati",
-      "linkExportHint": "Episodi, passaggi e workflow in JSONL o Parquet"
+      "linkExportHint": "Episodi, passaggi e workflow in JSONL o Parquet",
+      "linkAgent": "Usa Kortix Capture in un agente",
+      "linkAgentHint": "Collega il server MCP di Kortix; gli agenti leggono workflow, episodi e momenti"
     },
     "workflows": {
       "title": "Workflow",
@@ -21152,60 +21151,6 @@
       "table": "Tabella",
       "tableHint": "Un file Parquet contiene una tabella. Esporta di nuovo per un’altra."
     },
-    "ask": {
-      "title": "Chiedi del lavoro registrato",
-      "intro": "Le risposte citano workflow, episodi e momenti. Scegli qui sotto il lavoro di chi chiedere.",
-      "example1": "Quali workflow richiedono più tempo e quali sono pronti a diventare skill?",
-      "example2": "Chi si occupa di più delle fatture e quanto tempo gli serve?",
-      "example3": "Su cosa ha lavorato il team ieri?",
-      "exampleMine1": "Su cosa ho lavorato ieri?",
-      "exampleMine2": "Quali attività ripeto più spesso?",
-      "questions": "Domande",
-      "newQuestion": "Nuova domanda",
-      "thisConversation": "Questa conversazione",
-      "conversation": "Conversazione",
-      "label": "Domanda",
-      "placeholder": "Chiedi di workflow, persone, app o di un giorno",
-      "send": "Invia",
-      "answerFrom": "Risposta da: {scope}",
-      "scope": {
-        "org": "{name}",
-        "me": "I miei computer",
-        "person": "{name}",
-        "device": "{name}",
-        "people": "Persone",
-        "devices": "Computer"
-      },
-      "unnamed": "Computer senza nome",
-      "aMember": "Un membro",
-      "searching": "Ricerca nelle registrazioni…",
-      "writing": "{count, plural, one {Lettura di # fonte…} other {Lettura di # fonti…}}",
-      "cited": "{count, plural, =0 {Nessuna fonte citata} one {# fonte citata} other {# fonti citate}}",
-      "failed": "Impossibile rispondere",
-      "citation": "Fonte {n}",
-      "sources": "Fonti",
-      "sourcesCount": "{count, plural, one {# citata} other {# citate}}",
-      "sourcesEmpty": "Le fonti di una risposta compaiono qui.",
-      "kind": {
-        "workflow": "Workflow",
-        "episode": "Episodio",
-        "moment": "Momento"
-      },
-      "openWorkflow": "Apri workflow",
-      "openTimeline": "Apri nella timeline",
-      "lookedAt": "Consultato: {list}",
-      "looking": "Consultazione di {what}…",
-      "tool": {
-        "searchMoments": "momenti",
-        "searchMomentsFor": "momenti per «{query}»",
-        "listWorkflows": "workflow",
-        "listWorkflowsFor": "workflow per «{query}»",
-        "getWorkflow": "un workflow",
-        "listEpisodes": "episodi",
-        "getEpisode": "un episodio",
-        "stats": "statistiche"
-      }
-    },
     "thisComputer": {
       "title": "Questo computer",
       "breadcrumb": "Percorso di navigazione",
@@ -21213,6 +21158,29 @@
       "browserTitle": "Apri Kortix desktop per registrare questo computer",
       "browserBody": "Kortix Capture registra dall’app desktop. Installala, accedi, poi apri Kortix Capture › Questo computer.",
       "getDesktop": "Scarica l’app desktop di Kortix"
+    },
+    "agent": {
+      "title": "Usa Kortix Capture in un agente",
+      "description": "Kortix Capture non ha una chat propria. Qualsiasi agente con il server MCP di Kortix ne legge i dati, con i tuoi permessi.",
+      "step1": "1. Aggiungi il server MCP di Kortix",
+      "step1Hint": "Al primo utilizzo accede come te. Un solo URL per tutte le tue organizzazioni.",
+      "step2": "2. Gli strumenti di Capture che riceve",
+      "tool": {
+        "capture_accounts": "Organizzazioni con Kortix Capture attivo",
+        "capture_search": "Cerca testo a schermo, azioni e trascrizioni",
+        "capture_timeline": "Cosa ha registrato un dispositivo in un intervallo",
+        "capture_frame": "Un fotogramma: app, finestra, testo a schermo",
+        "capture_episodes": "Attività svolte, con obiettivo ed esito",
+        "capture_episode": "Un’attività con i suoi passaggi",
+        "capture_workflows": "Procedure ripetute e il loro tempo automatizzabile",
+        "capture_workflow": "Una procedura: passaggi, varianti, persone",
+        "capture_export": "Esportazione in blocco in JSONL o Parquet"
+      },
+      "step3": "3. Chiedi all’agente",
+      "example": "Quali workflow di {name} richiedono più tempo e chi li esegue?",
+      "scopeNote": "L’agente vede ciò che vedi qui: amministratori e lettori leggono tutti i membri, i membri solo i propri dati. Ogni lettura di un altro membro finisce nel registro di audit.",
+      "docs": "Documentazione di Kortix Capture",
+      "connect": "Collega un client"
     }
   }
 }

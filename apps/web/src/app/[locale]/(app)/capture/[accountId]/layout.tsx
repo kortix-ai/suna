@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 /**
  * /capture/[accountId] — Kortix Capture for one organization (Kortix account):
- * Overview, Workflows, Ask, Devices, a device's timeline, This computer and
+ * Overview, Workflows, Devices, a device's timeline, This computer and
  * Settings. Its own top bar; no project sidebar.
  */
 export default async function CaptureLayout({

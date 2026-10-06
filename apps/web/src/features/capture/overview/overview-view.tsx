@@ -2,7 +2,12 @@
 
 import type { CaptureWorkflowSummary } from '@kortix/sdk';
 import { useCaptureOverview } from '@kortix/sdk/react';
-import { ChatCircleIcon, CheckIcon, DesktopIcon, DownloadSimpleIcon } from '@phosphor-icons/react';
+import {
+  CheckIcon,
+  DesktopIcon,
+  DownloadSimpleIcon,
+  PlugsConnectedIcon,
+} from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -12,6 +17,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
+import { CaptureAgentModal } from '../agent/capture-agent-modal';
 import { CapturePage } from '../area/capture-area-shell';
 import { captureHref, useCaptureArea, useCaptureRange } from '../area/use-capture-area';
 import { ExportModal } from '../intelligence/export-modal';
@@ -50,6 +56,7 @@ function Overview({ accountId }: { accountId: string }) {
   const hours = useHours();
   const percent = usePercent();
   const [exportOpen, setExportOpen] = useState(false);
+  const [agentOpen, setAgentOpen] = useState(false);
   const data = overview.data;
   const span = `${new Date(range.window.from).toLocaleDateString(locale, { day: 'numeric', month: 'short' })} – ${new Date(Date.parse(range.window.to) - 1).toLocaleDateString(locale, { day: 'numeric', month: 'short' })}`;
   const change =
@@ -247,12 +254,6 @@ function Overview({ accountId }: { accountId: string }) {
               <h2 id="capture-links" className="text-foreground px-4 pt-4 pb-3 text-sm font-medium">
                 {t('quickLinks')}
               </h2>
-              <QuickLink
-                href={captureHref(accountId, 'ask')}
-                icon={<ChatCircleIcon className="size-4 shrink-0" />}
-                title={t('linkAsk')}
-                hint={t('linkAskHint')}
-              />
               {data && data.workflows.detected > 0 ? (
                 <QuickLink
                   href={`${captureHref(accountId, 'workflows')}?status=detected`}
@@ -275,6 +276,19 @@ function Overview({ accountId }: { accountId: string }) {
                     : t('linkDevicesHint')
                 }
               />
+              <button
+                type="button"
+                onClick={() => setAgentOpen(true)}
+                className="hover:bg-hover flex items-center gap-3 border-t px-4 py-3 text-left transition-colors last:rounded-b-md"
+              >
+                <span className="text-muted-foreground">
+                  <PlugsConnectedIcon className="size-4 shrink-0" />
+                </span>
+                <span className="flex min-w-0 flex-col">
+                  <span className="text-foreground text-sm font-medium">{t('linkAgent')}</span>
+                  <span className="text-muted-foreground text-xs">{t('linkAgentHint')}</span>
+                </span>
+              </button>
               {area.isAdmin ? (
                 <button
                   type="button"
@@ -294,6 +308,11 @@ function Overview({ accountId }: { accountId: string }) {
           </div>
         </>
       )}
+      <CaptureAgentModal
+        open={agentOpen}
+        onOpenChange={setAgentOpen}
+        accountName={area.accountName}
+      />
       {area.isAdmin ? (
         <ExportModal
           accountId={accountId}
