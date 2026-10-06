@@ -19256,7 +19256,8 @@
       "text6243d930fc1c": "AI Operating System",
       "textc959682e0398": "Visualizou os dispositivos conectados",
       "text976811d9540a": "Desconectou um dispositivo",
-      "text6f417aa88601": "Gastos do gateway LLM por origem listados"
+      "text6f417aa88601": "Gastos do gateway LLM por origem listados",
+      "textc96cd610ba08": "Chave de provedor compartilhada tentada novamente após o limite de uso"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
