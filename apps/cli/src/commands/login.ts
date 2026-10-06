@@ -18,7 +18,7 @@ import {
 } from '../api/config.ts';
 import type { AccountMembership, MeResponse } from '../api/types.ts';
 import { takeFlags } from '../command-argv.ts';
-import { takeFlagBool, takeFlagValue, fail, tokenRejectedLine } from '../command-helpers.ts';
+import { takeFlagBool, takeFlagValue, fail } from '../command-helpers.ts';
 import { ensureDefaultProjectBinding } from '../project-bind.ts';
 import { C, help, status } from '../style.ts';
 import { selectFromList } from '../tui-select.ts';
