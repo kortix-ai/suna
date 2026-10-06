@@ -55,7 +55,6 @@ export default async function DownloadPage({
     mobileCard: MOBILE_CARD,
     desktopRows: DESKTOP_ROWS,
     mobileRows: MOBILE_ROWS,
-    mobileStatus: MOBILE_STATUS,
   } = localizedDownloadContent(tI18nComplete);
 
   const detected: Platform =
@@ -78,7 +77,8 @@ export default async function DownloadPage({
     id: os,
     label: MOBILE_ROWS[os].label,
     meta: MOBILE_ROWS[os].hint,
-    status: MOBILE_STATUS,
+    href: MOBILE_ROWS[os].href,
+    external: true,
     Mark: MOBILE_MARKS[os],
   }));
 
@@ -102,10 +102,8 @@ export default async function DownloadPage({
       title={MOBILE_CARD.title}
       description={MOBILE_CARD.description}
       rows={mobileRows}
-      // Nothing to fill: neither row has a button while both apps are unreleased.
-      // A phone visitor therefore sees no solid button anywhere on the page,
-      // which is accurate — there is nothing here they can install today.
-      filled={null}
+      // A phone visitor's own store gets the one solid button.
+      filled={onPhone ? detected : null}
     />
   );
 
