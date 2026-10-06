@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Local test attestation: `pnpm test` proves it ran by writing
-// tests/attestations/<branch>.json; the pre-push hook and the merge gate check it.
+// tests/attestations/<branch>.json; the pre-push hook checks it (no CI job does).
 // One file per branch, so two PRs never edit the same path and never conflict.
 // A write deletes every other branch's file (and the legacy
 // tests/test-attestation.json): a merged PR's file is never edited again, so
@@ -10,15 +10,15 @@
 //   node tests/verify-attestation.mjs write <lane>=<pass|fail|skipped-no-db|skipped-sandbox-image> ...
 //
 // verify reads the attestation the PR itself added or edited under
-// tests/attestations/ (`git diff origin/main...rev`). With none, it reads
+// tests/attestations/ (`git diff origin/dev...rev`). With none, it reads
 // tests/attestations/<branch>.json at rev (--branch, else the checked-out
 // branch), then the legacy tests/test-attestation.json.
 //
 // diff_hash = sha256 of "<mode> <blob> <path>" for the files the PR itself
-// changed — `git diff origin/main...HEAD`, minus every attestation file. Verify
+// changed — `git diff origin/dev...HEAD`, minus every attestation file. Verify
 // stays green while those files are unchanged, even after an unrelated
-// origin/main merge lands other files; it goes stale only when a file the PR
-// changed is edited after the run. On main (no diverging merge-base) it falls
+// origin/dev merge lands other files; it goes stale only when a file the PR
+// changed is edited after the run. On dev (no diverging merge-base) it falls
 // back to source_hash: sha256 over every file the commit would contain. Both
 // are recomputed from `--rev`, so committing the attestation never changes them.
 //
@@ -91,25 +91,25 @@ export function sourceHash(rev) {
 const sha = (lines) => createHash('sha256').update(lines.join('\n')).digest('hex');
 
 /**
- * The files the PR itself changed: `git diff <merge-base origin/main>...<rev>`.
+ * The files the PR itself changed: `git diff <merge-base origin/dev>...<rev>`.
  * Returns { files: sorted paths, lines: { path -> "<mode> <blob> <path>" }, hash,
  * attestations: the files the PR added or edited under tests/attestations/ },
- * or null when there is no diverging merge-base (on/behind main, or origin/main
+ * or null when there is no diverging merge-base (on/behind dev, or origin/dev
  * unavailable) — the caller then falls back to the full-tree source_hash.
  */
 export function changedFiles(rev) {
   try {
-    git(['fetch', 'origin', 'main', '--quiet']); // best-effort: compare against the latest main
+    git(['fetch', 'origin', 'dev', '--quiet']); // best-effort: compare against the latest dev
   } catch {}
   let base;
   let head;
   try {
     head = git(['rev-parse', rev ?? 'HEAD']).toString().trim();
-    base = git(['merge-base', 'origin/main', head]).toString().trim();
+    base = git(['merge-base', 'origin/dev', head]).toString().trim();
   } catch {
-    return null; // no origin/main (unrelated histories) → full-tree fallback
+    return null; // no origin/dev (unrelated histories) → full-tree fallback
   }
-  if (!base || base === head) return null; // on or behind main → full-tree fallback
+  if (!base || base === head) return null; // on or behind dev → full-tree fallback
   const tokens = git(['diff', '--raw', '-z', '--no-renames', '--no-abbrev', base, head])
     .toString()
     .split('\0')
@@ -156,12 +156,18 @@ export function evaluate(attestation, current, required = REQUIRED_LANES, strict
   }
   // The only allowed skips: db-suites without Postgres, and packages on a Kortix
   // sandbox image (its platform state breaks agent-server tests identically at
-  // origin/main; the scheduled clean-runner Tests run is the backstop). Mirrors
+  // origin/dev; the scheduled clean-runner Tests run is the backstop). Mirrors
   // the company merge gate's G11 rule.
   const SKIPS = { 'db-suites': 'skipped-no-db', packages: 'skipped-sandbox-image' };
   const ok = (l) => lanes[l] === 'pass' || (l in SKIPS && lanes[l] === SKIPS[l]);
   const bad = [...new Set([...required, ...Object.keys(lanes)])].filter((l) => !ok(l));
   if (bad.length) return { code: 1, reason: `lane not run or not green: ${bad.join(',')}` };
+  // A diff that changes the schema package must have run the DB suites. The
+  // skipped-no-db escape is for diffs the DB cannot affect.
+  const touchesDb = (current.changed?.files ?? []).some((p) => p.startsWith('packages/db/'));
+  if (touchesDb && lanes['db-suites'] !== 'pass') {
+    return { code: 1, reason: 'db-suites must pass: this diff changes packages/db and skipped-no-db is not accepted' };
+  }
   const skipped = Object.keys(SKIPS).filter((l) => lanes[l] === SKIPS[l]);
   if (skipped.length) {
     return { code: strict ? 3 : 0, reason: `green, skipped: ${skipped.map((l) => `${l} ${SKIPS[l]}`).join(', ')}` };

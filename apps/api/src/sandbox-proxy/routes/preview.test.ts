@@ -201,6 +201,12 @@ describe('isProxiedBaseReset', () => {
 // this proxy strips; that strip is proven at the route in
 // __tests__/e2e-preview-proxy.test.ts.
 describe('the forward strip list', () => {
+  test('credential and hop-by-hop headers never reach a user app', () => {
+    for (const name of ['x-kortix-token', 'proxy-authorization', 'transfer-encoding', 'connection', 'upgrade', 'te', 'trailer', 'keep-alive']) {
+      expect(STRIP_FORWARD_HEADERS.has(name)).toBe(true);
+    }
+  });
+
   test('the strip list is matched case-insensitively, as headers are', () => {
     // Headers arrive in whatever case the client sent; the forward loop
     // lowercases before testing membership, so the entry must be lowercase.
