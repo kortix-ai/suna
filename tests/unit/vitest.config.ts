@@ -15,6 +15,10 @@ export default defineConfig({
     environment: 'node',
     globals: true,
     include: ['**/*.test.ts'],
+    // `pnpm test` runs this lane beside five others. A test that spawns a
+    // shell script (announce-dev-live, kortixd-package-boundary) takes under
+    // 1 s alone and passed 5 s, vitest's default, at a load average of 33.
+    testTimeout: 20_000,
     reporters: ['default', ['junit', { suiteName: 'unit' }]],
     outputFile: {
       junit: '../test-results/unit/junit.xml',
