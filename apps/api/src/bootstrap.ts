@@ -379,6 +379,8 @@ async function runShutdown(signal: string): Promise<void> {
   stopAccessControlCache();
   stopTmpReaper();
   await handBack;
+  // A build claim this task holds would block peers until its lease lapses.
+  await within(import('./snapshots/build-claim').then((m) => m.releaseAllSnapshotBuilds()), 5_000, 'snapshot claims');
   stopTeamsBotTokenRefresh();
   stopEventLoopLagSampler();
   await import('./shared/pg-broadcast')

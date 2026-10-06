@@ -232,33 +232,40 @@ export async function claimTriggerExecutions(input: {
     .limit(input.limit);
 
   const claimed = await mapWithConcurrency(candidates, 8, async (candidate) => {
-    const [row] = await db
-      .update(projectTriggerExecutions)
-      .set({
-        status: 'running',
-        attempts: candidate.attempts + 1,
-        lockedBy: input.workerId,
-        lockedUntil: new Date(input.now.getTime() + leaseMs),
-        updatedAt: input.now,
-      })
-      .where(
-        and(
-          eq(projectTriggerExecutions.executionId, candidate.executionId),
-          eq(projectTriggerExecutions.attempts, candidate.attempts),
-          or(
-            eq(projectTriggerExecutions.status, 'queued'),
-            and(
-              eq(projectTriggerExecutions.status, 'running'),
-              or(
-                isNull(projectTriggerExecutions.lockedUntil),
-                lte(projectTriggerExecutions.lockedUntil, input.now),
+    // A row whose UPDATE fails stays queued and is claimed on the next pass. One bad
+    // row must not discard the rows this batch already moved to `running`.
+    try {
+      const [row] = await db
+        .update(projectTriggerExecutions)
+        .set({
+          status: 'running',
+          attempts: candidate.attempts + 1,
+          lockedBy: input.workerId,
+          lockedUntil: new Date(input.now.getTime() + leaseMs),
+          updatedAt: input.now,
+        })
+        .where(
+          and(
+            eq(projectTriggerExecutions.executionId, candidate.executionId),
+            eq(projectTriggerExecutions.attempts, candidate.attempts),
+            or(
+              eq(projectTriggerExecutions.status, 'queued'),
+              and(
+                eq(projectTriggerExecutions.status, 'running'),
+                or(
+                  isNull(projectTriggerExecutions.lockedUntil),
+                  lte(projectTriggerExecutions.lockedUntil, input.now),
+                ),
               ),
             ),
           ),
-        ),
-      )
-      .returning();
-    return row ?? null;
+        )
+        .returning();
+      return row ?? null;
+    } catch (error) {
+      console.error('[trigger-executions] claim failed', { executionId: candidate.executionId, error });
+      return null;
+    }
   });
   return claimed.filter((row): row is TriggerExecutionRow => row !== null);
 }
