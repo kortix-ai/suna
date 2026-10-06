@@ -831,3 +831,28 @@ test('createFile in a folder that does not exist yet creates it', async () => {
   expect(await F.createFile('/workspace/new/a.md')).toEqual([{ path: '/workspace/new/a.md', size: 0 }]);
   expect(calls.some((c) => c.url === 'http://sbx.test/file/mkdir')).toBe(true);
 });
+
+// ── uploadNativeFile: a React Native `{ uri }` part, sent through the transport ──
+
+test('uploadNativeFile posts the target path and the file part to /file/upload with the bearer', async () => {
+  const results = await F.uploadNativeFile(
+    { uri: 'file:///cache/photo.png', name: 'photo.png', type: 'image/png' },
+    '/workspace/inbox',
+    'http://sbx.test',
+  );
+  expect(results).toEqual([]);
+  expect(last().url).toBe('http://sbx.test/file/upload');
+  expect(last().method).toBe('POST');
+  const form = last().raw as FormData;
+  expect(form.get('path')).toBe('/workspace/inbox');
+  expect(form.has('file')).toBe(true);
+});
+
+test('uploadNativeFile throws an ApiError carrying the status on a daemon failure', async () => {
+  mockFailStatus = 400;
+  const error = await F.uploadNativeFile({ uri: 'file:///x', name: 'x' }, '/workspace', 'http://sbx.test').catch(
+    (e: unknown) => e,
+  );
+  expect(error).toBeInstanceOf(ApiError);
+  expect((error as ApiError).status).toBe(400);
+});

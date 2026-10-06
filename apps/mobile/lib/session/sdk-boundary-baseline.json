@@ -1,8 +1,4 @@
 [
-  "host-kortix-network\thooks/useAccountDeletion.ts\t`${API_URL}/account/deletion-status`",
-  "host-kortix-network\thooks/useAccountDeletion.ts\t`${API_URL}/account/request-deletion`",
-  "host-kortix-network\thooks/useAccountDeletion.ts\t`${API_URL}/account/cancel-deletion`",
-  "host-kortix-network\thooks/useAccountDeletion.ts\t`${API_URL}/account/delete-immediately`",
   "host-kortix-network\tlib/billing/api.ts\t`${API_URL}${endpoint}`",
   "host-kortix-network\tlib/billing/checkout.ts\t`${API_URL}${endpoint}`",
   "host-kortix-network\tlib/billing/revenuecat.ts\t`${API_URL}/billing/revenuecat/sync`",

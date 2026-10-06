@@ -51,6 +51,8 @@ export interface EnqueueContinueSessionCommandInput {
    *  POSTs race (boot shell vs chat during the crossfade). */
   clientSentAtMs?: number;
   placement?: 'transcript' | 'composer';
+  /** See `QueuedContinueSessionPayload.delivery`. Pass the derived `placement` with it. */
+  delivery?: QueuedContinueSessionPayload['delivery'];
   /** Enqueue HELD — see `enqueueReleasingHold`. Pass `availableAt` with it. */
   held?: boolean;
   parts?: PromptPartWire[];
@@ -80,6 +82,7 @@ export function buildContinueSessionCommandValues(input: EnqueueContinueSessionC
     ...(typeof input.clientSentAtMs === 'number' ? { clientSentAtMs: input.clientSentAtMs } : {}),
     ...(input.parts ? { parts: input.parts } : {}),
     ...(input.placement ? { placement: input.placement } : {}),
+    ...(input.delivery ? { delivery: input.delivery } : {}),
     ...(input.overrides ? { overrides: input.overrides } : {}),
     ...(input.bindTurnIdentity ? { bindTurnIdentity: true } : {}),
     ...(input.authorSessionId ? { authorSessionId: input.authorSessionId } : {}),
