@@ -382,7 +382,10 @@ export async function markCommandFailed(
   // takes a working session away over one lost delivery.
   const isInboxPrompt =
     typeof (row.payload as { clientMessageId?: unknown } | null)?.clientMessageId === 'string';
-  if (row.commandType === 'continue_session' && row.sessionId && !isInboxPrompt) {
+  // A channel reply or a question answer showed its failure where it was sent;
+  // the direct call it replaced never parked the session either.
+  const isDirectFollowUp = (row.payload as { directFollowUp?: unknown } | null)?.directFollowUp === true;
+  if (row.commandType === 'continue_session' && row.sessionId && !isInboxPrompt && !isDirectFollowUp) {
     // Park the target session 'failed': findReusableTriggerSession skips failed
     // sessions, so a `session_mode = "reuse"` trigger's next fire creates a
     // FRESH session instead of re-aiming prompts at a wedged one — the proven

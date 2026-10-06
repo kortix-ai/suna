@@ -25,8 +25,8 @@ function createSessionCommandPayload(command: CreateSessionCommand): QueuedCreat
 
 /**
  * Enqueue a durable "deliver this follow-up into the session" command —
- * drained by the leader's scheduler tick, retried with backoff, dead-lettered
- * after 5 attempts. Survives the enqueueing pod dying, unlike a detached
+ * drained by the 1 s lifecycle worker on every replica (and by targeted kicks),
+ * retried with backoff, dead-lettered after 5 attempts. Survives the enqueueing pod dying, unlike a detached
  * promise. `availableAt` in the future = a scheduled grace window.
  */
 export interface EnqueueContinueSessionCommandInput {
@@ -60,6 +60,8 @@ export interface EnqueueContinueSessionCommandInput {
   bindTurnIdentity?: boolean;
   authorSessionId?: string | null;
   noReply?: boolean;
+  opencodeEnv?: Record<string, string | null>;
+  directFollowUp?: boolean;
 }
 
 /** Build one durable callback row. Exported for transaction-bound outbox writes. */
@@ -82,6 +84,8 @@ export function buildContinueSessionCommandValues(input: EnqueueContinueSessionC
     ...(input.bindTurnIdentity ? { bindTurnIdentity: true } : {}),
     ...(input.authorSessionId ? { authorSessionId: input.authorSessionId } : {}),
     ...(input.noReply ? { noReply: true } : {}),
+    ...(input.opencodeEnv ? { opencodeEnv: input.opencodeEnv } : {}),
+    ...(input.directFollowUp ? { directFollowUp: true } : {}),
   };
   return {
     commandType: 'continue_session',
