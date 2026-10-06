@@ -606,6 +606,7 @@ describe('runCreate: the full create() orchestration', () => {
       // Composes the REAL retry engine (already covered by its own suite
       // above) with a fake low-level provisionProject/wait, so this proves
       // genuine retry behaviour, not a restated assumption.
+      onPhase: () => {},
       runCreateAttempt: (payload, onPhase) =>
         runCreateAttempt(payload, {
           provisionProject: async (input) => {
