@@ -22,7 +22,9 @@ const RECONNECT_HINT = encoder.encode('retry: 1000\n\n');
 
 let inflight = 0;
 let draining = false;
+// replica-local: it counts this process's own work, and each task drains itself on its own SIGTERM.
 const idleWaiters = new Set<() => void>();
+// replica-local: the streams this process serves.
 const closers = new Set<() => void>();
 
 function settle(): void {

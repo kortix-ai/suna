@@ -10,6 +10,7 @@
  *
  * `run` returns the delay until the next tick.
  */
+import { logger } from '../lib/logger';
 import { isLeader } from './leader-election';
 
 export function leaderTimer(
@@ -31,7 +32,7 @@ export function leaderTimer(
     try {
       next = await run();
     } catch (error) {
-      console.error('[leader-timer] tick failed', error);
+      logger.error('[leader-timer] tick failed', { error: error instanceof Error ? error.message : String(error) });
       next = 60_000;
     }
     if (generationAtStart === generation) arm(generationAtStart, next);

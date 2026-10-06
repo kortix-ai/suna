@@ -457,7 +457,7 @@
   },
   "src/channels/email/routes.ts": {
     "no-console": {
-      "count": 2
+      "count": 1
     },
     "no-restricted-syntax": {
       "count": 1
@@ -605,7 +605,7 @@
   },
   "src/channels/slack/routes.ts": {
     "no-console": {
-      "count": 6
+      "count": 1
     },
     "no-restricted-imports": {
       "count": 2
@@ -685,11 +685,6 @@
       "count": 5
     }
   },
-  "src/channels/teams/binding.ts": {
-    "kortix-api/replica-local": {
-      "count": 1
-    }
-  },
   "src/channels/teams/catalog.ts": {
     "no-console": {
       "count": 4
@@ -762,7 +757,7 @@
   },
   "src/channels/teams/routes.ts": {
     "no-console": {
-      "count": 4
+      "count": 3
     }
   },
   "src/channels/teams/session.ts": {
@@ -2600,11 +2595,6 @@
       "count": 1
     }
   },
-  "src/projects/session-lifecycle/agent-availability.ts": {
-    "kortix-api/replica-local": {
-      "count": 1
-    }
-  },
   "src/projects/session-lifecycle/command-transitions.ts": {
     "no-console": {
       "count": 1
@@ -2748,9 +2738,6 @@
     }
   },
   "src/projects/trigger-entry.ts": {
-    "kortix-api/replica-local": {
-      "count": 1
-    },
     "no-restricted-properties": {
       "count": 1
     }
@@ -3433,9 +3420,6 @@
   "src/snapshots/templates.ts": {
     "kortix-api/projects-surface": {
       "count": 3
-    },
-    "kortix-api/replica-local": {
-      "count": 2
     },
     "no-console": {
       "count": 3

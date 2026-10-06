@@ -318,15 +318,10 @@ export async function bootServices() {
 // Graceful shutdown. ECS sends SIGTERM, then SIGKILL after `stop_timeout` (120 s,
 // infra/terraform/modules/ecs-api/variables.tf). The budgets below add up to
 // less: 5 s propagation + 85 s request drain + 15 s worker stop and flush.
-const DRAIN_PROPAGATION_MS = envMs('DRAIN_PROPAGATION_MS', 5_000);
-const DRAIN_BUDGET_MS = envMs('DRAIN_BUDGET_MS', 85_000);
+const DRAIN_PROPAGATION_MS = 5_000;
+const DRAIN_BUDGET_MS = 85_000;
 const WORKER_STOP_BUDGET_MS = 15_000;
 const HARD_EXIT_MS = 112_000;
-
-function envMs(name: string, fallback: number): number {
-  const value = Number(process.env[name]);
-  return Number.isFinite(value) && value >= 0 ? value : fallback;
-}
 
 /** Resolve with `work`'s result, or undefined after `ms`. Never rejects. */
 async function within<T>(work: Promise<T>, ms: number, label: string): Promise<T | undefined> {

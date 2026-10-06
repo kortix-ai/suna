@@ -1,5 +1,6 @@
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
+import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { isLeader } from '../../shared/leader-election';
 import { claimDueScheduleSlots, claimTriggerExecutions, markTriggerExecutionDispatched, markTriggerExecutionFailed, markTriggerExecutionSkipped, markTriggerExecutionSucceeded, type TriggerExecutionRow } from '../trigger-execution-store';
@@ -233,7 +234,7 @@ export async function drainTriggerExecutionQueue(
     // in-flight guard would clear under them.
     const outcomes = await mapWithConcurrency(rows, triggerExecutionConcurrency(), (row) =>
       executeTriggerExecution(row).catch((error): 'failed' => {
-        console.error('[trigger-executions] execution threw', { executionId: row.executionId, error });
+        logger.error('[trigger-executions] execution threw', { executionId: row.executionId, error: error instanceof Error ? error.message : String(error) });
         return 'failed';
       }),
     );

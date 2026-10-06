@@ -58,7 +58,7 @@ export async function renewSnapshotBuild(buildKey: string): Promise<boolean> {
   return rows.length > 0;
 }
 
-// Keys this process holds, each with its heartbeat timer.
+// replica-local: the claims THIS process holds (the rows in worker_leader_lease are the shared truth), each with its heartbeat timer.
 const held = new Map<string, ReturnType<typeof setTimeout>>();
 
 /** Keep the claim alive while the build runs. Returns the function that stops the heartbeat. */

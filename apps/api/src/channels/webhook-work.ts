@@ -19,6 +19,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { inArray } from 'drizzle-orm';
 import { chatEventDedup } from '@kortix/db';
 import { db } from '../shared/db';
+import { logger } from '../lib/logger';
 import { trackDetached } from '../shared/drain';
 
 /** Slack drops a webhook that has not answered after 3 s; stay well under it. */
@@ -36,7 +37,7 @@ async function releaseClaims(keys: ReadonlySet<string>): Promise<void> {
   try {
     await db.delete(chatEventDedup).where(inArray(chatEventDedup.eventId, [...keys]));
   } catch (error) {
-    console.error('[webhook-work] claim release failed', error);
+    logger.error('[webhook-work] claim release failed', { error: error instanceof Error ? error.message : String(error) });
   }
 }
 
@@ -55,7 +56,7 @@ export async function runWebhookWork(
     },
     async (error) => {
       outcome = 'failed';
-      console.error(`[${label}] handler failed`, error);
+      logger.error(`[${label}] handler failed`, { error: error instanceof Error ? error.message : String(error) });
       if (options.releaseOnFailure !== false) await releaseClaims(claims);
     },
   );

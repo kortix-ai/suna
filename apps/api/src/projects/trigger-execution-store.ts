@@ -5,6 +5,7 @@ import { featureFlagDef } from '../feature-flags/registry';
 import { nextTriggerScheduleSlot } from './trigger-schedule';
 import type { GitTriggerSpec } from './triggers';
 import { exponentialBackoffMs } from '../shared/backoff';
+import { logger } from '../lib/logger';
 import { mapWithConcurrency } from '../shared/map-with-concurrency';
 import { cronSlotFields } from './lib/trigger-payload';
 
@@ -263,7 +264,7 @@ export async function claimTriggerExecutions(input: {
         .returning();
       return row ?? null;
     } catch (error) {
-      console.error('[trigger-executions] claim failed', { executionId: candidate.executionId, error });
+      logger.error('[trigger-executions] claim failed', { executionId: candidate.executionId, error: error instanceof Error ? error.message : String(error) });
       return null;
     }
   });
