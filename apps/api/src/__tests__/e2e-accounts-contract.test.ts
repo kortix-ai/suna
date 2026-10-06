@@ -393,6 +393,8 @@ mock.module('../shared/resolve-account', () => ({
 
 mock.module('../shared/db', () => ({
   hasDatabase: () => true,
+  // accounts/seat-lock.ts (#9272) runs the invite accept in a transaction.
+  withDbTransaction: <T>(fn: () => Promise<T>) => fn(),
   db: {
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
