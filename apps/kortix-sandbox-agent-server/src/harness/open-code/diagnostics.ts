@@ -24,6 +24,7 @@ import {
   opencodeSessionInFlight,
 } from './opencode-turn-state'
 import { readOpenCodeSessionPin } from './runtime-state'
+import { opencodeSupportsSteer, runningOpencodeVersion } from './turns'
 
 import type { OpenCodeBootState } from './boot-state'
 
@@ -238,7 +239,11 @@ export function createOpenCodeDiagnosticsService(
 ): HarnessDiagnosticsService {
   return {
     // Every session feature the pi harness answers 501 for is native here.
-    capabilities: [...RUNTIME_CAPABILITIES],
+    // Steering needs OpenCode 1.18.15 or later; an unknown version does not list it.
+    capabilities: async () => {
+      const steer = opencodeSupportsSteer(await runningOpencodeVersion())
+      return RUNTIME_CAPABILITIES.filter((capability) => capability !== 'session.steer' || steer === true)
+    },
     catalogSnapshot: catalogSnapshotForHealth,
     health: (context, query) => readOpenCodeHealth(context, opencode, query),
     report: (context, tail) => readOpenCodeDiagnosticReport(opencode, home, context, tail),

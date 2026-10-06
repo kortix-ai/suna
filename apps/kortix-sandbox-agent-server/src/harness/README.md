@@ -57,7 +57,7 @@ route, the body, the credential, the retries and the dead-token breaker.
 
 | Module | Callback |
 | --- | --- |
-| `shared/turn-relay.ts` | `POST /projects/:id/turn-stream` (initial-turn claim, `turn_accepted`, `turn_abandoned`, `runtime_session` pin, `turn_begin`, `end`, memory-guard end), `/turn-question`, `/turn-permission` |
+| `shared/turn-relay.ts` | `POST /projects/:id/turn-stream` (initial-turn claim, `turn_accepted`, `turn_abandoned`, `runtime_session` pin, `turn_begin`, `end`, `steer_read`, memory-guard end), `/turn-question`, `/turn-permission` |
 | `shared/projection-relay.ts` | `POST /platform/runtime-projection`; the adapter registers its state reader |
 | `shared/audit-relay.ts` | `POST /projects/:id/sessions/:id/audit/events`: sanitize, batch, spool; batches carry `source: 'runtime'` and the harness id. pi feeds it every frame it publishes (`PiRuntimeHooks.onFrame`), so pi sessions have a tool audit trail |
 | `shared/boot-timeline-relay.ts` | `POST /platform/boot-timeline` |
@@ -74,8 +74,10 @@ spellings (`opencode_session_id`, kind `opencode_session`) from older daemons.
 extensions are in `details`), `runtimeReady` computed once from both, and
 `capabilities`: the host's `file.import`/`file.append`, the control's
 `config.release.v1` (both harnesses), and the session features the runtime serves
-(`HarnessDiagnosticsService.capabilities`: all ten on OpenCode;
-`session.subagents`, `session.compact` and `session.commands` on pi). The pre-W3 flat fields (`opencode`, `opencode_pid`,
+(`HarnessDiagnosticsService.capabilities()`, read on each health call: all eleven
+on OpenCode 1.18.15 and later, the ten without `session.steer` on an older or
+unknown OpenCode version; `session.subagents`, `session.compact`,
+`session.commands` and `session.steer` on pi). The pre-W3 flat fields (`opencode`, `opencode_pid`,
 `opencode_port`, `opencode_session_id`, …) are composed from the block in
 `routes/kortix/legacy-names.ts` for an older API.
 
@@ -87,6 +89,38 @@ ports for harness behavior. They import no adapter module; adapters import no
 other adapter, no route and nothing in `src/app/`. The app hands a boot what it
 needs through `HarnessBootContext` (`serve` starts the HTTP server).
 `bun run lint` enforces all of it.
+
+## Steering
+
+`POST /kortix/runtime/sessions/:id/steer` takes the `/prompt` body with
+`message_id` required (400 without it), behind the same auth, readiness gate
+and `X-Kortix-Turn-Verb` header. The running turn reads the message at its next
+step boundary, after the running tool batch; the turn does not stop. Answers:
+`202 { message_id, steered: true }`; `200 { deduplicated: true }` for an id
+already admitted, steered or on the transcript; `409 { code: 'no_active_turn' }`
+when no turn runs (nothing is stored, the caller sends a prompt);
+`501 { code: 'feature_not_supported' }` on OpenCode older than 1.18.15.
+
+- **Read.** pi: the loop emits the message as a user message
+  (`steeringMode: 'all'`: every message steered before one boundary arrives
+  together). The daemon publishes it on the wire then, under its id, and the
+  replies after it name it as `parentID`. OpenCode: the first assistant
+  `message.updated` whose `parentID` is the steered id. Both relay `steer_read`
+  once per id (`shared/turn-relay.ts`).
+- **Withdraw.** `DELETE /kortix/runtime/messages/:sid/:mid` on an unread
+  steered message removes it (pi: 200, from kortixd's queue in front of
+  `agent.steer()`; pi can only clear its queue, so the rest are steered again in
+  order). A read one answers `409 { error: 'message is already running' }`.
+  OpenCode keeps its own DELETE semantics.
+- **Leftovers (pi).** A turn that ends on its own with unread steered messages
+  starts the next turn with them, in the same queue slot: the first is its
+  prompt, the rest are read before its first model call. A stopped turn (Stop,
+  Quick Queue, the no-progress watchdog) drops them. OpenCode needs neither: its
+  loop does not end while a newer user message is unanswered.
+- **Gaps.** A steered message keeps the turn's model, agent and variant. On pi
+  it does not run extension `input` handlers, `/skill:` or prompt-template
+  expansion (a prompt does). Unread steered messages live in memory: a daemon
+  restart loses them.
 
 ## The pi harness
 

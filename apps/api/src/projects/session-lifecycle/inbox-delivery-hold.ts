@@ -2,6 +2,7 @@ import { sessionLifecycleCommands } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { type CommandLease, ownedByLease } from './command-lease';
+import { isHeld, isStopPausedOnDelivery } from './delivery-state';
 
 export class InboxDeliveryPaused extends Error {
   constructor() {
@@ -30,8 +31,8 @@ export async function assertInboxDeliveryActive(lease: CommandLease): Promise<vo
   if (
     !row ||
     (row.status !== 'succeeded' && row.lockedBy !== lease.lockedBy) ||
-    row.result?.held === true ||
-    row.payload?.stopPausedOnDelivery === true
+    isHeld(row.result) ||
+    isStopPausedOnDelivery(row.payload)
   ) {
     throw new InboxDeliveryPaused();
   }

@@ -55,6 +55,12 @@ describe('isPrivateIp', () => {
     ['1.1.1.1', false],
     ['172.15.0.1', false], // just below 172.16/12
     ['172.32.0.1', false], // just above
+    ['192.0.0.9', true], // IETF protocol assignments
+    ['192.88.99.1', true], // 6to4 relay anycast
+    ['2002:7f00:1::1', true], // 6to4 wrapping 127.0.0.1
+    ['2002:0a00:0001::', true], // 6to4 wrapping 10.0.0.1
+    ['2002:0808:0808::', false], // 6to4 wrapping 8.8.8.8
+    ['2001:0:4136:e378:8000:63bf:3fff:fdd2', true], // Teredo
     // IPv6
     ['::1', true],
     ['::', true],
@@ -141,6 +147,25 @@ describe('safeEgressFetch', () => {
     expect(fetchCalls).toHaveLength(1);
     expect(fetchCalls[0].init?.redirect).toBe('manual');
   });
+  test('DNS rebinding: the connect uses the checked address, never a second lookup', async () => {
+    let lookups = 0;
+    dnsResults['rebind.example'] = [{ address: '93.184.216.34', family: 4 }];
+    const answers = dnsResults;
+    // A second resolution would now return the metadata address.
+    Object.defineProperty(answers, 'rebind.example', {
+      get() {
+        lookups += 1;
+        return lookups === 1
+          ? [{ address: '93.184.216.34', family: 4 }]
+          : [{ address: '169.254.169.254', family: 4 }];
+      },
+    });
+    fetchResponses = [{ status: 200, body: 'ok' }];
+    await safeEgressFetch('https://rebind.example/x');
+    expect(lookups).toBe(1);
+    expect(fetchCalls[0].url).toBe('https://93.184.216.34/x');
+    expect((fetchCalls[0].init as { tls?: { serverName?: string } }).tls?.serverName).toBe('rebind.example');
+  });
   test('blocks the fetch entirely when the host resolves to a private IP (no fetch issued)', async () => {
     dnsResults['rebind.evil'] = [{ address: '169.254.169.254', family: 4 }];
     await expect(safeEgressFetch('https://rebind.evil/x')).rejects.toBeInstanceOf(UnsafeEgressError);
@@ -156,10 +181,13 @@ describe('safeEgressFetch', () => {
     const res = await safeEgressFetch('https://a.example/start');
     expect(res.status).toBe(200);
     expect(await res.text()).toBe('arrived');
+    // Each hop connects to the address it resolved, and keeps the name in Host.
     expect(fetchCalls.map((c) => c.url)).toEqual([
-      'https://a.example/start',
-      'https://b.example/dest',
+      'https://93.184.216.34/start',
+      'https://93.184.216.35/dest',
     ]);
+    expect(new Headers(fetchCalls[0].init?.headers).get('host')).toBe('a.example');
+    expect(new Headers(fetchCalls[1].init?.headers).get('host')).toBe('b.example');
   });
   test('blocks a redirect to a private IP host', async () => {
     dnsResults['a.example'] = [{ address: '93.184.216.34', family: 4 }];

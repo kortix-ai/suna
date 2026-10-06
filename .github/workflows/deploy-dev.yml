@@ -292,7 +292,7 @@ jobs:
       ${{ always()
         && needs.detect-changes.outputs.terraform == 'true'
         && vars.TF_APPLY_ROLE_ARN_DEV != ''
-        && github.ref == 'refs/heads/main'
+        && github.ref == 'refs/heads/dev'
         && (needs.build-api.result == 'success' || needs.build-api.result == 'skipped') }}
     permissions:
       contents: read
@@ -315,7 +315,7 @@ jobs:
       ${{ always()
         && needs.detect-changes.outputs.terraform == 'true'
         && vars.TF_APPLY_ROLE_ARN_DEV != ''
-        && github.ref == 'refs/heads/main'
+        && github.ref == 'refs/heads/dev'
         && (needs.terraform-dev-api.result == 'success' || needs.terraform-dev-api.result == 'skipped') }}
     permissions:
       contents: read
@@ -1431,7 +1431,7 @@ jobs:
     name: Announce live on dev
     needs: [detect-changes, deploy-api-ecs, verify-gateway-dev-parity, verify-web-dev]
     if: ${{ always() && !cancelled()
-      && github.ref == 'refs/heads/main'
+      && github.ref == 'refs/heads/dev'
       && (needs.detect-changes.outputs.api == 'true'
         || needs.detect-changes.outputs.gateway == 'true'
         || needs.detect-changes.outputs.frontend == 'true') }}
