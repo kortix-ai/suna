@@ -8,6 +8,21 @@ const KNOWN_BROWSER_NOISE_MESSAGES = [
   'MetaMask extension not found',
   'Looks like your website URL has changed',
   'CookieYes account',
+  // Timed-out extension window-message call. A third-party injected script
+  // (e.g. an extension content script) sends a `chrome: call method`
+  // window-message RPC (page world → extension world over `window.postMessage`)
+  // and rejects with this exact wording when no receiver answers within its
+  // own timeout. The throw is in the injected script, never first-party code:
+  // our bundles and API never emit a `chrome:` message channel, and this app
+  // serves no `/assets/js/` file (the observed throw-site frame is
+  // `app:///assets/js/content.js`, a bundled extension content script).
+  // Better Stack pattern `6f121228…` (Kortix Frontend prod, application_id
+  // 2346967): 1 occurrence / 0 users, 2026-10-03, marketing homepage `/`.
+  // Independent third-party Sentry ignore lists classify the same wording as
+  // a timed-out extension call. ponytail: exact-message anchor; widen to a
+  // generic `/^Window message ".+" timed out\.$/` rule if a second extension
+  // channel ever pages with the same helper wording.
+  'Window message "chrome: call method" timed out.',
   // Third-party injected scripts / extensions / scanner bots that monkey-patch
   // native Promise internals (e.g. `promise.then = ...`). The native Promise
   // prototype is read-only, so the assignment throws a TypeError that surfaces

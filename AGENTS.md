@@ -418,8 +418,9 @@ these as standing rules whenever you touch the data/runtime layer:
   `GET /kortix/health` lists `capabilities` (`RUNTIME_CAPABILITIES` in
   `packages/api-contract/src/runtime-relay.ts`), and a client gates the
   control with `runtimeSupports`. OpenCode lists all ten; pi lists
-  `session.subagents`. pi does not serve rewind, compaction, slash commands,
-  MCP servers, the todo list, shell turns, part edits or `session.attach`.
+  `session.subagents`, `session.compact` and `session.commands`. pi does not
+  serve rewind, MCP servers, the todo list, shell turns, part edits or
+  `session.attach`.
   The harness rules and the pi gap list are in
   `apps/kortix-sandbox-agent-server/src/harness/README.md`.
 - **`apps/web` data modules are shims.** Files such as
@@ -655,9 +656,31 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 - `pnpm --filter kortix-api lint` runs in the `Tests` packages lane. Its rules
   are in `apps/api/eslint.config.mjs`: layered imports, no Drizzle in route
   files, no `(c: any)`, no `process.env` outside `config.ts`, no
-  `console.*`, and a `replica-local:` comment on every empty module-level
-  `Map`/`Set`. Background timers are guarded by
+  `console.*`, a `replica-local:` comment on every empty module-level
+  `Map`/`Set`, and no import into `projects/` from outside it except
+  `projects/index.ts` or `projects/surface.ts`. Background timers are guarded by
   `apps/api/src/__tests__/unit-worker-scope-wiring.test.ts` instead.
+
+### API code conventions (`apps/api/src`)
+
+- **Routes register explicitly.** A route module exports
+  `register<Name>Routes()`. The module that mounts the router calls it right
+  before `app.route()` (`app.ts`, `accounts/index.ts`, `router/index.ts`).
+  Never register at import time. Call order is dispatch order.
+- **No service imports a route module.** Shared logic lives in a service file
+  next to the routes (for example `projects/session-open/`).
+- **Services take an `Actor`, never a Hono `Context`.** The route reads the
+  request through `middleware/` and `http-*.ts` helpers, builds the actor
+  (`middleware/actor.ts`, memoized per request), and calls the service with
+  plain values. Parse `Authorization: Bearer` with `shared/bearer-token.ts`.
+- **Every background loop lives in `workers/<name>-worker.ts`.** The worker
+  owns its timer, start/stop and `runWorkerTick` call. The tick stays an
+  exported service function. `bootstrap.ts` imports every loop from `workers/`.
+- **`iam/` reads the membership, group and role tables.** Use the read models
+  in `iam/membership-read.ts`, `iam/group-read.ts` and `iam/role-read.ts`.
+- **No function longer than 300 lines.** Split long functions into named steps.
+- **SQL trace:** `KORTIX_SQL_TRACE=<file>` appends every pool statement to the
+  file. Diff two traces to prove a refactor runs the same SQL.
 - `apps/api/eslint-suppressions.json` holds the violations that existed when
   each rule was added. A new violation fails. A fixed one fails until you run
   `pnpm --filter kortix-api lint:prune` and commit the smaller file. Never
@@ -666,8 +689,7 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 ### Frontend type/lint gate
 
 - `apps/web` `tsc --noEmit` is clean apart from ~15 known `@types/bun`
-  `test.each` errors in 3 test files (`app/(system)/api/og/template/template-url.test.ts`,
-  `features/file-viewer/preview-fit.test.tsx`,
+  `test.each` errors in 2 test files (`features/file-viewer/preview-fit.test.tsx`,
   `features/session/action-panel/easy/easy-panel-logic.test.ts`).
   The old ~1500 `TS2786` / `IntrinsicAttributes` noise from a React 19↔18
   types mismatch (two copies of `@types/react` in one program — `packages/sdk`

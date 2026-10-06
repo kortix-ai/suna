@@ -56,7 +56,7 @@ export function SecurityHeroVisual(): ReactNode {
         outside: isolation.outside.label,
       })}
     >
-      <div className="relative h-[24rem] w-full max-w-3xl overflow-hidden rounded-xl border border-border bg-background sm:h-[27rem]">
+      <div className="relative h-[24rem] w-full max-w-[38rem] overflow-hidden sm:h-[27rem]">
         {/* ── what never gets in ──────────────────────────────────────── */}
         {outside.map((item, i) => (
           <div

@@ -1027,7 +1027,7 @@ describe('managed models present as Kortix (descriptor.publicProvider)', () => {
       '"message":"Upstream error from Decart: Requested token count exceeds the model\'s maximum context length of 1048576 tokens."}}\n\n';
     const { response, text, calls } = await runManaged(
       (url) =>
-        url.startsWith('https://morph.example')
+        new URL(url).hostname === 'morph.example'
           ? new Response('{"error":{"message":"Invalid request","type":"invalid_request_error"}}', { status: 400 })
           : new Response(`: OPENROUTER PROCESSING\n\n${overflow}data: [DONE]\n\n`, {
               status: 200, headers: { 'content-type': 'text/event-stream' },
@@ -1206,10 +1206,20 @@ describe('model fallback chains (route.fallbackModels)', () => {
       attempts: 2,
       resolvedModel: 'fallback-model',
       candidatesTried: ['primary-upstream', 'fallback-upstream:fallback-model'],
+      // The route ids a session can show: what answered, and what it stood in for.
+      servedModel: 'fallback-model',
+      fallbackFrom: 'primary-model',
     });
     expect(traces.at(-1)?.attemptFailures?.map((f) => [f.provider, f.routeModel, f.status])).toEqual([
       ['primary-upstream', 'primary-model', 503],
     ]);
+  });
+
+  test('a request its own model answers names that model and no fallback', async () => {
+    const { response, traces } = await run({ respond: () => ok('from primary') });
+    expect(response.status).toBe(200);
+    expect(traces.at(-1)).toMatchObject({ ok: true, servedModel: 'primary-model' });
+    expect(traces.at(-1)).not.toHaveProperty('fallbackFrom');
   });
 
   // Incident 2026-09-28: a routed model the provider would not serve (404 —

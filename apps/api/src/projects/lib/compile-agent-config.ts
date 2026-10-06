@@ -69,7 +69,7 @@ import {
  * One compiled agent (`CompiledAgent` in `@kortix/api-contract/runtime-relay`,
  * the shape both harnesses read), with the manifest's permission type.
  */
-export type CompiledAgentEntry = CompiledAgent & { permission?: PermissionConfigV2 };
+type CompiledAgentEntry = CompiledAgent & { permission?: PermissionConfigV2 };
 
 /**
  * The compiled agent set `compileAgentConfig` produces (`CompiledAgentSet`).
@@ -78,7 +78,7 @@ export type CompiledAgentEntry = CompiledAgent & { permission?: PermissionConfig
  * agent declares none. `default_agent` is omitted when that agent is disabled
  * or a subagent, which cannot run as the primary.
  */
-export type CompiledAgents = CompiledAgentSet & { agent: Record<string, CompiledAgentEntry> };
+type CompiledAgents = CompiledAgentSet & { agent: Record<string, CompiledAgentEntry> };
 
 /** Raised when a v2 manifest can't be compiled — a genuine authoring error
  *  (malformed `.md` frontmatter, unsupported runtime), not a transient I/O
@@ -632,14 +632,6 @@ async function readManifestV2(project: GitBackedProject, baseRef?: string | null
   }
 }
 
-export async function resolveManifestRuntime(
-  project: GitBackedProject,
-  baseRef?: string | null,
-): Promise<RuntimeV2 | null> {
-  const raw = await readManifestV2(project, baseRef);
-  return raw ? manifestRuntime(raw) : null;
-}
-
 export async function resolveManifestPiPackageLists(project: GitBackedProject, baseRef?: string | null): Promise<unknown[][]> {
   return manifestPiPackageLists(await readManifestV2(project, baseRef));
 }
@@ -649,7 +641,7 @@ export async function resolveManifestPiPackageLists(project: GitBackedProject, b
  * session env builder uses it to learn `runtime:` from the same read that
  * compiles the agent config.
  */
-export interface CompileReadOptions {
+interface CompileReadOptions {
   onManifest?: (raw: Record<string, unknown>) => void;
   /**
    * Force the manifest read's mirror refresh with the ref-scoped freshness

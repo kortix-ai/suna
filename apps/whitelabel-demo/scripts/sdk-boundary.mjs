@@ -1,6 +1,11 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { dirname, extname, join, relative } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  lineNumber,
+  sourceFiles,
+  staticFetchTarget,
+} from '../../../scripts/lib/sdk-boundary-scan.mjs';
 
 const APP_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const REPO_ROOT = join(APP_ROOT, '..', '..');
@@ -8,6 +13,7 @@ const CLIENT_ROOT = join(APP_ROOT, 'src');
 const TEST_ROOT = join(APP_ROOT, 'tests');
 const REPOSITORY_TEST_ROOT = join(REPO_ROOT, 'tests', 'e2e', 'specs');
 const SOURCE_EXTENSIONS = new Set(['.js', '.jsx', '.mjs', '.ts', '.tsx']);
+
 const UI_ROOT = join(CLIENT_ROOT, 'components', 'ui');
 const API_ROOT = join(CLIENT_ROOT, 'app', 'api');
 const SERVER_ROOT = join(CLIENT_ROOT, 'server');
@@ -95,56 +101,18 @@ function isFeatureClient(path) {
   );
 }
 
-function sourceFiles(directory) {
-  const files = [];
-  for (const entry of readdirSync(directory)) {
-    const path = join(directory, entry);
-    const stats = statSync(path);
-    if (stats.isDirectory()) {
-      files.push(...sourceFiles(path));
-      continue;
-    }
-    if (SOURCE_EXTENSIONS.has(extname(path))) files.push(path);
-  }
-  return files;
-}
-
-function lineNumber(source, index) {
-  return source.slice(0, index).split('\n').length;
-}
-
 function rawFetchViolations(source, client) {
   const violations = [];
   const fetchPattern = /\bfetch\s*\(/g;
   for (const match of source.matchAll(fetchPattern)) {
-    const expression = source
-      .slice((match.index ?? 0) + match[0].length)
-      .trimStart();
-    const quote = expression[0];
-    let target = null;
-    if (quote === "'" || quote === '"') {
-      const end = expression.indexOf(quote, 1);
-      if (end > 0) target = expression.slice(1, end);
-    } else if (quote === '`') {
-      // Template literal: judge it by its STATIC PREFIX — the text before the
-      // first interpolation. `/api/x?id=${v}` is as verifiable as the string
-      // form; a template whose BASE is dynamic (`${base}/api/x`) still has an
-      // empty prefix and is correctly rejected. Without this, an app route with
-      // query params could not be called at all.
-      const end = expression.indexOf('`', 1);
-      const raw = end > 0 ? expression.slice(1, end) : expression.slice(1);
-      const interp = raw.indexOf('${');
-      const prefix = interp >= 0 ? raw.slice(0, interp) : raw;
-      target = prefix.length > 0 ? prefix : null;
-    }
+    const expression = source.slice((match.index ?? 0) + match[0].length).trimStart();
+    const target = staticFetchTarget(expression);
     const isAllowed =
       client &&
       target !== null &&
       ALLOWED_CLIENT_BFF_ROUTES.some(
         (route) =>
-          target === route ||
-          target.startsWith(`${route}/`) ||
-          target.startsWith(`${route}?`),
+          target === route || target.startsWith(`${route}/`) || target.startsWith(`${route}?`),
       );
     if (!isAllowed) {
       violations.push({
@@ -179,22 +147,19 @@ export function scanSource(source, options = { client: true }) {
 }
 
 export function scanWhiteLabelBoundary() {
-  return sourceFiles(CLIENT_ROOT).flatMap((path) => {
+  return sourceFiles(CLIENT_ROOT, { extensions: SOURCE_EXTENSIONS }).flatMap((path) => {
     const source = readFileSync(path, 'utf8');
-    return scanSource(source, { client: isFeatureClient(path) }).map(
-      (violation) => ({
-        ...violation,
-        file: relative(APP_ROOT, path),
-        line: lineNumber(source, violation.index),
-      }),
-    );
+    return scanSource(source, { client: isFeatureClient(path) }).map((violation) => ({
+      ...violation,
+      file: relative(APP_ROOT, path),
+      line: lineNumber(source, violation.index),
+    }));
   });
 }
 
 export function scanTestSource(source) {
   const violations = [];
-  const internalSdkImportPattern =
-    /['"][^'"]*packages\/sdk\/src(?:\/[^'"]*)?['"]/g;
+  const internalSdkImportPattern = /['"][^'"]*packages\/sdk\/src(?:\/[^'"]*)?['"]/g;
   for (const match of source.matchAll(internalSdkImportPattern)) {
     violations.push({
       rule: 'test-sdk-internal-import',
@@ -203,8 +168,7 @@ export function scanTestSource(source) {
       message: 'Application tests must import the public @kortix/sdk surface.',
     });
   }
-  const directTransportPattern =
-    /\bfetch\s*\([^)]{0,500}\/api\/kortix(?:\/|['"`])/g;
+  const directTransportPattern = /\bfetch\s*\([^)]{0,500}\/api\/kortix(?:\/|['"`])/g;
   for (const match of source.matchAll(directTransportPattern)) {
     violations.push({
       rule: 'test-raw-kortix-transport',
@@ -228,31 +192,25 @@ export function scanWhiteLabelTestBoundary() {
 }
 
 export function listWhiteLabelTestFiles() {
-  const localTests = sourceFiles(TEST_ROOT).filter(
+  const localTests = sourceFiles(TEST_ROOT, { extensions: SOURCE_EXTENSIONS }).filter(
     (path) =>
-      /\.test\.[cm]?[jt]sx?$/.test(path) &&
-      !path.endsWith(join('e2e', 'sdk-boundary.test.ts')),
+      /\.test\.[cm]?[jt]sx?$/.test(path) && !path.endsWith(join('e2e', 'sdk-boundary.test.ts')),
   );
-  const repositoryTests = sourceFiles(REPOSITORY_TEST_ROOT).filter(
-    (path) => /(?:whitelabel|sdk-only-session).*\.spec\.[cm]?[jt]sx?$/.test(path),
-  );
+  const repositoryTests = sourceFiles(REPOSITORY_TEST_ROOT, {
+    extensions: SOURCE_EXTENSIONS,
+  }).filter((path) => /(?:whitelabel|sdk-only-session).*\.spec\.[cm]?[jt]sx?$/.test(path));
   return [...localTests, ...repositoryTests];
 }
 
 function run() {
-  const violations = [
-    ...scanWhiteLabelBoundary(),
-    ...scanWhiteLabelTestBoundary(),
-  ];
+  const violations = [...scanWhiteLabelBoundary(), ...scanWhiteLabelTestBoundary()];
   if (violations.length === 0) {
     console.log('White-label SDK boundary: 0 violations.');
     return;
   }
 
   for (const violation of violations) {
-    console.error(
-      `${violation.file}:${violation.line} [${violation.rule}] ${violation.message}`,
-    );
+    console.error(`${violation.file}:${violation.line} [${violation.rule}] ${violation.message}`);
   }
   console.error(`White-label SDK boundary: ${violations.length} violation(s).`);
   process.exitCode = 1;

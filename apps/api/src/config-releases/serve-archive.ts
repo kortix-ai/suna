@@ -7,7 +7,7 @@
  *    to unrelated history, CFG-7): the store is tried directly by its
  *    project-scoped key. A hit is served exactly like step 3 below. On a miss,
  *    the tree may be the composed release tree of the `commit` the path names
- *    (config dir plus root skills and the pi config dir, see `composeReleaseTree`): it is rebuilt
+ *    (an agent variant's plugin selection, see `composeReleaseTree`): it is rebuilt
  *    from that commit and served like step 4. Anything else is 404.
  * 3. In the mirror: the store presigns a download URL. Public host: `302` to
  *    it. Loopback or private host: stream the stored bytes. A cloud sandbox
@@ -85,6 +85,8 @@ export interface ServeConfigArchiveDeps {
   store?: ConfigArchiveStore;
   publicOverride?: string | null;
   fetch?: (input: string) => Promise<Response>;
+  /** Tests only: a smaller archive cap, so the over-limit case needs no 32 MiB fixture. */
+  archiveLimit?: number;
 }
 
 function gzipResponse(bytes: Uint8Array, treeId: string, source: 'store' | 'mirror'): Response {
@@ -189,7 +191,7 @@ export async function serveConfigArchive(
 
   // Builds the archive when the store cannot serve it. A composed tree exists
   // only in a scratch repository, so it is rebuilt from its commit.
-  let build: () => Promise<Buffer> = () => buildConfigArchive(repo, treeId);
+  let build: () => Promise<Buffer> = () => buildConfigArchive(repo, treeId, deps.archiveLimit);
   if (!inMirror) {
     try {
       const served = await tryServeFromStore(store, key, treeId, publicOverride, fetchImpl);

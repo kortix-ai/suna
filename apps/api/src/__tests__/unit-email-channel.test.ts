@@ -72,7 +72,7 @@ const {
   setEmailSessionLifecycleForTest,
 } = await import('../channels/email/session');
 const { emailWebhookApp } = await import('../channels/email/app');
-await import('../channels/email/routes');
+(await import('../channels/email/routes')).registerEmailWebhookRoutes();
 
 const event: AgentMailMessageReceivedEvent = {
   type: 'event',

@@ -10,6 +10,7 @@
  */
 
 import { Button } from '@/components/ui/button';
+import type { PermissionRequest } from '@kortix/sdk';
 import type { KortixSendError } from '@kortix/sdk/react';
 import { ShieldQuestion } from 'lucide-react';
 import { useState } from 'react';
@@ -19,11 +20,8 @@ export function PermissionPrompt({
   request,
   onAnswer,
 }: {
-  request: Record<string, any>;
-  onAnswer: (
-    requestId: string,
-    decision: 'once' | 'always' | 'reject',
-  ) => Promise<void>;
+  request: PermissionRequest;
+  onAnswer: (requestId: string, decision: 'once' | 'always' | 'reject') => Promise<void>;
 }) {
   const [sending, setSending] = useState(false);
   const label = String(request.permission ?? 'this action').replace(/[._-]/g, ' ');

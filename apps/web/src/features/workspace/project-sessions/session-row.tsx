@@ -2,6 +2,7 @@
 
 import {
   SESSION_STATUS_TRANSLATION_KEY,
+  sessionCanBeStopped,
   sessionDisplayStatus,
   sessionSource,
   type SessionDisplayStatus,
@@ -237,6 +238,9 @@ function SessionRowImpl({
   // to change access and everyone else to read who else has it.
   const canManageSharing = session.can_manage_sharing !== false && !isDeleted;
   const hasLifecycleActions = access.canOpen && !isDeleted;
+  // Restart, Stop and Delete are the owner's or a project manager's; the server
+  // answers anyone else 403. Opening the session is not enough.
+  const canManageLifecycle = hasLifecycleActions && session.can_manage_lifecycle !== false;
   const showAccessEntry = hasLifecycleActions;
   const hasActions = hasLifecycleActions;
   const relativeLabel = time.relative ? shortRelative(time.relative) : '';
@@ -433,7 +437,7 @@ function SessionRowImpl({
                         {canManageSharing ? 'Share' : tI18nComplete.raw('textadc01d813da0')}
                       </DropdownMenuItem>
                     ) : null}
-                    {hasLifecycleActions ? (
+                    {canManageLifecycle ? (
                       <DropdownMenuItem
                         className="cursor-pointer"
                         disabled={restarting}
@@ -449,7 +453,7 @@ function SessionRowImpl({
                         {tI18nComplete.raw('text6b983a81e5e8')}
                       </DropdownMenuItem>
                     ) : null}
-                    {session.status === 'running' && hasLifecycleActions ? (
+                    {sessionCanBeStopped(session) && canManageLifecycle ? (
                       <DropdownMenuItem
                         className="cursor-pointer"
                         disabled={stopping}
@@ -461,7 +465,7 @@ function SessionRowImpl({
                         {tI18nComplete.raw('textcae7d57bc067')}
                       </DropdownMenuItem>
                     ) : null}
-                    {hasLifecycleActions ? (
+                    {canManageLifecycle ? (
                       <DropdownMenuItem
                         className="cursor-pointer"
                         variant="destructive"

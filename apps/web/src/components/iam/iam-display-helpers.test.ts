@@ -1,8 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
   countOverridingMembers,
-  floatCurrentUserFirst,
-  inheritedFromGroupSummary,
   isInheritedFromGroupOnly,
   isOverridingAccountRole,
   sortGroupMembersByOverride,
@@ -105,39 +103,6 @@ describe('sortGroupMembersByOverride', () => {
   });
 });
 
-describe('floatCurrentUserFirst', () => {
-  const list = [{ user_id: 'a' }, { user_id: 'b' }, { user_id: 'me' }, { user_id: 'c' }];
-
-  test('moves the current user to position 0', () => {
-    expect(floatCurrentUserFirst(list, 'me').map((m) => m.user_id)).toEqual(['me', 'a', 'b', 'c']);
-  });
-
-  test('no-op when current user already first', () => {
-    const me = [{ user_id: 'me' }, { user_id: 'a' }];
-    const result = floatCurrentUserFirst(me, 'me');
-    expect(result.map((m) => m.user_id)).toEqual(['me', 'a']);
-  });
-
-  test('no-op when current user is absent', () => {
-    expect(floatCurrentUserFirst(list, 'absent').map((m) => m.user_id)).toEqual([
-      'a',
-      'b',
-      'me',
-      'c',
-    ]);
-  });
-
-  test('no-op when currentUserId is null', () => {
-    expect(floatCurrentUserFirst(list, null).map((m) => m.user_id)).toEqual(['a', 'b', 'me', 'c']);
-  });
-
-  test('does not mutate the input', () => {
-    const before = list.map((m) => m.user_id);
-    floatCurrentUserFirst(list, 'me');
-    expect(list.map((m) => m.user_id)).toEqual(before);
-  });
-});
-
 describe('isInheritedFromGroupOnly', () => {
   test('true: no direct grant, no implicit, has group source', () => {
     expect(
@@ -191,68 +156,5 @@ describe('isInheritedFromGroupOnly', () => {
         effective_project_role: null,
       }),
     ).toBe(false);
-  });
-});
-
-describe('inheritedFromGroupSummary', () => {
-  test('single group: "Inherited Project member via Users"', () => {
-    expect(
-      inheritedFromGroupSummary({
-        has_implicit_access: false,
-        project_role: null,
-        effective_project_role: 'member',
-        group_sources: [{ group_name: 'Users', role: 'member' }],
-      }),
-    ).toBe('Inherited Project member via Users');
-  });
-
-  test('multiple groups: head + "+ N more"', () => {
-    expect(
-      inheritedFromGroupSummary({
-        has_implicit_access: false,
-        project_role: null,
-        effective_project_role: 'manager',
-        group_sources: [
-          { group_name: 'Engineering', role: 'manager' },
-          { group_name: 'Users', role: 'member' },
-        ],
-      }),
-    ).toBe('Inherited Project admin via Engineering + 1 more');
-  });
-
-  test('three groups: "+ 2 more"', () => {
-    expect(
-      inheritedFromGroupSummary({
-        has_implicit_access: false,
-        project_role: null,
-        effective_project_role: 'manager',
-        group_sources: [
-          { group_name: 'A', role: 'manager' },
-          { group_name: 'B', role: 'manager' },
-          { group_name: 'C', role: 'member' },
-        ],
-      }),
-    ).toBe('Inherited Project admin via A + 2 more');
-  });
-
-  test('null when the row is not group-inherited', () => {
-    expect(
-      inheritedFromGroupSummary({
-        has_implicit_access: true,
-        project_role: null,
-        effective_project_role: 'manager',
-        group_sources: [],
-      }),
-    ).toBeNull();
-  });
-
-  test('null when group_sources is omitted', () => {
-    expect(
-      inheritedFromGroupSummary({
-        has_implicit_access: false,
-        project_role: null,
-        effective_project_role: 'member',
-      }),
-    ).toBeNull();
   });
 });

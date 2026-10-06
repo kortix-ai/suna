@@ -87,14 +87,9 @@ function summaryFor(vm: ToolViewModel): string {
   }
 }
 
-function OutputBlock({ text, isError }: { text: string; isError?: boolean }) {
+function OutputBlock({ text }: { text: string }) {
   return (
-    <pre
-      className={cn(
-        'max-h-72 overflow-auto rounded-md bg-muted/50 p-2 font-mono text-[0.7rem] leading-relaxed scrollbar-thin',
-        isError ? 'text-destructive' : 'text-foreground/80',
-      )}
-    >
+    <pre className="max-h-72 overflow-auto rounded-md bg-muted/50 p-2 font-mono text-[0.7rem] leading-relaxed scrollbar-thin text-foreground/80">
       {text.slice(0, 6000)}
     </pre>
   );
@@ -137,7 +132,7 @@ function WebSearchBody({ vm }: { vm: Extract<ToolViewModel, { kind: 'web-search'
   );
 }
 
-function ShellBody({ vm }: { vm: Extract<ToolViewModel, { kind: 'shell' }>; isError: boolean }) {
+function ShellBody({ vm }: { vm: Extract<ToolViewModel, { kind: 'shell' }> }) {
   return (
     <div className="space-y-2">
       {vm.command && (
@@ -268,12 +263,7 @@ function QuestionBody({ vm }: { vm: Extract<ToolViewModel, { kind: 'question' }>
   );
 }
 
-function GenericBody({
-  vm,
-}: {
-  vm: Extract<ToolViewModel, { kind: 'generic' }>;
-  isError: boolean;
-}) {
+function GenericBody({ vm }: { vm: Extract<ToolViewModel, { kind: 'generic' }> }) {
   return (
     <div className="space-y-2">
       {vm.inputPretty && (
@@ -289,12 +279,12 @@ function GenericBody({
 /** Renders the expanded body for a `ToolViewModel`, one branch per kind —
  *  the switch is exhaustive so a new kind fails typecheck here instead of
  *  silently falling through to nothing. */
-function ToolBody({ vm, isError }: { vm: ToolViewModel; isError: boolean }) {
+function ToolBody({ vm }: { vm: ToolViewModel }) {
   switch (vm.kind) {
     case 'web-search':
       return <WebSearchBody vm={vm} />;
     case 'shell':
-      return <ShellBody vm={vm} isError={isError} />;
+      return <ShellBody vm={vm} />;
     case 'file-read':
     case 'file-write':
       return <FilePreviewBody path={vm.path} preview={vm.preview} />;
@@ -309,7 +299,7 @@ function ToolBody({ vm, isError }: { vm: ToolViewModel; isError: boolean }) {
     case 'question':
       return <QuestionBody vm={vm} />;
     case 'generic':
-      return <GenericBody vm={vm} isError={isError} />;
+      return <GenericBody vm={vm} />;
     default: {
       const _exhaustive: never = vm;
       return _exhaustive;
@@ -366,7 +356,7 @@ export function ToolCall({ tool }: { tool: ToolView }) {
       {hasDetail && (
         <CollapsibleContent>
           <div className="border-t border-border px-2.5 py-2">
-            <ToolBody vm={vm} isError={isError} />
+            <ToolBody vm={vm} />
           </div>
         </CollapsibleContent>
       )}

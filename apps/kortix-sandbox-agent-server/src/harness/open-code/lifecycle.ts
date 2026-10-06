@@ -122,9 +122,11 @@ import {
   writeSecretCapabilitiesInstruction,
 } from '@/services/sandbox-env/secret-capabilities'
 import { configReleaseNoticePath } from '@/services/config-release/notice'
-import { bootLinkPath, readBootLinkTarget } from '@/services/config-release/boot-config'
+import { bootLinkPath, readBootLinkTarget, releaseRootOf } from '@/services/config-release/boot-config'
+import { writeReleaseInstructionsPlugin } from './release-instructions'
 import { opencodeTurnInFlight } from './opencode-turn-state'
-import { MINIMAL_FALLBACK_MODELS, BUNDLED_MANAGED_MODELS, type KortixGatewayModel } from './fallback-models'
+import { CONNECTORS_MCP_COMMAND } from '@kortix/api-contract/sandbox-layout'
+import { MINIMAL_FALLBACK_MODELS, BUNDLED_MANAGED_MODELS, type KortixGatewayModel } from '@kortix/api-contract/fallback-models'
 import { SKILLS_DIR } from './project-layout'
 
 const READY_POLL_MS = 100
@@ -394,6 +396,8 @@ export async function buildOpencodeConfigContent(
     secretCapabilitiesInstructionPath?: string | null
     /** The config-release notice, when one exists (config-release/notice.ts). */
     configReleaseNoticePath?: string | null
+    /** OpenCode serves a config release: load the release instructions plugin (release-instructions.ts). */
+    servesRelease?: boolean
   } = {},
 ): Promise<string | undefined> {
   const connectorToken = env.KORTIX_TOKEN
@@ -517,6 +521,13 @@ export async function buildOpencodeConfigContent(
     out.instructions = instructions.includes(instructionPath) ? instructions : [...instructions, instructionPath]
   }
 
+  // A release's relative `instructions` resolve at the release root, not
+  // against `/workspace` (release-instructions.ts).
+  if (opts.servesRelease) {
+    const plugins = Array.isArray(out.plugin) ? out.plugin.filter((item): item is string => typeof item === 'string') : []
+    if (!plugins.includes(RELEASE_INSTRUCTIONS_PLUGIN_SPEC)) out.plugin = [...plugins, RELEASE_INSTRUCTIONS_PLUGIN_SPEC]
+  }
+
   // (5) Injected managed skills and the project root's skills — append to
   // whatever `skills.paths` the base config already declares; never clobber.
   const extraSkillDirs = [injectedSkillsDir, projectSkillsDir].filter((dir): dir is string => dir !== null)
@@ -541,16 +552,9 @@ export async function buildOpencodeConfigContent(
       ...mcp,
       'kortix-connectors': {
         type: 'local',
-        // Use the absolute path so OpenCode's MCP launcher does not depend on
-        // PATH propagation. The normal agent path is still `kortix connectors`.
-        //
-        // `connectors`, plural — it must match a real CLI command. Between
-        // 2026-08-06 (e868be1d6c) and this fix it read `connector`, which the
-        // CLI router rejects with "unknown command", so OpenCode's launcher
-        // got exit 2 and the MCP server never started. The CLI now also
-        // accepts the singular as an alias, which recovers snapshots baked
-        // with the old string.
-        command: ['/usr/local/bin/kortix', 'connectors', 'mcp'],
+        // The absolute path, so OpenCode's MCP launcher does not depend on PATH
+        // propagation. apps/cli runs this argv in a test (connectors-mcp-handshake).
+        command: [...CONNECTORS_MCP_COMMAND],
         enabled: true,
         environment: {
           // Proxy mode: the MCP talks to the localhost connector proxy with a
@@ -840,7 +844,7 @@ const BAKED_LLM_CATALOG_PATH = '/opt/kortix/llm-catalog.json'
 /** The baked path THIS process reads. `KORTIX_BAKED_LLM_CATALOG_PATH` lets a test
  *  run on a box whose image already carries the real catalog, where the image
  *  file would otherwise answer for a missing one. */
-const bakedCatalogPath = () => process.env.KORTIX_BAKED_LLM_CATALOG_PATH ?? BAKED_LLM_CATALOG_PATH
+export const bakedCatalogPath = () => process.env.KORTIX_BAKED_LLM_CATALOG_PATH ?? BAKED_LLM_CATALOG_PATH
 
 /** Read + normalize a catalog JSON file ({models:{…}} or a bare id→model map).
  *  Returns null when missing, unreadable, or empty so callers can fall through. */
@@ -1028,6 +1032,8 @@ function scheduleCatalogWarmToPath(
  * would then fail every session boot instead of one shell command.
  */
 const KORTIX_OPENCODE_CONFIG_PATH = join(OPENCODE_HOME, '.config', 'kortix-opencode.json')
+const RELEASE_INSTRUCTIONS_PLUGIN_PATH = join(OPENCODE_HOME, '.config', 'kortix-release-instructions.js')
+const RELEASE_INSTRUCTIONS_PLUGIN_SPEC = `file://${RELEASE_INSTRUCTIONS_PLUGIN_PATH}`
 
 /**
  * Materialize the composed Kortix config (see buildOpencodeConfigContent) and
@@ -1047,13 +1053,16 @@ export async function writeKortixOpencodeConfig(
     projectSkillsDir?: string | null
     secretCapabilitiesInstructionPath?: string | null
     configReleaseNoticePath?: string | null
+    servesRelease?: boolean
   } = {},
 ): Promise<string | null> {
+  if (opts.servesRelease) writeReleaseInstructionsPlugin(RELEASE_INSTRUCTIONS_PLUGIN_PATH)
   const content = await buildOpencodeConfigContent(env, {
     injectedSkillsDir: opts.injectedSkillsDir,
     projectSkillsDir: opts.projectSkillsDir,
     secretCapabilitiesInstructionPath: opts.secretCapabilitiesInstructionPath,
     configReleaseNoticePath: opts.configReleaseNoticePath,
+    servesRelease: opts.servesRelease,
   })
   if (!content) return null
   const configPath = opts.configPath ?? KORTIX_OPENCODE_CONFIG_PATH
@@ -2103,15 +2112,17 @@ export function createOpencodeLifecycle(
         err: err instanceof Error ? err.message : String(err),
       })
     }
-    // The project root's `skills/` joins only while the boot link names a dir
-    // in the working tree (config releases off). A release carries its own.
+    // The project root's `skills/` joins whenever the boot link names a config
+    // dir inside a project checkout: the working tree (config releases off), or
+    // a release, which is a checkout of the base branch with the same layout.
     const served = await readBootLinkTarget()
-    const projectRoot = currentCfg.projectTarget
-    const servesWorkingTree = !!served && !!projectRoot && served.startsWith(`${projectRoot}/`)
+    const projectRoot = served ? (releaseRootOf(served) ?? currentCfg.projectTarget) : null
+    const servesProject = !!served && !!projectRoot && served.startsWith(`${projectRoot}/`)
     return writeKortixOpencodeConfig(baseEnv, {
       configPath: options.configPathOverride,
       injectedSkillsDir: join(bootLinkPath(), 'skills'),
-      projectSkillsDir: servesWorkingTree ? join(projectRoot, SKILLS_DIR) : null,
+      projectSkillsDir: servesProject ? join(projectRoot, SKILLS_DIR) : null,
+      servesRelease: !!served && releaseRootOf(served) !== null,
       secretCapabilitiesInstructionPath,
       configReleaseNoticePath: configReleaseNoticePath(),
     })
@@ -2163,12 +2174,6 @@ export function createOpencodeLifecycle(
     // Opt-in only — no log noise in normal operation.
     if (process.env.KORTIX_OPENCODE_DEBUG === '1') {
       env.OPENCODE_LOG_LEVEL = 'DEBUG'
-    }
-    // The standalone binary already embeds a models.dev snapshot, and Kortix
-    // injects its managed provider catalog below. A remote catalog refresh adds
-    // network contention without adding a model that this session can use.
-    if (process.env.KORTIX_COMPILED_RUNTIME_FORMAT === 'kortix.compiled-runtime.v1') {
-      env.OPENCODE_DISABLE_MODELS_FETCH = '1'
     }
 
     const configPath = await writeComposedConfig(baseEnv)

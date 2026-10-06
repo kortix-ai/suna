@@ -2,7 +2,6 @@ import { type Kortix, type KortixPlatformConfig, createKortix } from '@kortix/sd
 import { runWithKortix } from '@kortix/sdk/server';
 
 import type { Auth } from './auth.ts';
-import { ApiError } from './client.ts';
 import { sdkBackendUrl } from '@kortix/shared/host-config';
 
 export { sdkBackendUrl } from '@kortix/shared/host-config';

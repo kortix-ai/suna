@@ -22,6 +22,7 @@ let homeRenders = 0;
 let thread: any;
 let threadRenders = 0;
 let reviewData: any[] = [];
+let actionsSheet: any;
 let tree: ReactTestRenderer | undefined;
 let ProjectScreen: typeof import('./ProjectScreen').ProjectScreen;
 
@@ -44,8 +45,9 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/components/session/SessionPage': { SessionPage: (props: any) => { threadRenders++; thread = props; return null; } },
   '@/components/session/ProjectLeftDrawer': { ProjectLeftDrawer: (props: any) => { drawer = props; return null; } },
   '@/components/session/FloatingMenuButton': { FloatingMenuButton: Empty },
+  '@/components/session/SessionActionsSheet': { SessionActionsSheet: React.forwardRef((props: any, _ref) => { actionsSheet = props; return null; }) },
   'react-native-drawer-layout': { Drawer: ({ children, renderDrawerContent }: any) => React.createElement(React.Fragment, null, renderDrawerContent(), children) },
-  '@/stores/tab-store': { PAGE_TABS: {}, useTabStore: Object.assign((selector: any) => selector(tab), { getState: () => tab, subscribe: () => () => {} }) },
+  '@/stores/tab-store': { PAGE_TABS: { 'page:files-nav': { id: 'page:files-nav', label: 'Files' } }, useTabStore: Object.assign((selector: any) => selector(tab), { getState: () => tab, subscribe: () => () => {} }) },
   // One object, as the real context's value: stable callbacks across renders.
   '@/contexts/SandboxContext': { useSandboxContext: () => sandbox },
   '@/contexts': { useAuthContext: () => ({ user: null }) },
@@ -93,6 +95,9 @@ for (const [, name] of source.matchAll(/from ['"]([^'"]+)['"]/g)) {
   }
   mock.module(name, () => ({ default: Empty, ...values }));
 }
+// A sub-page's module is required on first render (`Pages`), not imported.
+const FilesNavPage = () => null;
+mock.module('@/components/pages/FilesNavPage', () => ({ FilesNavPage }));
 
 beforeAll(async () => {
   (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -103,7 +108,7 @@ beforeEach(() => {
   homeRenders = 0;
   threadRenders = 0;
   reviewData = [];
-  route = drawer = home = connecting = back = stackListener = thread = undefined;
+  route = drawer = home = connecting = back = stackListener = thread = actionsSheet = undefined;
   tab = { activeSessionId: null, activePageId: null, setScope: spy('scope'), navigateToSession: spy('navigateSession') };
   routes = [{ key: 'home-key', name: 'index', params: { id: 'project-1' } }];
   response = async () => ({ stage: 'ready', retriable: false, failure: null, opencode_session_id: 'oc-1', sandbox: { status: 'active', external_id: 'box-1', sandbox_id: 'box-1' } });
@@ -199,6 +204,28 @@ describe('ProjectScreen connect and stack', () => {
     expect(seen('dispatch').at(-1)?.args[0].type).toBe('popTo');
     await focus(['index']);
     expect(back?.()).toBe(false);
+  });
+
+  test('the Files row pushes the Files sub-page over the thread; back pops to the thread', async () => {
+    tab.activeSessionId = 'oc-1';
+    await renderHook();
+    await focus(['index', 'view']);
+    await act(async () => actionsSheet.onOpenFiles());
+    expect(seen('dispatch').at(-1)?.args[0]).toEqual({ type: 'push', args: ['page', { id: 'project-1', pageId: 'page:files-nav' }] });
+    const onBack = () => {};
+    const page = route.renderSubPage('page:files-nav', onBack);
+    expect(page.type).toBe(FilesNavPage);
+    expect(page.props).toMatchObject({ projectId: 'project-1', onBack, page: { id: 'page:files-nav' } });
+    // The sub-page records the open thread; the same thread keeps it there.
+    expect(route.viewKey).toBe('session:oc-1');
+    await focus(['index', 'view', 'page']);
+    await act(async () => { expect(back?.()).toBe(true); });
+    expect(seen('backSubPage')).toHaveLength(1);
+  });
+
+  test('the route value carries the open target: null on home', async () => {
+    await renderHook();
+    expect(route.viewKey).toBeNull();
   });
 
   test('opening the drawer does not re-render project home', async () => {

@@ -43,6 +43,26 @@ export function sessionPersonalUser(
   return session.visibility === 'private' ? (session.created_by ?? null) : null;
 }
 
+export type PersonalKeysReason = 'shared' | 'prompted_by_another_member' | 'no_person';
+
+/**
+ * Whose own keys a session reaches, with the server's answer when it has one.
+ * The session row alone says only private or shared; the server also knows
+ * when a private session acts for nobody (its token predates on_behalf_of,
+ * it started unattended, or another member prompted it). The server's answer
+ * only narrows the row's: it never offers a key the row would not.
+ */
+export function sessionPersonalKeys(
+  session: { visibility?: string | null; created_by?: string | null } | null | undefined,
+  server: { personal_user_id?: string | null; personal_keys_reason?: PersonalKeysReason | null } | null | undefined,
+): { user: string | null | undefined; reason: PersonalKeysReason | null } {
+  const user = sessionPersonalUser(session);
+  if (user === undefined) return { user, reason: null };
+  if (user === null) return { user: null, reason: 'shared' };
+  if (server?.personal_user_id === undefined || server.personal_user_id === user) return { user, reason: null };
+  return { user: null, reason: server.personal_keys_reason ?? 'no_person' };
+}
+
 /**
  * The keys a session can use when it runs. The gateway serves a session's
  * selection with the session's personal user (spec 2026-09-22 §2.3): keys

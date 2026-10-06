@@ -7,6 +7,7 @@ import {
   matchesSourceFilters,
   matchesStatusFilters,
   SESSION_DISPLAY_STATUS_LABELS,
+  sessionCanBeStopped,
   sessionDisplayStatus,
   sessionIsShared,
   sessionDisplayLabel,
@@ -233,5 +234,35 @@ describe('mention markup in titles', () => {
   test('stripChatMentionMarkup collapses the whitespace the tag leaves behind', () => {
     expect(stripChatMentionMarkup('<at>Kortix Dev</at>&nbsp; now count   the lines')).toBe('now count the lines');
     expect(stripChatMentionMarkup('plain')).toBe('plain');
+  });
+});
+
+describe('sessionCanBeStopped', () => {
+  test('a running session can be stopped', () => {
+    expect(sessionCanBeStopped(makeSession({ status: 'running' }))).toBe(true);
+  });
+
+  // A warm shell whose box is up is reported `provisioning` (KRTX-1466), but
+  // it still bills compute the owner can stop — the stop route reads the
+  // sandbox row, not this word. Without the warm case the Stop control
+  // vanished from the row menu and the session header of every billed shell.
+  test('a warm shell reported provisioning can be stopped', () => {
+    expect(
+      sessionCanBeStopped(makeSession({ status: 'provisioning', metadata: { warm: true } })),
+    ).toBe(true);
+  });
+
+  test('a genuinely booting session cannot be stopped', () => {
+    expect(sessionCanBeStopped(makeSession({ status: 'provisioning' }))).toBe(false);
+    expect(
+      sessionCanBeStopped(makeSession({ status: 'provisioning', metadata: {} })),
+    ).toBe(false);
+    expect(sessionCanBeStopped(makeSession({ status: 'queued' }))).toBe(false);
+  });
+
+  test('settled and failed sessions cannot be stopped', () => {
+    for (const status of ['stopped', 'failed', 'completed'] as const) {
+      expect(sessionCanBeStopped(makeSession({ status }))).toBe(false);
+    }
   });
 });

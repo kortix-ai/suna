@@ -24,7 +24,7 @@ mock.module('../billing/services/account-deletion', () => ({
 }));
 
 const { startAccountDeletionSchedule, stopAccountDeletionSchedule } = await import(
-  '../billing/account-deletion-schedule'
+  '../workers/account-deletion-worker'
 );
 
 async function until(condition: () => boolean, what: string): Promise<void> {
