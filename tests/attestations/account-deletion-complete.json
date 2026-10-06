@@ -1,0 +1,11 @@
+{
+  "source_hash": "9b9c9ba99da446e69e1805b02d1261b4e929e9c1dcd9bd6dbb916ed5af9dc86a",
+  "head": "4270a7548f6e8ea6da2f9a7947d4e38883ae8919",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-06T19:13:17.543Z"
+}

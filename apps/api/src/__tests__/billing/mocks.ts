@@ -163,6 +163,8 @@ export function registerGlobalMocks() {
         where: async () => ({ rowCount: 0 }),
       }),
       transaction: async <T,>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(db),
+      // The bounded chunk deletes are raw SQL; a count below the chunk size ends the loop.
+      execute: async () => [{ n: 0 }],
     };
     return {
       db,
@@ -205,6 +207,12 @@ export function registerGlobalMocks() {
       mockRegistry.markDeletionCompleted ? mockRegistry.markDeletionCompleted(id) : undefined,
     getScheduledDeletions: async () =>
       mockRegistry.getScheduledDeletions ? mockRegistry.getScheduledDeletions() : [],
+    // The claim hands back the due request it names, as the real UPDATE does.
+    claimDeletionRequest: async (id: string) =>
+      (mockRegistry.getScheduledDeletions ? await mockRegistry.getScheduledDeletions() : []).find(
+        (row: { id: string }) => row.id === id,
+      ) ?? null,
+    releaseDeletionRequest: async () => undefined,
   }));
 }
 
