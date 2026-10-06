@@ -20,11 +20,15 @@
  * Readers: `getRequestOnBehalfOf(c)` (fresh, per request, from the auth
  * middleware) or the token row itself. No memo carries it: it changes per turn.
  */
-import type { Context } from 'hono';
 import { and, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm';
-import { accountMemberships, accountTokens, projectSessions } from '@kortix/db';
+import { accountTokens, projectSessions } from '@kortix/db';
 import { config } from '../../config';
 import { db } from '../../shared/db';
+import { membershipExistsSql, membershipRow } from '../../iam/membership-read';
+
+// The request reader `getRequestOnBehalfOf` lives in `middleware/on-behalf-of.ts`.
+// Re-exported here so every importer and mock keeps working.
+export { getRequestOnBehalfOf } from '../../middleware/on-behalf-of';
 
 /** Session metadata key stamped when a prompt cleared `on_behalf_of`. A
  *  re-mint of the session credential reads it and never restores the value. */
@@ -118,11 +122,7 @@ export async function resolveSessionOnBehalfOf(input: {
     const metadata = (session.metadata ?? {}) as Record<string, unknown>;
     const parentId = typeof metadata.spawned_by_session === 'string' ? metadata.spawned_by_session : null;
     const [membership, parent] = await Promise.all([
-      db
-        .select({ userId: accountMemberships.userId })
-        .from(accountMemberships)
-        .where(and(eq(accountMemberships.userId, input.userId), eq(accountMemberships.accountId, input.accountId)))
-        .limit(1),
+      membershipRow(input.userId, input.accountId),
       parentId
         ? db
             .select({ onBehalfOfUserId: accountTokens.onBehalfOfUserId })
@@ -216,7 +216,7 @@ export async function bindSessionTurnIdentity(input: {
   prompterUserId: string;
 }): Promise<boolean> {
   const prompter = sql`${input.prompterUserId}::uuid`;
-  const member = sql`exists (select 1 from kortix.account_memberships m where m.user_id = ${prompter} and m.account_id = ${input.accountId})`;
+  const member = membershipExistsSql(prompter, input.accountId);
   const changed = await db.execute<{ token_id: string }>(sql`
     with changed as (
       update kortix.account_tokens t
@@ -241,9 +241,4 @@ export async function bindSessionTurnIdentity(input: {
     select token_id from changed
   `);
   return changed.length > 0;
-}
-
-/** Fresh per-request value set by the auth middleware; null for non-session tokens. */
-export function getRequestOnBehalfOf(c: Context): string | null {
-  return (c.get('onBehalfOfUserId') as string | null | undefined) ?? null;
 }

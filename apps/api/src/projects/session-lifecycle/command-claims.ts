@@ -62,6 +62,15 @@ export async function claimDueLifecycleCommands(input: {
               isNull(sessionLifecycleCommands.lockedUntil),
               lte(sessionLifecycleCommands.lockedUntil, now),
             ),
+            // A HELD inbox prompt waits for the user's action, whatever its due
+            // time: its delivery re-reads the hold before the POST and gives
+            // the row straight back (`assertInboxDeliveryActive`). Several
+            // writers put a held row back due — a paused delivery, a park, an
+            // admission requeue — and each claim of it looped once per drain
+            // tick. An automation row has no such check; its hold still ends
+            // at `available_at`.
+            sql`(COALESCE(${sessionLifecycleCommands.result}->>'held', '') <> 'true'
+              OR ${sessionLifecycleCommands.payload}->>'clientMessageId' IS NULL)`,
           ),
           // ABANDONED CLAIM. A `running` row whose lock expired a full grace
           // ago has no live worker: the pod that claimed it is gone. Left

@@ -9,6 +9,7 @@ import { sessionSandboxes } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 
 import { db } from '../../shared/db';
+import { accountMemberExistsSql } from '../../iam/membership-read';
 import { logger } from '../../lib/logger';
 import { candidateSecretKeyHashesAsync } from '../../shared/token-hash';
 
@@ -72,8 +73,7 @@ export async function healSupersededSessionToken(sessionId: string): Promise<str
          and exists (select 1 from auth.users u
                       where u.id = t.user_id and u.deleted_at is null
                         and (u.banned_until is null or u.banned_until <= now()))
-         and exists (select 1 from kortix.account_members m
-                      where m.user_id = t.user_id and m.account_id = t.account_id)
+         and ${accountMemberExistsSql(sql`t.user_id`, sql`t.account_id`)}
       returning t.token_id, t.account_id, t.user_id`);
     const [healed] = ((result as { rows?: unknown[] }).rows ?? result) as Array<{
       token_id: string;
