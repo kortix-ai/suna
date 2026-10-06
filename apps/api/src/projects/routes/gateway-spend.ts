@@ -11,7 +11,7 @@ import {
   projectCapabilityAllowed,
 } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { listProjectGatewaySessionSpend } from '../../shared/session-costs';
+import { listProjectGatewaySessionSpend, listProjectGatewaySourceSpend } from '../../shared/session-costs';
 import { projectSpendByModel } from '../lib/session-model-usage';
 import {
   kortixBilledSpendSql,
@@ -194,6 +194,41 @@ export function registerGatewaySpendRoutes(): void {
           accountId: loaded.row.accountId,
           projectId,
           days,
+        }),
+      );
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/gateway/sources',
+      tags: ['gateway'],
+      summary: 'List LLM gateway spend by source (trigger, member, channel, API)',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        query: z.object({ hours: z.string().optional() }),
+      },
+      responses: { 200: json(z.any(), 'Gateway spend by source'), ...errors(404) },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ,
+      );
+
+      return c.json(
+        await listProjectGatewaySourceSpend({
+          accountId: loaded.row.accountId,
+          projectId,
+          hours: Number(c.req.query('hours')) || 24,
         }),
       );
     },
