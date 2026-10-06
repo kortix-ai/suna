@@ -11,6 +11,7 @@ import { QueuedPromptList } from '@/features/session/composer/queued-prompt-list
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
 import { isFirstPromptRow, projectQueueRows } from '@/features/session/queue-projection';
+import { useQueuedPromptEdit } from '@/features/session/queued-prompt-edit';
 import { SESSION_TRANSCRIPT_CLASS, SessionBodyRow } from '@/features/session/session-body';
 import { SessionLayout } from '@/features/session/session-layout';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
@@ -90,6 +91,7 @@ export function InstantSessionShell({
   draftActive?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tQueue = useTranslations('threads');
   // `ready` is the backend's authoritative "runtime is up" signal (POST /start).
   // Only the side panel reads it now: the thread deliberately shows the SAME
   // waiting row at every boot stage (see below), so there is nothing there to
@@ -131,7 +133,7 @@ export function InstantSessionShell({
     onSubmit,
     promptInbox,
   });
-  const { submitted, effectiveSubmission, extraSends, handleSend } = send;
+  const { submitted, effectiveSubmission, extraSends, handleSend, forgetExtraSend } = send;
   const shellQueue = useMemo(
     () =>
       projectQueueRows({
@@ -174,7 +176,7 @@ export function InstantSessionShell({
     text: string;
     id: number;
     options?: SessionPromptOverrides | null;
-    mode?: 'merge';
+    mode?: 'replace' | 'merge';
   } | null>(null);
   // The first send swaps the hero composer for the docked one, which remounts
   // it. The upload controller lives here, so a held send outlives that remount
@@ -183,6 +185,16 @@ export function InstantSessionShell({
   const applySuggestion = useCallback((text: string) => {
     setPrefill({ text, id: Date.now() });
   }, []);
+  // Edit opens a queued message in the composer and Submit saves the new words
+  // into the same row, files kept. The chat shares this edit and takes over an
+  // open one at the crossfade (`queued-prompt-edit.ts`).
+  const queueEdit = useQueuedPromptEdit({
+    key: sessionId,
+    rows: () => shellQueue.rows,
+    editPrompt: promptInbox.edit,
+    setComposerText: (text) => setPrefill({ text, id: Date.now(), mode: 'replace' }),
+    forgetLocalDraft: forgetExtraSend,
+  });
 
   const handleCommand = useCallback(
     (cmd: Command, args: string | undefined, options: ComposerOptions) => {
@@ -200,7 +212,10 @@ export function InstantSessionShell({
   // the welcome body) or the regular bottom position (post-submit thread view).
   const composerEl = (
     <ComposerChatInput
-      onSend={handleSend}
+      onSend={async (text, files, options, attachments) => {
+        if (await queueEdit.save(text)) return;
+        await handleSend(text, files, options, attachments);
+      }}
       onCommand={handleCommand}
       promptAttachments={promptAttachments}
       sessionId={sessionId}
@@ -236,20 +251,17 @@ export function InstantSessionShell({
               void promptInbox.retry(id).catch((error) => errorToast(error.message));
             }}
             onEdit={(id) => {
-              void promptInbox
-                .remove(id)
-                .then((removed) => {
-                  const text = removed.parts
-                    .filter((part) => part.type === 'text')
-                    .map((part) => part.text)
-                    .join('\n');
-                  setPrefill({ text, id: Date.now(), mode: 'merge', options: removed.overrides });
-                })
-                .catch((error) => errorToast(error.message));
+              queueEdit.takeBack(id);
             }}
+            editing={queueEdit.editing}
+            onCancelEdit={queueEdit.cancel}
           />
         ) : undefined
       }
+      // Editing a queued message: the send saves it back into the queue, so the
+      // control says Submit, never the boot-time Stop.
+      submitLabel={queueEdit.editing ? tQueue('submitEdit') : null}
+      onArrowUpAtStart={() => queueEdit.takeBack()}
       autoFocus
       // Hero radius pre-submit (matches the project home); back to the default
       // card radius once docked so the crossfade into SessionChat doesn't pop.

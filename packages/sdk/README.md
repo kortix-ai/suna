@@ -402,6 +402,16 @@ most 16,384 characters of JSON. Example: `examples/12-session-labels.ts`.
 `{ kind: 'member', user_id, name, email, avatar_url }` or `{ kind: 'session', session_id, name, agent? }`.
 In React, `useSessionMessageAuthors(projectId, sessionId, messageCount)` reads the same data.
 
+### Which model answered a turn
+
+`kortix.session(projectId, sessionId).modelUsage()` (or `getSessionModelUsage`) returns
+`{ latest, billed_cost, turns }` from the gateway's request record. `latest` is
+`{ served_model, fallback_from, at }` for the newest answered request: `served_model` is the model
+that answered, and `fallback_from` is the routed model when a fallback model answered in its place.
+`turns` maps the runtime message id of each prompt to `{ served_models, fallback_from, billed_cost }`.
+A transcript message carries only the model its turn asked for. In React,
+`useSessionModelUsage(projectId, sessionId)` reads the same record.
+
 ### React runtime
 
 `useSession(projectId, sessionId)` opens the session runtime returned by

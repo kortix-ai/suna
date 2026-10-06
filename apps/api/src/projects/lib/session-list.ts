@@ -208,6 +208,171 @@ export interface ProjectSessionInventory {
   initiatorNames: Map<string, string>;
 }
 
+type SessionInventoryInput = Parameters<typeof loadProjectSessionInventory>[0];
+
+function sessionCursorScope(input: SessionInventoryInput, filter: SessionListFilter): SessionCursorScope {
+  return {
+    projectId: input.projectId,
+    viewerId: input.userId,
+    ordering: input.orderByActivity ? 'activity' : undefined,
+    // A cursor is a scan position inside ONE filtered list.
+    filter:
+      filter.parent || filter.startedBy || filter.q || filter.labels?.length
+        ? JSON.stringify([
+            filter.parent ?? null,
+            filter.startedBy ?? null,
+            filter.q ?? null,
+            ...(filter.labels?.length ? [[...filter.labels].sort()] : []),
+          ])
+        : undefined,
+  };
+}
+
+// Step 2 — the three reads that need these rows but not each other, then the
+// visibility fold. Scoped to the rows given, so their cost is the page's cost
+// and not the project's: the pre-paging version read every sandbox row and
+// resolved every owner in the project on every poll.
+async function foldSessionRows(
+  rows: ProjectSessionRow[],
+  ctx: {
+    input: SessionInventoryInput;
+    canManageProject: boolean;
+    subject: ShareSubject;
+    accountSessionOversight: boolean;
+    grantsBySession: Map<string, SecretGrant[]>;
+    ownerIdentities: Map<string, SessionOwnerIdentity>;
+    runtimeStatusBySession: Map<string, RuntimeStatus>;
+  },
+) {
+  const { input, canManageProject, subject, accountSessionOversight, grantsBySession, ownerIdentities, runtimeStatusBySession } = ctx;
+  const rowIds = rows.map((row) => row.sessionId);
+  const [runtimeRows, rowGrants, rowOwners] = await Promise.all([
+    db
+      .select({ sessionId: sessionSandboxes.sessionId, status: sessionSandboxes.status })
+      .from(sessionSandboxes)
+      .where(
+        and(
+          eq(sessionSandboxes.projectId, input.projectId),
+          eq(sessionSandboxes.accountId, input.accountId),
+          inArray(sessionSandboxes.sessionId, rowIds),
+        ),
+      ),
+    loadSessionGrants(
+      rows.filter((row) => row.visibility === 'restricted').map((row) => row.sessionId),
+    ),
+    resolveSessionOwnerIdentities(
+      [
+        ...new Set(
+          rows
+            .flatMap((row) => [
+              row.createdBy,
+              row.initiatorType === 'member' || row.initiatorType === 'api' ? row.initiatorId : null,
+            ])
+            .filter((ownerId): ownerId is string => Boolean(ownerId)),
+        ),
+      ],
+      input.accountId,
+    ),
+  ]);
+
+  const rowRuntime = new Map(runtimeRows.map((row) => [row.sessionId, row.status]));
+  for (const [key, value] of rowRuntime) runtimeStatusBySession.set(key, value);
+  for (const [key, value] of rowGrants) grantsBySession.set(key, value);
+  for (const [key, value] of rowOwners) ownerIdentities.set(key, value);
+
+  return selectSessionRowsForViewer({
+    rows,
+    scope: input.scope,
+    canManageProject,
+    subject,
+    grantsBySession: rowGrants,
+    runtimeStatusBySession: rowRuntime,
+    callerSessionId: input.boundCredentialSessionId,
+    boundCredentialSessionId: input.boundCredentialSessionId,
+    accountSessionOversight,
+    agentPrincipal: input.agentPrincipal === true,
+  });
+}
+
+/** Serves the ancestors a page's children point at but the page does not hold. */
+async function appendMissingAncestors(input: {
+  projectId: string;
+  accountId: string;
+  filter: SessionListFilter;
+  items: SessionInventoryItem[];
+  scannedRows: ProjectSessionRow[];
+  foldRows: (rows: ProjectSessionRow[]) => ReturnType<typeof foldSessionRows>;
+}): Promise<void> {
+  const { filter, items, scannedRows, foldRows } = input;
+  // A coordinator sorts by its OWN `updated_at`, and a child's turns never
+  // touch it. So a coordinator that went quiet while its sub-agents kept
+  // working lands on a later page than they do, and every child on this page
+  // renders as a stray top-level row. Serve the missing ancestors with the
+  // page. They ride outside the keyset (the cursor does not move), so a later
+  // page can serve one again; clients de-duplicate by `session_id`.
+  const served = new Set(items.map((item) => item.row.sessionId));
+  // A `parent`-filtered read is already a tree level: roots have no parent to
+  // append, and children are read under the parent the client expanded. A
+  // label filter promises only rows carrying every label, so it gets no
+  // unlabeled ancestors either.
+  const appendAncestors = !filter.parent && !filter.labels?.length;
+  for (let depth = 0; appendAncestors && depth < MAX_ANCESTOR_DEPTH; depth += 1) {
+    const missing = [
+      ...new Set(
+        items
+          .map((item) => spawnedByOf(item.row))
+          .filter((id): id is string => id !== null && !served.has(id)),
+      ),
+    ];
+    if (missing.length === 0) break;
+    for (const id of missing) served.add(id);
+    const ancestorRows = await db
+      .select()
+      .from(projectSessions)
+      .where(
+        and(
+          eq(projectSessions.projectId, input.projectId),
+          eq(projectSessions.accountId, input.accountId),
+          inArray(projectSessions.sessionId, missing),
+        ),
+      );
+    if (ancestorRows.length === 0) break;
+    // The same fold as the page: an ancestor this viewer may not see stays out.
+    for (const item of (await foldRows(ancestorRows)).items) {
+      items.push(item);
+      scannedRows.push(item.row);
+    }
+  }
+}
+
+/** `parent=root` only: non-deleted children per served session. */
+async function loadChildCounts(input: {
+  projectId: string;
+  accountId: string;
+  filter: SessionListFilter;
+  items: SessionInventoryItem[];
+}): Promise<Map<string, number>> {
+  const { filter, items } = input;
+  const childCounts = new Map<string, number>();
+  if (filter.parent === 'root' && items.length > 0) {
+    const counts = await db
+      .select({ parentSessionId: projectSessions.parentSessionId, count: sql<number>`count(*)::int` })
+      .from(projectSessions)
+      .where(
+        and(
+          eq(projectSessions.projectId, input.projectId),
+          eq(projectSessions.accountId, input.accountId),
+          inArray(projectSessions.parentSessionId, items.map((item) => item.row.sessionId)),
+          // The soft-delete marker the visibility fold drops (session-inventory.ts).
+          sql`not (${projectSessions.metadata} ? 'deletedAt')`,
+        ),
+      )
+      .groupBy(projectSessions.parentSessionId);
+    for (const row of counts) if (row.parentSessionId) childCounts.set(row.parentSessionId, row.count);
+  }
+  return childCounts;
+}
+
 /**
  * Read one project's session inventory for one viewer.
  *
@@ -238,21 +403,7 @@ export async function loadProjectSessionInventory(input: {
   const filterSql = sessionListFilterSql(filter, input.userId);
   // A cursor is sealed to (project, viewer): it carries the scan position, which
   // can name a row this viewer may not see. See `encodeSessionCursor`.
-  const cursorScope: SessionCursorScope = {
-    projectId: input.projectId,
-    viewerId: input.userId,
-    ordering: input.orderByActivity ? 'activity' : undefined,
-    // A cursor is a scan position inside ONE filtered list.
-    filter:
-      filter.parent || filter.startedBy || filter.q || filter.labels?.length
-        ? JSON.stringify([
-            filter.parent ?? null,
-            filter.startedBy ?? null,
-            filter.q ?? null,
-            ...(filter.labels?.length ? [[...filter.labels].sort()] : []),
-          ])
-        : undefined,
-  };
+  const cursorScope = sessionCursorScope(input, filter);
   const sortAt = input.orderByActivity
     ? sql<Date>`date_trunc('milliseconds', coalesce((${projectSessions.metadata}->>'last_activity_at')::timestamptz, ${projectSessions.updatedAt}))`
     : sql<Date>`${projectSessions.updatedAt}`;
@@ -371,60 +522,16 @@ export async function loadProjectSessionInventory(input: {
   // rows are almost all invisible to this viewer returns a short page with a
   // cursor instead of scanning to the end of the list on one request.
   const MAX_CHUNKS = 8;
-
-  // Step 2 — the three reads that need these rows but not each other, then the
-  // visibility fold. Scoped to the rows given, so their cost is the page's cost
-  // and not the project's: the pre-paging version read every sandbox row and
-  // resolved every owner in the project on every poll.
-  const foldRows = async (rows: ProjectSessionRow[]) => {
-    const rowIds = rows.map((row) => row.sessionId);
-    const [runtimeRows, rowGrants, rowOwners] = await Promise.all([
-      db
-        .select({ sessionId: sessionSandboxes.sessionId, status: sessionSandboxes.status })
-        .from(sessionSandboxes)
-        .where(
-          and(
-            eq(sessionSandboxes.projectId, input.projectId),
-            eq(sessionSandboxes.accountId, input.accountId),
-            inArray(sessionSandboxes.sessionId, rowIds),
-          ),
-        ),
-      loadSessionGrants(
-        rows.filter((row) => row.visibility === 'restricted').map((row) => row.sessionId),
-      ),
-      resolveSessionOwnerIdentities(
-        [
-          ...new Set(
-            rows
-              .flatMap((row) => [
-                row.createdBy,
-                row.initiatorType === 'member' || row.initiatorType === 'api' ? row.initiatorId : null,
-              ])
-              .filter((ownerId): ownerId is string => Boolean(ownerId)),
-          ),
-        ],
-        input.accountId,
-      ),
-    ]);
-
-    const rowRuntime = new Map(runtimeRows.map((row) => [row.sessionId, row.status]));
-    for (const [key, value] of rowRuntime) runtimeStatusBySession.set(key, value);
-    for (const [key, value] of rowGrants) grantsBySession.set(key, value);
-    for (const [key, value] of rowOwners) ownerIdentities.set(key, value);
-
-    return selectSessionRowsForViewer({
-      rows,
-      scope: input.scope,
+  const foldRows = (rows: ProjectSessionRow[]) =>
+    foldSessionRows(rows, {
+      input,
       canManageProject,
       subject,
-      grantsBySession: rowGrants,
-      runtimeStatusBySession: rowRuntime,
-      callerSessionId: input.boundCredentialSessionId,
-      boundCredentialSessionId: input.boundCredentialSessionId,
       accountSessionOversight,
-      agentPrincipal: input.agentPrincipal === true,
+      grantsBySession,
+      ownerIdentities,
+      runtimeStatusBySession,
     });
-  };
 
   for (let pass = 0; pass < MAX_CHUNKS && items.length < limit; pass += 1) {
     const chunk = await (pass === 0 ? firstChunkRead : readChunk(cursor));
@@ -465,63 +572,16 @@ export async function loadProjectSessionInventory(input: {
     }
   }
 
-  // A coordinator sorts by its OWN `updated_at`, and a child's turns never
-  // touch it. So a coordinator that went quiet while its sub-agents kept
-  // working lands on a later page than they do, and every child on this page
-  // renders as a stray top-level row. Serve the missing ancestors with the
-  // page. They ride outside the keyset (the cursor does not move), so a later
-  // page can serve one again; clients de-duplicate by `session_id`.
-  const served = new Set(items.map((item) => item.row.sessionId));
-  // A `parent`-filtered read is already a tree level: roots have no parent to
-  // append, and children are read under the parent the client expanded. A
-  // label filter promises only rows carrying every label, so it gets no
-  // unlabeled ancestors either.
-  const appendAncestors = !filter.parent && !filter.labels?.length;
-  for (let depth = 0; appendAncestors && depth < MAX_ANCESTOR_DEPTH; depth += 1) {
-    const missing = [
-      ...new Set(
-        items
-          .map((item) => spawnedByOf(item.row))
-          .filter((id): id is string => id !== null && !served.has(id)),
-      ),
-    ];
-    if (missing.length === 0) break;
-    for (const id of missing) served.add(id);
-    const ancestorRows = await db
-      .select()
-      .from(projectSessions)
-      .where(
-        and(
-          eq(projectSessions.projectId, input.projectId),
-          eq(projectSessions.accountId, input.accountId),
-          inArray(projectSessions.sessionId, missing),
-        ),
-      );
-    if (ancestorRows.length === 0) break;
-    // The same fold as the page: an ancestor this viewer may not see stays out.
-    for (const item of (await foldRows(ancestorRows)).items) {
-      items.push(item);
-      scannedRows.push(item.row);
-    }
-  }
+  await appendMissingAncestors({
+    projectId: input.projectId,
+    accountId: input.accountId,
+    filter,
+    items,
+    scannedRows,
+    foldRows,
+  });
 
-  const childCounts = new Map<string, number>();
-  if (filter.parent === 'root' && items.length > 0) {
-    const counts = await db
-      .select({ parentSessionId: projectSessions.parentSessionId, count: sql<number>`count(*)::int` })
-      .from(projectSessions)
-      .where(
-        and(
-          eq(projectSessions.projectId, input.projectId),
-          eq(projectSessions.accountId, input.accountId),
-          inArray(projectSessions.parentSessionId, items.map((item) => item.row.sessionId)),
-          // The soft-delete marker the visibility fold drops (session-inventory.ts).
-          sql`not (${projectSessions.metadata} ? 'deletedAt')`,
-        ),
-      )
-      .groupBy(projectSessions.parentSessionId);
-    for (const row of counts) if (row.parentSessionId) childCounts.set(row.parentSessionId, row.count);
-  }
+  const childCounts = await loadChildCounts({ projectId: input.projectId, accountId: input.accountId, filter, items });
   const initiatorNames = new Map<string, string>();
   for (const [id, identity] of ownerIdentities) {
     const name = identity.name ?? identity.email ?? null;

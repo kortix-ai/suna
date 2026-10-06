@@ -1,7 +1,5 @@
 import type { TriggerSessionAccess } from '@kortix/api-contract';
 import {
-  accountGroups,
-  accountMembers,
   projectSessionGrants,
   projectSessions,
   projectTriggerRuntime,
@@ -9,6 +7,8 @@ import {
 } from '@kortix/db';
 import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
+import { accountMembersAmong } from '../iam/membership-read';
+import { accountGroupsAmong } from '../iam/group-read';
 import { resolveAgentRunAttribution } from './session-lifecycle/actor';
 import {
   PRIVATE_TRIGGER_SESSION_ACCESS,
@@ -46,31 +46,11 @@ export async function validateTriggerSessionAccessPrincipals(
 ): Promise<string | null> {
   if (access.mode !== 'members') return null;
   const [members, groups] = await Promise.all([
-    access.memberIds.length
-      ? db
-          .select({ id: accountMembers.userId })
-          .from(accountMembers)
-          .where(
-            and(
-              eq(accountMembers.accountId, accountId),
-              inArray(accountMembers.userId, access.memberIds),
-            ),
-          )
-      : [],
-    access.groupIds.length
-      ? db
-          .select({ id: accountGroups.groupId })
-          .from(accountGroups)
-          .where(
-            and(
-              eq(accountGroups.accountId, accountId),
-              inArray(accountGroups.groupId, access.groupIds),
-            ),
-          )
-      : [],
+    access.memberIds.length ? accountMembersAmong(accountId, access.memberIds) : [],
+    access.groupIds.length ? accountGroupsAmong(accountId, access.groupIds) : [],
   ]);
-  const foundMembers = new Set(members.map((row) => row.id));
-  const foundGroups = new Set(groups.map((row) => row.id));
+  const foundMembers = new Set(members.map((row) => row.userId));
+  const foundGroups = new Set(groups.map((row) => row.groupId));
   const unknownMember = access.memberIds.find((id) => !foundMembers.has(id));
   if (unknownMember)
     return `Session access member ${unknownMember} does not belong to this account`;

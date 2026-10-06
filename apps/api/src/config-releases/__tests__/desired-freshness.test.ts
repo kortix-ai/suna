@@ -13,7 +13,7 @@ import { describe, expect, test } from 'bun:test';
 import type { GitBackedProject } from '../../projects/git/types';
 import type { ConfigRelease } from '../builder';
 import { type DesiredReleaseDeps, resolveDesiredRelease } from '../desired';
-import { MemoryConfigReleaseLedger } from '../quarantine';
+import { MemoryConfigReleaseLedger } from './fakes';
 import type { DeclaredAgentRoster } from '../session-agent';
 
 const PROJECT: GitBackedProject = {
@@ -32,7 +32,7 @@ const ROSTER: DeclaredAgentRoster = {
 };
 
 const RELEASE: ConfigRelease = {
-  format: 'config-release-v1',
+  format: 'config-release-v2',
   release_id: 'release',
   source_commit: TIP,
   config_dir: null,

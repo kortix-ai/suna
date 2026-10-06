@@ -15,7 +15,13 @@
  */
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import { listAccountTokens, listOAuthGrants, revokeOAuthGrant } from './tokens';
+import {
+  listAccountTokens,
+  listOAuthGrants,
+  listSignedInDevices,
+  revokeOAuthGrant,
+  signOutDevice,
+} from './tokens';
 
 let calls: { url: string; method: string }[] = [];
 let nextResponse: { status: number; body: unknown } = { status: 200, body: [] };
@@ -94,5 +100,27 @@ test('revokeOAuthGrant(clientId) deletes that grant, escaping the id', async () 
   nextResponse = { status: 200, body: { ok: true, revoked_tokens: 2 } };
   expect(await revokeOAuthGrant('kortix client/1')).toEqual({ ok: true, revoked_tokens: 2 });
   expect(last().url).toBe('http://test.local/oauth/grants/kortix%20client%2F1');
+  expect(last().method).toBe('DELETE');
+});
+
+test('listSignedInDevices() reads the caller’s own browser sign-ins', async () => {
+  const device = {
+    session_id: '00000000-0000-4000-8000-000000000001',
+    user_agent: 'Mozilla/5.0',
+    ip: '203.0.113.7',
+    signed_in_at: '2026-10-01T00:00:00.000Z',
+    last_active_at: '2026-10-05T00:00:00.000Z',
+    current: true,
+  };
+  nextResponse = { status: 200, body: { devices: [device] } };
+  expect(await listSignedInDevices()).toEqual([device]);
+  expect(last().url).toBe('http://test.local/accounts/me/devices');
+  expect(last().method).toBe('GET');
+});
+
+test('signOutDevice(id) ends that one sign-in', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  await signOutDevice('00000000-0000-4000-8000-000000000002');
+  expect(last().url).toBe('http://test.local/accounts/me/devices/00000000-0000-4000-8000-000000000002');
   expect(last().method).toBe('DELETE');
 });
