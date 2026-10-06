@@ -1,5 +1,9 @@
 import { sql } from 'drizzle-orm';
-import { db, withDbTransaction } from '../shared/db';
+// A namespace import, resolved at call time: a suite that mocks shared/db
+// without `withDbTransaction` must not fail to link every importer of this module.
+import * as database from '../shared/db';
+
+const { db } = database;
 
 /**
  * Serialize "count the seats, then add the member" per account. Without it,
@@ -8,7 +12,7 @@ import { db, withDbTransaction } from '../shared/db';
  * until commit; the seat check and the membership insert both go inside `fn`.
  */
 export function withAccountSeatLock<T>(accountId: string, fn: () => Promise<T>): Promise<T> {
-  return withDbTransaction(async () => {
+  return database.withDbTransaction(async () => {
     await db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`account-seats:${accountId}`}, 0))`);
     return fn();
   });

@@ -29,7 +29,9 @@ import {
 import { isValidSecretName, writeSharedProjectSecret } from '../projects/secrets';
 import { clearSecretAudience, setSecretAudience } from '../projects/lib/secret-audience';
 import { resolveUserIdentities } from '../projects/lib/user-identity';
-import { db, withDbTransaction } from '../shared/db';
+// A namespace import, resolved at call time: a suite that mocks shared/db
+// without `withDbTransaction` must not fail to link every importer of this module.
+import * as database from '../shared/db';
 import { projectAccountMembershipRows } from '../iam/membership-read';
 import { TokenBucketRateLimiter } from '../shared/rate-limit';
 import { enforceRateLimit } from '../middleware/rate-limit';
@@ -39,6 +41,8 @@ import { watchConnectorCompletion } from './connector-completion-watch';
 import { composioConfigured, composioToolkitLogo } from '../connectors/composio';
 import { connectorConnectedPrompt, notifyConnectorSession } from '../connectors/notify-session';
 import { readJsonObject } from '../shared/http-body';
+
+const { db } = database;
 
 // The connector half of the notification moved to connectors/notify-session.ts so the
 // in-session Connect button's finalize can reuse it. Re-exported: this module is where
@@ -247,7 +251,7 @@ setupLinksPublicApp.openapi(createRoute({
   const values = (body?.values ?? {}) as Record<string, unknown>;
   const allowed = new Set(resolved.payload.fields.map((f) => f.name));
   const payload = resolved.payload;
-  const result = await withDbTransaction(async () => {
+  const result = await database.withDbTransaction(async () => {
     // The archive UPDATE takes the same row lock: either all values commit
     // before deletion, or this submission sees archived and writes nothing.
     const [project] = await db.select({ status: projects.status }).from(projects)
