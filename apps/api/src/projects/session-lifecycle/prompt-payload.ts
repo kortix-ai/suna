@@ -84,6 +84,16 @@ export interface QueuedContinueSessionPayload {
    *  dead-letter alert so "which automation lost its prompt" is answerable
    *  from the log line alone. */
   triggerSlug?: string | null;
+  /** Allow-listed env applied before delivery (email turns on connector MCP). */
+  opencodeEnv?: Record<string, string | null>;
+  /**
+   * Written by `deliverThroughQueue` for a producer that used to call
+   * `continueSession` directly (a channel reply, a question answer). Two things
+   * keep that call's behaviour: admission does not hold it behind a live turn
+   * (a Slack reply mid-turn joins the turn whose handle streams its answer),
+   * and a dead-letter does not park the session.
+   */
+  directFollowUp?: boolean;
 
   // ── Prompt-inbox fields. Absent on every row enqueued before the inbox
   //    existed, which is why every reader below falls back to `text`.

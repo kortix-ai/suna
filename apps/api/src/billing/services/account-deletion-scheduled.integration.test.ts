@@ -26,6 +26,8 @@ mock.module('../../shared/stripe', () => ({
 }));
 
 mock.module('../../shared/supabase', () => ({
+  // apps/artifacts.ts imports it; a partial mock without it fails at load.
+  toPublicStorageUrl: (url: string) => url,
   getSupabase: () => ({
     auth: {
       admin: {

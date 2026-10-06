@@ -108,7 +108,7 @@ beforeEach(() => {
   createCalls = [];
   setEmailSessionLifecycleForTest({
     resolveProjectAutomationActor: async () => 'user-1',
-    continueSession: async (input) => {
+    deliverFollowUp: async (input) => {
       continueCalls.push({
         sessionId: input.sessionId,
         text: input.text,

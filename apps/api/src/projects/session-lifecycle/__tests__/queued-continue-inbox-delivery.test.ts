@@ -671,6 +671,29 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(capturedBodies).toHaveLength(0);
   });
 
+  test('a direct follow-up (a question answer, a channel reply) goes into a live turn instead of waiting behind it', async () => {
+    const liveTurn = {
+      status: 'active',
+      metadata: { activeTurns: {
+        't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
+          messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
+      } },
+    };
+    boxRow = liveTurn;
+    expect(await executeQueuedContinue(baseRow())).toBe('queued');
+    expect(requeues.map((r) => r.reason)).toEqual(['turn_active']);
+    expect(capturedBodies).toHaveLength(0);
+
+    boxRow = liveTurn;
+    const reply = baseRow({
+      commandId: 'cmd-answer',
+      payload: { text: 'the answer is B', directFollowUp: true },
+    });
+    expect(await executeQueuedContinue(reply)).toBe('succeeded');
+    expect(requeues).toHaveLength(1);
+    expect(capturedBodies).toHaveLength(1);
+  });
+
   test('Quick Queue arms the active turn boundary after its head is durably queued', async () => {
     boxRow = {
       status: 'active',
