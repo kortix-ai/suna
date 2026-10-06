@@ -1,0 +1,18 @@
+{
+  "source_hash": "80067aa5d03b6b5fa9c7ba3e742541ea6e20cbcf3c5a5493365b232bc755499e",
+  "diff_files": [
+    "apps/cli/src/__tests__/reminders-live.test.ts",
+    "apps/cli/src/commands/reminders.ts",
+    "tests/spec/end-to-end.md",
+    "tests/src/flows/reminders.flow.ts"
+  ],
+  "diff_hash": "0a9575270ac280d10d0017cca164a9380e6e616304cf989ac17c4b24799d97dd",
+  "head": "57c00b66ae400b3fa6ccf4c3fa329b7894a4f772",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-06T13:52:02.714Z"
+}
