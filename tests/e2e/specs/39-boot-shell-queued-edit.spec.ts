@@ -206,6 +206,8 @@ test("39 — editing a message queued during boot keeps its files", async ({ pag
     await expect(
       page.getByText(FIRST, { exact: true }).filter({ visible: true }).first(),
     ).toBeVisible({ timeout: 30_000 });
+    // The floating welcome card covers the lower-right of the composer.
+    await dismissWelcomeCard(page);
 
     let queuedRow: ListedPrompt | undefined;
     await test.step("a message with a file queues behind the first prompt", async () => {
