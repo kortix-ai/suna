@@ -6,3 +6,4 @@ export * from './project-quota';
 export * from './session-visibility';
 export * from './user-identity';
 export * from './project-access';
+export * from './http-project-access';

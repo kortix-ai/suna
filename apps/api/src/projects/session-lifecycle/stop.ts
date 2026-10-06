@@ -233,7 +233,7 @@ export async function stopSession(input: {
     // and had drifted — it assigned `{...sandbox.metadata, stoppedAt, ...}`, a
     // whole-object write built from the SELECT above, so anything a concurrent
     // writer put in that column in between was silently dropped. Two live writers
-    // do exactly that (projects/routes/shared.ts clears and sets the
+    // do exactly that (projects/session-open/index.ts clears and sets the
     // `runtimeWakeId` wake fence), and the compute clamp's `lastAliveAt` stamp
     // lives one table over for the same reason. Merged, never assigned.
     if (!cancellingWake) {

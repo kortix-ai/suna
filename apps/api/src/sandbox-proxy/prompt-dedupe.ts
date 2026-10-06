@@ -31,7 +31,7 @@ import { createHash } from 'node:crypto';
  * path list happened to double as "is this non-idempotent" — so adding an
  * endpoint to one concern silently meant opting into the other, and forgetting
  * to meant opting out of every safety guard at once. Env sync keeps its own
- * predicate in `routes/preview.ts`; this one answers only "may the proxy send
+ * predicate in `pre-prompt-env-sync.ts`; this one answers only "may the proxy send
  * this body twice?".
  */
 export function isNonIdempotentSessionWrite(
@@ -111,7 +111,7 @@ export function deliveryKeyIdentifiesOneSubmission(key: string): boolean {
 // `DEDUPE_TTL_MS >= UNDELIVERED_PROMPT_STARVATION_MS`; deriving one from the
 // other makes that an invariant instead of a comment two files have to stay
 // in sync by hand. `session-lifecycle` already imports from `sandbox-proxy`
-// (session-lifecycle/runtime-client.ts -> `../../sandbox-proxy/routes/preview`), so this follows the
+// (session-lifecycle/runtime-client.ts -> `../../sandbox-proxy/forward`), so this follows the
 // SAME existing module-boundary direction rather than opening a new one.
 export const DEDUPE_TTL_MS = 10 * 60_000;
 const MAX_ENTRIES = 2_000;

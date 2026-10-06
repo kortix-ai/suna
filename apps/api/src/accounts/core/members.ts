@@ -1,8 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import {
   accountGroupMembers,
-  accountGroups,
-  accountMembers,
   accountMemberships,
   projects,
 } from '@kortix/db';
@@ -11,6 +9,8 @@ import { onMemberRemoved } from '../../billing/services/seat-management';
 import { ACCOUNT_ACTIONS, assertAuthorized, authorize } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
+import { accountGroupIds, accountGroupMembershipRows } from '../../iam/group-read';
+import { accountDirectoryRows, verifiedMfaMemberIds } from '../../iam/membership-read';
 import { auth, errors, json } from '../../openapi';
 import {
   accountRoleMap,
@@ -155,14 +155,7 @@ export function registerMemberRoutes(): void {
         // is_super_admin bypass flag). The ROLE comes from `role_assignments` —
         // the one store the engine reads — so this list can no longer disagree
         // with what the gate says a moment later.
-        db
-          .select({
-            userId: accountMembers.userId,
-            isSuperAdmin: accountMembers.isSuperAdmin,
-            joinedAt: accountMembers.joinedAt,
-          })
-          .from(accountMembers)
-          .where(eq(accountMembers.accountId, accountId)),
+        accountDirectoryRows(accountId),
         accountRoleMap(accountId),
         // Direct project grants per member, one batched query (name + role, not
         // just a count) — powers both the "N projects" chip and a popover
@@ -184,15 +177,7 @@ export function registerMemberRoutes(): void {
         (async () => {
             const map = new Map<string, Array<{ group_id: string; name: string }>>();
             try {
-              const groupRows = await db
-                .select({
-                  userId: accountGroupMembers.userId,
-                  groupId: accountGroups.groupId,
-                  name: accountGroups.name,
-                })
-                .from(accountGroupMembers)
-                .innerJoin(accountGroups, eq(accountGroupMembers.groupId, accountGroups.groupId))
-                .where(eq(accountGroups.accountId, accountId));
+              const groupRows = await accountGroupMembershipRows(accountId);
               for (const g of groupRows) {
                 const list = map.get(g.userId) ?? [];
                 list.push({ group_id: g.groupId, name: g.name });
@@ -230,14 +215,7 @@ export function registerMemberRoutes(): void {
           (async () => {
             const map = new Map<string, boolean>();
             try {
-              const mfaRows = await db.execute<{ user_id: string }>(sql`
-      SELECT DISTINCT user_id::text
-      FROM auth.mfa_factors
-      WHERE status = 'verified'
-        AND user_id IN (
-          SELECT user_id FROM kortix.account_members WHERE account_id = ${accountId}::uuid
-        )
-    `);
+              const mfaRows = await verifiedMfaMemberIds(accountId);
               const mfaData = (mfaRows as unknown as { rows: typeof mfaRows }).rows ?? mfaRows;
               for (const row of mfaData as Array<{ user_id: string }>) {
                 map.set(row.user_id, true);
@@ -377,10 +355,7 @@ export function registerMemberRoutes(): void {
       // re-invite restore access to groups the owner already removed this user from.
       await db.delete(accountGroupMembers).where(and(
         eq(accountGroupMembers.userId, targetUserId),
-        inArray(accountGroupMembers.groupId, db
-          .select({ groupId: accountGroups.groupId })
-          .from(accountGroups)
-          .where(eq(accountGroups.accountId, accountId))),
+        inArray(accountGroupMembers.groupId, accountGroupIds(accountId)),
       ));
       await db
         .delete(accountMemberships)

@@ -2,7 +2,6 @@ import { and, eq, lt, sql } from 'drizzle-orm';
 import { registerSessionFailureNotifier } from '../../shared/session-failure-notifier';
 import { chatThreads, chatTurnStreams } from '@kortix/db';
 import { db } from '../../shared/db';
-import { runWorkerTick } from '../../shared/audit-scope';
 import { config } from '../../config';
 import { classifyTurnError, TEAMS_TURN_ERROR_COMMANDS, type TurnErrorInfo } from '../slack/errors';
 import { sessionWebUrl } from '../slack/util';
@@ -681,20 +680,7 @@ export async function sweepStaleTeamsTurns(): Promise<void> {
   }
 }
 
-let gcTimer: ReturnType<typeof setInterval> | null = null;
-
-/** Leader-only (bootstrap.ts): one replica sweeps, not all of them. */
-export function startTeamsTurnGc(): void {
-  if (gcTimer) return;
-  gcTimer = setInterval(() => {
-    runWorkerTick('teams-turn-gc', sweepStaleTeamsTurns).catch((err) => console.warn('[teams-webhook] gc tick failed', err));
-  }, 5 * 60 * 1000);
-}
-
-export function stopTeamsTurnGc(): void {
-  if (gcTimer) clearInterval(gcTimer);
-  gcTimer = null;
-}
+export { startTeamsTurnGc, stopTeamsTurnGc } from '../../workers/teams-turn-gc-worker';
 
 /**
  * Does the runtime's turn ledger still hold a live turn for this session?

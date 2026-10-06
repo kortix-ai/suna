@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { Hono } from 'hono';
-import { clientIpFromHeaders, clientKeyFromHeaders, requestClientIp, requestClientKey } from './client-ip';
+import { clientIpFromHeaders, clientKeyFromHeaders } from './client-ip';
+import { requestClientIp, requestClientKey } from '../middleware/client-ip';
 
 function headers(values: Record<string, string>) {
   return (name: string) => values[name.toLowerCase()] ?? null;
