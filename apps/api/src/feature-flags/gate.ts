@@ -11,9 +11,12 @@
  * message, web gate screens) key off `code`, never off prose.
  * Wire shape: @kortix/api-contract FeatureDisabledErrorSchema.
  */
-import type { Context } from 'hono';
 import type { FeatureFlagKey } from '@kortix/api-contract';
-import { featureFlagDef, resolveFeatureFlag } from './registry';
+import { featureFlagDef } from './registry';
+
+// `requireFeatureFlag` answers with a Hono response, so it lives in
+// `http-gate.ts`. Re-exported here so every importer and mock keeps working.
+export { requireFeatureFlag } from './http-gate';
 
 export const FEATURE_DISABLED_CODE = 'feature_disabled' as const;
 
@@ -28,17 +31,4 @@ export function featureDisabledBody(key: FeatureFlagKey): {
     code: FEATURE_DISABLED_CODE,
     feature: key,
   };
-}
-
-/**
- * Returns the 403 response when the flag is off for this project, else null.
- * Fail-closed: unknown metadata shapes and unavailable flags reject.
- */
-export function requireFeatureFlag(
-  c: Context,
-  metadata: unknown,
-  key: FeatureFlagKey,
-) {
-  if (resolveFeatureFlag(metadata, key)) return null;
-  return c.json(featureDisabledBody(key), 403);
 }

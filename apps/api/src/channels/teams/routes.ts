@@ -83,22 +83,24 @@ async function processActivity(
   return c.body(null, 200);
 }
 
-// Shared multi-tenant endpoint: the project is unknown until the activity's
-// tenant + conversation resolve to an install (dispatch, handleTeamsActivity).
-teamsWebhookApp.post('/messages', async (c) => {
-  if (!teamsConfigured()) return c.json({ error: 'teams not configured' }, 503);
-  return processActivity(c);
-});
+export function registerTeamsWebhookRoutes(): void {
+  // Shared multi-tenant endpoint: the project is unknown until the activity's
+  // tenant + conversation resolve to an install (dispatch, handleTeamsActivity).
+  teamsWebhookApp.post('/messages', async (c) => {
+    if (!teamsConfigured()) return c.json({ error: 'teams not configured' }, 503);
+    return processActivity(c);
+  });
 
-// Bring-your-own-bot endpoint: the project is in the path. It answers only
-// for a project with its own bot app; the token's audience is that app.
-teamsWebhookApp.post('/:projectId/messages', async (c) => {
-  const projectId = c.req.param('projectId');
-  // UNAUTHENTICATED surface: a path that names no project with its own bot is
-  // a plain 404, the same answer for a project that does not exist. A 503 made
-  // Bot Framework retry and paged on scanner noise.
-  if (!isUuid(projectId)) return c.json({ error: 'Not found' }, 404);
-  const appId = await loadTeamsAppIdForProject(projectId);
-  if (!appId) return c.json({ error: 'Not found' }, 404);
-  return processActivity(c, { projectId, appId });
-});
+  // Bring-your-own-bot endpoint: the project is in the path. It answers only
+  // for a project with its own bot app; the token's audience is that app.
+  teamsWebhookApp.post('/:projectId/messages', async (c) => {
+    const projectId = c.req.param('projectId');
+    // UNAUTHENTICATED surface: a path that names no project with its own bot is
+    // a plain 404, the same answer for a project that does not exist. A 503 made
+    // Bot Framework retry and paged on scanner noise.
+    if (!isUuid(projectId)) return c.json({ error: 'Not found' }, 404);
+    const appId = await loadTeamsAppIdForProject(projectId);
+    if (!appId) return c.json({ error: 'Not found' }, 404);
+    return processActivity(c, { projectId, appId });
+  });
+}
