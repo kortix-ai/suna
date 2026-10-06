@@ -1,5 +1,5 @@
 {
-  "source_hash": "f9551e87d003cc35ef6dcb5284969498924488bc7aaa8a790e3460cd817fb286",
+  "source_hash": "0f25736dfd19a635fd6d4ef2308aae2a20577d827a479e76205e20695722f076",
   "diff_files": [
     "apps/api/src/__tests__/integration-revoked-token-auth.test.ts",
     "apps/api/src/http-errors.ts",
@@ -20,13 +20,13 @@
     "apps/kortix-sandbox-agent-server/src/__tests__/session-token-health.test.ts",
     "apps/kortix-sandbox-agent-server/src/lib/kortix-api/session-token-health.ts"
   ],
-  "diff_hash": "d0ef2b71bf0479287ebcd5ad82f53f5a0d6fd078921549439dd3366b718dc3a8",
-  "head": "7b29978900edfec276943896c79fbe5678825aab",
+  "diff_hash": "207e4f1ffd7c5c0d77b19f82250d4981135f9cbd4ea42a3ae36608a8960ea5e8",
+  "head": "2175b306c7c247d9e427f9c5428f6d0b122dd2c2",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-06T12:25:40.883Z"
+  "at": "2026-10-06T12:38:18.686Z"
 }
