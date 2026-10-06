@@ -1156,6 +1156,10 @@
           "name": "Apps",
           "description": "Stellen Sie statische Websites, JavaScript-Pakete, Dockerfiles und OCI-Images unter stabilen serverlosen URLs bereit."
         },
+        "backends": {
+          "name": "Backends",
+          "description": "Gib diesem Projekt selbst gehostete Convex-Backends: Datenbank, Serverfunktionen, Echtzeit und Dateispeicher, jeweils auf einer eigenen Maschine."
+        },
         "monitors": {
           "name": "Monitore",
           "description": "Führen Sie dauerhafte Wächter aus, die Protokolle, Feeds oder APIs beobachten und bei Ereignissen Agentensitzungen starten."
@@ -19255,7 +19259,32 @@
       "text974ed31ef006": "Backend erstellt",
       "texta09d5b41a6e5": "Backend gelöscht",
       "text3e5ef2a7483e": "Backend angezeigt",
-      "text59db25d6a41f": "Admin-Zugangsdaten des Backends gelesen"
+      "text59db25d6a41f": "Admin-Zugangsdaten des Backends gelesen",
+      "textd55e9ebeaa95": "Ein Backend namens {value0} existiert in diesem Projekt bereits.",
+      "text8dd10daddd77": "Ein vollständiges Backend für dieses Projekt: Datenbank, Serverfunktionen, Echtzeit, Dateispeicher und Zeitpläne. Powered by Convex.",
+      "text1724fdec043c": "Bitte den Agenten, eines zu bauen, oder erstelle hier eines.",
+      "texta5ca25099e19": "Bitte den Agenten, eines zu bauen.",
+      "text2de7b4934e29": "Backend-Aktionen",
+      "text7129d391fd25": "Backend erstellt",
+      "textb19cc2aecb0e": "Backend gelöscht",
+      "text26cbb889e198": "Backends",
+      "textaad2d1b4576e": "CLI-Umgebung kopiert",
+      "text3f044da00a6f": "CLI-Umgebung kopieren",
+      "text21de8d7ddc3e": "Deploy-Befehl kopieren",
+      "text55cb8e9fd5d3": "Backend konnte nicht erstellt werden",
+      "text278204d7dab9": "Backend konnte nicht gelöscht werden",
+      "textaca8aae25be5": "Backends konnten nicht geladen werden",
+      "text9962d69a4916": "Zugangsdaten konnten nicht geladen werden",
+      "textc6af0b77ba25": "Backend erstellen",
+      "textf2e1ab3c0d51": "Backend löschen",
+      "text5c3fa6a80824": "Deploy-Befehl kopiert",
+      "texte65ec54500c8": "Es startet auf einer eigenen Maschine und ist in wenigen Sekunden bereit.",
+      "text502d7f23fab3": "Kleinbuchstaben, Ziffern und Bindestriche. Beginnt mit einem Buchstaben. Bis zu 63 Zeichen.",
+      "text311cc7fed7c7": "Noch keine Backends",
+      "texta593a9f33e01": "Dies löscht {value0}, die zugehörige Maschine und alle Daten. Das lässt sich nicht rückgängig machen.",
+      "textd784a0fa435a": "Dieses Projekt hat das Limit von 3 Backends erreicht. Lösche eines, um ein weiteres zu erstellen.",
+      "texte7a241debad5": "URL",
+      "textbf8026b9f2ff": "backends convex datenbank echtzeit serverfunktionen speicher zeitpläne"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

@@ -1156,6 +1156,10 @@
           "name": "Aplicaciones",
           "description": "Despliega sitios estáticos, paquetes JavaScript, Dockerfiles e imágenes OCI en URL serverless estables."
         },
+        "backends": {
+          "name": "Backends",
+          "description": "Da a este proyecto backends de Convex autoalojados: base de datos, funciones de servidor, tiempo real y almacenamiento de archivos, cada uno en su propia máquina."
+        },
         "monitors": {
           "name": "Monitores",
           "description": "Ejecuta observadores persistentes de registros, fuentes o API que inician sesiones de agente ante eventos."
@@ -19255,7 +19259,32 @@
       "text974ed31ef006": "Backend creado",
       "texta09d5b41a6e5": "Backend eliminado",
       "text3e5ef2a7483e": "Backend consultado",
-      "text59db25d6a41f": "Credenciales de administrador del backend leídas"
+      "text59db25d6a41f": "Credenciales de administrador del backend leídas",
+      "textd55e9ebeaa95": "Ya existe un backend llamado {value0} en este proyecto.",
+      "text8dd10daddd77": "Un backend completo para este proyecto: base de datos, funciones de servidor, tiempo real, almacenamiento de archivos y programaciones. Con tecnología de Convex.",
+      "text1724fdec043c": "Pide al agente que cree uno, o crea uno aquí.",
+      "texta5ca25099e19": "Pide al agente que cree uno.",
+      "text2de7b4934e29": "Acciones del backend",
+      "text7129d391fd25": "Backend creado",
+      "textb19cc2aecb0e": "Backend eliminado",
+      "text26cbb889e198": "Backends",
+      "textaad2d1b4576e": "Entorno de CLI copiado",
+      "text3f044da00a6f": "Copiar entorno de CLI",
+      "text21de8d7ddc3e": "Copiar comando de despliegue",
+      "text55cb8e9fd5d3": "No se pudo crear el backend",
+      "text278204d7dab9": "No se pudo eliminar el backend",
+      "textaca8aae25be5": "No se pudieron cargar los backends",
+      "text9962d69a4916": "No se pudieron cargar las credenciales",
+      "textc6af0b77ba25": "Crear backend",
+      "textf2e1ab3c0d51": "Eliminar backend",
+      "text5c3fa6a80824": "Comando de despliegue copiado",
+      "texte65ec54500c8": "Se inicia en su propia máquina y está listo en unos segundos.",
+      "text502d7f23fab3": "Letras minúsculas, dígitos y guiones. Empieza con una letra. Hasta 63 caracteres.",
+      "text311cc7fed7c7": "Aún no hay backends",
+      "texta593a9f33e01": "Esto elimina {value0}, su máquina y todos sus datos. No se puede deshacer.",
+      "textd784a0fa435a": "Este proyecto alcanzó su límite de 3 backends. Elimina uno para crear otro.",
+      "texte7a241debad5": "URL",
+      "textbf8026b9f2ff": "backends convex base de datos tiempo real funciones de servidor almacenamiento programaciones"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

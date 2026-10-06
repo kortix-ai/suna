@@ -1156,6 +1156,10 @@
           "name": "应用",
           "description": "将静态网站、JavaScript 包、Dockerfile 和 OCI 镜像部署到稳定的无服务器网址。"
         },
+        "backends": {
+          "name": "后端",
+          "description": "为此项目提供自托管的 Convex 后端：数据库、服务器函数、实时和文件存储，每个后端运行在独立的机器上。"
+        },
         "monitors": {
           "name": "监控器",
           "description": "运行持久监控器来观察日志、信息源或 API，并根据事件启动智能体会话。"
@@ -19255,7 +19259,32 @@
       "text974ed31ef006": "已创建后端",
       "texta09d5b41a6e5": "已删除后端",
       "text3e5ef2a7483e": "已查看后端",
-      "text59db25d6a41f": "已读取后端管理员凭据"
+      "text59db25d6a41f": "已读取后端管理员凭据",
+      "textd55e9ebeaa95": "此项目中已存在名为 {value0} 的后端。",
+      "text8dd10daddd77": "此项目的完整后端：数据库、服务器函数、实时、文件存储和计划任务。由 Convex 提供支持。",
+      "text1724fdec043c": "让智能体创建一个，或在此处创建。",
+      "texta5ca25099e19": "让智能体创建一个。",
+      "text2de7b4934e29": "后端操作",
+      "text7129d391fd25": "后端已创建",
+      "textb19cc2aecb0e": "后端已删除",
+      "text26cbb889e198": "后端",
+      "textaad2d1b4576e": "CLI 环境已复制",
+      "text3f044da00a6f": "复制 CLI 环境",
+      "text21de8d7ddc3e": "复制部署命令",
+      "text55cb8e9fd5d3": "无法创建后端",
+      "text278204d7dab9": "无法删除后端",
+      "textaca8aae25be5": "无法加载后端",
+      "text9962d69a4916": "无法加载凭据",
+      "textc6af0b77ba25": "创建后端",
+      "textf2e1ab3c0d51": "删除后端",
+      "text5c3fa6a80824": "部署命令已复制",
+      "texte65ec54500c8": "它在独立的机器上启动，几秒钟内即可就绪。",
+      "text502d7f23fab3": "小写字母、数字和连字符。以字母开头。最多 63 个字符。",
+      "text311cc7fed7c7": "暂无后端",
+      "texta593a9f33e01": "这将删除 {value0}、它的机器以及所有数据。此操作无法撤销。",
+      "textd784a0fa435a": "此项目已达到 3 个后端的上限。请先删除一个再创建新的。",
+      "texte7a241debad5": "URL",
+      "textbf8026b9f2ff": "后端 convex 数据库 实时 服务器函数 存储 计划任务"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

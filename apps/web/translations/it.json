@@ -1156,6 +1156,10 @@
           "name": "App",
           "description": "Distribuisci siti statici, pacchetti JavaScript, Dockerfile e immagini OCI su URL serverless stabili."
         },
+        "backends": {
+          "name": "Backend",
+          "description": "Dai a questo progetto backend Convex self-hosted: database, funzioni server, realtime e archiviazione file, ciascuno su una macchina dedicata."
+        },
         "monitors": {
           "name": "Monitor",
           "description": "Esegui controlli permanenti su registri, feed o API che avviano sessioni agente in risposta agli eventi."
@@ -19255,7 +19259,32 @@
       "text974ed31ef006": "Backend creato",
       "texta09d5b41a6e5": "Backend eliminato",
       "text3e5ef2a7483e": "Backend visualizzato",
-      "text59db25d6a41f": "Credenziali amministratore del backend lette"
+      "text59db25d6a41f": "Credenziali amministratore del backend lette",
+      "textd55e9ebeaa95": "Esiste già un backend chiamato {value0} in questo progetto.",
+      "text8dd10daddd77": "Un backend completo per questo progetto: database, funzioni server, realtime, archiviazione file e pianificazioni. Basato su Convex.",
+      "text1724fdec043c": "Chiedi all’agente di crearne uno, oppure creane uno qui.",
+      "texta5ca25099e19": "Chiedi all’agente di crearne uno.",
+      "text2de7b4934e29": "Azioni del backend",
+      "text7129d391fd25": "Backend creato",
+      "textb19cc2aecb0e": "Backend eliminato",
+      "text26cbb889e198": "Backend",
+      "textaad2d1b4576e": "Ambiente CLI copiato",
+      "text3f044da00a6f": "Copia ambiente CLI",
+      "text21de8d7ddc3e": "Copia comando di deploy",
+      "text55cb8e9fd5d3": "Impossibile creare il backend",
+      "text278204d7dab9": "Impossibile eliminare il backend",
+      "textaca8aae25be5": "Impossibile caricare i backend",
+      "text9962d69a4916": "Impossibile caricare le credenziali",
+      "textc6af0b77ba25": "Crea backend",
+      "textf2e1ab3c0d51": "Elimina backend",
+      "text5c3fa6a80824": "Comando di deploy copiato",
+      "texte65ec54500c8": "Parte su una macchina dedicata ed è pronto in pochi secondi.",
+      "text502d7f23fab3": "Lettere minuscole, cifre e trattini. Inizia con una lettera. Fino a 63 caratteri.",
+      "text311cc7fed7c7": "Nessun backend per ora",
+      "texta593a9f33e01": "Questo elimina {value0}, la sua macchina e tutti i suoi dati. L’operazione non può essere annullata.",
+      "textd784a0fa435a": "Questo progetto ha raggiunto il limite di 3 backend. Eliminane uno per crearne un altro.",
+      "texte7a241debad5": "URL",
+      "textbf8026b9f2ff": "backend convex database realtime funzioni server archiviazione pianificazioni"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

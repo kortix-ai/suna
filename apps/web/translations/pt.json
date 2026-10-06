@@ -1156,6 +1156,10 @@
           "name": "Aplicativos",
           "description": "Implante sites estáticos, pacotes JavaScript, Dockerfiles e imagens OCI em URLs serverless estáveis."
         },
+        "backends": {
+          "name": "Backends",
+          "description": "Dê a este projeto backends Convex auto-hospedados: banco de dados, funções de servidor, tempo real e armazenamento de arquivos, cada um em sua própria máquina."
+        },
         "monitors": {
           "name": "Monitores",
           "description": "Execute observadores persistentes de registros, feeds ou APIs que iniciam sessões de agentes a partir de eventos."
@@ -19255,7 +19259,32 @@
       "text974ed31ef006": "Backend criado",
       "texta09d5b41a6e5": "Backend excluído",
       "text3e5ef2a7483e": "Backend visualizado",
-      "text59db25d6a41f": "Credenciais de administrador do backend lidas"
+      "text59db25d6a41f": "Credenciais de administrador do backend lidas",
+      "textd55e9ebeaa95": "Já existe um backend chamado {value0} neste projeto.",
+      "text8dd10daddd77": "Um backend completo para este projeto: banco de dados, funções de servidor, tempo real, armazenamento de arquivos e agendamentos. Com tecnologia Convex.",
+      "text1724fdec043c": "Peça ao agente para criar um ou crie um aqui.",
+      "texta5ca25099e19": "Peça ao agente para criar um.",
+      "text2de7b4934e29": "Ações do backend",
+      "text7129d391fd25": "Backend criado",
+      "textb19cc2aecb0e": "Backend excluído",
+      "text26cbb889e198": "Backends",
+      "textaad2d1b4576e": "Ambiente da CLI copiado",
+      "text3f044da00a6f": "Copiar ambiente da CLI",
+      "text21de8d7ddc3e": "Copiar comando de deploy",
+      "text55cb8e9fd5d3": "Não foi possível criar o backend",
+      "text278204d7dab9": "Não foi possível excluir o backend",
+      "textaca8aae25be5": "Não foi possível carregar os backends",
+      "text9962d69a4916": "Não foi possível carregar as credenciais",
+      "textc6af0b77ba25": "Criar backend",
+      "textf2e1ab3c0d51": "Excluir backend",
+      "text5c3fa6a80824": "Comando de deploy copiado",
+      "texte65ec54500c8": "Ele inicia em uma máquina própria e fica pronto em poucos segundos.",
+      "text502d7f23fab3": "Letras minúsculas, dígitos e hifens. Começa com uma letra. Até 63 caracteres.",
+      "text311cc7fed7c7": "Nenhum backend ainda",
+      "texta593a9f33e01": "Isso exclui {value0}, sua máquina e todos os seus dados. Não é possível desfazer.",
+      "textd784a0fa435a": "Este projeto atingiu o limite de 3 backends. Exclua um para criar outro.",
+      "texte7a241debad5": "URL",
+      "textbf8026b9f2ff": "backends convex banco de dados tempo real funções de servidor armazenamento agendamentos"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

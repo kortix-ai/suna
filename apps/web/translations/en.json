@@ -982,6 +982,10 @@
           "name": "Apps",
           "description": "Deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable serverless URLs."
         },
+        "backends": {
+          "name": "Backends",
+          "description": "Give this project self-hosted Convex backends: database, server functions, realtime and file storage, each on its own machine."
+        },
         "monitors": {
           "name": "Monitors",
           "description": "Run persistent watchers that observe logs, feeds, or APIs and start agent sessions from events."
@@ -19266,7 +19270,32 @@
       "text974ed31ef006": "Created backend",
       "texta09d5b41a6e5": "Deleted backend",
       "text3e5ef2a7483e": "Viewed backend",
-      "text59db25d6a41f": "Read backend admin credentials"
+      "text59db25d6a41f": "Read backend admin credentials",
+      "textd55e9ebeaa95": "A backend named {value0} already exists in this project.",
+      "text8dd10daddd77": "A full backend for this project: database, server functions, realtime, file storage and schedules. Powered by Convex.",
+      "text1724fdec043c": "Ask the agent to build one, or create one here.",
+      "texta5ca25099e19": "Ask the agent to build one.",
+      "text2de7b4934e29": "Backend actions",
+      "text7129d391fd25": "Backend created",
+      "textb19cc2aecb0e": "Backend deleted",
+      "text26cbb889e198": "Backends",
+      "textaad2d1b4576e": "CLI environment copied",
+      "text3f044da00a6f": "Copy CLI environment",
+      "text21de8d7ddc3e": "Copy deploy command",
+      "text55cb8e9fd5d3": "Could not create the backend",
+      "text278204d7dab9": "Could not delete the backend",
+      "textaca8aae25be5": "Could not load backends",
+      "text9962d69a4916": "Could not load the credentials",
+      "textc6af0b77ba25": "Create backend",
+      "textf2e1ab3c0d51": "Delete backend",
+      "text5c3fa6a80824": "Deploy command copied",
+      "texte65ec54500c8": "It starts on its own machine and is ready in a few seconds.",
+      "text502d7f23fab3": "Lowercase letters, digits and dashes. Starts with a letter. Up to 63 characters.",
+      "text311cc7fed7c7": "No backends yet",
+      "texta593a9f33e01": "This deletes {value0}, its machine and all of its data. This cannot be undone.",
+      "textd784a0fa435a": "This project has reached its limit of 3 backends. Delete one to create another.",
+      "texte7a241debad5": "URL",
+      "textbf8026b9f2ff": "backends convex database realtime server functions storage schedules"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
