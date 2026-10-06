@@ -160,7 +160,9 @@ import rules, and where new code goes; `bun run lint` enforces them.
 - `harness` is the selected harness's closed block (E19). `runtimeReady` is
   computed once in `routes/kortix/health.ts` from the host's repo checks and
   `harness.ready`. `capabilities` lists the session features the runtime
-  serves (E1): all ten on OpenCode, `session.subagents` on pi.
+  serves (E1): all eleven on OpenCode 1.18.15 and later (`session.steer` is
+  absent on an older or unknown version); `session.subagents`,
+  `session.compact`, `session.commands` and `session.steer` on pi.
 - `opencode`, `opencode_pid`, `opencode_port`, `opencode_session_id` and
   `opencode_session_required` are the pre-W3 flat names of the block's fields
   (`routes/kortix/legacy-names.ts`), kept for an API built before W3.

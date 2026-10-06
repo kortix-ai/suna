@@ -1,16 +1,21 @@
 /**
- * Integration test (real local DB) for the read behind `/settings/tokens` —
- * the page where a person manages THEIR OWN API keys.
+ * Integration test (real local DB) for the two reads behind the token
+ * listings: `/settings/tokens` — the page where a person manages THEIR OWN
+ * API keys — and the unnarrowed account list `kortix tokens ls` renders.
  *
- * `GET /v1/accounts/tokens` has always returned every row the account owns,
- * and three different kinds of row live in `account_tokens`: a person's own
+ * Three different kinds of row live in `account_tokens`: a person's own
  * hand-minted key, a session connector token the runtime mints per sandbox,
- * and a service account's bearer. A personal page must show exactly the first
- * kind, belonging to exactly the person looking at it — so this pins that
- * `listPersonalAccountTokens` filters on the columns that DEFINE the other two
- * (`session_id`, `service_account_id`, `agent_grant`) and on `user_id`, rather
- * than on the `name.startsWith('Connector Session ')` heuristic the browser
- * used to guess with.
+ * and a service account's bearer. A personal page must show exactly the
+ * first kind, belonging to exactly the person looking at it — so this pins
+ * that `listPersonalAccountTokens` filters on the columns that DEFINE the
+ * other two (`session_id`, `service_account_id`, `agent_grant`) and on
+ * `user_id`, rather than on the `name.startsWith('Connector Session ')`
+ * heuristic the browser used to guess with.
+ *
+ * The unnarrowed list is the revocation surface: every row it lists must be
+ * one the revoke endpoint would still accept (`status='active'`,
+ * `revoked_at` null), because `kortix tokens ls` → `kortix tokens rm` on a
+ * dead row only ever answers "token not found or already revoked".
  */
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { eq } from 'drizzle-orm';
@@ -31,6 +36,16 @@ const MY_PROJECT_SCOPED_KEY = crypto.randomUUID();
 const THEIR_KEY = crypto.randomUUID();
 const MY_SESSION_TOKEN = crypto.randomUUID();
 const SERVICE_ACCOUNT_BEARER = crypto.randomUUID();
+// A session token its session revoked on delete (`revokeSessionConnectorTokens`):
+// status='revoked', revoked_at stamped. The dogfood report: `kortix tokens ls`
+// still listed it, and revoking it answered 404 "token not found or already
+// revoked" — a listed row the revoke endpoint refuses.
+const REVOKED_SESSION_TOKEN = crypto.randomUUID();
+// The inverse corruption: status still reads 'active' but revoked_at is
+// stamped (no DB constraint ties the two columns; the release-gate sweep
+// revoked session tokens with a direct UPDATE). `validateAccountToken`
+// refuses such a row; the listing must not offer it either.
+const ZOMBIE_TOKEN = crypto.randomUUID();
 
 /** The columns every row needs, so each case below shows only its own point. */
 const row = (tokenId: string, extra: Partial<typeof accountTokens.$inferInsert>) =>
@@ -89,6 +104,22 @@ beforeAll(async () => {
       name: 'ci',
       serviceAccountId: SERVICE_ACCOUNT,
     }),
+    row(REVOKED_SESSION_TOKEN, {
+      userId: ME,
+      name: 'Connector Session deadbeef',
+      sessionId: crypto.randomUUID(),
+      status: 'revoked',
+      revokedAt: new Date('2026-01-02T00:00:00.000Z'),
+      agentGrant: { agent: 'main', connectors: [], permissions: 'all' },
+    }),
+    row(ZOMBIE_TOKEN, {
+      userId: ME,
+      name: 'Connector Session c0ffee1',
+      sessionId: crypto.randomUUID(),
+      status: 'active',
+      revokedAt: new Date('2026-01-03T00:00:00.000Z'),
+      agentGrant: { agent: 'main', connectors: [], permissions: 'all' },
+    }),
   ]);
 });
 
@@ -115,11 +146,17 @@ describe('listPersonalAccountTokens', () => {
     expect(ids).not.toContain(SERVICE_ACCOUNT_BEARER);
   });
 
-  test('the unnarrowed account list still returns every row — no existing caller changed', async () => {
+  test('the unnarrowed account list returns only the rows that can still act', async () => {
+    // The listing feeds `kortix tokens ls` → `tokens rm`: a listed row the
+    // revoke endpoint answers "token not found or already revoked" on is the
+    // bug this file pins. Live rows only — exactly what
+    // `validateAccountToken` accepts (status='active', revoked_at null).
     const ids = (await listAccountTokens(ACCOUNT)).map((t) => t.tokenId).sort();
     expect(ids).toEqual(
       [MY_KEY, MY_PROJECT_SCOPED_KEY, THEIR_KEY, MY_SESSION_TOKEN, SERVICE_ACCOUNT_BEARER].sort(),
     );
+    expect(ids).not.toContain(REVOKED_SESSION_TOKEN);
+    expect(ids).not.toContain(ZOMBIE_TOKEN);
   });
 });
 

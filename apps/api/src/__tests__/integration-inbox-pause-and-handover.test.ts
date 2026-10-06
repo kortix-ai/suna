@@ -23,6 +23,8 @@ import {
   InboxDeliveryPaused,
   assertInboxDeliveryActive,
 } from '../projects/session-lifecycle/inbox-delivery-hold';
+import { recordRepairedForward } from '../projects/session-lifecycle/inbox-placement';
+import { markCommandForwarded } from '../projects/session-lifecycle/command-transitions';
 import { LIFECYCLE_CLAIM_LOCK_MS } from '../projects/session-lifecycle/command-lease';
 import {
   LIFECYCLE_RUNNING_RECLAIM_GRACE_MS,
@@ -226,5 +228,35 @@ describe('a pod that exits while it delivers a prompt', () => {
     ).toEqual([]);
     const late = await claimOne('pod-b', at(LIFECYCLE_CLAIM_LOCK_MS + LIFECYCLE_RUNNING_RECLAIM_GRACE_MS + 1_000));
     expect(late.map((r) => r.commandId)).toEqual([row.commandId]);
+  });
+});
+
+describe('a placement repair that re-sends a forwarded prompt', () => {
+  test('records the new wire id, which the closed lease cannot write', async () => {
+    const row = await enqueue('q_repair_record');
+    const [claimed] = await claimOne('drain-a');
+    expect(await markCommandForwarded(claimed, SESSION_ID, 'msg_round0')).toBe(true);
+
+    // Round 1 of the repair: the lease closed with round 0's forward.
+    expect(await markCommandForwarded(claimed, SESSION_ID, 'msg_round1')).toBe(false);
+    await recordRepairedForward(row.commandId, 'msg_round1');
+
+    const after = await readRow(row.commandId);
+    expect(after.status).toBe('succeeded');
+    expect(after.result.status).toBe('forwarded');
+    expect(after.result.forwarded_message_id).toBe('msg_round1');
+  });
+
+  test('does not touch a row that is no longer forwarded', async () => {
+    const row = await enqueue('q_repair_closed');
+    const [claimed] = await claimOne('drain-a');
+    await markCommandForwarded(claimed, SESSION_ID, 'msg_round0');
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET result = result || '{"status": "delivered"}'::jsonb
+       WHERE command_id = ${row.commandId}::uuid`);
+
+    await recordRepairedForward(row.commandId, 'msg_round1');
+    expect((await readRow(row.commandId)).result.forwarded_message_id).toBe('msg_round0');
   });
 });

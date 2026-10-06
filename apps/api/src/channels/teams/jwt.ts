@@ -34,7 +34,9 @@ export async function validateInboundActivityJwt(
       audience,
     });
     const claimedServiceUrl = typeof payload.serviceurl === 'string' ? payload.serviceurl : null;
-    if (serviceUrl && claimedServiceUrl && claimedServiceUrl.replace(/\/+$/, '') !== serviceUrl.replace(/\/+$/, '')) {
+    // The Bot Framework puts the activity's service URL in every inbound token.
+    // A token without the claim cannot prove it was issued for this activity.
+    if (serviceUrl && (!claimedServiceUrl || claimedServiceUrl.replace(/\/+$/, '') !== serviceUrl.replace(/\/+$/, ''))) {
       return false;
     }
     return true;

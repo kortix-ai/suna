@@ -11,6 +11,21 @@ import type { HTTPException } from 'hono/http-exception';
 const WINDOW_MS = 10 * 60_000;
 const MAX_TRACKED_MESSAGES = 10_000;
 
+const UUID_PATTERN = /[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}/gi;
+
+/**
+ * The throttle bucket key for a dead-credential refusal: method, route,
+ * status and a reason with every token id normalized OUT. KRTX-1564 named the
+ * dead row in the refusal (`project token <id> is revoked`); keyed verbatim,
+ * every revoked token would open its own bucket and the per-route/reason
+ * window this limiter exists for (the KRTX-1039 warn spike) would shard into
+ * one-bucket-per-token noise. The printed LINE keeps the id — only the bucket
+ * key hides it.
+ */
+export function deadCredentialLogKey(method: string, path: string, status: number, reason: string): string {
+  return `${method} ${path} ${status} ${reason}`.replace(UUID_PATTERN, ':id');
+}
+
 const deadCredentials = new WeakSet<HTTPException>();
 
 type Window = { loggedAt: number; suppressed: number };

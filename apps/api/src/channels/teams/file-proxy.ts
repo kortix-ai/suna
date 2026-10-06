@@ -12,6 +12,7 @@ import { botConnectorToken, graphToken } from '../teams-auth';
 import type { TeamsActivity, TeamsConversationRef } from './types';
 import type { TeamsInbound } from './inbound';
 
+const MAX_DOWNLOAD_REDIRECTS = 5;
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 const UPLOAD_TTL_MS = 15 * 60 * 1000;
 
@@ -101,7 +102,38 @@ export async function downloadTeamsFile(
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const res = await fetch(parsed.href, { headers, signal: AbortSignal.timeout(60_000) });
+  // Redirects are followed by hand. The default `fetch` follows them with the
+  // bot/Graph bearer attached, to any host: a pre-authenticated SharePoint link,
+  // or any `*.microsoft.com` page with an open redirect, would then receive the
+  // token. Each hop must pass the same https + host allowlist, and the bearer
+  // goes only to the host it was minted for.
+  let current = parsed;
+  let res: Response | null = null;
+  for (let hop = 0; hop <= MAX_DOWNLOAD_REDIRECTS; hop++) {
+    res = await fetch(current.href, {
+      headers: current.host === parsed.host ? headers : {},
+      redirect: 'manual',
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (res.status < 300 || res.status >= 400) break;
+    const location = res.headers.get('location');
+    if (!location) break;
+    let next: URL;
+    try {
+      next = new URL(location, current);
+    } catch {
+      return { ok: false, error: 'invalid redirect', status: 502 };
+    }
+    if (
+      next.protocol !== 'https:' ||
+      (!ALLOWED_DOWNLOAD_HOST.test(next.hostname) && !ALLOWED_BOT_ATTACHMENT_HOST.test(next.hostname))
+    ) {
+      return { ok: false, error: 'redirect leaves the allowed Microsoft/SharePoint hosts', status: 502 };
+    }
+    current = next;
+    res = null;
+  }
+  if (!res) return { ok: false, error: 'too many redirects', status: 502 };
   if (!res.ok) return { ok: false, error: `download failed: HTTP ${res.status}`, status: 502 };
   return {
     ok: true,

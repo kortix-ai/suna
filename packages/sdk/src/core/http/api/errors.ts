@@ -261,6 +261,18 @@ export function isBillingError(error: any): boolean {
   return error instanceof BillingError;
 }
 
+/**
+ * Did the server (or the missing token) refuse this caller's credential?
+ * Decides on `status` (401, 403) or `AuthError`, never on message text: an id or
+ * URL that contains "401" is not an auth failure. Duck-typed on `status` so an
+ * error from a second copy of this class (dual package) still counts.
+ */
+export function isAuthFailure(error: unknown): boolean {
+  if (error instanceof AuthError) return true;
+  const status = (error as { status?: unknown } | null | undefined)?.status;
+  return status === 401 || status === 403;
+}
+
 // ============================================================================
 // UI Formatting
 // ============================================================================

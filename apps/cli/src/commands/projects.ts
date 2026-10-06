@@ -22,9 +22,10 @@ import {
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
+  tokenRejectedLine,
 } from '../command-helpers.ts';
 import { appendGitExcludeEntries } from '../git-exclude.ts';
-import { authHeaderArgs } from '../git-ops.ts';
+import { authGitEnv } from '../git-ops.ts';
 import { configureProjectGitAuth, resolveProjectGitTarget } from '../project-git.ts';
 import {
   clearLink,
@@ -1117,12 +1118,16 @@ async function projectsClone(
     }
   }
 
-  const args = target.token
-    ? [...authHeaderArgs(target.repoUrl, target.token, target.username), 'clone', target.repoUrl]
-    : ['clone', target.repoUrl];
+  const args = ['clone', target.repoUrl];
   if (destination) args.push(destination);
 
-  const cloned = spawnSync('git', args, { stdio: 'inherit' });
+  const cloned = spawnSync('git', args, {
+    stdio: 'inherit',
+    // The token travels in the environment, never in argv (see `authGitEnv`).
+    env: target.token
+      ? { ...process.env, ...authGitEnv(target.repoUrl, target.token, target.username) }
+      : undefined,
+  });
   if (cloned.error) {
     process.stderr.write(`${status.err(`Could not start git: ${cloned.error.message}`)}\n`);
     return 1;
@@ -1689,9 +1694,7 @@ async function projectsRm(args: string[]): Promise<number> {
 function surface(err: unknown): number {
   if (err instanceof ApiError) {
     if (err.status === 401) {
-      process.stderr.write(
-        `${status.err('Token rejected. Run `kortix login` to re-authenticate.')}\n`,
-      );
+      process.stderr.write(`${status.err(tokenRejectedLine(err.message))}\n`);
     } else {
       process.stderr.write(`${status.err(`HTTP ${err.status}: ${err.message}`)}\n`);
     }

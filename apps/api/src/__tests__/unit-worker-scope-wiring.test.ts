@@ -50,6 +50,7 @@ const WORKERS: Record<string, string> = {
   'billing-trial-expiry': 'workers/billing-rotation-worker.ts',
   'billing-yearly-rotation': 'workers/billing-rotation-worker.ts',
   'billing-free-tier-rotation': 'workers/billing-rotation-worker.ts',
+  'account-deletion': 'workers/account-deletion-worker.ts',
   'slack-turn-gc': 'workers/slack-turn-gc-worker.ts',
   'teams-turn-gc': 'workers/teams-turn-gc-worker.ts',
 };
@@ -92,6 +93,7 @@ const STARTS: Record<string, string> = {
   startGrantExpirySweeper: 'iam-grant-expiry',
   startOAuthSweeper: 'oauth-sweep',
   startBillingRotation: 'billing-trial-expiry',
+  startAccountDeletionSchedule: 'account-deletion',
   startSlackTurnGc: 'slack-turn-gc',
   startTeamsTurnGc: 'teams-turn-gc',
   startTeamsBotTokenRefresh: 'not a worker: in-memory Teams bot token',
