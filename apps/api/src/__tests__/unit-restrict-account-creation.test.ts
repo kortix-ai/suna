@@ -73,6 +73,11 @@ mock.module('../shared/db', () => ({
       throw new Error('db.select should not be reached by these tests');
     },
   },
+  // setup-links/public-app.ts imports it at module load (#9272); no test here
+  // opens a transaction.
+  withDbTransaction: () => {
+    throw new Error('withDbTransaction should not be reached by these tests');
+  },
 }));
 
 let accountsRouter: any;
