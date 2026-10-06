@@ -8,12 +8,12 @@
     "apps/cli/src/commands/sandboxes.ts"
   ],
   "diff_hash": "71a68c61484a789b372adf286a57c24ee52b6dade6064a0a3d21d1c5969ae963",
-  "head": "1eae3d16d0f3019a4cb5beafd637577da7b1725c",
+  "head": "b5cbc06b6af9e7d70c060e1e7970684c685bd8ef",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-06T13:42:45.376Z"
+  "at": "2026-10-06T14:08:53.047Z"
 }
