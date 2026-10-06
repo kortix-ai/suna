@@ -239,6 +239,21 @@ export function registerSecretResourceRoutes() {
     if (!(await mayManage(actorId, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
     const [member] = await accountMemberRow(accountId, userId);
     if (!member) return c.json({ error: 'Member not found' }, 404);
+    // Same checks as `PUT .../access`: a project key is shared only by someone
+    // who may read the project, and sharing beyond the creator needs
+    // `project.secret.write`; the grantee must be able to read the project.
+    if (row.projectId) {
+      if (!(await memberMayReadProject(accountId, row.projectId, actorId, { mfaAal: c.get('mfaAal') }))) {
+        return c.json({ error: 'Forbidden' }, 403);
+      }
+      if (userId !== row.createdBy) {
+        const verdict = await authorize(await actorOf(c, accountId), PROJECT_ACTIONS.PROJECT_SECRET_WRITE, { type: 'project', id: row.projectId });
+        if (!verdict.allowed) return c.json({ error: 'Project secret write access required' }, 403);
+      }
+      if (!(await memberMayReadProject(accountId, row.projectId, userId))) {
+        return c.json({ error: 'Member has no project access' }, 400);
+      }
+    }
     await db.insert(accountSecretGrants).values({ accountId, secretId: row.secretId, userId, grantedBy: actorId }).onConflictDoNothing();
     return c.json(await view(row, actorId));
   });
