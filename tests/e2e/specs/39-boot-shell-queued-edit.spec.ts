@@ -34,6 +34,8 @@ const QUEUED = "Then compare it with the attached notes";
 const EDITED = "Then compare it with the attached notes and list the gaps";
 
 type ListedPrompt = {
+  prompt_id: string;
+  client_message_id: string;
   full_text: string;
   state: string;
   placement: string;
@@ -46,9 +48,6 @@ type ListedPrompt = {
 // text parts only, so every file on the message was lost. Edit now opens the
 // row in place and Submit PATCHes its text, which keeps the row's files.
 test("39 — editing a message queued during boot keeps its files", async ({ page }, testInfo) => {
-  // The journey seeds the session in the database and holds it in boot by
-  // answering `/start` itself. A deployed target provisions real sessions.
-  test.skip(isDeployedTarget(), "local profile only: the session is seeded and held in boot");
   test.setTimeout(180_000);
   const env = loadEnv();
   const user = await createAuthUser(
@@ -82,7 +81,8 @@ test("39 — editing a message queued during boot keeps its files", async ({ pag
     });
     // The deterministic local profile has no live managed model catalog. Hand
     // the picker its real server-resolved default, as journey 28 does, so the
-    // composer can send; every prompt request below reaches the real API.
+    // composer can send; every prompt request below reaches the real API. A
+    // deployed target keeps its real catalog: a text file needs no vision.
     const defaults = await api<{ resolvedForCaller: string | null }>(
       auth.access_token,
       "GET",
@@ -111,11 +111,14 @@ test("39 — editing a message queued during boot keeps its files", async ({ pag
       defaultModel: modelId,
     };
 
-    // The local profile provisions no sessions: `POST /sessions` answers 503
-    // KORTIX_URL_UNREACHABLE. Seed what a create with a first prompt writes —
-    // the session row, and the prompt as the durable inbox row the server
-    // builds from `pending_prompt` (`pending:<session_id>`). The page opens it
-    // on the instant shell, as after a reload during boot.
+    // A session in boot, seeded as the server holds one: the session row, and
+    // its first prompt as the inbox row a create with `pending_prompt` writes
+    // (`pending:<session_id>`). During boot the drain has that prompt claimed
+    // and waits for the runtime (`deliver.ts`), so it is seeded delivering,
+    // under a fixture lock no drain takes over. Every later message waits
+    // behind it, on any target, and nothing provisions a computer. The local
+    // profile could not create the session anyway: `POST /sessions` answers
+    // 503 KORTIX_URL_UNREACHABLE there.
     const sessionId = await createDatabaseSession(env, {
       projectId: project.id,
       accountId: account.account_id,
@@ -124,8 +127,9 @@ test("39 — editing a message queued during boot keeps its files", async ({ pag
     await runDatabaseSql(
       `INSERT INTO kortix.session_lifecycle_commands
          (command_type, source, status, project_id, session_id, account_id,
-          actor_user_id, idempotency_key, payload)
-       VALUES ('continue_session', 'ui', 'queued', $1, $2, $3, $4, $5, $6::jsonb)`,
+          actor_user_id, idempotency_key, payload, result, locked_by, locked_until)
+       VALUES ('continue_session', 'ui', 'running', $1, $2, $3, $4, $5, $6::jsonb,
+         $7::jsonb, 'browser-boot-queue-fixture', now() + interval '10 minutes')`,
       [
         project.id,
         sessionId,
@@ -138,6 +142,7 @@ test("39 — editing a message queued during boot keeps its files", async ({ pag
           remintOnDelivery: true,
           parts: [{ type: "text", text: FIRST }],
         }),
+        JSON.stringify({ delivery_started_at: new Date().toISOString() }),
       ],
       env.databaseUrl,
     );
@@ -157,7 +162,11 @@ test("39 — editing a message queued during boot keeps its files", async ({ pag
       if (path.startsWith(promptsPath) && request.method() !== "GET") {
         promptWrites.push({ method: request.method(), path });
       }
-      if (request.method() === "GET" && path === `/v1/projects/${project.id}/model-picker`) {
+      if (
+        !isDeployedTarget() &&
+        request.method() === "GET" &&
+        path === `/v1/projects/${project.id}/model-picker`
+      ) {
         await route.fulfill({
           status: 200,
           contentType: "application/json",
@@ -198,6 +207,7 @@ test("39 — editing a message queued during boot keeps its files", async ({ pag
       page.getByText(FIRST, { exact: true }).filter({ visible: true }).first(),
     ).toBeVisible({ timeout: 30_000 });
 
+    let queuedRow: ListedPrompt | undefined;
     await test.step("a message with a file queues behind the first prompt", async () => {
       await page.locator("input[type=file]").setInputFiles({
         name: "notes.txt",
@@ -228,13 +238,21 @@ test("39 — editing a message queued during boot keeps its files", async ({ pag
       const row = page.locator("[data-queued-prompt-id]").filter({ hasText: QUEUED });
       await expect(row).toHaveAttribute("data-queued-state", "queued", { timeout: 30_000 });
       await expect(row).toContainText("1 file");
-      // The POST's drain hands the first prompt to the (booting) runtime and
-      // puts this row back behind it. Edit once it waits there.
+      // The POST's drain claims the row, finds the first prompt in delivery
+      // and puts the row back behind it. Edit once it waits there, outside
+      // that short claim.
       await expect
-        .poll(async () => (await listPrompts()).find((p) => p.full_text === QUEUED)?.state, {
-          timeout: 30_000,
-        })
+        .poll(
+          async () => {
+            queuedRow = (await listPrompts()).find((p) => p.full_text === QUEUED);
+            return queuedRow?.state;
+          },
+          { timeout: 30_000 },
+        )
         .toBe("waiting");
+      expect(queuedRow!.attachments).toEqual([
+        expect.objectContaining({ filename: "notes.txt" }),
+      ]);
     });
 
     await test.step("Edit opens the row in place and sends nothing", async () => {
@@ -259,10 +277,11 @@ test("39 — editing a message queued during boot keeps its files", async ({ pag
     await test.step("Submit saves the words into the same row, and the file stays", async () => {
       const writesBefore = promptWrites.length;
       await input.fill(EDITED);
+      // The PATCH names the queued row itself.
       const save = page.waitForRequest(
         (request) =>
           request.method() === "PATCH" &&
-          new URL(request.url()).pathname.startsWith(`${promptsPath}/`),
+          new URL(request.url()).pathname === `${promptsPath}/${queuedRow!.prompt_id}`,
       );
       await page.getByRole("button", { name: "Submit", exact: true }).click();
       const saved = await save;
@@ -281,14 +300,15 @@ test("39 — editing a message queued during boot keeps its files", async ({ pag
       });
     });
 
-    await test.step("the server row holds the new text and the file", async () => {
+    await test.step("the server row holds the new text and the same file", async () => {
       const prompts = await listPrompts();
-      expect(prompts.filter((p) => p.placement === "composer")).toEqual([
-        expect.objectContaining({
-          full_text: EDITED,
-          attachments: [{ filename: "notes.txt", mime: "text/plain" }],
-        }),
-      ]);
+      // The first prompt and the edited row; no copy of the old words.
+      expect(prompts.map((p) => p.client_message_id).sort()).toEqual(
+        [`pending:${sessionId}`, queuedRow!.client_message_id].sort(),
+      );
+      const edited = prompts.find((p) => p.prompt_id === queuedRow!.prompt_id);
+      expect(edited).toMatchObject({ full_text: EDITED, state: "waiting" });
+      expect(edited!.attachments).toEqual(queuedRow!.attachments);
     });
   } finally {
     try {
