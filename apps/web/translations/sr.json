@@ -196,6 +196,12 @@
   "newWorkspace": {
     "title": "Направи пројекат",
     "description": "Пројекат садржи ваше агенте, датотеке и сесије.",
+    "handoff": {
+      "validating": "Провера",
+      "creating_repository": "Креирање репозиторијума",
+      "registering": "Регистровање пројекта",
+      "seeding": "Припрема почетних датотека"
+    },
     "templateSeed": "Овај пројекат ће бити постављен из изабраног шаблона.",
     "account": {
       "label": "Налог",
@@ -1540,6 +1546,7 @@
         "email": "Е-пошта",
         "scheduled": "Заказано",
         "webhook": "Webhook",
+        "manual": "Ручно",
         "all": "Све"
       },
       "statusValue": {
