@@ -1,5 +1,5 @@
 {
-  "source_hash": "35982e90bb30616f1ced802ef164ab446bd503f686e7a5c0ee486596ee37ba56",
+  "source_hash": "573d053c33af80f1df672b092a2ad0aa8f2a8d93deb6a67a100e1da204efe973",
   "diff_files": [
     "apps/api/src/__tests__/unit-project-config-agents.test.ts",
     "apps/api/src/__tests__/unit-slack-selection.test.ts",
@@ -14,12 +14,12 @@
     "tests/src/flows/projects.flow.ts"
   ],
   "diff_hash": "377c3fc1d9f75a4bfa10f0ecc5dd1463134ee65b4f38b1d12144ad5a3a43b61d",
-  "head": "6607caeb50f122467704b3a96cc09ced3b7be9e1",
+  "head": "ad51ce73a1860b4f6c50ea2c410015d4d24e5760",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-06T21:34:13.461Z"
+  "at": "2026-10-06T23:27:15.941Z"
 }
