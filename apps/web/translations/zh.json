@@ -196,6 +196,12 @@
   "newWorkspace": {
     "title": "创建项目",
     "description": "项目用于存放您的智能体、文件和会话。",
+    "handoff": {
+      "validating": "正在验证",
+      "creating_repository": "正在创建仓库",
+      "registering": "正在注册项目",
+      "seeding": "正在准备初始文件"
+    },
     "templateSeed": "此项目将使用您选择的模板进行初始化。",
     "account": {
       "label": "账户",
@@ -1541,6 +1547,7 @@
         "email": "电子邮件",
         "scheduled": "已计划",
         "webhook": "Webhook",
+        "manual": "手动",
         "all": "全部"
       },
       "statusValue": {
@@ -9418,7 +9425,9 @@
     "i18nComplete": {
       "authEmailRateLimit": "无法发送邮件。请在大约一小时后重试。",
       "authRequestRateLimit": "请求过多。请在几分钟后重试。",
+      "text1a9030082a20": "创建技能",
       "text25ab55af92b1": "已开始上传附件",
+      "text38e64d6a8162": "将 SKILL.md 提交到项目的默认分支。无需模型或聊天。",
       "text40078a553439": "已上传附件分块",
       "text4c7f8000aabd": "附件上传完成",
       "text91420d2587c2": "已移除附件上传",
@@ -9892,6 +9901,9 @@
       "text0e498a7ede47": "已启用 {value0}",
       "text0e52f6b9d025": "Markdown",
       "text4cab70e9226b": "另存为 PDF",
+      "text9bf06a86c934": "新建技能",
+      "texta38668224f1a": "使用表单创建",
+      "textb25ab5d5e2a5": "技能已创建",
       "textce87352f1102": "此文件太大，无法另存为 PDF。请改为下载 Markdown 文件。",
       "text3b0c86f182b0": "无法准备 PDF。",
       "text0e570ca6fabe": "来源",
@@ -14448,6 +14460,7 @@
       "text895ce927db2e": "个人聊天",
       "text28c7d3f8b75d": "群聊",
       "text72b5b0c53de9": "已在 Microsoft Teams 中回复",
+      "textedac6130dac7": "无需聊天会话，直接将 SKILL.md 提交到仓库。",
       "textfc73e9ad2dae": "已在 Slack 中回复",
       "text8faf56a14a8d": "已在 Telegram 中回复",
       "text8ccfe10f2f2d": "发布到你的 Teams 目录",
@@ -19237,7 +19250,8 @@
       "text8f480bae8d16": "面向财务团队的 AI Agent",
       "text6243d930fc1c": "AI Operating System",
       "textc959682e0398": "查看了已登录的设备",
-      "text976811d9540a": "已将一台设备退出登录"
+      "text976811d9540a": "已将一台设备退出登录",
+      "text6f417aa88601": "已按来源列出 LLM 网关支出"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
