@@ -1,7 +1,7 @@
 /**
  * Session scope — every session-scoped route resolves the session inside the
  * authorized project, for a caller who may see it, through one guard
- * (`apps/api/src/projects/lib/session-access.ts`). Maps to spec SCOPE-*.
+ * (`apps/api/src/projects/lib/http-session-access.ts`). Maps to spec SCOPE-*.
  *
  * All flows run on the local profile: sessions are database rows, and no flow
  * provisions a sandbox.

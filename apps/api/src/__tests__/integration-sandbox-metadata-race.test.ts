@@ -206,7 +206,7 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
     });
 
     test('a /start readiness write from a row read before the claim does not erase it', async () => {
-      const { markRuntimeReadyWaitStarted } = await import('../projects/routes/shared');
+      const { markRuntimeReadyWaitStarted } = await import('../projects/session-open');
       const { claimInPlaceRestart } = await import('../projects/session-lifecycle/runtime-restart-claim');
       const staleRow = { sandboxId: SANDBOX_ID, metadata: await readMetadata() } as never;
       const restart = claim();
@@ -220,7 +220,7 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
     });
 
     test('a /start readiness write merges its clocks and keeps keys written after its read', async () => {
-      const { markRuntimeReadyWaitStarted } = await import('../projects/routes/shared');
+      const { markRuntimeReadyWaitStarted } = await import('../projects/session-open');
       const staleRow = { sandboxId: SANDBOX_ID, metadata: await readMetadata() } as never;
       await admin.query(
         `UPDATE kortix.session_sandboxes SET metadata = metadata || '{"egress_ip":"203.0.113.7"}'::jsonb
@@ -240,7 +240,7 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
     });
 
     test('a /start wake mark from a row read before the claim does not erase it', async () => {
-      const { markRuntimeWakeStarted } = await import('../projects/routes/shared');
+      const { markRuntimeWakeStarted } = await import('../projects/session-open');
       const { claimInPlaceRestart } = await import('../projects/session-lifecycle/runtime-restart-claim');
       const staleRow = { sandboxId: SANDBOX_ID, metadata: await readMetadata() } as never;
       const restart = claim();
@@ -256,7 +256,7 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
     });
 
     test('a /start wake mark merges and keeps keys written after its read', async () => {
-      const { markRuntimeWakeStarted } = await import('../projects/routes/shared');
+      const { markRuntimeWakeStarted } = await import('../projects/session-open');
       const staleRow = { sandboxId: SANDBOX_ID, metadata: await readMetadata() } as never;
       await admin.query(
         `UPDATE kortix.session_sandboxes SET metadata = metadata || '{"egress_ip":"203.0.113.7"}'::jsonb

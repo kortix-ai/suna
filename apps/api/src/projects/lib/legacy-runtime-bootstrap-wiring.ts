@@ -247,7 +247,7 @@ export function buildLegacyBootstrapDeps(row: LegacyBootstrapRow): LegacyBootstr
   const provider = getProvider(row.provider as ProviderName);
   return {
     now: () => Date.now(),
-    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+    sleep: Bun.sleep,
     manifestBuild: async () => {
       try {
         return (await runtimeAssetsManifest()).build;
