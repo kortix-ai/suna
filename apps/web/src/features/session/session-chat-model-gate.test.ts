@@ -35,6 +35,9 @@ describe('the session composer model gate holds during boot (KRTX-1667)', () => 
       'modelsLoading={providersLoading}',
     );
     expect(composerProps).toContain('modelRequired');
+    // Pin the bare-true form: any `modelRequired={<condition>}` re-opens the
+    // boot exemption this gate closes.
+    expect(composerProps).toMatch(/modelRequired(?!\s*=)/);
     // The boot state decides nothing about the gate. The catalog inputs decide
     // whether a refusal can even be known yet (`modelsLoading`,
     // `entitlementsPending` inside the composer), not whether it may be asked.

@@ -1,11 +1,16 @@
 {
-  "source_hash": "7990393af18c5b908e7ec157e3a9f3c46cadf03dc4ed58807c6df821c19c8299",
-  "head": "1276bc2dadab9c7a85e1f09cd62124e1c4a47f4d",
+  "source_hash": "68977ace53bec9ce75f3b2a0f15841c8f4a3fb9eb5284d9fe8f4c6adf8ff8e17",
+  "diff_files": [
+    "apps/web/src/features/session/session-chat-model-gate.test.ts",
+    "apps/web/src/features/session/session-chat.tsx"
+  ],
+  "diff_hash": "2a481180b6fbbff6d61b3c28f2fef52dbe087c16624678108dc7a9e64d9c413e",
+  "head": "da2d7b3d0c606d1e3c8540617519460bf6add582",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-06T12:13:04.476Z"
+  "at": "2026-10-06T13:53:51.577Z"
 }
