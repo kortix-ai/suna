@@ -26,39 +26,40 @@ export function DesktopCardImage() {
   );
 }
 
+/** The six iOS App Store screenshots, exported from the Paper file at 640w. */
 const MOBILE_SHOTS = [
-  '/images/mobile-app/app-1.png',
-  '/images/mobile-app/app-2.png',
-  '/images/mobile-app/app-3.png',
+  '/images/mobile-app/store-01.webp',
+  '/images/mobile-app/store-02.webp',
+  '/images/mobile-app/store-03.webp',
+  '/images/mobile-app/store-04.webp',
+  '/images/mobile-app/store-05.webp',
+  '/images/mobile-app/store-06.webp',
 ];
 
 /**
- * Three phones in the same 16:10 box the desktop poster occupies, so both cards'
- * headers are the same height and their first row seams line up.
+ * The six store screenshots as a filmstrip in the same 16:10 box the desktop
+ * art occupies, so both cards' headers are the same height and their first row
+ * seams line up.
  *
- * Each phone is HEIGHT-bound (`h-full w-auto` against the 1080x2337 ratio), not
- * width-bound. Width-bound was the first attempt and it was wrong: at a third of
- * the card's width each phone computes taller than the slot, so the bottoms
- * clipped at an arbitrary point mid-screenshot. That reads as a mistake rather
- * than a crop. Height-bound shows every phone whole, which also matches the
- * desktop card — that poster is shown complete too.
+ * Each shot is HEIGHT-bound (`h-full w-auto` against the 1284x2778 ratio) and
+ * `shrink-0`, so it is never squeezed. Six do not fit the card's width; the row
+ * stays centered and the slot's `overflow-hidden` crops the outer shots at the
+ * card edges. That reads as a strip that continues, not as a broken layout.
  *
- * Borders, never shadows. The `MobileSurface` treatment in `hero-surfaces.tsx`
- * frames these same shots with `shadow-md`; that part is deliberately not
- * carried over.
+ * Borders, never shadows.
  */
 export function MobileCardImage() {
   return (
-    <div className={cn(SLOT, 'flex items-center justify-center gap-3 px-6 py-6')}>
+    <div className={cn(SLOT, 'flex items-center justify-center gap-3 py-6')}>
       {MOBILE_SHOTS.map((src, i) => (
         <div
           key={src}
           className={cn(
-            'border-border bg-background relative aspect-[1080/2337] h-full w-auto',
+            'border-border bg-background relative aspect-[1284/2778] h-full w-auto shrink-0',
             'overflow-hidden rounded-md border',
-            // The middle phone lifts, the outer two drop. Enough to read as a
-            // deliberate arrangement, not enough to look scattered.
-            i === 1 ? '-translate-y-2' : 'translate-y-2',
+            // Alternate shots lift and drop. Enough to read as a deliberate
+            // arrangement, not enough to look scattered.
+            i % 2 === 1 ? '-translate-y-2' : 'translate-y-2',
           )}
         >
           <Image
