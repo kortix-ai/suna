@@ -28,9 +28,13 @@ import { hasAccountSessionOversight } from '../iam/session-oversight';
 import { accountMembers, projectSessions, serviceAccounts, sessionSandboxes } from '@kortix/db';
 import { and, eq, or, sql } from 'drizzle-orm';
 import type { KortixUserContext } from './kortix-user-context';
+import { setBounded } from './bounded-cache';
 import { isUuid } from './validate';
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
+// One entry per (sandbox, user) the proxy was asked about, denials included, so a
+// caller who sends random sandbox ids must not grow it without bound.
+const PREVIEW_CONTEXT_MAX = 20_000;
 
 // ─── Session-visibility gate for the daemon/opencode port ────────────────────
 // canAccessPreviewSandbox above authorizes on ACCOUNT MEMBERSHIP only. That is
@@ -490,7 +494,7 @@ async function getOrCompute(
     .then((fresh) => {
       // An invalidation during the check removed this entry: the verdict goes
       // to the callers already waiting on it and is not cached.
-      if (previewContextInFlight.get(key) === pending) previewContextCache.set(key, fresh);
+      if (previewContextInFlight.get(key) === pending) setBounded(previewContextCache, key, fresh, PREVIEW_CONTEXT_MAX);
       return fresh;
     })
     .finally(() => {
