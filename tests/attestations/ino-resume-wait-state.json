@@ -1,0 +1,22 @@
+{
+  "source_hash": "6f64c8e244b4401bc3da2cbde4e61eaf2f60cc29cb6ceba85c3a0da525eb23d8",
+  "diff_files": [
+    "apps/web/src/app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx",
+    "apps/web/src/app/[locale]/(system)/debug/session-wake/page.tsx",
+    "apps/web/src/features/session/session-resume.test.ts",
+    "apps/web/src/features/session/session-resume.ts",
+    "apps/web/src/features/session/session-starting-loader-note.test.tsx",
+    "apps/web/src/features/session/session-starting-loader.tsx",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "tests/unit/vitest.config.ts"
+  ],
+  "diff_hash": "55c466d42bebaf95540403a39d3fbbdc2853b93db0a4b386a8b8b53a2480295a",
+  "head": "8f0af5ed33f289560c7c73dd7fc933f1b4f93058",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-06T18:05:29.890Z"
+}
