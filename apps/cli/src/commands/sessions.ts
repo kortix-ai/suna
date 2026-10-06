@@ -30,6 +30,7 @@ import type { Auth } from '../api/auth.ts';
 import { confirm } from '../prompts.ts';
 import { hasEnvTokenHost } from '../api/config.ts';
 import { kortixFromAuth } from '../api/sdk.ts';
+import { sessionModelPin } from '@kortix/sdk';
 import type { ProjectSession, ProjectSummary } from '../api/types.ts';
 import { C, help, pad, status } from '../style.ts';
 import { sessionWebUrl } from '../web-url.ts';
@@ -78,7 +79,9 @@ Subcommands:
                                     --children <id> lists one session's
                                     children. --label <l> (repeatable)
                                     lists sessions carrying every given
-                                    label. --json.
+                                    label. --json rows also carry model,
+                                    the session's resolved model id
+                                    (null when the row stores none).
   status                            Mission control: every session + what
                                     each agent is doing right now (live).
                                     --all, --json. Aliases: overview, ps.
@@ -513,7 +516,9 @@ async function sessionsLs(opts: CtxOpts, flags: SessionListFlags, json = false):
   }
 
   if (json) {
-    emitJson(sessions);
+    // `model`: the stored resolved model pin, read through the SDK, never
+    // from `metadata` directly (the server bakes the resolution at create).
+    emitJson(sessions.map((s) => ({ ...s, model: sessionModelPin(s) })));
     return 0;
   }
 
