@@ -1,9 +1,7 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { createKortix } from '../../client/kortix';
-import { ApiError } from '../../http/api/errors';
 import { configureKortix } from '../../http/config';
 import {
-  askCapture,
   createCaptureExport,
   draftCaptureSkill,
   exportCaptureSkill,
@@ -16,7 +14,6 @@ import {
   listCaptureWorkflows,
   reviewCaptureWorkflow,
   runCaptureIntelligence,
-  type CaptureAskEvent,
 } from './capture-intelligence';
 
 let calls: { url: string; method: string; body: unknown; accept: string | null }[] = [];
@@ -98,30 +95,11 @@ test('exports: start one, list, read one with its download', async () => {
   expect((await getCaptureExport('a1', 'x1')).download?.url).toBe('https://s3/x');
 });
 
-const sse = (frames: unknown[]) =>
-  new Response(new ReadableStream({ start(c) { for (const f of frames) c.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(f)}\n\n`)); c.close(); } }), {
-    status: 200,
-    headers: { 'content-type': 'text/event-stream' },
-  });
-
-test('ask streams sources, deltas and the cited answer; an error frame throws ApiError with its code', async () => {
-  const source = { n: 1, kind: 'workflow', workflow_id: 'w1', label: 'Refund', detail: '' };
-  next = () => sse([{ type: 'sources', sources: [source] }, { type: 'delta', text: 'Refund ' }, { type: 'delta', text: 'is top [1].' }, { type: 'done', answer: 'Refund is top [1].', citations: [source], model: 'm', cost_usd: 0.001 }]);
-  const events: CaptureAskEvent[] = [];
-  const done = await askCapture('a1', { question: 'Top workflow?', scope: { from: 'f' } }, (e) => events.push(e));
-  expect(done.answer).toBe('Refund is top [1].');
-  expect(done.citations[0]).toMatchObject({ kind: 'workflow', workflow_id: 'w1' });
-  expect(events.map((e) => e.type)).toEqual(['sources', 'delta', 'delta', 'done']);
-  expect(last()).toMatchObject({ method: 'POST', url: `${A}/ask`, body: { question: 'Top workflow?', scope: { from: 'f' } }, accept: 'text/event-stream' });
-
-  next = () => sse([{ type: 'error', code: 'capture_budget_exceeded', error: 'Budget spent' }]);
-  const failed = await askCapture('a1', { question: 'x' }, () => {}).catch((e) => e);
-  expect(failed).toBeInstanceOf(ApiError);
-  expect((failed as ApiError).code).toBe('capture_budget_exceeded');
-
-  next = () => Response.json({ error: 'Capture is off for this account', code: 'capture_disabled' }, { status: 403 });
-  const refused = await askCapture('a1', { question: 'x' }, () => {}).catch((e) => e);
-  expect([(refused as ApiError).status, (refused as ApiError).code]).toEqual([403, 'capture_disabled']);
+test('Ask is gone: an agent reads Capture data through the hosted MCP or these REST calls', async () => {
+  const mod = (await import('./capture-intelligence')) as Record<string, unknown>;
+  expect(mod.askCapture).toBeUndefined();
+  const capture = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' }).capture.account('a1') as Record<string, unknown>;
+  expect(capture.ask).toBeUndefined();
 });
 
 test('the facade binds every Intelligence call to the account', async () => {
@@ -143,6 +121,4 @@ test('the facade binds every Intelligence call to the account', async () => {
   await capture.exports.create({ format: 'jsonl' });
   await capture.exports.get('x1');
   expect(last().url).toBe(`${A}/exports/x1`);
-  next = () => sse([{ type: 'done', answer: 'a', citations: [], model: 'm', cost_usd: 0 }]);
-  expect((await capture.ask({ question: 'q' })).answer).toBe('a');
 });

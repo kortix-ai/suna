@@ -7,7 +7,6 @@
  *   POST workflows/:id/skill-draft                 admins
  *   POST workflows/:id/skill                       admins with write access to the project
  *   GET  episodes · GET episodes/:id               yours; anyone's for admins and viewers (audited)
- *   POST ask                                       text/event-stream; yours, or the account for admins and viewers
  *   POST exports · GET exports · GET exports/:id   admins
  *   POST intelligence/run                          admins: run the pipelines now
  *
@@ -17,7 +16,6 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { accountsRouter } from '../accounts/core/app';
 import { auth, errors, json } from '../openapi';
 import { loadProjectForUser } from '../projects/lib/access';
-import { ask } from './ask';
 import { auditRead, captureAccess, isResponse, refuse, type Access, type Ctx } from './account-routes';
 import { enqueueExport, exportDownload } from './exports';
 import {
@@ -303,73 +301,6 @@ export function registerCaptureIntelligenceRoutes() {
         await auditRead(c, access, 'capture.member_view', e.userId);
       }
       return c.json({ ...episodeView(e), steps: await episodeSteps(e.episodeId) }, 200);
-    },
-  );
-
-  accountsRouter.openapi(
-    createRoute({
-      method: 'post',
-      path: '/{accountId}/capture/ask',
-      tags,
-      summary: 'Ask about recorded work; streams sources, answer text and citations (text/event-stream, data-only JSON frames)',
-      ...auth,
-      request: {
-        params,
-        body: {
-          content: {
-            'application/json': {
-              schema: z.object({
-                question: z.string().min(1).max(4000),
-                history: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string().max(20_000) })).max(20).optional(),
-                scope: z
-                  .object({
-                    user_id: z.string().uuid().optional(),
-                    device_id: z.string().uuid().optional(),
-                    from: z.string().optional(),
-                    to: z.string().optional(),
-                  })
-                  .optional(),
-              }),
-            },
-          },
-        },
-      },
-      responses: {
-        200: {
-          description: 'Frames `data: <json>`: sources, delta, then done or error',
-          content: { 'text/event-stream': { schema: z.any() } },
-        },
-        ...errors(400, 403, 404),
-      },
-    }),
-    async (c) => {
-      const body = c.req.valid('json');
-      // A member asks about their own data; an admin or viewer about a member, or the account.
-      const pre = await captureAccess(c);
-      if (isResponse(pre)) return pre as never;
-      const userId = body.scope?.user_id;
-      const access = userId && userId !== pre.viewer ? await captureAccess(c, { userId }) : pre.readsAll && !userId ? await captureAccess(c, { accountWide: true }) : pre;
-      if (isResponse(access)) return access as never;
-      const encoder = new TextEncoder();
-      return new Response(
-        new ReadableStream({
-          async start(controller) {
-            const write = (data: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
-            try {
-              await ask(
-                { accountId: access.accountId, viewer: access.viewer, subject: access.subject, accountWide: access.subject === null },
-                body,
-                write,
-              );
-            } catch (error) {
-              write({ type: 'error', code: 'capture_ask_failed', error: (error as Error).message || 'Ask failed' });
-            } finally {
-              controller.close();
-            }
-          },
-        }),
-        { status: 200, headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache, no-transform', 'x-accel-buffering': 'no' } },
-      ) as never;
     },
   );
 

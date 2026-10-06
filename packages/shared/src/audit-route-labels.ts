@@ -647,7 +647,6 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/accounts/:accountId/capture/workflows/:workflowId/skill': { action: 'capture.skill.publish', title: 'Published a skill from a Capture workflow' },
   'GET /v1/accounts/:accountId/capture/episodes': { action: 'capture.episode.list', title: 'Listed Capture episodes', events: ['capture.member_view', 'capture.account_view'] },
   'GET /v1/accounts/:accountId/capture/episodes/:episodeId': { action: 'capture.episode.read', title: 'Viewed a Capture episode', events: ['capture.member_view'] },
-  'POST /v1/accounts/:accountId/capture/ask': { action: 'capture.ask', title: 'Asked about Capture data', events: ['capture.member_view', 'capture.account_view'] },
   'POST /v1/accounts/:accountId/capture/exports': { action: 'capture.export.create', title: 'Started a Capture export' },
   'GET /v1/accounts/:accountId/capture/exports': { action: 'capture.export.list', title: 'Listed Capture exports' },
   'GET /v1/accounts/:accountId/capture/exports/:exportId': { action: 'capture.export.read', title: 'Viewed a Capture export' },

@@ -21,7 +21,6 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Approved computer tunnel permission request': 'text0f8ba6f797f1',
   'Approved connector action': 'textd2555357d10a',
   'Approved project access request': 'textd65159859848',
-  'Asked about Capture data': 'text92ec054263db',
   'Attached group to project': 'text24a754cf2e81',
   'Authenticated LLM gateway token': 'text8945f35c150f',
   'Authenticated computer tunnel agent': 'texta3036afdb779',
