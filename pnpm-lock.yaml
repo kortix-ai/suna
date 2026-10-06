@@ -12,6 +12,8 @@ overrides:
   '@types/react-dom': 19.2.3
   axios@>=1.0.0 <1.20.0: 1.20.0
   devalue@<5.9.3: 5.9.3
+  seroval@<1.6.2: 1.6.2
+  seroval-plugins@<1.6.2: 1.6.2
   protobufjs@>=7.0.0 <7.6.5: 7.6.5
   protobufjs@>=8.0.0 <8.6.6: 8.6.6
   '@protobufjs/utf8@>=1.0.0 <1.1.1': 1.1.1
@@ -29050,17 +29052,17 @@ packages:
       type-fest: 0.20.2
     dev: false
 
-  /seroval-plugins@1.5.6(seroval@1.5.6):
-    resolution: {integrity: sha512-HXuLAX2pu/UByPpaeo/TaMfvMIi+1QqIoPJYCcAtU8QkVNwgR6MPlGuCQTErV1JwraaMbYaWVIBX7mppzGLATQ==}
+  /seroval-plugins@1.6.2(seroval@1.6.2):
+    resolution: {integrity: sha512-TfxuUjlbBESzUOWdTkTKqvSmav0ABym+itetDXLK6mDz8SmrpdI30aF8RTXE8Bvq+tH/1yIDkvy3W0lfQb1ipQ==}
     engines: {node: '>=10'}
     peerDependencies:
-      seroval: ^1.0
+      seroval: 1.6.2
     dependencies:
-      seroval: 1.5.6
+      seroval: 1.6.2
     dev: false
 
-  /seroval@1.5.6:
-    resolution: {integrity: sha512-rVQVWjjSvlINzaQPZH5JFqsqEsIWdTxY3iJZCnTL/5gQbXIRooVZKI60tVCkOVfzcRPejboxO2t0P89dg5mQaA==}
+  /seroval@1.6.2:
+    resolution: {integrity: sha512-mPT+SD2TrlB6wvte1KkYOYUkubaTbd6pZ/6Kk3C9nxzrHmCZyhxOO7XGAeL7f+yLKZglzGtM9odUVvg/EhO+vQ==}
     engines: {node: '>=10'}
     dev: false
 
@@ -29467,8 +29469,8 @@ packages:
     resolution: {integrity: sha512-EeiY2xfpZJqPLjXspVEKjAII4yv8NyG//NxZ3IpOFHdUNnnTyL0uJOeS9LWGvA7cFCz5y94cjFwYlmw5Luncsg==}
     dependencies:
       csstype: 3.2.3
-      seroval: 1.5.6
-      seroval-plugins: 1.5.6(seroval@1.5.6)
+      seroval: 1.6.2
+      seroval-plugins: 1.6.2(seroval@1.6.2)
     dev: false
 
   /solid-presence@0.2.0(solid-js@1.9.15):
