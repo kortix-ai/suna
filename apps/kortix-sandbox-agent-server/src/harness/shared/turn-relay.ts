@@ -202,6 +202,29 @@ export async function relayTurnBegin(runtimeSessionId: string, messageId: string
   }
 }
 
+/**
+ * The running turn read a steered message at a step boundary (`steer_read`).
+ * apps/api closes that message's inbox row as delivered. 3 attempts; a
+ * non-ok answer other than 5xx is definitive. Skipped while the session
+ * credential is presumed dead (KRTX-446).
+ */
+export async function relaySteerRead(runtimeSessionId: string, messageId: string): Promise<void> {
+  if (!sandboxRelayContext() || sessionTokenPresumedDead()) return
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const response = await postTurnStream({ kind: 'steer_read', runtime_session_id: runtimeSessionId, turn_message_id: messageId })
+      if (!response || response.ok) return
+      const text = await response.text().catch(() => '')
+      noteControlPlaneResponse(response.status, text)
+      logger.warn('[turn-relay] steer-read relay non-ok', { status: response.status, attempt, body: text.slice(0, 200) })
+      if (response.status < 500) return
+    } catch (err) {
+      logger.warn('[turn-relay] steer-read relay fetch failed', { err: (err as Error).message, attempt })
+    }
+    if (attempt < 3) await Bun.sleep(1_000 * attempt)
+  }
+}
+
 /** A turn's end, as the adapter observed it. */
 export interface TurnEndFrame {
   runtimeSessionId: string

@@ -107,7 +107,7 @@ mock.module('../lib/access', () => ({
 // (which attaches the `supabaseAuth` middleware) is deliberately NOT imported,
 // so these requests need no Authorization header.
 const { projectsApp } = await import('../lib/app');
-await import('./project-detail');
+(await import('./project-detail')).registerProjectDetailRoutes();
 
 const dialect = new PgDialect();
 

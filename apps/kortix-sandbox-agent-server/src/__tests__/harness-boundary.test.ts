@@ -50,7 +50,7 @@ describe('harness ownership boundary', () => {
         }),
       },
       diagnostics: {
-        capabilities: ['session.subagents'],
+        capabilities: async () => ['session.subagents'],
         health: async () => ({
           harness: {
             id: 'test-only-adapter', version: '1.0.0', state: 'ok', ready: true, error: null,
@@ -60,7 +60,7 @@ describe('harness ownership boundary', () => {
         report: unexpected, logSources: () => [], readLog: unexpected,
       },
       queries: { bind: () => queries },
-      turns: { prompt: unexpected, abort: unexpected, readMessage: unexpected, removeMessage: unexpected, agents: unexpected },
+      turns: { prompt: unexpected, steer: unexpected, abort: unexpected, readMessage: unexpected, removeMessage: unexpected, agents: unexpected },
       background: { start: unexpected },
       assets: {
         harness: 'test', componentNames: [], resolveConfigDir: async () => '/tmp', injectSkills: async () => {},

@@ -4,6 +4,7 @@ import { db } from '../../shared/db';
 import { config } from '../../config';
 import { sendCard } from '../teams-api';
 import { EVENT_DEDUPE_TTL_MS } from './app';
+import { recordClaim } from '../webhook-work';
 import { listTenantProjects, resolveConversationProjectDetailed } from './binding';
 import { buildProjectPickerCard, buildWelcomeCard } from './cards';
 import { createPendingTeamsPickerMessage } from './auth-resume';
@@ -51,6 +52,7 @@ async function alreadyHandled(activityId: string): Promise<boolean> {
       .values({ eventId: `teams:event:${activityId}`, expiresAt: new Date(Date.now() + EVENT_DEDUPE_TTL_MS) })
       .onConflictDoNothing({ target: chatEventDedup.eventId })
       .returning({ eventId: chatEventDedup.eventId });
+    if (inserted.length > 0) recordClaim(`teams:event:${activityId}`);
     return inserted.length === 0;
   } catch (err) {
     console.warn('[teams-webhook] dedup insert failed (fail-open)', err);

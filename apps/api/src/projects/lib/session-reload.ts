@@ -32,6 +32,7 @@
 import { and, eq } from 'drizzle-orm';
 import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
+import { SANDBOX_SERVICE_PORT } from './sandbox-env-transport';
 import { logger } from '../../lib/logger';
 import { TimeoutError, withTimeout } from '../../shared/with-timeout';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
@@ -66,7 +67,6 @@ import {
 } from './session-sandbox-metadata';
 import { parseActualRuntime, UNREPORTED_ACTUAL_RUNTIME, type ActualRuntimeDocument } from '../../runtime-convergence/actual';
 
-const SANDBOX_SERVICE_PORT = 8000;
 /** A competing refresh is a fetch plus a fast-forward: seconds, not minutes. */
 const REFRESH_BUSY_RETRIES = 5;
 const REFRESH_BUSY_DELAY_MS = 3_000;
@@ -414,7 +414,7 @@ function defaultReloadDeps(): SessionReloadDeps {
     fetch: (url, init) => fetch(url, init),
     pushGovernance: pushSessionAgentConfigToSandbox,
     latestEtag: latestAgentConfigEtag,
-    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    sleep: Bun.sleep,
     recordReport: recordDaemonConfigReport,
     configReleasesEnabled: projectConfigReleasesEnabled,
     repairOrphanedTurn: repairTurnOrphanedBySwap,

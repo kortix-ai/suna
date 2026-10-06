@@ -609,6 +609,8 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 
 mock.module('../shared/resolve-account', () => ({
   resolveAccountId: async () => ACCOUNT_ID,
+}));
+mock.module('../middleware/resolve-account', () => ({
   resolveScopedAccountId: async () => ACCOUNT_ID,
 }));
 
@@ -1125,9 +1127,10 @@ mock.module('../projects/prompt-attachments', () => ({
   },
 }));
 
-const { projectsApp } = await import('../projects/index');
+const { projectsApp, registerAllProjectRoutes } = await import('../projects/index');
+registerAllProjectRoutes();
 const { encryptProjectSecret } = await import('../projects/secrets');
-const { resumeStoppedSandbox } = await import('../projects/routes/shared');
+const { resumeStoppedSandbox } = await import('../projects/session-open');
 const { TITLE_SOURCE_MAX_CHARS } = await import('../projects/session-title-generate');
 const { invalidateSandbox, resolveSandboxIngress } = await import('../sandbox-proxy/backend');
 const { reconcileSandboxStoppedByExternalId } = await import(

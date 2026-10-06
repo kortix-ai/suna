@@ -1,6 +1,7 @@
 import { sessionSandboxes } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
+import { SANDBOX_SERVICE_PORT } from './sandbox-env-transport';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { db } from '../../shared/db';
 
@@ -32,7 +33,6 @@ import { db } from '../../shared/db';
 
 /** 0s, 5s, 15s, 30s, 60s — bounded at ~110s total, then give up silently. */
 const RETRY_DELAYS_MS = [0, 5_000, 10_000, 15_000, 30_000] as const;
-const SANDBOX_SERVICE_PORT = 8000;
 const REQUEST_TIMEOUT_MS = 30_000;
 
 export interface SandboxRuntimeRefreshDeps {
@@ -69,7 +69,7 @@ const defaultDeps: SandboxRuntimeRefreshDeps = {
   resolveIngress: (externalId) =>
     resolveSandboxIngress(externalId, { port: SANDBOX_SERVICE_PORT, transport: 'http' }),
   fetch: globalThis.fetch,
-  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  sleep: Bun.sleep,
 };
 
 export type SandboxRuntimeRefreshOutcome = 'refreshed' | 'unreachable' | 'no_sandbox';

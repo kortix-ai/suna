@@ -513,6 +513,42 @@ export async function uploadFile(
 }
 
 /**
+ * A file on the device's disk, as React Native's `FormData` takes it: the
+ * runtime streams the bytes from `uri`, so they never enter the JS heap.
+ */
+export interface NativeFilePart {
+  uri: string;
+  name: string;
+  type?: string;
+}
+
+/**
+ * Upload a device file to the sandbox in one request (no chunking: the size is
+ * unknown to JS). For hosts whose `fetch` cannot build a `Blob` from a file URI
+ * (React Native). Daemon `POST /file/upload`, through the same auth, deadline,
+ * 401 replay and retry as `uploadFile`. `baseUrl` names the sandbox.
+ */
+export function uploadNativeFile(
+  file: NativeFilePart,
+  targetPath?: string,
+  baseUrl?: string,
+): Promise<UploadResult[]> {
+  const base = requireBaseUrl(baseUrl);
+  return uploadWithRetry(
+    () => {
+      const form = new FormData();
+      if (targetPath) form.append('path', targetPath);
+      form.append('file', { uri: file.uri, name: file.name, type: file.type || 'application/octet-stream' } as unknown as Blob);
+      return form;
+    },
+    (form) => authenticatedFetch(`${base}/file/upload`, { method: 'POST', body: form }, { timeoutMs: NATIVE_UPLOAD_TIMEOUT_MS }),
+  );
+}
+
+// The size is unknown, so the deadline is the ceiling `uploadTimeoutMsForBytes` allows.
+const NATIVE_UPLOAD_TIMEOUT_MS = UPLOAD_TIMEOUT_CEILING_MS;
+
+/**
  * Upload content to a specific path via the field-name-as-path convention.
  *
  * Goes through `authenticatedFetch` like every other write. It used to call a

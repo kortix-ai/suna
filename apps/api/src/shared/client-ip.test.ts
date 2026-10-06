@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { Hono } from 'hono';
-import { clientIpFromHeaders, clientKeyFromHeaders, requestClientIp, requestClientKey } from './client-ip';
+import { clientIpFromHeaders, clientKeyFromHeaders, egressIpFromHeaders } from './client-ip';
+import { requestClientIp, requestClientKey } from '../middleware/client-ip';
 
 function headers(values: Record<string, string>) {
   return (name: string) => values[name.toLowerCase()] ?? null;
@@ -59,5 +60,17 @@ describe('bucket key vs stored address', () => {
       await app.request('/', { headers: { 'x-forwarded-for': '192.0.2.1, 203.0.113.9, 198.51.100.7' } })
     ).json();
     expect(withHeader).toEqual({ key: '203.0.113.9', ip: '203.0.113.9' });
+  });
+});
+
+describe('egressIpFromHeaders', () => {
+  test('cf-connecting-ip wins', () => {
+    expect(egressIpFromHeaders(headers({ 'cf-connecting-ip': '203.0.113.7', 'x-forwarded-for': '1.1.1.1' }))).toBe('203.0.113.7');
+  });
+
+  test('without Cloudflare a forged leftmost xff entry is ignored (trusted-hop rule)', () => {
+    const read = headers({ 'x-forwarded-for': '198.51.100.99, 203.0.113.7, 172.70.1.2' });
+    expect(egressIpFromHeaders(read)).toBe('203.0.113.7');
+    expect(egressIpFromHeaders(headers({ 'x-forwarded-for': '203.0.113.7' }))).toBe('203.0.113.7');
   });
 });

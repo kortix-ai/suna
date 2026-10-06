@@ -51,6 +51,7 @@ import {
   isRuntimeIdentityUnavailable,
   isSandboxResumable,
   isWakeClassFailure,
+  sessionWakeProgress,
 } from '@/features/session/session-resume';
 import { canPollSessionStart } from '@/features/session/session-start-gate';
 import {
@@ -107,7 +108,6 @@ import {
   sessionStartKey,
   setActiveInstanceCookie,
   updateProjectSession,
-  wakeProgressFingerprint,
 } from '@kortix/sdk';
 import {
   type UseSessionResult,
@@ -366,9 +366,6 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const runtimeConnectionStatus = useRuntimeConnectionStore((s) => s.status);
   const runtimeVersion = useRuntimeConnectionStore((s) => s.openCodeVersion);
   const runtimeProbeError = useRuntimeConnectionStore((s) => s.runtimeError);
-  const sandboxMetadata = (sandbox?.metadata as Record<string, unknown> | undefined) ?? {};
-  const wakeStopReason =
-    typeof sandboxMetadata.stopReason === 'string' ? sandboxMetadata.stopReason : null;
   // Only an ESTABLISHED runtime is woken. A session whose first sandbox is
   // still being built (`external_id` null, "Sandbox build running…") is not
   // stuck — it is doing minutes of legitimate work with no client-visible
@@ -391,20 +388,16 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const wake = useWakeEscalation({
     waking: wakeLadderApplies,
     runtimeReachable: runtimeProbed && runtimeHealthy,
-    progress: wakeProgressFingerprint([
-      startStage,
-      session.reason,
-      sandbox?.status,
-      wakeStopReason,
-      typeof sandboxMetadata.runtimeWakeStartedAt === 'string'
-        ? sandboxMetadata.runtimeWakeStartedAt
-        : null,
-      session.runtimeSessionId,
+    progress: sessionWakeProgress({
+      stage: startStage,
+      reason: session.reason,
+      sandbox,
+      runtimeSessionId: session.runtimeSessionId,
       runtimeConnectionStatus,
       runtimeHealthy,
       runtimeVersion,
       runtimeProbeError,
-    ]),
+    }),
     serverGaveUp: wakeServerGaveUp,
     onRetryStart: () => {
       queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId, sessionId) });
@@ -1273,6 +1266,15 @@ function RestartSessionButton({
   pendingLabel?: string;
 }) {
   const t = useTranslations('sessionPage');
+  // Restart is the session owner's or a project manager's; the server answers
+  // anyone else 403. The row is the page's own cached read of this session.
+  const params = useParams<{ id: string; sessionId: string }>();
+  const { data: session } = useProjectSession(params?.id, params?.sessionId, {
+    enabled: !!params?.id && !!params?.sessionId,
+  });
+  if (session?.can_manage_lifecycle === false) {
+    return <p className="text-muted-foreground text-sm">{t('restart.ownerOnly')}</p>;
+  }
   return (
     <Button
       type="button"
