@@ -78,6 +78,7 @@ import { registerMarketplaceInstallSessionRoutes } from './routes/marketplace-in
 import { registerReviewItemsRoutes } from './routes/review-items';
 import { registerAgentScopeRoutes } from './routes/agent-scope';
 import { registerAgentConfigRoutes } from './routes/agent-config';
+import { registerProjectSkillsRoutes } from './routes/project-skills';
 import { registerGatewayRoutes } from './routes/gateway';
 import { registerChannelBindingsRoutes } from './routes/channel-bindings';
 import { registerMonitorsRoutes } from './routes/monitors';
@@ -156,6 +157,7 @@ export function registerAllProjectRoutes(): void {
   registerReviewItemsRoutes();
   registerAgentScopeRoutes();
   registerAgentConfigRoutes();
+  registerProjectSkillsRoutes();
   registerGatewayRoutes();
   registerChannelBindingsRoutes();
   registerMonitorsRoutes();
