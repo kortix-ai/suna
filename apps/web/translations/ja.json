@@ -1540,6 +1540,7 @@
         "email": "電子メール",
         "scheduled": "スケジュール済み",
         "webhook": "Webhook",
+        "manual": "手動",
         "all": "すべて"
       },
       "statusValue": {

@@ -804,6 +804,7 @@ function SessionListSection({
     email: 'email',
     schedule: 'scheduled',
     webhook: 'webhook',
+    manual: 'manual',
     all: 'all',
   } as const;
   const sectionKey = sectionTranslationKeys[section.id as keyof typeof sectionTranslationKeys];

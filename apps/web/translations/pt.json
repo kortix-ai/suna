@@ -1540,6 +1540,7 @@
         "email": "E-mail",
         "scheduled": "Agendado",
         "webhook": "Webhook",
+        "manual": "Manual",
         "all": "Todos"
       },
       "statusValue": {

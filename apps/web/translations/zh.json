@@ -1540,6 +1540,7 @@
         "email": "电子邮件",
         "scheduled": "已计划",
         "webhook": "Webhook",
+        "manual": "手动",
         "all": "全部"
       },
       "statusValue": {
