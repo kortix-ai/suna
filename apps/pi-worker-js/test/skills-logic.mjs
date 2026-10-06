@@ -17,7 +17,7 @@
 // the legacy `.kortix/opencode/skills`; the first one wins a name. Slash
 // commands are pi prompt templates from `<pi config dir>/prompts`, and
 // `/skill:name` expands the skill into the prompt, as pi's AgentSession does.
-// EXPECTED_PASSES=44
+// EXPECTED_PASSES=46
 
 import { installWorkerGlobals, makeCell, newMessageId, rootIdOf } from "./cell-harness.mjs";
 import { createServer } from "node:http";
@@ -242,6 +242,14 @@ check("a typed `/fix 7 lexer` prompt expands too", lastUserText(t.sent) === "Fix
   await cellExecutionEnv(failing.cell.cell()).writeFile("skills/deploy/SKILL.md", "---\nname: deploy\ndescription: Ship it\n---\n\nbody\n");
   const fs5 = (await (await failing.fetch("/skill")).json()).map((k) => k.name).join(",");
   check("an unreachable API leaves the project's skills working", fs5 === "deploy", fs5);
+}
+// ── /MACHINE.md: the starter prompt says to read it; a cell answers it truthfully ──
+{
+  const doc = await cellExecutionEnv(cell.cell.cell()).readTextFile("/MACHINE.md");
+  const text = doc?.ok ? String(doc.value) : "";
+  check("a cell serves /MACHINE.md, the path the starter agent prompt points at", text.startsWith("# Kortix pi cell") && text.includes("`node`") && text.includes("`npm`"), text.slice(0, 120));
+  check("and it says what is NOT here, so the prompt's pnpm/python3 advice is not taken as true",
+    text.includes("`python3`") && text.includes("`pnpm`") && /Not here:/.test(text) && text.includes("sandbox.type: vm"), text.slice(-400));
 }
 await gw.close();
 

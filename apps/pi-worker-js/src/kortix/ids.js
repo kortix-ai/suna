@@ -26,6 +26,11 @@ export async function mintRootId(sessionId) {
   return `ses_pi${(await sha256Hex(`pi-root\0${sessionId}`)).slice(0, 24)}`;
 }
 
+/** A subagent child's session id: kortixd's `mintChildId` (harness/pi/message-id.ts), byte for byte. */
+export async function mintChildId(rootId, nonce) {
+  return `ses_pi${(await sha256Hex(`pi-child\0${rootId}\0${nonce}`)).slice(0, 24)}`;
+}
+
 /** A root id has this shape; a request path that carries one names its cell. */
 export const ROOT_ID = /^ses_pi[0-9a-f]{24}$/;
 

@@ -39,6 +39,8 @@ export const ALL_SUITES = [
   // pi-durable's ExecutionEnv over the cell's tree and pi's storage over its
   // SQLite (pi's own conformance cases), and the tree and shell themselves.
   "conformance.mjs", "cellfs-logic.mjs",
+  // `git` in that shell, over isomorphic-git (git-command.js).
+  "git-command-logic.mjs",
   // THE MACHINE: the environment's RPC client, the attach, and the tool.
   "envrpc-logic.mjs", "environment-logic.mjs", "machine-logic.mjs", "machine-fs-logic.mjs",
   // The runtime inside the isolate: node, TypeScript, npm and plugins.
@@ -49,6 +51,8 @@ export const ALL_SUITES = [
   "interactions-logic.mjs",
   // The live stream: pi-durable's events as the client renders them.
   "turn-events-logic.mjs",
+  // task: subagents as pi-durable conversations.
+  "subagents-logic.mjs",
 ];
 
 /** The suites test/all.sh runs under node's SQLite — they open a DatabaseSync
@@ -56,7 +60,8 @@ export const ALL_SUITES = [
 const NEEDS_SQLITE = new Set([
   "kortix-contract-logic.mjs", "agent-config-logic.mjs", "skills-logic.mjs", "plan-logic.mjs", "files-logic.mjs",
   "git-logic.mjs", "pty-logic.mjs", "static-logic.mjs", "manifest-logic.mjs", "conformance.mjs", "cellfs-logic.mjs",
-  "environment-logic.mjs", "daemon-persist.mjs", "kortix-tools-logic.mjs", "interactions-logic.mjs",
+  "environment-logic.mjs", "daemon-persist.mjs", "kortix-tools-logic.mjs", "interactions-logic.mjs", "subagents-logic.mjs",
+  "git-command-logic.mjs",
 ]);
 export const nodeArgsFor = (suite) => (NEEDS_SQLITE.has(suite) ? ["--experimental-sqlite"] : []);
 

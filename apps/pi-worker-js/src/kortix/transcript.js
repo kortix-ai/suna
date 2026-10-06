@@ -19,8 +19,15 @@ export const TRANSCRIPT_TABLES_SQL = [
 ];
 
 export class TranscriptStore {
-  constructor(sql) {
+  /**
+   * @param {object} sql
+   * @param {{ session?: () => (string | null) }} [scope] one session's view of
+   *        the shared tables: the root's, or a subagent child's. Without it (or
+   *        while it answers null) every message is in view.
+   */
+  constructor(sql, scope = {}) {
     this.sql = sql;
+    this.session = typeof scope.session === "function" ? scope.session : () => null;
     for (const statement of TRANSCRIPT_TABLES_SQL) sql.exec(statement);
     /** message id -> info, not yet written */
     this.dirtyInfo = new Map();
@@ -128,8 +135,12 @@ export class TranscriptStore {
 
   /** Every message id, oldest first. Ids sort by time (the wire id codec). */
   #ids() {
-    const ids = new Set(this.sql.exec("SELECT id FROM kx_messages").toArray().map((r) => r.id));
-    for (const id of this.dirtyInfo.keys()) ids.add(id);
+    const session = this.session();
+    const rows = session
+      ? this.sql.exec("SELECT id FROM kx_messages WHERE session_id = ?", session).toArray()
+      : this.sql.exec("SELECT id FROM kx_messages").toArray();
+    const ids = new Set(rows.map((r) => r.id));
+    for (const [id, info] of this.dirtyInfo) if (!session || info?.sessionID === session) ids.add(id);
     for (const id of this.removedMessages) ids.delete(id);
     return [...ids].sort();
   }

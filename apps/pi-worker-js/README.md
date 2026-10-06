@@ -54,6 +54,8 @@ Platinum cell ── celld ── default export (src/worker.js)
 | `src/commands.js` | Slash commands: pi prompt templates from `<pi config dir>/prompts` (vendored pi 1.0.3 expansion, MIT). |
 | `src/permissions.js`, `src/interactions.js` | The agent's `permission` block before every tool call (pi-durable `beforeTool` hook); durable `ask` requests and the `question` tool. |
 | `src/kortix-tools/` | kortixd's `web_search`, `image_search`, `scrape_webpage`, `memory`, `show`. |
+| `src/subagents.js` | The `task` tool: each subagent a pi-durable conversation with its own session id, transcript and stream. |
+| `src/machine-doc.js` | `/MACHINE.md` for a cell. |
 | `build.mjs` | esbuild bundle to `dist/worker.js`. Stubs pi-ai's variable `import()` in `auth/context.js`. |
 | `wrangler.json` | celld deployment config. Holds no credential. |
 | `deploy-platinum.mjs` | Uploads `dist/worker.js` as a Platinum worker version and activates it. |
@@ -216,13 +218,14 @@ Verified on pi-js 2026-10-06 (`55ec8b7bcf`, live probe) and by `test/all.sh`.
 
 | Surface | kortixd pi | pi cell |
 | --- | --- | --- |
-| Tools | bash, read, write, edit, glob, grep, web_search, image_search, scrape_webpage, memory, show, question, task | All except `task`. Plus `todowrite`, `todoread`. |
+| Tools | bash, read, write, edit, glob, grep, web_search, image_search, scrape_webpage, memory, show, question, task | All of them. Plus `todowrite`, `todoread`. |
 | Skills | managed overlay, `skills/`, `<pi config dir>/skills`, `.kortix/opencode/skills`; `permission.skill` deny hides one | Same order and rules. `/skill:name` expands. |
 | Slash commands | `<pi config dir>/prompts`, `GET /command`, `POST /session/:id/command` | Same. `session.commands` advertised. |
 | Permissions | `deny`, `ask` (once, always, reject), `tools: {x: false}` | Same. A request survives an eviction. |
 | Compaction | `POST /session/:id/summarize` | Same. |
 | Secrets in the shell | project env and session env | Same; `KORTIX_*` never reaches the shell. |
-| Subagents (`task`, `session.subagents`) | Yes | **No.** |
+| Subagents (`task`, `session.subagents`) | `general`, `explore`, compiled `mode: subagent` agents; child sessions readable; `task_id` resumes | Same. Each child is its own pi-durable conversation: it survives an eviction, and a Stop on the root reaches it. |
+| `/MACHINE.md` | The VM's machine guide | The cell's own, generated from its command lists (`src/machine-doc.js`). |
 | Config releases (`config.release.v1`) | Yes | **No.** The cell reads the working tree. |
 | Shell | Ubuntu: git, python, npx, pnpm, bun, tar, sqlite3, `kortix` CLI | just-bash: node 22 shim and npm (no lifecycle scripts, no sockets, no child processes), curl, wget, jq, rg. **No** git, python, npx, pnpm, tar, zip, sqlite3, `kortix` CLI. |
 | Ports, `/proxy/:port`, dev servers | Yes | **No** (501). |

@@ -28,6 +28,7 @@
     "@earendil-works/chord": "1.0.3",
     "@earendil-works/pi-ai": "1.0.3",
     "@earendil-works/pi-durable": "1.0.3",
+    "diff": "8.0.4",
     "ignore": "7.0.5",
     "isomorphic-git": "1.41.9",
     "just-bash": "3.6.0",

@@ -12,6 +12,7 @@ import { Bash, InMemoryFs, defineCommand } from "just-bash/browser";
 import { ExecutionError, FileError, LineScanner, err, ok } from "@earendil-works/pi-durable/env";
 import { nodeCommand } from "./nodejs.js";
 import { npmCommand } from "./npm.js";
+import { gitCommand } from "./git-command.js";
 import { guardedFetch, wgetCommand } from "./cell-net.js";
 
 // THE WORKSPACE IS /workspace — the path the Kortix client addresses. The SDK
@@ -129,6 +130,8 @@ export function cellFs(sql) {
       wgetCommand(net),
       nodeCommand(defineCommand, { fetch: net }),
       npmCommand(defineCommand, { fetch: net, run: (line, opts) => bash.exec(line, { cwd: opts?.cwd ?? CELL_CWD }) }),
+      // `git` over isomorphic-git and this tree (git-command.js); no network.
+      gitCommand(defineCommand),
     ],
   });
 
@@ -185,19 +188,19 @@ export function cellFs(sql) {
 export function cellShellNote({ machine = false } = {}) {
   return [
     `Your bash tool is a small POSIX shell over this session's own tree at ${CELL_CWD}, which persists between turns.`,
-    "It is not a Linux machine: no apt or pip, no python, no git, and nothing keeps running or listens on a port after a command ends. curl and wget work over HTTP(S).",
+    "It is not a Linux machine: no apt, pip or python, and nothing keeps running or listens on a port. curl, wget and git work (git locally; Kortix pushes).",
     "node works here and is real — require, ESM, TypeScript, fs/path/crypto/zlib/http — and `npm install <pkg>` fetches from the registry into node_modules. There are no sockets, no child processes and no lifecycle scripts.",
     machine
-      ? "When a task needs a real machine — installs, python, builds, a dev server, git — use the machine tool: it attaches a full Linux environment with the project checked out and runs your command there."
-      : "This session has no Linux machine to attach. When a task needs one — python, builds, a dev server, git — say so plainly instead of working around it.",
+      ? "When a task needs a real machine — installs, python, builds, a dev server — use the machine tool: it attaches a full Linux environment with the project checked out and runs your command there."
+      : "This session has no Linux machine to attach. When a task needs one — python, builds, a dev server — say so plainly instead of working around it.",
   ].join("\n");
 }
 
 /** The commands this shell has, as `ls /usr/bin` prints them. cellfs-logic pins it. */
-export const CELL_COMMANDS = ["alias", "awk", "base64", "basename", "bash", "cat", "chmod", "clear", "column", "comm", "cp", "cut", "date", "diff", "dirname", "du", "echo", "egrep", "env", "expand", "expr", "false", "fgrep", "file", "find", "fold", "grep", "gunzip", "gzip", "head", "help", "history", "hostname", "html-to-markdown", "join", "jq", "ln", "ls", "md5sum", "mkdir", "mktemp", "mv", "nl", "node", "npm", "od", "paste", "printenv", "printf", "pwd", "readlink", "rev", "rg", "rm", "rmdir", "sed", "seq", "sh", "sha1sum", "sha256sum", "sleep", "sort", "split", "stat", "strings", "tac", "tail", "tee", "time", "timeout", "touch", "tr", "tree", "true", "unalias", "unexpand", "uniq", "wc", "which", "whoami", "xargs", "yes", "zcat"];
+export const CELL_COMMANDS = ["alias", "awk", "base64", "basename", "bash", "cat", "chmod", "clear", "column", "comm", "cp", "cut", "date", "diff", "dirname", "du", "echo", "egrep", "env", "expand", "expr", "false", "fgrep", "file", "find", "fold", "git", "grep", "gunzip", "gzip", "head", "help", "history", "hostname", "html-to-markdown", "join", "jq", "ln", "ls", "md5sum", "mkdir", "mktemp", "mv", "nl", "node", "npm", "od", "paste", "printenv", "printf", "pwd", "readlink", "rev", "rg", "rm", "rmdir", "sed", "seq", "sh", "sha1sum", "sha256sum", "sleep", "sort", "split", "stat", "strings", "tac", "tail", "tee", "time", "timeout", "touch", "tr", "tree", "true", "unalias", "unexpand", "uniq", "wc", "which", "whoami", "xargs", "yes", "zcat"];
 
 /** The commands a real box has that this shell does not. */
-export const CELL_MISSING = ["git", "ssh", "pnpm", "yarn", "python", "python3", "pip", "docker", "make", "gcc", "apt-get", "tar", "uname"];
+export const CELL_MISSING = ["ssh", "pnpm", "yarn", "python", "python3", "pip", "docker", "make", "gcc", "apt-get", "tar", "uname"];
 
 /** Network commands, registered by the fetch. */
 export const CELL_NET_COMMANDS = ["curl", "wget"];

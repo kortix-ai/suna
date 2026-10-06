@@ -155,7 +155,7 @@ export class CellEngine {
     // call that waits on a person resumes the same wait (interactions.js).
     this.registry.install(defineExtension({
       name: "kortix-permissions",
-      hooks: [hook(ToolTask, { beforeTool: (call, _api, context) => this.o.gate?.(call, context?.abortSignal) })],
+      hooks: [hook(ToolTask, { beforeTool: (call, api, context) => this.o.gate?.(call, context?.abortSignal, api?.conversationId) })],
     }));
     this.gatewayModels = new Map();
     this.faux = null;
@@ -204,20 +204,45 @@ export class CellEngine {
       if (this.gatewayBase !== baseUrl) this.gatewayModels.clear();
       this.gatewayBase = baseUrl;
       this.gatewayModels.set(id, gatewayModel(id, baseUrl));
-      this.models.setProvider(createProvider({
-        id: KORTIX_PROVIDER_ID,
-        name: "Kortix",
-        baseUrl,
-        auth: { apiKey: envApiKeyAuth("Kortix gateway token", ["KORTIX_PI_GATEWAY_KEY"]) },
-        models: [...this.gatewayModels.values()],
-        api: { "openai-completions": openAICompletionsApi() },
-      }));
+      this.#setGatewayProvider(baseUrl);
     }
     if (this.gatewayToken !== token) {
       this.gatewayToken = token;
       await this.credentials.modify(KORTIX_PROVIDER_ID, async () => ({ type: "api_key", key: token }));
     }
     return { provider: KORTIX_PROVIDER_ID, modelId: id };
+  }
+
+  /**
+   * The ModelRef for a gateway model id other than the session's (a subagent
+   * type that names its own model). Registers it with the provider first.
+   */
+  async modelRefFor(id) {
+    const own = await this.ensureModel();
+    const wanted = nativeModelId(id);
+    if (!wanted || this.scripted || wanted === own.modelId) return own;
+    if (!this.gatewayModels.has(wanted)) {
+      this.gatewayModels.set(wanted, gatewayModel(wanted, this.gatewayBase));
+      this.#setGatewayProvider(this.gatewayBase);
+    }
+    return { provider: KORTIX_PROVIDER_ID, modelId: wanted };
+  }
+
+  /** The Kortix gateway as pi-ai's provider, with every model registered so far. */
+  #setGatewayProvider(baseUrl) {
+    this.models.setProvider(createProvider({
+      id: KORTIX_PROVIDER_ID,
+      name: "Kortix",
+      baseUrl,
+      auth: { apiKey: envApiKeyAuth("Kortix gateway token", ["KORTIX_PI_GATEWAY_KEY"]) },
+      models: [...this.gatewayModels.values()],
+      api: { "openai-completions": openAICompletionsApi() },
+    }));
+  }
+
+  /** The root conversation's id, once the harness is open. */
+  get rootConversationId() {
+    return this.root?.id ?? null;
   }
 
   /** Steps for the scripted model, for a suite driving a cell. */
@@ -232,9 +257,11 @@ export class CellEngine {
   // ── the system prompt ──────────────────────────────────────────────────
 
   #sections() {
-    const part = (key) => async () => {
+    // A subagent child renders the same sections from its own parts: the
+    // conversation a request belongs to picks them (worker.js promptParts).
+    const part = (key) => async (input) => {
       try {
-        const parts = await this.o.prompt();
+        const parts = await this.o.prompt(input?.conversationId);
         return parts?.[key] || undefined;
       } catch (e) {
         this.log("prompt", key, errorText(e));

@@ -37,13 +37,13 @@ import { envRpcExecutionEnv, mintUserContext } from "./execenv.envrpc.js";
 import { CellEngine, fromAgentTool, nativeModelId } from "./engine.js";
 import { KortixEventBus, globalEventStream, runtimeEventStream } from "./kortix/bus.js";
 import { TranscriptStore } from "./kortix/transcript.js";
-import { MESSAGE_ID, MessageIdClock, ROOT_ID, mintRootId } from "./kortix/ids.js";
+import { MESSAGE_ID, MessageIdClock, ROOT_ID, mintChildId, mintRootId } from "./kortix/ids.js";
 import { decodeDataUrl, stripInlineAttachmentBytes } from "./kortix/attachments.js";
 import { turnErrorCode } from "./kortix/turn-events.js";
 import { CELL_VERSION, parsePromptBody } from "./kortix/prompt.js";
 import { filesAnswer } from "./cell-files.js";
 import { STATIC_PREFIX, staticAnswer } from "./cell-static.js";
-import { formatSkillInvocation } from "./vendor/pi-skills.js";
+import { formatSkillInvocation, formatSkillsForSystemPrompt } from "./vendor/pi-skills.js";
 import { loadWorkspaceSkills, withSkills } from "./skills.js";
 import { workspaceConfigDir, workspacePiConfigDir } from "./manifest.js";
 import { commandList, commandPromptBody, expandPromptTemplate, loadPromptTemplates } from "./commands.js";
@@ -51,6 +51,9 @@ import { MANAGED_SKILLS_TABLE_SQL, MANAGED_SKILLS_TTL_MS, fetchOverlay, material
 import { callRule, compilePermissionPolicy, permissionSubject, skillGranted, toolCapability } from "./permissions.js";
 import { CellInteractions, questionTool } from "./interactions.js";
 import { KORTIX_TOOL_NAMES, kortixTools } from "./kortix-tools/index.js";
+import { CellSubagents } from "./subagents.js";
+import { MACHINE_DOC_PATH, cellMachineDoc } from "./machine-doc.js";
+import { resolvePolicyRule } from "./permissions.js";
 import { ENVIRONMENT_TABLE_SQL, attachEnvironment, readCached as readEnvironment, waitForRepo } from "./environment.js";
 import { machineTool } from "./machine-tool.js";
 import { machineFs, machineGit } from "./machine-fs.js";
@@ -74,7 +77,7 @@ const DEFAULT_SYSTEM_PROMPT = [
 const PROJECT_INSTRUCTIONS_MAX = 16_000;
 
 /** kortixd's runtime capability names a pi session advertises; one `session.*` is required. */
-const CAPABILITIES = ["file.import", "file.append", "runtime.turns.v1", "session.compact", "session.commands"];
+const CAPABILITIES = ["file.import", "file.append", "runtime.turns.v1", "session.compact", "session.commands", "session.subagents"];
 
 /** The longest one alarm waits on pi; a longer run is waited on across several alarms. */
 const ALARM_WAIT_MS = 10 * 60_000;
@@ -108,7 +111,10 @@ export class AgentCell {
     this.sql.exec(MANAGED_SKILLS_TABLE_SQL);
     this.sessionEnv = {};
     for (const row of this.sql.exec("SELECT k, v FROM session_env")) this.sessionEnv[String(row.k)] = String(row.v);
-    this.transcript = new TranscriptStore(this.sql);
+    // Scoped to the root: a subagent child keeps its messages in the same
+    // tables under its own session id (childTranscript()).
+    this.transcript = new TranscriptStore(this.sql, { session: () => this.rootId });
+    this.childTranscripts = new Map();
     for (const m of this.transcript.all()) this.clock.observe(m.info.id);
     this.#closeInterruptedMessages();
     this.ready = true;
@@ -191,13 +197,13 @@ export class AgentCell {
       env: () => this.modelEnv(),
       publish: (frames) => this.publish(frames),
       envFor: (target) => this.toolEnv(target?.cwd),
-      prompt: () => this.promptParts(),
+      prompt: (conversationId) => this.promptParts(conversationId),
       tools: () => this.extraTools(),
       mintMessageId: () => this.clock.mint(),
       agentName: () => this.agentName(),
       onTurnEnd: () => { this.relayPending().catch(() => {}); },
       onCompaction: (phase) => this.compactionFrames(phase),
-      gate: (call, signal) => this.gate(call, signal),
+      gate: (call, signal, conversationId) => this.gate(call, signal, conversationId),
       log: (...a) => this.log(...a),
     });
     return this.__engine;
@@ -217,6 +223,31 @@ export class AgentCell {
     return this.__interactions;
   }
 
+  subagents() {
+    this.__subagents ??= new CellSubagents({
+      sql: this.sql,
+      engine: this.engine(),
+      rootId: () => this.rootId,
+      mintMessageId: () => this.clock.mint(),
+      mintChildId,
+      publish: (frames) => this.publish(frames),
+      compiledAgents: () => this.agentConfig().config.agents,
+      workspace: () => CELL_CWD,
+      log: (...a) => this.log(...a),
+    });
+    return this.__subagents;
+  }
+
+  /** A child session's transcript: the shared tables, scoped to the child's id. */
+  childTranscript(sessionId) {
+    let store = this.childTranscripts.get(sessionId);
+    if (!store) {
+      store = new TranscriptStore(this.sql, { session: () => sessionId });
+      this.childTranscripts.set(sessionId, store);
+    }
+    return store;
+  }
+
   /** The selected agent's compiled `permission` block (OpenCode's PermissionConfig). */
   policy() {
     return compilePermissionPolicy(this.agentConfig().agent?.permission);
@@ -227,12 +258,20 @@ export class AgentCell {
    * `toolGate` (harness/pi/runtime.ts). A tool the agent switches off and a
    * `deny` rule block; an `ask` rule waits for the user's reply.
    */
-  async gate(call, signal) {
+  async gate(call, signal, conversationId) {
     const tool = String(call?.name ?? "");
     const args = call?.arguments && typeof call.arguments === "object" ? call.arguments : {};
     const denied = { block: `The project policy denies this ${tool} call.` };
     if (this.agentConfig().agent?.tools?.[tool] === false) return denied;
-    const rule = callRule(this.policy(), tool, args, this.interactions().alwaysAllowed());
+    let rule = callRule(this.policy(), tool, args, this.interactions().alwaysAllowed());
+    const child = conversationId && conversationId !== this.engine().rootConversationId ? this.subagents().byConversation(conversationId) : null;
+    if (child) {
+      // The subagent's own rules first, the session's otherwise. A deny from
+      // either wins: delegating must never unlock a call the session denies.
+      const own = resolvePolicyRule(compilePermissionPolicy(child.permission ? JSON.parse(child.permission) : undefined), tool, args);
+      if (own === "deny" || this.agentConfig().config.agents?.[child.agent]?.tools?.[tool] === false) return denied;
+      if (rule !== "deny" && own) rule = own;
+    }
     if (rule === "deny") return denied;
     if (rule === "ask") {
       const reply = await this.interactions().askPermission({
@@ -255,12 +294,21 @@ export class AgentCell {
 
   /** Every frame goes on the bus AND into the transcript; one flush per batch. */
   publish(frames) {
+    const children = new Set();
     for (const frame of frames) {
       if (!frame?.type) continue;
-      this.transcript.apply(frame);
+      const p = frame.properties ?? {};
+      const session = p.sessionID ?? p.info?.sessionID ?? p.part?.sessionID;
+      if (session && this.rootId && session !== this.rootId) {
+        this.childTranscript(session).apply(frame);
+        children.add(session);
+      } else {
+        this.transcript.apply(frame);
+      }
       if (!frame.transcriptOnly) this.bus.publish(frame.type, frame.properties, frame.properties?.sessionID);
     }
     this.transcript.flush();
+    for (const session of children) this.childTranscript(session).flush();
     if (frames.some((f) => f.type === "message.updated" || f.type === "session.idle")) this.touch();
   }
 
@@ -459,8 +507,18 @@ export class AgentCell {
   }
 
   /** The system prompt's parts, prepared once per prompt and read by pi before each request. */
+  /** The cell's own /MACHINE.md (machine-doc.js), once per isolate, before the first prompt. */
+  async writeMachineDoc() {
+    if (this.__machineDoc) return;
+    const cell = this.cell();
+    await cell.ready;
+    await cell.fs.writeFile(MACHINE_DOC_PATH, cellMachineDoc({ machine: this.machineAvailable(), tools: this.toolIds() }));
+    this.__machineDoc = true;
+  }
+
   async preparePrompt() {
     await this.ensureCheckout().catch(() => null);
+    await this.writeMachineDoc().catch((e) => this.log("machine-doc", errorText(e)));
     const reload = !this.__skillsAfterCheckout;
     const { block } = await this.skills({ reload }).catch(() => ({ block: "" }));
     await this.commands({ reload }).catch(() => []);
@@ -476,13 +534,25 @@ export class AgentCell {
     return this.__prompt;
   }
 
-  async promptParts() {
-    return this.__prompt ?? this.preparePrompt();
+  async promptParts(conversationId) {
+    const root = this.__prompt ?? (await this.preparePrompt());
+    const child = conversationId && conversationId !== this.engine().rootConversationId ? this.subagents().byConversation(conversationId) : null;
+    if (!child) return root;
+    // kortixd's child prompt: its own base, the working directory, and the
+    // skills its own grant allows (runtime.ts `systemPrompt(child)`).
+    const policy = compilePermissionPolicy(child.permission ? JSON.parse(child.permission) : undefined);
+    const skills = (this.__skills?.skills ?? []).filter((skill) => skillGranted(policy, skill.name));
+    return {
+      system: `${child.system_prompt}\n\nWorking directory: ${CELL_CWD}`,
+      shell: root.shell,
+      instructions: root.instructions,
+      skills: skills.length ? formatSkillsForSystemPrompt(skills) : "",
+    };
   }
 
   /** The tool names a client lists: pi's coding tools, then the cell's own. */
   toolIds() {
-    return ["read", "write", "edit", "bash", "glob", "grep", "todowrite", "todoread", ...KORTIX_TOOL_NAMES, "question", ...(this.machineAvailable() ? ["machine"] : [])];
+    return ["read", "write", "edit", "bash", "glob", "grep", "todowrite", "todoread", ...KORTIX_TOOL_NAMES, "question", "task", ...(this.machineAvailable() ? ["machine"] : [])];
   }
 
   /** glob, grep, todo, question, machine and the project's plugin tools, for pi-durable. */
@@ -498,6 +568,8 @@ export class AgentCell {
       // web_search, image_search, scrape_webpage, memory, show: kortixd's own (kortix-tools/).
       ...kortixTools({ env: () => this.effectiveEnv(), fsEnv: () => cellExecutionEnv(this.cell()) }).map((t) => fromAgentTool(t)),
       fromAgentTool(questionTool(this.interactions()), { replay: "safe" }),
+      // task: subagents, each its own pi-durable conversation (subagents.js).
+      this.subagents().tool(),
       ...(this.machineAvailable() ? [fromAgentTool(this.machineTool())] : []),
       ...pluginTools.map((t) => fromAgentTool(t)),
     ];
@@ -873,6 +945,7 @@ export class AgentCell {
     }
     if (path === "/kortix/abort" && method === "POST") {
       this.interactions().rejectAll();
+      await this.subagents().abortAll().catch(() => {});
       const aborted = await this.engine().abort().catch(() => false);
       return json(200, { ok: true, aborted, runtime_session_id: root, opencode_session_id: root });
     }
@@ -887,10 +960,14 @@ export class AgentCell {
     if (path === "/session" && method === "GET") {
       const r = this.readiness();
       if (!r.ready) return json(503, { code: "runtime_not_ready", error: r.error ?? "the pi cell is starting", reason: r.phase, phase: r.phase }, { "x-kortix-boot-phase": `cell|${r.phase}` });
-      return json(200, [this.sessionObject()]);
+      return json(200, [this.sessionObject(), ...this.subagents().all().map((row) => this.subagents().sessionObject(row, this.sessionObject()))]);
     }
     if (path === "/session" && method === "POST") return json(200, this.sessionObject());
-    if (path === "/session/status" && method === "GET") return json(200, this.engine().activeTurn() ? { [root]: { type: "busy" } } : {});
+    if (path === "/session/status" && method === "GET") {
+      const status = this.engine().activeTurn() ? { [root]: { type: "busy" } } : {};
+      for (const row of this.subagents().all()) if (row.status === "busy") status[row.session_id] = { type: "busy" };
+      return json(200, status);
+    }
     const session = /^\/session\/([^/]+)(?:\/(.*))?$/.exec(path);
     if (session) return this.sessionRoute(req, decodeSegment(session[1]), session[2] ?? "", url, method);
 
@@ -1213,11 +1290,15 @@ export class AgentCell {
 
   async sessionRoute(req, sessionId, sub, url, method) {
     if (sessionId === null) return json(400, { error: "path contains malformed percent-encoding" });
-    if (sessionId !== this.rootId) return json(404, { error: "unknown session" });
+    if (sessionId !== this.rootId) {
+      const child = this.subagents().row(sessionId);
+      if (!child) return json(404, { error: "unknown session" });
+      return this.childRoute(child, sub, url, method);
+    }
     if (sub === "" && method === "GET") return json(200, this.sessionObject());
     if (sub === "" && method === "PATCH") return json(200, this.sessionObject());
     if (sub === "" && method === "DELETE") return json(200, true);
-    if (sub === "children" && method === "GET") return json(200, []);
+    if (sub === "children" && method === "GET") return json(200, this.subagents().all().map((row) => this.subagents().sessionObject(row, this.sessionObject())));
     const message = /^message(?:\/([^/]+)(?:\/part\/([^/]+))?)?$/.exec(sub);
     if (message && method === "GET") {
       const messageId = message[1] ? decodeSegment(message[1]) : null;
@@ -1267,6 +1348,7 @@ export class AgentCell {
     }
     if (sub === "abort" && method === "POST") {
       this.interactions().rejectAll();
+      await this.subagents().abortAll().catch(() => {});
       await this.engine().abort().catch(() => false);
       return json(200, true);
     }
@@ -1285,6 +1367,27 @@ export class AgentCell {
       return json(501, { code: "feature_not_supported", error: `${sub} is not supported by the pi cell` });
     }
     return notFound(`/session/${sessionId}/${sub}`);
+  }
+
+  /** A subagent child: readable while its parent task drives it, as in kortixd. */
+  childRoute(child, sub, url, method) {
+    const transcript = this.childTranscript(child.session_id);
+    if (sub === "" && method === "GET") return json(200, this.subagents().sessionObject(child, this.sessionObject()));
+    const message = /^message(?:\/([^/]+))?$/.exec(sub);
+    if (message && method === "GET") {
+      if (message[1]) {
+        const found = transcript.messageById(decodeSegment(message[1]) ?? "");
+        return found ? json(200, this.#strip(found)) : json(404, { error: "unknown message" });
+      }
+      const limitRaw = Number(url.searchParams.get("limit") ?? 0);
+      const limit = Number.isInteger(limitRaw) && limitRaw > 0 ? limitRaw : Math.max(transcript.count, 1);
+      const before = (url.searchParams.get("before") ?? url.searchParams.get("cursor"))?.trim() || null;
+      const page = transcript.page({ limit, before });
+      const older = page.hasMore ? String(page.messages[0]?.info.id ?? "") : "";
+      return json(200, page.messages.map((m) => this.#strip(m)), older ? { "x-next-cursor": older } : {});
+    }
+    if ((sub === "todo" || sub === "diff" || sub === "children") && method === "GET") return json(200, []);
+    return json(501, { code: "feature_not_supported", error: "a pi subagent session is read-only; its parent task drives it" });
   }
 
   async fileRoute(req, path, url, method) {
