@@ -48,8 +48,10 @@ Subcommands:
                            project now).
   fire <slug>              Manually fire a trigger now, wait for the run
                            outcome, and exit non-zero with the failure text
-                           when the run fails. The fired session is cleaned up
-                           on failure, so its API key does not outlive the run.
+                           when the run fails. The fired run's fresh session is
+                           cleaned up on failure (a run queued into an existing
+                           session leaves it), so its API key does not outlive
+                           the run.
                            [--wait <dur>]  How long to watch for the outcome
                            (default 90s; 0 returns as soon as the fire is
                            accepted).
@@ -317,15 +319,16 @@ async function triggersFire(
     return fail(`--wait must be a duration like 30s or 5m (got "${waitFlag}")`);
   }
 
-  const outcome = waitSeconds > 0 ? await triggerRunOutcome(ctx, slug, waitSeconds) : null;
-  if (outcome) {
+  const watch = waitSeconds > 0 ? await triggerRunOutcome(ctx, slug, waitSeconds) : null;
+  if (watch?.outcome === 'failed') {
     process.stderr.write(
-      `${status.err(`Trigger ${C.bold}${slug}${C.reset} run failed: ${outcome.error}`)}\n`,
+      `${status.err(`Trigger ${C.bold}${slug}${C.reset} run failed: ${watch.error}`)}\n`,
     );
     if (fired && resp.session_id) {
       // The dead session's per-session API key only dies with the session
       // (deleteSession revokes it), so the failed run's fresh session is
-      // cleaned up here instead of leaking a live bearer.
+      // cleaned up here instead of leaking a live bearer. A run queued into an
+      // existing session (queued response) leaves that session alone.
       try {
         await ctx.client.delete(`/projects/${ctx.projectId}/sessions/${resp.session_id}`);
         process.stdout.write(
@@ -340,13 +343,23 @@ async function triggersFire(
     return 1;
   }
 
+  // What the wait observed — never more than that. A window that expired with
+  // the watch running is "no failure observed", never "succeeded"; a watch
+  // that never started (runtime state unreadable, no attempt stamp) says so
+  // instead of claiming a no-failure window it did not watch.
+  let note = '';
+  if (watch?.outcome === 'watched') {
+    note = ` ${C.dim}— no failure within ${formatDurationSeconds(waitSeconds)}; the run is still going or finished clean. \`kortix triggers ls\` shows the outcome.${C.reset}`;
+  } else if (watch?.outcome === 'unwatched') {
+    note = ` ${C.dim}— could not watch the run outcome (${watch.reason}); \`kortix triggers ls\` shows it.${C.reset}`;
+  }
   if (fired && resp.session_id) {
     process.stdout.write(
-      `${status.ok(`Fired ${C.bold}${slug}${C.reset} → session ${C.dim}${resp.session_id}${C.reset}`)} ${C.dim}— no failure within ${formatDurationSeconds(waitSeconds)}; the run is still going or finished clean. \`kortix triggers ls\` shows the outcome.${C.reset}\n`,
+      `${status.ok(`Fired ${C.bold}${slug}${C.reset} → session ${C.dim}${resp.session_id}${C.reset}`)}${note}\n`,
     );
   } else if (!fired) {
     process.stdout.write(
-      `${status.info(`Queued ${C.bold}${slug}${C.reset}${resp.reason ? `${C.dim} — ${resp.reason}${C.reset}` : ''}`)} ${C.dim}— no failure within ${formatDurationSeconds(waitSeconds)}.${C.reset}\n`,
+      `${status.info(`Queued ${C.bold}${slug}${C.reset}${resp.reason ? `${C.dim} — ${resp.reason}${C.reset}` : ''}`)}${note}\n`,
     );
   } else {
     process.stdout.write(`${status.ok(`Fired ${C.bold}${slug}${C.reset}`)}\n`);
@@ -359,14 +372,16 @@ async function triggersFire(
  * stamps `last_attempt_at`; any later write is a run end, so a `failed` row
  * with a later attempt is THIS run's failure — never the stale one a fire over
  * a failing trigger keeps (keepRunFailure keeps the old failure under the
- * fire's own attempt stamp). A healthy run writes nothing, so the window
- * expiring means "no failure observed", never "succeeded".
+ * fire's own attempt stamp). A healthy run writes nothing, so a window that
+ * expires with the watch running is `watched` — "no failure observed", never
+ * "succeeded". A watch that never started is `unwatched`, so the caller cannot
+ * print a no-failure claim it did not earn.
  */
 async function triggerRunOutcome(
   ctx: { client: ApiClient; projectId: string },
   slug: string,
   waitSeconds: number,
-): Promise<{ error: string } | null> {
+): Promise<{ outcome: 'failed'; error: string } | { outcome: 'watched' } | { outcome: 'unwatched'; reason: string }> {
   const readTrigger = async (): Promise<ProjectTrigger | undefined> => {
     const resp = await ctx.client.get<ProjectTriggersResponse>(`/projects/${ctx.projectId}/triggers`);
     return resp.triggers.find((t) => t.slug === slug);
@@ -382,7 +397,9 @@ async function triggerRunOutcome(
       if (attempt < 2) await Bun.sleep(500);
     }
   }
-  if (!anchor?.last_attempt_at) return null;
+  if (!anchor?.last_attempt_at) {
+    return { outcome: 'unwatched', reason: anchor ? 'the trigger row has no attempt stamp' : 'the trigger row was not readable' };
+  }
   if (anchor.last_status === 'failed' && anchor.last_error) {
     // A fire over a failing trigger keeps the old failure until a run finishes.
     process.stdout.write(`${C.dim}Previous run failed: ${anchor.last_error}${C.reset}\n`);
@@ -402,10 +419,10 @@ async function triggerRunOutcome(
       row.last_attempt_at &&
       row.last_attempt_at > anchor.last_attempt_at
     ) {
-      return { error: row.last_error };
+      return { outcome: 'failed', error: row.last_error };
     }
   }
-  return null;
+  return { outcome: 'watched' };
 }
 
 // Server-side activation switch (cloud state in projects.metadata, NOT the

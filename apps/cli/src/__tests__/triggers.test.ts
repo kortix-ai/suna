@@ -575,12 +575,15 @@ describe('kortix triggers fire — reports the run outcome', () => {
     };
   }
 
-  function startFireServer(): string {
+  function startFireServer(opts: { triggersEndpoint?: 'down' } = {}): string {
     const base = `/v1/projects/${PROJECT}/triggers`;
     server = Bun.serve({
       port: 0,
       fetch: async (req) => {
         const url = new URL(req.url);
+        if (opts.triggersEndpoint === 'down' && url.pathname === base && req.method === 'GET') {
+          return Response.json({ error: 'database unavailable' }, { status: 503 });
+        }
         if (url.pathname === `${base}/dogfood-cron/fire` && req.method === 'POST') {
           const now = new Date().toISOString();
           // The fire route's own write: last_status fired, last_attempt_at set.
@@ -684,6 +687,18 @@ describe('kortix triggers fire — reports the run outcome', () => {
     expect(result.code).toBe(0);
     expect(result.stdout).toContain(SESSION_ID);
     expect(state.deletedSessions).toEqual([]);
+  });
+
+  test('an unreadable trigger row is reported as unwatched, never as no failure', async () => {
+    const apiConfig = writeConfig(startFireServer({ triggersEndpoint: 'down' }));
+    const result = await runCli(
+      ['triggers', 'fire', 'dogfood-cron', '--wait', '2s', '--project', PROJECT],
+      apiConfig,
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain(SESSION_ID);
+    expect(result.stdout).toContain('could not watch');
+    expect(result.stdout).not.toContain('no failure');
   });
 
   test('a fired session the caller cannot read exits non-zero', async () => {
