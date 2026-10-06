@@ -694,6 +694,12 @@ const envSchema = z.object({
   // active version celld serves (deployed by apps/pi-worker-js/deploy-platinum.mjs).
   KORTIX_PI_CELL_TEMPLATE: optStrDefault('pt-celld'),
   KORTIX_PI_CELL_WORKER: optStrDefault('kortix-pi-cell'),
+  // What one cell reserves on a Platinum host. A cell is one celld process
+  // holding an isolate and the session's files in memory; it inherited the
+  // pt-celld template's 4 GB until five cells filled a 25 GB host (Platinum dev
+  // answered 503 no capacity, 2026-10-06).
+  KORTIX_PI_CELL_RAM_MB: optInt(1024),
+  KORTIX_PI_CELL_CPU: optInt(1),
 
   // ── E2B — sandbox provisioning (conditional: required if enabled) ────────
   // E2B_DOMAIN is the base E2B domain without a protocol. The default uses
@@ -1417,6 +1423,8 @@ export const config = {
   KORTIX_PI_CELL_DEFAULT_ENABLED: env.KORTIX_PI_CELL_DEFAULT_ENABLED,
   KORTIX_PI_CELL_TEMPLATE: env.KORTIX_PI_CELL_TEMPLATE,
   KORTIX_PI_CELL_WORKER: env.KORTIX_PI_CELL_WORKER,
+  KORTIX_PI_CELL_RAM_MB: env.KORTIX_PI_CELL_RAM_MB,
+  KORTIX_PI_CELL_CPU: env.KORTIX_PI_CELL_CPU,
   E2B_API_KEY: env.E2B_API_KEY,
   E2B_DOMAIN: env.E2B_DOMAIN,
   E2B_TEMPLATE: env.E2B_TEMPLATE,

@@ -201,6 +201,9 @@ export function buildCellCreateBody(input: {
   worker: string;
   envVars: Record<string, string>;
   base: Record<string, unknown>;
+  /** What the cell reserves on its host (config KORTIX_PI_CELL_RAM_MB / _CPU). */
+  ramMb?: number;
+  cpu?: number;
 }): Record<string, unknown> {
   const env: Record<string, string> = { CELLD_BASE_PORT: String(AGENT_PORT) };
   for (const [k, v] of Object.entries(input.envVars)) env[`CELLD_VAR_${k}`] = String(v);
@@ -210,10 +213,21 @@ export function buildCellCreateBody(input: {
     template: input.template,
     runtime: 'cell',
     worker: input.worker,
+    ...(input.ramMb ? { ram_mb: input.ramMb } : {}),
+    ...(input.cpu ? { cpu: input.cpu } : {}),
     env,
     expose: [{ port: AGENT_PORT, public: false }],
     metadata: { ...(metadata as Record<string, unknown> | undefined), 'kortix.runtime': 'cell' },
   };
+}
+
+/** Platinum's answer to `exec` on a `runtime: cell` sandbox: it runs no commands. */
+export function isCellExecRefusal(err: unknown): boolean {
+  return (
+    err instanceof Error &&
+    /\/exec -> 501\b/.test(err.message) &&
+    err.message.includes('runtime_capability_unsupported')
+  );
 }
 
 /**
@@ -526,7 +540,14 @@ export class PlatinumProvider implements SandboxProvider {
       createBody.name = dedup.name;
     }
     const finalBody = opts.cell
-      ? buildCellCreateBody({ template, worker: opts.cell.worker, envVars, base: createBody })
+      ? buildCellCreateBody({
+          template,
+          worker: opts.cell.worker,
+          envVars,
+          base: createBody,
+          ramMb: config.KORTIX_PI_CELL_RAM_MB,
+          cpu: config.KORTIX_PI_CELL_CPU,
+        })
       : createBody;
     const createBodyJson = JSON.stringify(finalBody);
     const CREATE_PATH = '/v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000';
@@ -868,16 +889,44 @@ export class PlatinumProvider implements SandboxProvider {
     // Platinum resets last_activity_at before dispatching every /exec request.
     // One bounded no-op therefore renews its native idle timer without changing
     // the guest filesystem or starting a stopped sandbox.
-    const response = await platinumJson<PlatinumExecResponse>(`/v1/sandboxes/${externalId}/exec`, {
-      method: 'POST',
-      body: JSON.stringify({ cmd: ['true'], timeout_ms: 10_000 }),
-    });
+    let response: PlatinumExecResponse;
+    try {
+      response = await platinumJson<PlatinumExecResponse>(`/v1/sandboxes/${externalId}/exec`, {
+        method: 'POST',
+        body: JSON.stringify({ cmd: ['true'], timeout_ms: 10_000 }),
+      });
+    } catch (err) {
+      if (!isCellExecRefusal(err)) throw err;
+      return this.renewCellLifecycle(externalId);
+    }
     const result = response.result;
     if (!result || result.exit_code !== 0) {
       const detail = result?.stderr || result?.error || response.error || 'missing exec result';
       throw new Error(
         `Platinum lifecycle renewal failed for ${externalId}: exit ${result?.exit_code ?? 'unknown'}: ${detail.slice(0, 500)}`,
       );
+    }
+  }
+
+  /**
+   * A cell refuses `exec`, so the renewal above cannot reach it. Platinum also
+   * counts preview-URL traffic as activity (its sandbox proxy touches
+   * last_activity_at), so one authenticated GET of the cell's own /health
+   * through its private agent port renews the idle timer. The cell was created
+   * with auto_resume off, so this never wakes a stopped one.
+   */
+  private async renewCellLifecycle(externalId: string): Promise<void> {
+    const exposed = await platinumJson<PlatinumExposedPort>(`/v1/sandboxes/${externalId}/expose`, {
+      method: 'POST',
+      body: JSON.stringify({ port: AGENT_PORT, public: false, ttl_seconds: PREVIEW_TOKEN_TTL_SECONDS }),
+    });
+    const { url, token } = privateEdgeIngress({ ...exposed, port: exposed.port ?? AGENT_PORT });
+    const res = await fetch(`${url}/health`, {
+      headers: { [PLATINUM_PREVIEW_TOKEN_HEADER]: token },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (res.status !== 200) {
+      throw new Error(`Platinum lifecycle renewal failed for cell ${externalId}: GET /health -> ${res.status}`);
     }
   }
 

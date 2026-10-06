@@ -30,6 +30,7 @@ setTestEnv('PLATINUM_TEMPLATE', 'tpl_default');
 
 type Call = { path: string; method: string; body: Record<string, unknown> | undefined };
 let calls: Call[] = [];
+let execAnswer: 'ok' | 'cell' | 'error' = 'ok';
 
 mock.module('../../shared/platinum', () => ({
   isPlatinumConfigured: () => true,
@@ -41,6 +42,13 @@ mock.module('../../shared/platinum', () => ({
     calls.push({ path, method: String(init.method ?? 'GET'), body });
     if (path.startsWith('/v1/sandboxes?')) return { id: 'sbx_cell', state: 'running' };
     if (path.includes('/expose')) return { url: 'https://8000-sbx.test/?t=tok', token: 'tok', port: 8000, public: false };
+    if (path.endsWith('/exec')) {
+      if (execAnswer === 'cell') {
+        throw new Error(`platinum POST ${path} -> 501 {"error":"runtime 'cell' (Durable cell) does not support running a command","code":"runtime_capability_unsupported","runtime":"cell","capability":"exec"}`);
+      }
+      if (execAnswer === 'error') throw new Error(`platinum POST ${path} -> 500 {"error":"boom"}`);
+      return { result: { exit_code: 0, stdout: '', stderr: '' } };
+    }
     return {};
   },
 }));
@@ -63,6 +71,7 @@ const createBody = () => calls.find((c) => c.path.startsWith('/v1/sandboxes?') &
 
 beforeEach(() => {
   calls = [];
+  execAnswer = 'ok';
 });
 
 describe('a pi cell create', () => {
@@ -85,6 +94,13 @@ describe('a pi cell create', () => {
     expect(env.CELLD_VAR_KORTIX_API_URL).toBe('https://api.example.com/v1');
     expect(Object.keys(env).filter((k) => !k.startsWith('CELLD_VAR_'))).toEqual(['CELLD_BASE_PORT']);
     expect(body.envVars).toBeUndefined();
+  });
+
+  test('a cell reserves 1 GB and 1 CPU, not the 4 GB celld template default: five cells filled a 25 GB host', async () => {
+    await new PlatinumProvider().create({ ...opts, cell: { worker: 'kortix-pi-cell' } });
+    const body = createBody();
+    expect(body.ram_mb).toBe(1024);
+    expect(body.cpu).toBe(1);
   });
 
   test('celld listens on the agent port, which is exposed privately', async () => {
@@ -124,5 +140,43 @@ describe('a pi cell create', () => {
     expect(body.envVars).toBeUndefined();
     expect(body.type).toBe('ephemeral');
     expect(body.metadata).toEqual({ a: 1, 'kortix.runtime': 'cell' });
+  });
+});
+
+// A cell refuses `exec` (501 runtime_capability_unsupported), and exec is how
+// Platinum renewal resets the idle timer. Preview-URL traffic is the other
+// thing Platinum counts as activity (sandboxProxy touchActivity), so a cell is
+// renewed with one authenticated GET through its private agent port.
+describe('renewing a cell', () => {
+  test('falls back from exec to a GET on the cell\'s private preview URL, with its token', async () => {
+    execAnswer = 'cell';
+    const seen: Array<{ url: string; token: string | null }> = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      seen.push({ url: String(url), token: new Headers(init?.headers).get('x-pt-preview-token') });
+      return new Response('{"ok":true}', { status: 200 });
+    }) as unknown as typeof fetch;
+    try {
+      await new PlatinumProvider().renewLifecycle('sbx_cell');
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+    expect(seen).toEqual([{ url: 'https://8000-sbx.test/health', token: 'tok' }]);
+  });
+
+  test('a cell whose preview URL does not answer 200 is a failed renewal', async () => {
+    execAnswer = 'cell';
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response('down', { status: 502 })) as unknown as typeof fetch;
+    try {
+      await expect(new PlatinumProvider().renewLifecycle('sbx_cell')).rejects.toThrow(/502/);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  test('any other exec failure still fails the renewal: only the cell refusal falls back', async () => {
+    execAnswer = 'error';
+    await expect(new PlatinumProvider().renewLifecycle('sbx_vm')).rejects.toThrow(/500/);
   });
 });

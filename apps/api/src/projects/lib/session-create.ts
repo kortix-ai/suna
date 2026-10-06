@@ -756,21 +756,31 @@ async function validateSessionConnectorsForAgent(params: {
  * flag, whose default is the platform's KORTIX_PI_CELL_DEFAULT_ENABLED. A cell
  * boots no image, so a session that resolved a custom template stays a VM. A
  * cell also needs the platform to run cells and the LLM gateway, its only model
- * path; without either the session boots a VM rather than failing.
+ * path; without either the session boots a VM rather than failing. Pure: the
+ * sandbox-health poll asks it too, so the reason is returned, not logged.
  */
-export function sessionRunsInCell(params: { project: ProjectRow; sandboxSlug: string; declared: SandboxType | null }): boolean {
+export function cellDecision(params: {
+  project: ProjectRow;
+  sandboxSlug: string;
+  declared: SandboxType | null;
+}): { cell: boolean; fallback: string | null } {
   const { project, sandboxSlug, declared } = params;
-  if (declared === 'vm' || sandboxSlug !== DEFAULT_SANDBOX_SLUG) return false;
-  if (declared !== 'worker' && !resolveFeatureFlag(project.metadata, 'pi_cell')) return false;
+  if (declared === 'vm' || sandboxSlug !== DEFAULT_SANDBOX_SLUG) return { cell: false, fallback: null };
+  if (declared !== 'worker' && !resolveFeatureFlag(project.metadata, 'pi_cell')) return { cell: false, fallback: null };
   if (!featureFlagDef('pi_cell').available()) {
-    logger.warn('[sessions] kortix.yaml asks for sandbox.type worker, but this platform runs no cells; booting a VM', { projectId: project.projectId });
-    return false;
+    return { cell: false, fallback: 'kortix.yaml asks for sandbox.type worker, but this platform runs no cells; booting a VM' };
   }
   if (!projectLlmGatewayEnabled(project.metadata)) {
-    logger.warn('[sessions] the session asks for a pi cell but the LLM gateway is off; booting a VM', { projectId: project.projectId });
-    return false;
+    return { cell: false, fallback: 'the session asks for a pi cell but the LLM gateway is off; booting a VM' };
   }
-  return true;
+  return { cell: true, fallback: null };
+}
+
+/** `cellDecision` at session creation, where a fallback is worth one log line. */
+export function sessionRunsInCell(params: { project: ProjectRow; sandboxSlug: string; declared: SandboxType | null }): boolean {
+  const decision = cellDecision(params);
+  if (decision.fallback) logger.warn(`[sessions] ${decision.fallback}`, { projectId: params.project.projectId });
+  return decision.cell;
 }
 
 async function resolveSessionSandboxPlacement(params: {

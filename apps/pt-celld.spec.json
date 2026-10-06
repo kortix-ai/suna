@@ -37,7 +37,7 @@
     }
   ],
   "entrypoint": "/usr/local/bin/celld-boot",
-  "default_cpu": 2,
-  "default_ram_mb": 4096,
+  "default_cpu": 1,
+  "default_ram_mb": 1024,
   "default_disk_gb": 10
 }
