@@ -196,6 +196,12 @@
   "newWorkspace": {
     "title": "Criar um projeto",
     "description": "Um projeto reúne seus agentes, arquivos e sessões.",
+    "handoff": {
+      "validating": "A validar",
+      "creating_repository": "A criar o repositório",
+      "registering": "A registar o projeto",
+      "seeding": "A preparar os ficheiros iniciais"
+    },
     "templateSeed": "Este projeto será iniciado com o modelo escolhido.",
     "account": {
       "label": "Conta",
@@ -1540,6 +1546,7 @@
         "email": "E-mail",
         "scheduled": "Agendado",
         "webhook": "Webhook",
+        "manual": "Manual",
         "all": "Todos"
       },
       "statusValue": {
@@ -1726,7 +1733,8 @@
     },
     "restart": {
       "label": "Reiniciar sessão",
-      "pending": "Reiniciando…"
+      "pending": "Reiniciando…",
+      "ownerOnly": "Somente o proprietário da sessão ou um gerente do projeto pode reiniciar esta sessão."
     }
   },
   "modelSelector": {

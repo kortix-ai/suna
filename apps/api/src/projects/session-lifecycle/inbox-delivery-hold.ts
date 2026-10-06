@@ -9,24 +9,41 @@ export class InboxDeliveryPaused extends Error {
   }
 }
 
-/** Re-read Stop before each POST, including retries inside the readiness loop. */
-export async function assertInboxDeliveryActive(commandId: string): Promise<void> {
+/**
+ * Re-read the row before each POST, including retries inside the readiness
+ * loop. Two things stop the POST: a Stop (the hold), and a claim this delivery
+ * no longer owns — a shutdown handed the row back (`handBackClaims`) and
+ * another pod may already be sending it. A `succeeded` row is still ours: a
+ * placement repair re-sends after its own forward closed the claim.
+ */
+export async function assertInboxDeliveryActive(lease: CommandLease): Promise<void> {
   const [row] = await db
     .select({
+      status: sessionLifecycleCommands.status,
+      lockedBy: sessionLifecycleCommands.lockedBy,
       result: sessionLifecycleCommands.result,
       payload: sessionLifecycleCommands.payload,
     })
     .from(sessionLifecycleCommands)
-    .where(eq(sessionLifecycleCommands.commandId, commandId))
+    .where(eq(sessionLifecycleCommands.commandId, lease.commandId))
     .limit(1);
-  if (!row || row.result?.held === true || row.payload?.stopPausedOnDelivery === true) {
+  if (
+    !row ||
+    (row.status !== 'succeeded' && row.lockedBy !== lease.lockedBy) ||
+    row.result?.held === true ||
+    row.payload?.stopPausedOnDelivery === true
+  ) {
     throw new InboxDeliveryPaused();
   }
 }
 
-export async function releasePausedInboxDelivery(lease: CommandLease): Promise<void> {
-  // Preserve the CURRENT hold. Resume may have cleared it since the read above.
-  // Only release our own running claim; a deleted row must never be resurrected.
+/**
+ * Give a claimed row back to the queue, due now, with the claim's attempt
+ * increment returned. Preserves the CURRENT hold: Resume may have cleared it
+ * since the read above, and a held inbox row is not claimed again until it is
+ * lifted. Only our own running claim; a deleted row must never be resurrected.
+ */
+export async function returnClaimToQueue(lease: CommandLease): Promise<void> {
   await db
     .update(sessionLifecycleCommands)
     .set({

@@ -274,13 +274,15 @@ function startServer(): string {
         return Response.json({ opencode_model: model, applied_live: true });
       }
       if (method === 'GET' && path === `${session}/audit`) {
+        // Real wire shape: `action` is connectorCalls.action_path, stored WITH
+        // the slug prefix (`<slug>.<action>`, see recordExecution in gateway.ts).
         return Response.json({
           session_id: SESSION,
           count: 2,
           actions: [
             {
               execution_id: EXECUTION,
-              action: 'send_message',
+              action: 'slack.send_message',
               connector: 'slack',
               connector_id: 'conn-1',
               status: 'pending_approval',
@@ -291,7 +293,7 @@ function startServer(): string {
             },
             {
               execution_id: 'other',
-              action: 'read',
+              action: 'slack.read',
               connector: 'slack',
               connector_id: 'conn-1',
               status: 'ok',
