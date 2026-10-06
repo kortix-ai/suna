@@ -1,74 +1,38 @@
 #!/usr/bin/env bash
-# EVERY SUITE, AND SURVIVE THE DOCKER VM DYING.
+# EVERY SUITE, ONE COMMAND.
 #
-# On this machine the OrbStack VM is killed (SIGKILL) after roughly four or five
-# heavy suites. It is not this code and it is not the host:
+#   1. the node suites, in process against the shipped bundle — the list is
+#      test/suite-map.mjs ALL_SUITES, the same list the auditors read;
+#   2. test/session-e2e.mjs, a whole session on a real `celld dev`, when a
+#      celld binary is available (CELLD_BIN, or `celld` on PATH) — SKIPPED by
+#      name otherwise;
+#   3. with --live only: the dev-stack suites (pi-js.kortix.com, Platinum dev).
+#      Each SKIPs without its credentials, and they drive a deployment, not
+#      this tree — a green live run says nothing about uncommitted code.
 #
-#   host memory     min 5.46 GB free during a failing run — not pressure
-#   VM disk         34.5 GB free
-#   celld churn     25 cycles of a WORKING node, real bucket traffic — survived
-#   bind mounts     20 cycles mounting node_modules (10,722 files) — survived
-#   real deploys    15 cycles of esbuild-in-container + S3 writes — survived
-#   docker kill     8 SIGKILLs of a live container — survived
-#   short-lived     16 run --rm containers — survived
-#   published port  8 cycles, idle and with curl hammering it — survived
-#   host dialling   8 containers to an open port and 8 to a closed one — survived
+# NOT run here: test/mutate-*.mjs. The auditors rewrite tracked source files
+# in place and restore them at exit; a run killed partway leaves a mutant in
+# src/. Run one on purpose, alone, and check `git status` after it.
 #
-# No single operation reproduces it; only sustained multi-suite load does, and
-# OrbStack leaves no crash report. So the runner stops pretending the daemon is
-# reliable: it checks before each suite, brings it back with `orb start` (which
-# does not need the GUI crash dialog dismissed), and retries a suite ONCE if the
-# daemon died underneath it.
-#
-# A recovered run is reported as recovered, never as clean — the count of
-# restarts is printed at the end, because a suite that only passes on the second
-# attempt is a different fact from one that passes.
+# Usage: ./test/all.sh [--live]
 set -uo pipefail
 cd "$(dirname "$0")/.."
-
-RESTARTS=0
+LIVE=0
+for a in "$@"; do [ "$a" = "--live" ] && LIVE=1; done
 FAILED=0
 declare -a RESULTS=()
 
-alive() { docker version --format '{{.Server.Version}}' >/dev/null 2>&1; }
-
-ensure_docker() {
-  alive && return 0
-  RESTARTS=$((RESTARTS + 1))
-  orb start >/dev/null 2>&1
-  for _ in $(seq 1 240); do alive && break; sleep 0.25; done
-  alive || return 1
-  docker start pt-minio >/dev/null 2>&1
-  for _ in $(seq 1 60); do docker exec pt-minio true 2>/dev/null && return 0; sleep 0.25; done
-  return 0
-}
-
-
 # WHAT TREE WAS THIS RESULT ABOUT?
 #
-# Twice in one session I started a sweep in the background and then edited a
-# test file while it ran. Both times a suite reported a failure that had nothing
-# to do with the code — it had been rewritten underneath the run — and both
-# times I worked that out afterwards, from the shape of the error.
-#
-# A result is only meaningful about the tree it ran against. This hashes the
+# A sweep started in the background and a test file edited while it ran
+# reports a failure that has nothing to do with the code. This hashes the
 # sources and suites at the start and again at the end: if they differ the run
 # is NOT ATTRIBUTABLE and says so, rather than leaving a green or red summary
-# that means nothing.
-#
-# Deliberately not everything. wrangler.json is rewritten by the suites
-# themselves, dist/ is rebuilt, agent.config.json is written and restored by
-# celldctl-logic — hashing those would report drift on every clean run.
-#
-# Which is exactly what the first version did: the pattern was anchored at the
-# top level, so test/fixture-app/.platinum-build — 15 generated files the e2e
-# rebuilds every run — was hashed, and a clean bindings sweep declared itself
-# NOT ATTRIBUTABLE. A guard that fires when nothing is wrong is a guard someone
-# turns off, and I had written that sentence one commit before shipping it.
+# that means nothing. Not hashed: dist/ (rebuilt here), wrangler.json and
+# agent.config.json (written and restored by celldctl-logic).
 tree_hash() {
-  find . -type f \( -name '*.js' -o -name '*.mjs' -o -name '*.sh' -o -name '*.py' \) \
-    -not -path '*/node_modules/*' -not -path '*/dist/*' -not -path '*/.platinum-build/*' \
-    -not -path '*/.next/*' -not -path '*/fixture-app/*' 2>/dev/null \
+  find . -type f \( -name '*.js' -o -name '*.mjs' -o -name '*.ts' -o -name '*.sh' -o -name '*.py' \) \
+    -not -path '*/node_modules/*' -not -path '*/dist/*' 2>/dev/null \
     | sort | xargs shasum 2>/dev/null | shasum | cut -d' ' -f1
 }
 TREE_BEFORE=$(tree_hash)
@@ -77,10 +41,8 @@ run_suite() {
   local name="$1"; shift
   # The suite's own file, so its declared claim count can be read back.
   local SUITE_FILE=""
-  for a in "$@"; do case "$a" in *test/*.sh|*test/*.mjs) SUITE_FILE="$a" ;; esac; done
-  local log="/tmp/suite-${name}.log"
-  ensure_docker || { RESULTS+=("$name  SKIPPED (docker unavailable)"); FAILED=$((FAILED+1)); return; }
-
+  for a in "$@"; do case "$a" in test/*.sh|./test/*.sh|test/*.mjs) SUITE_FILE="$a" ;; esac; done
+  local log="/tmp/pi-cell-suite-${name}.log"
   if "$@" >"$log" 2>&1; then
     # A suite that skipped is not a suite that passed. Zero claims reported as
     # "0 ok" reads like a green run of nothing.
@@ -88,23 +50,14 @@ run_suite() {
       RESULTS+=("$name  SKIPPED ($(grep -m1 'SKIP:' "$log" | sed 's/.*SKIP: //'))")
       return
     fi
-    # THE COUNT THE SUITE ITSELF DECLARES.
-    #
-    # A suite's own tail check catches a section that ran and produced nothing.
-    # It cannot catch an `exit 0` partway, because that skips the tail — proved
-    # by making crash.sh stop after two claims: it exited 0, printed a clean
-    # two-line run, and nothing said a word.
-    #
-    # This is the other half. Where a suite declares EXPECTED_PASSES, the number
-    # it printed has to match it, so a short run is a failure here even when the
-    # suite never got as far as noticing.
+    # THE COUNT THE SUITE ITSELF DECLARES. A suite's own tail check catches a
+    # section that ran and produced nothing; it cannot catch an exit partway,
+    # because that skips the tail. Where a suite declares EXPECTED_PASSES (a
+    # `//` or `#` comment), the number it printed has to match it.
     local ran want
-    ran=$(grep -cE 'PASS|^  ok' "$log")
-    # A comment prefix is accepted so a .mjs suite can declare one too: under
-    # ESM's strict mode a bare top-level `EXPECTED_PASSES=53` is a ReferenceError,
-    # so every .mjs suite here declared nothing and the anchored pattern matched
-    # only the five shell suites. Nineteen suites, 653 of the run's claims, had
-    # no count to check against.
+    # Claim lines, plus pi's own conformance runner, which reports per group
+    # ("== env: 21 pass, 0 fail, 0 known gaps") rather than per case.
+    ran=$(( $(grep -cE 'PASS|^  ok' "$log") + $(awk '/^== [a-z]+: [0-9]+ pass/ { n += $3 } END { print n + 0 }' "$log") ))
     want=$(grep -m1 -oE '^(//|#)? *EXPECTED_PASSES=[0-9]+' "${SUITE_FILE:-/dev/null}" 2>/dev/null | cut -d= -f2)
     if [ -n "$want" ] && [ "$ran" -ne "$want" ]; then
       RESULTS+=("$name  INCOMPLETE: $ran of $want claims ran")
@@ -114,122 +67,53 @@ run_suite() {
     RESULTS+=("$name  $ran ok")
     return
   fi
-
-  # Distinguish "the suite found a bug" from "the daemon vanished under it".
-  # Retrying a real failure wastes minutes and teaches nothing.
-  if ! alive; then
-    ensure_docker || { RESULTS+=("$name  SKIPPED (docker did not come back)"); FAILED=$((FAILED+1)); return; }
-    if "$@" >"$log" 2>&1; then
-      RESULTS+=("$name  $(grep -cE 'PASS|^  ok' "$log") ok (RETRIED after the docker VM died)")
-      return
-    fi
-  fi
-  # KEEP THE EVIDENCE. /tmp/suite-<name>.log is overwritten by the next run, so
-  # a suite that fails once in five runs is undiagnosable by the time anyone
-  # looks. This copy is timestamped and survives.
-  local kept="/tmp/celld-failures/${name}-$(date +%Y%m%d-%H%M%S).log"
-  mkdir -p /tmp/celld-failures && cp "$log" "$kept" 2>/dev/null
+  # KEEP THE EVIDENCE. The log above is overwritten by the next run; this copy
+  # is timestamped and survives.
+  local kept="/tmp/pi-cell-failures/${name}-$(date +%Y%m%d-%H%M%S).log"
+  mkdir -p /tmp/pi-cell-failures && cp "$log" "$kept" 2>/dev/null
   RESULTS+=("$name  FAILED: $(grep -E 'FAIL' "$log" | sed 's/\x1b\[[0-9;]*m//g' | head -1 | sed 's/^ *//')  [kept: ${kept}]")
   FAILED=$((FAILED + 1))
 }
 
 printf '\n  \033[1mpi in a cell — every suite\033[0m\n\n'
-# BUILD FIRST. cell-logic and atob-shim import dist/worker.js, and the suite that
-# builds dist (fixture, build-and-model.mjs) ran four suites later — so on a
-# fresh checkout the first sweep failed both with ERR_MODULE_NOT_FOUND and the
-# second passed. Every checkout that had ever run a sweep carried a dist/ from
-# last time, which is how this stayed hidden.
+# BUILD FIRST: most suites import dist/worker.js, the bundle that ships.
 npm run --silent build >/dev/null 2>&1 || { echo "  build failed — nothing below can be trusted"; exit 1; }
 
-run_suite tools      node test/tools-logic.mjs
-run_suite shapes     node test/platinum-shapes.mjs
-run_suite compaction node test/compaction-logic.mjs
-run_suite safety     node test/daemon-safety.mjs
-run_suite cell       node --experimental-sqlite test/cell-logic.mjs
-run_suite atob       node test/atob-shim.mjs
-run_suite models     node test/model-logic.mjs
-run_suite ctl        node test/celldctl-logic.mjs
-run_suite deploy     node test/deploy-contract.mjs
-run_suite fixture    node test/build-and-model.mjs
-run_suite execenv    node test/execenv-logic.mjs
-run_suite persist    node test/daemon-persist.mjs
-run_suite opid       node test/opid-identity.mjs
-run_suite cancel     node test/cancel-logic.mjs
-run_suite skills     node test/skills-logic.mjs
-run_suite parity     node test/ledger-parity.mjs
-# The Kortix session surface on a cell — in-process, no Docker (kortix-parity.mjs).
-run_suite kparity    node --experimental-sqlite ./test/kortix-parity.mjs
-run_suite wire    node --experimental-sqlite ./test/wire-logic.mjs
-run_suite boot    node --experimental-sqlite ./test/boot-logic.mjs
-run_suite proj    node --experimental-sqlite ./test/projection-logic.mjs
-run_suite archive    node test/archive-logic.mjs
-run_suite meter      node test/meter-logic.mjs
-run_suite envplat    node test/execenv-platinum.mjs
-run_suite cellfs     node --experimental-sqlite ./test/cellfs-logic.mjs
-run_suite files      node --experimental-sqlite test/files-logic.mjs
-run_suite static     node --experimental-sqlite test/static-logic.mjs
-run_suite agentcfg   node --experimental-sqlite test/agent-config-logic.mjs
-run_suite manifest   node --experimental-sqlite test/manifest-logic.mjs
-run_suite envrpc     node test/envrpc-logic.mjs
-run_suite environ    node --experimental-sqlite test/environment-logic.mjs
-run_suite machine    node test/machine-logic.mjs
-run_suite machinefs  node test/machine-fs-logic.mjs
-run_suite node       node test/node-logic.mjs
-run_suite plugins    node test/plugins-logic.mjs
-run_suite typescript node test/typescript-logic.mjs
-run_suite npm        node test/npm-logic.mjs
-run_suite plan       node --experimental-sqlite test/plan-logic.mjs
-run_suite pty        node --experimental-sqlite test/pty-logic.mjs
-run_suite git        node --experimental-sqlite test/git-logic.mjs
-run_suite routes     node --experimental-sqlite test/kortix-routes-logic.mjs
-run_suite e2e        ./test/e2e.sh
-run_suite streaming  ./test/streaming.sh
-run_suite crash      ./test/crash.sh
-run_suite platinum   ./test/platinum.sh
+SUITES=$(node --no-warnings --input-type=module -e 'const m = await import("./test/suite-map.mjs"); console.log(m.ALL_SUITES.join("\n"))') \
+  || { echo "  could not read test/suite-map.mjs"; exit 1; }
+for suite in $SUITES; do
+  run_suite "${suite%.mjs}" node --experimental-sqlite --no-warnings "test/$suite"
+done
 
-# Eviction needs a node started with CELLD_MAX_RESIDENT_CELLS=1, which the other
-# suites do not want. It skips cleanly when that is not the case rather than
-# restarting the node underneath them.
-run_suite eviction   ./test/eviction.sh
-run_suite dev-evict  ./test/dev-evict.sh
-run_suite file-dur   ./test/dev-file-durability.sh
-run_suite box-loss   ./test/dev-box-loss.sh
-run_suite session-e2e ./test/dev-session-e2e.sh
-run_suite routes-e2e ./test/dev-routes-e2e.sh
-run_suite default-e2e ./test/dev-default-harness-e2e.sh
-run_suite runtime-e2e bash test/dev-runtime-e2e.sh
-run_suite ttft-e2e   bash test/dev-ttft-e2e.sh
-# The cell against a REAL Platinum dev sandbox as its workspace. Opt-in by the
-# presence of a dev token (PT_SANDBOX_KEY or ~/.config/platinum/credentials);
-# without one it SKIPs and says so. Last, because it owns the node's lifecycle.
-run_suite dev-e2e    ./test/dev-e2e.sh
-run_suite browser-e2e ./test/dev-browser-e2e.sh
-run_suite ui-e2e     ./test/dev-ui-e2e.sh
-run_suite fs-iso     ./test/cell-fs-isolation.sh
-# THE WORKER IN A REAL CELL ON DEV, folder-scoped. Needs the dev bucket's S3
-# credentials in PT_S3_* on top of the token; SKIPs by name without them.
-run_suite cell-dev   ./test/cell-dev-e2e.sh
+CELLD=${CELLD_BIN:-$(command -v celld 2>/dev/null || true)}
+if [ -n "$CELLD" ] && [ -x "$CELLD" ]; then
+  run_suite session-e2e node --no-warnings test/session-e2e.mjs --celld "$CELLD"
+else
+  RESULTS+=("session-e2e  SKIPPED (no celld binary: set CELLD_BIN or put celld on PATH)")
+fi
+
+if [ "$LIVE" -eq 1 ]; then
+  run_suite browser-e2e ./test/dev-browser-e2e.sh
+  run_suite session-dev ./test/dev-session-e2e.sh
+  run_suite ttft-e2e    bash test/dev-ttft-e2e.sh
+  run_suite ui-e2e      ./test/dev-ui-e2e.sh
+  run_suite cell-dev    ./test/cell-dev-e2e.sh
+fi
 
 for r in "${RESULTS[@]}"; do
   case "$r" in
-    *FAILED*|*SKIPPED*) printf '  \033[31m%s\033[0m\n' "$r" ;;
-    *RETRIED*)          printf '  \033[33m%s\033[0m\n' "$r" ;;
-    *)                  printf '  \033[32m%s\033[0m\n' "$r" ;;
+    *FAILED*|*INCOMPLETE*|*SKIPPED*) printf '  \033[31m%s\033[0m\n' "$r" ;;
+    *)                               printf '  \033[32m%s\033[0m\n' "$r" ;;
   esac
 done
-
 echo
-[ "$RESTARTS" -gt 0 ] && printf '  the docker VM was restarted %s time(s) during this run\n' "$RESTARTS"
-# A SKIP IS NOT A PASS — see the note in the bindings runner.
 SKIPPED=$(printf '%s\n' "${RESULTS[@]}" | grep -c 'SKIPPED' || true)
 TREE_AFTER=$(tree_hash)
 if [ "$TREE_BEFORE" != "$TREE_AFTER" ]; then
   printf '\n  \033[31mNOT ATTRIBUTABLE\033[0m the sources or suites changed while this ran\n'
   printf '  %s -> %s\n' "$(echo "$TREE_BEFORE" | cut -c1-12)" "$(echo "$TREE_AFTER" | cut -c1-12)"
-  printf '  Whatever it says above is about no particular version of this code.\n'
   exit 1
 fi
-
 if [ "$FAILED" -ne 0 ]; then
   printf '  %s suite(s) failed\n' "$FAILED"; exit 1
 elif [ "$SKIPPED" -ne 0 ]; then

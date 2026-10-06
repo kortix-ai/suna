@@ -192,7 +192,7 @@ export function cellShellNote() {
 }
 
 /** The commands this shell has, as `ls /usr/bin` prints them. cellfs-logic pins it. */
-export const CELL_COMMANDS = ["alias", "awk", "base64", "basename", "bash", "cat", "chmod", "clear", "column", "comm", "cp", "cut", "date", "diff", "dirname", "du", "echo", "egrep", "env", "expand", "expr", "false", "fgrep", "file", "find", "fold", "grep", "gunzip", "gzip", "head", "help", "history", "hostname", "html-to-markdown", "join", "jq", "ln", "ls", "md5sum", "mkdir", "mv", "nl", "node", "npm", "od", "paste", "printenv", "printf", "pwd", "readlink", "rev", "rg", "rm", "rmdir", "sed", "seq", "sh", "sha1sum", "sha256sum", "sleep", "sort", "split", "stat", "strings", "tac", "tail", "tee", "time", "timeout", "touch", "tr", "tree", "true", "unalias", "unexpand", "uniq", "wc", "which", "whoami", "xargs", "zcat"];
+export const CELL_COMMANDS = ["alias", "awk", "base64", "basename", "bash", "cat", "chmod", "clear", "column", "comm", "cp", "cut", "date", "diff", "dirname", "du", "echo", "egrep", "env", "expand", "expr", "false", "fgrep", "file", "find", "fold", "grep", "gunzip", "gzip", "head", "help", "history", "hostname", "html-to-markdown", "join", "jq", "ln", "ls", "md5sum", "mkdir", "mktemp", "mv", "nl", "node", "npm", "od", "paste", "printenv", "printf", "pwd", "readlink", "rev", "rg", "rm", "rmdir", "sed", "seq", "sh", "sha1sum", "sha256sum", "sleep", "sort", "split", "stat", "strings", "tac", "tail", "tee", "time", "timeout", "touch", "tr", "tree", "true", "unalias", "unexpand", "uniq", "wc", "which", "whoami", "xargs", "yes", "zcat"];
 
 /** The commands a real box has that this shell does not. */
 export const CELL_MISSING = ["git", "ssh", "pnpm", "yarn", "python", "python3", "pip", "docker", "make", "gcc", "apt-get", "tar", "uname"];
@@ -415,7 +415,8 @@ export function cellExecutionEnv(cell, cwd = CELL_CWD) {
       };
     }, context),
     exists: (p, context) => guard(p, () => fs.exists(abs(p)), context),
-    createDir: (p, options, context) => mutating(p, () => fs.mkdir(abs(p), { recursive: options?.recursive ?? false }), context),
+    // pi's reference environment creates parents unless told not to.
+    createDir: (p, options, context) => mutating(p, () => fs.mkdir(abs(p), { recursive: options?.recursive ?? true }), context),
     remove: (p, options, context) => mutating(p, () => fs.rm(abs(p), { recursive: options?.recursive ?? false, force: options?.force ?? false }), context),
     createTempDir: (prefix, context) => mutating(undefined, async () => {
       const d = `/tmp/${prefix ?? "tmp"}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;

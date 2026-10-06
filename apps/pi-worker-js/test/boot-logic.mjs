@@ -1,12 +1,15 @@
-// THE OPENCODE BOOT SURFACE AND THE TRANSCRIPT'S IDS, without a cell.
+// THE OPENCODE BOOT SURFACE, without a cell.
 //
-// Two defects on the real pi-js UI, 2026-09-09, session 5192652f: a refresh
-// never connected (every boot route 404), and every message showed twice (the
-// transcript read named messages by row number while the stream had named
-// them by wire id, and painted pi's thinking as a visible part).
-// EXPECTED_PASSES=35
+// A defect on the real pi-js UI, 2026-09-09, session 5192652f: a refresh never
+// connected, because every route the client calls at boot answered 404. These
+// claims pin each boot answer's shape (src/opencode-boot.js, pure).
+//
+// The transcript-id half of this suite (src/transcript-read.js) went with that
+// module in e7ba174195: the transcript is now kept in the wire shape as it is
+// streamed (src/kortix/transcript.js), so there is no read-time id derivation
+// left to pin. kortix-contract-logic.mjs pins the ids it serves.
+// EXPECTED_PASSES=23
 import { bootAnswer, isBootRoute, configModel, agentNameFrom } from "../src/opencode-boot.js";
-import { transcriptMessages, partType, messageIdFor, legacyIdAfter } from "../src/transcript-read.js";
 
 let bad = 0;
 const check = (name, ok, detail = "") => {
@@ -47,44 +50,6 @@ const check = (name, ok, detail = "") => {
     agentNameFrom({ KORTIX_AGENT: { model: "x" } }) === "kortix" && agentNameFrom({}) === "kortix" &&
     bootAnswer("GET", "/agent", { agentName: { name: "obj" } }).body[0].name === "kortix", "");
   check("configModel needs both halves", configModel("x", undefined) === undefined && configModel(undefined, "y") === undefined, "");
-}
-
-{
-  const rows = [
-    { i: 1, role: "user", json: JSON.stringify({ role: "user", content: [{ type: "text", text: "suppp" }] }), ts: 10, wire_id: "msg_088088c790015gYS8fAEf15ugc" },
-    { i: 2, role: "assistant", json: JSON.stringify({ role: "assistant", content: [{ type: "thinking", thinking: "the user greets" }, { type: "text", text: "sup!" }] }), ts: 20, wire_id: "msg_cell_00000001" },
-    { i: 3, role: "assistant", json: JSON.stringify({ role: "assistant", content: [{ type: "text", text: "old row" }] }), ts: 30 },
-  ];
-  const out = transcriptMessages(rows, "s1");
-  check("a user message is named by the id the client sent — the optimistic bubble reconciles",
-    out[0].info.id === "msg_088088c790015gYS8fAEf15ugc" && out[0].parts[0].messageID === "msg_088088c790015gYS8fAEf15ugc", JSON.stringify(out[0]));
-  // A legacy counter id is placed right after the real id before it, so the
-  // client's id ordering reads user, assistant, user, assistant — even when
-  // the client's clock ran ahead of the cell's and packed its ids newest+1.
-  const legacy = legacyIdAfter("msg_cell_00000001", out[0].info.id);
-  check("a legacy msg_cell id borrows the 12-hex clock of the preceding real id and takes a tail past any random one",
-    /^msg_[0-9a-f]{12}zzzzzzzzz[0-9A-Za-z]{5}$/.test(legacy ?? "") && legacy.slice(4, 16) === out[0].info.id.slice(4, 16)
-      && out[1].info.id === legacy && out[1].parts.every((p) => p.messageID === legacy), `${legacy} ${out[1].info.id}`);
-  check("and it sorts after that user id and before the very next clock value — the packed case measured on a46a8c1a",
-    (() => { const u1 = out[0].info.id; const t = BigInt("0x" + u1.slice(4, 16)) + 1n;
-             const u2 = "msg_" + t.toString(16).padStart(12, "0") + "00000000000000";
-             return u1 < legacy && legacy < u2; })(), legacy);
-  check("two legacy replies in one turn keep their order and both hang off the same message",
-    (() => { const a1 = legacyIdAfter("msg_cell_00000007", out[0].info.id), a2 = legacyIdAfter("msg_cell_00000008", out[0].info.id);
-             return a1 < a2 && a1.slice(0, 25) === a2.slice(0, 25); })(), "");
-  check("with no real id before it a legacy id is left as stored", messageIdFor({ i: 3, wire_id: "msg_cell_00000001" }, null) === "msg_cell_00000001", "");
-  check("a stored assistant message reads as COMPLETE (time.completed), a user message does not",
-    out[1].info.time.completed === 20 && out[1].info.time.created === 20 && out[0].info.time.completed === undefined, JSON.stringify([out[0].info.time, out[1].info.time]));
-  check("a real wire id is left exactly as it is", messageIdFor({ i: 9, ts: 5, wire_id: "msg_088088c790015gYS8fAEf15ugc" }) === "msg_088088c790015gYS8fAEf15ugc", "");
-  check("pi's thinking block is NOT in the transcript — the stream hides it, so must the read (the chat paints a `reasoning` part as an answer)",
-    out[1].parts.length === 1 && out[1].parts[0].type === "text" && out[1].parts[0].text === "sup!", JSON.stringify(out[1].parts));
-  check("and the surviving part keeps the index the stream named it by — p1, not p0",
-    out[1].parts[0].id === `${legacy}-p1`, out[1].parts[0].id);
-  check("a row from before the column falls back to its row number — exactly what the read used to emit",
-    out[2].info.id === "3" && out[2].parts[0].id === "3-p0", JSON.stringify(out[2]));
-  check("partType: thinking and reasoning both hide; text is text; tools keep their name",
-    partType("thinking") === "reasoning" && partType("reasoning") === "reasoning" && partType("text") === "text" && partType(undefined) === "text" && partType("toolCall") === "toolCall", "");
-  check("messageIdFor ignores a blank wire id", messageIdFor({ i: 7, wire_id: "  " }) === "7" && messageIdFor({ i: 7, wire_id: "w" }) === "w", "");
 }
 
 

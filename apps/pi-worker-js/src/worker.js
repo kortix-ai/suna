@@ -861,8 +861,11 @@ export class AgentCell {
     if (!token) return json(503, { error: "this cell has no KORTIX_TOKEN to verify the push with" });
     if ((req.headers.get("authorization") ?? "") !== `Bearer ${token}`) return json(401, { error: "unauthorized" });
     const body = await req.json().catch(() => null);
-    if (!body || typeof body !== "object") return json(400, { error: "body must be an object" });
-    const env = body.env && typeof body.env === "object" ? body.env : {};
+    // kortixd's validation, exactly: an empty push must not read as "the
+    // project now has no env" and delete every name the last one managed.
+    if (!body || typeof body.revision !== "string") return json(400, { error: "revision is required" });
+    if (!body.env || typeof body.env !== "object" || Array.isArray(body.env)) return json(400, { error: "env object is required" });
+    const env = body.env;
     const names = Array.isArray(body.names) ? body.names.filter((n) => typeof n === "string") : Object.keys(env);
     const before = JSON.stringify(this.sessionEnv);
     const write = (k, v) => {

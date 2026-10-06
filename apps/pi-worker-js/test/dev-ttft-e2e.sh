@@ -105,18 +105,10 @@ ck("and the turn finishes, rather than leaving the stream open on a turn that ne
 ck("the answer arrives on the STREAM, not only in the transcript — a client that polls is a client that waits",
    any(k.startswith("message.part") for _, k in warm["marks"]), str(warm["marks"][:6]))
 
-# THE CELL'S OWN SHARE, from its per-turn timing. The model dominates the wall
-# clock; what must not grow is the part this repository owns.
-turns = api(f"/v1/p/{sid}/8080/turns", tok).get("turns", [])
-timing = None
-for t in turns:
-    raw = t.get("timing")
-    if raw: timing = json.loads(raw) if isinstance(raw, str) else raw
-own = None
-if timing:
-    own = sum(v for k, v in timing.items() if k in ("queued", "checkout", "plugins", "skills", "buildAgent", "modelOpen"))
-ck("the cell's own work in a warm turn is a rounding error next to the model",
-   own is not None and own < 300, f"cell share {own} ms of {timing}")
+# THE CELL'S OWN SHARE is not claimed here any more: it was read from the old
+# turn ledger's per-turn `timing` (GET /turns), which went with that ledger in
+# e7ba174195. pi-durable keeps no such breakdown; the cell's `x-cell-ms` header
+# times each route, not a turn.
 
 try:
     api(f"/v1/projects/{PROJ}/sessions/{sid}/environment/stop", tok, "POST", {})

@@ -1,6 +1,6 @@
 // THE CELL'S OWN FILESYSTEM AND SHELL. In-process, no Docker, no daemon, no
 // microVM: the tree lives in the cell's SQLite and the shell is just-bash.
-// EXPECTED_PASSES=35
+// EXPECTED_PASSES=39
 import { DatabaseSync } from "node:sqlite";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
@@ -36,8 +36,21 @@ r = await env.exec("mkdir -p src && printf 'x=1\\n' > src/cfg.ini && cat src/cfg
 check("bash exit codes are reported, not swallowed", r.ok && r.value.exitCode === 3 && r.value.stdout.includes("x=1"), JSON.stringify(r.value).slice(0, 120));
 r = await env.readTextFile("src/cfg.ini");
 check("and the tools see files bash wrote", r.ok && r.value === "x=1\n", JSON.stringify(r).slice(0, 80));
-let out = ""; r = await env.exec("echo streamed", { onStdout: (s) => { out += s; } });
-check("stdout reaches the callback pi renders from", out.includes("streamed"), JSON.stringify(out));
+// pi-durable's exec contract: output goes to `onOutput(text, context, {stream})`
+// (the bash tool renders from it), and the result carries the exit code.
+const streams = [];
+const ctx = { abortSignal: new AbortController().signal };
+r = await env.exec("echo streamed && echo complained >&2", { onOutput: (text, context, info) => streams.push({ text, context, stream: info?.stream }) }, ctx);
+check("stdout reaches the callback pi renders from, labelled stdout",
+  r.ok && streams.some((o) => o.stream === "stdout" && o.text.includes("streamed")), JSON.stringify(streams));
+check("and stderr reaches it labelled stderr, with pi's own context handed back",
+  streams.some((o) => o.stream === "stderr" && o.text.includes("complained")) && streams.every((o) => o.context === ctx), JSON.stringify(streams.map((o) => o.stream)));
+r = await env.exec(["printf", "%s|", "two words", "it's"]);
+check("an argv command reaches the program unparsed — spaces and quotes intact",
+  r.ok && r.value.stdout === "two words|it's|", JSON.stringify(r.value?.stdout ?? r.error));
+r = await env.exec(["no-such-program-anywhere"]);
+check("an argv program that does not exist never started: a spawn_error, not exit 127",
+  !r.ok && r.error?.code === "spawn_error", JSON.stringify(r.error?.code ?? r.value));
 r = await env.exec("sleep 5", { timeout: 1 });
 check("a command past its timeout is pi's timeout error, not a hang", !r.ok && r.error?.code === "timeout", JSON.stringify(r).slice(0, 100));
 
@@ -47,9 +60,15 @@ const env2 = cellExecutionEnv(again);
 r = await env2.readTextFile("src/cfg.ini");
 check("THE TREE SURVIVES A REBUILD — it lives in the cell's SQLite, not the isolate", r.ok && r.value === "x=1\n", JSON.stringify(r).slice(0, 80));
 check("and so do the directories", again.restored.dirs >= 2 && again.restored.files >= 2, JSON.stringify(again.restored));
+// pi's contract: `remove` is non-recursive unless asked. A non-empty directory
+// is refused and left whole — rows included — rather than half-deleted.
 r = await env2.remove("notes");
+const kept = db.prepare("SELECT COUNT(*) AS n FROM files WHERE path LIKE '/workspace/notes%'").get();
+check("a non-recursive remove of a non-empty directory is refused, and nothing is deleted",
+  !r.ok && kept.n === 2 && (await env2.exists("notes/a.txt")).value === true, JSON.stringify({ r: r.error?.code, kept }));
+r = await env2.remove("notes", { recursive: true });
 const rows = db.prepare("SELECT COUNT(*) AS n FROM files WHERE path LIKE '/workspace/notes%'").get();
-check("a removal is persisted too — deleted rows do not come back", r.ok && rows.n === 0, JSON.stringify(rows));
+check("a recursive removal is persisted too — deleted rows do not come back", r.ok && rows.n === 0, JSON.stringify(rows));
 
 // ONLY THE AGENT'S TREE IS PERSISTED. just-bash ships /bin, /usr, /etc and
 // friends — 181 paths on an empty cell. Snapshotting those on every write is

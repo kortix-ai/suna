@@ -3,7 +3,7 @@
 // and `/file/status` answered `[]` because there was no git. isomorphic-git
 // over the cell's in-memory tree, cloning through the Kortix git proxy with
 // the session's own token.
-// EXPECTED_PASSES=30
+// EXPECTED_PASSES=29
 import { DatabaseSync } from "node:sqlite";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
@@ -124,7 +124,7 @@ check("a modified, an added and a deleted file each report themselves — the Fi
 
 // ── the cell's own checkout, without a repo to clone ──
 {
-  const h = makeCell(AgentCell, { KORTIX_SESSION_ID: "s", TOOLS_BACKEND: "cell" });
+  const h = makeCell(AgentCell, { KORTIX_SESSION_ID: "s" });
   const c = h.cell ?? h;
   const none = await c.ensureCheckout();
   check("a session with no repo url checks nothing out, and says why rather than throwing",
@@ -138,7 +138,7 @@ check("a modified, an added and a deleted file each report themselves — the Fi
 // ── /file/status from a real checkout, through the route the panel calls ──
 {
   const db2 = new DatabaseSync(":memory:");
-  const h = makeCell(AgentCell, { KORTIX_SESSION_ID: "s2", TOOLS_BACKEND: "cell" });
+  const h = makeCell(AgentCell, { KORTIX_SESSION_ID: "s2" });
   const c = h.cell ?? h;
   await (await h.fetch("/file?path=&c=s2")).json();          // makes the tree
   const f2 = gitFs(c.cellFs.fs);
@@ -157,7 +157,7 @@ check("a modified, an added and a deleted file each report themselves — the Fi
 
 // ── the project's own instructions ──
 {
-  const h = makeCell(AgentCell, { KORTIX_SESSION_ID: "s3", TOOLS_BACKEND: "cell" });
+  const h = makeCell(AgentCell, { KORTIX_SESSION_ID: "s3" });
   const c = h.cell ?? h;
   await (await h.fetch("/file?path=&c=s3")).json();
   check("no AGENTS.md, no instructions", (await c.projectInstructions("s3")) === "", "");
@@ -171,18 +171,6 @@ check("a modified, an added and a deleted file each report themselves — the Fi
   await c.cellFs.fs.writeFile(`${CELL_CWD}/CLAUDE.md`, "x".repeat(20000));
   const big = await c.projectInstructions("s3");
   check("and a very long file is cut rather than spending the whole context", big.length < 17_000 && big.endsWith("…"), String(big.length));
-}
-
-// A DAEMON-BACKED SESSION IS NOT A CELL. Reading the instructions used to
-// create a cell filesystem whatever the backend, and `/model` then reported
-// "cell" for a session whose tools ran through the daemon.
-{
-  const h = makeCell(AgentCell, { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_TOKEN: "t" });
-  const c = h.cell ?? h;
-  await h.fetch("/?c=s4");
-  await c.projectInstructions("s4");
-  check("looking for the project's instructions never manufactures a cell filesystem",
-    !c.cellFs && (await (await h.fetch("/model?c=s4")).json()).tools.backend === "daemon", String(!!c.cellFs));
 }
 
 console.log(bad ? `\n${bad} FAILED` : "\nall claims hold");

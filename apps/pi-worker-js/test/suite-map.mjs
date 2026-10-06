@@ -22,34 +22,34 @@ import { readFileSync } from "node:fs";
 
 const HERE = new URL("..", import.meta.url).pathname;
 
-/** Every node suite test/all.sh runs. The shell suites need a live container. */
+/**
+ * Every node suite test/all.sh runs. Not here: session-e2e.mjs, which needs a
+ * celld binary and reaches the source only through the bundle celld loads, and
+ * the live dev-stack shell suites.
+ */
 export const ALL_SUITES = [
-  "tools-logic.mjs", "platinum-shapes.mjs", "compaction-logic.mjs", "daemon-safety.mjs", "cell-logic.mjs",
-  "atob-shim.mjs", "model-logic.mjs", "celldctl-logic.mjs", "deploy-contract.mjs",
-  "build-and-model.mjs", "execenv-logic.mjs", "daemon-persist.mjs", "opid-identity.mjs",
-  "cancel-logic.mjs", "skills-logic.mjs", "ledger-parity.mjs", "archive-logic.mjs",
-  "meter-logic.mjs", "execenv-platinum.mjs",
-  // THE CELL'S OWN SURFACE. These were added over 2026-09-09/10 and were never
-  // added here, so the auditors' pool did not contain a single suite that
-  // imports cell-files, cell-git, cell-pty, cell-static, agent-config,
-  // plantools, kortix-runtime or manifest — every condition in eight new files
-  // would have been reported as a survivor by suites that were never run.
-  "kortix-parity.mjs", "wire-logic.mjs", "boot-logic.mjs", "projection-logic.mjs",
-  "cellfs-logic.mjs", "files-logic.mjs", "static-logic.mjs", "agent-config-logic.mjs",
-  "manifest-logic.mjs", "plan-logic.mjs", "pty-logic.mjs", "git-logic.mjs",
-  "kortix-routes-logic.mjs",
+  // Tooling: the auditors, the deploy tool and the standalone tool daemon.
+  "tools-logic.mjs", "daemon-safety.mjs", "daemon-persist.mjs", "celldctl-logic.mjs", "deploy-contract.mjs",
+  // THE CELL'S OWN SURFACE, through the shipped bundle: the kortixd contract,
+  // the boot routes, the project's agent, skills, plan tools, files, git, pty,
+  // static serving and the manifest.
+  "atob-shim.mjs", "kortix-contract-logic.mjs", "boot-logic.mjs", "agent-config-logic.mjs", "skills-logic.mjs",
+  "plan-logic.mjs", "files-logic.mjs", "git-logic.mjs", "pty-logic.mjs", "static-logic.mjs", "manifest-logic.mjs",
+  // pi-durable's ExecutionEnv over the cell's tree and pi's storage over its
+  // SQLite (pi's own conformance cases), and the tree and shell themselves.
+  "conformance.mjs", "cellfs-logic.mjs",
   // THE MACHINE: the environment's RPC client, the attach, and the tool.
   "envrpc-logic.mjs", "environment-logic.mjs", "machine-logic.mjs", "machine-fs-logic.mjs",
+  // The runtime inside the isolate: node, TypeScript, npm and plugins.
   "node-logic.mjs", "plugins-logic.mjs", "typescript-logic.mjs", "npm-logic.mjs",
 ];
 
 /** The suites test/all.sh runs under node's SQLite — they open a DatabaseSync
  *  (directly, or through cell-harness) and are a syntax error without it. */
 const NEEDS_SQLITE = new Set([
-  "cell-logic.mjs", "kortix-parity.mjs", "wire-logic.mjs", "boot-logic.mjs",
-  "projection-logic.mjs", "cellfs-logic.mjs", "files-logic.mjs", "static-logic.mjs",
-  "agent-config-logic.mjs", "manifest-logic.mjs", "plan-logic.mjs", "pty-logic.mjs",
-  "git-logic.mjs", "kortix-routes-logic.mjs", "environment-logic.mjs",
+  "kortix-contract-logic.mjs", "agent-config-logic.mjs", "skills-logic.mjs", "plan-logic.mjs", "files-logic.mjs",
+  "git-logic.mjs", "pty-logic.mjs", "static-logic.mjs", "manifest-logic.mjs", "conformance.mjs", "cellfs-logic.mjs",
+  "environment-logic.mjs", "daemon-persist.mjs",
 ]);
 export const nodeArgsFor = (suite) => (NEEDS_SQLITE.has(suite) ? ["--experimental-sqlite"] : []);
 

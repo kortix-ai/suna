@@ -154,11 +154,16 @@ check("the .ts extensions are the ones a project actually writes", TS_EXTENSIONS
   // THE STARTER'S OWN TYPESCRIPT PLUGIN AND EVERY FILE IT IMPORTS. This is the
   // claim that decides whether the feature is real: these were written for
   // OpenCode by someone who had a compiler, with no thought for this.
-  const root = new URL("../../../packages/starter/templates/base/.kortix/opencode/plugins", import.meta.url).pathname;
+  //
+  // A SNAPSHOT, byte for byte. The starter dropped `.kortix/opencode/plugins`
+  // in 0c4fc880f4 (the harness-agnostic project layout), so the corpus is kept
+  // here as it was at 0c4fc880f4^ — 11 files, 1,378 lines of real plugin code.
+  // It is a test input, not a dependency: nothing else reads it.
+  const root = new URL("./fixtures/starter-plugins", import.meta.url).pathname;
   const walk = (d) => readdirSync(d).flatMap((e) => (statSync(`${d}/${e}`).isDirectory() ? walk(`${d}/${e}`) : [`${d}/${e}`])).filter((f) => f.endsWith(".ts"));
   const files = walk(root);
   check("the starter's TypeScript plugin sources are where this claim says they are", files.length >= 10, `${files.length} files under ${root}`);
-  const failed = files.map((f) => [f.split("/plugins/")[1], parses(readFileSync(f, "utf8"))]).filter(([, r]) => r !== true);
+  const failed = files.map((f) => [f.slice(root.length + 1), parses(readFileSync(f, "utf8"))]).filter(([, r]) => r !== true);
   check("every one of them strips and parses — the whole real plugin, not a sample",
     failed.length === 0, failed.slice(0, 3).map(([f, r]) => `${f}: ${r}`).join(" | "));
   const lengths = files.map((f) => { const s = readFileSync(f, "utf8"); const r = stripTypes(s, f); return r.ok && r.code.length === s.length && r.code.split("\n").length === s.split("\n").length; });

@@ -164,9 +164,15 @@ if spelled: print(spelled.group(1).strip().rstrip("/"))
 else:
     v = re.search(r"^kortix_version:\s*(\d+)", m, re.M)
     print(".kortix/pi" if v and int(v.group(1)) >= 3 else ".kortix/opencode")')
-SK=$(curl -s -m 60 "$CELL/skills" "${AH[@]}")
-SKDIRS=$(printf '%s' "$SK" | python3 -c 'import json,sys;print(",".join(json.load(sys.stdin).get("dirs") or []))')
-SKN=$(printf '%s' "$SK" | python3 -c 'import json,sys;print(len(json.load(sys.stdin).get("skills") or []))')
+# GET /skill is OpenCode's list, one {name, description, location} per skill;
+# where the cell looked is read off the locations it found them at.
+SK=$(curl -s -m 60 "$CELL/skill" "${AH[@]}")
+SKDIRS=$(printf '%s' "$SK" | python3 -c 'import json,sys
+try: print(",".join(sorted({s["location"].rsplit("/", 2)[0] for s in json.load(sys.stdin)})))
+except Exception: print("")')
+SKN=$(printf '%s' "$SK" | python3 -c 'import json,sys
+try: print(len(json.load(sys.stdin)))
+except Exception: print(0)')
 echo "  --- project config: manifest dir $WANTDIR | skills $SKN in $SKDIRS"
 if [ -z "$MANI" ]; then
   echo "  SKIP the project has no kortix.yaml — nothing declares a config dir"
@@ -253,11 +259,10 @@ ck "the control plane holds an ACTIVE environment for this session, with a box i
   "$(printf '%s' "$ENVROW" | python3 -c 'import json,sys
 try: d=json.load(sys.stdin); print(1 if d.get("status")=="active" and d.get("external_id") and (d.get("preview_url") or "").startswith("https://") else 0)
 except Exception: print(0)')" "$(printf '%s' "$ENVROW" | head -c 160)"
-DIAG2=$(curl -s -m 60 "$CELL/kortix/diag" "${AH[@]}")
-ck "and the cell reports itself attached to THAT box — the same id the control plane names" \
-  "$(D="$DIAG2" I="$ENVID" python3 -c 'import json,os
-try: d=json.loads(os.environ["D"]); print(1 if os.environ["I"] and d.get("environment")==os.environ["I"] else 0)
-except Exception: print(0)')" "diag.environment=$(printf '%s' "$DIAG2" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("environment"))' 2>/dev/null) api=$ENVID"
+# "The cell reports itself attached to THAT box" is not claimed any more:
+# /kortix/diag answered an `environment` field before e7ba174195 and answers
+# {at, instance, root, logs} now. The model's own answer above (node ran, on
+# this session's branch) is what proves the attach.
 
 wait $PUMP 2>/dev/null || true
 # ---------- 7. what the stream carried ----------

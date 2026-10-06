@@ -8,7 +8,7 @@
 // binary file sent as text corrupted itself. And one thing that went wrong
 // here first: a context signed for the wrong secret, which the daemon answers
 // 401 and the proxy turns into "sandbox proxy authentication rejected".
-// EXPECTED_PASSES=27
+// EXPECTED_PASSES=31
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 let bad = 0;
 const check = watchClaims((n, c, d = "") => { if (c) console.log(`  ok    ${n}`); else { console.log(`  FAIL  ${n}${d ? `\n          ${d}` : ""}`); bad++; } });
@@ -71,9 +71,14 @@ function fakeDaemon(handler) {
   const ran = await env.exec("node -v", { cwd: "/workspace/app", timeout: 45 });
   check("exec passes the command, the cwd and the timeout IN MILLISECONDS",
     ran.ok && ran.value.stdout === "ran node -v in /workspace/app t=45000" && ran.value.exitCode === 0, JSON.stringify(ran.value));
-  let streamed = "";
-  await env.exec("x", { onStdout: (s) => { streamed += s; } });
-  check("stream callbacks are honoured after the fact — the daemon buffers", streamed.startsWith("ran x"), streamed);
+  const streamed = [];
+  const ctx = { abortSignal: new AbortController().signal };
+  await env.exec("x", { onOutput: (text, context, info) => streamed.push({ text, context, stream: info?.stream }) }, ctx);
+  check("output reaches pi's onOutput after the fact — the daemon buffers — labelled stdout, with the caller's context",
+    streamed.length === 1 && streamed[0].stream === "stdout" && streamed[0].text.startsWith("ran x") && streamed[0].context === ctx, JSON.stringify(streamed.map((o) => [o.stream, o.text])));
+  const argv = await env.exec(["echo", "two words", "it's"]);
+  check("an argv command is quoted word by word for the daemon's `bash -lc`",
+    argv.ok && d.seen.at(-1).args.command === "'echo' 'two words' 'it'\\''s'", d.seen.at(-1).args.command);
   const bin = await env.readBinaryFile("b");
   check("a binary read is decoded from base64 to bytes", bin.ok && bin.value instanceof Uint8Array && bin.value[1] === 1, "");
   await env.writeFile("b.bin", new Uint8Array([255, 0, 1]));
@@ -85,7 +90,6 @@ function fakeDaemon(handler) {
   const unknown = await env.createTempDir();
   check("an op the daemon does not know is an error in pi's shape, not a throw", unknown.ok === false && /unsupported op/.test(unknown.error.message), "");
   check("the env names its cwd and records what it called", env.cwd === "/workspace" && env.calls.some((c) => c.op === "exec"), "");
-  check("and declares itself NOT idempotent — no op ledger on this wire", env.idempotent === false, "");
 }
 {
   // HTTP failures are auth or a bad request, and they are reported as such
@@ -99,27 +103,60 @@ function fakeDaemon(handler) {
   check("and for exec it is an ExecutionError, the type pi's bash tool reads", rx.ok === false && rx.error?.name === "ExecutionError", String(rx.error?.name));
 }
 {
-  // A dropped socket on a READ is retried once; on a write it is not.
+  // A dropped socket is retried once, and ONLY for an operation a second send
+  // cannot change: a read, or a whole-file write (the same bytes twice leave
+  // the same file). Anything else may have landed, and twice is not once.
   let calls = 0;
-  const f = async () => { calls++; if (calls === 1) throw new TypeError("fetch failed: socket hang up"); return new Response(JSON.stringify({ ok: true, value: true }), { status: 200 }); };
+  const f = async () => { calls++; if (calls === 1) throw new TypeError("fetch failed: socket hang up"); return new Response(JSON.stringify({ ok: true, value: { stdout: "", stderr: "", exitCode: 0 } }), { status: 200 }); };
   const env = envRpcExecutionEnv({ base: "https://e", context: "c", fetch: f });
   check("a replay-safe read is sent again after a dropped socket", (await env.exists("x")).ok === true && calls === 2, String(calls));
   calls = 0;
-  const w = await env.writeFile("x", "y");
-  check("a WRITE is not — it may have landed, and twice is not the same as once", w.ok === false && calls === 1, String(calls));
+  check("so is a whole-file write — the same bytes twice leave the same file", (await env.writeFile("x", "y")).ok === true && calls === 2, String(calls));
+  calls = 0;
+  const a = await env.appendFile("x", "y");
+  check("an APPEND is not — it may have landed, and twice is not the same as once", a.ok === false && calls === 1, String(calls));
+  calls = 0;
+  const e = await env.exec("touch x");
+  check("nor is a command", e.ok === false && e.error?.name === "ExecutionError" && calls === 1, String(calls));
 }
 {
-  // The client's own timeout releases the caller.
-  const f = (_u, init) => new Promise((_, rej) => init.signal.addEventListener("abort", () => rej(Object.assign(new Error("aborted"), { name: "AbortError" }))));
+  // The client's own timeout releases the caller. AbortSignal.timeout's timer
+  // does not hold node's event loop open — a pending call with nothing else
+  // scheduled ends the process (exit 13) — so a ref'd timer stands in for the
+  // rest of a live isolate while these calls are pending.
+  const hold = setInterval(() => {}, 1000);
+  let calls = 0;
+  const f = (_u, init) => new Promise((_, rej) => {
+    calls++;
+    const fail = () => rej(init.signal.reason ?? Object.assign(new Error("aborted"), { name: "AbortError" }));
+    if (init.signal.aborted) fail(); else init.signal.addEventListener("abort", fail, { once: true });
+  });
   const env = envRpcExecutionEnv({ base: "https://e", context: "c", fetch: f, timeoutMs: 20 });
+  const t0 = Date.now();
   const r = await env.readTextFile("slow");
-  check("a call past the client timeout comes back `aborted` rather than hanging the turn", r.ok === false && r.error.code === "aborted", JSON.stringify(r.error?.code));
+  const ms = Date.now() - t0;
+  check("a call past the client timeout comes back an error in bounded time rather than hanging the turn",
+    r.ok === false && ms < 2_000, `${ms} ms ${JSON.stringify(r.error?.code)}`);
+  check("and it is a transport failure, retried once as a read is — not the caller's `aborted`, which pi reads as a stop",
+    r.error.code === "unknown" && calls === 2, `${r.error.code} after ${calls} call(s)`);
+  calls = 0;
+  const ctl = new AbortController();
+  const pending = env.readTextFile("slow", { abortSignal: ctl.signal });
+  ctl.abort();
+  const stopped = await pending;
+  check("while the caller's OWN abort comes back `aborted`, at once and without a retry",
+    stopped.ok === false && stopped.error.code === "aborted" && calls === 1, `${stopped.error?.code} after ${calls} call(s)`);
+  clearInterval(hold);
 }
 {
   const d = fakeDaemon((b) => ({ ok: true, value: b.args }));
   const env = envRpcExecutionEnv({ base: "https://e", context: "c", fetch: d.f });
-  check("createDir defaults to recursive and remove to neither recursive nor force — the daemon's own defaults, made explicit",
-    (await env.createDir("a/b")).value.recursive === true && JSON.stringify((await env.remove("x")).value) === JSON.stringify({ path: "x", recursive: false, force: false }), "");
+  // EXPLICIT ON THE WIRE, so the daemon's own default never decides. An
+  // omitted `recursive` on createDir is true, as in pi-durable's reference env
+  // and on the cell's own tree (execenv.cell.js); remove defaults to false.
+  check("createDir and remove always send recursive (and force) explicitly — createDir defaults to recursive, remove does not",
+    (await env.createDir("a/b")).value.recursive === true && (await env.createDir("a/b", { recursive: false })).value.recursive === false
+      && JSON.stringify((await env.remove("x")).value) === JSON.stringify({ path: "x", recursive: false, force: false }), "");
   check("readTextLines carries maxLines; fileInfo, listDir, canonicalPath, exists, joinPath, absolutePath, renameFile, appendFile, createTempFile all reach the wire by their daemon names",
     (await env.readTextLines("f", { maxLines: 3 })).value.maxLines === 3
       && (await Promise.all(["fileInfo", "listDir", "canonicalPath", "exists", "absolutePath"].map((op) => env[op]("p")))).every((r) => r.ok)

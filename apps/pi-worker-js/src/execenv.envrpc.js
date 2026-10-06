@@ -253,7 +253,7 @@ export function envRpcExecutionEnv({ base, context: userContext, cwd = "/workspa
     },
     // Nothing loads resources from the machine by watching it.
     watch: async () => err(new FileError("not_supported", "the environment rpc has no change feed")),
-    createDir: (path, options, context) => rpc("createDir", { path, recursive: options?.recursive ?? false }, context),
+    createDir: (path, options, context) => rpc("createDir", { path, recursive: options?.recursive ?? true }, context),
     remove: (path, options, context) => rpc("remove", { path, recursive: !!options?.recursive, force: !!options?.force }, context),
     createTempDir: (prefix, context) => rpc("createTempDir", { prefix: prefix ?? "tmp-" }, context),
     createTempFile: (options, context) => rpc("createTempFile", { prefix: options?.prefix ?? "", suffix: options?.suffix ?? "" }, context),

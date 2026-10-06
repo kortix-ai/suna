@@ -71,11 +71,13 @@ fi
 PUMP=$!
 for i in $(seq 1 40); do [ -s /tmp/be2e.sse ] && break; sleep 0.2; done
 ATT=$(head -c 200 /tmp/be2e.sse | tr '\n' ' ')
-ck "the browser's in-box stream attaches (200 + hello)" "$(grep -q 'kortix.hello' /tmp/be2e.sse && echo 1 || echo 0)" "got: ${ATT:-nothing}"
+# OpenCode's framing opens /global/event with `server.connected` (kortix/bus.js
+# globalEventStream); `kortix.hello` opens the runtime stream, not this one.
+ck "the browser's in-box stream attaches (200 + server.connected)" "$(grep -q 'server.connected' /tmp/be2e.sse && echo 1 || echo 0)" "got: ${ATT:-nothing}"
 
 W=streamcheck$RANDOM
 # THE PROMPT'S OWN ID, kept: the runtime echoes the user message the moment it
-# accepts the prompt (worker.js prompt_async), so the word this claim looks for
+# accepts the prompt (worker.js admit), so the word this claim looks for
 # is on the stream TWICE — once in this tab's own echo, once in the answer.
 # Searching the whole stream matched the echo, closed it before the model had
 # written anything, and reported deltas=0 (2026-09-10).

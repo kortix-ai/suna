@@ -12,7 +12,7 @@
 // question — which directory — from either syntax, and about the two ways the
 // cell can get it wrong: not reading it, and caching the answer it got before
 // the checkout arrived.
-// EXPECTED_PASSES=34
+// EXPECTED_PASSES=33
 import { DatabaseSync } from "node:sqlite";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
@@ -118,7 +118,7 @@ check("and an EMPTY SKILLS_DIR still means NO skills — that is how they are tu
 
 // ── in a cell, across the checkout that arrives late ──
 {
-  const h = makeCell(AgentCell, { KORTIX_SESSION_ID: "m1", TOOLS_BACKEND: "cell" });
+  const h = makeCell(AgentCell, { KORTIX_SESSION_ID: "m1" });
   const c = h.cell ?? h;
   await (await h.fetch("/file?path=&c=m1")).json();     // makes the tree, empty
   check("a cell whose workspace has no manifest yet answers null", (await c.configDir("m1")) === null, "");
@@ -128,17 +128,6 @@ check("and an EMPTY SKILLS_DIR still means NO skills — that is how they are tu
   await c.cellFs.fs.writeFile(`${CELL_CWD}/kortix.yaml`, "kortix_version: 2\n");
   check("an answered dir IS cached: the manifest can only change with a commit, and this runs on the prompt path",
     (await c.configDir("m1")) === ".kortix/pi", String(await c.configDir("m1")));
-}
-
-// A DAEMON-BACKED SESSION IS NOT A CELL — the same trap projectInstructions
-// fell into: reading the manifest must not manufacture a cell filesystem.
-{
-  const h = makeCell(AgentCell, { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_TOKEN: "t" });
-  const c = h.cell ?? h;
-  await h.fetch("/?c=m2");
-  await c.configDir("m2");
-  check("looking for the manifest never manufactures a cell filesystem",
-    !c.cellFs && (await (await h.fetch("/model?c=m2")).json()).tools.backend === "daemon", String(!!c.cellFs));
 }
 
 console.log(bad ? `\n${bad} FAILED` : "\nall claims hold");

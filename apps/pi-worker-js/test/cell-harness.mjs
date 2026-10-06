@@ -1,20 +1,34 @@
 // A FAKE DURABLE OBJECT, BACKED BY REAL SQLITE.
 //
-// Most of what can go wrong in worker.js is logic, not celld: the turn queue's
-// claim, route dispatch, compaction wiring, backend selection. All of it needed
-// Docker, MinIO and a cell to exercise — and on this machine that is the thing
-// that keeps killing the VM, so the tests that could run constantly were the
-// ones that ran least.
+// Most of what can go wrong in worker.js is logic, not celld: route dispatch,
+// the kortixd contract's shapes, prompt admission, the turn-end relay, env
+// pushes. None of it needs Docker, MinIO or a cell node to exercise.
 //
-// They do not need any of it. `state.storage.sql` is SQLite, `setAlarm` is a
-// timer, and the class under test is the one that ships: this imports
+// `state.storage.sql` is SQLite, `state.storage.transaction` is a SQLite
+// transaction (pi-durable's storage adapter needs both), `setAlarm` is a timer,
+// and the class under test is the one that ships: suites import
 // dist/worker.js, the actual bundle, so nothing is re-implemented or mocked
-// away. If the bundle is broken, this breaks.
+// away. If the bundle is broken, this breaks. A scripted turn (pi-ai's faux
+// provider, `CELL_MODEL=faux`) runs the real pi-durable harness end to end in
+// about 100 ms.
 //
 // What it deliberately does NOT test: replication, eviction, hibernation,
 // deployment adoption. Those are celld's, and pretending otherwise is how a
 // fake becomes a lie.
 import { DatabaseSync } from "node:sqlite";
+import { createHash } from "node:crypto";
+import { mintWireMessageId } from "../../../packages/sdk/src/core/session/wire-message-id.ts";
+
+/**
+ * The root a cell serves for a Kortix session: `ses_pi` + 24 hex of
+ * sha256("pi-root\0" + session). Computed HERE with node:crypto rather than
+ * imported from src/kortix/ids.js, so a suite that addresses a root by it
+ * also checks the worker's own derivation (kortixd's formula).
+ */
+export const rootIdOf = (session) => `ses_pi${createHash("sha256").update(`pi-root\0${session}`).digest("hex").slice(0, 24)}`;
+
+/** A Kortix wire message id, minted by the SDK's own codec — what a client sends. */
+export const newMessageId = () => mintWireMessageId({ nowMs: Date.now(), backdateMs: 0 });
 
 /** celld hands the worker a `sql` with .exec(query, ...args) -> iterable + toArray(). */
 // A CURSOR IS CONSUMED ONCE, as Cloudflare's SqlStorageCursor is.
@@ -115,9 +129,10 @@ export function makeStorage(db = new DatabaseSync(":memory:"), log) {
 }
 
 /**
- * A Durable Object namespace over a set of harness cells, so a cell can call a
- * SIBLING — which /fork does. Each name gets its own cell with its own SQLite,
- * because that isolation is the thing being relied on.
+ * A Durable Object namespace over a set of harness cells — `env.AGENT` for the
+ * worker's default-export router, which names an object per session root. Each
+ * name gets its own cell with its own SQLite, because that isolation is the
+ * thing being relied on.
  */
 export function makeNamespace(AgentCell, env = {}) {
   const cells = new Map();
@@ -221,15 +236,31 @@ export function makeCell(AgentCell, env = {}, opts = {}) {
     sockets,
     /** Drive a request the way celld would. */
     fetch: (path, init) => cell.fetch(new Request(`http://cell${path}`, init)),
-    /** Wait for the queue to drain, so a test asserts on a settled cell. */
+    /**
+     * Wait until every admitted turn has ended, so a test asserts on a settled
+     * cell. The cell's own ledger (engine.js `kx_turns`): one row per admitted
+     * user message, `queued` -> `running` -> `done` | `error`.
+     */
     async drain(ms = 8000) {
       const until = Date.now() + ms;
       while (Date.now() < until) {
-        const left = db.prepare("SELECT COUNT(*) AS n FROM turns WHERE status IN ('pending','running')").get()?.n ?? 0;
+        let left = 0;
+        try { left = db.prepare("SELECT COUNT(*) AS n FROM kx_turns WHERE status IN ('queued','running')").get()?.n ?? 0; } catch { /* no turn admitted yet */ }
         if (left === 0) return true;
-        await new Promise((r) => setTimeout(r, 100));
+        await new Promise((r) => setTimeout(r, 25));
       }
       return false;
+    },
+    /** Poll `/kortix/health` until the cell reports `runtimeReady`; the last answer. */
+    async ready(ms = 5000) {
+      const until = Date.now() + ms;
+      let last = null;
+      while (Date.now() < until) {
+        last = await (await cell.fetch(new Request("http://cell/kortix/health"))).json();
+        if (last.runtimeReady) return last;
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      return last;
     },
     rows: (sql) => db.prepare(sql).all().map((r) => ({ ...r })),
   };

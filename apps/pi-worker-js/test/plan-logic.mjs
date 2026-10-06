@@ -1,10 +1,13 @@
 // GLOB AND TODOS. The web client draws a tool call by NAME: `glob` gets the
 // search view, `todowrite` gets the checklist the session panel shows as a
-// plan, and it polls `GET /session/:id/todo`. A cell had none of them.
-// EXPECTED_PASSES=26
+// plan, and it polls `GET /session/:id/todo`. A cell had none of them. The
+// cell-level claims run real turns: a scripted one (the tools as pi calls them)
+// and one against the gateway mock (the tools the model is offered).
+// EXPECTED_PASSES=28
 import { DatabaseSync } from "node:sqlite";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
-import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
+import { makeCell, installWorkerGlobals, newMessageId, rootIdOf } from "./cell-harness.mjs";
+import { startGatewayMock, toolNamesOf } from "./openai-compat.mjs";
 installWorkerGlobals();
 let bad = 0;
 const check = watchClaims((n, c, d = "") => { if (c) console.log(`  ok    ${n}`); else { console.log(`  FAIL  ${n}${d ? `\n          ${d}` : ""}`); bad++; } });
@@ -63,28 +66,61 @@ check("a write tells the listener, so the browser can be told the plan changed",
 
 // ---- the route the client polls, and the tools the agent is given
 {
-  const h = makeCell(AgentCell, { KORTIX_SESSION_ID: "s", TOOLS_BACKEND: "cell" });
-  const c = h.cell ?? h;
-  check("GET /session/:id/todo starts empty", JSON.stringify(await (await h.fetch("/session/s/todo?c=s")).json()) === "[]", "");
+  const root = rootIdOf("s");
+  const h = makeCell(AgentCell, { KORTIX_SESSION_ID: "s", CELL_MODEL: "faux" });
+  const c = h.cell;
+  check("GET /session/:root/todo starts empty", JSON.stringify(await (await h.fetch(`/session/${root}/todo`)).json()) === "[]", "");
   writeTodos(c.sql, [{ content: "from the model", status: "in_progress" }]);
-  const served = await (await h.fetch("/session/s/todo?c=s")).json();
+  const served = await (await h.fetch(`/session/${root}/todo`)).json();
   check("and then answers what the model wrote — the poll the client makes every few seconds",
     served.length === 1 && served[0].content === "from the model" && served[0].status === "in_progress", JSON.stringify(served));
-  check("a todo poll for another session is refused", (await h.fetch("/session/other/todo?c=s")).status === 404, "");
-  const built = c.buildAgent("s").state.tools;
-  const names = built.map((t) => t.name).sort();
-  check("the agent is handed glob, todowrite and todoread alongside pi's own tools",
-    names.includes("glob") && names.includes("todowrite") && names.includes("todoread") && names.includes("bash") && names.includes("edit"), names.join(","));
-  // AS PI CALLS THEM: four arguments, no context. A tool appended raw never
-  // gets one — measured live 2026-09-10, glob answered "Cannot read properties
-  // of undefined (reading 'env')" while the unit claim above passed, because
-  // the claim handed it a context the harness never does.
-  await c.buildAgent("s").state.tools.find((t) => t.name === "write").execute("w1", { path: "plan.txt", content: "x" });
-  const globbed = await built.find((t) => t.name === "glob").execute("g1", { pattern: "**/*.txt" });
-  check("and glob runs the way pi calls it — four arguments, the context from the adapter",
-    globbed.content[0].text.includes("plan.txt"), JSON.stringify(globbed).slice(0, 200));
-  const wrote = await built.find((t) => t.name === "todowrite").execute("t1", { todos: [{ content: "through the adapter" }] });
-  check("and so does todowrite", readTodos(c.sql)[0]?.content === "through the adapter", JSON.stringify(wrote).slice(0, 160));
+  check("a todo poll for another session is refused", (await h.fetch(`/session/${rootIdOf("other")}/todo`)).status === 404, "");
+
+  // AS PI CALLS THEM: a real turn, the scripted model asking for each tool by
+  // name, pi-durable running it through the cell's adapter (engine.js
+  // fromAgentTool). Measured live 2026-09-10 on the old engine: glob answered
+  // "Cannot read properties of undefined (reading 'env')" while a unit claim
+  // passed, because the unit handed it a context the harness never did. So the
+  // claim is the turn, not the tool object.
+  c.engine().script([
+    { tool: "write", args: { path: "plan.txt", content: "x" } },
+    { tool: "glob", args: { pattern: "**/*.txt" } },
+    { tool: "todowrite", args: { todos: [{ content: "through the adapter", status: "in_progress" }] } },
+    { text: "planned" },
+  ]);
+  const events = [];
+  const watching = c.bus.subscribe((e) => events.push(e));
+  const res = await h.fetch(`/kortix/runtime/sessions/${root}/prompt`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message_id: newMessageId(), parts: [{ type: "text", text: "make a plan" }] }),
+  });
+  await h.drain();
+  watching.unsubscribe();
+  const parts = (await (await h.fetch(`/session/${root}/message`)).json()).flatMap((m) => m.parts);
+  const tool = (name) => parts.find((p) => p.type === "tool" && p.tool === name);
+  check("a turn is admitted (202)", res.status === 202, String(res.status));
+  check("glob runs the way pi calls it — through the adapter, over the session's tree",
+    tool("glob")?.state?.status === "completed" && String(tool("glob")?.state?.output ?? "").includes("plan.txt"), JSON.stringify(tool("glob")?.state).slice(0, 200));
+  check("and so does todowrite: the list is stored, so the poll answers it",
+    tool("todowrite")?.state?.status === "completed" && readTodos(c.sql)[0]?.content === "through the adapter"
+      && (await (await h.fetch(`/session/${root}/todo`)).json())[0]?.content === "through the adapter", JSON.stringify(readTodos(c.sql)));
+  const told = events.filter((e) => e.type === "todo.updated");
+  check("and the write is published as todo.updated for this session, so the browser is told the plan changed",
+    told.length === 1 && told[0].payload.sessionID === root && told[0].payload.todos[0]?.content === "through the adapter", JSON.stringify(told).slice(0, 200));
+}
+{
+  // WHAT THE MODEL IS OFFERED, read off the request the gateway receives.
+  const gw = await startGatewayMock({ reply: () => ({ text: "ok" }) });
+  const h = makeCell(AgentCell, { KORTIX_SESSION_ID: "t", KORTIX_TOKEN: "tok", KORTIX_LLM_BASE_URL: gw.url });
+  await h.fetch(`/kortix/runtime/sessions/${rootIdOf("t")}/prompt`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message_id: newMessageId(), parts: [{ type: "text", text: "hi" }] }),
+  });
+  await h.drain();
+  const names = toolNamesOf(gw.seen[0]?.body).sort();
+  check("the model is offered glob, todowrite and todoread alongside pi's own read, write, edit and bash",
+    ["glob", "todowrite", "todoread", "read", "write", "edit", "bash"].every((n) => names.includes(n)), names.join(","));
+  await gw.close();
 }
 
 console.log(bad ? `\n${bad} FAILED` : "\nall claims hold");

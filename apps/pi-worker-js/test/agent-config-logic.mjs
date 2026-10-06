@@ -1,11 +1,12 @@
 // THE PROJECT'S AGENT, INSIDE THE CELL. Kortix compiles `agents:` into an
 // OpenCode config and hands it down as KORTIX_COMPILED_AGENT_CONFIG; before
 // this the cell ignored it and every session ran the built-in prompt as
-// "kortix". Pure over the config, plus the cell's own reading of it.
-// EXPECTED_PASSES=27
-import { DatabaseSync } from "node:sqlite";
+// "kortix". Pure over the config, plus the cell's own reading of it — read
+// back from the request the model receives (the gateway mock).
+// EXPECTED_PASSES=32
 import { watchClaims } from "../../tools/crash-reporter.mjs";
-import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
+import { makeCell, installWorkerGlobals, newMessageId, rootIdOf } from "./cell-harness.mjs";
+import { startGatewayMock, systemPromptOf } from "./openai-compat.mjs";
 installWorkerGlobals();
 let bad = 0;
 const check = watchClaims((n, c, d = "") => { if (c) console.log(`  ok    ${n}`); else { console.log(`  FAIL  ${n}${d ? `\n          ${d}` : ""}`); bad++; } });
@@ -69,47 +70,80 @@ check("the picker lists every agent the project declares, with its description, 
 check("a project with no agents gets no list — the cell's own single entry stands", agentList(parseAgentConfig(""), "kortix", agentShape) === null, "");
 
 // ---- the cell reads it
+//
+// THROUGH THE CONTROL PLANE'S OWN PUSH, and checked where it matters: in the
+// request the model receives. apps/api sends the compiled config as runtime
+// keys (sandbox-session-push.ts `opencodeEnv`/`runtimeEnv`) under the
+// session's bearer, and the gateway mock records the system prompt and the
+// model id of every turn — so "the agent runs the project's prompt" is read
+// off the wire, not off the cell's opinion of itself.
+const TOKEN = "tok-agent-config";
+const gw = await startGatewayMock({ reply: () => ({ text: "ok" }) });
+// apps/api stamps every push with a `revision`; kortixd and the cell refuse one without it.
+let revision = 0;
+const push = (h, body) => h.fetch("/kortix/env", {
+  method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${TOKEN}` }, body: JSON.stringify({ revision: `r${++revision}`, ...body }),
+});
+/** One turn through the runtime verb; the gateway request it produced. */
+async function turn(h, session, text) {
+  const before = gw.seen.length;
+  const res = await h.fetch(`/kortix/runtime/sessions/${rootIdOf(session)}/prompt`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message_id: newMessageId(), parts: [{ type: "text", text }] }),
+  });
+  await h.drain();
+  return { status: res.status, sent: gw.seen.slice(before).at(-1)?.body ?? null };
+}
 {
-  const h = makeCell(AgentCell, { KORTIX_SESSION_ID: "s", KORTIX_AGENT_NAME: "scribe" });
-  const cell = h.cell ?? h;
-  await h.fetch("/kortix/env?c=s", { method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ env: { KORTIX_COMPILED_AGENT_CONFIG: CONFIG, KORTIX_COMPILED_AGENT_CONFIG_ETAG: "abc123", KORTIX_AGENT_NAME: "scribe" } }) });
+  const h = makeCell(AgentCell, { KORTIX_SESSION_ID: "s", KORTIX_TOKEN: TOKEN, KORTIX_AGENT_NAME: "scribe", KORTIX_LLM_BASE_URL: gw.url });
+  const cell = h.cell;
+  const res = await push(h, { env: {}, runtimeEnv: { KORTIX_COMPILED_AGENT_CONFIG: CONFIG, KORTIX_COMPILED_AGENT_CONFIG_ETAG: "abc123" } });
+  const pushed = await res.json();
+  check("the compiled config arrives as runtime keys under the session's bearer, the way apps/api pushes it",
+    res.status === 200 && pushed.runtime_env_names.join(",") === "KORTIX_COMPILED_AGENT_CONFIG,KORTIX_COMPILED_AGENT_CONFIG_ETAG", JSON.stringify(pushed).slice(0, 200));
   check("the cell runs the agent it was told to, with that agent's prompt",
-    cell.agent().name === "scribe" && cell.systemPrompt() === "You write docs.", `${cell.agent().name} / ${cell.systemPrompt().slice(0, 40)}`);
-  const agents = await (await h.fetch("/agent?c=s")).json();
+    cell.agentConfig().name === "scribe" && cell.agentName() === "scribe" && (await cell.preparePrompt()).system === "You write docs.",
+    `${cell.agentConfig().name} / ${(await cell.preparePrompt()).system.slice(0, 40)}`);
+  const agents = await (await h.fetch("/agent")).json();
   check("and GET /agent answers the project's agents, not one invented entry",
     Array.isArray(agents) && agents.map((a) => a.name).join(",") === "reviewer,scribe", JSON.stringify(agents).slice(0, 200));
-  const health = await (await h.fetch("/kortix/health?c=s")).json();
+  const health = await (await h.fetch("/kortix/health")).json();
   check("/kortix/health reports the config's etag, so 'is this session on the latest config?' is answerable",
     health.agent_config_etag === "abc123", JSON.stringify(health).slice(0, 160));
-  check("the agent's model reaches model resolution as a FALLBACK — the control plane's KORTIX_MODEL still wins",
+  check("the agent's model reaches model resolution as a FALLBACK under KORTIX_AGENT_MODEL",
     cell.modelEnv().KORTIX_AGENT_MODEL === "anthropic/claude-sonnet-5", JSON.stringify(cell.modelEnv().KORTIX_AGENT_MODEL));
-  {
-    const g = makeCell(AgentCell, { KORTIX_SESSION_ID: "s3" });
-    await g.fetch("/kortix/env?c=s3", { method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ env: { KORTIX_LLM_BASE_URL: "https://gw.example/v1/llm", KORTIX_TOKEN: "t", KORTIX_MODEL: "kortix/deepseek-v4-flash" } }) });
-    const m = await (await g.fetch("/model?c=s3")).json();
-    check("the session's own model reaches the gateway as the id it knows, not the kortix/ ref",
-      m.active?.id === "deepseek-v4-flash", JSON.stringify(m.active));
-  }
-  await h.fetch("/kortix/env?c=s", { method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ env: { KORTIX_AGENT_NAME: "reviewer" } }) });
+  let t = await turn(h, "s", "document the module");
+  check("a turn asks the gateway for the agent's model, with the gateway prefix stripped",
+    t.status === 202 && t.sent?.model === "anthropic/claude-sonnet-5", `${t.status} ${t.sent?.model}`);
+  check("and the system prompt the model receives IS the agent's `.md` body",
+    systemPromptOf(t.sent).startsWith("You write docs."), JSON.stringify(systemPromptOf(t.sent).slice(0, 60)));
+  // A REF THE GATEWAY TAKES, end to end: the control plane's KORTIX_MODEL
+  // wins over the agent's, and leaves the cell as the bare id.
+  await push(h, { env: {}, runtimeEnv: { KORTIX_MODEL: "kortix/deepseek-v4-flash" } });
+  t = await turn(h, "s", "again");
+  check("the control plane's KORTIX_MODEL wins, and reaches the gateway as the id it knows, not the kortix/ ref",
+    t.status === 202 && t.sent?.model === "deepseek-v4-flash", String(t.sent?.model));
+  await push(h, { env: {}, runtimeEnv: { KORTIX_AGENT_NAME: "reviewer" } });
   check("switching the session's agent switches the prompt without a restart",
-    cell.agent().name === "reviewer" && cell.systemPrompt().startsWith("You review"), cell.agent().name);
-  // THE TURN'S agent, not just the cell's opinion of the prompt.
-  check("the agent a turn is built with carries the project's prompt, however it is called",
-    cell.buildAgent("s").state.systemPrompt.startsWith("You review code")
-      && cell.buildAgent("s", undefined, undefined).state.systemPrompt.startsWith("You review code"),
-    JSON.stringify(cell.buildAgent("s").state.systemPrompt.slice(0, 60)));
-  const bare = makeCell(AgentCell, { KORTIX_SESSION_ID: "s2" });
-  const bareCell = bare.cell ?? bare;
-  // A request first: a cell makes its tables on the first one, and building an
-  // agent reaches for them.
-  const bareList = await (await bare.fetch("/agent?c=s2")).json();
-  check("a cell with no compiled config keeps the built-in prompt and answers a one-agent list",
-    bareCell.systemPrompt().startsWith("You are a coding agent") && bareCell.buildAgent("s2").state.systemPrompt.startsWith("You are a coding agent")
-      && bareList.length === 1, bareCell.systemPrompt().slice(0, 40));
+    cell.agentConfig().name === "reviewer" && (await cell.preparePrompt()).system.startsWith("You review"), cell.agentConfig().name);
+  t = await turn(h, "s", "review this");
+  check("and the very next turn the model receives carries the new agent's prompt",
+    systemPromptOf(t.sent).startsWith("You review code"), JSON.stringify(systemPromptOf(t.sent).slice(0, 60)));
+  check("the pre-W3 `opencodeEnv` name is still read, for an API deploy that sends it",
+    (await (await push(h, { env: {}, opencodeEnv: { KORTIX_COMPILED_AGENT_CONFIG_ETAG: "def456" } })).json()).runtime_env_names.join(",") === "KORTIX_COMPILED_AGENT_CONFIG_ETAG"
+      && (await (await h.fetch("/kortix/health")).json()).agent_config_etag === "def456", "");
 }
+{
+  const bare = makeCell(AgentCell, { KORTIX_SESSION_ID: "s2", KORTIX_TOKEN: TOKEN, KORTIX_LLM_BASE_URL: gw.url });
+  const bareList = await (await bare.fetch("/agent")).json();
+  const t = await turn(bare, "s2", "hello");
+  check("a cell with no compiled config keeps the built-in prompt and answers a one-agent list",
+    (await bare.cell.preparePrompt()).system.startsWith("You are a coding agent") && bareList.length === 1 && bareList[0].name === "kortix",
+    JSON.stringify(bareList).slice(0, 120));
+  check("and the model receives that built-in prompt",
+    systemPromptOf(t.sent).startsWith("You are a coding agent"), JSON.stringify(systemPromptOf(t.sent).slice(0, 60)));
+}
+await gw.close();
 
 console.log(bad ? `\n${bad} FAILED` : "\nall claims hold");
 process.exit(bad ? 1 : 0);

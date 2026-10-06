@@ -13,7 +13,10 @@ of the process that runs it.
 
 | Path | What it is |
 | --- | --- |
-| `apps/pi-worker-js/` | The cell: worker bundle, tests, `celldctl.mjs`, `wrangler.json`. Standalone npm app, excluded from the pnpm workspace. |
+| `apps/pi-worker-js/` | The cell: worker bundle, tests, `wrangler.json`, `deploy-platinum.mjs`. Standalone npm app, excluded from the pnpm workspace. Its `README.md` is the architecture doc. |
+| `apps/api/src/feature-flags/registry.ts` | The `pi_cell` project flag. Available only with `KORTIX_PI_CELL_ENABLED=true` and a `PLATINUM_API_KEY`. |
+| `apps/api/src/projects/lib/session-create.ts` | `piCellBoot`: a `pi_cell` session gets slug `pi-cell`, provider Platinum (locked), no project image, metadata `pi_cell_boot: true`. Requires the LLM gateway. |
+| `apps/api/src/platform/providers/platinum.ts` | `buildCellCreateBody`: the `runtime: "cell"` create body. Tested in `platinum-cell.test.ts`. |
 | `apps/pt-celld.spec.json` | Platinum template spec for the celld runtime image. The agent is not in the image: it is a bundle in the bucket. |
 | `apps/tools/` | Mutation and rail tools the cell suites run (`mutate.mjs`, `cell-rails.mjs`). |
 | `infra/cloudflare/workers/pi-js-router/` | The Cloudflare Worker that gives `pi-js.kortix.com` to one cell or one branch stack. |
@@ -44,6 +47,22 @@ of the process that runs it.
 - **pi-durable cannot wake itself.** The scheduler is in memory. After an
   eviction the host must call `harness.resume()`; the object's alarm is that
   wake-up.
+- **celld loads every named export of the entry module as a handler.** A
+  string or helper export fails the load (`Incorrect type for map entry
+  'CELL_VERSION'`). Keep `src/worker.js` exports to `AgentCell` and `default`.
+- **celld ends isolate work once the response is sent.** A turn that runs
+  after the prompt answers must run on the object's alarm.
+- **A Platinum cell takes session values as `CELLD_VAR_<NAME>`.** celld maps
+  them to `env.<NAME>` in the isolate. An unprefixed variable reaches the celld
+  node only. `CELLD_BASE_PORT=8000` puts celld on the port the API proxies.
+- **Platinum prod refuses cells.** `runtime: "cell"` on `api.platinum.dev`
+  answers `501 runtime_not_enabled` (measured 2026-10-05). Platinum dev
+  (`api-dev.platinum.dev`) runs them: create to `/kortix/health` ready in
+  4.6 s, a faux turn to `session.idle` in 241 ms. Deployed Kortix dev
+  provisions on Platinum prod, so `pi_cell` cannot boot there yet.
+- **A worker version reaches a cell only at cell start.**
+  `deploy-platinum.mjs` uploads and activates; `--roll` restarts the running
+  cells the activation lists.
 - **celld pin.** `pt-celld.spec.json` pins `celld 0.3.0` (x86_64 only).
   `celld 0.4.0+` adopts a new deployment in place and holds one in-flight
   request per object; `0.6.1` ships `aarch64-apple-darwin`, so `celld dev`
@@ -65,3 +84,15 @@ of the process that runs it.
 4. **Co-located celld nodes need distinct, stable `CELLD_NODE` ids.** A moved
    id makes every request answer `DurableObjectRoutingError`; a duplicated one
    makes nodes evict each other.
+
+## Verify
+
+```bash
+cd apps/pi-worker-js
+npm ci && npm run conformance              # pi-durable storage 23/23, env 21/21
+CELLD_BIN=$(command -v celld) npm test     # every suite + session-e2e on `celld dev`
+cd ../api && bun test --isolate --env-file=scripts/test.env src/platform/providers/platinum-cell.test.ts
+```
+
+`test/mutate-*.mjs` rewrite tracked source in place. A run killed partway
+leaves a mutant in `src/`. Run one alone, then `git status`.

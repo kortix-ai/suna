@@ -67,7 +67,7 @@ check("a terminal that is gone is not found", ptyGet(sql, p2.id) === null && pty
 
 // ── the routes and a real shell ──
 {
-  const h = makeCell(AgentCell, { KORTIX_SESSION_ID: "s", TOOLS_BACKEND: "cell" });
+  const h = makeCell(AgentCell, { KORTIX_SESSION_ID: "s" });
   const cell = h.cell ?? h;
   check("GET /kortix/pty starts empty", JSON.stringify(await (await h.fetch("/kortix/pty?c=s")).json()) === "[]", "");
   const created = await (await h.fetch("/kortix/pty?c=s", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "shell" }) })).json();

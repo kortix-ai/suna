@@ -7,10 +7,11 @@
 # ("runtime_capability_unsupported"), so RSS is not readable from inside; the
 # platform's own /metrics reports the box's `mem_used_mb`, which is the same
 # question asked from outside. Spawn N isolates on a box with nothing else on
-# it, read it again, take the slope. `/turns` rather than `/ping`, because /ping
-# answers BEFORE init() and an isolate that never built its schema is not a
-# session — the first run of this measured those and found nothing, which is
-# true and not the question.
+# it, read it again, take the slope. Each isolate is touched with `/ping`,
+# which runs AFTER init() (worker.js handle) and arms the boot alarm that opens
+# pi-durable's harness — an isolate that never built its schema is not a
+# session. (Before e7ba174195 /ping answered before init(), and `/turns` was
+# used instead; that route is gone.)
 set -uo pipefail
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin:$PATH
 API=https://api-dev.platinum.dev
@@ -43,7 +44,7 @@ for N in 100 200 400; do
 import sys, urllib.request, concurrent.futures
 u, nonce, lo, hi = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
 def touch(i):
-    try: urllib.request.urlopen(f"{u}/turns?c=inst-{nonce}-{i}", timeout=25).read()
+    try: urllib.request.urlopen(f"{u}/ping?c=inst-{nonce}-{i}", timeout=25).read()
     except Exception: pass
 with concurrent.futures.ThreadPoolExecutor(max_workers=24) as ex:
     list(ex.map(touch, range(lo, hi)))

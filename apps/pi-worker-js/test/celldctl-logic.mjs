@@ -88,8 +88,12 @@ check("MODEL_API_KEY is absent from the deployment config",
   !("MODEL_API_KEY" in vars()), JSON.stringify(Object.keys(vars())));
 check("TOOL_DAEMON_TOKEN is absent from the deployment config",
   !("TOOL_DAEMON_TOKEN" in vars()), JSON.stringify(Object.keys(vars())));
-check("the non-secret vars ARE written, so the worker is configured",
-  typeof vars().MODEL_PROVIDER === "string" && typeof vars().TOOL_DAEMON_URL === "string",
+// The model vars only. TOOL_DAEMON_URL was half of this claim while the
+// committed wrangler.json carried it; e7ba174195 removed the standalone tool
+// daemon from the worker and that var from wrangler.json, and celldctl never
+// wrote it — it only preserved what the file already had.
+check("the non-secret model vars ARE written",
+  typeof vars().MODEL_PROVIDER === "string" && typeof vars().MODEL_ID === "string" && typeof vars().MODEL_BASE_URL === "string",
   JSON.stringify(vars()));
 
 // ── the credential still reaches the node ───────────────────────────────────
