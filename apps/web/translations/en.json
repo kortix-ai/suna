@@ -439,20 +439,20 @@
       "twoFactorDescription": "A second factor keeps your account safe even if your sign-in is compromised.",
       "authenticatorApp": "Authenticator app",
       "authenticatorDescription": "Add an authenticator app (TOTP) as a second factor.",
-      "sessionVerified": "Session verified",
-      "enrolled": "Enrolled",
+      "statusOn": "On · Asked at sign-in and before sensitive changes",
       "addAuthenticatorApp": "Add authenticator app",
       "factorsLoadFailed": "Couldn’t load your authenticator apps",
       "retry": "Retry",
       "factorsUnchanged": "Your two-factor settings are unchanged — this is only the list failing to load.",
       "noFactorEnrolled": "No second factor enrolled",
       "noFactorDescription": "If your organization requires MFA, you’ll be blocked from gated actions until you enroll an authenticator here.",
-      "scanTitle": "Scan with your authenticator app",
-      "scanDescription": "Use 1Password, Google Authenticator, or any TOTP app — then enter the 6-digit code it shows.",
+      "scanTitle": "Scan with your phone",
+      "scanDescription": "Open any authenticator app and scan this code.",
       "qrAlt": "TOTP enrollment QR code",
-      "manualSecret": "Manual entry secret",
-      "sixDigitCode": "6-digit code",
-      "verifyAndEnable": "Verify and enable",
+      "manualSecret": "Can’t scan? Enter this key",
+      "codeTitle": "Enter the code",
+      "codeDescription": "Type the 6 digits your app shows. It verifies on its own.",
+      "verifyAndEnable": "Verify",
       "cancel": "Cancel",
       "removeFactorTitle": "Remove this factor?",
       "removeFactorDescription": "If your organization requires MFA and this is your only verified factor, you will be locked out of gated actions until you enroll again.",
@@ -469,10 +469,17 @@
       "signOutOtherDevicesFailed": "Could not sign out other devices",
       "currentDevice": "This browser",
       "deviceSignedInAt": "Signed in {date}",
-      "deviceActive": "Active",
       "noDevices": "No signed-in devices",
       "noDevicesDescription": "You are not signed in on any device right now.",
-      "devicesLoadFailed": "Couldn’t load your signed-in devices"
+      "devicesLoadFailed": "Couldn’t load your signed-in devices",
+      "deviceName": "{browser} on {os}",
+      "unknownDevice": "Unknown device",
+      "deviceLastActive": "Last active {date}",
+      "signOutDevice": "Sign out",
+      "signedOutDevice": "Signed out of that device",
+      "signOutDeviceFailed": "Could not sign out that device",
+      "copyIp": "Copy IP address",
+      "ipCopied": "IP address copied"
     },
     "appearance": {
       "theme": "Theme",
@@ -984,10 +991,6 @@
         "pooled_provider_secrets": {
           "name": "Pooled Provider Secrets",
           "description": "Members connect their own ChatGPT subscriptions and provider keys, share them when needed, and choose which ones each session uses."
-        },
-        "pi_worker": {
-          "name": "Pi Worker Runtime (compiled)",
-          "description": "Run sessions with the experimental Pi worker runtime."
         },
         "pi_harness": {
           "name": "Pi Harness (in-sandbox)",
@@ -1723,7 +1726,8 @@
     },
     "restart": {
       "label": "Restart session",
-      "pending": "Restarting…"
+      "pending": "Restarting…",
+      "ownerOnly": "Only the session owner or a project manager can restart this session."
     }
   },
   "modelSelector": {
@@ -9477,7 +9481,6 @@
       "text016cec7c484d": "Revoked connector",
       "text017245d54fdb": "in Slack.",
       "text018069eabbfd": "The definition",
-      "text018912e44371": "Downloaded compiled project checkout",
       "text019929eebb12": "Assign roles from Members (account) or Projects (per project). Custom roles appear in the same role picker as built-in ones.",
       "text01a556bb9792": "The person’s role and the agent’s declared grant must both allow it.",
       "text01b50fe973da": "Refresh provisioning health",
@@ -15844,6 +15847,7 @@
       "textb9819d569c9a": "Provision a few sandboxes and their timing + outcome will show up here.",
       "textb99e1742613b": "- slug: morning-brief",
       "textb99fa6c06150": "Preview unavailable",
+      "showPreviewUnavailableHint": "The app did not answer. Start it in your session, then refresh.",
       "textb9acc1017895": "Create a Kortix group for every group your IdP sends — no per-group mapping.",
       "textb9ad2f00fba7": "changes need",
       "textb9addc023078": "marko@kortix.com",
@@ -17696,7 +17700,6 @@
       "texted13dee8f1f7": "The repo is the company. Fork it, branch it, roll it back, or hand it to a new machine — the whole configuration comes with it.",
       "texted1596a9787f": "Use an access token",
       "texted1d87390f65": "Emit a group attribute (e.g. named groups) listing the user’s groups.",
-      "texted21e91b4d87": "Downloaded compiled pi worker runtime",
       "texted26c1af81cf": "Write tools",
       "texted2d94ab1136": "Sign in to the Microsoft Entra admin center (entra.microsoft.com) as an admin of your tenant.",
       "texted2e59c337d0": "Narrative",
@@ -17875,7 +17878,6 @@
       "textf27a58a42762": "Couldn't load file",
       "textf27bcbb5e1e2": "Dismissible",
       "textf27c4fdb823a": "Cloudflare Access passes email by default. Add the other attributes Kortix reads — id, firstName, lastName — as \"SAML attribute statements\": each is a Name plus the upstream IdP claim it maps to (a dropdown of your login method’s claims).",
-      "textf27e24caeef3": "Downloaded compiled session runtime",
       "textf29674479db4": "Connecting to OpenAI…",
       "textf297f631ba78": "It assembles what every interviewer wrote, arranged against the scorecard rather than by who typed most, and highlights where two interviewers disagreed. Surfacing disagreement is the point. Resolving it is the panel’s job.",
       "textf29ad8b8092c": "The attribute name (groups) must match Kortix’s group claim, which is prefilled at the connect step. Cloudflare passes through whatever group NAMES the upstream IdP sends.",
@@ -18839,9 +18841,7 @@
       "textb0f59e5a2722": "Started model provider OAuth login",
       "text0dd455816ef6": "Started sandbox snapshot rebuild",
       "text40cef5fd1dbd": "Started sandbox template build",
-      "text09917783e494": "Started session environment",
       "text18065b39fc81": "Stopped Kortix App",
-      "textb88830cc18af": "Stopped session environment",
       "text464b0b69fd48": "Streamed computer tunnel events",
       "text970caaaceccc": "Streamed request via secret relay",
       "text64a93d38e11a": "Streamed secret relay response",
@@ -19000,7 +19000,6 @@
       "text5ed3e15fac9f": "Viewed sandbox provider transition",
       "text70a61d85334a": "Viewed session",
       "textd7aa05eaf609": "Viewed session cost ledger",
-      "text4e22b3354b8f": "Viewed session environment",
       "text48b65bbc9863": "Viewed session policy",
       "text7c649f4bf685": "Viewed session provider secret pool",
       "text3fd349f95ce2": "Viewed session scope",
@@ -19123,6 +19122,10 @@
       "textda4bd8bdfe42": "Other people need the session owner's approval to join.",
       "text5dae52a3f448": "{count, plural, one {# channel} other {# channels}}",
       "text5097881a690f": "Thread: {title}",
+      "servedModelRow": "Model",
+      "servedModelInPlaceOf": "In place of",
+      "servedModelBadge": "Running on {model}",
+      "servedModelBarDescription": "{requested} did not answer the last request",
       "text414cc580557b": "Edited a queued session prompt",
       "text52867b778586": "One kortix.yaml.",
       "textd0dfd435b2f4": "Your AI workforce, as code.",
@@ -19242,12 +19245,24 @@
       "text09e71792c6c3": "AI agents for sales teams",
       "textaaab3a59b808": "AI agents for marketing teams",
       "text8f480bae8d16": "AI agents for finance teams",
-      "text6243d930fc1c": "AI Operating System"
+      "text6243d930fc1c": "AI Operating System",
+      "textc959682e0398": "Viewed signed-in devices",
+      "text976811d9540a": "Signed a device out"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
       "description": "Anyone with the link can view this without signing in. The link stays active until you revoke it.",
-      "confirm": "Create link"
+      "confirm": "Create link",
+      "liveTitle": "Public link",
+      "liveDescription": "Anyone with the link can view it without signing in.",
+      "liveCount": "{count} links point here; revoking turns them all off.",
+      "copy": "Copy",
+      "revoke": "{count, plural, one {Revoke link} other {Revoke # links}}",
+      "createDescription": "Anyone with the link can view this without signing in.",
+      "expiresAfter": "Expires after",
+      "cancel": "Cancel",
+      "expiryNever": "Never",
+      "expiryDays": "{count, plural, one {# day} other {# days}}"
     },
     "publicTranscriptShare": {
       "sectionTitle": "Public link",
@@ -20514,5 +20529,20 @@
     "people": "People in this session: {names}",
     "peopleMore": "People in this session: {names} and {count} more",
     "more": "{count} more can open this session"
+  },
+  "demoBooking": {
+    "meetingTitle": "Kortix demo",
+    "stepDetails": "Your details",
+    "stepTime": "Pick a time",
+    "formTitle": "Before we pick a time",
+    "formDescription": "We'll use this to prep a walkthrough for your team.",
+    "seeTimes": "See available times",
+    "close": "Close",
+    "bookedLabel": "Booking confirmed",
+    "bookedMeta": "{minutes} min · Link in your invite",
+    "inviteSent": "Invite sent to {email}",
+    "reschedule": "Need another time? Use the link in the invite.",
+    "addToCalendar": "Add to calendar",
+    "done": "Done"
   }
 }

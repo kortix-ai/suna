@@ -405,7 +405,7 @@ function listGitProxyRequests(logPath: string, projectId: string, from: Date, to
   // The id is validated as a UUID at the argument boundary (projectIdArg) and
   // escaped here regardless, so a CLI value can never alter the pattern.
   const safeProjectId = projectId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const re = new RegExp(`^\\[(\\d{4}-\\d{2}-\\d{2}T[^\\]]+)\\] \\[INFO\\] Request completed: (GET|POST) /v1/git/${safeProjectId}\\.git/(info/refs|git-upload-pack|fast-boot-bundle|compiled-checkout|project-snapshot) (\\d{3})`);
+  const re = new RegExp(`^\\[(\\d{4}-\\d{2}-\\d{2}T[^\\]]+)\\] \\[INFO\\] Request completed: (GET|POST) /v1/git/${safeProjectId}\\.git/(info/refs|git-upload-pack|fast-boot-bundle|project-snapshot) (\\d{3})`);
   const seen: GitProxyRequest[] = [];
   for (const line of readFileSync(logPath, 'utf8').split('\n')) {
     const m = line.match(re);

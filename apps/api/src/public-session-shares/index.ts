@@ -38,7 +38,7 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { errors, json, makeOpenApiApp } from '../openapi';
-import { createPublicSessionShareRateLimitMiddleware } from '../shared/rate-limit';
+import { createPublicSessionShareRateLimitMiddleware } from '../middleware/rate-limit';
 import {
   publicShareToken,
   resolvePublicShare,

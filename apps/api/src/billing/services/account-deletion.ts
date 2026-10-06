@@ -1,7 +1,6 @@
 import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import {
   accountDeletionRequests,
-  accountMembers,
   accounts,
   appDeploymentEvents,
   appDeployments,
@@ -23,7 +22,6 @@ import {
   reviewItems,
   sandboxes,
   sandboxComputeSessions,
-  sessionEnvironments,
   sessionLifecycleCommands,
   sessionPendingQuestions,
   sessionSandboxes,
@@ -38,6 +36,7 @@ import { getSupabase } from '../../shared/supabase';
 import { forgetUserJwtLiveness } from '../../shared/jwt-liveness';
 import { getStripe } from '../../shared/stripe';
 import { db } from '../../shared/db';
+import { ownedAccountRows } from '../../iam/membership-read';
 import { BillingError } from '../../errors';
 import { isUniqueViolation } from '../../shared/postgres-errors';
 import { tryGetProvider } from '../../platform/providers';
@@ -228,10 +227,7 @@ export async function reclaimableAccountIds(
   const ids = new Set<string>([accountId]);
   if (!userId) return [...ids];
   try {
-    const owned = await db
-      .select({ accountId: accountMembers.accountId })
-      .from(accountMembers)
-      .where(and(eq(accountMembers.userId, userId), eq(accountMembers.accountRole, 'owner')));
+    const owned = await ownedAccountRows(userId);
     for (const row of owned) if (row.accountId) ids.add(row.accountId);
   } catch (err) {
     // Degrade to the single account rather than skipping teardown entirely.
@@ -522,7 +518,6 @@ async function deleteAccountData(accountId: string): Promise<void> {
     await tx.delete(sandboxes).where(eq(sandboxes.accountId, accountId));
     await tx.delete(kortixApiKeys).where(eq(kortixApiKeys.accountId, accountId));
     await tx.delete(sessionSandboxes).where(eq(sessionSandboxes.accountId, accountId));
-    await tx.delete(sessionEnvironments).where(eq(sessionEnvironments.accountId, accountId));
     await tx.delete(sessionTurns).where(inArray(sessionTurns.sessionId, accountSessions));
     await tx.delete(sessionPendingQuestions).where(inArray(sessionPendingQuestions.sessionId, accountSessions));
     await tx.delete(providerEvents).where(eq(providerEvents.accountId, accountId));

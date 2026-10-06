@@ -613,20 +613,20 @@
       "twoFactorDescription": "Um segundo fator mantém sua conta segura mesmo que seu login seja comprometido.",
       "authenticatorApp": "Aplicativo autenticador",
       "authenticatorDescription": "Adicione um aplicativo autenticador (TOTP) como segundo fator.",
-      "sessionVerified": "Sessão verificada",
-      "enrolled": "Configurado",
+      "statusOn": "Ativado · Pedido no login e antes de alterações sensíveis",
       "addAuthenticatorApp": "Adicionar aplicativo autenticador",
       "factorsLoadFailed": "Não foi possível carregar seus aplicativos autenticadores",
       "retry": "Tentar novamente",
       "factorsUnchanged": "Suas configurações de dois fatores permanecem inalteradas – esta é apenas a lista que não carrega.",
       "noFactorEnrolled": "Nenhum segundo fator configurado",
       "noFactorDescription": "Se sua organização exigir MFA, você não poderá executar ações protegidas até configurar um aplicativo autenticador aqui.",
-      "scanTitle": "Digitalize com seu aplicativo autenticador",
-      "scanDescription": "Use 1Password, Google Authenticator ou qualquer aplicativo TOTP – em seguida, insira o código de 6 dígitos exibido.",
+      "scanTitle": "Escaneie com o celular",
+      "scanDescription": "Abra qualquer aplicativo autenticador e escaneie este código.",
       "qrAlt": "Código QR de inscrição TOTP",
-      "manualSecret": "Segredo de entrada manual",
-      "sixDigitCode": "Código de 6 dígitos",
-      "verifyAndEnable": "Verifique e ative",
+      "manualSecret": "Não consegue escanear? Digite esta chave",
+      "codeTitle": "Digite o código",
+      "codeDescription": "Digite os 6 dígitos que seu aplicativo mostra. A verificação é automática.",
+      "verifyAndEnable": "Verificar",
       "cancel": "Cancelar",
       "removeFactorTitle": "Remover esse fator?",
       "removeFactorDescription": "Se sua organização exigir MFA e este for seu único fator verificado, você não terá acesso a ações bloqueadas até se inscrever novamente.",
@@ -643,10 +643,17 @@
       "signOutOtherDevicesFailed": "Não foi possível desconectar outros dispositivos",
       "currentDevice": "Este navegador",
       "deviceSignedInAt": "Conectado em {date}",
-      "deviceActive": "Ativo",
       "noDevices": "Nenhum dispositivo conectado",
       "noDevicesDescription": "Você não está conectado em nenhum dispositivo neste momento.",
-      "devicesLoadFailed": "Não foi possível carregar seus dispositivos conectados"
+      "devicesLoadFailed": "Não foi possível carregar seus dispositivos conectados",
+      "deviceName": "{browser} em {os}",
+      "unknownDevice": "Dispositivo desconhecido",
+      "deviceLastActive": "Última atividade: {date}",
+      "signOutDevice": "Sair",
+      "signedOutDevice": "Sessão encerrada nesse dispositivo",
+      "signOutDeviceFailed": "Não foi possível encerrar a sessão nesse dispositivo",
+      "copyIp": "Copiar endereço IP",
+      "ipCopied": "Endereço IP copiado"
     },
     "appearance": {
       "theme": "Tema",
@@ -1158,10 +1165,6 @@
         "pooled_provider_secrets": {
           "name": "Segredos de provedor compartilhados",
           "description": "Os membros conectam as próprias assinaturas do ChatGPT e chaves de provedor, compartilham quando necessário e escolhem quais cada sessão usa."
-        },
-        "pi_worker": {
-          "name": "Ambiente do worker Pi (compilado)",
-          "description": "Execute sessões com o ambiente experimental do worker Pi."
         },
         "pi_harness": {
           "name": "Harness Pi (na sandbox)",
@@ -1723,7 +1726,8 @@
     },
     "restart": {
       "label": "Reiniciar sessão",
-      "pending": "Reiniciando…"
+      "pending": "Reiniciando…",
+      "ownerOnly": "Somente o proprietário da sessão ou um gerente do projeto pode reiniciar esta sessão."
     }
   },
   "modelSelector": {
@@ -9466,7 +9470,6 @@
       "text016cec7c484d": "Conector revogado",
       "text017245d54fdb": "no Slack.",
       "text018069eabbfd": "A definição",
-      "text018912e44371": "Checkout compilado do projeto baixado",
       "text019929eebb12": "Atribua funções em Membros (conta) ou Projetos (por projeto). As funções personalizadas aparecem no mesmo seletor das funções integradas.",
       "text01a556bb9792": "A função da pessoa e a permissão declarada do agente precisam autorizar a ação.",
       "text01b50fe973da": "Atualizar saúde do provisionamento",
@@ -15833,6 +15836,7 @@
       "textb9819d569c9a": "Provisione alguns sandboxes para que o tempo e o resultado apareçam aqui.",
       "textb99e1742613b": "- slug: morning-brief",
       "textb99fa6c06150": "Pré-visualização indisponível",
+      "showPreviewUnavailableHint": "O app não respondeu. Inicie-o na sua sessão e atualize.",
       "textb9acc1017895": "Crie um grupo Kortix para cada grupo enviado pelo seu IdP — sem mapeamento por grupo.",
       "textb9ad2f00fba7": "alterações necessárias",
       "textb9addc023078": "marko@kortix.com",
@@ -17685,7 +17689,6 @@
       "texted13dee8f1f7": "O repositório é a empresa. Faça um fork, crie uma branch, reverta ou entregue-o a uma nova máquina — toda a configuração vem junto.",
       "texted1596a9787f": "Usar um token de acesso",
       "texted1d87390f65": "Emita um atributo de grupo (por exemplo, chamado groups) que liste os grupos do usuário.",
-      "texted21e91b4d87": "Runtime compilado do worker pi baixado",
       "texted26c1af81cf": "Ferramentas de escrita",
       "texted2d94ab1136": "Entre no centro de administração do Microsoft Entra (entra.microsoft.com) como administrador do seu tenant.",
       "texted2e59c337d0": "Narrativa",
@@ -17864,7 +17867,6 @@
       "textf27a58a42762": "Não foi possível carregar o arquivo",
       "textf27bcbb5e1e2": "Dispensável",
       "textf27c4fdb823a": "O Cloudflare Access transmite o email por padrão. Adicione os outros atributos lidos pelo Kortix — id, firstName, lastName — como \"SAML attribute statements\": cada um é um Name associado à declaração do IdP upstream (um menu com as declarações do seu método de login).",
-      "textf27e24caeef3": "Runtime compilado da sessão baixado",
       "textf29674479db4": "Conectando ao OpenAI…",
       "textf297f631ba78": "Ele reúne o que cada entrevistador escreveu, organizado pelo scorecard, não por quem digitou mais, e destaca onde dois entrevistadores discordaram. Expor a discordância é o objetivo. Resol­vê-la é tarefa do painel.",
       "textf29ad8b8092c": "O nome do atributo (groups) deve corresponder à declaração de grupo do Kortix, preenchida previamente na etapa de conexão. O Cloudflare repassa os NOMES dos grupos enviados pelo IdP upstream.",
@@ -18828,9 +18830,7 @@
       "textb0f59e5a2722": "Login OAuth do provedor de modelos iniciado",
       "text0dd455816ef6": "Recriação do snapshot de sandbox iniciada",
       "text40cef5fd1dbd": "Build do modelo de sandbox iniciado",
-      "text09917783e494": "Ambiente da sessão iniciado",
       "text18065b39fc81": "Kortix App interrompido",
-      "textb88830cc18af": "Ambiente da sessão interrompido",
       "text464b0b69fd48": "Eventos do túnel do computador transmitidos",
       "text970caaaceccc": "Solicitação transmitida via relay de segredos",
       "text64a93d38e11a": "Resposta do relay de segredos transmitida",
@@ -18989,7 +18989,6 @@
       "text5ed3e15fac9f": "Transição do provedor de sandbox visualizada",
       "text70a61d85334a": "Sessão visualizada",
       "textd7aa05eaf609": "Livro-razão de custos da sessão visualizado",
-      "text4e22b3354b8f": "Ambiente da sessão visualizado",
       "text48b65bbc9863": "Política de sessão visualizada",
       "text7c649f4bf685": "Pool de segredos de provedor da sessão visualizado",
       "text3fd349f95ce2": "Escopo da sessão visualizado",
@@ -19112,6 +19111,10 @@
       "textda4bd8bdfe42": "Outras pessoas precisam da aprovação do proprietário da sessão para participar.",
       "text5dae52a3f448": "{count, plural, one {# canal} other {# canais}}",
       "text5097881a690f": "Tópico: {title}",
+      "servedModelRow": "Modelo",
+      "servedModelInPlaceOf": "No lugar de",
+      "servedModelBadge": "Executando em {model}",
+      "servedModelBarDescription": "{requested} não respondeu à última solicitação",
       "text414cc580557b": "Prompt da sessão na fila editado",
       "text52867b778586": "Um kortix.yaml.",
       "textd0dfd435b2f4": "Sua força de trabalho de IA, como código.",
@@ -19231,12 +19234,24 @@
       "text09e71792c6c3": "Agentes de IA para equipes de vendas",
       "textaaab3a59b808": "Agentes de IA para equipes de marketing",
       "text8f480bae8d16": "Agentes de IA para equipes de finanças",
-      "text6243d930fc1c": "AI Operating System"
+      "text6243d930fc1c": "AI Operating System",
+      "textc959682e0398": "Visualizou os dispositivos conectados",
+      "text976811d9540a": "Desconectou um dispositivo"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
       "description": "Qualquer pessoa com o link pode ver isto sem iniciar sessão. O link fica ativo até você revogá-lo.",
-      "confirm": "Criar link"
+      "confirm": "Criar link",
+      "liveTitle": "Link público",
+      "liveDescription": "Qualquer pessoa com o link pode vê-lo sem entrar.",
+      "liveCount": "{count} links apontam para cá; revogá-los desativa todos.",
+      "copy": "Copiar",
+      "revoke": "{count, plural, one {Revogar link} other {Revogar # links}}",
+      "createDescription": "Qualquer pessoa com o link pode ver isto sem entrar.",
+      "expiresAfter": "Expira após",
+      "cancel": "Cancelar",
+      "expiryNever": "Nunca",
+      "expiryDays": "{count, plural, one {# dia} other {# dias}}"
     },
     "publicTranscriptShare": {
       "sectionTitle": "Link público",
@@ -20514,5 +20529,20 @@
     "people": "Pessoas nesta sessão: {names}",
     "peopleMore": "Pessoas nesta sessão: {names} e mais {count}",
     "more": "Mais {count} podem abrir esta sessão"
+  },
+  "demoBooking": {
+    "meetingTitle": "Demo da Kortix",
+    "stepDetails": "Seus dados",
+    "stepTime": "Escolha um horário",
+    "formTitle": "Antes de escolher um horário",
+    "formDescription": "Usaremos isso para preparar uma demonstração para sua equipe.",
+    "seeTimes": "Ver horários disponíveis",
+    "close": "Fechar",
+    "bookedLabel": "Agendamento confirmado",
+    "bookedMeta": "{minutes} min · Link no seu convite",
+    "inviteSent": "Convite enviado para {email}",
+    "reschedule": "Precisa de outro horário? Use o link do convite.",
+    "addToCalendar": "Adicionar ao calendário",
+    "done": "Concluir"
   }
 }

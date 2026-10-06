@@ -24,7 +24,7 @@ import { unwrap, asRuntimeList, cachedRuntimeList, setLSCache, LS_COMMANDS } fro
  * the result unconditionally.
  *
  * Slash commands are a runtime capability (`session.commands`): a runtime
- * without them (pi) is never asked, and the list stays empty.
+ * without them is never asked, and the list stays empty.
  */
 export function useRuntimeCommands() {
   const runtimeReady = useRuntimeReady();

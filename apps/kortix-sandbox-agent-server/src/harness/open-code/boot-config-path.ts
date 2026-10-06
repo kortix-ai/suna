@@ -1,8 +1,10 @@
 import { pluginFilesInDir, toolNamesInDir } from './config-directory-inventory'
 import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import {
   activateBootConfig,
   bootConfigRoot,
+  configDirFiles,
   materializeRelease,
   pruneBootConfigs,
   quarantineRelease,
@@ -26,9 +28,10 @@ import { clearConfigReleaseNotice } from '@/services/config-release/notice'
 import { logger } from '@/lib/log/logger'
 import { repairOpencodeConfigDir } from './apple-double'
 import { serveConfigDir } from './boot-link'
+import { releaseConfigDir } from './project-layout'
 import { resolveOpencodeConfigDir, type OpenCodeConfig } from './config'
 import { deliverGovernance, effectiveReleaseId, manifestFromDescriptor } from '@/services/config-release/release'
-import { noteRunningConfig, prepareConfigDir, preparePlatformConfigDir, setRunningConfig } from './config-release'
+import { noteRunningConfig, prepareConfigDir, preparePlatformConfigDir, prepareRelease, setRunningConfig } from './config-release'
 import type { ConfigSource } from '@/types/config-release'
 import { VERIFY_READY_TIMEOUT_MS, type Opencode } from './lifecycle'
 import { pluginFilesFrom, provenCheck, toolNamesFromFiles, type ProvenCheckInput } from './proven-check'
@@ -127,7 +130,10 @@ export interface BootConfigPathResult {
 }
 
 interface Candidate {
+  /** The dir OpenCode is served: the release's config dir, or the image default. */
   dir: string
+  /** The release root (the repository checkout), for verification and the pointer. */
+  root: string | null
   source: ConfigSource
   /** One phrase, for the log and for `fallback_reason`. */
   label: string
@@ -200,14 +206,13 @@ async function bootCandidates(
   if (answer.descriptor && desiredId !== null && answer.descriptor.archive !== null && api) {
     const manifest = manifestFromDescriptor(answer.descriptor, desiredId)
     const dir = releaseDir(root, desiredId)
+    const verifyInput = { dir, files: manifest.files, configDir: manifest.config_dir, managedSkillsDir: input.managedSkillsDir }
     const quarantined = (await readQuarantine(root))[desiredId]
     if (quarantined) {
       reasons.push(`release ${desiredId.slice(0, 12)} is quarantined on this box: ${quarantined.reason}`)
     } else {
       try {
-        const intact =
-          existsSync(dir) &&
-          (await verifyRelease({ dir, files: manifest.files, managedSkillsDir: input.managedSkillsDir }))
+        const intact = existsSync(dir) && (await verifyRelease(verifyInput))
         if (intact) {
           await writeReleaseManifest(root, manifest)
         } else {
@@ -219,12 +224,16 @@ async function bootCandidates(
             manifest,
             archive,
             managedSkillsDir: input.managedSkillsDir,
-            prepare: (staged) => (input.prepare ?? defaultPrepare(input))(staged, true),
+            prepare: (staged) =>
+              input.prepare
+                ? input.prepare(manifest.config_dir ? join(staged, manifest.config_dir) : staged, true)
+                : prepareRelease(staged, manifest.config_dir, input.managedSkillsDir),
           })
         }
         input.mark?.('config-release-extracted')
         candidates.push({
-          dir,
+          dir: releaseConfigDir(dir, manifest.config_dir) ?? cfg.defaultOpencodeConfigDir,
+          root: dir,
           source: 'release',
           label: `release ${desiredId.slice(0, 12)}`,
           releaseId: desiredId,
@@ -245,6 +254,7 @@ async function bootCandidates(
     // branch. The image default runs with the release's compiled governance.
     candidates.push({
       dir: cfg.defaultOpencodeConfigDir,
+      root: null,
       source: 'image-default',
       label: `governance-only release ${desiredId.slice(0, 12)}`,
       releaseId: desiredId,
@@ -252,6 +262,10 @@ async function bootCandidates(
       manifest: null,
     })
     if (answer.descriptor.reason) reasons.push(answer.descriptor.reason)
+  } else if (answer.descriptor && desiredId === null) {
+    // The API could not build this session's release. The last proven copy or
+    // the image default serves, and says why.
+    reasons.push(answer.descriptor.reason ?? 'the API assigned no release')
   }
 
   // Valve B's floor: the previously available config on disk.
@@ -263,10 +277,16 @@ async function bootCandidates(
       const manifest = await readReleaseManifest(root, pointer.release_id)
       const intact =
         manifest !== null &&
-        (await verifyRelease({ dir: pointer.dir, files: manifest.files, managedSkillsDir: input.managedSkillsDir }))
+        (await verifyRelease({
+          dir: pointer.dir,
+          files: manifest.files,
+          configDir: manifest.config_dir,
+          managedSkillsDir: input.managedSkillsDir,
+        }))
       if (intact && manifest) {
         candidates.push({
-          dir: pointer.dir,
+          dir: releaseConfigDir(pointer.dir, manifest.config_dir) ?? cfg.defaultOpencodeConfigDir,
+          root: pointer.dir,
           source: 'release',
           label: `last proven release ${pointer.release_id.slice(0, 12)}`,
           releaseId: pointer.release_id,
@@ -283,6 +303,7 @@ async function bootCandidates(
   if (!candidates.some((candidate) => candidate.dir === cfg.defaultOpencodeConfigDir && candidate.releaseId === null)) {
     candidates.push({
       dir: cfg.defaultOpencodeConfigDir,
+      root: null,
       source: 'image-default',
       label: 'image default config',
       releaseId: null,
@@ -437,7 +458,7 @@ export async function bootOpenCodeConfig(input: BootConfigPathInput): Promise<Bo
           config_dir: candidate.manifest.config_dir,
           agent_repoint_reason: candidate.manifest.agent_repoint_reason ?? null,
         },
-        candidate.dir,
+        candidate.root,
       )
     }
     await point(candidate.dir, `boot candidate ${index + 1} of ${candidates.length}: ${candidate.label}`)
@@ -449,8 +470,12 @@ export async function bootOpenCodeConfig(input: BootConfigPathInput): Promise<Bo
     }
     const proof = await prove(
       candidate.dir,
-      candidate.manifest ? toolNamesFromFiles(candidate.manifest.files) : await toolNamesInDir(candidate.dir),
-      candidate.manifest ? pluginFilesFrom(candidate.manifest.files) : await pluginFilesInDir(candidate.dir),
+      candidate.manifest
+        ? toolNamesFromFiles(configDirFiles(candidate.manifest.files, candidate.manifest.config_dir))
+        : await toolNamesInDir(candidate.dir),
+      candidate.manifest
+        ? pluginFilesFrom(configDirFiles(candidate.manifest.files, candidate.manifest.config_dir))
+        : await pluginFilesInDir(candidate.dir),
     )
     if (proof.ok) {
       chosen = candidate
@@ -478,13 +503,13 @@ export async function bootOpenCodeConfig(input: BootConfigPathInput): Promise<Bo
   }
 
   // ── Step 6 ─────────────────────────────────────────────────────────────────
-  if (proven && chosen.manifest && chosen.releaseId) {
+  if (proven && chosen.manifest && chosen.releaseId && chosen.root) {
     const previous = await readBootConfigPointer(root).catch(() => null)
     await activateBootConfig(root, {
       release_id: chosen.releaseId,
       source_commit: chosen.manifest.source_commit,
       config_dir: chosen.manifest.config_dir,
-      dir: chosen.dir,
+      dir: chosen.root,
       proven: true,
     })
     await pruneBootConfigs(root, previous ? [chosen.releaseId, previous.release_id] : [chosen.releaseId])

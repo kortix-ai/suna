@@ -1,6 +1,5 @@
 import { accountMembers } from "@kortix/db";
 import { and, eq } from "drizzle-orm";
-import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { profileNameFromMetadata } from "../accounts/core/account-name";
 import { bootstrapPersonalAccount } from "../accounts/core/bootstrap-personal-account";
@@ -54,47 +53,18 @@ async function syncLegacySubscription(accountId: string): Promise<void> {
 }
 
 /**
- * Resolve the account a billing request should target.
+ * The account a billing request targets, from plain values: the caller's user
+ * id and the `account_id` the request named (query or body), if any. The HTTP
+ * reader is `resolveScopedAccountId` in `middleware/resolve-account.ts`.
  *
- * Multi-account users (one user, multiple Kortix accounts) need every billing
- * route to be account-scoped — otherwise mutating "Subscribe" or "Manage
- * billing" or even reading "account-state" silently target the user's FIRST
- * membership, which makes /accounts/<other>?tab=billing nonsensical.
- *
- * Resolution order:
- *   1. `?account_id=` (query) or `body.account_id` if provided → verify the
- *      caller is a member of that account, then return it. 403 on miss.
- *   2. Fall back to `resolveAccountId(userId)` — the user's primary
- *      membership. Preserves legacy behaviour for surfaces that haven't
- *      been migrated to send `account_id` yet.
- *
- * Pass `source: 'body'` for POST/PUT/PATCH/DELETE routes (we read the JSON
- * body once and look for `account_id`). Pass `source: 'query'` for GETs.
+ *   1. A named account → verify the caller is a member of it, then return it.
+ *      403 on miss.
+ *   2. Otherwise `resolveAccountId(userId)` — the user's primary membership.
  */
-export async function resolveScopedAccountId(
-  c: Context,
-  source: "query" | "body" = "query",
+export async function scopedAccountIdFor(
+  userId: string,
+  requested: string | undefined,
 ): Promise<string> {
-  const userId = c.get("userId") as string;
-
-  let requested: string | undefined;
-  if (source === "query") {
-    requested = c.req.query("account_id");
-  } else {
-    try {
-      // Use Hono's cached body parse (c.req.json()), NOT c.req.raw.clone().json():
-      // under @hono/zod-openapi the request-validation middleware consumes the raw
-      // body stream before the handler runs, so a clone of c.req.raw is empty by
-      // then → account_id would be missed → a non-member would resolve to their
-      // own account instead of being 403'd. c.req.json() returns the cached parse.
-      const body = await c.req.json();
-      const candidate = body?.account_id;
-      if (typeof candidate === "string" && candidate) requested = candidate;
-    } catch {
-      // No JSON body or malformed — that's fine, fall through.
-    }
-  }
-
   // Acting as an account: the target IS the scope. An explicit `account_id`
   // that disagrees is refused rather than honoured — a console still holding a
   // stale account id must not be able to steer a write out of the account the

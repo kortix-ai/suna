@@ -12,14 +12,11 @@ import {
 import { logger } from '@/lib/log/logger'
 
 /**
- * `/kortix/env-rpc` — the environment half of the harness/worker split (P1.7).
+ * `/kortix/env-rpc` — direct filesystem + shell access on THIS box, executed
+ * as the session (the box exists for exactly one session and holds its
+ * credential). The API's MCP tools (apps/api/src/mcp/index.ts) call it.
  *
- * The pi worker's built-in tools (bash, read, write, edit) run against an
- * ExecutionEnv whose every operation is one POST here. This route is that
- * environment: direct filesystem + shell access on THIS box, executed as the
- * session (the box exists for exactly one session and holds its credential).
- *
- * Wire contract (mirrors apps/kortix-worker/src/kortix-env.ts):
+ * Wire contract:
  *   POST { op, args, cwd }  →  { ok: true, value } | { ok: false, error: { code, message, path? } }
  * The route never throws wire-level errors for filesystem failures — a missing
  * file is a Result, not a 500. HTTP errors are reserved for auth and malformed
@@ -27,9 +24,7 @@ import { logger } from '@/lib/log/logger'
  *
  * Auth: `/kortix/*` is exempt from the daemon's global gate, so — exactly like
  * the sibling pty router — every request verifies X-Kortix-User-Context signed
- * with this box's own KORTIX_TOKEN. The worker holds the SAME session token
- * (platform/services/session-environment.ts boots the box with it), so it can
- * mint the header itself; nothing else can.
+ * with this box's own KORTIX_TOKEN.
  */
 
 const EXEC_TIMEOUT_DEFAULT_MS = 120_000

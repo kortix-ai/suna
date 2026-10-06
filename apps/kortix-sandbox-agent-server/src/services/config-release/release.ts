@@ -15,15 +15,25 @@ export class ConvergeBusyError extends Error {
   }
 }
 
+/** The API's reason for a session without repository access: governance only, by design. */
+const REPOSITORY_ACCESS_WITHHELD = 'repository access withheld'
+
 /**
  * The release ID to compare. The spec defines it as
  * `sha256((config_tree_id ?? "") + ":" + (compiled_governance_etag ?? ""))`,
  * null only when both are null. An API that sends null for a governance-only
  * session (no archive) gets the same ID computed here, so a governance-only
  * change still converges.
+ *
+ * A null ID with any other reason is the API saying it could not build the release
+ * (an archive over the limit, a missing plugin, a git error): there is no
+ * release, and the running config stays. Deriving a governance-only ID from
+ * it swapped boxes to the image default with no project tools, skills or
+ * plugins and no fallback reason (2026-10-05).
  */
 export function effectiveReleaseId(descriptor: ConfigReleaseDescriptor): string | null {
   if (descriptor.release_id !== null) return descriptor.release_id
+  if (descriptor.reason !== null && descriptor.reason !== REPOSITORY_ACCESS_WITHHELD) return null
   if (descriptor.config_tree_id !== null || descriptor.compiled_governance_etag === null) return null
   return createHash('sha256').update(`:${descriptor.compiled_governance_etag}`).digest('hex')
 }
@@ -33,7 +43,7 @@ export function manifestFromDescriptor(descriptor: ConfigReleaseDescriptor, rele
   return {
     release_id: releaseId,
     source_commit: descriptor.source_commit!,
-    config_dir: descriptor.config_dir!,
+    config_dir: descriptor.config_dir,
     config_tree_id: descriptor.config_tree_id!,
     archive_url: descriptor.archive!.url,
     archive_bytes: descriptor.archive!.bytes,

@@ -613,20 +613,20 @@
       "twoFactorDescription": "Ein zweiter Faktor sorgt dafür, dass Ihr Konto auch dann sicher bleibt, wenn Ihre Anmeldung gefährdet ist.",
       "authenticatorApp": "Authentifizierungs-App",
       "authenticatorDescription": "Fügen Sie als zweiten Faktor eine Authentifizierungs-App (TOTP) hinzu.",
-      "sessionVerified": "Sitzung bestätigt",
-      "enrolled": "Eingerichtet",
+      "statusOn": "Ein · Abgefragt bei der Anmeldung und vor sensiblen Änderungen",
       "addAuthenticatorApp": "Authentifizierungs-App hinzufügen",
       "factorsLoadFailed": "Ihre Authentifizierungs-Apps konnten nicht geladen werden",
       "retry": "Wiederholen",
       "factorsUnchanged": "Ihre Zwei-Faktor-Einstellungen bleiben unverändert – nur die Liste kann nicht geladen werden.",
       "noFactorEnrolled": "Kein zweiter Faktor eingerichtet",
       "noFactorDescription": "Wenn Ihre Organisation MFA verlangt, können Sie geschützte Aktionen erst wieder ausführen, nachdem Sie hier eine Authentifizierungs-App eingerichtet haben.",
-      "scanTitle": "Scannen Sie mit Ihrer Authentifizierungs-App",
-      "scanDescription": "Verwenden Sie 1Password, Google Authenticator oder eine beliebige TOTP-App – geben Sie dann den angezeigten 6-stelligen Code ein.",
+      "scanTitle": "Mit dem Handy scannen",
+      "scanDescription": "Öffnen Sie eine Authentifizierungs-App und scannen Sie diesen Code.",
       "qrAlt": "QR-Code zur TOTP-Einrichtung",
-      "manualSecret": "Geheimnis zur manuellen Eingabe",
-      "sixDigitCode": "6-stelliger Code",
-      "verifyAndEnable": "Überprüfen und aktivieren",
+      "manualSecret": "Scannen nicht möglich? Diesen Schlüssel eingeben",
+      "codeTitle": "Code eingeben",
+      "codeDescription": "Geben Sie die 6 Ziffern aus Ihrer App ein. Die Prüfung erfolgt automatisch.",
+      "verifyAndEnable": "Bestätigen",
       "cancel": "Abbrechen",
       "removeFactorTitle": "Diesen Faktor entfernen?",
       "removeFactorDescription": "Wenn Ihre Organisation MFA verlangt und dies Ihr einziger bestätigter Faktor ist, können Sie geschützte Aktionen erst wieder ausführen, nachdem Sie einen neuen Faktor eingerichtet haben.",
@@ -643,10 +643,17 @@
       "signOutOtherDevicesFailed": "Andere Geräte konnten nicht abgemeldet werden",
       "currentDevice": "Dieser Browser",
       "deviceSignedInAt": "Angemeldet am {date}",
-      "deviceActive": "Aktiv",
       "noDevices": "Keine angemeldeten Geräte",
       "noDevicesDescription": "Du bist derzeit auf keinem Gerät angemeldet.",
-      "devicesLoadFailed": "Deine angemeldeten Geräte konnten nicht geladen werden"
+      "devicesLoadFailed": "Deine angemeldeten Geräte konnten nicht geladen werden",
+      "deviceName": "{browser} auf {os}",
+      "unknownDevice": "Unbekanntes Gerät",
+      "deviceLastActive": "Zuletzt aktiv {date}",
+      "signOutDevice": "Abmelden",
+      "signedOutDevice": "Gerät abgemeldet",
+      "signOutDeviceFailed": "Das Gerät konnte nicht abgemeldet werden",
+      "copyIp": "IP-Adresse kopieren",
+      "ipCopied": "IP-Adresse kopiert"
     },
     "appearance": {
       "theme": "Design",
@@ -1158,10 +1165,6 @@
         "pooled_provider_secrets": {
           "name": "Gemeinsam genutzte Anbieter-Schlüssel",
           "description": "Mitglieder verbinden ihre eigenen ChatGPT-Abos und Anbieter-Schlüssel, teilen sie bei Bedarf und wählen pro Sitzung, welche genutzt werden."
-        },
-        "pi_worker": {
-          "name": "Pi-Worker-Laufzeit (kompiliert)",
-          "description": "Führen Sie Sitzungen mit der experimentellen Pi-Worker-Laufzeit aus."
         },
         "pi_harness": {
           "name": "Pi-Harness (in der Sandbox)",
@@ -1723,7 +1726,8 @@
     },
     "restart": {
       "label": "Sitzung neu starten",
-      "pending": "Wird neu gestartet…"
+      "pending": "Wird neu gestartet…",
+      "ownerOnly": "Nur der Sitzungsinhaber oder ein Projektmanager kann diese Sitzung neu starten."
     }
   },
   "modelSelector": {
@@ -9466,7 +9470,6 @@
       "text016cec7c484d": "Connector widerrufen",
       "text017245d54fdb": "in Slack.",
       "text018069eabbfd": "Die Definition",
-      "text018912e44371": "Kompilierten Projekt-Checkout heruntergeladen",
       "text019929eebb12": "Weise Rollen unter „Mitglieder“ (Konto) oder „Projekte“ (pro Projekt) zu. Benutzerdefinierte Rollen erscheinen in derselben Rollenauswahl wie integrierte Rollen.",
       "text01a556bb9792": "Sowohl die Rolle der Person als auch die deklarierte Berechtigung des Agenten müssen dies erlauben.",
       "text01b50fe973da": "Bereitstellungsstatus aktualisieren",
@@ -15833,6 +15836,7 @@
       "textb9819d569c9a": "Stelle einige Sandboxes bereit. Ihre Dauer und Ergebnisse werden hier angezeigt.",
       "textb99e1742613b": "- slug: morning-brief",
       "textb99fa6c06150": "Vorschau nicht verfügbar",
+      "showPreviewUnavailableHint": "Die App hat nicht geantwortet. Starte sie in deiner Sitzung und lade dann neu.",
       "textb9acc1017895": "Erstelle für jede von deinem IdP gesendete Gruppe eine Kortix-Gruppe – ohne Zuordnung pro Gruppe.",
       "textb9ad2f00fba7": "Änderungen erfordern Genehmigung",
       "textb9addc023078": "marko@kortix.com",
@@ -17685,7 +17689,6 @@
       "texted13dee8f1f7": "Das Repo ist das Unternehmen. Forken Sie es, erstellen Sie Branches, setzen Sie es zurück oder übergeben Sie es an einen neuen Computer — die gesamte Konfiguration kommt mit.",
       "texted1596a9787f": "Ein Zugriffstoken verwenden",
       "texted1d87390f65": "Geben Sie ein Gruppenattribut aus (z. B. mit dem Namen groups), das die Gruppen des Benutzers auflistet.",
-      "texted21e91b4d87": "Kompilierte Pi-Worker-Laufzeit heruntergeladen",
       "texted26c1af81cf": "Schreibtools",
       "texted2d94ab1136": "Melden Sie sich als Administrator Ihres Tenants im Microsoft Entra Admin Center (entra.microsoft.com) an.",
       "texted2e59c337d0": "Narrativ",
@@ -17864,7 +17867,6 @@
       "textf27a58a42762": "Datei konnte nicht geladen werden",
       "textf27bcbb5e1e2": "Ausblendbar",
       "textf27c4fdb823a": "Cloudflare Access übermittelt standardmäßig die E-Mail-Adresse. Fügen Sie die anderen von Kortix gelesenen Attribute – id, firstName, lastName – als „SAML attribute statements“ hinzu: jeweils ein Name plus der zugehörige Claim des vorgelagerten IdP (ein Dropdown mit den Claims Ihrer Anmeldemethode).",
-      "textf27e24caeef3": "Kompilierte Sitzungs-Laufzeit heruntergeladen",
       "textf29674479db4": "Verbindung mit OpenAI wird hergestellt …",
       "textf297f631ba78": "Es stellt die Notizen aller Interviewer zusammen, geordnet nach dem Bewertungsbogen statt danach, wer am meisten geschrieben hat, und hebt abweichende Einschätzungen hervor. Uneinigkeit sichtbar zu machen, ist der Zweck. Sie aufzulösen, ist Aufgabe des Panels.",
       "textf29ad8b8092c": "Der Attributname (groups) muss mit dem Kortix-Gruppen-Claim übereinstimmen, der beim Verbinden vorausgefüllt ist. Cloudflare übergibt die Gruppennamen, die der vorgelagerte IdP sendet.",
@@ -18828,9 +18830,7 @@
       "textb0f59e5a2722": "OAuth-Anmeldung des Modellanbieters gestartet",
       "text0dd455816ef6": "Neuaufbau des Sandbox-Snapshots gestartet",
       "text40cef5fd1dbd": "Build der Sandbox-Vorlage gestartet",
-      "text09917783e494": "Sitzungsumgebung gestartet",
       "text18065b39fc81": "Kortix App gestoppt",
-      "textb88830cc18af": "Sitzungsumgebung gestoppt",
       "text464b0b69fd48": "Computer-Tunnel-Ereignisse gestreamt",
       "text970caaaceccc": "Anfrage über Secret-Relay gestreamt",
       "text64a93d38e11a": "Secret-Relay-Antwort gestreamt",
@@ -18989,7 +18989,6 @@
       "text5ed3e15fac9f": "Übergang des Sandbox-Anbieters angezeigt",
       "text70a61d85334a": "Sitzung angezeigt",
       "textd7aa05eaf609": "Kostenjournal der Sitzung angezeigt",
-      "text4e22b3354b8f": "Sitzungsumgebung angezeigt",
       "text48b65bbc9863": "Sitzungsrichtlinie angezeigt",
       "text7c649f4bf685": "Anbieter-Secret-Pool der Sitzung angezeigt",
       "text3fd349f95ce2": "Sitzungsbereich angezeigt",
@@ -19112,6 +19111,10 @@
       "textda4bd8bdfe42": "Andere Personen brauchen zum Beitreten die Genehmigung des Sitzungseigentümers.",
       "text5dae52a3f448": "{count, plural, one {# Kanal} other {# Kanäle}}",
       "text5097881a690f": "Thread: {title}",
+      "servedModelRow": "Modell",
+      "servedModelInPlaceOf": "Anstelle von",
+      "servedModelBadge": "Läuft auf {model}",
+      "servedModelBarDescription": "{requested} hat die letzte Anfrage nicht beantwortet",
       "text414cc580557b": "Sitzungsaufforderung in der Warteschlange bearbeitet",
       "text52867b778586": "Eine kortix.yaml.",
       "textd0dfd435b2f4": "Deine KI-Belegschaft als Code.",
@@ -19231,12 +19234,24 @@
       "text09e71792c6c3": "KI-Agenten für Vertriebsteams",
       "textaaab3a59b808": "KI-Agenten für Marketingteams",
       "text8f480bae8d16": "KI-Agenten für Finanzteams",
-      "text6243d930fc1c": "AI Operating System"
+      "text6243d930fc1c": "AI Operating System",
+      "textc959682e0398": "Angemeldete Geräte angezeigt",
+      "text976811d9540a": "Ein Gerät abgemeldet"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
       "description": "Jeder mit dem Link kann dies ohne Anmeldung ansehen. Der Link bleibt aktiv, bis du ihn widerrufst.",
-      "confirm": "Link erstellen"
+      "confirm": "Link erstellen",
+      "liveTitle": "Öffentlicher Link",
+      "liveDescription": "Jeder mit dem Link kann es ohne Anmeldung ansehen.",
+      "liveCount": "{count} Links führen hierher; Widerrufen deaktiviert alle.",
+      "copy": "Kopieren",
+      "revoke": "{count, plural, one {Link widerrufen} other {# Links widerrufen}}",
+      "createDescription": "Jeder mit dem Link kann dies ohne Anmeldung ansehen.",
+      "expiresAfter": "Läuft ab nach",
+      "cancel": "Abbrechen",
+      "expiryNever": "Nie",
+      "expiryDays": "{count, plural, one {# Tag} other {# Tagen}}"
     },
     "publicTranscriptShare": {
       "sectionTitle": "Öffentlicher Link",
@@ -20514,5 +20529,20 @@
     "people": "Personen in dieser Sitzung: {names}",
     "peopleMore": "Personen in dieser Sitzung: {names} und {count} weitere",
     "more": "{count} weitere können diese Sitzung öffnen"
+  },
+  "demoBooking": {
+    "meetingTitle": "Kortix-Demo",
+    "stepDetails": "Deine Angaben",
+    "stepTime": "Termin wählen",
+    "formTitle": "Bevor wir einen Termin wählen",
+    "formDescription": "Damit bereiten wir eine Vorführung für dein Team vor.",
+    "seeTimes": "Freie Termine ansehen",
+    "close": "Schließen",
+    "bookedLabel": "Termin bestätigt",
+    "bookedMeta": "{minutes} Min. · Link in deiner Einladung",
+    "inviteSent": "Einladung an {email} gesendet",
+    "reschedule": "Anderer Termin? Nutze den Link in der Einladung.",
+    "addToCalendar": "Zum Kalender hinzufügen",
+    "done": "Fertig"
   }
 }

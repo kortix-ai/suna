@@ -13,8 +13,8 @@ import { decodeSupabaseJwtPayload, verifySupabaseJwt } from '../shared/jwt-verif
 import { isInconclusiveVerifyFailure } from '../shared/jwt-verify-outcome';
 import { setSentryUser } from '../lib/sentry';
 import { setContextField } from '../lib/request-context';
-import { auditLoginFail, auditLoginSuccess } from '../shared/auth-audit';
-import { requestClientKey } from '../shared/client-ip';
+import { auditLoginFail, auditLoginSuccess } from './auth-audit';
+import { requestClientKey } from './client-ip';
 import { isOAuthAccessToken, oauthScopeAllowsPath, validateOAuthAccessToken } from '../oauth/access-token';
 import { applyImpersonation } from './impersonation';
 import { withActor } from './auth-actor';
@@ -25,6 +25,7 @@ import { serviceAccountPrincipal, patPrincipal, jwtPrincipal } from './auth-prin
 import { applyOAuthAccessTokenPrincipal } from './auth-oauth';
 import { deadCredential401 } from './auth';
 import { enforceTokenProjectScope, extractPreviewSandboxId, setPreviewSessionCookie } from './auth-scope';
+import { bearerToken } from '../shared/bearer-token';
 
 const PREVIEW_SESSION_COOKIE = '__preview_session';
 
@@ -86,11 +87,7 @@ function extractToken(c: Context, previewSandboxId: string | null) {
   // Extract token: header → X-Kortix-Token (preview only) → cookie → query param
   const authHeader = c.req.header('Authorization');
   const kortixTokenHeader = previewSandboxId ? c.req.header('X-Kortix-Token') : undefined;
-  let token: string | undefined;
-
-  if (authHeader?.startsWith('Bearer ')) {
-    token = authHeader.slice(7);
-  }
+  let token: string | undefined = bearerToken(authHeader) ?? undefined;
 
   if (!token && kortixTokenHeader && isKortixToken(kortixTokenHeader)) {
     token = kortixTokenHeader;

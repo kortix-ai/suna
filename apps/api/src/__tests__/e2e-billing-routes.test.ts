@@ -55,6 +55,8 @@ mock.module('../middleware/auth', () => ({
 
 mock.module('../shared/resolve-account', () => ({
   resolveAccountId: async () => TEST_USER_ID,
+}));
+mock.module('../middleware/resolve-account', () => ({
   resolveScopedAccountId: async () => TEST_USER_ID,
 }));
 

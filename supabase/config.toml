@@ -43,6 +43,12 @@ enable_signup = true
 refresh_token_rotation_enabled = true
 refresh_token_reuse_interval = 0
 
+# Authenticator-app (TOTP) MFA: Settings → Security enrolls a factor, and the
+# step-up dialog verifies it. Without this section GoTrue rejects both calls.
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
+
 [auth.email]
 enable_signup = true
 enable_confirmations = false

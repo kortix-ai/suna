@@ -613,20 +613,20 @@
       "twoFactorDescription": "2 番目の要素により、サインインが危険にさらされた場合でもアカウントは安全に保たれます。",
       "authenticatorApp": "認証アプリ",
       "authenticatorDescription": "認証アプリ (TOTP) を 2 番目の要素として追加します。",
-      "sessionVerified": "セッションが検証されました",
-      "enrolled": "登録済み",
+      "statusOn": "オン · サインイン時と重要な変更の前に確認します",
       "addAuthenticatorApp": "認証アプリを追加する",
       "factorsLoadFailed": "認証アプリをロードできませんでした",
       "retry": "リトライ",
       "factorsUnchanged": "2 要素の設定は変更されません。これはリストのロードが失敗しているだけです。",
       "noFactorEnrolled": "第 2 要素は登録されていません",
       "noFactorDescription": "組織で MFA が必要な場合、ここで認証システムを登録するまで、ゲートされたアクションはブロックされます。",
-      "scanTitle": "認証アプリでスキャンする",
-      "scanDescription": "1Password、Google Authenticator、または任意の TOTP アプリを使用し、表示される 6 桁のコードを入力します。",
+      "scanTitle": "スマートフォンでスキャン",
+      "scanDescription": "認証アプリを開いて、このコードをスキャンしてください。",
       "qrAlt": "TOTP 登録 QR コード",
-      "manualSecret": "手動入力の秘密",
-      "sixDigitCode": "6桁のコード",
-      "verifyAndEnable": "確認して有効にする",
+      "manualSecret": "スキャンできない場合はこのキーを入力",
+      "codeTitle": "コードを入力",
+      "codeDescription": "アプリに表示される6桁を入力してください。自動で確認されます。",
+      "verifyAndEnable": "確認",
       "cancel": "キャンセル",
       "removeFactorTitle": "この要素を削除しますか?",
       "removeFactorDescription": "組織で MFA が必要で、これが唯一の検証済み要素である場合、再度登録するまでゲート アクションからロックアウトされます。",
@@ -643,10 +643,17 @@
       "signOutOtherDevicesFailed": "他のデバイスからサインアウトできませんでした",
       "currentDevice": "このブラウザー",
       "deviceSignedInAt": "{date}にサインイン",
-      "deviceActive": "アクティブ",
       "noDevices": "サインイン中のデバイスはありません",
       "noDevicesDescription": "現在どのデバイスでもサインインしていません。",
-      "devicesLoadFailed": "サインイン中のデバイスを読み込めませんでした"
+      "devicesLoadFailed": "サインイン中のデバイスを読み込めませんでした",
+      "deviceName": "{os} の {browser}",
+      "unknownDevice": "不明なデバイス",
+      "deviceLastActive": "最終アクティブ: {date}",
+      "signOutDevice": "サインアウト",
+      "signedOutDevice": "そのデバイスからサインアウトしました",
+      "signOutDeviceFailed": "そのデバイスからサインアウトできませんでした",
+      "copyIp": "IP アドレスをコピー",
+      "ipCopied": "IP アドレスをコピーしました"
     },
     "appearance": {
       "theme": "テーマ",
@@ -1158,10 +1165,6 @@
         "pooled_provider_secrets": {
           "name": "共有プロバイダーシークレット",
           "description": "メンバーが自分の ChatGPT サブスクリプションとプロバイダーキーを接続し、必要に応じて共有し、セッションごとに使用するものを選択します。"
-        },
-        "pi_worker": {
-          "name": "Pi ワーカーランタイム（コンパイル済み）",
-          "description": "試験運用中の Pi ワーカーランタイムでセッションを実行します。"
         },
         "pi_harness": {
           "name": "Pi ハーネス（サンドボックス内）",
@@ -1723,7 +1726,8 @@
     },
     "restart": {
       "label": "セッションを再起動",
-      "pending": "再起動中…"
+      "pending": "再起動中…",
+      "ownerOnly": "このセッションを再起動できるのは、セッションの所有者またはプロジェクト管理者のみです。"
     }
   },
   "modelSelector": {
@@ -9466,7 +9470,6 @@
       "text016cec7c484d": "コネクタを取り消しました",
       "text017245d54fdb": "（Slack内）。",
       "text018069eabbfd": "定義",
-      "text018912e44371": "コンパイル済みプロジェクトチェックアウトをダウンロードしました",
       "text019929eebb12": "メンバー（アカウント単位）またはプロジェクト（プロジェクト単位）からロールを割り当てます。カスタムロールは組み込みロールと同じロール選択欄に表示されます。",
       "text01a556bb9792": "ユーザーのロールとエージェントが宣言した権限の両方で許可される必要があります。",
       "text01b50fe973da": "プロビジョニングの状態を更新",
@@ -15833,6 +15836,7 @@
       "textb9819d569c9a": "いくつかのサンドボックスをプロビジョニングすると、所要時間と結果がここに表示されます",
       "textb99e1742613b": "- slug: morning-brief",
       "textb99fa6c06150": "プレビューを利用できません",
+      "showPreviewUnavailableHint": "アプリが応答しませんでした。セッションで起動してから更新してください。",
       "textb9acc1017895": "IdPから送信されたグループごとにKortixグループを作成します — グループ単位のマッピングは不要です。",
       "textb9ad2f00fba7": "変更が必要です",
       "textb9addc023078": "marko@kortix.com",
@@ -17685,7 +17689,6 @@
       "texted13dee8f1f7": "repoが会社そのものです。fork、branch、ロールバック、新しいマシンへの引き渡しができ、設定全体が一緒に移行します。",
       "texted1596a9787f": "アクセストークンを使用",
       "texted1d87390f65": "ユーザーのグループ一覧を示す group 属性（例：groups）を送信します。",
-      "texted21e91b4d87": "コンパイル済み pi worker ランタイムをダウンロードしました",
       "texted26c1af81cf": "書き込みツール",
       "texted2d94ab1136": "テナントの管理者としてMicrosoft Entra admin center（entra.microsoft.com）にサインインします。",
       "texted2e59c337d0": "ナラティブ",
@@ -17864,7 +17867,6 @@
       "textf27a58a42762": "ファイルを読み込めませんでした",
       "textf27bcbb5e1e2": "閉じることが可能",
       "textf27c4fdb823a": "Cloudflare Access はデフォルトで email を渡します。Kortix が読み取る他の属性（id、firstName、lastName）を「SAML attribute statements」として追加します。それぞれ Name と、対応付ける上流 IdP の claim（ログイン方法の claim のドロップダウン）を指定します。",
-      "textf27e24caeef3": "コンパイル済みセッションランタイムをダウンロードしました",
       "textf29674479db4": "OpenAIに接続しています…",
       "textf297f631ba78": "全面接官の記録を、入力者ごとではなく評価基準に沿って整理し、意見が分かれた点を強調します。意見の相違を表面化することが目的で、解決するのは面接パネルの仕事です。",
       "textf29ad8b8092c": "属性名（groups）は、接続ステップで事前入力されたKortixのgroup claimと一致させる必要があります。Cloudflareは上流のIdPが送信したグループ名をそのまま渡します。",
@@ -18828,9 +18830,7 @@
       "textb0f59e5a2722": "モデルプロバイダーの OAuth ログインを開始しました",
       "text0dd455816ef6": "サンドボックススナップショットの再構築を開始しました",
       "text40cef5fd1dbd": "サンドボックステンプレートのビルドを開始しました",
-      "text09917783e494": "セッション環境を起動しました",
       "text18065b39fc81": "Kortix App を停止しました",
-      "textb88830cc18af": "セッション環境を停止しました",
       "text464b0b69fd48": "コンピュータトンネルのイベントをストリーミングしました",
       "text970caaaceccc": "シークレットリレー経由でリクエストをストリーミングしました",
       "text64a93d38e11a": "シークレットリレーの応答をストリーミングしました",
@@ -18989,7 +18989,6 @@
       "text5ed3e15fac9f": "サンドボックスプロバイダーの移行を表示しました",
       "text70a61d85334a": "セッションを表示しました",
       "textd7aa05eaf609": "セッションコストの台帳を表示しました",
-      "text4e22b3354b8f": "セッション環境を表示しました",
       "text48b65bbc9863": "セッションポリシーを表示しました",
       "text7c649f4bf685": "セッションプロバイダーのシークレットプールを表示しました",
       "text3fd349f95ce2": "セッションスコープを表示しました",
@@ -19112,6 +19111,10 @@
       "textda4bd8bdfe42": "他の人が参加するには、セッションのオーナーの承認が必要です。",
       "text5dae52a3f448": "{count, plural, one {# チャンネル} other {# チャンネル}}",
       "text5097881a690f": "スレッド: {title}",
+      "servedModelRow": "モデル",
+      "servedModelInPlaceOf": "代替元",
+      "servedModelBadge": "{model} で実行中",
+      "servedModelBarDescription": "{requested} は直前のリクエストに応答しませんでした",
       "text414cc580557b": "キューに入ったセッションプロンプトを編集しました",
       "text52867b778586": "kortix.yaml ひとつ。",
       "textd0dfd435b2f4": "AI の労働力を、コードとして。",
@@ -19231,12 +19234,24 @@
       "text09e71792c6c3": "営業チーム向けAIエージェント",
       "textaaab3a59b808": "マーケティングチーム向けAIエージェント",
       "text8f480bae8d16": "経理・財務チーム向けAIエージェント",
-      "text6243d930fc1c": "AI Operating System"
+      "text6243d930fc1c": "AI Operating System",
+      "textc959682e0398": "サインイン中のデバイスを表示しました",
+      "text976811d9540a": "デバイスをサインアウトしました"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
       "description": "リンクを知っている人は誰でもサインインせずに閲覧できます。リンクは取り消すまで有効です。",
-      "confirm": "リンクを作成"
+      "confirm": "リンクを作成",
+      "liveTitle": "公開リンク",
+      "liveDescription": "リンクを知っている人は誰でもサインインせずに閲覧できます。",
+      "liveCount": "{count} 件のリンクがここを指しています。取り消すとすべて無効になります。",
+      "copy": "コピー",
+      "revoke": "{count, plural, other {# 件のリンクを取り消す}}",
+      "createDescription": "リンクを知っている人は誰でもサインインせずにこれを閲覧できます。",
+      "expiresAfter": "有効期限",
+      "cancel": "キャンセル",
+      "expiryNever": "なし",
+      "expiryDays": "{count, plural, other {# 日}}"
     },
     "publicTranscriptShare": {
       "sectionTitle": "公開リンク",
@@ -20514,5 +20529,20 @@
     "people": "このセッションの参加者: {names}",
     "peopleMore": "このセッションの参加者: {names} ほか{count}人",
     "more": "ほか{count}人がこのセッションを開けます"
+  },
+  "demoBooking": {
+    "meetingTitle": "Kortix デモ",
+    "stepDetails": "お客様情報",
+    "stepTime": "日時を選択",
+    "formTitle": "日時を選ぶ前に",
+    "formDescription": "チームに合わせたデモの準備に使います。",
+    "seeTimes": "空いている日時を見る",
+    "close": "閉じる",
+    "bookedLabel": "予約が確定しました",
+    "bookedMeta": "{minutes} 分 · リンクは招待状に記載",
+    "inviteSent": "{email} に招待状を送信しました",
+    "reschedule": "日時を変更する場合は招待状のリンクを使ってください。",
+    "addToCalendar": "カレンダーに追加",
+    "done": "完了"
   }
 }
