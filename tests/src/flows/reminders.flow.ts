@@ -161,23 +161,38 @@ flow(
         (await ctx.client.as(ctx.P.OWNER).get(REMINDERS, { params: sibling })).status(200).body().has('$.reminders', []);
       });
 
+      const cliEnv = {
+        KORTIX_TOKEN: own.secret,
+        KORTIX_API_URL: ctx.env.apiUrl,
+        KORTIX_PROJECT_ID: project.id,
+        KORTIX_SESSION_ID: own.sessionId,
+      };
+
       await ctx.step('real CLI inside the session: `kortix remind … --in 2h --json` exits 0 and the API reads it back', async () => {
-        const env = {
-          KORTIX_TOKEN: own.secret,
-          KORTIX_API_URL: ctx.env.apiUrl,
-          KORTIX_PROJECT_ID: project.id,
-          KORTIX_SESSION_ID: own.sessionId,
-        };
-        const created = await sandbox.run(['remind', 'Did the vendor email arrive?', '--in', '2h', '--json'], { env });
+        const created = await sandbox.run(['remind', 'Did the vendor email arrive?', '--in', '2h', '--json'], { env: cliEnv });
         if (created.exitCode !== 0) throw new Error(`remind exit ${created.exitCode}: ${created.all.slice(0, 600)}`);
         const reminder = JSON.parse(created.stdout.trim()) as Reminder;
         if (reminder.state !== 'active' || reminder.every !== null) throw new Error(`unexpected ${created.stdout}`);
-        const listed = await sandbox.run(['reminders', 'ls', '--json'], { env });
+        const listed = await sandbox.run(['reminders', 'ls', '--json'], { env: cliEnv });
         if (!listed.stdout.includes(reminder.id)) throw new Error(`ls lacks ${reminder.id}: ${listed.all.slice(0, 600)}`);
-        const removed = await sandbox.run(['reminders', 'rm', reminder.id], { env });
+        const removed = await sandbox.run(['reminders', 'rm', reminder.id], { env: cliEnv });
         if (removed.exitCode !== 0) throw new Error(`rm exit ${removed.exitCode}: ${removed.all.slice(0, 600)}`);
         const after = (await own.client.get(REMINDERS, { params })).json<{ reminders: Reminder[] }>().reminders;
         if (after.some((r) => r.id === reminder.id)) throw new Error('rm did not delete the reminder');
+      });
+
+      await ctx.step('real CLI: a named reminder lists its prompt in TEXT and its name in NAME (dogfood regression)', async () => {
+        const created = await sandbox.run(['remind', 'Say pong again', '--in', '2h', '--name', 'pong-check', '--json'], { env: cliEnv });
+        if (created.exitCode !== 0) throw new Error(`remind exit ${created.exitCode}: ${created.all.slice(0, 600)}`);
+        const named = JSON.parse(created.stdout.trim()) as Reminder;
+        const listed = await sandbox.run(['reminders', 'ls'], { env: cliEnv });
+        if (listed.exitCode !== 0) throw new Error(`ls exit ${listed.exitCode}: ${listed.all.slice(0, 600)}`);
+        const row = listed.stdout.split('\n').find((l) => l.includes(named.id)) ?? '';
+        if (!row.includes('pong-check') || !row.includes('Say pong again')) {
+          throw new Error(`ls row for a named reminder lacks the prompt or the name: ${row.slice(0, 300)}`);
+        }
+        const removed = await sandbox.run(['reminders', 'rm', named.id], { env: cliEnv });
+        if (removed.exitCode !== 0) throw new Error(`rm exit ${removed.exitCode}: ${removed.all.slice(0, 600)}`);
       });
 
       await ctx.step('another human setting a reminder on a shared session → 201; on_behalf_of stays the launcher until the fire is delivered', async () => {
