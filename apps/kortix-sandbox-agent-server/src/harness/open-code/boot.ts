@@ -78,6 +78,7 @@ import {
   type TurnEndFrame,
 } from '../shared/turn-relay'
 import { relayQuestionToApi } from './question-relay'
+import { observeSteerRead } from './turns'
 import { readControlPlaneEnv, sandboxRelayContext } from '@/lib/kortix-api/relay-context'
 import { observeIdleForRunaway } from './runaway-turn-guard'
 import {
@@ -694,6 +695,7 @@ async function startSessionRuntime(
     try {
       publishOpenCodeEvent(kortixEventBus(), event)
       runtimeStateStore()?.noteEvent(event)
+      observeSteerRead(event)
       // A catalog-moving frame re-pushes the projection (debounced, etag-gated).
       if (event.type && CATALOG_MOVING_EVENT_TYPES.has(event.type)) {
         scheduleRuntimeProjectionPush(event.type)

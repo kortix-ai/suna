@@ -29,12 +29,12 @@ permissions:
   id-token: write
 
 env:
-  AWS_REGION: us-west-2
+  AWS_REGION: eu-west-2
   NAMESPACE: kortix-staging
   STAGING_SUPABASE_REF: ujzsbwvurfyeuerxxeaz
   API_APP: kortix-api
   GATEWAY_APP: kortix-gateway
-  API_HOST: staging-api-ecs-fargate.kortix.com
+  API_HOST: staging-api-euw2.kortix.com
   GATEWAY_HOST: gateway-staging.kortix.com
   PUBLIC_API_HOST: staging-api.kortix.com
   WEB_HOST: staging.kortix.com
@@ -108,8 +108,8 @@ jobs:
       id-token: write
     uses: ./.github/workflows/terraform-apply.yml
     with:
-      tf_root: infra/terraform/environments/staging
-      aws_region: us-west-2
+      tf_root: infra/terraform/environments/staging-eu-west-2
+      aws_region: eu-west-2
       role_arn: ${{ vars.TF_APPLY_ROLE_ARN_STAGING }}
       github_environment: staging
       trusted_branch: staging
@@ -127,8 +127,8 @@ jobs:
       id-token: write
     uses: ./.github/workflows/terraform-apply.yml
     with:
-      tf_root: infra/terraform/environments/staging-web
-      aws_region: us-west-2
+      tf_root: infra/terraform/environments/staging-web-eu-west-2
+      aws_region: eu-west-2
       role_arn: ${{ vars.TF_APPLY_ROLE_ARN_STAGING }}
       github_environment: staging
       trusted_branch: staging
@@ -296,7 +296,7 @@ jobs:
           node-version: 22
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.3.14
       - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile --filter "@kortix/db..." --filter "kortix"
         env:
@@ -311,6 +311,7 @@ jobs:
       - name: Read credentials from AWS Secrets Manager
         uses: ./.aws-env/.github/actions/aws-env
         with:
+          aws-region: eu-west-2
           keys: |
             DATABASE_URL=kortix-staging-env:DATABASE_URL
       - name: Apply pending migrations (node-pg-migrate; halts on failure)
@@ -344,7 +345,7 @@ jobs:
       id-token: write # OIDC → ECS deploy role
       contents: read
     env:
-      AWS_REGION: us-west-2
+      AWS_REGION: eu-west-2
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
       SHA8: ${{ needs.preflight.outputs.sha8 }}
       VERSION: ${{ needs.preflight.outputs.version }}
@@ -376,7 +377,7 @@ jobs:
       # infra/terraform/modules/project-snapshots-bucket): that role has NO
       # s3:DeleteObject, and expiry is safe because the archive is a cache the
       # API rebuilds from its Git mirror.
-      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-staging-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-west-2","AUDIT_ARCHIVE_BUCKET":"kortix-staging-audit-archive","AUDIT_ARCHIVE_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-staging-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}'
+      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-staging-euw2-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"eu-west-2","AUDIT_ARCHIVE_BUCKET":"kortix-staging-euw2-audit-archive","AUDIT_ARCHIVE_REGION":"eu-west-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-staging-euw2-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"eu-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}'
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)
@@ -386,8 +387,8 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
       - name: Roll staging ECS (api + gateway) from the staging-env blob
         run: |
-          bash infra/scripts/ecs-deploy.sh staging "kortix/kortix-api:staging-${SHA8}" --version "${VERSION}"
-          bash infra/scripts/ecs-deploy.sh staging "kortix/kortix-gateway:staging-${SHA8}" --service gateway --version "${VERSION}"
+          bash infra/scripts/ecs-deploy.sh staging-euw2 "kortix/kortix-api:staging-${SHA8}" --version "${VERSION}"
+          bash infra/scripts/ecs-deploy.sh staging-euw2 "kortix/kortix-gateway:staging-${SHA8}" --service gateway --version "${VERSION}"
 
   wire-cloudflare:
     name: Wire Cloudflare staging DNS and Worker
@@ -476,10 +477,12 @@ jobs:
             main_module: "worker.mjs",
             compatibility_date: "2026-06-01",
             bindings: ([
-              {type:"plain_text", name:"ACTIVE_BACKEND", text:"ecs-fargate"},
+              {type:"plain_text", name:"ACTIVE_BACKEND", text:"eu-west-2"},
               {type:"plain_text", name:"BACKEND_ECS_FARGATE", text:"https://staging-api-ecs-fargate.kortix.com"},
-              {type:"plain_text", name:"GATEWAY_ACTIVE_BACKEND", text:"ecs-fargate"},
-              {type:"plain_text", name:"GATEWAY_BACKEND_ECS_FARGATE", text:"https://gateway-staging-ecs-fargate.kortix.com"}
+              {type:"plain_text", name:"BACKEND_EU_WEST_2", text:"https://staging-api-euw2.kortix.com"},
+              {type:"plain_text", name:"GATEWAY_ACTIVE_BACKEND", text:"eu-west-2"},
+              {type:"plain_text", name:"GATEWAY_BACKEND_ECS_FARGATE", text:"https://gateway-staging-ecs-fargate.kortix.com"},
+              {type:"plain_text", name:"GATEWAY_BACKEND_EU_WEST_2", text:"https://gateway-staging-euw2.kortix.com"}
             ] + $ci)
           }')"
           curl -fsS -X PUT \
@@ -580,7 +583,7 @@ jobs:
           VERSION: ${{ needs.preflight.outputs.version }}
         run: |
           bash infra/scripts/ecs-deploy.sh \
-            staging \
+            staging-euw2 \
             "kortix/kortix-frontend:staging-${SHA8}" \
             --service web \
             --version "${VERSION}"
@@ -618,7 +621,7 @@ jobs:
         run: |
           set -euo pipefail
           alb="$(aws elbv2 describe-load-balancers \
-            --names kortix-staging-web-alb \
+            --names kortix-staging-euw2-web-alb \
             --query 'LoadBalancers[0].DNSName' \
             --output text)"
           node infra/scripts/sync-web-dns.mjs staging "$alb"
@@ -642,6 +645,7 @@ jobs:
       - name: Read credentials from AWS Secrets Manager
         uses: ./.aws-env/.github/actions/aws-env
         with:
+          aws-region: eu-west-2
           keys: |
             VERCEL_TOKEN
             VERCEL_PROJECT_ID
@@ -731,9 +735,10 @@ jobs:
       - name: Read credentials from AWS Secrets Manager
         uses: ./.aws-env/.github/actions/aws-env
         with:
+          aws-region: eu-west-2
           keys: |
             VERCEL_BYPASS=kortix-ci-env:VERCEL_AUTOMATION_BYPASS_SECRET
-            WEB_PROTECTION_PASSWORD=kortix-staging-web-env:WEB_PROTECTION_PASSWORD
+            WEB_PROTECTION_PASSWORD=kortix-staging-euw2-web-env:WEB_PROTECTION_PASSWORD
       - name: Verify API and both web deployment paths
         env:
           EXPECTED_COMMIT: ${{ needs.preflight.outputs.sha }}

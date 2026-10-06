@@ -54,21 +54,22 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { MFA_AAL_QUERY_KEY, MFA_FACTORS_QUERY_KEY } from '@/hooks/account/use-mfa';
 import { useTranslations } from '@/i18n/use-translations';
 
+import { MFA_VERIFIED_EVENT, armPendingMfaAction, clearPendingMfaAction } from './mfa-pending-action';
+
 export const MFA_REQUIRED_EVENT = 'kortix:mfa-required';
-export const MFA_VERIFIED_EVENT = 'kortix:mfa-verified';
+export { MFA_VERIFIED_EVENT };
 
 /**
  * Run `action` now, or — while this session still owes a TOTP challenge — open
- * the step-up dialog first and run `action` once the code verifies. Same
- * contract as `chat-identity-connect`: the action stays armed if the dialog is
- * cancelled and runs at the next verified session.
+ * the step-up dialog first and run `action` once the code verifies. One action
+ * is armed at a time (the latest wins) and cancelling the dialog drops it.
  */
 export function requestMfaStepUp(challengeRequired: boolean, action: () => void): void {
   if (!challengeRequired) {
     action();
     return;
   }
-  window.addEventListener(MFA_VERIFIED_EVENT, () => action(), { once: true });
+  armPendingMfaAction(action);
   window.dispatchEvent(new CustomEvent(MFA_REQUIRED_EVENT));
 }
 
@@ -220,7 +221,10 @@ export function MfaStepUpProvider({ children }: { children?: React.ReactNode }) 
       <MfaChallengeDialog
         open={open}
         dismissible
-        onDismiss={() => setOpen(false)}
+        onDismiss={() => {
+          clearPendingMfaAction();
+          setOpen(false);
+        }}
         onVerified={() => setOpen(false)}
       />
     </>

@@ -1002,7 +1002,7 @@ describe('SessionPage message queue', () => {
   const inboxPosts = () =>
     fetchCalls.filter((c) => c.method === 'POST' && c.url.endsWith('/projects/proj-1/sessions/ps-1/prompts'));
 
-  test('a queued message goes to the server inbox in order with the composer overrides', async () => {
+  test('a message sent while the agent works steers the running turn', async () => {
     await renderPage();
     const options = { agent: 'builder', model: { providerID: 'prov', modelID: 'mod' }, variant: 'high' };
     await act(async () => {
@@ -1010,7 +1010,9 @@ describe('SessionPage message queue', () => {
       await composerProps.onEnqueue('second', {});
     });
     expect(inboxPosts().map((c) => (c.body as any).parts[0].text)).toEqual(['first', 'second']);
+    // `steer` keeps `placement: 'composer'`: an older API reads it as a queued row.
     expect(inboxPosts()[0].body).toMatchObject({
+      delivery: 'steer',
       placement: 'composer',
       overrides: { agent: 'builder', model: { providerID: 'prov', modelID: 'mod' }, variant: 'high' },
     });

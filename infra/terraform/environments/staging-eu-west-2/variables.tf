@@ -100,11 +100,22 @@ variable "enable_https" {
 
 variable "manage_dns" {
   description = <<-EOT
-    Manage the SHADOW verification Cloudflare records (staging-api-euw2-shadow
-    / gateway-staging-euw2-shadow) that point at this root's ALBs. Does NOT
-    touch staging-api-ecs-fargate.kortix.com or
-    gateway-staging-ecs-fargate.kortix.com until the runbook's cutover step.
+    Manage this stack's origin records (staging-api-euw2 /
+    gateway-staging-euw2), which point at this root's ALBs. The records for
+    ../staging (staging-api-ecs-fargate / gateway-staging-ecs-fargate) stay in
+    ../staging.
   EOT
   type        = bool
   default     = true
+}
+
+variable "api_task_count" {
+  description = <<-EOT
+    API task floor (desired_count and min_capacity). 6 is staging's release
+    sizing. While ../staging still runs its 6 tasks against the same database,
+    apply with 2: the staging database allows 120 connections and each API
+    task holds up to 9, so 6 + 6 tasks would leave about 10 free.
+  EOT
+  type        = number
+  default     = 6
 }

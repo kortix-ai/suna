@@ -229,7 +229,14 @@ withDb('account deletion on PostgreSQL', () => {
     // memberships, PATs, chat threads, gateway state…) and the swept orphans
     // (api keys, sandbox/session plane, tunnels, connectors, apps, admin
     // plane) alike.
-    expect(await accountScopedTablesWithRows(ACCOUNT_ID)).toEqual([]);
+    // The one retained row is the deletion receipt: the request, `completed`,
+    // its free-text reason scrubbed.
+    expect(await accountScopedTablesWithRows(ACCOUNT_ID)).toEqual(['account_deletion_requests']);
+    expect(
+      await rows<{ status: string; reason: string | null }>(
+        sql`SELECT status, reason FROM kortix.account_deletion_requests WHERE account_id = ${ACCOUNT_ID}`,
+      ),
+    ).toEqual([{ status: 'completed', reason: null }]);
 
     // The neighboring account is untouched.
     expect(await countWhere('accounts', sql`account_id = ${OTHER_ACCOUNT_ID}`)).toBe(1);

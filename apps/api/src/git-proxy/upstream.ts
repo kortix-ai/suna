@@ -3,8 +3,6 @@
  * boots the OpenAPI app on import) so they stay trivially unit-testable with no
  * DB/network/app deps.
  */
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
-
 /**
  * Bun fetch errors thrown when an upstream socket drops mid-request or
  * mid-stream. These are transient (upstream/network), so for idempotent
@@ -45,7 +43,7 @@ export async function fetchUpstreamBuffered(
 ): Promise<Response> {
   const retries = opts.retries ?? 2;
   const doFetch = opts.fetchImpl ?? fetch;
-  const doSleep = opts.sleepFn ?? sleep;
+  const doSleep = opts.sleepFn ?? Bun.sleep;
   let lastErr: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {

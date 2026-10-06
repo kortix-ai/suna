@@ -19,11 +19,11 @@
  */
 import { eq, inArray } from 'drizzle-orm';
 import {
-  accountGroupMembers,
   projectSessionGrants,
   projectSessions,
 } from '@kortix/db';
 import { db } from '../shared/db';
+import { groupIdsOfUser } from '../iam/group-read';
 
 export type ShareScope = 'project' | 'restricted';
 
@@ -112,10 +112,7 @@ export function parseSharingIntent(body: any, fallbackOwner: string): SharingInt
 
 /** Resolve a user's group memberships → the subject the gateway authorizes with. */
 export async function resolveShareSubject(userId: string): Promise<ShareSubject> {
-  const rows = await db
-    .select({ groupId: accountGroupMembers.groupId })
-    .from(accountGroupMembers)
-    .where(eq(accountGroupMembers.userId, userId));
+  const rows = await groupIdsOfUser(userId);
   return { userId, groupIds: rows.map((r) => r.groupId) };
 }
 

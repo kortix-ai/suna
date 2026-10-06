@@ -474,6 +474,7 @@ describe('buildConfigRelease', () => {
     expect(release.release_id).toBeNull();
     expect(release.config_tree_id).toMatch(/^[0-9a-f]{40}$/);
     expect(release.reason).toContain(`exceeds the ${32 * 1024}-byte config archive limit`);
+    expect(release.reason).toContain('`kortix validate` lists the largest files');
     expect(store.objects.size).toBe(0);
     // The answer is a fact of the commit: every box's descriptor request (one
     // per minute per box) must not rebuild and gzip the whole tree again.

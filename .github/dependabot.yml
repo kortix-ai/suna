@@ -6,8 +6,8 @@ updates:
   # JS/TS dependencies (pnpm uses the npm ecosystem).
   - package-ecosystem: "npm"
     directory: "/"
-    # main is the dev trunk. A pull request into main runs no CI.
-    target-branch: "main"
+    # dev is the dev trunk. A pull request into dev runs no CI.
+    target-branch: "dev"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -15,7 +15,7 @@ updates:
     # Before merging, check out the branch and run
     # `pnpm install --frozen-lockfile --lockfile-only --ignore-scripts`, then
     # `pnpm test`. #7518 merged a package.json bump whose root pnpm-lock.yaml
-    # was stale: every Tests lane on main then failed at install.
+    # was stale: every Tests lane on dev then failed at install.
     labels: ["dependencies"]
     groups:
       # Batch low-risk minor/patch bumps into one PR to cut review noise.
@@ -26,7 +26,7 @@ updates:
   # Keep GitHub Actions pinned and current (supply-chain hygiene).
   - package-ecosystem: "github-actions"
     directory: "/"
-    target-branch: "main"
+    target-branch: "dev"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -37,7 +37,7 @@ updates:
       - "/infra/terraform/modules/*"
       - "/infra/terraform/environments/*"
       - "/infra/terraform/environments/*/*"
-    target-branch: "main"
+    target-branch: "dev"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -50,7 +50,7 @@ updates:
       - "/apps/web"
       - "/apps/sandbox"
       - "/.kortix"
-    target-branch: "main"
+    target-branch: "dev"
     schedule:
       interval: "weekly"
       day: "monday"
