@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/marketing/button';
+import { cn } from '@/lib/utils';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from '@/components/site-link';
 
@@ -43,16 +44,20 @@ export function PlatformCard({
   description,
   rows,
   filled,
+  className,
 }: {
   image: React.ReactNode;
   title: string;
   description: string;
   rows: CardRow[];
   filled: Platform | null;
+  className?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
-    <section className="bg-popover flex flex-col overflow-hidden rounded-md border">
+    <section
+      className={cn('bg-popover flex flex-col overflow-hidden rounded-md border', className)}
+    >
       {image}
 
       <div className="px-5 pt-5 pb-4">

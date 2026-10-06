@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { MOBILE_CARD, MOBILE_ROWS } from './content';
-import { orderedMobile } from './detect-os';
+import { MOBILE_ORDER } from './detect-os';
 import { type CardRow, PlatformCard } from './platform-card';
 
 const Mark = () => <svg />;
@@ -11,7 +11,7 @@ const Mark = () => <svg />;
  * The mobile rows exactly as `/download` builds them, so this file fails when
  * the page changes, not only when the card does.
  */
-const mobileRows: CardRow[] = orderedMobile('macos').map((os) => ({
+const mobileRows: CardRow[] = MOBILE_ORDER.map((os) => ({
   id: os,
   label: MOBILE_ROWS[os].label,
   meta: MOBILE_ROWS[os].hint,
