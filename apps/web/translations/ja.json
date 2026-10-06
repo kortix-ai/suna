@@ -196,6 +196,12 @@
   "newWorkspace": {
     "title": "プロジェクトを作成",
     "description": "プロジェクトにはエージェント、ファイル、セッションが保存されます。",
+    "handoff": {
+      "validating": "検証中",
+      "creating_repository": "リポジトリを作成中",
+      "registering": "プロジェクトを登録中",
+      "seeding": "スターターファイルを準備中"
+    },
     "templateSeed": "このプロジェクトは選択したテンプレートからセットアップされます。",
     "account": {
       "label": "アカウント",
@@ -1540,6 +1546,7 @@
         "email": "電子メール",
         "scheduled": "スケジュール済み",
         "webhook": "Webhook",
+        "manual": "手動",
         "all": "すべて"
       },
       "statusValue": {

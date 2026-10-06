@@ -31,6 +31,7 @@ import { startProjectMaintenance, stopProjectMaintenance } from './workers/proje
 import { startProjectSnapshotWorker, stopProjectSnapshotWorker } from './workers/project-snapshot-worker';
 import { startProviderTransitionWorker, stopProviderTransitionWorker } from './workers/provider-transition-worker';
 import { startSessionLifecycleWorker, stopSessionLifecycleWorker } from './workers/session-lifecycle-worker';
+import { handBackClaims } from './projects/surface';
 import { startSlackTurnGc, stopSlackTurnGc } from './workers/slack-turn-gc-worker';
 import { startSunaMigrationWorker, stopSunaMigrationWorker } from './workers/suna-migration-worker';
 import { startTeamsBotTokenRefresh, stopTeamsBotTokenRefresh } from './workers/teams-bot-token-refresh-worker';
@@ -310,6 +311,11 @@ export async function shutdown(signal: string) {
   stopAccessControlCache();
   stopTmpReaper();
   stopSessionLifecycleWorker();
+  // Rows this process still holds go back to the queue now, not after the
+  // 10-min lock and grace; the session's next prompt waits behind them.
+  await handBackClaims()
+    .then((count) => count > 0 && appLogger.info('Handed back lifecycle claims', { count }))
+    .catch((error) => appLogger.warn('Lifecycle claim hand-back failed', { error }));
   stopTeamsBotTokenRefresh();
   stopEventLoopLagSampler();
   await import('./shared/pg-broadcast')
