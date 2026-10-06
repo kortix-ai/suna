@@ -16,6 +16,7 @@ import { wallet } from '../wallet';
 import { isPayingSubscriptionStatus } from './billing-state';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';
 import { isUuid } from '../../shared/validate';
+import { handleChargeRefunded, handleDisputeClosed, handleDisputeCreated } from './refund-clawback';
 import { planKeyFromMetadata, activateSubscriptionForAccount } from './stripe-checkout-webhooks';
 
 function planKeyMetadata(planKey: string): { tier_key: string; plan_key: string } {
@@ -194,6 +195,21 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
 
     case 'subscription_schedule.completed':
       await handleScheduleCompleted(event.data.object as any);
+      break;
+
+    case 'charge.refunded':
+      await handleChargeRefunded(
+        event.data.object as Stripe.Charge,
+        event.data.previous_attributes as Partial<Stripe.Charge> | undefined,
+      );
+      break;
+
+    case 'charge.dispute.created':
+      await handleDisputeCreated(event.data.object as Stripe.Dispute);
+      break;
+
+    case 'charge.dispute.closed':
+      await handleDisputeClosed(event.data.object as Stripe.Dispute);
       break;
 
     case 'subscription_schedule.released':
