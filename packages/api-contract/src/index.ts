@@ -1573,12 +1573,31 @@ export const SessionTurnFailureSchema = z.object({
 });
 export type SessionTurnFailure = z.infer<typeof SessionTurnFailureSchema>;
 
+/**
+ * Is the session working, decided ONCE by the server (R5.2). Clients show this
+ * instead of combining their own signals. `working` while a live turn runs that
+ * the runtime has not reported ended, or while a prompt is on its way to the
+ * runtime (`pending_delivery`). Ordered by the control frame's `cseq`.
+ */
+export const SessionWorkingSchema = z.object({
+  state: z.enum(['working', 'idle']),
+  /** When this state began (ISO), or null when the server does not know. */
+  since: z.string().nullable(),
+  /** The newest live turn, or null. */
+  turn_token: z.string().nullable(),
+  /** No live turn yet, but a prompt is queued for or being handed to the runtime. */
+  pending_delivery: z.boolean(),
+});
+export type SessionWorking = z.infer<typeof SessionWorkingSchema>;
+
 /** `GET .../turn`. `turns` empty means idle; it is a list because a session
  *  can hold more than one open turn. */
 export const SessionTurnStatusSchema = z.object({
   turns: z.array(SessionTurnSchema),
   last_ended: SessionTurnEndedSchema.optional(),
   recent_failures: z.array(SessionTurnFailureSchema).optional(),
+  /** Present on the session stream's `kortix.control.turn` frame. */
+  working: SessionWorkingSchema.optional(),
 });
 export type SessionTurnStatus = z.infer<typeof SessionTurnStatusSchema>;
 

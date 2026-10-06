@@ -47,7 +47,7 @@ import {
   serializePrompt,
 } from '../lib/session-prompt-view';
 import { SessionPromptDeliverySchema } from '@kortix/api-contract';
-import { WIRE_MESSAGE_ID, isWireIdAheadOf } from '../wire-message-id';
+import { WIRE_MESSAGE_ID, isWireIdAheadOf, mintWireMessageId } from '../wire-message-id';
 
 // ─── Prompt inbox ───────────────────────────────────────────────────────────
 //
@@ -131,7 +131,7 @@ export function registerSessionPromptsRoutes(): void {
         params: z.object({ projectId: z.string(), sessionId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
             client_message_id: z.string().openapi({ description: 'Caller-chosen id, 1-128 chars, unique per prompt. Reuse it to retry safely.' }),
-            message_id: z.string().openapi({ description: 'OpenCode wire message id (starts with msg_). Must sort after earlier messages of the session.' }),
+            message_id: z.string().optional().openapi({ description: 'Wire message id (starts with msg_). Omit it and the server mints one and places it in order on delivery.' }),
             parts: z.array(z.object({ type: z.enum(['text', 'file', 'agent']).optional(), text: z.string().optional(), mime: z.string().optional(), url: z.string().optional(), filename: z.string().optional(), attachment_id: z.string().optional() }).passthrough()).openapi({ description: '1 or more parts. Text prompt: [{"type":"text","text":"..."}].' }),
             placement: z.enum(['transcript', 'composer']).optional().openapi({ description: 'transcript sends now; composer stages it as a draft.' }),
             delivery: SessionPromptDeliverySchema.optional().openapi({ description: 'How the prompt reaches a running turn: steer (read at its next step), queue (after it ends), interrupt (ends it after the running tool). Sets placement.' }),
@@ -225,7 +225,12 @@ export function registerSessionPromptsRoutes(): void {
 
       const body = await readJsonObject(c);
       const clientMessageId = normalizeString(body.client_message_id);
-      const messageId = normalizeString(body.message_id);
+      // R5.2: the server owns message ids and order. A caller that sends none
+      // gets one minted here and re-placed above the transcript on delivery.
+      const serverMinted = body.message_id === undefined || body.message_id === null;
+      const messageId = serverMinted
+        ? mintWireMessageId({ nowMs: Date.now() }).id
+        : normalizeString(body.message_id);
       if (body.placement !== undefined && body.placement !== 'transcript' && body.placement !== 'composer') {
         return c.json({ error: 'placement must be transcript or composer' }, 400);
       }
@@ -341,7 +346,7 @@ export function registerSessionPromptsRoutes(): void {
         // HIGH bits of the id clock (`msg_1a0d…`, ~40 days out) until 2026-09 —
         // and delivered as-is it renders every later turn above this prompt.
         // Accepted rather than refused, so every installed CLI keeps working.
-        ...(body.remint_on_delivery === true || isWireIdAheadOf(messageId, Date.now())
+        ...(serverMinted || body.remint_on_delivery === true || isWireIdAheadOf(messageId, Date.now())
           ? { remintOnDelivery: true }
           : {}),
         // SEND order across surfaces whose POSTs race — see the batch sort in

@@ -60,10 +60,13 @@
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
+import type { Context } from 'hono';
 import { eq } from 'drizzle-orm';
 import { sessionSandboxes } from '@kortix/db';
 
 import { PROJECT_ACTIONS } from '../../iam';
+import { assertAgentScope } from '../../iam/agent-scope';
+import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { auth, errors } from '../../openapi';
 import { db } from '../../shared/db';
 import {
@@ -84,10 +87,12 @@ import {
 import {
   acquireControlReconciler,
   publishRuntimeStateFrame,
+  type WakeLadderActor,
 } from '../lib/session-control-reconciler';
 import { refreshRuntimeProjection } from '../lib/session-runtime-projection-refresh';
 import { readRuntimeLeg } from '../lib/session-runtime-projection';
 import {
+  fetchRuntimeHealth,
   openRuntimeEventStream,
   parseSseFrames,
 } from '../lib/session-runtime-transport';
@@ -121,6 +126,15 @@ export const STREAM_BUFFER_BYTES = 256 * 1024;
  * means the client stopped reading. It reconnects with its cursor.
  */
 export const STREAM_MAX_BACKLOG_BYTES = 8 * 1024 * 1024;
+
+/** Re-read delays for a harness that is not ready yet, in ms. The last repeats. */
+export const RUNTIME_HEALTH_BOOT_BACKOFF_MS = [300, 500, 1_000, 2_000];
+
+/** How long the pump keeps re-reading a harness that never reports ready. */
+export const RUNTIME_HEALTH_BOOT_WINDOW_MS = 120_000;
+
+/** Daemon frames after which `/kortix/health` may have changed. */
+const HEALTH_INVALIDATING_EVENTS = new Set(['kortix.boot', 'server.connected', 'server.instance.disposed']);
 
 /** Frames the daemon may send that mean the projection changed underneath us. */
 const PROJECTION_INVALIDATING_EVENTS = new Set([
@@ -240,6 +254,10 @@ export function registerSessionStreamRoutes(): void {
 
       const cursor = parseCursorQuery(c);
       const controlOnly = c.req.query('channels') === 'control';
+      // The server wake ladder acts as a watcher who could press Restart
+      // themselves: the same gates `/start` and `/restart` apply. Anyone else
+      // sees the ladder's state and never triggers it.
+      const ladderActor = controlOnly ? null : await wakeLadderActorFor(c, projectId, visible);
       const userId = String(c.get('userId') ?? loaded.userId ?? '');
       const accountId = String(loaded.row.accountId);
 
@@ -315,6 +333,7 @@ export function registerSessionStreamRoutes(): void {
             sessionId,
             projectId,
             controlOnly ? 'queue' : 'full',
+            ladderActor,
           );
           let heartbeat: ReturnType<typeof setInterval> | null = null;
 
@@ -398,6 +417,10 @@ export function registerSessionStreamRoutes(): void {
             writeMeta,
             writeRaw,
             room,
+            onRuntimeTurnEnd: (runtimeSessionId) =>
+              reconciler.noteRuntimeTurnEnd(runtimeSessionId, Date.now()),
+            onReachability: (reachable, reason) =>
+              reconciler.noteRuntimeReachability(reachable, reason),
           });
 
           abort.signal.addEventListener('abort', () => {
@@ -459,6 +482,14 @@ interface PumpArgs {
   writeRaw: (payload: string) => void;
   /** Resolves when the client buffer has room (backpressure). */
   room: () => Promise<void>;
+  /** A LIVE `kortix.turn` frame: the runtime ended a turn of this session id. */
+  onRuntimeTurnEnd: (runtimeSessionId: string) => void;
+  /** The harness answered ready (`true`), or the box went away (`false`, reason). */
+  onReachability: (reachable: boolean, reason: string | null) => void;
+  /** Frames at or below this seq are the daemon's replay, not news. */
+  liveAfterSeq?: number | null;
+  /** Re-read and push `/kortix/health`; set while a box is attached. */
+  refreshHealth?: () => void;
 }
 
 /**
@@ -478,6 +509,7 @@ async function pumpRuntime(args: PumpArgs): Promise<void> {
     // hour must not produce an event every five seconds.
     if (announcedDownReason === reason) return;
     announcedDownReason = reason;
+    args.onReachability(false, reason);
     args.writeMeta('kortix.runtime.status', {
       type: 'kortix.runtime.status',
       state: 'down',
@@ -559,6 +591,11 @@ async function pumpRuntime(args: PumpArgs): Promise<void> {
     // connection is warm. Awaited only inside this detached pump, never on a
     // request's response path.
     void refreshProjection(args, 'attach');
+    const attachAbort = new AbortController();
+    const stopHealth = () => attachAbort.abort();
+    args.abort.signal.addEventListener('abort', stopHealth, { once: true });
+    args.refreshHealth = watchRuntimeHealth(args, sandbox.externalId, attachAbort.signal);
+    args.refreshHealth();
 
     try {
       for await (const frame of parseSseFrames(opened.body, args.abort.signal)) {
@@ -572,8 +609,62 @@ async function pumpRuntime(args: PumpArgs): Promise<void> {
         error instanceof Error && error.message ? error.message.slice(0, 200) : 'stream_error',
       );
     }
+    attachAbort.abort();
+    args.abort.signal.removeEventListener('abort', stopHealth);
+    args.refreshHealth = undefined;
     await sleep(RUNTIME_ATTACH_BACKOFF_MS[0]!, args.abort.signal);
   }
+}
+
+/**
+ * Push the daemon's `/kortix/health` document as `kortix.runtime.health`.
+ *
+ * One read per attach and per boot/restart frame. A harness that is not ready
+ * yet is re-read on a short backoff for at most {@link RUNTIME_HEALTH_BOOT_WINDOW_MS},
+ * so the client sees `ready` the moment the box does and never probes the box
+ * itself. An unchanged document is not pushed twice.
+ */
+function watchRuntimeHealth(args: PumpArgs, externalId: string, signal: AbortSignal): () => void {
+  let lastPushed: string | null = null;
+  let running = false;
+  let again = false;
+  const read = async (): Promise<void> => {
+    if (running) {
+      again = true;
+      return;
+    }
+    running = true;
+    const startedAt = Date.now();
+    try {
+      for (let attempt = 0; !signal.aborted; attempt += 1) {
+        const result = await fetchRuntimeHealth({ externalId, userId: args.userId }, signal);
+        if (signal.aborted || args.isClosed()) return;
+        if (result.ok) {
+          const serialized = JSON.stringify(result.health);
+          if (serialized !== lastPushed) {
+            lastPushed = serialized;
+            args.writeMeta('kortix.runtime.health', {
+              type: 'kortix.runtime.health',
+              health: result.health,
+              at: Date.now(),
+            });
+          }
+        }
+        const harness = result.ok ? (result.health.harness as { ready?: unknown } | undefined) : undefined;
+        const ready = result.ok && result.health.status !== 'starting' && harness?.ready !== false;
+        if (ready) args.onReachability(true, null);
+        if (ready && !again) return;
+        again = false;
+        if (Date.now() - startedAt > RUNTIME_HEALTH_BOOT_WINDOW_MS) return;
+        const delay =
+          RUNTIME_HEALTH_BOOT_BACKOFF_MS[Math.min(attempt, RUNTIME_HEALTH_BOOT_BACKOFF_MS.length - 1)]!;
+        await sleep(delay, signal);
+      }
+    } finally {
+      running = false;
+    }
+  };
+  return () => void read();
 }
 
 /**
@@ -599,6 +690,7 @@ function forwardRuntimeFrame(args: PumpArgs, event: string | null, data: string)
   const seq = typeof parsed.seq === 'number' ? parsed.seq : null;
 
   if (type === 'kortix.hello') {
+    args.liveAfterSeq = typeof parsed.head_seq === 'number' ? parsed.head_seq : null;
     const epoch = typeof parsed.epoch === 'string' ? parsed.epoch : null;
     if (epoch && epoch !== args.runtime.epoch) {
       // A new daemon boot invalidates our seq. Adopt the epoch and forget the
@@ -616,6 +708,22 @@ function forwardRuntimeFrame(args: PumpArgs, event: string | null, data: string)
 
   if (PROJECTION_INVALIDATING_EVENTS.has(type)) {
     void refreshProjection(args, type);
+  }
+  if (HEALTH_INVALIDATING_EVENTS.has(type) && seq !== null && seq > (args.liveAfterSeq ?? Number.POSITIVE_INFINITY)) {
+    args.refreshHealth?.();
+  }
+
+  if (type === 'kortix.turn' && seq !== null && seq > (args.liveAfterSeq ?? Number.POSITIVE_INFINITY)) {
+    // Only a LIVE end is news: a replayed one may predate the turn running now,
+    // and the box clock is not the clock turns start on, so it is stamped here.
+    const payload = (parsed.payload ?? {}) as Record<string, unknown>;
+    const runtimeSessionId =
+      typeof payload.runtime_session_id === 'string'
+        ? payload.runtime_session_id
+        : typeof payload.opencode_session_id === 'string'
+          ? payload.opencode_session_id
+          : null;
+    if (runtimeSessionId) args.onRuntimeTurnEnd(runtimeSessionId);
   }
 
   if (seq !== null) args.runtime.seq = seq;
@@ -653,6 +761,24 @@ async function refreshProjection(args: PumpArgs, trigger: string): Promise<void>
     publishRuntimeStateFrame(args.sessionId, leg);
   } catch {
     // A projection refresh is an optimisation. It never degrades the stream.
+  }
+}
+
+async function wakeLadderActorFor(
+  c: Context,
+  projectId: string,
+  visible: { row: WakeLadderActor['visible']['row']; canManageLifecycle?: boolean },
+): Promise<WakeLadderActor | null> {
+  if (!visible.canManageLifecycle) return null;
+  if (c.get('authType') === 'apiKey' && c.get('apiKeyType') === 'user') return null;
+  try {
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+    const loaded = await loadProjectForUser(c, projectId, 'session');
+    if (!loaded) return null;
+    await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName);
+    return { loaded, visible: { row: visible.row } };
+  } catch {
+    return null;
   }
 }
 

@@ -49,6 +49,11 @@ let daemonAttach: () => Promise<
   | { ok: false; reason: string; status: number | null }
 >;
 let attachCalls: Array<{ since: number | null; epoch: string | null }> = [];
+let healthReads = 0;
+let nextHealth: () => { ok: true; health: Record<string, unknown> } | { ok: false; reason: string } = () => ({
+  ok: true,
+  health: { status: 'ok', runtimeReady: true, capabilities: ['session.compact'], harness: { id: 'pi', ready: true, state: 'ok' } },
+});
 
 mock.module('../../shared/db', () => ({
   db: {
@@ -101,6 +106,10 @@ mock.module('../lib/session-runtime-transport', () => ({
     return daemonAttach();
   },
   parseSseFrames: realParseSseFrames,
+  fetchRuntimeHealth: async () => {
+    healthReads += 1;
+    return nextHealth();
+  },
 }));
 
 mock.module('../lib/session-runtime-projection-refresh', () => ({
@@ -119,6 +128,8 @@ const { publishControlEvent, CONTROL_EPOCH, __resetControlEventsForTests } = con
  *  ROUTE, and a real reconciler would put a DB poll on a 5 s timer inside it. */
 let reconcilerSnapshot: unknown[] = [];
 let reconcilerModes: unknown[] = [];
+let runtimeTurnEnds: Array<{ runtimeSessionId: string; atMs: number }> = [];
+let reachability: Array<{ reachable: boolean; reason: string | null }> = [];
 mock.module('../lib/session-control-reconciler', () => ({
   acquireControlReconciler: (_sessionId: string, _projectId: string, mode: unknown) => {
     reconcilerModes.push(mode);
@@ -126,6 +137,12 @@ mock.module('../lib/session-control-reconciler', () => ({
     ready: async () => {},
     snapshot: () => reconcilerSnapshot,
     poke: () => {},
+    noteRuntimeTurnEnd: (runtimeSessionId: string, atMs: number) => {
+      runtimeTurnEnds.push({ runtimeSessionId, atMs });
+    },
+    noteRuntimeReachability: (reachable: boolean, reason: string | null) => {
+      reachability.push({ reachable, reason });
+    },
     release: () => {},
     };
   },
@@ -234,6 +251,13 @@ beforeEach(() => {
   sandboxQueryThrows = false;
   sandboxSelects = 0;
   sessionChangeWaiters.clear();
+  runtimeTurnEnds = [];
+  reachability = [];
+  healthReads = 0;
+  nextHealth = () => ({
+    ok: true,
+    health: { status: 'ok', runtimeReady: true, capabilities: ['session.compact'], harness: { id: 'pi', ready: true, state: 'ok' } },
+  });
   loadedProject = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID }, userId: USER_ID };
   visibleSession = { row: { sessionId: SESSION_ID }, grants: [], canManageProject: true };
   sandboxRow = { externalId: 'box-1', status: 'active' };
@@ -340,7 +364,7 @@ describe('box down — the stream still serves', () => {
       ),
     });
     const response = await openStream();
-    const frames = await readFrames(response, 4);
+    const frames = await readFrames(response, 5);
     // The runtime channel ATTACHES and says UP — never a degrade-to-poll `down`.
     expect(
       frames.find((frame) => frame.event === 'kortix.runtime.status')?.data,
@@ -385,7 +409,7 @@ describe('runtime channel: forwarded verbatim, never renumbered', () => {
       ),
     });
     const response = await openStream();
-    const frames = await readFrames(response, 4);
+    const frames = await readFrames(response, 5);
 
     const status = frames.find((frame) => frame.event === 'session.status');
     expect(status).toBeDefined();
@@ -679,5 +703,68 @@ describe('R5.1: a production-grade stream', () => {
     } finally {
       await reader.cancel().catch(() => {});
     }
+  });
+});
+
+describe('R5.2: a runtime turn end reaches the reconciler at once', () => {
+  test('a LIVE kortix.turn frame is reported; a replayed one is not', async () => {
+    daemonAttach = async () => ({
+      ok: true,
+      epoch: 'ep-turn',
+      body: daemonStream(
+        [
+          // The daemon had already sequenced 5 frames when this stream attached.
+          'event: kortix.hello\ndata: {"type":"kortix.hello","epoch":"ep-turn","head_seq":5,"first_seq":1,"since":3,"at":1}\n\n',
+          // Replay: an old turn end. It must not end a newer turn.
+          'event: kortix.turn\nid: 4\ndata: {"seq":4,"type":"kortix.turn","at":2,"payload":{"opencode_session_id":"ses_root","verdict":"idle"},"session":"ses_root"}\n\n',
+          // Live: pi names `runtime_session_id`.
+          'event: kortix.turn\nid: 6\ndata: {"seq":6,"type":"kortix.turn","at":3,"payload":{"runtime_session_id":"ses_root","verdict":"idle"},"session":"ses_root"}\n\n',
+        ],
+        500,
+      ),
+    });
+    const before = Date.now();
+    await readFrames(await openStream(), 5);
+    expect(runtimeTurnEnds).toHaveLength(1);
+    expect(runtimeTurnEnds[0]!.runtimeSessionId).toBe('ses_root');
+    // Stamped on the API clock: the box clock is not the one turns start on.
+    expect(runtimeTurnEnds[0]!.atMs).toBeGreaterThanOrEqual(before);
+  });
+});
+
+describe('R5.3: the stream carries the runtime health, so clients stop probing it', () => {
+  test('attaching reads /kortix/health once and pushes it', async () => {
+    daemonAttach = async () => ({ ok: true, epoch: 'ep-h', body: daemonStream([], 800) });
+    const frames = await readFrames(await openStream(), 4, 600);
+    const health = frames.find((frame) => frame.event === 'kortix.runtime.health');
+    expect(health?.data).toMatchObject({
+      channel: 'stream',
+      health: { capabilities: ['session.compact'], harness: { id: 'pi', ready: true } },
+    });
+    expect(healthReads).toBe(1);
+    // A ready harness is what ends a wake for the server ladder.
+    expect(reachability).toContainEqual({ reachable: true, reason: null });
+  });
+
+  test('a harness still starting is re-read until it is ready, then pushed again', async () => {
+    let reads = 0;
+    nextHealth = () => {
+      reads += 1;
+      return reads < 3
+        ? { ok: true, health: { status: 'starting', harness: { id: 'opencode', ready: false, state: 'starting' } } }
+        : { ok: true, health: { status: 'ok', runtimeReady: true, harness: { id: 'opencode', ready: true, state: 'ok' } } };
+    };
+    daemonAttach = async () => ({ ok: true, epoch: 'ep-s', body: daemonStream([], 3_000) });
+    const frames = await readFrames(await openStream(), 8, 2_500);
+    const pushed = frames.filter((frame) => frame.event === 'kortix.runtime.health');
+    expect(pushed.at(-1)?.data).toMatchObject({ health: { harness: { ready: true } } });
+    // Unchanged reads are not pushed twice.
+    expect(pushed.length).toBe(2);
+  });
+
+  test('a stopped box reads no health', async () => {
+    sandboxRow = { externalId: 'box-1', status: 'stopped' };
+    await readFrames(await openStream(), 2, 300);
+    expect(healthReads).toBe(0);
   });
 });

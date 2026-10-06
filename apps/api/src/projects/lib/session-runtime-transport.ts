@@ -200,6 +200,39 @@ export async function fetchRuntimeMessages(
   }
 }
 
+export type RuntimeHealthFetch =
+  | { ok: true; health: Record<string, unknown> }
+  | { ok: false; reason: string };
+
+/** Budget for one `/kortix/health` read. The daemon answers it from memory. */
+export const RUNTIME_HEALTH_TIMEOUT_MS = 5_000;
+
+/**
+ * Read the daemon's `GET /kortix/health` document once (status, harness
+ * readiness, capabilities). The session stream pushes it, so a client never
+ * probes the box itself.
+ */
+export async function fetchRuntimeHealth(
+  target: DaemonCallTarget,
+  signal?: AbortSignal,
+): Promise<RuntimeHealthFetch> {
+  try {
+    const endpoint = await daemonEndpoint(target);
+    if (!endpoint) return { ok: false, reason: 'no_service_key' };
+    const timeout = AbortSignal.timeout(RUNTIME_HEALTH_TIMEOUT_MS);
+    const response = await fetch(`${endpoint.url}/kortix/health`, {
+      headers: { ...endpoint.headers, Accept: 'application/json' },
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+    });
+    const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+    // A 503 with a JSON body is a real answer ("starting"); only no body is not.
+    if (!body || typeof body !== 'object') return { ok: false, reason: `daemon_${response.status}` };
+    return { ok: true, health: body };
+  } catch (error) {
+    return { ok: false, reason: reasonOf(error) };
+  }
+}
+
 export type RuntimeStreamOpen =
   | { ok: true; body: ReadableStream<Uint8Array>; epoch: string | null }
   | { ok: false; reason: string; status: number | null };
