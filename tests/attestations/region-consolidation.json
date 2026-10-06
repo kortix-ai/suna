@@ -1,0 +1,26 @@
+{
+  "source_hash": "7f4e8e974563dd6270eac6231c2fa0a0b1274f69d68f730bc2f8e0cdc0810ff4",
+  "diff_files": [
+    ".github/workflows/deploy-dev.yml",
+    "apps/api/eslint-suppressions.json",
+    "apps/api/src/git-proxy/project-snapshot-build.ts",
+    "apps/api/src/git-proxy/project-snapshot-ledger.ts",
+    "apps/api/src/git-proxy/project-snapshot-shared.ts",
+    "apps/api/src/projects/git-ref.ts",
+    "apps/api/src/shared/git-ref.ts",
+    "infra/cloudflare/workers/api-router/worker.test.mjs",
+    "infra/cloudflare/workers/api-router/wrangler.toml",
+    "infra/scripts/sync-web-env.sh",
+    "infra/terraform/environments/dev-us-east-2/README.md",
+    "infra/terraform/security-baseline/iam-gha-ecs-deploy.tf"
+  ],
+  "diff_hash": "1b1c36c08cea1e64926b8ba3f48a021ca9e219841aa3063280183973c54390e8",
+  "head": "9f6d24bae0dc998136a52e879da656d1f8fbb6f6",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-06T13:21:09.899Z"
+}
