@@ -1,23 +1,17 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import pg from 'pg';
+import { weekStartDate, weekStartOf } from './audit-archive/format';
 import { ensureAuditPartitions } from './audit-partition-worker';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const ACCOUNT = 'b9100000-0000-4000-a000-000000000001';
+const DAY = 86_400_000;
 
 let client: pg.Client | null = null;
 const q = <T extends pg.QueryResultRow = Record<string, unknown>>(
   text: string,
   values?: unknown[],
 ) => client!.query<T>(text, values);
-
-/** Monday 00:00 UTC of the week of `moment`. */
-function weekStart(moment: Date): Date {
-  const day = new Date(moment);
-  day.setUTCHours(0, 0, 0, 0);
-  day.setUTCDate(day.getUTCDate() - ((day.getUTCDay() + 6) % 7));
-  return day;
-}
 
 /**
  * Horizon weeks [week(now) .. week(now) + weeksAhead] that have no partition,
@@ -27,9 +21,8 @@ function weekStart(moment: Date): Date {
  * week per Monday after its build.
  */
 async function missingHorizonWeeks(weeksAhead: number): Promise<number> {
-  const from = weekStart(new Date());
-  const to = new Date(from);
-  to.setUTCDate(to.getUTCDate() + weeksAhead * 7);
+  const from = weekStartDate(weekStartOf(new Date()));
+  const to = new Date(from.getTime() + weeksAhead * 7 * DAY);
   const { rows } = await q<{ missing: number }>(
     `SELECT count(*)::int AS missing
        FROM generate_series($1::date, $2::date, interval '7 days') AS w(week_start)
@@ -72,9 +65,7 @@ describe.skipIf(!databaseUrl)('audit partition maintenance — migrated PostgreS
     // horizon week is the partition a cached per-suite template has lost. Drop
     // it on any UTC day and expect exactly it back on the next tick.
     await ensureAuditPartitions();
-    const rolled = weekStart(new Date());
-    rolled.setUTCDate(rolled.getUTCDate() + 8 * 7);
-    const name = `audit_events_p${rolled.toISOString().slice(0, 10).replaceAll('-', '')}`;
+    const name = `audit_events_p${weekStartOf(new Date(Date.now() + 8 * 7 * DAY)).replaceAll('-', '')}`;
     await q(`ALTER TABLE kortix.audit_events DETACH PARTITION kortix.${name}`);
     await q(`DROP TABLE kortix.${name}`);
     expect(await missingHorizonWeeks(8)).toBe(1);
