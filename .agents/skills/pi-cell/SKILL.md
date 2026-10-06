@@ -90,9 +90,13 @@ of the process that runs it.
 ```bash
 cd apps/pi-worker-js
 npm ci && npm run conformance              # pi-durable storage 23/23, env 21/21
-CELLD_BIN=$(command -v celld) npm test     # every suite + session-e2e on `celld dev`
+npm test                                   # every suite + session-e2e on the pinned `celld dev`
 cd ../api && bun test --isolate --env-file=scripts/test.env src/platform/providers/platinum-cell.test.ts
 ```
+
+CI runs `npm ci && ./test/all.sh` in the `packages` lane
+(`tests/bin/package-quality.ts`). `test/fetch-celld.mjs` pins celld `0.6.1`
+by the sha256 of each release asset.
 
 `test/mutate-*.mjs` rewrite tracked source in place. A run killed partway
 leaves a mutant in `src/`. Run one alone, then `git status`.

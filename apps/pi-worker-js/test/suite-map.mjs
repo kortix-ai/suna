@@ -30,6 +30,7 @@ const HERE = new URL("..", import.meta.url).pathname;
 export const ALL_SUITES = [
   // Tooling: the auditors, the deploy tool and the standalone tool daemon.
   "tools-logic.mjs", "daemon-safety.mjs", "daemon-persist.mjs", "celldctl-logic.mjs", "deploy-contract.mjs",
+  "fetch-celld-logic.mjs",
   // THE CELL'S OWN SURFACE, through the shipped bundle: the kortixd contract,
   // the boot routes, the project's agent, skills, plan tools, files, git, pty,
   // static serving and the manifest.

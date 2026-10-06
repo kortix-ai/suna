@@ -20,4 +20,5 @@ green.
 
 **Enforcement:** `apps/pi-worker-js/test/session-e2e.mjs` boots the built
 bundle on a real `celld dev` and goes red when celld refuses to load it.
-`test/all.sh` runs it when `CELLD_BIN` or `celld` on `PATH` is available.
+The CI `packages` lane runs it (`tests/bin/package-quality.ts` ->
+`apps/pi-worker-js/test/all.sh`, celld pinned by `test/fetch-celld.mjs`).

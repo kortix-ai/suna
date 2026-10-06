@@ -137,13 +137,18 @@ The session's provider is locked to Platinum and the project image is ignored.
 npm ci
 npm run build                       # dist/worker.js
 npm run conformance                 # pi-durable's own storage + ExecutionEnv suites
-CELLD_BIN=/path/to/celld npm test   # every suite, then a whole session on `celld dev`
+npm test                            # every suite, then a whole session on `celld dev`
 npm run contract                    # the kortixd contract, in process
 ```
 
-- `npm test` runs `test/all.sh`. It skips `session-e2e` by name when no celld
-  binary is on `PATH` or in `CELLD_BIN`. celld `0.6.1` ships
+- `npm test` runs `test/all.sh`. `session-e2e` uses `CELLD_BIN`, else `celld`
+  on `PATH`, else the pinned celld `0.6.1` release that `test/fetch-celld.mjs`
+  downloads, checks against its sha256, and caches in
+  `~/.cache/kortix/celld/0.6.1`. A checksum mismatch fails the run; no asset
+  for the platform or no network skips the suite by name. celld `0.6.1` ships
   `aarch64-apple-darwin`, so the e2e runs on a Mac without Docker.
+- CI: the `packages` lane (`tests/bin/package-quality.ts`, also
+  `pnpm test -- --packages-only`) runs `npm ci` and `./test/all.sh` here.
 - `test/mutate-*.mjs` rewrite tracked source in place. Run one alone and check
   `git status` after it. `test/all.sh` never runs them.
 

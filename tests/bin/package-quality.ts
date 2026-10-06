@@ -197,6 +197,19 @@ async function runWorkspaceTests(
   );
 }
 
+// apps/pi-worker-js (the `pi_cell` runtime) has its own package-lock.json and
+// sits outside the pnpm workspace. test/all.sh builds the bundle, runs every
+// cell suite, and boots the bundle on the pinned `celld dev` that
+// test/fetch-celld.mjs downloads and verifies. It takes ~3 min and shares
+// nothing with the steps below, so it starts first and is awaited last: this
+// lane is the binding one (`.github/workflows/tests.yml`).
+const piCellSuites = (async () => {
+  await run(['npm', 'ci', '--no-audit', '--no-fund'], { cwd: resolve(root, 'apps/pi-worker-js') });
+  await run(['./test/all.sh'], { cwd: resolve(root, 'apps/pi-worker-js') });
+})();
+// Awaited at the end; a failure before then must not surface as an unhandled rejection.
+piCellSuites.catch(() => {});
+
 await runAll([
   run(['node', 'scripts/stage-npm-publish.test.mjs']),
   run(['node', 'scripts/publish-npm-package.test.mjs']),
@@ -256,9 +269,14 @@ await runAll([
     2,
   ),
 ]);
-// apps/kortix-worker sits outside the pnpm workspace (own bun.lock, supply-chain
-// cooldown), so the workspace fan-out above cannot reach it. Install its deps
-// the way the sandbox-agent job does in ci.yml, then run its tests here — no
-// lane ran them before this.
-await run(['bun', 'install', '--frozen-lockfile'], { cwd: resolve(root, 'apps/kortix-worker') });
-await run(['bun', 'test', 'src/'], { cwd: resolve(root, 'apps/kortix-worker') });
+// apps/kortix-worker and apps/pi-worker-js sit outside the pnpm workspace, so
+// the workspace fan-out above cannot reach them.
+await runAll([
+  // kortix-worker: own bun.lock, supply-chain cooldown. Install its deps the
+  // way the sandbox-agent job does in ci.yml, then run its tests.
+  (async () => {
+    await run(['bun', 'install', '--frozen-lockfile'], { cwd: resolve(root, 'apps/kortix-worker') });
+    await run(['bun', 'test', 'src/'], { cwd: resolve(root, 'apps/kortix-worker') });
+  })(),
+  piCellSuites,
+]);

@@ -3,9 +3,9 @@
 #
 #   1. the node suites, in process against the shipped bundle — the list is
 #      test/suite-map.mjs ALL_SUITES, the same list the auditors read;
-#   2. test/session-e2e.mjs, a whole session on a real `celld dev`, when a
-#      celld binary is available (CELLD_BIN, or `celld` on PATH) — SKIPPED by
-#      name otherwise;
+#   2. test/session-e2e.mjs, a whole session on a real `celld dev`: CELLD_BIN,
+#      or `celld` on PATH, or the pinned release test/fetch-celld.mjs
+#      downloads — SKIPPED by name when none of the three is available;
 #   3. with --live only: the dev-stack suites (pi-js.kortix.com, Platinum dev).
 #      Each SKIPs without its credentials, and they drive a deployment, not
 #      this tree — a green live run says nothing about uncommitted code.
@@ -85,11 +85,22 @@ for suite in $SUITES; do
   run_suite "${suite%.mjs}" node --experimental-sqlite --no-warnings "test/$suite"
 done
 
+# celld: CELLD_BIN, else `celld` on PATH, else the pinned release
+# (test/fetch-celld.mjs: sha256-checked, cached in ~/.cache/kortix/celld).
+# No asset or no network skips by name; a download that fails its checksum
+# FAILS the run — a tampered release must not read as a skipped suite.
 CELLD=${CELLD_BIN:-$(command -v celld 2>/dev/null || true)}
-if [ -n "$CELLD" ] && [ -x "$CELLD" ]; then
+CELLD_REFUSED=0
+if [ -z "$CELLD" ] && ! CELLD=$(node test/fetch-celld.mjs 2>/tmp/pi-cell-fetch-celld.log); then
+  CELLD_REFUSED=1
+fi
+if [ "$CELLD_REFUSED" -eq 1 ]; then
+  RESULTS+=("session-e2e  FAILED: $(tail -1 /tmp/pi-cell-fetch-celld.log)")
+  FAILED=$((FAILED + 1))
+elif [ -n "$CELLD" ] && [ -x "$CELLD" ]; then
   run_suite session-e2e node --no-warnings test/session-e2e.mjs --celld "$CELLD"
 else
-  RESULTS+=("session-e2e  SKIPPED (no celld binary: set CELLD_BIN or put celld on PATH)")
+  RESULTS+=("session-e2e  SKIPPED (no celld binary: set CELLD_BIN, put celld on PATH, or allow test/fetch-celld.mjs to download it)")
 fi
 
 if [ "$LIVE" -eq 1 ]; then
