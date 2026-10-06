@@ -2,7 +2,7 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
   createAccountSecretResource, deleteAccountSecretResource, grantAccountSecretResource,
-  listAccountSecretResources, revokeAccountSecretResourceGrant, rotateAccountSecretResource,
+  listAccountSecretResources, retryAccountSecretResource, revokeAccountSecretResourceGrant, rotateAccountSecretResource,
   setAccountSecretResourceAccess,
   getSessionProviderSecretPool, setSessionProviderSecretPool,
   listSessionProviderSecretPools,
@@ -35,6 +35,13 @@ test('account secret resource calls use stable IDs and never send a value on rea
   ]);
   expect(calls[0]?.body).toBeNull();
   expect(calls[2]?.body).toEqual({ value: 'new-key' });
+});
+
+test('retry ends a cooldown with a body-less POST on the secret', async () => {
+  await retryAccountSecretResource('account', 'secret');
+  expect(calls.map((call) => [call.method, call.url])).toEqual([
+    ['POST', 'http://test.local/accounts/account/secret-resources/secret/retry'],
+  ]);
 });
 
 test('session pool preserves inherited, empty, and selected states', async () => {
