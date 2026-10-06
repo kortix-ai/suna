@@ -11,7 +11,7 @@ import {
   loadEmailInstallConnectionId,
 } from '../../projects/lib/session-connector-bindings';
 import {
-  continueSession as continueLifecycleSession,
+  deliverThroughQueue,
   createSession as createLifecycleSession,
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
 } from '../../projects/session-lifecycle';
@@ -23,7 +23,7 @@ import { matchesEmailSenderRegex } from './sender-policy-regex';
 import type { AgentMailMessageReceivedEvent } from './types';
 
 const defaultEmailSessionLifecycle = {
-  continueSession: continueLifecycleSession,
+  deliverFollowUp: deliverThroughQueue,
   createSession: createLifecycleSession,
   resolveProjectAutomationActor: resolveLifecycleAutomationActor,
 };
@@ -107,13 +107,14 @@ async function spawnEmailAgentTurn(
       });
       return;
     }
-    const outcome = await emailSessionLifecycle.continueSession({
+    const outcome = await emailSessionLifecycle.deliverFollowUp({
       source: 'email',
+      idempotencyKey: emailFollowUpKey(event),
       sessionId: existing.sessionId,
       text: renderFollowUpPrompt(event),
       opencodeEnv: { KORTIX_CONNECTORS_MCP_ENABLED: '1' },
     });
-    if (outcome === 'delivered') {
+    if (outcome === 'delivered' || outcome === 'queued') {
       await touchChatThread(thread);
     } else if (outcome === 'no-session') {
       await dropChatThread(thread);
@@ -123,6 +124,11 @@ async function spawnEmailAgentTurn(
   }
 
   await createThreadSession(projectId, event, false);
+}
+
+/** One received email: a redelivered webhook dedupes on it. */
+function emailFollowUpKey(event: AgentMailMessageReceivedEvent): string {
+  return `email:${event.message.inbox_id}:${event.message.message_id}`;
 }
 
 async function createThreadSession(
@@ -175,8 +181,9 @@ async function createThreadSession(
         });
         return;
       }
-      await emailSessionLifecycle.continueSession({
+      await emailSessionLifecycle.deliverFollowUp({
         source: 'email',
+        idempotencyKey: emailFollowUpKey(event),
         sessionId,
         text: renderFollowUpPrompt(event),
         opencodeEnv: { KORTIX_CONNECTORS_MCP_ENABLED: '1' },

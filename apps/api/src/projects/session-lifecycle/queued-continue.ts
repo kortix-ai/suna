@@ -32,6 +32,8 @@ const ANSWER_CHECK_RETRY_BASE_MS = 5_000;
 const MAX_ANSWER_CHECK_FAILURES = 3;
 
 async function admitQueuedContinue(row: SessionLifecycleCommandRow, tl: ProvisionTimeline): Promise<'admitted' | 'queued' | 'failed'> {
+  // The direct `continueSession` call this row replaced had no admission.
+  if ((row.payload as { directFollowUp?: unknown } | null)?.directFollowUp === true) return 'admitted';
   let admission: Awaited<ReturnType<typeof admitInboxPrompt>>;
   try {
     admission = await admitInboxPrompt(row);

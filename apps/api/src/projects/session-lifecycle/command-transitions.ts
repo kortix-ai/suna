@@ -10,6 +10,7 @@ import { inboxOrderBy } from './inbox-order';
 import { transitionSession } from './status-transitions';
 import { type CommandLease, logLeaseLost, ownedByLease } from './command-lease';
 import { withNextDeliveryAttempt } from './prompt-payload';
+import { notHeldSql, stopPausedOnDeliverySql } from './delivery-state';
 
 /**
  * Put a claimed row back WITHOUT counting the claim as an attempt.
@@ -179,7 +180,7 @@ export async function promoteNextInboxRow(sessionId: string): Promise<string | n
         eq(sessionLifecycleCommands.sessionId, sessionId),
         eq(sessionLifecycleCommands.commandType, 'continue_session'),
         eq(sessionLifecycleCommands.status, 'queued'),
-        sql`COALESCE(${sessionLifecycleCommands.result}->>'held', '') <> 'true'`,
+        notHeldSql,
         sql`(${sessionLifecycleCommands.result} ? 'admission_reason' OR ${sessionLifecycleCommands.availableAt} <= now())`,
       ),
     )
@@ -302,7 +303,7 @@ export async function markCommandForwarded(
       result: sql`${JSON.stringify(forwarded)}::jsonb || CASE
         WHEN COALESCE(${sessionLifecycleCommands.payload}->>'consumedOnDelivery', '') = 'true'
         THEN '{"status": "delivered"}'::jsonb
-        WHEN COALESCE(${sessionLifecycleCommands.payload}->>'stopPausedOnDelivery', '') = 'true'
+        WHEN ${stopPausedOnDeliverySql}
         THEN '{"stop_paused": true, "held": true}'::jsonb
         ELSE ${opts?.noReply ? '{"status": "delivered", "no_reply": true}' : '{}'}::jsonb
       END`,
@@ -381,7 +382,10 @@ export async function markCommandFailed(
   // takes a working session away over one lost delivery.
   const isInboxPrompt =
     typeof (row.payload as { clientMessageId?: unknown } | null)?.clientMessageId === 'string';
-  if (row.commandType === 'continue_session' && row.sessionId && !isInboxPrompt) {
+  // A channel reply or a question answer showed its failure where it was sent;
+  // the direct call it replaced never parked the session either.
+  const isDirectFollowUp = (row.payload as { directFollowUp?: unknown } | null)?.directFollowUp === true;
+  if (row.commandType === 'continue_session' && row.sessionId && !isInboxPrompt && !isDirectFollowUp) {
     // Park the target session 'failed': findReusableTriggerSession skips failed
     // sessions, so a `session_mode = "reuse"` trigger's next fire creates a
     // FRESH session instead of re-aiming prompts at a wedged one — the proven
@@ -572,7 +576,7 @@ export async function reArmRuntimeBlockedPrompts(
         eq(sessionLifecycleCommands.sessionId, sessionId),
         eq(sessionLifecycleCommands.status, 'queued'),
         sql`${sessionLifecycleCommands.result}->>'delivery_blocked' = ${RUNTIME_UNREACHABLE_REASON}`,
-        sql`COALESCE(${sessionLifecycleCommands.result}->>'held', 'false') <> 'true'`,
+        notHeldSql,
       ),
     )
     .returning({ commandId: sessionLifecycleCommands.commandId });

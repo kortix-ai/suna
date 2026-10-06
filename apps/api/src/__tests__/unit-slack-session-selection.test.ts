@@ -69,7 +69,7 @@ mock.module('../shared/db', () => ({
   hasDatabase: () => true,
 }));
 mock.module('../projects/session-lifecycle', () => ({
-  continueSession: async () => 'delivered',
+  deliverThroughQueue: async () => 'delivered',
   createSession: async (input: { body: Record<string, unknown> }) => {
     lastBody = input.body;
     return { status: 'created', sessionId: 'new-sess', row: fakeSessionRow('new-sess') };
@@ -232,7 +232,7 @@ beforeEach(() => {
   lastFinalize = null;
   scopedAgents = [];
   setSlackSessionLifecycleForTest({
-    continueSession: async () => 'delivered',
+    deliverFollowUp: async () => 'delivered',
     createSession: async (input: { body: Record<string, unknown> }) => {
       lastBody = input.body;
       return { status: 'created', sessionId: 'new-sess', row: fakeSessionRow('new-sess') };
@@ -257,7 +257,7 @@ test('channel agent + model override flow into the session body', async () => {
 test('the create key is per message, not per thread', async () => {
   const keys: unknown[] = [];
   setSlackSessionLifecycleForTest({
-    continueSession: async () => 'delivered',
+    deliverFollowUp: async () => 'delivered',
     createSession: async (input: { idempotencyKey?: string | null }) => {
       keys.push(input.idempotencyKey);
       return { status: 'created', sessionId: 'new-sess', row: fakeSessionRow('new-sess') };
@@ -321,7 +321,7 @@ test('deleted channel agent (AGENT_NOT_DECLARED) → in-thread agent picker, not
     { name: 'shipper', description: 'Ships things.' },
   ];
   setSlackSessionLifecycleForTest({
-    continueSession: async () => 'delivered',
+    deliverFollowUp: async () => 'delivered',
     createSession: async () => ({
       status: 'failed',
       retryable: false,
@@ -381,7 +381,7 @@ test('a failed start releases the thread-create claim', async () => {
   const { chatEventDedup } = await import('@kortix/db');
   selection = { projectId: 'proj-1', agentName: 'ghost', opencodeModel: null };
   setSlackSessionLifecycleForTest({
-    continueSession: async () => 'delivered',
+    deliverFollowUp: async () => 'delivered',
     createSession: async () => ({
       status: 'failed',
       retryable: false,
@@ -399,7 +399,7 @@ test('a failed start releases the thread-create claim', async () => {
 test('out-of-credits (402) → credit copy, no picker blocks', async () => {
   selection = { projectId: 'proj-1', agentName: null, opencodeModel: null };
   setSlackSessionLifecycleForTest({
-    continueSession: async () => 'delivered',
+    deliverFollowUp: async () => 'delivered',
     createSession: async () => ({
       status: 'failed',
       retryable: false,
