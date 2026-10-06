@@ -888,7 +888,16 @@ export async function handleChatCompletions(
     );
   }
 
-  const responseText = await upstream.text();
+  let responseText: string;
+  try {
+    responseText = await upstream.text();
+  } catch (error) {
+    // The provider answered 200 and bills for the prompt. A connection reset
+    // while reading the body must not leave a request with no usage row and no
+    // refund: settle the prompt estimate, then fail the request as before.
+    if (upstream.ok) await settle(null, null, { outputChars: 0, clientStopped: true });
+    throw error;
+  }
   const data = (() => {
     try {
       return JSON.parse(responseText) as unknown;

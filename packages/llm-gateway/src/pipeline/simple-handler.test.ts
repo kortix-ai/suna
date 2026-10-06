@@ -495,6 +495,28 @@ describe('simple gateway pipeline', () => {
     expect(usage[0]!.promptTokens).toBeGreaterThanOrEqual(1_000);
   });
 
+  test('a non-stream 200 whose body read fails settles the prompt estimate', async () => {
+    const usage: UsageEvent[] = [];
+    const broken = new Response(
+      new ReadableStream<Uint8Array>({ start: (controller) => controller.error(new Error('connection reset')) }),
+      { headers: { 'content-type': 'application/json' } },
+    );
+    await handleChatCompletions(
+      {
+        hooks: hooks(usage, []),
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async () => broken,
+      },
+      {
+        authorization: 'Bearer token',
+        rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'p'.repeat(4_000) }] }),
+      },
+    ).catch(() => undefined);
+    expect(usage).toHaveLength(1);
+    expect(usage[0]).toMatchObject({ usageEstimated: true, completionTokens: 0 });
+    expect(usage[0]!.promptTokens).toBeGreaterThanOrEqual(1_000);
+  });
+
   // An error frame before any output served nothing: the client gets the
   // provider's status as an HTTP error, which OpenCode can retry or compact on.
   test.each([
