@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 /**
- * `kortix triggers` as a real process, for the third trigger type.
+ * `kortix triggers` as a real process, for the third trigger type and the
+ * webhook trigger's info panel.
  * `add` edits the LOCAL kortix.yaml, so
  * those cases assert the file on disk; `ls`/`info` read the cloud, so those
  * cases assert the rendering of a served listing.
@@ -41,6 +42,34 @@ const MONITOR_TRIGGER = {
   session_key: null,
   filter: null,
   last_fired_at: null,
+  webhook_url: null,
+};
+
+const WEBHOOK_TRIGGER = {
+  ...MONITOR_TRIGGER,
+  slug: 'release-hook',
+  path: 'kortix.yaml#triggers.release-hook',
+  name: 'Release hook',
+  type: 'webhook',
+  agent: 'releaser',
+  secret_env: 'RELEASE_HOOK_SECRET',
+  run: null,
+  mode: null,
+  interval_seconds: null,
+  expect_event_within_seconds: null,
+  prompt_template: 'A release webhook arrived: {{ body.event }}',
+  webhook_url: 'https://api.kortix.test/v1/webhooks/projects/proj_hook/release-hook',
+};
+
+const CRON_TRIGGER = {
+  ...WEBHOOK_TRIGGER,
+  slug: 'nightly',
+  name: 'Nightly digest',
+  type: 'cron',
+  agent: 'default',
+  secret_env: null,
+  cron: '0 0 9 * * 1-5',
+  prompt_template: 'Summarize yesterday',
   webhook_url: null,
 };
 
@@ -519,5 +548,66 @@ describe('kortix triggers — monitors', () => {
     expect(text).toContain('secret_env: WEBHOOK_SECRET');
     expect(text).not.toContain('mode:');
     expect(text).not.toContain('run:');
+  });
+});
+
+describe('kortix triggers info — webhook signing', () => {
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'kortix-triggers-'));
+    process.env = { ...ORIGINAL_ENV };
+    writeManifest();
+    config = writeConfig('http://127.0.0.1:1');
+  });
+
+  afterEach(() => {
+    server?.stop(true);
+    server = null;
+    rmSync(tmp, { recursive: true, force: true });
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  test('info shows the signing header, the algorithm and a signed sample request', async () => {
+    const apiConfig = writeConfig(startServer([WEBHOOK_TRIGGER]));
+    const result = await runCli(
+      ['triggers', 'info', 'release-hook', '--project', PROJECT],
+      apiConfig,
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('X-Kortix-Signature');
+    expect(result.stdout).toContain('HMAC-SHA256');
+    expect(result.stdout).toContain(`curl -X POST ${WEBHOOK_TRIGGER.webhook_url}`);
+    expect(result.stdout).toContain('openssl dgst -sha256 -hmac "$SECRET"');
+    // The scheme is signed with the caller's own secret (the $SECRET
+    // placeholder), like the dashboard panel — never a secret value.
+    expect(result.stdout).toContain('$SECRET is the signing key you saved for this webhook');
+  });
+
+  test('info --json carries the signing scheme a caller can act on', async () => {
+    const apiConfig = writeConfig(startServer([WEBHOOK_TRIGGER]));
+    const result = await runCli(
+      ['triggers', 'info', 'release-hook', '--project', PROJECT, '--json'],
+      apiConfig,
+    );
+    expect(result.code).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.webhook_signing).toEqual({
+      header: 'X-Kortix-Signature',
+      algorithm: 'HMAC-SHA256 over the exact raw request body',
+      sample_request: expect.stringContaining(`curl -X POST ${WEBHOOK_TRIGGER.webhook_url}`),
+    });
+    expect(parsed.webhook_signing.sample_request).toContain('X-Kortix-Signature: sha256=');
+  });
+
+  test('a cron trigger carries no signing metadata', async () => {
+    const apiConfig = writeConfig(startServer([CRON_TRIGGER]));
+    const result = await runCli(
+      ['triggers', 'info', 'nightly', '--project', PROJECT, '--json'],
+      apiConfig,
+    );
+    expect(result.code).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.webhook_signing).toBeUndefined();
+    const text = await runCli(['triggers', 'info', 'nightly', '--project', PROJECT], apiConfig);
+    expect(text.stdout).not.toContain('X-Kortix-Signature');
   });
 });
