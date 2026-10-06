@@ -29,6 +29,7 @@ import {
   refundToolReservation,
   injectApiKey,
 } from './helpers';
+import { capFirecrawlCrawlLimit } from './crawl-limit';
 
 function pricingProvider(service: ProxyServiceConfig, managed: boolean): string {
   if (managed && service.kortixTargetBaseUrl === config.OPENROUTER_API_URL) {
@@ -184,6 +185,7 @@ async function handleKortixProxy(
 
   body = injectApiKey(service, headers, body, /* useKortixInjection */ true);
   body = maybeNormalizeOpenAIResponsesInput(service, method, subPath, body, headers);
+  body = capFirecrawlCrawlLimit(service, method, subPath, body, headers);
   // A managed OpenAI-compatible chat stream sends no usage frame unless asked.
   if (service.isLlm === true && service.name !== 'anthropic' && subPath.endsWith('/chat/completions')) {
     body = forceStreamUsage(body, headers);

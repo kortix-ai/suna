@@ -1622,6 +1622,12 @@ const TOOL_PRICING: Record<string, ToolPricing> = {
     perResultCost: 0,
     markupMultiplier: 1.5,
   },
+  // Crawl status polls cost nothing upstream, so they cost nothing here.
+  proxy_firecrawl_status: {
+    baseCost: 0,
+    perResultCost: 0,
+    markupMultiplier: 1,
+  },
   proxy_context7: {
     baseCost: 0.001,
     perResultCost: 0,
