@@ -74,10 +74,11 @@ export {
   toSandboxAbsolutePath,
   toWorkspaceRelative,
   uploadFile,
+  uploadNativeFile,
   uploadTimeoutMsForBytes,
   writeFile,
 } from './core/files/client';
-export type { UploadFileOptions, UploadProgressEvent } from './core/files/client';
+export type { NativeFilePart, UploadFileOptions, UploadProgressEvent } from './core/files/client';
 export type * from './core/files/types';
 
 /** Generate a session id (RFC 4122 v4, with a non-secure-context fallback). */

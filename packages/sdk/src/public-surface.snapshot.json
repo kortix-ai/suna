@@ -1077,6 +1077,7 @@
     "uploadAppArtifactArchive",
     "uploadConnectorAttachment",
     "uploadFile",
+    "uploadNativeFile",
     "uploadPromptAttachment",
     "uploadSessionAttachment",
     "uploadSlackChannelFile",
@@ -2539,6 +2540,7 @@
     "toSandboxAbsolutePath",
     "toWorkspaceRelative",
     "uploadFile",
+    "uploadNativeFile",
     "uploadTimeoutMsForBytes",
     "writeFile"
   ],
