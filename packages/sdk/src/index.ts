@@ -58,6 +58,7 @@ export {
   deleteFile,
   files,
   FileExistsError,
+  fileDownloadRequest,
   findFiles,
   findText,
   getCurrentProject,
@@ -498,6 +499,7 @@ export * from './core/client/kortix';
 export * from './core/http/abort-error';
 export * from './core/http/api-client';
 export * from './core/http/auth';
+export * from './core/http/authenticated-request';
 export * from './core/http/config';
 export * from './core/http/feature-flags';
 export * from './core/http/fresh-sessions';

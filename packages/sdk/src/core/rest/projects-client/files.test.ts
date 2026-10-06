@@ -1,6 +1,6 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import { listProjectFiles, readProjectFile } from './files';
+import { listProjectFiles, projectArchiveRequest, readProjectFile } from './files';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
 let nextResponse: { status: number; body: unknown } = { status: 200, body: {} };
@@ -67,4 +67,11 @@ test('readProjectFile is a silent background read — a 403 never hits the globa
   } finally {
     configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
   }
+});
+
+test('projectArchiveRequest names the archive route with ref, path and the bearer, without fetching', async () => {
+  const request = await projectArchiveRequest('P 1', 'main', 'src/app');
+  expect(request.url).toBe('http://test.local/projects/P%201/files/archive?ref=main&path=src%2Fapp');
+  expect(request.headers.authorization).toBe('Bearer tok');
+  expect(calls).toHaveLength(0);
 });

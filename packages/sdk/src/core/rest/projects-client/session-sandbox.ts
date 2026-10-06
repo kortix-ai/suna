@@ -220,6 +220,33 @@ function classifySessionStartFailure(error?: Error): SessionStartError | null {
   return null;
 }
 
+// Numeric input remains supported for existing SDK consumers.
+type SessionStartOptions = number | {
+    /** Server-side long-poll budget in milliseconds. */
+    waitMs?: number;
+    /**
+   * Telemetry only. A session created before a repository replacement starts,
+   * runs the project's current config release and converges without it.
+   */
+    repositoryMode?: "previous";
+  };
+
+function postSessionStart(projectId: string, sessionId: string, options?: SessionStartOptions) {
+  const waitMs = typeof options === "number" ? options : options?.waitMs;
+  const repositoryMode = typeof options === "number" ? undefined : options?.repositoryMode;
+  const search = new URLSearchParams();
+  if (waitMs && waitMs > 0) search.set("wait_ms", String(Math.floor(waitMs)));
+  if (repositoryMode) search.set("repository_mode", repositoryMode);
+  const qs = search.size > 0 ? `?${search.toString()}` : "";
+  return backendApi.post<SessionStartResult>(
+    `/projects/${projectId}/sessions/${sessionId}/start${qs}`,
+    {},
+    // Keep toasts quiet here. Terminal client errors are rendered by the host;
+    // transient transport/server failures still yield null so polling can recover.
+    { showErrors: false },
+  );
+}
+
 /**
  * THE session-open call. Idempotently provisions/resumes the sandbox and resolves
  * the OpenCode pin server-side, returning ONE readiness payload to poll until
@@ -228,30 +255,9 @@ function classifySessionStartFailure(error?: Error): SessionStartError | null {
 export async function startProjectSession(
   projectId: string,
   sessionId: string,
-  // Numeric input remains supported for existing SDK consumers.
-  options?: number | {
-    /** Server-side long-poll budget in milliseconds. */
-    waitMs?: number;
-    /**
-   * Telemetry only. A session created before a repository replacement starts,
-   * runs the project's current config release and converges without it.
-   */
-    repositoryMode?: "previous";
-  },
+  options?: SessionStartOptions,
 ): Promise<SessionStartResult | null> {
-  const waitMs = typeof options === "number" ? options : options?.waitMs;
-  const repositoryMode = typeof options === "number" ? undefined : options?.repositoryMode;
-  const search = new URLSearchParams();
-  if (waitMs && waitMs > 0) search.set("wait_ms", String(Math.floor(waitMs)));
-  if (repositoryMode) search.set("repository_mode", repositoryMode);
-  const qs = search.size > 0 ? `?${search.toString()}` : "";
-  const response = await backendApi.post<SessionStartResult>(
-    `/projects/${projectId}/sessions/${sessionId}/start${qs}`,
-    {},
-    // Keep toasts quiet here. Terminal client errors are rendered by the host;
-    // transient transport/server failures still yield null so polling can recover.
-    { showErrors: false },
-  );
+  const response = await postSessionStart(projectId, sessionId, options);
   if (!response.success || !response.data) {
     const terminal = classifySessionStartFailure(response.error);
     // A 404 for a session minted in THIS tab is the optimistic create-vs-start
@@ -261,7 +267,26 @@ export async function startProjectSession(
     if (terminal && !(terminal.status === 404 && isSessionFresh(sessionId))) throw terminal;
     return null;
   }
-  const result = response.data;
+  return recordReadyRuntime(projectId, sessionId, response.data);
+}
+
+/**
+ * {@link startProjectSession}, but every failed request rejects with the API
+ * error itself (`status`, `code`, and a 402's billing `detail` intact) instead
+ * of yielding `null`. For a host that counts transient failures and shows one
+ * error, or opens an upgrade prompt on a 402.
+ */
+export async function startProjectSessionOrThrow(
+  projectId: string,
+  sessionId: string,
+  options?: SessionStartOptions,
+): Promise<SessionStartResult> {
+  const response = await postSessionStart(projectId, sessionId, options);
+  if (!response.success || !response.data) throw response.error ?? new Error("Unable to start this session");
+  return recordReadyRuntime(projectId, sessionId, response.data);
+}
+
+function recordReadyRuntime(projectId: string, sessionId: string, result: SessionStartResult): SessionStartResult {
   // Populate the shared session-runtime registry the instant a session goes
   // ready, regardless of WHICH caller drove this /start (the facade's
   // `ensureReady()` or the React `useSession` hook — both call this one
