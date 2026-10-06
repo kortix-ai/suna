@@ -8,7 +8,7 @@ import { continueSession } from './continue-session';
 import { PromptDeliveryRefused } from './prompt-delivery-refusal';
 import { assertInboxDeliveryActive, InboxDeliveryPaused, returnClaimToQueue } from './inbox-delivery-hold';
 import { removeStrandedOpencodeMessage } from './runtime-client';
-import { MAX_LIVE_PLACEMENT_REPAIRS, hasLaterForwardedSibling, remintForRepair, verifyLivePlacement } from './inbox-placement';
+import { MAX_LIVE_PLACEMENT_REPAIRS, hasLaterForwardedSibling, recordRepairedForward, remintForRepair, verifyLivePlacement } from './inbox-placement';
 import { MAX_RUNTIME_UNREACHABLE_RETRIES, markCommandFailed, parkPromptForUnreachableRuntime, markCommandForwarded, requeueUnlandedPrompt, markCommandSucceeded, type SessionLifecycleCommandRow, type QueuedContinueSessionPayload } from './store';
 import type { PromptOverridesWire } from './prompt-payload';
 import { DELIVERY_FAILURE_COPY, type SessionDeliveryOutcome, type SessionInvocationSource } from './types';
@@ -138,7 +138,9 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
       payload.clientMessageId ? () => assertInboxDeliveryActive(row) : undefined);
       tl.mark('delivered');
       if (delivery !== 'delivered') break;
-      await markDelivered(row, payload, wireMessageId, tl, noReply);
+      // A repair round re-sends after round 0's forward closed the claim.
+      if (round === 0) await markDelivered(row, payload, wireMessageId, tl, noReply);
+      else await recordRepairedForward(row.commandId, wireMessageId!);
       if (!placedIntoLiveTurn || !wireMessageId) break;
       const replaced = await repairPlacement(row, wireMessageId, postedAt, round, underPlaced, tl);
       if (!replaced) break;

@@ -301,3 +301,28 @@ export async function remintForRepair(
   }
   return minted.id;
 }
+
+/**
+ * A placement repair re-sent a forwarded prompt under `wireMessageId`. The
+ * first forward already closed the claim (`markCommandForwarded`), so this is
+ * not a lease write: it moves the one forwarded row to the id OpenCode now
+ * holds, which the consumption confirmation and the forwarded sweep key on.
+ */
+export async function recordRepairedForward(commandId: string, wireMessageId: string): Promise<void> {
+  await db
+    .update(sessionLifecycleCommands)
+    .set({
+      result: sql`${sessionLifecycleCommands.result} || ${JSON.stringify({
+        forwarded_message_id: wireMessageId,
+        forwarded_at: new Date().toISOString(),
+      })}::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(sessionLifecycleCommands.commandId, commandId),
+        eq(sessionLifecycleCommands.status, 'succeeded'),
+        sql`${sessionLifecycleCommands.result}->>'status' = 'forwarded'`,
+      ),
+    );
+}
