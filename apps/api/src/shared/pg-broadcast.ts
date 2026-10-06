@@ -55,12 +55,23 @@ export const TUNNEL_FORWARD_CHANNEL = 'kortix_tunnel_rpc_forward';
  */
 export const LIFECYCLE_COMMAND_SETTLED_CHANNEL = 'kortix_lifecycle_command_settled';
 
+/**
+ * A fourth channel: "a lifecycle command is queued, due at this epoch ms". A
+ * database trigger (migration 20261006135526223) sends it for every writer.
+ * The drain worker schedules itself for that moment; see
+ * `onLifecycleCommandDue`.
+ */
+export const LIFECYCLE_COMMAND_DUE_CHANNEL = 'kortix_lifecycle_command_due';
+
 type Handler = (projectId: string) => void;
 
 let listener: postgres.Sql | null = null;
 let handlers: Handler[] = [];
 let publish: ((projectId: string) => void) | null = null;
 let tunnelForwardHandler: ((payload: string) => void) | null = null;
+let commandDueHandler: ((dueAtMs: number) => void) | null = null;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+const LISTEN_RETRY_MS = 60_000;
 
 // replica-local: a waiter waits in this process; the NOTIFY reaches every replica.
 const settleWaiters = new Map<string, Set<() => void>>();
@@ -92,6 +103,21 @@ export function waitForLifecycleCommandSettle(commandId: string, ms: number): { 
 
 function wakeSettleWaiters(commandId: string): void {
   for (const wake of settleWaiters.get(commandId) ?? []) wake();
+}
+
+/** The drain worker registers on start. Kept across stop/start of the LISTEN. */
+export function onLifecycleCommandDue(handler: ((dueAtMs: number) => void) | null): void {
+  commandDueHandler = handler;
+}
+
+function deliverCommandDue(payload: string): void {
+  const dueAtMs = Number(payload);
+  if (!Number.isFinite(dueAtMs)) return;
+  try {
+    commandDueHandler?.(dueAtMs);
+  } catch {
+    // A subscriber must not take the listener down.
+  }
 }
 
 /** The forwarder registers once, at import. Kept across stop/start. */
@@ -166,6 +192,7 @@ export async function startConfigBaseMoveBroadcast(): Promise<boolean> {
       }
     });
     await sql.listen(LIFECYCLE_COMMAND_SETTLED_CHANNEL, wakeSettleWaiters);
+    await sql.listen(LIFECYCLE_COMMAND_DUE_CHANNEL, deliverCommandDue);
     listener = sql;
     publish = (projectId: string) => {
       // Fire-and-forget on the LISTEN connection's own pool: it runs no other
@@ -174,7 +201,7 @@ export async function startConfigBaseMoveBroadcast(): Promise<boolean> {
       void sql.notify(BASE_MOVE_CHANNEL, projectId).catch(() => {});
     };
     console.log(
-      `[config-releases] base-move broadcast listening on ${BASE_MOVE_CHANNEL}, ${TUNNEL_FORWARD_CHANNEL}, ${LIFECYCLE_COMMAND_SETTLED_CHANNEL}`,
+      `[config-releases] base-move broadcast listening on ${BASE_MOVE_CHANNEL}, ${TUNNEL_FORWARD_CHANNEL}, ${LIFECYCLE_COMMAND_SETTLED_CHANNEL}, ${LIFECYCLE_COMMAND_DUE_CHANNEL}`,
     );
     return true;
   } catch (error) {
@@ -184,11 +211,19 @@ export async function startConfigBaseMoveBroadcast(): Promise<boolean> {
       '[config-releases] base-move broadcast unavailable; the desired-release memo falls back to its TTL:',
       error instanceof Error ? error.message : String(error),
     );
+    // Try again later. Until then every subscriber runs at its pre-NOTIFY rate.
+    retryTimer ??= setTimeout(() => {
+      retryTimer = null;
+      void startConfigBaseMoveBroadcast();
+    }, LISTEN_RETRY_MS);
+    retryTimer.unref?.();
     return false;
   }
 }
 
 export async function stopConfigBaseMoveBroadcast(): Promise<void> {
+  if (retryTimer) clearTimeout(retryTimer);
+  retryTimer = null;
   const sql = listener;
   listener = null;
   publish = null;
