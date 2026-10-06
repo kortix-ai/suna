@@ -42,13 +42,22 @@ export function resetSteerWitnessForTests(): void {
   unreadSteers.clear()
 }
 
-/** Relay `steer_read` once per steered id, on its first answering assistant message. */
+/**
+ * Relay `steer_read` once per steered id, on its first answering assistant
+ * message. OpenCode parents a step on the NEWEST user message and answers
+ * everything before it, so every older unread steer (the set keeps send
+ * order) was read by the same step.
+ */
 export function observeSteerRead(event: { type?: string; properties?: unknown }): void {
   if (event.type !== 'message.updated' || unreadSteers.size === 0) return
   const info = (event.properties as { info?: { role?: unknown; parentID?: unknown; sessionID?: unknown } } | undefined)?.info
   if (info?.role !== 'assistant' || typeof info.parentID !== 'string' || typeof info.sessionID !== 'string') return
-  if (!unreadSteers.delete(info.parentID)) return
-  void relaySteerRead(info.sessionID, info.parentID)
+  if (!unreadSteers.has(info.parentID)) return
+  for (const id of unreadSteers) {
+    unreadSteers.delete(id)
+    void relaySteerRead(info.sessionID, id)
+    if (id === info.parentID) break
+  }
 }
 
 async function call(

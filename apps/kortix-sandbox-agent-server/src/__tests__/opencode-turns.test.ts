@@ -320,4 +320,28 @@ describe('steering on OpenCode (R10)', () => {
       api.stop(true)
     }
   })
+
+  test('a step parented on the newer of two steers reads both (OpenCode answers everything before it)', async () => {
+    const bodies: Array<Record<string, unknown>> = []
+    const api = Bun.serve({ port: 0, fetch: async (req) => (bodies.push((await req.json()) as Record<string, unknown>), Response.json({ ok: true })) })
+    const saved = { ...process.env }
+    Object.assign(process.env, { KORTIX_PROJECT_ID: 'proj_1', KORTIX_SESSION_ID: 'sess_1', KORTIX_TOKEN: 'tok', KORTIX_API_URL: `http://127.0.0.1:${api.port}` })
+    try {
+      const busy = opencode({ ses_1: { type: 'busy' } })
+      const turns = createOpenCodeTurnService(busy.proxy, () => '/workspace', at('1.18.23'))
+      await turns.steer('ses_1', steerInput('msg_s1'))
+      await turns.steer('ses_1', steerInput('msg_s2'))
+      observeSteerRead({ type: 'message.updated', properties: { info: { sessionID: 'ses_1', role: 'assistant', parentID: 'msg_s2' } } })
+      const deadline = Date.now() + 2_000
+      while (bodies.length < 2 && Date.now() < deadline) await Bun.sleep(10)
+      await Bun.sleep(50)
+      expect(bodies.map((body) => body.turn_message_id).sort()).toEqual(['msg_s1', 'msg_s2'])
+    } finally {
+      for (const key of ['KORTIX_PROJECT_ID', 'KORTIX_SESSION_ID', 'KORTIX_TOKEN', 'KORTIX_API_URL']) {
+        if (saved[key] === undefined) delete process.env[key]
+        else process.env[key] = saved[key]
+      }
+      api.stop(true)
+    }
+  })
 })
