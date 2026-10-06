@@ -321,9 +321,6 @@
   "src/billing/services/account-deletion.ts": {
     "kortix-api/projects-surface": {
       "count": 2
-    },
-    "no-console": {
-      "count": 14
     }
   },
   "src/billing/services/account-write-owner.ts": {
@@ -3233,7 +3230,7 @@
   },
   "src/shared/preview-ownership.ts": {
     "kortix-api/layers": {
-      "count": 4
+      "count": 5
     },
     "kortix-api/replica-local": {
       "count": 4
