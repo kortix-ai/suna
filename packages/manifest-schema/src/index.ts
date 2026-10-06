@@ -91,6 +91,8 @@ export {
   serializeManifestObject,
 } from './format';
 
+export { slugifySlug } from './slug';
+
 export {
   type ImportableKey,
   type ManifestImportReader,

@@ -1957,6 +1957,12 @@
     "queuedFiles": "{count, plural, one {# file} other {# file}}",
     "queuedCount": "{count} in coda",
     "editingQueued": "In modifica",
+    "steerNextStep": "Letto al passo successivo",
+    "steerFallbackUnsupported": "Attende questo turno. Questa sessione non accetta messaggi durante un turno.",
+    "steerFallbackNotPrompter": "Attende questo turno. Lo ha avviato un altro membro.",
+    "steerFallbackTurnEnded": "Viene eseguito come turno a sé. Il turno è terminato prima.",
+    "stopAndSend": "Interrompi e invia",
+    "stopAndSendFailed": "Impossibile interrompere e inviare quel messaggio",
     "submitEdit": "Invia",
     "collapseQueue": "Comprimi coda",
     "expandQueue": "Espandi coda"
@@ -9428,7 +9434,9 @@
     "i18nComplete": {
       "authEmailRateLimit": "Impossibile inviare l’email. Riprova tra circa un’ora.",
       "authRequestRateLimit": "Troppe richieste. Riprova tra qualche minuto.",
+      "text1a9030082a20": "Crea competenza",
       "text25ab55af92b1": "Caricamento allegato avviato",
+      "text38e64d6a8162": "Esegue il commit di un SKILL.md sul branch predefinito del progetto. Nessun modello o chat necessari.",
       "text40078a553439": "Blocco dell’allegato caricato",
       "text4c7f8000aabd": "Caricamento allegato completato",
       "text91420d2587c2": "Caricamento allegato rimosso",
@@ -9902,6 +9910,9 @@
       "text0e498a7ede47": "Abilitato {value0}",
       "text0e52f6b9d025": "Markdown",
       "text4cab70e9226b": "Salva come PDF",
+      "text9bf06a86c934": "Nuova competenza",
+      "texta38668224f1a": "Crea con un modulo",
+      "textb25ab5d5e2a5": "Competenza creata",
       "textce87352f1102": "Questo file è troppo grande per essere salvato come PDF. Scarica invece il file Markdown.",
       "text3b0c86f182b0": "Impossibile preparare il PDF.",
       "text0e570ca6fabe": "Origine",
@@ -14458,6 +14469,7 @@
       "text895ce927db2e": "Chat personale",
       "text28c7d3f8b75d": "Chat di gruppo",
       "text72b5b0c53de9": "Ha risposto in Microsoft Teams",
+      "textedac6130dac7": "Esegue il commit di un SKILL.md nel repository senza una sessione di chat.",
       "textfc73e9ad2dae": "Ha risposto in Slack",
       "text8faf56a14a8d": "Ha risposto in Telegram",
       "text8ccfe10f2f2d": "Pubblica nel catalogo Teams",
@@ -19247,7 +19259,9 @@
       "text8f480bae8d16": "Agenti IA per i team finanza",
       "text6243d930fc1c": "AI Operating System",
       "textc959682e0398": "Ha visualizzato i dispositivi connessi",
-      "text976811d9540a": "Ha disconnesso un dispositivo"
+      "text976811d9540a": "Ha disconnesso un dispositivo",
+      "text6f417aa88601": "Spesa del gateway LLM per origine elencata",
+      "textc96cd610ba08": "Chiave del provider condivisa riprovata dopo il limite di utilizzo"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

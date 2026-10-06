@@ -741,6 +741,9 @@ async function notifyRequestingSession(
     const { enqueueContinueSessionCommand, drainSessionLifecycleQueue } = await import(
       '../projects/session-lifecycle'
     );
+    // A key per submission only so the kick can target this row: an untargeted
+    // kick delivers whichever row is oldest-due.
+    const idempotencyKey = `secret-submitted:${sessionId}:${crypto.randomUUID()}`;
     await enqueueContinueSessionCommand({
       source: 'system:secret-submitted',
       projectId,
@@ -748,8 +751,9 @@ async function notifyRequestingSession(
       sessionId,
       actorUserId,
       text: secretSubmittedPrompt(saved, reach),
+      idempotencyKey,
     });
-    drainSessionLifecycleQueue({ limit: 1 }).catch(() => {});
+    drainSessionLifecycleQueue({ idempotencyKey, burst: false }).catch(() => {});
     console.info('[setup-links] secret submitted, session notified', { sessionId, saved });
   } catch (err) {
     console.warn('[setup-links] failed to notify session of secret submission:', err);

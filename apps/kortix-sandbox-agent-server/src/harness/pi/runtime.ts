@@ -34,7 +34,7 @@ import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './e
 import type { KortixHost, SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
 import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRule } from './interactions'
 import type { PiModels, SelectedModel } from './model'
-import { nativeModelId } from './model'
+import { compactionSettings, nativeModelId } from './model'
 import { TranscriptStore, type RuntimeFrame } from './transcript'
 import { PiTurnEvents, assistantInfoFields, assistantMessageError, type TurnEventEmission } from './turn-events'
 import { withAgentSampling } from './sampling'
@@ -156,6 +156,8 @@ export interface PiRuntimeHooks {
   onPermissionAsked?: (request: RuntimePermissionRequest) => void
   /** Every frame the runtime publishes on the event bus (the audit trail reads it). */
   onFrame?: (frame: RuntimeFrame) => void
+  /** A turn read a steered message: it is on the wire and in the model's context. */
+  onSteerRead?: (read: { rootId: string; messageId: string }) => void
 }
 
 export interface PiRuntimeOptions {
@@ -203,6 +205,13 @@ interface Turn {
    * run that starts afterwards is cut at `agent_start`.
    */
   stopRequested?: boolean
+}
+
+/** A steered message no turn has read yet. `message` is the object handed to `agent.steer()`. */
+interface Steered {
+  messageId: string
+  input: PromptInput
+  message: AgentMessage
 }
 
 interface Dump {
@@ -270,6 +279,12 @@ export class PiRuntime {
   private queue: Promise<unknown> = Promise.resolve()
   private active: Turn | null = null
   private runningTools = 0
+  /** Steered messages the running turn has not read, in send order (kortixd's queue in front of pi's). */
+  private steered: Steered[] = []
+  /** Steered ids the running turn read. */
+  private readonly steerReads = new Set<string>()
+  /** The user message the next assistant message answers: the turn's, then the newest steered one read. */
+  private turnParent: string | null = null
   private abortAfterTool: { promptId: string; messageId: string } | null = null
   private status: 'idle' | 'busy' = 'idle'
   /** Turns admitted and not yet finished, the running one included. */
@@ -397,7 +412,7 @@ export class PiRuntime {
       this.adapter = new PiTurnEvents({
         sessionID: this.rootId,
         mintMessageId: () => this.clock.mint(this.now()),
-        parentMessageId: () => this.active?.messageId ?? null,
+        parentMessageId: () => this.turnParent,
         model: () => ({ providerID: this.selected!.providerID, modelID: this.selected!.modelID }),
         agent: this.agentName,
         workspace: this.workspace,
@@ -428,6 +443,8 @@ export class PiRuntime {
         ),
         convertToLlm,
         toolExecution: 'parallel',
+        // Every message steered before a step boundary reaches the next step together (D9.5).
+        steeringMode: 'all',
         initialState: {
           systemPrompt: '',
           model: this.selected.model,
@@ -456,6 +473,7 @@ export class PiRuntime {
         systemPrompt: () => this.systemPrompt(),
         skillAllowed: (name) => skillGranted(this.policy, name),
         provider: this.models.models.getProvider(this.selected.providerID),
+        compaction: compactionSettings(this.models.catalog, this.cfg.piCompactAtTokens),
       })
       const extensionsMs = performance.now() - extensionsStartedAt
       this.rebuildSystemPrompt()
@@ -561,9 +579,7 @@ export class PiRuntime {
     if (!this.agent || this.state !== 'ok') throw new PromptRejected('pi runtime is not ready')
     if (!this.workspaceReady) throw new PromptRejected('workspace is not ready')
     const messageId = input.messageID ?? this.clock.mint(this.now())
-    if (this.transcript.messageById(messageId) || this.completedTurns.has(messageId)) {
-      throw new PromptRejected(`message ${messageId} was already admitted`)
-    }
+    if (this.knows(messageId)) throw new PromptRejected(`message ${messageId} was already admitted`)
     this.clock.observe(messageId)
     if (input.model) {
       const modelId = input.model.providerID === this.selected!.providerID ? input.model.modelID : nativeModelId(`${input.model.providerID}/${input.model.modelID}`)
@@ -595,6 +611,56 @@ export class PiRuntime {
         this.pendingTurns -= 1
       })
     return { messageId, done: outcome }
+  }
+
+  /** The id is on record: a message, a finished turn, the running turn or an unread steered message. */
+  private knows(messageId: string): boolean {
+    return (
+      !!this.transcript.messageById(messageId) ||
+      this.completedTurns.has(messageId) ||
+      this.active?.messageId === messageId ||
+      this.steered.some((entry) => entry.messageId === messageId)
+    )
+  }
+
+  /**
+   * Hand a message to the running turn. pi reads it at the next step boundary
+   * (after the running tool batch), and the runtime publishes it on the wire
+   * then (`onAgentEvent`). `no_turn` when no turn would read it: none runs, or
+   * the running one is being stopped. The turn's model, agent and variant apply.
+   */
+  steer(input: PromptInput & { messageID: string }): 'steered' | 'duplicate' | 'no_turn' {
+    if (!this.agent || this.state !== 'ok') throw new PromptRejected('pi runtime is not ready')
+    const messageId = input.messageID
+    if (this.knows(messageId)) return 'duplicate'
+    if (!this.active || this.active.stopRequested || this.abortAfterTool) return 'no_turn'
+    this.clock.observe(messageId)
+    const message: AgentMessage = {
+      role: 'user',
+      content: [{ type: 'text', text: input.text || '(attachment)' }, ...this.images(input)],
+      timestamp: this.now(),
+    }
+    this.steered.push({ messageId, input, message })
+    this.agent.steer(message)
+    return 'steered'
+  }
+
+  /**
+   * Take back a steered message the turn has not read. pi can only clear its
+   * steering queue, so the other queued messages are steered again in order.
+   * `read` when pi already took it for the next step, null when it is not a
+   * steered message of this turn.
+   */
+  withdrawSteer(messageId: string): 'removed' | 'read' | null {
+    if (this.steerReads.has(messageId)) return 'read'
+    const entry = this.steered.find((candidate) => candidate.messageId === messageId)
+    if (!entry || !this.agent) return null
+    const queued = this.agent.peekQueuedMessages()
+    if (!queued.includes(entry.message)) return 'read'
+    this.steered = this.steered.filter((candidate) => candidate !== entry)
+    this.agent.clearSteeringQueue()
+    for (const message of queued) if (message !== entry.message) this.agent.steer(message)
+    return 'removed'
   }
 
   /**
@@ -662,6 +728,8 @@ export class PiRuntime {
    * `agent.abort()` lets pi compact (a model call) after the stopped reply.
    */
   private stopPi(): void {
+    // A stopped turn reads no steered message; the turn's end drops what is unread.
+    this.agent?.clearSteeringQueue()
     this.pi?.session.abort().catch((err) => logger.warn('[pi] abort failed', { err: err instanceof Error ? err.message : String(err) }))
   }
 
@@ -697,6 +765,8 @@ export class PiRuntime {
   private async runTurn(turn: Turn): Promise<void> {
     const agent = this.agent!
     this.active = turn
+    this.turnParent = turn.messageId
+    this.steerReads.clear()
     this.status = 'busy'
     this.hooks.onTurnBegin?.({ rootId: this.rootId, messageId: turn.messageId })
     let outcome: TurnOutcome = 'completed'
@@ -766,6 +836,7 @@ export class PiRuntime {
       this.permissions.rejectAll()
       this.questions.rejectAll()
       this.active = null
+      this.turnParent = null
       this.runningTools = 0
       this.abortAfterTool = null
       this.status = 'idle'
@@ -774,6 +845,20 @@ export class PiRuntime {
       turn.resolve(outcome)
       this.hooks.onTurnEnd?.({ rootId: this.rootId, messageId: turn.messageId, status: outcome === 'error' ? 'error' : 'idle', ...(error ? { error } : {}) })
     }
+    // Steered messages the turn did not read. A stopped turn drops them (the
+    // API's Stop path owns them). Otherwise they start the next turn: the first
+    // is its prompt, the rest are read before its first model call. Same queue
+    // slot, so no prompt admitted meanwhile runs before them.
+    const [next, ...rest] = turn.stopRequested ? [] : this.steered
+    this.steered = rest
+    agent.clearSteeringQueue()
+    if (!next) return
+    for (const entry of rest) agent.steer(entry.message)
+    this.publishUserMessage(this.rootId, next.messageId, next.input)
+    this.hooks.onSteerRead?.({ rootId: this.rootId, messageId: next.messageId })
+    let resolveNext!: (outcome: TurnOutcome) => void
+    const nextOutcome = new Promise<TurnOutcome>((r) => (resolveNext = r))
+    await this.runTurn({ messageId: next.messageId, input: next.input, resolve: resolveNext, outcome: nextOutcome })
   }
 
   /** Omit the failed model attempt from pi's session store, so the retry does not send it again. */
@@ -873,7 +958,15 @@ export class PiRuntime {
 
   private onAgentEvent(event: AgentEvent): void {
     if (event.type === 'agent_start' && this.active?.stopRequested) this.stopPi()
-    if (event.type === 'message_start' && event.message.role === 'user' && this.active?.input.command) {
+    const steered = event.type === 'message_start' && event.message.role === 'user' ? this.steered.find((entry) => entry.message === event.message) : undefined
+    if (steered) {
+      // The turn reads a steered message now: it goes on the wire at this step, and the next reply answers it.
+      this.steered = this.steered.filter((entry) => entry !== steered)
+      this.steerReads.add(steered.messageId)
+      this.turnParent = steered.messageId
+      this.publishUserMessage(this.rootId, steered.messageId, steered.input)
+      this.hooks.onSteerRead?.({ rootId: this.rootId, messageId: steered.messageId })
+    } else if (event.type === 'message_start' && event.message.role === 'user' && this.active?.input.command) {
       const { content } = event.message
       const text = typeof content === 'string' ? content : content.map((block) => (block.type === 'text' ? block.text : '')).join('')
       const messageID = this.active.messageId
@@ -1430,7 +1523,7 @@ export class PiRuntime {
     if (messageId === null) {
       return { inFlight: this.busy(), end: this.busy() ? null : this.latestEnd(), orphanedPrompt: false }
     }
-    if (this.active?.messageId === messageId) return { inFlight: true, end: null, orphanedPrompt: false }
+    if (this.active?.messageId === messageId || this.steered.some((entry) => entry.messageId === messageId)) return { inFlight: true, end: null, orphanedPrompt: false }
     const completed = this.completedTurns.get(messageId)
     if (completed) return { inFlight: false, end: completed === 'error' ? 'failed' : 'completed', orphanedPrompt: false }
     // Queued behind the running turn: on record, not yet answered, still ours.

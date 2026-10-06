@@ -38,6 +38,10 @@ Use the narrowest source type that preserves the App behavior:
 | Next.js static export | set `output: 'export'`, build, then deploy `out/ --type static --spa` |
 | Next.js server runtime | Dockerfile, command, and port `3000` |
 | Any custom HTTP service | Dockerfile, command, and target port |
+
+Deploy build output from disk; do not commit it. Add `dist/` and `out/` to
+`.gitignore`: a large repository breaks the agent config every session builds
+from it (`kortix validate` warns).
 | Existing public container image | `--image`, command, and target port |
 
 Prefer a prebuilt static directory for generated artifacts. It removes the

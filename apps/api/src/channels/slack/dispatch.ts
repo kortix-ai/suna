@@ -20,6 +20,7 @@ import { handleSlashCommand } from './commands';
 import {
   createOrJoinThreadSession,
   deliverSlackFollowUpToSession,
+  slackFollowUpKey,
   renderFollowUpPrompt,
   slackFollowUpModel,
 } from './session';
@@ -861,6 +862,7 @@ async function deliverToExistingThread(
   }
   const outcome = await deliverSlackFollowUpToSession({
     sessionId: existing.sessionId,
+    idempotencyKey: slackFollowUpKey(teamId, event),
     text: renderFollowUpPrompt(envelope, event, await slackMessageLabels({ projectId, teamId, event })),
     userId: actorUserId,
     model: await slackFollowUpModel({
@@ -876,18 +878,10 @@ async function deliverToExistingThread(
     }),
   });
 
-  if (outcome === 'delivered') {
+  // `queued`: the reply is durable and the queue delivers it once the box is
+  // up; the turn handle stays open for that answer.
+  if (outcome === 'delivered' || outcome === 'queued') {
     await touchChatThread(thread);
-    return { handled: true as const, handle };
-  }
-
-  if (outcome === 'pending') {
-    if (handle) {
-      await deleteTurn(existing.sessionId);
-      await finalizeTurn(handle, {
-        error: "Still waking this thread's session back up — send that again in a moment.",
-      });
-    }
     return { handled: true as const, handle };
   }
 
@@ -906,5 +900,7 @@ async function deliverToExistingThread(
     return { handled: true as const, handle };
   }
 
+  // Only a deleted session is replaced. Anything else revived the thread onto a
+  // new session and orphaned a live one.
   return { handled: false as const, handle };
 }

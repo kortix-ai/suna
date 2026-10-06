@@ -28,6 +28,7 @@ import {
   enqueueReleasingHold,
   holdInboxPrompts,
   inboxSendState,
+  interruptInboxPrompt,
   listInboxPrompts,
   retryInboxPrompt,
 } from '../session-lifecycle';
@@ -41,9 +42,11 @@ import {
 } from '../session-lifecycle/prompt-parts';
 import {
   type PromptRow,
+  promptDelivery,
   promptState,
   serializePrompt,
 } from '../lib/session-prompt-view';
+import { SessionPromptDeliverySchema } from '@kortix/api-contract';
 import { WIRE_MESSAGE_ID, isWireIdAheadOf } from '../wire-message-id';
 
 // ─── Prompt inbox ───────────────────────────────────────────────────────────
@@ -77,6 +80,7 @@ const LONE_SEND_MAX_AGE_MS = 1_000;
  *  shape. */
 const RemovedSessionPromptSchema = z.object({
   placement: z.enum(['transcript', 'composer']).optional(),
+  delivery: SessionPromptDeliverySchema.optional(),
   prompt_id: z.string(),
   client_message_id: z.string(),
   removed_message_ids: z.array(z.string()).optional(),
@@ -91,6 +95,7 @@ function serializeRemovedPrompt(row: PromptRow) {
   const parts = Array.isArray(payload.parts) ? payload.parts : [];
   return {
     placement: payload.placement === 'transcript' ? 'transcript' as const : 'composer' as const,
+    delivery: promptDelivery(payload),
     prompt_id: row.commandId,
     client_message_id: typeof payload.clientMessageId === 'string' ? payload.clientMessageId : '',
     // The ORIGINAL wire id, never the re-minted one: an undo re-creates the
@@ -129,6 +134,7 @@ export function registerSessionPromptsRoutes(): void {
             message_id: z.string().openapi({ description: 'OpenCode wire message id (starts with msg_). Must sort after earlier messages of the session.' }),
             parts: z.array(z.object({ type: z.enum(['text', 'file', 'agent']).optional(), text: z.string().optional(), mime: z.string().optional(), url: z.string().optional(), filename: z.string().optional(), attachment_id: z.string().optional() }).passthrough()).openapi({ description: '1 or more parts. Text prompt: [{"type":"text","text":"..."}].' }),
             placement: z.enum(['transcript', 'composer']).optional().openapi({ description: 'transcript sends now; composer stages it as a draft.' }),
+            delivery: SessionPromptDeliverySchema.optional().openapi({ description: 'How the prompt reaches a running turn: steer (read at its next step), queue (after it ends), interrupt (ends it after the running tool). Sets placement.' }),
             overrides: z.object({ agent: z.string().optional(), model: z.object({ providerID: z.string(), modelID: z.string() }).optional(), variant: z.string().optional(), directory: z.string().optional() }).passthrough().optional().optional().openapi({ description: 'Per-prompt agent or model override.' }),
             remint_on_delivery: z.boolean().optional().openapi({ description: 'Assign a fresh wire id when the prompt is delivered.' }),
             client_sent_at_ms: z.number().optional().openapi({ description: 'Client send time, epoch milliseconds.' }),
@@ -223,6 +229,11 @@ export function registerSessionPromptsRoutes(): void {
       if (body.placement !== undefined && body.placement !== 'transcript' && body.placement !== 'composer') {
         return c.json({ error: 'placement must be transcript or composer' }, 400);
       }
+      const deliveryInput = SessionPromptDeliverySchema.optional().safeParse(body.delivery);
+      if (!deliveryInput.success) return c.json({ error: 'delivery must be steer, queue or interrupt' }, 400);
+      const delivery = deliveryInput.data;
+      // `delivery` decides the placement; a request with only `placement` keeps its old meaning.
+      const placement = delivery ? (delivery === 'interrupt' ? 'transcript' : 'composer') : body.placement;
       const rawParts = Array.isArray(body.parts) ? body.parts : [];
       if (!clientMessageId || clientMessageId.length > 128) {
         return c.json({ error: 'client_message_id is required (1..128 chars)' }, 400);
@@ -317,7 +328,8 @@ export function registerSessionPromptsRoutes(): void {
         idempotencyKey,
         clientMessageId,
         wireMessageId: messageId,
-        ...(body.placement ? { placement: body.placement } : {}),
+        ...(placement ? { placement } : {}),
+        ...(delivery ? { delivery } : {}),
         // OPT-IN, and only one producer sets it: the localStorage migration,
         // whose id is minted at page load — against a transcript this tab has
         // not read yet — for a message the user typed before their last reload.
@@ -540,7 +552,7 @@ export function registerSessionPromptsRoutes(): void {
       tags: ['sessions'],
       summary: 'Edit a queued prompt',
       description:
-        'Replace the text of a prompt still waiting in the queue. The prompt keeps its place, its files and any hold, and is not sent.',
+        'Replace the text of a prompt still waiting in the queue. The prompt keeps its place, its files and any hold, and is not sent. `delivery: interrupt` turns it into a Quick Queue prompt that ends the running turn after its current tool ("Stop and send").',
       ...auth,
       request: {
         params: z.object({
@@ -549,7 +561,8 @@ export function registerSessionPromptsRoutes(): void {
           promptId: z.string(),
         }),
         body: { content: { 'application/json': { schema: lenientBody({
-            text: z.string().openapi({ description: 'The new text of the prompt.' }),
+            text: z.string().optional().openapi({ description: 'The new text of the prompt.' }),
+            delivery: z.literal('interrupt').optional().openapi({ description: 'interrupt: send it next, ending the running turn after its current tool. Only for a prompt that is not sent yet.' }),
           }) } }, required: true },
       },
       responses: {
@@ -580,17 +593,32 @@ export function registerSessionPromptsRoutes(): void {
       if (!visible) return c.json({ error: 'Not found' }, 404);
 
       const body = await readJsonObject(c);
-      // The same limits a sent text part meets.
-      const sanitized = sanitizeInboxPromptParts([{ type: 'text', text: body.text }]);
-      if ('error' in sanitized) return c.json({ error: sanitized.error }, 400);
-      const text = flattenPromptText(sanitized.parts);
-      if (!text.trim()) return c.json({ error: 'text is required' }, 400);
-
-      // No drain kick and no hold release: an edit changes a waiting message,
-      // it does not send one. `POST /prompts` would do both.
-      const outcome = await editInboxPrompt(sessionId, promptId, text);
-      if (outcome.outcome === 'edited') return c.json(serializePrompt(outcome.row), 200);
-      if (outcome.outcome === 'delivering') {
+      if (body.delivery !== undefined && body.delivery !== 'interrupt') {
+        return c.json({ error: 'delivery must be interrupt' }, 400);
+      }
+      if (body.text === undefined && body.delivery === undefined) {
+        return c.json({ error: 'text or delivery is required' }, 400);
+      }
+      let outcome: Awaited<ReturnType<typeof editInboxPrompt>> | null = null;
+      if (body.text !== undefined) {
+        // The same limits a sent text part meets.
+        const sanitized = sanitizeInboxPromptParts([{ type: 'text', text: body.text }]);
+        if ('error' in sanitized) return c.json({ error: sanitized.error }, 400);
+        const text = flattenPromptText(sanitized.parts);
+        if (!text.trim()) return c.json({ error: 'text is required' }, 400);
+        // No drain kick and no hold release: an edit changes a waiting message,
+        // it does not send one. `POST /prompts` would do both.
+        outcome = await editInboxPrompt(sessionId, promptId, text);
+      }
+      if (body.delivery === 'interrupt' && (!outcome || outcome.outcome === 'edited')) {
+        outcome = await interruptInboxPrompt(sessionId, promptId);
+        // "Stop and send" sends: the row is due now and the drain arms the interrupt.
+        if (outcome.outcome === 'edited' && outcome.row.idempotencyKey) {
+          void drainSessionLifecycleQueue({ idempotencyKey: outcome.row.idempotencyKey }).catch(() => undefined);
+        }
+      }
+      if (outcome?.outcome === 'edited') return c.json(serializePrompt(outcome.row), 200);
+      if (outcome?.outcome === 'delivering') {
         return c.json({ error: 'Prompt is already with the agent' }, 409);
       }
       return c.json({ error: 'Not found' }, 404);

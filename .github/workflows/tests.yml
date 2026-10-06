@@ -23,7 +23,7 @@ name: Tests
 
 on:
   pull_request:
-    branches: [main, staging]
+    branches: [dev, staging]
     types: [opened, reopened, synchronize, ready_for_review, labeled]
   schedule:
     # Off the top of the hour: GitHub drops congested top-of-hour crons.

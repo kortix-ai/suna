@@ -230,4 +230,43 @@ describe('loadProjectConfig characterization', () => {
       },
     ]);
   });
+
+  // The skill-create route serializes every frontmatter string as a
+  // double-quoted YAML scalar (the one single-line form valid for any text),
+  // so a description may carry quotes, colons and backslashes. The summary
+  // parser must read that scalar back to its text, or the catalog shows the
+  // escapes.
+  test('reads a quoted frontmatter scalar with escapes back to its text', async () => {
+    await push(
+      {
+        'skills/quoted/SKILL.md': `---
+name: "Quoted \\"Skill\\""
+description: "Runs deploys: say \\"go\\""
+---
+`,
+      },
+      'add the quoted skill',
+    );
+    const config = await loadProjectConfig(project);
+
+    const skill = config.skills.find((s) => s.path === 'skills/quoted/SKILL.md');
+    expect(skill?.name).toBe('Quoted "Skill"');
+    expect(skill?.description).toBe('Runs deploys: say "go"');
+  });
+
+  // A plain scalar (the writer emits one when the text needs no quoting) may
+  // end in a quote character; the reader must not eat it as a closing quote.
+  test('reads a plain scalar that ends in a quote back intact', async () => {
+    await push(
+      {
+        'skills/plain/SKILL.md': '---\nname: Deploy "v1"\ndescription: Covers the don\'t path\n---\n',
+      },
+      'add the plain skill',
+    );
+    const config = await loadProjectConfig(project);
+
+    const skill = config.skills.find((s) => s.path === 'skills/plain/SKILL.md');
+    expect(skill?.name).toBe('Deploy "v1"');
+    expect(skill?.description).toBe("Covers the don't path");
+  });
 });

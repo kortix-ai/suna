@@ -74,10 +74,11 @@ export {
   toSandboxAbsolutePath,
   toWorkspaceRelative,
   uploadFile,
+  uploadNativeFile,
   uploadTimeoutMsForBytes,
   writeFile,
 } from './core/files/client';
-export type { UploadFileOptions, UploadProgressEvent } from './core/files/client';
+export type { NativeFilePart, UploadFileOptions, UploadProgressEvent } from './core/files/client';
 export type * from './core/files/types';
 
 /** Generate a session id (RFC 4122 v4, with a non-secure-context fallback). */
@@ -199,6 +200,7 @@ export {
   BillingError,
   RequestTooLargeError,
   parseBillingError,
+  isAuthFailure,
   isBillingError,
   formatBillingErrorForUI,
   FEATURE_DISABLED_CODE,
@@ -522,6 +524,8 @@ export {
   savedCopyEmptyRoot,
 } from './core/session-sync/saved-transcript';
 export * from './core/session/url';
+/** How this deployment addresses previews (`GET /v1/p/config`), cached per backend. */
+export { loadPreviewUrlTemplate } from './core/session/preview-config';
 export * from './core/stream/event-stream';
 export * from './core/stream/fetch-sse';
 export * from './core/turns';
