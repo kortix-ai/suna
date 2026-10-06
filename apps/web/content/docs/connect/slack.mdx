@@ -146,7 +146,9 @@ project.
 - `channel_info` answers for any public channel. A private channel or DM
   follows the table above.
 - `file_info` answers when the file is shared in a conversation the agent may
-  read.
+  read, or in a thread of this project. `slack download` follows the same rule: a file shared only in another
+  project's conversation answers `403`. A download stops at 50 MB and answers
+  `413`.
 - `search_messages` runs only while no other project is connected to the
   workspace, because a search cannot be limited to one project's
   conversations.
@@ -225,6 +227,10 @@ they rotate on rate limits. The channel's model starts every new thread; a
 thread keeps the model it started with. A model a thread can no longer run is
 replaced for that message instead of failing it. See
 [Provider keys and member access](/docs/project/models#provider-keys-and-member-access).
+
+A follow-up with an image runs on a model that can read images. When no model
+in reach can, the agent is told so in the prompt: it says it cannot see the
+image and asks for the text, instead of guessing.
 
 ## Channel and people names
 
