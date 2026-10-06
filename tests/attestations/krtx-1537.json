@@ -1,5 +1,5 @@
 {
-  "source_hash": "22c245758d6a957f638568b05153150e6db9e94b2f9e2e932d8c20b86dbc6ead",
+  "source_hash": "c93995c5f3c315846e8af4db86d16c4e001cadb57bb220fa26764fc52c269e2c",
   "diff_files": [
     "apps/api/src/projects/git/config.test.ts",
     "apps/api/src/projects/git/config.ts",
@@ -32,13 +32,13 @@
     "tests/spec/routes.generated.json",
     "tests/src/flows/skills.flow.ts"
   ],
-  "diff_hash": "d52e77203eafe532eda6f3573b3766a6343113cfefb4c5a4b425dbe23f4c32d9",
-  "head": "9ac0a3c55463bab7871ca57bf1626388f359ed6a",
+  "diff_hash": "909c10e5286c01da397f0f8a43f79f96fc213138e330932d93b880497daacc8d",
+  "head": "7fb62bfec2cecfa3208f883837158e939cb43687",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-06T12:25:45.128Z"
+  "at": "2026-10-06T13:13:38.254Z"
 }
