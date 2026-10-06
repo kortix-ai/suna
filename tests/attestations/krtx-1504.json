@@ -1,11 +1,21 @@
 {
-  "source_hash": "578e648d9b76992a167356d78ecea60de109e0e85d5a5c98c86a314445829834",
-  "head": "57f676ae0c22b84ab970ddaae59e03c03aed8d85",
+  "source_hash": "9822ad0624ff1218e410285ceb4e7855e7cef0d75a1e0e053a3b96750b1bb26d",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    "apps/cli/DESIGN.md",
+    "apps/cli/src/__tests__/triggers.test.ts",
+    "apps/cli/src/api/types.ts",
+    "apps/cli/src/commands/triggers.ts",
+    "apps/web/content/docs/cli.mdx",
+    "apps/web/content/docs/connect/triggers.mdx"
+  ],
+  "diff_hash": "c09af8939d89734bfbd175000c6c7f6c805222a504983d5a62528fb863d12443",
+  "head": "c247f8e50e7db46f1139a495c3d27d6788879021",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-06T21:11:48.136Z"
+  "at": "2026-10-06T21:46:00.895Z"
 }
