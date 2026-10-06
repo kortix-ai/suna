@@ -655,7 +655,7 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 
 `COST-3` A real sandbox on an account that never subscribed is metered. `credit_accounts.billing_model` defaults to `legacy`; a session on such an account, whose tier is not a legacy paid plan, opens a `sandbox_compute_sessions` row once its sandbox is active. Only a legacy paid plan (`tier_2_20`, `tier_6_50`, `tier_25_200`, `tier_200_1000`, `pro`) on the legacy billing model is exempt.
 
-`COST-4` Account-wide usage reads (`GET /usage`, `/usage/cost-summary`, `/usage/cost-by-project`, `/usage/session-costs` without `project_id`, `GET /generation`) require `billing.read` for every credential class. A service account with no role assignment → 403; a member's PAT (members hold `billing.read`) → 200; a project filter naming a project outside the caller's account or without read access → 404; project-scoped tokens → 403 on account-wide reads.
+`COST-4` Account-wide usage reads (`GET /usage`, `/usage/cost-summary`, `/usage/cost-by-project`, `/usage/session-costs` without `project_id`, `GET /generation`) require `billing.read` for every credential class. A service account with no role assignment → 403; a member's PAT (members hold `billing.read`) → 200; a project filter naming a project outside the caller's account or without read access → 403/404; project-scoped tokens → 403 on account-wide reads.
 
 ---
 

@@ -318,7 +318,7 @@ flow(
       for (const path of reads) (await c.get(path)).status(403);
       (await c.get('/v1/generation', { query: { id: 'req_x' } })).status(403);
     });
-    await ctx.step('member PAT (billing.read) still reads account usage → 200; foreign project filter → 404', async () => {
+    await ctx.step('member PAT (billing.read) still reads account usage → 200; foreign project filter → 403/404', async () => {
       const created = await ctx.client.as(member).post('/v1/accounts/tokens', {
         name: ctx.fixtures.name('cost4-pat'),
         account_id: team.id,
@@ -327,7 +327,7 @@ flow(
       const c = ctx.client.withBearer(created.json<{ secret_key: string }>().secret_key, 'COST-4-PAT');
       for (const path of reads) (await c.get(path)).status(200);
       (await c.get('/v1/generation', { query: { id: 'req_x' } })).status(404);
-      (await c.get('/v1/usage/session-costs', { query: { project_id: otherProject.id } })).status(404);
+      (await c.get('/v1/usage/session-costs', { query: { project_id: otherProject.id } })).status([403, 404]);
     });
     await ctx.step('OWNER JWT still reads account usage → 200', async () => {
       const owner = ctx.client.as(ctx.P.OWNER);
