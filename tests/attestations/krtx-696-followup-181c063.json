@@ -1,5 +1,5 @@
 {
-  "source_hash": "01def7e53af8c2a25bca49136359576ef8e348c1c31875a64a289332f9de7427",
+  "source_hash": "92c8fa13195abe063d0085618f143b021a8a3dd7460d6e2e4e3d2cff498d6610",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-06T064927Z-key-a-diagnostic-warn-on-the-episode-the-system-already-budg.md",
@@ -9,13 +9,13 @@
     "apps/api/src/projects/session-open/session-open-readiness.test.ts",
     "apps/api/src/projects/session-open/session-open-readiness.ts"
   ],
-  "diff_hash": "5153f98232cf44bbd24013f3159d5fda3b8041bb147e2d7e7b2c7063b52d9a2b",
-  "head": "1be5c2fe9293a471a2ef07008835297d80fa2f4a",
+  "diff_hash": "424125d417146c98540802e8352617fe18c3641b5de4897dc9962e9b2f21bb9d",
+  "head": "a980f47eb0d0cdf23f35de5eee87266e7c2315fe",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-06T12:37:55.180Z"
+  "at": "2026-10-06T13:53:10.749Z"
 }
