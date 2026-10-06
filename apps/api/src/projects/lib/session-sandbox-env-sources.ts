@@ -197,7 +197,7 @@ export async function resolveSessionSecretsPrincipal(
 ): Promise<{
   grantEnvForSession: string[] | 'all' | undefined;
   secretsPrincipalUserId: string | null;
-  sessionPolicyMetadata: unknown;
+  sessionPolicyMetadata: Record<string, unknown> | null;
 }> {
   // Per-session secret policy, read by sessionId inside the builder so all three
   // call sites (create, restart, open/ensure) are covered — no caller can
@@ -245,7 +245,7 @@ export async function buildSessionRuntimeSecrets(
     agentGrantEnv: string[] | 'all' | undefined;
     grantEnvForSession: string[] | 'all' | undefined;
     secretsPrincipalUserId: string | null;
-    sessionPolicyMetadata: unknown;
+    sessionPolicyMetadata: Record<string, unknown> | null;
   },
 ): Promise<{
   runtimeSecrets: {

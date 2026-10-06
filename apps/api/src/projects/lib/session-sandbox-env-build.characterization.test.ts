@@ -288,9 +288,9 @@ describe('buildSessionSandboxEnvVars — v2 native session', () => {
     // The compiled v2 agent config ships sealed, and its etag matches the
     // shipped config (what the daemon's /kortix/health echoes back).
     expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe('{"compiled":"v2"}');
-    expect(env.KORTIX_COMPILED_AGENT_CONFIG_ETAG).toBe(
-      realCompile.agentConfigEtag('{"compiled":"v2"}'),
-    );
+    // A non-empty config never hashes to null (agentConfigEtag's contract).
+    const expectedEtag: string = realCompile.agentConfigEtag('{"compiled":"v2"}') ?? '';
+    expect(env.KORTIX_COMPILED_AGENT_CONFIG_ETAG).toBe(expectedEtag);
 
     // OpenCode is the daemon default: no explicit harness key.
     expect(env.KORTIX_HARNESS).toBeUndefined();
