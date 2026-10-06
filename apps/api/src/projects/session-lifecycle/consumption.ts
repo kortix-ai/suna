@@ -398,3 +398,29 @@ export async function reconcileForwardedPrompts(
   }
   return out;
 }
+
+/**
+ * A turn end that names a STEER row's id (R10). OpenCode ends a turn on the
+ * last assistant's `parentID`, which after a steer is the steered message, not
+ * the message that opened the turn. Returns the turn's own message id
+ * (`result.steered_into_message_id`) and confirms the steer row consumed; null
+ * when no steer row of this session carries the id. One read, served by the
+ * session index; the caller asks only when the end matched no open turn.
+ */
+export async function steerTargetAtTurnEnd(sessionId: string, messageId: string): Promise<string | null> {
+  const [steer] = await db
+    .select({ into: sql<string | null>`${sessionLifecycleCommands.result}->>'steered_into_message_id'` })
+    .from(sessionLifecycleCommands)
+    .where(
+      and(
+        eq(sessionLifecycleCommands.sessionId, sessionId),
+        eq(sessionLifecycleCommands.commandType, 'continue_session'),
+        sql`${sessionLifecycleCommands.result} ? 'steered_into_message_id'`,
+        wireMessageIdMatches(messageId),
+      ),
+    )
+    .limit(1);
+  if (!steer?.into) return null;
+  await confirmInboxPromptConsumed(sessionId, messageId);
+  return steer.into;
+}

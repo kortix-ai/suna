@@ -21,10 +21,10 @@ export function createPiDiagnosticsService(
   releases: Pick<PiConfigReleases, 'report' | 'sourceCommit'>,
 ): HarnessDiagnosticsService {
   return {
-    // Subagents (the `task` tool), compaction and slash commands (pi's prompt
-    // templates) are native; rewind, fork, MCP, todo, shell and the harness's own
+    // Subagents (the `task` tool), compaction, slash commands (pi's prompt
+    // templates) and steering are native; rewind, fork, MCP, todo, shell and the harness's own
     // terminal client are not yet (pi/surface.ts answers them 501 `feature_not_supported`).
-    capabilities: ['session.subagents', 'session.compact', 'session.commands'],
+    capabilities: async () => ['session.subagents', 'session.compact', 'session.commands', 'session.steer'],
     async health(context, query): Promise<HarnessHealthReport> {
       const bootState: PiBootState = context.bootState
       const rt = runtime()
