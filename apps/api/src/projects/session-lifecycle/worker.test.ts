@@ -148,3 +148,13 @@ test('a later due time keeps its own wake after an earlier one drains', async ()
   expect(drains).toBe(3);
   expect(Date.now() - t0).toBeLessThan(4_000);
 }, 10_000);
+
+test('a drain stuck on a cold boot no longer blocks the next drain, up to a bound', async () => {
+  const { canStartDrain, DRAIN_STALL_MS, MAX_CONCURRENT_DRAINS } = await import('../../workers/session-lifecycle-worker');
+  const now = 1_000_000;
+  expect(canStartDrain([], now)).toBe(true);
+  expect(canStartDrain([now - 1_000], now)).toBe(false);
+  expect(canStartDrain([now - DRAIN_STALL_MS], now)).toBe(true);
+  const stuck = Array.from({ length: MAX_CONCURRENT_DRAINS }, () => now - 5 * 60_000);
+  expect(canStartDrain(stuck, now)).toBe(false);
+});

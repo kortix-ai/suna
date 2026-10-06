@@ -1,3 +1,4 @@
+import { BoundedMap } from '../../shared/bounded-map';
 /**
  * THE AGENT A PROMPT IS DELIVERED UNDER, CHECKED AGAINST THE RUNTIME THAT HAS
  * TO RUN IT.
@@ -101,7 +102,7 @@ interface CacheEntry {
   atMs: number;
 }
 
-const rosterCache = new Map<string, CacheEntry>();
+const rosterCache = new BoundedMap<string, CacheEntry>(5_000);
 
 /**
  * Read (and cache) the agent names a session's runtime reports.
