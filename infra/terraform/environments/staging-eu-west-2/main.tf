@@ -166,8 +166,8 @@ module "api" {
   # instance class, different region.
   task_cpu                   = 2048
   task_memory                = 4096
-  desired_count              = 6
-  min_capacity               = 6
+  desired_count              = var.api_task_count
+  min_capacity               = var.api_task_count
   max_capacity               = 8
   use_fargate_spot           = true
   fargate_base_on_demand     = 1
