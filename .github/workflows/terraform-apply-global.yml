@@ -55,7 +55,7 @@ jobs:
       aws_region: us-west-2
       role_arn: ${{ vars.TF_APPLY_ROLE_ARN_GLOBAL }}
       github_environment: infra-global
-      trusted_branch: main
+      trusted_branch: dev
       allow_deletes: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_deletes || false }}
 
   security-baseline:
@@ -71,5 +71,5 @@ jobs:
       aws_region: us-west-2
       role_arn: ${{ vars.TF_APPLY_ROLE_ARN_GLOBAL }}
       github_environment: infra-global
-      trusted_branch: main
+      trusted_branch: dev
       allow_deletes: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_deletes || false }}

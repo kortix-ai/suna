@@ -304,7 +304,7 @@ jobs:
       aws_region: us-east-2
       role_arn: ${{ vars.TF_APPLY_ROLE_ARN_DEV }}
       github_environment: dev
-      trusted_branch: main
+      trusted_branch: dev
       cloudflare: true
       allow_deletes: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_deletes || false }}
 
@@ -326,7 +326,7 @@ jobs:
       aws_region: us-east-2
       role_arn: ${{ vars.TF_APPLY_ROLE_ARN_DEV }}
       github_environment: dev
-      trusted_branch: main
+      trusted_branch: dev
       cloudflare: true
       allow_deletes: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_deletes || false }}
 
