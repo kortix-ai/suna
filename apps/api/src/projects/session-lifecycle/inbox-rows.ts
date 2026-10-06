@@ -36,9 +36,10 @@ export function inboxScope(sessionId: string) {
  * How long a HELD prompt stays out of the drain's way.
  *
  * A hold is released by an action, never by this timer — the user sending
- * anything new, or pressing "send now" on a row. The horizon exists only so a
- * held row cannot outlive a browser that never comes back: a day later the
- * queue drains rather than holding a prompt for ever.
+ * anything new, or pressing "send now" on a row. The drain never claims a held
+ * inbox prompt (`claimDueLifecycleCommands`), so for those this is only the
+ * row's due time once the hold is lifted. A held AUTOMATION row (no
+ * `clientMessageId`) is delivered when this horizon passes.
  */
 export const INBOX_HOLD_MS = 24 * 60 * 60 * 1000;
 
