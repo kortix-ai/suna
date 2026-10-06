@@ -239,7 +239,10 @@ export function useSessionStream(
       sessionId,
       runtime: true,
       ...(options.tabId ? { tabId: options.tabId } : {}),
-      onControl: (frame) => applySessionControlFrame(queryClient, projectId, sessionId, frame, memory),
+      onControl: (frame) => {
+        applySessionControlFrame(queryClient, projectId, sessionId, frame, memory);
+        setConnectionStreamDriven(sessionStreamConnected(projectId, sessionId));
+      },
       onRuntimeStatus: (status) => {
         if (status.state === 'down') memory.runtimeReady = false;
         applyRuntimeStatus(status);
@@ -253,7 +256,7 @@ export function useSessionStream(
         }
         memory.runtimeReady = ready;
       },
-      onConnectionChange: (connected) => setConnectionStreamDriven(connected),
+      onConnectionChange: () => setConnectionStreamDriven(sessionStreamConnected(projectId, sessionId)),
     });
     return () => {
       stream.close();

@@ -124,6 +124,11 @@ interface SharedStream {
   /** The connection's channels, so a runtime subscriber can upgrade it. */
   connectedWithRuntime: boolean;
   tabId: string | null;
+  /**
+   * The server owns session state (R5): it sent `kortix.control.session`. An
+   * API from before R5 never does, and against it the SDK keeps every poll.
+   */
+  authoritative: boolean;
   /** The next connect must happen now: a subscriber changed the URL. */
   reconnectNow: boolean;
   /** Ends the current attempt only (an upgrade), not the stream. */
@@ -149,6 +154,7 @@ export function openSessionStream(options: SessionControlStreamOptions): Session
       runtimeRefs: 0,
       connectedWithRuntime: false,
       tabId: null,
+      authoritative: false,
       reconnectNow: false,
       attempt: null,
       abort: new AbortController(),
@@ -207,9 +213,14 @@ export function openSessionStream(options: SessionControlStreamOptions): Session
 /** Join the session's stream for its control channel (the prompt queue). */
 export const openSessionControlStream = openSessionStream;
 
-/** Is this session's stream connected right now? */
+/**
+ * Is this session's stream connected to a server that owns session state? The
+ * SDK stands its polls down on this, never on a bare connection: an API from
+ * before R5 serves the stream without the turn verdict, title or health frames.
+ */
 export function sessionStreamConnected(projectId: string, sessionId: string): boolean {
-  return streams.get(`${projectId}/${sessionId}`)?.connected === true;
+  const shared = streams.get(`${projectId}/${sessionId}`);
+  return shared?.connected === true && shared.authoritative;
 }
 
 // replica-local: listeners in this client, told when any stream connects or drops.
@@ -368,6 +379,10 @@ async function run(options: SessionControlStreamOptions, shared: SharedStream): 
           payload: frame.payload,
         };
         shared.latest.set(type, control);
+        if (type === 'kortix.control.session' && !shared.authoritative) {
+          shared.authoritative = true;
+          for (const listener of [...connectionListeners]) safely(listener);
+        }
         each(shared, (subscriber) => subscriber.onControl?.(control));
         const payload = frame.payload as SessionControlQueue | undefined;
         if (type === 'kortix.control.queue' && payload?.known && Array.isArray(payload.prompts)) {

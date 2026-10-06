@@ -5,6 +5,7 @@ import {
   __resetSessionControlStreamsForTests,
   openSessionControlStream,
   openSessionStream,
+  sessionStreamConnected,
   sessionStreamEventClient,
 } from './control-stream';
 
@@ -392,4 +393,21 @@ test('a tab presence id joins the stream URL; a late one reconnects at once', as
 test('every caller of one session gets the SAME event client, so openEventStream shares one machine', () => {
   expect(sessionStreamEventClient('p1', 's9')).toBe(sessionStreamEventClient('p1', 's9'));
   expect(sessionStreamEventClient('p1', 's9')).not.toBe(sessionStreamEventClient('p1', 's10'));
+});
+
+test('the polls stand down only for a server that owns session state (sent kortix.control.session)', async () => {
+  const stream = openSessionStream({ projectId: 'p1', sessionId: 's1', timing: TIMING });
+  await tick();
+  connections[0]!.push(hello);
+  connections[0]!.push({ channel: 'control', cepoch: 'capi_a', cseq: 1, type: 'kortix.control.turn', at: 1, payload: { known: true, turns: [] } });
+  await tick();
+  // Connected, but an API from before R5: no session frame, so the SDK keeps polling.
+  expect(sessionStreamConnected('p1', 's1')).toBe(false);
+  connections[0]!.push({ channel: 'control', cepoch: 'capi_a', cseq: 2, type: 'kortix.control.session', at: 1, payload: { known: true, title: null, secrets_rev: '0:' } });
+  await tick();
+  expect(sessionStreamConnected('p1', 's1')).toBe(true);
+  connections[0]!.end();
+  await tick();
+  expect(sessionStreamConnected('p1', 's1')).toBe(false);
+  stream.close();
 });
