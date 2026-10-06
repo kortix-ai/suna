@@ -94,3 +94,40 @@ export function resolveProjectId(projectArg?: string): string | null {
   if (link?.project_id) return link.project_id;
   return defaultProject()?.project_id ?? null;
 }
+
+/** Where a resolved project came from. `link` and `default` are the CLI
+ *  config's own principal (a logged-in host and its project); `env` is the
+ *  platform-injected sandbox pair. The two must never be mixed — see the
+ *  one-principal guard in resolveProjectContext. */
+export type ProjectSource = 'flag' | 'env' | 'link' | 'default';
+
+export interface ProjectRef {
+  projectId: string;
+  source: ProjectSource;
+}
+
+/**
+ * resolveProjectContext's project resolution, with the winning source
+ * attached: --project → link.json → KORTIX_PROJECT_ID → the active host's
+ * default. The directory link is the most specific binding, so it outranks
+ * the session env for every caller of this path.
+ *
+ * When the link names the env project itself, the env source is kept: the
+ * ambient session token is a valid credential for its own project, so an
+ * in-sandbox `kortix ship` (which links the session's own project) keeps
+ * working without stored credentials for the link host.
+ */
+export function resolveProjectRef(projectArg?: string): ProjectRef | null {
+  if (projectArg) return { projectId: projectArg, source: 'flag' };
+  const link = loadLink();
+  const envProjectId = sandboxEnvValue('KORTIX_PROJECT_ID');
+  const env: ProjectRef | null = envProjectId ? { projectId: envProjectId, source: 'env' } : null;
+  if (link?.project_id) {
+    if (env && link.project_id === env.projectId) return env;
+    return { projectId: link.project_id, source: 'link' };
+  }
+  const defaultRef = defaultProject();
+  return (
+    env ?? (defaultRef?.project_id ? { projectId: defaultRef.project_id, source: 'default' } : null)
+  );
+}

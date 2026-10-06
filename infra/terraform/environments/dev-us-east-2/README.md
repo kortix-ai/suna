@@ -83,24 +83,31 @@ lease.
 
 ### Phase 2 — switch
 
-1. `copy-env-secret.sh kortix-dev-env us-west-2 us-east-2 --check` must print
-   `in sync`. Re-copy with `--workers off` when it does not.
-2. In the old dev-web state, drop the `dev` record so `../dev-web` can neither
+Before the merge:
+
+1. `copy-env-secret.sh kortix-dev-env us-west-2 us-east-2 --workers on`, then
+   `ecs-deploy.sh dev-use2 <current dev API image> --wait-for serving` so the
+   new tasks read the flag. Both stacks are now lease candidates; the lease row
+   still allows one leader.
+2. Roll the current dev images onto `dev-use2` (API, gateway, web), so the
+   switch does not change the code that answers.
+3. In the old dev-web state, drop the `dev` record so `../dev-web` can neither
    revert nor delete it:
    `terraform -chdir=infra/terraform/environments/dev-web state rm 'module.dns[0].cloudflare_record.this["dev"]'`.
-3. Merge the switch PR: Worker `[env.dev.vars]` gets `BACKEND_US_EAST_2` /
-   `GATEWAY_BACKEND_US_EAST_2` and `ACTIVE_BACKEND = "us-east-2"`; Deploy Dev
-   targets `dev-use2`, us-east-2, these roots and the new buckets. Deploy Dev
-   then repoints `dev.kortix.com`.
-4. Workers: `--workers on` for the us-east-2 copy and redeploy the new API, then
-   set `KORTIX_WORKERS_ENABLED=false` in the us-west-2 copy and redeploy `dev`.
-   The lease moves within 60 s.
+
+The merge is the switch. `deploy-api-router-dev.yml` deploys the dev-api
+Worker with `ACTIVE_BACKEND = "us-east-2"` within a minute. `Terraform Apply
+Global` grants the deploy role the `kortix-dev-use2-*` task roles. Then:
+
+4. `gh workflow run deploy-dev.yml -f surface=all`: it targets `dev-use2`,
+   these roots and the new buckets, and `publish-web-ecs-dns` points
+   `dev.kortix.com` at `kortix-dev-use2-web-alb`.
 5. Verify dev end to end.
 
 **Undo:** `wrangler deploy --env dev --var ACTIVE_BACKEND:ecs-fargate --var
-GATEWAY_ACTIVE_BACKEND:ecs-fargate`, `node infra/scripts/sync-web-dns.mjs dev
-<kortix-dev-web-alb DNS name>`, and swap the two workers flags back. Both stacks
-use one database, so nothing diverges.
+GATEWAY_ACTIVE_BACKEND:ecs-fargate` and `node infra/scripts/sync-web-dns.mjs dev
+<kortix-dev-web-alb DNS name>`. Both stacks use one database, so nothing
+diverges.
 
 ### Phase 3 — idle the old stack
 
