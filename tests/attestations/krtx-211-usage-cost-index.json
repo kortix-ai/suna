@@ -1,9 +1,13 @@
 {
-  "source_hash": "ceab94c5b6ddc1a09c658be1805bf4df6d82b185ad6beeae997bbb840fc4a655",
+  "source_hash": "52053b1ba374bf950072001666b1adee9d2d0d10f71ff9eaa009f427f1020816",
   "diff_files": [
     "apps/api/src/__tests__/unit-account-id-param.test.ts",
     "apps/api/src/__tests__/unit-resolve-account.test.ts",
+    "apps/api/src/__tests__/unit-resolve-principal-uuid.test.ts",
+    "apps/api/src/__tests__/unit-scim-uuid-guard.test.ts",
     "apps/api/src/accounts/core/app.ts",
+    "apps/api/src/iam/authorize.ts",
+    "apps/api/src/scim/app.ts",
     "apps/api/src/shared/resolve-account.ts",
     "packages/db/drizzle/meta/20261006000003_snapshot.json",
     "packages/db/drizzle/meta/_journal.json",
@@ -13,13 +17,13 @@
     "packages/db/src/schema/kortix.ts",
     "tests/migration/gateway-logs-account-cost-index.test.ts"
   ],
-  "diff_hash": "d571e9ad4afea9059d2fc2f6547a57687cd2383e0242d118a89262b86248cebd",
-  "head": "f7478fec5e0a9aab23414cdce57ad6ac5d3260ac",
+  "diff_hash": "ecf30ab369730c12e051108739773ccd4206c84cb5543837810614ff26cb5c98",
+  "head": "194462ef093bfd3db7d5eb5e4a6a39c312bd2a8f",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-06T01:47:24.254Z"
+  "at": "2026-10-06T02:47:52.298Z"
 }
