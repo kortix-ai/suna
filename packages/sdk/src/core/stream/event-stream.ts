@@ -20,6 +20,7 @@
 import type { Event as OpenCodeSdkEvent } from '../runtime/runtime-types';
 import { getSupabaseAccessToken, invalidateTokenCache } from '../http/auth';
 import { getClientForUrl } from '../runtime/client';
+import { isAuthFailure } from '../http/api/errors';
 import { logger } from '../http/logger';
 
 /**
@@ -615,11 +616,10 @@ function createLiveStream(
         if (abortController.signal.aborted) break;
         attemptError = err;
         const errStr = String(err);
+        // By status or `AuthError`, never by message text. The vendor client puts
+        // the HTTP status on `cause`.
         const isAuthError =
-          errStr.includes('401') ||
-          errStr.includes('403') ||
-          errStr.includes('Unauthorized') ||
-          errStr.includes('Token refresh failed');
+          isAuthFailure(err) || isAuthFailure((err as { cause?: unknown } | null)?.cause);
         logger.error('SSE event stream error', {
           error: errStr,
           retryCount,
