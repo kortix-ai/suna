@@ -1,9 +1,10 @@
 {
-  "source_hash": "8bcaffa20a66b0dcc711c66edffde659fc189a93112c4eabaa96230c914f445c",
+  "source_hash": "7282be17d06153342a9ebc2edf39f158345406c9a553e105940f9db7987aeab4",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-06T122404Z-never-leave-a-row-claimable-that-its-own-delivery-will-refus.md",
     ".agents/skills/learnings/entries/2026-10-06T122405Z-hand-back-every-lifecycle-claim-on-sigterm-a-dead-process-s.md",
+    "apps/api/eslint-suppressions.json",
     "apps/api/src/__tests__/integration-inbox-pause-and-handover.test.ts",
     "apps/api/src/bootstrap.ts",
     "apps/api/src/projects/session-lifecycle/__tests__/instance-scope-release.test.ts",
@@ -19,13 +20,13 @@
     "apps/api/src/projects/session-lifecycle/queued-continue-delivery.ts",
     "apps/api/src/projects/surface.ts"
   ],
-  "diff_hash": "f04b96d006a8b8742536744e098f7f0de1da51b11557958a88216e6a87143314",
-  "head": "77a421b59cb909a924767b6569ca448d0156d382",
+  "diff_hash": "a61930790d350a78f34e2535704f0536695c07d7911d1326e300e43285e350a6",
+  "head": "f58942092991d40a7ce67164ad7416a2b10c6339",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-06T12:37:10.301Z"
+  "at": "2026-10-06T12:57:49.840Z"
 }
