@@ -1,16 +1,16 @@
 {
-  "source_hash": "0a36cfbd8c9e94339218e5b7ec3649a8c7a10f9c93498756367863222d6400a4",
+  "source_hash": "e994be5d870ad4b967a781a525a93d1e13b861e3d2c8fd6732d12b8f79dda05a",
   "diff_files": [
     "apps/api/src/__tests__/integration-suna-migration-db-step.test.ts",
     "apps/api/src/projects/suna-migration/suna-migration-phases.ts"
   ],
   "diff_hash": "4fd202de900b6c6be792923dc545164eb24882f4164f2cab29972c56530ab8c8",
-  "head": "ff77f2ce75824e3144927a7a0af060c70a25424a",
+  "head": "4bbf03d70a30a6c83a83ccef33a13f35cdd0b2fa",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-06T21:20:04.308Z"
+  "at": "2026-10-06T21:31:03.504Z"
 }
