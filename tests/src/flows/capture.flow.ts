@@ -727,7 +727,11 @@ flow(
       if (!all.hits.some((h) => h.user_id === member.userId)) throw new Error('the owner does not see the member');
       const db = await openDb(ctx);
       try {
-        const n = Number((await db.query<{ n: string }>(`SELECT count(*) AS n FROM kortix.audit_events WHERE account_id = $1 AND action = 'capture.account_view' AND actor_user_id = $2`, [team.id, ownerId])).rows[0]!.n);
+        // The audit log is written after the response: wait for the row.
+        const n = await waitFor(
+          async () => Number((await db.query<{ n: string }>(`SELECT count(*) AS n FROM kortix.audit_events WHERE account_id = $1 AND action = 'capture.account_view' AND actor_user_id = $2`, [team.id, ownerId])).rows[0]!.n),
+          { until: (count) => count >= 1, timeoutMs: 15_000, intervalMs: 500, description: 'the capture.account_view row of the API-key read' },
+        );
         if (n < 1) throw new Error('no capture.account_view row');
       } finally {
         await db.end();
