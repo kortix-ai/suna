@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import * as realAccess from '../../projects/lib/access';
+import { mockIamEngineAllowAll } from '../../__tests__/helpers/iam-mocks';
 
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000001';
 const PROJECT_ID = '00000000-0000-4000-a000-000000000002';
@@ -115,6 +116,16 @@ mock.module('../../shared/session-costs', () => ({
   },
 }));
 
+// Account-wide usage reads assert `billing.read` (#9272). The IAM engine reads
+// tables this suite does not model, so it is bypassed; the asserted actions
+// are recorded, and a test can deny `billing.read`.
+let assertedActions: string[] = [];
+let billingReadDenied = false;
+mockIamEngineAllowAll((action) => {
+  assertedActions.push(action);
+  if (billingReadDenied && action === 'billing.read') throw new HTTPException(403, { message: 'Forbidden' });
+});
+
 const { usageApp } = await import('./usage');
 
 function createTestApp() {
@@ -130,6 +141,8 @@ function createTestApp() {
 }
 
 beforeEach(() => {
+  assertedActions = [];
+  billingReadDenied = false;
   authType = 'supabase';
   sandboxId = null;
   tokenProjectId = null;
@@ -150,6 +163,18 @@ describe('GET /v1/usage/cost-summary', () => {
     expect(summaryInput?.projectId).toBeUndefined();
     expect(summaryInput?.sessionId).toBeUndefined();
     expect(await response.json()).toEqual(summary);
+  });
+
+  // #9272: an account-wide read needs `billing.read`, for every credential.
+  test('an account-wide summary asserts billing.read, and a denial is 403', async () => {
+    await createTestApp().request(`/v1/usage/cost-summary?account_id=${ACCOUNT_ID}`);
+    expect(assertedActions).toContain('billing.read');
+
+    billingReadDenied = true;
+    summaryInput = null;
+    const denied = await createTestApp().request(`/v1/usage/cost-summary?account_id=${ACCOUNT_ID}`);
+    expect(denied.status).toBe(403);
+    expect(summaryInput).toBeNull();
   });
 
   test('defaults the window to the trailing 30 days when from/to are absent', async () => {

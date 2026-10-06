@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, setSystemTime, test } from 'bun:test';
-import { connectorConnections, connectors, projectSessions, projects } from '@kortix/db';
+import { connectorConnections, connectors, projectSecrets, projectSessions, projects } from '@kortix/db';
 
 mock.module('../config', () => ({ config: { API_KEY_SECRET: 'test-pepper' } }));
 
@@ -16,6 +16,8 @@ let sessionRows: Array<Record<string, unknown>> = [];
 let projectRows: Array<Record<string, unknown>> = [];
 let connectorRows: Array<Record<string, unknown>> = [];
 let connectionRows: Array<Record<string, unknown>> = [];
+/** Shared `project_secrets` rows written after the link was minted (#9272: a link is single use per key). */
+let writtenSinceMint: Array<Record<string, unknown>> = [];
 mock.module('../shared/db', () => ({
   withDbTransaction: async <T>(action: () => Promise<T>) => action(),
   db: {
@@ -32,13 +34,29 @@ mock.module('../shared/db', () => ({
                   ? connectorRows
                   : table === connectorConnections
                     ? connectionRows
-                    : [];
+                    : table === projectSecrets
+                      ? writtenSinceMint
+                      : [];
             return Object.assign(Promise.resolve(rows), { for: async () => rows });
           },
         }),
       }),
     }),
   },
+}));
+
+// The link's minter must still be in the account (#9272). `user-1` is, unless a
+// test removes them.
+let minterIsMember = true;
+const realMembershipRead = await import('../iam/membership-read');
+mock.module('../iam/membership-read', () => ({
+  ...realMembershipRead,
+  projectAccountMembershipRows: async () => (minterIsMember ? [{ found: 1 }] : []),
+}));
+const realUserIdentity = await import('../projects/lib/user-identity');
+mock.module('../projects/lib/user-identity', () => ({
+  ...realUserIdentity,
+  resolveUserIdentities: async (ids: string[]) => new Map(ids.map((id) => [id, { displayName: 'Sam Rivera' }])),
 }));
 
 mock.module('../shared/rate-limit', () => ({
@@ -195,6 +213,8 @@ beforeEach(() => {
     { connectorId: CONNECTOR_ID, providerType: 'pipedream', authorizationStrategy: 'project' },
   ];
   connectionRows = [];
+  writtenSinceMint = [];
+  minterIsMember = true;
   pipedreamOn = false;
   credentialAlreadySet = false;
   credentialLandedSince = false;
@@ -381,6 +401,20 @@ describe('POST /secret/:token', () => {
       expect(enqueued).toHaveLength(0);
     });
   }
+
+  test('a link whose minter left the account is gone (410), and nothing is written', async () => {
+    minterIsMember = false;
+    const res = await submit(mintToken());
+    expect(res.status).toBe(410);
+    expect(writes).toHaveLength(0);
+  });
+
+  test('a key written after the link was minted spends the link (409)', async () => {
+    writtenSinceMint = [{ id: 'secret-1' }];
+    const res = await submit(mintToken());
+    expect(res.status).toBe(409);
+    expect(writes).toHaveLength(0);
+  });
 
   test('saves the value, propagates, and notifies the running requesting session', async () => {
     sessionRows = [{ status: 'running', accountId: 'acct-1', metadata: {} }];

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import * as realAccess from '../../projects/lib/access';
+import { mockIamEngineAllowAll } from '../../__tests__/helpers/iam-mocks';
 
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000001';
 const PROJECT_ID = '00000000-0000-4000-a000-000000000002';
@@ -108,6 +109,11 @@ mock.module('../../shared/session-costs', () => ({
     throw new Error('getSessionCostRecord should not be called from cost-by-project tests');
   },
 }));
+
+// Account-wide usage reads assert `billing.read` (#9272). The IAM engine reads
+// tables this suite does not model, so it is bypassed (allow all); the
+// `billing.read` denial is tested in usage-cost-summary-http.test.ts.
+mockIamEngineAllowAll();
 
 const { usageApp } = await import('./usage');
 
