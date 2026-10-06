@@ -1,7 +1,8 @@
 {
-  "source_hash": "2506eb7e95e2a32b994d91d3a8644e636586df5ea5dba24d5ad912d58051e6f3",
+  "source_hash": "847c547487fc5ebc6415a69e9865286a763c0216fb281cbe33bc2fbd6064cb27",
   "diff_files": [
     ".github/workflows/deploy-staging.yml",
+    "apps/api/src/billing/services/account-deletion-scheduled.integration.test.ts",
     "apps/web/src/lib/seo/content-timestamps.json",
     "infra/cloudflare/workers/api-router/worker.mjs",
     "infra/cloudflare/workers/api-router/worker.test.mjs",
@@ -13,13 +14,13 @@
     "infra/terraform/security-baseline/iam-gha-ecs-deploy.tf",
     "tests/unit/staging-secret-workflow.test.ts"
   ],
-  "diff_hash": "aa471bf3106fe61b5c2be51d81196c13c1fb3a97b076e0e1a75cbbbd3a95dd46",
-  "head": "520618d4b86564a93cac7f0d46f9fbf0f6b6a832",
+  "diff_hash": "61b4029d70b6a464aeb2424eb0eb66583a8c41b52fd456d8bb25db101cf3eabd",
+  "head": "6d9683f76d4ab2b813945bbf67787f763e4dc1ee",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-06T14:35:04.320Z"
+  "at": "2026-10-06T15:11:07.613Z"
 }
