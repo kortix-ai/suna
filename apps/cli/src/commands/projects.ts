@@ -191,7 +191,7 @@ export async function runProjects(argv: string[]): Promise<number> {
         process.stderr.write(`${status.err(err instanceof Error ? err.message : String(err))}\n`);
         return 2;
       }
-      return projectsLink(restCopy[0], hostArg);
+      return projectsLink(restCopy.find((a) => !a.startsWith('-')), hostArg);
     }
     case 'unlink':
       return projectsUnlink();
