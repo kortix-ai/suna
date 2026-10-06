@@ -267,6 +267,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Listed LLM gateway keys': 'text72c5c89cad31',
   'Listed LLM gateway request logs': 'text9ea097f3041b',
   'Listed LLM gateway spend by session': 'text53339e99fff9',
+  'Listed LLM gateway spend by source': 'text6f417aa88601',
   'Listed Microsoft Teams conversations': 'text10acae596546',
   'Listed OAuth apps': 'texteec0fcc629c8',
   'Listed SCIM groups': 'text2367348cc27b',

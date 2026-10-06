@@ -196,6 +196,12 @@
   "newWorkspace": {
     "title": "Crear un proyecto",
     "description": "Un proyecto contiene tus agentes, archivos y sesiones.",
+    "handoff": {
+      "validating": "Validando",
+      "creating_repository": "Creando el repositorio",
+      "registering": "Registrando el proyecto",
+      "seeding": "Preparando los archivos iniciales"
+    },
     "templateSeed": "Este proyecto se iniciará con la plantilla que elegiste.",
     "account": {
       "label": "Cuenta",
@@ -1540,6 +1546,7 @@
         "email": "Correo electrónico",
         "scheduled": "Programado",
         "webhook": "Webhook",
+        "manual": "Manual",
         "all": "Todos"
       },
       "statusValue": {
@@ -1726,7 +1733,8 @@
     },
     "restart": {
       "label": "Reiniciar sesión",
-      "pending": "Reiniciando…"
+      "pending": "Reiniciando…",
+      "ownerOnly": "Solo el propietario de la sesión o un administrador del proyecto puede reiniciar esta sesión."
     }
   },
   "modelSelector": {
@@ -19235,7 +19243,8 @@
       "text8f480bae8d16": "Agentes de IA para equipos de finanzas",
       "text6243d930fc1c": "AI Operating System",
       "textc959682e0398": "Vio los dispositivos con sesión iniciada",
-      "text976811d9540a": "Cerró la sesión de un dispositivo"
+      "text976811d9540a": "Cerró la sesión de un dispositivo",
+      "text6f417aa88601": "Gasto de la pasarela de LLM por origen consultado"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

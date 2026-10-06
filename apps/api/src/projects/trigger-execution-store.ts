@@ -4,32 +4,15 @@ import { db } from '../shared/db';
 import { featureFlagDef } from '../feature-flags/registry';
 import { nextTriggerScheduleSlot } from './trigger-schedule';
 import type { GitTriggerSpec } from './triggers';
+import { exponentialBackoffMs } from '../shared/backoff';
+import { mapWithConcurrency } from '../shared/map-with-concurrency';
+import { cronSlotFields } from './lib/trigger-payload';
 
 export type TriggerExecutionRow = typeof projectTriggerExecutions.$inferSelect;
 
 export interface ClaimedScheduleSlot {
   execution: TriggerExecutionRow;
   inserted: boolean;
-}
-
-async function mapConcurrently<T, R>(
-  items: T[],
-  concurrency: number,
-  fn: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let cursor = 0;
-  const worker = async () => {
-    while (cursor < items.length) {
-      const index = cursor;
-      cursor += 1;
-      results[index] = await fn(items[index]);
-    }
-  };
-  await Promise.all(
-    Array.from({ length: Math.min(Math.max(1, concurrency), items.length) }, () => worker()),
-  );
-  return results;
 }
 
 function triggerPayload(input: {
@@ -45,6 +28,7 @@ function triggerPayload(input: {
       scheduled_for: input.scheduledFor.toISOString(),
       claimed_at: input.claimedAt.toISOString(),
       last_scheduled_for: input.lastScheduledFor?.toISOString() ?? null,
+      ...cronSlotFields(input.scheduledFor),
     },
     trigger: { slug: input.spec.slug, type: input.spec.type, kind: 'git' },
   };
@@ -93,7 +77,7 @@ export async function claimDueScheduleSlots(input: {
     .orderBy(asc(projectTriggerRuntime.nextFireAt), asc(projectTriggerRuntime.projectId))
     .limit(input.limit);
 
-  const results = await mapConcurrently(candidates, 8, async (candidate) => {
+  const results = await mapWithConcurrency(candidates, 8, async (candidate) => {
     if (!candidate.nextFireAt || !candidate.scheduleRevision || !candidate.scheduleSpec) {
       return null;
     }
@@ -247,7 +231,7 @@ export async function claimTriggerExecutions(input: {
     .orderBy(asc(projectTriggerExecutions.availableAt), asc(projectTriggerExecutions.createdAt))
     .limit(input.limit);
 
-  const claimed = await mapConcurrently(candidates, 8, async (candidate) => {
+  const claimed = await mapWithConcurrency(candidates, 8, async (candidate) => {
     const [row] = await db
       .update(projectTriggerExecutions)
       .set({
@@ -349,7 +333,7 @@ export async function markTriggerExecutionFailed(input: {
   terminal?: boolean;
 }): Promise<'queued' | 'dead_lettered'> {
   const terminal = input.terminal || input.row.attempts >= 5;
-  const retryDelayMs = Math.min(60_000, 2 ** Math.max(0, input.row.attempts - 1) * 2_000);
+  const retryDelayMs = exponentialBackoffMs({ attempt: input.row.attempts, baseMs: 2_000, capMs: 60_000 });
   await db
     .update(projectTriggerExecutions)
     .set({

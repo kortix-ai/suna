@@ -15,13 +15,16 @@
  * narrowing or removing an agent is always allowed. Humans and sessions that
  * borrow a human's authority are not affected.
  */
-import type { Context } from 'hono';
 import type { AgentGrant } from '@kortix/db';
 import { AGENT_DEFAULT_CEILING } from './agent-principal';
-import { getAgentGrant } from './agent-scope';
 import { authorize } from './authorize';
 import { buildDenialError } from './denial-message';
 import type { Actor } from './actor';
+
+// The request readers `isGovernedAgentWriter` and `assertNoGrantEscalation`
+// read the Hono context, so they live in `middleware/agent-grant-ceiling.ts`.
+// Re-exported here so every importer keeps working.
+export { isGovernedAgentWriter, assertNoGrantEscalation } from '../middleware/agent-grant-ceiling';
 
 export type GrantDimension = 'permissions' | 'connectors' | 'secrets' | 'apps';
 export interface GrantEscalation {
@@ -116,28 +119,26 @@ export async function holdsEveryGrant(
   return escalation === null;
 }
 
-/** A governed agent principal: authorizes as its own service account (agent_principal on, non-null grant). */
-export function isGovernedAgentWriter(c: Context): boolean {
-  const credential = (c.get('actor') as Actor | undefined)?.credential as
-    | { kind?: string; agentPrincipal?: boolean }
-    | undefined;
-  return credential?.kind === 'agent_session' && credential.agentPrincipal === true && getAgentGrant(c) !== null;
+/** A governed agent principal that writes a grant: the request's actor and its own agent grant. */
+export interface GovernedAgentWriter {
+  actor: Actor;
+  grant: AgentGrant;
 }
 
 /**
  * 403 `agent_grant_escalation` when a governed agent's write would give any
  * agent a permission, connector, secret or App the writer does not hold. A
- * no-op for every other caller.
+ * no-op when `governed` is null (every other caller).
  */
-export async function assertNoGrantEscalation(
-  c: Context,
+export async function assertNoGrantEscalationBy(
+  governed: GovernedAgentWriter | null,
   projectId: string,
   before: Map<string, AgentGrant>,
   after: Map<string, AgentGrant>,
 ): Promise<void> {
-  if (!isGovernedAgentWriter(c)) return;
-  const actor = c.get('actor') as Actor;
-  const writer = getAgentGrant(c)!;
+  if (!governed) return;
+  const { actor } = governed;
+  const writer = governed.grant;
   const escalation = await findGrantEscalation({
     writer,
     writerMayPerform: async (action) => (await authorize(actor, action, { type: 'project', id: projectId })).allowed,
