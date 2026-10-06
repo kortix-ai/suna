@@ -215,7 +215,7 @@ describe('native test-lane workflow', () => {
     // 2026-09-28. Labels ran the suite on nearly every pull request into
     // `main`: every agent PR carried `preview`, and each push re-ran six lanes.
     // Into `main`, only the act of adding `test` runs it, once; a push does not.
-    expect(testWorkflow).toContain('branches: [main, staging]');
+    expect(testWorkflow).toContain('branches: [dev, staging]');
     expect(testWorkflow).toContain('types: [opened, reopened, synchronize, ready_for_review, labeled]');
     expect(testWorkflow).not.toContain('labels.*.name');
     expect(testWorkflow).not.toContain("'preview'");
@@ -264,7 +264,7 @@ describe('native test-lane workflow', () => {
           const next = block.slice(i + 1).findIndex((l) => /^  \S/.test(l));
           const body = block.slice(i + 1, next < 0 ? undefined : i + 1 + next);
           const branches = body.find((l) => /^    branches:/.test(l));
-          return !branches || /\bmain\b/.test(branches);
+          return !branches || /\bdev\b/.test(branches);
         });
       });
     expect(offenders).toEqual([]);
@@ -316,7 +316,7 @@ describe('native test-lane workflow', () => {
       const next = block.slice(push + 1).findIndex((l) => /^ {2}\S/.test(l));
       const body = block.slice(push + 1, next < 0 ? undefined : push + 1 + next);
       const branches = body.find((l) => /^ {4}branches:/.test(l));
-      return !branches || /\bmain\b/.test(branches);
+      return !branches || /\bdev\b/.test(branches);
     };
     const onMain = readdirSync(dir)
       .filter((file) => /\.ya?ml$/.test(file) && pushesToMain(file))
@@ -331,7 +331,7 @@ describe('native test-lane workflow', () => {
     ]);
     // Release branches keep their gates.
     for (const file of ['ci.yml', 'tests.yml', 'secret-scan.yml', 'secrets-guard.yml', 'codeql.yml']) {
-      expect(readFileSync(resolve(dir, file), 'utf8'), file).toMatch(/pull_request:[\s\S]*?branches: \[(?:main, )?staging/);
+      expect(readFileSync(resolve(dir, file), 'utf8'), file).toMatch(/pull_request:[\s\S]*?branches: \[(?:dev, )?staging/);
     }
     const deployDev = readFileSync(resolve(dir, 'deploy-dev.yml'), 'utf8');
     expect(deployDev).toContain('workflow_dispatch:');

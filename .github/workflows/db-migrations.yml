@@ -30,7 +30,7 @@ on:
   # their box. The push to `main` is the non-blocking post-merge check; release
   # pull requests (`staging`, `prod`) are the gate.
   push:
-    branches: [main]
+    branches: [dev]
     paths:
       - 'packages/db/**'
       - '.github/workflows/db-migrations.yml'
