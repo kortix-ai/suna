@@ -782,6 +782,23 @@ describe('getCostSummary', () => {
     ]);
   });
 
+  test('the project-scoped compute prior scan joins project_sessions before filtering on its column', async () => {
+    // computeScope carries `project_sessions.project_id = $4` whenever a
+    // project scope is set. A prior-window scan that filters on that column
+    // without joining the table is invalid SQL (missing FROM-clause entry)
+    // — the query double records calls without executing them, so only an
+    // explicit join assertion catches it here. Postgres rejects it at
+    // runtime; scripts/verify-cost-queries.ts executes the same paths.
+    await getCostSummary({ accountId, projectId, window });
+
+    const record = computePriorRecord();
+    expect(record?.calls.map((call) => call.method)).toEqual(['innerJoin', 'where']);
+    expect(renderJoinOn(record, 'innerJoin')).toBe(
+      '"kortix"."project_sessions"."session_id" = "kortix"."sandbox_compute_sessions"."session_id"',
+    );
+    expect(renderWhere(record).sql).toContain('"project_sessions"."project_id" = $');
+  });
+
   test('assembles totals, previous, series and models from the grouped scans', async () => {
     resultForQuery = (fields, table) => {
       if (table === gatewayRequestLogs && 'setId' in fields) {

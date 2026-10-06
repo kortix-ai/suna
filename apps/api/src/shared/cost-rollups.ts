@@ -391,6 +391,27 @@ export async function getCostSummary(input: {
 
   const previous = previousWindow(window);
 
+  // The prior-window compute total carries no project attribution of its
+  // own, but computeScope still filters on project_sessions.project_id
+  // when a project scope is set — so the join exists exactly when that
+  // predicate needs it (an INNER join, as before: at project scope every
+  // surviving row must match the project). Drizzle's joined and unjoined
+  // builders are differently-typed chain objects, so the branch awaits
+  // inside each arm rather than unifying them at a ternary.
+  function loadComputePrior(w: CostWindow) {
+    if (projectId) {
+      return db
+        .select({ cost: sql<number>`coalesce(sum(${sandboxComputeSessions.costUsd}), 0)::float8` })
+        .from(sandboxComputeSessions)
+        .innerJoin(projectSessions, eq(projectSessions.sessionId, sandboxComputeSessions.sessionId))
+        .where(computeScope(w));
+    }
+    return db
+      .select({ cost: sql<number>`coalesce(sum(${sandboxComputeSessions.costUsd}), 0)::float8` })
+      .from(sandboxComputeSessions)
+      .where(computeScope(w));
+  }
+
   // One grouped scan per source per window. Prod Server-Timing (2026-10-04,
   // the largest account) showed this route spending db;dur=4.5–25s across
   // n=10 statements: five independent scans of the same 30-day
@@ -447,10 +468,7 @@ export async function getCostSummary(input: {
           ()
         )`,
       ),
-    db
-      .select({ cost: sql<number>`coalesce(sum(${sandboxComputeSessions.costUsd}), 0)::float8` })
-      .from(sandboxComputeSessions)
-      .where(computeScope(previous)),
+    loadComputePrior(previous),
   ]);
 
   // Split the grouped rows by their set label. The grand-total row is the
@@ -490,8 +508,10 @@ export async function getCostSummary(input: {
 
   // Cost descending, then provider/model descending as a deterministic
   // tie-break — the same rule the ungrouped version ordered by in SQL.
-  // Plain code-unit comparison, not localeCompare: the tie-break must not
-  // depend on the JS runtime's locale.
+  // ponytail: the tie-break compares code units, not the DB collation —
+  // identical for the ASCII provider/model slugs; move the ordering back
+  // into SQL (a per-set LIMIT can't live inside GROUPING SETS) if a
+  // non-ASCII model name ever needs exact SQL tie order.
   const models = llmGroupRows
     .filter((row) => row.setId === 'model')
     .map((row) => {
