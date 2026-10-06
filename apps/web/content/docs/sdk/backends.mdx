@@ -22,13 +22,16 @@ branch on it. See [Feature flags](/docs/feature-flags).
 | Method | Wraps | What it does |
 |---|---|---|
 | `backends.list()` | `GET /projects/:pid/backends` | Lists the project's backends |
-| `backends.create({ name })` | `POST …/backends` | Creates and boots a backend. Returns when it runs |
+| `backends.create({ name })` | `POST …/backends` | Claims the name and starts the backend. Returns at once with status `provisioning` |
+| `backends.waitUntilRunning(backendId)` | polls `GET …/backends/:id` | Resolves with the running backend; rejects with its error, or after 10 minutes |
 | `backends.get(backendId)` | `GET …/backends/:id` | Reads one backend |
 | `backends.credentials(backendId)` | `GET …/backends/:id/credentials` | Reads `url`, `site_url`, `admin_key`, and `env` |
+| `backends.token(backendId)` | `POST …/backends/:id/token` | A one-hour Kortix sign-in token naming the caller, for `client.setAuth` |
 | `backends.remove(backendId)` | `DELETE …/backends/:id` | Deletes the backend and its machine |
 
-`create` is synchronous. It takes about 3 to 5 seconds, and up to a few
-minutes the first time the Convex image builds. Set a long client timeout.
+`create` answers at once with `status: 'provisioning'`. Boot takes about 3 to 5
+seconds, and up to a few minutes on a region's first image build. Call
+`waitUntilRunning` before you read credentials.
 
 A `name` is lowercase letters, digits, and dashes, starts with a letter, and
 is at most 63 characters.

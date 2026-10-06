@@ -103,18 +103,68 @@ with `eval`, as shown above. To read it for yourself, run
 `kortix backends env main`.
 :::
 
+## Where the code lives
+
+A backend does not know about repositories. A deploy pushes code with the
+admin key, so the Convex code can live in the project repo (the default,
+`backends/<name>/`), in another directory (`--dir`), in a separate repository,
+or on a laptop or CI runner that runs
+`eval "$(kortix backends env main)" && npx convex deploy`.
+
+## Sign-in: functions know the member
+
+Every backend trusts Kortix as its identity provider. At creation Kortix gives
+the backend its own signing key and writes `KORTIX_AUTH_ISSUER`,
+`KORTIX_AUTH_AUDIENCE` and `KORTIX_AUTH_JWKS` into its environment. Add this
+file and deploy:
+
+```ts
+// convex/auth.config.ts
+export default {
+  providers: [{
+    type: "customJwt",
+    issuer: process.env.KORTIX_AUTH_ISSUER!,
+    applicationID: process.env.KORTIX_AUTH_AUDIENCE!,
+    jwks: process.env.KORTIX_AUTH_JWKS!,
+    algorithm: "ES256",
+  }],
+};
+```
+
+`await ctx.auth.getUserIdentity()` then returns the member (`subject` = Kortix
+user id, `email`, `name`), or `null` for an anonymous call. The backend URL is
+public, so every function that touches non-public data must reject `null`.
+
+Kortix mints one-hour tokens:
+
+| Caller | Token source |
+|---|---|
+| A person in a Kortix App | `GET /_kortix/backend-token?backend=<name>` on the App's own origin |
+| An agent, script or CLI | `kortix backends token <name>`, `POST /v1/projects/:id/backends/:backendId/token`, SDK `backends.token(id)` |
+
 ## Use a backend from an App
 
-Set the backend `url` as an environment variable of the
-[App](/docs/feature-flags/apps), for example `VITE_CONVEX_URL`,
-`NEXT_PUBLIC_CONVEX_URL`, or `CONVEX_URL`. The URL is public. The App needs no
-admin key.
+The backend `url` is public. A static App reads it at build time: commit
+`VITE_CONVEX_URL=<url>` in the App's `.env.production`, then build and deploy
+the built directory. A server-rendered App reads `CONVEX_URL` from its `env` in
+`kortix.yaml`. The App needs no admin key.
 
 ```ts
 import { ConvexReactClient } from "convex/react";
 
 const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL);
+convex.setAuth(async () => {
+  const res = await fetch("/_kortix/backend-token?backend=main");
+  return res.ok ? (await res.json()).token : null;
+});
 ```
+
+## Agents
+
+Agents in Kortix sessions load the `kortix-backends` system skill before they
+write Convex code, and `kortix-internal-apps` when they build a complete app.
+Both tell the agent to install Convex's own agent rules and skills at runtime
+(`npx convex ai-files install`).
 
 ## Roles and audit
 

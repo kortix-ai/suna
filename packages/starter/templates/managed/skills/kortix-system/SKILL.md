@@ -9,7 +9,8 @@ description: "Canonical reference for Kortix projects, Apps, the CLI, sessions, 
 The `kortix` CLI is the live source of truth for how Kortix works. The Kortix
 **system skills** — `kortix-system`, `kortix-apps`, `kortix-connectors`,
 `kortix-memory`, `kortix-harness-refinement`, `kortix-slack`,
-`kortix-computer`, `kortix-marketplace` — are
+`kortix-computer`, `kortix-marketplace`, `kortix-backends`,
+`kortix-internal-apps` — are
 served fresh by the CLI,
 so their instructions always match the platform version you're running on (no
 re-install, no image re-bake):
@@ -386,17 +387,16 @@ or operating an App.
 
 <backends>
 A **Kortix backend** is a full backend for the project: a database, server
-functions, realtime queries, file storage, and schedules, powered by Convex.
-Each backend is a self-hosted Convex instance in its own always-on machine. A
-project holds up to 3. The Convex code lives in the project repo, for example
-`backends/main/` with `package.json` and `convex/`. Deploy it with
-`kortix backends deploy main --dir backends/main`. Apps read the backend through
-its public URL. Backends is experimental and off by default.
+functions, realtime queries, file storage, schedules and search, powered by
+self-hosted Convex, with built-in Kortix sign-in (functions know the signed-in
+member). One machine per backend, up to 3 per project. The Convex code usually
+lives in the project repo (`backends/<name>/`) and ships with
+`kortix backends deploy <name> --dir backends/<name>`. Experimental, off by
+default (feature flag `backends`).
 
-**Full reference:**
-`references/kortix/backends.md` — the deploy loop, schema, functions, HTTP
-actions, crons, file storage, wiring an App, reading data as an agent, secret
-handling, and limits. Load it before you create or change a backend.
+**Load the system skills:** `kortix-backends` before you create or change a
+backend or write Convex code; `kortix-internal-apps` when the user wants a
+complete app (backend + UI + sign-in) built, deployed and verified.
 </backends>
 
 <marketplace>
@@ -827,14 +827,6 @@ to see the full enum.
   rules; environment and secret mappings; stable URLs; cold wake and idle
   stop; lifecycle commands; rollback; resource and budget limits; and current
   first-release boundaries. Load before deploying or operating an App.
-</reference>
-
-<reference path="references/kortix/backends.md">
-  Kortix Backends reference. Covers when to use a backend, the repo layout, the
-  `kortix backends deploy` loop, Convex schema, queries, mutations, actions,
-  HTTP actions, crons, file storage, search, wiring an App to the backend URL,
-  reading and writing data as an agent, admin key handling, and limits. Load
-  before creating or changing a backend.
 </reference>
 
 <reference path="references/kortix/marketplace.md">

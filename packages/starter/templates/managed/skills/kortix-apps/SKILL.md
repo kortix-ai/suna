@@ -150,6 +150,25 @@ it, or put it in logs. The first request exchanges it for an eight-hour
 App-host cookie and redirects to the same path without the token. Create a fresh
 link for each independent browser profile or cookie jar.
 
+## With a Kortix Backend (data, logic, sign-in)
+
+When the App needs a database, server logic or live updates, give it a Kortix
+Backend (load `kortix-backends`; for a whole internal app load
+`kortix-internal-apps`).
+
+- **Backend URL:** public. A static or SPA App reads it at **build time**:
+  commit `VITE_CONVEX_URL=<url>` (Vite) or `NEXT_PUBLIC_CONVEX_URL=<url>`
+  (Next.js) in the App's `.env.production`, build, deploy the built directory
+  (`--type static --spa`). `kortix apps deploy` has no flag for build-time
+  variables. A server-rendered App reads `CONVEX_URL` from `env` in
+  `kortix.yaml` at runtime.
+- **Sign-in:** the App's Convex client fetches `GET /_kortix/backend-token?backend=<name>`
+  from its own origin (`convex.setAuth(...)`). Kortix answers with a one-hour
+  token naming the viewer, so backend functions know who is calling. Needs a
+  signed-in viewer: access `private`, `project` or `restricted`, and `--viewer`
+  not `off`. A `public` or `password` App gets `401`.
+- **Never** put the backend admin key in an App, a bundle or App `env`.
+
 ## Verify
 
 Do not stop at a `ready` status.
