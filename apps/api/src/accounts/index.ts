@@ -7,7 +7,7 @@
 import { accountsRouter } from './core/app';
 import { supabaseAuth } from '../middleware/auth';
 import { accountSessionGate } from '../iam/session-gate';
-import { iamRouter } from './iam';
+import { iamRouter, registerIamRoutes } from './iam';
 import { auditRouter } from './audit';
 import { registerTokenRoutes } from './core/tokens';
 import { registerDeviceRoutes } from './core/devices';
@@ -35,6 +35,7 @@ accountsRouter.use('/*', async (c, next) => {
 // Mount IAM routes (groups/policies/roles/super-admin/effective). Sub-router
 // declares its own paths under /:accountId/iam/*, so mounting at '/' here is
 // correct.
+registerIamRoutes();
 accountsRouter.route('/', iamRouter);
 accountsRouter.route('/', auditRouter);
 

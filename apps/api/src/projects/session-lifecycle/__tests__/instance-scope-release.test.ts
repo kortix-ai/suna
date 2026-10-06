@@ -75,14 +75,14 @@ mock.module('../../../shared/db', () => ({
 mock.module('../../session-title-generate', () => ({
   generateSessionTitleFromFirstPrompt: async () => {},
 }));
-mock.module('../../routes/shared', () => ({
+mock.module('../../session-open', () => ({
   openSession: async () => ({
     stage: 'ready',
     sandbox: { external_id: EXTERNAL_ID, provider: 'daytona' },
     opencode_session_id: OC_SESSION_ID,
   }),
 }));
-mock.module('../../../sandbox-proxy/routes/preview', () => ({
+mock.module('../../../sandbox-proxy/forward', () => ({
   forwardToSandbox: async (
     _externalId: string,
     _port: number,

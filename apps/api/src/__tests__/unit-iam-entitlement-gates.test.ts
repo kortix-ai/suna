@@ -74,8 +74,8 @@ mock.module('../repositories/sso', () => ({
 }));
 
 const { iamRouter } = await import('../accounts/iam/app');
-await import('../accounts/iam/scim-tokens');
-await import('../accounts/iam/sso');
+(await import('../accounts/iam/scim-tokens')).registerIamScimTokensRoutes();
+(await import('../accounts/iam/sso')).registerIamSsoRoutes();
 
 function buildApp() {
   const app = new Hono();
