@@ -4,7 +4,6 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { createInstallationToken, getFileSha, getGitHubAppInstallation, parseGitHubRepoUrl, verifyGitHubInstallationAdmin, type GitHubRepo } from '../github';
 import { invalidateProjectMirror } from '../git';
-import { encryptProjectSecret } from '../secrets';
 import { copySharedSecretsIntoProject, type SharedSecretCopy } from './repository-secret-copy';
 import {
   buildProjectGitConnectionValues,
