@@ -127,7 +127,7 @@
     "prettier-plugin-tailwindcss": "^0.6.14",
     "react-native-svg-transformer": "^1.5.1",
     "react-test-renderer": "19.2.3",
-    "sharp": "^0.35.4",
+    "sharp": "^0.35.5",
     "typescript": "~5.9.2"
   },
   "private": true,
