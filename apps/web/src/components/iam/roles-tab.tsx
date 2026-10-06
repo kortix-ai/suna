@@ -468,7 +468,9 @@ function RoleRow({
 
 const KEY_RE = /^[a-z0-9_]{2,64}$/;
 
-function slugifyKey(name: string): string {
+/** The create dialog's key auto-generation: the name as a URL-safe key.
+ *  Exported for the dialog's key tests. */
+export function slugifyKey(name: string): string {
   return name
     .toLowerCase()
     .replace(/[^a-z0-9_]+/g, '_')
@@ -476,31 +478,40 @@ function slugifyKey(name: string): string {
     .slice(0, 64);
 }
 
-function RoleDialog({
-  accountId,
-  mode,
-  role,
-  prefill,
-  open,
-  onOpenChange,
-}: {
-  accountId: string;
-  /** 'view' is read-only — everyone gets it (including non-managers and on
-   *  built-in roles), not just people who can edit. "What can this role
-   *  actually do?" should never require permission to change it. */
-  mode: 'create' | 'edit' | 'view';
-  role?: IamRole;
-  prefill?: RolePrefill | null;
-  open: boolean;
-  onOpenChange: (o: boolean) => void;
-}) {
+/** Create carries an optional duplicate-prefill and no role; edit and view
+ *  always carry the role they open. The union turns the impossible states — an
+ *  edit with no role, a create with one — into compile errors instead of
+ *  non-null assertions at every use. 'view' is read-only — everyone gets it
+ *  (including non-managers and on built-in roles), not just people who can
+ *  edit: "What can this role actually do?" should never require permission to
+ *  change it. */
+export type RoleDialogProps =
+  | {
+      accountId: string;
+      mode: 'create';
+      prefill?: RolePrefill | null;
+      open: boolean;
+      onOpenChange: (o: boolean) => void;
+    }
+  | {
+      accountId: string;
+      mode: 'edit' | 'view';
+      role: IamRole;
+      open: boolean;
+      onOpenChange: (o: boolean) => void;
+    };
+
+function RoleDialog(props: RoleDialogProps) {
+  const { accountId, open, onOpenChange } = props;
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
-  const isView = mode === 'view';
-  const isEdit = mode === 'edit' && !!role;
+  const isView = props.mode === 'view';
+  const isEdit = props.mode === 'edit';
   // Both edit and view load the role's existing grant set into the matrix —
   // view just never lets it change.
-  const hasExistingRole = (mode === 'edit' || mode === 'view') && !!role;
+  const hasExistingRole = props.mode !== 'create';
+  const role = props.mode === 'create' ? undefined : props.role;
+  const prefill = props.mode === 'create' ? props.prefill : undefined;
 
   const [name, setName] = useState(role?.name ?? prefill?.name ?? '');
   const [keyValue, setKeyValue] = useState(role?.key ?? (prefill ? slugifyKey(prefill.name) : ''));
@@ -524,7 +535,11 @@ function RoleDialog({
   // role's existing grant set, view just never writes it back.
   const permsQuery = useQuery({
     queryKey: ['iam-role-permissions', accountId, role?.role_id],
-    queryFn: () => getRolePermissions(accountId, role!.role_id),
+    queryFn: () => {
+      // `enabled` gates the fetch but is not a type guard: narrow explicitly.
+      if (!role) throw new Error('Role permissions need the role they load');
+      return getRolePermissions(accountId, role.role_id);
+    },
     staleTime: 30_000,
     enabled: hasExistingRole,
   });
@@ -566,15 +581,19 @@ function RoleDialog({
 
   const updateMutation = useMutation({
     mutationFn: async () => {
-      const nameChanged = name.trim() !== role!.name;
-      const descChanged = (description.trim() || null) !== (role!.description ?? null);
+      // The submit button only exists in edit mode, which always carries the
+      // role — narrowed here so this callback cannot compile against a create
+      // dialog.
+      if (!role) throw new Error('Edit needs the role it opens');
+      const nameChanged = name.trim() !== role.name;
+      const descChanged = (description.trim() || null) !== (role.description ?? null);
       if (nameChanged || descChanged) {
-        await updateRole(accountId, role!.role_id, {
+        await updateRole(accountId, role.role_id, {
           name: name.trim(),
           description: description.trim() || null,
         });
       }
-      await updateRolePermissions(accountId, role!.role_id, [...selected]);
+      await updateRolePermissions(accountId, role.role_id, [...selected]);
     },
     onSuccess: () => {
       successToast(tI18nComplete.raw('texta172f7fb3563'));
@@ -583,7 +602,7 @@ function RoleDialog({
       void invalidatePermissionProbes(queryClient, { accountId });
       queryClient.invalidateQueries({ queryKey: ['iam-roles', accountId] });
       queryClient.invalidateQueries({
-        queryKey: ['iam-role-permissions', accountId, role!.role_id],
+        queryKey: ['iam-role-permissions', accountId, role?.role_id],
       });
       onOpenChange(false);
     },

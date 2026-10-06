@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import { awaitTerminalStage } from '../await-stage';
-import type { SessionStartResult } from '../../routes/shared';
+import type { SessionStartResult } from '../../session-open';
 
 const mk = (stage: string, retriable: boolean | null = true): SessionStartResult =>
   ({ stage, retriable }) as unknown as SessionStartResult;

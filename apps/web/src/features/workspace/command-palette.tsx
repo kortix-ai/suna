@@ -876,7 +876,7 @@ export function CommandPalette() {
     (s) => s.preferences.conversationDensity ?? 'normal',
   );
   const billingEnabled = isBillingEnabled();
-  // What the active session's runtime serves (E1): a pi session has no compact.
+  // What the active session's runtime serves (E1): a control shows only with its capability.
   const runtimeCapabilities = useRuntimeConnectionStore((s) => s.runtimeCapabilities);
 
   // The project's own agents from the Kortix project config, filtered by the
@@ -1040,8 +1040,6 @@ export function CommandPalette() {
         id: `terminal:${pty.id}`,
         title: pty.title || pty.command || 'Terminal',
         type: 'terminal',
-        // LEGACY: terminal tabs only surface through <SidebarRight />, which
-        // both AppProviders call sites mount with showRightSidebar={false}.
         // `/terminal/<id>` is not a route.
         href: `/terminal/${pty.id}`,
       });

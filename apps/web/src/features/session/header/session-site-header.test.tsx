@@ -334,27 +334,14 @@ describe('SessionSiteHeader "more actions" menu — Delete last, technical items
     expect(exportIndex).toBeGreaterThan(renameIndex);
   });
 
-  test('Export and Summarize items are renamed to plain language and styled as visually subordinate', () => {
+  test('Export and Summarize items are renamed to plain language', () => {
     // "Compact session" / "Export transcript" were the jargon-y labels the
     // brief called out by name — they must not survive under those names.
+    // The items render in the plain menu style (#9169), not muted.
     expect(source).not.toContain('Compact session');
     expect(source).not.toContain('Export transcript');
     expect(source).toContain('Export conversation');
     expect(source).toContain('Summarize conversation');
-
-    const exportItemStart = source.indexOf('Export conversation') - 400;
-    const exportItem = source.slice(
-      Math.max(0, exportItemStart),
-      source.indexOf('Export conversation'),
-    );
-    expect(exportItem).toContain('text-muted-foreground');
-
-    const compactItemStart = source.indexOf('Summarize conversation') - 400;
-    const compactItem = source.slice(
-      Math.max(0, compactItemStart),
-      source.indexOf('Summarize conversation'),
-    );
-    expect(compactItem).toContain('text-muted-foreground');
   });
 });
 
@@ -410,8 +397,11 @@ describe('SessionConfigIndicator wiring', () => {
     // a runaway session they did not start.
     expect(source).toContain('projectSession.can_manage_sharing !== false');
     expect(source).toContain('projectSession.can_manage_lifecycle !== false');
-    // Stop is lifecycle. It must not ride on the sharing verdict.
-    expect(source).toContain("projectSession.status === 'running' && canManageLifecycle");
+    // Stop is lifecycle. It must not ride on the sharing verdict. The status
+    // half lives in `sessionCanBeStopped` (a warm shell reported
+    // `provisioning` keeps its Stop control, KRTX-1466); the lifecycle
+    // verdict stays here.
+    expect(source).toContain('sessionCanBeStopped(projectSession) && canManageLifecycle');
   });
 
   test('the ⋯ item and the chip share ONE mutation, so pending state cannot disagree', () => {
@@ -489,5 +479,40 @@ describe('SessionSiteHeader Share', () => {
     // The label hides at the same breakpoint the Hint turns on.
     expect(button).toContain('hidden md:inline');
     expect(button).toContain('<Share />');
+  });
+});
+
+describe('SessionSiteHeader Fork', () => {
+  const menuStart = source.indexOf('const sessionActionItems = (');
+  const menu = source.slice(menuStart, source.indexOf('\n  );', menuStart));
+
+  // `session.fork` is a runtime capability (OpenCode serves it, pi does not),
+  // and the fork belongs to a project session's conversation: a share viewer
+  // or instant shell has no route to open the fork on.
+  test('the Fork item is gated on the runtime capability and the project session', () => {
+    expect(source).toContain("useRuntimeSupports('session.fork') && isProjectSession");
+    const item = menu.slice(menu.indexOf('{canFork && ('));
+    expect(item.slice(0, item.indexOf('</>'))).toContain('i18nComplete.text0e5f7f6732e0');
+  });
+
+  test('Fork is one mutation, disabled while pending, like the other items', () => {
+    expect(source).toContain('const forkSession = useForkSession(');
+    const item = menu.slice(menu.indexOf('{canFork && ('));
+    expect(item).toContain('disabled={forkSession.isPending}');
+    expect(item).toContain('forkSession.mutate(\n                  { sessionId },');
+  });
+
+  test('a forked conversation opens on the same project-session route', () => {
+    expect(source).toContain('childSessionHref(');
+    expect(source).toContain('/projects/${projectId}/sessions/${projectSessionId}`');
+  });
+
+  // Conversation actions group: Fork branches the transcript, so it reads
+  // beside Export/Summarize, not beside the lifecycle verbs above the divider.
+  test('Fork sits in the conversation group, before Export conversation', () => {
+    const forkAt = menu.indexOf('text0e5f7f6732e0');
+    const exportAt = menu.indexOf('text5d974f9e80c3');
+    expect(forkAt).toBeGreaterThan(-1);
+    expect(exportAt).toBeGreaterThan(forkAt);
   });
 });

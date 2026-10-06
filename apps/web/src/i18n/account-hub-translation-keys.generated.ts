@@ -18,6 +18,7 @@ export const ACCOUNT_HUB_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   Plan: 'textfa8ed0bdabdd',
   'Plan, wallet, and spend for this account.': 'text1ff0d2da36a6',
   Projects: 'text04e2a9728af7',
+  "Read access to the account's own audit trail.": 'textf91c9658eeab',
   Roles: 'textc25337055464',
   'Service account tokens for CI and automations, and the rules they follow.': 'text7af0d5b84ba4',
   'Kortix charges and credit ledger for this account.': 'text36569109d4e5',

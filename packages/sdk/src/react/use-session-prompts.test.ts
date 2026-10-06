@@ -7,6 +7,7 @@ import type { SessionPrompt } from '../core/rest/projects-client/sessions';
 import {
   applyOptimisticPrompt,
   applyInboxObservation,
+  EDITED_PROMPT_OVERLAY_MS,
   inboxDrained,
   optimisticSessionPrompt,
   reconcileOptimisticPrompts,
@@ -15,7 +16,9 @@ import {
   SESSION_PROMPTS_IDLE_POLL_MS,
   SESSION_PROMPTS_POLL_MS,
   noteInboxObservation,
+  overlayEditedPrompt,
   readSessionPromptsInbox,
+  releaseEditedPromptOverlay,
   releaseHeldPrompts,
   releaseRemovedPromptTombstone,
   removeFailureKeepsRow,
@@ -23,6 +26,7 @@ import {
   sessionPromptsPollMs,
   startSessionWithPrompt,
   tombstoneRemovedPrompt,
+  withEditedPromptOverlays,
   withEditedPromptText,
   withoutRemovedPrompts,
 } from './use-session-prompts';
@@ -548,6 +552,61 @@ describe('removed-prompt tombstones', () => {
   });
 });
 
+/**
+ * An edit answers on the CLICK and stays answered until the server has it.
+ *
+ * `edit` writes the new words optimistically, then PATCHes. A poll that reached
+ * the server before the PATCH lists the old words, and it replaced the edit:
+ * the row showed the old words again until the read after the PATCH.
+ */
+describe('edits in flight', () => {
+  const old = (prompt_id: string) => row({ prompt_id, text: 'old', full_text: 'old' });
+
+  test('a read that lists the old words keeps the edit while its save is in flight', () => {
+    overlayEditedPrompt('sess-e1', 'a', 'NEW', 1_000);
+    const rows = [old('a'), row({ prompt_id: 'b', text: 'two', full_text: 'two' })];
+    expect(
+      withEditedPromptOverlays('sess-e1', rows, 1_500).map((r) => [r.prompt_id, r.text, r.full_text]),
+    ).toEqual([
+      ['a', 'NEW', 'NEW'],
+      ['b', 'two', 'two'],
+    ]);
+  });
+
+  test('the overlay is scoped to its own session', () => {
+    overlayEditedPrompt('sess-e2', 'a', 'NEW', 1_000);
+    expect(withEditedPromptOverlays('sess-other', [old('a')], 1_500)).toEqual([old('a')]);
+  });
+
+  test('a released overlay lets the server\'s words back: a refused save shows the old text', () => {
+    overlayEditedPrompt('sess-e3', 'a', 'NEW', 1_000);
+    releaseEditedPromptOverlay('sess-e3', 'a');
+    expect(withEditedPromptOverlays('sess-e3', [old('a')], 1_500)).toEqual([old('a')]);
+  });
+
+  test('the overlay expires, so a save that never settles cannot pin its words', () => {
+    overlayEditedPrompt('sess-e4', 'a', 'NEW', 1_000);
+    expect(
+      withEditedPromptOverlays('sess-e4', [old('a')], 1_000 + EDITED_PROMPT_OVERLAY_MS + 1),
+    ).toEqual([old('a')]);
+  });
+
+  test('readSessionPromptsInbox keeps the edit over a read that left before the save', async () => {
+    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () => Response.json({ prompts: [old('a')] })) as unknown as typeof fetch;
+    overlayEditedPrompt('sess-e5', 'a', 'NEW');
+    try {
+      const rows = await readSessionPromptsInbox('proj-1', 'sess-e5', []);
+      expect(rows.map((r) => [r.prompt_id, r.text, r.full_text])).toEqual([['a', 'NEW', 'NEW']]);
+    } finally {
+      releaseEditedPromptOverlay('sess-e5', 'a');
+      globalThis.fetch = original;
+      configureKortix({ backendUrl: '', getToken: async () => null });
+    }
+  });
+});
+
 // ── The session-open bundle seam ────────────────────────────────────────────
 
 describe('readSessionPromptsInbox and the open bundle', () => {
@@ -801,6 +860,13 @@ describe('withEditedPromptText', () => {
       ['c', 'three'],
     ]);
     expect(before[1].text).toBe('two');
+  });
+
+  test('replaces the full text too: a queue draws `full_text`, so the old words would show until the read after the PATCH', () => {
+    const before = [{ ...row('a', 'one'), full_text: 'one, in full' }];
+    const [after] = withEditedPromptText(before, 'a', 'ONE, in full');
+    expect(after).toMatchObject({ text: 'ONE, in full', full_text: 'ONE, in full' });
+    expect(before[0].full_text).toBe('one, in full');
   });
 
   test('a row that is gone stays gone', () => {

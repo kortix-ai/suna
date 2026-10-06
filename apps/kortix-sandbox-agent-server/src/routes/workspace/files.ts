@@ -1,3 +1,4 @@
+import { DAEMON_FILE_IMPORT_TIMEOUT_MS } from '@kortix/api-contract/runtime-relay'
 import { Hono } from 'hono'
 import path from 'node:path'
 import fs from 'node:fs/promises'
@@ -28,7 +29,7 @@ import { isLikelyBinary, mimeTypeFor } from './file-mime'
 
 const DEFAULT_ALLOWED_ROOTS = ['/workspace', '/opt', '/tmp', '/home']
 const MAX_PROMPT_ATTACHMENT_BYTES = 50 * 1024 * 1024
-const IMPORT_TIMEOUT_MS = 120_000
+const IMPORT_TIMEOUT_MS = DAEMON_FILE_IMPORT_TIMEOUT_MS
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 type PromptAttachmentImportRequest = {

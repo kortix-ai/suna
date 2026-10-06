@@ -19,7 +19,7 @@ import {
   parseCostWindow,
 } from '../../shared/cost-window';
 import { db } from '../../shared/db';
-import { resolveScopedAccountId } from '../../shared/resolve-account';
+import { resolveScopedAccountId } from '../../middleware/resolve-account';
 import { getSessionCostRecord, listSessionCosts } from '../../shared/session-costs';
 import type { AppEnv } from '../../types';
 import {

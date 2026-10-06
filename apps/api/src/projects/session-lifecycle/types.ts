@@ -1,7 +1,7 @@
 import type { ProjectRow, ProjectSessionRow, RequestAuditContext } from '../lib/serializers';
 import type { PromptOverridesWire, PromptPartWire } from './prompt-payload';
 import type { SessionCreateError } from '../lib/sessions';
-import type { SessionStartResult } from '../routes/shared';
+import type { SessionStartResult } from '../session-open';
 
 export type SessionInvocationSource =
   | 'ui'
@@ -247,5 +247,5 @@ export interface SessionLifecycleResult {
   deduped?: boolean;
   retryable?: boolean;
   reason?: string;
-  error?: SessionCreateError | { status: number; body: Record<string, unknown> };
+  error?: SessionCreateError;
 }

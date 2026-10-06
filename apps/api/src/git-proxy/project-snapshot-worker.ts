@@ -1,8 +1,9 @@
 /**
  * Leader-only worker that turns queued `project_snapshot_archives` rows into
  * published archives. Same shape as the other singleton workers
- * (`shared/audit-webhooks.ts`): a recursive `setTimeout` tick so a slow build
- * can never overlap the next tick in this process, `SKIP LOCKED` claims so a
+ * (`workers/audit-webhook-worker.ts`): a recursive `setTimeout` tick
+ * (`workers/project-snapshot-worker.ts`) so a slow build can never overlap
+ * the next tick in this process, `SKIP LOCKED` claims so a
  * leadership flap can never double-build a row, and every outcome settled on
  * the row itself so failure stays visible and retryable.
  *
@@ -15,18 +16,9 @@ import {
   processProjectSnapshot,
   type ProcessedProjectSnapshot,
 } from './project-snapshot';
-import { projectSnapshotStorageConfigured } from './project-snapshot-store';
-import { runWorkerTick } from '../shared/audit-scope';
 
 const CLAIM_BATCH = 2;
-const IDLE_MS = 5_000;
-const ERROR_MS = 15_000;
 const WORKER_ID = newProjectSnapshotWorkerId();
-
-let timer: ReturnType<typeof setTimeout> | null = null;
-let running = false;
-let stopped = true;
-let activeTick: Promise<void> | null = null;
 
 function logOutcome(result: ProcessedProjectSnapshot): void {
   const line = {
@@ -62,42 +54,4 @@ export async function runProjectSnapshotWorkerOnce(
   return results;
 }
 
-async function tick(): Promise<void> {
-  if (stopped) return;
-  let delay = IDLE_MS;
-  try {
-    const processed = await runProjectSnapshotWorkerOnce();
-    // Drain a backlog promptly; sleep only when the queue was empty.
-    if (processed.length > 0) delay = 250;
-  } catch (err) {
-    console.error('[project-snapshot] worker tick failed', err);
-    delay = ERROR_MS;
-  }
-  if (stopped) return;
-  timer = setTimeout(() => {
-    activeTick = runWorkerTick('project-snapshots', tick);
-  }, delay);
-}
-
-export function startProjectSnapshotWorker(): void {
-  if (running) return;
-  if (!projectSnapshotStorageConfigured()) {
-    console.info('[project-snapshot] worker idle: KORTIX_PROJECT_SNAPSHOT_S3_BUCKET is not configured');
-    return;
-  }
-  running = true;
-  stopped = false;
-  activeTick = runWorkerTick('project-snapshots', tick);
-}
-
-export async function stopProjectSnapshotWorker(): Promise<void> {
-  if (!running) return;
-  stopped = true;
-  running = false;
-  if (timer) {
-    clearTimeout(timer);
-    timer = null;
-  }
-  await activeTick?.catch(() => {});
-  activeTick = null;
-}
+export { startProjectSnapshotWorker, stopProjectSnapshotWorker } from '../workers/project-snapshot-worker';

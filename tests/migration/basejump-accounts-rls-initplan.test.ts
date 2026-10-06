@@ -129,24 +129,14 @@ suite('basejump.accounts RLS initplan (throwaway Postgres)', () => {
       'full_page_writes=off',
     ]);
     if (!up.ok) throw new Error(`could not start test container: ${up.stderr}`);
+    // Host TCP probe: `docker exec pg_isready` answers over the unix socket,
+    // which initdb's temporary socket-only server satisfies while nothing
+    // serves TCP yet — the published port's proxy then accepts and closes the
+    // suite's first `psql` (`server closed the connection unexpectedly`). See
+    // worktree-migrate.test.ts for the full timeline and CI run 36153691220.
     let ready = false;
     for (let i = 0; i < 60; i++) {
-      // Probe the container's own TCP listener, never the Unix socket: the
-      // entrypoint's temporary init server answers the socket while the real
-      // server (the one the published port proxies to) is not up yet, so a
-      // socket-ready poll lets runMigrate's first psql die mid-init.
-      ready = sh([
-        'docker',
-        'exec',
-        CONTAINER,
-        'pg_isready',
-        '-h',
-        '127.0.0.1',
-        '-U',
-        'postgres',
-        '-d',
-        'postgres',
-      ]).ok;
+      ready = sh(['psql', url, '-tAc', 'select 1']).ok;
       if (ready) break;
       await Bun.sleep(1000);
     }

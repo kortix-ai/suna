@@ -2,6 +2,7 @@
  * Project triggers — manage-gated CRUD. Maps to spec §17 (TRG-1..5).
  * Trigger create commits the project manifest (a real git commit).
  */
+import { TriggerListSchema } from '@kortix/api-contract';
 import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
 import { CliSandbox, throwIfCliInfraFailure } from '../fixtures/cli';
@@ -66,11 +67,11 @@ flow(
   { domain: 'triggers', routes: ['GET /v1/projects/:projectId/triggers'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
-    await ctx.step('list triggers', async () => {
+    await ctx.step('list triggers; the body is the contract TriggerList envelope', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/projects/:projectId/triggers', { params: { projectId: p.id } });
-      r.status(200);
+      r.status(200).body().schema(TriggerListSchema);
     });
     // project.trigger.read gate (IAM enforcement audit) — a stranger with no
     // project access at all still 404s (loadProjectForUser denies before the

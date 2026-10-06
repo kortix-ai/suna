@@ -180,3 +180,9 @@ botkube-comm-real.yaml
 .e2e/failures/
 .e2e/logs/
 .e2e/videos/
+
+# Crash dumps carry the whole process environment. Never commit one.
+# Not bare `core`: packages/sdk/src/core is source.
+/core
+core.[0-9]*
+*.core

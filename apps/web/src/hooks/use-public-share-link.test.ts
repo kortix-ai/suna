@@ -25,9 +25,10 @@ describe('Copy link asks before it creates a public share', () => {
   });
 
   test('the share is minted only from the confirmation', () => {
-    const mints = HOOK_SOURCE.match(/mutation\.mutate\(\)/g) ?? [];
+    // One mint call, and it is the confirmation's — `copyLink` only opens it.
+    const mints = HOOK_SOURCE.match(/mutation\.mutate\(/g) ?? [];
     expect(mints).toHaveLength(1);
-    expect(HOOK_SOURCE).toContain('onConfirm: () => mutation.mutate()');
+    expect(HOOK_SOURCE).toMatch(/onConfirm: \([^)]*\) =>\s*mutation\.mutate\(/);
   });
 
   test('every caller of usePublicShareLink renders the confirmation', () => {
@@ -39,7 +40,11 @@ describe('Copy link asks before it creates a public share', () => {
     expect(callers.length).toBeGreaterThanOrEqual(3);
     for (const file of callers) {
       const text = readFileSync(file, 'utf8');
-      expect(text, relative(SRC, file)).toContain('<PublicShareLinkConfirm');
+      // The modal confirm, or the viewer header's popover, which mints only
+      // from its own "Create link" button.
+      const confirms =
+        text.includes('<PublicShareLinkConfirm') || text.includes('<PublicLinkPopover');
+      expect(confirms, relative(SRC, file)).toBe(true);
     }
   });
 });

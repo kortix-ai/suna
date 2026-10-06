@@ -142,7 +142,7 @@ export interface WeekExport {
 
 export async function exportWeek(deps: ArchiveDeps, week: string): Promise<WeekExport> {
   const { db, store, mode } = deps;
-  const sleep = deps.sleep ?? ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const sleep = deps.sleep ?? Bun.sleep;
   const batch = deps.batchRows ?? 5_000;
   const keepUntil = retainUntil(week);
   const partition = await partitionAttached(db, week);
@@ -290,7 +290,7 @@ async function countPartition(db: Db, week: string): Promise<number> {
 
 /** DETACH takes ACCESS EXCLUSIVE on the parent: never wait for it longer than a second, and retry. */
 async function detachPartition(deps: ArchiveDeps, week: string): Promise<void> {
-  const sleep = deps.sleep ?? ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const sleep = deps.sleep ?? Bun.sleep;
   for (let attempt = 1; ; attempt += 1) {
     try {
       await deps.db.transaction(async (tx) => {
