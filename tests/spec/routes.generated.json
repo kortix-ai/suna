@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 721,
+  "count": 722,
   "routes": [
     {
       "method": "GET",
@@ -2429,6 +2429,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/warm/claim"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/skills"
     },
     {
       "method": "GET",

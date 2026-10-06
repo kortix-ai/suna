@@ -13,6 +13,11 @@ export function bindProjectCore(projectId: string) {
     },
     get: (opts?: Parameters<typeof P.getProject>[1]) => P.getProject(projectId, opts),
     detail: () => P.getProjectDetail(projectId),
+    skills: {
+      /** Create a skill file on the default branch — no model needed. */
+      create: (...a: DropFirst<Parameters<typeof P.createProjectSkill>>) =>
+        P.createProjectSkill(projectId, ...a),
+    },
     /** Canonical project-scoped audit timeline. */
     audit: (options?: Parameters<typeof P.listProjectAudit>[1]) =>
       P.listProjectAudit(projectId, options),

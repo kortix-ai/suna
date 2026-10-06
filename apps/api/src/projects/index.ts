@@ -80,6 +80,7 @@ import './routes/marketplace-install-session';
 import './routes/review-items';
 import './routes/agent-scope';
 import './routes/agent-config';
+import './routes/project-skills';
 import './routes/gateway';
 import './routes/channel-bindings';
 import './routes/monitors';

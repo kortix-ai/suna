@@ -4,6 +4,7 @@
 
 export * from './accounts';
 export * from './projects';
+export * from './skills';
 export * from './github';
 export * from './git-backend';
 export * from './access';
