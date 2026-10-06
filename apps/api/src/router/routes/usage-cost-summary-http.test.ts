@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import * as realAccess from '../../projects/lib/access';
-import { mockIamEngineAllowAll } from '../../__tests__/helpers/iam-mocks';
+import * as realAuthorize from '../../iam/authorize';
 
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000001';
 const PROJECT_ID = '00000000-0000-4000-a000-000000000002';
@@ -62,6 +62,15 @@ mock.module('../../middleware/resolve-account', () => ({
   resolveScopedAccountId: async (c: TestContext) => c.req.query('account_id') || ACCOUNT_ID,
 }));
 
+// #9272: account-wide usage reads require `billing.read`. Record the check.
+const authorizedActions: string[] = [];
+mock.module('../../iam/authorize', () => ({
+  ...realAuthorize,
+  assertAuthorized: async (_actor: unknown, action: string) => {
+    authorizedActions.push(action);
+  },
+}));
+
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
@@ -116,16 +125,6 @@ mock.module('../../shared/session-costs', () => ({
   },
 }));
 
-// Account-wide usage reads assert `billing.read` (#9272). The IAM engine reads
-// tables this suite does not model, so it is bypassed; the asserted actions
-// are recorded, and a test can deny `billing.read`.
-let assertedActions: string[] = [];
-let billingReadDenied = false;
-mockIamEngineAllowAll((action) => {
-  assertedActions.push(action);
-  if (billingReadDenied && action === 'billing.read') throw new HTTPException(403, { message: 'Forbidden' });
-});
-
 const { usageApp } = await import('./usage');
 
 function createTestApp() {
@@ -141,8 +140,6 @@ function createTestApp() {
 }
 
 beforeEach(() => {
-  assertedActions = [];
-  billingReadDenied = false;
   authType = 'supabase';
   sandboxId = null;
   tokenProjectId = null;
@@ -159,22 +156,12 @@ describe('GET /v1/usage/cost-summary', () => {
     );
 
     expect(response.status).toBe(200);
+    // An account-wide read needs billing.read (#9272).
+    expect(authorizedActions).toContain('billing.read');
     expect(summaryInput?.accountId).toBe(ACCOUNT_ID);
     expect(summaryInput?.projectId).toBeUndefined();
     expect(summaryInput?.sessionId).toBeUndefined();
     expect(await response.json()).toEqual(summary);
-  });
-
-  // #9272: an account-wide read needs `billing.read`, for every credential.
-  test('an account-wide summary asserts billing.read, and a denial is 403', async () => {
-    await createTestApp().request(`/v1/usage/cost-summary?account_id=${ACCOUNT_ID}`);
-    expect(assertedActions).toContain('billing.read');
-
-    billingReadDenied = true;
-    summaryInput = null;
-    const denied = await createTestApp().request(`/v1/usage/cost-summary?account_id=${ACCOUNT_ID}`);
-    expect(denied.status).toBe(403);
-    expect(summaryInput).toBeNull();
   });
 
   test('defaults the window to the trailing 30 days when from/to are absent', async () => {

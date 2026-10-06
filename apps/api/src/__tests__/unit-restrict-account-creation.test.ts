@@ -51,6 +51,8 @@ mockIamAssignments();
 
 mock.module('../shared/db', () => ({
   hasDatabase: () => true,
+  // accounts/seat-lock.ts (#9272) wraps the member insert in a transaction.
+  withDbTransaction: <T>(fn: () => Promise<T>) => fn(),
   db: {
     insert: (table: any) => ({
       values: (vals: any) => {
@@ -72,11 +74,6 @@ mock.module('../shared/db', () => ({
     select: () => {
       throw new Error('db.select should not be reached by these tests');
     },
-  },
-  // setup-links/public-app.ts imports it at module load (#9272); no test here
-  // opens a transaction.
-  withDbTransaction: () => {
-    throw new Error('withDbTransaction should not be reached by these tests');
   },
 }));
 

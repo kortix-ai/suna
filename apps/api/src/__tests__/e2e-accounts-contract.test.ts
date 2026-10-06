@@ -393,6 +393,8 @@ mock.module('../shared/resolve-account', () => ({
 
 mock.module('../shared/db', () => ({
   hasDatabase: () => true,
+  // accounts/seat-lock.ts (#9272) runs the invite accept in a transaction.
+  withDbTransaction: <T>(fn: () => Promise<T>) => fn(),
   db: {
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
@@ -540,13 +542,6 @@ mock.module('../shared/db', () => ({
       return user ? [{ id: user.id }] : [];
     },
   },
-}));
-
-// Invite accept takes the per-account seat lock (#9272): a pg advisory lock in
-// a transaction, which this shim does not model. The lock is proved against
-// PostgreSQL by integration-seat-lock; here it only runs the guarded step.
-mock.module('../accounts/seat-lock', () => ({
-  withAccountSeatLock: async <T>(_accountId: string, fn: () => Promise<T>) => fn(),
 }));
 
 const { accountsRouter } = await import('../accounts/index');

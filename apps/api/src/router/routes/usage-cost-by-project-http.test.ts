@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import * as realAccess from '../../projects/lib/access';
-import { mockIamEngineAllowAll } from '../../__tests__/helpers/iam-mocks';
+import * as realAuthorize from '../../iam/authorize';
 
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000001';
 const PROJECT_ID = '00000000-0000-4000-a000-000000000002';
@@ -63,6 +63,15 @@ mock.module('../../middleware/resolve-account', () => ({
 // never calls into it, but the static import still has to resolve — the real
 // module pulls in resolveAccountId from the mocked resolve-account above,
 // which does not export it.
+// #9272: account-wide usage reads require `billing.read`. Record the check.
+const authorizedActions: string[] = [];
+mock.module('../../iam/authorize', () => ({
+  ...realAuthorize,
+  assertAuthorized: async (_actor: unknown, action: string) => {
+    authorizedActions.push(action);
+  },
+}));
+
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
@@ -109,11 +118,6 @@ mock.module('../../shared/session-costs', () => ({
     throw new Error('getSessionCostRecord should not be called from cost-by-project tests');
   },
 }));
-
-// Account-wide usage reads assert `billing.read` (#9272). The IAM engine reads
-// tables this suite does not model, so it is bypassed (allow all); the
-// `billing.read` denial is tested in usage-cost-summary-http.test.ts.
-mockIamEngineAllowAll();
 
 const { usageApp } = await import('./usage');
 
