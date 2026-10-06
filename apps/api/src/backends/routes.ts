@@ -11,7 +11,14 @@ import { projectsApp } from '../projects/lib/app';
 import { requireFeatureFlag } from '../feature-flags/gate';
 import { decryptProjectSecret } from '../projects/secrets/envelope';
 import { resolveSessionSandboxRegion } from '../platform/services/sandbox-region';
-import { BackendLimitError, type BackendRow, createBackend, deleteBackend } from './provision';
+import {
+  BackendLimitError,
+  type BackendRow,
+  deleteBackend,
+  effectiveStatus,
+  insertBackend,
+  provisionBackend,
+} from './provision';
 
 const BackendObject = z
   .object({
@@ -49,18 +56,20 @@ const ProjectParams = z.object({ projectId: z.string().uuid() });
 const BackendParams = z.object({ projectId: z.string().uuid(), backendId: z.string().uuid() });
 
 function serialize(row: BackendRow) {
-  const lastError = (row.metadata as { lastError?: unknown }).lastError;
+  const status = effectiveStatus(row);
+  const lastError =
+    status !== row.status ? 'Provisioning was interrupted. Delete this backend and create it again.' : (row.metadata as { lastError?: unknown }).lastError;
   return {
     backend_id: row.backendId,
     project_id: row.projectId,
     name: row.name,
-    status: row.status as 'provisioning' | 'running' | 'error' | 'deleted',
+    status: status as 'provisioning' | 'running' | 'error' | 'deleted',
     url: row.url,
     site_url: row.siteUrl,
     cpu: row.cpu,
     memory_gb: row.memoryGb,
     disk_gb: row.diskGb,
-    error: row.status === 'error' && typeof lastError === 'string' ? lastError : null,
+    error: status === 'error' && typeof lastError === 'string' ? lastError : null,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
   };
@@ -121,15 +130,16 @@ export function registerBackendsRoutes(): void {
     createRoute({
       method: 'post', path: '/{projectId}/backends', tags: ['backends'], summary: 'Create a backend', ...auth,
       description:
-        'Provisions a self-hosted Convex backend in its own machine and waits until it answers. ' +
+        'Claims the name and starts provisioning a self-hosted Convex backend in its own machine. ' +
+        'Answers 202 with status `provisioning`; poll the backend until it is `running` or `error`. ' +
         'Usually a few seconds; the first create in a region also builds the image.',
       request: {
         params: ProjectParams,
         body: { content: { 'application/json': { schema: z.object({ name: NameSchema }) } }, required: true },
       },
       responses: {
-        201: json(z.object({ backend: BackendObject }), 'Created'),
-        ...errors(400, 403, 404, 409, 502),
+        202: json(z.object({ backend: BackendObject }), 'Provisioning'),
+        ...errors(400, 403, 404, 409),
       },
     }),
     async (c: any) => {
@@ -138,14 +148,12 @@ export function registerBackendsRoutes(): void {
       if (loaded instanceof Response) return loaded;
       const { name } = c.req.valid('json') as { name: string };
       try {
-        const row = await createBackend({
-          projectId,
-          accountId: loaded.row.accountId,
-          userId: loaded.userId,
-          name,
-          region: resolveSessionSandboxRegion(loaded.row.metadata),
-        });
-        return c.json({ backend: serialize(row) }, 201);
+        const row = await insertBackend({ projectId, accountId: loaded.row.accountId, userId: loaded.userId, name });
+        // Outlives the response; failures land on the row as status `error`.
+        void provisionBackend(row, resolveSessionSandboxRegion(loaded.row.metadata)).catch((error) =>
+          console.error('[backends] provision failed', { projectId, backendId: row.backendId, error }),
+        );
+        return c.json({ backend: serialize(row) }, 202);
       } catch (error) {
         if (error instanceof BackendLimitError) {
           return c.json({ error: error.message, code: 'backend_limit' }, 409);
@@ -153,8 +161,7 @@ export function registerBackendsRoutes(): void {
         if (inspectDatabaseError(error)?.pgCode === '23505') {
           return c.json({ error: `a backend named "${name}" already exists`, code: 'backend_name_taken' }, 409);
         }
-        console.error('[backends] create failed', { projectId, name, error });
-        return c.json({ error: 'The backend could not be started. Try again.', code: 'backend_create_failed' }, 502);
+        throw error;
       }
     },
   );
@@ -190,7 +197,7 @@ export function registerBackendsRoutes(): void {
       const row = await liveBackend(projectId, backendId);
       if (!row) return c.json({ error: 'Not found' }, 404);
       if (row.status !== 'running' || !row.url || !row.siteUrl || !row.adminKeyEnc) {
-        return c.json({ error: `backend is ${row.status}`, code: 'backend_not_running' }, 409);
+        return c.json({ error: `backend is ${effectiveStatus(row)}`, code: 'backend_not_running' }, 409);
       }
       const adminKey = decryptProjectSecret(projectId, row.adminKeyEnc);
       await recordAuditEvent({

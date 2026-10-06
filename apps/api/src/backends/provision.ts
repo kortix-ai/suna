@@ -2,11 +2,14 @@
  * Kortix Backends lifecycle: one self-hosted Convex backend per persistent
  * Platinum machine.
  *
- * Create is synchronous (≈3 s on a warm image, up to a few minutes the first
- * time a region builds the image): insert the row, create the machine with
- * public 3210/3211, write the origins file the supervisor waits for, wait for
- * `/version`, mint the admin key inside the machine, seal it, mark `running`.
- * Any failure marks the row `error` and deletes the machine.
+ * Create is two steps. `insertBackend` claims the name and answers at once.
+ * `provisionBackend` then runs in the background (≈3 s on a warm image, up to
+ * a few minutes the first time a region builds the image): create the machine
+ * with public 3210/3211, write the origins file the supervisor waits for, wait
+ * for `/version`, mint the admin key inside the machine, seal it, mark
+ * `running`. Any failure marks the row `error` and deletes the machine. A row
+ * left `provisioning` by a process restart reads as `error` after
+ * PROVISION_STALE_MS (see `effectiveStatus`).
  *
  * ponytail: not metered. Backends are capped per project while the flag is
  * experimental; compute metering with liveness stamps is the gate to beta.
@@ -48,6 +51,16 @@ export type BackendRow = typeof projectBackends.$inferSelect;
 
 export class BackendLimitError extends Error {}
 
+/** Longer than any real provision, including a first image build. */
+export const PROVISION_STALE_MS = 15 * 60_000;
+
+/** The status to show: a provision this old was interrupted, not slow. */
+export function effectiveStatus(row: BackendRow, now = Date.now()): BackendRow['status'] {
+  return row.status === 'provisioning' && now - row.createdAt.getTime() > PROVISION_STALE_MS
+    ? 'error'
+    : row.status;
+}
+
 function exposedOrigin(created: PlatinumCreated, port: number): string {
   const url = created.exposed?.find((e) => e.port === port)?.url;
   if (!url) throw new Error(`platinum create returned no exposed URL for port ${port}`);
@@ -87,12 +100,11 @@ async function deleteMachine(externalId: string): Promise<void> {
   await platinumJson(`/v1/sandboxes/${externalId}`, { method: 'DELETE' });
 }
 
-export async function createBackend(input: {
+export async function insertBackend(input: {
   projectId: string;
   accountId: string;
   userId: string;
   name: string;
-  region?: string;
 }): Promise<BackendRow> {
   const live = await db
     .select({ id: projectBackends.backendId })
@@ -118,8 +130,11 @@ export async function createBackend(input: {
       createdBy: input.userId,
     })
     .returning();
-  const backendId = row!.backendId;
+  return row!;
+}
 
+export async function provisionBackend(row: BackendRow, region?: string): Promise<BackendRow> {
+  const { backendId, projectId } = row;
   let externalId: string | null = null;
   try {
     const created = await platinumJson<PlatinumCreated>(
@@ -138,7 +153,7 @@ export async function createBackend(input: {
           cpu: BACKEND_MACHINE.cpu,
           ram_mb: BACKEND_MACHINE.memoryGb * 1024,
           disk_gb: BACKEND_MACHINE.diskGb,
-          ...(input.region ? { region: input.region } : {}),
+          ...(region ? { region } : {}),
           // Convex clients cannot send Platinum's preview token, so both ports
           // are public; the admin key guards the admin API, as on Convex Cloud.
           expose: [
@@ -177,19 +192,21 @@ export async function createBackend(input: {
         status: 'running',
         url,
         siteUrl,
-        adminKeyEnc: encryptProjectSecret(input.projectId, adminKey),
+        adminKeyEnc: encryptProjectSecret(projectId, adminKey),
         updatedAt: new Date(),
       })
-      .where(eq(projectBackends.backendId, backendId))
+      // Only a row nobody deleted meanwhile may become `running`.
+      .where(and(eq(projectBackends.backendId, backendId), isNull(projectBackends.deletedAt)))
       .returning();
-    return ready!;
+    if (!ready) throw new Error('backend was deleted while it was provisioning');
+    return ready;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (externalId) await deleteMachine(externalId).catch(() => {});
     await db
       .update(projectBackends)
       .set({ status: 'error', updatedAt: new Date(), metadata: { lastError: message.slice(0, 2_000) } })
-      .where(eq(projectBackends.backendId, backendId))
+      .where(and(eq(projectBackends.backendId, backendId), isNull(projectBackends.deletedAt)))
       .catch(() => {});
     throw error;
   }
