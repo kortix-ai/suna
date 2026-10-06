@@ -1,5 +1,5 @@
 {
-  "source_hash": "be000fd71b529a4270715fc1356f931cc53b5b9eb0e76ff0d14c97111b449e32",
+  "source_hash": "2fa9906a1cfcf4c0867a45a313816625c67a63e166b749706ee153b34e3e6c5b",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-05T214855Z-run-pnpm-test-on-the-ci-toolchain-bun-1-3-14-and-bash-5-not.md",
@@ -540,13 +540,13 @@
     "tests/src/flows/session-scope.flow.ts",
     "tests/unit/latency-budget.test.ts"
   ],
-  "diff_hash": "ba535007b01f5835f947db6bff8609aa522beab71f817a8f456e2aadb5e2c435",
-  "head": "ddd894808eaf19b0b3eac39d8ace42813fb44a74",
+  "diff_hash": "a8593135af16886226d5806c75c193dae14160918e7d01a72a48bdf6a0308b14",
+  "head": "aa4491aa960798e769c6296772f1e03174a8a200",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-05T23:27:47.263Z"
+  "at": "2026-10-06T01:24:14.232Z"
 }
