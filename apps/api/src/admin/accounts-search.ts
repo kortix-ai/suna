@@ -2,6 +2,7 @@ import { accounts } from '@kortix/db';
 import { type SQL, sql } from 'drizzle-orm';
 import { accountIdsWithMemberEmailLikeSql } from '../iam/membership-read';
 import { qualifiedColumn } from '../shared/sql-qualified-column';
+import { escapeLike } from '../shared/sql-like';
 
 /**
  * The `search` filter of the admin accounts list: the account's name or any
@@ -21,7 +22,7 @@ import { qualifiedColumn } from '../shared/sql-qualified-column';
  * sequential scan.
  */
 export function adminAccountsSearchCondition(search: string): SQL {
-  const pattern = `%${search}%`;
+  const pattern = `%${escapeLike(search)}%`;
   return sql`(${qualifiedColumn(accounts.name)} ilike ${pattern} or ${qualifiedColumn(accounts.accountId)} IN (
     ${accountIdsWithMemberEmailLikeSql(pattern)}))`;
 }

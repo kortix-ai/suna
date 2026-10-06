@@ -124,6 +124,7 @@ export async function completeSlackOauthInstall(input: {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: exchangeBody.toString(),
+      signal: AbortSignal.timeout(10_000),
     });
     tokenJson = (await tokenRes.json()) as SlackOauthResponse;
   } catch (err) {

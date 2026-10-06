@@ -8,7 +8,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import pg from 'pg';
-import { claimExpiredSandboxStop, releaseSandboxStopClaim } from '../projects/reaping/box-queries';
+import {
+  claimExpiredSandboxStop,
+  claimManualSandboxStop,
+  releaseSandboxStopClaim,
+} from '../projects/reaping/box-queries';
 import {
   clearPendingStopObservation,
   markPendingStopObservation,
@@ -733,6 +737,35 @@ describe('prompt-versus-stop linearization', () => {
     const metadata = (await readRow()).metadata;
     expect(metadata.lifecycleStopClaim).toBeUndefined();
     expect(metadata.activeTurns).toHaveProperty(t('recovery'));
+  });
+
+  test('a manual stop claims a row with a live turn and an unexpired deadline, once', async () => {
+    await setLifecycleState({
+      activeTurns: {
+        [t('manual-live')]: {
+          token: t('manual-live'),
+          state: 'active',
+          opencodeSessionId: 'ses_root',
+          messageId: 'msg_live',
+          startedAtMs: 1,
+        },
+      },
+    });
+
+    expect(await claimManualSandboxStop(SANDBOX_ID, 'manual-first')).toBe(true);
+    expect(await claimManualSandboxStop(SANDBOX_ID, 'manual-second')).toBe(false);
+    expect((await readRow()).metadata.lifecycleStopClaim).toEqual({
+      token: 'manual-first',
+      claimedAtMs: expect.any(Number),
+    });
+    // A prompt that arrives after the claim is refused before any byte is sent.
+    expect(
+      await beginSandboxTurn(
+        { sandboxId: SANDBOX_ID },
+        { token: t('after-manual'), runtimeSessionId: 'ses_root', messageId: 'msg_after' },
+        60_000,
+      ),
+    ).toBe('no_box');
   });
 
   test('claim release is token-scoped', async () => {

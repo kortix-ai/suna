@@ -103,7 +103,7 @@ export async function readExportPage(
   }
 
   if (found.length < want) {
-    const conditions = buildFilters(input.accountId, input.filters);
+    const conditions = buildFilters(input.accountId, input.filters, { floorFreeTextSearch: false });
     if (input.cursor) conditions.push(buildAuditCursorCondition(input.cursor, input.accountId, 'ascending'));
     const fetched = await db
       .select()

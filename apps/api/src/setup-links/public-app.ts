@@ -10,8 +10,8 @@
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { requestClientKey } from '../middleware/client-ip';
-import { connectorConnections, connectors, projectSessions, projects } from '@kortix/db';
-import { and, eq } from 'drizzle-orm';
+import { connectorConnections, connectors, projectSecrets, projectSessions, projects } from '@kortix/db';
+import { and, eq, gt, isNull } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
 import { type Context, type Next } from 'hono';
 import { errors, json, lenientBody, makeOpenApiApp } from '../openapi';
@@ -257,12 +257,20 @@ setupLinksPublicApp.openapi(createRoute({
     }
     // "Only the person who asked" — the one audience a link holder may choose.
     // It can only narrow: the default is everyone in the project.
+    // The minter must still be in the account: a removed member's links die with them.
+    if (payload.uid && !(await linkRequester(resolved.projectId, payload.uid))) {
+      return c.json({ error: 'This link is no longer valid — ask the agent for a fresh one' }, 410);
+    }
     const requester = body?.only_requester === true ? await linkRequester(resolved.projectId, payload.uid) : null;
     if (body?.only_requester === true && !requester) {
       return c.json({ error: 'This link cannot keep the values to one person' }, 400);
     }
     const accountId = requester ? await projectAccount(resolved.projectId) : null;
 
+    // Single use per key, without a table: a key written after the link was
+    // minted is spent. The shared (non-personal) row's updated_at is the marker.
+    const mintedAt = new Date(payload.iat ?? payload.exp - 7 * 24 * 60 * 60_000);
+    let spent = 0;
     const saved: string[] = [];
     for (const [rawName, rawValue] of Object.entries(values)) {
       const name = rawName.toUpperCase();
@@ -271,6 +279,14 @@ setupLinksPublicApp.openapi(createRoute({
       if (!allowed.has(name) || !isValidSecretName(name)) continue;
       const value = typeof rawValue === 'string' ? rawValue : '';
       if (!value) continue;
+      const [written] = await db.select({ id: projectSecrets.secretId }).from(projectSecrets)
+        .where(and(
+          eq(projectSecrets.projectId, resolved.projectId),
+          eq(projectSecrets.identifier, name),
+          isNull(projectSecrets.ownerUserId),
+          gt(projectSecrets.updatedAt, mintedAt),
+        )).limit(1);
+      if (written) { spent++; continue; }
       const audience =
         requester && accountId
           ? { accountId, projectId: resolved.projectId, principals: [{ principal_type: 'user' as const, principal_id: requester.id }], grantedBy: requester.id }
@@ -287,14 +303,14 @@ setupLinksPublicApp.openapi(createRoute({
         ...(pendingId ? { secretId: pendingId } : {}),
       });
       if (audience && pendingId && secretId !== pendingId) {
-        // The key already existed: drop the pending grants, narrow the row itself.
+        // The key already existed: drop the pending grants. A link never narrows an existing row's audience.
         await clearSecretAudience({ accountId: audience.accountId, projectId: audience.projectId, secretId: pendingId });
-        await setSecretAudience({ ...audience, secretId });
       }
       saved.push(name);
     }
 
     if (saved.length === 0) {
+      if (spent > 0) return c.json({ error: 'This link was already used — ask the agent for a fresh one' }, 409);
       return c.json({ error: 'No values provided for the requested keys' }, 400);
     }
 

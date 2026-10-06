@@ -12,6 +12,7 @@ import { keepRunFailure } from '../trigger-execution-store';
 import { TRIGGER_REUSE_RETIRED_AT } from './trigger-run-outcome';
 import { disableSessionReminder, reminderPromptText } from './session-reminders';
 import type { TriggerFireSource } from './trigger-webhook-auth';
+import { claimTriggerCreate, releaseTriggerCreate, triggerCreateKey } from './trigger-create-claim';
 
 /**
  * Find a user we can attribute trigger-spawned sessions to. Git-backed
@@ -341,8 +342,37 @@ export async function fireGitTrigger(input: {
   if (queuedSessionId) {
     return { status: 'queued', sessionId: queuedSessionId, reason: 'prompt queued for delivery' };
   }
-  return createGitTriggerSession(input, actor, sessionKey);
+  const createKey = triggerCreateKey({
+    projectId: project.projectId,
+    slug: spec.slug,
+    sessionKey,
+    sessionMode: spec.sessionMode,
+  });
+  if (!createKey) return createGitTriggerSession(input, actor, sessionKey);
+
+  // One creator per key. A delivery that loses waits for the winner's session
+  // (up to 15 s) and prompts it; if none appears it creates, as before.
+  if (!(await claimTriggerCreate(createKey))) {
+    for (let attempt = 0; attempt < CREATE_WAIT_ATTEMPTS; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, CREATE_WAIT_POLL_MS));
+      const joined = await queueExistingTriggerSession(input, actor, sessionKey);
+      if (joined) return { status: 'queued', sessionId: joined, reason: 'prompt queued for delivery' };
+    }
+    return createGitTriggerSession(input, actor, sessionKey);
+  }
+  let result: Awaited<ReturnType<typeof createGitTriggerSession>> | undefined;
+  try {
+    result = await createGitTriggerSession(input, actor, sessionKey);
+    return result;
+  } finally {
+    // A create that only queued has no session row yet: keep the claim until it
+    // expires so deliveries during backpressure do not each queue another create.
+    if (result?.status !== 'queued') await releaseTriggerCreate(createKey);
+  }
 }
+
+const CREATE_WAIT_ATTEMPTS = 15;
+const CREATE_WAIT_POLL_MS = 1_000;
 
 /**
  * A session reminder re-prompts its own session and nothing else. Unlike a pinned
