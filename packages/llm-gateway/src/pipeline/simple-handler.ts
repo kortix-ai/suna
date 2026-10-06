@@ -15,6 +15,7 @@ import { type FetchImpl, callUpstream } from '../http';
 import {
   type ExtractedUsage,
   type SseErrorFrame,
+  chunkOutputChars,
   estimateOutputTokens,
   estimateCachedPromptTokens,
   estimatePromptTokens,
@@ -503,7 +504,7 @@ export async function handleChatCompletions(
   const billable = descriptor.billingMode !== 'none' || (fallbackChosenByProject && Boolean(chain?.length));
   // Measured now, while the parsed body still exists: a billable stream that
   // ends before its usage frame is settled from this (see usage/estimate.ts).
-  const promptTokenEstimate = streaming && billable ? estimatePromptTokens(body) : 0;
+  const promptTokenEstimate = billable ? estimatePromptTokens(body) : 0;
   const cachedTokenEstimate = estimateCachedPromptTokens(body, promptTokenEstimate);
   // Kept only so a STREAMING body that gets cut before a single byte reaches
   // the client can be transparently retried (see relayStream's `redispatch`
@@ -895,7 +896,18 @@ export async function handleChatCompletions(
       return null;
     }
   })();
-  await settle(extractUsageFromJson(data));
+  const reportedUsage = (data as { usage?: unknown } | null)?.usage;
+  if (upstream.ok && (reportedUsage == null || typeof reportedUsage !== 'object')) {
+    // A 200 with no usage object still generated output the provider bills.
+    // Settle the estimate, never zero.
+    const choices = (data as { choices?: Array<{ message?: unknown }> } | null)?.choices;
+    const outputChars = Array.isArray(choices)
+      ? chunkOutputChars({ choices: choices.map((choice) => ({ delta: choice?.message })) })
+      : 0;
+    await settle(null, null, { outputChars, clientStopped: false });
+  } else {
+    await settle(extractUsageFromJson(data));
+  }
   if (served.publicProvider) {
     const publicText =
       data && typeof data === 'object' && !Array.isArray(data)
