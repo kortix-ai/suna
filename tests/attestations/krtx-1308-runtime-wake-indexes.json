@@ -1,0 +1,20 @@
+{
+  "source_hash": "018c67fb7e0d36221fa7e8dc8c28205e8dd4f2dc21bb0a1a732e63e2a83d04a7",
+  "diff_files": [
+    "packages/db/drizzle/meta/20261006211050_snapshot.json",
+    "packages/db/drizzle/meta/_journal.json",
+    "packages/db/migrations/20261006203300000_session_sandboxes_wake_id_index.concurrent.ts",
+    "packages/db/migrations/20261006203301000_session_sandboxes_wake_cleanup_until_index.concurrent.ts",
+    "packages/db/scripts/session-sandboxes-runtime-wake-index.integration.test.ts",
+    "packages/db/src/schema/kortix.ts"
+  ],
+  "diff_hash": "74e00d4ac9e0807f1acfa13219f50df1d4d354991bd66f9e8cf25a2a67c29586",
+  "head": "1df3a00c512d4e375e080e00e0578e6e7b11cedd",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-06T21:24:11.859Z"
+}
