@@ -86,6 +86,8 @@ async function rowMenuItems(
   page: Page,
   trigger = page.getByRole('button', { name: `Actions for ${TITLE}`, exact: true }),
 ) {
+  // A row shows its actions button on hover, in place of the owner's avatar.
+  await trigger.hover({ force: true });
   await trigger.click();
   const menu = page.getByRole('menu');
   await expect(menu.getByRole('menuitem', { name: /Who has access|Share/ })).toBeVisible();
