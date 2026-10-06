@@ -1,7 +1,6 @@
 {
-  "source_hash": "2f60d5c54306af572a7b8270b5bc7af111b25ba0839ad42f52e270c6d8bb6328",
+  "source_hash": "31952bc61efc90f35429ada372dcbed204349bca8c69ea4da8daa371463ddd67",
   "diff_files": [
-    "apps/api/src/__tests__/e2e-marketplace-http.test.ts",
     "apps/api/src/__tests__/integration-session-model-repoint.test.ts",
     "apps/api/src/__tests__/unit-channel-model-access.test.ts",
     "apps/api/src/__tests__/unit-channel-vision-model.test.ts",
@@ -27,24 +26,21 @@
     "apps/api/src/projects/routes/session-open-bundle.test.ts",
     "apps/api/src/projects/routes/session-open-bundle.ts",
     "apps/api/src/projects/session-title-generate.ts",
-    "apps/api/src/shared/platinum.test.ts",
     "apps/web/src/features/workspace/customize/sections/gateway-view.tsx",
     "apps/web/src/features/workspace/customize/sections/view/gateway/gateway-routing.test.ts",
-    "apps/web/src/lib/menu-registry.flags.test.ts",
-    "apps/web/src/lib/seo/content-timestamps.json",
-    "packages/sdk/src/core/attachments/prompt-attachments.test.ts",
+    "packages/llm-gateway/src/domain/hooks.ts",
     "packages/sdk/src/core/models/composer-model.ts",
     "packages/sdk/src/core/models/composer-models.test.ts",
     "packages/sdk/src/core/models/model-visibility.ts",
     "packages/sdk/src/react/use-model-defaults.test.ts"
   ],
-  "diff_hash": "35108eb2353c61433affa20cd5a7e8589c085bf26db50c486e41074d7e21ca20",
-  "head": "3b4f3dcab2a2f888be15d5eb23bafe9c7a793518",
+  "diff_hash": "7e278eb4fe0a137ca4d7e3fe4f34efe5a81aa71989ca90f7fc1ce797f4f5f3d8",
+  "head": "bff3582c6f16f8bd6a4bb8299cd00eb4998db24e",
   "passed": true,
   "lanes": {
-    "packages": "pass",
     "core": "pass",
-    "db-suites": "pass"
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-04T02:49:20.976Z"
+  "at": "2026-10-06T13:36:39.049Z"
 }
