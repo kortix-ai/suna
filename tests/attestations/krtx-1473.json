@@ -1,6 +1,8 @@
 {
-  "source_hash": "d53203c47653577c63b702939a84b01c587c6de88397be0bda2e8aa4846706bd",
+  "source_hash": "e2f9a6b32b99d6a8d61eeef666832302f0a78e349926ed9c628fc66c1cf6a791",
   "diff_files": [
+    "apps/api/eslint-suppressions.json",
+    "apps/api/src/__tests__/unit-session-title-invariant.test.ts",
     "apps/api/src/projects/lib/connector-binding-effective.ts",
     "apps/api/src/projects/lib/connector-binding-entitlement.ts",
     "apps/api/src/projects/lib/connector-binding-resolve.ts",
@@ -36,15 +38,17 @@
     "apps/api/src/projects/lib/session-reminders.ts",
     "apps/api/src/projects/lib/session-sandbox-env-build.characterization.test.ts",
     "apps/api/src/projects/lib/session-sandbox-env-build.ts",
-    "apps/api/src/projects/lib/session-sandbox-env-sources.ts"
+    "apps/api/src/projects/lib/session-sandbox-env-sources.ts",
+    "apps/api/src/projects/lib/sessions.fast-boot-git-hint.test.ts",
+    "apps/api/src/projects/lib/sessions.provider-failover-wiring.test.ts"
   ],
-  "diff_hash": "f34e905dbd52a1b6ced0161c8f2c86fcbbaf64ea7e9a7715550d3a6ff27225b3",
-  "head": "a74096aa70d3ac556247f270c7186c3e00d8571d",
+  "diff_hash": "f64ee91c9c07cf3d0660436de53461a9221372225242e872e287067564a80be1",
+  "head": "089a8c83d717bf1e8cb260323448e8b03325c40e",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-06T13:06:25.922Z"
+  "at": "2026-10-06T14:26:38.826Z"
 }
