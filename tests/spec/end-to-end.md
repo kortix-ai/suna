@@ -1454,8 +1454,8 @@ configured. Routes: `GET/POST /projects/:projectId/backends`,
 `GET/DELETE /projects/:projectId/backends/:backendId`,
 `GET /projects/:projectId/backends/:backendId/credentials`.
 
-`BKD-1` Gated surface. Flag off: list, create, get, credentials and delete
-answer `403 {code:'feature_disabled', feature:'backends'}`. `PATCH
+`BKD-1` Gated surface. Flag off: list, create, get, credentials, delete, resize,
+token, backups, snapshot and restore answer `403 {code:'feature_disabled', feature:'backends'}`. `PATCH
 /projects/:projectId/features` with `backends: true` answers 200. Where Platinum
 is configured the flag resolves on: list answers 200 with a `backends` array, and
 an invalid name answers 400 before any machine is requested. Where it is not, the
