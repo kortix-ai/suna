@@ -1,5 +1,8 @@
 import { sql } from 'drizzle-orm';
-import { db, withDbTransaction } from '../shared/db';
+// A namespace import: ~190 unit suites mock shared/db without
+// withDbTransaction, and a named import fails at link time in every one that
+// reaches this module (accounts/invites.ts).
+import * as database from '../shared/db';
 
 /**
  * Serialize "count the seats, then add the member" per account. Without it,
@@ -8,8 +11,8 @@ import { db, withDbTransaction } from '../shared/db';
  * until commit; the seat check and the membership insert both go inside `fn`.
  */
 export function withAccountSeatLock<T>(accountId: string, fn: () => Promise<T>): Promise<T> {
-  return withDbTransaction(async () => {
-    await db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`account-seats:${accountId}`}, 0))`);
+  return database.withDbTransaction(async () => {
+    await database.db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`account-seats:${accountId}`}, 0))`);
     return fn();
   });
 }
