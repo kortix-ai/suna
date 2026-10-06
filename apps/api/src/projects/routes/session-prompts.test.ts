@@ -257,6 +257,8 @@ mock.module('../../billing/services/billing-gate', () => ({
 let sendState: { held: boolean; pending: boolean } | null = null;
 let edits: Array<{ sessionId: string; promptId: string; text: string }> = [];
 let editOutcome: 'edited' | 'delivering' | 'missing' = 'edited';
+let interrupts: string[] = [];
+let interruptOutcome: 'edited' | 'delivering' | 'missing' = 'edited';
 
 mock.module('../session-lifecycle', () => ({
   ...realLifecycle,
@@ -284,6 +286,18 @@ mock.module('../session-lifecycle', () => ({
     return {
       outcome: 'edited',
       row: row({ payload: { text, clientMessageId: 'q_1', wireMessageId: WIRE_ID } }),
+    };
+  },
+  interruptInboxPrompt: async (_sessionId: string, promptId: string) => {
+    interrupts.push(promptId);
+    if (interruptOutcome !== 'edited') return { outcome: interruptOutcome };
+    return {
+      outcome: 'edited',
+      row: row({
+        idempotencyKey: `prompt:${SESSION_ID}:q_1`,
+        payload: { text: 'say hi', clientMessageId: 'q_1', wireMessageId: WIRE_ID, delivery: 'interrupt', placement: 'transcript' },
+        result: { promoted: true },
+      }),
     };
   },
   drainSessionLifecycleQueue: async (input: Record<string, unknown>) => {
@@ -364,7 +378,7 @@ mock.module('../session-lifecycle/inbox-hold-settle', () => ({
 }));
 
 const { projectsApp } = await import('../lib/app');
-await import('./session-prompts');
+(await import('./session-prompts')).registerSessionPromptsRoutes();
 
 function app() {
   const application = new Hono<{ Variables: { userId: string; authType: string } }>();
@@ -402,6 +416,8 @@ beforeEach(() => {
   drains = [];
   edits = [];
   editOutcome = 'edited';
+  interrupts = [];
+  interruptOutcome = 'edited';
   enqueueResult = null;
   billingOk = true;
   dbReadDelayMs = 0;
@@ -440,6 +456,19 @@ describe('POST .../prompts', () => {
       deduped: false,
       observed_at: expect.any(String),
     });
+  });
+
+  test('delivery sets the stored placement; placement alone keeps its meaning (R10)', async () => {
+    await post({ ...validBody, delivery: 'steer' });
+    await post({ ...validBody, client_message_id: 'q_2', delivery: 'interrupt', placement: 'composer' });
+    await post({ ...validBody, client_message_id: 'q_3', placement: 'transcript' });
+    expect(enqueued.map((e) => [e.delivery, e.placement])).toEqual([
+      ['steer', 'composer'],
+      ['interrupt', 'transcript'],
+      [undefined, 'transcript'],
+    ]);
+    expect((await post({ ...validBody, client_message_id: 'q_4', delivery: 'now' })).status).toBe(400);
+    expect(enqueued).toHaveLength(3);
   });
 
   test('carries the client-minted wire id, the parts and the overrides into the payload', async () => {
@@ -655,6 +684,9 @@ describe('GET .../prompts', () => {
         text: 'say hi',
         full_text: 'say hi',
         placement: 'composer',
+        // A row from before steering: `queue`, as its placement implies.
+        delivery: 'queue',
+        steer_fallback: null,
         attempts: 0,
         runtime_retries: 0,
         last_error: null,
@@ -800,6 +832,7 @@ describe('DELETE .../prompts/:promptId', () => {
     expect(await response.json()).toEqual({
       removed: {
         placement: 'composer',
+        delivery: 'queue',
         prompt_id: PROMPT_ID,
         removed_message_ids: [WIRE_ID],
         client_message_id: 'q_1',
@@ -891,6 +924,29 @@ describe('PATCH .../prompts/:promptId', () => {
 
   test('refuses a prompt id that is not a row id', async () => {
     expect((await edit({ text: 'x' }, 'not-a-uuid')).status).toBe(400);
+  });
+
+  test('"Stop and send": delivery interrupt converts the row and kicks the drain (R10)', async () => {
+    const response = await edit({ delivery: 'interrupt' });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ delivery: 'interrupt', placement: 'transcript' });
+    expect(interrupts).toEqual([PROMPT_ID]);
+    expect(edits).toHaveLength(0);
+    expect(drains).toEqual([{ idempotencyKey: `prompt:${SESSION_ID}:q_1` }]);
+  });
+
+  test('text and delivery together: the edit, then the conversion', async () => {
+    expect((await edit({ text: 'say hello', delivery: 'interrupt' })).status).toBe(200);
+    expect(edits).toHaveLength(1);
+    expect(interrupts).toEqual([PROMPT_ID]);
+  });
+
+  test('a row on its way cannot be converted; another delivery value is refused', async () => {
+    interruptOutcome = 'delivering';
+    expect((await edit({ delivery: 'interrupt' })).status).toBe(409);
+    expect(drains).toHaveLength(0);
+    expect((await edit({ delivery: 'steer' })).status).toBe(400);
+    expect(interrupts).toEqual([PROMPT_ID]);
   });
 });
 

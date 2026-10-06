@@ -8,9 +8,15 @@
  * reload clears it, which is correct: a reloaded session is a resume, not new.
  */
 const freshSessions = new Set<string>();
+/** A window that creates thousands of sessions forgets the oldest marks. */
+const MAX_FRESH_SESSIONS = 500;
 
 export function markSessionFresh(id: string | null | undefined): void {
-  if (id) freshSessions.add(id);
+  if (!id) return;
+  freshSessions.add(id);
+  if (freshSessions.size > MAX_FRESH_SESSIONS) {
+    freshSessions.delete(freshSessions.values().next().value as string);
+  }
 }
 
 export function isSessionFresh(id: string | null | undefined): boolean {

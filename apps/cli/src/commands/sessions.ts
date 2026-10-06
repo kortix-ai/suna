@@ -125,7 +125,9 @@ Subcommands:
                                     one-shot with --prompt). --new starts one.
                                     --queue stores the prompt in the session's
                                     durable inbox instead of handing it to the
-                                    runtime.
+                                    runtime. --steer stores it the same way and
+                                    hands it to the running turn at its next
+                                    step.
   queue <session-id> [<sub>]        The durable prompt inbox: ls (default), rm
                                     <prompt-id>, now <prompt-id>, hold,
                                     release. --json.

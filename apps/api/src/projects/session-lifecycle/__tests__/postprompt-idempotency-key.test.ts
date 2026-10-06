@@ -65,7 +65,7 @@ mock.module('../../session-title-generate', () => ({
   generateSessionTitleFromFirstPrompt: async () => {},
 }));
 
-mock.module('../../routes/shared', () => ({
+mock.module('../../session-open', () => ({
   openSession: async () => ({
     stage: 'ready',
     sandbox: { external_id: EXTERNAL_ID, provider: 'daytona' },
@@ -75,7 +75,7 @@ mock.module('../../routes/shared', () => ({
 
 // The one call site F2 fixes: capture the header `postPrompt` sends instead
 // of actually reaching a sandbox.
-mock.module('../../../sandbox-proxy/routes/preview', () => ({
+mock.module('../../../sandbox-proxy/forward', () => ({
   forwardToSandbox: async (
     _externalId: string,
     _port: number,

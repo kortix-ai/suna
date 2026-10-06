@@ -18,7 +18,7 @@ on:
     paths:
       - "infra/**"
       - ".github/workflows/drata-compliance.yml"
-  # No push to `main` (Actions minutes, 2026-10-03): the daily schedule scans it.
+  # No push to `dev` (Actions minutes, 2026-10-03): the daily schedule scans it.
   schedule:
     - cron: "37 6 * * *" # 06:37 UTC daily
   pull_request:

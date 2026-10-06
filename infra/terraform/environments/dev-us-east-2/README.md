@@ -1,23 +1,23 @@
 # dev-us-east-2 — dev's API/gateway, colocated with the dev database
 
-Standing-up-before-tearing-down twin of `../dev`. Same module set, same
-Fargate/Spot sizing, **different region (us-east-2, matching the dev
-Supabase database's region)** and different resource names (`kortix-dev-use2`)
-so it can exist alongside `../dev` (us-west-2) without any name collision —
-IAM roles and the project-snapshots S3 bucket name are account/global-namespace
-scoped, not region-scoped, so they cannot share `../dev`'s names while both are
-live. See the apply runbook in PR #7844 for the full
-rationale, apply sequence, and cutover/rollback.
+Twin of `../dev` that stands up before `../dev` is torn down. Same module set,
+same Fargate Spot sizing, **different region (us-east-2, the dev Supabase
+database's region)** and different resource names (`kortix-dev-use2`), so it
+runs next to `../dev` (us-west-2) without a name collision. IAM roles and S3
+bucket names are global, so the two stacks cannot share names while both live.
+`../dev-web-us-east-2` is the matching web service.
 
 | Surface | Where it runs | Managed by |
 |---|---|---|
-| `dev-api-use2-shadow.kortix.com` | Cloudflare (proxied) → ALB → ECS Fargate (us-east-2) | **this Terraform** |
-| `gateway-dev-use2-shadow.kortix.com` | Cloudflare (proxied) → ALB → ECS Fargate (us-east-2) | **this Terraform** |
+| `dev-api-use2.kortix.com` | Cloudflare (proxied) → ALB → ECS Fargate (us-east-2) | **this Terraform** |
+| `gateway-dev-use2.kortix.com` | Cloudflare (proxied) → ALB → ECS Fargate (us-east-2) | **this Terraform** |
+| `dev-use2.kortix.com` | Cloudflare (proxied) → ALB → ECS Fargate (us-east-2) | `../dev-web-us-east-2` |
 
-These are **shadow verification hostnames**. Production dev traffic
-(`dev-api.kortix.com` / `dev-api-ecs-fargate.kortix.com`) is unaffected by this
-root until the runbook's cutover step repoints those DNS records at this
-root's ALB.
+These are origin hostnames. `dev-api.kortix.com` and `gateway-dev.kortix.com`
+are the dev-api Worker (`infra/cloudflare/workers/api-router`). Its
+`ACTIVE_BACKEND` picks the origin: `ecs-fargate` = `../dev`, `us-east-2` = this
+root. `dev.kortix.com` is a CNAME that Deploy Dev's `publish-web-ecs-dns` job
+points at the web ALB.
 
 ## Why this exists
 
@@ -32,35 +32,95 @@ Server-side `Server-Timing`, same code, same query counts:
 us-east-2. Moving the API to us-east-2 removes the cross-continent hop; it
 does not remove the sequential-round-trip count (a separate, larger change).
 
-## Apply
+## Switch-over runbook
 
-Not yet wired into `deploy-dev.yml` — this is a **new, not-yet-applied** root.
-Follow the apply runbook in PR #7844 for the exact,
-ordered `terraform init` / `plan` / `apply` sequence, required
-`TF_VAR_secret_arn`-equivalent inputs, and the DNS cutover + decommission
-steps that come after verification.
+Nothing below moves data. The dev database stays where it is. The snapshot
+bucket and the config-release archives are caches that the API rebuilds from
+Git (`apps/api/src/config-releases/store.ts`), so the new buckets start empty.
+Every `terraform apply`, Worker change and delete needs an approved plan.
 
-```bash
-cd infra/terraform/environments/dev-us-east-2
-export AWS_PROFILE=...                          # us-east-2 creds
-export TF_VAR_cloudflare_api_token=...           # = CLOUDFLARE_API_TOKEN secret
-terraform init
-terraform plan
-```
+**Background workers.** The singleton loops (cron triggers, maintenance,
+migration workers) run on the one replica that holds the lease row in
+`kortix.worker_leader_lease` (`apps/api/src/shared/leader-election.ts`). Both
+stacks share the database, so they share the lease. The new stack still starts
+with `KORTIX_WORKERS_ENABLED=false`, so an unverified stack never takes the
+lease.
 
-### Secrets
+### Phase 1 — stand up (dev keeps serving from `../dev`)
 
-`kortix-dev-env` must be **replicated** to us-east-2 first (native Secrets
-Manager cross-region replication — same secret name, same content, a
-region-specific ARN; the source of truth stays the us-west-2 secret). See the
-runbook. `data "aws_secretsmanager_secret" "env"` resolves the replica
-automatically once the provider region is `us-east-2` and the name matches.
+1. Copy the env blobs to us-east-2. The script prints key names only.
 
-### Image
+   ```bash
+   infra/scripts/copy-env-secret.sh kortix-dev-env us-west-2 us-east-2 --workers off
+   infra/scripts/copy-env-secret.sh kortix-dev-web-env us-west-2 us-east-2 --to-name kortix-dev-use2-web-env
+   ```
 
-Same convention as `../dev`: `api_image` defaults to the moving
-`:dev-latest` tag; CI (once wired) would pass the exact `dev-<sha8>` tag it
-just published.
+   Until phase 4, an edit to `kortix-dev-env` goes to both copies. `--check`
+   names the keys that drifted.
+2. Plan this root, then `../dev-web-us-east-2` (it reads this root's VPC).
+   `TF_VAR_cloudflare_api_token` is `CLOUDFLARE_API_TOKEN` in `kortix-ci-env`.
 
-> ⚠️ `terraform apply` here creates real, billable AWS resources (VPC, NAT,
-> ALB × 2, Fargate). It does not touch anything in `../dev`.
+   ```bash
+   terraform init && terraform plan -out=plan.tfplan   # read it, then apply
+   ```
+
+3. Roll the real task definitions. Terraform only seeds the services; the
+   deploy script renders the env from the secret. The overrides are the
+   `deploy-api-ecs` job's, with the new bucket names and region:
+
+   ```bash
+   export KORTIX_ECS_ENV_OVERRIDES="$(grep -m1 -A1 'KORTIX_ECS_ENV_OVERRIDES: >-' .github/workflows/deploy-dev.yml | tail -1 \
+     | sed -E 's/kortix-dev-(project-snapshots|audit-archive)/kortix-dev-use2-\1/g; s/"us-west-2"/"us-east-2"/g; s/^ +//')"
+   bash infra/scripts/ecs-deploy.sh dev-use2 kortix/kortix-api:dev-<sha8> --wait-for serving
+   bash infra/scripts/ecs-deploy.sh dev-use2 kortix/kortix-gateway:dev-<sha8> --service gateway
+   KORTIX_ECS_ENV_OVERRIDES= bash infra/scripts/ecs-deploy.sh dev-use2 kortix/kortix-frontend:dev-<sha8> --service web
+   ```
+
+4. Verify on the origins: `https://dev-api-use2.kortix.com/v1/health`,
+   `https://gateway-dev-use2.kortix.com/health/live`, `https://dev-use2.kortix.com`,
+   and real sessions on both harnesses with the CLI pointed at
+   `https://dev-api-use2.kortix.com`.
+
+### Phase 2 — switch
+
+Before the merge:
+
+1. `copy-env-secret.sh kortix-dev-env us-west-2 us-east-2 --workers on`, then
+   `ecs-deploy.sh dev-use2 <current dev API image> --wait-for serving` so the
+   new tasks read the flag. Both stacks are now lease candidates; the lease row
+   still allows one leader.
+2. Roll the current dev images onto `dev-use2` (API, gateway, web), so the
+   switch does not change the code that answers.
+3. In the old dev-web state, drop the `dev` record so `../dev-web` can neither
+   revert nor delete it:
+   `terraform -chdir=infra/terraform/environments/dev-web state rm 'module.dns[0].cloudflare_record.this["dev"]'`.
+
+The merge is the switch. `deploy-api-router-dev.yml` deploys the dev-api
+Worker with `ACTIVE_BACKEND = "us-east-2"` within a minute. `Terraform Apply
+Global` grants the deploy role the `kortix-dev-use2-*` task roles. Then:
+
+4. `gh workflow run deploy-dev.yml -f surface=all`: it targets `dev-use2`,
+   these roots and the new buckets, and `publish-web-ecs-dns` points
+   `dev.kortix.com` at `kortix-dev-use2-web-alb`.
+5. Verify dev end to end.
+
+**Undo:** `wrangler deploy --env dev --var ACTIVE_BACKEND:ecs-fargate --var
+GATEWAY_ACTIVE_BACKEND:ecs-fargate` and `node infra/scripts/sync-web-dns.mjs dev
+<kortix-dev-web-alb DNS name>`. Both stacks use one database, so nothing
+diverges.
+
+### Phase 3 — idle the old stack
+
+After 24 hours of clean traffic, scale `kortix-dev`, `kortix-dev-gateway` and
+`kortix-dev-web` (us-west-2) to 0 tasks. Undo is then `ecs-deploy.sh dev
+<current image>` plus the steps above (~2-3 min).
+
+### Phase 4 — decommission (3-7 days after the switch)
+
+Destroy `../dev` and `../dev-web` (read the destroy plan first), delete the
+us-west-2 `kortix-dev-env` and `kortix-dev-web-env`, and add this root and
+`../dev-web-us-east-2` to the drift-plan matrix in
+`.github/workflows/terraform-ci.yml`.
+
+> ⚠️ `terraform apply` here creates billable AWS resources (VPC, NAT, 2 ALBs,
+> Fargate). It does not touch anything in `../dev`.

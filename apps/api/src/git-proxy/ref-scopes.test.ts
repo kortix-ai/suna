@@ -42,15 +42,12 @@ const user: GitPrincipal = { kind: 'user', userId: 'u1', tokenId: 'tok-1' };
 const internal: GitPrincipal = { kind: 'internal' };
 
 /**
- * Minimal Hono-context stand-in. The resolver reads `agentGrant` for a session,
- * and `deriveRequestContext` reads request headers for a person (IP / AAL are
- * folded into the authorize cache key).
+ * The request values the resolver reads: the session's agent grant, and the
+ * IAM request context (IP / AAL, folded into the authorize cache key) — empty,
+ * as a request without forwarding headers or an MFA level derives it.
  */
 function ctxWithGrant(grant: unknown): any {
-  return {
-    get: (key: string) => (key === 'agentGrant' ? grant : undefined),
-    req: { header: () => undefined },
-  };
+  return { agentGrant: grant ?? null, ctx: { ip: undefined, mfaAal: undefined } };
 }
 
 const ANY: GitRefScope = 'project.gitops.ref.any';

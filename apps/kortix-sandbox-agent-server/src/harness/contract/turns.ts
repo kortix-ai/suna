@@ -29,6 +29,13 @@ export interface HarnessTurnResponse {
 export interface HarnessTurnService {
   /** 202 `{ message_id }`, 200 `{ deduplicated: true }`, or an error status. */
   prompt(runtimeSessionId: string, input: RuntimePromptInput): Promise<HarnessTurnResponse>
+  /**
+   * Hand a message to the running turn, which reads it at its next step
+   * boundary. `input.messageId` is set. 202 `{ message_id, steered: true }`,
+   * 200 `{ deduplicated: true }`, 409 `{ code: STEER_NO_ACTIVE_TURN_CODE }`
+   * when no turn runs (nothing is stored), 501 `{ code: 'feature_not_supported' }`.
+   */
+  steer(runtimeSessionId: string, input: RuntimePromptInput): Promise<HarnessTurnResponse>
   abort(runtimeSessionId: string): Promise<HarnessTurnResponse>
   /** 200 `{ info, parts }` or 404. */
   readMessage(runtimeSessionId: string, messageId: string): Promise<HarnessTurnResponse>

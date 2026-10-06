@@ -58,6 +58,12 @@ let abandonResult = true;
 let adoptResult = 'adopted';
 let causeResult = 'attached';
 const order: string[] = [];
+let completionQueue: Array<typeof completionResult> = [];
+const completedMessageIds: Array<string | undefined> = [];
+const confirmed: string[] = [];
+const steerLookups: string[] = [];
+let steerTargets: Record<string, string> = {};
+let confirmOutcome: 'confirmed' | 'pending_delivery' | 'no_prompt' = 'confirmed';
 
 const databaseMock = {
   select: (projection: Record<string, unknown> = {}) => ({
@@ -122,9 +128,21 @@ mock.module('../sandbox-turn-lifecycle', () => ({
   abandonSandboxTurn: async () => abandonResult,
   acceptSandboxTurn: async () => true,
   adoptRuntimeSandboxTurn: async () => adoptResult,
-  completeSandboxTurn: async () => {
+  completeSandboxTurn: async (_sessionId: string, _status: string, identity?: { messageId?: string }) => {
     order.push('complete');
-    return completionResult;
+    completedMessageIds.push(identity?.messageId);
+    return completionQueue.shift() ?? completionResult;
+  },
+}));
+
+mock.module('../session-lifecycle/consumption', () => ({
+  confirmInboxPromptConsumed: async (_sessionId: string, messageId: string) => {
+    confirmed.push(messageId);
+    return confirmOutcome;
+  },
+  steerTargetAtTurnEnd: async (_sessionId: string, messageId: string) => {
+    steerLookups.push(messageId);
+    return steerTargets[messageId] ?? null;
   },
 }));
 
@@ -184,7 +202,7 @@ mock.module('../../notifications/session-push', () => ({
 }));
 
 const { projectsApp } = await import('../lib/app');
-await import('./turn-stream');
+(await import('./turn-stream')).registerTurnStreamRoutes();
 
 function buildApp(ctx: Record<string, unknown> = {}) {
   const app = new Hono<{ Variables: Record<string, unknown> }>();
@@ -237,6 +255,12 @@ beforeEach(() => {
   causeResult = 'attached';
   order.length = 0;
   triggerRunEnds.length = 0;
+  completionQueue = [];
+  completedMessageIds.length = 0;
+  confirmed.length = 0;
+  steerLookups.length = 0;
+  steerTargets = {};
+  confirmOutcome = 'confirmed';
 });
 
 describe('POST /v1/projects/:projectId/turn-stream — sleeve gates', () => {
@@ -690,5 +714,50 @@ describe('POST /v1/projects/:projectId/turn-stream — content relay (step / ans
       reason: 'invalid_form',
       error: 'the form needs at least one field with an id and a label',
     });
+  });
+});
+
+describe('POST /v1/projects/:projectId/turn-stream — steering (R10)', () => {
+  test('steer_read requires a sandbox token and a message id', async () => {
+    const denied = await post({ session_id: SESSION_ID, kind: 'steer_read', turn_message_id: 'msg_s' });
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toEqual({ error: 'steer_read requires a sandbox token' });
+    const missing = await post({ session_id: SESSION_ID, kind: 'steer_read' }, sandboxCtx);
+    expect(missing.status).toBe(400);
+    expect(confirmed).toEqual([]);
+  });
+
+  test('steer_read confirms the steered row consumed', async () => {
+    const response = await post({ session_id: SESSION_ID, kind: 'steer_read', turn_message_id: 'msg_s' }, sandboxCtx);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, outcome: 'confirmed' });
+    expect(confirmed).toEqual(['msg_s']);
+    expect(capabilityCalls).toEqual([]);
+  });
+
+  test('an end that names a steered message closes the turn the steer went into', async () => {
+    steerTargets = { msg_s: 'msg_turn' };
+    completionQueue = [{ outcome: 'identity_mismatch', activeTurnCount: 1, closedTurnCount: 0 }];
+    const response = await post({ session_id: SESSION_ID, kind: 'end', turn_message_id: 'msg_s' }, sandboxCtx);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      turn_completion: { outcome: 'closed', closed_turn_count: 1 },
+    });
+    expect(completedMessageIds).toEqual(['msg_s', 'msg_turn']);
+    expect(steerLookups).toEqual(['msg_s']);
+  });
+
+  test('an end that closed its own turn reads no steer row', async () => {
+    await post({ session_id: SESSION_ID, kind: 'end', turn_message_id: 'msg_turn' }, sandboxCtx);
+    expect(completedMessageIds).toEqual(['msg_turn']);
+    expect(steerLookups).toEqual([]);
+  });
+
+  test('a mismatched end that names no steer row stays a mismatch', async () => {
+    completionResult = { outcome: 'identity_mismatch', activeTurnCount: 1, closedTurnCount: 0 };
+    const response = await post({ session_id: SESSION_ID, kind: 'end', turn_message_id: 'msg_other' }, sandboxCtx);
+    expect(await response.json()).toMatchObject({ ok: false, turn_completion: { outcome: 'identity_mismatch' } });
+    expect(completedMessageIds).toEqual(['msg_other']);
+    expect(steerLookups).toEqual(['msg_other']);
   });
 });
