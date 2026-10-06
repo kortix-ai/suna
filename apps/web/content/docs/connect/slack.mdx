@@ -146,7 +146,7 @@ project.
 - `channel_info` answers for any public channel. A private channel or DM
   follows the table above.
 - `file_info` answers when the file is shared in a conversation the agent may
-  read. `slack download` follows the same rule: a file shared only in another
+  read, or in a thread of this project. `slack download` follows the same rule: a file shared only in another
   project's conversation answers `403`. A download stops at 50 MB and answers
   `413`.
 - `search_messages` runs only while no other project is connected to the
