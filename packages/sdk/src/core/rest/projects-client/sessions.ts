@@ -2,6 +2,7 @@
 
 import { type ApiClientOptions, ApiError, backendApi } from '../../http/api-client';
 import { markSessionFresh } from '../../http/fresh-sessions';
+import { currentSavedCopyStore } from '../../session-sync/saved-copy-store';
 import type { AuditEvent } from './audit';
 import { type ConnectorSharing, unwrap } from './shared';
 
@@ -1556,9 +1557,12 @@ export async function updateProjectSession(
 }
 
 export async function deleteProjectSession(projectId: string, sessionId: string) {
-  return unwrap(
+  const result = unwrap(
     await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/sessions/${sessionId}`),
   );
+  // The device's saved copy of a deleted session would only take space.
+  void currentSavedCopyStore()?.remove(projectId, sessionId);
+  return result;
 }
 
 export async function restartProjectSession(projectId: string, sessionId: string) {

@@ -1156,7 +1156,7 @@ function dropSessionData(state: SyncData, sessionIDs: readonly string[]): SyncDa
  * The second needs the child's `kortixSessionScope` plumbed through from the
  * host: entries written for an opened session are keyed
  * `…:kortix-session:<scope>`, so a scopeless read looks up a different key and
- * misses (idb-sync-cache-key.ts:6-9).
+ * misses.
  */
 function pruneDetachedSessions(messages: Record<string, Message[]>): string[] {
 	const evicted: string[] = [];
