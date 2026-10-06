@@ -99,6 +99,7 @@ import {
   SESSION_PROMPTS_IDLE_POLL_MS,
   usePermissionSelfHeal,
   useQuestionSelfHeal,
+  useSessionStreamConnected,
   useRuntimeCommands,
   useRuntimeConfig,
   useRuntimeSession,
@@ -371,8 +372,12 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // runtime is bound, then the live stream. The newest page only: `loadOlder`
   // pulls the next older page (COR-144).
   const kortixSessionScope = projectId && projectSessionId ? `${projectId}/${projectSessionId}` : undefined;
+  // The session stream (R5.3): while it is up, the SDK's tail and ask polls
+  // stand down — the box's ring replays what a reconnect missed.
+  const streamConnected = useSessionStreamConnected(projectId ?? '', projectSessionId ?? '');
   const { hasOlder, isLoadingOlder, loadOlder, retryTranscript } = useSessionSync(sessionId, {
     kortixSessionScope,
+    streamConnected,
     networkEnabled: runtimeReady,
     savedChild: isSubThread,
     // The rows are read below, paced: a streamed delta does not re-render this hook.
@@ -438,8 +443,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // is lost, and the agent then waits on a blocked tool call with nothing
   // above the composer. The SDK re-reads the runtime's pending lists while a
   // question tool (or a gated tool) runs with nothing pending in the store.
-  useQuestionSelfHeal(sessionId, safeMessages, { enabled: runtimeReady });
-  usePermissionSelfHeal(sessionId, safeMessages, { enabled: runtimeReady });
+  useQuestionSelfHeal(sessionId, safeMessages, { enabled: runtimeReady && !streamConnected });
+  usePermissionSelfHeal(sessionId, safeMessages, { enabled: runtimeReady && !streamConnected });
 
   // ── Message Queue ──────────────────────────────────────────────────────
   const [queuedMessages, setQueuedMessages] = useState<SessionPrompt[]>(EMPTY_PROMPTS);

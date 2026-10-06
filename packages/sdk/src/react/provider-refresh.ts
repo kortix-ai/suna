@@ -88,6 +88,15 @@ function invalidateProviderQueries(
   void queryClient.invalidateQueries({ queryKey: configKeys.all }, fetchOptions);
 }
 
+/**
+ * Re-read the project's provider state once: the session stream saw the
+ * project's secrets version move (`kortix.control.session`), on this device or
+ * another. Keeps a read already in flight.
+ */
+export function invalidateProjectProviderQueries(queryClient: QueryClient, projectId: string): void {
+  invalidateProviderQueries(queryClient, projectId, false);
+}
+
 export function refreshProjectProviderState(
   queryClient: QueryClient,
   projectId: string,

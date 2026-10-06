@@ -59,6 +59,8 @@ const IDLE_STATUS = { type: 'idle' } as SessionStatus;
  * Network synchronization lives in the framework-free SessionSyncController.
  */
 interface UseSessionSyncOptions {
+  /** The session stream is connected (R5.3): no liveness or verify reads. */
+  streamConnected?: boolean;
   mirror?: SessionTranscriptSyncEnvelope | null;
   /**
    * Stable Kortix `(projectId, sessionId)` scope for disk transcript ownership.
@@ -480,6 +482,10 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
         : !isLoading || mirrorAbsentFor === mirrorKey
           ? 'absent'
           : 'loading';
+
+  useEffect(() => {
+    controller.setStreamReliable(options.streamConnected === true);
+  }, [controller, options.streamConnected]);
 
   useEffect(() => {
     // No runtime session to read (`''` under `useSession({ chatEngine: false })`):

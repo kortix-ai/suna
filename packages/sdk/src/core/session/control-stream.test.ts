@@ -4,6 +4,8 @@ import type { RuntimeEventMessage } from '../runtime/runtime-rest-client';
 import {
   __resetSessionControlStreamsForTests,
   openSessionControlStream,
+  openSessionStream,
+  sessionStreamEventClient,
 } from './control-stream';
 
 /** One connection the fake transport holds open until the test ends it. */
@@ -219,4 +221,170 @@ test('a failing connect backs off and retries', async () => {
   expect(attempts).toBeGreaterThanOrEqual(3);
   // Never connected, so never reported as lost either.
   expect(states).toEqual([]);
+});
+
+// ── R5.3: one stream per session carries the runtime too ─────────────────────
+
+const runtimeFrame = (seq: number, type = 'message.part.delta', payload: Record<string, unknown> = { delta: 'x' }) => ({
+  channel: 'runtime',
+  epoch: 'ep1',
+  seq,
+  type,
+  at: 1,
+  payload,
+});
+
+test('a runtime subscriber upgrades the shared connection to every channel, keeping the control cursor', async () => {
+  const control = openSessionStream({ projectId: 'p1', sessionId: 's1', timing: TIMING });
+  await tick();
+  connections[0]!.push(queueFrame(3, []));
+  await tick();
+  const runtime = openSessionStream({ projectId: 'p1', sessionId: 's1', runtime: true, timing: TIMING });
+  await tick(20);
+  expect(connections[0]!.signal.aborted).toBe(true);
+  expect(connections).toHaveLength(2);
+  expect(connections[1]!.url).toBe('http://backend.test/v1/projects/p1/sessions/s1/events?since_control=3&cepoch=capi_a');
+  runtime.close();
+  control.close();
+});
+
+test('runtime frames reach runtime subscribers as runtime events keyed epoch:seq; daemon frames are not events', async () => {
+  const events: unknown[] = [];
+  const stream = openSessionStream({
+    projectId: 'p1',
+    sessionId: 's1',
+    runtime: true,
+    onRuntimeEvent: (event) => events.push(event),
+    timing: TIMING,
+  });
+  await tick();
+  connections[0]!.push(runtimeFrame(7));
+  connections[0]!.push(runtimeFrame(8, 'kortix.turn', { verdict: 'idle' }));
+  await tick();
+  expect(events).toEqual([{ id: 'ep1:7', type: 'message.part.delta', properties: { delta: 'x' } }]);
+  stream.close();
+});
+
+test('a reconnect resumes at the runtime cursor too', async () => {
+  const stream = openSessionStream({ projectId: 'p1', sessionId: 's1', runtime: true, timing: TIMING });
+  await tick();
+  connections[0]!.push(runtimeFrame(41));
+  await tick();
+  connections[0]!.end();
+  await tick(20);
+  expect(connections[1]!.url).toBe('http://backend.test/v1/projects/p1/sessions/s1/events?since=41&epoch=ep1');
+  stream.close();
+});
+
+test('a runtime resync is reported and drops the runtime cursor', async () => {
+  let resyncs = 0;
+  const stream = openSessionStream({
+    projectId: 'p1',
+    sessionId: 's1',
+    runtime: true,
+    onRuntimeResync: () => {
+      resyncs += 1;
+    },
+    timing: TIMING,
+  });
+  await tick();
+  connections[0]!.push(runtimeFrame(41));
+  connections[0]!.push({ channel: 'runtime', epoch: 'ep2', type: 'kortix.resync', reason: 'epoch-changed' });
+  await tick();
+  expect(resyncs).toBe(1);
+  connections[0]!.end();
+  await tick(20);
+  expect(connections[1]!.url).toBe('http://backend.test/v1/projects/p1/sessions/s1/events');
+  stream.close();
+});
+
+test('runtime status and health frames reach their callbacks', async () => {
+  const statuses: unknown[] = [];
+  const healths: unknown[] = [];
+  const stream = openSessionStream({
+    projectId: 'p1',
+    sessionId: 's1',
+    runtime: true,
+    onRuntimeStatus: (status) => statuses.push(status),
+    onRuntimeHealth: (health) => healths.push(health),
+    timing: TIMING,
+  });
+  await tick();
+  connections[0]!.push({ channel: 'stream', type: 'kortix.runtime.status', state: 'down', reason: 'sandbox_stopped' });
+  connections[0]!.push({ channel: 'stream', type: 'kortix.runtime.status', state: 'up', epoch: 'ep1' });
+  connections[0]!.push({ channel: 'stream', type: 'kortix.runtime.health', health: { capabilities: ['session.compact'] } });
+  await tick();
+  expect(statuses).toEqual([
+    { state: 'down', reason: 'sandbox_stopped' },
+    { state: 'up', reason: null },
+  ]);
+  expect(healths).toEqual([{ capabilities: ['session.compact'] }]);
+  stream.close();
+});
+
+test('every control frame reaches onControl, and a late subscriber is handed the newest of each type', async () => {
+  const first: string[] = [];
+  const a = openSessionStream({ projectId: 'p1', sessionId: 's1', onControl: (frame) => first.push(frame.type), timing: TIMING });
+  await tick();
+  connections[0]!.push({ channel: 'control', cepoch: 'capi_a', cseq: 1, type: 'kortix.control.turn', at: 1, payload: { known: true, turns: [] } });
+  connections[0]!.push({ channel: 'control', cepoch: 'capi_a', cseq: 2, type: 'kortix.control.session', at: 1, payload: { known: true, title: 'T', secrets_rev: '0:' } });
+  await tick();
+  expect(first).toEqual(['kortix.control.turn', 'kortix.control.session']);
+  const late: unknown[] = [];
+  const b = openSessionStream({ projectId: 'p1', sessionId: 's1', onControl: (frame) => late.push(frame.payload), timing: TIMING });
+  expect(late).toEqual([{ known: true, turns: [] }, { known: true, title: 'T', secrets_rev: '0:' }]);
+  a.close();
+  b.close();
+});
+
+test('the stream heartbeat reaches onHeartbeat', async () => {
+  let beats = 0;
+  const stream = openSessionStream({
+    projectId: 'p1',
+    sessionId: 's1',
+    onHeartbeat: () => {
+      beats += 1;
+    },
+    timing: TIMING,
+  });
+  await tick();
+  connections[0]!.push(heartbeat);
+  await tick();
+  expect(beats).toBe(1);
+  stream.close();
+});
+
+test('the event client yields runtime events from the shared connection until aborted', async () => {
+  const resyncs: number[] = [];
+  const client = sessionStreamEventClient('p1', 's1', { onResync: () => resyncs.push(1) });
+  const abort = new AbortController();
+  const { stream } = await client.global.event({ signal: abort.signal });
+  const iterator = stream[Symbol.asyncIterator]();
+  const first = iterator.next();
+  await tick();
+  expect(connections).toHaveLength(1);
+  expect(connections[0]!.url).toBe('http://backend.test/v1/projects/p1/sessions/s1/events');
+  connections[0]!.push(runtimeFrame(3));
+  expect((await first).value).toEqual({ id: 'ep1:3', type: 'message.part.delta', properties: { delta: 'x' } });
+  connections[0]!.push({ channel: 'runtime', epoch: 'ep1', type: 'kortix.resync' });
+  await tick();
+  expect(resyncs).toHaveLength(1);
+  const pending = iterator.next();
+  abort.abort();
+  expect((await pending).done).toBe(true);
+  await tick();
+  // The last subscriber left: the shared connection ends.
+  expect(connections[0]!.signal.aborted).toBe(true);
+});
+
+test('a tab presence id joins the stream URL; a late one reconnects at once', async () => {
+  const control = openSessionStream({ projectId: 'p1', sessionId: 's1', timing: TIMING });
+  await tick();
+  expect(connections[0]!.url).toBe('http://backend.test/v1/projects/p1/sessions/s1/events?channels=control');
+  const withTab = openSessionStream({ projectId: 'p1', sessionId: 's1', tabId: 'tab-1', timing: TIMING });
+  await tick(20);
+  expect(connections[0]!.signal.aborted).toBe(true);
+  expect(connections[1]!.url).toBe('http://backend.test/v1/projects/p1/sessions/s1/events?channels=control&tab_id=tab-1');
+  withTab.close();
+  control.close();
 });

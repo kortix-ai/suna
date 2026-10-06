@@ -19,6 +19,10 @@ import { logger } from '../../core/http/logger';
 import { onHostSignal } from '../../core/session/host-signals';
 import { dropClientForUrl, getClient } from '../../core/runtime/client';
 import { openEventStream } from '../../core/stream/event-stream';
+import { sessionStreamEventClient } from '../../core/session/control-stream';
+
+/** The shared session stream has its own 45 s liveness bound. */
+const SESSION_STREAM_WATCHDOG_OFF_MS = 24 * 60 * 60_000;
 import { useKortixRouteProjectId } from '../route-project';
 import { useCurrentRuntime } from '../use-current-runtime';
 import { clearConfigOverrides } from '../use-opencode-config';
@@ -47,7 +51,17 @@ export { subscribeRuntimeStream, type RuntimeStreamSignal } from './runtime-stre
  * needs the React Query `QueryClient` (cache reads/writes, which
  * `createEventHandler` and `hydrateCore` below perform).
  */
-export function useRuntimeEventStream(options: { enabled?: boolean } = {}) {
+export function useRuntimeEventStream(
+  options: {
+    enabled?: boolean;
+    /**
+     * Read runtime events from this session's stream (`GET .../events`, R5.3)
+     * instead of the sandbox proxy's `/global/event`. `useSession` passes both.
+     */
+    projectId?: string;
+    sessionId?: string;
+  } = {},
+) {
   const queryClient = useQueryClient();
   // The project this SSE connection's events are about — threaded into
   // `refetchKortixSessionMirrors` so a title/tree mirror refetch stays scoped
@@ -213,8 +227,19 @@ export function useRuntimeEventStream(options: { enabled?: boolean } = {}) {
     // connect/reconnect/backoff loop, heartbeat watchdog, and event
     // coalescing all live in `openEventStream` — this wrapper only supplies
     // the QueryClient-dependent event handler and the gap-rehydrate hook.
+    // R5.3: the session's own stream when the host names the session. A
+    // reconnect inside the box's replay ring loses nothing, so only a runtime
+    // resync re-reads; the shared stream owns liveness, so this machine's
+    // watchdog stays out of it.
+    const sessionStream =
+      options.projectId && options.sessionId
+        ? sessionStreamEventClient(options.projectId, options.sessionId, {
+            onResync: () => hydrate({ rehydrateMessages: true }),
+          })
+        : null;
     const handle = openEventStream({
-      client,
+      client: sessionStream ?? client,
+      ...(sessionStream ? { heartbeatTimeoutMs: SESSION_STREAM_WATCHDOG_OFF_MS } : {}),
       // A park is not a verdict about the sandbox — only about the last few
       // attempts. Nothing supplied this callback before, so the stream's
       // documented "terminal for this handle" silently became terminal for the
@@ -237,7 +262,9 @@ export function useRuntimeEventStream(options: { enabled?: boolean } = {}) {
         emitRuntimeStreamSignal({ type: 'event', event });
       },
       onConnectionChange: (state) => emitRuntimeStreamSignal({ type: state }),
-      onGapRehydrate: () => hydrate({ rehydrateMessages: true }),
+      onGapRehydrate: () => {
+        if (!sessionStream) hydrate({ rehydrateMessages: true });
+      },
     });
 
     return () => {
@@ -261,6 +288,8 @@ export function useRuntimeEventStream(options: { enabled?: boolean } = {}) {
     sandboxStatus,
     runtimeHealthy,
     options.enabled,
+    options.projectId,
+    options.sessionId,
     applySyncEvent,
     stopCompaction,
     projectId,

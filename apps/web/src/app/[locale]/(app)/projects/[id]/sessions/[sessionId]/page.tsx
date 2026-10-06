@@ -121,6 +121,7 @@ import {
   useProjectSession,
   useSession,
   useSessionPrompts,
+  useSessionStreamConnected,
   useWakeEscalation,
 } from '@kortix/sdk/react';
 
@@ -413,6 +414,10 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     // own ref, so a rebuilt closure here cannot re-run its decision effect and
     // fire one rung twice.
     onRestart: handleRestart,
+    // While the session stream is up the server runs this ladder (R5.2) and
+    // the hook only reports it.
+    projectId,
+    sessionId,
   });
   // THE progress-aware budget. Every consumer below reads time-since-CHANGE,
   // never time-since-wake-started — the fixed clock this replaces expired
@@ -425,9 +430,13 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // than one second could then never elapse, silently ending the resume loop
   // after its first immediate attempt.
   const wakeShowingProgress = wakeSilentMs < AUTO_RESUME_WINDOW_MS;
+  // With the session stream up, every change of the box row re-reads `/start`
+  // (R5.3), so only the first, waking attempt is needed here.
+  const sessionStreamConnected = useSessionStreamConnected(projectId, sessionId);
   useEffect(() => {
     if (!sandboxResumable) return;
     if (!wakeShowingProgress) return;
+    if (sessionStreamConnected && resumeAttempts > 0) return;
     // First attempt fires immediately (match the refresh); back off after that,
     // and keep re-asking for as long as the wake is still showing progress.
     const t = setTimeout(
@@ -438,7 +447,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       resumeAttempts === 0 ? 0 : Math.min(1500 * 2 ** Math.min(resumeAttempts - 1, 3), 8000),
     );
     return () => clearTimeout(t);
-  }, [sandboxResumable, resumeAttempts, wakeShowingProgress, projectId, sessionId, queryClient]);
+  }, [sandboxResumable, resumeAttempts, wakeShowingProgress, sessionStreamConnected, projectId, sessionId, queryClient]);
   // While a resumable box is still SHOWING PROGRESS it is "waking", not "dead"
   // — render the boot loader, never the dead-end card.
   const autoResuming = isAutoResuming(sandbox, { elapsedMs: wakeSilentMs });

@@ -90,6 +90,15 @@ mock.module('../../shared/pg-broadcast', () => ({
     }),
 }));
 
+let presenceRenewals: Array<{ userId: string; sessionId: string; tabId: string }> = [];
+mock.module('../lib/session-presence', () => ({
+  PRESENCE_RENEW_MS: 30_000,
+  renewSessionPresence: async (userId: string, sessionId: string, tabId: string) => {
+    presenceRenewals.push({ userId, sessionId, tabId });
+    return true;
+  },
+}));
+
 mock.module('../lib/access', () => ({
   ...realAccess,
   loadProjectForUser: async () => loadedProject,
@@ -253,6 +262,7 @@ beforeEach(() => {
   sessionChangeWaiters.clear();
   runtimeTurnEnds = [];
   reachability = [];
+  presenceRenewals = [];
   healthReads = 0;
   nextHealth = () => ({
     ok: true,
@@ -766,5 +776,24 @@ describe('R5.3: the stream carries the runtime health, so clients stop probing i
     sandboxRow = { externalId: 'box-1', status: 'stopped' };
     await readFrames(await openStream(), 2, 300);
     expect(healthReads).toBe(0);
+  });
+});
+
+describe('R5.3: a visible tab keeps its presence through the stream, not a 30 s PUT', () => {
+  const TAB = '66666666-6666-4666-8666-666666666666';
+
+  test('a browser login with tab_id renews that tab lease when the stream opens', async () => {
+    loadedProject = { ...loadedProject!, actor: { credential: { kind: 'jwt' } } } as never;
+    sandboxRow = { externalId: 'box-1', status: 'stopped' };
+    await readFrames(await openStream(`?tab_id=${TAB}`), 2, 200);
+    expect(presenceRenewals).toEqual([{ userId: USER_ID, sessionId: SESSION_ID, tabId: TAB }]);
+  });
+
+  test('a token caller or a malformed tab id renews nothing', async () => {
+    sandboxRow = { externalId: 'box-1', status: 'stopped' };
+    await readFrames(await openStream(`?tab_id=${TAB}`), 2, 200);
+    loadedProject = { ...loadedProject!, actor: { credential: { kind: 'jwt' } } } as never;
+    await readFrames(await openStream('?tab_id=not-a-uuid'), 2, 200);
+    expect(presenceRenewals).toEqual([]);
   });
 });

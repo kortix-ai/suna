@@ -79,6 +79,7 @@ import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { isUuid } from '../../shared/validate';
 import { isPgBroadcastListening, waitForSessionChange } from '../../shared/pg-broadcast';
+import { PRESENCE_RENEW_MS, renewSessionPresence } from '../lib/session-presence';
 import {
   CONTROL_EPOCH,
   subscribeControlEvents,
@@ -214,6 +215,8 @@ export function registerSessionStreamRoutes(): void {
           cepoch: z.string().optional(),
           /** `control`: the control channel only, no daemon attach. Default: both. */
           channels: z.enum(['all', 'control']).optional(),
+          /** A browser tab's presence id: the stream renews its lease (R5.3). */
+          tab_id: z.string().optional(),
         }),
       },
       responses: {
@@ -258,6 +261,15 @@ export function registerSessionStreamRoutes(): void {
       // themselves: the same gates `/start` and `/restart` apply. Anyone else
       // sees the ladder's state and never triggers it.
       const ladderActor = controlOnly ? null : await wakeLadderActorFor(c, projectId, visible);
+      // Presence is a human browser tab's: the same gate `PUT .../presence` applies.
+      const presenceTabId = c.req.query('tab_id');
+      const presenceRenewal =
+        presenceTabId &&
+        isUuid(presenceTabId) &&
+        loaded.actor?.credential.kind === 'jwt' &&
+        !callerKortixSessionId(c)
+          ? { userId: String(loaded.userId), tabId: presenceTabId }
+          : null;
       const userId = String(c.get('userId') ?? loaded.userId ?? '');
       const accountId = String(loaded.row.accountId);
 
@@ -404,6 +416,18 @@ export function registerSessionStreamRoutes(): void {
             });
           }, STREAM_HEARTBEAT_MS);
           (heartbeat as unknown as { unref?: () => void }).unref?.();
+
+          let presenceTimer: ReturnType<typeof setInterval> | null = null;
+          if (presenceRenewal) {
+            const renew = () =>
+              void renewSessionPresence(presenceRenewal.userId, sessionId, presenceRenewal.tabId).catch(() => {});
+            renew();
+            presenceTimer = setInterval(renew, PRESENCE_RENEW_MS);
+            (presenceTimer as unknown as { unref?: () => void }).unref?.();
+            abort.signal.addEventListener('abort', () => {
+              if (presenceTimer) clearInterval(presenceTimer);
+            }, { once: true });
+          }
 
           if (!controlOnly) void pumpRuntime({
             sessionId,
