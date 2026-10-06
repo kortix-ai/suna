@@ -56,8 +56,8 @@ test("39 — editing a message queued during boot keeps its files", async ({ pag
   );
   let projectFixture: ManifestProject | undefined;
   const promptWrites: Array<{ method: string; path: string }> = [];
-  // While set, the save and every inbox read wait for it.
-  let inFlight: Promise<void> | undefined;
+  // While set, the save waits for it, so the server still has the old words.
+  let saveHeld: Promise<void> | undefined;
 
   try {
     const auth = await signIn(user.email!, authOptions);
@@ -164,12 +164,8 @@ test("39 — editing a message queued during boot keeps its files", async ({ pag
       if (path.startsWith(promptsPath) && request.method() !== "GET") {
         promptWrites.push({ method: request.method(), path });
       }
-      if (
-        inFlight &&
-        path.startsWith(promptsPath) &&
-        (request.method() === "PATCH" || request.method() === "GET")
-      ) {
-        await inFlight;
+      if (saveHeld && request.method() === "PATCH" && path.startsWith(`${promptsPath}/`)) {
+        await saveHeld;
       }
       if (
         !isDeployedTarget() &&
@@ -294,12 +290,12 @@ test("39 — editing a message queued during boot keeps its files", async ({ pag
           request.method() === "PATCH" &&
           new URL(request.url()).pathname === `${promptsPath}/${queuedRow!.prompt_id}`,
       );
-      // Hold the save and every inbox read. Before the server answers, the row
-      // must already show the new words, once, with its file: the client's
-      // own answer to Submit, never a flash of the old words.
-      let release!: () => void;
-      inFlight = new Promise<void>((resolve) => {
-        release = resolve;
+      // Hold the save. Until it lands, the row must already show the new words,
+      // once, with its file — and keep them through an inbox read the server
+      // answers with the old words. It used to flash the old words back.
+      let releaseSave!: () => void;
+      saveHeld = new Promise<void>((resolve) => {
+        releaseSave = resolve;
       });
       await page.getByRole("button", { name: "Submit", exact: true }).click();
       const saved = await save;
@@ -308,9 +304,20 @@ test("39 — editing a message queued during boot keeps its files", async ({ pag
         await expect(rows).toHaveCount(1);
         await expect(rows.first()).toContainText(EDITED);
         await expect(rows.first()).toContainText("1 file");
+        const staleRead = await page.waitForResponse(
+          (response) =>
+            response.request().method() === "GET" &&
+            new URL(response.url()).pathname === promptsPath,
+        );
+        expect(
+          ((await staleRead.json()) as { prompts: ListedPrompt[] }).prompts.map((p) => p.full_text),
+        ).toContain(QUEUED);
+        // Let the page draw that read before looking again.
+        await page.waitForTimeout(500);
+        await expect(rows.first()).toContainText(EDITED, { timeout: 2_000 });
       } finally {
-        inFlight = undefined;
-        release();
+        saveHeld = undefined;
+        releaseSave();
       }
       expect(saved.postDataJSON()).toEqual({ text: EDITED });
       expect((await saved.response())?.status()).toBe(200);
