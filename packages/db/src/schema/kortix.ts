@@ -3651,6 +3651,16 @@ export const gatewayRequestLogs = kortixSchema.table(
       .on(table.projectId, table.createdAt)
       .where(sql`not ${table.ok}`),
     index('idx_gateway_logs_session').on(table.projectId, table.sessionId),
+    // Covering index for the account+window cost aggregates (cost-summary,
+    // cost-by-project, session-costs): the real build carries INCLUDE with
+    // every column those aggregates read (session_id, project_id, provider,
+    // resolved_model, billing_mode, ok, both precise cost columns, the four
+    // token columns), so the scans are index-only and never touch the wide
+    // heap rows. Drizzle's builder cannot express INCLUDE; the declaration
+    // here (without it) is enough to keep the contract in sync, the same
+    // pattern as idx_gateway_logs_project_failed_time. Built CONCURRENTLY in
+    // 20261006230500000_gateway_logs_account_time_covering.concurrent.ts.
+    index('idx_gateway_logs_account_time_covering').on(table.accountId, table.createdAt),
   ],
 );
 

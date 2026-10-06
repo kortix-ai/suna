@@ -848,6 +848,13 @@
       "when": 1791316882778,
       "tag": "20261006200122_trigger_session_lookup_index",
       "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1791328607231,
+      "tag": "20261006231647_gateway_logs_account_time_covering",
+      "breakpoints": true
     }
   ]
 }
