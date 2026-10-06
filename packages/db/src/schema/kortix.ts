@@ -1127,6 +1127,18 @@ export const projectSessions = kortixSchema.table(
       .where(
         sql`${table.originRef} is not null and ${table.status} in ('queued','branching','provisioning','running')`,
       ),
+    // A trigger fire looks its session up by `(project, slug, key)` in the
+    // metadata, newest first (projects/lib/trigger-fire.ts). Without this the
+    // lookup read every session of the project. Partial: only trigger-created
+    // rows carry a slug.
+    index('idx_project_sessions_trigger_key')
+      .on(
+        table.projectId,
+        sql`(${table.metadata} ->> 'trigger_slug')`,
+        sql`(${table.metadata} ->> 'trigger_session_key')`,
+        table.createdAt.desc(),
+      )
+      .where(sql`(${table.metadata} ->> 'trigger_slug') is not null`),
     uniqueIndex('idx_project_sessions_project_branch').on(table.projectId, table.branchName),
     uniqueIndex('idx_project_sessions_tenant_identity').on(
       table.accountId,
