@@ -311,8 +311,28 @@ describe('decideImpersonation', () => {
       '/v1/projects/p1/channels/teams/connect',
       '/v1/projects/p1/connect-requests',
       '/v1/projects/p1/secret-requests',
+      // Durable project persistence: templates, manifest merge, provider
+      // login, App deploys.
+      '/v1/projects/p1/sandbox-templates/t1/build',
+      '/v1/projects/p1/change-requests/cr1/merge',
+      '/v1/projects/p1/oauth/codex/start',
+      '/v1/projects/p1/apps',
     ]) {
       expect(isImpersonationForbiddenPath(path, 'POST'), `POST ${path}`).toBe(true);
+    }
+    expect(isImpersonationForbiddenPath('/v1/projects/p1', 'PATCH')).toBe(true);
+  });
+
+  test('reads and non-durable writes next to the durable-persistence routes stay open', () => {
+    for (const [path, method] of [
+      ['/v1/projects/p1/triggers', 'GET'],
+      ['/v1/projects/p1/secrets', 'GET'],
+      ['/v1/projects/p1', 'GET'],
+      ['/v1/projects/p1', 'POST'],
+      ['/v1/projects/p1/apps/a1/access-session', 'POST'],
+      ['/v1/projects/p1/change-requests/cr1/close', 'POST'],
+    ] as const) {
+      expect(isImpersonationForbiddenPath(path, method), `${method} ${path}`).toBe(false);
     }
   });
 });

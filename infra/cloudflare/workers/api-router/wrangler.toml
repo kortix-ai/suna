@@ -15,6 +15,9 @@
 # ECS). Production stays on "ecs-fargate" until the database cutover. Check
 # the selected value in the Worker binding; responses do not disclose it.
 
+# Gateway control-plane gate: `wrangler secret put INTERNAL_EDGE_KEY --env <env>` makes
+# the API host answer 404 to /internal/* unless the caller sends the same value in
+# x-kortix-internal-edge-key. Set KORTIX_INTERNAL_EDGE_KEY on the gateway FIRST.
 main = "worker.mjs"
 compatibility_date = "2026-06-01"
 workers_dev = false

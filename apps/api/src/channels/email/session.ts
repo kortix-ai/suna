@@ -19,6 +19,7 @@ import { db } from '../../shared/db';
 import { dropChatThread, findChatThread, touchChatThread } from '../core/threads';
 import { type AgentMailSenderPolicy, loadAgentMailSenderPolicyForInbox } from '../install-store';
 import { EMAIL_EVENT_DEDUPE_TTL_MS } from './app';
+import { recordClaim } from '../webhook-work';
 import { matchesEmailSenderRegex } from './sender-policy-regex';
 import type { AgentMailMessageReceivedEvent } from './types';
 
@@ -283,6 +284,7 @@ async function alreadyHandled(key: string): Promise<boolean> {
       })
       .onConflictDoNothing({ target: chatEventDedup.eventId })
       .returning({ eventId: chatEventDedup.eventId });
+    if (inserted.length > 0) recordClaim(key);
     return inserted.length === 0;
   } catch (err) {
     console.warn('[email-webhook] event dedup check failed', err);
@@ -301,6 +303,7 @@ async function claimInboundMessage(event: AgentMailMessageReceivedEvent): Promis
       })
       .onConflictDoNothing({ target: chatEventDedup.eventId })
       .returning({ eventId: chatEventDedup.eventId });
+    if (inserted.length > 0) recordClaim(key);
     return inserted.length > 0;
   } catch (err) {
     console.error('[email-webhook] inbound message claim failed (fail-open)', err);
