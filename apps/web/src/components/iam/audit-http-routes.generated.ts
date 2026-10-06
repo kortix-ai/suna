@@ -502,6 +502,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|projects|:projectId|gateway|routing-policy|preview",
   "GET|v1|projects|:projectId|gateway|series",
   "GET|v1|projects|:projectId|gateway|sessions",
+  "GET|v1|projects|:projectId|gateway|sources",
   "PUT|v1|projects|:projectId|git-credential",
   "POST|v1|projects|:projectId|git-token",
   "POST|v1|projects|:projectId|git|collaborators",

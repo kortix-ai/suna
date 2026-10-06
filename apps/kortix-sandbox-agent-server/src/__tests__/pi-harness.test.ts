@@ -2195,6 +2195,32 @@ describe('pi compaction', () => {
     expect(page.messages.filter((m) => m.info.error)).toEqual([])
   })
 
+  test('KORTIX_PI_COMPACT_AT_TOKENS compacts a context far below the model window', async () => {
+    // Window 64,000: pi alone waits until 47,616. A 30,000 context stays put without the budget...
+    const plain = await boot({ script: [{ text: 'first answer' }, { text: 'big answer', promptTokens: 30_000 }], prepare: compactEverything })
+    await promptAndSettle(plain, 'ALPHA question')
+    await promptAndSettle(plain, 'BETA question')
+    await waitFor(() => plain.service.runtime()!.idle())
+    const plainPage = (await plain.bearer(`/kortix/runtime/messages/${plain.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+    expect(compactionTurns(plainPage)).toEqual([])
+
+    // ...and compacts by itself once the budget (20,000) is below it.
+    const r = await boot({
+      script: [{ text: 'first answer' }, { text: 'big answer', promptTokens: 30_000 }, ...SUMMARY],
+      prepare: compactEverything,
+      env: { KORTIX_PI_COMPACT_AT_TOKENS: '20000' },
+    })
+    const root = r.service.runtime()!.rootId
+    await promptAndSettle(r, 'ALPHA question')
+    await promptAndSettle(r, 'BETA question')
+    await waitFor(() => r.service.runtime()!.idle())
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    const [turn] = compactionTurns(page)
+    expect(turn!.part).toMatchObject({ type: 'compaction', auto: true })
+    // The transcript keeps the history before the cut.
+    expect(JSON.stringify(page.messages)).toContain('ALPHA question')
+  })
+
   test('a context overflow compacts and retries: the turn completes with no error on the wire', async () => {
     const overflow = { status: 400, message: "This model's maximum context length is 64000 tokens. However, your messages resulted in 70000 tokens." }
     const r = await boot({ script: [{ text: 'first answer' }, overflow, ...SUMMARY, { text: 'answer after compaction' }], prepare: compactEverything })
