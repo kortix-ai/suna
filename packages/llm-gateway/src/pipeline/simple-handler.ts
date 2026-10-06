@@ -16,6 +16,7 @@ import {
   type ExtractedUsage,
   type SseErrorFrame,
   estimateOutputTokens,
+  estimateCachedPromptTokens,
   estimatePromptTokens,
   extractUsageFromJson,
 } from '../usage';
@@ -503,6 +504,7 @@ export async function handleChatCompletions(
   // Measured now, while the parsed body still exists: a billable stream that
   // ends before its usage frame is settled from this (see usage/estimate.ts).
   const promptTokenEstimate = streaming && billable ? estimatePromptTokens(body) : 0;
+  const cachedTokenEstimate = estimateCachedPromptTokens(body, promptTokenEstimate);
   // Kept only so a STREAMING body that gets cut before a single byte reaches
   // the client can be transparently retried (see relayStream's `redispatch`
   // option / streaming.ts's `handleIncompleteTermination`). dispatch() owns
@@ -719,7 +721,7 @@ export async function handleChatCompletions(
       ? {
           promptTokens: promptTokenEstimate,
           completionTokens: estimateOutputTokens(observed!.outputChars),
-          cachedTokens: 0,
+          cachedTokens: cachedTokenEstimate,
           cacheWriteTokens: 0,
         }
       : reported;
