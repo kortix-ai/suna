@@ -5,6 +5,8 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  '@codemirror/state': 6.7.5
+  '@codemirror/view': 6.43.12
   '@icons-pack/react-simple-icons@>=13.11.2 <14': 13.11.1
   import-in-the-middle: 3.0.0
   next@>=15.0.0 <16.3.6: 16.3.6
@@ -851,10 +853,10 @@ importers:
         specifier: ^6.9.5
         version: 6.9.7
       '@codemirror/state':
-        specifier: ^6.6.0
+        specifier: 6.7.5
         version: 6.7.5
       '@codemirror/view':
-        specifier: ^6.41.0
+        specifier: 6.43.12
         version: 6.43.12
       '@embedpdf/core':
         specifier: ^2.14.4
@@ -4015,8 +4017,8 @@ packages:
   /@codemirror/search@6.7.2:
     resolution: {integrity: sha512-gUYkYhT2+n/+VGZ+8EzE5WFkYZUZYm1VOKDudIsNqh42uRVQJ0a6Yss9sdKT3MeOYfuL1N6AZA57oza0Oyr0LA==}
     dependencies:
-      '@codemirror/state': 6.7.6
-      '@codemirror/view': 6.43.13
+      '@codemirror/state': 6.7.5
+      '@codemirror/view': 6.43.12
       crelt: 1.0.7
     dev: false
 
@@ -4026,18 +4028,12 @@ packages:
       '@marijn/find-cluster-break': 1.0.4
     dev: false
 
-  /@codemirror/state@6.7.6:
-    resolution: {integrity: sha512-kAz+AncRtKuIknedxT1bq4XwXv4UowhbkHU1myPrtVb/jZtImWuV5BXzv5vK6i3kYACsdiZiQKFQQ5Mq7elW8w==}
-    dependencies:
-      '@marijn/find-cluster-break': 1.0.4
-    dev: false
-
   /@codemirror/theme-one-dark@6.1.3:
     resolution: {integrity: sha512-NzBdIvEJmx6fjeremiGp3t/okrLPYT0d9orIc7AFun8oZcRk58aejkqhv6spnz4MLAevrKNPMQYXEWMg4s+sKA==}
     dependencies:
       '@codemirror/language': 6.12.4
-      '@codemirror/state': 6.7.6
-      '@codemirror/view': 6.43.13
+      '@codemirror/state': 6.7.5
+      '@codemirror/view': 6.43.12
       '@lezer/highlight': 1.2.3
     dev: false
 
@@ -4045,15 +4041,6 @@ packages:
     resolution: {integrity: sha512-Nv0vxQ19NAqvB/c2pFzjIzFlzzJl7jmdtNkwOwGbn0Ks9mFAzibvumz7cQem5cRsFA2cEw2fg+uHZGbcHupLQQ==}
     dependencies:
       '@codemirror/state': 6.7.5
-      crelt: 1.0.7
-      style-mod: 4.1.3
-      w3c-keyname: 2.2.8
-    dev: false
-
-  /@codemirror/view@6.43.13:
-    resolution: {integrity: sha512-sihaFrUzAsYBQsL9J2t69y8nfMQGwcYmggAZsk+kjPbjYZMyuf2hU8tUNTZ+P+isb6XRr8JE22TZlJxBoVdH1A==}
-    dependencies:
-      '@codemirror/state': 6.7.6
       crelt: 1.0.7
       style-mod: 4.1.4
       w3c-keyname: 2.2.8
@@ -10901,8 +10888,8 @@ packages:
     peerDependencies:
       '@codemirror/autocomplete': ^6.0.0
       '@codemirror/language': ^6.0.0
-      '@codemirror/state': ^6.0.0
-      '@codemirror/view': ^6.0.0
+      '@codemirror/state': 6.7.5
+      '@codemirror/view': 6.43.12
       '@lezer/common': ^1.0.0
       '@lezer/highlight': ^1.0.0
       '@lezer/lr': ^1.0.0
@@ -10933,8 +10920,8 @@ packages:
       '@codemirror/lang-html': ^6.2.0
       '@codemirror/lang-javascript': ^6.1.1
       '@codemirror/language': ^6.0.0
-      '@codemirror/state': ^6.0.0
-      '@codemirror/view': ^6.0.0
+      '@codemirror/state': 6.7.5
+      '@codemirror/view': 6.43.12
       '@lezer/common': ^1.0.0
       '@lezer/highlight': ^1.0.0
       '@lezer/javascript': ^1.2.0
@@ -14699,8 +14686,8 @@ packages:
       '@codemirror/language': '>=6.0.0'
       '@codemirror/lint': '>=6.0.0'
       '@codemirror/search': '>=6.0.0'
-      '@codemirror/state': '>=6.0.0'
-      '@codemirror/view': '>=6.0.0'
+      '@codemirror/state': 6.7.5
+      '@codemirror/view': 6.43.12
     dependencies:
       '@codemirror/autocomplete': 6.20.3
       '@codemirror/commands': 6.11.1
@@ -14756,8 +14743,8 @@ packages:
     resolution: {integrity: sha512-dU0UgEEgEXCAYpxuVDQ6fovE82XsqgHZckTJOH6Bs8xCi3Z7dwBKO4pXuiA8qGDwTOXOMjSzfi+pRViDm7OfWw==}
     peerDependencies:
       '@codemirror/language': '>=6.0.0'
-      '@codemirror/state': '>=6.0.0'
-      '@codemirror/view': '>=6.0.0'
+      '@codemirror/state': 6.7.5
+      '@codemirror/view': 6.43.12
     dependencies:
       '@codemirror/language': 6.12.4
       '@codemirror/state': 6.7.5
@@ -14768,9 +14755,9 @@ packages:
     resolution: {integrity: sha512-DYVFAKLX+F/4JS9N/7xexh+TICrlncwkX9HKKInrP1bwO0tSfc3k0GB6oawTYhelVKh20cX3TuRx+NJSkVXuMw==}
     peerDependencies:
       '@babel/runtime': '>=7.11.0'
-      '@codemirror/state': '>=6.0.0'
+      '@codemirror/state': 6.7.5
       '@codemirror/theme-one-dark': '>=6.0.0'
-      '@codemirror/view': '>=6.0.0'
+      '@codemirror/view': 6.43.12
       codemirror: '>=6.0.0'
       react: '>=17.0.0'
       react-dom: '>=17.0.0'
@@ -17501,8 +17488,8 @@ packages:
       '@codemirror/language': 6.12.4
       '@codemirror/lint': 6.9.7
       '@codemirror/search': 6.7.2
-      '@codemirror/state': 6.7.6
-      '@codemirror/view': 6.43.13
+      '@codemirror/state': 6.7.5
+      '@codemirror/view': 6.43.12
     dev: false
 
   /collapse-white-space@2.1.0:
