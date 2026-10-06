@@ -205,6 +205,7 @@ export function registerGlobalMocks() {
       mockRegistry.cancelDeletionRequest ? mockRegistry.cancelDeletionRequest(id) : undefined,
     markDeletionCompleted: async (id: string) =>
       mockRegistry.markDeletionCompleted ? mockRegistry.markDeletionCompleted(id) : undefined,
+    countOverdueBacklog: async () => 0,
     getScheduledDeletions: async () =>
       mockRegistry.getScheduledDeletions ? mockRegistry.getScheduledDeletions() : [],
     // The claim hands back the due request it names, as the real UPDATE does.

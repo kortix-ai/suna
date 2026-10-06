@@ -1,4 +1,4 @@
-import { eq, and, lte, or, sql } from 'drizzle-orm';
+import { eq, and, gt, lte, or, sql } from 'drizzle-orm';
 import { accountDeletionRequests } from '@kortix/db';
 import { db } from '../../shared/db';
 
@@ -63,10 +63,22 @@ export async function markDeletionCompleted(requestId: string) {
 /** A `processing` claim older than this belongs to a dead worker. */
 const STALE_CLAIM_INTERVAL = sql`interval '1 hour'`;
 
+/**
+ * The worker never executes a request more than this far past its date. It
+ * ticks every 15 minutes, so a normal request runs within one tick. An older
+ * one is a backlog: prod held 410 never-executed requests from 2026-04-25 on
+ * (5 accounts active after their request, 17 on a paid tier) when the worker
+ * shipped. Deleting those is an irreversible product decision, so they stay
+ * `pending` for a person (`countOverdueBacklog`). An auth-user delete makes
+ * its request due now, so it is never in the backlog.
+ */
+const MAX_OVERDUE = sql`interval '2 days'`;
+
 /** Due requests: `pending`, plus `processing` claims a dead worker left behind. */
 function dueRequest() {
   return and(
     lte(accountDeletionRequests.scheduledFor, sql`now()`),
+    gt(accountDeletionRequests.scheduledFor, sql`now() - ${MAX_OVERDUE}`),
     or(
       eq(accountDeletionRequests.status, 'pending'),
       and(
@@ -75,6 +87,20 @@ function dueRequest() {
       ),
     ),
   );
+}
+
+/** Pending requests the worker leaves for a person (see `MAX_OVERDUE`). */
+export async function countOverdueBacklog(): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(accountDeletionRequests)
+    .where(
+      and(
+        eq(accountDeletionRequests.status, 'pending'),
+        lte(accountDeletionRequests.scheduledFor, sql`now() - ${MAX_OVERDUE}`),
+      ),
+    );
+  return row?.count ?? 0;
 }
 
 export async function getScheduledDeletions() {

@@ -55,6 +55,7 @@ import {
   createDeletionRequest,
   cancelDeletionRequest,
   markDeletionCompleted,
+  countOverdueBacklog,
   getScheduledDeletions,
   claimDeletionRequest,
   releaseDeletionRequest,
@@ -204,6 +205,10 @@ export async function processScheduledDeletions(): Promise<{
     }
   }
 
+  const backlog = await countOverdueBacklog();
+  if (backlog > 0) {
+    logger.warn(`[AccountDeletion] ${backlog} pending request(s) are past the overdue window and wait for a person`);
+  }
   logger.info(`[AccountDeletion] Processed: ${processed}, Errors: ${errors.length}`);
   return { processed, errors };
 }
