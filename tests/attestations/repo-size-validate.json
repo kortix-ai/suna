@@ -1,0 +1,32 @@
+{
+  "source_hash": "95ab0055d4a07444cfcb461dde2649070fa4425a0522301ff902a45b160e9a1d",
+  "diff_files": [
+    "apps/api/src/config-releases/ROLLOUT.md",
+    "apps/api/src/config-releases/builder.test.ts",
+    "apps/api/src/config-releases/builder.ts",
+    "apps/cli/src/__tests__/repo-size.blackbox.test.ts",
+    "apps/cli/src/commands/ship.ts",
+    "apps/cli/src/commands/validate.ts",
+    "apps/cli/src/manifest.ts",
+    "apps/cli/src/project-lint.ts",
+    "apps/web/content/docs/cli.mdx",
+    "apps/web/content/docs/work/runtime.mdx",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/starter/src/embedded.generated.json",
+    "packages/starter/templates/base/skills/kortix-cli/SKILL.md",
+    "packages/starter/templates/managed/skills/kortix-apps/SKILL.md",
+    "packages/starter/templates/managed/skills/kortix-system/SKILL.md",
+    "packages/starter/templates/managed/skills/kortix-system/references/kortix/kortix-cli.md",
+    "tests/spec/end-to-end.md",
+    "tests/src/flows/cli-ship.flow.ts"
+  ],
+  "diff_hash": "46757297cbf81e86e059d77c47e26e2d436f3df5657fdbd09d2911fc507a1f55",
+  "head": "f9c9cc4f7f5a54e57021ffd6db41158b5b70a248",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-06T16:42:18.456Z"
+}
