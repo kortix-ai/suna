@@ -1,5 +1,6 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
+import { type SavedCopyStore, setSavedCopyStore } from '../../session-sync/saved-copy-store';
 import { clearSessionFresh, isSessionFresh } from '../../http/fresh-sessions';
 import type {
   CreateProjectSessionInput,
@@ -772,6 +773,25 @@ test('deleteProjectSession DELETEs the session', async () => {
   await deleteProjectSession('P1', 'S1');
   expect(last().url).toContain('/projects/P1/sessions/S1');
   expect(last().method).toBe('DELETE');
+});
+
+test("deleteProjectSession drops the session's saved copy on this device", async () => {
+  const removed: string[] = [];
+  setSavedCopyStore({
+    remove: async (projectId: string, sessionId: string) => void removed.push(`${projectId}/${sessionId}`),
+  } as unknown as SavedCopyStore);
+  try {
+    nextResponse = { status: 200, body: { ok: true } };
+    await deleteProjectSession('P1', 'S1');
+    expect(removed).toEqual(['P1/S1']);
+
+    // A refused delete keeps the copy: the session still exists.
+    nextResponse = { status: 403, body: { error: 'forbidden' } };
+    await expect(deleteProjectSession('P1', 'S2')).rejects.toThrow();
+    expect(removed).toEqual(['P1/S1']);
+  } finally {
+    setSavedCopyStore(null);
+  }
 });
 
 test('restartProjectSession POSTs to /restart', async () => {
