@@ -112,9 +112,9 @@ async function loadTarget(sessionId: string): Promise<SessionConfigConvergenceTa
 const defaultDeps: SessionConfigConvergenceDeps = {
   loadTarget,
   reload: (input) => reloadSessionConfig(input),
-  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  sleep: Bun.sleep,
   configReleasesEnabled,
-  // DYNAMIC import on purpose. `sandbox-proxy/routes/preview.ts` reaches this
+  // DYNAMIC import on purpose. `sandbox-proxy/forward/` reaches this
   // module through the turn-start convergence gate, and a static edge to
   // `sandbox-env-sync` drags that whole graph into every proxy unit test that
   // partially mocks it — five of them failed with "Export named

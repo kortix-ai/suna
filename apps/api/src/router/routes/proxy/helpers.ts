@@ -10,6 +10,7 @@ import { type ProxyServiceConfig, matchAllowedRoute } from '../../config/proxy-s
 import { deductToolCredits } from '../../services/billing';
 import { refundReservation, reserveActorCost } from '../../services/reservation';
 import type { AuthResult, ToolCreditReservation } from './app';
+import { bearerToken } from '../../../shared/bearer-token';
 
 // Re-export matchAllowedRoute for handlers (kept here so handlers import from one place)
 export { matchAllowedRoute };
@@ -57,7 +58,8 @@ const KORTIX_TOKEN_SOURCES: KortixTokenSource[] = [
     invalid: 'Invalid Kortix token',
     extract: (c) => {
       const authHeader = c.req.header('Authorization');
-      if (authHeader?.startsWith('Bearer ')) return authHeader.slice(7);
+      const bearer = bearerToken(authHeader);
+      if (bearer !== null) return bearer;
       return authHeader?.startsWith('Token ') ? authHeader.slice(6) : undefined;
     },
   },

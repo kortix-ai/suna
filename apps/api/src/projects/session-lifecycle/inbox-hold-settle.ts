@@ -212,7 +212,7 @@ export const liveHoldSettleDeps: HoldSettleDeps = {
   async closeTurn(sessionId, messageId) {
     await closeSandboxTurnByMessageId(sessionId, messageId, 'abandoned');
   },
-  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  sleep: Bun.sleep,
   now: () => Date.now(),
 };
 

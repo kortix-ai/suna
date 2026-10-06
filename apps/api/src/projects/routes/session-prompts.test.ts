@@ -364,7 +364,7 @@ mock.module('../session-lifecycle/inbox-hold-settle', () => ({
 }));
 
 const { projectsApp } = await import('../lib/app');
-await import('./session-prompts');
+(await import('./session-prompts')).registerSessionPromptsRoutes();
 
 function app() {
   const application = new Hono<{ Variables: { userId: string; authType: string } }>();
