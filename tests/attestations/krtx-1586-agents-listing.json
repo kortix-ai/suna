@@ -1,0 +1,25 @@
+{
+  "source_hash": "35982e90bb30616f1ced802ef164ab446bd503f686e7a5c0ee486596ee37ba56",
+  "diff_files": [
+    "apps/api/src/__tests__/unit-project-config-agents.test.ts",
+    "apps/api/src/__tests__/unit-slack-selection.test.ts",
+    "apps/api/src/accounts/iam/custom-roles.test.ts",
+    "apps/api/src/accounts/iam/custom-roles.ts",
+    "apps/api/src/channels/slack/selection.ts",
+    "apps/api/src/projects/git/config.test.ts",
+    "apps/api/src/projects/git/config.ts",
+    "apps/api/src/projects/lib/serializers.test.ts",
+    "apps/api/src/projects/lib/serializers.ts",
+    "tests/spec/end-to-end.md",
+    "tests/src/flows/projects.flow.ts"
+  ],
+  "diff_hash": "377c3fc1d9f75a4bfa10f0ecc5dd1463134ee65b4f38b1d12144ad5a3a43b61d",
+  "head": "6607caeb50f122467704b3a96cc09ced3b7be9e1",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-06T21:34:13.461Z"
+}
