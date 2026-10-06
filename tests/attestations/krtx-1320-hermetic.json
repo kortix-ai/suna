@@ -1,5 +1,5 @@
 {
-  "source_hash": "028999fe20eaafdebb5a02772dbe36fdce8a5e729111079bab43b754616be272",
+  "source_hash": "713d2e7ec76a45ae0978f04dbbf9c090d7eeffae9f794c2716984172ce1bbfe1",
   "diff_files": [
     "apps/api/scripts/test.sh",
     "apps/cli/package.json",
@@ -8,7 +8,6 @@
     "apps/kortix-sandbox-agent-server/scripts/test.sh",
     "apps/kortix-sandbox-agent-server/src/__tests__/file-import-route.test.ts",
     "scripts/hermetic-test-env.sh",
-    "tests/migration/basejump-accounts-rls-initplan.test.ts",
     "tests/migration/credit-lifetime-rollup.test.ts",
     "tests/migration/credit-rpc-overloads.test.ts",
     "tests/migration/legacy-credit-ledger-created-by-index.test.ts",
@@ -16,13 +15,13 @@
     "tests/migration/wallet-ledger.test.ts",
     "tests/unit/test-runner-contract.test.ts"
   ],
-  "diff_hash": "c7dc965cd8570a3089ec9255cac5e8f0bfcd04ff88b2f4fe4ef8e450d63b645c",
-  "head": "c9a697302870b5cd7e6dbcbf0fbb0adbe7a81316",
+  "diff_hash": "77e4849c00bb48dec5486f383bab70e2fdf32dd41f31b5342f9869f1ce8183c9",
+  "head": "ad5f72c2975854e8ddb163f72739d1e63a546065",
   "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "pass",
+    "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-04T08:10:31.451Z"
+  "at": "2026-10-06T12:50:26.540Z"
 }
