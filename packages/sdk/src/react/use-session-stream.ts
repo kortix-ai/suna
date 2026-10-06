@@ -16,6 +16,8 @@
  *  - `kortix.control.runtime` → `qk.project.sessionRuntimeControl` (the box
  *    and the server wake ladder), and a `/start` re-read when the box row
  *    changes (no 1.5-60 s `/start` timer);
+ *  - `kortix.control.audit`  → `qk.project.sessionAuditWatermark`, which a
+ *    host's audit list re-reads on change (no 5-15 s audit poll);
  *  - `kortix.runtime.status` / `.health` → the connection store (no
  *    `/kortix/health` probe).
  *
@@ -111,6 +113,10 @@ export function applySessionControlFrame(
       }
       memory.secretsRev = payload.secrets_rev;
     }
+    return;
+  }
+  if (frame.type === 'kortix.control.audit') {
+    queryClient.setQueryData(qk.project.sessionAuditWatermark(projectId, sessionId), frame.payload);
     return;
   }
   if (frame.type === 'kortix.control.runtime') {
