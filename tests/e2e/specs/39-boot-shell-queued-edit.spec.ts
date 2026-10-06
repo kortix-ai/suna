@@ -56,6 +56,8 @@ test("39 — editing a message queued during boot keeps its files", async ({ pag
   );
   let projectFixture: ManifestProject | undefined;
   const promptWrites: Array<{ method: string; path: string }> = [];
+  // While set, the save and every inbox read wait for it.
+  let inFlight: Promise<void> | undefined;
 
   try {
     const auth = await signIn(user.email!, authOptions);
@@ -161,6 +163,13 @@ test("39 — editing a message queued during boot keeps its files", async ({ pag
       const path = new URL(request.url()).pathname;
       if (path.startsWith(promptsPath) && request.method() !== "GET") {
         promptWrites.push({ method: request.method(), path });
+      }
+      if (
+        inFlight &&
+        path.startsWith(promptsPath) &&
+        (request.method() === "PATCH" || request.method() === "GET")
+      ) {
+        await inFlight;
       }
       if (
         !isDeployedTarget() &&
@@ -285,8 +294,24 @@ test("39 — editing a message queued during boot keeps its files", async ({ pag
           request.method() === "PATCH" &&
           new URL(request.url()).pathname === `${promptsPath}/${queuedRow!.prompt_id}`,
       );
+      // Hold the save and every inbox read. Before the server answers, the row
+      // must already show the new words, once, with its file: the client's
+      // own answer to Submit, never a flash of the old words.
+      let release!: () => void;
+      inFlight = new Promise<void>((resolve) => {
+        release = resolve;
+      });
       await page.getByRole("button", { name: "Submit", exact: true }).click();
       const saved = await save;
+      const rows = page.locator("[data-queued-prompt-id]");
+      try {
+        await expect(rows).toHaveCount(1);
+        await expect(rows.first()).toContainText(EDITED);
+        await expect(rows.first()).toContainText("1 file");
+      } finally {
+        inFlight = undefined;
+        release();
+      }
       expect(saved.postDataJSON()).toEqual({ text: EDITED });
       expect((await saved.response())?.status()).toBe(200);
       // One PATCH: no DELETE of the row and no re-POST of the message.
