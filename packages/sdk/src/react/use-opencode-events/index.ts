@@ -19,7 +19,7 @@ import { logger } from '../../core/http/logger';
 import { onHostSignal } from '../../core/session/host-signals';
 import { dropClientForUrl, getClient } from '../../core/runtime/client';
 import { openEventStream } from '../../core/stream/event-stream';
-import { sessionStreamEventClient } from '../../core/session/control-stream';
+import { openSessionStream, sessionStreamEventClient } from '../../core/session/control-stream';
 
 /** The shared session stream has its own 45 s liveness bound. */
 const SESSION_STREAM_WATCHDOG_OFF_MS = 24 * 60 * 60_000;
@@ -233,8 +233,15 @@ export function useRuntimeEventStream(
     // watchdog stays out of it.
     const sessionStream =
       options.projectId && options.sessionId
-        ? sessionStreamEventClient(options.projectId, options.sessionId, {
-            onResync: () => hydrate({ rehydrateMessages: true }),
+        ? sessionStreamEventClient(options.projectId, options.sessionId)
+        : null;
+    // The box could not replay a gap: re-read what this view holds.
+    const resyncs =
+      options.projectId && options.sessionId
+        ? openSessionStream({
+            projectId: options.projectId,
+            sessionId: options.sessionId,
+            onRuntimeResync: () => hydrate({ rehydrateMessages: true }),
           })
         : null;
     const handle = openEventStream({
@@ -269,6 +276,7 @@ export function useRuntimeEventStream(
 
     return () => {
       revival.stop();
+      resyncs?.close();
       handle.close();
       emitRuntimeStreamSignal({ type: 'closed' });
     };

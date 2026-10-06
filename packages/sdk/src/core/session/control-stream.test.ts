@@ -388,3 +388,8 @@ test('a tab presence id joins the stream URL; a late one reconnects at once', as
   withTab.close();
   control.close();
 });
+
+test('every caller of one session gets the SAME event client, so openEventStream shares one machine', () => {
+  expect(sessionStreamEventClient('p1', 's9')).toBe(sessionStreamEventClient('p1', 's9'));
+  expect(sessionStreamEventClient('p1', 's9')).not.toBe(sessionStreamEventClient('p1', 's10'));
+});

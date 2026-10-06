@@ -420,15 +420,31 @@ export function __resetSessionControlStreamsForTests(): void {
  * cut it (`heartbeatTimeoutMs`), and its gap repair is replaced by
  * `onResync`: a reconnect inside the box's ring loses nothing.
  */
+export interface SessionStreamEventClient {
+  global: {
+    event: (options: { signal: AbortSignal }) => Promise<{ stream: AsyncIterable<unknown> }>;
+  };
+}
+
+// replica-local: one adapter per session in this client, so `openEventStream`
+// (which shares a connection per client OBJECT) fans one machine out to every
+// mount instead of running one per mount and dispatching each event twice.
+// ponytail: never evicted; bounded by the sessions one tab opens.
+const eventClients = new Map<string, SessionStreamEventClient>();
+
 export function sessionStreamEventClient(
   projectId: string,
   sessionId: string,
   hooks: { onResync?: () => void } = {},
-): {
-  global: {
-    event: (options: { signal: AbortSignal }) => Promise<{ stream: AsyncIterable<unknown> }>;
-  };
-} {
+): SessionStreamEventClient {
+  // Resync callbacks are per caller; the client is shared. A caller that
+  // passes one gets its own (uncached) client — the hook below uses the
+  // shared client and subscribes to resyncs separately.
+  const key = `${projectId}/${sessionId}`;
+  if (!hooks.onResync) {
+    const cached = eventClients.get(key);
+    if (cached) return cached;
+  }
   async function* iterate(signal: AbortSignal): AsyncGenerator<unknown> {
     const queue: unknown[] = [];
     let wake: () => void = () => {};
@@ -459,9 +475,11 @@ export function sessionStreamEventClient(
       handle.close();
     }
   }
-  return {
+  const client: SessionStreamEventClient = {
     global: {
       event: async ({ signal }) => ({ stream: iterate(signal) }),
     },
   };
+  if (!hooks.onResync) eventClients.set(key, client);
+  return client;
 }
