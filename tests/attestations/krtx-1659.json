@@ -1,0 +1,16 @@
+{
+  "source_hash": "bb16b3b024a4143b878bace8084580f91f555584e302a1cfb9f8be306c3b10d5",
+  "diff_files": [
+    "apps/cli/src/__tests__/projects-info.blackbox.test.ts",
+    "apps/cli/src/commands/projects.ts"
+  ],
+  "diff_hash": "cc92a0cb7cbf233c86ed6e10b32a125462b7987710cb4471abca7f9599817ff7",
+  "head": "2986eb74655082a16432c1e6c0e99dad943efe1e",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-06T13:20:52.609Z"
+}
