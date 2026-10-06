@@ -526,6 +526,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/projects/:projectId/gateway/routing-policy/preview': { action: 'gateway.routing_policy.preview', title: 'Previewed gateway routing policy' },
   'GET /v1/projects/:projectId/gateway/series': { action: 'gateway.series.read', title: 'Viewed LLM gateway daily usage' },
   'GET /v1/projects/:projectId/gateway/sessions': { action: 'gateway.session_spend.list', title: 'Listed LLM gateway spend by session' },
+  'GET /v1/projects/:projectId/gateway/sources': { action: 'gateway.source_spend.list', title: 'Listed LLM gateway spend by source' },
   'PUT /v1/projects/:projectId/git-credential': { action: 'git.credential.set', title: 'Set project Git credential' },
   'POST /v1/projects/:projectId/git-token': { action: 'git.push_token.create', title: 'Created Git push token' },
   'POST /v1/projects/:projectId/git/collaborators': { action: 'git.collaborator.invite', title: 'Added Git collaborator' },
