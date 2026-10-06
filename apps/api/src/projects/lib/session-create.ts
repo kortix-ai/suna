@@ -1478,8 +1478,7 @@ async function provisionCreatedSession(params: {
       userId,
       agentName,
       // A pi cell boots the celld template; there is no project image to use.
-      allowProjectImage:
-        sandboxSlug === PI_CELL_SANDBOX_SLUG ? false : projectImageAllowedForSession(agentName, repositoryAccess),
+      allowProjectImage: projectImageAllowedForSession(agentName, repositoryAccess) && sandboxSlug !== PI_CELL_SANDBOX_SLUG,
       provider: providerName,
       providerLocked,
       metadata: {
