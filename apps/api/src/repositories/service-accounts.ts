@@ -5,6 +5,7 @@
 
 import { and, asc, eq, inArray, isNull, isNotNull } from 'drizzle-orm';
 import { serviceAccounts, roleAssignments } from '@kortix/db';
+import { notAnAudienceGrant } from '../iam/audience-grants';
 import { db } from '../shared/db';
 import { errorSqlstate } from '../shared/error-cause';
 import { createLastUsedTracker } from '../shared/throttled-last-used';
@@ -238,7 +239,8 @@ export async function deleteServiceAccount(
   // `role_assignments.principal_id` is polymorphic across user/group/
   // service_account/pending, so it carries no FK to service_accounts; without
   // this delete, a removed SA leaves dangling assignments behind that a re-used
-  // id would inherit.
+  // id would inherit. Its audience grants stay and reach nobody: deleting a
+  // value's last one would share it with the whole project.
   return db.transaction(async (tx) => {
     await tx
       .delete(roleAssignments)
@@ -247,6 +249,7 @@ export async function deleteServiceAccount(
           eq(roleAssignments.accountId, accountId),
           eq(roleAssignments.principalType, 'service_account'),
           eq(roleAssignments.principalId, serviceAccountId),
+          notAnAudienceGrant(),
         ),
       );
     const rows = await tx
