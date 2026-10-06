@@ -36,7 +36,6 @@ export async function requestPersonalOwner(
   if (!reach) return loaded.userId;
   return personalResourceOwner({
     agentPrincipal: true,
-    legacyUserId: loaded.userId,
     onBehalfOfUserId: reach.onBehalfOfUserId,
     visibility: reach.visibility,
   });

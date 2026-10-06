@@ -30,6 +30,7 @@
  */
 import type { ObjectType as ObjectGrantType } from './catalog';
 import { assignRole, listAssignments, revokeAssignment, SYSTEM_ACTOR } from './assignments';
+import { isAudienceObjectType } from './audience-grants';
 import { loadObjectGrants } from './authorize';
 import { objectGrantRows } from './read-models';
 import { invalidateIamCacheForProjectResources } from './cache-invalidation';
@@ -169,10 +170,11 @@ export async function deleteResourceGrant(
   projectId: string,
   accountId: string,
 ): Promise<boolean> {
-  // Only the kinds this module stores. A `connection` grant narrows who may use
-  // a shared connector account and is written under the connections-manage
-  // capability; the members-manage route that calls this must not delete one
-  // (the last one would widen the account to the whole project).
+  // Only the kinds this module stores. A `connection` or `secret` grant is an
+  // audience — who may use a shared connector account or a secret value — and
+  // is written under that object's own capability; the members-manage route
+  // that calls this must not delete one (the last one would widen the object
+  // to the whole project, `audience-grants.ts`).
   const [assignment] = (
     await listAssignments({
       accountId,
@@ -181,7 +183,11 @@ export async function deleteResourceGrant(
       liveOnly: false,
     })
   ).filter(
-    (r) => r.assignmentId === grantId && r.objectType !== null && isResourceType(r.objectType),
+    (r) =>
+      r.assignmentId === grantId &&
+      r.objectType !== null &&
+      isResourceType(r.objectType) &&
+      !isAudienceObjectType(r.objectType),
   );
   if (!assignment) return false;
   await revokeAssignment(SYSTEM_ACTOR, accountId, grantId, { skipWriterAuthz: true });
