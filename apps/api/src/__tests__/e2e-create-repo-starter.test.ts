@@ -667,7 +667,8 @@ mock.module('../shared/db', () => ({
   db: starterDbMock,
 }));
 
-const { projectsApp } = await import('../projects/index');
+const { projectsApp, registerAllProjectRoutes } = await import('../projects/index');
+registerAllProjectRoutes();
 const { ACCOUNT_ACTIONS } = await import('../iam');
 const { buildStarterFiles } = await import('../projects/starter');
 

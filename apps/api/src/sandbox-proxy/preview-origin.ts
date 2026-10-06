@@ -24,7 +24,7 @@
 
 import { authenticatePreviewPrincipalDetailed, extractPreviewToken } from './preview-auth';
 import { bindPreviewResource, bindPreviewSession } from './preview-audit';
-import { forwardToSandbox } from './routes/preview';
+import { forwardToSandbox } from './forward';
 import { resolveExternalIdFromHostLabel } from './backend';
 import { config } from '../config';
 import { PREVIEW_STATE_HEADER, previewStatePage, type PreviewState } from './preview-state-page';
@@ -431,7 +431,7 @@ export async function handlePreviewOriginRequest(
   // means a form auto-submitted from evil.com arrives with the cookie attached.
   // The app's own CSRF defence cannot help: the proxy deliberately rewrites
   // `Origin` to the upstream so frameworks see a consistent pair (see
-  // routes/preview.ts), so the check has to live here.
+  // forward/upstream.ts), so the check has to live here.
   if (!isSameSiteRequest(req, publicHost)) {
     return jsonError(403, 'Cross-site request to a preview', origin);
   }
