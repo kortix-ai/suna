@@ -105,6 +105,20 @@ export function capabilityReadsImages(model: CapabilityView | undefined): boolea
   return model.attachment === true;
 }
 
+/**
+ * The prompt note for a turn whose image no model in reach can read. Without
+ * it the agent called `read`, saw nothing, and hunted for ImageMagick and
+ * tesseract (Teams, 2026-09-19).
+ */
+export const NO_VISION_NOTE = [
+  '',
+  'IMPORTANT: no image-capable model is available in this project, so you',
+  'cannot see the attached image even after downloading it. Do not call `read`',
+  'on it and do not look for OCR tools. Tell the user plainly that you cannot',
+  'view images here, ask them to paste the text or describe it, and mention',
+  'that a project admin can enable an image-capable model.',
+].join('\n');
+
 /** The cheap, synchronous check used on the channel hot path. */
 export function modelReadsImages(projectId: string, model: string | null | undefined): boolean {
   if (!model) return false;

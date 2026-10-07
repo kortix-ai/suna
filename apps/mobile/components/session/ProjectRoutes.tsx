@@ -12,7 +12,8 @@
  *   /projects/[id]/page     page     — a sub-page (`?pageId=`), pushed over
  *                                      the page it was opened from: project
  *                                      Settings from Settings, Schedules or
- *                                      Secrets from project Settings
+ *                                      Secrets from project Settings, Files
+ *                                      from the thread's ··· sheet
  *
  * The stack is `[index]`, `[index, X]`, or `[index, X, page, …]`. The
  * drawer never deepens it: it pushes `sessions`, `files`, or `account` over
@@ -40,6 +41,8 @@
  *   - view route removed (pop, replace, leaving the project) → reset the
  *     store to the home state, before the route leaves the navigation state,
  *     so the home route never sees "not home" with no view to show it
+ *   - sub-page: the store's open target changes after the push → leave for
+ *     the view (ProjectSubPageRoute)
  */
 
 import * as React from 'react';
@@ -61,6 +64,7 @@ import {
   isSubPageId,
   subPageBackMove,
   subPageLeaveMove,
+  subPageShouldLeave,
   type SubPageId,
 } from '@/lib/session/project-stack';
 import { haptics } from '@/lib/haptics';
@@ -81,6 +85,11 @@ export interface ProjectRouteValue {
   view: React.ReactNode;
   /** True when no page, thread, or connecting session is open. */
   isHome: boolean;
+  /**
+   * What the store has open (`projectViewKey`): null on project home. A
+   * sub-page leaves when it differs from its value at the sub-page's mount.
+   */
+  viewKey: string | null;
   /**
    * Increments each time the view finishes covering project home. The home
    * route remounts on it, so a sent prompt does not wait in the composer.
@@ -118,9 +127,9 @@ export interface ProjectRouteValue {
   openSessionActions: (session: ProjectSession) => void;
   /**
    * Push a sub-page (`page` route) over the focused project route. Stable.
-   * Call it only from a screen that shows while the store is on the home
-   * state (a covering route, or another sub-page): a sub-page leaves as soon
-   * as the store is off home (ProjectSubPageRoute).
+   * From a covering route, another sub-page, or the open thread (Files from
+   * the session ··· sheet). A sub-page leaves when the store's open target
+   * changes after it was pushed (ProjectSubPageRoute).
    */
   openSubPage: (pageId: SubPageId) => void;
   /** The content of a sub-page. `onBack` pops the sub-page. */
@@ -283,23 +292,27 @@ export function backFromSubPage(navigation: {
  * → `pop`), and the iOS swipe-back (this screen enables the gesture, and the
  * drawer's edge swipe is off while it is on top).
  *
- * When the store leaves the home state while this route is focused (a
- * session opened from a notification), the stack ends as [index, view]
- * (`subPageLeaveMove`): a view under the sub-pages is popped to and swaps
- * its content; otherwise the stack resets to [index, view], so a new view
- * mounts with the store already off home. Removing this route never resets
- * the store.
+ * When the store's open target changes while this route is focused
+ * (`subPageShouldLeave`: a session opened from a notification, or the thread
+ * under Files deleted), the stack ends as [index, view] (`subPageLeaveMove`):
+ * a view under the sub-pages is popped to and swaps its content (or, back on
+ * home, removes itself); otherwise the stack resets to [index, view], so a
+ * new view mounts with the store already off home. The target at mount is
+ * not a reason to leave: Files pushed over the open thread stays. Removing
+ * this route never resets the store.
  */
 export function ProjectSubPageRoute() {
-  const { renderSubPage, isHome } = useProjectRoute();
+  const { renderSubPage, viewKey } = useProjectRoute();
   const { pageId } = useLocalSearchParams<{ pageId?: string }>();
   const navigation = useNavigation<ProjectStackNavigation>();
   const isFocused = useIsFocused();
   // Set once the route starts to leave for the view, so it never dispatches twice.
   const leavingRef = React.useRef(false);
+  // The store's open target when this sub-page was pushed.
+  const viewKeyAtMount = React.useRef(viewKey).current;
 
   React.useEffect(() => {
-    if (isHome || !isFocused || leavingRef.current) return;
+    if (!subPageShouldLeave({ viewKey, viewKeyAtMount }) || !isFocused || leavingRef.current) return;
     leavingRef.current = true;
     const state = navigation.getState();
     if (subPageLeaveMove(state.routes.map((route) => route.name)) === 'pop-to-view') {
@@ -309,7 +322,7 @@ export function ProjectSubPageRoute() {
     navigation.dispatch(
       CommonActions.reset(homeAndRoute(state.routes[0], { name: PROJECT_VIEW_ROUTE }))
     );
-  }, [isHome, isFocused, navigation]);
+  }, [viewKey, viewKeyAtMount, isFocused, navigation]);
 
   const goBack = React.useCallback(() => {
     haptics.tap();

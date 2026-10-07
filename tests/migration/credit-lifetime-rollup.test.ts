@@ -21,7 +21,12 @@ function psql(sql: string): string {
 }
 
 function pgReady(): boolean {
-  return sh(['docker', 'exec', CONTAINER, 'pg_isready', '-U', 'postgres', '-d', 'postgres']).ok;
+  // Host TCP probe: `docker exec pg_isready` answers over the unix socket,
+  // which initdb's temporary socket-only server satisfies while nothing serves
+  // TCP yet — the published port's proxy then accepts and closes the suite's
+  // first `psql` (`server closed the connection unexpectedly`). See
+  // worktree-migrate.test.ts for the full timeline and CI run 36153691220.
+  return sh(['psql', url, '-tAc', 'select 1']).ok;
 }
 
 function newAccount(): string {
@@ -84,11 +89,16 @@ suite('credit_accounts lifetime_* rollup (throwaway Postgres)', () => {
       'full_page_writes=off',
     ]);
     if (!up.ok) throw new Error(`could not start test container: ${up.stderr}`);
+    // Poll until ready and let the last poll be the proof: a second poll
+    // after the loop races a loaded Docker daemon (a failed exec reads as
+    // "not ready") and throws right after a successful poll.
+    let ready = false;
     for (let i = 0; i < 60; i++) {
-      if (pgReady()) break;
+      ready = pgReady();
+      if (ready) break;
       await Bun.sleep(1000);
     }
-    if (!pgReady()) throw new Error('test Postgres never became ready');
+    if (!ready) throw new Error('test Postgres never became ready');
     const code = await runMigrate(ROOT, ports);
     if (code !== 0) throw new Error('migrations failed');
   }, 240_000);

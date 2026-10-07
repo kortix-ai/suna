@@ -1,6 +1,5 @@
 import {
   DEFAULT_API_BASE,
-  DEFAULT_HOST_NAME,
   type Host,
   activeHost,
   activeHostName,
@@ -9,11 +8,10 @@ import {
   removeHost,
   upsertHost,
 } from './config.ts';
-import { sandboxEnvValue } from './sandbox-env.ts';
 import { sdkBackendUrl } from '@kortix/shared/host-config';
 
 // Backward-compatible auth surface — every existing command imports
-// `Auth`, `loadAuth`, `saveAuth`, `clearAuth`, `authFileLocation` from
+// `Auth`, `loadAuth`, `saveAuthForHost`, `clearAuth`, `authFileLocation` from
 // here. Internally we now delegate to the multi-host config store, but
 // the shape callers see is unchanged.
 
@@ -79,18 +77,20 @@ export function loadAuth(): Auth | null {
   return host ? hostToAuth(host) : null;
 }
 
+/**
+ * The token the config store holds now for the host `auth` names, or null when
+ * the active host differs. A long-lived local proxy calls it per request, so a
+ * `kortix login` in another terminal reaches it without a restart.
+ */
+export function currentTokenFor(auth: Auth): string | null {
+  const stored = loadAuth();
+  return stored && sameApiBase(stored.api_base, auth.api_base) ? stored.token : null;
+}
+
 /** Load a specific named host's auth (for --host overrides). */
 export function loadAuthForHost(name: string): Auth | null {
   const host = getHost(name);
   return host ? hostToAuth(host) : null;
-}
-
-/** Persist the active host. Saves under the active host name, or under
- * `cloud` if no hosts are configured yet. Marks the touched host
- * active. */
-export function saveAuth(auth: Auth): void {
-  const targetName = activeHostName() ?? DEFAULT_HOST_NAME;
-  upsertHost(targetName, authToHost(auth, getHost(targetName)), true);
 }
 
 /** Persist a named host explicitly. */
@@ -108,12 +108,4 @@ export function clearAuth(name?: string): boolean {
 /** Display path of the config file backing this CLI's auth state. */
 export function authFileLocation(): string {
   return configFilePath();
-}
-
-/** Resolve the API base URL the CLI should use for "no auth yet" calls. */
-export function resolveApiBase(): string {
-  const sandboxApiUrl = sandboxEnvValue('KORTIX_API_URL');
-  if (sandboxApiUrl) return sandboxApiUrl;
-  const host = activeHost();
-  return host?.url ?? DEFAULT_API_BASE;
 }

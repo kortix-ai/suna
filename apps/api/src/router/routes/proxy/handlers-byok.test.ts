@@ -13,6 +13,7 @@ mock.module('../../services/llm-reservation', () => ({
   reserveEstimatedLlmCredits: async () => { reserveCalls += 1; return null; },
   settleLlmReservation: async () => { settleCalls += 1; },
   refundLlmReservation: async () => { refundCalls += 1; },
+  settleHeldLlmReservation: async () => { settleCalls += 1; },
 }));
 
 mock.module('./helpers', () => ({

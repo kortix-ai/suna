@@ -5,6 +5,13 @@
  * a full boot. Gated on the `daytona` capability, except SESS-36, which runs on
  * the local profile against a database session with a saved transcript.
  */
+import {
+  CreateSessionPromptResultSchema,
+  ProjectSessionSchema,
+  SessionPromptListSchema,
+  SessionTurnStatusSchema,
+  WarmProjectSessionResultSchema,
+} from '@kortix/api-contract';
 import { isKe2eRetryableError } from '../core/client';
 import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
@@ -1251,7 +1258,7 @@ flow(
     let replacementId = '';
     let replacementInsertedAt = '';
 
-    await ctx.step('warming creates an ordinary session marked unused', async () => {
+    await ctx.step('warming creates an ordinary session marked unused, in the contract shape', async () => {
       const r = await owner.post(
         '/v1/projects/:projectId/sessions/warm',
         {},
@@ -1261,7 +1268,8 @@ flow(
         .body()
         .has('$.reused', false)
         .has('$.session.metadata.warm', true)
-        .exists('$.session.session_id');
+        .exists('$.session.session_id')
+        .schema(WarmProjectSessionResultSchema);
       warmSessionId = r.json<any>().session.session_id;
       ctx.track('session', warmSessionId, { projectId: p.id });
     });
@@ -1609,7 +1617,7 @@ flow(
           const held = await owner.post(`${promptPath}/hold`, { held: true }, { params });
           held.status(200);
           for (const response of [held, await owner.get(promptPath, { params })]) {
-            response.status(200);
+            response.status(200).body().schema(SessionPromptListSchema);
             const mine = response.json<any>().prompts.find((p: any) => p.prompt_id === commandId);
             if (mine?.state !== 'waiting' || mine?.reason !== 'held')
               throw new Error(`Stop state: ${JSON.stringify(mine)}`);
@@ -1638,7 +1646,7 @@ flow(
           // unconnected connector, because that refusal could not be cleared
           // from the product. The connector CALL denies instead and carries a
           // connect link.
-          accepted.status(202).body().has('$.state', 'queued');
+          accepted.status(202).body().has('$.state', 'queued').schema(CreateSessionPromptResultSchema);
           const queued = await db.query(
             `SELECT command_id FROM kortix.session_lifecycle_commands
              WHERE session_id = $1 AND payload->>'clientMessageId' = 'unconnected-connector'`,
@@ -1812,9 +1820,9 @@ flow(
         }
       });
 
-      await ctx.step('the read lists the turns that died, newest first, and names the cause it has', async () => {
+      await ctx.step('the read lists the turns that died, newest first, names the cause it has, and matches the contract', async () => {
         const response = await owner.get(turnPath, { params });
-        response.status(200);
+        response.status(200).body().schema(SessionTurnStatusSchema);
         const body = response.json<TurnBody>();
         const listed = (body.recent_failures ?? []).map((f) => [f.message_id, f.error?.name ?? null]);
         const expected = [
@@ -2161,7 +2169,7 @@ flow(
     const patch = (as: typeof owner, sessionId: string, body: unknown) => as.patch(one, body, { params: { ...params, sessionId } });
     const ids = async (as: typeof owner, query: string) => {
       const r = await as.get(`${list}?${query}`, { params });
-      r.status(200);
+      r.status(200).body().schema(ProjectSessionSchema.array());
       return r.json<Row[]>().map((row) => row.session_id).sort();
     };
     const expectIds = (got: string[], want: string[], what: string) => {
@@ -2185,10 +2193,10 @@ flow(
       if (row.labels.length !== 3) throw new Error('labels changed by a metadata PATCH');
     });
 
-    await ctx.step('a null metadata value removes that key; GET reads back labels and metadata', async () => {
+    await ctx.step('a null metadata value removes that key; GET reads back labels and metadata in the contract shape', async () => {
       (await patch(owner, coordinator, { metadata: { priority: null } })).status(200);
       const r = await owner.get(one, { params: { ...params, sessionId: coordinator } });
-      r.status(200);
+      r.status(200).body().schema(ProjectSessionSchema);
       const row = r.json<Row>();
       if ('priority' in row.metadata) throw new Error(`priority kept: ${JSON.stringify(row.metadata)}`);
       if (row.metadata.ticket !== 'T-1') throw new Error('ticket lost');

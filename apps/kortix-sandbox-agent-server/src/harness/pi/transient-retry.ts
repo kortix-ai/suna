@@ -14,7 +14,8 @@
  *
  * A retry drops the failed assistant message from the agent's context (it is
  * never sent to the model again) and continues from the last user or tool
- * result, the same as pi's own `_prepareRetry`. Two bounded phases, one
+ * result, the same as pi's own `_prepareRetry`. The root's context is pi's
+ * session store, so the root passes its own `dropFailed` (runtime.ts). Two bounded phases, one
  * schedule (default base 2 s):
  *   - in-turn retries: 5 attempts at 2, 4, 8, 16, 30 s (~60 s) for a blip;
  *   - resumes: 3 more at 60, 120, 240 s (~7 min) for an outage.
@@ -39,10 +40,11 @@ export function retryDelayMs(attempt: number, baseDelayMs: number): number {
  * Transient shapes pi-ai's classifier misses: a stream cut mid data-line
  * surfaces as a JSON parse error ("JSON Parse error: Unable to parse JSON
  * string", "JSON parsing failed: Text: {...", "Could not parse message into
- * JSON"); a gateway availability error reads "<model> is temporarily
+ * JSON", and since pi-ai 1.0 "Error reading response: malformed server-sent
+ * event JSON."); a gateway availability error reads "<model> is temporarily
  * unavailable"; Bun's fetch timeout reads "The operation timed out".
  */
-const TRANSIENT_EXTRA = /json pars(e|ing)|unable to parse json|parse message into json|temporarily unavailable|timed? ?out/i
+const TRANSIENT_EXTRA = /json pars(e|ing)|unable to parse json|parse message into json|malformed server-sent event|temporarily unavailable|timed? ?out/i
 /** Account limits are never transient, whatever else the text says. */
 const PERMANENT = /insufficient_quota|quota exceeded|out of budget|billing|usage limit|available balance/i
 
@@ -96,6 +98,11 @@ export class TransientRetry {
     return { attempt, delayMs, next: this.opts.now() + delayMs, message: assistant.errorMessage || 'The model request failed' }
   }
 
+  /** A failed step was continued at least once: the steps after it run outside pi's prompt loop. */
+  get retried(): boolean {
+    return this.attempts > 0
+  }
+
   get wasAborted(): boolean {
     return this.aborted
   }
@@ -110,14 +117,20 @@ export class TransientRetry {
    * Run `first`, then continue the agent after each transient failure until a
    * step succeeds, fails for good, the budget is spent, or `abort` is called.
    */
-  async run(agent: RetryableAgent, first: () => Promise<void>): Promise<void> {
+  async run(
+    agent: RetryableAgent,
+    first: () => Promise<void>,
+    dropFailed: () => void = () => {
+      agent.state.messages = agent.state.messages.slice(0, -1)
+    },
+  ): Promise<void> {
     await first()
     for (;;) {
       const plan = this.plan(agent.state.messages.at(-1))
       if (!plan) return
       this.attempts = plan.attempt
       if (!(await this.sleep(plan.delayMs))) return
-      agent.state.messages = agent.state.messages.slice(0, -1)
+      dropFailed()
       await agent.continue()
     }
   }

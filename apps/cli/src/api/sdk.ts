@@ -2,7 +2,6 @@ import { type Kortix, type KortixPlatformConfig, createKortix } from '@kortix/sd
 import { runWithKortix } from '@kortix/sdk/server';
 
 import type { Auth } from './auth.ts';
-import { ApiError } from './client.ts';
 import { sdkBackendUrl } from '@kortix/shared/host-config';
 
 export { sdkBackendUrl } from '@kortix/shared/host-config';
@@ -64,6 +63,9 @@ export interface RunningSandboxPortProxy {
 interface StartSandboxPortProxyOpts {
   runtimeUrl: string;
   token: string;
+  /** Read for every request and WebSocket upgrade; falls back to `token`. A
+   *  proxy lives as long as `opencode attach`, longer than one credential. */
+  getToken?: () => string | null | undefined | Promise<string | null | undefined>;
   port?: number;
 }
 
@@ -97,7 +99,7 @@ export function startSandboxPortProxy(opts: StartSandboxPortProxyOpts): RunningS
       const incoming = new URL(req.url);
       if (req.headers.get('upgrade')?.toLowerCase() === 'websocket') {
         const upstream = new URL(`${baseWs}${incoming.pathname}${incoming.search}`);
-        upstream.searchParams.set('token', opts.token);
+        upstream.searchParams.set('token', (await opts.getToken?.()) || opts.token);
         const upgraded = bunServer.upgrade(req, {
           data: { upstreamUrl: upstream.toString() },
         });
@@ -105,7 +107,7 @@ export function startSandboxPortProxy(opts: StartSandboxPortProxyOpts): RunningS
       }
 
       const upstream = `${baseHttp}${incoming.pathname}${incoming.search}`;
-      return forwardProxiedHttp(req, upstream, opts.token);
+      return forwardProxiedHttp(req, upstream, (await opts.getToken?.()) || opts.token);
     },
     websocket: {
       open(ws) {

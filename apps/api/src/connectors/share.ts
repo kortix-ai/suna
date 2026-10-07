@@ -19,11 +19,11 @@
  */
 import { eq, inArray } from 'drizzle-orm';
 import {
-  accountGroupMembers,
   projectSessionGrants,
   projectSessions,
 } from '@kortix/db';
 import { db } from '../shared/db';
+import { groupIdsOfUser } from '../iam/group-read';
 
 export type ShareScope = 'project' | 'restricted';
 
@@ -112,10 +112,7 @@ export function parseSharingIntent(body: any, fallbackOwner: string): SharingInt
 
 /** Resolve a user's group memberships → the subject the gateway authorizes with. */
 export async function resolveShareSubject(userId: string): Promise<ShareSubject> {
-  const rows = await db
-    .select({ groupId: accountGroupMembers.groupId })
-    .from(accountGroupMembers)
-    .where(eq(accountGroupMembers.userId, userId));
+  const rows = await groupIdsOfUser(userId);
   return { userId, groupIds: rows.map((r) => r.groupId) };
 }
 
@@ -283,9 +280,37 @@ export function isTriggerRunSession(session: { metadata: unknown; initiatorType?
 }
 
 /**
+ * An agent session's standing on one session row under the agent-principal
+ * model (spec §2). The agent acts as itself, so it owns only its own session
+ * and the sessions it spawned (`metadata.spawned_by_session`), never the
+ * launcher's other sessions. Visibility only narrows: a private or restricted
+ * session it does not own is invisible even when the launcher could see it; a
+ * project-visible session keeps the ordinary verdict (`visibleByRules`).
+ */
+export function agentSessionStanding(
+  boundCredentialSessionId: string | null,
+  row: { sessionId: string; metadata: unknown; visibility: string },
+  visibleByRules: boolean,
+): { isOwner: boolean; visible: boolean } {
+  const meta = (row.metadata ?? {}) as Record<string, unknown>;
+  const isOwner =
+    boundCredentialSessionId !== null &&
+    (row.sessionId === boundCredentialSessionId ||
+      meta.spawned_by_session === boundCredentialSessionId);
+  return { isOwner, visible: isOwner || (row.visibility === 'project' && visibleByRules) };
+}
+
+/**
  * Project-session content visibility. Project managers can open sessions that
  * triggers created. Ordinary private human sessions remain owner-only. The
  * backend sibling-session gate runs first and cannot be bypassed.
+ *
+ * A session-bound credential whose bind names the target (or its spawner) is
+ * the session's own credential and always passes, before the overrides: a
+ * trigger/schedule run attributes its row to the agent's standing service
+ * account, not to the launcher in the token, so the ownership rule below
+ * would otherwise refuse the session its own credential and the daemon-port
+ * gate would 403 every proxied runtime read from the box.
  */
 export function isProjectSessionVisibleTo(
   visibility: SessionVisibility,
@@ -307,6 +332,14 @@ export function isProjectSessionVisibleTo(
   },
 ): boolean {
   if (!isSessionTargetVisibleToCaller(ownership)) return false;
+  // The session's own credential, mint-time fact — before the overrides:
+  // neither oversight nor the manager override is needed to open yourself,
+  // and both are powers the bind must never widen into sibling reach.
+  if (agentSessionStanding(ownership.boundCredentialSessionId, {
+    sessionId: ownership.sessionId,
+    metadata: context.metadata,
+    visibility,
+  }, true).isOwner) return true;
   // Oversight is a HUMAN admin's power. A sandbox/agent token launched by an
   // admin must not read every other member's session through it, for the same
   // reason as the trigger-session manager override below.

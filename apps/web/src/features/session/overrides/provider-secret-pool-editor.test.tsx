@@ -9,6 +9,8 @@ import { NewProviderSecretPoolEditor, ProviderSecretPoolEditor } from './provide
 function render(input: {
   resources?: unknown[]; failed?: boolean; selection?: Record<string, string[]>; canEdit?: boolean; saving?: boolean;
   session?: { visibility: 'private' | 'project' | 'restricted'; created_by: string };
+  /** The server's answer to whose own keys the session reaches. */
+  personal?: { personal_user_id: string | null; personal_keys_reason: 'shared' | 'prompted_by_another_member' | 'no_person' | null };
   /** Seed no configured pool, so the provider shows its default. */
   providerId?: string;
 } = {}) {
@@ -20,7 +22,7 @@ function render(input: {
   const singleKey = ['session-provider-secret-pool', 'project', 'session', 'anthropic'];
   const pool = { provider_id: 'anthropic', configured: true, secret_ids: [] };
   // The list holds configured pools only: a provider with no selection has no entry.
-  client.setQueryData(listKey, { pools: input.providerId ? [] : [pool], can_edit: input.canEdit ?? true });
+  client.setQueryData(listKey, { pools: input.providerId ? [] : [pool], can_edit: input.canEdit ?? true, ...input.personal });
   client.setQueryData(singleKey, pool);
   if (input.failed) {
     for (const key of [listKey, singleKey]) {
@@ -116,6 +118,34 @@ describe('a session offers only keys it can use when it runs', () => {
     expect(html).toContain('Team key');
     expect(html).toContain('My key');
     expect(html).not.toContain('This session is shared');
+  });
+
+  // Reported on dev 2026-09-29: a private Teams session from before
+  // on_behalf_of offered "ino's main account", and the save was refused as
+  // "This session is shared".
+  test.each([
+    ['no_person', 'This session does not act for a person'],
+    ['prompted_by_another_member', 'Another member has prompted this session'],
+  ] as const)('a private session that acts for nobody (%s) hides its creator`s own keys, and says why', (reason, note) => {
+    const html = render({
+      resources: [team, mine],
+      session: { visibility: 'private', created_by: 'me' },
+      personal: { personal_user_id: null, personal_keys_reason: reason },
+    });
+    expect(html).toContain('Team key');
+    expect(html).not.toContain('My key');
+    expect(html).toContain(note);
+    expect(html).not.toContain('This session is shared');
+  });
+
+  test('a private session the server confirms still offers its creator`s own keys', () => {
+    const html = render({
+      resources: [team, mine],
+      session: { visibility: 'private', created_by: 'me' },
+      personal: { personal_user_id: 'me', personal_keys_reason: null },
+    });
+    expect(html).toContain('My key');
+    expect(html).not.toContain('does not act for a person');
   });
 
   test('a shared session never promises the person`s own ChatGPT connection', () => {

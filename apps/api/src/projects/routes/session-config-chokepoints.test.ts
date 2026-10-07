@@ -40,10 +40,25 @@ describe('GET /config authorizes before it reads session state', () => {
   });
 
   test('the release resolve never refreshes the mirror a second time (KRTX-629)', () => {
-    // The etag compile above it already invalidated + fetched the mirror in
-    // THIS request. `resolveDesiredRelease` must not drop the stamp again:
-    // that made every read of this polled route pay a second `git fetch`.
+    // The etag stage above it already refreshed the mirror in THIS request
+    // (ref-scoped tip proof or fetch). `resolveDesiredRelease` must not drop
+    // the stamp again: that made every read of this polled route pay a second
+    // `git fetch`.
     expect(CONFIG).toContain('refreshProjectMirror: false');
+  });
+
+  test('every mirror-reading stage races one shared budget (KRTX-818)', () => {
+    // The mirror fetch behind these stages has a 30s per-op timeout and
+    // retries 3 times. Unbounded, a slow fetch outran the 25s request deadline
+    // and 503'd every poll against a slow mirror (`git;dur` 24.4–25.0s on every
+    // deadline 503). Each stage now races what is left of one 20s budget and
+    // answers its own "could not tell" value on timeout.
+    expect(CONFIG).toContain('const configReadStart = Date.now()');
+    expect(CONFIG).toContain('budgetLeft(configReadStart)');
+    expect(CONFIG).toContain("boundedStage(");
+    for (const stage of ['latest_etag', 'desired_release', 'config_dir']) {
+      expect(CONFIG).toContain(`'${stage}'`);
+    }
   });
 });
 
@@ -57,13 +72,22 @@ describe('every session is compared the same way', () => {
   });
 
   test('stale is the release-ID compare, tri-state, never a default false', () => {
-    expect(CONFIG).toContain('stale: isReleaseStale(release, desired !== null)');
+    // No assignable release (an unbuildable tip with nothing proven) is
+    // nothing to reload into: unknown, never "stale".
+    expect(CONFIG).toContain(
+      'stale: isReleaseStale(release, desired !== null && desired.descriptor.release_id !== null)',
+    );
+  });
+
+  test('the API states why the tip is not assigned, when the box does not', () => {
+    // 2026-10-05: an unbuildable or quarantined tip read as "up to date".
+    expect(CONFIG).toContain('release.fallback_reason ??= desired?.fallbackReason ?? null');
   });
 
   test('the compiled etag is read for every session', () => {
     // It used to be skipped for a "frozen" session, which forced `latest_etag`
     // to null and made the pre-release compare unusable for it.
-    expect(CONFIG).toContain('latestAgentConfigEtag({');
+    expect(CONFIG).toContain('latestAgentConfigEtag(');
     expect(CONFIG).not.toContain('Promise.resolve(null)');
   });
 });

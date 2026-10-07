@@ -10,7 +10,7 @@
  * stay pure — no React, no implicit ambient state.
  */
 
-import { createContext, useContext, type ReactNode } from 'react';
+import { createContext, useContext, useMemo, type ReactNode } from 'react';
 
 export interface ProjectFilesContextValue {
   projectId: string;
@@ -29,7 +29,11 @@ export function ProjectFilesProvider({
   value: ProjectFilesContextValue;
   children: ReactNode;
 }) {
-  return <ProjectFilesContext.Provider value={value}>{children}</ProjectFilesContext.Provider>;
+  // Callers pass an inline object; keying on its primitives keeps consumers
+  // from re-rendering every time the parent does.
+  const { projectId, ref, defaultBranch } = value;
+  const stable = useMemo(() => ({ projectId, ref, defaultBranch }), [projectId, ref, defaultBranch]);
+  return <ProjectFilesContext.Provider value={stable}>{children}</ProjectFilesContext.Provider>;
 }
 
 /**

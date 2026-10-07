@@ -45,6 +45,9 @@ export interface ProjectConfigSummary {
      *  follows the project default. */
     model?: string | null;
     source: 'opencode' | 'kortix.yaml';
+    /** True for a platform-owned agent the API injects (the Meta coordinator),
+     *  not one declared in `kortix.yaml`. Hosts render it read-only. */
+    platform?: boolean;
     enabled?: boolean;
     sandbox?: string | null;
     /** Per-agent governance from the manifest's `agents` declarations (v2

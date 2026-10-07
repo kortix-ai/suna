@@ -116,9 +116,12 @@ const enqueue = mock(
     return { state: 'queued' };
   },
 );
+// The viewer: queued rows offer their actions to their author only.
+mock.module('@/features/providers/auth-provider', () => ({ useAuth: () => ({ user: { id: 'user-1' } }) }));
 mock.module('@kortix/sdk/react', () => ({
   ...realSdkReact,
   startSessionWithPrompt,
+  useProjectSession: () => ({ data: undefined }),
   usePromptAttachments: () => ({}),
   useRuntimeAgents: () => ({ data: [] }),
   useFeatureFlag: () => ({ enabled: true, isLoading: false }),

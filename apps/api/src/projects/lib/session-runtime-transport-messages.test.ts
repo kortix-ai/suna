@@ -16,7 +16,7 @@ mock.module('../../sandbox-proxy/backend', () => ({
   },
 }));
 
-const { fetchRuntimeMessages, fetchRuntimeState, resetLegacyRuntimeApiForTests } = await import('./session-runtime-transport');
+const { fetchRuntimeMessages, fetchRuntimeState, openRuntimeEventStream, resetLegacyRuntimeApiForTests } = await import('./session-runtime-transport');
 
 let requests: Array<{ url: string; headers: Record<string, string> }> = [];
 let respond: () => Response = () => Response.json({ messages: [] });
@@ -114,5 +114,35 @@ describe('the Runtime API path across daemon builds (W3 D4)', () => {
   test('a W3 daemon is asked once, at /kortix/runtime', async () => {
     await fetchRuntimeState({ externalId: 'new-box' });
     expect(requests.map((r) => r.url)).toEqual(['http://daemon.local/kortix/runtime/state']);
+  });
+});
+
+describe('openRuntimeEventStream — the caller abort outlives the connect (05#3)', () => {
+  test('aborting the caller signal after the attach ends the live body', async () => {
+    let requestSignal: AbortSignal | undefined;
+    globalThis.fetch = mock(async (_url: unknown, init?: RequestInit) => {
+      requestSignal = init?.signal as AbortSignal;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          requestSignal?.addEventListener('abort', () => controller.error(new Error('aborted')), { once: true });
+        },
+      });
+      return new Response(body, { headers: { 'content-type': 'text/event-stream' } });
+    }) as unknown as typeof fetch;
+
+    const caller = new AbortController();
+    const opened = await openRuntimeEventStream({ externalId: 'ext-1' }, { signal: caller.signal });
+    expect(opened.ok).toBe(true);
+    caller.abort();
+    expect(requestSignal?.aborted).toBe(true);
+  });
+
+  test('a failed attach leaves no listener behind on the caller signal', async () => {
+    globalThis.fetch = mock(async () => new Response('nope', { status: 503 })) as unknown as typeof fetch;
+    const caller = new AbortController();
+    const opened = await openRuntimeEventStream({ externalId: 'ext-1' }, { signal: caller.signal });
+    expect(opened.ok).toBe(false);
+    // Nothing to assert on the signal's listeners directly; aborting must not throw.
+    expect(() => caller.abort()).not.toThrow();
   });
 });

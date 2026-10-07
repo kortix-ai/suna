@@ -105,14 +105,14 @@ Rules for both harnesses:
   (`<change-requests>` below).
 - `web_search`, `image_search`, `scrape_webpage`, `memory` and `show` exist
   on both harnesses, with the same names and arguments.
-- pi does not have rewind, compaction, slash commands, MCP servers or a todo
-  tool. `references/pi/overview.md` lists the differences.
+- pi does not have rewind, MCP servers or a todo tool.
+  `references/pi/overview.md` lists the differences.
 </harnesses>
 
 <capabilities>
 ## What Kortix can do
 
-Kortix is an open-source AI Management System. Your agents, skills, memory,
+Kortix is an open-source AI Operating System. Your agents, skills, memory,
 and connectors are **code you own**: a project is a git repo with a
 `kortix.yaml` at its root; a session is one unit of agent work on its own
 cloud computer and branch; work becomes permanent only via a
@@ -563,7 +563,9 @@ When you, as an agent, have changes you believe should persist:
    with base can't be applied, and the conflict is yours to fix, not
    the reviewer's.
 2. **Commit on the session branch.** Small, working commits. Never
-   rewrite history that isn't yours.
+   rewrite history that isn't yours. Run `kortix validate` first, and
+   never commit a large binary or generated file (see `<gotchas>`:
+   keep big static assets out of Git).
 3. **Push the branch.** This step is NOT optional — a commit that
    never leaves the sandbox produces an empty, un-appliable CR:
    ```sh
@@ -724,7 +726,8 @@ agents:
 - v1 (`kortix.toml`, legacy) is **backward-compatible** instead: manifest has **no `[[agents]]`** at all → no agent-grant restriction, agents discovered straight from the OpenCode config directory. Agent **is listed** → its `connectors`/`kortix_permissions` (default each = none if omitted). Manifest **has `[[agents]]` but this agent isn't listed** → default-deny for Kortix grants. The v1 default agent keeps **full access** only while `[[agents]]` is unadopted — the moment you add `[[agents]]`, declare the default agent too or it falls under the unlisted-deny rule.
 - **You are the acting principal.** Effective = your `kortix_permissions` ∩ your **ceiling** (the IAM role an admin binds to your service account; with none bound, every grantable project permission). `all`, `"*"`, and any list containing `"*"` mean every permission, including `project.members.manage` and `project.delete`. The one exception is `project.credentials.issue` (`403 agent_human_only_action`): a token you mint would carry none of your permissions. The launcher's role is not an input. The human contributes "may run this agent" and their own personal resources (their connector connections, personal secrets, their computer) — only in their own **private** session, and only until someone else prompts it. Trigger and channel runs have no human behind them.
   - `project.read` in your own project is always granted.
-  - When a call returns 403, read `code`: `agent_scope_insufficient` → the action is missing from your `kortix_permissions` (propose a CR); `agent_ceiling_insufficient` → an admin must raise your ceiling role; `agent_not_accessible` → the human may not run that agent. Never claim an authority the code says you lack.
+  - When a call returns 403, read `code`: `agent_scope_insufficient` → the action is missing from your `kortix_permissions` (propose a CR); `agent_ceiling_insufficient` → an admin must raise your ceiling role; `agent_not_accessible` → the human may not run that agent; `agent_grant_escalation` → you tried to give an agent (yourself included) a permission, connector, secret or App you do not hold. Never claim an authority the code says you lack.
+  - **You grant only what you hold.** Any agent grant you write — through the agent editor, the scope or secret-grant routes, or a CR you merge — may add only what your own effective grant holds. A person widens an agent beyond you. A push straight to the default branch also needs you to hold every grant; otherwise open a CR.
 - Editing the manifest only takes effect once the **CR is merged** (read from the default branch). A CR that changes `agents.*` needs `project.agent.write`, `triggers` needs `project.trigger.create|update|delete`, `default_agent` needs `project.customize.write` — on top of `project.gitops.merge`. With `kortix_permissions: all` you hold them all and merge such a CR yourself. A push straight to the default branch needs `project.gitops.ref.any` plus all of those. A `503 CR_GOVERNANCE_UNVERIFIED` means the manifest could not be read; nothing merged, retry after `Retry-After` seconds. An older server answers `403 CR_AGENT_GOVERNANCE_CHANGE`; only a person can merge it there.
 - Check what you hold with `kortix whoami --token-only`. If it says `none` right after a `kortix.yaml` change, the change broke your grant: revert it before anything else.
 - Session environment precedence is explicit `sandbox_slug`, agent `sandbox`, project `sandbox.default`, then platform `default`. Triggers, schedules, and channels use the target agent's environment.
@@ -754,7 +757,8 @@ project.agent.read  project.agent.write
 project.skill.read  project.skill.write
 project.command.read  project.command.write
 project.file.read  project.file.write
-project.customize.read  project.customize.write
+project.settings.write  project.sandbox.write
+project.model.read  project.model.write
 project.gitops.read  project.gitops.push  project.gitops.merge
 project.secret.read  project.secret.write
 project.connector.read  project.connector.write  project.connector.connections.manage   # channels (Slack/meet/email) send + connect are gated here
@@ -985,6 +989,18 @@ Things that surprise people:
   keeping, the next move is *always* `kortix cr open`, never a force
   push, never asking the user to copy files out. See the
   `<change-requests>` section above.
+- **Keep big static assets out of Git.** Every session builds its agent
+  config from the whole repository at the base commit (`git archive`, so
+  history and `.git` do not count). Above 32 MiB compressed or 128 MiB
+  uncompressed that build fails, and every session runs the platform
+  default config without the project's agents. Put videos, images,
+  datasets, model weights and generated media in object storage (S3, R2,
+  GCS) or a CDN, and download them at runtime. Add build output (`dist/`,
+  `out/`, `node_modules/`) to `.gitignore`. `kortix validate` warns about
+  any file of 10 MiB or more and a repository over 32 MiB; run it before
+  you commit. A path that must stay in Git but that no agent reads can be
+  left out of the agent config with `<path> export-ignore` in
+  `.gitattributes`.
 - **Triggers live in `kortix.yaml`, not as files.** Old Kortix shipped
   triggers under `.opencode/triggers/<slug>.md` — that's gone.
   Centralized in the manifest now, parsed as `triggers:`.

@@ -1,3 +1,4 @@
+import { stripChatMentionMarkup } from '@kortix/shared';
 import type { UiTranslator } from '@/i18n/translator';
 
 import {
@@ -35,7 +36,8 @@ export type SessionSourceKind =
   | 'teams'
   | 'email'
   | 'schedule'
-  | 'webhook';
+  | 'webhook'
+  | 'manual';
 
 export interface SessionSource {
   kind: SessionSourceKind;
@@ -74,8 +76,13 @@ export function sessionSource(session: ProjectSession, tI18nComplete: UiTranslat
     return { kind: 'email', label: tI18nComplete.raw('text969ccbd3cf63'), triggerSlug: null };
   if (typeof meta.trigger_source === 'string') {
     const triggerSlug = typeof meta.trigger_slug === 'string' ? meta.trigger_slug : null;
-    // Classify by the trigger's kind (cron|webhook) when present so a manual
-    // "run now" fire groups under its trigger; fall back to the fire source.
+    // The fire origin is how THIS run started; `trigger_type` is the trigger's
+    // declared kind. A manual `kortix triggers fire` of a cron trigger must
+    // not read as a scheduled run — "why did this run" needs the origin.
+    if (meta.trigger_source === 'manual')
+      return { kind: 'manual', label: tI18nComplete.raw('textb0b9fe24ffa9'), triggerSlug };
+    // Otherwise classify by the trigger's kind (cron|webhook) so the run groups
+    // under its trigger; fall back to the fire source.
     const type = typeof meta.trigger_type === 'string' ? meta.trigger_type : meta.trigger_source;
     if (type === 'cron')
       return { kind: 'schedule', label: tI18nComplete.raw('text4724f344c1c0'), triggerSlug };
@@ -106,18 +113,7 @@ export function sessionDisplayLabel(session: ProjectSession): string {
   );
 }
 
-/**
- * Teams wraps a channel @-mention of the bot in `<at>…</at>`. Sessions titled
- * from such a message before the API stripped it (#7388) still carry the tag
- * in `name`; nothing a person reads should show it.
- */
-export function stripChatMentionMarkup(value: string): string {
-  return value
-    .replace(/<at[^>]*>.*?<\/at>/gi, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+export { stripChatMentionMarkup } from '@kortix/shared';
 
 /**
  * What the user sees, as opposed to what the sandbox is doing. The words and
@@ -157,6 +153,24 @@ export const SESSION_STATUS_TRANSLATION_KEY = {
 export { isLegacyMigratedSession };
 
 /**
+ * Whether the row's lifecycle menu and the session header may offer Stop.
+ *
+ * `running` is the classic case. A warm shell (`metadata.warm`, pre-created
+ * and never prompted) is reported `provisioning` for as long as its idle box
+ * lives (KRTX-1466), but it still bills compute the owner can stop — the stop
+ * route reads the sandbox row, not this word — so it keeps its Stop control.
+ * A genuinely booting session (no warm marker) does not: its box is not up
+ * yet, and stopping one answers 409 "Session is not running".
+ */
+export function sessionCanBeStopped(session: ProjectSession): boolean {
+  if (session.status === 'running') return true;
+  return (
+    session.status === 'provisioning' &&
+    ((session.metadata ?? {}) as Record<string, unknown>).warm === true
+  );
+}
+
+/**
  * Resolve a session to its display status. A pending review wins outright; a
  * status this build has never seen reads `stopped`. See `sessionListStatus`.
  */
@@ -179,7 +193,8 @@ export type SessionSourceFilter =
   | 'teams'
   | 'email'
   | 'schedule'
-  | 'webhook';
+  | 'webhook'
+  | 'manual';
 export type SessionStatusFilter = 'running' | 'done' | 'stopped' | 'failed' | 'legacy';
 
 export const SESSION_SOURCE_FILTERS: Array<{ value: SessionSourceFilter; label: string }> = [
@@ -190,6 +205,7 @@ export const SESSION_SOURCE_FILTERS: Array<{ value: SessionSourceFilter; label: 
   { value: 'email', label: 'Email' },
   { value: 'schedule', label: 'Scheduled' },
   { value: 'webhook', label: 'Webhook' },
+  { value: 'manual', label: 'Manual' },
 ];
 
 export const SESSION_STATUS_FILTERS: Array<{ value: SessionStatusFilter; label: string }> = [

@@ -35,6 +35,8 @@ type CommandRow = {
   lastError: string | null;
   createdAt: Date;
   availableAt: Date;
+  /** The member the prompt runs as. Only they edit, send or retry it. */
+  actorUserId?: string | null;
 };
 
 let commandTable: CommandRow[] = [];
@@ -59,6 +61,8 @@ function row(overrides: Partial<CommandRow> = {}): CommandRow {
     lastError: null,
     createdAt: new Date('2026-08-18T00:00:00.000Z'),
     availableAt: new Date('2026-08-18T00:00:00.000Z'),
+    // The caller of every route below sent it.
+    actorUserId: USER_ID,
     ...overrides,
   };
 }
@@ -192,11 +196,10 @@ function predicateOf(predicate: unknown): (r: CommandRow) => boolean {
     if (ids.length > 0) {
       const wanted = new Set(ids);
       if (!wanted.has(r.commandId) && !wanted.has(r.sessionId ?? '')) return false;
-      if (wanted.has(r.commandId) === false && wanted.has(r.sessionId ?? '') === false) return false;
-      // Both a session scope and a command scope may be present; every bound id
-      // must match one of the row's own ids.
+      // A session scope, a command scope and an author may be present; every
+      // bound id must match one of the row's own ids.
       for (const id of wanted) {
-        if (id !== r.commandId && id !== r.sessionId) return false;
+        if (id !== r.commandId && id !== r.sessionId && id !== r.actorUserId) return false;
       }
     }
     if (wantsHeld && r.result?.held !== true) return false;
@@ -256,7 +259,11 @@ mock.module('../../billing/services/billing-gate', () => ({
 /** What the inbox read answers a new send. Null: the real read, over the mocked rows. */
 let sendState: { held: boolean; pending: boolean } | null = null;
 let edits: Array<{ sessionId: string; promptId: string; text: string }> = [];
-let editOutcome: 'edited' | 'delivering' | 'missing' = 'edited';
+let editOutcome: 'edited' | 'delivering' | 'missing' | 'not_author' = 'edited';
+let interrupts: string[] = [];
+let interruptOutcome: 'edited' | 'delivering' | 'missing' | 'not_author' = 'edited';
+/** Who the route said is writing, per edit or interrupt call. */
+let writers: unknown[] = [];
 
 mock.module('../session-lifecycle', () => ({
   ...realLifecycle,
@@ -278,12 +285,26 @@ mock.module('../session-lifecycle', () => ({
     commandTable.push(created);
     return { row: created, deduped: false };
   },
-  editInboxPrompt: async (sessionId: string, promptId: string, text: string) => {
+  editInboxPrompt: async (sessionId: string, promptId: string, text: string, actor: unknown) => {
     edits.push({ sessionId, promptId, text });
+    writers.push(actor);
     if (editOutcome !== 'edited') return { outcome: editOutcome };
     return {
       outcome: 'edited',
       row: row({ payload: { text, clientMessageId: 'q_1', wireMessageId: WIRE_ID } }),
+    };
+  },
+  interruptInboxPrompt: async (_sessionId: string, promptId: string, actor: unknown) => {
+    interrupts.push(promptId);
+    writers.push(actor);
+    if (interruptOutcome !== 'edited') return { outcome: interruptOutcome };
+    return {
+      outcome: 'edited',
+      row: row({
+        idempotencyKey: `prompt:${SESSION_ID}:q_1`,
+        payload: { text: 'say hi', clientMessageId: 'q_1', wireMessageId: WIRE_ID, delivery: 'interrupt', placement: 'transcript' },
+        result: { promoted: true },
+      }),
     };
   },
   drainSessionLifecycleQueue: async (input: Record<string, unknown>) => {
@@ -364,7 +385,7 @@ mock.module('../session-lifecycle/inbox-hold-settle', () => ({
 }));
 
 const { projectsApp } = await import('../lib/app');
-await import('./session-prompts');
+(await import('./session-prompts')).registerSessionPromptsRoutes();
 
 function app() {
   const application = new Hono<{ Variables: { userId: string; authType: string } }>();
@@ -402,6 +423,8 @@ beforeEach(() => {
   drains = [];
   edits = [];
   editOutcome = 'edited';
+  interrupts = [];
+  interruptOutcome = 'edited';
   enqueueResult = null;
   billingOk = true;
   dbReadDelayMs = 0;
@@ -440,6 +463,19 @@ describe('POST .../prompts', () => {
       deduped: false,
       observed_at: expect.any(String),
     });
+  });
+
+  test('delivery sets the stored placement; placement alone keeps its meaning (R10)', async () => {
+    await post({ ...validBody, delivery: 'steer' });
+    await post({ ...validBody, client_message_id: 'q_2', delivery: 'interrupt', placement: 'composer' });
+    await post({ ...validBody, client_message_id: 'q_3', placement: 'transcript' });
+    expect(enqueued.map((e) => [e.delivery, e.placement])).toEqual([
+      ['steer', 'composer'],
+      ['interrupt', 'transcript'],
+      [undefined, 'transcript'],
+    ]);
+    expect((await post({ ...validBody, client_message_id: 'q_4', delivery: 'now' })).status).toBe(400);
+    expect(enqueued).toHaveLength(3);
   });
 
   test('carries the client-minted wire id, the parts and the overrides into the payload', async () => {
@@ -655,6 +691,9 @@ describe('GET .../prompts', () => {
         text: 'say hi',
         full_text: 'say hi',
         placement: 'composer',
+        // A row from before steering: `queue`, as its placement implies.
+        delivery: 'queue',
+        steer_fallback: null,
         attempts: 0,
         runtime_retries: 0,
         last_error: null,
@@ -662,6 +701,8 @@ describe('GET .../prompts', () => {
         // client never has to distinguish "no attachments" from "old server".
         attachments: [],
         no_reply: false,
+        // The member it runs as.
+        author_user_id: USER_ID,
         created_at: '2026-08-18T00:00:00.000Z',
         available_at: '2026-08-18T00:00:00.000Z',
       },
@@ -800,6 +841,7 @@ describe('DELETE .../prompts/:promptId', () => {
     expect(await response.json()).toEqual({
       removed: {
         placement: 'composer',
+        delivery: 'queue',
         prompt_id: PROMPT_ID,
         removed_message_ids: [WIRE_ID],
         client_message_id: 'q_1',
@@ -891,6 +933,29 @@ describe('PATCH .../prompts/:promptId', () => {
 
   test('refuses a prompt id that is not a row id', async () => {
     expect((await edit({ text: 'x' }, 'not-a-uuid')).status).toBe(400);
+  });
+
+  test('"Stop and send": delivery interrupt converts the row and kicks the drain (R10)', async () => {
+    const response = await edit({ delivery: 'interrupt' });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ delivery: 'interrupt', placement: 'transcript' });
+    expect(interrupts).toEqual([PROMPT_ID]);
+    expect(edits).toHaveLength(0);
+    expect(drains).toEqual([{ idempotencyKey: `prompt:${SESSION_ID}:q_1` }]);
+  });
+
+  test('text and delivery together: the edit, then the conversion', async () => {
+    expect((await edit({ text: 'say hello', delivery: 'interrupt' })).status).toBe(200);
+    expect(edits).toHaveLength(1);
+    expect(interrupts).toEqual([PROMPT_ID]);
+  });
+
+  test('a row on its way cannot be converted; another delivery value is refused', async () => {
+    interruptOutcome = 'delivering';
+    expect((await edit({ delivery: 'interrupt' })).status).toBe(409);
+    expect(drains).toHaveLength(0);
+    expect((await edit({ delivery: 'steer' })).status).toBe(400);
+    expect(interrupts).toEqual([PROMPT_ID]);
   });
 });
 
@@ -1092,5 +1157,54 @@ describe('POST .../prompts authorship', () => {
     expect(enqueued.at(-1)!.authorSessionId).toBeNull();
     await send(SESSION_ID);
     expect(enqueued.at(-1)!.authorSessionId).toBeNull();
+  });
+});
+
+// A queued prompt runs as its author: the drain binds the session credential
+// to them. Another member who could rewrite or send it would run their own
+// text under the author's identity.
+describe("another member's queued prompt", () => {
+  const OTHER_MEMBER = '22222222-2222-4222-8222-222222222222';
+  const call = (method: string, suffix = '', body?: unknown) =>
+    app().request(`${base()}/${PROMPT_ID}${suffix}`, {
+      method,
+      ...(body === undefined
+        ? {}
+        : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+    });
+  const notAuthor = async (response: Response) => {
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: 'not_prompt_author' });
+  };
+
+  test('send now and remove → 403 not_prompt_author; the row is unchanged', async () => {
+    commandTable = [row({ actorUserId: OTHER_MEMBER })];
+    const before = structuredClone(commandTable[0]);
+    await notAuthor(await call('POST', '/retry'));
+    await notAuthor(await call('DELETE'));
+    expect(commandTable).toEqual([before]);
+    expect(drains).toEqual([]);
+  });
+
+  test('edit and Stop and send name the caller as the writer and answer the refusal with 403', async () => {
+    writers = [];
+    editOutcome = 'not_author';
+    interruptOutcome = 'not_author';
+    try {
+      await notAuthor(await call('PATCH', '', { text: 'rewritten' }));
+      await notAuthor(await call('PATCH', '', { delivery: 'interrupt' }));
+    } finally {
+      editOutcome = 'edited';
+      interruptOutcome = 'edited';
+    }
+    expect(writers).toEqual([{ userId: USER_ID }, { userId: USER_ID }]);
+  });
+
+  test('someone who manages the session removes it, and does not send it', async () => {
+    commandTable = [row({ actorUserId: OTHER_MEMBER })];
+    visibleSession = { ...visibleSession, canManageLifecycle: true };
+    await notAuthor(await call('POST', '/retry'));
+    expect((await call('DELETE')).status).toBe(200);
+    expect(commandTable).toEqual([]);
   });
 });

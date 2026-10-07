@@ -10,30 +10,12 @@
  * the other.
  */
 
-export interface CompactToolCall {
-  tool: string;
-  status: string | null;
-  /** `detail: 'full'` only: the call's arguments as JSON, and what it returned
-   *  (or its error), each cut to the read's `chars` bound. */
-  input?: string;
-  output?: string;
-}
-
-export interface CompactMessage {
-  /** The OpenCode message id, verbatim. This is the identity a client settles
-   *  a mirror-sourced message against when the runtime finally answers. */
-  id: string | null;
-  /** `info.parentID` — which user message a step was parented on. */
-  parent_id: string | null;
-  role: string;
-  created: string | null;
-  completed: string | null;
-  text: string;
-  tools: CompactToolCall[];
-  files: Array<{ filename: string | null; mime: string | null }>;
-  reasoning_omitted: boolean;
-  error: { name?: string; message?: string } | null;
-}
+/** The compact row and its tool calls are wire shapes: `@kortix/api-contract`. */
+export type {
+  SessionTranscriptMessage as CompactMessage,
+  SessionTranscriptToolCall as CompactToolCall,
+} from '@kortix/api-contract';
+import type { SessionTranscriptMessage as CompactMessage } from '@kortix/api-contract';
 
 export type RawOpencodePart = {
   type?: string;

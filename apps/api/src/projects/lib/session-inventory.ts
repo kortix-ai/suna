@@ -1,12 +1,12 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 import { config } from '../../config';
 import {
+  agentSessionStanding,
   isProjectSessionVisibleTo,
   type SecretGrant,
   type ShareSubject,
 } from '../../connectors/share';
 import type { projectSessions, sessionSandboxes } from '@kortix/db';
-import { agentSessionStanding } from './agent-session-standing';
 import { ACTIVE_SESSION_STATUSES } from './session-status';
 import { isWarmProjectSession } from './warm-sessions';
 
@@ -107,7 +107,7 @@ export function selectSessionRowsForViewer(input: {
    */
   accountSessionOversight?: boolean;
   /**
-   * The caller is an agent session under the `agent_principal` model (spec §2).
+   * The caller is an agent session under the agent-principal model (spec §2).
    * It lists only its own session, its children, and project-visible sessions —
    * never the launcher's other private or restricted ones.
    */
@@ -196,7 +196,13 @@ export function selectSessionRowsForViewer(input: {
       ) {
         return false;
       }
-      return item.row.status !== 'stopped' || item.runtimeStatus === 'stopped';
+      // A stopped session lists whatever its runtime row says: a terminal turn
+      // error parks the session (`parkTurnError`) while its box is still up,
+      // and a session stopped before its first box was created has no runtime
+      // row at all. Hiding either made the session vanish from this list and
+      // the sidebar while `sessions info` and the manager inventory returned
+      // it (KRTX-1452); clients read `runtime_status` from the payload.
+      return true;
     }),
   };
 }
@@ -223,6 +229,12 @@ export function selectSessionRowsForViewer(input: {
 /** One row's position in the `(updated_at DESC, session_id DESC)` order. */
 export interface SessionListCursor {
   updatedAt: Date;
+  /**
+   * `updatedAt` at full (microsecond) precision, as the database printed it.
+   * A JS Date holds milliseconds, so a keyset compare against `updatedAt` alone
+   * skipped rows that differ from the boundary row below a millisecond.
+   */
+  updatedAtIso?: string;
   sessionId: string;
 }
 
@@ -270,7 +282,7 @@ export function encodeSessionCursor(cursor: SessionListCursor, scope: SessionCur
   const cipher = createCipheriv('aes-256-gcm', cursorKey(scope), iv, {
     authTagLength: CURSOR_TAG_BYTES,
   });
-  const payload = `${cursor.updatedAt.toISOString()}|${cursor.sessionId}`;
+  const payload = `${cursor.updatedAtIso ?? cursor.updatedAt.toISOString()}|${cursor.sessionId}`;
   const ciphertext = Buffer.concat([cipher.update(payload, 'utf8'), cipher.final()]);
   return [
     'v1',
@@ -316,18 +328,22 @@ export function decodeSessionCursor(
   }
   const separator = payload.indexOf('|');
   if (separator <= 0) return null;
-  const updatedAt = new Date(payload.slice(0, separator));
+  const updatedAtIso = payload.slice(0, separator);
+  const updatedAt = new Date(updatedAtIso);
   const sessionId = payload.slice(separator + 1);
   if (!sessionId || Number.isNaN(updatedAt.getTime())) return null;
-  return { updatedAt, sessionId };
+  return { updatedAt, updatedAtIso, sessionId };
 }
 
 /** The cursor that resumes AFTER this row. */
 export function cursorForRow(
-  row: Pick<ProjectSessionRow, 'updatedAt' | 'sessionId'>,
+  row: Pick<ProjectSessionRow, 'updatedAt' | 'sessionId'> & { updatedAtIso?: string },
   scope: SessionCursorScope,
 ): string {
-  return encodeSessionCursor({ updatedAt: row.updatedAt, sessionId: row.sessionId }, scope);
+  return encodeSessionCursor(
+    { updatedAt: row.updatedAt, updatedAtIso: row.updatedAtIso, sessionId: row.sessionId },
+    scope,
+  );
 }
 
 /** Default page size for the session list, and the ceiling a caller may ask

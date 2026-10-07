@@ -24,3 +24,9 @@ export function setSessionToken(token: string): void {
 export function clearSessionToken(): void {
   window.localStorage.removeItem(SESSION_KEY);
 }
+
+/** Authorization headers for the app's own BFF routes — empty when signed out
+ *  (an empty header object sends nothing, same as a conditional spread). */
+export function authHeaders(token?: string | null): Record<string, string> {
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}

@@ -13,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
 import { cn, relativeTime } from '@/lib/utils';
+import { ApiError } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, FolderX, Plus, Settings } from 'lucide-react';
 import Link from 'next/link';
@@ -30,9 +31,7 @@ const STATUS_DOT: Record<string, string> = {
 
 /** 403/404 from the API — access denied or the project doesn't exist here. */
 function isAccessError(err: unknown): boolean {
-  const e = err as { status?: number; message?: string } | undefined;
-  if (e?.status === 403 || e?.status === 404) return true;
-  return /\b40[34]\b|forbidden|do not have access|not found/i.test(e?.message ?? '');
+  return err instanceof ApiError && (err.status === 403 || err.status === 404);
 }
 
 export function ProjectShell({ children }: { children: React.ReactNode }) {

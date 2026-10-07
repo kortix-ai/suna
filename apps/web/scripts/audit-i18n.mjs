@@ -828,8 +828,6 @@ function scanFile(file) {
       const coveredAuditTitleText =
         file === path.join(srcDir, 'components/iam/audit-display-helpers.ts') &&
         localizedAuditTitleText.has(node.text);
-      const coveredStarterPromptText =
-        file === path.join(srcDir, 'lib/starter-prompts.ts') && ['label', 'prompt'].includes(name);
       const coveredSessionsCopy =
         file === path.join(srcDir, 'features/workspace/settings/tabs/sessions-tab.tsx') &&
         [
@@ -849,7 +847,7 @@ function scanFile(file) {
         file === path.join(srcDir, 'features/marketing/company-os-sections.tsx') &&
         ['codePoints', 'runsPoints'].includes(catalogRoot);
       const coveredRoleCapabilityCopy =
-        file === path.join(srcDir, 'components/iam/role-capability-matrix.tsx') &&
+        file === path.join(srcDir, 'components/iam/role-capability-model.ts') &&
         catalogRoot === 'AREA_COPY';
       const coveredSnapshotsFallbackCopy =
         file === path.join(srcDir, 'features/workspace/settings/tabs/snapshots-tab.tsx') &&
@@ -1109,7 +1107,6 @@ function scanFile(file) {
         !coveredRoleText &&
         !coveredSiteConfigText &&
         !coveredAuditTitleText &&
-        !coveredStarterPromptText &&
         !coveredSessionsCopy &&
         !coveredSettingsRail &&
         !coveredOnboardingProfileFixture &&

@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -18,6 +19,8 @@ const CITATION = [
   `(\\.\\./)+${TREE}/`,
 ].join('|');
 
+const citation = new RegExp(CITATION, 'm');
+
 function git(args: string[]): string[] {
   try {
     return execFileSync('git', args, { cwd: REPO_ROOT, encoding: 'utf8' })
@@ -31,6 +34,22 @@ function git(args: string[]): string[] {
 }
 
 describe('the top-level documentation tree', () => {
+  it('rejects root and relative citations while allowing nested trees and URLs', () => {
+    for (const text of [
+      `See ${TREE}/runbooks/example.md`,
+      `See ../${TREE}/example.md`,
+      `See ${TREE}/POLICY.md`,
+      `prefix\0${TREE}/plans/example.md`,
+      `prefix\n${TREE}/incidents/example.md`,
+    ])
+      expect(citation.test(text)).toBe(true);
+    for (const text of [
+      `See apps/web/content/${TREE}/example.mdx`,
+      `See https://example.test/${TREE}/runbooks/example.md`,
+    ])
+      expect(citation.test(text)).toBe(false);
+  });
+
   it('tracks no file', () => {
     expect(git(['ls-files', '--', `${TREE}/`])).toEqual([]);
   });
@@ -45,12 +64,15 @@ describe('the top-level documentation tree', () => {
       // Its fixture path sits inside a skill's own directory, not the repo root.
       ':!packages/sdk/src/core/turns/tools/skill-helpers.test.ts',
     ];
-    // A literal pass first: the extended regex over the whole tree took 3.2 to
-    // 4.6 s of this test's 5 s budget in the CI core lane, and timed out under
-    // local load. The literal pass leaves ~200 files for the regex.
+    // V8 checks the candidates without the slow second Git regex scan or unbounded grep output.
     const candidates = git(['grep', '-l', '-F', `${TREE}/`, '--', ...scope]);
-    const offenders =
-      candidates.length === 0 ? [] : git(['grep', '-l', '-E', CITATION, '--', ...candidates]);
+    const offenders = candidates.filter((path) =>
+      citation.test(readFileSync(join(REPO_ROOT, path), 'utf8')),
+    );
     expect(offenders).toEqual([]);
-  });
+    // The runner runs this lane concurrently with the DB lane's 192 throwaway
+    // Postgres containers (CI gives each lane its own runner), and the
+    // whole-tree `git grep` then needs more than the 5 s default on a loaded
+    // box. The assertion is unchanged; only the budget is load-tolerant.
+  }, 30_000);
 });
