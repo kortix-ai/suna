@@ -99,6 +99,9 @@ let dbPath: string
 function buildDb(messages = 6, attachmentBytes = 120_000): void {
   const db = new Database(dbPath, { create: true })
   db.exec('PRAGMA journal_mode = WAL')
+  // A throwaway temp database: durability costs real fsyncs, and on a loaded
+  // worker sandbox that pushed the beforeEach past bun's 5 s default.
+  db.exec('PRAGMA synchronous = OFF')
   db.exec(`
     CREATE TABLE session (id text PRIMARY KEY, project_id text NOT NULL, parent_id text, slug text NOT NULL,
       directory text NOT NULL, title text NOT NULL, version text NOT NULL, revert text, agent text, model text,

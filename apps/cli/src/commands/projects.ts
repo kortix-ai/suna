@@ -1356,7 +1356,8 @@ async function projectsInfo(arg?: string, json = false, hostArg?: string): Promi
   if (!located) return 1;
   const p = located.located.project;
   if (json) {
-    emitJson(p);
+    // The API's wire name for the id is `project_id`; scripts read `.id`.
+    emitJson({ id: p.project_id, ...p });
     return 0;
   }
   process.stdout.write('\n');
