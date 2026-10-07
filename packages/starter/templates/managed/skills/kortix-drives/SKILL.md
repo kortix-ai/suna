@@ -1,40 +1,38 @@
 ---
 name: kortix-drives
-description: "Kortix Drive folders under `/drives` — the user's own drive, the agent's own drive, and team drives, synced with the Kortix web app and every other session. Load before you read or save a file the user should keep, look for the user's notes, preferences or context, keep memory or outputs across sessions, or when you see a file named `... (conflict <date> <time>)...`."
+description: "The project's Files under `/drives`: the user's own folder (their desktop, also at `~/Desktop`) and the folders shared with you, synced with the Kortix web app and every other session. Load before you read or save a file the user should keep, look for the user's notes, preferences or context, keep memory across sessions, or when you see a file named `... (conflict <date> <time>)...`."
 ---
 
 <skill name="kortix-drives">
 
 <overview>
-A **drive** is a folder that lives outside this sandbox. It syncs both ways
-within seconds with the Kortix web app and with every other session that
-mounts it, it keeps a version history, and it outlives this session.
-Everything under `/drives` is a drive; everything else on this machine is
-session scratch.
+**Files** is the project's shared folder tree. It lives outside this sandbox,
+syncs both ways within seconds with the Kortix web app and with every other
+session that mounts it, keeps a version history, and outlives this session.
+Each folder under `/drives` is one folder of Files that this session may use;
+everything else on this machine is session scratch.
 
-`/drives/README.md` is the live map for THIS session: which drives are
+`/drives/README.md` is the live map for THIS session: which folders are
 mounted, where, read-only or read-write, and any open conflicts. Kortix
-rewrites it whenever a drive is attached, detached or changes mode. Read it
-first; never edit it.
+rewrites it whenever access changes. Read it first; never edit it.
 </overview>
 
 <layout>
 | Path | What it is | Access |
 | --- | --- | --- |
-| `/drives/me` | the user's own drive: their notes, preferences, context | read-only by default |
-| `/drives/from-agents` | the "From agents" folder of the user's drive | read-write |
-| `/drives/agent` | your own drive: your memory and outputs, shared by every session of this agent | read-write |
-| `/drives/<name>` | a company drive, or a drive a colleague shared | as granted |
+| `/drives/me` (and `~/Desktop`) | the user's own folder, `Users/<name>` in Files | read-write |
+| `/drives/me/Memory` | what you keep about this user across sessions | read-write |
+| `/drives/company` | the project's shared `Company` folder, with `Company/Memory` for what the whole team should know | as shared |
+| `/drives/<name>` | any other folder shared with you, this agent or this user | as shared |
 
 - Look in `/drives/me` for the user's context before you ask them for it.
-- Save files meant for the user in `/drives/from-agents`. They appear in the
-  user's drive under **From agents**.
-- Keep what you need to remember across sessions in `/drives/agent`.
-- When `/drives/me` is read-write, the user opted in to full write for this
-  session or this agent. Still prefer `/drives/from-agents` for new files;
-  change the user's own files only when asked.
-- A drive can be attached or detached while you run. Re-read
-  `/drives/README.md` when a path you expected is missing.
+- Save files you make for the user in `/drives/me`.
+- Keep what you learn about the user in `/drives/me/Memory`; keep what the
+  whole team should know in `Company/Memory` when it is mounted.
+- You see only folders someone shared. If you need another folder, ask the
+  user to share it with you in Files.
+- Access can change while you run. Re-read `/drives/README.md` when a path you
+  expected is missing or refuses writes.
 </layout>
 
 <conflicts>
@@ -53,12 +51,10 @@ one version stays at the path and the other is saved beside it as
 - A file written here is visible elsewhere within seconds, not instantly.
   Avoid two sessions editing one file at once.
 - Writes go through `sync`/close like any disk: close files you write.
-- Do not put secrets or credentials in a drive: other people with access to
-  the drive read the same files.
-- A session mounts a limited number of drives. Drives that did not fit are
+- Do not put secrets or credentials in Files: other people with access to a
+  folder read the same files.
+- A session mounts a limited number of folders. Folders that did not fit are
   listed in `/drives/README.md`; tell the user rather than look for them.
-- A drive can be taken away or turned read-only while you work, when someone
-  removes its grant. Its folder then disappears or refuses writes: tell the user.
 </limits>
 
 </skill>

@@ -1,46 +1,36 @@
-// Drives — shared folders that sessions mount and people browse. A personal
-// drive belongs to one user, an agent drive to one project agent, a company
-// drive to the account (attached to projects by a grant).
+// A project's Files: one drive per project, a tree of folders, and access per
+// folder (read, write or manage) for people, teams, agents and the whole
+// project. Each person has their own folder, `/Users/<name>`, private until
+// they share it and mounted as their desktop in their sessions.
 
 import { ApiError, backendApi } from '../../http/api-client';
 import { authenticatedFetch } from '../../http/auth';
 import { platformConfig } from '../../http/config';
 import { unwrap } from './shared';
 
-export type DriveKind = 'personal' | 'agent' | 'company';
-export type DriveGrantAccess = 'read' | 'write';
+export type FolderLevel = 'read' | 'write' | 'manage';
+export type FolderAccess = 'none' | FolderLevel;
+export type FolderPrincipalType = 'user' | 'group' | 'agent' | 'project';
 
 export interface Drive {
   driveId: string;
   accountId: string;
-  kind: DriveKind;
+  projectId: string;
+  kind: 'project';
   name: string;
-  ownerUserId: string | null;
-  projectId: string | null;
-  agentName: string | null;
-  isDefault: boolean;
   /** Null when the drive has no files yet or its size could not be read. */
   sizeBytes: number | null;
+  sizeLimitBytes: number | null;
   fileCount: number | null;
   lastChangeAt: string | null;
   createdAt: string;
   updatedAt: string;
-  /** Where a session sees the drive, e.g. `/drives/me`. */
-  mountPath: string;
-  /** The size cap of the drive's storage, when known. */
-  sizeLimitBytes?: number | null;
-  /** What the caller may do: `read`, `write` (files) or `manage` (also rename, delete and grant). */
-  access: 'read' | 'write' | 'manage';
-  /** A personal drive someone else owns and shared with the caller. */
-  shared?: boolean;
-  /** Who shared it, for a shared drive. */
-  ownerEmail?: string | null;
-  /** "(conflict ...)" copies on the drive that nobody resolved or dismissed yet. */
+  /** The caller's access at the top of the drive: `manage` for project admins. */
+  access: FolderAccess;
+  /** The caller's own folder, `/Users/<name>`. */
+  personalFolder: string | null;
+  /** "(conflict ...)" copies in folders the caller can see that nobody resolved or dismissed yet. */
   openConflicts?: number;
-  /** Company drives listed for a project: that project's grant, or null when it has none. */
-  projectAccess?: DriveGrantAccess | null;
-  /** Company drives listed for a project: the grants to that project's agents. */
-  agentGrants?: Array<{ agentName: string; access: DriveGrantAccess }>;
 }
 
 export interface DriveEntry {
@@ -49,38 +39,48 @@ export interface DriveEntry {
   type: 'file' | 'dir' | 'symlink';
   size: number;
   mtime: number;
+  /** What the caller may do with this entry. */
+  access: FolderAccess;
+  /** The folder has sharing of its own. */
+  shared?: boolean;
 }
 
 export interface DriveVersion {
   id: string;
   createdAt: string;
-  /** `created` (the empty drive), `edit` (a change made in Drive), `sync` (changes from a session), `restore`. */
+  /** `created` (the empty drive), `edit` (a change made in Files), `sync` (changes from a session), `restore`. */
   kind: 'created' | 'edit' | 'sync' | 'restore';
   author: 'drive' | 'session' | 'system';
   changes: { changed: number; deleted: number };
 }
 
-/**
- * Where a drive mounts beyond its owner's sessions: every session of a
- * project, every session a person starts, or every session of one agent.
- * On a personal drive, `user` is a share and an `agent` grant with `write`
- * lets that agent write the whole drive in the owner's sessions.
- */
-export type DriveGrantSubject =
-  | { type: 'project'; projectId: string }
-  | { type: 'user'; userId: string }
-  | { type: 'agent'; projectId: string; agentName: string };
-
-export interface DriveGrant {
+/** One grant on a folder, or on a folder above it (`inherited`). */
+export interface FolderGrant {
   grantId: string;
-  type: DriveGrantSubject['type'];
-  projectId: string | null;
-  projectName: string | null;
-  userId: string | null;
-  userEmail: string | null;
-  agentName: string | null;
-  access: DriveGrantAccess;
-  createdAt: string;
+  path: string;
+  inherited: boolean;
+  /** Made by Kortix: a person's own folder, the default for Company. */
+  system: boolean;
+  principalType: FolderPrincipalType;
+  principalId: string;
+  label: string;
+  level: FolderLevel;
+}
+
+export interface FolderAccessView {
+  path: string;
+  /** The caller's own access. */
+  access: FolderAccess;
+  /** The folder can be shared (not the top of Files, not /Users). */
+  grantable: boolean;
+  grants: FolderGrant[];
+}
+
+export interface FolderPrincipals {
+  people: Array<{ id: string; label: string }>;
+  teams: Array<{ id: string; label: string }>;
+  /** `id` is the agent's name. */
+  agents: Array<{ id: string; label: string }>;
 }
 
 /** A "(conflict ...)" copy kept beside `originalPath` when two writers changed it at once. */
@@ -93,103 +93,66 @@ export interface DriveConflict {
 
 export interface SessionDrive {
   driveId: string;
+  /** The folder, for people: "Company", "Users / ana". */
   name: string;
-  kind: DriveKind;
+  kind: 'project';
   mountPath: string;
   readOnly: boolean;
-  /** Only this folder of the drive is mounted (the "From agents" folder). */
-  subdir?: string;
-  /** The writable "From agents" folder of the session owner's drive. */
-  fromAgents?: boolean;
-  /** `me`: the session owner's own drive; `agent`: the session agent's drive. */
-  role?: 'me' | 'agent' | 'drive';
+  /** The folder of the drive this mount is. */
+  subdir: string;
+  /** `me`: the session owner's own folder, their desktop. */
+  role?: 'me' | 'drive';
   openConflicts?: number;
-  /** Set for a personal drive someone shared into the session. */
-  ownerEmail?: string;
 }
 
 export interface SessionDrives {
   drives: SessionDrive[];
-  /** The session is its owner's own (private, started by them): their drives mount in it. */
+  /** The session is its owner's own (private, started by them): their folder mounts in it. */
   personal: boolean;
-  /** Drives the session should have that did not fit in its sandbox's mount slots. */
+  /** Folders the session should have that did not fit in its sandbox's mount slots. */
   skipped?: Array<{ driveId: string; name: string }>;
-  /** What to tell people about `skipped`, or null when every drive fit. */
+  /** What to tell people about `skipped`, or null when every folder fit. */
   skippedMessage?: string | null;
-}
-
-export interface SessionDriveChange extends SessionDrives {
-  /** False when the session is not running: the change applies when it next starts. */
-  live: boolean;
 }
 
 const drivePath = (driveId: string) => `/drives/${encodeURIComponent(driveId)}`;
 
-/** The caller's drives. Creates their default personal drive on first use. */
-export async function listDrives(scope?: { projectId?: string; accountId?: string }): Promise<Drive[]> {
-  const query: Record<string, string> = {};
-  if (scope?.projectId) query.projectId = scope.projectId;
-  else if (scope?.accountId) query.account_id = scope.accountId;
-  const qs = Object.keys(query).length ? `?${new URLSearchParams(query)}` : '';
-  return unwrap(await backendApi.get<{ drives: Drive[] }>(`/drives${qs}`), 'Failed to load drives').drives;
+/** The project's Files. Creates the drive and the caller's own folder on first use. */
+export async function getProjectDrive(projectId: string): Promise<Drive> {
+  const drives = unwrap(
+    await backendApi.get<{ drives: Drive[] }>(`/drives?${new URLSearchParams({ projectId })}`),
+    'Failed to load files',
+  ).drives;
+  if (!drives[0]) throw new ApiError('Files not found', { status: 404 });
+  return drives[0];
 }
 
-export async function createDrive(input: {
-  name: string;
-  kind: 'personal' | 'company';
-  accountId?: string;
-}): Promise<Drive> {
+/** Who has access to a folder: its own grants and the ones it inherits. */
+export async function getFolderAccess(driveId: string, path: string): Promise<FolderAccessView> {
   return unwrap(
-    await backendApi.post<Drive>('/drives', {
-      name: input.name,
-      kind: input.kind,
-      ...(input.accountId ? { account_id: input.accountId } : {}),
-    }),
-    'Failed to create drive',
+    await backendApi.get<FolderAccessView>(`${drivePath(driveId)}/access?${new URLSearchParams({ path })}`),
+    'Failed to load sharing',
   );
 }
 
-export async function renameDrive(driveId: string, name: string): Promise<Drive> {
-  return unwrap(await backendApi.patch<Drive>(drivePath(driveId), { name }), 'Failed to rename drive');
-}
-
-/** Deletes the drive and every file in it. */
-export async function deleteDrive(driveId: string): Promise<void> {
-  unwrap(await backendApi.delete(drivePath(driveId)), 'Failed to delete drive');
-}
-
-/** Grant a drive to a project, a person or an agent. Granting the same subject again changes its access. */
-export async function grantDrive(
+/**
+ * Share a folder: a person (user id), a team (group id), an agent (its name)
+ * or everyone in the project. Sharing again changes the level.
+ */
+export async function shareFolder(
   driveId: string,
-  subject: DriveGrantSubject,
-  access: DriveGrantAccess = 'write',
-): Promise<DriveGrant> {
-  return unwrap(
-    await backendApi.post<DriveGrant>(`${drivePath(driveId)}/grants`, { ...subject, access }),
-    'Failed to grant drive',
-  );
+  input: { path: string; principalType: FolderPrincipalType; principalId?: string; level: FolderLevel },
+): Promise<{ grantId: string }> {
+  return unwrap(await backendApi.put<{ grantId: string }>(`${drivePath(driveId)}/access`, input), 'Failed to share folder');
 }
 
-/** Remove the grant to one subject. */
-export async function revokeDrive(driveId: string, subject: DriveGrantSubject): Promise<void> {
-  const query: Record<string, string> =
-    subject.type === 'user'
-      ? { userId: subject.userId }
-      : subject.type === 'agent'
-        ? { projectId: subject.projectId, agentName: subject.agentName }
-        : { projectId: subject.projectId };
-  unwrap(await backendApi.delete(`${drivePath(driveId)}/grants?${new URLSearchParams(query)}`), 'Failed to remove grant');
+export async function unshareFolder(driveId: string, grantId: string): Promise<void> {
+  unwrap(await backendApi.delete(`${drivePath(driveId)}/access/${encodeURIComponent(grantId)}`), 'Failed to stop sharing');
 }
 
-/** Remove one grant by id. */
-export async function removeDriveGrant(driveId: string, grantId: string): Promise<void> {
-  unwrap(await backendApi.delete(`${drivePath(driveId)}/grants/${encodeURIComponent(grantId)}`), 'Failed to remove grant');
-}
-
-/** Where the drive is granted. Needs manage access to the drive. */
-export async function listDriveGrants(driveId: string): Promise<DriveGrant[]> {
-  return unwrap(await backendApi.get<{ grants: DriveGrant[] }>(`${drivePath(driveId)}/grants`), 'Failed to load grants')
-    .grants;
+/** People, teams and agents a folder can be shared with. */
+export async function listFolderPrincipals(driveId: string): Promise<FolderPrincipals> {
+  return unwrap(await backendApi.get<FolderPrincipals>(`${drivePath(driveId)}/principals`), 'Failed to load people');
 }
 
 /** Conflict copies on the drive that are still open. */
@@ -208,12 +171,17 @@ export async function dismissDriveConflict(driveId: string, conflictId: string):
   );
 }
 
-/** One folder's entries (not recursive). */
+/** One folder's entries (not recursive): only what the caller may see, each with the caller's access. */
 export async function listDriveFiles(driveId: string, path = '/'): Promise<DriveEntry[]> {
+  return (await listDriveFolder(driveId, path)).entries;
+}
+
+/** One folder's entries and the caller's access to the folder itself. */
+export async function listDriveFolder(driveId: string, path = '/'): Promise<{ entries: DriveEntry[]; access: FolderAccess }> {
   return unwrap(
-    await backendApi.get<{ entries: DriveEntry[] }>(`${drivePath(driveId)}/files?${new URLSearchParams({ path })}`),
+    await backendApi.get<{ entries: DriveEntry[]; access: FolderAccess }>(`${drivePath(driveId)}/files?${new URLSearchParams({ path })}`),
     'Failed to load files',
-  ).entries;
+  );
 }
 
 /**
@@ -282,65 +250,20 @@ export async function listDriveVersions(driveId: string): Promise<DriveVersion[]
   ).versions;
 }
 
-/** Make the drive's files equal a version's. Later versions stay in the history. */
-export async function restoreDriveVersion(driveId: string, versionId: string): Promise<Drive> {
-  return unwrap(
-    await backendApi.post<Drive>(`${drivePath(driveId)}/restore`, { versionId }),
-    'Failed to restore version',
-  );
+/** Make the drive's files equal a version's (project admins). Later versions stay in the history. */
+export async function restoreDriveVersion(driveId: string, versionId: string): Promise<void> {
+  unwrap(await backendApi.post(`${drivePath(driveId)}/restore`, { versionId }), 'Failed to restore version');
 }
 
 const sessionDrivesPath = (projectId: string, sessionId: string) =>
   `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/drives`;
 
-/** The drives the session's current sandbox mounts, and where. */
+/** The folders the session's current sandbox mounts, and where. */
 export async function listSessionDrives(projectId: string, sessionId: string): Promise<SessionDrive[]> {
   return (await getSessionDrives(projectId, sessionId)).drives;
 }
 
-/** The session's drives, and whether it is its owner's own session. */
+/** The session's folders, and whether it is its owner's own session. */
 export async function getSessionDrives(projectId: string, sessionId: string): Promise<SessionDrives> {
-  return unwrap(await backendApi.get<SessionDrives>(sessionDrivesPath(projectId, sessionId)), 'Failed to load session drives');
-}
-
-/**
- * Attach a drive to a session: mounted in the running sandbox now and in
- * every later sandbox of the session. A personal drive attaches only to its
- * holder's own private session.
- */
-export async function attachSessionDrive(
-  projectId: string,
-  sessionId: string,
-  input: { driveId: string; readOnly?: boolean },
-): Promise<SessionDriveChange> {
-  return unwrap(
-    await backendApi.post<SessionDriveChange>(sessionDrivesPath(projectId, sessionId), input),
-    'Failed to attach drive',
-  );
-}
-
-/** Take a drive out of a session, now and for every later sandbox of it. */
-export async function detachSessionDrive(projectId: string, sessionId: string, driveId: string): Promise<SessionDriveChange> {
-  return unwrap(
-    await backendApi.delete<SessionDriveChange>(`${sessionDrivesPath(projectId, sessionId)}/${encodeURIComponent(driveId)}`),
-    'Failed to detach drive',
-  );
-}
-
-/**
- * Switch a session's drive between read-only and read-write. `write` on your
- * own drive is the per-session full-write opt-in.
- */
-export async function setSessionDriveAccess(
-  projectId: string,
-  sessionId: string,
-  driveId: string,
-  access: DriveGrantAccess,
-): Promise<SessionDriveChange> {
-  return unwrap(
-    await backendApi.patch<SessionDriveChange>(`${sessionDrivesPath(projectId, sessionId)}/${encodeURIComponent(driveId)}`, {
-      access,
-    }),
-    'Failed to change drive access',
-  );
+  return unwrap(await backendApi.get<SessionDrives>(sessionDrivesPath(projectId, sessionId)), 'Failed to load session files');
 }

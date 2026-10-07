@@ -2,29 +2,15 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { ApiError } from '../../http/api-client';
 import { configureKortix } from '../../http/config';
 import {
-  attachSessionDrive,
-  createDrive,
-  deleteDrive,
-  detachSessionDrive,
-  dismissDriveConflict,
-  getSessionDrives,
-  listDriveConflicts,
-  listDriveGrants,
-  removeDriveGrant,
-  setSessionDriveAccess,
   deleteDriveFile,
   downloadDriveFile,
   getDriveFileUrl,
-  grantDrive,
   listDriveFiles,
-  listDrives,
   listDriveVersions,
   listSessionDrives,
   makeDriveFolder,
   moveDriveFile,
-  renameDrive,
   restoreDriveVersion,
-  revokeDrive,
   uploadDriveFile,
 } from './drives';
 
@@ -50,86 +36,6 @@ beforeEach(() => {
 configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
 const last = () => calls[calls.length - 1]!;
 const D = '11111111-2222-4333-8444-555555555555';
-
-test('listDrives scopes by project, or by account', async () => {
-  respond(200, { drives: [{ driveId: D, kind: 'personal', name: 'My Drive' }] });
-  const drives = await listDrives({ projectId: 'p1' });
-  expect(last().url).toBe('http://test.local/drives?projectId=p1');
-  expect(drives[0]!.driveId).toBe(D);
-  await listDrives({ accountId: 'a1' });
-  expect(last().url).toBe('http://test.local/drives?account_id=a1');
-  await listDrives();
-  expect(last().url).toBe('http://test.local/drives');
-});
-
-test('createDrive, renameDrive and deleteDrive send the documented bodies', async () => {
-  respond(201, { driveId: D, kind: 'company', name: 'Team' });
-  expect((await createDrive({ name: 'Team', kind: 'company', accountId: 'a1' })).driveId).toBe(D);
-  expect(last().method).toBe('POST');
-  expect(JSON.parse(String(last().body))).toEqual({ name: 'Team', kind: 'company', account_id: 'a1' });
-
-  respond(200, { driveId: D, name: 'Docs' });
-  await renameDrive(D, 'Docs');
-  expect([last().method, last().url]).toEqual(['PATCH', `http://test.local/drives/${D}`]);
-  expect(JSON.parse(String(last().body))).toEqual({ name: 'Docs' });
-
-  next = { status: 204, body: null, type: '' };
-  await deleteDrive(D);
-  expect([last().method, last().url]).toEqual(['DELETE', `http://test.local/drives/${D}`]);
-});
-
-test('grantDrive grants to a project, a person or an agent; revokeDrive names the subject', async () => {
-  respond(200, { grantId: 'g1', type: 'project', projectId: 'p1', access: 'read' });
-  expect((await grantDrive(D, { type: 'project', projectId: 'p1' }, 'read')).access).toBe('read');
-  expect(last().url).toBe(`http://test.local/drives/${D}/grants`);
-  expect(JSON.parse(String(last().body))).toEqual({ type: 'project', projectId: 'p1', access: 'read' });
-  await grantDrive(D, { type: 'user', userId: 'u1' });
-  expect(JSON.parse(String(last().body))).toEqual({ type: 'user', userId: 'u1', access: 'write' });
-  await grantDrive(D, { type: 'agent', projectId: 'p1', agentName: 'kortix' }, 'write');
-  expect(JSON.parse(String(last().body))).toEqual({ type: 'agent', projectId: 'p1', agentName: 'kortix', access: 'write' });
-
-  next = { status: 204, body: null, type: '' };
-  await revokeDrive(D, { type: 'project', projectId: 'p1' });
-  expect([last().method, last().url]).toEqual(['DELETE', `http://test.local/drives/${D}/grants?projectId=p1`]);
-  await revokeDrive(D, { type: 'agent', projectId: 'p1', agentName: 'a b' });
-  expect(last().url).toBe(`http://test.local/drives/${D}/grants?projectId=p1&agentName=a+b`);
-  await revokeDrive(D, { type: 'user', userId: 'u1' });
-  expect(last().url).toBe(`http://test.local/drives/${D}/grants?userId=u1`);
-  await removeDriveGrant(D, 'g1');
-  expect([last().method, last().url]).toEqual(['DELETE', `http://test.local/drives/${D}/grants/g1`]);
-
-  respond(200, { grants: [{ grantId: 'g1', type: 'user', userEmail: 'a@b.c', access: 'read' }] });
-  expect((await listDriveGrants(D))[0]!.userEmail).toBe('a@b.c');
-  expect(last().url).toBe(`http://test.local/drives/${D}/grants`);
-});
-
-test('conflicts are listed and dismissed per drive', async () => {
-  respond(200, { conflicts: [{ conflictId: 'c1', path: '/a (conflict 2026-10-01 1405).md', originalPath: '/a.md', detectedAt: 't' }] });
-  expect((await listDriveConflicts(D))[0]!.originalPath).toBe('/a.md');
-  expect(last().url).toBe(`http://test.local/drives/${D}/conflicts`);
-  next = { status: 204, body: null, type: '' };
-  await dismissDriveConflict(D, 'c1');
-  expect([last().method, last().url]).toEqual(['POST', `http://test.local/drives/${D}/conflicts/c1/dismiss`]);
-});
-
-test('session drives: read, attach, detach and switch access', async () => {
-  const body = { drives: [{ driveId: D, name: 'Brand', kind: 'company', mountPath: '/drives/brand', readOnly: true, openConflicts: 0 }], personal: true, live: true };
-  respond(200, body);
-  expect((await getSessionDrives('p1', 's1')).personal).toBe(true);
-  expect(last().url).toBe('http://test.local/projects/p1/sessions/s1/drives');
-
-  const attached = await attachSessionDrive('p1', 's1', { driveId: D, readOnly: true });
-  expect([last().method, last().url]).toEqual(['POST', 'http://test.local/projects/p1/sessions/s1/drives']);
-  expect(JSON.parse(String(last().body))).toEqual({ driveId: D, readOnly: true });
-  expect(attached.live).toBe(true);
-
-  await detachSessionDrive('p1', 's1', D);
-  expect([last().method, last().url]).toEqual(['DELETE', `http://test.local/projects/p1/sessions/s1/drives/${D}`]);
-
-  await setSessionDriveAccess('p1', 's1', D, 'write');
-  expect([last().method, last().url]).toEqual(['PATCH', `http://test.local/projects/p1/sessions/s1/drives/${D}`]);
-  expect(JSON.parse(String(last().body))).toEqual({ access: 'write' });
-});
 
 test('file operations encode the path in the query', async () => {
   respond(200, { entries: [{ path: '/a b', name: 'a b', type: 'dir', size: 0, mtime: 1 }] });
@@ -181,12 +87,12 @@ test('versions, restore and session drives', async () => {
   expect((await listDriveVersions(D))[0]!.id).toBe('c1');
   expect(last().url).toBe(`http://test.local/drives/${D}/versions`);
 
-  respond(200, { driveId: D });
+  next = { status: 204, body: null, type: '' };
   await restoreDriveVersion(D, 'c1');
   expect([last().method, last().url]).toEqual(['POST', `http://test.local/drives/${D}/restore`]);
   expect(JSON.parse(String(last().body))).toEqual({ versionId: 'c1' });
 
-  respond(200, { drives: [{ driveId: D, name: 'My Drive', kind: 'personal', mountPath: '/drives/me', readOnly: false }] });
+  respond(200, { drives: [{ driveId: D, name: 'Users / ana', kind: 'project', mountPath: '/drives/me', readOnly: false, subdir: '/Users/ana', role: 'me' }] });
   const mounted = await listSessionDrives('p1', 's1');
   expect(last().url).toBe('http://test.local/projects/p1/sessions/s1/drives');
   expect(mounted[0]!.mountPath).toBe('/drives/me');
