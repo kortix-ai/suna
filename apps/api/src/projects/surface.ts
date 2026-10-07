@@ -15,6 +15,8 @@ export {
   RETRYABLE_GIT_AUTH_REASONS,
   type GitProxyAuth,
 } from './lib/git';
+export { memoryRepoName, parseMemoryRepoKind } from './lib/memory-repos';
+export { ensureManagedRepo, managedRepoUpstream } from './git-backends/github';
 
 // Session helpers (consumed by channels and provisioning).
 export {

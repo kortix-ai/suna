@@ -1,4 +1,5 @@
 
+import { buildMemoryReposEnv } from './memory-repos';
 import { projectSessions, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 
@@ -466,6 +467,13 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
       projectSnapshotMode: input.projectSnapshotMode,
       projectSnapshotPin: input.projectSnapshotPin,
       projectSnapshotDescriptor: input.projectSnapshotDescriptor,
+    }),
+    // The company memory repo and the session user's personal one
+    // (git-proxy/memory-repos.ts), cloned beside the checkout.
+    ...buildMemoryReposEnv({
+      projectId: input.projectId,
+      userId: input.userId,
+      repositoryAccess: (input.repositoryAccess ?? true) && !input.platformMetaAgent,
     }),
     // The platform coordinator uses API-level delegation and never receives a
     // project checkout. Keep this override after buildSessionRuntimeEnv so the

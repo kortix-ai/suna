@@ -26,6 +26,7 @@ import {
 } from '../projects';
 import type { GitScope, UpstreamGit } from '../projects/git-backends';
 import type { ProjectRow } from '../projects/lib/serializers';
+import type { Context } from 'hono';
 import type { AppEnv } from '../types';
 import { deriveRequestContext } from '../middleware/iam-request-context';
 import { getAgentGrant } from '../middleware/agent-scope';
@@ -65,6 +66,9 @@ import {
   verifyReadyProjectSnapshotObjectsInBackground,
 } from './project-snapshot';
 import { projectSnapshotStorageConfigured } from './project-snapshot-store';
+import { ensureManagedRepo, managedRepoUpstream, memoryRepoName, parseMemoryRepoKind } from '../projects/surface';
+import { logger } from '../lib/logger';
+import { resolveGitBackend } from '../platform/services/managed-git-backend';
 
 export const gitProxyApp = makeOpenApiApp<AppEnv>();
 
@@ -216,60 +220,7 @@ async function forwardAuthorized(
     );
   }
 
-  const search = new URL(c.req.url).search; // includes leading '?' or ''
-  const base = upstream.url.replace(/\/$/, '');
-  const target = `${base}${suffix}${search}`;
-
-  const headers: Record<string, string> = {};
-  for (const name of FORWARD_REQUEST_HEADERS) {
-    const value = c.req.header(name);
-    if (value) headers[name] = value;
-  }
-  Object.assign(headers, upstream.headers);
-
-  const method = c.req.method;
-  // Idempotent ref discovery (GET /info/refs) → buffer + bounded retry, so a
-  // transient upstream socket-close is caught here instead of escaping Bun's
-  // fetch streamer to the global uncaught handler (Better Stack `df7a31d4…`).
-  // Pack streams (POST upload/receive-pack) stay streamed: large / non-idempotent.
-  const isIdempotentGet = method === 'GET' || method === 'HEAD';
-  let res: Response;
-  try {
-    if (isIdempotentGet) {
-      res = await fetchUpstreamBuffered(target, {
-        method,
-        headers,
-        redirect: 'manual',
-        // @ts-ignore — Bun extension: don't decompress the git smart-HTTP body.
-        decompress: false,
-      });
-    } else {
-      res = await fetch(target, {
-        method,
-        headers,
-        body,
-        redirect: 'manual',
-        // A push never shares its upstream connection. An upstream may answer a
-        // push before reading the whole body (a rejection, a size limit); Bun
-        // then pools the socket while the body is still in flight, and the next
-        // request to that host, from any project, fails to parse (a bare 400,
-        // seen on the local-git fixture as GH-17 / AGP-10 flakes). A push costs
-        // one new connection; fetch (upload-pack) keeps reusing them.
-        keepalive: suffix !== '/git-receive-pack',
-        // @ts-ignore — Bun extensions: stream the request body, don't decompress.
-        duplex: 'half',
-        decompress: false,
-      });
-    }
-  } catch (err) {
-    console.warn(`[git-proxy] upstream fetch failed for ${projectId}:`, err);
-    return c.text('git upstream unreachable', 502);
-  }
-
-  const respHeaders = new Headers();
-  res.headers.forEach((value, key) => {
-    if (!STRIP_RESPONSE_HEADERS.has(key.toLowerCase())) respHeaders.set(key, value);
-  });
+  const res = await sendUpstream(c, upstream, suffix, body, projectId);
 
   // Build-on-push warming: a successful push (git-receive-pack) to the managed
   // git may have advanced the project's default-branch tip. Kick the
@@ -361,6 +312,76 @@ async function forwardAuthorized(
       }
     })();
   }
+
+  return res;
+}
+
+/**
+ * Send one git smart-HTTP request to `upstream` and hand its answer back,
+ * minus the hop-by-hop headers. Nothing project-specific happens here: the
+ * project and memory routes both forward through it.
+ */
+async function sendUpstream(
+  c: Context<AppEnv>,
+  upstream: UpstreamGit,
+  suffix: string,
+  body: ReadableStream<Uint8Array> | null,
+  label: string,
+): Promise<Response> {
+  const search = new URL(c.req.url).search; // includes leading '?' or ''
+  const base = upstream.url.replace(/\/$/, '');
+  const target = `${base}${suffix}${search}`;
+
+  const headers: Record<string, string> = {};
+  for (const name of FORWARD_REQUEST_HEADERS) {
+    const value = c.req.header(name);
+    if (value) headers[name] = value;
+  }
+  Object.assign(headers, upstream.headers);
+
+  const method = c.req.method;
+  // Idempotent ref discovery (GET /info/refs) → buffer + bounded retry, so a
+  // transient upstream socket-close is caught here instead of escaping Bun's
+  // fetch streamer to the global uncaught handler (Better Stack `df7a31d4…`).
+  // Pack streams (POST upload/receive-pack) stay streamed: large / non-idempotent.
+  const isIdempotentGet = method === 'GET' || method === 'HEAD';
+  let res: Response;
+  try {
+    if (isIdempotentGet) {
+      res = await fetchUpstreamBuffered(target, {
+        method,
+        headers,
+        redirect: 'manual',
+        // @ts-ignore — Bun extension: don't decompress the git smart-HTTP body.
+        decompress: false,
+      });
+    } else {
+      res = await fetch(target, {
+        method,
+        headers,
+        body,
+        redirect: 'manual',
+        // A push never shares its upstream connection. An upstream may answer a
+        // push before reading the whole body (a rejection, a size limit); Bun
+        // then pools the socket while the body is still in flight, and the next
+        // request to that host, from any project, fails to parse (a bare 400,
+        // seen on the local-git fixture as GH-17 / AGP-10 flakes). A push costs
+        // one new connection; fetch (upload-pack) keeps reusing them.
+        keepalive: suffix !== '/git-receive-pack',
+        // @ts-ignore — Bun extensions: stream the request body, don't decompress.
+        duplex: 'half',
+        decompress: false,
+      });
+    }
+  } catch (err) {
+    console.warn(`[git-proxy] upstream fetch failed for ${label}:`, err);
+    return c.text('git upstream unreachable', 502);
+  }
+
+  const respHeaders = new Headers();
+  res.headers.forEach((value, key) => {
+    if (!STRIP_RESPONSE_HEADERS.has(key.toLowerCase())) respHeaders.set(key, value);
+  });
 
   return new Response(res.body, { status: res.status, headers: respHeaders });
 }
@@ -833,3 +854,84 @@ gitProxyApp.openapi(
   },
 );
 
+
+// ── Memory repos (memory-repos.ts) ─────────────────────────────────────────
+// `/{project}/memory/{repo}.git/...`: the project's company memory and the
+// caller's personal memory, each its own managed repository. Same token, same
+// authorization as the project repo; pushes land on `main` with no ref gate
+// and none of the project's post-push warming.
+const memoryParams = projectParam.extend({
+  repo: z.string().openapi({
+    param: { name: 'repo', in: 'path' },
+    description: '`company` or `user`, optionally suffixed with `.git`',
+    example: 'company.git',
+  }),
+});
+
+async function forwardMemory(c: Context<AppEnv>, scope: GitScope, suffix: string): Promise<Response> {
+  const projectId = validProjectIdOrResponse(c, c.req.param('project') ?? '');
+  if (projectId instanceof Response) return projectId;
+  const kind = parseMemoryRepoKind(c.req.param('repo') ?? '');
+  if (!kind) return c.text('Unknown memory repository', 404);
+  const auth = await authorize(c, projectId, scope);
+  if (!auth.ok) {
+    if (auth.status === 401) return unauthorized(c, auth.message);
+    return c.text(auth.message, auth.status as 403 | 404 | 409);
+  }
+  if (scope === 'write' && auth.principal.kind === 'monitor') {
+    return c.text('A monitor box cannot write memory', 403);
+  }
+  const name = memoryRepoName(kind, auth.project, auth.principal);
+  if (!name) return c.text('This credential belongs to no user, so it has no personal memory', 403);
+  if (!resolveGitBackend()) return c.text('Memory repositories need the managed git backend', 502);
+  let upstream: UpstreamGit;
+  try {
+    upstream = await managedRepoUpstream(await ensureManagedRepo(name), scope);
+  } catch (err) {
+    logger.warn('[git-proxy] memory repo unavailable', {
+      projectId,
+      kind,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    c.header('Retry-After', '2');
+    return c.json({ error: 'memory_repo_unavailable', retry: true }, 503);
+  }
+  return sendUpstream(c, upstream, suffix, c.req.raw.body, `${projectId}/memory/${kind}`);
+}
+
+gitProxyApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{project}/memory/{repo}/info/refs',
+    tags: ['git'],
+    summary: 'Memory repo ref discovery',
+    request: {
+      params: memoryParams,
+      query: z.object({ service: z.enum(['git-upload-pack', 'git-receive-pack']).optional() }),
+    },
+    responses: gitResponses,
+  }),
+  async (c) => forwardMemory(c, scopeForService(c.req.query('service')), '/info/refs'),
+);
+gitProxyApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{project}/memory/{repo}/git-upload-pack',
+    tags: ['git'],
+    summary: 'Memory repo clone / fetch',
+    request: { params: memoryParams },
+    responses: gitResponses,
+  }),
+  async (c) => forwardMemory(c, 'read', '/git-upload-pack'),
+);
+gitProxyApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{project}/memory/{repo}/git-receive-pack',
+    tags: ['git'],
+    summary: 'Memory repo push',
+    request: { params: memoryParams },
+    responses: gitResponses,
+  }),
+  async (c) => forwardMemory(c, 'write', '/git-receive-pack'),
+);

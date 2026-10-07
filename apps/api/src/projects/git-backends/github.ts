@@ -8,6 +8,7 @@ import {
   createInstallationToken,
   createRepo as ghCreateRepo,
   deleteRepo as ghDeleteRepo,
+  getRepo as ghGetRepo,
   isGithubAppConfigured,
   isOrgAccount,
 } from '../github';
@@ -235,3 +236,49 @@ export const githubBackend: GitHostBackend = {
 };
 
 export { managedGithubToken };
+
+function githubStatus(err: unknown): number | undefined {
+  return typeof (err as { status?: unknown })?.status === 'number' ? (err as { status: number }).status : undefined;
+}
+// replica-local: a cache of repos known to exist. A replica that has not seen
+// one yet asks GitHub once; creation itself is idempotent across replicas.
+const ensuredManagedRepos = new Map<string, GitConnectionRef>();
+/**
+ * A private repository in the managed org, created on first use: the memory
+ * repos (projects/lib/memory-repos.ts). Same owner and credential as a managed
+ * project repo; nothing is recorded in the database, because the name is
+ * derived from the ids it belongs to. Positive results are memoized per process.
+ */
+export async function ensureManagedRepo(name: string): Promise<GitConnectionRef> {
+  const hit = ensuredManagedRepos.get(name);
+  if (hit) return hit;
+  const auth = await managedAdminAuth();
+  const owner = auth.owner!;
+  const repo = await ghGetRepo({ owner, repo: name, auth }).catch(async (err) => {
+    if (githubStatus(err) !== 404) throw err;
+    // Two sessions can race to create it: the loser reads the winner's repo.
+    return ghCreateRepo({ name, owner, isPrivate: true, autoInit: false, auth }).catch(async (createErr) => {
+      if (githubStatus(createErr) === 422) return ghGetRepo({ owner, repo: name, auth });
+      throw createErr;
+    });
+  });
+  const ref: GitConnectionRef = {
+    provider: 'github',
+    upstreamUrl: repo.clone_url,
+    externalRepoId: String(repo.id),
+    repoOwner: owner,
+    repoName: repo.name,
+    installationId: auth.source === 'app_installation' ? (auth.installationId ?? null) : null,
+    credentialRef: null,
+    defaultBranch: 'main',
+    managed: true,
+    metadata: {},
+  };
+  ensuredManagedRepos.set(name, ref);
+  return ref;
+}
+
+/** The upstream for a managed repo, with a runtime token scoped to it. */
+export async function managedRepoUpstream(ref: GitConnectionRef, scope: GitScope): Promise<UpstreamGit> {
+  return githubBackend.buildUpstream(ref, await mintManagedWriteToken(ref), scope);
+}
