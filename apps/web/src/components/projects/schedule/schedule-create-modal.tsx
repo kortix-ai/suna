@@ -302,10 +302,12 @@ export function ScheduleCreateModal({
     const el = promptRef.current?.textArea;
     const at = el?.selectionStart ?? instruction.length;
     const end = el?.selectionEnd ?? at;
-    setInstruction(`${instruction.slice(0, at)}${token}${instruction.slice(end)}`);
+    // Two chips in a row read as two words, not `}}{{`.
+    const text = at > 0 && !/\s/.test(instruction[at - 1]) ? ` ${token}` : token;
+    setInstruction(`${instruction.slice(0, at)}${text}${instruction.slice(end)}`);
     requestAnimationFrame(() => {
       el?.focus();
-      el?.setSelectionRange(at + token.length, at + token.length);
+      el?.setSelectionRange(at + text.length, at + text.length);
     });
   }
 
