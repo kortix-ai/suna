@@ -71,7 +71,8 @@ describe exactly what it does and what it touches.
 
 Post the exact action you're about to take — the platform, the specific
 change, and its effect — and wait for an explicit reply in the thread before
-acting. Never proceed on silence, and never re-attempt a gated action the
+acting. In a channel, ask the approver to @mention the bot, or the reply never
+reaches you. Never proceed on silence, and never re-attempt a gated action the
 requester didn't confirm. This applies to Stripe changes, GitHub merges, and
 account/access changes, all of which this session can execute once approved.
 Database writes are different in kind, not just gated: `DATABASE_URL` is a
