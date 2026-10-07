@@ -11,12 +11,15 @@ import {
   waitForBackendOperation,
   getBackend,
   getBackendCredentials,
+  getBackendLogs,
   getBackendToken,
   listBackends,
+  rotateBackendAdminKey,
   waitForBackend,
   type ProjectBackend,
   type ProjectBackendBackups,
   type ProjectBackendCredentials,
+  type ProjectBackendHealth,
 } from './backends';
 
 type Call = { url: string; method: string; body: unknown };
@@ -244,4 +247,42 @@ test('A backend carries its public sign-in values and the backups name the snaps
   responses = [{ body: { backend: signedIn } }, { body: backups }];
   expect((await getBackend('project-1', backend.backend_id)).auth_env?.KORTIX_AUTH_AUDIENCE).toBe(backend.backend_id);
   expect((await getBackendBackups('project-1', backend.backend_id)).snapshot_limit).toBe(5);
+});
+
+test('rotateBackendAdminKey POSTs to the rotation route and returns the backend', async () => {
+  responses.push({ body: { backend } });
+  expect(await rotateBackendAdminKey('project-1', backend.backend_id)).toEqual(backend);
+  expect(last()).toMatchObject({
+    method: 'POST',
+    url: `http://backend.test/v1/projects/project-1/backends/${backend.backend_id}/rotate-admin-key`,
+  });
+  responses.push({ status: 409, body: { error: 'another operation is running on this backend', code: 'backend_busy' } });
+  await expect(rotateBackendAdminKey('project-1', backend.backend_id)).rejects.toMatchObject({ code: 'backend_busy' });
+});
+
+test('getBackendLogs reads the process log, 200 lines unless asked', async () => {
+  responses.push({ body: { log: 'convex exited 1 at 1700000000\n' } });
+  expect(await getBackendLogs('project-1', backend.backend_id)).toBe('convex exited 1 at 1700000000\n');
+  expect(last()).toMatchObject({
+    method: 'GET',
+    url: `http://backend.test/v1/projects/project-1/backends/${backend.backend_id}/logs?lines=200`,
+  });
+  responses.push({ body: { log: '' } });
+  await getBackendLogs('project-1', backend.backend_id, { lines: 1000 });
+  expect(last().url).toEndWith('/logs?lines=1000');
+});
+
+test('A backend carries its last health probe and the new operation kinds', () => {
+  const health: ProjectBackendHealth = {
+    ok: false,
+    checked_at: '2026-10-07T00:00:00.000Z',
+    machine_state: 'stopped',
+    failures: 1,
+    error: 'The backend machine is stopped.',
+    disk_used_pct: null,
+    repair: 'started',
+  };
+  const recovering: ProjectBackend = { ...backend, operation: 'recovering', health };
+  const rotating: ProjectBackend = { ...backend, operation: 'rotating_key', health: null };
+  expect([recovering.operation, rotating.operation]).toEqual(['recovering', 'rotating_key']);
 });

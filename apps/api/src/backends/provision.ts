@@ -7,9 +7,13 @@
  * a few minutes the first time a region builds the image): create the machine
  * with public 3210/3211, write the origins file the supervisor waits for, wait
  * for `/version`, mint the admin key inside the machine, seal it, mark
- * `running`. Any failure marks the row `error` and deletes the machine. A row
- * left `provisioning` by a process restart reads as `error` after
- * PROVISION_STALE_MS (see `effectiveStatus`).
+ * `running`. Any failure marks the row `error` and deletes the machine.
+ *
+ * A provision writes `metadata.heartbeatAt` every HEARTBEAT_MS. One whose
+ * heartbeat stops (the API process died: a deploy, an OOM) is resumed by
+ * maintenance (./maintenance.ts): it replays the create with the same
+ * Idempotency-Key, so Platinum returns the same machine, and every later step
+ * is safe to repeat.
  *
  * ponytail: not metered. Backends are capped per project (3) and per account
  * (10) while the flag is internal-only; compute metering is the gate to beta.
@@ -72,14 +76,44 @@ export type BackendRow = typeof projectBackends.$inferSelect;
 
 export class BackendLimitError extends Error {}
 
+/** A provision or operation writes `metadata.heartbeatAt` this often while it runs. */
+export const HEARTBEAT_MS = 20_000;
+
 /** Longer than any real provision, including a first image build. */
 export const PROVISION_STALE_MS = 15 * 60_000;
 
-/** The status to show: a provision this old was interrupted, not slow. */
+/** The last sign of life of the provision or operation running on this row. */
+export function lastHeartbeat(row: Pick<BackendRow, 'metadata' | 'createdAt'>): number {
+  const meta = row.metadata as { heartbeatAt?: string; operationStartedAt?: string };
+  const at = Date.parse(meta.heartbeatAt ?? meta.operationStartedAt ?? '');
+  return Number.isFinite(at) ? at : row.createdAt.getTime();
+}
+
+/**
+ * The status to show. A provision with no heartbeat for PROVISION_STALE_MS was
+ * interrupted and maintenance could not resume it: it reads as `error`.
+ */
 export function effectiveStatus(row: BackendRow, now = Date.now()): BackendRow['status'] {
-  return row.status === 'provisioning' && now - row.createdAt.getTime() > PROVISION_STALE_MS
-    ? 'error'
-    : row.status;
+  return row.status === 'provisioning' && now - lastHeartbeat(row) > PROVISION_STALE_MS ? 'error' : row.status;
+}
+
+/**
+ * Writes `metadata.heartbeatAt` every HEARTBEAT_MS until the returned stop is
+ * called, so maintenance can tell a running provision or operation from one
+ * whose API process died.
+ */
+export function keepAlive(backendId: string): () => void {
+  const beat = () =>
+    db
+      .update(projectBackends)
+      .set({
+        metadata: sql`coalesce(${projectBackends.metadata}, '{}'::jsonb) || ${JSON.stringify({ heartbeatAt: new Date().toISOString() })}::jsonb`,
+      })
+      .where(and(eq(projectBackends.backendId, backendId), isNull(projectBackends.deletedAt)))
+      .catch((error) => logger.warn('[backends] heartbeat failed', { backendId, error: String(error) }));
+  const timer = setInterval(beat, HEARTBEAT_MS);
+  timer.unref?.();
+  return () => clearInterval(timer);
 }
 
 function exposedOrigin(created: PlatinumCreated, port: number): string {
@@ -104,21 +138,63 @@ export async function waitHealthy(url: string): Promise<void> {
   throw new Error(`backend did not become healthy within ${HEALTH_WAIT_MS / 1000}s (${last})`);
 }
 
-async function mintAdminKey(externalId: string): Promise<string> {
+/** Runs a bash script in the backend machine. Returns stdout; throws on a non-zero exit. */
+export async function execInBackend(externalId: string, script: string, timeoutMs = 30_000): Promise<string> {
   const out = await platinumJson<PlatinumExec>(`/v1/sandboxes/${externalId}/exec`, {
     method: 'POST',
-    signal: AbortSignal.timeout(40_000),
-    body: JSON.stringify({ cmd: ['bash', '-c', 'cd /convex && ./generate_admin_key.sh'], timeout_ms: 30_000 }),
+    signal: AbortSignal.timeout(timeoutMs + 10_000),
+    body: JSON.stringify({ cmd: ['bash', '-c', script], timeout_ms: timeoutMs }),
   });
-  const key = out.result?.stdout?.trim().split('\n').pop()?.trim();
-  if (out.error || out.result?.exit_code !== 0 || !key) {
-    logger.error('[backends] admin key generation failed', {
+  if (out.error || out.result?.exit_code !== 0) {
+    logger.error('[backends] exec failed', {
       externalId,
-      error: out.error ?? out.result?.stderr?.slice(0, 2_000) ?? 'empty output',
+      error: out.error ?? out.result?.stderr?.slice(0, 2_000) ?? `exit ${out.result?.exit_code}`,
     });
-    throw new Error('the backend could not create its admin key');
+    throw new Error('a command in the backend machine failed');
   }
+  return out.result?.stdout ?? '';
+}
+
+/** Derives the admin key from the machine's current instance secret. */
+async function mintAdminKey(externalId: string): Promise<string> {
+  const key = (await execInBackend(externalId, 'cd /convex && ./generate_admin_key.sh')).trim().split('\n').pop()?.trim();
+  if (!key) throw new Error('the backend could not create its admin key');
   return key;
+}
+
+/** Convex answers 200 once it accepts the key. Polled: Convex can answer /version before it serves admin routes. */
+async function verifyAdminKey(url: string, adminKey: string): Promise<void> {
+  const deadline = Date.now() + HEALTH_WAIT_MS;
+  let last = '';
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`${url}/api/check_admin_key`, {
+        headers: { Authorization: `Convex ${adminKey}` },
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (res.ok) return;
+      last = `HTTP ${res.status}`;
+    } catch (err) {
+      last = err instanceof Error ? err.message : String(err);
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  throw new Error(`the backend did not accept its new admin key (${last})`);
+}
+
+/**
+ * Mints the admin key the running machine accepts now, checks that Convex
+ * takes it, and seals it on the row. Needed after anything that can change the
+ * instance secret: a rotation, a snapshot restore, a backup restore.
+ */
+export async function sealAdminKey(row: BackendRow): Promise<void> {
+  if (!row.externalId || !row.url) throw new Error('backend has no machine');
+  const adminKey = await mintAdminKey(row.externalId);
+  await verifyAdminKey(row.url, adminKey);
+  await db
+    .update(projectBackends)
+    .set({ adminKeyEnc: encryptProjectSecret(row.projectId, adminKey), updatedAt: new Date() })
+    .where(and(eq(projectBackends.backendId, row.backendId), isNull(projectBackends.deletedAt)));
 }
 
 /**
@@ -286,6 +362,7 @@ export async function insertBackend(input: {
 export async function provisionBackend(row: BackendRow, region?: string): Promise<BackendRow> {
   const { backendId, projectId } = row;
   let externalId: string | null = null;
+  const stopHeartbeat = keepAlive(backendId);
   try {
     const created = await platinumJson<PlatinumCreated>(
       `/v1/sandboxes?wait_for_state=running&wait_timeout_ms=${CREATE_WAIT_MS}`,
@@ -366,6 +443,8 @@ export async function provisionBackend(row: BackendRow, region?: string): Promis
       .where(and(eq(projectBackends.backendId, backendId), isNull(projectBackends.deletedAt)))
       .catch(() => {});
     throw error;
+  } finally {
+    stopHeartbeat();
   }
 }
 

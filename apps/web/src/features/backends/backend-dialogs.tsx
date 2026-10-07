@@ -367,12 +367,19 @@ export function BackendBackupsDialog({
   );
 }
 
-export function BackendOperationBadge() {
+/** The badge for an operation in flight: resize, admin-key rotation, or a recovery Kortix runs. */
+export function BackendOperationBadge({ operation }: { operation: NonNullable<ProjectBackend['operation']> }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
+  const label =
+    operation === 'rotating_key'
+      ? t.raw('text4a75e77ccc8d')
+      : operation === 'recovering'
+        ? t.raw('text959bdc881c93')
+        : t.raw('text6f2769b24c0f');
   return (
     <Badge variant="warning" className="gap-1.5">
       <Loading className="size-3 shrink-0" />
-      {t.raw('text6f2769b24c0f')}
+      {label}
     </Badge>
   );
 }

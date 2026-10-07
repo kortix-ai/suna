@@ -1468,7 +1468,7 @@ public issuer routes `GET /backends/:backendId/.well-known/openid-configuration`
 and `GET /backends/:backendId/jwks.json`.
 
 `BKD-1` Gated surface. Flag off: list, create, get, credentials, delete, resize,
-token, backups, snapshot and restore answer `403 {code:'feature_disabled', feature:'backends'}`. The owner's
+token, backups, snapshot, restore, rotate-admin-key and logs answer `403 {code:'feature_disabled', feature:'backends'}`. The owner's
 `PATCH /projects/:projectId/features` with `backends` true, false or null
 answers `403 {code:'feature_operator_only', feature:'backends'}`, and the
 owner's `PUT /admin/api/projects/:id/features` answers 403. The platform
@@ -1482,7 +1482,15 @@ unknown backend answers 404 and a malformed id 400. The caps under concurrency,
 `Cache-Control: no-store` on credentials and token, `convex_version`, the stored
 issuer, the issuer discovery and key set (verified against a minted token), and
 the issuer move are asserted by the
-DB suites `apps/api/src/backends/*.integration.test.ts`. Not asserted locally:
+DB suites `apps/api/src/backends/*.integration.test.ts`. The same suites drive
+the maintenance sweep against a fake Platinum and a fake Convex: an interrupted
+provision resumes on its Idempotency-Key and reaches `running`, one interrupted
+3 times turns `error`, an interrupted resize is recovered with
+`last_operation_error`, the health probe records `health` and starts a stopped
+machine, restores a tombstoned one from backup, and turns a missing one `error`
+after 3 probes; admin-key rotation seals the key Convex accepts and answers
+`409 backend_busy` during another operation; the logs route strips color codes
+and rejects `lines` outside 1–1000. Not asserted locally:
 create (`202 provisioning`), a duplicate name (`409 backend_name_taken`), the
 `backend.credentials.read` audit row, and delete. They
 need a Platinum machine and are verified on a deployed environment.

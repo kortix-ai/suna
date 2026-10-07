@@ -86,7 +86,9 @@ the session branch like any other code.
 | --- | --- |
 | `kortix backends list` | Backends and their status (`provisioning`, `running`, `error`). |
 | `kortix backends create <name>` | Create and wait, without deploying. |
-| `kortix backends get <name> [--json]` | `url` (Convex client URL), `site_url` (HTTP actions), status. |
+| `kortix backends get <name> [--json]` | `url` (Convex client URL), `site_url` (HTTP actions), status, and `health` (the last 5-minute probe: machine state, disk use). |
+| `kortix backends logs <name> [--lines N]` | The Convex process log (startup, crashes, restarts, request lines). Read it when the backend answers errors or `health` fails. |
+| `kortix backends rotate-key <name> --yes` | Replace the admin key; every key read before stops working. About 1 s of restart; data stays. |
 | `kortix backends dashboard <name>` | Link to the backend's admin dashboard in Kortix (data, functions, logs, files, schedules, env). Give it to the user so they can inspect what you built. |
 | `kortix backends connect <name> [--json]` | Working code to reach the backend: from an App, from outside (member token, HTTP API, your own server), from the CLI. No secret. The same snippets as Connect in Kortix web; give the user this when they ask how to use the backend. |
 | `kortix backends env <name>` | Shell exports for the Convex CLI (admin). Use with `eval`. |
@@ -190,6 +192,7 @@ npx convex data tasks --limit 20              # rows
 npx convex run tasks:create '{"title":"…"}'   # run a function as admin
 npx convex env set SOME_API_BASE https://…    # deployment env var for actions
 npx convex logs                               # function logs
+kortix backends logs main --lines 200         # process log: crashes, restarts
 npx convex export --path /tmp/backup.zip      # data + files
 ```
 
@@ -211,6 +214,9 @@ the link from `kortix backends dashboard <name>`.
   (`backend.credentials.read`). Never print, log, commit or paste it, and never
   put it in an App, a bundle, `kortix.yaml` or a chat. Keep it in the shell via
   `eval "$(kortix backends env <name>)"`.
+- If the admin key leaked (printed, committed, pasted into a chat), rotate it:
+  `kortix backends rotate-key <name> --yes`, then `eval "$(kortix backends env <name>)"`
+  again. Tell the user: every `.env.local` holding the old key needs the new one.
 - Sign-in tokens are 15-minute bearer tokens. Never commit or log them either.
 - A deployment env var set with `npx convex env set` is readable by anyone with
   the admin key; put third-party credentials there only when an action needs
@@ -238,6 +244,9 @@ kortix backends restore main <snapshot-id> --yes            # roll back; later c
   change after the snapshot is gone, so confirm with the user first.
 - Limits: 1–16 vCPU, 1–32 GB memory, 10–100 GB disk (disk can only grow).
 - For portable copies outside Kortix, `npx convex export` (data and files).
+- Kortix probes every backend every 5 minutes, starts a stopped machine, and
+  restores a lost one from its last automatic backup by itself (data since that
+  backup is lost). `operation: recovering` shows while it does.
 
 ## Limits
 

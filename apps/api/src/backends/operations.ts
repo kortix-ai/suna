@@ -11,21 +11,45 @@
  *   MAX_SNAPSHOTS and drops the rest.
  * - Resize: stop → resize (which boots) → healthy. Verified 4 s of downtime,
  *   data intact. A snapshot is taken first, so a bad resize can be undone.
+ * - Admin-key rotation: a new Convex instance secret, then a Convex restart
+ *   (verified on CONVEX_BACKEND_IMAGE: under 1 s of downtime; the old key gets
+ *   401 BadAdminKey; documents, files and environment variables are kept).
+ * - Recovery: start a stopped machine, re-spawn a lost or system-tombstoned one
+ *   from its last automatic backup. Maintenance runs it (./maintenance.ts).
+ *
+ * One operation at a time per backend (`metadata.operation`). A running
+ * operation heartbeats (`keepAlive`); one silent for OPERATION_STALE_MS lost
+ * its API process, and maintenance takes it over and recovers the backend.
  */
 
 import { projectBackends } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
-import { platinumJson } from '../shared/platinum';
+import { PlatinumHttpError, platinumJson } from '../shared/platinum';
 import { logger } from '../lib/logger';
-import { BackendOperationError, backendFailureMessage } from './errors';
-import { type BackendRow, type BackendSize, BACKEND_MACHINE_LIMITS, waitHealthy } from './provision';
+import { BackendOperationError, backendFailureMessage, backendProviderFailure } from './errors';
+import { CONVEX_LOG_FILE } from './convex-image';
+import {
+  type BackendRow,
+  type BackendSize,
+  BACKEND_MACHINE_LIMITS,
+  execInBackend,
+  keepAlive,
+  lastHeartbeat,
+  sealAdminKey,
+  waitHealthy,
+} from './provision';
 
 export const MAX_SNAPSHOTS = 5;
 const STOP_WAIT_MS = 60_000;
 
-type PlatinumSandboxState = {
+export type PlatinumSandboxState = {
   state?: string;
+  /** Set on a machine Platinum's reconciler tombstoned while a completed backup existed. */
+  recoverable?: boolean;
+  cpu?: number;
+  ramMb?: number;
+  diskGb?: number;
   backupState?: string | null;
   lastBackupAt?: string | null;
   backupSizeBytes?: number | null;
@@ -42,38 +66,55 @@ function machine(row: BackendRow): string {
   return row.externalId;
 }
 
-/** A resize never takes this long; past it the API process that ran it died. */
-export const OPERATION_STALE_MS = 10 * 60_000;
+export const BACKEND_OPERATIONS = ['resizing', 'rotating_key', 'recovering'] as const;
+export type BackendOperationKind = (typeof BACKEND_OPERATIONS)[number];
+
+/** An operation with no heartbeat this long lost its API process. */
+export const OPERATION_STALE_MS = 2 * 60_000;
 
 /** The operation in flight, from row metadata. A stale one counts as none. */
-export function backendOperation(row: BackendRow, now = Date.now()): 'resizing' | null {
-  const meta = row.metadata as { operation?: string; operationStartedAt?: string };
-  if (meta.operation !== 'resizing') return null;
-  const started = Date.parse(meta.operationStartedAt ?? '');
-  return Number.isFinite(started) && now - started > OPERATION_STALE_MS ? null : 'resizing';
+export function backendOperation(row: BackendRow, now = Date.now()): BackendOperationKind | null {
+  const meta = row.metadata as { operation?: string; heartbeatAt?: string; operationStartedAt?: string };
+  const kind = BACKEND_OPERATIONS.find((k) => k === meta.operation);
+  if (!kind) return null;
+  // A marker with no timestamp at all never goes stale (the SQL claim agrees).
+  if (!meta.heartbeatAt && !meta.operationStartedAt) return kind;
+  return now - lastHeartbeat(row) > OPERATION_STALE_MS ? null : kind;
+}
+
+/** SQL: the row has no operation, or its operation stopped heartbeating. */
+function operationFree(now = Date.now()) {
+  const staleBefore = new Date(now - OPERATION_STALE_MS).toISOString();
+  const meta = projectBackends.metadata;
+  return sql`(not (coalesce(${meta}, '{}'::jsonb) ? 'operation') or coalesce((${meta}->>'heartbeatAt')::timestamptz, (${meta}->>'operationStartedAt')::timestamptz) < ${staleBefore}::timestamptz)`;
 }
 
 /**
  * Marks the backend busy in one conditional UPDATE, so two concurrent
  * requests cannot both start an operation. A stale marker is taken over.
  */
-async function claimOperation(backendId: string): Promise<boolean> {
-  const staleBefore = new Date(Date.now() - OPERATION_STALE_MS).toISOString();
+export async function claimOperation(backendId: string, kind: BackendOperationKind): Promise<boolean> {
+  const now = new Date().toISOString();
   const claimed = await db
     .update(projectBackends)
     .set({
       updatedAt: new Date(),
-      metadata: sql`coalesce(${projectBackends.metadata}, '{}'::jsonb) || ${JSON.stringify({ operation: 'resizing', operationStartedAt: new Date().toISOString() })}::jsonb`,
+      metadata: sql`coalesce(${projectBackends.metadata}, '{}'::jsonb) || ${JSON.stringify({ operation: kind, operationStartedAt: now, heartbeatAt: now })}::jsonb`,
     })
-    .where(
-      and(
-        eq(projectBackends.backendId, backendId),
-        isNull(projectBackends.deletedAt),
-        sql`(not (coalesce(${projectBackends.metadata}, '{}'::jsonb) ? 'operation') or (${projectBackends.metadata}->>'operationStartedAt') < ${staleBefore})`,
-      ),
-    )
+    .where(and(eq(projectBackends.backendId, backendId), isNull(projectBackends.deletedAt), operationFree()))
     .returning({ id: projectBackends.backendId });
   return claimed.length === 1;
+}
+
+/** Clears the marker. `error` becomes `last_operation_error`; success clears it. */
+export async function releaseOperation(backendId: string, error: string | null): Promise<void> {
+  await db
+    .update(projectBackends)
+    .set({
+      updatedAt: new Date(),
+      metadata: sql`(coalesce(${projectBackends.metadata}, '{}'::jsonb) - 'operation' - 'operationStartedAt' - 'heartbeatAt' - 'lastOperationError') || ${JSON.stringify(error ? { lastOperationError: error.slice(0, 600) } : {})}::jsonb`,
+    })
+    .where(eq(projectBackends.backendId, backendId));
 }
 
 // ── Backups and snapshots ────────────────────────────────────────────────────
@@ -138,6 +179,9 @@ export async function restoreBackendSnapshot(row: BackendRow, snapshotId: string
   await waitHealthy(row.url!).catch(() => {
     throw new BackendOperationError('the backend did not come back healthy after the restore; retry or restore again', 'restore_unhealthy');
   });
+  // A snapshot taken before an admin-key rotation brings the old instance
+  // secret back; Kortix must hold the key the machine accepts now.
+  await sealAdminKey(row);
 }
 
 // ── Resize ───────────────────────────────────────────────────────────────────
@@ -168,8 +212,8 @@ export function targetSize(row: BackendRow, want: Partial<BackendSize>): Backend
 export async function beginResize(row: BackendRow, want: Partial<BackendSize>): Promise<BackendSize> {
   machine(row);
   const next = targetSize(row, want);
-  if (!(await claimOperation(row.backendId))) {
-    throw new BackendOperationError('a resize is already running', 'backend_busy');
+  if (!(await claimOperation(row.backendId, 'resizing'))) {
+    throw new BackendOperationError('another operation is running on this backend', 'backend_busy');
   }
   return next;
 }
@@ -177,6 +221,7 @@ export async function beginResize(row: BackendRow, want: Partial<BackendSize>): 
 /** Safety snapshot → stop → resize (boots) → healthy → record the size. Clears `resizing` either way. */
 export async function runResize(row: BackendRow, next: BackendSize): Promise<void> {
   const externalId = row.externalId!;
+  const stopHeartbeat = keepAlive(row.backendId);
   try {
     await createBackendSnapshot(row);
     await platinumJson(`/v1/sandboxes/${externalId}/stop`, { method: 'POST', body: '{}' });
@@ -195,13 +240,7 @@ export async function runResize(row: BackendRow, next: BackendSize): Promise<voi
       .set({ cpu: next.cpu, memoryGb: next.memoryGb, diskGb: next.diskGb, updatedAt: new Date() })
       .where(and(eq(projectBackends.backendId, row.backendId), isNull(projectBackends.deletedAt)));
     await waitHealthy(row.url!);
-    await db
-      .update(projectBackends)
-      .set({
-        updatedAt: new Date(),
-        metadata: sql`(coalesce(${projectBackends.metadata}, '{}'::jsonb) - 'operation' - 'operationStartedAt' - 'lastOperationError')`,
-      })
-      .where(eq(projectBackends.backendId, row.backendId));
+    await releaseOperation(row.backendId, null);
   } catch (error) {
     logger.error('[backends] resize failed', { backendId: row.backendId, error: String(error) });
     // Never leave the backend down: boot it again at whatever size it has.
@@ -209,13 +248,143 @@ export async function runResize(row: BackendRow, next: BackendSize): Promise<voi
     if (state?.state === 'stopped') {
       await platinumJson(`/v1/sandboxes/${externalId}/start`, { method: 'POST', body: '{}' }).catch(() => {});
     }
+    await releaseOperation(row.backendId, `resize failed: ${backendFailureMessage(error)}`).catch(() => {});
+  } finally {
+    stopHeartbeat();
+  }
+}
+
+// ── Admin-key rotation ───────────────────────────────────────────────────────
+
+/**
+ * Writes a new Convex instance secret (fsynced temp file, then rename: the
+ * guest disk has no journal, kortix-ai/platinum#1450) and stops Convex. The
+ * supervisor starts it again 1 s later, on the new secret. The pattern matches
+ * the Convex process only, never this script's own `bash -c` command line.
+ */
+export const ROTATE_INSTANCE_SECRET_SCRIPT = `set -e
+d=/convex/data/credentials
+p='^\\./convex-local-backend '
+openssl rand -hex 32 > "$d/instance_secret.next"
+sync "$d/instance_secret.next"
+mv "$d/instance_secret.next" "$d/instance_secret"
+sync "$d"
+pkill -f "$p" || true
+for i in $(seq 150); do
+  pgrep -f "$p" > /dev/null || exit 0
+  if [ "$i" = 100 ]; then pkill -9 -f "$p" || true; fi
+  sleep 0.1
+done
+echo 'convex did not stop' >&2
+exit 1`;
+
+/**
+ * Replaces the backend's admin key: every key handed out before stops working.
+ * Convex derives admin keys from its instance secret, so the secret changes
+ * and Convex restarts (under 1 s). Data, files and environment variables stay.
+ * Also invalidated: upload URLs not yet used and open pagination cursors.
+ */
+export async function rotateBackendAdminKey(row: BackendRow): Promise<void> {
+  const externalId = machine(row);
+  if (!(await claimOperation(row.backendId, 'rotating_key'))) {
+    throw new BackendOperationError('another operation is running on this backend', 'backend_busy');
+  }
+  const stopHeartbeat = keepAlive(row.backendId);
+  try {
+    await execInBackend(externalId, ROTATE_INSTANCE_SECRET_SCRIPT, 30_000);
+    await waitHealthy(row.url!);
+    await sealAdminKey(row);
+    await releaseOperation(row.backendId, null);
+  } catch (error) {
+    logger.error('[backends] admin key rotation failed', { backendId: row.backendId, error: String(error) });
+    // The secret may have changed already: Kortix must still hold a key the machine accepts.
+    await recoverBackend(row).catch((recoverError) =>
+      logger.error('[backends] recovery after a failed rotation failed', { backendId: row.backendId, error: String(recoverError) }),
+    );
+    await releaseOperation(row.backendId, `admin key rotation failed: ${backendFailureMessage(error)}`).catch(() => {});
+    throw backendProviderFailureOr(error, 'The admin key could not be rotated. Try again.', 'rotation_failed');
+  } finally {
+    stopHeartbeat();
+  }
+}
+
+function backendProviderFailureOr(error: unknown, message: string, code: string): BackendOperationError {
+  if (error instanceof BackendOperationError) return error;
+  return backendProviderFailure(error) ?? new BackendOperationError(message, code, 502);
+}
+
+// ── Logs ─────────────────────────────────────────────────────────────────────
+
+export const MAX_LOG_LINES = 1_000;
+
+/** The last `lines` lines of the Convex process log, across the current and the previous (capped) file, without color codes. */
+export async function readBackendLog(row: BackendRow, lines: number): Promise<string> {
+  const externalId = machine(row);
+  const n = Math.max(1, Math.min(MAX_LOG_LINES, Math.floor(lines)));
+  const out = await execInBackend(externalId, `cat ${CONVEX_LOG_FILE}.1 ${CONVEX_LOG_FILE} 2>/dev/null | tail -n ${n}`, 15_000);
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: strips ANSI color escapes
+  return out.replace(/\x1b\[[0-9;]*m/g, '');
+}
+
+// ── Recovery ─────────────────────────────────────────────────────────────────
+
+/** Platinum states a `start` call boots from. */
+const START_STATES = new Set(['stopped', 'archived', 'failed-start']);
+/** A restore from backup copies the disk from object storage. */
+const RECOVER_RUNNING_WAIT_MS = 10 * 60_000;
+
+/** The machine as Platinum sees it, including a recoverable tombstone; null when it is gone. */
+export async function readMachine(externalId: string): Promise<PlatinumSandboxState | null> {
+  try {
+    return await platinumJson<PlatinumSandboxState>(`/v1/sandboxes/${externalId}?include_deleted=true`, {
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (error) {
+    if (error instanceof PlatinumHttpError && error.status === 404) return null;
+    throw error;
+  }
+}
+
+export type RecoveryAction = 'started' | 'restored_from_backup' | 'none';
+
+/**
+ * Brings the backend back and makes the row match the machine: starts a
+ * stopped machine; re-spawns a lost or system-tombstoned one from its last
+ * automatic backup (same id and URLs; data since that backup is lost); waits
+ * until Convex answers; seals the admin key the machine accepts now; records
+ * the machine's real size. The caller holds the operation lock.
+ */
+export async function recoverBackend(row: BackendRow): Promise<RecoveryAction> {
+  const externalId = row.externalId;
+  if (!externalId || !row.url) throw new BackendOperationError('backend has no machine', 'backend_not_running');
+  let current = await readMachine(externalId);
+  if (!current) throw new BackendOperationError('The backend machine no longer exists.', 'backend_machine_missing');
+  let action: RecoveryAction = 'none';
+  if (current.recoverable || current.state === 'lost') {
+    await platinumJson(`/v1/sandboxes/${externalId}/restore-from-backup`, { method: 'POST', body: '{}' });
+    action = 'restored_from_backup';
+  } else if (current.state && START_STATES.has(current.state)) {
+    await platinumJson(`/v1/sandboxes/${externalId}/start`, { method: 'POST', body: '{}' });
+    action = 'started';
+  }
+  const deadline = Date.now() + RECOVER_RUNNING_WAIT_MS;
+  while (current?.state !== 'running' || current.recoverable) {
+    if (Date.now() > deadline) throw new Error(`machine did not reach running (state ${current?.state ?? 'missing'})`);
+    await new Promise((r) => setTimeout(r, 1_000));
+    current = await readMachine(externalId);
+  }
+  await waitHealthy(row.url);
+  await sealAdminKey(row);
+  const size = {
+    cpu: current.cpu,
+    memoryGb: typeof current.ramMb === 'number' ? Math.round(current.ramMb / 1024) : undefined,
+    diskGb: current.diskGb,
+  };
+  if (Object.values(size).every((v) => typeof v === 'number' && v > 0)) {
     await db
       .update(projectBackends)
-      .set({
-        updatedAt: new Date(),
-        metadata: sql`(coalesce(${projectBackends.metadata}, '{}'::jsonb) - 'operation' - 'operationStartedAt') || ${JSON.stringify({ lastOperationError: `resize failed: ${backendFailureMessage(error).slice(0, 500)}` })}::jsonb`,
-      })
-      .where(eq(projectBackends.backendId, row.backendId))
-      .catch(() => {});
+      .set({ ...(size as BackendSize), updatedAt: new Date() })
+      .where(and(eq(projectBackends.backendId, row.backendId), isNull(projectBackends.deletedAt)));
   }
+  return action;
 }

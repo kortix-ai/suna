@@ -385,9 +385,12 @@ function BackendsTable({
   );
 }
 
+/** The API's disk warning threshold (apps/api/src/backends/maintenance.ts DISK_WARN_PCT). */
+export const BACKEND_DISK_WARN_PCT = 80;
+
 export function BackendStatusBadge({ backend }: { backend: ProjectBackend }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
-  if (backend.operation) return <BackendOperationBadge />;
+  if (backend.operation) return <BackendOperationBadge operation={backend.operation} />;
   if (backend.status === 'provisioning')
     return (
       <Badge variant="warning" className="gap-1.5">
@@ -395,6 +398,8 @@ export function BackendStatusBadge({ backend }: { backend: ProjectBackend }) {
         {t.raw('textc2b1b8e2e039')}
       </Badge>
     );
+  if (backend.status === 'running' && backend.health?.ok === false)
+    return <Badge variant="warning">{t.raw('textd14f65e63358')}</Badge>;
   if (backend.status === 'running')
     return <Badge variant="success">{t.raw('textf4ccae29e1bb')}</Badge>;
   if (backend.status === 'error')
@@ -451,6 +456,16 @@ function BackendRow({
           <BackendStatusBadge backend={backend} />
           {backend.status === 'error' && backend.error ? (
             <span className="text-destructive max-w-xs text-xs break-words">{backend.error}</span>
+          ) : null}
+          {backend.status === 'running' && backend.health?.ok === false && backend.health.error ? (
+            <span className="text-muted-foreground max-w-xs text-xs break-words">
+              {backend.health.error}
+            </span>
+          ) : null}
+          {backend.health?.disk_used_pct != null && backend.health.disk_used_pct >= BACKEND_DISK_WARN_PCT ? (
+            <span className="text-muted-foreground text-xs">
+              {t('text652d18ba46c8', { value0: Math.round(backend.health.disk_used_pct) })}
+            </span>
           ) : null}
           {!backend.operation && backend.last_operation_error ? (
             <span className="text-destructive max-w-xs text-xs break-words" role="alert">

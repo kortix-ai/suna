@@ -19376,7 +19376,18 @@
       "textb046e155c93a": "管理密钥",
       "textfb195abf4173": "通过 HTTP 调用查询",
       "textcf54801410ac": "已读取后端签发方元数据",
-      "text8dd0c59bb496": "已读取后端签名密钥"
+      "text8dd0c59bb496": "已读取后端签名密钥",
+      "text4a75e77ccc8d": "正在轮换密钥…",
+      "text959bdc881c93": "正在恢复…",
+      "textd14f65e63358": "无响应",
+      "text652d18ba46c8": "磁盘已用 {value0}%",
+      "text0aeabb927ead": "轮换管理员密钥",
+      "text8c62d9c111ea": "轮换此管理员密钥？",
+      "text5f966791327e": "此前读取的所有管理员密钥都将失效，包括 .env.local 文件和智能体会话中的密钥。Convex 会重启约 1 秒。数据、文件和环境变量保持不变。",
+      "text3f2bcc63b01e": "管理员密钥已轮换",
+      "text6dab22ece77e": "无法轮换管理员密钥",
+      "textcbf3aebd14dd": "已轮换后端管理员密钥",
+      "text12d16cf5ef6f": "已读取后端日志"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

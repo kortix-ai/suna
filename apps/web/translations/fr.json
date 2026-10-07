@@ -19376,7 +19376,18 @@
       "textb046e155c93a": "Clé d'administration",
       "textfb195abf4173": "Appelez une query via HTTP",
       "textcf54801410ac": "Métadonnées de l’émetteur du backend lues",
-      "text8dd0c59bb496": "Clés de signature du backend lues"
+      "text8dd0c59bb496": "Clés de signature du backend lues",
+      "text4a75e77ccc8d": "Renouvellement de la clé…",
+      "text959bdc881c93": "Récupération…",
+      "textd14f65e63358": "Ne répond pas",
+      "text652d18ba46c8": "Disque plein à {value0} %",
+      "text0aeabb927ead": "Renouveler la clé admin",
+      "text8c62d9c111ea": "Renouveler cette clé admin ?",
+      "text5f966791327e": "Toute clé admin lue auparavant cesse de fonctionner, y compris celles des fichiers .env.local et des sessions d’agent. Convex redémarre pendant environ 1 seconde. Les données, fichiers et variables d’environnement sont conservés.",
+      "text3f2bcc63b01e": "Clé admin renouvelée",
+      "text6dab22ece77e": "Impossible de renouveler la clé admin",
+      "textcbf3aebd14dd": "Clé admin du backend renouvelée",
+      "text12d16cf5ef6f": "Journaux du backend lus"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

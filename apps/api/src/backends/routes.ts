@@ -27,17 +27,38 @@ import { backendDashboardUrl } from './dashboard-host';
 import { BACKEND_TOKEN_TTL_SECONDS } from './auth';
 import { CONVEX_CLI_VERSION } from './convex-image';
 import {
+  BACKEND_OPERATIONS,
   BackendOperationError,
+  MAX_LOG_LINES,
   backendOperation,
   backendProviderFailure,
   beginResize,
   createBackendSnapshot,
   listBackendBackups,
+  readBackendLog,
   restoreBackendSnapshot,
+  rotateBackendAdminKey,
   runResize,
 } from './operations';
+import type { BackendHealth } from './maintenance';
 
 const STATUSES = ['provisioning', 'running', 'error', 'deleted'] as const;
+
+const BackendHealthObject = z
+  .object({
+    ok: z.boolean(),
+    checked_at: z.string(),
+    machine_state: z.string().nullable().openapi({
+      description: "The machine's state: `running`, `stopped`, `restoring`, …; `missing` when it no longer exists.",
+    }),
+    failures: z.number().int().openapi({ description: 'Failed probes in a row.' }),
+    error: z.string().nullable(),
+    disk_used_pct: z.number().nullable(),
+    repair: z.enum(['started', 'restored_from_backup']).nullable().openapi({
+      description: 'What the probe started to bring the machine back, if anything.',
+    }),
+  })
+  .openapi('BackendHealth');
 
 const BackendObject = z
   .object({
@@ -54,8 +75,15 @@ const BackendObject = z
     memory_gb: z.number().int(),
     disk_gb: z.number().int(),
     error: z.string().nullable(),
-    operation: z.enum(['resizing']).nullable().openapi({ description: 'A day-two operation in flight.' }),
+    operation: z.enum(BACKEND_OPERATIONS).nullable().openapi({
+      description:
+        'A day-two operation in flight: `resizing`, `rotating_key` (admin-key rotation), `recovering` (Kortix ' +
+        'is starting the machine or restoring it from its last automatic backup).',
+    }),
     last_operation_error: z.string().nullable(),
+    health: BackendHealthObject.nullable().openapi({
+      description: 'The last health probe (every 5 min while the backend runs). null until the first probe.',
+    }),
     auth_env: z
       .object({ KORTIX_AUTH_ISSUER: z.string(), KORTIX_AUTH_AUDIENCE: z.string(), KORTIX_AUTH_JWKS: z.string() })
       .nullable()
@@ -137,6 +165,7 @@ function serialize(row: BackendRow) {
     error: status === 'error' && typeof lastError === 'string' ? lastError : null,
     operation: backendOperation(row),
     last_operation_error: ((row.metadata as { lastOperationError?: unknown }).lastOperationError as string | undefined) ?? null,
+    health: ((row.metadata as { health?: BackendHealth }).health ?? null),
     auth_env: backendPublicAuthEnv(row),
     convex_version: CONVEX_CLI_VERSION,
     created_at: row.createdAt.toISOString(),
@@ -217,6 +246,7 @@ export function registerBackendsRoutes(): void {
         throw error;
       }
       // Outlives the response; a failure lands on the row as status `error`.
+      // It heartbeats: if this process dies, maintenance resumes it.
       void provisionBackend(row, resolveSessionSandboxRegion(loaded.row.metadata)).catch((error) =>
         logger.error('[backends] provision failed', { projectId, backendId: row.backendId, error: String(error) }),
       );
@@ -345,7 +375,8 @@ export function registerBackendsRoutes(): void {
       if (!row) return c.json({ error: 'Not found' }, 404);
       try {
         const next = await beginResize(row, { cpu: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb });
-        // Outlives the response; the result lands on the row.
+        // Outlives the response; the result lands on the row. It heartbeats:
+        // if this process dies, maintenance recovers the backend.
         void runResize(row, next);
       } catch (error) {
         const answer = operationError(c, error);
@@ -354,6 +385,76 @@ export function registerBackendsRoutes(): void {
       }
       const fresh = (await getLiveBackend(projectId, backendId))!;
       return c.json({ backend: serialize(fresh) }, 202);
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'post', path: '/{projectId}/backends/{backendId}/rotate-admin-key', tags: ['backends'],
+      summary: 'Rotate the admin key', ...auth,
+      description:
+        'Replaces the admin key. Every key read before stops working (401). Convex derives admin keys from its ' +
+        'instance secret, so the secret changes and Convex restarts (about 1 s of downtime; clients reconnect). ' +
+        'Documents, files and environment variables stay. Upload URLs not yet used and open pagination cursors ' +
+        'stop working. Read the new key from `/credentials`. Restoring a snapshot taken before a rotation brings ' +
+        'the old key back: rotate again after such a restore.',
+      request: { params: BackendParams },
+      responses: { 200: json(z.object({ backend: BackendObject }), 'Rotated'), ...errors(400, 403, 404, 409, 502, 503) },
+    }),
+    async (c) => {
+      const { projectId, backendId } = c.req.valid('param');
+      const loaded = await authorizedProject(c, projectId, true);
+      if (loaded instanceof Response) return loaded;
+      const row = await getLiveBackend(projectId, backendId);
+      if (!row) return c.json({ error: 'Not found' }, 404);
+      try {
+        await rotateBackendAdminKey(row);
+      } catch (error) {
+        const answer = operationError(c, error);
+        if (answer) return answer;
+        throw error;
+      }
+      return c.json({ backend: serialize((await getLiveBackend(projectId, backendId)) ?? row) }, 200);
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'get', path: '/{projectId}/backends/{backendId}/logs', tags: ['backends'],
+      summary: 'Read the Convex process log', ...auth,
+      description:
+        "The last lines of the Convex backend process log: startup, crashes, restarts, request lines. Function " +
+        "logs (console.log in your functions) are in the dashboard's Logs page and in `npx convex logs`.",
+      request: {
+        params: BackendParams,
+        query: z.object({
+          lines: z.coerce.number().int().min(1).max(MAX_LOG_LINES).default(200).openapi({
+            description: `How many lines, newest last. 1 to ${MAX_LOG_LINES}, default 200.`,
+          }),
+        }),
+      },
+      responses: {
+        200: json(z.object({ log: z.string() }), 'Log'),
+        ...errors(400, 403, 404, 409, 502, 503),
+      },
+    }),
+    async (c) => {
+      const { projectId, backendId } = c.req.valid('param');
+      const { lines } = c.req.valid('query');
+      // Request lines and errors can carry data: the same permission as the admin key.
+      const loaded = await authorizedProject(c, projectId, true);
+      if (loaded instanceof Response) return loaded;
+      const row = await getLiveBackend(projectId, backendId);
+      if (!row) return c.json({ error: 'Not found' }, 404);
+      try {
+        const log = await readBackendLog(row, lines);
+        c.header('Cache-Control', 'no-store');
+        return c.json({ log }, 200);
+      } catch (error) {
+        const answer = operationError(c, error);
+        if (answer) return answer;
+        throw error;
+      }
     },
   );
 

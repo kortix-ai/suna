@@ -690,7 +690,9 @@ Manages the project's self-hosted Convex backends. Each backend runs in its own 
 | `kortix backends backups <name\|id> [--json]` | Show the automatic backup (last time, size, interval) and the snapshots, newest first. |
 | `kortix backends snapshot <name\|id> [--json]` | Take a snapshot now. The backend keeps the newest 5. |
 | `kortix backends restore <name\|id> <snapshot-id> [--yes] [--json]` | Roll the backend back to a snapshot. Every change after the snapshot is lost. Asks first unless `--yes`. |
-| `kortix backends get <name\|id> [--json]` | Show one backend. |
+| `kortix backends get <name\|id> [--json]` | Show one backend, with its last health probe (machine state, disk use) and any operation in flight. `list` marks a backend whose probe failed `unhealthy`. |
+| `kortix backends logs <name\|id> [--lines <1-1000>] [--json]` | Print the end of the Convex process log (default 200 lines): startup, crashes, restarts, request lines. Function logs: `npx convex logs`. |
+| `kortix backends rotate-key <name\|id> [--yes] [--json]` | Replace the admin key. Every key read before stops working. Convex restarts for about 1 s; data, files and environment variables stay. Asks first unless `--yes`. |
 | `kortix backends dashboard <name\|id> [--open] [--json]` | Print the link to the backend's admin dashboard (Convex's dashboard inside Kortix, signed in for you). `--open` opens it in the browser. |
 | `kortix backends connect <name\|id> [--json]` | Print how to reach the backend, in three groups: from a Kortix App (`kortixAppBackendToken`), from outside (a member token, the HTTP API at `/api/query` and `/api/mutation`, HTTP actions at `site_url`, `verifyKortixMemberToken` on your own server), and from the CLI. The same snippets as **Connect** in Kortix web. Prints no secret. |
 | `kortix backends token <name\|id> [--json]` | Print a 15-minute Kortix sign-in token naming you. Convex functions read you with `ctx.auth.getUserIdentity()`. |
@@ -703,6 +705,8 @@ kortix backends deploy main                  # create if missing, then deploy ./
 kortix backends resize main --cpu 2 --memory 4   # restart on 2 vCPU, 4 GB
 kortix backends snapshot main                # keep a restore point before a risky deploy
 kortix backends restore main <snapshot-id>   # roll back to it
+kortix backends logs main --lines 500        # why did Convex restart?
+kortix backends rotate-key main --yes        # after a key leaked; read it again with env
 eval "$(kortix backends env main)"           # point the Convex CLI at it in this shell
 kortix backends env main --format dotenv >> .env.local
 ```

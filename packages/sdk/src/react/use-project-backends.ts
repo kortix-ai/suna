@@ -9,6 +9,7 @@ import {
   listBackends,
   resizeBackend,
   restoreBackendSnapshot,
+  rotateBackendAdminKey,
 } from '../core/rest/projects-client';
 import { contract } from './query-contracts';
 import { qk } from './query-keys';
@@ -25,7 +26,7 @@ export function useProjectBackends(projectId: string | null | undefined) {
     queryFn: () => listBackends(projectId as string),
     enabled: !!projectId,
     ...contract('inventory'),
-    // Poll while a backend provisions or runs an operation (a resize).
+    // Poll while a backend provisions or runs an operation (resize, rotation, recovery).
     refetchInterval: (q) =>
       q.state.data?.some((backend) => backend.status === 'provisioning' || backend.operation) ? 2_000 : false,
   });
@@ -52,7 +53,12 @@ export function useProjectBackends(projectId: string | null | undefined) {
     onSuccess: invalidate,
   });
 
-  return { ...query, create, remove, resize, restore };
+  const rotateAdminKey = useMutation({
+    mutationFn: (backendId: string) => rotateBackendAdminKey(projectId as string, backendId),
+    onSuccess: invalidate,
+  });
+
+  return { ...query, create, remove, resize, restore, rotateAdminKey };
 }
 
 /** Automatic backup state and snapshots of one backend, plus a take-snapshot mutation. */

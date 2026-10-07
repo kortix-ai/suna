@@ -64,6 +64,10 @@ test('project(id).backends binds the project id on every call', async () => {
   expect(last().url).toContain('/projects/PID123/backends/B1/backups');
   await backends.restore('B1', 'S1').catch(() => undefined);
   expect(last().url).toContain('/projects/PID123/backends/B1/restore');
+  await backends.rotateAdminKey('B1').catch(() => undefined);
+  expect(last().url).toContain('/projects/PID123/backends/B1/rotate-admin-key');
+  await backends.logs('B1', { lines: 50 }).catch(() => undefined);
+  expect(last().url).toContain('/projects/PID123/backends/B1/logs?lines=50');
 });
 
 test('project(id).apps exposes the complete App lifecycle with the project id bound', async () => {

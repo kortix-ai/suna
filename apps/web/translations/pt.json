@@ -19376,7 +19376,18 @@
       "textb046e155c93a": "Chave de administrador",
       "textfb195abf4173": "Chame uma query via HTTP",
       "textcf54801410ac": "Metadados do emissor do backend lidos",
-      "text8dd0c59bb496": "Chaves de assinatura do backend lidas"
+      "text8dd0c59bb496": "Chaves de assinatura do backend lidas",
+      "text4a75e77ccc8d": "Rotacionando a chave…",
+      "text959bdc881c93": "Recuperando…",
+      "textd14f65e63358": "Não responde",
+      "text652d18ba46c8": "Disco {value0}% cheio",
+      "text0aeabb927ead": "Rotacionar chave de administrador",
+      "text8c62d9c111ea": "Rotacionar esta chave de administrador?",
+      "text5f966791327e": "Toda chave de administrador lida antes deixa de funcionar, incluindo chaves em arquivos .env.local e sessões de agentes. O Convex reinicia por cerca de 1 segundo. Dados, arquivos e variáveis de ambiente permanecem.",
+      "text3f2bcc63b01e": "Chave de administrador rotacionada",
+      "text6dab22ece77e": "Não foi possível rotacionar a chave de administrador",
+      "textcbf3aebd14dd": "Chave de administrador do backend rotacionada",
+      "text12d16cf5ef6f": "Logs do backend lidos"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

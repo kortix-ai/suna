@@ -32,6 +32,8 @@ branch on it. See [Feature flags](/docs/feature-flags).
 | `backends.backups(backendId)` | `GET …/backends/:id/backups` | Reads the automatic backup state and the snapshots, newest first |
 | `backends.snapshot(backendId)` | `POST …/backends/:id/snapshots` | Takes a snapshot now. The backend keeps the newest 5 |
 | `backends.restore(backendId, snapshotId)` | `POST …/backends/:id/restore` | Rolls the backend back to a snapshot. Resolves with the running backend |
+| `backends.rotateAdminKey(backendId)` | `POST …/backends/:id/rotate-admin-key` | Replaces the admin key; every key read before stops working. Convex restarts (about 1 s). Resolves with the backend |
+| `backends.logs(backendId, { lines? })` | `GET …/backends/:id/logs` | The last `lines` (1 to 1000, default 200) of the Convex process log, as one string |
 | `backends.remove(backendId)` | `DELETE …/backends/:id` | Deletes the backend and its machine |
 
 `create` answers at once with `status: 'provisioning'`. Boot takes about 3 to 5
@@ -67,6 +69,30 @@ While a resize runs, the backend has `operation: 'resizing'`. When it fails,
 `size_unchanged`, and `409` with `backend_busy` or `backend_not_running`.
 `restore` answers `400` with `snapshot_not_found`.
 
+## Rotate the admin key, read the log, check health
+
+```ts
+const backends = kortix.project(projectId).backends;
+
+await backends.rotateAdminKey(backendId);               // old keys now get 401
+const { admin_key } = await backends.credentials(backendId);
+
+const log = await backends.logs(backendId, { lines: 500 });
+
+const { health } = await backends.get(backendId);
+if (health && !health.ok) console.warn(health.machine_state, health.error);
+```
+
+Rotation keeps documents, files, functions and environment variables. It
+invalidates upload URLs not yet used and open pagination cursors. Restoring a
+snapshot taken before a rotation brings the old key back: rotate again.
+`rotateAdminKey` and `logs` need `project.backend.write`. `rotateAdminKey`
+answers `409` with `backend_busy` while another operation runs.
+
+`health` is the last probe (Kortix probes every 5 minutes). Kortix starts a
+stopped machine and restores a lost one from its last automatic backup by
+itself; `operation` reads `recovering` while it does.
+
 ## Deploy Convex functions to a backend
 
 `credentials().env` holds the two variables the Convex CLI reads for a
@@ -96,9 +122,11 @@ Every type below is exported from `@kortix/sdk`.
 
 | Type | What it holds |
 |---|---|
-| `ProjectBackend` | `backend_id`, `project_id`, `name`, `status`, `url`, `site_url`, `dashboard_url`, `cpu`, `memory_gb`, `disk_gb`, `error`, `operation`, `last_operation_error`, `auth_env` (the public `KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE` and `KORTIX_AUTH_JWKS` values; `null` for a backend created before Kortix sign-in), `convex_version` (the matching `convex` npm CLI version), `created_at`, `updated_at` |
+| `ProjectBackend` | `backend_id`, `project_id`, `name`, `status`, `url`, `site_url`, `dashboard_url`, `cpu`, `memory_gb`, `disk_gb`, `error`, `operation`, `last_operation_error`, `health` (the last `ProjectBackendHealth`; `null` before the first probe), `auth_env` (the public `KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE` and `KORTIX_AUTH_JWKS` values; `null` for a backend created before Kortix sign-in), `convex_version` (the matching `convex` npm CLI version), `created_at`, `updated_at` |
 | `ProjectBackendStatus` | `'provisioning' \| 'running' \| 'error' \| 'deleted'` |
-| `ProjectBackendOperation` | `'resizing'` |
+| `ProjectBackendOperation` | `'resizing' \| 'rotating_key' \| 'recovering'` |
+| `ProjectBackendHealth` | `ok`, `checked_at`, `machine_state` (`running`, `stopped`, …, `missing`), `failures` (failed probes in a row), `error`, `disk_used_pct`, `repair` (`'started' \| 'restored_from_backup' \| null`) |
+| `GetBackendLogsOptions` | `lines` (1 to 1000, default 200) |
 | `ProjectBackendSize` | `cpu`, `memory_gb`, `disk_gb`, all optional |
 | `CreateProjectBackendInput` | `name`, plus the optional size fields |
 | `ProjectBackendBackups` | `automatic` (`state`, `last_backup_at`, `size_bytes`, `interval_minutes`), `snapshots` and `snapshot_limit` (how many snapshots the backend keeps) |
@@ -166,7 +194,7 @@ function BackendList({ projectId }: { projectId: string }) {
 ```
 
 It returns the query fields plus `create`, `remove`, `resize` (`{ backendId, cpu?, memory_gb?, disk_gb? }`),
-and `restore` (`{ backendId, snapshotId }`). Every mutation invalidates the
+`restore` (`{ backendId, snapshotId }`) and `rotateAdminKey` (`backendId`). Every mutation invalidates the
 list. The list refetches every 2 seconds while a backend provisions or runs an
 operation. `projectBackendsKey(projectId)` is the query key.
 

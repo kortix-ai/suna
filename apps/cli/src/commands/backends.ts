@@ -72,6 +72,15 @@ Subcommands:
                                     not exist.
     --dir <path>                    Directory with convex/ or convex.json.
                                     Default: the current directory.
+  logs <name|id>                    Print the end of the Convex process log:
+                                    startup, crashes, restarts, request lines.
+                                    Function logs: npx convex logs. --json.
+    --lines <1-1000>                How many lines. Default 200.
+  rotate-key <name|id>              Replace the admin key. Every key read
+                                    before stops working. Convex restarts
+                                    (about 1 s); data, files and env stay.
+                                    --json.
+    --yes                           Skip the confirmation.
   delete <name|id>                  Delete the backend and its machine.
     --yes                           Skip the confirmation.
 
@@ -196,6 +205,10 @@ export async function runBackends(argv: string[]): Promise<number> {
         return await envCommand(rest, common.options);
       case 'token':
         return await tokenCommand(rest, common.options, common.json);
+      case 'logs':
+        return await logsCommand(rest, common.options, common.json);
+      case 'rotate-key':
+        return await rotateKeyCommand(rest, common.options, common.json);
       case 'deploy':
         return await deployCommand(rest, extra, common.options);
       case 'delete':
@@ -219,8 +232,21 @@ function backendLines(backend: ProjectBackend): string {
     row('site url', backend.site_url) +
     row('dashboard', backend.dashboard_url ? 'kortix backends dashboard ' + backend.name : null) +
     row('machine', `${backend.cpu} vCPU · ${backend.memory_gb} GB · ${backend.disk_gb} GB disk`) +
+    (backend.health ? row('health', healthLine(backend.health)) : '') +
+    (backend.operation ? row('operation', backend.operation) : '') +
+    (backend.last_operation_error ? row('last error', backend.last_operation_error) : '') +
     (backend.error ? row('error', backend.error) : '')
   );
+}
+
+function healthLine(health: NonNullable<ProjectBackend['health']>): string {
+  const disk = health.disk_used_pct === null ? '' : ` · disk ${Math.round(health.disk_used_pct)}% used`;
+  return `${health.ok ? 'ok' : `unhealthy: ${health.error ?? health.machine_state ?? 'unknown'}`}${disk}`;
+}
+
+/** The STATUS column: the status, marked when the last probe failed. */
+function statusCell(backend: ProjectBackend): string {
+  return backend.status === 'running' && backend.health?.ok === false ? 'unhealthy' : backend.status;
 }
 
 async function listCommand(options: ContextOptions, json: boolean): Promise<number> {
@@ -239,7 +265,7 @@ async function listCommand(options: ContextOptions, json: boolean): Promise<numb
   process.stdout.write(`\n  ${C.bold}${pad('NAME', width)}  STATUS        URL${C.reset}\n`);
   for (const backend of backends) {
     process.stdout.write(
-      `  ${pad(backend.name, width)}  ${pad(backend.status, 12)}  ${backend.url ?? '-'}\n`,
+      `  ${pad(backend.name, width)}  ${pad(statusCell(backend), 12)}  ${backend.url ?? '-'}\n`,
     );
   }
   process.stdout.write('\n');
@@ -473,6 +499,48 @@ async function tokenCommand(rest: string[], options: ContextOptions, json: boole
   const minted = await scoped(ctx, async () => ctx.backends.token((await resolveBackend(ctx.backends, target)).backend_id));
   if (json) emitJson(minted);
   else process.stdout.write(`${minted.token}\n`);
+  return 0;
+}
+
+async function logsCommand(rest: string[], options: ContextOptions, json: boolean): Promise<number> {
+  const raw = takeFlagValue(rest, ['--lines', '-n']);
+  const lines = raw === undefined ? 200 : Number(raw);
+  if (!Number.isInteger(lines) || lines < 1 || lines > 1000) return fail('--lines must be a whole number from 1 to 1000');
+  const target = rest.find((value) => !value.startsWith('-'));
+  if (!target) return fail('logs needs a backend name or id');
+  const ctx = await context(options);
+  if (!ctx) return 1;
+  const log = await scoped(ctx, async () => ctx.backends.logs((await resolveBackend(ctx.backends, target)).backend_id, { lines }));
+  if (json) emitJson({ log });
+  else process.stdout.write(log);
+  return 0;
+}
+
+async function rotateKeyCommand(rest: string[], options: ContextOptions, json: boolean): Promise<number> {
+  const yes = takeFlagBool(rest, ['--yes', '-y']);
+  const target = rest.find((value) => !value.startsWith('-'));
+  if (!target) return fail('rotate-key needs a backend name or id');
+  const ctx = await context(options);
+  if (!ctx) return 1;
+  const backend = await scoped(ctx, () => resolveBackend(ctx.backends, target));
+  if (!yes) {
+    const ok = await confirm(
+      `Rotate the admin key of ${C.bold}${backend.name}${C.reset}? Every key read before stops working (.env.local files, agent sessions). Convex restarts for about 1 s.`,
+      false,
+      { onEndOfInput: false },
+    );
+    if (!ok) {
+      process.stdout.write(`${C.dim}Cancelled.${C.reset}\n`);
+      return 0;
+    }
+  }
+  const rotated = await scoped(ctx, () => ctx.backends.rotateAdminKey(backend.backend_id));
+  if (json) emitJson({ backend: rotated });
+  else {
+    process.stdout.write(
+      `\n  ${status.ok(`rotated the admin key of ${rotated.name}`)}\n  ${C.dim}Read the new key with kortix backends env ${rotated.name}.${C.reset}\n\n`,
+    );
+  }
   return 0;
 }
 

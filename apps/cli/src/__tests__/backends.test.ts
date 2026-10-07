@@ -22,6 +22,7 @@ let snapshots: Array<{ snapshot_id: string; created_at: string; size_bytes: numb
 let resizeFailure: string | null = null;
 let failResize = false;
 let dashboardUrl: string | null = 'https://dev-backend-99999999888847778666555555555555.apps.backends.test';
+let health: Record<string, unknown> | null = null;
 
 function backend(overrides: Record<string, unknown> = {}) {
   return {
@@ -42,6 +43,7 @@ function backend(overrides: Record<string, unknown> = {}) {
       KORTIX_AUTH_JWKS: 'data:text/plain;charset=utf-8;base64,e30=',
     },
     error: null,
+    health,
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
     ...overrides,
@@ -119,6 +121,13 @@ function startServer(): string {
         return Response.json({ backend: backend() });
       }
       if (path === `${base}/backends/${BACKEND_ID}/credentials`) return Response.json(credentials());
+      if (path === `${base}/backends/${BACKEND_ID}/rotate-admin-key` && req.method === 'POST') {
+        return Response.json({ backend: backend() });
+      }
+      if (path === `${base}/backends/${BACKEND_ID}/logs` && req.method === 'GET') {
+        const lines = new URL(req.url).searchParams.get('lines');
+        return Response.json({ log: `started (${lines} lines)\nconvex exited 1 at 1700000000\n` });
+      }
       if (path === `${base}/backends/${BACKEND_ID}/token` && req.method === 'POST') {
         return Response.json({ token: 'h.p.s', expires_at: '2026-10-06T01:00:00.000Z' });
       }
@@ -217,6 +226,7 @@ beforeEach(() => {
   failResize = false;
   snapshots = [{ snapshot_id: 'snap-1', created_at: '2026-01-01T00:00:00.000Z', size_bytes: 1048576 }];
   dashboardUrl = 'https://dev-backend-99999999888847778666555555555555.apps.backends.test';
+  health = null;
 });
 
 afterEach(() => {
@@ -247,7 +257,7 @@ describe('kortix backends', () => {
   test('--help lists every subcommand', async () => {
     const r = await runCli(['backends', '--help'], join(tmp, 'none.json'));
     expect(r.code).toBe(0);
-    for (const sub of ['list | ls', 'create <name>', 'resize <name|id>', 'backups <name|id>', 'snapshot <name|id>', 'restore <name|id> <snapshot-id>', 'get <name|id>', 'dashboard <name|id>', 'connect <name|id>', 'env <name|id>', 'deploy <name>', 'delete <name|id>']) {
+    for (const sub of ['list | ls', 'create <name>', 'resize <name|id>', 'backups <name|id>', 'snapshot <name|id>', 'restore <name|id> <snapshot-id>', 'get <name|id>', 'dashboard <name|id>', 'connect <name|id>', 'env <name|id>', 'deploy <name>', 'delete <name|id>', 'logs <name|id>', 'rotate-key <name|id>']) {
       expect(r.stdout).toContain(sub);
     }
   });
@@ -561,5 +571,39 @@ describe('kortix backends', () => {
     expect(calls.find((c) => c.path.endsWith('/restore'))?.body).toEqual({ snapshot_id: 'snap-1' });
     const missing = await runCli(['backends', 'restore', 'main', '--yes', '--project', PROJECT], config);
     expect(missing.code).toBe(2);
+  });
+
+  test('logs prints the process log as is; --lines reaches the API; a bad --lines never does', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['backends', 'logs', 'main', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toBe('started (200 lines)\nconvex exited 1 at 1700000000\n');
+    const many = await runCli(['backends', 'logs', 'main', '--lines', '1000', '--project', PROJECT, '--json'], config);
+    expect(JSON.parse(many.stdout).log).toContain('(1000 lines)');
+    calls = [];
+    const bad = await runCli(['backends', 'logs', 'main', '--lines', '5000', '--project', PROJECT], config);
+    expect(bad.code).toBe(2);
+    expect(calls).toEqual([]);
+  });
+
+  test('rotate-key --yes POSTs the rotation; without --yes and no terminal it rotates nothing', async () => {
+    const config = writeConfig(startServer());
+    const refused = await runCli(['backends', 'rotate-key', 'main', '--project', PROJECT], config);
+    expect(refused.code).not.toBe(0);
+    expect(calls.some((c) => c.path.endsWith('/rotate-admin-key'))).toBe(false);
+    const r = await runCli(['backends', 'rotate-key', 'main', '--yes', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('rotated the admin key of main');
+    expect(calls.filter((c) => c.method === 'POST' && c.path.endsWith('/rotate-admin-key'))).toHaveLength(1);
+  });
+
+  test('get and list show a failed health probe', async () => {
+    health = { ok: false, checked_at: '2026-01-01T00:00:00.000Z', machine_state: 'stopped', failures: 2, error: 'The backend machine is stopped.', disk_used_pct: 91, repair: 'started' };
+    const config = writeConfig(startServer());
+    const get = await runCli(['backends', 'get', 'main', '--project', PROJECT], config);
+    expect(get.stdout).toContain('unhealthy: The backend machine is stopped.');
+    expect(get.stdout).toContain('91% used');
+    const list = await runCli(['backends', 'ls', '--project', PROJECT], config);
+    expect(list.stdout).toContain('unhealthy');
   });
 });

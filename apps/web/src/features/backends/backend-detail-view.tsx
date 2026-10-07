@@ -3,6 +3,7 @@
 import { CopyButton } from '@/components/markdown/copy-button';
 import Link from '@/components/site-link';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,7 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
 import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast } from '@/components/ui/toast';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { FeatureGateScreen } from '@/features/workspace/feature-gate-screen';
@@ -24,7 +25,12 @@ import { useFeatureFlag, useProjectBackendBackups, useProjectBackends } from '@k
 import { ArrowLeftIcon, DatabaseIcon, DotsThreeIcon } from '@phosphor-icons/react';
 import { useEffect, useRef, useState } from 'react';
 import { BackendConnectDialog } from './backend-connect-dialog';
-import { BackendBackupsDialog, ResizeBackendDialog, backendSizeLabel } from './backend-dialogs';
+import {
+  BackendBackupsDialog,
+  ResizeBackendDialog,
+  backendOperationError,
+  backendSizeLabel,
+} from './backend-dialogs';
 import { BackendStatusBadge } from './backends-view';
 
 /**
@@ -45,7 +51,7 @@ export function BackendDetailView({
   const gate = useFeatureFlag(projectId, 'backends');
   const backends = useProjectBackends(gate.enabled ? projectId : null);
   const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_BACKEND_WRITE).allowed === true;
-  const [dialog, setDialog] = useState<'resize' | 'backups' | 'connect' | null>(null);
+  const [dialog, setDialog] = useState<'resize' | 'backups' | 'connect' | 'rotate' | null>(null);
   const backend = backends.data?.find((b) => b.backend_id === backendId) ?? null;
   const listHref = capabilityTabHref(projectId, 'backends');
 
@@ -112,6 +118,14 @@ export function BackendDetailView({
                   >
                     {t.raw('textf0e800ed571e')}
                   </DropdownMenuItem>
+                  {canWrite ? (
+                    <DropdownMenuItem
+                      disabled={backend.status !== 'running' || backend.operation !== null}
+                      onClick={() => setDialog('rotate')}
+                    >
+                      {t.raw('text0aeabb927ead')}
+                    </DropdownMenuItem>
+                  ) : null}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -160,6 +174,27 @@ export function BackendDetailView({
           onResize={(size) =>
             backends.resize.mutateAsync({ backendId: backend.backend_id, ...size })
           }
+        />
+      ) : null}
+      {backend ? (
+        <ConfirmDialog
+          open={dialog === 'rotate'}
+          onOpenChange={(open) => !open && !backends.rotateAdminKey.isPending && setDialog(null)}
+          title={t.raw('text8c62d9c111ea')}
+          description={t.raw(
+            'text5f966791327e',
+          )}
+          confirmLabel={t.raw('text0aeabb927ead')}
+          isPending={backends.rotateAdminKey.isPending}
+          onConfirm={async () => {
+            try {
+              await backends.rotateAdminKey.mutateAsync(backend.backend_id);
+              successToast(t.raw('text3f2bcc63b01e'));
+            } catch (error) {
+              errorToast(backendOperationError(error, t.raw('text6dab22ece77e'), t));
+            }
+            setDialog(null);
+          }}
         />
       ) : null}
       {backend && dialog === 'connect' ? (

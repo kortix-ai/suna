@@ -34,6 +34,8 @@ flow(
       "GET /v1/projects/:projectId/backends/:backendId/backups",
       "POST /v1/projects/:projectId/backends/:backendId/snapshots",
       "POST /v1/projects/:projectId/backends/:backendId/restore",
+      "POST /v1/projects/:projectId/backends/:backendId/rotate-admin-key",
+      "GET /v1/projects/:projectId/backends/:backendId/logs",
       "GET /v1/backends/:backendId/.well-known/openid-configuration",
       "GET /v1/backends/:backendId/jwks.json",
     ],
@@ -97,6 +99,15 @@ flow(
           { snapshot_id: "snap_none" },
           { params: backendParams },
         ),
+      );
+    });
+
+    await ctx.step("flag off: rotate-admin-key, logs → 403 feature_disabled", async () => {
+      expectDisabled(
+        await owner.post("/v1/projects/:projectId/backends/:backendId/rotate-admin-key", {}, { params: backendParams }),
+      );
+      expectDisabled(
+        await owner.get("/v1/projects/:projectId/backends/:backendId/logs", { params: backendParams }),
       );
     });
 

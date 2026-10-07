@@ -39,11 +39,16 @@ describe('Kortix Backends React Query bindings', () => {
     expect(poll([{ status: 'provisioning', operation: null }])).toBe(2_000);
   });
 
-  test('resize and restore invalidate the backend list', () => {
+  test('resize, restore and rotateAdminKey invalidate the backend list', () => {
     const backends = useProjectBackends('project-1') as any;
     backends.resize.onSuccess();
     backends.restore.onSuccess();
-    expect(invalidated).toEqual([qk.project.backends('project-1'), qk.project.backends('project-1')]);
+    backends.rotateAdminKey.onSuccess();
+    expect(invalidated).toEqual([
+      qk.project.backends('project-1'),
+      qk.project.backends('project-1'),
+      qk.project.backends('project-1'),
+    ]);
   });
 
   test('backups query is keyed per backend, disabled without one, and a snapshot refreshes it', () => {

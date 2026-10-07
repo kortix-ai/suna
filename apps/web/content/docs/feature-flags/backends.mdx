@@ -294,6 +294,65 @@ Limits: 1–16 vCPU, 1–32 GB memory, 10–100 GB disk. API: `PATCH
 /v1/projects/:id/backends/:backendId`, `GET …/backups`, `POST …/snapshots`,
 `POST …/restore`.
 
+## Health and logs
+
+Kortix probes every running backend every 5 minutes: the machine state, Convex
+`/version` (5 s timeout) and disk use. The result is the backend's `health`
+in the API, a **Not responding** badge in Kortix web, and a `health` line in
+`kortix backends get`.
+
+| The probe finds | Kortix does |
+|---|---|
+| Convex does not answer | Records the failure. Convex's supervisor restarts a crashed Convex within 1 s. Three failed probes in a row alert Kortix. |
+| The machine is stopped | Starts it, then re-reads the admin key. `operation` reads `recovering` meanwhile. |
+| The host was lost, or Platinum removed the machine with a completed backup | Restores the machine from its last automatic backup: same URLs, data since that backup is lost (up to 1 hour). |
+| The machine no longer exists | After 3 probes the backend turns `error`. Delete it and create it again. |
+| Disk use at 80% or more | Shows **Disk N% full**. Resize the disk (`kortix backends resize <name> --disk <gb>`). |
+
+A create or resize survives an API restart. Each heartbeats every 20 s. One
+with no heartbeat for 2 minutes is resumed: a create replays on the same
+machine, an interrupted resize or rotation ends with the machine running and
+`last_operation_error` set. A create interrupted 3 times turns `error`.
+
+The Convex process log holds startup, crash and restart lines, and one line
+per request:
+
+```bash
+kortix backends logs main               # the last 200 lines
+kortix backends logs main --lines 1000  # up to 1000
+npx convex logs                         # function logs (console.log in your functions)
+```
+
+The machine keeps each log at 50 MB plus one previous 50 MB file. Backends
+created before this cap keep their image: their logs are not capped.
+
+## Rotate the admin key
+
+Rotate the admin key when it may have leaked: a removed project member read
+it, it was printed into a session, or a `.env.local` left the machine.
+
+```bash
+kortix backends rotate-key main --yes
+eval "$(kortix backends env main)"   # read the new key
+```
+
+In Kortix web: the backend page, **⋯ → Rotate admin key**. API: `POST
+/v1/projects/:id/backends/:backendId/rotate-admin-key`.
+
+Convex derives every admin key from the backend's instance secret. Rotation
+writes a new instance secret and restarts Convex: about 1 second of downtime,
+and clients reconnect. After it:
+
+- Every admin key read before answers `401 BadAdminKey`.
+- Documents, files, functions and environment variables are unchanged.
+- Upload URLs not yet used and open pagination cursors stop working.
+- Member sign-in tokens keep working: they use a different key.
+- A dashboard open in Kortix web signs in again after a reload.
+
+Restoring a snapshot taken before a rotation brings the old instance secret
+back, so the old admin key works again. Kortix re-reads the key after every
+restore. Rotate again after such a restore.
+
 ## Use Convex directly
 
 A backend is plain self-hosted Convex. With its URL and admin key
@@ -306,10 +365,11 @@ Python clients, the HTTP API, and Convex components.
 | Permission | Allows |
 |---|---|
 | `project.backend.read` | List and view backends. |
-| `project.backend.write` | Create and delete backends. Read the admin credentials. |
+| `project.backend.write` | Create, resize and delete backends. Read the admin credentials and the process log. Rotate the admin key. |
 
-Reading the credentials writes a `backend.credentials.read` audit event. See
-[Audit actions](/docs/audit-actions).
+Reading the credentials writes a `backend.credentials.read` audit event.
+Rotation is `backend.credentials.rotate`; reading the log is
+`backend.logs.read`. See [Audit actions](/docs/audit-actions).
 
 ## Limits
 
@@ -322,6 +382,8 @@ Reading the credentials writes a `backend.credentials.read` audit event. See
   `auth.config.ts` works.
 - Convex cloud features are absent: preview deployments, the AI gateway for
   `@convex-dev/agent`, and audit logs.
+- A backend keeps the image it was created with. Image fixes (the log cap,
+  a newer Convex) reach new backends only.
 - `npx convex export` covers data and files. It does not cover environment
   variables or pending scheduled jobs.
 

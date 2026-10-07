@@ -5,7 +5,27 @@ import { unwrap } from './shared';
 
 export type ProjectBackendStatus = 'provisioning' | 'running' | 'error' | 'deleted';
 
-export type ProjectBackendOperation = 'resizing';
+/**
+ * A day-two operation in flight. `rotating_key`: an admin-key rotation.
+ * `recovering`: Kortix is starting the machine, or restoring it from its last
+ * automatic backup, after a failed health probe or an interrupted operation.
+ */
+export type ProjectBackendOperation = 'resizing' | 'rotating_key' | 'recovering';
+
+/** The last health probe of a running backend. Kortix probes every 5 minutes. */
+export interface ProjectBackendHealth {
+  ok: boolean;
+  checked_at: string;
+  /** The machine's state: `running`, `stopped`, `restoring`, …; `missing` when it no longer exists; `null` when the provider did not answer. */
+  machine_state: string | null;
+  /** Failed probes in a row. */
+  failures: number;
+  error: string | null;
+  /** Percent of the machine disk in use, when known. */
+  disk_used_pct: number | null;
+  /** What the probe started to bring the machine back, if anything. */
+  repair: 'started' | 'restored_from_backup' | null;
+}
 
 /** Machine size. Every field is optional on write. */
 export interface ProjectBackendSize {
@@ -41,6 +61,8 @@ export interface ProjectBackend {
   operation: ProjectBackendOperation | null;
   /** Why the last operation failed. Cleared by the next operation. */
   last_operation_error: string | null;
+  /** The last health probe. `null` before the first one; absent on servers older than this field. */
+  health?: ProjectBackendHealth | null;
   /**
    * Public values that verify this backend's member tokens: no secret. Put
    * them in the environment of any server that calls `verifyKortixMemberToken`.
@@ -266,6 +288,45 @@ export async function createBackendSnapshot(
     ),
     'Failed to snapshot backend',
   );
+}
+
+/**
+ * Replaces the admin key: every key read before stops working. Convex restarts
+ * (about 1 s). Data, files and environment variables stay. Read the new key
+ * with {@link getBackendCredentials}. Answers `409` with `backend_busy` or
+ * `backend_not_running`.
+ */
+export async function rotateBackendAdminKey(projectId: string, backendId: string): Promise<ProjectBackend> {
+  return unwrap(
+    await backendApi.post<{ backend: ProjectBackend }>(
+      `/projects/${projectId}/backends/${backendId}/rotate-admin-key`,
+      {},
+    ),
+    'Failed to rotate the backend admin key',
+  ).backend;
+}
+
+export interface GetBackendLogsOptions {
+  /** 1 to 1000. Default 200. */
+  lines?: number;
+}
+
+/**
+ * The last lines of the Convex process log (startup, crashes, restarts,
+ * request lines), newest last. Function logs are in the dashboard and in
+ * `npx convex logs`.
+ */
+export async function getBackendLogs(
+  projectId: string,
+  backendId: string,
+  options: GetBackendLogsOptions = {},
+): Promise<string> {
+  return unwrap(
+    await backendApi.get<{ log: string }>(
+      `/projects/${projectId}/backends/${backendId}/logs?lines=${options.lines ?? 200}`,
+    ),
+    'Failed to read the backend log',
+  ).log;
 }
 
 /** Rolls the backend back to a snapshot. Every change after it is lost. Answers `400` with `snapshot_not_found`. */

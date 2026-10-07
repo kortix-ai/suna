@@ -19376,7 +19376,18 @@
       "textb046e155c93a": "Clave de administrador",
       "textfb195abf4173": "Llama a una query por HTTP",
       "textcf54801410ac": "Metadatos del emisor del backend leídos",
-      "text8dd0c59bb496": "Claves de firma del backend leídas"
+      "text8dd0c59bb496": "Claves de firma del backend leídas",
+      "text4a75e77ccc8d": "Rotando la clave…",
+      "text959bdc881c93": "Recuperando…",
+      "textd14f65e63358": "No responde",
+      "text652d18ba46c8": "Disco al {value0} %",
+      "text0aeabb927ead": "Rotar la clave de administrador",
+      "text8c62d9c111ea": "¿Rotar esta clave de administrador?",
+      "text5f966791327e": "Todas las claves de administrador leídas antes dejan de funcionar, incluidas las de archivos .env.local y sesiones de agentes. Convex se reinicia durante aproximadamente 1 segundo. Los datos, archivos y variables de entorno se conservan.",
+      "text3f2bcc63b01e": "Clave de administrador rotada",
+      "text6dab22ece77e": "No se pudo rotar la clave de administrador",
+      "textcbf3aebd14dd": "Clave de administrador del backend rotada",
+      "text12d16cf5ef6f": "Registros del backend leídos"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

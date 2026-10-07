@@ -19387,7 +19387,18 @@
       "textb046e155c93a": "Admin key",
       "textfb195abf4173": "Call a query over HTTP",
       "textcf54801410ac": "Read backend issuer metadata",
-      "text8dd0c59bb496": "Read backend signing keys"
+      "text8dd0c59bb496": "Read backend signing keys",
+      "text4a75e77ccc8d": "Rotating key…",
+      "text959bdc881c93": "Recovering…",
+      "textd14f65e63358": "Not responding",
+      "text652d18ba46c8": "Disk {value0}% full",
+      "text0aeabb927ead": "Rotate admin key",
+      "text8c62d9c111ea": "Rotate this admin key?",
+      "text5f966791327e": "Every admin key read before stops working, including keys in .env.local files and agent sessions. Convex restarts for about 1 second. Data, files and environment variables stay.",
+      "text3f2bcc63b01e": "Admin key rotated",
+      "text6dab22ece77e": "Could not rotate the admin key",
+      "textcbf3aebd14dd": "Rotated backend admin key",
+      "text12d16cf5ef6f": "Read backend logs"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

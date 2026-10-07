@@ -60,6 +60,8 @@ export function bindProjectAccessResources(projectId: string) {
         P.restoreBackendSnapshot(projectId, backendId, snapshotId),
       credentials: (backendId: string) => P.getBackendCredentials(projectId, backendId),
       token: (backendId: string) => P.getBackendToken(projectId, backendId),
+      rotateAdminKey: (backendId: string) => P.rotateBackendAdminKey(projectId, backendId),
+      logs: (backendId: string, options?: P.GetBackendLogsOptions) => P.getBackendLogs(projectId, backendId, options),
       remove: (backendId: string) => P.deleteBackend(projectId, backendId),
     },
 

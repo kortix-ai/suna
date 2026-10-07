@@ -19376,7 +19376,18 @@
       "textb046e155c93a": "Администраторски кључ",
       "textfb195abf4173": "Позовите упит преко HTTP-а",
       "textcf54801410ac": "Pročitani metapodaci izdavaoca backenda",
-      "text8dd0c59bb496": "Pročitani ključevi za potpisivanje backenda"
+      "text8dd0c59bb496": "Pročitani ključevi za potpisivanje backenda",
+      "text4a75e77ccc8d": "Rotiranje ključa…",
+      "text959bdc881c93": "Oporavak…",
+      "textd14f65e63358": "Ne odgovara",
+      "text652d18ba46c8": "Disk je {value0}% pun",
+      "text0aeabb927ead": "Rotiraj administratorski ključ",
+      "text8c62d9c111ea": "Rotirati ovaj administratorski ključ?",
+      "text5f966791327e": "Svaki ranije pročitani administratorski ključ prestaje da radi, uključujući ključeve u .env.local datotekama i sesijama agenata. Convex se ponovo pokreće oko 1 sekunde. Podaci, datoteke i promenljive okruženja ostaju.",
+      "text3f2bcc63b01e": "Administratorski ključ je rotiran",
+      "text6dab22ece77e": "Rotiranje administratorskog ključa nije uspelo",
+      "textcbf3aebd14dd": "Rotiran administratorski ključ backenda",
+      "text12d16cf5ef6f": "Pročitani logovi backenda"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

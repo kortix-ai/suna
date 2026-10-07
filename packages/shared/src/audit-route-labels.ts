@@ -442,6 +442,8 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/projects/:projectId/backends/:backendId/restore': { action: 'backend.snapshot.restore', title: 'Restore a backend snapshot' },
   'POST /v1/projects/:projectId/backends/:backendId/token': { action: 'backend.token.mint', title: 'Mint a backend sign-in token' },
   'GET /v1/projects/:projectId/backends/:backendId/credentials': { action: 'backend.credentials.view', title: 'Read backend admin credentials', events: ['backend.credentials.read'] },
+  'POST /v1/projects/:projectId/backends/:backendId/rotate-admin-key': { action: 'backend.credentials.rotate', title: 'Rotated backend admin key' },
+  'GET /v1/projects/:projectId/backends/:backendId/logs': { action: 'backend.logs.read', title: 'Read backend logs' },
   'GET /v1/projects/:projectId/branches': { action: 'git.branch.list', title: 'Listed Git branches' },
   'GET /v1/projects/:projectId/change-requests': { action: 'change_request.list', title: 'Listed change requests' },
   'POST /v1/projects/:projectId/change-requests': { action: 'change_request.create', title: 'Created change request' },

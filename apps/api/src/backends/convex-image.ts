@@ -36,18 +36,36 @@ const DASHBOARD_SERVER = readFileSync(new URL('./dashboard-server.mjs', import.m
 
 /** The file Kortix writes after create: the public origins exist only once the sandbox id does. */
 export const CONVEX_ORIGINS_FILE = '/convex/origins.env';
+/** Convex's process log: startup failures, crashes, the supervisor's restart lines. */
+export const CONVEX_LOG_FILE = '/var/log/convex.log';
+const DASHBOARD_LOG_FILE = '/var/log/convex-dashboard.log';
+/**
+ * Each log is capped at this size, plus one previous copy (`<file>.1`): at
+ * most 4 × 50 MB on a disk that also holds the database. The cap is checked
+ * every 30 s, so a file can overshoot it by what Convex writes in 30 s.
+ * ponytail: copy-then-truncate loses the lines written between the two steps
+ * (milliseconds). A logrotate-style reopen needs Convex to reopen its log.
+ */
+export const CONVEX_LOG_CAP_BYTES = 50 * 1024 * 1024;
 
 const SUPERVISOR = `#!/bin/bash
 # Waits for ${CONVEX_ORIGINS_FILE}, then runs the Convex backend forever.
 cd /convex || exit 1
 while [ ! -s ${CONVEX_ORIGINS_FILE} ]; do sleep 0.2; done
 set -a; . ${CONVEX_ORIGINS_FILE}; set +a
-export DO_NOT_REQUIRE_SSL=1 DISABLE_BEACON=1 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export DO_NOT_REQUIRE_SSL=1 DISABLE_BEACON=1 RUST_LOG=info PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# Caps each log at ${CONVEX_LOG_CAP_BYTES} bytes plus one previous copy. Both writers append (>>), so a truncate is safe.
+( while true; do
+    for f in ${CONVEX_LOG_FILE} ${DASHBOARD_LOG_FILE}; do
+      if [ "$(stat -c %s "$f" 2>/dev/null || echo 0)" -gt ${CONVEX_LOG_CAP_BYTES} ]; then cp "$f" "$f.1" && : > "$f"; fi
+    done
+    sleep 30
+  done ) &
 # The Convex dashboard (port 6791), restarted if it ever exits.
-( while true; do node /usr/local/bin/convex-dashboard-server.mjs >> /var/log/convex-dashboard.log 2>&1; sleep 1; done ) &
+( while true; do node /usr/local/bin/convex-dashboard-server.mjs >> ${DASHBOARD_LOG_FILE} 2>&1; sleep 1; done ) &
 while true; do
-  ./run_backend.sh >> /var/log/convex.log 2>&1
-  echo "convex exited $? at $(date +%s)" >> /var/log/convex.log
+  ./run_backend.sh >> ${CONVEX_LOG_FILE} 2>&1
+  echo "convex exited $? at $(date +%s)" >> ${CONVEX_LOG_FILE}
   sleep 1
 done
 `;
