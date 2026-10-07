@@ -231,7 +231,10 @@ export interface ProjectTriggersResponse {
 }
 
 export interface TriggerFireResponse {
-  status: 'queued' | 'fired';
+  // 'deduped' = an identical fire is already running; the request was
+  // collapsed into it (no new session). The route serves it (apps/api
+  // projects/routes/triggers.ts fire handler).
+  status: 'queued' | 'fired' | 'deduped';
   reason?: string | null;
   session_id?: string | null;
 }

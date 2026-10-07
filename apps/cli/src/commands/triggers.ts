@@ -8,6 +8,7 @@ import type {
 } from '../api/types.ts';
 import { splitHelp } from '../command-argv.ts';
 import {
+  type CtxOpts,
   emitJson,
   fail,
   missing,
@@ -16,7 +17,6 @@ import {
   takeFlagBool,
   takeFlagValue,
   takeFlagValues,
-  type CtxOpts,
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import {
@@ -381,9 +381,15 @@ async function triggerRunOutcome(
   ctx: { client: ApiClient; projectId: string },
   slug: string,
   waitSeconds: number,
-): Promise<{ outcome: 'failed'; error: string } | { outcome: 'watched' } | { outcome: 'unwatched'; reason: string }> {
+): Promise<
+  | { outcome: 'failed'; error: string }
+  | { outcome: 'watched' }
+  | { outcome: 'unwatched'; reason: string }
+> {
   const readTrigger = async (): Promise<ProjectTrigger | undefined> => {
-    const resp = await ctx.client.get<ProjectTriggersResponse>(`/projects/${ctx.projectId}/triggers`);
+    const resp = await ctx.client.get<ProjectTriggersResponse>(
+      `/projects/${ctx.projectId}/triggers`,
+    );
     return resp.triggers.find((t) => t.slug === slug);
   };
   // The anchor is the fire's own attempt stamp: without it no later write can
@@ -398,7 +404,10 @@ async function triggerRunOutcome(
     }
   }
   if (!anchor?.last_attempt_at) {
-    return { outcome: 'unwatched', reason: anchor ? 'the trigger row has no attempt stamp' : 'the trigger row was not readable' };
+    return {
+      outcome: 'unwatched',
+      reason: anchor ? 'the trigger row has no attempt stamp' : 'the trigger row was not readable',
+    };
   }
   if (anchor.last_status === 'failed' && anchor.last_error) {
     // A fire over a failing trigger keeps the old failure until a run finishes.

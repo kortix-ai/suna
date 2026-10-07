@@ -588,19 +588,31 @@ describe('kortix triggers fire — reports the run outcome', () => {
           const now = new Date().toISOString();
           // The fire route's own write: last_status fired, last_attempt_at set.
           state.triggers = state.triggers.map((t) =>
-            t.slug === 'dogfood-cron' ? { ...t, last_status: 'fired', last_error: null, last_attempt_at: now } : t,
+            t.slug === 'dogfood-cron'
+              ? { ...t, last_status: 'fired', last_error: null, last_attempt_at: now }
+              : t,
           );
           if (state.failAfterMs !== null) {
             setTimeout(() => {
               state.triggers = state.triggers.map((t) =>
                 t.slug === 'dogfood-cron'
-                  ? { ...t, last_status: 'failed', last_error: FAILURE_TEXT, last_attempt_at: new Date().toISOString() }
+                  ? {
+                      ...t,
+                      last_status: 'failed',
+                      last_error: FAILURE_TEXT,
+                      last_attempt_at: new Date().toISOString(),
+                    }
                   : t,
               );
             }, state.failAfterMs);
           }
           return Response.json(
-            { status: state.fireStatus, session_id: state.fireStatus === 'fired' ? SESSION_ID : null, command_id: null, deduped: false },
+            {
+              status: state.fireStatus,
+              session_id: state.fireStatus === 'fired' ? SESSION_ID : null,
+              command_id: null,
+              deduped: false,
+            },
             { status: 202 },
           );
         }
