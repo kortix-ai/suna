@@ -118,16 +118,12 @@ export async function fetchProjectFileRaw(
   if (ref) params.set('ref', ref);
   const query = params.toString() ? `?${params.toString()}` : '';
 
-  const token = await getSupabaseAccessTokenWithRetry();
   const url = `${platformConfig().backendUrl || ''}/projects/${projectId}/files/raw${query}`;
-  const res = await fetch(url, {
-    method: 'GET',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    signal: options?.signal,
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(text || `Failed to read file (HTTP ${res.status})`);
-  }
+  const res = await sendChecked(
+    url,
+    { method: 'GET', ...(options?.signal ? { signal: options.signal } : {}) },
+    {},
+    'Failed to read file',
+  );
   return await res.blob();
 }
