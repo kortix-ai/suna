@@ -1,5 +1,5 @@
 {
-  "source_hash": "0c682c6c4011038bc2d2ab5184fb9f2aa35fd747033548517ab91d80dd8b0238",
+  "source_hash": "72c67435ce503ab8e4b2fcd7779947c172980b41cf499c6b1754883df4dcc33f",
   "diff_files": [
     "packages/db/drizzle/meta/20261004061656_snapshot.json",
     "packages/db/drizzle/meta/_journal.json",
@@ -8,12 +8,12 @@
     "tests/migration/gateway-logs-session-rollup-index.test.ts"
   ],
   "diff_hash": "14a29b0ac63e979dd4b51232293e470e69509d2c4e2498a657883d9841ea19b8",
-  "head": "df0702fa65d92caf20ccb45ce68045f2bc3c247a",
+  "head": "eb3b4f97403f269d084f54868a90b5a300b5bbb5",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-07T00:30:22.282Z"
+  "at": "2026-10-07T00:45:45.749Z"
 }

@@ -855,13 +855,6 @@
       "when": 1791331606153,
       "tag": "20261007000646_permission_push_claims",
       "breakpoints": true
-    },
-    {
-      "idx": 122,
-      "version": "7",
-      "when": 1791332476251,
-      "tag": "20261004061656_gateway_logs_session_rollup_index",
-      "breakpoints": true
     }
   ]
 }
