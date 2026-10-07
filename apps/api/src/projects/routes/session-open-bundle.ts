@@ -194,8 +194,10 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
               accountDefault: defaults.account,
               agentDefaults: defaults.agents,
               projectDefault: defaults.projects[projectId] ?? null,
-              resolvedForCaller:
-                resolved.model ?? (freeTier ? null : platformDefaultModelId()),
+              // Same answer as GET /model-defaults (KRTX-1067): the platform
+              // default is servable for every tier, so the fallback is the
+              // same for free and paid callers.
+              resolvedForCaller: resolved.model ?? platformDefaultModelId(),
               resolvedSource: resolved.source,
               freeTier,
             };

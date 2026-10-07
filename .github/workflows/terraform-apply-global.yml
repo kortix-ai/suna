@@ -1,6 +1,6 @@
 name: Terraform Apply Global
 
-# Applies the two ACCOUNT-GLOBAL Terraform roots on every push to `main` that
+# Applies the two ACCOUNT-GLOBAL Terraform roots on every push to `dev` that
 # touches them. These are not environment infrastructure — they are the SOC 2
 # controls themselves (CloudTrail, GuardDuty, IAM baseline, WAF, the compliance
 # Lambdas), and a merged-but-unapplied change here is a compliance finding, not
@@ -55,7 +55,7 @@ jobs:
       aws_region: us-west-2
       role_arn: ${{ vars.TF_APPLY_ROLE_ARN_GLOBAL }}
       github_environment: infra-global
-      trusted_branch: main
+      trusted_branch: dev
       allow_deletes: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_deletes || false }}
 
   security-baseline:
@@ -71,5 +71,5 @@ jobs:
       aws_region: us-west-2
       role_arn: ${{ vars.TF_APPLY_ROLE_ARN_GLOBAL }}
       github_environment: infra-global
-      trusted_branch: main
+      trusted_branch: dev
       allow_deletes: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_deletes || false }}

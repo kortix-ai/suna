@@ -170,6 +170,9 @@ describe('kortix sandboxes provider', () => {
     expect(r.stdout).toContain('provider --clear');
     expect(r.stdout).toContain('provider status');
     expect(r.stdout).toContain('project.settings.write');
+    // KRTX-1681: the pin is a person's action — the help must not promise an
+    // agent session that holding the permission is enough.
+    expect(r.stdout).toContain('always refused');
   });
 
   test('bare `provider` prints the pin and what this host offers; --json is machine-readable', async () => {

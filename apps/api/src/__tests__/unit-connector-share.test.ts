@@ -419,6 +419,65 @@ describe('trigger-created session visibility', () => {
       { metadata, canManageProject: true },
     )).toBe(false);
   });
+
+  /*
+   * The session's OWN credential.
+   *
+   * A schedule/trigger run attributes its row to the agent's standing service
+   * account, never to the launcher the token names, so the ownership rule
+   * refused the session its own credential: the daemon-port gate 403'd every
+   * proxied runtime read from the box (`[preview] session access refused`).
+   * `agentSessionStanding` already grants that standing on the REST read path
+   * and the bind is mint-time fact — only this session's provisioning mints a
+   * token bound to it — so it must hold here without granting sibling reach.
+   */
+  const OWN_CREDENTIAL = {
+    origin: 'schedule',
+    sessionId: 'trigger-session-b',
+    callerSessionId: 'trigger-session-b',
+    boundCredentialSessionId: 'trigger-session-b',
+  };
+
+  test('the session own credential opens a private trigger-created session', () => {
+    expect(isProjectSessionVisibleTo(
+      'private', serviceAccount, [], { userId: ALICE, groupIds: [] }, OWN_CREDENTIAL,
+      { metadata, canManageProject: true },
+    )).toBe(true);
+  });
+
+  test('the own credential opens it without manager standing too', () => {
+    // The launcher is not a project manager here: the binding, not
+    // `canManageProject`, is the authority.
+    expect(isProjectSessionVisibleTo(
+      'private', serviceAccount, [], { userId: ALICE, groupIds: [] }, OWN_CREDENTIAL,
+      { metadata, canManageProject: false },
+    )).toBe(true);
+  });
+
+  test('a plain session own credential opens it, with no trigger marker', () => {
+    expect(isProjectSessionVisibleTo(
+      'private', BOB, [], { userId: ALICE, groupIds: [] },
+      { origin: 'user', sessionId: 'own-session', callerSessionId: 'own-session', boundCredentialSessionId: 'own-session' },
+      { metadata: {}, canManageProject: false },
+    )).toBe(true);
+  });
+
+  test('a coordinator credential opens the worker session it spawned', () => {
+    expect(isProjectSessionVisibleTo(
+      'private', serviceAccount, [], { userId: ALICE, groupIds: [] },
+      { origin: 'trigger', sessionId: 'worker-session', callerSessionId: 'coordinator-session', boundCredentialSessionId: 'coordinator-session' },
+      { metadata: { spawned_by_session: 'coordinator-session' }, canManageProject: false },
+    )).toBe(true);
+  });
+
+  test('another session credential still cannot open a trigger-created session', () => {
+    // No sibling reach: the binding must name the target or its spawner.
+    expect(isProjectSessionVisibleTo(
+      'private', serviceAccount, [], { userId: ALICE, groupIds: [] },
+      { origin: 'trigger', sessionId: 'trigger-session-b', callerSessionId: 'other-session', boundCredentialSessionId: 'other-session' },
+      { metadata, canManageProject: true },
+    )).toBe(false);
+  });
 });
 
 /**

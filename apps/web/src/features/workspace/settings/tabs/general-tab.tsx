@@ -50,12 +50,14 @@
  *     even list archived rows (`packages/sdk/src/react/use-admin-projects.ts`).
  *
  *   So from the user's side the loss is total and one-way, and the copy now
- *   says that. What it does NOT say is that the data is erased, because it is
- *   not — and it explicitly reassures that the Git repository survives, which
- *   is true: `deleteManagedProjectRepo` runs only under `?purge=true`
- *   (`project-settings.ts`), a query param `archiveProject()` never sends. Claiming the repo
- *   was destroyed would be the one genuinely false thing this dialog could
- *   say, and it is the thing users would panic about first.
+ *   says that. What it does NOT say is that the row is erased, because the DB
+ *   row survives for support. And since KRTX-1692 the copy tells the truth
+ *   about the Git repository: deleting the workspace deletes the
+ *   Kortix-managed repository with it (`deleteManagedProjectRepo` runs on
+ *   every delete, `apps/api/src/projects/routes/project-settings.ts`); a
+ *   repository the user connected themselves is never touched. The
+ *   consequences list names the managed-repo loss and the reassurance states
+ *   the connected-repo survival — the one thing users would panic about.
  *
  *   Because the action is irreversible AND ambiguous (an account has several
  *   workspaces; the wrong one is one click away), the confirmation is
@@ -173,30 +175,32 @@ const GENERAL_TAB_ACTIONS = [
  * unable to fail. Exporting the array gives the test something real to hold —
  * see `general-tab.delete-copy.test.ts`.
  *
- * Every line is a traced consequence of `status: 'archived'`, not a guess.
+ * Every line is a traced consequence of deleting the workspace, not a guess.
  * The trace, with file references, is in this file's header comment. Two
  * standing rules for editing this list:
  *
- * 1. **Never claim the data is erased.** It is not — the row survives, the
- *    Git repository survives. Claim only the loss of access, which IS total:
+ * 1. **Never claim the row itself is erased.** It is not — the DB row
+ *    survives for support. Claim the loss of access, which IS total:
  *    `loadProjectForUser` 404s every project-scoped route for an archived row.
- * 2. **Never drop the repository reassurance below.** "Permanent" plus silence
- *    about the repo reads as "my code is gone", which is the one thing a user
- *    would panic about and the one thing that is false.
+ * 2. **Never drop the repository lines below.** The managed repo is deleted
+ *    with the workspace and the user's own repositories are not: naming both
+ *    is what keeps "permanent" from reading as "my code is gone" (for a
+ *    connected repo) or "my code is safe" (for a managed one).
  */
 export const DELETE_WORKSPACE_CONSEQUENCES = [
   'Every session in this workspace, with its files, history, and outputs',
   'All scheduled runs and triggers — they stop firing straight away',
   'Every connected integration, secret, and API key scoped to this workspace',
+  'The Kortix-managed git repository for this workspace, with every commit in it',
   'Access for everyone on the team — nobody can reach this workspace again',
 ] as const;
 
 /** Stated because it is true and because its absence would be read as a
- *  denial. `archiveProject()` sends no `?purge=true`, which is the only thing
- *  that deletes a Kortix-managed repository (`apps/api/.../routes/project-settings.ts`);
- *  user-connected repositories are never touched at all. */
+ *  denial. `deleteManagedProjectRepo` deletes only the Kortix-managed
+ *  upstream; repositories the user connected themselves are never touched
+ *  (`apps/api/src/projects/routes/project-settings.ts`). */
 export const DELETE_WORKSPACE_REASSURANCE =
-  'Your connected Git repository is not deleted. Any code already pushed to it stays where it is.';
+  'Git repositories you connected yourself are not deleted. Any code already pushed to them stays where it is.';
 
 /**
  * A section label between two groups — plain small text, optionally one line
@@ -609,6 +613,7 @@ export function GeneralTab({ projectId }: { projectId: string }) {
           t('consequences.sessions'),
           t('consequences.automation'),
           t('consequences.integrations'),
+          t('consequences.managedRepo'),
           t('consequences.access'),
         ],
         reassurance: t('reassurance'),

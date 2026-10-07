@@ -71,7 +71,7 @@ export interface SecretDef {
  */
 export const SECRET_DEFS: SecretDef[] = [
   // Database & Supabase
-  { key: 'POSTGRES_PASSWORD', category: 'database', kind: 'generated', required: true, rotatable: true },
+  { key: 'POSTGRES_PASSWORD', category: 'database', kind: 'generated', required: true, rotatable: false },
   { key: 'SUPABASE_JWT_SECRET', category: 'database', kind: 'generated', required: true, rotatable: true },
   { key: 'SUPABASE_ANON_KEY', category: 'database', kind: 'generated', required: true, rotatable: false },
   { key: 'SUPABASE_SERVICE_ROLE_KEY', category: 'database', kind: 'generated', required: true, rotatable: false },
@@ -170,7 +170,7 @@ export const SECRET_DEFS: SecretDef[] = [
   // Internal tokens
   { key: 'GATEWAY_INTERNAL_TOKEN', category: 'internal_tokens', kind: 'generated', required: true, rotatable: true },
   { key: 'INTERNAL_SERVICE_KEY', category: 'internal_tokens', kind: 'generated', required: true, rotatable: true },
-  { key: 'API_KEY_SECRET', category: 'internal_tokens', kind: 'generated', required: true, rotatable: true },
+  { key: 'API_KEY_SECRET', category: 'internal_tokens', kind: 'generated', required: true, rotatable: false },
   { key: 'TUNNEL_SIGNING_SECRET', category: 'internal_tokens', kind: 'generated', required: true, rotatable: true },
 ];
 

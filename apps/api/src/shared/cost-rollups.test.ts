@@ -30,13 +30,14 @@ function renderJoinOn(record: QueryRecord | undefined, method: 'innerJoin' | 'le
   return new PgDialect().sqlToQuery(call.args[1] as SQL).sql;
 }
 
-// The mock records orderBy() without applying it, so the ORDER BY can only be
-// asserted by rendering it, same reasoning as renderWhere above.
-function renderOrderBy(record: QueryRecord | undefined): string[] {
-  const terms = record?.calls.find((call) => call.method === 'orderBy')?.args;
-  if (!terms?.length) throw new Error('query recorded no orderBy() call');
+// Renders the GROUP BY fragment so a test can pin which grouping sets one
+// scan computes. Same reasoning as renderWhere: a recorded groupBy() call
+// without rendered SQL proves nothing about what the statement does.
+function renderGroupBy(record: QueryRecord | undefined): string {
+  const terms = record?.calls.find((call) => call.method === 'groupBy')?.args;
+  if (!terms?.length) throw new Error('query recorded no groupBy() call');
   const dialect = new PgDialect();
-  return terms.map((term) => dialect.sqlToQuery(term as SQL).sql);
+  return dialect.sqlToQuery(terms[0] as SQL).sql;
 }
 
 // Renders one selected field's SQL expression (e.g. a `sum(...)` aggregate)
@@ -479,6 +480,83 @@ describe('buildCostSeries', () => {
   });
 });
 
+/** Grouped-scan contract: one pass per source per window. */
+describe('getCostSummary grouped scans', () => {
+  const window = {
+    from: new Date('2026-07-01T00:00:00.000Z'),
+    to: new Date('2026-07-08T00:00:00.000Z'),
+  };
+
+  test('issues one scan per source per window — two gateway, two compute — not one query per figure', async () => {
+    await getCostSummary({ accountId, window });
+
+    // Prod Server-Timing (2026-10-04, the largest account): this route spent
+    // db;dur=4.5–25s across n=10 statements, five of them independent scans
+    // of the same 30-day gateway_request_logs window and four of
+    // sandbox_compute_sessions. Every extra scan re-reads the same heap
+    // pages, so the explorer's cold load timed out at the 25s cap. The
+    // grouping-set collapse is the fix this suite pins: one scan per source
+    // per window, plus one prior-window scan per source.
+    expect(queryRecords.filter((query) => query.table === gatewayRequestLogs)).toHaveLength(2);
+    expect(queryRecords.filter((query) => query.table === sandboxComputeSessions)).toHaveLength(2);
+  });
+
+  test('the current-window gateway scan computes totals, days, models and projects in one grouping-sets pass', async () => {
+    await getCostSummary({ accountId, window });
+
+    const scan = queryRecords.find(
+      (query) => query.table === gatewayRequestLogs && 'setId' in query.fields,
+    );
+    const groupBy = renderGroupBy(scan);
+    expect(groupBy).toContain('grouping sets');
+    // The four views the summary serves, each its own set of one scan.
+    expect(groupBy).toContain('"provider"');
+    expect(groupBy).toContain('"resolved_model"');
+    expect(groupBy).toContain("date_trunc('day'");
+    expect(groupBy).toContain('"project_id"');
+    // The grand total is the empty set, and every window bound is a plain
+    // column comparison the account_time index serves.
+    expect(groupBy).toContain('()');
+    const where = renderWhere(scan);
+    expect(where.sql).toContain('"created_at" >= $');
+    expect(where.sql).toContain('"created_at" < $');
+  });
+
+  test('the current-window compute scan covers totals, days and projects through one left join', async () => {
+    await getCostSummary({ accountId, window });
+
+    const scan = queryRecords.find(
+      (query) => query.table === sandboxComputeSessions && 'setId' in query.fields,
+    );
+    // LEFT JOIN, never INNER: the grand-total set must still cover compute
+    // spend whose session has no project_sessions row (the account-wide
+    // total includes unassigned spend), and a LEFT JOIN keeps every row.
+    expect(scan?.calls.map((call) => call.method)).toEqual(['leftJoin', 'where', 'groupBy']);
+    expect(renderJoinOn(scan, 'leftJoin')).toBe(
+      '"kortix"."project_sessions"."session_id" = "kortix"."sandbox_compute_sessions"."session_id"',
+    );
+    const groupBy = renderGroupBy(scan);
+    expect(groupBy).toContain('grouping sets');
+    expect(groupBy).toContain("date_trunc('day'");
+    expect(groupBy).toContain('"project_id"');
+    expect(groupBy).toContain('()');
+  });
+
+  test('the setId marker is a grouping() case, not a data-shape guess', async () => {
+    await getCostSummary({ accountId, window });
+
+    const scan = queryRecords.find(
+      (query) => query.table === gatewayRequestLogs && 'setId' in query.fields,
+    );
+    const setId = renderField(scan, 'setId');
+    expect(setId).toContain('grouping(');
+    expect(setId).toContain("'model'");
+    expect(setId).toContain("'day'");
+    expect(setId).toContain("'project'");
+    expect(setId).toContain("'totals'");
+  });
+});
+
 describe('getCostSummary', () => {
   const window = {
     from: new Date('2026-07-01T00:00:00.000Z'),
@@ -487,19 +565,11 @@ describe('getCostSummary', () => {
   const projectId = '00000000-0000-4000-a000-000000000002';
   const sessionId = 'session-summary-test';
 
-  function llmTotalsRecord() {
+  // The two grouped scans each carry every field the summary needs; the two
+  // prior-window scans each carry exactly one (`cost`). Dispatch on that.
+  function llmGroupedRecord() {
     return queryRecords.find(
-      (query) => query.table === gatewayRequestLogs && 'llmCost' in query.fields,
-    );
-  }
-  function llmDailyRecord() {
-    return queryRecords.find(
-      (query) => query.table === gatewayRequestLogs && 'day' in query.fields,
-    );
-  }
-  function modelsRecord() {
-    return queryRecords.find(
-      (query) => query.table === gatewayRequestLogs && 'model' in query.fields,
+      (query) => query.table === gatewayRequestLogs && 'setId' in query.fields,
     );
   }
   function llmPriorRecord() {
@@ -510,14 +580,9 @@ describe('getCostSummary', () => {
         'cost' in query.fields,
     );
   }
-  function computeTotalsRecord() {
+  function computeGroupedRecord() {
     return queryRecords.find(
-      (query) => query.table === sandboxComputeSessions && 'computeCost' in query.fields,
-    );
-  }
-  function computeDailyRecord() {
-    return queryRecords.find(
-      (query) => query.table === sandboxComputeSessions && 'day' in query.fields,
+      (query) => query.table === sandboxComputeSessions && 'setId' in query.fields,
     );
   }
   function computePriorRecord() {
@@ -528,21 +593,11 @@ describe('getCostSummary', () => {
         'cost' in query.fields,
     );
   }
-  function llmProjectIdsRecord() {
-    return queryRecords.find(
-      (query) => query.table === gatewayRequestLogs && 'projectId' in query.fields,
-    );
-  }
-  function computeProjectIdsRecord() {
-    return queryRecords.find(
-      (query) => query.table === sandboxComputeSessions && 'projectId' in query.fields,
-    );
-  }
 
   test('windows the LLM aggregate on created_at and the compute aggregate on started_at, never last_billed_at', async () => {
     await getCostSummary({ accountId, window });
 
-    const llmWhere = renderWhere(llmTotalsRecord());
+    const llmWhere = renderWhere(llmGroupedRecord());
     expect(llmWhere.sql).toContain('"created_at" >= $');
     expect(llmWhere.sql).toContain('"created_at" < $');
     expect(llmWhere.params).toEqual([
@@ -551,7 +606,7 @@ describe('getCostSummary', () => {
       '2026-07-08T00:00:00.000Z',
     ]);
 
-    const computeWhere = renderWhere(computeTotalsRecord());
+    const computeWhere = renderWhere(computeGroupedRecord());
     expect(computeWhere.sql).toContain('"started_at" >= $');
     expect(computeWhere.sql).toContain('"started_at" < $');
     expect(computeWhere.sql).not.toContain('last_billed_at');
@@ -562,21 +617,23 @@ describe('getCostSummary', () => {
     ]);
   });
 
-  test('omits the project scope when unscoped, so compute totals cover unassigned spend too', async () => {
+  test('the compute scan left-joins project_sessions, so unassigned spend stays in the grand total', async () => {
     await getCostSummary({ accountId, window });
 
-    // Joining project_sessions unconditionally would inner-join away compute
-    // cost from sessions with no project_sessions row, undercounting the
-    // account-wide total that the "unassigned" row downstream depends on.
-    // This applies to every money query on the compute side — totals, daily,
-    // AND prior — not just totals: an unguarded prior-window join would
-    // silently exclude unassigned compute from `previous.total_cost` too,
-    // corrupting the period delta the same way.
-    expect(computeTotalsRecord()?.calls.map((call) => call.method)).not.toContain('innerJoin');
-    expect(computeDailyRecord()?.calls.map((call) => call.method)).not.toContain('innerJoin');
-    expect(computePriorRecord()?.calls.map((call) => call.method)).not.toContain('innerJoin');
+    // Joining project_sessions with an INNER join would inner-join away
+    // compute cost from sessions with no project_sessions row, undercounting
+    // the account-wide total that the "unassigned" row downstream depends
+    // on. The LEFT JOIN keeps every row; the prior-window scan carries the
+    // same rule (no join at all there), so `previous.total_cost` cannot
+    // silently exclude unassigned compute either.
+    expect(computeGroupedRecord()?.calls.map((call) => call.method)).toEqual([
+      'leftJoin',
+      'where',
+      'groupBy',
+    ]);
+    expect(computePriorRecord()?.calls.map((call) => call.method)).toEqual(['where']);
 
-    const llmWhere = renderWhere(llmTotalsRecord());
+    const llmWhere = renderWhere(llmGroupedRecord());
     expect(llmWhere.params).toHaveLength(3);
   });
 
@@ -586,26 +643,28 @@ describe('getCostSummary', () => {
     // gateway_request_logs carries two cost columns: the legacy
     // final_cost (numeric(12,6)) and final_cost_precise (numeric(20,10),
     // Drizzle field name finalCost). Only the precise column may back any
-    // of these four LLM money aggregates — a swap to the legacy column
+    // of these LLM money aggregates — a swap to the legacy column
     // truncates money and nothing else here would notice.
-    expect(renderField(llmTotalsRecord(), 'llmCost')).toContain('"final_cost_precise"');
-    expect(renderField(llmDailyRecord(), 'cost')).toContain('"final_cost_precise"');
-    expect(renderField(modelsRecord(), 'cost')).toContain('"final_cost_precise"');
+    expect(renderField(llmGroupedRecord(), 'llmCost')).toContain('"final_cost_precise"');
+    expect(renderField(llmGroupedRecord(), 'llmKortixCost')).toContain('"final_cost_precise"');
+    expect(renderField(llmGroupedRecord(), 'llmProviderCost')).toContain(
+      '"upstream_cost_precise"',
+    );
     expect(renderField(llmPriorRecord(), 'cost')).toContain('"final_cost_precise"');
 
     // compute_seconds must be BILLED seconds (last_billed_at - started_at),
     // not raw wall time (e.g. now() - started_at, or ended_at - started_at)
     // — a session that stopped accruing charges but never formally ended
     // would otherwise keep accumulating seconds it was never billed for.
-    const computeSecondsSql = renderField(computeTotalsRecord(), 'computeSeconds');
+    const computeSecondsSql = renderField(computeGroupedRecord(), 'computeSeconds');
     expect(computeSecondsSql).toContain('"last_billed_at"');
     expect(computeSecondsSql).toContain('"started_at"');
   });
 
-  test('scopes every query to project_id when provided, joining compute through project_sessions', async () => {
+  test('scopes the project predicate into the WHERE of both grouped scans when provided', async () => {
     await getCostSummary({ accountId, projectId, window });
 
-    const llmWhere = renderWhere(llmTotalsRecord());
+    const llmWhere = renderWhere(llmGroupedRecord());
     expect(llmWhere.sql).toContain('"project_id" = $');
     expect(llmWhere.params).toEqual([
       accountId,
@@ -614,9 +673,11 @@ describe('getCostSummary', () => {
       projectId,
     ]);
 
-    const computeRecord = computeTotalsRecord();
-    expect(computeRecord?.calls.map((call) => call.method)).toContain('innerJoin');
-    expect(renderJoinOn(computeRecord, 'innerJoin')).toBe(
+    const computeRecord = computeGroupedRecord();
+    // The predicate on the joined column makes the LEFT JOIN behave exactly
+    // like the INNER JOIN an ungrouped version used: a right side that
+    // fails the predicate drops the row, matched or not.
+    expect(renderJoinOn(computeRecord, 'leftJoin')).toBe(
       '"kortix"."project_sessions"."session_id" = "kortix"."sandbox_compute_sessions"."session_id"',
     );
     const computeWhere = renderWhere(computeRecord);
@@ -629,10 +690,10 @@ describe('getCostSummary', () => {
     ]);
   });
 
-  test('scopes to session_id on both sources without requiring a project_sessions join', async () => {
+  test('scopes to session_id on both sources without needing the project predicate', async () => {
     await getCostSummary({ accountId, sessionId, window });
 
-    const llmWhere = renderWhere(llmTotalsRecord());
+    const llmWhere = renderWhere(llmGroupedRecord());
     expect(llmWhere.sql).toContain('"session_id" = $');
     expect(llmWhere.params).toEqual([
       accountId,
@@ -641,10 +702,9 @@ describe('getCostSummary', () => {
       sessionId,
     ]);
 
-    const computeRecord = computeTotalsRecord();
-    expect(computeRecord?.calls.map((call) => call.method)).not.toContain('innerJoin');
-    const computeWhere = renderWhere(computeRecord);
+    const computeWhere = renderWhere(computeGroupedRecord());
     expect(computeWhere.sql).toContain('"session_id" = $');
+    expect(computeWhere.sql).not.toContain('"project_sessions"."project_id" = $');
     expect(computeWhere.params).toEqual([
       accountId,
       '2026-07-01T00:00:00.000Z',
@@ -653,49 +713,57 @@ describe('getCostSummary', () => {
     ]);
   });
 
-  test('the daily series is grouped and windowed the same as the totals', async () => {
-    await getCostSummary({ accountId, window });
+  test('the model breakdown orders by spend descending with a deterministic tie-break, top 10', async () => {
+    // Rows arrive in whatever order the scan returns; a cost tie straddling
+    // the 10th row exercises both the ordering and the LIMIT 10.
+    resultForQuery = (fields, table) => {
+      if (table === gatewayRequestLogs && 'setId' in fields) {
+        const model = (provider: string, model: string, cost: number, requestCount: number) => ({
+          setId: 'model',
+          provider,
+          model,
+          day: null,
+          projectId: null,
+          llmCost: cost,
+          llmKortixCost: cost,
+          llmProviderCost: 0,
+          requestCount,
+          sessionCount: 1,
+        });
+        return [
+          model('zeta', 'm-1', 1, 1),
+          model('alpha', 'm-9', 9, 1),
+          ...Array.from({ length: 8 }, (_, index) =>
+            model('bedrock', `anthropic/claude-${index}`, 5, 1),
+          ),
+          // The cost-5 tie runs past the 10th row: without a deterministic
+          // break, which model lands there can flip between refreshes.
+          model('anthropic', 'claude-a', 5, 1),
+          model('anthropic', 'claude-b', 5, 1),
+          model('anthropic', 'claude-c', 5, 1),
+          model('anthropic', 'claude-d', 5, 1),
+        ];
+      }
+      return [];
+    };
 
-    expect(llmDailyRecord()?.calls.map((call) => call.method)).toEqual(['where', 'groupBy']);
-    expect(renderWhere(llmDailyRecord()).params).toEqual(renderWhere(llmTotalsRecord()).params);
+    const summary = await getCostSummary({ accountId, window });
 
-    expect(computeDailyRecord()?.calls.map((call) => call.method)).toEqual(['where', 'groupBy']);
-    expect(renderWhere(computeDailyRecord()).params).toEqual(
-      renderWhere(computeTotalsRecord()).params,
-    );
-  });
-
-  test('the model breakdown groups by provider and model, ordered by spend descending, limited to 10', async () => {
-    await getCostSummary({ accountId, window });
-
-    const record = modelsRecord();
-    expect(record?.calls.map((call) => call.method)).toEqual([
-      'where',
-      'groupBy',
-      'orderBy',
-      'limit',
-    ]);
-    expect(record?.calls.find((call) => call.method === 'groupBy')?.args).toEqual([
-      gatewayRequestLogs.provider,
-      gatewayRequestLogs.resolvedModel,
-    ]);
-    expect(record?.calls.find((call) => call.method === 'limit')?.args).toEqual([10]);
-  });
-
-  test('the model breakdown breaks a spend tie deterministically by provider then model', async () => {
-    await getCostSummary({ accountId, window });
-
-    // A tie on the 10th row is ordinary at LIMIT 10, not an edge case: cost
-    // ordering alone leaves it to whatever order Postgres happens to scan
-    // rows in, which can flip between refreshes.
-    const [spend, provider, model] = renderOrderBy(modelsRecord());
-    // Account Billing orders by the amount Kortix charged. Provider-side BYOK
-    // spend remains an observability metric and is excluded here.
-    expect(spend).toContain('final_cost_precise');
-    expect(spend).not.toContain('upstream_cost_precise');
-    expect(spend?.endsWith(' desc')).toBe(true);
-    expect(provider).toBe('"kortix"."gateway_request_logs"."provider" desc');
-    expect(model).toBe('"kortix"."gateway_request_logs"."resolved_model" desc');
+    expect(summary.models).toHaveLength(10);
+    // Most spend first.
+    expect(summary.models[0]).toEqual({
+      provider: 'alpha',
+      model: 'm-9',
+      cost: 9,
+      request_count: 1,
+    });
+    // The spend-tie block: 'bedrock' outranks 'anthropic' at equal cost
+    // (descending), the model descends inside a provider, and the cut at
+    // ten keeps claude-d (the tie's 10th row) and drops claude-c onward.
+    expect(summary.models[1]).toMatchObject({ provider: 'bedrock', model: 'anthropic/claude-7' });
+    expect(summary.models[8]).toMatchObject({ provider: 'bedrock', model: 'anthropic/claude-0' });
+    expect(summary.models[9]).toMatchObject({ provider: 'anthropic', model: 'claude-d' });
+    expect(summary.models.map((row) => row.provider)).not.toContain('zeta');
   });
 
   test('the prior window is the equal-length window immediately before the current one', async () => {
@@ -714,71 +782,106 @@ describe('getCostSummary', () => {
     ]);
   });
 
-  test('project_count is sourced from a dedicated query per side, the compute side always joined', async () => {
-    await getCostSummary({ accountId, window });
+  test('the project-scoped compute prior scan joins project_sessions before filtering on its column', async () => {
+    // computeScope carries `project_sessions.project_id = $4` whenever a
+    // project scope is set. A prior-window scan that filters on that column
+    // without joining the table is invalid SQL (missing FROM-clause entry)
+    // — the query double records calls without executing them, so only an
+    // explicit join assertion catches it here. Postgres rejects it at
+    // runtime; the PR body records the same paths executed on a real
+    // Postgres.
+    await getCostSummary({ accountId, projectId, window });
 
-    // The LLM side reads project_id directly off gateway_request_logs — no
-    // join needed, it is already a column on that table.
-    const llmIds = llmProjectIdsRecord();
-    expect(llmIds?.calls.map((call) => call.method)).toEqual(['where', 'groupBy']);
-    expect(renderWhere(llmIds).sql).toContain('"project_id" is not null');
-    expect(renderWhere(llmIds).params).toEqual([
-      accountId,
-      '2026-07-01T00:00:00.000Z',
-      '2026-07-08T00:00:00.000Z',
-    ]);
-
-    // The compute side has no project_id column of its own: this query
-    // always joins project_sessions to reach it, unconditionally — unlike
-    // computeTotals/computeDaily/computePrior, which join only when
-    // projectId scopes the query down to one project. This query carries no
-    // money, so there is nothing for that join to silently undercount.
-    const computeIds = computeProjectIdsRecord();
-    expect(computeIds?.calls.map((call) => call.method)).toEqual(['innerJoin', 'where', 'groupBy']);
-    expect(renderJoinOn(computeIds, 'innerJoin')).toBe(
+    const record = computePriorRecord();
+    expect(record?.calls.map((call) => call.method)).toEqual(['innerJoin', 'where']);
+    expect(renderJoinOn(record, 'innerJoin')).toBe(
       '"kortix"."project_sessions"."session_id" = "kortix"."sandbox_compute_sessions"."session_id"',
     );
+    expect(renderWhere(record).sql).toContain('"project_sessions"."project_id" = $');
   });
 
-  test('assembles totals, previous, series and models from the aggregate queries', async () => {
+  test('assembles totals, previous, series and models from the grouped scans', async () => {
     resultForQuery = (fields, table) => {
-      if (table === gatewayRequestLogs && 'llmCost' in fields) {
-        return [{ llmCost: '10', requestCount: 4, sessionCount: 2 }];
-      }
-      if (table === gatewayRequestLogs && 'day' in fields) {
-        return [{ day: '2026-07-02', cost: '10' }];
-      }
-      if (table === gatewayRequestLogs && 'model' in fields) {
+      if (table === gatewayRequestLogs && 'setId' in fields) {
         return [
-          { provider: 'bedrock', model: 'anthropic/claude-sonnet-5', cost: '10', requestCount: 4 },
+          {
+            setId: 'totals',
+            provider: null,
+            model: null,
+            day: null,
+            projectId: null,
+            llmCost: '10',
+            llmKortixCost: '10',
+            llmProviderCost: '0',
+            requestCount: 4,
+            sessionCount: 2,
+          },
+          {
+            setId: 'day',
+            provider: null,
+            model: null,
+            day: '2026-07-02',
+            projectId: null,
+            llmCost: '10',
+            llmKortixCost: '10',
+            llmProviderCost: '0',
+            requestCount: 4,
+            sessionCount: 1,
+          },
+          {
+            setId: 'model',
+            provider: 'bedrock',
+            model: 'anthropic/claude-sonnet-5',
+            day: null,
+            projectId: null,
+            llmCost: '10',
+            llmKortixCost: '10',
+            llmProviderCost: '0',
+            requestCount: 4,
+            sessionCount: 1,
+          },
+          {
+            setId: 'project',
+            provider: null,
+            model: null,
+            day: null,
+            projectId: 'p1',
+            llmCost: '10',
+            llmKortixCost: '10',
+            llmProviderCost: '0',
+            requestCount: 4,
+            sessionCount: 1,
+          },
         ];
       }
-      if (table === gatewayRequestLogs && 'projectId' in fields) {
-        // Project p1 has LLM activity in the window.
-        return [{ projectId: 'p1' }];
+      if (table === gatewayRequestLogs) return [{ cost: '4' }];
+      if (table === sandboxComputeSessions && 'setId' in fields) {
+        return [
+          {
+            setId: 'totals',
+            day: null,
+            projectId: null,
+            computeCost: '5',
+            computeSeconds: 900,
+            sessionCount: 3,
+          },
+          {
+            setId: 'day',
+            day: '2026-07-03',
+            projectId: null,
+            computeCost: '5',
+            computeSeconds: 900,
+            sessionCount: 1,
+          },
+          // p1 again (both sources touch it) plus p2, which has ONLY
+          // compute spend in this window and zero gateway_request_logs
+          // rows — the scenario a count(distinct) on the LLM side alone
+          // would miss.
+          { setId: 'project', day: null, projectId: 'p1', computeCost: '5', computeSeconds: 900, sessionCount: 1 },
+          { setId: 'project', day: null, projectId: 'p2', computeCost: '5', computeSeconds: 900, sessionCount: 1 },
+        ];
       }
-      if (table === gatewayRequestLogs && Object.keys(fields).length === 1 && 'cost' in fields) {
-        return [{ cost: '4' }];
-      }
-      if (table === sandboxComputeSessions && 'computeCost' in fields) {
-        return [{ computeCost: '5', computeSeconds: 900, sessionCount: 3 }];
-      }
-      if (table === sandboxComputeSessions && 'day' in fields) {
-        return [{ day: '2026-07-03', cost: '5' }];
-      }
-      if (table === sandboxComputeSessions && 'projectId' in fields) {
-        // p1 again (both sources touch it) plus p2, which has ONLY compute
-        // spend in this window and zero gateway_request_logs rows — the
-        // scenario a count(distinct) on the LLM side alone would miss.
-        return [{ projectId: 'p1' }, { projectId: 'p2' }];
-      }
-      if (
-        table === sandboxComputeSessions &&
-        Object.keys(fields).length === 1 &&
-        'cost' in fields
-      ) {
-        return [{ cost: '6' }];
-      }
+      if (table === sandboxComputeSessions) return [{ cost: '6' }];
       return [];
     };
 
@@ -792,7 +895,7 @@ describe('getCostSummary', () => {
 
     expect(summary.totals).toEqual({
       llm_cost: 10,
-      llm_kortix_cost: 0,
+      llm_kortix_cost: 10,
       llm_provider_cost: 0,
       compute_cost: 5,
       total_cost: 15,
@@ -817,11 +920,42 @@ describe('getCostSummary', () => {
     ]);
   });
 
-  test('counts a project with compute spend and zero LLM calls in the window', async () => {
+  test('drops the LEFT JOIN\'s NULL project group and counts a compute-only project', async () => {
     resultForQuery = (fields, table) => {
-      if (table === gatewayRequestLogs && 'projectId' in fields) return [];
-      if (table === sandboxComputeSessions && 'projectId' in fields) {
-        return [{ projectId: 'compute-only-project' }];
+      if (table === gatewayRequestLogs && 'setId' in fields) {
+        // An account-wide window whose only project-set rows come from the
+        // compute side; the LLM side still returns its totals row.
+        return [
+          {
+            setId: 'totals',
+            provider: null,
+            model: null,
+            day: null,
+            projectId: null,
+            llmCost: '0',
+            llmKortixCost: '0',
+            llmProviderCost: '0',
+            requestCount: 0,
+            sessionCount: 0,
+          },
+        ];
+      }
+      if (table === sandboxComputeSessions && 'setId' in fields) {
+        return [
+          {
+            setId: 'totals',
+            day: null,
+            projectId: null,
+            computeCost: '5',
+            computeSeconds: 900,
+            sessionCount: 3,
+          },
+          // Unassigned compute spend: the LEFT JOIN's NULL project group.
+          // It must be dropped from the distinct-project count (it has no
+          // project) while its cost stays in the grand-total set.
+          { setId: 'project', day: null, projectId: null, computeCost: '2', computeSeconds: 60, sessionCount: 1 },
+          { setId: 'project', day: null, projectId: 'compute-only-project', computeCost: '3', computeSeconds: 840, sessionCount: 2 },
+        ];
       }
       return [];
     };
@@ -829,5 +963,52 @@ describe('getCostSummary', () => {
     const summary = await getCostSummary({ accountId, window });
 
     expect(summary.totals.project_count).toBe(1);
+    // Unassigned compute is still part of the account-wide total.
+    expect(summary.totals.compute_cost).toBe(5);
+  });
+
+  test('an empty window still yields one totals row per source and a zero-filled series', async () => {
+    resultForQuery = (fields, table) => {
+      if (table === gatewayRequestLogs && 'setId' in fields) {
+        // Each grand-total set returns its single all-NULL row even on an
+        // empty window; every grouped set returns none.
+        return [
+          {
+            setId: 'totals',
+            provider: null,
+            model: null,
+            day: null,
+            projectId: null,
+            llmCost: '0',
+            llmKortixCost: '0',
+            llmProviderCost: '0',
+            requestCount: 0,
+            sessionCount: 0,
+          },
+        ];
+      }
+      if (table === sandboxComputeSessions && 'setId' in fields) {
+        return [
+          { setId: 'totals', day: null, projectId: null, computeCost: '0', computeSeconds: 0, sessionCount: 0 },
+        ];
+      }
+      return [];
+    };
+
+    const summary = await getCostSummary({
+      accountId,
+      window: {
+        from: new Date('2026-07-01T00:00:00.000Z'),
+        to: new Date('2026-07-03T00:00:00.000Z'),
+      },
+    });
+
+    expect(summary.totals.total_cost).toBe(0);
+    expect(summary.previous).toEqual({ total_cost: 0 });
+    expect(summary.series).toEqual([
+      { day: '2026-07-01', llm_cost: 0, compute_cost: 0, total_cost: 0 },
+      { day: '2026-07-02', llm_cost: 0, compute_cost: 0, total_cost: 0 },
+    ]);
+    expect(summary.models).toEqual([]);
   });
 });

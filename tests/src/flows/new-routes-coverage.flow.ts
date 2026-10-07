@@ -193,6 +193,15 @@ flow(
         });
       response.status([400, 404]);
     });
+    await ctx.step('a files.slack.com URL that names no file → 400, before any Slack call', async () => {
+      const response = await ctx.client
+        .as(ctx.P.OWNER)
+        .get(
+          `/v1/projects/:projectId/channels/slack/file?url=${encodeURIComponent('https://files.slack.com/files-pri/T0KE2E-F0KE2E')}`,
+          { params: { projectId: project.id } },
+        );
+      response.status(400).body().matches('$.error', /must be a Slack file URL/);
+    });
   },
 );
 
