@@ -115,6 +115,9 @@ export interface ProjectTrigger {
   last_error?: string | null;
   /** ISO time of the last fire attempt or run outcome. */
   last_attempt_at?: string | null;
+  /** ISO time an enabled cron trigger runs next: the slot the scheduler
+   *  claims, jitter included. Null for a webhook trigger, and from an older API. */
+  next_fire_at?: string | null;
   /** Public fire URL for webhook triggers; null for cron. */
   webhook_url: string | null;
 }
