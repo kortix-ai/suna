@@ -23,7 +23,16 @@ const api = createApiJsonClient(apiBase);
 interface AccountSummary {
   account_id: string;
   personal_account?: boolean;
+  is_primary_owner?: boolean;
+  account_role?: string;
 }
+
+/** The account a fresh user owns (spec 22's rule). */
+const ownedAccount = (accounts: AccountSummary[]) => {
+  const own = accounts.find((a) => a.personal_account || a.is_primary_owner || a.account_role === 'owner');
+  if (!own) throw new Error('the seeded user owns no account');
+  return own.account_id;
+};
 
 test('45 — accepting a project invite lands in the invited project, not the remembered one', async ({ page }) => {
   test.setTimeout(180_000);
@@ -33,41 +42,42 @@ test('45 — accepting a project invite lands in the invited project, not the re
   const ownerEmail = `e2e-invite-landing-owner-${runId}@example.test`;
   const inviteeEmail = `e2e-invite-landing-invitee-${runId}@example.test`;
   const owner = await createAuthUser(ownerEmail, authOptions);
-  const invitee = await createAuthUser(inviteeEmail, authOptions);
+  let invitee: { id: string } | null = null;
   const projectIds: string[] = [];
 
   try {
     const ownerAuth = await signIn(ownerEmail, authOptions);
-    const inviteeAuth = await signIn(inviteeEmail, authOptions);
-    const ownerAccount = (await api<AccountSummary[]>(ownerAuth.access_token, 'GET', '/accounts')).find(
-      (a) => a.personal_account,
-    )!.account_id;
-    const inviteeAccount = (await api<AccountSummary[]>(inviteeAuth.access_token, 'GET', '/accounts')).find(
-      (a) => a.personal_account,
-    )!.account_id;
+    const ownerAccount = ownedAccount(await api<AccountSummary[]>(ownerAuth.access_token, 'GET', '/accounts'));
 
-    // The invitee's own project, open in this browser: the remembered one.
-    const scratch = await createDatabaseProject(env, {
-      accountId: inviteeAccount,
-      userId: invitee.id,
-      name: `Scratch ${runId}`,
-    });
-    projectIds.push(scratch.id);
-    // The project the invitee is invited to, in the owner's account.
+    // The project the invitee is invited to, in the owner's account. The email
+    // link (`/invites/<id>`) exists for someone with no Kortix account yet: an
+    // existing user is added directly.
     const website = await createDatabaseProject(env, {
       accountId: ownerAccount,
       userId: owner.id,
       name: `Website ${runId}`,
     });
     projectIds.push(website.id);
-
     const invited = await api<{ status: string; invite_id: string }>(
       ownerAuth.access_token,
       'POST',
       `/projects/${website.id}/access/invite`,
       { email: inviteeEmail, role: 'member' },
+      201,
     );
     expect(invited.status).toBe('invited');
+
+    // The invitee signs up, and has a project of their own open in this browser.
+    invitee = await createAuthUser(inviteeEmail, authOptions);
+    const inviteeAuth = await signIn(inviteeEmail, authOptions);
+    const inviteeAccount = ownedAccount(await api<AccountSummary[]>(inviteeAuth.access_token, 'GET', '/accounts'));
+
+    const scratch = await createDatabaseProject(env, {
+      accountId: inviteeAccount,
+      userId: invitee.id,
+      name: `Scratch ${runId}`,
+    });
+    projectIds.push(scratch.id);
 
     await installBrowserSessionDirect(page, inviteeAuth, `/projects/${scratch.id}`, authOptions);
     await selectAccountForUi(page, inviteeAccount);
@@ -85,7 +95,7 @@ test('45 — accepting a project invite lands in the invited project, not the re
     await expect(page).toHaveURL(new RegExp(`/projects/${website.id}(\\?|$)`), { timeout: 30_000 });
   } finally {
     for (const id of projectIds) await deleteDatabaseProject(env, id).catch(() => undefined);
-    await deleteAuthUser(invitee.id, authOptions).catch(() => undefined);
+    if (invitee) await deleteAuthUser(invitee.id, authOptions).catch(() => undefined);
     await deleteAuthUser(owner.id, authOptions).catch(() => undefined);
   }
 });
