@@ -1,18 +1,16 @@
 {
-  "source_hash": "4bd1bcb82f80c19329fdf98c5b21169af138761599ac8862a4f66759e31f6f0f",
+  "source_hash": "6eccfcf44eec5f9dd542927bdd1a89be8376aa8ba8abed91f150754a219274bd",
   "diff_files": [
     "apps/api/src/shared/cost-rollups.test.ts",
-    "apps/api/src/shared/cost-rollups.ts",
-    "packages/db/drizzle/meta/_journal.json",
-    "packages/db/src/schema/kortix.ts"
+    "apps/api/src/shared/cost-rollups.ts"
   ],
-  "diff_hash": "19fb0e0f155d3c21b2ac8d3e06a9c592d3606d3a2ad68cbbd1134292c73a77ec",
-  "head": "bce6d7ab0662d0c3dd2098d2fa26a2b9a5d45e35",
+  "diff_hash": "569cea2f4f59ca23688f490dc0d5229e1f74e41e29cc16f5d087dada0aa13a53",
+  "head": "00b93e01d5aafe3e1c47f296dfce033d5944de0b",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-07T00:28:32.459Z"
+  "at": "2026-10-07T00:33:13.279Z"
 }
