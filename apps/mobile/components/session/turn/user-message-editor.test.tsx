@@ -49,18 +49,26 @@ mock.module('@/components/kortix/kortix-loader', () => ({ KortixLoader: Empty })
 mock.module('@/components/kortix/toast-provider', () => ({ useToast: () => ({}) }));
 mock.module('@/components/icons/slack-icon', () => ({ SlackIcon: Empty }));
 mock.module('@/components/icons/teams-icon', () => ({ TeamsIcon: Empty }));
+mock.module('@/components/icons/telegram-icon', () => ({ TelegramIcon: Empty }));
 mock.module('@/components/session/ParticipantAvatar', () => ({ ParticipantAvatar: Empty }));
 mock.module('@/components/session/mention-chip', () => ({ MentionChip: Empty }));
 mock.module('@/lib/icons', () => ({
-  CaretDownIcon: Empty,
+  AlarmIcon: Empty,
+  CheckIcon: Empty,
   CopyIcon: Empty,
+  LightningIcon: Empty,
   PencilIcon: Empty,
   TextTIcon: Empty,
   DownloadSimpleIcon: Empty,
   PaperPlaneTiltIcon: Empty,
-  TimerIcon: Empty,
 }));
-mock.module('@/lib/haptics', () => ({ haptics: { medium: () => {} } }));
+mock.module('nativewind', () => ({ useColorScheme: () => ({ colorScheme: 'light' }) }));
+mock.module('@/components/kortix/KortixLogo', () => ({ KortixLogo: Empty }));
+mock.module('@/components/session/turn/source-pill', () => ({ SourcePill: Empty }));
+mock.module('@/components/kortix/sheet', () => ({ CopyContentButton: Empty, KortixBottomSheetModal: Empty }));
+mock.module('@gorhom/bottom-sheet', () => ({ BottomSheetScrollView: Empty }));
+mock.module('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
+mock.module('@/lib/haptics', () => ({ haptics: { medium: () => {}, selection: () => {}, success: () => {} } }));
 mock.module('@/lib/utils/theme', () => ({
   MOTION: { duration: { slow: 300 }, easing: { default: [0, 0, 1, 1] } },
   THEME: { light: { muted: '#m', sidebar: '#s', mutedForeground: '#mf', foreground: '#f' }, dark: {} },

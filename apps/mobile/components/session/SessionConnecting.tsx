@@ -65,7 +65,7 @@ export interface SessionConnectError {
 }
 
 /** `text-[0.9rem] leading-[22px] font-medium` — same as the thread's user bubble (turn/user-message.tsx). */
-const BUBBLE_TEXT_STYLE = { fontFamily: 'Roobert-Medium', fontSize: 14.4, lineHeight: 22 } as const;
+const BUBBLE_TEXT_STYLE = { fontFamily: 'Roobert-Medium', fontSize: 13, lineHeight: 19 } as const;
 const noop = () => {};
 
 export function SessionConnecting({
