@@ -19356,7 +19356,9 @@
       "textf2f698118cc1": "Delete app event",
       "text2dca9f542da4": "{name} connected",
       "text54e2237efa16": "Triggers on this app go live now.",
-      "text2fd655fcbaad": "It goes live when the account is connected."
+      "text2fd655fcbaad": "It goes live when the account is connected.",
+      "text2eb91a6f88aa": "1 file stays attached. Remove it to run the command, or remove the command to send the file as a message.",
+      "text807f9beb34b1": "{count, plural, other {# files stay attached. Remove them to run the command, or remove the command to send them as a message.}}"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

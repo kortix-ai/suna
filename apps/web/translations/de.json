@@ -19345,7 +19345,9 @@
       "textf2f698118cc1": "App-Ereignis löschen",
       "text2dca9f542da4": "{name} verbunden",
       "text54e2237efa16": "Trigger für diese App sind jetzt live.",
-      "text2fd655fcbaad": "Er geht live, sobald das Konto verbunden ist."
+      "text2fd655fcbaad": "Er geht live, sobald das Konto verbunden ist.",
+      "text2eb91a6f88aa": "1 Datei bleibt angehängt. Entferne sie, um den Befehl auszuführen, oder entferne den Befehl, um die Datei als Nachricht zu senden.",
+      "text807f9beb34b1": "{count, plural, other {# Dateien bleiben angehängt. Entferne sie, um den Befehl auszuführen, oder entferne den Befehl, um sie als Nachricht zu senden.}}"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

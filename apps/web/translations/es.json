@@ -19345,7 +19345,9 @@
       "textf2f698118cc1": "Eliminar evento de aplicación",
       "text2dca9f542da4": "{name} conectado",
       "text54e2237efa16": "Los disparadores de esta aplicación ya están activos.",
-      "text2fd655fcbaad": "Se activa cuando la cuenta esté conectada."
+      "text2fd655fcbaad": "Se activa cuando la cuenta esté conectada.",
+      "text2eb91a6f88aa": "1 archivo permanece adjunto. Elimínalo para ejecutar el comando, o elimina el comando para enviar el archivo como mensaje.",
+      "text807f9beb34b1": "{count, plural, other {# archivos permanecen adjuntos. Elimínalos para ejecutar el comando, o elimina el comando para enviarlos como mensaje.}}"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

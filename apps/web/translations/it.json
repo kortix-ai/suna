@@ -19345,7 +19345,9 @@
       "textf2f698118cc1": "Elimina evento dell'app",
       "text2dca9f542da4": "{name} connesso",
       "text54e2237efa16": "I trigger di questa app sono ora attivi.",
-      "text2fd655fcbaad": "Diventa attivo quando l'account è collegato."
+      "text2fd655fcbaad": "Diventa attivo quando l'account è collegato.",
+      "text2eb91a6f88aa": "1 file resta allegato. Rimuovilo per eseguire il comando, oppure rimuovi il comando per inviare il file come messaggio.",
+      "text807f9beb34b1": "{count, plural, other {# file restano allegati. Rimuovili per eseguire il comando, oppure rimuovi il comando per inviarli come messaggio.}}"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

@@ -19345,7 +19345,9 @@
       "textf2f698118cc1": "Excluir evento de aplicativo",
       "text2dca9f542da4": "{name} conectado",
       "text54e2237efa16": "Os gatilhos deste aplicativo já estão em funcionamento.",
-      "text2fd655fcbaad": "Ele entra em funcionamento quando a conta for conectada."
+      "text2fd655fcbaad": "Ele entra em funcionamento quando a conta for conectada.",
+      "text2eb91a6f88aa": "1 arquivo permanece anexado. Remova-o para executar o comando, ou remova o comando para enviar o arquivo como mensagem.",
+      "text807f9beb34b1": "{count, plural, other {# arquivos permanecem anexados. Remova-os para executar o comando, ou remova o comando para enviá-los como mensagem.}}"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

@@ -19345,7 +19345,9 @@
       "textf2f698118cc1": "删除应用事件",
       "text2dca9f542da4": "{name} 已连接",
       "text54e2237efa16": "此应用的触发器现已上线。",
-      "text2fd655fcbaad": "连接账户后即会上线。"
+      "text2fd655fcbaad": "连接账户后即会上线。",
+      "text2eb91a6f88aa": "1 个文件仍将作为附件保留。移除文件以运行命令，或移除命令以将文件作为消息发送。",
+      "text807f9beb34b1": "{count, plural, other {# 个文件仍将作为附件保留。移除文件以运行命令，或移除命令以将文件作为消息发送。}}"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
