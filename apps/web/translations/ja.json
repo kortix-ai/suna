@@ -19610,20 +19610,36 @@
     "sharePrivateDescription": "自分のアカウントを使用できるユーザーを追加で選択します。共有アカウントになり、プロジェクトの接続管理者も管理できるようになります。",
     "ownerMeta": "自分のアカウント"
   },
+  "mfaStepUp": {
+    "title": "本人確認",
+    "gateDescription": "このアカウントでは二要素認証が有効です。続行するには、認証アプリの6桁のコードを入力してください。",
+    "actionDescription": "この操作には二要素認証が必要です。続行するには、認証アプリの6桁のコードを入力してください。",
+    "codeLabel": "6桁のコード",
+    "verify": "確認",
+    "cancel": "キャンセル",
+    "signOut": "サインアウト",
+    "verified": "確認しました",
+    "invalidCode": "このコードは使用できませんでした。認証アプリを確認して、もう一度お試しください。",
+    "noFactorTitle": "二要素認証を設定",
+    "noFactorDescription": "この操作には二要素認証が必要です。設定 → セキュリティで認証アプリを追加してから、もう一度お試しください。"
+  },
   "connectMcp": {
-    "title": "MCP で Kortix を接続",
-    "description": "この URL を Claude、ChatGPT、Cursor、Codex などの MCP クライアントに追加します。初回はクライアントが Kortix へのサインインを求めます。インストールは不要です。",
-    "urlLabel": "MCP URL",
-    "addToClient": "クライアントに追加",
-    "other": "その他",
-    "claudeSteps": "Claude（Web またはデスクトップ）で 設定 → コネクタ → カスタムコネクタを追加 を開き、URL を貼り付けてサインインします。",
-    "claudeCodeHint": "次に Claude Code で /mcp を実行してサインインします。",
-    "otherHint": "ChatGPT（開発者モード）、VS Code、Windsurf などのクライアント：上の URL でリモート MCP サーバーを追加するか、この JSON を使用します。",
-    "addToCursor": "Cursor に追加",
-    "signInOnFirstUse": "初回使用時に Cursor が Kortix へのサインインを求めます。",
+    "title": "MCP で Kortix に接続",
+    "description": "Claude、Claude Code、Cursor、Codex、または任意の MCP クライアントから Kortix を使えます。サインインは一度だけ。インストールは不要です。",
     "docs": "ドキュメント",
     "done": "完了",
-    "copy": "コピー"
+    "copy": "コピー",
+    "anyClient": "任意の MCP クライアント",
+    "add": "追加",
+    "copied": "コピーしました",
+    "copyUrl": "URL をコピー",
+    "via": {
+      "claude": "設定 → コネクタ",
+      "claude-code": "ターミナルコマンド 1 つ",
+      "cursor": "ワンクリックでインストール",
+      "codex": "ターミナルコマンド 2 つ",
+      "other": "VS Code、Windsurf など"
+    }
   },
   "oauthConsent": {
     "unverifiedTitle": "未確認のアプリ",

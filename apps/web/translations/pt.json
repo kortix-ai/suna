@@ -19610,20 +19610,36 @@
     "sharePrivateDescription": "Escolha quem mais pode usar sua conta. Ela passa a ser uma conta compartilhada, que quem gerencia as conexões do projeto também pode gerenciar.",
     "ownerMeta": "Sua conta"
   },
+  "mfaStepUp": {
+    "title": "Confirme que é você",
+    "gateDescription": "Sua conta tem a autenticação de dois fatores ativada. Digite o código de 6 dígitos do seu app autenticador para continuar.",
+    "actionDescription": "Esta ação exige autenticação de dois fatores. Digite o código de 6 dígitos do seu app autenticador para continuar.",
+    "codeLabel": "Código de 6 dígitos",
+    "verify": "Verificar",
+    "cancel": "Cancelar",
+    "signOut": "Sair",
+    "verified": "Verificado",
+    "invalidCode": "Esse código não funcionou. Confira seu app autenticador e tente novamente.",
+    "noFactorTitle": "Configure a autenticação de dois fatores",
+    "noFactorDescription": "Esta ação exige autenticação de dois fatores. Adicione um app autenticador em Configurações → Segurança e tente novamente."
+  },
   "connectMcp": {
-    "title": "Conectar o Kortix via MCP",
-    "description": "Adicione esta URL ao Claude, ChatGPT, Cursor, Codex ou a qualquer cliente MCP. Na primeira vez, o cliente pede que você entre no Kortix. Nada para instalar.",
-    "urlLabel": "URL do MCP",
-    "addToClient": "Adicione ao seu cliente",
-    "other": "Outro",
-    "claudeSteps": "No Claude (web ou desktop), abra Configurações → Conectores → Adicionar conector personalizado, cole a URL e entre.",
-    "claudeCodeHint": "Depois execute /mcp no Claude Code e entre.",
-    "otherHint": "ChatGPT (modo desenvolvedor), VS Code, Windsurf e outros clientes: adicione um servidor MCP remoto com a URL acima ou com este JSON.",
-    "addToCursor": "Adicionar ao Cursor",
-    "signInOnFirstUse": "O Cursor pede que você entre no Kortix no primeiro uso.",
-    "docs": "Documentação",
-    "done": "Concluído",
-    "copy": "Copiar"
+    "title": "Conecte o Kortix via MCP",
+    "description": "Use o Kortix no Claude, Claude Code, Cursor, Codex ou qualquer cliente MCP. Você entra uma vez. Nada para instalar.",
+    "docs": "Docs",
+    "done": "Concluir",
+    "copy": "Copiar",
+    "anyClient": "Qualquer cliente MCP",
+    "add": "Adicionar",
+    "copied": "Copiado",
+    "copyUrl": "Copiar URL",
+    "via": {
+      "claude": "Configurações → Conectores",
+      "claude-code": "Um comando no terminal",
+      "cursor": "Instalação com um clique",
+      "codex": "Dois comandos no terminal",
+      "other": "VS Code, Windsurf e mais"
+    }
   },
   "oauthConsent": {
     "unverifiedTitle": "App não verificado",

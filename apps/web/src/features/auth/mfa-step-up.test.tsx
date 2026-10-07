@@ -31,6 +31,7 @@ let aal: {
 };
 let challengeAndVerifyResponse: { data: unknown; error: { message: string } | null };
 let aalHang: Promise<void> | null = null;
+let verifyHang: Promise<void> | null = null;
 const challengeAndVerifyCalls: Array<{ factorId: string; code: string }> = [];
 const signOutCalls: string[] = [];
 
@@ -46,6 +47,8 @@ mock.module('@/lib/supabase/client', () => ({
         },
         challengeAndVerify: async (args: { factorId: string; code: string }) => {
           challengeAndVerifyCalls.push(args);
+          if (verifyHang) await verifyHang;
+          if (challengeAndVerifyResponse.error) return challengeAndVerifyResponse;
           // The real verify mints the aal2 session BEFORE it resolves, so the
           // onSuccess refetch of the AAL answer must see aal2 here.
           aal = { data: { currentLevel: 'aal2', nextLevel: 'aal2' }, error: null };
@@ -65,16 +68,17 @@ mock.module('@/lib/auth/perform-sign-out', () => ({
 }));
 
 const COPY: Record<string, string> = {
-  text4d8f4755ac09: 'Verify it is you',
-  text3ba20a470a12: 'Enter a code from your authenticator app to verify this session.',
-  text0d1fa0dfcc9e: '6-digit code',
-  text19766ed6ccb2: 'Cancel',
-  texteea2745e2867: 'Verify',
-  text48f0d3d397d4: 'Sign out',
-  text4f7838402f37: 'Verified',
-  texte7307911656c: 'Code did not verify',
-  text669350bd2952: 'No second factor enrolled',
-  textf3a4ff3c0ae3: 'Enroll an authenticator app under Settings → Security.',
+  title: 'Verify it is you',
+  gateDescription: 'Your account has two-factor authentication on.',
+  actionDescription: 'This action needs two-factor authentication.',
+  codeLabel: '6-digit code',
+  cancel: 'Cancel',
+  verify: 'Verify',
+  signOut: 'Sign out',
+  verified: 'Verified',
+  invalidCode: 'That code did not work.',
+  noFactorTitle: 'Set up two-factor authentication',
+  noFactorDescription: 'Add an authenticator app in Settings → Security.',
 };
 mock.module('@/i18n/use-translations', () => ({
   useTranslations: () => Object.assign((key: string) => COPY[key] ?? key, { raw: (key: string) => COPY[key] ?? key }),
@@ -98,18 +102,16 @@ mock.module('@/components/ui/dialog', () => ({
     open ? createElement('div', { 'data-dialog': 'open' }, children) : null,
   DialogContent: host('section'),
   DialogDescription: host('p'),
-  DialogFooter: host('footer'),
-  DialogHeader: host('header'),
   DialogTitle: host('h2'),
 }));
 mock.module('@/components/ui/button', () => ({
   Button: ({ children, ...props }: { children?: React.ReactNode; [key: string]: unknown }) =>
     createElement('button', props, children),
 }));
-mock.module('@/components/ui/input', () => ({
-  Input: (props: Record<string, unknown>) => createElement('input', props),
+mock.module('@/components/ui/dot-matrix/session-dot-matrix', () => ({
+  SessionDotMatrix: () => createElement('span', null, 'matrix'),
 }));
-mock.module('@/components/ui/label', () => ({ Label: host('label') }));
+mock.module('@/features/icon/icons/kortix', () => ({ Kortix: host('svg') }));
 mock.module('@/components/ui/loading', () => ({
   default: (props: Record<string, unknown>) => createElement('span', props, 'loading'),
 }));
@@ -204,6 +206,20 @@ async function mount(
 
 const APP = createElement('p', null, 'APP CONTENT');
 
+async function enterAndVerify(root: unknown, value: string): Promise<void> {
+  const code = input(root);
+  if (!code) throw new Error('no code input');
+  await act(async () => {
+    (code.props?.onChange as (e: { target: { value: string } }) => void)({ target: { value } });
+  });
+  const verify = buttons(root).find((b) => textOf(b.props?.children).endsWith('Verify'));
+  if (!verify) throw new Error('no Verify button');
+  await act(async () => {
+    (verify.props?.onClick as () => void)();
+  });
+  await settle();
+}
+
 const verifiedTotpAal = () => {
   session = { access_token: 't' };
   user = { created_at: '2020-01-01T00:00:00.000Z', factors: [{ id: 'f-totp', factor_type: 'totp', status: 'verified' }] };
@@ -217,6 +233,7 @@ beforeEach(() => {
   aal = { data: null, error: null };
   challengeAndVerifyResponse = { data: {}, error: null };
   aalHang = null;
+  verifyHang = null;
   challengeAndVerifyCalls.length = 0;
   signOutCalls.length = 0;
   toasts.length = 0;
@@ -271,6 +288,26 @@ describe('MfaGate', () => {
     // invalidation refetched the AAL answer, which is what releases the gate.
     await settle();
     expect(serialize(root)).toContain('APP CONTENT');
+  });
+
+  test('Verify shows the session dot matrix while the code is checked', async () => {
+    verifiedTotpAal();
+    verifyHang = new Promise(() => {});
+    const root = await mount(createElement(MfaGate, null, APP));
+    await enterAndVerify(root, '654321');
+
+    expect(serialize(root)).toContain('matrix');
+    expect(serialize(root)).not.toContain('APP CONTENT');
+  });
+
+  test('a wrong code shows the inline error and keeps the gate up', async () => {
+    verifiedTotpAal();
+    challengeAndVerifyResponse = { data: null, error: { message: 'Invalid TOTP code entered' } };
+    const root = await mount(createElement(MfaGate, null, APP));
+    await enterAndVerify(root, '111111');
+
+    expect(serialize(root)).toContain('That code did not work.');
+    expect(serialize(root)).not.toContain('APP CONTENT');
   });
 
   test('holds the app behind the loading frame while the auth bootstrap has not resolved', async () => {
