@@ -23,7 +23,7 @@ import type { Context } from 'hono';
 import { accountsRouter } from '../accounts/core/app';
 import { accountRoleFor } from '../iam/read-models';
 import { auth, errors, json } from '../openapi';
-import { callerKortixSessionId } from '../projects/lib/caller-session';
+import { callerKortixSessionId } from '../middleware/caller-session';
 import { getRequestOnBehalfOf } from '../projects/lib/on-behalf-of';
 import { supabaseAuth } from '../middleware/auth';
 import { recordAuditEvent } from '../shared/audit';

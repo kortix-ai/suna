@@ -37,6 +37,7 @@ import { canAccessPreviewSandbox, resolveSandboxProjectId } from '../shared/prev
 import { bindAuditPrincipal } from '../shared/audit-scope';
 import { previewActorFields } from './preview-audit';
 import type { PreviewPrincipalKind } from './preview-session';
+import { bearerToken } from '../shared/bearer-token';
 
 async function sandboxBelongsToProject(sandboxId: string, projectId: string): Promise<boolean> {
   const sandboxProjectId = await resolveSandboxProjectId(sandboxId);
@@ -186,7 +187,8 @@ export async function authenticatePreviewPrincipalDetailed(
  */
 export function extractPreviewToken(req: Request, url: URL): string | null {
   const authHeader = req.headers.get('Authorization');
-  if (authHeader?.startsWith('Bearer ')) return authHeader.slice(7);
+  const bearer = bearerToken(authHeader);
+  if (bearer !== null) return bearer;
   const ktHeader = req.headers.get('X-Kortix-Token');
   if (ktHeader) return ktHeader;
   const qp = url.searchParams.get('token');

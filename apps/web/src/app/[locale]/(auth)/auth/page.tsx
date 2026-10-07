@@ -66,6 +66,47 @@ type Step = 'entry' | 'sso' | 'credentials' | 'link';
 const RESEND_COOLDOWN_SECONDS = 30;
 const EASE = [0.23, 1, 0.32, 1] as const;
 
+// sessionStorage key holding the address a stale-bundle recovery is handing
+// back to the form with. Consumed by the prefill effect on the next mount.
+const STALE_BUNDLE_EMAIL_KEY = 'kortix:stale-bundle-email';
+
+/**
+ * Next 16 rejects a server-action call whose id the running server does not
+ * know by throwing `UnrecognizedActionError` (the 404 response carries
+ * `x-nextjs-action-not-found: 1`). A browser holding the previous build's
+ * client bundle hits this whenever a deploy rolls underneath it: the HTML it
+ * rendered references action ids the new build no longer registers. The class
+ * name is the stable contract; the class itself is not exported from `next`.
+ */
+function isUnrecognizedActionError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { name?: unknown }).name === 'UnrecognizedActionError'
+  );
+}
+
+/**
+ * Recover a stale client bundle: reload the document once, so the browser
+ * re-fetches the build the server is actually running and the same submit
+ * succeeds. A soft refresh cannot do this — the stale action ids are baked
+ * into the already-loaded chunks. One shot per document: if the skew outlives
+ * the reload (e.g. an edge still serving the old page), the caller surfaces
+ * the error instead of looping. Returns true when it took over.
+ */
+let reloadedForStaleBundle = false;
+function recoverStaleBundle(email: string): boolean {
+  if (reloadedForStaleBundle || typeof window === 'undefined') return false;
+  reloadedForStaleBundle = true;
+  try {
+    if (email) window.sessionStorage.setItem(STALE_BUNDLE_EMAIL_KEY, email);
+  } catch {
+    // Storage full or disabled: reload without the prefill.
+  }
+  window.location.reload();
+  return true;
+}
+
 /* ─── Small shared pieces ──────────────────────────────────────────────── */
 
 function PasswordInput({
@@ -162,6 +203,20 @@ function AuthCardForm({
     const t = setTimeout(() => setResendIn((prev) => prev - 1), 1000);
     return () => clearTimeout(t);
   }, [step, resendIn]);
+
+  // A stale-bundle recovery reloaded the document mid-submit; put the address
+  // back so the retried submit is one click away.
+  useEffect(() => {
+    try {
+      const stashed = window.sessionStorage.getItem(STALE_BUNDLE_EMAIL_KEY);
+      if (stashed) {
+        window.sessionStorage.removeItem(STALE_BUNDLE_EMAIL_KEY);
+        setEmail(stashed);
+      }
+    } catch {
+      // sessionStorage unavailable (privacy mode): no prefill.
+    }
+  }, []);
 
   const enabledProviders = useMemo(() => {
     const raw = getEnv().AUTH_PROVIDERS || '';
@@ -291,6 +346,7 @@ function AuthCardForm({
         failWith((result as any).message as string);
       }
     } catch (err: any) {
+      if (isUnrecognizedActionError(err) && recoverStaleBundle(target)) return;
       if (err?.digest?.startsWith('NEXT_REDIRECT')) return;
       failWith(err?.message || t('errors.unexpected'));
     } finally {
@@ -347,7 +403,9 @@ function AuthCardForm({
         return 'handled';
       }
       // Work domain with no SAML provider.
-    } catch {
+    } catch (err) {
+      // A stale bundle's action-id failure must reach the recovery, not read as "no SAML provider".
+      if (isUnrecognizedActionError(err)) throw err;
       // SAML not enabled on this Supabase, or a transient error.
     }
     return 'none';
@@ -377,6 +435,9 @@ function AuthCardForm({
         const domain = emailDomain(trimmed) ?? trimmed;
         failWith(t('sso.notConfigured', { domain }));
       }
+    } catch (err) {
+      if (isUnrecognizedActionError(err) && recoverStaleBundle(trimmed)) return;
+      failWith(t('errors.unexpected'));
     } finally {
       setPendingAction(null);
     }
@@ -447,6 +508,9 @@ function AuthCardForm({
       }
       setCredMode(resolved);
       setStep('credentials');
+    } catch (err) {
+      if (isUnrecognizedActionError(err) && recoverStaleBundle(trimmed)) return;
+      failWith(t('errors.unexpected'));
     } finally {
       setPendingAction(null);
     }
@@ -478,6 +542,9 @@ function AuthCardForm({
       }
       setCredMode(resolved);
       setStep('credentials');
+    } catch (err) {
+      if (isUnrecognizedActionError(err) && recoverStaleBundle(target)) return;
+      failWith(t('errors.unexpected'));
     } finally {
       setPendingAction(null);
     }
@@ -549,6 +616,7 @@ function AuthCardForm({
 
       await establishSessionAndRedirect(result);
     } catch (err: any) {
+      if (isUnrecognizedActionError(err) && recoverStaleBundle(email.trim())) return;
       if (err?.digest?.startsWith('NEXT_REDIRECT')) return;
       failWith(err?.message || t('errors.unexpected'));
     } finally {

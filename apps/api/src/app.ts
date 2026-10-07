@@ -12,11 +12,14 @@ import { accountInvitesRouter } from './accounts/invites';
 import { adminApp } from './admin';
 import { authRouter } from './auth';
 import { headlessAuthRouter } from './auth/headless';
-import { authEmailHookApp } from './auth/send-email-hook';
+import { authEmailHookApp, registerSendEmailHookRoutes } from './auth/send-email-hook';
 import { accountDeletionApp, billingApp } from './billing';
 import { notificationsApp } from './notifications/routes';
 import {
   emailWebhookApp,
+  registerEmailWebhookRoutes,
+  registerSlackWebhookRoutes,
+  registerTeamsWebhookRoutes,
   slackIdentityApp,
   slackOauthApp,
   slackWebhookApp,
@@ -40,12 +43,12 @@ import { oauthApp } from './oauth';
 import { opsApp } from './ops';
 import { platformApp } from './platform';
 import { sandboxWebhooksApp } from './platform/webhooks/routes';
-import { projectWebhooksApp, projectsApp } from './projects';
+import { projectWebhooksApp, projectsApp, registerAllProjectRoutes } from './projects';
 import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
 import { router } from './router';
 import { runtimeAssetsApp } from './runtime-assets';
 import { sandboxProxyApp } from './sandbox-proxy';
-import { scimRouter } from './scim';
+import { registerScimRoutes, scimRouter } from './scim';
 import { setupApp } from './setup';
 import { skillsApp } from './skills';
 import { tunnelApp } from './tunnel';
@@ -86,6 +89,7 @@ app.route('/v1/auth', headlessAuthRouter);
 app.route('/v1/auth', authRouter);
 // SCIM 2.0 — separate auth (per-account bearer tokens, not Supabase JWT).
 // Mounted outside /v1 so IdPs configure the documented protocol URL.
+registerScimRoutes();
 app.route('/scim/v2', scimRouter);
 
 // /v1/account-invites/* — accept/decline/describe pending team invitations.
@@ -163,6 +167,7 @@ app.use('/v1/platform/boot-timeline', supabaseAuth);
 // pins this route too.
 app.use('/v1/platform/runtime-projection', supabaseAuth);
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
+registerAllProjectRoutes();
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 // /v1/mcp — the hosted MCP server, bound to the caller's token like the CLI.
@@ -214,13 +219,17 @@ app.route('/v1/runtime-assets', runtimeAssetsApp); // GET /manifest, /cli, /agen
 app.route('/v1/webhooks', projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
 
 app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oauth/callback — OAuth dance
+registerSlackWebhookRoutes();
 app.route('/v1/webhooks/slack', slackWebhookApp); // /v1/webhooks/slack/:projectId — raw Slack events (BYO mode)
 app.route('/v1/webhooks/teams/oauth', teamsOauthApp); // /v1/webhooks/teams/oauth/callback — admin-consent + catalog publish
+registerTeamsWebhookRoutes();
 app.route('/v1/webhooks/teams', teamsWebhookApp); // /v1/webhooks/teams/messages — Bot Framework activities
 app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slack/identity/bind — authed /login bind
 app.route('/v1/channels/teams/identity', teamsIdentityApp); // /v1/channels/teams/identity/bind — authed login bind
 app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
+registerEmailWebhookRoutes();
 app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/agentmail — AgentMail inbound email (Svix-signed)
+registerSendEmailHookRoutes();
 app.route('/v1/webhooks/auth', authEmailHookApp); // /v1/webhooks/auth/send-email — Supabase Auth send-email hook (Standard Webhooks-signed)
 
 app.route('/v1/webhooks/sandbox', sandboxWebhooksApp); // /v1/webhooks/sandbox/{daytona,platinum} — provider lifecycle → close billing

@@ -6,13 +6,14 @@
 # already eu-west-2 API / eu-west-2 DB) — staging becomes a truer release
 # candidate for prod's latency profile, not just a colocation fix.
 #
-#   staging-api-euw2-shadow.kortix.com    → Cloudflare (proxied) → ALB
-#   gateway-staging-euw2-shadow.kortix.com → Cloudflare (proxied) → ALB
+#   staging-api-euw2.kortix.com     → Cloudflare (proxied) → ALB → API
+#   gateway-staging-euw2.kortix.com → Cloudflare (proxied) → ALB → gateway
 #
-# Shadow verification hostnames only — ../staging keeps serving
-# staging-api-ecs-fargate.kortix.com / gateway-staging-ecs-fargate.kortix.com
-# until the runbook's cutover step. See
-# the apply runbook in PR #7844.
+# These are this stack's origin hostnames. The staging-api Worker picks the
+# live origin: ../staging while its ACTIVE_BACKEND is "ecs-fargate", this root
+# once it is "eu-west-2". Until the switch, this API runs with
+# KORTIX_WORKERS_ENABLED=false in its copy of kortix-staging-env. README.md in
+# this directory has the apply and switch-over steps.
 #
 # Naming: local.name is "kortix-staging-euw2", not "kortix-staging" — IAM
 # roles/policies are account-global and the project-snapshots S3 bucket name
@@ -50,8 +51,8 @@ provider "cloudflare" {
 
 locals {
   name           = "kortix-staging-euw2"
-  api_domain     = "staging-api-euw2-shadow.kortix.com"
-  gateway_domain = "gateway-staging-euw2-shadow.kortix.com"
+  api_domain     = "staging-api-euw2.kortix.com"
+  gateway_domain = "gateway-staging-euw2.kortix.com"
   cloudflare_ip_ranges = [
     "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22",
     "141.101.64.0/18", "108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20",
@@ -130,6 +131,20 @@ module "acm_gateway" {
   }
 }
 
+# ── Kortix Capture store ──────────────────────────────────────────────────────
+# Private bucket the Kortix Capture desktop app writes the capture format to
+# (orgs/<account_id>/<device_id>/…), the SQS queue of its `*.manifest.json`
+# events, and the device role the API assumes with a per-device session policy.
+# The task names them through the non-secret KORTIX_CAPTURE_S3_BUCKET /
+# _S3_REGION / _SQS_QUEUE_URL / _STS_ROLE_ARN overrides in the deploy workflow.
+# Nothing records until an account turns Capture on.
+module "capture_store" {
+  source            = "../../modules/capture-store"
+  name              = "${local.name}-capture-store"
+  api_task_role_arn = module.api.task_role_arn
+  tags              = local.tags
+}
+
 module "api" {
   source     = "../../modules/ecs-api"
   name       = local.name
@@ -157,6 +172,10 @@ module "api" {
   audit_archive_enabled       = true
   audit_archive_bucket_arn    = module.audit_archive.bucket_arn
   audit_archive_kms_key_arn   = module.audit_archive.kms_key_arn
+  capture_enabled             = true
+  capture_bucket_arn          = module.capture_store.bucket_arn
+  capture_queue_arn           = module.capture_store.queue_arn
+  capture_device_role_arn     = module.capture_store.device_role_arn
 
   alb_ingress_cidrs = local.cloudflare_ip_ranges
 
@@ -165,8 +184,8 @@ module "api" {
   # instance class, different region.
   task_cpu                   = 2048
   task_memory                = 4096
-  desired_count              = 6
-  min_capacity               = 6
+  desired_count              = var.api_task_count
+  min_capacity               = var.api_task_count
   max_capacity               = 8
   use_fargate_spot           = true
   fargate_base_on_demand     = 1
@@ -189,7 +208,7 @@ module "gateway" {
   container_port    = 8090
   health_check_path = "/health/live"
   certificate_arn   = one(module.acm_gateway[*].certificate_arn)
-  environment       = merge(var.gateway_environment, { KORTIX_API_URL = "https://${local.api_domain}" })
+  environment       = merge(var.gateway_environment, { KORTIX_API_URL = "https://staging-api.kortix.com" })
   secrets           = var.api_secrets
   secrets_blob_arn  = data.aws_secretsmanager_secret.env.arn
 
@@ -208,22 +227,24 @@ module "gateway" {
   tags                       = local.tags
 }
 
-# ── DNS: shadow verification hostnames only ────────────────────────────────────
+# ── DNS: this stack's origin hostnames ────────────────────────────────────────
+# The staging-api Worker decides which origin serves staging-api.kortix.com, so
+# these records never change at the switch-over.
 module "dns" {
   source  = "../../modules/cloudflare-dns"
   count   = var.manage_dns ? 1 : 0
   zone_id = var.cloudflare_zone_id
 
   records = {
-    staging-api-euw2-shadow = {
-      name    = "staging-api-euw2-shadow"
+    staging-api-euw2 = {
+      name    = "staging-api-euw2"
       type    = "CNAME"
       value   = module.api.alb_dns_name
       proxied = true
       ttl     = 1
     }
-    gateway-staging-euw2-shadow = {
-      name    = "gateway-staging-euw2-shadow"
+    gateway-staging-euw2 = {
+      name    = "gateway-staging-euw2"
       type    = "CNAME"
       value   = module.gateway.alb_dns_name
       proxied = true

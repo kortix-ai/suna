@@ -7,10 +7,10 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as tar from 'tar';
 import { config } from '../config';
-import { validateSha } from '../projects/git-ref';
+import { validateSha } from '../shared/git-ref';
 import { refreshMirror, runGit } from '../projects/git/mirror';
 import type { GitBackedProject } from '../projects/git/types';
-import { normalizeSnapshotRef, PROJECT_SNAPSHOT_MARKER_PATH, type ProjectSnapshotMarker } from './project-snapshot';
+import { normalizeSnapshotRef, PROJECT_SNAPSHOT_MARKER_PATH, type ProjectSnapshotMarker } from './project-snapshot-shared';
 import { PROJECT_SNAPSHOT_FORMAT, PROJECT_SNAPSHOT_ARCHIVE_CONTENT_TYPE, PROJECT_SNAPSHOT_BLOBS_CONTENT_TYPE, getObjectText, headObject, projectSnapshotBlobsKey, projectSnapshotManifestKey, projectSnapshotTreeKey, projectSnapshotObjectPrefix, putObjectIfAbsent, type ProjectSnapshotManifest, type ProjectSnapshotRepository } from './project-snapshot-store';
 
 // ── Build ───────────────────────────────────────────────────────────────────

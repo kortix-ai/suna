@@ -5,7 +5,7 @@
  * `capture.episodes`, `capture.mine`, `capture.export`) run in the shared job
  * worker (shared/job-queue.ts).
  *
- * Leader only (startCaptureWorkers):
+ * Leader only (workers/capture-worker.ts runs these ticks):
  *   - events reader: long-polls the SQS queue of the bucket's `*.manifest.json`
  *     ObjectCreated events (AWS), enqueueing one ingest per key;
  *   - index reader: for each active device, reads `status.json` (live status),
@@ -22,7 +22,6 @@ import { captureDeviceGrants, captureDevices, captureEpisodes, captureWorkspaces
 import { and, eq, gt, gte, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { logger } from '../lib/logger';
-import { runWorkerTick } from '../shared/audit-scope';
 import { db } from '../shared/db';
 import { enqueueJob, enqueueJobs, pruneFinishedJobs, registerJobHandler } from '../shared/job-queue';
 import { accountPrefix, deviceFields, foldIndex, jsonLines, PolicySchema, statusReportedAt, utcDay } from './format';
@@ -269,7 +268,7 @@ async function removeChunkRows(tx: Tx, chunks: Array<{ chunkId: string; startAt:
   await tx.delete(timelineChunks).where(inArray(timelineChunks.chunkId, ids));
 }
 
-async function pollAllDevices(): Promise<void> {
+export async function pollAllDevices(): Promise<void> {
   if (!captureStoreConfigured()) return;
   for (const device of await activeDevices()) {
     try {
@@ -295,7 +294,7 @@ export function manifestKeysFromEvent(body: string): string[] {
     .filter((key) => key.endsWith('.manifest.json'));
 }
 
-async function receiveEvents(): Promise<void> {
+export async function receiveEvents(): Promise<void> {
   const queueUrl = config.KORTIX_CAPTURE_SQS_QUEUE_URL!;
   sqs ??= new SQSClient({ region: captureRegion() });
   const out = await sqs.send(
@@ -362,7 +361,7 @@ export async function applyRetention(limitPerAccount = 200): Promise<number> {
 }
 
 let lastPartitionDay = '';
-async function maintenance(): Promise<void> {
+export async function captureMaintenance(): Promise<void> {
   const today = utcDay(Date.now());
   if (lastPartitionDay !== today) {
     await db.execute(sql`SELECT kortix.capture_timeline_ensure_partitions((now() AT TIME ZONE 'UTC')::date, 3)`);
@@ -377,49 +376,4 @@ async function maintenance(): Promise<void> {
   await applyRetention();
   await db.delete(captureDeviceGrants).where(lt(captureDeviceGrants.expiresAt, sql`now() - interval '1 day'`));
   await pruneFinishedJobs(7);
-}
-
-// ─── Loops ───────────────────────────────────────────────────────────────────
-
-const loops: Array<{ stop: () => void }> = [];
-
-function loop(name: string, everyMs: () => number, tick: () => Promise<unknown>) {
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  let stopped = false;
-  const run = async () => {
-    let delay = everyMs();
-    try {
-      await tick();
-    } catch (error) {
-      // A failing tick (no permission, store down) must not spin: wait at least 30 s.
-      delay = Math.max(delay, 30_000);
-      logger.error(`[capture] ${name} tick failed`, { error: String(error) });
-    }
-    if (!stopped) timer = setTimeout(run, delay);
-  };
-  timer = setTimeout(run, 1_000);
-  return {
-    stop: () => {
-      stopped = true;
-      if (timer) clearTimeout(timer);
-    },
-  };
-}
-
-export function startCaptureWorkers(): void {
-  if (loops.length) return;
-  loops.push(
-    loop('capture-index-reader', () => config.KORTIX_CAPTURE_INDEX_POLL_SECONDS * 1000, () =>
-      runWorkerTick('capture-index-reader', pollAllDevices),
-    ),
-  );
-  loops.push(loop('capture-maintenance', () => 5 * 60_000, () => runWorkerTick('capture-maintenance', maintenance)));
-  if ((config.KORTIX_CAPTURE_SQS_QUEUE_URL ?? '').trim()) {
-    // Long polling waits up to 20 s inside the call; the loop re-arms at once.
-    loops.push(loop('capture-events-reader', () => 0, () => runWorkerTick('capture-events-reader', receiveEvents)));
-  }
-}
-
-export function stopCaptureWorkers(): void {
-  for (const l of loops.splice(0)) l.stop();
 }

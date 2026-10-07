@@ -29,20 +29,22 @@ describe('resolveModelDefault', () => {
     });
   });
 
-  test('does not expose the paid platform default to a free-tier caller', () => {
+  test('resolves the platform default for a free-tier caller (KRTX-1067)', () => {
+    // The gateway serves the platform default to every tier now, so a fresh
+    // free account gets a working default model instead of a dead composer.
     expect(
       resolveModelDefault(
         {
           accountDefault: null,
           projectDefault: null,
-          platformDefault: 'kortix/platform',
+          platformDefault: 'kimi-k3',
           agentDefaults: {},
-          resolvedForCaller: null,
+          resolvedForCaller: 'kimi-k3',
           freeTier: true,
         },
         undefined,
       ),
-    ).toBeUndefined();
+    ).toEqual({ providerID: 'kortix', modelID: 'kimi-k3' });
   });
 });
 
@@ -136,7 +138,15 @@ describe('model defaults from the session-open snapshot', () => {
     expect(value.resolveDefaultFor('coder')).toEqual({ providerID: 'kortix', modelID: 'google/gemini-agent' });
 
     releaseDetail();
-    await settle();
+    // A fixed 10 ms sleep is a lane-load race: under parallel workers the
+    // /detail response can land after the sleep, so the update fires outside
+    // act and the assertion reads the pre-response render. Wait, bounded and
+    // inside act, until the response has actually landed.
+    await act(async () => {
+      for (let i = 0; i < 100 && !value.llmGatewayEnabled; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    });
     expect(value.llmGatewayEnabled).toBe(true);
     expect(value.data).toEqual(DEFAULTS as never);
     expect(requests.filter((url) => url.includes('/model-defaults'))).toHaveLength(0);

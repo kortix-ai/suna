@@ -93,12 +93,12 @@ export function useProjectSessions(projectId: string, options?: UseProjectSessio
     getNextPageParam: projectSessionsPageParam,
     enabled: options?.enabled ?? true,
     refetchOnWindowFocus: options?.refetchOnWindowFocus,
+    ...contract('inventory'),
     refetchInterval: (query) => {
       const interval = options?.refetchInterval;
       if (typeof interval !== 'function') return interval ?? false;
       return interval(flattenProjectSessionPages(query.state.data));
     },
-    ...contract('inventory'),
   });
 
   return {

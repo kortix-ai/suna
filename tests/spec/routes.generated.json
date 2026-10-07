@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 764,
+  "count": 724,
   "routes": [
     {
       "method": "GET",
@@ -261,142 +261,6 @@
     {
       "method": "POST",
       "path": "/v1/accounts/:accountId/branding/assets/:kind"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/accounts/:accountId/capture"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/chunks/:chunkId/media"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/days"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/devices"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/accounts/:accountId/capture/devices/:deviceId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/devices/:deviceId/assets/:name"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/accounts/:accountId/capture/devices/:deviceId/policy"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/accounts/:accountId/capture/devices/:deviceId/sync"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/episodes"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/episodes/:episodeId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/exports"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/accounts/:accountId/capture/exports"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/exports/:exportId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/frames/:frameId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/accounts/:accountId/capture/intelligence/run"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/members"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/accounts/:accountId/capture/members/:userId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/overview"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/people"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/policy"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/accounts/:accountId/capture/policy"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/ranges"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/accounts/:accountId/capture/ranges"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/ranges/:rangeId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/accounts/:accountId/capture/ranges/:rangeId/process"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/search"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/timeline"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/timeline/items"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/workflows"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/workflows/:workflowId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/accounts/:accountId/capture/workflows/:workflowId/review"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/accounts/:accountId/capture/workflows/:workflowId/skill"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/accounts/:accountId/capture/workflows/:workflowId/skill-draft"
     },
     {
       "method": "GET",
@@ -725,6 +589,10 @@
     {
       "method": "PUT",
       "path": "/v1/accounts/:accountId/secret-resources/:secretId/grants/:userId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/secret-resources/:secretId/retry"
     },
     {
       "method": "PUT",
@@ -1113,42 +981,6 @@
     {
       "method": "POST",
       "path": "/v1/billing/webhooks/stripe"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/capture/credentials"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/capture/device/authorize"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/capture/device/grants/:user_code"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/capture/device/grants/:user_code/approve"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/capture/device/grants/:user_code/deny"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/capture/device/token"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/capture/me/frames/:frameId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/capture/me/search"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/capture/me/timeline"
     },
     {
       "method": "POST",
@@ -2175,6 +2007,10 @@
       "path": "/v1/projects/:projectId/gateway/sessions"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/gateway/sources"
+    },
+    {
       "method": "PUT",
       "path": "/v1/projects/:projectId/git-credential"
     },
@@ -2601,6 +2437,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/warm/claim"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/skills"
     },
     {
       "method": "GET",

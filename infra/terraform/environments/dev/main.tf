@@ -133,12 +133,12 @@ module "audit_archive" {
 
 # ── Kortix Capture store ──────────────────────────────────────────────────────
 # Private bucket the Kortix Capture desktop app writes the capture format to
-# (orgs/<account>/projects/<project>/<device>/…), the SQS queue of its
+# (orgs/<account_id>/<device_id>/…), the SQS queue of its
 # `*.manifest.json` events, and the device role the API assumes with a
 # per-device session policy. The task names them through the non-secret
 # KORTIX_CAPTURE_S3_BUCKET / _S3_REGION / _SQS_QUEUE_URL / _STS_ROLE_ARN
-# overrides in the deploy workflow. Nothing records until a project turns on
-# the `capture` feature flag.
+# overrides in the deploy workflow. Nothing records until an account turns
+# Capture on.
 module "capture_store" {
   source            = "../../modules/capture-store"
   name              = "${local.name}-capture-store"

@@ -627,12 +627,6 @@ export function resolveCreditPriceId(amountDollars: number): string | null {
   return prices.credits[amountDollars] ?? null;
 }
 
-export function getCreditPackageAmounts(): number[] {
-  return Object.keys(getStripePrices().credits)
-    .map(Number)
-    .sort((a, b) => a - b);
-}
-
 // ─── Price ID ↔ Tier reverse lookup ─────────────────────────────────────────
 
 const priceIdToTier = new Map<string, string>();

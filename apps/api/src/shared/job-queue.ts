@@ -10,14 +10,13 @@
  *                                    settle a job; failure backs off exponentially
  *                                    and marks the job `dead` after max_attempts
  *
- * `startJobWorker()` runs on every replica: SKIP LOCKED spreads the work, and a
+ * `startJobWorker()` (workers/job-queue-worker.ts) runs on every replica: SKIP LOCKED spreads the work, and a
  * restart loses nothing because a claim is only a timestamp. Handlers must be
  * idempotent: a job runs at least once.
  */
 import { jobQueue } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from './db';
-import { runWorkerTick } from './audit-scope';
 import { logger } from '../lib/logger';
 
 export type Job = typeof jobQueue.$inferSelect;
@@ -150,31 +149,4 @@ export async function runJobBatch(limit = 4): Promise<number> {
     ran += jobs.length;
   }
   return ran;
-}
-
-const IDLE_MS = 2_000;
-let timer: ReturnType<typeof setTimeout> | null = null;
-let stopped = true;
-
-async function tick(): Promise<void> {
-  let delay = IDLE_MS;
-  try {
-    // A full batch means more work is likely waiting: go again at once.
-    if ((await runWorkerTick('job-queue', () => runJobBatch())) > 0) delay = 0;
-  } catch (error) {
-    logger.error('[job-queue] tick failed', { error: String(error) });
-  }
-  if (!stopped) timer = setTimeout(tick, delay);
-}
-
-export function startJobWorker(): void {
-  if (!stopped) return;
-  stopped = false;
-  timer = setTimeout(tick, IDLE_MS);
-}
-
-export function stopJobWorker(): void {
-  stopped = true;
-  if (timer) clearTimeout(timer);
-  timer = null;
 }

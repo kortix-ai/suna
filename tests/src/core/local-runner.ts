@@ -341,20 +341,24 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       fullBrowser,
       fullPackageQuality,
     ];
+    // The SDK lane owns the gate's only wall-clock assertions (the ReDoS
+    // guards in packages/sdk, 100 ms and 1000 ms bounds). Inside the heavy
+    // start burst they measured 1272 ms against the 1000 ms bound on a
+    // 6-core box (PR #9266 saw the same at load 57), while the lane alone
+    // passes at ~370 ms and CI runs every lane in an isolated job. Give the
+    // SDK a stage of its own so no lane can steal its clock.
+    const fullStage = [fullFlows, dbSuites, runnerUnit, routeCoverage, worktreeUnit];
     return {
       mode: 'full',
       lanes,
       // Four REST workers and four browsers contend for the same local API and
       // database. Keep browser verification after REST. Package quality stays
       // exclusive because concurrent package workers double both lane times.
-      stages: [
-        [fullFlows, sdk, dbSuites, runnerUnit, routeCoverage, worktreeUnit],
-        [fullBrowser],
-        [fullPackageQuality],
-      ],
+      stages: [fullStage, [sdk], [fullBrowser], [fullPackageQuality]],
     };
   }
-  const lanes = [flows, sdk, dbSuites, runnerUnit, routeCoverage, worktreeUnit];
+  const coreStage = [flows, dbSuites, runnerUnit, routeCoverage, worktreeUnit];
+  const lanes = [...coreStage, sdk];
   // `pnpm test` is the whole attested suite minus the browser journeys, so it
   // also runs package quality (the attestation's `packages` lane) after the
   // core stage. The SDK runs once, as its own lane.
@@ -365,7 +369,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   return {
     mode: 'core',
     lanes: [...lanes, corePackageQuality],
-    stages: [lanes, [corePackageQuality]],
+    stages: [coreStage, [sdk], [corePackageQuality]],
   };
 }
 

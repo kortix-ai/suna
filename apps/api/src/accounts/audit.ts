@@ -24,7 +24,7 @@ import {
   recordAuditEvent,
 } from '../shared/audit';
 import { auditCredentialNames } from '../shared/audit-credential-names';
-import { requestClientIp } from '../shared/client-ip';
+import { requestClientIp } from '../middleware/client-ip';
 import {
   deliverTestEvent,
   generateWebhookSecret,
@@ -38,13 +38,14 @@ import {
   parseAuditLimit,
   serializeAuditEvent,
 } from '../shared/audit-query';
+import { wakeAuditWebhookWorker } from '../workers/audit-webhook-worker';
 import { AuditActorTypeSchema, AuditListSchema } from '../shared/audit-schema';
 import { readExportPage } from '../shared/audit-archive/export-page';
 import { auditArchiveStore } from '../shared/audit-archive/store';
 import { reconcileAuditEvents } from '../shared/audit-reconciliation';
 import type { AppEnv } from '../types';
 import { type AuditFilterInput, buildFilters } from './audit-filters';
-import { requireEntitlement } from './iam/helpers';
+import { requireEntitlement } from './iam/http-helpers';
 import { readJsonObject } from '../shared/http-body';
 
 export const auditRouter = makeOpenApiApp<AppEnv>();
@@ -819,6 +820,7 @@ auditRouter.openapi(
     if (!hook) return c.json({ error: 'webhook not found' }, 404);
     const replayed = await replayAuditWebhookDelivery(deliveryId, webhookId);
     if (!replayed) return c.json({ error: 'delivery not found' }, 404);
+    wakeAuditWebhookWorker();
     await recordAuditEvent({
       accountId,
       actorUserId: userId,

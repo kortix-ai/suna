@@ -13,7 +13,7 @@ Every row in the [audit log](/docs/accounts#audit-log) carries an `action`: `dom
 - A route with two actions (`secret.strategy.update` or `secret.strategy.changed`) records the second when its handler records that event, for example only for a real change. That event, with its before and after state, is then the request's row.
 - Rows written before 2026-09-24 carry `METHOD /template` as their action. The web app and the CLI show them with the same titles.
 
-This page lists 740 route actions and 70 other events.
+This page lists 700 route actions and 64 other events.
 
 ## `account.`
 
@@ -188,54 +188,6 @@ This page lists 740 route actions and 70 other events.
 | `billing.webhook.revenuecat.receive` | Received RevenueCat billing webhook | `POST /v1/billing/webhooks/revenuecat` (also `POST /v1/billing/webhook/revenuecat`) |
 | `billing.webhook.stripe.receive` | Received Stripe billing webhook | `POST /v1/billing/webhooks/stripe` (also `POST /v1/billing/webhook/stripe`) |
 
-## `capture.`
-
-| Action | Title | Route |
-| --- | --- | --- |
-| `capture.asset.read` or `capture.member_view` | Opened a capture screenshot | `GET /v1/accounts/:accountId/capture/devices/:deviceId/assets/:name` |
-| `capture.days.read` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Viewed the days of a capture timeline | `GET /v1/accounts/:accountId/capture/days` |
-| `capture.device.authorize` | Started a capture device sign-in | `POST /v1/capture/device/authorize` |
-| `capture.device.credentials` | Issued capture storage credentials | `POST /v1/capture/credentials` |
-| `capture.device.grant.approve` | Approved a capture device sign-in | `POST /v1/capture/device/grants/:user_code/approve` |
-| `capture.device.grant.deny` | Denied a capture device sign-in | `POST /v1/capture/device/grants/:user_code/deny` |
-| `capture.device.grant.read` | Viewed a capture device sign-in | `GET /v1/capture/device/grants/:user_code` |
-| `capture.device.list` or `capture.member_view` or `capture.account_view` | Listed capture devices | `GET /v1/accounts/:accountId/capture/devices` |
-| `capture.device.policy.update` | Updated a capture device policy | `PUT /v1/accounts/:accountId/capture/devices/:deviceId/policy` |
-| `capture.device.revoke` | Revoked a capture device | `DELETE /v1/accounts/:accountId/capture/devices/:deviceId` |
-| `capture.device.sync` | Synced a capture device | `POST /v1/accounts/:accountId/capture/devices/:deviceId/sync` |
-| `capture.device.token` | Polled a capture device sign-in | `POST /v1/capture/device/token` |
-| `capture.episode.list` or `capture.member_view` or `capture.account_view` | Listed Capture episodes | `GET /v1/accounts/:accountId/capture/episodes` |
-| `capture.episode.read` or `capture.member_view` | Viewed a Capture episode | `GET /v1/accounts/:accountId/capture/episodes/:episodeId` |
-| `capture.export.create` | Started a Capture export | `POST /v1/accounts/:accountId/capture/exports` |
-| `capture.export.list` | Listed Capture exports | `GET /v1/accounts/:accountId/capture/exports` |
-| `capture.export.read` | Viewed a Capture export | `GET /v1/accounts/:accountId/capture/exports/:exportId` |
-| `capture.frame.read` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Viewed a capture frame | `GET /v1/accounts/:accountId/capture/frames/:frameId` |
-| `capture.frame.read` or `capture.agent_read` | Viewed a capture frame | `GET /v1/capture/me/frames/:frameId` |
-| `capture.intelligence.run` | Ran the Capture pipelines | `POST /v1/accounts/:accountId/capture/intelligence/run` |
-| `capture.media.read` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Opened capture media | `GET /v1/accounts/:accountId/capture/chunks/:chunkId/media` |
-| `capture.member.list` or `capture.account_view` | Listed Capture roles | `GET /v1/accounts/:accountId/capture/members` |
-| `capture.member.update` or `capture.member_role` | Changed a Capture role | `PUT /v1/accounts/:accountId/capture/members/:userId` |
-| `capture.overview.read` or `capture.account_view` | Viewed the Capture overview | `GET /v1/accounts/:accountId/capture/overview` |
-| `capture.people.read` or `capture.account_view` | Viewed the capture people summary | `GET /v1/accounts/:accountId/capture/people` |
-| `capture.policy.read` | Viewed the capture policy | `GET /v1/accounts/:accountId/capture/policy` |
-| `capture.policy.update` | Updated the capture policy | `PUT /v1/accounts/:accountId/capture/policy` |
-| `capture.range.create` | Saved a capture range | `POST /v1/accounts/:accountId/capture/ranges` |
-| `capture.range.list` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Listed capture ranges | `GET /v1/accounts/:accountId/capture/ranges` |
-| `capture.range.process` or `capture.member_view` | Reprocessed a capture range | `POST /v1/accounts/:accountId/capture/ranges/:rangeId/process` |
-| `capture.range.read` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Viewed a capture range | `GET /v1/accounts/:accountId/capture/ranges/:rangeId` |
-| `capture.search` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Searched a capture timeline | `GET /v1/accounts/:accountId/capture/search` |
-| `capture.search` or `capture.agent_read` | Searched a capture timeline | `GET /v1/capture/me/search` |
-| `capture.skill.draft` | Drafted a skill from a Capture workflow | `POST /v1/accounts/:accountId/capture/workflows/:workflowId/skill-draft` |
-| `capture.skill.publish` | Published a skill from a Capture workflow | `POST /v1/accounts/:accountId/capture/workflows/:workflowId/skill` |
-| `capture.timeline.items.read` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Viewed capture timeline items | `GET /v1/accounts/:accountId/capture/timeline/items` |
-| `capture.timeline.read` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Viewed a capture timeline | `GET /v1/accounts/:accountId/capture/timeline` |
-| `capture.timeline.read` or `capture.agent_read` | Viewed a capture timeline | `GET /v1/capture/me/timeline` |
-| `capture.workflow.list` or `capture.account_view` | Listed Capture workflows | `GET /v1/accounts/:accountId/capture/workflows` |
-| `capture.workflow.read` or `capture.account_view` | Viewed a Capture workflow | `GET /v1/accounts/:accountId/capture/workflows/:workflowId` |
-| `capture.workflow.review` | Reviewed a Capture workflow | `POST /v1/accounts/:accountId/capture/workflows/:workflowId/review` |
-| `capture.workspace.read` | Viewed the Capture workspace | `GET /v1/accounts/:accountId/capture` |
-| `capture.workspace.update` or `capture.enable` or `capture.disable` | Turned Capture on or off | `PATCH /v1/accounts/:accountId/capture` |
-
 ## `change_request.`
 
 | Action | Title | Route |
@@ -406,6 +358,7 @@ This page lists 740 route actions and 70 other events.
 | `gateway.routing_policy.update` | Updated gateway routing policy | `PUT /v1/projects/:projectId/gateway/routing-policy` |
 | `gateway.series.read` | Viewed LLM gateway daily usage | `GET /v1/projects/:projectId/gateway/series` |
 | `gateway.session_spend.list` | Listed LLM gateway spend by session | `GET /v1/projects/:projectId/gateway/sessions` |
+| `gateway.source_spend.list` | Listed LLM gateway spend by source | `GET /v1/projects/:projectId/gateway/sources` |
 
 ## `git.`
 
@@ -768,6 +721,7 @@ This page lists 740 route actions and 70 other events.
 | `secret.account_resource.delete` | Deleted pooled provider key | `DELETE /v1/accounts/:accountId/secret-resources/:secretId` |
 | `secret.account_resource.grant` | Granted pooled provider key | `PUT /v1/accounts/:accountId/secret-resources/:secretId/grants/:userId` |
 | `secret.account_resource.list` | Listed pooled provider keys | `GET /v1/accounts/:accountId/secret-resources` |
+| `secret.account_resource.retry` | Retried pooled provider key after rate limit | `POST /v1/accounts/:accountId/secret-resources/:secretId/retry` |
 | `secret.account_resource.revoke` | Revoked pooled provider key grant | `DELETE /v1/accounts/:accountId/secret-resources/:secretId/grants/:userId` |
 | `secret.account_resource.rotate` | Rotated pooled provider key | `PUT /v1/accounts/:accountId/secret-resources/:secretId/value` |
 | `secret.agent.grant` | Granted secret to an agent | `POST /v1/projects/:projectId/secrets/:identifier/grant` |
@@ -867,6 +821,7 @@ This page lists 740 route actions and 70 other events.
 
 | Action | Title | Route |
 | --- | --- | --- |
+| `skill.create` | Created project skill | `POST /v1/projects/:projectId/skills` |
 | `skill.system.file.read` | Viewed Kortix system skill file | `GET /v1/skills/:name/file` |
 | `skill.system.list` | Listed Kortix system skills | `GET /v1/skills` |
 | `skill.system.read` | Viewed Kortix system skill | `GET /v1/skills/:name` |
@@ -972,12 +927,6 @@ Sandboxes, background jobs, database triggers, and handlers record these for som
 | `auth.login.success` | Signed in |
 | `auth.session.first_sight` | Started authenticated session |
 | `billing.trial.converted` | Converted trial to paid plan |
-| `capture.account_view` | Viewed the capture data of an account |
-| `capture.agent_read` | An agent read the capture timeline of the person it acts for |
-| `capture.disable` | Turned Capture off |
-| `capture.enable` | Turned Capture on |
-| `capture.member_role` | Changed a Capture role |
-| `capture.member_view` | Viewed the capture data of a member |
 | `connector.*` | Ran connector call |
 | `connector.approval.approved` | Approved connector action |
 | `connector.approval.denied` | Denied connector action |

@@ -207,10 +207,12 @@ function pushCurrentBranch(
     return null;
   }
   const refspec = `${branch}:refs/heads/${branch}`;
-  const args = pushToken ? [...authHeaderArgs(repoUrl, pushToken, gitUsername), 'push'] : ['push'];
-  args.push('-u', 'origin', refspec);
+  const args = ['push', '-u', 'origin', refspec];
 
-  const push = run('git', args, { inheritStdio: true });
+  const push = run('git', args, {
+    inheritStdio: true,
+    env: pushToken ? authGitEnv(repoUrl, pushToken, gitUsername) : undefined,
+  });
   if (!push.ok) {
     if (!opts.quietOnFailure) {
       process.stderr.write(`\n${status.err(`git push failed (exit ${push.code}).`)}\n`);
@@ -265,15 +267,21 @@ export async function pushProjectBranch(
   return pushCurrentBranch(upstreamUrl, minted.push_token, minted.git_username || pushUsername);
 }
 
-/** `-c http.<scheme>://<host>/.extraheader=AUTHORIZATION: basic <b64>` —
- *  mirrors the backend's git auth scheme (projects/git.ts). The extraheader
- *  key MUST carry the remote's actual scheme (http for a localhost proxy,
- *  https in prod) or git won't apply it (scheme-scoped config). */
-export function authHeaderArgs(
+/** The environment that makes git send `http.<scheme>://<host>/.extraheader=
+ *  Authorization: Basic <b64>` — mirrors the backend's git auth scheme
+ *  (projects/git.ts). The extraheader key MUST carry the remote's actual scheme
+ *  (http for a localhost proxy, https in prod) or git won't apply it
+ *  (scheme-scoped config).
+ *
+ *  Passed as `GIT_CONFIG_COUNT/KEY_n/VALUE_n` (git 2.31+), never as `-c` on the
+ *  command line: argv is readable by every local user (`ps`, `/proc/<pid>/cmdline`)
+ *  and by every other process in a shared sandbox. Appends to a count the caller
+ *  already set. */
+export function authGitEnv(
   repoUrl: string,
   token: string,
   gitUsername = 'x-access-token',
-): string[] {
+): Record<string, string> {
   let origin = 'https://github.com';
   try {
     const u = new URL(repoUrl);
@@ -284,7 +292,12 @@ export function authHeaderArgs(
   const enc = Buffer.from(`${gitUsername}:${token}`).toString('base64');
   // RFC 7617 treats the auth scheme case-insensitively, but Code Storage's
   // Git endpoint currently requires the canonical `Basic` spelling.
-  return ['-c', `http.${origin}/.extraheader=Authorization: Basic ${enc}`];
+  const n = Number.parseInt(process.env.GIT_CONFIG_COUNT ?? '', 10) || 0;
+  return {
+    GIT_CONFIG_COUNT: String(n + 1),
+    [`GIT_CONFIG_KEY_${n}`]: `http.${origin}/.extraheader`,
+    [`GIT_CONFIG_VALUE_${n}`]: `Authorization: Basic ${enc}`,
+  };
 }
 
 /**
@@ -327,13 +340,18 @@ interface RunResult {
   stderr: string;
 }
 
-export function run(cmd: string, args: string[], opts?: { inheritStdio?: boolean }): RunResult {
+export function run(
+  cmd: string,
+  args: string[],
+  opts?: { inheritStdio?: boolean; env?: Record<string, string> },
+): RunResult {
   let result: SpawnSyncReturns<Buffer | string>;
+  const env = opts?.env ? { ...process.env, ...opts.env } : undefined;
   if (opts?.inheritStdio) {
-    result = spawnSync(cmd, args, { stdio: 'inherit' });
+    result = spawnSync(cmd, args, { stdio: 'inherit', env });
     return { ok: result.status === 0, code: result.status ?? 1, stdout: '', stderr: '' };
   }
-  result = spawnSync(cmd, args, { encoding: 'utf8' });
+  result = spawnSync(cmd, args, { encoding: 'utf8', env });
   return {
     ok: result.status === 0,
     code: result.status ?? 1,

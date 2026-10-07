@@ -289,9 +289,9 @@ function platformDefaultModel(): string | null {
  *
  * The account's own default chain first, then the platform default — but ONLY
  * ever a model the gateway will actually serve for this account+project. The
- * unconditional platform default is a trap: it is a MANAGED id, so on a free
- * tier (or a deployment with no managed provider) the gateway refuses it and
- * every prompt pays a mint → doomed completion → revoke. The caller skips that
+ * unconditional platform default is a trap: on a deployment with no managed
+ * provider (and for a paid-gated managed id) the gateway refuses it and every
+ * prompt pays a mint → doomed completion → revoke. The caller skips that
  * spend and persists its deterministic prompt excerpt instead.
  *
  */

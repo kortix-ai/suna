@@ -42,6 +42,27 @@ import * as P from '../rest/projects-client';
 function runtime(): RuntimeClient {
   return getClient();
 }
+
+// The config the last GLOBAL client wrote. A second global client with another
+// backend or token source re-points every earlier client, so it is a bug in a
+// multi-tenant process. One warning per process, never an error: a host that
+// re-creates its one client (HMR, a re-login) is legitimate.
+let lastGlobalConfig: KortixPlatformConfig | null = null;
+let warnedGlobalRepoint = false;
+
+function noteGlobalClient(config: KortixPlatformConfig): void {
+  const previous = lastGlobalConfig;
+  lastGlobalConfig = config;
+  if (warnedGlobalRepoint || !previous) return;
+  if (previous.backendUrl === config.backendUrl && previous.getToken === config.getToken) return;
+  warnedGlobalRepoint = true;
+  console.warn(
+    '[kortix] createKortix() was called again with a different backendUrl or getToken. ' +
+      'Every client shares one process-global config, so the earlier client now uses the new one. ' +
+      'For several tenants in one process use createScopedKortix() from @kortix/sdk/server.',
+  );
+}
+
 export function createKortix(config: KortixPlatformConfig, opts?: { global?: boolean }) {
   // Wire the platform seam once. All wrapped functions read it.
   //
@@ -50,6 +71,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
   // `AsyncLocalStorage` scope `createScopedKortix` wraps every method call in,
   // so this returned facade never touches (or is affected by) the module-global
   // singleton other concurrent `createKortix()` calls in the same process share.
+  if (opts?.global !== false) noteGlobalClient(config);
   configureKortix(config, opts);
 
   const resolvePreviewOptsForSandbox = bindPreviewOptions(config);

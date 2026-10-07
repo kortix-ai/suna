@@ -6,16 +6,16 @@
 # paid 7-13 times per request: /accounts/me measured 2084ms on dev vs 24ms on
 # prod (colocated), for identical code and identical query counts.
 #
-#   dev-api-use2-shadow.kortix.com    → Cloudflare (proxied, Full strict) → ALB
-#   gateway-dev-use2-shadow.kortix.com → Cloudflare → ALB → gateway service
+#   dev-api-use2.kortix.com     → Cloudflare (proxied, Full strict) → ALB → API
+#   gateway-dev-use2.kortix.com → Cloudflare (proxied, Full strict) → ALB → gateway
 #
-# These are SHADOW verification hostnames only, exactly like
-# ../prod-us-east-2-shadow's api-use2-shadow / gateway-use2-shadow. This root
-# does not touch dev-api-ecs-fargate.kortix.com, gateway-dev-ecs-fargate.
-# kortix.com, or the dev-api Worker's ACTIVE_BACKEND — ../dev keeps serving
-# live traffic until the runbook's cutover step repoints DNS. See
-# the apply runbook in PR #7844 for the full apply sequence,
-# what gets created, what (later) gets destroyed, and the rollback.
+# These are this stack's origin hostnames. The dev-api Worker
+# (infra/cloudflare/workers/api-router) picks the live origin: ../dev while its
+# ACTIVE_BACKEND is "ecs-fargate", this root once it is "us-east-2". The
+# switch and its undo are one Worker variable; no DNS record moves. Until the
+# switch, this API runs with KORTIX_WORKERS_ENABLED=false in its copy of
+# kortix-dev-env, so it never takes the background-worker lease from ../dev.
+# README.md in this directory has the apply and switch-over steps.
 #
 # Naming: local.name is "kortix-dev-use2", NOT "kortix-dev". IAM roles and
 # policies are ACCOUNT-GLOBAL, not region-scoped (unlike almost everything
@@ -133,6 +133,20 @@ module "audit_archive" {
   tags             = local.tags
 }
 
+# ── Kortix Capture store ──────────────────────────────────────────────────────
+# Private bucket the Kortix Capture desktop app writes the capture format to
+# (orgs/<account_id>/<device_id>/…), the SQS queue of its `*.manifest.json`
+# events, and the device role the API assumes with a per-device session policy.
+# The task names them through the non-secret KORTIX_CAPTURE_S3_BUCKET /
+# _S3_REGION / _SQS_QUEUE_URL / _STS_ROLE_ARN overrides in the deploy workflow.
+# Nothing records until an account turns Capture on.
+module "capture_store" {
+  source            = "../../modules/capture-store"
+  name              = "${local.name}-capture-store"
+  api_task_role_arn = module.api.task_role_arn
+  tags              = local.tags
+}
+
 module "api" {
   source     = "../../modules/ecs-api"
   name       = local.name
@@ -149,7 +163,7 @@ module "api" {
   container_port  = var.container_port
   certificate_arn = one(module.certificate[*].certificate_arn)
   environment = merge(var.api_environment, {
-    LLM_GATEWAY_PROXY_TARGET = "https://gateway-dev-use2-shadow.kortix.com"
+    LLM_GATEWAY_PROXY_TARGET = "https://gateway-dev-use2.kortix.com"
   })
   secrets                     = var.api_secrets
   secrets_blob_arn            = data.aws_secretsmanager_secret.env.arn
@@ -160,6 +174,10 @@ module "api" {
   audit_archive_enabled       = true
   audit_archive_bucket_arn    = module.audit_archive.bucket_arn
   audit_archive_kms_key_arn   = module.audit_archive.kms_key_arn
+  capture_enabled             = true
+  capture_bucket_arn          = module.capture_store.bucket_arn
+  capture_queue_arn           = module.capture_store.queue_arn
+  capture_device_role_arn     = module.capture_store.device_role_arn
 
   alb_ingress_cidrs = local.cloudflare_ip_ranges
 
@@ -190,7 +208,7 @@ module "gateway" {
   container_port    = 8090
   health_check_path = "/health/live"
   certificate_arn   = one(module.certificate[*].certificate_arn)
-  environment       = merge(var.gateway_environment, { KORTIX_API_URL = "https://dev-api-use2-shadow.kortix.com" })
+  environment       = merge(var.gateway_environment, { KORTIX_API_URL = "https://dev-api.kortix.com" })
   secrets           = var.api_secrets
   secrets_blob_arn  = data.aws_secretsmanager_secret.env.arn
 
@@ -208,26 +226,25 @@ module "gateway" {
   tags                       = local.tags
 }
 
-# ── DNS: shadow verification hostnames only ────────────────────────────────────
-# dev-api-use2-shadow / gateway-dev-use2-shadow → this root's ALBs. The real
-# dev-api-ecs-fargate / gateway-dev-ecs-fargate hostnames stay pointed at
-# ../dev until the runbook's cutover step. Cutting over is a DNS record
-# value change, not a resource this module needs to add later.
+# ── DNS: this stack's origin hostnames ────────────────────────────────────────
+# dev-api-use2 / gateway-dev-use2 → this root's ALBs. The dev-api Worker decides
+# which origin serves dev-api.kortix.com, so these records never change at the
+# switch-over.
 module "dns" {
   source  = "../../modules/cloudflare-dns"
   count   = var.manage_dns ? 1 : 0
   zone_id = var.cloudflare_zone_id
 
   records = {
-    dev-api-use2-shadow = {
-      name    = "dev-api-use2-shadow"
+    dev-api-use2 = {
+      name    = "dev-api-use2"
       type    = "CNAME"
       value   = module.api.alb_dns_name
       proxied = true
       ttl     = 1
     }
-    gateway-dev-use2-shadow = {
-      name    = "gateway-dev-use2-shadow"
+    gateway-dev-use2 = {
+      name    = "gateway-dev-use2"
       type    = "CNAME"
       value   = module.gateway.alb_dns_name
       proxied = true
