@@ -88,7 +88,7 @@ function buildHomeView(input: { projects: HomeProjectRow[]; recent: HomeRecentRo
       text: [
         '*Start a session from any Slack thread.*',
         '',
-        "`@`-mention me in any channel with a task and an agent gets on it — working across your connected tools and replying right in the thread. Follow-ups stay in the same session.",
+        "`@`-mention me in any channel with a task and an agent gets on it — working across your connected tools and replying right in the thread. Tag me again in the thread to follow up — I read the thread first.",
       ].join('\n'),
     },
   });
