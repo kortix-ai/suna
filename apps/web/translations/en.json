@@ -227,6 +227,7 @@
       "create": "Create project",
       "tryAgain": "Try again",
       "upgrade": "Upgrade plan",
+      "settings": "Settings",
       "logOut": "Log out",
       "signingOut": "Signing out",
       "back": "Back to projects"
@@ -2200,6 +2201,12 @@
         "other": "Other reason"
       }
     }
+  },
+  "ssoRequired": {
+    "title": "Sign in with single sign-on",
+    "description": "Your organization requires single sign-on for this account. Sign out, then continue with your work email to sign in through your company's identity provider.",
+    "signOut": "Sign out and use SSO",
+    "notNow": "Not now"
   },
   "auth": {
     "haveReferralCode": "Have a referral code?",
@@ -19610,20 +19617,36 @@
     "sharePrivateDescription": "Choose who else can use your account. It becomes a shared account, which the project's connection managers can also manage.",
     "ownerMeta": "Your account"
   },
+  "mfaStepUp": {
+    "title": "Verify it’s you",
+    "gateDescription": "Your account has two-factor authentication on. Enter the 6-digit code from your authenticator app to continue.",
+    "actionDescription": "This action needs two-factor authentication. Enter the 6-digit code from your authenticator app to continue.",
+    "codeLabel": "6-digit code",
+    "verify": "Verify",
+    "cancel": "Cancel",
+    "signOut": "Sign out",
+    "verified": "Verified",
+    "invalidCode": "That code didn’t work. Check your authenticator app and try again.",
+    "noFactorTitle": "Set up two-factor authentication",
+    "noFactorDescription": "This action needs two-factor authentication. Add an authenticator app in Settings → Security, then try again."
+  },
   "connectMcp": {
     "title": "Connect Kortix over MCP",
-    "description": "Add this URL to Claude, ChatGPT, Cursor, Codex or any MCP client. The client asks you to sign in to Kortix the first time. Nothing to install.",
-    "urlLabel": "MCP URL",
-    "addToClient": "Add it to your client",
-    "other": "Other",
-    "claudeSteps": "In Claude (web or desktop), open Settings → Connectors → Add custom connector, paste the URL, and sign in.",
-    "claudeCodeHint": "Then run /mcp in Claude Code and sign in.",
-    "otherHint": "ChatGPT (developer mode), VS Code, Windsurf and other clients: add a remote MCP server with the URL above, or this JSON.",
-    "addToCursor": "Add to Cursor",
-    "signInOnFirstUse": "Cursor asks you to sign in to Kortix on first use.",
+    "description": "Use Kortix from Claude, Claude Code, Cursor, Codex, or any MCP client. You sign in once. Nothing to install.",
     "docs": "Docs",
     "done": "Done",
-    "copy": "Copy"
+    "copy": "Copy",
+    "anyClient": "Any MCP client",
+    "add": "Add",
+    "copied": "Copied",
+    "copyUrl": "Copy URL",
+    "via": {
+      "claude": "Settings → Connectors",
+      "claude-code": "One terminal command",
+      "cursor": "One-click install",
+      "codex": "Two terminal commands",
+      "other": "VS Code, Windsurf, and more"
+    }
   },
   "oauthConsent": {
     "unverifiedTitle": "Unverified app",

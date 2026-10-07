@@ -65,6 +65,7 @@ import {
   useRuntimeProviders,
   useVisibleAgents,
 } from '@kortix/sdk/react';
+import { buildWebhookSampleRequest } from '@kortix/shared';
 import {
   CaretDownIcon,
   DotsThreeIcon,
@@ -149,19 +150,6 @@ function useTriggerUpdate<TInput = void>(
     },
     onError: (e: Error) => errorToast(e.message || update.errorFallback),
   });
-}
-
-/** A copy-pasteable request for whoever is wiring the other end up. */
-function buildSampleRequest(url: string): string {
-  return [
-    `curl -X POST ${url} \\`,
-    `  -H "Content-Type: application/json" \\`,
-    `  -H "X-Kortix-Signature: sha256=$(echo -n '$BODY' | openssl dgst -sha256 -hmac "$SECRET" -hex | sed 's/^.* //')" \\`,
-    `  -d '$BODY'`,
-    ``,
-    `# $BODY   is the JSON you want to send, e.g. {"event":"deploy.succeeded"}`,
-    `# $SECRET is the signing key you saved for this webhook`,
-  ].join('\n');
 }
 
 export function ScheduleDetailSheet({
@@ -623,7 +611,7 @@ function AddressPanel({
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const url = trigger.webhook_url ?? '';
-  const sample = useMemo(() => buildSampleRequest(url), [url]);
+  const sample = useMemo(() => buildWebhookSampleRequest(url), [url]);
   const security = describeSecurity(trigger, tI18nComplete);
 
   const [secretName, setSecretName] = useState(trigger.secret_env ?? '');
