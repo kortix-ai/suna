@@ -92,7 +92,7 @@ const eventTrigger = (
 describe('an app event trigger', () => {
   test('names the app and the event, never the wire id', () => {
     const out = row(eventTrigger({}));
-    expect(out).toContain('Github pull request event on Github');
+    expect(out).toContain('Pull request on Github');
     expect(out).not.toContain('GITHUB_PULL_REQUEST_EVENT');
   });
 

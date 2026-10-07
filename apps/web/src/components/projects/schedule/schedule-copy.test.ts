@@ -94,8 +94,8 @@ describe('app event triggers in the copy layer', () => {
   });
 
   test('reads as the app event, in the list sentence and as the fallback name', () => {
-    expect(describeWhen(event)).toBe('Github pull request event on Github');
-    expect(triggerName(event)).toBe('Github pull request event on Github');
+    expect(describeWhen(event)).toBe('Pull request on Github');
+    expect(triggerName(event)).toBe('Pull request on Github');
   });
 });
 

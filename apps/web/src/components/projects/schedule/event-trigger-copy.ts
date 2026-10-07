@@ -33,10 +33,14 @@ export function appLabel(app: string | null | undefined, fallback: string): stri
   return sentence[0].toUpperCase() + sentence.slice(1);
 }
 
-/** The list-row sentence: "Github pull request event on Github". */
+/** The list-row sentence: `GITHUB_PULL_REQUEST_CREATED` on github -> "Pull request created on Github". */
 export function describeEventWhen(event: ProjectTriggerEvent | null): string {
   if (!event) return 'When an app event happens';
-  return `${humanizeEventType(event.type)} on ${appLabel(event.app, event.connector)}`;
+  // The id repeats the app and often ends in a noise word; the sentence names the app once.
+  const prefix = `${(event.app ?? '').toLowerCase()}_`;
+  const type = (event.type.toLowerCase().startsWith(prefix) ? event.type.slice(prefix.length) : event.type)
+    .replace(/_(trigger|event)$/i, '');
+  return `${humanizeEventType(type || event.type)} on ${appLabel(event.app, event.connector)}`;
 }
 
 /* ─── Status ────────────────────────────────────────────────────────────── */
