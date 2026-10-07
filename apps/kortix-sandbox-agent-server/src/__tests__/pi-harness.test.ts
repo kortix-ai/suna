@@ -2670,3 +2670,82 @@ describe('pi retract (R7.1)', () => {
     expect(seen.begins).toEqual([TURN])
   })
 })
+
+describe('pi per-prompt agent (R7.2)', () => {
+  const post = (r: Rig, path: string, body: unknown) =>
+    r.user(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  const root = (r: Rig) => r.service.runtime()!.rootId
+  const page = async (r: Rig) =>
+    (await r.bearer(`/kortix/runtime/messages/${root(r)}`).then((res) => res.json())) as WirePage
+  const sendTimeId = async (r: Rig) => {
+    const clock = new MessageIdClock()
+    for (const message of (await page(r)).messages) clock.observe(String(message.info.id))
+    return clock.mint(Date.now())
+  }
+  const send = async (r: Rig, text: string, agent?: string) => {
+    const messageId = await sendTimeId(r)
+    const res = await post(r, `/kortix/runtime/sessions/${root(r)}/prompt`, { message_id: messageId, parts: [{ type: 'text', text }], ...(agent ? { agent } : {}) })
+    expect(res.status).toBe(202)
+    return messageId
+  }
+  /** The system text the model was sent on request `index`: every system message, in order. */
+  const systemOf = (index: number) =>
+    gateway.sent[index]!.filter((m) => m.role === 'system').map((m) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content))).join('\n')
+  const agents = {
+    default_agent: 'coder',
+    agent: {
+      coder: { mode: 'primary', prompt: 'PROMPT-OF-CODER' },
+      writer: { mode: 'primary', prompt: 'PROMPT-OF-WRITER', permission: { bash: 'deny' } },
+      reviewer: { mode: 'subagent', prompt: 'PROMPT-OF-REVIEWER' },
+      retired: { mode: 'primary', disable: true, prompt: 'PROMPT-OF-RETIRED' },
+    },
+  }
+
+  test('a prompt that picks an agent runs on that agent; one that picks none runs on the session agent', async () => {
+    const ends: string[] = []
+    const r = await boot({
+      script: [{ tool: 'bash', args: { command: 'echo writer-ran-bash' } }, { text: 'writer done' }, { text: 'coder done' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify(agents) },
+      hooks: { onTurnEnd: ({ messageId }) => void ends.push(messageId) },
+    })
+    const first = gateway.sent.length
+    const writerTurn = await send(r, 'as the writer, run a command', 'writer')
+    await waitFor(() => ends.length === 1)
+    // The writer's prompt reached the model, and its `bash: deny` refused the call.
+    expect(systemOf(first)).toContain('PROMPT-OF-WRITER')
+    let messages = (await page(r)).messages
+    const writerMessages = messages.filter((m) => m.info.id === writerTurn || m.info.parentID === writerTurn)
+    expect(writerMessages.map((m) => m.info.agent)).toEqual(['writer', 'writer', 'writer'])
+    const tool = writerMessages.flatMap((m) => m.parts).find((p) => p.type === 'tool')!
+    expect(tool.state.status).toBe('error')
+    expect(existsSync(join(r.workspace, 'writer-ran-bash'))).toBe(false)
+
+    const before = gateway.sent.length
+    const coderTurn = await send(r, 'and now with no pick')
+    await waitFor(() => ends.length === 2)
+    const system = systemOf(before)
+    expect(system.lastIndexOf('PROMPT-OF-CODER')).toBeGreaterThan(system.lastIndexOf('PROMPT-OF-WRITER'))
+    messages = (await page(r)).messages
+    expect(messages.filter((m) => m.info.id === coderTurn || m.info.parentID === coderTurn).map((m) => m.info.agent)).toEqual(['coder', 'coder'])
+    // The state document still names the session's agent as the default.
+    const state = (await r.bearer('/kortix/runtime/state').then((res) => res.json())) as { config: { value: { default_agent: string } } }
+    expect(state.config.value.default_agent).toBe('coder')
+  })
+
+  test('a subagent, a disabled agent and an unknown name are not run as the session agent', async () => {
+    const ends: string[] = []
+    const r = await boot({
+      script: [{ text: 'one' }, { text: 'two' }, { text: 'three' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify(agents) },
+      hooks: { onTurnEnd: ({ messageId }) => void ends.push(messageId) },
+    })
+    for (const [index, pick] of ['reviewer', 'retired', 'nobody'].entries()) {
+      const before = gateway.sent.length
+      const id = await send(r, `pick ${pick}`, pick)
+      await waitFor(() => ends.length === index + 1)
+      const system = systemOf(before)
+      expect({ pick, coder: system.includes('PROMPT-OF-CODER'), other: /PROMPT-OF-(REVIEWER|RETIRED)/.test(system) }).toEqual({ pick, coder: true, other: false })
+      expect((await page(r)).messages.find((m) => m.info.id === id)!.info.agent).toBe('coder')
+    }
+  })
+})

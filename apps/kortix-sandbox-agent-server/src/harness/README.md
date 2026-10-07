@@ -181,6 +181,14 @@ Config it reads (all set by apps/api for every session, harness-neutral values):
 + `KORTIX_TOKEN`, the image-baked catalog at `/opt/kortix/llm-catalog.json`.
 pi-only: `KORTIX_PI_STATE_DIR`.
 
+`KORTIX_AGENT_NAME` (else the config's `default_agent`) is the session's
+agent. A prompt that picks a primary agent of the compiled config runs its
+turn on that agent: its prompt, permission policy, tool switches, sampling and
+variant, and its `model` when the prompt names none. A prompt that picks none
+runs on the session's agent, as on OpenCode. A pick of a subagent, a disabled
+agent or an unknown name is logged and runs on the session's agent. pi
+packages and extensions stay the ones the session booted with.
+
 ### Config releases
 
 With the project's `config_releases` flag on, pi runs the base branch's

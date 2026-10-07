@@ -197,6 +197,8 @@ interface ChildDump {
 interface Turn {
   messageId: string
   input: PromptInput
+  /** The agent the turn runs on, resolved at admission (`resolveTurnAgent`). */
+  agent: string
   resolve: (outcome: TurnOutcome) => void
   outcome: Promise<TurnOutcome>
   /**
@@ -275,6 +277,9 @@ export class PiRuntime {
   private readonly children = new Map<string, ChildSession>()
   private skills: Skill[] = []
   private compiled: CompiledAgentConfig | null = null
+  /** The session's agent: what a prompt that picks none runs on (`resolveAgentName`). */
+  private sessionAgentName = 'build'
+  /** The agent of the running turn, or of the last one: its prompt, permission policy, tools and sampling are applied. */
   private agentName = 'build'
   private policy: PermissionPolicy = {}
   private adapter: PiTurnEvents | null = null
@@ -409,7 +414,7 @@ export class PiRuntime {
       this.coding = coding
       const { convertToLlm } = coding
       this.compiled = parseCompiledAgentConfig(this.env.KORTIX_COMPILED_AGENT_CONFIG)
-      this.agentName = this.resolveAgentName()
+      this.sessionAgentName = this.agentName = this.resolveAgentName()
       this.models = await createPiModels({
         env: this.env,
         defaultModelRef: this.env.KORTIX_MODEL ?? this.compiledAgent()?.model ?? this.compiled?.model ?? null,
@@ -420,7 +425,7 @@ export class PiRuntime {
         mintMessageId: () => this.clock.mint(this.now()),
         parentMessageId: () => this.turnParent,
         model: () => ({ providerID: this.selected!.providerID, modelID: this.selected!.modelID }),
-        agent: this.agentName,
+        agent: () => this.agentName,
         workspace: this.workspace,
         now: this.now,
         publish: (frame) => this.publish(frame),
@@ -534,7 +539,7 @@ export class PiRuntime {
     const { createPiModels } = await import('./model')
     const before = `${this.selected?.modelID}|${this.agentName}|${this.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG ?? ''}`
     this.compiled = parseCompiledAgentConfig(this.env.KORTIX_COMPILED_AGENT_CONFIG)
-    this.agentName = this.resolveAgentName()
+    this.sessionAgentName = this.agentName = this.resolveAgentName()
     this.models = await createPiModels({
       env: this.env,
       defaultModelRef: this.env.KORTIX_MODEL ?? this.compiledAgent()?.model ?? this.compiled?.model ?? null,
@@ -587,11 +592,13 @@ export class PiRuntime {
     const messageId = input.messageID ?? this.clock.mint(this.now())
     if (this.knows(messageId)) throw new PromptRejected(`message ${messageId} was already admitted`)
     this.clock.observe(messageId)
-    if (input.model) {
-      const modelId = input.model.providerID === this.selected!.providerID ? input.model.modelID : nativeModelId(`${input.model.providerID}/${input.model.modelID}`)
-      if (modelId && modelId !== this.selected!.modelID) this.selected = this.models!.select(modelId)
-    }
-    this.publishUserMessage(this.rootId, messageId, input)
+    const agentName = this.resolveTurnAgent(input.agent)
+    // The prompt's model, else the model the picked agent pins, else the current one.
+    const modelId = input.model
+      ? input.model.providerID === this.selected!.providerID ? input.model.modelID : nativeModelId(`${input.model.providerID}/${input.model.modelID}`)
+      : input.agent ? nativeModelId(this.compiled?.agent?.[agentName]?.model) : null
+    if (modelId && modelId !== this.selected!.modelID) this.selected = this.models!.select(modelId)
+    this.publishUserMessage(this.rootId, messageId, input, { agent: agentName, selected: this.selected! })
     if (input.noReply) {
       // OpenCode `noReply`: the next turn's model sees this message, and none
       // runs now. On the serial queue so it lands between turns, and persisted
@@ -613,7 +620,7 @@ export class PiRuntime {
     }
     let resolve!: (outcome: TurnOutcome) => void
     const outcome = new Promise<TurnOutcome>((r) => (resolve = r))
-    const turn: Turn = { messageId, input, resolve, outcome }
+    const turn: Turn = { messageId, input, agent: agentName, resolve, outcome }
     this.waiting.set(messageId, turn)
     this.pendingTurns += 1
     this.queue = this.queue
@@ -821,6 +828,7 @@ export class PiRuntime {
     }
     // The turn's first model call reads every `noReply` message before it.
     this.unreadNoReply.clear()
+    this.applyAgent(turn.agent)
     const agent = this.agent!
     this.active = turn
     this.turnParent = turn.messageId
@@ -912,11 +920,12 @@ export class PiRuntime {
     agent.clearSteeringQueue()
     if (!next) return
     for (const entry of rest) agent.steer(entry.message)
+    // A steered message took the running turn's agent; the turn it starts keeps it.
     this.publishUserMessage(this.rootId, next.messageId, next.input)
     this.hooks.onSteerRead?.({ rootId: this.rootId, messageId: next.messageId })
     let resolveNext!: (outcome: TurnOutcome) => void
     const nextOutcome = new Promise<TurnOutcome>((r) => (resolveNext = r))
-    await this.runTurn({ messageId: next.messageId, input: next.input, resolve: resolveNext, outcome: nextOutcome })
+    await this.runTurn({ messageId: next.messageId, input: next.input, agent: this.agentName, resolve: resolveNext, outcome: nextOutcome })
   }
 
   /** Omit the failed model attempt from pi's session store, so the retry does not send it again. */
@@ -1165,7 +1174,7 @@ export class PiRuntime {
       mintMessageId: () => this.clock.mint(this.now()),
       parentMessageId: () => messageId,
       model: () => model,
-      agent: input.agent,
+      agent: () => input.agent,
       workspace: this.workspace,
       now: this.now,
       publish: (frame) => this.publish(frame),
@@ -1376,6 +1385,34 @@ export class PiRuntime {
     return this.compiled?.agent?.[this.agentName]
   }
 
+  /**
+   * The agent a prompt runs on: the one it picks when the compiled config has
+   * it as a primary agent, else the session's agent, as OpenCode does for a
+   * prompt with no agent. A pick pi cannot run is logged and not applied.
+   */
+  private resolveTurnAgent(requested: string | undefined): string {
+    const name = requested?.trim()
+    if (!name || name === 'default' || name === this.sessionAgentName) return this.sessionAgentName
+    const agent = this.compiled?.agent?.[name]
+    if (agent && !agent.disable && agent.mode !== 'subagent') return name
+    logger.warn('[pi] the prompt picks an agent the session cannot run; it runs on the session agent', {
+      requested: name,
+      reason: !agent ? 'unknown' : agent.disable ? 'disabled' : 'subagent',
+      agent: this.sessionAgentName,
+    })
+    return this.sessionAgentName
+  }
+
+  /** Make `name` the agent of the next model call: its permission policy, tool switches and prompt. Between turns only. */
+  private applyAgent(name: string): void {
+    if (name === this.agentName) return
+    this.agentName = name
+    this.policy = compilePermissionPolicy(this.compiledAgent()?.permission)
+    this.permissions.setPolicy(this.policy)
+    // `setActiveToolsByName` re-reads `systemPrompt()`, so the next request carries the agent's prompt.
+    this.rebuildSystemPrompt()
+  }
+
   /** An agent's `temperature`, `top_p` and `steps` for its requests on `model`. */
   private sampling(agent: CompiledAgent | undefined, model: SelectedModel) {
     return {
@@ -1531,7 +1568,7 @@ export class PiRuntime {
         value: {
           model: selected ? `${selected.providerID}/${selected.modelID}` : null,
           small_model: null,
-          default_agent: this.agentName,
+          default_agent: this.sessionAgentName,
           permission: this.compiledAgent()?.permission ?? null,
           instructions: null,
           enabled_providers: selected ? [selected.providerID] : null,
