@@ -134,6 +134,8 @@ export async function requeueForAdmission(
   lease: CommandLease,
   reason: InboxAdmissionReason,
   availableAt: Date,
+  /** Extra result keys the refusal carries — the boundary-wait window. */
+  resultPatch?: Record<string, unknown>,
 ): Promise<boolean> {
   const rows = await db
     .update(sessionLifecycleCommands)
@@ -144,7 +146,7 @@ export async function requeueForAdmission(
       lockedUntil: null,
       attempts: sql`GREATEST(${sessionLifecycleCommands.attempts} - 1, 0)`,
       result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb)
-        || ${JSON.stringify({ admission_reason: reason })}::jsonb
+        || ${JSON.stringify({ admission_reason: reason, ...(resultPatch ?? {}) })}::jsonb
         || jsonb_build_object('admission_refusals',
              COALESCE((${sessionLifecycleCommands.result}->>'admission_refusals')::int, 0) + 1)`,
       payload: sql`${sessionLifecycleCommands.payload} || '{"remintOnDelivery": true}'::jsonb`,

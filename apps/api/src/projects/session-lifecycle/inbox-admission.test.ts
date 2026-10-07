@@ -2,8 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import {
   INBOX_ORDER_BACKOFF_MS,
   INBOX_ORDER_MAX_BACKOFF_MS,
+  QUEUE_BOUNDARY_FALLBACK_MS,
   admissionBackoffMs,
   admitInboxPrompt,
+  boundaryWaitDecision,
   sessionHoldsTurnAuthority,
 } from './inbox-admission';
 import type { SessionLifecycleCommandRow } from './store';
@@ -157,5 +159,106 @@ describe('missed turn-end recovery', () => {
       reconcileTurn: async () => {},
     });
     expect(result).toMatchObject({ admit: false, reason: 'turn_active' });
+  });
+
+  test('a turn entry stuck in delivering never arms the interrupt', async () => {
+    // Acceptance is the daemon's own relay; until it lands the runtime has not
+    // confirmed the turn, so ending it at a boundary is the arm's decision to
+    // skip, not this gate's.
+    const delivering = {
+      t1: { token: 't1', state: 'delivering', opencodeSessionId: 'ses_1', messageId: 'msg_1', startedAtMs: 1 },
+    };
+    const result = await admitInboxPrompt(row({ payload: { text: 'hi', placement: 'transcript' } }), {
+      readSandbox: async () => ({ status: 'active', metadata: { activeTurns: delivering } }),
+      hasInFlightPrompt: async () => false,
+      hasOlderPendingPrompt: async () => false,
+    });
+    expect(result).toMatchObject({ admit: false, reason: 'turn_active' });
+    expect(result).not.toHaveProperty('interruptAtBoundary');
+  });
+});
+
+describe('the boundary interrupt names the live turn', () => {
+  test('a stale coexisting turn entry does not disable the interrupt — the NEWEST active turn is interrupted', async () => {
+    // One turn entry that outlived its end relay used to make `turns.length
+    // === 1` fail, which silently disarmed the Quick Queue interrupt for the
+    // WHOLE run: every queued message then waited out a 30-minute turn the
+    // reporter could not stop without losing the queue (KRTX-1684, prod
+    // 2026-10-06). The newest entry is the turn that is running.
+    const turns = {
+      'turn-stale': { token: 'turn-stale', state: 'active', opencodeSessionId: 'ses_old', messageId: 'msg_old', startedAtMs: 1 },
+      'turn-live': { token: 'turn-live', state: 'active', opencodeSessionId: 'ses_live', messageId: 'msg_live', startedAtMs: 2 },
+    };
+    const result = await admitInboxPrompt(row({ payload: { text: 'hi', placement: 'transcript' } }), {
+      readSandbox: async () => ({ status: 'active', metadata: { activeTurns: turns } }),
+      hasInFlightPrompt: async () => false,
+      hasOlderPendingPrompt: async () => false,
+    });
+    expect(result).toMatchObject({
+      admit: false,
+      reason: 'turn_active',
+      interruptAtBoundary: { opencodeSessionId: 'ses_live', messageId: 'msg_live' },
+    });
+  });
+
+  test('a legacy entry without a start stamp yields to one that has one', async () => {
+    const turns = {
+      'turn-legacy': { token: 'turn-legacy', state: 'active', opencodeSessionId: 'ses_old', messageId: 'msg_old' },
+      'turn-live': { token: 'turn-live', state: 'active', opencodeSessionId: 'ses_live', messageId: 'msg_live', startedAtMs: 7 },
+    };
+    const result = await admitInboxPrompt(row({ payload: { text: 'hi', placement: 'transcript' } }), {
+      readSandbox: async () => ({ status: 'active', metadata: { activeTurns: turns } }),
+      hasInFlightPrompt: async () => false,
+      hasOlderPendingPrompt: async () => false,
+    });
+    expect(result).toMatchObject({
+      interruptAtBoundary: { opencodeSessionId: 'ses_live', messageId: 'msg_live' },
+    });
+  });
+});
+
+describe('boundaryWaitDecision — the bounded fallback for a silent interrupt', () => {
+  const identity = { opencodeSessionId: 'ses_live', messageId: 'msg_live' };
+  const windowStart = 1_000_000;
+
+  test('the first refusal starts the window and aborts nothing', () => {
+    expect(boundaryWaitDecision(null, identity, windowStart)).toEqual({
+      wait: { ...identity, sinceMs: windowStart },
+      abort: false,
+    });
+  });
+
+  test('inside the window the row keeps waiting on the same turn', () => {
+    const waiting = { boundary_wait: { ...identity, sinceMs: windowStart } };
+    expect(
+      boundaryWaitDecision(waiting, identity, windowStart + QUEUE_BOUNDARY_FALLBACK_MS - 1),
+    ).toEqual({ wait: { ...identity, sinceMs: windowStart }, abort: false });
+  });
+
+  test('past the window the abort fires once and the window restarts', () => {
+    const waiting = { boundary_wait: { ...identity, sinceMs: windowStart } };
+    const due = boundaryWaitDecision(waiting, identity, windowStart + QUEUE_BOUNDARY_FALLBACK_MS);
+    expect(due.abort).toBe(true);
+    expect(due.wait.sinceMs).toBe(windowStart + QUEUE_BOUNDARY_FALLBACK_MS);
+  });
+
+  test('a different live turn resets the window — the boundary already moved', () => {
+    const waiting = { boundary_wait: { ...identity, sinceMs: windowStart } };
+    expect(
+      boundaryWaitDecision(waiting, { opencodeSessionId: 'ses_live', messageId: 'msg_newer' }, windowStart + 1),
+    ).toEqual({
+      wait: { opencodeSessionId: 'ses_live', messageId: 'msg_newer', sinceMs: windowStart + 1 },
+      abort: false,
+    });
+  });
+
+  test('a corrupt or stale marker is treated as a fresh window', () => {
+    expect(
+      boundaryWaitDecision({ boundary_wait: { sinceMs: 'not-a-number' } }, identity, windowStart),
+    ).toEqual({ wait: { ...identity, sinceMs: windowStart }, abort: false });
+    expect(boundaryWaitDecision({ boundary_wait: 'garbage' }, identity, windowStart)).toEqual({
+      wait: { ...identity, sinceMs: windowStart },
+      abort: false,
+    });
   });
 });

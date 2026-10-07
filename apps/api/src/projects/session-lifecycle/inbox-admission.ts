@@ -1,7 +1,7 @@
 import { sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
-import { RUNNING_SANDBOX_STATUSES, storedSandboxTurns } from '../session-turn-ledger';
+import { RUNNING_SANDBOX_STATUSES, storedSandboxTurns, type StoredSandboxTurn } from '../session-turn-ledger';
 import { inboxFollowsRow, inboxPrecedesRow } from './inbox-order';
 import { reconcileInboxTurn } from './inbox-turn-recovery';
 import type { InboxAdmissionReason, SessionLifecycleCommandRow } from './store';
@@ -142,6 +142,90 @@ export interface InboxAdmissionDeps {
   hasInFlightPrompt: (sessionId: string, exceptCommandId: string) => Promise<boolean>;
 }
 
+/**
+ * How long a queued head row may wait behind ONE live turn for the daemon's
+ * boundary interrupt to end it, before the control plane ends that turn
+ * itself and lets the relay promote the row.
+ *
+ * The interrupt is the fast path — a turn normally ends at its next tool
+ * boundary, seconds after the arm. This window only bounds the interrupt's
+ * silent failure modes (an entry the relay never closed, an arm the daemon
+ * answers and never fires, a skipped arm): a healthy interrupt or a natural
+ * turn end reaches the boundary long before it. Prod 2026-10-06: three
+ * queued messages waited out a ~30-minute run with no interrupt and no
+ * refusal log — the only dispatch left was "after the whole run", which is
+ * the regression this bound closes.
+ *
+ * ponytail: fixed ceiling, not a knob; promote to config.KORTIX_* only when
+ * support needs to tune it per environment.
+ */
+export const QUEUE_BOUNDARY_FALLBACK_MS = 10 * 60_000;
+
+/** The turn an interrupt may end, as the admission refusal carried it. */
+export interface BoundaryTurnIdentity {
+  opencodeSessionId: string;
+  messageId: string;
+}
+
+/** The row's own record of how long it has waited behind this turn. */
+export interface BoundaryWait extends BoundaryTurnIdentity {
+  sinceMs: number;
+}
+
+/**
+ * Decide the boundary-wait step for one `turn_active` refusal.
+ *
+ * Pure over the row's result, the live turn's identity and the clock, so the
+ * window is testable without a database. A first refusal starts the window;
+ * the same turn still live past `QUEUE_BOUNDARY_FALLBACK_MS` aborts ONCE and
+ * restarts the window (a lost terminal relay gets a bounded retry, a healthy
+ * interrupt never reaches this); a DIFFERENT live turn means the boundary
+ * already moved and the window restarts from now.
+ */
+export function boundaryWaitDecision(
+  result: unknown,
+  turn: BoundaryTurnIdentity,
+  nowMs: number,
+): { wait: BoundaryWait; abort: boolean } {
+  const stored = (result as { boundary_wait?: unknown } | null | undefined)?.boundary_wait as
+    | BoundaryWait
+    | undefined;
+  const sinceMs =
+    stored && typeof stored.sinceMs === 'number' && Number.isFinite(stored.sinceMs)
+      ? stored.sinceMs
+      : null;
+  const sameTurn =
+    !!stored &&
+    sinceMs !== null &&
+    stored.opencodeSessionId === turn.opencodeSessionId &&
+    stored.messageId === turn.messageId;
+  if (!sameTurn) {
+    return { wait: { ...turn, sinceMs: nowMs }, abort: false };
+  }
+  const waited = nowMs - sinceMs;
+  return {
+    wait: { ...turn, sinceMs: waited >= QUEUE_BOUNDARY_FALLBACK_MS ? nowMs : sinceMs },
+    abort: waited >= QUEUE_BOUNDARY_FALLBACK_MS,
+  };
+}
+
+/**
+ * The live turn a boundary interrupt may end: the NEWEST stored turn.
+ *
+ * This used to be `turns.length === 1 ? turns[0] : null`, so one entry that
+ * outlived its end relay silently DISARMED the interrupt for the whole run —
+ * every queued message then waited out the turn in full, which is exactly the
+ * "it waits for everything to finish" report. The newest entry is the turn
+ * that is running; an older entry is a ledger leftover the reaper owns.
+ */
+export function newestStoredTurn(turns: StoredSandboxTurn[]): StoredSandboxTurn | null {
+  let newest: StoredSandboxTurn | null = null;
+  for (const turn of turns) {
+    if (!newest || (turn.startedAtMs ?? -1) > (newest.startedAtMs ?? -1)) newest = turn;
+  }
+  return newest;
+}
+
 const liveDeps: InboxAdmissionDeps = {
   reconcileTurn: reconcileInboxTurn,
   async readSandbox(sessionId) {
@@ -241,7 +325,7 @@ export async function admitInboxPrompt(
     }
     if (sessionHoldsTurnAuthority(sandbox)) {
       const turns = storedSandboxTurns(sandbox?.metadata);
-      const active = turns.length === 1 ? turns[0] : null;
+      const active = newestStoredTurn(turns);
       const interruptAtBoundary =
         isHead &&
         (row.payload as { placement?: unknown } | null)?.placement === 'transcript' &&
