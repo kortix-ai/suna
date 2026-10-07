@@ -197,9 +197,10 @@ the customer portal, and credit purchases are Stripe flows, app-owned.
 | `creditBreakdown(accountId?)` · `usageHistory(params?)` | credit balance by source · usage over time |
 | `sessionCosts.list(options?)` · `sessionCosts.get(sessionId, options?)` | paginated session-cost records · one detailed session ledger |
 | `tierConfigurations()` | available plan tiers |
-| `checkout.createSession(input)` · `checkout.confirmSession(sessionId, accountId?)` | start · confirm a Stripe Checkout session |
+| `checkout.createSession(input)` · `checkout.confirmSession(sessionId, accountId?)` | **Deprecated.** Reject with `ENDPOINT_RETIRED`. Removed in the next major. |
 | `subscription.createPortalSession(...)` · `subscription.cancel(...)` · `subscription.reactivate(...)` | open the customer portal · cancel · reactivate |
-| `subscription.scheduleDowngrade(...)` · `cancelScheduledChange(...)` · `prorationPreview(...)` | schedule · cancel · preview a plan change |
+| `subscription.cancelScheduledChange(...)` · `prorationPreview(...)` | cancel · preview a plan change |
+| `subscription.scheduleDowngrade(...)` | **Deprecated.** Rejects with `ENDPOINT_RETIRED`. Change the plan in the customer portal. Removed in the next major. |
 | `credits.purchase(input)` · `credits.autoTopupSettings(...)` · `credits.configureAutoTopup(...)` | one-off purchase · read · configure auto-topup |
 
 `sessionCosts.list()` accepts `accountId`, `projectId`, `limit`, and `offset`.

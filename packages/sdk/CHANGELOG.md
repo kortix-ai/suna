@@ -184,6 +184,12 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   unknown until the probe answers, as before.
 
 ### Deprecated
+- `createCheckoutSession`, `confirmCheckoutSession` and `scheduleDowngrade`
+  (and the facade's `kortix.billing.checkout.{createSession,confirmSession}`
+  and `kortix.billing.subscription.scheduleDowngrade`). The API retired their
+  routes; each now rejects with `ENDPOINT_RETIRED` and sends no request. Use
+  `createPerSeatCheckout` for checkout and the Stripe customer portal
+  (`createPortalSession`) for a plan change. Removed in the next major.
 - `useSession` option `initialOpenCodeSessionId` (use
   `initialRuntimeSessionId`) and `opencodeSessionId` on the
   `useSessionMessages` source (use `runtimeSessionId`). Both keep working; the
