@@ -1,7 +1,8 @@
 {
-  "source_hash": "3c5f336a450cb43dcbd88165f302c75330ed4997a39634d825725cd0b8d78ed0",
+  "source_hash": "bcf438fed72d65919d8215fdfa94c6dff66fd4c7a59ba25df3cfb7d62936955e",
   "diff_files": [
     "apps/api/src/__tests__/e2e-connector-faces.test.ts",
+    "apps/cli/src/__tests__/connector-gateway-pin.test.ts",
     "apps/cli/src/__tests__/connector-mcp-secret-call.test.ts",
     "apps/cli/src/__tests__/connectors-mcp-handshake.test.ts",
     "apps/cli/src/__tests__/connectors-session-flag.test.ts",
@@ -14,19 +15,22 @@
     "apps/cli/src/__tests__/sandboxes-local-blackbox.test.ts",
     "apps/cli/src/api/auth.ts",
     "apps/cli/src/command-helpers.ts",
+    "apps/cli/src/commands/access.ts",
+    "apps/cli/src/commands/projects.ts",
     "apps/cli/src/connector-gateway/gateway.ts",
     "apps/cli/src/connector-gateway/mint-connect-link.test.ts",
     "apps/cli/src/host-notice.ts",
+    "apps/cli/src/project-link.ts",
     "packages/shared/src/host-config/config.ts",
     "scripts/hermetic-test-env.sh"
   ],
-  "diff_hash": "2cc56cb83bf1734bf789722b6cce5dc78f0043f0dacf21d3c831a073811bbff5",
-  "head": "3c9fd70644b1717aab100d7a3f607a22b5a5d93a",
+  "diff_hash": "ff51663225a25651ec767742f9e6365f12e29d1095f2f48457de94f3abfa2cbd",
+  "head": "57b1f1f76192e400f4074865aec34a22368aa156",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-07T12:25:38.084Z"
+  "at": "2026-10-07T13:51:12.833Z"
 }
