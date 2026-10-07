@@ -14,8 +14,10 @@ export default defineConfig({
     root: import.meta.dirname,
     environment: 'node',
     globals: true,
-    // Several unit tests spawn bash or git. Under a loaded machine the 5 s default
-    // fails them with a timeout that says nothing about the code under test.
+    // Several unit tests spawn bash or git, and `pnpm test` runs this lane beside
+    // five others. A test that spawns a shell script (announce-dev-live,
+    // kortixd-package-boundary) takes under 1 s alone and passed 5 s, vitest's
+    // default, at a load average of 33.
     testTimeout: 30_000,
     include: ['**/*.test.ts'],
     reporters: ['default', ['junit', { suiteName: 'unit' }]],

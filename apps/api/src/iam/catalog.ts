@@ -260,11 +260,3 @@ export async function unscopedDefaultFor(objectType: string): Promise<UnscopedDe
   const policies = await loadObjectPoliciesMemo();
   return policies.get(objectType) ?? 'closed';
 }
-
-/** Test hook: drop every structural memo. */
-export function clearCatalogCaches(): void {
-  loadCatalogMemo.clear();
-  loadSystemRolesMemo.clear();
-  loadCustomRoleActionsMemo.clear();
-  loadObjectPoliciesMemo.clear();
-}

@@ -49,9 +49,7 @@ const ORPHAN_ACCOUNT_TABLES = [
   appDeploymentEvents,
   appDeployments,
   changeRequests,
-  connectorCalls,
   connectorConnections,
-  gatewayRequestLogs,
   impersonationGrants,
   kortixApiKeys,
   legacySandboxMigrations,
@@ -62,16 +60,11 @@ const ORPHAN_ACCOUNT_TABLES = [
   providerEvents,
   reviewItems,
   sandboxes,
-  sandboxComputeSessions,
-  sessionLifecycleCommands,
-  sessionPendingQuestions,
   sessionSandboxes,
-  sessionTurns,
   sunaAccountMigrations,
   tunnelAuditLogs,
   tunnelConnections,
   tunnelDeviceAuthRequests,
-  usageEvents,
 ];
 
 /**
@@ -102,6 +95,7 @@ let sessionsSettled: Array<{ sessionId: string }> = [];
 let sessionUpdateError: Error | null = null;
 
 let deletedRows: Array<{ table: unknown; condition: unknown }> = [];
+let chunkDeleteStatements = 0;
 let deleteError: Error | null = null;
 
 let stops: string[] = [];
@@ -152,6 +146,7 @@ mock.module('../../shared/db', () => {
       where: (cond: unknown) => Promise<{ rowCount: number }>;
     };
     transaction: <T>(fn: (tx: FakeDb) => Promise<T>) => Promise<T>;
+    execute: (query: unknown) => Promise<Array<{ n: number }>>;
   }
   const db: FakeDb = {
     select: () => ({
@@ -197,6 +192,13 @@ mock.module('../../shared/db', () => {
     // the same fake, which is exactly what the tests assert about (the sweep
     // statements issued inside one transaction).
     transaction: <T,>(fn: (tx: FakeDb) => Promise<T>): Promise<T> => fn(db),
+    // The bounded chunk deletes run outside the transaction as raw SQL; their
+    // real behavior is covered by integration-account-deletion.test.ts.
+    execute: async () => {
+      chunkDeleteStatements++;
+      if (deleteError) throw deleteError;
+      return [{ n: 0 }];
+    },
   };
   return { db };
 });
@@ -262,7 +264,10 @@ mock.module('../repositories/account-deletion', () => ({
   createDeletionRequest: async () => ({ id: 'req-1' }),
   cancelDeletionRequest: async () => undefined,
   markDeletionCompleted: async (id: string) => { completedRequests.push(id); },
+  countOverdueBacklog: async () => 0,
   getScheduledDeletions: async () => scheduledRequests,
+  claimDeletionRequest: async (id: string) => scheduledRequests.find((r: { id: string }) => r.id === id) ?? null,
+  releaseDeletionRequest: async () => undefined,
 }));
 
 const { deleteAccountImmediately, reclaimableAccountIds, processScheduledDeletions } = await import('./account-deletion');
@@ -288,6 +293,7 @@ beforeEach(() => {
   sessionsSettled = [];
   sessionUpdateError = null;
   deletedRows = [];
+  chunkDeleteStatements = 0;
   deleteError = null;
   stops = [];
   removes = [];
@@ -497,6 +503,8 @@ describe('deleteAccountImmediately — account data deletion', () => {
     for (const table of ORPHAN_ACCOUNT_TABLES) {
       expect(swept.has(table)).toBe(true);
     }
+    // The seven unbounded tables go in chunked statements outside the transaction.
+    expect(chunkDeleteStatements).toBe(7);
     // Every account_id-bound sweep is bound to the deleting account. The
     // sweeps scoped through a subquery of the account's project/session/app
     // ids (these tables have no account_id index) are covered by the
@@ -563,10 +571,11 @@ test('immediate deletion uses the pending requester when no user id is supplied'
   expect(completedRequests).toEqual(['req-1']);
 });
 
-test('scheduled account deletion does not delete its historical requester identity', async () => {
+test('scheduled account deletion deletes the account data, then its requester identity', async () => {
   scheduledRequests = [{ id: 'req-1', accountId: 'acct-1', userId: 'user-1' }];
   expect(await processScheduledDeletions()).toEqual({ processed: 1, errors: [] });
-  expect(deletedUsers).toEqual([]);
+  expect(deletedRows.length).toBeGreaterThan(0);
+  expect(deletedUsers).toEqual(['user-1']);
   expect(completedRequests).toEqual(['req-1']);
 });
 
