@@ -8,14 +8,16 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { accounts, appArtifacts, appDeployments, appImages, appRuntimes, apps, projects } from '@kortix/db';
-import { eq, like } from 'drizzle-orm';
+import { eq, like, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { appDeploymentSnapshotName } from '../snapshots/quota-gc-select';
+import { SnapshotInUseError } from '../snapshots/providers/errors';
 import {
   appImageReclaimIo,
   claimAppImage,
   markAppImageReady,
   reclaimAppDeploymentImages,
+  releaseAppImage,
   releaseDeploymentImage,
   releaseDeploymentImages,
   teardownAppRuntimes,
@@ -313,15 +315,15 @@ withDb('Shared App images — claim, reference count, release', () => {
       () => provider,
     )).toBe('none');
     expect(provider.deleted).toEqual([]);
-    expect(await appImageReclaimIo.loadUnusedImages(50)).toEqual([]);
+    expect(await appImageReclaimIo.loadUnusedImages(50, ['platinum'])).toEqual([]);
 
     // The other App's deployment still has a runtime: it pins the image even once deleted.
     await db.insert(appRuntimes).values(runtime(READY_RUNTIME, OTHER_APP_DEPLOYMENT, 'stopped'));
     await db.update(appDeployments).set({ status: 'deleted' }).where(eq(appDeployments.deploymentId, OTHER_APP_DEPLOYMENT));
-    expect(await appImageReclaimIo.loadUnusedImages(50)).toEqual([]);
+    expect(await appImageReclaimIo.loadUnusedImages(50, ['platinum'])).toEqual([]);
 
     await db.update(appRuntimes).set({ status: 'deleted' }).where(eq(appRuntimes.runtimeId, READY_RUNTIME));
-    expect(await appImageReclaimIo.loadUnusedImages(50)).toEqual([{ imageName: SHARED, provider: 'platinum' }]);
+    expect(await appImageReclaimIo.loadUnusedImages(50, ['platinum'])).toEqual([{ imageName: SHARED, provider: 'platinum' }]);
     expect(await releaseDeploymentImage(
       { deploymentId: OTHER_APP_DEPLOYMENT, hostingProvider: 'platinum', providerBuildId: SHARED },
       () => provider,
@@ -350,14 +352,14 @@ withDb('Shared App images — claim, reference count, release', () => {
       providerBuildId: OTHER_SHARED,
     });
     await db.insert(appImages).values({ imageName: OTHER_SHARED, provider: 'platinum', status: 'building' });
-    expect(await appImageReclaimIo.loadUnusedImages(50)).toEqual([]);
+    expect(await appImageReclaimIo.loadUnusedImages(50, ['platinum'])).toEqual([]);
 
     await db.update(appDeployments).set({ status: 'failed', leaseOwner: null, leaseExpiresAt: null })
       .where(eq(appDeployments.deploymentId, DELETED_APP_BUILDING));
     const provider = providerWith([]);
     const result = await reclaimAppDeploymentImages({}, {
       ...appImageReclaimIo,
-      providers: () => [],
+      providers: () => [{ name: 'platinum', adapter: provider }],
       releaseImage: (image) => releaseDeploymentImage(
         { deploymentId: DELETED_APP_BUILDING, hostingProvider: image.provider, providerBuildId: image.imageName },
         () => provider,
@@ -366,6 +368,94 @@ withDb('Shared App images — claim, reference count, release', () => {
     expect(provider.deleted).toEqual([OTHER_SHARED]);
     expect(result).toMatchObject({ reclaimable: 1, released: 1, errors: 0 });
     expect(await imageRow(OTHER_SHARED)).toBeNull();
+  });
+
+  test('two retrying deployments that both used the image never wait on each other', async () => {
+    // BUILDER claimed the build, its lease lapsed, FOLLOWER took it over, then
+    // FOLLOWER failed retryably. Both rows keep provider_build_id = SHARED.
+    await claimAppImage({ imageName: SHARED, provider: 'platinum', deploymentId: BUILDER, leaseOwner: OWNER_A });
+    await db.update(appDeployments).set({ leaseExpiresAt: new Date(Date.now() - 1_000) })
+      .where(eq(appDeployments.deploymentId, BUILDER));
+    expect(await claimAppImage({ imageName: SHARED, provider: 'platinum', deploymentId: FOLLOWER, leaseOwner: OWNER_B }))
+      .toBe('build');
+    // Both retry at once: each is `building` under a live lease before it claims.
+    await db.update(appDeployments).set({ status: 'building', ...leased(OWNER_A) })
+      .where(eq(appDeployments.deploymentId, BUILDER));
+    const claims = [
+      await claimAppImage({ imageName: SHARED, provider: 'platinum', deploymentId: BUILDER, leaseOwner: OWNER_A }),
+      await claimAppImage({ imageName: SHARED, provider: 'platinum', deploymentId: FOLLOWER, leaseOwner: OWNER_B }),
+    ];
+    expect(claims).toEqual(['wait', 'build']);
+    expect((await imageRow(SHARED))?.builderDeploymentId).toBe(FOLLOWER);
+  });
+
+  test('a release calls the provider with no transaction or image lock held; a claim meanwhile waits', async () => {
+    await markAppImageReady(SHARED, 'platinum');
+    const seen: Array<{ lockFree: boolean; status: string | undefined; claim: string | null }> = [];
+    const provider: AppImageProvider = {
+      isConfigured: () => true,
+      listSnapshots: async () => [],
+      deleteSnapshot: async (name) => {
+        const lockFree = await db.transaction(async (tx) => {
+          const [row] = await tx.execute(sql`select pg_try_advisory_xact_lock(hashtext(${`app-image:${name}`})) as ok`) as unknown as Array<{ ok: boolean }>;
+          return Boolean(row?.ok);
+        });
+        // Only probe a claim when it cannot block on a lock this release holds.
+        const claim = lockFree
+          ? await claimAppImage({ imageName: name, provider: 'platinum', deploymentId: FOLLOWER, leaseOwner: OWNER_B })
+          : null;
+        seen.push({ lockFree, status: (await imageRow(name))?.status, claim });
+      },
+    };
+    expect(await releaseAppImage({ imageName: SHARED, provider: 'platinum' }, () => provider)).toBe('released');
+    expect(seen).toEqual([{ lockFree: true, status: 'deleting', claim: 'wait' }]);
+    expect(await imageRow(SHARED)).toBeNull();
+    expect(await buildIdOf(FOLLOWER)).toBeNull();
+  });
+
+  test('an image the provider keeps is restored and rotated, so the next pass reaches the next image', async () => {
+    await db.insert(appImages).values([
+      { imageName: SHARED, provider: 'platinum', status: 'ready', updatedAt: new Date(Date.now() - 120_000) },
+      { imageName: OTHER_SHARED, provider: 'platinum', status: 'ready', updatedAt: new Date(Date.now() - 60_000) },
+    ]);
+    const deleted: string[] = [];
+    const provider: AppImageProvider = {
+      isConfigured: () => true,
+      listSnapshots: async () => [],
+      deleteSnapshot: async (name) => {
+        // A sandbox this database already marks deleted still pins the oldest image.
+        if (name === SHARED) throw new SnapshotInUseError(name, 1);
+        deleted.push(name);
+      },
+    };
+    const io = {
+      ...appImageReclaimIo,
+      providers: () => [{ name: 'platinum', adapter: provider }],
+      releaseImage: (image: { imageName: string; provider: string }) => releaseAppImage(image, () => provider),
+    };
+    expect(await reclaimAppDeploymentImages({ maxPerPass: 1 }, io)).toMatchObject({ released: 0, pending: 1 });
+    expect((await imageRow(SHARED))?.status).toBe('ready');
+    expect(await reclaimAppDeploymentImages({ maxPerPass: 1 }, io)).toMatchObject({ released: 1, pending: 0 });
+    expect(deleted).toEqual([OTHER_SHARED]);
+  });
+
+  test('an image on a provider not configured here never takes a reclaim slot', async () => {
+    await db.insert(appImages).values([
+      { imageName: SHARED, provider: 'daytona', status: 'ready', updatedAt: new Date(Date.now() - 120_000) },
+      { imageName: OTHER_SHARED, provider: 'platinum', status: 'ready', updatedAt: new Date(Date.now() - 60_000) },
+    ]);
+    const provider = providerWith([]);
+    const result = await reclaimAppDeploymentImages({ maxPerPass: 1 }, {
+      ...appImageReclaimIo,
+      providers: () => [{ name: 'platinum', adapter: provider }],
+      releaseImage: (image) => releaseAppImage(image, (name) => {
+        if (name !== 'platinum') throw new Error(`provider ${name} is not configured`);
+        return provider;
+      }),
+    });
+    expect(provider.deleted).toEqual([OTHER_SHARED]);
+    expect(result).toMatchObject({ released: 1, deferred: 0 });
+    expect((await imageRow(SHARED))?.provider).toBe('daytona');
   });
 
   test('a build that finishes after a release removed its row records the image again', async () => {

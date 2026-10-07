@@ -4330,6 +4330,7 @@ export const appDeployments = kortixSchema.table(
  * row exists from the first build attempt until the provider image is
  * deleted. The deployments that use an image are the ones whose
  * `provider_build_id` names it; usage is counted by query, never stored.
+ * `deleting`: a release is calling the provider delete; claims wait.
  */
 export const appImages = kortixSchema.table(
   'app_images',
@@ -4340,8 +4341,10 @@ export const appImages = kortixSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     readyAt: timestamp('ready_at', { withTimezone: true }),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    /** The deployment that claimed the build. Only it builds while its lease is live. */
+    builderDeploymentId: uuid('builder_deployment_id'),
   },
-  (table) => [check('app_images_status_check', sql`${table.status} IN ('building', 'ready')`)],
+  (table) => [check('app_images_status_check', sql`${table.status} IN ('building', 'ready', 'deleting')`)],
 );
 
 /**

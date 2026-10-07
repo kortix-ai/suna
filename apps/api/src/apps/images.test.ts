@@ -75,8 +75,8 @@ function fakeIo(input: {
       if (input.lookupFails) throw new Error('database unavailable');
       return new Set(ids.filter((id) => input.reclaimable?.includes(id)));
     },
-    async loadUnusedImages(limit) {
-      return (input.unusedImages ?? []).slice(0, limit);
+    async loadUnusedImages(limit, providers) {
+      return (input.unusedImages ?? []).filter((image) => providers.includes(image.provider)).slice(0, limit);
     },
     async releaseImage(image) {
       input.sharedReleased?.push(image.imageName);
@@ -345,6 +345,41 @@ describe('template quota guard', () => {
     expect(reclaims).toBe(1);
   });
 
+  // A disk/CPU quota is transient, and a Dockerfile's own log line names no
+  // template count: neither may reclaim or fail the deployment permanently.
+  test.each([
+    ['a Dockerfile RUN step that prints a disk quota error', 'Platinum template kortix-appimg-dev-abc build failed: RUN npm ci: write /app/node_modules: Disk quota exceeded'],
+    ['a Daytona organization disk quota', 'Snapshot build failed: Total disk quota exceeded (100GB). Please contact support'],
+    ['a Daytona CPU quota', 'Snapshot build failed: Total CPU quota exceeded'],
+    ['a pip quota line in a Platinum build log', 'Platinum template kortix-appimg-dev-abc build failed: ERROR: quota exceeded for package index'],
+  ])('%s passes through without a reclaim', async (_label, message) => {
+    let reclaims = 0;
+    let builds = 0;
+    const failure = await buildWithImageQuotaGuard({
+      provider: 'platinum',
+      build: async () => { builds += 1; throw new Error(message); },
+      reclaim: async () => { reclaims += 1; },
+    }).catch((error: unknown) => error);
+    expect(failure).not.toBeInstanceOf(AppImageQuotaExceededError);
+    expect((failure as Error).message).toBe(message);
+    expect(reclaims).toBe(0);
+    expect(builds).toBe(1);
+  });
+
+  test('a Daytona snapshot-count refusal reclaims like the Platinum template quota', async () => {
+    let reclaims = 0;
+    let builds = 0;
+    await buildWithImageQuotaGuard({
+      provider: 'daytona',
+      build: async () => {
+        builds += 1;
+        if (builds === 1) throw new Error('Snapshot build failed: Organization has reached the maximum number of snapshots (100)');
+      },
+      reclaim: async () => { reclaims += 1; },
+    });
+    expect([builds, reclaims]).toEqual([2, 1]);
+  });
+
   test('any other build failure passes through without a reclaim', async () => {
     let reclaims = 0;
     const failure = await buildWithImageQuotaGuard({
@@ -362,7 +397,7 @@ describe('shared image reclaim pass', () => {
   test('releases unused shared images with no provider listing, and counts what the provider kept', async () => {
     const released: string[] = [];
     const io = fakeIo({
-      providers: [],
+      providers: [{ name: 'platinum', adapter: fakeProvider() }],
       unusedImages: [
         { imageName: 'kortix-appimg-dev-aaaaaaaaaaaaaaaaaaaaaaaa', provider: 'platinum', outcome: 'released' },
         { imageName: 'kortix-appimg-dev-bbbbbbbbbbbbbbbbbbbbbbbb', provider: 'platinum', outcome: 'pending' },
@@ -377,6 +412,13 @@ describe('shared image reclaim pass', () => {
     expect(result).toMatchObject({ reclaimable: 2, released: 1, pending: 1, deferred: 0, errors: 0 });
   });
 
+  test('the pass asks only for images on the providers configured here', async () => {
+    const asked: string[][] = [];
+    const io = fakeIo({ providers: [{ name: 'platinum', adapter: fakeProvider() }] });
+    await reclaimAppDeploymentImages({}, { ...io, loadUnusedImages: async (limit, providers) => { asked.push(providers); return []; } });
+    expect(asked).toEqual([['platinum']]);
+  });
+
   test('one pass releases at most maxPerPass shared images', async () => {
     const released: string[] = [];
     const unusedImages = ['a', 'b', 'c'].map((letter) => ({
@@ -384,7 +426,7 @@ describe('shared image reclaim pass', () => {
       provider: 'platinum',
       outcome: 'released' as const,
     }));
-    const result = await reclaimAppDeploymentImages({ maxPerPass: 2 }, fakeIo({ providers: [], unusedImages, sharedReleased: released }));
+    const result = await reclaimAppDeploymentImages({ maxPerPass: 2 }, fakeIo({ providers: [{ name: 'platinum', adapter: fakeProvider() }], unusedImages, sharedReleased: released }));
     expect(released).toHaveLength(2);
     expect(result).toMatchObject({ released: 2, deferred: 1 });
   });

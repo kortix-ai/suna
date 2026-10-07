@@ -261,6 +261,37 @@ withDb('static App hosting', () => {
       .where(and(eq(appSiteBlobs.accountId, ACCOUNT_ID), eq(appSiteBlobs.sha256, lostSha)))).toEqual([]);
   });
 
+  test('a read that missed while a publish re-uploaded the blob keeps its ledger row', async () => {
+    await seedDeployments(1, 'building');
+    const storage = memoryStorage();
+    const root = await site({ 'index.html': '<!doctype html><title>race</title>' });
+    roots.push(root);
+    await publishStaticSite({ deploymentId: dep(1), accountId: ACCOUNT_ID, sourceDir: root, storage });
+    const sha = createHash('sha256').update('<!doctype html><title>race</title>').digest('hex');
+    // The first read started before the upload finished and saw no object; the object exists now.
+    const open = storage.open.bind(storage);
+    let stale = true;
+    storage.open = async (key: string, range?: { start: number; end: number }) => {
+      if (stale) { stale = false; return null; }
+      return open(key, range);
+    };
+    const serve = () => serveStaticDeployment({
+      request: new Request('https://app.test/'),
+      url: new URL('https://app.test/'),
+      accountId: ACCOUNT_ID,
+      deploymentId: dep(1),
+      spa: true,
+      publicApp: true,
+      storage,
+    });
+    expect((await serve()).status).toBe(503);
+    // The row stays: reclaim and account deletion work from it, so the object is never orphaned.
+    expect(await db.select({ sha256: appSiteBlobs.sha256 }).from(appSiteBlobs)
+      .where(and(eq(appSiteBlobs.accountId, ACCOUNT_ID), eq(appSiteBlobs.sha256, sha)))).toEqual([{ sha256: sha }]);
+    expect(await deleteAccountSiteObjects(ACCOUNT_ID, storage)).toEqual({ removed: 1 });
+    expect(storage.objects.has(blobKey(ACCOUNT_ID, sha))).toBe(false);
+  });
+
   test('a body over 4 MiB streams uncompressed; concurrent requests for a small file share one storage read', async () => {
     await seedDeployments(1, 'building');
     const storage = memoryStorage();

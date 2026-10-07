@@ -41,7 +41,11 @@
  * image are the ones whose `provider_build_id` names it; usage is counted by
  * query (`appImageInUseSql`), never stored. Claim (`claimAppImage`) and release
  * (`releaseAppImage`) take the same advisory lock per image name, so a release
- * never deletes an image a deployment has just claimed.
+ * never deletes an image a deployment has just claimed. A release marks the row
+ * `deleting` under the lock and calls the provider with no transaction open:
+ * a slow provider never holds a pooled connection, and claims wait meanwhile.
+ * The row names its one builder (`builder_deployment_id`), so two deployments
+ * that both used the image earlier never wait on each other.
  *
  * Known limit: a reused image is not probed at the provider first. An image
  * deleted outside Kortix fails the runtime create; delete the deployments that
@@ -57,8 +61,8 @@ import { getProvider, type SandboxProvider } from '../platform/providers';
 import { db } from '../shared/db';
 import { mapWithConcurrency } from '../shared/map-with-concurrency';
 import { getSandboxProvider } from '../snapshots/providers';
-import { classifySnapshotError } from '../snapshots/error-classify';
 import { SnapshotInUseError } from '../snapshots/providers/errors';
+import { PLATINUM_BUILD_FAILED_RE } from '../snapshots/providers/platinum-templates';
 import {
   APP_DEPLOYMENT_PREFIX,
   APP_IMAGE_PREFIX,
@@ -74,6 +78,12 @@ export const APP_IMAGE_RECLAIM_MAX_PER_PASS = 25;
 
 /** Concurrent provider deletes inside one App delete request. */
 const RELEASE_CONCURRENCY = 4;
+
+/**
+ * A `deleting` row older than this belongs to a release that died mid-call.
+ * The next release retries it; until then, claims wait.
+ */
+const DELETING_STALE_MS = 15 * 60_000;
 
 /**
  * - `released`: the provider no longer holds the image (deleted now, or absent).
@@ -205,7 +215,7 @@ export async function claimAppImage(input: {
 }): Promise<AppImageClaim> {
   return db.transaction(async (tx) => {
     await lockAppImage(tx, input.imageName);
-    const [image] = await tx.select({ status: appImages.status })
+    const [image] = await tx.select({ status: appImages.status, builder: appImages.builderDeploymentId })
       .from(appImages)
       .where(eq(appImages.imageName, input.imageName))
       .limit(1);
@@ -213,20 +223,36 @@ export async function claimAppImage(input: {
     if (image?.status === 'ready') {
       claim = 'reuse';
       await tx.update(appImages).set({ updatedAt: new Date() }).where(eq(appImages.imageName, input.imageName));
+    } else if (image?.status === 'deleting') {
+      // A release is deleting it at the provider; build afresh once the row goes.
+      claim = 'wait';
     } else if (image) {
-      const [builder] = await tx.select({ deploymentId: appDeployments.deploymentId })
-        .from(appDeployments)
-        .where(and(
-          eq(appDeployments.providerBuildId, input.imageName),
-          eq(appDeployments.status, 'building'),
-          ne(appDeployments.deploymentId, input.deploymentId),
-          sql`${appDeployments.leaseExpiresAt} > now()`,
-        ))
-        .limit(1);
+      // Only the deployment that claimed the build counts as its builder: an
+      // earlier attempt's `provider_build_id` names an image, not a live build.
+      const [builder] = image.builder && image.builder !== input.deploymentId
+        ? await tx.select({ deploymentId: appDeployments.deploymentId })
+          .from(appDeployments)
+          .where(and(
+            eq(appDeployments.deploymentId, image.builder),
+            eq(appDeployments.status, 'building'),
+            sql`${appDeployments.leaseExpiresAt} > now()`,
+          ))
+          .limit(1)
+        : [];
       claim = builder ? 'wait' : 'build';
+      if (claim === 'build') {
+        await tx.update(appImages)
+          .set({ builderDeploymentId: input.deploymentId, updatedAt: new Date() })
+          .where(eq(appImages.imageName, input.imageName));
+      }
     } else {
       claim = 'build';
-      await tx.insert(appImages).values({ imageName: input.imageName, provider: input.provider, status: 'building' });
+      await tx.insert(appImages).values({
+        imageName: input.imageName,
+        provider: input.provider,
+        status: 'building',
+        builderDeploymentId: input.deploymentId,
+      });
     }
     if (claim === 'wait') return claim;
     const rows = await tx.update(appDeployments)
@@ -252,10 +278,15 @@ export async function markAppImageReady(imageName: string, provider: string, now
 }
 
 /**
- * Delete one shared image when no deployment uses it. Holds the image lock
- * across the provider delete, so a concurrent claim waits and then builds
- * afresh instead of reusing an image being deleted. Never throws.
- * `none`: another deployment still uses it, or its provider is not configured.
+ * Delete one shared image when no deployment uses it. Three steps, each
+ * transaction under the image lock and none open across the provider call:
+ *   1. mark the row `deleting` (a concurrent claim then waits);
+ *   2. call the provider delete;
+ *   3. drop the row, or on failure restore its status. The restore bumps
+ *      `updated_at`, so the next maintenance pass tries other images first.
+ * Never throws. `none`: another deployment still uses it, or its provider is
+ * not configured. `pending`: the provider kept it, or another release is
+ * deleting it now.
  */
 export async function releaseAppImage(
   image: { imageName: string; provider: string },
@@ -263,25 +294,59 @@ export async function releaseAppImage(
 ): Promise<AppImageReleaseOutcome> {
   const adapter = imageProvider(image.provider, resolve);
   if (!adapter) return 'none';
-  try {
-    return await db.transaction(async (tx) => {
-      await lockAppImage(tx, image.imageName);
-      const [usage] = await tx.execute(sql`select ${appImageInUseSql(image.imageName)} as in_use`) as unknown as Array<{ in_use: boolean }>;
-      if (usage?.in_use) return 'none' as const;
-      await adapter.deleteSnapshot(image.imageName);
-      await tx.delete(appImages).where(eq(appImages.imageName, image.imageName));
-      return 'released' as const;
-    });
-  } catch (error) {
+  const name = image.imageName;
+  const fail = (error: unknown): 'pending' => {
     if (!(error instanceof SnapshotInUseError)) {
       logger.warn('[apps] shared image release failed; maintenance retries it', {
-        imageName: image.imageName,
+        imageName: name,
         provider: image.provider,
         error: error instanceof Error ? error.message : String(error),
       });
     }
     return 'pending';
+  };
+  let marked: { restore: string } | 'none' | 'busy' | 'gone';
+  try {
+    marked = await db.transaction(async (tx) => {
+      await lockAppImage(tx, name);
+      const [usage] = await tx.execute(sql`select ${appImageInUseSql(name)} as in_use`) as unknown as Array<{ in_use: boolean }>;
+      if (usage?.in_use) return 'none' as const;
+      const [row] = await tx.select({ status: appImages.status, updatedAt: appImages.updatedAt })
+        .from(appImages).where(eq(appImages.imageName, name)).limit(1);
+      // The row lives until the provider delete succeeds: no row, no image.
+      if (!row) return 'gone' as const;
+      if (row.status === 'deleting' && Date.now() - row.updatedAt.getTime() < DELETING_STALE_MS) return 'busy' as const;
+      await tx.update(appImages).set({ status: 'deleting', updatedAt: new Date() }).where(eq(appImages.imageName, name));
+      // A stale `deleting` row may hide a half-built image: never restore it as `ready`.
+      return { restore: row.status === 'deleting' ? 'building' : row.status };
+    });
+  } catch (error) {
+    return fail(error);
   }
+  if (marked === 'none') return 'none';
+  if (marked === 'busy') return 'pending';
+  if (marked === 'gone') return 'released';
+  const { restore } = marked;
+  const finish = (write: (tx: Tx) => Promise<unknown>) => db.transaction(async (tx) => {
+    await lockAppImage(tx, name);
+    await write(tx);
+  });
+  const stillDeleting = and(eq(appImages.imageName, name), eq(appImages.status, 'deleting'));
+  try {
+    await adapter.deleteSnapshot(name);
+  } catch (error) {
+    await finish((tx) => tx.update(appImages)
+      .set({ status: restore, updatedAt: new Date() })
+      .where(stillDeleting)).catch(() => {});
+    return fail(error);
+  }
+  try {
+    await finish((tx) => tx.delete(appImages).where(stillDeleting));
+  } catch (error) {
+    // The provider image is gone; a stale `deleting` row is retried and released.
+    return fail(error);
+  }
+  return 'released';
 }
 
 /** The provider refused a build because the org holds its maximum number of templates. */
@@ -298,6 +363,16 @@ export class AppImageQuotaExceededError extends Error {
 }
 
 /**
+ * The provider's template-COUNT refusal: Platinum `org_template_quota_exceeded`,
+ * Daytona's snapshot-count limit. Not a disk or CPU quota (transient), and never
+ * a failed Platinum build, whose message carries the Dockerfile's log lines.
+ */
+export function isTemplateQuotaRefusal(message: string): boolean {
+  if (PLATINUM_BUILD_FAILED_RE.test(message)) return false;
+  return /org_template_quota_exceeded|maximum number of snapshots|snapshot limit|limit of \d+ snapshots|too many snapshots/i.test(message);
+}
+
+/**
  * Run a build. When the provider refuses it for its template quota, reclaim
  * unused App images once and retry once. A second quota refusal throws
  * `AppImageQuotaExceededError`: retrying on a backoff only restates it.
@@ -308,7 +383,7 @@ export async function buildWithImageQuotaGuard(input: {
   reclaim: () => Promise<unknown>;
   onReclaim?: (providerMessage: string) => Promise<void>;
 }): Promise<void> {
-  const isQuota = (error: unknown) => classifySnapshotError(error instanceof Error ? error.message : String(error)) === 'quota';
+  const isQuota = (error: unknown) => isTemplateQuotaRefusal(error instanceof Error ? error.message : String(error));
   try {
     await input.build();
     return;
@@ -509,8 +584,12 @@ export interface AppImageReclaimIo {
    * with no remaining runtime. Unknown ids (another environment) never return.
    */
   loadReclaimableDeploymentIds(deploymentIds: string[]): Promise<Set<string>>;
-  /** Shared images this environment tracks that no deployment uses. */
-  loadUnusedImages(limit: number): Promise<Array<{ imageName: string; provider: string }>>;
+  /**
+   * Shared images this environment tracks that no deployment uses, on the
+   * given providers only: an image whose provider is not configured here can
+   * never be released, so it must not take a slot from one that can.
+   */
+  loadUnusedImages(limit: number, providers: string[]): Promise<Array<{ imageName: string; provider: string }>>;
   releaseImage(image: { imageName: string; provider: string }): Promise<AppImageReleaseOutcome>;
 }
 
@@ -560,11 +639,15 @@ export const appImageReclaimIo: AppImageReclaimIo = {
     }
     return found;
   },
-  async loadUnusedImages(limit) {
+  async loadUnusedImages(limit, providers) {
+    if (providers.length === 0) return [];
     return db
       .select({ imageName: appImages.imageName, provider: appImages.provider })
       .from(appImages)
-      .where(sql`not ${appImageInUseSql(sql`${appImages.imageName}`)}`)
+      .where(and(
+        inArray(appImages.provider, providers),
+        sql`not ${appImageInUseSql(sql`${appImages.imageName}`)}`,
+      ))
       .orderBy(appImages.updatedAt)
       .limit(limit);
   },
@@ -628,7 +711,8 @@ export async function reclaimAppDeploymentImages(
     });
   }
 
-  for (const { name, adapter } of io.providers()) {
+  const providers = io.providers();
+  for (const { name, adapter } of providers) {
     let images: string[];
     try {
       images = (await adapter.listSnapshots())
@@ -679,7 +763,7 @@ export async function reclaimAppDeploymentImages(
 
   // Shared images: tracked in this database, so no provider listing is needed.
   try {
-    const unused = await io.loadUnusedImages(maxPerPass + 1);
+    const unused = await io.loadUnusedImages(maxPerPass + 1, providers.map((provider) => provider.name));
     result.reclaimable += unused.length;
     result.deferred += Math.max(0, unused.length - maxPerPass);
     for (const image of unused.slice(0, maxPerPass)) {

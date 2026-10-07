@@ -442,13 +442,29 @@ function readSmallBlob(storage: SiteStorage, key: string): Promise<Uint8Array | 
  * then the reclaim transaction failed). Drop the row under the account's blob
  * lock, so the next publish of that content uploads it again instead of
  * reusing a row with no object.
+ *
+ * A concurrent publish may have uploaded the object since the failed read. It
+ * inserts the row after its upload, without the lock. So storage is checked
+ * again AFTER the delete, and an object found then gets its row back: in any
+ * order, an existing object keeps a ledger row, which is what reclaim and
+ * account deletion (D8) remove objects from. A failed check keeps the row.
  */
-async function forgetMissingBlob(accountId: string, sha256: string): Promise<void> {
+async function forgetMissingBlob(storage: SiteStorage, accountId: string, file: SiteFile): Promise<void> {
+  const { sha256, sizeBytes } = file;
   logger.warn('[apps] app_site_blob_missing', { accountId, sha256 });
   await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`app-site-blobs:${accountId}`}))`);
     await tx.delete(appSiteBlobs).where(and(eq(appSiteBlobs.accountId, accountId), eq(appSiteBlobs.sha256, sha256)));
   });
+  const present = await storage.open(blobKey(accountId, sha256)).then(
+    async (stream) => {
+      if (!stream) return false;
+      await stream.cancel().catch(() => {});
+      return true;
+    },
+    () => true,
+  );
+  if (present) await db.insert(appSiteBlobs).values({ accountId, sha256, sizeBytes }).onConflictDoNothing();
 }
 
 export function resetStaticSiteCaches(): void {
@@ -550,7 +566,7 @@ export async function serveStaticDeployment(input: {
     return new Response(null, { status: 416, headers });
   }
   const unavailable = async () => {
-    await forgetMissingBlob(input.accountId, file.sha256).catch((error) => {
+    await forgetMissingBlob(storage, input.accountId, file).catch((error) => {
       logger.error('[apps] forgetting a missing static blob failed', { error: String(error) });
     });
     return plain(503, 'This file is temporarily unavailable', { 'retry-after': '5' });
