@@ -855,6 +855,13 @@
       "when": 1791331606153,
       "tag": "20261007000646_permission_push_claims",
       "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1791366481736,
+      "tag": "20261007094801_session_sandboxes_wake_fence_index",
+      "breakpoints": true
     }
   ]
 }
