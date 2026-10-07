@@ -1,21 +1,22 @@
 {
-  "source_hash": "22f3ab0d5e390dd0560cc516de51ba6b40b46296dd972f0999151c60c56f9842",
+  "source_hash": "ea1c93b41b9fb22c7fba4f914b4c0046c06472a3212a81d67871388009badd1c",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-06T064927Z-key-a-diagnostic-warn-on-the-episode-the-system-already-budg.md",
+    ".agents/skills/learnings/entries/2026-10-07T083543Z-re-run-every-pre-existing-verification-note-after-every-trun.md",
     "apps/api/src/__tests__/integration-unreachable-warn-gate.test.ts",
     "apps/api/src/projects/session-lifecycle/readiness-clocks.test.ts",
     "apps/api/src/projects/session-lifecycle/readiness-clocks.ts",
     "apps/api/src/projects/session-open/session-open-readiness.test.ts",
     "apps/api/src/projects/session-open/session-open-readiness.ts"
   ],
-  "diff_hash": "5631db14f0ee8a71705d98f9958befc6e3d94e285aec59ea7cca289614165401",
-  "head": "5666f60ac681fcbd2d84bf84db9fc8e3b3f1cbe6",
+  "diff_hash": "84aedc8378efd747ac78f591c365afed48434990485c4bc960f1ee265a01201d",
+  "head": "3454fe658e5ec7aed2391d030b2ff14028daafac",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-07T06:18:09.654Z"
+  "at": "2026-10-07T08:39:05.975Z"
 }
