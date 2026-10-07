@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 
 import {
+  fitColumnWidths,
   nodeText,
   TABLE_CELL_PADDING_X,
   tableCellAlign,
@@ -87,5 +88,22 @@ describe('table column widths', () => {
     expect(longCellText.length).toBeGreaterThan(300);
     expect(widths[0]).toBe(240 + 2 * TABLE_CELL_PADDING_X);
     expect(widths[2]).toBeLessThan(widths[0]);
+  });
+});
+
+describe('fitted column widths', () => {
+  test('a narrow table stretches to the viewport in whole points, the last column taking the remainder', () => {
+    const fitted = fitColumnWidths([50.4, 100.2, 50], 301.7);
+    expect(fitted.every(Number.isInteger)).toBe(true);
+    expect(fitted.reduce((a, b) => a + b, 0)).toBe(301);
+    expect(fitted[1]).toBeGreaterThan(fitted[0]);
+  });
+
+  test('a wide table keeps its natural widths, rounded up to whole points', () => {
+    expect(fitColumnWidths([200.2, 300], 320)).toEqual([201, 300]);
+  });
+
+  test('before the viewport is measured the natural widths are used', () => {
+    expect(fitColumnWidths([44, 60], 0)).toEqual([44, 60]);
   });
 });

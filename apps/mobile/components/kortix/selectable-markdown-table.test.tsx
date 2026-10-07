@@ -141,6 +141,15 @@ test('GFM columns render their alignment on every cell text node, header include
   }
 });
 
+test('each cell anchors its text at the column edge: left by default, centre and right for GFM columns', () => {
+  for (const row of renderRows(ALIGNED)) {
+    expect(row.map((c) => c.style.alignItems)).toEqual(['flex-start', 'center', 'flex-end']);
+  }
+  for (const row of renderRows('| a | b |\n|---|---|\n| 1 | 2 |')) {
+    expect(row.map((c) => c.style.alignItems)).toEqual(['flex-start', 'flex-start']);
+  }
+});
+
 test('a table without alignment markers is left-aligned, with inline code, a link and bold', () => {
   const rows = renderRows('| a | b |\n|---|---|\n| `x` | [l](https://example.com) |\n| **b** | plain |');
   expect(rows).toHaveLength(3);
@@ -152,30 +161,36 @@ test('a table without alignment markers is left-aligned, with inline code, a lin
   expect(rows[1][1].text.findAllByType('uitextview' as never).filter((n) => n.props.accessibilityRole === 'link')).toHaveLength(1);
 });
 
-test('every cell in a column has the same flexBasis, header and body, and the long cell is capped', () => {
+test('every cell in a column has the same whole-point width, header and body, and the long cell is capped', () => {
   const rows = renderRows(ALIGNED);
-  const bases = [0, 1, 2].map((col) => rows.map((row) => row[col].style.flexBasis));
-  for (const column of bases) {
-    expect(typeof column[0]).toBe('number');
+  const widths = [0, 1, 2].map((col) => rows.map((row) => row[col].style.width));
+  for (const column of widths) {
+    expect(Number.isInteger(column[0])).toBe(true);
     expect(new Set(column).size).toBe(1);
   }
   // 240 (body text cap) + 2 * TABLE_CELL_PADDING_X, narrower columns stay narrower.
-  expect(bases[0][0] as number).toBeGreaterThan(240);
-  expect(bases[2][0] as number).toBeLessThan(bases[0][0] as number);
-  for (const row of rows) for (const cell of row) expect(cell.style.flexShrink).toBe(0);
+  expect(widths[0][0] as number).toBeGreaterThan(240);
+  expect(widths[2][0] as number).toBeLessThan(widths[0][0] as number);
+  for (const row of rows) for (const cell of row) expect(cell.style.flexGrow).toBeUndefined();
+});
+
+test('a row with a missing cell still has every column, so the dividers stay in one line', () => {
+  const rows = renderRows('| a | b | c |\n|---|---|---|\n| 1 | 2 |\n| 1 | 2 | 3 |');
+  expect(rows.map((r) => r.length)).toEqual([3, 3, 3]);
+  for (const col of [0, 1, 2]) expect(new Set(rows.map((r) => r[col].style.width)).size).toBe(1);
+  expect(rows.map((r) => r[2].style.borderLeftWidth)).toEqual([0.5, 0.5, 0.5]);
 });
 
 test('the table draws a full grid: a rounded outer border, a divider above every row after the first and left of every column after the first', () => {
   const root = renderTable(ALIGNED);
   const frame = flatten(hostParent(root.findByType('gh-scroll' as never)).props.style);
-  expect(frame).toMatchObject({ borderWidth: 1, borderColor: palette.border, overflow: 'hidden' });
-  expect(frame.borderRadius as number).toBeGreaterThan(0);
+  expect(frame).toMatchObject({ borderWidth: 0.5, borderColor: palette.border, borderRadius: 6, overflow: 'hidden' });
 
   const rows = renderRows(ALIGNED);
-  expect(rows.map((r) => r.rowStyle.borderTopWidth)).toEqual([0, 1, 1]);
+  expect(rows.map((r) => r.rowStyle.borderTopWidth)).toEqual([0, 0.5, 0.5]);
   for (const row of rows) {
     expect(row.rowStyle.borderTopColor).toBe(palette.border);
-    expect(row.map((c) => c.style.borderLeftWidth)).toEqual([0, 1, 1]);
+    expect(row.map((c) => c.style.borderLeftWidth)).toEqual([0, 0.5, 0.5]);
     for (const cell of row) expect(cell.style.borderLeftColor).toBe(palette.border);
   }
 });

@@ -102,6 +102,7 @@ import {
   TABLE_CELL_PADDING_X,
   TABLE_CELL_PADDING_Y,
   tableCellAlign,
+  fitColumnWidths,
   tableColumnWidths,
   tableSections,
 } from '@/lib/markdown/table-layout';
@@ -499,6 +500,8 @@ function renderCellContent(cell: AstNode, isDark: boolean, palette: MarkdownPale
 
 /** Width of the fade at a table edge that has more columns past it. */
 const TABLE_FADE_WIDTH = 24;
+const TABLE_BORDER_WIDTH = 0.5;
+const CELL_ALIGN_ITEMS = { left: 'flex-start', center: 'center', right: 'flex-end' } as const;
 
 /**
  * Web: `border rounded-md` wrapper that scrolls horizontally, `w-full` table in
@@ -511,6 +514,7 @@ export function MarkdownTable({ node, palette, isDark }: { node: AstNode; palett
   const fill = useContext(MarkdownSurfaceContext) ?? palette.tableBody;
   const [fade, setFade] = useState({ left: false, right: false });
   const [headerHeight, setHeaderHeight] = useState(0);
+  const [viewport, setViewport] = useState(0);
   const scroll = useRef({ x: 0, content: 0, viewport: 0, left: false, right: false });
   // Sets state only when an edge flips, not on every scroll frame.
   const updateFade = useCallback(() => {
@@ -527,15 +531,15 @@ export function MarkdownTable({ node, palette, isDark }: { node: AstNode; palett
   const colCount = Math.max(0, ...sections.flatMap((s) => s.rows.map((r) => r.length)));
   if (colCount === 0) return <View />;
 
-  const colWidths = tableColumnWidths(sections, colCount);
+  const colWidths = fitColumnWidths(tableColumnWidths(sections, colCount), viewport);
 
   let rowIndex = 0;
   return (
     <View
       style={{
-        borderWidth: 1,
+        borderWidth: TABLE_BORDER_WIDTH,
         borderColor: palette.border,
-        borderRadius: RADIUS.md,
+        borderRadius: RADIUS.sm,
         overflow: 'hidden',
         backgroundColor: fill,
       }}
@@ -556,6 +560,7 @@ export function MarkdownTable({ node, palette, isDark }: { node: AstNode; palett
         }}
         onLayout={(e) => {
           scroll.current.viewport = e.nativeEvent.layout.width;
+          setViewport(e.nativeEvent.layout.width);
           updateFade();
         }}
       >
@@ -570,7 +575,7 @@ export function MarkdownTable({ node, palette, isDark }: { node: AstNode; palett
                   onLayout={section.isHeader && rIdx === 0 ? (e) => setHeaderHeight(e.nativeEvent.layout.height) : undefined}
                   style={{
                     flexDirection: 'row',
-                    borderTopWidth: divider ? 1 : 0,
+                    borderTopWidth: divider ? TABLE_BORDER_WIDTH : 0,
                     borderTopColor: palette.border,
                     backgroundColor: section.isHeader ? palette.tableHeader : undefined,
                   }}
@@ -579,10 +584,10 @@ export function MarkdownTable({ node, palette, isDark }: { node: AstNode; palett
                     <View
                       key={cIdx}
                       style={{
-                        flexBasis: colWidths[cIdx],
-                        flexGrow: 1,
-                        flexShrink: 0,
-                        borderLeftWidth: cIdx > 0 ? 1 : 0,
+                        width: colWidths[cIdx],
+                        // Yoga places the text, sized to its content, at the column's edge.
+                        alignItems: CELL_ALIGN_ITEMS[tableCellAlign(cell)],
+                        borderLeftWidth: cIdx > 0 ? TABLE_BORDER_WIDTH : 0,
                         borderLeftColor: palette.border,
                         paddingHorizontal: TABLE_CELL_PADDING_X,
                         paddingVertical: TABLE_CELL_PADDING_Y,

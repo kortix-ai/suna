@@ -68,3 +68,18 @@ export function tableColumnWidths(sections: TableSection[], colCount: number): n
   }
   return colWidths;
 }
+
+/**
+ * Whole-point column widths that fill the viewport. Extra room is shared in
+ * proportion and the last column takes the rounding remainder. Every row uses
+ * these exact widths, so each column divider is one straight line.
+ */
+export function fitColumnWidths(widths: number[], viewport: number): number[] {
+  const natural = widths.map((w) => Math.ceil(w));
+  const total = natural.reduce((sum, w) => sum + w, 0);
+  const target = Math.floor(viewport);
+  if (total === 0 || total >= target) return natural;
+  const fitted = natural.map((w) => Math.floor((w * target) / total));
+  fitted[fitted.length - 1] += target - fitted.reduce((sum, w) => sum + w, 0);
+  return fitted;
+}
