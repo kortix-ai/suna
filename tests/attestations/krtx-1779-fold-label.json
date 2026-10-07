@@ -1,0 +1,18 @@
+{
+  "source_hash": "288ba151affd627e09320aa32eaec520840d007dc67c08d0262a5754640580db",
+  "diff_files": [
+    "apps/web/src/app/[locale]/(system)/debug/tools/page.tsx",
+    "apps/web/src/features/session/action-panel/easy/outputs-card.test.tsx",
+    "apps/web/src/features/session/action-panel/easy/outputs-card.tsx",
+    "apps/web/src/features/session/action-panel/shared/output-priority.ts"
+  ],
+  "diff_hash": "272f13fe564501e8db27ecc7da7c098a928338738d571c06a988ea664030b6cb",
+  "head": "be736c26dad30046e82357eea8530a2e1b4dd6a1",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-07T22:52:43.373Z"
+}

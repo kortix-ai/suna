@@ -1046,6 +1046,48 @@ const EMPTY_MESSAGES: MessageWithParts[] = [
   } as any,
 ];
 
+// A run that crossed the Outputs fold with a MIXED hidden tail — eight
+// deliverable files in front, a deck, a video and a note behind the fold. The
+// fold's noun follows the hidden rows' kinds: an all-file fold says "N more
+// files", a mixed one says "N more items" (KRTX-1779). The two single-run
+// fixtures above stay under the eight-row limit, so without this the fold
+// button, its label and the expand interaction have no visual home.
+const FOLD_PARTS = [
+  part('write', done({ filePath: '/workspace/reports/chart-summary.pdf' }, '')),
+  part('write', done({ filePath: '/workspace/reports/revenue.xlsx' }, '')),
+  part('write', done({ filePath: '/workspace/reports/leads.csv' }, '')),
+  part('write', done({ filePath: '/workspace/reports/brief.docx' }, '')),
+  part('write', done({ filePath: '/workspace/reports/forecast.pdf' }, '')),
+  part('write', done({ filePath: '/workspace/reports/cohort.xlsx' }, '')),
+  part('write', done({ filePath: '/workspace/reports/pipeline.csv' }, '')),
+  part('write', done({ filePath: '/workspace/reports/handbook.docx' }, '')),
+  // Behind the fold: the note (a write → kind 'file', derive-panels.ts), the
+  // deck (kind ranks 4) and the video (RANK_MEDIA) — the deck and the video
+  // make the fold mixed, so its noun is "items".
+  part('write', done({ filePath: '/workspace/reports/notes.md' }, '')),
+  part(
+    'presentation_gen',
+    done(
+      { presentation_name: 'Pricing deck' },
+      JSON.stringify({ presentation_path: '/workspace/outputs/pricing-deck.pptx' }),
+    ),
+  ),
+  part(
+    'video_gen',
+    done(
+      { prompt: 'launch teaser' },
+      JSON.stringify({ path: '/workspace/outputs/launch-teaser.mp4' }),
+    ),
+  ),
+];
+
+const FOLD_MESSAGES: MessageWithParts[] = [
+  {
+    info: { id: 'm_fold', role: 'assistant' },
+    parts: FOLD_PARTS,
+  } as any,
+];
+
 // ---------------------------------------------------------------------------
 // Task 21 fixtures — the three states the earlier tasks' reviews explicitly
 // deferred to this live visual pass: a completed run with real deliverables
@@ -1674,6 +1716,16 @@ export default function DebugToolsPage() {
                 messages={STOPPED_MESSAGES}
                 isSessionBusy={false}
               />
+            </div>
+          </div>
+          {/* A dev-only page, so this caption is a literal: one new fixture is
+              not worth a hashed key in every locale file. */}
+          <div>
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs">
+              Outputs fold — mixed hidden rows (KRTX-1779): says "3 more items"
+            </div>
+            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-md border">
+              <EasyFixture sessionId="debug-easy-fold" messages={FOLD_MESSAGES} />
             </div>
           </div>
         </div>

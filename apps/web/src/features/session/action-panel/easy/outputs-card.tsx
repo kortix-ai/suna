@@ -157,10 +157,9 @@ function isOpenable(output: OutputItem): boolean {
  */
 /**
  * How many rows before the rest folds away. The list arrives sorted by what a
- * person came for (see `sortOutputs`), so the first rows are always the
- * deliverables — which means the fold can only ever hide scaffolding, never the
- * thing the user asked for. A run touching 200 files would otherwise turn this
- * card into the whole panel.
+ * person came for (see `sortOutputs`), so the fold only ever hides the tail —
+ * overflow deliverables, then scaffolding — never the top of the list. A
+ * run touching 200 files would otherwise turn this card into the whole panel.
  */
 const VISIBLE_LIMIT = 8;
 
@@ -228,7 +227,9 @@ export function OutputRows({
   const deliverables = outputs.filter((o) => !isScaffoldingOutput(o));
   const base = deliverables.length > 0 ? deliverables : outputs;
   const visible = showAll ? outputs : base.slice(0, VISIBLE_LIMIT);
-  const hidden = Math.max(0, outputs.length - visible.length);
+  const hiddenRows = outputs.filter((o) => !visible.includes(o));
+  const hidden = hiddenRows.length;
+  const hiddenNoun = `${hiddenRows.every((o) => o.kind === 'file') ? 'file' : 'item'}${hidden === 1 ? '' : 's'}`;
   // Grouping only ever organizes the expanded long list (see
   // `groupOutputsByKind`'s own doc comment) — the collapsed, pre-fold slice
   // stays a flat list, so this is `null` whenever `showAll` is false.
@@ -282,12 +283,14 @@ export function OutputRows({
             <ChevronDown className="size-3.5" />
           </span>
           {/* Say what they are, not just how many — "8 more" is a mystery box;
-              "8 more files" is a decision the user can make without clicking. */}
+              "8 more files" is a decision the user can make without clicking.
+              The noun follows the hidden rows: an all-file fold keeps "files",
+              a mixed one (video, deck, app) says "items". */}
           {/* `tabular-nums`: the count climbs while a run streams outputs in,
               and proportional digits shift the whole label sideways each time
               it crosses a width boundary (9 → 10 → 100). */}
           <span className="truncate tabular-nums">
-            {hidden} {tI18nComplete.raw('text187897ce0afc')} {hidden === 1 ? 'file' : 'files'}
+            {hidden} {tI18nComplete.raw('text187897ce0afc')} {hiddenNoun}
           </span>
         </button>
       )}

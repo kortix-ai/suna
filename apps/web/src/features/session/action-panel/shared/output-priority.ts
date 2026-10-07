@@ -67,7 +67,7 @@ export function outputRank(output: Pick<OutputItem, 'name' | 'kind' | 'shown'>):
 }
 
 /** Scaffolding: the making-of, not the thing — ranks in the last bucket and
- *  folds behind "N more files" whenever a real deliverable exists. */
+ *  folds behind the "N more" row whenever a real deliverable exists. */
 export function isScaffoldingOutput(output: Pick<OutputItem, 'name' | 'kind' | 'shown'>): boolean {
   return outputRank(output) === RANK_OTHER;
 }
