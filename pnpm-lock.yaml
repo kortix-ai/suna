@@ -1643,6 +1643,9 @@ importers:
       pg:
         specifier: ^8.13.0
         version: 8.23.0
+      smol-toml:
+        specifier: ^1.3.0
+        version: 1.8.0
       typescript:
         specifier: ^5.5.0
         version: 5.9.3
@@ -29310,7 +29313,6 @@ packages:
   /smol-toml@1.8.0:
     resolution: {integrity: sha512-kCZr2V3ch9i00x8zXRhjUNVcjG9ijES5dDudkXvUVCT5QlJNQWElSJdZqyPemffHoLNUYwOcou0Fy+ojN0uHSQ==}
     engines: {node: '>= 18'}
-    dev: false
 
   /snake-case@3.0.4:
     resolution: {integrity: sha512-LAOh4z89bGQvl9pFfNF8V146i7o7/CqFPbqzYgP+yYzDIDeS9HaNFtXABamRW+AQzEVODcvE79ljJ+8a9YSdMg==}

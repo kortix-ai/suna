@@ -1,0 +1,16 @@
+{
+  "source_hash": "07b217e3a7981f9f3225addd71ebd93f9b76242a37fdee3eb64ae630eb7d61f5",
+  "diff_files": [
+    "apps/api/src/__tests__/unit-daytona-snapshot-context.test.ts",
+    "apps/api/src/snapshots/build-context.ts"
+  ],
+  "diff_hash": "2b1ac1c36a329b30dd8c83b3bc71868fe5c9e7d04134b75a93d8cc183e396056",
+  "head": "3e457bf40c95828bd9c106a8cf150a5eec737544",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-07T01:30:14.490Z"
+}

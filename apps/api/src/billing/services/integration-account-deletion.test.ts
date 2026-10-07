@@ -16,6 +16,7 @@ import {
   accounts,
   creditAccounts,
   gatewayRequestLogs,
+  projectSessions,
   projects,
 } from '@kortix/db';
 import { insertIntoView } from '../../__tests__/helpers/compat-views';
@@ -35,9 +36,15 @@ const { claimDeletionRequest } = await import('../repositories/account-deletion'
 const superuser = new pg.Client({ connectionString: process.env.TEST_DATABASE_SUPERUSER_URL });
 const past = () => new Date(Date.now() - 60_000).toISOString();
 
-async function seed(opts: { logs?: number; subscription?: boolean } = {}) {
-  const accountId = crypto.randomUUID();
+/**
+ * A requester and the account they asked to delete. By default the account is
+ * their personal account, whose id is the user id (`bootstrapPersonalAccount`).
+ * `team` seeds an account with its own id; `requester` files the request as
+ * someone who is not a member at all.
+ */
+async function seed(opts: { logs?: number; subscription?: boolean; team?: boolean; requester?: string } = {}) {
   const userId = crypto.randomUUID();
+  const accountId = opts.team ? crypto.randomUUID() : userId;
   await db.insert(accounts).values({ accountId, name: 'deletion-test' });
   await db.insert(projects).values({
     projectId: crypto.randomUUID(),
@@ -59,10 +66,31 @@ async function seed(opts: { logs?: number; subscription?: boolean } = {}) {
   }
   const [request] = await db
     .insert(accountDeletionRequests)
-    .values({ accountId, userId, scheduledFor: past(), status: 'pending' })
+    .values({ accountId, userId: opts.requester ?? userId, scheduledFor: past(), status: 'pending' })
     .returning();
   return { accountId, userId, requestId: request!.id };
 }
+
+/** A user's personal account with one running session. */
+async function seedRunningPersonalAccount() {
+  const userId = crypto.randomUUID();
+  const projectId = crypto.randomUUID();
+  const sessionId = crypto.randomUUID();
+  await db.insert(accounts).values({ accountId: userId, name: 'bystander' });
+  await insertIntoView(db, accountMembers, [{ userId, accountId: userId, accountRole: 'owner' }]);
+  await db.insert(projects).values({ projectId, accountId: userId, name: 'p1', repoUrl: 'https://example.com/b.git' });
+  await db.insert(projectSessions).values({
+    sessionId,
+    projectId,
+    accountId: userId,
+    branchName: `session/${sessionId}`,
+    createdBy: userId,
+    status: 'running',
+  });
+  return { userId, sessionId };
+}
+const sessionStatus = async (id: string) =>
+  (await db.select().from(projectSessions).where(eq(projectSessions.sessionId, id)))[0]?.status;
 
 const accountExists = async (id: string) =>
   (await db.select().from(accounts).where(eq(accounts.accountId, id))).length === 1;
@@ -162,6 +190,42 @@ describe('scheduled deletion', () => {
       .set({ processingStartedAt: sql`now() - interval '2 hours'` })
       .where(eq(accountDeletionRequests.id, requestId));
     expect((await claimDeletionRequest(requestId))?.status).toBe('processing');
+  });
+});
+
+describe('whose login goes', () => {
+  // Deleting a team account is not deleting the person: the owner keeps their
+  // login and the sessions of their other accounts.
+  test('a team account is deleted; its owner keeps their login and other accounts', async () => {
+    const owner = await seedRunningPersonalAccount();
+    const { accountId, requestId } = await seed({ team: true, requester: owner.userId });
+    await insertIntoView(db, accountMembers, [{ userId: owner.userId, accountId, accountRole: 'owner' }]);
+
+    const result = await processScheduledDeletions();
+
+    expect(result.errors).toEqual([]);
+    expect(await accountExists(accountId)).toBe(false);
+    expect(deleteUser).not.toHaveBeenCalled();
+    expect(await accountExists(owner.userId)).toBe(true);
+    expect(await sessionStatus(owner.sessionId)).toBe('running');
+    expect(await requestStatus(requestId)).toBe('completed');
+  });
+
+  // A request an operator filed while acting as the customer names the
+  // operator as its requester. It deletes the customer's account and never
+  // the operator's login or sessions.
+  test("a request filed by a non-member never deletes the requester's login or sessions", async () => {
+    const operator = await seedRunningPersonalAccount();
+    const { accountId, requestId } = await seed({ requester: operator.userId });
+
+    const result = await processScheduledDeletions();
+
+    expect(result.errors).toEqual([]);
+    expect(await accountExists(accountId)).toBe(false);
+    expect(deleteUser).not.toHaveBeenCalled();
+    expect(await accountExists(operator.userId)).toBe(true);
+    expect(await sessionStatus(operator.sessionId)).toBe('running');
+    expect(await requestStatus(requestId)).toBe('completed');
   });
 });
 
