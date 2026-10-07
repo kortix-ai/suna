@@ -211,7 +211,7 @@ async function reportSlackStartError(
       const agents = await loadScopedChannelAgents({ teamId, projectId, slackUserId: event.user ?? undefined });
       await finalizeTurn(handle, {
         title: "Couldn't start — pick an agent",
-        error: "I couldn't start a session — the agent set for this channel no longer exists. Pick a current agent, then send your message again.",
+        error: "I couldn't start a session — the agent set for this channel no longer exists. Pick a current agent, then mention me again.",
         blocks: buildAgentUnavailablePickerBlocks({
           channelId: event.channel,
           badAgent: selectedAgent,
@@ -448,7 +448,18 @@ export const TURN_INSTRUCTIONS = [
   '  divider, context, image, actions). Plain text via `slack send "..."` is fine',
   '  for one-liners, but prefer blocks when there\'s real structure to convey.',
   '- One `slack send` per turn. It finalizes the live stream and can\'t be undone.',
+  '- In a channel thread only a message that @mentions you reaches you. When you ask an',
+  '  open-ended question with `slack send`, ask the person to @mention you in the reply.',
+  '  (Button questions are unaffected: clicks arrive through interactivity.)',
 ].join('\n');
+
+/** Untagged channel-thread replies never reach the session; the agent reads them on demand. */
+function readThreadInstruction(event: SlackEvent): string {
+  return [
+    'People may have posted in this thread since your last reply without tagging you. Those messages are not in this session.',
+    `Before you answer, read the thread with \`slack thread --channel ${event.channel ?? 'unknown'} --ts ${event.thread_ts ?? event.ts ?? 'unknown'}\` and use what was said since your last reply.`,
+  ].join('\n');
+}
 
 function renderFileInfo(event: SlackEvent): string {
   if (!event.files?.length) return '';
@@ -484,6 +495,7 @@ export function renderFollowUpPrompt(envelope: SlackEnvelope, event: SlackEvent,
     'This session may serve several threads. Reply to THIS message in its originating channel and thread:',
     `slack send --channel ${event.channel ?? 'unknown'} --thread ${event.thread_ts ?? event.ts ?? 'unknown'} --text "<answer>"`,
     'The live slack step stream follows this message automatically. Do not use the session\'s original Slack thread for this reply.',
+    ...(event.channel_type !== 'im' && !event.channel?.startsWith('D') ? [readThreadInstruction(event)] : []),
     '',
     text,
     renderFileInfo(event),
@@ -492,7 +504,7 @@ export function renderFollowUpPrompt(envelope: SlackEnvelope, event: SlackEvent,
   ].join('\n');
 }
 
-function renderAgentPrompt(
+export function renderAgentPrompt(
   envelope: SlackEnvelope,
   event: SlackEvent,
   revived: boolean,
@@ -520,6 +532,9 @@ function renderAgentPrompt(
     `User:       ${user}`,
   );
   if (threadTs) lines.push(`Thread ts:  ${threadTs}`);
+  if (event.channel_type !== 'im' && event.thread_ts && event.thread_ts !== event.ts) {
+    lines.push('', readThreadInstruction(event));
+  }
   lines.push('', 'Message:', text, renderFileInfo(event), '', TURN_INSTRUCTIONS);
   return lines.join('\n');
 }

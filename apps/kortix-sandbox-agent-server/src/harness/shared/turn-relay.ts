@@ -404,7 +404,8 @@ export async function relayQuestion(request: Pick<RuntimeQuestionRequest, 'id' |
   // Name the channel the agent is in: a Teams agent has no `slack send`.
   const sentinel =
     `(Posted to the ${channel} conversation. In ${channel}, questions are async — the user ` +
-    'replies as a normal message, which reaches you as a NEW turn with full context. Do NOT ' +
+    'replies in the thread, which reaches you as a NEW turn with full context. In a channel, ' +
+    'the reply reaches you only when it @mentions you; a DM reply needs no mention. Do NOT ' +
     'wait for an answer here; finish this turn now.)'
   return request.questions.map(() => [sentinel])
 }

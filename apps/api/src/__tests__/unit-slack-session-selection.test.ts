@@ -413,3 +413,30 @@ test('out-of-credits (402) → credit copy, no picker blocks', async () => {
   expect(lastFinalize?.error?.toLowerCase()).toContain('out of credits');
   expect(lastFinalize?.blocks).toBeUndefined();
 });
+
+// Untagged channel-thread replies never reach the session. When the bot is
+// tagged again, the prompt tells the agent to read the thread first.
+test('a channel follow-up tells the agent to read the thread first', async () => {
+  const { renderFollowUpPrompt } = await import('../channels/slack/session');
+  const prompt = renderFollowUpPrompt(envelope, { ...event, channel_type: 'channel' });
+  expect(prompt).toContain('slack thread --channel C1 --ts 90.0');
+});
+
+test('a DM follow-up has no read-the-thread instruction', async () => {
+  const { renderFollowUpPrompt } = await import('../channels/slack/session');
+  const prompt = renderFollowUpPrompt(envelope, { ...event, channel_type: 'im' });
+  expect(prompt).not.toContain('slack thread --channel');
+});
+
+test('a first-turn mention inside a thread tells the agent to read the thread; a top-level mention does not', async () => {
+  const { renderAgentPrompt } = await import('../channels/slack/session');
+  const inThread = renderAgentPrompt(envelope, { ...event, channel_type: 'channel' }, false);
+  expect(inThread).toContain('slack thread --channel C1 --ts 90.0');
+  const topLevel = renderAgentPrompt(envelope, { ...event, channel_type: 'channel', thread_ts: undefined }, false);
+  expect(topLevel).not.toContain('slack thread --channel');
+});
+
+test('turn instructions tell the agent that only a mention reaches it in a channel thread', async () => {
+  const { TURN_INSTRUCTIONS } = await import('../channels/slack/session');
+  expect(TURN_INSTRUCTIONS).toContain('@mention you');
+});
