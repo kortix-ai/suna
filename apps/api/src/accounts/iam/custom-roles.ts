@@ -142,7 +142,9 @@ export type AgentIdentity = {
 export type EagerProvisionProjectRow = Parameters<typeof loadConfigWithFilesCached>[0];
 
 export interface EagerProvisionDeps {
-  loadConfig: (row: EagerProvisionProjectRow) => Promise<{ agents: Array<{ name: string }> }>;
+  // `enabled` is optional on purpose: the config summary lists disabled agents
+  // (`enabled: false`) and this loader may stand in for one.
+  loadConfig: (row: EagerProvisionProjectRow) => Promise<{ agents: Array<{ name: string; enabled?: boolean }> }>;
   ensureAccount: (args: { accountId: string; projectId: string; agentName: string }) => Promise<string>;
   concurrency: number;
   perProjectBudgetMs: number;
@@ -175,7 +177,9 @@ export async function eagerlyProvisionAgentIdentities(
     let agentNames: string[] = ['default'];
     try {
       const config = await withTimeout(deps.loadConfig(p), deps.perProjectBudgetMs, 'agent-identities config load');
-      agentNames = ['default', ...config.agents.map((a) => a.name)];
+      // The config summary lists disabled agents too (enabled: false); an
+      // identity for an agent no session can launch is noise in the picker.
+      agentNames = ['default', ...config.agents.filter((a) => a.enabled !== false).map((a) => a.name)];
     } catch {
       // repo momentarily unreachable or slow — still expose the implicit
       // `default`.
