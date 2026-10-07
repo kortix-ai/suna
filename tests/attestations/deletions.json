@@ -1,5 +1,5 @@
 {
-  "source_hash": "ceb3ab7014f3775fdcd2eadeca0c65a34c860aa4f4542cfe2606da2690876bdd",
+  "source_hash": "ddaf559f518cc49a3ced4a054dc0a52d2636eedb3364fca79889c4bb87e8eb90",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-07T230522Z-in-a-fork-checkout-give-the-pre-push-guards-a-dev-ref-to-com.md",
@@ -517,13 +517,13 @@
     "tests/src/flows/triggers.flow.ts",
     "tests/unit/migration-order-guard.test.ts"
   ],
-  "diff_hash": "de219e642c0de64a0efe45181ef607fdbec19339eb14d9bc4021e06a0dfd817f",
-  "head": "319934af18206d5ff3b421b415f71bb0fdb4cdd9",
+  "diff_hash": "a29c89b2bfc181161a6ed8630cc945de6f6a7d27c5ecc57ed604a3eb78ffd71e",
+  "head": "39de11bfffc8c43906a39f661b2adc86a8e15713",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-07T23:40:00.548Z"
+  "at": "2026-10-07T23:52:37.439Z"
 }
