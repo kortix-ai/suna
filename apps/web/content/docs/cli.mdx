@@ -973,7 +973,7 @@ To clear it:
 | `kortix self-host connect-github` | Connect a GitHub App for managed repos. |
 | `kortix self-host env ls [--show]` | Show persistent config values, masking secrets by default. |
 | `kortix self-host env set KEY=VALUE ...` | Set a value and restart only the services it affects. |
-| `kortix self-host env rotate KEY\|--all-generated` | Regenerate a rotatable, CLI-generated secret. |
+| `kortix self-host env rotate KEY\|--all-generated` | Regenerate a rotatable, CLI-generated secret. `API_KEY_SECRET` (it encrypts every stored secret) and `POSTGRES_PASSWORD` (the database roles keep the first one) are refused. |
 | `kortix self-host logs [service]` | Tail stack logs. |
 | `kortix self-host uninstall` | Stop the stack and delete this instance's containers, volumes, and config. |
 
