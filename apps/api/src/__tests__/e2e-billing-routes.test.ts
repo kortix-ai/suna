@@ -1,17 +1,17 @@
 /**
  * E2E tests for Billing HTTP routes.
  *
- * Tests: tier-configurations, credit-breakdown, deduct, deduct-usage,
- *        account deletion (status, request, cancel, delete-immediately).
+ * Tests: tier-configurations, credit-breakdown, usage-history, and account
+ *        deletion on /v1/account/* (status, request, cancel, delete-immediately).
  *
  * Strategy:
  * - mock.module() replaces auth, services, and repositories
- * - Mount billingApp in a test Hono app with error handler
+ * - Mount billingApp and accountDeletionApp in a test Hono app with error handler
  */
 import { describe, test, expect, beforeEach, mock } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { BillingError, InsufficientCreditsError } from '../errors';
+import { BillingError } from '../errors';
 
 // ─── Mock state ──────────────────────────────────────────────────────────────
 
@@ -24,8 +24,6 @@ let mockCreditBalance: any = {
   dailyCreditsBalance: '3.00',
   tier: 'tier_6_50',
 };
-let mockDeductResult: any = { amount: 0.5, balance: 99.5, transactionId: 'tx_test_001', replayed: false };
-let mockDeductError: Error | null = null;
 let mockTransactionsSummary: any = { totalCredits: 150, totalDebits: 50, count: 200 };
 
 let mockDeletionStatus: any = {
@@ -39,7 +37,6 @@ let mockDeletionCancelResult: any = null;
 let mockDeletionDeleteResult: any = null;
 let mockDeletionError: Error | null = null;
 let mockAccountDeleteAllowed = true;
-let mockBillingWriteAllowed = true;
 
 // ─── Register mocks ──────────────────────────────────────────────────────────
 
@@ -89,37 +86,12 @@ mock.module('../iam', () => ({
   },
 }));
 
-// /deduct and /deduct-usage take client-supplied amounts: `billing.write` only.
-const realIamAuthorize = await import('../iam/authorize');
-mock.module('../iam/authorize', () => ({
-  ...realIamAuthorize,
-  assertAuthorized: async (_actor: unknown, action: string) => {
-    if (action === 'billing.write' && !mockBillingWriteAllowed) {
-      throw new HTTPException(403, { message: "You don't have permission to change billing." });
-    }
-  },
-}));
-
 // Credits service mock
 mock.module('../billing/services/credits', () => ({
-  calculateTokenCost: (prompt: number, completion: number, model: string) => {
-    // Realistic: mirrors real calculateTokenCost with TOKEN_PRICE_MULTIPLIER=1.2
-    // Uses anthropic-level pricing as default (inputPer1M=3, outputPer1M=15)
-    const inputCost = (prompt / 1_000_000) * 3;
-    const outputCost = (completion / 1_000_000) * 15;
-    return (inputCost + outputCost) * 1.2;
-  },
   getCreditSummary: () => ({ total: 100, daily: 3, monthly: 80, extra: 20 }),
 }));
 
-mock.module('../billing/wallet', () => ({
-  wallet: {
-    debit: async () => {
-      if (mockDeductError) throw mockDeductError;
-      return mockDeductResult;
-    },
-  },
-}));
+mock.module('../billing/wallet', () => ({ wallet: {} }));
 
 // Credit accounts repository mock
 mock.module('../billing/repositories/credit-accounts', () => ({
@@ -226,7 +198,7 @@ mock.module('../billing/repositories/account-deletion', () => ({
 
 // ─── Import billing app AFTER mocks ──────────────────────────────────────────
 
-const { billingApp } = await import('../billing/index');
+const { billingApp, accountDeletionApp } = await import('../billing/index');
 
 // ─── Test app factory ────────────────────────────────────────────────────────
 
@@ -234,6 +206,7 @@ function createBillingTestApp() {
   const app = new Hono();
 
   app.route('/v1/billing', billingApp);
+  app.route('/v1/account', accountDeletionApp);
 
   app.onError((err, c) => {
     if (err instanceof BillingError) {
@@ -261,8 +234,6 @@ beforeEach(() => {
     dailyCreditsBalance: '3.00',
     tier: 'tier_6_50',
   };
-  mockDeductResult = { amount: 0.5, balance: 99.5, transactionId: 'tx_test_001', replayed: false };
-  mockDeductError = null;
   mockTransactionsSummary = { totalCredits: 150, totalDebits: 50, count: 200 };
   mockDeletionStatus = {
     has_pending_deletion: false,
@@ -340,136 +311,6 @@ describe('Billing: credit-breakdown', () => {
   });
 });
 
-describe('Billing: deduct', () => {
-  test('POST /v1/billing/deduct deducts credits for token usage', async () => {
-    const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/deduct', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
-      body: JSON.stringify({
-        prompt_tokens: 1000,
-        completion_tokens: 500,
-        model: 'claude-sonnet-4.6',
-      }),
-    });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.cost).toBeDefined();
-    expect(body.new_balance).toBeDefined();
-    expect(body.transaction_id).toBe('tx_test_001');
-  });
-
-  test('returns success with zero cost when calculated cost is zero', async () => {
-    const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/deduct', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
-      body: JSON.stringify({
-        prompt_tokens: 0,
-        completion_tokens: 0,
-        model: 'free-model',
-      }),
-    });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.cost).toBe(0);
-  });
-
-  test('returns error when deduction fails (insufficient credits)', async () => {
-    mockDeductError = new InsufficientCreditsError(0.5, 100);
-    const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/deduct', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
-      body: JSON.stringify({
-        prompt_tokens: 10000000,
-        completion_tokens: 10000000,
-        model: 'claude-sonnet-4.6',
-      }),
-    });
-    expect(res.status).toBe(402);
-  });
-
-  test('deducts without thread_id or message_id', async () => {
-    const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/deduct', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
-      body: JSON.stringify({
-        prompt_tokens: 1000,
-        completion_tokens: 500,
-        model: 'claude-sonnet-4.6',
-      }),
-    });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-  });
-});
-
-describe('Billing: deduct requires billing.write', () => {
-  test('a member without billing.write cannot debit the wallet via /deduct or /deduct-usage', async () => {
-    mockBillingWriteAllowed = false;
-    try {
-      const app = createBillingTestApp();
-      for (const [path, body] of [
-        ['/v1/billing/deduct', { prompt_tokens: 1000, completion_tokens: 500, model: 'claude-sonnet-4.6' }],
-        ['/v1/billing/deduct-usage', { amount: 5 }],
-      ] as const) {
-        const res = await app.request(path, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
-          body: JSON.stringify(body),
-        });
-        expect(res.status).toBe(403);
-      }
-    } finally {
-      mockBillingWriteAllowed = true;
-    }
-  });
-});
-
-describe('Billing: deduct-usage', () => {
-  test('POST /v1/billing/deduct-usage deducts a fixed amount', async () => {
-    const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/deduct-usage', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
-      body: JSON.stringify({ amount: 0.05, description: 'Custom usage' }),
-    });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-  });
-
-  test('returns success with zero cost for zero/negative amount', async () => {
-    const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/deduct-usage', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
-      body: JSON.stringify({ amount: 0 }),
-    });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.cost).toBe(0);
-  });
-
-  test('returns success with zero cost for negative amount', async () => {
-    const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/deduct-usage', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
-      body: JSON.stringify({ amount: -5 }),
-    });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.cost).toBe(0);
-  });
-});
-
 describe('Billing: usage-history', () => {
   test('GET /v1/billing/usage-history returns summary', async () => {
     const app = createBillingTestApp();
@@ -495,9 +336,9 @@ describe('Billing: usage-history', () => {
 });
 
 describe('Billing: account deletion', () => {
-  test('GET /v1/billing/account/deletion-status returns no pending deletion', async () => {
+  test('GET /v1/account/deletion-status returns no pending deletion', async () => {
     const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/account/deletion-status', {
+    const res = await app.request('/v1/account/deletion-status', {
       method: 'GET',
       headers: { Authorization: 'Bearer test_token' },
     });
@@ -506,10 +347,10 @@ describe('Billing: account deletion', () => {
     expect(body.has_pending_deletion).toBe(false);
   });
 
-  test('GET /v1/billing/account/deletion-status requires account delete permission', async () => {
+  test('GET /v1/account/deletion-status requires account delete permission', async () => {
     mockAccountDeleteAllowed = false;
     const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/account/deletion-status', {
+    const res = await app.request('/v1/account/deletion-status', {
       method: 'GET',
       headers: { Authorization: 'Bearer test_token' },
     });
@@ -518,7 +359,7 @@ describe('Billing: account deletion', () => {
     expect(body.message).toContain("don't have permission");
   });
 
-  test('GET /v1/billing/account/deletion-status returns pending deletion', async () => {
+  test('GET /v1/account/deletion-status returns pending deletion', async () => {
     mockDeletionStatus = {
       has_pending_deletion: true,
       deletion_scheduled_for: '2026-03-01T00:00:00.000Z',
@@ -526,7 +367,7 @@ describe('Billing: account deletion', () => {
       can_cancel: true,
     };
     const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/account/deletion-status', {
+    const res = await app.request('/v1/account/deletion-status', {
       method: 'GET',
       headers: { Authorization: 'Bearer test_token' },
     });
@@ -537,9 +378,9 @@ describe('Billing: account deletion', () => {
     expect(body.deletion_scheduled_for).toBeDefined();
   });
 
-  test('POST /v1/billing/account/request-deletion creates deletion request', async () => {
+  test('POST /v1/account/request-deletion creates deletion request', async () => {
     const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/account/request-deletion', {
+    const res = await app.request('/v1/account/request-deletion', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
       body: JSON.stringify({ reason: 'Testing deletion' }),
@@ -553,10 +394,10 @@ describe('Billing: account deletion', () => {
     expect(body.grace_period_days).toBe(14);
   });
 
-  test('POST /v1/billing/account/request-deletion requires account delete permission', async () => {
+  test('POST /v1/account/request-deletion requires account delete permission', async () => {
     mockAccountDeleteAllowed = false;
     const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/account/request-deletion', {
+    const res = await app.request('/v1/account/request-deletion', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
       body: JSON.stringify({ reason: 'not owner' }),
@@ -564,9 +405,9 @@ describe('Billing: account deletion', () => {
     expect(res.status).toBe(403);
   });
 
-  test('POST /v1/billing/account/request-deletion works without reason', async () => {
+  test('POST /v1/account/request-deletion works without reason', async () => {
     const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/account/request-deletion', {
+    const res = await app.request('/v1/account/request-deletion', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
       body: JSON.stringify({}),
@@ -574,10 +415,10 @@ describe('Billing: account deletion', () => {
     expect(res.status).toBe(200);
   });
 
-  test('POST /v1/billing/account/request-deletion returns error when already pending', async () => {
+  test('POST /v1/account/request-deletion returns error when already pending', async () => {
     mockDeletionError = new BillingError('Active deletion request already exists', 400);
     const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/account/request-deletion', {
+    const res = await app.request('/v1/account/request-deletion', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
       body: JSON.stringify({}),
@@ -585,9 +426,9 @@ describe('Billing: account deletion', () => {
     expect(res.status).toBe(400);
   });
 
-  test('POST /v1/billing/account/cancel-deletion cancels pending deletion', async () => {
+  test('POST /v1/account/cancel-deletion cancels pending deletion', async () => {
     const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/account/cancel-deletion', {
+    const res = await app.request('/v1/account/cancel-deletion', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
     });
@@ -596,29 +437,29 @@ describe('Billing: account deletion', () => {
     expect(body.success).toBe(true);
   });
 
-  test('POST /v1/billing/account/cancel-deletion requires account delete permission', async () => {
+  test('POST /v1/account/cancel-deletion requires account delete permission', async () => {
     mockAccountDeleteAllowed = false;
     const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/account/cancel-deletion', {
+    const res = await app.request('/v1/account/cancel-deletion', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
     });
     expect(res.status).toBe(403);
   });
 
-  test('POST /v1/billing/account/cancel-deletion returns error when nothing to cancel', async () => {
+  test('POST /v1/account/cancel-deletion returns error when nothing to cancel', async () => {
     mockDeletionError = new BillingError('No active deletion request found', 400);
     const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/account/cancel-deletion', {
+    const res = await app.request('/v1/account/cancel-deletion', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
     });
     expect(res.status).toBe(400);
   });
 
-  test('DELETE /v1/billing/account/delete-immediately deletes account', async () => {
+  test('DELETE /v1/account/delete-immediately deletes account', async () => {
     const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/account/delete-immediately', {
+    const res = await app.request('/v1/account/delete-immediately', {
       method: 'DELETE',
       headers: { Authorization: 'Bearer test_token' },
     });
@@ -628,10 +469,10 @@ describe('Billing: account deletion', () => {
     expect(body.message).toBe('Account deleted');
   });
 
-  test('DELETE /v1/billing/account/delete-immediately requires account delete permission', async () => {
+  test('DELETE /v1/account/delete-immediately requires account delete permission', async () => {
     mockAccountDeleteAllowed = false;
     const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/account/delete-immediately', {
+    const res = await app.request('/v1/account/delete-immediately', {
       method: 'DELETE',
       headers: { Authorization: 'Bearer test_token' },
     });

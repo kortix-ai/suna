@@ -310,7 +310,7 @@
   },
   "src/billing/routes/subscriptions.ts": {
     "no-restricted-syntax": {
-      "count": 3
+      "count": 2
     }
   },
   "src/billing/routes/webhooks.ts": {
@@ -391,7 +391,7 @@
   },
   "src/billing/services/subscriptions.ts": {
     "no-console": {
-      "count": 17
+      "count": 10
     }
   },
   "src/billing/services/tiers.ts": {
@@ -2767,19 +2767,9 @@
       "count": 5
     }
   },
-  "src/router/routes/generation.ts": {
-    "no-restricted-imports": {
-      "count": 2
-    }
-  },
-  "src/router/routes/llm.ts": {
-    "no-console": {
-      "count": 2
-    }
-  },
   "src/router/routes/proxy/handlers.ts": {
     "no-console": {
-      "count": 12
+      "count": 7
     },
     "no-restricted-syntax": {
       "count": 5
@@ -2793,16 +2783,6 @@
       "count": 3
     }
   },
-  "src/router/routes/search-image.ts": {
-    "no-console": {
-      "count": 3
-    }
-  },
-  "src/router/routes/search-web.ts": {
-    "no-console": {
-      "count": 3
-    }
-  },
   "src/router/routes/usage.ts": {
     "kortix-api/projects-surface": {
       "count": 1
@@ -2813,30 +2793,10 @@
   },
   "src/router/services/billing.ts": {
     "no-console": {
-      "count": 6
-    }
-  },
-  "src/router/services/llm-reservation.ts": {
-    "no-console": {
-      "count": 4
-    }
-  },
-  "src/router/services/llm.ts": {
-    "no-console": {
-      "count": 6
+      "count": 3
     }
   },
   "src/router/services/reservation.ts": {
-    "no-console": {
-      "count": 1
-    }
-  },
-  "src/router/services/serper.ts": {
-    "no-console": {
-      "count": 1
-    }
-  },
-  "src/router/services/tavily.ts": {
     "no-console": {
       "count": 1
     }
@@ -2846,7 +2806,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 5
+      "count": 4
     }
   },
   "src/routes/system.ts": {

@@ -332,8 +332,6 @@ const envSchema = z.object({
   // ── Proxy Providers (optional) ───────────────────────────────────────────
   FIRECRAWL_API_URL: optUrl('https://api.firecrawl.dev'),
   FIRECRAWL_API_KEY: optStr,
-  CONTEXT7_API_URL: optUrl('https://context7.com'),
-  CONTEXT7_API_KEY: optStr,
 
   // ── Managed git (provider-agnostic via the git proxy) ────────────────────
   // MANAGED_GIT_PROVIDER selects the backend NEW managed repos provision on
@@ -532,13 +530,7 @@ const envSchema = z.object({
   // the in-cluster gateway service, e.g. http://kortix-gateway:8090, so the
   // gateway stays internal and sandboxes reach it via the API's public origin.
   LLM_GATEWAY_PROXY_TARGET: optStr,
-  OPENAI_API_URL: optUrl('https://api.openai.com/v1'),
   OPENAI_API_KEY: optStr,
-  // xAI / Gemini / Groq route their TEXT models through OpenRouter (see
-  // router/config/proxy-services.ts), so only base URLs are read there.
-  XAI_API_URL: optUrl('https://api.x.ai/v1'),
-  GEMINI_API_URL: optUrl('https://generativelanguage.googleapis.com/v1beta'),
-  GROQ_API_URL: optUrl('https://api.groq.com/openai/v1'),
   // ── LiveKit — the voice channel's transport (see channels/voice/livekit.ts) ──
   // A room per call, an agents-js worker doing STT->LLM->TTS, a plain LiveKit
   // client page a human opens directly. Defaults match the project's local dev
@@ -1274,8 +1266,6 @@ export const config = {
   // ─── Proxy Providers ──────────────────────────────────────────────────────
   FIRECRAWL_API_URL: env.FIRECRAWL_API_URL,
   FIRECRAWL_API_KEY: env.FIRECRAWL_API_KEY,
-  CONTEXT7_API_URL: env.CONTEXT7_API_URL,
-  CONTEXT7_API_KEY: env.CONTEXT7_API_KEY,
 
   // ─── Managed git ──────────────────────────────────────────────────────────
   MANAGED_GIT_PROVIDER: env.MANAGED_GIT_PROVIDER,
@@ -1340,11 +1330,7 @@ export const config = {
   LLM_GATEWAY_BYOK_FALLBACK_MODEL: env.LLM_GATEWAY_BYOK_FALLBACK_MODEL,
   LLM_GATEWAY_PROXY_PORT: env.LLM_GATEWAY_PROXY_PORT,
   LLM_GATEWAY_PROXY_TARGET: env.LLM_GATEWAY_PROXY_TARGET,
-  OPENAI_API_URL: env.OPENAI_API_URL,
   OPENAI_API_KEY: env.OPENAI_API_KEY,
-  XAI_API_URL: env.XAI_API_URL,
-  GEMINI_API_URL: env.GEMINI_API_URL,
-  GROQ_API_URL: env.GROQ_API_URL,
   LIVEKIT_URL: env.LIVEKIT_URL,
   LIVEKIT_API_KEY: env.LIVEKIT_API_KEY,
   LIVEKIT_API_SECRET: env.LIVEKIT_API_SECRET,

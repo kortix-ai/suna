@@ -622,19 +622,17 @@ flow(
 
 flow(
   'DEL-1',
-  { domain: 'accounts', routes: ['GET /v1/billing/account/deletion-status'] },
+  { domain: 'accounts', routes: ['GET /v1/account/deletion-status'] },
   async (ctx) => {
     await ctx.step('OWNER reads deletion status', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/billing/account/deletion-status');
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/account/deletion-status');
       r.status(200);
     });
   },
 );
 
-// DEL-3 — the "backwards-compatible" `/v1/account/*` deletion mount
-// (apps/api/src/billing/routes/account-deletion.ts, mounted at /v1/account/*
-// in apps/api/src/index.ts:694, distinct from the `/v1/billing/account/*`
-// mirror mount covered by DEL-1/DEL-2). Drives `GET .../deletion-status` and
+// DEL-4 — the `/v1/account/*` deletion mount
+// (apps/api/src/billing/routes/account-deletion.ts). Drives `GET .../deletion-status` and
 // the real, destructive `DELETE .../delete-immediately` on a THROWAWAY user's
 // own personal account (never OWNER/team accounts other flows depend on).
 // Immediate self-deletion removes the auth identity, invalidates its token and

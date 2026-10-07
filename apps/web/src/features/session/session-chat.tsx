@@ -2255,8 +2255,8 @@ export function SessionChat({
   }, [sessionId, clearSendReceipt]);
 
   // ============================================================================
-  // Billing: DISABLED — billing is handled server-side by the router
-  // (POST /v1/router/chat/completions deducts credits per LLM call).
+  // Billing: DISABLED — billing is handled server-side by the LLM gateway
+  // (it deducts credits per LLM call).
   // This frontend useEffect was causing double-billing once opencode.jsonc
   // got cost config and step-finish.cost became non-zero.
   // ============================================================================

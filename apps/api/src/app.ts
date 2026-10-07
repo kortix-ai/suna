@@ -56,6 +56,7 @@ import { installHttpMiddleware } from './http-middleware';
 import { installHttpErrors } from './http-errors';
 import { registerSystemRoutes } from './routes/system';
 import { registerPlatformEndpoints } from './routes/platform-endpoints';
+import { registerRetiredRoutes } from './routes/retired';
 import { dispatchInProcess } from './inbound-dispatch';
 
 // ─── App Setup ──────────────────────────────────────────────────────────────
@@ -68,6 +69,9 @@ export { app };
 installHttpMiddleware(app);
 
 registerSystemRoutes(app);
+
+// Retired routes answer 410 before any mount below can match them.
+registerRetiredRoutes(app);
 
 registerPlatformEndpoints(app);
 
@@ -118,7 +122,7 @@ app.openapi(
 // ─── Mount Sub-Services ─────────────────────────────────────────────────────
 // All services follow the pattern: /v1/{serviceName}/...
 
-app.route('/v1/router', router); // /v1/router/chat/completions, /v1/router/models, /v1/router/web-search, /v1/router/tavily/*, etc.
+app.route('/v1/router', router); // /v1/router/health and the /v1/router/{tavily,serper,firecrawl}/* billed proxies
 
 // LLM gateway surfaces: in-API /v1/llm (full pipeline), /internal/gateway
 // control-plane RPC, and the /v1/llm-gateway reverse proxy. See ./llm-gateway/wire.
@@ -132,10 +136,8 @@ app.route('/v1/router', router); // /v1/router/chat/completions, /v1/router/mode
 // test 404'd instead of exercising its gate.
 mountLlmGateway(app);
 
-// OpenRouter-parity read endpoints, scoped to the authenticated account.
-import { generationApp } from './router/routes/generation';
+// OpenRouter-parity usage read, scoped to the authenticated account.
 import { usageApp } from './router/routes/usage';
-app.route('/v1/generation', generationApp); // GET /v1/generation?id=<requestId> — single gateway-call forensics
 app.route('/v1/usage', usageApp); // GET /v1/usage[?start&end&group_by] — account usage rollup
 
 app.route('/v1/billing', billingApp); // /v1/billing/account-state, /v1/billing/webhooks/*
