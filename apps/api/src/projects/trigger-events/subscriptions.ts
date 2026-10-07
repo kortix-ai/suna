@@ -56,6 +56,7 @@ export async function resolveSource(
   const [connector] = await db
     .select({
       connectorId: connectors.connectorId,
+      name: connectors.name,
       provider: connectors.providerType,
       config: connectors.config,
     })
@@ -76,9 +77,11 @@ export async function resolveSource(
   if (typeof app !== 'string' || !app) {
     return { kind: 'error', message: `Connector "${event.connector}" does not name an app.`, providerId: provider.id };
   }
+  // People read these messages: name the app as the project's connector does ("GitHub", not "github").
+  const label = connector.name?.trim() || app;
   const needs: Resolution = {
     kind: 'needs_connection',
-    message: `Connect a shared ${app} account to activate this trigger.`,
+    message: `Connect a shared ${label} account to activate this trigger.`,
   };
   // A trigger is unattended: it runs on the project's shared default account,
   // never a member's private one (connection-access.ts).
@@ -101,7 +104,7 @@ export async function resolveSource(
     return {
       kind: 'error',
       providerId: provider.id,
-      message: `This ${app} account is shared with specific people only. Event triggers need an account shared with the whole project.`,
+      message: `This ${label} account is shared with specific people only. Event triggers need an account shared with the whole project.`,
     };
   }
   if (
@@ -115,12 +118,15 @@ export async function resolveSource(
   ) {
     return { ...needs, providerId: provider.id };
   }
-  return {
-    kind: 'ok',
-    providerId: provider.id,
-    provider,
-    connection: { connectionId, connectorSlug: event.connector, app, metadata: row.metadata },
-  };
+  const connection = { connectionId, connectorSlug: event.connector, app, metadata: row.metadata };
+  if (provider.connectionReady && !provider.connectionReady(connection)) {
+    return {
+      kind: 'needs_connection',
+      providerId: provider.id,
+      message: `Finish connecting the shared ${label} account to activate this trigger.`,
+    };
+  }
+  return { kind: 'ok', providerId: provider.id, provider, connection };
 }
 
 async function unsubscribeIfUnreferenced(

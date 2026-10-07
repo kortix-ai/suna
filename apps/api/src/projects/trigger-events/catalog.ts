@@ -87,7 +87,7 @@ export async function listEventApps(projectId: string, accountId: string): Promi
     for (const item of cached.items) {
       const row = rows.find((r) => r.provider === provider.id && (r.config as Record<string, unknown> | null)?.app === item.app);
       const resolved = row ? await resolveSource(projectId, accountId, { connector: row.slug, type: '', config: {} }) : null;
-      const connected = resolved?.kind === 'ok' && (provider.connectionReady?.(resolved.connection) ?? true);
+      const connected = resolved?.kind === 'ok';
       out.push({ provider: provider.id, ...item, connector: row?.slug ?? null, connected });
     }
   }

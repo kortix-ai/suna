@@ -156,7 +156,7 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
   test('needs_connection until a shared account exists, then active; a repeat call is a no-op', async () => {
     await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
     expect(await status('a')).toBe('needs_connection');
-    expect((await store.get(PROJECT_ID, 'a'))?.lastError).toContain('Connect a shared example account');
+    expect((await store.get(PROJECT_ID, 'a'))?.lastError).toContain('Connect a shared Inbox account');
     expect(calls).toEqual([]);
 
     await connect();
