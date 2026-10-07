@@ -184,18 +184,24 @@ flow(
       await ctx.step('real CLI: a named reminder lists its prompt in TEXT and its name in NAME (dogfood regression)', async () => {
         const created = await sandbox.run(['remind', 'Say pong again', '--in', '2h', '--name', 'pong-check', '--json'], { env: cliEnv });
         if (created.exitCode !== 0) throw new Error(`remind exit ${created.exitCode}: ${created.all.slice(0, 600)}`);
-        const named = JSON.parse(created.stdout.trim()) as Reminder;
+        let named: Reminder | undefined;
+        let rmFailed: string | undefined;
         try {
+          const parsed = JSON.parse(created.stdout.trim()) as Reminder;
+          named = parsed;
           const listed = await sandbox.run(['reminders', 'ls'], { env: cliEnv });
           if (listed.exitCode !== 0) throw new Error(`ls exit ${listed.exitCode}: ${listed.all.slice(0, 600)}`);
-          const row = listed.stdout.split('\n').find((l) => l.includes(named.id)) ?? '';
+          const row = listed.stdout.split('\n').find((l) => l.includes(parsed.id)) ?? '';
           if (!row.includes('pong-check') || !row.includes('Say pong again')) {
             throw new Error(`ls row for a named reminder lacks the prompt or the name: ${row.slice(0, 300)}`);
           }
         } finally {
-          const removed = await sandbox.run(['reminders', 'rm', named.id], { env: cliEnv });
-          if (removed.exitCode !== 0) throw new Error(`rm exit ${removed.exitCode}: ${removed.all.slice(0, 600)}`);
+          if (named) {
+            const removed = await sandbox.run(['reminders', 'rm', named.id], { env: cliEnv });
+            if (removed.exitCode !== 0) rmFailed = `rm exit ${removed.exitCode}: ${removed.all.slice(0, 600)}`;
+          }
         }
+        if (rmFailed) throw new Error(rmFailed);
       });
 
       await ctx.step('another human setting a reminder on a shared session → 201; on_behalf_of stays the launcher until the fire is delivered', async () => {
