@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { assertLinear } from './load-guard';
 import { extractGatewayErrorDetails, rawErrorText, unwrapError } from './errors';
 
 // The gateway's structured error envelope — mirrors gatewayErrorBody()
@@ -312,16 +313,12 @@ describe('unwrapError — a message that is itself a serialized body is unwrappe
   // it is whatever an upstream gateway returned — so this must stay linear.
   test('a pathological unclosed-tag body is parsed in linear time, not quadratically', () => {
     const hostile = `<html>${'<title'.repeat(30_000)}`;
-    const started = Date.now();
-    unwrapError(hostile);
-    expect(Date.now() - started).toBeLessThan(1_000);
+    assertLinear(() => unwrapError(hostile), 1_000);
   });
 
   test('the same bound holds for a long run of unclosed script tags', () => {
     const hostile = `<html><body>${'<script'.repeat(30_000)}`;
-    const started = Date.now();
-    unwrapError(hostile);
-    expect(Date.now() - started).toBeLessThan(1_000);
+    assertLinear(() => unwrapError(hostile), 1_000);
   });
 
   test('a body with no recognizable sentence never renders "[object Object]" or empty', () => {

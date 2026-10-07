@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
+import { assertLinear } from './load-guard';
+
 import {
   foldForTest,
   jsonTail,
@@ -49,11 +51,11 @@ function strings(tokens: string[], count: number, maxTokens: number, seed: numbe
   return out;
 }
 
-/** Runs `fn` and fails when it takes longer than `ms`. */
+/** Runs `fn` and fails when it takes meaningfully longer than linear time —
+ * see `load-guard.ts` for why the bound rides on a measured reference
+ * instead of the wall clock alone. */
 function fast(fn: () => unknown, ms = 250): void {
-  const start = performance.now();
-  fn();
-  expect(performance.now() - start).toBeLessThan(ms);
+  assertLinear(fn, ms);
 }
 
 const N = 100_000;

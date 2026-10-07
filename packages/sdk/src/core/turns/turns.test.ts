@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
+import { assertLinear } from './load-guard';
+
 import type {
   Message as OpencodeMessage,
   Part as OpencodePart,
@@ -646,18 +648,14 @@ describe('stripAnsi', () => {
 
   test('does not hang on a single long unterminated OSC sequence (ReDoS guard)', () => {
     const malicious = `\x1b]${'0'.repeat(50_000)}`;
-    const start = performance.now();
-    stripAnsi(malicious);
-    expect(performance.now() - start).toBeLessThan(1000);
+    assertLinear(() => stripAnsi(malicious), 1000);
   });
 
   test('does not hang on many repeated unterminated OSC starts (ReDoS guard, /g multi-anchor)', () => {
     // str.replace with a /g regex retries the scan from every OSC start it finds;
     // without a bounded run length this is O(n^2) even though no single match is ambiguous.
     const malicious = '\x1b]'.repeat(200_000);
-    const start = performance.now();
-    stripAnsi(malicious);
-    expect(performance.now() - start).toBeLessThan(1000);
+    assertLinear(() => stripAnsi(malicious), 1000);
   });
 });
 
