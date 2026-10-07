@@ -788,7 +788,8 @@ describe('getCostSummary', () => {
     // without joining the table is invalid SQL (missing FROM-clause entry)
     // — the query double records calls without executing them, so only an
     // explicit join assertion catches it here. Postgres rejects it at
-    // runtime; scripts/verify-cost-queries.ts executes the same paths.
+    // runtime; the PR body records the same paths executed on a real
+    // Postgres.
     await getCostSummary({ accountId, projectId, window });
 
     const record = computePriorRecord();
