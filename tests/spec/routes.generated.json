@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 734,
+  "count": 736,
   "routes": [
     {
       "method": "GET",
@@ -681,6 +681,14 @@
     {
       "method": "GET",
       "path": "/v1/admin/api/accounts/:id/users"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/admin/api/boot-modes"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/admin/api/boot-modes"
     },
     {
       "method": "POST",
