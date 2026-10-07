@@ -281,7 +281,7 @@ A command resolves "the project" in this order:
 | `kortix projects unlink` | Remove `.kortix/link.json`. |
 | `kortix projects open [<id>]` | Open a project's dashboard page in your browser. |
 | `kortix projects clone [<id>] [dir]` | Clone a project's repo through the authenticated Kortix git proxy. |
-| `kortix projects rm [<id>] [--purge] [-y\|--yes]` | Archive a project. `--purge` also deletes its managed git repo. |
+| `kortix projects rm [<id>] [-y\|--yes]` | Delete a project and its Kortix-managed git repo. Repositories you connected yourself are never touched. |
 | `kortix projects set [<id>] [--name <n>] [--branch <b>] [--manifest <path>] [--json]` | Update one project's settings. Only the fields you pass are written. Passing no field exits `2`. Alias: `update`. |
 | `kortix projects set [<id>] --icon <emoji>\|--no-icon\|--glyph <name>:<color>\|--no-glyph` | Set or remove the project's icon. |
 | `kortix projects rename [<id>] <name>` | Alias for `kortix projects set --name <name>`. |
@@ -764,7 +764,7 @@ A trigger starts a session from a schedule, a webhook, or a monitor (experimenta
 | `kortix triggers set <slug> [options]` | Change a live trigger. Only the flags you pass are written. Always applies now — there is no local form. Alias: `update`. |
 | `kortix triggers rm <slug> [--apply]` | Remove a trigger from `kortix.yaml`, or from the cloud project now with `--apply`. |
 | `kortix triggers info <slug> [--json]` | Show one trigger. |
-| `kortix triggers fire <slug>` | Fire a trigger manually. |
+| `kortix triggers fire <slug>` | Fire a trigger manually and wait for the run outcome: a failed run exits non-zero with its error, and the fired run's fresh session is cleaned up (a run queued into an existing session is left in place). `--wait <dur>` bounds the wait (default `90s`; `0` returns as soon as the fire is accepted). |
 | `kortix triggers enable <slug> [--apply]` / `disable <slug> [--apply]` | Turn one trigger on or off. |
 | `kortix triggers pause` / `resume` | Deactivate or reactivate every trigger on the project, server-side. |
 
@@ -973,7 +973,7 @@ To clear it:
 | `kortix self-host connect-github` | Connect a GitHub App for managed repos. |
 | `kortix self-host env ls [--show]` | Show persistent config values, masking secrets by default. |
 | `kortix self-host env set KEY=VALUE ...` | Set a value and restart only the services it affects. |
-| `kortix self-host env rotate KEY\|--all-generated` | Regenerate a rotatable, CLI-generated secret. |
+| `kortix self-host env rotate KEY\|--all-generated` | Regenerate a rotatable, CLI-generated secret. `API_KEY_SECRET` (it encrypts every stored secret) and `POSTGRES_PASSWORD` (the database roles keep the first one) are refused. |
 | `kortix self-host logs [service]` | Tail stack logs. |
 | `kortix self-host uninstall` | Stop the stack and delete this instance's containers, volumes, and config. |
 

@@ -4,6 +4,7 @@ import type { KortixAccount } from '@kortix/sdk';
 import {
   INITIAL_FORM_STATE,
   buildProvisionPayload,
+  canCreateInAccount,
   filterCreatableAccounts,
   isForeignAccountList,
   isSubmittable,
@@ -80,6 +81,36 @@ describe('filterCreatableAccounts', () => {
     expect(result?.name).toContain("'s Account");
     expect(result?.name).not.toBe('a@x.com');
     expect(result?.name).toBe("a@x.com's Account");
+  });
+});
+
+describe('canCreateInAccount — the probe is the authority once it answers; the role answers while it is in flight', () => {
+  // KRTX-1700: a fresh owner's first /projects render showed "Ask an owner or
+  // admin to invite you" while the `project.create` probe was still in flight,
+  // because a pending verdict collapsed to `undefined`, which means no. The
+  // owner role carries `project.create` in the canonical model (packages/db
+  // migrations seed it), so the account payload the page already holds can
+  // answer the pending window; only a SETTLED verdict may take the answer away.
+  test('a pending probe keeps an owner creatable', () => {
+    expect(canCreateInAccount(owner, undefined)).toBe(true);
+  });
+
+  test('a pending probe keeps an admin creatable', () => {
+    expect(canCreateInAccount(admin, undefined)).toBe(true);
+  });
+
+  test('a pending probe keeps a member out — ask-an-admin stays theirs', () => {
+    expect(canCreateInAccount(member, undefined)).toBe(false);
+    expect(canCreateInAccount(roleless, undefined)).toBe(false);
+  });
+
+  test('a settled no takes the answer away, even from an owner', () => {
+    // The MFA step-up gate denies an owner; the CTA must then flip off.
+    expect(canCreateInAccount(owner, false)).toBe(false);
+  });
+
+  test('a settled yes grants a member — the custom-role case the probe exists for', () => {
+    expect(canCreateInAccount(member, true)).toBe(true);
   });
 });
 

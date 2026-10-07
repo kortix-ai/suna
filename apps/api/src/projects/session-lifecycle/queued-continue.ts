@@ -14,7 +14,9 @@ import {
   parkPromptForUnreachableRuntime,
   type QueuedContinueSessionPayload,
 } from './store';
-import { admitInboxPrompt, hasLaterReleasedSibling, sessionHoldsLiveTurn } from './inbox-admission';
+import { admitInboxPrompt, boundaryWaitDecision, hasLaterReleasedSibling, sessionHoldsLiveTurn, type BoundaryTurnIdentity, type BoundaryWait } from './inbox-admission';
+import { abortRuntimeTurn } from './abort-runtime-turn';
+import { markTurnStopRequested } from '../session-turn-ledger';
 import { openUserAbove } from './forwarded-placement';
 import {
   armQuickQueueInterrupt,
@@ -60,8 +62,22 @@ async function admitQueuedContinue(row: SessionLifecycleCommandRow, tl: Provisio
       { retryable: false, attempts: row.attempts, sessionId: row.sessionId });
     return 'failed';
   }
+  // THE BOUNDARY FALLBACK. The interrupt above is a handshake the API cannot
+  // verify — a turn entry the relay never closed, an arm the daemon answers
+  // and never fires, a skipped arm — and each failure mode leaves the head row
+  // waiting out the WHOLE run in silence (prod 2026-10-06: three queued
+  // messages behind a ~30-minute run). If the SAME turn is still live after
+  // QUEUE_BOUNDARY_FALLBACK_MS, the control plane ends the turn itself, the
+  // terminal relay promotes this row, and the queue dispatches.
+  let boundaryWait: BoundaryWait | null = null;
+  if (admission.reason === 'turn_active' && admission.interruptAtBoundary) {
+    const decision = boundaryWaitDecision(row.result, admission.interruptAtBoundary, Date.now());
+    boundaryWait = decision.wait;
+    if (decision.abort) await endTurnForQueuedPrompt(row, admission.interruptAtBoundary);
+  }
   try {
-    await requeueForAdmission(row, admission.reason, new Date(Date.now() + admission.retryAfterMs));
+    await requeueForAdmission(row, admission.reason, new Date(Date.now() + admission.retryAfterMs),
+      boundaryWait ? { boundary_wait: boundaryWait } : undefined);
   } catch (err) {
     await markCommandFailed(row, `admission requeue failed: ${err instanceof Error ? err.message : String(err)}`, {
       retryable: true, attempts: row.attempts, sessionId: row.sessionId,
@@ -70,6 +86,34 @@ async function admitQueuedContinue(row: SessionLifecycleCommandRow, tl: Provisio
   }
   if (admission.reason === 'turn_active') await wakeAfterAdmission(row);
   return 'queued';
+}
+
+/**
+ * End the live turn a queued prompt has waited out past its boundary window.
+ *
+ * The stamp goes down BEFORE the abort: the ledger keeps a stop request only
+ * over an abort, and without it the turn closes on a bare "Aborted" frame
+ * that reads as a failure nobody asked for. Same stamp and same abort the
+ * daemon's own boundary interrupt and the Stop button use.
+ */
+async function endTurnForQueuedPrompt(row: SessionLifecycleCommandRow, turn: BoundaryTurnIdentity): Promise<void> {
+  if (!row.sessionId) return;
+  try {
+    await markTurnStopRequested(row.sessionId, 'QueueInterrupt', {
+      opencodeSessionId: turn.opencodeSessionId,
+      messageId: turn.messageId,
+    });
+  } catch (err) {
+    logger.warn('[session-lifecycle] could not stamp the queue boundary interrupt', {
+      sessionId: row.sessionId, commandId: row.commandId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  const aborted = await abortRuntimeTurn(row.sessionId);
+  logger.info('[session-lifecycle] queued prompt ended the turn its boundary interrupt never ended', {
+    sessionId: row.sessionId, commandId: row.commandId, aborted,
+    runtimeSessionId: turn.opencodeSessionId,
+  });
 }
 
 async function wakeAfterAdmission(row: SessionLifecycleCommandRow): Promise<void> {

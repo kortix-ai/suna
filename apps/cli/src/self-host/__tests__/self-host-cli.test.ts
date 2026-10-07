@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parse } from 'yaml';
@@ -62,6 +62,40 @@ describe('kortix self-host (generic Docker CLI)', () => {
     ]);
     return { code, stdout, stderr };
   }
+
+  test.each([true, false])('status --json emits only JSON with updater available=%s', async (available) => {
+    expect((await run(['init', '--yes'])).code).toBe(0);
+    const bin = join(tmp, 'bin');
+    mkdirSync(bin);
+    const report = {
+      status: { outcome: 'ok', from_version: '0.9.71', to_version: '0.9.72' },
+      drift: [],
+      lock: { locked: false, holder: '' },
+    };
+    // Stub only the external Docker boundary; execute the real CLI process.
+    writeFileSync(join(bin, 'docker'), `#!/bin/sh
+case " $* " in
+  *" ps "*) printf 'NAME IMAGE STATUS\\nfixture-api fixture:stable Up\\n' ;;
+  *" report "*) ${available ? `printf '%s\\n' '${JSON.stringify(report)}'` : 'exit 1'} ;;
+esac
+`, { mode: 0o755 });
+    const env = { PATH: `${bin}:${process.env.PATH}` };
+    const human = await run(['status'], env);
+    expect(human.code).toBe(0);
+    expect(human.stdout).toContain('NAME IMAGE STATUS');
+    const result = await run(['status', '--json'], env);
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toEqual({
+      instance,
+      auto_update: true,
+      update_time: '02:00',
+      update_tz: 'America/New_York',
+      update: available ? report.status : null,
+      drift: available ? report.drift : null,
+      lock: available ? report.lock : null,
+    });
+  });
 
   function readEnv(instanceName = instance): Record<string, string> {
     const content = readFileSync(join(configRoot, instanceName, '.env'), 'utf8');

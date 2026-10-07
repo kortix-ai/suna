@@ -112,7 +112,7 @@ test(
             const removed = await api<{ repo_deleted: boolean }>(
               token,
               'DELETE',
-              `/projects/${projectId}?purge=true`,
+              `/projects/${projectId}`,
             );
             expect(removed.repo_deleted).toBe(true);
             break;
