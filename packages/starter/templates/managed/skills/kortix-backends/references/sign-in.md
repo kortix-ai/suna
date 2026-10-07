@@ -176,6 +176,14 @@ An agent session that opens an App's `/_kortix/backend-token` gets `403
 agent_viewer`: it must not act as the person who launched it. Use
 `kortix backends token` instead.
 
+Any viewer an App admits gets a token for any running backend of the App's
+project, by name. Kortix does not bind an App to its backends. The token
+proves who the member is, not what they may do: `requireKortixMember` with no
+`groups` or `roles` admits every viewer of every App in the project, including
+the account members and groups a `restricted` App lists who are not project
+members. Put `groups` or `roles` on every function whose data is not meant for
+all of them.
+
 ## People who are not Kortix members
 
 Kortix sign-in is for the project's own people. When the App serves customers

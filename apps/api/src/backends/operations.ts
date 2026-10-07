@@ -29,6 +29,7 @@ import { PlatinumHttpError, platinumJson } from '../shared/platinum';
 import { logger } from '../lib/logger';
 import { BackendOperationError, backendFailureMessage, backendProviderFailure } from './errors';
 import { CONVEX_LOG_FILE } from './convex-image';
+import { pauseComputeSession } from '../billing/services/compute-metering';
 import {
   type BackendRow,
   type BackendSize,
@@ -45,6 +46,8 @@ const STOP_WAIT_MS = 60_000;
 
 export type PlatinumSandboxState = {
   state?: string;
+  /** Whether a public request wakes the stopped machine. Absent on Platinum builds before #1335. */
+  autoResume?: boolean;
   /** Set on a machine Platinum's reconciler tombstoned while a completed backup existed. */
   recoverable?: boolean;
   cpu?: number;
@@ -112,7 +115,9 @@ export async function releaseOperation(backendId: string, error: string | null):
     .update(projectBackends)
     .set({
       updatedAt: new Date(),
-      metadata: sql`(coalesce(${projectBackends.metadata}, '{}'::jsonb) - 'operation' - 'operationStartedAt' - 'heartbeatAt' - 'lastOperationError') || ${JSON.stringify(error ? { lastOperationError: error.slice(0, 600) } : {})}::jsonb`,
+      // An operation ends with the machine running, so `parked` goes too: the
+      // backend of an archived project is parked again on the next tick.
+      metadata: sql`(coalesce(${projectBackends.metadata}, '{}'::jsonb) - 'operation' - 'operationStartedAt' - 'heartbeatAt' - 'lastOperationError' - 'parked') || ${JSON.stringify(error ? { lastOperationError: error.slice(0, 600) } : {})}::jsonb`,
     })
     .where(eq(projectBackends.backendId, backendId));
 }
@@ -239,6 +244,10 @@ export async function runResize(row: BackendRow, next: BackendSize): Promise<voi
       .update(projectBackends)
       .set({ cpu: next.cpu, memoryGb: next.memoryGb, diskGb: next.diskGb, updatedAt: new Date() })
       .where(and(eq(projectBackends.backendId, row.backendId), isNull(projectBackends.deletedAt)));
+    // Close the window at the old size; the next probe opens one at the new size.
+    await pauseComputeSession(row.backendId).catch((error) =>
+      logger.warn('[backends] could not close the compute window after a resize', { backendId: row.backendId, error: String(error) }),
+    );
     await waitHealthy(row.url!);
     await releaseOperation(row.backendId, null);
   } catch (error) {

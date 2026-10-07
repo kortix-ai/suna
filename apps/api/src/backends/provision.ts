@@ -15,8 +15,12 @@
  * Idempotency-Key, so Platinum returns the same machine, and every later step
  * is safe to repeat.
  *
- * ponytail: not metered. Backends are capped per project (3) and per account
- * (10) while the flag is internal-only; compute metering is the gate to beta.
+ * Billing: a running machine is metered like a sandbox, reserved spec × wall
+ * clock (workload_type `backend`); ./maintenance.ts opens the window and
+ * records liveness. Snapshot storage is not billed yet.
+ * ponytail: no per-backend budget. The caps (3 per project, 10 per account) and
+ * the wallet gate on create and resize bound the spend; add a budget like Apps
+ * when a customer runs many backends.
  * ponytail: always on (`persistent`). Platinum does not count an open
  * WebSocket as activity, so idle-stop would cycle every live client; add it
  * once the edge does.
@@ -48,6 +52,7 @@ import {
 } from './convex-image';
 import { backendFailureMessage } from './errors';
 import { logger } from '../lib/logger';
+import { endComputeSession } from '../billing/services/compute-metering';
 
 export const BACKEND_PROVIDER = 'platinum';
 export const MAX_BACKENDS_PER_PROJECT = 3;
@@ -223,8 +228,45 @@ async function writeOriginsFile(externalId: string, body: string): Promise<void>
   }
 }
 
-async function deleteMachine(externalId: string): Promise<void> {
-  await platinumJson(`/v1/sandboxes/${externalId}`, { method: 'DELETE' });
+/** Platinum answered 404: the machine or snapshot is already gone, the goal of a delete. */
+function alreadyGone(error: unknown): boolean {
+  return error instanceof PlatinumHttpError && error.status === 404;
+}
+
+/**
+ * Deletes every snapshot of the machine, then the machine. Platinum's sandbox
+ * DELETE tombstones the sandbox and leaves its snapshot rows and images, so the
+ * snapshots go first. Anything already gone counts as deleted.
+ */
+export async function deleteBackendMachine(externalId: string): Promise<void> {
+  const snapshots = await platinumJson<Array<{ id: string }>>(`/v1/sandboxes/${externalId}/snapshots`).catch((error) => {
+    if (alreadyGone(error)) return [];
+    throw error;
+  });
+  for (const snapshot of snapshots) {
+    await platinumJson(`/v1/sandboxes/${externalId}/snapshots/${snapshot.id}`, { method: 'DELETE' }).catch((error) => {
+      if (!alreadyGone(error)) throw error;
+    });
+  }
+  await platinumJson(`/v1/sandboxes/${externalId}`, { method: 'DELETE' }).catch((error) => {
+    if (!alreadyGone(error)) throw error;
+  });
+}
+
+/**
+ * Deletes a machine that a failed provision leaves behind. A failed delete
+ * returns `{ machineDeletePending: true }` for the row's metadata, and
+ * maintenance retries it every tick.
+ */
+export async function discardMachine(backendId: string, externalId: string | null): Promise<{ machineDeletePending?: true }> {
+  if (!externalId) return {};
+  try {
+    await deleteBackendMachine(externalId);
+    return {};
+  } catch (error) {
+    logger.warn('[backends] machine delete failed; maintenance retries it', { backendId, externalId, error: String(error) });
+    return { machineDeletePending: true };
+  }
 }
 
 export async function listProjectBackends(projectId: string): Promise<BackendRow[]> {
@@ -436,10 +478,10 @@ export async function provisionBackend(row: BackendRow, region?: string): Promis
   } catch (error) {
     // The row carries a mapped reason; the provider's raw text stays in the log.
     const message = backendFailureMessage(error);
-    if (externalId) await deleteMachine(externalId).catch(() => {});
+    const pending = await discardMachine(backendId, externalId);
     await db
       .update(projectBackends)
-      .set({ status: 'error', updatedAt: new Date(), metadata: { lastError: message.slice(0, 2_000) } })
+      .set({ status: 'error', updatedAt: new Date(), metadata: { lastError: message.slice(0, 2_000), ...pending } })
       .where(and(eq(projectBackends.backendId, backendId), isNull(projectBackends.deletedAt)))
       .catch(() => {});
     throw error;
@@ -505,14 +547,13 @@ export async function moveBackendIssuers(): Promise<{ moved: number; failed: num
   return { moved, failed };
 }
 
-/** Delete the machine (its data goes with it), then retire the row. */
+/** Delete the machine and its snapshots (its data goes with them), close its meter, then retire the row. */
 export async function deleteBackend(row: BackendRow): Promise<void> {
-  if (row.externalId) {
-    await deleteMachine(row.externalId).catch((err) => {
-      // An already-deleted machine is the goal state.
-      if (!(err instanceof Error && / -> 404 /.test(err.message))) throw err;
-    });
-  }
+  if (row.externalId) await deleteBackendMachine(row.externalId);
+  // The billing invariant sweep closes the window of a deleted backend if this fails.
+  await endComputeSession(row.backendId).catch((error) =>
+    logger.warn('[backends] could not close the compute window', { backendId: row.backendId, error: String(error) }),
+  );
   await db
     .update(projectBackends)
     .set({ status: 'deleted', deletedAt: new Date(), updatedAt: new Date() })

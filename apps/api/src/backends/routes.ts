@@ -10,6 +10,7 @@ import { requireFeatureFlag } from '../feature-flags/gate';
 import { resolveSessionSandboxRegion } from '../platform/services/sandbox-region';
 import type { AppEnv } from '../types';
 import { resolveAppViewerIdentity } from '../apps/viewer';
+import { checkBillingAdmission } from '../billing/services/billing-gate';
 import {
   BackendLimitError,
   type BackendRow,
@@ -190,6 +191,25 @@ async function authorizedProject(c: Context<AppEnv>, projectId: string, write = 
   return requireFeatureFlag(c, loaded.row.metadata, 'backends') ?? loaded;
 }
 
+/**
+ * The wallet gate session create runs. A backend bills its reserved size from
+ * its first second, so an account that cannot pay creates or grows none. The
+ * 402 body is the one every billing gate answers (BillingGateError).
+ */
+async function unfundedBody(accountId: string) {
+  const gate = await checkBillingAdmission(accountId);
+  if (gate.ok) return null;
+  return {
+    error: gate.message,
+    code: gate.reason,
+    balance: gate.balance,
+    billing_model: gate.billingModel,
+    has_subscription: gate.hasSubscription,
+    billing_state: gate.billingState,
+    account_id: accountId,
+  };
+}
+
 export function registerBackendsRoutes(): void {
   projectsApp.openapi(
     createRoute({
@@ -219,7 +239,7 @@ export function registerBackendsRoutes(): void {
       },
       responses: {
         202: json(z.object({ backend: BackendObject }), 'Provisioning'),
-        ...errors(400, 403, 404, 409),
+        ...errors(400, 402, 403, 404, 409),
       },
     }),
     async (c) => {
@@ -227,6 +247,8 @@ export function registerBackendsRoutes(): void {
       const { name, cpu, memory_gb: memoryGb, disk_gb: diskGb } = c.req.valid('json');
       const loaded = await authorizedProject(c, projectId, true);
       if (loaded instanceof Response) return loaded;
+      const unfunded = await unfundedBody(loaded.row.accountId);
+      if (unfunded) return c.json(unfunded, 402);
       let row: BackendRow;
       try {
         row = await insertBackend({
@@ -364,7 +386,7 @@ export function registerBackendsRoutes(): void {
         params: BackendParams,
         body: { content: { 'application/json': { schema: z.object(SizeFields) } }, required: true },
       },
-      responses: { 202: json(z.object({ backend: BackendObject }), 'Resizing'), ...errors(400, 403, 404, 409, 502, 503) },
+      responses: { 202: json(z.object({ backend: BackendObject }), 'Resizing'), ...errors(400, 402, 403, 404, 409, 502, 503) },
     }),
     async (c) => {
       const { projectId, backendId } = c.req.valid('param');
@@ -373,6 +395,11 @@ export function registerBackendsRoutes(): void {
       if (loaded instanceof Response) return loaded;
       const row = await getLiveBackend(projectId, backendId);
       if (!row) return c.json({ error: 'Not found' }, 404);
+      // Only a resize that costs more needs the wallet; shrinking is always allowed.
+      const grows =
+        (body.cpu ?? row.cpu) > row.cpu || (body.memory_gb ?? row.memoryGb) > row.memoryGb || (body.disk_gb ?? row.diskGb) > row.diskGb;
+      const unfunded = grows ? await unfundedBody(row.accountId) : null;
+      if (unfunded) return c.json(unfunded, 402);
       try {
         const next = await beginResize(row, { cpu: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb });
         // Outlives the response; the result lands on the row. It heartbeats:

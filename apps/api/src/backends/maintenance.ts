@@ -9,13 +9,19 @@
  *    stopped is recovered: the machine is started if it is down, the admin key
  *    is re-sealed, the size is read back, and `last_operation_error` says it
  *    was interrupted.
- * 3. Probe: every running backend of an active project. Platinum's view of the
+ * 3. Park and unpark (./lifecycle.ts): the backends of an archived project
+ *    stop, those of a project that is active again come back.
+ * 4. Probe: every running backend of an active project. Platinum's view of the
  *    machine plus `GET <url>/version` (5 s) and disk use. The result is
  *    `metadata.health` (the API's `health`). A stopped machine is started; a
  *    lost or system-tombstoned one is restored from its last automatic backup.
  *    A machine Platinum no longer has turns the row `error` after
  *    UNHEALTHY_ALERT_AFTER probes. Three failed probes in a row log at error
- *    level, which alerts.
+ *    level, which alerts. The probe is also the meter: a running machine has
+ *    an open compute window (workload_type `backend`) and its liveness is
+ *    recorded; a machine that is not running has its window closed.
+ * 5. Orphans (./lifecycle.ts): retry failed machine deletes; once an hour,
+ *    delete backend machines no live row references.
  *
  * Steps 1 and 2 and the repairs in step 3 run detached: they heartbeat, so a
  * later tick never starts a second copy, and a process that dies mid-way is
@@ -28,6 +34,12 @@ import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { isPlatinumConfigured, platinumJson } from '../shared/platinum';
 import { mapWithConcurrency } from '../shared/map-with-concurrency';
+import {
+  markComputeSessionAlive,
+  pauseComputeSession,
+  startComputeSession,
+} from '../billing/services/compute-metering';
+import { parkAndUnparkBackends, reapOrphanBackendMachines, retryPendingMachineDeletes } from './lifecycle';
 import { resolveSessionSandboxRegion } from '../platform/services/sandbox-region';
 import { backendFailureMessage } from './errors';
 import {
@@ -40,7 +52,7 @@ import {
   recoverBackend,
   releaseOperation,
 } from './operations';
-import { type BackendRow, provisionBackend } from './provision';
+import { BACKEND_PROVIDER, type BackendRow, discardMachine, provisionBackend } from './provision';
 
 export const MAX_PROVISION_ATTEMPTS = 3;
 /** Consecutive failed probes before an error-level log, and before a missing machine turns the row `error`. */
@@ -69,6 +81,9 @@ export interface BackendSweepResult {
   probed: number;
   unhealthy: number;
   repairs: number;
+  parked: number;
+  unparked: number;
+  machinesDeleted: number;
   errors: number;
 }
 
@@ -114,15 +129,16 @@ async function resumeProvisions(result: BackendSweepResult): Promise<void> {
     if (attempts > MAX_PROVISION_ATTEMPTS || !project) {
       result.failedProvisions += 1;
       logger.error('[backends] provisioning abandoned', { backendId: row.backendId, attempts });
-      if (row.externalId) {
-        await platinumJson(`/v1/sandboxes/${row.externalId}`, { method: 'DELETE' }).catch(() => {});
-      }
+      const pending = await discardMachine(row.backendId, row.externalId);
       await db
         .update(projectBackends)
         .set({
           status: 'error',
           updatedAt: new Date(),
-          metadata: { lastError: `Provisioning was interrupted ${MAX_PROVISION_ATTEMPTS} times. Delete this backend and create it again.` },
+          metadata: {
+            lastError: `Provisioning was interrupted ${MAX_PROVISION_ATTEMPTS} times. Delete this backend and create it again.`,
+            ...pending,
+          },
         })
         .where(and(eq(projectBackends.backendId, row.backendId), eq(projectBackends.status, 'provisioning')));
       continue;
@@ -230,6 +246,9 @@ export async function probeBackend(row: BackendRow): Promise<BackendHealth> {
       ...(lost ? { status: 'error', updatedAt: new Date() } : {}),
     })
     .where(and(eq(projectBackends.backendId, row.backendId), eq(projectBackends.status, 'running')));
+  await meter(row, machineState).catch((meterError) =>
+    logger.warn('[backends] metering failed', { backendId: row.backendId, error: String(meterError) }),
+  );
   const context = { backendId: row.backendId, projectId: row.projectId, machineState, failures, error, repair };
   if (failures >= UNHEALTHY_ALERT_AFTER) logger.error('[backends] backend unhealthy', context);
   else if (error) logger.warn('[backends] backend probe failed', context);
@@ -237,6 +256,28 @@ export async function probeBackend(row: BackendRow): Promise<BackendHealth> {
     logger.warn('[backends] backend disk is filling', { backendId: row.backendId, diskUsedPct: disk });
   }
   return health;
+}
+
+/**
+ * A running machine bills its reserved size by wall clock: open the window (a
+ * no-op when one is open) and record that the control plane saw it alive. Any
+ * other observed state closes the window. Platinum not answering (null) changes
+ * nothing; the billing liveness grace bounds the window.
+ */
+async function meter(row: BackendRow, machineState: string | null): Promise<void> {
+  if (machineState === 'running') {
+    await startComputeSession({
+      sandboxId: row.backendId,
+      accountId: row.accountId,
+      provider: BACKEND_PROVIDER,
+      spec: { cpuCores: row.cpu, memoryGb: row.memoryGb, diskGb: row.diskGb, gpuCount: 0 },
+      workloadType: 'backend',
+      metadata: { backendId: row.backendId, projectId: row.projectId, name: row.name },
+    });
+    await markComputeSessionAlive(row.backendId);
+  } else if (machineState) {
+    await pauseComputeSession(row.backendId);
+  }
 }
 
 async function probeRunning(result: BackendSweepResult): Promise<void> {
@@ -250,7 +291,7 @@ async function probeRunning(result: BackendSweepResult): Promise<void> {
         isNull(projectBackends.deletedAt),
         isNotNull(projectBackends.externalId),
         isNotNull(projectBackends.url),
-        // ponytail: an archived project's backends are left alone; when archive stops machines (D9), nothing here restarts them.
+        // An archived project's backends are parked (./lifecycle.ts); the probe would start them again.
         eq(projects.status, 'active'),
       ),
     );
@@ -277,13 +318,30 @@ export const EMPTY_BACKEND_SWEEP: BackendSweepResult = {
   probed: 0,
   unhealthy: 0,
   repairs: 0,
+  parked: 0,
+  unparked: 0,
+  machinesDeleted: 0,
   errors: 0,
 };
+
+async function parkStep(result: BackendSweepResult): Promise<void> {
+  const step = await parkAndUnparkBackends();
+  result.parked += step.parked;
+  result.unparked += step.unparked;
+  result.errors += step.errors;
+}
+
+async function orphanStep(result: BackendSweepResult): Promise<void> {
+  const retried = await retryPendingMachineDeletes();
+  const reaped = await reapOrphanBackendMachines();
+  result.machinesDeleted += retried.deleted + reaped.deleted;
+  result.errors += retried.errors + reaped.errors;
+}
 
 export async function sweepBackends(): Promise<BackendSweepResult> {
   const result = { ...EMPTY_BACKEND_SWEEP };
   if (!isPlatinumConfigured()) return result;
-  for (const step of [resumeProvisions, takeOverOperations, probeRunning]) {
+  for (const step of [resumeProvisions, takeOverOperations, parkStep, probeRunning, orphanStep]) {
     await step(result).catch((error) => {
       result.errors += 1;
       logger.warn('[backends] sweep step failed', { step: step.name, error: String(error) });

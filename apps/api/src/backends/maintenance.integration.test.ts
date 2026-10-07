@@ -1,5 +1,13 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { accountMembers, accounts, projectBackends, projectMembers, projects } from '@kortix/db';
+import {
+  accountMembers,
+  accounts,
+  creditAccounts,
+  projectBackends,
+  projectMembers,
+  projects,
+  sandboxComputeSessions,
+} from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { db } from '../shared/db';
@@ -9,22 +17,42 @@ import { insertIntoView } from '../__tests__/helpers/compat-views';
 import { decryptProjectSecret, encryptProjectSecret } from '../projects/surface';
 import { MAX_PROVISION_ATTEMPTS, UNHEALTHY_ALERT_AFTER, sweepBackends } from './maintenance';
 import { BackendOperationError, claimOperation, rotateBackendAdminKey } from './operations';
-import type { BackendRow } from './provision';
+import { type BackendRow, discardMachine } from './provision';
+import { ORPHAN_MACHINE_GRACE_MS, deleteAccountBackends, reapOrphanBackendMachines } from './lifecycle';
+import { sandboxOwnershipMarker } from '../platform/sandbox-ownership';
 
 // The backends maintenance sweep, admin-key rotation and the logs route
 // against the real DB, a fake Platinum API and a fake Convex backend. Proves:
 // an interrupted provision resumes on the same machine (H6), an interrupted
 // operation is recovered (H6), the probe records health and repairs a stopped,
 // lost or tombstoned machine (H1), rotation re-seals the key Convex accepts
-// (H4), and the logs route returns the process log without color codes (L1).
+// (H4), the logs route returns the process log without color codes (L1), an
+// archived project's backends park and come back (D9), account deletion
+// deletes machines and snapshots (D9), orphaned machines are deleted (B5), and
+// a running backend is metered (D11).
 
-type Machine = { state: string; recoverable?: boolean; cpu: number; ramMb: number; diskGb: number; secret: number };
+type Machine = {
+  state: string;
+  recoverable?: boolean;
+  cpu: number;
+  ramMb: number;
+  diskGb: number;
+  secret: number;
+  autoResume?: boolean;
+  snapshots?: string[];
+  /** Listed by GET /v1/sandboxes; a machine without it is not listed. */
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+};
 const machines = new Map<string, Machine>();
 const calls: string[] = [];
+const listPages: string[] = [];
 let convexDown = false;
 
 const keyFor = (id: string) => `synthetic|${id}-secret-${machines.get(id)?.secret ?? 0}`;
 const machineOf = (path: string) => /^\/v1\/sandboxes\/([^/?]+)/.exec(path)?.[1] ?? '';
+/** Machines whose DELETE answers 500. */
+const failDelete = new Set<string>();
 
 // One fake Convex per machine is overkill: every machine's URL is this one,
 // tagged with the machine id in the path prefix.
@@ -52,6 +80,17 @@ const platinum = Bun.serve({
     const id = machineOf(url.pathname);
     const sub = url.pathname.slice(`/v1/sandboxes/${id}`.length);
     calls.push(`${req.method} ${url.pathname}${req.headers.get('idempotency-key') ? ` key=${req.headers.get('idempotency-key')}` : ''}`);
+    if (req.method === 'GET' && url.pathname === '/v1/sandboxes') {
+      // Platinum's paginated list, two rows per page so the orphan pass pages.
+      const listed = [...machines].filter(([, m]) => m.metadata && m.state !== 'deleted');
+      const offset = Number(url.searchParams.get('offset') ?? 0);
+      const page = listed.slice(offset, offset + 2);
+      listPages.push(url.search);
+      return Response.json({
+        rows: page.map(([mid, m]) => ({ id: mid, state: m.state, metadata: m.metadata, created_at: m.createdAt })),
+        has_more: offset + page.length < listed.length,
+      });
+    }
     if (req.method === 'POST' && url.pathname === '/v1/sandboxes') {
       const body = (await req.json()) as { name: string };
       const newId = `sbx-${body.name}`;
@@ -69,6 +108,20 @@ const platinum = Bun.serve({
       return Response.json({ ...m, ...(m.recoverable ? { recoverable: true } : {}) });
     }
     if (req.method === 'GET' && sub === '/usage') return Response.json({ disk_used_pct: 42 });
+    if (req.method === 'GET' && sub === '/snapshots') return Response.json((m.snapshots ?? []).map((sid) => ({ id: sid, createdAt: '2026-10-07T00:00:00Z' })));
+    if (req.method === 'DELETE' && sub.startsWith('/snapshots/')) {
+      m.snapshots = (m.snapshots ?? []).filter((sid) => sid !== sub.slice('/snapshots/'.length));
+      return Response.json({ deleted: true });
+    }
+    if (req.method === 'PATCH' && sub === '') {
+      m.autoResume = ((await req.json()) as { auto_resume: boolean }).auto_resume;
+      return Response.json(m);
+    }
+    if (req.method === 'POST' && sub === '/stop') {
+      if (m.state !== 'running') return Response.json({ code: 'sandbox_not_running' }, { status: 409 });
+      m.state = 'stopped';
+      return Response.json({ state: 'stopping' });
+    }
     if (req.method === 'PUT' && sub.startsWith('/files')) return Response.json({ ok: true });
     if (req.method === 'POST' && sub === '/start') {
       m.state = 'running';
@@ -80,6 +133,7 @@ const platinum = Bun.serve({
       return Response.json({ state: 'restoring' });
     }
     if (req.method === 'DELETE' && sub === '') {
+      if (failDelete.has(id)) return Response.json({ error: 'synthetic failure' }, { status: 500 });
       machines.delete(id);
       return Response.json({ ok: true });
     }
@@ -301,11 +355,13 @@ describe('health probe (H1)', () => {
     expect(meta(after).lastError).toContain('no longer exists');
   });
 
-  test("an archived project's stopped backend is not probed or started", async () => {
+  test("an archived project's stopped backend is not probed or started; it is parked", async () => {
     const row = await runningBackend('archived', { state: 'stopped' }, { projectId: ARCHIVED_PROJECT });
     await sweepBackends();
-    expect(meta(await read(row.backendId)).health).toBeUndefined();
-    expect(machines.get('sbx-archived')!.state).toBe('stopped');
+    const after = await read(row.backendId);
+    expect(meta(after).health).toBeUndefined();
+    expect(typeof meta(after).parked).toBe('string');
+    expect(machines.get('sbx-archived')).toMatchObject({ state: 'stopped', autoResume: false });
   });
 });
 
@@ -367,5 +423,169 @@ describe('routes', () => {
     await sweepBackends();
     const { backend } = await (await call('GET', `/${row.backendId}`)).json();
     expect(backend.health).toMatchObject({ ok: true, machine_state: 'running', disk_used_pct: 42 });
+  });
+});
+
+describe('archive and unarchive (D9)', () => {
+  test('a running backend of an archived project is parked once: auto-resume off, stopped, marked', async () => {
+    const row = await runningBackend('park-me', { autoResume: true }, { projectId: ARCHIVED_PROJECT });
+    const result = await sweepBackends();
+    expect(result.parked).toBeGreaterThanOrEqual(1);
+    expect(machines.get('sbx-park-me')).toMatchObject({ state: 'stopped', autoResume: false });
+    const after = await read(row.backendId);
+    expect(Date.parse(meta(after).parked)).toBeGreaterThan(Date.now() - 60_000);
+    expect(meta(after).health).toBeUndefined();
+    await sweepBackends();
+    expect(calls.filter((c) => c === 'POST /v1/sandboxes/sbx-park-me/stop')).toHaveLength(1);
+    expect(calls.filter((c) => c === 'PATCH /v1/sandboxes/sbx-park-me')).toHaveLength(1);
+  });
+
+  test('a project active again: auto-resume back on, marker cleared, the probe starts the machine', async () => {
+    const project = crypto.randomUUID();
+    await db.insert(projects).values({ projectId: project, accountId: ACCOUNT, name: 'unarchive', repoUrl: 'https://example.com/u.git', status: 'archived' });
+    const row = await runningBackend('unpark-me', { autoResume: true }, { projectId: project });
+    await sweepBackends();
+    expect(machines.get('sbx-unpark-me')).toMatchObject({ state: 'stopped', autoResume: false });
+    await db.update(projects).set({ status: 'active' }).where(eq(projects.projectId, project));
+    const result = await sweepBackends();
+    expect(result.unparked).toBe(1);
+    expect(machines.get('sbx-unpark-me')!.autoResume).toBe(true);
+    const after = await eventually(
+      () => read(row.backendId),
+      (r) => !meta(r).operation && machines.get('sbx-unpark-me')!.state === 'running',
+    );
+    expect(meta(after).parked).toBeUndefined();
+    expect(after.status).toBe('running');
+  });
+});
+
+describe('account deletion (D9)', () => {
+  test('every backend of the account: snapshots deleted, then the machine, then the row retired; other accounts untouched', async () => {
+    const account = crypto.randomUUID();
+    const project = crypto.randomUUID();
+    await db.insert(accounts).values({ accountId: account, name: 'backend-account-deletion' });
+    await db.insert(projects).values({ projectId: project, accountId: account, name: 'gone', repoUrl: 'https://example.com/g.git' });
+    const row = await runningBackend('account-gone', { snapshots: ['snap-a', 'snap-b'] }, { projectId: project, accountId: account });
+    const survivor = await runningBackend('account-stays', {});
+    expect(await deleteAccountBackends(account)).toBe(1);
+    expect(calls).toContain('DELETE /v1/sandboxes/sbx-account-gone/snapshots/snap-a');
+    expect(calls).toContain('DELETE /v1/sandboxes/sbx-account-gone/snapshots/snap-b');
+    expect(calls.indexOf('DELETE /v1/sandboxes/sbx-account-gone')).toBeGreaterThan(
+      calls.indexOf('DELETE /v1/sandboxes/sbx-account-gone/snapshots/snap-b'),
+    );
+    expect(machines.has('sbx-account-gone')).toBe(false);
+    const after = await read(row.backendId);
+    expect(after.status).toBe('deleted');
+    expect(after.deletedAt).not.toBeNull();
+    expect(machines.has('sbx-account-stays')).toBe(true);
+    expect((await read(survivor.backendId)).deletedAt).toBeNull();
+  });
+
+  test('a machine delete that fails throws, so account deletion stops and retries', async () => {
+    const account = crypto.randomUUID();
+    const project = crypto.randomUUID();
+    await db.insert(accounts).values({ accountId: account, name: 'backend-account-deletion-fail' });
+    await db.insert(projects).values({ projectId: project, accountId: account, name: 'stuck', repoUrl: 'https://example.com/s.git' });
+    const row = await runningBackend('account-stuck', {}, { projectId: project, accountId: account });
+    failDelete.add('sbx-account-stuck');
+    try {
+      await expect(deleteAccountBackends(account)).rejects.toThrow();
+      expect((await read(row.backendId)).deletedAt).toBeNull();
+    } finally {
+      failDelete.delete('sbx-account-stuck');
+    }
+    expect(await deleteAccountBackends(account)).toBe(1);
+  });
+});
+
+describe('orphaned machines (B5)', () => {
+  test('a failed delete after a failed provision is recorded, then retried by the sweep', async () => {
+    machines.set('sbx-pending', { state: 'running', cpu: 1, ramMb: 1024, diskGb: 10, secret: 1 });
+    failDelete.add('sbx-pending');
+    const backendId = crypto.randomUUID();
+    expect(await discardMachine(backendId, 'sbx-pending')).toEqual({ machineDeletePending: true });
+    failDelete.delete('sbx-pending');
+    const [row] = await db
+      .insert(projectBackends)
+      .values({ backendId, projectId: PROJECT, accountId: ACCOUNT, name: 'pending', status: 'error', provider: 'platinum', externalId: 'sbx-pending', cpu: 1, memoryGb: 1, diskGb: 10, metadata: { lastError: 'x', machineDeletePending: true } })
+      .returning();
+    const result = await sweepBackends();
+    expect(result.machinesDeleted).toBeGreaterThanOrEqual(1);
+    expect(machines.has('sbx-pending')).toBe(false);
+    expect(meta(await read(row!.backendId)).machineDeletePending).toBeUndefined();
+  });
+
+  test('every page, every state: old unreferenced machines go with their snapshots; young, referenced and foreign ones stay', async () => {
+    const owner = await sandboxOwnershipMarker();
+    const tag = (backendId: string, managed = owner) => ({ 'kortix.managed': managed, 'kortix.workload': 'backend', 'kortix.backend_id': backendId });
+    const old = new Date(Date.now() - 2 * ORPHAN_MACHINE_GRACE_MS).toISOString();
+    const base = { cpu: 1, ramMb: 1024, diskGb: 10, secret: 1 };
+    // Referenced by a live running row: kept.
+    const kept = await runningBackend('orphan-kept', {});
+    Object.assign(machines.get('sbx-orphan-kept')!, { metadata: tag(kept.backendId), createdAt: old });
+    // No row at all, stopped, with a snapshot: deleted.
+    machines.set('sbx-orphan-rowless', { ...base, state: 'stopped', snapshots: ['snap-o'], metadata: tag(crypto.randomUUID()), createdAt: old });
+    // No row, but younger than the grace: kept.
+    machines.set('sbx-orphan-young', { ...base, state: 'running', metadata: tag(crypto.randomUUID()), createdAt: new Date().toISOString() });
+    // A soft-deleted row: deleted.
+    const [deleted] = await db
+      .insert(projectBackends)
+      .values({ projectId: PROJECT, accountId: ACCOUNT, name: 'orphan-deleted', status: 'deleted', provider: 'platinum', externalId: 'sbx-orphan-deleted', cpu: 1, memoryGb: 1, diskGb: 10, deletedAt: new Date() })
+      .returning();
+    machines.set('sbx-orphan-deleted', { ...base, state: 'running', metadata: tag(deleted!.backendId), createdAt: old });
+    // A second machine for a running row that references another one: deleted.
+    machines.set('sbx-orphan-duplicate', { ...base, state: 'running', metadata: tag(kept.backendId), createdAt: old });
+    // A provisioning row owns its machine before it records the id: kept.
+    const [provisioning] = await db
+      .insert(projectBackends)
+      .values({ projectId: PROJECT, accountId: ACCOUNT, name: 'orphan-provisioning', status: 'provisioning', provider: 'platinum', cpu: 1, memoryGb: 1, diskGb: 10, metadata: { heartbeatAt: new Date().toISOString() } })
+      .returning();
+    machines.set('sbx-orphan-provisioning', { ...base, state: 'running', metadata: tag(provisioning!.backendId), createdAt: old });
+    // Another control plane's machine: never ours to delete.
+    machines.set('sbx-orphan-foreign', { ...base, state: 'running', metadata: tag(crypto.randomUUID(), 'v2-another-database'), createdAt: old });
+    listPages.length = 0;
+
+    const result = await reapOrphanBackendMachines({ force: true });
+
+    expect(result).toMatchObject({ deleted: 3, errors: 0 });
+    expect(listPages.length).toBeGreaterThanOrEqual(4);
+    for (const search of listPages) expect(search).toContain('regions=local');
+    for (const gone of ['sbx-orphan-rowless', 'sbx-orphan-deleted', 'sbx-orphan-duplicate']) expect(machines.has(gone)).toBe(false);
+    expect(calls).toContain('DELETE /v1/sandboxes/sbx-orphan-rowless/snapshots/snap-o');
+    for (const stays of ['sbx-orphan-kept', 'sbx-orphan-young', 'sbx-orphan-provisioning', 'sbx-orphan-foreign']) {
+      expect(machines.has(stays)).toBe(true);
+    }
+    // At most once an hour without `force`.
+    expect((await reapOrphanBackendMachines()).listed).toBe(0);
+  });
+});
+
+describe('metering (D11)', () => {
+  test('a running backend opens one backend window at its size and records liveness; parking closes it', async () => {
+    const account = crypto.randomUUID();
+    const project = crypto.randomUUID();
+    await db.insert(accounts).values({ accountId: account, name: 'backend-metering' });
+    await db.insert(creditAccounts).values({ accountId: account, billingModel: 'per_seat', tier: 'free', balance: '100', nonExpiringCredits: '100' });
+    await db.insert(projects).values({ projectId: project, accountId: account, name: 'metered', repoUrl: 'https://example.com/m.git' });
+    const row = await runningBackend('metered', {}, { projectId: project, accountId: account, cpu: 2, memoryGb: 4, diskGb: 20 });
+    const saved = config.KORTIX_BILLING_INTERNAL_ENABLED;
+    config.KORTIX_BILLING_INTERNAL_ENABLED = true;
+    try {
+      const windows = () => db.select().from(sandboxComputeSessions).where(eq(sandboxComputeSessions.sandboxId, row.backendId));
+      await sweepBackends();
+      await sweepBackends();
+      const open = await windows();
+      expect(open).toHaveLength(1);
+      expect(open[0]).toMatchObject({ workloadType: 'backend', provider: 'platinum', state: 'active', cpuCores: 2, memoryGb: 4, diskGb: 20, endedAt: null });
+      expect(Date.parse((open[0]!.metadata as { lastAliveAt: string }).lastAliveAt)).toBeGreaterThan(Date.now() - 60_000);
+      await db.update(projects).set({ status: 'archived' }).where(eq(projects.projectId, project));
+      await sweepBackends();
+      const closed = await windows();
+      expect(closed).toHaveLength(1);
+      expect(closed[0]).toMatchObject({ state: 'stopped' });
+      expect(closed[0]!.endedAt).not.toBeNull();
+    } finally {
+      config.KORTIX_BILLING_INTERNAL_ENABLED = saved;
+    }
   });
 });

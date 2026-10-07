@@ -43,7 +43,8 @@ is `available` only when `PLATINUM_API_KEY` is set. See
 | Storage | SQLite on the machine disk |
 | Machine | One per backend. Default 1 vCPU, 1 GB memory, 10 GB disk; resizable to 16 vCPU, 32 GB, 100 GB. |
 | Uptime | Always on. The machine never idles to a stop. |
-| Limit | 3 backends per project |
+| Billing | Reserved CPU, memory and disk × the time the machine runs. See [Billing](#billing). |
+| Limit | 3 backends per project, 10 per account |
 | Name | Lowercase letters, digits, and dashes. Starts with a letter. 63 characters at most. |
 
 Your data lives on the machine disk. Kortix backs it up with the machine disk.
@@ -255,6 +256,15 @@ creates the backend. Two public routes at that URL need no credential:
 | `GET <issuer>/.well-known/openid-configuration` | `issuer` and `jwks_uri` (OpenID Provider metadata for verifiers; no authorization endpoint) |
 | `GET <issuer>/jwks.json` | The backend's public ES256 key as a JSON Web Key Set |
 
+Any viewer the App admits gets a token for any running backend of the App's
+project: `?backend=<name>` picks it, and Kortix does not bind an App to its
+backends. The token proves who the member is, not what they may do. So
+`requireKortixMember(identity)` without `groups` or `roles` admits every
+viewer of every App in the project, including the account members and groups
+a `restricted` App lists who are not project members. Check `groups` or
+`roles` in every function that reads or writes data not meant for all of
+them.
+
 So a JOSE library or an API gateway finds the key from the token's `iss`
 alone, and `verifyKortixMemberToken` takes `KORTIX_AUTH_JWKS=<issuer>/jwks.json`
 in place of the inline value. A backend created before the issuer was a URL
@@ -371,9 +381,38 @@ Reading the credentials writes a `backend.credentials.read` audit event.
 Rotation is `backend.credentials.rotate`; reading the log is
 `backend.logs.read`. See [Audit actions](/docs/audit-actions).
 
+## Billing
+
+A backend is billed like a sandbox: its reserved CPU, memory and disk ×
+wall-clock time while the machine runs, at the compute rate, from the
+account's wallet. The default size (1 vCPU, 1 GB, 10 GB) costs about $0.081
+per hour at list price, about $59 for a 30-day month. Each charge is a
+`Backend compute · <cpu>vCPU/<memory>GB/<disk>GB` line in the usage ledger.
+
+- The health probe opens the backend's compute window when it sees the
+  machine running and records it alive every 5 minutes. A machine Kortix does
+  not see alive stops billing after the compute liveness grace (60 minutes).
+- A resize closes the window at the old size; the next probe opens one at the
+  new size.
+- An account that cannot pay gets `402` on create and on a resize that grows
+  the machine, with the same body as every other billing gate. A shrinking
+  resize is always allowed.
+- Snapshot and backup storage are not billed.
+- There is no per-backend monthly budget. The caps (3 per project, 10 per
+  account) bound the spend. Delete a backend to stop its charges.
+
+## Archive, account deletion and orphans
+
+| Event | What happens to the machine |
+|---|---|
+| The project is deleted (archived) | Kortix turns Platinum's auto-resume off, stops the machine and closes its compute window, at once and again on every 5-minute maintenance tick. The data stays. A public request does not wake it. |
+| The project is active again | Auto-resume goes back on and the machine starts within 5 minutes. |
+| The account is deleted | Kortix deletes every backend of the account: its snapshots, then its machine. The data cannot be recovered. A failure stops the account deletion, which retries. |
+| A machine no live backend references | Kortix deletes it, with its snapshots, once it is 1 hour old. This covers a create interrupted before Kortix recorded the machine, and a delete that failed. |
+
 ## Limits
 
-- Backends are not metered. A project is capped at 3.
+- A project is capped at 3 backends, an account at 10.
 - Backends are always on. A backend does not stop when idle.
 - One machine per backend: it scales up (resize), not out.
 - `npx convex dashboard` does not work against a self-hosted backend. Use

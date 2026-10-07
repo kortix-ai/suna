@@ -3,6 +3,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
+import { logger } from '../../lib/logger';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
@@ -251,7 +252,7 @@ export function registerProjectSettingsRoutes(): void {
     try {
       repoDeleted = await deleteManagedProjectRepo(loaded.row);
     } catch (error) {
-      console.error(`[projects] failed to delete managed repo for ${projectId}:`, error);
+      logger.error('[projects] failed to delete the managed repo', { projectId, error: String(error) });
       return c.json({ error: 'Failed to delete managed project repository' }, 502);
     }
 
@@ -262,6 +263,11 @@ export function registerProjectSettingsRoutes(): void {
       .returning();
 
     if (!row) return c.json({ error: 'Not found' }, 404);
+    // Stop the project's Kortix Backends now (data kept, no auto-resume). The
+    // maintenance tick parks any this misses.
+    void import('../../backends/lifecycle')
+      .then(({ parkAndUnparkBackends }) => parkAndUnparkBackends(projectId))
+      .catch((error) => logger.warn('[projects] could not park the backends', { projectId, error: String(error) }));
     return c.json({ ok: true, archived: true, repo_deleted: repoDeleted });
   },
   );
