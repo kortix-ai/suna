@@ -44,7 +44,7 @@ import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { FLOATING_MENU_CLEARANCE } from '@/components/session/FloatingMenuButton';
 import { ComposerBottomFade } from '@/components/session/composer-bottom-fade';
 import { AttachmentTile } from '@/components/session/attachment-tile';
-import { UserMessageBubble } from '@/components/session/turn/user-message';
+import { MessageBody, UserMessageBubble } from '@/components/session/turn/user-message';
 import { SessionTurn } from '@/components/session/SessionTurn';
 import { SessionDotMatrix } from '@/components/session/dot-matrix/session-dot-matrix';
 import { ToolFilePreviewHost, useToolFilePreviewStore } from '@/components/session/tool/shared/navigation';
@@ -64,8 +64,8 @@ export interface SessionConnectError {
   detail?: string;
 }
 
-/** `text-[0.9rem] leading-[22px] font-medium` — same as the thread's user bubble (turn/user-message.tsx). */
-const BUBBLE_TEXT_STYLE = { fontFamily: 'Roobert-Medium', fontSize: 13, lineHeight: 19 } as const;
+/** The first prompt has no session mentions yet. */
+const NO_SESSIONS: { id: string; title: string }[] = [];
 const noop = () => {};
 
 export function SessionConnecting({
@@ -189,7 +189,7 @@ export function SessionConnecting({
             ) : null}
             {firstMessage ? (
               <UserMessageBubble isDark={isDark}>
-                <Text style={BUBBLE_TEXT_STYLE}>{firstMessage}</Text>
+                <MessageBody text={firstMessage} sessions={NO_SESSIONS} />
               </UserMessageBubble>
             ) : null}
           </View>
