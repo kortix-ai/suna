@@ -347,8 +347,12 @@ export function shortRelative(input: string): string {
  *  list is still loading: a first load that is paused offline, or not enabled
  *  yet, is not "no sessions". With data, "no sessions at all" wins over
  *  "sessions exist but none match the active filter". */
-export type SessionListViewState = 'loading' | 'error' | 'empty' | 'no-matches' | 'content';
+export type SessionListViewState = 'loading' | 'error' | 'empty' | 'no-matches' | 'more' | 'content';
 
+/** KRTX-1727: the server drops rows the viewer may not see after a bounded
+ *  scan, so zero rows with a cursor left is not an empty list. While the list
+ *  reads past empty pages on its own (`scanning`) it is loading; after that,
+ *  `more` offers Load more instead of "No sessions yet". */
 export function resolveSessionListViewState(params: {
   hasData: boolean;
   isError: boolean;
@@ -356,8 +360,14 @@ export function resolveSessionListViewState(params: {
   visibleCount: number;
   /** The server already applied a filter (labels): zero rows is "no matches". */
   serverFiltered?: boolean;
+  /** A list reads past empty pages on its own (`useProjectSessions().isScanning`). */
+  scanning?: boolean;
+  /** A list has a next page (`hasNextPage`). */
+  hasMore?: boolean;
 }): SessionListViewState {
   if (!params.hasData) return params.isError ? 'error' : 'loading';
+  if (params.totalCount === 0 && params.scanning) return 'loading';
+  if (params.totalCount === 0 && params.hasMore) return 'more';
   if (params.totalCount === 0) return params.serverFiltered ? 'no-matches' : 'empty';
   if (params.visibleCount === 0) return 'no-matches';
   return 'content';
