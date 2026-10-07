@@ -282,7 +282,7 @@ describe('kortix backends', () => {
 
   test('dashboard prints the Kortix page that frames the Convex dashboard', async () => {
     const config = writeConfig(startServer());
-    const page = `https://web.backends.test/projects/${PROJECT}/backends/${BACKEND_ID}`;
+    const page = `https://web.backends.test/projects/${PROJECT}/customize/backends/${BACKEND_ID}`;
     const r = await runCli(['backends', 'dashboard', 'main', '--project', PROJECT], config);
     expect(r.code).toBe(0);
     expect(r.stdout.trim()).toBe(page);

@@ -310,7 +310,7 @@ async function getCommand(rest: string[], options: ContextOptions, json: boolean
 
 /** The Kortix web page that frames the backend's Convex dashboard. */
 export function backendDashboardPage(projectUrl: string, backendId: string): string {
-  return `${projectUrl}/backends/${backendId}`;
+  return `${projectUrl}/customize/backends/${backendId}`;
 }
 
 async function dashboardCommand(rest: string[], options: ContextOptions, json: boolean): Promise<number> {

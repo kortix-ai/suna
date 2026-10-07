@@ -24,9 +24,9 @@ While the flag is off:
 - Every Apps route answers `403` with
   `{ error, code: "feature_disabled", feature: "apps" }`.
 - `kortix apps <subcommand>` prints the same sentence and exits `1`.
-- The **Apps** entry does not appear in the project sidebar. Opening
-  `/projects/<id>/apps` directly shows a gate screen that links to the flag. The
-  page itself never enables the feature.
+- The **Apps** tab does not appear in Customize. Opening
+  `/projects/<id>/customize/apps` directly shows a gate screen. The page itself
+  never enables the feature.
 
 ## Source kinds
 
@@ -329,8 +329,8 @@ and Caddy binaries. A PostgreSQL advisory lock prevents duplicate refreshes.
 
 ## The Apps page
 
-Once the flag is on, an **Apps** row appears in the project sidebar, under
-Customize. The page is operational, not a creation surface: it lists the
+Once the flag is on, an **Apps** tab appears at the end of the project's
+Customize bar (`/projects/<id>/customize/apps`). The page is operational, not a creation surface: it lists the
 project's Apps with live state, a signed preview of each running App, and the
 access controls. Deploying is `kortix apps deploy .`.
 
