@@ -269,7 +269,6 @@ export function useRuntimeSessionTodo(sessionId: string) {
 // ============================================================================
 
 export function useSummarizeRuntimeSession() {
-  const queryClient = useQueryClient();
   const startCompaction = useOpenCodeCompactionStore((s) => s.startCompaction);
   const stopCompaction = useOpenCodeCompactionStore((s) => s.stopCompaction);
   return useMutation({
