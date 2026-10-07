@@ -1213,6 +1213,24 @@ environment proves a `released` image and a successful single-deployment
 delete; `apps/api/src/apps/images.integration.test.ts` proves the maintenance
 sweep that retries `pending` images.
 
+`APP-8` A static App runs no VM (`requires: appHost`). The real CLI process
+`kortix apps deploy dist --type static --spa --access public --json` returns a
+`ready` deployment with `hosting_type: "static"`: the worker publishes each file
+once per account under its SHA-256 and the API serves it at the App's own
+hostname behind the access gate. `GET /` → **200** HTML with
+`cache-control: public, no-cache`; a hashed asset → `public, max-age=31536000,
+immutable`; a page navigation to an unknown path → the SPA shell; a missing
+asset → **404**; `If-None-Match` with the ETag → **304**. A redeploy of one
+changed file logs `(1 new, 2 unchanged)` and serves the new page at once.
+`POST /projects/:projectId/apps/:appId/rollback` to v1 → **200** and v1 is
+served (no runtime starts). After 8 deploys the deployment list holds exactly
+v3–v8 `ready` (the active one and the 5 newest others,
+`KORTIX_APPS_RETAINED_DEPLOYMENTS`); v1 and v2 are retired. The local profile
+runs the worker with `KORTIX_APPS_WORKER_ENABLED=static`, so static
+deployments complete while sandbox deployments stay `queued` for APP-7.
+`apps/api/src/apps/static-site.integration.test.ts` proves deduplication,
+range requests, retention's freed files and blob reclaim on PostgreSQL.
+
 ---
 
 ## 29. Additional executable product contracts

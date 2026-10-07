@@ -139,6 +139,15 @@ async function event(
   });
 }
 
+/**
+ * `KORTIX_APPS_WORKER_ENABLED=static`: drive only static deployments, which
+ * need no sandbox provider. For an operator who hosts static Apps without one,
+ * and for the local test profile, whose providers are unreachable on purpose.
+ */
+function staticOnlyWorker(): boolean {
+  return process.env.KORTIX_APPS_WORKER_ENABLED === 'static';
+}
+
 export async function claimAppDeployment(
   owner: string,
   now = new Date(),
@@ -149,6 +158,7 @@ export async function claimAppDeployment(
     .where(
       and(
         inArray(appDeployments.status, [...LIVE_DEPLOYMENT_STATUSES]),
+        staticOnlyWorker() ? eq(appDeployments.sourceKind, 'static') : undefined,
         or(isNull(appDeployments.nextAttemptAt), lte(appDeployments.nextAttemptAt, now)),
         or(isNull(appDeployments.leaseExpiresAt), lt(appDeployments.leaseExpiresAt, now)),
       ),

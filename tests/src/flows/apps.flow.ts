@@ -1031,3 +1031,150 @@ flow(
     }
   },
 );
+
+flow(
+  "APP-8",
+  {
+    domain: "apps",
+    requires: ["appHost"],
+    timeoutMs: 300_000,
+    routes: [
+      "PATCH /v1/projects/:projectId/features",
+      "POST /v1/projects/:projectId/apps",
+      "POST /v1/projects/:projectId/apps/artifacts",
+      "POST /v1/projects/:projectId/apps/artifacts/:artifactId/finalize",
+      "POST /v1/projects/:projectId/apps/:appId/deployments",
+      "GET /v1/projects/:projectId/apps/:appId/deployments",
+      "GET /v1/projects/:projectId/apps/:appId/deployments/:deploymentId",
+      "GET /v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs",
+      "POST /v1/projects/:projectId/apps/:appId/rollback",
+      "DELETE /v1/projects/:projectId/apps/:appId",
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const projectParams = { projectId: project.id };
+    const slug = ctx.fixtures.name("static").toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 63);
+    const apiOrigin = ctx.env.apiUrl.replace(/\/v1$/, "");
+    const cli = new CliSandbox("app8");
+    const asset = "assets/index-Qx7Lm2Pa.js";
+    let appId = "";
+    let appHost = "";
+    const versions: string[] = [];
+
+    const page = async (path: string, headers: Record<string, string> = {}) => {
+      const response = await fetch(`${apiOrigin}${path}`, {
+        headers: { "x-kortix-app-host": appHost, ...headers },
+        redirect: "manual",
+      });
+      return { status: response.status, headers: response.headers, text: await response.text() };
+    };
+    const writeSite = (marker: string, script: string) => {
+      cli.writeFile("dist/index.html", `<!doctype html><title>${marker}</title><script src="/${asset}"></script>`);
+      cli.writeFile(`dist/${asset}`, script);
+      cli.writeFile("dist/robots.txt", "User-agent: *");
+    };
+    const deploy = async (marker: string, script = "console.log('app')") => {
+      writeSite(marker, script);
+      const started = Date.now();
+      const result = await cli.run([
+        "apps", "deploy", "dist", "--type", "static", "--spa", "--access", "public",
+        ...(appId ? ["--app", appId] : ["--slug", slug, "--name", "ke2e static"]),
+        "--project", project.id, "--json",
+      ]);
+      if (result.exitCode !== 0) throw new Error(`kortix apps deploy: ${result.exitCode} ${result.stderr}`);
+      const out = JSON.parse(result.stdout);
+      versions.push(out.deployment.deployment_id);
+      return { out, ms: Date.now() - started };
+    };
+
+    try {
+      await ctx.step("enable Apps and sign the CLI in", async () => {
+        (await owner.patch("/v1/projects/:projectId/features", { feature: "apps", enabled: true },
+          { params: projectParams })).status(200);
+        const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name("cli-app8") });
+        const login = await cli.login(pat, { noProject: true, account: project.accountId });
+        if (login.exitCode !== 0) throw new Error(`kortix login: ${login.stderr}`);
+      });
+
+      await ctx.step("kortix apps deploy of a built SPA is ready with no runtime: hosting_type static", async () => {
+        const { out, ms } = await deploy("v1");
+        appId = out.app.app_id;
+        appHost = new URL(out.app.url).hostname;
+        if (out.deployment.status !== "ready" || out.deployment.hosting_type !== "static") {
+          throw new Error(`expected a ready static deployment, got ${out.deployment.status}/${out.deployment.hosting_type}`);
+        }
+        if (ms > 90_000) throw new Error(`a static deploy took ${ms} ms`);
+        const read = await owner.get("/v1/projects/:projectId/apps/:appId/deployments/:deploymentId",
+          { params: { ...projectParams, appId, deploymentId: versions[0]! } });
+        read.status(200).body().has("$.deployment.hosting_type", "static").has("$.deployment.status", "ready");
+      });
+
+      await ctx.step("the App serves its files: shell, hashed asset, SPA deep link, 404 for a missing asset, 304", async () => {
+        const home = await page("/");
+        if (home.status !== 200 || !home.text.includes("<title>v1</title>")) {
+          throw new Error(`GET /: ${home.status} ${home.text.slice(0, 120)}`);
+        }
+        if (home.headers.get("cache-control") !== "public, no-cache") {
+          throw new Error(`HTML cache-control: ${home.headers.get("cache-control")}`);
+        }
+        const script = await page(`/${asset}`);
+        if (script.status !== 200 || script.headers.get("cache-control") !== "public, max-age=31536000, immutable") {
+          throw new Error(`asset: ${script.status} ${script.headers.get("cache-control")}`);
+        }
+        const deep = await page("/deals/42", { accept: "text/html" });
+        if (deep.status !== 200 || !deep.text.includes("<title>v1</title>")) throw new Error(`deep link: ${deep.status}`);
+        const missing = await page("/assets/missing-file.js", { accept: "*/*" });
+        if (missing.status !== 404) throw new Error(`missing asset: ${missing.status}`);
+        const revalidated = await page("/", { "if-none-match": home.headers.get("etag") ?? "" });
+        if (revalidated.status !== 304) throw new Error(`If-None-Match: ${revalidated.status}`);
+      });
+
+      await ctx.step("a redeploy uploads only the changed file and switches atomically", async () => {
+        const { out } = await deploy("v2");
+        if (out.deployment.status !== "ready") throw new Error(`v2 is ${out.deployment.status}`);
+        const logs = await owner.get("/v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs",
+          { params: { ...projectParams, appId, deploymentId: versions[1]! } });
+        logs.status(200);
+        if (!JSON.stringify(logs.json()).includes("(1 new, 2 unchanged)")) {
+          throw new Error(`expected 1 new and 2 unchanged files: ${JSON.stringify(logs.json()).slice(0, 400)}`);
+        }
+        const home = await page("/");
+        if (!home.text.includes("<title>v2</title>")) throw new Error(`v2 is not served: ${home.text.slice(0, 120)}`);
+      });
+
+      await ctx.step("rollback to v1 is a pointer flip: no runtime to start", async () => {
+        const rolled = await owner.post("/v1/projects/:projectId/apps/:appId/rollback",
+          { deployment_id: versions[0] }, { params: { ...projectParams, appId } });
+        rolled.status(200).body().has("$.active_deployment_id", versions[0]);
+        const home = await page("/");
+        if (!home.text.includes("<title>v1</title>")) throw new Error(`v1 is not served after rollback`);
+      });
+
+      await ctx.step("retention: after 8 deploys the App keeps its active deployment and the 5 newest others", async () => {
+        for (let i = 3; i <= 8; i += 1) await deploy(`v${i}`, `console.log(${i})`);
+        const list = await owner.get("/v1/projects/:projectId/apps/:appId/deployments",
+          { params: { ...projectParams, appId } });
+        list.status(200);
+        const rows = (list.json<any>().deployments ?? list.json<any>()) as Array<{ deployment_id: string; status: string; version: number }>;
+        const ready = rows.filter((row) => row.status === "ready").map((row) => row.version).sort((a, b) => a - b);
+        // Retired deployments are `deleted`, which the list leaves out.
+        const listed = rows.map((row) => row.version);
+        if (JSON.stringify(ready) !== JSON.stringify([3, 4, 5, 6, 7, 8]) || listed.includes(1) || listed.includes(2)) {
+          throw new Error(`expected exactly 3-8 ready and 1-2 retired, got ready ${ready}, listed ${listed}`);
+        }
+        const home = await page("/");
+        if (!home.text.includes("<title>v8</title>")) throw new Error("the newest deployment is not served");
+      });
+
+      await ctx.step("delete the App", async () => {
+        (await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...projectParams, appId } })).status(200);
+        appId = "";
+      });
+    } finally {
+      if (appId) await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...projectParams, appId } }).catch(() => {});
+      cli.dispose();
+    }
+  },
+);
