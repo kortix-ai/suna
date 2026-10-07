@@ -105,7 +105,8 @@ interface ResourceGrantRow {
  * takes.
  */
 export async function listResourceGrants(projectId: string): Promise<ResourceGrantRow[]> {
-  const rows = await objectGrantRows({ projectId });
+  // Folder grants (the project's Files) are listed by the Files access dialog, not here.
+  const rows = (await objectGrantRows({ projectId })).filter((r) => isResourceType(r.resourceType));
   return rows.map((r) => ({
     grantId: r.grantId,
     resourceType: r.resourceType,

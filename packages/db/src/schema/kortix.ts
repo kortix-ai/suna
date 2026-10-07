@@ -6574,10 +6574,12 @@ export const pushDeviceTokens = kortixSchema.table('push_device_tokens', {
 ]);
 
 // ─── Drives ───────────────────────────────────────────────────────────────
-// A Drive is a shared folder backed by one Platinum volume in drive sync mode.
-// `personal` belongs to one user in one account (one default each), `agent`
-// to one (project, agent), `company` to the account and reaches a project only
-// through a `drive_grants` row. Server-only: the API is the sole reader.
+// A Drive is a folder tree backed by one Platinum volume in drive sync mode.
+// `project` is THE drive: one per project, shown as Files, with access per
+// folder held in `role_assignments` (object type `folder`). `personal`,
+// `agent` and `company` are the earlier per-person / per-agent / per-account
+// drives; they are read only by the job that folds them into project drives
+// (apps/api/src/drives/fold.ts). Server-only: the API is the sole reader.
 export const drives = kortixSchema.table('drives', {
   driveId: uuid('drive_id').defaultRandom().primaryKey(),
   accountId: uuid('account_id')
@@ -6604,7 +6606,10 @@ export const drives = kortixSchema.table('drives', {
   uniqueIndex('drives_agent_per_project')
     .on(table.projectId, table.agentName)
     .where(sql`${table.kind} = 'agent'`),
-  check('drives_kind', sql`${table.kind} in ('personal', 'agent', 'company')`),
+  uniqueIndex('drives_one_per_project')
+    .on(table.projectId)
+    .where(sql`${table.kind} = 'project'`),
+  check('drives_kind', sql`${table.kind} in ('personal', 'agent', 'company', 'project')`),
 ]);
 
 // Where a drive mounts, beyond its owner's own sessions. One row per subject:
