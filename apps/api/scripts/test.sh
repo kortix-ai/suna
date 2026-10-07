@@ -2,6 +2,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# The unit suite is hermetic; strip the ambient platform state first.
+. ../../scripts/hermetic-test-env.sh
+
 mode="${1:-default}"
 
 case "$mode" in

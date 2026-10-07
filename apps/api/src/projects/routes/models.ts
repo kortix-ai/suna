@@ -423,7 +423,9 @@ export function registerModelsRoutes(): void {
         accountDefault: defaults.account,
         agentDefaults: defaults.agents,
         projectDefault: defaults.projects[projectId] ?? null,
-        resolvedForCaller: resolved.model ?? (freeTier ? null : platformDefaultModelId()),
+        // The platform default is servable for every tier (KRTX-1067), so the
+        // honest fallback is the same for free and paid callers.
+        resolvedForCaller: resolved.model ?? platformDefaultModelId(),
         resolvedSource: resolved.source,
         freeTier,
       });

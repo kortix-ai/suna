@@ -42,8 +42,8 @@
  * A hold is lifted by an ACTION, never by a timer: sending anything new
  * (`POST .../prompts` → `enqueueReleasingHold`), "send now" on one row
  * (`retryInboxPrompt`), or Resume (`POST .../prompts/hold {held:false}`).
- * `INBOX_HOLD_MS` (24 h) is a horizon, not a scheduler — it exists so a browser
- * that never comes back cannot hold a prompt for ever.
+ * The drain never claims a held inbox prompt, so `INBOX_HOLD_MS` (24 h) does
+ * not lift the hold either (see `INBOX_HOLD_MS`).
  *
  * "Delivers at most once more" is what step 3 below buys. Without it a held
  * forwarded row is released straight back onto the queue while OpenCode still
@@ -65,6 +65,7 @@ import {
 } from './forwarded-placement';
 import { INBOX_HOLD_MS, inboxScope } from './inbox-rows';
 import { withNextDeliveryAttempt } from './store';
+import { onWireSql } from './delivery-state';
 
 const TIP_LIMIT = 16;
 /** How long a claimed delivery is given to land after the hold. A delivery is
@@ -103,7 +104,7 @@ function stopPausedOnWireScope(sessionId: string) {
   return and(
     inboxScope(sessionId),
     eq(sessionLifecycleCommands.status, 'succeeded'),
-    sql`${sessionLifecycleCommands.result}->>'status' IN ('forwarded', 'delivered')`,
+    onWireSql,
     sql`(${sessionLifecycleCommands.result}->>'forwarded_at')::timestamptz > now() - interval '10 minutes'`,
   );
 }
@@ -190,7 +191,7 @@ export const liveHoldSettleDeps: HoldSettleDeps = {
         and(
           eq(sessionLifecycleCommands.commandId, commandId),
           eq(sessionLifecycleCommands.status, 'succeeded'),
-          sql`${sessionLifecycleCommands.result}->>'status' IN ('forwarded', 'delivered')`,
+          onWireSql,
         ),
       );
   },
@@ -205,7 +206,7 @@ export const liveHoldSettleDeps: HoldSettleDeps = {
         and(
           eq(sessionLifecycleCommands.commandId, commandId),
           eq(sessionLifecycleCommands.status, 'succeeded'),
-          sql`${sessionLifecycleCommands.result}->>'status' IN ('forwarded', 'delivered')`,
+          onWireSql,
         ),
       );
   },

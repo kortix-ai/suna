@@ -196,6 +196,12 @@
   "newWorkspace": {
     "title": "Crea uno progetto",
     "description": "Uno progetto contiene agenti, file e sessioni.",
+    "handoff": {
+      "validating": "Validazione",
+      "creating_repository": "Creazione del repository",
+      "registering": "Registrazione del progetto",
+      "seeding": "Preparazione dei file iniziali"
+    },
     "templateSeed": "Questo progetto verrà inizializzato dal modello scelto.",
     "account": {
       "label": "Account",
@@ -842,9 +848,10 @@
         "sessions": "Ogni sessione in questo progetto, con file, cronologia e risultati",
         "automation": "Tutte le esecuzioni pianificate e i trigger — smettono subito di funzionare",
         "integrations": "Ogni integrazione connessa, segreto e chiave API limitata a questo progetto",
+        "managedRepo": "Il repository Git gestito da Kortix di questo progetto, con ogni commit incluso",
         "access": "L'accesso per tutto il team — nessuno potrà più raggiungere questo progetto"
       },
-      "reassurance": "Il repository Git connesso non viene eliminato. Il codice già inviato resta al suo posto.",
+      "reassurance": "I repository Git connessi personalmente non vengono eliminati. Il codice già inviato resta al suo posto.",
       "keepWorkspace": "Mantieni progetto"
     },
     "sandbox": {
@@ -1540,6 +1547,7 @@
         "email": "E-mail",
         "scheduled": "Programmato",
         "webhook": "Webhook",
+        "manual": "Manuale",
         "all": "Tutti"
       },
       "statusValue": {
@@ -1946,6 +1954,13 @@
     "queuedFiles": "{count, plural, one {# file} other {# file}}",
     "queuedCount": "{count} in coda",
     "editingQueued": "In modifica",
+    "steerNextStep": "Letto al passo successivo",
+    "queuedByAnotherMember": "Inviato da un altro membro. Solo quella persona può modificarlo o inviarlo.",
+    "steerFallbackUnsupported": "Attende questo turno. Questa sessione non accetta messaggi durante un turno.",
+    "steerFallbackNotPrompter": "Attende questo turno. Lo ha avviato un altro membro.",
+    "steerFallbackTurnEnded": "Viene eseguito come turno a sé. Il turno è terminato prima.",
+    "stopAndSend": "Interrompi e invia",
+    "stopAndSendFailed": "Impossibile interrompere e inviare quel messaggio",
     "submitEdit": "Invia",
     "collapseQueue": "Comprimi coda",
     "expandQueue": "Espandi coda"
@@ -9417,7 +9432,9 @@
     "i18nComplete": {
       "authEmailRateLimit": "Impossibile inviare l’email. Riprova tra circa un’ora.",
       "authRequestRateLimit": "Troppe richieste. Riprova tra qualche minuto.",
+      "text1a9030082a20": "Crea competenza",
       "text25ab55af92b1": "Caricamento allegato avviato",
+      "text38e64d6a8162": "Esegue il commit di un SKILL.md sul branch predefinito del progetto. Nessun modello o chat necessari.",
       "text40078a553439": "Blocco dell’allegato caricato",
       "text4c7f8000aabd": "Caricamento allegato completato",
       "text91420d2587c2": "Caricamento allegato rimosso",
@@ -9891,6 +9908,9 @@
       "text0e498a7ede47": "Abilitato {value0}",
       "text0e52f6b9d025": "Markdown",
       "text4cab70e9226b": "Salva come PDF",
+      "text9bf06a86c934": "Nuova competenza",
+      "texta38668224f1a": "Crea con un modulo",
+      "textb25ab5d5e2a5": "Competenza creata",
       "textce87352f1102": "Questo file è troppo grande per essere salvato come PDF. Scarica invece il file Markdown.",
       "text3b0c86f182b0": "Impossibile preparare il PDF.",
       "text0e570ca6fabe": "Origine",
@@ -14447,6 +14467,7 @@
       "text895ce927db2e": "Chat personale",
       "text28c7d3f8b75d": "Chat di gruppo",
       "text72b5b0c53de9": "Ha risposto in Microsoft Teams",
+      "textedac6130dac7": "Esegue il commit di un SKILL.md nel repository senza una sessione di chat.",
       "textfc73e9ad2dae": "Ha risposto in Slack",
       "text8faf56a14a8d": "Ha risposto in Telegram",
       "text8ccfe10f2f2d": "Pubblica nel catalogo Teams",
@@ -19236,7 +19257,9 @@
       "text8f480bae8d16": "Agenti IA per i team finanza",
       "text6243d930fc1c": "AI Operating System",
       "textc959682e0398": "Ha visualizzato i dispositivi connessi",
-      "text976811d9540a": "Ha disconnesso un dispositivo"
+      "text976811d9540a": "Ha disconnesso un dispositivo",
+      "text6f417aa88601": "Spesa del gateway LLM per origine elencata",
+      "textc96cd610ba08": "Chiave del provider condivisa riprovata dopo il limite di utilizzo"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -19373,750 +19396,6 @@
   "personalWelcome": {
     "dismiss": "Chiudi",
     "emailCopied": "Indirizzo email copiato"
-  },
-  "starterPrompts": {
-    "items": {
-      "company-memory": {
-        "label": "Configura il tuo agente",
-        "prompt": "Configura il mio agente. Fammi domande sulla mia azienda: di cosa ci occupiamo, chi sono i nostri clienti, chi fa parte del team, quali sono i nostri prodotti e le nostre priorità principali. Salva ciò che impari nella memoria del progetto, così lo ricorderai in ogni sessione futura, e quando hai finito apri una richiesta di modifica così potrò esaminarla."
-      },
-      "agent-create": {
-        "label": "Crea un agente",
-        "prompt": "Crea un agente specializzato per un'attività che la mia azienda svolge spesso. Scrivi il suo prompt in `agents/`, assegnagli in `kortix.yaml` solo i grant di cui ha effettivamente bisogno e apri una richiesta di modifica così potrò leggerla prima che l'agente entri in funzione. Scegli l'attività che mi farebbe risparmiare più tempo e spiegami perché l'hai scelta."
-      },
-      "agent-team": {
-        "label": "Crea un team di agenti",
-        "prompt": "Progetta un piccolo team di agenti per la mia azienda: tre o quattro specialisti, ciascuno con un compito circoscritto e un grant limitato, e spiega come si passano il lavoro. Documentali e apri un'unica richiesta di modifica che li includa tutti."
-      },
-      "skill-write": {
-        "label": "Scrivi una skill",
-        "prompt": "Trasforma in una skill, da salvare in `skills/`, un'attività che la mia azienda svolge sempre allo stesso modo, così ogni sessione futura saprà già come gestirla. Scegli quella di maggior valore, scrivila correttamente includendo i passaggi e le insidie, e apri una richiesta di modifica."
-      },
-      "skill-from-runbook": {
-        "label": "Trasforma abitudine in skill",
-        "prompt": "Continuo a spiegarti lo stesso processo. Mettilo per iscritto come skill riutilizzabile, includendo i passaggi, gli input e l'aspetto di un buon output, poi apri una richiesta di modifica. Se non riesci a capirlo dalla memoria, chiedimi in una sola riga quale processo intendo."
-      },
-      "agent-review": {
-        "label": "Esamina i miei agenti",
-        "prompt": "Leggi ogni agente presente in questo progetto, includendo il prompt e i grant, e dimmi quali sono vaghi, quali hanno permessi eccessivi e quali si sovrappongono. Proponi le correzioni in un'unica richiesta di modifica."
-      },
-      "grants-audit": {
-        "label": "Verifica accesso agenti",
-        "prompt": "Esegui un audit di `kortix.yaml`: per ogni agente, elenca i connector, i secret e le skill a cui può accedere, e segnala qualsiasi elemento concesso come `all` che non ne abbia bisogno. Proponi un insieme di permessi più ristretto in una richiesta di modifica."
-      },
-      "trigger-daily": {
-        "label": "Pianifica briefing al giorno",
-        "prompt": "Configura un trigger cron che venga eseguito ogni mattina dei giorni feriali, raccolga ciò che è cambiato in questo progetto e mi scriva un breve briefing. Aggiungilo a `kortix.yaml`, mantienilo disabilitato e dimmi l'unica riga da modificare quando vorrò attivarlo."
-      },
-      "trigger-weekly": {
-        "label": "Pianifica un report settimanale",
-        "prompt": "Configura un trigger cron settimanale che produca il report che altrimenti scriverei a mano il venerdì. Aggiungilo a `kortix.yaml` come disabilitato e mostrami esattamente cosa avrebbe prodotto questa settimana."
-      },
-      "trigger-webhook": {
-        "label": "Avvia il lavoro da un webhook",
-        "prompt": "Configura un trigger webhook firmato, così un altro sistema potrà avviare il lavoro qui. Aggiungilo a `kortix.yaml`, dimmi l'URL e quale secret contiene la chiave di firma, e scrivi il prompt che attiva."
-      },
-      "connector-setup": {
-        "label": "Collega uno strumento che uso",
-        "prompt": "Dimmi quale connector vale la pena configurare per primo per un'azienda come la mia, cosa ti permetterebbe concretamente di fare una volta collegato e quali approvazioni ti servirebbero da parte mia."
-      },
-      "memory-curate": {
-        "label": "Riordina la memoria del progetto",
-        "prompt": "Leggi la memoria del progetto, individua ciò che è obsoleto, duplicato o vago e riscrivila in modo che una nuova sessione ottenga la verità in un solo passaggio. Apri una richiesta di modifica con il diff."
-      },
-      "memory-gaps": {
-        "label": "Individua i tuoi punti ciechi",
-        "prompt": "Esamina la memoria del progetto e dimmi le dieci cose che dovresti sapere per svolgere bene il mio lavoro ma che attualmente non conosci. Chiedimele in un unico elenco numerato a cui possa rispondere con una sola risposta."
-      },
-      "harness-improve": {
-        "label": "Migliora te stesso",
-        "prompt": "Esamina ciò che le sessioni recenti di questo progetto hanno effettivamente fatto, individua i punti in cui ti sei bloccato o hai ripetuto del lavoro e perfeziona i prompt, le skill e la memoria che lo hanno causato. Apri un'unica richiesta di modifica intitolata `harness: …`."
-      },
-      "cr-open": {
-        "label": "Apri la prima richiesta",
-        "prompt": "Scegli il miglioramento più utile che puoi apportare ora a questo progetto, realizzalo e apri una richiesta di modifica spiegando cosa hai cambiato e perché. Mantienilo abbastanza contenuto da poterlo esaminare in due minuti."
-      },
-      "repo-tour": {
-        "label": "Spiegami il mio repository",
-        "prompt": "Guidami attraverso questo progetto così com'è ora: cosa è configurato, quali agenti esistono, cosa è collegato, cosa è vuoto, e indicami le tre cose che vale la pena configurare per prime."
-      },
-      "agent-onboarder": {
-        "label": "Crea un agente per l'onboarding",
-        "prompt": "Crea un agente che si occupi dell'onboarding dei nuovi dipendenti della mia azienda: deve rispondere alle loro domande usando la propria memoria, indirizzarli verso i documenti giusti e segnalare ciò a cui non ha saputo rispondere. Apri una richiesta di modifica."
-      },
-      "agent-watcher": {
-        "label": "Agente monitora concorrenti",
-        "prompt": "Crea un agente e un trigger settimanale che monitorino i nostri concorrenti e mi comunichino solo ciò che è effettivamente cambiato. Aggiungili entrambi al repository in stato disabilitato e mostrami un esempio dell'output di questa settimana."
-      },
-      "agent-inbox": {
-        "label": "Agente per smistare la posta",
-        "prompt": "Crea un agente che smisti una casella di posta: distingua ciò che richiede il mio intervento, ciò a cui serve una risposta e ciò che può aspettare, quindi scriva un breve riepilogo. Apri una richiesta di modifica con l'agente e i relativi permessi."
-      },
-      "csv-dashboard": {
-        "label": "Trasforma CSV in dashboard",
-        "prompt": "Allego un CSV grezzo. Costruisci una vera dashboard: inserisci i grafici che spiegano davvero i dati, in una pagina che posso aprire, e inviami l'URL. Se non è allegato nulla, dimmelo in una riga invece di aspettare."
-      },
-      "csv-charts": {
-        "label": "Grafici corretti per CSV",
-        "prompt": "Allego un CSV. Scegli il grafico giusto per ogni domanda a cui rispondono i dati, creali e aggiungi a ciascuno una didascalia che spieghi cosa mostra. Niente grafici a torta, a meno che un grafico a torta non sia davvero la scelta giusta."
-      },
-      "spreadsheet-analysis": {
-        "label": "Dai senso a un foglio di calcolo",
-        "prompt": "Leggi il foglio di calcolo che ho allegato, individua gli schemi e i valori anomali e scrivimi un breve riepilogo di ciò che dovrei effettivamente fare al riguardo. Se non è allegato nulla, dimmelo in una riga invece di aspettare."
-      },
-      "metrics-dashboard": {
-        "label": "Crea dashboard metriche",
-        "prompt": "Costruisci una dashboard live dei numeri che un'azienda come la mia monitora ogni settimana, come web app funzionante, e inviami l'URL. Usa ciò che puoi ricavare dalla memoria del progetto e, alla fine, elenca tutto ciò che hai dovuto ipotizzare invece di fermarti per chiedermelo."
-      },
-      "kpi-wall": {
-        "label": "Crea una parete di KPI",
-        "prompt": "Costruisci una singola pagina che mostri se l'azienda è sulla buona strada: i cinque numeri che contano, ciascuno con il proprio obiettivo e il relativo andamento. Deve essere una web app funzionante; inviami l'URL."
-      },
-      "sheet-to-app": {
-        "label": "Trasforma un foglio in un'app",
-        "prompt": "Allego un foglio di calcolo che il mio team modifica a mano. Trasformalo in una vera web app con un modulo e una tabella, così nessuno lo romperà di nuovo, e inviami l'URL."
-      },
-      "crm-lite": {
-        "label": "Crea un CRM leggero",
-        "prompt": "Costruisci un CRM leggero come web app funzionante: aziende, contatti, fase della trattativa e prossima azione, con alcune righe realistiche già inserite per poterlo vedere in funzione. Inviami l'URL."
-      },
-      "task-board": {
-        "label": "Crea una bacheca delle attività",
-        "prompt": "Costruisci una bacheca delle attività come web app funzionante: colonne, trascinamento tra le colonne e salvataggio delle modifiche. Inviami l'URL."
-      },
-      "intake-form": {
-        "label": "Crea un modulo di raccolta dati",
-        "prompt": "Costruisci un modulo di raccolta dati come web app funzionante, con le domande a cui un nuovo cliente dovrebbe rispondere prima della prima chiamata e con le risposte salvate in un luogo che io possa consultare. Inviami l'URL."
-      },
-      "pricing-calculator": {
-        "label": "Crea un calcolatore dei prezzi",
-        "prompt": "Costruisci un calcolatore dei prezzi come web app funzionante, così un potenziale cliente può stimare quanto pagherebbe, e inviami l'URL. Usa ciò che puoi ricavare dalla memoria del progetto e, alla fine, elenca tutto ciò che hai dovuto ipotizzare invece di fermarti per chiedermelo."
-      },
-      "feedback-board": {
-        "label": "Crea una bacheca dei feedback",
-        "prompt": "Costruisci una bacheca dei feedback dei clienti come web app funzionante: possibilità di inviare un'idea, votarla positivamente e visualizzare uno stato per ciascuna. Inviami l'URL."
-      },
-      "inventory-tracker": {
-        "label": "Crea un tracker dell'inventario",
-        "prompt": "Crea un tracker dell'inventario come web app funzionante — articoli, quantità, avvisi di scorte basse — e inviami l'URL."
-      },
-      "status-page": {
-        "label": "Crea una pagina di stato",
-        "prompt": "Crea una pagina di stato come web app funzionante — componenti, stato attuale, cronologia degli incidenti — e inviami l'URL."
-      },
-      "clean-data": {
-        "label": "Pulisci i miei dati",
-        "prompt": "Allego un foglio di calcolo disordinato. Puliscilo — colonne coerenti, date corrette, testo senza spazi superflui, nessun duplicato — e forniscimi un registro delle modifiche di tutto ciò che hai alterato."
-      },
-      "runway": {
-        "label": "Calcola la nostra autonomia",
-        "prompt": "Allego i nostri dati. Calcola il nostro tasso di consumo e per quanti mesi abbiamo autonomia, mostra i calcoli così posso discuterli e indicami le due leve che incidono maggiormente sul risultato."
-      },
-      "budget-variance": {
-        "label": "Confronta budget e consuntivo",
-        "prompt": "Allego il nostro budget e i dati consuntivi. Mostrami dove siamo sopra e sotto il budget, ordina gli scostamenti per entità e dimmi su quali vale la pena intervenire."
-      },
-      "cashflow-forecast": {
-        "label": "Prevedi la nostra liquidità",
-        "prompt": "Allego le nostre transazioni. Crea una previsione del flusso di cassa per i prossimi sei mesi, indica chiaramente le ipotesi e segnala il mese in cui la liquidità si fa critica."
-      },
-      "unit-economics": {
-        "label": "Calcola l'economia unitaria",
-        "prompt": "Calcola quanto ci costa davvero un cliente e quanto vale — acquisizione, erogazione, supporto, fidelizzazione — e dimmi quale numero correggere per primo. Usa ciò che puoi recuperare dalla memoria del progetto ed elenca alla fine tutto ciò che hai dovuto ipotizzare, invece di fermarti per chiedermelo."
-      },
-      "pricing-model": {
-        "label": "Modella una variazione di prezzo",
-        "prompt": "Modella cosa succede se cambiamo i prezzi — la struttura dell'offerta, i calcoli per postazione e l'effetto sui ricavi a tre livelli di adozione. Forniscimi il foglio di calcolo e una raccomandazione di un paragrafo."
-      },
-      "invoice-reconcile": {
-        "label": "Riconcilia le mie fatture",
-        "prompt": "Allego le fatture e un estratto conto bancario. Abbinale, elenca ciò che non trova corrispondenza in entrambe le direzioni e dimmi cosa sembra un addebito duplicato."
-      },
-      "expense-categorise": {
-        "label": "Categorizza le nostre spese",
-        "prompt": "Allego le nostre spese. Categorizzale, suddividi la spesa per categoria e per mese, individua ciò che cresce più rapidamente e indica le tre voci da tagliare per prime."
-      },
-      "subscription-audit": {
-        "label": "Trova le spese inutili",
-        "prompt": "Allego gli estratti conto delle nostre carte. Trova ogni addebito ricorrente, segnala quelli che sembrano inutilizzati o duplicati e calcola quanto risparmieremmo ogni anno annullandoli."
-      },
-      "ar-chase": {
-        "label": "Sollecita le fatture non pagate",
-        "prompt": "Allego i nostri crediti verso clienti. Calcola chi deve cosa e da quanto tempo è in ritardo, poi prepara l'e-mail di sollecito per ciascuno — ferma, non scortese — ordinandole in base all'importo in gioco."
-      },
-      "financial-model": {
-        "label": "Crea un modello finanziario",
-        "prompt": "Crea un semplice modello finanziario — ricavi, costi, liquidità, autonomia — basato su un foglio delle ipotesi che posso modificare, con un grafico della liquidità nel tempo. Usa ciò che puoi recuperare dalla memoria del progetto ed elenca alla fine tutto ciò che hai dovuto ipotizzare, invece di fermarti per chiedermelo."
-      },
-      "cohort-revenue": {
-        "label": "Analizza i ricavi per coorte",
-        "prompt": "Allego i dati sui ricavi dei clienti. Crea un'analisi per coorte, dimmi in un paragrafo se la fidelizzazione sta migliorando e mostra quale coorte è cambiata."
-      },
-      "headcount-cost": {
-        "label": "Pianifica costi assunzioni",
-        "prompt": "Crea un piano delle assunzioni in un foglio di calcolo — ruolo, tempistiche, costo complessivo e cosa rende possibile — con i totali mensili rapportati alla nostra autonomia."
-      },
-      "margin-analysis": {
-        "label": "Trova i margini migliori",
-        "prompt": "Sto allegando i dati sulle vendite. Calcola il margine per prodotto, cliente e canale, e dimmi cosa dovremmo vendere di più e cosa sta generando perdite senza farsi notare."
-      },
-      "board-metrics": {
-        "label": "Prepara metriche del board",
-        "prompt": "Prepara il pacchetto di numeri che un board si aspetta — crescita, burn, runway, retention, pipeline — sotto forma di grafici, con una lettura di una riga per ciascuno. Recupera tutto ciò che puoi dalla memoria del progetto e, alla fine, elenca ciò che hai dovuto ipotizzare invece di fermarti a chiedermelo."
-      },
-      "pitch-deck": {
-        "label": "Crea una presentazione",
-        "prompt": "Crea una presentazione di 10 slide per introdurre la mia azienda: cosa facciamo, per chi lo facciamo, il problema, come funziona e perché proprio ora. Scrivi i testi e progetta le slide — non consegnarmi una semplice scaletta. Recupera tutto ciò che puoi dalla memoria del progetto e, alla fine, elenca ciò che hai dovuto ipotizzare invece di fermarti a chiedermelo."
-      },
-      "deck-from-doc": {
-        "label": "Documento in presentazione",
-        "prompt": "Sto allegando un documento. Trasformalo in una presentazione efficace per una riunione — un'idea per slide, con le note del relatore sotto — invece di incollare i paragrafi nelle slide."
-      },
-      "investor-update": {
-        "label": "Aggiornamento per investitori",
-        "prompt": "Prepara l'aggiornamento di questo mese per gli investitori — risultati principali, metriche, aspetti negativi e ciò per cui ho bisogno di aiuto. Recupera i numeri invece di chiedermeli. Recupera tutto ciò che puoi dalla memoria del progetto e, alla fine, elenca ciò che hai dovuto ipotizzare invece di fermarti a chiedermelo."
-      },
-      "board-deck": {
-        "label": "Presentazione per il board",
-        "prompt": "Crea una presentazione per il board — a che punto siamo rispetto al piano, le tre decisioni di cui ho bisogno dal board e i rischi che non intendo nascondere. Recupera tutto ciò che puoi dalla memoria del progetto e, alla fine, elenca ciò che hai dovuto ipotizzare invece di fermarti a chiedermelo."
-      },
-      "sales-deck": {
-        "label": "Presentazione commerciale",
-        "prompt": "Crea una presentazione commerciale per una prima chiamata — il loro problema, la nostra risposta, le prove e il prossimo passo — con le note del relatore. Recupera tutto ciò che puoi dalla memoria del progetto e, alla fine, elenca ciò che hai dovuto ipotizzare invece di fermarti a chiedermelo."
-      },
-      "data-slide": {
-        "label": "Trasforma i numeri in slide",
-        "prompt": "Sto allegando dei dati. Crea le tre slide che ne raccontano la storia — un grafico per ciascuna e una frase di sintesi per ciascuna — pronte da presentare."
-      },
-      "pdf-report": {
-        "label": "Crea un vero report PDF",
-        "prompt": "Prendi ciò su cui abbiamo lavorato e impaginalo come un vero report PDF — copertina, indice, numeri di pagina, grafici — che possa inviare a un cliente senza modificarlo."
-      },
-      "proposal": {
-        "label": "Scrivi una proposta",
-        "prompt": "Scrivi una proposta per il cliente — il problema come lo ha descritto, cosa faremmo, il piano e il prezzo, lasciando il numero come segnaposto. Recupera tutto ciò che puoi dalla memoria del progetto e, alla fine, elenca ciò che hai dovuto ipotizzare invece di fermarti a chiedermelo."
-      },
-      "one-pager": {
-        "label": "Crea pagina di presentazione",
-        "prompt": "Scrivi una pagina di presentazione sulla mia azienda da inviare prima di una riunione — cosa facciamo, per chi, perché è importante e cosa fare dopo. Recupera tutto ciò che puoi dalla memoria del progetto e, alla fine, elenca ciò che hai dovuto ipotizzare invece di fermarti a chiedermelo."
-      },
-      "contract-explain": {
-        "label": "Spiega un contratto",
-        "prompt": "Sto allegando un contratto. Spiegalo in parole semplici — gli obblighi, gli aspetti economici, le condizioni di risoluzione e le date — poi elenca le domande da sottoporre a un avvocato. Non dirmi se dovrei firmarlo."
-      },
-      "meeting-actions": {
-        "label": "Trasforma gli appunti in azioni",
-        "prompt": "Tra poco incollerò i miei appunti della riunione. Trasformali in decisioni, responsabili e scadenze, e dimmi chiaramente cosa è rimasto irrisolto."
-      },
-      "weekly-report": {
-        "label": "Scrivi il report settimanale",
-        "prompt": "Scrivi il report aziendale di questa settimana — cosa è avanzato, cosa no e cosa dovrebbe preoccuparmi — attingendo dal repo e dalla memoria invece di chiedermelo."
-      },
-      "case-study": {
-        "label": "Scrivi un case study",
-        "prompt": "Scrivi un case study cliente — la situazione, cosa è cambiato e il risultato — usando uno pseudonimo se non ti ho fornito il nome di un cliente reale. Pubblicalo come pagina e inviami l'URL."
-      },
-      "hard-email": {
-        "label": "Scrivi l’email difficile",
-        "prompt": "Aiutami a scrivere l’email che continuo a rimandare: un aumento di prezzo, un ritardo o una brutta notizia. Chiedimi quale in una sola riga, poi dammi tre versioni, da diretta a delicata."
-      },
-      "competitor-teardown": {
-        "label": "Analizza a fondo un concorrente",
-        "prompt": "Scegli il nostro concorrente più vicino e analizzalo a fondo: posizionamento, prezzi, cosa lancia, cosa i clienti apprezzano e criticano e i due ambiti in cui possiamo batterlo. Cita ogni fonte."
-      },
-      "pricing-benchmark": {
-        "label": "Confronta i nostri prezzi",
-        "prompt": "Cerca quanto fanno pagare i prodotti comparabili, inserisci tutto in un’unica tabella con i pacchetti e il calcolo per utente e dimmi dove ci collochiamo e se è una scelta deliberata."
-      },
-      "lead-list": {
-        "label": "Crea una lista di lead",
-        "prompt": "Crea una lista di 25 aziende che corrispondono al nostro profilo cliente, indicando perché ciascuna è adatta e chi è la persona migliore da contattare. In un foglio di calcolo, con le fonti."
-      },
-      "investor-list": {
-        "label": "Crea una lista di investitori",
-        "prompt": "Crea una lista di investitori che finanziano aziende come la mia nella nostra fase: fondo, partner, un investimento recente rilevante e il modo più diretto per arrivare a loro. In un foglio di calcolo, con le fonti."
-      },
-      "market-sizing": {
-        "label": "Dimensiona il mio mercato",
-        "prompt": "Dimensiona il mercato a cui mi rivolgo, con approccio top-down e bottom-up, e mostra i calcoli e le fonti così posso discutere i numeri."
-      },
-      "review-mining": {
-        "label": "Analizza recensioni rivali",
-        "prompt": "Leggi le recensioni pubbliche dei nostri concorrenti, individua ciò che le persone apprezzano e criticano ripetutamente e trasformalo nei tre messaggi che dovremmo comunicare sul nostro sito."
-      },
-      "industry-catchup": {
-        "label": "Aggiornami sul mio settore",
-        "prompt": "Aggiornami sul mio settore nell’ultimo mese: cosa è stato lanciato, chi ha raccolto fondi e cosa è cambiato; poi dimmi quali due elementi contano davvero per noi e perché."
-      },
-      "keyword-research": {
-        "label": "Cosa cercano gli acquirenti",
-        "prompt": "Cerca cosa digitano davvero nei motori di ricerca i nostri acquirenti, raggruppalo per intento e indicami le cinque pagine che vale la pena scrivere per prime. In un foglio di calcolo, con le fonti."
-      },
-      "buyer-research": {
-        "label": "Studia i miei acquirenti",
-        "prompt": "Studia le persone che acquistano prodotti come il mio: dove si riuniscono, di cosa si lamentano e quali parole usano per descrivere il problema. Cita le fonti."
-      },
-      "regulation-scan": {
-        "label": "Esamina le norme applicabili",
-        "prompt": "Cerca le norme e gli standard applicabili a un’azienda come la mia, riassumi in parole semplici cosa richiede ciascuno e segnala cosa dovrei sottoporre a un avvocato invece di agire autonomamente."
-      },
-      "events-list": {
-        "label": "Trova eventi interessanti",
-        "prompt": "Trova le conferenze e gli incontri a cui partecipano davvero i nostri acquirenti quest’anno: data, luogo, costo e se ne vale la pena. In un foglio di calcolo."
-      },
-      "landing-page": {
-        "label": "Pubblica una landing page",
-        "prompt": "Crea una landing page per il mio prodotto e pubblicala. Usa tutto ciò che puoi recuperare dalla memoria del progetto e, alla fine, elenca ciò che hai dovuto ipotizzare invece di fermarti a chiedermelo. Inviami l’URL live quando è online."
-      },
-      "pricing-page": {
-        "label": "Pubblica una pagina dei prezzi",
-        "prompt": "Scrivi e pubblica una pagina dei prezzi: i piani, cosa include ciascuno e le obiezioni a cui la pagina deve rispondere. Usa tutto ciò che puoi recuperare dalla memoria del progetto e, alla fine, elenca ciò che hai dovuto ipotizzare invece di fermarti a chiedermelo."
-      },
-      "docs-site": {
-        "label": "Pubblica documentazione",
-        "prompt": "Crea e pubblica un piccolo sito di documentazione per il mio prodotto: guida introduttiva, concetti fondamentali e una guida pratica. Usa tutto ciò che puoi recuperare dalla memoria del progetto e, alla fine, elenca ciò che hai dovuto ipotizzare invece di fermarti a chiedermelo."
-      },
-      "changelog-page": {
-        "label": "Pubblica un changelog",
-        "prompt": "Crea e pubblica una pagina changelog e scrivi le voci recenti basandoti sulla cronologia di questo repository, invece di chiedermi cosa è stato rilasciato."
-      },
-      "comparison-page": {
-        "label": "Pubblica una pagina comparativa",
-        "prompt": "Crea e pubblica un confronto onesto tra noi e la nostra alternativa più vicina, indicando in cosa eccelle ciascuno. Fai ricerche sull’altra parte invece di inventare informazioni."
-      },
-      "seo-pass": {
-        "label": "Fai un controllo SEO",
-        "prompt": "Esegui un audit SEO del mio sito — titoli, descrizioni, intestazioni, testo alternativo, link interni, sitemap — correggi ciò che puoi e indica cosa richiede una decisione da parte mia."
-      },
-      "homepage-rewrite": {
-        "label": "Riscrivi la mia homepage",
-        "prompt": "Riscrivi la mia homepage in modo che la prima schermata dica cosa facciamo, per chi è e cosa fare dopo. Pubblicala e mostrami il prima e il dopo affiancati."
-      },
-      "waitlist-page": {
-        "label": "Crea una pagina waitlist",
-        "prompt": "Crea e pubblica una pagina waitlist per qualcosa che sto per lanciare — un titolo, la promessa e un unico campo per raccogliere le email. Ricava tutto il possibile dalla memoria del progetto e, alla fine, elenca ciò che hai dovuto supporre invece di fermarti per chiedermelo."
-      },
-      "blog-post": {
-        "label": "Scrivi e pubblica un post",
-        "prompt": "Scrivi un post su qualcosa che la mia azienda conosce davvero, pubblicalo sul nostro sito e inviami l’URL. Scegli l’argomento più utile per i nostri potenziali clienti e spiega perché."
-      },
-      "faq-page": {
-        "label": "Scrivi una pagina FAQ",
-        "prompt": "Scrivi e pubblica una FAQ che risponda alle dieci domande che farebbe davvero chi acquista per la prima volta. Ricava tutto il possibile dalla memoria del progetto e, alla fine, elenca ciò che hai dovuto supporre invece di fermarti per chiedermelo."
-      },
-      "careers-page": {
-        "label": "Crea una pagina Lavora con noi",
-        "prompt": "Crea e pubblica una pagina Lavora con noi — come lavoriamo, per quali ruoli stiamo assumendo e come candidarsi. Ricava tutto il possibile dalla memoria del progetto e, alla fine, elenca ciò che hai dovuto supporre invece di fermarti per chiedermelo."
-      },
-      "storefront-copy": {
-        "label": "Scrivi il testo della scheda",
-        "prompt": "Scrivi il testo per la nostra scheda su un marketplace o app store — il titolo, la presentazione breve, la descrizione completa e gli screenshot che dovrei acquisire."
-      },
-      "cold-email": {
-        "label": "Scrivi email a freddo",
-        "prompt": "Scrivi una sequenza di quattro email a freddo per il nostro cliente ideale — brevi, specifiche, senza adulazioni — e indica l’obiettivo di ciascuna."
-      },
-      "launch-announcement": {
-        "label": "Scrivi un annuncio di lancio",
-        "prompt": "Scrivi l’annuncio di lancio della nostra prossima versione in tre lunghezze — un post, un’email e una riga — dicendo la stessa cosa in tutti i formati."
-      },
-      "newsletter": {
-        "label": "Prepara la newsletter",
-        "prompt": "Prepara la newsletter clienti di questo mese — cosa abbiamo rilasciato, cosa abbiamo imparato e una cosa utile che possono mettere in pratica."
-      },
-      "social-calendar": {
-        "label": "Pianifica calendario social",
-        "prompt": "Pianifica un mese di contenuti — tema, contenuto, canale, data — in un foglio di calcolo che io possa affidare a qualcun altro."
-      },
-      "linkedin-posts": {
-        "label": "Scrivi una settimana di post",
-        "prompt": "Scrivi una settimana di post su ciò che stiamo costruendo — un’idea per ciascuno, con un tono umano e senza esche per generare interazioni."
-      },
-      "positioning": {
-        "label": "Definisci il posizionamento",
-        "prompt": "Scrivi il nostro posizionamento: la categoria, a chi è rivolto, l’alternativa e l’unica cosa che facciamo meglio. Dammi tre opzioni, raccomandane una e spiega perché."
-      },
-      "icp-definition": {
-        "label": "Definisci il cliente ideale",
-        "prompt": "Descrivi a chi ci rivolgiamo davvero: l'azienda, la persona e il fattore scatenante che li spinge a cercarci; indica anche a chi dovremmo dire di no."
-      },
-      "objection-handling": {
-        "label": "Rispondi alle obiezioni",
-        "prompt": "Elenca le obiezioni che riceviamo durante le vendite e scrivi la risposta onesta a ciascuna, senza sviare."
-      },
-      "win-loss": {
-        "label": "Analizza vittorie e sconfitte",
-        "prompt": "Allego le nostre trattative recenti. Individua gli schemi ricorrenti nelle trattative vinte e perse e indicami l'unico cambiamento che migliorerebbe di più il tasso di successo."
-      },
-      "interview-guide": {
-        "label": "Scrivi le domande ai clienti",
-        "prompt": "Scrivi le domande per un'intervista con un cliente che ci permetta davvero di imparare qualcosa: domande aperte, non tendenziose, più ciò che dovrei ascoltare in ogni risposta."
-      },
-      "referral-program": {
-        "label": "Progetta un programma referral",
-        "prompt": "Progetta un programma referral per il mio prodotto: l'incentivo, il funzionamento e il testo; spiegami anche come potrebbe essere sfruttato impropriamente."
-      },
-      "brand-voice": {
-        "label": "Scrivi guida allo stile",
-        "prompt": "Scrivi la nostra guida alla voce del brand: come comunichiamo e come non comunichiamo, con riscritture prima e dopo di testi reali presenti sul nostro sito."
-      },
-      "code-review": {
-        "label": "Esamina il mio codice",
-        "prompt": "Esamina il codice in questo repo come farebbe un senior engineer: prima la correttezza, poi la chiarezza. Forniscimi un elenco prioritario, partendo dai problemi peggiori, e apri una change request per le correzioni di cui sei sicuro."
-      },
-      "write-tests": {
-        "label": "Scrivi i test mancanti",
-        "prompt": "Trova nel codice di questo repo ciò che causerebbe più danni se si rompesse e non ha test, scrivi i test e apri una change request. Dimmi cosa hai scelto deliberatamente di non coprire e perché."
-      },
-      "fix-bug": {
-        "label": "Correggi un bug che descrivo",
-        "prompt": "Ti descriverò un bug. Riproducilo prima in questo repo, poi correggine la causa invece del sintomo, aggiungi un test che lo avrebbe rilevato e apri una change request."
-      },
-      "explain-codebase": {
-        "label": "Spiega questo codebase",
-        "prompt": "Guidami attraverso questo codebase: cosa fa, com'è organizzato, dove si trova la logica importante e quali sono le tre cose che confonderebbero un nuovo engineer."
-      },
-      "refactor-file": {
-        "label": "Riordina un file complesso",
-        "prompt": "Trova nel repo il file che sta facendo troppe cose, suddividilo lungo le sue vere responsabilità senza cambiare il comportamento e apri una change request. Dimostra con i test che il comportamento è invariato."
-      },
-      "deps-upgrade": {
-        "label": "Aggiorna le dipendenze",
-        "prompt": "Controlla le dipendenze di questo repo per individuare versioni obsolete e vulnerabili, aggiorna quelle sicure, esegui i test e apri una change request indicando tutto ciò che richiede una decisione umana."
-      },
-      "readme": {
-        "label": "Scrivi il README",
-        "prompt": "Scrivi il README che questo repo dovrebbe avere: cos'è, come eseguirlo e come lavorarci, basandoti sul codice anziché su supposizioni. Apri una change request."
-      },
-      "ci-setup": {
-        "label": "Configura la CI",
-        "prompt": "Configura la continuous integration per questo repo: installazione, typecheck, lint e test, in modo che una change request mi dica se è sicura prima che la legga. Aprila come change request."
-      },
-      "api-client": {
-        "label": "Scrivi un client API",
-        "prompt": "Scrivi un client tipizzato per un'API che devo chiamare, includendo già la gestione degli errori e i retry, oltre a un test basato su una risposta registrata. Chiedimi in una riga quale API."
-      },
-      "security-review": {
-        "label": "Esamina codice per i rischi",
-        "prompt": "Esamina questo repository alla ricerca degli errori di sicurezza che si verificano davvero — segreti nel codice sorgente, input non validati, controlli di autorizzazione mancanti — e apri una richiesta di modifica per ciò che puoi correggere in sicurezza."
-      },
-      "perf-audit": {
-        "label": "Trova cosa è lento",
-        "prompt": "Trova i percorsi più lenti di questo progetto, misura invece di fare supposizioni e dimmi quale modifica avrebbe l'impatto maggiore. Mostrami i numeri prima e dopo."
-      },
-      "error-handling": {
-        "label": "Gestisci bene gli errori",
-        "prompt": "Trova dove questo codice fallisce in silenzio o genera errori su cui una persona non può intervenire, correggilo in modo che ogni errore spieghi cosa è successo e cosa fare, e apri una richiesta di modifica."
-      },
-      "db-migration": {
-        "label": "Scrivi migrazione database",
-        "prompt": "Scrivi la migrazione necessaria per lo schema di questo progetto, incluso il rollback, e dimmi cosa succederebbe alle righe esistenti. Apri una richiesta di modifica invece di eseguirla."
-      },
-      "api-docs": {
-        "label": "Documenta la mia API",
-        "prompt": "Documenta l'API di questo progetto a partire dal codice — ogni route, i relativi input, le risposte e gli errori — e pubblicala come una pagina che posso inviare a qualcuno."
-      },
-      "dead-code": {
-        "label": "Trova il codice inutilizzato",
-        "prompt": "Trova il codice di questo repository che non viene più raggiunto da nulla, dimostralo con il grafo degli import invece di valutarlo a occhio e apri una richiesta di modifica per eliminarlo."
-      },
-      "branch-explain": {
-        "label": "Spiega cosa è cambiato",
-        "prompt": "Leggi la cronologia recente di questo repository e dimmi cosa è realmente cambiato e perché, nell'ordine più comprensibile per una persona che è stata assente."
-      },
-      "api-to-sheet": {
-        "label": "Porta un'API in un foglio",
-        "prompt": "Recupera da un'API i dati che mi servono e mantienili in un foglio di calcolo che sia davvero leggibile. Chiedimi quale API in una riga, poi crealo e mostrami il primo recupero."
-      },
-      "recurring-export": {
-        "label": "Imposta export ricorrente",
-        "prompt": "Configura un'esportazione che venga eseguita secondo una pianificazione e depositi i dati dove mi servono, come trigger in `kortix.yaml`. Mostrami l'output di un'esecuzione prima di lasciarla attiva."
-      },
-      "page-monitor": {
-        "label": "Monitora cambiamenti pagina",
-        "prompt": "Monitora una pagina che per me è importante e avvisami solo quando cambia qualcosa di significativo — non per ogni modifica agli spazi bianchi. Configurala come trigger pianificato e mostrami il diff di oggi."
-      },
-      "scraper": {
-        "label": "Costruiscimi uno scraper",
-        "prompt": "Costruisci uno scraper per un sito che ti indicherò, salva i risultati in un posto che posso interrogare e sii esplicito su cosa farà quando la struttura della pagina cambia."
-      },
-      "reconcile-systems": {
-        "label": "Riconcilia due sistemi",
-        "prompt": "Sto allegando esportazioni da due sistemi che dovrebbero corrispondere. Trova ogni riga in cui non corrispondono, dimmi quale lato sembra errato e forniscimi l'elenco da correggere."
-      },
-      "alert-threshold": {
-        "label": "Avvisami quando cambia un numero",
-        "prompt": "Configura un controllo che monitori un numero importante per me e mi avvisi quando supera una soglia che imposto — non un report giornaliero che smetterò di leggere. Aggiungilo come trigger."
-      },
-      "form-to-sheet": {
-        "label": "Invia risposte a un foglio",
-        "prompt": "Prendi le risposte da un modulo che usiamo già e inseriscile automaticamente in un foglio di calcolo, eliminando i duplicati e assegnando correttamente i tipi di dati."
-      },
-      "digest-sources": {
-        "label": "Riepiloga fonti ogni giorno",
-        "prompt": "Seleziona le poche fonti che devo davvero seguire e configura un trigger giornaliero che le legga e mi invii solo ciò che è cambiato e perché è importante."
-      },
-      "job-description": {
-        "label": "Scrivi una descrizione del ruolo",
-        "prompt": "Scrivi la descrizione del ruolo che ho più bisogno di coprire: cosa farà concretamente nei primi 90 giorni, non una lista dei requisiti desiderabili. Usa le informazioni disponibili nella memoria del progetto e, alla fine, elenca ciò che hai dovuto dedurre invece di fermarti per farmi domande."
-      },
-      "cv-screen": {
-        "label": "Seleziona i CV per me",
-        "prompt": "Allego i CV e la descrizione del ruolo. Valuta ciascun candidato in base a ciò che il lavoro richiede realmente, assegnagli un punteggio, mettili in ordine e dimmi chiaramente con quali due dovrei parlare e perché."
-      },
-      "interview-plan": {
-        "label": "Pianifica il processo colloqui",
-        "prompt": "Progetta il processo di colloquio per un ruolo: chi fa quali domande, in quale ordine e cosa deve scoprire ogni fase. Includi le domande."
-      },
-      "role-scorecard": {
-        "label": "Scrivi scheda valutazione ruolo",
-        "prompt": "Scrivi una scheda di valutazione per un ruolo: i risultati di cui è responsabile, come capiremo se sta andando bene e come si manifesta un fallimento dopo 90 giorni. Usa le informazioni disponibili nella memoria del progetto e, alla fine, elenca ciò che hai dovuto dedurre invece di fermarti per farmi domande."
-      },
-      "onboarding-plan": {
-        "label": "Scrivi un piano 30-60-90",
-        "prompt": "Scrivi un piano per i primi 30, 60 e 90 giorni di una persona che entra nella mia azienda: cosa leggerà, chi incontrerà e di cosa sarà responsabile alla fine di ogni fase. Usa le informazioni disponibili nella memoria del progetto e, alla fine, elenca ciò che hai dovuto dedurre invece di fermarti per farmi domande."
-      },
-      "team-handbook": {
-        "label": "Scrivi il manuale del team",
-        "prompt": "Scrivi il manuale che una persona nuova leggerà nella prima settimana: come lavoriamo, dove si trovano le cose, a chi chiedere e come si definisce un buon lavoro, usando ciò che è già presente in questo repo e nella memoria."
-      },
-      "reference-questions": {
-        "label": "Scrivi domande referenze",
-        "prompt": "Scrivi le domande per verificare le referenze che mi fornirebbero informazioni concrete: specifiche e difficili da liquidare con frasi fatte, più un esempio di come suonerebbe una risposta negativa."
-      },
-      "comp-bands": {
-        "label": "Prepara le fasce retributive",
-        "prompt": "Cerca quanto vengono pagate le persone nei nostri ruoli sul nostro mercato e prepara fasce salariali realistiche, spiegandone le motivazioni. Cita le fonti."
-      },
-      "review-template": {
-        "label": "Scrivi un modello di valutazione",
-        "prompt": "Scrivi il modello di valutazione delle performance per la mia azienda: breve, specifico e incentrato sui risultati anziché sulla personalità, più le indicazioni per gestire la conversazione."
-      },
-      "offer-letter": {
-        "label": "Prepara una lettera di offerta",
-        "prompt": "Prepara una lettera di offerta per un ruolo, lasciando i numeri come segnaposto e indicando quali clausole dovrebbe esaminare un avvocato, senza decidere al posto suo."
-      },
-      "help-centre": {
-        "label": "Crea un centro assistenza",
-        "prompt": "Crea e pubblica un centro assistenza per il mio prodotto: gli articoli di cui le persone hanno realmente bisogno, scritti usando ciò che è presente in questo repo, e inviami l'URL."
-      },
-      "canned-replies": {
-        "label": "Scrivi risposte predefinite",
-        "prompt": "Scrivi le risposte salvate per le domande a cui rispondiamo continuamente: utili, umane e abbastanza brevi da essere effettivamente utilizzate."
-      },
-      "support-triage": {
-        "label": "Smista arretrato assistenza",
-        "prompt": "Allego i ticket aperti. Dividili tra quelli che richiedono il mio intervento, quelli a cui bisogna rispondere e quelli che possono essere chiusi, quindi prepara le risposte per il secondo gruppo."
-      },
-      "incident-note": {
-        "label": "Nota clienti sull'incidente",
-        "prompt": "Qualcosa si è rotto e devo informare i clienti. Scrivi la nota: cosa è successo, chi ne è stato coinvolto e cosa stiamo facendo; sii onesto, senza giri di parole né tentativi di scaricare la colpa."
-      },
-      "faq-from-tickets": {
-        "label": "Trasforma i ticket in una FAQ",
-        "prompt": "Allego i nostri ticket di assistenza. Individua le domande che continuano a ripetersi, scrivi le risposte una volta sola e pubblicale come pagina FAQ."
-      },
-      "churn-analysis": {
-        "label": "Scopri perché se ne vanno",
-        "prompt": "Ti allego i dati sul churn e le motivazioni delle cancellazioni. Trova i veri schemi, separali dal rumore e dimmi qual è l’unica cosa da sistemare per prima."
-      },
-      "nps-analysis": {
-        "label": "Analizza i feedback dei clienti",
-        "prompt": "Ti allego i feedback dei clienti. Raggruppali per tema, dimmi cosa apprezzano di più e cosa continuano a chiedere, e cita le frasi che vale la pena appendere al muro."
-      },
-      "onboarding-emails": {
-        "label": "Scrivi le email di onboarding",
-        "prompt": "Scrivi le email che un nuovo cliente riceve nelle prime due settimane: ognuna deve meritarsi il suo posto insegnando qualcosa, non limitandosi a chiedere come va. Usa tutto ciò che puoi ricavare dalla memoria del progetto e, alla fine, elenca ciò che hai dovuto ipotizzare invece di fermarti a chiedermelo."
-      },
-      "refund-policy": {
-        "label": "Prepara una politica di rimborso",
-        "prompt": "Prepara una politica di rimborso equa e priva di ambiguità, pubblicala e segnala tutto ciò che un avvocato dovrebbe verificare prima della pubblicazione."
-      },
-      "vendor-list": {
-        "label": "Elenca fornitori e rinnovi",
-        "prompt": "Individua ogni strumento e fornitore per cui paghiamo, il relativo costo e la data di rinnovo. Inserisci tutto in un foglio di calcolo e segnala i rinnovi nei prossimi 60 giorni."
-      },
-      "meeting-agenda": {
-        "label": "Scrivi l’ordine del giorno",
-        "prompt": "Scrivi l’ordine del giorno per una riunione imminente: le decisioni da prendere, il materiale da leggere prima e il tempo da dedicare a ogni punto."
-      },
-      "ops-review": {
-        "label": "Fai la mia revisione settimanale",
-        "prompt": "Fai la mia revisione settimanale: recupera ciò che è cambiato in questo repository e nella memoria, dimmi cosa è avanzato, cosa è rimasto indietro e quali sono le tre cose che meritano la mia attenzione lunedì."
-      },
-      "process-map": {
-        "label": "Mappa il flusso di lavoro",
-        "prompt": "Mappa come scorre davvero il lavoro nella mia azienda, dalla richiesta alla consegna, indica dove si blocca e proponi il cambiamento che aiuterebbe di più. Usa tutto ciò che puoi ricavare dalla memoria del progetto e, alla fine, elenca ciò che hai dovuto ipotizzare invece di fermarti a chiedermelo."
-      },
-      "okr-draft": {
-        "label": "Prepara obiettivi trimestre",
-        "prompt": "Prepara gli obiettivi di questo trimestre: tre obiettivi, risultati misurabili per ciascuno e ciò che decidiamo esplicitamente di non fare. Usa tutto ciò che puoi ricavare dalla memoria del progetto e, alla fine, elenca ciò che hai dovuto ipotizzare invece di fermarti a chiedermelo."
-      },
-      "decision-log": {
-        "label": "Avvia registro decisioni",
-        "prompt": "Leggi la cronologia e la memoria di questo repository, ricostruisci le decisioni effettivamente prese e le relative motivazioni, poi scrivile in un registro delle decisioni che possa continuare ad aggiornare."
-      },
-      "risk-register": {
-        "label": "Crea un registro dei rischi",
-        "prompt": "Elenca cosa potrebbe realisticamente andare storto per un’azienda come la mia, assegna una priorità in base a probabilità e impatto e indica la soluzione meno costosa per ridurre ciascun rischio. Usa tutto ciò che puoi ricavare dalla memoria del progetto e, alla fine, elenca ciò che hai dovuto ipotizzare invece di fermarti a chiedermelo."
-      },
-      "asset-inventory": {
-        "label": "Inventario nostri account",
-        "prompt": "Individua ogni account, dominio e servizio da cui dipende questa azienda, chi controlla ciascuno e cosa si interromperebbe se perdessimo l’accesso. Usa tutto ciò che puoi ricavare dalla memoria del progetto e, alla fine, elenca ciò che hai dovuto ipotizzare invece di fermarti a chiedermelo."
-      },
-      "sop-library": {
-        "label": "Crea la raccolta delle SOP",
-        "prompt": "Trasforma le attività che la mia azienda svolge ripetutamente in procedure scritte, organizzate in modo che qualcuno possa trovare quella giusta in dieci secondi. Inizia dalle tre con il maggior valore."
-      },
-      "calendar-audit": {
-        "label": "Analizza come impiego il tempo",
-        "prompt": "Ti allego l’esportazione del mio calendario. Dimmi come impiego davvero il mio tempo, quali riunioni non hanno un risultato chiaro e cosa dovrei eliminare o accorciare."
-      },
-      "north-star": {
-        "label": "Definisci metrica guida",
-        "prompt": "Individua il numero che indica meglio se questa azienda sta funzionando, sostienilo confrontandolo con i due candidati migliori e spiega come lo misureremmo. Usa tutto ciò che puoi ricavare dalla memoria del progetto e, alla fine, elenca ciò che hai dovuto ipotizzare invece di fermarti a chiedermelo."
-      },
-      "tracking-plan": {
-        "label": "Piano tracciamento eventi",
-        "prompt": "Scrivi il piano di tracciamento degli eventi per il mio prodotto: quali eventi vale la pena registrare, le relative proprietà e le domande a cui ciascuno risponde. Escludi quelli che nessuno consulterà."
-      },
-      "ab-test-design": {
-        "label": "Progetta un test A/B",
-        "prompt": "Progetta un esperimento per una modifica che sto valutando: l’ipotesi, la metrica, la dimensione del campione e per quanto tempo deve durare affinché i risultati siano significativi."
-      },
-      "experiment-analysis": {
-        "label": "Analizza un esperimento",
-        "prompt": "Allego i risultati di un esperimento. Dimmi se la differenza è reale, quanto varrebbe se implementassimo la modifica e sii onesto se la risposta non è conclusiva."
-      },
-      "funnel-analysis": {
-        "label": "Trova dove perde il funnel",
-        "prompt": "Allego i dati del funnel. Trova il passaggio in cui perdiamo più persone, quantifica il valore di risolvere il problema e suggerisci cosa provare."
-      },
-      "retention-curve": {
-        "label": "Traccia la nostra retention",
-        "prompt": "Allego i dati di utilizzo. Traccia la retention nel tempo, dimmi se la curva si stabilizza e cosa questo indica sul fatto che abbiamo trovato il product-market fit."
-      },
-      "segment-analysis": {
-        "label": "Trova i nostri clienti migliori",
-        "prompt": "Allego i dati dei clienti. Determina quale segmento ha la retention e la spesa migliori e dimmi quali caratteristiche condividono e che potremmo targettizzare intenzionalmente."
-      },
-      "dashboard-spec": {
-        "label": "Decidi cosa misurare",
-        "prompt": "Dimmi quali numeri questa azienda dovrebbe davvero monitorare ogni settimana e quali sono metriche di vanità, poi crea la dashboard per quelli rimasti."
-      },
-      "brand-palette": {
-        "label": "Scegli una palette di brand",
-        "prompt": "Prepara una palette di brand e una scala tipografica per la mia azienda: i colori, dove usare ciascuno e i rapporti di contrasto, in un riferimento di una pagina che possa consegnare a chiunque."
-      },
-      "design-review": {
-        "label": "Revisiona il mio design",
-        "prompt": "Esamina il mio sito o prodotto e revisionane il design: gerarchia, spaziatura, tipografia, colore e contrasto. Dammi un elenco prioritizzato, partendo dal problema peggiore, con le modifiche da apportare."
-      },
-      "logo-brief": {
-        "label": "Scrivi un brief per il logo",
-        "prompt": "Scrivi il brief che consegnerei a un designer per il nostro logo: cos’è l’azienda, quale sensazione deve trasmettere, cosa evitare e tre direzioni che vale la pena esplorare. Ricava tutto ciò che puoi dalla memoria del progetto e, alla fine, elenca ciò che hai dovuto ipotizzare invece di fermarti a farmi domande."
-      },
-      "slide-template": {
-        "label": "Progetta un modello per le slide",
-        "prompt": "Progetta un modello di slide riutilizzabile per la mia azienda: layout per titolo, sezione, contenuto, metrica e citazione, e salvalo in modo che le presentazioni future partano da lì."
-      },
-      "social-templates": {
-        "label": "Progetta modelli per i social",
-        "prompt": "Progetta i modelli grafici che riutilizziamo per i post sui social, usando i nostri colori e la nostra tipografia, e salvali in modo che basti una modifica per renderli pronti."
-      },
-      "email-template": {
-        "label": "Progetta un modello email",
-        "prompt": "Progetta il modello HTML delle email che inviamo: leggibile su telefono, con un degrado elegante e senza richiedere immagini per essere comprensibile, e salvalo nel repository."
-      },
-      "ui-audit": {
-        "label": "Verifica coerenza della UI",
-        "prompt": "Esamina il nostro prodotto e trova i casi in cui la stessa cosa appare diversa in due punti: pulsanti, spaziatura, testo e stati. Elenca le correzioni partendo dalle più urgenti."
-      },
-      "icon-set": {
-        "label": "Scegli un set di icone",
-        "prompt": "Scegli un set di icone adatto al nostro brand, spiega perché è adatto e mostrane l’applicazione nei dieci punti in cui usiamo più spesso le icone."
-      },
-      "privacy-policy": {
-        "label": "Redigi informativa privacy",
-        "prompt": "Redigi un’informativa sulla privacy che descriva ciò che facciamo realmente con i dati, anziché usare testo generico, ed elenca ogni affermazione che un legale deve verificare prima della pubblicazione."
-      },
-      "terms-of-service": {
-        "label": "Redigi i termini di servizio",
-        "prompt": "Redigi i termini di servizio per il mio prodotto in un linguaggio semplice e segnala ogni clausola che richiede l’intervento di un legale, senza decidere al posto suo."
-      },
-      "security-questionnaire": {
-        "label": "Questionario di sicurezza",
-        "prompt": "Allego un questionario di sicurezza inviato da un cliente. Prepara risposte oneste basate su ciò che è realmente vero per questo progetto e indica chiaramente ogni risposta che devo verificare personalmente."
-      },
-      "dpa-checklist": {
-        "label": "Verifica accordi sui dati",
-        "prompt": "Elenca gli accordi sul trattamento dei dati di cui in genere ha bisogno un’azienda come la mia, cosa copre ciascuno e quali sembrano mancare. Segnala cosa sottoporre a un legale."
-      },
-      "sow-draft": {
-        "label": "Redigi un ambito di lavoro",
-        "prompt": "Redigi un ambito di lavoro — deliverable, tappe, cosa è fuori ambito e cosa mi serve dal cliente. Segnala tutto ciò che dovrebbe esaminare un legale. Recupera dalla memoria del progetto tutto ciò che puoi ed elenca alla fine ciò che hai dovuto ipotizzare, invece di fermarti per farmi domande."
-      },
-      "nda-explain": {
-        "label": "Spiegami un NDA",
-        "prompt": "Allego un NDA. Spiegami in linguaggio semplice cosa accetterei, cosa c’è di insolito e quali domande fare prima di firmare. Non dirmi se devo firmarlo."
-      },
-      "plan-week": {
-        "label": "Pianifica la mia settimana",
-        "prompt": "Guarda cosa sta realmente succedendo in questo progetto e pianifica la mia settimana — cosa conta, cosa può aspettare e a cosa dovrei dire di no. Esprimi una posizione chiara."
-      },
-      "meeting-prep": {
-        "label": "Preparami per una riunione",
-        "prompt": "Ho una riunione in programma. Fai una ricerca sulle persone che incontrerò, recupera dalla memoria ciò che già sappiamo su di loro e forniscimi un briefing di una pagina con le tre domande da fare."
-      },
-      "catch-up": {
-        "label": "Dimmi cosa mi sono perso",
-        "prompt": "Sono stato assente. Dimmi cosa è successo in questo progetto mentre non c’ero, cosa richiede una mia decisione e cosa è urgente — in quest’ordine."
-      },
-      "draft-replies": {
-        "label": "Prepara le mie risposte",
-        "prompt": "Allego i messaggi a cui devo rispondere. Prepara ciascuna risposta con il mio tono, iniziando dalla versione più breve accettabile, e segnala le due di cui dovrei occuparmi personalmente."
-      },
-      "summarise-thread": {
-        "label": "Riassumi una lunga conversazione",
-        "prompt": "Allego una lunga conversazione. Dimmi cosa è stato effettivamente concordato, cosa è ancora aperto e cosa devo fare per qualcuno — tralasciando le chiacchiere."
-      },
-      "daily-standup": {
-        "label": "Scrivi il mio standup",
-        "prompt": "Leggi cosa è realmente cambiato in questo progetto da ieri e scrivi il mio standup sulla base dei fatti — fatto, in corso, bloccato — invece di farmi domande."
-      },
-      "follow-ups": {
-        "label": "Gestisci i miei follow-up",
-        "prompt": "Esamina le sessioni recenti e la memoria, trova tutto ciò che ho detto che avrei fatto e non ho fatto e forniscimi l’elenco nell’ordine in cui dovrei occuparmene."
-      },
-      "reading-digest": {
-        "label": "Riassumi ciò che ho salvato",
-        "prompt": "Allego link e documenti che ho salvato e non ho mai letto. Leggili per me, dimmi quali due ne valevano la pena e riassumili adeguatamente."
-      },
-      "explain-concept": {
-        "label": "Spiegalo al mio team",
-        "prompt": "Spiega qualcosa di tecnico al mio team con un linguaggio che seguiranno davvero — niente gergo, un esempio svolto e le due cose che le persone sbagliano più spesso. Chiedimi l’argomento in una riga."
-      },
-      "training-course": {
-        "label": "Crea un corso di formazione",
-        "prompt": "Crea un breve corso che insegni a qualcuno a svolgere dall’inizio alla fine un’attività nella mia azienda: le lezioni, gli esercizi e come capire che l’ha appresa. Scegli l’attività che sarebbe più utile."
-      },
-      "glossary": {
-        "label": "Scrivi il nostro glossario",
-        "prompt": "Scrivi il glossario dei termini usati nella mia azienda, inclusi quelli che usiamo in modo diverso da chiunque altro, basandoti su ciò che è già presente in questo repo e nella memoria."
-      },
-      "how-to-guide": {
-        "label": "Scrivi una guida pratica",
-        "prompt": "Scrivi la guida pratica per l’attività che le persone continuano a chiedermi di spiegare, includendo screenshot o comandi quando sono utili. Pubblicala e inviami l’URL."
-      },
-      "runbook": {
-        "label": "Scrivi un runbook",
-        "prompt": "Scrivi un runbook per un’attività che la mia azienda svolge ripetutamente, passo dopo passo, in modo che qualcun altro possa eseguirla senza chiedermi nulla. Scegli quella di maggior valore e spiega il motivo."
-      },
-      "onboarding-doc": {
-        "label": "Scrivi documento onboarding",
-        "prompt": "Scrivi il documento che una nuova persona legge durante la prima settimana: come lavoriamo, dove si trovano le cose, a chi chiedere e come si riconosce un buon lavoro. Ricava tutto ciò che puoi dalla memoria del progetto ed elenca alla fine ciò che hai dovuto dedurre, invece di fermarti per chiedermelo."
-      }
-    }
   },
   "repositoryAccess": {
     "label": "Accesso al repository del progetto",

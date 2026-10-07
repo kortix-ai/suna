@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { teamsPendingUploads } from '@kortix/db';
 import { eq, lt } from 'drizzle-orm';
+import { dbChannelOwnership, gateChannelRead, type ChannelOwnership } from '../../connectors/channel-read-scope';
 import { db } from '../../shared/db';
+import { DOWNLOAD_TOO_LARGE, readCapped } from '../core/download';
 import { loadTeamsBotCredentials } from '../install-store';
 import { provenTeamsTenants } from './inbound';
 import { sendActivity, sendCard } from '../teams-api';
@@ -12,6 +14,7 @@ import { botConnectorToken, graphToken } from '../teams-auth';
 import type { TeamsActivity, TeamsConversationRef } from './types';
 import type { TeamsInbound } from './inbound';
 
+const MAX_DOWNLOAD_REDIRECTS = 5;
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 const UPLOAD_TTL_MS = 15 * 60 * 1000;
 
@@ -60,12 +63,38 @@ export function isAllowedGraphDownload(url: URL): boolean {
   return GRAPH_DOWNLOAD_PATHS.some((re) => re.test(url.pathname));
 }
 
+/**
+ * The conversation a hosted-content URL belongs to, as the read gate names it:
+ * a channel message's thread (`/teams/{t}/channels/{c}/messages/{m}/…`), or a
+ * chat (`/chats/{chat}/messages/…`). Null when an id does not decode.
+ */
+function hostedContentConversation(
+  url: URL,
+): { actionPath: 'get_message' | 'list_messages'; args: Record<string, string> } | null {
+  try {
+    const seg = url.pathname.split('/').map(decodeURIComponent);
+    return seg[2] === 'chats'
+      ? { actionPath: 'list_messages', args: { 'channel-id': seg[3] } }
+      : { actionPath: 'get_message', args: { 'channel-id': seg[5], 'message-id': seg[7] } };
+  } catch {
+    return null;
+  }
+}
+
 export type FileProxyError = { ok: false; error: string; status: number };
 
+/**
+ * Fetch a file an inbound Teams message carried. A Graph hosted-content URL is
+ * confined like a read of its conversation: the Graph token is the tenant's,
+ * and one tenant can be connected to several projects. A Bot Framework
+ * attachment id and a SharePoint download URL name no conversation; both are
+ * unguessable and come only from an activity this project received.
+ */
 export async function downloadTeamsFile(
   projectId: string,
   url: string,
-): Promise<{ ok: true; body: ArrayBuffer; contentType: string } | FileProxyError> {
+  ownership: ChannelOwnership = dbChannelOwnership,
+): Promise<{ ok: true; body: Uint8Array; contentType: string } | FileProxyError> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -95,19 +124,52 @@ export async function downloadTeamsFile(
     // from a project secret an admin can overwrite.
     const [tenant] = await provenTeamsTenants(projectId);
     if (!tenant) return { ok: false, error: 'Teams not connected for this project', status: 404 };
+    const conversation = hostedContentConversation(parsed);
+    if (!conversation) return { ok: false, error: 'invalid url', status: 400 };
+    const gate = await gateChannelRead({ projectId, platform: 'teams', risk: 'read', ...conversation }, ownership);
+    if (gate.refusal) return { ok: false, error: gate.refusal.message, status: 403 };
     const creds = await loadTeamsBotCredentials(projectId);
     const token = await graphToken(tenant, creds).catch(() => null);
     if (!token) return { ok: false, error: 'could not mint a Graph token', status: 502 };
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const res = await fetch(parsed.href, { headers, signal: AbortSignal.timeout(60_000) });
+  // Redirects are followed by hand. The default `fetch` follows them with the
+  // bot/Graph bearer attached, to any host: a pre-authenticated SharePoint link,
+  // or any `*.microsoft.com` page with an open redirect, would then receive the
+  // token. Each hop must pass the same https + host allowlist, and the bearer
+  // goes only to the host it was minted for.
+  let current = parsed;
+  let res: Response | null = null;
+  for (let hop = 0; hop <= MAX_DOWNLOAD_REDIRECTS; hop++) {
+    res = await fetch(current.href, {
+      headers: current.host === parsed.host ? headers : {},
+      redirect: 'manual',
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (res.status < 300 || res.status >= 400) break;
+    const location = res.headers.get('location');
+    if (!location) break;
+    let next: URL;
+    try {
+      next = new URL(location, current);
+    } catch {
+      return { ok: false, error: 'invalid redirect', status: 502 };
+    }
+    if (
+      next.protocol !== 'https:' ||
+      (!ALLOWED_DOWNLOAD_HOST.test(next.hostname) && !ALLOWED_BOT_ATTACHMENT_HOST.test(next.hostname))
+    ) {
+      return { ok: false, error: 'redirect leaves the allowed Microsoft/SharePoint hosts', status: 502 };
+    }
+    current = next;
+    res = null;
+  }
+  if (!res) return { ok: false, error: 'too many redirects', status: 502 };
   if (!res.ok) return { ok: false, error: `download failed: HTTP ${res.status}`, status: 502 };
-  return {
-    ok: true,
-    body: await res.arrayBuffer(),
-    contentType: res.headers.get('content-type') ?? 'application/octet-stream',
-  };
+  const body = await readCapped(res);
+  if (!body) return { ok: false, error: DOWNLOAD_TOO_LARGE, status: 413 };
+  return { ok: true, body, contentType: res.headers.get('content-type') ?? 'application/octet-stream' };
 }
 
 export interface TeamsUploadArgs {
