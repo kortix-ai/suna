@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { segmentTurn, type Part, type ToolPart } from '@kortix/sdk';
+import { getTurnStatus, segmentTurn, type Part, type ToolPart } from '@kortix/sdk';
 
 import {
   WORKSPACE_ROOTS,
   answeredQuestionParts,
+  busyStatusParts,
   commandPromptText,
   compactionTurnView,
   hasCompactionTurn,
@@ -21,9 +22,9 @@ import {
   transcriptBusyRowVisible,
   turnErrorIsAbort,
   turnErrorText,
-  turnHasReasoning,
   turnHasSteps,
   turnResponse,
+  withoutReasoning,
   type TurnBodyTurn,
 } from './turn-body';
 
@@ -97,10 +98,42 @@ describe('turnHasSteps (web SessionTurnImpl hasSteps)', () => {
   });
 });
 
-describe('turnHasReasoning', () => {
-  test('only non-blank reasoning counts', () => {
-    expect(turnHasReasoning(wrap([reasoning('  ')]))).toBe(false);
-    expect(turnHasReasoning(wrap([reasoning('plan')]))).toBe(true);
+describe('withoutReasoning', () => {
+  test('drops every reasoning part and keeps the order of the rest', () => {
+    const parts = wrap([text('a'), reasoning('private'), tool('read'), reasoning('')]);
+    expect(withoutReasoning(parts)).toEqual([parts[0], parts[2]]);
+  });
+
+  test('a reasoning-only turn has no steps and no response', () => {
+    const parts = withoutReasoning(wrap([reasoning('only thinking')]));
+    expect(parts).toEqual([]);
+    expect(turnHasSteps(parts)).toBe(false);
+    expect(segmentTurn(segmentInputParts(parts, new Map(), false), {})).toEqual([]);
+  });
+
+  test('a thought between text and a tool leaves a text segment and a burst', () => {
+    const parts = withoutReasoning(wrap([text('a'), reasoning('b'), tool('read')]));
+    const kinds = segmentTurn(segmentInputParts(parts, new Map(), false), {}).map((s) => s.kind);
+    expect(kinds).toEqual(['text', 'burst']);
+  });
+});
+
+describe('busyStatusParts', () => {
+  test('a thought after a tool reads "Thinking...", not the tool phrase', () => {
+    const parts = wrap([tool('read'), reasoning('**Plan** secret')]);
+    expect(getTurnStatus(withoutReasoning(parts) as never)).toBe('Reading files...');
+    expect(getTurnStatus(busyStatusParts(parts) as never)).toBe('Thinking...');
+  });
+
+  test('a reasoning-only working turn reads "Thinking..." and leaks no text', () => {
+    const parts = wrap([reasoning('**Heading** private')]);
+    expect(getTurnStatus(withoutReasoning(parts) as never)).toContain('Figuring out');
+    expect(getTurnStatus(busyStatusParts(parts) as never)).toBe('Thinking...');
+    expect(JSON.stringify(busyStatusParts(parts))).not.toContain('private');
+  });
+
+  test('parts after the thought still win', () => {
+    expect(getTurnStatus(busyStatusParts(wrap([reasoning('x'), tool('read')])) as never)).toBe('Reading files...');
   });
 });
 
