@@ -1,6 +1,7 @@
 {
-  "source_hash": "de32515ce18217b4da1f80fc5f9fbd858155cae9553fd94c3d70b3a7d43b6780",
+  "source_hash": "35fd2117da167208f3b61d7053f08f3dea8020a99860142b3ad318ee53726af5",
   "diff_files": [
+    "apps/api/src/__tests__/integration-sandbox-ownership.test.ts",
     "apps/cli/src/__tests__/cli-blackbox.test.ts",
     "apps/cli/src/__tests__/host-notice.test.ts",
     "apps/cli/src/__tests__/sandbox-auth.test.ts",
@@ -11,15 +12,19 @@
     "apps/cli/src/connector-gateway/gateway.ts",
     "apps/cli/src/connector-gateway/mint-connect-link.test.ts",
     "apps/cli/src/host-notice.ts",
+    "packages/sdk/src/core/turns/errors.test.ts",
+    "packages/sdk/src/core/turns/load-guard.ts",
+    "packages/sdk/src/core/turns/text-scan.test.ts",
+    "packages/sdk/src/core/turns/turns.test.ts",
     "packages/shared/src/host-config/config.ts"
   ],
-  "diff_hash": "0b897fc370d521fb40df841018d051e37cafb1a04a8abbe740c06589875be289",
-  "head": "17da280b32b5781ef8ea81979a5123a7c4e1fac8",
-  "passed": false,
+  "diff_hash": "3fea9ccef422f061b020c10c75962ba8058ee678362a05935c7a6329e1334b5c",
+  "head": "ddb1a4c08506f241631a9e02c92edc98a1a11e6b",
+  "passed": true,
   "lanes": {
-    "core": "fail",
+    "core": "pass",
     "packages": "skipped-sandbox-image",
-    "db-suites": "fail"
+    "db-suites": "pass"
   },
-  "at": "2026-10-07T08:53:10.919Z"
+  "at": "2026-10-07T09:56:48.750Z"
 }
