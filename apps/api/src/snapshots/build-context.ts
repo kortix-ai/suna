@@ -559,10 +559,8 @@ export async function stageBuildContext(
     // sessions just pay the first-instance cost at runtime as before).
     let opencodeConfigPath: string | undefined;
     if (await isDir(OPENCODE_CONFIG_SRC_PATH)) {
-      await cp(OPENCODE_CONFIG_SRC_PATH, join(contextDir, 'kortix-opencode-config'), {
-        recursive: true,
-      });
       opencodeConfigPath = 'kortix-opencode-config';
+      await stageOpencodeConfigTree(OPENCODE_CONFIG_SRC_PATH, join(contextDir, opencodeConfigPath));
     }
 
     // Bake the FULL gateway model catalog into the image. The no-restart warm seed
