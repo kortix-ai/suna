@@ -1,11 +1,18 @@
 {
-  "source_hash": "728b1cd07915dbefcc28343547d7076d638fe902206e1f98220cb2a9a588d613",
-  "head": "bd481240d0e29e2dbb51a6fdc48919cca14e5ae5",
+  "source_hash": "04dbc7f125c9dfab6a73abda7b18a391f603b0af98a64806b2635b2ee54f63ae",
+  "diff_files": [
+    "apps/api/src/__tests__/unit-routes-manifest.test.ts",
+    "apps/web/src/lib/auth/session-rejection.test.ts",
+    "apps/web/src/lib/auth/session-rejection.ts",
+    "apps/web/src/lib/seo/content-timestamps.json"
+  ],
+  "diff_hash": "4a0737410d92ccc1686bd80e55b33b1f8e6193d8f8879b895879bccac5f92fab",
+  "head": "24575ea2cd0425a8986f4d9f561e3e7774dc5a32",
   "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "skipped-sandbox-image",
+    "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-07T18:38:01.211Z"
+  "at": "2026-10-07T21:07:22.967Z"
 }
