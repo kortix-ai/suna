@@ -1,0 +1,18 @@
+{
+  "source_hash": "325f442607882ed950d42d159c8c6da62d27258388d76118497898fb8d899581",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-06T121045Z-distinguish-the-api-s-404-bodies-before-a-cli-guard-replaces.md",
+    "apps/cli/src/__tests__/reminders-live.test.ts",
+    "apps/cli/src/commands/reminders.ts"
+  ],
+  "diff_hash": "22ec67834e0976d63841e773d3466304fdd8c53f13c8618b70ce7cad470d5a5d",
+  "head": "74cc6a4a6da800a9a9a2da27cea1a0a0fd91eb72",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-06T21:13:29.772Z"
+}
