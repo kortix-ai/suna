@@ -109,7 +109,7 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
   let honesty: typeof import('../../apps/api/src/billing/ledger-type-honesty');
 
   beforeAll(async () => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
     const up = sh([
       'docker', 'run', '-d', '--name', CONTAINER,
       '-e', 'POSTGRES_PASSWORD=postgres', '-e', 'POSTGRES_USER=postgres', '-e', 'POSTGRES_DB=postgres',
@@ -167,7 +167,7 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
 
   afterAll(async () => {
     await database?.$client.end({ timeout: 5 });
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
   });
 
   describe('grant', () => {

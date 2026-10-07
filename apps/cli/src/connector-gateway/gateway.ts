@@ -14,7 +14,7 @@
  *      (`KORTIX_TOKEN` + `KORTIX_PROJECT_ID`).
  */
 import type { ConnectorCallResult, Kortix } from '@kortix/sdk';
-import { loadAuth } from '../api/auth.ts';
+import { loadAuth, loadEnvAuth } from '../api/auth.ts';
 import { clientFromAuth, type ApiClient } from '../api/client.ts';
 import { kortixFromAuth } from '../api/sdk.ts';
 import { resolveProjectId } from '../project-link.ts';
@@ -23,11 +23,13 @@ import { CliError, stringValue } from './io.ts';
 /**
  * The Connector gateway client — runs tool calls as the launching user.
  *
- * Resolves auth from ONE place (`activeHost()` via loadAuth), so it works
- * identically:
- *   - in-sandbox: `KORTIX_TOKEN` + `KORTIX_API_URL` are
- *     injected and win;
- *   - on a laptop: falls back to the host you `kortix login`'d.
+ * Resolves auth from ONE place, pinned to the injected session identity:
+ * `loadEnvAuth()` (the sandbox delegation env) wins, `loadAuth()` (the stored
+ * login) is only the fallback when nothing is injected. That keeps it
+ * identical in both worlds — and immune to an in-sandbox `hosts use`
+ * selection (KRTX-1705): a session only ever invokes `kortix connectors` /
+ * `kortix connectors mcp`, so the data plane always acts as the launching
+ * user, whatever the config file says.
  * The project comes from KORTIX_PROJECT_ID / `.kortix/link.json` / `--project`.
  * When a project is known we hit the project-explicit gateway routes (which
  * accept a plain user token), so `kortix connectors` is the SAME locally and in
@@ -37,7 +39,11 @@ import { CliError, stringValue } from './io.ts';
 export type ConnectorClient = Kortix['connectors'];
 
 export function connectorClient(projectOverride?: string): ConnectorClient {
-  const auth = loadAuth();
+  // The session's data plane always acts as the launching user: the injected
+  // KORTIX_TOKEN wins even over an in-sandbox `hosts use` selection
+  // (loadEnvAuth, KRTX-1705) — these routes serve the session's project on
+  // the launching deployment.
+  const auth = loadEnvAuth() ?? loadAuth();
   if (!auth?.token) {
     throw new CliError(
       'not authenticated — run `kortix login` (or set KORTIX_TOKEN in a sandbox).',
@@ -59,7 +65,9 @@ export function connectorProjectContext(projectOverride?: string): {
   client: ApiClient;
   projectId: string;
 } {
-  const auth = loadAuth();
+  // Same env-token pin as connectorClient: the management + setup-link
+  // routes belong to the launching deployment, not a selected host.
+  const auth = loadEnvAuth() ?? loadAuth();
   if (!auth?.token) {
     throw new CliError('not authenticated — KORTIX_TOKEN is missing.', 'MISSING_ENV');
   }

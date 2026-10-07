@@ -1,6 +1,6 @@
 /**
  * Device registration for remote push: OS permission, the Expo push token,
- * and the server's device-token rows (lib/notifications/api.ts).
+ * and the server's device-token rows (`@kortix/sdk` `registerDeviceToken`).
  *
  * - `syncPushRegistration()`: signed in and permission already granted →
  *   register the token with the current preferences. Never asks.
@@ -18,8 +18,8 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { isRunningInExpoGo } from 'expo';
 import { log } from '@/lib/logger';
-import { notificationsApi } from '@/lib/notifications/api';
-import { serverPreferences, SIGN_OUT_UNREGISTER_TIMEOUT_MS } from '@/lib/notifications/push';
+import { registerDeviceToken, unregisterDeviceToken } from '@kortix/sdk';
+import { serverPreferences, SIGN_OUT_UNREGISTER_TIMEOUT_MS, type ServerPreferences } from '@/lib/notifications/push';
 import { withDeadline } from '@/lib/utils/with-deadline';
 import { useNotificationStore } from '@/stores/notification-store';
 import { usePushStore } from '@/stores/push-store';
@@ -103,6 +103,16 @@ export function syncPushRegistration(): Promise<string | null> {
   return syncInFlight;
 }
 
+/** Idempotent upsert: re-registering the same token only updates its preferences. */
+function register(token: string, preferences: ServerPreferences) {
+  return registerDeviceToken({
+    device_token: token,
+    device_type: Platform.OS === 'ios' ? 'ios' : 'android',
+    provider: 'expo',
+    preferences,
+  });
+}
+
 async function runSync(): Promise<string | null> {
   if (!remotePushSupported()) return null;
   const Notifications = getNotifications()!;
@@ -111,7 +121,7 @@ async function runSync(): Promise<string | null> {
   if (!token) return null;
   const prefs = serverPreferences(useNotificationStore.getState().preferences);
   try {
-    await notificationsApi.registerDeviceToken(token, prefs);
+    await register(token, prefs);
     lastPosted = postedKey(token, prefs);
     usePushStore.getState().setToken(token);
     return token;
@@ -132,7 +142,7 @@ export async function syncPushPreferences(): Promise<void> {
   const key = postedKey(token, prefs);
   if (key === lastPosted) return;
   try {
-    await notificationsApi.registerDeviceToken(token, prefs);
+    await register(token, prefs);
     lastPosted = key;
   } catch (error) {
     log.warn('[PUSH] Preference sync failed:', error);
@@ -174,7 +184,7 @@ export async function unregisterPushOnSignOut(): Promise<void> {
     // The deadline also covers the auth header read, which can wait on a
     // token refresh before the request starts.
     await withDeadline(
-      notificationsApi.unregisterDeviceToken(token, controller.signal),
+      unregisterDeviceToken(token, { signal: controller.signal }),
       SIGN_OUT_UNREGISTER_TIMEOUT_MS,
       undefined
     );

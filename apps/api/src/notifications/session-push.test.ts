@@ -41,6 +41,7 @@ function harness(opts: {
   rows?: PushDeviceTokenRow[];
   enabled?: boolean;
   isPresent?: SessionPushDeps['isPresent'];
+  mayReceive?: SessionPushDeps['mayReceive'];
   send?: SessionPushDeps['send'];
 }) {
   const sent: ExpoPushMessage[][] = [];
@@ -49,6 +50,7 @@ function harness(opts: {
   const deps: SessionPushDeps = {
     enabled: opts.enabled ?? true,
     isPresent: opts.isPresent,
+    mayReceive: opts.mayReceive,
     logger: { warn: (...args: unknown[]) => void warnings.push(args) },
     loadSession: async () => (opts.session === undefined ? { createdBy: USER, title: 'Fix the build' } : opts.session),
     store: {
@@ -228,6 +230,22 @@ describe('createSessionNotifier', () => {
     expect(outcome.reason).toBe('sent');
     expect(h.listed).toEqual(['user-a']);
     expect(h.sent[0]![0]!.body).toBe('Kortix has a question: Which region?');
+  });
+
+  // KRTX-1722: removal stopped the sign-in, and the removed member's phone
+  // kept getting the session titles and questions of teammates' turns.
+  test('a recipient who left the account gets nothing; the others still do', async () => {
+    const h = harness({ mayReceive: async (user) => user !== 'user-left' });
+    const outcome = await h.notify({ ...event, recipients: ['user-a', 'user-left'] });
+    expect(outcome.reason).toBe('sent');
+    expect(h.listed).toEqual(['user-a']);
+  });
+
+  test('a creator who left the account → no push, reason no_access', async () => {
+    const h = harness({ mayReceive: async () => false });
+    expect(await h.notify(event)).toEqual({ sent: 0, reason: 'no_access' });
+    expect(h.listed).toHaveLength(0);
+    expect(h.sent).toHaveLength(0);
   });
 
   test('every recipient present → no push', async () => {

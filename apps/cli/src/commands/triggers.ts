@@ -74,7 +74,8 @@ Add options:
                            Trigger type (default cron).
   --prompt <text>          Initial prompt for the spawned session (required).
   --agent <name>           Logical agent to run (default: project default_agent).
-  --cron <expr>            6-field cron (cron type). e.g. "0 0 9 * * 1-5".
+  --cron <expr>            6-field cron (cron type), seconds first, at most
+                           once a minute. e.g. "0 0 9 * * 1-5".
   --run-at <iso>           Run ONCE at this instant instead of on a cron.
   --timezone <tz>          Timezone for cron/run-at (default UTC).
   --secret-env <NAME>      HMAC secret env var (webhook type).

@@ -60,6 +60,7 @@ import type { Command } from '@/lib/session/runtime-data';
 import { detectCommandFromText } from '@/lib/session/detect-command';
 import {
   answeredQuestionParts as selectAnsweredQuestionParts,
+  busyStatusParts,
   commandPromptText,
   compactionTurnView,
   inlineContentItems,
@@ -71,10 +72,10 @@ import {
   toDisplayPath,
   turnErrorIsAbort,
   turnErrorText,
-  turnHasReasoning,
   turnHasSteps,
   turnBodyLayout,
   turnResponse,
+  withoutReasoning,
   type TurnBodyTurn,
 } from '@/lib/session/turn-body';
 import type { ChangeItem } from '@/lib/session/session-change-requests';
@@ -92,7 +93,7 @@ import { CompactionFailedRow, CompactionMarker } from './turn/compaction-divider
 import { TextPartBlock } from './turn/text-part';
 import { TurnActions } from './turn/turn-actions';
 import { SessionChangeRequests } from './SessionChangeRequests';
-import { UserMessage, type UserMessageUploadStatus } from './turn/user-message';
+import { UserMessage, type SessionSourceAuthor, type UserMessageUploadStatus } from './turn/user-message';
 
 /** Web turn root `space-y-2.5`. */
 const TURN_STACK_GAP = webSpace(2.5);
@@ -143,6 +144,8 @@ interface SessionTurnProps {
   uploadStatus?: UserMessageUploadStatus;
   /** Who sent this turn's prompt. Set only in a session with two or more people. */
   sender?: AvatarPerson | null;
+  /** Another Kortix session sent this prompt — see `UserMessage`. */
+  sessionAuthor?: SessionSourceAuthor | null;
   /**
    * False while the working turn is scrolled out of the list's viewport: its
    * shimmer and busy dot matrix hold still (KRTX-1638). Defaults to on screen.
@@ -180,6 +183,7 @@ function SessionTurnImpl({
   queueState,
   uploadStatus,
   sender,
+  sessionAuthor,
   onScreen = true,
   changeRequests,
   onOpenChangeRequest,
@@ -189,10 +193,9 @@ function SessionTurnImpl({
   const bodyTurn = turn as unknown as TurnBodyTurn;
 
   // Mobile's wire types are a local copy of the SDK's; the turn rules take SDK parts.
-  const allParts = useMemo(
-    () => collectTurnParts(turn) as unknown as ReadonlyArray<{ part: SdkPart }>,
-    [turn],
-  );
+  const rawParts = useMemo(() => collectTurnParts(turn) as unknown as ReadonlyArray<{ part: SdkPart }>, [turn]);
+  const allParts = useMemo(() => withoutReasoning(rawParts), [rawParts]);
+  const busyParts = useMemo(() => busyStatusParts(rawParts), [rawParts]);
 
   // Web: `working = isWorkingTurn && sessionWorking`. Any other turn is never working.
   const working = useMemo(
@@ -201,7 +204,6 @@ function SessionTurnImpl({
   );
 
   const hasSteps = useMemo(() => turnHasSteps(allParts), [allParts]);
-  const hasReasoning = useMemo(() => turnHasReasoning(allParts), [allParts]);
   const hasAssistantContent = turn.assistantMessages.length > 0;
 
   const response = useMemo(
@@ -254,7 +256,7 @@ function SessionTurnImpl({
   );
   const retrySecondsLeft = useRetrySecondsLeft(retryInfo);
   // Throttled status + stall clock; "Thinking" until the turn has an assistant message.
-  const { statusText, elapsedLabel } = useTurnBusyStatus({ allParts, working, hasAssistantContent });
+  const { statusText, elapsedLabel } = useTurnBusyStatus({ allParts: busyParts, working, hasAssistantContent });
 
   // ── Compaction ──
   const compactionInfo = useMemo(() => compactionTurnInfo(turn as never), [turn]);
@@ -294,6 +296,7 @@ function SessionTurnImpl({
       queueState={queueState}
       uploadStatus={uploadStatus}
       sender={sender}
+      sessionAuthor={sessionAuthor}
     />
   );
 
@@ -351,14 +354,13 @@ function SessionTurnImpl({
   const layout = turnBodyLayout({
     working,
     hasSteps,
-    hasReasoning,
     hasAssistantContent,
     showInlineContent,
     isCommand: !!commandForTurn,
   });
 
   // 2. Segments
-  if (layout.segments) {
+  if (layout.segments && segments.length > 0) {
     body.push(
       <TurnLiveContext.Provider key="segments" value={working}>
         <View style={{ gap: SEGMENT_STACK_GAP }}>
@@ -453,7 +455,7 @@ function SessionTurnImpl({
       </LoopMotionContext.Provider>,
     );
   } else {
-    if (!hasSteps && !working && !hasReasoning && answeredQuestions.length > 0) {
+    if (!hasSteps && !working && answeredQuestions.length > 0) {
       body.push(
         <View key="answered" style={{ marginTop: SEGMENT_STACK_GAP, gap: SMALL_STACK_GAP }}>
           {answeredQuestions.map((part) => (

@@ -68,8 +68,23 @@ export function turnHasSteps(allParts: ReadonlyArray<PartEntry>): boolean {
   });
 }
 
-export function turnHasReasoning(allParts: ReadonlyArray<PartEntry>): boolean {
-  return allParts.some(({ part }) => isReasoningPart(part) && !!part.text?.trim());
+/**
+ * The turn's parts without reasoning. Mobile never shows thinking, so every
+ * rule below reads these parts, not the raw ones.
+ */
+export function withoutReasoning<T extends PartEntry>(allParts: ReadonlyArray<T>): T[] {
+  return allParts.filter(({ part }) => !isReasoningPart(part));
+}
+
+/**
+ * The parts the busy label reads. A thought stays in, with its text blanked, so
+ * the label is a bare "Thinking..." (the SDK's status scan returns the last
+ * tool's phrase otherwise) and no thought text or heading reaches the screen.
+ */
+export function busyStatusParts<T extends PartEntry>(rawParts: ReadonlyArray<T>): T[] {
+  return rawParts.map((entry) =>
+    isReasoningPart(entry.part) ? { ...entry, part: { ...entry.part, text: '' } } : entry,
+  );
 }
 
 // ─── Answered questions ──────────────────────────────────────────────────────
@@ -261,20 +276,18 @@ export interface TurnBodyLayout {
 export function turnBodyLayout({
   working,
   hasSteps,
-  hasReasoning,
   hasAssistantContent,
   showInlineContent,
   isCommand,
 }: {
   working: boolean;
   hasSteps: boolean;
-  hasReasoning: boolean;
   hasAssistantContent: boolean;
   showInlineContent: boolean;
   isCommand: boolean;
 }): TurnBodyLayout {
   const text = showInlineContent ? 'inline' : isCommand && !hasSteps ? 'response' : 'segments';
-  const segments = hasAssistantContent && (text === 'segments' || working || hasSteps || hasReasoning);
+  const segments = hasAssistantContent && (text === 'segments' || working || hasSteps);
   return { segments, text };
 }
 
