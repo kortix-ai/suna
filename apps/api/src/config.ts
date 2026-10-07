@@ -792,6 +792,11 @@ const envSchema = z.object({
   // Per client IP: Kortix bearer tokens that need a fresh hash (not seen by
   // this process recently). A token already validated here is not counted.
   KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN: optInt(300),
+  // Per client IP: RFC 7591 dynamic client registrations (POST /v1/oauth/register)
+  // accepted per hour. Prod keeps the 30; a single test address legitimately
+  // registers more — the api flow lane's MCP/OAU flows sit exactly on this
+  // boundary, so local test runs raise it.
+  KORTIX_OAUTH_REGISTER_PER_HOUR: optInt(30),
   KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT: optInt(3),
   KORTIX_TRIGGER_SCHEDULER_ENABLED: optBoolTrue,
   KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS: optInt(1_000),
@@ -1490,6 +1495,7 @@ export const config = {
   KORTIX_PROXY_REQS_PER_MIN: env.KORTIX_PROXY_REQS_PER_MIN,
   KORTIX_TRUSTED_PROXY_HOPS: env.KORTIX_TRUSTED_PROXY_HOPS,
   KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN: env.KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN,
+  KORTIX_OAUTH_REGISTER_PER_HOUR: env.KORTIX_OAUTH_REGISTER_PER_HOUR,
   KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT:
     env.KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT,
   KORTIX_TRIGGER_SCHEDULER_ENABLED: env.KORTIX_TRIGGER_SCHEDULER_ENABLED,

@@ -615,7 +615,13 @@ function redirectTarget(redirectUri: string): string {
 
 // replica-local: per-instance bucket; a shared store if registration spam spans instances.
 const registerLimiter = new TokenBucketRateLimiter('oauth_register');
-const REGISTER_POLICY = { limit: 30, windowMs: 60 * 60 * 1000 };
+// 30 registrations/hour/client is the prod default; KORTIX_OAUTH_REGISTER_PER_HOUR
+// raises it where one address legitimately registers more — the api flow lane's
+// MCP+OAU flows sit exactly on this boundary from a single test address.
+const REGISTER_POLICY = {
+  limit: config.KORTIX_OAUTH_REGISTER_PER_HOUR,
+  windowMs: 60 * 60 * 1000,
+};
 
 oauthApp.openapi(
   createRoute({
