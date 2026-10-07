@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { db } from '../shared/db';
 import { createBuildLog } from './build-log';
-import { retireSupersededDeployments, rollBackActiveDeployment, sweepAppRetention } from './retention';
+import { reclaimAppArtifacts, retireSupersededDeployments, rollBackActiveDeployment, sweepAppRetention } from './retention';
 import {
   blobKey,
   deleteAccountSiteObjects,
@@ -532,6 +532,22 @@ withDb('static App hosting', () => {
     const left = await db.select({ sha: appSiteBlobs.sha256 }).from(appSiteBlobs)
       .where(and(eq(appSiteBlobs.accountId, ACCOUNT_ID), inArray(appSiteBlobs.sha256, [kept, orphan, fresh])));
     expect(left.map((row) => row.sha).sort()).toEqual([kept, fresh].sort());
+  });
+
+  test('archive reclaim frees an unused old archive while another archive has a live deployment', async () => {
+    // The correlation must reach the outer row (qualifiedColumn): one live deployment
+    // protects only its own archive.
+    await seedDeployments(1);
+    const unused = '00000000-0000-4000-a000-00000000d9a1';
+    const old = new Date(Date.now() - 48 * 3600_000);
+    await db.insert(appArtifacts).values({ artifactId: unused, accountId: ACCOUNT_ID, projectId: PROJECT_ID, kind: 'archive', status: 'ready' });
+    await db.update(appArtifacts).set({ updatedAt: old }).where(inArray(appArtifacts.artifactId, [unused, ARTIFACT_ID]));
+
+    expect(await reclaimAppArtifacts()).toBe(1);
+
+    const rows = await db.select({ id: appArtifacts.artifactId, status: appArtifacts.status }).from(appArtifacts)
+      .where(inArray(appArtifacts.artifactId, [unused, ARTIFACT_ID]));
+    expect(Object.fromEntries(rows.map((row) => [row.id, row.status]))).toEqual({ [unused]: 'deleted', [ARTIFACT_ID]: 'ready' });
   });
 
   test('a failed object delete keeps the ledger rows, so the next pass retries', async () => {

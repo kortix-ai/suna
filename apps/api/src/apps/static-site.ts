@@ -34,6 +34,7 @@ import { promisify } from 'node:util';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { mapWithConcurrency } from '../shared/map-with-concurrency';
 import { getSupabase } from '../shared/supabase';
 import { retryAppArtifactStorage } from './artifacts';
@@ -612,10 +613,10 @@ const BLOB_RECLAIM_BATCH = 500;
  * rows, and a publish never reuses a blob that is being deleted.
  */
 export async function reclaimAppSiteBlobs(storage: SiteStorage = supabaseSiteStorage): Promise<{ reclaimed: number }> {
-  const unreferenced = sql`${appSiteBlobs.createdAt} < now() - ${BLOB_GRACE}::interval
+  const unreferenced = sql`${qualifiedColumn(appSiteBlobs.createdAt)} < now() - ${BLOB_GRACE}::interval
     and not exists (select 1 from ${appSiteFiles}
-      where ${appSiteFiles.accountId} = ${appSiteBlobs.accountId}
-        and ${appSiteFiles.sha256} = ${appSiteBlobs.sha256})`;
+      where ${appSiteFiles.accountId} = ${qualifiedColumn(appSiteBlobs.accountId)}
+        and ${appSiteFiles.sha256} = ${qualifiedColumn(appSiteBlobs.sha256)})`;
   const candidates = await db
     .select({ accountId: appSiteBlobs.accountId, sha256: appSiteBlobs.sha256 })
     .from(appSiteBlobs)

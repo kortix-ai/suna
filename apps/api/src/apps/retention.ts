@@ -24,6 +24,7 @@ import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { getSupabase } from '../shared/supabase';
 import { APP_ARTIFACT_BUCKET } from './artifacts';
 import { releaseDeploymentImages, teardownAppRuntimes } from './images';
@@ -218,12 +219,12 @@ export async function reclaimAppArtifacts(): Promise<number> {
   const unused = await db
     .select({ artifactId: appArtifacts.artifactId, objectPath: appArtifacts.objectPath })
     .from(appArtifacts)
-    .where(sql`${appArtifacts.kind} = 'archive'
-      and ${appArtifacts.status} in ('uploading', 'uploaded', 'ready', 'rejected')
-      and ${appArtifacts.updatedAt} < now() - ${ARTIFACT_GRACE}::interval
+    .where(sql`${qualifiedColumn(appArtifacts.kind)} = 'archive'
+      and ${qualifiedColumn(appArtifacts.status)} in ('uploading', 'uploaded', 'ready', 'rejected')
+      and ${qualifiedColumn(appArtifacts.updatedAt)} < now() - ${ARTIFACT_GRACE}::interval
       and not exists (
         select 1 from ${appDeployments} d join ${apps} a on a.app_id = d.app_id
-        where d.artifact_id = ${appArtifacts.artifactId}
+        where d.artifact_id = ${qualifiedColumn(appArtifacts.artifactId)}
           and a.deleted_at is null
           and d.status not in ('deleted', 'failed', 'cancelled')
       )`)
