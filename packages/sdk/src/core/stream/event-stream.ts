@@ -20,6 +20,7 @@
 import type { Event as OpenCodeSdkEvent } from '../runtime/runtime-types';
 import { getSupabaseAccessToken, invalidateTokenCache } from '../http/auth';
 import { getClientForUrl } from '../runtime/client';
+import { isAuthFailure } from '../http/api/errors';
 import { logger } from '../http/logger';
 
 /**
@@ -57,12 +58,16 @@ export interface EventStreamTimers {
   now: () => number;
   setTimeout: (handler: () => void, timeoutMs?: number) => EventStreamTimerHandle;
   clearTimeout: (handle: EventStreamTimerHandle | undefined) => void;
+  /** Uniform `[0, 1)`; spreads reconnect delays. Defaults to `() => 0` (no
+   *  jitter) when omitted, so a fake clock stays exact. */
+  random?: () => number;
 }
 
 const realTimers: EventStreamTimers = {
   now: () => Date.now(),
   setTimeout: (handler, timeoutMs) => setTimeout(handler, timeoutMs),
   clearTimeout: (handle) => clearTimeout(handle),
+  random: () => Math.random(),
 };
 
 export interface OpenEventStreamOptions {
@@ -76,7 +81,12 @@ export interface OpenEventStreamOptions {
   client?: EventStreamClient;
   /** Called once per event, in dispatch order, after coalescing/flush. A
    *  throw here is caught and logged — one bad handler must never break the
-   *  stream or crash the host. */
+   *  stream or crash the host.
+   *
+   *  Consecutive `message.part.delta` events of one part field that land in
+   *  the same 16ms flush arrive as ONE event: `properties.delta` is their
+   *  text joined, `id` is the last one's, and `coalesced` lists the wire
+   *  events it replaced. Appending `delta` gives the same text either way. */
   onEvent: (event: RuntimeEvent) => void;
   /** Called once a reconnect is ESTABLISHED, with the gap in ms from the last
    *  frame received to the new connection. Fires when the dropped stream had
@@ -174,6 +184,14 @@ const FAST_RECONNECT_DELAY_MS = 250;
 const BASE_RECONNECT_DELAY_MS = 1000;
 const MAX_RECONNECT_DELAY_MS = 30_000;
 const MAX_BACKOFF_EXPONENT = 5;
+/** A worked stream that closes sooner than this is not "stable"... */
+const STABLE_LIFETIME_MS = 10_000;
+/** ...and this many of them in a row drop the fast path (a server that sends
+ *  one frame and closes would otherwise reconnect 4 times a second). */
+const MAX_CONSECUTIVE_SHORT_STABLE = 4;
+/** Reconnect delays stretch by up to this fraction, so a restart does not
+ *  bring every client back in lockstep. */
+const RECONNECT_JITTER = 0.5;
 const SSE_DEFAULT_RETRY_DELAY_MS = 3000;
 const SSE_MAX_RETRY_DELAY_MS = 30_000;
 const CONNECT_TIMEOUT_MS = 20_000;
@@ -202,6 +220,39 @@ function getCoalesceKey(event: RuntimeEvent): string | undefined {
   }
   if (event.type === 'lsp.updated') return 'lsp.updated';
   return undefined;
+}
+
+type PartDeltaEvent = Extract<RuntimeEvent, { type: 'message.part.delta' }> & {
+  /** The wire events this one replaced, in order. Set only on a merged event. */
+  coalesced?: RuntimeEvent[];
+};
+
+/**
+ * Text-delta coalescing: `next` appended to `tail` as ONE event, when both are
+ * deltas of the same part field. Else undefined.
+ *
+ * Only the queue's TAIL is ever merged into, so a run never crosses another
+ * event and dispatch order stays the wire order. The merged event carries the
+ * joined `delta`, the last wire event's `id`, and every wire event it replaced
+ * in `coalesced`: a consumer that dedupes by event id (the sync store) still
+ * sees each one.
+ */
+function mergePartDelta(tail: RuntimeEvent | undefined, next: RuntimeEvent): RuntimeEvent | undefined {
+  if (tail?.type !== 'message.part.delta' || next.type !== 'message.part.delta') return undefined;
+  const a = tail.properties;
+  const b = next.properties;
+  if (
+    a.partID !== b.partID ||
+    a.field !== b.field ||
+    a.messageID !== b.messageID ||
+    a.sessionID !== b.sessionID
+  ) {
+    return undefined;
+  }
+  // The list is this module's own (made on a run's first merge), so it grows in place.
+  const wire = (tail as PartDeltaEvent).coalesced ?? [tail];
+  wire.push(next);
+  return { ...next, properties: { ...b, delta: a.delta + b.delta }, coalesced: wire } as PartDeltaEvent;
 }
 
 /**
@@ -236,6 +287,9 @@ interface LiveStream {
   subscribers: Set<StreamSubscriber>;
   /** The connection's last reported state; null once parked or torn down. */
   connectionState: () => EventStreamConnectionState | null;
+  /** True once the connect loop gave up. A parked stream never reconnects, so
+   *  a later `openEventStream` replaces it instead of joining it. */
+  isParked: () => boolean;
   /** Aborts the connection and releases its timers. Called once, when the
    *  LAST subscriber leaves. */
   teardown: () => void;
@@ -303,6 +357,7 @@ function createLiveStream(
   }
 
   let connectionState: EventStreamConnectionState | null = null;
+  let parked = false;
   const setConnectionState = (state: EventStreamConnectionState | null) => {
     if (connectionState === state) return;
     connectionState = state;
@@ -366,6 +421,7 @@ function createLiveStream(
     // Survives across attempts; reset by any attempt that delivered events
     // or that failed slowly without an HTTP status.
     let consecutiveHardFailures = 0;
+    let consecutiveShortStable = 0;
     while (!abortController.signal.aborted) {
       let streamHadEvents = false;
       // Events other than the connection's own `server.connected` greeting.
@@ -521,15 +577,21 @@ function createLiveStream(
           // The connection's own greeting is not work that a drop could lose.
           if (e.type !== 'server.connected') streamHadWork = true;
 
-          const ck = getCoalesceKey(e);
-          if (ck) {
-            const existing = coalesced.get(ck);
-            if (existing !== undefined) {
-              queue[existing] = undefined;
+          // The tail is never a replaced slot: a replacement pushes right after.
+          const merged = mergePartDelta(queue[queue.length - 1]?.event, e);
+          if (merged) {
+            queue[queue.length - 1] = { type: merged.type, event: merged };
+          } else {
+            const ck = getCoalesceKey(e);
+            if (ck) {
+              const existing = coalesced.get(ck);
+              if (existing !== undefined) {
+                queue[existing] = undefined;
+              }
+              coalesced.set(ck, queue.length);
             }
-            coalesced.set(ck, queue.length);
+            queue.push({ type: (e as any).type, event: e });
           }
-          queue.push({ type: (e as any).type, event: e });
           schedule();
 
           if (t.now() - yieldedAt < YIELD_INTERVAL_MS) continue;
@@ -549,16 +611,15 @@ function createLiveStream(
         // reconnected stream delivers a real event, backoff resets and the
         // fast path returns. Missed-while-waiting events are covered by the
         // gap-rehydrate signal below.
-        stableConnection = streamHadEvents;
+        stableConnection = streamHadWork;
       } catch (err) {
         if (abortController.signal.aborted) break;
         attemptError = err;
         const errStr = String(err);
+        // By status or `AuthError`, never by message text. The vendor client puts
+        // the HTTP status on `cause`.
         const isAuthError =
-          errStr.includes('401') ||
-          errStr.includes('403') ||
-          errStr.includes('Unauthorized') ||
-          errStr.includes('Token refresh failed');
+          isAuthFailure(err) || isAuthFailure((err as { cause?: unknown } | null)?.cause);
         logger.error('SSE event stream error', {
           error: errStr,
           retryCount,
@@ -613,8 +674,10 @@ function createLiveStream(
       // over ~2 minutes by the exponential backoff below — park for good.
       const attemptDurationMs = t.now() - attemptStartedAt;
       const httpStatus = (attemptError as { cause?: { status?: unknown } } | null)?.cause?.status;
+      // A greeting alone is not delivery: a proxy that says hello and closes
+      // is as dead as one that refuses the connect.
       const isHardFailure =
-        !streamHadEvents &&
+        !streamHadWork &&
         ((typeof httpStatus === 'number' && httpStatus >= 400) ||
           attemptDurationMs < HARD_FAILURE_WINDOW_MS);
       consecutiveHardFailures = isHardFailure ? consecutiveHardFailures + 1 : 0;
@@ -628,6 +691,7 @@ function createLiveStream(
         // subscriber's from firing — `dispatchToSubscribers` catches per
         // subscriber.
         connectionState = null;
+        parked = true;
         dispatchToSubscribers((sub) => sub.onParked, {
           consecutiveFailures: consecutiveHardFailures,
           lastError: attemptError,
@@ -646,7 +710,10 @@ function createLiveStream(
         eventful: (unrepaired?.eventful ?? false) || streamHadWork,
       };
 
-      if (stableConnection) {
+      consecutiveShortStable =
+        stableConnection && attemptDurationMs < STABLE_LIFETIME_MS ? consecutiveShortStable + 1 : 0;
+      const fastPath = stableConnection && consecutiveShortStable <= MAX_CONSECUTIVE_SHORT_STABLE;
+      if (fastPath) {
         // Fast reconnect after healthy streams so live streaming resumes
         // immediately.
         retryCount = 0;
@@ -656,12 +723,13 @@ function createLiveStream(
           logger.warn('SSE event stream reconnecting', { retryCount });
         }
       }
-      const delay = stableConnection
+      const baseDelay = fastPath
         ? FAST_RECONNECT_DELAY_MS
         : Math.min(
             BASE_RECONNECT_DELAY_MS * 2 ** Math.min(retryCount - 1, MAX_BACKOFF_EXPONENT),
             MAX_RECONNECT_DELAY_MS,
           );
+      const delay = Math.round(baseDelay * (1 + RECONNECT_JITTER * (t.random?.() ?? 0)));
       await new Promise<void>((resolve) => {
         const timer = t.setTimeout(resolve, delay);
         const onAbort = () => {
@@ -676,6 +744,7 @@ function createLiveStream(
   return {
     subscribers,
     connectionState: () => connectionState,
+    isParked: () => parked,
     teardown: () => {
       connectionState = null;
       abortController.abort();
@@ -720,6 +789,14 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
   const subscriber: StreamSubscriber = { onEvent, onGapRehydrate, onParked, onConnectionChange };
 
   let liveStream = liveStreamsByClient.get(client);
+  // A parked stream has no connect loop left. Joining it would hand this caller
+  // a stream that never delivers and never says so, and would make a revival's
+  // fresh open join the corpse too. Replace it: its old subscribers keep their
+  // handles, and their `leave` only deletes the registry entry it still owns.
+  if (liveStream?.isParked()) {
+    liveStreamsByClient.delete(client);
+    liveStream = undefined;
+  }
   if (!liveStream) {
     const subscribers = new Set<StreamSubscriber>([subscriber]);
     liveStream = createLiveStream(client, opts, subscribers);

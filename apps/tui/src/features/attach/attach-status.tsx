@@ -41,15 +41,6 @@ export interface AttachStatusBannerProps {
   error?: AttachFailure | null;
 }
 
-/** The in-TUI banner. Null status and null error render nothing. */
-export function AttachStatusBanner({ status, error }: AttachStatusBannerProps) {
-  if (error) {
-    return <text fg={theme.danger}>{`Attach failed at ${error.stage}: ${error.message}`}</text>;
-  }
-  if (!status) return null;
-  return <text fg={theme.dim}>{attachStatusLine(status)}</text>;
-}
-
 export interface AttachResultToastProps {
   result: RunAttachResult | null;
   onDismiss: () => void;

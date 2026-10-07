@@ -2,7 +2,7 @@ import type { ApprovalLinkDetails } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { ApprovalDecisionView } from './approval-decision';
+import { ApprovalDecisionPanel, ApprovalDecisionView } from './approval-decision';
 
 // The standalone approve page has six states. Each is rendered here from the
 // same view the page uses, so a state that stops showing its outcome, its
@@ -202,5 +202,59 @@ describe('ApprovalDecisionView', () => {
     });
     expect(html).not.toContain('Agent&#x27;s description');
     expect(html).not.toContain('>Parameters<');
+  });
+});
+
+describe('ApprovalDecisionPanel', () => {
+  const panel = (props: Partial<Parameters<typeof ApprovalDecisionPanel>[0]>) =>
+    renderToStaticMarkup(
+      <ApprovalDecisionPanel
+        details={pending}
+        outcome={null}
+        busyDecision={null}
+        error={null}
+        onDecision={() => undefined}
+        {...props}
+      />,
+    );
+
+  test('renders the same call and decisions as the page, without the page frame', () => {
+    const html = panel({});
+    expect(html).toContain('An agent needs your approval');
+    expect(html).toContain('github.merge_pull_request');
+    expect(html).toContain('acme/web');
+    expect(html).toContain('Approve this call');
+    expect(html).toContain('Deny');
+    expect(html).not.toContain('min-h-svh');
+  });
+
+  test('no decision handler: the call reads, but nothing can be decided', () => {
+    const html = panel({ onDecision: undefined });
+    expect(html).toContain('github.merge_pull_request');
+    expect(html).not.toContain('Approve this call');
+    expect(html).not.toContain('Message to the agent');
+  });
+
+  test('a session to return to is one row, and only when it can be opened', () => {
+    expect(panel({ onOpenSession: () => undefined })).toContain('Open session');
+    expect(panel({})).not.toContain('Open session');
+  });
+
+  test('the connector mark hides on mobile on the page, and stays in the modal', () => {
+    // The page's AuthFrame pins a Kortix logo in the mobile corner instead;
+    // the modal has no frame, so its mark must not hide below `md`.
+    expect(panel({})).toContain('hidden md:block');
+    const modal = panel({ markOnMobile: true });
+    expect(modal).not.toContain('hidden md:block');
+    expect(modal).toContain('logos.composio.dev/api/github');
+  });
+
+  test('a viewer without argument visibility is told why, not that nothing was recorded', () => {
+    const html = panel({
+      details: { ...pending, args_preview: null, review_complete: false },
+      previewAuthorized: false,
+    });
+    expect(html).not.toContain('Approve this call');
+    expect(html).toContain('text-kortix-orange');
   });
 });

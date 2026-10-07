@@ -1,7 +1,7 @@
 import type { ProjectRow, ProjectSessionRow, RequestAuditContext } from '../lib/serializers';
 import type { PromptOverridesWire, PromptPartWire } from './prompt-payload';
 import type { SessionCreateError } from '../lib/sessions';
-import type { SessionStartResult } from '../routes/shared';
+import type { SessionStartResult } from '../session-open';
 
 export type SessionInvocationSource =
   | 'ui'
@@ -76,7 +76,6 @@ export interface CreateSessionCommand {
   mayManageSystemConnections?: boolean;
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
-  enforceAccountCap?: boolean;
   request?: RequestAuditContext;
   idempotencyKey?: string | null;
   queuePolicy?: QueuePolicy;
@@ -100,7 +99,6 @@ export interface QueuedCreateSessionPayload {
   extraEnvVars?: Record<string, string>;
   visibility?: 'private' | 'project' | 'restricted';
   mayManageSystemConnections?: boolean;
-  enforceAccountCap?: boolean;
   postCreate?: SessionLifecyclePostCreateAction[];
   // Origin-derivation signals captured at ENQUEUE time. Without them a queued
   // backend create would replay as origin 'user'. Absent on rows queued before
@@ -180,6 +178,10 @@ export interface StartSessionCommand {
    *  learns `ready` the instant it flips instead of on its own poll tick.
    *  Bounded server-side (START_AWAIT_MAX_MS); omit/0 = original one-shot. */
   waitMs?: number;
+  /** Keep-alive poll (`?keep_stopped=1`): report a deliberately stopped box, never wake it. */
+  keepStopped?: boolean;
+  /** Aborts the long-poll when the caller disconnects. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -249,6 +251,5 @@ export interface SessionLifecycleResult {
   deduped?: boolean;
   retryable?: boolean;
   reason?: string;
-  error?: SessionCreateError | { status: number; body: Record<string, unknown> };
-  headers?: Record<string, string>;
+  error?: SessionCreateError;
 }

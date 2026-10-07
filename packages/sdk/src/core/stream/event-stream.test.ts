@@ -271,6 +271,127 @@ describe('openEventStream coalescing', () => {
   });
 });
 
+function partDelta(id: string, delta: string, partID = 'prt_1', field = 'text'): RuntimeEvent {
+  return {
+    id,
+    type: 'message.part.delta',
+    properties: { sessionID: 's1', messageID: 'msg_1', partID, field, delta },
+  } as unknown as RuntimeEvent;
+}
+
+/** What a dispatched delta stands for: its text and the wire event ids it replaced. */
+function deltaShape(event: RuntimeEvent) {
+  const coalesced = (event as { coalesced?: RuntimeEvent[] }).coalesced;
+  return {
+    id: (event as { id?: string }).id,
+    delta: (event.properties as { delta: string }).delta,
+    wireIds: coalesced?.map((e) => (e as { id?: string }).id),
+  };
+}
+
+describe('openEventStream text-delta coalescing', () => {
+  test('consecutive deltas of one part field dispatch as ONE event per flush window', async () => {
+    const clock = createFakeClock();
+    const { client, channels } = createConnectableClient();
+    const dispatched: RuntimeEvent[] = [];
+    const handle = openEventStream({ client, onEvent: (e) => dispatched.push(e), timers: clock });
+    await tick();
+
+    const wire = Array.from({ length: 50 }, (_, i) => partDelta(`evt_${i}`, `w${i} `));
+    for (const event of wire) channels[0].push(event);
+    await tick(200);
+    await clock.advance(16);
+
+    expect(dispatched.length).toBe(1);
+    expect(dispatched[0].type).toBe('message.part.delta');
+    expect(deltaShape(dispatched[0])).toEqual({
+      id: 'evt_49',
+      delta: wire.map((e) => (e.properties as { delta: string }).delta).join(''),
+      wireIds: wire.map((e) => (e as { id?: string }).id),
+    });
+    expect((dispatched[0].properties as any).partID).toBe('prt_1');
+
+    handle.close();
+  });
+
+  test('a run never crosses another event: dispatch order is the wire order', async () => {
+    const clock = createFakeClock();
+    const { client, channels } = createConnectableClient();
+    const dispatched: RuntimeEvent[] = [];
+    const handle = openEventStream({ client, onEvent: (e) => dispatched.push(e), timers: clock });
+    await tick();
+
+    channels[0].push(partDelta('evt_1', 'a'));
+    channels[0].push(partDelta('evt_2', 'b'));
+    channels[0].push(partUpdated('prt_1'));
+    channels[0].push(partDelta('evt_3', 'c'));
+    channels[0].push(partDelta('evt_4', 'd'));
+    channels[0].push(sessionStatus('s1', 'busy'));
+    channels[0].push(partDelta('evt_5', 'e'));
+    await tick(200);
+    await clock.advance(16);
+
+    expect(dispatched.map((e) => e.type)).toEqual([
+      'message.part.delta',
+      'message.part.updated',
+      'message.part.delta',
+      'session.status',
+      'message.part.delta',
+    ]);
+    expect(deltaShape(dispatched[0])).toEqual({ id: 'evt_2', delta: 'ab', wireIds: ['evt_1', 'evt_2'] });
+    expect(deltaShape(dispatched[2])).toEqual({ id: 'evt_4', delta: 'cd', wireIds: ['evt_3', 'evt_4'] });
+    expect(deltaShape(dispatched[4])).toEqual({ id: 'evt_5', delta: 'e', wireIds: undefined });
+
+    handle.close();
+  });
+
+  test('deltas of another part or another field are not merged, and a lone delta is the wire object', async () => {
+    const clock = createFakeClock();
+    const { client, channels } = createConnectableClient();
+    const dispatched: RuntimeEvent[] = [];
+    const handle = openEventStream({ client, onEvent: (e) => dispatched.push(e), timers: clock });
+    await tick();
+
+    const wire = [
+      partDelta('evt_1', 'a', 'prt_1'),
+      partDelta('evt_2', 'b', 'prt_2'),
+      partDelta('evt_3', 'c', 'prt_1'),
+      partDelta('evt_4', 'd', 'prt_1', 'reasoning'),
+    ];
+    for (const event of wire) channels[0].push(event);
+    await tick(200);
+    await clock.advance(16);
+
+    expect(dispatched).toEqual(wire);
+    for (let i = 0; i < wire.length; i++) expect(dispatched[i]).toBe(wire[i]);
+
+    handle.close();
+  });
+
+  test('a run is split by the flush window, never held past it', async () => {
+    const clock = createFakeClock();
+    const { client, channels } = createConnectableClient();
+    const dispatched: RuntimeEvent[] = [];
+    const handle = openEventStream({ client, onEvent: (e) => dispatched.push(e), timers: clock });
+    await tick();
+
+    channels[0].push(partDelta('evt_1', 'a'));
+    channels[0].push(partDelta('evt_2', 'b'));
+    await tick();
+    await clock.advance(16);
+    channels[0].push(partDelta('evt_3', 'c'));
+    await tick();
+    await clock.advance(16);
+
+    expect(dispatched.map(deltaShape)).toEqual([
+      { id: 'evt_2', delta: 'ab', wireIds: ['evt_1', 'evt_2'] },
+      { id: 'evt_3', delta: 'c', wireIds: undefined },
+    ]);
+
+    handle.close();
+  });
+});
+
 describe('openEventStream vendor-retry containment (connection-leak regression)', () => {
   // `@opencode-ai/sdk`'s `createSseClient` wraps every connection in its OWN
   // internal retry-with-backoff loop that swallows failures and reschedules
@@ -1583,5 +1704,138 @@ describe('openEventStream close()', () => {
     handle.close();
     handle.close();
     await tick();
+  });
+});
+
+// ── 05#6: a greeting is not work; backoff is jittered ────────────────────────
+
+const serverConnected = () => ({ type: 'server.connected', properties: {} }) as unknown as RuntimeEvent;
+
+describe('openEventStream greeting-only streams (05#6)', () => {
+  test('a stream that sends only the server.connected greeting rides the exponential backoff, not 250 ms', async () => {
+    const clock = createFakeClock();
+    const { timers, log } = createLoggingTimers(clock);
+    const { client, channels } = createConnectableClient(() => log.push('connect'));
+    const handle = openEventStream({ client, onEvent: () => {}, timers });
+    await tick();
+
+    channels[0].push(serverConnected());
+    await tick();
+    channels[0].end();
+    await clock.advance(250);
+    expect(channels.length).toBe(1);
+    await clock.advance(750);
+    expect(channels.length).toBe(2);
+
+    channels[1].push(serverConnected());
+    await tick();
+    channels[1].end();
+    await clock.advance(2000);
+    expect(channels.length).toBe(3);
+
+    expect(reconnectDelaysFromLog(log)).toEqual([1000, 2000]);
+    handle.close();
+  });
+
+  test('repeated greeting-then-close cycles park the stream like any other hard failure', async () => {
+    const clock = createFakeClock();
+    const { client, channels } = createConnectableClient();
+    const parked: number[] = [];
+    const handle = openEventStream({
+      client,
+      onEvent: () => {},
+      onParked: (r) => parked.push(r.consecutiveFailures),
+      timers: clock,
+    });
+    await tick();
+    // Each attempt dies at once; the wait is exactly the backoff ladder.
+    for (const wait of [1000, 2000, 4000, 8000, 16_000, 30_000, 30_000, 30_000]) {
+      channels[channels.length - 1].push(serverConnected());
+      await tick();
+      channels[channels.length - 1].end();
+      await clock.advance(wait);
+    }
+    expect(parked).toEqual([8]);
+    handle.close();
+  });
+
+  test('a server that delivers one real event then closes, repeatedly, falls off the fast path', async () => {
+    const clock = createFakeClock();
+    const { timers, log } = createLoggingTimers(clock);
+    const { client, channels } = createConnectableClient(() => log.push('connect'));
+    const handle = openEventStream({ client, onEvent: () => {}, timers });
+    await tick();
+    // Four fast reconnects, then the fifth rides the ladder (1 s, then 2 s).
+    for (const wait of [250, 250, 250, 250, 1000, 2000]) {
+      channels[channels.length - 1].push(partUpdated('p'));
+      await tick();
+      await clock.advance(16);
+      channels[channels.length - 1].end();
+      await clock.advance(wait);
+    }
+    expect(reconnectDelaysFromLog(log)).toEqual([250, 250, 250, 250, 1000, 2000]);
+    handle.close();
+  });
+});
+
+describe('openEventStream backoff jitter (05#6)', () => {
+  test('a reconnect delay is stretched by up to 50% so clients do not reconnect in lockstep', async () => {
+    const clock = createFakeClock();
+    const { client, channels } = createConnectableClient();
+    const handle = openEventStream({ client, onEvent: () => {}, timers: { ...clock, random: () => 1 } });
+    await tick();
+    channels[0].end();
+    await clock.advance(1000);
+    expect(channels.length).toBe(1);
+    await clock.advance(500);
+    expect(channels.length).toBe(2);
+    handle.close();
+  });
+});
+
+// ── 05#5: a joiner to a parked shared stream gets a live one ─────────────────
+
+describe('openEventStream joining a parked stream (05#5)', () => {
+  test('a later subscriber replaces the parked connection instead of joining a dead one', async () => {
+    const clock = createFakeClock();
+    let attempts = 0;
+    const channels: FakeEventChannel[] = [];
+    let dead = true;
+    const client: EventStreamClient = {
+      global: {
+        event: async (opts) => {
+          attempts++;
+          if (dead) throw new Error('GET /global/event → 503', { cause: { status: 503 } });
+          const channel = new FakeEventChannel();
+          opts.signal.addEventListener('abort', () => channel.end(), { once: true });
+          channels.push(channel);
+          return { stream: channel };
+        },
+      },
+    };
+    const parkedA: number[] = [];
+    const a = openEventStream({ client, onEvent: () => {}, onParked: (r) => parkedA.push(r.consecutiveFailures), timers: clock });
+    await tick();
+    await clock.advance(200_000);
+    expect(parkedA).toEqual([8]);
+    const attemptsAtPark = attempts;
+
+    dead = false;
+    const got: RuntimeEvent[] = [];
+    const b = openEventStream({ client, onEvent: (e) => got.push(e), timers: clock });
+    await tick();
+    expect(attempts).toBe(attemptsAtPark + 1);
+    channels[0].push(partUpdated('late'));
+    await tick();
+    await clock.advance(16);
+    expect(got).toHaveLength(1);
+
+    // A's own close must not tear B's live connection down.
+    a.close();
+    channels[0].push(partUpdated('after-a-closed'));
+    await tick();
+    await clock.advance(16);
+    expect(got).toHaveLength(2);
+    b.close();
   });
 });

@@ -1,9 +1,11 @@
 /**
  * `/developers` copy.
  *
- * Plain English lives here, not in `apps/web/translations/*.json`, so the copy
- * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
- * Wire i18n keys only once the copy is locked.
+ * English lives here as the source; `localizedDevelopersCopy` translates it per
+ * request through the `hardcodedUi.i18nComplete` catalog. Changing a string
+ * changes its key (SHA-256 of the text), so add the new English and its eight
+ * translations in the same change: `pnpm --filter Kortix-Computer-Frontend
+ * i18n:strict` fails on copy that renders untranslated.
  *
  * Voice rules: the `kortix-brand` skill. Never name a licence: "open source" and stop.
  * Every claim below already shipped on the previous `/developers` page or sits in
@@ -12,6 +14,9 @@
  * section task edits its own block only.
  */
 
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
 import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 
 /** A two-line headline: `muted` renders first and dimmed, `ink` second. */
@@ -297,3 +302,18 @@ export const loop = {
     },
   ],
 } as const;
+
+export type ThesisStatement = (typeof thesis.statements)[number];
+export type CliGroup = (typeof cli.groups)[number];
+
+/**
+ * Every section in the visitor's language. Strings without a catalog key
+ * (code samples, commands, ids, file names) pass through unchanged.
+ */
+export function localizedDevelopersCopy(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(
+    { hero, thesis, loop, scale, cli, connectors, closing },
+    tI18nComplete,
+    REMAINING_UI_TRANSLATION_KEYS,
+  );
+}

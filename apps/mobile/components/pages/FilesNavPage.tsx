@@ -1,5 +1,9 @@
 /**
  * FilesNavPage — the project's repo files (web parity: features/project-files).
+ * Opens from the drawer's Files pill (the `files` route: the hamburger) and,
+ * as a sub-page over the thread, from the session ··· sheet's Files row
+ * (`page:files-nav`, KRTX-1636: Go back in the hamburger's place, which
+ * returns to that thread).
  * A READ-ONLY git-repo browser: the `/files` endpoint returns a FLAT recursive
  * file list, so folders are derived client-side from the paths. Browse by
  * version (branch), open a file, see its history, and download a file or a
@@ -8,8 +12,9 @@
  * Layout (Jay, 2026-09-22):
  * - `PageHeader` with the large title and the `···`; no controls beside it.
  * - Search, then the breadcrumb (chips, never clipped). Inside a folder the
- *   hamburger stays (Jay, 2026-09-22: no Go back in its place, on any page);
- *   a crumb, or Android back, goes up one folder, never to home.
+ *   hamburger (or, as a sub-page, Go back) stays: a crumb, or Android back,
+ *   goes up one folder, never to home. Go back on the sub-page leaves the
+ *   page from any folder.
  * - List: sections titled "Folders" and "Files", rows of `SettingsRow` in
  *   `SettingsGroupItem`s. Grid: 2-up tiles. Both are one virtualised
  *   `FlatList` (`buildFilesListItems`, COR-155).
@@ -27,7 +32,7 @@
  * (`sheet-push`) and a checkpoint pushes its diff in after it.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { BackHandler, Platform, Pressable, RefreshControl, ScrollView, View, type ListRenderItem } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
@@ -58,7 +63,7 @@ import { FileGlyph } from '@/components/files/file-icons';
 import { downloadFailureMessage } from '@/lib/files/download-status';
 import { saveFileToDevice, type SaveToDeviceResult } from '@/lib/files/save-to-device';
 import { buildFilesListItems, type FilesListItem } from '@/lib/files/files-list-items';
-import { searchFileTree, searchResultLocation } from '@/lib/files/tree-search';
+import { indexChildren, searchFileTree, searchResultLocation } from '@/lib/files/tree-search';
 import { folderTone } from '@/lib/files/folder-tone';
 import { haptics } from '@/lib/haptics';
 import {
@@ -87,6 +92,8 @@ import { THEME } from '@/lib/utils/theme';
 interface FilesNavPageProps {
   page: { id: string; label: string };
   projectId: string;
+  /** As a sub-page: Go back in place of the hamburger. */
+  onBack?: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
   isDrawerOpen?: boolean;
@@ -119,21 +126,10 @@ const EMPTY_ITEMS: FilesListItem<FileRow>[] = [];
 const BAR_CONTROL_HEIGHT = 40;
 const SHEET_SNAP_POINTS = ['100%'];
 
-/** Immediate children of `dir` derived from the flat file list. */
-function childrenOf(entries: ProjectFileEntry[], dir: string): { dirs: string[]; files: ProjectFileEntry[] } {
-  const prefix = dir ? `${dir}/` : '';
-  const dirSet = new Set<string>();
-  const files: ProjectFileEntry[] = [];
-  for (const e of entries) {
-    if (dir && !e.path.startsWith(prefix)) continue;
-    const rest = e.path.slice(prefix.length);
-    if (!rest) continue;
-    const slash = rest.indexOf('/');
-    if (slash === -1) files.push(e);
-    else dirSet.add(rest.slice(0, slash));
-  }
-  return { dirs: [...dirSet], files };
-}
+/** Stable while the files query loads: a new `[]` each render re-runs every memo below. */
+const NO_ENTRIES: ProjectFileEntry[] = [];
+/** A folder with no children (`indexChildren` has no key for it). */
+const NO_CHILDREN: { dirs: string[]; files: ProjectFileEntry[] } = { dirs: [], files: [] };
 
 /**
  * `downloadAsync` writes the body whatever the status: a 401 or 404 body used
@@ -466,6 +462,7 @@ function FileTile({
 export function FilesNavPage({
   page,
   projectId,
+  onBack,
   onOpenDrawer,
   onOpenRightDrawer,
   isDrawerOpen,
@@ -498,10 +495,12 @@ export function FilesNavPage({
   }, [defaultBranch, ref_]);
 
   const filesQuery = useProjectFiles(projectId, ref_);
-  const entries = filesQuery.data ?? [];
+  const entries = filesQuery.data ?? NO_ENTRIES;
+  // Every folder's children in one pass per file list, so a folder tap is a lookup.
+  const childrenByDir = useMemo(() => indexChildren(entries), [entries]);
 
   const rows = useMemo<SandboxFile[]>(() => {
-    const { dirs, files } = childrenOf(entries, path);
+    const { dirs, files } = childrenByDir.get(path) ?? NO_CHILDREN;
     const cmp = (a: string, b: string) => {
       if (sortBy === 'type') {
         const t = ext(a).localeCompare(ext(b));
@@ -524,21 +523,26 @@ export function FilesNavPage({
       ...otherDirs.map((d) => mk(d, path ? `${path}/${d}` : d, 'directory')),
       ...fileNodes.map((f) => mk(basename(f.path), f.path, 'file', f.size)),
     ];
-  }, [entries, path, sortBy, sortOrder]);
+  }, [childrenByDir, path, sortBy, sortOrder]);
 
   // Search covers the whole tree, not only this folder (COR-155): the files
   // query already holds every path. A result shows its folder.
-  const searching = search.trim().length > 0;
+  // The list follows the typed text at deferred priority, so a keystroke
+  // updates the field first. Cleared text applies at once: a folder tap and
+  // Go up clear the search, and must not show the old results for a render.
+  const deferredSearch = useDeferredValue(search);
+  const query = search ? deferredSearch : '';
+  const searching = query.trim().length > 0;
   const visible = useMemo<FileRow[]>(() => {
     if (!searching) return rows;
-    return searchFileTree(entries, search).map((r) => ({
+    return searchFileTree(entries, query).map((r) => ({
       name: r.name,
       path: r.path,
       type: r.type,
       size: r.size,
       parent: r.parent,
     }));
-  }, [entries, rows, search, searching]);
+  }, [entries, rows, query, searching]);
   const folders = useMemo(() => visible.filter((r) => r.type === 'directory'), [visible]);
   const files = useMemo(() => visible.filter((r) => r.type === 'file'), [visible]);
   const listItems = useMemo(() => buildFilesListItems(folders, files, viewMode), [folders, files, viewMode]);
@@ -664,7 +668,7 @@ export function FilesNavPage({
     : filesQuery.isError
       ? ((filesQuery.error as Error)?.message ?? 'Unable to load the files')
       : visible.length === 0
-        ? search
+        ? query
           ? 'No matching files'
           : path
             ? 'This folder is empty'
@@ -673,11 +677,11 @@ export function FilesNavPage({
 
   return (
     <View className="flex-1 bg-background">
-      {/* Inside a folder, Go back takes the hamburger's place and goes up one
-          folder; the title is the folder's name. */}
+      {/* Inside a folder the title is the folder's name. */}
       <PageHeader
         title={path ? basename(path) : page.label}
-        onOpenDrawer={onOpenDrawer}
+        onBack={onBack}
+        onOpenDrawer={onBack ? undefined : onOpenDrawer}
         onOpenRightDrawer={onOpenRightDrawer}
         isDrawerOpen={isDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}

@@ -21,6 +21,7 @@ import {
 } from './store';
 import { INBOX_ORDER_BACKOFF_MS } from './inbox-admission';
 import { withCommandLeaseHeartbeat } from './command-lease';
+import { claimsStopped, forgetClaim, trackClaims } from './claim-handover';
 import { claimDueSessionInboxSiblings } from './inbox-rows';
 import { compareInboxSendOrder } from './inbox-order';
 import type { QueuedCreateSessionPayload } from './types';
@@ -53,6 +54,10 @@ async function drainSessionLifecycleQueueTick(
     idempotencyKey?: string;
     /** Completion wakes target rows already in the inbox; they need no burst delay. */
     coalesce?: boolean;
+    /** `false`: the enqueuer saw no other prompt of this session and the POST
+     *  did not wait on the client, so no straggler can exist: no burst delay
+     *  and no sibling sweep. The prompt route decides it. */
+    burst?: boolean;
     /** Only drain commands due before this instant — see claimDueLifecycleCommands. */
     availableBefore?: Date;
   } = {},
@@ -65,9 +70,12 @@ async function drainSessionLifecycleQueueTick(
   // the rest of the burst was even durable (measured: one of four boot sends
   // delivered a step behind, out of order). A quarter second collects the
   // stragglers and is invisible next to the ~1.3 s delivery itself.
-  if (input.idempotencyKey && input.coalesce !== false) {
+  const burst = input.burst !== false;
+  if (input.idempotencyKey && burst && input.coalesce !== false) {
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
+  // A shutdown began: another replica takes the work (`handBackClaims`).
+  if (claimsStopped()) return { claimed: 0, succeeded: 0, failed: 0, queued: 0, released: 0 };
   const rows = await claimDueLifecycleCommands({
     workerId,
     limit: input.limit ?? 10,
@@ -79,13 +87,14 @@ async function drainSessionLifecycleQueueTick(
   // leaving them to their own kicks is what delivered a burst of sends one
   // ~1.5 s round-trip at a time (and let a step boundary split the answers).
   // Sweep them in so the lane batches them below.
-  if (input.idempotencyKey && rows.length > 0) {
+  if (input.idempotencyKey && burst && rows.length > 0) {
     const sessions = [...new Set(rows.map((r) => r.sessionId).filter((v): v is string => !!v))];
     for (const sessionId of sessions) {
       const siblings = await claimDueSessionInboxSiblings({ workerId, sessionId });
       rows.push(...siblings.filter((sib) => !rows.some((r) => r.commandId === sib.commandId)));
     }
   }
+  trackClaims(rows);
   const out = { claimed: rows.length, succeeded: 0, failed: 0, queued: 0, released: 0 };
 
   // INSTANCE SCOPE (local dev on a shared DB — projects/instance-scope.ts).
@@ -113,6 +122,7 @@ async function drainSessionLifecycleQueueTick(
           error: err instanceof Error ? err.message : String(err),
         });
       });
+      forgetClaim(row);
       logger.info('[session-lifecycle] command belongs to another instance — released', {
         commandId: row.commandId,
         sessionId: row.sessionId,
@@ -145,7 +155,7 @@ async function drainSessionLifecycleQueueTick(
   // Every claimed row runs under its lease: the lock is renewed while the row
   // is in hand, and every write that ends the claim names the lease.
   const runRow = (row: SessionLifecycleCommandRow): Promise<void> =>
-    withCommandLeaseHeartbeat(row, () => runClaimedRow(row));
+    withCommandLeaseHeartbeat(row, () => runClaimedRow(row)).finally(() => forgetClaim(row));
 
   async function runClaimedRow(row: SessionLifecycleCommandRow): Promise<void> {
     if (row.commandType === 'continue_session') {
@@ -268,6 +278,7 @@ async function drainSessionLifecycleQueueTick(
             'older_prompt_pending',
             new Date(Date.now() + INBOX_ORDER_BACKOFF_MS),
           );
+          forgetClaim(sibling);
           out.queued += 1;
         }
         await runRow(batch[0]);

@@ -1,3 +1,5 @@
+import { wakeProgressFingerprint } from '@kortix/sdk';
+
 /**
  * Resume-decision helpers for the session view.
  *
@@ -42,8 +44,8 @@ export function isRuntimeIdentityUnavailable(
  * its `external_id` — that is what "the identity was preserved, and no
  * replacement sandbox was created" means. Reading only status + external_id
  * therefore called a permanently dead runtime resumable, and the page spent its
- * whole auto-resume budget re-issuing `/start` against it (prod session
- * ad4b63ac, 2026-08-13) before landing on a Restart button that can only 409.
+ * whole auto-resume budget re-issuing `/start` against it (a prod session,
+ * 2026-08-13) before landing on a Restart button that can only 409.
  */
 export function isSandboxResumable(sandbox: ResumableSandboxLike | null | undefined): boolean {
   if (isRuntimeIdentityUnavailable(sandbox)) return false;
@@ -123,7 +125,7 @@ export interface WakeFailureInput {
  * Two exclusions are load-bearing:
  *   - a runtime the provider LOST (`runtimeIdentityState: 'unavailable'`) is
  *     never wake-class — `POST /restart` answers 409 forever, so retrying it is
- *     the prod loop of session ad4b63ac;
+ *     the 2026-08-13 prod loop;
  *   - a capacity or git-auth failure is not fixed by restarting either, and its
  *     card must appear at once.
  */
@@ -138,4 +140,45 @@ export function isWakeClassFailure(input: WakeFailureInput): boolean {
     stopReason === 'runtime_wake_failed' ||
     stopReason === 'runtime_boot_failed'
   );
+}
+
+/** A wake metadata clock, or null when the row does not carry it. */
+function wakeClock(sandbox: ResumableSandboxLike | null | undefined, key: string): string | null {
+  const value = sandbox?.metadata?.[key];
+  return typeof value === 'string' ? value : null;
+}
+
+/**
+ * Everything observable about a wake, as the escalation ladder's progress
+ * fingerprint. Any change is progress.
+ *
+ * `runtimeWakeProgressAt` is the server's heartbeat. A cold restore runs
+ * inside the provider's `start()` (Platinum: 100–546 s measured) and the box
+ * reads `stopped` the whole time, so without it a healthy restore looked
+ * silent: the ladder retried and restarted it at 75 s, and the page showed
+ * the "stopped" error card at 90 s.
+ */
+export function sessionWakeProgress(input: {
+  stage: string | null | undefined;
+  reason: string | null | undefined;
+  sandbox: ResumableSandboxLike | null | undefined;
+  runtimeSessionId?: string | null;
+  runtimeConnectionStatus?: string | null;
+  runtimeHealthy?: boolean;
+  runtimeVersion?: string | null;
+  runtimeProbeError?: string | null;
+}): string {
+  return wakeProgressFingerprint([
+    input.stage,
+    input.reason,
+    input.sandbox?.status,
+    wakeClock(input.sandbox, 'stopReason'),
+    wakeClock(input.sandbox, 'runtimeWakeStartedAt'),
+    wakeClock(input.sandbox, 'runtimeWakeProgressAt'),
+    input.runtimeSessionId,
+    input.runtimeConnectionStatus,
+    input.runtimeHealthy,
+    input.runtimeVersion,
+    input.runtimeProbeError,
+  ]);
 }

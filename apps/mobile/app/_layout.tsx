@@ -6,17 +6,14 @@ import { ROOBERT_FONTS } from '@/lib/utils/fonts';
 import { NAV_THEME, THEME } from '@/lib/utils/theme';
 // Initialises i18n synchronously (English, bundled) before the first render.
 import '@/lib/utils/i18n';
-import { usePresence } from '@/hooks/usePresence';
 import {
   AuthProvider,
   LanguageProvider,
-  AgentProvider,
   BillingProvider,
   AdvancedFeaturesProvider,
   TrackingProvider,
   useAuthContext,
 } from '@/contexts';
-import { PresenceProvider } from '@/contexts/PresenceContext';
 import { SandboxProvider } from '@/contexts/SandboxContext';
 import {
   QueryClient,
@@ -65,11 +62,11 @@ import { bindSavedCopies } from '@/lib/session/saved-copy-registry';
 import { installHapticsGate } from '@/lib/haptics';
 import { installLoopbackRewrite } from '@/lib/utils/loopback-xhr';
 import { resolveLocalUrl } from '@/lib/utils/resolve-local-url';
+import Constants from 'expo-constants';
 import { configureKortix } from '@kortix/sdk';
 import EventSource from 'react-native-sse';
 import { createSseTransport } from '@/lib/session/sse-transport';
-import * as ExpoCrypto from 'expo-crypto';
-import { API_URL, getAuthToken } from '@/api/config';
+import { API_URL, kortixGetToken } from '@/api/config';
 import {
   clearWebRegistrationHandoff,
   consumeAuthCallbackState,
@@ -90,15 +87,6 @@ if (__DEV__ && Platform.OS !== 'web' && typeof XMLHttpRequest === 'function') {
   installLoopbackRewrite(XMLHttpRequest, resolveLocalUrl);
 }
 
-// `@kortix/sdk` mints ids with the Web Crypto global, which Hermes does not
-// provide. `expo-crypto` supplies the two functions it calls.
-if (typeof globalThis.crypto === 'undefined') {
-  (globalThis as { crypto?: unknown }).crypto = {
-    getRandomValues: ExpoCrypto.getRandomValues,
-    randomUUID: ExpoCrypto.randomUUID,
-  };
-}
-
 // Wire the SDK's single app-specific seam once at startup, before any screen
 // mounts. `backendUrl`/`getToken` reuse mobile's own env resolution and
 // Supabase token source (api/config.ts) unchanged — this just injects them
@@ -106,7 +94,8 @@ if (typeof globalThis.crypto === 'undefined') {
 // through to `backendApi`/`projects-client` instead of hand-rolling fetch.
 configureKortix({
   backendUrl: API_URL,
-  getToken: getAuthToken,
+  getToken: kortixGetToken,
+  clientVersion: Constants.expoConfig?.version ? `mobile/${Constants.expoConfig.version}` : undefined,
   // The live session stream arrives over `react-native-sse` (an XHR wire); the
   // SDK keeps reconnect, resume and the reducer (lib/session/sse-transport.ts).
   eventStreamTransport: createSseTransport({ EventSource, onUnauthorized: reportUnauthorized }),
@@ -520,88 +509,93 @@ export default function RootLayout() {
               <AuthProvider>
                 <SandboxProvider>
                   <BillingProvider>
-                    <AgentProvider>
-                      <AdvancedFeaturesProvider>
-                        <PresenceProvider>
-                          <ToastProvider>
-                            <BottomSheetModalProvider>
-                              <ThemeProvider value={NAV_THEME[activeColorScheme]}>
-                                <StatusBar
-                                  style={activeColorScheme === 'dark' ? 'light' : 'dark'}
-                                />
-                                <View className="flex-1">
-                                  <QueryCachePersistence />
-                                  <SplashGate />
-                                  <AuthProtection>
-                                    {/* Every stack is the native Stack with the platform default
-                                        push/pop on iOS and Android. `index` only redirects, so it
-                                        does not animate. */}
-                                    <Stack
-                                      screenOptions={{
-                                        headerShown: false,
-                                        gestureEnabled: true,
-                                      }}>
-                                      <Stack.Screen name="index" options={{ animation: 'none' }} />
-                                      {/* First run (COR-161): the upgrade screen, then
-                                          the first project. Both open with replace from
-                                          `index`; nothing sits under them to swipe to. */}
-                                      <Stack.Screen
-                                        name="welcome"
-                                        options={{ gestureEnabled: false, animation: bootAnimation }}
-                                      />
-                                      <Stack.Screen
-                                        name="new"
-                                        options={{ gestureEnabled: false, animation: bootAnimation }}
-                                      />
-                                      {/* The Projects list: a plain page, no tab bar. */}
-                                      <Stack.Screen
-                                        name="projects/index"
-                                        options={{ gestureEnabled: false }}
-                                      />
-                                      <Stack.Screen
-                                        name="auth"
-                                        options={{ gestureEnabled: false, animation: bootAnimation }}
-                                      />
-                                      <Stack.Screen
-                                        name="projects/[id]"
-                                        // Back never leaves a project: no swipe-back.
-                                        // Only the project menu's All projects opens the
-                                        // list (ProjectLeftDrawer). The project stack has
-                                        // no swipe-back either: its left edge opens the
-                                        // project drawer on every project page.
-                                        options={{ gestureEnabled: false, animation: bootAnimation }}
-                                      />
-                                      <Stack.Screen
-                                        name="(settings)"
-                                        options={{
-                                          presentation: 'card',
-                                          fullScreenGestureEnabled: true,
-                                        }}
-                                      />
-                                      <Stack.Screen name="plans" />
-                                      <Stack.Screen name="billing" />
-                                      <Stack.Screen
-                                        name="accounts/[id]"
-                                        options={{ fullScreenGestureEnabled: true }}
-                                      />
-                                    </Stack>
-                                  </AuthProtection>
-                                </View>
-                                <OtaUpdateManager />
-                                <SandboxUpgradeGateListener />
-                                <GlobalUpgradeSheet />
-                                <PortalHost />
-                                <OfflineBanner />
-                                <SessionEndedDialog />
-                                <PushNotificationsBridge />
-                              </ThemeProvider>
-                            </BottomSheetModalProvider>
-                            {/* Above every bottom sheet: dropdowns opened from inside a sheet. */}
-                            <PortalHost name={OVERLAY_PORTAL_HOST} />
-                          </ToastProvider>
-                        </PresenceProvider>
-                      </AdvancedFeaturesProvider>
-                    </AgentProvider>
+                    <AdvancedFeaturesProvider>
+                      <ToastProvider>
+                        <BottomSheetModalProvider>
+                          <ThemeProvider value={NAV_THEME[activeColorScheme]}>
+                            <StatusBar
+                              style={activeColorScheme === 'dark' ? 'light' : 'dark'}
+                            />
+                            <View className="flex-1">
+                              <QueryCachePersistence />
+                              <SplashGate />
+                              <AuthProtection>
+                                {/* Every stack is the native Stack with the platform default
+                                    push/pop on iOS and Android. `index` only redirects, so it
+                                    does not animate.
+                                    `freezeOnBlur`: a covered screen does not re-render. On the
+                                    New Architecture the stack freezes only screens two or more
+                                    below the top (project → Billing → Plans freezes the
+                                    project); the screen under the top stays live for the back
+                                    gesture. A frozen screen keeps its state and its effects, its
+                                    stores keep updating, and it renders the latest state when it
+                                    shows again. The stream, its cues and push run above the
+                                    stack (`SandboxProvider`, this layout), so they never freeze. */}
+                                <Stack
+                                  screenOptions={{
+                                    headerShown: false,
+                                    gestureEnabled: true,
+                                    freezeOnBlur: true,
+                                  }}>
+                                  <Stack.Screen name="index" options={{ animation: 'none' }} />
+                                  {/* First run (COR-161): the upgrade screen, then
+                                      the first project. Both open with replace from
+                                      `index`; nothing sits under them to swipe to. */}
+                                  <Stack.Screen
+                                    name="welcome"
+                                    options={{ gestureEnabled: false, animation: bootAnimation }}
+                                  />
+                                  <Stack.Screen
+                                    name="new"
+                                    options={{ gestureEnabled: false, animation: bootAnimation }}
+                                  />
+                                  {/* The Projects list: a plain page, no tab bar. */}
+                                  <Stack.Screen
+                                    name="projects/index"
+                                    options={{ gestureEnabled: false }}
+                                  />
+                                  <Stack.Screen
+                                    name="auth"
+                                    options={{ gestureEnabled: false, animation: bootAnimation }}
+                                  />
+                                  <Stack.Screen
+                                    name="projects/[id]"
+                                    // Back never leaves a project: no swipe-back.
+                                    // Only the project menu's All projects opens the
+                                    // list (ProjectLeftDrawer). The project stack has
+                                    // no swipe-back either: its left edge opens the
+                                    // project drawer on every project page.
+                                    options={{ gestureEnabled: false, animation: bootAnimation }}
+                                  />
+                                  <Stack.Screen
+                                    name="(settings)"
+                                    options={{
+                                      presentation: 'card',
+                                      fullScreenGestureEnabled: true,
+                                    }}
+                                  />
+                                  <Stack.Screen name="plans" />
+                                  <Stack.Screen name="billing" />
+                                  <Stack.Screen
+                                    name="accounts/[id]"
+                                    options={{ fullScreenGestureEnabled: true }}
+                                  />
+                                </Stack>
+                              </AuthProtection>
+                            </View>
+                            <OtaUpdateManager />
+                            <SandboxUpgradeGateListener />
+                            <GlobalUpgradeSheet />
+                            <PortalHost />
+                            <OfflineBanner />
+                            <SessionEndedDialog />
+                            <PushNotificationsBridge />
+                          </ThemeProvider>
+                        </BottomSheetModalProvider>
+                        {/* Above every bottom sheet: dropdowns opened from inside a sheet. */}
+                        <PortalHost name={OVERLAY_PORTAL_HOST} />
+                      </ToastProvider>
+                    </AdvancedFeaturesProvider>
                   </BillingProvider>
                 </SandboxProvider>
               </AuthProvider>
@@ -677,11 +671,6 @@ function AuthProtection({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading: authLoading } = useAuthContext();
   const segments = useSegments();
   const router = useRouter();
-
-  const segmentsArray = segments as string[];
-  const threadId =
-    segmentsArray.length > 3 && segmentsArray[2] === 'thread' ? segmentsArray[3] : undefined;
-  usePresence(threadId);
 
   useEffect(() => {
     // Don't do anything while auth is loading

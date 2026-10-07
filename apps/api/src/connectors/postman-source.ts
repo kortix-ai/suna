@@ -1,4 +1,5 @@
 import { parseSpecDocument } from './spec-doc';
+import { mapWithConcurrency } from '../shared/map-with-concurrency';
 
 export type PostmanSourceDocumentKind = 'openapi' | 'postman';
 
@@ -172,7 +173,7 @@ async function resolveApiManifest(
   if (ids.length > maxApis) throw new Error(`Postman repository contains ${ids.length} APIs; limit is ${maxApis}`);
 
   const concurrency = options.concurrency ?? 8;
-  const relations = (await mapConcurrent(ids, concurrency, async (id) => {
+  const relations = (await mapWithConcurrency(ids, concurrency, async (id) => {
     const entitySource = manifestSource.replace(/\/api$/, `/api_${encodeURIComponent(id)}`);
     try {
       return { entitySource, entity: parsePostmanApiEntity(await loader(entitySource)) };
@@ -187,7 +188,7 @@ async function resolveApiManifest(
   refs.sort((a, b) => a.source.localeCompare(b.source));
 
   const maxBytes = options.maxDocumentBytes ?? 10 * 1024 * 1024;
-  const documents = (await mapConcurrent(refs, concurrency, async (ref) => {
+  const documents = (await mapWithConcurrency(refs, concurrency, async (ref) => {
     try {
       const raw = await loader(ref.source);
       if (new TextEncoder().encode(raw).byteLength > maxBytes) {
@@ -206,24 +207,6 @@ async function resolveApiManifest(
   })).filter((value): value is PostmanSourceDocument => value !== null);
   if (documents.length === 0) throw new Error('Postman repository contains no usable API definitions or collections');
   return documents;
-}
-
-async function mapConcurrent<T, R>(
-  items: readonly T[],
-  limit: number,
-  worker: (item: T, index: number) => Promise<R>,
-): Promise<R[]> {
-  const output = new Array<R>(items.length);
-  let cursor = 0;
-  const run = async () => {
-    while (true) {
-      const index = cursor++;
-      if (index >= items.length) return;
-      output[index] = await worker(items[index]!, index);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(Math.max(1, limit), items.length) }, run));
-  return output;
 }
 
 export async function resolvePostmanSource(

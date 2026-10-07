@@ -529,7 +529,8 @@ describe('page-level sidebar openers are all the one SidebarToggle', () => {
       repoRoot,
       'apps/web/src/features/project-files/components/drive-header.tsx',
     ),
-    'apps-view.tsx': join(repoRoot, 'apps/web/src/features/apps/apps-view.tsx'),
+    // Apps, Review and Reminders draw their opener through this shared header.
+    'project-page-header.tsx': join(import.meta.dir, 'project-page-header.tsx'),
     // The route that had NO opener on any of its headerless surfaces, which is
     // why the component exists. See HeaderlessSessionSurface.
     'sessions/[sessionId]/page.tsx': join(

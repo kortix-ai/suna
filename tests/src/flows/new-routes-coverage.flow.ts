@@ -83,6 +83,7 @@ flow(
       'GET /v1/projects/:projectId/gateway/overview',
       'GET /v1/projects/:projectId/gateway/series',
       'GET /v1/projects/:projectId/gateway/sessions',
+      'GET /v1/projects/:projectId/gateway/sources',
       'GET /v1/projects/:projectId/gateway/breakdown',
       'GET /v1/projects/:projectId/gateway/errors',
       'GET /v1/projects/:projectId/gateway/logs',
@@ -115,6 +116,17 @@ flow(
         const r = await owner.get(route, { params });
         r.status([200, 403]);
       }
+    });
+    await ctx.step('gateway spend by source returns the windowed rollup shape', async () => {
+      const r = await owner.get('/v1/projects/:projectId/gateway/sources', {
+        params,
+        query: { hours: '6' },
+      });
+      r.status(200);
+      const body = r.json() as { window_hours: number; sources: unknown[]; total: { cost: number } };
+      if (body.window_hours !== 6) throw new Error(`window_hours ${body.window_hours} != 6`);
+      if (!Array.isArray(body.sources)) throw new Error('sources is not an array');
+      if (typeof body.total?.cost !== 'number') throw new Error('total.cost is not a number');
     });
     await ctx.step('gateway log detail unknown id returns boundary response', async () => {
       const r = await owner.get('/v1/projects/:projectId/gateway/logs/:logId', {
@@ -180,6 +192,15 @@ flow(
           params: { projectId: project.id },
         });
       response.status([400, 404]);
+    });
+    await ctx.step('a files.slack.com URL that names no file → 400, before any Slack call', async () => {
+      const response = await ctx.client
+        .as(ctx.P.OWNER)
+        .get(
+          `/v1/projects/:projectId/channels/slack/file?url=${encodeURIComponent('https://files.slack.com/files-pri/T0KE2E-F0KE2E')}`,
+          { params: { projectId: project.id } },
+        );
+      response.status(400).body().matches('$.error', /must be a Slack file URL/);
     });
   },
 );

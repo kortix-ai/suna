@@ -1,15 +1,16 @@
 import { projectSessions, projects } from '@kortix/db';
 import { and, asc, eq, inArray, lt, ne, sql } from 'drizzle-orm';
+import { logger } from '../lib/logger';
 import { tickRunningComputeCharges } from '../billing/services/compute-metering';
 import { cleanupExpiredConnectorAttachments } from '../connectors/attachments';
 import { db } from '../shared/db';
 import { recordAuditEvent } from '../shared/audit';
-import { runWorkerTick } from '../shared/audit-scope';
 import { reconcileStaleBuilds } from '../snapshots/builder';
 import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
 import { EMPTY_APP_IMAGE_RECLAIM_RESULT, reclaimAppDeploymentImages } from '../apps/images';
 import { type GitBackedProject, deleteRemoteSessionBranch } from './git';
 import { purgeExpiredMonitorEvents, reconcileMonitorBoxes } from './lib/monitor-box';
+import { mapWithConcurrency } from './lib/trigger-scheduler-state';
 import { emptyMonitorReconcileResult } from './lib/monitor-box-core';
 import { reconcileForwardedPrompts } from './session-lifecycle/consumption';
 import { reconcileUndeliveredPrompts } from './session-lifecycle/undelivered-prompts';
@@ -30,16 +31,12 @@ import {
 const DEFAULT_BRANCH_RETENTION_DAYS = 90;
 const DEFAULT_MAINTENANCE_INTERVAL_MS = 5 * 60 * 1000;
 const GC_BATCH_SIZE = 50;
+// The sweeps of one cycle run on the request pool (5 connections per process).
+// At most this many run at once, so a cycle never holds the whole pool.
+const SWEEP_CONCURRENCY = 3;
 
 const TERMINAL_SESSION_STATUSES = ['stopped', 'completed', 'failed'] as const;
 
-type MaintenanceTimer = ReturnType<typeof setInterval>;
-
-const globalForProjectMaintenance = globalThis as typeof globalThis & {
-  __kortixProjectMaintenanceTimer?: MaintenanceTimer | null;
-};
-
-let maintenanceTimer: MaintenanceTimer | null = null;
 let maintenanceRunning = false;
 // Wall-clock time the current run acquired the lock, or null when idle. Used
 // solely by the stall watchdog below — never trust a boolean lock alone (see
@@ -63,7 +60,7 @@ function branchRetentionDays(): number {
   return positiveInt(process.env.KORTIX_BRANCH_RETENTION_DAYS, DEFAULT_BRANCH_RETENTION_DAYS);
 }
 
-function maintenanceIntervalMs(): number {
+export function maintenanceIntervalMs(): number {
   return positiveInt(
     process.env.KORTIX_PROJECT_MAINTENANCE_INTERVAL_MS,
     DEFAULT_MAINTENANCE_INTERVAL_MS,
@@ -244,6 +241,28 @@ export async function sweepExpiredSessionBranches(now = new Date()): Promise<{
   return { candidates: rows.length, deleted, skipped, errors };
 }
 
+/**
+ * Run every sweep, at most `limit` at a time. Results keep the input order.
+ * A sweep that rejects does not stop the others: every sweep runs, then the
+ * first rejection is rethrown.
+ */
+export async function runSweepsBounded<const T extends readonly (() => Promise<unknown>)[]>(
+  sweeps: T,
+  limit = SWEEP_CONCURRENCY,
+): Promise<{ -readonly [K in keyof T]: Awaited<ReturnType<T[K]>> }> {
+  const settled = await mapWithConcurrency(sweeps, limit, async (sweep) => {
+    try {
+      return { value: await sweep() };
+    } catch (error) {
+      return { error };
+    }
+  });
+  for (const result of settled) if ('error' in result) throw result.error;
+  return settled.map((result) => ('value' in result ? result.value : undefined)) as {
+    -readonly [K in keyof T]: Awaited<ReturnType<T[K]>>;
+  };
+}
+
 /** Test-only visibility into the lock — never used by runtime code. */
 export function __isMaintenanceRunningForTest(): boolean {
   return maintenanceRunning;
@@ -266,9 +285,289 @@ export async function runProjectMaintenance(): Promise<void> {
   }
   const myGeneration = ++maintenanceGeneration;
   maintenanceRunning = true;
-  maintenanceStartedAt = Date.now();
+  const cycleStartedAt = Date.now();
+  maintenanceStartedAt = cycleStartedAt;
   try {
-    const [
+    const sweeps = await runMaintenanceSweeps();
+    logMaintenanceCycle(sweeps, cycleStartedAt);
+
+    // Invariant monitor: in steady state, every `active` compute session has a
+    // running box. A non-zero count means billing is leaking — make it loud so a
+    // silent regression pages instead of accruing $ for days (the original bug).
+    await checkBillingInvariants();
+  } finally {
+    // Only the run that's still current may release the lock — see
+    // maintenanceGeneration's docstring for why an abandoned, force-reset run
+    // settling later must not clobber a newer run's state.
+    if (maintenanceGeneration === myGeneration) {
+      maintenanceRunning = false;
+      maintenanceStartedAt = null;
+    }
+  }
+}
+
+/** Every maintenance sweep, SWEEP_CONCURRENCY at a time. A failing sweep logs and returns its empty result. */
+function runMaintenanceSweeps() {
+  return runSweepsBounded([
+    // Provider-authoritative idle reaper + state/billing reconcile (the fix for
+    // boxes that never auto-stopped and kept billing). Backstops the webhooks.
+    () => reapAndReconcileSandboxes().catch((err) => {
+      console.warn(
+        '[project-maintenance] reaper failed:',
+        err instanceof Error ? err.message : err,
+      );
+      return { ...EMPTY_REAP_RESULT };
+    }),
+    // Billing safety net: close metering for any active compute row whose box
+    // is not actually running (catches orphans / missed webhooks).
+    () => reconcileOrphanComputeSessions().catch((err) => {
+      console.warn(
+        '[project-maintenance] orphan-compute reconcile failed:',
+        err instanceof Error ? err.message : err,
+      );
+      return { checked: 0, closed: 0, errors: 0, byReason: undefined };
+    }),
+    // Session-side leak fix: reconcile project_sessions stuck in an ACTIVE
+    // status with no running box behind them — invisible to the provider reaper
+    // above (which keys off an `active` sandbox row). A stuck row reads as a
+    // live session in every list and status view. DB-only, so it drains
+    // even while Daytona is throttling the box reaper.
+    () => reconcileStuckActiveSessions().catch((err) => {
+      console.warn(
+        '[project-maintenance] stuck-session reconcile failed:',
+        err instanceof Error ? err.message : err,
+      );
+      return { candidates: 0, reconciled: 0, billingClosed: 0, errors: 0 };
+    }),
+    // Prompt-delivery backstop: execute queued session_lifecycle_commands the
+    // scheduler drain should have taken minutes ago (leader dead / scheduler
+    // disabled) — the other half of "queued — agent picking up" forever.
+    () => reconcileUndeliveredPrompts().catch((err) => {
+      console.warn(
+        '[project-maintenance] undelivered-prompt reconcile failed:',
+        err instanceof Error ? err.message : err,
+      );
+      return { claimed: 0, succeeded: 0, failed: 0, queued: 0 };
+    }),
+    // The other end of the same queue: FORWARDED prompts whose ledger
+    // confirmation never arrived. It only ever closes rows — a prompt that
+    // reads `delivering` for ever is a composer that never stops working.
+    () => reconcileForwardedPrompts().catch((err) => {
+      console.warn(
+        '[project-maintenance] forwarded-prompt reconcile failed:',
+        err instanceof Error ? err.message : err,
+      );
+      return { scanned: 0, confirmed: 0, forceClosed: 0 };
+    }),
+    // Provider-authoritative orphan-BOX reaper: stops boxes still running on
+    // the provider (this env) with no live DB row — the leak the DB-driven
+    // reaper above structurally can't see. STOP-only, label-scoped, age-gated.
+    () => reapOrphanProviderBoxes().catch((err) => {
+      console.warn(
+        '[project-maintenance] orphan-box reaper failed:',
+        err instanceof Error ? err.message : err,
+      );
+      return { listed: 0, orphans: 0, stopped: 0, errors: 0 };
+    }),
+    () => sweepExpiredSessionBranches(),
+    // Partial-bill active compute once its window reaches the maintenance
+    // interval, so running-session charges appear before the stop hook.
+    // Also reconciles `active` sandboxes left with no open compute row (the
+    // close-without-reopen defect — see reconcileMissingComputeSessions).
+    () => tickRunningComputeCharges().catch((err) => {
+      console.warn(
+        '[project-maintenance] compute tick failed:',
+        err instanceof Error ? err.message : err,
+      );
+      return { settled: 0, reconciled: 0 };
+    }),
+    // Heal snapshot build-log rows orphaned at "building" by a process
+    // restart/crash, globally across all projects.
+    () => reconcileStaleBuilds().catch((err) => {
+      console.warn(
+        '[project-maintenance] stale-build reconcile failed:',
+        err instanceof Error ? err.message : err,
+      );
+      return { checked: 0, closedReady: 0, closedFailed: 0 };
+    }),
+    // GC superseded template snapshots (content-addressed names orphaned by
+    // every identity drift) before the 100/org Daytona quota fills up.
+    // Pressure-gated + bounded; no-op while the ORG total is small.
+    () => reconcileSnapshotQuota().catch((err) => {
+      console.warn(
+        '[project-maintenance] snapshot quota GC failed:',
+        err instanceof Error ? err.message : err,
+      );
+      return {
+        orgTotal: 0,
+        managedCount: 0,
+        eligible: 0,
+        deleted: 0,
+        deferred: 0,
+        budgetUnresolved: false,
+        dryRun: false,
+      };
+    }),
+    // App deployment images (`kortix-app-<deploymentId>`): one per build,
+    // counted against Platinum's per-org template cap, never reclaimed by the
+    // Daytona-only quota GC above. Deletes only images whose deployment THIS
+    // database holds as unservable (App deleted, deployment failed/deleted),
+    // after removing any runtime that still pins one. Bounded per pass.
+    () => reclaimAppDeploymentImages().catch((err) => {
+      logger.warn('[project-maintenance] App image reclaim failed:',
+        err instanceof Error ? err.message : err);
+      return { ...EMPTY_APP_IMAGE_RECLAIM_RESULT, errors: 1 };
+    }),
+    // Private Connector email attachments expire after 24 hours. Successful
+    // sends become non-replayable immediately, then this sweep deletes them
+    // after the signed-URL ingestion grace window.
+    () => cleanupExpiredConnectorAttachments().catch((err) => {
+      console.warn(
+        '[project-maintenance] connector-attachment cleanup failed:',
+        err instanceof Error ? err.message : err,
+      );
+      return { deleted: 0, errors: 1 };
+    }),
+    () => import('./prompt-attachments').then(({ cleanupExpiredPromptAttachments }) => cleanupExpiredPromptAttachments()).catch((err) => {
+      console.warn('[project-maintenance] prompt-attachment cleanup failed:', err instanceof Error ? err.message : err);
+      return { deleted: 0, errors: 1 };
+    }),
+    // A timed-out provider start can complete after its request owner exits.
+    // Stop that late VM while the durable row remains stopped and unbilled.
+    () => reconcileRuntimeWakeFences().catch((err) => {
+      console.warn(
+        '[project-maintenance] runtime-wake reconcile failed:',
+        err instanceof Error ? err.message : err,
+      );
+      return { checked: 0, stopped: 0, removed: 0, errors: 1 };
+    }),
+    // Nothing else ever re-checks a PARKED sandbox: the reaper's candidate
+    // predicate is `status = 'active'` and the wake fence only sees rows with
+    // a live wake. So a box the provider lost while it sat parked stayed
+    // advertised as resumable until a user tripped over it — 16,243 prod rows
+    // had never been re-verified, 16 of them already dead (2026-08-13).
+    // Rotating + bounded, and it also clears the flag when a runtime is back.
+    () => verifyParkedRuntimes().catch((err) => {
+      console.warn(
+        '[project-maintenance] parked-runtime verification failed:',
+        err instanceof Error ? err.message : err,
+      );
+      return { examined: 0, lost: 0, healed: 0, errors: 1 };
+    }),
+    // Monitors. Converges the
+    // per-project monitor box: flag on + >=1 enabled monitor => a box exists
+    // running the current manifest revision; flag off, zero monitors, or an
+    // exceeded budget => no box. Also the ONLY place a persistent monitor box
+    // is observed alive, which is what keeps its billing window earning.
+    () => reconcileMonitorBoxes().catch((err) => {
+      console.warn(
+        '[project-maintenance] monitor-box reconcile failed:',
+        err instanceof Error ? err.message : err,
+      );
+      return { ...emptyMonitorReconcileResult(), errors: 1 };
+    }),
+    // 30-day retention on the append-only monitor event log.
+    () => purgeExpiredMonitorEvents().catch((err) => {
+      console.warn(
+        '[project-maintenance] monitor-event retention failed:',
+        err instanceof Error ? err.message : err,
+      );
+      return 0;
+    }),
+    // A deleted session's box is removed until the provider confirms it is
+    // gone; one failed remove no longer leaves its disk behind for good.
+    () => removeArchivedProviderBoxes().catch((err) => {
+      console.warn(
+        '[project-maintenance] archived-box removal failed:',
+        err instanceof Error ? err.message : err,
+      );
+      return { examined: 0, removed: 0, failed: 1 };
+    }),
+    // A `provisioning` row whose restart/recovery owner is gone is converged
+    // to the provider's state; nothing else ever acts on such a row.
+    () => convergeStuckProvisioningRuntimes().catch((err) => {
+      console.warn(
+        '[project-maintenance] stuck-provisioning converge failed:',
+        err instanceof Error ? err.message : err,
+      );
+      return { examined: 0, activated: 0, parked: 0, lost: 0, archived: 0, errors: 1 };
+    }),
+  ]);
+}
+
+/** The cycle's `completed` line when any sweep acted, then the unconditional heartbeat. */
+function logMaintenanceCycle(
+  sweeps: Awaited<ReturnType<typeof runMaintenanceSweeps>>,
+  cycleStartedAt: number,
+): void {
+  const [
+    idle,
+    orphanCompute,
+    stuckSessions,
+    undeliveredPrompts,
+    forwardedPrompts,
+    orphanBoxes,
+    branches,
+    computeTick,
+    staleBuilds,
+    snapshotGc,
+    appImages,
+    connectorAttachments,
+    promptAttachments,
+    runtimeWakes,
+    parkedRuntimes,
+    monitorBoxes,
+    monitorEventsPurged,
+    archivedRemovals,
+    stuckProvisioning,
+  ] = sweeps;
+  const hadAction = Boolean(
+    idle.stopped ||
+      idle.reconciled ||
+      idle.errors ||
+      orphanCompute.closed ||
+      orphanCompute.errors ||
+      stuckSessions.reconciled ||
+      stuckSessions.errors ||
+      undeliveredPrompts.claimed ||
+      forwardedPrompts.confirmed ||
+      forwardedPrompts.forceClosed ||
+      orphanBoxes.stopped ||
+      orphanBoxes.errors ||
+      branches.deleted ||
+      branches.errors ||
+      computeTick.settled ||
+      computeTick.reconciled ||
+      staleBuilds.closedReady ||
+      staleBuilds.closedFailed ||
+      snapshotGc.deleted ||
+      appImages.released ||
+      appImages.runtimesRemoved ||
+      appImages.errors ||
+      connectorAttachments.deleted ||
+      connectorAttachments.errors ||
+      promptAttachments.deleted ||
+      promptAttachments.errors ||
+      runtimeWakes.stopped ||
+      runtimeWakes.removed ||
+      runtimeWakes.errors ||
+      parkedRuntimes.lost ||
+      parkedRuntimes.healed ||
+      parkedRuntimes.errors ||
+      monitorBoxes.created ||
+      monitorBoxes.restarted ||
+      monitorBoxes.stopped ||
+      monitorBoxes.disabledOverCap ||
+      monitorBoxes.deferred ||
+      monitorBoxes.errors ||
+      monitorEventsPurged ||
+      archivedRemovals.removed ||
+      archivedRemovals.failed ||
+      stuckProvisioning.examined ||
+      stuckProvisioning.errors,
+  );
+  if (hadAction) {
+    console.log('[project-maintenance] completed', {
       idle,
       orphanCompute,
       stuckSessions,
@@ -283,371 +582,91 @@ export async function runProjectMaintenance(): Promise<void> {
       connectorAttachments,
       promptAttachments,
       runtimeWakes,
-      parkedRuntimes,
       monitorBoxes,
       monitorEventsPurged,
       archivedRemovals,
       stuckProvisioning,
-    ] = await Promise.all([
-      // Provider-authoritative idle reaper + state/billing reconcile (the fix for
-      // boxes that never auto-stopped and kept billing). Backstops the webhooks.
-      reapAndReconcileSandboxes().catch((err) => {
-        console.warn(
-          '[project-maintenance] reaper failed:',
-          err instanceof Error ? err.message : err,
-        );
-        return { ...EMPTY_REAP_RESULT };
-      }),
-      // Billing safety net: close metering for any active compute row whose box
-      // is not actually running (catches orphans / missed webhooks).
-      reconcileOrphanComputeSessions().catch((err) => {
-        console.warn(
-          '[project-maintenance] orphan-compute reconcile failed:',
-          err instanceof Error ? err.message : err,
-        );
-        return { checked: 0, closed: 0, errors: 0, byReason: undefined };
-      }),
-      // Session-side leak fix: reconcile project_sessions stuck in an ACTIVE
-      // status with no running box behind them — invisible to the provider reaper
-      // above (which keys off an `active` sandbox row) and the real reason an
-      // account's concurrent-session cap fills up and wedges Slack. DB-only, so
-      // it drains the cap even while Daytona is throttling the box reaper.
-      reconcileStuckActiveSessions().catch((err) => {
-        console.warn(
-          '[project-maintenance] stuck-session reconcile failed:',
-          err instanceof Error ? err.message : err,
-        );
-        return { candidates: 0, reconciled: 0, billingClosed: 0, errors: 0 };
-      }),
-      // Prompt-delivery backstop: execute queued session_lifecycle_commands the
-      // scheduler drain should have taken minutes ago (leader dead / scheduler
-      // disabled) — the other half of "queued — agent picking up" forever.
-      reconcileUndeliveredPrompts().catch((err) => {
-        console.warn(
-          '[project-maintenance] undelivered-prompt reconcile failed:',
-          err instanceof Error ? err.message : err,
-        );
-        return { claimed: 0, succeeded: 0, failed: 0, queued: 0 };
-      }),
-      // The other end of the same queue: FORWARDED prompts whose ledger
-      // confirmation never arrived. It only ever closes rows — a prompt that
-      // reads `delivering` for ever is a composer that never stops working.
-      reconcileForwardedPrompts().catch((err) => {
-        console.warn(
-          '[project-maintenance] forwarded-prompt reconcile failed:',
-          err instanceof Error ? err.message : err,
-        );
-        return { scanned: 0, confirmed: 0, forceClosed: 0 };
-      }),
-      // Provider-authoritative orphan-BOX reaper: stops boxes still running on
-      // the provider (this env) with no live DB row — the leak the DB-driven
-      // reaper above structurally can't see. STOP-only, label-scoped, age-gated.
-      reapOrphanProviderBoxes().catch((err) => {
-        console.warn(
-          '[project-maintenance] orphan-box reaper failed:',
-          err instanceof Error ? err.message : err,
-        );
-        return { listed: 0, orphans: 0, stopped: 0, errors: 0 };
-      }),
-      sweepExpiredSessionBranches(),
-      // Partial-bill active compute once its window reaches the maintenance
-      // interval, so running-session charges appear before the stop hook.
-      // Also reconciles `active` sandboxes left with no open compute row (the
-      // close-without-reopen defect — see reconcileMissingComputeSessions).
-      tickRunningComputeCharges().catch((err) => {
-        console.warn(
-          '[project-maintenance] compute tick failed:',
-          err instanceof Error ? err.message : err,
-        );
-        return { settled: 0, reconciled: 0 };
-      }),
-      // Heal snapshot build-log rows orphaned at "building" by a process
-      // restart/crash, globally across all projects.
-      reconcileStaleBuilds().catch((err) => {
-        console.warn(
-          '[project-maintenance] stale-build reconcile failed:',
-          err instanceof Error ? err.message : err,
-        );
-        return { checked: 0, closedReady: 0, closedFailed: 0 };
-      }),
-      // GC superseded template snapshots (content-addressed names orphaned by
-      // every identity drift) before the 100/org Daytona quota fills up.
-      // Pressure-gated + bounded; no-op while the ORG total is small.
-      reconcileSnapshotQuota().catch((err) => {
-        console.warn(
-          '[project-maintenance] snapshot quota GC failed:',
-          err instanceof Error ? err.message : err,
-        );
-        return {
-          orgTotal: 0,
-          managedCount: 0,
-          eligible: 0,
-          deleted: 0,
-          deferred: 0,
-          budgetUnresolved: false,
-          dryRun: false,
-        };
-      }),
-      // App deployment images (`kortix-app-<deploymentId>`): one per build,
-      // counted against Platinum's per-org template cap, never reclaimed by the
-      // Daytona-only quota GC above. Deletes only images whose deployment THIS
-      // database holds as unservable (App deleted, deployment failed/deleted),
-      // after removing any runtime that still pins one. Bounded per pass.
-      reclaimAppDeploymentImages().catch((err) => {
-        console.warn(
-          '[project-maintenance] App image reclaim failed:',
-          err instanceof Error ? err.message : err,
-        );
-        return { ...EMPTY_APP_IMAGE_RECLAIM_RESULT, errors: 1 };
-      }),
-      // Private Connector email attachments expire after 24 hours. Successful
-      // sends become non-replayable immediately, then this sweep deletes them
-      // after the signed-URL ingestion grace window.
-      cleanupExpiredConnectorAttachments().catch((err) => {
-        console.warn(
-          '[project-maintenance] connector-attachment cleanup failed:',
-          err instanceof Error ? err.message : err,
-        );
-        return { deleted: 0, errors: 1 };
-      }),
-      import('./prompt-attachments').then(({ cleanupExpiredPromptAttachments }) => cleanupExpiredPromptAttachments()).catch((err) => {
-        console.warn('[project-maintenance] prompt-attachment cleanup failed:', err instanceof Error ? err.message : err);
-        return { deleted: 0, errors: 1 };
-      }),
-      // A timed-out provider start can complete after its request owner exits.
-      // Stop that late VM while the durable row remains stopped and unbilled.
-      reconcileRuntimeWakeFences().catch((err) => {
-        console.warn(
-          '[project-maintenance] runtime-wake reconcile failed:',
-          err instanceof Error ? err.message : err,
-        );
-        return { checked: 0, stopped: 0, removed: 0, errors: 1 };
-      }),
-      // Nothing else ever re-checks a PARKED sandbox: the reaper's candidate
-      // predicate is `status = 'active'` and the wake fence only sees rows with
-      // a live wake. So a box the provider lost while it sat parked stayed
-      // advertised as resumable until a user tripped over it — 16,243 prod rows
-      // had never been re-verified, 16 of them already dead (2026-08-13).
-      // Rotating + bounded, and it also clears the flag when a runtime is back.
-      verifyParkedRuntimes().catch((err) => {
-        console.warn(
-          '[project-maintenance] parked-runtime verification failed:',
-          err instanceof Error ? err.message : err,
-        );
-        return { examined: 0, lost: 0, healed: 0, errors: 1 };
-      }),
-      // Monitors. Converges the
-      // per-project monitor box: flag on + >=1 enabled monitor => a box exists
-      // running the current manifest revision; flag off, zero monitors, or an
-      // exceeded budget => no box. Also the ONLY place a persistent monitor box
-      // is observed alive, which is what keeps its billing window earning.
-      reconcileMonitorBoxes().catch((err) => {
-        console.warn(
-          '[project-maintenance] monitor-box reconcile failed:',
-          err instanceof Error ? err.message : err,
-        );
-        return { ...emptyMonitorReconcileResult(), errors: 1 };
-      }),
-      // 30-day retention on the append-only monitor event log.
-      purgeExpiredMonitorEvents().catch((err) => {
-        console.warn(
-          '[project-maintenance] monitor-event retention failed:',
-          err instanceof Error ? err.message : err,
-        );
-        return 0;
-      }),
-      // A deleted session's box is removed until the provider confirms it is
-      // gone; one failed remove no longer leaves its disk behind for good.
-      removeArchivedProviderBoxes().catch((err) => {
-        console.warn(
-          '[project-maintenance] archived-box removal failed:',
-          err instanceof Error ? err.message : err,
-        );
-        return { examined: 0, removed: 0, failed: 1 };
-      }),
-      // A `provisioning` row whose restart/recovery owner is gone is converged
-      // to the provider's state; nothing else ever acts on such a row.
-      convergeStuckProvisioningRuntimes().catch((err) => {
-        console.warn(
-          '[project-maintenance] stuck-provisioning converge failed:',
-          err instanceof Error ? err.message : err,
-        );
-        return { examined: 0, activated: 0, parked: 0, lost: 0, archived: 0, errors: 1 };
-      }),
-    ]);
-    const hadAction = Boolean(
-      idle.stopped ||
-        idle.reconciled ||
-        idle.errors ||
-        orphanCompute.closed ||
-        orphanCompute.errors ||
-        stuckSessions.reconciled ||
-        stuckSessions.errors ||
-        undeliveredPrompts.claimed ||
-        forwardedPrompts.confirmed ||
-        forwardedPrompts.forceClosed ||
-        orphanBoxes.stopped ||
-        orphanBoxes.errors ||
-        branches.deleted ||
-        branches.errors ||
-        computeTick.settled ||
-        computeTick.reconciled ||
-        staleBuilds.closedReady ||
-        staleBuilds.closedFailed ||
-        snapshotGc.deleted ||
-        appImages.released ||
-        appImages.runtimesRemoved ||
-        appImages.errors ||
-        connectorAttachments.deleted ||
-        connectorAttachments.errors ||
-        promptAttachments.deleted ||
-        promptAttachments.errors ||
-        runtimeWakes.stopped ||
-        runtimeWakes.removed ||
-        runtimeWakes.errors ||
-        parkedRuntimes.lost ||
-        parkedRuntimes.healed ||
-        parkedRuntimes.errors ||
-        monitorBoxes.created ||
-        monitorBoxes.restarted ||
-        monitorBoxes.stopped ||
-        monitorBoxes.disabledOverCap ||
-        monitorBoxes.deferred ||
-        monitorBoxes.errors ||
-        monitorEventsPurged ||
-        archivedRemovals.removed ||
-        archivedRemovals.failed ||
-        stuckProvisioning.examined ||
-        stuckProvisioning.errors,
-    );
-    if (hadAction) {
-      console.log('[project-maintenance] completed', {
-        idle,
-        orphanCompute,
-        stuckSessions,
-        undeliveredPrompts,
-        forwardedPrompts,
-        orphanBoxes,
-        branches,
-        computeTick,
-        staleBuilds,
-        snapshotGc,
-        appImages,
-        connectorAttachments,
-        promptAttachments,
-        runtimeWakes,
-        monitorBoxes,
-        monitorEventsPurged,
-        archivedRemovals,
-        stuckProvisioning,
-      });
-    }
-    // Unconditional heartbeat — proof-of-life independent of whether any
-    // action happened. A stuck lock (see the watchdog above) produces total
-    // silence from this function forever; a healthy loop with nothing to do
-    // ALSO produces total silence under the old (action-gated-only) logging,
-    // making the two indistinguishable from logs alone — which is exactly how
-    // the 2026-07-02 incident went undetected for hours. This line is cheap
-    // (one per cycle, ~every 5min) and makes "the loop is alive" observable —
-    // wire an alert on its absence for N cycles instead of trusting silence.
-    // Every counter that a silent regression would hide. `deferred` is the one
-    // that mattered most: an unordered LIMIT left ~179 of 279 prod rows
-    // permanently outside the sweep and NOTHING said so for weeks. `idle_stopped`
-    // is now the number that matters: it counts boxes stopped because their
-    // deadline passed, and a flat zero over a busy hour means the deadline is
-    // not being enforced.
-    console.log(
-      '[project-maintenance] heartbeat',
-      `idle_candidates=${idle.candidates}`,
-      `idle_matching=${idle.matching}`,
-      `idle_deferred=${idle.deferred}`,
-      `idle_stopped=${idle.stopped}`,
-      `idle_skipped=${idle.skipped}`,
-      `lifecycle_renewed=${idle.lifecycleRenewed}`,
-      `compute_rows_closed=${orphanCompute.closed}`,
-      `late_wakes_stopped=${runtimeWakes.stopped}`,
-      `parked_runtimes_preserved=${runtimeWakes.removed}`,
-      `parked_verified=${parkedRuntimes.examined}`,
-      `parked_lost=${parkedRuntimes.lost}`,
-      `parked_healed=${parkedRuntimes.healed}`,
-      `archived_boxes_removed=${archivedRemovals.removed}`,
-      `archived_box_remove_failures=${archivedRemovals.failed}`,
-      `stuck_provisioning_converged=${stuckProvisioning.examined}`,
-      // A reclaimable App image that stays `pending` pass after pass is one a
-      // sandbox still pins; a growing `listed` with zero `released` is an App
-      // image leak against the provider's template cap.
-      `app_images_listed=${appImages.listed}`,
-      `app_images_released=${appImages.released}`,
-      `app_images_pending=${appImages.pending}`,
-      `app_images_deferred=${appImages.deferred}`,
-      // A monitor box only stays billable while this sweep observes it, so
-      // `monitor_observed` going flat while boxes exist is the signal that
-      // monitor billing has silently stopped earning.
-      `monitor_projects=${monitorBoxes.projects}`,
-      `monitor_observed=${monitorBoxes.observed}`,
-      `monitor_created=${monitorBoxes.created}`,
-      `monitor_stopped=${monitorBoxes.stopped}`,
-      `action=${hadAction}`,
-    );
+    });
+  }
+  // Unconditional heartbeat — proof-of-life independent of whether any
+  // action happened. A stuck lock (see the watchdog above) produces total
+  // silence from this function forever; a healthy loop with nothing to do
+  // ALSO produces total silence under the old (action-gated-only) logging,
+  // making the two indistinguishable from logs alone — which is exactly how
+  // the 2026-07-02 incident went undetected for hours. This line is cheap
+  // (one per cycle, ~every 5min) and makes "the loop is alive" observable —
+  // wire an alert on its absence for N cycles instead of trusting silence.
+  // Every counter that a silent regression would hide. `deferred` is the one
+  // that mattered most: an unordered LIMIT left ~179 of 279 prod rows
+  // permanently outside the sweep and NOTHING said so for weeks. `idle_stopped`
+  // is now the number that matters: it counts boxes stopped because their
+  // deadline passed, and a flat zero over a busy hour means the deadline is
+  // not being enforced.
+  console.log(
+    '[project-maintenance] heartbeat',
+    `idle_candidates=${idle.candidates}`,
+    `idle_matching=${idle.matching}`,
+    `idle_deferred=${idle.deferred}`,
+    `idle_stopped=${idle.stopped}`,
+    `idle_skipped=${idle.skipped}`,
+    `lifecycle_renewed=${idle.lifecycleRenewed}`,
+    `compute_rows_closed=${orphanCompute.closed}`,
+    `late_wakes_stopped=${runtimeWakes.stopped}`,
+    `parked_runtimes_preserved=${runtimeWakes.removed}`,
+    `parked_verified=${parkedRuntimes.examined}`,
+    `parked_lost=${parkedRuntimes.lost}`,
+    `parked_healed=${parkedRuntimes.healed}`,
+    `archived_boxes_removed=${archivedRemovals.removed}`,
+    `archived_box_remove_failures=${archivedRemovals.failed}`,
+    `stuck_provisioning_converged=${stuckProvisioning.examined}`,
+    // A reclaimable App image that stays `pending` pass after pass is one a
+    // sandbox still pins; a growing `listed` with zero `released` is an App
+    // image leak against the provider's template cap.
+    `app_images_listed=${appImages.listed}`,
+    `app_images_released=${appImages.released}`,
+    `app_images_pending=${appImages.pending}`,
+    `app_images_deferred=${appImages.deferred}`,
+    // A monitor box only stays billable while this sweep observes it, so
+    // `monitor_observed` going flat while boxes exist is the signal that
+    // monitor billing has silently stopped earning.
+    `monitor_projects=${monitorBoxes.projects}`,
+    `monitor_observed=${monitorBoxes.observed}`,
+    `monitor_created=${monitorBoxes.created}`,
+    `monitor_stopped=${monitorBoxes.stopped}`,
+    // The sweeps run SWEEP_CONCURRENCY at a time. A cycle that takes longer
+    // than the interval makes the next tick skip, which halves every sweep's
+    // rate: alert on this value approaching the interval.
+    `cycle_ms=${Date.now() - cycleStartedAt}`,
+    `action=${hadAction}`,
+  );
+}
 
-    // Invariant monitor: in steady state, every `active` compute session has a
-    // running box. A non-zero count means billing is leaking — make it loud so a
-    // silent regression pages instead of accruing $ for days (the original bug).
-    try {
-      const [billingLeak, staleLiveness] = await Promise.all([
-        countBillingInvariantViolations(),
-        countStaleLivenessWindows(),
-      ]);
-      if (billingLeak > 0) {
-        console.warn(
-          `[project-maintenance] BILLING INVARIANT VIOLATED: ${billingLeak} active compute session(s) with a non-running box`,
-        );
-      }
-      // The mirror monitor. Billing is gated on control-plane liveness now, so
-      // a starved/dead reaper stops earning revenue SILENTLY where the old
-      // wall-clock model would have over-billed loudly. Alert on both.
-      if (staleLiveness > 0) {
-        console.warn(
-          `[project-maintenance] BILLING LIVENESS STALE: ${staleLiveness} active compute session(s) not observed alive within the grace — revenue is draining silently, check the reaper`,
-        );
-      }
-    } catch (err) {
+/** The billing invariant monitors. A failed check logs and never fails the cycle. */
+async function checkBillingInvariants(): Promise<void> {
+  try {
+    const [billingLeak, staleLiveness] = await Promise.all([
+      countBillingInvariantViolations(),
+      countStaleLivenessWindows(),
+    ]);
+    if (billingLeak > 0) {
       console.warn(
-        '[project-maintenance] billing invariant check failed:',
-        err instanceof Error ? err.message : err,
+        `[project-maintenance] BILLING INVARIANT VIOLATED: ${billingLeak} active compute session(s) with a non-running box`,
       );
     }
-  } finally {
-    // Only the run that's still current may release the lock — see
-    // maintenanceGeneration's docstring for why an abandoned, force-reset run
-    // settling later must not clobber a newer run's state.
-    if (maintenanceGeneration === myGeneration) {
-      maintenanceRunning = false;
-      maintenanceStartedAt = null;
+    // The mirror monitor. Billing is gated on control-plane liveness now, so
+    // a starved/dead reaper stops earning revenue SILENTLY where the old
+    // wall-clock model would have over-billed loudly. Alert on both.
+    if (staleLiveness > 0) {
+      console.warn(
+        `[project-maintenance] BILLING LIVENESS STALE: ${staleLiveness} active compute session(s) not observed alive within the grace — revenue is draining silently, check the reaper`,
+      );
     }
+  } catch (err) {
+    console.warn(
+      '[project-maintenance] billing invariant check failed:',
+      err instanceof Error ? err.message : err,
+    );
   }
 }
 
-export function startProjectMaintenance(): void {
-  if (process.env.KORTIX_PROJECT_MAINTENANCE_ENABLED === 'false') return;
-  if (globalForProjectMaintenance.__kortixProjectMaintenanceTimer) {
-    clearInterval(globalForProjectMaintenance.__kortixProjectMaintenanceTimer);
-  }
-  maintenanceTimer = setInterval(() => {
-    runWorkerTick('project-maintenance', runProjectMaintenance).catch((err) => {
-      console.error('[project-maintenance] run failed:', err);
-    });
-  }, maintenanceIntervalMs());
-  globalForProjectMaintenance.__kortixProjectMaintenanceTimer = maintenanceTimer;
-}
-
-export function stopProjectMaintenance(): void {
-  if (maintenanceTimer) {
-    clearInterval(maintenanceTimer);
-    maintenanceTimer = null;
-  }
-  if (globalForProjectMaintenance.__kortixProjectMaintenanceTimer) {
-    clearInterval(globalForProjectMaintenance.__kortixProjectMaintenanceTimer);
-    globalForProjectMaintenance.__kortixProjectMaintenanceTimer = null;
-  }
-}
+export { startProjectMaintenance, stopProjectMaintenance } from '../workers/project-maintenance-worker';

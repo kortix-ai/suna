@@ -24,10 +24,10 @@ import {
 import { SANDBOX_SPEC_LIMITS } from '../dockerfile-layer';
 import { tarBuildContext } from '../staging-tar';
 import { normalizeExistingProviderState } from './state';
-import { productionPlatinumClient, observeTemplates, findTemplateByName, findTemplateById, paginateTemplates, fetchAllTemplates, waitForActive, requireExternalTemplateId, isPlatinumAuthFailure } from './platinum-templates';
+import { productionPlatinumClient, observeTemplates, findTemplateByName, findTemplateById, paginateTemplates, fetchAllTemplates, lookupTemplatesNamed, waitForActive, requireExternalTemplateId, isPlatinumAuthFailure, PlatinumTemplateBuildFailedError, PLATINUM_BUILD_FAILED_RE } from './platinum-templates';
 import type { PlatinumClient, PlatinumTemplate } from './platinum-templates';
 import { uploadWithRetry, templateInUseCount } from './platinum-upload';
-export { PlatinumTemplateListingError, findTemplateByName, waitForActive, requireExternalTemplateId } from './platinum-templates';
+export { PlatinumTemplateListingError, PlatinumTemplateBuildFailedError, summarizePlatinumBuildFailure, findTemplateByName, waitForActive, requireExternalTemplateId } from './platinum-templates';
 export type { PlatinumClient } from './platinum-templates';
 export { uploadUrlGuardOptsFromEnv, uploadWithRetry, UploadUrlRejectedError } from './platinum-upload';
 import type {
@@ -144,8 +144,8 @@ export function isPlatinumSizeCapBuildFailure(err: unknown): boolean {
  * and points at a registration-pipeline flake on Platinum's side rather than a
  * real build problem with this content. Verified empirically during a
  * 2026-07-18 dev incident: a `from-build` registration silently never
- * produced a template (stuck ~15min on `state: missing`, dev sandbox_id
- * 5771eb57-b0be-4579-8e33-93776a66f4fe), while a fresh build attempt for a
+ * produced a template (stuck ~15min on `state: missing`, on one dev
+ * sandbox), while a fresh build attempt for a
  * different content hash minutes later succeeded on its very first try — so a
  * same-process retry is a real, bounded (BUILD_ATTEMPTS) mitigation, not a
  * blind retry-forever. A build that reaches any OTHER observed state
@@ -159,7 +159,13 @@ export function isRetryablePlatinumBuildError(err: unknown): boolean {
   // non-retryable even if a raw ENOSPC/too_big message happens to also contain
   // one of the transient substrings matched below (e.g. "network").
   if (isPlatinumSizeCapBuildFailure(err)) return false;
+  // An explicit `state: failed` is a genuine build error. It now carries the
+  // build log's failing lines, which can contain any of the transient
+  // substrings below ("no such file", "timeout", "network") — so it must be
+  // decided before them, by type or (re-wrapped) by its message prefix.
+  if (err instanceof PlatinumTemplateBuildFailedError) return false;
   const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  if (PLATINUM_BUILD_FAILED_RE.test(m)) return false;
   // Platinum answers 429 for TWO opposite conditions, and only one is transient:
   //   - `rate_limited` (server.ts) — the per-org mutation-rate bucket
   //     (PT_ORG_MUT_RATE, 20 req/s). Transient; retrying is right.
@@ -210,6 +216,9 @@ export function fromBuildKernelModules(input: Pick<BuildableTemplate, 'snapshotN
   };
 }
 
+
+/** Parallel exact-name lookups per batch when ranking last-ready candidates. */
+const NAMED_LOOKUP_CONCURRENCY = 6;
 
 export class PlatinumAdapter implements SandboxProviderAdapter {
   readonly id = 'platinum' as const;
@@ -400,6 +409,29 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
 
   async findFirstActiveSnapshot(names: readonly string[]): Promise<string | null> {
     if (!this.client.isConfigured() || names.length === 0) return null;
+    // Exact-name lookups: one request per candidate instead of a walk of the
+    // whole org list (34 pages on Kortix Dev, 2026-10-02). The first candidate
+    // doubles as the probe for the control plane's `?name=` filter.
+    const isActive = (rows: PlatinumTemplate[]) =>
+      rows.some((t) => normalizeExistingProviderState(t.state) === 'active');
+    const [firstName, ...rest] = names;
+    if (firstName === undefined) return null;
+    const first = await lookupTemplatesNamed(firstName, this.client);
+    if ('named' in first) {
+      if (isActive(first.named)) return firstName;
+      for (let i = 0; i < rest.length; i += NAMED_LOOKUP_CONCURRENCY) {
+        const batch = rest.slice(i, i + NAMED_LOOKUP_CONCURRENCY);
+        const results = await Promise.all(
+          batch.map((name) =>
+            lookupTemplatesNamed(name, this.client).then((result) => ({ name, result })),
+          ),
+        );
+        // Results keep batch order, so the first hit is the highest-priority one.
+        const hit = results.find(({ result }) => 'named' in result && isActive(result.named));
+        if (hit) return hit.name;
+      }
+      return null;
+    }
     const priorities = new Map(names.map((name, index) => [name, index]));
     let bestIndex: number | null = null;
     const { early } = await paginateTemplates<string>(
@@ -418,6 +450,7 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
         return bestIndex === 0 ? names[0] : undefined;
       },
       this.client,
+      first.firstPage,
     );
     return early ?? (bestIndex === null ? null : names[bestIndex]!);
   }
@@ -467,7 +500,15 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
     if (!this.client.isConfigured()) return;
     observeTemplates.invalidate();
     try {
-      const matches = (await fetchAllTemplates(this.client)).filter((template) => template.name === snapshotName);
+      // One exact-name request, not a walk of every template in the org: this
+      // runs on the first session after a deploy (reaping the predecessor).
+      const lookup = await lookupTemplatesNamed(snapshotName, this.client);
+      const matches =
+        'named' in lookup
+          ? lookup.named
+          : (await paginateTemplates(() => undefined, this.client, lookup.firstPage)).all.filter(
+              (template) => template.name === snapshotName,
+            );
       let inUse = 0;
       for (const template of matches) {
         try {

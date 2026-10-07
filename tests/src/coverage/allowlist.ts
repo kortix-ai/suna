@@ -132,6 +132,31 @@ export const uncoveredAllow: AllowEntry[] = [
     reason:
       "DEBT, not a considered exemption. Route shipped with the fast-git-boot work (#6976) but the manifest was not regenerated then; a canonical manifest regen surfaced it. Nothing covers it — this entry keeps the gap visible instead of re-hiding it behind a stale manifest.",
   },
+  // `ALL` passthroughs. dump-routes.ts lists real `.all()` handlers since the
+  // one-contract wave; no flow can declare the method `ALL`, so each is listed
+  // here with the reason its concrete traffic is not a local flow.
+  ...["/v1/llm/*", "/v1/llm-gateway/*"].map((path) => ({
+    method: "ALL",
+    path,
+    reason: "LLM gateway bridge; flows declare its concrete routes (see externalRoutes)",
+  })),
+  {
+    method: "ALL",
+    path: "/v1/p/:sandboxId/:port/*",
+    reason: "sandbox preview proxy; needs a live cloud sandbox, which the local profile excludes",
+  },
+  ...["/:port", "/:port/*", "/file", "/file/*"].map((tail) => ({
+    method: "ALL",
+    path: `/v1/p/public-share/:token${tail}`,
+    reason: "public-share proxy into a live sandbox; needs a cloud sandbox, which the local profile excludes",
+  })),
+  ...["context7", "firecrawl", "gemini", "groq", "openai", "serper", "tavily", "xai"].flatMap((provider) =>
+    [`/v1/router/${provider}`, `/v1/router/${provider}/*`].map((path) => ({
+      method: "ALL",
+      path,
+      reason: "provider passthrough to a third-party API; needs real provider keys, which the local profile excludes",
+    })),
+  ),
 ];
 
 export const externalRoutes: AllowEntry[] = [

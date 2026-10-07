@@ -3,6 +3,19 @@ import { connectorConnections, connectors, projectSessions, projects } from '@ko
 
 mock.module('../config', () => ({ config: { API_KEY_SECRET: 'test-pepper' } }));
 
+// #9272: a secret link works only while its minter is still in the account.
+let memberRows: Array<{ found: number }> = [{ found: 1 }];
+const realMembershipRead = await import('../iam/membership-read');
+mock.module('../iam/membership-read', () => ({
+  ...realMembershipRead,
+  projectAccountMembershipRows: async () => memberRows,
+}));
+const realUserIdentity = await import('../projects/lib/user-identity');
+mock.module('../projects/lib/user-identity', () => ({
+  ...realUserIdentity,
+  resolveUserIdentities: async (ids: string[]) => new Map(ids.map((id) => [id, { displayName: null }])),
+}));
+
 const realSecrets = await import('../projects/secrets');
 const writes: Array<Record<string, unknown>> = [];
 mock.module('../projects/secrets', () => ({
@@ -43,9 +56,10 @@ mock.module('../shared/db', () => ({
 
 mock.module('../shared/rate-limit', () => ({
   TokenBucketRateLimiter: class {},
+}));
+mock.module('../middleware/rate-limit', () => ({
   enforceRateLimit: async () => null,
   createProjectSecretWriteRateLimitMiddleware: () => async (_c: any, next: any) => next(),
-  consumeProjectSessionCreateBudget: () => ({ allowed: true, limit: 100, remaining: 99, resetMs: 1000 }),
 }));
 
 const propagated: string[] = [];
@@ -182,6 +196,7 @@ function finalize(token: string) {
 
 beforeEach(() => {
   setSystemTime(T0);
+  memberRows = [{ found: 1 }];
   writes.length = 0;
   propagated.length = 0;
   enqueued.length = 0;
@@ -368,6 +383,14 @@ describe('POST /secret/:token', () => {
       body: JSON.stringify({ values }),
     });
   }
+
+  test('a link from a member who left the account is gone (410) and saves nothing', async () => {
+    memberRows = [];
+    const res = await submit(mintToken());
+    expect(res.status).toBe(410);
+    expect(writes).toHaveLength(0);
+    expect(propagated).toHaveLength(0);
+  });
 
   for (const status of ['archived', 'missing']) {
     test(`${status} project rejects submission without side effects`, async () => {

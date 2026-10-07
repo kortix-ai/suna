@@ -107,6 +107,8 @@ let promptResponsePlan: Array<'failed' | 'deduplicated' | 'permanent-refusal'> =
 // FIRST posted id, so the delivery's retry lands and the test does not have to
 // sit out the loop's 45s deadline.
 let runtimeDropsFirstDelivery = false;
+/** A body over the landing-proof threshold: what the provider edge can drop. */
+const OVER_EDGE_TEXT = 'x'.repeat(70_000);
 let promotionCalls: string[] = [];
 /** Runs inside every `promoteNextInboxRow` — lets a test change the world
  *  between one delivery of a chain and the next. */
@@ -143,7 +145,8 @@ mock.module('../../../shared/db', () => ({
         where: () => {
           const limit = async () => {
             if (projection && 'result' in projection && 'payload' in projection) {
-              return [{ result: { held: pauseAfterPosts !== null && capturedBodies.length >= pauseAfterPosts }, payload: {} }];
+              // The claim `baseRow()` holds: still running under its lease.
+              return [{ status: 'running', lockedBy: null, result: { held: pauseAfterPosts !== null && capturedBodies.length >= pauseAfterPosts }, payload: {} }];
             }
             if (table === projectSessions) return sessionRow ? [sessionRow] : [];
             if (table === projects) return [{ projectId: PROJECT_ID, accountId: ACCOUNT_ID }];
@@ -192,7 +195,7 @@ mock.module('../../session-title-generate', () => ({
   generateSessionTitleFromFirstPrompt: async () => {},
 }));
 
-mock.module('../../routes/shared', () => ({
+mock.module('../../session-open', () => ({
   openSession: async (input: { sessionId: string }) => {
     events.push(`open:${input.sessionId}`);
     const delay = openDelayBySession[input.sessionId];
@@ -205,7 +208,7 @@ mock.module('../../routes/shared', () => ({
   },
 }));
 
-mock.module('../../../sandbox-proxy/routes/preview', () => ({
+mock.module('../../../sandbox-proxy/forward', () => ({
   forwardToSandbox: async (
     _externalId: string,
     _port: number,
@@ -626,7 +629,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     for (const scenario of cases) {
       scenario.setup();
       expect(await executeQueuedContinue(baseRow({ payload: {
-        text: 'say hi',
+        text: scenario.delivery === 'not-landed' ? OVER_EDGE_TEXT : 'say hi',
         ...(scenario.delivery === 'not-landed' ? { wireMessageId: SUBMITTED_WIRE_ID } : {}),
       } }))).toBe(scenario.result);
       expect({
@@ -666,6 +669,29 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(await executeQueuedContinue(baseRow())).toBe('queued');
     expect(envSyncCalls).toBe(0);
     expect(capturedBodies).toHaveLength(0);
+  });
+
+  test('a direct follow-up (a question answer, a channel reply) goes into a live turn instead of waiting behind it', async () => {
+    const liveTurn = {
+      status: 'active',
+      metadata: { activeTurns: {
+        't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
+          messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
+      } },
+    };
+    boxRow = liveTurn;
+    expect(await executeQueuedContinue(baseRow())).toBe('queued');
+    expect(requeues.map((r) => r.reason)).toEqual(['turn_active']);
+    expect(capturedBodies).toHaveLength(0);
+
+    boxRow = liveTurn;
+    const reply = baseRow({
+      commandId: 'cmd-answer',
+      payload: { text: 'the answer is B', directFollowUp: true },
+    });
+    expect(await executeQueuedContinue(reply)).toBe('succeeded');
+    expect(requeues).toHaveLength(1);
+    expect(capturedBodies).toHaveLength(1);
   });
 
   test('Quick Queue arms the active turn boundary after its head is durably queued', async () => {
@@ -1259,10 +1285,10 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     const outcome = await executeQueuedContinue(
       baseRow({
         payload: {
-          text: 'HII',
+          text: OVER_EDGE_TEXT,
           clientMessageId: 'q_dropped',
           wireMessageId: SUBMITTED_WIRE_ID,
-          parts: [{ type: 'text', text: 'HII' }],
+          parts: [{ type: 'text', text: OVER_EDGE_TEXT }],
         },
       }),
     );
@@ -1293,10 +1319,10 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     const outcome = await executeQueuedContinue(
       baseRow({
         payload: {
-          text: 'HII',
+          text: OVER_EDGE_TEXT,
           clientMessageId: 'q_dropped_final',
           wireMessageId: SUBMITTED_WIRE_ID,
-          parts: [{ type: 'text', text: 'HII' }],
+          parts: [{ type: 'text', text: OVER_EDGE_TEXT }],
         },
       }),
     );
@@ -1309,6 +1335,25 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
       options: { retryable: false },
     });
   }, 20_000);
+
+  // The read-back guards a body the edge can drop. An ordinary prompt cannot be
+  // dropped by it, and paid a database read plus a daemon GET for nothing.
+  test('an ordinary prompt is forwarded without reading it back', async () => {
+    const outcome = await executeQueuedContinue(
+      baseRow({
+        payload: {
+          text: 'HII',
+          clientMessageId: 'q_small',
+          wireMessageId: SUBMITTED_WIRE_ID,
+          parts: [{ type: 'text', text: 'HII' }],
+        },
+      }),
+    );
+
+    expect(outcome).toBe('succeeded');
+    expect(capturedKeys).toEqual(['cmd-1']);
+    expect(legacyMessageReads.filter((read) => read.path.endsWith(`/message/${SUBMITTED_WIRE_ID}`))).toEqual([]);
+  });
 
   test('an ATTACHMENT-ONLY prompt is delivered, not dead-lettered', async () => {
     // The POST route deliberately accepts an empty flattened text when a

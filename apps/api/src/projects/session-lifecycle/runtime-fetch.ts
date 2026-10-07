@@ -51,42 +51,61 @@ export const runtimeVerbPaths = {
   abort: (sessionId: string) => `/kortix/runtime/sessions/${segment(sessionId)}/abort`,
   agents: (directory: string) => `/kortix/runtime/agents?directory=${segment(directory)}`,
   prompt: (sessionId: string) => `/kortix/runtime/sessions/${segment(sessionId)}/prompt`,
+  /** Hand a message to the RUNNING turn (`session.steer`). Not a turn start. */
+  steer: (sessionId: string) => `/kortix/runtime/sessions/${segment(sessionId)}/steer`,
   state: '/kortix/runtime/state',
 } as const;
 
-const TURN_VERBS_TTL_MS = 5 * 60_000;
-const TURN_VERBS_MEMO_MAX = 5_000;
+const CAPABILITIES_TTL_MS = 5 * 60_000;
+const CAPABILITIES_MEMO_MAX = 5_000;
 // ponytail: per-process memo, cleared when full; a box whose daemon updates in
 // place is read again after the TTL.
-const turnVerbs = new Map<string, { serves: boolean; at: number }>();
+const capabilitiesMemo = new Map<string, { capabilities: string[]; at: number }>();
+
+/**
+ * What this sandbox's runtime serves: the `capabilities` of `/kortix/health`.
+ * One read per sandbox per 5 minutes. Null when the read fails, and a failed
+ * read is not kept. A daemon that lists nothing answers `[]`.
+ *
+ * `/start` returns the list with `stage: ready`, so a client knows what the
+ * runtime serves before its own first health probe answers.
+ */
+export async function runtimeCapabilities(
+  externalId: string | undefined,
+  endpoint: () => Promise<{ url: string; headers: Record<string, string> } | null>,
+  now = Date.now(),
+): Promise<string[] | null> {
+  if (!externalId) return null;
+  const known = capabilitiesMemo.get(externalId);
+  if (known && now - known.at < CAPABILITIES_TTL_MS) return known.capabilities;
+  try {
+    const resolved = await endpoint();
+    if (!resolved) return null;
+    const res = await sessionRuntimeFetch(resolved, 'GET', '/kortix/health');
+    if (!res.ok) return null;
+    const body = (await res.json().catch(() => null)) as { capabilities?: unknown } | null;
+    const capabilities = Array.isArray(body?.capabilities)
+      ? body.capabilities.filter((value): value is string => typeof value === 'string')
+      : [];
+    if (capabilitiesMemo.size >= CAPABILITIES_MEMO_MAX) capabilitiesMemo.clear();
+    capabilitiesMemo.set(externalId, { capabilities, at: now });
+    return capabilities;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Does this sandbox's daemon serve the Kortix turn routes (`runtime.turns.v1`
- * in `/kortix/health` `capabilities`)? One read per sandbox per 5 minutes. A
- * failed read answers false and is not kept: the legacy spelling works on
- * every daemon, so a miss costs only the old path.
+ * in `/kortix/health` `capabilities`)? A failed read answers false: the legacy
+ * spelling works on every daemon, so a miss costs only the old path.
  */
 export async function runtimeServesTurnVerbs(
   externalId: string | undefined,
   endpoint: () => Promise<{ url: string; headers: Record<string, string> } | null>,
   now = Date.now(),
 ): Promise<boolean> {
-  if (!externalId) return false;
-  const known = turnVerbs.get(externalId);
-  if (known && now - known.at < TURN_VERBS_TTL_MS) return known.serves;
-  try {
-    const resolved = await endpoint();
-    if (!resolved) return false;
-    const res = await sessionRuntimeFetch(resolved, 'GET', '/kortix/health');
-    if (!res.ok) return false;
-    const body = (await res.json().catch(() => null)) as { capabilities?: unknown } | null;
-    const serves = Array.isArray(body?.capabilities) && body.capabilities.includes(RUNTIME_TURNS_CAPABILITY);
-    if (turnVerbs.size >= TURN_VERBS_MEMO_MAX) turnVerbs.clear();
-    turnVerbs.set(externalId, { serves, at: now });
-    return serves;
-  } catch {
-    return false;
-  }
+  return (await runtimeCapabilities(externalId, endpoint, now))?.includes(RUNTIME_TURNS_CAPABILITY) ?? false;
 }
 
 /** The header kortixd sets on every answer of a Kortix turn verb (`routes/kortix/runtime.ts`). */
@@ -101,11 +120,16 @@ export const TURN_VERB_HEADER = 'x-kortix-turn-verb';
  */
 export function turnVerbMissing(externalId: string | undefined, res: Response): boolean {
   if (res.status !== 404 || res.headers.get(TURN_VERB_HEADER)) return false;
-  if (externalId) turnVerbs.delete(externalId);
+  if (externalId) capabilitiesMemo.delete(externalId);
   return true;
+}
+
+/** Forget one sandbox's capabilities: its daemon refused a verb it listed. */
+export function forgetRuntimeCapabilities(externalId: string | undefined): void {
+  if (externalId) capabilitiesMemo.delete(externalId);
 }
 
 /** Test-only. */
 export function __resetRuntimeTurnVerbsMemo(): void {
-  turnVerbs.clear();
+  capabilitiesMemo.clear();
 }

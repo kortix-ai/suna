@@ -10,11 +10,17 @@ import { useSessionStateStore } from '@kortix/sdk/react';
 
 import enMessages from '../../../../translations/en.json';
 import { adoptSentAttachmentPreviews } from '../sent-attachment-previews';
-import { buildOptimisticPromptTextWithUploads, sentAttachmentsOf } from '../uploaded-file-refs';
+import {
+  buildOptimisticPromptTextWithUploads,
+  promptFileParts,
+  sentAttachmentsOf,
+  uploadedFileRefXml,
+} from '../uploaded-file-refs';
 import {
   MessageAttachments,
   UserMessage,
   UserMessageBubble,
+  editResendAttachments,
   editablePromptText,
   normalizeAttachments,
 } from './user-message';
@@ -23,6 +29,9 @@ const message = {
   info: { id: 'message-1', role: 'user' },
   parts: [{ id: 'part-1', messageID: 'message-1', type: 'text', text: 'ship the thing' }],
 } as MessageWithParts;
+
+/** A synthetic UUID, for `kortix-attachment://` refs. */
+const UUID = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
 /** The same message, stamped. Wednesday 12 August 2026, 09:34 UTC. */
 const stamped = {
@@ -76,6 +85,21 @@ describe('UserMessage actions', () => {
     expect(markup).not.toContain('aria-label="Edit message and rewind session"');
   });
 
+  test('the delivery status sits at the right edge, after the hover-revealed meta', () => {
+    // The faded meta group keeps its width while invisible, and the server
+    // stamp lands while the prompt is still delivering. A status to its left
+    // jumped sideways when the stamp arrived.
+    const markup = renderText('ship the thing', {
+      message: stamped,
+      onRewind: () => {},
+      rewindDisabled: true,
+      deliveryStatus: <span data-queued-status="sending">Sending</span>,
+    });
+    const status = markup.indexOf('data-queued-status="sending"');
+    expect(markup.indexOf('<time')).toBeGreaterThan(-1);
+    expect(status).toBeGreaterThan(markup.indexOf('<time'));
+    expect(status).toBeGreaterThan(markup.indexOf('aria-label="Copy code"'));
+  });
 });
 
 describe('UserMessage renders the composer chip, not its own treatment', () => {
@@ -640,6 +664,53 @@ describe('UserMessage inline edit-from-here editor', () => {
     expect((markup.match(/disabled=""/g) ?? []).length).toBe(2);
   });
 
+  test('the editor shows each attachment the message carried, each with a remove button', () => {
+    const ref = `kortix-attachment://${UUID(1)}/${UUID(2)}/${UUID(3)}`;
+    const text = [
+      'ship the thing',
+      '',
+      uploadedFileRefXml({
+        path: '/workspace/uploads/.kortix-inbox/shot.png',
+        mime: 'image/png',
+        filename: 'shot.png',
+        attachment: ref,
+      }),
+      uploadedFileRefXml({
+        path: '/workspace/uploads/.kortix-inbox/report.pdf',
+        mime: 'application/pdf',
+        filename: 'report.pdf',
+      }),
+    ].join('\n');
+    const markup = renderText(text, editProps);
+    expect(markup).toContain('<textarea');
+    expect(markup).toContain('aria-label="Remove shot.png"');
+    expect(markup).toContain('aria-label="Remove report.pdf"');
+    expect((markup.match(/aria-label="Remove /g) ?? []).length).toBe(2);
+    expect((markup.match(/title="(shot\.png|report\.pdf)"/g) ?? []).length).toBe(2);
+  });
+
+  test('an edit with no text cannot send, even with attachments kept', () => {
+    // A text-less replacement prompt does not commit the staged rewind: the
+    // runtime keeps the original turn and appends a new one (KRTX-962 preview).
+    const ref = `kortix-attachment://${UUID(1)}/${UUID(2)}/${UUID(3)}`;
+    const text = uploadedFileRefXml({
+      path: '/workspace/uploads/.kortix-inbox/shot.png',
+      mime: 'image/png',
+      filename: 'shot.png',
+      attachment: ref,
+    });
+    const markup = renderText(text, { ...editProps, editingText: '   ' });
+    expect(markup).toContain('aria-label="Remove shot.png"');
+    // Send only: Cancel stays live.
+    expect((markup.match(/disabled=""/g) ?? []).length).toBe(1);
+  });
+
+  test('a message without attachments draws no strip in the editor', () => {
+    const markup = renderText('ship the thing', editProps);
+    expect(markup).not.toContain('aria-label="Remove ');
+    expect(markup).not.toContain('<ul');
+  });
+
   test('editingText without handlers changes nothing — the bubble stays', () => {
     const markup = renderText('ship the thing', { editingText: 'do it differently' });
     expect(markup).not.toContain('<textarea');
@@ -1042,6 +1113,72 @@ describe('UserMessage renders N inline reply quotes at their positions', () => {
     const beforeFirstQuote = markup.slice(0, markup.indexOf('<blockquote'));
     const openRuns = (beforeFirstQuote.match(/<div class="[^"]*font-medium[^"]*"/g) ?? []).length;
     expect(openRuns).toBe(0);
+  });
+});
+
+describe('editResendAttachments (what an edited prompt sends again)', () => {
+  const ref = (n: number) => `kortix-attachment://${UUID(1)}/${UUID(2)}/${UUID(n)}`;
+  const REMOTE = 'https://files.example/remote.pdf';
+  const NOTES = '/workspace/uploads/.kortix-inbox/notes.md';
+  const NOTES_REF = uploadedFileRefXml({
+    path: NOTES,
+    mime: 'application/octet-stream',
+    filename: 'notes.md',
+  });
+
+  test('a saved copy and a native file part ride as URLs, a path-only upload as its ref', () => {
+    const { files, text } = editResendAttachments([
+      {
+        key: 'a',
+        filename: 'shot.png',
+        mime: 'image/png',
+        src: ref(3),
+        path: '/workspace/uploads/.kortix-inbox/shot.png',
+      },
+      { key: 'b', filename: 'remote.pdf', mime: 'application/pdf', src: REMOTE },
+      { key: 'c', filename: 'notes.md', path: NOTES, src: NOTES },
+      { key: 'd', filename: 'pending.txt', mime: 'text/plain' },
+      { key: 'e', filename: 'data.csv', mime: 'text/csv', src: ref(4), path: '/workspace/d.csv' },
+    ], 'hi');
+
+    expect(files).toEqual([
+      { kind: 'remote', url: ref(3), filename: 'shot.png', mime: 'image/png', isImage: true },
+      {
+        kind: 'remote',
+        url: REMOTE,
+        filename: 'remote.pdf',
+        mime: 'application/pdf',
+        isImage: false,
+      },
+      { kind: 'remote', url: ref(4), filename: 'data.csv', mime: 'text/csv', isImage: false },
+    ]);
+    // The saved copy is missing: the runtime still holds the file at its path.
+    expect(text).toBe(`hi\n\n${NOTES_REF}`);
+  });
+
+  test('the text joins the refs: unchanged with none, trimmed text first, refs alone for blank text', () => {
+    const upload = [{ key: 'n', filename: 'notes.md', path: NOTES, src: NOTES }];
+    expect(editResendAttachments([], '  hi  ').text).toBe('  hi  ');
+    expect(editResendAttachments(upload, ' hi ').text).toBe(`hi\n\n${NOTES_REF}`);
+    expect(editResendAttachments(upload, '   ').text).toBe(NOTES_REF);
+    expect(editResendAttachments(upload, '').text).toBe(NOTES_REF);
+  });
+
+  test('promptFileParts maps every kept tile to a file part', () => {
+    const kept = [
+      { key: 'a', filename: 'shot.png', mime: 'image/png', src: ref(3) },
+      { key: 'b', filename: 'remote.pdf', mime: 'application/pdf', src: REMOTE },
+    ];
+
+    const parts = promptFileParts(editResendAttachments(kept, '').files, []);
+    expect(parts).toEqual([
+      { type: 'file', mime: 'image/png', url: ref(3), filename: 'shot.png' },
+      { type: 'file', mime: 'application/pdf', url: REMOTE, filename: 'remote.pdf' },
+    ]);
+  });
+
+  test('nothing kept sends nothing', () => {
+    expect(editResendAttachments([], 'hi')).toEqual({ files: [], text: 'hi' });
   });
 });
 

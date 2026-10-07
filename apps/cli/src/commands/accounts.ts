@@ -8,7 +8,7 @@ import {
 import { ApiError, clientFromAuth } from '../api/client.ts';
 import { selectFromList } from '../tui-select.ts';
 import { splitHelp } from '../command-argv.ts';
-import { emitJson, takeFlagBool } from '../command-helpers.ts';
+import { emitJson, takeFlagBool, tokenRejectedLine } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import type { AccountMembership, MeResponse } from '../api/types.ts';
 
@@ -201,10 +201,8 @@ function accountsCurrent(json = false): number {
   if (!auth) return 1;
   const active = activeAccount();
   if (!active) {
-    if (json) {
-      emitJson(null);
-      return 0;
-    }
+    // Both forms fail together: stdout stays valid JSON (null), exit 1, diagnostic on stderr.
+    if (json) emitJson(null);
     process.stderr.write(
       `${status.err('No active account.')} Run ${C.cyan}kortix accounts use <slug>${C.reset}.\n`,
     );
@@ -251,9 +249,7 @@ async function accountsInfo(arg?: string, json = false): Promise<number> {
 function surface(err: unknown): number {
   if (err instanceof ApiError) {
     if (err.status === 401) {
-      process.stderr.write(
-        `${status.err('Token rejected. Run `kortix login` to re-authenticate.')}\n`,
-      );
+      process.stderr.write(`${status.err(tokenRejectedLine(err.message))}\n`);
     } else {
       process.stderr.write(`${status.err(`HTTP ${err.status}: ${err.message}`)}\n`);
     }

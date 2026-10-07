@@ -630,8 +630,15 @@ function importSingleHostAuth(
  * appends endpoint paths verbatim — so the version mount must be present
  * exactly once.
  */
+/** Strip trailing `/` without a backtracking regex (CodeQL js/polynomial-redos). */
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === '/') end -= 1;
+  return value.slice(0, end);
+}
+
 export function sdkBackendUrl(apiBase: string): string {
-  let base = secureRemoteBase(apiBase).replace(/\/+$/, '');
+  let base = trimTrailingSlashes(secureRemoteBase(apiBase));
   if (base.endsWith('/v1')) base = base.slice(0, -3);
-  return `${base.replace(/\/+$/, '')}/v1`;
+  return `${trimTrailingSlashes(base)}/v1`;
 }

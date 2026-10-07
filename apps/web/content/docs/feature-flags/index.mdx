@@ -23,7 +23,7 @@ another project, and nothing for other accounts.
    `Overridden for this project`.
 3. Use the switch. The change applies to the current project immediately.
 
-You need the project's `project.customize.write` permission. The route answers
+You need the project's `project.settings.write` permission. The route answers
 `403` for any other caller.
 
 ### From the CLI
@@ -122,7 +122,6 @@ Registry order — the same order **Settings → Feature flags** shows.
 | `reminders` | Reminders | Beta | Off | `routes` |
 | `warm_sessions` | Warm Sessions | Beta | On | `routes` |
 | `secrets_egress` | Network-Enforced Secrets | Experimental | On | `behavioral` |
-| `pi_worker` | Pi Worker Runtime (compiled) | Experimental | Off | `routes` |
 | `pi_harness` | Pi Harness (in-sandbox) | Experimental | Off | `behavioral` |
 
 `llm_gateway` reads its per-project default from
@@ -156,9 +155,6 @@ refs). An explicit project choice always wins.
 - **`secrets_egress`** — offer network enforcement for a secret: the sandbox
   holds a handle, and Kortix substitutes the real value only on requests to
   approved hosts. See [Secrets](/docs/project/secrets).
-- **`pi_worker`** — compile a pi-based worker runtime and the OpenCode
-  compiled-boot artifacts on every push. Sessions boot on the split
-  worker/environment topology only when the manifest also sets `runtime: pi`.
 - **`pi_harness`** — run this project's sessions on the pi agent harness
   inside the ordinary session sandbox (`KORTIX_HARNESS=pi`). On: every new or
   restarted session boots pi, whatever the manifest says. Off: the manifest
@@ -178,15 +174,10 @@ refs). An explicit project choice always wins.
 
 A graduated feature is on for every project and has no switch.
 
-- **Agents as principals** is standard behavior. An agent session acts as the
-  agent itself — its Kortix permissions within its ceiling role, minus the
-  human-only permissions, whoever runs it. It is not listed on
-  **Settings → Feature flags** and there is nothing to turn on. See
-  [Agent permissions](/docs/project/permissions). One project can be put back
-  on the old launcher-role model for a single release; ask support, who set it
-  with `PATCH /v1/projects/:id/features`. That switch is removed in the release
-  after this one.
-- **Review Center** graduated out of the flag system. The Review tab, the
+- **Agents as principals** is standard behavior with no switch. An agent
+  session acts as the agent itself — its Kortix permissions within its ceiling
+  role, whoever runs it. See [Agent permissions](/docs/project/permissions).
+- **Review Center** graduated out of the flag system. The Review page, the
   sidebar Review row, and the command-palette row show for every project; the
   `project.review.read` and `project.review.act` permissions still apply.
   `review_center` is no longer a flag key: `PATCH /v1/projects/:id/features`

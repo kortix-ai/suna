@@ -2,7 +2,6 @@
 
 import { readAccountParam } from '@/features/workspace/new/account-param';
 import { readCloneParam } from '@/features/workspace/new/clone-param';
-import { readOnboardingParam } from '@/features/workspace/new/onboarding-param';
 import { readSourceParam } from '@/features/workspace/new/source-param';
 import { useTranslations } from '@/i18n/use-translations';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
@@ -11,7 +10,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
 import { DesktopCloseButton } from '@/components/desktop/desktop-close-button';
-import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -41,7 +39,6 @@ import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isBillingEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
-import { firstChatHref } from '@/stores/first-chat-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 
 /**
@@ -138,13 +135,6 @@ export function NewWorkspacePage() {
 
   useSignedOutRedirect();
 
-  // Same `useSearchParams()` result the clone param reads — one subscription,
-  // two params. Non-null only between "the workspace was created" and "the
-  // user finished or skipped onboarding for it".
-  const onboardingProjectId = readOnboardingParam(
-    new URLSearchParams(searchParams?.toString() ?? ''),
-  );
-
   // `?source=` is how the picked repository source survives the real
   // navigation to `/github/setup` and back (`readSourceParam`). Read into the
   // INITIAL state only — a lazy `useState` initializer, so a later param
@@ -186,31 +176,26 @@ export function NewWorkspacePage() {
     retry,
     canRetry,
     limitReached,
+    phase,
   } = useCreateWorkspace();
   const openUpgradeDialog = useUpgradeDialogStore((store) => store.openUpgradeDialog);
   const submitting = status === 'creating';
-  /**
-   * The form is gone and `WorkspaceHandoff` holds the page.
-   *
-   * ONE flag over both waiting windows — the create being in flight, and the
-   * project existing while the wizard is still `null` — because the user is in
-   * one continuous wait across them and the screen should not change at the
-   * seam. Deriving it here rather than testing both conditions at the JSX also
-   * means the two can never drift into a state that renders neither branch.
-   */
-  const handingOff = submitting || Boolean(onboardingProjectId);
 
-  // Only surface a name error after the field has been left once. Validating
-  // on the first keystroke would tell the user "Name is required" while they
-  // are still typing the name.
+  // The too-long message fires LIVE, before the field is ever left: the input
+  // no longer truncates typed or pasted names at the limit (there is no
+  // `maxLength` — the browser used to clip silently at 120, which made this
+  // message and the submit gate both unreachable for typing). The remaining
+  // name errors wait for the field to be left once: validating on the first
+  // keystroke would tell the user "Name is required" while they are still
+  // typing the name.
   const nameError = useMemo(() => {
-    if (!touched) return null;
     const result = validateWorkspaceName(state.name);
-    if (result.ok) return null;
-    if (result.error === 'Name is required') return t('validation.nameRequired');
-    if (result.error.startsWith('Name must be')) {
+    if (!result.ok && result.error.startsWith('Name must be')) {
       return t('validation.nameTooLong', { max: WORKSPACE_NAME_MAX_LENGTH });
     }
+    if (!touched) return null;
+    if (result.ok) return null;
+    if (result.error === 'Name is required') return t('validation.nameRequired');
     return t('validation.nameCharacters');
   }, [state.name, t, touched]);
 
@@ -329,15 +314,10 @@ export function NewWorkspacePage() {
       {/* TWO states, one swap — see the `SWAP_IN`/`SWAP_OUT` doc comment above.
           `initial={false}` so neither side fades in on first paint.
 
-          `handingOff` deliberately folds the onboarding param in with
-          `submitting` rather than gating the whole block on it separately. The
-          param OWNS this page: `/new?onboarding=<id>` means the workspace
-          already exists, so the create form has nothing left to say — and on a
-          RELOAD the create hook restarts at `status: 'idle'`, so `submitting`
-          alone would paint the live form (Name input, `autoFocus`, fully
-          interactive) in the window before `getProjectDetail` settles. A user
-          who reloaded mid-onboarding could type into it, and if the account
-          list resolved first, Enter fired a SECOND `runCreate`.
+          The swap runs only while the create is in flight — the handoff holds
+          the page from the click until the provision finishes; on success the
+          orchestration navigates to `/projects/<id>` (KRTX-1419), so there is
+          no post-create window on this page for the form to reappear in.
 
           The header lives INSIDE the form branch, not above the swap. It is
           the form's title — "Create a workspace" above a screen that is already
@@ -345,17 +325,19 @@ export function NewWorkspacePage() {
           motions (a block fading while a heading holds still) instead of the
           page turning over as one thing. */}
       <AnimatePresence mode="wait" initial={false}>
-        {handingOff ? (
+        {submitting ? (
           <m.div
             key="handoff"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1, transition: SWAP_IN }}
             exit={{ opacity: 0, transition: SWAP_OUT }}
           >
-            {/* `state.name` survives the whole handoff — this component is a
-                sibling of the form in the same render, not a route away — so
-                the name shown is the one submitted, never re-fetched. */}
-            <WorkspaceHandoff workspaceName={state.name.trim()} projectId={onboardingProjectId} />
+            {/* `state.name` is the form's own state, so the name shown is the
+                one submitted. `phase` is the latest streamed provisioning
+                phase (KRTX-1543): the managed create reports its steps over
+                `/projects/provision-stream` and the handoff renders them;
+                `null` (GitHub sources, fallback) renders the base screen. */}
+            <WorkspaceHandoff workspaceName={state.name.trim()} phase={phase} />
           </m.div>
         ) : (
           <m.div
@@ -471,7 +453,10 @@ export function NewWorkspacePage() {
                       onChange={(event) => setState((s) => ({ ...s, name: event.target.value }))}
                       onBlur={() => setTouched(true)}
                       placeholder={t('name.placeholder')}
-                      maxLength={WORKSPACE_NAME_MAX_LENGTH}
+                      // No `maxLength`: the browser would clip typed and pasted
+                      // names at the limit with no message, and the validation
+                      // below would stay unreachable. The limit is enforced by
+                      // `isSubmittable` (shared form model) + the live message.
                       size="md"
                       className="w-full"
                       aria-invalid={nameError ? true : undefined}
@@ -624,33 +609,14 @@ export function NewWorkspacePage() {
         )}
       </AnimatePresence>
 
-      {/* Onboarding runs HERE, not on the workspace page. It is a fullscreen
-          portal, so whenever it mounts it covers the handoff above — which is
-          exactly why the handoff has no "finished" state of its own to render.
-
-          `key` on the project: `index`, `domain` and the survey `answers` are
-          plain `useState` inside the wizard, none keyed on the project, so a
-          change of id on a mounted instance would PATCH workspace A's answers
-          onto workspace B. */}
-      {onboardingProjectId && (
-        <ProjectOnboardingWizard
-          key={onboardingProjectId}
-          projectId={onboardingProjectId}
-          // Onboarding lands on the project's first chat, the one place besides
-          // the sidebar row that opens it (`firstChatHref`).
-          onCompleted={() => router.replace(firstChatHref(onboardingProjectId))}
-          onSkip={() => router.replace(firstChatHref(onboardingProjectId))}
-        />
-      )}
-
-      {/* The plan step's "See plans" option calls `openUpgrade()`, which needs a
-          mounted `GlobalUpgradeModal` to answer it. The other hosts are
-          `AppProviders` (mounted by `project-shell.tsx` and the share page,
-          never by `app/(app)/layout.tsx`) and `accounts/[id]/page.tsx`, which
-          mounts one bare — the precedent that this mount follows. Neither
-          covers `/new`, so billing can be enabled here with no host at all and
-          that option is a dead click. Same flag and
-          same line as `app-providers.tsx:139`. */}
+      {/* The plan-cap error's "Upgrade" button calls `openUpgradeDialog()`,
+          which needs a mounted `GlobalUpgradeModal` to answer it. The other
+          hosts are `AppProviders` (mounted by `project-shell.tsx` and the share
+          page, never by `app/(app)/layout.tsx`) and
+          `accounts/[id]/page.tsx`, which mounts one bare — the precedent that
+          this mount follows. Neither covers `/new`, so billing can be enabled
+          here with no host at all and that button would be a dead click. Same
+          flag and same line as `app-providers.tsx:139`. */}
       {isBillingEnabled() && <GlobalUpgradeModal />}
     </main>
   );

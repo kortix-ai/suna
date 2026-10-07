@@ -64,6 +64,8 @@ export interface BillingDeductResult {
   reason?: string;
   transactionId?: string;
   error?: string;
+  /** The wallet could not answer (infra fault, not a refusal). The caller answers 503. */
+  retryable?: boolean;
 }
 
 // === Context Types ===
@@ -170,8 +172,8 @@ export interface TierConfig {
   models: string[];
   dailyCreditConfig: DailyCreditConfig | null;
   hidden: boolean;
-  /** Max concurrent project sessions allowed for accounts on this tier. */
-  concurrentSessionLimit: number;
+  /** Apps an account on this tier may own, and App runtimes it may run at once. */
+  appLimit: number;
   /** Enterprise feature gates. Absent ⇒ treated as all-false. */
   entitlements: TierEntitlements;
 }
@@ -222,8 +224,8 @@ export interface AccountStateResponse {
    * RESOLVED plan: an active admin-issued trial and the per-seat self-heal
    * overlay the stored tier (billing/services/resolve-billing.ts), so a
    * trialing account reports the plan its gates actually enforce. `tier.name`,
-   * `tier.display_name`, `tier.entitlements` and `limits.concurrent_sessions`
-   * come from the same resolved view.
+   * `tier.display_name`, and `tier.entitlements` come from the same
+   * resolved view.
    *
    * Optional: additive field, so a client built against the older shape still
    * type-checks. The API always sends it.
@@ -352,17 +354,6 @@ export interface AccountStateResponse {
     period_start: string | null;
     period_end: string | null;
   } | null;
-  /**
-   * Account-level resource limits + current usage. The `concurrent_sessions`
-   * field surfaces the same cap the API enforces at session-create time
-   * (see shared/account-limits.ts).
-   */
-  limits?: {
-    concurrent_sessions: {
-      active: number;
-      limit: number;
-    };
-  };
 }
 
 export interface ScheduledChange {

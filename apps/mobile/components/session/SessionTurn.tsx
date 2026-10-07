@@ -5,6 +5,10 @@
  * `SessionTurnImpl` (turn root `space-y-2.5`):
  *
  *   1. user message
+ *   (Text shimmer: a running burst's "Working · N steps" always sweeps; any other
+ *   segment sweeps only when it is the LAST one, and the inline content only when
+ *   there is no segments block; see `LoopMotionContext`. While the working
+ *   turn is off screen (`onScreen` false) nothing sweeps and the dot matrix holds.)
  *   2. segments (`space-y-3`) — bursts (`ActivityBurst`: thinking, tool rows,
  *      file chips), standalone tools (`ToolPartRenderer`: deliverables,
  *      sub-agents, calls with a pending permission), and prose between bursts
@@ -26,6 +30,7 @@
 
 import React, { useMemo } from 'react';
 import { View } from 'react-native';
+import { LoopMotionContext } from '@/components/kortix/text-shimmer';
 import { useColorScheme } from 'nativewind';
 import type { AvatarPerson } from '@/lib/session/participants';
 import {
@@ -70,7 +75,7 @@ import {
   type TurnBodyTurn,
 } from '@/lib/session/turn-body';
 import { BUSY_RETRY_LABEL } from '@/lib/session/busy-status';
-import { webSpace, type QueuedPromptState } from '@/lib/session/user-message';
+import { webSpace, type MessageAttachment, type QueuedPromptState } from '@/lib/session/user-message';
 import { SessionBusyIndicator, useTurnBusyStatus } from './session-busy-indicator';
 import { SessionRetryDisplay, useRetrySecondsLeft } from './session-retry-display';
 import { TurnErrorDisplay } from './SessionErrorBanner';
@@ -127,12 +132,17 @@ interface SessionTurnProps {
   editPending?: boolean;
   onEditStart?: (messageId: string, text: string) => void;
   onEditCancel?: () => void;
-  onEditSend?: (messageId: string, text: string) => void;
+  onEditSend?: (messageId: string, text: string, kept: MessageAttachment[]) => void;
   rewindDisabled?: boolean;
   queueState?: QueuedPromptState | null;
   uploadStatus?: UserMessageUploadStatus;
   /** Who sent this turn's prompt. Set only in a session with two or more people. */
   sender?: AvatarPerson | null;
+  /**
+   * False while the working turn is scrolled out of the list's viewport: its
+   * shimmer and busy dot matrix hold still (KRTX-1638). Defaults to on screen.
+   */
+  onScreen?: boolean;
 }
 
 const EMPTY_QUESTIONS: QuestionRequest[] = Object.freeze([]) as unknown as QuestionRequest[];
@@ -161,6 +171,7 @@ function SessionTurnImpl({
   queueState,
   uploadStatus,
   sender,
+  onScreen = true,
 }: SessionTurnProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -333,30 +344,38 @@ function SessionTurnImpl({
       <TurnLiveContext.Provider key="segments" value={working}>
         <View style={{ gap: SEGMENT_STACK_GAP }}>
           {segments.map((segment, index) => {
+            // Trailing is structural (`burstIsRunning` keeps the trailing burst
+            // running between calls); only loop motion follows the viewport.
+            // A running burst's "Working · N steps" always sweeps on screen
+            // (Jay); any other segment sweeps only when it is the trailing one.
+            const trailing = index === segments.length - 1;
+            const shimmerSegment = onScreen && trailing;
             if (segment.kind === 'burst') {
               return (
-                <ActivityBurst
-                  key={`burst-${segment.parts[0]?.id ?? 'empty'}`}
-                  segment={segment}
-                  turnLive={working}
-                  isTrailing={index === segments.length - 1}
-                  sessionId={sessionId}
-                  onOpenFile={onFileMention}
-                  toDisplayPath={displayPath}
-                  onPermissionReply={onPermissionReply}
-                />
+                <LoopMotionContext.Provider key={`burst-${segment.parts[0]?.id ?? 'empty'}`} value={onScreen}>
+                  <ActivityBurst
+                    segment={segment}
+                    turnLive={working}
+                    isTrailing={trailing}
+                    sessionId={sessionId}
+                    onOpenFile={onFileMention}
+                    toDisplayPath={displayPath}
+                    onPermissionReply={onPermissionReply}
+                  />
+                </LoopMotionContext.Provider>
               );
             }
             if (segment.kind === 'standalone') {
               if (!shouldShowToolPart(segment.part)) return null;
               return (
-                <ToolPartRenderer
-                  key={segment.part.id}
-                  part={segment.part}
-                  sessionId={sessionId}
-                  permission={getPermissionForTool(permissions, segment.part.callID)}
-                  onPermissionReply={onPermissionReply}
-                />
+                <LoopMotionContext.Provider key={segment.part.id} value={shimmerSegment}>
+                  <ToolPartRenderer
+                    part={segment.part}
+                    sessionId={sessionId}
+                    permission={getPermissionForTool(permissions, segment.part.callID)}
+                    onPermissionReply={onPermissionReply}
+                  />
+                </LoopMotionContext.Provider>
               );
             }
             // A text-only turn renders its response below instead.
@@ -378,8 +397,20 @@ function SessionTurnImpl({
   }
 
   // 3. Response / inline content
+  // The streaming reply and the finished reply share the key "response" and
+  // the same element tree, so the reply keeps its views when the turn ends
+  // instead of remounting (a re-parse, re-highlight and image reload). A
+  // slash-command reply streams in its card with the chrome off.
   if (working && !hasSteps && !showInlineContent && response) {
-    body.push(<TextPartBlock key="response-streaming" text={response} isDark={isDark} isStreaming />);
+    body.push(
+      commandForTurn ? (
+        <CommandOutputCard key="response" name={commandForTurn.name} chrome={false}>
+          <TextPartBlock text={response} isDark={isDark} isStreaming />
+        </CommandOutputCard>
+      ) : (
+        <TextPartBlock key="response" text={response} isDark={isDark} isStreaming />
+      ),
+    );
   }
   if (showInlineContent && inlineItems) {
     let lastTextIndex = -1;
@@ -391,17 +422,21 @@ function SessionTurnImpl({
         }
       }
     }
+    // Inline tools sweep only when no segments block already owns the turn's shimmer.
+    const inlineShimmer = onScreen && body.length === 0;
     body.push(
-      <View key="inline" style={{ gap: SEGMENT_STACK_GAP }}>
-        {inlineItems.map((item, index) => {
-          if (item.type === 'text') {
-            const streaming = index === lastTextIndex;
-            const text = streaming ? item.part.text ?? '' : (item.part.text ?? '').trim();
-            return <TextPartBlock key={item.id} text={text} isDark={isDark} isStreaming={streaming} />;
-          }
-          return <ToolPartRenderer key={item.id} part={item.part} sessionId={sessionId} turnLive={working} />;
-        })}
-      </View>,
+      <LoopMotionContext.Provider key="inline" value={inlineShimmer}>
+        <View style={{ gap: SEGMENT_STACK_GAP }}>
+          {inlineItems.map((item, index) => {
+            if (item.type === 'text') {
+              const streaming = index === lastTextIndex;
+              const text = streaming ? item.part.text ?? '' : (item.part.text ?? '').trim();
+              return <TextPartBlock key={item.id} text={text} isDark={isDark} isStreaming={streaming} />;
+            }
+            return <ToolPartRenderer key={item.id} part={item.part} sessionId={sessionId} turnLive={working} />;
+          })}
+        </View>
+      </LoopMotionContext.Provider>,
     );
   } else {
     if (!working && !hasSteps && response) {
@@ -444,12 +479,14 @@ function SessionTurnImpl({
             details={retryInfo.details}
           />
         ) : null}
-        <SessionBusyIndicator
-          sessionId={sessionId}
-          statusText={statusText}
-          elapsedLabel={elapsedLabel}
-          retryLabel={retryInfo ? BUSY_RETRY_LABEL : undefined}
-        />
+        <LoopMotionContext.Provider value={onScreen}>
+          <SessionBusyIndicator
+            sessionId={sessionId}
+            statusText={statusText}
+            elapsedLabel={elapsedLabel}
+            retryLabel={retryInfo ? BUSY_RETRY_LABEL : undefined}
+          />
+        </LoopMotionContext.Provider>
       </View>,
     );
   }

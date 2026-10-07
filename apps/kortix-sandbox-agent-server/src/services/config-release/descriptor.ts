@@ -7,8 +7,8 @@ import { z } from 'zod'
  * fetches, verifies, applies and reports.
  */
 
-/** The existing `MAX_OPENCODE_CONFIG_ARCHIVE_BYTES`: 4 MiB. */
-export const MAX_CONFIG_ARCHIVE_BYTES = 4 * 1024 * 1024
+/** The API's `MAX_CONFIG_ARCHIVE_BYTES` (apps/api/src/config-releases/release-tree.ts): 32 MiB. */
+export const MAX_CONFIG_ARCHIVE_BYTES = 32 * 1024 * 1024
 
 const HEX64 = /^[0-9a-f]{64}$/
 /** A Git object ID: SHA-1 (40 hex) or SHA-256 (64 hex). */
@@ -44,7 +44,7 @@ const FileEntry = z.tuple([
 
 const DescriptorSchema = z
   .object({
-    format: z.literal('config-release-v1'),
+    format: z.literal('config-release-v2'),
     release_id: z.string().regex(HEX64).nullable(),
     mode: z.literal('follow-base'),
     source_commit: z.string().regex(OBJECT_ID).nullable(),
@@ -81,7 +81,6 @@ const DescriptorSchema = z
     if (value.archive !== null) {
       if (value.release_id === null) issue('an archive needs a release_id')
       if (value.files === null) issue('an archive needs its files')
-      if (value.config_dir === null) issue('an archive needs its config_dir')
       if (value.config_tree_id === null) issue('an archive needs its config_tree_id')
       if (value.source_commit === null) issue('an archive needs its source_commit')
       if (!/^\/v1\/projects\/[^/?#]+\/config-archives\/[0-9a-f]+(?:\?[^#]*)?$/.test(value.archive.url)) {

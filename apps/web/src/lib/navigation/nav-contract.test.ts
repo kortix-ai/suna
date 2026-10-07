@@ -177,12 +177,9 @@ describe('nav contract — every URL written to history is a real route', () => 
   // Back. Live code must build `/projects/<id>/sessions/<id>` instead.
   //
   // The allow-list is exactly the paths proven unreachable: the palette's
-  // no-projectId branch, and the terminal rail that both AppProviders call
-  // sites mount with showRightSidebar={false}.
-  const LEGACY_UNREACHABLE = [
-    'src/features/workspace/command-palette.tsx',
-    'src/components/sidebar/sidebar-right.tsx',
-  ];
+  // no-projectId terminal action. The legacy right rail that also wrote these
+  // hrefs is deleted (KRTX-1012); its allow-list entry went with it.
+  const LEGACY_UNREACHABLE = ['src/features/workspace/command-palette.tsx'];
 
   test('no live code writes a /sessions/<id> or /terminal/<id> tab href', () => {
     const hits = execFileSync(

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { RUNTIME_WAKE_CLAIM_CLEARED_KEYS } from '../routes/shared';
+import { RUNTIME_WAKE_CLAIM_CLEARED_KEYS } from '../session-open';
 import {
   IN_PLACE_RESTART_CLEARED_KEYS,
   RUNTIME_READINESS_CLOCK_KEYS,
@@ -114,7 +114,7 @@ describe('progress-aware OpenCode boot budget (SampleCo 2026-08-25 17:23 double 
 
 // ───────────────────────────────────────────────────────────────────────────
 // The automatic cooldown rung must not inherit the previous attempt's boot
-// budget. SampleCo 2026-08-26, session 29861dfa / box inqwpv4a: attempt 1
+// budget. SampleCo 2026-08-26, one session on an E2B box: attempt 1
 // failed ~13:27; the rung re-attempted ~13:33; the daemon booted through
 // 13:34:48.8, authenticated to the gateway 13:34:48.5-49.1 and claimed its
 // initial turn at 13:34:49.216 — and `/start` parked the box at 13:34:49.202.

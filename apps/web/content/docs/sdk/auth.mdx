@@ -22,6 +22,11 @@ The audit log records the credential your `getToken` returns (a browser
 session, a personal access token, a connected app), not a label your host
 reports. `clientSource` is deprecated and does nothing.
 
+Set `clientVersion` to your app's name and release version, for example
+`my-app/1.4.0`. The SDK sends it as `X-Kortix-Client-Version` on every request.
+Kortix writes it to request logs only, to see which client versions still call
+an API route before that route is retired. It never reaches the audit log.
+
 ## Personal access tokens
 
 A personal access token (PAT) is the credential for the SDK, the CLI, and CI.
@@ -82,6 +87,31 @@ getToken: async () =>
 
 The SDK calls `getToken` on every request, so a refreshed token takes effect
 automatically.
+
+### Recover from a rejected token
+
+When the API answers `401`, the SDK replays the request once with a fresh
+token. A `getToken` that caches must tell the SDK what to drop. Attach an
+`invalidate(rejectedToken)` function to it. The SDK calls it before the replay,
+and the replay then reads a new token.
+
+```ts
+const getToken = Object.assign(
+  async () => cachedSession.accessToken,
+  { invalidate: (rejected: string) => cachedSession.refreshIfCurrent(rejected) },
+);
+```
+
+Rules:
+
+- Parallel `401`s on one token call `invalidate` once and share one refresh.
+- The SDK replays a request once. A second `401` returns to the caller.
+- Without `invalidate`, the replay re-reads `getToken()`. A cached getter then
+  returns the dead token, and the replay does not happen.
+- `invalidateTokenCache()` calls `invalidate` with the last token `getToken`
+  returned. The live event stream uses it after an auth error.
+- `isAuthFailure(error)` is `true` for a `401`, a `403` or an `AuthError`. It
+  reads `status`, never the message text.
 
 ## Headless sign-in (email, password, magic link, social)
 

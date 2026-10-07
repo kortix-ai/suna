@@ -13,6 +13,7 @@ import {
   stageSnapshot,
   timeStage,
 } from './server-timing';
+import { parseServerTiming } from '../../scripts/prompt-latency-bench';
 
 /**
  * `Server-Timing` stages are how the next latency pass attributes a slow
@@ -112,6 +113,11 @@ describe('stage accounting', () => {
       formatStageEntries({ db: { count: 12, wallMs: 30.4 }, auth: { count: 1, wallMs: 4.6 } }),
     ).toEqual(['auth;dur=5;desc="n=1"', 'db;dur=30;desc="n=12"']);
   });
+
+  test('the latency bench reads the statement count back', () => {
+    const header = ['total;dur=41', ...formatStageEntries({ db: { count: 12, wallMs: 30.4 } }), 'api;dur=41'].join(', ');
+    expect(parseServerTiming(header)).toEqual({ total: { dur: 41 }, db: { dur: 30, n: 12 }, api: { dur: 41 } });
+  });
 });
 
 describe('classifyOutbound', () => {
@@ -197,7 +203,7 @@ describe('Server-Timing header', () => {
  * second header. Each mark is namespaced `turnstage-<label>` so the benchmark
  * can recognize every entry belonging to the turn breakdown WITHOUT hardcoding
  * the current stage names — three concurrent branches are actively adding and
- * renaming `ptl.mark(...)` calls in `sandbox-proxy/routes/preview.ts`, and a
+ * renaming `ptl.mark(...)` calls in `sandbox-proxy/forward/`, and a
  * namespace prefix is what lets a new stage show up automatically instead of
  * silently being dropped by an allowlist.
  */

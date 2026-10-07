@@ -54,7 +54,7 @@ function manifestOf(release: BuiltRelease): ReleaseManifest {
   return {
     release_id: d.release_id!,
     source_commit: d.source_commit!,
-    config_dir: d.config_dir!,
+    config_dir: d.config_dir,
     config_tree_id: d.config_tree_id!,
     archive_url: d.archive!.url,
     archive_bytes: d.archive!.bytes,
@@ -73,7 +73,7 @@ async function materialize(built: BuiltRelease, prepare?: (dir: string) => Promi
 }
 
 const verify = (built: BuiltRelease, dir: string) =>
-  verifyRelease({ dir, files: built.descriptor.files!, managedSkillsDir: overlay })
+  verifyRelease({ dir, files: built.descriptor.files!, configDir: REL, managedSkillsDir: overlay })
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'kortix-release-store-'))
@@ -102,8 +102,8 @@ describe('materializeRelease', () => {
     const built = release('v1')
     const { dir } = await materialize(built)
     expect(dir).toBe(join(store, built.descriptor.release_id!))
-    expect(readFileSync(join(dir, 'agents/kortix.md'), 'utf8')).toBe('PROMPT v1\n')
-    expect(existsSync(join(dir, 'app.ts'))).toBe(false)
+    expect(readFileSync(join(dir, REL, 'agents/kortix.md'), 'utf8')).toBe('PROMPT v1\n')
+    expect(readFileSync(join(dir, 'app.ts'), 'utf8')).toBe('export const x = 1\n')
     expect(await verify(built, dir)).toBe(true)
     expect(await readReleaseManifest(store, built.descriptor.release_id!)).toEqual(manifestOf(built))
   })
@@ -118,22 +118,22 @@ describe('materializeRelease', () => {
 
   test('project files are read-only; an executable keeps its execute bit', async () => {
     const { dir } = await materialize(release('v1'))
-    expect(() => accessSync(join(dir, 'agents/kortix.md'), constants.W_OK)).toThrow()
-    expect(() => writeFileSync(join(dir, 'agents/kortix.md'), 'EDIT\n')).toThrow()
-    accessSync(join(dir, 'skills/pdf/scripts/run.sh'), constants.X_OK)
+    expect(() => accessSync(join(dir, REL, 'agents/kortix.md'), constants.W_OK)).toThrow()
+    expect(() => writeFileSync(join(dir, REL, 'agents/kortix.md'), 'EDIT\n')).toThrow()
+    accessSync(join(dir, REL, 'skills/pdf/scripts/run.sh'), constants.X_OK)
   })
 
   test('the prepare hook runs on the staged directory before it is sealed', async () => {
     let staged = ''
     const { dir } = await materialize(release('v1'), async (path) => {
       staged = path
-      cpSync(overlay, join(path, 'skills'), { recursive: true, force: true })
-      writeFileSync(join(path, 'bun.lock'), 'lock\n')
+      cpSync(overlay, join(path, REL, 'skills'), { recursive: true, force: true })
+      writeFileSync(join(path, REL, 'bun.lock'), 'lock\n')
     })
     expect(staged).toMatch(/\.tmp$/)
     expect(staged.startsWith(`${dir}.`)).toBe(true)
     expect(existsSync(staged)).toBe(false)
-    expect(readFileSync(join(dir, 'skills/kortix-cli/SKILL.md'), 'utf8')).toBe('OVERLAY\n')
+    expect(readFileSync(join(dir, REL, 'skills/kortix-cli/SKILL.md'), 'utf8')).toBe('OVERLAY\n')
   })
 
   test('a failing prepare leaves no release and no staging directory', async () => {
@@ -147,7 +147,7 @@ describe('materializeRelease', () => {
     symlinkSync('kortix.md', join(repo, `${REL}/agents/alias.md`))
     const built = release('symlink')
     const { dir } = await materialize(built)
-    expect(readlinkSync(join(dir, 'agents/alias.md'))).toBe('kortix.md')
+    expect(readlinkSync(join(dir, REL, 'agents/alias.md'))).toBe('kortix.md')
     expect(await verify(built, dir)).toBe(true)
   })
 })
@@ -156,7 +156,7 @@ describe('extractConfigArchive refuses an archive that does not match its descri
   test('a changed byte', async () => {
     const built = release('v1')
     const files = structuredClone(built.descriptor.files!)
-    const agent = files.find(([path]) => path === 'agents/kortix.md')!
+    const agent = files.find(([path]) => path === `${REL}/agents/kortix.md`)!
     agent[2] = 'f'.repeat(40)
     await expect(extractConfigArchive(built.archive, files, join(root, 'x'))).rejects.toThrow(/does not match its blob ID/)
     expect(existsSync(join(root, 'x'))).toBe(false)
@@ -164,8 +164,8 @@ describe('extractConfigArchive refuses an archive that does not match its descri
 
   test('a file the descriptor does not list', async () => {
     const built = release('v1')
-    const files = built.descriptor.files!.filter(([path]) => path !== 'opencode.jsonc')
-    await expect(extractConfigArchive(built.archive, files, join(root, 'x'))).rejects.toThrow(/unlisted files: opencode.jsonc/)
+    const files = built.descriptor.files!.filter(([path]) => path !== `${REL}/opencode.jsonc`)
+    await expect(extractConfigArchive(built.archive, files, join(root, 'x'))).rejects.toThrow(/unlisted files: \.kortix\/opencode\/opencode.jsonc/)
   })
 
   test('a listed file the archive lacks', async () => {
@@ -184,7 +184,7 @@ describe('extractConfigArchive refuses an archive that does not match its descri
 
   test('a file list with a path inside a listed file', async () => {
     const built = release('v1')
-    const files = [...built.descriptor.files!, ['opencode.jsonc/x', '100644', 'e'.repeat(40)]] as never
+    const files = [...built.descriptor.files!, [`${REL}/opencode.jsonc/x`, '100644', 'e'.repeat(40)]] as never
     await expect(extractConfigArchive(built.archive, files, join(root, 'x'))).rejects.toThrow(/inside a listed file/)
   })
 })
@@ -194,14 +194,14 @@ describe('verifyRelease', () => {
     const built = release('v1')
     const { dir } = await materialize(built)
     spawnSync('chmod', ['-R', 'u+w', dir])
-    writeFileSync(join(dir, 'agents/kortix.md'), 'TAMPERED\n')
+    writeFileSync(join(dir, REL, 'agents/kortix.md'), 'TAMPERED\n')
     expect(await verify(built, dir)).toBe(false)
-    writeFileSync(join(dir, 'agents/kortix.md'), 'PROMPT v1\n')
+    writeFileSync(join(dir, REL, 'agents/kortix.md'), 'PROMPT v1\n')
     expect(await verify(built, dir)).toBe(true)
-    writeFileSync(join(dir, 'agents/rogue.md'), 'ADDED\n')
+    writeFileSync(join(dir, REL, 'agents/rogue.md'), 'ADDED\n')
     expect(await verify(built, dir)).toBe(false)
-    rmSync(join(dir, 'agents/rogue.md'))
-    rmSync(join(dir, 'skills/pdf/SKILL.md'))
+    rmSync(join(dir, REL, 'agents/rogue.md'))
+    rmSync(join(dir, REL, 'skills/pdf/SKILL.md'))
     expect(await verify(built, dir)).toBe(false)
   })
 
@@ -212,19 +212,19 @@ describe('verifyRelease', () => {
     // the test opens the root the same way `materializeRelease` has it open
     // at that point. Post-seal an agent cannot create them at all — that is
     // the case above. What is asserted here is what `verifyRelease` TOLERATES.
-    spawnSync('chmod', ['u+w', dir])
-    writeFileSync(join(dir, 'package.json'), '{"dependencies":{"@opencode-ai/plugin":"1.18.23"}}\n')
-    writeFileSync(join(dir, 'bun.lock'), 'lock\n')
-    mkdirSync(join(dir, 'node_modules/zod'), { recursive: true })
-    writeFileSync(join(dir, 'node_modules/zod/index.js'), '')
-    spawnSync('chmod', ['-R', 'u+w', join(dir, 'skills')])
-    writeFileSync(join(dir, 'skills/kortix-cli/SKILL.md'), 'NEWER OVERLAY\n')
+    spawnSync('chmod', ['u+w', join(dir, REL)])
+    writeFileSync(join(dir, REL, 'package.json'), '{"dependencies":{"@opencode-ai/plugin":"1.18.23"}}\n')
+    writeFileSync(join(dir, REL, 'bun.lock'), 'lock\n')
+    mkdirSync(join(dir, REL, 'node_modules/zod'), { recursive: true })
+    writeFileSync(join(dir, REL, 'node_modules/zod/index.js'), '')
+    spawnSync('chmod', ['-R', 'u+w', join(dir, REL, 'skills')])
+    writeFileSync(join(dir, REL, 'skills/kortix-cli/SKILL.md'), 'NEWER OVERLAY\n')
     expect(await verify(built, dir)).toBe(true)
   })
 
   /**
-   * Verified on a real Daytona box (2026-09-24, release 7a60e568, session
-   * 1a685caf): the seal left the release ROOT and `skills/` at 0755, so an
+   * Verified on a real Daytona box (2026-09-24, release 7a60e568, one
+   * session): the seal left the release ROOT and `skills/` at 0755, so an
    * agent's `write` tool answered "Wrote file successfully." for
    * `<release>/skills/<name>/SKILL.md` and for a root-level file. The next
    * convergence then failed verification, rebuilt the release and respawned
@@ -256,19 +256,19 @@ describe('verifyRelease', () => {
     mkdirSync(join(baked, 'kortix-new'), { recursive: true });
     writeFileSync(join(baked, 'kortix-new/SKILL.md'), 'NEW OVERLAY\n');
 
-    await ensureInjectedManagedSkills(dir, { bakedDir: baked, unsealManaged: true });
+    await ensureInjectedManagedSkills(join(dir, REL), { bakedDir: baked, unsealManaged: true });
 
-    expect(readFileSync(join(dir, 'skills/kortix-new/SKILL.md'), 'utf8')).toBe('NEW OVERLAY\n');
-    expect(() => writeFileSync(join(dir, 'rogue-after-inject.md'), 'x')).toThrow(/EACCES|EPERM|EROFS/);
+    expect(readFileSync(join(dir, REL, 'skills/kortix-new/SKILL.md'), 'utf8')).toBe('NEW OVERLAY\n');
+    expect(() => writeFileSync(join(dir, REL, 'rogue-after-inject.md'), 'x')).toThrow(/EACCES|EPERM|EROFS/);
   });
 
   test('a swapped symlink is compared by its target, never followed', async () => {
     symlinkSync('kortix.md', join(repo, `${REL}/agents/alias.md`))
     const built = release('symlink')
     const { dir } = await materialize(built)
-    spawnSync('chmod', ['u+w', join(dir, 'agents')])
-    rmSync(join(dir, 'agents/alias.md'))
-    symlinkSync('/etc/passwd', join(dir, 'agents/alias.md'))
+    spawnSync('chmod', ['u+w', join(dir, REL, 'agents')])
+    rmSync(join(dir, REL, 'agents/alias.md'))
+    symlinkSync('/etc/passwd', join(dir, REL, 'agents/alias.md'))
     expect(await verify(built, dir)).toBe(false)
   })
 })
@@ -367,7 +367,7 @@ describe('the boot link', () => {
     const link = await pointBootLink(first.dir, store)
     expect(link).toBe(bootLinkPath(store))
     expect(readlinkSync(link)).toBe(first.dir)
-    expect(readFileSync(join(link, 'agents/kortix.md'), 'utf8')).toBe('PROMPT v1\n')
+    expect(readFileSync(join(link, REL, 'agents/kortix.md'), 'utf8')).toBe('PROMPT v1\n')
     await pointBootLink(second, store)
     expect(readlinkSync(link)).toBe(second)
     expect(spawnSync('ls', [store]).stdout.toString().split('\n').filter((name) => name.includes('.tmp'))).toEqual([])

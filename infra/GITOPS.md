@@ -76,6 +76,36 @@ Warm-session adoption requires provider-reported placement matching the current
 project flag. Server-owned placement intent only deduplicates in-flight warming;
 it is not proof that a sandbox is ready or in the requested region.
 
+### Dev release gate: the default image exists before the roll
+
+Before the API ECS roll, `deploy-dev.yml` runs
+`apps/api/scripts/prepare-platform-default-image.ts` inside the new API image.
+The container receives exactly the environment the roll registers:
+`ecs-deploy.sh --dry-run` writes the rendered task environment to
+`ECS_DEPLOY_RENDERED_ENV_FILE` (running revision, `KORTIX_ECS_ENV_OVERRIDES`,
+version stamp), and the secret document is passed as `KORTIX_ENV_JSON`. The
+image identity depends on that environment, so the gate and the rolled tasks
+compute the same `kortix-default-<hash>`.
+
+1. The gate builds the Platinum platform default image of the new version
+   UNPUBLISHED (`buildPlatformDefaultImageForRelease`). The template row is
+   not repointed, so `recordTemplateBuilt` does not reap the snapshot the
+   serving version still boots, and no predecessor is pruned.
+2. With `KORTIX_PLATINUM_US_REGION` set, it calls
+   `POST /v1/templates/:id/prepare` (Platinum #1381) until Platinum answers
+   HTTP `200` `ready`/`ready` for the exact template id and region. The
+   deadline is 12 minutes.
+
+After the roll, the first session (or the leader's startup pre-build) finds the
+image active and publishes it, as after its own build before this gate. A
+session in either region boots the exact image of the version that serves it,
+and a US session does not wait for an EU-to-US copy.
+
+The step never blocks the roll (`continue-on-error`, 25-minute timeout). A
+failure prints a `::warning::` with the cause, and the deploy then behaves as it
+did before the gate: the new tasks build the image and the first US session
+waits for the copy. Kortix staging and production workflows are unchanged.
+
 ## Rollback
 
 `rollback-prod.yml` validates that each requested release image exists. It then
@@ -86,7 +116,7 @@ remain compatible with the selected application version.
 Run the workflow with:
 
 ```bash
-gh workflow run rollback-prod.yml --repo kortix-ai/suna --ref main \
+gh workflow run rollback-prod.yml --repo kortix-ai/suna --ref dev \
   -f version=vX.Y.Z \
   -f reason="<incident>" \
   -f confirm="ROLLBACK PROD"

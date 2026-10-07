@@ -120,6 +120,7 @@ const SOURCE_SECTION_ORDER: Array<{ id: string; label: string }> = [
   { id: 'email', label: 'Email' },
   { id: 'schedule', label: 'Scheduled' },
   { id: 'webhook', label: 'Webhook' },
+  { id: 'manual', label: 'Manual' },
 ];
 
 const NONE_SECTION_ORDER: Array<{ id: string; label: string }> = [{ id: 'all', label: 'All' }];

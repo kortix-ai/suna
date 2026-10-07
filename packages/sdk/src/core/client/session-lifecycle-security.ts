@@ -29,6 +29,8 @@ export function bindSessionLifecycleSecurity(ctx: SessionBindingContext) {
       P.getSessionTranscript(ctx.projectId, ctx.sessionId, options),
     /** Who wrote each message: a member, or another session's agent. */
     messageAuthors: () => P.getSessionMessageAuthors(ctx.projectId, ctx.sessionId),
+    /** Which model answered each turn, and what Kortix billed for it. */
+    modelUsage: () => P.getSessionModelUsage(ctx.projectId, ctx.sessionId),
     /** The DURABLE server-side transcript mirror, in sync-store shape
      *  (OpenCode message envelopes verbatim, attachment bytes and tool
      *  inputs/outputs stripped). This is the read that answers while the
@@ -48,6 +50,12 @@ export function bindSessionLifecycleSecurity(ctx: SessionBindingContext) {
       list: () => P.listSessionPrompts(ctx.projectId, ctx.sessionId),
       remove: (promptId: string) => P.deleteSessionPrompt(ctx.projectId, ctx.sessionId, promptId),
       retry: (promptId: string) => P.retrySessionPrompt(ctx.projectId, ctx.sessionId, promptId),
+      /** Replace a waiting prompt's text in place; sends nothing. */
+      edit: (promptId: string, text: string) =>
+        P.editSessionPrompt(ctx.projectId, ctx.sessionId, promptId, text),
+      /** "Stop and send": a waiting prompt becomes Quick Queue. */
+      interrupt: (promptId: string) =>
+        P.interruptSessionPrompt(ctx.projectId, ctx.sessionId, promptId),
       /** Hold (or release) the whole queue — what the Stop button writes. */
       hold: (held: boolean) => P.holdSessionPrompts(ctx.projectId, ctx.sessionId, held),
     },

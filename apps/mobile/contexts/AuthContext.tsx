@@ -1,11 +1,12 @@
 import * as React from 'react';
-import { useAuth } from '@/hooks/useAuth';
-import type { AuthState, SignInCredentials, SignUpCredentials, OAuthProvider } from '@/lib/utils/auth-types';
+import { useAuth, type UserState } from '@/hooks/useAuth';
+import type { SignInCredentials, SignUpCredentials, OAuthProvider } from '@/lib/utils/auth-types';
 
 /**
- * Auth Context Type
+ * Auth Context Type. It has no `session`: read the access token at call time
+ * with `getAuthToken` (`api/config.ts`).
  */
-interface AuthContextType extends AuthState {
+interface AuthContextType extends UserState {
   signIn: (credentials: SignInCredentials) => Promise<any>;
   signUp: (credentials: SignUpCredentials) => Promise<any>;
   signInWithOAuth: (provider: OAuthProvider) => Promise<any>;

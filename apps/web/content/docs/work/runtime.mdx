@@ -28,7 +28,7 @@ The sandbox itself carries a separate `status` in its own row, with its own enum
 | `error` | The provider reports a boot or runtime failure. |
 | `archived` | Terminal. You deleted the session and the provider destroyed the sandbox, not paused it. |
 
-Kortix enforces a concurrent-session limit per account. Exceeding your tier's limit returns `429`.
+Kortix does not cap how many sessions run at once, per account or per project. Running sessions bill compute; an account out of credit gets `402` on create.
 
 ### Active-turn protection
 
@@ -57,9 +57,11 @@ A sandbox holds the config of the commit it was provisioned from. A resume or a 
 
 The platform never writes `/workspace` to do this. `/workspace` stays the full clone that you and the agent read and edit.
 
-The unit a session runs is a **config release**: one archive of the OpenCode config directory (`harnesses/opencode` unless the manifest sets `opencode.config_dir`) and the root `skills/` at a base commit, plus the agent config the API compiles from `kortix.yaml` and the agent files. A project created before 2026-09 uses `.kortix/opencode`, which also holds its agents and skills. The release ID covers both halves. A commit that changes neither produces the same release ID, so nothing restarts.
+The unit a session runs is a **config release**: a read-only checkout of the base branch at one commit, with the same files and folders as `/workspace`, plus the agent config the API compiles from `kortix.yaml` and the agent files. The runtime reads its config inside the release from the same paths it uses in `/workspace`: `harnesses/opencode` (unless the manifest sets `opencode.config_dir`), `skills/`, and the agent files. A project created before 2026-09 uses `.kortix/opencode`, which also holds its agents and skills. Every commit to the base branch is a new release.
 
-Both session runtimes run config releases. OpenCode reads the whole archive. pi reads the agents, from the compiled agent config, `skills/`, and its own config directory: `pi.config_dir` in the manifest, else `harnesses/pi`, else `.kortix/pi`. The release carries that directory as `pi/`, so pi's skills, extensions, prompts, and `settings.json` also come from the base branch. The OpenCode files in the archive (`opencode.json`, `tools/`, `plugins/`) do not affect a pi session.
+The release holds every file Git tracks at that commit; history and `.git` do not count. A release over 32 MiB compressed or 128 MiB uncompressed is not built, and the session runs the platform default config without the project's agents. Keep big static assets (video, datasets, model weights, build output) in object storage such as S3, R2, or GCS, not in Git. A path that must stay in Git but that no agent reads can be left out of the release with `<path> export-ignore` in `.gitattributes`. [`kortix validate`](/docs/cli#manifest-validation) warns before you push.
+
+Both session runtimes run config releases. OpenCode reads its config directory inside the release. pi reads the agents, from the compiled agent config, `skills/`, and its own config directory: `pi.config_dir` in the manifest, else `harnesses/pi`, else `.kortix/pi`, at the same path inside the release, so pi's skills, extensions, prompts, and `settings.json` also come from the base branch. The OpenCode files (`opencode.json`, `tools/`, `plugins/`) do not affect a pi session.
 
 Convergence runs at the **start of every turn**: a prompt on a box that is behind converges first, then runs. It also runs after the box boots, after each resume and restart, when the base branch moves, and when you select **Reload config** or run `kortix sessions reload`. Those are a warm-up — they move the box onto the current config while nobody waits, so the turn usually starts with nothing to do and pays nothing.
 

@@ -331,6 +331,31 @@ test('listChannelBindings carries whether Slack still has the conversation', asy
   expect(result.bindings[0]?.channelUnavailable).toBe(true);
 });
 
+// Every thread of a Teams channel is its own binding, named `Team › Channel`.
+// The server adds the thread's session title so the threads can be told apart.
+test('listChannelBindings carries a Teams channel thread\'s title', async () => {
+  const thread: ChannelBinding = {
+    bindingId: 'b3',
+    platform: 'teams',
+    workspaceId: 'tenant-1',
+    channelId: '19:general@thread.tacv2;messageid=1700000000001',
+    channelName: 'Eng › General',
+    channelType: 'channel',
+    threadTitle: 'Deploy review',
+    agentName: null,
+    opencodeModel: null,
+    conversationPolicy: 'project_open',
+    installedAt: '2026-01-01',
+    effectiveAgent: { agent: 'support', source: 'project' },
+    effectiveModel: { model: null, source: 'platform' },
+  };
+  nextResponse = { status: 200, body: { projectDefaultAgent: null, bindings: [thread] } };
+
+  const result = await listChannelBindings('P1');
+
+  expect(result.bindings[0]?.threadTitle).toBe('Deploy review');
+});
+
 test('updateChannelBinding PATCHes the binding by id', async () => {
   nextResponse = {
     status: 200,

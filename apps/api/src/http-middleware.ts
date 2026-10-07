@@ -13,6 +13,7 @@ import {
   setContextField,
 } from './lib/request-context';
 import {
+  requestClientLogFields,
   requestLogLevel,
   requestTimingLogField,
   shouldSuppressRequestLog,
@@ -24,7 +25,7 @@ import { createCorsMiddleware } from './middleware/cors';
 import { requestDeadline } from './middleware/request-deadline';
 import { PROXY_HOP_HEADER, PROXY_UPSTREAM_STATUS_HEADER } from './sandbox-proxy/proxy-hop';
 import { upstreamTiming } from './middleware/upstream-timing';
-import { auditApiRequest } from './shared/audit';
+import { auditApiRequest } from './middleware/audit';
 import { isUuid } from './shared/validate';
 
 // The global middleware chain, in the registration order the request sees it.
@@ -230,6 +231,7 @@ app.use('*', async (c, next) => {
       // makes turn-stream `kind` queryable in CloudWatch Logs Insights; the full
       // request context (which carries identity) still goes to Better Stack only.
       ...getDiagnosticFields(),
+      ...requestClientLogFields((name) => c.req.header(name)),
       ...(serverTiming ? { server_timing: serverTiming } : {}),
       // Only on failed proxy requests: identify the failing hop without logging
       // request bodies, response bodies, or any sandbox identity.

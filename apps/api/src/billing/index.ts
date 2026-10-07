@@ -13,7 +13,7 @@ import { creditsRouter } from './routes/credits';
 import { paymentsRouter } from './routes/payments';
 import { subscriptionsRouter } from './routes/subscriptions';
 import { webhooksRouter } from './routes/webhooks';
-import { billingRotationIntervalsEnabled } from './rotation-schedule';
+import { bearerToken } from '../shared/bearer-token';
 
 const billingApp = makeOpenApiApp<AppEnv>();
 const accountDeletionApp = makeOpenApiApp<AppEnv>();
@@ -23,14 +23,21 @@ billingApp.route('/webhooks', webhooksRouter);
 // Alias: /webhook → /webhooks (some providers send to singular form)
 billingApp.route('/webhook', webhooksRouter);
 
-// Auth for all billing routes except webhooks
+// Auth-skip is an exact prefix match on the mounted path. A substring test
+// (`includes('/webhook')`) would skip auth on any future param route whose
+// value contains the word.
+const UNAUTHENTICATED_BILLING_PATH = /^\/v1\/billing\/(webhooks?|cron)(\/|$)/;
+// `account` is account deletion: every deployment owes it, billing or not. Its
+// billing steps (Stripe cancel, wallet forfeit) find nothing to do without
+// billing.
+const BILLING_GATE_EXEMPT_PATH = /^\/v1\/billing\/(account-state|account|webhooks|cron)(\/|$)/;
+export const isUnauthenticatedBillingPath = (path: string) => UNAUTHENTICATED_BILLING_PATH.test(path);
+export const isBillingGateExemptPath = (path: string) => BILLING_GATE_EXEMPT_PATH.test(path);
+
+// Auth for all billing routes except webhooks and the cron endpoints (they
+// verify a signature or the internal bearer themselves).
 billingApp.use('*', async (c, next) => {
-  if (c.req.path.includes('/webhook')) {
-    return next();
-  }
-  if (c.req.path.includes('/cron/')) {
-    return next();
-  }
+  if (isUnauthenticatedBillingPath(c.req.path)) return next();
   return supabaseAuth(c, next);
 });
 
@@ -42,7 +49,7 @@ billingApp.route('/account-state', accountStateRouter);
 // never hit Stripe, never get blocked by credits, never see subscription UI.
 // Account-state (above) already returns the "Local (Unlimited)" mock.
 billingApp.use('*', async (c, next) => {
-  if (c.req.path.includes('/account-state') || c.req.path.includes('/webhooks') || c.req.path.includes('/cron/')) {
+  if (isBillingGateExemptPath(c.req.path)) {
     return next();
   }
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
@@ -56,17 +63,13 @@ billingApp.route('/', subscriptionsRouter);
 billingApp.route('/', paymentsRouter);
 billingApp.route('/', creditsRouter);
 
-// Account deletion (mounted at /v1/billing/account/*)
+// Account deletion (mounted at /v1/billing/account/*). Exempt from the billing
+// gate above: a self-hosted deployment deletes accounts too.
 billingApp.route('/account', accountDeletionRouter);
 
-// Backwards-compatible account deletion API (mounted at /v1/account/*)
+// Backwards-compatible account deletion API (mounted at /v1/account/*). No
+// billing gate, for the same reason.
 accountDeletionApp.use('*', supabaseAuth);
-accountDeletionApp.use('*', async (c, next) => {
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
-    return c.json({ error: 'Billing is not enabled', billing_disabled: true }, 404);
-  }
-  return next();
-});
 accountDeletionApp.route('/', accountDeletionRouter);
 
 function timingSafeStringEqual(a: string, b: string): boolean {
@@ -77,7 +80,7 @@ function timingSafeStringEqual(a: string, b: string): boolean {
 
 function requireInternalCronAuth(c: Context<AppEnv>): Response | null {
   const authHeader = c.req.header('Authorization');
-  const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  const bearer = bearerToken(authHeader) ?? '';
   const header = c.req.header('X-Kortix-Internal-Key') ?? '';
   const expected = config.INTERNAL_SERVICE_KEY;
   const ok =
@@ -164,38 +167,5 @@ billingApp.openapi(
     return c.json({ expired, monthly_regrants: monthlyRegrants });
   },
 );
-
-if (billingRotationIntervalsEnabled(config)) {
-  const TRIAL_EXPIRY_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
-  setInterval(() => void runWorkerTick('billing-trial-expiry', async () => {
-    try {
-      const { sweepExpiredTrials, sweepTrialMonthlyGrants } = await import('./services/trial-admin');
-      await sweepExpiredTrials();
-      await sweepTrialMonthlyGrants();
-    } catch (err) {
-      console.error('[BillingApp] Trial-expiry sweep interval error:', err);
-    }
-  }), TRIAL_EXPIRY_SWEEP_INTERVAL_MS);
-
-  const YEARLY_ROTATION_INTERVAL_MS = 60 * 60 * 1000;
-  setInterval(() => void runWorkerTick('billing-yearly-rotation', async () => {
-    try {
-      const { processYearlyCreditRotation } = await import('./services/yearly-rotation');
-      await processYearlyCreditRotation();
-    } catch (err) {
-      console.error('[BillingApp] Yearly rotation interval error:', err);
-    }
-  }), YEARLY_ROTATION_INTERVAL_MS);
-
-  const FREE_TIER_ROTATION_INTERVAL_MS = 60 * 60 * 1000;
-  setInterval(() => void runWorkerTick('billing-free-tier-rotation', async () => {
-    try {
-      const { processFreeTierCreditRotation } = await import('./services/free-tier-rotation');
-      await processFreeTierCreditRotation();
-    } catch (err) {
-      console.error('[BillingApp] Free-tier rotation interval error:', err);
-    }
-  }), FREE_TIER_ROTATION_INTERVAL_MS);
-}
 
 export { billingApp, accountDeletionApp };

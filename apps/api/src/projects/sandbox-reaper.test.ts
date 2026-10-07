@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { appRuntimes, projectMonitorBoxes, projectSessions, sandboxComputeSessions, sessionEnvironments, sessionSandboxes } from '@kortix/db';
+import { appRuntimes, projectMonitorBoxes, projectSessions, sandboxComputeSessions, sessionSandboxes } from '@kortix/db';
 import * as realComputeMetering from '../billing/services/compute-metering';
 import * as realProviders from '../platform/providers';
 import { mockConfigModule } from './reaping/test-support/mock-config';
@@ -8,7 +8,6 @@ import { __resetProbeBackoffForTests } from './reaping/box-reaper';
 // ── mock state ──────────────────────────────────────────────────────────────
 let candidates: any[] = [];
 let appRuntimeKeepRows: any[] = [];
-let environmentKeepRows: any[] = [];
 let monitorKeepRows: any[] = [];
 let freshReference = async (_provider: string, _externalId: string): Promise<boolean> => false;
 mock.module('./reaping/orphan-box-references', () => ({
@@ -268,8 +267,6 @@ mock.module('../shared/db', () => ({
                 ? selectedSandboxRows
                 : table === appRuntimes
                   ? appRuntimeKeepRows
-                  : table === sessionEnvironments
-                    ? environmentKeepRows
                     : table === projectMonitorBoxes
                       ? monitorKeepRows
                   : table === sandboxComputeSessions
@@ -487,7 +484,6 @@ const HOUR = 3_600_000;
 beforeEach(() => {
   candidates = [];
   appRuntimeKeepRows = [];
-  environmentKeepRows = [];
   monitorKeepRows = [];
   freshReference = async () => false;
   statusByExternal = {};
@@ -1492,8 +1488,8 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     // the moments between OpenCode ACKing a prompt and starting it look like.
     // Redelivering into that window runs the user's prompt twice.
     //
-    // EXPECTATION CHANGED 2026-08-20 (live incident, SampleCo session
-    // d1b74954): this used to CLEAR the record while skipping the redelivery.
+    // EXPECTATION CHANGED 2026-08-20 (live incident, a SampleCo
+    // session): this used to CLEAR the record while skipping the redelivery.
     // Clearing deletes the record — the only thing that can ever trigger the
     // redelivery — so a terminal observation landing inside the age floor was
     // a one-shot race that swallowed the prompt for good (cleared `unknown` at
@@ -2007,7 +2003,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
   });
 
   // ═══ THE SILENT RENEWAL STARVATION THIS CLOSES ═══
-  // Incident 2026-08-17T20:40:03Z (session 0fc6897a): `deadlineGrant` stayed
+  // Incident 2026-08-17T20:40:03Z (a prod session): `deadlineGrant` stayed
   // `boot_floor` for the box's whole life. The daemon on that warm snapshot
   // answered the turn probe with nothing readable, so `observeSandboxTurn`
   // never returned `active`, `renewActiveSandboxTurn` never ran, and the box
@@ -2046,7 +2042,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
   });
 
   // ═══ THE PROBE ITSELF WAS THE LOAD ═══
-  // SampleCo 2026-08-25 (session 9df2a873): two API replicas re-asked one box
+  // SampleCo 2026-08-25 (one session): two API replicas re-asked one box
   // 345 times in an hour after `unknown`; every ask made OpenCode serialise
   // its 140 MB transcript, and the kernel OOM-killed it mid-turn. An unknown
   // answer now backs the PROBE off (20 s → 5 min) while the drip still runs.
@@ -2789,7 +2785,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
   });
 
   // ═══ THE MID-TURN PARK THIS CLOSES ═══
-  // Incident 2026-08-17T20:40:03Z (session 0fc6897a, Daytona f468056d): one
+  // Incident 2026-08-17T20:40:03Z (a prod session on Daytona): one
   // provider read of `stopped` durably parked a box that was running a turn,
   // `stopReason: provider_reconcile`, and Daytona's own autoStopInterval was 720
   // — the provider never stopped it. `stopping` and `pending_stop` both map to
@@ -3005,10 +3001,9 @@ describe('reapOrphanProviderBoxes', () => {
   const NOW2 = new Date('2026-06-21T12:00:00Z');
   const hoursAgo = (h: number) => new Date(NOW2.getTime() - h * 3_600_000);
 
-  test('keeps worker environments and monitor boxes', async () => {
-    environmentKeepRows = [{ provider: 'daytona', externalId: 'worker-env' }];
+  test('keeps monitor boxes', async () => {
     monitorKeepRows = [{ provider: 'daytona', externalId: 'monitor' }];
-    managedBoxes = ['worker-env', 'monitor'].map((externalId) => ({ externalId, createdAt: hoursAgo(48) }));
+    managedBoxes = ['monitor'].map((externalId) => ({ externalId, createdAt: hoursAgo(48) }));
     expect((await reapOrphanProviderBoxes(NOW2)).stopped).toBe(0);
     expect(stops).toEqual([]);
   });

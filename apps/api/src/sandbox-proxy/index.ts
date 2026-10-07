@@ -6,8 +6,11 @@ import { previewConfig } from './routes/preview-config';
 import { publicShareApp } from './routes/public-share';
 import { shareApp } from './routes/share';
 import { invalidateSandbox, loadSandbox } from './backend';
-import { createSandboxProxyRateLimitMiddleware } from '../shared/rate-limit';
+import { isCookieCsrfRefused } from './cookie-csrf';
+import { prefetchSandbox } from './http-prefetch';
+import { createSandboxProxyRateLimitMiddleware } from '../middleware/rate-limit';
 import { makeOpenApiApp } from '../openapi';
+import type { Context, Next } from 'hono';
 
 // OpenAPIHono root: the /auth + /share sub-apps contribute typed route defs to
 // the spec; the path-based `preview` proxy stays a raw streaming Hono catch-all
@@ -33,11 +36,39 @@ sandboxProxyApp.route('/share', shareApp);
 sandboxProxyApp.route('/public-share', publicShareApp);
 
 // ── Path-based proxy ────────────────────────────────────────────────────────
+// Order is load-bearing: authenticate, then rate-limit, and only then start
+// reading the sandbox row (http-prefetch.ts). A row read on a miss falls back to a
+// case-insensitive `external_id` scan, so it must never be reachable by an
+// unauthenticated or over-limit caller. Started here, the read overlaps the
+// rest of the request before `forwardToSandbox` needs it (the body read).
 // Auth middleware accepts Supabase JWT, kortix_ tokens, and cookies.
+// Before authentication: a write that rides only the ambient cookie from another
+// origin is refused (cookie-csrf.ts).
+sandboxProxyApp.use('/:sandboxId/:port/*', cookieCsrfGate);
+sandboxProxyApp.use('/:sandboxId/:port', cookieCsrfGate);
 sandboxProxyApp.use('/:sandboxId/:port/*', combinedAuth);
 sandboxProxyApp.use('/:sandboxId/:port', combinedAuth);
 sandboxProxyApp.use('/:sandboxId/:port/*', createSandboxProxyRateLimitMiddleware());
 sandboxProxyApp.use('/:sandboxId/:port', createSandboxProxyRateLimitMiddleware());
+sandboxProxyApp.use('/:sandboxId/:port/*', prefetchSandboxRow);
+sandboxProxyApp.use('/:sandboxId/:port', prefetchSandboxRow);
+
+async function cookieCsrfGate(c: Context, next: Next) {
+  if (isCookieCsrfRefused(c.req.raw)) {
+    return c.json({ error: 'cross-origin write with an ambient preview cookie', code: 'CSRF_REFUSED' }, 403);
+  }
+  await next();
+}
+
+async function prefetchSandboxRow(c: Context, next: Next) {
+  const sandboxId = c.req.param('sandboxId');
+  // `combinedAuth` lets a CORS preflight through without a credential; an
+  // identity is set only by a credential that verified. Neither is forgeable.
+  if (sandboxId && c.req.method !== 'OPTIONS' && c.get('userId')) {
+    prefetchSandbox(c, sandboxId);
+  }
+  await next();
+}
 
 // ── Provider resolution (share endpoints) ─────────────────────────────────────
 // A thin policy layer over the single backend row loader: the share routes only

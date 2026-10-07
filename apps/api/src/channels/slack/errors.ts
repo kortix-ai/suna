@@ -289,6 +289,18 @@ export function classifyTurnError(
 
   // 3. Usage / rate limit — provider throttling or a plan cap.
   if (code ? code === 'rate_limit' : isUsageLimit(status, lower)) {
+    // A ChatGPT plan limit lasts hours or days; the gateway names the reset
+    // (resolve-candidates.ts `chatGptAccountsResting`).
+    const reset = /reached their usage limit\. The first resets in ([^."]+)\./.exec(message)?.[1];
+    if (reset) {
+      return {
+        title: 'Usage limit reached',
+        text:
+          `:hourglass_flowing_sand: *ChatGPT usage limit reached* — the selected ChatGPT account resets in ${reset}.` +
+          ` ${commands.pickModel}`,
+        aborted: false,
+      };
+    }
     return {
       title: 'Usage limit reached',
       text:

@@ -107,6 +107,21 @@ describe('sendExpoPushMessages', () => {
     expect(result.tickets).toHaveLength(1);
   });
 
+  test('a timeout is not retried: Expo may already hold the batch', async () => {
+    const { fn, calls } = fakeFetch(() => {
+      throw new DOMException('The operation timed out.', 'TimeoutError');
+    });
+    const result = await sendExpoPushMessages([message(1)], { fetch: fn, retryDelayMs: 0, logger });
+    expect(calls).toHaveLength(1);
+    expect(result.failedMessages).toBe(1);
+  });
+
+  test('every POST carries a timeout signal', async () => {
+    const { fn, calls } = fakeFetch(okTickets);
+    await sendExpoPushMessages([message(1)], { fetch: fn, retryDelayMs: 0, logger });
+    expect(calls[0]!.init.signal).toBeInstanceOf(AbortSignal);
+  });
+
   test('gives up after the one retry and never throws', async () => {
     const { fn, calls } = fakeFetch(() => new Response('down', { status: 502 }));
     const result = await sendExpoPushMessages([message(1), message(2)], { fetch: fn, retryDelayMs: 0, logger });

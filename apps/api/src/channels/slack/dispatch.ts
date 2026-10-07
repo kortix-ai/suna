@@ -15,10 +15,12 @@ import {
 import { backfillSlackBindingLabel } from './binding-label';
 import { slackMessageLabels } from './labels';
 import { PICKER_TTL_MS } from './app';
+import { createPendingSlackPickerMessage } from './auth-resume';
 import { handleSlashCommand } from './commands';
 import {
   createOrJoinThreadSession,
   deliverSlackFollowUpToSession,
+  slackFollowUpKey,
   renderFollowUpPrompt,
   slackFollowUpModel,
 } from './session';
@@ -50,8 +52,6 @@ import type {
   SlackEvent,
   SlashResponse,
 } from './types';
-
-export const pendingPickers = new Map<string, { envelope: SlackEnvelope; expiry: number }>();
 
 // NOTE: deliberately does NOT call backfillSlackBindingLabel — this runs on EVERY
 // Slack event, and the name is already captured on first-bind (the auto-bind
@@ -217,7 +217,11 @@ async function postProjectPicker(opts: {
     .from(projects)
     .where(inArray(projects.projectId, projectIds));
 
-  const pickerId = randomUUID();
+  // The button carries only this id; the triggering message is parked in the DB
+  // so the click replays it on any replica. No message (DM/assistant open) →
+  // nothing to replay, the pick just binds and confirms.
+  const pickerId =
+    (envelope && (await createPendingSlackPickerMessage({ teamId, envelope, ttlMs: PICKER_TTL_MS }))) || randomUUID();
   const conversation = isDm ? null : await describeSlackConversation(token, channelId);
   const channelName = conversation?.type === 'channel' || conversation?.type === 'private_channel' ? conversation.name : null;
   const channelLabel = isDm
@@ -246,16 +250,6 @@ async function postProjectPicker(opts: {
       })),
     },
   ];
-
-  const now = Date.now();
-  for (const [k, v] of pendingPickers) {
-    if (v.expiry < now) pendingPickers.delete(k);
-  }
-  // Only register a replay when a message triggered the picker. On DM/assistant
-  // open there's no message to replay — the pick just binds + confirms.
-  if (envelope) {
-    pendingPickers.set(pickerId, { envelope, expiry: now + PICKER_TTL_MS });
-  }
 
   const pickerTs = await postBlocks(
     token,
@@ -866,35 +860,34 @@ async function deliverToExistingThread(
     handle.sessionId = existing.sessionId;
     await saveTurn(handle);
   }
+  const plan = await slackFollowUpModel({
+    project: { projectId, accountId: project.accountId, metadata: project.metadata },
+    userId: actorUserId,
+    sessionId: existing.sessionId,
+    event,
+    session: {
+      createdBy: existing.createdBy ?? null,
+      metadata: existing.metadata,
+      agentName: existing.agentName ?? null,
+    },
+  });
   const outcome = await deliverSlackFollowUpToSession({
     sessionId: existing.sessionId,
-    text: renderFollowUpPrompt(envelope, event, await slackMessageLabels({ projectId, teamId, event })),
-    userId: actorUserId,
-    model: await slackFollowUpModel({
-      project: { projectId, accountId: project.accountId, metadata: project.metadata },
-      userId: actorUserId,
-      sessionId: existing.sessionId,
+    idempotencyKey: slackFollowUpKey(teamId, event),
+    text: renderFollowUpPrompt(
+      envelope,
       event,
-      session: {
-        createdBy: existing.createdBy ?? null,
-        metadata: existing.metadata,
-        agentName: existing.agentName ?? null,
-      },
-    }),
+      await slackMessageLabels({ projectId, teamId, event }),
+      plan.imagesUnavailable,
+    ),
+    userId: actorUserId,
+    model: plan.model,
   });
 
-  if (outcome === 'delivered') {
+  // `queued`: the reply is durable and the queue delivers it once the box is
+  // up; the turn handle stays open for that answer.
+  if (outcome === 'delivered' || outcome === 'queued') {
     await touchChatThread(thread);
-    return { handled: true as const, handle };
-  }
-
-  if (outcome === 'pending') {
-    if (handle) {
-      await deleteTurn(existing.sessionId);
-      await finalizeTurn(handle, {
-        error: "Still waking this thread's session back up — send that again in a moment.",
-      });
-    }
     return { handled: true as const, handle };
   }
 
@@ -913,5 +906,7 @@ async function deliverToExistingThread(
     return { handled: true as const, handle };
   }
 
+  // Only a deleted session is replaced. Anything else revived the thread onto a
+  // new session and orphaned a live one.
   return { handled: false as const, handle };
 }

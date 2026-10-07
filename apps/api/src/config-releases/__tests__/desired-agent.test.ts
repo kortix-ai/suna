@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { resolveDesiredRelease, type DesiredReleaseDeps } from '../desired';
 import type { ConfigRelease, ConfigReleaseVariant } from '../builder';
 import type { DeclaredAgentRoster } from '../session-agent';
-import { MemoryConfigReleaseLedger } from '../quarantine';
+import { MemoryConfigReleaseLedger } from './fakes';
 
 const PROJECT = {
   projectId: '33333333-3333-4333-8333-333333333333',
@@ -33,7 +33,7 @@ let built: ConfigReleaseVariant[] = [];
 /** One release per variant, so the release ID proves which variant was built. */
 function releaseFor(variant: ConfigReleaseVariant): ConfigRelease {
   return {
-    format: 'config-release-v1',
+    format: 'config-release-v2',
     release_id: `${variant}-release`,
     source_commit: TIP,
     config_dir: '.kortix/opencode',
@@ -88,6 +88,18 @@ describe('a declared agent is untouched', () => {
       deps(),
     );
     expect(built).toEqual(['agent:kortix']);
+    expect(desired.descriptor.agent_repoint).toBeNull();
+  });
+});
+
+describe('the platform meta coordinator', () => {
+  test('never receives the project release, even when its metadata says repository access', async () => {
+    const desired = await resolveDesiredRelease(
+      { project: PROJECT, baseRef: 'main', sessionAgent: 'meta', repositoryAccess: true },
+      deps(),
+    );
+    expect(built).toEqual(['meta']);
+    expect(desired.variant).toBe('meta');
     expect(desired.descriptor.agent_repoint).toBeNull();
   });
 });

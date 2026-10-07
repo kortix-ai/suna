@@ -42,8 +42,12 @@ Done when `git branch --show-current` prints the canonical branch inside its wor
 - Use the Conventional Commits subject style that `git log` shows:
   `fix(sandbox): …`, `feat(web): …`, `refactor(api): …`, `docs(repo): …`.
 - `pnpm install` arms `.githooks`. The hooks encrypt staged `.env` files, block plaintext
-  secrets, and refuse blocked customer terms. When a hook fires, fix the content and commit
-  again. Keep the hooks on every commit (never `--no-verify`).
+  secrets, refuse blocked customer terms, and refuse a crash dump or a file over 20 MB. When a
+  hook fires, fix the content and commit again. Keep the hooks on every commit (never
+  `--no-verify`).
+- Stage files by name: `git add <path> <path>`. Never `git add -A`, `git add .`, or
+  `git commit -a` outside one named directory. A blanket add once committed a worker's core
+  dump, and a core dump holds every secret in the process environment.
 - Ship the tests with the behaviour change (the **testing** skill).
 
 Done when the commit exists and the hooks passed.
@@ -54,6 +58,11 @@ Run the narrowest relevant test first, then `pnpm test` (the **testing** skill).
 the changed behaviour on your worktree's stack: `pnpm worktree start <slug>` prints the web
 and API ports. Exercise the real surface: the HTTP route with `curl`, the real CLI process,
 or the page with agent-browser. No CI lane runs these for you before the merge.
+`pnpm test` writes `tests/attestations/<branch>.json` and deletes every other file
+there: commit `tests/attestations/` (`git add -A tests/attestations`). If a merge of
+`origin/main` conflicts on the legacy `tests/test-attestation.json`, delete it. The pre-push hook and the
+merge gate run `pnpm test:verify` against the pushed head and reject a stale or red
+attestation. Never push with `--no-verify`.
 
 Done when the commands you will list under "How was this tested?" passed, with output
 captured.
@@ -74,11 +83,15 @@ ab() { agent-browser --session "$SESSION" "$@"; }
 # Sign in before recording, so the video never shows an auth form.
 .agents/skills/contributing/scripts/preview-sign-in.sh "$S" "$SESSION"   # prints the synthetic email
 
-mkdir -p output/pr
+# Absolute paths only: the agent-browser daemon is shared by every session on
+# the machine and resolves a relative path against the cwd of whichever
+# session started it, which can be another worktree.
+OUT="$PWD/output/pr"
+mkdir -p "$OUT"
 ab set viewport 1440 900
 ab open "$S/<changed route>"
 ab wait --load networkidle          # record a rendered page, not a hydrating one
-ab record start output/pr/demo.mp4 --cursor
+ab record start "$OUT/demo.mp4" --cursor
 #   Drive the change: `ab snapshot -i`, then `ab click @eN`, `ab fill @eN …`.
 #   Put `ab wait 800` between actions so a person can follow.
 ab record stop
@@ -169,9 +182,10 @@ gh pr view <pr> --json body --jq .body | grep -cE '\]\(\./output/'              
 - Self-merge when the change is verified (`AGENTS.md` → "Default delivery", rule 5): the
   local checks passed and the PR is mergeable. Do not wait for the user's approval, and do
   not wait for a CI check: none runs. `gh pr merge <pr> --squash`.
-- After the merge, follow **Deploy Dev** to the "Live on dev" comment and verify the change
-  on dev. The same push runs the `Tests` lanes on `main`. They block nothing; a red run
-  comments on your commit, and fixing it is yours.
+- A push to `main` does not deploy dev and does not run `Tests`. Deploy deliberately:
+  `gh workflow run deploy-dev.yml -f surface=changed` (`changed` ships every merge since
+  dev's live SHA; `all` forces every surface; `frontend` builds the web app only). Follow the
+  run to the "Live on dev" comment, then verify the change on dev.
 - Report the PR URL, the merge SHA, the local test commands and their results, the dev
   verification, and anything still unverified.
 - Merging into `staging` or `prod`, and every release step, still needs the user's explicit
@@ -182,13 +196,15 @@ gh pr view <pr> --json body --jq .body | grep -cE '\]\(\./output/'              
 | Event | Workflows | Blocks? |
 | --- | --- | --- |
 | PR into `main` | none. Adding `test` runs the six `Tests` lanes once (~9 min); adding `preview` deploys once (~7 min), with no tests. A push re-runs neither. | no |
-| Push to `main` (the merge) | `Deploy Dev`, the six `Tests` lanes, `CI`, `CodeQL`, `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `i18n-catalogs`, `drata`, `Desktop`, `deploy-api-router-dev`, `Terraform Apply Global` | no: post-merge safety net |
+| Push to `main` (the merge) | `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `i18n-catalogs`, `deploy-api-router-dev`, `Terraform Apply Global`. Nothing else. | no |
+| Dispatch / schedule on `main` | `Deploy Dev` and `Desktop`: dispatch only. `Tests`: daily. `drata`: daily. `CI`, `CodeQL`: weekly. | no |
 | PR into `staging` | the six `Tests` lanes, `CI`, `CodeQL`, `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `Terraform CI`, `Security Scan`, `i18n-catalogs`, `drata` | release discipline |
 | PR into `prod` | the same scanners plus `tests-release.yml`; its `full suite + quality gates` check is the only required check in the repo | yes |
 
 `tests/unit/sandbox-workflow.test.ts` fails when a workflow other than the label-gated
-`tests.yml` and `deploy-preview.yml` triggers on a pull request into `main`. Move a new check to `push: main` or to the release
-PRs, never to PRs into `main`.
+`tests.yml` and `deploy-preview.yml` triggers on a pull request into `main`. Move a new check to a schedule, a dispatch, or the release
+PRs, never to PRs into `main`. Add it to `push: main` only when it takes seconds: a
+push runs on GitHub-billed minutes, and the factory merges ~37 PRs a day.
 
 ## Labels
 

@@ -426,10 +426,17 @@ function createMainWindow() {
   // Navigation gate — top-frame only. Anything that isn't a logged-in product/
   // auth page or a sandbox preview opens in the user's real browser. Iframes
   // (Pipedream Connect) are NOT gated and load freely in-app.
-  mainWindow.webContents.on('will-navigate', (event, url) => {
+  const gateTopNavigation = (event, url) => {
     if (shouldLoadInApp(url)) return;
     event.preventDefault();
     shell.openExternal(url);
+  };
+  mainWindow.webContents.on('will-navigate', gateTopNavigation);
+  // `will-navigate` does not fire for a server redirect (an in-app route that
+  // 30x-redirects to another site). Without this the app window, which has no
+  // address bar, would render that site as if it were Kortix.
+  mainWindow.webContents.on('will-redirect', (event, url, _isInPlace, isMainFrame) => {
+    if (isMainFrame) gateTopNavigation(event, url);
   });
 
   // Go menu state follows every committed navigation, including the App
@@ -1061,7 +1068,7 @@ function registerIpc() {
   // Single funnel matching the Tauri `core.invoke(cmd, args)` contract so the
   // web app's existing calls (set_zoom / open_external / get_frontend_url /
   // set_frontend_url) work unchanged.
-  ipcMain.handle('kortix:invoke', (event, cmd, args = {}) => {
+  ipcMain.handle('kortix:invoke', async (event, cmd, args = {}) => {
     if (!isTrustedSender(event)) {
       throw new Error('Unauthorized IPC sender');
     }
@@ -1095,6 +1102,17 @@ function registerIpc() {
         // Same URL rules as the instance chooser.
         const normalized = normalizeInstanceUrl(String(args.url || ''));
         if (!normalized.ok) throw new Error(normalized.error);
+        // Page script must not repoint the shell on its own: a native dialog,
+        // which no page can click, names the new origin first.
+        const { response } = await dialog.showMessageBox(mainWindow, {
+          type: 'warning',
+          buttons: ['Switch', 'Cancel'],
+          defaultId: 1,
+          cancelId: 1,
+          message: 'Switch Kortix to another server?',
+          detail: `The app will load and trust ${new URL(normalized.url).origin}.`,
+        });
+        if (response !== 0) throw new Error('Switching the server was cancelled.');
         const saveError = switchInstance({
           kind: 'custom',
           url: normalized.url,

@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from 'crypto';
+import { bearerToken } from './bearer-token';
 
 const ACTOR_CONTEXT_HEADER = 'X-Kortix-Actor-Context';
 
@@ -71,7 +72,7 @@ export function resolveActorFromRequest(
   const raw = c.req.header(ACTOR_CONTEXT_HEADER);
   if (!raw) return null;
   const auth = c.req.header('Authorization') || c.req.header('authorization');
-  const bearer = auth?.startsWith('Bearer ') ? auth.slice(7) : auth;
+  const bearer = bearerToken(auth) ?? auth;
   if (!bearer) return null;
   const result = verifyActorContext(raw, bearer);
   const prefix = options.logPrefix ?? '[ACTOR]';

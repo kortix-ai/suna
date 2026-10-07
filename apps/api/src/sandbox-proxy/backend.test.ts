@@ -37,6 +37,10 @@ mock.module('../shared/kortix-user-context', () => ({
 }));
 
 let resolveCalls: Array<{ port: number; transport?: string; path?: string }> = [];
+// Held open by the single-flight tests so calls overlap; the failure is thrown
+// by the next provider call only.
+let resolveGate: Promise<void> | null = null;
+let resolveFailure: Error | null = null;
 
 mock.module('../platform/providers', () => ({
   ...realProviders,
@@ -44,10 +48,15 @@ mock.module('../platform/providers', () => ({
     ingressCacheTtlMs: provider === 'e2b' ? 0 : undefined,
     async resolveIngress(_externalId: string, request: { port: number; transport?: string; path?: string }) {
       resolveCalls.push(request);
+      const url = `http://sandbox.local/${resolveCalls.length}`;
+      const failure = resolveFailure;
+      resolveFailure = null;
+      await resolveGate;
+      if (failure) throw failure;
       const isPty = request.transport === 'websocket' && request.path?.includes('/pty/');
       const effectivePort = isPty ? 9999 : request.port;
       return {
-        url: `http://sandbox.local/${resolveCalls.length}`,
+        url,
         headers: {},
         effectivePort,
         websocket: isPty ? { userContextQueryParam: '__kortix_user_context' } : undefined,
@@ -57,7 +66,7 @@ mock.module('../platform/providers', () => ({
   }),
 }));
 
-const { resolveSandboxIngress } = await import('./backend');
+const { invalidatePreviewLink, resolveExternalIdFromHostLabel, resolveSandboxIngress } = await import('./backend');
 
 const BASE_RECORD = {
   sandboxId: 'sbx-1',
@@ -119,5 +128,122 @@ describe('resolveSandboxIngress cache key — websocket', () => {
     const second = await resolveSandboxIngress(record, request);
     expect(resolveCalls.length).toBe(1);
     expect(second).toEqual(first);
+  });
+});
+
+// A page load fires its proxied requests together. On a cold link cache every
+// one of them used to make its own provider call for the same link.
+describe('resolveSandboxIngress single-flight', () => {
+  /** Hold every provider call open until `release()`. */
+  function holdProvider(): () => void {
+    let release = () => {};
+    resolveGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return () => {
+      release();
+      resolveGate = null;
+    };
+  }
+
+  test('concurrent misses on one (sandbox, port) make one provider call', async () => {
+    resolveCalls = [];
+    const record = { ...BASE_RECORD, externalId: 'ext-flight-1' };
+    const release = holdProvider();
+
+    const calls = Array.from({ length: 5 }, (_, i) =>
+      resolveSandboxIngress(record, { port: 8000, transport: 'http', path: `/asset-${i}` }),
+    );
+    release();
+    const resolved = await Promise.all(calls);
+
+    expect(resolveCalls.length).toBe(1);
+    for (const ingress of resolved) expect(ingress).toEqual(resolved[0]);
+    // The shared result is cached like a single call's result.
+    await resolveSandboxIngress(record, { port: 8000, transport: 'http' });
+    expect(resolveCalls.length).toBe(1);
+  });
+
+  test('another port or another sandbox never joins a call in flight', async () => {
+    resolveCalls = [];
+    const record = { ...BASE_RECORD, externalId: 'ext-flight-2' };
+    const other = { ...BASE_RECORD, externalId: 'ext-flight-3' };
+    const release = holdProvider();
+
+    const calls = [
+      resolveSandboxIngress(record, { port: 8000, transport: 'http' }),
+      resolveSandboxIngress(record, { port: 3000, transport: 'http' }),
+      resolveSandboxIngress(other, { port: 8000, transport: 'http' }),
+    ];
+    release();
+    const [daemon, app, otherDaemon] = await Promise.all(calls);
+
+    expect(resolveCalls.length).toBe(3);
+    expect(new Set([daemon.url, app.url, otherDaemon.url]).size).toBe(3);
+  });
+
+  test('a failed provider call is not kept: every waiter gets the error, the next call resolves again', async () => {
+    resolveCalls = [];
+    const record = { ...BASE_RECORD, externalId: 'ext-flight-4' };
+    const release = holdProvider();
+    resolveFailure = new Error('provider unavailable');
+
+    const outcomes = Promise.allSettled([
+      resolveSandboxIngress(record, { port: 8000, transport: 'http' }),
+      resolveSandboxIngress(record, { port: 8000, transport: 'http' }),
+    ]);
+    release();
+    expect((await outcomes).map((o) => o.status)).toEqual(['rejected', 'rejected']);
+    expect(resolveCalls.length).toBe(1);
+
+    const ingress = await resolveSandboxIngress(record, { port: 8000, transport: 'http' });
+    expect(resolveCalls.length).toBe(2);
+    expect(ingress.url).toBe('http://sandbox.local/2');
+  });
+
+  test('a provider that opts out of the cache still shares one call between concurrent misses', async () => {
+    resolveCalls = [];
+    const record = { ...BASE_RECORD, provider: 'e2b', externalId: 'ext-flight-5' };
+    const release = holdProvider();
+
+    const calls = [
+      resolveSandboxIngress(record, { port: 8000, transport: 'http' }),
+      resolveSandboxIngress(record, { port: 8000, transport: 'http' }),
+    ];
+    release();
+    await Promise.all(calls);
+    expect(resolveCalls.length).toBe(1);
+
+    // Nothing was cached: the next call asks the provider again.
+    await resolveSandboxIngress(record, { port: 8000, transport: 'http' });
+    expect(resolveCalls.length).toBe(2);
+  });
+
+  test('a link invalidated while its call is in flight is not joined and not cached', async () => {
+    resolveCalls = [];
+    const record = { ...BASE_RECORD, externalId: 'ext-flight-6' };
+    const release = holdProvider();
+
+    const before = resolveSandboxIngress(record, { port: 8000, transport: 'http' });
+    invalidatePreviewLink('ext-flight-6', 8000);
+    const after = resolveSandboxIngress(record, { port: 8000, transport: 'http' });
+    release();
+
+    expect((await before).url).toBe('http://sandbox.local/1');
+    expect((await after).url).toBe('http://sandbox.local/2');
+    // The cache holds the call made after the invalidation.
+    expect((await resolveSandboxIngress(record, { port: 8000, transport: 'http' })).url).toBe(
+      'http://sandbox.local/2',
+    );
+    expect(resolveCalls.length).toBe(2);
+  });
+});
+
+describe('resolveExternalIdFromHostLabel', () => {
+  // `db` is `{}` in this file: a label that reached the query would throw.
+  test('a label that cannot be a DNS label never reaches the database', async () => {
+    for (const label of ['x'.repeat(64), 'sbx_01abc', 'a b', '', "a'; drop table x;--"]) {
+      expect(await resolveExternalIdFromHostLabel(label)).toBeNull();
+    }
   });
 });

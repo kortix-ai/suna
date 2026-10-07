@@ -15,7 +15,8 @@
  * It is the layout of app/projects/[id]/: a nested stack of project home
  * (index), at most one covering route: the open page, thread, or connecting
  * session (view), Sessions, Files, or Account, and the sub-pages pushed over
- * it (page: project Settings, Schedules, Secrets). Every project page shows
+ * it (page: project Settings, Schedules, Secrets; Files over the thread,
+ * from the session ··· sheet). Every project page shows
  * the hamburger and the drawer opens on it, except a sub-page, which shows
  * Go back. Android back from a sub-page pops it; from a covering route it
  * returns to project home; from project home it does nothing. Only the
@@ -57,6 +58,7 @@ import {
   drawerThreadMove,
   shownProjectSessionId,
   projectEdgeGesture,
+  projectViewKey,
   type SubPageId,
 } from '@/lib/session/project-stack';
 import { ProjectSwitcherSheet } from '@/components/projects/ProjectSwitcherSheet';
@@ -120,6 +122,9 @@ const Pages = {
   get SchedulesPage(): typeof import('@/components/pages/SchedulesPage').SchedulesPage {
     return require('@/components/pages/SchedulesPage').SchedulesPage;
   },
+  get FilesNavPage(): typeof import('@/components/pages/FilesNavPage').FilesNavPage {
+    return require('@/components/pages/FilesNavPage').FilesNavPage;
+  },
   get ReviewPage(): typeof import('@/components/pages/ReviewPage').ReviewPage {
     return require('@/components/pages/ReviewPage').ReviewPage;
   },
@@ -128,6 +133,9 @@ const Pages = {
   },
   get MemoryPage(): typeof import('@/components/pages/MemoryPage').MemoryPage {
     return require('@/components/pages/MemoryPage').MemoryPage;
+  },
+  get AppsPage(): typeof import('@/components/pages/AppsPage').AppsPage {
+    return require('@/components/pages/AppsPage').AppsPage;
   },
   get ProjectDetailPage(): typeof import('@/components/pages/ProjectDetailPage').ProjectDetailPage {
     return require('@/components/pages/ProjectDetailPage').ProjectDetailPage;
@@ -308,6 +316,24 @@ export function ProjectScreen() {
     refreshSessionLists, firstPromptRef, navigateToSession, setConnectError,
     erroredSessionRef, freshSessionIdRef, setConnectingProjectSessionId, showUpgradeForError,
   });
+  // `handleCreateAgent` changes with the create mutation and toast objects. The
+  // thread gets a stable wrapper that calls the latest one, so a memoized
+  // SessionPage skips parent re-renders.
+  const createAgentRef = useRef(handleCreateAgent);
+  createAgentRef.current = handleCreateAgent;
+  const createAgent = useCallback(() => createAgentRef.current(), []);
+  // The thread's "···" and title tap act on the open thread's project session.
+  // Stable: they read the latest row through a ref.
+  const activeProjectSessionRef = useRef(activeProjectSession);
+  activeProjectSessionRef.current = activeProjectSession;
+  const openActiveSessionActions = useCallback(() => {
+    const session = activeProjectSessionRef.current;
+    if (session) openSessionActions(session);
+  }, [openSessionActions]);
+  const renameActiveSession = useCallback(() => {
+    const session = activeProjectSessionRef.current;
+    if (session) openSessionActions(session, 'rename');
+  }, [openSessionActions]);
   // Left drawer open state (ProjectLeftDrawer).
   const [drawerOpen, setDrawerOpen] = useState(false);
   // Stable handlers, so a memoized SessionPage skips parent re-renders.
@@ -397,6 +423,9 @@ export function ProjectScreen() {
     [openThreadFromDrawer]
   );
 
+  // The open session's parent: that parent's children start open in the drawer.
+  const activeParentSessionId = activeProjectSession ? sessionParentId(activeProjectSession) : null;
+
   // The left drawer. It mounts through renderDrawerContent, so it stays mounted while visually closed.
   // The drawer's gear button is gone (COR-123/COR-160 Task 4): the project
   // Settings page is reached from Settings (drawer avatar) → project row.
@@ -406,7 +435,7 @@ export function ProjectScreen() {
         projectId={projectId}
         activeProjectSessionId={shownSessionId}
         activeRuntimeSessionId={shownRuntimeId}
-        activeParentSessionId={activeProjectSession ? sessionParentId(activeProjectSession) : null}
+        activeParentSessionId={activeParentSessionId}
         reviewNeedsYouCount={reviewNeedsYouCount}
         needsYouBySession={needsYouSessions}
         // New session opens project home: its composer starts the session.
@@ -424,8 +453,10 @@ export function ProjectScreen() {
       projectId,
       shownSessionId,
       shownRuntimeId,
+      activeParentSessionId,
       drawerOpen,
       reviewNeedsYouCount,
+      needsYouSessions,
       returnHome,
       openSessionFromDrawer,
       openSubsessionFromDrawer,
@@ -436,24 +467,18 @@ export function ProjectScreen() {
     ]
   );
 
-  // Tool pages keep PageHeader: its hamburger opens the drawer. The "···"
-  // that opened the project sheet is removed (COR-123/COR-160 Task 3): the
-  // project sheet (`CustomizeSheet`) is deleted, so no page passes
-  // `onOpenRightDrawer` any more and `PageHeader` shows no "···".
-  const pageChrome = useMemo(
-    () => ({
-      onOpenDrawer: openDrawer,
-      isDrawerOpen: drawerOpen,
-    }),
-    [openDrawer, drawerOpen]
-  );
-
   // ── Route content ──
 
   const isHome =
     !scopeReady ||
     (!activePageId && !activeSessionId && !connectingProjectSessionId);
   isHomeRef.current = isHome;
+  const viewKey = projectViewKey({
+    isHome,
+    activePageId,
+    activeSessionId,
+    connectingSessionId: connectingProjectSessionId,
+  });
 
   // The thread renders only once the context holds its sandbox. Until then it
   // shows the connecting view, so SessionPage never starts its sync and
@@ -477,6 +502,25 @@ export function ProjectScreen() {
       openedThreadRef.current = keptOpenedThread;
     }
   }, [renderedOpenedThread, keptOpenedThread]);
+
+  // The drawer state reaches the view only where it shows: a tool page's
+  // hamburger X and the connecting view's loader. The thread does not read
+  // it, so a drawer toggle keeps the thread's element and does not re-render
+  // SessionPage.
+  const threadShown = !activePageId && !!activeSessionId && threadReady;
+  const viewDrawerOpen = threadShown ? false : drawerOpen;
+
+  // Tool pages keep PageHeader: its hamburger opens the drawer. The "···"
+  // that opened the project sheet is removed (COR-123/COR-160 Task 3): the
+  // project sheet (`CustomizeSheet`) is deleted, so no page passes
+  // `onOpenRightDrawer` any more and `PageHeader` shows no "···".
+  const pageChrome = useMemo(
+    () => ({
+      onOpenDrawer: openDrawer,
+      isDrawerOpen: viewDrawerOpen,
+    }),
+    [openDrawer, viewDrawerOpen]
+  );
 
   // While the computer wakes, the connecting view shows the session's saved
   // copy (hooks/useSavedCopy.ts): the one this device kept, then the server's,
@@ -511,8 +555,30 @@ export function ProjectScreen() {
   const savedCopy = useSavedCopy(savedCopyHookTarget);
   const savedCopyMessages = savedCopy.messages;
   const connectingEmpty = !!savedCopyRootId && savedCopy.empty && !connectingFirstPrompt;
+  // The thread's and the connecting view's props, read before the memo below:
+  // `openedProjectSessionIdsRef` is a ref, so the memo must depend on its value.
+  const openedProjectSessionId = activeSessionId ? openedProjectSessionIdsRef.current[activeSessionId] : undefined;
+  const threadProjectSessionId = activeProjectSession?.session_id ?? openedProjectSessionId;
+  const connectingViewProjectSessionId =
+    activeProjectSession?.session_id ?? connectingProjectSessionId ?? openedProjectSessionId ?? undefined;
+  const canOpenSessionActions = !!activeProjectSession;
+  const canRenameSession = !!activeProjectSession && !activeSubsession;
+  const threadTitle = activeSubsession
+    ? subsessionTitle(activeSubsession)
+    : activeProjectSession
+      ? sessionDisplayTitle(activeProjectSession)
+      : undefined;
+  // The row's agent binds the root thread only; a sub-session runs its own.
+  // `'default'` is the server's spelling of "no agent bound" (web's session page).
+  const boundAgentName =
+    !activeSubsession && activeProjectSession?.agent_name !== 'default'
+      ? activeProjectSession?.agent_name
+      : null;
+
   // The open page, thread, or connecting session: the view route's content.
-  const viewContent = isHome ? null : (
+  // Memoized on its real inputs: a stable element lets React skip the view
+  // route when only the drawer, a poll, or a sheet changed.
+  const viewContent = useMemo(() => isHome ? null : (
         <View className="flex-1 bg-background">
           {activePageId ? (
           /* Tool page — the SAME page component the legacy screen renders. Its
@@ -530,6 +596,8 @@ export function ProjectScreen() {
             />
           ) : activePageId === 'page:browser' && PAGE_TABS[activePageId] ? (
             <Pages.BrowserPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
+          ) : activePageId === 'page:apps' && PAGE_TABS[activePageId] ? (
+            <Pages.AppsPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
           ) : activePageId === 'page:memory' && PAGE_TABS[activePageId] ? (
             <Pages.MemoryPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
           ) : activePageId.startsWith('page:project:') ? (
@@ -548,38 +616,17 @@ export function ProjectScreen() {
           <SessionPage
             sessionId={activeSessionId}
             projectId={projectId}
-            projectSessionId={
-              activeProjectSession?.session_id ?? openedProjectSessionIdsRef.current[activeSessionId]
-            }
+            projectSessionId={threadProjectSessionId}
             onBack={handleBack}
             onOpenDrawer={openDrawer}
-            onOpenRightDrawer={
-              activeProjectSession ? () => openSessionActions(activeProjectSession) : undefined
-            }
-            onRenamePress={
-              activeProjectSession && !activeSubsession
-                ? () => openSessionActions(activeProjectSession, 'rename')
-                : undefined
-            }
-            sessionTitle={
-              activeSubsession
-                ? subsessionTitle(activeSubsession)
-                : activeProjectSession
-                  ? sessionDisplayTitle(activeProjectSession)
-                  : undefined
-            }
+            onOpenRightDrawer={canOpenSessionActions ? openActiveSessionActions : undefined}
+            onRenamePress={canRenameSession ? renameActiveSession : undefined}
+            sessionTitle={threadTitle}
             subAgentRelation={activeSubAgentRelation}
             subAgents={activeSubAgents}
             onOpenProjectSession={handleOpenProjectSession}
-            onCreateAgent={handleCreateAgent}
-            // The row's agent binds the root thread only; a sub-session runs its own.
-            // `'default'` is the server's spelling of "no agent bound" (web's session page).
-            boundAgentName={
-              !activeSubsession && activeProjectSession?.agent_name !== 'default'
-                ? activeProjectSession?.agent_name
-                : null
-            }
-            isDrawerOpen={drawerOpen}
+            onCreateAgent={createAgent}
+            boundAgentName={boundAgentName}
           />
         ) : activeSessionId || connectingProjectSessionId ? (
           /* Connecting — a project session is provisioning (or errored), or
@@ -600,23 +647,52 @@ export function ProjectScreen() {
               onCancel={handleCancelConnect}
               onRestart={handleRestartSession}
               restarting={restartingSession}
-              showLoader={!drawerOpen}
+              showLoader={!viewDrawerOpen}
               messages={savedCopyMessages}
               statusLabel={WAKING_NOTICE}
               sessionId={savedCopyRootId ?? undefined}
               empty={connectingEmpty}
               projectId={projectId}
-              projectSessionId={
-                activeProjectSession?.session_id ??
-                connectingProjectSessionId ??
-                (activeSessionId ? openedProjectSessionIdsRef.current[activeSessionId] : undefined) ??
-                undefined
-              }
+              projectSessionId={connectingViewProjectSessionId}
             />
           </View>
         ) : null}
         </View>
-  );
+  ), [
+    isHome,
+    activePageId,
+    projectId,
+    pageChrome,
+    handleOpenSessionById,
+    handlePageBack,
+    activeSessionId,
+    threadReady,
+    threadProjectSessionId,
+    handleBack,
+    openDrawer,
+    canOpenSessionActions,
+    openActiveSessionActions,
+    canRenameSession,
+    renameActiveSession,
+    threadTitle,
+    activeSubAgentRelation,
+    activeSubAgents,
+    handleOpenProjectSession,
+    createAgent,
+    boundAgentName,
+    connectingProjectSessionId,
+    connectingTitle,
+    connectingFirstPrompt,
+    connectError,
+    handleCancelConnect,
+    handleRestartSession,
+    restartingSession,
+    viewDrawerOpen,
+    savedCopyMessages,
+    savedCopyRootId,
+    connectingEmpty,
+    connectingViewProjectSessionId,
+  ]);
 
   // A sub-page's content (the `page` route): Go back in place of the
   // hamburger, and no drawer. Project Settings opens its Customize rows as
@@ -636,14 +712,20 @@ export function ProjectScreen() {
           return <Pages.SecretsNavPage page={page} projectId={projectId} onBack={onBack} />;
         case 'page:members':
           return <Pages.MembersNavPage page={page} projectId={projectId} onBack={onBack} />;
+        case 'page:files-nav':
+          return <Pages.FilesNavPage page={page} projectId={projectId} onBack={onBack} />;
       }
     },
     [projectId, openSubPage]
   );
 
+  // The session ··· sheet's Files row (KRTX-1636): the project's Files as a
+  // sub-page over the thread, so back returns to that thread.
+  const openFilesOverThread = useCallback(() => openSubPage('page:files-nav'), [openSubPage]);
+
   // Project home — Kortix symbol, composer.
-  // Memoized: `projectRoute` is a new object each render, so a stable element
-  // is what lets React skip home when only `drawerOpen` or a poll changed.
+  // Memoized: a stable element lets React skip home when only `drawerOpen`
+  // or a poll changed.
   // `handleDashboardSend` changes with the create mutation and toast objects,
   // so home gets a stable wrapper that calls the latest one.
   const dashboardSendRef = useRef(handleDashboardSend);
@@ -667,23 +749,44 @@ export function ProjectScreen() {
     [projectId, isDashboardSending, submitNewSession, openDrawer, takeInitialDraft]
   );
 
-  const projectRoute: ProjectRouteValue = {
-    home: homeContent,
-    view: viewContent,
-    isHome,
-    homeKey,
-    goHome,
-    newSession: returnHome,
-    onViewCovered: handleViewCovered,
-    projectId,
-    // Stable: a useCallback whose only dependency is a zustand store action.
-    openProjectSession: handleOpenProjectSession,
-    openDrawer,
-    isDrawerOpen: drawerOpen,
-    openSessionActions,
-    openSubPage,
-    renderSubPage,
-  };
+  // Memoized: a new value re-renders every project route that reads it.
+  const projectRoute = useMemo<ProjectRouteValue>(
+    () => ({
+      home: homeContent,
+      view: viewContent,
+      isHome,
+      viewKey,
+      homeKey,
+      goHome,
+      newSession: returnHome,
+      onViewCovered: handleViewCovered,
+      projectId,
+      // Stable: a useCallback whose only dependency is a zustand store action.
+      openProjectSession: handleOpenProjectSession,
+      openDrawer,
+      isDrawerOpen: drawerOpen,
+      openSessionActions,
+      openSubPage,
+      renderSubPage,
+    }),
+    [
+      homeContent,
+      viewContent,
+      isHome,
+      viewKey,
+      homeKey,
+      goHome,
+      returnHome,
+      handleViewCovered,
+      projectId,
+      handleOpenProjectSession,
+      openDrawer,
+      drawerOpen,
+      openSessionActions,
+      openSubPage,
+      renderSubPage,
+    ]
+  );
 
   // ── Render ──
 
@@ -729,12 +832,23 @@ export function ProjectScreen() {
         <ProjectRouteProvider value={projectRoute}>
           {/* Native Stack: platform default push/pop. No iOS swipe-back: the
               left edge belongs to the drawer on every project route, except
-              a sub-page (page), where it goes back. */}
+              a sub-page (page), where it goes back.
+              `freezeOnBlur`: a covered screen does not re-render. On the New
+              Architecture the stack freezes only screens two or more below the
+              top; the screen under the top stays live for the back gesture.
+              React Freeze suspends a frozen screen's rendering. Its state and
+              its passive effects (listeners, timers, subscriptions) stay
+              mounted; its layout effects are cleaned up while it is hidden
+              and run again when it shows. Its stores keep updating, and it
+              renders the latest state when it shows again. No screen here
+              drives visible state from a timer or a focus listener while
+              covered: each route acts only while focused. */}
           <Stack
             screenOptions={{
               headerShown: false,
               gestureEnabled: false,
               fullScreenGestureEnabled: false,
+              freezeOnBlur: true,
             }}
             // The focused route is the top of the stack.
             screenListeners={({ route, navigation: routeNavigation }) => ({
@@ -758,7 +872,7 @@ export function ProjectScreen() {
       {/* One session actions sheet (COR-140 Task 5): the thread's "···", the
           Sessions page's long press, and the drawer's session row long press
           all open it through `openSessionActions` (ProjectRouteValue). */}
-      <SessionActionsSheet ref={actionsSheetRef} projectId={projectId} />
+      <SessionActionsSheet ref={actionsSheetRef} projectId={projectId} onOpenFiles={openFilesOverThread} />
 
       {/* The project/account switcher (COR-124), opened by the drawer's
           switcher row. A picked project closes the drawer too. */}

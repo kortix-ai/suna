@@ -61,7 +61,8 @@ export interface SessionFilesSheetProps {
   onSelect: (file: SessionFile) => void;
 }
 
-export const SessionFilesSheet = React.forwardRef<SheetRef, SessionFilesSheetProps>(
+/** Memoized: the composer around it re-renders on every keystroke and passes stable props. */
+export const SessionFilesSheet = React.memo(React.forwardRef<SheetRef, SessionFilesSheetProps>(
   ({ sessionId, sandboxUrl, onSelect }, ref) => {
     const modalRef = React.useRef<BottomSheetModal>(null);
     const previewSheetRef = React.useRef<SheetRef>(null);
@@ -122,7 +123,7 @@ export const SessionFilesSheet = React.forwardRef<SheetRef, SessionFilesSheetPro
       </>
     );
   }
-);
+));
 SessionFilesSheet.displayName = 'SessionFilesSheet';
 
 function SessionFilesBody({

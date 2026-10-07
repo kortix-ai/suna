@@ -72,6 +72,7 @@ export function StepHeader({
   tagline,
   description,
   mark,
+  markOnMobile = false,
 }: {
   /** A string, or a string led by a status mark (a decided approval). */
   title: React.ReactNode;
@@ -81,6 +82,9 @@ export function StepHeader({
    * the mark it replaces: below `md` the frame's own corner logo stands.
    */
   mark?: React.ReactNode;
+  /** Show the mark below `md` too. For a header outside `AuthFrame` (a modal),
+   *  where no corner logo stands in for it on mobile. */
+  markOnMobile?: boolean;
   /** Second line in the same size as the title, dimmed (entry step only). */
   tagline?: string;
   description?: React.ReactNode;
@@ -88,11 +92,18 @@ export function StepHeader({
   return (
     <div className="mb-10">
       {mark ? (
-        <div className="hidden md:block">{mark}</div>
+        <div className={markOnMobile ? undefined : 'hidden md:block'}>{mark}</div>
       ) : (
         <KortixLogo variant="icon" size={22} className="text-foreground hidden md:block" />
       )}
-      <h1 className="text-foreground text-2xl font-medium tracking-tight md:mt-6">{title}</h1>
+      <h1
+        className={cn(
+          'text-foreground text-2xl font-medium tracking-tight md:mt-6',
+          mark && markOnMobile && 'mt-6',
+        )}
+      >
+        {title}
+      </h1>
       {tagline ? (
         <p className="text-muted-foreground text-2xl font-medium tracking-tight text-balance">{tagline}</p>
       ) : null}

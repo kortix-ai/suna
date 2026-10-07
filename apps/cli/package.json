@@ -1,7 +1,7 @@
 {
   "name": "@kortix/cli",
   "version": "0.1.0",
-  "description": "Kortix CLI \u2014 scaffold a Kortix project (.kortix/) inside any git repository.",
+  "description": "Open-source AI Operating System: your agents, skills, memory, and connectors in one repo you own. Any model. Self-host or cloud.",
   "private": true,
   "type": "module",
   "bin": {
@@ -18,7 +18,7 @@
     "bundle:linux-x64": "bash bundle/bundle-linux-x64.sh",
     "bundle:linux-arm64": "bash bundle/bundle-linux-arm64.sh",
     "bundle:clean": "rm -f bundle/kortix bundle/kortix-darwin-* bundle/kortix-linux-*",
-    "test": "pnpm lint:sdk-boundary && bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000} --isolate --parallel=4",
+    "test": "pnpm lint:sdk-boundary && bash scripts/test.sh",
     "lint:sdk-boundary": "node scripts/sdk-boundary.mjs"
   },
   "dependencies": {

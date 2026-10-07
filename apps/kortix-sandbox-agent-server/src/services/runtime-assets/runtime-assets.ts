@@ -1,3 +1,4 @@
+import { MANAGED_SKILLS_DIR, RUNTIME_ASSETS_STATE_PATH } from '@kortix/api-contract/sandbox-layout'
 import { createHash } from 'node:crypto'
 import {
   chmod,
@@ -15,7 +16,7 @@ import { homedir } from 'node:os'
 import type { Config } from '@/lib/config/config'
 import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import { harnessAssets, swapAssets, stagedAgentSha, agentUpdatesPinned, recentlyFullyConverged, noteRuntimeConvergence, requestAgentSwapIfIdle, applyStagedAssetsIfIdle } from './runtime-assets-swap-report'
-export { AGENT_SWAP_EXIT_CODE, runtimeConvergenceReport, runningRuntimeAssets, resetRuntimeConvergenceReportForTests, noteRuntimeConvergence, requestAgentSwapIfIdle, applyStagedAssetsIfIdle, recentlyFullyConverged, __resetReconcileCooldownForTests, __setConvergenceTimestampForTests, registerAgentSwapBlocker, resetAgentSwapBlockersForTests, agentSwapRequiresUnattendedBox, registerHarnessAssets, resetHarnessAssetsForTests, configureRuntimeConvergence, resetRuntimeConvergenceForTests } from './runtime-assets-swap-report'
+export { AGENT_SWAP_EXIT_CODE, runtimeConvergenceReport, runningRuntimeAssets, __resetVerifiedDigestsForTests, resetRuntimeConvergenceReportForTests, noteRuntimeConvergence, requestAgentSwapIfIdle, applyStagedAssetsIfIdle, recentlyFullyConverged, __resetReconcileCooldownForTests, __setConvergenceTimestampForTests, registerAgentSwapBlocker, resetAgentSwapBlockersForTests, agentSwapRequiresUnattendedBox, registerHarnessAssets, resetHarnessAssetsForTests, configureRuntimeConvergence, resetRuntimeConvergenceForTests } from './runtime-assets-swap-report'
 export type { AgentSwapDecision, AgentSwapOptions, RuntimeConvergenceReport, RunningRuntimeAssets } from './runtime-assets-swap-report'
 import type {
   HarnessAssetOutcome,
@@ -114,9 +115,9 @@ function cliPathFallback(): string {
 }
 
 /** Image-baked managed-skill overlay root; created here when the image had none. */
-const DEFAULT_MANAGED_SKILLS_DIR = '/opt/kortix/managed-skills'
+const DEFAULT_MANAGED_SKILLS_DIR = MANAGED_SKILLS_DIR
 /** Digest bookkeeping, so a converged box never re-hashes a 100 MB binary. */
-const DEFAULT_STATE_PATH = '/opt/kortix/runtime-assets-state.json'
+const DEFAULT_STATE_PATH = RUNTIME_ASSETS_STATE_PATH
 
 /**
  * The image-baked daemon — an IMMUTABLE FLOOR, not an update target.
@@ -259,6 +260,10 @@ export interface RuntimeAssetsOptions {
   cliFallbackPath?: string
   /** Test seam for `replaceCli`'s directory-unlock escalation. See `ReplaceCliDeps.unlockDir`. */
   unlockCliDir?: (dir: string) => Promise<boolean>
+  /** The chunk store this pass may reuse bytes from. Defaults to the box's own
+   *  binaries (see {@link chunkStoreSources}); injectable for tests, whose box
+   *  can carry real multi-megabyte binaries the indexer would hash for minutes. */
+  localChunkSources?: string[]
 }
 
 /** One entry of the v2 `components` map. Every field is optional by contract. */

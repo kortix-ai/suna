@@ -21,10 +21,14 @@ import {
   resolveDeliverableAgent,
   runtimeAgentRoster,
 } from './agent-availability';
-import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
+import type { SandboxRecord } from '../../sandbox-proxy/backend';
+import { forwardToSandbox } from '../../sandbox-proxy/forward';
 import { sandboxOpencodeEndpoint } from '../opencode-mapping';
+import { STEER_NO_ACTIVE_TURN_CODE } from '@kortix/api-contract/runtime-relay';
+import { KORTIX_SERVICE_CALL_HEADER } from '../../shared/kortix-user-context';
 import {
   WORKSPACE,
+  forgetRuntimeCapabilities,
   runtimeServesTurnVerbs,
   turnVerbMissing,
   runtimeVerbPaths,
@@ -267,7 +271,7 @@ export async function removeRuntimeMessage(
 }
 
 /** `DELETE` one message: 2xx removed, 404 already gone, 409 the loop is running. */
-async function deleteRuntimeMessage(session: ResolvedSessionRuntime, messageId: string): Promise<Response> {
+export async function deleteRuntimeMessage(session: ResolvedSessionRuntime, messageId: string): Promise<Response> {
   if (await servesTurnVerbs(session)) {
     const res = await sessionRuntimeFetch(session.endpoint, 'DELETE', runtimeVerbPaths.message(session.opencodeSessionId, messageId));
     if (!turnVerbMissing(session.externalId, res)) return res;
@@ -483,6 +487,19 @@ export class PromptNeverLandedError extends Error {
   }
 }
 
+/**
+ * Thrown out of a `steer` POST that no running turn took. `turn_ended`: the
+ * daemon answered `409 no_active_turn` (it stored nothing). `unsupported`: the
+ * daemon cannot steer (`501`, or no Kortix turn routes). The caller sends the
+ * row as a Queue List prompt. Not a failed attempt.
+ */
+export class SteerNotTaken extends Error {
+  constructor(readonly reason: 'turn_ended' | 'unsupported') {
+    super(`steer not taken: ${reason}`);
+    this.name = 'SteerNotTaken';
+  }
+}
+
 export async function readLegacyRuntimeMessage(
   input: LegacyRuntimePartTarget & { messageId: string },
 ): Promise<LegacyRuntimeMessage | null> {
@@ -583,6 +600,14 @@ export async function postPrompt(
     noReply?: boolean;
     accountId?: string;
     projectId?: string;
+    /** Told the size of each body that goes on the wire (attachments
+     *  materialized), so the caller can decide whether to prove landing. */
+    onBodyBytes?: (bytes: number) => void;
+    /** The target's sandbox row, when the delivery already read it. */
+    sandboxRecord?: SandboxRecord;
+    /** Hand the message to the RUNNING turn (`POST .../steer`) instead of
+     *  starting one. Kortix route only; throws {@link SteerNotTaken}. */
+    steer?: boolean;
   },
 ): Promise<'accepted' | 'deduplicated' | 'failed' | 'unreachable'> {
   const parts: PromptPartWire[] =
@@ -640,9 +665,14 @@ export async function postPrompt(
   // A daemon that serves the Kortix turn routes gets the Kortix prompt; an
   // older one gets OpenCode's `prompt_async` (legacy-runtime-rest.ts).
   const kortixRoute = await runtimeServesTurnVerbs(externalId, () => sandboxOpencodeEndpoint(externalId, userId));
+  // OpenCode's own REST has no steer verb.
+  if (prompt?.steer && !kortixRoute) throw new SteerNotTaken('unsupported');
   const send = (kortix: boolean) => {
     const target = kortix
-      ? { path: runtimeVerbPaths.prompt(opencodeSessionId), query: '' }
+      ? {
+          path: prompt?.steer ? runtimeVerbPaths.steer(opencodeSessionId) : runtimeVerbPaths.prompt(opencodeSessionId),
+          query: '',
+        }
       : legacyRuntimePaths.prompt(opencodeSessionId, directory);
     const body = new TextEncoder().encode(
       JSON.stringify(
@@ -666,6 +696,11 @@ export async function postPrompt(
             },
       ),
     );
+    prompt?.onBodyBytes?.(body.byteLength);
+    // A steer goes to the box DIRECTLY with the service-call mark: kortixd
+    // refuses `/steer` without it, and the user-facing proxy strips it, so no
+    // member can steer around admission's prompter check (D9.3).
+    if (prompt?.steer) return postSteerDirect(externalId, userId, target.path, new TextDecoder().decode(body));
     return forwardToSandbox(
       externalId,
       DAEMON_PORT,
@@ -703,11 +738,18 @@ export async function postPrompt(
       }),
       body.buffer as ArrayBuffer,
       config.KORTIX_URL ?? '',
+      undefined,
+      undefined,
+      { record: prompt?.sandboxRecord },
     );
   };
   try {
     let res = await send(kortixRoute);
-    if (kortixRoute && turnVerbMissing(externalId, res)) res = await send(false);
+    if (kortixRoute && turnVerbMissing(externalId, res)) {
+      if (prompt?.steer) throw new SteerNotTaken('unsupported');
+      res = await send(false);
+    }
+    if (prompt?.steer) await throwIfSteerNotTaken(externalId, res);
     if (res.ok || res.status === 204) {
       if (res.status === 200) {
         const result = (await res.json().catch(() => null)) as {
@@ -728,7 +770,7 @@ export async function postPrompt(
     if (res.status === 502 || res.status === 503 || res.status === 504) return 'unreachable';
     return 'failed';
   } catch (err) {
-    if (err instanceof PromptDeliveryRefused) throw err;
+    if (err instanceof PromptDeliveryRefused || err instanceof SteerNotTaken) throw err;
     // A connection refused/reset while the sandbox finishes resuming — treat as a
     // retryable miss (the deliver loop will heal + retry) instead of letting it
     // bubble up and silently drop the turn.
@@ -737,4 +779,22 @@ export async function postPrompt(
     // reasoning as the 502/503/504 branch above.
     return 'unreachable';
   }
+}
+
+/** The two steer answers that mean "send it as a prompt instead". */
+async function throwIfSteerNotTaken(externalId: string, res: Response): Promise<void> {
+  if (res.status === 501) {
+    forgetRuntimeCapabilities(externalId);
+    throw new SteerNotTaken('unsupported');
+  }
+  if (res.status !== 409) return;
+  const body = (await res.clone().json().catch(() => null)) as { code?: unknown } | null;
+  if (body?.code === STEER_NO_ACTIVE_TURN_CODE) throw new SteerNotTaken('turn_ended');
+}
+
+/** `POST .../steer` straight to the box, as the platform (see `postPrompt`). No endpoint: 503. */
+async function postSteerDirect(externalId: string, userId: string, path: string, body: string): Promise<Response> {
+  const endpoint = await sandboxOpencodeEndpoint(externalId, userId);
+  if (!endpoint) return new Response(null, { status: 503 });
+  return sessionRuntimeFetch(endpoint, 'POST', path, { headers: { [KORTIX_SERVICE_CALL_HEADER]: '1' }, body }, 30_000);
 }

@@ -79,6 +79,8 @@ interface BundleEntry {
    *  (always claimable) from "resolved a while ago" (claimable only inside the
    *  share window). */
   settledAtMs: number | null;
+  /** What `promise` resolved to. Unset while it is in flight. */
+  bundle?: SessionOpenBundle | null;
 }
 
 interface TranscriptStash {
@@ -145,6 +147,7 @@ export function openSessionBundle(
   };
   entry.promise = entry.promise.then((bundle) => {
     entry.settledAtMs = now();
+    entry.bundle = bundle;
     return bundle;
   });
   entries.set(key, entry);
@@ -178,6 +181,20 @@ export function claimOpenBundle(
     return null;
   }
   return entry.promise;
+}
+
+/**
+ * The bundle this session's open has ALREADY received, inside the share window.
+ * `null` while it is in flight: for a reader that must not wait for the
+ * snapshot. It asks its own route instead.
+ */
+export function settledOpenBundle(
+  projectId: string,
+  sessionId: string,
+  nowMs: number = Date.now(),
+): SessionOpenBundle | null {
+  const entry = entries.get(scopeKey(projectId, sessionId));
+  return entry && entry.settledAtMs !== null && claimable(entry, nowMs) ? (entry.bundle ?? null) : null;
 }
 
 /** One `GET .../turn` answer plus the instant the SERVER took it. Structurally
@@ -229,6 +246,26 @@ export function openBundleAudit(bundle: SessionOpenBundle): SessionAudit | null 
     count: audit.count,
     actions: audit.actions,
   };
+}
+
+/**
+ * Project the transcript leg onto what the saved-history read
+ * (`GET .../transcript?shape=sync&history=true`) answers: the same window, served
+ * only for the session's CURRENT root. `null` when the leg is unknown or
+ * pointer-only, and when a saved copy's root is not the root the session row
+ * names. The route decides those.
+ *
+ * Reads the leg, never the one-shot stash: the stash is the mirror paint's.
+ */
+export function openBundleHistory(bundle: SessionOpenBundle): SessionTranscriptSyncEnvelope | null {
+  const transcript = bundle.transcript;
+  if (!transcript || transcript.known !== true || transcript.requested !== true) return null;
+  const { known: _known, requested: _requested, ...envelope } = transcript;
+  // "No saved copy" is the same answer with or without the root check.
+  if (!envelope.available) return envelope;
+  const root = bundle.session?.runtime_session_id ?? bundle.session?.opencode_session_id;
+  const savedRoot = envelope.runtime_session_id ?? envelope.opencode_session_id;
+  return root && savedRoot === root ? envelope : null;
 }
 
 function stashTranscript(key: string, bundle: SessionOpenBundle, nowMs: number): void {

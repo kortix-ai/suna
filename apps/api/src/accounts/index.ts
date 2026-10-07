@@ -7,9 +7,10 @@
 import { accountsRouter } from './core/app';
 import { supabaseAuth } from '../middleware/auth';
 import { accountSessionGate } from '../iam/session-gate';
-import { iamRouter } from './iam';
+import { iamRouter, registerIamRoutes } from './iam';
 import { auditRouter } from './audit';
 import { registerTokenRoutes } from './core/tokens';
+import { registerDeviceRoutes } from './core/devices';
 import { registerAccountRoutes } from './core/accounts';
 import { registerMemberRoutes } from './core/members';
 import { registerBrandingRoutes } from './branding';
@@ -34,6 +35,7 @@ accountsRouter.use('/*', async (c, next) => {
 // Mount IAM routes (groups/policies/roles/super-admin/effective). Sub-router
 // declares its own paths under /:accountId/iam/*, so mounting at '/' here is
 // correct.
+registerIamRoutes();
 accountsRouter.route('/', iamRouter);
 accountsRouter.route('/', auditRouter);
 
@@ -41,9 +43,11 @@ accountsRouter.route('/', auditRouter);
 // Hono matches routes in registration order, so anything declared after the
 // `:accountId` handler would be shadowed by it. The calls below mirror the
 // original route-registration order exactly:
+//   me/devices GET/DELETE            → registerDeviceRoutes
 //   me, tokens GET/POST/DELETE        → registerTokenRoutes
 //   accounts list/create/get/patch    → registerAccountRoutes
 //   members + invites + leave         → registerMemberRoutes
+registerDeviceRoutes();
 registerTokenRoutes();
 registerAccountRoutes();
 registerMemberRoutes();

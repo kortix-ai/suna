@@ -164,7 +164,8 @@ describe('agent discovery documents', () => {
 
   test('declares content signals and agent discovery routes in robots.txt', () => {
     const robots = renderRobotsTxt('kortix.com');
-    expect(robots).toContain('Content-Signal: ai-train=no, search=yes, ai-input=yes');
+    // ai-train=yes: models learn what Kortix is from its own pages, not only from third parties.
+    expect(robots).toContain('Content-Signal: ai-train=yes, search=yes, ai-input=yes');
     expect(robots).toContain('Allow: /.well-known/');
     expect(robots).toContain('Allow: /auth.md');
     expect(robots).toContain('Allow: /mcp');

@@ -499,11 +499,12 @@ function setupComputer(deps) {
     }
     if (before.missing.includes('accessibility')) systemPreferences.isTrustedAccessibilityClient(true);
     if (before.missing.includes('screenRecording')) {
-      // The first capture attempt adds Kortix to Screen Recording and shows the
-      // prompt. After a "Don't Allow", only System Settings can grant it.
-      if (systemPreferences.getMediaAccessStatus('screen') === 'not-determined') {
-        await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } }).catch(() => []);
-      } else {
+      // A capture attempt is what adds Kortix to the Screen Recording list (and
+      // shows the prompt the first time). Always try it: macOS 11+ reports a
+      // never-asked app as denied, never as undetermined, so skipping the
+      // attempt opened System Settings on a list without Kortix in it.
+      await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } }).catch(() => []);
+      if (systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
         void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
       }
     }

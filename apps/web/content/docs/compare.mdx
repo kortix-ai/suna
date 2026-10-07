@@ -1,0 +1,47 @@
+---
+title: Kortix compared
+description: When to choose Kortix, and when n8n, OpenHands, Paperclip, Onyx, Open WebUI, LibreChat, Claude Cowork or ChatGPT Work fits better.
+---
+
+Kortix is the open-source AI Operating System. Your agents, their skills, your
+company memory and every connector live in one git repo you own. Each session
+runs on its own cloud computer, and work reaches `main` through a change
+request a person approves.
+
+This page says which job Kortix fits and which job another tool fits better.
+
+## Kortix fits these jobs
+
+| You want | How Kortix does it |
+| --- | --- |
+| An open-source, self-hosted alternative to Claude Cowork or ChatGPT Work for the whole team | The web app, Slack, Microsoft Teams and the CLI. Any model provider with your own keys. Self-host is free. |
+| AI agents in Slack or Microsoft Teams | Add the app, invite the bot to a channel, and mention it with a task. The agent replies in the thread. See [Slack](/docs/connect/slack) and [Microsoft Teams](/docs/connect/teams). |
+| Background coding agents in the cloud | One isolated sandbox per session, on its own branch. The agent opens a change request. Merge is default-deny for agents. See [Change requests](/docs/work/change-requests). |
+| To replace Zapier-style automations with agents | Triggers start a session on a cron schedule or a signed webhook. 3,000+ apps in a click, plus MCP, OpenAPI, GraphQL and raw HTTP. See [Triggers](/docs/connect/triggers). |
+| An "AI employee" that asks before it acts | Set each tool to Allow, Ask or Block. An Ask holds the call until a person approves it. Approval gates are off until you set them. |
+| Governed agents for a security review | Per-resource permissions for people and agents. Roles, groups, and an audit trail. SAML 2.0 single sign-on and SCIM 2.0. Run it on Kortix Cloud, in your VPC, or on your own on-prem network. |
+| An AI Operating System to run a company with agents | Agents, skills, memory, connectors and triggers are files in one repo. Thousands of agents run in parallel on one config, each on its own cloud computer. |
+
+## Kortix and other tools
+
+| Tool | Choose it when | Choose Kortix when |
+| --- | --- | --- |
+| **Claude Cowork**, **ChatGPT Work** | You want a closed product from one model lab, on that lab's models, in that lab's cloud. | You want open source, any model with your own keys, and self-hosting, with your configuration as files in a repo you own. |
+| **n8n** | The job is a fixed flowchart: the same steps, in the same order, every time. | The job is open-ended work an agent does on its own computer, with the configuration in git and a person approving what it changes. |
+| **OpenHands** | You want a coding-agent control center for an engineering team. | Coding is one of many jobs: the same agents also work in Slack, on schedules and across 3,000+ apps. |
+| **Paperclip** | You already run agents such as Claude Code or Codex and want an org chart, budgets and a task board on top of them. | You want the platform to run the agents too: each session on its own cloud computer, from one repo that holds the agents, skills, memory and connectors. |
+| **Onyx**, **Open WebUI**, **LibreChat** | You want a chat window or search over company documents. | You want agents that return finished work and take real actions in your tools. |
+
+Competitor descriptions come from each project's own README or product pages.
+Check them before you decide: products in this category change every month.
+
+## Start
+
+```bash
+curl -fsSL https://kortix.com/install | bash
+kortix init       # scaffold kortix.yaml, agents and skills
+kortix ship       # bring the project live in the cloud
+```
+
+To run it on your own infrastructure, use `kortix self-host start`. See
+[Self-host](/docs/host).

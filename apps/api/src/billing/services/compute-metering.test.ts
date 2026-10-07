@@ -32,6 +32,22 @@ mock.module('../../config', () => ({
 let storageCalls: string[] = [];
 let openRows: Array<{ id: string } | null> = [];
 let insertError: unknown = null;
+/** Rows the stale-session sweep hands the tick; empty keeps every other test untouched. */
+let staleRows: Array<typeof sandboxComputeSessions.$inferSelect> = [];
+/** What claimComputeWindow answers; false keeps every other test untouched. */
+let claimResult = false;
+/** Wallet settlements the metering path attempted (the real wallet is never reached). */
+let settleCalls: Array<{ description: string } & Record<string, unknown>> = [];
+
+mock.module('./wallet-debits', () => ({
+  settleAndCheckAutoTopup: async (
+    input: { description: string } & Record<string, unknown>,
+  ) => {
+    settleCalls.push(input);
+    if (settleError) throw settleError;
+    return { amount: input.amount, balance: 0, overdraft: false, transactionId: 'tx_test', replayed: false };
+  },
+}));
 
 mock.module('../repositories/credit-accounts', () => ({
   getCreditAccount: async () => {
@@ -59,7 +75,7 @@ mock.module('../repositories/compute-sessions', () => ({
   },
   claimComputeWindow: async () => {
     storageCalls.push('claimComputeWindow');
-    return false;
+    return claimResult;
   },
   releaseComputeWindow: async () => {
     storageCalls.push('releaseComputeWindow');
@@ -67,8 +83,15 @@ mock.module('../repositories/compute-sessions', () => ({
   },
   findStaleActiveSessions: async () => {
     storageCalls.push('findStaleActiveSessions');
-    return [];
+    return staleRows;
   },
+}));
+
+/** Whether the ledger holds the debit key after a failed settle. */
+let ledgerHasKey = false;
+let settleError: Error | null = null;
+mock.module('../repositories/ledger-keys', () => ({
+  ledgerRequestKeyExists: async () => ledgerHasKey,
 }));
 
 mock.module('../../shared/db', () => ({
@@ -83,8 +106,10 @@ mock.module('../../shared/db', () => ({
   ),
 }));
 
+import { sandboxComputeSessions } from '@kortix/db';
+
 const metering = await import('./compute-metering');
-const { calculateComputeCost } = metering;
+const { calculateComputeCost, tickRunningComputeCharges } = metering;
 
 const SPEC = { cpuCores: 2, memoryGb: 4, diskGb: 20, gpuCount: 0 };
 
@@ -93,6 +118,89 @@ beforeEach(() => {
   storageCalls = [];
   openRows = [];
   insertError = null;
+  staleRows = [];
+  claimResult = false;
+  settleCalls = [];
+  ledgerHasKey = false;
+  settleError = null;
+});
+
+/** An active sandbox row the tick would settle this pass, 10 minutes unbilled. */
+function staleRow(sessionId: string | null): typeof sandboxComputeSessions.$inferSelect {
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60_000).toISOString();
+  const now = new Date().toISOString();
+  return {
+    id: 'cs_row',
+    accountId: 'acct_tick_' + Math.random().toString(36).slice(2),
+    sandboxId: 'sb_row',
+    sessionId,
+    actorUserId: null,
+    provider: 'daytona',
+    cpuCores: 2,
+    memoryGb: 4,
+    diskGb: 20,
+    gpuCount: 0,
+    state: 'active',
+    startedAt: tenMinutesAgo,
+    endedAt: null,
+    lastBilledAt: tenMinutesAgo,
+    costUsd: '0',
+    ledgerId: null,
+    metadata: { lastAliveAt: now },
+    workloadType: 'session',
+    appRuntimeId: null,
+    createdAt: tenMinutesAgo,
+    updatedAt: tenMinutesAgo,
+  };
+}
+
+describe('the partial-billing tick', () => {
+  test('the settle names the session that ran the box in the ledger debit', async () => {
+    staleRows = [staleRow('sess-123')];
+    claimResult = true;
+
+    const result = await tickRunningComputeCharges();
+
+    expect(result.settled).toBe(1);
+    expect(settleCalls).toHaveLength(1);
+    expect(settleCalls[0]!.description).toBe('Sandbox compute · sess-123 · 2vCPU/4GB/20GB · 600s');
+  });
+
+  test('a box opened outside a session keeps the plain ledger description', async () => {
+    staleRows = [staleRow(null)];
+    claimResult = true;
+
+    await tickRunningComputeCharges();
+
+    expect(settleCalls).toHaveLength(1);
+    expect(settleCalls[0]!.description).toBe('Sandbox compute · 2vCPU/4GB/20GB · 600s');
+  });
+});
+
+describe('a failed compute settlement', () => {
+  // 10 minutes of 2 vCPU / 4 GB / 20 GB: 600 s * ($0.201312 / 3600 s) = $0.03355.
+  test('releases the window when the ledger holds no debit under the key', async () => {
+    staleRows = [staleRow('sess-123')];
+    claimResult = true;
+    settleError = new Error('connection terminated');
+    ledgerHasKey = false;
+
+    await tickRunningComputeCharges();
+
+    expect(storageCalls).toContain('releaseComputeWindow');
+  });
+
+  test('keeps the window when the debit committed and only the response was lost', async () => {
+    staleRows = [staleRow('sess-123')];
+    claimResult = true;
+    settleError = new Error('connection terminated');
+    ledgerHasKey = true;
+
+    await tickRunningComputeCharges();
+
+    expect(settleCalls).toHaveLength(1);
+    expect(storageCalls).not.toContain('releaseComputeWindow');
+  });
 });
 
 describe('calculateComputeCost', () => {

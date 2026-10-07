@@ -11,9 +11,9 @@ import type { SessionConfigRelease } from '@kortix/sdk';
  * did before releases existed.
  */
 
-export type ConfigTone = 'ok' | 'warn';
+type ConfigTone = 'ok' | 'warn';
 
-export interface ConfigLine {
+interface ConfigLine {
   tone: ConfigTone;
   text: string;
 }

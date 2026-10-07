@@ -46,6 +46,43 @@ describe('authorizeEnvironment', () => {
     ).toEqual({ allowed: false, reason: 'configuration_error' });
   });
 
+  test('always allows the Supabase auth callback routes', () => {
+    // The verify→callback hop is a cross-site top-level redirect whose request
+    // can arrive without the access cookie; a gate 401 there consumes the
+    // single-use code and the sign-in link is burned with no session. The
+    // routes carry their own boundary (PKCE code + browser-held verifier), so
+    // the environment gate adds nothing on them.
+    for (const pathname of ['/auth/callback', '/auth/mobile/callback']) {
+      expect(
+        authorizeEnvironment({
+          enabled: 'true',
+          password: 'test-password',
+          authorization: null,
+          pathname,
+        }),
+      ).toEqual({ allowed: true, source: 'auth-callback' });
+    }
+  });
+
+  test('exempts exactly the auth callback routes, not lookalike paths', () => {
+    for (const pathname of [
+      '/auth/callbackx',
+      '/auth/callback/extra',
+      '/auth',
+      '/auth/signup',
+      '/projects',
+    ]) {
+      expect(
+        authorizeEnvironment({
+          enabled: 'true',
+          password: 'test-password',
+          authorization: null,
+          pathname,
+        }),
+      ).toEqual({ allowed: false, reason: 'credentials_required' });
+    }
+  });
+
   test('rejects missing and malformed credentials', () => {
     for (const authorization of [null, 'Bearer token', 'Basic not-base64%%%']) {
       expect(

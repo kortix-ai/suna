@@ -62,13 +62,14 @@ import {
   readManifestFromRepo,
   readRepoFile,
   type GitBackedProject,
+  type MirrorRefresh,
 } from '../git';
 
 /**
  * One compiled agent (`CompiledAgent` in `@kortix/api-contract/runtime-relay`,
  * the shape both harnesses read), with the manifest's permission type.
  */
-export type CompiledAgentEntry = CompiledAgent & { permission?: PermissionConfigV2 };
+type CompiledAgentEntry = CompiledAgent & { permission?: PermissionConfigV2 };
 
 /**
  * The compiled agent set `compileAgentConfig` produces (`CompiledAgentSet`).
@@ -77,7 +78,7 @@ export type CompiledAgentEntry = CompiledAgent & { permission?: PermissionConfig
  * agent declares none. `default_agent` is omitted when that agent is disabled
  * or a subagent, which cannot run as the primary.
  */
-export type CompiledAgents = CompiledAgentSet & { agent: Record<string, CompiledAgentEntry> };
+type CompiledAgents = CompiledAgentSet & { agent: Record<string, CompiledAgentEntry> };
 
 /** Raised when a v2 manifest can't be compiled — a genuine authoring error
  *  (malformed `.md` frontmatter, unsupported runtime), not a transient I/O
@@ -631,14 +632,6 @@ async function readManifestV2(project: GitBackedProject, baseRef?: string | null
   }
 }
 
-export async function resolveManifestRuntime(
-  project: GitBackedProject,
-  baseRef?: string | null,
-): Promise<RuntimeV2 | null> {
-  const raw = await readManifestV2(project, baseRef);
-  return raw ? manifestRuntime(raw) : null;
-}
-
 export async function resolveManifestPiPackageLists(project: GitBackedProject, baseRef?: string | null): Promise<unknown[][]> {
   return manifestPiPackageLists(await readManifestV2(project, baseRef));
 }
@@ -648,8 +641,16 @@ export async function resolveManifestPiPackageLists(project: GitBackedProject, b
  * session env builder uses it to learn `runtime:` from the same read that
  * compiles the agent config.
  */
-export interface CompileReadOptions {
+interface CompileReadOptions {
   onManifest?: (raw: Record<string, unknown>) => void;
+  /**
+   * Force the manifest read's mirror refresh with the ref-scoped freshness
+   * proof: `readManifestFromRepo` proves THIS ref against the remote with one
+   * `git ls-remote` and only fetches the whole mirror when the branch moved.
+   * A caller that must answer "latest" proves the ref instead of trusting the
+   * 60s TTL. Omitted keeps the plain TTL behavior.
+   */
+  forceRefresh?: MirrorRefresh;
 }
 
 export async function resolveCompiledAgentConfigForSession(
@@ -673,7 +674,9 @@ export async function resolveCompiledAgentConfigForSession(
   let manifestVersion: number | undefined;
   try {
     const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
-    const found = await readManifestFromRepo(project, candidates, ref);
+    const found = await readManifestFromRepo(project, candidates, ref, {
+      forceRefresh: options.forceRefresh,
+    });
     if (!found) return null;
 
     const format = manifestFormatForPath(found.path);
@@ -742,7 +745,9 @@ export async function resolveSelectedAgentConfigForSession(
   const candidates = manifestCandidatePaths(project.manifestPath).map(
     (candidate) => candidate.path,
   );
-  const found = await readManifestFromRepo(project, candidates, ref);
+  const found = await readManifestFromRepo(project, candidates, ref, {
+    forceRefresh: options.forceRefresh,
+  });
   if (!found) {
     throw new CompileAgentConfigError(
       `Project ${project.projectId} has no manifest for selected-agent compilation.`,

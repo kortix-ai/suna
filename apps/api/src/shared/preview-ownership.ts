@@ -4,8 +4,9 @@
  * Project-sessions on Daytona model:
  *   - A sandbox lives in `kortix.session_sandboxes`.
  *   - A user can hit the sandbox if they're a member of the account that owns
- *     it (account_members.account_id == session_sandboxes.account_id), or if
- *     they're a platform admin.
+ *     it (account_members.account_id == session_sandboxes.account_id) AND may
+ *     read the sandbox's project (`project.read`), or if they're a platform
+ *     admin. An agent service account reaches only its own project's boxes.
  *
  * The legacy sandbox-members / scope / role machinery has been removed along
  * with the rest of the /instances surface.
@@ -21,14 +22,19 @@ import {
   resolveShareSubject,
 } from '../connectors/share';
 import { authorize } from '../iam';
-import { actorForUser } from '../iam/actor';
+import { actorForServiceAccount, actorForUser } from '../iam/actor';
 import { hasAccountSessionOversight } from '../iam/session-oversight';
 import { accountMembers, projectSessions, serviceAccounts, sessionSandboxes } from '@kortix/db';
 import { and, eq, or, sql } from 'drizzle-orm';
 import type { KortixUserContext } from './kortix-user-context';
+import { setBounded } from './bounded-cache';
+import { registerPrincipalScopedMemo } from './principal-scoped-memos';
 import { isUuid } from './validate';
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
+// One entry per (sandbox, user) the proxy was asked about, denials included, so a
+// caller who sends random sandbox ids must not grow it without bound.
+const PREVIEW_CONTEXT_MAX = 20_000;
 
 // ─── Session-visibility gate for the daemon/opencode port ────────────────────
 // canAccessPreviewSandbox above authorizes on ACCOUNT MEMBERSHIP only. That is
@@ -44,6 +50,11 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 // membership cache trade-off).
 const SESSION_VISIBILITY_TTL_MS = 10_000;
 const sessionVisibilityCache = new Map<string, { allowed: boolean; expiresAt: number }>();
+/** Verdicts in flight, by the cache key. Per process; gone when the read settles. */
+// replica-local: single-flight dedup of one burst of concurrent reads; the
+// entry dies with its promise, so there is no state to share, and another
+// replica re-reading is one redundant query, never a different verdict.
+const sessionVisibilityInFlight = new Map<string, Promise<boolean>>();
 
 /**
  * Whether `userId` may reach the SESSION behind a sandbox (daemon-port traffic).
@@ -75,6 +86,23 @@ export async function canAccessSandboxSession(input: {
   const cached = sessionVisibilityCache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.allowed;
 
+  // The cache expires every 10 s, and a page load fires its daemon-port
+  // requests together: without this each one ran the 3 reads below. Same key
+  // as the cache, so a verdict is shared exactly as the cache shares it. A
+  // rejection is never kept.
+  const joined = sessionVisibilityInFlight.get(key);
+  if (joined) return joined;
+  const pending = readSandboxSessionAccess(input, key).finally(() =>
+    sessionVisibilityInFlight.delete(key),
+  );
+  sessionVisibilityInFlight.set(key, pending);
+  return pending;
+}
+
+async function readSandboxSessionAccess(
+  input: Parameters<typeof canAccessSandboxSession>[0],
+  key: string,
+): Promise<boolean> {
   // Started with the row read below, not after it: neither depends on it, and
   // this runs on the prompt path where each round trip is a full one.
   const subjectRead = resolveShareSubject(input.userId);
@@ -340,9 +368,12 @@ async function isAccountMember(userId: string, accountId: string): Promise<boole
  * transcript. A disabled SA is refused: a revoked/deleted agent identity must
  * not keep reading a session's transcript.
  */
-async function isAccountServiceAccount(userId: string, accountId: string): Promise<boolean> {
+async function accountServiceAccount(
+  userId: string,
+  accountId: string,
+): Promise<{ projectId: string | null } | null> {
   const [row] = await db
-    .select({ serviceAccountId: serviceAccounts.serviceAccountId })
+    .select({ projectId: serviceAccounts.projectId })
     .from(serviceAccounts)
     .where(
       and(
@@ -352,18 +383,55 @@ async function isAccountServiceAccount(userId: string, accountId: string): Promi
       ),
     )
     .limit(1);
-  return !!row;
+  return row ?? null;
 }
+
+/**
+ * Account membership is not project access: a guest of project Q is an account
+ * member with no role on project P, and REST refuses them every P route
+ * (`project.read`, `loadVisibleSession`). The proxy reaches the same box, so it
+ * asks the same question. The account check above has already passed, so the
+ * MFA step-up is not asked again (`aal2`), exactly as `memberMayReadProject`.
+ *
+ * An AGENT service account (`projectId` set) reaches only its own project's
+ * boxes. A manual service account goes through IAM like any principal.
+ */
+async function mayReadSandboxProject(
+  userId: string,
+  ref: SandboxRef,
+  serviceAccount: { projectId: string | null } | null,
+): Promise<boolean> {
+  const obj = { type: 'project' as const, id: ref.projectId };
+  if (serviceAccount?.projectId) return serviceAccount.projectId === ref.projectId;
+  const actor = serviceAccount
+    ? actorForServiceAccount(userId, ref.accountId)
+    : actorForUser(userId, ref.accountId, { mfaAal: 'aal2' });
+  return (await authorize(actor, 'project.read', obj)).allowed;
+}
+
+type SandboxRef = { sandboxId: string; accountId: string; projectId: string };
 
 async function computeEntry(
   previewSandboxId: string,
   userId: string,
+  known?: SandboxRef,
 ): Promise<CacheEntry> {
   const expiresAt = Date.now() + CACHE_TTL_MS;
 
-  const ref = await resolveSandboxRef(previewSandboxId);
-  const primaryAccountId = await resolveAccountId(userId);
-  const platformAdmin = await isPlatformAdmin(primaryAccountId);
+  // Two independent chains: the sandbox row needs only the id, the admin
+  // verdict needs only the user. They start together and the membership read
+  // starts as soon as the row names the account, so a cold check is 2 round
+  // trips instead of 4. Awaited in the original order: the same error surfaces
+  // first.
+  // A caller that just read the sandbox row (the proxy) passes it, and the
+  // membership read then starts with the admin read: one round trip, not two.
+  const refRead = known ? Promise.resolve(known) : resolveSandboxRef(previewSandboxId);
+  const adminRead = resolveAccountId(userId).then(isPlatformAdmin);
+  adminRead.catch(() => undefined);
+  const ref = await refRead;
+  const memberRead = ref ? isAccountMember(userId, ref.accountId) : null;
+  memberRead?.catch(() => undefined);
+  const platformAdmin = await adminRead;
 
   if (!ref) {
     // No sandbox row found. Allow only platform admins so the lookup-by-name
@@ -382,12 +450,13 @@ async function computeEntry(
     };
   }
 
-  const member =
-    platformAdmin ||
-    (await isAccountMember(userId, ref.accountId)) ||
-    (await isAccountServiceAccount(userId, ref.accountId));
-  if (!member) {
-    return { allowed: false, payload: null, expiresAt };
+  if (!platformAdmin) {
+    const human = await memberRead;
+    const serviceAccount = human ? null : await accountServiceAccount(userId, ref.accountId);
+    if (!human && !serviceAccount) return { allowed: false, payload: null, expiresAt };
+    if (!(await mayReadSandboxProject(userId, ref, serviceAccount))) {
+      return { allowed: false, payload: null, expiresAt };
+    }
   }
 
   return {
@@ -402,16 +471,37 @@ async function computeEntry(
   };
 }
 
+/**
+ * Checks in flight, by the cache key. A page load fires its proxied requests
+ * together, so on a cold cache each one used to run the whole check. An entry
+ * lives only as long as its check: a rejection is never kept.
+ */
+// replica-local: single-flight dedup within one process, same contract as the
+// session-visibility in-flight map above — nothing persists past the promise.
+const previewContextInFlight = new Map<string, Promise<CacheEntry>>();
+
 async function getOrCompute(
   previewSandboxId: string,
   userId: string,
+  known?: SandboxRef,
 ): Promise<CacheEntry> {
   const key = cacheKey(previewSandboxId, userId);
   const cached = previewContextCache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached;
-  const fresh = await computeEntry(previewSandboxId, userId);
-  previewContextCache.set(key, fresh);
-  return fresh;
+  const joined = previewContextInFlight.get(key);
+  if (joined) return joined;
+  const pending: Promise<CacheEntry> = computeEntry(previewSandboxId, userId, known)
+    .then((fresh) => {
+      // An invalidation during the check removed this entry: the verdict goes
+      // to the callers already waiting on it and is not cached.
+      if (previewContextInFlight.get(key) === pending) setBounded(previewContextCache, key, fresh, PREVIEW_CONTEXT_MAX);
+      return fresh;
+    })
+    .finally(() => {
+      if (previewContextInFlight.get(key) === pending) previewContextInFlight.delete(key);
+    });
+  previewContextInFlight.set(key, pending);
+  return pending;
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────────
@@ -420,13 +510,16 @@ export async function canAccessPreviewSandbox(input: {
   previewSandboxId: string;
   userId?: string;
   accountId?: string;
+  /** The sandbox row for `previewSandboxId`, when the caller already read it
+   *  in this request. Saves re-reading it; the verdict is the same. */
+  sandbox?: SandboxRef;
 }): Promise<boolean> {
   if (!input.userId) {
     if (!input.accountId) return false;
-    const ref = await resolveSandboxRef(input.previewSandboxId);
+    const ref = input.sandbox ?? (await resolveSandboxRef(input.previewSandboxId));
     return !!ref && ref.accountId === input.accountId;
   }
-  const entry = await getOrCompute(input.previewSandboxId, input.userId);
+  const entry = await getOrCompute(input.previewSandboxId, input.userId, input.sandbox);
   return entry.allowed;
 }
 
@@ -446,14 +539,22 @@ export async function resolvePreviewUserContext(
 export function clearPreviewOwnershipCache(): void {
   ownerCache.clear();
   previewContextCache.clear();
+  previewContextInFlight.clear();
 }
 
-/** Drop every cached entry for a user. */
+/** Drop every cached entry and every check in flight for a user. */
 export function invalidatePreviewCacheForUser(userId: string): void {
   const suffix = `:${userId}`;
-  for (const key of previewContextCache.keys()) {
-    if (key.endsWith(suffix)) {
-      previewContextCache.delete(key);
+  for (const entries of [previewContextCache, previewContextInFlight]) {
+    for (const key of entries.keys()) {
+      if (key.endsWith(suffix)) entries.delete(key);
     }
   }
 }
+
+// A removed or demoted member must lose the proxy at once, not at the end of the
+// 5-minute TTL. `invalidateIamCacheForUser` (called on every membership and role
+// change) reaches this cache through the same registry the IAM memos use.
+registerPrincipalScopedMemo({
+  invalidateByPrefix: (prefix) => invalidatePreviewCacheForUser(prefix.slice(0, -1)),
+});

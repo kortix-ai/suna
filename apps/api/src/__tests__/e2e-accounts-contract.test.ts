@@ -254,8 +254,14 @@ function upsertInvite(values: any, set?: Record<string, unknown>) {
 }
 
 // The read models project from THIS suite's member rows — see mockIamReadModels.
+// `roleReads` counts the projections: on `GET /v1/accounts` the only caller is
+// `accountRolesForUser`, so it is the number of role reads that request made.
+let roleReads = 0;
 mockIamReadModels({
-  members: () => memberRows.map((m) => ({ userId: m.userId, accountId: m.accountId, accountRole: m.accountRole })),
+  members: () => {
+    roleReads += 1;
+    return memberRows.map((m) => ({ userId: m.userId, accountId: m.accountId, accountRole: m.accountRole }));
+  },
 });
 
 // The ROLE half of membership is `assignRole` now, not a column on the row this
@@ -356,10 +362,9 @@ mock.module('../accounts/email', () => ({
   },
 }));
 
-mock.module('../shared/rate-limit', () => ({
+mock.module('../middleware/rate-limit', () => ({
   createInviteAcceptRateLimitMiddleware: () => async (_c: any, next: any) => next(),
   createProjectSecretWriteRateLimitMiddleware: () => async (_c: any, next: any) => next(),
-  consumeProjectSessionCreateBudget: () => ({ allowed: true, limit: 100, remaining: 99, resetMs: 1000 }),
 }));
 
 mock.module('../shared/resolve-account', () => ({
@@ -388,6 +393,8 @@ mock.module('../shared/resolve-account', () => ({
 
 mock.module('../shared/db', () => ({
   hasDatabase: () => true,
+  // accounts/seat-lock.ts (#9272) runs the invite accept in a transaction.
+  withDbTransaction: <T>(fn: () => Promise<T>) => fn(),
   db: {
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
@@ -1072,6 +1079,16 @@ describe('accounts API contract', () => {
     expect(accountRows).toHaveLength(accountCountBefore);
     expect(memberRows.filter((m) => m.userId === OWNER_ID)).toHaveLength(2);
     expect(accountRows.some((a) => a.accountId === OWNER_ID)).toBe(false);
+  });
+
+  // The pre-claim read only decides the bootstrap, so it reads no roles. The
+  // list used to read memberships AND roles twice on every call.
+  test('GET /v1/accounts reads the caller roles once per call', async () => {
+    roleReads = 0;
+    const res = await createApp().request('/v1/accounts');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toHaveLength(2);
+    expect(roleReads).toBe(1);
   });
 
   // GET /v1/accounts/me (tokens.ts) had the identical claim-before-check

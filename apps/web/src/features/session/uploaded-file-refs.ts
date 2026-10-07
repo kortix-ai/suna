@@ -3,7 +3,7 @@ import {
   promptFileReferenceXml,
   sanitizePromptUploadFilename,
 } from '@kortix/shared';
-import type { SessionPromptPart } from '@kortix/sdk';
+import { isSessionAttachmentRef, type SessionPromptPart } from '@kortix/sdk';
 import { attachmentMime } from '@/features/session/attachment-mime';
 import type { SentAttachment } from '@/features/session/sent-attachment-previews';
 import type { AttachedFile } from '@/features/session/session-chat-input';
@@ -65,6 +65,8 @@ export function optimisticUploadedFileRef(file: AttachedFile): UploadedFileRef {
     path: file.filename,
     mime: file.mime,
     filename: file.filename,
+    // A resent saved copy (the inline editor): the tile draws that copy at once.
+    ...(isSessionAttachmentRef(file.url) ? { attachment: file.url } : {}),
   };
 }
 
@@ -84,7 +86,8 @@ export function sentAttachmentsOf(files: readonly AttachedFile[]): SentAttachmen
   return files.map((file) => {
     const ref = optimisticUploadedFileRef(file);
     return {
-      ...(ref.attachment ? { id: ref.attachment } : {}),
+      // An id is an SDK upload id only, never a saved-copy ref.
+      ...(ref.attachment && !isSessionAttachmentRef(ref.attachment) ? { id: ref.attachment } : {}),
       filename: ref.filename,
       mime: ref.mime,
     };

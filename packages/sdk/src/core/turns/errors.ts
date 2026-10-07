@@ -524,7 +524,11 @@ export function extractGatewayErrorDetails(raw: unknown): GatewayErrorDetails | 
   const record = raw as Record<string, unknown>;
 
   const direct = gatewayFieldsFrom(record);
-  if (direct) return direct;
+  // A runtime error `{ name, data, code }` is not the gateway body: its `code`
+  // is the daemon's own class (`rate_limit`), and the envelope, when there is
+  // one, sits in `data`. That outer `code` is the answer only when it does not.
+  const runtimeError = typeof record.name === 'string' && typeof record.data === 'object';
+  if (direct && !runtimeError) return direct;
 
   const errorField = record.error;
   if (errorField && typeof errorField === 'object' && !Array.isArray(errorField)) {
@@ -557,5 +561,5 @@ export function extractGatewayErrorDetails(raw: unknown): GatewayErrorDetails | 
     }
   }
 
-  return undefined;
+  return direct;
 }
