@@ -349,7 +349,7 @@ export function InstantSessionShell({
                     deferPreview
                     sessionId={sessionId}
                     busy={firstPromptRow?.state !== 'failed'}
-                    leadingStatus={
+                    deliveryStatus={
                       firstPromptRow?.state === 'failed' ? (
                         <QueuedPromptFailure
                           lastError={firstPromptRow.last_error}
@@ -378,7 +378,7 @@ export function InstantSessionShell({
                       deferPreview
                       busy={false}
                       className={QUEUED_BUBBLE_OPACITY_CLASS}
-                      leadingStatus={
+                      deliveryStatus={
                         entry.prompt?.state === 'failed' ? (
                           <QueuedPromptFailure
                             lastError={entry.prompt.last_error}

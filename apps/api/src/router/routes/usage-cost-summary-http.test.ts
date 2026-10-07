@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import * as realAccess from '../../projects/lib/access';
+import * as realAuthorize from '../../iam/authorize';
 
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000001';
 const PROJECT_ID = '00000000-0000-4000-a000-000000000002';
@@ -59,6 +60,15 @@ mock.module('../../middleware/auth', () => ({
 
 mock.module('../../middleware/resolve-account', () => ({
   resolveScopedAccountId: async (c: TestContext) => c.req.query('account_id') || ACCOUNT_ID,
+}));
+
+// #9272: account-wide usage reads require `billing.read`. Record the check.
+const authorizedActions: string[] = [];
+mock.module('../../iam/authorize', () => ({
+  ...realAuthorize,
+  assertAuthorized: async (_actor: unknown, action: string) => {
+    authorizedActions.push(action);
+  },
 }));
 
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
@@ -146,6 +156,8 @@ describe('GET /v1/usage/cost-summary', () => {
     );
 
     expect(response.status).toBe(200);
+    // An account-wide read needs billing.read (#9272).
+    expect(authorizedActions).toContain('billing.read');
     expect(summaryInput?.accountId).toBe(ACCOUNT_ID);
     expect(summaryInput?.projectId).toBeUndefined();
     expect(summaryInput?.sessionId).toBeUndefined();

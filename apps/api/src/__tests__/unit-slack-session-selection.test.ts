@@ -372,6 +372,41 @@ test('an unlabelled follow-up keeps the bare ids', async () => {
   expect(prompt).toContain('New message from U0TEST1 in Slack channel C0TEST1, thread 300.3:');
 });
 
+// A Teams follow-up whose image no model in reach can read says so in the
+// prompt (teams/session.ts, 2026-09-19: the agent hunted for ImageMagick and
+// tesseract instead). A Slack follow-up said nothing.
+const imageEvent = {
+  ...event,
+  files: [{ id: 'F0TEST1', name: 'chart.png', mimetype: 'image/png', filetype: 'png', size: 2048, url_private_download: 'https://files.slack.com/files-pri/T0TEST1-F0TEST1/download/chart.png' }],
+};
+
+test('a follow-up image no model can read carries the no-vision note', async () => {
+  const { renderFollowUpPrompt, slackFollowUpModel } = await import('../channels/slack/session');
+  const plan = await slackFollowUpModel({
+    project: { projectId: 'proj-1', accountId: 'acct-1', metadata: {} },
+    userId: 'user-1',
+    sessionId: 'sess-1',
+    event: imageEvent,
+    session: { createdBy: 'user-1', metadata: {}, agentName: null },
+  });
+  expect(plan).toEqual({ model: null, imagesUnavailable: true });
+  const prompt = renderFollowUpPrompt(envelope, imageEvent, undefined, plan.imagesUnavailable);
+  expect(prompt).toContain('no image-capable model is available in this project');
+});
+
+test('a follow-up with no image carries no no-vision note', async () => {
+  const { renderFollowUpPrompt, slackFollowUpModel } = await import('../channels/slack/session');
+  const plan = await slackFollowUpModel({
+    project: { projectId: 'proj-1', accountId: 'acct-1', metadata: {} },
+    userId: 'user-1',
+    sessionId: 'sess-1',
+    event,
+    session: { createdBy: 'user-1', metadata: {}, agentName: null },
+  });
+  expect(plan.imagesUnavailable).toBe(false);
+  expect(renderFollowUpPrompt(envelope, event, undefined, plan.imagesUnavailable)).not.toContain('image-capable');
+});
+
 // A non-agent failure still renders honest, specific copy (not the picker).
 // The thread-create claim lives 5 minutes. A failed start kept it, so the
 // re-send the picker asks for ("Pick a current agent, then send your message
