@@ -347,3 +347,63 @@ flow(
     }
   },
 );
+
+flow(
+  "FILE-12",
+  { domain: "files", routes: ["GET /v1/projects/:projectId/files/raw"] },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    const tree = await ctx.client
+      .as(ctx.P.OWNER)
+      .get("/v1/projects/:projectId/files", { params: { projectId: p.id } });
+    const entries = tree.json<Array<{ path: string; type?: string }>>() ?? [];
+    const firstFile = entries.find((e) => e && e.type !== "tree" && e.type !== "dir" && e.path);
+
+    await ctx.step("absent path param → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/files/raw", { params: { projectId: p.id } });
+      r.status(400);
+    });
+    if (firstFile) {
+      await ctx.step("known file path → 200 whose bytes decode to the content read", async () => {
+        const raw = await ctx.client
+          .as(ctx.P.OWNER)
+          .get("/v1/projects/:projectId/files/raw", {
+            params: { projectId: p.id },
+            query: { path: firstFile.path },
+          });
+        raw.status(200);
+        const text = await ctx.client
+          .as(ctx.P.OWNER)
+          .get("/v1/projects/:projectId/files/content", {
+            params: { projectId: p.id },
+            query: { path: firstFile.path },
+          });
+        text.status(200);
+        // The byte route and the string route answer the same text file.
+        if (raw.text() !== text.json<{ content: string }>().content) {
+          throw new Error("raw bytes do not match the content read");
+        }
+      });
+    }
+    await ctx.step("a missing path → 404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/files/raw", {
+          params: { projectId: p.id },
+          query: { path: "ke2e-no-such-file.bin" },
+        });
+      r.status(404);
+    });
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/projects/:projectId/files/raw", {
+          params: { projectId: p.id },
+          query: { path: "README.md" },
+        });
+      r.status(401);
+    });
+  },
+);

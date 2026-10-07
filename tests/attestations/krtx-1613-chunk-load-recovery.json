@@ -1,0 +1,20 @@
+{
+  "source_hash": "f05e9eaa8b22a3b872a6552adde10a0dc5c656c52aba955c1629d58928fea3af",
+  "diff_files": [
+    "apps/web/src/app/[locale]/error.tsx",
+    "apps/web/src/app/global-error.tsx",
+    "apps/web/src/components/common/route-error.tsx",
+    "apps/web/src/lib/chunk-load-recovery-boundaries.test.tsx",
+    "apps/web/src/lib/chunk-load-recovery.test.ts",
+    "apps/web/src/lib/chunk-load-recovery.ts"
+  ],
+  "diff_hash": "5bb7ae95f1c04ccd09bbb7d21ad67f4bf2b6432acfcbdd68f0c09b0c16b5d817",
+  "head": "3e9b23ee3149e0c8db7bb679fe0b5e146b037a34",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-06T12:05:19.705Z"
+}
