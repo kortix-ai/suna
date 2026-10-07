@@ -1,6 +1,4 @@
 import { getStripe } from '../../shared/stripe';
-import { db } from '../../shared/db';
-import { eq } from 'drizzle-orm';
 import {
   getCreditAccount,
   updateCreditAccount,

@@ -5,7 +5,6 @@ import {
 } from '../../connectors/db-deps';
 import { requestMemo, runWithContext } from '../../lib/request-context';
 import {
-  type ValidatedSessionConnectorBinding,
   canonicalConnectorAlias,
   connectorBindingPayloadConflicts,
   invalidateSessionConnectorLookup,

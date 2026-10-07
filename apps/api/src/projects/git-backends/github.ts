@@ -1,5 +1,4 @@
 import {
-  type GitBackend,
   resolveGitBackend,
 } from '../../platform/services/managed-git-backend';
 import {

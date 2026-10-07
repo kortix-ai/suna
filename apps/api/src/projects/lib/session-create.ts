@@ -30,7 +30,6 @@ import {
   toOpencodeModelRef,
 } from '../../llm-gateway/resolution/effective';
 
-import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
 import { selectProvider } from '../../platform/services/provider-balancer';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
@@ -96,7 +95,7 @@ import {
   resolveProjectSnapshotPinForSession,
 } from '../../git-proxy/project-snapshot';
 
-import { buildSessionSandboxEnvVars, deriveKortixApiBase } from './session-sandbox-env-build';
+import { buildSessionSandboxEnvVars } from './session-sandbox-env-build';
 import { sandboxCallbackUnreachableReason, sandboxCallbackDeadTunnelReason } from './session-callback-probe';
 /** Every status a failed create answers with. Routes that create a session
  *  declare these, so the published spec lists them. */

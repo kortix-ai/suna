@@ -23,7 +23,6 @@ import { config } from '../config';
 import { ObjectStore, type ObjectBody, type PutOutcome, resolvePresignTarget } from '../object-store/s3';
 
 export { resolvePresignTarget };
-export type { PutOutcome };
 
 export const PROJECT_SNAPSHOT_FORMAT = 'project-snapshot-v2';
 export const PROJECT_SNAPSHOT_MANIFEST_NAME = 'manifest.json';

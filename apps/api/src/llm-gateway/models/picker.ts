@@ -15,8 +15,7 @@ import {
 // catalog (wrong `anthropic/` prefix, dashed vs dotted versions, models that
 // aren't served), so every pick risked a gateway 404 ("model isn't available").
 
-export type { PickerModel } from './picker-catalog';
-export { labelForModelRef, providerFlagship } from './picker-catalog';
+export { labelForModelRef } from './picker-catalog';
 
 /**
  * The picker's model list for a project: managed models (unless the account is

@@ -87,7 +87,7 @@ export function isFullyWithheld(strategy: SecretStrategy): boolean {
 import type { SecretEgressPolicy, SecretEgressRule, SecretInjectionSlot } from '@kortix/db';
 import type { SecretConsumer } from '@kortix/api-contract';
 
-export type { SecretConsumer, SecretEgressPolicy, SecretEgressRule, SecretInjectionSlot };
+export type { SecretConsumer, SecretEgressPolicy };
 
 export type EgressPolicyParse =
   { ok: true; policy: SecretEgressPolicy } | { ok: false; error: string };

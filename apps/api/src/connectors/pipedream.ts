@@ -22,9 +22,6 @@ import {
 import { pageOf, rankApps, type CatalogApp } from './pipedream-search';
 import type { PipedreamActionLike } from './types';
 
-export { isCatalogApp } from './pipedream-catalog';
-export type { CatalogCategory } from './pipedream-index';
-
 const PD_BASE = 'https://api.pipedream.com';
 
 /**

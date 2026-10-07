@@ -28,8 +28,7 @@ import type {
   ResolvedEmailMessage,
 } from './types';
 
-export type { EmailAddress, EmailMessage, EmailProvider, EmailSendResult } from './types';
-export { closeSmtpTransports } from './providers/smtp';
+export type { EmailSendResult } from './types';
 
 const FALLBACK_FROM: EmailAddress = { email: 'noreply@kortix.com', name: 'Kortix' };
 

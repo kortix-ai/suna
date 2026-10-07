@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
-import { GitOperationError, isGitPathNotFoundError, runGit as realRunGit } from './mirror';
+import { GitOperationError, isGitPathNotFoundError } from './mirror';
 import { isRepoFileNotFoundError, readRepoFileBytes, RepoFileNotFoundError } from './files';
 
 // `readRepoFile` imports `runGit` + `refreshMirror` from `./mirror`. We mock the

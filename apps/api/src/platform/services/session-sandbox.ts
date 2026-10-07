@@ -61,7 +61,6 @@ import { ProvisionTimeline } from './provision-timeline';
 import { recordProviderEvent } from './provider-events';
 import type { GitBackedProject } from '../../projects/git';
 import { startComputeSession } from '../../billing/services/compute-metering';
-import { readManifest } from '../../projects/triggers';
 import { resolveAgentGrant } from '../../projects/agents';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
@@ -730,7 +729,7 @@ async function createAttemptSandbox(
   image: EnsureSandboxImageResult,
   firstStage: ProvisioningStage,
 ): Promise<{ result: ProvisionResult; attempts: number } | null> {
-  const { opts, sandbox, providerCreateInput, tl } = ctx;
+  const { opts, sandbox, providerCreateInput } = ctx;
   const { providerName, provider } = state;
   // FIX-A: honor the activated pinned template id (provider-matched) so the
   // running sandbox is the EXACT warm image activation chose — behind the

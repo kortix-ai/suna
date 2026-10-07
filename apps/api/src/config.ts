@@ -50,19 +50,6 @@ const optInt = (def: number) =>
       return Number.isNaN(n) ? def : n;
     });
 
-/** Optional decimal with a default — money, unlike optInt's counts. A
- *  non-numeric or negative value falls back to the default rather than
- *  silently becoming a cap of NaN (which compares false against everything and
- *  would disable the limit it was set to enforce). */
-const optNum = (def: number) =>
-  z
-    .string()
-    .optional()
-    .default(String(def))
-    .transform((v) => {
-      const n = Number.parseFloat(v);
-      return Number.isFinite(n) && n >= 0 ? n : def;
-    });
 
 /** Optional boolean. optBoolFalse accepts the common truthy spellings
  * (case-insensitive) so a "1" / "yes" / "on" from a k8s env or secret bundle

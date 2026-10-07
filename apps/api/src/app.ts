@@ -285,7 +285,6 @@ app.route('/v1/admin', adminApp);
 app.route('/v1/oauth', oauthApp);
 app.route('/v1/connectors/oauth2', nativeOAuth2CallbackApp);
 
-import { warmPipedreamCatalog } from './connectors/pipedream';
 // TUNNEL_ENABLED=false: the relay never starts, so every tunnel route answers
 // 503. The web hides its computer surfaces when the machine list fails.
 app.use('/v1/tunnel/*', async (c, next) => {

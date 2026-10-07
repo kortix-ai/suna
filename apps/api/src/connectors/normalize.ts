@@ -492,7 +492,6 @@ function boundedPlainSchema(node: unknown): Record<string, unknown> | null {
 
 /* ─── dispatch ───────────────────────────────────────────────────────────── */
 
-import type { ConnectorProvider } from '../projects/connectors';
 import { channelCatalog } from './channels';
 
 /** Source material a connector needs normalized, by provider. */

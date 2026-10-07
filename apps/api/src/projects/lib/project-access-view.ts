@@ -1,4 +1,3 @@
-import { db } from '../../shared/db';
 import { accountMemberJoinRows } from '../../iam/membership-read';
 import { accountGroupNames, groupMemberRows } from '../../iam/group-read';
 import { isAccountManager, roleAllows, type AccountRole, type ProjectRole } from '../access';

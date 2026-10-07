@@ -14,7 +14,6 @@ import {
   SLACK_CHANNEL_CONNECTOR_SLUG,
   TEAMS_CHANNEL_CONNECTOR_SLUG,
   channelApiBase,
-  channelAuth,
   channelCatalog,
   channelDefaultSlug,
 } from '../connectors/channels';

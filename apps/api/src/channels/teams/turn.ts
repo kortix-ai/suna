@@ -681,8 +681,6 @@ export async function sweepStaleTeamsTurns(): Promise<void> {
   }
 }
 
-export { startTeamsTurnGc, stopTeamsTurnGc } from '../../workers/teams-turn-gc-worker';
-
 /**
  * Does the runtime's turn ledger still hold a live turn for this session?
  * Unknown counts as no: a sweep that cannot tell must still clear a card

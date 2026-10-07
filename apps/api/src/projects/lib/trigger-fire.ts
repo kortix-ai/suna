@@ -326,7 +326,7 @@ export async function fireGitTrigger(input: {
   reason?: string;
   deduped?: boolean;
 }> {
-  const { spec, project, payload, renderedPrompt, source } = input;
+  const { spec, project, payload } = input;
   // The session's owning identity (created_by / billing / audit). Automated runs
   // never impersonate a picked human — the agent's declared scope governs access.
   // See resolveTriggerActor().

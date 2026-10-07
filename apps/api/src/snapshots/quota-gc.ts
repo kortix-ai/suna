@@ -22,7 +22,7 @@
 
 import { appDeployments, sandboxTemplates } from '@kortix/db';
 import { type BudgetReportState, decideBudgetReport } from './budget-report-policy';
-import { eq, isNotNull, sql } from 'drizzle-orm';
+import { eq, isNotNull } from 'drizzle-orm';
 import {
   deleteDaytonaSnapshotById,
   isDaytonaConfigured,

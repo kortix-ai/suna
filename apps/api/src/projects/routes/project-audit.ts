@@ -172,18 +172,6 @@ function remainingIngestBudgetMs(c: unknown): number | null {
   return startedAt + deadline - Date.now();
 }
 
-/** The PostgreSQL SQLSTATE behind a contention error, following `cause`. */
-function auditErrorSqlState(error: unknown): string | null {
-  let current: unknown = error;
-  for (let depth = 0; current && typeof current === 'object' && depth < 5; depth += 1) {
-    const code = (current as { code?: unknown }).code;
-    if (typeof code === 'string') return code;
-    const cause = (current as { cause?: unknown }).cause;
-    if (cause === current) break;
-    current = cause;
-  }
-  return null;
-}
 
 /** The live sandbox row bound to the ingesting sandbox token, joined to its session. */
 async function loadIngestSessionScope(input: { sandboxId: string; accountId: string; projectId: string }) {

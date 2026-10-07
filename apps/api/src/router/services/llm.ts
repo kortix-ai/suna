@@ -2,8 +2,6 @@ import { config, KORTIX_MARKUP } from '../../config';
 import { logger } from '../../lib/logger';
 import { OPENROUTER_APP_REFERER, OPENROUTER_APP_TITLE } from '../../openrouter-attribution';
 import {
-  getModel,
-  getAllModels,
   requireModelPricing,
   resolveOpenRouterId,
   type ModelConfig,

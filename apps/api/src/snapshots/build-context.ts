@@ -44,7 +44,6 @@ import { buildStarterFiles, DEFAULT_STARTER_TEMPLATE_ID } from '../projects/star
 import { assertCliArtifactAttested } from './cli-artifact-attestation';
 import { buildLayeredDockerfile } from './dockerfile-layer';
 import { stageOpencodeConfigTree } from './opencode-config-stage';
-import { stagingTarArgs, stagingTarEnv } from './staging-tar';
 
 const execFileAsyncBC = promisify(execFile);
 
@@ -189,27 +188,6 @@ async function stageManagedSkills(outDir: string): Promise<void> {
   }
 }
 
-async function assertRuntimeArtifactsCurrent(
-  agentPath: string,
-  cliPath: string,
-  attestationPath: string,
-): Promise<void> {
-  if (!process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH) {
-    const srcDir = resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/src');
-    if (await agentBinaryStale(agentPath, srcDir)) {
-      throw new Error(
-        `kortix-agent dist binary (${agentPath}) is older than its source ` +
-          `(${srcDir}) — run \`bun run build\` in apps/kortix-sandbox-agent-server ` +
-          `or the image will bake stale code under a fresh content hash`,
-      );
-    }
-  }
-  await assertCliArtifactAttested({
-    cliRoot: resolve(REPO_ROOT, 'apps/cli'),
-    binaryPath: cliPath,
-    attestationPath,
-  });
-}
 
 export async function stageMetaBuildContext(): Promise<StagedContext> {
   const agentPath = agentBinPath();
