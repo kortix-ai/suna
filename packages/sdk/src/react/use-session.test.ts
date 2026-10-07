@@ -77,6 +77,7 @@ import {
   sendReceiptId,
   sendStateOnError,
   sendStateOnStart,
+  sessionPromptFromParts,
   sessionStartStaleTime,
   shouldPollSessionStart,
   shouldRetrySessionStart,
@@ -1261,7 +1262,7 @@ describe('classifySendError — connector refusals', () => {
 // file read, anything below the hook's own actions) had to rebuild it. These
 // pin the resolution, including the part the raw field cannot be used for:
 // `runtime_url` is a RELATIVE path (`/p/<ext>/8000`, see
-// `apps/api/src/projects/routes/shared.ts:526`), never an absolute URL.
+// `apps/api/src/projects/session-open/index.ts:526`), never an absolute URL.
 
 describe('resolveSessionRuntimeUrl', () => {
   const sandbox = (externalId: string | null) =>
@@ -1320,6 +1321,51 @@ describe('resolveSessionRuntimeUrl', () => {
 // a store of its own and passed it on every call, so the ONE thing that must
 // not change is the payload for a caller that never sets a variant: the key
 // has to stay absent, not become `undefined` or `null`.
+
+describe('sessionPromptFromParts (W5 E4: sendParts goes through the prompt inbox)', () => {
+  const WIRE_ID = /^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
+
+  test('parts, picks and a server-placed wire id become one inbox prompt', () => {
+    const prompt = sessionPromptFromParts(
+      'ses_root',
+      [
+        { type: 'text', text: 'hello', id: 'prt_client' },
+        { type: 'file', mime: 'image/png', url: 'data:image/png;base64,AA==', filename: 'a.png' },
+        { type: 'agent', name: 'reviewer' },
+      ],
+      { model: { providerID: 'kortix', modelID: 'claude' }, agent: 'coder', variant: 'high', directory: '/workspace/app' },
+      undefined,
+      1_700_000_000_000,
+    );
+    expect(prompt).toEqual({
+      clientMessageId: prompt.messageId,
+      messageId: expect.stringMatching(WIRE_ID),
+      // The part id is the host's own correlation key; the inbox drops it.
+      parts: [
+        { type: 'text', text: 'hello' },
+        { type: 'file', mime: 'image/png', url: 'data:image/png;base64,AA==', filename: 'a.png' },
+        { type: 'agent', name: 'reviewer' },
+      ],
+      overrides: {
+        model: { providerID: 'kortix', modelID: 'claude' },
+        agent: 'coder',
+        variant: 'high',
+        directory: '/workspace/app',
+      },
+      remintOnDelivery: true,
+      clientSentAtMs: 1_700_000_000_000,
+    });
+  });
+
+  test('one clientMessageId keeps one wire id across retries; no picks sends no overrides', () => {
+    const first = sessionPromptFromParts('ses_root', [{ type: 'text', text: 'x' }], {}, 'queue-1');
+    const retry = sessionPromptFromParts('ses_root', [{ type: 'text', text: 'x' }], {}, 'queue-1');
+    expect(first.clientMessageId).toBe('queue-1');
+    expect(retry.messageId).toBe(first.messageId);
+    expect('overrides' in first).toBe(false);
+    expect(sessionPromptFromParts('ses_root', [{ type: 'text', text: 'x' }], {}).messageId).not.toBe(first.messageId);
+  });
+});
 
 describe('resolveSendOptions', () => {
   const none = { model: null, agent: null, variant: null };

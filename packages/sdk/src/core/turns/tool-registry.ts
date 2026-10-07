@@ -5,14 +5,15 @@
  * icon-free sibling for hosts that just need "what kind of tool is this" (e.g.
  * `classifyPart`'s `ToolView`, filtering/grouping steps by category).
  *
- * Canonical opencode built-in tool names (bash, read, write, edit, grep, glob,
- * webfetch, task, todowrite, question, patch, list, …) get a hand-picked
- * label. Kortix's plugin tool families (agent_*, session_*, task_*, trigger_*,
- * project_*, pty_*, and their `-`/`oc-` variants) are recognized by prefix so
- * new tools in an existing family are categorized correctly without a
- * registry update. Anything else falls back to a humanized version of the
- * raw name with category 'other'.
+ * Built-in tool names (bash, read, write, edit, grep, glob, webfetch, task,
+ * todowrite, question, patch, list, …) get a hand-picked label. The category
+ * comes from the tool's kind (`toolKind`), which also recognizes the plugin
+ * families (agent_*, session_*, task_*, trigger_*, project_*, pty_*) by
+ * prefix. Anything else falls back to a humanized version of the raw name
+ * with category 'other'.
  */
+
+import { type ToolKind, toolKind } from './tool-kind';
 
 export type ToolCategory = 'shell' | 'files' | 'search' | 'edit' | 'web' | 'task' | 'other';
 
@@ -21,70 +22,75 @@ export interface ToolInfoEntry {
   category: ToolCategory;
 }
 
-/** Registry keyed by the tool's normalized (underscore, no `oc_` prefix) name. */
-const TOOL_REGISTRY: Record<string, ToolInfoEntry> = {
-  // Shell / terminal
-  bash: { label: 'Shell', category: 'shell' },
-  pty_spawn: { label: 'Spawn Terminal', category: 'shell' },
-  pty_read: { label: 'Terminal Output', category: 'shell' },
-  pty_write: { label: 'Terminal Input', category: 'shell' },
-  pty_input: { label: 'Terminal Input', category: 'shell' },
-  pty_kill: { label: 'Kill Process', category: 'shell' },
-
-  // Read-only file access
-  read: { label: 'Read File', category: 'files' },
-  list: { label: 'List Directory', category: 'files' },
-  ls: { label: 'List Directory', category: 'files' },
-
-  // Mutating file operations
-  write: { label: 'Write File', category: 'edit' },
-  edit: { label: 'Edit File', category: 'edit' },
-  multiedit: { label: 'Edit File', category: 'edit' },
-  morph_edit: { label: 'Edit File', category: 'edit' },
-  apply_patch: { label: 'Apply Patch', category: 'edit' },
-  patch: { label: 'Apply Patch', category: 'edit' },
-
-  // Search
-  grep: { label: 'Search Code', category: 'search' },
-  glob: { label: 'Find Files', category: 'search' },
-  image_search: { label: 'Image Search', category: 'search' },
-  session_search: { label: 'Search Sessions', category: 'search' },
-
-  // Web
-  webfetch: { label: 'Fetch Page', category: 'web' },
-  scrape_webpage: { label: 'Scrape Page', category: 'web' },
-  websearch: { label: 'Web Search', category: 'web' },
-  web_search: { label: 'Web Search', category: 'web' },
-  image_gen: { label: 'Generate Image', category: 'web' },
-  video_gen: { label: 'Generate Video', category: 'web' },
-
-  // Task / agent orchestration + planning
-  task: { label: 'Delegate to Agent', category: 'task' },
-  todowrite: { label: 'Plan Tasks', category: 'task' },
-  todoread: { label: 'Read Plan', category: 'task' },
-  question: { label: 'Ask Question', category: 'task' },
-  presentation_gen: { label: 'Presentation', category: 'task' },
-  show: { label: 'Show Output', category: 'task' },
-  show_user: { label: 'Show Output', category: 'task' },
-
-  // DCP / context management
-  prune: { label: 'Prune Context', category: 'other' },
-  distill: { label: 'Distill Context', category: 'other' },
-  compress: { label: 'Compress Context', category: 'other' },
-  context_info: { label: 'Context Info', category: 'other' },
+/** Hand-picked labels, keyed by the tool's normalized (underscore, no `oc_` prefix) name. */
+const TOOL_LABEL: Record<string, string> = {
+  bash: 'Shell',
+  pty_spawn: 'Spawn Terminal',
+  pty_read: 'Terminal Output',
+  pty_write: 'Terminal Input',
+  pty_input: 'Terminal Input',
+  pty_kill: 'Kill Process',
+  read: 'Read File',
+  list: 'List Directory',
+  ls: 'List Directory',
+  write: 'Write File',
+  edit: 'Edit File',
+  multiedit: 'Edit File',
+  morph_edit: 'Edit File',
+  apply_patch: 'Apply Patch',
+  patch: 'Apply Patch',
+  grep: 'Search Code',
+  glob: 'Find Files',
+  image_search: 'Image Search',
+  session_search: 'Search Sessions',
+  webfetch: 'Fetch Page',
+  scrape_webpage: 'Scrape Page',
+  websearch: 'Web Search',
+  web_search: 'Web Search',
+  image_gen: 'Generate Image',
+  video_gen: 'Generate Video',
+  task: 'Delegate to Agent',
+  todowrite: 'Plan Tasks',
+  todoread: 'Read Plan',
+  question: 'Ask Question',
+  presentation_gen: 'Presentation',
+  show: 'Show Output',
+  show_user: 'Show Output',
+  prune: 'Prune Context',
+  distill: 'Distill Context',
+  compress: 'Compress Context',
+  context_info: 'Context Info',
 };
 
-/** Tool-name-family prefixes that should categorize even when the exact tool
- *  isn't in TOOL_REGISTRY (forward-compat for new tools in an existing
- *  family, e.g. a new `agent_*` or `trigger_*` tool). Checked in order. */
-const PREFIX_CATEGORIES: Array<{ prefix: string; category: ToolCategory }> = [
-  { prefix: 'pty_', category: 'shell' },
-  { prefix: 'agent_', category: 'task' },
-  { prefix: 'session_', category: 'task' },
-  { prefix: 'task_', category: 'task' },
-  { prefix: 'trigger_', category: 'task' },
-  { prefix: 'project_', category: 'task' },
-];
+/** The category of each tool kind (`toolKind`). */
+const CATEGORY_OF_KIND: Record<ToolKind, ToolCategory> = {
+  read: 'files',
+  list: 'files',
+  glob: 'search',
+  grep: 'search',
+  write: 'edit',
+  edit: 'edit',
+  apply_patch: 'edit',
+  bash: 'shell',
+  pty: 'shell',
+  web_search: 'web',
+  webfetch: 'web',
+  media: 'web',
+  show: 'task',
+  task: 'task',
+  delegate: 'task',
+  sessions: 'task',
+  todowrite: 'task',
+  question: 'task',
+  automations: 'task',
+  projects: 'task',
+  memory: 'other',
+  connectors: 'other',
+  skill: 'other',
+  context: 'other',
+  retired: 'other',
+  other: 'other',
+};
 
 function stripOcPrefix(name: string): string {
   return name.replace(/^oc[-_]/, '');
@@ -113,15 +119,8 @@ export function humanizeToolName(name: string): string {
  * 'other' (or a family category, if the name matches a known prefix).
  */
 export function toolInfo(name: string): ToolInfoEntry {
-  const normalized = normalizeToolName(name);
-  const known = TOOL_REGISTRY[normalized];
-  if (known) return known;
-
-  for (const { prefix, category } of PREFIX_CATEGORIES) {
-    if (normalized.startsWith(prefix)) {
-      return { label: humanizeToolName(name), category };
-    }
-  }
-
-  return { label: humanizeToolName(name), category: 'other' };
+  return {
+    label: TOOL_LABEL[normalizeToolName(name)] ?? humanizeToolName(name),
+    category: CATEGORY_OF_KIND[toolKind(name)],
+  };
 }

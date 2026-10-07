@@ -1,13 +1,14 @@
 {
   "name": "Kortix",
   "short_name": "Kortix",
-  "description": "Open-source AI Management System: your agents, skills, memory, and connectors in one repo you own. Any model. Self-host or cloud.",
+  "description": "Open-source AI Operating System: your agents, skills, memory, and connectors in one repo you own. Any model. Self-host or cloud.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#000000",
   "theme_color": "#000000",
   "orientation": "portrait-primary",
   "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
     { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
     { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
@@ -19,8 +20,8 @@
   "related_applications": [
     {
       "platform": "play",
-      "url": "https://play.google.com/store/apps/details?id=com.kortix.app",
-      "id": "com.kortix.app"
+      "url": "https://play.google.com/store/apps/details?id=com.kortix.application",
+      "id": "com.kortix.application"
     },
     {
       "platform": "itunes",

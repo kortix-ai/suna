@@ -19,7 +19,7 @@
  * `tools/conformance.test.ts`). The pure contracts stay real: `@kortix/sdk`,
  * `shared/registry`, `shared/tool-part`, `lib/session/activity`,
  * `lib/session/disclosure-store`, `lib/session/user-message`,
- * `lib/opencode/diff-utils`, `stores/tab-store`. Mocks are file-scoped in
+ * `lib/session/diff-utils`, `stores/tab-store`. Mocks are file-scoped in
  * Bun 1.3; the graph here is only reachable from this file.
  */
 
@@ -57,9 +57,8 @@ const PALETTE = { mutedForeground: '#71717a' };
 mock.module('react-native', () => ({ View }));
 mock.module('nativewind', () => ({ useColorScheme: () => ({ colorScheme: 'light' }) }));
 mock.module('@/components/ui/text', () => ({ Text }));
-mock.module('@/lib/opencode/sync-store', () => ({
-  useSyncStore: (selector: (store: { permissions: Record<string, unknown> }) => unknown) =>
-    selector({ permissions: {} }),
+mock.module('@/lib/session/session-store', () => ({
+  usePendingPermissions: () => [],
 }));
 mock.module('./shared/infrastructure', () => ({
   ToolRunningContext: React.createContext(false),
@@ -67,6 +66,7 @@ mock.module('./shared/infrastructure', () => ({
   StalePendingContext: React.createContext(false),
   ToolDurationContext: React.createContext<number | undefined>(undefined),
   TurnLiveContext: React.createContext(false),
+  ToolMotionContext: React.createContext(true),
   BasicTool: ({ trigger, children }: { trigger?: unknown; children?: React.ReactNode }) => (
     <view>
       {triggerText(trigger)}
@@ -133,6 +133,14 @@ const RegisteredBashRow = ({ part }: { part: { callID: string } }) => (
   <text>{`REGISTERED-BASH-ROW:${part.callID}`}</text>
 );
 
+/** Prints what the ambient contexts hand to a row: may it animate, and is its turn live. */
+const ProbeRow = () => {
+  const infra = require('./shared/infrastructure');
+  const motion = React.useContext(infra.ToolMotionContext);
+  const live = React.useContext(infra.TurnLiveContext);
+  return <text>{`PROBE motion:${motion} live:${live}`}</text>;
+};
+
 let ToolPartRenderer: typeof import('./tool-part-renderer').ToolPartRenderer;
 let registry: typeof import('./shared/registry').ToolRegistry;
 
@@ -140,6 +148,7 @@ beforeAll(async () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   ({ ToolRegistry: registry } = await import('./shared/registry'));
   registry.register('bash', RegisteredBashRow);
+  registry.register('probe', ProbeRow);
   ({ ToolPartRenderer } = await import('./tool-part-renderer'));
 });
 
@@ -225,5 +234,52 @@ describe('ToolPartRenderer dispatch', () => {
       await new Promise((resolve) => setTimeout(resolve, 60));
     });
     expect(texts()).toContain('Waiting for your permission');
+  });
+});
+
+describe('ToolPartRenderer motion gate', () => {
+  const probe = (status: string, input: Record<string, unknown> = { q: 1 }) => ({
+    type: 'tool',
+    id: 'part-p',
+    callID: 'call-p',
+    tool: 'probe',
+    state: { status, input },
+  });
+  const probeText = () => texts().find((t) => t.startsWith('PROBE'));
+
+  test('a running call in a finished turn may not animate', async () => {
+    await renderPart(probe('running'), { turnLive: false });
+    expect(probeText()).toBe('PROBE motion:false live:false');
+  });
+
+  test('a pending call that has input, in a finished turn, may not animate', async () => {
+    await renderPart(probe('pending'), { turnLive: false });
+    expect(probeText()).toBe('PROBE motion:false live:false');
+  });
+
+  test('a running call in a live turn animates', async () => {
+    await renderPart(probe('running'), { turnLive: true });
+    expect(probeText()).toBe('PROBE motion:true live:true');
+  });
+
+  test('a completed call in a finished turn keeps motion on (its own loaders, such as an image probe, still run)', async () => {
+    await renderPart(probe('completed'), { turnLive: false });
+    expect(probeText()).toBe('PROBE motion:true live:false');
+  });
+
+  test('a nested renderer with no turnLive prop gets the liveness its parent resolved from a prop', async () => {
+    const childProbe = { ...probe('running'), id: 'child', callID: 'child-call' };
+    const Nest = () => {
+      const Renderer = ToolPartRenderer as unknown as React.ComponentType<Record<string, unknown>>;
+      return <Renderer part={childProbe} />;
+    };
+    registry.register('nest', Nest);
+    const nest = { ...probe('running'), id: 'nest', callID: 'nest-call', tool: 'nest' };
+
+    await renderPart(nest, { turnLive: true });
+    expect(probeText()).toBe('PROBE motion:true live:true');
+
+    await renderPart(nest, { turnLive: false });
+    expect(probeText()).toBe('PROBE motion:false live:false');
   });
 });

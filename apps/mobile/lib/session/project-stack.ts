@@ -4,10 +4,11 @@
  *
  * The stack is `[index]`, `[index, X]`, or `[index, X, page, …]`: X is a
  * covering route (view, sessions, files, account), and `page` is a sub-page
- * pushed from the page under it (Settings → project Settings → Schedules).
- * A drawer destination replaces a covering route instead of pushing over it,
- * and drops any sub-pages, so the drawer never deepens the stack. Only a
- * sub-page open deepens it, and back pops exactly one level.
+ * pushed from the page under it (Settings → project Settings → Schedules, or
+ * the thread → Files from the session ··· sheet). A drawer destination
+ * replaces a covering route instead of pushing over it, and drops any
+ * sub-pages, so the drawer never deepens the stack. Only a sub-page open
+ * deepens it, and back pops exactly one level.
  *
  * Pure: no React, React Native, or expo imports (unit-tested under bun test).
  */
@@ -31,9 +32,16 @@ export const PROJECT_PAGE_ROUTE = 'page';
 
 /**
  * The pages that open as sub-pages: project Settings (from Settings) and its
- * Customize rows, Schedules, Secrets and Members. Tab-store page ids.
+ * Customize rows, Schedules, Secrets and Members; and the project's Files,
+ * from the session ··· sheet over the thread (KRTX-1636). Tab-store page ids.
  */
-export const SUB_PAGE_IDS = ['page:settings', 'page:schedules', 'page:secrets-nav', 'page:members'] as const;
+export const SUB_PAGE_IDS = [
+  'page:settings',
+  'page:schedules',
+  'page:secrets-nav',
+  'page:members',
+  'page:files-nav',
+] as const;
 export type SubPageId = (typeof SUB_PAGE_IDS)[number];
 
 /** True for a page id that opens as a sub-page (the `page` route's param). */
@@ -117,8 +125,42 @@ export function subPageBackMove(stack: readonly string[]): 'pop' | 'replace-home
 }
 
 /**
- * The store left the home state (a drawer session row, the Review row, a
- * notification) while a sub-page is on top. The stack ends as
+ * What the store has open, as one comparable value: null on project home,
+ * else the open page, thread, or connecting session. A sub-page records it
+ * when it mounts (`subPageShouldLeave`).
+ */
+export function projectViewKey(input: {
+  isHome: boolean;
+  activePageId: string | null;
+  activeSessionId: string | null;
+  connectingSessionId: string | null;
+}): string | null {
+  if (input.isHome) return null;
+  if (input.activePageId) return `page:${input.activePageId}`;
+  if (input.activeSessionId) return `session:${input.activeSessionId}`;
+  return `connecting:${input.connectingSessionId ?? ''}`;
+}
+
+/**
+ * A focused sub-page leaves for the view when the store's open target
+ * (`projectViewKey`) changed after the sub-page was pushed:
+ * - pushed from home (Settings from Account), the store leaves home → leave
+ * - pushed over a thread (Files), the same thread still open → stay
+ * - pushed over a thread, another session opens (a notification) → leave;
+ *   the view under it swaps its content
+ * - pushed over a thread, the store returns home (the session was deleted) →
+ *   leave; the view then removes itself and the stack ends on home
+ */
+export function subPageShouldLeave(input: {
+  viewKey: string | null;
+  viewKeyAtMount: string | null;
+}): boolean {
+  return input.viewKey !== input.viewKeyAtMount;
+}
+
+/**
+ * The store's open target changed (a drawer session row, the Review row, a
+ * notification) while a sub-page is on top (`subPageShouldLeave`). The stack ends as
  * `[index, view]`:
  * - a view under the sub-pages → `pop-to-view`: that view swaps its content.
  *   Never replace a view with a new view: the old view's cleanup would close
@@ -192,7 +234,7 @@ export function pageBackMove(state: {
  */
 export function shownProjectSessionId(state: {
   activePageId: string | null;
-  /** The open thread's project session id (not the OpenCode id). */
+  /** The open thread's project session id (not the runtime session id). */
   threadSessionId: string | null;
   connectingSessionId: string | null;
 }): string | null {
@@ -213,11 +255,11 @@ export function drawerSessionRowMove(
 }
 
 /**
- * A drawer row that targets one OpenCode session of a project session: a
+ * A drawer row that targets one runtime session of a project session: a
  * session row (its root pin) or a sub-session row under it (the child's id).
  *
  * - `open`: another project session — the connect path (`handleOpenProjectSession`).
- * - `focus`: the shown thread, another OpenCode session of it — only the tab
+ * - `focus`: the shown thread, another runtime session of it — only the tab
  *   store's active id changes (`navigateToSession`), the same sandbox stays,
  *   no reconnect. The task tool's View uses the same call.
  * - `queue`: the shown session is still connecting (no thread yet) — the
@@ -230,32 +272,32 @@ export function drawerSessionRowMove(
  */
 export function drawerThreadMove(state: {
   rowSessionId: string;
-  targetOpenCodeId: string | null;
+  targetRuntimeId: string | null;
   shownSessionId: string | null;
-  /** The thread's OpenCode id (tab store `activeSessionId`); null while connecting. */
-  activeOpenCodeId: string | null;
+  /** The thread's runtime session id (tab store `activeSessionId`); null while connecting. */
+  activeRuntimeId: string | null;
 }): 'open' | 'focus' | 'queue' | 'close' {
   if (drawerSessionRowMove(state.rowSessionId, state.shownSessionId) === 'open') return 'open';
-  if (!state.targetOpenCodeId) return 'close';
-  if (!state.activeOpenCodeId) return 'queue';
-  return state.targetOpenCodeId !== state.activeOpenCodeId ? 'focus' : 'close';
+  if (!state.targetRuntimeId) return 'close';
+  if (!state.activeRuntimeId) return 'queue';
+  return state.targetRuntimeId !== state.activeRuntimeId ? 'focus' : 'close';
 }
 
-/** An OpenCode session to show once a project session's thread connects. */
+/** A runtime session to show once a project session's thread connects. */
 export interface PendingThreadFocus {
   sessionId: string;
-  openCodeId: string;
+  runtimeId: string;
 }
 
 /**
- * Which OpenCode session a just-connected thread shows: the pending focus
+ * Which runtime session a just-connected thread shows: the pending focus
  * when it belongs to this project session (a sub-session row tapped while
  * its parent was not open, or while it was connecting), else the root.
  */
 export function threadOpenTarget(
   pending: PendingThreadFocus | null,
   sessionId: string,
-  rootOpenCodeId: string
+  rootRuntimeId: string
 ): string {
-  return pending?.sessionId === sessionId ? pending.openCodeId : rootOpenCodeId;
+  return pending?.sessionId === sessionId ? pending.runtimeId : rootRuntimeId;
 }

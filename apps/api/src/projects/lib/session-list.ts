@@ -41,7 +41,7 @@ import { db } from '../../shared/db';
 import { hasAccountSessionOversight } from '../../iam/session-oversight';
 
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { and, desc, eq, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { SessionStartedByFilter } from './session-initiator';
 import { resolveSessionOwnerIdentities, viewerManagerStanding } from './access';
@@ -80,8 +80,6 @@ export interface SessionListFilter {
   q?: string | null;
   /** The session carries every one of these labels (exact match). */
   labels?: string[] | null;
-  /** 'me' = conversations the viewer was asked into (`metadata.participants`). */
-  participant?: 'me' | null;
 }
 
 type SessionTable = typeof projectSessions;
@@ -143,9 +141,6 @@ function sessionListFilterSql(filter: SessionListFilter, viewerId: string): SQL 
   if (filter.parent === 'root') conditions.push(isNull(t.parentSessionId));
   else if (filter.parent) conditions.push(eq(t.parentSessionId, filter.parent));
   if (filter.startedBy) conditions.push(startedBySql(filter.startedBy, viewerId));
-  if (filter.participant === 'me') {
-    conditions.push(sql`${t.metadata}->'participants' @> ${JSON.stringify([viewerId])}::jsonb`);
-  }
   if (filter.labels?.length) {
     const has = (table: SessionTable) => sql`${table.labels} @> ${JSON.stringify(filter.labels)}::jsonb`;
     conditions.push(
@@ -213,246 +208,102 @@ export interface ProjectSessionInventory {
   initiatorNames: Map<string, string>;
 }
 
-/**
- * Read one project's session inventory for one viewer.
- *
- * `probeManageCapability` is injected rather than imported so this module stays
- * free of the request context (and unit-testable without one) — the route
- * passes the same `project.members.manage` probe the lifecycle routes use.
- */
-export async function loadProjectSessionInventory(input: {
-  projectId: string;
-  accountId: string;
-  userId: string;
-  effectiveRole: ProjectRole;
-  scope: ProjectSessionListScope;
-  /** `callerKortixSessionId(c)` — null for a Supabase browser JWT. */
-  boundCredentialSessionId: string | null;
-  /** The caller is an agent session under the `agent_principal` model (spec §2). */
-  agentPrincipal?: boolean;
-  probeManageCapability: () => Promise<boolean>;
-  /** Max VISIBLE items to return. Clamped to `SESSION_PAGE_MAX_LIMIT`. */
-  limit?: number;
-  /** Opaque cursor from a previous page's `nextCursor`. */
-  cursor?: string | null;
-  /** Use conversation activity for projects whose imported sessions retain historical dates. */
-  orderByActivity?: boolean;
-  filter?: SessionListFilter;
-}): Promise<ProjectSessionInventory> {
-  const filter = input.filter ?? {};
-  const filterSql = sessionListFilterSql(filter, input.userId);
-  // A cursor is sealed to (project, viewer): it carries the scan position, which
-  // can name a row this viewer may not see. See `encodeSessionCursor`.
-  const cursorScope: SessionCursorScope = {
+type SessionInventoryInput = Parameters<typeof loadProjectSessionInventory>[0];
+
+function sessionCursorScope(input: SessionInventoryInput, filter: SessionListFilter): SessionCursorScope {
+  return {
     projectId: input.projectId,
     viewerId: input.userId,
     ordering: input.orderByActivity ? 'activity' : undefined,
     // A cursor is a scan position inside ONE filtered list.
     filter:
-      filter.parent || filter.startedBy || filter.q || filter.labels?.length || filter.participant
+      filter.parent || filter.startedBy || filter.q || filter.labels?.length
         ? JSON.stringify([
             filter.parent ?? null,
             filter.startedBy ?? null,
             filter.q ?? null,
             ...(filter.labels?.length ? [[...filter.labels].sort()] : []),
-            ...(filter.participant ? [`participant:${filter.participant}`] : []),
           ])
         : undefined,
   };
-  const sortAt = input.orderByActivity
-    ? sql<Date>`date_trunc('milliseconds', coalesce((${projectSessions.metadata}->>'last_activity_at')::timestamptz, ${projectSessions.updatedAt}))`
-    : sql<Date>`${projectSessions.updatedAt}`;
-  const rowSortAt = (row: ProjectSessionRow): Date => {
-    if (!input.orderByActivity) return row.updatedAt;
-    const raw = row.metadata?.last_activity_at;
-    if (typeof raw !== 'string') return row.updatedAt;
-    const parsed = new Date(raw);
-    return Number.isNaN(parsed.getTime()) ? row.updatedAt : parsed;
-  };
+}
 
-  const limit = Math.min(
-    Math.max(Math.trunc(input.limit ?? SESSION_PAGE_DEFAULT_LIMIT), 1),
-    SESSION_PAGE_MAX_LIMIT,
-  );
-
-  // Step 1 — everything that depends only on the CALLER runs together with the
-  // first row chunk. Both are needed before a single row can be folded.
-  const [subject, canManageProject] = await Promise.all([
-    resolveShareSubject(input.userId),
-    // Manager standing must be derived exactly as the lifecycle routes derive
-    // it (loadVisibleSession): a session-bound agent credential never inherits
-    // the launching user's `manage` role. Computing it from the role alone made
-    // every list row report `can_manage_lifecycle: true` to a credential whose
-    // DELETE would then 403 — the two answers must come from one predicate.
-    viewerManagerStanding(
-      input.effectiveRole,
-      input.boundCredentialSessionId,
-      input.probeManageCapability,
+// Step 2 — the three reads that need these rows but not each other, then the
+// visibility fold. Scoped to the rows given, so their cost is the page's cost
+// and not the project's: the pre-paging version read every sandbox row and
+// resolved every owner in the project on every poll.
+async function foldSessionRows(
+  rows: ProjectSessionRow[],
+  ctx: {
+    input: SessionInventoryInput;
+    canManageProject: boolean;
+    subject: ShareSubject;
+    accountSessionOversight: boolean;
+    grantsBySession: Map<string, SecretGrant[]>;
+    ownerIdentities: Map<string, SessionOwnerIdentity>;
+    runtimeStatusBySession: Map<string, RuntimeStatus>;
+  },
+) {
+  const { input, canManageProject, subject, accountSessionOversight, grantsBySession, ownerIdentities, runtimeStatusBySession } = ctx;
+  const rowIds = rows.map((row) => row.sessionId);
+  const [runtimeRows, rowGrants, rowOwners] = await Promise.all([
+    db
+      .select({ sessionId: sessionSandboxes.sessionId, status: sessionSandboxes.status })
+      .from(sessionSandboxes)
+      .where(
+        and(
+          eq(sessionSandboxes.projectId, input.projectId),
+          eq(sessionSandboxes.accountId, input.accountId),
+          inArray(sessionSandboxes.sessionId, rowIds),
+        ),
+      ),
+    loadSessionGrants(
+      rows.filter((row) => row.visibility === 'restricted').map((row) => row.sessionId),
+    ),
+    resolveSessionOwnerIdentities(
+      [
+        ...new Set(
+          rows
+            .flatMap((row) => [
+              row.createdBy,
+              row.initiatorType === 'member' || row.initiatorType === 'api' ? row.initiatorId : null,
+            ])
+            .filter((ownerId): ownerId is string => Boolean(ownerId)),
+        ),
+      ],
+      input.accountId,
     ),
   ]);
 
-  // The manager-only scope is refused before any row is read: an unauthorized
-  // caller must not cost a page scan.
-  // Oversight widens only the manager inventory; see selectSessionRowsForViewer.
-  const accountSessionOversight =
-    input.scope === 'project' &&
-    canManageProject &&
-    input.boundCredentialSessionId === null &&
-    (await hasAccountSessionOversight(input.userId, input.accountId));
+  const rowRuntime = new Map(runtimeRows.map((row) => [row.sessionId, row.status]));
+  for (const [key, value] of rowRuntime) runtimeStatusBySession.set(key, value);
+  for (const [key, value] of rowGrants) grantsBySession.set(key, value);
+  for (const [key, value] of rowOwners) ownerIdentities.set(key, value);
 
-  if (input.scope === 'project' && !canManageProject) {
-    return {
-      authorized: false,
-      items: [],
-      rows: [],
-      nextCursor: null,
-      canManageProject,
-      grantsBySession: new Map(),
-      ownerIdentities: new Map(),
-      runtimeStatusBySession: new Map(),
-      subject,
-      childCounts: new Map(),
-      initiatorNames: new Map(),
-    };
-  }
+  return selectSessionRowsForViewer({
+    rows,
+    scope: input.scope,
+    canManageProject,
+    subject,
+    grantsBySession: rowGrants,
+    runtimeStatusBySession: rowRuntime,
+    callerSessionId: input.boundCredentialSessionId,
+    boundCredentialSessionId: input.boundCredentialSessionId,
+    accountSessionOversight,
+    agentPrincipal: input.agentPrincipal === true,
+  });
+}
 
-  // The visibility fold drops rows (soft-deleted, warm-unprompted, another
-  // member's private session), so a chunk of exactly `limit` rows would
-  // under-fill the page. Over-read, then keep pulling chunks until the page is
-  // full or the list ends.
-  const chunkSize = Math.min(Math.max(limit * 3, 60), 500);
-
-  const items: SessionInventoryItem[] = [];
-  const scannedRows: ProjectSessionRow[] = [];
-  const grantsBySession = new Map<string, SecretGrant[]>();
-  const ownerIdentities = new Map<string, SessionOwnerIdentity>();
-  const runtimeStatusBySession = new Map<string, RuntimeStatus>();
-
-  let cursor = decodeSessionCursor(input.cursor, cursorScope);
-  let nextCursor: string | null = null;
-  let exhausted = false;
-
-  // Bounded so a page can never turn into a full-table walk: a project whose
-  // rows are almost all invisible to this viewer returns a short page with a
-  // cursor instead of scanning to the end of the list on one request.
-  const MAX_CHUNKS = 8;
-
-  // Step 2 — the three reads that need these rows but not each other, then the
-  // visibility fold. Scoped to the rows given, so their cost is the page's cost
-  // and not the project's: the pre-paging version read every sandbox row and
-  // resolved every owner in the project on every poll.
-  const foldRows = async (rows: ProjectSessionRow[]) => {
-    const rowIds = rows.map((row) => row.sessionId);
-    const [runtimeRows, rowGrants, rowOwners] = await Promise.all([
-      db
-        .select({ sessionId: sessionSandboxes.sessionId, status: sessionSandboxes.status })
-        .from(sessionSandboxes)
-        .where(
-          and(
-            eq(sessionSandboxes.projectId, input.projectId),
-            eq(sessionSandboxes.accountId, input.accountId),
-            inArray(sessionSandboxes.sessionId, rowIds),
-          ),
-        ),
-      loadSessionGrants(
-        rows.filter((row) => row.visibility === 'restricted').map((row) => row.sessionId),
-      ),
-      resolveSessionOwnerIdentities(
-        [
-          ...new Set(
-            rows
-              .flatMap((row) => [
-                row.createdBy,
-                row.initiatorType === 'member' || row.initiatorType === 'api' ? row.initiatorId : null,
-              ])
-              .filter((ownerId): ownerId is string => Boolean(ownerId)),
-          ),
-        ],
-        input.accountId,
-      ),
-    ]);
-
-    const rowRuntime = new Map(runtimeRows.map((row) => [row.sessionId, row.status]));
-    for (const [key, value] of rowRuntime) runtimeStatusBySession.set(key, value);
-    for (const [key, value] of rowGrants) grantsBySession.set(key, value);
-    for (const [key, value] of rowOwners) ownerIdentities.set(key, value);
-
-    return selectSessionRowsForViewer({
-      rows,
-      scope: input.scope,
-      canManageProject,
-      subject,
-      grantsBySession: rowGrants,
-      runtimeStatusBySession: rowRuntime,
-      callerSessionId: input.boundCredentialSessionId,
-      boundCredentialSessionId: input.boundCredentialSessionId,
-      accountSessionOversight,
-      agentPrincipal: input.agentPrincipal === true,
-    });
-  };
-
-  for (let pass = 0; pass < MAX_CHUNKS && items.length < limit; pass += 1) {
-    const chunk = await db
-      .select()
-      .from(projectSessions)
-      .where(
-        and(
-          eq(projectSessions.projectId, input.projectId),
-          eq(projectSessions.accountId, input.accountId),
-          filterSql,
-          // Keyset: strictly after the cursor row in `(sort_at DESC,
-          // session_id DESC)`. Ordinary projects use the updated_at index;
-          // opted-in imports use their historical conversation activity.
-          cursor
-            ? or(
-                lt(sortAt, cursor.updatedAt.toISOString()),
-                and(
-                  eq(sortAt, cursor.updatedAt.toISOString()),
-                  lt(projectSessions.sessionId, cursor.sessionId),
-                ),
-              )
-            : undefined,
-        ),
-      )
-      .orderBy(desc(sortAt), desc(projectSessions.sessionId))
-      .limit(chunkSize);
-
-    if (chunk.length === 0) {
-      exhausted = true;
-      break;
-    }
-
-    const selected = await foldRows(chunk);
-
-    for (const item of selected.items) {
-      // A manager's inventory lists sessions it may not open, with the title
-      // redacted. Search must not match on that hidden title.
-      if (filter.q && !item.canAccess) continue;
-      // Stop exactly at the page boundary, and remember the row we stopped on
-      // so the next page resumes from it rather than re-serving it.
-      if (items.length >= limit) break;
-      items.push(item);
-      scannedRows.push(item.row);
-      nextCursor = cursorForRow({ updatedAt: rowSortAt(item.row), sessionId: item.row.sessionId }, cursorScope);
-    }
-
-    // Did the page fill before we reached the end of this chunk? Then the rows
-    // we skipped are NOT served yet: the scan position stays at the last row we
-    // emitted and the next page picks them up. Only a chunk we folded to its
-    // last row advances the cursor past it — and only then can a short chunk
-    // mean the list is over. Marking `exhausted` on a chunk we stopped inside
-    // would drop its tail permanently.
-    if (items.length < limit) {
-      const lastChunkRow = chunk[chunk.length - 1]!;
-      nextCursor = cursorForRow({ updatedAt: rowSortAt(lastChunkRow), sessionId: lastChunkRow.sessionId }, cursorScope);
-      cursor = { updatedAt: rowSortAt(lastChunkRow), sessionId: lastChunkRow.sessionId };
-      if (chunk.length < chunkSize) {
-        exhausted = true;
-        break;
-      }
-    }
-  }
-
+/** Serves the ancestors a page's children point at but the page does not hold. */
+async function appendMissingAncestors(input: {
+  projectId: string;
+  accountId: string;
+  filter: SessionListFilter;
+  items: SessionInventoryItem[];
+  scannedRows: ProjectSessionRow[];
+  foldRows: (rows: ProjectSessionRow[]) => ReturnType<typeof foldSessionRows>;
+}): Promise<void> {
+  const { filter, items, scannedRows, foldRows } = input;
   // A coordinator sorts by its OWN `updated_at`, and a child's turns never
   // touch it. So a coordinator that went quiet while its sub-agents kept
   // working lands on a later page than they do, and every child on this page
@@ -464,7 +315,7 @@ export async function loadProjectSessionInventory(input: {
   // append, and children are read under the parent the client expanded. A
   // label filter promises only rows carrying every label, so it gets no
   // unlabeled ancestors either.
-  const appendAncestors = !filter.parent && !filter.labels?.length && !filter.participant;
+  const appendAncestors = !filter.parent && !filter.labels?.length;
   for (let depth = 0; appendAncestors && depth < MAX_ANCESTOR_DEPTH; depth += 1) {
     const missing = [
       ...new Set(
@@ -492,7 +343,16 @@ export async function loadProjectSessionInventory(input: {
       scannedRows.push(item.row);
     }
   }
+}
 
+/** `parent=root` only: non-deleted children per served session. */
+async function loadChildCounts(input: {
+  projectId: string;
+  accountId: string;
+  filter: SessionListFilter;
+  items: SessionInventoryItem[];
+}): Promise<Map<string, number>> {
+  const { filter, items } = input;
   const childCounts = new Map<string, number>();
   if (filter.parent === 'root' && items.length > 0) {
     const counts = await db
@@ -510,6 +370,224 @@ export async function loadProjectSessionInventory(input: {
       .groupBy(projectSessions.parentSessionId);
     for (const row of counts) if (row.parentSessionId) childCounts.set(row.parentSessionId, row.count);
   }
+  return childCounts;
+}
+
+/**
+ * Read one project's session inventory for one viewer.
+ *
+ * `probeManageCapability` is injected rather than imported so this module stays
+ * free of the request context (and unit-testable without one) — the route
+ * passes the same `project.members.manage` probe the lifecycle routes use.
+ */
+export async function loadProjectSessionInventory(input: {
+  projectId: string;
+  accountId: string;
+  userId: string;
+  effectiveRole: ProjectRole;
+  scope: ProjectSessionListScope;
+  /** `callerKortixSessionId(c)` — null for a Supabase browser JWT. */
+  boundCredentialSessionId: string | null;
+  /** The caller is an agent session under the agent-principal model (spec §2). */
+  agentPrincipal?: boolean;
+  probeManageCapability: () => Promise<boolean>;
+  /** Max VISIBLE items to return. Clamped to `SESSION_PAGE_MAX_LIMIT`. */
+  limit?: number;
+  /** Opaque cursor from a previous page's `nextCursor`. */
+  cursor?: string | null;
+  /** Use conversation activity for projects whose imported sessions retain historical dates. */
+  orderByActivity?: boolean;
+  filter?: SessionListFilter;
+}): Promise<ProjectSessionInventory> {
+  const filter = input.filter ?? {};
+  const filterSql = sessionListFilterSql(filter, input.userId);
+  // A cursor is sealed to (project, viewer): it carries the scan position, which
+  // can name a row this viewer may not see. See `encodeSessionCursor`.
+  const cursorScope = sessionCursorScope(input, filter);
+  const sortAt = input.orderByActivity
+    ? sql<Date>`date_trunc('milliseconds', coalesce((${projectSessions.metadata}->>'last_activity_at')::timestamptz, ${projectSessions.updatedAt}))`
+    : sql<Date>`${projectSessions.updatedAt}`;
+  const rowSortAt = (row: ProjectSessionRow): Date => {
+    if (!input.orderByActivity) return row.updatedAt;
+    const raw = row.metadata?.last_activity_at;
+    if (typeof raw !== 'string') return row.updatedAt;
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? row.updatedAt : parsed;
+  };
+
+  // `updated_at` at microsecond precision for the cursor of the default order. The
+  // activity order already sorts on a millisecond-truncated key.
+  const SORT_AT_ISO = sql<string>`to_char(${projectSessions.updatedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+  const rowSortIso = (row: ProjectSessionRow): string | undefined =>
+    input.orderByActivity ? undefined : (row as { sortAtIso?: string }).sortAtIso;
+
+  const limit = Math.min(
+    Math.max(Math.trunc(input.limit ?? SESSION_PAGE_DEFAULT_LIMIT), 1),
+    SESSION_PAGE_MAX_LIMIT,
+  );
+
+  // The visibility fold drops rows (soft-deleted, warm-unprompted, another
+  // member's private session), so a chunk of exactly `limit` rows would
+  // under-fill the page. Over-read, then keep pulling chunks until the page is
+  // full or the list ends.
+  const chunkSize = Math.min(Math.max(limit * 3, 60), 500);
+
+  let cursor = decodeSessionCursor(input.cursor, cursorScope);
+
+  // `async`: calling it starts the read. Awaiting it later only collects it.
+  const readChunk = async (after: typeof cursor) =>
+    db
+      .select({ ...getTableColumns(projectSessions), sortAtIso: SORT_AT_ISO })
+      .from(projectSessions)
+      .where(
+        and(
+          eq(projectSessions.projectId, input.projectId),
+          eq(projectSessions.accountId, input.accountId),
+          filterSql,
+          // Keyset: strictly after the cursor row in `(sort_at DESC,
+          // session_id DESC)`. Ordinary projects use the updated_at index;
+          // opted-in imports use their historical conversation activity.
+          after
+            ? or(
+                lt(sortAt, after.updatedAtIso ?? after.updatedAt.toISOString()),
+                and(
+                  eq(sortAt, after.updatedAtIso ?? after.updatedAt.toISOString()),
+                  lt(projectSessions.sessionId, after.sessionId),
+                ),
+              )
+            : undefined,
+        ),
+      )
+      .orderBy(desc(sortAt), desc(projectSessions.sessionId))
+      .limit(chunkSize);
+
+  // Step 1 — everything that depends only on the CALLER runs together with the
+  // first row chunk. Both are needed before a single row can be folded.
+  //
+  // Manager standing must be derived exactly as the lifecycle routes derive
+  // it (loadVisibleSession): a session-bound agent credential never inherits
+  // the launching user's `manage` role. Computing it from the role alone made
+  // every list row report `can_manage_lifecycle: true` to a credential whose
+  // DELETE would then 403 — the two answers must come from one predicate.
+  const standingRead = viewerManagerStanding(
+    input.effectiveRole,
+    input.boundCredentialSessionId,
+    input.probeManageCapability,
+  );
+  // The manager-only scope is refused before any row is read: an unauthorized
+  // caller must not cost a page scan. Its reads start when the verdict allows
+  // them, not after the share subject.
+  // Oversight widens only the manager inventory; see selectSessionRowsForViewer.
+  const managerInventory = input.scope === 'project';
+  const firstChunkRead = managerInventory
+    ? standingRead.then((allowed) => (allowed ? readChunk(cursor) : []))
+    : readChunk(cursor);
+  const oversightRead =
+    managerInventory && input.boundCredentialSessionId === null
+      ? standingRead.then(
+          (allowed) => allowed && hasAccountSessionOversight(input.userId, input.accountId),
+        )
+      : Promise.resolve(false);
+  // Both are awaited after the caller reads. A rejection surfaces there, in
+  // the original order, and must not be unhandled before.
+  firstChunkRead.catch(() => undefined);
+  oversightRead.catch(() => undefined);
+  const [subject, canManageProject] = await Promise.all([
+    resolveShareSubject(input.userId),
+    standingRead,
+  ]);
+
+  if (managerInventory && !canManageProject) {
+    return {
+      authorized: false,
+      items: [],
+      rows: [],
+      nextCursor: null,
+      canManageProject,
+      grantsBySession: new Map(),
+      ownerIdentities: new Map(),
+      runtimeStatusBySession: new Map(),
+      subject,
+      childCounts: new Map(),
+      initiatorNames: new Map(),
+    };
+  }
+
+  const accountSessionOversight = await oversightRead;
+
+  const items: SessionInventoryItem[] = [];
+  const scannedRows: ProjectSessionRow[] = [];
+  const grantsBySession = new Map<string, SecretGrant[]>();
+  const ownerIdentities = new Map<string, SessionOwnerIdentity>();
+  const runtimeStatusBySession = new Map<string, RuntimeStatus>();
+
+  let nextCursor: string | null = null;
+  let exhausted = false;
+
+  // Bounded so a page can never turn into a full-table walk: a project whose
+  // rows are almost all invisible to this viewer returns a short page with a
+  // cursor instead of scanning to the end of the list on one request.
+  const MAX_CHUNKS = 8;
+  const foldRows = (rows: ProjectSessionRow[]) =>
+    foldSessionRows(rows, {
+      input,
+      canManageProject,
+      subject,
+      accountSessionOversight,
+      grantsBySession,
+      ownerIdentities,
+      runtimeStatusBySession,
+    });
+
+  for (let pass = 0; pass < MAX_CHUNKS && items.length < limit; pass += 1) {
+    const chunk = await (pass === 0 ? firstChunkRead : readChunk(cursor));
+
+    if (chunk.length === 0) {
+      exhausted = true;
+      break;
+    }
+
+    const selected = await foldRows(chunk);
+
+    for (const item of selected.items) {
+      // A manager's inventory lists sessions it may not open, with the title
+      // redacted. Search must not match on that hidden title.
+      if (filter.q && !item.canAccess) continue;
+      // Stop exactly at the page boundary, and remember the row we stopped on
+      // so the next page resumes from it rather than re-serving it.
+      if (items.length >= limit) break;
+      items.push(item);
+      scannedRows.push(item.row);
+      nextCursor = cursorForRow({ updatedAt: rowSortAt(item.row), updatedAtIso: rowSortIso(item.row), sessionId: item.row.sessionId }, cursorScope);
+    }
+
+    // Did the page fill before we reached the end of this chunk? Then the rows
+    // we skipped are NOT served yet: the scan position stays at the last row we
+    // emitted and the next page picks them up. Only a chunk we folded to its
+    // last row advances the cursor past it — and only then can a short chunk
+    // mean the list is over. Marking `exhausted` on a chunk we stopped inside
+    // would drop its tail permanently.
+    if (items.length < limit) {
+      const lastChunkRow = chunk[chunk.length - 1]!;
+      nextCursor = cursorForRow({ updatedAt: rowSortAt(lastChunkRow), updatedAtIso: rowSortIso(lastChunkRow), sessionId: lastChunkRow.sessionId }, cursorScope);
+      cursor = { updatedAt: rowSortAt(lastChunkRow), updatedAtIso: rowSortIso(lastChunkRow), sessionId: lastChunkRow.sessionId };
+      if (chunk.length < chunkSize) {
+        exhausted = true;
+        break;
+      }
+    }
+  }
+
+  await appendMissingAncestors({
+    projectId: input.projectId,
+    accountId: input.accountId,
+    filter,
+    items,
+    scannedRows,
+    foldRows,
+  });
+
+  const childCounts = await loadChildCounts({ projectId: input.projectId, accountId: input.accountId, filter, items });
   const initiatorNames = new Map<string, string>();
   for (const [id, identity] of ownerIdentities) {
     const name = identity.name ?? identity.email ?? null;

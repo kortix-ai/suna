@@ -12,7 +12,7 @@
  * runs through `beforeActive` (session-sandbox.ts), and additionally restores
  * the pin at the end so a lost race self-heals on the next open.
  *
- * Mechanics proven live on prod (project 79d76143, sandbox d265e212):
+ * Mechanics proven live on a prod project and sandbox:
  * download the archive captured at migration time, re-key its project ids to the
  * workspace's opencode projectID (opencode scopes session lists by project),
  * SIGKILL the server (pattern must match `opencode.exe serve`), swap the db in,
@@ -28,8 +28,6 @@ import { logger as appLogger } from '../lib/logger';
 import { getDaytona } from '../shared/daytona';
 import { db } from '../shared/db';
 import { downloadOpencodeArchive } from './legacy-migration-storage';
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export interface LegacyRehydrateSpec {
   sourceSandboxId: string;
@@ -234,7 +232,7 @@ async function waitForOpencodeProjectId(
     } catch {
       /* opencode not up yet */
     }
-    await sleep(3000);
+    await Bun.sleep(3000);
   }
   return null;
 }

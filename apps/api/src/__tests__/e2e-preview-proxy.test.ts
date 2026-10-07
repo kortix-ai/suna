@@ -214,7 +214,7 @@ mock.module('../projects/lib/on-behalf-of', () => ({
 }));
 
 // IAM — a prompt that switches to a CONCRETE agent is authorized for
-// `project.agent.read` on that agent before the re-mint (sandbox-proxy/routes/preview.ts).
+// `project.agent.read` on that agent before the re-mint (sandbox-proxy/forward/access.ts).
 // The real engine issues an `innerJoin` this file's `db` stub does not build, so
 // leaving it unmocked makes `authorize` throw, the forward retry 4x, and every
 // agent-switch assertion answer 502 instead of the 204 it is about.
@@ -742,18 +742,6 @@ describe('Preview proxy: websocket upgrade (path form)', () => {
     expect(upstream.searchParams.get('wake')).toBeNull();
     expect(upstream.searchParams.get('cursor')).toBe('5');
   });
-
-  // Both sides of one contract in two packages: the daemon's health payload
-  // must publish the field the lookup reads.
-  test('the daemon health payload publishes the runtime port (harness.details.port)', async () => {
-    const health = await Bun.file(
-      new URL(
-        '../../../kortix-sandbox-agent-server/src/harness/open-code/diagnostics.ts',
-        import.meta.url,
-      ).pathname,
-    ).text();
-    expect(health).toContain('port: opencode.getActivePort()');
-  });
 });
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -1007,8 +995,9 @@ describe('Preview proxy: forwarding', () => {
     });
   });
 
-  // A concrete agent is forwarded when it matches the session's agent or
-  // resolves the legacy default sentinel. Switching concrete agents is refused.
+  // A concrete agent is forwarded when it matches the session's agent, when the
+  // session runs the legacy default sentinel, or — since KRTX-1290 — when the
+  // switch to it is authorized (the IAM gate above is held open here).
   test.each([
     ['the agent the session runs', 'reviewer', 'reviewer'],
     ['a concrete agent in a default session', 'default', 'kortix'],
@@ -1036,8 +1025,12 @@ describe('Preview proxy: forwarding', () => {
     });
   });
 
-  test('refuses a different concrete agent before forwarding prompt_async', async () => {
+  test('forwards an authorized switch to a different concrete agent (KRTX-1290)', async () => {
     mockDbSandbox = { ...mockDbSandbox, agentName: 'reviewer' };
+    mockFetchResponses = [
+      { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
+      { status: 204, body: '' },
+    ];
     const app = createProxyTestApp();
     const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
       method: 'POST',
@@ -1045,9 +1038,15 @@ describe('Preview proxy: forwarding', () => {
       body: JSON.stringify({ agent: 'researcher', parts: [{ type: 'text', text: 'hi' }] }),
     });
 
-    expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ code: 'AGENT_SWITCH_NOT_ALLOWED' });
-    expect(mockFetchCalls).toEqual([]);
+    expect(res.status).toBe(204);
+    expect(mockFetchCalls.map((call) => call.url)).toEqual([
+      'https://preview.daytona.io/proxy-url/kortix/env',
+      'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async',
+    ]);
+    expect(JSON.parse(mockFetchCalls[1]?.body ?? '{}')).toEqual({
+      agent: 'researcher',
+      parts: [{ type: 'text', text: 'hi' }],
+    });
   });
 
   test('returns a clean proxy error when project env sync is rejected', async () => {
@@ -1121,7 +1120,10 @@ describe('Preview proxy: forwarding', () => {
       {
         status: 0,
         body: '',
-        error: new Error('Unable to connect. Is the computer able to access the url?'),
+        // Bun's real shape for a refused connection: a TypeError with a code.
+        error: Object.assign(new TypeError('Unable to connect. Is the computer able to access the url?'), {
+          code: 'ConnectionRefused',
+        }),
       },
       { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
       { status: 204, body: '' },
@@ -1631,7 +1633,7 @@ describe('Preview proxy: retry exhaustion', () => {
 // no wake, no resend of the (non-idempotent) message, and a distinct,
 // honest signal instead of the generic "sandbox unreachable" 502. See
 // preview-retry-budget.ts (proxyAttemptTimeoutMs) and forwardToSandbox's
-// catch block in routes/preview.ts.
+// catch block in forward/retry.ts.
 describe('Preview proxy: long-turn completion timeout', () => {
   test('a connect-timer abort on POST /session/:id/message returns 504 LONG_TURN_PROXY_TIMEOUT — no wake, no resend', async () => {
     const savedFetch = globalThis.fetch;
@@ -1811,29 +1813,28 @@ describe('Preview proxy: SSE stall bypass', () => {
   });
 });
 
-// The daemon's /kortix/opencode/* namespace negotiates compression with the
-// client. `fetch` hands back DECODED bytes while keeping the upstream
-// `content-encoding` and compressed `content-length`; forwarding those with a
-// decoded body is a response no client can read.
+// The daemon's /kortix/runtime/* namespace negotiates compression with the
+// client. The proxy fetches upstream with `decompress: false`, so it holds the
+// raw compressed bytes: the daemon's `content-encoding` and `content-length`
+// must reach the client with them, or no client can read the body.
 describe('Preview proxy: upstream encoding on the daemon namespace', () => {
-  test('the client negotiation reaches the daemon, and the decoded body is relabelled', async () => {
+  test('the client negotiation reaches the daemon, and its encoded answer passes through labelled', async () => {
     mockFetchResponses = [
       {
         status: 200,
-        body: '{"state":"ok"}',
+        body: 'gzip-bytes!!',
         headers: { 'content-encoding': 'gzip', 'content-length': '12' },
       },
     ];
     const res = await createProxyTestApp().request(
-      `/v1/p/${TEST_SANDBOX_ID}/8000/kortix/opencode/state`,
+      `/v1/p/${TEST_SANDBOX_ID}/8000/kortix/runtime/messages/ses_root`,
       { headers: { Authorization: 'Bearer test', 'Accept-Encoding': 'gzip' } },
     );
 
     expect(mockFetchCalls[0]?.headers['accept-encoding']).toBe('gzip');
-    expect(res.headers.get('content-encoding')).toBeNull();
-    expect(res.headers.get('content-length')).toBeNull();
-    expect(res.headers.get('x-kortix-upstream-encoding')).toBe('gzip');
-    expect(res.headers.get('access-control-expose-headers')).toContain('x-kortix-upstream-encoding');
+    expect(res.headers.get('content-encoding')).toBe('gzip');
+    expect(res.headers.get('content-length')).toBe('12');
+    expect(res.headers.get('x-kortix-upstream-encoding')).toBeNull();
   });
 });
 

@@ -5,7 +5,7 @@
  * originating session (`sessionId`); web's sidebar folds the same list the
  * same way (`summarizeReviewSessions`).
  *
- * Pending OpenCode permissions and `question`-tool questions are not in the
+ * Pending runtime permissions and `question`-tool questions are not in the
  * inbox: the API keeps no project-wide list of them, so a session waiting on
  * one only shows it inside its open thread.
  *

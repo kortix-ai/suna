@@ -206,7 +206,6 @@ mock.module('../projects/git', () => ({
 }));
 
 mock.module("../snapshots/builder", () => ({
-  ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
   ensureMetaSandboxImage: async () => ({ snapshotName: "kortix-meta-test", slug: "meta", contentHash: "b".repeat(64), built: false, isDefault: false }),
   deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
@@ -308,8 +307,8 @@ mock.module('../projects/lib/git', () => ({
 
 mock.module('../platform/services/session-sandbox', () => ({
   provisionSessionSandbox: async (input: any) => {
+    lastProvisionEnv = await input.extraEnvVars;
     sandboxProvisionCalls += 1;
-    lastProvisionEnv = input.extraEnvVars;
   },
 }));
 
@@ -413,10 +412,13 @@ const triggerDbMock: any = {
               // both `await ...limit(n)` and `...limit(n).offset(m)` resolve.
               limit: (limit: number) => {
                 const limited = rows.slice(0, limit);
-                return {
+                const chain = {
                   offset: async (offset: number) => limited.slice(offset),
+                  // The lifecycle claim locks its picks: `.limit(n).for('update', …)`.
+                  for: () => chain,
                   then: (resolve: (rows: any[]) => unknown) => resolve(limited),
                 };
+                return chain;
               },
               then: (resolve: (rows: any[]) => unknown) => resolve(rows),
             };
@@ -608,7 +610,14 @@ const triggerDbMock: any = {
         where: () => ({
           returning: async () => {
             if (table === sessionLifecycleCommands) {
-              lifecycleCommandRows = lifecycleCommandRows.map((row) => ({ ...row, ...setValues }));
+              // The claim sets `attempts` and `result` with SQL expressions that
+              // Postgres evaluates against the row; apply the plain values.
+              const plain = Object.fromEntries(Object.entries(setValues).filter(([, v]) => !is(v, SQL)));
+              lifecycleCommandRows = lifecycleCommandRows.map((row) => ({
+                ...row,
+                ...plain,
+                ...(is(setValues.attempts, SQL) ? { attempts: row.attempts + 1 } : {}),
+              }));
               return lifecycleCommandRows;
             }
             return [];
@@ -781,9 +790,11 @@ const {
   drainTriggerExecutionQueue,
   projectsApp,
   projectWebhooksApp,
+  registerAllProjectRoutes,
   runProjectTriggerSweep,
 } = await import('../projects/index');
-const { resetRateLimiters } = await import('../shared/rate-limit');
+registerAllProjectRoutes();
+const { resetRateLimiters } = await import('../middleware/rate-limit');
 
 function createApp() {
   const app = new Hono();
@@ -1626,7 +1637,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(manifestReadCalls).toBe(2);
   });
 
-  test('webhook reports a connector delivery mismatch without creating a session', async () => {
+  test('webhook rejects a connector delivery mismatch as a plain 401 without creating a session', async () => {
     seedManifest(webhookEntry({
       slug: 'hook',
       name: 'Hook',
@@ -1647,11 +1658,40 @@ describe('git-backed triggers — runtime fire paths', () => {
       body: rawBody,
     });
 
-    expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({
-      code: 'webhook_secret_delivery_mismatch',
-    });
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'Invalid webhook signature' });
     expect(sandboxProvisionCalls).toBe(0);
+  });
+
+  test('an unknown slug answers the same 401 as a bad signature (no existence oracle)', async () => {
+    seedManifest(webhookEntry({ slug: 'hook', name: 'Hook', secretEnv: 'HOOK_SECRET', prompt: 'x' }));
+    secretValues.set('HOOK_SECRET', 'shhh');
+    const app = createApp();
+    const rawBody = JSON.stringify({ a: 1 });
+    const res = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/no-such-slug`, {
+      method: 'POST',
+      headers: { 'X-Kortix-Signature': sign(rawBody, 'shhh') },
+      body: rawBody,
+    });
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'Invalid webhook signature' });
+  });
+
+  test('a timestamped delivery signs <timestamp>.<body> and a stale one is refused', async () => {
+    seedManifest(webhookEntry({ slug: 'hook', name: 'Hook', secretEnv: 'HOOK_SECRET', prompt: 'x' }));
+    secretValues.set('HOOK_SECRET', 'shhh');
+    const app = createApp();
+    const rawBody = JSON.stringify({ a: 1 });
+    const send = (timestamp: number) =>
+      app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+        method: 'POST',
+        headers: { 'X-Kortix-Timestamp': String(timestamp), 'X-Kortix-Signature': sign(`${timestamp}.${rawBody}`, 'shhh') },
+        body: rawBody,
+      });
+    const now = Math.floor(Date.now() / 1000);
+    expect((await send(now - 3600)).status).toBe(401);
+    expect((await send(now + 3600)).status).toBe(401);
+    expect((await send(now)).status).toBe(202);
   });
 
   test('webhook fires with a valid HMAC spawn a session', async () => {

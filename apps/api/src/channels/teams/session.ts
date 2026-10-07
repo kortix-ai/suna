@@ -3,7 +3,7 @@ import { chatEventDedup, chatThreads, projectSessions, projects } from '@kortix/
 import { db } from '../../shared/db';
 import { config } from '../../config';
 import {
-  continueSession as continueLifecycleSession,
+  deliverThroughQueue,
   createSession as createLifecycleSession,
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
 } from '../../projects/session-lifecycle';
@@ -17,6 +17,7 @@ import { userMayLaunchAgent } from '../scoped-agents';
 import { resolveAgentGrant } from '../../projects/agents';
 import { EVENT_DEDUPE_TTL_MS } from './app';
 import { ensureTeamsConversationBinding, teamsChannelCtx } from './binding';
+import { labelTeamsChannelBinding } from './channel-label';
 import { postTeamsIdentityPrompt, teamsUserId } from './identity';
 import { chatUser, resolveChatActor } from '../core/identity';
 import {
@@ -40,7 +41,7 @@ import {
   startTurn,
 } from './turn';
 import { sessionWebUrl } from '../slack/util';
-import { modelReadsImages, promptModelOverride } from '../vision-model';
+import { modelReadsImages, NO_VISION_NOTE, promptModelOverride } from '../vision-model';
 import {
   type ChannelModelScope,
   planChannelFollowUp,
@@ -57,7 +58,7 @@ import { describeTeamsConversation, isPersonalChat, stripTeamsMentions, teamsMes
 import { ensureTeamsThreadParticipant, normalizeConversationPolicy, rememberTeamsThreadOwner } from './participants';
 
 const defaultTeamsSessionLifecycle = {
-  continueSession: continueLifecycleSession,
+  deliverFollowUp: deliverThroughQueue,
   createSession: createLifecycleSession,
   resolveProjectAutomationActor: resolveLifecycleAutomationActor,
   holdsLiveTurn: sessionHoldsLiveTurn,
@@ -147,9 +148,12 @@ export async function deliverTeamsFollowUpToSession(input: {
   userId?: string | null;
   /** This turn only — see channels/vision-model.ts. */
   model?: string | null;
+  /** One Teams activity: a redelivered webhook dedupes on it. */
+  idempotencyKey: string;
 }) {
-  return teamsSessionLifecycle.continueSession({
+  return teamsSessionLifecycle.deliverFollowUp({
     source: 'teams',
+    idempotencyKey: input.idempotencyKey,
     sessionId: input.sessionId,
     text: input.text,
     userId: input.userId,
@@ -378,6 +382,8 @@ async function deliverFollowUp(input: {
     conversationId,
     ...describeTeamsConversation(activity),
   }).catch((err) => console.warn('[teams-webhook] binding backfill failed', err));
+  // A channel message says the team's id, not its name: Teams names it.
+  void labelTeamsChannelBinding({ projectId, tenantId, conversationId, activity });
 
   const hasImage = teamsMessageHasImage(activity);
   const currentModel = sessionModelOf(input.sessionMetadata);
@@ -400,27 +406,19 @@ async function deliverFollowUp(input: {
     hasImage && !turnModel && !modelReadsImages(projectId, currentModel || undefined);
   const outcome = await deliverTeamsFollowUpToSession({
     sessionId,
+    idempotencyKey: `teams:${tenantId}:${conversationId}:${activity.id ?? crypto.randomUUID()}`,
     text: renderFollowUpPrompt(activity, imagesUnavailable),
     userId,
     model: turnModel,
   });
 
-  if (outcome === 'delivered') {
+  // `queued`: durable; the queue delivers it once the box is up.
+  if (outcome === 'delivered' || outcome === 'queued') {
     await touchChatThread(conversationThread(tenantId, conversationId));
     return 'done';
   }
 
-  if (outcome === 'pending' || outcome === 'not-landed') {
-    if (handle) {
-      await deleteTurn(sessionId);
-      await finalizeTurn(handle, {
-        error: "Still waking this conversation's session back up — send that again in a moment.",
-      });
-    }
-    return 'done';
-  }
-
-  if (outcome === 'failed' || outcome === 'unreachable') {
+  if (outcome === 'failed') {
     if (handle) {
       await deleteTurn(sessionId);
       if (await claimConversationErrorNotice(tenantId, conversationId)) {
@@ -596,6 +594,7 @@ export async function createOrJoinTeamsConversationSession(input: {
   }
 
   await ensureTeamsConversationBinding({ projectId, tenantId, conversationId, ...describeTeamsConversation(activity) });
+  void labelTeamsChannelBinding({ projectId, tenantId, conversationId, activity });
   const selection = await currentChannelSelection(teamsChannelCtx(tenantId, conversationId));
 
   // Per-resource scoping, as the web and Slack apply it: a person scoped out
@@ -642,7 +641,6 @@ export async function createOrJoinTeamsConversationSession(input: {
       // markup Teams wraps around the bot's name in channels.
       title_source: activity.text ? stripTeamsMentions(activity.text) || null : null,
     },
-    enforceAccountCap: false,
     queuePolicy: 'on_backpressure',
     // One key per inbound message, never per conversation. The lifecycle
     // keeps a key forever (a unique index, no retention) and a chat is one
@@ -725,7 +723,7 @@ export async function createOrJoinTeamsConversationSession(input: {
   }
 
   if (result.status === 'queued' || result.status === 'pending') {
-    if (handle) await finalizeTurn(handle, { answer: queuedMessage(result.reason) });
+    if (handle) await finalizeTurn(handle, { answer: queuedMessage() });
     return;
   }
 
@@ -752,10 +750,7 @@ function startError(status: number | undefined, body: unknown): string {
   return startErrorMessage(status, body, TEAMS_START_ERROR_COMMANDS);
 }
 
-function queuedMessage(reason?: string): string {
-  if (reason === 'account session cap') {
-    return "This workspace is at its concurrent-session limit, so I've queued your task. I'll start it and reply right here as soon as a slot frees up.";
-  }
+function queuedMessage(): string {
   return "I've queued your task behind the sessions already starting in this project, and I'll reply right here the moment it begins.";
 }
 
@@ -830,15 +825,6 @@ const TURN_INSTRUCTIONS = [
   '- Use `teams send` for a question only when it is genuinely open-ended prose with nothing to pick from. A numbered list of choices in a message is the wrong shape — the user cannot tap it.',
   '- Deliver the final answer with `teams send` (text, or an Adaptive Card via --card-file). One `teams send` per turn — it finalizes the live message.',
   '- Put a link the user should open (connect an app, open a PR, review a draft) alone on its own line as `[Short action](url)` — Teams renders it as a button.',
-].join('\n');
-
-const NO_VISION_NOTE = [
-  '',
-  'IMPORTANT: no image-capable model is available in this project, so you',
-  'cannot see the attached image even after downloading it. Do not call `read`',
-  'on it and do not look for OCR tools. Tell the user plainly that you cannot',
-  'view images here, ask them to paste the text or describe it, and mention',
-  'that a project admin can enable an image-capable model.',
 ].join('\n');
 
 function renderAttachments(activity: TeamsActivity): string[] {

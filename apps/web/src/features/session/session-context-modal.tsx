@@ -15,11 +15,20 @@ import { Close } from '@/features/icon/icons/close';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import { cn } from '@/lib/utils';
 import type { MessageWithParts } from '@/ui/types';
-import { formatCost, type Session } from '@kortix/sdk';
+import {
+  formatCost,
+  isAgentPart,
+  isFilePart,
+  isReasoningPart,
+  isTextPart,
+  isToolPart,
+  type Session,
+} from '@kortix/sdk';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import { useMemo } from 'react';
 import { CopyAllButton, SessionContextMessageExplorer } from './session-context-message-explorer';
 import { getSessionContextMetrics } from './session-context-metrics';
+import type { ServedModelNotice } from './turn/served-model';
 import { SubSessionSection } from './session-context-sub-sessions';
 
 // ============================================================================
@@ -69,9 +78,9 @@ export function estimateBreakdown(
     (acc, msg) => {
       if (msg.info.role === 'user') {
         const user = msg.parts.reduce((sum, part) => {
-          if (part.type === 'text') return sum + part.text.length;
-          if (part.type === 'file') return sum + (part.source?.text?.value?.length ?? 0);
-          if (part.type === 'agent') return sum + (part.source?.value?.length ?? 0);
+          if (isTextPart(part)) return sum + part.text.length;
+          if (isFilePart(part)) return sum + (part.source?.text?.value?.length ?? 0);
+          if (isAgentPart(part)) return sum + (part.source?.value?.length ?? 0);
           return sum;
         }, 0);
         return { ...acc, user: acc.user + user };
@@ -79,11 +88,9 @@ export function estimateBreakdown(
       if (msg.info.role !== 'assistant') return acc;
       const result = msg.parts.reduce(
         (sum, part) => {
-          if (part.type === 'text')
+          if (isTextPart(part) || isReasoningPart(part))
             return { assistant: sum.assistant + part.text.length, tool: sum.tool };
-          if (part.type === 'reasoning')
-            return { assistant: sum.assistant + part.text.length, tool: sum.tool };
-          if (part.type === 'tool') {
+          if (isToolPart(part)) {
             const state = part.state;
             const inputLen = Object.keys(state?.input ?? {}).length * 16;
             let toolLen = inputLen;
@@ -204,6 +211,8 @@ function SessionContextModalBody({
   session,
   providers,
   allSessions,
+  servedModel,
+  billedCost,
 }: Omit<SessionContextModalProps, 'open' | 'onOpenChange'>) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('hardcodedUi.componentsSessionSessionContextModal');
@@ -284,12 +293,19 @@ function SessionContextModalBody({
         {/* Overview — three naked stats, typography only, no boxes. Context
             usage lives in the section below instead of duplicating here. */}
         <div className="flex flex-wrap items-start gap-x-12 gap-y-4">
+          {/* The transcript names the model each turn asked for and prices it
+              at that model. When a fallback model answered, the gateway's
+              record names the model that ran and what Kortix billed. */}
           <OverviewStat
             label={t.raw('statModel')}
-            value={ctx?.modelLabel ?? '—'}
-            meta={ctx?.providerLabel}
+            value={servedModel?.served ?? ctx?.modelLabel ?? '—'}
+            meta={
+              servedModel
+                ? `${tI18nComplete.raw('servedModelInPlaceOf')} ${servedModel.fallbackFrom}`
+                : ctx?.providerLabel
+            }
           />
-          <OverviewStat label={t.raw('statCost')} value={formatCost(metrics.totalCost)} />
+          <OverviewStat label={t.raw('statCost')} value={formatCost(billedCost ?? metrics.totalCost)} />
           <OverviewStat label={t.raw('statMessages')} value={counts.all.toLocaleString()} />
         </div>
 
@@ -415,6 +431,10 @@ interface SessionContextModalProps {
   session: Session | undefined;
   providers: ProviderListResponse | undefined;
   allSessions?: Session[];
+  /** The model that answered the newest request, when a fallback model did. */
+  servedModel?: ServedModelNotice | null;
+  /** What Kortix billed the session, when a fallback model answered a turn. */
+  billedCost?: number | null;
 }
 
 export function SessionContextModal({
@@ -424,6 +444,8 @@ export function SessionContextModal({
   session,
   providers,
   allSessions,
+  servedModel,
+  billedCost,
 }: SessionContextModalProps) {
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
@@ -433,6 +455,8 @@ export function SessionContextModal({
           session={session}
           providers={providers}
           allSessions={allSessions}
+          servedModel={servedModel}
+          billedCost={billedCost}
         />
       </ModalContent>
     </Modal>

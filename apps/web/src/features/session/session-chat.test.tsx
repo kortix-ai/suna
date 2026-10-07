@@ -5,7 +5,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { SidebarProvider } from '@/components/ui/sidebar';
-import type { SessionPrompt } from '@kortix/sdk';
+import type { ChangeRequest, SessionPrompt, SessionTurnOutcome } from '@kortix/sdk';
 import enMessages from '../../../translations/en.json';
 import { sessionAuditKey } from './session-audit-shared';
 import { TurnErrorDisplay } from './session-error-banner';
@@ -34,9 +34,11 @@ const userFixture = (id: string, text: string) => ({
 });
 let inboxPrompts: SessionPrompt[] = [];
 let busy = false;
+let persistedOutcome: SessionTurnOutcome = {};
 let auditPending = false;
 mock.module('@kortix/sdk/react', () => ({
   ...realSdk,
+  useSessionTurnOutcome: () => persistedOutcome,
   useSessionMessages: () => fixtureMessages,
   useSessionSync: () => ({
     messages: fixtureMessages,
@@ -56,6 +58,7 @@ mock.module('@kortix/sdk/react', () => ({
   useProjectConfig: () => ({}),
   useSessionPrompts: () => ({ prompts: inboxPrompts }),
   useSessionMessageAuthors: () => ({ data: undefined }),
+  useFeatureFlag: () => ({ enabled: true, isLoading: false }),
   useSessionWorking: () => ({
     state: busy ? 'working' : 'idle',
     turnId: busy ? 'user-fixture' : null,
@@ -84,13 +87,16 @@ mock.module('@/features/session/session-permission-prompt', () => ({
 mock.module('@/features/session/composer/composer', () => ({
   COMPOSER_SHELL_CLASS: '',
   Composer: ({
+    aboveSlot,
     inputSlot,
     lockForApproval,
   }: {
+    aboveSlot?: React.ReactNode;
     inputSlot?: React.ReactNode;
     lockForApproval?: boolean;
   }) => (
     <div>
+      {aboveSlot}
       {inputSlot}
       <textarea aria-label="Message" disabled={lockForApproval} />
       <button type="button" disabled={lockForApproval}>
@@ -101,8 +107,41 @@ mock.module('@/features/session/composer/composer', () => ({
 }));
 const { SessionChat, deriveTurnErrorAbortState, deriveTurnErrorPresentation } =
   await import('./session-chat');
+const { changeRequestKeys } = await import(
+  '@/features/project-files/hooks/use-change-requests'
+);
 
 const errorTurn = (error?: unknown) => ({ assistantMessages: [{ info: { error } }] });
+
+const changeRequestFixture = (): ChangeRequest => ({
+  cr_id: 'cr-fixture',
+  account_id: 'account-fixture',
+  project_id: 'project-fixture',
+  number: 7,
+  title: 'synthetic files reorder',
+  description: 'a synthetic change request for the outcome pin',
+  base_ref: 'main',
+  head_ref: 'cr/synthetic',
+  status: 'open',
+  head_commit_sha: null,
+  base_commit_sha: null,
+  origin_session_id: 'project-session-fixture',
+  created_by: 'agent-fixture',
+  merged_at: null,
+  merged_by: null,
+  merge_commit_sha: null,
+  closed_at: null,
+  closed_by: null,
+  metadata: {},
+  created_at: new Date(2000).toISOString(),
+  updated_at: new Date(2000).toISOString(),
+});
+
+const seedSessionChangeRequests = (client: QueryClient, crs: ChangeRequest[]) =>
+  client.setQueryData(
+    changeRequestKeys.sessionList('project-fixture', 'project-session-fixture'),
+    { change_requests: crs },
+  );
 
 describe('SessionChat turn error presentation', () => {
   test('aborted turn stays silent without a control-plane notice', () => {
@@ -165,6 +204,54 @@ describe('SessionChat transcript rows', () => {
         </NextIntlClientProvider>
       </QueryClientProvider>,
     );
+  test('persisted failures render without a transcript message and deduplicate last_ended', () => {
+    fixtureMessages = [];
+    persistedOutcome = {
+      recent_failures: [{ message_id: 'install-prompt', ended_at: null, error: { name: 'Error', message: 'synthetic install failure' } }],
+      last_ended: { turn_token: 'install-turn', message_id: 'install-prompt', end_reason: 'failed', ended_at: null, error: { name: 'Error', message: 'synthetic install failure' } },
+    };
+    try {
+      expect(renderChat().split('synthetic install failure').length - 1).toBe(1);
+      persistedOutcome = { last_ended: { turn_token: 'early-turn', end_reason: 'failed', ended_at: null, error: { name: 'Error', message: 'synthetic early failure' } } };
+      expect(renderChat()).toContain('synthetic early failure');
+    } finally {
+      fixtureMessages = baseFixtureMessages;
+      persistedOutcome = {};
+    }
+  });
+
+  test('unknown persisted failures render after settling even without a transcript', () => {
+    fixtureMessages = [];
+    persistedOutcome = { atMs: 100000, recent_failures: [{ message_id: 'install-unknown', ended_at: new Date(0).toISOString(), error: null }] };
+    try {
+      expect(renderChat()).toContain('Agent turn failed. No reason was reported.');
+      persistedOutcome = { last_ended: { turn_token: 'unknown-early', end_reason: 'failed', ended_at: null } };
+      expect(renderChat()).toContain('Agent turn failed. No reason was reported.');
+      persistedOutcome = { atMs: 100001, recent_failures: [{ message_id: 'install-provisional', ended_at: new Date(100000).toISOString(), error: null }] };
+      expect(renderChat()).not.toContain('Agent turn failed. No reason was reported.');
+    } finally {
+      fixtureMessages = baseFixtureMessages;
+      persistedOutcome = {};
+    }
+  });
+
+  test('persisted failures already represented by transcript rows are not repeated', () => {
+    persistedOutcome = { recent_failures: [{ message_id: 'user-fixture', ended_at: null, error: { name: 'Error', message: 'synthetic persisted failure' } }] };
+    try {
+      fixtureMessages = [];
+      expect(renderChat().split('synthetic persisted failure').length - 1).toBe(1);
+      fixtureMessages = baseFixtureMessages;
+      expect(renderChat().split('synthetic persisted failure').length - 1).toBe(1);
+      persistedOutcome = { last_ended: { turn_token: 'done', end_reason: 'completed', ended_at: null, error: { name: 'Error', message: 'stale completed error' } } };
+      expect(renderChat()).not.toContain('stale completed error');
+      persistedOutcome = { last_ended: { turn_token: 'stop', end_reason: 'failed', ended_at: null, error: { name: 'AbortError', message: 'Aborted' } } };
+      expect(renderChat()).not.toContain('Aborted');
+    } finally {
+      persistedOutcome = {};
+      fixtureMessages = baseFixtureMessages;
+    }
+  });
+
   test('an audit-pending executor call leaves the editor and send enabled beside its approval action', () => {
     auditPending = true;
     busy = true;
@@ -201,9 +288,8 @@ describe('SessionChat transcript rows', () => {
     busy = false;
   });
 
-  test('an ask (no_reply first message) shows its card with no Queued, Sending or Thinking', () => {
-    const ask =
-      '[ASK from Avery <avery@example.com> to Viewer <viewer@example.com> — the people named answer here.]\n\nWhich region?';
+  test('a no_reply prompt shows its bubble with no Queued, Sending or Thinking', () => {
+    const ask = 'Which region?';
     fixtureMessages = [];
     inboxPrompts = [
       {
@@ -224,7 +310,6 @@ describe('SessionChat transcript rows', () => {
     ];
     try {
       const markup = renderChat();
-      expect(markup).toContain('data-message-kind="ask"');
       expect(markup).toContain('Which region?');
       expect(markup).not.toContain('Thinking');
       expect(markup).not.toContain('Sending');
@@ -269,9 +354,9 @@ describe('SessionChat transcript rows', () => {
 // pins one section the transcript move must preserve, through the whole
 // SessionChat render, so the same assertions hold before and after the move.
 describe('SessionChat moved turn sections', () => {
-  const renderChat = () =>
+  const renderChat = (client = new QueryClient()) =>
     renderToStaticMarkup(
-      <QueryClientProvider client={new QueryClient()}>
+      <QueryClientProvider client={client}>
         <NextIntlClientProvider locale="en" messages={enMessages} onError={() => {}}>
           <SidebarProvider>
             <SessionChat
@@ -387,5 +472,51 @@ describe('SessionChat moved turn sections', () => {
     } finally {
       fixtureMessages = baseFixtureMessages;
     }
+  });
+
+  // Pin for the turn-outcome footer (KRTX-1622): the KRTX-355 session-chat
+  // split moved the `TurnFooter` comment block but dropped its
+  // `{!working && <TurnOutcomes …/>}` render, so the provider pipeline below
+  // fed a context nothing read. Both cases render through the whole
+  // SessionChat so the provider → anchor → footer path is the one under test.
+  describe('turn-outcome footer', () => {
+    test('a settled turn whose span contains this session’s change request renders its outcome card', () => {
+      fixtureMessages = [
+        userFixture('user-cr', 'open the synthetic change request'),
+        {
+          info: {
+            id: 'assistant-cr',
+            role: 'assistant',
+            parentID: 'user-cr',
+            agent: 'build',
+            time: { created: 2000 },
+          },
+          parts: [],
+        },
+      ];
+      const client = new QueryClient();
+      seedSessionChangeRequests(client, [changeRequestFixture()]);
+      try {
+        const markup = renderChat(client);
+        expect(markup).toContain('data-testid="turn-outcomes"');
+        expect(markup).toContain('synthetic files reorder');
+        expect(markup).toContain('Waiting for you');
+      } finally {
+        fixtureMessages = baseFixtureMessages;
+      }
+    });
+
+    test('a turn still working renders no outcome card yet', () => {
+      busy = true;
+      const client = new QueryClient();
+      seedSessionChangeRequests(client, [changeRequestFixture()]);
+      try {
+        // The change request postdates the only turn's start, so it anchors to
+        // the working turn; the `!working` gate is what must hide it.
+        expect(renderChat(client)).not.toContain('data-testid="turn-outcomes"');
+      } finally {
+        busy = false;
+      }
+    });
   });
 });

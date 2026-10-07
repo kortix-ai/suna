@@ -69,7 +69,6 @@ const localizedSiteConfigText = generatedTranslationText(
 const localizedAuditTitleText = generatedTranslationText(
   'components/iam/audit-title-translation-keys.generated.ts',
 );
-const localizedBlogText = generatedTranslationText('i18n/blog-translation-keys.generated.ts');
 const localizedPublicMetadataText = generatedTranslationText(
   'i18n/public-metadata-translation-keys.generated.ts',
 );
@@ -829,8 +828,6 @@ function scanFile(file) {
       const coveredAuditTitleText =
         file === path.join(srcDir, 'components/iam/audit-display-helpers.ts') &&
         localizedAuditTitleText.has(node.text);
-      const coveredStarterPromptText =
-        file === path.join(srcDir, 'lib/starter-prompts.ts') && ['label', 'prompt'].includes(name);
       const coveredSessionsCopy =
         file === path.join(srcDir, 'features/workspace/settings/tabs/sessions-tab.tsx') &&
         [
@@ -845,18 +842,16 @@ function scanFile(file) {
         ['STATIC_GROUPS', 'RETIRED_RAIL_ITEMS'].includes(catalogRoot);
       const coveredOnboardingProfileFixture =
         file === path.join(srcDir, 'components/projects/onboarding/onboarding-profile.ts') &&
-        ['USE_CASE_OPTIONS', 'STARTER_PROMPTS'].includes(catalogRoot);
+        catalogRoot === 'USE_CASE_OPTIONS';
       const coveredCompanyOsMessageKey =
         file === path.join(srcDir, 'features/marketing/company-os-sections.tsx') &&
         ['codePoints', 'runsPoints'].includes(catalogRoot);
       const coveredRoleCapabilityCopy =
-        file === path.join(srcDir, 'components/iam/role-capability-matrix.tsx') &&
+        file === path.join(srcDir, 'components/iam/role-capability-model.ts') &&
         catalogRoot === 'AREA_COPY';
       const coveredSnapshotsFallbackCopy =
         file === path.join(srcDir, 'features/workspace/settings/tabs/snapshots-tab.tsx') &&
         catalogRoot === 'DEFAULT_SNAPSHOTS_COPY';
-      const coveredBlogMetadata =
-        file === path.join(srcDir, 'lib/blog-posts.ts') && localizedBlogText.has(node.text);
       const coveredPublicMetadata =
         file === path.join(srcDir, 'lib/seo/public-content.ts') &&
         localizedPublicMetadataText.has(node.text);
@@ -1009,8 +1004,7 @@ function scanFile(file) {
           catalogRoot === 'DEFAULT_BUCKET_COPY') ||
         (file === path.join(srcDir, 'features/workspace/settings/tabs/profile-tab.tsx') &&
           catalogRoot === 'DEFAULT_PROFILE_TAB_COPY') ||
-        (file === path.join(srcDir, 'lib/site-metadata.ts') && catalogRoot === 'siteMetadata') ||
-        (file === path.join(srcDir, 'components/home/cli-demo.tsx') && catalogRoot === 'PALETTE');
+        (file === path.join(srcDir, 'lib/site-metadata.ts') && catalogRoot === 'siteMetadata');
       const coveredTechnicalCatalog =
         (file === path.join(srcDir, 'components/home/navbar.tsx') &&
           catalogRoot === 'DRAWER_SOCIALS') ||
@@ -1113,14 +1107,12 @@ function scanFile(file) {
         !coveredRoleText &&
         !coveredSiteConfigText &&
         !coveredAuditTitleText &&
-        !coveredStarterPromptText &&
         !coveredSessionsCopy &&
         !coveredSettingsRail &&
         !coveredOnboardingProfileFixture &&
         !coveredCompanyOsMessageKey &&
         !coveredRoleCapabilityCopy &&
         !coveredSnapshotsFallbackCopy &&
-        !coveredBlogMetadata &&
         !coveredPublicMetadata &&
         !coveredWallpaperDownload &&
         !coveredDesignToken &&

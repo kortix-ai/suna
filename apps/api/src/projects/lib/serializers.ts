@@ -6,6 +6,7 @@ import type {
   SecretDeliveryBlockedReason,
   SecretDeliveryStrategy,
 } from '@kortix/api-contract';
+import { normalizeRuntimeSessionSnapshots } from './runtime-session-snapshot';
 import {
   type accountGithubInstallations,
   type projectGitConnections,
@@ -15,12 +16,13 @@ import {
   type projects,
 } from '@kortix/db';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
-import type { Context } from 'hono';
 import { sessionInitiatorLabel } from './session-initiator';
 import { type SandboxProviderName, config } from '../../config';
 import { mayManageSessionSharing, type SecretGrant, visibilityToIntent } from '../../connectors/share';
 import { buildFeatureFlagCatalog, resolveFeatureFlags } from '../../feature-flags/registry';
-import { requestClientIp } from '../../shared/client-ip';
+// The request reader `requestAuditContext` lives in `middleware/request-audit.ts`.
+// Re-exported here so every importer and mock keeps working.
+export { requestAuditContext } from '../../middleware/request-audit';
 import { normalizeJsonObject } from '../../shared/json';
 import { db } from '../../shared/db';
 import type { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
@@ -37,6 +39,7 @@ import { parseGitHubRepoUrl } from './git';
 import { isPlaceholderOpencodeTitle, runtimeRootTitleFromSnapshot } from './opencode-title';
 import { normalizeProjectGlyph } from './project-glyph';
 import { normalizeProjectIcon } from './project-icon';
+import { isWarmProjectSession } from './warm-sessions';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 
@@ -119,10 +122,10 @@ export function serializeSession(
     ownerEmail?: string | null;
     /** Resolved human or service-account display name. */
     ownerName?: string | null;
+    /** The owner's profile photo, for the starter mark. */
+    ownerAvatarUrl?: string | null;
     /** Display name of a member/service-account initiator that is not the owner. */
     initiatorName?: string | null;
-    /** Resolved people of a conversation (`metadata.participants`), single-session read only. */
-    participants?: Array<{ user_id: string; name: string | null; email: string | null }>;
     /** Whether created_by identifies a human, service account, or stale principal. */
     ownerType?: 'user' | 'service_account' | 'unknown' | null;
     /** Whether the viewer may read/open the session, independent of inventory visibility. */
@@ -145,10 +148,9 @@ export function serializeSession(
   // the metadata object alone would still have leaked the OpenCode-synced title
   // (which summarises the conversation) and the conversation-tree snapshot.
   const canAccess = ctx?.canAccess ?? true;
-  const opencodeSessions =
-    canAccess && Array.isArray(row.metadata?.opencode_sessions)
-      ? row.metadata.opencode_sessions
-      : [];
+  const opencodeSessions = canAccess
+    ? normalizeRuntimeSessionSnapshots(row.metadata?.opencode_sessions)
+    : [];
   const isOwner = ctx?.viewerId ? row.createdBy === ctx.viewerId : false;
   // A user-set name (metadata.custom_name) is authoritative and ALWAYS wins
   // over the auto title (metadata.name) mirrored from OpenCode server-side
@@ -183,7 +185,16 @@ export function serializeSession(
     custom_name: customName,
     labels: canAccess ? (row.labels ?? []) : [],
     agent_name: row.agentName,
-    status: row.status,
+    // A warm (pre-created, never-prompted) session whose box is up must not
+    // claim `running`: nothing has ever run in it, and every list painted those
+    // shells as phantom green "Running" rows (KRTX-1466). Report the status it
+    // held while its box booted; the first accepted turn drops the warm marker
+    // (session-activity.ts) and the row reads `running` again. The row itself
+    // still lists and still bills — see session-inventory.ts (KRTX-1068).
+    status:
+      row.status === 'running' && isWarmProjectSession(row.metadata)
+        ? 'provisioning'
+        : row.status,
     error: row.error,
     // Inventory filters inaccessible rows. Keep this boundary fail-closed for
     // other callers that serialize with canAccess=false. Metadata holds
@@ -199,8 +210,8 @@ export function serializeSession(
     created_by: row.createdBy,
     owner_email: ctx?.ownerEmail ?? null,
     owner_name: ctx?.ownerName ?? null,
+    owner_avatar_url: ctx?.ownerAvatarUrl ?? null,
     owner_type: ctx?.ownerType ?? (row.createdBy ? 'unknown' : null),
-    participant_people: canAccess ? (ctx?.participants ?? []) : [],
     visibility: row.visibility,
     origin: row.origin,
     parent_session_id: row.parentSessionId ?? null,
@@ -380,15 +391,6 @@ export function serializeGitHubRepo(repo: GitHubRepo) {
   };
 }
 
-export function requestAuditContext(c: Context): RequestAuditContext {
-  return {
-    method: c.req.method,
-    path: c.req.path,
-    ip: requestClientIp(c),
-    userAgent: c.req.header('user-agent') || null,
-  };
-}
-
 export type SecretRow = typeof projectSecrets.$inferSelect;
 
 /**
@@ -426,9 +428,11 @@ function grantAdmits(list: string[], identifier: string): boolean {
  *                  rescue it — grants come only from manifest specs.
  *   `declarative`, agents non-empty — the manifest parsed and its declarations
  *                  are the complete grant set. CERTAIN either way.
- *   `declarative`, agents EMPTY — the only ambiguous state, and it is reached by
- *                  a manifest that FAILED to parse (specs empty, errors present)
- *                  or one whose agents are all disabled. Report null.
+ *   `declarative`, agents EMPTY — the only ambiguous state, and it is reached
+ *                  by a manifest that FAILED to parse (specs empty, errors
+ *                  present). Report null. (Disabled agents stay listed with
+ *                  `enabled: false` and are skipped below, so an all-disabled
+ *                  manifest reports `no_agent_grant`, not the ambiguous null.)
  *
  * Getting this backwards would be worse than useless in both directions: silent
  * on the commonest broken setup (no `agents:` block), and crying wolf on a
@@ -447,7 +451,10 @@ export function secretDeliveryBlockedReason(
   if (config.agent_discovery !== 'declarative') return null;
   const agents = config.agents;
   if (!Array.isArray(agents) || agents.length === 0) return null;
+  // The summary lists disabled agents too (enabled: false); only an agent a
+  // session could actually launch makes "granted somewhere" certain.
   const granted = agents.some((agent) => {
+    if (agent.enabled === false) return false;
     const env = agent.scope?.env;
     return Array.isArray(env) && grantAdmits(env, identifier);
   });

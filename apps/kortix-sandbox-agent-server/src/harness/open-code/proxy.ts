@@ -1,3 +1,4 @@
+import { BLOCKING_TURN_VERBS } from '@kortix/api-contract/runtime-relay'
 import { requireOpenCodeConfig } from './config'
 import type { HarnessProxyService } from '../contract/proxy'
 import { bootPhaseLabel } from './boot-phase'
@@ -51,20 +52,16 @@ const UPSTREAM_RESPONSE_TIMEOUT_MS = 10_000
 // the browser waits for. This only stops the daemon severing a live turn first.
 const LONG_TURN_RESPONSE_TIMEOUT_MS = 10 * 60_000
 
+const BLOCKING_TURN_PATH = new RegExp(`^/session/[^/]+/(?:${BLOCKING_TURN_VERBS.join('|')})(?:$|[/?#])`)
+
 /**
- * Does opencode withhold this response until a whole turn completes?
- *
- * Mirrors `isLongTurnCompletionRequest` in
- * `apps/api/src/sandbox-proxy/preview-retry-budget.ts` — the two layers must
- * agree on which calls block, or the inner one aborts what the outer one is
- * patiently waiting for. Keep them in sync; there is no shared module because
- * the daemon ships inside the sandbox image and cannot import from apps/api.
+ * Does opencode withhold this response until a whole turn completes? The API
+ * proxy (`isLongTurnCompletionRequest`) reads the same `BLOCKING_TURN_VERBS`:
+ * the two layers must agree, or the inner one aborts what the outer one is
+ * patiently waiting for.
  */
 export function isBlockingTurnRequest(method: string, path: string): boolean {
-  return (
-    method.toUpperCase() === 'POST' &&
-    /^\/session\/[^/]+\/(?:message|command|summarize)(?:$|[/?#])/.test(path)
-  )
+  return method.toUpperCase() === 'POST' && BLOCKING_TURN_PATH.test(path)
 }
 
 /** Native readiness and upstream protocol handling, without route registration. */
@@ -124,18 +121,18 @@ export function createOpenCodeProxyService(
         )
       }
 
-      if (bootState.initialOpenCodeSessionError) {
+      if (bootState.initialRuntimeSessionError) {
         return notReady(
           {
             error: 'sandbox runtime not ready',
             reason: 'initial_runtime_session_failed',
-            message: bootState.initialOpenCodeSessionError,
+            message: bootState.initialRuntimeSessionError,
           },
           'initial_session_failed',
         )
       }
 
-      if (bootState.initialOpenCodeSessionRequired && !bootState.initialOpenCodeSessionId) {
+      if (bootState.initialRuntimeSessionRequired && !bootState.initialRuntimeSessionId) {
         return notReady(
           {
             error: 'sandbox runtime not ready',

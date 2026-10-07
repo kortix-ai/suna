@@ -1,5 +1,6 @@
+import { numberValue, isoValue } from './cost-values';
 import { gatewayRequestLogs, projectSessions, projects, sandboxComputeSessions } from '@kortix/db';
-import { and, desc, eq, gte, lt, sql } from 'drizzle-orm';
+import { and, eq, gte, lt, sql } from 'drizzle-orm';
 
 import type { CostSort, CostWindow } from './cost-window';
 import { db } from './db';
@@ -42,17 +43,6 @@ interface ComputeProjectAggregateRow {
   computeCost: number | string;
   sessionCount: number | string;
   lastAt: Date | string | null;
-}
-
-function numberValue(value: number | string | null | undefined): number {
-  const result = Number(value ?? 0);
-  return Number.isFinite(result) ? result : 0;
-}
-
-function isoValue(value: Date | string | null | undefined): string | null {
-  if (!value) return null;
-  const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 function laterIso(left: string | null, right: string | null): string | null {
@@ -325,20 +315,29 @@ const LLM_DAY_EXPRESSION = sql<string>`to_char(date_trunc('day', ${gatewayReques
 // mode, so `at time zone 'UTC'` on the raw column is valid the same way.
 const COMPUTE_DAY_EXPRESSION = sql<string>`to_char(date_trunc('day', ${sandboxComputeSessions.startedAt} at time zone 'UTC'), 'YYYY-MM-DD')`;
 
-interface ComputeTotalsRow {
-  computeCost: number | string;
-  computeSeconds: number | string;
-  sessionCount: number | string;
-}
+/**
+ * Which grouping set a grouped-scan row belongs to.
+ *
+ * `grouping(expr)` is 1 when `expr` is NOT a grouping column of the row's
+ * set — decided by the GROUP BY, never by the data. Each set below has
+ * exactly one expression with `grouping() = 0`, except the grand total
+ * (none), so one CASE labels every row. Dispatching on the null shape of
+ * the projected columns instead would silently misroute the day a provider
+ * or a day expression ever returns NULL — the label must come from the
+ * query plan, not from the data.
+ */
+const LLM_SET_ID = sql<string>`case
+  when grouping(${gatewayRequestLogs.provider}) = 0 then 'model'
+  when grouping(${LLM_DAY_EXPRESSION}) = 0 then 'day'
+  when grouping(${gatewayRequestLogs.projectId}) = 0 then 'project'
+  else 'totals'
+end`;
 
-interface ComputeDailyRow {
-  day: string;
-  cost: number | string;
-}
-
-interface ComputePriorRow {
-  cost: number | string;
-}
+const COMPUTE_SET_ID = sql<string>`case
+  when grouping(${COMPUTE_DAY_EXPRESSION}) = 0 then 'day'
+  when grouping(${projectSessions.projectId}) = 0 then 'project'
+  else 'totals'
+end`;
 
 // Scoped, windowed spend totals, a gap-filled daily series, the top 10
 // models by spend, and the prior equal-length window's total for a period
@@ -367,12 +366,15 @@ export async function getCostSummary(input: {
 
   // Compute rows carry no project_id of their own — reaching it means
   // joining project_sessions (session_id is its primary key, as in
-  // listCostByProject above). The join is added only when scoping to one
-  // project: joining unconditionally would inner-join away compute cost from
-  // sessions with no project_sessions row, silently undercounting the
-  // account-wide total. This endpoint's totals.total_cost must cover ALL
-  // account spend in the window — the same constraint loadReconciliation in
-  // session-costs.ts enforces with a LEFT JOIN for the same reason.
+  // listCostByProject above). The grouped scan LEFT JOINs project_sessions
+  // always: the grand-total set must still cover compute cost from sessions
+  // with no project_sessions row (the account-wide total includes unassigned
+  // spend — the same constraint loadReconciliation in session-costs.ts
+  // enforces with a LEFT JOIN), and a LEFT JOIN keeps every row. When
+  // scoping to one project the ps.project_id predicate in the WHERE makes
+  // the LEFT JOIN behave exactly like the INNER JOIN the ungrouped version
+  // used (a right side that fails the predicate drops the row, matched or
+  // not), and the project grouping set then sees only that project.
   const computeScope = (w: CostWindow) => {
     const conditions = [
       eq(sandboxComputeSessions.accountId, accountId),
@@ -387,99 +389,46 @@ export async function getCostSummary(input: {
     return and(...conditions);
   };
 
-  const computeTotalsFields = {
-    computeCost: sql<number>`coalesce(sum(${sandboxComputeSessions.costUsd}), 0)::float8`,
-    computeSeconds: sql<number>`coalesce(sum(${billedComputeSecondsExpression}), 0)::float8`,
-    sessionCount: sql<number>`count(distinct ${sandboxComputeSessions.sessionId})::int`,
-  };
-  const computeDailyFields = {
-    day: COMPUTE_DAY_EXPRESSION,
-    cost: sql<number>`coalesce(sum(${sandboxComputeSessions.costUsd}), 0)::float8`,
-  };
-  const computePriorFields = {
-    cost: sql<number>`coalesce(sum(${sandboxComputeSessions.costUsd}), 0)::float8`,
-  };
-
-  // Each loader branches on whether the project_sessions join is needed and
-  // awaits inside the branch, rather than assigning a not-yet-awaited query
-  // built by a ternary — Drizzle's joined and unjoined builders are
-  // differently-typed chain objects, and unifying them at the ternary
-  // (instead of at the already-resolved Promise) is exactly the kind of
-  // ambiguity the brief's Step 5 pseudocode (`computeBase`) glossed over.
-  function loadComputeTotals(w: CostWindow): Promise<ComputeTotalsRow[]> {
-    if (projectId) {
-      return db
-        .select(computeTotalsFields)
-        .from(sandboxComputeSessions)
-        .innerJoin(projectSessions, eq(projectSessions.sessionId, sandboxComputeSessions.sessionId))
-        .where(computeScope(w));
-    }
-    return db.select(computeTotalsFields).from(sandboxComputeSessions).where(computeScope(w));
-  }
-
-  function loadComputeDaily(w: CostWindow): Promise<ComputeDailyRow[]> {
-    if (projectId) {
-      return db
-        .select(computeDailyFields)
-        .from(sandboxComputeSessions)
-        .innerJoin(projectSessions, eq(projectSessions.sessionId, sandboxComputeSessions.sessionId))
-        .where(computeScope(w))
-        .groupBy(COMPUTE_DAY_EXPRESSION);
-    }
-    return db
-      .select(computeDailyFields)
-      .from(sandboxComputeSessions)
-      .where(computeScope(w))
-      .groupBy(COMPUTE_DAY_EXPRESSION);
-  }
-
-  function loadComputePrior(w: CostWindow): Promise<ComputePriorRow[]> {
-    if (projectId) {
-      return db
-        .select(computePriorFields)
-        .from(sandboxComputeSessions)
-        .innerJoin(projectSessions, eq(projectSessions.sessionId, sandboxComputeSessions.sessionId))
-        .where(computeScope(w));
-    }
-    return db.select(computePriorFields).from(sandboxComputeSessions).where(computeScope(w));
-  }
-
   const previous = previousWindow(window);
 
-  // A dedicated, non-money query pair for project_count: the true union of
-  // distinct project ids touched by either source, not just the LLM side's
-  // count (see the comment on totals.project_count below for why the LLM
-  // side alone undercounts). The compute side is always joined to
-  // project_sessions here — unlike computeTotals/computeDaily/computePrior,
-  // this query carries no money, so there is no completeness constraint to
-  // protect: a compute row with no project_sessions match has no project to
-  // attribute to a distinct-project count in the first place.
-  const llmProjectIdsQuery = db
-    .select({ projectId: gatewayRequestLogs.projectId })
-    .from(gatewayRequestLogs)
-    .where(and(llmScope(window), sql`${gatewayRequestLogs.projectId} is not null`))
-    .groupBy(gatewayRequestLogs.projectId);
+  // The prior-window compute total carries no project attribution of its
+  // own, but computeScope still filters on project_sessions.project_id
+  // when a project scope is set — so the join exists exactly when that
+  // predicate needs it (an INNER join, as before: at project scope every
+  // surviving row must match the project). Drizzle's joined and unjoined
+  // builders are differently-typed chain objects, so the branch awaits
+  // inside each arm rather than unifying them at a ternary.
+  function loadComputePrior(w: CostWindow) {
+    if (projectId) {
+      return db
+        .select({ cost: sql<number>`coalesce(sum(${sandboxComputeSessions.costUsd}), 0)::float8` })
+        .from(sandboxComputeSessions)
+        .innerJoin(projectSessions, eq(projectSessions.sessionId, sandboxComputeSessions.sessionId))
+        .where(computeScope(w));
+    }
+    return db
+      .select({ cost: sql<number>`coalesce(sum(${sandboxComputeSessions.costUsd}), 0)::float8` })
+      .from(sandboxComputeSessions)
+      .where(computeScope(w));
+  }
 
-  const computeProjectIdsQuery = db
-    .select({ projectId: projectSessions.projectId })
-    .from(sandboxComputeSessions)
-    .innerJoin(projectSessions, eq(projectSessions.sessionId, sandboxComputeSessions.sessionId))
-    .where(computeScope(window))
-    .groupBy(projectSessions.projectId);
-
-  const [
-    llmTotalsRows,
-    llmDailyRows,
-    modelRows,
-    llmPriorRows,
-    llmProjectIdRows,
-    computeTotalsRows,
-    computeDailyRows,
-    computePriorRows,
-    computeProjectIdRows,
-  ] = await Promise.all([
+  // One grouped scan per source per window. Prod Server-Timing (2026-10-04,
+  // the largest account) showed this route spending db;dur=4.5–25s across
+  // n=10 statements: five independent scans of the same 30-day
+  // gateway_request_logs window and four of sandbox_compute_sessions, each
+  // re-reading the same heap pages, with repeats after the first load
+  // settling at ~0.1s once the buffer cache was warm. The scan itself is
+  // the cost — GROUPING SETS computes totals, the daily series, the model
+  // breakdown and the distinct-project list from a single pass, keeping
+  // every figure identical to the one-query-per-figure version.
+  const [llmGroupRows, llmPriorRows, computeGroupRows, computePriorRows] = await Promise.all([
     db
       .select({
+        setId: LLM_SET_ID,
+        provider: gatewayRequestLogs.provider,
+        model: gatewayRequestLogs.resolvedModel,
+        day: LLM_DAY_EXPRESSION,
+        projectId: gatewayRequestLogs.projectId,
         llmCost: kortixBilledSpendSql,
         llmKortixCost: kortixBilledSpendSql,
         llmProviderCost: providerBilledSpendSql,
@@ -487,51 +436,109 @@ export async function getCostSummary(input: {
         sessionCount: sql<number>`count(distinct ${gatewayRequestLogs.sessionId})::int`,
       })
       .from(gatewayRequestLogs)
-      .where(llmScope(window)),
-    db
-      .select({
-        day: LLM_DAY_EXPRESSION,
-        cost: kortixBilledSpendSql,
-      })
-      .from(gatewayRequestLogs)
       .where(llmScope(window))
-      .groupBy(LLM_DAY_EXPRESSION),
-    db
-      .select({
-        provider: gatewayRequestLogs.provider,
-        model: gatewayRequestLogs.resolvedModel,
-        cost: kortixBilledSpendSql,
-        requestCount: sql<number>`count(*)::int`,
-      })
-      .from(gatewayRequestLogs)
-      .where(llmScope(window))
-      .groupBy(gatewayRequestLogs.provider, gatewayRequestLogs.resolvedModel)
-      // Cost descending, then provider/model descending as a deterministic
-      // tie-break — without it, which model lands on the 10th row of a tie
-      // is unspecified and can flip between refreshes.
-      .orderBy(
-        desc(kortixBilledSpendSql),
-        desc(gatewayRequestLogs.provider),
-        desc(gatewayRequestLogs.resolvedModel),
-      )
-      .limit(10),
+      .groupBy(
+        sql`grouping sets (
+          (${gatewayRequestLogs.provider}, ${gatewayRequestLogs.resolvedModel}),
+          (${LLM_DAY_EXPRESSION}),
+          (${gatewayRequestLogs.projectId}),
+          ()
+        )`,
+      ),
     db
       .select({ cost: kortixBilledSpendSql })
       .from(gatewayRequestLogs)
       .where(llmScope(previous)),
-    llmProjectIdsQuery,
-    loadComputeTotals(window),
-    loadComputeDaily(window),
+    db
+      .select({
+        setId: COMPUTE_SET_ID,
+        day: COMPUTE_DAY_EXPRESSION,
+        projectId: projectSessions.projectId,
+        computeCost: sql<number>`coalesce(sum(${sandboxComputeSessions.costUsd}), 0)::float8`,
+        computeSeconds: sql<number>`coalesce(sum(${billedComputeSecondsExpression}), 0)::float8`,
+        sessionCount: sql<number>`count(distinct ${sandboxComputeSessions.sessionId})::int`,
+      })
+      .from(sandboxComputeSessions)
+      .leftJoin(projectSessions, eq(projectSessions.sessionId, sandboxComputeSessions.sessionId))
+      .where(computeScope(window))
+      .groupBy(
+        sql`grouping sets (
+          (${COMPUTE_DAY_EXPRESSION}),
+          (${projectSessions.projectId}),
+          ()
+        )`,
+      ),
     loadComputePrior(previous),
-    computeProjectIdsQuery,
   ]);
 
-  const projectIds = new Set<string>();
-  for (const row of llmProjectIdRows) if (row.projectId) projectIds.add(row.projectId);
-  for (const row of computeProjectIdRows) if (row.projectId) projectIds.add(row.projectId);
+  // Split the grouped rows by their set label. The grand-total row is the
+  // one row whose set has no grouping column; an empty window still returns
+  // it (aggregate without GROUP BY), while every grouped set returns none —
+  // the same shapes the per-query version produced.
+  const llmTotals = llmGroupRows.find((row) => row.setId === 'totals');
+  const computeTotals = computeGroupRows.find((row) => row.setId === 'totals');
 
-  const llmTotals = llmTotalsRows[0];
-  const computeTotals = computeTotalsRows[0];
+  const llmDailyRows: DailyCostRow[] = [];
+  const computeDailyRows: DailyCostRow[] = [];
+  for (const row of llmGroupRows) {
+    if (row.setId === 'day' && row.day) llmDailyRows.push({ day: row.day, cost: row.llmCost });
+  }
+  for (const row of computeGroupRows) {
+    if (row.setId === 'day' && row.day) computeDailyRows.push({ day: row.day, cost: row.computeCost });
+  }
+
+  // The true union of distinct project ids across both sources, not just
+  // the LLM side's count: a project can have compute spend and zero
+  // gateway_request_logs rows in the window (a session whose compute
+  // started inside the window but whose LLM calls fell outside it, or a
+  // project on BYO keys with no gateway rows at all), and listCostByProject
+  // above already treats such a project as real (mergeProjectCostRows's
+  // compute loop calls ensure(row.projectId) same as the LLM loop). The
+  // grouping sets produce this as the rows of each source's project set;
+  // the compute side's LEFT JOIN adds a NULL group for unassigned spend,
+  // which the `row.projectId` guard drops the same way the ungrouped
+  // version's INNER JOIN never saw those rows at all.
+  const projectIds = new Set<string>();
+  for (const row of llmGroupRows) {
+    if (row.setId === 'project' && row.projectId) projectIds.add(row.projectId);
+  }
+  for (const row of computeGroupRows) {
+    if (row.setId === 'project' && row.projectId) projectIds.add(row.projectId);
+  }
+
+  // Cost descending, then provider/model descending as a deterministic
+  // tie-break — the same rule the ungrouped version ordered by in SQL.
+  // ponytail: the tie-break compares code units, not the DB collation —
+  // identical for the ASCII provider/model slugs; move the ordering back
+  // into SQL (a per-set LIMIT can't live inside GROUPING SETS) if a
+  // non-ASCII model name ever needs exact SQL tie order.
+  const models = llmGroupRows
+    .filter((row) => row.setId === 'model')
+    .map((row) => {
+      // Unreachable by construction: provider and resolved_model are the
+      // grouping columns of the 'model' set and both are NOT NULL in the
+      // table, so a 'model' row always carries both. The guard narrows
+      // without a cast and fails loudly if the set marker or the schema
+      // ever drifts.
+      if (!row.provider || !row.model) {
+        throw new Error(`model grouping-set row without provider/model: ${JSON.stringify(row)}`);
+      }
+      return {
+        provider: row.provider,
+        model: row.model,
+        cost: numberValue(row.llmCost),
+        request_count: numberValue(row.requestCount),
+      };
+    })
+    .sort((left, right) => {
+      const byCost = right.cost - left.cost;
+      if (byCost) return byCost;
+      if (left.provider !== right.provider) return left.provider < right.provider ? 1 : -1;
+      if (left.model === right.model) return 0;
+      return left.model < right.model ? 1 : -1;
+    })
+    .slice(0, 10);
+
   const llmCost = numberValue(llmTotals?.llmCost);
   const computeCost = numberValue(computeTotals?.computeCost);
 
@@ -575,11 +582,6 @@ export async function getCostSummary(input: {
     totals,
     previous: { total_cost: previousTotalCost },
     series: buildCostSeries(llmDailyRows, computeDailyRows, window),
-    models: modelRows.map((row) => ({
-      provider: row.provider,
-      model: row.model,
-      cost: numberValue(row.cost),
-      request_count: numberValue(row.requestCount),
-    })),
+    models,
   };
 }

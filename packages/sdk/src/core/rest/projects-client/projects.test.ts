@@ -971,12 +971,9 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'monitors',
     'reminders',
     'secrets_egress',
-    'pi_worker',
     'pooled_provider_secrets',
     'pi_harness',
-    'agent_principal',
     'us_region',
-    'human_messaging',
     'warm_sessions',
   ];
   expect([...FEATURE_FLAG_KEYS].sort()).toEqual(expected.sort());
@@ -1008,6 +1005,12 @@ test('agent_tunnel graduated: computers need no flag, the key still typechecks',
   expect(FEATURE_FLAG_KEYS).not.toContain(graduated);
 });
 
+test('agent_principal graduated: every governed agent authorizes as itself, the key still typechecks', () => {
+  // There is one authorization path. The API no longer serves `agent_principal`.
+  const graduated: FeatureFlagKey = 'agent_principal';
+  expect(FEATURE_FLAG_KEYS).not.toContain(graduated);
+});
+
 test('session_transcript_history graduated: saved history is always on, the key still typechecks', () => {
   // Every session saves its transcript and shows it while its computer is off.
   // The API no longer serves `session_transcript_history`.
@@ -1019,6 +1022,13 @@ test('teams graduated: Microsoft Teams needs no flag, the key still typechecks',
   // Every project can connect Teams. The API no longer serves `teams`.
   const graduated: FeatureFlagKey = 'teams';
   expect(FEATURE_FLAG_KEYS).not.toContain(graduated);
+});
+
+test('pi_worker withdrawn: sessions run pi only in the sandbox, the key still typechecks', () => {
+  // The worker/environment split left the product. The API no longer lists,
+  // resolves, or accepts `pi_worker`; `pi_harness` is the pi path.
+  const withdrawn: FeatureFlagKey = 'pi_worker';
+  expect(FEATURE_FLAG_KEYS).not.toContain(withdrawn);
 });
 
 test('FeatureFlagView stability accepts stable, beta, and experimental', () => {

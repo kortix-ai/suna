@@ -21,16 +21,16 @@ export function createPiDiagnosticsService(
   releases: Pick<PiConfigReleases, 'report' | 'sourceCommit'>,
 ): HarnessDiagnosticsService {
   return {
-    // Subagents (the `task` tool) are native; rewind, compact, commands, fork,
-    // MCP, todo, shell and the harness's own terminal client are not yet
-    // (pi/surface.ts answers them 501 `feature_not_supported`).
-    capabilities: ['session.subagents'],
+    // Subagents (the `task` tool), compaction, slash commands (pi's prompt
+    // templates) and steering are native; rewind, fork, MCP, todo, shell and the harness's own
+    // terminal client are not yet (pi/surface.ts answers them 501 `feature_not_supported`).
+    capabilities: async () => ['session.subagents', 'session.compact', 'session.commands', 'session.steer'],
     async health(context, query): Promise<HarnessHealthReport> {
       const bootState: PiBootState = context.bootState
       const rt = runtime()
       const state = rt?.getState() ?? 'down'
-      const initialSessionReady = !bootState.initialOpenCodeSessionRequired || !!bootState.initialOpenCodeSessionId
-      const error = bootState.initialOpenCodeSessionError ?? startError() ?? bootState.auditRelayError ?? null
+      const initialSessionReady = !bootState.initialRuntimeSessionRequired || !!bootState.initialRuntimeSessionId
+      const error = bootState.initialRuntimeSessionError ?? startError() ?? bootState.auditRelayError ?? null
       const probe = query.turn !== undefined && rt ? rt.turnProbe(query.turn.messageId || null) : null
       const model = rt?.selectedModel()
       // The same read the `config` block reports, so `ready` never disagrees with it.
@@ -42,7 +42,7 @@ export function createPiDiagnosticsService(
           state,
           ready: !error && state === 'ok' && config.proven && initialSessionReady,
           error,
-          session: { id: bootState.initialOpenCodeSessionId ?? null, required: !!bootState.initialOpenCodeSessionRequired },
+          session: { id: bootState.initialRuntimeSessionId ?? null, required: !!bootState.initialRuntimeSessionRequired },
           turn: probe ? { in_flight: probe.inFlight, end: probe.end, orphaned_prompt: probe.orphanedPrompt } : null,
           details: {
             model: model ? `${model.providerID}/${model.modelID}` : null,
@@ -87,7 +87,7 @@ export function createPiDiagnosticsService(
         },
         boot: {
           repo_materialization_error: bootState.repoMaterializationError,
-          initial_session_error: bootState.initialOpenCodeSessionError ?? null,
+          initial_session_error: bootState.initialRuntimeSessionError ?? null,
           timeline: bootState.timeline,
         },
         resources,

@@ -7,6 +7,8 @@
  * and response knowledge inside the SDK.
  */
 
+import { retiredEndpointError } from '../../http/api/errors';
+import { auditFilterQuery } from '../projects-client/audit-filter';
 import { platformApiBase } from './shared';
 
 export interface HostRequestOptions {
@@ -303,6 +305,10 @@ export interface SecretSetupLinkInfo {
     description: string | null;
   }>;
   expires_at: string;
+  /** The person whose session asked for the values, when that is a member of
+   *  the project's account; the form may keep the values to them. Absent on
+   *  older servers and for links an automation minted. */
+  requester?: { label: string | null } | null;
 }
 
 export function getSecretSetupLink(
@@ -346,10 +352,13 @@ export function submitSecretSetupLink(
   token: string,
   values: Record<string, string>,
   options: HostRequestOptions,
+  /** `only_requester`: only the person who asked may use the values (see
+   *  `SecretSetupLinkInfo.requester`). Omitted = everyone in the project. */
+  audience?: { only_requester?: boolean },
 ): Promise<SecretSetupLinkSubmitResult> {
   return requestJson(`/setup-links/secret/${encodeURIComponent(token)}`, options, {
     method: 'POST',
-    body: { values },
+    body: { values, ...(audience?.only_requester ? { only_requester: true } : {}) },
   });
 }
 
@@ -410,48 +419,11 @@ export interface AccountAuditExport {
 
 export async function downloadAccountAudit(
   accountId: string,
-  query: {
-    format: 'csv' | 'jsonl';
-    action?: string;
-    actor?: string;
-    project_id?: string;
-    session_id?: string;
-    actor_type?: 'human' | 'agent' | 'service_account' | 'system' | 'anonymous';
-    source?: string;
-    credential_kind?: string;
-    phase?: string;
-    outcome?: 'success' | 'failure' | 'denied' | 'pending';
-    request_id?: string;
-    correlation_id?: string;
-    resource_type?: string;
-    since?: string;
-    until?: string;
-    q?: string;
-    cursor?: string;
-    limit?: number;
-  },
+  query: Parameters<typeof auditFilterQuery>[0] & { format: 'csv' | 'jsonl' },
   options: HostRequestOptions,
 ): Promise<AccountAuditExport> {
-  const params = new URLSearchParams({ format: query.format });
-  if (query.action) params.set('action', query.action);
-  if (query.actor) params.set('actor', query.actor);
-  if (query.project_id) params.set('project_id', query.project_id);
-  if (query.session_id) params.set('session_id', query.session_id);
-  if (query.actor_type) params.set('actor_type', query.actor_type);
-  if (query.source) params.set('source', query.source);
-  if (query.credential_kind) params.set('credential_kind', query.credential_kind);
-  if (query.phase) params.set('phase', query.phase);
-  if (query.outcome) params.set('outcome', query.outcome);
-  if (query.request_id) params.set('request_id', query.request_id);
-  if (query.correlation_id) params.set('correlation_id', query.correlation_id);
-  if (query.resource_type) params.set('resource_type', query.resource_type);
-  if (query.since) params.set('since', query.since);
-  if (query.until) params.set('until', query.until);
-  if (query.q) params.set('q', query.q);
-  if (query.cursor) params.set('cursor', query.cursor);
-  if (query.limit != null) params.set('limit', String(query.limit));
   const response = await fetch(
-    `${platformApiBase(options.backendUrl)}/accounts/${encodeURIComponent(accountId)}/audit/export?${params}`,
+    `${platformApiBase(options.backendUrl)}/accounts/${encodeURIComponent(accountId)}/audit/export?${auditFilterQuery(query)}`,
     {
       headers: requestHeaders(options, false),
       ...(options.signal ? { signal: options.signal } : {}),
@@ -471,44 +443,33 @@ export async function downloadAccountAudit(
   };
 }
 
+/**
+ * @deprecated The API deleted `POST /v1/admin/stress-test/run` with the ops
+ * console. Always rejects with `ENDPOINT_RETIRED`. Removed in the next major.
+ */
 export async function openStressTestStream(
-  input: Record<string, unknown>,
-  options: HostRequestOptions,
+  _input: Record<string, unknown>,
+  _options: HostRequestOptions,
 ): Promise<ReadableStream<Uint8Array>> {
-  const response = await fetch(`${platformApiBase(options.backendUrl)}/admin/stress-test/run`, {
-    method: 'POST',
-    headers: requestHeaders(options, true),
-    body: JSON.stringify(input),
-    ...(options.signal ? { signal: options.signal } : {}),
-  });
-  if (!response.ok) {
-    const body = await parseResponseBody(response);
-    throw new HostBoundaryError(errorMessage(response, body), response.status, body);
-  }
-  if (!response.body) {
-    throw new HostBoundaryError('No response body', response.status, null);
-  }
-  return response.body;
+  throw retiredEndpointError('openStressTestStream');
 }
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-export function buildPublicTemplateUrl(backendUrl: string, shareId: string): URL | null {
-  if (!UUID_PATTERN.test(shareId)) return null;
-  return new URL(`templates/public/${shareId.toLowerCase()}`, `${platformApiBase(backendUrl)}/`);
+/**
+ * @deprecated The API serves no public template route (`/v1/templates/public/:id`).
+ * Always throws `ENDPOINT_RETIRED`. Removed in the next major.
+ */
+export function buildPublicTemplateUrl(_backendUrl: string, _shareId: string): URL | null {
+  throw retiredEndpointError('buildPublicTemplateUrl');
 }
 
+/**
+ * @deprecated The API serves no public template route (`/v1/templates/public/:id`).
+ * Always rejects with `ENDPOINT_RETIRED`. Removed in the next major.
+ */
 export async function getPublicTemplate<T>(
-  backendUrl: string,
-  shareId: string,
-  signal?: AbortSignal,
+  _backendUrl: string,
+  _shareId: string,
+  _signal?: AbortSignal,
 ): Promise<T> {
-  const url = buildPublicTemplateUrl(backendUrl, shareId);
-  if (!url) throw new HostBoundaryError('Invalid shareId parameter', 400, null);
-  const response = await fetch(url, { signal });
-  const body = await parseResponseBody(response);
-  if (!response.ok) {
-    throw new HostBoundaryError(errorMessage(response, body), response.status, body);
-  }
-  return body as T;
+  throw retiredEndpointError('getPublicTemplate');
 }

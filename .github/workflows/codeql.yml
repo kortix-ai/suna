@@ -4,10 +4,10 @@ name: CodeQL
 # Findings appear under the repo's Security > Code scanning tab.
 
 on:
+  # No push to `dev` (Actions minutes, 2026-10-03). `dev` is scanned weekly
+  # below. `staging` and `prod` are scanned on push and on release pull requests.
   push:
-    branches: [main, staging, prod]
-  # A pull request into `main` runs no CI. The push to `main` below is the
-  # post-merge scan.
+    branches: [staging, prod]
   pull_request:
     branches: [staging, prod]
   schedule:

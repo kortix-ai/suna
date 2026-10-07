@@ -38,6 +38,7 @@ import {
   invalidateIamCacheForProjectResources,
 } from './cache-invalidation';
 import { pendingPrincipalId, type Actor, type PrincipalRef } from './actor';
+import { notAnAudienceGrant } from './audience-grants';
 
 export type AssignmentSource = 'manual' | 'scim' | 'sso' | 'invite' | 'system';
 
@@ -780,14 +781,18 @@ async function assertWriterMayAssign(
 ): Promise<void> {
   if (writer === SYSTEM_ACTOR) return;
   const projectObj: Obj = scopeId ? { type: 'project', id: scopeId } : { type: 'account' };
+  // Who may use a secret value or a connector account is a person's decision.
+  // An agent that may write either could otherwise widen one narrowed away
+  // from it, or name itself in the audience, and then use it.
+  if ((objectType === 'secret' || objectType === 'connection') && writer.credential.kind === 'agent_session') {
+    throw new HTTPException(403, {
+      message:
+        objectType === 'secret'
+          ? 'An agent cannot change who can use a secret. A person changes it in Customize → Secrets.'
+          : 'An agent cannot change who can use a connector account. A person changes it in Customize → Connectors.',
+    });
+  }
   if (objectType === 'secret') {
-    // Who may use a secret is a person's decision. An agent that can write
-    // secrets could otherwise widen a value narrowed away from it, then use it.
-    if (writer.credential.kind === 'agent_session') {
-      throw new HTTPException(403, {
-        message: 'An agent cannot change who can use a secret. A person changes it in Customize → Secrets.',
-      });
-    }
     await assertAuthorized(writer, 'project.secret.write', projectObj);
     return;
   }
@@ -1030,7 +1035,11 @@ export async function deleteAccountScopeAssignments(accountId: string, userId: s
   invalidateIamCacheForUser(userId);
 }
 
-/** The project-scope sibling of `deleteAccountScopeAssignments`. */
+/**
+ * The project-scope sibling of `deleteAccountScopeAssignments`. Keeps the
+ * person's audience grants (`audience-grants.ts`): deleting the last one would
+ * share an "Only you" value with the whole project.
+ */
 export async function deleteProjectScopeAssignments(accountId: string, userId: string): Promise<void> {
   await db
     .delete(roleAssignments)
@@ -1040,6 +1049,7 @@ export async function deleteProjectScopeAssignments(accountId: string, userId: s
         eq(roleAssignments.principalType, 'user'),
         eq(roleAssignments.principalId, userId),
         eq(roleAssignments.scopeType, 'project'),
+        notAnAudienceGrant(),
       ),
     );
   invalidateIamCacheForUser(userId);

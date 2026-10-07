@@ -51,9 +51,9 @@ export const DENY_SUBCOMMANDS: { path: [string, string]; denial: Denial }[] = [
 /** Top-level commands that run. `whoami --token-only`, `chat` without `--prompt` and `--host` are refused by `denial()`. */
 export const CLI_ALLOWED = [
   'whoami', 'doctor', 'validate', 'schema', 'accounts', 'members', 'groups', 'tokens', 'billing', 'projects',
-  'sessions', 'session', 'chat', 'files', 'cr', 'review', 'triggers', 'reminders', 'remind', 'send', 'connectors',
+  'sessions', 'session', 'chat', 'files', 'cr', 'review', 'triggers', 'reminders', 'remind', 'connectors',
   'secrets', 'providers', 'env', 'gateway', 'apps', 'channels', 'sandboxes', 'marketplace', 'system-skills',
-  'skills', 'registry', 'agents', 'models', 'access', 'roles', 'permissions', 'audit', 'grants', 'help', 'version',
+  'skills', 'registry', 'agents', 'models', 'access', 'roles', 'permissions', 'perms', 'audit', 'grants', 'help', 'version',
 ];
 
 export function denial(args: string[]): Denial | null {

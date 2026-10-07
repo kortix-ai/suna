@@ -1,4 +1,5 @@
 import { relayOrphanedTurnEndToApi } from './turn-relay'
+import { claimInitialTurn, relayRuntimeSession } from '../shared/turn-relay'
 import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { logger } from '@/lib/log/logger'
@@ -9,11 +10,8 @@ import { noteOpencodeStopRequested, type AbortedTurnVerdict } from './instance-g
 import type { OpencodeTurnError } from './events'
 import { isSharedSeedBakedRoot } from './opencode-fork-root'
 import { openCodeSeedBakedPinPath, openCodeSessionPinPath, readOpenCodeSessionPin, writeOpenCodeSeedBakedPin, writeOpenCodeSessionPin } from './runtime-state'
-import { sandboxRelayContext } from '@/lib/kortix-api/relay-context'
 import { observeOpencodeDelivery } from './opencode-turn-state'
-import { claimInitialTurnFromApi, createInitialOpenCodeSession, deliverInitialOpenCodePrompt, buildInitialPromptBody } from './initial-prompt'
-
-export { resetClaimedInitialTurnForTests } from './initial-turn-claim'
+import { createInitialOpenCodeSession, deliverInitialOpenCodePrompt, buildInitialPromptBody } from './initial-prompt'
 
 // Reuse the pinned root and deliver the initial prompt only when delivery is unconfirmed.
 /** Retry delay for the initial-session claim: 5s, 10s, …, capped at 30s. */
@@ -24,14 +22,14 @@ export function initialSessionRetryDelayMs(attempt: number): number {
 /** The subset of `SandboxBootState` the initial-session finalizer touches. */
 type InitialSessionBootState = Pick<
   SandboxBootState,
-  'initialOpenCodeSessionId' | 'initialOpenCodeSessionError' | 'initialOpenCodeSessionRequired'
+  'initialRuntimeSessionId' | 'initialRuntimeSessionError' | 'initialRuntimeSessionRequired'
 >
 
 /**
  * Record that the initial OpenCode session is established under `sessionId`,
  * and release a poisoned failure flag left by an earlier attempt.
  *
- * `initialOpenCodeSessionError` describes ONE attempt of the retry ladder,
+ * `initialRuntimeSessionError` describes ONE attempt of the retry ladder,
  * not the box. `proxy.ts` (`initial_opencode_session_failed`, 503) and
  * `routes/health.ts` (`runtimeReady`) both treat it as a permanent failure
  * because until now nothing ever cleared it: it was written on a caught
@@ -42,8 +40,8 @@ type InitialSessionBootState = Pick<
  * stops answering `initial_opencode_session_failed` once this runs.
  */
 export function finalizeInitialSession(bootState: InitialSessionBootState, sessionId: string): void {
-  bootState.initialOpenCodeSessionId = sessionId
-  bootState.initialOpenCodeSessionError = null
+  bootState.initialRuntimeSessionId = sessionId
+  bootState.initialRuntimeSessionError = null
 }
 
 /**
@@ -89,7 +87,7 @@ export async function maybeCreateInitialOpencodeSession(
   bootMark: (label: string) => void,
   onListening?: () => void,
 ): Promise<void> {
-  const claimedTurn = await claimInitialTurnFromApi()
+  const claimedTurn = await claimInitialTurn()
   if (!bootState.timeline.some((mark) => mark.label === 'initial-turn-claimed')) {
     bootMark('initial-turn-claimed')
   }
@@ -181,7 +179,7 @@ export async function maybeCreateInitialOpencodeSession(
   // Set the durable DB pin server-side now — Slack/trigger/cron sessions that no
   // browser ever opens otherwise kept a null pin, which forced a lazy resolution
   // that could land on the wrong root.
-  void relayBootstrapPinToApi(sessionId)
+  void relayRuntimeSession(sessionId)
 
   if (prompt && !alreadyDelivered) {
     await publishInitialOpenCodeSessionAfterPrompt(bootState, sessionId, () =>
@@ -199,12 +197,12 @@ export async function maybeCreateInitialOpencodeSession(
     bootMark('initial-prompt-delivered')
     logger.info('[boot] initial prompt delivered', { sessionId })
   } else if (prompt) {
-    bootState.initialOpenCodeSessionId = sessionId
+    bootState.initialRuntimeSessionId = sessionId
     logger.info('[boot] initial prompt already delivered to reused root; not re-running', {
       sessionId,
     })
   } else {
-    bootState.initialOpenCodeSessionId = sessionId
+    bootState.initialRuntimeSessionId = sessionId
     logger.info('[boot] opencode root ready (bootstrap, no prompt)', { sessionId })
   }
   bootMark('opencode-session-created')
@@ -213,7 +211,7 @@ export async function maybeCreateInitialOpencodeSession(
 /**
  * Publish the boot root only after OpenCode accepts the initial prompt.
  *
- * The event-loop reconciliation timer reads `initialOpenCodeSessionId` as its
+ * The event-loop reconciliation timer reads `initialRuntimeSessionId` as its
  * acceptance gate. Publishing the id before `prompt_async` returns lets that
  * timer promote a `delivering` database record while the request is still in
  * flight, including before OpenCode has received one byte.
@@ -225,7 +223,7 @@ export async function publishInitialOpenCodeSessionAfterPrompt(
 ): Promise<void> {
   await deliver()
   bootState.initialPromptDeliveredAtMs = Date.now()
-  bootState.initialOpenCodeSessionId = sessionId
+  bootState.initialRuntimeSessionId = sessionId
 }
 
 /**
@@ -843,37 +841,5 @@ async function abortOpencodeTurn(baseUrl: string, workspace: string, sessionId: 
     logger.info('[boot] aborted interrupted turn on reused root', { sessionId })
   } catch (err) {
     logger.warn('[boot] failed to abort interrupted turn', { sessionId, err: (err as Error).message })
-  }
-}
-
-/**
- * Report the canonical opencode root to apps/api so it writes the durable DB
- * pin (project_sessions.opencode_session_id) at bootstrap — no browser needed.
- * Best-effort and fire-once: even if it never lands (transient blip), the API
- * still heals the pin on the first /ensure-opencode. Never blocks boot.
- */
-async function relayBootstrapPinToApi(opencodeSessionId: string): Promise<void> {
-  const ctx = sandboxRelayContext()
-  if (!ctx) return
-  const { projectId, sessionId, token, apiRoot } = ctx
-  const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        session_id: sessionId,
-        kind: 'opencode_session',
-        opencode_session_id: opencodeSessionId,
-      }),
-      signal: AbortSignal.timeout(15_000),
-    })
-    if (!res.ok) {
-      logger.warn('[boot] bootstrap pin relay non-ok', { status: res.status })
-      return
-    }
-    logger.info('[boot] bootstrap opencode session pinned via api', { opencodeSessionId })
-  } catch (err) {
-    logger.warn('[boot] bootstrap pin relay failed', { err: (err as Error).message })
   }
 }

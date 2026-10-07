@@ -158,7 +158,7 @@ describe('a send paints first and holds its POST on the handed-off uploads', () 
     const detachedSend = between(shellSend, 'function deliverDetached(', 'async function deliverInChain(');
     const chainSend = between(shellSend, 'async function deliverInChain(', 'interface FirstPromptSourcesProps');
     const post = between(shellSend, 'function buildPost(', 'function deliverDetached(');
-    const send = between(shellSend, 'const handleSend = useCallback(', 'return { submitted, effectiveSubmission, extraSends, handleSend };');
+    const send = between(shellSend, 'const handleSend = useCallback(', 'const forgetExtraSend = useCallback(');
     expect(paint).toContain('setSubmission({ text, files: files ?? [] });');
     expect(send).toContain('paintSend(send, env);');
     expect(send).toContain('deliverDetached(send, env, post);');
@@ -266,7 +266,7 @@ describe('stop reaches the queue that actually holds the messages', () => {
     // of behind an earlier Send still waiting in the session's delivery chain.
     expect(rewind).toContain('const editSend = { commitsRewind: true };');
     const sendAt = rewind.indexOf(
-      'await handleSend(text, undefined, undefined, undefined, editSend)',
+      'await handleSend(sendText, resend, undefined, undefined, editSend)',
     );
     const commitAt = rewind.indexOf('.commitSessionRevert(');
     expect(sendAt).toBeGreaterThan(-1);
@@ -439,27 +439,49 @@ describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
   });
 });
 
-describe('Up takes the queue back into the composer', () => {
-  test('only what the server actually removed comes back, in queue order, above the draft', () => {
-    const takeBack = between(
-      chat,
-      'const handleTakeBackQueue = useCallback(',
-      '// ---- Triple-ESC to stop ----',
-    );
-    expect(takeBack).toContain('row.takeBackEligible');
-    // Drafts are read BEFORE the removals: removing a row prunes its draft.
-    expect(takeBack.indexOf('useQueuedDraftStore.getState().bySession[sessionId]')).toBeLessThan(
-      takeBack.indexOf('promptInbox.remove(row.id)'),
-    );
-    expect(takeBack).toContain('Promise.allSettled(');
-    expect(takeBack).toContain('composeTakeBack({ removed, drafts })');
-    expect(takeBack).toContain('.setPrefill(sessionId, text, files)');
-    // Anything that cannot come back losslessly goes back to the queue.
-    expect(takeBack).toContain('restoreQueuedMessage(prompt,');
+describe('Up and the pencil edit a queued entry in place', () => {
+  // The edit itself (no request on open, a PATCH that keeps the row's files on
+  // Submit, nothing on Cancel) is `queued-prompt-edit.ts`, tested on its own in
+  // `queued-prompt-edit.test.ts`. These pin that BOTH surfaces drawing the
+  // queue use it: the boot shell used to delete the row and refill the
+  // composer with its text parts only, losing every file on the message.
+  test('the chat and the boot shell share one edit, keyed by the project session', () => {
+    expect(chat).toContain('const queueEdit = useQueuedPromptEdit({');
+    expect(chat).toContain('key: projectSessionId ?? sessionId,');
+    expect(shell).toContain('const queueEdit = useQueuedPromptEdit({');
+    expect(shell).toContain('key: sessionId,');
   });
 
-  test('the composer gets the key handler and the hint', () => {
-    expect(chat).toContain('onArrowUpAtStart={() => handleTakeBackQueue()}');
+  test('Edit never deletes the queued row, so its files stay on it', () => {
+    for (const source of [chat, shell]) {
+      const onEdit = between(source, 'onEdit={(id) => {', '}}');
+      expect(onEdit).toContain('queueEdit.takeBack(id)');
+      expect(onEdit).not.toContain('.remove(');
+      expect(source).toContain('editing={queueEdit.editing}');
+      expect(source).toContain('onCancelEdit={queueEdit.cancel}');
+    }
+  });
+
+  test('Submit while editing saves into the same row and never sends', () => {
+    expect(chat).toContain('if (await queueEdit.save(text)) return;');
+    const shellSubmit = between(
+      shell,
+      'onSend={async (text, files, options, attachments) => {',
+      'onCommand={handleCommand}',
+    );
+    expect(shellSubmit.indexOf('if (await queueEdit.save(text)) return;')).toBeGreaterThan(-1);
+    expect(shellSubmit.indexOf('if (await queueEdit.save(text)) return;')).toBeLessThan(
+      shellSubmit.indexOf('await handleSend('),
+    );
+    for (const source of [chat, shell]) {
+      // The boot shell shows a disabled Stop while the box boots; editing must
+      // still be submittable.
+      expect(source).toContain("submitLabel={queueEdit.editing ? tQueue('submitEdit') : null}");
+      expect(source).toContain('onArrowUpAtStart={() => queueEdit.takeBack()}');
+    }
+  });
+
+  test('the chat composer shows the Up hint while something is editable', () => {
     // The hint shows only while there is something Up would take back.
     expect(chat).toMatch(/hint=\{\s*canTakeBackQueue \?/);
   });

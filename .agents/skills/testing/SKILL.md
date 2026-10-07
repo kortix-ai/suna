@@ -56,6 +56,7 @@ pnpm test -- --db-only [path-filter ...] # PostgreSQL-backed suites only
 pnpm test -- --browser-only    # Browser only; owns the deterministic local stack
 pnpm test -- --browser-only --browser-shard=1/4 # One browser shard
 pnpm test -- --packages-only   # Every app/package test and publish contract
+pnpm test -- --agentic-only tests/example.e2e.ts # Opt-in browser-agent pilot
 pnpm test -- --full            # Browser plus all app/package tests
 pnpm test -- --target-smoke    # Deployed staging API SHA and Playwright smoke
 pnpm test -- --target-full     # Every deployed staging flow and browser journey
@@ -64,9 +65,48 @@ pnpm test -- --target-full     # Every deployed staging flow and browser journey
 Full mode also builds, dry-packs, and install-smokes publishable npm packages.
 Do not replace this package contract with a separate CI workflow.
 
+The [e2e evaluation and runbook](references/e2e-evaluation.md) defines the opt-in
+browser-agent pilot. Keep it outside the default/full/release gates until its
+reliability and false-pass criteria are measured. Preserve all existing lanes.
+
 Browser and full modes start local Supabase, migrations, API, gateway, and web.
 They reuse a running API only when it proves the deterministic test profile.
 Browser runs use two Playwright workers, locally and in each CI shard.
+
+A green `pnpm test` writes `tests/attestations/<branch>.json` (`/` and every char
+outside `[A-Za-z0-9._-]` become `-`; a detached HEAD writes
+`detached-<short-sha>.json`) and deletes every other file in `tests/attestations/`
+plus the legacy `tests/test-attestation.json`; commit `tests/attestations/`.
+One file per branch keeps PRs from conflicting on it; deleting a merged PR's
+file is conflict-free because no branch edits it again. Format:
+`{source_hash, diff_files, diff_hash, head, passed, lanes: {<lane>: pass|fail|skipped-no-db|skipped-sandbox-image}, at}`.
+`diff_files` is the files the PR itself changed (`git diff origin/main...HEAD`,
+minus every attestation file) and `diff_hash` their sha256; both are recomputed from
+the verified rev, so committing the attestation does not change them. Verify
+stays green after a merge of `origin/main` that touches other files, and goes
+stale only when a file the PR changed is edited after the run. `source_hash`
+(the sha256 of every file the commit would contain except attestation files) is
+the full-tree fallback used on a direct main push, where there is no diverging
+merge-base. Lanes: `core` (sdk, runner units, route coverage, worktree units), `packages`
+(package quality), `db-suites` (API/CLI flows + DB suites; both need Docker:
+local Supabase, GoTrue, per-suite Postgres containers), and `browser` when
+run. Plain `pnpm test` runs all but `browser`. A lane is written only when all
+its runner lanes ran in that run or one failed. A filtered or sharded run
+(`--id`, `--domain`, a path filter, `--browser-shard`) writes nothing, and a
+lane-only mode updates only the lanes it fully covers, on unchanged source.
+`pnpm test:verify [--rev <sha>] [--branch <name>]` (`tests/verify-attestation.mjs`)
+reads the file the rev's PR diff adds or edits under `tests/attestations/` (with
+several, the `--branch` match, else the newest `at`), else `<branch>.json` at the
+rev (`--branch`, else the checked-out branch), else the legacy file. It
+recomputes the diff: exit `0` green, `1` missing/stale/red. `core` and `packages` must be `pass`,
+every other lane must be `pass`. Two skips exist, neither a pass: `db-suites`
+`skipped-no-db` (no Docker) and `packages` `skipped-sandbox-image` (a Kortix
+sandbox image breaks those tests identically at `origin/main`; the scheduled
+clean-runner `Tests` run is the backstop). `--strict` exits `3` for either skip. No in-sandbox
+Postgres: the DB lanes depend on Docker in three places, so a Docker-less box
+records the skip and the merge gate holds DB PRs.
+The `.githooks/pre-push` hook enforces this on every branch push except
+`scratch/*`. Never push with `--no-verify`.
 
 Run the narrowest relevant command first. Run `pnpm test` before handoff. Run
 `pnpm test -- --full` for testing infrastructure, broad refactors, and release
@@ -85,11 +125,16 @@ work.
 Each root run writes a benchmark to
 `tests/test-results/local/benchmark-<timestamp>.json`.
 
+An API performance change reports a measured before/after from
+`apps/api/scripts/prompt-latency-bench.ts`. The runbook and the baseline are
+in `references/api-latency-baseline.md`.
+
 ## Your machine is the pre-merge gate
 
 A pull request into `main` runs **no** GitHub Actions job by itself. Every test
-for a change runs in the developer's own box before the merge. CI runs after the
-merge (push to `main`, non-blocking) and on release pull requests into `staging`
+for a change runs in the developer's own box before the merge. CI runs on a
+schedule on `main` (`Tests` daily, `CI` and `CodeQL` weekly; a push to `main` runs none of
+them) and on release pull requests into `staging`
 and `prod`. In the rare case you want CI before a `main` merge, add a label: `test`
 runs the six lanes once (~9 min), `preview` deploys once (~7 min) with no tests. A push
 re-runs neither. Never add them by default. `tests/unit/sandbox-workflow.test.ts`
@@ -102,9 +147,9 @@ Before a `main` merge, run the narrowest relevant command first, then
 
 | Change touches | CI job (post-merge / release) | Run locally before the merge |
 | --- | --- | --- |
-| anything | `Tests` core + packages lanes | `pnpm test` (core) and `pnpm test -- --packages-only` |
+| anything | `pnpm test:verify` (merge gate); `Tests` lanes on `staging`/`prod` PRs | `pnpm test` (core) and `pnpm test -- --packages-only` |
 | browser-visible behavior | `Tests` browser lanes | `pnpm test -- --browser-only` (or `--full` for everything) |
-| `apps/api` | `CI` → API typecheck | `pnpm --filter kortix-api typecheck` |
+| `apps/api` | `CI` → API typecheck; `Tests` packages lane → API lint | `pnpm --filter kortix-api typecheck` and `pnpm --filter kortix-api lint` (after fixing a violation: `lint:prune`) |
 | `apps/web` | `CI` → Frontend build | `pnpm --filter ./apps/web build` |
 | `apps/kortix-sandbox-agent-server` | `CI` → Sandbox agent build | `bun run typecheck && bun run lint && bun run test:architecture` in that directory |
 | `packages/db/migrations` | `DB Migrations` | the four commands in `packages/db/MIGRATIONS.md` → "CI gates" |

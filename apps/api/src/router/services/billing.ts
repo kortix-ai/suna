@@ -1,8 +1,10 @@
+import { debitAndCheckAutoTopup, settleAndCheckAutoTopup } from '../../billing/services/wallet-debits';
+import { logger } from '../../lib/logger';
 import { config, getToolCost } from '../../config';
 
 import { creditGateExemptEnv } from './credit-gate-env';
 
-import { InsufficientCreditsError } from '../../errors';
+import { InsufficientCreditsError, WalletUnavailableError } from '../../errors';
 import { wallet, type LedgerDebitType } from '../../billing/wallet';
 import type { BillingCheckResult, BillingDeductResult } from '../../types';
 
@@ -44,12 +46,13 @@ async function debitForRouter(
   amount: number,
   description: string,
   kind: LedgerDebitType,
-): Promise<{ ok: true; amount: number; balance: number; transactionId: string } | { ok: false; error: string }> {
+): Promise<{ ok: true; amount: number; balance: number; transactionId: string } | { ok: false; error: string; retryable?: boolean }> {
   try {
-    const result = await wallet.debit({ accountId, amount, description, kind, key: null });
+    const result = await debitAndCheckAutoTopup({ accountId, amount, description, kind, key: null });
     return { ok: true, ...result };
   } catch (err) {
     if (err instanceof InsufficientCreditsError) return { ok: false, error: err.reason };
+    if (err instanceof WalletUnavailableError) return { ok: false, error: err.message, retryable: true };
     console.error('[BILLING] router debit failed:', err);
     return { ok: false, error: 'Deduction error' };
   }
@@ -91,7 +94,7 @@ export async function deductToolCredits(
   const result = await debitForRouter(accountId, cost, deductDescription, 'usage');
 
   if (!result.ok) {
-    return { success: false, cost: 0, newBalance: 0, error: result.error };
+    return { success: false, cost: 0, newBalance: 0, error: result.error, retryable: result.retryable };
   }
 
   console.info(`[BILLING] Deducted $${cost.toFixed(4)}. New balance: $${result.balance.toFixed(2)}`);
@@ -134,7 +137,7 @@ export async function deductLLMCredits(
   const result = await debitForRouter(accountId, calculatedCost, description, 'llm_debit');
 
   if (!result.ok) {
-    return { success: false, cost: 0, newBalance: 0, error: result.error };
+    return { success: false, cost: 0, newBalance: 0, error: result.error, retryable: result.retryable };
   }
 
   console.info(`[BILLING] Deducted $${calculatedCost.toFixed(6)}. New balance: $${result.balance.toFixed(2)}`);
@@ -145,4 +148,36 @@ export async function deductLLMCredits(
     newBalance: result.balance || 0,
     transactionId: result.transactionId,
   };
+}
+
+/**
+ * Record LLM spend that already happened upstream. SETTLEMENT, not admission:
+ * the wallet takes the amount even when the balance cannot cover it (the
+ * balance goes negative). An admission debit would refuse it on a drained
+ * wallet and the spend would leave no ledger row. Used for the amount above
+ * the reservation, and for the whole charge when nothing was reserved.
+ */
+export async function settleLLMCredits(
+  accountId: string,
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+  amount: number,
+): Promise<BillingDeductResult> {
+  if (amount <= 0 || !config.KORTIX_BILLING_INTERNAL_ENABLED || creditGateExemptEnv()) {
+    return { success: true, cost: 0, newBalance: 0 };
+  }
+  try {
+    const result = await settleAndCheckAutoTopup({
+      accountId,
+      amount,
+      description: `LLM: ${model} (${inputTokens}/${outputTokens} tokens)`,
+      kind: 'llm_debit',
+      key: null,
+    });
+    return { success: true, cost: result.amount, newBalance: result.balance, transactionId: result.transactionId };
+  } catch (err) {
+    logger.error('[BILLING] router settlement failed', { error: String(err) });
+    return { success: false, cost: 0, newBalance: 0, error: 'Settlement error' };
+  }
 }

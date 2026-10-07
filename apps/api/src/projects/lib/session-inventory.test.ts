@@ -126,6 +126,50 @@ describe('selectSessionRowsForViewer', () => {
     });
   });
 
+  test('manager project scope drops a soft-deleted warm draft and keeps a soft-deleted real session', () => {
+    // A deleted "New session" row was never prompted, so its tombstone carries
+    // no conversation or work to audit — keeping it is what left the Sessions
+    // page unable to ever reach its empty state on a fresh project. A deleted
+    // real session keeps its tombstone row for the manager's audit.
+    const deletedWarmDraft = row('deleted-warm-draft', {
+      status: 'stopped',
+      metadata: {
+        warm: true,
+        deletedAt: '2026-07-20T10:00:00.000Z',
+        deletedBy: VIEWER_ID,
+      },
+    });
+    const deletedReal = row('deleted-real', {
+      status: 'completed',
+      metadata: { deletedAt: '2026-07-20T10:00:00.000Z', deletedBy: VIEWER_ID },
+    });
+    const liveWarmDraft = row('live-warm-draft', {
+      status: 'stopped',
+      metadata: { warm: true },
+    });
+
+    const selected = selectSessionRowsForViewer({
+      rows: [deletedWarmDraft, deletedReal, liveWarmDraft],
+      scope: 'project',
+      canManageProject: true,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      boundCredentialSessionId: null,
+      runtimeStatusBySession: new Map(),
+    });
+
+    expect(selected.authorized).toBe(true);
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual([
+      'deleted-real',
+      'live-warm-draft',
+    ]);
+    expect(selected.items[0]).toMatchObject({
+      deletedAt: '2026-07-20T10:00:00.000Z',
+      deletedBy: VIEWER_ID,
+    });
+  });
+
   test('project scope is denied without project-management rights', () => {
     const selected = selectSessionRowsForViewer({
       rows: [row('private-other', { createdBy: OTHER_ID })],
@@ -190,7 +234,7 @@ describe('selectSessionRowsForViewer', () => {
     expect(selected.items).toEqual([]);
   });
 
-  test('visible scope preserves the existing visibility and resumability filters', () => {
+  test('visible scope keeps the visibility filters and lists every stopped session', () => {
     const own = row('own');
     const privateOther = row('private-other', { createdBy: OTHER_ID });
     // A session migrated from the old runtime: status `completed`, no runtime
@@ -221,9 +265,34 @@ describe('selectSessionRowsForViewer', () => {
     expect(selected.items.map((item) => item.row.sessionId)).toEqual([
       'own',
       'migrated',
+      'stopped-lost',
       'stopped-resumable',
     ]);
     expect(selected.items.find((item) => item.row.sessionId === 'migrated')?.canAccess).toBe(true);
+  });
+
+  // The KRTX-1452 regression (see the filter's comment): a stopped session
+  // whose runtime row is missing or still `active` must list.
+  test('visible scope lists a stopped session the runtime row does not confirm', () => {
+    const parkedAfterTurnError = row('parked-turn-error', { status: 'stopped' });
+    const stoppedWithoutRuntime = row('stopped-no-runtime', { status: 'stopped' });
+
+    const selected = selectSessionRowsForViewer({
+      rows: [parkedAfterTurnError, stoppedWithoutRuntime],
+      scope: 'visible',
+      canManageProject: false,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      boundCredentialSessionId: null,
+      runtimeStatusBySession: new Map([['parked-turn-error', 'active']]),
+    });
+
+    expect(selected.authorized).toBe(true);
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual([
+      'parked-turn-error',
+      'stopped-no-runtime',
+    ]);
   });
 });
 
@@ -247,8 +316,29 @@ describe('selectSessionRowsForViewer — warm sessions', () => {
     }).items.map((item) => item.row.sessionId);
   }
 
-  test('visible scope hides a warm session', () => {
-    expect(visible([row('own'), row('warm', { metadata: { warm: true } })])).toEqual(['own']);
+  test('visible scope hides an idle warm session', () => {
+    expect(visible([
+      row('own'),
+      row('warm', { status: 'stopped', metadata: { warm: true } }),
+    ])).toEqual(['own']);
+  });
+
+  // A warm box bills compute from creation (sandbox-deadline-policy.ts
+  // warmPoolGrantMs) until the reaper or the user stops it. A billed session
+  // the list hides is money its owner cannot see, open or stop, so a warm row
+  // that is still provisioning or running lists in the `visible` scope like
+  // any other session. The marker keeps hiding the row once nothing bills —
+  // stopped, failed, completed.
+  test('a warm session that is up and billing lists in the visible scope', () => {
+    expect(visible([row('billed-warm', { metadata: { warm: true } })])).toEqual(['billed-warm']);
+  });
+
+  test('a warm session still provisioning lists too — its box is about to bill', () => {
+    expect(visible([row('warming-up', { status: 'provisioning', metadata: { warm: true } })])).toEqual(['warming-up']);
+  });
+
+  test('a warm session that failed before its box came up stays hidden', () => {
+    expect(visible([row('failed-warm', { status: 'failed', metadata: { warm: true } })])).toEqual([]);
   });
 
   test('a used session lists like any other — the first prompt drops the marker', () => {
@@ -256,7 +346,8 @@ describe('selectSessionRowsForViewer — warm sessions', () => {
   });
 
   // The reaper flips `project_sessions.status` to stopped and leaves the marker
-  // in place. That row must not surface through the resumable-stopped branch.
+  // in place. That row must stay hidden through the warm-marker check, not
+  // resurface as an ordinary stopped session.
   test('a reaped warm session stays hidden even though it looks resumable', () => {
     const selected = selectSessionRowsForViewer({
       rows: [row('reaped-warm', { status: 'stopped', metadata: { warm: true } })],
@@ -318,7 +409,7 @@ describe('mergeSessionOwnerIdentities', () => {
     const identities = mergeSessionOwnerIdentities({
       ownerIds: [humanId, agentId, staleId],
       users: new Map([
-        [humanId, { exists: true, email: 'ari@kortix.ai', displayName: 'Ari' }],
+        [humanId, { exists: true, email: 'ari@kortix.ai', displayName: 'Ari', avatarUrl: 'https://img.example.test/ari.png' }],
         [agentId, { exists: false, email: null, displayName: null }],
         [staleId, { exists: false, email: null, displayName: null }],
       ]),
@@ -335,16 +426,19 @@ describe('mergeSessionOwnerIdentities', () => {
       type: 'user',
       name: 'Ari',
       email: 'ari@kortix.ai',
+      avatarUrl: 'https://img.example.test/ari.png',
     });
     expect(identities.get(agentId)).toEqual({
       type: 'service_account',
       name: 'backend-debugger',
       email: null,
+      avatarUrl: null,
     });
     expect(identities.get(staleId)).toEqual({
       type: 'unknown',
       name: null,
       email: null,
+      avatarUrl: null,
     });
   });
 });
@@ -500,6 +594,13 @@ describe('session list cursor', () => {
     const decoded = decodeSessionCursor(encoded, SCOPE);
     expect(decoded?.sessionId).toBe('S1');
     expect(decoded?.updatedAt.toISOString()).toBe(updatedAt.toISOString());
+  });
+
+  test('keeps the microsecond position the database printed', () => {
+    const updatedAt = new Date('2026-09-16T10:11:12.345Z');
+    const updatedAtIso = '2026-09-16T10:11:12.345678Z';
+    const decoded = decodeSessionCursor(encodeSessionCursor({ updatedAt, updatedAtIso, sessionId: 'S1' }, SCOPE), SCOPE);
+    expect(decoded?.updatedAtIso).toBe(updatedAtIso);
   });
 
   test('is URL-safe — it travels in a query string', () => {

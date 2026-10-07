@@ -63,10 +63,10 @@ export class AmbiguousSecretGrantError extends Error {
  *     KEY is an AmbiguousSecretGrantError — a deliberate list naming both is a
  *     misconfiguration, not something to silently resolve.
  */
-/** Sort key among values of one KEY: a value narrowed to and shared with this
- *  session's person (`audience: 'in'`) before one shared with everyone. */
+/** Sort key among values of one KEY: reached through the session's person,
+ *  then through its agent, then shared with everyone. */
 export function secretAudienceRank(audience: ResolvedProjectSecret['audience']): number {
-  return audience === 'in' ? 0 : 1;
+  return audience === 'person' ? 0 : audience === 'agent' ? 1 : 2;
 }
 
 export function resolveGrantedSecretSelection(

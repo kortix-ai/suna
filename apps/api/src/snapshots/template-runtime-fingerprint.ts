@@ -17,11 +17,11 @@ import {
   UV_VERSION,
 } from '@kortix/shared';
 import { SANDBOX_VERSION, config } from '../config';
-import { snapshotEmbedsAgentForBootMode } from './compiled-runtime-fingerprint';
 import {
   buildRuntimeArtifactFingerprint,
   cliConnectorRuntimeArtifacts,
 } from './runtime-fingerprint';
+import { KORTIXD_SHARED_SOURCES } from '@kortix/api-contract/sandbox-layout';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -206,8 +206,9 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // download plus a ~210 MB re-hash to get there.
 const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v49';
 
-// The runtime layer bakes source artifacts into every template's rootfs. Exactly
-// TWO are the kortix-agent binary; the rest (entrypoint, in-sandbox CLI surface,
+// The runtime layer bakes source artifacts into every template's rootfs. The
+// first set is the kortix-agent binary (its source, package.json and the shared
+// files it bundles); the rest (entrypoint, in-sandbox CLI surface,
 // slack-cli, SDK-backed Connector client) are the non-agent runtime. The
 // agent-swap fast path
 // replaces ONLY the agent, so the builder must prove the NON-agent runtime is
@@ -215,6 +216,8 @@ const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v49';
 const AGENT_RUNTIME_ARTIFACTS = [
   { label: 'kortix-agent-src', path: AGENT_SRC_DIR, excludeNames: FINGERPRINT_EXCLUDES },
   { label: 'kortix-agent-pkg', path: AGENT_PKG_JSON },
+  // The contract and SDK files the daemon bundles: a change there changes the binary.
+  ...KORTIXD_SHARED_SOURCES.map((path) => ({ label: `kortix-agent-shared:${path}`, path: resolve(REPO_ROOT, path) })),
 ];
 const NON_AGENT_RUNTIME_ARTIFACTS = [
   { label: 'kortix-entrypoint', path: ENTRYPOINT_PATH },
@@ -227,6 +230,9 @@ const NON_AGENT_RUNTIME_ARTIFACTS = [
   // includes @kortix/sdk because the compiled CLI owns the Connector client.
   ...cliConnectorRuntimeArtifacts(CLI_ROOT),
 ];
+
+/** Every runtime input of the snapshot: the daemon binary's sources, then the rest. */
+export const RUNTIME_ARTIFACTS = [...AGENT_RUNTIME_ARTIFACTS, ...NON_AGENT_RUNTIME_ARTIFACTS];
 // Both version strings fold in the layer/opencode/browser/sandbox constants — all
 // NON-agent inputs (bumped when the layer/opencode/browser change, not the agent
 // binary), so they belong in BOTH fingerprints. The per-process cache re-walks the
@@ -274,7 +280,7 @@ export async function currentRuntimeArtifactFingerprint(): Promise<string> {
   runtimeFingerprintInflight = buildRuntimeArtifactFingerprint({
     sandboxVersion: sandboxVersionStr(),
     opencodeVersion: OPENCODE_VERSION,
-    artifacts: runtimeArtifactsForBootMode(config.KORTIX_COMPILED_BOOT_MODE),
+    artifacts: [...RUNTIME_ARTIFACTS],
   })
     .then((value) => {
       runtimeFingerprintCache = { key, value };
@@ -286,17 +292,6 @@ export async function currentRuntimeArtifactFingerprint(): Promise<string> {
       throw err;
     });
   return runtimeFingerprintInflight;
-}
-
-export function runtimeArtifactsForBootMode(
-  mode: 'off' | 'shadow' | 'prefer' | 'required',
-): Array<(typeof AGENT_RUNTIME_ARTIFACTS)[number] | (typeof NON_AGENT_RUNTIME_ARTIFACTS)[number]> {
-  // In prefer/required mode server.mjs carries the daemon. Daemon source is no
-  // longer an image input, so changing it must not mint an 8 GB snapshot.
-  // Shadow/off still execute the baked daemon and retain the original identity.
-  return snapshotEmbedsAgentForBootMode(mode)
-    ? [...AGENT_RUNTIME_ARTIFACTS, ...NON_AGENT_RUNTIME_ARTIFACTS]
-    : [...NON_AGENT_RUNTIME_ARTIFACTS];
 }
 
 /**

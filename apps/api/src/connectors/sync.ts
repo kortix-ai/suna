@@ -25,7 +25,7 @@ import { parse as parseToml } from 'smol-toml';
 import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-store';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { assertAllowedEndpointUrl, assertAllowedSourceAddress } from '../marketplace/catalog';
-import { safeEgressFetch } from '../shared/ssrf-guard';
+import { safeEgressFetch, UnsafeEgressError } from '../shared/ssrf-guard';
 import { configuredTimeoutMs, withTimeout } from '../shared/with-timeout';
 import { config } from '../config';
 import {
@@ -34,7 +34,7 @@ import {
   manifestHashForConnector,
 } from '../projects/connectors';
 import { type GitBackedProject, isRepoFileNotFoundError, readRepoFile } from '../projects/git';
-import { withProjectGitAuth } from '../projects/index';
+import { withProjectGitAuth } from '../projects/surface';
 import { extractProjectPolicies } from '../projects/policies';
 import {
   confineSharedProjectSecretToConnector,
@@ -71,7 +71,7 @@ import { composioCatalogTools, composioConfigured } from './composio';
 import { pipedreamAppIcon, pipedreamCatalog, pipedreamConfigured } from './pipedream';
 import type { PolicyAction } from './policy';
 import { resolvePostmanSource, type PostmanSourceDocument } from './postman-source';
-import { parseSpecDocument } from './spec-doc';
+import { isSpecLoadError, parseSpecDocument, SpecLoadError } from './spec-doc';
 import {
   type ConnectorAuthDiscovery,
   discoverHttpAuthChallenge,
@@ -215,7 +215,8 @@ export async function discoverDraftConnectorAuth(
   return discoverConnectorAuthFromSource(await withProjectGitAuth(row), draft);
 }
 
-async function discoverConnectorAuthFromSource(
+/** Exported for contract tests (`unit-connector-spec-load-discovery.test.ts`). */
+export async function discoverConnectorAuthFromSource(
   project: GitBackedProject,
   draft: Record<string, unknown>,
 ): Promise<ConnectorAuthDiscovery> {
@@ -240,6 +241,17 @@ async function discoverConnectorAuthFromSource(
     try {
       return discoverOpenApiAuth(await loadSpecDoc(project, spec), spec);
     } catch (e) {
+      if (isSpecLoadError(e)) {
+        // The spec the user pointed at cannot be loaded: a non-OK HTTP status
+        // (an auth-walled or wrong URL — Better Stack `3e5bd849…`), a landing
+        // page, or an unparseable body. Expected user-input state, not a
+        // server fault — there is no auth to discover from an unreadable spec,
+        // so degrade like the missing-repo case below instead of letting the
+        // throw 500 → Sentry. The real reason surfaces through the sync path's
+        // catalog error (connector status `error` + the create flow's
+        // sync-error toast).
+        return { ...EMPTY_AUTH_DISCOVERY, warnings: [e.message] };
+      }
       if (
         isRepoFileNotFoundError(e) ||
         String((e as Error).message).startsWith('connector spec not found in repository:')
@@ -259,6 +271,12 @@ async function discoverConnectorAuthFromSource(
         resolveWorkspace: resolvePostmanWorkspace,
       });
     } catch (e) {
+      if (isSpecLoadError(e)) {
+        // Same expected user-input state as the openapi branch above: a
+        // remote Postman source the API could not load degrades to the empty
+        // discovery instead of a 500 → Sentry.
+        return { ...EMPTY_AUTH_DISCOVERY, warnings: [e.message] };
+      }
       if (
         isRepoFileNotFoundError(e) ||
         String((e as Error).message).startsWith('connector spec not found in repository:')
@@ -1323,17 +1341,27 @@ async function loadSourceText(project: GitBackedProject, spec: string): Promise<
   let raw: string;
   if (/^https?:\/\//i.test(spec)) {
     assertAllowedSourceAddress(spec);
-    const res = await safeEgressFetch(spec, {
-      // Signal we accept either form; servers that content-negotiate may hand
-      // back JSON, but we parse whatever comes regardless.
-      headers: {
-        accept: 'application/json, application/yaml, text/yaml, text/plain, */*',
-      },
-    });
-    if (!res.ok) {
-      throw new Error(`failed to fetch spec at ${spec}: HTTP ${res.status} ${res.statusText}`);
+    try {
+      const res = await safeEgressFetch(spec, {
+        // Signal we accept either form; servers that content-negotiate may hand
+        // back JSON, but we parse whatever comes regardless.
+        headers: {
+          accept: 'application/json, application/yaml, text/yaml, text/plain, */*',
+        },
+      });
+      if (!res.ok) {
+        throw new SpecLoadError(`failed to fetch spec at ${spec}: HTTP ${res.status} ${res.statusText}`);
+      }
+      raw = await res.text();
+    } catch (e) {
+      // Everything after the guards that stops the spec body from being read
+      // is a spec-load failure (Better Stack `3e5bd849…`), not a server fault.
+      // A URL the egress guard refused keeps its typed envelope — the routes
+      // map it to the structured `invalid_source_address` 400
+      // (Better Stack `f5c0ce61…`).
+      if (e instanceof SpecLoadError || e instanceof UnsafeEgressError) throw e;
+      throw new SpecLoadError(`failed to fetch spec at ${spec}: ${(e as Error).message}`);
     }
-    raw = await res.text();
   } else {
     // `readRepoFile` throws a typed `RepoFileNotFoundError` when the path isn't
     // in the repo at the ref (see #3537 / `isGitPathNotFoundError`) instead of

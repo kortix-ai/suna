@@ -10,8 +10,8 @@ import { db } from '../../shared/db';
 import { resolveUserIdentities } from './user-identity';
 
 export type SessionMessageAuthor =
-  | { kind: 'member'; user_id: string; name: string; email: string | null }
-  | { kind: 'session'; session_id: string; name: string };
+  | { kind: 'member'; user_id: string; name: string; email: string | null; avatar_url: string | null }
+  | { kind: 'session'; session_id: string; name: string; agent?: string };
 
 export interface SessionMessageAuthors {
   /** Keyed by every runtime message id the prompt travelled under. */
@@ -19,6 +19,11 @@ export interface SessionMessageAuthors {
   /** A spawned session's first message came from its parent's agent through
    *  `initial_prompt`, which leaves no ledger row. Null otherwise. */
   initial_author: SessionMessageAuthor | null;
+}
+
+/** The agent a session runs, unless it is the column's `'default'` placeholder. */
+function namedAgent(agentName: string | null | undefined): agentName is string {
+  return !!agentName && agentName !== 'default';
 }
 
 function sessionTitle(metadata: unknown): string {
@@ -58,15 +63,18 @@ export async function sessionMessageAuthors(session: {
   const [titles, identities] = await Promise.all([
     sessionIds.size > 0
       ? db
-          .select({ sessionId: projectSessions.sessionId, metadata: projectSessions.metadata })
+          .select({ sessionId: projectSessions.sessionId, metadata: projectSessions.metadata, agentName: projectSessions.agentName })
           .from(projectSessions)
           .where(and(inArray(projectSessions.sessionId, [...sessionIds]), eq(projectSessions.projectId, session.projectId)))
       : Promise.resolve([]),
     resolveUserIdentities([...userIds]),
   ]);
-  const titleById = new Map(titles.map((row) => [row.sessionId, sessionTitle(row.metadata)]));
-  const sessionAuthor = (id: string): SessionMessageAuthor | null =>
-    titleById.has(id) ? { kind: 'session', session_id: id, name: titleById.get(id)! } : null;
+  const sessionById = new Map(titles.map((row) => [row.sessionId, row]));
+  const sessionAuthor = (id: string): SessionMessageAuthor | null => {
+    const row = sessionById.get(id);
+    if (!row) return null;
+    return { kind: 'session', session_id: id, name: sessionTitle(row.metadata), ...(namedAgent(row.agentName) ? { agent: row.agentName } : {}) };
+  };
 
   const authors: Record<string, SessionMessageAuthor> = {};
   for (const row of rows) {
@@ -82,6 +90,7 @@ export async function sessionMessageAuthors(session: {
           user_id: row.userId,
           name: identity.displayName?.trim() || identity.email || 'Member',
           email: identity.email,
+          avatar_url: identity.avatarUrl ?? null,
         };
       }
     }

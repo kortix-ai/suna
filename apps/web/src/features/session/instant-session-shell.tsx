@@ -11,12 +11,9 @@ import { QueuedPromptList } from '@/features/session/composer/queued-prompt-list
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
 import { isFirstPromptRow, projectQueueRows } from '@/features/session/queue-projection';
+import { useQueuedPromptEdit } from '@/features/session/queued-prompt-edit';
 import { SESSION_TRANSCRIPT_CLASS, SessionBodyRow } from '@/features/session/session-body';
 import { SessionLayout } from '@/features/session/session-layout';
-import { SessionMessageCard } from '@/features/session/turn/session-message-card';
-import { isAskForViewer } from '@/features/session/turn/message-author';
-import { parseSessionMessagePrompt } from '@/features/session/message-parsing';
-import { useAuth } from '@/features/providers/auth-provider';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import {
@@ -26,12 +23,13 @@ import {
 import { buildOptimisticPromptTextWithUploads } from '@/features/session/uploaded-file-refs';
 import { useInstantSessionSend } from '@/features/session/use-instant-session-send';
 import { ProjectHomeWelcomeBody } from '@/features/workspace/project-layout/project-home';
+import { useAuth } from '@/features/providers/auth-provider';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import type { SessionPromptOverrides, SessionStartStage } from '@kortix/sdk';
 import type { Command } from '@kortix/sdk/react';
 import {
-  useFeatureFlag,
+  useProjectSession,
   usePromptAttachments,
   useRuntimeAgents,
   useSessionPrompts,
@@ -95,6 +93,7 @@ export function InstantSessionShell({
   draftActive?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tQueue = useTranslations('threads');
   // `ready` is the backend's authoritative "runtime is up" signal (POST /start).
   // Only the side panel reads it now: the thread deliberately shows the SAME
   // waiting row at every boot stage (see below), so there is nothing there to
@@ -129,13 +128,6 @@ export function InstantSessionShell({
   // written by a pre-deploy tab.
   const promptInbox = useSessionPrompts(projectId, sessionId, { enabled: hydrated });
   const firstPromptRow = promptInbox.prompts.find((p) => isFirstPromptRow(p));
-  // An ask's first message (`no_reply`) goes to people: show it as the ask card,
-  // with no Thinking row and no Stop button while the box boots.
-  const { user: viewer } = useAuth();
-  const { enabled: humanMessaging } = useFeatureFlag(projectId, 'human_messaging');
-  const askInfo = humanMessaging && firstPromptRow?.no_reply
-    ? parseSessionMessagePrompt(firstPromptRow.full_text ?? firstPromptRow.text)
-    : undefined;
   const send = useInstantSessionSend({
     projectId,
     sessionId,
@@ -143,7 +135,13 @@ export function InstantSessionShell({
     onSubmit,
     promptInbox,
   });
-  const { submitted, effectiveSubmission, extraSends, handleSend } = send;
+  const { submitted, effectiveSubmission, extraSends, handleSend, forgetExtraSend } = send;
+  // A queued prompt runs as its author: only they edit or send it, and the
+  // session's managers may remove it.
+  const { user: viewer } = useAuth();
+  const viewerManagesSession =
+    useProjectSession(projectId, sessionId, { enabled: !!projectId && !!sessionId }).data
+      ?.can_manage_lifecycle !== false;
   const shellQueue = useMemo(
     () =>
       projectQueueRows({
@@ -156,8 +154,9 @@ export function InstantSessionShell({
           createdAtMs: 0,
           posted: false,
         })),
+        viewer: { userId: viewer?.id, managesSession: viewerManagesSession },
       }),
-    [promptInbox.prompts, extraSends],
+    [promptInbox.prompts, extraSends, viewer?.id, viewerManagesSession],
   );
   const transcriptQueue = useMemo(() => {
     const rows = promptInbox.prompts.filter(
@@ -186,7 +185,7 @@ export function InstantSessionShell({
     text: string;
     id: number;
     options?: SessionPromptOverrides | null;
-    mode?: 'merge';
+    mode?: 'replace' | 'merge';
   } | null>(null);
   // The first send swaps the hero composer for the docked one, which remounts
   // it. The upload controller lives here, so a held send outlives that remount
@@ -195,6 +194,16 @@ export function InstantSessionShell({
   const applySuggestion = useCallback((text: string) => {
     setPrefill({ text, id: Date.now() });
   }, []);
+  // Edit opens a queued message in the composer and Submit saves the new words
+  // into the same row, files kept. The chat shares this edit and takes over an
+  // open one at the crossfade (`queued-prompt-edit.ts`).
+  const queueEdit = useQueuedPromptEdit({
+    key: sessionId,
+    rows: () => shellQueue.rows,
+    editPrompt: promptInbox.edit,
+    setComposerText: (text) => setPrefill({ text, id: Date.now(), mode: 'replace' }),
+    forgetLocalDraft: forgetExtraSend,
+  });
 
   const handleCommand = useCallback(
     (cmd: Command, args: string | undefined, options: ComposerOptions) => {
@@ -212,7 +221,10 @@ export function InstantSessionShell({
   // the welcome body) or the regular bottom position (post-submit thread view).
   const composerEl = (
     <ComposerChatInput
-      onSend={handleSend}
+      onSend={async (text, files, options, attachments) => {
+        if (await queueEdit.save(text)) return;
+        await handleSend(text, files, options, attachments);
+      }}
       onCommand={handleCommand}
       promptAttachments={promptAttachments}
       sessionId={sessionId}
@@ -226,14 +238,14 @@ export function InstantSessionShell({
       // normal (typeable) — only the send button flips to a stop button. The
       // stop is disabled because there's nothing running to stop yet; the real
       // chat's live stop takes over the instant it crossfades in.
-      isBusy={!!submitted && !askInfo}
+      isBusy={!!submitted}
       // The first message IS the turn as far as this shell is concerned, so a
       // `/` command submitted now is refused with the same message a command
       // typed mid-turn gets, rather than racing the boot.
-      sessionWorking={!!submitted && !askInfo}
+      sessionWorking={!!submitted}
       stopDisabled={!!submitted}
       // What was typed while the box boots — see `shellQueueRows`.
-      inputSlot={
+      aboveSlot={
         submitted ? (
           <QueuedPromptList
             rows={shellQueue.rows}
@@ -248,20 +260,17 @@ export function InstantSessionShell({
               void promptInbox.retry(id).catch((error) => errorToast(error.message));
             }}
             onEdit={(id) => {
-              void promptInbox
-                .remove(id)
-                .then((removed) => {
-                  const text = removed.parts
-                    .filter((part) => part.type === 'text')
-                    .map((part) => part.text)
-                    .join('\n');
-                  setPrefill({ text, id: Date.now(), mode: 'merge', options: removed.overrides });
-                })
-                .catch((error) => errorToast(error.message));
+              queueEdit.takeBack(id);
             }}
+            editing={queueEdit.editing}
+            onCancelEdit={queueEdit.cancel}
           />
         ) : undefined
       }
+      // Editing a queued message: the send saves it back into the queue, so the
+      // control says Submit, never the boot-time Stop.
+      submitLabel={queueEdit.editing ? tQueue('submitEdit') : null}
+      onArrowUpAtStart={() => queueEdit.takeBack()}
       autoFocus
       // Hero radius pre-submit (matches the project home); back to the default
       // card radius once docked so the crossfade into SessionChat doesn't pop.
@@ -337,12 +346,6 @@ export function InstantSessionShell({
                   {/* The composer shows Stop from this send on, so the one
                       Thinking row sits here, above any queued bubbles. A failed
                       delivery shows its cause instead. */}
-                  {askInfo ? (
-                    <SessionMessageCard
-                      info={askInfo}
-                      replyHint={isAskForViewer(askInfo, viewer?.email)}
-                    />
-                  ) : (
                   <OptimisticTurn
                     text={buildOptimisticPromptTextWithUploads(
                       effectiveSubmission.text,
@@ -355,7 +358,7 @@ export function InstantSessionShell({
                     deferPreview
                     sessionId={sessionId}
                     busy={firstPromptRow?.state !== 'failed'}
-                    leadingStatus={
+                    deliveryStatus={
                       firstPromptRow?.state === 'failed' ? (
                         <QueuedPromptFailure
                           lastError={firstPromptRow.last_error}
@@ -367,7 +370,6 @@ export function InstantSessionShell({
                       ) : undefined
                     }
                   />
-                  )}
                 </div>
               )}
               {!hasTranscript &&
@@ -385,7 +387,7 @@ export function InstantSessionShell({
                       deferPreview
                       busy={false}
                       className={QUEUED_BUBBLE_OPACITY_CLASS}
-                      leadingStatus={
+                      deliveryStatus={
                         entry.prompt?.state === 'failed' ? (
                           <QueuedPromptFailure
                             lastError={entry.prompt.last_error}

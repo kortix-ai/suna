@@ -211,11 +211,11 @@ describe('native test-lane workflow', () => {
     expect(release).toContain('https://staging.kortix.com');
   });
 
-  test('runs the local suite after a merge, on a release pull request, or when a person adds `test`', () => {
+  test('runs the local suite on a schedule, on a release pull request, or when a person adds `test`', () => {
     // 2026-09-28. Labels ran the suite on nearly every pull request into
-    // `main`: every agent PR carried `preview`, and each push re-ran six lanes.
-    // Into `main`, only the act of adding `test` runs it, once; a push does not.
-    expect(testWorkflow).toContain('branches: [main, staging]');
+    // `dev`: every agent PR carried `preview`, and each push re-ran six lanes.
+    // Into `dev`, only the act of adding `test` runs it, once; a push does not.
+    expect(testWorkflow).toContain('branches: [dev, staging]');
     expect(testWorkflow).toContain('types: [opened, reopened, synchronize, ready_for_review, labeled]');
     expect(testWorkflow).not.toContain('labels.*.name');
     expect(testWorkflow).not.toContain("'preview'");
@@ -241,10 +241,10 @@ describe('native test-lane workflow', () => {
     expect(testWorkflow).not.toMatch(/^  decide:/m);
   });
 
-  test('no workflow runs a job on a pull request into main by itself', () => {
-    // A pull request into `main` is mergeable the moment it opens. CI runs on
-    // pull requests into `staging` and `prod`, and after the merge on `main`.
-    // Two workflows listen to pull requests into `main`, and each runs a job
+  test('no workflow runs a job on a pull request into dev by itself', () => {
+    // A pull request into `dev` is mergeable the moment it opens. CI runs on
+    // pull requests into `staging` and `prod`, and after the merge on `dev`.
+    // Two workflows listen to pull requests into `dev`, and each runs a job
     // only when a person adds its label: tests.yml (`test`) and
     // deploy-preview.yml (`preview`). Both gates are pinned above.
     const labelGated = new Set(['tests.yml', 'deploy-preview.yml']);
@@ -253,7 +253,7 @@ describe('native test-lane workflow', () => {
       .filter((file) => /\.ya?ml$/.test(file) && !labelGated.has(file))
       .filter((file) => {
         // Walk the top-level `on:` block line by line: a pull request trigger
-        // is an offender unless its `branches:` list exists and omits `main`.
+        // is an offender unless its `branches:` list exists and omits `dev`.
         const lines = readFileSync(resolve(dir, file), 'utf8').split('\n');
         const on = lines.indexOf('on:');
         if (on < 0) return false;
@@ -264,41 +264,78 @@ describe('native test-lane workflow', () => {
           const next = block.slice(i + 1).findIndex((l) => /^  \S/.test(l));
           const body = block.slice(i + 1, next < 0 ? undefined : i + 1 + next);
           const branches = body.find((l) => /^    branches:/.test(l));
-          return !branches || /\bmain\b/.test(branches);
+          return !branches || /\bdev\b/.test(branches);
         });
       });
     expect(offenders).toEqual([]);
   });
 
-  test('the dev trunk tests its own latest commit, and cannot block anything', () => {
-    // A push-triggered run has nothing left to gate: the code merged, and
-    // deploy-dev.yml deploys the same push without waiting.
-    expect(testWorkflow).toMatch(/\n  push:\n(?:\s+#.*\n)*\s+branches: \[main\]/);
+  test('a push to dev runs no suite: the trunk is tested on a daily schedule and cannot block anything', () => {
+    // 2026-10-03 (Actions minutes). The per-merge gate is the local attestation
+    // and the pre-push hook. A scheduled run on `dev` HEAD is the safety net.
+    const on = testWorkflow.slice(testWorkflow.indexOf('\non:'), testWorkflow.indexOf('\nconcurrency:'));
+    expect(on).not.toMatch(/^ {2}push:/m);
+    expect(on).toMatch(/^ {2}schedule:\n(?: {4}#.*\n)* {4}- cron: '/m);
+    expect(on).toContain('workflow_dispatch:');
     // The suite parses markdown (tests/spec/end-to-end.md feeds route coverage).
-    // Skipping docs-only pushes leaves main red with no run and blames the
-    // next commit.
     expect(testWorkflow).not.toMatch(/^\s+paths-ignore:/m);
 
     // Per-ref group: a PR run (refs/pull/N/merge) can never cancel the trunk.
     expect(testWorkflow).toContain('group: tests-${{ github.ref }}');
-    // A PR cancels its superseded run; a push to main queues, so a burst of
-    // merges still ends with a verdict instead of all-cancelled.
-    expect(testWorkflow).toContain("cancel-in-progress: ${{ github.event_name != 'push' }}");
+    // A PR cancels its superseded run; a scheduled run queues.
+    expect(testWorkflow).toContain("cancel-in-progress: ${{ github.event_name == 'pull_request' }}");
 
     const report = testWorkflow.slice(testWorkflow.indexOf('\n  trunk-report:'));
     expect(report).toContain('needs: lane');
     // A lane that hits `timeout-minutes` concludes `cancelled`, not `failure`,
-    // so `failure()` would miss it. `cancelled()` covers a replaced pending run.
+    // so `failure()` would miss it. `cancelled()` covers a replaced queued run.
     expect(report).toContain(
-      "if: github.event_name == 'push' && !cancelled() && needs.lane.result != 'success'",
+      "if: github.event_name == 'schedule' && !cancelled() && needs.lane.result != 'success'",
     );
     expect(report).not.toMatch(/^\s+if:.*failure\(\)/m);
     // Top level is `contents: read`; the commit comment 403s without this.
     expect(report).toContain('contents: write');
 
-    // A red trunk has to reach its author, or nobody learns main is broken.
+    // A red trunk has to reach someone, or nobody learns dev is broken.
     expect(testWorkflow).toContain('repos/$REPO/commits/$SHA/comments');
-    expect(testWorkflow).toContain('::error::main is red at $SHA');
+    expect(testWorkflow).toContain('::error::dev is red at $SHA');
+  });
+
+  test('a push to dev triggers only the cheap guards and path-gated infra applies', () => {
+    // 2026-10-03 (Actions minutes). Dev deploy, Tests, CI, CodeQL, Drata and the
+    // desktop build are dispatch, schedule, or release-branch only.
+    const dir = resolve(root, '.github/workflows');
+    const pushesToMain = (file: string): boolean => {
+      const lines = readFileSync(resolve(dir, file), 'utf8').split('\n');
+      const on = lines.indexOf('on:');
+      if (on < 0) return false;
+      const end = lines.findIndex((line, i) => i > on && /^\S/.test(line));
+      const block = lines.slice(on + 1, end < 0 ? undefined : end);
+      const push = block.findIndex((line) => /^ {2}push:/.test(line));
+      if (push < 0) return false;
+      const next = block.slice(push + 1).findIndex((l) => /^ {2}\S/.test(l));
+      const body = block.slice(push + 1, next < 0 ? undefined : push + 1 + next);
+      const branches = body.find((l) => /^ {4}branches:/.test(l));
+      return !branches || /\bdev\b/.test(branches);
+    };
+    const onMain = readdirSync(dir)
+      .filter((file) => /\.ya?ml$/.test(file) && pushesToMain(file))
+      .sort();
+    expect(onMain).toEqual([
+      'db-migrations.yml', // path-gated: packages/db/**
+      'deploy-api-router-dev.yml', // path-gated: the router worker
+      'i18n-catalogs.yml', // path-gated: translations
+      'secret-scan.yml', // ~15 s
+      'secrets-guard.yml', // ~15 s
+      'terraform-apply-global.yml', // path-gated: infra/terraform roots
+    ]);
+    // Release branches keep their gates.
+    for (const file of ['ci.yml', 'tests.yml', 'secret-scan.yml', 'secrets-guard.yml', 'codeql.yml']) {
+      expect(readFileSync(resolve(dir, file), 'utf8'), file).toMatch(/pull_request:[\s\S]*?branches: \[(?:dev, )?staging/);
+    }
+    const deployDev = readFileSync(resolve(dir, 'deploy-dev.yml'), 'utf8');
+    expect(deployDev).toContain('workflow_dispatch:');
+    expect(deployDev).toMatch(/^ {6}surface:\n(?:.*\n)*? {8}default: changed/m);
   });
 
   test('does not repeat local tests after staging merge or on the production PR', () => {
@@ -425,7 +462,7 @@ describe('the preview label is one fast deploy, and a superseded run never deplo
   const previewWorkflow = readFileSync(resolve(root, '.github/workflows/deploy-preview.yml'), 'utf8');
   const revalidate = previewWorkflow.slice(
     previewWorkflow.indexOf('- name: Revalidate exact preview approval'),
-    previewWorkflow.indexOf('- uses: actions/download-artifact@v8'),
+    previewWorkflow.indexOf('- uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c'),
   );
 
   test('only an explicit act starts a run, and only a dispatch runs the suite', () => {

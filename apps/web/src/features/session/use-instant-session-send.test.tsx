@@ -67,9 +67,6 @@ mock.module('react', () => ({
     return [value, record] as const;
   },
 }));
-mock.module('@/features/providers/auth-provider', () => ({
-  useAuth: () => ({ user: { id: 'viewer-1', email: 'viewer@example.com' } }),
-}));
 mock.module('@/features/session/composer-chat-input', () => ({
   ComposerChatInput: (props: typeof composer) => {
     composer = props;
@@ -119,11 +116,15 @@ const enqueue = mock(
     return { state: 'queued' };
   },
 );
+// The viewer: queued rows offer their actions to their author only.
+mock.module('@/features/providers/auth-provider', () => ({ useAuth: () => ({ user: { id: 'user-1' } }) }));
 mock.module('@kortix/sdk/react', () => ({
   ...realSdkReact,
   startSessionWithPrompt,
+  useProjectSession: () => ({ data: undefined }),
   usePromptAttachments: () => ({}),
   useRuntimeAgents: () => ({ data: [] }),
+  useFeatureFlag: () => ({ enabled: true, isLoading: false }),
   useSessionPrompts: () => ({ prompts: inboxPrompts, enqueue }),
   readStartStash: (sessionId: string) => stashes.get(sessionId) ?? null,
   writeStartStash: () => {},

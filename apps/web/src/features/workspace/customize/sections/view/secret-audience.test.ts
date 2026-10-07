@@ -24,10 +24,22 @@ describe('secret audience ↔ the Who can use it choice', () => {
   test('anything else is Specific people or groups, with the picks preselected', () => {
     expect(audienceDraftFrom([share('member', 'me'), share('group', 'g1')], 'me')).toEqual({
       audience: 'members',
-      picked: { memberIds: ['me'], groupIds: ['g1'] },
+      picked: { memberIds: ['me'], groupIds: ['g1'], agentIds: [] },
     });
     // Another person's single grant is not "Only you" for this viewer.
     expect(audienceDraftFrom([share('member', 'them')], 'me').audience).toBe('members');
+  });
+
+  test('an agent share opens as a pick and saves back as principal_type agent', () => {
+    expect(audienceDraftFrom([share('agent', 'sa-1')], 'me')).toEqual({
+      audience: 'members',
+      picked: { memberIds: [], groupIds: [], agentIds: ['sa-1'] },
+    });
+    expect(
+      sharedWithFrom({ audience: 'members', picked: { memberIds: [], groupIds: [], agentIds: ['sa-1'] } }, 'me'),
+    ).toEqual([{ principal_type: 'agent', principal_id: 'sa-1' }]);
+    expect(sameSharedWith([share('agent', 'sa-1')], [{ principal_type: 'agent', principal_id: 'sa-1' }])).toBe(true);
+    expect(sameSharedWith([share('agent', 'sa-1')], [{ principal_type: 'user', principal_id: 'sa-1' }])).toBe(false);
   });
 
   test('Save sends [] for Everyone, the viewer for Only you, the picks otherwise', () => {

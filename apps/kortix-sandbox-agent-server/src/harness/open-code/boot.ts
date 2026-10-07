@@ -1,9 +1,9 @@
+import type { RuntimePermissionRequest, RuntimeQuestionRequest } from '@kortix/api-contract/transcript'
 import { retryUntilInitialSessionEstablished, maybeCreateInitialOpencodeSession, finalizeOrphanedTurn, unrequestedAbortCause, finalizeInitialSession, markSeedBakedSession } from './initial-session'
-import { relayInitialTurnAcceptedToApi, claimInitialTurnFromApi, reconcileInitialTurnAcceptanceToApi, createInitialOpenCodeSession, INITIAL_TURN_PICKUP_GRACE_MS } from './initial-prompt'
-import { getClaimedInitialTurn } from './initial-turn-claim'
-export { resetClaimedInitialTurnForTests, initialSessionRetryDelayMs, finalizeInitialSession, retryUntilInitialSessionEstablished, publishInitialOpenCodeSessionAfterPrompt, finalizeOrphanedTurn, waitForOpencodeRootReadiness, resolveExistingRoot, reusedRootAlreadyDelivered, unrequestedAbortCause } from './initial-session'
+import { reconcileInitialTurnAcceptanceToApi, createInitialOpenCodeSession, INITIAL_TURN_PICKUP_GRACE_MS } from './initial-prompt'
+export { initialSessionRetryDelayMs, finalizeInitialSession, retryUntilInitialSessionEstablished, publishInitialOpenCodeSessionAfterPrompt, finalizeOrphanedTurn, waitForOpencodeRootReadiness, resolveExistingRoot, reusedRootAlreadyDelivered, unrequestedAbortCause } from './initial-session'
 export type { ExistingRootResult } from './initial-session'
-export { createInitialOpenCodeSession, deliverInitialOpenCodePrompt, relayInitialTurnAcceptedToApi, claimInitialTurnFromApi, relayInitialTurnAbandonedToApi, reconcileInitialTurnAcceptanceToApi, waitForInitialSessionCreate, resolveOpencodeModel, buildInitialPromptBody, INITIAL_TURN_PICKUP_GRACE_MS } from './initial-prompt'
+export { createInitialOpenCodeSession, deliverInitialOpenCodePrompt, reconcileInitialTurnAcceptanceToApi, waitForInitialSessionCreate, resolveOpencodeModel, buildInitialPromptBody, INITIAL_TURN_PICKUP_GRACE_MS } from './initial-prompt'
 export type { InitialTurnAcceptanceReconciliation } from './initial-prompt'
 import { armSeedAdoption, runWarmSeedMode } from './warm-seed'
 import { relayTurnBeginAfterInitialAcceptance, relayTurnBeginToApi, relayTurnEndToApi, reconcileFinishedFirstTurn, isRootOpencodeSession } from './turn-relay'
@@ -27,6 +27,7 @@ import {
 import { logger } from '@/lib/log/logger'
 import {
   catalogIsDegraded,
+  bakedCatalogPath,
   hasKortixLlmGateway,
   missingManagedModelIds,
   refreshGatewayCatalogFile,
@@ -58,12 +59,7 @@ import {
 } from '@/services/runtime-assets/runtime-assets'
 import { wireRuntimeTruth } from './runtime-truth-glue'
 import { isSharedSeedBakedRoot } from './opencode-fork-root'
-import {
-  flattenOpencodeError,
-  type PermissionRequest,
-  type QuestionRequest,
-  type OpencodeTurnError,
-} from './events'
+import { flattenOpencodeError, type OpencodeTurnError } from './events'
 import { createTurnAutoResumer } from './turn-auto-resume'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { CATALOG_MOVING_EVENT_TYPES, runtimeStateStore } from './runtime-state-projection'
@@ -82,6 +78,7 @@ import {
   type TurnEndFrame,
 } from '../shared/turn-relay'
 import { relayQuestionToApi } from './question-relay'
+import { observeSteerRead } from './turns'
 import { readControlPlaneEnv, sandboxRelayContext } from '@/lib/kortix-api/relay-context'
 import { observeIdleForRunaway } from './runaway-turn-guard'
 import {
@@ -567,7 +564,7 @@ export async function reconcileManagedModels(
       return
     }
     const written = writeManagedOverlayCatalogFile({
-      currentCatalogFile: process.env.KORTIX_LLM_CATALOG_FILE ?? '/opt/kortix/llm-catalog.json',
+      currentCatalogFile: process.env.KORTIX_LLM_CATALOG_FILE ?? bakedCatalogPath(),
       targetCatalogFile:
         opts.catalogTargetFile ?? `${OPENCODE_HOME}/.config/kortix-llm-catalog.session.json`,
       managed: live,
@@ -698,6 +695,7 @@ async function startSessionRuntime(
     try {
       publishOpenCodeEvent(kortixEventBus(), event)
       runtimeStateStore()?.noteEvent(event)
+      observeSteerRead(event)
       // A catalog-moving frame re-pushes the projection (debounced, etag-gated).
       if (event.type && CATALOG_MOVING_EVENT_TYPES.has(event.type)) {
         scheduleRuntimeProjectionPush(event.type)
@@ -723,14 +721,14 @@ async function startSessionRuntime(
       })
     }
   }
-  const onQuestionAsked = (req: QuestionRequest) => {
+  const onQuestionAsked = (req: RuntimeQuestionRequest) => {
     void relayQuestionToApi(req, cfg, opencode).catch((err) =>
       logger.warn('[opencode-events] question relay failed', { err: (err as Error).message }),
     )
   }
   // Report only: apps/api pushes "needs your approval". The permission itself
-  // stays open for the user (shared/permission-relay.ts).
-  const onPermissionAsked = (req: PermissionRequest) => {
+  // stays open for the user (shared/turn-relay.ts `relayPermission`).
+  const onPermissionAsked = (req: RuntimePermissionRequest) => {
     void relayPermission(req).catch((err) =>
       logger.warn('[opencode-events] permission relay failed', { err: (err as Error).message }),
     )
@@ -818,13 +816,13 @@ async function startSessionRuntime(
   }
   let initialTurnAcceptanceSettled = false
   const initialTurnAcceptancePending = () =>
-    !initialTurnAcceptanceSettled && getClaimedInitialTurn() !== null
+    !initialTurnAcceptanceSettled && initialTurnClaim() !== null
   let initialTurnAcceptanceInFlight = false
   const reconcileInitialTurnAcceptance = async () => {
     if (initialTurnAcceptanceSettled || initialTurnAcceptanceInFlight) return
-    const opencodeSessionId = bootState.initialOpenCodeSessionId
-    const turnToken = getClaimedInitialTurn()?.turnToken
-    const messageId = getClaimedInitialTurn()?.messageId
+    const opencodeSessionId = bootState.initialRuntimeSessionId
+    const turnToken = initialTurnClaim()?.turnToken
+    const messageId = initialTurnClaim()?.messageId
     if (!opencodeSessionId || !turnToken || !messageId) return
     initialTurnAcceptanceInFlight = true
     try {
@@ -879,7 +877,7 @@ async function startSessionRuntime(
     onReconcile: onConnected,
   }
   let loopStarted = false
-  if (bootState.initialOpenCodeSessionRequired) {
+  if (bootState.initialRuntimeSessionRequired) {
     // Start the /event loop before resolving the root and delivering the prompt.
     // Do not await the response headers: OpenCode can withhold them until the
     // first event, which makes an await here deadlock with prompt delivery. The
@@ -890,11 +888,11 @@ async function startSessionRuntime(
       // `maybeCreateInitialOpencodeSession` (direct call above, or via
       // `attemptInitialSession` under the retry ladder below) already wrote
       // the id onto `bootState` before this runs — see the `if
-      // (bootState.initialOpenCodeSessionId)` / `established()` guards at
+      // (bootState.initialRuntimeSessionId)` / `established()` guards at
       // both call sites. Re-applying it through the pure helper is what
-      // clears a poisoned `initialOpenCodeSessionError` from an earlier
+      // clears a poisoned `initialRuntimeSessionError` from an earlier
       // failed attempt; see `finalizeInitialSession`.
-      finalizeInitialSession(bootState, bootState.initialOpenCodeSessionId as string)
+      finalizeInitialSession(bootState, bootState.initialRuntimeSessionId as string)
       await reconcileInitialTurnAcceptance()
       bootMark('initial-turn-accepted')
       opencode.markReady()
@@ -912,11 +910,11 @@ async function startSessionRuntime(
         bootMark,
         markOpencodeListening,
       ).catch((err) => {
-        bootState.initialOpenCodeSessionError = err instanceof Error ? err.message : String(err)
+        bootState.initialRuntimeSessionError = err instanceof Error ? err.message : String(err)
         logger.warn('[boot] initial opencode session setup failed', err)
       })
     await attemptInitialSession()
-    if (bootState.initialOpenCodeSessionId) {
+    if (bootState.initialRuntimeSessionId) {
       await completeInitialSessionBoot()
       return
     }
@@ -930,7 +928,7 @@ async function startSessionRuntime(
     // loop fallback below) proceeds and the box stays observable meanwhile.
     void retryUntilInitialSessionEstablished({
       attempt: attemptInitialSession,
-      established: () => bootState.initialOpenCodeSessionId !== null,
+      established: () => bootState.initialRuntimeSessionId !== null,
       finalize: completeInitialSessionBoot,
     })
   }

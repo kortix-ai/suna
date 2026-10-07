@@ -80,6 +80,7 @@ the run stays blocked. Use `answerQuestion`, `rejectQuestion`, or
 | `replayStartStash` | `true` | Replay a prompt saved before the session existed, once the session is ready. |
 | `enabled` | `true` | Set `false` to delay the hook, for example until a billing check passes. |
 | `chatEngine` | `true` | Set `false` if your app mounts its own chat surface for this session, to avoid syncing messages twice. |
+| `initialRuntimeSessionId` | `null` | A runtime session pin your server already holds for this session. The transcript renders from it while `/start` runs; the `/start` answer stays authoritative. `initialOpenCodeSessionId` is its deprecated name. |
 | `repositoryMode` | — | Telemetry only. A session created before a repository replacement starts and runs the project's current config without it. Only its `/workspace` clone still comes from the old repository, so a push from it needs a rebase first. |
 
 Sending is optimistic. `send` shows your message right away, then stream
@@ -109,6 +110,21 @@ need a running session. Each mirrors a method on the
 | `useProjectTriggers(projectId)` | Triggers: list, create, update, remove, fire. |
 | `useChangeRequests(projectId, status?)` | Change requests: list, open, merge, close, request changes. |
 | `useRuntimeSupports(capability)` | Whether the open session's runtime serves a feature (`session.rewind`, `session.compact`, …), from the `/kortix/health` answers the runtime-reconnect poller reads. `true` until the first answer. See [What the runtime supports](/docs/sdk/sessions#what-the-runtime-supports). |
+| `resetRuntimeQueries(queryClient)` | Not a hook. Drops every cached runtime query (sessions, messages, agents, commands, diffs). Call it after the session's runtime is replaced by a restart or a config reload, so the next read comes from the new runtime. |
+
+## Connector setup links
+
+An agent can mint a 1-click connect link (`/connect/<token>`). The flow's data
+and runtime policy live in the SDK; a host renders its own dialog over them and
+injects its adapters.
+
+| Export | Role |
+|---|---|
+| `useConnectorSetup(token, options)` | The whole flow: load what the link names, `POST /start`, open the provider's hosted page through the injected `openPopup`, poll `POST /finalize` on the 3 s / 5 s / 5-minute schedule, and report `phase` (`loading`, `ready`, `starting`, `opened`, `connected`, `error`), the app info, the error, and who the account was authorized as. `options` carries the host's `backendUrl`, `storage` adapter and `openPopup`; `onOpened` fires after each popup opening. |
+| `useConnectorLinkInfo(token, options)` | One shared, storage-backed cache per link token, so every card and the modal share one GET of the rate-limited public route and paint the app's logo on the first frame. The same `backendUrl`/`storage` options. |
+| `createConnectorLinkInfoCache(fetchInfo, { storage })` | The cache factory itself (framework-free, storage injected) for a host that wants its own instance. |
+| `resolveConnectorStart({ start, finalize })` | The `/start` outcome rule: hosted url → popup, already connected → finalize once, otherwise the error message. |
+| `nextConnectorPollDelay(attempt, elapsedMs)` | The bounded poll schedule (3 s first, 5 s after, stops at 5 minutes). |
 
 ## Start the open read early
 
@@ -254,8 +270,18 @@ It runs before every `composer` entry and ends the active response after the
 current tool call completes.
 Pass `placement: 'composer'` to keep it in the editable list above the input.
 It waits for the active response to finish. Each placement keeps submission order.
-The web composer uses Enter for transcript placement and Command+Enter
-(Control+Enter on Windows/Linux) for composer placement. Shift+Enter inserts a newline.
+Pass `delivery: 'steer' | 'queue' | 'interrupt'` to say how the prompt reaches a
+running turn. `steer` hands it to the turn at its next step; the turn does not
+stop. `queue` waits for the turn to end. `interrupt` ends the turn after the
+running tool. With only `delivery`, the SDK sends the placement it implies:
+`interrupt` is `transcript`, the others are `composer`. A steer row that cannot
+steer reads `delivery: 'queue'` with `steer_fallback` set to `unsupported`,
+`not_prompter` or `turn_ended`. `interrupt(promptId)` ("Stop and send") turns a
+waiting row into a transcript entry; a row already on the wire answers `409`.
+
+The web composer sends Enter as `steer` while a turn runs, and as a transcript
+send while the session is idle. Command+Enter (Control+Enter on Windows/Linux)
+is composer placement. Shift+Enter inserts a newline.
 
 List rows include `full_text` for complete previews after reload. `text` remains
 the bounded preview for older clients. Attachment bytes are excluded from list
@@ -274,8 +300,8 @@ after admission succeeds. A confirmed active turn clears the pending presentatio
 even if the previous inbox snapshot still lists that prompt. Runtime activity
 preserves the active turn's message ID during this handoff.
 
-The web composer names Enter **Quick Queue** and Command/Ctrl+Enter **Queue List**.
-Quick Queue entries run first. A waiting Quick Queue entry is a tinted bubble after
+The web composer names Command/Ctrl+Enter **Queue List** and a row's "Stop and
+send" **Quick Queue**. Quick Queue entries run first. A waiting Quick Queue entry is a tinted bubble after
 delivered turns, with no status text. Queue List entries remain editable until delivery starts.
 The server recovers missed completion events from exact runtime evidence, including
 after reload, without treating an unreachable runtime as a completed turn.
@@ -283,6 +309,12 @@ after reload, without treating an unreachable runtime as a completed turn.
 Each distinct Enter displays its pending prompt immediately, even while an earlier
 acceptance request is unresolved. Only a delivery failure adds text: its cause,
 Retry, and Remove. The server inbox continues to own execution order.
+
+The hook reads queue changes from the session's control stream
+(`GET .../sessions/:id/events?channels=control`), one connection per session
+however many components mount it. Every write of an inbox row arrives as a
+`kortix.control.queue` frame. The `GET .../prompts` poll runs only while that
+stream is not connected.
 
 ### Why a turn ended
 

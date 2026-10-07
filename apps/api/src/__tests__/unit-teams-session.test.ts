@@ -17,8 +17,8 @@ import { chatIdentityStub } from './helpers/chat-identity-stub';
  */
 
 const PROJECT_ID = '40c2e222-c4c2-47f6-ba40-05e8f40098b3';
-const TENANT_ID = '36009a52-46d2-44bc-ba56-57a87e485e0a';
-const CONVERSATION_ID = 'a:1FQyR2jW1pEUK';
+const TENANT_ID = '00000000-0000-4000-8000-00000000a11c';
+const CONVERSATION_ID = 'a:1SyntheticChat';
 
 const calls: string[] = [];
 let actor: { userId: string } | { reason: 'unlinked' | 'not_member' } = { userId: 'user-1' };
@@ -238,7 +238,7 @@ const activity = {
   text: 'List the files in this repo',
   serviceUrl: 'https://smba.trafficmanager.net/emea/',
   conversation: { id: CONVERSATION_ID, tenantId: TENANT_ID },
-  from: { id: '29:abc', name: 'Ivan Bagaric', aadObjectId: 'aad-user-1' },
+  from: { id: '29:abc', name: 'Jordan Lee', aadObjectId: 'aad-user-1' },
   recipient: { id: '28:bot' },
 };
 
@@ -277,7 +277,7 @@ beforeEach(() => {
       created.push(input);
       return { status: 'running', sessionId: 'sess-new' } as never;
     },
-    continueSession: async (input: Record<string, unknown>) => {
+    deliverFollowUp: async (input: Record<string, unknown>) => {
       calls.push('continueSession');
       continued.push(input);
       return followUpOutcome as never;
@@ -463,13 +463,13 @@ describe('follow-up outcomes — the conversation is never left on "Working on i
     expect(finalized).toHaveLength(0);
   });
 
-  test('pending (session still waking): the live card says so and the mapping is kept', async () => {
-    followUpOutcome = 'pending';
+  test('queued (durable, box waking): no card, the mapping is kept and bumped', async () => {
+    followUpOutcome = 'queued';
     await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });
-    expect(calls).toContain('deleteTurn');
-    expect(finalized).toHaveLength(1);
-    expect(String(finalized[0].error)).toMatch(/waking/i);
+    expect(calls).not.toContain('deleteTurn');
+    expect(finalized).toHaveLength(0);
     expect(created).toHaveLength(0);
+    expect(dbOps).toContain('update');
     expect(dbOps.filter((o) => o === 'delete')).toHaveLength(0);
   });
 
@@ -526,7 +526,7 @@ describe('binding names', () => {
       conversationId: CONVERSATION_ID,
       activity: { ...activity, conversation: { ...activity.conversation, conversationType: 'personal' } },
     });
-    expect(bindings[0]).toMatchObject({ channelName: 'Ivan Bagaric', channelType: 'personal' });
+    expect(bindings[0]).toMatchObject({ channelName: 'Jordan Lee', channelType: 'personal' });
   });
 });
 
@@ -637,7 +637,7 @@ describe('a turn that died mid-flight does not wedge the conversation', () => {
     // run's answer: its `teams send` then found no turn.
     setTeamsSessionLifecycleForTest({
       createSession: async () => ({ status: 'running', sessionId: 'sess-new' }) as never,
-      continueSession: async (input: Record<string, unknown>) => {
+      deliverFollowUp: async (input: Record<string, unknown>) => {
         continued.push(input);
         return 'delivered' as never;
       },

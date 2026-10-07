@@ -24,6 +24,7 @@ import {
   opencodeSessionInFlight,
 } from './opencode-turn-state'
 import { readOpenCodeSessionPin } from './runtime-state'
+import { opencodeSupportsSteer, runningOpencodeVersion } from './turns'
 
 import type { OpenCodeBootState } from './boot-state'
 
@@ -103,8 +104,8 @@ async function readOpenCodeHealth(
   const bootState: OpenCodeBootState = context.bootState
   const opencodeState = opencode.getState()
   const initialSessionReady =
-    !bootState.initialOpenCodeSessionRequired || !!bootState.initialOpenCodeSessionId
-  const error = bootState.initialOpenCodeSessionError ?? bootState.auditRelayError ?? null
+    !bootState.initialRuntimeSessionRequired || !!bootState.initialRuntimeSessionId
+  const error = bootState.initialRuntimeSessionError ?? bootState.auditRelayError ?? null
   // PLAN-one-boot-path C3: a box is never reportable as ready unless it runs a
   // PROVEN config. `opencodeState === 'ok'` is not that proof — its liveness
   // probe only asks whether the session API answers, so a config whose tools or
@@ -144,8 +145,8 @@ async function readOpenCodeHealth(
       ready: runtimeReady,
       error,
       session: {
-        id: bootState.initialOpenCodeSessionId ?? null,
-        required: !!bootState.initialOpenCodeSessionRequired,
+        id: bootState.initialRuntimeSessionId ?? null,
+        required: !!bootState.initialRuntimeSessionRequired,
       },
       turn: turn
         ? {
@@ -166,10 +167,6 @@ async function readOpenCodeHealth(
         // API's PTY proxy reaches opencode directly (the daemon cannot carry a
         // WebSocket), so it must not assume 4096.
         port: opencode.getActivePort(),
-        // Only the OpenCode lifecycle consumes the compiled runtime.
-        compiled_runtime: process.env.KORTIX_COMPILED_RUNTIME_FORMAT === 'kortix.compiled-runtime.v1',
-        compiled_runtime_format: process.env.KORTIX_COMPILED_RUNTIME_FORMAT || null,
-        compiled_runtime_source_sha: process.env.KORTIX_COMPILED_RUNTIME_SOURCE_SHA || null,
         // How often the periodic reconcile floor runs, so "why hasn't this
         // healed yet" has an answer bound to a number.
         runtime_truth_tick_interval_ms: runtimeTruthTickIntervalMs(),
@@ -217,12 +214,12 @@ async function readOpenCodeDiagnosticReport(
       internal_url: opencode.getInternalUrl(),
       binary: opencode.getBinaryPath(),
       port_pair: [cfg.opencodeInternalPort, cfg.opencodeStandbyPort],
-      session_id: bootState.initialOpenCodeSessionId ?? null,
+      session_id: bootState.initialRuntimeSessionId ?? null,
       log_file: opencodeLog,
     },
     boot: {
       repo_materialization_error: bootState.repoMaterializationError,
-      initial_session_error: bootState.initialOpenCodeSessionError ?? null,
+      initial_session_error: bootState.initialRuntimeSessionError ?? null,
       timeline: bootState.timeline,
     },
     resources: projectOpenCodeResourceSnapshot(resourcesNow),
@@ -242,7 +239,11 @@ export function createOpenCodeDiagnosticsService(
 ): HarnessDiagnosticsService {
   return {
     // Every session feature the pi harness answers 501 for is native here.
-    capabilities: [...RUNTIME_CAPABILITIES],
+    // Steering needs OpenCode 1.18.15 or later; an unknown version does not list it.
+    capabilities: async () => {
+      const steer = opencodeSupportsSteer(await runningOpencodeVersion())
+      return RUNTIME_CAPABILITIES.filter((capability) => capability !== 'session.steer' || steer === true)
+    },
     catalogSnapshot: catalogSnapshotForHealth,
     health: (context, query) => readOpenCodeHealth(context, opencode, query),
     report: (context, tail) => readOpenCodeDiagnosticReport(opencode, home, context, tail),

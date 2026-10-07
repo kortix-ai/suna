@@ -20,12 +20,11 @@ import { backendApi } from '@kortix/sdk';
 import * as sdk from '@kortix/sdk';
 
 // ── Generic fetch helper ────────────────────────────────────────────────────
-// Kept mobile-native: this is the shared primitive for endpoints the SDK does
-// NOT cover at all (account-level IAM MFA/session-policy/PAT-policy/
-// service-accounts/audit — see lib/accounts/accounts-client.ts, which imports `apiFetch` from this file) as well as
-// the couple of functions below kept mobile-native for behavioral reasons.
-// Uses the same token source (`api/config.ts#getAuthToken`) that's wired into
-// `configureKortix({ getToken })`, so both paths share one auth story.
+// Kept mobile-native only for the few functions below whose error contract
+// (`createApiRequestError`, the upgrade gate) differs from the SDK's. The SDK
+// covers the account and IAM routes (members, invites, audit, MFA and session
+// policy, service accounts): use its exports, not this helper, for those.
+// Same token source as `configureKortix({ getToken })`.
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = await getAuthToken();
@@ -115,6 +114,11 @@ export {
   setProjectSessionSharing,
   stopProjectSession,
 } from '@kortix/sdk';
+
+// ── Session participants and message authors ───────────────────────────────
+
+export type { SessionMessageAuthor, SessionMessageAuthors, SessionParticipant, SessionParticipants } from '@kortix/sdk';
+export { getSessionMessageAuthors, getSessionParticipants } from '@kortix/sdk';
 
 // ── Session public shares (KRTX-248: the public transcript link) ────────────
 // `createSessionPublicShare(pid, sid, { transcript: true })` returns the live

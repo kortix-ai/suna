@@ -1,8 +1,8 @@
 import type { QueuedDraft } from '@/stores/queued-draft-store';
-import type { RemovedSessionPrompt, SessionPrompt } from '@kortix/sdk';
+import type { SessionPrompt } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import type { AttachedFile } from './composer/types';
-import { cleanPromptText, composeTakeBack, projectQueueRows } from './queue-projection';
+import { cleanPromptText, composerSendDelivery, projectQueueRows } from './queue-projection';
 
 function prompt(overrides: Partial<SessionPrompt> = {}): SessionPrompt {
   return {
@@ -91,6 +91,45 @@ describe('projectQueueRows', () => {
       // No server id yet: nothing to remove or take back.
       ['optimistic:q_9', 'sending', false, false, null],
     ]);
+  });
+
+  // A queued prompt runs as its author. The API answers 403 not_prompt_author
+  // to anyone else's edit, Stop and send or retry, so none is offered.
+  test("another member's rows offer no edit, Stop and send or retry", () => {
+    const prompts = [
+      prompt({ prompt_id: 'theirs', author_user_id: 'user-b' }),
+      prompt({ prompt_id: 'theirs-failed', state: 'failed', author_user_id: 'user-b' }),
+      prompt({ prompt_id: 'mine', author_user_id: 'user-a' }),
+      prompt({ prompt_id: 'mine-failed', state: 'failed', author_user_id: 'user-a' }),
+    ];
+    const controls = (managesSession: boolean) =>
+      projectQueueRows({ prompts, viewer: { userId: 'user-a', managesSession } }).rows.map((r) => [
+        r.id,
+        r.takeBackEligible,
+        r.interruptible,
+        r.retryable,
+        r.removable,
+        r.fromAnotherMember ?? false,
+      ]);
+    expect(controls(false)).toEqual([
+      ['theirs', false, false, false, false, true],
+      ['theirs-failed', false, false, false, false, true],
+      ['mine', true, true, false, true, false],
+      ['mine-failed', false, false, true, true, false],
+    ]);
+    // A session manager may remove another member's row, and nothing else.
+    expect(controls(true)).toEqual([
+      ['theirs', false, false, false, true, true],
+      ['theirs-failed', false, false, false, true, true],
+      ['mine', true, true, false, true, false],
+      ['mine-failed', false, false, true, true, false],
+    ]);
+  });
+
+  test('without a viewer every row keeps its controls (an older API lists no author)', () => {
+    const { rows } = projectQueueRows({ prompts: [prompt({ prompt_id: 'old' })] });
+    expect(rows[0]).toMatchObject({ takeBackEligible: true, interruptible: true, removable: true });
+    expect(rows[0]?.fromAnotherMember).toBeUndefined();
   });
 
   test('a row already on screen in the transcript is not a queued entry — by any of its ids', () => {
@@ -182,20 +221,29 @@ describe('projectQueueRows', () => {
     expect(rows[0]).toMatchObject({ text: 'as typed', attachmentCount: 2, takeBackEligible: true });
   });
 
-  test('a row with files and no draft cannot be taken back — its files would be lost', () => {
+  test('a row with files is still editable: an edit changes its text, the files stay on the row', () => {
     const { rows } = projectQueueRows({
       prompts: [
         prompt({
           prompt_id: 'files',
           attachments: [{ filename: 'a.pdf', mime: 'application/pdf' }],
         }),
-        prompt({ prompt_id: 'text' }),
       ],
     });
-    expect(rows.map((r) => [r.id, r.takeBackEligible])).toEqual([
-      ['files', false],
-      ['text', true],
-    ]);
+    expect(rows[0]).toMatchObject({ takeBackEligible: true, editText: 'say hi' });
+  });
+
+  test('an edit swaps only the words the user sees: a quote around them survives', () => {
+    const raw = '<reply_context>quoted</reply_context>\nmy reply';
+    const { rows } = projectQueueRows({ prompts: [prompt({ full_text: raw, text: raw })] });
+    expect(rows[0]).toMatchObject({ text: 'my reply', editText: 'my reply', rawText: raw });
+  });
+
+  test('words that are not one run of the raw text cannot be edited in place', () => {
+    const raw =
+      '<reply_context>a</reply_context>\nreply to a\n<reply_context>b</reply_context>\nreply to b';
+    const { rows } = projectQueueRows({ prompts: [prompt({ full_text: raw, text: raw })] });
+    expect(rows[0]).toMatchObject({ editText: null, takeBackEligible: false });
   });
 
   test('a draft still uploading has a row before the inbox does, after the server rows', () => {
@@ -222,6 +270,84 @@ describe('projectQueueRows', () => {
   });
 });
 
+describe('steering rows', () => {
+  test('a steer row is listed with its caption flag; a Quick Queue row is not listed', () => {
+    const { rows } = projectQueueRows({
+      prompts: [
+        prompt({ prompt_id: 'steer', placement: 'composer', delivery: 'steer' }),
+        prompt({ prompt_id: 'quick', placement: 'transcript', delivery: 'interrupt' }),
+        prompt({ prompt_id: 'queue', placement: 'composer', delivery: 'queue' }),
+      ],
+    });
+    expect(rows.map((row) => [row.id, row.steer ?? false])).toEqual([
+      ['steer', true],
+      ['queue', false],
+    ]);
+  });
+
+  test('a steer row on the wire is unread, so it can still be removed', () => {
+    const { rows } = projectQueueRows({
+      prompts: [
+        prompt({ prompt_id: 'steering', delivery: 'steer', state: 'delivering' }),
+        prompt({ prompt_id: 'queued-turn', delivery: 'queue', state: 'delivering' }),
+      ],
+    });
+    expect(rows.map((row) => [row.id, row.removable])).toEqual([
+      ['steering', true],
+      ['queued-turn', false],
+    ]);
+  });
+
+  test('a fallen-back steer row carries the reason it waits', () => {
+    const { rows } = projectQueueRows({
+      prompts: [prompt({ delivery: 'queue', steer_fallback: 'not_prompter', reason: 'turn_active' })],
+    });
+    expect(rows[0].steer).toBeUndefined();
+    expect(rows[0].steerFallback).toBe('not_prompter');
+  });
+
+  test('Stop and send is offered only on a waiting row the server holds', () => {
+    const { rows } = projectQueueRows({
+      prompts: [
+        prompt({ prompt_id: 'queued' }),
+        prompt({ prompt_id: 'waiting', state: 'waiting', reason: 'turn_active' }),
+        prompt({ prompt_id: 'delivering', state: 'delivering' }),
+        prompt({ prompt_id: 'failed', state: 'failed' }),
+        prompt({ prompt_id: 'optimistic:q_9', client_message_id: 'q_9' }),
+      ],
+      drafts: [draft('upload', { posted: false, delivery: 'steer' })],
+    });
+    expect(rows.map((row) => [row.id, row.interruptible])).toEqual([
+      ['queued', true],
+      ['waiting', true],
+      ['delivering', false],
+      ['failed', false],
+      ['optimistic:q_9', false],
+      ['draft:upload', false],
+    ]);
+    // The upload window already shows that the message steers.
+    expect(rows.at(-1)?.steer).toBe(true);
+  });
+});
+
+describe('composerSendDelivery', () => {
+  test('Enter while a turn runs steers, and waits in the composer list', () => {
+    expect(composerSendDelivery('transcript', true)).toEqual({
+      placement: 'composer',
+      delivery: 'steer',
+    });
+  });
+
+  test('Cmd/Ctrl+Enter is Queue List, busy or idle', () => {
+    expect(composerSendDelivery('composer', true)).toEqual({ placement: 'composer', delivery: 'queue' });
+    expect(composerSendDelivery('composer', false)).toEqual({ placement: 'composer', delivery: 'queue' });
+  });
+
+  test('Enter while idle is unchanged: a transcript send with no delivery mode', () => {
+    expect(composerSendDelivery('transcript', false)).toEqual({ placement: 'transcript' });
+  });
+});
+
 describe('cleanPromptText', () => {
   test('strips every block the send path appends', () => {
     const text =
@@ -231,46 +357,3 @@ describe('cleanPromptText', () => {
   });
 });
 
-describe('composeTakeBack', () => {
-  const removed = (
-    clientMessageId: string,
-    parts: RemovedSessionPrompt['parts'],
-  ): RemovedSessionPrompt => ({
-    prompt_id: `p-${clientMessageId}`,
-    client_message_id: clientMessageId,
-    message_id: `msg-${clientMessageId}`,
-    parts,
-    overrides: null,
-  });
-
-  test('one entry per line, in queue order, drafts exactly as typed with their files', () => {
-    const result = composeTakeBack({
-      removed: [
-        removed('q_1', [{ type: 'text', text: 'server copy of one' }]),
-        removed('q_2', [{ type: 'text', text: 'two, from another tab' }]),
-      ],
-      drafts: [draft('q_1', { text: 'one, as typed', files: [remoteFile] })],
-    });
-    expect(result).toEqual({
-      text: 'one, as typed\ntwo, from another tab',
-      files: [remoteFile],
-      requeue: [],
-    });
-  });
-
-  test('a prompt with no draft that carries files goes back to the queue, never into the composer half-empty', () => {
-    const withUpload = removed('q_3', [
-      {
-        type: 'text',
-        text: 'see file\n\n<file path="/workspace/uploads/a.png" mime="image/png" filename="a.png"></file>',
-      },
-    ]);
-    const withFilePart = removed('q_4', [
-      { type: 'text', text: 'see url' },
-      { type: 'file', mime: 'image/png', url: 'https://files.test/b.png' },
-    ]);
-    const result = composeTakeBack({ removed: [withUpload, withFilePart], drafts: [] });
-    expect(result.text).toBe('');
-    expect(result.requeue).toEqual([withUpload, withFilePart]);
-  });
-});

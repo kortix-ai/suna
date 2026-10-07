@@ -18,7 +18,17 @@ const TRANSIENT_SLACK_ERRORS = new Set([
   'request_timeout',
 ]);
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/**
+ * Slack's read methods drop a JSON body. A call site that forgot `form: true`
+ * failed silently twice: users.info (2026-08-19) and conversations.info
+ * (until 2026-10-02). The method name decides now, not each caller.
+ */
+const FORM_ONLY_METHOD = /\.(info|list|history|replies)$/;
+
+/** Whether a call goes form-encoded: a read method always, any other when asked. */
+export function slackSendsForm(method: string, form?: boolean): boolean {
+  return form === true || FORM_ONLY_METHOD.test(method);
+}
 
 async function slackApiCall(
   token: string,
@@ -44,6 +54,7 @@ async function slackApiCall(
   // (chat.postMessage, chat.startStream) may have already landed, so retrying it
   // would duplicate the message. chat.update / reactions.* are idempotent and
   // retry freely.
+  const form = slackSendsForm(method, opts.form);
   const idempotent = opts.idempotent !== false;
   const maxAttempts = Math.max(1, (opts.retries ?? 1) + 1);
   let last: SlackApiResult = { ok: false, error: 'unknown' };
@@ -52,12 +63,12 @@ async function slackApiCall(
       const res = await fetch(`${SLACK_API_BASE}/${method}`, {
         method: 'POST',
         headers: {
-          'Content-Type': opts.form
+          'Content-Type': form
             ? 'application/x-www-form-urlencoded; charset=utf-8'
             : 'application/json; charset=utf-8',
           authorization: `Bearer ${token}`,
         },
-        body: opts.form
+        body: form
           ? new URLSearchParams(
               Object.entries(body)
                 .filter(([, v]) => v !== undefined && v !== null)
@@ -71,7 +82,7 @@ async function slackApiCall(
         const retryAfter = Number(res.headers.get('retry-after')) || attempt;
         last = { ok: false, error: 'ratelimited' };
         if (attempt < maxAttempts) {
-          await sleep(Math.min(retryAfter, 5) * 1000);
+          await Bun.sleep(Math.min(retryAfter, 5) * 1000);
           continue;
         }
         return last;
@@ -80,7 +91,7 @@ async function slackApiCall(
         last = { ok: false, error: `http_${res.status}` };
         // May have been processed server-side — only retry idempotent calls.
         if (idempotent && attempt < maxAttempts) {
-          await sleep(attempt * 400);
+          await Bun.sleep(attempt * 400);
           continue;
         }
         return last;
@@ -90,7 +101,7 @@ async function slackApiCall(
         const err = data.error ?? '';
         // 'ratelimited' is always safe; other transient errors only for idempotent.
         if (err === 'ratelimited' || (idempotent && TRANSIENT_SLACK_ERRORS.has(err))) {
-          await sleep(attempt * 400);
+          await Bun.sleep(attempt * 400);
           continue;
         }
       }
@@ -100,13 +111,18 @@ async function slackApiCall(
       // have been sent. Either way, only retry idempotent calls.
       last = { ok: false, error: (err as Error)?.name === 'TimeoutError' ? 'timeout' : 'network_error' };
       if (idempotent && attempt < maxAttempts) {
-        await sleep(attempt * 400);
+        await Bun.sleep(attempt * 400);
         continue;
       }
       return last;
     }
   }
   return last;
+}
+
+/** files.info: the file and the conversations it is shared in. */
+export async function getFileInfo(token: string, fileId: string): Promise<SlackApiResult> {
+  return slackApiCall(token, 'files.info', { file: fileId });
 }
 
 // Posts a plain message. Returns the message ts (needed to delete it later).
@@ -581,13 +597,47 @@ export async function getSlackUserDisplayName(token: string, userId: string): Pr
   }
 }
 
-export async function getChannelName(token: string, channel: string): Promise<string | null> {
+export type SlackConversationType = 'channel' | 'private_channel' | 'im' | 'mpim';
+
+/** What a person recognizes a Slack conversation by. */
+export interface SlackConversationLabel {
+  /**
+   * A channel's name without `#`, the other person's name for a direct
+   * message, or the members' handles for a group DM. Null when Slack did not
+   * say.
+   */
+  name: string | null;
+  type: SlackConversationType | null;
+  /** Deleted, or out of the bot's reach (`channel_not_found`). */
+  unavailable: boolean;
+}
+
+/**
+ * Name a conversation for a person. `conversations.info` must go form-encoded:
+ * sent as JSON, Slack drops the `channel` parameter and answers
+ * `channel_not_found`, which left every binding unnamed until 2026-10-02.
+ */
+export async function describeSlackConversation(token: string, channel: string): Promise<SlackConversationLabel> {
+  const unknown: SlackConversationLabel = { name: null, type: null, unavailable: false };
   try {
-    const r = await slackApiCall(token, 'conversations.info', { channel });
-    if (!r.ok) return null;
-    const info = r.channel as { name?: string } | undefined;
-    return info?.name ?? null;
+    const r = await slackApiCall(token, 'conversations.info', { channel }, { form: true });
+    if (!r.ok) return r.error === 'channel_not_found' ? { ...unknown, unavailable: true } : unknown;
+    const info = r.channel as
+      | { name?: string; user?: string; is_im?: boolean; is_mpim?: boolean; is_private?: boolean }
+      | undefined;
+    if (!info) return unknown;
+    if (info.is_im) {
+      const name = info.user ? await getSlackUserDisplayName(token, info.user) : null;
+      return { name, type: 'im', unavailable: false };
+    }
+    if (info.is_mpim) {
+      // `mpdm-sam--alex--kim-1`: the members' handles, which Slack shows as the
+      // conversation's name, without its prefix and counter.
+      const handles = info.name?.replace(/^mpdm-/, '').replace(/-\d+$/, '').split('--').filter(Boolean) ?? [];
+      return { name: handles.length > 0 ? handles.join(', ') : null, type: 'mpim', unavailable: false };
+    }
+    return { name: info.name ?? null, type: info.is_private ? 'private_channel' : 'channel', unavailable: false };
   } catch {
-    return null;
+    return unknown;
   }
 }

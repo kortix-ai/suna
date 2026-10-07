@@ -41,7 +41,10 @@ mock.module('../llm-gateway/resolution/default-model', () => ({
   },
 }));
 
-mock.module('../llm-gateway/models/served-managed-models', () => ({ platformDefaultModelId: () => 'glm-5.3-flash' }));
+mock.module('../llm-gateway/models/served-managed-models', () => ({
+  platformDefaultModelId: () => 'glm-5.3-flash',
+  isPlatformDefaultModelId: (id: string) => id === 'glm-5.3-flash',
+}));
 
 // The gateway's own personal-key rule for a live session.
 const ownerQueries: Array<Record<string, unknown>> = [];
@@ -236,7 +239,7 @@ describe('checkChannelModel — checked as the gateway will run it', () => {
 
     const verdict = await access.checkChannelModel(scope({ personalUserId: null }), 'codex/gpt-6-astra');
 
-    expect(verdict).toMatchObject({ ok: true, model: 'kortix/codex/gpt-6-astra' });
+    expect(verdict).toMatchObject({ ok: true, model: 'codex/gpt-6-astra' });
     expect(probes[0]).toMatchObject({
       userId: 'ivan', personalUserId: null, providerSecretPools: { codex: ['k1'] }, model: 'codex/gpt-6-astra',
     });

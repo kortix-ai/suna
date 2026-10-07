@@ -49,6 +49,10 @@ const VIDEO_SLIDER = cn(
   '[&_[data-slot=slider-thumb]]:focus:ring-offset-black/60',
 );
 
+export async function requestVideoFullscreen(element: { requestFullscreen?: () => Promise<void> }) {
+  await element.requestFullscreen?.();
+}
+
 export function VideoRenderer({
   url,
   className,
@@ -168,7 +172,11 @@ export function VideoRenderer({
       if (isPlaying) {
         videoRef.current.pause();
       } else {
-        videoRef.current.play();
+        // An unhandled play() rejection pages Better Stack as
+        // `NotAllowedError: The play method is not allowed…` (the UA's
+        // autoplay policy). On rejection the element stays paused — keep the
+        // toggle state truthful instead of letting the promise escape.
+        void videoRef.current.play().catch(() => setIsPlaying(false));
       }
       setIsPlaying(!isPlaying);
     }
@@ -202,7 +210,9 @@ export function VideoRenderer({
     if (videoRef.current) {
       videoRef.current.currentTime = 0;
       setCurrentTime(0);
-      videoRef.current.play();
+      // Same play() rejection guard as togglePlay: the restart attempt stays
+      // paused when the UA denies playback, so keep the state truthful.
+      void videoRef.current.play().catch(() => setIsPlaying(false));
       setIsPlaying(true);
     }
   };
@@ -213,7 +223,7 @@ export function VideoRenderer({
     if (isFullscreen) {
       await document.exitFullscreen();
     } else {
-      await containerRef.current.requestFullscreen();
+      await requestVideoFullscreen(containerRef.current);
     }
   };
 
@@ -478,20 +488,5 @@ export function VideoRenderer({
         </>
       )}
     </div>
-  );
-}
-
-// Compact video player for inline tool views
-export function InlineVideoPlayer({ url, className }: { url: string; className?: string }) {
-  return (
-    <VideoRenderer
-      url={url}
-      className={cn(
-        'aspect-video w-80 rounded-2xl border border-neutral-200 dark:border-neutral-700/50',
-        className,
-      )}
-      compact
-      loop
-    />
   );
 }

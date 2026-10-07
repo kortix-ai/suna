@@ -171,7 +171,7 @@ mock.module('../secrets/http-broker', () => ({
 }));
 
 const { projectsApp } = await import('../projects/lib/app');
-await import('../projects/routes/secret-broker');
+(await import('../projects/routes/secret-broker')).registerSecretBrokerRoutes();
 
 function buildApp() {
   const app = new Hono<{
@@ -267,14 +267,14 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
    */
   describe('the session credential is bound to its own sandbox', () => {
     test('a request from the pinned sandbox is served', async () => {
-      sandboxRow = { metadata: { egress_ip: '67.213.121.131' } };
-      const response = await brokerRequest('67.213.121.131');
+      sandboxRow = { metadata: { egress_ip: '198.51.100.21' } };
+      const response = await brokerRequest('198.51.100.21');
       expect(response.status).toBe(200);
       expect(brokerCalls).toHaveLength(1);
     });
 
     test('the SAME token from anywhere else is refused before the secret is decrypted', async () => {
-      sandboxRow = { metadata: { egress_ip: '67.213.121.131' } };
+      sandboxRow = { metadata: { egress_ip: '198.51.100.21' } };
       const response = await brokerRequest('203.0.113.9');
       expect(response.status).toBe(403);
       expect(await response.json()).toMatchObject({ code: 'sandbox_egress_mismatch' });
@@ -296,7 +296,7 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
     test('a caller with no resolvable address cannot pass a pinned session', async () => {
       // Absent != matching. Treating "unknown" as a match would let anyone
       // through by simply stripping the header.
-      sandboxRow = { metadata: { egress_ip: '67.213.121.131' } };
+      sandboxRow = { metadata: { egress_ip: '198.51.100.21' } };
       const response = await brokerRequest();
       expect(response.status).toBe(403);
       expect(brokerCalls).toHaveLength(0);

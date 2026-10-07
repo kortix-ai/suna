@@ -5,7 +5,7 @@ import type {
   Agent,
   Command,
   ProviderListResponse as SdkProviderListResponse,
-} from '@opencode-ai/sdk/v2/client';
+} from '../../core/runtime/runtime-types';
 
 // ============================================================================
 // Query Keys
@@ -65,7 +65,12 @@ export function unwrap<T>(result: {
       (typeof err === 'string' ? err : null) ||
       (typeof err === 'object' ? JSON.stringify(err) : null) ||
       (status ? `Server returned ${status}` : 'SDK request failed');
-    throw new Error(String(msg));
+    // Carry the HTTP status on the thrown error. Every retry policy in this
+    // directory (and the web QueryClient's default) classifies on `error.status`:
+    // a status-less throw made a dead-token 401 look retryable and produced an
+    // 11-request warn storm on the picker queries (prod, 2026-10-02). The SSE
+    // transport throws the same shape (`Object.assign(new Error, { status })`).
+    throw status ? Object.assign(new Error(String(msg)), { status }) : new Error(String(msg));
   }
   return result.data as T;
 }

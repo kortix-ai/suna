@@ -13,7 +13,7 @@ Every row in the [audit log](/docs/accounts#audit-log) carries an `action`: `dom
 - A route with two actions (`secret.strategy.update` or `secret.strategy.changed`) records the second when its handler records that event, for example only for a real change. That event, with its before and after state, is then the request's row.
 - Rows written before 2026-09-24 carry `METHOD /template` as their action. The web app and the CLI show them with the same titles.
 
-This page lists 698 route actions and 64 other events.
+This page lists 701 route actions and 64 other events.
 
 ## `account.`
 
@@ -51,7 +51,6 @@ This page lists 698 route actions and 64 other events.
 | `admin.account.member_role.set` | Changed account member role | `POST /v1/admin/api/accounts/:id/members/:userId/role` |
 | `admin.account.overrides.set` | Set account entitlement overrides | `PUT /v1/admin/api/accounts/:id/overrides` |
 | `admin.account.project.list` | Listed account projects as admin | `GET /v1/admin/api/accounts/:id/projects` |
-| `admin.account.session_limit.set` | Updated account session limit | `POST /v1/admin/api/accounts/:id/session-limit` |
 | `admin.account.sso_domain.set` | Set account SSO domain verification | `PUT /v1/admin/api/accounts/:id/sso-domain-verification` |
 | `admin.account.subscription.read` | Viewed account Stripe subscription | `GET /v1/admin/api/accounts/:id/subscription` |
 | `admin.account.tier.set` | Updated account tier | `POST /v1/admin/api/accounts/:id/tier` |
@@ -93,6 +92,7 @@ This page lists 698 route actions and 64 other events.
 | `app.create` | Created Kortix App | `POST /v1/projects/:projectId/apps` |
 | `app.delete` | Deleted Kortix App | `DELETE /v1/projects/:projectId/apps/:appId` |
 | `app.deployment.create` | Deployed Kortix App | `POST /v1/projects/:projectId/apps/:appId/deployments` |
+| `app.deployment.delete` | Deleted Kortix App deployment | `DELETE /v1/projects/:projectId/apps/:appId/deployments/:deploymentId` |
 | `app.deployment.list` | Listed Kortix App deployments | `GET /v1/projects/:projectId/apps/:appId/deployments` |
 | `app.deployment.log.list` | Viewed Kortix App deployment logs | `GET /v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs` |
 | `app.deployment.read` | Viewed Kortix App deployment | `GET /v1/projects/:projectId/apps/:appId/deployments/:deploymentId` |
@@ -125,6 +125,8 @@ This page lists 698 route actions and 64 other events.
 | --- | --- | --- |
 | `auth.access_request.create` | Requested early access | `POST /v1/access/request-access` |
 | `auth.client_config.read` | Read the sign-in configuration | `GET /v1/auth/client-config` |
+| `auth.device.list` | Viewed signed-in devices | `GET /v1/accounts/me/devices` |
+| `auth.device.sign_out` | Signed a device out | `DELETE /v1/accounts/me/devices/:sessionId` |
 | `auth.email.check` | Checked sign-in email | `POST /v1/access/check-email` |
 | `auth.identity.read` | Viewed own identity | `GET /v1/accounts/me` |
 | `auth.logout` | Signed out | `POST /v1/auth/logout` (also `POST /v1/auth/sign-out`) |
@@ -357,6 +359,7 @@ This page lists 698 route actions and 64 other events.
 | `gateway.routing_policy.update` | Updated gateway routing policy | `PUT /v1/projects/:projectId/gateway/routing-policy` |
 | `gateway.series.read` | Viewed LLM gateway daily usage | `GET /v1/projects/:projectId/gateway/series` |
 | `gateway.session_spend.list` | Listed LLM gateway spend by session | `GET /v1/projects/:projectId/gateway/sessions` |
+| `gateway.source_spend.list` | Listed LLM gateway spend by source | `GET /v1/projects/:projectId/gateway/sources` |
 
 ## `git.`
 
@@ -370,9 +373,6 @@ This page lists 698 route actions and 64 other events.
 | `git.commit.diff.read` | Viewed Git commit diff | `GET /v1/projects/:projectId/commits/:sha/diff` |
 | `git.commit.list` | Listed Git commits | `GET /v1/projects/:projectId/commits` |
 | `git.commit.read` | Viewed Git commit | `GET /v1/projects/:projectId/commits/:sha` |
-| `git.compiled_checkout.download` | Downloaded compiled project checkout | `GET /v1/git/:project/compiled-checkout` |
-| `git.compiled_pi_runtime.download` | Downloaded compiled pi worker runtime | `GET /v1/git/:project/compiled-pi-runtime` |
-| `git.compiled_runtime.download` | Downloaded compiled session runtime | `GET /v1/git/:project/compiled-runtime` |
 | `git.connection.read` | Viewed Git connection status | `GET /v1/projects/:projectId/git/connection` |
 | `git.credential.set` | Set project Git credential | `PUT /v1/projects/:projectId/git-credential` |
 | `git.fast_boot_bundle.download` | Downloaded fast-boot Git bundle | `GET /v1/git/:project/fast-boot-bundle` |
@@ -582,6 +582,7 @@ This page lists 698 route actions and 64 other events.
 | `project.access_request.create` | Requested project access | `POST /v1/projects/:projectId/access-requests` |
 | `project.access_request.list` | Listed project access requests | `GET /v1/projects/:projectId/access-requests` |
 | `project.access_request.reject` | Rejected project access request | `POST /v1/projects/:projectId/access-requests/:requestId/reject` |
+| `project.agent_identity.list` | Listed project agent identities | `GET /v1/projects/:projectId/agent-identities` |
 | `project.cli_token.create` | Created project CLI token | `POST /v1/projects/:projectId/cli-token` |
 | `project.cli_token.list` | Listed project CLI tokens | `GET /v1/projects/:projectId/cli-token` |
 | `project.cli_token.revoke` | Revoked project CLI token | `DELETE /v1/projects/:projectId/cli-token/:tokenId` |
@@ -721,6 +722,7 @@ This page lists 698 route actions and 64 other events.
 | `secret.account_resource.delete` | Deleted pooled provider key | `DELETE /v1/accounts/:accountId/secret-resources/:secretId` |
 | `secret.account_resource.grant` | Granted pooled provider key | `PUT /v1/accounts/:accountId/secret-resources/:secretId/grants/:userId` |
 | `secret.account_resource.list` | Listed pooled provider keys | `GET /v1/accounts/:accountId/secret-resources` |
+| `secret.account_resource.retry` | Retried pooled provider key after rate limit | `POST /v1/accounts/:accountId/secret-resources/:secretId/retry` |
 | `secret.account_resource.revoke` | Revoked pooled provider key grant | `DELETE /v1/accounts/:accountId/secret-resources/:secretId/grants/:userId` |
 | `secret.account_resource.rotate` | Rotated pooled provider key | `PUT /v1/accounts/:accountId/secret-resources/:secretId/value` |
 | `secret.agent.grant` | Granted secret to an agent | `POST /v1/projects/:projectId/secrets/:identifier/grant` |
@@ -752,18 +754,18 @@ This page lists 698 route actions and 64 other events.
 | `session.config_release.resolve` | Resolved session config release | `POST /v1/projects/:projectId/sessions/:sessionId/config-release` |
 | `session.create` | Created session | `POST /v1/projects/:projectId/sessions` |
 | `session.delete` | Deleted session | `DELETE /v1/projects/:projectId/sessions/:sessionId` |
-| `session.environment.read` | Viewed session environment | `GET /v1/projects/:projectId/sessions/:sessionId/environment` |
-| `session.environment.start` | Started session environment | `POST /v1/projects/:projectId/sessions/:sessionId/environment/ensure` |
-| `session.environment.stop` | Stopped session environment | `POST /v1/projects/:projectId/sessions/:sessionId/environment/stop` |
 | `session.event.stream` | Streamed session events | `GET /v1/projects/:projectId/sessions/:sessionId/events` |
 | `session.git.push` | Committed and pushed session changes | `POST /v1/projects/:projectId/sessions/:sessionId/commit-push` |
 | `session.list` | Listed project sessions | `GET /v1/projects/:projectId/sessions` |
 | `session.message_authors.read` | Viewed session message authors | `GET /v1/projects/:projectId/sessions/:sessionId/message-authors` |
 | `session.model.update` | Changed session model | `PUT /v1/projects/:projectId/sessions/:sessionId/model` |
+| `session.model_usage.read` | Viewed session model usage | `GET /v1/projects/:projectId/sessions/:sessionId/model-usage` |
+| `session.participants.list` | Viewed session participants | `GET /v1/projects/:projectId/sessions/:sessionId/participants` |
 | `session.permission.notify` | Relayed session permission request | `POST /v1/projects/:projectId/turn-permission` |
 | `session.presence.update` | Updated session presence | `PUT /v1/projects/:projectId/sessions/:sessionId/presence` |
 | `session.preview.list` | Listed session preview candidates | `GET /v1/projects/:projectId/sessions/:sessionId/previews` |
 | `session.prompt.delete` | Removed a queued session prompt | `DELETE /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId` |
+| `session.prompt.edit` | Edited a queued session prompt | `PATCH /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId` |
 | `session.prompt.hold.set` | Set session prompt queue hold | `POST /v1/projects/:projectId/sessions/:sessionId/prompts/hold` |
 | `session.prompt.list` | Viewed queued session prompts | `GET /v1/projects/:projectId/sessions/:sessionId/prompts` |
 | `session.prompt.retry` | Retried a queued session prompt | `POST /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId/retry` |
@@ -820,6 +822,7 @@ This page lists 698 route actions and 64 other events.
 
 | Action | Title | Route |
 | --- | --- | --- |
+| `skill.create` | Created project skill | `POST /v1/projects/:projectId/skills` |
 | `skill.system.file.read` | Viewed Kortix system skill file | `GET /v1/skills/:name/file` |
 | `skill.system.list` | Listed Kortix system skills | `GET /v1/skills` |
 | `skill.system.read` | Viewed Kortix system skill | `GET /v1/skills/:name` |

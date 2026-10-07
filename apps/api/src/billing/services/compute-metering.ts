@@ -1,3 +1,4 @@
+import { settleAndCheckAutoTopup } from './wallet-debits';
 // Billing v2 — sandbox compute metering.
 //
 // Sandboxes declare their reserved spec (cpu / memory / disk / gpu) in
@@ -19,6 +20,7 @@
 // partially bills any session whose last_billed_at is at least 5 minutes old,
 // so a missed close hook can never silently accrue uncharged compute.
 
+import { logger } from '../../lib/logger';
 import {
   appDeployments,
   appRuntimes,
@@ -47,6 +49,7 @@ import {
   releaseComputeWindow,
 } from '../repositories/compute-sessions';
 import { getCreditAccount } from '../repositories/credit-accounts';
+import { ledgerRequestKeyExists } from '../repositories/ledger-keys';
 import { resolveAccountBilling } from './billing-cache';
 import {
   billableWindowEnd,
@@ -281,14 +284,20 @@ async function settleComputeWindow(
   // The release path below is now a genuine error path rather than the steady
   // state it used to be: a drained account no longer bounces every window
   // forever, it records the overdraft once and blocks the next admission.
+  // The session that ran the box is named in the description only when the row
+  // has one (a bare App box does not), so a ledger charge reads the same as it
+  // always has and a session charge is traceable to its session — the same
+  // identifier the Session costs tab shows.
+  const sessionLabel = row.sessionId ? `${row.sessionId} · ` : '';
+  const debitKey = `compute:${row.id}:${claimedEnd.toISOString()}`;
   try {
-    await wallet.settle({
+    await settleAndCheckAutoTopup({
       accountId: row.accountId,
       amount: windowCost,
       // The multiplier is named in the description only when it is not list
       // price, so a custom-priced debit is self-explaining in the ledger and an
       // ordinary one reads exactly as it always has.
-      description: `Sandbox compute · ${row.cpuCores}vCPU/${row.memoryGb}GB/${row.diskGb}GB · ${durationSeconds.toFixed(0)}s${
+      description: `Sandbox compute · ${sessionLabel}${row.cpuCores}vCPU/${row.memoryGb}GB/${row.diskGb}GB · ${durationSeconds.toFixed(0)}s${
         rateMultiplier === DEFAULT_COMPUTE_RATE_MULTIPLIER ? '' : ` · ${rateMultiplier}× rate`
       }`,
       kind: 'compute_debit',
@@ -297,9 +306,20 @@ async function settleComputeWindow(
       // of charging again. The CAS claim above already stops two settlers from
       // both billing; this covers the single settler that never learned its own
       // debit succeeded.
-      key: { request: `compute:${row.id}:${claimedEnd.toISOString()}` },
+      key: { request: debitKey },
     });
   } catch (err) {
+    // The failure may be a lost RESPONSE: the debit committed and only the
+    // answer was lost. Releasing then moves the cursor back, the next tick
+    // bills the same seconds under a later window end (a different key), and
+    // the customer pays twice. Ask the ledger before releasing.
+    if (await ledgerRequestKeyExists(debitKey).catch(() => false)) {
+      logger.warn(
+        `[compute-metering] debit for session ${row.id} committed despite an error; window kept`,
+        { error: err instanceof Error ? err.message : String(err) },
+      );
+      return 'settled';
+    }
     // No longer reachable for a merely-drained wallet (settlement overdrafts
     // instead of refusing). Retained for the real failures that remain — a
     // missing credit row, an RPC/transport error — where handing the window

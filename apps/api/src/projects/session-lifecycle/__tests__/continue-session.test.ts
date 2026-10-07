@@ -55,7 +55,7 @@ mock.module('../../session-title-generate', () => ({
   },
 }));
 
-mock.module('../../../sandbox-proxy/routes/preview', () => ({
+mock.module('../../../sandbox-proxy/forward', () => ({
   forwardToSandbox: async (
     _externalId: string,
     _port: number,
@@ -78,7 +78,7 @@ mock.module('../../lib/sessions', () => ({
   },
 }));
 
-mock.module('../../routes/shared', () => ({
+mock.module('../../session-open', () => ({
   openSession: async () => {
     opens++;
     if (openedStage) return { stage: openedStage, sandbox: { external_id: EXTERNAL_ID, provider: 'daytona' }, opencode_session_id: OC_SESSION_ID };
@@ -91,7 +91,7 @@ mock.module('../status-transitions', () => ({
   transitionSession: async (action: string) => { transitions.push(action); return true; },
 }));
 mock.module('../../../platform/service-key', () => ({ serviceKeyForExternalId: async () => 'key' }));
-mock.module('../../../sandbox-proxy/backend', () => ({ resolveSandboxIngress: async () => ({ url: 'https://sandbox.test', headers: {} }), resolveServiceKey: async () => 'key' }));
+mock.module('../../../sandbox-proxy/backend', () => ({ resolveSandboxIngress: async () => ({ url: 'https://sandbox.test', headers: {} }), invalidateSandbox: () => {}, resolveServiceKey: async () => 'key' }));
 mock.module('../../lib/sandbox-env-sync', () => ({ syncSandboxEnvForPrompt: async () => { syncs++; } }));
 
 mock.module('../../lib/on-behalf-of', () => ({

@@ -30,6 +30,8 @@ export {
   accountsRelations,
   accountGithubInstallationsRelations,
   auditEvents,
+  auditEventsAll,
+  auditArchiveChunks,
   auditSessionSequences,
   usageEvents,
   gatewayRequestLogs,
@@ -99,6 +101,7 @@ export {
   sunaAccountMigrations,
   kortixApiKeys,
   accountTokens,
+  permissionPushClaims,
   workerLeaderLease,
   // Relations
   projectsRelations,

@@ -74,10 +74,11 @@ export {
   toSandboxAbsolutePath,
   toWorkspaceRelative,
   uploadFile,
+  uploadNativeFile,
   uploadTimeoutMsForBytes,
   writeFile,
 } from './core/files/client';
-export type { UploadFileOptions, UploadProgressEvent } from './core/files/client';
+export type { NativeFilePart, UploadFileOptions, UploadProgressEvent } from './core/files/client';
 export type * from './core/files/types';
 
 /** Generate a session id (RFC 4122 v4, with a non-secure-context fallback). */
@@ -177,6 +178,7 @@ export type {
 export {
   openEventStream,
   type EventStreamClient,
+  type EventStreamConnectionState,
   type EventStreamHandle,
   type EventStreamTimers,
   type RuntimeEvent,
@@ -198,6 +200,7 @@ export {
   BillingError,
   RequestTooLargeError,
   parseBillingError,
+  isAuthFailure,
   isBillingError,
   formatBillingErrorForUI,
   FEATURE_DISABLED_CODE,
@@ -481,7 +484,7 @@ export {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Ambiguity pins for names reachable both from our modules and from the
-// vendor type star (`export type * from '@opencode-ai/sdk/v2/client'` inside
+// vendor type star (`export type * from './core/runtime/runtime-types'` inside
 // core/runtime/client). Each is declared ONCE in this package; naming it here
 // picks the canonical module and silences the ambiguity without renaming.
 export { type FileContent, type FileNode } from './core/files/types';
@@ -521,6 +524,8 @@ export {
   savedCopyEmptyRoot,
 } from './core/session-sync/saved-transcript';
 export * from './core/session/url';
+/** How this deployment addresses previews (`GET /v1/p/config`), cached per backend. */
+export { loadPreviewUrlTemplate } from './core/session/preview-config';
 export * from './core/stream/event-stream';
 export * from './core/stream/fetch-sse';
 export * from './core/turns';
@@ -563,8 +568,8 @@ export {
   type ComposerAgentReason,
   type ComposerAgentResolution,
 } from './core/agents/composer-agents';
-export { flattenModels, isOfferedModel, type FlatModel } from './core/models/model-flatten';
-export type { ModelKey } from './core/models/model-key';
+export { flattenModels, isOfferedModel, type FlatModel, type ModelOption } from './core/models/model-flatten';
+export { modelRefToKey, type ModelKey } from './core/models/model-key';
 export {
   createModelVisibility,
   modelInDefaultView,

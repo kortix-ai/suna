@@ -4,6 +4,7 @@ import {
   bigint,
   boolean,
   check,
+  date,
   foreignKey,
   index,
   integer,
@@ -300,8 +301,6 @@ export const accountMemberships = kortixSchema.table(
     // Account-only reads (member lists, seat counts, cache invalidation). The
     // primary key leads with user_id, so it serves user-only reads.
     index('idx_account_members_account_id').on(table.accountId),
-    // Duplicates the primary key; kept until a drop migration retires it.
-    uniqueIndex('idx_account_members_user_account').on(table.userId, table.accountId),
   ],
 );
 
@@ -942,6 +941,9 @@ export const accountSecretResources = kortixSchema.table('account_secret_resourc
   strategy: projectSecretStrategyEnum('strategy').notNull(),
   active: boolean('active').default(true).notNull(),
   cooldownUntil: timestamp('cooldown_until', { withTimezone: true }),
+  /** When a cooling-down account may be re-tried: each limit sets it 15 min out; the first
+   *  resolve after it lifts `cooldownUntil` once (a reset before the provider's hinted reset). */
+  cooldownProbeAt: timestamp('cooldown_probe_at', { withTimezone: true }),
   /** First permanent failure of the stored login (a refresh the provider
    *  rejected, or a login that cannot be read). The account stays usable and
    *  in its pools; a successful refresh or a reconnect clears it. */
@@ -952,6 +954,11 @@ export const accountSecretResources = kortixSchema.table('account_secret_resourc
 }, (table) => [
   index('account_secret_resources_account_provider').on(table.accountId, table.providerId),
   unique('account_secret_resources_account_identity').on(table.secretId, table.accountId),
+  // Covers the project_id FK (account_secret_resources_project_id_projects_project_id_fk,
+  // built by 20261002225526000_account_secret_project_id_index.concurrent.ts): a
+  // project delete cascades here by project_id, and that lookup otherwise seq-scans
+  // the table (Supabase advisor: unindexed_foreign_keys).
+  index('idx_account_secret_resources_project_id').on(table.projectId),
 ]);
 
 /** A member's permission to use one account secret resource. */
@@ -1105,9 +1112,8 @@ export const projectSessions = kortixSchema.table(
     index('idx_project_sessions_parent')
       .on(table.parentSessionId, table.updatedAt.desc(), table.sessionId.desc())
       .where(sql`${table.parentSessionId} is not null`),
-    // Per-END-USER concurrency cap for Kortix-as-a-Backend: COUNT of a single
-    // origin_ref's live sessions, checked on every backend session create.
-    // Partial on the ACTIVE statuses (mirroring ACTIVE_SESSION_STATUSES in
+    // Served the retired per-END-USER Kortix-as-a-Backend session cap (COUNT
+    // of one origin_ref's live sessions); no query reads it now. Partial on the ACTIVE statuses (mirroring ACTIVE_SESSION_STATUSES in
     // apps/api/src/projects/lib/session-status.ts) and on origin_ref IS NOT
     // NULL, so it indexes only live backend sessions — a small fraction of the
     // table, and nothing at all for non-KaaB projects.
@@ -1121,6 +1127,18 @@ export const projectSessions = kortixSchema.table(
       .where(
         sql`${table.originRef} is not null and ${table.status} in ('queued','branching','provisioning','running')`,
       ),
+    // A trigger fire looks its session up by `(project, slug, key)` in the
+    // metadata, newest first (projects/lib/trigger-fire.ts). Without this the
+    // lookup read every session of the project. Partial: only trigger-created
+    // rows carry a slug.
+    index('idx_project_sessions_trigger_key')
+      .on(
+        table.projectId,
+        sql`(${table.metadata} ->> 'trigger_slug')`,
+        sql`(${table.metadata} ->> 'trigger_session_key')`,
+        table.createdAt.desc(),
+      )
+      .where(sql`(${table.metadata} ->> 'trigger_slug') is not null`),
     uniqueIndex('idx_project_sessions_project_branch').on(table.projectId, table.branchName),
     uniqueIndex('idx_project_sessions_tenant_identity').on(
       table.accountId,
@@ -1130,16 +1148,15 @@ export const projectSessions = kortixSchema.table(
     // NOTE: `idx_project_sessions_one_available_warm` (one `available` warm
     // session per project+creator) USED to be declared here. It arbitrated a
     // create race that no longer exists: a warm session is now an ordinary
-    // session and a duplicate costs one extra box, bounded by the reserved
-    // concurrent-session slot. Dropped by
+    // session and a duplicate costs one extra box. Dropped by
     // migrations/20260813203000000_drop_one_available_warm_index.concurrent.ts.
     // NOTE: three more indexes exist, built CONCURRENTLY and listed in
     // scripts/schema-contract-sql-only.ts:
     //   `idx_project_sessions_created_at` (created_at) — the admin activity
     //     dashboard's global `created_at >= $1` window scan.
     //   `idx_project_sessions_account_active` ((account_id) WHERE status IN the
-    //     active set) — keeps the concurrency-cap COUNT O(active). Its predicate
-    //     mirrors ACTIVE_SESSION_STATUSES.
+    //     active set) — served the retired account session cap COUNT; no
+    //     reader now. Its predicate mirrors ACTIVE_SESSION_STATUSES.
     //   `idx_project_sessions_project_updated` — the session list's keyset page.
   ],
 );
@@ -1763,6 +1780,12 @@ export const sessionLifecycleCommands = kortixSchema.table(
     index('idx_session_lifecycle_commands_session').on(table.sessionId),
     index('idx_session_lifecycle_commands_locked').on(table.lockedUntil),
     index('idx_session_lifecycle_commands_account').on(table.accountId),
+    // The forwarded-prompt sweep (`reconcileForwardedPrompts`): rows still
+    // `forwarded`, oldest first. Partial, because every other row is closed:
+    // `(status, available_at)` matches every succeeded row ever written.
+    index('idx_session_lifecycle_commands_forwarded')
+      .on(table.updatedAt)
+      .where(sql`(${table.result}->>'status') = 'forwarded'`),
   ],
 );
 
@@ -1857,15 +1880,15 @@ export const chatThreads = kortixSchema.table(
   ],
 );
 
-// Short-lived Slack messages waiting for the sender to finish `/login`. The
-// login URL carries only this id; the original Slack event stays server-side so
-// we can resume the exact message after the account bind succeeds.
+// Short-lived chat messages parked server-side until the sender acts: Slack
+// `/login` resume (project set), or a Slack/Teams project-picker click (project
+// NULL until the pick). The URL or button carries only this id, so any replica
+// can resume the exact message.
 export const chatPendingAuthMessages = kortixSchema.table(
   'chat_pending_auth_messages',
   {
     pendingId: uuid('pending_id').defaultRandom().primaryKey(),
     projectId: uuid('project_id')
-      .notNull()
       .references(() => projects.projectId, { onDelete: 'cascade' }),
     platform: varchar('platform', { length: 32 }).default('slack').notNull(),
     workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
@@ -1883,6 +1906,11 @@ export const chatPendingAuthMessages = kortixSchema.table(
       table.expiresAt,
     ),
     index('idx_chat_pending_auth_messages_expiry').on(table.expiresAt),
+    // Covers the project_id FK (chat_pending_auth_messages_project_id_fkey, built
+    // by the chat_pending_auth_messages_project_index migration): a project
+    // delete cascades here by project_id, and that lookup otherwise seq-scans
+    // the table (Supabase advisor: unindexed_foreign_keys, KRTX-1097).
+    index('idx_chat_pending_auth_messages_project').on(table.projectId),
   ],
 );
 
@@ -2066,6 +2094,25 @@ export const chatEventDedup = kortixSchema.table(
   (table) => [index('idx_chat_event_dedup_expiry').on(table.expiresAt)],
 );
 
+// One row per agent permission ask that sent a push: the cross-replica claim
+// behind "one push per (session, request id)" (api notifications/permission-push.ts).
+export const permissionPushClaims = kortixSchema.table(
+  'permission_push_claims',
+  {
+    sessionId: text('session_id').notNull(),
+    requestId: text('request_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.sessionId, table.requestId] }),
+    foreignKey({
+      name: 'permission_push_claims_session_fk',
+      columns: [table.sessionId],
+      foreignColumns: [projectSessions.sessionId],
+    }).onDelete('cascade'),
+  ],
+);
+
 // Single-row-per-lock advisory lease for cross-replica leader election (the
 // scheduler / sweepers elect one leader so background work doesn't double-run
 // across ECS tasks). Previously SQL-migration-only; folded into the schema so
@@ -2121,6 +2168,22 @@ export const sessionSandboxes = kortixSchema.table(
     index('idx_session_sandboxes_account').on(table.accountId),
     index('idx_session_sandboxes_status').on(table.status),
     index('idx_session_sandboxes_external_id').on(table.externalId),
+    // The parked-runtime verification sweep (apps/api/src/projects/reaping/
+    // parked-runtime-verification.ts `verifyParkedRuntimes`) reads the batch
+    // as `WHERE status = <param> AND external_id IS NOT NULL ORDER BY
+    // metadata->>'parkedVerifiedAt' ASC NULLS FIRST LIMIT 60`. On prod this
+    // scanned ~45k stopped rows and sorted them for every pass (mean 3027 ms,
+    // 1704 calls — pg_stat_statements via the Supabase collector). `status` is
+    // the leading key, NOT a partial-index predicate: the app binds it as a
+    // query parameter, and a generic plan cannot prove `status = $1` implies
+    // `status = 'stopped'`, so a partial index would drop out of the plan
+    // after the first few executions. `external_id IS NOT NULL` is static in
+    // the statement, so it can stay a partial predicate. The expression is
+    // declared ASC NULLS FIRST to match the query's `asc nulls first` exactly
+    // (Postgres's ASC default is NULLS LAST, which would leave a sort).
+    index('idx_session_sandboxes_parked_verified')
+      .on(table.status, sql`(${table.metadata} ->> 'parkedVerifiedAt') ASC NULLS FIRST`)
+      .where(sql`${table.externalId} is not null`),
   ],
 );
 
@@ -2139,6 +2202,11 @@ export const sessionSandboxes = kortixSchema.table(
  * its data path.
  *
  * One environment per session, enforced by the primary key.
+ *
+ * RETIRED: the pi worker split was removed and nothing reads or writes this
+ * table. It stays declared until a follow-up migration drops it, after every
+ * replica runs code with no reader (a drop under an old replica fails its
+ * account-deletion and orphan-reaper queries).
  */
 export const sessionEnvironments = kortixSchema.table(
   'session_environments',
@@ -2389,6 +2457,10 @@ export const sessionRuntimeProjections = kortixSchema.table(
     /** The sandbox that produced it. Names the winner when a warm fork adopts. */
     externalId: text('external_id').notNull(),
     // ── identity (the freshness check reads these, never the jsonb) ──────────
+    /** The document format, `kortix.runtime.v1`. Null on a row a pre-W5 daemon wrote. */
+    schema: text('schema'),
+    /** `opencode` or `pi`. Null on a row a pre-W5 daemon wrote. */
+    harness: text('harness'),
     runtimeSessionId: text('opencode_session_id'),
     harnessVersion: text('opencode_version'),
     agentConfigEtag: text('agent_config_etag'),
@@ -2984,6 +3056,18 @@ export const accountTokens = kortixSchema.table(
     index('idx_account_tokens_account').on(table.accountId),
     index('idx_account_tokens_user').on(table.userId),
     index('idx_account_tokens_project').on(table.projectId),
+    // FK coverage for the Supabase advisor's unindexed_foreign_keys lint
+    // (KRTX-1091): every ON DELETE CASCADE walk from service_accounts and every
+    // ON DELETE SET NULL walk from auth.users over these two columns seq-scans
+    // account_tokens without an index leading with them. Partial: both columns
+    // are NULL for most rows (laptop CLI PATs, unattended runs), and a FK
+    // enforcement scan never matches a NULL.
+    index('idx_account_tokens_service_account')
+      .on(table.serviceAccountId)
+      .where(sql`${table.serviceAccountId} is not null`),
+    index('idx_account_tokens_on_behalf_of_user')
+      .on(table.onBehalfOfUserId)
+      .where(sql`${table.onBehalfOfUserId} is not null`),
   ],
 );
 
@@ -3258,10 +3342,18 @@ export const accountGithubInstallationsRelations = relations(
   }),
 );
 
-export const auditEvents = kortixSchema.table(
-  'audit_events',
-  {
-    eventId: uuid('event_id').defaultRandom().primaryKey(),
+/**
+ * The columns of an audit event, as fresh builders on every call. One definition for
+ * `audit_events` (the table writers use) and the read view `audit_events_all`, so the two can
+ * never drift in this file. The database side, including `audit_events_legacy`, is guarded by
+ * audit-events-partitioned.integration.test.ts.
+ */
+function auditEventColumns() {
+  return {
+    // UUIDv7 (migration 20261002..._audit_events_uuid_v7): the leading 48 bits are the
+    // creation time in ms, so new ids append at the right edge of the pkey btree
+    // instead of landing on a random cold page. Rows written before it keep their v4 id.
+    eventId: uuid('event_id').default(sql`kortix.uuid_v7()`).notNull(),
     // Deliberately no FK. Account deletion must not rewrite or delete forensic history.
     accountId: uuid('account_id'),
     projectId: uuid('project_id'),
@@ -3271,6 +3363,8 @@ export const auditEvents = kortixSchema.table(
     messageId: text('message_id'),
     toolCallId: text('tool_call_id'),
     executionId: text('execution_id'),
+    /** Deprecated: set only on rows written before 2026-10 (the allocator and its lock left
+     *  the ingest path). NULL for newer rows; the session log orders those by event_id. */
     sessionSequence: bigint('session_sequence', { mode: 'number' }),
     actorUserId: uuid('actor_user_id'),
     actorType: text('actor_type'),
@@ -3313,7 +3407,9 @@ export const auditEvents = kortixSchema.table(
     outputSha256: varchar('output_sha256', { length: 64 }),
     errorCode: text('error_code'),
     errorMessage: text('error_message'),
+    /** Deprecated: the hash chain left ingestion in 2026-10. NULL for newer rows. */
     integrityPreviousHash: varchar('integrity_previous_hash', { length: 64 }),
+    /** Deprecated: see integrityPreviousHash. */
     integrityHash: varchar('integrity_hash', { length: 64 }),
     before: jsonb('before').$type<Record<string, unknown> | null>(),
     after: jsonb('after').$type<Record<string, unknown> | null>(),
@@ -3321,11 +3417,21 @@ export const auditEvents = kortixSchema.table(
     userAgent: text('user_agent'),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
     occurredAt: timestamp('occurred_at', { withTimezone: true }).defaultNow().notNull(),
-  },
+  };
+}
+
+export const auditEvents = kortixSchema.table(
+  'audit_events',
+  auditEventColumns(),
   (table) => [
+    // `audit_events` is RANGE-partitioned by occurred_at, one partition per week (migrations
+    // 20261001225732505 and 20261001225732973). drizzle-kit has no syntax for that: this
+    // declares the parent's columns and indexes, which PostgreSQL copies onto every partition.
+    // A unique index on a partitioned table must contain the partition key, so the primary key
+    // and the dedupe index below carry occurred_at.
+    primaryKey({ name: 'audit_events_pkey', columns: [table.eventId, table.occurredAt] }),
     index('idx_audit_events_account_time').on(table.accountId, table.occurredAt),
     index('idx_audit_events_actor_time').on(table.actorUserId, table.occurredAt),
-    index('idx_audit_events_resource').on(table.resourceType, table.resourceId),
     index('idx_audit_events_account_project_time').on(
       table.accountId,
       table.projectId,
@@ -3336,21 +3442,20 @@ export const auditEvents = kortixSchema.table(
       table.sessionId,
       table.occurredAt,
     ),
-    index('idx_audit_events_account_project_sequence').on(
-      table.accountId,
-      table.projectId,
-      table.sessionSequence,
-    ),
-    index('idx_audit_events_account_session_sequence').on(
-      table.accountId,
-      table.sessionId,
-      table.sessionSequence,
-    ),
+    // Dropped 2026-10-01 (migration 20261001214716390_drop_unused_audit_events_indexes):
+    // `idx_audit_events_account_project_sequence` (account_id, project_id,
+    // session_sequence), `idx_audit_events_account_session_sequence` (account_id,
+    // session_id, session_sequence) and `idx_audit_events_resource` (resource_type,
+    // resource_id). 22 GB, one index write each on every audit row. No query orders
+    // by session_sequence under an account/project predicate (the only
+    // session_sequence read is the session_id-only index below), and no query
+    // filters resource_id; resource_type is matched with LIKE 'x%', which a
+    // default-collation (en_US.UTF-8) btree cannot serve.
     // The per-session audit read (GET /v1/projects/:id/sessions/:id/audit)
     // filters on `session_id` ALONE and orders by (session_sequence, event_id)
     // — deliberately without an account predicate, because chain rows written
     // before account resolution (auth.login.success) or from project-neutral
-    // endpoints would vanish from the middle of the integrity chain. Every
+    // endpoints would vanish from the session's log. Every
     // other index on this table leads with account_id/actor/resource, so that
     // query seq-scanned the whole ledger and died on the 25 s statement
     // timeout (57014) on the request path (prod, 2026-09-25). This index leads
@@ -3384,11 +3489,14 @@ export const auditEvents = kortixSchema.table(
         table.sourceRecordId,
         table.phase,
         sql`coalesce(${table.sourceRevision}, '')`,
+        table.occurredAt,
       )
       .where(sql`${table.sourceLedger} is not null and ${table.sourceRecordId} is not null`),
     index('idx_audit_events_action_pattern').using('btree', sql`${table.action} text_pattern_ops`),
-    index('idx_audit_events_request').on(table.requestId),
-    index('idx_audit_events_correlation').on(table.correlationId),
+    index('idx_audit_events_request').on(table.requestId).where(sql`${table.requestId} is not null`),
+    index('idx_audit_events_correlation')
+      .on(table.correlationId)
+      .where(sql`${table.correlationId} is not null`),
     // Standalone index on occurred_at so the admin ops dashboard's account-
     // agnostic "audit events in the last 24h" count
     // (apps/api/src/ops/index.ts) is an index-only scan instead of a full
@@ -3401,6 +3509,38 @@ export const auditEvents = kortixSchema.table(
   ],
 );
 
+/**
+ * The relation every audit READ goes through (`SELECT * FROM audit_events` today; after the
+ * partition cutover, the partitioned table UNION ALL `audit_events_legacy`). Writers keep
+ * using `auditEvents`. Migration 20261001225220282_audit_events_all_view.
+ */
+export const auditEventsAll = kortixSchema.view('audit_events_all', auditEventColumns()).existing();
+
+/**
+ * One row per week of audit history the archive job has exported to S3 (weeks start Monday 00:00
+ * UTC). `status`: exporting -> archived (verified in S3, still readable in PostgreSQL) -> removed
+ * (the partition, and the legacy table for weeks it covered, are gone from PostgreSQL) or expired
+ * (older than the 365-day retention: dropped, never exported). A reader serves a week from S3 only
+ * when `archived`/`removed` AND the PostgreSQL relations that held it are gone.
+ */
+export const auditArchiveChunks = kortixSchema.table('audit_archive_chunks', {
+  weekStart: date('week_start', { mode: 'string' }).primaryKey(),
+  status: text('status').notNull(),
+  rowCount: bigint('row_count', { mode: 'number' }).default(0).notNull(),
+  legacyRowCount: bigint('legacy_row_count', { mode: 'number' }).default(0).notNull(),
+  objectCount: integer('object_count').default(0).notNull(),
+  byteCount: bigint('byte_count', { mode: 'number' }).default(0).notNull(),
+  manifestKey: text('manifest_key'),
+  /** sha256 hex of the manifest object. */
+  manifestSha256: varchar('manifest_sha256', { length: 64 }),
+  retainUntil: timestamp('retain_until', { withTimezone: true }),
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
+  removedAt: timestamp('removed_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+/** Deprecated: nothing writes it since migration 20261001223552613 (the prepare trigger no
+ *  longer allocates sequences). Kept for old rows; drop it in a later forward migration. */
 export const auditSessionSequences = kortixSchema.table('audit_session_sequences', {
   sessionId: text('session_id').primaryKey(),
   lastSequence: bigint('last_sequence', { mode: 'number' }).default(0).notNull(),
@@ -3764,12 +3904,8 @@ export const creditAccounts = kortixSchema.table(
     // preview) and from `config.ENTERPRISE_LICENSE_AVAILABLE` (a platform-wide
     // self-host license): this is the per-account, real-contract flag.
     enterpriseEntitled: boolean('enterprise_entitled').default(false).notNull(),
-    // Operator-set concurrent-session cap for this account. NULL (the default)
-    // means "no override" — the account's plan tier decides the limit
-    // (TierConfig.concurrentSessionLimit). When set, it takes precedence over
-    // the tier limit in BOTH directions (raise for enterprise deals, lower for
-    // abuse containment). Set out-of-band (data migration / operator SQL),
-    // like tier='enterprise'.
+    // RETIRED: the operator-set concurrent-session cap. Sessions are uncapped
+    // and no code reads or writes this column; drop it in its own migration.
     maxConcurrentSessions: integer('max_concurrent_sessions'),
     // Admin-issued trial. The trial NEVER writes `tier` — the Stripe webhook
     // (webhooks.ts syncSubscriptionState) overwrites `tier` on every
@@ -3853,9 +3989,9 @@ export const sessionPendingQuestions = kortixSchema.table(
     sessionId: text('session_id').notNull(),
     /** opencode's `question.asked` request id — the dedupe key with sessionId. */
     requestId: text('request_id').notNull(),
-    /** The opencode session that asked; survives an opencode restart changing it. */
+    /** The runtime session that asked; survives a runtime restart changing it. */
     runtimeSessionId: text('opencode_session_id'),
-    /** The raw QuestionInfo[] as opencode reported it. */
+    /** RuntimeQuestion[] (`@kortix/api-contract/transcript`), as `/turn-question` coerced it. */
     questions: jsonb().notNull(),
     askedAt: timestamp('asked_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
     /** Null while the question is still open — the index keys on this. */
@@ -4073,7 +4209,11 @@ export const appArtifacts = kortixSchema.table(
   ],
 );
 
-/** Immutable deployment version. Active routing remains an Apps-row pointer. */
+/**
+ * Immutable deployment version. Active routing remains an Apps-row pointer.
+ * `deleted` is terminal: the owner removed this deployment, its runtimes, and
+ * its provider image. Reads hide it; it is never a rollback target.
+ */
 export const appDeployments = kortixSchema.table(
   'app_deployments',
   {
@@ -4116,7 +4256,7 @@ export const appDeployments = kortixSchema.table(
   (table) => [
     check(
       'app_deployments_status_check',
-      sql`${table.status} IN ('queued', 'validating', 'building', 'provisioning', 'checking', 'ready', 'failed', 'cancelled')`,
+      sql`${table.status} IN ('queued', 'validating', 'building', 'provisioning', 'checking', 'ready', 'failed', 'cancelled', 'deleted')`,
     ),
     check(
       'app_deployments_source_kind_check',
@@ -4197,6 +4337,7 @@ export const appDeploymentEvents = kortixSchema.table(
       sql`${table.level} IN ('debug', 'info', 'warn', 'error')`,
     ),
     index('app_deployment_events_deployment_idx').on(table.deploymentId, table.createdAt),
+    index('app_deployment_events_runtime_idx').on(table.runtimeId),
   ],
 );
 
@@ -4306,6 +4447,8 @@ export const accountDeletionRequests = kortixSchema.table(
     cancelledAt: timestamp('cancelled_at', { withTimezone: true, mode: 'string' }),
     isCancelled: boolean('is_cancelled').default(false),
     isDeleted: boolean('is_deleted').default(false),
+    /** Set while a worker holds the `processing` claim; a stale one is reclaimable. */
+    processingStartedAt: timestamp('processing_started_at', { withTimezone: true, mode: 'string' }),
   },
   (table) => [
     // At most one pending deletion request per account. The application
@@ -4715,10 +4858,6 @@ export const accessRequests = kortixSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [
-    index('idx_access_requests_email').on(table.email),
-    index('idx_access_requests_status').on(table.status),
-  ],
 );
 
 // ─── Change Requests ────────────────────────────────────────────────────────
@@ -5363,11 +5502,8 @@ export const auditWebhookDeliveries = kortixSchema.table(
       columns: [table.webhookId],
       foreignColumns: [auditWebhooks.webhookId],
     }).onDelete('cascade'),
-    foreignKey({
-      name: 'audit_delivery_event_fk',
-      columns: [table.eventId],
-      foreignColumns: [auditEvents.eventId],
-    }).onDelete('cascade'),
+    // No FK on event_id: audit_events is partitioned, so event_id alone is not unique
+    // (migration 20261001225732090).
     uniqueIndex('idx_audit_webhook_delivery_event').on(table.webhookId, table.eventId),
     index('idx_audit_webhook_delivery_due').on(
       table.status,

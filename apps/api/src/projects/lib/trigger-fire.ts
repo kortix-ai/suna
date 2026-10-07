@@ -1,3 +1,4 @@
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import type { PromptOverridesWire } from '../session-lifecycle/store';
 import { projectSessions, projectTriggerRuntime } from '@kortix/db';
@@ -11,6 +12,7 @@ import { keepRunFailure } from '../trigger-execution-store';
 import { TRIGGER_REUSE_RETIRED_AT } from './trigger-run-outcome';
 import { disableSessionReminder, reminderPromptText } from './session-reminders';
 import type { TriggerFireSource } from './trigger-webhook-auth';
+import { claimTriggerCreate, releaseTriggerCreate, triggerCreateKey } from './trigger-create-claim';
 
 /**
  * Find a user we can attribute trigger-spawned sessions to. Git-backed
@@ -25,7 +27,7 @@ export async function resolveGitTriggerActor(accountId: string): Promise<string 
 /**
  * Resolve the identity a trigger's automated session PROVISIONS as — the
  * account-member stand-in `createProjectSession` needs for the provisioning/
- * authorization actor (concurrency cap, secret-visibility subject, the
+ * authorization actor (secret-visibility subject, the
  * standing-role fallback an unactivated agent SA relies on — see
  * `resolveActingActor` in iam/engine-v2.ts). This is intentionally NOT the
  * run's recorded identity. The create-session action applies the trigger's
@@ -228,11 +230,18 @@ export async function findKeyedTriggerSession(
  * session must carry it on the prompt itself, or the prompt silently runs on
  * whatever default the session was created with — on prod that was a July
  * session pinned to a managed model the account can no longer use.
+ *
+ * The one place a stored ref becomes the runtime's `{providerID, modelID}`:
+ * with the LLM gateway every model is the `kortix` provider's; without it the
+ * ref is the native `provider/model`, and a managed id has no provider.
  */
-export function triggerModelOverride(model: string | null | undefined): PromptOverridesWire | undefined {
+export function triggerModelOverride(
+  model: string | null | undefined,
+  gatewayEnabled = true,
+): PromptOverridesWire | undefined {
   const trimmed = (model ?? '').trim();
   if (!trimmed) return undefined;
-  const ref = toOpencodeModelRef(trimmed);
+  const ref = gatewayEnabled ? toOpencodeModelRef(trimmed) : trimmed.replace(/^kortix\//, '');
   const slash = ref.indexOf('/');
   if (slash <= 0 || slash === ref.length - 1) return undefined;
   return { model: { providerID: ref.slice(0, slash), modelID: ref.slice(slash + 1) } };
@@ -248,6 +257,8 @@ async function enqueueTriggerPrompt(input: {
   idempotencyKey?: string | null;
   /** The trigger's configured model; carried on the prompt for a re-prompted session. */
   model?: string | null;
+  /** `actor` is a person whose deferred prompt this is: the turn acts as them. */
+  bindTurnIdentity?: boolean;
 }): Promise<'queued' | 'no-session' | 'failed'> {
   // Scoped to the trigger's own project and account. A pinned `session_id` is
   // manifest text, so a session of any other project is "no session" here and
@@ -279,10 +290,14 @@ async function enqueueTriggerPrompt(input: {
     // Same per-due-slot key the create path uses — a fire the sweep timed out
     // on but that actually enqueued isn't duplicated when the next tick retries.
     idempotencyKey: input.idempotencyKey ?? null,
-    overrides: triggerModelOverride(input.model),
+    overrides: triggerModelOverride(input.model, projectLlmGatewayEnabled(input.project.metadata)),
+    ...(input.bindTurnIdentity ? { bindTurnIdentity: true } : {}),
   });
-  // Fast path only — the scheduler's 60s drain tick is the delivery guarantee.
-  drainSessionLifecycleQueue({ limit: 1 }).catch(() => {});
+  // Fast path only — the 1 s lifecycle worker is the delivery guarantee. Targeted
+  // when the fire has a key: an untargeted kick delivers whichever row is oldest.
+  drainSessionLifecycleQueue(
+    input.idempotencyKey ? { idempotencyKey: input.idempotencyKey, burst: false } : { limit: 1 },
+  ).catch(() => {});
   return 'queued';
 }
 
@@ -327,8 +342,37 @@ export async function fireGitTrigger(input: {
   if (queuedSessionId) {
     return { status: 'queued', sessionId: queuedSessionId, reason: 'prompt queued for delivery' };
   }
-  return createGitTriggerSession(input, actor, sessionKey);
+  const createKey = triggerCreateKey({
+    projectId: project.projectId,
+    slug: spec.slug,
+    sessionKey,
+    sessionMode: spec.sessionMode,
+  });
+  if (!createKey) return createGitTriggerSession(input, actor, sessionKey);
+
+  // One creator per key. A delivery that loses waits for the winner's session
+  // (up to 15 s) and prompts it; if none appears it creates, as before.
+  if (!(await claimTriggerCreate(createKey))) {
+    for (let attempt = 0; attempt < CREATE_WAIT_ATTEMPTS; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, CREATE_WAIT_POLL_MS));
+      const joined = await queueExistingTriggerSession(input, actor, sessionKey);
+      if (joined) return { status: 'queued', sessionId: joined, reason: 'prompt queued for delivery' };
+    }
+    return createGitTriggerSession(input, actor, sessionKey);
+  }
+  let result: Awaited<ReturnType<typeof createGitTriggerSession>> | undefined;
+  try {
+    result = await createGitTriggerSession(input, actor, sessionKey);
+    return result;
+  } finally {
+    // A create that only queued has no session row yet: keep the claim until it
+    // expires so deliveries during backpressure do not each queue another create.
+    if (result?.status !== 'queued') await releaseTriggerCreate(createKey);
+  }
 }
+
+const CREATE_WAIT_ATTEMPTS = 15;
+const CREATE_WAIT_POLL_MS = 1_000;
 
 /**
  * A session reminder re-prompts its own session and nothing else. Unlike a pinned
@@ -341,11 +385,13 @@ async function fireSessionReminder(
 ): ReturnType<typeof fireGitTrigger> {
   const { spec, project } = input;
   const sessionId = spec.pinnedSessionId;
+  const author = spec.reminder?.promptAuthorUserId;
   const outcome = sessionId
     ? await enqueueTriggerPrompt({
-        project, sessionId, actor, text: reminderPromptText(spec), source: 'reminder',
+        project, sessionId, actor: author ?? actor, text: reminderPromptText(spec), source: 'reminder',
         triggerSlug: spec.slug, model: null,
         idempotencyKey: input.idempotencyKey ?? null,
+        bindTurnIdentity: !!author,
       })
     : 'no-session';
   if (outcome === 'queued') {
@@ -433,7 +479,6 @@ async function createGitTriggerSession(
     project,
     userId: actor,
     requestingPrincipalType: 'human',
-    enforceAccountCap: false,
     // Fail closed until the post-create action resolves the trigger's current
     // account-local policy. Queued creates resolve it when the worker runs.
     visibility: 'private',

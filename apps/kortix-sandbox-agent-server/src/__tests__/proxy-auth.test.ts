@@ -14,6 +14,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'bun:test'
+import { HarnessHealthSchema, healthRuntimePort } from '@kortix/api-contract/runtime-relay'
 import type { Opencode } from '@/harness/open-code/lifecycle'
 import {
   buildOpenCodeTestApp,
@@ -63,15 +64,9 @@ describe('daemon proxy auth gate', () => {
     const body = (await res.json()) as {
       daemon: string
       auth: string
-      compiled_boot_mode: string
-      compiled_checkout: boolean
-      harness: { details: { compiled_runtime: boolean } }
     }
     expect(body.daemon).toBe('ok')
     expect(body.auth).toBe('configured')
-    expect(body.compiled_boot_mode).toBe('off')
-    expect(body.compiled_checkout).toBe(false)
-    expect(body.harness.details.compiled_runtime).toBe(false)
   })
 
   it('reports the same host facts as every harness, naming itself', async () => {
@@ -85,33 +80,12 @@ describe('daemon proxy auth gate', () => {
     // The pre-W3 flat fields an older API reads, composed from the block.
     expect(body.opencode_pid).toBe(body.harness.details.pid)
     expect(body.opencode_port).toBe(body.harness.details.port)
+    // apps/api reads the runtime port for its PTY proxy with this function.
+    expect(HarnessHealthSchema.parse(body.harness).details.port).toBe(4096)
+    expect(healthRuntimePort(body)).toBe(4096)
     expect(body.runtime_truth).toBeDefined()
     const host = await readHostHealth({ cfg, bootTime: Date.now(), bootState: { repoMaterializationError: null, timeline: [] }, staticWebPort: null, resources: () => null })
     expect(Object.keys(body)).toEqual(expect.arrayContaining(Object.keys(host)))
-  })
-
-  it('reports when the workspace came from a compiled checkout', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'kortix-compiled-health-'))
-    try {
-      const target = join(root, 'workspace')
-      git(['init', '-b', 'main', target])
-      writeFileSync(join(target, '.git', 'kortix-compiled-checkout.json'), '{}')
-      const app = buildOpenCodeTestApp(
-        baseConfig({ projectTarget: target, compiledBootMode: 'prefer' }),
-        fakeOpencode(),
-        Date.now(),
-      )
-
-      const res = await app.request('/kortix/health')
-      const body = (await res.json()) as {
-        compiled_boot_mode: string
-        compiled_checkout: boolean
-      }
-      expect(body.compiled_boot_mode).toBe('prefer')
-      expect(body.compiled_checkout).toBe(true)
-    } finally {
-      rmSync(root, { recursive: true, force: true })
-    }
   })
 
   it('reports auth=unconfigured when the sandbox token is unset', async () => {
@@ -200,7 +174,7 @@ describe('daemon proxy auth gate', () => {
         baseConfig({ autoClone: false, projectTarget: target }),
         fakeOpencode('ok'),
         Date.now(),
-        { repoMaterializationError: null, timeline, initialOpenCodeSessionRequired: true, initialOpenCodeSessionId: null },
+        { repoMaterializationError: null, timeline, initialRuntimeSessionRequired: true, initialRuntimeSessionId: null },
       )
       const third = await answering.request('/session?directory=%2Fworkspace', {
         headers: { [KORTIX_USER_CONTEXT_HEADER]: signed },
@@ -221,8 +195,8 @@ describe('daemon proxy auth gate', () => {
       {
         repoMaterializationError: null,
         timeline: [],
-        initialOpenCodeSessionRequired: true,
-        initialOpenCodeSessionId: null,
+        initialRuntimeSessionRequired: true,
+        initialRuntimeSessionId: null,
       },
     )
 
@@ -273,9 +247,9 @@ describe('daemon proxy auth gate', () => {
     const bootState = {
       repoMaterializationError: null,
       timeline: [],
-      initialOpenCodeSessionRequired: true,
-      initialOpenCodeSessionId: null as string | null,
-      initialOpenCodeSessionError: 'ECONNREFUSED on attempt 1' as string | null,
+      initialRuntimeSessionRequired: true,
+      initialRuntimeSessionId: null as string | null,
+      initialRuntimeSessionError: 'ECONNREFUSED on attempt 1' as string | null,
     }
     const app = buildOpenCodeTestApp(baseConfig(), fakeOpencode('ok'), Date.now(), bootState)
     const signed = signTestUserContext({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, TEST_TOKEN)

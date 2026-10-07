@@ -1,5 +1,5 @@
 import { autoSeedableModels } from '@kortix/llm-catalog/lite';
-import type { ProviderListResponse } from '@opencode-ai/sdk/v2/client';
+import type { ProviderListResponse } from '../runtime/runtime-types';
 
 import type { ModelDefaultsResponse } from '../rest/projects-client/model-defaults';
 import { healBedrockModelKey } from './bedrock-invokable';
@@ -14,7 +14,9 @@ import { type ModelKey, wireToModelKey } from './model-key';
 /**
  * The gateway's configured default for an agent, from
  * `GET /projects/:id/model-defaults`: agent → project → account → platform.
- * A free-tier account never resolves the platform default.
+ * The platform default resolves for every tier — the gateway serves it to
+ * free tier too (KRTX-1067), and an unoffered model is skipped by the caller's
+ * `isOfferedModel` validation either way.
  */
 export function resolveModelDefault(
   data: ModelDefaultsResponse | undefined,
@@ -24,7 +26,7 @@ export function resolveModelDefault(
     (agentName ? data?.agentDefaults?.[agentName] : undefined) ??
     data?.projectDefault ??
     data?.accountDefault ??
-    (data?.freeTier ? undefined : data?.platformDefault);
+    data?.platformDefault;
   return wire ? wireToModelKey(wire) : undefined;
 }
 

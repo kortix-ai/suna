@@ -1,16 +1,22 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 import { config } from '../../config';
 import {
+  agentSessionStanding,
   isProjectSessionVisibleTo,
   type SecretGrant,
   type ShareSubject,
 } from '../../connectors/share';
 import type { projectSessions, sessionSandboxes } from '@kortix/db';
+import { ACTIVE_SESSION_STATUSES } from './session-status';
 import { isWarmProjectSession } from './warm-sessions';
-import { agentSessionStanding } from './agent-session-standing';
 
 type ProjectSessionRow = typeof projectSessions.$inferSelect;
 type RuntimeStatus = typeof sessionSandboxes.$inferSelect.status;
+
+/** `ACTIVE_SESSION_STATUSES.includes(row.status)` does not typecheck against
+ *  the wider status union; the Set is the no-cast membership test the fold
+ *  needs per row. */
+const ACTIVE_SESSION_STATUSES_SET: ReadonlySet<string> = new Set(ACTIVE_SESSION_STATUSES);
 
 export type ProjectSessionListScope = 'visible' | 'project';
 
@@ -26,13 +32,15 @@ export interface SessionOwnerIdentity {
   type: 'user' | 'service_account' | 'unknown';
   name: string | null;
   email: string | null;
+  /** The person's profile photo (http(s) only); null for a machine or stale owner. */
+  avatarUrl: string | null;
 }
 
 export function mergeSessionOwnerIdentities(input: {
   ownerIds: string[];
   users: Map<
     string,
-    { exists: boolean; email: string | null; displayName?: string | null }
+    { exists: boolean; email: string | null; displayName?: string | null; avatarUrl?: string | null }
   >;
   serviceAccounts: Array<{
     serviceAccountId: string;
@@ -55,6 +63,7 @@ export function mergeSessionOwnerIdentities(input: {
         type: 'user',
         name: user.displayName || user.email,
         email: user.email,
+        avatarUrl: user.avatarUrl ?? null,
       });
       continue;
     }
@@ -65,11 +74,12 @@ export function mergeSessionOwnerIdentities(input: {
         type: 'service_account',
         name: serviceAccount.agentName || serviceAccount.name,
         email: null,
+        avatarUrl: null,
       });
       continue;
     }
 
-    result.set(ownerId, { type: 'unknown', name: null, email: null });
+    result.set(ownerId, { type: 'unknown', name: null, email: null, avatarUrl: null });
   }
 
   return result;
@@ -97,7 +107,7 @@ export function selectSessionRowsForViewer(input: {
    */
   accountSessionOversight?: boolean;
   /**
-   * The caller is an agent session under the `agent_principal` model (spec §2).
+   * The caller is an agent session under the agent-principal model (spec §2).
    * It lists only its own session, its children, and project-visible sessions —
    * never the launcher's other private or restricted ones.
    */
@@ -143,7 +153,19 @@ export function selectSessionRowsForViewer(input: {
     // A list row is a disclosure. Keep manager-only lifecycle coverage for
     // sessions the manager can open, including warm and soft-deleted rows, but
     // never return an inaccessible session as a redacted breadcrumb.
-    return { authorized: true, items: items.filter((item) => item.canAccess) };
+    //
+    // A soft-deleted warm draft is the one exception: it was never prompted, so
+    // its tombstone holds no conversation or work to audit, and listing it kept
+    // the Sessions page's empty state unreachable on a fresh project. A warm
+    // row that dropped its marker deletes like any other real session.
+    return {
+      authorized: true,
+      items: items.filter(
+        (item) =>
+          item.canAccess &&
+          !(item.deletedAt && isWarmProjectSession(item.row.metadata)),
+      ),
+    };
   }
 
   return {
@@ -152,14 +174,35 @@ export function selectSessionRowsForViewer(input: {
       if (item.deletedAt) return false;
       if (!item.canAccess) return false;
       // A warm session the user never prompted holds no work of theirs, so
-      // listing it is noise: they would see a session in the sidebar they never
-      // started. The marker is dropped by the first prompt, and from that moment
-      // the row lists like any other session. See lib/warm-sessions.ts.
+      // while it is not actively coming up or running it stays hidden — a
+      // project visit must not litter the sidebar with rows the user never
+      // started. The marker is dropped by the first prompt, and from that
+      // moment the row lists like any other session. See lib/warm-sessions.ts.
+      //
+      // A warm row whose session is provisioning or running is different: its
+      // box bills compute from creation (sandbox-deadline-policy.ts
+      // warmPoolGrantMs) until the reaper or the user stops it. A billed
+      // session the list hides is money its owner cannot see, open or stop, so
+      // it lists in the `visible` scope like any other running session. The
+      // session row's own status is the predicate, not the sandbox row: sandbox
+      // provisioning is fire-and-forget (session-create.ts), so the sandbox row
+      // can lag seconds behind a session that is already up and billing.
       //
       // `visible` scope only. The `project` scope keeps accessible warm rows for
       // lifecycle inspection, but it also applies the access filter above.
-      if (isWarmProjectSession(item.row.metadata)) return false;
-      return item.row.status !== 'stopped' || item.runtimeStatus === 'stopped';
+      if (
+        isWarmProjectSession(item.row.metadata) &&
+        !ACTIVE_SESSION_STATUSES_SET.has(item.row.status)
+      ) {
+        return false;
+      }
+      // A stopped session lists whatever its runtime row says: a terminal turn
+      // error parks the session (`parkTurnError`) while its box is still up,
+      // and a session stopped before its first box was created has no runtime
+      // row at all. Hiding either made the session vanish from this list and
+      // the sidebar while `sessions info` and the manager inventory returned
+      // it (KRTX-1452); clients read `runtime_status` from the payload.
+      return true;
     }),
   };
 }
@@ -186,6 +229,12 @@ export function selectSessionRowsForViewer(input: {
 /** One row's position in the `(updated_at DESC, session_id DESC)` order. */
 export interface SessionListCursor {
   updatedAt: Date;
+  /**
+   * `updatedAt` at full (microsecond) precision, as the database printed it.
+   * A JS Date holds milliseconds, so a keyset compare against `updatedAt` alone
+   * skipped rows that differ from the boundary row below a millisecond.
+   */
+  updatedAtIso?: string;
   sessionId: string;
 }
 
@@ -233,7 +282,7 @@ export function encodeSessionCursor(cursor: SessionListCursor, scope: SessionCur
   const cipher = createCipheriv('aes-256-gcm', cursorKey(scope), iv, {
     authTagLength: CURSOR_TAG_BYTES,
   });
-  const payload = `${cursor.updatedAt.toISOString()}|${cursor.sessionId}`;
+  const payload = `${cursor.updatedAtIso ?? cursor.updatedAt.toISOString()}|${cursor.sessionId}`;
   const ciphertext = Buffer.concat([cipher.update(payload, 'utf8'), cipher.final()]);
   return [
     'v1',
@@ -279,18 +328,22 @@ export function decodeSessionCursor(
   }
   const separator = payload.indexOf('|');
   if (separator <= 0) return null;
-  const updatedAt = new Date(payload.slice(0, separator));
+  const updatedAtIso = payload.slice(0, separator);
+  const updatedAt = new Date(updatedAtIso);
   const sessionId = payload.slice(separator + 1);
   if (!sessionId || Number.isNaN(updatedAt.getTime())) return null;
-  return { updatedAt, sessionId };
+  return { updatedAt, updatedAtIso, sessionId };
 }
 
 /** The cursor that resumes AFTER this row. */
 export function cursorForRow(
-  row: Pick<ProjectSessionRow, 'updatedAt' | 'sessionId'>,
+  row: Pick<ProjectSessionRow, 'updatedAt' | 'sessionId'> & { updatedAtIso?: string },
   scope: SessionCursorScope,
 ): string {
-  return encodeSessionCursor({ updatedAt: row.updatedAt, sessionId: row.sessionId }, scope);
+  return encodeSessionCursor(
+    { updatedAt: row.updatedAt, updatedAtIso: row.updatedAtIso, sessionId: row.sessionId },
+    scope,
+  );
 }
 
 /** Default page size for the session list, and the ceiling a caller may ask

@@ -14,13 +14,16 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, TextInput, View, type LayoutChangeEvent } from 'react-native';
+import { Keyboard, Platform, Pressable, TextInput, View, type LayoutChangeEvent } from 'react-native';
 import Reanimated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
+import { ParticipantAvatar } from '../ParticipantAvatar';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { SlackIcon } from '@/components/icons/slack-icon';
+import { TeamsIcon } from '@/components/icons/teams-icon';
 import {
   CaretDownIcon,
   CopyIcon,
@@ -28,19 +31,18 @@ import {
   TextTIcon,
   DownloadSimpleIcon,
   PaperPlaneTiltIcon,
-  QuestionIcon,
-  SlackLogoIcon,
   TimerIcon,
 } from '@/lib/icons';
 import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
-import type { Turn } from '@/lib/opencode/types';
-import type { Command } from '@/lib/opencode/hooks/use-opencode-data';
+import type { Turn } from '@/lib/session/types';
+import type { Command } from '@/lib/session/runtime-data';
 import { messageCreatedAt, type MessageWithParts } from '@kortix/sdk';
-import { parseSessionMessagePrompt, parseTriggerEvent } from '@kortix/shared';
-import { parseLegacyChannelMessage } from '@/lib/session/channel-message';
+import { type ChannelPlatform, parseChannelMessage } from '@kortix/shared';
+import { parseTriggerEvent } from '@kortix/shared';
 import { detectCommandFromText } from '@/lib/session/detect-command';
-import { formatMegabytes } from '@/lib/session/image-load';
+import { formatMegabytes } from '@kortix/sdk/react';
 import { buildMentionSegments } from '@/lib/session/mention-segments';
+import { participantName, type AvatarPerson } from '@/lib/session/participants';
 import {
   isPreviewableImage,
   localOrResolvedSource,
@@ -58,7 +60,7 @@ import {
   type QueuedPromptState,
 } from '@/lib/session/user-message';
 import { MentionChip } from '../mention-chip';
-import { AttachmentOverflowTile, AttachmentTile } from '../attachment-tile';
+import { AttachmentOverflowTile, AttachmentRemoveButton, AttachmentTile } from '../attachment-tile';
 import { useSandboxImage } from './use-sandbox-image';
 import { haptics } from '@/lib/haptics';
 import * as Clipboard from 'expo-clipboard';
@@ -81,6 +83,8 @@ const BUBBLE_TEXT_STYLE = { fontFamily: 'Roobert-Medium', fontSize: 14.4, lineHe
 const BUBBLE_PADDING_X = webSpace(3.5);
 const BUBBLE_PADDING_Y = webSpace(2.5);
 const BUBBLE_RADIUS = 10;
+/** Web's 4px top-right corner under the sender's avatar (`--radius` 10 minus 6). */
+const BUBBLE_TAIL_RADIUS = 4;
 /** `max-h-[200px]`. */
 const CLAMP_HEIGHT = 200;
 /** `h-10` fade. */
@@ -88,15 +92,54 @@ const FADE_HEIGHT = webSpace(10);
 /** `text-xs` = 0.8125rem with a 1rem line. */
 const META_TEXT_STYLE = { fontSize: 13, lineHeight: 16 } as const;
 
-// Fixed third-party brand marks for channel cards; they must not follow the app theme.
-const CHANNEL_BRAND_COLOR = {
-  Telegram: 'hsl(198.7 91.9% 56.3%)', // hex-allowlist: Telegram blue, web CHANNEL_BRAND_COLOR.Telegram hsl(198.7 91.9% 56.3%)
-  Slack: 'hsl(339.6 82.2% 51.6%)', // hex-allowlist: Slack pink, web CHANNEL_BRAND_COLOR.Slack hsl(339.6 82.2% 51.6%)
-} as const;
+// A channel card's mark and label, as web draws them (`channel-brand.tsx`). The
+// label colors are the platforms' fixed brand colors, never the app theme. Slack
+// has no hue to tint with: its mark is four colors and its name reads like
+// Slack's wordmark, in the text color.
+const TELEGRAM_BRAND_COLOR = 'hsl(198.7 91.9% 56.3%)'; // hex-allowlist: Telegram blue, web CHANNEL_BRAND_COLOR.Telegram hsl(198.7 91.9% 56.3%)
+const CHANNEL_LABEL_COLOR: Record<ChannelPlatform, string | undefined> = {
+  Slack: undefined,
+  Teams: '#5B5FC7', // hex-allowlist: Microsoft Teams purple #5B5FC7, web CHANNEL_BRAND_COLOR.Teams
+  Telegram: TELEGRAM_BRAND_COLOR,
+};
+const CHANNEL_LABEL: Record<ChannelPlatform, string> = {
+  Slack: 'Slack',
+  Teams: 'Microsoft Teams',
+  Telegram: 'Telegram',
+};
+
+function ChannelMark({ platform, size }: { platform: ChannelPlatform; size: number }) {
+  return platform === 'Teams' ? <TeamsIcon size={size} /> : platform === 'Slack' ? <SlackIcon size={size} /> : (
+    <Icon as={PaperPlaneTiltIcon} size={size} color={TELEGRAM_BRAND_COLOR} />
+  );
+}
 
 /** `isDark` is passed down from SessionTurn. */
 function paletteFor(isDark: boolean) {
   return THEME[isDark ? 'dark' : 'light'];
+}
+
+/**
+ * A message in a shared session: its sender's avatar above the bubble, on
+ * the right edge, your own included (web `MessageSenderAbove`).
+ */
+function MessageSenderAbove({
+  sender,
+  children,
+}: {
+  sender: AvatarPerson | null | undefined;
+  children: React.ReactNode;
+}) {
+  if (!sender) return <>{children}</>;
+  return (
+    <View
+      className="items-end"
+      style={{ gap: webSpace(1.5) }}
+      accessibilityLabel={`Sent by ${participantName(sender)}`}>
+      <ParticipantAvatar person={sender} />
+      <View className="max-w-full">{children}</View>
+    </View>
+  );
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -138,38 +181,6 @@ function SystemMessageCard({ dimStyle, menuProps, openMenu, actions, children }:
   );
 }
 
-/**
- * A message the viewer did not type: another session's agent, or an ask that
- * opens a conversation with people. Left-aligned like an assistant turn. The
- * sender comes from the platform header in the text: mobile has no
- * message-authors data, so a typed header would show here as well.
- */
-function IncomingMessageCard({ info, dimStyle }: {
-  info: NonNullable<ReturnType<typeof parseSessionMessagePrompt>>;
-  dimStyle: ReturnType<typeof useAnimatedStyle>;
-}) {
-  const isAsk = info.type === 'ask';
-  const sender = info.sender.kind === 'session' ? info.sender.title || 'Untitled session' : info.sender.name;
-  const label = isAsk
-    ? `${sender} asked ${info.to.map((p) => p.name || p.email).join(', ')}`
-    : `From ${sender}`;
-  return (
-    <Reanimated.View className="px-4" style={dimStyle}>
-      <View
-        className="border-border bg-popover self-start rounded-md border"
-        style={{ maxWidth: '90%', paddingHorizontal: webSpace(4), paddingVertical: webSpace(2.5), gap: webSpace(1.5) }}>
-        <View className="flex-row items-center" style={{ gap: webSpace(1.5) }}>
-          <Icon as={isAsk ? QuestionIcon : PaperPlaneTiltIcon} size={webSpace(3.5)} className="text-muted-foreground" />
-          <Text variant="muted" numberOfLines={2} style={[META_TEXT_STYLE, { flexShrink: 1 }]}>
-            {label}
-          </Text>
-        </View>
-        {info.prompt ? <Text className="text-sm">{info.prompt}</Text> : null}
-      </View>
-    </Reanimated.View>
-  );
-}
-
 // ─── UserMessage ─────────────────────────────────────────────────────────────
 
 export function UserMessage({
@@ -187,7 +198,7 @@ export function UserMessage({
   rewindDisabled,
   queueState,
   uploadStatus,
-  messagingCards = false,
+  sender,
 }: {
   turn: Turn;
   isDark: boolean;
@@ -203,14 +214,17 @@ export function UserMessage({
   /** Opens the editor on this message with its prompt text. */
   onEditStart?: (messageId: string, text: string) => void;
   onEditCancel?: () => void;
-  onEditSend?: (messageId: string, text: string) => void;
+  onEditSend?: (messageId: string, text: string, kept: MessageAttachment[]) => void;
   /** Hides Edit (busy session, queued prompts, a rewind in flight). Copy stays. */
   rewindDisabled?: boolean;
   /** Dims the column; `interrupted` also shows a status line. */
   queueState?: QueuedPromptState | null;
   uploadStatus?: UserMessageUploadStatus;
-  /** `human_messaging` is on. Off: a header never makes a card; the text draws as a plain bubble. */
-  messagingCards?: boolean;
+  /**
+   * Who sent this message, in a shared session, the viewer included. Drawn
+   * as their avatar above the bubble. Null when no sender is recorded.
+   */
+  sender?: AvatarPerson | null;
 }) {
   const message = turn.userMessage;
   const messageId = message.info.id;
@@ -233,13 +247,8 @@ export function UserMessage({
 
   // Both parsers are linear in the prompt: a channel or a webhook chooses this
   // text, and a regex version of each froze the JS thread on a crafted prompt.
-  const channelMessageInfo = useMemo(() => parseLegacyChannelMessage(rawText), [rawText]);
+  const channelMessageInfo = useMemo(() => parseChannelMessage(rawText), [rawText]);
   const triggerEventInfo = useMemo(() => parseTriggerEvent(rawText), [rawText]);
-  const sessionMessage = useMemo(() => parseSessionMessagePrompt(rawText), [rawText]);
-  const incoming =
-    messagingCards && sessionMessage && (sessionMessage.sender.kind === 'session' || sessionMessage.type === 'ask')
-      ? sessionMessage
-      : undefined;
 
   // Queued dim: `duration-slow transition-opacity` + `opacity-50`.
   const dim = useSharedValue(queueState ? 0.5 : 1);
@@ -259,13 +268,15 @@ export function UserMessage({
   // under the bubble; only a queued status line (or Select text's Done)
   // stays there. The bubble's own long press opens it through the trigger's
   // ref: the bubble is already a Pressable (tap expands a long message).
-  const canEdit = !!onEditStart && !rewindDisabled && !channelMessageInfo && !triggerEventInfo && !incoming;
+  const canEdit = !!onEditStart && !rewindDisabled && !channelMessageInfo && !triggerEventInfo;
   const menuRef = useRef<TriggerRef>(null);
   // Select text: the bubble's text becomes selectable in place until Done.
   const [selecting, setSelecting] = useState(false);
   const openMenu = useCallback(() => {
     if (!promptText) return;
     haptics.medium();
+    // The menu draws under the keyboard otherwise: close it first.
+    Keyboard.dismiss();
     menuRef.current?.open();
   }, [promptText]);
   const menuProps = {
@@ -276,11 +287,7 @@ export function UserMessage({
     onEdit: canEdit ? () => onEditStart?.(messageId, promptText) : undefined,
   };
 
-  const actions = selecting ? (
-    <Button variant="ghost" size="sm" className="rounded-full" onPress={() => setSelecting(false)}>
-      <Text>Done</Text>
-    </Button>
-  ) : statusLabel ? (
+  const status = statusLabel ? (
     <Text
       variant="muted"
       numberOfLines={1}
@@ -288,6 +295,13 @@ export function UserMessage({
       {statusLabel}
     </Text>
   ) : null;
+  const actions = selecting ? (
+    <Button variant="ghost" size="sm" className="rounded-full" onPress={() => setSelecting(false)}>
+      <Text>Done</Text>
+    </Button>
+  ) : (
+    status
+  );
 
   // Editing replaces the whole column with the full-width editor.
   if (editingText != null && onEditSend && onEditCancel) {
@@ -296,28 +310,24 @@ export function UserMessage({
         <UserMessageEditor
           isDark={isDark}
           initialText={editingText}
+          attachments={attachments}
           pending={editPending}
           onCancel={onEditCancel}
-          onSend={(text) => onEditSend(messageId, text)}
+          onSend={(text, kept) => onEditSend(messageId, text, kept)}
         />
       </View>
     );
   }
 
-  if (incoming) return <IncomingMessageCard info={incoming} dimStyle={dimStyle} />;
-
   if (channelMessageInfo) {
-    const brand = CHANNEL_BRAND_COLOR[channelMessageInfo.platform] ?? CHANNEL_BRAND_COLOR.Slack;
+    const { platform } = channelMessageInfo;
+    const labelColor = CHANNEL_LABEL_COLOR[platform];
     return (
       <SystemMessageCard dimStyle={dimStyle} menuProps={menuProps} openMenu={openMenu} actions={actions}>
         <View className="flex-row items-center" style={{ gap: webSpace(2) }}>
-          <Icon
-            as={channelMessageInfo.platform === 'Telegram' ? PaperPlaneTiltIcon : SlackLogoIcon}
-            size={webSpace(3.5)}
-            color={brand}
-          />
-          <Text variant="muted" style={[META_TEXT_STYLE, { fontFamily: 'Roobert-Medium', color: brand }]}>
-            {channelMessageInfo.platform}
+          <ChannelMark platform={platform} size={webSpace(3.5)} />
+          <Text style={[META_TEXT_STYLE, { fontFamily: 'Roobert-Medium' }, labelColor ? { color: labelColor } : null]}>
+            {CHANNEL_LABEL[platform]}
           </Text>
           <Text variant="muted" style={META_TEXT_STYLE}>
             ·
@@ -364,39 +374,37 @@ export function UserMessage({
   return (
     <Reanimated.View className="px-4" style={dimStyle}>
       <View className="items-end self-end" style={{ maxWidth: '80%', gap: webSpace(2) }}>
-        {sessionMessage?.sender.kind === 'person' ? (
-          <Text variant="muted" numberOfLines={1} style={[META_TEXT_STYLE, { fontFamily: 'Roobert-Medium' }]}>
-            {sessionMessage.sender.name}
-          </Text>
-        ) : null}
         {attachments.length > 0 || failed ? (
           <MessageAttachments attachments={attachments} status={failed} onOpenPath={onFileMention} />
         ) : null}
 
         {hasBubble ? (
-          // A failed send greys its bubble; "Try again" above stays full strength.
-          <MessageMenu {...menuProps} onSelectText={() => setSelecting(true)}>
-            <View className="items-end" style={failed ? FAILED_BUBBLE_STYLE : undefined}>
-              <UserMessageBubble
-                isDark={isDark}
-                quotes={content.quotes}
-                // While selecting, a long press belongs to the text selection.
-                onLongPress={selecting ? undefined : openMenu}>
-                {selecting ? (
-                  <SelectableMessageText text={promptText} isDark={isDark} />
-                ) : bodyText || commandInfo ? (
-                  <MessageBody
-                    text={bodyText}
-                    command={commandInfo?.name}
-                    sessions={content.sessions}
-                    agentNames={agentNames}
-                    onFileMention={onFileMention}
-                    onSessionMention={onSessionMention}
-                  />
-                ) : null}
-              </UserMessageBubble>
-            </View>
-          </MessageMenu>
+          <MessageSenderAbove sender={sender}>
+            {/* A failed send greys its bubble; "Try again" above stays full strength. */}
+            <MessageMenu {...menuProps} onSelectText={() => setSelecting(true)}>
+              <View className="items-end" style={failed ? FAILED_BUBBLE_STYLE : undefined}>
+                <UserMessageBubble
+                  isDark={isDark}
+                  tail={!!sender}
+                  quotes={content.quotes}
+                  // While selecting, a long press belongs to the text selection.
+                  onLongPress={selecting ? undefined : openMenu}>
+                  {selecting ? (
+                    <SelectableMessageText text={promptText} isDark={isDark} />
+                  ) : bodyText || commandInfo ? (
+                    <MessageBody
+                      text={bodyText}
+                      command={commandInfo?.name}
+                      sessions={content.sessions}
+                      agentNames={agentNames}
+                      onFileMention={onFileMention}
+                      onSessionMention={onSessionMention}
+                    />
+                  ) : null}
+                </UserMessageBubble>
+              </View>
+            </MessageMenu>
+          </MessageSenderAbove>
         ) : null}
 
         {actions}
@@ -582,8 +590,11 @@ export function UserMessageBubble({
   quotes = [],
   children,
   onLongPress,
+  tail = false,
 }: {
   isDark: boolean;
+  /** The sender's avatar sits above: the top-right corner, under it, is 4pt, as web. */
+  tail?: boolean;
   /** Quoted passages above the text. Omitted by the connecting screen's pending-prompt bubble. */
   quotes?: string[];
   children?: React.ReactNode;
@@ -621,6 +632,7 @@ export function UserMessageBubble({
         maxWidth: '100%',
         backgroundColor: surface,
         borderRadius: BUBBLE_RADIUS,
+        ...(tail ? { borderTopRightRadius: BUBBLE_TAIL_RADIUS } : null),
         paddingHorizontal: BUBBLE_PADDING_X,
         paddingVertical: BUBBLE_PADDING_Y,
         overflow: 'hidden',
@@ -688,8 +700,9 @@ export function UserMessageBubble({
 
 /**
  * Replaces the column while a message is edited: the bubble surface at full
- * width (`w-full gap-2 py-3`), the text, then secondary Cancel + primary Send.
- * Send rewinds the session to this message and sends the edited text.
+ * width (`w-full gap-2 py-3`), the message's attachments (each with a remove
+ * dot), the text, then secondary Cancel + primary Send. Send rewinds the
+ * session to this message and sends the edited text with the kept attachments.
  *
  * A raw `TextInput`, not `Textarea`: the editor must focus with the caret at
  * the end, and `Textarea` is not `forwardRef` and draws a border.
@@ -697,22 +710,28 @@ export function UserMessageBubble({
 export function UserMessageEditor({
   isDark,
   initialText,
+  attachments = [],
   pending,
   onCancel,
   onSend,
 }: {
   isDark: boolean;
   initialText: string;
+  /** The message's attachments. The user keeps or removes each; Send carries the kept ones. */
+  attachments?: MessageAttachment[];
   pending?: boolean;
   onCancel: () => void;
-  onSend: (text: string) => void;
+  onSend: (text: string, kept: MessageAttachment[]) => void;
 }) {
   const palette = paletteFor(isDark);
   const [draft, setDraft] = useState(initialText);
+  const [kept, setKept] = useState(attachments);
   const [selection, setSelection] = useState<{ start: number; end: number } | undefined>({
     start: initialText.length,
     end: initialText.length,
   });
+  // Text is required, attachments or not: a text-less replacement prompt does
+  // not commit the staged rewind, so the original turn would stay (KRTX-962).
   const canSend = Boolean(draft.trim()) && !pending;
 
   return (
@@ -726,6 +745,20 @@ export function UserMessageEditor({
         paddingVertical: webSpace(3),
       }}
     >
+      {kept.length > 0 ? (
+        <View className="flex-row flex-wrap" style={{ gap: webSpace(2) }}>
+          {kept.map((file) => (
+            <View key={file.key} style={{ position: 'relative' }}>
+              <MessageAttachmentTile file={file} />
+              <AttachmentRemoveButton
+                filename={file.filename}
+                disabled={pending}
+                onRemove={() => setKept((all) => all.filter((f) => f.key !== file.key))}
+              />
+            </View>
+          ))}
+        </View>
+      ) : null}
       <TextInput
         value={draft}
         onChangeText={setDraft}
@@ -748,7 +781,7 @@ export function UserMessageEditor({
         <Button variant="secondary" size="sm" disabled={pending} onPress={onCancel}>
           <Text>Cancel</Text>
         </Button>
-        <Button size="sm" disabled={!canSend} onPress={() => canSend && onSend(draft)}>
+        <Button size="sm" disabled={!canSend} onPress={() => canSend && onSend(draft, kept)}>
           {pending ? <KortixLoader customSize={14} /> : null}
           <Text>Send</Text>
         </Button>

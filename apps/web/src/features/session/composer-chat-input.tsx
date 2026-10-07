@@ -50,6 +50,7 @@ export function ComposerChatInput({
   placeholder,
   prefill,
   onPrefillApplied,
+  aboveSlot,
   inputSlot,
   toolbarSlot,
   underbarPlacement,
@@ -63,6 +64,8 @@ export function ComposerChatInput({
   draftScope,
   draftActive,
   promptAttachments,
+  submitLabel,
+  onArrowUpAtStart,
 }: {
   onSend: (
     text: string,
@@ -102,6 +105,7 @@ export function ComposerChatInput({
     submit?: boolean;
   } | null;
   onPrefillApplied?: SessionChatInputProps['onPrefillApplied'];
+  aboveSlot?: ReactNode;
   inputSlot?: ReactNode;
   toolbarSlot?: ReactNode;
   underbarPlacement?: SessionChatInputProps['underbarPlacement'];
@@ -121,6 +125,10 @@ export function ComposerChatInput({
   draftActive?: boolean;
   /** Host-owned upload controller. See `SessionChatInputProps.promptAttachments`. */
   promptAttachments?: SessionChatInputProps['promptAttachments'];
+  /** Editing a queued message: the send saves it, so the control says this. */
+  submitLabel?: SessionChatInputProps['submitLabel'];
+  /** Up in an empty composer: open the latest queued message for editing. */
+  onArrowUpAtStart?: SessionChatInputProps['onArrowUpAtStart'];
 }) {
   const { data: agents } = useRuntimeAgents({ projectId });
   const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
@@ -133,7 +141,7 @@ export function ComposerChatInput({
     config,
     sessionId,
     boundAgentName,
-    defaultAgentName: projectConfig?.open_code_default_agent,
+    defaultAgentName: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
   });
   const restoredOptions = prefill?.options;
   const setAgent = local.agent.set;
@@ -146,7 +154,6 @@ export function ComposerChatInput({
     setVariant(restoredOptions.variant ?? undefined);
   }, [restoredOptions, setAgent, setModel, setVariant]);
 
-  const lockedAgentName = boundAgentName?.trim() || null;
   /**
    * What will ACTUALLY run — see `composer-agent-access.ts`.
    *
@@ -162,13 +169,13 @@ export function ComposerChatInput({
   const agentResolution = resolveComposerAgent({
     agents,
     boundAgent: boundAgentName,
-    defaultAgent: projectConfig?.open_code_default_agent,
+    defaultAgent: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
     selectedAgent: local.agent.current?.name ?? null,
   });
-  const selectedAgentName = lockedAgentName ?? agentResolution.selected;
-  // A locked meta session runs its own bound agent, so an empty project roster
-  // does not refuse it.
-  const noAccessibleAgents = !lockedAgentName && agentResolution.disabled;
+  const selectedAgentName = agentResolution.selected;
+  // An empty project roster refuses an unbound composer; the resolver answers
+  // `disabled` for exactly that case.
+  const noAccessibleAgents = agentResolution.disabled;
 
   useEffect(() => {
     onAgentSelectionChange?.(selectedAgentName);
@@ -252,6 +259,7 @@ export function ComposerChatInput({
       placeholder={placeholder}
       prefill={prefill}
       onPrefillApplied={onPrefillApplied}
+      aboveSlot={aboveSlot}
       inputSlot={inputSlot}
       toolbarSlot={combinedToolbarSlot}
       underbarPlacement={underbarPlacement}
@@ -264,11 +272,7 @@ export function ComposerChatInput({
       agents={local.agent.list}
       selectedAgent={selectedAgentName}
       noAccessibleAgents={noAccessibleAgents}
-      onAgentChange={
-        // The selectedAgentName effect above notifies the parent; no inline call.
-        lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)
-      }
-      agentSelectorLocked={!!lockedAgentName}
+      onAgentChange={(name) => local.agent.set(name ?? undefined)}
       models={local.model.list}
       selectedModel={local.model.currentKey ?? null}
       onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}
@@ -280,6 +284,8 @@ export function ComposerChatInput({
       commands={commands || []}
       draftScope={draftScope}
       draftActive={draftActive}
+      submitLabel={submitLabel}
+      onArrowUpAtStart={onArrowUpAtStart}
     />
   );
 }

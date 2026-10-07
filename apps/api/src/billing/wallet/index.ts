@@ -57,7 +57,7 @@
  */
 import { creditAccounts, creditLedger } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
-import { InsufficientCreditsError } from '../../errors';
+import { InsufficientCreditsError, WalletUnavailableError } from '../../errors';
 import { db } from '../../shared/db';
 import { isDuplicateCreditGrantError } from './duplicate-error';
 import { assertRpcDebitLedgerType } from '../ledger-type-honesty';
@@ -148,12 +148,6 @@ function requestId(key: WalletKey | null): string | null {
   return key && 'request' in key ? key.request : null;
 }
 
-/** Fire-and-forget: a debit or settlement may have crossed the auto-topup threshold. */
-async function triggerAutoTopup(accountId: string): Promise<void> {
-  const { checkAndTriggerAutoTopup } = await import('../services/auto-topup');
-  void checkAndTriggerAutoTopup(accountId);
-}
-
 async function grant(input: GrantInput): Promise<GrantResult> {
   const event = eventId(input.key);
   const request = requestId(input.key);
@@ -198,8 +192,11 @@ async function debit(input: DebitInput): Promise<DebitResult> {
       p_idempotency_key => ${requestId(input.key)}::text
     )`);
   } catch (error) {
+    // A transport or SQL fault is not a refusal. Do not read the balance back
+    // through the pool that just failed, and do not tell a funded account it
+    // has no credit.
     console.error('[Wallet] debit failed:', error);
-    throw new InsufficientCreditsError(await currentBalance(input.accountId), input.amount, 'Deduction error');
+    throw new WalletUnavailableError();
   }
 
   if (!result.success) {
@@ -210,7 +207,6 @@ async function debit(input: DebitInput): Promise<DebitResult> {
     );
   }
 
-  await triggerAutoTopup(input.accountId);
   return {
     amount: result.amount_deducted ?? input.amount,
     balance: result.new_total ?? 0,
@@ -270,7 +266,6 @@ async function settle(input: SettleInput): Promise<SettleResult> {
       });
   }
 
-  await triggerAutoTopup(input.accountId);
   return {
     amount: result.amount_deducted ?? input.amount,
     balance: result.new_total ?? 0,

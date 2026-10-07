@@ -17,13 +17,31 @@
  * after the POST returns, so a short bounded poll costs one round trip in the
  * normal case.
  *
- * Both fallbacks lean the same way — toward "landed":
+ * ONLY A BODY THE EDGE CAN DROP IS PROVEN (`promptNeedsLandingProof`). The read
+ * ran after every prompt: a database read, a daemon GET, and up to 2.1 s of
+ * lane time when the read was slow, to guard a failure a small body cannot hit.
+ *
+ * Neither fallback establishes absence, so neither re-sends:
  *  - no wire id to look up: nothing to prove, so nothing is claimed;
- *  - the read itself FAILS (box mid-resume, proxy blip): absence is not
- *    established, and re-sending a prompt the runtime already took would run
- *    the user's message twice. A false "landed" costs a stuck row the sweep
- *    reclaims; a false "missing" costs a duplicate turn.
+ *  - the read itself FAILS (box mid-resume, proxy blip): re-sending a prompt
+ *    the runtime already took would run the user's message twice. A false
+ *    "landed" costs a stuck row the sweep reclaims; a false "missing" costs a
+ *    duplicate turn.
+ * Both answer `unknown`, not `landed`: the caller forwards the row as before
+ * and the log says what was actually established.
  */
+
+/**
+ * Bodies up to ~104 KB land and ~115 KB and above are dropped (measured, see
+ * above). Half the lowest dropped size leaves room for the edge to change.
+ */
+export const LANDING_PROOF_MIN_BODY_BYTES = 64 * 1024;
+
+export function promptNeedsLandingProof(bodyBytes: number): boolean {
+  return bodyBytes >= LANDING_PROOF_MIN_BODY_BYTES;
+}
+
+export type PromptLanding = 'landed' | 'missing' | 'unknown';
 
 export interface PromptLandingProofInput {
   /** The wire id the prompt was forwarded under. */
@@ -41,9 +59,9 @@ export interface PromptLandingProofInput {
 const DEFAULT_ATTEMPTS = 3;
 const DEFAULT_DELAY_MS = 700;
 
-export async function confirmPromptLanded(input: PromptLandingProofInput): Promise<boolean> {
+export async function confirmPromptLanded(input: PromptLandingProofInput): Promise<PromptLanding> {
   const messageId = input.messageId?.trim();
-  if (!messageId) return true;
+  if (!messageId) return 'unknown';
 
   const attempts = input.attempts ?? DEFAULT_ATTEMPTS;
   const delayMs = input.delayMs ?? DEFAULT_DELAY_MS;
@@ -51,14 +69,14 @@ export async function confirmPromptLanded(input: PromptLandingProofInput): Promi
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
       const message = await input.readMessage(messageId);
-      if (message !== null && message !== undefined) return true;
+      if (message !== null && message !== undefined) return 'landed';
     } catch {
       // Unreadable, not absent. See the header.
-      return true;
+      return 'unknown';
     }
     if (attempt < attempts - 1 && delayMs > 0) {
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      await Bun.sleep(delayMs);
     }
   }
-  return false;
+  return 'missing';
 }

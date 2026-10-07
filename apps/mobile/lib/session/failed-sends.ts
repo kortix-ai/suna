@@ -17,6 +17,8 @@
 import { create } from 'zustand';
 import type { SessionPromptPart } from '@kortix/sdk';
 import type { AttachedFile } from './attachments';
+import { optimisticUserParts } from './optimistic-parts';
+import type { MessageWithParts } from './types';
 
 export interface FailedSend<TOptions = unknown, TMentions = unknown> {
   /** The text `handleSend` was called with (attachment refs included). */
@@ -34,6 +36,8 @@ export interface FailedSend<TOptions = unknown, TMentions = unknown> {
    */
   clientMessageId?: string;
   messageId?: string;
+  /** When the send failed: where the bubble sorts in the thread. */
+  failedAtMs?: number;
 }
 
 export interface SendIds {
@@ -95,4 +99,26 @@ const EMPTY: Record<string, FailedSend> = {};
 /** The failed sends of one session, by message id. Stable when empty. */
 export function useFailedSends(sessionId: string): Record<string, FailedSend> {
   return useFailedSendStore((state) => state.bySession[sessionId] ?? EMPTY);
+}
+
+/**
+ * The failed sends of a session as transcript rows, oldest first. A failed
+ * send is not in the transcript (the server never had it), so the thread
+ * appends these to the rows it read: the message stays where the user sent it,
+ * dimmed, with "Not sent · Try again".
+ */
+export function failedSendRows(sessionId: string, failed: Record<string, FailedSend>): MessageWithParts[] {
+  return Object.entries(failed)
+    .map(([messageId, send]) => {
+      const createdAt = send.failedAtMs ?? 0;
+      return {
+        info: { id: messageId, role: 'user', sessionID: sessionId, time: { created: createdAt } },
+        parts: optimisticUserParts(send.text, send.localFiles ?? [], createdAt).map((part) => ({
+          ...part,
+          sessionID: sessionId,
+          messageID: messageId,
+        })),
+      } as unknown as MessageWithParts;
+    })
+    .sort((a, b) => (a.info.time?.created ?? 0) - (b.info.time?.created ?? 0));
 }

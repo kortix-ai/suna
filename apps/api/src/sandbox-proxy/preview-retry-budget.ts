@@ -1,3 +1,6 @@
+import { BLOCKING_TURN_VERBS } from '@kortix/api-contract/runtime-relay';
+import { classifyRuntimeRequest } from './runtime-request';
+
 // Total wall-clock budget for the preview proxy's auto-wake retry loop. Must
 // stay under the AWS ALB's 60s idle timeout: when every attempt hangs (a cold or
 // errored sandbox whose Daytona upstream never answers) the proxy has to return
@@ -35,9 +38,10 @@ export const PROXY_RETRY_DELAYS_MS = [250, 1_000, 3_000] as const;
 // non-idempotent body. One prod session recorded one `/webapp` submit as four
 // identical user messages, 11.0s / 11.8s / 13.7s apart.
 export function isLongTurnCompletionRequest(request: { method: string; path: string }): boolean {
+  const classified = classifyRuntimeRequest(request.method, request.path);
   return (
-    request.method.toUpperCase() === 'POST' &&
-    /^\/session\/[^/]+\/(?:message|command|summarize)(?:$|[/?#])/.test(request.path)
+    classified.kind === 'turn-start' &&
+    (BLOCKING_TURN_VERBS as readonly string[]).includes(classified.verb)
   );
 }
 

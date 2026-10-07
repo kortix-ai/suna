@@ -18,6 +18,7 @@
  * lives here and the dependency direction stays one-way.
  */
 
+import { classifyRuntimeRequest, turnStartBodyFields } from '../sandbox-proxy/runtime-request';
 import { randomUUID } from 'node:crypto';
 import { type SQL, sql } from 'drizzle-orm';
 import { mintWireMessageId } from './wire-message-id';
@@ -200,38 +201,23 @@ export function storedSandboxTurns(
   }
   return turns;
 }
-/** Parse the root OpenCode session and client-minted message identity. */
+/**
+ * The runtime session and client-minted message a turn-start request names.
+ * `noReply` persists the message and starts no loop: there is no turn to
+ * track, and no idle relay will ever arrive to close one. Such a POST skips
+ * the ledger's live-turn serialization; the inbox admission gate is what keeps
+ * it out of a live turn. A malformed body leaves the identity session-scoped;
+ * the delivery token still provides CAS safety.
+ */
 export function extractTurnIdentity(
   path: string,
   body: ArrayBuffer | undefined,
 ): SandboxTurnIdentity | null {
-  const normalized = path.replace(/^\/proxy\/\d+(?=\/)/, '');
-  const match = /^\/session\/([^/?#]+)\/(?:prompt_async|message|command|summarize)(?:$|[/?#])/.exec(
-    normalized,
-  );
-  if (!match) return null;
-
-  let messageId: string | null = null;
-  if (body?.byteLength) {
-    try {
-      const parsed = JSON.parse(new TextDecoder().decode(body)) as {
-        messageID?: unknown;
-        noReply?: unknown;
-      };
-      // `noReply` persists the message and starts no loop: there is no turn to
-      // track, and no idle relay will ever arrive to close one. Such a POST
-      // skips the ledger's live-turn serialization; the inbox admission gate
-      // is what keeps it out of a live turn.
-      if (parsed.noReply === true) return null;
-      if (typeof parsed.messageID === 'string' && parsed.messageID.trim()) {
-        messageId = parsed.messageID.trim();
-      }
-    } catch {
-      // The proxy will let OpenCode validate malformed input. Lifecycle identity
-      // remains session-scoped and the delivery token still provides CAS safety.
-    }
-  }
-  return { runtimeSessionId: decodeURIComponent(match[1]), messageId };
+  const request = classifyRuntimeRequest('POST', path);
+  if (request.kind !== 'turn-start') return null;
+  const { messageId, noReply } = turnStartBodyFields(body);
+  if (noReply) return null;
+  return { runtimeSessionId: request.runtimeSessionId, messageId };
 }
 
 export interface SandboxTurnStart extends SandboxTurnIdentity {
@@ -675,35 +661,6 @@ export function endedTurnLedger(
 }
 
 /**
- * The rows a ledger INSERT is allowed to create a turn from: the sandbox that
- * still holds this exact token's authority, locked.
- *
- * Both writers that OPEN a ledger row do it in a SECOND round trip after their
- * authority write, and a stop can commit in that gap. The stop erases
- * `activeTurns` and settles the sandbox's open rows in one transaction, so a
- * row created after it commits can never be closed by anything: every
- * token-scoped settle CASes against the entry the stop deleted, and the
- * sandbox-scoped one has already run. That row would claim a turn is running
- * for ever on a parked box.
- *
- * `FOR UPDATE` is what closes the window rather than narrowing it. A plain
- * predicate reads its own snapshot and happily passes while the stop is
- * mid-commit; the lock makes this statement WAIT for that transaction and then
- * re-evaluate against the row it wrote, so the two orderings are the only two
- * outcomes: the INSERT lands first and the stop settles it, or the stop lands
- * first and the INSERT writes nothing. Lock order is unchanged
- * (session_sandboxes, then session_turns), so this adds no deadlock edge.
- */
-export function openableTurnOwner(sandboxId: string, token: string): SQL {
-  return sql`SELECT s.session_id, s.sandbox_id, s.project_id, s.account_id
-               FROM kortix.session_sandboxes s
-              WHERE s.sandbox_id = ${sandboxId}::uuid
-                AND s.status IN ('active', 'provisioning')
-                AND s.metadata->'activeTurns'->${token} IS NOT NULL
-              FOR UPDATE`;
-}
-
-/**
  * Settle every still-open ledger row of one sandbox.
  *
  * The stop writer (reaping/sandbox-state-sync.ts) erases `activeTurn` /
@@ -831,7 +788,7 @@ export async function settleOrphanedSandboxTurns(): Promise<number> {
 
 /**
  * A second end frame for a turn that is already closed may still be the only one
- * that says WHY. Session ad02e053 (2026-09-18): OpenCode's own "Aborted" frame
+ * that says WHY. A session on 2026-09-18: OpenCode's own "Aborted" frame
  * closed the turn 476 ms before the memory guard's frame named the cause. Same
  * identity match as `wasSandboxTurnAlreadyClosed`; touches `failed` rows only,
  * and only to replace a missing or abort-only error with a named cause.

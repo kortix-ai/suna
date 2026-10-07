@@ -105,7 +105,7 @@ fi
 # Translation catalogs keep their key order (apps/web/scripts/i18n-catalogs.mjs).
 # A conflict resolution that rebuilt them reordered every catalog twice
 # (2026-09-22, and #7337 on 2026-09-28), and CI only saw it after the merge to
-# main. A merge commit may take either parent's order. The check reads the
+# dev. A merge commit may take either parent's order. The check reads the
 # working tree. Set I18N_REORDER=1 for an intentional reorder.
 if [ -z "$I18N_REORDER" ] && git rev-parse --verify --quiet HEAD >/dev/null \
   && git diff --cached --name-only | grep -qE '^apps/web/translations/[^/]+\.json$'; then
@@ -123,6 +123,10 @@ sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-worktree-branch.sh"
 
 # (3) No customer data: refuse added lines with a blocked term (AGENTS.md).
 sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-blocked-terms.sh" staged
+
+# No crash dumps or files over 20 MB: a core dump carries every secret in the
+# process environment.
+sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-binary-dumps.sh" staged
 
 # (4) Backstop: block any remaining unencrypted, committable .env.
 #

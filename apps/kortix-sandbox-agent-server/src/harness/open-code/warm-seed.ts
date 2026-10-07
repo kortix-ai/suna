@@ -4,7 +4,7 @@ import { logger } from '@/lib/log/logger'
 import { writeAgentEnvFile } from '../shared/agent-env-file'
 import { configureGlobalGitIdentity, configureGitCredentialHelper, configureRepoCredentialHelper, materializeRepo, materializeProjectSeed, materializeScaffoldSeed, scheduleHistoryBackfill } from '@/lib/git/git'
 import { loadOpenCodeConfig as loadConfig, type OpenCodeConfig as Config } from './config'
-import { waitForOpencodeReady, refreshGatewayCatalogFile } from './lifecycle'
+import { bakedCatalogPath, waitForOpencodeReady, refreshGatewayCatalogFile } from './lifecycle'
 import { bootOpenCodeConfig } from './boot-config-path'
 import { OPENCODE_HOME } from './paths'
 import { createProjectEnvStore } from '@/services/sandbox-env/project-env'
@@ -23,6 +23,11 @@ import type { DaemonServer } from '../contract/server'
 // Read KEY=VALUE lines from the per-session env file into process.env. Platinum
 // restore writes it directly into the guest pre-boot at /etc/pt-env (host-agent
 // writeEnvIntoOverlay via debugfs / writeGuestEnv).
+/** The host-written env file the restore watchers read. Tests point it at an
+ *  absent path: a Kortix box's own /etc/pt-env would otherwise answer for a rig
+ *  that has no session env file. */
+const ptEnvFile = () => process.env.KORTIX_PT_ENV_PATH ?? '/etc/pt-env'
+
 export function reloadSessionEnv(paths: string[] = ['/etc/pt-env']): void {
   for (const path of paths) {
     let txt: string
@@ -264,7 +269,7 @@ export async function runWarmSeedMode(
       // Rebuild the proxy/control surface with the fork's cfg; the seed booted
       // tokenless or with seed-only credentials.
       server.reload(cfg2)
-      bootState.initialOpenCodeSessionRequired =
+      bootState.initialRuntimeSessionRequired =
         (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
       logger.info('[seed] adopting forked session', { trigger, projectId: cfg2.projectId, autoClone: cfg2.autoClone })
       try { await configureGlobalGitIdentity(cfg2, OPENCODE_HOME) } catch {}
@@ -297,7 +302,7 @@ export async function runWarmSeedMode(
       const llmApiKey = process.env.KORTIX_TOKEN
       if (llmBaseUrl && llmApiKey) {
         const currentCatalogFile =
-          process.env.KORTIX_LLM_CATALOG_FILE ?? '/opt/kortix/llm-catalog.json'
+          process.env.KORTIX_LLM_CATALOG_FILE ?? bakedCatalogPath()
         const targetCatalogFile = `${OPENCODE_HOME}/.config/kortix-llm-catalog.session.json`
         const refresh = await refreshGatewayCatalogFile({
           currentCatalogFile,
@@ -377,7 +382,7 @@ export async function runWarmSeedMode(
   process.on('SIGHUP', () => adopt('sighup'))
   const poll = setInterval(() => {
     let txt = ''
-    try { txt = readFileSync('/etc/pt-env', 'utf8') } catch { return }
+    try { txt = readFileSync(ptEnvFile(), 'utf8') } catch { return }
     if (/^KORTIX_API_URL=\S/m.test(txt)) { clearInterval(poll); adopt('env-poll:/etc/pt-env') }
   }, 200)
 }
@@ -406,7 +411,7 @@ export function armSeedAdoption(
       // Re-arm the proxy with the session's tokens — the seed booted with the
       // deriving session's credentials, which must never serve this fork.
       server.reload(cfg2)
-      bootState.initialOpenCodeSessionRequired =
+      bootState.initialRuntimeSessionRequired =
         (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
       logger.info('[seed] adoption — initializing session', { trigger, branch: process.env.KORTIX_BRANCH_NAME })
       try { await configureGlobalGitIdentity(cfg2, OPENCODE_HOME) } catch {}
@@ -429,7 +434,7 @@ export function armSeedAdoption(
   process.on('SIGHUP', () => adopt('sighup'))
   const poll = setInterval(() => {
     let txt = ''
-    try { txt = readFileSync('/etc/pt-env', 'utf8') } catch { return }
+    try { txt = readFileSync(ptEnvFile(), 'utf8') } catch { return }
     if (/^KORTIX_SESSION_ID=\S/m.test(txt)) { clearInterval(poll); adopt('env-poll') }
   }, 250)
 }

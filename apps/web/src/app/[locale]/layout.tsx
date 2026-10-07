@@ -1,3 +1,4 @@
+import { PRICING_PLANS } from '@/features/billing/pricing-plans';
 import { WebMcpTools } from '@/components/agent-discovery/webmcp-tools';
 import { BrowserNoiseGuard } from '@/components/browser-noise-guard';
 import { DesktopBackButton } from '@/components/desktop/desktop-back-button';
@@ -97,6 +98,7 @@ const ROOT_METADATA: Metadata = {
   icons: {
     icon: [
       { url: '/favicon.ico', sizes: 'any' },
+      { url: '/favicon.svg', type: 'image/svg+xml' },
       {
         url: '/icon-light-32.png',
         sizes: '32x32',
@@ -143,6 +145,73 @@ export async function generateMetadata(): Promise<Metadata> {
     twitter: { ...ROOT_METADATA.twitter, title, description },
   };
 }
+
+/**
+ * The site's entity graph, once per page. Every feature line is a row of the
+ * kortix-brand claims file. "Suna" is the repository's and the earlier
+ * product's name, so search and answer engines join the two entities.
+ */
+const SITE_JSON_LD = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'Organization',
+      '@id': `${siteMetadata.url}/#organization`,
+      name: siteMetadata.name,
+      alternateName: ['Kortix AI', 'Kortix Suna', 'Suna'],
+      url: siteMetadata.url,
+      logo: `${siteMetadata.url}/icon-512.png`,
+      description: siteMetadata.description,
+      foundingDate: '2024',
+      sameAs: [
+        'https://github.com/kortix-ai/suna',
+        'https://x.com/kortix',
+        'https://linkedin.com/company/kortix',
+      ],
+      contactPoint: { '@type': 'ContactPoint', contactType: 'Customer Support', url: `${siteMetadata.url}/support` },
+    },
+    {
+      '@type': 'SoftwareApplication',
+      '@id': `${siteMetadata.url}/#software`,
+      name: siteMetadata.name,
+      alternateName: ['Kortix AI Operating System', 'Kortix AI OS', 'Suna'],
+      url: siteMetadata.url,
+      applicationCategory: 'BusinessApplication',
+      applicationSubCategory: 'AI Operating System',
+      operatingSystem: 'Web, macOS, Linux',
+      downloadUrl: `${siteMetadata.url}/download`,
+      description: siteMetadata.description,
+      publisher: { '@id': `${siteMetadata.url}/#organization` },
+      isAccessibleForFree: true,
+      featureList: [
+        'Open source. Read it, fork it, audit it.',
+        'Any model provider with your own keys.',
+        'One isolated sandbox per session.',
+        '3,000+ apps in a click, plus MCP, OpenAPI, Postman, GraphQL and raw HTTP.',
+        'Session work reaches main through a change request.',
+        'Per-resource permissions for people and agents. Roles, groups, and an audit trail.',
+        'SAML 2.0 single sign-on and SCIM 2.0.',
+        'Slack and Microsoft Teams.',
+        'Run it on Kortix Cloud, in your VPC, or on your own on-prem network.',
+      ],
+      offers: PRICING_PLANS.filter((plan) => plan.price.startsWith('$')).map((plan) => ({
+        '@type': 'Offer',
+        name: plan.name,
+        price: plan.price.replace('$', ''),
+        priceCurrency: 'USD',
+        description: plan.note,
+      })),
+    },
+    {
+      '@type': 'SoftwareSourceCode',
+      '@id': `${siteMetadata.url}/#source`,
+      name: 'Kortix',
+      codeRepository: 'https://github.com/kortix-ai/suna',
+      programmingLanguage: 'TypeScript',
+      isPartOf: { '@id': `${siteMetadata.url}/#software` },
+    },
+  ],
+};
 
 export default async function RootLayout({
   children,
@@ -248,52 +317,7 @@ export default async function RootLayout({
 
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: safeJsonForHtml({
-              '@context': 'https://schema.org',
-              '@type': 'Organization',
-              name: siteMetadata.name,
-              alternateName: [
-                'Kortix',
-                "Kortix AI",
-                "Kortix – The open-source AI Management System",
-              ],
-              url: siteMetadata.url,
-              logo: `${siteMetadata.url}/favicon.svg`,
-              description: siteMetadata.description,
-              foundingDate: '2024',
-              sameAs: [
-                'https://github.com/kortix-ai/suna',
-                'https://x.com/kortix',
-                'https://linkedin.com/company/kortix',
-              ],
-              contactPoint: {
-                '@type': 'ContactPoint',
-                contactType: "Customer Support",
-                url: siteMetadata.url,
-              },
-            }),
-          }}
-        />
-
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: safeJsonForHtml({
-              '@context': 'https://schema.org',
-              '@type': 'SoftwareApplication',
-              name: siteMetadata.title,
-              alternateName: [siteMetadata.name, 'Kortix'],
-              applicationCategory: 'BusinessApplication',
-              operatingSystem: "Web, macOS, Windows, Linux",
-              description: siteMetadata.description,
-              offers: {
-                '@type': 'Offer',
-                price: '0',
-                priceCurrency: 'USD',
-              },
-            }),
-          }}
+          dangerouslySetInnerHTML={{ __html: safeJsonForHtml(SITE_JSON_LD) }}
         />
 
       </head>

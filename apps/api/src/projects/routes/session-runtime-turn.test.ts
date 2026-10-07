@@ -252,7 +252,7 @@ mock.module('../lib/access', () => ({
 }));
 
 const { projectsApp } = await import('../lib/app');
-await import('./session-runtime');
+(await import('./session-runtime')).registerSessionRuntimeRoutes();
 
 /** `c.get('sessionId')` is OVERLOADED: a Kortix project-session id under a
  *  connector token, the SUPABASE AUTH session id under a browser JWT. The
@@ -553,7 +553,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
   });
 
   test('lists the turns that died, names the cause when there is one, and never a stop somebody asked for', async () => {
-    // Session ad02e053: four sub-agent tasks read "failed" and the turn said
+    // The 2026-09-18 memory-guard incident: four sub-agent tasks read "failed" and the turn said
     // nothing. A failure the user cannot see is the bug.
     const at = (s: number) => new Date(`2026-08-17T00:00:0${s}.000Z`);
     const ended = (

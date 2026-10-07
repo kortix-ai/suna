@@ -2,8 +2,9 @@
 
 The **single, opinionated data layer** for the Kortix API. One typed
 client wraps both the **Kortix REST API** and the **agent runtime** so a
-host app — web, mobile, reference — imports **only `@kortix/sdk`** and never
-`@opencode-ai/sdk` directly. (The no-raw-`backendApi`/`authenticatedFetch` rule
+host app — web, mobile, reference — imports **only `@kortix/sdk`**. The SDK
+owns its types: the transcript is Kortix's own format (`kortix.transcript.v1`),
+and the package depends on no harness SDK. (The no-raw-`backendApi`/`authenticatedFetch` rule
 below is the target state, not yet fully true of apps/web — see Rules of the
 road.)
 
@@ -247,9 +248,11 @@ Older subpaths (`@kortix/sdk/projects-client`, `/turns`, …) still work and are
 the four that are real, and **API-MAP.md**'s Stability table for the full
 list of aliases (20 of them).
 
-> **React Native / Expo:** REST works. **Streaming does not** — RN's `fetch` has
-> no `response.body`. Use `createHttpSessionSyncController` for bounded history
-> synchronization. Keep the platform-specific event transport for live events.
+> **React Native / Expo:** REST works. Live streaming works with a host
+> transport: pass `configureKortix({ eventStreamTransport })` (one connection's
+> messages over the wire your runtime has, e.g. `react-native-sse`), and report
+> foreground and network changes with `notifyHostSignal`. `apps/mobile` runs
+> `useSession` from `@kortix/sdk/react` this way.
 
 ## Quick start
 
@@ -324,17 +327,19 @@ await s.send("Build me a widget"); // provisions/resumes if needed, then prompts
 await s.rewind(userMessageId); // stages a reversible rollback on this session
 await s.restoreRewind(); // restores the removed path before the next prompt
 await s.previews();
+await s.participants(); // who can open the session
 await s.reloadConfig({ refresh_repo: false });
 await s.reloadConfigStream(
   { refresh_repo: false },
   (event) => event.type === "phase" && console.log(event.phase),
 );
 
-// Lower level: the typed OpenCode REST compatibility client for THIS sandbox.
-// `.runtime` throws until the runtime is resolved, and the runtime is keyed by
-// the OpenCode session id (NOT the Kortix `sid`) — resolve both via ensureReady.
-const { runtimeSessionId } = await s.ensureReady();
-await s.runtime.session.prompt({ sessionID: runtimeSessionId, parts });
+// The session verbs, bound to THIS session's own runtime (each provisions it first).
+const { messages, hasMore } = await s.messages({ limit: 50 }); // { info, parts }[], oldest first
+const { statuses, permissions, questions } = await s.pending();
+await s.answerPermission(permissions[0].id, "once"); // "once" | "always" | "reject"
+await s.answerQuestion(questions[0].id, [["Yes"]]); // null dismisses it
+await s.compact(); // only when health() lists `session.compact`
 ```
 
 React consumers use `useAccountSecretResources(accountId)` and
@@ -366,9 +371,9 @@ const browserSession = await apps.access.session(app.app_id);
 
 Access modes are `private`, `project`, `restricted`, `public`, and `password`. An access session exchanges a five-minute URL for an eight-hour, host-only cookie. A stopped or idle App resumes on the same public request. Transient machine requests receive `202 app_starting` and `Retry-After: 3`.
 
-For OpenCode REST sessions, `send()` reads the persisted session model and
+`send()` reads the persisted session model and
 agent before the first prompt on a handle. This prevents a snapshot-inherited
-OpenCode session from reusing stale snapshot defaults. A per-call choice
+runtime session from reusing stale snapshot defaults. A per-call choice
 overrides a `setModel()` or `setAgent()` choice. A handle choice overrides the
 persisted session default.
 
@@ -390,27 +395,37 @@ every given label, and `useProjectSessions(projectId, { labels })` does the same
 React. Each label is 1–64 characters, at most 20 per session; one metadata write is at
 most 16,384 characters of JSON. Example: `examples/12-session-labels.ts`.
 
-### Ask people, and who wrote each message
+### Who wrote each message
 
-With the project flag `human_messaging` on, `createProjectSession(projectId, { participants, initial_prompt })`
-opens a conversation with project members (1–20 emails; `initial_prompt` is required). The prompt posts
-from the caller with no agent turn; the agent runs when a participant replies.
-`listProjectSessions(projectId, { participant: 'me' })` lists the conversations you were asked into.
 `kortix.session(projectId, sessionId).messageAuthors()` (or `getSessionMessageAuthors`) returns
 `{ authors, initial_author }`: `authors` maps a runtime message id to a `SessionMessageAuthor`,
-`{ kind: 'member', user_id, name, email }` or `{ kind: 'session', session_id, name }`.
+`{ kind: 'member', user_id, name, email, avatar_url }` or `{ kind: 'session', session_id, name, agent? }`.
 In React, `useSessionMessageAuthors(projectId, sessionId, messageCount)` reads the same data.
-Authorship works without the flag. See `apps/web/content/docs/connect/messaging.mdx`.
+
+### Which model answered a turn
+
+`kortix.session(projectId, sessionId).modelUsage()` (or `getSessionModelUsage`) returns
+`{ latest, billed_cost, turns }` from the gateway's request record. `latest` is
+`{ served_model, fallback_from, at }` for the newest answered request: `served_model` is the model
+that answered, and `fallback_from` is the routed model when a fallback model answered in its place.
+`turns` maps the runtime message id of each prompt to `{ served_models, fallback_from, billed_cost }`.
+A transcript message carries only the model its turn asked for. In React,
+`useSessionModelUsage(projectId, sessionId)` reads the same record.
 
 ### React runtime
 
-`useSession(projectId, sessionId)` opens the OpenCode REST runtime returned by
-`POST /start`. The hook owns messages, rewind and restore, cancellation,
-commands, permissions, and questions. Hosts do not construct runtime routes.
+`useSession(projectId, sessionId)` opens the session runtime returned by
+`POST /start`. The runtime is OpenCode or pi; the hook reads the same routes,
+transcript and events from both. The hook owns messages, rewind and restore,
+cancellation, commands, permissions, and questions. Hosts do not construct
+runtime routes. A feature one harness lacks is a capability: gate its control
+with `runtimeSupports(health?.capabilities, 'session.rewind')`. pi lists
+`session.subagents` only, so rewind, compaction, slash commands, the todo list
+and the runtime config document stay hidden or empty on a pi session.
 
 Every session saves its transcript at the end of each turn. `useSession` reads saved
 messages from the platform database while `/start` continues. It uses the
-server-validated OpenCode root and lets the live read reconcile the saved messages by ID.
+server-validated runtime session id and lets the live read reconcile the saved messages by ID.
 Missing or rejected history falls back to the existing runtime path.
 
 `useSession().savedTranscript` says whether that saved conversation can show before the
@@ -428,20 +443,21 @@ the paged session list. Both are per user and bounded; clear both on sign-out. S
 states have one set of words for every host: `sessionListStatus`, `SESSION_LIST_STATUS`,
 `sessionConnectionLabel`, `SESSION_NOTICE`, and `turnRetryLabel`.
 
-A server-rendered host can seed a known OpenCode pin while `/start` runs:
+A server-rendered host can seed a known runtime session pin while `/start` runs:
 
 ```tsx
 useSession(projectId, sessionId, {
-  initialOpenCodeSessionId: persistedSession.runtime_session_id ?? persistedSession.opencode_session_id,
+  initialRuntimeSessionId: persistedSession.runtime_session_id ?? persistedSession.opencode_session_id,
 });
 ```
 
 Use only a pin that the host authorized for the same `(projectId, sessionId)`.
 The seed hydrates cached content. It does not choose the runtime identity.
 The pin returned by `/start` always replaces a stale seed. The SDK also scopes
-OpenCode query and synchronization controllers to the sandbox runtime. Two
+runtime query and synchronization controllers to the sandbox runtime. Two
 sandboxes cannot share browser cache state when a snapshot exposes the same
-OpenCode id during adoption.
+runtime session id during adoption. `opencode_session_id` is the older name
+of `runtime_session_id`; read it only as the fallback above.
 
 After a project replaces its repository, a session created before the
 replacement still starts. It runs the project's CURRENT config release and
@@ -479,8 +495,8 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` (`{ account }`) · `accounts` · `uploadAttachment` |
 | `kortix.project(id)` | id-bound handle: `.apps` (stable serverless App URLs, access, artifacts, deployments, logs, rollback, start/stop) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
-| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · `providerSecretPool.{list,get,set}` · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · OpenCode REST compatibility escape hatches: `stream()` and `.runtime` |
-| `kortix.runtime()` | the OpenCode v2 compatibility client for the active sandbox; use a session-scoped handle in multi-tenant code |
+| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`participants`/`previews`/`commit`/`publicShares`/`ensureReady`) · `providerSecretPool.{list,get,set}` · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · runtime REST escape hatches: `stream()` and the deprecated `.runtime` |
+| `kortix.runtime()` | the runtime REST client for the active sandbox (the SDK's own `RuntimeClient`, frozen at the `@opencode-ai/sdk` 1.18.23 route shapes); use a session-scoped handle in multi-tenant code |
 
 Runnable, self-contained scripts for the highest-value flows live in
 [`examples/`](./examples): list projects with a PAT, send + stream, the
@@ -557,7 +573,7 @@ restart. Credentials are encrypted server-side and are never returned, placed
 in `KORTIX_SESSION_CONTEXT`, or injected into the sandbox environment. Raw env
 and MCP configuration are not session-create inputs.
 
-For OpenCode REST sessions, `session.stream()` is a thin facade over the
+`session.stream()` is a thin facade over the
 framework-free `openEventStream`
 primitive (also exported directly, for hosts that want to manage the client
 themselves): it resolves THIS handle's own runtime (`ensureReady()`), connects
@@ -574,7 +590,14 @@ const handle = await kortix.session(pid, sid).stream({
 handle.close();
 ```
 
-`session.stream()` emits OpenCode v2 events. Use `useSession()` in React.
+`session.stream()` emits the runtime's events (`message.updated`,
+`message.part.updated`, `session.status`, `permission.*`, `question.*`, …),
+the same from OpenCode and pi. Use `useSession()` in React.
+
+Events arrive in batches, 16 ms apart. Consecutive `message.part.delta` events
+for one part field in a batch arrive as one event: `properties.delta` is their
+text joined in order, `id` is the last event's id, and `coalesced` lists the
+events it replaced.
 
 `@kortix/sdk/react`'s `useRuntimeEventStream` uses the exact same primitive
 under the hood — it just also writes into the React Query cache.
@@ -635,7 +658,8 @@ mode — see its README.
 
 Everything needed to render an agent transcript without adopting any Kortix
 UI: `classifyPart`/`classifyTurn` (framework-free, from the root entry)
-normalize all twelve opencode part types (text, reasoning, tool, file,
+normalize all twelve part types of the Kortix transcript format
+(`kortix.transcript.v1`; both harnesses emit it) (text, reasoning, tool, file,
 subtask, patch, snapshot, agent, retry, compaction, step, + a forward-compat
 `unknown`) into a typed `ClassifiedPart`, and normalize a failed assistant
 turn's `info.error` into a `{ name, message }` `TurnError` — so "assistant
@@ -699,7 +723,8 @@ the root import — offers the same agents and models and sends the same pick.
 | `composerSelectableAgents(agents, { enableProjects?, includeSubagents? })` | roster → picker list (no hidden agents, no subagents, `project-manager` only with `enableProjects`) |
 | `resolveComposerAgent({ agents, boundAgent, defaultAgent, selectedAgent })` | → the agent to send, and `disabled` when none is accessible |
 | `pickerProviderList({ gatewayEnabled, modelPicker, runtimeProviders, llmCatalogProviders, secretNames })` | raw sources → provider list |
-| `flattenModels(providers, { providerMode })` | provider list → `FlatModel[]` |
+| `flattenModels(providers, { providerMode })` | provider list → `ModelOption[]` (a `FlatModel` plus `id`, the ref a pick stores) |
+| `modelRefToKey(ref, gatewayEnabled)` | a stored ref (session pin, channel binding, trigger, agent `model`) → `ModelKey`; `kortix/x` and `x` are one gateway model |
 | `createModelVisibility({ catalogModels, pins?, connectedProviderIds?, freeTier? })` | → default-visibility predicate |
 | `modelInDefaultView(model, { search, isStoreVisible, selected })` | → whether the empty-search picker shows the model |
 | `resolveModelDefault(modelDefaults, agentName)` | `/model-defaults` → agent → project → account → platform default |
@@ -712,7 +737,7 @@ tree-shake (Metro) stays small.
 ## Errors
 
 One typed hierarchy, produced by **every** HTTP layer — `backendApi`, the
-`authenticatedFetch`, the files client, the opencode client, and
+`authenticatedFetch`, the files client, the runtime REST client, and
 `ensureReady()` all throw/return the same classes (from
 the root barrel; `@kortix/sdk/react` re-exports them too). They're real classes: `instanceof` works across every host, and
 `name`/shape are preserved for legacy `error.name === 'ApiError'` sniffers.
@@ -765,7 +790,7 @@ LLM session retries can carry the gateway's structured failure chain. Use
 `provider`, gateway `code`, `requestId`, and ordered `attemptFailures`. Each
 failure identifies the provider, route model, resolved model, stage, upstream
 status when available, concrete code, and bounded message. Plain legacy retry
-messages remain supported and return `details: undefined`. When OpenCode keeps
+messages remain supported and return `details: undefined`. When the runtime keeps
 only the HTTP error message, `getRetryMessage(status)` still returns the full
 gateway composite. That message includes the request ID and each candidate's
 provider, resolved model, HTTP status, code, and bounded message.
@@ -779,7 +804,7 @@ That is the whole map — learn it once.
 
 | import | when you use it | why it is separate |
 | --- | --- | --- |
-| `@kortix/sdk` | **almost always.** `createKortix`, `configureKortix`, the REST surface, `files`, session URLs + health (`runtimeSupports` reads a runtime's `capabilities`), `classifyPart`/`classifyTurn`/`toolViewModel`, `openEventStream`, `narrowChatEvent`, the message queue, the error classes, and every domain type | — |
+| `@kortix/sdk` | **almost always.** `createKortix`, `configureKortix`, the REST surface, `files`, session URLs + health (`runtimeSupports` reads a runtime's `capabilities`), `classifyPart`/`classifyTurn`/`toolViewModel`/`toToolView`/`toolKind`, `openEventStream`, `narrowChatEvent`, the message queue, the error classes, and every domain type | — |
 | `@kortix/sdk/react` | hooks and providers: `useSession`, every `useRuntime*` (each pre-W4 `useOpenCode*` name is a deprecated alias), `useChatTurns`/`renderParts`, the domain hooks | `react` is an **optional peer dependency**. Putting these at the root would force React on a CLI, a worker, or a React Native host |
 | `@kortix/sdk/server` | `runWithKortix`, `createScopedKortix`, `getScopedConfig` — per-request config isolation in a Node/Bun backend | imports `node:async_hooks`. Never let it into a browser bundle |
 | `@kortix/sdk/wire-message-id` | `mintWireMessageId`, `mintWireMessageIdAbove`, `newestWireIdClock`, `wireIdClock`, `wireIdClockDelta`, `maxWireIdClock`, `isWireIdAheadOf` — the OpenCode wire message-id clock | not a dependency split: the root exports the same names. A server that mints ids loads this one import-free module instead of the whole barrel |
@@ -820,6 +845,7 @@ interface KortixPlatformConfig {
   getToken: () => Promise<string | null>;
   /** @deprecated Inert: the SDK sends no client label. */
   clientSource?: 'api' | 'cli' | 'mobile' | 'tui' | 'web';
+  clientVersion?: string; // '<surface>/<version>', sent as X-Kortix-Client-Version
   getUserId?: () => Promise<string | null>;
   billingEnabled?: boolean;
   sandboxId?: string | null;
@@ -835,6 +861,12 @@ authenticated (`credential_kind`: browser session, personal access token,
 connected app, agent session, API key, service account), never a label the
 client reports about itself.
 
+Set `clientVersion` to the host's surface and release version, for example
+`cli/0.13.42`. The SDK sends it as `X-Kortix-Client-Version` on every request.
+The API writes it to its request log only, so a route is retired only when no
+supported client version still calls it. It is telemetry: it never reaches the
+audit log and grants nothing. A blank value sends nothing.
+
 The SDK is host-agnostic: no Next.js / web coupling in the core. The host injects
 its token getter and toast/notify sinks; the SDK does the rest. Today that's proven
 in React DOM (`apps/web` and the `apps/whitelabel-demo` reference app are the
@@ -843,16 +875,17 @@ The framework-free core — turn classification, session URLs and health, the
 REST clients, file operations, transcript formatting — has no React or DOM
 dependency and is usable from any JS host, all of it from the root entry;
 `apps/mobile` imports `classifyTurn` from `@kortix/sdk` this way.
-React Native does not use `@kortix/sdk/react`. Mobile now uses the framework-free
-`createHttpSessionSyncController` for message history, status recovery, and older
-pagination. Mobile keeps its platform-specific event transport because React
-Native cannot consume the SDK's fetch-based SSE stream.
+`apps/mobile` (React Native) also runs `useSession` from `@kortix/sdk/react`.
+Its only platform code for the session runtime is the event transport
+(`eventStreamTransport`, `react-native-sse`) and the lifecycle signals
+(`notifyHostSignal` from `AppState` and its network listener).
 
 ## Rules of the road
 
-- **No `@opencode-ai/sdk` in host code.** Import opencode types/client from
-  `@kortix/sdk`. The SDK is the sole owner of that dependency.
-  (Holds today — no host imports it.)
+- **No harness SDK in host code.** Import transcript and runtime types from
+  `@kortix/sdk`, and reach the runtime through the session verbs. `session.runtime`
+  (the raw REST compatibility client) is deprecated.
+  (Holds today — no host imports `@opencode-ai/sdk`, and neither does the SDK.)
 - **No raw `backendApi` / `authenticatedFetch` in host code.** Use the facade or a
   subpath module. (Aspirational: apps/web still calls `backendApi` via its
   `@/lib/api-client` re-export in ~30 files and keeps a parallel
@@ -934,7 +967,7 @@ pnpm --filter @kortix/sdk test   # facade, files, react hooks, turns, transcript
 ```
 
 See **`API-MAP.md`** for the complete endpoint catalogue. It covers the Kortix
-REST API and OpenCode REST runtime. See **`CHANGELOG.md`** for
+REST API and the session runtime's REST routes. See **`CHANGELOG.md`** for
 per-release changes.
 
 
@@ -1002,6 +1035,31 @@ current tool call. `composer` waits for the active response to finish. Each
 placement keeps submission order. A row without placement keeps its submission
 order ahead of `composer` entries and is presented as `composer`.
 
+### Prompt delivery: steer, queue, interrupt
+
+`createSessionPrompt` and `enqueue` also accept `delivery: 'steer' | 'queue' |
+'interrupt'`. It decides how a prompt reaches a running turn:
+
+- `steer`: the running turn reads the prompt at its next step boundary. The
+  turn does not stop.
+- `queue` (Queue List): the prompt waits for the turn to end.
+- `interrupt` (Quick Queue): the turn ends after its running tool, then the
+  prompt runs.
+
+With no turn running, every mode starts a turn. When only `delivery` is given,
+the SDK also sends the placement it implies (`interrupt` → `transcript`, the
+others → `composer`), so an API built before steering treats a steer prompt as
+a Queue List entry.
+
+A steer prompt falls back to `queue` when the runtime cannot take messages
+mid-turn, when another member's turn is running, or when the turn ended first.
+The row then reads `delivery: 'queue'` and `steer_fallback: 'unsupported' |
+'not_prompter' | 'turn_ended'`.
+
+`interruptSessionPrompt` (`session.prompts.interrupt`,
+`useSessionPrompts().interrupt`) is "Stop and send": it turns a row still
+waiting in the queue into Quick Queue. A row already on the wire answers `409`.
+
 `SessionPrompt.full_text` preserves complete text for rendering after reload;
 `text` remains the bounded preview. List responses expose attachment names and
 MIME types without attachment bytes. Removal responses retain the complete
@@ -1018,8 +1076,9 @@ after admission succeeds. A confirmed active turn clears the pending presentatio
 even if the previous inbox snapshot still lists that prompt. Runtime activity
 preserves the active turn's message ID during this handoff.
 
-Web calls Enter **Quick Queue** and Command/Ctrl+Enter **Queue List**. Both
-advance automatically; Quick Queue entries run first. Queue List entries stay editable
+Web sends Enter while a turn runs as **steer**, Command/Ctrl+Enter as **Queue
+List**, and "Stop and send" on a queued row as **Quick Queue**. Enter on an idle
+session starts a turn. Queued entries advance automatically; Quick Queue entries run first. Queue List entries stay editable
 until delivery begins. Stop pauses pending entries; Resume releases that hold.
 
 Pass the inbox IDs, in queue order, as `pendingMessageIds` to
@@ -1031,6 +1090,12 @@ Queue acceptance and runtime execution are separate states. Each distinct submis
 appears immediately, including while a previous POST is pending. The working hook
 updates `pendingDelivery` when the same turn becomes active, without waiting for
 a different turn ID or timestamp.
+
+`useSessionPrompts` reads queue changes from the session's control stream
+(`GET .../sessions/:id/events?channels=control`, one connection per session per
+client). Every write of an inbox row arrives as a `kortix.control.queue` frame,
+whichever API replica served the write. The `GET .../prompts` poll runs only
+while that stream is not connected, and a reconnect reads the list once.
 
 
 ### Why a turn ended

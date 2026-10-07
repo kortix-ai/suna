@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { authUsersRows } from './helpers/auth-users-execute';
 import { mockIamAssignments, mockIamReadModels } from './helpers/iam-mocks';
+import { projects } from '@kortix/db';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
@@ -103,6 +104,12 @@ function resetState() {
   rejectedBranch = null;
 }
 
+// The list test holds the role-grant read open with the gate and counts the
+// reads of `projects` made meanwhile.
+let projectRoleGrantsGate: Promise<void> | null = null;
+let projectRoleGrantsReached = false;
+let projectRowReads = 0;
+
 // The engine module itself is the seam now — `../iam` re-exports it, and every
 // route calls it with the structured `Actor`. Mirror the role gate against the
 // test's mocked membership rows so viewer/non-member denial is still exercised.
@@ -123,6 +130,10 @@ mockIamReadModels({
       projectId: r.projectId,
       projectRole: r.projectRole,
     })),
+  holdProjectRoleGrants: () => {
+    projectRoleGrantsReached = true;
+    return projectRoleGrantsGate ?? undefined;
+  },
 });
 
 // A project role is one `assignRole` call now, not an INSERT into
@@ -297,7 +308,6 @@ mock.module('../projects/lib/project-deletion', () => ({
 }));
 
 mock.module("../snapshots/builder", () => ({
-  ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
   ensureMetaSandboxImage: async () => ({ snapshotName: "kortix-meta-test", slug: "meta", contentHash: "b".repeat(64), built: false, isDefault: false }),
   deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
@@ -414,6 +424,20 @@ const projectDbMock = createProjectsContractDbMock(dbState);
     baseExecute(query)) as typeof baseExecute;
 }
 
+{
+  const baseSelect = projectDbMock.select;
+  projectDbMock.select = (fields?: Record<string, unknown>) => {
+    const builder = baseSelect(fields);
+    return {
+      ...builder,
+      from: (table: unknown) => {
+        if (table === projects) projectRowReads += 1;
+        return builder.from(table);
+      },
+    };
+  };
+}
+
 mock.module('../shared/db', () => ({
   hasDatabase: true,
   db: projectDbMock,
@@ -434,7 +458,8 @@ mock.module('../projects/prompt-attachments', () => ({
   },
 }));
 
-const { projectsApp } = await import('../projects/index');
+const { projectsApp, registerAllProjectRoutes } = await import('../projects/index');
+registerAllProjectRoutes();
 
 function createApp() {
   const app = new Hono();
@@ -588,6 +613,36 @@ describe('projects API contract', () => {
       project_role: 'member',
       effective_project_role: 'member',
     });
+  });
+
+  // The two reads are independent. In series each one is a full round trip.
+  test('the list reads the role grants and the project rows together', async () => {
+    let release = () => {};
+    projectRoleGrantsGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    projectRoleGrantsReached = false;
+    projectRowReads = 0;
+    try {
+      const pending = createApp().request(`/v1/projects?account_id=${ACCOUNT_ID}`);
+      for (let tick = 0; tick < 50 && !projectRoleGrantsReached; tick += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      expect(projectRoleGrantsReached).toBe(true);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      // The grants read is still held open; the row read has already started.
+      expect(projectRowReads).toBe(1);
+
+      release();
+      const res = await pending;
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.map((project: any) => project.project_id).sort()).toEqual([PROJECT_ID, OTHER_PROJECT_ID]);
+      expect(projectRowReads).toBe(1);
+    } finally {
+      release();
+      projectRoleGrantsGate = null;
+    }
   });
 
   test('returns detail, file listings, file content, and updates last_opened_at', async () => {
@@ -757,20 +812,18 @@ describe('projects API contract', () => {
     expect(del.status).toBe(200);
     expect(await del.json()).toEqual({ ok: true, archived: true, repo_deleted: false });
     expect(releasedAttachmentProjects).toEqual([PROJECT_ID]);
-    expect(deleteManagedRepoCalls).toEqual([]);
+    expect(deleteManagedRepoCalls.map((project) => project.projectId)).toEqual([PROJECT_ID]);
     expect(dbState.projectRows.find((project) => project.projectId === PROJECT_ID)?.status).toBe('archived');
 
     const after = await app.request(`/v1/projects/${PROJECT_ID}`);
     expect(after.status).toBe(404);
   });
 
-  test('purges a managed repository only when explicitly requested', async () => {
+  test('deletes the managed repository with the project on every delete', async () => {
     const app = createApp();
     deleteManagedRepoResult = true;
 
-    const del = await app.request(`/v1/projects/${PROJECT_ID}?purge=true`, {
-      method: 'DELETE',
-    });
+    const del = await app.request(`/v1/projects/${PROJECT_ID}`, { method: 'DELETE' });
 
     expect(del.status).toBe(200);
     expect(await del.json()).toEqual({ ok: true, archived: true, repo_deleted: true });
@@ -784,7 +837,7 @@ describe('projects API contract', () => {
     const app = createApp();
     deleteManagedRepoError = new Error('provider unavailable');
 
-    const del = await app.request(`/v1/projects/${PROJECT_ID}?purge=true`, { method: 'DELETE' });
+    const del = await app.request(`/v1/projects/${PROJECT_ID}`, { method: 'DELETE' });
 
     expect(del.status).toBe(502);
     expect(await del.json()).toEqual({ error: 'Failed to delete managed project repository' });
@@ -792,12 +845,12 @@ describe('projects API contract', () => {
     expect(dbState.projectRows.find((project) => project.projectId === PROJECT_ID)?.status).toBe('active');
   });
 
-  test('a failed attachment release answers 500 before the irreversible repository purge', async () => {
+  test('a failed attachment release answers 500 before the repository deletion', async () => {
     const app = createApp();
     deleteManagedRepoResult = true;
     releaseAttachmentsError = new Error('database unavailable');
 
-    const del = await app.request(`/v1/projects/${PROJECT_ID}?purge=true`, { method: 'DELETE' });
+    const del = await app.request(`/v1/projects/${PROJECT_ID}`, { method: 'DELETE' });
 
     expect(del.status).toBe(500);
     // The retry finds the repository and the project exactly as they were.

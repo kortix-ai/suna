@@ -43,14 +43,21 @@ export function SessionStarterMark({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { user } = useAuth();
   if (starter.type === 'member') {
-    // The viewer's own row draws the viewer's avatar, never the "You" label's initial.
+    // The viewer's own row draws the viewer's avatar, never the "You" label's
+    // initial. The photo the list carries wins: the signed-in user's metadata
+    // is the copy from sign-in and misses a photo changed since.
     const metadataName = user?.user_metadata?.full_name ?? user?.user_metadata?.name;
+    const metadataAvatar = user?.user_metadata?.avatar_url;
     return (
       <UserAvatar
         size="sm"
         className={avatarClassName}
         name={starter.isViewer ? (typeof metadataName === 'string' ? metadataName : undefined) : starter.label}
         email={starter.isViewer ? (user?.email ?? '') : (session.owner_email ?? '')}
+        avatarUrl={
+          session.owner_avatar_url ??
+          (starter.isViewer && typeof metadataAvatar === 'string' ? metadataAvatar : null)
+        }
       />
     );
   }
@@ -60,8 +67,10 @@ export function SessionStarterMark({
   else if (starter.type === 'channel') {
     Icon = SOURCE_ICONS[(starter.id ?? '') as keyof typeof SOURCE_ICONS] ?? ChatTeardropTextIcon;
   } else {
-    // A trigger: schedule for cron, webhook otherwise.
-    Icon = sessionSource(session, tI18nComplete).kind === 'webhook' ? SOURCE_ICONS.webhook : SOURCE_ICONS.schedule;
+    // A trigger fires under its own source kind: schedule, webhook, or manual
+    // (`kortix triggers fire`). The kind's glyph, not the scheduler's.
+    const kind = sessionSource(session, tI18nComplete).kind;
+    Icon = kind === 'chat' ? ChatTeardropTextIcon : SOURCE_ICONS[kind];
   }
   return <Icon className={cn('size-4', iconClassName)} />;
 }

@@ -24,7 +24,8 @@ globalThis.fetch = (async (url: string, init: RequestInit) => {
   return reply();
 }) as typeof fetch;
 
-const { conversationMemberId, deleteActivity, openDirectConversation, sendTargetedCard } = await import('../channels/teams-api');
+const { conversationMemberId, deleteActivity, getTeamsTeam, listTeamsTeamChannels, openDirectConversation, sendTargetedCard } =
+  await import('../channels/teams-api');
 
 beforeEach(() => {
   calls.length = 0;
@@ -114,5 +115,40 @@ describe('conversationMemberId', () => {
   test('someone Teams does not know in that conversation is null', async () => {
     reply = () => Response.json({ error: { code: 'MemberNotFoundInConversation' } }, { status: 404 });
     expect(await conversationMemberId({ serviceUrl: SERVICE_URL, conversationId: '19:g@thread.v2', projectId: 'p1' }, 'aad-x')).toBeNull();
+  });
+});
+
+// The names a channel binding shows: a Teams message carries the team's id but
+// rarely its name. Shapes as the Bot Connector answered for a test tenant.
+describe('team reads', () => {
+  const TEAM = '19:team-root@thread.tacv2';
+
+  test('reads a team by its id', async () => {
+    reply = () => Response.json({ id: TEAM, name: 'Eng', aadGroupId: 'aad-group-1', channelCount: 2, memberCount: 3 });
+    expect(await getTeamsTeam(SERVICE_URL, TEAM, 'p1')).toEqual({ id: TEAM, name: 'Eng' });
+    expect(calls).toEqual([{ method: 'GET', url: `${SERVICE_URL}v3/teams/19%3Ateam-root%40thread.tacv2`, body: undefined }]);
+  });
+
+  test('an id that is not a team, or any failure, is null', async () => {
+    reply = () => Response.json({ error: { code: 'BadArgument', message: 'Cannot find team with provided id' } }, { status: 404 });
+    expect(await getTeamsTeam(SERVICE_URL, '19:design@thread.tacv2', 'p1')).toBeNull();
+    reply = () => new Response('not json', { status: 200 });
+    expect(await getTeamsTeam(SERVICE_URL, TEAM, 'p1')).toBeNull();
+  });
+
+  test('lists the channels of a team; General arrives without a name', async () => {
+    reply = () =>
+      Response.json({ conversations: [{ type: 'standard', id: TEAM }, { type: 'standard', id: '19:design@thread.tacv2', name: 'Design' }] });
+    expect(await listTeamsTeamChannels(SERVICE_URL, TEAM, 'p1')).toEqual([
+      { id: TEAM, name: null },
+      { id: '19:design@thread.tacv2', name: 'Design' },
+    ]);
+    expect(calls).toEqual([{ method: 'GET', url: `${SERVICE_URL}v3/teams/19%3Ateam-root%40thread.tacv2/conversations`, body: undefined }]);
+  });
+
+  test('never sends the bot token to a host that is not the Bot Framework', async () => {
+    expect(await getTeamsTeam('https://attacker.example/', TEAM, 'p1')).toBeNull();
+    expect(await listTeamsTeamChannels('https://attacker.example/', TEAM, 'p1')).toBeNull();
+    expect(calls).toEqual([]);
   });
 });

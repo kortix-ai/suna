@@ -7,6 +7,7 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { View, Image, ScrollView, Platform, useWindowDimensions } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
+import { MermaidBlock } from '@/components/markdown/mermaid/MermaidBlock';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
@@ -65,6 +66,7 @@ export enum FilePreviewType {
   IMAGE = 'image',
   PDF = 'pdf',
   MARKDOWN = 'markdown',
+  MERMAID = 'mermaid',
   CSV = 'csv',
   XLSX = 'xlsx',
   DOCX = 'docx',
@@ -111,6 +113,7 @@ export function getFilePreviewType(filename: string): FilePreviewType {
   // SVG is never drawn on mobile (Jay, 2026-09-22, `lib/files/svg-policy`):
   // it reads as its markup, so Copy works, and Download hands the real file to
   // the device. The `SvgXml` renderer that briefly lived here is gone.
+  if (ext === 'mmd' || ext === 'mermaid') return FilePreviewType.MERMAID;
   if (ext === 'svg') return FilePreviewType.TEXT;
   if (imageExtensions.includes(ext)) return FilePreviewType.IMAGE;
   if (documentExtensions.includes(ext)) return FilePreviewType.PDF;
@@ -236,6 +239,7 @@ function ImagePreview({ blobUrl, fileName }: { blobUrl?: string; fileName: strin
   const [aspectRatio, setAspectRatio] = useState(0);
   const { width: screenWidth } = useWindowDimensions();
   const maxWidth = screenWidth - 32;
+  const bottomInset = React.useContext(FilePreviewBottomInsetContext);
 
   if (!blobUrl) {
     return (
@@ -251,7 +255,7 @@ function ImagePreview({ blobUrl, fileName }: { blobUrl?: string; fileName: strin
   return (
     <ScrollView
       className="flex-1"
-      contentContainerStyle={{ padding: 16 }}
+      contentContainerStyle={{ padding: 16, paddingBottom: 16 + bottomInset }}
       showsVerticalScrollIndicator={false}
       style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
     >
@@ -311,7 +315,7 @@ function MarkdownPreview({ content }: { content: string }) {
       contentContainerStyle={{ paddingBottom: bottomInset }}
       style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
     >
-      <SelectableMarkdownText isDark={isDark}>
+      <SelectableMarkdownText isDark={isDark} remoteImages="load">
         {autoLinkUrls(content)}
       </SelectableMarkdownText>
     </ScrollView>
@@ -596,7 +600,9 @@ function HtmlPreview({
 
   if (htmlPreviewUrl) {
     return (
-      <View className="flex-1">
+      // Android has no `contentInset`: the WebView ends above the host's
+      // floating controls instead, so the page's end is never under them.
+      <View className="flex-1" style={Platform.OS === 'android' ? { paddingBottom: bottomInset } : undefined}>
         <WebView
           source={{ uri: htmlPreviewUrl }}
           // iOS only: the page's end rests above a host's floating controls.
@@ -672,19 +678,17 @@ function CsvPreview({ content }: { content: string }) {
   const headers = rows[0]?.split(',').slice(0, CSV_MAX_COLUMNS).map(h => h.trim()) || [];
   const dataRows = rows.slice(1);
 
+  // Vertical outside, horizontal inside: on Android the outer scroll view sees
+  // a drag first, and a horizontal one takes any drag that drifts sideways.
   return (
     <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={true}
+      showsVerticalScrollIndicator={true}
       className="flex-1"
+      contentContainerStyle={{ paddingBottom: bottomInset }}
       style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
     >
-      <ScrollView
-        showsVerticalScrollIndicator={true}
-        className="px-4 py-4"
-        contentContainerStyle={{ paddingBottom: bottomInset }}
-        style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
-      >
+      <ScrollView horizontal showsHorizontalScrollIndicator={true}>
+        <View className="px-4 py-4">
         {/* Headers */}
         <View className="flex-row border-b pb-2 mb-2"
           style={{
@@ -741,6 +745,7 @@ function CsvPreview({ content }: { content: string }) {
             Showing first 100 rows of {dataRows.length}
           </Text>
         )}
+        </View>
       </ScrollView>
     </ScrollView>
   );
@@ -1446,7 +1451,10 @@ function TextContentPreview({
   filePath?: string;
   sandboxUrl?: string;
 }) {
+  const { colorScheme } = useColorScheme();
   switch (previewType) {
+    case FilePreviewType.MERMAID:
+      return <MermaidBlock chart={content} language="mermaid" isDark={colorScheme === 'dark'} />;
     case FilePreviewType.MARKDOWN:
       return <MarkdownPreview content={content} />;
 
@@ -1541,7 +1549,7 @@ export function FilePreview({
     <TextContentPreview
       content={textPreview.text}
       fileName={fileName}
-      previewType={previewType}
+      previewType={previewType === FilePreviewType.MERMAID && textPreview.decision === 'truncate' ? FilePreviewType.TEXT : previewType}
       filePath={filePath}
       sandboxUrl={sandboxUrl}
     />

@@ -25,6 +25,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { cn } from '@/lib/utils';
 import type { TurnCostInfo } from '@/ui';
 import { sessionTurnMetaRows } from './session-turn-meta-rows';
+import type { TurnServedModel } from './turn/served-model';
 
 // Nothing ticks while the popover is closed — a relative "N ago" that nobody
 // can see doesn't need to stay accurate.
@@ -34,11 +35,13 @@ export function SessionTurnMeta({
   endedAt,
   durationMs,
   cost,
+  served,
   className,
 }: {
   endedAt: number | null;
   durationMs: number | null;
   cost: TurnCostInfo | null | undefined;
+  served?: TurnServedModel;
   className?: string;
 }): React.ReactElement | null {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -64,8 +67,8 @@ export function SessionTurnMeta({
   // so the fallback below stands in for a clock read that hasn't happened.
   const rows = useMemo(
     () =>
-      sessionTurnMetaRows({ endedAt, now: now ?? endedAt ?? 0, durationMs, cost }, tI18nComplete),
-    [endedAt, now, durationMs, cost, tI18nComplete],
+      sessionTurnMetaRows({ endedAt, now: now ?? endedAt ?? 0, durationMs, cost, served }, tI18nComplete),
+    [endedAt, now, durationMs, cost, served, tI18nComplete],
   );
 
   // A ⋯ that opens onto an empty panel is worse than no ⋯ at all.

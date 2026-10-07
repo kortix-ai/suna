@@ -28,7 +28,7 @@ on it. See [Feature flags](/docs/feature-flags).
 | `apps.create(input)` | `POST …/apps` | Creates an App and assigns its stable URL |
 | `apps.get(appId)` | `GET …/apps/:id` | Reads one App |
 | `apps.update(appId, input)` | `PATCH …/apps/:id` | Renames it or changes machine, idle timeout, or budget |
-| `apps.remove(appId)` | `DELETE …/apps/:id` | Deletes the App and its runtimes |
+| `apps.remove(appId)` | `DELETE …/apps/:id` | Deletes the App, its runtimes, and every deployment image; returns `images: {released, pending}` |
 | `apps.start(appId)` | `POST …/apps/:id/start` | Sets `desired_state` to `running` and warms the runtime |
 | `apps.stop(appId)` | `POST …/apps/:id/stop` | Suspends compute now; the next request resumes it |
 | `apps.rollback(appId, deploymentId)` | `POST …/apps/:id/rollback` | Moves traffic to a ready deployment |
@@ -49,12 +49,13 @@ Deployments are immutable and numbered:
 | `apps.deployments.list(appId)` | `GET …/apps/:id/deployments` | Lists the deployment history |
 | `apps.deployments.get(appId, deploymentId)` | `GET …/deployments/:did` | Reads one deployment plus its events |
 | `apps.deployments.logs(appId, deploymentId, options?)` | `GET …/deployments/:did/logs` | Reads runtime logs with a cursor |
+| `apps.deployments.remove(appId, deploymentId)` | `DELETE …/deployments/:did` | Deletes one deployment and its image; `409` for the live deployment or an in-progress build. Returns `image: 'released' \| 'pending' \| 'none'` |
 
 Access is the App's own authorization policy:
 
 | Method | Wraps | What it does |
 |---|---|---|
-| `apps.access.get(appId)` | `GET …/apps/:id/access` | Reads the policy. Needs `project.customize.write` |
+| `apps.access.get(appId)` | `GET …/apps/:id/access` | Reads the policy. Needs `project.app.read` |
 | `apps.access.update(appId, input)` | `PATCH …/apps/:id/access` | Replaces the policy and bumps its revision |
 | `apps.access.session(appId)` | `POST …/apps/:id/access-session` | Mints a five-minute URL that exchanges into a host-only cookie |
 

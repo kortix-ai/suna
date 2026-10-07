@@ -23,9 +23,11 @@ import { sessionLifecycleCommands } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
+import { isPgBroadcastListening, waitForLifecycleCommandSettle } from '../../shared/pg-broadcast';
 import { closeSandboxTurnByMessageId } from '../sandbox-turn-lifecycle';
-import { readSessionMessageTip, removeRuntimeMessage, resolveSessionOpencodeEndpoint } from './runtime-client';
-import { WORKSPACE, sessionRuntimeFetch } from './runtime-fetch';
+import { deleteRuntimeMessage, readSessionMessageTip, removeRuntimeMessage, resolveSessionOpencodeEndpoint } from './runtime-client';
+import { sessionRuntimeFetch } from './runtime-fetch';
+import { legacyRuntimePaths } from './legacy-runtime-rest';
 import { reachedPlacement, strandedPlacement, type PlacementTipMessage } from './forwarded-placement';
 import { deleteInboxRowsWithAttachmentGrace, inboxScope } from './inbox-rows';
 import { wireMessageIdMatches } from './wire-id-match';
@@ -37,6 +39,8 @@ function isOnWire(result: unknown): boolean {
 import type { SessionLifecycleCommandRow } from './store';
 
 const TIP_LIMIT = 30;
+const SETTLE_BUDGET_MS = 3_200;
+const POLL_FALLBACK_MS = 400;
 
 export type CancelForwardedOutcome =
   | { outcome: 'cancelled'; row: SessionLifecycleCommandRow }
@@ -67,29 +71,35 @@ export async function cancelForwardedPrompt(
   // A row the drain has CLAIMED settles into `forwarded` within ~1.5 s (one
   // proxied POST). The click that races that window waits it out rather than
   // refusing — from the user's side the prompt is equally "queued" either way.
+  // It waits on the settle itself (a NOTIFY from any replica), re-reading the
+  // row on each wake; without the LISTEN it re-reads every 400 ms as before.
   let row: SessionLifecycleCommandRow | undefined;
-  for (let attempt = 0; attempt < 8; attempt += 1) {
+  const deadline = Date.now() + SETTLE_BUDGET_MS;
+  for (;;) {
+    const settle = waitForLifecycleCommandSettle(
+      promptId,
+      isPgBroadcastListening() ? deadline - Date.now() : POLL_FALLBACK_MS,
+    );
     const [found] = await db
       .select()
       .from(sessionLifecycleCommands)
       .where(and(eq(sessionLifecycleCommands.commandId, promptId), inboxScope(sessionId)))
       .limit(1);
+    if (found?.status === 'running' && Date.now() < deadline) {
+      await settle.done;
+      continue;
+    }
+    settle.cancel();
     if (!found) return { outcome: 'not_forwarded' };
     // ON THE WIRE: forwarded, or already confirmed `delivered` — the daemon's
     // acceptance relay confirms on PERSISTENCE (~1 s after delivery), long
     // before any model step reads the message. The tip read below is what
     // decides "actually being answered".
-    if (found.status === 'succeeded' && isOnWire(found.result)) {
-      row = found as SessionLifecycleCommandRow;
-      break;
-    }
-    if (found.status === 'queued' || found.status === 'failed') {
-      // Fell back into the queue while we watched — the plain delete path
-      // owns it again.
-      return { outcome: 'not_forwarded' };
-    }
-    if (found.status !== 'running') return { outcome: 'not_forwarded' };
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    if (found.status === 'succeeded' && isOnWire(found.result)) row = found as SessionLifecycleCommandRow;
+    // `queued`/`failed`: fell back into the queue while we watched — the plain
+    // delete path owns it again. Anything else is not on the wire either.
+    else if (found.status !== 'running') return { outcome: 'not_forwarded' };
+    break;
   }
   if (!row) {
     logger.warn('[cancel-forwarded] row never settled out of running', { session_id: sessionId, prompt_id: promptId });
@@ -106,7 +116,6 @@ export async function cancelForwardedPrompt(
     logger.warn('[cancel-forwarded] endpoint unresolved', { session_id: sessionId, prompt_id: promptId });
     return { outcome: 'unreachable' };
   }
-  const base = `/session/${encodeURIComponent(resolved.opencodeSessionId)}`;
 
   let tip: PlacementTipMessage[] | null;
   try {
@@ -128,6 +137,22 @@ export async function cancelForwardedPrompt(
     if (!verdict.stranded && reachedPlacement(tip, id)) return { outcome: 'answered' };
   }
 
+  // A STEER pi has not read is in no transcript: kortixd holds it in front of
+  // the turn and publishes it when the turn reads it. Only its DELETE takes it
+  // back: 2xx removed, 404 gone, 409 read (R10).
+  if (present.length === 0 && typeof result.steered_into_message_id === 'string') {
+    for (const id of targetIds) {
+      let status: number;
+      try {
+        status = (await deleteRuntimeMessage(resolved, id)).status;
+      } catch {
+        return { outcome: 'unreachable' };
+      }
+      if (status === 409) return { outcome: 'answered' };
+      if (status >= 300 && status !== 404) return { outcome: 'unreachable' };
+    }
+  }
+
   // Take the copies out. Whole-message first (works while idle); when the
   // loop is busy that route is refused — empty the message part by part
   // instead, which the model then never sees.
@@ -144,7 +169,7 @@ export async function cancelForwardedPrompt(
         const res = await sessionRuntimeFetch(
           resolved.endpoint,
           'DELETE',
-          `${base}/message/${encodeURIComponent(message.id)}/part/${encodeURIComponent(partId)}?directory=${encodeURIComponent(WORKSPACE)}`,
+          legacyRuntimePaths.part(resolved.opencodeSessionId, message.id, partId),
         );
         if (!res.ok && res.status !== 404) {
           logger.warn('[cancel-forwarded] part delete refused', {

@@ -1,6 +1,7 @@
-import { readFileSync, readdirSync } from 'node:fs';
-import { extname, join, relative } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import ts from 'typescript';
+import { sourceFiles } from '../../../scripts/lib/sdk-boundary-scan.mjs';
 
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx']);
 const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
@@ -35,6 +36,7 @@ const CANONICAL_SDK_ENTRIES = new Set([
   '@kortix/sdk',
   '@kortix/sdk/react',
   '@kortix/sdk/server',
+  '@kortix/sdk/workspace-search',
   '@kortix/sdk/internal/idb-sync-cache',
   '@kortix/sdk/internal/diagnostics-store',
   '@kortix/sdk/internal/managed-storage',
@@ -114,21 +116,37 @@ const FORBIDDEN_KORTIX_NETWORK_PATHS = [
   /\/user-roles/,
 ];
 
-function productionSourceFiles(root) {
-  const files = [];
-  const visit = (directory) => {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      const absolute = join(directory, entry.name);
-      if (entry.isDirectory()) {
-        visit(absolute);
-        continue;
-      }
-      if (!SOURCE_EXTENSIONS.has(extname(entry.name)) || TEST_FILE.test(entry.name)) continue;
-      files.push(absolute);
-    }
-  };
-  visit(root);
-  return files.sort();
+const RUNTIME_NOT_READY_PHRASE = /opencode not ready/i;
+const RUNTIME_QUERY_KEY_ROOT = 'opencode';
+
+const QUERY_CACHE_METHODS = new Set([
+  'cancelQueries',
+  'ensureQueryData',
+  'fetchQuery',
+  'getQueryData',
+  'getQueryState',
+  'invalidateQueries',
+  'prefetchQuery',
+  'refetchQueries',
+  'removeQueries',
+  'resetQueries',
+  'setQueryData',
+]);
+
+/**
+ * An array literal used as a React Query key: the value of a `queryKey`
+ * property, or the first argument of a query-cache method. A plain list that
+ * starts with the word (provider ids, a demo table) is not a key.
+ */
+function isQueryKey(array) {
+  const parent = array.parent;
+  if (ts.isPropertyAssignment(parent)) return parent.name.getText() === 'queryKey';
+  return (
+    ts.isCallExpression(parent) &&
+    parent.arguments[0] === array &&
+    ts.isPropertyAccessExpression(parent.expression) &&
+    QUERY_CACHE_METHODS.has(parent.expression.name.text)
+  );
 }
 
 function lineOf(sourceFile, node) {
@@ -147,6 +165,26 @@ function networkPathViolation(value) {
   return FORBIDDEN_KORTIX_NETWORK_PATHS.some((pattern) => pattern.test(value));
 }
 
+// A `fetch` whose URL is built from the backend base is a hand-rolled Kortix
+// API call, whatever its path: the path denylist above cannot name every route.
+const BACKEND_BASE = /\b(?:BACKEND_URL|backendUrl|getBackendUrl|getApiUrl)\b/;
+
+/** The initializer of the `const`/`let` named `identifier`, searched outward. */
+function initializerOf(identifier) {
+  for (let node = identifier.parent; node; node = node.parent) {
+    if (!ts.isBlock(node) && !ts.isSourceFile(node)) continue;
+    for (const statement of node.statements) {
+      if (!ts.isVariableStatement(statement)) continue;
+      for (const declaration of statement.declarationList.declarations) {
+        if (ts.isIdentifier(declaration.name) && declaration.name.text === identifier.text) {
+          return declaration.initializer;
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
 function networkTargetText(node) {
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
   if (ts.isTemplateExpression(node)) {
@@ -159,7 +197,11 @@ function networkTargetText(node) {
 
 export function scanSdkBoundary(sourceRoot) {
   const violations = [];
-  for (const absolute of productionSourceFiles(sourceRoot)) {
+  for (const absolute of sourceFiles(sourceRoot, {
+    extensions: SOURCE_EXTENSIONS,
+    skip: (path) => TEST_FILE.test(path),
+    sort: true,
+  })) {
     const code = readFileSync(absolute, 'utf8');
     const sourceFile = ts.createSourceFile(
       absolute,
@@ -244,19 +286,59 @@ export function scanSdkBoundary(sourceRoot) {
           });
         }
       }
+      // F2: the daemon's not-ready answer differs per harness and the SDK
+      // classifies every spelling (`isRuntimeNotReadyResponse`,
+      // `isRuntimeStartingError`, `RUNTIME_NOT_READY_MARKERS`). A phrase
+      // spelled here covers one harness and drifts.
+      const literalText = ts.isTemplateExpression(node)
+        ? networkTargetText(node)
+        : ts.isStringLiteral(node) ||
+            ts.isNoSubstitutionTemplateLiteral(node) ||
+            ts.isRegularExpressionLiteral(node)
+          ? node.text
+          : '';
+      if (RUNTIME_NOT_READY_PHRASE.test(literalText)) {
+        violations.push({
+          file,
+          line: lineOf(sourceFile, node),
+          kind: 'runtime-not-ready-string',
+          source: literalText,
+        });
+      }
+      // F2: runtime cache keys are the SDK's (`runtimeKeys`,
+      // `resetRuntimeQueries`); their root segment is not a host contract.
+      if (
+        ts.isArrayLiteralExpression(node) &&
+        node.elements[0] &&
+        ts.isStringLiteral(node.elements[0]) &&
+        node.elements[0].text === RUNTIME_QUERY_KEY_ROOT &&
+        isQueryKey(node)
+      ) {
+        violations.push({
+          file,
+          line: lineOf(sourceFile, node),
+          kind: 'runtime-query-key',
+          source: RUNTIME_QUERY_KEY_ROOT,
+        });
+      }
       if (
         ts.isCallExpression(node) &&
         ts.isIdentifier(node.expression) &&
         (node.expression.text === 'fetch' || node.expression.text === 'EventSource') &&
         node.arguments[0]
       ) {
-        const target = networkTargetText(node.arguments[0]);
-        if (target && networkPathViolation(target)) {
+        const argument = node.arguments[0];
+        const urlNode = ts.isIdentifier(argument) ? (initializerOf(argument) ?? argument) : argument;
+        const target = networkTargetText(argument) || networkTargetText(urlNode);
+        if (
+          (target && networkPathViolation(target)) ||
+          (node.expression.text === 'fetch' && BACKEND_BASE.test(urlNode.getText(sourceFile)))
+        ) {
           violations.push({
             file,
             line: lineOf(sourceFile, node),
             kind: 'host-kortix-network',
-            source: target,
+            source: target || urlNode.getText(sourceFile),
           });
         }
       }

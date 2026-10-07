@@ -58,7 +58,7 @@ mock.module('../../session-title-generate', () => ({
   generateSessionTitleFromFirstPrompt: async () => {},
 }));
 
-mock.module('../../routes/shared', () => ({
+mock.module('../../session-open', () => ({
   openSession: async () => {
     events.push('open');
     return {
@@ -71,6 +71,7 @@ mock.module('../../routes/shared', () => ({
 
 mock.module('../../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://sandbox.test', headers: {} }),
+  invalidateSandbox: () => {},
   // Complete-module stand-ins: every export the (growing) import graph
   // reaches must exist, or the whole file dies with "Export named X not
   // found". `resolveServiceKey` is reached via runtime-client.ts → opencode-mapping.
@@ -89,7 +90,7 @@ mock.module('../../lib/sandbox-env-sync', () => ({
   },
 }));
 
-mock.module('../../../sandbox-proxy/routes/preview', () => ({
+mock.module('../../../sandbox-proxy/forward', () => ({
   forwardToSandbox: async () => {
     events.push('prompt');
     return new Response(null, { status: 204 });

@@ -64,11 +64,14 @@ export function usePublicShareLink({ projectId, sessionId, input }: PublicShareL
   );
 
   const mutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (expiresAt: string | null) => {
       if (!projectId || !sessionId || !input) {
         throw new Error('Nothing is selected to share');
       }
-      const result = await createSessionPublicShare(projectId, sessionId, input);
+      const result = await createSessionPublicShare(projectId, sessionId, {
+        ...input,
+        expires_at: expiresAt,
+      });
       const publicUrl = publicShareUrl(result.share.public_path);
       if (!publicUrl) {
         throw new Error('Share link was not returned');
@@ -104,7 +107,9 @@ export function usePublicShareLink({ projectId, sessionId, input }: PublicShareL
       onOpenChange: (open: boolean) => {
         if (!mutation.isPending) setConfirmOpen(open);
       },
-      onConfirm: () => mutation.mutate(),
+      /** `expiresAt` is an ISO timestamp, or null for a link that never expires. */
+      onConfirm: (expiresAt: string | null = null) =>
+        mutation.mutate(typeof expiresAt === 'string' ? expiresAt : null),
       isPending: mutation.isPending,
     },
     isPending: mutation.isPending,

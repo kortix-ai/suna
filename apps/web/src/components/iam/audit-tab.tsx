@@ -56,7 +56,7 @@ import { localizeUiCatalog, translateUiCatalogText } from '@/i18n/localize-ui-ca
 import { PRODUCT_CATALOG_TRANSLATION_KEYS } from '@/i18n/product-catalog-translation-keys.generated';
 import { getSupabaseAccessTokenWithRetry } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
-import { type IamAuditEvent, listAuditEvents } from '@/lib/iam-client';
+import { type IamAuditEvent, type ListAuditFilter, listAuditEvents } from '@/lib/iam-client';
 import { CREDENTIAL_KINDS, CREDENTIAL_LABEL_KEYS, credentialVia } from './audit-credential-label';
 import { cn } from '@/lib/utils';
 import {
@@ -106,6 +106,27 @@ const EMPTY_FILTER: AuditFilterState = {
   since: '',
   until: '',
 };
+
+/** The filter state as the audit wire type: a blank UI field drops out, a set
+ *  one maps to its wire key. The one projection for both callers — the list
+ *  query adds its `cursor`/`limit` and the paginated export its `format`/`
+ *  cursor` on top; each used to carry its own copy of these twelve mappings. */
+export function auditFilterWire(filter: AuditFilterState): ListAuditFilter {
+  return {
+    action: filter.action || undefined,
+    actor: filter.actor || undefined,
+    actor_type: filter.actorType || undefined,
+    project_id: filter.projectId || undefined,
+    session_id: filter.sessionId || undefined,
+    credential_kind: filter.credentialKind || undefined,
+    phase: filter.phase || undefined,
+    outcome: filter.outcome || undefined,
+    resource_type: filter.resourceType || undefined,
+    q: filter.q || undefined,
+    since: filter.since || undefined,
+    until: filter.until || undefined,
+  };
+}
 
 const QUICK_FILTERS: Array<{
   label: string;
@@ -249,22 +270,7 @@ export function AuditTab({ accountId }: { accountId: string }) {
   const query = useInfiniteQuery({
     queryKey: ['audit', accountId, filter],
     queryFn: ({ pageParam }) =>
-      listAuditEvents(accountId, {
-        action: filter.action || undefined,
-        actor: filter.actor || undefined,
-        actor_type: filter.actorType || undefined,
-        project_id: filter.projectId || undefined,
-        session_id: filter.sessionId || undefined,
-        credential_kind: filter.credentialKind || undefined,
-        phase: filter.phase || undefined,
-        outcome: filter.outcome || undefined,
-        resource_type: filter.resourceType || undefined,
-        q: filter.q || undefined,
-        since: filter.since || undefined,
-        until: filter.until || undefined,
-        cursor: pageParam,
-        limit: 50,
-      }),
+      listAuditEvents(accountId, { ...auditFilterWire(filter), cursor: pageParam, limit: 50 }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
   });
@@ -290,22 +296,7 @@ export function AuditTab({ accountId }: { accountId: string }) {
       for (;;) {
         const result = await downloadAccountAudit(
           accountId,
-          {
-            format,
-            action: filter.action || undefined,
-            actor: filter.actor || undefined,
-            actor_type: filter.actorType || undefined,
-            project_id: filter.projectId || undefined,
-            session_id: filter.sessionId || undefined,
-            credential_kind: filter.credentialKind || undefined,
-            phase: filter.phase || undefined,
-            outcome: filter.outcome || undefined,
-            resource_type: filter.resourceType || undefined,
-            q: filter.q || undefined,
-            since: filter.since || undefined,
-            until: filter.until || undefined,
-            cursor,
-          },
+          { format, ...auditFilterWire(filter), cursor },
           { backendUrl: getEnv().BACKEND_URL ?? '', accessToken: token },
         );
         filename ??= result.filename;
@@ -354,6 +345,9 @@ export function AuditTab({ accountId }: { accountId: string }) {
           </p>
           <p className="text-muted-foreground max-w-2xl text-xs leading-relaxed">
             {tI18nComplete.raw('text862397da3718')}
+          </p>
+          <p className="text-muted-foreground max-w-2xl text-xs leading-relaxed">
+            {tI18nComplete.raw('textd8b78d762ad0')}
           </p>
         </div>
         <DropdownMenu>

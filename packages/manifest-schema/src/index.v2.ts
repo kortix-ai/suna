@@ -61,9 +61,8 @@ export type AgentModeV2 = 'primary' | 'subagent' | 'all';
 export type WorkspaceModeV2 = 'runtime' | 'read' | 'branch';
 
 /** Session runtimes — which agent harness a session boots inside its sandbox.
- *  `pi` runs pi-agent-core in-process in the sandbox daemon (`KORTIX_HARNESS=pi`);
- *  with the project's `pi_worker` feature flag it instead boots the split
- *  worker/environment topology. Anything else — including absence — keeps the
+ *  `pi` runs pi-agent-core in-process in the sandbox daemon (`KORTIX_HARNESS=pi`).
+ *  Anything else — including absence — keeps the
  *  OpenCode path byte-for-byte. Reserved room for `claude` later. */
 export type RuntimeV2 = 'opencode' | 'pi';
 
@@ -179,8 +178,7 @@ export interface AgentBlockV2 {
    *  (slugs | "all" | "none"), deny-by-default when omitted. A `project`-mode
    *  App needs only `project.app.read` in `kortix_permissions`; a `public` App
    *  admits everyone; a `password` App never admits a Kortix credential.
-   *  Enforced by the App gate only while the project's `agent_principal`
-   *  flag is on. The validator cannot see whether the project has Apps
+   *  Enforced by the App gate. The validator cannot see whether the project has Apps
    *  enabled (a DB feature flag), so it checks shape only. */
   apps?: GrantSetV2;
   /** The project permissions (`project.*` IAM actions) this agent's session
@@ -246,20 +244,22 @@ export interface AppBlockV2 {
  * to-govern back-compat); v2 defaults to `'none'` (deny-by-default, spec
  * §2.2/§2.5) — same shape, opposite default. Shape errors (e.g. a garbage
  * string) resolve to `'none'`; `validateGrantList` is what surfaces those as
- * validation errors.
+ * validation errors. `"*"`, and any list containing `*`, is `'all'`.
  */
 export function resolveGrantSet(value: unknown, defaultWhenOmitted: 'all' | 'none'): GrantSetV2 {
   if (value === undefined || value === null) return defaultWhenOmitted;
   if (typeof value === 'string') {
     const v = value.trim().toLowerCase();
     if (v === '' || v === 'none') return 'none';
-    if (v === 'all') return 'all';
+    if (v === 'all' || v === '*') return 'all';
     return 'none';
   }
   if (Array.isArray(value)) {
-    return value
+    const items = value
       .filter((item): item is string => typeof item === 'string' && item.trim() !== '')
       .map((item) => item.trim());
+    // `*` is a synonym of `all`, alone or beside other entries.
+    return items.includes('*') ? 'all' : items;
   }
   return defaultWhenOmitted;
 }
@@ -567,7 +567,7 @@ const MOVED_TO_AGENT_MD_KEYS = [
 ] as const;
 
 /**
- * Validate an agent's native `.md` frontmatter as parsed OpenCode behavior
+ * Validate an agent's `.md` frontmatter: its behavior on every harness
  * (spec §2.2, 2026-07-05 redirect — the ONE home for mode/model/temperature/
  * top_p/steps/variant/color/hidden/permission/description). This is NOT part
  * of `validateManifest`'s pipeline (frontmatter lives in a repo file the
@@ -575,8 +575,8 @@ const MOVED_TO_AGENT_MD_KEYS = [
  * (compile-agent-config.ts), which DOES read the file, to reuse the exact
  * same field rules instead of re-deriving them. A stock OpenCode agent `.md`
  * with none of these fields set is valid as-is (every field optional); the
- * deprecated upstream `tools`/`maxSteps` fields are still flagged so an
- * author gets a pointer instead of a silently-ignored key.
+ * retired `tools`/`maxSteps` names are still flagged so an author gets a
+ * pointer instead of a silently-ignored key.
  */
 export function validateAgentMdFrontmatter(
   frontmatter: Record<string, unknown>,
@@ -646,18 +646,18 @@ export function validateAgentMdFrontmatter(
     validatePermissionConfig(frontmatter.permission, `${where}.permission`, issues);
   }
 
-  // Deprecated upstream fields — pointer errors, not silent pass-through.
+  // Retired field names — pointer errors, not silent pass-through.
   if (frontmatter.tools !== undefined) {
     issues.push({
       path: `${where}.tools`,
-      message: '`tools` is deprecated upstream — use `permission` instead.',
+      message: '`tools` is not an agent setting — use `permission` instead.',
       severity: 'error',
     });
   }
   if (frontmatter.maxSteps !== undefined) {
     issues.push({
       path: `${where}.maxSteps`,
-      message: '`maxSteps` is deprecated upstream — use `steps` instead.',
+      message: '`maxSteps` is not an agent setting — use `steps` instead.',
       severity: 'error',
     });
   }

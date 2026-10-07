@@ -10,15 +10,17 @@ import {
 import SectionHeader from '@/features/marketing/component/section-header';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import type { ReactNode } from 'react';
+import { safeJsonForHtml } from '@/lib/security/safe-json';
 import { faq, type FaqItem } from './content';
 
 type FaqSectionProps = {
   eyebrow?: string;
   title?: string;
   items?: readonly FaqItem[];
+  titleClassName?: string;
 };
 
-export function FaqSection({ eyebrow, title, items }: FaqSectionProps): ReactNode {
+export function FaqSection({ eyebrow, title, items, titleClassName }: FaqSectionProps): ReactNode {
   const localizedFaq = useLocalizedUiCatalog(faq);
   const resolvedEyebrow = eyebrow ?? localizedFaq.eyebrow;
   const resolvedTitle = title ?? localizedFaq.title;
@@ -29,8 +31,29 @@ export function FaqSection({ eyebrow, title, items }: FaqSectionProps): ReactNod
       className="mx-auto grid w-full max-w-7xl grid-cols-1 px-6 py-24 md:py-30 lg:grid-cols-[35%_minmax(0,1fr)] lg:gap-x-12"
     >
       <div className="w-full min-w-0">
-        <SectionHeader eyebrow={resolvedEyebrow} title={resolvedTitle} />
+        <SectionHeader
+          eyebrow={resolvedEyebrow}
+          title={resolvedTitle}
+          titleClassName={titleClassName}
+        />
       </div>
+
+      {/* The answers sit in a collapsed accordion; this states every one for
+          search and answer engines, in the reader's locale. */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: safeJsonForHtml({
+            '@context': 'https://schema.org',
+            '@type': 'FAQPage',
+            mainEntity: resolvedItems.map((item) => ({
+              '@type': 'Question',
+              name: item.question,
+              acceptedAnswer: { '@type': 'Answer', text: item.answer },
+            })),
+          }),
+        }}
+      />
 
       <Reveal delay={0.06} className="mt-10 w-full min-w-0 lg:mt-0">
         <Accordion type="single" collapsible className="flex w-full flex-col gap-1 border-0">

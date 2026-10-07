@@ -25,7 +25,7 @@ import { projectSecrets } from '@kortix/db';
 import { GrantSecretToAgentInputSchema, GrantSecretToAgentResultSchema } from '@kortix/api-contract';
 import { and, eq, isNull, or } from 'drizzle-orm';
 import { auth, errors, json } from '../../openapi';
-import { applyAgentScope, extractAgents } from '../agents';
+import { applyAgentScope, extractAgents, grantsByAgent } from '../agents';
 import {
   applyAgentScopeV2,
   grantSecretToAgentV2,
@@ -34,11 +34,14 @@ import {
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { PROJECT_ACTIONS } from '../../iam';
-import { isProjectSessionPrincipal } from '../../iam/agent-scope';
+import { assertNoGrantEscalation } from '../../iam/agent-grant-ceiling';
+import { isBorrowedSessionPrincipal } from '../../iam/agent-scope';
 import { db } from '../../shared/db';
 import { isValidIdentifier } from '../secrets';
 import { commitManifest, loadManifestForEdit } from '../lib/triggers';
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
+import { eagerlyProvisionAgentIdentities, type AgentIdentity } from '../../accounts/iam/custom-roles';
+import { listAgentServiceAccounts } from '../../repositories/service-accounts';
 
 // `'all'` = every item the launcher can see; a list = an explicit allowlist;
 // `[]` = none. Mirrors the AgentSpec GrantSet.
@@ -55,152 +58,6 @@ const AgentScopeBody = z.object({
   // route rather than forcing a whole-block `/config` PUT for one list.
   apps: GrantSetSchema.optional(),
 });
-
-projectsApp.openapi(
-  createRoute({
-    method: 'put',
-    path: '/{projectId}/agents/{agentName}/scope',
-    tags: ['projects'],
-    summary: 'Set which secrets and connectors an agent may use',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string(), agentName: z.string() }),
-      body: { content: { 'application/json': { schema: AgentScopeBody } } },
-    },
-    responses: {
-      200: json(z.any(), 'Updated agent scope'),
-      ...errors(400, 403, 404, 409, 502),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const agentName = c.req.param('agentName');
-    // Floor 'read' (membership); the real gate is project.agent.write below.
-    // Scoping an agent edits its `[[agents]]` manifest entry (binding its
-    // connectors AND secrets), so it's an agent-config edit — agent.write is the
-    // precise leaf (a single connector/secret leaf wouldn't cover both). Was
-    // 'manage' → project.write, so unchecking agent.write did nothing here.
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
-    );
-
-    const parsed = AgentScopeBody.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: 'Invalid body', code: 'invalid_body' }, 400);
-    const { env, connectors, connectors_required, connectors_personal, apps } = parsed.data;
-    const normalizedRequired = normalizeRequiredConnectorAliases({
-      connectors_required,
-      connectors_personal,
-    });
-    if (!normalizedRequired.ok) {
-      return c.json({ error: normalizedRequired.error, code: 'invalid_body' }, 400);
-    }
-    const connectorsRequired = normalizedRequired.block.connectors_required as string[] | undefined;
-    if (
-      env === undefined &&
-      connectors === undefined &&
-      connectorsRequired === undefined &&
-      apps === undefined
-    ) {
-      return c.json(
-        {
-          error: 'Provide env, connectors, connectors_required and/or apps',
-          code: 'nothing_to_update',
-        },
-        400,
-      );
-    }
-
-    let manifest;
-    try {
-      manifest = await loadManifestForEdit(loaded.row);
-    } catch (e) {
-      return c.json(
-        { error: (e as Error).message || 'failed to read manifest', code: 'manifest_read' },
-        400,
-      );
-    }
-
-    // The agent must already be declared — this route SCOPES an existing agent,
-    // it doesn't create the roster entry (that's the fuller /config editor). v1
-    // stores agents as a `[[agents]]` array; v2 (kortix.yaml) as an `agents:`
-    // map. The v1-only path treated a v2 map as an empty array, so EVERY scope
-    // edit on a YAML project 404'd "agent not found" — branch on the schema.
-    if (manifest.schemaVersion >= 2) {
-      const applied = applyAgentScopeV2(manifest, agentName, {
-        env,
-        connectors,
-        connectorsRequired,
-        apps,
-      });
-      if (!applied.ok) {
-        return applied.notFound
-          ? c.json({ error: applied.error, code: 'agent_not_found' }, 404)
-          : c.json({ error: applied.error, code: 'invalid_scope', issues: applied.issues }, 400);
-      }
-      manifest.raw = applied.raw;
-    } else {
-      const current = Array.isArray(manifest.raw.agents)
-        ? (manifest.raw.agents as Record<string, unknown>[])
-        : [];
-      if (connectorsRequired !== undefined) {
-        return c.json(
-          {
-            error: 'connectors_required requires a v2 (kortix.yaml) manifest',
-            code: 'unsupported_in_v1',
-          },
-          400,
-        );
-      }
-      // v1 `[[agents]]` has no `apps` key — `applyAgentScope` would drop it
-      // silently and answer 200 with a grant that was never written.
-      if (apps !== undefined) {
-        return c.json(
-          { error: 'apps requires a v2 (kortix.yaml) manifest', code: 'unsupported_in_v1' },
-          400,
-        );
-      }
-      const applied = applyAgentScope(current, agentName, { env, connectors }, manifest.path);
-      if (!applied.ok) return c.json({ error: applied.error, code: 'agent_not_found' }, 404);
-      manifest.raw.agents = applied.agents;
-    }
-
-    // Shape-validate through the real parser before committing — a malformed
-    // grant set is a clean 400, never a broken manifest.
-    const check = extractAgents(manifest);
-    const problem = check.errors.find((e) => e.name === agentName);
-    if (problem) return c.json({ error: problem.error, code: 'invalid_scope' }, 400);
-
-    const committed = await commitManifest(
-      loaded.row,
-      manifest,
-      `chore: scope agent ${agentName} (secrets/connectors/apps)`,
-    );
-    if ('error' in committed) {
-      return c.json({ error: committed.error }, committed.status as 400 | 409 | 502);
-    }
-    // A person's edit is pushed now. An agent session's is not: forcing a
-    // re-push is refused to agents on POST /secrets/sync (the re-mint half of
-    // the policy-widening chain), and this route must not become a side door to
-    // it. The agent's own next prompt re-syncs through the normal path.
-    if (!isProjectSessionPrincipal(c)) pushGrantChange(projectId);
-
-    const spec = check.specs.find((s) => s.name === agentName);
-    return c.json({
-      ok: true,
-      agent: agentName,
-      env: spec?.env ?? 'all',
-      connectors: spec?.connectors ?? [],
-      apps: spec?.apps ?? [],
-      connectors_required: spec?.connectorsRequired ?? [],
-    });
-  },
-);
 
 /**
  * A grant edit changes which secrets live sessions may receive. Push it now:
@@ -219,175 +76,387 @@ function pushGrantChange(projectId: string): void {
   });
 }
 
-// POST /:projectId/secrets/:identifier/grant
-//
-// The one-click fix behind the secrets page's "No agent can receive this
-// secret" warning (`delivery_blocked_reason: 'no_agent_grant'`, see
-// `secretDeliveryBlockedReason` in ../lib/serializers.ts). An `egress`/`broker`
-// row is delivered ONLY when some agent's `secrets:` list names its identifier
-// — `'all'` does not count (../../secrets/strategy.ts) — so before this route
-// the warning was a dead end that only a hand-edit of kortix.yaml could clear.
-//
-// Deliberately narrower than PUT /agents/:agentName/scope above: that route
-// REPLACES a grant set and 404s an agent the manifest does not declare, which
-// is the wrong shape for "make this one secret reach this one agent". This one
-// only widens, and upserts the agent entry when the roster omits it.
-//
-// Lives in this file because it is the same manifest round-trip as the scope
-// route — same authz, same loadManifestForEdit/commitManifest pair.
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/secrets/{identifier}/grant',
-    tags: ['secrets'],
-    summary: 'Grant a secret to an agent',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string(), identifier: z.string() }),
-      body: { content: { 'application/json': { schema: GrantSecretToAgentInputSchema } } },
+export function registerAgentScopeRoutes(): void {
+  projectsApp.openapi(
+    createRoute({
+      method: 'put',
+      path: '/{projectId}/agents/{agentName}/scope',
+      tags: ['projects'],
+      summary: 'Set which secrets and connectors an agent may use',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), agentName: z.string() }),
+        body: { content: { 'application/json': { schema: AgentScopeBody } } },
+      },
+      responses: {
+        200: json(z.any(), 'Updated agent scope'),
+        ...errors(400, 403, 404, 409, 502),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const agentName = c.req.param('agentName');
+      // Floor 'read' (membership); the real gate is project.agent.write below.
+      // Scoping an agent edits its `[[agents]]` manifest entry (binding its
+      // connectors AND secrets), so it's an agent-config edit — agent.write is the
+      // precise leaf (a single connector/secret leaf wouldn't cover both). Was
+      // 'manage' → project.write, so unchecking agent.write did nothing here.
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
+      );
+
+      const parsed = AgentScopeBody.safeParse(await c.req.json().catch(() => null));
+      if (!parsed.success) return c.json({ error: 'Invalid body', code: 'invalid_body' }, 400);
+      const { env, connectors, connectors_required, connectors_personal, apps } = parsed.data;
+      const normalizedRequired = normalizeRequiredConnectorAliases({
+        connectors_required,
+        connectors_personal,
+      });
+      if (!normalizedRequired.ok) {
+        return c.json({ error: normalizedRequired.error, code: 'invalid_body' }, 400);
+      }
+      const connectorsRequired = normalizedRequired.block.connectors_required as string[] | undefined;
+      if (
+        env === undefined &&
+        connectors === undefined &&
+        connectorsRequired === undefined &&
+        apps === undefined
+      ) {
+        return c.json(
+          {
+            error: 'Provide env, connectors, connectors_required and/or apps',
+            code: 'nothing_to_update',
+          },
+          400,
+        );
+      }
+
+      let manifest;
+      try {
+        manifest = await loadManifestForEdit(loaded.row);
+      } catch (e) {
+        return c.json(
+          { error: (e as Error).message || 'failed to read manifest', code: 'manifest_read' },
+          400,
+        );
+      }
+      // Read before the edit below mutates `manifest.raw` (v1 in place).
+      const grantsBefore = grantsByAgent(extractAgents(manifest));
+
+      // The agent must already be declared — this route SCOPES an existing agent,
+      // it doesn't create the roster entry (that's the fuller /config editor). v1
+      // stores agents as a `[[agents]]` array; v2 (kortix.yaml) as an `agents:`
+      // map. The v1-only path treated a v2 map as an empty array, so EVERY scope
+      // edit on a YAML project 404'd "agent not found" — branch on the schema.
+      if (manifest.schemaVersion >= 2) {
+        const applied = applyAgentScopeV2(manifest, agentName, {
+          env,
+          connectors,
+          connectorsRequired,
+          apps,
+        });
+        if (!applied.ok) {
+          return applied.notFound
+            ? c.json({ error: applied.error, code: 'agent_not_found' }, 404)
+            : c.json({ error: applied.error, code: 'invalid_scope', issues: applied.issues }, 400);
+        }
+        manifest.raw = applied.raw;
+      } else {
+        const current = Array.isArray(manifest.raw.agents)
+          ? (manifest.raw.agents as Record<string, unknown>[])
+          : [];
+        if (connectorsRequired !== undefined) {
+          return c.json(
+            {
+              error: 'connectors_required requires a v2 (kortix.yaml) manifest',
+              code: 'unsupported_in_v1',
+            },
+            400,
+          );
+        }
+        // v1 `[[agents]]` has no `apps` key — `applyAgentScope` would drop it
+        // silently and answer 200 with a grant that was never written.
+        if (apps !== undefined) {
+          return c.json(
+            { error: 'apps requires a v2 (kortix.yaml) manifest', code: 'unsupported_in_v1' },
+            400,
+          );
+        }
+        const applied = applyAgentScope(current, agentName, { env, connectors }, manifest.path);
+        if (!applied.ok) return c.json({ error: applied.error, code: 'agent_not_found' }, 404);
+        manifest.raw.agents = applied.agents;
+      }
+
+      // Shape-validate through the real parser before committing — a malformed
+      // grant set is a clean 400, never a broken manifest.
+      const check = extractAgents(manifest);
+      const problem = check.errors.find((e) => e.name === agentName);
+      if (problem) return c.json({ error: problem.error, code: 'invalid_scope' }, 400);
+      // An agent grants only what it holds (iam/agent-grant-ceiling.ts).
+      await assertNoGrantEscalation(c, projectId, grantsBefore, grantsByAgent(check));
+
+      const committed = await commitManifest(
+        loaded.row,
+        manifest,
+        `chore: scope agent ${agentName} (secrets/connectors/apps)`,
+      );
+      if ('error' in committed) {
+        return c.json({ error: committed.error }, committed.status as 400 | 409 | 502);
+      }
+      // Pushed now for a person and a governed agent. A session that borrows a
+      // human's authority may not force a re-push (POST /secrets/sync refuses it,
+      // the re-mint half of the policy-widening chain); its next prompt re-syncs.
+      if (!isBorrowedSessionPrincipal(c)) pushGrantChange(projectId);
+
+      const spec = check.specs.find((s) => s.name === agentName);
+      return c.json({
+        ok: true,
+        agent: agentName,
+        env: spec?.env ?? 'all',
+        connectors: spec?.connectors ?? [],
+        apps: spec?.apps ?? [],
+        connectors_required: spec?.connectorsRequired ?? [],
+      });
     },
-    responses: {
-      200: json(GrantSecretToAgentResultSchema, 'Secret granted to the agent'),
-      ...errors(400, 403, 404, 409, 502),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const identifierParam = c.req.param('identifier')?.trim();
-    if (!identifierParam || !isValidIdentifier(identifierParam)) {
-      return c.json({ error: 'Invalid secret identifier', code: 'invalid_identifier' }, 400);
-    }
-    const parsed = GrantSecretToAgentInputSchema.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: 'Invalid body', code: 'invalid_body' }, 400);
-    const agentName = parsed.data.agent;
+  );
 
-    // Same gate as the scope route above: membership floor, then agent.write as
-    // the precise leaf — this writes the agent's `[[agents]]`/`agents:` entry.
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
-    );
-    // BOTH leaves, because this route straddles two boundaries. Writing the
-    // agent entry is `project.agent.write`, but deciding what to write means
-    // reading secret metadata, and the secrets list itself is gated on
-    // `project.secret.read` (secrets.ts). They are separate entries in
-    // kortix.role_permissions, so a role can hold one without the other — and with
-    // only the write leaf the 404/409/200 split below would answer "does this
-    // identifier exist, and is its delivery denied?" for a caller deliberately
-    // kept off the secrets surface. Assert the read leaf before the lookup.
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_SECRET_READ,
-    );
-    // Belt over the central agent-grant fold, which is not enough here: that
-    // fold passes an agent session whose grant is NULL (an ungoverned project —
-    // `agentMayPerform(null)` is true), and an ungoverned project is exactly the
-    // case this route serves. A running session must never widen its own secret
-    // grant, so refuse every project-session principal outright.
-    if (isProjectSessionPrincipal(c)) {
-      return c.json(
-        { error: 'Agent sessions cannot grant a secret to an agent', code: 'agent_session_forbidden' },
-        403,
-      );
-    }
+  // POST /:projectId/secrets/:identifier/grant
+  //
+  // The one-click fix behind the secrets page's "No agent can receive this
+  // secret" warning (`delivery_blocked_reason: 'no_agent_grant'`, see
+  // `secretDeliveryBlockedReason` in ../lib/serializers.ts). An `egress`/`broker`
+  // row is delivered ONLY when some agent's `secrets:` list names its identifier
+  // — `'all'` does not count (../../secrets/strategy.ts) — so before this route
+  // the warning was a dead end that only a hand-edit of kortix.yaml could clear.
+  //
+  // Deliberately narrower than PUT /agents/:agentName/scope above: that route
+  // REPLACES a grant set and 404s an agent the manifest does not declare, which
+  // is the wrong shape for "make this one secret reach this one agent". This one
+  // only widens, and upserts the agent entry when the roster omits it.
+  //
+  // Lives in this file because it is the same manifest round-trip as the scope
+  // route — same authz, same loadManifestForEdit/commitManifest pair.
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{projectId}/secrets/{identifier}/grant',
+      tags: ['secrets'],
+      summary: 'Grant a secret to an agent',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), identifier: z.string() }),
+        body: { content: { 'application/json': { schema: GrantSecretToAgentInputSchema } } },
+      },
+      responses: {
+        200: json(GrantSecretToAgentResultSchema, 'Secret granted to the agent'),
+        ...errors(400, 403, 404, 409, 502),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const identifierParam = c.req.param('identifier')?.trim();
+      if (!identifierParam || !isValidIdentifier(identifierParam)) {
+        return c.json({ error: 'Invalid secret identifier', code: 'invalid_identifier' }, 400);
+      }
+      const parsed = GrantSecretToAgentInputSchema.safeParse(await c.req.json().catch(() => null));
+      if (!parsed.success) return c.json({ error: 'Invalid body', code: 'invalid_body' }, 400);
+      const agentName = parsed.data.agent;
 
-    // Scoped to the rows this caller can actually see (shared, plus their own
-    // override) — the same slice `loadSecretViewsForUser` builds the secrets
-    // page from. Without the owner filter the 404 boundary would answer "does
-    // another member hold a private secret under this identifier".
-    const rows = await db
-      .select({
-        identifier: projectSecrets.identifier,
-        ownerUserId: projectSecrets.ownerUserId,
-        strategy: projectSecrets.strategy,
-      })
-      .from(projectSecrets)
-      .where(
-        and(
-          eq(projectSecrets.projectId, projectId),
-          eq(projectSecrets.identifier, identifierParam),
-          or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, loaded.userId)),
-        ),
+      // Same gate as the scope route above: membership floor, then agent.write as
+      // the precise leaf — this writes the agent's `[[agents]]`/`agents:` entry.
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
       );
-    // One identifier can carry a shared row AND a per-user override row. The
-    // delivery policy the warning is about is the shared row's, exactly as
-    // `buildSecretView` (../lib/serializers.ts) reads it — shared first, the
-    // personal row only when no shared row exists.
-    const target = rows.find((row) => row.ownerUserId === null) ?? rows[0];
-    if (!target) return c.json({ error: 'Not found' }, 404);
-    const identifier = target.identifier;
-    if (target.strategy === 'denied') {
-      return c.json(
-        {
-          error: 'This secret is denied delivery. Change its delivery policy before granting it.',
-          code: 'secret_not_grantable',
-        },
-        409,
+      // BOTH leaves, because this route straddles two boundaries. Writing the
+      // agent entry is `project.agent.write`, but deciding what to write means
+      // reading secret metadata, and the secrets list itself is gated on
+      // `project.secret.read` (secrets.ts). They are separate entries in
+      // kortix.role_permissions, so a role can hold one without the other — and with
+      // only the write leaf the 404/409/200 split below would answer "does this
+      // identifier exist, and is its delivery denied?" for a caller deliberately
+      // kept off the secrets surface. Assert the read leaf before the lookup.
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_SECRET_READ,
       );
-    }
+      // Belt over the central agent-grant fold, which is not enough here: that
+      // fold passes an agent session whose grant is NULL (an ungoverned project —
+      // `agentMayPerform(null)` is true), and an ungoverned project is exactly the
+      // case this route serves. A session that borrows a human's authority must
+      // never widen its own secret grant. A governed agent's permissions decide.
+      if (isBorrowedSessionPrincipal(c)) {
+        return c.json(
+          { error: 'Agent sessions cannot grant a secret to an agent', code: 'agent_session_forbidden' },
+          403,
+        );
+      }
 
-    let manifest;
-    try {
-      manifest = await loadManifestForEdit(loaded.row);
-    } catch (e) {
-      return c.json(
-        { error: (e as Error).message || 'failed to read manifest', code: 'manifest_read' },
-        400,
-      );
-    }
-
-    // What `secrets: all` currently resolves to — the helper writes this out
-    // when it has to turn an `'all'` grant into an explicit list. Deliberately
-    // NOT owner-filtered like the lookup above: `'all'` covers another member's
-    // private override too, and dropping it here would revoke it from the agent.
-    // Read unconditionally so the helper stays pure; one indexed SELECT is noise
-    // next to the git commit this route performs.
-    const projectIdentifiers = (
-      await db
-        .selectDistinct({ identifier: projectSecrets.identifier })
+      // Scoped to the rows this caller can actually see (shared, plus their own
+      // override) — the same slice `loadSecretViewsForUser` builds the secrets
+      // page from. Without the owner filter the 404 boundary would answer "does
+      // another member hold a private secret under this identifier".
+      const rows = await db
+        .select({
+          identifier: projectSecrets.identifier,
+          ownerUserId: projectSecrets.ownerUserId,
+          strategy: projectSecrets.strategy,
+        })
         .from(projectSecrets)
-        .where(eq(projectSecrets.projectId, projectId))
-    ).map((row) => row.identifier);
+        .where(
+          and(
+            eq(projectSecrets.projectId, projectId),
+            eq(projectSecrets.identifier, identifierParam),
+            or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, loaded.userId)),
+          ),
+        );
+      // One identifier can carry a shared row AND a per-user override row. The
+      // delivery policy the warning is about is the shared row's, exactly as
+      // `buildSecretView` (../lib/serializers.ts) reads it — shared first, the
+      // personal row only when no shared row exists.
+      const target = rows.find((row) => row.ownerUserId === null) ?? rows[0];
+      if (!target) return c.json({ error: 'Not found' }, 404);
+      const identifier = target.identifier;
+      if (target.strategy === 'denied') {
+        return c.json(
+          {
+            error: 'This secret is denied delivery. Change its delivery policy before granting it.',
+            code: 'secret_not_grantable',
+          },
+          409,
+        );
+      }
 
-    const applied = grantSecretToAgentV2(manifest, agentName, identifier, projectIdentifiers);
-    if (!applied.ok) {
-      return applied.unsupportedV1
-        ? c.json({ error: applied.error, code: 'manifest_v1_unsupported' }, 400)
-        : c.json({ error: applied.error, code: 'invalid_grant', issues: applied.issues }, 400);
-    }
-    if (applied.alreadyGranted) {
+      let manifest;
+      try {
+        manifest = await loadManifestForEdit(loaded.row);
+      } catch (e) {
+        return c.json(
+          { error: (e as Error).message || 'failed to read manifest', code: 'manifest_read' },
+          400,
+        );
+      }
+
+      // What `secrets: all` currently resolves to — the helper writes this out
+      // when it has to turn an `'all'` grant into an explicit list. Deliberately
+      // NOT owner-filtered like the lookup above: `'all'` covers another member's
+      // private override too, and dropping it here would revoke it from the agent.
+      // Read unconditionally so the helper stays pure; one indexed SELECT is noise
+      // next to the git commit this route performs.
+      const projectIdentifiers = (
+        await db
+          .selectDistinct({ identifier: projectSecrets.identifier })
+          .from(projectSecrets)
+          .where(eq(projectSecrets.projectId, projectId))
+      ).map((row) => row.identifier);
+
+      const applied = grantSecretToAgentV2(manifest, agentName, identifier, projectIdentifiers);
+      if (!applied.ok) {
+        return applied.unsupportedV1
+          ? c.json({ error: applied.error, code: 'manifest_v1_unsupported' }, 400)
+          : c.json({ error: applied.error, code: 'invalid_grant', issues: applied.issues }, 400);
+      }
+      if (applied.alreadyGranted) {
+        return c.json({
+          identifier,
+          agent: agentName,
+          already_granted: true,
+          adopted_governance: false,
+        });
+      }
+      // An agent grants only what it holds: a governed agent cannot hand itself
+      // (or another agent) a secret outside its own `secrets:` list.
+      await assertNoGrantEscalation(
+        c,
+        projectId,
+        grantsByAgent(extractAgents(manifest)),
+        grantsByAgent(extractAgents({ ...manifest, raw: applied.raw })),
+      );
+      manifest.raw = applied.raw;
+
+      const committed = await commitManifest(
+        loaded.row,
+        manifest,
+        `chore(agents): grant ${identifier} to ${agentName}`,
+      );
+      if ('error' in committed) {
+        return c.json({ error: committed.error }, committed.status as 400 | 409 | 502);
+      }
+      pushGrantChange(projectId);
+
       return c.json({
         identifier,
         agent: agentName,
-        already_granted: true,
-        adopted_governance: false,
+        already_granted: false,
+        adopted_governance: applied.adoptedGovernance,
       });
-    }
-    manifest.raw = applied.raw;
+    },
+  );
 
-    const committed = await commitManifest(
-      loaded.row,
-      manifest,
-      `chore(agents): grant ${identifier} to ${agentName}`,
-    );
-    if ('error' in committed) {
-      return c.json({ error: committed.error }, committed.status as 400 | 409 | 502);
-    }
-    pushGrantChange(projectId);
-
-    return c.json({
-      identifier,
-      agent: agentName,
-      already_granted: false,
-      adopted_governance: applied.adoptedGovernance,
-    });
-  },
-);
+  // GET /v1/projects/:projectId/agent-identities
+  // This project's agents as principals — each agent's auto-provisioned service
+  // account — for a "Who can use it" picker (a secret value, a connector
+  // account). Project read: an agent's id and name, which every agent row already
+  // shows. The account-wide `/accounts/:id/iam/agent-identities` stays admin-only
+  // (`policy.read`) because it spans every project.
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/agent-identities',
+      tags: ['agents'],
+      summary: "List this project's agent identities (service accounts)",
+      ...auth,
+      request: { params: z.object({ projectId: z.string() }) },
+      responses: {
+        200: json(
+          z.object({
+            agents: z.array(
+              z.object({
+                service_account_id: z.string(),
+                name: z.string(),
+                project_id: z.string().nullable(),
+                agent_name: z.string().nullable(),
+              }),
+            ),
+          }),
+          "The project's agent identities",
+        ),
+        ...errors(404),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      const byKey = new Map<string, AgentIdentity>();
+      for (const row of await listAgentServiceAccounts(loaded.row.accountId)) {
+        if (row.projectId !== projectId) continue;
+        byKey.set(`${row.projectId}|${row.agentName}`, {
+          service_account_id: row.serviceAccountId,
+          name: row.name,
+          project_id: row.projectId,
+          agent_name: row.agentName,
+        });
+      }
+      await eagerlyProvisionAgentIdentities(loaded.row.accountId, [loaded.row], byKey);
+      const agents = [...byKey.values()]
+        .filter((agent) => agent.project_id === projectId)
+        .sort((a, b) => (a.agent_name ?? '').localeCompare(b.agent_name ?? ''));
+      return c.json({ agents });
+    },
+  );
+}

@@ -8,6 +8,7 @@ import { MoonIcon } from '@phosphor-icons/react';
 import { COMPOSER_INPUT_SLOT_CLASS, type SessionChatInputProps } from './composer';
 import type { ComposerQuote } from './composer-logic';
 import { QuoteList } from './quote-list';
+import { ServedModelBar } from './served-model-bar';
 
 /**
  * The composer's stack ABOVE the card: the `'above'` `/` dock anchor, the
@@ -31,12 +32,17 @@ export function ComposerAboveCard({
   quotes,
   quoteListLabels,
   handleRemoveQuote,
+  aboveSlot,
   inputSlot,
   notice = null,
   onNoticeRetry,
+  servedModel = null,
+  onModelChange,
   slashMenuPlacement = 'above',
 }: ComposerAboveCardProps) {
   const showQueueStrip = Boolean(inputSlot);
+  // The strip explains the model selector, so it shows only where one exists.
+  const served = onModelChange ? servedModel : null;
 
   return (
     <>
@@ -76,6 +82,9 @@ export function ComposerAboveCard({
       />
     </div>
 
+    {/* The queued messages: their own card, under the reply quotes. */}
+    {aboveSlot && <div className="mb-2 w-full empty:hidden">{aboveSlot}</div>}
+
     {/*
       The stack above the card. Each layer owns its OWN top rounding rather
       than leaning on a wrapper clip: the old `overflow-hidden rounded-t-xl`
@@ -86,7 +95,7 @@ export function ComposerAboveCard({
       (queue strip at 96%, first full-width bar, the card itself); a layer
       the SAME width as the one above stays square and shares the divider.
     */}
-    {(notice || showQueueStrip) && (
+    {(notice || served || showQueueStrip) && (
       <div className="relative isolate flex w-full flex-col items-center justify-center">
         {/*
           ONE element carries both the strip's chrome (bg, border, padding)
@@ -132,6 +141,8 @@ export function ComposerAboveCard({
             )}
           </div>
         )}
+
+        {served && <ServedModelBar notice={served} underNotice={Boolean(notice)} />}
       </div>
     )}
     </>

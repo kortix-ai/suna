@@ -1,8 +1,9 @@
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { config } from '../config';
-import { requestClientKey } from '../shared/client-ip';
+import { requestClientKey } from './client-ip';
 import { isTokenHashCached, isTokenValidated } from '../shared/token-hash';
+import { bearerToken } from '../shared/bearer-token';
 
 /**
  * Pre-authentication budget for UNKNOWN Kortix bearer tokens, per client IP.
@@ -26,6 +27,7 @@ const WINDOW_MS = 60_000;
 const MAX_TRACKED_ADDRESSES = 50_000;
 
 type Window = { count: number; startedAt: number };
+// replica-local: limit × API replicas; blunts token guessing, not a quota.
 const windows = new Map<string, Window>();
 
 function limit(): number {
@@ -108,10 +110,8 @@ export async function withTokenAttemptBudget<T>(
 /** The first `kortix_` credential a request presents, in resolver order. */
 export function presentedKortixToken(c: Context, cookieName?: string): string | null {
   const authorization = c.req.header('Authorization');
-  if (authorization?.startsWith('Bearer ')) {
-    const bearer = authorization.slice(7);
-    if (bearer.startsWith('kortix_')) return bearer;
-  }
+  const bearer = bearerToken(authorization);
+  if (bearer?.startsWith('kortix_')) return bearer;
   const header = c.req.header('X-Kortix-Token');
   if (header?.startsWith('kortix_')) return header;
   if (cookieName) {

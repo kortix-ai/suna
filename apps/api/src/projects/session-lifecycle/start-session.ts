@@ -3,16 +3,21 @@
 import { projectSessions } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
-import { openSession } from '../routes/shared';
+import { healSupersededSessionToken } from '../lib/heal-session-token';
+import { openSession } from '../session-open';
 import { awaitTerminalStage } from './await-stage';
 import type { SessionLifecycleResult, StartSessionCommand } from './types';
 
 export async function startSession(command: StartSessionCommand) {
+  // Before the box wakes: its daemon claims its first turn with the token the
+  // provider injected, and that token may have been revoked while the box kept it.
+  await healSupersededSessionToken(command.sessionId);
   const first = await openSession({
     loaded: command.loaded,
     visible: command.visible,
     projectId: command.projectId,
     sessionId: command.sessionId,
+    keepStopped: command.keepStopped,
   });
   // Optional long-poll: re-resolve (re-reading the live session row each tick,
   // like continueSession) until ready/terminal or the bounded deadline, so the
@@ -41,9 +46,10 @@ export async function startSession(command: StartSessionCommand) {
         visible: { row: fresh },
         projectId: command.projectId,
         sessionId: command.sessionId,
+        keepStopped: command.keepStopped,
       });
     },
-    { waitMs: command.waitMs ?? 0 },
+    { waitMs: command.waitMs ?? 0, signal: command.signal },
   );
   return {
     status: start.stage === 'ready' ? 'ready' : 'pending',

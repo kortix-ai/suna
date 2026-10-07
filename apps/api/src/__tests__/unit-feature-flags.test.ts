@@ -75,13 +75,12 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(resolveFeatureFlag({ experimental: { meta_agent: false } }, 'meta_agent')).toBe(false);
   });
 
-  test('agent_principal is ON by default and a project may still switch it off (spec 2026-09-22 §5)', () => {
-    // An agent's authority belongs to the AGENT, so it is the default. The
-    // explicit `false` is the one-release escape hatch back to the old
-    // launcher-∩-grant model.
-    expect(resolveFeatureFlag({}, 'agent_principal')).toBe(true);
-    expect(resolveFeatureFlag({ experimental: { agent_principal: true } }, 'agent_principal')).toBe(true);
-    expect(resolveFeatureFlag({ experimental: { agent_principal: false } }, 'agent_principal')).toBe(false);
+  test('agent_principal graduated: no flag, and a stored override is inert', () => {
+    // A governed agent always authorizes as itself (spec 2026-09-22 §5): the
+    // one-release escape hatch back to the launcher model is gone.
+    expect(isFeatureFlagKey('agent_principal')).toBe(false);
+    const metadata = { experimental: { agent_principal: false } };
+    expect(Object.keys(resolveFeatureFlags(metadata))).not.toContain('agent_principal');
   });
 
   test('agent_tunnel graduated: computers need no flag and a stored override is inert', () => {
@@ -158,8 +157,8 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(config).not.toHaveProperty('TEAMS_CHANNEL_ENABLED');
   });
 
-  test('connectors_api_discover defaults on but allows a project to opt out', () => {
-    expect(resolveFeatureFlag({}, 'connectors_api_discover')).toBe(true);
+  test('connectors_api_discover requires explicit opt-in', () => {
+    expect(resolveFeatureFlag({}, 'connectors_api_discover')).toBe(false);
     expect(
       resolveFeatureFlag(
         { experimental: { connectors_api_discover: true } },
@@ -297,8 +296,8 @@ describe('buildFeatureFlagCatalog', () => {
  * the support escape hatch with it.
  */
 describe('catalogHidden', () => {
-  test('agent_principal is the hidden flag this release', () => {
-    expect(HIDDEN_KEYS).toEqual(['agent_principal']);
+  test('no flag is hidden this release (agent_principal graduated)', () => {
+    expect(HIDDEN_KEYS).toEqual([]);
   });
 
   for (const key of HIDDEN_KEYS) {

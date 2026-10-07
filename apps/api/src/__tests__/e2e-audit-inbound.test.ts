@@ -38,7 +38,7 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-const { auditApiRequest } = await import('../shared/audit');
+const { auditApiRequest } = await import('../middleware/audit');
 const { annotateAuditEvent, attachInboundAuditScope, bindAuditPrincipal } = await import(
   '../shared/audit-scope'
 );
@@ -115,6 +115,36 @@ describe('the request audit writes a row for every request', () => {
     await app.request(path, { method });
 
     expect(auditRows).toHaveLength(0);
+  });
+});
+
+describe('the audit ingest endpoint does not audit itself', () => {
+  const INGEST = `/v1/projects/${PROJECT}/sessions/${PROJECT}/audit/events`;
+  const ingestApp = (status: number) => {
+    const app = new Hono();
+    app.use('*', auditApiRequest);
+    app.post('/v1/projects/:projectId/sessions/:sessionId/audit/events', (c) => {
+      (c as any).set('accountId', ACCOUNT);
+      return c.json({}, status as 200);
+    });
+    return app;
+  };
+
+  beforeEach(() => {
+    auditRows = [];
+  });
+
+  test('a successful batch writes no row of its own', async () => {
+    const res = await ingestApp(200).request(INGEST, { method: 'POST', body: '{}' });
+    expect(res.status).toBe(200);
+    expect(auditRows).toHaveLength(0);
+  });
+
+  test('a refused batch is still audited', async () => {
+    const res = await ingestApp(401).request(INGEST, { method: 'POST', body: '{}' });
+    expect(res.status).toBe(401);
+    expect(auditRows).toHaveLength(1);
+    expect(auditRows[0]).toMatchObject({ action: 'audit.session.ingest', httpStatus: 401 });
   });
 });
 

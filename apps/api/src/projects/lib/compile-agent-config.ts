@@ -36,6 +36,7 @@
  */
 import { createHash } from 'node:crypto';
 import { z } from '@hono/zod-openapi';
+import type { CompiledAgent, CompiledAgentSet } from '@kortix/api-contract/runtime-relay';
 import {
   agentFileCandidates,
   defaultAgentFile,
@@ -61,45 +62,23 @@ import {
   readManifestFromRepo,
   readRepoFile,
   type GitBackedProject,
+  type MirrorRefresh,
 } from '../git';
 
-/** OpenCode's per-agent `AgentConfig` — the compiled shape for one `agent.<name>` entry. */
-export interface OpencodeAgentConfig {
-  description?: string;
-  mode?: 'primary' | 'subagent' | 'all';
-  model?: string;
-  variant?: string;
-  temperature?: number;
-  top_p?: number;
-  /** The agent's `.md` body (frontmatter stripped) — its system prompt. */
-  prompt?: string;
-  disable?: boolean;
-  tools?: Record<string, boolean>;
-  hidden?: boolean;
-  options?: Record<string, unknown>;
-  color?: string;
-  steps?: number;
-  permission?: PermissionConfigV2;
-}
+/**
+ * One compiled agent (`CompiledAgent` in `@kortix/api-contract/runtime-relay`,
+ * the shape both harnesses read), with the manifest's permission type.
+ */
+type CompiledAgentEntry = CompiledAgent & { permission?: PermissionConfigV2 };
 
-/** The compiled OpenCode config fragment `compileAgentConfig` produces. */
-export interface OpencodeConfig {
-  /** Top-level default model passthrough — the manifest's `default_agent`'s
-   *  compiled model (from ITS `.md` frontmatter), so a brand-new session (no
-   *  agent picked yet) starts on the same model its default agent would
-   *  resolve to. Omitted when the default agent declares no model (the
-   *  platform/account default applies, same as today). */
-  model?: string;
-  /** No compiled field maps to a top-level `small_model` today — passthrough
-   *  is a no-op until one exists. Reserved so a future field has somewhere to
-   *  land without another signature change. */
-  small_model?: string;
-  /** The manifest's `default_agent`: the agent a session with no agent chosen
-   *  runs, on every runtime (OpenCode reads this key; so does pi). Omitted when
-   *  that agent is disabled or a subagent, which cannot run as the primary. */
-  default_agent?: string;
-  agent: Record<string, OpencodeAgentConfig>;
-}
+/**
+ * The compiled agent set `compileAgentConfig` produces (`CompiledAgentSet`).
+ * `model` is the default agent's compiled model, so a session that picked no
+ * agent starts on the model its default agent resolves to; omitted when that
+ * agent declares none. `default_agent` is omitted when that agent is disabled
+ * or a subagent, which cannot run as the primary.
+ */
+type CompiledAgents = CompiledAgentSet & { agent: Record<string, CompiledAgentEntry> };
 
 /** Raised when a v2 manifest can't be compiled — a genuine authoring error
  *  (malformed `.md` frontmatter, unsupported runtime), not a transient I/O
@@ -204,7 +183,7 @@ export const KNOWN_BEHAVIOR_KEYS = BEHAVIOR_FRONTMATTER_KEYS.filter(
  *  frontmatter shape (a generic per-key schema can't express "temperature is
  *  a number, permission is a tree, model is a string" from a flat string
  *  array), PLUS `prompt` (the `.md` BODY, not a frontmatter key — see
- *  `OpencodeAgentConfig.prompt` above). Kept beside `KNOWN_BEHAVIOR_KEYS`
+ *  `CompiledAgentEntry.prompt` above). Kept beside `KNOWN_BEHAVIOR_KEYS`
  *  rather than re-declared in the route so the two are visibly one thing;
  *  `compile-agent-config.test.ts`'s coordination test fails loudly the moment
  *  a field is added to one without the other. */
@@ -254,7 +233,7 @@ export function compileAgentConfig(
   manifest: Record<string, unknown>,
   runtime: RuntimeV2 = 'opencode',
   agentMdFiles: Record<string, string> = {},
-): OpencodeConfig | null {
+): CompiledAgents | null {
   if (![2, 3].includes(manifestSchemaVersion(manifest))) return null;
 
   if (runtime !== 'opencode') {
@@ -267,7 +246,7 @@ export function compileAgentConfig(
   const rawAgents =
     v2.agents && typeof v2.agents === 'object' && !Array.isArray(v2.agents) ? v2.agents : {};
 
-  const agent: Record<string, OpencodeAgentConfig> = {};
+  const agent: Record<string, CompiledAgentEntry> = {};
   for (const [name, block] of Object.entries(rawAgents)) {
     const md = manifestSchemaVersion(manifest) === 3 ? null : suppliedAgentMarkdown(manifest, name, agentMdFiles);
     agent[name] = md
@@ -293,7 +272,7 @@ export function compileSelectedAgentConfig(
   agentName: string,
   runtime: RuntimeV2 = 'opencode',
   agentMdFiles: Record<string, string> = {},
-): OpencodeConfig {
+): CompiledAgents {
   if (![2, 3].includes(manifestSchemaVersion(manifest))) {
     throw new CompileAgentConfigError('Selected-agent compilation requires kortix_version 2 or 3.');
   }
@@ -316,7 +295,7 @@ export function compileSelectedAgentConfig(
     throw new CompileAgentConfigError(`Agent "${agentName}" is disabled.`, agentName);
   }
 
-  let compiledAgent: OpencodeAgentConfig;
+  let compiledAgent: CompiledAgentEntry;
   if (manifestSchemaVersion(manifest) === 3) {
     compiledAgent = compileYamlAgentBlock(agentName, block, agentMdFiles);
   } else {
@@ -342,7 +321,7 @@ function compileYamlAgentBlock(
   name: string,
   block: AgentBlockV2,
   files: Record<string, string>,
-): OpencodeAgentConfig {
+): CompiledAgentEntry {
   const raw = block as Record<string, unknown>;
   const issues: ManifestIssue[] = [];
   validateAgentMdFrontmatter(raw, `agents.${name}`, issues);
@@ -359,7 +338,7 @@ function compileYamlAgentBlock(
   if (issues.some((issue) => issue.severity === 'error')) {
     throw new CompileAgentConfigError(issues.map((issue) => `${issue.path}: ${issue.message}`).join('; '), name);
   }
-  const compiled: OpencodeAgentConfig = {};
+  const compiled: CompiledAgentEntry = {};
   for (const key of BEHAVIOR_FRONTMATTER_KEYS) {
     if (raw[key] !== undefined) (compiled as Record<string, unknown>)[key] = raw[key];
   }
@@ -376,8 +355,8 @@ function compileAgentBlock(
   block: AgentBlockV2,
   mdPath: string,
   mdContent: string | undefined,
-): OpencodeAgentConfig {
-  const out: OpencodeAgentConfig = {};
+): CompiledAgentEntry {
+  const out: CompiledAgentEntry = {};
 
   if (mdContent !== undefined) {
     const { frontmatter, body } = parseAgentMarkdown(mdContent);
@@ -653,14 +632,6 @@ async function readManifestV2(project: GitBackedProject, baseRef?: string | null
   }
 }
 
-export async function resolveManifestRuntime(
-  project: GitBackedProject,
-  baseRef?: string | null,
-): Promise<RuntimeV2 | null> {
-  const raw = await readManifestV2(project, baseRef);
-  return raw ? manifestRuntime(raw) : null;
-}
-
 export async function resolveManifestPiPackageLists(project: GitBackedProject, baseRef?: string | null): Promise<unknown[][]> {
   return manifestPiPackageLists(await readManifestV2(project, baseRef));
 }
@@ -670,8 +641,16 @@ export async function resolveManifestPiPackageLists(project: GitBackedProject, b
  * session env builder uses it to learn `runtime:` from the same read that
  * compiles the agent config.
  */
-export interface CompileReadOptions {
+interface CompileReadOptions {
   onManifest?: (raw: Record<string, unknown>) => void;
+  /**
+   * Force the manifest read's mirror refresh with the ref-scoped freshness
+   * proof: `readManifestFromRepo` proves THIS ref against the remote with one
+   * `git ls-remote` and only fetches the whole mirror when the branch moved.
+   * A caller that must answer "latest" proves the ref instead of trusting the
+   * 60s TTL. Omitted keeps the plain TTL behavior.
+   */
+  forceRefresh?: MirrorRefresh;
 }
 
 export async function resolveCompiledAgentConfigForSession(
@@ -695,7 +674,9 @@ export async function resolveCompiledAgentConfigForSession(
   let manifestVersion: number | undefined;
   try {
     const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
-    const found = await readManifestFromRepo(project, candidates, ref);
+    const found = await readManifestFromRepo(project, candidates, ref, {
+      forceRefresh: options.forceRefresh,
+    });
     if (!found) return null;
 
     const format = manifestFormatForPath(found.path);
@@ -764,7 +745,9 @@ export async function resolveSelectedAgentConfigForSession(
   const candidates = manifestCandidatePaths(project.manifestPath).map(
     (candidate) => candidate.path,
   );
-  const found = await readManifestFromRepo(project, candidates, ref);
+  const found = await readManifestFromRepo(project, candidates, ref, {
+    forceRefresh: options.forceRefresh,
+  });
   if (!found) {
     throw new CompileAgentConfigError(
       `Project ${project.projectId} has no manifest for selected-agent compilation.`,

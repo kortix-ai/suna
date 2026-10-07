@@ -10,11 +10,12 @@
 import { chatUserIdentities, connectorCalls, projectSessions } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { approvalPreviewReviewable } from '../connectors/args-preview';
-import type { ApprovalDecision } from '../projects/lib/connector-approval-decision';
+import type { ApprovalDecision, PendingApprovalRow } from '../projects/lib/connector-approval-decision';
 import { db } from '../shared/db';
 import { loadSlackTokenForProject } from './install-store';
 import { postBlocks, updateBlocks } from './slack-api';
-import { buildApprovalCardBlocks, buildApprovalOutcomeBlocks } from './slack/approval-card';
+import { buildApprovalCardBlocks, buildApprovalOutcomeBlocks, slackUserIdsIn } from './slack/approval-card';
+import { slackUserNames } from './slack/labels';
 import { deleteTurn, finalizeTurn, loadTurn } from './slack/turn';
 import { updateCard } from './teams-api';
 import { postTeamsApprovalCard } from './teams/approval';
@@ -91,7 +92,8 @@ export async function postApprovalCard(input: PostApprovalCardInput): Promise<{ 
   }
   if (thread.projectId !== input.projectId) return { posted: false };
 
-  const blocks = buildApprovalCardBlocks(cardInput);
+  const names = await slackUserNames(thread.token, thread.teamId, slackUserIdsIn(argsPreview));
+  const blocks = buildApprovalCardBlocks(cardInput, names);
   const ts = await postBlocks(
     thread.token,
     thread.channel,
@@ -118,6 +120,13 @@ async function recordCard(executionId: string, card: ChatApprovalCardRef): Promi
     .update(connectorCalls)
     .set({ resultSummary: sql`coalesce(${connectorCalls.resultSummary}, '{}'::jsonb) || ${JSON.stringify({ chat_card: card })}::jsonb` })
     .where(eq(connectorCalls.executionId, executionId));
+}
+
+/** The result summary's object shape, or null when the row carries none. */
+function summaryOf(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }
 
 function cardRefOf(resultSummary: Record<string, unknown>): ChatApprovalCardRef | null {
@@ -147,13 +156,15 @@ async function decidedByLabel(userId: string, teamId: string): Promise<string> {
 /** Replace a posted card's buttons with the outcome. No card, no-op. */
 export async function markApprovalCardDecided(input: {
   projectId: string;
-  resultSummary: Record<string, unknown>;
-  actionPath: string;
+  /** The decided call: its PRE-decision row (the card ref rides on the summary). */
+  row: PendingApprovalRow;
   decision: ApprovalDecision;
   note: string;
   actorUserId: string;
 }): Promise<void> {
-  const card = cardRefOf(input.resultSummary);
+  const { actionPath } = input.row;
+  const summary = summaryOf(input.row.resultSummary);
+  const card = summary ? cardRefOf(summary) : null;
   if (!card) return;
   if (card.platform === 'teams') {
     const ref = await conversationRefForSession(card.session_id);
@@ -161,7 +172,7 @@ export async function markApprovalCardDecided(input: {
       await updateCard(
         ref,
         card.activity_id,
-        buildTeamsApprovalOutcomeCard({ actionPath: input.actionPath, decision: input.decision, note: input.note, decidedBy: 'a teammate in Kortix' }),
+        buildTeamsApprovalOutcomeCard({ actionPath, decision: input.decision, note: input.note, decidedBy: 'a teammate in Kortix' }),
       );
     }
     return;
@@ -169,18 +180,17 @@ export async function markApprovalCardDecided(input: {
   const token = await loadSlackTokenForProject(input.projectId);
   if (!token) return;
   const blocks = buildApprovalOutcomeBlocks({
-    actionPath: input.actionPath,
+    actionPath,
     decision: input.decision,
     decidedBy: await decidedByLabel(input.actorUserId, card.team_id),
     note: input.note,
-    approvalContext:
-      typeof input.resultSummary.approval_context === 'string' ? input.resultSummary.approval_context : null,
+    approvalContext: typeof summary?.approval_context === 'string' ? summary.approval_context : null,
   });
   await updateBlocks(
     token,
     card.channel,
     card.ts,
-    `${input.decision === 'approve' ? 'Approved' : 'Denied'}: ${input.actionPath}`,
+    `${input.decision === 'approve' ? 'Approved' : 'Denied'}: ${actionPath}`,
     blocks,
   );
 }

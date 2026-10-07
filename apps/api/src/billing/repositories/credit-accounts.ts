@@ -1,5 +1,6 @@
 import { creditAccounts } from '@kortix/db';
-import { and, eq, isNull, lte, ne, or } from 'drizzle-orm';
+import { and, asc, eq, gt, isNull, lte, ne, or } from 'drizzle-orm';
+import { ROTATION_BATCH_SIZE } from '../services/rotation-batch';
 import { db } from '../../shared/db';
 
 export async function getCreditAccount(accountId: string) {
@@ -96,8 +97,6 @@ export async function getSubscriptionInfo(accountId: string) {
       seatCount: creditAccounts.seatCount,
       seatSubscriptionItemId: creditAccounts.seatSubscriptionItemId,
       autoTopupCustomized: creditAccounts.autoTopupCustomized,
-      // Operator-set per-account concurrent-session override (NULL = use tier).
-      maxConcurrentSessions: creditAccounts.maxConcurrentSessions,
       // The JSONB override map. Selected because callers feed this row
       // straight to `resolveBillingFromRow` (account-state.ts:96); omitting it
       // would make an override silently vanish on that path while applying
@@ -136,37 +135,49 @@ export async function updateCreditAccount(
     .where(eq(creditAccounts.accountId, accountId));
 }
 
-export async function getYearlyAccountsDueForRotation() {
+const rotationColumns = {
+  accountId: creditAccounts.accountId,
+  tier: creditAccounts.tier,
+  nextCreditGrant: creditAccounts.nextCreditGrant,
+};
+
+export async function getYearlyAccountsDueForRotation(afterAccountId?: string) {
   const now = new Date().toISOString();
 
   const rows = await db
-    .select()
+    .select(rotationColumns)
     .from(creditAccounts)
     .where(
       and(
+        afterAccountId ? gt(creditAccounts.accountId, afterAccountId) : undefined,
         eq(creditAccounts.planType, 'yearly'),
         ne(creditAccounts.tier, 'free'),
         eq(creditAccounts.stripeSubscriptionStatus, 'active'),
         ne(creditAccounts.paymentStatus, 'past_due'),
         or(isNull(creditAccounts.nextCreditGrant), lte(creditAccounts.nextCreditGrant, now)),
       ),
-    );
+    )
+    .orderBy(asc(creditAccounts.accountId))
+    .limit(ROTATION_BATCH_SIZE);
 
   return rows;
 }
 
-export async function getFreeAccountsDueForRotation() {
+export async function getFreeAccountsDueForRotation(afterAccountId?: string) {
   const now = new Date().toISOString();
 
   const rows = await db
-    .select()
+    .select(rotationColumns)
     .from(creditAccounts)
     .where(
       and(
+        afterAccountId ? gt(creditAccounts.accountId, afterAccountId) : undefined,
         eq(creditAccounts.tier, 'free'),
         or(isNull(creditAccounts.nextCreditGrant), lte(creditAccounts.nextCreditGrant, now)),
       ),
-    );
+    )
+    .orderBy(asc(creditAccounts.accountId))
+    .limit(ROTATION_BATCH_SIZE);
 
   return rows;
 }

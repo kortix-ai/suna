@@ -3,7 +3,6 @@ import {
   ConnectorAuthorizationStrategySchema,
   ConnectionSchema,
   ConnectionMetadataSchema,
-  EXPERIMENTAL_FEATURE_KEYS,
   FEATURE_FLAG_KEYS,
   FeatureFlagStabilitySchema,
   ErrorEnvelopeSchema,
@@ -143,13 +142,10 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       reminders: false,
       warm_sessions: false,
       secrets_egress: false,
-      pi_worker: false,
       pooled_provider_secrets: false,
       pi_harness: false,
       config_releases: true,
-      agent_principal: false,
       us_region: false,
-      human_messaging: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -723,18 +719,11 @@ describe('envelopes', () => {
       'reminders',
       'warm_sessions',
       'secrets_egress',
-      'pi_worker',
       'pooled_provider_secrets',
       'pi_harness',
       'config_releases',
-      'agent_principal',
       'us_region',
-      'human_messaging',
     ]);
-  });
-
-  test('EXPERIMENTAL_FEATURE_KEYS is a deprecated alias of the same list', () => {
-    expect(EXPERIMENTAL_FEATURE_KEYS).toBe(FEATURE_FLAG_KEYS);
   });
 
   test('stability admits stable — a settled feature can still ship behind a flag', () => {

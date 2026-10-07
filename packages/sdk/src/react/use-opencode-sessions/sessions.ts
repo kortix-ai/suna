@@ -6,7 +6,8 @@ import { isRuntimeConfigInvalidError } from '../../core/http/runtime-errors';
 import { markSessionFresh } from '../../core/http/fresh-sessions';
 import { useOpenCodeCompactionStore } from '../../browser/stores/opencode-compaction-store';
 import { useCurrentRuntime } from '../use-current-runtime';
-import type { Session } from '@opencode-ai/sdk/v2/client';
+import { useRuntimeSupports } from '../use-runtime-supports';
+import type { Session } from '../../core/runtime/runtime-types';
 import { runtimeKeys, useRuntimeReady } from './keys';
 import { unwrap, getLSCache, setLSCache, LS_SESSIONS, canQueryRuntimeSession } from './shared';
 import { NoCompactionModelError } from './no-compaction-model-error';
@@ -194,6 +195,41 @@ export function useUpdateRuntimeSession() {
   });
 }
 
+/** Fork the conversation at `sessionId` (the runtime's `POST /session/{id}/fork`):
+ *  a new session in the same sandbox that carries the copied history up to
+ *  `messageID` (every message when absent), titled `"<title> (fork #N)"`. The
+ *  runtime capability is `session.fork`; a caller gates the control with
+ *  `useRuntimeSupports('session.fork')` — pi does not serve it. */
+export function useForkSession() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ sessionId, messageID }: { sessionId: string; messageID?: string }) => {
+      const client = getClient();
+      const result = await client.session.fork({
+        sessionID: sessionId,
+        ...(messageID !== undefined && { messageID }),
+      });
+      return unwrap(result);
+    },
+    onSuccess: (forkedSession) => {
+      // Surgically insert into cache — SSE session.created will also fire.
+      const session = forkedSession as Session;
+      queryClient.setQueryData<Session[]>(runtimeKeys.sessions(), (old) => {
+        if (!old) return [session];
+        const idx = old.findIndex((s) => s.id === session.id);
+        if (idx >= 0) {
+          const next = [...old];
+          next[idx] = session;
+          return next.sort((a, b) => b.time.updated - a.time.updated);
+        }
+        return [session, ...old].sort((a, b) => b.time.updated - a.time.updated);
+      });
+      queryClient.setQueryData(runtimeKeys.runtimeSession(session.id), session);
+    },
+  });
+}
+
 export function useRuntimeSessionDiff(sessionId: string) {
   const runtimeReady = useRuntimeReady();
   const canQuerySession = canQueryRuntimeSession(sessionId);
@@ -209,18 +245,24 @@ export function useRuntimeSessionDiff(sessionId: string) {
   });
 }
 
+/**
+ * The runtime's todo list for a session. A runtime capability
+ * (`session.todo`): a runtime without one (pi) is never asked, and `data`
+ * stays undefined.
+ */
 export function useRuntimeSessionTodo(sessionId: string) {
   const runtimeReady = useRuntimeReady();
   const canQuerySession = canQueryRuntimeSession(sessionId);
+  const supported = useRuntimeSupports('session.todo');
   return useQuery({
-    queryKey: ['opencode', 'session-todo', sessionId],
+    queryKey: runtimeKeys.sessionTodo(sessionId),
     queryFn: async () => {
       const client = getClient();
       const result = await client.session.todo({ sessionID: sessionId });
       const data = unwrap(result);
       return Array.isArray(data) ? data : [];
     },
-    enabled: runtimeReady && canQuerySession,
+    enabled: runtimeReady && canQuerySession && supported,
     staleTime: Infinity,
   });
 }

@@ -18,6 +18,8 @@ import {
   type SessionListStatus,
 } from '@kortix/sdk';
 
+import { stripChatMentionMarkup } from '@kortix/shared';
+
 import type { ProjectSession } from '@/lib/projects/projects-client';
 
 // ── Display title ────────────────────────────────────────────────────────
@@ -31,7 +33,9 @@ export const UNTITLED_SESSION_LABEL = 'New session';
 export function resolveSessionTitle(session: ProjectSession): string | null {
   const metadata = session.metadata as Record<string, unknown> | null | undefined;
   const legacyMetadataName = typeof metadata?.session_name === 'string' ? metadata.session_name : null;
-  return session.custom_name?.trim() || session.name?.trim() || legacyMetadataName?.trim() || null;
+  return stripChatMentionMarkup(session.custom_name ?? '') ||
+    stripChatMentionMarkup(session.name ?? '') ||
+    stripChatMentionMarkup(legacyMetadataName ?? '') || null;
 }
 
 /**
@@ -84,13 +88,13 @@ function promptActivityMs(session: ProjectSession): number | null {
   return activityMs(metadata?.last_activity_at);
 }
 
-/** Newest conversation update in OpenCode's scoped session snapshot
- *  (`opencode_sessions[].updated_at`, already epoch ms), or null when the
+/** Newest conversation update in the runtime's scoped session snapshot
+ *  (`runtime_sessions[].updated_at`, already epoch ms), or null when the
  *  session carries no usable snapshot. */
 function conversationActivityMs(session: ProjectSession): number | null {
   let latest: number | null = null;
-  for (const openCodeSession of session.opencode_sessions ?? []) {
-    const parsed = activityMs(openCodeSession.updated_at);
+  for (const runtimeSession of session.runtime_sessions ?? session.opencode_sessions ?? []) {
+    const parsed = activityMs(runtimeSession.updated_at);
     if (parsed === null) continue;
     latest = latest === null ? parsed : Math.max(latest, parsed);
   }
@@ -101,7 +105,7 @@ function conversationActivityMs(session: ProjectSession): number | null {
  * The latest real activity for a session, in epoch ms. Newest evidence first:
  *
  *   1. `metadata.last_activity_at` — the API's prompt stamp.
- *   2. `opencode_sessions[].updated_at` — OpenCode's conversation snapshot.
+ *   2. `runtime_sessions[].updated_at` — the runtime's conversation snapshot.
  *   3. `updated_at` — row bookkeeping, reached only when neither signal
  *      above exists.
  *   4. `created_at` — last resort.
@@ -323,68 +327,19 @@ export function recentSessions(sessions: ProjectSession[], limit: number): Proje
     .map((entry) => entry.session);
 }
 
-// ── OpenCode sub-sessions ──────────────────────────────────────────────────
+// ── Sub-sessions ───────────────────────────────────────────────────────────
+// The tree itself (`rootRuntimeSession`, `directSubsessions`,
+// `projectSessionForRuntimeId`) is the SDK's, shared with web.
 
-/** One entry of a project session's OpenCode snapshot (`opencode_sessions[]`). */
-export type ProjectRuntimeSession = ProjectSession['opencode_sessions'][number];
+/** One conversation of a project session's runtime tree (`runtime_sessions[]`). */
+export type ProjectRuntimeSession = NonNullable<ProjectSession['runtime_sessions']>[number];
 
-/** What a sub-session row shows when OpenCode has not titled it (web: 'Sub-session'). */
+/** What a sub-session row shows when the runtime has not titled it (web: 'Sub-session'). */
 export const SUB_SESSION_FALLBACK_TITLE = 'Sub-session';
 
-/**
- * The root OpenCode session a project session is pinned to: the entry whose
- * id is `opencode_session_id`, else (no pin yet) the first parentless entry.
- * A pin that is not in the snapshot yields null. Port of web's
- * `rootOpenCodeSession` (`apps/web/src/components/projects/session-label.ts`).
- */
-export function rootOpenCodeSession(session: ProjectSession): ProjectRuntimeSession | null {
-  const openCodeSessions = session.opencode_sessions ?? [];
-  const rootId = session.opencode_session_id;
-  if (rootId) return openCodeSessions.find((item) => item.id === rootId) ?? null;
-  return openCodeSessions.find((item) => !item.parent_id) ?? null;
-}
-
-/**
- * Direct, non-archived children of the root OpenCode session (the agent's
- * sub-agents), newest `updated_at` first; a missing time counts as 0 and ties
- * break on id, so the order never churns between refetches. A child of a
- * child is not included. Port of web's `directSubsessions`. Never mutates
- * `opencode_sessions`.
- */
-export function directSubsessions(session: ProjectSession): ProjectRuntimeSession[] {
-  const root = rootOpenCodeSession(session);
-  if (!root) return [];
-  return (session.opencode_sessions ?? [])
-    .filter((item) => item.parent_id === root.id && !item.archived_at)
-    .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0) || a.id.localeCompare(b.id));
-}
-
-/** A sub-session row's title: OpenCode's title, trimmed, else `SUB_SESSION_FALLBACK_TITLE`. */
+/** A sub-session row's title: the runtime's title, trimmed, else `SUB_SESSION_FALLBACK_TITLE`. */
 export function subsessionTitle(child: ProjectRuntimeSession): string {
   return child.title?.trim() || SUB_SESSION_FALLBACK_TITLE;
-}
-
-/**
- * The project session that owns an id the thread shows. The tab store's
- * active id is an OpenCode id: the root (a thread opened from a list), or a
- * sub-session (a drawer sub-session row, or a task tool's View). Match order:
- * a project session id or root pin first, then any entry of a row's
- * `opencode_sessions` snapshot — every sub-session runs in its parent's
- * sandbox, so the parent row owns it. Null for null or an unknown id.
- */
-export function projectSessionForOpenCodeId(
-  sessions: readonly ProjectSession[],
-  openCodeId: string | null,
-): ProjectSession | null {
-  if (!openCodeId) return null;
-  const direct = sessions.find(
-    (session) => session.opencode_session_id === openCodeId || session.session_id === openCodeId,
-  );
-  if (direct) return direct;
-  return (
-    sessions.find((session) => (session.opencode_sessions ?? []).some((item) => item.id === openCodeId)) ??
-    null
-  );
 }
 
 /**

@@ -4,6 +4,7 @@
 
 export * from './accounts';
 export * from './projects';
+export * from './skills';
 export * from './github';
 export * from './git-backend';
 export * from './access';
@@ -17,6 +18,7 @@ export * from './prompt-attachments';
 export * from './git-history';
 export * from './change-requests';
 export * from './sessions';
+export * from './session-prompt-actions';
 export * from './triggers';
 export * from './session-sandbox';
 export * from './model-defaults';

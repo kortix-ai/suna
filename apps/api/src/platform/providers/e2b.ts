@@ -1,8 +1,9 @@
 /** E2B Cloud implementation of Kortix's unified sandbox runtime contract. */
 
 import type { SandboxExecOptions, SandboxExecResult } from './contract';
+import { isProviderNotFound } from './status';
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
-import { type Sandbox as E2BSandbox, Sandbox, SandboxNotFoundError } from 'e2b';
+import { type Sandbox as E2BSandbox, Sandbox } from 'e2b';
 import { SANDBOX_VERSION, config } from '../../config';
 import { configuredTimeoutMs, withTimeout } from '../../shared/with-timeout';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
@@ -112,18 +113,6 @@ function apiOpts() {
     domain: e2bDomain(),
     requestTimeoutMs: 20_000,
   } as const;
-}
-
-function isMissingSandboxError(error: unknown): boolean {
-  if (error instanceof SandboxNotFoundError) return true;
-  const err = error as {
-    status?: unknown;
-    statusCode?: unknown;
-    code?: unknown;
-    message?: unknown;
-  } | null;
-  if (err?.status === 404 || err?.statusCode === 404 || err?.code === 404) return true;
-  return /not found|does not exist|no such sandbox/i.test(String(err?.message ?? error ?? ''));
 }
 
 /**
@@ -651,7 +640,7 @@ export class E2BProvider implements SandboxProvider {
         `E2B kill(${externalId})`,
       );
     } catch (error) {
-      if (!isMissingSandboxError(error)) throw error;
+      if (!isProviderNotFound(error)) throw error;
     } finally {
       invalidateRunningStatus(externalId);
       statusCacheGeneration.delete(externalId);
@@ -676,7 +665,7 @@ export class E2BProvider implements SandboxProvider {
       return 'unknown';
     } catch (error) {
       invalidateRunningStatus(externalId);
-      if (isMissingSandboxError(error)) {
+      if (isProviderNotFound(error)) {
         statusCacheGeneration.delete(externalId);
         return 'removed';
       }

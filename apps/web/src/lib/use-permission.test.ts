@@ -54,8 +54,8 @@ describe('no UI gate branches on a role label', () => {
   // `effective_project_role === 'manager'` or the roster's `can_manage` flag.
   const CONVERTED: Array<[string, string]> = [
     ['features/workspace/settings/tabs/general-tab.tsx', 'PROJECT_DELETE'],
-    ['features/workspace/settings/tabs/sandbox-tab.tsx', 'PROJECT_CUSTOMIZE_WRITE'],
-    ['features/workspace/settings/tabs/snapshots-tab.tsx', 'PROJECT_CUSTOMIZE_WRITE'],
+    ['features/workspace/settings/tabs/sandbox-tab.tsx', 'PROJECT_SANDBOX_WRITE'],
+    ['features/workspace/settings/tabs/snapshots-tab.tsx', 'PROJECT_SANDBOX_WRITE'],
     ['features/workspace/customize/sections/view/git-view.tsx', 'PROJECT_WRITE'],
     ['components/projects/schedule-view.tsx', 'PROJECT_TRIGGER_UPDATE'],
     ['components/iam/access-projects-tab.tsx', 'PROJECT_MEMBERS_MANAGE'],
@@ -143,16 +143,26 @@ describe('every access write busts the probe cache', () => {
 });
 
 describe('the client no longer mirrors the permission catalog', () => {
+  // The model moved out of the renderer into `role-capability-model.ts` (the
+  // member panels read it too); the guard follows the code it guards: the
+  // model carries the catalog-driven table, the renderer only re-exports it.
+  const model = read('components/iam/role-capability-model.ts');
   const matrix = read('components/iam/role-capability-matrix.tsx');
   const panel = read('components/iam/member-access-panel.tsx');
 
   test('areas, levels and implications come from the catalog', () => {
-    expect(matrix).toContain('export function buildAreaTable(');
-    expect(matrix).toContain('export function buildImplications(');
-    expect(matrix).toContain('entry.implies');
+    expect(model).toContain('export function buildAreaTable(');
+    expect(model).toContain('export function buildImplications(');
+    expect(model).toContain('entry.implies');
     // The hardcoded tables and the client-invented implication graph are gone.
-    expect(matrix).not.toContain('const PROJECT_AREAS');
-    expect(matrix).not.toContain('const ACCOUNT_AREAS');
+    expect(model).not.toContain('const PROJECT_AREAS');
+    expect(model).not.toContain('const ACCOUNT_AREAS');
+    expect(model).not.toContain('EXTRA_IMPLICATIONS: Record');
+  });
+
+  test('the renderer re-exports the model instead of carrying its own copy', () => {
+    expect(matrix).toContain("export * from './role-capability-model'");
+    expect(matrix).not.toContain('export function buildAreaTable(');
     expect(matrix).not.toContain('EXTRA_IMPLICATIONS: Record');
   });
 

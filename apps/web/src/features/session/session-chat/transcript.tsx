@@ -15,7 +15,7 @@ import { isQuestionTool } from '../session-activity-groups';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { detectCommandFromText } from '@/features/session/detect-command';
 import { useTranslations } from '@/i18n/use-translations';
-import { type SessionMessageAuthor, type SessionPrompt, groupShowSegments } from '@kortix/sdk';
+import { type SessionMessageAuthor, type SessionPrompt, type SessionPromptViewer, groupShowSegments, isCompactionPart, isPatchPart, isSnapshotPart, isStepPart, sessionPromptActions, toolKind } from '@kortix/sdk';
 import {
   WarningIcon as AlertTriangle,
   CheckCircleIcon as CheckCircle,
@@ -57,7 +57,11 @@ import { ConnectProviderDialog } from '@/features/session/model-selector';
 import { TurnOutcomes } from '@/features/session/outcomes/turn-outcomes';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { showTurnBusyIndicator } from '@/features/session/turn-busy-visibility';
-import type { AttachmentUploadStatus } from '@/features/session/turn/user-message';
+import type {
+  AttachmentUploadStatus,
+  NormalizedAttachment,
+} from '@/features/session/turn/user-message';
+import type { TurnServedModel } from '@/features/session/turn/served-model';
 import { SessionBusyIndicator } from '../session-busy-indicator';
 import { SessionTurnMeta } from '../session-turn-meta';
 import {
@@ -390,10 +394,9 @@ interface SessionTurnProps {
   /** Who wrote this turn's user message, and whether the bubble names them. */
   author?: SessionMessageAuthor;
   showAuthor?: boolean;
-  headerTrusted?: boolean;
-  /** `human_messaging` is on: ask / from-session cards may draw. Off draws a plain bubble. */
-  messagingCards?: boolean;
-  viewerEmail?: string;
+  /** The models that answered this turn and what Kortix billed for it, from
+   *  the gateway's request record. Keep its identity stable: the row is memoized. */
+  servedModel?: TurnServedModel;
   /** What the control plane recorded about how THIS session's turns ended. */
   turnOutcome: SessionTurnOutcome;
   /**
@@ -462,6 +465,10 @@ interface SessionTurnProps {
   pendingPrompt?: SessionPrompt;
   onRetryQueued?: (id: string) => void;
   onRemoveQueued?: (id: string) => void;
+  /** Who is looking. A prompt runs as its author, so Retry is the author's
+   *  and Remove the author's or a session manager's (`sessionPromptActions`).
+   *  Omitted: the viewer's own. Keep it referentially stable (memo). */
+  queuedPromptViewer?: SessionPromptViewer;
   /** The files this turn's Send carried, by identity — see `UserMessage`. */
   pendingAttachments?: ReadonlyArray<SentAttachment>;
   uploadStatus?: AttachmentUploadStatus;
@@ -504,8 +511,8 @@ interface SessionTurnProps {
   /** The staged rewind + replacement send is in flight. */
   editPending?: boolean;
   onEditCancel?: () => void;
-  /** Commit the edit: rewind the session at `messageId` and send `text`. */
-  onEditSend?: (messageId: string, text: string) => void;
+  /** Commit the edit: rewind the session at `messageId`, send `text` and the `kept` attachments. */
+  onEditSend?: (messageId: string, text: string, kept: NormalizedAttachment[]) => void;
 }
 
 /**
@@ -584,7 +591,7 @@ export function resolveTurnError(turn: Turn): string | undefined {
   if (msgError) return msgError;
   for (const msg of turn.assistantMessages) {
     for (const part of msg.parts) {
-      if (part.type !== 'tool') continue;
+      if (!isToolPart(part)) continue;
       const tool = part as ToolPart;
       if (isQuestionTool(tool.tool) && tool.state.status === 'error' && 'error' in tool.state) {
         return (tool.state as { error: string }).error.replace(/^Error:\s*/, '');
@@ -639,12 +646,11 @@ const allParts = useMemo(() => collectTurnParts(turn), [turn]);
 // (todowrite, task, question) don't count as "steps".
 const hasSteps = useMemo(() => {
   return allParts.some(({ part }) => {
-    if (part.type === 'compaction' || part.type === 'snapshot' || part.type === 'patch')
-      return true;
+    if (isCompactionPart(part) || isSnapshotPart(part) || isPatchPart(part)) return true;
     if (isToolPart(part)) {
       // `isPlanWriteTool` — NOT a bare `=== 'todowrite'`. The runtime emits
       // both spellings, and the plan card owns both (see plan-anchor.ts).
-      if (isPlanWriteTool(part.tool) || part.tool === 'task' || isQuestionTool(part.tool))
+      if (isPlanWriteTool(part.tool) || toolKind(part.tool) === 'task' || isQuestionTool(part.tool))
         return false;
       return shouldShowToolPart(part);
     }
@@ -848,7 +854,7 @@ function collectAnsweredQuestions(
     const msg = assistantMessages[mi];
     for (let pi = 0; pi < msg.parts.length; pi++) {
       const part = msg.parts[pi];
-      if (part.type !== 'tool') continue;
+      if (!isToolPart(part)) continue;
       const tool = part as ToolPart;
       if (!isQuestionTool(tool.tool)) continue;
       questionInfos.push({
@@ -871,7 +877,7 @@ function collectAnsweredQuestions(
       const msg = assistantMessages[msgIndex];
       for (let pi = partIndex + 1; pi < msg.parts.length; pi++) {
         const p = msg.parts[pi];
-        if (p.type === 'step-finish' || p.type === 'step-start') continue;
+        if (isStepPart(p)) continue;
         return true;
       }
       // Check for later messages in the turn
@@ -1526,7 +1532,7 @@ function TurnSessionReport({ report }: { report: SessionReport }) {
 /** The user side of a turn: the report card, the system-pill line, and the
  *  user bubble (hidden for notification-only turns). */
 function TurnUserBlock(
-  props: Pick<SessionTurnProps, 'turn' | 'author' | 'showAuthor' | 'headerTrusted' | 'messagingCards' | 'viewerEmail' | 'isLast' | 'pending' | 'interruptedBeforeRun' | 'pendingPrompt' | 'onRetryQueued' | 'onRemoveQueued' | 'pendingAttachments' | 'uploadStatus' | 'pendingText' | 'agentNames' | 'commandMessages' | 'commands' | 'sessionId' | 'ownsPlan' | 'onRewind' | 'rewindDisabled' | 'editingText' | 'editPending' | 'onEditCancel' | 'onEditSend'> & {
+  props: Pick<SessionTurnProps, 'turn' | 'author' | 'showAuthor' | 'pending' | 'interruptedBeforeRun' | 'pendingPrompt' | 'onRetryQueued' | 'onRemoveQueued' | 'queuedPromptViewer' | 'pendingAttachments' | 'uploadStatus' | 'pendingText' | 'agentNames' | 'commandMessages' | 'commands' | 'sessionId' | 'ownsPlan' | 'onRewind' | 'rewindDisabled' | 'editingText' | 'editPending' | 'onEditCancel' | 'onEditSend'> & {
     model: TurnModelState;
     queueTone: TurnQueueTone;
     userContent: TurnUserContentState;
@@ -1548,20 +1554,24 @@ function TurnUserBlock(
 
 /** The user message bubble — dimmed while the prompt waits in the queue. */
 function TurnUserBubble(
-  props: Pick<SessionTurnProps, 'turn' | 'author' | 'showAuthor' | 'headerTrusted' | 'messagingCards' | 'viewerEmail' | 'isLast' | 'pending' | 'interruptedBeforeRun' | 'pendingPrompt' | 'onRetryQueued' | 'onRemoveQueued' | 'pendingAttachments' | 'uploadStatus' | 'pendingText' | 'agentNames' | 'commandMessages' | 'commands' | 'sessionId' | 'ownsPlan' | 'onRewind' | 'rewindDisabled' | 'editingText' | 'editPending' | 'onEditCancel' | 'onEditSend'> & {
+  props: Pick<SessionTurnProps, 'turn' | 'author' | 'showAuthor' | 'pending' | 'interruptedBeforeRun' | 'pendingPrompt' | 'onRetryQueued' | 'onRemoveQueued' | 'queuedPromptViewer' | 'pendingAttachments' | 'uploadStatus' | 'pendingText' | 'agentNames' | 'commandMessages' | 'commands' | 'sessionId' | 'ownsPlan' | 'onRewind' | 'rewindDisabled' | 'editingText' | 'editPending' | 'onEditCancel' | 'onEditSend'> & {
     queueTone: TurnQueueTone;
     userContent: TurnUserContentState;
   },
 ) {
   const { hasVisibleUserContent } = props.userContent;
   const {
-    turn, author, showAuthor, headerTrusted, messagingCards, viewerEmail, isLast, pending, pendingPrompt, interruptedBeforeRun,
+    turn, author, showAuthor, pending, pendingPrompt, interruptedBeforeRun,
     pendingAttachments, uploadStatus, pendingText, agentNames,
     commandMessages, commands, sessionId, ownsPlan, onRewind, rewindDisabled,
     editingText, editPending, onEditCancel, onEditSend,
-    onRetryQueued, onRemoveQueued,
+    onRetryQueued, onRemoveQueued, queuedPromptViewer,
   } = props;
   const { queueState, queuedStatus } = props.queueTone;
+  const promptActions =
+    pendingPrompt && queuedPromptViewer
+      ? sessionPromptActions(pendingPrompt, queuedPromptViewer)
+      : { own: true, removable: true };
   return (
     <>
     {/* ── User message ── */}
@@ -1579,10 +1589,6 @@ function TurnUserBubble(
           message={turn.userMessage}
           author={author}
           showAuthor={showAuthor}
-          headerTrusted={headerTrusted}
-          messagingCards={messagingCards}
-          viewerEmail={viewerEmail}
-          isLastMessage={isLast}
           pendingAttachments={pendingAttachments}
           uploadStatus={uploadStatus}
           pendingText={pendingText}
@@ -1597,17 +1603,17 @@ function TurnUserBubble(
           editPending={editPending}
           onEditCancel={onEditCancel}
           onEditSend={onEditSend}
-          leadingStatus={
+          deliveryStatus={
             queuedStatus === 'failed' ? (
               <QueuedPromptFailure
                 lastError={pendingPrompt?.last_error}
                 onRetry={
-                  pendingPrompt && onRetryQueued
+                  pendingPrompt && onRetryQueued && promptActions.own
                     ? () => onRetryQueued(pendingPrompt.prompt_id)
                     : undefined
                 }
                 onRemove={
-                  pendingPrompt && onRemoveQueued
+                  pendingPrompt && onRemoveQueued && promptActions.removable
                     ? () => onRemoveQueued(pendingPrompt.prompt_id)
                     : undefined
                 }
@@ -1935,7 +1941,7 @@ function TurnSettledResponse({
 /** The turn's footer: the working row, the error banner, the outcomes, the
  *  action bar, and the connect-provider dialog. */
 function TurnFooter(
-  props: Pick<SessionTurnProps, 'turn' | 'sessionId' | 'suppressBusyIndicator' | 'awaitingUser' | 'providers'> & {
+  props: Pick<SessionTurnProps, 'turn' | 'sessionId' | 'suppressBusyIndicator' | 'awaitingUser' | 'providers' | 'servedModel'> & {
     model: TurnModelState;
     errors: TurnErrorState;
     answered: TurnAnsweredState;
@@ -1949,7 +1955,7 @@ function TurnFooter(
 ) {
   const {
     turn, providers, model, errors, answered, status, retry, meta, tHardcodedUi,
-    connectProviderOpen, onConnectProviderOpenChange,
+    connectProviderOpen, onConnectProviderOpenChange, servedModel,
   } = props;
   const { working, response } = model;
   const { turnError, turnErrorRow, turnErrorRowDetails, turnErrorRaw } = errors;
@@ -1981,6 +1987,8 @@ function TurnFooter(
         Gated on `!working` for the same reason the action bar is — an
         outcome is a settled fact, and a card that appears mid-stream would
         claim a change request exists before the server has one. */}
+      {!working && <TurnOutcomes turnKey={turn.userMessage.info.id} />}
+
       {/* ── Action bar (copy + turn meta) ──
           Gated on `!working` only. A turn that ends in tool calls has no closing
           prose, but its finished-at / duration / cost are still turn facts —
@@ -1999,6 +2007,7 @@ function TurnFooter(
           turnEndedAt={turnEndedAt}
           turnDurationMs={turnDurationMs}
           costInfo={costInfo}
+          servedModel={servedModel}
           tHardcodedUi={tHardcodedUi}
         />
       )}
@@ -2067,6 +2076,7 @@ function TurnActionBar({
   turnEndedAt,
   turnDurationMs,
   costInfo,
+  servedModel,
   tHardcodedUi,
 }: {
   response: string;
@@ -2074,6 +2084,7 @@ function TurnActionBar({
   turnEndedAt: TurnSettledMeta['turnEndedAt'];
   turnDurationMs: TurnSettledMeta['turnDurationMs'];
   costInfo: TurnSettledMeta['costInfo'];
+  servedModel?: TurnServedModel;
   tHardcodedUi: ReturnType<typeof useTranslations>;
 }) {
   const [copied, setCopied] = useState(false);
@@ -2128,6 +2139,7 @@ const handleCopy = async () => {
           endedAt={turnEndedAt}
           durationMs={turnDurationMs}
           cost={costInfo}
+          served={servedModel}
           className="flex items-center justify-center"
         />
     </div>

@@ -1,12 +1,12 @@
 import { createHash } from 'node:crypto';
-import { and, eq, lt } from 'drizzle-orm';
+import { and, asc, eq, isNull, lt } from 'drizzle-orm';
 import { chatEventDedup, chatTurnStreams, projectSessions } from '@kortix/db';
 import { db } from '../../shared/db';
-import { runWorkerTick } from '../../shared/audit-scope';
 import { registerSessionFailureNotifier } from '../../shared/session-failure-notifier';
 import { config } from '../../config';
 import { sessionWebUrl } from './util';
-import { markdownToMrkdwn, mrkdwnToRichTextElements } from './mrkdwn';
+import { markdownToMrkdwn, mrkdwnToRichTextElements, slackMentionsAsText, unlabelledMentionIds } from './mrkdwn';
+import { slackUserNames } from './labels';
 import { loadSlackTokenForProject } from '../install-store';
 import {
   addReaction,
@@ -51,13 +51,13 @@ export function rowToHandle(row: typeof chatTurnStreams.$inferSelect, token: str
  * were dropped, leaving the thread frozen on one stale step while the agent
  * worked on.
  *
- * PROD 2026-09-05, session e58ddd55 (Slack thread 1788612689.109129 in
- * C0BQCDKMTGX). `slack step` at 12:54:42, next at 13:19:22 — a 24m40s gap — so
+ * PROD 2026-09-05, one session (Slack thread <thread_ts> in
+ * <channel_id>). `slack step` at 12:54:42, next at 13:19:22 — a 24m40s gap — so
  * the row was reaped at 13:09:42 and the following five steps plus the answer
  * went nowhere while the agent ran two more hours. The agent noticed the silence
  * and started its own `while sleep 200; do slack step` keepalive at 13:37; by
  * then there was nothing left to keep alive. Three incident threads that week
- * (d91f2ff5, d08cccb4, 11f9e9e9) died the same way and read in Slack as
+ * died the same way and read in Slack as
  * "Kortix ignored the incident".
  *
  * The GC sweep below is the reaper, and the honest one: it is keyed on
@@ -143,57 +143,55 @@ export async function sweepStaleSlackTurns(): Promise<void> {
   const stale = await db
     .select()
     .from(chatTurnStreams)
-    .where(and(eq(chatTurnStreams.finalized, false), lt(chatTurnStreams.updatedAt, cutoff)))
+    // Teams rows carry a channelRef and have their own sweep (teams/turn.ts). They
+    // must not fill this window, and the oldest rows go first so none starves.
+    .where(and(eq(chatTurnStreams.finalized, false), lt(chatTurnStreams.updatedAt, cutoff), isNull(chatTurnStreams.channelRef)))
+    .orderBy(asc(chatTurnStreams.updatedAt))
     .limit(50);
-  for (const row of stale) {
-    if (row.channelRef) continue;
-    // Thirty minutes without a `slack step` is not proof of a dead run: a
-    // build, a test suite, or a subagent posts nothing while it works. This
-    // used to close the thread as "timed out" AND abort the runtime turn,
-    // killing healthy work mid-run (prod 2026-09-25: one `slack step`, then
-    // two subagents with model calls every minute, aborted at 30m56s). The
-    // runtime's turn authority decides; a live run keeps its thread, touched
-    // so it is not reconsidered for another 30 minutes.
-    if (await runtimeStillWorking(row.sessionId)) {
-      await db
-        .update(chatTurnStreams)
-        .set({ updatedAt: new Date() })
-        .where(and(eq(chatTurnStreams.sessionId, row.sessionId), eq(chatTurnStreams.finalized, false)));
-      continue;
+  try {
+    for (const row of stale) {
+      // Thirty minutes without a `slack step` is not proof of a dead run: a
+      // build, a test suite, or a subagent posts nothing while it works. This
+      // used to close the thread as "timed out" AND abort the runtime turn,
+      // killing healthy work mid-run (prod 2026-09-25: one `slack step`, then
+      // two subagents with model calls every minute, aborted at 30m56s). The
+      // runtime's turn authority decides; a live run keeps its thread, touched
+      // so it is not reconsidered for another 30 minutes.
+      if (await runtimeStillWorking(row.sessionId)) {
+        await db
+          .update(chatTurnStreams)
+          .set({ updatedAt: new Date() })
+          .where(and(eq(chatTurnStreams.sessionId, row.sessionId), eq(chatTurnStreams.finalized, false)));
+        continue;
+      }
+      if (!(await claimFinalize(row.sessionId))) continue;
+      const token = await loadSlackTokenForProject(row.projectId);
+      if (token) {
+        // Last-resort close: the runtime holds no turn, yet no end relay reached
+        // this thread in 30 minutes (the sandbox died, or the relay was lost).
+        await finalizeTurn(rowToHandle(row, token), {
+          error: ':warning: *This run ended without a reply.* Open the session to see how far it got.',
+        });
+      } else {
+        // No token (app uninstalled / token rotated) → we can't post or clear
+        // the ⏳. Reap the row anyway (below) and surface it so a dead install
+        // is observable instead of silently dropping every turn.
+        console.warn('[slack-webhook] gc: no Slack token for project — cannot finalize turn', {
+          projectId: row.projectId,
+          teamId: row.teamId,
+          sessionId: row.sessionId,
+        });
+      }
+      await deleteTurn(row.sessionId);
+      await abortDeadRuntimeTurn(row.sessionId);
     }
-    if (!(await claimFinalize(row.sessionId))) continue;
-    const token = await loadSlackTokenForProject(row.projectId);
-    if (token) {
-      // Last-resort close: the runtime holds no turn, yet no end relay reached
-      // this thread in 30 minutes (the sandbox died, or the relay was lost).
-      await finalizeTurn(rowToHandle(row, token), {
-        error: ':warning: *This run ended without a reply.* Open the session to see how far it got.',
-      });
-    } else {
-      // No token (app uninstalled / token rotated) → we can't post or clear
-      // the ⏳. Reap the row anyway (below) and surface it so a dead install
-      // is observable instead of silently dropping every turn.
-      console.warn('[slack-webhook] gc: no Slack token for project — cannot finalize turn', {
-        projectId: row.projectId,
-        teamId: row.teamId,
-        sessionId: row.sessionId,
-      });
-    }
-    await deleteTurn(row.sessionId);
-    await abortDeadRuntimeTurn(row.sessionId);
+  } finally {
+    // The dedup table is bounded by this delete; a throw above must not skip it.
+    await db.delete(chatEventDedup).where(lt(chatEventDedup.expiresAt, now));
   }
-  await db.delete(chatEventDedup).where(lt(chatEventDedup.expiresAt, now));
 }
 
-setInterval(() => {
-  void runWorkerTick('slack-turn-gc', async () => {
-    try {
-      await sweepStaleSlackTurns();
-    } catch (err) {
-      console.warn('[slack-webhook] gc tick failed', err);
-    }
-  });
-}, 5 * 60 * 1000).unref();
+export { startSlackTurnGc, stopSlackTurnGc } from '../../workers/slack-turn-gc-worker';
 
 /**
  * Does the runtime's turn authority still hold a live turn for this session?
@@ -617,15 +615,21 @@ export async function relayTurnStepDetailed(
   }
   if (handle.finalized) return { ok: false, reason: 'turn_finalized' };
 
+  // A step names people as text. A mention in a step would notify that person
+  // on every repaint of the plan, and the rich_text repaint printed it raw.
+  const ids = unlabelledMentionIds(title, opts.detail, opts.outputForPrev);
+  const names = ids.length > 0 ? await slackUserNames(handle.token, handle.teamId, ids) : new Map<string, string>();
+  const asText = (text: string) => slackMentionsAsText(text, names);
+
   // First `slack step` → create the plan-checklist message.
   if (!handle.ts) {
     const firstStep: StreamTaskChunk = {
       type: 'task_update',
       id: 'step-0',
-      title: title.slice(0, 200),
+      title: asText(title).slice(0, 200),
       status: 'in_progress',
     };
-    if (opts.detail) firstStep.details = markdownToMrkdwn(opts.detail).slice(0, 500);
+    if (opts.detail) firstStep.details = asText(markdownToMrkdwn(opts.detail)).slice(0, 500);
     const opened = await openPlanMessage(handle, firstStep);
     if (!opened) return { ok: false, reason: 'stream_open_failed' };
     handle.expiry = Date.now() + STREAM_TTL_MS;
@@ -638,7 +642,7 @@ export async function relayTurnStepDetailed(
   const last = handle.steps[handle.steps.length - 1];
   if (last && last.status === 'in_progress') {
     last.status = 'complete';
-    if (opts.outputForPrev) last.output = markdownToMrkdwn(opts.outputForPrev).slice(0, 500);
+    if (opts.outputForPrev) last.output = asText(markdownToMrkdwn(opts.outputForPrev)).slice(0, 500);
     if (opts.sourcesForPrev && opts.sourcesForPrev.length > 0) {
       last.sources = opts.sourcesForPrev.slice(0, 8).map((s) => ({
         type: 'url',
@@ -650,10 +654,10 @@ export async function relayTurnStepDetailed(
   const next: StreamTaskChunk = {
     type: 'task_update',
     id: `step-${handle.steps.length}`,
-    title: title.slice(0, 200),
+    title: asText(title).slice(0, 200),
     status: 'in_progress',
   };
-  if (opts.detail) next.details = markdownToMrkdwn(opts.detail).slice(0, 500);
+  if (opts.detail) next.details = asText(markdownToMrkdwn(opts.detail)).slice(0, 500);
   handle.steps.push(next);
   handle.expiry = Date.now() + STREAM_TTL_MS;
   await repaintLivePlan(handle);
@@ -678,7 +682,7 @@ export async function relayTurnAnswerDetailed(
   // NO ROW AT ALL → the turn was closed and deleted (the 30-minute GC sweep)
   // while the run was still going. The answer is real and the thread is still
   // waiting for it, so deliver it anyway instead of returning false into an HTTP
-  // 200 the agent reads as "sent". See postAnswerWithoutTurn.
+  // 200 the agent reads as "sent". See postAnswerWithoutTurnDetailed.
   if (!handle) return postAnswerWithoutTurnDetailed(sessionId, text, blocks);
   // A FINALIZED row is a turn already closed WITH its reply — a duplicate
   // `slack send`, or a `session.idle` that won the race. Stay quiet.
@@ -694,7 +698,7 @@ export async function relayTurnAnswerDetailed(
 // ── Last-resort answer delivery, with no turn row left ────────────────────────
 // The row can legitimately be gone by the time the agent answers: the GC closes
 // a turn after 30 minutes with no relay, posts "Run timed out", and deletes it.
-// The RUN does not stop — prod 2026-09-04 session d08cccb4 posted three steps,
+// The RUN does not stop — a prod session on 2026-09-04 posted three steps,
 // went quiet, was closed at 30 minutes, and only finished at 09:06:28, 2h58m
 // after it started. `relayTurnAnswer` found no handle, returned false, and the
 // route answered the sandbox HTTP 200 `{ok:false}` (projects/routes/turn-stream.ts), so
@@ -734,18 +738,6 @@ async function claimAnswerRescue(sessionId: string, text: string): Promise<boole
     console.warn('[slack-webhook] answer-rescue claim failed (suppressing)', err);
     return false;
   }
-}
-
-/**
- * Post an agent answer into its Slack thread when no turn row exists.
- * Returns true only when Slack accepted the message.
- */
-export async function postAnswerWithoutTurn(
-  sessionId: string,
-  text: string,
-  blocks?: unknown[],
-): Promise<boolean> {
-  return (await postAnswerWithoutTurnDetailed(sessionId, text, blocks)).ok;
 }
 
 export async function postAnswerWithoutTurnDetailed(

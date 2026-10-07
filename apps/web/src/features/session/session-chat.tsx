@@ -12,19 +12,29 @@ import { useQueuedDraftStore, useQueuedDrafts } from '@/stores/queued-draft-stor
 import {
   type SandboxLifecycle,
   type SessionPrompt,
+  type SessionPromptDelivery,
   type SessionPromptPart,
   hasRetryingAssistantTurn,
+  isTextPart,
+  isToolPart,
   listSessionPrompts,
   projectSessionConnection,
 } from '@kortix/sdk';
-import { useFeatureFlag, useProjectSession, useSessionMessageAuthors } from '@kortix/sdk/react';
+import { useProjectSession, useSessionMessageAuthors, useSessionModelUsage, useSessionParticipants } from '@kortix/sdk/react';
 import { ArrowBendUpLeftIcon, CaretDownIcon, StackIcon as Layers } from '@phosphor-icons/react';
 import { m } from 'motion/react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { awaitsAgent, isUnansweredAsk, resolveTranscriptAuthors, showAuthorName } from './turn/message-author';
+import {
+  AUTHOR_RETRY_DELAYS_MS,
+  authorForTurn,
+  awaitsAgent,
+  missingAuthorKey,
+  resolveTranscriptAuthors,
+  showAuthorName,
+} from './turn/message-author';
 import { useAuth } from '@/features/providers/auth-provider';
 import { QueuedPromptList } from './composer/queued-prompt-list';
 import { runtimePermissionLocksComposer } from './composer/send-blockers';
@@ -35,8 +45,9 @@ import {
   SUGGESTION_MENU_SELECTOR,
   shouldCountEscape,
 } from './esc-to-stop';
-import { composeTakeBack, isFirstPromptRow, projectQueueRows } from './queue-projection';
-import { createQueueUndoAction, restoreQueuedMessage } from './queued-message-restore';
+import { composerSendDelivery, isFirstPromptRow, projectQueueRows } from './queue-projection';
+import { useQueuedPromptEdit } from './queued-prompt-edit';
+import { createQueueUndoAction } from './queued-message-restore';
 import { CompactionMarker, CompactionSummaryBody } from './turn/compaction-card';
 import { compactionTurnInfo } from './turn/compaction-state';
 import { chatPlanAnchorId } from './turn/plan-anchor';
@@ -97,10 +108,15 @@ import {
 } from '@/features/session/composer/attachment-submission';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import { showTurnBusyIndicator } from '@/features/session/turn-busy-visibility';
-import type { AttachmentUploadStatus } from '@/features/session/turn/user-message';
+import {
+  editResendAttachments,
+  type AttachmentUploadStatus,
+  type NormalizedAttachment,
+} from '@/features/session/turn/user-message';
 import { SessionBusyIndicator } from './session-busy-indicator';
 import { useSessionBaseRef } from './session-changes-shared';
 import { resolveEffectiveBusy } from './session-chat-busy';
+import { MODEL_USAGE_SETTLE_MS, servedModelNotice, sessionBilledCost, turnServedModelResolver } from './turn/served-model';
 import { sessionTurnSpan } from './session-turn-meta-rows';
 
 import { Button } from '@/components/ui/button';
@@ -161,7 +177,8 @@ import {
   getWorkingState,
   groupMessagesIntoTurns,
 } from '@/ui';
-import { isAbortError } from '@kortix/sdk';
+import { isAbortError, turnEndNotice } from '@kortix/sdk';
+import { failureShownByTurn, persistedFailureText } from '@/features/session/persisted-turn-failure';
 import {
   type AbortSettlement,
   type KortixSendError,
@@ -379,7 +396,7 @@ interface SessionChatProps {
 const TRANSCRIPT_THROTTLE_MS = 50;
 
 /** `useSessionMessages` input when no `useSession` owns this chat: reads nothing. */
-const DETACHED_SESSION_MESSAGES = { projectId: '', sessionId: '', opencodeSessionId: null };
+const DETACHED_SESSION_MESSAGES = { projectId: '', sessionId: '', runtimeSessionId: null };
 
 export function SessionChat({
   sessionId,
@@ -600,20 +617,14 @@ export function SessionChat({
     projectSessionId,
     newestUserMessageId,
   );
-  // The ledger records a message's delivered id a moment after the runtime
-  // shows it: ask once more when the newest message is still unattributed.
-  const authorsRetriedFor = useRef<string | null>(null);
-  useEffect(() => {
-    if (!messageAuthors || !newestUserMessageId || messageAuthors.authors[newestUserMessageId]) return;
-    if (authorsRetriedFor.current === newestUserMessageId) return;
-    authorsRetriedFor.current = newestUserMessageId;
-    const timer = setTimeout(() => void refetchMessageAuthors(), 2000);
-    return () => clearTimeout(timer);
-  }, [messageAuthors, newestUserMessageId, refetchMessageAuthors]);
   const transcriptAuthors = useMemo(
     () => resolveTranscriptAuthors(userMessageIds, messageAuthors),
     [userMessageIds, messageAuthors],
   );
+  // A session two or more people can open reads as a group chat from its first
+  // prompt: every author shows, the viewer included. Same cache as the header.
+  const { data: sessionParticipants } = useSessionParticipants(projectId, projectSessionId);
+  const groupChat = transcriptAuthors.multiAuthor || !!sessionParticipants?.multi_user;
   // Project sessions use the server-side project agent roster. Non-project
   // sessions fall back to OpenCode's directory-scoped runtime discovery.
   const { data: agents } = useRuntimeAgents({ directory: session?.directory, projectId });
@@ -630,23 +641,29 @@ export function SessionChat({
   // crash cannot lose it, and the server — not this component — decides whether
   // it runs now or waits for the turn in flight.
   const promptInbox = useSessionPrompts(projectId, projectSessionId);
-  // A `no_reply` prompt (an ask's first message) is delivered to people, not
-  // queued for the agent: it draws no Sending/Queued chip and no Thinking row.
-  // Its bubble still comes from `queuedSyntheticMessages`.
+  // A `no_reply` prompt runs no turn: it draws no Sending/Queued chip and no
+  // Thinking row. Its bubble still comes from `queuedSyntheticMessages`.
   const agentPrompts = useMemo(() => promptInbox.prompts.filter(awaitsAgent), [promptInbox.prompts]);
-  // Ids a server `no_reply` ask prompt shows under: its header is the server's.
-  // `human_messaging` off: asks and from-session messages draw as plain bubbles.
-  const { enabled: messagingCards } = useFeatureFlag(projectId, 'human_messaging');
-  const askMessageIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const prompt of promptInbox.prompts) {
-      if (!prompt.no_reply) continue;
-      if (prompt.message_id) ids.add(prompt.message_id);
-      if (prompt.wire_message_id) ids.add(prompt.wire_message_id);
-      ids.add(`queued-${prompt.prompt_id}`);
-    }
-    return ids;
-  }, [promptInbox.prompts]);
+  // Every user message and queued prompt on screen wants an author. The ledger
+  // records a delivered id a moment after the runtime shows it, and a prompt
+  // someone else just queued is newer than the cached answer: while any id is
+  // unattributed, ask again on a short backoff (`AUTHOR_RETRY_DELAYS_MS`).
+  const missingAuthors = missingAuthorKey(messageAuthors, [
+    ...userMessageIds,
+    ...promptInbox.prompts.flatMap((prompt) => [prompt.message_id, prompt.wire_message_id ?? '']),
+  ]);
+  const authorRetry = useRef<{ key: string; count: number }>({ key: '', count: 0 });
+  useEffect(() => {
+    if (!missingAuthors) return;
+    if (authorRetry.current.key !== missingAuthors) authorRetry.current = { key: missingAuthors, count: 0 };
+    const delay = AUTHOR_RETRY_DELAYS_MS[authorRetry.current.count];
+    if (delay === undefined) return;
+    const timer = setTimeout(() => {
+      authorRetry.current.count += 1;
+      void refetchMessageAuthors();
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [missingAuthors, messageAuthors, refetchMessageAuthors]);
   /**
    * What the first prompt's attachment strip should say before runtime delivery.
    *
@@ -698,7 +715,7 @@ export function SessionChat({
     config,
     sessionId,
     boundAgentName,
-    defaultAgentName: projectConfig?.open_code_default_agent,
+    defaultAgentName: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
   });
   /**
    * The agent this composer will ACTUALLY run — see `composer-agent-access.ts`.
@@ -712,7 +729,7 @@ export function SessionChat({
   const composerAgent = resolveComposerAgent({
     agents,
     boundAgent: boundAgentName,
-    defaultAgent: projectConfig?.open_code_default_agent,
+    defaultAgent: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
     selectedAgent: local.agent.current?.name ?? null,
   });
   const composerAgentName = composerAgent.selected;
@@ -785,7 +802,7 @@ export function SessionChat({
         text: sessionPrefill.text,
         id: sessionPrefill.id,
         ...(sessionPrefill.files ? { files: sessionPrefill.files } : {}),
-        mode: 'merge' as const,
+        mode: sessionPrefill.mode ?? ('merge' as const),
       };
     }
     return null;
@@ -1029,18 +1046,8 @@ export function SessionChat({
   // so a lost `session.compacted` frame stops pinning the composer at
   // `OPTIMISTIC_COMPACTION_MAX_MS` instead of for the lifetime of the tab, and
   // a compaction started by a second device is visible here at all.
-  // An ask nobody answered yet went to people, not to the agent: the runtime
-  // reads busy for a moment after delivering it, but nothing is working. Folded
-  // in HERE so Stop and Thinking still read one value.
-  const askAwaitsPeople = useMemo(() => {
-    const list = messages ?? [];
-    const last = list[list.length - 1];
-    if (!last || last.info.role !== 'user') return false;
-    if (list.filter((m) => m.info.role === 'user').length !== 1) return false;
-    return messagingCards && isUnansweredAsk({ userMessage: last, assistantMessages: [] });
-  }, [messages, messagingCards]);
   const effectiveBusy = resolveEffectiveBusy({
-    isServerBusy: isServerBusy && !askAwaitsPeople,
+    isServerBusy,
     isOptimisticCompacting,
     hasRetryingAssistant,
   });
@@ -1069,6 +1076,35 @@ export function SessionChat({
   useEffect(() => {
     isBusyRef.current = effectiveBusy;
   }, [effectiveBusy]);
+
+  // Which model answered each turn, and what Kortix billed for it, from the
+  // gateway's request record. The transcript and the model selector name the
+  // model a turn ASKED for; a fallback chain decides what answers. A request's
+  // row is written as the request ends: read again on each new assistant
+  // message and at the end of a turn, then once more for its last request.
+  const newestAssistantMessageId = useMemo(
+    () => (messages ?? []).findLast((m) => m.info.role === 'assistant')?.info.id ?? '',
+    [messages],
+  );
+  const { data: modelUsage, refetch: refetchModelUsage } = useSessionModelUsage(projectId, projectSessionId);
+  useEffect(() => {
+    if (!newestAssistantMessageId) return;
+    // `cancelRefetch: false`: a read already in flight (the mount's own) is the read.
+    void refetchModelUsage({ cancelRefetch: false });
+    if (effectiveBusy) return;
+    const timer = setTimeout(() => void refetchModelUsage(), MODEL_USAGE_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [newestAssistantMessageId, effectiveBusy, refetchModelUsage]);
+  const servedNotice = useMemo(
+    () => servedModelNotice(modelUsage, local.model.currentKey, local.model.list),
+    [modelUsage, local.model.currentKey, local.model.list],
+  );
+  // Not gated on the composer's selection: the modal reports the session.
+  const sessionServedModel = useMemo(
+    () => servedModelNotice(modelUsage, null, local.model.list),
+    [modelUsage, local.model.list],
+  );
+  const servedModelOfTurn = useMemo(() => turnServedModelResolver(local.model.list), [local.model.list]);
 
   // Render-driven only: the session is working, or the transcript shows a user
   // message nothing has answered yet. The transcript-inference terms are gone —
@@ -1231,7 +1267,7 @@ export function SessionChat({
       }
       // The bubble's own words: the non-synthetic text parts, joined.
       const text = message.parts
-        .filter((part) => part.type === 'text' && !(part as { synthetic?: boolean }).synthetic)
+        .filter((part) => isTextPart(part) && !(part as { synthetic?: boolean }).synthetic)
         .map((part) => (part as { text?: string }).text ?? '')
         .join('\n');
       only = { id: message.info.id, text };
@@ -1318,14 +1354,25 @@ export function SessionChat({
     // by the effect above, i.e. AFTER the render that first sees a row.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [promptInbox.prompts, sessionId, messages, firstTurnClaim]);
+  // A queued prompt runs as its author: only they edit or send it, and the
+  // session's managers may remove it. Same cache entry as the header's read.
+  const viewerManagesSession =
+    useProjectSession(projectId, projectSessionId ?? undefined, {
+      enabled: !!projectId && !!projectSessionId,
+    }).data?.can_manage_lifecycle !== false;
+  const queuedPromptViewer = useMemo(
+    () => ({ userId: viewer?.id, managesSession: viewerManagesSession }),
+    [viewer?.id, viewerManagesSession],
+  );
   const queueRows = useMemo(
     () =>
       projectQueueRows({
         prompts: promptInbox.prompts,
         transcriptMessageIds: transcriptClaimedIds,
         drafts: queuedDrafts,
+        viewer: queuedPromptViewer,
       }),
-    [promptInbox.prompts, transcriptClaimedIds, queuedDrafts],
+    [promptInbox.prompts, transcriptClaimedIds, queuedDrafts, queuedPromptViewer],
   );
   // A posted draft whose row the inbox no longer lists was delivered or
   // removed; nothing reads it again.
@@ -1336,7 +1383,7 @@ export function SessionChat({
     }
     useQueuedDraftStore.getState().prune(sessionId, listed);
   }, [promptInbox.prompts, queuedDrafts, sessionId]);
-  // Read by `handleSend` and `handleTakeBackQueue`, which are stable callbacks.
+  // Read by `handleSend` and the queue edit, which are stable callbacks.
   // Written in an effect, never during render — the same rule as `isBusyRef`.
   const queueRowsRef = useRef(queueRows.rows);
   useEffect(() => {
@@ -1436,6 +1483,16 @@ export function SessionChat({
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [promptInbox.retry],
+  );
+
+  // "Stop and send": the waiting row becomes Quick Queue. The running turn
+  // ends after its running tool, then this row runs.
+  const handleStopAndSendQueuedMessage = useCallback(
+    (id: string) => {
+      void promptInbox.interrupt(id).catch(() => errorToast(tQueue('stopAndSendFailed')));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [promptInbox.interrupt],
   );
 
   // Associate stashed command info with the newest user message when messages
@@ -2213,7 +2270,7 @@ export function SessionChat({
         if (parts) {
           const match = parts.find(
             (p) =>
-              p.type === 'tool' &&
+              isToolPart(p) &&
               isQuestionTool((p as ToolPart).tool) &&
               (p as ToolPart).callID === questionReq.tool!.callID,
           );
@@ -2372,6 +2429,8 @@ export function SessionChat({
         commitsRewind?: boolean;
         /** Quick Queue paints a transcript bubble; Queue List adds a row above the composer. */
         placement?: 'transcript' | 'composer';
+        /** How the prompt reaches a running turn (`composerSendDelivery`). */
+        delivery?: SessionPromptDelivery;
       },
     ) => {
       setCommandError(null);
@@ -2484,6 +2543,7 @@ export function SessionChat({
         }));
       }
       const placement = overrides?.placement ?? 'transcript';
+      const delivery = overrides?.delivery;
       // Placement decides WHERE the send waits: Quick Queue paints its bubble in
       // the transcript now, Queue List draws a row above the composer. Busy
       // state or earlier live rows decide only whether it waits at all.
@@ -2494,6 +2554,7 @@ export function SessionChat({
         useQueuedDraftStore.getState().add(sessionId, {
           clientMessageId,
           placement,
+          ...(delivery ? { delivery } : {}),
           text: rawText,
           files: attachedFiles,
           createdAtMs: sentAtMs,
@@ -2736,6 +2797,7 @@ export function SessionChat({
             }
             const created = await promptInbox.enqueue({
               placement,
+              ...(delivery ? { delivery } : {}),
               clientMessageId,
               messageId: messageID,
               parts: mappedParts,
@@ -2915,7 +2977,7 @@ export function SessionChat({
    * different control. Now the editor IS the confirmation.
    */
   const handleEditSend = useCallback(
-    async (messageId: string, text: string) => {
+    async (messageId: string, text: string, kept: NormalizedAttachment[] = []) => {
       if (!sessionState) return;
       setEditSendPending(true);
       try {
@@ -2962,7 +3024,10 @@ export function SessionChat({
         // This send commits the rewind staged above, so it POSTs at once: it never
         // waits behind an earlier Send still in the session's delivery chain.
         const editSend = { commitsRewind: true };
-        await handleSend(text, undefined, undefined, undefined, editSend).catch(() => {
+        // The kept attachments go again: a saved copy as a URL part, a path-only upload as its ref.
+        const { files, text: sendText } = editResendAttachments(kept, text);
+        const resend = files.length ? files : undefined;
+        await handleSend(sendText, resend, undefined, undefined, editSend).catch(() => {
           sendOk = false;
         });
         // Mirror the SDK's own send path (`use-session.ts` `sendParts`, which
@@ -2979,8 +3044,8 @@ export function SessionChat({
         // `unrevert` finds nothing staged (or throws BusyError mid-run).
         // A FAILED send leaves the record staged on purpose — the revert is
         // still real server-side and Restore genuinely works there.
-        if (sendOk && sessionState.opencodeSessionId) {
-          useSessionStateStore.getState().commitSessionRevert(sessionState.opencodeSessionId);
+        if (sendOk && sessionState.runtimeSessionId) {
+          useSessionStateStore.getState().commitSessionRevert(sessionState.runtimeSessionId);
         }
       } catch (error) {
         errorToast(tHardcodedUi.raw('i18nComplete.text810b28e5110c'), {
@@ -3078,82 +3143,18 @@ export function SessionChat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [promptInbox.hold]);
 
-  /**
-   * Edit takes the selected composer entry back. Up takes the latest eligible
-   * entry, preserving whatever is already typed.
-   *
-   * Returns whether it acted, synchronously — the composer keeps Up as a caret
-   * move when there is nothing to take back. The removal itself is async: each
-   * row is DELETEd first, and only what the server actually removed comes back,
-   * so a row a turn already started (409) is never both sent and in the draft.
-   * A removed prompt that cannot come back losslessly (files, no local draft)
-   * is re-queued instead of dropped (`composeTakeBack`).
-   */
-  const takeBackInFlightRef = useRef(false);
-  const handleTakeBackQueue = useCallback(
-    (promptId?: string): boolean => {
-      const eligible = queueRowsRef.current
-        .filter((row) => row.takeBackEligible && (!promptId || row.id === promptId))
-        .slice(-1);
-      if (eligible.length === 0) return false;
-      if (takeBackInFlightRef.current) return true;
-      takeBackInFlightRef.current = true;
-      // Captured BEFORE the removals: removing a row prunes its draft.
-      const drafts = useQueuedDraftStore.getState().bySession[sessionId] ?? [];
-      void (async () => {
-        try {
-          const settled = await Promise.allSettled(
-            eligible.map((row) => promptInbox.remove(row.id)),
-          );
-          const removed = settled.flatMap((result) =>
-            result.status === 'fulfilled' && result.value ? [result.value] : [],
-          );
-          if (removed.length === 0) {
-            const failure = settled.find((result) => result.status === 'rejected');
-            if (failure?.status === 'rejected') throw failure.reason;
-            return;
-          }
-          const store = useSessionStateStore.getState();
-          for (const prompt of removed) {
-            for (const id of prompt.removed_message_ids ?? [prompt.message_id]) {
-              store.forgetControlPlaneMessage(sessionId, id);
-            }
-          }
-          const { text, files, requeue } = composeTakeBack({ removed, drafts });
-          useQueuedDraftStore.getState().remove(
-            sessionId,
-            removed.map((prompt) => prompt.client_message_id),
-          );
-          if (text || files.length > 0) {
-            const restored = removed[0].overrides;
-            if (restored?.agent) localAgentSet(restored.agent);
-            if (restored?.model) localModelSet(restored.model);
-            localVariantSet(restored?.variant ?? undefined);
-            useSessionComposerPrefillStore.getState().setPrefill(sessionId, text, files);
-          }
-          for (const prompt of requeue) {
-            void promptInbox
-              .enqueue(restoreQueuedMessage(prompt, () => mintSessionWireMessageId(sessionId)))
-              .catch(() => errorToast(tHardcodedUi.raw('i18nComplete.text8af21acebf14')));
-          }
-        } catch (error) {
-          errorToast(error instanceof Error ? error.message : String(error));
-        } finally {
-          takeBackInFlightRef.current = false;
-        }
-      })();
-      return true;
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    },
-    [
-      sessionId,
-      promptInbox.remove,
-      promptInbox.enqueue,
-      localAgentSet,
-      localModelSet,
-      localVariantSet,
-    ],
-  );
+  // Edit (the pencil) and Up open a queued message in the composer; Submit
+  // saves the new words into the same row. Shared with the boot shell, which
+  // may hand over an open edit: see `queued-prompt-edit.ts`.
+  const queueEdit = useQueuedPromptEdit({
+    key: projectSessionId ?? sessionId,
+    rows: () => queueRowsRef.current,
+    editPrompt: promptInbox.edit,
+    setComposerText: (text) =>
+      useSessionComposerPrefillStore.getState().setPrefill(sessionId, text, undefined, 'replace'),
+    forgetLocalDraft: (clientMessageId) =>
+      useQueuedDraftStore.getState().remove(sessionId, [clientMessageId]),
+  });
 
   // ---- Triple-ESC to stop ----
   // ESC 1 → show hint (2 more). ESC 2 → show hint (1 more). ESC 3 → stop.
@@ -3615,30 +3616,51 @@ export function SessionChat({
     [projectId, projectSessionId, sessionScopeAgentName],
   );
 
+  // The queued messages and the one Resume while a Stop holds the queue: their
+  // own full-width card above the composer stack, not inside the strip.
+  const chatAboveSlot = useMemo(
+    () => (
+      <QueuedPromptList
+        rows={queueRows.rows}
+        heldCount={queueRows.heldCount}
+        resumePending={resumePending}
+        onResume={() => void handleResumeQueue()}
+        onEdit={(id) => {
+          queueEdit.takeBack(id);
+        }}
+        onRemove={(id) => void handleRemoveQueuedMessage(id)}
+        onRetry={handleRetryQueuedMessage}
+        onStopAndSend={effectiveBusy ? handleStopAndSendQueuedMessage : undefined}
+        editing={queueEdit.editing}
+        onCancelEdit={queueEdit.cancel}
+      />
+    ),
+    [
+      queueEdit.editing,
+      queueEdit.cancel,
+      queueEdit.takeBack,
+      queueRows,
+      resumePending,
+      handleResumeQueue,
+      handleRemoveQueuedMessage,
+      handleRetryQueuedMessage,
+      handleStopAndSendQueuedMessage,
+      effectiveBusy,
+    ],
+  );
+
   const chatInputSlot = useMemo(
     () => (
       <>
-        {/* The queued messages, directly above the card — and the one Resume
-            while a Stop holds the queue. Renders nothing when neither applies. */}
-        <QueuedPromptList
-          rows={queueRows.rows}
-          heldCount={queueRows.heldCount}
-          resumePending={resumePending}
-          onResume={() => void handleResumeQueue()}
-          onEdit={(id) => {
-            handleTakeBackQueue(id);
-          }}
-          onRemove={(id) => void handleRemoveQueuedMessage(id)}
-          onRetry={handleRetryQueuedMessage}
-        />
         {/* Connector actions a policy gated for approval — pauses the run
             until the human decides. Self-hides when nothing's pending. */}
         <SessionApprovalPrompt />
-        {/* Opencode tool permissions (bash/edit/…) awaiting a decision —
+        {/* Runtime tool permissions (bash/edit/…) awaiting a decision —
             the turn is blocked inside the runtime and resumes the moment
             a reply lands. Self-hides when nothing's pending. */}
         <SessionPermissionPrompt
           sessionId={sessionId}
+          agentName={sessionScopeAgentName}
           permissions={pendingPermissions}
           onReply={handlePermissionReply}
         />
@@ -3672,12 +3694,6 @@ export function SessionChat({
       handleQuestionReply,
       handleQuestionReject,
       handleQuestionActionChange,
-      queueRows,
-      resumePending,
-      handleResumeQueue,
-      handleRemoveQueuedMessage,
-      handleTakeBackQueue,
-      handleRetryQueuedMessage,
       tHardcodedUi,
     ],
   );
@@ -4006,6 +4022,8 @@ export function SessionChat({
           session={session}
           providers={providers}
           allSessions={allSessions}
+          servedModel={sessionServedModel}
+          billedCost={sessionBilledCost(modelUsage)}
         />
 
         {/* Compact modal — opened from the composer's `/` palette */}
@@ -4243,6 +4261,14 @@ export function SessionChat({
                             !confirmedActive && turn.assistantMessages.length === 0
                               ? pendingPromptsByMessageId.get(turn.userMessage.info.id)
                               : undefined;
+                          // A queued prompt is not in the runtime transcript yet;
+                          // its author still shows (`authorForTurn`).
+                          const turnAuthor = authorForTurn(
+                            transcriptAuthors,
+                            messageAuthors,
+                            turn.userMessage.info.id,
+                            pendingPrompt?.wire_message_id,
+                          );
                           return (
                             <TranscriptTurnRow
                               // ONE element per prompt: keyed by the id the
@@ -4273,15 +4299,9 @@ export function SessionChat({
                                     : 'mt-12'
                               }
                               turn={turn}
-                              author={transcriptAuthors.byMessage.get(turn.userMessage.info.id)}
-                              showAuthor={showAuthorName(
-                                transcriptAuthors.byMessage.get(turn.userMessage.info.id),
-                                transcriptAuthors.multiAuthor,
-                                viewer?.id,
-                              )}
-                              headerTrusted={askMessageIds.has(turn.userMessage.info.id)}
-                              messagingCards={messagingCards}
-                              viewerEmail={viewer?.email}
+                              author={turnAuthor}
+                              showAuthor={showAuthorName(turnAuthor, groupChat, viewer?.id)}
+                              servedModel={servedModelOfTurn(modelUsage, turn.userMessage.info.id)}
                               turnOutcome={turnOutcome}
                               isLast={turn.userMessage.info.id === lastUserMessageId}
                               ownsPlan={turn.userMessage.info.id === planAnchorId}
@@ -4336,6 +4356,7 @@ export function SessionChat({
                               pendingPrompt={pendingPrompt}
                               onRetryQueued={stableRetryQueued}
                               onRemoveQueued={stableRemoveQueued}
+                              queuedPromptViewer={queuedPromptViewer}
                               interruptedBeforeRun={interruptedTurnIds.has(
                                 turn.userMessage.info.id,
                               )}
@@ -4385,6 +4406,39 @@ export function SessionChat({
                         <CompactionMarker running />
                       </div>
                     )}
+
+                    {/* Persisted failures can precede any transcript message (for
+                        example, a marketplace install rejected at admission). */}
+                    {[
+                      ...(turnOutcome.recent_failures ?? []),
+                      ...(turnOutcome.last_ended?.end_reason === 'failed' &&
+                      !turnOutcome.recent_failures?.some(
+                        (failure) => failure.message_id === turnOutcome.last_ended?.message_id,
+                      )
+                        ? [turnOutcome.last_ended]
+                        : []),
+                    ].filter((failure) =>
+                      !isAbortError(failure.error) &&
+                      !failureShownByTurn(failure, turns) &&
+                      (!failure.error?.message || failure.error.message !== commandError?.message),
+                    ).map((failure) => {
+                      const messageId = failure.message_id ?? 'persisted-turn-failure';
+                      // Use the SDK's settle window for a cause that may arrive
+                      // one frame later, including an unnamed failed last turn.
+                      const notice = turnEndNotice({
+                        ...turnOutcome,
+                        recent_failures: [{ ...failure, message_id: messageId, error: failure.error ?? null }],
+                      }, messageId, { hasError: false, isAbort: false });
+                      return notice ? (
+                        <TurnErrorDisplay
+                          key={messageId}
+                          errorText={notice.kind === 'unexplained'
+                            ? tHardcodedUi.raw('i18nComplete.text73112526c03a')
+                            : persistedFailureText(failure.error)}
+                          className="mt-2"
+                        />
+                      ) : null;
+                    })}
 
                     {/* Busy indicator when no turns yet but session is busy */}
                     {commandError && (
@@ -4488,7 +4542,15 @@ export function SessionChat({
                 // focus onto a phone keyboard.
                 autoFocus={deferComposerFocus ? false : undefined}
                 onSend={async (text, files, mentions, attachments, placement) => {
-                  await handleSend(text, files, mentions, attachments, { placement });
+                  if (await queueEdit.save(text)) return;
+                  // Enter while a turn runs steers it (D9.1); Cmd/Ctrl+Enter is Queue List.
+                  await handleSend(
+                    text,
+                    files,
+                    mentions,
+                    attachments,
+                    composerSendDelivery(placement ?? 'transcript', isBusyRef.current),
+                  );
                 }}
                 prefill={composerPrefill}
                 onPrefillApplied={(id) => {
@@ -4496,10 +4558,13 @@ export function SessionChat({
                 }}
                 // Up from the first row takes the queue back; the placeholder
                 // says so while there is something to take.
-                onArrowUpAtStart={() => handleTakeBackQueue()}
+                onArrowUpAtStart={() => queueEdit.takeBack()}
                 hint={
                   canTakeBackQueue ? tHardcodedUi.raw('i18nComplete.text03a01dd53ffa') : undefined
                 }
+                // Editing a queued message: the send saves it back into the
+                // queue, so the control says Submit, never Stop.
+                submitLabel={queueEdit.editing ? tQueue('submitEdit') : null}
                 draftScope={composerDraftScope}
                 draftActive={!deferComposerFocus}
                 attachRequestId={attachRequestId}
@@ -4521,8 +4586,7 @@ export function SessionChat({
                 escCount={escCount}
                 agents={local.agent.list}
                 selectedAgent={composerAgentName}
-                onAgentChange={boundAgentName ? undefined : handleAgentChange}
-                agentSelectorLocked={!!boundAgentName}
+                onAgentChange={handleAgentChange}
                 noAccessibleAgents={noAccessibleAgents}
                 commands={chatCommands}
                 slashFiles={chatSlashFiles}
@@ -4559,8 +4623,10 @@ export function SessionChat({
                 questionButtonLabel={renderedQuestion ? questionAction.label : null}
                 questionCanAct={questionAction.canAct}
                 onQuestionAction={handleQuestionAction}
+                aboveSlot={chatAboveSlot}
                 inputSlot={chatInputSlot}
                 toolbarSlot={chatToolbarSlot}
+                servedModel={servedNotice}
                 // The shell can now render on a cached transcript alone, i.e. before
                 // the sandbox answers — so sending has to be gated separately from
                 // reading. See sessionComposerReadiness.

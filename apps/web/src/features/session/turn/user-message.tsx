@@ -1,9 +1,9 @@
 'use client';
 
-import { MessageAuthorLabel, SessionMessageCard } from './session-message-card';
+import { MessageSenderAbove } from '../participants/session-participants';
+import { MessageAuthorLabel } from './message-author-label';
 import { ReminderTurnCard } from './reminder-turn-card';
-import { isAskForViewer } from './message-author';
-import { toast } from 'sonner';
+import { errorToast } from '@/components/ui/toast';
 import {
   fetchSessionAttachment,
   isSessionAttachmentRef,
@@ -54,6 +54,7 @@ import {
   type TextPart,
 } from '@/ui';
 import {
+  AttachmentRemoveButton,
   AttachmentTile,
   TILE_INTERACTIVE,
   TILE_SURFACE,
@@ -65,6 +66,8 @@ import {
   sentAttachmentPreview,
   type SentAttachment,
 } from '../sent-attachment-previews';
+import type { AttachedFile } from '../composer/types';
+import { uploadedFileRefXml } from '../uploaded-file-refs';
 import {
   buildMentionSegments,
   type MentionSegment,
@@ -81,7 +84,6 @@ import {
   parseSessionReferences,
   parseSystemNotifications,
   parseReminderPrompt,
-  parseSessionMessagePrompt,
   parseTriggerEvent,
   QUOTE_MARKER_RE,
   quoteMarker,
@@ -489,6 +491,7 @@ export interface AttachmentUploadStatus {
 }
 
 function StoredAttachmentFile({ file }: { file: NormalizedAttachment }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [downloading, setDownloading] = useState(false);
   const download = async () => {
     if (downloading) return;
@@ -505,7 +508,7 @@ function StoredAttachmentFile({ file }: { file: NormalizedAttachment }) {
       link.remove();
       if (stored) setTimeout(() => URL.revokeObjectURL(url), 30_000);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not download attachment');
+      errorToast(error instanceof Error ? error.message : tI18nComplete('text7f755292bf51'));
     } finally {
       setDownloading(false);
     }
@@ -721,6 +724,38 @@ export function editablePromptText(
   return stripKortixSystemTags(withoutSessions).trim();
 }
 
+/**
+ * What an edited prompt sends again for the attachments the editor kept.
+ *
+ * A saved copy (`kortix-attachment://`) or a native file part rides as a URL
+ * part; the API writes a saved copy into the sandbox again. An upload whose
+ * saved copy is missing is still in the sandbox, so its `<file>` ref is resent
+ * as text, joined under the trimmed `text` (refs alone when the text is blank).
+ * A tile with neither source has nothing to resend.
+ */
+export function editResendAttachments(
+  kept: readonly NormalizedAttachment[],
+  text: string,
+): {
+  files: AttachedFile[];
+  text: string;
+} {
+  const files: AttachedFile[] = [];
+  const refs: string[] = [];
+  for (const { src, path, filename, mime: kind } of kept) {
+    const mime = kind || 'application/octet-stream';
+    if (src && (isSessionAttachmentRef(src) || !path)) {
+      const isImage = isPreviewableImage(filename, mime);
+      files.push({ kind: 'remote', url: src, filename, mime, isImage });
+    } else if (path) {
+      refs.push(uploadedFileRefXml({ path, mime, filename }));
+    }
+  }
+  const joined = refs.join('\n');
+  const body = text.trim();
+  return { files, text: joined ? (body ? `${body}\n\n${joined}` : joined) : text };
+}
+
 // ============================================================================
 // The bubble
 // ============================================================================
@@ -761,8 +796,11 @@ export function UserMessageBubble({
   textId,
   textRef,
   quoted,
+  tail = false,
   children,
 }: {
+  /** The sender's avatar sits above: the top-right corner, under it, is 4px. */
+  tail?: boolean;
   /** The text overflows its clamp, so there is something to expand. */
   canExpand: boolean;
   expanded: boolean;
@@ -785,6 +823,8 @@ export function UserMessageBubble({
       className={cn(
         BUBBLE_SURFACE,
         'relative overflow-hidden',
+        // 4px: `--radius` (10) minus 6, the corner under the sender's avatar.
+        tail && 'rounded-tr-[calc(var(--radius)-6px)]',
         fullWidth ? 'w-full' : 'w-fit',
         canExpand && 'cursor-pointer',
       )}
@@ -876,7 +916,7 @@ export function UserMessageActions({
   rewindPromptText,
   onRewind,
   rewindDisabled,
-  leadingStatus,
+  deliveryStatus,
 }: {
   /** Epoch milliseconds, or `null` when the backend never stamped one. */
   timestamp: number | null;
@@ -889,11 +929,11 @@ export function UserMessageActions({
   onRewind?: (messageId: string, text: string) => void;
   rewindDisabled?: boolean;
   /**
-   * Rendered before `leading` and ALWAYS visible — a queued prompt's delivery
-   * failure and its recovery actions (`QueuedPromptFailure`). Waiting and
-   * sending prompts render no words; the bubble's queue tone carries them.
+   * ALWAYS visible, at the row's right edge — a queued prompt's delivery
+   * progress (`QueuedPromptProgress`) or its failure and recovery actions
+   * (`QueuedPromptFailure`).
    */
-  leadingStatus?: React.ReactNode;
+  deliveryStatus?: React.ReactNode;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // Copy stays available while the agent is busy / rewind is locked.
@@ -902,7 +942,7 @@ export function UserMessageActions({
   const hasMeta = timestamp !== null || Boolean(edited);
 
   // Nothing to say and nothing to do — don't leave an empty row behind.
-  if (!hasMeta && !copyText && !leadingStatus) return null;
+  if (!hasMeta && !copyText && !deliveryStatus) return null;
 
   return (
     // The fade sits on the ROW, so the timestamp and the buttons reveal
@@ -910,12 +950,14 @@ export function UserMessageActions({
     // it. `opacity`, never mounting: the row holds its height whether or not
     // the pointer is over the turn, so nothing in the transcript reflows.
     // The status word (when there is one) sits OUTSIDE the fade: it is the
-    // one thing on this row a user must not have to hover to learn.
+    // one thing on this row a user must not have to hover to learn. It is the
+    // LAST child, pinned to the right edge: the faded group still takes its
+    // width, and the server stamp lands while a prompt is still `delivering`,
+    // so a status to its left slid 56px for a frame before it vanished.
     <div className="flex w-full items-center justify-end gap-2">
-      {leadingStatus}
       <div
         className={cn(
-          'flex items-center gap-2 transition-opacity duration-150',
+          'flex items-center gap-2 transition-opacity duration-normal',
           // `max-md:opacity-100` — the reveal is a DESKTOP affordance only.
           //
           // A touch screen has no hover, so under 768px this row would sit
@@ -970,6 +1012,7 @@ export function UserMessageActions({
           </div>
         )}
       </div>
+      {deliveryStatus}
     </div>
   );
 }
@@ -996,19 +1039,25 @@ export function UserMessageActions({
  */
 export function UserMessageEditor({
   initialText,
+  attachments = [],
   pending,
   onCancel,
   onSend,
 }: {
   initialText: string;
+  /** The message's attachments. The user keeps or removes each; Send carries the kept ones. */
+  attachments?: NormalizedAttachment[];
   /** The staged rewind is on the wire — hold both buttons. */
   pending?: boolean;
   onCancel: () => void;
-  onSend: (text: string) => void;
+  onSend: (text: string, kept: NormalizedAttachment[]) => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [draft, setDraft] = useState(initialText);
+  const [kept, setKept] = useState(attachments);
   const editorRef = useRef<HTMLTextAreaElement>(null);
+  // Text is required, attachments or not: a text-less replacement prompt does
+  // not commit the staged rewind, so the original turn would stay (KRTX-962).
   const canSend = Boolean(draft.trim()) && !pending;
 
   // Focus with the caret at the END on mount — autofocus alone puts it at the
@@ -1032,6 +1081,27 @@ export function UserMessageEditor({
 
   return (
     <div className={cn(BUBBLE_SURFACE, 'w-full gap-2 py-3 select-text')}>
+      {kept.length > 0 && (
+        <ul className="flex flex-wrap gap-2">
+          {kept.map((file) => (
+            <li key={file.key} className="contents">
+              <div className="group relative">
+                {isImageAttachment(file) ? (
+                  <AttachmentImage file={file} />
+                ) : (
+                  <AttachmentTile filename={file.filename} mime={file.mime} />
+                )}
+                {!pending && (
+                  <AttachmentRemoveButton
+                    filename={file.filename}
+                    onRemove={() => setKept((all) => all.filter((f) => f.key !== file.key))}
+                  />
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
       <textarea
         ref={editorRef}
         value={draft}
@@ -1047,7 +1117,7 @@ export function UserMessageEditor({
           // from firing the send.
           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault();
-            if (canSend) onSend(draft);
+            if (canSend) onSend(draft, kept);
           }
         }}
         aria-label={tI18nComplete.raw('text9757ccd5ef12')}
@@ -1064,7 +1134,7 @@ export function UserMessageEditor({
           type="button"
           size="sm"
           disabled={!canSend}
-          onClick={() => canSend && onSend(draft)}
+          onClick={() => canSend && onSend(draft, kept)}
         >
           {pending && <Loading variant="spokes" className="size-3.5 shrink-0" />}
           {tI18nComplete.raw('textf6f4688ff23d')}
@@ -1082,10 +1152,6 @@ export function UserMessage({
   message,
   author,
   showAuthor,
-  headerTrusted,
-  messagingCards = true,
-  viewerEmail,
-  isLastMessage,
   agentNames,
   commandInfo,
   commands,
@@ -1097,7 +1163,7 @@ export function UserMessage({
   editPending,
   onEditCancel,
   onEditSend,
-  leadingStatus,
+  deliveryStatus,
   pendingAttachments,
   uploadStatus,
   pendingText,
@@ -1107,18 +1173,6 @@ export function UserMessage({
   author?: SessionMessageAuthor;
   /** Draw the author's name above the bubble (group chat). */
   showAuthor?: boolean;
-  /** The server wrote this message's header without a ledger author (an ask's first, `no_reply` prompt). */
-  headerTrusted?: boolean;
-  /**
-   * `human_messaging` is on for the project. Off: no ask / from-session card and
-   * no reply hint, even for a message whose header the ledger confirmed; the
-   * header is stripped and the text draws as a plain bubble. Author labels stay.
-   */
-  messagingCards?: boolean;
-  /** The viewer's email, to tell whether an ask is addressed to them. */
-  viewerEmail?: string;
-  /** No user message came after this one. */
-  isLastMessage?: boolean;
   agentNames?: string[];
   commandInfo?: {
     name: string;
@@ -1146,9 +1200,9 @@ export function UserMessage({
   editPending?: boolean;
   onEditCancel?: () => void;
   /** Send the edit: stage the rewind at this message and deliver `text`. */
-  onEditSend?: (messageId: string, text: string) => void;
-  /** See `UserMessageActions.leadingStatus`. */
-  leadingStatus?: React.ReactNode;
+  onEditSend?: (messageId: string, text: string, kept: NormalizedAttachment[]) => void;
+  /** See `UserMessageActions.deliveryStatus`. */
+  deliveryStatus?: React.ReactNode;
   /**
    * The files this message's Send carried, in send order. The runtime streams
    * a message's parts text-first and the file parts seconds later; these keep
@@ -1179,24 +1233,9 @@ export function UserMessage({
     quotes,
     uploads: uploadedFiles,
   } = useMemo(() => parseAttachmentContent(message.parts), [message.parts]);
-  // A message from another session or in a group chat opens with a platform
-  // header for the agent. The card or the author label says it instead.
-  // Anyone can type a header. Only the server's ledger (`author`) or a server
-  // `no_reply` prompt makes it real; without either it stays plain text.
-  // The header line itself is always hidden: it is agent-facing text, and a
-  // typed one claims nothing once it is gone (names come from the ledger).
-  const headerConfirmed = messagingCards && (!!author || !!headerTrusted);
-  const sessionMessage = useMemo(
-    () => (headerConfirmed ? parseSessionMessagePrompt(rawText) : undefined),
-    [rawText, headerConfirmed],
-  );
-  const textWithoutHeader = useMemo(
-    () => parseSessionMessagePrompt(textAfterFiles)?.prompt ?? textAfterFiles,
-    [textAfterFiles],
-  );
   const { cleanText: textAfterProjects } = useMemo(
-    () => parseProjectReferences(textWithoutHeader),
-    [textWithoutHeader],
+    () => parseProjectReferences(textAfterFiles),
+    [textAfterFiles],
   );
   const { cleanText: textAfterFileMentions, files: fileMentionRefs } = useMemo(
     () => parseFileMentionReferences(textAfterProjects),
@@ -1287,8 +1326,7 @@ export function UserMessage({
       const stripped = stripSystemPtyText((p as TextPart).text);
       if (stripped.trim()) lines.push(stripped);
     }
-    const joined = lines.join('\n').trim();
-    return parseSessionMessagePrompt(joined)?.prompt ?? joined;
+    return lines.join('\n').trim();
   }, [message.parts]);
 
   const rewindPromptText = useMemo(() => {
@@ -1331,7 +1369,7 @@ export function UserMessage({
       rewindPromptText={rewindPromptText}
       onRewind={onRewind}
       rewindDisabled={rewindDisabled}
-      leadingStatus={leadingStatus}
+      deliveryStatus={deliveryStatus}
     />
   );
 
@@ -1541,9 +1579,10 @@ export function UserMessage({
     return (
       <UserMessageEditor
         initialText={editingText}
+        attachments={allAttachments}
         pending={editPending}
         onCancel={onEditCancel}
-        onSend={(text) => onEditSend(message.info.id, text)}
+        onSend={(text, kept) => onEditSend(message.info.id, text, kept)}
       />
     );
   }
@@ -1571,26 +1610,6 @@ export function UserMessage({
           )}
         </div>
         {actions}
-      </div>
-    );
-  }
-
-  // Another session's message, or an ask: an incoming card on the left.
-  // A session card needs a session author; an ask card any ledger author, or
-  // the server's own `no_reply` ask.
-  if (
-    sessionMessage &&
-    (sessionMessage.type === 'ask'
-      ? true
-      : author?.kind === 'session' || (headerTrusted && sessionMessage.sender.kind === 'session'))
-  ) {
-    return (
-      <div className="flex flex-col items-start gap-1">
-        <SessionMessageCard
-          info={sessionMessage}
-          author={author}
-          replyHint={isLastMessage && isAskForViewer(sessionMessage, viewerEmail)}
-        />
       </div>
     );
   }
@@ -1656,7 +1675,9 @@ export function UserMessage({
         showPlan ? 'max-w-full' : 'max-w-[80%]',
       )}
     >
-      {showAuthor && author && <MessageAuthorLabel author={author} />}
+      {/* A member author is the avatar above the bubble; another session's
+          agent has no face, so it keeps the named label. */}
+      {showAuthor && author?.kind === 'session' && <MessageAuthorLabel author={author} />}
       {/* A kept failed send with no files still states its failure, with Retry. */}
       {(allAttachments.length > 0 || uploadStatus?.state === 'failed') && (
         <MessageAttachments attachments={allAttachments} status={uploadStatus} />
@@ -1674,25 +1695,28 @@ export function UserMessage({
           the bubble used to render anyway — a padded surface with nothing in
           it, hanging under the attachments. The attachments ARE the message. */}
       {(bodyText || quotedPieces || effectiveCommandInfo) && (
-        <UserMessageBubble
-          canExpand={canExpand}
-          expanded={expanded}
-          onToggle={() => setExpanded(!expanded)}
-          textId={`${message.info.id}-text`}
-          textRef={textRef}
-          quoted={Boolean(quotedPieces)}
-        >
-          {quotedPieces ? (
-            <QuotedMessageBody pieces={quotedPieces} renderText={renderQuotedRun} />
-          ) : (
-            (bodyText || effectiveCommandInfo) && (
-              <>
-                {commandLead}
-                {renderSegments(segments)}
-              </>
-            )
-          )}
-        </UserMessageBubble>
+        <MessageSenderAbove sender={showAuthor && author?.kind === 'member' ? author : null}>
+          <UserMessageBubble
+            tail={showAuthor && author?.kind === 'member'}
+            canExpand={canExpand}
+            expanded={expanded}
+            onToggle={() => setExpanded(!expanded)}
+            textId={`${message.info.id}-text`}
+            textRef={textRef}
+            quoted={Boolean(quotedPieces)}
+          >
+            {quotedPieces ? (
+              <QuotedMessageBody pieces={quotedPieces} renderText={renderQuotedRun} />
+            ) : (
+              (bodyText || effectiveCommandInfo) && (
+                <>
+                  {commandLead}
+                  {renderSegments(segments)}
+                </>
+              )
+            )}
+          </UserMessageBubble>
+        </MessageSenderAbove>
       )}
       {/* Sent-at, "edited", and the hover actions are ONE row, sitting directly
           under the bubble they describe — notification cards below are separate

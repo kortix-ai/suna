@@ -549,10 +549,11 @@ interface ConnectionFields {
 export interface ConnectionShare {
   /** The assignment id; `revokeAssignment` takes it. */
   grant_id: string;
-  /** `project` = everyone with access to the project. */
-  principal_type: 'member' | 'group' | 'project';
+  /** `project` = everyone with access to the project. `agent`: `principal_id`
+   *  is the agent's service account; every session of that agent may use it. */
+  principal_type: 'member' | 'group' | 'project' | 'agent';
   principal_id: string;
-  /** A member's email, a group's name, or the project's name. */
+  /** A member's email, a group's name, an agent's name, or the project's name. */
   label: string;
   expires_at: string | null;
 }

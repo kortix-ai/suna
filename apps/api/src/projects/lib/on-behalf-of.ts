@@ -18,14 +18,17 @@
  *     service account) clears `on_behalf_of` and keeps `user_id`.
  *
  * Readers: `getRequestOnBehalfOf(c)` (fresh, per request, from the auth
- * middleware) or `credentialOnBehalfOf(actor)` (iam/actor.ts, 15 s memo).
+ * middleware) or the token row itself. No memo carries it: it changes per turn.
  */
-import type { Context } from 'hono';
 import { and, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm';
-import { accountMemberships, accountTokens, projectSessions } from '@kortix/db';
+import { accountTokens, projectSessions } from '@kortix/db';
 import { config } from '../../config';
-import { loadTokenBinding } from '../../iam/actor';
 import { db } from '../../shared/db';
+import { membershipExistsSql, membershipRow } from '../../iam/membership-read';
+
+// The request reader `getRequestOnBehalfOf` lives in `middleware/on-behalf-of.ts`.
+// Re-exported here so every importer and mock keeps working.
+export { getRequestOnBehalfOf } from '../../middleware/on-behalf-of';
 
 /** Session metadata key stamped when a prompt cleared `on_behalf_of`. A
  *  re-mint of the session credential reads it and never restores the value. */
@@ -87,9 +90,9 @@ export function channelPrompterForOnBehalfOf(input: {
   teamsRequiresUserIdentity: boolean;
 }): string | null | undefined {
   if (typeof input.source !== 'string') return undefined;
-  // A reminder prompt is text its creator wrote earlier. The reminder create route
-  // already cleared `on_behalf_of` when that creator was another human, so a
-  // fire is like `system:connector-connected`: the session's own human caused it.
+  // A reminder the session's own agent set is that session's background work:
+  // its fire leaves the identity as is. A reminder a person set is marked
+  // `bindTurnIdentity` at fire time instead (trigger-fire.ts) and never gets here.
   if (input.source === 'trigger:reminder') return undefined;
   if (input.source.startsWith('trigger:')) return null;
   if (input.source === 'email' || input.source === 'telegram') return null;
@@ -119,11 +122,7 @@ export async function resolveSessionOnBehalfOf(input: {
     const metadata = (session.metadata ?? {}) as Record<string, unknown>;
     const parentId = typeof metadata.spawned_by_session === 'string' ? metadata.spawned_by_session : null;
     const [membership, parent] = await Promise.all([
-      db
-        .select({ userId: accountMemberships.userId })
-        .from(accountMemberships)
-        .where(and(eq(accountMemberships.userId, input.userId), eq(accountMemberships.accountId, input.accountId)))
-        .limit(1),
+      membershipRow(input.userId, input.accountId),
       parentId
         ? db
             .select({ onBehalfOfUserId: accountTokens.onBehalfOfUserId })
@@ -185,9 +184,6 @@ export async function clearSessionOnBehalfOfForPrompt(input: {
     )
     .returning({ tokenId: accountTokens.tokenId });
   if (cleared.length === 0) return false;
-  // The IAM token-binding memo carries the value for 15 s; drop it here so
-  // this replica's next request already sees NULL.
-  for (const row of cleared) loadTokenBinding.invalidate(row.tokenId);
   await db
     .update(projectSessions)
     .set({
@@ -220,7 +216,7 @@ export async function bindSessionTurnIdentity(input: {
   prompterUserId: string;
 }): Promise<boolean> {
   const prompter = sql`${input.prompterUserId}::uuid`;
-  const member = sql`exists (select 1 from kortix.account_memberships m where m.user_id = ${prompter} and m.account_id = ${input.accountId})`;
+  const member = membershipExistsSql(prompter, input.accountId);
   const changed = await db.execute<{ token_id: string }>(sql`
     with changed as (
       update kortix.account_tokens t
@@ -244,11 +240,5 @@ export async function bindSessionTurnIdentity(input: {
     )
     select token_id from changed
   `);
-  for (const row of changed) loadTokenBinding.invalidate(row.token_id);
   return changed.length > 0;
-}
-
-/** Fresh per-request value set by the auth middleware; null for non-session tokens. */
-export function getRequestOnBehalfOf(c: Context): string | null {
-  return (c.get('onBehalfOfUserId') as string | null | undefined) ?? null;
 }

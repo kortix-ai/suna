@@ -36,6 +36,15 @@ const LOCK_KEY = 'background-workers';
 const TTL_MS = 60_000;
 const RENEW_INTERVAL_MS = 20_000;
 const ACQUIRE_RETRY_MS = 15_000;
+// One lease query may take this long. postgres.js has no per-query timeout, and
+// a half-open socket to the pooler leaves the promise pending forever.
+const QUERY_TIMEOUT_MS = 10_000;
+// The leader steps down this long BEFORE its lease can expire, measured from the
+// moment the last winning renew was SENT (the DB clock started then, not when the
+// reply arrived). The margin covers clock drift and `onRelease` latency.
+const DEMOTE_AFTER_MS = TTL_MS - 10_000;
+// Independent of the tick chain: a hung tick must not be able to hide an expired lease.
+const WATCHDOG_MS = 5_000;
 
 export interface LeaderElectionHandlers {
   /** Called once when this node becomes leader (start singleton workers). */
@@ -96,6 +105,28 @@ export function runsSingletonWorkers(env: NodeJS.ProcessEnv = process.env): bool
   );
 }
 
+/** Reject if `work` does not settle within `ms`; `onTimeout` runs once on expiry (cancel the query). */
+export async function withTimeout<T>(work: PromiseLike<T>, ms: number, onTimeout?: () => void): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          try {
+            onTimeout?.();
+          } catch {
+            // best-effort cancel
+          }
+          reject(new Error(`leader lease query timed out after ${ms}ms`));
+        }, ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 // ─── Runtime state ───────────────────────────────────────────────────────────
 
 const ownerId = `${os.hostname()}-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
@@ -104,12 +135,21 @@ let sql: ReturnType<typeof postgres> | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let running = false;
 let leader = false;
-let lastRenewSuccessMs = 0;
+// performance.now() taken BEFORE the last winning acquire/renew was sent.
+let lastRenewStartedMono = 0;
+let watchdog: ReturnType<typeof setTimeout> | null = null;
 let handlers: LeaderElectionHandlers | null = null;
 let tableReady = false;
 
+/**
+ * True while this node holds a lease it can still trust. A singleton writer
+ * calls this before a side effect: a leader whose renew deadline passed is
+ * already a former leader, even if `demote` has not finished yet (fencing).
+ */
 export function isLeader(): boolean {
-  return leader;
+  if (!leader) return false;
+  if (!sql) return true; // single node, no lease to lose
+  return !shouldDemote(lastRenewStartedMono, performance.now(), DEMOTE_AFTER_MS);
 }
 
 async function ensureLeaseTable(): Promise<void> {
@@ -140,7 +180,7 @@ async function acquireOrRenew(): Promise<boolean> {
   if (!sql) return false;
   await ensureLeaseTable();
   const ttlSec = Math.ceil(TTL_MS / 1000);
-  const rows = await sql<{ owner_id: string }[]>`
+  const query = sql<{ owner_id: string }[]>`
     INSERT INTO kortix.worker_leader_lease AS l (lock_key, owner_id, expires_at, updated_at)
     VALUES (${LOCK_KEY}, ${ownerId}, now() + make_interval(secs => ${ttlSec}), now())
     ON CONFLICT (lock_key) DO UPDATE
@@ -150,6 +190,7 @@ async function acquireOrRenew(): Promise<boolean> {
       WHERE l.owner_id = EXCLUDED.owner_id OR l.expires_at < now()
     RETURNING owner_id
   `;
+  const rows = await withTimeout(query, QUERY_TIMEOUT_MS, () => query.cancel());
   return interpretAcquireResult(rows, ownerId);
 }
 
@@ -194,9 +235,10 @@ async function tick(): Promise<void> {
   if (!running) return;
   let nextDelay = leader ? RENEW_INTERVAL_MS : ACQUIRE_RETRY_MS;
   try {
+    const sentAtMono = performance.now();
     const won = await acquireOrRenew();
     if (won) {
-      lastRenewSuccessMs = Date.now();
+      lastRenewStartedMono = sentAtMono;
       await promote();
     } else if (leader) {
       // Someone else holds a live lease — step down immediately.
@@ -204,11 +246,8 @@ async function tick(): Promise<void> {
     }
   } catch (err) {
     logger.error('[leader] lease tick failed', { error: err instanceof Error ? err.message : String(err) });
-    // Can't confirm leadership; step down once our last good lease has lapsed so
-    // a healthy peer can take over without overlap. Retry sooner meanwhile.
-    if (leader && shouldDemote(lastRenewSuccessMs, Date.now())) {
-      await demote('renew failures exceeded lease TTL');
-    }
+    // Can't confirm leadership; the watchdog steps down at the renew deadline so a
+    // healthy peer can take over without overlap. Retry sooner meanwhile.
     nextDelay = Math.min(nextDelay, ACQUIRE_RETRY_MS);
   } finally {
     if (running) timer = setTimeout(() => void tick(), nextDelay);
@@ -255,6 +294,14 @@ export function startLeaderElection(
   });
 
   logger.info('[leader] starting election', { ownerId, ttlMs: TTL_MS, renewMs: RENEW_INTERVAL_MS });
+  const watch = () => {
+    if (leader && shouldDemote(lastRenewStartedMono, performance.now(), DEMOTE_AFTER_MS)) {
+      void demote('renew deadline passed');
+    }
+    watchdog = setTimeout(watch, WATCHDOG_MS);
+    watchdog.unref?.();
+  };
+  watch();
   void tick();
 }
 
@@ -268,6 +315,10 @@ export async function stopLeaderElection(): Promise<void> {
   if (timer) {
     clearTimeout(timer);
     timer = null;
+  }
+  if (watchdog) {
+    clearTimeout(watchdog);
+    watchdog = null;
   }
   const wasLeader = leader;
   await demote('shutdown');

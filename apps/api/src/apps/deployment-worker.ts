@@ -26,6 +26,8 @@ import { AppBudgetExceededError } from './budget';
 import { AppAccountUnfundedError, AppLimitError, assertAppComputeAllowed } from './limits';
 import { appRuntimeArtifactDigest } from './runtime-artifacts';
 import { appDeploymentFailureDisposition } from './deployment-failures';
+import { appDeploymentSnapshotName } from '../snapshots/quota-gc-select';
+import { exponentialBackoffMs } from '../shared/backoff';
 
 export const APP_RUNTIME_VERSION =
   process.env.KORTIX_APP_RUNTIME_VERSION
@@ -97,8 +99,18 @@ class PermanentAppDeploymentError extends Error {
   }
 }
 
+/**
+ * A worker that dies mid-drive (OOM, SIGKILL) never reaches `recordDeploymentFailure`,
+ * so the cap there cannot count that attempt. The claim counts it instead: once the
+ * lease lapses the row is claimed again with `attemptCount` past the cap, and the
+ * drive fails it for good rather than building a fourth time.
+ */
+export function attemptsExhausted(attemptCount: number): boolean {
+  return attemptCount > MAX_ATTEMPTS;
+}
+
 function retryDelayMs(attempt: number): number {
-  return Math.min(60_000, 2_000 * 2 ** Math.max(0, attempt - 1));
+  return exponentialBackoffMs({ attempt, baseMs: 2_000, capMs: 60_000 });
 }
 
 async function event(
@@ -310,6 +322,21 @@ async function deploymentAuditRefFor(claimed: ClaimedDeployment): Promise<Deploy
   }
 }
 
+/**
+ * What a drive created before a throw. The failure path and the `finally`
+ * read it, so every step records a resource the moment it exists.
+ */
+interface DeploymentDriveState {
+  runtimeId: string | null;
+  runtimeExternalId: string | null;
+  runtimeProvider: SandboxProviderName | null;
+  temporaryRoot: string | null;
+  auditRef: DeploymentAuditRef | null;
+}
+
+type DeploymentContext = Awaited<ReturnType<typeof deploymentContext>>;
+type RequestedMachine = { cpuCores: number; memoryGb: number; diskGb: number };
+
 export async function driveAppDeployment(
   claimed: ClaimedDeployment,
   owner: string,
@@ -323,22 +350,48 @@ export async function driveAppDeployment(
       });
     });
   }, HEARTBEAT_MS);
-  let runtimeId: string | null = null;
-  let runtimeExternalId: string | null = null;
-  let runtimeProvider: SandboxProviderName | null = null;
-  let temporaryRoot: string | null = null;
-  let auditRef: DeploymentAuditRef | null = null;
+  const state: DeploymentDriveState = {
+    runtimeId: null,
+    runtimeExternalId: null,
+    runtimeProvider: null,
+    temporaryRoot: null,
+    auditRef: null,
+  };
   try {
+    if (attemptsExhausted(claimed.attemptCount)) {
+      // The dead attempt may have left a live runtime; the failure path below
+      // closes its compute window and removes it.
+      const [orphan] = await db
+        .select()
+        .from(appRuntimes)
+        .where(
+          and(
+            eq(appRuntimes.deploymentId, claimed.deploymentId),
+            inArray(appRuntimes.status, ['provisioning', 'starting', 'running']),
+          ),
+        )
+        .limit(1);
+      if (orphan) {
+        state.runtimeId = orphan.runtimeId;
+        state.runtimeExternalId = orphan.externalId;
+        state.runtimeProvider = orphan.provider as SandboxProviderName;
+      }
+      throw new PermanentAppDeploymentError(
+        `The deployment worker stopped ${MAX_ATTEMPTS} times while driving this deployment`,
+        'attempts_exhausted',
+      );
+    }
     const context = await deploymentContext(claimed.deploymentId);
-    auditRef = {
+    const auditRef: DeploymentAuditRef = {
       appId: context.app.appId,
       deploymentId: claimed.deploymentId,
       accountId: context.app.accountId,
       projectId: context.app.projectId,
       createdBy: claimed.createdBy,
     };
+    state.auditRef = auditRef;
     const provider = selectedProvider(context.deployment.hostingProvider);
-    runtimeProvider = provider;
+    state.runtimeProvider = provider;
     await setDeploymentStatus(claimed.deploymentId, owner, 'validating', {
       hostingProvider: provider,
       error: null,
@@ -346,214 +399,39 @@ export async function driveAppDeployment(
     });
     await event(claimed.deploymentId, 'validation_started', 'Validating App artifact');
 
-    let sourceDir: string | undefined;
-    if (context.artifact.kind === 'archive') {
-      if (context.artifact.status !== 'uploaded' && context.artifact.status !== 'ready') {
-        throw new PermanentAppDeploymentError(
-          `Artifact is ${context.artifact.status}, expected uploaded`,
-          'artifact_not_uploaded',
-        );
-      }
-      if (!context.artifact.objectPath) {
-        throw new PermanentAppDeploymentError('Archive artifact has no object path', 'artifact_missing');
-      }
-      temporaryRoot = await mkdtemp(join(tmpdir(), 'kortix-app-deployment-'));
-      const archivePath = join(temporaryRoot, 'source.tar.gz');
-      const downloaded = await downloadAppArtifact(context.artifact.objectPath, archivePath);
-      if (context.artifact.sha256 && downloaded.sha256 !== context.artifact.sha256) {
-        throw new PermanentAppDeploymentError('Artifact SHA-256 does not match finalization', 'digest_mismatch');
-      }
-      if (context.artifact.sizeBytes && downloaded.sizeBytes !== context.artifact.sizeBytes) {
-        throw new PermanentAppDeploymentError('Artifact size does not match finalization', 'size_mismatch');
-      }
-      sourceDir = join(temporaryRoot, 'source');
-      const inspection = await extractAppArchive(archivePath, sourceDir);
-      await db
-        .update(appArtifacts)
-        .set({
-          status: 'ready',
-          sha256: downloaded.sha256,
-          sizeBytes: downloaded.sizeBytes,
-          metadata: { ...(context.artifact.metadata as object), inspection },
-          updatedAt: new Date(),
-        })
-        .where(eq(appArtifacts.artifactId, context.artifact.artifactId));
-    } else if (context.artifact.kind !== 'oci_image') {
-      throw new PermanentAppDeploymentError(`Unsupported artifact kind ${context.artifact.kind}`, 'artifact_kind');
-    }
-
-    const rawBuildSpec = context.deployment.buildSpec as Record<string, unknown>;
-    const source = rawBuildSpec.source as AppSourceSpec | undefined;
-    if (!source || typeof source !== 'object') {
-      throw new PermanentAppDeploymentError('Deployment source specification is missing', 'invalid_spec');
-    }
-    let normalized;
-    try {
-      normalized = await normalizeAppBuild(source, sourceDir);
-    } catch (error) {
-      throw new PermanentAppDeploymentError(
-        error instanceof Error ? error.message : String(error),
-        'invalid_spec',
-      );
-    }
-
-    const availableSecrets = await listResolvedProjectSecrets(
-      context.app.projectId,
-      context.deployment.createdBy,
-    );
-    let runtimeEnvironment;
-    try {
-      runtimeEnvironment = resolveAppRuntimeEnvironment({
-        environment: (rawBuildSpec.environment ?? {}) as Record<string, string>,
-        secrets: (rawBuildSpec.secrets ?? {}) as Record<string, string>,
-        availableSecrets,
-      });
-    } catch (error) {
-      throw new PermanentAppDeploymentError(
-        error instanceof Error ? error.message : String(error),
-        'invalid_environment',
-      );
-    }
-
-    // Entitlement, concurrency and budget, before a build burns provider time.
-    // A refusal here is permanent: the operator must fund the account, stop an
-    // App, or raise the budget and then deploy again. Retrying three times on a
-    // 30s backoff would only restate the same answer.
-    try {
-      await assertAppComputeAllowed(context.app);
-    } catch (error) {
-      if (error instanceof AppBudgetExceededError) {
-        throw new PermanentAppDeploymentError(error.message, 'app_budget_exceeded');
-      }
-      if (error instanceof AppAccountUnfundedError) {
-        throw new PermanentAppDeploymentError(error.message, 'account_unfunded');
-      }
-      if (error instanceof AppLimitError) {
-        throw new PermanentAppDeploymentError(error.message, error.code);
-      }
-      throw error;
-    }
-
-    const snapshotName = `kortix-app-${claimed.deploymentId.replaceAll('-', '')}`;
-    await setDeploymentStatus(claimed.deploymentId, owner, 'building', {
-      sourceKind: normalized.sourceKind,
-      runtimeSpec: normalized.runtimeSpec,
-      buildSpec: { ...rawBuildSpec, source, normalized: normalized.buildSpec },
-      providerBuildId: snapshotName,
-    });
-    await event(claimed.deploymentId, 'build_started', `Building ${snapshotName}`, {
-      data: { provider },
-    });
-    const requestedMachine = {
-      cpuCores: context.app.cpuCores,
-      memoryGb: context.app.memoryGb,
-      diskGb: context.app.diskGb,
-    };
-    await hosting.buildImage({
+    const sourceDir = await prepareDeploymentSource(context, state);
+    const { rawBuildSpec, source, normalized, runtimeEnvironment } = await resolveDeploymentBuild(context, sourceDir);
+    await assertDeploymentComputeAllowed(context);
+    const { snapshotName, requestedMachine } = await buildDeploymentImage({
+      claimed,
+      owner,
+      hosting,
+      context,
       provider,
-      snapshotName,
-      slug: context.app.slug,
-      sourceDir: normalized.sourceDir,
-      dockerfile: normalized.dockerfile,
-      runtimeSpec: normalized.runtimeSpec,
-      machine: requestedMachine,
-      logTap: {
-        onLine: (line) => {
-          void event(claimed.deploymentId, 'build_log', line.slice(0, 4_000), { level: 'debug' });
-        },
-      },
+      rawBuildSpec,
+      source,
+      normalized,
     });
-    await event(claimed.deploymentId, 'build_ready', 'App image is ready', { data: { provider } });
+
+    // A build takes minutes; the App can be deleted meanwhile. Never start a
+    // runtime (and its compute meter) for a deleted App. Its image is
+    // reclaimed by project maintenance (`reclaimAppDeploymentImages`).
+    const [stillLive] = await db.select({ appId: apps.appId }).from(apps)
+      .where(and(eq(apps.appId, context.app.appId), isNull(apps.deletedAt)))
+      .limit(1);
+    if (!stillLive) throw new PermanentAppDeploymentError('App was deleted during the build', 'not_found');
 
     await setDeploymentStatus(claimed.deploymentId, owner, 'provisioning');
-    const [existingRuntime] = await db
-      .select()
-      .from(appRuntimes)
-      .where(
-        and(
-          eq(appRuntimes.deploymentId, claimed.deploymentId),
-          inArray(appRuntimes.status, ['provisioning', 'starting', 'running']),
-        ),
-      )
-      .limit(1);
-    if (existingRuntime) {
-      runtimeId = existingRuntime.runtimeId;
-      runtimeExternalId = existingRuntime.externalId;
-      runtimeProvider = existingRuntime.provider as SandboxProviderName;
-      await hosting.start(runtimeProvider, runtimeExternalId);
-    } else {
-      runtimeId = randomUUID();
-      const handle = await hosting.createRuntime({
-        provider,
-        runtimeId,
-        accountId: context.app.accountId,
-        userId: context.deployment.createdBy,
-        name: `app-${context.app.routeKey}-v${context.deployment.version}`,
-        snapshotName,
-        machine: requestedMachine,
-        // The App verifies `x-kortix-app-viewer` with this. Derived per App, so
-        // it is not the platform secret and rotating the platform secret rotates
-        // every App's. `KORTIX_*` is reserved from user-supplied env, so this
-        // cannot be shadowed by a manifest value.
-        envVars: {
-          ...runtimeEnvironment.env,
-          [APP_VIEWER_SECRET_ENV]: appViewerSecret(context.app.appId),
-        },
-      });
-      runtimeExternalId = handle.externalId;
-      const now = new Date();
-      await db.insert(appRuntimes).values({
-        runtimeId,
-        deploymentId: claimed.deploymentId,
-        accountId: context.app.accountId,
-        provider,
-        externalId: handle.externalId,
-        status: 'starting',
-        controlTokenHash: handle.controlTokenHash,
-        idleDeadlineAt: new Date(now.getTime() + context.app.idleTimeoutSeconds * 1000),
-        startedAt: now,
-        metadata: {
-          ...handle.metadata,
-          secretIdentifiers: runtimeEnvironment.secretIdentifiers,
-          environmentKeys: Object.keys(runtimeEnvironment.env).sort(),
-        },
-      });
-      // Meter what the provider actually allocates. E2B has no disk parameter,
-      // so charging this App's disk_gb there would bill storage nobody
-      // provisioned. Tell the operator when the two differ instead of silently
-      // accepting a specification the provider ignored.
-      const effectiveMachine = hosting.effectiveMachine(provider, requestedMachine);
-      if (
-        effectiveMachine.cpuCores !== requestedMachine.cpuCores
-        || effectiveMachine.memoryGb !== requestedMachine.memoryGb
-        || effectiveMachine.diskGb !== requestedMachine.diskGb
-      ) {
-        await event(
-          claimed.deploymentId,
-          'machine_provider_adjusted',
-          `${provider} does not enforce the full machine specification; billing meters what it allocates`,
-          {
-            runtimeId,
-            level: 'warn',
-            data: { requested: requestedMachine, effective: effectiveMachine },
-          },
-        );
-      }
-      await startComputeSession({
-        sandboxId: runtimeId,
-        accountId: context.app.accountId,
-        actorUserId: context.deployment.createdBy,
-        provider,
-        spec: { ...effectiveMachine, gpuCount: 0 },
-        workloadType: 'app',
-        appRuntimeId: runtimeId,
-        metadata: { deploymentId: claimed.deploymentId, appId: context.app.appId },
-      });
-      await event(claimed.deploymentId, 'runtime_created', 'App runtime created', {
-        runtimeId,
-        data: { provider, externalId: handle.externalId },
-      });
-    }
+    const { runtimeId, runtimeExternalId, runtimeProvider } = await provisionDeploymentRuntime({
+      claimed,
+      hosting,
+      context,
+      provider,
+      snapshotName,
+      requestedMachine,
+      runtimeEnvironment,
+      state,
+    });
 
     await setDeploymentStatus(claimed.deploymentId, owner, 'checking');
     await hosting.waitUntilReady(runtimeProvider, runtimeExternalId, runtimeId);
@@ -575,63 +453,337 @@ export async function driveAppDeployment(
       });
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const disposition = appDeploymentFailureDisposition(message);
-    const permanent = error instanceof PermanentAppDeploymentError || disposition.permanent;
-    const errorCode = error instanceof PermanentAppDeploymentError
-      ? error.code
-      : disposition.code;
-    const attempt = claimed.attemptCount;
-    if (runtimeId) {
-      await db
-        .update(appRuntimes)
-        .set({ status: 'error', stoppedAt: new Date(), updatedAt: new Date() })
-        .where(eq(appRuntimes.runtimeId, runtimeId))
-        .catch(() => {});
-      await pauseComputeSession(runtimeId).catch(() => {});
-    }
-    if (runtimeProvider && runtimeExternalId) {
-      await hosting.remove(runtimeProvider, runtimeExternalId).catch(() => {});
-    }
-    const terminal = permanent || attempt >= MAX_ATTEMPTS;
-    await db
-      .update(appDeployments)
-      .set({
-        status: terminal ? 'failed' : 'queued',
-        errorCode,
-        error: message.slice(0, 8_000),
-        failedAt: terminal ? new Date() : null,
-        nextAttemptAt: terminal ? null : new Date(Date.now() + retryDelayMs(attempt)),
-        leaseOwner: null,
-        leaseExpiresAt: null,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(appDeployments.deploymentId, claimed.deploymentId),
-          eq(appDeployments.leaseOwner, owner),
-        ),
-      );
-    await event(claimed.deploymentId, terminal ? 'deployment_failed' : 'deployment_retry', message, {
-      level: 'error',
-      runtimeId: runtimeId ?? undefined,
-      data: { attempt, terminal },
-    }).catch(() => {});
-    if (terminal) {
-      // A retry is not an outcome; only the terminal failure is audited.
-      const ref = auditRef ?? (await deploymentAuditRefFor(claimed));
-      if (ref) await auditDeploymentOutcome(ref, { outcome: 'failed', errorCode, attempt });
-      return;
-    }
+    await recordDeploymentFailure({ claimed, owner, hosting, state, error });
   } finally {
     clearInterval(heartbeat);
-    if (temporaryRoot) await rm(temporaryRoot, { recursive: true, force: true }).catch(() => {});
+    if (state.temporaryRoot) await rm(state.temporaryRoot, { recursive: true, force: true }).catch(() => {});
   }
 }
 
-const workerState = globalThis as unknown as {
-  __kortixAppsWorkerTimer?: ReturnType<typeof setInterval> | null;
-};
+/** Download, verify and unpack an archive artifact. Returns its source directory (none for an OCI image). */
+async function prepareDeploymentSource(
+  context: DeploymentContext,
+  state: DeploymentDriveState,
+): Promise<string | undefined> {
+  let sourceDir: string | undefined;
+  if (context.artifact.kind === 'archive') {
+    if (context.artifact.status !== 'uploaded' && context.artifact.status !== 'ready') {
+      throw new PermanentAppDeploymentError(
+        `Artifact is ${context.artifact.status}, expected uploaded`,
+        'artifact_not_uploaded',
+      );
+    }
+    if (!context.artifact.objectPath) {
+      throw new PermanentAppDeploymentError('Archive artifact has no object path', 'artifact_missing');
+    }
+    state.temporaryRoot = await mkdtemp(join(tmpdir(), 'kortix-app-deployment-'));
+    const archivePath = join(state.temporaryRoot, 'source.tar.gz');
+    const downloaded = await downloadAppArtifact(context.artifact.objectPath, archivePath);
+    if (context.artifact.sha256 && downloaded.sha256 !== context.artifact.sha256) {
+      throw new PermanentAppDeploymentError('Artifact SHA-256 does not match finalization', 'digest_mismatch');
+    }
+    if (context.artifact.sizeBytes && downloaded.sizeBytes !== context.artifact.sizeBytes) {
+      throw new PermanentAppDeploymentError('Artifact size does not match finalization', 'size_mismatch');
+    }
+    sourceDir = join(state.temporaryRoot, 'source');
+    const inspection = await extractAppArchive(archivePath, sourceDir);
+    await db
+      .update(appArtifacts)
+      .set({
+        status: 'ready',
+        sha256: downloaded.sha256,
+        sizeBytes: downloaded.sizeBytes,
+        metadata: { ...(context.artifact.metadata as object), inspection },
+        updatedAt: new Date(),
+      })
+      .where(eq(appArtifacts.artifactId, context.artifact.artifactId));
+  } else if (context.artifact.kind !== 'oci_image') {
+    throw new PermanentAppDeploymentError(`Unsupported artifact kind ${context.artifact.kind}`, 'artifact_kind');
+  }
+  return sourceDir;
+}
+
+/** Normalize the build spec against the source and resolve the runtime environment. */
+async function resolveDeploymentBuild(context: DeploymentContext, sourceDir: string | undefined) {
+  const rawBuildSpec = context.deployment.buildSpec as Record<string, unknown>;
+  const source = rawBuildSpec.source as AppSourceSpec | undefined;
+  if (!source || typeof source !== 'object') {
+    throw new PermanentAppDeploymentError('Deployment source specification is missing', 'invalid_spec');
+  }
+  let normalized;
+  try {
+    normalized = await normalizeAppBuild(source, sourceDir);
+  } catch (error) {
+    throw new PermanentAppDeploymentError(
+      error instanceof Error ? error.message : String(error),
+      'invalid_spec',
+    );
+  }
+
+  const availableSecrets = await listResolvedProjectSecrets(
+    context.app.projectId,
+    context.deployment.createdBy,
+  );
+  let runtimeEnvironment;
+  try {
+    runtimeEnvironment = resolveAppRuntimeEnvironment({
+      environment: (rawBuildSpec.environment ?? {}) as Record<string, string>,
+      secrets: (rawBuildSpec.secrets ?? {}) as Record<string, string>,
+      availableSecrets,
+    });
+  } catch (error) {
+    throw new PermanentAppDeploymentError(
+      error instanceof Error ? error.message : String(error),
+      'invalid_environment',
+    );
+  }
+  return { rawBuildSpec, source, normalized, runtimeEnvironment };
+}
+
+async function assertDeploymentComputeAllowed(context: DeploymentContext): Promise<void> {
+  // Entitlement, concurrency and budget, before a build burns provider time.
+  // A refusal here is permanent: the operator must fund the account, stop an
+  // App, or raise the budget and then deploy again. Retrying three times on a
+  // 30s backoff would only restate the same answer.
+  try {
+    await assertAppComputeAllowed(context.app);
+  } catch (error) {
+    if (error instanceof AppBudgetExceededError) {
+      throw new PermanentAppDeploymentError(error.message, 'app_budget_exceeded');
+    }
+    if (error instanceof AppAccountUnfundedError) {
+      throw new PermanentAppDeploymentError(error.message, 'account_unfunded');
+    }
+    if (error instanceof AppLimitError) {
+      throw new PermanentAppDeploymentError(error.message, error.code);
+    }
+    throw error;
+  }
+}
+
+async function buildDeploymentImage(input: {
+  claimed: ClaimedDeployment;
+  owner: string;
+  hosting: AppHostingProvider;
+  context: DeploymentContext;
+  provider: SandboxProviderName;
+  rawBuildSpec: Record<string, unknown>;
+  source: AppSourceSpec;
+  normalized: Awaited<ReturnType<typeof normalizeAppBuild>>;
+}): Promise<{ snapshotName: string; requestedMachine: RequestedMachine }> {
+  const { claimed, owner, hosting, context, provider, rawBuildSpec, source, normalized } = input;
+  const snapshotName = appDeploymentSnapshotName(claimed.deploymentId);
+  await setDeploymentStatus(claimed.deploymentId, owner, 'building', {
+    sourceKind: normalized.sourceKind,
+    runtimeSpec: normalized.runtimeSpec,
+    buildSpec: { ...rawBuildSpec, source, normalized: normalized.buildSpec },
+    providerBuildId: snapshotName,
+  });
+  await event(claimed.deploymentId, 'build_started', `Building ${snapshotName}`, {
+    data: { provider },
+  });
+  const requestedMachine = {
+    cpuCores: context.app.cpuCores,
+    memoryGb: context.app.memoryGb,
+    diskGb: context.app.diskGb,
+  };
+  await hosting.buildImage({
+    provider,
+    snapshotName,
+    slug: context.app.slug,
+    sourceDir: normalized.sourceDir,
+    dockerfile: normalized.dockerfile,
+    runtimeSpec: normalized.runtimeSpec,
+    machine: requestedMachine,
+    logTap: {
+      onLine: (line) => {
+        void event(claimed.deploymentId, 'build_log', line.slice(0, 4_000), { level: 'debug' });
+      },
+    },
+  });
+  await event(claimed.deploymentId, 'build_ready', 'App image is ready', { data: { provider } });
+  return { snapshotName, requestedMachine };
+}
+
+/** Restart the deployment's live runtime, or create one and open its compute window. */
+async function provisionDeploymentRuntime(input: {
+  claimed: ClaimedDeployment;
+  hosting: AppHostingProvider;
+  context: DeploymentContext;
+  provider: SandboxProviderName;
+  snapshotName: string;
+  requestedMachine: RequestedMachine;
+  runtimeEnvironment: ReturnType<typeof resolveAppRuntimeEnvironment>;
+  state: DeploymentDriveState;
+}): Promise<{ runtimeId: string; runtimeExternalId: string; runtimeProvider: SandboxProviderName }> {
+  const { claimed, hosting, context, provider, snapshotName, requestedMachine, runtimeEnvironment, state } = input;
+  const [existingRuntime] = await db
+    .select()
+    .from(appRuntimes)
+    .where(
+      and(
+        eq(appRuntimes.deploymentId, claimed.deploymentId),
+        inArray(appRuntimes.status, ['provisioning', 'starting', 'running']),
+      ),
+    )
+    .limit(1);
+  if (existingRuntime) {
+    state.runtimeId = existingRuntime.runtimeId;
+    state.runtimeExternalId = existingRuntime.externalId;
+    state.runtimeProvider = existingRuntime.provider as SandboxProviderName;
+    await hosting.start(state.runtimeProvider, state.runtimeExternalId);
+    return {
+      runtimeId: state.runtimeId,
+      runtimeExternalId: state.runtimeExternalId,
+      runtimeProvider: state.runtimeProvider,
+    };
+  }
+  const runtimeId = randomUUID();
+  state.runtimeId = runtimeId;
+  const handle = await hosting.createRuntime({
+    provider,
+    runtimeId,
+    accountId: context.app.accountId,
+    userId: context.deployment.createdBy,
+    name: `app-${context.app.routeKey}-v${context.deployment.version}`,
+    snapshotName,
+    machine: requestedMachine,
+    // The App verifies `x-kortix-app-viewer` with this. Derived per App, so
+    // it is not the platform secret and rotating the platform secret rotates
+    // every App's. `KORTIX_*` is reserved from user-supplied env, so this
+    // cannot be shadowed by a manifest value.
+    envVars: {
+      ...runtimeEnvironment.env,
+      [APP_VIEWER_SECRET_ENV]: appViewerSecret(context.app.appId),
+    },
+  });
+  state.runtimeExternalId = handle.externalId;
+  const now = new Date();
+  await db.insert(appRuntimes).values({
+    runtimeId,
+    deploymentId: claimed.deploymentId,
+    accountId: context.app.accountId,
+    provider,
+    externalId: handle.externalId,
+    status: 'starting',
+    controlTokenHash: handle.controlTokenHash,
+    idleDeadlineAt: new Date(now.getTime() + context.app.idleTimeoutSeconds * 1000),
+    startedAt: now,
+    metadata: {
+      ...handle.metadata,
+      secretIdentifiers: runtimeEnvironment.secretIdentifiers,
+      environmentKeys: Object.keys(runtimeEnvironment.env).sort(),
+    },
+  });
+  // Meter what the provider actually allocates. E2B has no disk parameter,
+  // so charging this App's disk_gb there would bill storage nobody
+  // provisioned. Tell the operator when the two differ instead of silently
+  // accepting a specification the provider ignored.
+  const effectiveMachine = hosting.effectiveMachine(provider, requestedMachine);
+  if (
+    effectiveMachine.cpuCores !== requestedMachine.cpuCores
+    || effectiveMachine.memoryGb !== requestedMachine.memoryGb
+    || effectiveMachine.diskGb !== requestedMachine.diskGb
+  ) {
+    await event(
+      claimed.deploymentId,
+      'machine_provider_adjusted',
+      `${provider} does not enforce the full machine specification; billing meters what it allocates`,
+      {
+        runtimeId,
+        level: 'warn',
+        data: { requested: requestedMachine, effective: effectiveMachine },
+      },
+    );
+  }
+  await startComputeSession({
+    sandboxId: runtimeId,
+    accountId: context.app.accountId,
+    actorUserId: context.deployment.createdBy,
+    provider,
+    spec: { ...effectiveMachine, gpuCount: 0 },
+    workloadType: 'app',
+    appRuntimeId: runtimeId,
+    metadata: { deploymentId: claimed.deploymentId, appId: context.app.appId },
+  });
+  await event(claimed.deploymentId, 'runtime_created', 'App runtime created', {
+    runtimeId,
+    data: { provider, externalId: handle.externalId },
+  });
+  return { runtimeId, runtimeExternalId: handle.externalId, runtimeProvider: provider };
+}
+
+/** Release what the drive created, then requeue the deployment or fail it for good. */
+async function recordDeploymentFailure(input: {
+  claimed: ClaimedDeployment;
+  owner: string;
+  hosting: AppHostingProvider;
+  state: DeploymentDriveState;
+  error: unknown;
+}): Promise<void> {
+  const { claimed, owner, hosting, state, error } = input;
+  const { runtimeId, runtimeExternalId, runtimeProvider, auditRef } = state;
+  const message = error instanceof Error ? error.message : String(error);
+  const disposition = appDeploymentFailureDisposition(message);
+  const permanent = error instanceof PermanentAppDeploymentError || disposition.permanent;
+  const errorCode = error instanceof PermanentAppDeploymentError
+    ? error.code
+    : disposition.code;
+  const attempt = claimed.attemptCount;
+  // Each cleanup step is independent; a failed one must not hide the next,
+  // but it must be visible: an open compute window keeps billing, and a row
+  // left 'starting' hides the runtime from the compute-invariant sweep.
+  const cleanupFailed = (step: string) => (cleanupError: unknown) => {
+    logger.error('[apps] failed-deploy cleanup step failed', {
+      step,
+      deploymentId: claimed.deploymentId,
+      runtimeId,
+      error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+    });
+  };
+  if (runtimeId) {
+    await db
+      .update(appRuntimes)
+      .set({ status: 'error', stoppedAt: new Date(), updatedAt: new Date() })
+      .where(eq(appRuntimes.runtimeId, runtimeId))
+      .catch(cleanupFailed('mark_runtime_error'));
+    await pauseComputeSession(runtimeId).catch(cleanupFailed('close_compute_window'));
+  }
+  if (runtimeProvider && runtimeExternalId) {
+    await hosting.remove(runtimeProvider, runtimeExternalId).catch(cleanupFailed('remove_runtime'));
+  }
+  const terminal = permanent || attempt >= MAX_ATTEMPTS;
+  await db
+    .update(appDeployments)
+    .set({
+      status: terminal ? 'failed' : 'queued',
+      errorCode,
+      error: message.slice(0, 8_000),
+      failedAt: terminal ? new Date() : null,
+      nextAttemptAt: terminal ? null : new Date(Date.now() + retryDelayMs(attempt)),
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(appDeployments.deploymentId, claimed.deploymentId),
+        eq(appDeployments.leaseOwner, owner),
+      ),
+    );
+  await event(claimed.deploymentId, terminal ? 'deployment_failed' : 'deployment_retry', message, {
+    level: 'error',
+    runtimeId: runtimeId ?? undefined,
+    data: { attempt, terminal },
+  }).catch(cleanupFailed('record_event'));
+  if (terminal) {
+    // A retry is not an outcome; only the terminal failure is audited.
+    const ref = auditRef ?? (await deploymentAuditRefFor(claimed));
+    if (ref) await auditDeploymentOutcome(ref, { outcome: 'failed', errorCode, attempt });
+    return;
+  }
+}
+
 let workerRunning = false;
 let workerKickScheduled = false;
 let workerRerunRequested = false;
@@ -681,19 +833,4 @@ export async function runAppDeploymentTick(): Promise<{ processed: number }> {
   }
 }
 
-export function startAppDeploymentWorker(): void {
-  if (process.env.KORTIX_APPS_WORKER_ENABLED === 'false') return;
-  stopAppDeploymentWorker();
-  const interval = Math.max(1_000, Number(process.env.KORTIX_APPS_WORKER_INTERVAL_MS) || 5_000);
-  triggerAppDeploymentWorker();
-  workerState.__kortixAppsWorkerTimer = setInterval(() => {
-    triggerAppDeploymentWorker();
-  }, interval);
-}
-
-export function stopAppDeploymentWorker(): void {
-  if (workerState.__kortixAppsWorkerTimer) {
-    clearInterval(workerState.__kortixAppsWorkerTimer);
-    workerState.__kortixAppsWorkerTimer = null;
-  }
-}
+export { startAppDeploymentWorker, stopAppDeploymentWorker } from '../workers/app-deployment-worker';

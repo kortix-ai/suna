@@ -96,6 +96,42 @@ test('getClientForUrl injects the bearer token for a same-origin backend-proxied
   expect(calls[0].auth).toBe('Bearer test-token');
 });
 
+test('configureKortix({ eventStreamTransport }) carries the live stream with the platform headers; fetch is not called', async () => {
+  const calls = captureRequests();
+  const connects: Array<{ url: string; auth: string | null }> = [];
+  const rejected: string[] = [];
+  const getToken = Object.assign(async () => authToken ?? null, {
+    invalidate: (token: string) => {
+      rejected.push(token);
+      authToken = 'fresh-token';
+    },
+  });
+  configureKortix({
+    backendUrl: 'http://backend.local/v1',
+    getToken,
+    billingEnabled: true,
+    eventStreamTransport: async function* (request) {
+      connects.push({ url: request.url, auth: request.headers.get('authorization') });
+      if (connects.length === 1) throw Object.assign(new Error('unauthorized'), { status: 401 });
+      yield { data: '{"type":"server.connected","properties":{}}' };
+    },
+  });
+  const client = getClientForUrl('http://backend.local/v1/p/sb-1/8000');
+  const { stream } = await client.global.event({ sseMaxRetryAttempts: 2, sseDefaultRetryDelay: 1 });
+  const events: unknown[] = [];
+  for await (const event of stream) events.push(event);
+
+  expect(events).toEqual([{ type: 'server.connected', properties: {} }]);
+  const url = 'http://backend.local/v1/p/sb-1/8000/global/event';
+  // A 401 from the transport invalidates the rejected token; the reconnect sends the fresh one.
+  expect(connects).toEqual([
+    { url, auth: 'Bearer test-token' },
+    { url, auth: 'Bearer fresh-token' },
+  ]);
+  expect(rejected).toEqual(['test-token']);
+  expect(calls).toEqual([]);
+});
+
 test('getClientForUrl throws on an empty url', () => {
   expect(() => getClientForUrl('')).toThrow();
 });

@@ -34,6 +34,23 @@ describe('writeAgentEnvFile', () => {
     expect(statSync(sh).mode & 0o777).toBe(0o600)
   })
 
+  test('disables core dumps in every shell that sources it', () => {
+    const store = createProjectEnvStore({
+      KORTIX_PROJECT_SECRET_NAMES: 'API_KEY',
+      API_KEY: 'secret',
+    } as NodeJS.ProcessEnv)
+    const sh = shPath()
+
+    writeAgentEnvFile(store, { sh })
+
+    // Daytona starts sandboxes with an unlimited core size; raise it first.
+    const result = Bun.spawnSync(
+      ['bash', '-c', 'ulimit -c unlimited && BASH_ENV="$1" bash -c "ulimit -c"', '_', sh],
+      { env: { PATH: process.env.PATH ?? '/usr/bin:/bin' } },
+    )
+    expect(result.stdout.toString().trim()).toBe('0')
+  })
+
   test('injection-safe — values are single-quote escaped', () => {
     const store = createProjectEnvStore({
       KORTIX_PROJECT_SECRET_NAMES: 'EVIL',
@@ -166,7 +183,6 @@ describe('writeAgentEnvFile', () => {
         KORTIX_API_URL: 'https://api.example.test/v1',
         KORTIX_FRONTEND_URL: 'https://app.example.test',
         KORTIX_DEFAULT_BRANCH: 'trunk',
-        KORTIX_FEATURES: 'none',
         // daemon-internal — MUST NOT leak into the agent shell
         KORTIX_LLM_API_KEY: 'internal-llm-key',
         KORTIX_WARM_SEED: '1',
@@ -182,7 +198,6 @@ describe('writeAgentEnvFile', () => {
     expect(body).toContain("export KORTIX_API_URL='https://api.example.test/v1'")
     expect(body).toContain("export KORTIX_FRONTEND_URL='https://app.example.test'")
     expect(body).toContain("export KORTIX_DEFAULT_BRANCH='trunk'")
-    expect(body).toContain("export KORTIX_FEATURES='none'") // CLI hides flagged commands from it
     // daemon-internal stays filtered (not the agent's business)
     expect(body).not.toContain('KORTIX_WARM_SEED')
     expect(body).not.toContain('KORTIX_LLM_PROXY_URL')

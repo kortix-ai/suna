@@ -75,9 +75,19 @@ export function groupChangeRequestsBySession(
 }
 
 /** Whether the session list should keep polling — true while any session is
- *  still mid-provisioning (queued/branching/provisioning). */
+ *  still mid-provisioning (queued/branching/provisioning).
+ *
+ *  A warm row (pre-created, never prompted) is skipped: the API reports its
+ *  idle, billed shell as `provisioning` for as long as the box lives
+ *  (KRTX-1466), and polling that static status 5s-fast for up to the warm
+ *  grant would buy nothing — the next real change is the marker drop at the
+ *  first accepted turn, which the open-session interval covers. */
 export function shouldPollProjectSessions(sessions: ProjectSession[] | undefined): boolean {
-  return (sessions ?? []).some((session) => LIVE_SESSION_STATUSES.includes(session.status));
+  return (sessions ?? []).some(
+    (session) =>
+      LIVE_SESSION_STATUSES.includes(session.status) &&
+      (session.metadata as Record<string, unknown> | null)?.warm !== true,
+  );
 }
 
 /** Fast poll: a provisioning session changes status within seconds. */
@@ -147,12 +157,12 @@ function promptActivityMs(session: ProjectSession): number | null {
   return activityMs((session.metadata as Record<string, unknown> | null)?.last_activity_at);
 }
 
-/** Newest conversation update in OpenCode's scoped session snapshot, or null
+/** Newest conversation update in the runtime's scoped session snapshot, or null
  *  when the session carries no usable snapshot. */
 function conversationActivityMs(session: ProjectSession): number | null {
   let latest: number | null = null;
-  for (const openCodeSession of session.opencode_sessions ?? []) {
-    const parsed = activityMs(openCodeSession.updated_at);
+  for (const runtimeSession of session.runtime_sessions ?? session.opencode_sessions ?? []) {
+    const parsed = activityMs(runtimeSession.updated_at);
     if (parsed === null) continue;
     latest = latest === null ? parsed : Math.max(latest, parsed);
   }
@@ -166,7 +176,7 @@ function conversationActivityMs(session: ProjectSession): number | null {
  * runs, and the conversation snapshot keeps advancing while the agent replies.
  *
  *   1. `metadata.last_activity_at` — the API's prompt stamp.
- *   2. `opencode_sessions[].updated_at` — OpenCode's conversation snapshot.
+ *   2. `runtime_sessions[].updated_at` — the runtime's conversation snapshot.
  *      Real activity, but a LAGGING cache: it is written only by a deferred,
  *      best-effort sandbox read (`opencode-session-snapshot.ts`), so a session
  *      whose sandbox was unreachable at that moment has no snapshot at all.

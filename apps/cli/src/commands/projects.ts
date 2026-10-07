@@ -1,25 +1,20 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
-import { isProjectGlyphColor, isProjectGlyphName, PROJECT_GLYPH_COLORS } from '@kortix/shared';
+import { PROJECT_GLYPH_COLORS, isProjectGlyphColor, isProjectGlyphName } from '@kortix/shared';
 import { loadAuth, loadAuthForHost } from '../api/auth.ts';
+import type { Auth } from '../api/auth.ts';
+import { ApiError, clientFromAuth } from '../api/client.ts';
 import {
   activeAccount,
   activeHostName,
   clearDefaultProject,
   defaultProject,
+  getHost,
   setActiveAccount,
   setDefaultProject,
 } from '../api/config.ts';
-import { ApiError, clientFromAuth } from '../api/client.ts';
-import { confirm } from '../prompts.ts';
-import {
-  clearLink,
-  isKortixProject,
-  loadLink,
-  resolveProjectId,
-  saveLink,
-} from '../project-link.ts';
-import { selectFromList } from '../tui-select.ts';
+import type { AccountMembership, MeResponse, ProjectSummary } from '../api/types.ts';
+import { openInBrowser } from '../browser.ts';
 import {
   emitJson,
   locateProjectAnywhere,
@@ -27,15 +22,22 @@ import {
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
+  tokenRejectedLine,
 } from '../command-helpers.ts';
-import { C, help, pad, status } from '../style.ts';
-import { projectWebUrl } from '../web-url.ts';
-import { openInBrowser } from '../browser.ts';
 import { appendGitExcludeEntries } from '../git-exclude.ts';
+import { authGitEnv } from '../git-ops.ts';
 import { configureProjectGitAuth, resolveProjectGitTarget } from '../project-git.ts';
-import type { Auth } from '../api/auth.ts';
-import type { AccountMembership, MeResponse, ProjectSummary } from '../api/types.ts';
-import { authHeaderArgs } from './ship.ts';
+import {
+  clearLink,
+  isKortixProject,
+  loadLink,
+  resolveProjectId,
+  saveLink,
+} from '../project-link.ts';
+import { confirm } from '../prompts.ts';
+import { C, help, pad, status } from '../style.ts';
+import { selectFromList } from '../tui-select.ts';
+import { projectWebUrl } from '../web-url.ts';
 
 /** Back-compat alias — the helper moved to ../project-git.ts so `ship` can use
  *  it without an import cycle through this command module. */
@@ -58,14 +60,20 @@ Subcommands:
                        to a v2 kortix.yaml and opens a change request.
   use [<id>]           Set the global DEFAULT project (interactive if omitted).
                        Switches the active account to the project's account.
-  unset                Clear the global default project.
-  link [<id>]          Bind cwd to a remote project (writes .kortix/link.json)
+                       --host <name> binds that logged-in host's default
+                       instead of the active one.
+  unset                Clear the global default project. --host <name> clears
+                       that host's instead.
+  link [<id>]          Bind cwd to a remote project (writes .kortix/link.json).
+                       --host <name> binds a project on that logged-in host,
+                       authenticating with its stored key.
   unlink               Remove .kortix/link.json from cwd
   open [<id>]          Open the dashboard URL for one project
   clone [<id>] [dir]   Clone through the authenticated Kortix git proxy. Falls
                        back to your local Git credentials for direct BYO repos.
-  rm [<id>]            Archive a project (defaults to the linked one).
-                       --purge also deletes its managed git repo (irreversible).
+  rm [<id>]            Delete a project and its Kortix-managed git repo
+                       (defaults to the linked one). Repositories you
+                       connected yourself are never touched.
                        -y / --yes skips the confirmation.
   features [ls]        List every feature flag with its effective state for the
                        project (Settings → Feature flags). (--json)
@@ -78,8 +86,6 @@ An explicit <id> on info/open/rm resolves on its own: tries the active host
 first, then — unless you pass --host — scans every other logged-in host for
 it. A directory link (.kortix/link.json) always wins over the default; the
 default is what commands use anywhere else on your machine.
-
-Run \`kortix projects <subcommand> --help\` for options.
 `;
 
 export async function runProjects(argv: string[]): Promise<number> {
@@ -153,13 +159,43 @@ export async function runProjects(argv: string[]): Promise<number> {
       return projectsInfo(restCopy[0], json, hostArg);
     }
     case 'use':
-    case 'default':
-      return projectsUse(rest.find((a) => !a.startsWith('-')));
+    case 'default': {
+      const restCopy = [...rest];
+      let hostArg: string | undefined;
+      try {
+        hostArg = takeFlagValue(restCopy, ['--host']);
+      } catch (err) {
+        process.stderr.write(`${status.err((err as Error).message)}\n`);
+        return 2;
+      }
+      return projectsUse(
+        restCopy.find((a) => !a.startsWith('-')),
+        hostArg,
+      );
+    }
     case 'unset':
-    case 'clear':
-      return projectsUnset();
-    case 'link':
-      return projectsLink(rest[0]);
+    case 'clear': {
+      const restCopy = [...rest];
+      let hostArg: string | undefined;
+      try {
+        hostArg = takeFlagValue(restCopy, ['--host']);
+      } catch (err) {
+        process.stderr.write(`${status.err((err as Error).message)}\n`);
+        return 2;
+      }
+      return projectsUnset(hostArg);
+    }
+    case 'link': {
+      const restCopy = [...rest];
+      let hostArg: string | undefined;
+      try {
+        hostArg = takeFlagValue(restCopy, ['--host']);
+      } catch (err) {
+        process.stderr.write(`${status.err((err as Error).message)}\n`);
+        return 2;
+      }
+      return projectsLink(restCopy.find((a) => !a.startsWith('-')), hostArg);
+    }
     case 'unlink':
       return projectsUnlink();
     case 'open': {
@@ -215,7 +251,7 @@ Options:
   --host <name>         Use this logged-in host.
   --json                Machine-readable output.
 
-Requires project.customize.write. A flag the platform marks unavailable stays
+Requires project.settings.write. A flag the platform marks unavailable stays
 off regardless of the project override.
 `;
 
@@ -251,9 +287,7 @@ function printFeatureTable(rows: FeatureFlagRow[]): void {
         ? `${C.green}on   ${C.reset}`
         : `${C.dim}off  ${C.reset}`;
     const origin = !r.available ? 'unavailable' : r.overridden ? 'override' : 'default';
-    process.stdout.write(
-      `  ${pad(r.key, keyW)}  ${state}  ${pad(origin, 10)}  ${r.name}\n`,
-    );
+    process.stdout.write(`  ${pad(r.key, keyW)}  ${state}  ${pad(origin, 10)}  ${r.name}\n`);
   }
   process.stdout.write('\n');
 }
@@ -296,24 +330,43 @@ async function projectsFeatures(argv: string[]): Promise<number> {
     }
   }
 
-  if (sub === 'enable' || sub === 'on' || sub === 'disable' || sub === 'off' || sub === 'reset' || sub === 'clear') {
+  if (
+    sub === 'enable' ||
+    sub === 'on' ||
+    sub === 'disable' ||
+    sub === 'off' ||
+    sub === 'reset' ||
+    sub === 'clear'
+  ) {
     if (!flag) {
-      process.stderr.write(`${status.err(`features ${sub} requires a <flag>.`)}\n\n${FEATURES_HELP}`);
+      process.stderr.write(
+        `${status.err(`features ${sub} requires a <flag>.`)}\n\n${FEATURES_HELP}`,
+      );
       return 2;
     }
-    const enabled = sub === 'enable' || sub === 'on' ? true : sub === 'disable' || sub === 'off' ? false : null;
+    const enabled =
+      sub === 'enable' || sub === 'on' ? true : sub === 'disable' || sub === 'off' ? false : null;
     try {
-      const project = await client.patch<Record<string, unknown>>(`/projects/${projectId}/features`, {
-        feature: flag,
-        enabled,
-      });
+      const project = await client.patch<Record<string, unknown>>(
+        `/projects/${projectId}/features`,
+        {
+          feature: flag,
+          enabled,
+        },
+      );
       const row = featureRows(project).find((r) => r.key === flag);
       if (json) {
         emitJson(row ?? { key: flag, enabled });
         return 0;
       }
       const verb = enabled === null ? 'reset to default' : enabled ? 'enabled' : 'disabled';
-      const effective = row ? (row.available ? (row.enabled ? 'on' : 'off') : 'unavailable on this host') : '?';
+      const effective = row
+        ? row.available
+          ? row.enabled
+            ? 'on'
+            : 'off'
+          : 'unavailable on this host'
+        : '?';
       process.stdout.write(`${status.ok(`${flag} ${verb} — effective: ${effective}`)}\n`);
       if (row && !row.available) {
         process.stdout.write(
@@ -369,7 +422,7 @@ Options:
   --json                 Emit the updated project as JSON.
   -h, --help             Show this help.
 
-Requires project.customize.write. The icon fields are three-state: omit to
+Requires project.settings.write. The icon fields are three-state: omit to
 leave as-is, --no-icon / --no-glyph to remove. A project shows ONE icon, so
 writing either clears the other; --icon with --glyph is refused. Passing no
 field at all exits 2 rather than issuing a no-op write.
@@ -601,7 +654,9 @@ async function projectsCliTokens(argv: string[]): Promise<number> {
           `  ${pad(t.token_id, idW)}  ${pad(t.name, nameW)}  ${pad(t.status, 8)}  ${C.faded}${used}${C.reset}\n`,
         );
       }
-      process.stdout.write(`\n  ${C.dim}${items.length} token${items.length === 1 ? '' : 's'}${C.reset}\n\n`);
+      process.stdout.write(
+        `\n  ${C.dim}${items.length} token${items.length === 1 ? '' : 's'}${C.reset}\n\n`,
+      );
       return 0;
     } catch (err) {
       return surfaceApiError(err);
@@ -986,7 +1041,7 @@ Then verify the CR actually carries your diff: run \`kortix cr diff <number>\` �
 
 Do **not** run \`kortix cr merge\`. This is a human-reviewed change like any other — stop once the CR is open and verified non-empty, and tell the user its number so they can review the diff and merge it themselves.`;
 
-export interface ProjectCloneTarget {
+interface ProjectCloneTarget {
   repoUrl: string;
   token: string | null;
   username: string;
@@ -1010,11 +1065,7 @@ export function saveClonedProjectLink(
     repoRoot,
   );
 
-  appendGitExcludeEntries(
-    repoRoot,
-    ['/.kortix/link.json'],
-    'Kortix local project binding',
-  );
+  appendGitExcludeEntries(repoRoot, ['/.kortix/link.json'], 'Kortix local project binding');
 }
 
 /** Resolve clone auth without ever placing a credential in the remote URL.
@@ -1027,9 +1078,9 @@ export function resolveProjectCloneTarget(
   const target = resolveProjectGitTarget(project);
   return {
     repoUrl: target.repoUrl,
-    token: target.credentialMode === "kortix-token" ? kortixToken : null,
-    username: "x-access-token",
-    needsManagedToken: target.credentialMode === "managed-git-token",
+    token: target.credentialMode === 'kortix-token' ? kortixToken : null,
+    username: 'x-access-token',
+    needsManagedToken: target.credentialMode === 'managed-git-token',
   };
 }
 
@@ -1041,7 +1092,7 @@ async function projectsClone(
   const id = arg ?? resolveProjectId();
   if (!id) {
     process.stderr.write(
-      `${status.err("No project selected. Run `kortix projects use`, link a directory, or pass an id.")}\n`,
+      `${status.err('No project selected. Run `kortix projects use`, link a directory, or pass an id.')}\n`,
     );
     return 1;
   }
@@ -1068,34 +1119,30 @@ async function projectsClone(
     }
   }
 
-  const args = target.token
-    ? [
-        ...authHeaderArgs(target.repoUrl, target.token, target.username),
-        "clone",
-        target.repoUrl,
-      ]
-    : ["clone", target.repoUrl];
+  const args = ['clone', target.repoUrl];
   if (destination) args.push(destination);
 
-  const cloned = spawnSync("git", args, { stdio: "inherit" });
+  const cloned = spawnSync('git', args, {
+    stdio: 'inherit',
+    // The token travels in the environment, never in argv (see `authGitEnv`).
+    env: target.token
+      ? { ...process.env, ...authGitEnv(target.repoUrl, target.token, target.username) }
+      : undefined,
+  });
   if (cloned.error) {
-    process.stderr.write(
-      `${status.err(`Could not start git: ${cloned.error.message}`)}\n`,
-    );
+    process.stderr.write(`${status.err(`Could not start git: ${cloned.error.message}`)}\n`);
     return 1;
   }
   if ((cloned.status ?? 1) !== 0) {
-    process.stderr.write(
-      `${status.err(`git clone failed (exit ${cloned.status ?? 1}).`)}\n`,
-    );
+    process.stderr.write(`${status.err(`git clone failed (exit ${cloned.status ?? 1}).`)}\n`);
     return cloned.status ?? 1;
   }
 
   const defaultDirectory =
     target.repoUrl
-      .split("/")
+      .split('/')
       .pop()
-      ?.replace(/\.git$/i, "") || project.name;
+      ?.replace(/\.git$/i, '') || project.name;
   const repoRoot = resolve(process.cwd(), destination || defaultDirectory);
   if (isKortixProject(repoRoot)) {
     saveClonedProjectLink(
@@ -1248,8 +1295,7 @@ async function projectsLsAll(auth: Auth, json = false, query?: string): Promise<
 
   let total = 0;
   for (const s of sections) {
-    const activeMark =
-      s.account.account_id === activeId ? `   ${C.green}← active${C.reset}` : '';
+    const activeMark = s.account.account_id === activeId ? `   ${C.green}← active${C.reset}` : '';
     process.stdout.write('\n');
     process.stdout.write(
       `  ${C.bold}${s.account.name || s.account.slug}${C.reset} ${C.faded}(${s.account.slug}, ${s.account.role})${C.reset}${activeMark}\n`,
@@ -1281,11 +1327,7 @@ function renderProjectTable(
   for (const p of projects) {
     const isDefault = p.project_id === marks.def;
     const isLinked = p.project_id === marks.linked;
-    const marker = isDefault
-      ? `${C.green}● ${C.reset}`
-      : isLinked
-        ? `${C.cyan}◆ ${C.reset}`
-        : '  ';
+    const marker = isDefault ? `${C.green}● ${C.reset}` : isLinked ? `${C.cyan}◆ ${C.reset}` : '  ';
     const tag = isDefault
       ? `   ${C.green}default${C.reset}`
       : isLinked
@@ -1315,7 +1357,8 @@ async function projectsInfo(arg?: string, json = false, hostArg?: string): Promi
   if (!located) return 1;
   const p = located.located.project;
   if (json) {
-    emitJson(p);
+    // The API's wire name for the id is `project_id`; scripts read `.id`.
+    emitJson({ id: p.project_id, ...p });
     return 0;
   }
   process.stdout.write('\n');
@@ -1330,9 +1373,35 @@ async function projectsInfo(arg?: string, json = false, hostArg?: string): Promi
   return 0;
 }
 
-async function projectsUse(arg?: string): Promise<number> {
-  const auth = requireAuth();
-  if (!auth) return 1;
+function isDefaultProjectResponse(value: unknown): boolean {
+  return value !== null && typeof value === 'object'
+    && 'project_id' in value && typeof value.project_id === 'string' && value.project_id.trim().length > 0
+    && 'account_id' in value && typeof value.account_id === 'string' && value.account_id.trim().length > 0
+    && 'name' in value && typeof value.name === 'string' && value.name.trim().length > 0;
+}
+
+function invalidDefaultProjectResponse(value: unknown): number {
+  const detail = value !== null && typeof value === 'object'
+    && 'error' in value && typeof value.error === 'string' ? `: ${value.error}` : '';
+  process.stderr.write(`${status.err(`Invalid project response${detail}. Expected project_id, account_id and name.`)}\n`);
+  return 1;
+}
+
+async function projectsUse(arg?: string, hostArg?: string): Promise<number> {
+  // --host names a logged-in host other than the active one: its credential
+  // serves the request, and the default project binds on ITS host entry —
+  // never the ambient session host (`activeHost()` prefers the sandbox env
+  // token, which is what turned `use <id> --host <other>` into a 403 about
+  // a project the user never referenced).
+  const auth = hostArg ? loadAuthForHost(hostArg) : requireAuth();
+  if (!auth?.token) {
+    if (hostArg) {
+      process.stderr.write(
+        `${status.err(`Host "${hostArg}" is not logged in.`)} Run ${C.cyan}kortix login --host ${hostArg}${C.reset}.\n`,
+      );
+    }
+    return 1;
+  }
 
   let target: ProjectSummary | null = null;
   if (arg) {
@@ -1343,18 +1412,20 @@ async function projectsUse(arg?: string): Promise<number> {
       return surface(err);
     }
   } else {
-    // Pick from the active account's projects.
+    // Pick from the target host's stored account (--host) or the active one.
     let list: ProjectSummary[];
     try {
-      list = await clientFromAuth(auth, { accountId: scopeAccountId(auth) }).get<ProjectSummary[]>(
-        '/projects',
-      );
+      const accountId = hostArg ? auth.account_id || undefined : scopeAccountId(auth);
+      list = await clientFromAuth(auth, { accountId }).get<ProjectSummary[]>('/projects');
     } catch (err) {
       return surface(err);
     }
+    if (!Array.isArray(list) || !list.every(isDefaultProjectResponse)) {
+      return invalidDefaultProjectResponse(list);
+    }
     if (list.length === 0) {
       process.stderr.write(
-        `${status.err('No projects in the active account.')} Switch with \`kortix accounts use\`.\n`,
+        `${status.err(hostArg ? `No projects in host "${hostArg}"'s account.` : 'No projects in the active account.')} Switch with \`kortix accounts use\`.\n`,
       );
       return 1;
     }
@@ -1369,15 +1440,15 @@ async function projectsUse(arg?: string): Promise<number> {
     target = picked;
   }
 
-  if (!target) {
-    process.stderr.write(`${status.err('Could not resolve a project.')}\n`);
-    return 1;
-  }
+  if (!isDefaultProjectResponse(target)) return invalidDefaultProjectResponse(target);
 
   // A default project pins its account. If it lives in a different account
-  // than the active one, switch the active account to it (resolving the
-  // account's display name best-effort) before recording the default.
-  const switched = target.account_id !== (activeAccount()?.id ?? auth.account_id);
+  // than the target host's active one, switch that host's active account to
+  // it (resolving the account's display name best-effort) before recording
+  // the default. With --host the comparison is against the named host's own
+  // stored account, not the ambient active one.
+  const priorAccountId = hostArg ? auth.account_id : (activeAccount()?.id ?? auth.account_id);
+  const switched = target.account_id !== priorAccountId;
   let accountLabel = target.account_id.slice(0, 8);
   if (switched) {
     let slug = target.account_id.slice(0, 8);
@@ -1392,18 +1463,26 @@ async function projectsUse(arg?: string): Promise<number> {
     } catch {
       /* fall back to the truncated id */
     }
-    setActiveAccount({ id: target.account_id, slug, name });
+    setActiveAccount({ id: target.account_id, slug, name }, hostArg);
     accountLabel = name ? `${name} (${slug})` : slug;
   }
-  setDefaultProject({
-    project_id: target.project_id,
-    account_id: target.account_id,
-    name: target.name,
-  });
+  setDefaultProject(
+    {
+      project_id: target.project_id,
+      account_id: target.account_id,
+      name: target.name,
+    },
+    hostArg,
+  );
 
   process.stdout.write(`${status.ok(`Default project: ${C.bold}${target.name}${C.reset}`)}\n`);
+  if (hostArg) {
+    process.stdout.write(`  ${C.dim}host      ${C.reset}${hostArg}\n`);
+  }
   if (switched) {
-    process.stdout.write(`  ${C.dim}account → ${C.reset}${accountLabel} ${C.dim}(now active)${C.reset}\n`);
+    process.stdout.write(
+      `  ${C.dim}account → ${C.reset}${accountLabel} ${C.dim}(now active${hostArg ? ` on ${hostArg}` : ''})${C.reset}\n`,
+    );
   }
   process.stdout.write(
     `  ${C.dim}Used by connectors/connections/sessions when a directory isn't linked.${C.reset}\n`,
@@ -1411,9 +1490,11 @@ async function projectsUse(arg?: string): Promise<number> {
   return 0;
 }
 
-async function projectsUnset(): Promise<number> {
-  const existing = defaultProject();
-  if (clearDefaultProject()) {
+async function projectsUnset(hostArg?: string): Promise<number> {
+  // The message describes the entry being cleared: the named host with
+  // --host, else the active one (the same resolution clearDefaultProject uses).
+  const existing = hostArg ? (getHost(hostArg)?.default_project ?? null) : defaultProject();
+  if (clearDefaultProject(hostArg)) {
     process.stdout.write(
       `${status.ok(`Cleared the default project${existing?.name ? ` ${C.dim}(was ${existing.name})${C.reset}` : ''}`)}\n`,
     );
@@ -1423,9 +1504,21 @@ async function projectsUnset(): Promise<number> {
   return 0;
 }
 
-async function projectsLink(arg?: string): Promise<number> {
-  const auth = requireAuth();
-  if (!auth) return 1;
+async function projectsLink(arg?: string, hostArg?: string): Promise<number> {
+  // --host names a logged-in host other than the active one: its stored
+  // credential serves the request, like `projects use` — never the ambient
+  // session token (the sandbox env token is scoped to the session's own
+  // project, which turned `link <id> --host <other>` into a 403 about a
+  // cross-project principal).
+  const auth = hostArg ? loadAuthForHost(hostArg) : requireAuth();
+  if (!auth?.token) {
+    if (hostArg) {
+      process.stderr.write(
+        `${status.err(`Host "${hostArg}" is not logged in.`)} Run ${C.cyan}kortix login --host ${hostArg}${C.reset}.\n`,
+      );
+    }
+    return 1;
+  }
 
   // Refuse to scatter `.kortix/link.json` into random directories. A
   // project is only "Kortix-linkable" if it already has a `.kortix/`
@@ -1480,7 +1573,9 @@ async function projectsLink(arg?: string): Promise<number> {
     return 1;
   }
 
-  const hostName = activeHostName() ?? 'default';
+  // A --host link binds that host: the link record must name it so later
+  // commands in this directory reach the project through its credential.
+  const hostName = hostArg ?? activeHostName() ?? 'default';
   saveLink({
     project_id: target.project_id,
     account_id: target.account_id,
@@ -1502,7 +1597,9 @@ async function projectsUnlink(): Promise<number> {
   const existing = loadLink();
   clearLink();
   if (existing) {
-    process.stdout.write(`${status.ok(`Unlinked ${C.dim}(was ${existing.project_id})${C.reset}`)}\n`);
+    process.stdout.write(
+      `${status.ok(`Unlinked ${C.dim}(was ${existing.project_id})${C.reset}`)}\n`,
+    );
   } else {
     process.stdout.write(`${C.dim}Not linked. Nothing to do.${C.reset}\n`);
   }
@@ -1535,7 +1632,6 @@ interface RmResult {
 
 async function projectsRm(args: string[]): Promise<number> {
   const rest = [...args];
-  const purge = takeFlagBool(rest, ['--purge']);
   const yes = takeFlagBool(rest, ['-y', '--yes']);
   let hostArg: string | undefined;
   try {
@@ -1561,9 +1657,7 @@ async function projectsRm(args: string[]): Promise<number> {
   const { client, project } = located.located;
 
   if (!yes) {
-    const msg = purge
-      ? `Archive ${C.bold}${project.name}${C.reset} AND permanently delete its managed git repo? ${C.red}This cannot be undone.${C.reset}`
-      : `Archive ${C.bold}${project.name}${C.reset}? (the git repo is kept; pass --purge to delete it)`;
+    const msg = `Delete ${C.bold}${project.name}${C.reset} and its Kortix-managed git repo? ${C.red}This cannot be undone.${C.reset}`;
     const ok = await confirm(msg, false);
     if (!ok) {
       process.stdout.write(`${C.dim}Cancelled.${C.reset}\n`);
@@ -1573,7 +1667,7 @@ async function projectsRm(args: string[]): Promise<number> {
 
   let result: RmResult;
   try {
-    result = await client.delete<RmResult>(`/projects/${id}${purge ? '?purge=true' : ''}`);
+    result = await client.delete<RmResult>(`/projects/${id}`);
   } catch (err) {
     return surface(err);
   }
@@ -1581,14 +1675,12 @@ async function projectsRm(args: string[]): Promise<number> {
   // Drop the local binding if we just removed the linked project.
   if (loadLink()?.project_id === id) clearLink();
 
-  process.stdout.write(`${status.ok(`Archived ${C.bold}${project.name}${C.reset}`)}\n`);
-  if (purge) {
-    process.stdout.write(
-      result.repo_deleted
+  process.stdout.write(
+    `${status.ok(`Deleted ${C.bold}${project.name}${C.reset}`)}\n` +
+      (result.repo_deleted
         ? `  ${C.dim}managed git repo deleted${C.reset}\n`
-        : `  ${C.dim}no managed repo to delete (bring-your-own repos are left untouched)${C.reset}\n`,
-    );
-  }
+        : `  ${C.dim}no managed repo to delete (bring-your-own repos are left untouched)${C.reset}\n`),
+  );
   return 0;
 }
 
@@ -1597,9 +1689,7 @@ async function projectsRm(args: string[]): Promise<number> {
 function surface(err: unknown): number {
   if (err instanceof ApiError) {
     if (err.status === 401) {
-      process.stderr.write(
-        `${status.err('Token rejected. Run `kortix login` to re-authenticate.')}\n`,
-      );
+      process.stderr.write(`${status.err(tokenRejectedLine(err.message))}\n`);
     } else {
       process.stderr.write(`${status.err(`HTTP ${err.status}: ${err.message}`)}\n`);
     }

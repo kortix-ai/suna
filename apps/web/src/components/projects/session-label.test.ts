@@ -3,11 +3,11 @@ import { describe, expect, test } from 'bun:test';
 import { testUiTranslator } from '@/i18n/test-translator';
 import type { ProjectSession, ProjectSessionStatus } from '@kortix/sdk';
 import {
-  directSubsessions,
   isLegacyMigratedSession,
   matchesSourceFilters,
   matchesStatusFilters,
   SESSION_DISPLAY_STATUS_LABELS,
+  sessionCanBeStopped,
   sessionDisplayStatus,
   sessionIsShared,
   sessionDisplayLabel,
@@ -223,6 +223,45 @@ describe('matchesSourceFilters', () => {
     expect(matchesSourceFilters(teams, ['teams'], testUiTranslator)).toBe(true);
     expect(matchesSourceFilters(teams, ['slack'], testUiTranslator)).toBe(false);
   });
+
+  // A manual `kortix triggers fire <slug>` stamps `trigger_source: 'manual'` on
+  // the spawned session (apps/api/src/projects/routes/triggers.ts). The list
+  // must not fold that run into the trigger's declared kind: "why did this
+  // run" needs the fire origin, not just the trigger.
+  test('a manual fire of a cron trigger reads manual, not scheduled', () => {
+    const manual = makeSession({
+      metadata: { trigger_source: 'manual', trigger_type: 'cron', trigger_slug: 'dogfood-cron' },
+    });
+    const scheduled = makeSession({
+      metadata: { trigger_source: 'cron', trigger_type: 'cron', trigger_slug: 'dogfood-cron' },
+    });
+    expect(sessionSource(manual, testUiTranslator)).toMatchObject({
+      kind: 'manual',
+      triggerSlug: 'dogfood-cron',
+    });
+    expect(sessionSource(manual, testUiTranslator).label).not.toBe(
+      sessionSource(scheduled, testUiTranslator).label,
+    );
+    expect(matchesSourceFilters(manual, ['manual'], testUiTranslator)).toBe(true);
+    expect(matchesSourceFilters(manual, ['schedule'], testUiTranslator)).toBe(false);
+  });
+
+  test('a scheduled fire of the same trigger keeps its kind', () => {
+    const scheduled = makeSession({
+      metadata: { trigger_source: 'cron', trigger_type: 'cron', trigger_slug: 'dogfood-cron' },
+    });
+    const webhook = makeSession({
+      metadata: { trigger_source: 'webhook', trigger_type: 'webhook', trigger_slug: 'dogfood-hook' },
+    });
+    expect(sessionSource(scheduled, testUiTranslator)).toMatchObject({
+      kind: 'schedule',
+      triggerSlug: 'dogfood-cron',
+    });
+    expect(sessionSource(webhook, testUiTranslator)).toMatchObject({
+      kind: 'webhook',
+      triggerSlug: 'dogfood-hook',
+    });
+  });
 });
 
 describe('mention markup in titles', () => {
@@ -237,61 +276,32 @@ describe('mention markup in titles', () => {
   });
 });
 
-/**
- * Sub-sessions visibly reordered themselves in the sidebar while the user was
- * looking at the list. They sort newest-first on `updated_at`, and a child
- * whose timestamp is missing collapses to `0` — so every such child TIED, and
- * `Array.prototype.sort` then preserved whatever order the sandbox listing
- * happened to arrive in. That order is re-derived on each refetch, and the
- * snapshot writer treats a pure reorder as a change worth persisting, so the
- * churn reached every client.
- *
- * Ties need a deterministic tiebreak. Ids are stable and unique, so they are it.
- */
-describe('directSubsessions ordering', () => {
-  const parent = (children: Array<{ id: string; updated_at?: number }>) =>
-    ({
-      opencode_session_id: 'root',
-      opencode_sessions: [
-        { id: 'root', parent_id: null },
-        ...children.map((c) => ({ ...c, parent_id: 'root' })),
-      ],
-    }) as never;
-
-  test('newest first when the timestamps differ', () => {
-    const out = directSubsessions(
-      parent([
-        { id: 'a', updated_at: 100 },
-        { id: 'b', updated_at: 300 },
-        { id: 'c', updated_at: 200 },
-      ]),
-    );
-    expect(out.map((s) => s.id)).toEqual(['b', 'c', 'a']);
+describe('sessionCanBeStopped', () => {
+  test('a running session can be stopped', () => {
+    expect(sessionCanBeStopped(makeSession({ status: 'running' }))).toBe(true);
   });
 
-  test('children with NO timestamp keep a stable, id-ordered sequence', () => {
-    const forward = directSubsessions(parent([{ id: 'c' }, { id: 'a' }, { id: 'b' }]));
-    const reversed = directSubsessions(parent([{ id: 'b' }, { id: 'a' }, { id: 'c' }]));
-    expect(forward.map((s) => s.id)).toEqual(['a', 'b', 'c']);
-    // The same children in a different ARRIVAL order must render identically —
-    // that is the whole bug.
-    expect(reversed.map((s) => s.id)).toEqual(forward.map((s) => s.id));
+  // A warm shell whose box is up is reported `provisioning` (KRTX-1466), but
+  // it still bills compute the owner can stop — the stop route reads the
+  // sandbox row, not this word. Without the warm case the Stop control
+  // vanished from the row menu and the session header of every billed shell.
+  test('a warm shell reported provisioning can be stopped', () => {
+    expect(
+      sessionCanBeStopped(makeSession({ status: 'provisioning', metadata: { warm: true } })),
+    ).toBe(true);
   });
 
-  test('equal timestamps tie-break on id rather than on arrival order', () => {
-    const forward = directSubsessions(
-      parent([
-        { id: 'z', updated_at: 500 },
-        { id: 'y', updated_at: 500 },
-      ]),
-    );
-    const reversed = directSubsessions(
-      parent([
-        { id: 'y', updated_at: 500 },
-        { id: 'z', updated_at: 500 },
-      ]),
-    );
-    expect(forward.map((s) => s.id)).toEqual(['y', 'z']);
-    expect(reversed.map((s) => s.id)).toEqual(forward.map((s) => s.id));
+  test('a genuinely booting session cannot be stopped', () => {
+    expect(sessionCanBeStopped(makeSession({ status: 'provisioning' }))).toBe(false);
+    expect(
+      sessionCanBeStopped(makeSession({ status: 'provisioning', metadata: {} })),
+    ).toBe(false);
+    expect(sessionCanBeStopped(makeSession({ status: 'queued' }))).toBe(false);
+  });
+
+  test('settled and failed sessions cannot be stopped', () => {
+    for (const status of ['stopped', 'failed', 'completed'] as const) {
+      expect(sessionCanBeStopped(makeSession({ status }))).toBe(false);
+    }
   });
 });

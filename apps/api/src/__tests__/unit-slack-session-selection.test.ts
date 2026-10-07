@@ -69,7 +69,7 @@ mock.module('../shared/db', () => ({
   hasDatabase: () => true,
 }));
 mock.module('../projects/session-lifecycle', () => ({
-  continueSession: async () => 'delivered',
+  deliverThroughQueue: async () => 'delivered',
   createSession: async (input: { body: Record<string, unknown> }) => {
     lastBody = input.body;
     return { status: 'created', sessionId: 'new-sess', row: fakeSessionRow('new-sess') };
@@ -172,7 +172,8 @@ mock.module('../channels/slack-api', () => ({
   addReaction: async () => {},
   appendStream: async () => {},
   deleteMessage: async () => {},
-  getChannelName: async () => 'general',
+  describeSlackConversation: async () => ({ name: 'general', type: 'channel', unavailable: false }),
+  getSlackUserDisplayName: async () => null,
   isBotUser: async () => true,
   findBotUserIdByName: async () => null,
   joinChannel: async () => true,
@@ -231,7 +232,7 @@ beforeEach(() => {
   lastFinalize = null;
   scopedAgents = [];
   setSlackSessionLifecycleForTest({
-    continueSession: async () => 'delivered',
+    deliverFollowUp: async () => 'delivered',
     createSession: async (input: { body: Record<string, unknown> }) => {
       lastBody = input.body;
       return { status: 'created', sessionId: 'new-sess', row: fakeSessionRow('new-sess') };
@@ -256,7 +257,7 @@ test('channel agent + model override flow into the session body', async () => {
 test('the create key is per message, not per thread', async () => {
   const keys: unknown[] = [];
   setSlackSessionLifecycleForTest({
-    continueSession: async () => 'delivered',
+    deliverFollowUp: async () => 'delivered',
     createSession: async (input: { idempotencyKey?: string | null }) => {
       keys.push(input.idempotencyKey);
       return { status: 'created', sessionId: 'new-sess', row: fakeSessionRow('new-sess') };
@@ -320,7 +321,7 @@ test('deleted channel agent (AGENT_NOT_DECLARED) → in-thread agent picker, not
     { name: 'shipper', description: 'Ships things.' },
   ];
   setSlackSessionLifecycleForTest({
-    continueSession: async () => 'delivered',
+    deliverFollowUp: async () => 'delivered',
     createSession: async () => ({
       status: 'failed',
       retryable: false,
@@ -350,6 +351,62 @@ test('follow-ups to one session identify the originating thread for each reply',
   expect(second).not.toContain('CONE');
 });
 
+// A Slack event names nobody, so the prompt showed `U0…` / `C0…` where a Teams
+// prompt shows a person's name. Labels sit beside the ids; the reply command
+// keeps the ids.
+test('a labelled follow-up names the sender and the channel and keeps the ids for the reply', async () => {
+  const { renderFollowUpPrompt } = await import('../channels/slack/session');
+  const prompt = renderFollowUpPrompt(
+    envelope,
+    { ...event, user: 'U0TEST1', channel: 'C0TEST1', thread_ts: '300.3', text: '<@U0BOT> status?' },
+    { channel: '#general', user: 'Sam Rivera', text: '<@U0BOT|Kortix> status?' },
+  );
+  expect(prompt).toContain('New message from Sam Rivera (U0TEST1) in Slack channel #general (C0TEST1), thread 300.3:');
+  expect(prompt).toContain('slack send --channel C0TEST1 --thread 300.3');
+  expect(prompt).toContain('<@U0BOT|Kortix> status?');
+});
+
+test('an unlabelled follow-up keeps the bare ids', async () => {
+  const { renderFollowUpPrompt } = await import('../channels/slack/session');
+  const prompt = renderFollowUpPrompt(envelope, { ...event, user: 'U0TEST1', channel: 'C0TEST1', thread_ts: '300.3' });
+  expect(prompt).toContain('New message from U0TEST1 in Slack channel C0TEST1, thread 300.3:');
+});
+
+// A Teams follow-up whose image no model in reach can read says so in the
+// prompt (teams/session.ts, 2026-09-19: the agent hunted for ImageMagick and
+// tesseract instead). A Slack follow-up said nothing.
+const imageEvent = {
+  ...event,
+  files: [{ id: 'F0TEST1', name: 'chart.png', mimetype: 'image/png', filetype: 'png', size: 2048, url_private_download: 'https://files.slack.com/files-pri/T0TEST1-F0TEST1/download/chart.png' }],
+};
+
+test('a follow-up image no model can read carries the no-vision note', async () => {
+  const { renderFollowUpPrompt, slackFollowUpModel } = await import('../channels/slack/session');
+  const plan = await slackFollowUpModel({
+    project: { projectId: 'proj-1', accountId: 'acct-1', metadata: {} },
+    userId: 'user-1',
+    sessionId: 'sess-1',
+    event: imageEvent,
+    session: { createdBy: 'user-1', metadata: {}, agentName: null },
+  });
+  expect(plan).toEqual({ model: null, imagesUnavailable: true });
+  const prompt = renderFollowUpPrompt(envelope, imageEvent, undefined, plan.imagesUnavailable);
+  expect(prompt).toContain('no image-capable model is available in this project');
+});
+
+test('a follow-up with no image carries no no-vision note', async () => {
+  const { renderFollowUpPrompt, slackFollowUpModel } = await import('../channels/slack/session');
+  const plan = await slackFollowUpModel({
+    project: { projectId: 'proj-1', accountId: 'acct-1', metadata: {} },
+    userId: 'user-1',
+    sessionId: 'sess-1',
+    event,
+    session: { createdBy: 'user-1', metadata: {}, agentName: null },
+  });
+  expect(plan.imagesUnavailable).toBe(false);
+  expect(renderFollowUpPrompt(envelope, event, undefined, plan.imagesUnavailable)).not.toContain('image-capable');
+});
+
 // A non-agent failure still renders honest, specific copy (not the picker).
 // The thread-create claim lives 5 minutes. A failed start kept it, so the
 // re-send the picker asks for ("Pick a current agent, then send your message
@@ -359,7 +416,7 @@ test('a failed start releases the thread-create claim', async () => {
   const { chatEventDedup } = await import('@kortix/db');
   selection = { projectId: 'proj-1', agentName: 'ghost', opencodeModel: null };
   setSlackSessionLifecycleForTest({
-    continueSession: async () => 'delivered',
+    deliverFollowUp: async () => 'delivered',
     createSession: async () => ({
       status: 'failed',
       retryable: false,
@@ -377,7 +434,7 @@ test('a failed start releases the thread-create claim', async () => {
 test('out-of-credits (402) → credit copy, no picker blocks', async () => {
   selection = { projectId: 'proj-1', agentName: null, opencodeModel: null };
   setSlackSessionLifecycleForTest({
-    continueSession: async () => 'delivered',
+    deliverFollowUp: async () => 'delivered',
     createSession: async () => ({
       status: 'failed',
       retryable: false,

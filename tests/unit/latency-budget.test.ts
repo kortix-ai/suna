@@ -16,7 +16,7 @@ import {
  * not changed: pre-flight (auth, load, authorize, fingerprint compare) ≤60ms,
  * the API→box delivery hop ≤60ms, ≤150ms total. The API emits its own stage
  * breakdown as `ProvisionTimeline.summary()` — one mark per
- * `apps/api/src/sandbox-proxy/routes/preview.ts` `ptl.mark(...)` call — and
+ * `apps/api/src/sandbox-proxy/forward/` `ptl.mark(...)` call — and
  * this module is the harness's own judgment of that breakdown against the
  * budget. It must name the exact offending stage, not just say "too slow",
  * because three concurrent branches are changing this same send path and need

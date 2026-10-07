@@ -136,8 +136,8 @@ export function parseTriggerDraft(
   body: Record<string, unknown>,
   opts: { existingSlug: string | null },
 ): TriggerDraft | { error: string } {
-  const rawSlug = normalizeString((body as any).slug);
-  const name = normalizeString((body as any).name);
+  const rawSlug = normalizeString(body.slug);
+  const name = normalizeString(body.name);
   if (!name) return { error: 'name is required' };
 
   const slug = opts.existingSlug ?? rawSlug ?? slugify(name);
@@ -145,25 +145,25 @@ export function parseTriggerDraft(
     return { error: `Invalid slug "${slug}" — use letters, digits, dashes, underscores only` };
   }
 
-  const typeRaw = normalizeString((body as any).type);
+  const typeRaw = normalizeString(body.type);
   const type: GitTriggerType | null =
     typeRaw === 'webhook' || typeRaw === 'cron' || typeRaw === 'monitor' ? typeRaw : null;
   if (!type) return { error: 'type must be "cron", "webhook", or "monitor"' };
 
   const promptTemplate = normalizeString(
-    (body as any).prompt_template ?? (body as any).promptTemplate,
+    body.prompt_template ?? body.promptTemplate,
   );
   if (!promptTemplate) return { error: 'prompt_template is required' };
 
-  const agent = normalizeString((body as any).agent ?? (body as any).agent_name) ?? 'default';
+  const agent = normalizeString(body.agent ?? body.agent_name) ?? 'default';
   // null/empty model = "Default" — leave it to the resolution chain at fire time.
-  const model = normalizeString((body as any).model) ?? null;
-  const enabled = normalizeBoolean((body as any).enabled) ?? true;
+  const model = normalizeString(body.model) ?? null;
+  const enabled = normalizeBoolean(body.enabled) ?? true;
 
   const session = parseDraftSession(body, type);
   if ('error' in session) return session;
   const { sessionMode, pinnedSessionId, sessionKey } = session;
-  const parsedFilter = parseDraftFilter((body as any).filter);
+  const parsedFilter = parseDraftFilter(body.filter);
   if ('error' in parsedFilter) return parsedFilter;
   const { filter } = parsedFilter;
 
@@ -175,7 +175,7 @@ export function parseTriggerDraft(
 
 function parseDraftSession(body: Record<string, unknown>, type: GitTriggerType):
   Pick<TriggerDraft, 'sessionMode' | 'pinnedSessionId' | 'sessionKey'> | { error: string } {
-  const sessionModeRaw = normalizeString((body as any).session_mode ?? (body as any).sessionMode);
+  const sessionModeRaw = normalizeString(body.session_mode ?? body.sessionMode);
   if (
     sessionModeRaw &&
     !(GIT_TRIGGER_SESSION_MODES as readonly string[]).includes(sessionModeRaw)
@@ -187,14 +187,14 @@ function parseDraftSession(body: Record<string, unknown>, type: GitTriggerType):
   // Declaring a `session_key` IS the opt-in to keyed sessions — requiring both
   // it and `session_mode: keyed` was redundant. An explicit mode still wins, so
   // `session_mode: fresh` + a stray key stays fresh (and nulls the key below).
-  const sessionKeyRaw = normalizeString((body as any).session_key ?? (body as any).sessionKey);
+  const sessionKeyRaw = normalizeString(body.session_key ?? body.sessionKey);
 
   const sessionMode: GitTriggerSessionMode = sessionModeRaw
     ? (sessionModeRaw as GitTriggerSessionMode)
     : sessionKeyRaw
       ? 'keyed'
       : defaultTriggerSessionMode(type);
-  const pinnedSessionIdRaw = normalizeString((body as any).session_id ?? (body as any).sessionId);
+  const pinnedSessionIdRaw = normalizeString(body.session_id ?? body.sessionId);
   if (sessionMode === 'pinned' && !pinnedSessionIdRaw) {
     return { error: 'session_mode "pinned" requires a session_id to pin the trigger to' };
   }
@@ -253,11 +253,11 @@ function parseMonitorDraft(body: Record<string, unknown>, common: DraftCommon): 
 }
 
 function parseCronDraft(body: Record<string, unknown>, common: DraftCommon): TriggerDraft | { error: string } {
-    const timezone = normalizeString((body as any).timezone) ?? 'UTC';
+    const timezone = normalizeString(body.timezone) ?? 'UTC';
     const timezoneError = validateTriggerTimezone(timezone);
     if (timezoneError) return { error: timezoneError };
     // One-off ("run once") schedules carry `run_at` instead of `cron`.
-    const runAtRaw = normalizeString((body as any).run_at ?? (body as any).runAt);
+    const runAtRaw = normalizeString(body.run_at ?? body.runAt);
     if (runAtRaw) {
       const parsed = Date.parse(runAtRaw);
       if (Number.isNaN(parsed)) {
@@ -276,7 +276,7 @@ function parseCronDraft(body: Record<string, unknown>, common: DraftCommon): Tri
         expectEventWithinSeconds: null,
       };
     }
-    const cron = normalizeString((body as any).cron ?? (body as any).schedule);
+    const cron = normalizeString(body.cron ?? body.schedule);
     if (!cron)
       return { error: 'cron triggers must declare a `cron` expression or a one-off `run_at`' };
     const cronError = validateTriggerCron(cron, timezone);
@@ -296,7 +296,7 @@ function parseCronDraft(body: Record<string, unknown>, common: DraftCommon): Tri
 }
 
 function parseWebhookDraft(body: Record<string, unknown>, common: DraftCommon): TriggerDraft | { error: string } {
-  const secretEnv = normalizeString((body as any).secret_env ?? (body as any).secretEnv);
+  const secretEnv = normalizeString(body.secret_env ?? body.secretEnv);
   if (!secretEnv) return { error: 'webhook triggers must declare `secret_env`' };
   if (!/^[A-Z_][A-Z0-9_]*$/.test(secretEnv)) {
     return { error: `secret_env must look like a project_secrets name (got "${secretEnv}")` };

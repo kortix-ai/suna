@@ -31,13 +31,6 @@ import {
   isKortixManagedSkillName,
 } from '@kortix/starter';
 
-/**
- * Every flag a skill template wraps in `<!-- flag:NAME -->` blocks. The overlay
- * has one variant per subset of these. A unit test pins this list to the
- * markers actually present in `packages/starter/templates`.
- */
-export const OVERLAY_FLAGS = ['human_messaging'] as const;
-
 /** Where skills live inside the starter templates (and a root-layout Kortix project). */
 const SKILLS_PREFIX = `${SKILLS_DIR}/`;
 
@@ -51,10 +44,10 @@ export interface ManagedSkillOverlayFile {
  * Every file of the managed-skill overlay, sorted by path so the byte stream —
  * and therefore the hash below — is deterministic across processes and deploys.
  */
-export function managedSkillOverlayFiles(flags: readonly string[] = []): ManagedSkillOverlayFile[] {
+export function managedSkillOverlayFiles(): ManagedSkillOverlayFile[] {
   const files = [
-    ...getManagedSkillFiles({ flags }),
-    ...getStarterFiles({ projectName: 'Kortix', template: 'general-knowledge-worker', flags }),
+    ...getManagedSkillFiles(),
+    ...getStarterFiles({ projectName: 'Kortix', template: 'general-knowledge-worker' }),
   ];
   const byPath = new Map<string, string>();
   for (const file of files) {
@@ -85,42 +78,4 @@ export function managedSkillOverlayHash(files: ManagedSkillOverlayFile[]): strin
     hash.update('\0');
   }
   return hash.digest('hex');
-}
-
-const overlayCache = new Map<string, { files: ManagedSkillOverlayFile[]; hash: string }>();
-
-/**
- * Overlay files + hash for one set of ON flags. Memoized per sorted flag list:
- * the templates are immutable for the life of a process.
- */
-export function managedSkillOverlayFor(flags: readonly string[] = []): {
-  files: ManagedSkillOverlayFile[];
-  hash: string;
-} {
-  const on = OVERLAY_FLAGS.filter((f) => flags.includes(f));
-  const key = on.join(',');
-  let hit = overlayCache.get(key);
-  if (!hit) {
-    const files = managedSkillOverlayFiles(on);
-    hit = { files, hash: managedSkillOverlayHash(files) };
-    overlayCache.set(key, hit);
-  }
-  return hit;
-}
-
-/**
- * Server-side convergence compares a box's running overlay hash with ONE
- * desired hash (flags off). A box whose project turned a flag on legitimately
- * runs another variant. Map any variant's hash to the flags-off hash so those
- * compares read "current". The box itself reconciles flag changes against the
- * per-session `/manifest`; a flag toggle is not drift the server must chase.
- */
-export function normalizeRunningSkillsHash<T extends string | null>(have: T): T | string {
-  if (!have) return have;
-  const base = managedSkillOverlayFor([]).hash;
-  for (let mask = 1; mask < 1 << OVERLAY_FLAGS.length; mask++) {
-    const on = OVERLAY_FLAGS.filter((_, i) => mask & (1 << i));
-    if (managedSkillOverlayFor(on).hash === have) return base;
-  }
-  return have;
 }

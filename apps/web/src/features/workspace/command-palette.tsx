@@ -664,7 +664,7 @@ function ChangeRequestsPage({
  * Same data, same route, same permission gate as the Feature flags section of
  * `/projects/<id>/config` (`settings/tabs/experimental-tab.tsx`): the project
  * summary's `experimental_features`, `PATCH /projects/:id/features` through
- * `updateFeatureFlag`, and `PROJECT_CUSTOMIZE_WRITE`. Two doors onto one
+ * `updateFeatureFlag`, and `PROJECT_SETTINGS_WRITE`. Two doors onto one
  * behaviour, not a second implementation of it — the cache writes below are
  * the same set that tab performs, so the flag-gated rail, sidebar and palette
  * rows all re-resolve together either way.
@@ -694,7 +694,7 @@ function FeatureFlagsPage({
     ...contract('config'),
   });
 
-  const writeCap = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  const writeCap = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
   // Fail-closed while the probe is in flight — the same rule `ExperimentalTab`
   // applies, so a slow probe never offers a toggle the server would reject.
   const canEdit = !writeCap.isLoading && writeCap.allowed === true;
@@ -876,7 +876,7 @@ export function CommandPalette() {
     (s) => s.preferences.conversationDensity ?? 'normal',
   );
   const billingEnabled = isBillingEnabled();
-  // What the active session's runtime serves (E1): a pi session has no compact.
+  // What the active session's runtime serves (E1): a control shows only with its capability.
   const runtimeCapabilities = useRuntimeConnectionStore((s) => s.runtimeCapabilities);
 
   // The project's own agents from the Kortix project config, filtered by the
@@ -1040,8 +1040,6 @@ export function CommandPalette() {
         id: `terminal:${pty.id}`,
         title: pty.title || pty.command || 'Terminal',
         type: 'terminal',
-        // LEGACY: terminal tabs only surface through <SidebarRight />, which
-        // both AppProviders call sites mount with showRightSidebar={false}.
         // `/terminal/<id>` is not a route.
         href: `/terminal/${pty.id}`,
       });
@@ -1368,9 +1366,8 @@ export function CommandPalette() {
    *    keep answering for the account you just left.
    * 3. Navigate.
    *
-   * The already-active workspace never reaches here: `rootWorkspaceResults`
-   * drops it, and the dedicated page renders it as a checked, non-selectable
-   * row.
+   * Selecting the active workspace also opens its home page, including when
+   * the user is currently viewing a session or settings inside it.
    */
   const handleSelectWorkspace = useCallback(
     (workspace: KortixProject) => {
@@ -1502,10 +1499,8 @@ export function CommandPalette() {
    * selecting a row buried in Navigation. Removing the `projectId` clause is
    * the single change that makes ⌘K → name → Enter work.
    *
-   * `rootWorkspaceResults` drops the active workspace (it matches its own name
-   * best and selecting it re-navigates to the page you are on) and caps the
-   * rest, so workspaces take a slice of the mixed root page rather than owning
-   * it.
+   * `rootWorkspaceResults` includes the active workspace and caps matches,
+   * so workspaces take a slice of the mixed root page rather than owning it.
    */
   const rootWorkspaceRows = useMemo(
     () => (hasQuery ? rootWorkspaceResults(workspaceRows, query) : []),
@@ -2940,9 +2935,8 @@ export function CommandPalette() {
                 One account gets a single "Workspaces" heading instead — a lone
                 account heading over the only list is noise, not structure.
 
-                Unlike the root results this KEEPS the workspace you are in, as
-                a checked row. A directory that omits where you are makes you
-                doubt the directory. */}
+                Like the root results this includes the workspace you are in,
+                marked here with a check. */}
             {page === 'workspaces' &&
               (workspacePageRows.length > 0 ? (
                 workspacePageGroups.map((group) => (

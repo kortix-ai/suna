@@ -82,7 +82,7 @@ resource "aws_iam_policy" "mfa_self_manage" {
 # "Access Policies Restrict Broad Access") only flags `Resource: "*"` on
 # `Effect: "Allow"` statements (a broad allow); this `Effect: "Deny"` is the
 # opposite and is NOT flagged — verified on PR #6289 (scan
-# 0c4a4878-9b23-4751-a7d0-84d68c6b0050: critical count unchanged from main).
+# 0c4a4878-9b23-4751-a7d0-84d68c6b0050: critical count unchanged from dev).
 # The checkov skip is defensive — checkov runs
 # soft_fail: true in CI so it does not gate, but the comment documents intent.
 resource "aws_iam_policy" "mfa_required" {
@@ -142,6 +142,18 @@ locals {
       policies = concat([
         "arn:aws:iam::aws:policy/AdministratorAccess",
         "arn:aws:iam::aws:policy/IAMUserChangePassword",
+      ], var.enforce_mfa_for_iam_users ? [aws_iam_policy.mfa_required.arn] : [])
+      members = []
+    }
+    # Day-to-day human access for engineers who do not administer IAM.
+    # PowerUserAccess allows every service except IAM, Organizations, and
+    # Account. The group carries its own MFA self-service and MFA deny, so
+    # membership in this one group is complete and safe. Person memberships
+    # are managed out-of-band, as for administrators.
+    engineers = {
+      policies = concat([
+        "arn:aws:iam::aws:policy/PowerUserAccess",
+        aws_iam_policy.mfa_self_manage.arn,
       ], var.enforce_mfa_for_iam_users ? [aws_iam_policy.mfa_required.arn] : [])
       members = []
     }

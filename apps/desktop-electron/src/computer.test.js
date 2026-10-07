@@ -511,3 +511,35 @@ describe('desktop wiring', () => {
     }
   });
 });
+
+describe('computer setup (the macOS grants the approved access needs)', () => {
+  test('files need the protected folders; Computer Use needs Accessibility and Screen Recording', () => {
+    const home = tempDir();
+    const config = (capabilities) =>
+      fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({ enabledCapabilities: capabilities }));
+    const none = { accessibility: false, screenRecording: false, files: null };
+
+    expect(computer.computerSetupMissing(home, none)).toEqual([]); // not paired
+    config(['shell']);
+    expect(computer.computerSetupMissing(home, none)).toEqual([]);
+    config(['filesystem', 'shell', 'desktop']);
+    expect(computer.computerSetupMissing(home, none)).toEqual(['files', 'accessibility', 'screenRecording']);
+    expect(
+      computer.computerSetupMissing(home, { accessibility: true, screenRecording: false, files: true }),
+    ).toEqual(['screenRecording']);
+    // A folder the person refused stays missing: setup sends them to System Settings.
+    config(['filesystem']);
+    expect(computer.computerSetupMissing(home, { ...none, files: false })).toEqual(['files']);
+    expect(computer.computerSetupMissing(home, { accessibility: true, screenRecording: true, files: true })).toEqual([]);
+    expect(computer.computerSetupMissing(home, null)).toEqual([]); // not macOS
+  });
+
+  test('Allow all always attempts a capture, so Kortix is listed under Screen Recording', () => {
+    const tray = fs.readFileSync(path.join(__dirname, 'computer-tray.js'), 'utf8');
+    const request = tray.slice(tray.indexOf("before.missing.includes('screenRecording')"), tray.indexOf('const needsRestart'));
+    // macOS 11+ never reports 'not-determined' for the screen, so no branch may gate the capture on it.
+    expect(request).not.toContain("'not-determined'");
+    expect(request.indexOf('desktopCapturer.getSources')).toBeGreaterThan(-1);
+    expect(request.indexOf('desktopCapturer.getSources')).toBeLessThan(request.indexOf('Privacy_ScreenCapture'));
+  });
+});

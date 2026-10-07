@@ -7,9 +7,12 @@ import { EMAIL_COLORS, EMAIL_FONT_MONO, EMAIL_FONT_SANS, EMAIL_LAYOUT as L } fro
 
 // Colors and fonts come from the brand kit (brand-tokens.generated.ts). Rules:
 // .agents/skills/kortix-brand/references/verbal/voice-and-tone.md section 5.5.
-export const BRAND_FOOTER = 'Kortix — The open-source AI Management System';
+export const BRAND_FOOTER = 'Kortix — The open-source AI Operating System';
 // Canonical hosted logo (symbol + wordmark, black, alpha). See visual/brandmark.md.
 const BRAND_LOGO_URL = L.logoUrl;
+// The PNG is 2001 x 399. Outlook desktop ignores CSS sizes and draws an <img>
+// at its attribute size, so the width attribute keeps the logo at 22 px high.
+const LOGO_WIDTH = Math.round((L.logoHeight * 2001) / 399);
 
 const COLOR_BG = EMAIL_COLORS.surface1;
 const COLOR_CARD = EMAIL_COLORS.canvas;
@@ -41,19 +44,24 @@ export const S = {
 
 export function renderEmail(opts: { kicker?: string; title: string; body: string }): string {
   return `<!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="x-apple-disable-message-reformatting" />
+    <meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" />
+    <meta name="color-scheme" content="light" />
+    <meta name="supported-color-schemes" content="light" />
     <title>${escapeHtml(opts.title)}</title>
   </head>
   <body style="${S.wrapper}">
     <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="${S.outerTable}">
       <tr>
         <td align="center">
+          <!--[if mso]><table role="presentation" width="${L.containerWidth}" align="center" cellspacing="0" cellpadding="0" border="0"><tr><td><![endif]-->
           <div style="${S.container}">
             <div style="${S.header}">
-              <img src="${BRAND_LOGO_URL}" alt="Kortix" height="${L.logoHeight}" style="${S.logo}" />
+              <img src="${BRAND_LOGO_URL}" alt="Kortix" width="${LOGO_WIDTH}" height="${L.logoHeight}" style="${S.logo}" />
             </div>
             <div style="${S.body}">
               ${opts.kicker ? `<div style="${S.kicker}">${escapeHtml(opts.kicker)}</div>` : ''}
@@ -64,6 +72,7 @@ export function renderEmail(opts: { kicker?: string; title: string; body: string
               <p style="${S.footerP}">${BRAND_FOOTER}</p>
             </div>
           </div>
+          <!--[if mso]></td></tr></table><![endif]-->
         </td>
       </tr>
     </table>

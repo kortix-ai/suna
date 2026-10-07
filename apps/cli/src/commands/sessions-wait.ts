@@ -8,6 +8,7 @@ import {
   fail,
 } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
+import { sleep } from '@kortix/shared/guards';
 
 const HELP = help`Usage: kortix sessions wait-for <session-id> [options]
 
@@ -43,11 +44,11 @@ export type WaitPollState = 'idle' | 'working' | 'blocked';
  */
 export function classifyWaitPoll(
   statuses: Record<string, { type?: string; [key: string]: unknown } | undefined>,
-  opencodeSessionId: string,
+  runtimeSessionId: string,
   pending: { permissions: number; questions: number },
 ): WaitPollState {
   if (pending.permissions > 0 || pending.questions > 0) return 'blocked';
-  const current = statuses[opencodeSessionId];
+  const current = statuses[runtimeSessionId];
   if (!current || current.type === 'idle') return 'idle';
   return 'working';
 }
@@ -55,8 +56,6 @@ export function classifyWaitPoll(
 export function isAuthoritativelySettled(status: string): boolean {
   return status === 'completed';
 }
-
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export async function runSessionsWaitFor(argv: string[]): Promise<number> {
   const rest = [...argv];
@@ -126,23 +125,13 @@ export async function runSessionsWaitFor(argv: string[]): Promise<number> {
     while (Date.now() < deadline) {
       let state: WaitPollState | null = null;
       try {
-        const [statuses, permissions, questions] = await Promise.all([
-          handle.runtime.session.status().then((r) => r.data ?? {}),
-          handle.runtime.permission
-            .list()
-            .then((r) => (r.data ?? []) as Array<{ sessionID?: string }>)
-            .catch(() => []),
-          handle.runtime.question
-            .list()
-            .then((r) => (r.data ?? []) as Array<{ sessionID?: string }>)
-            .catch(() => []),
-        ]);
+        const { statuses, permissions, questions } = await handle.pending();
         state = classifyWaitPoll(
-          statuses as Record<string, { type?: string }>,
-          ready.opencodeSessionId,
+          statuses,
+          ready.runtimeSessionId,
           {
-            permissions: permissions.filter((p) => p.sessionID === ready.opencodeSessionId).length,
-            questions: questions.filter((q) => q.sessionID === ready.opencodeSessionId).length,
+            permissions: permissions.filter((p) => p.sessionID === ready.runtimeSessionId).length,
+            questions: questions.filter((q) => q.sessionID === ready.runtimeSessionId).length,
           },
         );
       } catch {

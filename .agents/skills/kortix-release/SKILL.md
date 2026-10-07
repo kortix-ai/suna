@@ -61,10 +61,10 @@ If the change set is "fixes + a couple small features" → **patch**. Don't infl
 `main` takes PRs with no required CI: the developer's own box is the pre-merge
 check (the **testing** skill, "your machine is the pre-merge gate"). A person
 may add the `test` label for one explicit six-lane run (the **contributing**
-skill). A push to `main` runs the six `Tests` lanes as a **non-blocking trunk
-signal**, and an automated "repair main" pass opens fix-forward PRs
-(`fix(...): repair main after <sha> (...)`) when that push run is red. **Neither
-the push run nor the repair pass blocks a promotion** — do not wait for either
+skill). A daily `schedule` runs the six `Tests` lanes on `main` as a **non-blocking trunk
+signal** (a push does not), and an automated "repair main" pass opens fix-forward PRs
+(`fix(...): repair main after <sha> (...)`) when that scheduled run is red. **Neither
+the scheduled run nor the repair pass blocks a promotion** — do not wait for either
 before Step 2.
 
 ### Step 2 — promote current main
@@ -320,3 +320,20 @@ no `vX.Y.Z` Release.
    the three npm packages, the GitHub Release (24 assets), and Better Stack all
    verified on the new version.
 8. `:stable` moved only if the user explicitly asked for it this release.
+9. **One-time, release carrying #9272 (the `/internal/*` edge gate):** the
+   api-router worker ships inert until `INTERNAL_EDGE_KEY` is set. Do it per env,
+   in this order, after that release is live in the env. A wrong order breaks LLM
+   inference, because the gateway calls `/internal/gateway/*` through the public
+   API host.
+   1. Generate a random 32-byte key. Never print it.
+   2. Add `KORTIX_INTERNAL_EDGE_KEY` to the env's Secrets Manager blob
+      `kortix-<env>-env` (needs an MFA session) and to `apps/api/.env.<env>` with
+      `dotenvx set`.
+   3. Redeploy the gateway (new ECS deployment). Confirm it sends the header:
+      gateway `GET /v1/models` with a PAT still returns 200.
+   4. Only then `wrangler secret put INTERNAL_EDGE_KEY --env <env>` on the
+      api-router worker, and redeploy the worker.
+   5. Verify: public `curl https://<api-host>/internal/gateway/authenticate`
+      returns 404 (the worker gate, not the app's 401), and a gateway chat call
+      gives the same answer as before.
+   Rollback: delete the worker secret. The gateway header is harmless.

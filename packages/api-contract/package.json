@@ -8,11 +8,15 @@
   "exports": {
     ".": "./src/index.ts",
     "./secret-relay": "./src/secret-relay.ts",
-    "./runtime-relay": "./src/runtime-relay.ts"
+    "./runtime-relay": "./src/runtime-relay.ts",
+    "./transcript": "./src/transcript.ts",
+    "./fallback-models": "./src/fallback-models.ts",
+    "./egress-shim-rules": "./src/egress-shim-rules.ts",
+    "./sandbox-layout": "./src/sandbox-layout.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}"
   },
   "dependencies": {
     "zod": "^3.23.0"

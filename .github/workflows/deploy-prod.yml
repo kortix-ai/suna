@@ -67,7 +67,26 @@ jobs:
       notes: ${{ steps.v.outputs.notes }}
       source_sha: ${{ steps.v.outputs.source_sha }}
     steps:
-      - uses: actions/checkout@v7
+      # Fail closed before anything publishes. A dispatch from another branch
+      # would otherwise run this file's own copy of every release step.
+      - name: Refuse any ref except prod
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/prod" ]; then
+            echo "::error::deploy-prod.yml runs only from refs/heads/prod, not $GITHUB_REF."
+            exit 1
+          fi
+      # Both Terraform jobs below skip when this variable is empty, and
+      # `deploy-ecs` accepts a skip. An unset or deleted variable would remove
+      # the prod infra apply from the release with a green run.
+      - name: Require the prod Terraform apply role
+        env:
+          TF_APPLY_ROLE_ARN_PROD: ${{ vars.TF_APPLY_ROLE_ARN_PROD }}
+        run: |
+          if [ -z "$TF_APPLY_ROLE_ARN_PROD" ]; then
+            echo "::error::Repository variable TF_APPLY_ROLE_ARN_PROD is unset. The prod Terraform applies would skip silently."
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0  # need full tags + annotations to read the release notes
       - name: Read VERSION + release notes (committed by the promote PR)
@@ -181,10 +200,10 @@ jobs:
     needs: version
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Best effort, like the banner itself: an unreadable token skips it.
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -221,9 +240,9 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     steps:
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -236,7 +255,7 @@ jobs:
             DOCKERHUB_USERNAME
             DOCKERHUB_TOKEN
       - name: Log in to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
@@ -247,8 +266,8 @@ jobs:
         run: |
           set -euo pipefail
           # HARD REQUIREMENT: only ever retag an image built from the EXACT
-          # promoted commit (staging-<sha8>, or dev-<sha8> as a same-commit
-          # fallback for the rare case main already built it). There is
+          # promoted commit (staging-<sha8> ONLY: a dev-<sha8> image bakes dev
+          # NEXT_PUBLIC_* values and dev URLs and must never become a release). There is
           # DELIBERATELY no further fallback (e.g. to :dev-latest or any
           # "latest"-style tag): that used to silently retag an UNRELATED,
           # arbitrarily-stale image as the release when the exact tag was
@@ -261,13 +280,10 @@ jobs:
           fi
           for IMAGE in kortix/kortix-api kortix/kortix-gateway kortix/kortix-frontend; do
             STAGING_TAG="staging-${SOURCE_SHA:0:8}"
-            DEV_TAG="dev-${SOURCE_SHA:0:8}"
             if docker buildx imagetools inspect "$IMAGE:$STAGING_TAG" >/dev/null 2>&1; then
               SRC_TAG="$STAGING_TAG"
-            elif docker buildx imagetools inspect "$IMAGE:$DEV_TAG" >/dev/null 2>&1; then
-              SRC_TAG="$DEV_TAG"
             else
-              echo "::error::$IMAGE: no image tagged for the exact release commit ${SOURCE_SHA} (looked for :$STAGING_TAG and :$DEV_TAG). Refusing to fall back to :dev-latest or any other tag — that has shipped a stale/unrelated image before. Build+push the staging image for this commit, then re-run this job."
+              echo "::error::$IMAGE: no image tagged for the exact release commit ${SOURCE_SHA} (looked for :$STAGING_TAG). Refusing to fall back to :dev-latest or any other tag — that has shipped a stale/unrelated image before. Build+push the staging image for this commit, then re-run this job."
               exit 1
             fi
             # A prod release publishes :X.Y.Z + :latest only. The self-host
@@ -322,7 +338,7 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     steps:
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -334,7 +350,7 @@ jobs:
           keys: |
             DOCKERHUB_USERNAME
             DOCKERHUB_TOKEN
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
@@ -369,13 +385,13 @@ jobs:
     needs: version
     runs-on: ${{ vars.CI_RUNNER_M_2204 || 'blacksmith-4vcpu-ubuntu-2204' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: latest
+          bun-version: 1.3.14
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
 
@@ -383,7 +399,7 @@ jobs:
         # The repo's lockfile is pnpm format; `bun install` cannot migrate it
         # ("PnpmLockfileTooOld"), so install deps with pnpm and compile with bun.
         run: |
-          corepack enable && corepack prepare pnpm@latest --activate || true
+          corepack enable pnpm
           pnpm install --frozen-lockfile
         env:
           npm_config_engine_strict: "false"
@@ -430,7 +446,7 @@ jobs:
         run: ./artifacts/kortix-linux-x64 version
 
       - name: Upload CLI artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cli-binaries
           path: |
@@ -483,20 +499,20 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: latest
+          bun-version: 1.3.14
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install workspace deps (pnpm)
         run: |
-          corepack enable && corepack prepare pnpm@latest --activate || true
+          corepack enable pnpm
           pnpm install --frozen-lockfile
         env:
           npm_config_engine_strict: "false"
@@ -519,20 +535,20 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: latest
+          bun-version: 1.3.14
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install workspace deps (pnpm)
         run: |
-          corepack enable && corepack prepare pnpm@latest --activate || true
+          corepack enable pnpm
           pnpm install --frozen-lockfile
         env:
           npm_config_engine_strict: "false"
@@ -555,20 +571,20 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: latest
+          bun-version: 1.3.14
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install workspace deps (pnpm)
         run: |
-          corepack enable && corepack prepare pnpm@latest --activate || true
+          corepack enable pnpm
           pnpm install --frozen-lockfile
         env:
           npm_config_engine_strict: "false"
@@ -621,9 +637,9 @@ jobs:
               apps/desktop-electron/dist/*.AppImage
               apps/desktop-electron/dist/latest-linux.yml
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
 
@@ -632,9 +648,9 @@ jobs:
 
       # The app bundles the computer agent (packages/agent-tunnel), built with
       # bun by scripts/ensure-runtime.js before electron-builder runs.
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: latest
+          bun-version: 1.3.14
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --filter @kortix/desktop-electron --filter @kortix/agent-tunnel
@@ -649,7 +665,7 @@ jobs:
       # are read in case they are added later.
       - name: Check out the aws-env action
         if: runner.os != 'Windows'
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -736,7 +752,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload installer artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.files }}
@@ -773,12 +789,12 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Download CLI artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: cli-binaries
           path: artifacts/
@@ -864,7 +880,7 @@ jobs:
           echo "✅ all ${present} expected binaries present, non-empty, and checksummed."
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ needs.version.outputs.tag }}
           target_commitish: ${{ github.sha }}
@@ -889,7 +905,7 @@ jobs:
       contents: write
     steps:
       - name: Download desktop artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         continue-on-error: true
         with:
           path: desktop-artifacts/
@@ -921,21 +937,25 @@ jobs:
   migrate-db:
     name: Apply DB migrations to prod
     needs: version
+    # `environment: prod` puts `environment:prod` in the OIDC subject. Only that
+    # subject can assume the prod role below, and the environment admits branch
+    # `prod` only.
+    environment: prod
     runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: latest
+          bun-version: 1.3.14
       - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile --filter "@kortix/db..." --filter "kortix"
         env:
           npm_config_engine_strict: "false"
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -944,6 +964,7 @@ jobs:
       - name: Read credentials from AWS Secrets Manager
         uses: ./.aws-env/.github/actions/aws-env
         with:
+          role-to-assume: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy-prod
           keys: |
             DATABASE_URL=kortix-prod-env:DATABASE_URL
       - name: Apply pending migrations (node-pg-migrate; halts on failure)
@@ -955,79 +976,11 @@ jobs:
           fi
           pnpm --filter @kortix/db migrate
 
-  # ── Verify prod actually matches the migrations (live-schema presence gate) ──
-  # migrate-db proves the migrations RAN; this proves they TOOK. A faked baseline
-  # (migrate.ts autoBaselineIfNeeded marks-applied-without-running on a pre-existing
-  # schema) can leave holes the migration step never notices — exactly how
-  # project_session_public_shares went missing on prod until a user hit a 500.
-  # Builds the canonical schema fresh from the committed migrations in a sidecar
-  # Postgres, then asserts prod contains every table+column it defines. Presence-
-  # only (canonical ⊆ live): tolerant of prod's legacy/cosmetic differences,
-  # strict about missing objects. deploy-ecs gates on this — drift blocks the roll.
-  verify-schema:
-    name: Verify prod schema matches migrations
-    # TEMPORARILY DISABLED. Prod is broadly diverged from the migration baseline
-    # (e.g. execution_status / sandbox_provider enum values the canonical schema
-    # defines but prod lacks). Reconciling that is a separate, deliberate effort;
-    # until then this presence check blocks every prod roll. Re-enable with the
-    # repository variable ENABLE_PROD_SCHEMA_GATE=true and restore
-    # `verify-schema` in deploy-ecs.needs.
-    if: vars.ENABLE_PROD_SCHEMA_GATE == 'true'
-    needs: migrate-db
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-    env:
-      CANONICAL_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
-    steps:
-      - uses: actions/checkout@v7
-      - name: Check out the aws-env action
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ github.workflow_sha }}
-          path: .aws-env
-          sparse-checkout: .github/actions
-          persist-credentials: false
-      - name: Read credentials from AWS Secrets Manager
-        uses: ./.aws-env/.github/actions/aws-env
-        with:
-          keys: |
-            LIVE_DB_URL=kortix-prod-env:DATABASE_URL
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - run: corepack enable pnpm
-      - run: pnpm install --frozen-lockfile --filter "@kortix/db..." --filter "kortix"
-        env:
-          npm_config_engine_strict: "false"
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
-      - name: Build canonical schema from migrations (sidecar)
-        env:
-          DATABASE_URL: ${{ env.CANONICAL_DB_URL }}
-        run: |
-          psql "$CANONICAL_DB_URL" -v ON_ERROR_STOP=1 -f packages/db/scripts/test-prereqs.sql
-          pnpm --filter @kortix/db migrate
-      - name: Assert prod contains every object the migrations define
-        run: |
-          set -euo pipefail
-          if [ -z "${LIVE_DB_URL:-}" ]; then
-            echo "::error::PROD_DATABASE_URL secret is not set — cannot verify prod schema."
-            exit 1
-          fi
-          bun packages/db/scripts/verify-live-schema.ts
+  # NO prod schema gate runs here. A presence check against the live prod schema
+  # (packages/db/scripts/verify-live-schema.ts) was disabled because prod diverges
+  # from the migration baseline, and it never gated `deploy-ecs`. A comment must
+  # not claim a gate that does not exist. Re-adding it needs the drift reconciled
+  # first, and `verify-schema` listed in `deploy-ecs.needs`.
 
   # ── Deploy API + gateway to prod ECS Fargate ────────────────────────────────
   # api.kortix.com and gateway.kortix.com are served by ECS Fargate. This job
@@ -1058,13 +1011,14 @@ jobs:
         && needs.migrate-db.result == 'success'
         && (needs.terraform-prod-api.result == 'success' || needs.terraform-prod-api.result == 'skipped')
         && (needs.terraform-prod.result == 'success' || needs.terraform-prod.result == 'skipped') }}
+    environment: prod
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     permissions:
       id-token: write # OIDC → ECS deploy role
       contents: read
     env:
       AWS_REGION: eu-west-2
-      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy-prod
       VERSION: ${{ needs.version.outputs.version }}
       # Non-secret task environment. KORTIX_PREVIEW_BASE_DOMAIN is the wildcard
       # every sandbox preview origin sits under; it is declared, never derived
@@ -1085,11 +1039,11 @@ jobs:
       # infra/terraform/modules/project-snapshots-bucket): that role has NO
       # s3:DeleteObject, and expiry is safe because the archive is a cache the
       # API rebuilds from its Git mirror.
-      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-prod-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"eu-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}'
+      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","AUDIT_ARCHIVE_BUCKET":"kortix-prod-audit-archive","AUDIT_ARCHIVE_REGION":"eu-west-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-prod-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"eu-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
@@ -1141,7 +1095,7 @@ jobs:
   # warning. NOTE: `continue-on-error` is NOT valid on a reusable-workflow
   # call job — GitHub rejects the whole file (startup_failure, zero jobs).
   # A job-level `if:` IS valid, and a skipped job leaves the run green — the
-  # same mechanism `verify-schema` uses with ENABLE_PROD_SCHEMA_GATE.
+  # same mechanism the shadow lane uses with ENABLE_US_SHADOW_DEPLOY.
   # ── Deploy the prod API router Worker ───────────────────────────────────────
   # api.kortix.com and gateway.kortix.com are fronted by the Cloudflare Worker
   # in infra/cloudflare/workers/api-router. Until 2026-09-07 NOTHING in this
@@ -1174,9 +1128,9 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || '9785405a992435bb0c7bd19f9b6d26d5' }}
       WORKER_NAME: api-kortix-router
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -1378,7 +1332,7 @@ jobs:
 
       # Best effort, like the announcement itself: a missing value skips Slack.
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -1478,26 +1432,27 @@ jobs:
   deploy-web-ecs:
     name: Deploy prod web to ECS Fargate
     needs: [version, retag-images, deploy-ecs]
+    environment: prod
     runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     permissions:
       id-token: write
       contents: read
     env:
       AWS_REGION: eu-west-2
-      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy-prod
       VERSION: ${{ needs.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -1530,22 +1485,23 @@ jobs:
   publish-web-ecs-dns:
     name: Publish prod FE-ECS DNS
     needs: [deploy-web-ecs]
+    environment: prod
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     permissions:
       id-token: write
       contents: read
     env:
       AWS_REGION: eu-west-2
-      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy-prod
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -1612,9 +1568,9 @@ jobs:
     needs: [version, verify-live-version]
     runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -1627,7 +1583,7 @@ jobs:
             VERCEL_ORG_ID=kortix-ci-env:VERCEL_TEAM_ID
             VERCEL_PROJECT_ID
             VERCEL_TOKEN
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
       - name: Link and verify the Vercel project
@@ -1670,7 +1626,7 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     timeout-minutes: 12
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Wait for the released frontend and verify its EU Supabase configuration
         run: |
           node apps/web/scripts/validate-production-supabase-env.mjs \
@@ -1679,31 +1635,31 @@ jobs:
             --attempts 30 \
             --interval-ms 20000
 
-  # ── Keep main's VERSION honest (post-publish, never premature) ──────────────
-  # promote.yml does NOT bump main's VERSION (publishing is gated on the prod
-  # merge). After a release publishes, advance main's VERSION to the NEXT dev
+  # ── Keep dev's VERSION honest (post-publish, never premature) ──────────────
+  # promote.yml does NOT bump dev's VERSION (publishing is gated on the prod
+  # merge). After a release publishes, advance dev's VERSION to the NEXT dev
   # target (released patch + 1) so the single source of truth tracks prod: this
   # is what the Vercel dev frontend, desktop builds, and the API image default
   # read. `[skip ci]` keeps it from re-triggering the dev pipeline.
   sync-main-version:
-    name: Sync main VERSION → next dev target
+    name: Sync dev VERSION → next dev target
     needs: [version, github-release]
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     permissions:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: main
+          ref: dev
           fetch-depth: 0
-      # `main` is branch-protected (require PR), so a direct push is rejected
+      # `dev` is branch-protected (require PR), so a direct push is rejected
       # (GH006) — which used to fail this job and make Deploy Prod show red even
       # though the release fully shipped. Route the bump through an
       # auto-merged PR instead. Non-fatal: a hiccup here must never fail a
-      # successful production deploy (the version is derived from prod, not main's
+      # successful production deploy (the version is derived from prod, not dev's
       # VERSION, so a lagging bump is cosmetic).
-      - name: Advance main's VERSION via auto-merged PR
+      - name: Advance dev's VERSION via auto-merged PR
         continue-on-error: true
         env:
           RELEASED: ${{ needs.version.outputs.version }}
@@ -1713,32 +1669,32 @@ jobs:
           IFS='.' read -r MA MI PA <<< "$RELEASED"
           NEXT="${MA}.${MI}.$((PA + 1))"
           cur="$(tr -d '[:space:]' < VERSION 2>/dev/null || true)"
-          if [ "$cur" = "$NEXT" ]; then echo "main already at $NEXT — nothing to do."; exit 0; fi
+          if [ "$cur" = "$NEXT" ]; then echo "dev already at $NEXT — nothing to do."; exit 0; fi
           BR="chore/version-bump-$NEXT"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BR"
           printf '%s\n' "$NEXT" > VERSION
           git add VERSION
-          git commit -m "chore(release): main VERSION → $NEXT (dev target after $RELEASED) [skip ci]"
+          git commit -m "chore(release): dev VERSION → $NEXT (dev target after $RELEASED) [skip ci]"
           git push -u origin "$BR" --force-with-lease
-          gh pr create --base main --head "$BR" \
+          gh pr create --base dev --head "$BR" \
             --title "chore(release): VERSION → $NEXT [skip ci]" \
-            --body "Auto-bump main's VERSION to the next dev target after the v$RELEASED prod release." || true
-          # [skip ci] in the squash subject so merging to main doesn't kick off a
+            --body "Auto-bump dev's VERSION to the next dev target after the v$RELEASED prod release." || true
+          # [skip ci] in the squash subject so merging to dev doesn't kick off a
           # full dev build/deploy just for a one-line VERSION bump.
-          SUBJ="chore(release): main VERSION → $NEXT (dev target after $RELEASED) [skip ci]"
+          SUBJ="chore(release): dev VERSION → $NEXT (dev target after $RELEASED) [skip ci]"
           gh pr merge "$BR" --squash --delete-branch --subject "$SUBJ" --body "" --admin \
             || gh pr merge "$BR" --squash --delete-branch --subject "$SUBJ" --body "" \
             || true
 
   # ── Keep staging's VERSION honest too (post-publish) ────────────────────────
   # promote.yml cuts releases FROM `staging` (the pre-prod source of truth) but
-  # never bumps its VERSION, and — until this job — only `main` was advanced
+  # never bumps its VERSION, and — until this job — only `dev` was advanced
   # after publish. So staging's VERSION drifted far behind prod: frozen at
-  # whatever `main VERSION →` bump last happened to be synced into it, while
-  # prod and main climbed release after release. Advance staging to the SAME
-  # next dev target as main so the branch releases are cut from stays
+  # whatever `dev VERSION →` bump last happened to be synced into it, while
+  # prod and dev climbed release after release. Advance staging to the SAME
+  # next dev target as dev so the branch releases are cut from stays
   # version-coherent with prod. Cosmetic (promote derives the release version
   # from prod's VERSION, not staging's), non-fatal, and `[skip ci]` in the
   # squash subject avoids kicking a staging rebuild for a one-line bump.
@@ -1750,7 +1706,7 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: staging
           fetch-depth: 0
@@ -1795,10 +1751,10 @@ jobs:
     needs: [verify-live-version, frontend-auth-proof]
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Best effort, like the banner itself: an unreadable token skips it.
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -1850,9 +1806,9 @@ jobs:
     needs: [version, retag-images, verify-live-version]
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     steps:
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -1864,7 +1820,7 @@ jobs:
           keys: |
             DOCKERHUB_USERNAME
             DOCKERHUB_TOKEN
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}

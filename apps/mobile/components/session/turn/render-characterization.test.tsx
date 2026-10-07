@@ -57,7 +57,8 @@ mock.module('@/components/kortix/pressable-surface', () => ({
     return React.createElement('rn-pressable-surface', props, children);
   },
 }));
-mock.module('@/components/kortix/text-shimmer', () => ({ TextShimmer: passthrough('rn-text-shimmer') }));
+const LoopMotion = React.createContext(true);
+mock.module('@/components/kortix/text-shimmer', () => ({ TextShimmer: passthrough('rn-text-shimmer'), LoopMotionContext: LoopMotion }));
 mock.module('@/components/ui/separator', () => ({ Separator: passthrough('rn-separator') }));
 mock.module('@/components/ui/text', () => ({ Text: passthrough('rn-text') }));
 mock.module('@/components/ui/button', () => ({
@@ -71,13 +72,23 @@ mock.module('@/components/session/use-press-scale', () => ({
   usePressScale: () => ({ onPressIn: () => {}, onPressOut: () => {}, animatedStyle: {} }),
 }));
 mock.module('@/components/session/tool/shared/styles', () => ({
+  monoFont: 'mono',
   TURN_SPACE: { radiusMd: 6, icon: 16 },
   TURN_TYPE: { xs: { fontSize: 12 } },
   useTurnPalette: () => ({ muted: '#muted', mutedForeground: '#muted-fg', muted70: '#muted-70' }),
 }));
+/** Mount and unmount events of the stubbed `TextPartBlock`, by its first text. */
+const textPartLifecycle: string[] = [];
 mock.module('@/components/session/turn/text-part', () => ({
   TextPartBlock: ({ text, ...props }: any) => {
     textParts.push({ text, ...props });
+    const first = React.useRef(text).current;
+    React.useEffect(() => {
+      textPartLifecycle.push(`mount:${first}`);
+      return () => {
+        textPartLifecycle.push(`unmount:${first}`);
+      };
+    }, [first]);
     return React.createElement('rn-text-part', { text });
   },
 }));
@@ -106,13 +117,34 @@ mock.module('./session-turn-meta', () => ({
   TURN_ACTION_ICON_SIZE: 17,
 }));
 
+// SessionTurn's other rows: only the reply's lifecycle is under test.
+mock.module('@/components/session/session-busy-indicator', () => ({
+  SessionBusyIndicator: passthrough('rn-busy'),
+  useTurnBusyStatus: () => ({ statusText: 'Working', elapsedLabel: '' }),
+}));
+mock.module('@/components/session/session-retry-display', () => ({
+  SessionRetryDisplay: passthrough('rn-retry'),
+  useRetrySecondsLeft: () => 0,
+}));
+mock.module('@/components/session/SessionErrorBanner', () => ({ TurnErrorDisplay: passthrough('rn-turn-error') }));
+mock.module('@/components/session/tool/shared/infrastructure', () => ({ TurnLiveContext: React.createContext(false) }));
+mock.module('@/components/session/tool/tool-part-renderer', () => ({ ToolPartRenderer: passthrough('rn-tool') }));
+mock.module('@/components/session/tool/tools/register', () => ({}));
+// A burst prints its `isTrailing` and the `LoopMotionContext` it renders under.
+mock.module('@/components/session/turn/activity-burst', () => ({
+  ActivityBurst: ({ isTrailing }: any) => React.createElement('rn-burst', { isTrailing, loop: React.useContext(LoopMotion) }),
+}));
+mock.module('@/components/session/turn/user-message', () => ({ UserMessage: passthrough('rn-user-message') }));
+
 let CompactionMarker: typeof import('./compaction-divider').CompactionMarker;
 let TurnActions: typeof import('./turn-actions').TurnActions;
+let SessionTurn: typeof import('../SessionTurn').SessionTurn;
 
 beforeAll(async () => {
   (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
   ({ CompactionMarker } = await import('./compaction-divider'));
   ({ TurnActions } = await import('./turn-actions'));
+  ({ SessionTurn } = await import('../SessionTurn'));
 });
 
 /** Captures re-push on every re-render: read the current props with `.at(-1)`. */
@@ -121,6 +153,7 @@ beforeEach(() => {
   pressables.length = 0;
   buttons.length = 0;
   textParts.length = 0;
+  textPartLifecycle.length = 0;
   turnMetas.length = 0;
   clipboard.length = 0;
 });
@@ -133,7 +166,7 @@ let tree: ReactTestRenderer | undefined;
 
 /** A `MessageWithParts` stub: `turn-meta` reads only `info.time.created/completed`. */
 const message = (id: string, time: { created?: number; completed?: number }) =>
-  ({ id, info: { time } }) as unknown as import('@/lib/opencode/types').MessageWithParts;
+  ({ id, info: { time } }) as unknown as import('@/lib/session/types').MessageWithParts;
 
 describe('CompactionMarker (characterization: inline summary is the only path)', () => {
   test('a landed summary pill toggles the inline summary, no opens-elsewhere branch', async () => {
@@ -185,7 +218,7 @@ describe('TurnActions (characterization: only the turn/response/costInfo mode)',
   const turn = {
     userMessage: message('user-1', { created: 1_000 }),
     assistantMessages: [message('a-1', { created: 2_000, completed: 3_500 })],
-  } as import('@/lib/opencode/types').Turn;
+  } as import('@/lib/session/types').Turn;
   const costInfo = { cost: 0.5, tokens: { input: 10, output: 5 } };
 
   test('derives Finished/Duration from the turn and renders the action bar', async () => {
@@ -214,4 +247,139 @@ describe('TurnActions (characterization: only the turn/response/costInfo mode)',
     expect(buttons).toEqual([]);
     expect(turnMetas).toHaveLength(1);
   });
+});
+
+describe('SessionTurn reply (characterization: one instance from streaming to finished)', () => {
+  const textPart = (text: string) => ({ id: 'part-1', type: 'text', text, sessionID: 's-1', messageID: 'a-1' });
+  const userMessageWith = (prompt: string) => ({
+    info: { id: 'user-1', role: 'user', sessionID: 's-1', time: { created: 1_000 } },
+    parts: [{ id: 'user-part-1', type: 'text', text: prompt, sessionID: 's-1', messageID: 'user-1' }],
+  });
+  const turnWith = (text: string, completed?: number, prompt = 'Explain this') =>
+    ({
+      userMessage: userMessageWith(prompt),
+      assistantMessages: [
+        { info: { id: 'a-1', role: 'assistant', sessionID: 's-1', time: { created: 2_000, completed } }, parts: [textPart(text)] },
+      ],
+    }) as unknown as import('@/lib/session/types').Turn;
+
+  test('the streaming reply keeps its instance when the turn finishes', async () => {
+    await act(async () => {
+      tree = create(
+        <SessionTurn
+          turn={turnWith('Hello, this is the start')}
+          isWorkingTurn
+          sessionStatus={{ type: 'busy' } as never}
+          isBusy
+        />,
+      );
+    });
+    expect(textParts.at(-1)).toMatchObject({ text: 'Hello, this is the start', isStreaming: true });
+
+    await act(async () => {
+      tree?.update(
+        <SessionTurn
+          turn={turnWith('Hello, this is the start of a longer reply.')}
+          isWorkingTurn
+          sessionStatus={{ type: 'busy' } as never}
+          isBusy
+        />,
+      );
+    });
+    await act(async () => {
+      tree?.update(
+        <SessionTurn
+          turn={turnWith('Hello, this is the start of a longer reply.', 3_000)}
+          isWorkingTurn={false}
+          isBusy={false}
+        />,
+      );
+    });
+
+    // Finished: the same reply text, no longer streaming, and the action bar shows.
+    expect(textParts.at(-1)).toMatchObject({ text: 'Hello, this is the start of a longer reply.' });
+    expect(textParts.at(-1).isStreaming).toBeFalsy();
+    expect(JSON.stringify(tree?.toJSON() ?? {})).toContain('session-turn-actions');
+    // One mount over the whole stream and the finish: the reply never remounted.
+    expect(textPartLifecycle).toEqual(['mount:Hello, this is the start']);
+  });
+
+  test('a slash-command reply keeps its instance and gains the card when the turn finishes', async () => {
+    const commands = [
+      { name: 'review', template: 'Review the following change carefully: $ARGUMENTS' },
+    ] as unknown as import('@/lib/session/runtime-data').Command[];
+    const prompt = 'Review the following change carefully: src/app.ts';
+    const streaming = (text: string) => (
+      <SessionTurn
+        turn={turnWith(text, undefined, prompt)}
+        isWorkingTurn
+        sessionStatus={{ type: 'busy' } as never}
+        isBusy
+        commands={commands}
+      />
+    );
+
+    await act(async () => {
+      tree = create(streaming('Looks good so far'));
+    });
+    // Streaming: no card chrome, as before the card kept its tree shape.
+    let json = JSON.stringify(tree?.toJSON() ?? {});
+    expect(json).not.toContain('session-command-output');
+    expect(json).not.toContain('/review');
+    expect(textParts.at(-1)).toMatchObject({ text: 'Looks good so far', isStreaming: true });
+
+    await act(async () => {
+      tree?.update(streaming('Looks good so far. One nit.'));
+    });
+    await act(async () => {
+      tree?.update(
+        <SessionTurn
+          turn={turnWith('Looks good so far. One nit.', 3_000, prompt)}
+          isWorkingTurn={false}
+          isBusy={false}
+          commands={commands}
+        />,
+      );
+    });
+
+    // Finished: the card with its `/review` chip wraps the reply.
+    json = JSON.stringify(tree?.toJSON() ?? {});
+    expect(json).toContain('session-command-output');
+    expect(json).toContain('/review');
+    expect(textParts.at(-1)).toMatchObject({ text: 'Looks good so far. One nit.' });
+    expect(textParts.at(-1).isStreaming).toBeFalsy();
+    expect(textPartLifecycle).toEqual(['mount:Looks good so far']);
+  });
+});
+
+describe('SessionTurn segments: every burst loops while on screen, trailing is structural', () => {
+  const tool = (id: string) => ({
+    id, type: 'tool', tool: 'bash', callID: `call-${id}`, sessionID: 's-1', messageID: 'a-1',
+    state: { status: 'running', input: { command: 'ls' }, time: { start: 2_000 } },
+  });
+  const text = (id: string) => ({ id, type: 'text', text: `between ${id}`, sessionID: 's-1', messageID: 'a-1' });
+  const turn = {
+    userMessage: {
+      info: { id: 'user-1', role: 'user', sessionID: 's-1', time: { created: 1_000 } },
+      parts: [{ id: 'user-part-1', type: 'text', text: 'Go', sessionID: 's-1', messageID: 'user-1' }],
+    },
+    assistantMessages: [
+      { info: { id: 'a-1', role: 'assistant', sessionID: 's-1', time: { created: 2_000 } }, parts: [tool('t-1'), text('x-1'), tool('t-2')] },
+    ],
+  } as unknown as import('@/lib/session/types').Turn;
+  const bursts = () => tree!.root.findAll((node) => node.type === ('rn-burst' as never)).map((node) => node.props);
+
+  for (const onScreen of [true, false]) {
+    test(`onScreen=${onScreen}: only the last burst is trailing; every burst loops only on screen`, async () => {
+      await act(async () => {
+        tree = create(
+          <SessionTurn turn={turn} isWorkingTurn sessionStatus={{ type: 'busy' } as never} isBusy onScreen={onScreen} />,
+        );
+      });
+      expect(bursts()).toEqual([
+        { isTrailing: false, loop: onScreen },
+        { isTrailing: true, loop: onScreen },
+      ]);
+    });
+  }
 });

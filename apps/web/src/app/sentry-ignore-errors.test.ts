@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import { RUNTIME_NOT_READY_MARKERS } from '@kortix/sdk';
 
 // Locks the SDK-level gate for the transient `RuntimeNotReadyError` cluster
 // (Kortix Frontend prod): `[opencode-sdk] Server URL not ready — sandbox is
@@ -17,7 +18,10 @@ test('sentry.client.config ignores the transient runtime-not-ready markers', asy
   // re-wrapped unhandled-rejection preserving the wording).
   expect(source).toContain("'Server URL not ready'");
   expect(source).toContain("'sandbox is still loading'");
-  expect(source).toContain("'opencode not ready'");
+  // The daemon's not-ready 503: the SDK owns its spellings (code, pi, OpenCode).
+  expect(source).toContain('...RUNTIME_NOT_READY_MARKERS');
+  expect([...RUNTIME_NOT_READY_MARKERS]).toContain('opencode not ready');
+  expect([...RUNTIME_NOT_READY_MARKERS]).toContain('sandbox runtime not ready');
   // The beforeSend hook must still delegate to the noise filter (which also
   // classifies runtime-not-ready via shouldIgnoreSentryNoiseEvent).
   expect(source).toContain('shouldIgnoreSentryNoiseEvent');
@@ -92,4 +96,17 @@ test('sentry.client.config drops the Firefox cross-compartment onerror-chain fai
   const source = await Bun.file(`${import.meta.dir}/../../sentry.client.config.ts`).text();
   expect(source).toContain('/^(?:Error: )?Permission denied to access property "apply"$/');
   expect(source).not.toContain("'Permission denied to access property'");
+});
+
+test('sentry.client.config drops the timed-out extension window-message call', async () => {
+  // Reproduces Better Stack error 6f121228...165c5870 (Kortix Frontend prod):
+  // `Window message "chrome: call method" timed out.` from a third-party
+  // extension content script (`app:///assets/js/content.js`) whose
+  // page-world → extension-world `window.postMessage` RPC got no answer.
+  // Our code never emits a `chrome:` message channel, so the bare string is
+  // unambiguous (same class as the MetaMask/CookieYes entries above); the
+  // frame-aware `beforeSend` hook (browser-error-noise.ts) drops the same
+  // class at event build time.
+  const source = await Bun.file(`${import.meta.dir}/../../sentry.client.config.ts`).text();
+  expect(source).toContain("'Window message \"chrome: call method\" timed out.'");
 });

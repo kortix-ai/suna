@@ -6,10 +6,11 @@ import { config } from '../../config';
 import { projectLlmGatewayEnabledById } from '../../llm-gateway/enablement';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import type { ProviderName } from '../../platform/providers';
+import { SANDBOX_SERVICE_PORT, postEnvToDaemon } from './sandbox-env-transport';
 import { waitForDaemonRuntimeReady } from './sandbox-daemon-ready';
-import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
 import { resolveSessionNetworkBoundary } from './network-secret-boundary';
-import { decideEnvSyncAction } from './env-sync-skip-decision';
+import { loadSessionSecretContext } from './session-secret-context';
+import { decideEnvSyncAction, type EnvSyncMemoryState } from './env-sync-skip-decision';
 import { loadEnvSyncDurableState, persistEnvSyncDurableState } from './env-sync-durable-state';
 import {
   PROMPT_BOUNDARY_ARM_WAIT_MS,
@@ -19,14 +20,7 @@ import {
   type SandboxEnvSnapshot,
 } from './sandbox-env-snapshot';
 
-/** Resolve the LLM gateway URL used by every supported remote provider. */
-export function llmGatewayBaseUrlForProvider(_providerName: ProviderName): string {
-  return resolveLlmGatewayBaseUrl(config.KORTIX_URL);
-}
-
-export const SANDBOX_SERVICE_PORT = 8000;
 export const FANOUT_CONCURRENCY = 6;
-const ENV_PUSH_TIMEOUT_MS = 15_000;
 
 /**
  * Per-sandbox record of the last `refreshModels`-relevant payload THIS
@@ -57,14 +51,12 @@ const ENV_PUSH_TIMEOUT_MS = 15_000;
  * `env-sync-skip-decision.ts` for the full three-way decision this memo feeds
  * into (push / skip / skip-and-background-refresh) and why memory always
  * wins over the durable record when both are present.
+ *
+ * replica-local: by design — the durable half above is the cross-replica
+ * correctness boundary, so each replica's copy of this memo may miss what
+ * another replica confirmed.
  */
-const lastPromptModelSignature = new Map<string, string>();
-/** When THIS process last confirmed (by pushing, or by reading a matching
- *  durable record) that a sandbox is running the memoed signature. Paired
- *  with `ENV_SYNC_BACKGROUND_REFRESH_STALE_MS`, NOT a hard expiry: an
- *  unchanged signature skips the round trip indefinitely — see
- *  `decideEnvSyncAction`. */
-const lastPromptEnvPushAt = new Map<string, number>();
+const lastPromptModelSignature = new Map<string, EnvSyncMemoryState>();
 /**
  * How stale a CONFIRMED-current record (memory or durable) may get before a
  * skip also fires a detached background re-push. This is not a correctness
@@ -80,13 +72,13 @@ export const ENV_SYNC_BACKGROUND_REFRESH_STALE_MS = 10 * 60_000;
  *  never reused, so this must be bounded the same way `armedNetworkBoundaries`
  *  is. No TTL: unlike the boundary arm this is not self-healing drift, it is a
  *  pure memo of "what did we last tell this box", so eviction on capacity
- *  (oldest-write-first, same as the boundary cache) is enough. */
-const PROMPT_MODEL_SIGNATURE_CACHE_MAX = 2_000;
+ *  (oldest-write-first, same as the boundary cache) is enough. Exported so
+ *  tests don't hardcode the number. */
+export const PROMPT_MODEL_SIGNATURE_CACHE_MAX = 2_000;
 
 /** Test seam: drop every remembered per-prompt signature. */
 export function __resetPromptModelSignatureCacheForTests(): void {
   lastPromptModelSignature.clear();
-  lastPromptEnvPushAt.clear();
 }
 
 /**
@@ -150,168 +142,30 @@ function promptModelSignature(input: {
   ]);
 }
 
-function rememberPromptModelSignature(externalId: string, signature: string): void {
-  lastPromptEnvPushAt.set(externalId, Date.now());
-  if (lastPromptEnvPushAt.size > PROMPT_MODEL_SIGNATURE_CACHE_MAX) {
-    const oldest = lastPromptEnvPushAt.keys().next();
-    if (!oldest.done) lastPromptEnvPushAt.delete(oldest.value);
-  }
+/** The ONLY writer of the memo, and the only place the capacity bound is
+ *  enforced — every write path (push, background refresh, the skip path's
+ *  durable-record confirmation) records the signature and its confirmation
+ *  time as ONE entry here, so the two halves can never drift apart and the
+ *  map never outgrows `PROMPT_MODEL_SIGNATURE_CACHE_MAX`. */
+function rememberPromptModelSignature(
+  externalId: string,
+  signature: string,
+  appliedAtMs: number,
+): void {
   lastPromptModelSignature.delete(externalId);
   if (lastPromptModelSignature.size >= PROMPT_MODEL_SIGNATURE_CACHE_MAX) {
     const oldest = lastPromptModelSignature.keys().next();
     if (!oldest.done) lastPromptModelSignature.delete(oldest.value);
   }
-  lastPromptModelSignature.set(externalId, signature);
-}
-
-function isSecureOrPrivateTarget(rawUrl: string): boolean {
-  let u: URL;
-  try {
-    u = new URL(rawUrl);
-  } catch {
-    return false;
-  }
-  if (u.protocol === 'https:') return true;
-  if (u.protocol !== 'http:') return false;
-  const h = u.hostname;
-  if (['localhost', '127.0.0.1', '0.0.0.0', '::1'].includes(h)) return true;
-  if (!h.includes('.')) return true; // single-label docker/service name on a private bridge
-  if (/\.(local|internal|svc|cluster\.local)$/.test(h)) return true;
-  // RFC1918 / link-local — anchored to full IPv4 literals so a public hostname
-  // like "10.foo.evil.com" can't slip through a `^10.` prefix match.
-  if (/^10(\.\d{1,3}){3}$/.test(h)) return true;
-  if (/^192\.168(\.\d{1,3}){2}$/.test(h)) return true;
-  if (/^172\.(1[6-9]|2\d|3[01])(\.\d{1,3}){2}$/.test(h)) return true;
-  if (/^169\.254(\.\d{1,3}){2}$/.test(h)) return true;
-  if (/^f[cd][0-9a-f]{2}:/i.test(h)) return true; // IPv6 unique-local
-  return false; // plain http to a public host — refuse to send secrets in cleartext
-}
-
-export async function postEnvToDaemon(args: {
-  previewUrl: string;
-  providerHeaders: Record<string, string>;
-  serviceKey: string;
-  snapshot: SandboxEnvSnapshot;
-  refreshModels?: boolean;
-  /** Runtime env the daemon applies to the OPENCODE process (allow-listed there). */
-  opencodeEnv?: Record<string, string | null>;
-  llmGatewayEnabled?: boolean;
-  llmGatewayBaseUrl?: string;
-  requireAgentEnvProof?: boolean;
-}): Promise<{
-  opencodeState: string | null;
-  revision: string;
-  exported: number;
-  managed: number | null;
-  withheld: number | null;
-  agentEnvWritten: boolean;
-  /**
-   * How the daemon applied the config, or null when it did not say (an older
-   * daemon, or no reload was needed). 'kept-old' is the verified swap
-   * declining: the new opencode never came up and the previous one still
-   * serves — the push landed, the config did not.
-   */
-  opencodeReload: 'disposed' | 'restarted' | 'kept-old' | null;
-  /**
-   * Did applying the config interrupt a turn someone was waiting on?
-   * `null` = the box did not say (older daemon, or no reload happened).
-   */
-  opencodeTurnEnded: boolean | null;
-}> {
-  if (!isSecureOrPrivateTarget(args.previewUrl)) {
-    throw new Error('refusing to push secrets over insecure transport (non-TLS public host)');
-  }
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${args.serviceKey}`,
-    ...args.providerHeaders,
-  };
-
-  const runtimeEnv = {
-    ...(args.opencodeEnv ?? {}),
-    [SECRET_CAPABILITIES_ENV_NAME]: args.snapshot.capabilitiesJson,
-  };
-  const res = await fetch(`${args.previewUrl.replace(/\/$/, '')}/kortix/env`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      env: args.snapshot.env,
-      names: args.snapshot.names,
-      revision: args.snapshot.revision,
-      refreshModels: args.refreshModels ?? false,
-      runtimeEnv,
-      // The same map under its pre-W3 name, for a daemon built before W3.
-      opencodeEnv: runtimeEnv,
-      ...(typeof args.llmGatewayEnabled === 'boolean'
-        ? {
-            llmGatewayEnabled: args.llmGatewayEnabled,
-            ...(args.llmGatewayBaseUrl ? { llmGatewayBaseUrl: args.llmGatewayBaseUrl } : {}),
-          }
-        : {}),
-    }),
-    signal: AbortSignal.timeout(ENV_PUSH_TIMEOUT_MS),
-  });
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`env sync failed: ${res.status}${body ? ` ${body.slice(0, 500)}` : ''}`);
-  }
-  // The daemon echoes opencode's post-sync state. After a model-affecting change
-  // it restarts opencode and reports `starting` here — the signal we use to wait
-  // for readiness before the prompt is forwarded.
-  const body = (await res.json().catch(() => null)) as {
-    ok?: unknown;
-    revision?: unknown;
-    exported?: unknown;
-    managed?: unknown;
-    withheld?: unknown;
-    agent_env_written?: unknown;
-    runtime?: unknown;
-    runtime_reload?: unknown;
-    runtime_turn_ended?: unknown;
-    /** Pre-W3 names of the three fields above; a daemon built before W3 sends only these. */
-    opencode?: unknown;
-    opencode_reload?: unknown;
-    opencode_turn_ended?: unknown;
-  } | null;
-  const runtimeState = body?.runtime ?? body?.opencode;
-  const runtimeReload = body?.runtime_reload ?? body?.opencode_reload;
-  const runtimeTurnEnded = body?.runtime_turn_ended ?? body?.opencode_turn_ended;
-  const expectedExported = Object.keys(args.snapshot.env).length;
-  if (args.requireAgentEnvProof) {
-    if (!body || body.ok !== true) throw new Error('env sync proof missing ok=true');
-    if (body.revision !== args.snapshot.revision) {
-      throw new Error(`env sync revision mismatch: expected ${args.snapshot.revision}, received ${String(body.revision)}`);
-    }
-    if (body.agent_env_written !== true) {
-      throw new Error('env sync did not confirm agent-env.sh write');
-    }
-    if (body.exported !== expectedExported) {
-      throw new Error(`env sync export mismatch: expected ${expectedExported}, received ${String(body.exported)}`);
-    }
-  }
-  return {
-    opencodeState: typeof runtimeState === 'string' ? runtimeState : null,
-    // How the daemon applied the config. 'kept-old' means the verified swap
-    // declined: the new opencode never came up, so the running one still
-    // serves and the change did NOT take. An older daemon omits the field
-    // entirely — null, meaning "could not tell", never "it worked".
-    opencodeReload:
-      typeof runtimeReload === 'string' ? (runtimeReload as 'disposed' | 'restarted' | 'kept-old') : null,
-    opencodeTurnEnded: typeof runtimeTurnEnded === 'boolean' ? runtimeTurnEnded : null,
-    revision: typeof body?.revision === 'string' ? body.revision : args.snapshot.revision,
-    exported: typeof body?.exported === 'number' ? body.exported : expectedExported,
-    managed: typeof body?.managed === 'number' ? body.managed : null,
-    withheld: typeof body?.withheld === 'number' ? body.withheld : null,
-    agentEnvWritten: body?.agent_env_written === true,
-  };
+  lastPromptModelSignature.set(externalId, { signature, pushedAtMs: appliedAtMs });
 }
 
 /**
  * Fire a DETACHED re-push of an already-confirmed-current env, for the "skip,
  * but it's stale" branch of `decideEnvSyncAction`. Never awaited by
  * `syncSandboxEnvForPrompt` and never lets a background failure surface to a
- * turn — see the header on `lastPromptEnvPushAt`/`ENV_SYNC_BACKGROUND_REFRESH_STALE_MS`.
+ * turn — see the header on `lastPromptModelSignature`/
+ * `ENV_SYNC_BACKGROUND_REFRESH_STALE_MS`.
  *
  * Sends the SAME snapshot the caller already resolved for THIS prompt, not a
  * freshly re-resolved one: the signature already matched what memory/the
@@ -352,7 +206,7 @@ function scheduleBackgroundEnvRefresh(args: {
         llmGatewayBaseUrl: args.llmGatewayBaseUrl,
       });
       const appliedAtMs = Date.now();
-      rememberPromptModelSignature(args.externalId, args.signature);
+      rememberPromptModelSignature(args.externalId, args.signature, appliedAtMs);
       await persistEnvSyncDurableState(args.sessionId, args.signature, appliedAtMs);
       console.log(
         `[env-sync] background refresh confirmed current sandbox=${args.externalId} session=${args.sessionId}`,
@@ -401,10 +255,15 @@ export async function syncSandboxEnvForPrompt(args: {
   // result. They start together and are awaited in the original order, so a
   // failure still surfaces at the same place and with the same meaning — the
   // boundary's fail-closed grant error included.
+  // Both read the session row, the project row, the running agent's grant and
+  // the personal-override owner. One context answers both.
+  const secretContext = loadSessionSecretContext(args.projectId, args.sessionId, args.requestedAgent);
+  secretContext.catch(() => undefined);
   const boundaryRead = resolveSessionNetworkBoundary(
     args.projectId,
     args.sessionId,
     args.requestedAgent,
+    secretContext,
   );
   const gatewayRead = projectLlmGatewayEnabledById(args.projectId);
   boundaryRead.catch(() => undefined);
@@ -413,6 +272,7 @@ export async function syncSandboxEnvForPrompt(args: {
     args.projectId,
     args.sessionId,
     args.requestedAgent,
+    secretContext,
   );
   lap('snapshot');
   if (!snapshot) return;
@@ -493,9 +353,7 @@ export async function syncSandboxEnvForPrompt(args: {
   lap('arm');
   const llmGatewayEnabled = await gatewayRead;
   lap('gateway-flag');
-  const llmGatewayBaseUrl = llmGatewayEnabled
-    ? llmGatewayBaseUrlForProvider(args.providerName)
-    : undefined;
+  const llmGatewayBaseUrl = llmGatewayEnabled ? resolveLlmGatewayBaseUrl(config.KORTIX_URL) : undefined;
   // Only ask the daemon to reload when something that could move ITS
   // `result.changed || opencodeEnvChanged` gate has actually changed since the
   // last CONFIRMED-applied signature for this sandbox. "Confirmed" is checked
@@ -515,11 +373,7 @@ export async function syncSandboxEnvForPrompt(args: {
     llmGatewayBaseUrl,
     opencodeEnv: args.opencodeEnv,
   });
-  const memoSignature = lastPromptModelSignature.get(args.externalId);
-  const memory =
-    memoSignature !== undefined
-      ? { signature: memoSignature, pushedAtMs: lastPromptEnvPushAt.get(args.externalId) ?? 0 }
-      : null;
+  const memory = lastPromptModelSignature.get(args.externalId) ?? null;
   // Pay for the durable read only when THIS process's own memo cannot already
   // answer — memory is always at least as fresh (see the note on
   // `decideEnvSyncAction`), so a matching memo makes the read pure overhead.
@@ -537,8 +391,9 @@ export async function syncSandboxEnvForPrompt(args: {
     // Confirmed current — by this process or by another replica. Nothing to
     // say, and the daemon would no-op it. Skip the round-trip entirely: the
     // turn pays only the proxy hop, never the daemon RTT or a respawn wait.
-    lastPromptModelSignature.set(args.externalId, signature);
-    lastPromptEnvPushAt.set(args.externalId, decision.appliedAtMs);
+    // Same single writer as a push, so the capacity bound holds here too and
+    // the confirmed-at time stays exactly what the durable record said.
+    rememberPromptModelSignature(args.externalId, signature, decision.appliedAtMs);
     if (decision.scheduleBackgroundRefresh) {
       // Self-heal for drift THIS process did not cause. Detached: never
       // awaited here, and a failure inside it never touches this turn.
@@ -555,8 +410,9 @@ export async function syncSandboxEnvForPrompt(args: {
         signature,
       });
     }
-    await markSandboxLlmGatewayMode(args.sessionId, llmGatewayEnabled);
-    lap('mark');
+    // Bookkeeping, and on this path the stored flag already matches in the
+    // steady state: the turn does not wait for a write that changes nothing.
+    void markSandboxLlmGatewayMode(args.sessionId, llmGatewayEnabled).catch(() => undefined);
     console.log(
       `[env-sync] timing sandbox=${args.externalId} push=skipped ` +
         `background_refresh=${decision.scheduleBackgroundRefresh} ${JSON.stringify(timing)}`,
@@ -581,7 +437,7 @@ export async function syncSandboxEnvForPrompt(args: {
   // this replica or any other, retries with a real push again instead of
   // assuming the failed attempt landed.
   const appliedAtMs = Date.now();
-  rememberPromptModelSignature(args.externalId, signature);
+  rememberPromptModelSignature(args.externalId, signature, appliedAtMs);
   await persistEnvSyncDurableState(args.sessionId, signature, appliedAtMs);
   lap('push');
   // A model-affecting change just restarted opencode (state !== 'ok'). The prompt
@@ -605,25 +461,15 @@ export async function syncSandboxEnvForPrompt(args: {
   console.log(`[env-sync] timing sandbox=${args.externalId} push=sent refreshModels=true ${JSON.stringify(timing)}`);
 }
 
-type ActiveSandboxRow = {
-  externalId: string;
-  sessionId: string;
-  provider: string;
-  serviceKey: string;
-};
-
-/** Run `push` for every active sandbox of a project (bounded fan-out). A failed sandbox is logged, never thrown. */
-async function fanOutToActiveSandboxes(
+export async function propagateLlmGatewayModeToActiveSandboxes(
   projectId: string,
-  label: string,
-  push: (row: ActiveSandboxRow) => Promise<void>,
+  enabled: boolean,
 ): Promise<void> {
   try {
     const rows = await db
       .select({
         externalId: sessionSandboxes.externalId,
         sessionId: sessionSandboxes.sessionId,
-        provider: sessionSandboxes.provider,
         config: sessionSandboxes.config,
       })
       .from(sessionSandboxes)
@@ -637,65 +483,33 @@ async function fanOutToActiveSandboxes(
       const serviceKey = typeof rowConfig.serviceKey === 'string' ? rowConfig.serviceKey : null;
       if (!serviceKey) return;
       try {
-        await push({ externalId: row.externalId, sessionId: row.sessionId, provider: row.provider, serviceKey });
+        const snapshot =
+          (await resolveSandboxEnvSnapshot(projectId, row.sessionId)) ??
+          emptySandboxEnvSnapshot(`llm-gateway-${enabled ? 'on' : 'off'}`);
+        const { url, headers } = await resolveSandboxIngress(row.externalId, { port: SANDBOX_SERVICE_PORT, transport: 'http' });
+        await postEnvToDaemon({
+          previewUrl: url,
+          providerHeaders: headers,
+          serviceKey,
+          snapshot,
+          refreshModels: true,
+          llmGatewayEnabled: enabled,
+          llmGatewayBaseUrl: enabled ? resolveLlmGatewayBaseUrl(config.KORTIX_URL) : undefined,
+        });
+        await markSandboxLlmGatewayMode(row.sessionId, enabled);
       } catch (err) {
         console.warn(
-          `[env-sync] ${label} push failed for sandbox ${row.externalId}:`,
+          `[env-sync] LLM gateway mode push failed for sandbox ${row.externalId}:`,
           err instanceof Error ? err.message : err,
         );
       }
     });
   } catch (err) {
     console.warn(
-      `[env-sync] ${label} fan-out failed for project ${projectId}:`,
+      `[env-sync] LLM gateway mode fan-out failed for project ${projectId}:`,
       err instanceof Error ? err.message : err,
     );
   }
-}
-
-export async function propagateLlmGatewayModeToActiveSandboxes(
-  projectId: string,
-  enabled: boolean,
-): Promise<void> {
-  await fanOutToActiveSandboxes(projectId, 'LLM gateway mode', async (row) => {
-    // The base URL is resolved PER ROW — a project's active sandboxes can span
-    // more than one provider, and each needs its own provider's origin.
-    const snapshot =
-      (await resolveSandboxEnvSnapshot(projectId, row.sessionId)) ??
-      emptySandboxEnvSnapshot(`llm-gateway-${enabled ? 'on' : 'off'}`);
-    const { url, headers } = await resolveSandboxIngress(row.externalId, { port: SANDBOX_SERVICE_PORT, transport: 'http' });
-    await postEnvToDaemon({
-      previewUrl: url,
-      providerHeaders: headers,
-      serviceKey: row.serviceKey,
-      snapshot,
-      refreshModels: true,
-      llmGatewayEnabled: enabled,
-      llmGatewayBaseUrl: enabled ? llmGatewayBaseUrlForProvider(row.provider as ProviderName) : undefined,
-    });
-    await markSandboxLlmGatewayMode(row.sessionId, enabled);
-  });
-}
-
-/**
- * Push `KORTIX_FEATURES` to every running sandbox of the project so the
- * in-box CLI hides or shows a flagged command without a restart.
- * `refreshModels` stays off: the value only feeds the CLI's shell env, so no
- * opencode reload and no turn is cut.
- */
-export async function propagateFeaturesToActiveSandboxes(projectId: string, features: string): Promise<void> {
-  await fanOutToActiveSandboxes(projectId, 'features', async (row) => {
-    const snapshot =
-      (await resolveSandboxEnvSnapshot(projectId, row.sessionId)) ?? emptySandboxEnvSnapshot('features');
-    const { url, headers } = await resolveSandboxIngress(row.externalId, { port: SANDBOX_SERVICE_PORT, transport: 'http' });
-    await postEnvToDaemon({
-      previewUrl: url,
-      providerHeaders: headers,
-      serviceKey: row.serviceKey,
-      snapshot,
-      opencodeEnv: { KORTIX_FEATURES: features },
-    });
-  });
 }
 
 /**

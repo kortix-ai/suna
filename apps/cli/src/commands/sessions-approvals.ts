@@ -1,5 +1,5 @@
 import type { PermissionRequest, QuestionRequest } from '@kortix/sdk';
-import { unwrapRuntime, withKortixScope } from '../api/sdk.ts';
+import { withKortixScope } from '../api/sdk.ts';
 import {
   emitJson,
   locateSessionAnywhere,
@@ -94,15 +94,8 @@ async function pendingFor(resolved: ResolvedSession): Promise<{
   questions: QuestionRequest[];
 } | null> {
   try {
-    const [permissions, questions] = await Promise.all([
-      withKortixScope(resolved.auth, async () =>
-        unwrapRuntime(await resolved.runtime.permission.list()),
-      ),
-      withKortixScope(resolved.auth, async () =>
-        unwrapRuntime(await resolved.runtime.question.list()),
-      ),
-    ]);
-    return { permissions: permissions ?? [], questions: questions ?? [] };
+    const { permissions, questions } = await withKortixScope(resolved.auth, () => resolved.handle.pending());
+    return { permissions, questions };
   } catch (err) {
     surfaceApiError(err);
     return null;
@@ -206,15 +199,7 @@ export async function runSessionsApprove(argv: string[]): Promise<number> {
 
   const reply = reject ? 'reject' : always ? 'always' : 'once';
   try {
-    await withKortixScope(resolved.auth, async () =>
-      unwrapRuntime(
-        await resolved.runtime.permission.reply({
-          requestID: requestId,
-          reply,
-          message,
-        }),
-      ),
-    );
+    await withKortixScope(resolved.auth, () => resolved.handle.answerPermission(requestId, reply, message));
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -294,9 +279,7 @@ export async function runSessionsAnswer(argv: string[]): Promise<number> {
 
   try {
     if (reject) {
-      await withKortixScope(resolved.auth, async () =>
-        unwrapRuntime(await resolved.runtime.question.reject({ requestID: requestId })),
-      );
+      await withKortixScope(resolved.auth, () => resolved.handle.answerQuestion(requestId, null));
       process.stdout.write(`${status.ok(`Dismissed ${C.bold}${requestId}${C.reset}`)}\n`);
       return 0;
     }
@@ -315,14 +298,7 @@ export async function runSessionsAnswer(argv: string[]): Promise<number> {
       });
       answers = [[...mapped, ...(text !== undefined ? [text] : [])]];
     }
-    await withKortixScope(resolved.auth, async () =>
-      unwrapRuntime(
-        await resolved.runtime.question.reply({
-          requestID: requestId,
-          answers,
-        }),
-      ),
-    );
+    await withKortixScope(resolved.auth, () => resolved.handle.answerQuestion(requestId, answers));
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -443,16 +419,23 @@ export async function runSessionsConnectorApprovals(argv: string[]): Promise<num
     process.stdout.write('\n');
     process.stdout.write(`  ${C.dim}${pad('EXECUTION', idW)}   RISK          ACTION${C.reset}\n`);
     for (const action of actions) {
-      const path = action.connector ? `${action.connector}.${action.action}` : action.action;
+      // `action` already carries the connector prefix (`<slug>.<action>`) — the
+      // same field --json emits. Never prepend `connector` again.
       process.stdout.write(
-        `  ${C.cyan}${pad(action.execution_id, idW)}${C.reset}   ${pad(action.risk ?? 'unknown', 12)}  ${C.bold}${path}${C.reset}\n`,
+        `  ${C.cyan}${pad(action.execution_id, idW)}${C.reset}   ${pad(action.risk ?? 'unknown', 12)}  ${C.bold}${action.action}${C.reset}\n`,
       );
       const args = action.result_summary?.args_preview;
       if (args !== undefined) {
         process.stdout.write(`    ${C.dim}args ${JSON.stringify(args)}${C.reset}\n`);
       }
+      // The /approve page handles both decisions; the CLI approve/deny commands
+      // are refused for PAT and agent callers (APPROVAL_REQUIRES_HUMAN).
+      if (action.approval_url) {
+        process.stdout.write(`    ${C.dim}decide at ${action.approval_url}${C.reset}\n`);
+      }
       process.stdout.write(
-        `    ${C.dim}kortix sessions approvals ${sessionId} approve ${action.execution_id}${C.reset}\n`,
+        `    ${C.dim}approve: kortix sessions approvals ${sessionId} approve ${action.execution_id}${C.reset}\n` +
+          `    ${C.dim}deny: kortix sessions approvals ${sessionId} deny ${action.execution_id}${C.reset}\n`,
       );
     }
     process.stdout.write('\n');

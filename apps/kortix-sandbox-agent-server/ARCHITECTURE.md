@@ -59,12 +59,12 @@ shared layer.
 | --- | --- | --- |
 | `src/types/**` | `src/types/**` | none, and no runtime code at all |
 | `src/lib/**` | the shared layer | none |
-| `src/services/<name>/**` | its own folder, the services `SERVICES` declares for it, the shared layer | `egress-shim`: `node-forge`, `@kortix/api-contract` |
+| `src/services/<name>/**` | its own folder, the services `SERVICES` declares for it, the shared layer | `egress-shim`: `node-forge`, `@kortix/api-contract`. `monitor`, `runtime-assets`: `@kortix/api-contract` |
 | `src/harness/harness.ts` | the harness, all services, the shared layer | none |
-| `src/harness/{open-code,pi}/**` | its own folder, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract`. `open-code`: `bun:sqlite`. `pi`: `@earendil-works/*`, `typebox` |
+| `src/harness/{open-code,pi}/**` | its own folder, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract`. `open-code`: `bun:sqlite`. `pi`: `@earendil-works/*`, `typebox`, `@kortix/sdk/wire-message-id` |
 | `src/harness/{contract,shared}/**` | `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract` (the daemon-to-API wire, `runtime-relay`) |
 | `src/routes/**` | `src/routes/**`, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `hono`, `@kortix/api-contract` |
-| `src/app/**`, `src/main.ts` | everything above except adapter internals | `hono` |
+| `src/app/**`, `src/main.ts` | everything above except adapter internals | `hono`, `@kortix/api-contract` |
 | anything else under `src/` | nothing: a file outside every layer fails the lint | — |
 
 Consequences:
@@ -102,19 +102,22 @@ path outside `src/` (another package, `package.json`) stays relative. The
 `kortixd/import-style` lint rule enforces both directions and fixes them:
 `bun run lint --fix`.
 
-Files that another package imports (`src/harness/open-code/fallback-models.ts`,
-`src/services/egress-shim/rules.ts`) have no imports, because that package's
-typecheck does not know this `@/`.
+No other package imports or reads `src/`, and `src/` imports no other app
+(`tests/unit/kortixd-package-boundary.test.ts`). A value the daemon shares with
+apps/api, the CLI or `@kortix/shared` lives in `packages/api-contract` and both
+sides import it. The daemon reaches those files, and the SDK's import-free
+`wire-message-id.ts`, through tsconfig paths. `KORTIXD_SHARED_SOURCES`
+(`@kortix/api-contract/sandbox-layout`) lists them: apps/api fingerprints them
+with this source, and the Dockerfiles copy them (`src/__tests__/shared-sources.test.ts`).
 
 ## OpenCode names (E18 ratchet)
 
 OpenCode knowledge belongs in `src/harness/open-code/`. The `kortixd/opencode-names`
 lint rule rejects an identifier or string that matches `/open.?code/i` in
 `src/lib/`, `src/types/`, `src/services/`, `src/routes/`, `src/app/`,
-`src/main.ts`, `src/harness/contract/` and `src/harness/shared/`. Tests,
-`src/harness/harness.ts` and both adapters are out of scope. `src/harness/pi/`
-joins after E2, when pi stops emitting the OpenCode wire. Comments are not
-checked.
+`src/main.ts`, `src/harness/contract/`, `src/harness/shared/` and, since W5 E2
+(pi emits the Kortix format), `src/harness/pi/`. Tests, `src/harness/harness.ts`
+and the OpenCode adapter are out of scope. Comments are not checked.
 
 `OPENCODE_NAMES_ALLOWED` in `eslint.config.mjs` lists the names that exist
 today, per file. The list only shrinks: an entry whose word no longer occurs in
@@ -125,7 +128,10 @@ Since W3 the list holds one file, `src/routes/kortix/legacy-names.ts`: the
 pre-W3 wire names (`opencode_pid`, `opencodeEnv`, `/kortix/opencode`, …) that an
 API deploy built before W3 still reads and sends. Every other module uses the
 Kortix names (`runtime_*`, `runtime_session_id`, `harness_version`). Delete the
-file, its callers' spreads and its entry when no such API deploy can run.
+file, its callers' spreads and its entry when no such API deploy can run. The
+two pi entries (`src/harness/pi/config.ts`, `config-release.ts`) name the legacy
+layout's config directory, `.kortix/opencode`, which a project that has not
+moved to the root layout still uses.
 
 ## Where a type goes
 
@@ -222,10 +228,9 @@ and `package.json` work around. Each one was measured, not assumed:
   dependencies there, so `@types/node` is a declared devDependency. Without it,
   every `node:*` import reports `Cannot find module`. A bare built-in name
   (`crypto`, `fs`) does not resolve under pnpm even then, so a
-  `no-restricted-imports` rule rejects it and names the `node:` form. It stays at the version
-  `bun-types` resolves in `pnpm-lock.yaml` (20.19.43): `apps/api` typechecks
-  daemon source through a test, and a second `@types/node` version in that
-  program breaks its typecheck.
+  `no-restricted-imports` rule rejects it and names the `node:` form. It is
+  declared `^20`, like apps/web, so pnpm keeps one `@types/node` for the
+  monorepo (the `^22` catalog entry moves 18 transitive `@types/*` packages).
 - A tsconfig-aliased file outside the plugin root (`@kortix/api-contract`)
   arrives as an absolute path. The egress-shim entry allows the absolute and the
   root-relative form.

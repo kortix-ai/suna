@@ -1,7 +1,8 @@
 /**
  * Kortix Apps — project-owned serverless App CRUD, artifact registration, and
- * deployment lifecycle boundaries, and the App viewer token. Maps to spec
- * section 28 (APP-1..6).
+ * deployment lifecycle boundaries, the App viewer token, and deleting an App
+ * or one deployment together with its provider images. Maps to spec section 28
+ * (APP-1..7).
  */
 import { flow } from "../core/flow";
 import { CliSandbox } from "../fixtures/cli";
@@ -876,6 +877,154 @@ flow(
         }
       });
     } finally {
+      if (appId) {
+        await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...projectParams, appId } }).catch(() => {});
+      }
+    }
+  },
+);
+
+flow(
+  "APP-7",
+  {
+    domain: "apps",
+    routes: [
+      "PATCH /v1/projects/:projectId/features",
+      "POST /v1/projects/:projectId/apps",
+      "POST /v1/projects/:projectId/apps/artifacts",
+      "POST /v1/projects/:projectId/apps/:appId/deployments",
+      "GET /v1/projects/:projectId/apps/:appId/deployments",
+      "GET /v1/projects/:projectId/apps/:appId/deployments/:deploymentId",
+      "DELETE /v1/projects/:projectId/apps/:appId/deployments/:deploymentId",
+      "DELETE /v1/projects/:projectId/apps/:appId",
+      "GET /v1/projects/:projectId/apps/:appId",
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const projectParams = { projectId: project.id };
+    const IN_PROGRESS = ["queued", "validating", "building", "provisioning", "checking"];
+
+    await ctx.step("enable the apps flag", async () => {
+      (await owner.patch(
+        "/v1/projects/:projectId/features",
+        { feature: "apps", enabled: true },
+        { params: projectParams },
+      )).status(200);
+    });
+
+    const slug = ctx.fixtures
+      .name("images")
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, "-")
+      .slice(0, 63);
+    let appId = "";
+    let deploymentId = "";
+    const deploymentParams = () => ({ ...projectParams, appId, deploymentId });
+    const cli = new CliSandbox("app7");
+    try {
+      await ctx.step("create an App and deploy an immutable OCI artifact", async () => {
+        const created = await owner.post(
+          "/v1/projects/:projectId/apps",
+          { slug, name: "ke2e image release" },
+          { params: projectParams },
+        );
+        created.status(201);
+        appId = created.json<any>().app_id;
+        const artifact = await owner.post(
+          "/v1/projects/:projectId/apps/artifacts",
+          { kind: "oci_image", image: "docker.io/library/nginx:alpine" },
+          { params: projectParams },
+        );
+        artifact.status(201);
+        const deployment = await owner.post(
+          "/v1/projects/:projectId/apps/:appId/deployments",
+          {
+            artifact_id: artifact.json<any>().artifact.artifact_id,
+            source: {
+              kind: "oci_image",
+              image: "docker.io/library/nginx:alpine",
+              command: ["nginx", "-g", "daemon off;"],
+              port: 80,
+            },
+          },
+          { params: { ...projectParams, appId } },
+        );
+        deployment.status(202).body().has("$.status", "queued").has("$.version", 1);
+        deploymentId = deployment.json<any>().deployment_id;
+      });
+
+      await ctx.step("a deployment still in progress is refused with 409 deployment_in_progress", async () => {
+        const refused = await owner.del(
+          "/v1/projects/:projectId/apps/:appId/deployments/:deploymentId",
+          { params: deploymentParams() },
+        );
+        refused.status(409).body().has("$.code", "deployment_in_progress");
+        const status = refused.json<any>().status;
+        if (!IN_PROGRESS.includes(status)) throw new Error(`409 named a finished status: ${status}`);
+      });
+
+      await ctx.step("an unknown deployment answers 404; a cross-project principal gets 403", async () => {
+        (await owner.del(
+          "/v1/projects/:projectId/apps/:appId/deployments/:deploymentId",
+          { params: { ...projectParams, appId, deploymentId: UNKNOWN_ID } },
+        )).status(404);
+        (await ctx.client.as(ctx.P.NONMEMBER).del(
+          "/v1/projects/:projectId/apps/:appId/deployments/:deploymentId",
+          { params: deploymentParams() },
+        )).status(403);
+      });
+
+      await ctx.step("kortix apps delete --deployment requires --yes, names the deployments that exist, and relays the 409", async () => {
+        const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name("cli-app7") });
+        const login = await cli.login(pat, { noProject: true, account: project.accountId });
+        if (login.exitCode !== 0) throw new Error(`kortix login: ${login.stderr}`);
+        const unconfirmed = await cli.run(["apps", "delete", slug, "--deployment", "v1", "--project", project.id]);
+        if (unconfirmed.exitCode === 0 || !/deleting a deployment is destructive; pass --yes/.test(unconfirmed.stderr + unconfirmed.stdout)) {
+          throw new Error(`delete --deployment ran without --yes: ${unconfirmed.exitCode} ${unconfirmed.stderr}`);
+        }
+        const unknown = await cli.run(["apps", "delete", slug, "--deployment", "v9", "--yes", "--project", project.id]);
+        if (unknown.exitCode === 0 || !/Deployment v9 not found \(deployments: v1\)/.test(unknown.stderr + unknown.stdout)) {
+          throw new Error(`unknown deployment was not named: ${unknown.exitCode} ${unknown.stderr} ${unknown.stdout}`);
+        }
+        // v1 is still building on the local stack. On a deployed target the
+        // build can finish first, and the API then refuses for the other
+        // reason: v1 serves live traffic. Either 409 must reach the user.
+        const inProgress = await cli.run(["apps", "delete", slug, "--deployment", "v1", "--yes", "--project", project.id]);
+        if (inProgress.exitCode === 0 || !/still in progress \(status: [a-z]+\)|serves live traffic/.test(inProgress.stderr + inProgress.stdout)) {
+          throw new Error(`in-progress delete was not refused: ${inProgress.exitCode} ${inProgress.stderr} ${inProgress.stdout}`);
+        }
+        const list = await owner.get(
+          "/v1/projects/:projectId/apps/:appId/deployments",
+          { params: { ...projectParams, appId } },
+        );
+        list.status(200).body().has("$.deployments[0].deployment_id", deploymentId);
+      });
+
+      await ctx.step("kortix apps delete --yes --json deletes the App during its build and reports the image release", async () => {
+        const deleted = await cli.run(["apps", "delete", slug, "--yes", "--json", "--project", project.id]);
+        if (deleted.exitCode !== 0) throw new Error(`kortix apps delete: ${deleted.exitCode} ${deleted.stderr}`);
+        const body = JSON.parse(deleted.stdout);
+        // The App owns at most one image here. On the local stack the build is
+        // still running, so it is pending (0 or 1, depending on whether the
+        // worker recorded the build provider yet). On a deployed target the
+        // build can finish first, and then the image is released instead.
+        const released = body.images?.released;
+        const pending = body.images?.pending;
+        if (body.ok !== true || body.app_id !== appId || body.slug !== slug
+          || ![0, 1].includes(released) || ![0, 1].includes(pending) || released + pending > 1) {
+          throw new Error(`unexpected delete output: ${deleted.stdout}`);
+        }
+        (await owner.get("/v1/projects/:projectId/apps/:appId", { params: { ...projectParams, appId } })).status(404);
+        (await owner.get(
+          "/v1/projects/:projectId/apps/:appId/deployments",
+          { params: { ...projectParams, appId } },
+        )).status(404);
+        appId = "";
+      });
+    } finally {
+      cli.dispose();
       if (appId) {
         await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...projectParams, appId } }).catch(() => {});
       }

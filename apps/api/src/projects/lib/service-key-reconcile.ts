@@ -46,6 +46,7 @@ import { getProvider, type ProviderName } from '../../platform/providers';
 import { invalidateSandbox } from '../../sandbox-proxy/backend';
 import { db } from '../../shared/db';
 import { logger } from '../../lib/logger';
+import { isPlausibleServiceKey } from './heal-session-token';
 
 /** One bounded exec. A reconcile must never hold an open. */
 const EXEC_TIMEOUT_MS = 15_000;
@@ -59,17 +60,6 @@ export type ServiceKeyReconcileOutcome =
   | 'unreadable'
   /** The box's token is unusable (empty/absurd) — never written. */
   | 'rejected';
-
-/**
- * A `KORTIX_TOKEN` we are willing to believe. Deliberately strict: this value
- * is about to become the row's identity key, and writing a shell error message
- * into it would lock the session out exactly like the bug being fixed.
- */
-export function isPlausibleServiceKey(value: string): boolean {
-  if (value.length < 20 || value.length > 40_000) return false;
-  if (/\s/.test(value)) return false;
-  return value.startsWith('kortix_');
-}
 
 export interface ServiceKeyReconcileDeps {
   exec: (externalId: string, command: string[]) => Promise<{

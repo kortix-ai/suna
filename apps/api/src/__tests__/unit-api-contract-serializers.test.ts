@@ -9,7 +9,7 @@ import {
 import type { projectSecrets, projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import { config } from '../config';
 import { buildSecretView, serializeProject, serializeSession } from '../projects/lib/serializers';
-import { serializeSandboxRow } from '../projects/routes/shared';
+import { serializeSandboxRow } from '../projects/session-open';
 
 const NOW = new Date('2026-07-01T12:00:00.000Z');
 const PROJECT_ID = '11111111-2222-4333-8444-555555555555';
@@ -190,6 +190,7 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
       canManageProject: true,
       ownerEmail: 'owner@acme.dev',
       ownerName: 'Build Agent',
+      ownerAvatarUrl: 'https://img.example.test/owner.png',
       ownerType: 'service_account',
       canAccess: false,
       runtimeStatus: 'stopped',
@@ -200,6 +201,7 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
     expect(parsed.sharing).toEqual({ mode: 'members', memberIds: [USER_ID], groupIds: [] });
     expect(parsed.owner_email).toBe('owner@acme.dev');
     expect(parsed.owner_name).toBe('Build Agent');
+    expect(parsed.owner_avatar_url).toBe('https://img.example.test/owner.png');
     expect(parsed.owner_type).toBe('service_account');
     expect(parsed.can_access).toBe(false);
     expect(parsed.runtime_status).toBe('stopped');

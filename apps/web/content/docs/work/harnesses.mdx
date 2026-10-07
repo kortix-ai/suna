@@ -1,0 +1,104 @@
+---
+title: Harnesses
+description: A session runs one agent harness, OpenCode or pi. This page lists how a project selects one and what each one supports.
+---
+
+A harness is the agent runtime inside a session's sandbox. It runs the model
+loop, calls tools, and produces the transcript. Kortix has two: **OpenCode**
+(the default) and **pi**. A session runs exactly one.
+
+Both harnesses read the same project: `kortix.yaml`, the agent files in
+`agents/`, the skills in `skills/`, and `memory/`. The clients (web, CLI, TUI,
+mobile, SDK) read both through the same session API. The differences are the
+session features in the [matrix](#what-each-harness-supports) below and the
+files each harness reads for its own configuration.
+
+## How a session selects its harness
+
+Kortix decides when a session starts, restarts, or resumes. A running session
+keeps its harness until then.
+
+| Rule, in order | Harness |
+| --- | --- |
+| The project's `llm_gateway` flag is off | OpenCode |
+| The project's `pi_harness` flag is on | pi |
+| `kortix.yaml` sets `runtime: pi` | pi |
+| Anything else | OpenCode |
+
+- pi calls models only through the Kortix LLM gateway. A project with
+  `llm_gateway` off boots OpenCode, whatever the flag or the manifest says.
+  See [Models](/docs/project/models).
+- `runtime` is a `kortix_version: 2` manifest key. A legacy `kortix.toml`
+  project cannot set it. See [the manifest reference](/docs/project/manifest).
+- `pi_harness` is a per-project feature flag, off by default. See
+  [Feature flags](/docs/feature-flags).
+
+To see which harness a session runs, read `harness.id` in the sandbox
+daemon's `GET /kortix/health` answer: `opencode` or `pi`.
+
+## What each harness supports
+
+A harness lists the optional session features it serves in the `capabilities`
+array of `GET /kortix/health`. A client hides a control when the session's
+`capabilities` lacks the id. The SDK check is
+[`runtimeSupports`](/docs/sdk/sessions#what-the-runtime-supports).
+
+### Both harnesses
+
+| Feature | OpenCode | pi |
+| --- | --- | --- |
+| Chat turns, streaming, stop | Yes | Yes |
+| Agent `.md`: prompt, `model`, `variant`, `mode`, `tools`, `permission`, `temperature`, `top_p`, `steps` | Yes | Yes. pi does not apply `options` (provider options). |
+| Per-agent `permission` rules and permission requests | Yes | Yes |
+| Questions (`question` tool) | Yes | Yes |
+| Subagents (`task` tool), `session.subagents` | Yes | Yes: `general`, `explore` (read-only), and each project agent with `mode: subagent` or `all`. A subagent cannot start another subagent. |
+| Skills (`skills/` and the managed `kortix-*` skills), with the agent's `skills` grant | Yes. The agent loads a skill with the `skill` tool. | Yes. The system prompt lists each granted skill; the agent reads the file. |
+| `web_search`, `image_search`, `scrape_webpage`, `memory`, `show` tools | Yes, from the tool files in the project's OpenCode config directory (`tools/`). | Yes, built into the sandbox daemon. The names, arguments, and output are the same. |
+| [Config releases](/docs/work/runtime#config-convergence), `config.release.v1` | Yes | Yes |
+| Compact (summarize) the conversation, on demand and by itself near the model's context window, `session.compact` | Yes | Yes. A model request that overflows the window compacts and retries once. |
+| Project slash commands, `session.commands` | Yes, from `commands/` in the OpenCode config directory. | Yes, from the prompt templates in `prompts/` in the pi config directory and in pi packages. pi does not read OpenCode's `commands/`. |
+| Terminal in the sandbox (PTY) | Yes | Yes |
+| `bash`, `read`, `write`, `edit`, `glob`, `grep` tools; [secrets](/docs/project/secrets) in the shell; the `kortix` CLI | Yes | Yes |
+
+The web tools follow the `websearch` (`web_search`, `image_search`) and
+`webfetch` (`scrape_webpage`) permission keys on both harnesses. On OpenCode
+these tools cannot ask: an `ask` rule denies them. On pi an `ask` rule raises
+a permission request. On pi a `memory` command that changes a file follows
+`edit` and `view` follows `read`; on OpenCode only a `memory` rule governs
+the tool.
+
+### OpenCode only today
+
+| Feature | Capability | OpenCode | pi |
+| --- | --- | --- | --- |
+| Rewind to a message and restore it. Edit-and-resend uses rewind. | `session.rewind` | Yes | No |
+| MCP servers (`mcp` in `opencode.jsonc`) | `session.mcp` | Yes | No MCP client. [Connectors](/docs/connect/connectors) work on both harnesses through the `kortix connectors` CLI. |
+| Todo list (`todowrite` tool) and the plan card | `session.todo` | Yes | No. The plan card stays empty. |
+| Attach the harness's own terminal client (`kortix connect`, TUI `Alt+o`) | `session.attach` | Yes | No. See [TUI](/docs/tui). |
+| Runtime config document (`/global/config`) | `session.config` | Yes | No. Agents and models come from the project on both. |
+| Fork a session at a message | `session.fork` | Yes | No |
+| A shell command run as a turn | `session.shell` | Yes | No |
+| `AGENTS.md` rules file | — | Yes. OpenCode loads it. | No. Put the rules in the agent's `.md` or in a skill. |
+| Model providers without the LLM gateway | — | Yes | No. pi needs `llm_gateway` on. |
+
+A pi session answers a request for a feature it does not serve with
+`501 feature_not_supported`, or `404` for a document it does not have
+(`/global/config`). It does not ignore the request.
+
+## Harness configuration files
+
+Each harness has one directory for the files only that harness reads.
+
+| | OpenCode | pi |
+| --- | --- | --- |
+| Directory | `harnesses/opencode/`, or `opencode.config_dir` | `harnesses/pi/`, or `pi.config_dir` |
+| Legacy directory | `.kortix/opencode/` | `.kortix/pi/` |
+| Contents | `opencode.jsonc`, `plugins/`, `tools/`, `commands/` | `settings.json`, `extensions/`, `skills/`, `prompts/` |
+| Extensions | Plugins and custom tools in that directory | [pi packages](/docs/project/manifest#harnesses) in `harnesses.pi.packages`, and extension files in `extensions/` |
+
+A pi session does not read `opencode.jsonc`, `plugins/`, `tools/`, or
+`commands/`. An OpenCode session does not read the pi directory.
+
+pi packages come from [pi.dev/packages](https://pi.dev/packages). A package
+can add tools that pi does not have, for example an MCP adapter or a todo
+tool. Kortix loads the package; it does not test third-party packages.

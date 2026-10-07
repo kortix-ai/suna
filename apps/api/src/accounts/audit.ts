@@ -12,7 +12,7 @@
 //   - DELETE /:accountId/audit/webhooks/:id
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { auditEvents, auditWebhookDeliveries, auditWebhooks } from '@kortix/db';
+import { auditEventsAll, auditWebhookDeliveries, auditWebhooks } from '@kortix/db';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
 import { actorOf } from '../iam/actor';
@@ -24,7 +24,7 @@ import {
   recordAuditEvent,
 } from '../shared/audit';
 import { auditCredentialNames } from '../shared/audit-credential-names';
-import { requestClientIp } from '../shared/client-ip';
+import { requestClientIp } from '../middleware/client-ip';
 import {
   deliverTestEvent,
   generateWebhookSecret,
@@ -38,11 +38,14 @@ import {
   parseAuditLimit,
   serializeAuditEvent,
 } from '../shared/audit-query';
+import { wakeAuditWebhookWorker } from '../workers/audit-webhook-worker';
 import { AuditActorTypeSchema, AuditListSchema } from '../shared/audit-schema';
+import { readExportPage } from '../shared/audit-archive/export-page';
+import { auditArchiveStore } from '../shared/audit-archive/store';
 import { reconcileAuditEvents } from '../shared/audit-reconciliation';
 import type { AppEnv } from '../types';
 import { type AuditFilterInput, buildFilters } from './audit-filters';
-import { requireEntitlement } from './iam/helpers';
+import { requireEntitlement } from './iam/http-helpers';
 import { readJsonObject } from '../shared/http-body';
 
 export const auditRouter = makeOpenApiApp<AppEnv>();
@@ -211,9 +214,9 @@ auditRouter.openapi(
 
     const rows = await db
       .select()
-      .from(auditEvents)
+      .from(auditEventsAll)
       .where(and(...conditions))
-      .orderBy(desc(auditEvents.occurredAt), desc(auditEvents.eventId))
+      .orderBy(desc(auditEventsAll.occurredAt), desc(auditEventsAll.eventId))
       .limit(limit + 1);
 
     const hasMore = rows.length > limit;
@@ -308,6 +311,8 @@ auditRouter.openapi(
     path: '/{accountId}/audit/export',
     tags: ['accounts'],
     summary: 'Export audit events as CSV or JSONL',
+    description:
+      'Oldest first, 10,000 events per page (follow X-Audit-Next-Cursor). Reaches back 365 days: events older than 90 days are read from the S3 archive. The list endpoint covers the last 90 days only.',
     ...auth,
     request: {
       params: AccountIdParam,
@@ -382,40 +387,36 @@ auditRouter.openapi(
 
     await flushAuditEvents({ waitMs: AUDIT_READ_FLUSH_BARRIER_MS });
 
-    const conditions = buildFilters(accountId, {
-      actor,
-      actorType,
-      projectId,
-      sessionId,
-      source,
-      credentialKind,
-      phase,
-      outcome,
-      requestId,
-      correlationId,
-      actionPrefix,
-      resourceType,
-      sinceRaw,
-      untilRaw,
-      q,
-    });
-
-    if (parsedCursor) {
-      conditions.push(buildAuditCursorCondition(parsedCursor, accountId, 'ascending'));
-    }
-
-    const fetched = await db
-      .select()
-      .from(auditEvents)
-      .where(and(...conditions))
-      // Export is chronological (oldest → newest) — that's the order humans
-      // expect when grepping through a CSV; pagination uses reverse order.
-      .orderBy(asc(auditEvents.occurredAt), asc(auditEvents.eventId))
-      .limit(exportLimit + 1);
-    const hasMore = fetched.length > exportLimit;
-    const rows = hasMore ? fetched.slice(0, exportLimit) : fetched;
-    const last = rows.at(-1);
-    const nextCursor = hasMore && last ? `${last.occurredAt.toISOString()}|${last.eventId}` : null;
+    // Ascending, across the archive (weeks older than 90 days, S3) and PostgreSQL. A bucket that is
+    // not configured means PostgreSQL only.
+    const page = await readExportPage(
+      { db, store: auditArchiveStore().configured ? auditArchiveStore() : null },
+      {
+        accountId,
+        cursor: parsedCursor,
+        limit: exportLimit,
+        filters: {
+          actor,
+          actorType,
+          projectId,
+          sessionId,
+          source,
+          credentialKind,
+          phase,
+          outcome,
+          requestId,
+          correlationId,
+          actionPrefix,
+          resourceType,
+          sinceRaw,
+          untilRaw,
+          q,
+        },
+      },
+    );
+    const rows = page.rows;
+    const hasMore = page.nextCursor !== null;
+    const nextCursor = page.nextCursor;
 
     const filenameDate = new Date().toISOString().slice(0, 10);
     const filename = `audit-${filenameDate}.${format}`;
@@ -819,6 +820,7 @@ auditRouter.openapi(
     if (!hook) return c.json({ error: 'webhook not found' }, 404);
     const replayed = await replayAuditWebhookDelivery(deliveryId, webhookId);
     if (!replayed) return c.json({ error: 'delivery not found' }, 404);
+    wakeAuditWebhookWorker();
     await recordAuditEvent({
       accountId,
       actorUserId: userId,

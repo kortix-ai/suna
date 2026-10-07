@@ -1,7 +1,7 @@
 /**
  * The session actions sheet's rules (COR-148) — pure, so every rule has a test.
  *
- * `SessionActionsSheet` puts three rows above Rename · Share · …:
+ * `SessionActionsSheet` puts four rows above Rename · Share · …:
  *   1. Open change request — `OpenCRSheet` prefilled with the session's
  *      branch (`branch_name` → `base_ref`). A project API call, so it works
  *      for any session that carries its own branch.
@@ -9,7 +9,11 @@
  *      `/vcs/diff?mode=branch` (web `useSessionChanges`: the working tree plus
  *      every commit this branch carries over its base). Needs the live
  *      runtime, so only the open thread shows it.
- *   3. Compact — the OpenCode summarize call (`useCompactSession`). Needs the
+ *   3. Files — the project's Files page, pushed as a sub-page over the
+ *      thread (`page:files-nav`), so back returns to that thread. A project
+ *      API page, so it needs no live runtime: shown for the open thread even
+ *      when the sandbox is asleep.
+ *   4. Compact — the runtime's summarize call (`useSummarizeRuntimeSession`). Needs the
  *      live runtime, one that serves `session.compact` (not pi), and never
  *      runs while the session works.
  *
@@ -20,7 +24,7 @@
 
 export type ChangeStatus = 'added' | 'deleted' | 'modified';
 
-/** One entry of the runtime's `/vcs/diff` answer (OpenCode `VcsFileDiff`). */
+/** One entry of the runtime's `/vcs/diff` answer (the SDK's `VcsFileDiff`). */
 export interface VcsFileChange {
   file: string;
   patch?: string;
@@ -121,13 +125,16 @@ export function patchForFile(file: Pick<ChangedFile, 'path' | 'patch'>): string 
 // ─── Rows ────────────────────────────────────────────────────────────────────
 
 /** Is the sheet's session the thread on screen? The tab store keys a thread by
- *  its OpenCode id; ProjectScreen resolves a row by either id, so this does too. */
+ *  its runtime session id; ProjectScreen resolves a row by either id, so this does too. */
 export function isOpenThreadSession(
-  session: { session_id: string; opencode_session_id: string | null },
+  session: { session_id: string; runtime_session_id?: string | null; opencode_session_id: string | null },
   activeSessionId: string | null,
 ): boolean {
   if (!activeSessionId) return false;
-  return session.opencode_session_id === activeSessionId || session.session_id === activeSessionId;
+  return (
+    (session.runtime_session_id ?? session.opencode_session_id) === activeSessionId ||
+    session.session_id === activeSessionId
+  );
 }
 
 /** The branch a session's change request merges into: its base, else `main` (web). */
@@ -171,6 +178,7 @@ export interface SessionActionRowsInput {
 export interface SessionActionRows {
   openChangeRequest: ActionRowState;
   viewChanges: ActionRowState;
+  files: ActionRowState;
   compact: ActionRowState;
 }
 
@@ -195,6 +203,9 @@ export function sessionActionRows(input: SessionActionRowsInput): SessionActionR
     else viewChanges = { visible: true, enabled: true, value: changedFilesLabel(n) };
   }
 
+  // Files is pushed over the open thread; the page needs no runtime.
+  const files: ActionRowState = input.isOpenThread ? { visible: true, enabled: true } : HIDDEN;
+
   let compact: ActionRowState = HIDDEN;
   if (live && input.canManageLifecycle && input.canCompact) {
     if (input.compacting) compact = { visible: true, enabled: false, value: 'Compacting…' };
@@ -202,5 +213,5 @@ export function sessionActionRows(input: SessionActionRowsInput): SessionActionR
     else compact = { visible: true, enabled: true };
   }
 
-  return { openChangeRequest, viewChanges, compact };
+  return { openChangeRequest, viewChanges, files, compact };
 }

@@ -19,8 +19,8 @@
  * and the `/start` poll for `(projectId, sessionId)`.
  */
 
-import type { Message, Part } from '@opencode-ai/sdk/v2/client';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { Message, Part } from '../core/runtime/runtime-types';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { useOpenCodeCompactionStore } from '../browser/stores/opencode-compaction-store';
@@ -34,18 +34,20 @@ import {
 import { useRuntimePendingStore } from '../browser/stores/opencode-pending-store';
 import {
   markRuntimeReadyVerified,
-  resetForServerSwitch,
-  setRuntimeHealth,
-  setSandboxStatus,
+  seedConnectionFromReadyStart,
 } from '../browser/stores/sandbox-connection-store';
 import { getSandboxUrlForExternalId } from '../browser/stores/server-store';
 import { getBackendUrl } from '../core/session/server-store/url-helpers';
 import { ascendingId, useSyncStore } from '../browser/stores/sync-store';
 import { BillingError, parseBillingError } from '../core/http/api/errors';
 import { isSessionFresh } from '../core/http/fresh-sessions';
+import { onSessionStopped } from '../core/http/session-stopped';
 import { formatRuntimeError } from '../core/http/runtime-errors';
 import {
+  type CreateSessionPromptInput,
+  type SessionPromptPart,
   type SessionStartResult,
+  createSessionPrompt,
   isSessionStartError,
   sessionStartKey,
   startProjectSession,
@@ -55,9 +57,10 @@ import { setCurrentRuntime } from '../core/session/current-runtime';
 import { openSessionBundle } from '../core/session/open-bundle';
 import { messagesBeforeRewind } from '../core/session/rewind';
 import { extractGatewayErrorDetails, unwrapError } from '../core/turns/errors';
-import { holdLiveStart } from './hold-live-start';
+import { holdLiveStart, liveStartPollMode } from './hold-live-start';
 import { clearStartStash, readStartStash } from './session-start-stash';
 import { reconcileHydratedSessionTitle } from './session-title-sync';
+import { seedModelDefaultsFromOpenBundle } from './prefetch-session-open';
 import { useSessionTranscriptHistory } from './use-session-transcript-history';
 import { useCanonicalRuntimeSession } from './use-canonical-opencode-session';
 import type { ModelKey } from './use-model-store';
@@ -73,8 +76,8 @@ import {
   useAbortRuntimeSession,
   useExecuteRuntimeCommand,
   useRuntimeSession,
-  useSendRuntimeMessage,
 } from './use-opencode-sessions';
+import { mintSessionWireMessageId } from './use-opencode-sessions/messages';
 import { unwrap } from './use-opencode-sessions/shared';
 import { usePermissionSelfHeal } from './use-permission-self-heal';
 import { useProjectConfig } from './use-project-config';
@@ -142,7 +145,7 @@ export const SESSION_START_POLL_MS = 1_500;
  *  - `sandbox.external_id` — the provider sandbox id. The proxy route is the
  *    SDK's to compose (`getSandboxUrlForExternalId`), never the host's.
  *  - `runtime_url` — a RELATIVE path, `/p/<external_id>/8000`
- *    (`apps/api/src/projects/routes/shared.ts:526`). Returned verbatim it is a
+ *    (`apps/api/src/projects/session-open/index.ts:526`). Returned verbatim it is a
  *    string no host can fetch.
  *
  * The external id wins because it is the same derivation `startProjectSession`
@@ -206,6 +209,52 @@ export function resolveSendOptions(
     ...(agent ? { agent } : {}),
     ...(variant ? { variant } : {}),
     ...(override?.directory ? { directory: override.directory } : {}),
+  };
+}
+
+/**
+ * The inbox prompt (`POST .../prompts`) for one `sendParts` call.
+ *
+ * The wire id is minted here and placed by the server at delivery
+ * (`remintOnDelivery`), as the CLI does. One `clientMessageId` keeps one wire
+ * id across retries of a submission; without one, the minted id names the
+ * submission. A text part's `id` is the host's own correlation key for its
+ * optimistic message and does not go on the wire.
+ */
+export function sessionPromptFromParts(
+  runtimeSessionId: string,
+  parts: PromptPart[],
+  options: SendOptions,
+  clientMessageId?: string,
+  nowMs: number = Date.now(),
+): CreateSessionPromptInput {
+  const messageId = mintSessionWireMessageId(runtimeSessionId, clientMessageId);
+  const wireParts: SessionPromptPart[] = parts.map((part) => {
+    if (part.type === 'file') {
+      return {
+        type: 'file',
+        mime: part.mime,
+        url: part.url,
+        ...(part.filename ? { filename: part.filename } : {}),
+        ...(part.source ? { source: part.source } : {}),
+      };
+    }
+    if (part.type === 'agent') return { type: 'agent', name: part.name, ...(part.source ? { source: part.source } : {}) };
+    return { type: 'text', text: part.text };
+  });
+  const overrides = {
+    ...(options.model ? { model: options.model } : {}),
+    ...(options.agent ? { agent: options.agent } : {}),
+    ...(options.variant ? { variant: options.variant } : {}),
+    ...(options.directory ? { directory: options.directory } : {}),
+  };
+  return {
+    clientMessageId: clientMessageId ?? messageId,
+    messageId,
+    parts: wireParts,
+    ...(Object.keys(overrides).length ? { overrides } : {}),
+    remintOnDelivery: true,
+    clientSentAtMs: nowMs,
   };
 }
 
@@ -955,9 +1004,11 @@ export interface UseSessionOptions {
    */
   enabled?: boolean;
   /**
-   * A server-authorized OpenCode session pin associated with this Kortix
+   * A server-authorized runtime session pin associated with this Kortix
    * session. The `/start` response remains authoritative.
    */
+  initialRuntimeSessionId?: string | null;
+  /** @deprecated Renamed to `initialRuntimeSessionId`, which wins when both are set. Removed in the next major. */
   initialOpenCodeSessionId?: string | null;
   /**
    * Mount the chat-consumption engine — `useSessionSync` (messages/status/diffs/
@@ -1030,7 +1081,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     replayStartStash = true,
     enabled = true,
     chatEngine = true,
-    initialOpenCodeSessionId = null,
+    initialRuntimeSessionId = options.initialOpenCodeSessionId ?? null,
     subscribeMessages = true,
     browserPresence = false,
   } = options;
@@ -1060,11 +1111,25 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const start = useQuery({
     queryKey: sessionStartKey(projectId, sessionId),
     // Once live, only a lifecycle fact leaves live (hold-live-start.ts).
-    queryFn: async () =>
-      holdLiveStart(
-        queryClient.getQueryData<SessionStartResult | null>(sessionStartKey(projectId, sessionId)),
-        await startProjectSession(projectId, sessionId, { waitMs, repositoryMode }),
-      ),
+    queryFn: async () => {
+      const previous = queryClient.getQueryData<SessionStartResult | null>(
+        sessionStartKey(projectId, sessionId),
+      );
+      const mode = liveStartPollMode(previous, typeof document !== 'undefined' && document.hidden);
+      // A background tab that shows the session ready does not poll: the poll
+      // only keeps a box alive for nobody. The next visible fetch revalidates.
+      if (mode === 'skip' && previous) return previous;
+      return holdLiveStart(
+        previous,
+        await startProjectSession(projectId, sessionId, {
+          waitMs,
+          repositoryMode,
+          // The keep-alive poll must report a user Stop or an idle park, never
+          // undo it. An open (no ready answer cached yet) wakes the box as before.
+          keepStopped: mode === 'keep-stopped',
+        }),
+      );
+    },
     enabled: startEnabled,
     retry: (failureCount, error) => shouldRetrySessionStart(failureCount, error, sessionId),
     retryDelay: (failureCount, error) =>
@@ -1074,6 +1139,15 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     staleTime: sessionStartStaleTime,
     ...SESSION_START_POLL_OPTIONS,
   });
+  // A user Stop (any host, via `stopProjectSession`) re-reads `/start` at once:
+  // the poll answers `stopped` (keep_stopped) instead of waiting up to 60 s.
+  useEffect(() => {
+    if (!startEnabled) return;
+    return onSessionStopped((stoppedId) => {
+      if (stoppedId !== sessionId) return;
+      void queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId, sessionId) });
+    });
+  }, [startEnabled, projectId, sessionId, queryClient]);
   const startData = start.data ?? null;
   const startError = isSessionStartError(start.error) ? start.error : null;
   const stage = startData?.stage ?? null;
@@ -1140,6 +1214,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   useIsomorphicLayoutEffect(() => {
     if (!startEnabled) return;
     openSessionBundle(projectId, sessionId);
+    seedModelDefaultsFromOpenBundle(queryClient, projectId, sessionId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, sessionId]);
 
@@ -1212,9 +1287,12 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     if (!switched || !sandbox?.external_id) return;
     // Claim this runtime before the route's reconnect poller mounts; otherwise
     // its first reset treats the healthy seed as belonging to a different box.
-    resetForServerSwitch(getSandboxUrlForExternalId(sandbox.external_id));
-    setSandboxStatus('connected');
-    setRuntimeHealth(true);
+    // The ready answer also lists what the runtime serves, so capability gates
+    // are right before the first health probe answers.
+    seedConnectionFromReadyStart(
+      getSandboxUrlForExternalId(sandbox.external_id),
+      startData?.capabilities,
+    );
   }, [switched]);
 
   // 4. Open the live SSE stream. This was a provider component (RuntimeEvent
@@ -1230,7 +1308,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     projectId,
     sessionId,
     pinFromStart: startData?.runtime_session_id ?? startData?.opencode_session_id ?? null,
-    initialPin: transcriptHistory.rootSessionId ?? initialOpenCodeSessionId,
+    initialPin: transcriptHistory.rootSessionId ?? initialRuntimeSessionId,
     listRuntimeSessions: switched,
   });
   const { rootSessionId } = canonicalSession;
@@ -1454,8 +1532,12 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const config = useProjectConfig(projectId);
   const picks = useSessionPicks(sessionId);
 
-  // 8. Mutations.
-  const sendMutation = useSendRuntimeMessage();
+  // 8. Mutations. A prompt creates a durable row; retrying the POST would
+  // only find the same row (`clientMessageId`), so the outer retry stays off.
+  const sendMutation = useMutation({
+    mutationFn: (input: CreateSessionPromptInput) => createSessionPrompt(projectId, sessionId, input),
+    retry: false,
+  });
   const abortMutation = useAbortRuntimeSession();
   const commandMutation = useExecuteRuntimeCommand();
 
@@ -1540,12 +1622,14 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     };
     noteSendReceipt(sessionId, receipt);
     try {
-      await sendMutation.mutateAsync({
-        sessionId: ocSessionId,
-        parts,
-        ...(Object.keys(opts).length ? { options: opts } : {}),
-        ...(override?.clientMessageId ? { clientMessageId: override.clientMessageId } : {}),
-      });
+      // Every turn start goes through the session's durable prompt inbox, the
+      // path the web composer and the CLI use: the server decides when it runs.
+      const result = await sendMutation.mutateAsync(
+        sessionPromptFromParts(ocSessionId, parts, opts, override?.clientMessageId),
+      );
+      if (result.state === 'failed') {
+        throw new Error('This prompt was refused: its earlier delivery already failed.');
+      }
       // The server has the prompt. From here — and NOT before — a `/turn` read
       // is able to see it, so one is allowed to answer for it.
       acceptSendReceipt(sessionId, receipt.messageId, Date.now());

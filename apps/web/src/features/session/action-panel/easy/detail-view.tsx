@@ -47,10 +47,10 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
-import { normalizeName } from '../../tool/tool-meta';
 import { ToolPartRenderer, ToolSurfaceContext } from '../../tool/tool-renderers';
 import { PanelWidthButton } from './viewer-actions';
 import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
+import { isPlanWriteTool } from '@/features/session/turn/plan-anchor';
 
 /** Closes the detail. Exported so a body with its own toolbar can host it. */
 export function CloseButton({ onClose }: { onClose: () => void }) {
@@ -740,8 +740,7 @@ export function DetailLayer({
 
 /** Tools that re-send their ENTIRE state on every call rather than a delta. */
 function isSnapshotTool(tool: string): boolean {
-  const n = normalizeName(tool);
-  return n === 'todo_write' || n === 'todowrite';
+  return isPlanWriteTool(tool);
 }
 
 /**
@@ -791,11 +790,18 @@ export function ToolParts({
     (part) => (part.state as { status?: string } | undefined)?.status === 'error',
   );
 
+  // A lone `show` call IS the preview: `ToolPartRenderer` sizes it `h-full`
+  // (`fillsPanel`), and that height only resolves if this column has one too.
+  // Without it the preview's iframe fell back to the browser's 150px default.
+  const fillsPanel =
+    visible.length === 1 && (visible[0].tool === 'show' || visible[0].tool === 'show-user');
+
   return (
     <ToolSurfaceContext.Provider value="panel">
       <div
         className={cn(
           'flex min-w-0 flex-col gap-2',
+          fillsPanel && 'h-full',
           // Tool views cap their own scroll height for the inline chat, where
           // they're one item among many. Here the detail IS the tool — a web
           // search that shows 5 of its 20 results behind an inner scrollbar is

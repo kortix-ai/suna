@@ -26,6 +26,14 @@ export function toWireModel(ref: string): string {
  * The OPENCODE ref form: every gateway model is registered under OpenCode's
  * `kortix` provider. The remaining path is the gateway wire model, including
  * nested provider paths such as `codex/gpt-5.6-sol`.
+ *
+ * Every other stored model is the wire id (`toWireModel`): channel bindings,
+ * triggers, account and agent defaults. Only a session's
+ * `metadata.opencode_model` keeps this form, because released clients (the
+ * CLI, `@kortix/sdk` `send()`) split it on the first `/` into the prompt's
+ * `{providerID, modelID}`; a bare wire id there would send no model, and a
+ * BYOK id the wrong provider. It goes when those clients read the model from
+ * the API instead of parsing the pin.
  */
 export function toOpencodeModelRef(model: string): string {
   return `${KORTIX_PREFIX}${toWireModel(model)}`;
@@ -49,6 +57,11 @@ export function chooseEffectiveModel(params: {
   projectDefault?: string | null;
   accountDefault?: string | null;
   freeModelsOnly?: boolean;
+  /** The caller's resolved platform default: the ONE managed model free tier
+   *  may use (KRTX-1067). A parameter, not a config read — this module stays
+   *  pure, and the batch-mocked config of one test cannot steer another's
+   *  cached chain decision. */
+  platformDefault?: string | null;
 }): { model: string | null; source: ModelSource } {
   let candidate: string | null = null;
   let source: ModelSource = 'platform';
@@ -63,9 +76,17 @@ export function chooseEffectiveModel(params: {
     source = 'account';
   }
   if (!candidate) return { model: null, source: 'platform' };
-  // Free tier cannot use managed Kortix models; the chosen candidate is dropped
-  // to the platform default rather than falling through to a broader layer.
-  if (params.freeModelsOnly && isManagedRef(candidate)) return { model: null, source: 'platform' };
+  // Free tier cannot use managed Kortix models beyond the platform default —
+  // the one managed model every tier may use (KRTX-1067). The chosen candidate
+  // is dropped to the platform default rather than falling through to a
+  // broader layer (see choose-default-model.test).
+  if (
+    params.freeModelsOnly &&
+    isManagedRef(candidate) &&
+    toWireModel(candidate) !== params.platformDefault
+  ) {
+    return { model: null, source: 'platform' };
+  }
   return { model: candidate, source };
 }
 

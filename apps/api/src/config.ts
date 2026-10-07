@@ -144,6 +144,9 @@ const envSchema = z.object({
 
   // ── Database (REQUIRED) ──────────────────────────────────────────────────
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required — cannot start without a database'),
+  // Debug only: append each SQL statement the API pool sends (whitespace-normalized
+  // text, no params) as one line to this file. Empty = off.
+  KORTIX_SQL_TRACE: optStr,
 
   // ── Supabase (REQUIRED) ──────────────────────────────────────────────────
   SUPABASE_URL: z
@@ -572,30 +575,12 @@ const envSchema = z.object({
   // template row still references. On by default; boot auto-heal covers the rare
   // cross-env race where another env's row pointed at the reaped (identical) name.
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: optBoolTrue,
-  // Pi worker pool (harness/worker split P1.8): keep this many PARKED boxes of
-  // the shared pi-worker snapshot per environment, claimed at session create
-  // (a claim skips provider create + box boot, ~4s of the cold path measured
-  // on dev 2026-08-27). 0 = off. Pure accelerator: claim failure falls back to
-  // an ordinary cold create.
-  KORTIX_PI_WORKER_POOL_TARGET: optInt(0),
-  // Parked boxes older than this are reaped and replaced; also the Daytona
-  // auto-stop backstop a parked box is created with, so an orphaned box
-  // reclaims itself even if every API instance dies.
-  KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES: optInt(60),
   // The fresh-session Git fast path: KORTIX_SESSION_FRESH, the base-tip +
   // scaffold-delta hint (inline or remote bundle), and the OpenCode config-dir
   // hint that lets the daemon spawn OpenCode before the checkout. Default ON;
   // `false` restores the pre-2026-08-27 create-time contract. The daemon side
   // is additive and falls back to the clone path without these hints.
   KORTIX_FAST_GIT_BOOT_ENABLED: optBoolTrue,
-  // Experimental compiled boot path. The API builds a verified checkout and
-  // OpenCode launcher for one exact Git SHA. `off` preserves the clone and
-  // baked-agent path. `shadow` verifies both artifacts without using them.
-  // `prefer` uses both artifacts with legacy fallback. `required` fails closed.
-  KORTIX_COMPILED_BOOT_MODE: z
-    .enum(['off', 'shadow', 'prefer', 'required'])
-    .optional()
-    .default('off'),
   // ── Project snapshot archives (S3 config provider) ─────────────────────
   // A fresh session materializes its project from a prebuilt `.tar.gz` in S3
   // instead of a Git clone. `git` (default) never attempts S3 and is the
@@ -636,6 +621,21 @@ const envSchema = z.object({
   /** Lifetime of the presigned download URL handed to a sandbox. */
   KORTIX_PROJECT_SNAPSHOT_DOWNLOAD_TTL_SECONDS: optInt(900),
   KORTIX_PROJECT_SNAPSHOT_MAX_ARCHIVE_BYTES: optInt(512 * 1024 * 1024),
+
+  // ── Audit archive (optional) ────────────────────────────────────────────
+  // Weeks of kortix.audit_events older than 90 days are exported to this S3 bucket (Object Lock,
+  // retained until the week's end + 365 days) and their PostgreSQL partition is dropped. Off
+  // unless AUDIT_ARCHIVE_ENABLED is true AND the bucket is set AND the bucket has Object Lock.
+  // Credentials: the AWS SDK default chain (the ECS task role). Endpoint + path style: MinIO.
+  AUDIT_ARCHIVE_ENABLED: optBoolFalse,
+  AUDIT_ARCHIVE_BUCKET: optStr,
+  AUDIT_ARCHIVE_REGION: optStr,
+  AUDIT_ARCHIVE_ENDPOINT: optUrl(''),
+  AUDIT_ARCHIVE_FORCE_PATH_STYLE: optBoolFalse,
+  AUDIT_ARCHIVE_ACCESS_KEY_ID: optStr,
+  AUDIT_ARCHIVE_SECRET_ACCESS_KEY: optStr,
+  /** Export read rate cap (rows per second): the job must not compete with ingest for IO. */
+  AUDIT_ARCHIVE_ROWS_PER_SECOND: optInt(5_000),
 
   // ── Config releases (optional) ──────────────────────────────────────────
   // Config archives go through the API's ONE object store
@@ -1203,6 +1203,10 @@ export const config = {
 
   // ─── Internal Deployment Controls ─────────────────────────────────────────
   INTERNAL_KORTIX_ENV: env.INTERNAL_KORTIX_ENV as InternalKortixEnv,
+  // True only when the deploy set the variable. An unset variable falls back to
+  // 'dev' above, and the router credit gate must not read that fallback as a
+  // dev exemption (see router/services/credit-gate-env.ts).
+  INTERNAL_KORTIX_ENV_EXPLICIT: Boolean(process.env.INTERNAL_KORTIX_ENV),
   // Empty string reads as unset: the launchers always export the var, and a
   // blank value must not turn into an instance called "".
   KORTIX_INSTANCE_ID: env.KORTIX_INSTANCE_ID || undefined,
@@ -1229,6 +1233,7 @@ export const config = {
 
   // ─── Database ──────────────────────────────────────────────────────────────
   DATABASE_URL: env.DATABASE_URL,
+  KORTIX_SQL_TRACE: env.KORTIX_SQL_TRACE,
 
   // ─── Supabase ──────────────────────────────────────────────────────────────
   SUPABASE_URL: env.SUPABASE_URL,
@@ -1355,10 +1360,7 @@ export const config = {
   DAYTONA_TARGET: env.DAYTONA_TARGET,
   DAYTONA_WEBHOOK_SECRET: env.DAYTONA_WEBHOOK_SECRET,
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
-  KORTIX_PI_WORKER_POOL_TARGET: env.KORTIX_PI_WORKER_POOL_TARGET,
-  KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES: env.KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES,
   KORTIX_FAST_GIT_BOOT_ENABLED: env.KORTIX_FAST_GIT_BOOT_ENABLED,
-  KORTIX_COMPILED_BOOT_MODE: env.KORTIX_COMPILED_BOOT_MODE,
   KORTIX_PROJECT_SNAPSHOT_MODE: env.KORTIX_PROJECT_SNAPSHOT_MODE,
   KORTIX_PROJECT_SNAPSHOT_S3_BUCKET: env.KORTIX_PROJECT_SNAPSHOT_S3_BUCKET,
   KORTIX_PROJECT_SNAPSHOT_S3_REGION: env.KORTIX_PROJECT_SNAPSHOT_S3_REGION,
@@ -1370,6 +1372,14 @@ export const config = {
   KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID: env.KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID,
   KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY: env.KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY,
   KORTIX_PROJECT_SNAPSHOT_DOWNLOAD_TTL_SECONDS: env.KORTIX_PROJECT_SNAPSHOT_DOWNLOAD_TTL_SECONDS,
+  AUDIT_ARCHIVE_ENABLED: env.AUDIT_ARCHIVE_ENABLED,
+  AUDIT_ARCHIVE_BUCKET: env.AUDIT_ARCHIVE_BUCKET,
+  AUDIT_ARCHIVE_REGION: env.AUDIT_ARCHIVE_REGION,
+  AUDIT_ARCHIVE_ENDPOINT: env.AUDIT_ARCHIVE_ENDPOINT,
+  AUDIT_ARCHIVE_FORCE_PATH_STYLE: env.AUDIT_ARCHIVE_FORCE_PATH_STYLE,
+  AUDIT_ARCHIVE_ACCESS_KEY_ID: env.AUDIT_ARCHIVE_ACCESS_KEY_ID,
+  AUDIT_ARCHIVE_SECRET_ACCESS_KEY: env.AUDIT_ARCHIVE_SECRET_ACCESS_KEY,
+  AUDIT_ARCHIVE_ROWS_PER_SECOND: env.AUDIT_ARCHIVE_ROWS_PER_SECOND,
   KORTIX_CONFIG_ARCHIVE_S3_BUCKET: env.KORTIX_CONFIG_ARCHIVE_S3_BUCKET,
   KORTIX_CONFIG_ARCHIVE_S3_REGION: env.KORTIX_CONFIG_ARCHIVE_S3_REGION,
   KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: env.KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT,
@@ -1611,6 +1621,12 @@ const TOOL_PRICING: Record<string, ToolPricing> = {
     baseCost: 0.01,
     perResultCost: 0,
     markupMultiplier: 1.5,
+  },
+  // Crawl status polls cost nothing upstream, so they cost nothing here.
+  proxy_firecrawl_status: {
+    baseCost: 0,
+    perResultCost: 0,
+    markupMultiplier: 1,
   },
   proxy_context7: {
     baseCost: 0.001,

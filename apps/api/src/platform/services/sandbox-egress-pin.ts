@@ -25,8 +25,8 @@
  *
  * Measured instead (two Daytona sandboxes, personal account, 2026-08-14):
  *
- *     sandbox c6009f9d → 67.213.121.131 , 67.213.121.131
- *     sandbox 004f74dc → 67.213.113.135 , 67.213.113.135
+ *     sandbox A → <egress_ip_a> , <egress_ip_a>
+ *     sandbox B → <egress_ip_b> , <egress_ip_b>
  *
  * Each sandbox has its OWN egress address, stable across calls. So "is this
  * request coming from the sandbox the token was issued to" is answerable.
@@ -48,31 +48,16 @@
  * that blocks, and it is the one that means what it says.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import type { Context } from 'hono';
 import { sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 
+// `requestEgressIp` (the caller's address as this deployment sees it) lives in
+// `middleware/client-ip.ts`, over `egressIpFromHeaders` in `shared/client-ip.ts`.
+// Re-exported here so every importer keeps working.
+export { requestEgressIp } from '../../middleware/client-ip';
+
 /** Where the pin lives on `session_sandboxes.metadata`. Stable storage detail. */
 export const EGRESS_IP_KEY = 'egress_ip';
-
-/**
- * The caller's address as this deployment sees it.
- *
- * `cf-connecting-ip` is read FIRST because the edge OVERWRITES it on every
- * request. `x-forwarded-for` is not overwritten — Cloudflare appends to what
- * the client sent, so its first hop is attacker-controlled. A caller who
- * exfiltrated a session token can therefore set `x-forwarded-for` to the pinned
- * sandbox address and replay the token from anywhere; they cannot forge
- * `cf-connecting-ip`. The xff/x-real-ip fallback stays for deployments that do
- * not sit behind Cloudflare.
- */
-export function requestEgressIp(c: Context): string | null {
-  const cf = c.req.header('cf-connecting-ip')?.trim();
-  if (cf) return cf;
-  const xff = c.req.header('x-forwarded-for');
-  const first = xff ? xff.split(',')[0]?.trim() : undefined;
-  return first || c.req.header('x-real-ip')?.trim() || null;
-}
 
 /**
  * Record the sandbox's egress address, once.

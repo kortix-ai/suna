@@ -2,6 +2,8 @@ import { submitDemoRequest } from '@kortix/sdk';
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 
+import { clientIp, consumeRateLimit } from '@/lib/seo/rate-limit';
+
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
@@ -75,13 +77,56 @@ async function notify(body: Record<string, unknown>): Promise<void> {
   }
 }
 
+const MAX_BODY_BYTES = 8 * 1024;
+const MAX_FIELD_CHARS = 2000;
+const SUBMISSIONS_PER_MINUTE = 5;
+// The only keys the forms send. Anything else is dropped, never stored.
+const STRING_FIELDS = [
+  'name',
+  'email',
+  'company_name',
+  'company_size',
+  'goal',
+  'source',
+  'opening',
+  'owned',
+  'link',
+] as const;
+
 export async function POST(request: NextRequest) {
-  let body: Record<string, unknown>;
+  const rate = consumeRateLimit(`demo-request:${clientIp(request)}`, SUBMISSIONS_PER_MINUTE);
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { error: 'Too many requests' },
+      {
+        status: 429,
+        headers: { 'Retry-After': String(Math.max(1, Math.ceil((rate.resetsAt - Date.now()) / 1000))) },
+      },
+    );
+  }
+
+  const declared = Number(request.headers.get('content-length') ?? 0);
+  if (declared > MAX_BODY_BYTES) {
+    return NextResponse.json({ error: 'Body too large' }, { status: 413 });
+  }
+  let raw: Record<string, unknown>;
   try {
-    body = await request.json();
+    const text = await request.text();
+    if (new TextEncoder().encode(text).length > MAX_BODY_BYTES) {
+      return NextResponse.json({ error: 'Body too large' }, { status: 413 });
+    }
+    raw = JSON.parse(text);
   } catch {
     return NextResponse.json({ error: 'Invalid body' }, { status: 400 });
   }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return NextResponse.json({ error: 'Invalid body' }, { status: 400 });
+  }
+  const body: Record<string, unknown> = {};
+  for (const key of STRING_FIELDS) {
+    if (typeof raw[key] === 'string') body[key] = (raw[key] as string).slice(0, MAX_FIELD_CHARS);
+  }
+  if (typeof raw.qualified === 'boolean') body.qualified = raw.qualified;
 
   if (!isValidEmail(String(body.email ?? '').trim())) {
     return NextResponse.json({ error: 'Invalid email' }, { status: 400 });

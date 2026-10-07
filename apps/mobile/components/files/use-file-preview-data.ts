@@ -12,7 +12,7 @@
 import { useEffect, useState } from 'react';
 
 import type { SandboxFile } from '@/api/types';
-import { blobToDataURL, useOpenCodeFileBlob, useOpenCodeFileContent } from '@/lib/files/hooks';
+import { blobToDataURL, useSandboxFileBlob, useSandboxFileContent } from '@/lib/files/hooks';
 import { previewDecision } from '@/lib/files/preview-limits';
 import { FilePreviewType, getFilePreviewType } from './FilePreviewRenderers';
 
@@ -53,7 +53,7 @@ export function useFilePreviewData(
     isLoading: isLoadingText,
     error: textError,
     refetch: refetchText,
-  } = useOpenCodeFileContent(
+  } = useSandboxFileContent(
     shouldFetchText ? sandboxUrl : undefined,
     shouldFetchText ? file?.path : undefined
   );
@@ -63,7 +63,7 @@ export function useFilePreviewData(
     isLoading: isLoadingBlob,
     error: blobError,
     refetch: refetchBlob,
-  } = useOpenCodeFileBlob(
+  } = useSandboxFileBlob(
     shouldFetchBlob ? sandboxUrl : undefined,
     shouldFetchBlob ? file?.path : undefined
   );

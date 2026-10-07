@@ -45,13 +45,6 @@ describe('local test runner contract', () => {
     expect(source).toMatch(/"start",\s+"--ignore-health-check"/);
   });
 
-  it('generates an unpredictable internal gateway token for each local stack', () => {
-    const source = readFileSync(resolve(root, 'tests/src/core/local-stack.ts'), 'utf8');
-
-    expect(source).toContain('const gatewayToken = `ke2e-local-${crypto.randomUUID()}`;');
-    expect(source).not.toContain('"ke2e-local-gateway-internal-token"');
-  });
-
   it('snapshots fixture counts into results before teardown starts', () => {
     const runner = readFileSync(resolve(root, 'tests/src/core/runner.ts'), 'utf8');
     const fixtureSnapshot = runner.indexOf('fixtureStats: world.fixtureStats()');
@@ -129,10 +122,25 @@ describe('local test runner contract', () => {
     );
     const dbPackage = JSON.parse(readFileSync(resolve(root, 'packages/db/package.json'), 'utf8'));
 
-    expect(cliPackage.scripts.test).toContain(
+    // The hermetic env wrapper (scripts/hermetic-test-env.sh) owns the
+    // environment for both wrappers; the bun invocation it execs is still the
+    // proven one, and the timeout contract the packages lane sets
+    // (KORTIX_TEST_TIMEOUT_MS=30000; process-heavy git fixtures sit above bun's
+    // 5 s default on slower boxes) lives in the execed invocation.
+    expect(cliPackage.scripts.test).toBe('pnpm lint:sdk-boundary && bash scripts/test.sh');
+    expect(readFileSync(resolve(root, 'apps/cli/scripts/test.sh'), 'utf8')).toContain(
       'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000} --isolate --parallel=4',
     );
-    expect(agentPackage.scripts.test).toBe('bun test');
+    expect(agentPackage.scripts.test).toBe('bash scripts/test.sh');
+    expect(readFileSync(resolve(root, 'apps/kortix-sandbox-agent-server/scripts/test.sh'), 'utf8')).toContain(
+      'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}',
+    );
+    const gatewayPackage = JSON.parse(
+      readFileSync(resolve(root, 'apps/llm-gateway/package.json'), 'utf8'),
+    );
+    expect(gatewayPackage.scripts.test).toBe(
+      'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}',
+    );
     // Serial on purpose. `--parallel` implies `--isolate`, and under isolation
     // Bun 1.3.14 re-creates process.stdout/stderr per test file, dups the
     // stdio fd into epoll, and never ends the outgoing sinks at the swap

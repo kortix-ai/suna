@@ -12,8 +12,8 @@
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { eq, and, desc, inArray, isNull, ne, type SQL } from 'drizzle-orm';
-import { connectorConnections, connectors, tunnelConnections } from '@kortix/db';
+import { eq, and, desc, isNull, ne } from 'drizzle-orm';
+import { connectorConnections, tunnelConnections } from '@kortix/db';
 import { db } from '../../shared/db';
 import { tunnelRelay } from '../core/relay';
 import {
@@ -22,7 +22,7 @@ import {
   isTunnelToken,
   verifySecretKey,
 } from '../../shared/crypto';
-import { requestClientKey } from '../../shared/client-ip';
+import { requestClientKey } from '../../middleware/client-ip';
 import { isUuid } from '../../shared/validate';
 import { tunnelRateLimiter } from '../core/rate-limiter';
 import type { AppEnv } from '../../types';
@@ -30,9 +30,17 @@ import { makeOpenApiApp, json, errors } from '../../openapi';
 import { getTunnelOwnerContext, getTunnelReadContext } from './auth';
 import { isTunnelConnectionLive } from '../core/cluster-forwarder';
 import { effectiveMachineCapabilities } from '../core/rpc-core';
-import { retryOnDeadlock } from '../../shared/error-cause';
 import { readJsonObject } from '../../shared/http-body';
 import { uniqueComputerLabel } from '../../connectors/computers';
+import { bearerToken } from '../../shared/bearer-token';
+import { unpairMachine } from '../registrations';
+
+export {
+  retireStaleUnidentifiedRegistrations,
+  retireSupersededRegistrations,
+  UNIDENTIFIED_RETENTION_DAYS,
+  unpairMachine,
+} from '../registrations';
 
 /** Permissive connection row shape, as persisted + serialized. */
 const ConnectionSchema = z.record(z.string(), z.any());
@@ -100,53 +108,6 @@ async function relabelComputerAccounts(tx: Tx, tunnelId: string, name: string): 
       .set({ label, updatedAt: new Date() })
       .where(eq(connectorConnections.connectionId, account.connectionId));
   }
-}
-
-/**
- * Unpair one machine: revoke its computer accounts (and drop their default
- * pin) so no resolver picks an account that reaches nothing, delete it (the
- * foreign key then sets their tunnel_id NULL), and drop its live socket.
- * False when no machine matches `tunnelId` and `where`.
- *
- * Lock order: connector rows, then the machine row, the order
- * `attachComputerConnection` uses. The delete's SET NULL update re-checks each
- * account's connector with a key-share lock, so taking it last, behind the
- * machine row, deadlocked (40P01) against an attach that holds the connector
- * and waits for the machine. The connectors are locked first, sorted, in the
- * same statement the delete would lock them. A connector that gains an account
- * for this machine after the read is the one case left: the retry covers it.
- */
-export async function unpairMachine(tunnelId: string, where?: SQL): Promise<boolean> {
-  const deleted = await retryOnDeadlock(() =>
-    db.transaction(async (tx) => {
-      const held = await tx
-        .selectDistinct({ connectorId: connectorConnections.connectorId })
-        .from(connectorConnections)
-        .where(eq(connectorConnections.tunnelId, tunnelId));
-      if (held.length > 0) {
-        await tx
-          .select({ connectorId: connectors.connectorId })
-          .from(connectors)
-          .where(inArray(connectors.connectorId, held.map((row) => row.connectorId)))
-          .orderBy(connectors.connectorId)
-          .for('key share');
-      }
-      const [machine] = await tx
-        .select({ tunnelId: tunnelConnections.tunnelId })
-        .from(tunnelConnections)
-        .where(and(eq(tunnelConnections.tunnelId, tunnelId), where))
-        .for('update');
-      if (!machine) return false;
-      await tx
-        .update(connectorConnections)
-        .set({ status: 'revoked', isDefault: false, updatedAt: new Date() })
-        .where(eq(connectorConnections.tunnelId, tunnelId));
-      await tx.delete(tunnelConnections).where(eq(tunnelConnections.tunnelId, tunnelId));
-      return true;
-    }),
-  );
-  if (deleted) tunnelRelay.disconnectAgent(tunnelId, 4003, 'tunnel deleted');
-  return deleted;
 }
 
 export function createConnectionsRouter() {
@@ -364,7 +325,7 @@ export function createTunnelSelfRouter() {
       }
       const tunnelId = c.req.header('x-tunnel-id') ?? '';
       const header = c.req.header('authorization') ?? '';
-      const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+      const token = bearerToken(header)?.trim() ?? '';
       if (!isUuid(tunnelId)) return c.json({ error: 'X-Tunnel-Id must be a UUID' }, 400);
       // Look the machine up before the costly verifier, as the WS handshake does.
       const [machine] = isTunnelToken(token)

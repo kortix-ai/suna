@@ -44,6 +44,7 @@ mock.module('../../services/llm-reservation', () => ({
   reserveEstimatedLlmCredits: async () => null,
   settleLlmReservation: async () => undefined,
   refundLlmReservation: async () => undefined,
+  settleHeldLlmReservation: async () => undefined,
 }));
 
 mock.module('./helpers', () => ({

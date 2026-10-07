@@ -30,20 +30,16 @@
  * network calls.
  *
  * WHAT IT NEVER DOES. `POST /kortix/catalog/converge` — the one call this
- * gate can make — is idle-gated and verified-swap based on the daemon side
- * (`convergeManagedModelCatalog` in the sandbox agent server), exactly like
- * `config-release.ts`: it never ends a running turn, and it takes ONE
- * attempt with a bounded timeout, never a retry ladder.
+ * gate can make — is idle-gated on the daemon side
+ * (`convergeManagedModelCatalog` in the sandbox agent server): it never ends
+ * a running turn, and it takes ONE attempt with a bounded timeout, never a
+ * retry ladder. The daemon registers the id and reloads OpenCode's config in
+ * place; it decides nothing about whether the gateway serves the model.
  */
 
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
+import { SANDBOX_SERVICE_PORT } from './sandbox-env-transport';
 import { loadActiveSandbox } from './sandbox-runtime-refresh';
-import {
-  lastKnownManagedCatalog,
-  modelConfirmation,
-  noteModelConfirmation,
-  noteRunningCatalog,
-} from '../../runtime-assets/running-catalog';
 import { logger } from '../../lib/logger';
 
 /**
@@ -65,7 +61,6 @@ export interface ModelCatalogConvergeDeps {
   fetch: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 }
 
-const SANDBOX_SERVICE_PORT = 8000;
 
 const defaultConvergeDeps: ModelCatalogConvergeDeps = {
   loadActiveSandbox,
@@ -138,7 +133,8 @@ export type ModelCatalogTurnStartDecision =
  * whether the repair actually landed IN TIME for the request it is about to
  * forward, so it can refuse with a diagnosable error instead of proxying
  * into a guaranteed failure:
- *   - `'restarted'` — a fresh OpenCode is up with the model. Forward normally.
+ *   - `'reloaded'` / `'restarted'` — the running OpenCode registers the model
+ *     (config reloaded in place, or a verified swap). Forward normally.
  *   - `'unchanged'` / `'file-updated'` — nothing to swap, or the file is
  *     staged for the box's NEXT natural restart. Forward normally; if the
  *     model was genuinely absent this is `declined`/`no-gateway`, not these.
@@ -245,31 +241,4 @@ async function convergeOneModel(
   }
   if (result.modelPresent) deps.noteModelConfirmation(sessionId, model);
   return { decision: 'converged', daemonOutcome: result.outcome };
-}
-
-/**
- * Record what a health read said about this box's managed catalog. Called
- * from the SAME probe `turn-start-convergence.ts`'s `noteAssetsFromHealth`
- * already runs — never a second network call.
- */
-export function noteManagedCatalogFromHealth(
-  sessionId: string,
-  ids: string[] | null,
-  fallbackReason: string | null,
-): void {
-  noteRunningCatalog(sessionId, ids, fallbackReason);
-}
-
-export function defaultModelCatalogTurnStartDeps(
-  isManagedModelId: (id: string) => boolean,
-  probe: (sessionId: string) => Promise<RunningCatalogLookup | undefined>,
-): ModelCatalogTurnStartDeps {
-  return {
-    isManagedModelId,
-    lastKnown: lastKnownManagedCatalog,
-    probe,
-    convergeCatalog: async (sessionId, model) => convergeSandboxModelCatalog(sessionId, undefined, model),
-    modelConfirmation,
-    noteModelConfirmation,
-  };
 }

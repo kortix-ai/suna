@@ -26,13 +26,11 @@ import { contract, qk, type Command } from '@kortix/sdk/react';
 import { META_SANDBOX_SLUG, isMetaAgentName } from '@kortix/shared';
 import { AccessRequestsBell } from './home/access-requests-bell';
 import { FirstChat } from './home/first-chat';
-import { MetaRuntimeIndicator } from './home/meta-runtime-indicator';
 import { SandboxPicker } from './home/sandbox-picker';
 import { ProjectHomeWallpaper, ProjectHomeWelcomeBody } from './home/welcome-body';
 
 // This path is this view's public surface — the instant session shell and the
 // IAM tests already import from here, so the moved pieces keep their address.
-export { PROJECT_SETUP_TILE_ACTIONS } from './home/setup-tiles';
 export { ProjectHomeWelcomeBody } from './home/welcome-body';
 
 export interface ProjectHomeSendOptions extends ComposerOptions {
@@ -257,7 +255,6 @@ export function ProjectHome({
       }
       prefill={prefill}
       onAgentSelectionChange={setSelectedAgent}
-      toolbarSlot={metaSelected ? <MetaRuntimeIndicator /> : null}
       sandboxSlot={sandboxSlot}
     />
   );

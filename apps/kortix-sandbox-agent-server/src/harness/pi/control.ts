@@ -52,7 +52,7 @@ function setRuntimeEnv(next: Record<string, string | null>): { changed: boolean;
 
 function applyRuntimeEnv(input: unknown, releaseOwned: boolean): { changed: boolean; names: string[] } {
   if (input === undefined) return { changed: false, names: [] }
-  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('opencodeEnv must be an object')
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('runtimeEnv must be an object')
   const next: Record<string, string | null> = {}
   for (const [name, value] of Object.entries(input as Record<string, unknown>)) {
     if (releaseOwned && RELEASE_OWNED_ENV_NAMES.has(name.trim().toUpperCase())) {

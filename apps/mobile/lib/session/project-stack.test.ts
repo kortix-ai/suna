@@ -11,8 +11,10 @@ import {
   homeAndRoute,
   isSubPageId,
   projectEdgeGesture,
+  projectViewKey,
   subPageLeaveMove,
   subPageOpenMove,
+  subPageShouldLeave,
   subPageBackMove,
   drawerRouteMove,
   drawerSessionRowMove,
@@ -132,13 +134,19 @@ describe('androidBackMove', () => {
 });
 
 describe('sub-pages', () => {
-  test('project Settings, Schedules, Secrets and Members are the pages that open as sub-pages', () => {
-    expect([...SUB_PAGE_IDS]).toEqual(['page:settings', 'page:schedules', 'page:secrets-nav', 'page:members']);
+  test('project Settings, Schedules, Secrets, Members and Files are the pages that open as sub-pages', () => {
+    expect([...SUB_PAGE_IDS]).toEqual([
+      'page:settings',
+      'page:schedules',
+      'page:secrets-nav',
+      'page:members',
+      'page:files-nav',
+    ]);
     for (const id of SUB_PAGE_IDS) expect(isSubPageId(id)).toBe(true);
   });
 
   test('other page ids, and a missing param, are not sub-pages', () => {
-    for (const id of ['page:review', 'page:files-nav', 'page:browser', '', undefined, null]) {
+    for (const id of ['page:review', 'page:browser', 'page:apps', '', undefined, null]) {
       expect(isSubPageId(id)).toBe(false);
     }
   });
@@ -152,6 +160,11 @@ describe('subPageOpenMove', () => {
 
   test('the same sub-page already on top (a double tap): nothing', () => {
     expect(subPageOpenMove({ name: PAGE, pageId: 'page:schedules' }, 'page:schedules')).toBe('none');
+  });
+
+  test('Files from the session sheet: push over the thread; a double tap pushes nothing', () => {
+    expect(subPageOpenMove({ name: PROJECT_VIEW_ROUTE }, 'page:files-nav')).toBe('push');
+    expect(subPageOpenMove({ name: PAGE, pageId: 'page:files-nav' }, 'page:files-nav')).toBe('none');
   });
 
   test('no stack yet: nothing to push onto', () => {
@@ -179,6 +192,50 @@ describe('subPageLeaveMove', () => {
   test('another covering route under the sub-pages: reset to [home, view]', () => {
     expect(subPageLeaveMove([HOME, PROJECT_ACCOUNT_ROUTE, PAGE])).toBe('reset-to-view');
     expect(subPageLeaveMove([HOME, PROJECT_ACCOUNT_ROUTE, PAGE, PAGE])).toBe('reset-to-view');
+  });
+});
+
+describe('projectViewKey', () => {
+  const none = { activePageId: null, activeSessionId: null, connectingSessionId: null };
+
+  test('project home (or a scope not ready yet): null', () => {
+    expect(projectViewKey({ isHome: true, ...none })).toBeNull();
+    expect(projectViewKey({ isHome: true, ...none, activeSessionId: 'ses_a' })).toBeNull();
+  });
+
+  test('a page, a thread, and a connecting session each get their own key', () => {
+    expect(projectViewKey({ isHome: false, ...none, activePageId: 'page:review' })).toBe('page:page:review');
+    expect(projectViewKey({ isHome: false, ...none, activeSessionId: 'ses_a' })).toBe('session:ses_a');
+    expect(projectViewKey({ isHome: false, ...none, connectingSessionId: 'ps_a' })).toBe('connecting:ps_a');
+  });
+
+  test('two threads never share a key', () => {
+    expect(projectViewKey({ isHome: false, ...none, activeSessionId: 'ses_a' })).not.toBe(
+      projectViewKey({ isHome: false, ...none, activeSessionId: 'ses_b' })
+    );
+  });
+});
+
+describe('subPageShouldLeave', () => {
+  test('opened from home (Settings from Account): stays while the store is home', () => {
+    expect(subPageShouldLeave({ viewKey: null, viewKeyAtMount: null })).toBe(false);
+  });
+
+  test('opened from home, then the store leaves home (a notification, a drawer session): leave', () => {
+    expect(subPageShouldLeave({ viewKey: 'session:ses_a', viewKeyAtMount: null })).toBe(true);
+  });
+
+  test('pushed over a thread (Files), the same thread still open: stay', () => {
+    expect(subPageShouldLeave({ viewKey: 'session:ses_a', viewKeyAtMount: 'session:ses_a' })).toBe(false);
+  });
+
+  test('pushed over a thread, then another session opens: leave (pop to the view, which swaps)', () => {
+    expect(subPageShouldLeave({ viewKey: 'session:ses_b', viewKeyAtMount: 'session:ses_a' })).toBe(true);
+    expect(subPageShouldLeave({ viewKey: 'connecting:ps_b', viewKeyAtMount: 'session:ses_a' })).toBe(true);
+  });
+
+  test('pushed over a thread, then the store returns home (the session was deleted): leave', () => {
+    expect(subPageShouldLeave({ viewKey: null, viewKeyAtMount: 'session:ses_a' })).toBe(true);
   });
 });
 
@@ -296,39 +353,39 @@ describe('drawerThreadMove', () => {
 
   test('a row of another session opens that session', () => {
     expect(
-      drawerThreadMove({ rowSessionId: 'ps-2', targetOpenCodeId: 'oc-2', shownSessionId: 'ps-1', activeOpenCodeId: 'oc-1' })
+      drawerThreadMove({ rowSessionId: 'ps-2', targetRuntimeId: 'oc-2', shownSessionId: 'ps-1', activeRuntimeId: 'oc-1' })
     ).toBe('open');
     expect(
-      drawerThreadMove({ rowSessionId: 'ps-2', targetOpenCodeId: null, shownSessionId: null, activeOpenCodeId: null })
+      drawerThreadMove({ rowSessionId: 'ps-2', targetRuntimeId: null, shownSessionId: null, activeRuntimeId: null })
     ).toBe('open');
   });
 
-  test('the row of the thread already showing that OpenCode session only closes', () => {
-    expect(drawerThreadMove({ ...parent, targetOpenCodeId: 'oc-root', activeOpenCodeId: 'oc-root' })).toBe('close');
-    expect(drawerThreadMove({ ...parent, targetOpenCodeId: 'oc-child', activeOpenCodeId: 'oc-child' })).toBe('close');
+  test('the row of the thread already showing that runtime session only closes', () => {
+    expect(drawerThreadMove({ ...parent, targetRuntimeId: 'oc-root', activeRuntimeId: 'oc-root' })).toBe('close');
+    expect(drawerThreadMove({ ...parent, targetRuntimeId: 'oc-child', activeRuntimeId: 'oc-child' })).toBe('close');
   });
 
   test('a sub-session row of the shown session focuses that sub-session in place', () => {
-    expect(drawerThreadMove({ ...parent, targetOpenCodeId: 'oc-child', activeOpenCodeId: 'oc-root' })).toBe('focus');
+    expect(drawerThreadMove({ ...parent, targetRuntimeId: 'oc-child', activeRuntimeId: 'oc-root' })).toBe('focus');
   });
 
   test('the parent row while a sub-session shows focuses the root again', () => {
-    expect(drawerThreadMove({ ...parent, targetOpenCodeId: 'oc-root', activeOpenCodeId: 'oc-child' })).toBe('focus');
+    expect(drawerThreadMove({ ...parent, targetRuntimeId: 'oc-root', activeRuntimeId: 'oc-child' })).toBe('focus');
   });
 
   test('the shown session still connecting (no thread yet): queue the target for when the thread opens', () => {
-    expect(drawerThreadMove({ ...parent, targetOpenCodeId: 'oc-child', activeOpenCodeId: null })).toBe('queue');
-    expect(drawerThreadMove({ ...parent, targetOpenCodeId: 'oc-root', activeOpenCodeId: null })).toBe('queue');
+    expect(drawerThreadMove({ ...parent, targetRuntimeId: 'oc-child', activeRuntimeId: null })).toBe('queue');
+    expect(drawerThreadMove({ ...parent, targetRuntimeId: 'oc-root', activeRuntimeId: null })).toBe('queue');
   });
 
   test('a sub-session row of a session that is not on screen opens that session', () => {
     expect(
-      drawerThreadMove({ rowSessionId: 'ps-2', targetOpenCodeId: 'oc-2-child', shownSessionId: 'ps-1', activeOpenCodeId: 'oc-1' })
+      drawerThreadMove({ rowSessionId: 'ps-2', targetRuntimeId: 'oc-2-child', shownSessionId: 'ps-1', activeRuntimeId: 'oc-1' })
     ).toBe('open');
   });
 
   test('a row with no OpenCode pin yet on the shown session only closes', () => {
-    expect(drawerThreadMove({ ...parent, targetOpenCodeId: null, activeOpenCodeId: 'oc-child' })).toBe('close');
+    expect(drawerThreadMove({ ...parent, targetRuntimeId: null, activeRuntimeId: 'oc-child' })).toBe('close');
   });
 });
 
@@ -338,10 +395,10 @@ describe('threadOpenTarget', () => {
   });
 
   test('a pending sub-session of this session: that sub-session', () => {
-    expect(threadOpenTarget({ sessionId: 'ps-1', openCodeId: 'oc-child' }, 'ps-1', 'oc-root')).toBe('oc-child');
+    expect(threadOpenTarget({ sessionId: 'ps-1', runtimeId: 'oc-child' }, 'ps-1', 'oc-root')).toBe('oc-child');
   });
 
   test('a pending focus for another session is ignored: the root', () => {
-    expect(threadOpenTarget({ sessionId: 'ps-2', openCodeId: 'oc-other' }, 'ps-1', 'oc-root')).toBe('oc-root');
+    expect(threadOpenTarget({ sessionId: 'ps-2', runtimeId: 'oc-other' }, 'ps-1', 'oc-root')).toBe('oc-root');
   });
 });

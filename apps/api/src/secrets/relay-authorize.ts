@@ -36,7 +36,7 @@ import { decryptProjectSecret, intersectSecretGrants } from '../projects/secrets
 import { ACTIVE_SESSION_STATUSES } from '../projects/lib/session-status';
 import { db } from '../shared/db';
 import { resolveSessionPersonalOwner } from '../projects/lib/personal-resources';
-import { filterSecretRowsByAudience, secretAudiencePerson } from '../projects/lib/secret-audience';
+import { filterSecretRowsByAudience, secretAudienceSubject } from '../projects/lib/secret-audience';
 import type { SessionHandleFacts } from './handle-substitution';
 import type { SecretBrokerError, SecretSubstitution } from './http-broker';
 import { networkBoundaryPolicyError } from './network-boundary';
@@ -124,7 +124,7 @@ export async function resolveSpendableHandles(input: {
   // this is no longer its person's private session (secret-audience.ts).
   const reachableRows = await filterSecretRowsByAudience({
     projectId: input.projectId,
-    personId: () => secretAudiencePerson({ projectId: input.projectId, sessionId: input.sessionId }),
+    subject: () => secretAudienceSubject({ projectId: input.projectId, sessionId: input.sessionId }),
     rows: secretRows,
   });
   type SecretRow = (typeof reachableRows)[number];
@@ -314,8 +314,8 @@ export async function authorizeSecretRelay(
   const reachable = await filterSecretRowsByAudience({
     projectId: input.projectId,
     accountId: input.accountId,
-    personId: () =>
-      secretAudiencePerson({
+    subject: () =>
+      secretAudienceSubject({
         projectId: input.projectId,
         accountId: input.accountId,
         sessionId: input.sessionId,

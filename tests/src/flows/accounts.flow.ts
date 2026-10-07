@@ -2,6 +2,7 @@
  * Accounts & identity — authenticated. Maps to spec §4 (ME-*, ACCT-*, MEM-*, TOK-*).
  * Needs OWNER + NONMEMBER principals (provisioned per run).
  */
+import { AccountSummarySchema } from '@kortix/api-contract';
 import { flow } from '../core/flow';
 import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
 
@@ -21,9 +22,9 @@ flow(
 );
 
 flow('ACCT-1', { domain: 'accounts', routes: ['GET /v1/accounts'] }, async (ctx) => {
-  await ctx.step('list memberships', async () => {
+  await ctx.step('list memberships; every row matches the contract AccountSummary', async () => {
     const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts');
-    r.status(200);
+    r.status(200).body().schema(AccountSummarySchema.array());
   });
   await ctx.step(
     "the personal account is named, never after the email (KRTX-638: no \"<email>'s Account\")",
@@ -442,6 +443,8 @@ flow(
       'POST /v1/accounts/:accountId/members',
       'GET /v1/projects/:projectId/access',
       'POST /v1/account-invites/:inviteId/accept',
+      'DELETE /v1/accounts/:accountId/members/:userId',
+      'GET /v1/accounts/:accountId',
     ],
   },
   async (ctx) => {
@@ -553,6 +556,26 @@ flow(
         if (!row) throw new Error('accepted invitee missing from project access list');
         if (row.effective_project_role !== 'manager')
           throw new Error(`expected manager, got ${row.effective_project_role}`);
+
+        // A current member re-accepting the same invite still heals (200).
+        const again = await ctx.client
+          .as(addressee)
+          .post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } });
+        again.status(200);
+
+        // After removal the accepted invite must not re-create the membership.
+        const removed = await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/:accountId/members/:userId', {
+          params: { accountId: team.id, userId: addressee.userId! },
+        });
+        removed.status(200);
+        const replay = await ctx.client
+          .as(addressee)
+          .post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } });
+        replay.status(410);
+        const after = await ctx.client
+          .as(addressee)
+          .get('/v1/accounts/:accountId', { params: { accountId: team.id } });
+        after.status([403, 404]);
       },
     );
 
@@ -614,14 +637,18 @@ flow(
 // mirror mount covered by DEL-1/DEL-2). Drives `GET .../deletion-status` and
 // the real, destructive `DELETE .../delete-immediately` on a THROWAWAY user's
 // own personal account (never OWNER/team accounts other flows depend on).
-// deleteAccountImmediately() zeroes the credit account (balance/tier/status)
-// but does not remove the Supabase auth identity — the world fixture tears
-// that down via the admin API regardless of what this flow does to it.
+// Immediate self-deletion removes the auth identity, invalidates its token and
+// removes the account row itself: the account answers 404 to a nonmember.
 flow(
   'DEL-4',
   {
     domain: 'accounts',
-    routes: ['DELETE /v1/account/delete-immediately', 'GET /v1/account/deletion-status'],
+    routes: [
+      'DELETE /v1/account/delete-immediately',
+      'GET /v1/account/deletion-status',
+      'GET /v1/accounts/me',
+      'GET /v1/accounts/:accountId',
+    ],
   },
   async (ctx) => {
     const victim = await ctx.fixtures.user({ label: 'DEL-4' });
@@ -643,21 +670,36 @@ flow(
         .has('$.deletion_scheduled_for', null)
         .has('$.can_cancel', false);
     });
+    let victimAccountId = '';
+    await ctx.step('a nonmember is forbidden from the throwaway account → 403', async () => {
+      // The personal account is the victim's first (and only) membership.
+      const me = await asVictim.get('/v1/accounts/me');
+      me.status(200).body().exists('$.accounts[0].account_id');
+      victimAccountId = me.json().accounts[0].account_id;
+      (
+        await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/accounts/:accountId', { params: { accountId: victimAccountId } })
+      ).status(403);
+    });
     await ctx.step('throwaway account deletes itself immediately → 200', async () => {
       const r = await asVictim.del('/v1/account/delete-immediately');
       r.status(200).body().has('$.success', true).has('$.message', 'Account deleted');
     });
-    await ctx.step('deletion-status is still readable after immediate delete', async () => {
-      // No deletion REQUEST was ever scheduled, so the immediate delete doesn't
-      // flip has_pending_deletion — it just proves the account (and its token)
-      // are still usable, i.e. delete-immediately zeroes credits rather than
-      // hard-deleting the identity.
-      const r = await asVictim.get('/v1/account/deletion-status');
-      r.status(200).body().has('$.has_pending_deletion', false);
+    await ctx.step('old token cannot read account or deletion status → 401', async () => {
+      (await asVictim.get('/v1/accounts/me')).status(401);
+      (await asVictim.get('/v1/account/deletion-status')).status(401);
     });
-    await ctx.step('delete-immediately is idempotent → 200 again', async () => {
-      const r = await asVictim.del('/v1/account/delete-immediately');
-      r.status(200).body().has('$.success', true);
+    await ctx.step('the deleted account is gone for a nonmember → 404', async () => {
+      (
+        await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/accounts/:accountId', { params: { accountId: victimAccountId } })
+      ).status(404);
+    });
+    await ctx.step('repeated deletion cannot restore old-token access → 401', async () => {
+      (await asVictim.del('/v1/account/delete-immediately')).status(401);
+      (await asVictim.get('/v1/accounts/me')).status(401);
     });
   },
 );

@@ -77,7 +77,7 @@ export function ApplyModal({
 
     setSubmitting(true);
     try {
-      await fetch(LEAD_ENDPOINT, {
+      const response = await fetch(LEAD_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -100,7 +100,9 @@ export function ApplyModal({
           source: SOURCE,
         }),
       });
+      if (!response.ok) throw new Error(`Application request failed: ${response.status}`);
     } catch {
+      setError(tI18nComplete.raw('textc3bf78fdd3b9'));
       errorToast(tI18nComplete.raw('textc3bf78fdd3b9'), {
         description: tI18nComplete.raw('textfedb675f658f'),
       });

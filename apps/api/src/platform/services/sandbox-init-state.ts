@@ -1,6 +1,7 @@
-import { WarmRuntimeUnavailableError, SandboxTemplateNotFoundError } from '../providers';
+import { SnapshotStillBuildingError, WarmRuntimeUnavailableError, SandboxTemplateNotFoundError } from '../providers';
 import type { CreateSandboxOpts, ProvisionResult, SandboxProvider } from '../providers';
 import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
+import { exponentialBackoffMs } from '../../shared/backoff';
 
 export type SandboxInitStatus = 'pending' | 'provisioning' | 'retrying' | 'ready' | 'failed';
 type SandboxHealthStatus = 'healthy' | 'degraded' | 'offline' | 'unknown';
@@ -18,16 +19,15 @@ const RETRY_DELAY_MAX_MS = 4_000;
 const SNAPSHOT_BUILDING_MAX_ATTEMPTS = 30;
 const SNAPSHOT_BUILDING_RETRY_DELAY_MS = 10_000;
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
 function isSnapshotStillBuilding(error: unknown): boolean {
-  return /snapshot .+ is building/i.test(errorMessage(error));
+  if (error instanceof SnapshotStillBuildingError) return true;
+  // legacy: Daytona refuses a create from a snapshot it is still building with
+  // only this text. Delete when Daytona types the refusal.
+  return (error as Error | null)?.name?.startsWith('Daytona') === true && /snapshot .+ is building/i.test(errorMessage(error));
 }
 
 export function deriveSandboxInitStatus(
@@ -240,8 +240,8 @@ export async function retrySandboxProvisionCreate(
       // provider capacity is terminal and never reaches this delay branch.
       const delay = snapshotStillBuilding
         ? SNAPSHOT_BUILDING_RETRY_DELAY_MS
-        : Math.min(RETRY_DELAY_BASE_MS * 2 ** (attempt - 1), RETRY_DELAY_MAX_MS);
-      await sleep(delay);
+        : exponentialBackoffMs({ attempt, baseMs: RETRY_DELAY_BASE_MS, capMs: RETRY_DELAY_MAX_MS });
+      await Bun.sleep(delay);
     }
   }
   throw lastError instanceof Error ? lastError : new Error('Sandbox initialization failed');

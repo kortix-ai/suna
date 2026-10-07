@@ -27,6 +27,24 @@ describe('classifyTurnError', () => {
     expect(r.text.toLowerCase()).toContain('usage limit');
   });
 
+  // A prod thread was told "give it a minute" while its only ChatGPT account
+  // was out for 4 more days. The gateway names the reset; the card repeats it.
+  test('usage limit — a ChatGPT plan limit names its reset and the model command, not "a minute"', () => {
+    const body = JSON.stringify({
+      message: 'All selected ChatGPT connections reached their usage limit. The first resets in 4 days.',
+      code: 'provider_pool_rate_limited',
+      suggestion: 'Choose another model, or connect another ChatGPT account.',
+    });
+    const info = { name: 'UnknownError', statusCode: 429, code: 'rate_limit' as const, message: `429: ${body}` };
+    const slack = classifyTurnError(info);
+    expect(slack.title).toBe('Usage limit reached');
+    expect(slack.text).toContain('ChatGPT usage limit');
+    expect(slack.text).toContain('resets in 4 days');
+    expect(slack.text).toContain('`/kortix models`');
+    expect(slack.text).not.toContain('minute');
+    expect(classifyTurnError(info, TEAMS_TURN_ERROR_COMMANDS).text).toContain('`/models`');
+  });
+
   test('usage limit — "usage limit has been reached" message', () => {
     const r = classifyTurnError({ message: 'The usage limit has been reached' });
     expect(r.title).toBe('Usage limit reached');
@@ -270,6 +288,33 @@ describe('classifyTurnError', () => {
     const r = classifyTurnError({ statusCode: 402, message: 'Insufficient credits' });
     expect(r.title).toBe('Out of credits');
     expect(r.aborted).toBe(false);
+  });
+});
+
+describe('classifyTurnError — the daemon code decides (W5 E11)', () => {
+  test.each([
+    ['credits', 'Out of credits'],
+    ['rate_limit', 'Usage limit reached'],
+    ['auth', 'Provider rejected the request'],
+    ['context_length', 'Conversation too long'],
+    ['output_length', 'Response too long'],
+    ['aborted', 'Run stopped'],
+  ] as const)('code %s with no name, status or matching text', (code, title) => {
+    expect(classifyTurnError({ name: 'UnknownError', message: 'upstream said no', code }).title).toBe(title);
+  });
+
+  test('a specific code beats text that names another bucket', () => {
+    expect(classifyTurnError({ message: 'rate limit exceeded', code: 'auth' }).title).toBe('Provider rejected the request');
+  });
+
+  test('code unknown falls back to the name, status and text checks', () => {
+    expect(classifyTurnError({ message: 'Insufficient credits. Balance: $-0.06', code: 'unknown' }).title).toBe('Out of credits');
+    expect(classifyTurnError({ name: 'TimeoutError', message: 'The session made no progress.', code: 'unknown' }).title).toBe('Run failed');
+  });
+
+  test('a ChatGPT login refusal still wins over an auth code', () => {
+    const r = classifyTurnError({ statusCode: 401, message: 'Could not parse your authentication token.', code: 'auth' });
+    expect(r.title).toBe('ChatGPT login needs reconnection');
   });
 });
 
