@@ -26,7 +26,7 @@ suite('drop kortix.session_environments (throwaway Postgres)', () => {
   let finalCode = -1;
 
   beforeAll(async () => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
     const up = sh([
       'docker', 'run', '-d', '--name', CONTAINER,
       '-e', 'POSTGRES_PASSWORD=postgres', '-e', 'POSTGRES_USER=postgres', '-e', 'POSTGRES_DB=postgres',
@@ -57,7 +57,7 @@ suite('drop kortix.session_environments (throwaway Postgres)', () => {
   }, 300_000);
 
   afterAll(() => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
   });
 
   test('refuses while a SQL function still reads the table, and keeps the table', () => {

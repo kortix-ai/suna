@@ -1535,7 +1535,7 @@ flow(
       );
 
       await ctx.step(
-        'signed webhook under backpressure → 202 queued; the same X-Kortix-Delivery-Id again → the same command, deduped:true; one command row',
+        'signed webhook under backpressure → 202 queued; the same X-Kortix-Delivery-Id again → status deduped, the same command; one command row',
         async () => {
           const rawBody = JSON.stringify({ action: 'opened' });
           const deliveryId = `ke2e-${crypto.randomUUID()}`;
@@ -1553,7 +1553,7 @@ flow(
           first.status(202).body().has('$.status', 'queued').has('$.reason', 'project provisioning backpressure').has('$.deduped', false);
           const commandId = first.json<{ command_id: string | null }>().command_id;
           if (!commandId) throw new Error(`queued webhook returned no command_id: ${first.text()}`);
-          (await deliver()).status(202).body().has('$.status', 'queued').has('$.command_id', commandId).has('$.deduped', true);
+          (await deliver()).status(202).body().has('$.status', 'deduped').has('$.command_id', commandId).has('$.deduped', true);
           const n = await withDb(ctx, async (db) =>
             (await db.query<{ n: number }>(
               'SELECT count(*)::int AS n FROM kortix.session_lifecycle_commands WHERE idempotency_key = $1',
