@@ -96,7 +96,7 @@ connected app (e.g. a new pull request). The prompt reads the event as
 event.connector, and event.occurred_at.
   --connector <slug>       The project's connector the event happens on
                            (required).
-  --event <TYPE>           Provider event type, e.g. GITHUB_PULL_REQUEST_EVENT
+  --event <TYPE>           Provider event type, e.g. GITHUB_PULL_REQUEST_CREATED
                            (required; list with \`triggers events\`).
   --config <key=value>     Event config field. Repeat for more. Values are
                            strings.

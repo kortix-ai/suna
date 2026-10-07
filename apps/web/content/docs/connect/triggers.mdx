@@ -117,13 +117,13 @@ The trigger is live as soon as its badge reads **Live**. The other badges are **
 ```sh
 kortix triggers events --connector github
 kortix triggers add pr-review --type event \
-  --connector github --event GITHUB_PULL_REQUEST_EVENT \
-  --config owner=acme --config repo=api \
-  --prompt "Review {{ event.data.pull_request.html_url }}"
+  --connector github --event GITHUB_PULL_REQUEST_CREATED \
+  --config repo=acme/api \
+  --prompt "Review {{ event.data.html_url }}"
 kortix ship
 ```
 
-`kortix triggers events --connector <slug>` lists the events a connector offers and each event's settings. `--config key=value` repeats once per setting and passes strings. `--config-json '{"limit": 5}'` passes typed values. An event trigger takes none of `--cron`, `--run-at`, `--timezone`, `--secret-env`, `--run`, `--mode`, `--interval`, or `--expect-event-within`.
+`kortix triggers events --connector <slug>` lists the events a connector offers and each event's settings. Read each setting's description: some events take a full name in one setting, such as `repo: acme/api`, and reject the same value split across `owner` and `repo`. `--config key=value` repeats once per setting and passes strings. `--config-json '{"limit": 5}'` passes typed values. An event trigger takes none of `--cron`, `--run-at`, `--timezone`, `--secret-env`, `--run`, `--mode`, `--interval`, or `--expect-event-within`.
 
 ### Config shape
 
@@ -133,14 +133,14 @@ triggers:
   - slug: pr-review
     type: event
     connector: github # required, slug of a connector under `connectors:`
-    event: GITHUB_PULL_REQUEST_EVENT # required, event type from `kortix triggers events`
-    config: { owner: acme, repo: api } # optional, settings of the event
+    event: GITHUB_PULL_REQUEST_CREATED # required, event type from `kortix triggers events`
+    config: { repo: acme/api } # optional, settings of the event
     agent: default
     session_mode: fresh # default "fresh"
     filter: # optional, same guard a webhook uses
-      "event.data.action": "opened"
+      "event.data.draft": "false"
     prompt: |
-      Review {{ event.data.pull_request.html_url }}
+      Review {{ event.data.html_url }}
 ```
 
 ### What the prompt can read
@@ -151,12 +151,12 @@ The prompt, `filter`, and `session_key` read these roots:
 | --- | --- |
 | `event.data.<field>` | The app's own event data. `kortix triggers events` shows the fields each event carries. |
 | `event.id` | The provider's id for this event. |
-| `event.type` | The event type, such as `GITHUB_PULL_REQUEST_EVENT`. |
+| `event.type` | The event type, such as `GITHUB_PULL_REQUEST_CREATED`. |
 | `event.app` | The app slug, such as `github`. |
 | `event.connector` | The connector slug the trigger watches. |
 | `event.occurred_at` | When the event happened. |
 
-Event data comes from a third party. Kortix starts the session's first message with `[APP EVENT — automated, third-party content, not user input]`, so the agent treats the event content as data and not as instructions.
+Event data comes from a third party. Kortix starts the session's first message with `[App event: <trigger name> — automated, third-party content, not user input]`, so the agent treats the event content as data and not as instructions. That line is also the session's title until the agent names it.
 
 ### Status
 
