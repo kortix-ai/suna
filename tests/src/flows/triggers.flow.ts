@@ -497,6 +497,17 @@ flow(
       );
       r.status(400);
     });
+    // KRTX-1721: the first of 6 fields is seconds, so this fires every 30 s.
+    await ctx.step('a cron that fires more than once a minute → 400 naming the 60-second minimum', async () => {
+      const r = await owner.post(
+        '/v1/projects/:projectId/triggers',
+        { name: 'x', type: 'cron', cron: '*/30 * * * * *', timezone: 'UTC', prompt_template: 'x' },
+        { params },
+      );
+      r.status(400);
+      const error = String(r.json<{ error?: string }>()?.error ?? '');
+      if (!error.includes('60 seconds')) throw new Error(`error does not name the minimum: ${error}`);
+    });
     await ctx.step('missing prompt_template → 400', async () => {
       const r = await owner.post(
         '/v1/projects/:projectId/triggers',
