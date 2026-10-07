@@ -12,6 +12,7 @@ import { consumeAuthCallbackState, createAuthCallbackRedirect } from '@/lib/auth
 import { admitMobileOAuthSession } from '@/lib/auth/mobile-admission';
 import { parsePersistedSession, sessionForNullAuthResult } from '@/lib/auth/persisted-session';
 import { sessionExpiry } from '@/lib/auth/session-expiry-monitor';
+import { signOutThisDevice } from '@/lib/auth/sign-out';
 import { keysToClear } from '@/lib/auth/sign-out-keys';
 import { applyProfileLocale } from '@/lib/utils/i18n';
 import { withDeadline } from '@/lib/utils/with-deadline';
@@ -348,7 +349,7 @@ export function useAuth() {
             );
             setOauthRejection('No account found. Create an account on the web first.');
             sessionExpiry.disarm();
-            await supabase.auth.signOut().catch(() => {});
+            await signOutThisDevice(supabase.auth);
             return;
           }
         }
@@ -1014,12 +1015,12 @@ export function useAuth() {
   /**
    * Sign out - Best practice implementation
    *
-   * 1. Attempts global sign out (server + local)
-   * 2. Falls back to local-only if global fails
-   * 3. Clears every AsyncStorage key except device preferences (theme,
+   * 1. Signs out this device only (scope local): web and other installs
+   *    stay signed in.
+   * 2. Clears every AsyncStorage key except device preferences (theme,
    *    language, onboarding cache — see lib/auth/sign-out-keys), including the
    *    Supabase session keys as a failsafe
-   * 4. Forces React state update
+   * 3. Forces React state update
    *
    * Note: Onboarding status is stored in user_metadata (backend), so it persists
    * across devices and logins. AsyncStorage cache is kept for faster checks.
@@ -1085,17 +1086,8 @@ export function useAuth() {
       // Bounded (3 s) and never throws: sign-out does not wait on it failing.
       await unregisterPushOnSignOut();
 
-      const { error: globalError } = await supabase.auth.signOut({ scope: 'global' });
-
-      if (globalError) {
-        log.warn('⚠️  Global sign out failed:', globalError.message);
-
-        const { error: localError } = await supabase.auth.signOut({ scope: 'local' });
-
-        if (localError) {
-          log.warn('⚠️  Local sign out also failed:', localError.message);
-        }
-      }
+      const signOutError = await signOutThisDevice(supabase.auth);
+      if (signOutError) log.warn('⚠️  Sign out failed on the server:', signOutError);
 
       await clearUserStorage();
 
