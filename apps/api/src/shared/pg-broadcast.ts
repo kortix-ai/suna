@@ -73,7 +73,7 @@ export const SESSION_PROMPTS_CHANGED_CHANNEL = 'kortix_session_prompts_changed';
 
 /**
  * A sixth channel: "this session's box or title changed". Database triggers
- * (migration 20261006182246238) send it for every writer of a client-visible
+ * (migration 20261007140000000) send it for every writer of a client-visible
  * `session_sandboxes` field (status, external id, live turns, wake fields) and
  * of the session title. The payload is one session id. The control reconciler
  * re-reads that session now, and `/events` streams waiting for a box wake; see

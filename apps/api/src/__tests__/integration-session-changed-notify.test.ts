@@ -1,7 +1,7 @@
 /**
  * Integration test (real local PostgreSQL): a client-visible write of a
  * session's box row or title NOTIFYs every replica with the session id
- * (R5.1/R5.2, migration 20261006182246238). A stream waiting for a stopped box
+ * (R5.1/R5.2, migration 20261007140000000). A stream waiting for a stopped box
  * wakes on it, and a replica that watches the session publishes the new turn
  * state at once. A deadline renewal or an unrelated metadata key stays silent.
  */
