@@ -206,20 +206,55 @@ describe('backend routes', () => {
 
 describe('GET /_kortix/backend-token on the App gate', () => {
   const APP = crypto.randomUUID();
-  const gateApp = (accessMode: string) => ({
-    appId: APP, accountId: ACCOUNT, projectId: PROJECT, name: 'gate-test', accessMode,
+  const OTHER_PROJECT = crypto.randomUUID();
+  const gateApp = (accessMode: string, backends: string[], projectId: string) => ({
+    appId: APP, accountId: ACCOUNT, projectId, name: 'gate-test', accessMode,
     accessPasswordHash: null, accessRevision: 1, createdBy: MANAGER, updatedAt: new Date(),
-    viewerTokenScope: 'identity',
+    viewerTokenScope: 'identity', backends,
   });
-  const ask = (accessMode: string, userId: string) => {
+  const ask = (
+    accessMode: string,
+    userId: string,
+    { backend = 'main', backends = ['main'], projectId = PROJECT }: { backend?: string; backends?: string[]; projectId?: string } = {},
+  ) => {
     const cookie = createAppAccessToken({ appId: APP, kind: 'kortix', userId, revision: 1, expiresAt: new Date(Date.now() + 60_000) });
-    const url = new URL('https://gate-test.apps.example.test/_kortix/backend-token?backend=main');
+    const url = new URL(`https://gate-test.apps.example.test/_kortix/backend-token?backend=${backend}`);
     const request = new Request(url, { headers: { cookie: `${appAccessCookieName()}=${cookie}` } });
-    return appBackendTokenResponse(request, url, gateApp(accessMode));
+    return appBackendTokenResponse(request, url, gateApp(accessMode, backends, projectId));
   };
 
-  test('a public App: a member with a gate cookie gets a token', async () => {
-    expect((await ask('public', MANAGER)).status).toBe(200);
+  beforeAll(async () => {
+    // A second project of the same account, with backends on and no backend of its own.
+    await db.insert(projects).values({
+      projectId: OTHER_PROJECT, accountId: ACCOUNT, name: 'backend-routes-other',
+      repoUrl: 'https://example.com/backend-routes-other.git', metadata: { experimental: { backends: true } },
+    });
+  });
+
+  test('a public App: a member with a gate cookie gets a token for a backend the App lists', async () => {
+    const res = await ask('public', MANAGER);
+    expect(res.status).toBe(200);
+    expect((await res.json()).token).toMatch(/^ey/);
+  });
+
+  test('a backend the App does not list: 403 backend_not_listed, also with no list at all (the default)', async () => {
+    for (const [backend, backends] of [['issued', ['main']], ['main', []], ['main', ['issued']]] as const) {
+      const res = await ask('public', MANAGER, { backend, backends: [...backends] });
+      expect(res.status).toBe(403);
+      expect(res.headers.get('cache-control')).toBe('no-store');
+      const body = await res.json();
+      expect(body.error).toBe('backend_not_listed');
+      expect(body.token).toBeUndefined();
+    }
+  });
+
+  test("an App of another project: 403 for this project's backend; listing its name reaches only its own project", async () => {
+    const unlisted = await ask('public', MANAGER, { projectId: OTHER_PROJECT, backends: [] });
+    expect(unlisted.status).toBe(403);
+    expect((await unlisted.json()).error).toBe('backend_not_listed');
+    const listed = await ask('public', MANAGER, { projectId: OTHER_PROJECT, backends: ['main'] });
+    expect(listed.status).toBe(404);
+    expect((await listed.json()).error).toBe('backend_not_found');
   });
 
   test('a public App: a cookie of someone who lost access mints nothing', async () => {

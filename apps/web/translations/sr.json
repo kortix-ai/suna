@@ -19410,7 +19410,8 @@
       "textcd08dcee6a87": "Прави се снимак…",
       "text5a4918e0201c": "Враћа се…",
       "textd9682a5acb38": "{value0} од {value1} ручних снимака",
-      "text581e89ae1f08": "Брисање снимка бекенда"
+      "text581e89ae1f08": "Брисање снимка бекенда",
+      "text1af77a9ae95c": "Navedite ovaj backend u aplikaciji. Aplikacija dobija tokene posetioca samo za backende koje navodi."
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

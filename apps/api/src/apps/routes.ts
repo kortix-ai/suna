@@ -90,6 +90,15 @@ const ImageReleaseObject = z.object({ released: z.number().int(), pending: z.num
 const APP_SLUG = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const APP_ENV_NAME = /^(?!KORTIX_|OPENCODE_)[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 const APP_SECRET_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
+/**
+ * The Kortix Backends (by name) this App may mint a viewer token for at
+ * `/_kortix/backend-token`. Empty, the default: none. A name may list a
+ * backend the project has not created yet.
+ */
+const BackendsSchema = z
+  .array(z.string().regex(/^[a-z][a-z0-9-]{0,62}$/, 'a backend name: lowercase letters, digits and dashes'))
+  .max(10)
+  .transform((names) => [...new Set(names)]);
 const EnvironmentSchema = z.record(
   z.string().regex(APP_ENV_NAME),
   z.string().max(32_768),
@@ -193,6 +202,7 @@ function serializeApp(row: typeof apps.$inferSelect, viewerCanAccess = true) {
     machine: { cpu: row.cpuCores, memory_gb: row.memoryGb, disk_gb: row.diskGb },
     idle_timeout_seconds: row.idleTimeoutSeconds,
     monthly_budget_usd: Number(row.monthlyBudgetUsd),
+    backends: row.backends,
     last_request_at: row.lastRequestAt?.toISOString() ?? null,
     viewer_can_access: viewerCanAccess,
     created_at: row.createdAt.toISOString(),
@@ -497,6 +507,7 @@ export function registerAppsRoutes(): void {
           disk_gb: DiskSchema.default(10),
           idle_timeout_seconds: z.number().int().min(120).max(86400).default(300),
           monthly_budget_usd: z.number().min(0).max(100000).default(5),
+          backends: BackendsSchema.default([]),
         }) } } },
       },
       responses: { 201: json(AppObject, 'App'), ...errors(400, 402, 403, 404, 409) },
@@ -524,6 +535,7 @@ export function registerAppsRoutes(): void {
           cpuCores: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb,
           idleTimeoutSeconds: body.idle_timeout_seconds,
           monthlyBudgetUsd: body.monthly_budget_usd.toFixed(2),
+          backends: body.backends,
         }).returning();
         return c.json(serializeApp(row!), 201);
       } catch (error) {
@@ -631,6 +643,7 @@ export function registerAppsRoutes(): void {
           name: z.string().min(1).max(200).optional(), cpu: CpuSchema.optional(),
           memory_gb: MemorySchema.optional(), disk_gb: DiskSchema.optional(),
           idle_timeout_seconds: z.number().int().min(120).max(86400).optional(), monthly_budget_usd: z.number().min(0).max(100000).optional(),
+          backends: BackendsSchema.optional(),
         }) } } },
       },
       responses: { 200: json(AppObject, 'App'), ...errors(400, 403, 404) },
@@ -658,6 +671,7 @@ export function registerAppsRoutes(): void {
         ...(body.disk_gb !== undefined ? { diskGb: body.disk_gb } : {}),
         ...(body.idle_timeout_seconds !== undefined ? { idleTimeoutSeconds: body.idle_timeout_seconds } : {}),
         ...(body.monthly_budget_usd !== undefined ? { monthlyBudgetUsd: body.monthly_budget_usd.toFixed(2) } : {}),
+        ...(body.backends !== undefined ? { backends: body.backends } : {}),
         updatedAt: new Date(),
       }).where(and(eq(apps.appId, appId), eq(apps.projectId, projectId), isNull(apps.deletedAt))).returning();
       return row ? c.json(serializeApp(row)) : c.json({ error: 'Not found' }, 404);

@@ -165,7 +165,9 @@ Backend (load `kortix-backends`; for a whole internal app load
 - **Sign-in:** `convex.setAuth(kortixAppBackendToken("<name>"))` from
   `@kortix/sdk`. It fetches `GET /_kortix/backend-token?backend=<name>` on the
   App's own origin: a 15-minute token naming the viewer, with their Kortix
-  groups and role, refreshed before it expires. Needs a signed-in viewer:
+  groups and role, refreshed before it expires. **The App must list the
+  backend:** `kortix apps set <app> --backends <name>` (or `backends: [<name>]`
+  in its `kortix.yaml` block); otherwise `403 backend_not_listed`. Needs a signed-in viewer:
   access `private`, `project` or `restricted`, and `--viewer` not `off`. A
   `public` or `password` App gets `401`.
 - **Who is looking, without a backend:** `fetchKortixAppViewer()` returns the

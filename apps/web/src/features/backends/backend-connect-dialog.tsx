@@ -68,6 +68,7 @@ export function BackendConnectDialog({
   };
   const titles: Record<BackendConnectSnippetId, string> = {
     'app-install': t.raw('text294cc628974b'),
+    'app-backends': t.raw('text1af77a9ae95c'),
     'app-env': t.raw('text411987e899ae'),
     'app-client': t.raw('text7aa71e6b61dd'),
     'backend-auth-config': t.raw('texta064b3f41933'),

@@ -22,8 +22,11 @@ import {
   updateApp,
   updateAppAccess,
   uploadAppArtifactArchive,
+  type App,
   type AppDeployment,
   type AppImageRelease,
+  type CreateAppInput,
+  type UpdateAppInput,
   type DeleteAppDeploymentResult,
   type AppAccessMode,
   type AppHostingProvider,
@@ -141,6 +144,21 @@ test('Apps CRUD uses the project-scoped API contract', async () => {
 
   await deleteApp('project-1', 'app-1');
   expect(last().method).toBe('DELETE');
+});
+
+test('an App lists the backends it may mint viewer tokens for; create and update send the list', async () => {
+  const app = { app_id: 'app-1', backends: ['main'] } as App;
+  const listed: string[] | undefined = app.backends;
+  expect(listed).toEqual(['main']);
+  responses.push({ status: 201, body: app }, { body: app });
+
+  const created: CreateAppInput = { slug: 'crm', name: 'CRM', backends: ['main'] };
+  await createApp('project-1', created);
+  expect(last()).toMatchObject({ method: 'POST', body: { slug: 'crm', name: 'CRM', backends: ['main'] } });
+
+  const update: UpdateAppInput = { backends: [] };
+  await updateApp('project-1', 'app-1', update);
+  expect(last()).toMatchObject({ method: 'PATCH', url: 'http://backend.test/v1/projects/project-1/apps/app-1', body: { backends: [] } });
 });
 
 test('App access reads, updates, and creates a browser exchange URL through project-scoped REST routes', async () => {

@@ -80,7 +80,7 @@ The full subcommand list:
 | `kortix apps list` | List the project's Apps. `--json`. |
 | `kortix apps create <slug>` | Create an App without deploying it. |
 | `kortix apps deploy [path]` | Deploy a directory, a `.tar.gz`, or `--image`. |
-| `kortix apps set <id\|slug>` | Change an existing App: `--name`, `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--budget`. |
+| `kortix apps set <id\|slug>` | Change an existing App: `--name`, `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--budget`, `--backends`. |
 | `kortix apps show <id\|slug>` | Show the App and its deployments; marks the live one. `--json`. |
 | `kortix apps logs <id\|slug> [deployment]` | Read runtime logs. `--after N --limit N`. |
 | `kortix apps start <id\|slug>` | Permit requests and start the App. |
@@ -96,7 +96,9 @@ The full subcommand list:
 `kortix apps set` sends only the flags you pass, and needs project write
 access. `--memory-gb` accepts `--memory` and `--disk-gb` accepts `--disk` as
 aliases. `--idle-timeout` takes 120-86400 seconds. A machine or budget change
-applies to the next deployment, not to the running runtime.
+applies to the next deployment, not to the running runtime. `--backends main,crm`
+replaces the App's backend list (see [Backends an App may use](#backends-an-app-may-use));
+`--backends=` clears it. It applies at once.
 
 ### Deployment defaults from `kortix.yaml`
 
@@ -112,6 +114,7 @@ apps:
     readiness_path: /
     idle_timeout_seconds: 300
     monthly_budget_usd: 5
+    backends: [main]
     resources:
       cpu: 1
       memory_gb: 2
@@ -123,7 +126,26 @@ apps:
 ```
 
 Select the block with `kortix apps deploy --manifest-app docs`. An explicit flag
-always wins over the block.
+always wins over the block. A block with `backends` replaces the App's backend
+list on every deploy.
+
+### Backends an App may use
+
+An App gets a viewer token at `/_kortix/backend-token?backend=<name>` (what
+`kortixAppBackendToken("<name>")` calls) only for a
+[backend](/docs/feature-flags/backends) it lists in `backends`. A new App lists
+none, so it acts as its viewer on no backend. Code in one App can never act as
+the viewer on a backend that only another App uses. Any other name answers
+`403` with `error: "backend_not_listed"`; the SDK warns in the browser console.
+
+| Surface | Set the list |
+|---|---|
+| CLI | `kortix apps set <app> --backends main` or `kortix apps create <slug> --backends main` |
+| `kortix.yaml` | `backends: [main]` in the `apps.<name>` block, applied by `kortix apps deploy` |
+| API | `backends` on `POST /v1/projects/:projectId/apps` and `PATCH …/apps/:appId` |
+
+A name may list a backend the project has not created yet. The token is always
+for the backend of that name in the App's own project.
 
 ### Machine, idle timeout, and budget
 

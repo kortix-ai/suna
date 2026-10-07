@@ -19421,7 +19421,8 @@
       "textcd08dcee6a87": "Taking snapshot…",
       "text5a4918e0201c": "Restoring…",
       "textd9682a5acb38": "{value0} of {value1} manual snapshots",
-      "text581e89ae1f08": "Delete a backend snapshot"
+      "text581e89ae1f08": "Delete a backend snapshot",
+      "text1af77a9ae95c": "List this backend on the App. An App gets viewer tokens only for the backends it lists."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

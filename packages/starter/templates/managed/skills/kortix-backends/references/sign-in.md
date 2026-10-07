@@ -178,6 +178,12 @@ export const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL);
 convex.setAuth(kortixAppBackendToken("main"));   // the backend's name
 ```
 
+List the backend on the App, or the App gets no token for it:
+
+```sh
+kortix apps set <app> --backends main        # or backends: [main] in kortix.yaml apps.<app>
+```
+
 `kortixAppBackendToken` fetches `GET /_kortix/backend-token?backend=main` on
 the App's own origin, caches the token and refreshes it before it expires. It
 yields `null` (anonymous) for every non-200 answer: to see why, call the
@@ -255,6 +261,7 @@ Call the route the App calls, from the App's origin, and read the code:
 | `401 no_viewer_identity` | No Kortix session on the request, a `password` App, or a `public` App whose viewer lost access | Open the App through Kortix or an access link; set access `private`, `project` or `restricted`. |
 | `403 feature_disabled` | The project has Backends off | Ask Kortix to enable Backends for the project. |
 | `403 agent_viewer` | An agent session's own token | `kortix backends token <name>`. |
+| `403 backend_not_listed` | The App does not list this backend (a new App lists none) | `kortix apps set <app> --backends <name>`, or `backends: [<name>]` in the App's `kortix.yaml` block. |
 | `404 viewer_disabled` | The App's viewer is `off` | `kortix apps access <app> --viewer identity`. |
 | `404 backend_not_found` | No running backend with that name in the App's project | Check `kortix backends list` and the name in `kortixAppBackendToken("<name>")`. |
 | `409 backend_auth_unavailable` | The backend predates Kortix sign-in | Create a new backend and redeploy to it. |

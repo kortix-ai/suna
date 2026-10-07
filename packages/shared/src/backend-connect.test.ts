@@ -29,6 +29,13 @@ describe('backendConnectSnippets', () => {
     expect(code('app-client')).toContain('convex.setAuth(kortixAppBackendToken("crm"));');
   });
 
+  test('the App tab first lists the backend on the App: an App gets tokens only for backends it lists', () => {
+    const snippets = backendConnectSnippets(backend);
+    const app = snippets.filter((s) => s.tab === 'app').map((s) => s.id);
+    expect(app.indexOf('app-backends')).toBe(1);
+    expect(code('app-backends')).toBe('kortix apps set <app> --backends crm\n# or in kortix.yaml: apps.<app>.backends: [crm]');
+  });
+
   test('outside callers send a bearer to /api/query, /api/mutation and the HTTP actions origin', () => {
     expect(code('outside-token-cli')).toBe('TOKEN=$(kortix backends token crm)');
     expect(code('outside-token-sdk')).toContain(

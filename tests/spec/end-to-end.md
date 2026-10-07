@@ -1127,6 +1127,8 @@ project read then lists `apps` with `enabled: true, operator_only: true`. A
 project writer creates a unique lower-case slug and machine policy; list/get
 return the stable public URL and active deployment pointer; patch updates
 mutable policy; delete is soft and removes the App from subsequent reads.
+A new App lists no backends (`backends: []`); patch sets the list by name,
+deduplicated, and get reads it back; an invalid backend name → 400.
 Invalid slugs → 400; `NONMEMBER` → 403.
 
 `APP-2` Artifact and deployment boundaries —

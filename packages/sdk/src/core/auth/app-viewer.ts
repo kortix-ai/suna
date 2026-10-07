@@ -151,9 +151,17 @@ async function loadBackendToken(
 ): Promise<string | null> {
   try {
     const res = await fetchImpl(url, { credentials: 'same-origin', headers: { accept: 'application/json' } });
-    // 401 nobody signed in, 403 an agent viewer, 404 no such backend, 409 a
-    // backend without sign-in: all "no token", none of them a crash.
-    if (!res.ok) return null;
+    // 401 nobody signed in, 403 an agent viewer or a backend this App does not
+    // list, 404 no such backend, 409 a backend without sign-in: all "no
+    // token", none of them a crash. The unlisted backend is a setup mistake
+    // the developer must see, so it is the one that warns.
+    if (!res.ok) {
+      if (res.status === 403) {
+        const refusal = (await res.json().catch(() => null)) as { error?: unknown; error_description?: unknown } | null;
+        if (refusal?.error === 'backend_not_listed') console.warn(`[kortix] ${String(refusal.error_description)}`);
+      }
+      return null;
+    }
     const body = (await res.json().catch(() => null)) as { token?: unknown; expires_at?: unknown } | null;
     if (!body || typeof body.token !== 'string') return null;
     const expiry = typeof body.expires_at === 'string' ? Date.parse(body.expires_at) : Number.NaN;
@@ -176,6 +184,10 @@ async function loadBackendToken(
  * client.setAuth(kortixAppBackendToken('main'));
  * fetch(url, { headers: { authorization: `Bearer ${await kortixAppBackendToken('main')()}` } });
  * ```
+ *
+ * The App must list the backend (the App's `backends`, e.g. `kortix apps set
+ * <app> --backends main`). For a backend it does not list the gate answers
+ * `403 backend_not_listed`: this yields `null` and warns in the console.
  *
  * Cached until shortly before expiry; concurrent callers share one request;
  * `{ forceRefreshToken: true }` always asks the gate again. Yields `null` when

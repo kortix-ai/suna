@@ -12,6 +12,7 @@ export type BackendConnectTab = 'app' | 'outside' | 'admin';
 /** Stable ids. Hosts title each snippet by its id; the CLI uses `title`. */
 export type BackendConnectSnippetId =
   | 'app-install'
+  | 'app-backends'
   | 'app-env'
   | 'app-client'
   | 'backend-auth-config'
@@ -61,6 +62,14 @@ export function backendConnectSnippets(target: BackendConnectTarget): BackendCon
       file: 'terminal',
       language: 'sh',
       code: 'npm i convex @kortix/sdk',
+    },
+    {
+      id: 'app-backends',
+      tab: 'app',
+      title: 'List this backend on the App; an App gets viewer tokens only for the backends it lists',
+      file: 'terminal',
+      language: 'sh',
+      code: `kortix apps set <app> --backends ${name}\n# or in kortix.yaml: apps.<app>.backends: [${name}]`,
     },
     {
       id: 'app-env',

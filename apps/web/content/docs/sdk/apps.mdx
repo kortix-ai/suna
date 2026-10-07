@@ -83,7 +83,9 @@ console.log(app.url, deployment.status); // https://…apps.kortix.com  queued
 
 `create` accepts the machine and budget fields too: `cpu`, `memory_gb`,
 `disk_gb`, `idle_timeout_seconds`, and `monthly_budget_usd`. Omit them for the
-defaults.
+defaults. `backends` lists the Kortix Backends, by name, the App may mint viewer
+tokens for; the default is none, and `update(appId, { backends })` replaces the
+list (see [Backends an App may use](/docs/feature-flags/apps#backends-an-app-may-use)).
 
 Wait for the deployment by polling its status:
 
@@ -314,7 +316,7 @@ Every type below is exported from `@kortix/sdk`.
 
 | Type | What it holds |
 |---|---|
-| `App` | Identity, `url`, `access_mode`, `access_revision`, `desired_state`, `active_deployment_id`, `machine`, `idle_timeout_seconds`, `monthly_budget_usd`, `last_request_at`, `viewer_can_access` |
+| `App` | Identity, `url`, `access_mode`, `access_revision`, `desired_state`, `active_deployment_id`, `machine`, `idle_timeout_seconds`, `monthly_budget_usd`, `backends`, `last_request_at`, `viewer_can_access` |
 | `AppDeployment` | `version`, `status`, `source_kind`, `hosting_provider`, `runtime_spec`, `build_spec`, `error_code`, `attempt_count`, `created_by`, `actor_type`, `source_session_id` |
 | `AppDeploymentDetail` | One `deployment` plus its `events` |
 | `AppAccessConfig` | `mode`, `revision`, `member_ids`, `group_ids`, `password_configured` |

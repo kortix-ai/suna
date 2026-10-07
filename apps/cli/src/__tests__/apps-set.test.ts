@@ -100,6 +100,7 @@ function startServer(): string {
             },
             idle_timeout_seconds: (patch.idle_timeout_seconds as number) ?? 300,
             monthly_budget_usd: (patch.monthly_budget_usd as number) ?? 5,
+            backends: (patch.backends as string[]) ?? [],
           }),
         );
       }
@@ -183,6 +184,28 @@ describe('kortix apps set', () => {
     ]) {
       expect(r.stdout).toContain(existing);
     }
+  });
+
+  test('set --backends sends the list (deduplicated, trimmed) and prints it; `--backends=` clears it', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--backends', 'main, crm,main'], config);
+    expect(r.code).toBe(0);
+    expect(patchCall()?.body).toEqual({ backends: ['main', 'crm'] });
+    expect(r.stdout).toMatch(/backends\s+main, crm/);
+
+    calls = [];
+    const cleared = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--backends='], config);
+    expect(cleared.code).toBe(0);
+    expect(patchCall()?.body).toEqual({ backends: [] });
+    expect(cleared.stdout).toMatch(/backends\s+none/);
+  });
+
+  test('set refuses a backend name the API would refuse, before any request', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--backends', 'Main'], config);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('--backends');
+    expect(patchCall()).toBeUndefined();
   });
 
   test('set PATCHes only the flags passed, resolving the App by slug', async () => {

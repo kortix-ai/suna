@@ -4221,6 +4221,11 @@ export const apps = kortixSchema.table(
     monthlyBudgetUsd: numeric('monthly_budget_usd', { precision: 12, scale: 2 })
       .default('5.00')
       .notNull(),
+    /**
+     * The Kortix Backends (by name, in this App's project) this App may mint a
+     * viewer token for at `/_kortix/backend-token`. Empty (the default): none.
+     */
+    backends: text('backends').array().default(sql`'{}'::text[]`).notNull(),
     lastRequestAt: timestamp('last_request_at', { withTimezone: true }),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

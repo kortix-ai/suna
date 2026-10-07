@@ -197,6 +197,28 @@ describe('kortixAppBackendToken', () => {
     expect(await kortixAppBackendToken('main', { fetch: backendFetch })()).toBe('jwt-1');
   });
 
+  test('a backend the App does not list: null, and one console warning that names the fix', async () => {
+    const warnings: unknown[][] = [];
+    const warn = console.warn;
+    console.warn = (...args: unknown[]) => warnings.push(args);
+    try {
+      const notListed = (async () =>
+        Response.json(
+          { error: 'backend_not_listed', error_description: 'This App does not list the backend "crm".' },
+          { status: 403 },
+        )) as unknown as typeof fetch;
+      expect(await kortixAppBackendToken('crm', { fetch: notListed })()).toBeNull();
+      expect(warnings).toHaveLength(1);
+      expect(String(warnings[0]![0])).toContain('This App does not list the backend "crm".');
+      // Another refusal (no viewer) stays silent.
+      status = 401;
+      expect(await kortixAppBackendToken('main', { fetch: backendFetch })()).toBeNull();
+      expect(warnings).toHaveLength(1);
+    } finally {
+      console.warn = warn;
+    }
+  });
+
   test('refetches once the cached token is inside the refresh skew', async () => {
     const shortFetch = (async (input: RequestInfo | URL) => {
       calls.push(String(input));

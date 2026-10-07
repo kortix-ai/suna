@@ -731,6 +731,7 @@ function appBlockV2Schema(): JsonSchemaFragment {
       readiness_path: { type: 'string', pattern: '^/' },
       idle_timeout_seconds: { type: 'integer', minimum: 120, maximum: 86400 },
       monthly_budget_usd: { type: 'number', minimum: 0 },
+      backends: { type: 'array', items: { type: 'string', pattern: '^[a-z][a-z0-9-]{0,62}$' } },
       resources: {
         type: 'object',
         properties: {

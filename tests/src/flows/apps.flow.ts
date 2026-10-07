@@ -107,7 +107,9 @@ flow(
         .exists("$.app_id")
         .exists("$.url")
         .has("$.slug", slug)
-        .has("$.desired_state", "running");
+        .has("$.desired_state", "running")
+        // No backend access unless the App lists the backend.
+        .has("$.backends", []);
       appId = response.json<any>().app_id;
     });
 
@@ -128,6 +130,18 @@ flow(
         .body()
         .has("$.name", "Updated ke2e App")
         .has("$.idle_timeout_seconds", 420);
+
+      const listed = await owner.patch(
+        "/v1/projects/:projectId/apps/:appId",
+        { backends: ["main", "crm", "main"] },
+        { params },
+      );
+      listed.status(200).body().has("$.backends", ["main", "crm"]);
+      (await owner.get("/v1/projects/:projectId/apps/:appId", { params }))
+        .status(200)
+        .body()
+        .has("$.backends", ["main", "crm"]);
+      (await owner.patch("/v1/projects/:projectId/apps/:appId", { backends: ["Not A Name"] }, { params })).status(400);
     });
 
     await ctx.step(

@@ -418,7 +418,7 @@ async function resolveEndpointViewer(
 export async function appBackendTokenResponse(
   request: Request,
   url: URL,
-  app: AppAccessRow & { viewerTokenScope?: string | null },
+  app: AppAccessRow & { viewerTokenScope?: string | null; backends?: string[] | null },
   verifyUserAccess: AppUserAccessVerifier = appAccessibleToUser,
 ): Promise<Response> {
   const noStore = { 'cache-control': 'no-store' };
@@ -429,6 +429,17 @@ export async function appBackendTokenResponse(
     );
   }
   const name = url.searchParams.get('backend') ?? 'main';
+  // An App acts as its viewer only on the backends it lists (`apps.backends`).
+  // Code in an App that has nothing to do with a backend gets no token for it.
+  if (!(app.backends ?? []).includes(name)) {
+    return Response.json(
+      {
+        error: 'backend_not_listed',
+        error_description: `This App does not list the backend "${name}". Add it to the App's backends: kortix apps set <app> --backends ${name}.`,
+      },
+      { status: 403, headers: noStore },
+    );
+  }
   const viewer = await resolveEndpointViewer(request, url, app);
   if (viewer instanceof Response) return viewer;
   if (viewer.agentViewer) {

@@ -1552,6 +1552,13 @@
             "type": "number",
             "minimum": 0
           },
+          "backends": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,62}$"
+            }
+          },
           "resources": {
             "type": "object",
             "properties": {

@@ -19410,7 +19410,8 @@
       "textcd08dcee6a87": "Criando snapshot…",
       "text5a4918e0201c": "Restaurando…",
       "textd9682a5acb38": "{value0} de {value1} snapshots manuais",
-      "text581e89ae1f08": "Excluir um snapshot do backend"
+      "text581e89ae1f08": "Excluir um snapshot do backend",
+      "text1af77a9ae95c": "Liste este backend no App. Um App só recebe tokens do visitante para os backends que lista."
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

@@ -233,6 +233,8 @@ export interface AppBlockV2 {
   readiness_path?: string;
   idle_timeout_seconds?: number;
   monthly_budget_usd?: number;
+  /** Kortix Backends, by name, the App may mint viewer tokens for. Default: none. */
+  backends?: string[];
   resources?: AppResourcesV2;
   env?: Record<string, string>;
   secrets?: Record<string, string>;

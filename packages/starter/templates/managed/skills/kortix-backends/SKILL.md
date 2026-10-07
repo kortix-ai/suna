@@ -232,6 +232,10 @@ function that reads or writes non-public data must call it first.**
 release 0.13.52: check with `npm view @kortix/sdk version` and the test in
 sign-in.md, which also gives the fallback until the release is on npm.
 
+**An App gets a token only for a backend it lists:** `kortix apps set <app>
+--backends main` (or `backends: [main]` in its `kortix.yaml` block). A new App
+lists none and gets `403 backend_not_listed`.
+
 sign-in.md is the one place for the details: the App wiring
 (`convex.setAuth(kortixAppBackendToken("main"))`, the build-time backend URL),
 who gets a token, groups and roles, troubleshooting, and Convex Auth for

@@ -116,6 +116,7 @@ Create `.gitignore` before the first `npm install`.
    printf 'VITE_CONVEX_URL=%s\n' "$(kortix backends get main --json | python3 -c 'import sys,json;print(json.load(sys.stdin)["backend"]["url"])')" > .env.production
    npm run build
    cd - && kortix apps deploy ./apps/<app>/dist --slug <app> --name "<Name>" --type static --spa --access project
+   kortix apps set <app> --backends main     # the App gets sign-in tokens only for the backends it lists
    ```
    `--access project` lets every project member in. Use `restricted` with
    `--members/--groups` for a smaller audience. Never `public` for internal

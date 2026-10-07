@@ -144,7 +144,7 @@ them as `{ backend, snippets: [{ id, tab, title, file, language, code }] }`.
 
 | Tab | What it shows |
 |---|---|
-| App | `npm i convex @kortix/sdk`, the `VITE_CONVEX_URL` line, `convex.setAuth(kortixAppBackendToken("<name>"))`, the backend's `convex/auth.config.ts`, and a function that calls `requireKortixMember` |
+| App | `npm i convex @kortix/sdk`, `kortix apps set <app> --backends <name>`, the `VITE_CONVEX_URL` line, `convex.setAuth(kortixAppBackendToken("<name>"))`, the backend's `convex/auth.config.ts`, and a function that calls `requireKortixMember` |
 | From outside | A member token from `kortix backends token <name>` or the SDK's `backends.token(id)`; `curl` calls to `<url>/api/query` and `<url>/api/mutation` with `Authorization: Bearer`; an HTTP action on `site_url`; `verifyKortixMemberToken` on your own server with the three public `KORTIX_AUTH_*` values |
 | CLI & admin | `kortix backends deploy`, `eval "$(kortix backends env <name>)"`, Convex CLI commands, `kortix backends dashboard`, and the admin key |
 
@@ -259,7 +259,7 @@ within 15 minutes. The App gate refuses them at once:
 
 | Caller | Token source |
 |---|---|
-| A person in a Kortix App | `GET /_kortix/backend-token?backend=<name>` on the App's own origin |
+| A person in a Kortix App | `GET /_kortix/backend-token?backend=<name>` on the App's own origin, for a backend the App lists (`kortix apps set <app> --backends <name>`); any other name answers `403 backend_not_listed` |
 | An agent, script or CLI | `kortix backends token <name>`, `POST /v1/projects/:id/backends/:backendId/token`, SDK `backends.token(id)`. An agent session's token names the agent (`kind: "agent"`), with no groups and no role. |
 
 ## Use a backend from an App
@@ -268,6 +268,11 @@ The backend `url` is public. A static App reads it at build time: commit
 `VITE_CONVEX_URL=<url>` in the App's `.env.production`, then build and deploy
 the built directory. A server-rendered App reads `CONVEX_URL` from its `env` in
 `kortix.yaml`. The App needs no admin key.
+
+The App must list the backend: `kortix apps set <app> --backends main`, or
+`backends: [main]` in its `kortix.yaml` block. An App that does not list a
+backend gets no token for it (`403 backend_not_listed`), and a new App lists
+none. See [Backends an App may use](/docs/feature-flags/apps#backends-an-app-may-use).
 
 ```ts
 import { ConvexReactClient } from "convex/react";

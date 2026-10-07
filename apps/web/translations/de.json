@@ -19410,7 +19410,8 @@
       "textcd08dcee6a87": "Snapshot wird erstellt…",
       "text5a4918e0201c": "Wird wiederhergestellt…",
       "textd9682a5acb38": "{value0} von {value1} manuellen Snapshots",
-      "text581e89ae1f08": "Backend-Snapshot löschen"
+      "text581e89ae1f08": "Backend-Snapshot löschen",
+      "text1af77a9ae95c": "Dieses Backend in der App eintragen. Eine App erhält Betrachter-Tokens nur für die Backends, die sie auflistet."
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

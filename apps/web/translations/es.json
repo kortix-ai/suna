@@ -19410,7 +19410,8 @@
       "textcd08dcee6a87": "Tomando instantánea…",
       "text5a4918e0201c": "Restaurando…",
       "textd9682a5acb38": "{value0} de {value1} instantáneas manuales",
-      "text581e89ae1f08": "Eliminar una instantánea del backend"
+      "text581e89ae1f08": "Eliminar una instantánea del backend",
+      "text1af77a9ae95c": "Añade este backend a la App. Una App solo obtiene tokens de espectador para los backends que enumera."
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

@@ -19410,7 +19410,8 @@
       "textcd08dcee6a87": "Instantané en cours…",
       "text5a4918e0201c": "Restauration…",
       "textd9682a5acb38": "{value0} sur {value1} instantanés manuels",
-      "text581e89ae1f08": "Supprimer un instantané de backend"
+      "text581e89ae1f08": "Supprimer un instantané de backend",
+      "text1af77a9ae95c": "Ajoutez ce backend à l'App. Une App n'obtient des jetons de visiteur que pour les backends qu'elle liste."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
