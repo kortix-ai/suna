@@ -347,7 +347,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     height: composerAreaHeight.value + bottomInset * (1 - keyboardProgress.value),
   }));
   // The project drawer's bottom-bar fade (`ProjectLeftDrawer` `fadeHeight`:
-  // inset + 16pt gap + 44pt controls + 36pt above them), at a quarter of its height.
+  // inset + 16pt gap + 44pt controls + 36pt above them), at 28.75% of its height.
   const composerFadeHeight = (insets.bottom + DRAWER_FADE_HEIGHT) * COMPOSER_FADE_SCALE;
   /** The end padding as the room reads it (the UI thread's last value). */
   const endPaddingNow = useCallback(
@@ -2275,8 +2275,8 @@ const COMPOSER_OVERLAY = { position: 'absolute', top: 0, right: 0, bottom: 0, le
 const COMPOSER_FADE = { position: 'absolute', right: 0, bottom: 0, left: 0 } as const;
 /** The drawer fade's height above the safe-area inset: 16pt gap + 44pt controls + 36pt above them. */
 const DRAWER_FADE_HEIGHT = 16 + 44 + 36;
-/** The session fade is a quarter of the drawer's. */
-const COMPOSER_FADE_SCALE = 0.25;
+/** The session fade: a quarter of the drawer's, plus 15%. */
+const COMPOSER_FADE_SCALE = 0.2875;
 
 /**
  * The list's `KeyboardGestureArea`, offset by the composer's height. The height
