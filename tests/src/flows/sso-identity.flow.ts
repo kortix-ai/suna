@@ -540,6 +540,8 @@ flow(
     const passwordPerson = await ctx.fixtures.userWithEmail(`admin@${domain}`);
     const ssoPerson = await ctx.fixtures.userWithEmail(`member@${domain}`);
     const elsewhere = await team.addMember('member');
+    // An account member reads a project only with a project role.
+    await team.grantProjectRole(project.id, elsewhere.userId!, 'member');
     let sso: Client;
 
     await ctx.step('two people on the domain join the account; one of them signs in through the IdP', async () => {
