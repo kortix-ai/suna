@@ -135,28 +135,34 @@ export function turnIsConfirmedActive(input: {
 /**
  * Does this turn's bubble read as queued (muted text, a Sending or Queued line)?
  *
- * Only while the agent has not reached the prompt. The inbox holding the row is
- * not that fact: every send goes through the inbox, an idle one too. An idle
- * send is the working turn from its first frame (`freshSendHint`) and draws
- * Thinking under its bubble, so it reads as sent while the inbox delivers it.
- * The server's own `waiting` (a live turn, an older prompt, or a Stop hold) and
- * `failed` keep the queued look on any turn.
+ * Only while something runs ahead of it. The inbox holding the row is not that
+ * fact: every send goes through the inbox, an idle one too. The turn NEXT IN
+ * LINE (the working turn, or, while no turn is working yet, the oldest
+ * unanswered one: a new session's first prompt) has nothing ahead of it, and
+ * reads as sent while the inbox delivers it. The server's own `waiting` (a live
+ * turn, an older prompt, or a Stop hold) and `failed` keep the queued look on
+ * any turn.
  */
 export function turnRendersQueued(input: {
+  turnId: string;
+  /** `resolveWorkingTurn` for the transcript. */
+  resolution: WorkingTurnResolution;
+  /** The session is working (the composer shows Stop). */
+  sessionWorking: boolean;
   /** `turnIsConfirmedActive` for this turn. */
   confirmedActive: boolean;
-  /** This turn is the working turn of a working session. */
-  isTurnWorking: boolean;
-  /** This turn is after the working turn with no answer (`pendingTurnIds`). */
-  behindWorkingTurn: boolean;
   /** The inbox row this turn renders, while the server still holds it. */
   inboxPrompt?: Pick<SessionPrompt, 'state' | 'reason'> | null;
 }): boolean {
   if (input.confirmedActive) return false;
-  if (input.behindWorkingTurn) return true;
-  if (!input.inboxPrompt) return false;
-  if (!input.isTurnWorking) return true;
-  return input.inboxPrompt.state === 'waiting' || input.inboxPrompt.state === 'failed';
+  const { workingTurnId, pendingTurnIds } = input.resolution;
+  const nextInLine =
+    input.sessionWorking &&
+    (workingTurnId === null ? pendingTurnIds[0] : workingTurnId) === input.turnId;
+  if (nextInLine) {
+    return input.inboxPrompt?.state === 'waiting' || input.inboxPrompt?.state === 'failed';
+  }
+  return pendingTurnIds.includes(input.turnId) || !!input.inboxPrompt;
 }
 
 /**

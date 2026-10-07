@@ -170,14 +170,15 @@ describe("the first prompt's text outlives the store's copy, locally", () => {
 test('a bubble reads as queued only while it waits behind a turn', () => {
   // Inbox presence alone dimmed an idle send until the server named
   // its turn. The rule (`turnRendersQueued`) is tested in the SDK; this pins
-  // that the transcript feeds it the working turn, not the inbox alone. The
+  // that the transcript feeds it the working-turn resolution, not the inbox alone. The
   // inbox row still reaches the bubble (`data-pending-prompt-id`).
   expect(chat).toContain('const confirmedActive = turnIsConfirmedActive({');
   expect(chat).toContain('!confirmedActive && turn.assistantMessages.length === 0');
   const pending = between(chat, 'pending={turnRendersQueued({', 'pendingPrompt={pendingPrompt}');
+  expect(pending).toContain('turnId: turn.userMessage.info.id,');
+  expect(pending).toContain('resolution: workingTurn,');
+  expect(pending).toContain('sessionWorking: lastTurnWorking,');
   expect(pending).toContain('confirmedActive,');
-  expect(pending).toContain('isTurnWorking,');
-  expect(pending).toContain('behindWorkingTurn: pendingTurnIds.has(turn.userMessage.info.id)');
   expect(pending).toContain('inboxPrompt: pendingPrompt');
   expect(pending).not.toContain('Boolean(pendingPrompt)');
 });

@@ -4356,12 +4356,13 @@ export function SessionChat({
                               suppressBusyIndicator={suppressWorkingTurnBusy}
                               awaitingUser={awaitingUserInput}
                               // An idle send stays in the inbox until delivery,
-                              // but the agent is already on it: queued only while
+                              // but nothing runs ahead of it: queued only while
                               // it waits behind a turn (`turnRendersQueued`).
                               pending={turnRendersQueued({
+                                turnId: turn.userMessage.info.id,
+                                resolution: workingTurn,
+                                sessionWorking: lastTurnWorking,
                                 confirmedActive,
-                                isTurnWorking,
-                                behindWorkingTurn: pendingTurnIds.has(turn.userMessage.info.id),
                                 inboxPrompt: pendingPrompt,
                               })}
                               pendingPrompt={pendingPrompt}
