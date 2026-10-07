@@ -57,6 +57,8 @@ import {
   type SandboxImageSpec,
 } from '../../snapshots/builder';
 import { config } from '../../config';
+import { attemptsLeft, bootFailureReason, modeAfterFailures, type BootMode, type SessionBootRecord } from './boot-mode';
+import * as bootModeStore from './boot-mode-store';
 import { claimParkedPiWorkerBox, maintainPiWorkerPool } from './pi-worker-pool';
 import { providerFallbackSetting } from './runtime-settings';
 import { selectProvider } from './provider-balancer';
@@ -700,6 +702,67 @@ export async function provisionSessionSandbox(opts: {
     // Idempotency-Key/name) across those "ambiguous retry" iterations.
     let platinumCreateAttempt = restorePlatinumCreateAttempt(sandbox.metadata as Record<string, unknown> | null) || 1;
     providerCreateInput.createAttempt = platinumCreateAttempt;
+    // Session boot mode (boot-mode.ts): image alone, image + boot artifacts, or
+    // an ephemeral box with its state on a volume. Resolved per provider, and
+    // stepped down after repeated failures in one mode.
+    const bootStore = slug !== META_SANDBOX_SLUG && slug !== PI_WORKER_SANDBOX_SLUG ? bootModeStore : null;
+    let bootMode: BootMode = 'standard';
+    let bootRecord: SessionBootRecord | null = null;
+    let bootStandardFallback = true;
+    let bootModeProvider: string | null = null;
+    let bootVolumeLocked = false;
+    // Set once this attempt reached the mode's own steps: earlier failures are not the mode's fault.
+    let bootModeStageReached = false;
+    const resolveBootModeFor = async (forProvider: string): Promise<void> => {
+      bootModeProvider = forProvider;
+      bootMode = 'standard';
+      bootRecord = null;
+      // Off the volume provider there is nothing to choose: the image boots.
+      if (!bootStore || forProvider !== 'platinum') return;
+      try {
+        const decision = await bootStore.resolveProjectBootMode({
+          accountId,
+          projectId,
+          provider: forProvider,
+          projectMetadata: opts.projectMetadata,
+        });
+        if (decision.source === 'provider') return;
+        const { record, stateVolume } = await bootStore.readSessionBoot(sandbox.sandboxId);
+        // State already on a volume (a box booted with it, or a session from before
+        // boot modes): it never steps off the volume.
+        bootVolumeLocked = Boolean(stateVolume) && (record ? record.volumeBooted === true : true);
+        const failures = record?.failures ?? {};
+        bootStandardFallback = decision.standardFallback;
+        bootMode = persistentMachine
+          ? decision.mode
+          : modeAfterFailures(
+              decision.mode,
+              failures,
+              bootStore.bootModePolicy().policy,
+              decision.standardFallback,
+              bootVolumeLocked,
+            );
+        bootRecord = {
+          requested: decision.mode,
+          source: decision.source,
+          mode: bootMode,
+          failures,
+          fallbacks: record?.fallbacks ?? [],
+          ...(record?.volumeBooted ? { volumeBooted: true } : {}),
+          ...(record?.bootedAt ? { bootedAt: record.bootedAt } : {}),
+          updatedAt: new Date().toISOString(),
+        };
+        await bootStore.writeSessionBoot(sandbox.sandboxId, bootRecord);
+        tl.note(`boot-mode:${bootMode}:${decision.source}`);
+      } catch (err) {
+        console.warn(
+          `[session-sandbox] ${sandbox.sandboxId}: boot mode not resolved, booting standard:`,
+          err instanceof Error ? err.message : String(err),
+        );
+        bootMode = 'standard';
+        bootRecord = null;
+      }
+    };
     provisioning: while (true) {
     try {
       const branch = opts.baseRef || opts.gitProject.defaultBranch;
@@ -745,6 +808,8 @@ export async function provisionSessionSandbox(opts: {
       // into the box and kept in sync by its daemon over the Kortix API, so
       // the session still boots with every drive it is entitled to.
       // A failover onto Platinum mounts natively: the sync switch must not follow it.
+      if (bootModeProvider !== providerName) await resolveBootModeFor(providerName);
+      bootModeStageReached = false;
       if (providerCreateInput.envVars?.KORTIX_DRIVE_SYNC) {
         const { KORTIX_DRIVE_SYNC: _sync, ...rest } = providerCreateInput.envVars;
         providerCreateInput.envVars = rest;
@@ -780,9 +845,15 @@ export async function provisionSessionSandbox(opts: {
         // before the drives, whose mount slots it shares; a failure to open it fails this attempt (retried by
         // the loop) rather than booting a box that would lose the session.
         // A persistent machine keeps everything on its root disk instead.
+        bootModeStageReached = true;
         if (!sessionStateResolved && !persistentMachine) {
           sessionState = await import('./ephemeral-sandbox').then((m) =>
-            m.resolveSessionStateMount({ projectId, sessionId: sandbox.sandboxId, provider: providerName }),
+            m.resolveSessionStateMount({
+              projectId,
+              sessionId: sandbox.sandboxId,
+              provider: providerName,
+              allowNew: bootStore ? bootMode === 'volume' : undefined,
+            }),
           );
           sessionStateResolved = true;
         }
@@ -801,7 +872,14 @@ export async function provisionSessionSandbox(opts: {
         }
         // Boot artifacts take the first mount slot: drives get what is left.
         if (!bootArtifactsResolved) {
-          bootArtifacts = await import('./boot-artifacts').then((m) => m.bootArtifactsMount());
+          bootArtifacts =
+            bootStore && bootMode === 'standard'
+              ? null
+              : await import('./boot-artifacts').then((m) =>
+                  bootStore
+                    ? m.bootArtifactsMount(bootStore.bootModePolicy().policy.artifacts ?? config.KORTIX_BOOT_ARTIFACTS)
+                    : m.bootArtifactsMount(),
+                );
           bootArtifactsResolved = true;
         }
         if (!driveMountsResolved) {
@@ -1039,6 +1117,31 @@ export async function provisionSessionSandbox(opts: {
       // A synced box: its daemon copies the drives in and keeps them in sync.
       const driveSyncMeta = providerName !== 'platinum' && mountedDrives.length ? { driveSync: true } : {};
       const timeline = tl.summary();
+      // The mode this box booted in, on the box row and on the session.
+      const bootRecordNow = bootRecord as SessionBootRecord | null;
+      const bootModeMeta = bootRecordNow
+        ? {
+            bootMode: {
+              mode: bootMode,
+              requested: bootRecordNow.requested,
+              source: bootRecordNow.source,
+              ...(bootMode !== bootRecordNow.requested && bootRecordNow.fallbacks.length ? { fellBack: true } : {}),
+            },
+          }
+        : {};
+      if (bootStore && bootRecordNow) {
+        const at = new Date().toISOString();
+        bootRecord = {
+          ...bootRecordNow,
+          mode: bootMode,
+          bootedAt: at,
+          updatedAt: at,
+          ...(sessionState || bootRecordNow.volumeBooted ? { volumeBooted: true } : {}),
+        };
+        await bootStore.writeSessionBoot(sandbox.sandboxId, bootRecord).catch((err) =>
+          console.warn(`[session-sandbox] ${sandbox.sandboxId}: boot record not written:`, err),
+        );
+      }
 
       const [currentSession] = await db
         .select({ status: projectSessions.status, metadata: projectSessions.metadata })
@@ -1167,6 +1270,7 @@ export async function provisionSessionSandbox(opts: {
             ...driveSyncMeta,
             ...(sessionState ? { sessionStateVolume: sessionState.volume } : {}),
             ...(persistentMachine ? { rootVolume: true } : {}),
+            ...bootModeMeta,
             runtimeArtifact: {
               artifactType: providerName === 'daytona' ? 'daytona_snapshot' : `${providerName}_template`,
               providerArtifactRef: imageInfo!.snapshotName,
@@ -1311,6 +1415,77 @@ export async function provisionSessionSandbox(opts: {
       }
 
       const bgMessage = bgErr instanceof Error ? bgErr.message : String(bgErr);
+
+      // ── Boot mode fallback ───────────────────────────────────────────────
+      // A box that fails in `volume` or `artifacts` is tried again in that mode
+      // until its attempts are spent, then one step down (volume → artifacts →
+      // standard), on the same provider. Capacity, git and policy failures are
+      // not the mode's fault and go straight to the paths below.
+      const bootRecordNow = bootRecord as SessionBootRecord | null;
+      if (
+        bootStore &&
+        bootRecordNow &&
+        bootModeStageReached &&
+        bootMode !== 'standard' &&
+        !persistentMachine &&
+        !['provider-capacity', 'git-auth', 'invalid-secret-boundary-policy', 'snapshot-too-large'].includes(
+          classifySandboxProvisioningFailure(bgErr).category,
+        )
+      ) {
+        const policy = bootStore.bootModePolicy().policy;
+        const failures = { ...bootRecordNow.failures, [bootMode]: (bootRecordNow.failures[bootMode] ?? 0) + 1 };
+        const next = modeAfterFailures(bootMode, failures, policy, bootStandardFallback, bootVolumeLocked);
+        const at = new Date().toISOString();
+        const stepped = next !== bootMode;
+        const dropStateVolume = stepped && bootMode === 'volume' && !bootVolumeLocked;
+        bootRecord = {
+          ...bootRecordNow,
+          mode: next,
+          failures,
+          fallbacks: stepped
+            ? [
+                ...bootRecordNow.fallbacks,
+                { from: bootMode, to: next, reason: bootFailureReason(bgMessage), detail: bgMessage.slice(0, 200), at },
+              ]
+            : bootRecordNow.fallbacks,
+          updatedAt: at,
+        };
+        await bootStore
+          .writeSessionBoot(sandbox.sandboxId, bootRecord, { dropStateVolume })
+          .catch((err) => console.warn(`[session-sandbox] ${sandbox.sandboxId}: boot record not written:`, err));
+        if (stepped || attemptsLeft(bootMode, failures, policy)) {
+          console.warn(
+            `[session-sandbox] ${sandbox.sandboxId}: ${bootMode} boot failed (${failures[bootMode]}x)` +
+              (stepped ? `, falling back to ${next}` : ', trying again') +
+              `: ${bgMessage.slice(0, 160)}`,
+          );
+          if (bgExternalId) {
+            await provider.remove(bgExternalId).catch(() => {});
+            bgExternalId = null;
+          }
+          if (stepped) {
+            tl.mark(`boot-mode-fallback:${bootMode}->${next}`);
+            if (dropStateVolume && providerCreateInput.envVars) {
+              for (const key of Object.keys(sessionState?.env ?? { KORTIX_PERSIST_ROOT: '' })) {
+                delete providerCreateInput.envVars[key];
+              }
+              sessionState = null;
+              providerCreateInput.volumesRequired = undefined;
+            }
+            bootMode = next;
+            sessionStateResolved = false;
+            bootArtifactsResolved = false;
+            driveMountsResolved = false;
+          } else {
+            tl.mark(`boot-mode-retry:${bootMode}`);
+          }
+          platinumCreateAttempt += 1;
+          providerCreateInput.createAttempt = platinumCreateAttempt;
+          // The create's last failure may have marked the row failed already.
+          await transitionSandbox('reprovision', sandbox.sandboxId).catch(() => null);
+          continue provisioning;
+        }
+      }
 
       // ── Provider failover (one-shot, on init) ────────────────────────────
       // Admin-gated (DB `provider_fallback`, OFF by default). When ON, a

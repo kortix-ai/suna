@@ -6,7 +6,9 @@
  * entrypoint and daemon take those files instead of downloading them, so a box
  * whose image is older than the release still boots on the release.
  *
- * One setting, `KORTIX_BOOT_ARTIFACTS=<volume>@<tag>`. The mount is an
+ * One setting, `KORTIX_BOOT_ARTIFACTS=<volume>@<tag>`, which the admin boot-mode
+ * policy can override. Which sessions mount it is the session boot mode
+ * (boot-mode.ts: `artifacts` and `volume`). The mount is an
  * optimization and never a reason a session fails to start: a tag that does
  * not resolve is left out (and logged), and the box boots from its image.
  */
@@ -37,8 +39,10 @@ let checked: { key: string; ok: boolean; at: number } | null = null;
  * checked against Platinum (cached five minutes) so a typo or an unpublished
  * release costs one log line, not every session.
  */
-export async function bootArtifactsMount(): Promise<BootArtifactsMount | null> {
-  const parsed = parseBootArtifacts(config.KORTIX_BOOT_ARTIFACTS);
+export async function bootArtifactsMount(
+  spec: string | null | undefined = config.KORTIX_BOOT_ARTIFACTS,
+): Promise<BootArtifactsMount | null> {
+  const parsed = parseBootArtifacts(spec);
   if (!parsed || !isPlatinumConfigured()) return null;
   const key = `${parsed.volume}@${parsed.ref}`;
   if (!checked || checked.key !== key || Date.now() - checked.at > CHECK_TTL_MS) {

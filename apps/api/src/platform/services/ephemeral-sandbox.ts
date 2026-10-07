@@ -21,7 +21,7 @@
 
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
+import { resolveProjectBootMode } from './boot-mode-store';
 import { endComputeSession } from '../../billing/services/compute-metering';
 import { db } from '../../shared/db';
 import { isPlatinumConfigured, platinumFetch } from '../../shared/platinum';
@@ -53,10 +53,15 @@ export function ephemeralSandboxesKillSwitchOff(): boolean {
   return raw === '0' || raw === 'off' || raw === 'false' || raw === 'no';
 }
 
-/** Is a NEW box of this project's sessions ephemeral? */
+/**
+ * Is a NEW box of this project's sessions ephemeral? The session boot mode
+ * decides (boot-mode.ts: `volume`); the project flag is one of its inputs.
+ */
 export async function ephemeralSandboxesEnabled(projectId: string, provider: string): Promise<boolean> {
   if (provider !== 'platinum' || !isPlatinumConfigured() || ephemeralSandboxesKillSwitchOff()) return false;
-  return projectFeatureFlagEnabled(projectId, 'ephemeral_sandboxes').catch(() => false);
+  return resolveProjectBootMode({ projectId, provider })
+    .then((d) => d.mode === 'volume')
+    .catch(() => false);
 }
 
 /** project_sessions metadata: the session's state lives on this volume (set once, never cleared). */
@@ -91,10 +96,12 @@ export async function resolveSessionStateMount(input: {
   projectId: string;
   sessionId: string;
   provider: string;
+  /** The session's boot mode allows a new volume; omitted ⇒ resolve it here. */
+  allowNew?: boolean;
 }): Promise<{ volume: string; mountPath: string; env: Record<string, string>; waitedMs: number; generation: number } | null> {
   if (input.provider !== 'platinum' || !isPlatinumConfigured()) return null;
   const existing = await sessionStateVolumeOf(input.sessionId);
-  if (!existing && !(await ephemeralSandboxesEnabled(input.projectId, input.provider))) return null;
+  if (!existing && !(input.allowNew ?? (await ephemeralSandboxesEnabled(input.projectId, input.provider)))) return null;
   const t0 = Date.now();
   const volume = await ensureSessionStateVolume(input.sessionId);
   if (!existing) await recordSessionStateVolume(input.sessionId, volume);
@@ -191,6 +198,8 @@ export async function retireOnStopPlan(sandboxId: string): Promise<{ metadata: u
   // A persistent machine's disk is its root volume: a stop keeps the box.
   if (isRootVolumeBox(md)) return null;
   if (recordedSessionStateVolume(md)) return { metadata: md, sessionId: row.sessionId };
+  // A box that stepped down from `volume` after failed boots stays a normal box.
+  if ((md.bootMode as { fellBack?: boolean } | undefined)?.fellBack) return null;
   if (!(await ephemeralSandboxesEnabled(row.projectId, row.provider))) return null;
   return { metadata: md, sessionId: row.sessionId };
 }
