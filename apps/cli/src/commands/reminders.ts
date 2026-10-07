@@ -165,11 +165,12 @@ export async function runReminders(argv: string[], shortcut = false): Promise<nu
         return 0;
       }
       const idW = Math.max(...reminders.map((r) => r.id.length), 2);
-      process.stdout.write(`\n  ${C.dim}${pad('ID', idW)}   STATE    ${pad('REPEAT', 24)}  NEXT                  LAST FIRED            TEXT${C.reset}\n`);
+      const nameW = Math.max(...reminders.map((r) => (r.name ?? '—').length), 4);
+      process.stdout.write(`\n  ${C.dim}${pad('ID', idW)}   STATE    ${pad('REPEAT', 24)}  NEXT                  LAST FIRED            ${pad('NAME', nameW)}  TEXT${C.reset}\n`);
       for (const r of reminders) {
-        const text = (r.name ?? r.prompt).replace(/\s+/g, ' ');
+        const text = r.prompt.replace(/\s+/g, ' ');
         process.stdout.write(
-          `  ${pad(r.id, idW)}   ${pad(r.state, 7)}  ${pad(describeSchedule(r).slice(0, 24), 24)}  ${pad(formatInstant(r.next_fire_at), 20)}  ${pad(formatInstant(r.last_fired_at), 20)}  ${text.length > 60 ? `${text.slice(0, 59)}…` : text}\n`,
+          `  ${pad(r.id, idW)}   ${pad(r.state, 7)}  ${pad(describeSchedule(r).slice(0, 24), 24)}  ${pad(formatInstant(r.next_fire_at), 20)}  ${pad(formatInstant(r.last_fired_at), 20)}  ${pad(r.name ?? '—', nameW)}  ${text.length > 60 ? `${text.slice(0, 59)}…` : text}\n`,
         );
         if (r.last_error) process.stdout.write(`  ${' '.repeat(idW)}   ${C.red}${r.last_error}${C.reset}\n`);
       }

@@ -566,6 +566,11 @@ export function SessionChat({
   // runtime is connected + healthy). We need it here too so the render logic
   // can tell "still booting" apart from "genuinely gone".
   const runtimeReady = useRuntimeReady();
+  // The model gate holds during boot too (KRTX-1667): a pre-ready send becomes a
+  // durable inbox row nobody re-checks, so a Free plan's queued prompt died at the
+  // gateway. The served catalog (`GET /model-picker`) answers before the boot
+  // window opens, and the composer's loading flags keep the gate silent while it
+  // is still in flight — queue-while-booting survives wherever a model exists.
   const allowSendBeforeReady = !!projectSessionId && !runtimeReady;
   // "The health poller GAVE UP", which `!runtimeReady` does not say — that is
   // also every ordinary boot. Only the composer notice reads it, to tell a probe
@@ -4608,7 +4613,7 @@ export function SessionChat({
                 sessionId={sessionId}
                 projectId={projectId}
                 providers={providers}
-                modelRequired={!allowSendBeforeReady}
+                modelRequired
                 modelsLoading={providersLoading}
                 onContextClick={handleContextClick}
                 onCompactClick={runtimeCanCompact ? handleCompactClick : undefined}
