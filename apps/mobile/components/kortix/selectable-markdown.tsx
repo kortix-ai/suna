@@ -53,6 +53,7 @@ import {
 } from 'react-native';
 import { UITextView } from 'react-native-uitextview';
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
+import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { Easing, Keyframe } from 'react-native-reanimated';
 import type { MarkdownTextInput as MarkdownTextInputComponent } from '@expensify/react-native-live-markdown';
 import Markdown, { MarkdownIt, type MarkdownProps } from 'react-native-markdown-display';
@@ -65,7 +66,7 @@ import {
   darkMarkdownStyle,
 } from '@/lib/utils/live-markdown-config';
 import { useColorScheme } from 'nativewind';
-import { MOTION, THEME } from '@/lib/utils/theme';
+import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
 import { FONT_FAMILY } from '@/lib/utils/fonts';
 import * as Clipboard from 'expo-clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -96,6 +97,14 @@ import {
   type BlockKind,
   type StackContext,
 } from '@/lib/markdown/markdown-layout';
+import {
+  nodeText,
+  TABLE_CELL_PADDING_X,
+  TABLE_CELL_PADDING_Y,
+  fitColumnWidths,
+  tableColumnWidths,
+  tableSections,
+} from '@/lib/markdown/table-layout';
 import { openLink } from '@/lib/utils/open-link';
 
 // The component's own module, not the package root: the root also exports
@@ -155,6 +164,11 @@ export interface SelectableMarkdownTextProps {
    * Sandbox images load either way.
    */
   remoteImages?: MarkdownRemoteImages;
+  /**
+   * The colour behind the text, when it is not the page background (a sheet,
+   * a card). Tables fill with it, and their edge fades start from it.
+   */
+  surface?: string;
 }
 
 /**
@@ -183,6 +197,9 @@ function handleLibraryLinkPress(url: string): boolean {
  * blocks read it to hold highlighting and follow the newest line.
  */
 const OpenFenceContext = createContext(false);
+
+/** `SelectableMarkdownTextProps.surface`, for the tables below. */
+export const MarkdownSurfaceContext = createContext<string | undefined>(undefined);
 
 type AstNode = {
   key: string;
@@ -221,21 +238,6 @@ function stack(nodes: AstNode[], children: React.ReactNode[], context: StackCont
 function hasParent(parents: AstNode[], type: string): boolean {
   return parents.some((parent) => parent.type === type);
 }
-
-/** Plain text of an AST node. */
-function nodeText(node: AstNode | undefined): string {
-  if (!node) return '';
-  if (node.content) return node.content;
-  return (node.children ?? []).map(nodeText).join('');
-}
-
-/** Roobert average advance at `text-sm`, for estimating table column widths. */
-const TABLE_CHAR_WIDTH = 7.7;
-const TABLE_CELL_PADDING_X = web(4);
-const TABLE_CELL_PADDING_Y = web(2);
-const TABLE_MIN_COLUMN = 44;
-/** Body cells wrap past this width; headers never wrap (`whitespace-nowrap`). */
-const TABLE_MAX_BODY_TEXT = 240;
 
 /** Web's `MarkdownCode` routing: Mermaid first, then math fences, then code. */
 function FencedCode({ node, isDark }: { node: AstNode; isDark: boolean }) {
@@ -495,42 +497,71 @@ function renderCellContent(cell: AstNode, isDark: boolean, palette: MarkdownPale
   });
 }
 
+/** Width of the fade at a table edge that has more columns past it. */
+const TABLE_FADE_WIDTH = 24;
+const TABLE_BORDER_WIDTH = 0.5;
+
 /**
  * Web: `border rounded-md` wrapper that scrolls horizontally, `w-full` table in
- * `text-sm`, `bg-muted` header, `px-4 py-2` cells, row dividers.
+ * `text-sm`, `bg-muted` header, `px-4 py-2` cells. Mobile draws the full grid
+ * (a divider between every row and every column), and fades an edge while
+ * more columns lie past it. The frame holds the border, so it stays put while
+ * the content scrolls.
  */
-function MarkdownTable({ node, palette, isDark }: { node: AstNode; palette: MarkdownPalette; isDark: boolean }) {
-  const sections: { isHeader: boolean; rows: AstNode[][] }[] = [];
-  for (const section of node.children ?? []) {
-    const isHeader = section.type === 'thead';
-    const rows: AstNode[][] = [];
-    for (const row of section.children ?? []) {
-      if (row.type === 'tr') rows.push((row.children ?? []).filter((c) => c.type === 'th' || c.type === 'td'));
-    }
-    if (rows.length > 0) sections.push({ isHeader, rows });
-  }
+export function MarkdownTable({ node, palette, isDark }: { node: AstNode; palette: MarkdownPalette; isDark: boolean }) {
+  const fill = useContext(MarkdownSurfaceContext) ?? palette.tableBody;
+  const [fade, setFade] = useState({ left: false, right: false });
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const [viewport, setViewport] = useState(0);
+  const scroll = useRef({ x: 0, content: 0, viewport: 0, left: false, right: false });
+  // Sets state only when an edge flips, not on every scroll frame.
+  const updateFade = useCallback(() => {
+    const s = scroll.current;
+    const left = s.x > 1;
+    const right = s.x + s.viewport < s.content - 1;
+    if (left === s.left && right === s.right) return;
+    s.left = left;
+    s.right = right;
+    setFade({ left, right });
+  }, []);
 
+  const sections = tableSections(node);
   const colCount = Math.max(0, ...sections.flatMap((s) => s.rows.map((r) => r.length)));
   if (colCount === 0) return <View />;
 
-  const colWidths: number[] = [];
-  for (let col = 0; col < colCount; col++) {
-    let header = 0;
-    let body = 0;
-    for (const section of sections) {
-      for (const row of section.rows) {
-        const width = nodeText(row[col]).length * TABLE_CHAR_WIDTH;
-        if (section.isHeader) header = Math.max(header, width);
-        else body = Math.max(body, Math.min(width, TABLE_MAX_BODY_TEXT));
-      }
-    }
-    colWidths.push(Math.max(Math.max(header, body) + 2 * TABLE_CELL_PADDING_X, TABLE_MIN_COLUMN));
-  }
+  const colWidths = fitColumnWidths(tableColumnWidths(sections, colCount), viewport);
 
   let rowIndex = 0;
   return (
-    <View style={{ borderWidth: 1, borderColor: palette.border, borderRadius: RADIUS.md, overflow: 'hidden' }}>
-      <GHScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ minWidth: '100%' }}>
+    <View
+      style={{
+        borderWidth: TABLE_BORDER_WIDTH,
+        borderColor: palette.border,
+        borderRadius: RADIUS.sm,
+        overflow: 'hidden',
+        backgroundColor: fill,
+      }}
+    >
+      <GHScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ minWidth: '100%' }}
+        scrollEventThrottle={16}
+        onScroll={(e) => {
+          const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+          Object.assign(scroll.current, { x: contentOffset.x, content: contentSize.width, viewport: layoutMeasurement.width });
+          updateFade();
+        }}
+        onContentSizeChange={(width) => {
+          scroll.current.content = width;
+          updateFade();
+        }}
+        onLayout={(e) => {
+          scroll.current.viewport = e.nativeEvent.layout.width;
+          setViewport(e.nativeEvent.layout.width);
+          updateFade();
+        }}
+      >
         <View style={{ flexGrow: 1 }}>
           {sections.map((section, sIdx) =>
             section.rows.map((cells, rIdx) => {
@@ -538,9 +569,11 @@ function MarkdownTable({ node, palette, isDark }: { node: AstNode; palette: Mark
               return (
                 <View
                   key={`${sIdx}-${rIdx}`}
+                  // GFM has one header row: the fade paints its colour over that height.
+                  onLayout={section.isHeader && rIdx === 0 ? (e) => setHeaderHeight(e.nativeEvent.layout.height) : undefined}
                   style={{
                     flexDirection: 'row',
-                    borderTopWidth: divider ? 1 : 0,
+                    borderTopWidth: divider ? TABLE_BORDER_WIDTH : 0,
                     borderTopColor: palette.border,
                     backgroundColor: section.isHeader ? palette.tableHeader : undefined,
                   }}
@@ -549,9 +582,12 @@ function MarkdownTable({ node, palette, isDark }: { node: AstNode; palette: Mark
                     <View
                       key={cIdx}
                       style={{
-                        flexBasis: colWidths[cIdx],
-                        flexGrow: 1,
-                        flexShrink: 0,
+                        width: colWidths[cIdx],
+                        // Every column is left-aligned: GFM `:---:` / `---:` markers are
+                        // ignored, and Yoga places the text, sized to its content, at the left edge.
+                        alignItems: 'flex-start',
+                        borderLeftWidth: cIdx > 0 ? TABLE_BORDER_WIDTH : 0,
+                        borderLeftColor: palette.border,
                         paddingHorizontal: TABLE_CELL_PADDING_X,
                         paddingVertical: TABLE_CELL_PADDING_Y,
                       }}
@@ -578,6 +614,25 @@ function MarkdownTable({ node, palette, isDark }: { node: AstNode; palette: Mark
           )}
         </View>
       </GHScrollView>
+      {fade.left ? <TableEdgeFade side="left" headerHeight={headerHeight} header={palette.tableHeader} body={fill} /> : null}
+      {fade.right ? <TableEdgeFade side="right" headerHeight={headerHeight} header={palette.tableHeader} body={fill} /> : null}
+    </View>
+  );
+}
+
+/** A fade from the table's fill (opaque at the edge) to clear: the header colour over the header row, the body fill below. */
+function TableEdgeFade({ side, headerHeight, header, body }: { side: 'left' | 'right'; headerHeight: number; header: string; body: string }) {
+  const colors = (fill: string) => (side === 'left' ? [fill, withAlpha(fill, 0)] : [withAlpha(fill, 0), fill]) as [string, string];
+  return (
+    <View
+      testID={`table-fade-${side}`}
+      pointerEvents="none"
+      style={{ position: 'absolute', top: 0, bottom: 0, [side]: 0, width: TABLE_FADE_WIDTH }}
+    >
+      {headerHeight > 0 ? (
+        <LinearGradient colors={colors(header)} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ height: headerHeight }} />
+      ) : null}
+      <LinearGradient colors={colors(body)} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flex: 1 }} />
     </View>
   );
 }
@@ -1033,7 +1088,7 @@ function IOSSelectableMarkdown({ text, isDark, isStreaming }: { text: string; is
  * the `UITextView` native view, a double tap opens a selection sheet instead.
  */
 export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = memo(
-  function SelectableMarkdownText({ children, isDark: isDarkProp, isStreaming, remoteImages = 'placeholder' }: SelectableMarkdownTextProps) {
+  function SelectableMarkdownText({ children, isDark: isDarkProp, isStreaming, remoteImages = 'placeholder', surface }: SelectableMarkdownTextProps) {
     const { colorScheme } = useColorScheme();
     const isDark = isDarkProp ?? colorScheme === 'dark';
 
@@ -1042,11 +1097,13 @@ export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = mem
 
     return (
       <MarkdownImagesContext.Provider value={remoteImages}>
-        {Platform.OS === 'ios' && !IOS_TEXT_VIEW ? (
-          <IOSSelectableMarkdown text={text} isDark={isDark} isStreaming={isStreaming} />
-        ) : (
-          <MarkdownBlocks text={text} isDark={isDark} isStreaming={isStreaming} />
-        )}
+        <MarkdownSurfaceContext.Provider value={surface}>
+          {Platform.OS === 'ios' && !IOS_TEXT_VIEW ? (
+            <IOSSelectableMarkdown text={text} isDark={isDark} isStreaming={isStreaming} />
+          ) : (
+            <MarkdownBlocks text={text} isDark={isDark} isStreaming={isStreaming} />
+          )}
+        </MarkdownSurfaceContext.Provider>
       </MarkdownImagesContext.Provider>
     );
   },

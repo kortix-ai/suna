@@ -2,8 +2,9 @@
 
 import { useTranslations } from '@/i18n/use-translations';
 
-import { wrapChildrenWithPaths } from '@/components/common/clickable-path';
+import { ClickablePath, wrapChildrenWithPaths } from '@/components/common/clickable-path';
 import { MarkdownCode } from '@/components/markdown/code';
+import { parseFileLinkHref, remarkWorkspaceFileLinks } from '@/components/markdown/file-links';
 import { InsideLinkContext } from '@/components/markdown/code/inside-link-context';
 import {
   isKatexClassName,
@@ -149,6 +150,17 @@ const MARKDOWN_COMPONENTS = {
         <SetupLinkButton kind={pendingSetupLink} token={null}>
           {children}
         </SetupLinkButton>
+      );
+    }
+
+    // A file in the session's workspace opens the file preview, the same
+    // as a path in prose (see `remarkWorkspaceFileLinks`).
+    const filePath = policy.fileLinks ? parseFileLinkHref(href) : null;
+    if (filePath) {
+      return (
+        <ClickablePath filePath={filePath} className={LINK_CLASS}>
+          {children}
+        </ClickablePath>
       );
     }
 
@@ -411,6 +423,7 @@ export interface UnifiedMarkdownProps {
  * stable across renders (see the `rehypePlugins` note below).
  */
 const REMARK_PLUGINS_WITH_SETUP_LINKS = [...katexRemarkPlugins, remarkSetupLinkBlocks];
+const REMARK_PLUGINS_WITH_FILE_LINKS = [...REMARK_PLUGINS_WITH_SETUP_LINKS, remarkWorkspaceFileLinks];
 
 // Single source of truth for markdown rendering across the app — clean, minimal,
 // readable in both themes.
@@ -471,7 +484,13 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
             parseIncompleteMarkdown={isStreaming}
             parseMarkdownIntoBlocksFn={parseMarkdownBlocks}
             components={MARKDOWN_COMPONENTS as any}
-            remarkPlugins={policy.setupLinks ? REMARK_PLUGINS_WITH_SETUP_LINKS : katexRemarkPlugins}
+            remarkPlugins={
+              policy.fileLinks
+                ? REMARK_PLUGINS_WITH_FILE_LINKS
+                : policy.setupLinks
+                  ? REMARK_PLUGINS_WITH_SETUP_LINKS
+                  : katexRemarkPlugins
+            }
             // Module-level arrays for the same reason as MARKDOWN_COMPONENTS: a
             // new array each render made every block re-parse on every token.
             rehypePlugins={policy.rawHtml ? katexRehypePlugins : katexRehypePluginsNoRaw}
