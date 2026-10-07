@@ -303,6 +303,7 @@ mock.module('../projects/git', () => ({
   grepRepoFiles: async () => [],
   loadProjectConfig: async () => ({}),
   readRepoFile: async () => '',
+  readRepoFileBytes: async () => Buffer.alloc(0),
   // connector/sync.ts imports these from the same barrel; a wholesale module mock
   // that omits them makes the whole file fail to LOAD with a SyntaxError, which
   // reads as "the suite is broken" rather than "the mock is short two names".

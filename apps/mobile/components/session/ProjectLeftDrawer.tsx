@@ -87,7 +87,6 @@ import { PixelDeadFlower } from '@/components/kortix/PixelDeadFlower';
 import { DrawerSessionNode, NESTED_SESSION_INDENT, useSessionStarterOf } from './DrawerSessionRows';
 import { SubsessionTreeMemory } from '@/components/session/SessionSubsessionTree';
 import { NavPill, ReviewCountPill, SwitcherRow } from './DrawerNavRows';
-import { LegacyChatsSection } from '@/components/menu/LegacyChatsSection';
 import { SessionChildren, type SessionChildrenProps } from '@/components/session/SessionTreeParts';
 import { PlanRingAvatar } from '@/components/settings/PlanRingAvatar';
 import { useActivePlanName } from '@/hooks/useActivePlanName';
@@ -736,17 +735,6 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
     [navigateOnce, onNavigateRoute]
   );
 
-  // LegacyChatsSection takes raw colours for its icons.
-  const iconColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
-  // Memoized: a new footer element re-renders Previous chats on every drawer render.
-  const legacyChats = useMemo(
-    () => (
-      <View className="mt-2 px-2">
-        <LegacyChatsSection iconColor={iconColor} mutedColor={mutedColor} isDark={isDark} />
-      </View>
-    ),
-    [iconColor, mutedColor, isDark]
-  );
   const showPageLoader = isFetchingNextPage && open;
   const listFooter = useMemo(
     () => (
@@ -756,10 +744,9 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
             <KortixLoader size="small" />
           </View>
         ) : null}
-        {legacyChats}
       </View>
     ),
-    [showPageLoader, legacyChats]
+    [showPageLoader]
   );
 
   // The drawer surface (bg-chrome-background), transparent → opaque, so rows

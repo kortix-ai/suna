@@ -609,6 +609,21 @@ async function deleteAccountData(accountId: string, keepRequestId?: string): Pro
     await tx.delete(tunnelAuditLogs).where(eq(tunnelAuditLogs.accountId, accountId));
     await tx.delete(tunnelConnections).where(eq(tunnelConnections.accountId, accountId));
     await tx.delete(sandboxes).where(eq(sandboxes.accountId, accountId));
+    // kortix.guard_session_sandbox_identity() refuses to delete a session box
+    // that has an external_id unless its session is soft-deleted. The account is
+    // going away, so soft-delete its sessions first. Without this the delete
+    // below threw and every account with an established box failed to delete.
+    await tx
+      .update(projectSessions)
+      .set({
+        metadata: sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || jsonb_build_object('deletedAt', to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))`,
+      })
+      .where(
+        and(
+          eq(projectSessions.accountId, accountId),
+          sql`${projectSessions.metadata}->>'deletedAt' is null`,
+        ),
+      );
     await tx.delete(kortixApiKeys).where(eq(kortixApiKeys.accountId, accountId));
     await tx.delete(sessionSandboxes).where(eq(sessionSandboxes.accountId, accountId));
     await tx.delete(providerEvents).where(eq(providerEvents.accountId, accountId));

@@ -474,8 +474,9 @@ running session, use the session's file operations — see
 
 | method | what |
 | --- | --- |
-| `list(options?)` · `read(path, ref?)` | the repo tree · a file's contents at a git ref |
-| `search(query)` | search the repo |
+| `listDirectory({ ref?, path? })` | one folder level: `{ entries: [{ path, type, size? }], truncated }`. Use it to build a tree; every folder is complete up to 5,000 entries. |
+| `list(options?)` · `read(path, ref?)` | every file under a path, recursively, cut at 1,000 (the response carries `X-Kortix-Truncated: 1` when cut) · a file's contents at a git ref |
+| `search(query, { content?, ref?, limit? })` | search filenames over the whole repo, or contents with `content: true` |
 | `archive(options?)` · `history(path)` | download a tarball · a file's git history |
 
 #### `p.git` — history

@@ -3,6 +3,7 @@
 import { backendApi } from '../../http/api-client';
 import { sendChecked } from '../../http/transport';
 import { platformConfig } from '../../http/config';
+import { type AuthenticatedRequest, authenticatedRequest } from '../../http/authenticated-request';
 import { unwrap, type ProjectFileEntry } from './shared';
 
 export async function listProjectFiles(
@@ -18,6 +19,43 @@ export async function listProjectFiles(
       `/projects/${projectId}/files${query}`,
       // project.file.read is manager-tier — a member deep-linking to the files
       // page legitimately 403s. The files view renders its own error state.
+      { showErrors: false },
+    ),
+  );
+}
+
+/** One entry of a folder listing: a file, or a folder to open with another call. */
+export interface ProjectDirectoryEntry {
+  /** Repository-relative path. */
+  path: string;
+  type: 'file' | 'directory';
+  /** Bytes of a file. A folder has none. */
+  size?: number;
+}
+
+export interface ProjectDirectoryListing {
+  entries: ProjectDirectoryEntry[];
+  /** The folder has more entries than one response carries. */
+  truncated: boolean;
+}
+
+/**
+ * The immediate children of one folder (`path`, or the repository root).
+ * Unlike `listProjectFiles`, which returns a recursive list cut at 1,000
+ * files, every folder is complete up to its own entry cap.
+ */
+export async function listProjectDirectory(
+  projectId: string,
+  options?: { ref?: string; path?: string },
+) {
+  const params = new URLSearchParams();
+  if (options?.ref) params.set('ref', options.ref);
+  if (options?.path) params.set('path', options.path);
+  params.set('depth', '1');
+  return unwrap(
+    await backendApi.get<ProjectDirectoryListing>(
+      `/projects/${projectId}/files?${params.toString()}`,
+      // Same manager-tier gate as listProjectFiles: the view renders its own error state.
       { showErrors: false },
     ),
   );
@@ -97,6 +135,25 @@ export async function fetchProjectArchive(
   const url = `${platformConfig().backendUrl || ''}/projects/${projectId}/files/archive${query}`;
   const res = await sendChecked(url, { method: 'GET' }, { timeoutMs: ARCHIVE_TIMEOUT_MS }, 'Failed to download');
   return await res.blob();
+}
+
+/**
+ * The archive download of {@link fetchProjectArchive} as a request the host
+ * sends itself, for a host that streams the zip to disk (React Native's
+ * `FileSystem.downloadAsync`) instead of reading it into a Blob.
+ */
+export async function projectArchiveRequest(
+  projectId: string,
+  ref: string,
+  path?: string,
+): Promise<AuthenticatedRequest> {
+  const params = new URLSearchParams();
+  if (ref) params.set('ref', ref);
+  if (path) params.set('path', path);
+  const query = params.toString() ? `?${params.toString()}` : '';
+  return authenticatedRequest(
+    `${platformConfig().backendUrl}/projects/${encodeURIComponent(projectId)}/files/archive${query}`,
+  );
 }
 
 /**

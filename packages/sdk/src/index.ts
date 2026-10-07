@@ -58,6 +58,7 @@ export {
   deleteFile,
   files,
   FileExistsError,
+  fileDownloadRequest,
   findFiles,
   findText,
   getCurrentProject,
@@ -498,6 +499,7 @@ export * from './core/client/kortix';
 export * from './core/http/abort-error';
 export * from './core/http/api-client';
 export * from './core/http/auth';
+export * from './core/http/authenticated-request';
 export * from './core/http/config';
 export * from './core/http/feature-flags';
 export * from './core/http/fresh-sessions';
@@ -524,6 +526,8 @@ export {
   savedCopyEmptyRoot,
 } from './core/session-sync/saved-transcript';
 export * from './core/session/url';
+/** The authenticated `/p/{externalId}/{port}` proxy URL of a session's sandbox port. */
+export { getSandboxUrlForExternalId } from './core/session/server-store/url-helpers';
 /** How this deployment addresses previews (`GET /v1/p/config`), cached per backend. */
 export { loadPreviewUrlTemplate } from './core/session/preview-config';
 export * from './core/stream/event-stream';

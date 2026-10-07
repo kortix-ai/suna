@@ -771,7 +771,7 @@ Read-only view of the project's git repo. Operates on the default branch unless 
 
 | Command | Effect |
 | --- | --- |
-| `kortix files ls [<path>]` | List files under a path. |
+| `kortix files ls [<path>]` | List files under a path, recursively. The list stops at 1,000 files and says so; narrow it with a path or use `files search`. |
 | `kortix files cat <path>` | Print a file's contents. |
 | `kortix files search <query> [--content]` | Search filenames, or file contents with `--content`. |
 | `kortix files history <path>` | Commit history for one file. |
@@ -987,7 +987,7 @@ A session builds its [agent config](/docs/work/runtime) from every file Git trac
 To clear it:
 - Move big static assets (video, images, datasets, model weights) to object storage such as S3, R2, or GCS, or a CDN, and download them at runtime.
 - Add build output (`dist/`, `out/`) to `.gitignore`.
-- For a path that must stay in Git but that no agent reads, add `<path> export-ignore` to `.gitattributes`. The release leaves it out, and so does the check.
+- For a path that must stay in Git but that no agent reads, add `<path> export-ignore` to `.gitattributes`. The release leaves it out, and so does the check; a directory rule covers everything under it. The agent config dir and `kortix.yaml` always ship whole.
 
 ### Self-host
 

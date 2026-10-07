@@ -11,6 +11,7 @@ import { RootClientHosts, RootQueryHosts } from '@/components/root-client-hosts'
 import { IconProvider } from '@/components/ui/icon-provider';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { MfaStepUpProvider } from '@/features/auth/mfa-step-up';
+import { SsoRequiredProvider } from '@/features/auth/sso-required';
 import { BrandingProvider } from '@/features/branding/branding-provider';
 import { RequestDemoProvider } from '@/features/contact/request-demo-provider';
 import { AuthProvider } from '@/features/providers/auth-provider';
@@ -367,7 +368,11 @@ export default async function RootLayout({
                           event (coded 403) and walks the user through a TOTP
                           step-up so the retried action passes the IAM gate. */}
                           <MfaStepUpProvider>
-                            <KortixProjectScope>{children}</KortixProjectScope>
+                            {/* SSO only: catches kortix:sso-required (coded 403)
+                            and offers to sign out and sign in through the IdP. */}
+                            <SsoRequiredProvider>
+                              <KortixProjectScope>{children}</KortixProjectScope>
+                            </SsoRequiredProvider>
                           </MfaStepUpProvider>
                         </RequestDemoProvider>
                       </BrandingProvider>

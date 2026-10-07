@@ -16,7 +16,8 @@ export async function loadPublicAppState(routeKey: string) {
     .select({ app: apps, projectMetadata: projects.metadata })
     .from(apps)
     .innerJoin(projects, eq(projects.projectId, apps.projectId))
-    .where(and(eq(apps.routeKey, routeKey), isNull(apps.deletedAt)))
+    // An App of a deleted workspace is not served (KRTX-1714).
+    .where(and(eq(apps.routeKey, routeKey), isNull(apps.deletedAt), eq(projects.status, 'active')))
     .limit(1);
   const app = loaded?.app;
   if (!loaded || !resolveFeatureFlag(loaded.projectMetadata, 'apps')) return null;
