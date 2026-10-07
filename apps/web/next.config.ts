@@ -7,6 +7,7 @@ import { PHASE_PRODUCTION_BUILD } from 'next/constants';
 import createNextIntlPlugin from 'next-intl/plugin';
 import path from 'path';
 import { buildBlumeDocs, getBlumeDocsOutputPaths } from './scripts/blume-docs.mjs';
+import { BLOG_ORIGIN } from './src/config/blog-origin';
 import { locales } from './src/i18n/catalog.mjs';
 import { SHIPPED_ICON_WEIGHTS } from './src/lib/icons/icon-config';
 import {
@@ -242,9 +243,6 @@ function resolveTurbopackFileSystemCacheForDev(): boolean {
 // to trade prod-build fidelity for speed: skip the `standalone` file-tracing pass
 // (next start never reads .next/standalone) and skip ESLint.
 const IS_PREVIEW_BUILD = process.env.KORTIX_PREVIEW_BUILD === '1';
-
-// Origin of the blog deployment that /blog is served from (see rewrites()).
-const BLOG_ORIGIN = process.env.KORTIX_BLOG_ORIGIN?.replace(/\/+$/, '');
 
 // --- Cross-origin dev / preview access -----------------------------------
 // The app is frequently reached through a proxy whose hostname differs from the
@@ -706,8 +704,11 @@ const nextConfig = (): NextConfig => ({
       // so posts ship on a push to that repo, without a release of this one.
       // Every page, asset, feed and Markdown twin lives under /blog there, so
       // these two rules carry all of it. The middleware lets /blog through
-      // untouched (i18n/routing.ts NON_PAGE_PREFIXES). Unset, as in local dev
-      // and self-hosted deployments, /blog is simply not served.
+      // untouched (i18n/routing.ts NON_PAGE_PREFIXES). KORTIX_BLOG_ORIGIN is
+      // unset on dev and self-hosted deployments, so the shared resolver
+      // (src/config/blog-origin.ts) falls back to the canonical origin: /blog
+      // serves the real blog everywhere instead of 404ing under the link the
+      // footer and navbar advertise. An explicit empty value keeps it off.
       ...(BLOG_ORIGIN
         ? [
             { source: '/blog', destination: `${BLOG_ORIGIN}/blog` },
