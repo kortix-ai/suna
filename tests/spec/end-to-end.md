@@ -466,6 +466,7 @@ Repo files are read-only over the project API; live edits happen in the sandbox 
 `FILE-9` live file CRUD inside sandbox → through proxy to the daemon's `/file` API on `:8000` (create/read/update/delete/list). Durable truth = git repo; sandbox tree is ephemeral.
 `FILE-11` Read-after-push at a branch ref. After a push creates a new branch, `GET /projects/:id/files/content?path=&ref=<branch>` and `GET /projects/:id/files?ref=<branch>` answer at once with the pushed file, although the server mirror fetched inside the last refresh interval. A pushed update of an existing file (default branch reads) keeps the interval; an unknown branch → 404 `ref not found`. Local target only (the push goes straight to the bare repository).
 `FILE-12` `GET /projects/:id/files/raw?path=&ref=` → the file's exact bytes (`git cat-file blob`), the byte-accurate read behind binary previews and downloads. **Absent `path` param → 400**; missing path → 404; a text file's bytes decode to exactly what `files/content` returns as text; ANON → 401.
+`FILE-13` **Files lists every folder** — `GET /projects/:id/files?depth=1[&path=<dir>]` returns `{ entries: [{path, type: file|directory}], truncated }` for one folder level, complete past 1,000 entries (a 1,200-file `a/` lists whole, and `z/` after it is reachable); the recursive list (no `depth`) stays capped at 1,000 and sends `X-Kortix-Truncated: 1` when cut (KRTX-1723).
 
 ---
 
