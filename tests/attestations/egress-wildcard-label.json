@@ -1,5 +1,5 @@
 {
-  "source_hash": "ff17896aa7592c0e418a43c2f581e6a1a789a7f18e3d11fb9dc10aef11a4bc10",
+  "source_hash": "a6f9982f4898abbaa95bc3a7a3310d76d50264ebf2df2a2a73010e7ddbd54cac",
   "diff_files": [
     "apps/api/src/__tests__/integration-sandbox-ownership.test.ts",
     "apps/api/src/secrets/strategy.test.ts",
@@ -8,12 +8,12 @@
     "tests/unit/local-runner.test.ts"
   ],
   "diff_hash": "b73f199c3a04e43706fee15764f22008fce8de2743efd5bc59c3dfff5b2780d1",
-  "head": "753f34dc3a8317a7319ffff1bb8e4698379e8333",
+  "head": "71a87bccc30acdd616c4629894cf44fa6b335570",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-07T05:15:18.411Z"
+  "at": "2026-10-07T05:24:48.592Z"
 }
