@@ -954,7 +954,7 @@ A session builds its [agent config](/docs/work/runtime) from every file Git trac
 To clear it:
 - Move big static assets (video, images, datasets, model weights) to object storage such as S3, R2, or GCS, or a CDN, and download them at runtime.
 - Add build output (`dist/`, `out/`) to `.gitignore`.
-- For a path that must stay in Git but that no agent reads, add `<path> export-ignore` to `.gitattributes`. The release leaves it out, and so does the check.
+- For a path that must stay in Git but that no agent reads, add `<path> export-ignore` to `.gitattributes`. The release leaves it out, and so does the check; a directory rule covers everything under it. The agent config dir and `kortix.yaml` always ship whole.
 
 ### Self-host
 
