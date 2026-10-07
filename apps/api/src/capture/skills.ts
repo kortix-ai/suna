@@ -6,7 +6,7 @@
  */
 import { captureWorkflows } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { commitRepoFile } from '../projects/surface';
+import type { commitRepoFile } from '../projects/surface';
 import { db } from '../shared/db';
 import type { WorkflowRow } from './intelligence';
 
@@ -121,6 +121,8 @@ export async function publishSkill(input: {
   by: string;
 }): Promise<{ ok: true; skill: Record<string, unknown> } | { error: string; status: number }> {
   const path = `skills/${input.name}/SKILL.md`;
+  // Loaded on use, like the route that calls this: the projects surface is a heavy import graph.
+  const { commitRepoFile } = await import('../projects/surface');
   const committed = await commitRepoFile(input.project, path, input.markdown, `capture: publish skill ${input.name} from workflow "${input.workflow.name}"`);
   if (!('ok' in committed)) return committed;
   const skill = {

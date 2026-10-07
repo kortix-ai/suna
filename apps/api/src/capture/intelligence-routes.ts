@@ -17,7 +17,6 @@ import * as C from '@kortix/api-contract';
 import { accountsRouter } from '../accounts/core/app';
 import { auth, errors, json } from '../openapi';
 import { readJsonObject } from '../shared/http-body';
-import { loadProjectForUser } from '../projects/surface';
 import { auditRead, captureAccess, isResponse, refuse, type Access, type Ctx } from './account-routes';
 import { enqueueExport, exportDownload } from './exports';
 import {
@@ -244,6 +243,9 @@ function registerCaptureWorkflowRoutes() {
       const body = c.req.valid('json');
       const name = skillSlug(body.name);
       if (name !== body.name) return refuse(c, 400, 'capture_bad_skill_name', `Skill names are lower case, a–z, 0–9 and dashes: "${name}"`);
+      // Loaded on use: the projects surface pulls the session and connector graph, which the
+      // other Capture routes (and every module that imports the accounts router) never need.
+      const { loadProjectForUser } = await import('../projects/surface');
       const loaded = await loadProjectForUser(c, body.project_id, 'write');
       if (!loaded || loaded.row.accountId !== access.accountId) return c.json({ error: 'Project not found' }, 404);
       const published = await publishSkill({ workflow: w, project: loaded.row, name, markdown: body.markdown, by: access.viewer });
