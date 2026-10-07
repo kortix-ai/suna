@@ -72,7 +72,7 @@ const suite = dockerOk ? describe : describe.skip;
 
 suite('usage breakdown reads metadata->>ledger_type (throwaway Postgres)', () => {
   beforeAll(async () => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
     const up = sh([
       'docker',
       'run',
@@ -113,7 +113,7 @@ suite('usage breakdown reads metadata->>ledger_type (throwaway Postgres)', () =>
   }, 240_000);
 
   afterAll(() => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
   });
 
   test('a production-shaped compute debit lands in compute_usd', async () => {
