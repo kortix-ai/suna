@@ -80,10 +80,10 @@ describe('listEventTypes', () => {
     });
     listPages = [
       { items: [item('A', 'poll'), item('B', 'webhook')], nextCursor: 'c2' },
-      { items: [{ ...item('C', 'other'), payload: {} }], nextCursor: null },
+      { items: [{ ...item('C', 'other'), payload: {} }, { ...item('D', undefined as unknown as string), config: { properties: { interval: { type: 'number' } } } }], nextCursor: null },
     ];
     const types = await provider.listEventTypes('github');
-    expect(types.map((t) => [t.type, t.delivery])).toEqual([['A', 'poll'], ['B', 'push'], ['C', null]]);
+    expect(types.map((t) => [t.type, t.delivery])).toEqual([['A', 'poll'], ['B', 'push'], ['C', null], ['D', 'poll']]);
     expect(types[0]).toMatchObject({ app: 'github', configSchema: { type: 'object', properties: { repo: { type: 'string' } } }, payloadSchema: { type: 'object' } });
     expect(types[2]!.payloadSchema).toBeNull();
     expect(calls[0]![1]).toMatchObject({ toolkits: ['github'] });

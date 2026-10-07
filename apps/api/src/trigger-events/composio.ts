@@ -51,6 +51,17 @@ function isNotFound(error: unknown): boolean {
   return e?.status === 404 || e?.cause?.status === 404;
 }
 
+/**
+ * `@composio/core` 0.17 drops the trigger type's `type` field ('poll' | 'webhook'),
+ * so a polling trigger is also recognised by its `interval` config property.
+ */
+function deliveryOf(type: unknown, configSchema: Record<string, unknown>): EventTypeInfo['delivery'] {
+  if (type === 'poll') return 'poll';
+  if (type === 'webhook') return 'push';
+  const properties = configSchema.properties as Record<string, unknown> | undefined;
+  return properties && 'interval' in properties ? 'poll' : null;
+}
+
 export const composioEventSource: EventSourceProvider = {
   id: 'composio',
   configured: () => composioConfigured(),
@@ -67,7 +78,7 @@ export const composioEventSource: EventSourceProvider = {
           name: item.name,
           description: item.description,
           app: item.toolkit?.slug ?? app,
-          delivery: item.type === 'poll' ? 'poll' : item.type === 'webhook' ? 'push' : null,
+          delivery: deliveryOf(item.type, asRecord(item.config)),
           configSchema: asRecord(item.config),
           payloadSchema: item.payload && Object.keys(item.payload).length ? asRecord(item.payload) : null,
         });
