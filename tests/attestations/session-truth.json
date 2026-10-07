@@ -1,5 +1,5 @@
 {
-  "source_hash": "639bb4d5952720597f73b326b2e2ba60ad4cd0df2261374045e82f9061ca7634",
+  "source_hash": "f5cff7fe7c7b35402fcc7d9c2312b01d8d0c45dc9f1b28e3158a570a0303f596",
   "diff_files": [
     ".source/browser.ts",
     ".source/dynamic.ts",
@@ -15,6 +15,8 @@
     "apps/api/src/projects/lib/session-runtime-transport.ts",
     "apps/api/src/projects/lib/session-working.test.ts",
     "apps/api/src/projects/lib/session-working.ts",
+    "apps/api/src/projects/lib/wake-ladder-authorization.test.ts",
+    "apps/api/src/projects/lib/wake-ladder-authorization.ts",
     "apps/api/src/projects/routes/session-prompts.test.ts",
     "apps/api/src/projects/routes/session-prompts.ts",
     "apps/api/src/projects/routes/session-stream.test.ts",
@@ -148,13 +150,13 @@
     "packages/sdk/src/react/use-wake-escalation-server.test.ts",
     "packages/sdk/src/react/use-wake-escalation.ts"
   ],
-  "diff_hash": "5847d1f8b451e746a5ee21713b6ff7a7b63807f250e2f96ce79e493d69c24a47",
-  "head": "f3e49fcea8b9eafce706e32d5ef6bc36b8f93908",
+  "diff_hash": "ebfe41aea6073b0289aa51151de346cb396789c4fff246aed5c5d4aadd34d8dd",
+  "head": "614151b9ac5a65f50b3237bb2ad08d8439c4057c",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-07T00:47:54.872Z"
+  "at": "2026-10-07T13:37:23.133Z"
 }
