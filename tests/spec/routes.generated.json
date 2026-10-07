@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 724,
+  "count": 727,
   "routes": [
     {
       "method": "GET",
@@ -1185,6 +1185,18 @@
     {
       "method": "GET",
       "path": "/v1/git/:project/info/refs"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/git/:project/memory/:repo/git-receive-pack"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/git/:project/memory/:repo/git-upload-pack"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/git/:project/memory/:repo/info/refs"
     },
     {
       "method": "GET",
