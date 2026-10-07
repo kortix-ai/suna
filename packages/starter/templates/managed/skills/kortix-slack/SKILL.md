@@ -33,7 +33,7 @@ slack send --channel U0123ABCD --text "Can you approve the deploy?"
 
 | `thread_binding` | Meaning | What to do |
 | --- | --- | --- |
-| `bound: true` | Replies in this thread come back to this session as your next turn. | Tell the user you asked in Slack, then end the turn. Do not poll. |
+| `bound: true` | In a channel, a reply that @mentions the bot comes back to this session as your next turn. In a DM, every reply does. | Tell the user you asked in Slack and, in a channel, to @mention the bot in the thread to answer. Then end the turn. Do not poll. |
 | `bound: false`, `reason: thread_bound_to_another_session`, `owner_session_id` | Another session of this project owns the thread. Replies go there, not here. | To take it over: `slack bind-thread --channel <channel> --thread <thread_ts> --force`. Otherwise post a NEW top-level message (`slack send --channel <id>` without `--thread`). |
 | `bound: false`, `reason: thread_owned_by_another_user` / `thread_owned_by_another_project` | Another person's session, or another project, owns the thread. `--force` cannot move it. | Post a NEW top-level message. |
 | `bound: false`, `reason: workspace_unknown` / `bind_failed` | The bind was not written. Replies will start a new session. | Run `slack bind-thread --channel <channel> --thread <thread_ts>` once. If it fails, tell the user replies will not reach this session. |
@@ -49,7 +49,7 @@ slack send --channel U0123ABCD --text "Can you approve the deploy?"
 - `--force` moves the thread to this session: `{"bound": true, "rebound_from": "<old session>"}`. It works only when both sessions belong to the same project and were started by the same user. Otherwise it fails with `status: 403` (`THREAD_OWNED_BY_ANOTHER_USER` / `THREAD_OWNED_BY_ANOTHER_PROJECT`). After a move, replies stop reaching the old session — use `--force` only when the user wants this session to own the conversation.
 
 Rules:
-- **Tell the human to reply IN THE THREAD.** A top-level message in the DM or channel is a new thread and starts a new session.
+- **Tell the human to reply IN THE THREAD.** A top-level message in the DM or channel is a new thread and starts a new session. In a channel, the reply must @mention the bot to reach the session. A DM needs no mention.
 - **`slack send --file --thread <ts>` binds that thread; a top-level `--file` post binds nothing.**
 - **Answer a bound reply with `slack send "<answer>"`.** The reply opened a Slack turn in this session, so the plain answer form works.
 </thread-binding>
