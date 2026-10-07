@@ -1,5 +1,5 @@
 {
-  "source_hash": "17f6ac7da58d12cad37bbfd2b19a6b14d0631ef8daba468d70720ca4064c0b56",
+  "source_hash": "74eeae75aa7d77ddc694833ae35f41e680ae883193c2f27cbac00738b42af56c",
   "diff_files": [
     "apps/api/eslint-suppressions.json",
     "apps/api/package.json",
@@ -223,7 +223,6 @@
     "apps/api/src/projects/git-backends/index.ts",
     "apps/api/src/projects/git.ts",
     "apps/api/src/projects/git/branches.ts",
-    "apps/api/src/projects/git/files.test.ts",
     "apps/api/src/projects/git/files.ts",
     "apps/api/src/projects/git/manifest-refresh.integration.test.ts",
     "apps/api/src/projects/git/merge.ts",
@@ -511,13 +510,13 @@
     "tests/src/flows/system.flow.ts",
     "tests/src/flows/triggers.flow.ts"
   ],
-  "diff_hash": "45e44456595799772506c3a04bf793e393f86cc637a029c000c38cffaccc0bd4",
-  "head": "0e457cbaaee6ec833711e2901a4f0e1530f3eb05",
+  "diff_hash": "faa996e09d9793ffec968a3cf7df18c2feb95954763d0a28ea9413165e4e611e",
+  "head": "2bb3d79d9eeac9b518a52b124b3ad38f2e35d021",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-07T15:31:19.977Z"
+  "at": "2026-10-07T15:51:24.601Z"
 }
