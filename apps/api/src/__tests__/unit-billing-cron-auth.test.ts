@@ -10,10 +10,13 @@ mock.module('../config', () => ({
 }));
 
 const { billingApp } = await import('../billing');
+const { Hono } = await import('hono');
+// The auth skip matches the mounted path (#9272), so mount it as app.ts does.
+const app = new Hono().route('/v1/billing', billingApp);
 
 describe('billing cron route auth', () => {
   test('rejects ordinary authenticated users before rotation code can run', async () => {
-    const res = await billingApp.request('/cron/yearly-rotation', {
+    const res = await app.request('/v1/billing/cron/yearly-rotation', {
       method: 'POST',
       headers: { Authorization: 'Bearer user-jwt' },
     });
@@ -22,7 +25,7 @@ describe('billing cron route auth', () => {
   });
 
   test('allows the internal service key for scheduler callers', async () => {
-    const res = await billingApp.request('/cron/free-tier-rotation', {
+    const res = await app.request('/v1/billing/cron/free-tier-rotation', {
       method: 'POST',
       headers: { 'X-Kortix-Internal-Key': 'internal-test-key' },
     });

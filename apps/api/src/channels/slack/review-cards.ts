@@ -128,7 +128,7 @@ export function buildReviewCardBlocks(
 
   blocks.push({
     type: 'context',
-    elements: [{ type: 'mrkdwn', text: '↩︎  Click a button, or reply in this thread.' }],
+    elements: [{ type: 'mrkdwn', text: '↩︎  Click a button, or @mention me in this thread.' }],
   });
   return blocks;
 }

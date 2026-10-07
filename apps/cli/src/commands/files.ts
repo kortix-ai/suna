@@ -176,6 +176,9 @@ export async function runFiles(argv: string[]): Promise<number> {
 
 // ── files ls ───────────────────────────────────────────────────────────────
 
+/** The most files GET /projects/:id/files returns without `depth=1`. */
+const RECURSIVE_LIST_LIMIT = 1000;
+
 async function filesLs(
   client: ApiClient,
   base: string,
@@ -200,8 +203,16 @@ async function filesLs(
     );
   }
   process.stdout.write(
-    `\n  ${C.dim}${items.length} file${items.length === 1 ? '' : 's'}${C.reset}\n\n`,
+    `\n  ${C.dim}${items.length} file${items.length === 1 ? '' : 's'}${C.reset}\n`,
   );
+  // The server's recursive list stops at RECURSIVE_LIST_LIMIT files. A full
+  // page means files may be missing: say so, never present it as complete.
+  if (items.length >= RECURSIVE_LIST_LIMIT) {
+    process.stdout.write(
+      `  ${C.dim}The list stops at 1,000 files. Narrow it with a path, or find a file with \`kortix files search <name>\`.${C.reset}\n`,
+    );
+  }
+  process.stdout.write('\n');
   return 0;
 }
 

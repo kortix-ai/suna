@@ -1,5 +1,5 @@
 import { backendApi } from '../../http/api-client';
-import { getSupabaseAccessTokenWithRetry } from '../../http/auth';
+import { sendChecked } from '../../http/transport';
 import { platformConfig } from '../../http/config';
 import type { ProjectSessionStatus } from './sessions';
 import { unwrap } from './shared';
@@ -325,9 +325,8 @@ export async function getCostSummary(
 //
 // `fetchCostExportCsv` below owns the whole authenticated flow — attach the
 // token, fetch, return a Blob — the same pattern `fetchProjectArchive` in
-// `./files.ts` already uses for the project-archive download (it calls
-// `getSupabaseAccessTokenWithRetry()` itself, attaches the header itself,
-// and returns a `Blob`). `costExportUrl` stays exported alongside it as the
+// `./files.ts` already uses for the project-archive download (both go
+// through `sendChecked()`: bearer, deadline, one 401 replay, `ApiError`). `costExportUrl` stays exported alongside it as the
 // pure URL builder, for a caller that wants the URL without immediately
 // fetching it (e.g. to hand to a different authenticated transport, or to
 // display/copy) — removing it now would break the export this task already
@@ -396,10 +395,9 @@ export interface CostExportResult {
 
 /**
  * Fetch a CSV export as a `Blob`, owning the whole authenticated flow —
- * mirrors `fetchProjectArchive` in `./files.ts`: resolves the current token
- * via `getSupabaseAccessTokenWithRetry()`, attaches
- * `Authorization: Bearer <token>` itself, and throws with the response body
- * on a non-OK response.
+ * mirrors `fetchProjectArchive` in `./files.ts`: sends through `sendChecked()`
+ * (bearer, deadline, one 401 replay) and throws an `ApiError` with the status
+ * and the response body on a non-OK response.
  */
 export function fetchCostExportCsv(
   kind: 'projects',
@@ -424,15 +422,7 @@ export async function fetchCostExportCsv(
       ? costExportUrl('projects', options as ProjectCostExportOptions)
       : costExportUrl('sessions', options as SessionCostExportOptions);
 
-  const token = await getSupabaseAccessTokenWithRetry();
-  const res = await fetch(url, {
-    method: 'GET',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(text || `Failed to export CSV (HTTP ${res.status})`);
-  }
+  const res = await sendChecked(url, { method: 'GET' }, { timeoutMs: 10 * 60_000 }, 'Failed to export CSV');
 
   const rowCapHeader = res.headers.get('x-kortix-row-cap');
   const parsedRowCap = rowCapHeader != null ? Number(rowCapHeader) : NaN;

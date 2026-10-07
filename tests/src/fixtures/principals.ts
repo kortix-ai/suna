@@ -26,7 +26,7 @@ export interface Provisioned {
   supabaseUserIds: string[];
 }
 
-const PASSWORD = 'Ke2e-passw0rd-Aa1!';
+export const PASSWORD = 'Ke2e-passw0rd-Aa1!';
 
 export interface SynthUser {
   user: AdminUser;

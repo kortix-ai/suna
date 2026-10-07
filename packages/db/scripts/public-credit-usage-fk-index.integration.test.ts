@@ -221,7 +221,7 @@ describe.skipIf(!dockerAvailable)(
     afterAll(() => {
       if (stagingDir) rmSync(stagingDir, { recursive: true, force: true });
       if (!containerStarted) return;
-      Bun.spawnSync(['docker', 'rm', '-f', container], { stdout: 'ignore', stderr: 'ignore' });
+      Bun.spawnSync(['docker', 'rm', '-f', '-v', container], { stdout: 'ignore', stderr: 'ignore' });
     });
 
     test('the migration file exists exactly once', () => {

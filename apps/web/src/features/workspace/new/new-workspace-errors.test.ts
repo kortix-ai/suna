@@ -189,7 +189,9 @@ describe('/new failure states: the plan cap offers the upgrade dialog (dev, 2026
   // its own flag and the page answers it with the upgrade dialog.
   test('the hook exposes limitReached, derived from the shared isProjectLimitError', () => {
     expect(hook).toContain("limitReached = status === 'error' && isProjectLimitError(lastError)");
-    expect(hook).toContain('limitReached };');
+    // `phase` (KRTX-1543) returns beside it: the streamed provisioning phase
+    // the handoff renders.
+    expect(hook).toContain('canRetry, limitReached, phase };');
   });
 
   test('messageFor keeps the server text for the cap — it already says what to do', () => {

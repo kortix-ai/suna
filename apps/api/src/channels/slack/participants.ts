@@ -439,7 +439,7 @@ export async function decideSlackThreadJoin(input: {
   const sessionUrl = sessionWebUrl(config.FRONTEND_URL, session.projectId, input.sessionId);
   if (token) {
     const text = input.decision === 'approved'
-      ? `You've been approved for this Kortix session. Send your message again and I'll continue.`
+      ? `You've been approved for this Kortix session. Mention me again and I'll continue.`
       : 'The session owner declined your request for this Kortix session.';
     await postEphemeral(
       token,
@@ -452,7 +452,7 @@ export async function decideSlackThreadJoin(input: {
           text: {
             type: 'mrkdwn',
             text: input.decision === 'approved'
-              ? `*Approved.*\nSend your message again in this thread. You can also <${sessionUrl}|open the session in Kortix>.`
+              ? `*Approved.*\nMention me again in this thread. You can also <${sessionUrl}|open the session in Kortix>.`
               : '*Request declined.*\nStart a new thread if you want Kortix to work with you separately.',
           },
         },

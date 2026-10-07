@@ -22,9 +22,10 @@ import {
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
+  tokenRejectedLine,
 } from '../command-helpers.ts';
 import { appendGitExcludeEntries } from '../git-exclude.ts';
-import { authHeaderArgs } from '../git-ops.ts';
+import { authGitEnv } from '../git-ops.ts';
 import { configureProjectGitAuth, resolveProjectGitTarget } from '../project-git.ts';
 import {
   clearLink,
@@ -63,13 +64,16 @@ Subcommands:
                        instead of the active one.
   unset                Clear the global default project. --host <name> clears
                        that host's instead.
-  link [<id>]          Bind cwd to a remote project (writes .kortix/link.json)
+  link [<id>]          Bind cwd to a remote project (writes .kortix/link.json).
+                       --host <name> binds a project on that logged-in host,
+                       authenticating with its stored key.
   unlink               Remove .kortix/link.json from cwd
   open [<id>]          Open the dashboard URL for one project
   clone [<id>] [dir]   Clone through the authenticated Kortix git proxy. Falls
                        back to your local Git credentials for direct BYO repos.
-  rm [<id>]            Archive a project (defaults to the linked one).
-                       --purge also deletes its managed git repo (irreversible).
+  rm [<id>]            Delete a project and its Kortix-managed git repo
+                       (defaults to the linked one). Repositories you
+                       connected yourself are never touched.
                        -y / --yes skips the confirmation.
   features [ls]        List every feature flag with its effective state for the
                        project (Settings → Feature flags). (--json)
@@ -181,8 +185,17 @@ export async function runProjects(argv: string[]): Promise<number> {
       }
       return projectsUnset(hostArg);
     }
-    case 'link':
-      return projectsLink(rest[0]);
+    case 'link': {
+      const restCopy = [...rest];
+      let hostArg: string | undefined;
+      try {
+        hostArg = takeFlagValue(restCopy, ['--host']);
+      } catch (err) {
+        process.stderr.write(`${status.err((err as Error).message)}\n`);
+        return 2;
+      }
+      return projectsLink(restCopy.find((a) => !a.startsWith('-')), hostArg);
+    }
     case 'unlink':
       return projectsUnlink();
     case 'open': {
@@ -546,6 +559,17 @@ async function projectsRename(argv: string[]): Promise<number> {
 
 // ── Project-scoped CLI tokens ──────────────────────────────────────────────
 
+/** The API hides session-bound tokens from the CLI token list (they are the
+ *  runtime's per-session KORTIX_TOKEN, minted and revoked with the session —
+ *  a person never creates one). The count keeps their provenance visible
+ *  instead of a silent hole in the list. */
+function writeSessionTokenNote(count: number): void {
+  if (count <= 0) return;
+  process.stdout.write(
+    `${C.dim}  Not listed: ${count} session token${count === 1 ? '' : 's'} — minted by the runtime, one per session (the sandbox's KORTIX_TOKEN); each lives and dies with its session.${C.reset}\n`,
+  );
+}
+
 const CLI_TOKENS_HELP = help`Usage: kortix projects cli-tokens [ls | new | rm <token-id>] [options]
 
 Project-scoped CLI tokens (kortix_pat_…). A token is bound to ONE project —
@@ -553,7 +577,8 @@ the API rejects it on every other project. Session sandboxes use their
 session-bound KORTIX_TOKEN instead.
 
 Subcommands:
-  ls                   List this project's tokens. (--json)
+  ls                   List this project's CLI tokens. Session tokens are not
+                       listed (the count below the table). (--json)
   new                  Mint one. The secret is printed ONCE and never again.
   rm <token-id>        Revoke one.
 
@@ -581,6 +606,12 @@ interface CliTokenRow {
   last_used_at: string | null;
   created_at: string;
   revoked_at: string | null;
+}
+
+/** `session_tokens` is absent from an older API's answer; treat that as 0. */
+interface CliTokenList {
+  items: CliTokenRow[];
+  session_tokens?: number;
 }
 
 interface CreatedCliToken extends CliTokenRow {
@@ -620,13 +651,14 @@ async function projectsCliTokens(argv: string[]): Promise<number> {
 
   if (sub === 'ls' || sub === 'list') {
     try {
-      const { items } = await ctx.client.get<{ items: CliTokenRow[] }>(path);
+      const { items, session_tokens: sessionTokens = 0 } = await ctx.client.get<CliTokenList>(path);
       if (json) {
         emitJson(items);
         return 0;
       }
       if (items.length === 0) {
         process.stdout.write(`${status.info('No CLI tokens on this project.')}\n`);
+        writeSessionTokenNote(sessionTokens);
         return 0;
       }
       const idW = Math.max(8, ...items.map((t) => t.token_id.length));
@@ -641,9 +673,9 @@ async function projectsCliTokens(argv: string[]): Promise<number> {
           `  ${pad(t.token_id, idW)}  ${pad(t.name, nameW)}  ${pad(t.status, 8)}  ${C.faded}${used}${C.reset}\n`,
         );
       }
-      process.stdout.write(
-        `\n  ${C.dim}${items.length} token${items.length === 1 ? '' : 's'}${C.reset}\n\n`,
-      );
+      process.stdout.write(`\n  ${C.dim}${items.length} token${items.length === 1 ? '' : 's'}${C.reset}\n`);
+      writeSessionTokenNote(sessionTokens);
+      process.stdout.write('\n');
       return 0;
     } catch (err) {
       return surfaceApiError(err);
@@ -1106,12 +1138,16 @@ async function projectsClone(
     }
   }
 
-  const args = target.token
-    ? [...authHeaderArgs(target.repoUrl, target.token, target.username), 'clone', target.repoUrl]
-    : ['clone', target.repoUrl];
+  const args = ['clone', target.repoUrl];
   if (destination) args.push(destination);
 
-  const cloned = spawnSync('git', args, { stdio: 'inherit' });
+  const cloned = spawnSync('git', args, {
+    stdio: 'inherit',
+    // The token travels in the environment, never in argv (see `authGitEnv`).
+    env: target.token
+      ? { ...process.env, ...authGitEnv(target.repoUrl, target.token, target.username) }
+      : undefined,
+  });
   if (cloned.error) {
     process.stderr.write(`${status.err(`Could not start git: ${cloned.error.message}`)}\n`);
     return 1;
@@ -1340,7 +1376,8 @@ async function projectsInfo(arg?: string, json = false, hostArg?: string): Promi
   if (!located) return 1;
   const p = located.located.project;
   if (json) {
-    emitJson(p);
+    // The API's wire name for the id is `project_id`; scripts read `.id`.
+    emitJson({ id: p.project_id, ...p });
     return 0;
   }
   process.stdout.write('\n');
@@ -1486,9 +1523,21 @@ async function projectsUnset(hostArg?: string): Promise<number> {
   return 0;
 }
 
-async function projectsLink(arg?: string): Promise<number> {
-  const auth = requireAuth();
-  if (!auth) return 1;
+async function projectsLink(arg?: string, hostArg?: string): Promise<number> {
+  // --host names a logged-in host other than the active one: its stored
+  // credential serves the request, like `projects use` — never the ambient
+  // session token (the sandbox env token is scoped to the session's own
+  // project, which turned `link <id> --host <other>` into a 403 about a
+  // cross-project principal).
+  const auth = hostArg ? loadAuthForHost(hostArg) : requireAuth();
+  if (!auth?.token) {
+    if (hostArg) {
+      process.stderr.write(
+        `${status.err(`Host "${hostArg}" is not logged in.`)} Run ${C.cyan}kortix login --host ${hostArg}${C.reset}.\n`,
+      );
+    }
+    return 1;
+  }
 
   // Refuse to scatter `.kortix/link.json` into random directories. A
   // project is only "Kortix-linkable" if it already has a `.kortix/`
@@ -1543,7 +1592,9 @@ async function projectsLink(arg?: string): Promise<number> {
     return 1;
   }
 
-  const hostName = activeHostName() ?? 'default';
+  // A --host link binds that host: the link record must name it so later
+  // commands in this directory reach the project through its credential.
+  const hostName = hostArg ?? activeHostName() ?? 'default';
   saveLink({
     project_id: target.project_id,
     account_id: target.account_id,
@@ -1600,7 +1651,6 @@ interface RmResult {
 
 async function projectsRm(args: string[]): Promise<number> {
   const rest = [...args];
-  const purge = takeFlagBool(rest, ['--purge']);
   const yes = takeFlagBool(rest, ['-y', '--yes']);
   let hostArg: string | undefined;
   try {
@@ -1626,9 +1676,7 @@ async function projectsRm(args: string[]): Promise<number> {
   const { client, project } = located.located;
 
   if (!yes) {
-    const msg = purge
-      ? `Archive ${C.bold}${project.name}${C.reset} AND permanently delete its managed git repo? ${C.red}This cannot be undone.${C.reset}`
-      : `Archive ${C.bold}${project.name}${C.reset}? (the git repo is kept; pass --purge to delete it)`;
+    const msg = `Delete ${C.bold}${project.name}${C.reset} and its Kortix-managed git repo? ${C.red}This cannot be undone.${C.reset}`;
     const ok = await confirm(msg, false);
     if (!ok) {
       process.stdout.write(`${C.dim}Cancelled.${C.reset}\n`);
@@ -1638,7 +1686,7 @@ async function projectsRm(args: string[]): Promise<number> {
 
   let result: RmResult;
   try {
-    result = await client.delete<RmResult>(`/projects/${id}${purge ? '?purge=true' : ''}`);
+    result = await client.delete<RmResult>(`/projects/${id}`);
   } catch (err) {
     return surface(err);
   }
@@ -1647,15 +1695,11 @@ async function projectsRm(args: string[]): Promise<number> {
   if (loadLink()?.project_id === id) clearLink();
 
   process.stdout.write(
-    `${status.ok(`${purge ? 'Purged' : 'Archived'} ${C.bold}${project.name}${C.reset}`)}\n`,
-  );
-  if (purge) {
-    process.stdout.write(
-      result.repo_deleted
+    `${status.ok(`Deleted ${C.bold}${project.name}${C.reset}`)}\n` +
+      (result.repo_deleted
         ? `  ${C.dim}managed git repo deleted${C.reset}\n`
-        : `  ${C.dim}no managed repo to delete (bring-your-own repos are left untouched)${C.reset}\n`,
-    );
-  }
+        : `  ${C.dim}no managed repo to delete (bring-your-own repos are left untouched)${C.reset}\n`),
+  );
   return 0;
 }
 
@@ -1664,9 +1708,7 @@ async function projectsRm(args: string[]): Promise<number> {
 function surface(err: unknown): number {
   if (err instanceof ApiError) {
     if (err.status === 401) {
-      process.stderr.write(
-        `${status.err('Token rejected. Run `kortix login` to re-authenticate.')}\n`,
-      );
+      process.stderr.write(`${status.err(tokenRejectedLine(err.message))}\n`);
     } else {
       process.stderr.write(`${status.err(`HTTP ${err.status}: ${err.message}`)}\n`);
     }

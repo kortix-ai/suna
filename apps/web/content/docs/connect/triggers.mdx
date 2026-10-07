@@ -48,7 +48,7 @@ kortix ship
 kortix triggers ls
 ```
 
-The list shows each trigger's slug, state, and when it last fired. To fire it now instead of waiting for the schedule, run `kortix triggers fire daily-digest`.
+The list shows each trigger's slug, state, and when it last fired. To fire it now instead of waiting for the schedule, run `kortix triggers fire daily-digest`. The command waits for the run's outcome and exits non-zero with the failure text when the run fails; `--wait <dur>` bounds the wait (default `90s`).
 </Step>
 
 </Steps>
@@ -246,6 +246,8 @@ sandbox can retain the previous value.
 
 A `reuse` or `keyed` session whose history no longer fits the model, even after automatic compaction, is retired. The next fire starts a fresh session. Any other failure keeps the session for the next fire.
 
+A frequent cron trigger that should not re-send an ever-growing history can roll its session over on a calendar boundary: `session_key: "merge-{{ cron.scheduled_date }}"` keeps one serialized session per UTC day, and `{{ cron.scheduled_hour }}` one per UTC hour.
+
 ## Failed runs
 
 When a run that a trigger started ends with an error, Kortix records it on the trigger:
@@ -296,7 +298,7 @@ Every fire also gets `{{ trigger.slug }}`, `{{ trigger.type }}`, and `{{ trigger
 
 | Source | Variables |
 | --- | --- |
-| cron | `{{ cron.schedule }}`, `{{ cron.timezone }}`, `{{ cron.scheduled_for }}` (the slot the fire is for), `{{ cron.claimed_at }}` (when the scheduler picked it up), `{{ cron.last_scheduled_for }}` (the previous slot; empty on the first fire). No top-level `fired_at`. |
+| cron | `{{ cron.schedule }}`, `{{ cron.timezone }}`, `{{ cron.scheduled_for }}` (the slot the fire is for), `{{ cron.claimed_at }}` (when the scheduler picked it up), `{{ cron.last_scheduled_for }}` (the previous slot; empty on the first fire), `{{ cron.scheduled_date }}` (UTC `YYYY-MM-DD` of the slot), `{{ cron.scheduled_hour }}` (UTC `YYYY-MM-DDTHH`). No top-level `fired_at`. |
 | webhook | `{{ fired_at }}`, `{{ body.* }}` (JSON-parsed; falls back to `{{ body.raw }}` if the body does not parse), `{{ headers.content_type }}`, `{{ headers.user_agent }}`, `{{ headers.forwarded_for }}`. |
 | monitor | `{{ line.* }}` — the stdout line, JSON-parsed; a line that does not parse renders as `{{ line.raw }}`. Plus `{{ monitor.slug }}`, `{{ monitor.seq }}`, `{{ monitor.emitted_at }}`, and `{{ monitor.kind }}` (`event` or `lifecycle`). |
 | manual (dashboard "fire now" or the `fire` endpoint) | `{{ fired_at }}`, `{{ source }}` (`manual`), `{{ actor }}`, `{{ message.text }}`, `{{ message.source }}`. |
@@ -313,6 +315,8 @@ Fires on `POST /v1/webhooks/projects/{projectId}/{slug}`. Kortix checks the requ
 
 1. **HMAC signature** — header `X-Kortix-Signature: sha256=<hmac>` (the `sha256=` prefix is optional) or the GitHub-compatible `X-Hub-Signature-256`. HMAC-SHA256 over the raw request body, using the secret named by `secret_env`.
 2. **Static token**, only when no signature header is present, for senders that cannot HMAC-sign a body. Send the secret as `X-Kortix-Token: <secret>`, `Authorization: Bearer <secret>`, or `Authorization: Basic <base64(user:secret)>` (the password half is the token).
+
+`kortix triggers info <slug>` prints this scheme — the header, the algorithm, and a sample request signed with a `$SECRET` placeholder — and `--json` carries it as `webhook_signing`. The dashboard's trigger sheet shows the same sample request.
 
 | Status | Meaning |
 | --- | --- |
@@ -345,4 +349,6 @@ A project-level switch stops every trigger in the project at once, independent o
 - The scheduler polls roughly every second (default 1,000 ms; configurable via `KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS`). Cron precision is best-effort to the second, even though the expression has a seconds field.
 - Each project allows 3 triggered sessions provisioning at once, by default. A fire past that returns `queued` (`202`) instead of failing, and runs once one of them finishes provisioning. There is no cap on how many sessions run at once.
 - A manual or webhook fire has a 45-second timeout. Loading the manifest has a 30-second timeout.
-- A cron fire is keyed on the due schedule slot, so a fire that timed out but actually landed does not duplicate on retry. A webhook fire is keyed on the delivery ID header, or a hash of the body and signature when the sender sends no ID.
+- A cron fire is keyed on the due schedule slot, so a fire that timed out but actually landed does not duplicate on retry.
+- A webhook delivery runs once per event. Kortix reads the event ID from `X-Kortix-Delivery-Id`, `X-GitHub-Delivery`, `X-Gitlab-Event-UUID`, `Linear-Delivery`, `webhook-id` or `svix-id`, in that order; a retry with the same ID answers `202 { status: "deduped" }` and runs nothing. `X-Request-Id` is not an event ID. Without an event ID, an identical body and signature within 10 minutes counts as the same event; after that it runs again, so a job that posts the same static body on every deploy runs on every deploy. Send `X-Kortix-Delivery-Id` with a new value per event (the sample request uses `$(uuidgen)`).
+- A delivery whose earlier attempt failed for good (for example, the account was out of credits) or whose session was deleted runs again when redelivered with the same ID. A duplicate does not change `last_fired_at`.

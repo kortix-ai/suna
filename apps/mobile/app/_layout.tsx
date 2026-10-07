@@ -63,10 +63,10 @@ import { installHapticsGate } from '@/lib/haptics';
 import { installLoopbackRewrite } from '@/lib/utils/loopback-xhr';
 import { resolveLocalUrl } from '@/lib/utils/resolve-local-url';
 import Constants from 'expo-constants';
-import { configureKortix } from '@kortix/sdk';
+import { createKortix } from '@kortix/sdk';
 import EventSource from 'react-native-sse';
 import { createSseTransport } from '@/lib/session/sse-transport';
-import { API_URL, getAuthToken } from '@/api/config';
+import { API_URL, kortixGetToken } from '@/api/config';
 import {
   clearWebRegistrationHandoff,
   consumeAuthCallbackState,
@@ -87,14 +87,13 @@ if (__DEV__ && Platform.OS !== 'web' && typeof XMLHttpRequest === 'function') {
   installLoopbackRewrite(XMLHttpRequest, resolveLocalUrl);
 }
 
-// Wire the SDK's single app-specific seam once at startup, before any screen
-// mounts. `backendUrl`/`getToken` reuse mobile's own env resolution and
-// Supabase token source (api/config.ts) unchanged — this just injects them
-// into @kortix/sdk so `lib/projects/projects-client.ts` and friends can call
-// through to `backendApi`/`projects-client` instead of hand-rolling fetch.
-configureKortix({
+// The app's one @kortix/sdk client, created at startup before any screen
+// mounts. `backendUrl`/`getToken` reuse mobile's env resolution and Supabase
+// token source (api/config.ts). Screens call the SDK's standalone functions,
+// which read this same process-wide config.
+createKortix({
   backendUrl: API_URL,
-  getToken: getAuthToken,
+  getToken: kortixGetToken,
   clientVersion: Constants.expoConfig?.version ? `mobile/${Constants.expoConfig.version}` : undefined,
   // The live session stream arrives over `react-native-sse` (an XHR wire); the
   // SDK keeps reconnect, resume and the reducer (lib/session/sse-transport.ts).

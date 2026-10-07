@@ -36,16 +36,22 @@ printf '%s\n' "$push_refs" | sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check
 # made with --no-verify.
 printf '%s\n' "$push_refs" | sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-binary-dumps.sh" push
 
+# No new migration that sorts before origin/dev's newest: checkOrder on every
+# deployed DB refuses it and the next deploy stops at migrate.
+printf '%s\n' "$push_refs" | sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-migration-order.sh"
+
 # Tests ran locally on the files this PR changed. `pnpm test` writes
 # tests/attestations/<branch>.json; verify-attestation.mjs finds the file the
 # pushed commit's diff adds (else <pushed branch>.json, else the legacy
 # tests/test-attestation.json) and recomputes the PR diff
-# (git diff origin/main...HEAD) from the pushed commit, so a merge of origin/main
+# (git diff origin/dev...HEAD) from the pushed commit, so a merge of origin/dev
 # that touches other files keeps it green. Sanctioned skips: db-suites may be
 # skipped-no-db (no Docker) and packages may be skipped-sandbox-image (a Kortix
-# sandbox image) — fine for a PR branch, never for main (--strict). The merge
-# gate holds a DB-touching PR on the db skip. Deletions, tags, and scratch/*
-# branches are exempt.
+# sandbox image) — fine for a PR branch, never for dev (--strict). A diff that
+# touches packages/db must have db-suites=pass: verify-attestation.mjs rejects the
+# skip. This hook is the ONLY enforcement: the attestation is an unsigned local
+# file, no CI job reads it, and `git push --no-verify` bypasses it. It catches a
+# forgotten run, not a forged one. Deletions, tags, and scratch/* branches are exempt.
 root=$(cd "$(dirname "$0")/.." && pwd)
 bad=$(printf '%s\n' "$push_refs" | while read -r _ local_sha remote_ref _; do
   [ -n "$local_sha" ] && [ "$local_sha" != "$zero" ] || continue
@@ -53,13 +59,13 @@ bad=$(printf '%s\n' "$push_refs" | while read -r _ local_sha remote_ref _; do
   [ "${remote_ref#refs/heads/}" != "$remote_ref" ] || continue
   [ "${remote_ref#refs/heads/scratch/}" = "$remote_ref" ] || continue
   strict=""
-  [ "$remote_ref" = refs/heads/main ] && strict="--strict"
+  [ "$remote_ref" = refs/heads/dev ] && strict="--strict"
   node "$root/tests/verify-attestation.mjs" verify --rev "$local_sha" \
     --branch "${remote_ref#refs/heads/}" $strict >&2 || echo "$remote_ref"
 done)
 if [ -n "$bad" ]; then
   echo "pre-push: the test attestation is missing, stale, or red — run \`pnpm test\` and commit tests/attestations/ before pushing." >&2
-  echo "  Rejected: $bad. Do not bypass with --no-verify: the merge gate runs \`pnpm test:verify\` on the PR head." >&2
+  echo "  Rejected: $bad. Do not bypass with --no-verify: no CI job re-checks the attestation, so the hook is the only gate." >&2
   exit 1
 fi
 

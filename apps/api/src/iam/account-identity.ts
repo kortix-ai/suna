@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { invalidateIamCacheForUser } from './cache-invalidation';
 import { emailTrustedSql } from './email-trust';
@@ -25,7 +25,17 @@ export async function resolveAccountIdentityByEmail(
   const normalizedEmail = email.trim().toLowerCase();
   if (!normalizedEmail) return { userId: null, ambiguous: false };
 
-  const rows = (await db.execute(sql`
+  const rows = (await db.execute(accountIdentityCandidatesQuery(accountId, normalizedEmail))) as unknown as Array<{
+    user_id: string;
+  }>;
+  if (rows.length === 0) return { userId: null, ambiguous: false };
+  if (rows.length > 1) return { userId: null, ambiguous: true };
+  return { userId: rows[0]?.user_id ?? null, ambiguous: false };
+}
+
+/** The candidate query behind `resolveAccountIdentityByEmail`; `normalizedEmail` is trimmed and lower-case. */
+export function accountIdentityCandidatesQuery(accountId: string, normalizedEmail: string): SQL {
+  return sql`
     WITH candidates AS (
       SELECT u.id::text AS user_id,
         CASE
@@ -46,7 +56,12 @@ export async function resolveAccountIdentityByEmail(
         AND lower(trim(directory.user_name))=${normalizedEmail}
       LEFT JOIN kortix.account_memberships membership
         ON membership.account_id=${accountId}::uuid AND membership.user_id=u.id
-      WHERE lower(trim(u.email))=${normalizedEmail}
+      -- GoTrue's own lookup shape, so users_instance_id_email_idx serves it.
+      -- lower(trim(email)) matched no index and read all of auth.users per call
+      -- (410k rows in prod). GoTrue stores emails trimmed and writes the nil
+      -- instance id; NULL covers rows written outside GoTrue.
+      WHERE lower(u.email::text)=${normalizedEmail}
+        AND (u.instance_id='00000000-0000-0000-0000-000000000000'::uuid OR u.instance_id IS NULL)
         AND ${emailTrustedSql(sql`u`, accountId)}
     ), best AS (
       SELECT min(priority) AS priority FROM candidates
@@ -55,10 +70,7 @@ export async function resolveAccountIdentityByEmail(
     FROM candidates, best
     WHERE candidates.priority=best.priority
     ORDER BY candidates.user_id
-  `)) as unknown as Array<{ user_id: string }>;
-  if (rows.length === 0) return { userId: null, ambiguous: false };
-  if (rows.length > 1) return { userId: null, ambiguous: true };
-  return { userId: rows[0]?.user_id ?? null, ambiguous: false };
+  `;
 }
 
 async function transferProviderConnections(

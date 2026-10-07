@@ -57,7 +57,7 @@
  */
 import { creditAccounts, creditLedger } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
-import { InsufficientCreditsError } from '../../errors';
+import { InsufficientCreditsError, WalletUnavailableError } from '../../errors';
 import { db } from '../../shared/db';
 import { isDuplicateCreditGrantError } from './duplicate-error';
 import { assertRpcDebitLedgerType } from '../ledger-type-honesty';
@@ -192,8 +192,11 @@ async function debit(input: DebitInput): Promise<DebitResult> {
       p_idempotency_key => ${requestId(input.key)}::text
     )`);
   } catch (error) {
+    // A transport or SQL fault is not a refusal. Do not read the balance back
+    // through the pool that just failed, and do not tell a funded account it
+    // has no credit.
     console.error('[Wallet] debit failed:', error);
-    throw new InsufficientCreditsError(await currentBalance(input.accountId), input.amount, 'Deduction error');
+    throw new WalletUnavailableError();
   }
 
   if (!result.success) {

@@ -4,6 +4,7 @@
 
 export * from './accounts';
 export * from './projects';
+export * from './skills';
 export * from './github';
 export * from './git-backend';
 export * from './access';
@@ -17,6 +18,7 @@ export * from './prompt-attachments';
 export * from './git-history';
 export * from './change-requests';
 export * from './sessions';
+export * from './session-prompt-actions';
 export * from './triggers';
 export * from './session-sandbox';
 export * from './model-defaults';
@@ -45,6 +47,7 @@ export * from './setup-links';
 export * from './marketplace-catalog';
 export * from './templates';
 export * from './apps';
+export * from './notifications';
 
 // Cross-cutting types that originally lived in this module. Re-exported
 // explicitly (not the internal `unwrap` helper) to keep the surface identical.

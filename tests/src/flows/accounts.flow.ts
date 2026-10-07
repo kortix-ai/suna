@@ -304,15 +304,47 @@ flow(
 
 flow(
   'MEM-5',
-  { domain: 'accounts', routes: ['POST /v1/accounts/:accountId/leave'] },
+  { domain: 'accounts', routes: [
+    'POST /v1/accounts/:accountId/leave',
+    'POST /v1/accounts/:accountId/iam/groups',
+    'POST /v1/accounts/:accountId/iam/groups/:groupId/members',
+    'GET /v1/accounts/:accountId/iam/groups/:groupId/members',
+  ] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const member = await team.addMember('member');
+    let groupId = '';
+    await ctx.step('the member is in a group', async () => {
+      await enableEnterpriseDemo(ctx, team.id);
+      const created = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/groups',
+        { name: ctx.fixtures.name('leaver') },
+        { params: { accountId: team.id } },
+      );
+      created.status(201);
+      groupId = created.json<any>().group_id;
+      (await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/groups/:groupId/members',
+        { userIds: [member.userId!] },
+        { params: { accountId: team.id, groupId } },
+      )).status(200).body().has('$.added', 1);
+    });
     await ctx.step('member leaves → ok', async () => {
       const r = await ctx.client
         .as(member)
         .post('/v1/accounts/:accountId/leave', {}, { params: { accountId: team.id } });
       r.status(200);
+    });
+    // KRTX-1722: leaving kept the group rows, so a re-invite restored every
+    // group grant. Removal and SCIM already delete them.
+    await ctx.step('the leaver is in no group of the account', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/groups/:groupId/members', {
+        params: { accountId: team.id, groupId },
+      });
+      r.status(200);
+      if (r.json<any>().members.some((row: any) => row.user_id === member.userId)) {
+        throw new Error('The member who left remains in the group');
+      }
     });
     await ctx.step('non-member leave → 404', async () => {
       const r = await ctx.client
@@ -443,6 +475,8 @@ flow(
       'POST /v1/accounts/:accountId/members',
       'GET /v1/projects/:projectId/access',
       'POST /v1/account-invites/:inviteId/accept',
+      'DELETE /v1/accounts/:accountId/members/:userId',
+      'GET /v1/accounts/:accountId',
     ],
   },
   async (ctx) => {
@@ -554,6 +588,26 @@ flow(
         if (!row) throw new Error('accepted invitee missing from project access list');
         if (row.effective_project_role !== 'manager')
           throw new Error(`expected manager, got ${row.effective_project_role}`);
+
+        // A current member re-accepting the same invite still heals (200).
+        const again = await ctx.client
+          .as(addressee)
+          .post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } });
+        again.status(200);
+
+        // After removal the accepted invite must not re-create the membership.
+        const removed = await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/:accountId/members/:userId', {
+          params: { accountId: team.id, userId: addressee.userId! },
+        });
+        removed.status(200);
+        const replay = await ctx.client
+          .as(addressee)
+          .post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } });
+        replay.status(410);
+        const after = await ctx.client
+          .as(addressee)
+          .get('/v1/accounts/:accountId', { params: { accountId: team.id } });
+        after.status([403, 404]);
       },
     );
 
