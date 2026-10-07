@@ -93,6 +93,7 @@ const buttons: any[] = []; // every mounted design-system Button's props
 const viewProps: any[] = []; // every mounted react-native View's props
 let composerRenders = 0; // how many times SessionChatInput rendered
 let gestureAreaProps: any = null; // KeyboardGestureArea's latest props
+let safeInsets = { top: 0, bottom: 0, left: 0, right: 0 }; // useSafeAreaInsets' answer
 /** keyboard-controller's `KeyboardEvents` listeners, by event name. */
 const keyboardListeners = new Map<string, Set<() => void>>();
 const keyboardEvent = (name: string) => keyboardListeners.get(name)?.forEach((cb) => cb());
@@ -320,7 +321,7 @@ const moduleMocks: Record<string, Record<string, any>> = {
     interpolate: () => 0,
   },
   'react-native-safe-area-context': {
-    useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+    useSafeAreaInsets: () => safeInsets,
   },
   nativewind: { useColorScheme: () => ({ colorScheme: 'light' }) },
   'expo-linear-gradient': { LinearGradient: (props: any) => props.children ?? null },
@@ -749,6 +750,7 @@ beforeEach(() => {
   composerProps = null;
   composerRenders = 0;
   gestureAreaProps = null;
+  safeInsets = { top: 0, bottom: 0, left: 0, right: 0 };
   keyboardListeners.clear();
   wakingComposerProps = null;
   markdownActionsValue = null;
@@ -1524,6 +1526,51 @@ describe('SessionPage render work', () => {
     });
     expect(gestureAreaProps.offset).toBe(120);
     expect(composerRenders).toBe(renders);
+  });
+
+  test('the composer floats over the list, and the list ends above it', async () => {
+    safeInsets = { top: 0, bottom: 34, left: 0, right: 0 };
+    seedTurns(['one']);
+    await renderPage();
+    const composer = tree!.root.find(
+      (node) => typeof node.type === 'function' && node.props.inputNativeID === `composer-input-${SID}`,
+    );
+    const ancestors = (node: any) => {
+      const chain: any[] = [];
+      for (let at = node.parent; at; at = at.parent) chain.push(at);
+      return chain;
+    };
+    const isOverlay = (node: any) => node.type === RNView && node.props.style?.position === 'absolute';
+    // The composer and the fade sit in an absolute overlay, not below the list.
+    const overlay = ancestors(composer).find(isOverlay);
+    expect(overlay).toBeTruthy();
+    expect(overlay.props.style).toMatchObject({ top: 0, bottom: 0 });
+    expect(overlay.props.pointerEvents).toBe('box-none');
+    const fade = tree!.root.find((node) => typeof node.type === 'function' && Array.isArray(node.props.colors));
+    expect(fade.props.pointerEvents).toBe('none');
+    expect(ancestors(fade)).toContain(overlay);
+
+    // The list's end padding: the measured composer area plus the inset.
+    const composerArea = ancestors(composer).filter((node) => node.type === RNView && node.props.onLayout)[1];
+    await act(async () => {
+      composerArea.props.onLayout({ nativeEvent: { layout: { height: 150.4 } } });
+    });
+    const paddingHeight = () =>
+      tree!.root.findAll((node) => node.type === RNView && node.props.style?.height === 184).length;
+    expect(paddingHeight()).toBe(1);
+    // The room counts the covered height: 600 − 184 − 200 − 24 = 192.
+    await layoutTranscript(576, [200]);
+    expect(spacerHeight()).toBe(192);
+
+    // The keyboard covers the home indicator: the inset leaves the padding.
+    await act(async () => {
+      keyboardEvent('keyboardWillShow');
+    });
+    expect(tree!.root.findAll((node) => node.type === RNView && node.props.style?.height === 150).length).toBe(1);
+    await act(async () => {
+      keyboardEvent('keyboardWillHide');
+    });
+    expect(paddingHeight()).toBe(1);
   });
 
   test('while the keyboard moves a shrinking room waits for it to stop, a growing room commits at once', async () => {

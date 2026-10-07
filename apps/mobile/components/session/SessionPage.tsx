@@ -286,10 +286,10 @@ const MAINTAIN_FIRST_VISIBLE = { minIndexForVisible: 0 } as const;
 const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 1 } as const;
 /**
  * iOS: the list draws past its bottom edge. The keyboard is Liquid Glass and
- * shows what lies under it; the list ends at the composer, so without this
+ * shows what lies under it; the list ends at the keyboard, so without this
  * only the flat page is under the keyboard and it reads as a solid panel.
- * The later rows now draw under the composer (opaque, `bottomBackground`) and
- * under the keyboard, as in Messages. Layout and scroll geometry do not change.
+ * The later rows now draw under the keyboard, as in Messages. Layout and
+ * scroll geometry do not change.
  */
 const LIST_DRAWS_UNDER_KEYBOARD = Platform.OS === 'ios' ? ({ overflow: 'visible' } as const) : undefined;
 
@@ -332,6 +332,31 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     bottomAreaHeightRef.current = height;
     setGestureOffsetRef.current?.(height);
   }, []);
+  // The composer floats over the list: the list runs to the bottom edge and
+  // scrolls behind it. The list's end padding is the height the composer
+  // covers: the composer area (pill, queue, chips, input) plus the
+  // home-indicator inset while the keyboard is down. Like the gesture offset,
+  // it changes on every line wrap, so only `ListEndPadding` renders again.
+  const composerAreaHeightRef = useRef(0);
+  const keyboardShownRef = useRef(KeyboardController.isVisible());
+  const bottomInsetRef = useRef(bottomInset);
+  bottomInsetRef.current = bottomInset;
+  const endPaddingRef = useRef(0);
+  const setEndPaddingRef = useRef<((height: number) => void) | null>(null);
+  const syncEndPadding = useCallback(() => {
+    const next = composerAreaHeightRef.current + (keyboardShownRef.current ? 0 : bottomInsetRef.current);
+    if (next === endPaddingRef.current) return;
+    endPaddingRef.current = next;
+    setEndPaddingRef.current?.(next);
+  }, []);
+  useEffect(syncEndPadding, [bottomInset, syncEndPadding]);
+  const handleComposerAreaLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      composerAreaHeightRef.current = Math.round(e.nativeEvent.layout.height);
+      syncEndPadding();
+    },
+    [syncEndPadding],
+  );
   const { sandboxUrl } = useSandboxContext();
   // Declared early: `handleStop` (below) needs it for a failed-abort toast.
   const toast = useToast();
@@ -1066,8 +1091,9 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // applies the result to the FlatList.
   //
   // FACT 1 — the room: the footer spacer under the newest reached turn is
-  //   max(24, viewport − span(anchor turn → content end) − topOffset), so that
-  //   turn can sit `topOffset` below the top of the list.
+  //   max(24, viewport − end padding − span(anchor turn → content end) −
+  //   topOffset), so that turn can sit `topOffset` below the top of the list.
+  //   The end padding is the height the floating composer covers.
   // FACT 2 — the end: because of the room, `content − viewport` IS that turn
   //   at the top while the answer fits, and the answer's tail once it does not.
   // THE RULE — follow: while on, every layout change puts the list at the end.
@@ -1232,7 +1258,9 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       });
       // A turn in the span has not laid out yet: keep the room until it has.
       if (span === null) return { measured: false, anchorChanged: false };
-      next = Math.round(roomUnderNewestTurn(viewportHeight, span, topOffset));
+      // The composer covers the end of the list: the room is sized in the
+      // part above it.
+      next = Math.round(roomUnderNewestTurn(viewportHeight - endPaddingRef.current, span, topOffset));
       const anchorId = list[index].userMessage.info.id;
       anchorChanged = previous !== null && previous.id !== anchorId;
       lastAnchorRef.current = {
@@ -1293,9 +1321,10 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     });
   }, []);
 
-  // The keyboard's start and end events bound its motion. The end sets the
-  // room the motion held back, then settles once. The fallback ends a motion
-  // whose end event does not come.
+  // The keyboard's start and end events bound its motion. The start moves the
+  // home-indicator inset in or out of the end padding, as the composer's own
+  // inset follows the keyboard. The end sets the room the motion held back,
+  // then settles once. The fallback ends a motion whose end event does not come.
   useEffect(() => {
     let fallback: ReturnType<typeof setTimeout> | null = null;
     const stop = () => {
@@ -1314,9 +1343,14 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       if (fallback) clearTimeout(fallback);
       fallback = setTimeout(stop, KEYBOARD_MOTION_MAX_MS);
     };
+    const startTo = (shown: boolean) => () => {
+      start();
+      keyboardShownRef.current = shown;
+      syncEndPadding();
+    };
     const subscriptions = [
-      KeyboardEvents.addListener('keyboardWillShow', start),
-      KeyboardEvents.addListener('keyboardWillHide', start),
+      KeyboardEvents.addListener('keyboardWillShow', startTo(true)),
+      KeyboardEvents.addListener('keyboardWillHide', startTo(false)),
       KeyboardEvents.addListener('keyboardDidShow', stop),
       KeyboardEvents.addListener('keyboardDidHide', stop),
     ];
@@ -1325,7 +1359,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       if (fallback) clearTimeout(fallback);
       keyboardMovingRef.current = false;
     };
-  }, [scheduleSettle]);
+  }, [scheduleSettle, syncEndPadding]);
 
   const cancelGlide = useCallback(() => {
     const glide = glideRef.current;
@@ -2104,6 +2138,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
               </View>
               {/* The room (FACT 1): lets the newest turn pin near the top. */}
               <View onLayout={handleSpacerLayout} style={{ height: room }} />
+              {/* The height the floating composer covers. */}
+              <ListEndPadding heightRef={endPaddingRef} setHeightRef={setEndPaddingRef} />
             </View>
           }
           onScrollToIndexFailed={handleScrollToIndexFailed}
@@ -2112,22 +2148,30 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
         </ConnectorHandoffContext.Provider>
         </ComposerGestureArea>
 
-        <ScrollToBottomButton visible={showScrollButton} onPress={jumpToEnd} />
-
+        {/* The composer floats over the list, at the bottom of this view: the
+            keyboard's `padding` above lifts the view, so the composer rides
+            on the keyboard. `box-none`: taps reach the list everywhere but
+            on the composer. */}
+        <View pointerEvents="box-none" style={COMPOSER_OVERLAY}>
+        <View pointerEvents="box-none" style={FILL}>
         {heroMounted ? <FreshSessionHero opacity={heroOpacity} visible={showFreshHero} /> : null}
-      </View>
 
-      {/* Fade gradient above input — only when textarea is shown */}
-      {!hasQuestion && (
+        {/* The fade into the composer: chat text never meets the input. */}
         <LinearGradient
           colors={isDark ? [withAlpha(THEME.dark.background, 0), withAlpha(THEME.dark.background, 1)] : [withAlpha(THEME.light.background, 0), withAlpha(THEME.light.background, 1)]}
-          style={{ height: 24, marginTop: -24, zIndex: 1 }}
+          style={COMPOSER_FADE}
           pointerEvents="none"
         />
-      )}
 
-      {/* Opaque: the list draws under this block on iOS (LIST_DRAWS_UNDER_KEYBOARD). */}
-      <View style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
+        <ScrollToBottomButton visible={showScrollButton} onPress={jumpToEnd} />
+        </View>
+
+      {/* Opaque, the page's own background below the fade: the list scrolls
+          under the composer and, on iOS, under the keyboard
+          (LIST_DRAWS_UNDER_KEYBOARD). */}
+      <Reanimated.View style={[bottomAreaStyle, { backgroundColor: isDark ? THEME.dark.background : THEME.light.background }]}>
+      {/* The composer area, without the inset: the list's end padding. */}
+      <View onLayout={handleComposerAreaLayout}>
       {/* Sandbox health pill — full-width row immediately above the chat
           input. Self-hides (returns null) when the sandbox is reachable,
           so it takes no layout space the rest of the time. */}
@@ -2140,7 +2184,6 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       )}
 
       {/* Bottom area — question prompt OR chat input, above the safe area. */}
-      <Reanimated.View style={bottomAreaStyle}>
         <View onLayout={handleBottomAreaLayout}>
         {hasQuestion && activeQuestion ? (
           <QuestionPrompt
@@ -2191,7 +2234,9 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
           />
         )}
         </View>
+      </View>
       </Reanimated.View>
+        </View>
       </View>
 
       <ConnectProviderSheet
@@ -2224,6 +2269,27 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
 export const SessionPage = React.memo(SessionPageImpl);
 
 const FILL = { flex: 1 } as const;
+/** Over the whole message area: the composer sits at its bottom. */
+const COMPOSER_OVERLAY = { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 } as const;
+/** The 24pt fade at the bottom of the area above the composer. */
+const COMPOSER_FADE = { position: 'absolute', right: 0, bottom: 0, left: 0, height: 24 } as const;
+
+/**
+ * The list's end padding: the height the floating composer covers. The height
+ * is this component's own state, set through `setHeightRef`, like
+ * `ComposerGestureArea`: a new height renders only this component.
+ */
+function ListEndPadding({
+  heightRef,
+  setHeightRef,
+}: {
+  heightRef: React.RefObject<number>;
+  setHeightRef: React.RefObject<((height: number) => void) | null>;
+}) {
+  const [height, setHeight] = useState(() => heightRef.current);
+  setHeightRef.current = setHeight;
+  return <View style={{ height }} />;
+}
 
 /**
  * The list's `KeyboardGestureArea`, offset by the composer's height. The height
