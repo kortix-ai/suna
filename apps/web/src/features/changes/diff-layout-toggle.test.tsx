@@ -22,7 +22,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import React, { act, useState } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
+import { createRoot } from 'react-dom/client';
 import { Window } from 'happy-dom';
 
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
@@ -39,7 +39,8 @@ globals.cancelAnimationFrame = (id: number) => clearTimeout(id);
 // @pierre/diffs touches DOM classes by bare global name (SVGElement, …) and
 // happy-dom keeps them on its Window, not on globalThis.
 for (const key of Object.getOwnPropertyNames(win)) {
-  if (/^[A-Z]/.test(key) && !(key in globals)) globals[key] = (win as Record<string, unknown>)[key];
+  if (/^[A-Z]/.test(key) && !(key in globals))
+    globals[key] = (win as unknown as Record<string, unknown>)[key];
 }
 
 import { ChangeList, DiffLayoutToggle, useChangeExpansion } from './change-list';
@@ -89,6 +90,21 @@ function Harness({ entries = ENTRIES }: { entries?: ChangeEntry[] }) {
   );
 }
 
+/**
+ * The mount, exactly like the session panel and the proposal dialog create
+ * theirs: the happy-dom node crosses into the lib.dom world once, at the
+ * cast, and every helper downstream takes the lib.dom handle (navbar.test.tsx's
+ * `lib.element` rule). The root is created outside `act`, so `root.unmount()`
+ * typechecks as a real `Root`, never the `null` initializer a callback
+ * assignment would narrow to.
+ */
+function mountHarness() {
+  const raw = win.document.createElement('div');
+  win.document.body.appendChild(raw);
+  const host = raw as unknown as HTMLElement;
+  return { host, root: createRoot(host) };
+}
+
 const click = (el: Element) =>
   el.dispatchEvent(
     new win.MouseEvent('click', { bubbles: true, cancelable: true }) as unknown as Event,
@@ -136,13 +152,10 @@ describe('DiffLayoutToggle through a real click', () => {
   test(
     'stacked → side by side → stacked re-renders the diff each way',
     async () => {
-    const host = win.document.createElement('div');
-    win.document.body.appendChild(host);
-    let root: Root | null = null;
-    await act(async () => {
-      root = createRoot(host);
-      root.render(<Harness />);
-    });
+      const { host, root } = mountHarness();
+      await act(async () => {
+        root.render(<Harness />);
+      });
 
     // Both controls exist, labelled for the tooltip and for assistive tech.
     const stacked = toggleButton(host, 'Stacked');
@@ -184,7 +197,7 @@ describe('DiffLayoutToggle through a real click', () => {
     expect(stacked.getAttribute('aria-pressed')).toBe('true');
     await waitFor(host, () => columns(host)[0] === 'data-unified', 'unified column again');
 
-    root?.unmount();
+    root.unmount();
     },
     30_000,
   );
@@ -192,11 +205,8 @@ describe('DiffLayoutToggle through a real click', () => {
   test(
     'a new file (a one-sided patch) also switches to side by side, and back',
     async () => {
-      const host = win.document.createElement('div');
-      win.document.body.appendChild(host);
-      let root: Root | null = null;
+      const { host, root } = mountHarness();
       await act(async () => {
-        root = createRoot(host);
         root.render(<Harness entries={NEW_FILE_ENTRIES} />);
       });
 
@@ -232,7 +242,7 @@ describe('DiffLayoutToggle through a real click', () => {
         'the new-file unified column again',
       );
 
-      root?.unmount();
+      root.unmount();
     },
     30_000,
   );

@@ -1,0 +1,15 @@
+{
+  "source_hash": "c8e03e69a58ca935dc2ab9ed6d86a02a522bbcf1da7a45c32f35153be462291d",
+  "diff_files": [
+    "apps/web/src/features/changes/diff-layout-toggle.test.tsx"
+  ],
+  "diff_hash": "fd7376e8924c4de6bd3bd71da0d4367b8478cda08285ca151f5e45e153182d14",
+  "head": "d8d5db52d1943c942a5e7b286ac4cb2c207dbac8",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-07T12:32:04.960Z"
+}
