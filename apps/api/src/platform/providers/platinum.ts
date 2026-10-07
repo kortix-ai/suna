@@ -58,6 +58,7 @@ import { createHash } from 'node:crypto';
 import { SANDBOX_VERSION, config } from '../../config';
 import { currentInstanceId } from '../../projects/instance-scope';
 import { isOpencodePort } from '../../shared/opencode-ports';
+import { logger } from '../../lib/logger';
 import { platinumJson, platinumJsonResponse, type PlatinumHttpError } from '../../shared/platinum';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
 import { serviceKeyForExternalId } from '../service-key';
@@ -926,7 +927,7 @@ export class PlatinumProvider implements SandboxProvider {
       );
       const unavailable = body.regions?.unavailable ?? [];
       if (unavailable.length) {
-        console.warn(
+        logger.warn(
           `[platinum] running-box scan missed regions: ${unavailable.map((r) => r.region).join(',')}`,
         );
       }
