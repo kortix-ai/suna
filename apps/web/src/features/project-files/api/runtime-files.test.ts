@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { configureKortix } from '@kortix/sdk';
 
-import { readFile, readFileAsBlob } from './runtime-files';
+import { listFiles, readFile, readFileAsBlob, searchFiles } from './runtime-files';
 
 // Byte-level responses for /files/raw and JSON for /files/content, per-URL.
 let routes: Record<string, { status: number; body: BodyInit; contentType: string }> = {};
@@ -115,4 +115,73 @@ test('readFileAsBlob returns the exact bytes of a binary file', async () => {
 test('a 404 from the raw route surfaces as a not-found error', async () => {
   routes['/files/raw'] = { status: 404, body: 'File not found', contentType: 'text/plain' };
   await expect(readFile('P1', 'main', '/workspace/logo.png')).rejects.toThrow(/File not found|404/i);
+});
+
+// KRTX-1723: the tree was built from the recursive list, which stops at 1,000
+// files, so every folder that sorts after file 1,000 was missing.
+test('listFiles reads one folder level (depth=1) and maps folders and files', async () => {
+  routes['/projects/P1/files'] = {
+    status: 200,
+    body: JSON.stringify({
+      entries: [
+        { path: 'src/lib', type: 'directory' },
+        { path: 'src/index.ts', type: 'file' },
+      ],
+      truncated: false,
+    }),
+    contentType: 'application/json',
+  };
+  const nodes = await listFiles('P1', 'main', '/workspace/src');
+  const url = new URL(calls[0]);
+  expect(url.searchParams.get('depth')).toBe('1');
+  expect(url.searchParams.get('path')).toBe('src');
+  expect(url.searchParams.get('ref')).toBe('main');
+  expect(nodes).toEqual([
+    { name: 'lib', path: '/workspace/src/lib', absolute: '/workspace/src/lib', type: 'directory', ignored: false },
+    { name: 'index.ts', path: '/workspace/src/index.ts', absolute: '/workspace/src/index.ts', type: 'file', ignored: false },
+  ]);
+});
+
+test('listFiles at the root lists a folder that sorts after 1,000 files', async () => {
+  routes['/projects/P1/files'] = {
+    status: 200,
+    body: JSON.stringify({
+      entries: [
+        { path: 'README.md', type: 'file' },
+        { path: 'a', type: 'directory' },
+        { path: 'z', type: 'directory' },
+      ],
+      truncated: false,
+    }),
+    contentType: 'application/json',
+  };
+  const nodes = await listFiles('P1', 'main', '/workspace');
+  expect(new URL(calls[0]).searchParams.has('path')).toBe(false);
+  expect(nodes.map((n) => `${n.type}:${n.path}`)).toEqual([
+    'directory:/workspace/a',
+    'directory:/workspace/z',
+    'file:/workspace/README.md',
+  ]);
+});
+
+// KRTX-1723: the Files page had no search; a file past the old 1,000-file cut
+// could be neither seen nor found.
+test('searchFiles asks the server by filename and returns workspace paths', async () => {
+  routes['/projects/P1/files/search'] = {
+    status: 200,
+    body: JSON.stringify({ query: 'last', ref: 'main', content_search: false, results: [{ path: 'z/last.txt' }] }),
+    contentType: 'application/json',
+  };
+  const paths = await searchFiles('P1', 'main', ' last ', { limit: 30 });
+  const url = new URL(calls[0]);
+  expect(url.searchParams.get('q')).toBe('last');
+  expect(url.searchParams.get('ref')).toBe('main');
+  expect(url.searchParams.get('limit')).toBe('30');
+  expect(url.searchParams.has('content')).toBe(false);
+  expect(paths).toEqual(['/workspace/z/last.txt']);
+});
+
+test('searchFiles sends nothing for a blank query', async () => {
+  expect(await searchFiles('P1', 'main', '   ')).toEqual([]);
+  expect(calls).toHaveLength(0);
 });

@@ -20,16 +20,16 @@ const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
  *  - `@kortix/sdk/internal/*` — three browser-only internal modules apps/web
  *                            must share with the SDK. None of them can be
  *                            re-exported from the isomorphic root:
- *      - `idb-sync-cache`    sign-out clears the per-user cached session
- *                            transcripts out of IndexedDB.
+ *      - `idb-sync-cache`    the device keeps saved session copies in
+ *                            IndexedDB (`lib/device-caches.ts`), and
+ *                            sign-out clears them (`reset-client-state.ts`).
  *      - `diagnostics-store` the SDK event stream writes LSP diagnostics into
  *                            this zustand store; the file viewer reads it
  *                            through the `@/stores/diagnostics-store` shim.
- *      - `managed-storage`   the SDK registers its disposable caches here;
- *                            quota reclaim and the boot prune go through the
+ *      - `managed-storage`   disposable caches register here; quota
+ *                            reclaim and the boot prune go through the
  *                            `@/lib/storage/managed-storage` shim.
- *                            Each is imported in exactly one file, with an
- *                            inline eslint disable. The other four zustand
+ *                            Each import carries an inline eslint disable. The other four zustand
  *                            stores under `internal/` stay forbidden.
  */
 const CANONICAL_SDK_ENTRIES = new Set([
