@@ -9,10 +9,17 @@ describe('resolveSitePath', () => {
   test('exact files, directory indexes and clean URLs', () => {
     expect(resolve('/')).toEqual({ path: 'index.html', status: 200 });
     expect(resolve('/logo.png')).toEqual({ path: 'logo.png', status: 200 });
-    expect(resolve('/docs')).toEqual({ path: 'docs/index.html', status: 200 });
+    expect(resolve('/docs')).toEqual({ redirect: '/docs/' });
     expect(resolve('/docs/')).toEqual({ path: 'docs/index.html', status: 200 });
     expect(resolve('/about')).toEqual({ path: 'about.html', status: 200 });
     expect(resolve('/assets/index-D8j1YYcB.js')).toEqual({ path: 'assets/index-D8j1YYcB.js', status: 200 });
+  });
+
+  test('a directory without its trailing slash redirects, built from the normalized path only', () => {
+    const dirs = (path: string) => resolveSitePath(path, (p) => ['evil.test/index.html', 'a b/index.html'].includes(p), { spa: false, navigation: true });
+    expect(dirs('//evil.test')).toEqual({ redirect: '/evil.test/' });
+    expect(dirs('/a%20b')).toEqual({ redirect: '/a%20b/' });
+    expect(dirs('/a%20b/')).toEqual({ path: 'a b/index.html', status: 200 });
   });
 
   test('a SPA serves its shell for page navigations, never for missing assets', () => {
@@ -202,7 +209,7 @@ describe('publishStaticSite containment', () => {
         accountId: '00000000-0000-4000-a000-000000000001',
         sourceDir: source,
         root: 'link/site',
-        storage: { put: async (key) => { reads.push(key); }, get: async () => null, remove: async () => {} },
+        storage: { put: async (key) => { reads.push(key); }, open: async () => null, remove: async () => {} },
       })).rejects.toThrow(/static root resolves outside the artifact/);
       expect(reads).toEqual([]);
     } finally {
@@ -211,3 +218,104 @@ describe('publishStaticSite containment', () => {
     }
   });
 });
+
+describe('serveStaticDeployment against a fake storage', () => {
+  const ACCOUNT = '00000000-0000-4000-a000-000000000011';
+  const DEPLOYMENT = '00000000-0000-4000-a000-000000000012';
+  const MIB = 1024 * 1024;
+
+  async function setup() {
+    const { siteCaches, resetStaticSiteCaches, blobKey } = await import('./static-site');
+    resetStaticSiteCaches();
+    const large = new Uint8Array(5 * MIB).map((_, i) => 97 + (i % 26));
+    const small = new TextEncoder().encode('<!doctype html><link rel=stylesheet href=style.css>');
+    const files = [
+      { path: 'data.json', sha256: 'a'.repeat(64), sizeBytes: large.byteLength, contentType: 'application/json' },
+      { path: 'docs/index.html', sha256: 'b'.repeat(64), sizeBytes: small.byteLength, contentType: 'text/html; charset=utf-8' },
+    ];
+    siteCaches.manifests.set(DEPLOYMENT, new Map(files.map((file) => [file.path, file])), 1);
+    const objects = new Map([[blobKey(ACCOUNT, 'a'.repeat(64)), large], [blobKey(ACCOUNT, 'b'.repeat(64)), small]]);
+    const opens: Array<{ key: string; range?: { start: number; end: number } }> = [];
+    let fail = false;
+    const storage = {
+      put: async () => {},
+     
+      remove: async () => {},
+      open: async (key: string, range?: { start: number; end: number }) => {
+        opens.push({ key, range });
+        if (fail) throw new Error('storage down');
+        const bytes = objects.get(key);
+        if (!bytes) return null;
+        const slice = range ? bytes.subarray(range.start, range.end + 1) : bytes;
+        return new Blob([slice]).stream();
+      },
+    };
+    const { serveStaticDeployment } = await import('./static-site');
+    const serve = (path: string, init: RequestInit = {}) => serveStaticDeployment({
+      request: new Request(`https://app.test${path}`, init),
+      url: new URL(`https://app.test${path}`),
+      accountId: ACCOUNT,
+      deploymentId: DEPLOYMENT,
+      spa: false,
+      publicApp: true,
+      storage,
+    });
+    return { serve, opens, large, setFail: (value: boolean) => { fail = value; } };
+  }
+
+  test('a 5 MiB text file streams uncompressed with its exact length', async () => {
+    const { serve, opens, large } = await setup();
+    const response = await serve('/data.json', { headers: { 'accept-encoding': 'br, gzip' } });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-encoding')).toBeNull();
+    expect(response.headers.get('content-length')).toBe(String(large.byteLength));
+    expect(response.body).toBeInstanceOf(ReadableStream);
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(large);
+    expect(opens).toEqual([{ key: `${ACCOUNT}/${'a'.repeat(64)}`, range: undefined }]);
+  });
+
+  test('a range on a large file asks storage for only those bytes', async () => {
+    const { serve, opens, large } = await setup();
+    const response = await serve('/data.json', { headers: { range: 'bytes=1048576-1048585' } });
+    expect(response.status).toBe(206);
+    expect(response.headers.get('content-range')).toBe(`bytes 1048576-1048585/${large.byteLength}`);
+    expect(response.headers.get('content-length')).toBe('10');
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(large.subarray(1048576, 1048586));
+    expect(opens[0]!.range).toEqual({ start: 1048576, end: 1048585 });
+  });
+
+  test('HEAD answers from the manifest and reads no blob', async () => {
+    const { serve, opens, large } = await setup();
+    const response = await serve('/data.json', { method: 'HEAD' });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-length')).toBe(String(large.byteLength));
+    expect(opens).toEqual([]);
+  });
+
+  test('a directory URL without a slash redirects 308 and keeps the query', async () => {
+    const { serve, opens } = await setup();
+    const response = await serve('/docs?tab=2');
+    expect(response.status).toBe(308);
+    expect(response.headers.get('location')).toBe('/docs/?tab=2');
+    expect(response.headers.get('cache-control')).toBe('public, max-age=0, must-revalidate');
+    expect(response.headers.get('cloudflare-cdn-cache-control')).toBe('no-store');
+    expect(opens).toEqual([]);
+    expect((await serve('/docs/')).status).toBe(200);
+  });
+
+  test('a 304 carries vary: accept-encoding', async () => {
+    const { serve } = await setup();
+    const response = await serve('/docs/', { headers: { 'if-none-match': `W/"${'b'.repeat(64)}"` } });
+    expect(response.status).toBe(304);
+    expect(response.headers.get('vary')).toBe('accept-encoding');
+  });
+
+  test('a storage failure answers 503 with retry-after', async () => {
+    const { serve, setFail } = await setup();
+    setFail(true);
+    const response = await serve('/data.json');
+    expect(response.status).toBe(503);
+    expect(response.headers.get('retry-after')).toBe('5');
+  });
+});
+

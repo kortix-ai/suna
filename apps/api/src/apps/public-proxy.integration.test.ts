@@ -176,6 +176,8 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
       });
       const response = await handleAppPublicRequest(request);
       expect(response?.status).toBe(403);
+      // The gate's own answers are never kept by the Cloudflare cache in front of the API host.
+      expect(response?.headers.get('cloudflare-cdn-cache-control')).toBe('no-store');
       expect(await response?.json()).toEqual({ error: 'Invalid App edge signature' });
     } finally {
       if (previous === undefined) delete process.env.KORTIX_APPS_ALLOW_DIRECT_EDGE;

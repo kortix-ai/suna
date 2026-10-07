@@ -60,6 +60,11 @@ Build here, then deploy the output directory itself as the path
   output bloats the repository every session clones (`kortix validate` warns).
 - A static App holds at most 20,000 files of at most 50 MiB each. A larger
   site fails with `invalid_site`.
+- A static publish never serves `.git/`, `.env*` or `.DS_Store`, at any depth,
+  even when an SDK or API upload contains them. The `site_published` log line
+  counts what it left out.
+- A symlink in the upload that resolves outside it fails the deploy
+  (`escapes the build context`). Links inside the upload are kept.
 
 Static caching: HTML and every other file revalidate on each request (ETag,
 `304`). Build output with a content hash in its name is immutable for a year:
@@ -67,7 +72,9 @@ Static caching: HTML and every other file revalidate on each request (ETag,
 `index-D8j1YYcB.js`. Never overwrite such a file in place; let the bundler
 rename it. A public App's immutable files are also cached at the Kortix edge.
 After a switch to private or a delete, edge copies stay reachable by exact URL
-for up to 1 hour.
+for up to 1 hour. A directory URL without its slash (`/docs`) redirects `308`
+to `/docs/`, so relative links in `docs/index.html` resolve. Files over 4 MiB
+are served uncompressed and support `Range` requests.
 
 Before building generated output, inspect `package.json` and the lockfile. Run
 the declared `build` script with the repository's package manager. Do not assume

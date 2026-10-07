@@ -5,6 +5,7 @@ import {
   accounts,
   appDeploymentEvents,
   appDeployments,
+  appSiteBlobs,
   changeRequests,
   connectorCalls,
   connectorConnections,
@@ -48,6 +49,7 @@ const ORPHAN_ACCOUNT_TABLES = [
   accountDeletionRequests,
   appDeploymentEvents,
   appDeployments,
+  appSiteBlobs,
   changeRequests,
   connectorConnections,
   impersonationGrants,
@@ -116,11 +118,13 @@ const { config } = await import('../../config');
 config.SUPABASE_JWT_LIVENESS_TTL_MS = 30000;
 const liveness = await import('../../shared/jwt-liveness');
 mock.module('../../shared/supabase', () => ({
-  getSupabase: () => ({ auth: { admin: { deleteUser: async (id: string) => {
-    if (deleteUserError) return { error: deleteUserError };
-    deletedUsers.push(id);
-    return { error: null };
-  } } } }),
+  getSupabase: () => ({
+    auth: { admin: { deleteUser: async (id: string) => {
+      if (deleteUserError) return { error: deleteUserError };
+      deletedUsers.push(id);
+      return { error: null };
+    } } },
+  }),
 }));
 
 /**

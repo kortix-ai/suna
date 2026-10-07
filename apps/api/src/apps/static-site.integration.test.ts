@@ -16,6 +16,7 @@ import { createBuildLog } from './build-log';
 import { retireSupersededDeployments, rollBackActiveDeployment, sweepAppRetention } from './retention';
 import {
   blobKey,
+  deleteAccountSiteObjects,
   MAX_COMPRESS_BYTES,
   publishStaticSite,
   reclaimAppSiteBlobs,
@@ -37,22 +38,29 @@ const APP_ID = '00000000-0000-4000-a000-00000000d903';
 const ARTIFACT_ID = '00000000-0000-4000-a000-00000000d904';
 const dep = (n: number) => `00000000-0000-4000-a000-0000000d${String(910 + n).padStart(4, '0')}`;
 
-function memoryStorage(): SiteStorage & { objects: Map<string, Uint8Array>; puts: number } {
+function memoryStorage() {
   const objects = new Map<string, Uint8Array>();
   const store = {
     objects,
     puts: 0,
-    async put(key: string, bytes: Uint8Array) {
+    opens: 0,
+    async put(key: string, body: Blob) {
       store.puts += 1;
-      objects.set(key, bytes);
+      objects.set(key, new Uint8Array(await body.arrayBuffer()));
     },
-    async get(key: string) {
-      return objects.get(key) ?? null;
+    async open(key: string, range?: { start: number; end: number }) {
+      store.opens += 1;
+      const bytes = objects.get(key);
+      if (!bytes) return null;
+      return new Blob([(range ? bytes.subarray(range.start, range.end + 1) : bytes) as Uint8Array<ArrayBuffer>]).stream();
+    },
+    async list(prefix: string) {
+      return [...objects.keys()].filter((key) => key.startsWith(`${prefix}/`)).slice(0, 1000);
     },
     async remove(keys: string[]) {
       for (const key of keys) objects.delete(key);
     },
-  };
+  } satisfies SiteStorage & Record<string, unknown>;
   return store;
 }
 
@@ -135,7 +143,7 @@ withDb('static App hosting', () => {
     });
     roots.push(v1);
     const first = await publishStaticSite({ deploymentId: dep(1), accountId: ACCOUNT_ID, sourceDir: v1, storage });
-    expect(first).toEqual({ files: 4, bytes: first.bytes, uploadedBlobs: 3, reusedBlobs: 0 });
+    expect(first).toEqual({ files: 4, bytes: first.bytes, uploadedBlobs: 3, reusedBlobs: 0, skippedFiles: 0 });
     expect(storage.objects.size).toBe(3);
 
     const v2 = await site({
@@ -241,46 +249,129 @@ withDb('static App hosting', () => {
     const missing = await serve('/assets/missing.js');
     expect(missing.status).toBe(404);
     expect(missing.headers.get('cloudflare-cdn-cache-control')).toBe('no-store');
-    storage.objects.delete(blobKey(ACCOUNT_ID, createHash('sha256').update('0123456789').digest('hex')));
+    const lostSha = createHash('sha256').update('0123456789').digest('hex');
+    storage.objects.delete(blobKey(ACCOUNT_ID, lostSha));
     resetStaticSiteCaches();
     const gone = await serve('/video.bin');
     expect(gone.status).toBe(503);
     expect(gone.headers.get('cloudflare-cdn-cache-control')).toBe('no-store');
     expect(gone.headers.get('retry-after')).toBe('5');
+    // The ledger row of the lost blob is dropped, so the next publish uploads it again.
+    expect(await db.select().from(appSiteBlobs)
+      .where(and(eq(appSiteBlobs.accountId, ACCOUNT_ID), eq(appSiteBlobs.sha256, lostSha)))).toEqual([]);
   });
 
-  test('a body over 4 MiB is served uncompressed, and concurrent requests share one storage read', async () => {
+  test('a body over 4 MiB streams uncompressed; concurrent requests for a small file share one storage read', async () => {
     await seedDeployments(1, 'building');
     const storage = memoryStorage();
-    let gets = 0;
-    const get = storage.get.bind(storage);
-    storage.get = async (key: string) => {
-      gets += 1;
-      await Bun.sleep(100); // a storage download takes time; requests arrive meanwhile
-      return get(key);
+    const open = storage.open.bind(storage);
+    storage.open = async (key: string, range?: { start: number; end: number }) => {
+      await Bun.sleep(100); // a storage read takes time; requests arrive meanwhile
+      return open(key, range);
     };
     const large = 'x'.repeat(MAX_COMPRESS_BYTES + 1);
-    const root = await site({ 'data.json': large });
+    const root = await site({ 'data.json': large, 'small.js': 'y'.repeat(2048) });
     roots.push(root);
     await publishStaticSite({ deploymentId: dep(1), accountId: ACCOUNT_ID, sourceDir: root, storage });
-    const serve = () =>
+    const serve = (path: string) =>
       serveStaticDeployment({
-        request: new Request('https://app.test/data.json?x=1', { headers: { 'accept-encoding': 'br, gzip' } }),
-        url: new URL('https://app.test/data.json?x=1'),
+        request: new Request(`https://app.test${path}?x=1`, { headers: { 'accept-encoding': 'br, gzip' } }),
+        url: new URL(`https://app.test${path}?x=1`),
         accountId: ACCOUNT_ID,
         deploymentId: dep(1),
         spa: false,
         publicApp: true,
         storage,
       });
-    const responses = await Promise.all([serve(), serve(), serve()]);
-    expect(gets).toBe(1);
-    for (const response of responses) {
-      expect(response.status).toBe(200);
-      expect(response.headers.get('content-encoding')).toBeNull();
-      expect(response.headers.get('content-length')).toBe(String(large.length));
+    const small = await Promise.all([serve('/small.js'), serve('/small.js'), serve('/small.js')]);
+    expect(storage.opens).toBe(1);
+    for (const response of small) expect(response.headers.get('content-encoding')).toBe('br');
+    const response = await serve('/data.json');
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-encoding')).toBeNull();
+    expect(response.headers.get('content-length')).toBe(String(large.length));
+    expect(await response.text()).toBe(large);
+  });
+
+  test('publish leaves out .git, .env* and .DS_Store, and uploads large files at most two at a time from disk', async () => {
+    await seedDeployments(1, 'building');
+    const storage = memoryStorage();
+    let inFlight = 0;
+    let peak = 0;
+    const put = storage.put.bind(storage);
+    storage.put = async (key: string, body: Blob) => {
+      // The publish hands storage a file reference, never bytes it read.
+      expect(body).not.toBeInstanceOf(Uint8Array);
+      if (body.size > MAX_COMPRESS_BYTES) {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await Bun.sleep(30);
+        inFlight -= 1;
+      }
+      return put(key, body);
+    };
+    const files: Record<string, string> = {
+      'index.html': '<!doctype html>',
+      '.git/config': '[core]',
+      '.env': 'SECRET=1',
+      'sub/.env.local': 'SECRET=2',
+      '.DS_Store': 'x',
+      '.well-known/security.txt': 'Contact: mailto:security@example.test',
+    };
+    for (let i = 0; i < 5; i += 1) files[`media/clip-${i}.bin`] = String(i).repeat(MAX_COMPRESS_BYTES + 1);
+    const root = await site(files);
+    roots.push(root);
+    const result = await publishStaticSite({ deploymentId: dep(1), accountId: ACCOUNT_ID, sourceDir: root, storage });
+    expect(result.skippedFiles).toBe(4);
+    expect(peak).toBe(2);
+    const rows = await db.select({ path: appSiteFiles.path }).from(appSiteFiles).where(eq(appSiteFiles.deploymentId, dep(1)));
+    expect(rows.map((row) => row.path).sort()).toEqual([
+      '.well-known/security.txt', 'index.html',
+      ...Array.from({ length: 5 }, (_, i) => `media/clip-${i}.bin`),
+    ].sort());
+  });
+
+  test('the sweep reaches a deleted App\'s files past many file-less dead deployments, and reclaim frees its blobs', async () => {
+    await seedDeployments(150, 'deleted');
+    const DELETED_APP = '00000000-0000-4000-a000-00000000d9a1';
+    const DELETED_DEPLOYMENT = '00000000-0000-4000-a000-00000000d9a2';
+    await db.insert(apps).values({
+      appId: DELETED_APP, accountId: ACCOUNT_ID, projectId: PROJECT_ID, slug: 'static-deleted', name: 'deleted', routeKey: 'dddddddddddddd02',
+    });
+    await db.insert(appDeployments).values({
+      deploymentId: DELETED_DEPLOYMENT, appId: DELETED_APP, artifactId: ARTIFACT_ID, version: 1, status: 'ready',
+      sourceKind: 'static', hostingType: 'static', runtimeVersion: 'test', runtimeSpec: {}, createdBy: PROJECT_ID,
+    });
+    const storage = memoryStorage();
+    const root = await site({ 'index.html': 'deleted app', 'app.js': 'deleted app js' });
+    roots.push(root);
+    await publishStaticSite({ deploymentId: DELETED_DEPLOYMENT, accountId: ACCOUNT_ID, sourceDir: root, storage });
+    await db.update(apps).set({ deletedAt: new Date() }).where(eq(apps.appId, DELETED_APP));
+
+    const swept = await sweepAppRetention(5);
+
+    expect(swept.siteFilesReleased).toBe(2);
+    expect(await db.select().from(appSiteFiles).where(eq(appSiteFiles.deploymentId, DELETED_DEPLOYMENT))).toEqual([]);
+    await db.update(appSiteBlobs).set({ createdAt: new Date(Date.now() - 3 * 3600_000) }).where(eq(appSiteBlobs.accountId, ACCOUNT_ID));
+    expect((await reclaimAppSiteBlobs(storage)).reclaimed).toBe(2);
+    expect(await storage.list(ACCOUNT_ID)).toEqual([]);
+  });
+
+  test('deleteAccountSiteObjects removes the object of every ledger row of the account, in batches', async () => {
+    const storage = memoryStorage();
+    const shas = Array.from({ length: 2500 }, (_, i) => String(i).padStart(64, '0'));
+    for (const sha of shas) storage.objects.set(blobKey(ACCOUNT_ID, sha), new Uint8Array([1]));
+    for (let i = 0; i < shas.length; i += 1000) {
+      await db.insert(appSiteBlobs).values(shas.slice(i, i + 1000).map((sha256) => ({ accountId: ACCOUNT_ID, sha256, sizeBytes: 1 })));
     }
-    expect(await responses[0]!.text()).toBe(large);
+    const neighbor = blobKey('00000000-0000-4000-a000-00000000ffff', 'e'.repeat(64));
+    storage.objects.set(neighbor, new Uint8Array([1]));
+    let calls = 0;
+    const remove = storage.remove.bind(storage);
+    storage.remove = async (keys: string[]) => { calls += 1; return remove(keys); };
+    expect(await deleteAccountSiteObjects(ACCOUNT_ID, storage)).toEqual({ removed: 2500 });
+    expect(calls).toBe(3);
+    expect([...storage.objects.keys()]).toEqual([neighbor]);
   });
 
   test('retention keeps the active and the newest N others, frees their files, keeps the history', async () => {
@@ -415,7 +506,7 @@ withDb('static App hosting', () => {
   test('a failed object delete keeps the ledger rows, so the next pass retries', async () => {
     const orphan = 'd'.repeat(64);
     await db.insert(appSiteBlobs).values({ accountId: ACCOUNT_ID, sha256: orphan, sizeBytes: 1, createdAt: new Date(Date.now() - 3 * 3600_000) });
-    const failing: SiteStorage = { put: async () => {}, get: async () => null, remove: async () => { throw new Error('storage down'); } };
+    const failing: SiteStorage = { put: async () => {}, open: async () => null, remove: async () => { throw new Error('storage down'); } };
     await expect(reclaimAppSiteBlobs(failing)).rejects.toThrow('storage down');
     const [row] = await db.select({ n: sql<number>`count(*)::int` }).from(appSiteBlobs)
       .where(and(eq(appSiteBlobs.accountId, ACCOUNT_ID), eq(appSiteBlobs.sha256, orphan)));

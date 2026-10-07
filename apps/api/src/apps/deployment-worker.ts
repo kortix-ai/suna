@@ -612,7 +612,8 @@ async function driveStaticDeployment(input: {
   await event(
     claimed.deploymentId,
     'site_published',
-    `Published ${published.files} files (${published.uploadedBlobs} new, ${published.reusedBlobs} unchanged)`,
+    `Published ${published.files} files (${published.uploadedBlobs} new, ${published.reusedBlobs} unchanged)` +
+      (published.skippedFiles ? `; left out ${published.skippedFiles} entries (.git, .env*, .DS_Store)` : ''),
     { data: { ...published } },
   );
   const [stillLive] = await db.select({ appId: apps.appId }).from(apps)

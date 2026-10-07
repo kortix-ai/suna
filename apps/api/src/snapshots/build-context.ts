@@ -136,6 +136,9 @@ export async function stageAppBuildContext(
         await cp(join(appContext.sourceDir, entry), join(contextDir, entry), {
           recursive: true,
           preserveTimestamps: true,
+          // Keep link targets as written. Without this, cp rewrites a
+          // relative target to an absolute path on this host.
+          verbatimSymlinks: true,
         });
       }
     }

@@ -55,6 +55,33 @@ export async function handleAppPublicRequest(
   request: Request,
   forwardApi?: (request: Request) => Promise<Response>,
 ): Promise<Response | null> {
+  const response = await routeAppPublicRequest(request, forwardApi);
+  return response && withoutCloudflareCache(response);
+}
+
+/**
+ * Every App-origin answer, the gate's own included (sign-in redirect, 403,
+ * status page), carries `cloudflare-cdn-cache-control: no-store`. The API
+ * hostnames are Cloudflare-proxied and that cache keys on the API host and
+ * path, not the App host: a cached answer for one App would serve another.
+ * Only the apps-router Worker caches App responses, keyed on the App host.
+ */
+function withoutCloudflareCache(response: Response): Response {
+  try {
+    response.headers.set('cloudflare-cdn-cache-control', 'no-store');
+    return response;
+  } catch {
+    // Immutable headers (a fetched response): copy them.
+    const headers = new Headers(response.headers);
+    headers.set('cloudflare-cdn-cache-control', 'no-store');
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  }
+}
+
+async function routeAppPublicRequest(
+  request: Request,
+  forwardApi?: (request: Request) => Promise<Response>,
+): Promise<Response | null> {
   const url = new URL(request.url);
   const matched = resolveAppRequest(request, url);
   if (!matched) return null;

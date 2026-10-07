@@ -250,8 +250,14 @@ A static App answers every request at once. HTML revalidates on every load
 (`no-cache`, with an ETag), hashed build assets (`index-D8j1YYcB.js`) are cached
 for a year, text files are compressed (Brotli or gzip), a page navigation to an
 unknown path gets `index.html` when the App is an SPA, and a missing file gets
-your `404.html` with status `404`. Responses are `private` to shared caches
-unless the App is public. On Kortix cloud, a public App's hashed build assets
+your `404.html` with status `404`. A directory URL without its trailing slash
+(`/docs`) redirects `308` to `/docs/`, so relative links in `docs/index.html`
+resolve. Only build output with a content hash in its name (`_next/static/`,
+and files under `assets/` or `static/js|css|media/`) is immutable; every other
+file revalidates. Files over 4 MiB are streamed uncompressed and support
+`Range` requests. A static publish never includes `.git/`, `.env*` or
+`.DS_Store`, and a symlink that resolves outside the upload fails the deploy.
+Responses are `private` to shared caches unless the App is public. On Kortix cloud, a public App's hashed build assets
 are also cached at the edge for up to 1 hour. After the App turns non-public or
 is deleted, those copies stay reachable by exact URL for up to 1 hour.
 
@@ -433,6 +439,11 @@ kortix apps delete docs --yes                       # the App and every image it
 
 Failed deployments and deleted Apps also release their images without any
 action: project maintenance removes them every few minutes.
+
+A static App's files are content-addressed and shared between its
+deployments. Deleting a deployment or the App releases its file list at once;
+maintenance deletes each stored file 1 hour after no deployment names it.
+Deleting the account deletes every stored file of the account immediately.
 
 When a Kortix release changes the App supervisor image (`kortix-appd` and
 Caddy), a server App gets one immutable replacement built from the same

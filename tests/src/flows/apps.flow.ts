@@ -1118,6 +1118,7 @@ flow(
       cli.writeFile("dist/index.html", `<!doctype html><title>${marker}</title><script src="/${asset}"></script>`);
       cli.writeFile(`dist/${asset}`, script);
       cli.writeFile("dist/robots.txt", "User-agent: *");
+      cli.writeFile("dist/docs/index.html", `<!doctype html><title>docs ${marker}</title>`);
     };
     const deploy = async (marker: string, script = "console.log('app')") => {
       writeSite(marker, script);
@@ -1173,16 +1174,29 @@ flow(
         if (missing.status !== 404) throw new Error(`missing asset: ${missing.status}`);
         const revalidated = await page("/", { "if-none-match": home.headers.get("etag") ?? "" });
         if (revalidated.status !== 304) throw new Error(`If-None-Match: ${revalidated.status}`);
+        if (revalidated.headers.get("vary") !== "accept-encoding") throw new Error(`304 vary: ${revalidated.headers.get("vary")}`);
       });
 
-      await ctx.step("a redeploy uploads only the changed file and switches atomically", async () => {
+      await ctx.step("a directory URL without its slash redirects 308 to the slash, keeping the query; the slash URL serves its index", async () => {
+        const bare = await page("/docs?tab=2");
+        if (bare.status !== 308 || bare.headers.get("location") !== "/docs/?tab=2") {
+          throw new Error(`GET /docs: ${bare.status} location ${bare.headers.get("location")}`);
+        }
+        if (bare.headers.get("cloudflare-cdn-cache-control") !== "no-store") {
+          throw new Error(`redirect cloudflare-cdn-cache-control: ${bare.headers.get("cloudflare-cdn-cache-control")}`);
+        }
+        const slash = await page("/docs/");
+        if (slash.status !== 200 || !slash.text.includes("<title>docs v1</title>")) throw new Error(`GET /docs/: ${slash.status}`);
+      });
+
+      await ctx.step("a redeploy uploads only the changed files and switches atomically", async () => {
         const { out } = await deploy("v2");
         if (out.deployment.status !== "ready") throw new Error(`v2 is ${out.deployment.status}`);
         const logs = await owner.get("/v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs",
           { params: { ...projectParams, appId, deploymentId: versions[1]! } });
         logs.status(200);
-        if (!JSON.stringify(logs.json()).includes("(1 new, 2 unchanged)")) {
-          throw new Error(`expected 1 new and 2 unchanged files: ${JSON.stringify(logs.json()).slice(0, 400)}`);
+        if (!JSON.stringify(logs.json()).includes("(2 new, 2 unchanged)")) {
+          throw new Error(`expected 2 new and 2 unchanged files: ${JSON.stringify(logs.json()).slice(0, 400)}`);
         }
         const home = await page("/");
         if (!home.text.includes("<title>v2</title>")) throw new Error(`v2 is not served: ${home.text.slice(0, 120)}`);

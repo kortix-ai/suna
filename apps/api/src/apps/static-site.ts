@@ -14,9 +14,10 @@
  *     Unchanged files across deploys are not uploaded again.
  *   - Serve: the manifest (immutable per deployment), small blobs and their
  *     compressed bodies are cached in process, each cache bounded by bytes.
- *     A body over 4 MiB is served uncompressed. Hashed assets are cacheable
- *     for a year; HTML revalidates. Content is `private` to caches unless the
- *     App is public.
+ *     A body over 4 MiB is streamed from storage (ranges included) and served
+ *     uncompressed, never held whole in memory. HEAD reads no blob. Hashed
+ *     build output is cacheable for a year; everything else revalidates.
+ *     Content is `private` to caches unless the App is public.
  *   - Activate and roll back: flip `apps.active_deployment_id`. Nothing boots.
  *
  * Blobs are freed by `reclaimAppSiteBlobs` once no live manifest names them.
@@ -26,10 +27,12 @@ import { appSiteBlobs, appSiteFiles } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import { brotliCompress, constants as zlib, gzip } from 'node:zlib';
-import { lstat, readdir, readFile, realpath } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { lstat, readdir, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, join, posix, relative, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { config } from '../config';
+import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { mapWithConcurrency } from '../shared/map-with-concurrency';
 import { getSupabase } from '../shared/supabase';
@@ -40,6 +43,8 @@ export const APP_SITE_BUCKET = 'app-sites';
 export const MAX_SITE_FILE_BYTES = 50 * 1024 * 1024;
 export const MAX_SITE_FILES = 20_000;
 const UPLOAD_CONCURRENCY = 8;
+/** Files over `MAX_COMPRESS_BYTES` upload two at a time: a publish holds at most ~2 × 50 MiB in flight. */
+const LARGE_UPLOAD_CONCURRENCY = 2;
 const ROW_BATCH = 1_000;
 
 export function staticHostingEnabled(): boolean {
@@ -53,10 +58,21 @@ export interface SiteFile {
   contentType: string;
 }
 
+export interface ByteRange {
+  start: number;
+  /** Inclusive. */
+  end: number;
+}
+
 /** Where blob bytes live. Swappable for tests. */
 export interface SiteStorage {
-  put(key: string, bytes: Uint8Array, contentType: string): Promise<void>;
-  get(key: string): Promise<Uint8Array | null>;
+  /** Stores one blob. `body` is a file on disk (`Bun.file`): nothing reads it into memory first. */
+  put(key: string, body: Blob, contentType: string): Promise<void>;
+  /**
+   * The blob's bytes (only `range` when given) as a stream. Null: storage has
+   * no such object. Any other storage failure throws.
+   */
+  open(key: string, range?: ByteRange): Promise<ReadableStream<Uint8Array> | null>;
   remove(keys: string[]): Promise<void>;
 }
 
@@ -81,20 +97,36 @@ function ensureSiteBucket(): Promise<void> {
   return bucketReady;
 }
 
+// Object reads and writes go to the Storage REST API directly: supabase-js
+// buffers a download whole and wraps an upload in multipart form data.
+const storageObjectUrl = (path: string) => `${config.SUPABASE_URL}/storage/v1/object/${path}`;
+const storageHeaders = (extra: Record<string, string> = {}) => ({
+  apikey: config.SUPABASE_SERVICE_ROLE_KEY,
+  authorization: `Bearer ${config.SUPABASE_SERVICE_ROLE_KEY}`,
+  ...extra,
+});
+
 export const supabaseSiteStorage: SiteStorage = {
-  async put(key, bytes, contentType) {
+  async put(key, body, contentType) {
     await ensureSiteBucket();
     await retryAppArtifactStorage(async () => {
-      const { error } = await getSupabase()
-        .storage.from(APP_SITE_BUCKET)
-        .upload(key, bytes, { contentType, upsert: true, cacheControl: '31536000' });
-      if (error) throw error;
+      const response = await fetch(storageObjectUrl(`${APP_SITE_BUCKET}/${key}`), {
+        method: 'POST',
+        headers: storageHeaders({ 'content-type': contentType, 'cache-control': 'max-age=31536000', 'x-upsert': 'true' }),
+        body,
+      });
+      if (!response.ok) throw new Error(`app-sites upload answered ${response.status}: ${(await response.text()).slice(0, 200)}`);
     });
   },
-  async get(key) {
-    const { data, error } = await getSupabase().storage.from(APP_SITE_BUCKET).download(key);
-    if (error || !data) return null;
-    return new Uint8Array(await data.arrayBuffer());
+  async open(key, range) {
+    const response = await fetch(storageObjectUrl(`authenticated/${APP_SITE_BUCKET}/${key}`), {
+      headers: storageHeaders(range ? { range: `bytes=${range.start}-${range.end}` } : {}),
+    });
+    if (response.ok && (!range || response.status === 206) && response.body) return response.body;
+    const text = await response.text().catch(() => '');
+    // Storage answers a missing object 404, or 400 with a not_found body.
+    if (response.status === 404 || (response.status === 400 && /not.?found/i.test(text))) return null;
+    throw new Error(`app-sites read answered ${response.status}${range ? ' to a range request' : ''}: ${text.slice(0, 200)}`);
   },
   async remove(keys) {
     if (keys.length === 0) return;
@@ -105,16 +137,32 @@ export const supabaseSiteStorage: SiteStorage = {
 
 // ── Publish ──────────────────────────────────────────────────────────────────
 
-/** Every regular file under `root`, as POSIX paths relative to it. Symlinks are skipped. */
-async function listFiles(root: string, dir = ''): Promise<string[]> {
-  const out: string[] = [];
+/**
+ * Never published, at any depth: version-control state, environment files and
+ * Finder metadata. The CLI leaves them out of its archive; an SDK or direct API
+ * upload may not.
+ */
+const isUnpublishedName = (name: string) => name === '.git' || name === '.DS_Store' || name.startsWith('.env');
+
+/** Every regular file under `root`, as POSIX paths relative to it. Symlinks and unpublished names are skipped. */
+async function listFiles(root: string, out = { paths: [] as string[], skipped: 0 }, dir = '') {
   for (const entry of await readdir(join(root, dir), { withFileTypes: true })) {
     const relativePath = dir ? `${dir}/${entry.name}` : entry.name;
-    if (entry.isDirectory()) out.push(...(await listFiles(root, relativePath)));
-    else if (entry.isFile()) out.push(relativePath);
-    if (out.length > MAX_SITE_FILES) throw new Error(`A static App may hold at most ${MAX_SITE_FILES} files`);
+    if (isUnpublishedName(entry.name)) out.skipped += 1;
+    else if (entry.isDirectory()) await listFiles(root, out, relativePath);
+    else if (entry.isFile()) out.paths.push(relativePath);
+    if (out.paths.length > MAX_SITE_FILES) throw new Error(`A static App may hold at most ${MAX_SITE_FILES} files`);
   }
   return out;
+}
+
+/** SHA-256 and size of one file, read as a stream. */
+async function hashSiteFile(path: string): Promise<{ sha256: string; sizeBytes: number }> {
+  const { size } = await stat(path);
+  if (size > MAX_SITE_FILE_BYTES) throw new Error(`exceeds ${MAX_SITE_FILE_BYTES} bytes`);
+  const hash = createHash('sha256');
+  for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer);
+  return { sha256: hash.digest('hex'), sizeBytes: size };
 }
 
 export function siteContentType(path: string): string {
@@ -128,6 +176,8 @@ export interface PublishResult {
   bytes: number;
   uploadedBlobs: number;
   reusedBlobs: number;
+  /** Entries left out as unpublished names (`.git`, `.env*`, `.DS_Store`). */
+  skippedFiles: number;
 }
 
 /**
@@ -163,20 +213,14 @@ export async function publishStaticSite(input: {
   const storage = input.storage ?? supabaseSiteStorage;
   const root = await containedRoot(input.sourceDir, input.root ?? '.');
   // `listFiles` skips symlinks, so no file below the real root leaves it.
-  const paths = await listFiles(root);
+  const { paths, skipped } = await listFiles(root);
   if (paths.length === 0) throw new Error('The static root holds no files');
 
   const files = await mapWithConcurrency(paths, UPLOAD_CONCURRENCY, async (path) => {
-    const bytes = new Uint8Array(await readFile(join(root, path)));
-    if (bytes.byteLength > MAX_SITE_FILE_BYTES) {
-      throw new Error(`${path} exceeds ${MAX_SITE_FILE_BYTES} bytes`);
-    }
-    return {
-      path,
-      sha256: createHash('sha256').update(bytes).digest('hex'),
-      sizeBytes: bytes.byteLength,
-      contentType: siteContentType(path),
-    } satisfies SiteFile;
+    const hashed = await hashSiteFile(join(root, path)).catch((error: Error) => {
+      throw new Error(`${path}: ${error.message}`);
+    });
+    return { path, ...hashed, contentType: siteContentType(path) } satisfies SiteFile;
   });
 
   // References first, under the account's blob lock: once these rows commit,
@@ -207,34 +251,37 @@ export async function publishStaticSite(input: {
     return found;
   });
   const missing = [...unique.values()].filter((file) => !stored.has(file.sha256));
-  await mapWithConcurrency(missing, UPLOAD_CONCURRENCY, async (file) => {
-    const bytes = new Uint8Array(await readFile(join(root, file.path)));
-    await storage.put(blobKey(input.accountId, file.sha256), bytes, file.contentType);
+  const upload = async (file: SiteFile) => {
+    await storage.put(blobKey(input.accountId, file.sha256), Bun.file(join(root, file.path)), file.contentType);
     await db
       .insert(appSiteBlobs)
       .values({ accountId: input.accountId, sha256: file.sha256, sizeBytes: file.sizeBytes })
       .onConflictDoNothing();
-  });
+  };
+  await mapWithConcurrency(missing.filter((file) => file.sizeBytes <= MAX_COMPRESS_BYTES), UPLOAD_CONCURRENCY, upload);
+  await mapWithConcurrency(missing.filter((file) => file.sizeBytes > MAX_COMPRESS_BYTES), LARGE_UPLOAD_CONCURRENCY, upload);
   return {
     files: files.length,
     bytes: files.reduce((sum, file) => sum + file.sizeBytes, 0),
     uploadedBlobs: missing.length,
     reusedBlobs: unique.size - missing.length,
+    skippedFiles: skipped,
   };
 }
 
 // ── Serve ────────────────────────────────────────────────────────────────────
 
 /**
- * Which file a request path names. Order: the exact file, `<path>/index.html`,
- * `<path>.html`; then the SPA shell for a page navigation; then `404.html`
- * with status 404. Null: nothing to serve.
+ * Which file a request path names. Order: the exact file, `<path>/index.html`
+ * (as a redirect to `<path>/`, so relative URLs in the page resolve against the
+ * directory), `<path>.html`; then the SPA shell for a page navigation; then
+ * `404.html` with status 404. Null: nothing to serve.
  */
 export function resolveSitePath(
   pathname: string,
   has: (path: string) => boolean,
   options: { spa: boolean; navigation: boolean },
-): { path: string; status: 200 | 404 } | null {
+): { path: string; status: 200 | 404 } | { redirect: string } | null {
   let decoded: string;
   try {
     decoded = decodeURIComponent(pathname);
@@ -247,7 +294,13 @@ export function resolveSitePath(
   const candidates = !path || decoded.endsWith('/')
     ? [`${path ? `${path.replace(/\/$/, '')}/` : ''}index.html`]
     : [path, `${path}/index.html`, `${path}.html`];
-  for (const candidate of candidates) if (has(candidate)) return { path: candidate, status: 200 };
+  for (const candidate of candidates) {
+    if (!has(candidate)) continue;
+    // Built from the normalized path, never the raw one: `//host/` would be a
+    // protocol-relative redirect to another site.
+    if (candidate === `${path}/index.html`) return { redirect: `/${path.split('/').map(encodeURIComponent).join('/')}/` };
+    return { path: candidate, status: 200 };
+  }
   if (options.spa && options.navigation && has('index.html')) return { path: 'index.html', status: 200 };
   if (has('404.html')) return { path: '404.html', status: 404 };
   return null;
@@ -367,18 +420,35 @@ export async function loadSiteManifest(deploymentId: string): Promise<Map<string
 // storage read; another replica reads its own copy, which is identical.
 const blobReads = new Map<string, Promise<Uint8Array | null>>();
 
-function readBlob(storage: SiteStorage, key: string): Promise<Uint8Array | null> {
+/** A blob of at most `MAX_COMPRESS_BYTES`, whole and cached. Larger blobs are streamed, never read here. */
+function readSmallBlob(storage: SiteStorage, key: string): Promise<Uint8Array | null> {
   const hit = siteCaches.blobs.get(key);
   if (hit) return Promise.resolve(hit);
   let read = blobReads.get(key);
   if (!read) {
-    read = storage.get(key).then((bytes) => {
-      if (bytes && bytes.byteLength <= MAX_COMPRESS_BYTES) siteCaches.blobs.set(key, bytes, bytes.byteLength);
+    read = storage.open(key).then(async (stream) => {
+      if (!stream) return null;
+      const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+      siteCaches.blobs.set(key, bytes, bytes.byteLength);
       return bytes;
     }).finally(() => blobReads.delete(key));
     blobReads.set(key, read);
   }
   return read;
+}
+
+/**
+ * Storage lost a blob its ledger row still names (an object delete succeeded,
+ * then the reclaim transaction failed). Drop the row under the account's blob
+ * lock, so the next publish of that content uploads it again instead of
+ * reusing a row with no object.
+ */
+async function forgetMissingBlob(accountId: string, sha256: string): Promise<void> {
+  logger.warn('[apps] app_site_blob_missing', { accountId, sha256 });
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`app-site-blobs:${accountId}`}))`);
+    await tx.delete(appSiteBlobs).where(and(eq(appSiteBlobs.accountId, accountId), eq(appSiteBlobs.sha256, sha256)));
+  });
 }
 
 export function resetStaticSiteCaches(): void {
@@ -441,6 +511,12 @@ export async function serveStaticDeployment(input: {
   if (!resolved) {
     return plain(404, 'Not found');
   }
+  if ('redirect' in resolved) {
+    return plain(308, '', {
+      location: `${resolved.redirect}${url.search}`,
+      'cache-control': `${input.publicApp ? 'public' : 'private'}, max-age=0, must-revalidate`,
+    });
+  }
   const file = manifest.get(resolved.path)!;
   // Weak: the identity, gzip and Brotli bodies share it (RFC 9110 §8.8.1).
   const etag = `W/"${file.sha256}"`;
@@ -458,22 +534,50 @@ export async function serveStaticDeployment(input: {
   if (resolved.status === 200 && ifNoneMatch.includes(`"${file.sha256}"`)) {
     return new Response(null, { status: 304, headers });
   }
-  const bytes = await readBlob(input.storage ?? supabaseSiteStorage, blobKey(input.accountId, file.sha256));
-  if (!bytes) {
-    return plain(503, 'This file is temporarily unavailable', { 'retry-after': '5' });
+  const size = file.sizeBytes;
+  const encoding = chooseEncoding(request.headers.get('accept-encoding'), file.contentType, size);
+  // HEAD answers from the manifest: no storage read.
+  if (request.method === 'HEAD') {
+    if (encoding) headers.set('content-encoding', encoding);
+    else headers.set('content-length', String(size));
+    return new Response(null, { status: resolved.status, headers });
   }
-  const range = resolved.status === 200 ? parseRange(request.headers.get('range'), bytes.byteLength) : null;
+  const storage = input.storage ?? supabaseSiteStorage;
+  const key = blobKey(input.accountId, file.sha256);
+  const range = resolved.status === 200 ? parseRange(request.headers.get('range'), size) : null;
   if (range === 'invalid') {
-    headers.set('content-range', `bytes */${bytes.byteLength}`);
+    headers.set('content-range', `bytes */${size}`);
     return new Response(null, { status: 416, headers });
   }
-  // A range is served from the identity bytes; anything else may be compressed.
-  const encoding = range ? null : chooseEncoding(request.headers.get('accept-encoding'), file.contentType, bytes.byteLength);
-  if (encoding) headers.set('content-encoding', encoding);
-  const body = range ? bytes.subarray(range.start, range.end + 1) : encoding ? await encodeSiteBody(file.sha256, encoding, bytes) : bytes;
-  if (range) headers.set('content-range', `bytes ${range.start}-${range.end}/${bytes.byteLength}`);
-  headers.set('content-length', String(body.byteLength));
-  return new Response(request.method === 'HEAD' ? null : (body as Uint8Array<ArrayBuffer>), {
+  const unavailable = async () => {
+    await forgetMissingBlob(input.accountId, file.sha256).catch((error) => {
+      logger.error('[apps] forgetting a missing static blob failed', { error: String(error) });
+    });
+    return plain(503, 'This file is temporarily unavailable', { 'retry-after': '5' });
+  };
+  let body: Uint8Array | ReadableStream<Uint8Array>;
+  try {
+    if (size > MAX_COMPRESS_BYTES) {
+      // Streamed from storage, the range included: never held whole in memory.
+      const stream = await storage.open(key, range ?? undefined);
+      if (!stream) return await unavailable();
+      body = stream;
+    } else {
+      const bytes = await readSmallBlob(storage, key);
+      if (!bytes) return await unavailable();
+      // A range is served from the identity bytes; anything else may be compressed.
+      body = range ? bytes.subarray(range.start, range.end + 1)
+        : encoding ? await encodeSiteBody(file.sha256, encoding, bytes)
+        : bytes;
+      if (!range && encoding) headers.set('content-encoding', encoding);
+    }
+  } catch (error) {
+    logger.error('[apps] static file read failed', { deploymentId: input.deploymentId, error: String(error) });
+    return plain(503, 'This file is temporarily unavailable', { 'retry-after': '5' });
+  }
+  if (range) headers.set('content-range', `bytes ${range.start}-${range.end}/${size}`);
+  headers.set('content-length', String(body instanceof Uint8Array ? body.byteLength : range ? range.end - range.start + 1 : size));
+  return new Response(body as Uint8Array<ArrayBuffer> | ReadableStream<Uint8Array>, {
     status: range ? 206 : resolved.status,
     headers,
   });
@@ -516,4 +620,22 @@ export async function reclaimAppSiteBlobs(storage: SiteStorage = supabaseSiteSto
     });
   }
   return { reclaimed };
+}
+
+/**
+ * Account deletion: the stored object of every `app_site_blobs` row of the
+ * account. The rows go in the deletion transaction, after this.
+ */
+export async function deleteAccountSiteObjects(
+  accountId: string,
+  storage: SiteStorage = supabaseSiteStorage,
+): Promise<{ removed: number }> {
+  // ponytail: ledger-driven. An object whose row never committed (the process
+  // died between upload and insert) is not found here or by reclaim; list the
+  // `<account_id>/` prefix if that ever shows up in storage.
+  const rows = await db.select({ sha256: appSiteBlobs.sha256 }).from(appSiteBlobs).where(eq(appSiteBlobs.accountId, accountId));
+  for (let i = 0; i < rows.length; i += ROW_BATCH) {
+    await storage.remove(rows.slice(i, i + ROW_BATCH).map((row) => blobKey(accountId, row.sha256)));
+  }
+  return { removed: rows.length };
 }

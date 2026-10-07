@@ -6,6 +6,7 @@ import {
   appDeploymentEvents,
   appDeployments,
   appRuntimes,
+  appSiteFiles,
   apps,
 } from '@kortix/db';
 import { and, desc, eq, inArray, isNull, max, ne, notInArray, sql } from 'drizzle-orm';
@@ -734,6 +735,12 @@ export function registerAppsRoutes(): void {
         })
         .from(appDeployments)
         .where(eq(appDeployments.appId, appId));
+      // Static files: the manifests go now, so `reclaimAppSiteBlobs` frees the
+      // blobs after its grace. A publish still running writes after this; the
+      // retention sweep drops those rows (the App is deleted).
+      if (deployments.length > 0) {
+        await db.delete(appSiteFiles).where(inArray(appSiteFiles.deploymentId, deployments.map((d) => d.deploymentId)));
+      }
       const runtimes = await db
         .select({ runtimeId: appRuntimes.runtimeId, provider: appRuntimes.provider, externalId: appRuntimes.externalId })
         .from(appRuntimes)
@@ -985,6 +992,7 @@ export function registerAppsRoutes(): void {
       // runtime goes first. Anything left `pending` is retried by maintenance.
       await teardownAppRuntimes(runtimes);
       const image = await releaseDeploymentImage({ deploymentId, hostingProvider: decision.hostingProvider });
+      await db.delete(appSiteFiles).where(eq(appSiteFiles.deploymentId, deploymentId));
       await db.insert(appDeploymentEvents).values({
         deploymentId,
         type: 'deployment_deleted',

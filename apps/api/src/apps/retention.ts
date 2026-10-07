@@ -138,6 +138,8 @@ export const FAILED_BUILD_LOG_DAYS = 14;
 const BUILD_LOG_DELETE_BATCH = 5_000;
 const ARTIFACT_GRACE = '24 hours';
 const ARTIFACT_BATCH = 100;
+/** Dead deployments whose static files one sweep drops (up to 20,000 rows each). */
+const DEAD_DEPLOYMENT_BATCH = 100;
 
 /**
  * Maintenance: apply retention to every App that has more ready deployments
@@ -169,13 +171,17 @@ export async function sweepAppRetention(keep = config.KORTIX_APPS_RETAINED_DEPLO
     })).length;
   }
 
+  // Only dead deployments that still hold files: retention leaves every
+  // retired deployment dead and file-less, and an unfiltered batch of those
+  // never reached the files of a deleted App.
   const deadFiles = await db.execute(sql`
     delete from ${appSiteFiles}
     where ${appSiteFiles.deploymentId} in (
       select d.deployment_id from ${appDeployments} d
       join ${apps} a on a.app_id = d.app_id
-      where a.deleted_at is not null or d.status in ('deleted', 'failed', 'cancelled')
-      limit 50
+      where (a.deleted_at is not null or d.status in ('deleted', 'failed', 'cancelled'))
+        and exists (select 1 from ${appSiteFiles} f where f.deployment_id = d.deployment_id)
+      limit ${DEAD_DEPLOYMENT_BATCH}
     )`);
 
   const failedBuildLogs = await db.execute(sql`
