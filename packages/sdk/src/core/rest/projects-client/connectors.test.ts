@@ -29,6 +29,7 @@ import {
   type ConnectorConnectResult,
   connectorConnect,
   connectorFinalize,
+  deleteConnectorCredential,
   pipedreamConnect,
   pipedreamConnectConnection,
   pipedreamFinalize,
@@ -1477,4 +1478,32 @@ test('describeConnectorTool: a malformed tool name (no dot) resolves to null wit
   const tool = await describeConnectorTool('P1', 'not-a-tool-name');
   expect(tool).toBeNull();
   expect(calls).toHaveLength(0);
+});
+
+test('deleteConnectorCredential DELETEs the connector credential (disconnect)', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  const result = await deleteConnectorCredential('P1', 'google sheets');
+  expect(last().url).toBe('http://test.local/connectors/projects/P1/connectors/google%20sheets/credential');
+  expect(last().method).toBe('DELETE');
+  expect(result).toEqual({ ok: true });
+});
+
+test('deleteConnectorCredential throws on a failed response', async () => {
+  nextResponse = { status: 409, body: { error: 'connector is shared' } };
+  await expect(deleteConnectorCredential('P1', 'gmail')).rejects.toBeTruthy();
+});
+
+test('connectorConnect forwards the redirect URIs the hosted flow returns to', async () => {
+  nextResponse = { status: 200, body: { connectUrl: 'https://connect.composio.dev/link/r' } };
+  await connectorConnect('P1', 'gmail', {
+    successRedirectUri: 'kortix://connect/success',
+    errorRedirectUri: 'kortix://connect/error',
+  });
+  expect(last().body).toEqual({
+    success_redirect_uri: 'kortix://connect/success',
+    error_redirect_uri: 'kortix://connect/error',
+  });
+
+  await connectorConnect('P1', 'gmail', { owner: 'project', successRedirectUri: 'kortix://ok' });
+  expect(last().body).toEqual({ owner: 'project', success_redirect_uri: 'kortix://ok' });
 });

@@ -1402,6 +1402,10 @@ export type ConnectorConnectOwner = 'project' | 'me';
 export interface ConnectorConnectOptions {
   /** Owner for the account this authorization creates. Defaults to `me`. */
   owner?: ConnectorConnectOwner;
+  /** Where the hosted flow sends the browser after success (a native app's deep link). */
+  successRedirectUri?: string;
+  /** Where the hosted flow sends the browser after a failure. */
+  errorRedirectUri?: string;
 }
 
 /**
@@ -1421,7 +1425,11 @@ export async function connectorConnect(
       `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/connect`,
       // Omitted rather than null when unset: the API reads the key's presence
       // to apply its own default, and an old client sends no key at all.
-      options.owner ? { owner: options.owner } : {},
+      {
+        ...(options.owner ? { owner: options.owner } : {}),
+        ...(options.successRedirectUri ? { success_redirect_uri: options.successRedirectUri } : {}),
+        ...(options.errorRedirectUri ? { error_redirect_uri: options.errorRedirectUri } : {}),
+      },
     ),
   );
 }
@@ -1944,6 +1952,15 @@ export async function setConnectorCredential(
     await backendApi.put<{ ok: boolean }>(
       `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/credential`,
       input,
+    ),
+  );
+}
+
+/** Disconnect a connector: remove its stored credential. */
+export async function deleteConnectorCredential(projectId: string, slug: string) {
+  return unwrap(
+    await backendApi.delete<{ ok: boolean }>(
+      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/credential`,
     ),
   );
 }

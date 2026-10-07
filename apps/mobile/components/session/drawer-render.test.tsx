@@ -14,7 +14,7 @@ const source = files.map((file) => readFileSync(`${import.meta.dir}/${file}`, 'u
 const host = (name: string) => ({ children, ...props }: any) => React.createElement(name, props, children);
 const Empty = () => null;
 
-const renders = { mark: 0, children: 0, legacy: 0 };
+const renders = { mark: 0, children: 0 };
 let childrenProps: any[] = [];
 let paged: Record<string, any> = {};
 const VirtualList = (props: any) => {
@@ -51,7 +51,6 @@ const fakes: Record<string, Record<string, unknown>> = {
   '@/components/session/SessionTreeParts': {
     SessionChildren: (props: any) => { renders.children++; childrenProps.push(props); return null; },
   },
-  '@/components/menu/LegacyChatsSection': { LegacyChatsSection: () => { renders.legacy++; return null; } },
   '@/lib/projects/hooks': {
     useProject: () => ({ data: { name: 'Project', account_id: 'a-1' } }),
     useAccounts: () => ({ data: [] }),
@@ -119,7 +118,7 @@ const row = (id: string, extra: Record<string, unknown> = {}) => ({ session_id: 
 
 let tree: any;
 beforeEach(() => {
-  renders.mark = renders.children = renders.legacy = 0;
+  renders.mark = renders.children = 0;
   childrenProps = [];
   // `p-1` is expanded below: its children block shows.
   paged = {
@@ -159,12 +158,10 @@ describe('ProjectLeftDrawer renders', () => {
     const before = { ...renders };
     await act(async () => tree.update(React.createElement(Drawer.ProjectLeftDrawer, { ...props, open: true })));
     expect(renders.mark).toBe(before.mark);
-    expect(renders.legacy).toBe(before.legacy);
     // The children block's loader follows `open`.
     expect(childrenProps.at(-1).showLoader).toBe(true);
     await act(async () => tree.update(React.createElement(Drawer.ProjectLeftDrawer, { ...props, open: false })));
     expect(renders.mark).toBe(before.mark);
-    expect(renders.legacy).toBe(before.legacy);
     expect(childrenProps.at(-1).showLoader).toBe(false);
   });
 

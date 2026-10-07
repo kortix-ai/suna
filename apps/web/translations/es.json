@@ -2202,6 +2202,12 @@
       }
     }
   },
+  "ssoRequired": {
+    "title": "Inicia sesión con inicio de sesión único",
+    "description": "Tu organización exige inicio de sesión único para esta cuenta. Cierra sesión y continúa con tu correo de trabajo para iniciar sesión mediante el proveedor de identidad de tu empresa.",
+    "signOut": "Cerrar sesión y usar SSO",
+    "notNow": "Ahora no"
+  },
   "auth": {
     "haveReferralCode": "¿Tienes un código de referido?",
     "referralCode": "Código de Referido",

@@ -31,12 +31,3 @@ export const kortixGetToken = createRefreshingToken({
     return data.session?.access_token ?? null;
   },
 });
-
-export async function getAuthHeaders(): Promise<HeadersInit> {
-  const token = await getAuthToken();
-  
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}

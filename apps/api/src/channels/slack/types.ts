@@ -61,7 +61,7 @@ export interface SlashCtx {
   projectScopedProjectId?: string;
 }
 
-export type EventClass = 'mention' | 'dm' | 'follow_up' | 'ignore';
+export type EventClass = 'mention' | 'dm' | 'ignore';
 
 export interface HomeProjectRow { projectId: string; name: string; repoUrl: string }
 export interface HomeRecentRow { projectId: string; lastMessageAt: Date; threadId: string }

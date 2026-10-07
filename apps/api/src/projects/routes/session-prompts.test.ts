@@ -613,6 +613,17 @@ describe('POST .../prompts', () => {
     expect(agentAccessCalls).toEqual([{ requested: 'other-agent', sessionAgent: 'kortix' }]);
   });
 
+  test('a prompt with no message_id gets a server-minted id, placed on delivery (R5.2)', async () => {
+    const { message_id: _omitted, ...withoutId } = validBody as Record<string, unknown>;
+    const res = await post(withoutId);
+    expect(res.status).toBe(202);
+    expect(enqueued[0].wireMessageId).toMatch(/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/);
+    // The server owns the order: the drain re-mints it above the transcript.
+    expect(enqueued[0].remintOnDelivery).toBe(true);
+    const body = (await res.json()) as { message_id: string };
+    expect(body.message_id).toBe(enqueued[0].wireMessageId as string);
+  });
+
   test('rejects a message id OpenCode cannot order', async () => {
     // A badly-shaped id sorts below the transcript and OpenCode reads the
     // prompt as already answered — the turn silently never runs.
