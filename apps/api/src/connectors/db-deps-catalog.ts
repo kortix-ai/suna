@@ -203,6 +203,7 @@ export async function listCatalog(
           description: a.description ?? '',
           risk: a.risk,
           inputSchema: options.includeSchemas === false ? null : (a.inputSchema ?? null),
+          ...(options.includeOutputSchemas ? { outputSchema: a.outputSchema ?? null } : {}),
         })),
       accounts,
       // What an UNNAMED call runs as: the one pinned account, or the only
