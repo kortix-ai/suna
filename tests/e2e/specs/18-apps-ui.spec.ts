@@ -183,7 +183,7 @@ test.describe('18 — Kortix Apps UI', () => {
       await page.reload({ waitUntil: 'domcontentloaded' });
       expect((await emptyListResponse).status()).toBe(200);
       await dismissOnboarding(page);
-      await expect(page.getByText('No Apps yet', { exact: true })).toBeVisible();
+      await expect(page.getByText('Apps you publish will show up here', { exact: true })).toBeVisible();
 
       const seeded = await api<AppResponse>(
         session.access_token,

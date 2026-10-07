@@ -12011,7 +12011,6 @@
       "text4b227777d4dd": "4",
       "text4b25aab8909e": "Inoltre, ottengono i segreti e i connettori dell'agente per USE, non per la modifica.",
       "text4b2a7fd0198e": "Agenti, skill e memoria come file git di tua proprietà",
-      "text4b2e1a2b9cbc": "Esegui il deployment di un sito statico, un bundle JavaScript, un Dockerfile o un’immagine OCI dalla directory del progetto. Apparirà qui non appena sarà online.",
       "text4b2fcfb4b248": "Gestisci → Utenti e gruppi",
       "text4b303ca7f76c": "Sessione avviata per correggere la build del sandbox",
       "text4b36ce9864db": "Ruolo creato",
@@ -13659,7 +13658,6 @@
       "text7a9d22da3496": "Selettore di emoji",
       "text7a9decd79093": "Ho aperto l’applicazione SAML",
       "text7a9f6daee641": "your-company/",
-      "text7aaec6fe02f0": "Nessuna App",
       "text7abc49dfa87b": "Input",
       "text7abf95c1092d": "Rimuovi la regola {value0} condizione {value1}",
       "text7acb37a3030a": "Approva / pubblica",
@@ -19283,7 +19281,9 @@
       "textaef7de28d529": "Server",
       "text34b66838fe48": "Mostra log",
       "text903b49a91e18": "Sito statico",
-      "text245c1e26ba4c": "Impossibile caricare il log."
+      "text245c1e26ba4c": "Impossibile caricare il log.",
+      "textdb4764b8b3e7": "Le app che pubblichi appariranno qui",
+      "texta7a8d2a5fb25": "Chiedi a un agente di crearne una."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

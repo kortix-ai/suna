@@ -12022,7 +12022,6 @@
       "text4b227777d4dd": "4",
       "text4b25aab8909e": "They also get the agent's secrets and connectors to USE, not edit.",
       "text4b2a7fd0198e": "Agents, skills and memory as git files you own",
-      "text4b2e1a2b9cbc": "Deploy a static site, JavaScript bundle, Dockerfile, or OCI image from your project directory. It shows up here the moment it goes live.",
       "text4b2fcfb4b248": "Manage → Users and groups",
       "text4b303ca7f76c": "Started a session to fix the sandbox build",
       "text4b36ce9864db": "Role created",
@@ -13670,7 +13669,6 @@
       "text7a9d22da3496": "Emoji Picker",
       "text7a9decd79093": "I’ve opened the SAML application",
       "text7a9f6daee641": "your-company/",
-      "text7aaec6fe02f0": "No Apps yet",
       "text7abc49dfa87b": "Inputs",
       "text7abf95c1092d": "Remove rule {value0} condition {value1}",
       "text7acb37a3030a": "Approve / ship",
@@ -19294,7 +19292,9 @@
       "textaef7de28d529": "Server",
       "text34b66838fe48": "Show log",
       "text903b49a91e18": "Static site",
-      "text245c1e26ba4c": "The log could not be loaded."
+      "text245c1e26ba4c": "The log could not be loaded.",
+      "textdb4764b8b3e7": "Apps you publish will show up here",
+      "texta7a8d2a5fb25": "Ask an agent to build one."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

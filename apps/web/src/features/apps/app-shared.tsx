@@ -67,8 +67,6 @@ export function appCommand(app: App): string {
   return `kortix apps deploy . --app ${app.app_id}`;
 }
 
-/** The command that puts a first App on this page. Shown in the empty state. */
-export const FIRST_DEPLOY_COMMAND = 'kortix apps deploy .';
 
 /**
  * The hostname a person reads an App by.
