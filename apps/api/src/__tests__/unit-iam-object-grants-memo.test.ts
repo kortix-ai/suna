@@ -26,7 +26,7 @@ const flat = source.replace(/\s+/g, ' ');
 describe('loadObjectGrants memo — empty map caching', () => {
   test('never caches an empty map for a closed-by-default or narrowable-by-default object type', () => {
     expect(flat).toContain(
-      "shouldCache: (map, _projectId, objectType) => map.size > 0 || !NEVER_CACHE_EMPTY_OBJECT_TYPES.has(objectType)",
+      "(map.size > 0 || !NEVER_CACHE_EMPTY_OBJECT_TYPES.has(objectType))",
     );
     expect(flat).toContain(
       "NEVER_CACHE_EMPTY_OBJECT_TYPES: ReadonlySet<string> = new Set(['agent', 'connection', 'secret'])",
@@ -97,5 +97,43 @@ describe('loadObjectGrants — cross-replica staleness for connection', () => {
     table.set('skill1', ['user:u1']); // nothing writes this in production today
     expect((await replica.memo('p1', 'skill')).size).toBe(0); // served from cache, unchanged
     expect(replica.loads).toBe(1);
+  });
+});
+
+// SEC-AUD-1/2/4 (v0.13.52 release gate, staging with several API replicas): a
+// replica that had cached a NON-empty secret-grant map kept serving it after a
+// sibling wrote a new grant. A value saved as "people and groups" read as open
+// to everyone, and a session holding a person-only value could be shared. For
+// the narrowable types a stale map of any size is a stale over- or under-grant,
+// so `secret` and `connection` grants are never cached: every replica reads
+// the current rows.
+describe('loadObjectGrants — narrowable types are never cached', () => {
+  test('source: secret and connection skip the memo entirely', () => {
+    expect(flat).toContain(
+      "NEVER_CACHE_OBJECT_TYPES: ReadonlySet<string> = new Set(['connection', 'secret'])",
+    );
+    expect(flat).toContain(
+      'shouldCache: (map, _projectId, objectType) => !NEVER_CACHE_OBJECT_TYPES.has(objectType) && (map.size > 0 || !NEVER_CACHE_EMPTY_OBJECT_TYPES.has(objectType))',
+    );
+  });
+
+  test('a replica holding a non-empty secret map sees a sibling\'s next grant', async () => {
+    const table = new Map<string, string[]>([['holder_only', ['user:holder']]]);
+    let loads = 0;
+    const replica = ttlMemo({
+      ttlMs: 60_000,
+      keyFn: (projectId: string, objectType: string) => `${projectId}|${objectType}`,
+      loader: async () => {
+        loads += 1;
+        return new Map(table.entries());
+      },
+      shouldCache: (map, _projectId, objectType) =>
+        !new Set(['connection', 'secret']).has(objectType) && (map.size > 0 || !new Set(['agent']).has(objectType)),
+      enableInTests: true,
+    });
+    expect((await replica('p1', 'secret')).size).toBe(1);
+    table.set('group_only', ['group:g1']);
+    expect((await replica('p1', 'secret')).get('group_only')).toEqual(['group:g1']);
+    expect(loads).toBe(2);
   });
 });

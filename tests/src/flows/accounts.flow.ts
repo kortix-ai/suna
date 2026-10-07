@@ -565,7 +565,7 @@ flow(
 
         // After removal the accepted invite must not re-create the membership.
         const removed = await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/:accountId/members/:userId', {
-          params: { accountId: team.id, userId: addressee.userId },
+          params: { accountId: team.id, userId: addressee.userId! },
         });
         removed.status(200);
         const replay = await ctx.client
