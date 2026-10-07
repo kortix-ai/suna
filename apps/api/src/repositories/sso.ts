@@ -42,6 +42,17 @@ export type SsoGroupMapping = {
 
 // ─── Provider ─────────────────────────────────────────────────────────────
 
+/**
+ * A personal account: its id is its owner's auth user id
+ * (`bootstrapPersonalAccount`).
+ */
+export async function isPersonalAccount(accountId: string): Promise<boolean> {
+  const rows = (await db.execute(
+    sql`SELECT 1 FROM auth.users WHERE id::text = ${accountId} LIMIT 1`,
+  )) as unknown as unknown[];
+  return rows.length > 0;
+}
+
 export async function getSsoProvider(accountId: string): Promise<SsoProvider | null> {
   const [row] = await db
     .select()
