@@ -246,28 +246,3 @@ export async function reconcileSnapshotQuota(
   );
   return result;
 }
-
-/**
- * Observe Daytona capacity without deleting snapshots. Project-image admission
- * fails closed unless the provider and every safety read produced a complete,
- * immediately actionable view below the post-GC target.
- */
-export async function assessDaytonaProjectImageAdmission(
-  opts: { now?: number } = {},
-  io: SnapshotQuotaIo = defaultSnapshotQuotaIo,
-): Promise<DaytonaProjectImageAdmission> {
-  const quota = await reconcileSnapshotQuota({ dryRun: true, now: opts.now }, io);
-  if (quota.observationStatus !== 'complete') {
-    return { allowed: false, reason: quota.observationStatus, quota };
-  }
-  if (quota.budgetUnresolved) {
-    return { allowed: false, reason: 'budget_unresolved', quota };
-  }
-  if (quota.deferred > 0) {
-    return { allowed: false, reason: 'deferred_candidates', quota };
-  }
-  if (quota.orgTotal >= QUOTA_GC_ORG_TARGET) {
-    return { allowed: false, reason: 'org_target_reached', quota };
-  }
-  return { allowed: true, reason: 'allowed', quota };
-}

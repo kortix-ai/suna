@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  advanceTriggerScheduleSlot,
   initialTriggerScheduleSlot,
+  nextTriggerScheduleSlot,
   triggerScheduleRevision,
   validateTriggerCron,
   validateTriggerTimezone,
@@ -94,9 +94,8 @@ describe('materialized next_fire_at', () => {
     expect(
       initialTriggerScheduleSlot(oneOff, new Date('2026-07-27T16:00:00.000Z'))?.toISOString(),
     ).toBe('2026-07-27T15:00:00.000Z');
-    expect(advanceTriggerScheduleSlot(oneOff, new Date('2026-07-27T15:00:00.000Z'))).toBeNull();
     expect(
-      advanceTriggerScheduleSlot(schedule(), new Date('2026-07-27T15:00:00.000Z'))?.toISOString(),
+      nextTriggerScheduleSlot(schedule(), new Date('2026-07-27T15:00:00.000Z'))?.toISOString(),
     ).toBe('2026-07-28T15:00:00.000Z');
   });
 });
@@ -136,7 +135,7 @@ describe('type = "monitor" never schedules', () => {
 
   test('claims no initial or next slot', () => {
     expect(initialTriggerScheduleSlot(monitor(), new Date('2026-07-27T14:00:00.000Z'))).toBeNull();
-    expect(advanceTriggerScheduleSlot(monitor(), new Date('2026-07-27T14:00:00.000Z'))).toBeNull();
+    expect(nextTriggerScheduleSlot(monitor(), new Date('2026-07-27T14:00:00.000Z'))).toBeNull();
   });
 
   test('its revision tracks the monitor fields', () => {

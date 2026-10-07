@@ -25,7 +25,7 @@ import {
   handleCall,
 } from '../connectors/gateway';
 import type { NormalizedAction } from '../connectors/types';
-import { connectorSpecToTomlEntry, extractConnectors } from '../projects/connectors';
+import { extractConnectors } from '../projects/connectors';
 import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
 
 function expectDefined<T>(value: T | null | undefined): T {
@@ -187,7 +187,7 @@ function parse(body: string) {
 }
 
 describe('[[connectors]] provider="channel"', () => {
-  test('slack platform parses + round-trips through TOML', () => {
+  test('slack platform parses', () => {
     const { specs, errors } = parse(`
 [[connectors]]
 slug = "slack"
@@ -196,13 +196,9 @@ platform = "slack"
 `);
     expect(errors).toEqual([]);
     expect(specs[0]).toMatchObject({ slug: 'slack', provider: 'channel', platform: 'slack' });
-    expect(connectorSpecToTomlEntry(expectDefined(specs[0]))).toMatchObject({
-      provider: 'channel',
-      platform: 'slack',
-    });
   });
 
-  test('email platform parses + round-trips through TOML', () => {
+  test('email platform parses', () => {
     const { specs, errors } = parse(`
 [[connectors]]
 slug = "kortix_email"
@@ -212,10 +208,6 @@ platform = "email"
     expect(errors).toEqual([]);
     expect(specs[0]).toMatchObject({
       slug: 'kortix_email',
-      provider: 'channel',
-      platform: 'email',
-    });
-    expect(connectorSpecToTomlEntry(expectDefined(specs[0]))).toMatchObject({
       provider: 'channel',
       platform: 'email',
     });

@@ -506,7 +506,7 @@
   },
   "src/channels/slack-api.ts": {
     "no-console": {
-      "count": 34
+      "count": 32
     }
   },
   "src/channels/slack-oauth.ts": {
@@ -1293,11 +1293,6 @@
       "count": 1
     }
   },
-  "src/llm-gateway/models/picker.ts": {
-    "kortix-api/projects-surface": {
-      "count": 1
-    }
-  },
   "src/llm-gateway/models/runtime-catalog.ts": {
     "no-restricted-properties": {
       "count": 1
@@ -1883,11 +1878,6 @@
   "src/projects/lib/trigger-connector-sweep.ts": {
     "no-console": {
       "count": 3
-    }
-  },
-  "src/projects/lib/trigger-fire.ts": {
-    "no-console": {
-      "count": 1
     }
   },
   "src/projects/lib/trigger-manifest.ts": {

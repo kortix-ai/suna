@@ -13,7 +13,6 @@
 /** The compact row and its tool calls are wire shapes: `@kortix/api-contract`. */
 export type {
   SessionTranscriptMessage as CompactMessage,
-  SessionTranscriptToolCall as CompactToolCall,
 } from '@kortix/api-contract';
 import type { SessionTranscriptMessage as CompactMessage } from '@kortix/api-contract';
 

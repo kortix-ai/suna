@@ -41,7 +41,6 @@ export type {
 
 export {
   invalidateProjectMirror,
-  resolveTreeOid,
   materializeRepoContext,
   type MirrorRefresh,
 } from './git/mirror';
@@ -54,7 +53,6 @@ export {
   readRepoFileBytes,
   readManifestFromRepo,
   archiveRepoSubtree,
-  getFileAtRef,
   getFileHistory,
   RepoFileNotFoundError,
   isRepoFileNotFoundError,
@@ -91,7 +89,6 @@ export {
   previewMerge,
   MergeConflictError,
   mergeBranches,
-  diffStat,
   resolveBranchAheadState,
 } from './git/merge';
 

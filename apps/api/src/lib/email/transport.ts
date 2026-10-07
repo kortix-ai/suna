@@ -176,18 +176,8 @@ function hasAwsWorkloadIdentity(): boolean {
   );
 }
 
-/** Providers that will be attempted, in order. Empty = no email delivery. */
-export function configuredEmailProviders(): EmailProvider[] {
-  return resolveEmailChain().targets.map((target) => target.kind);
-}
-
 export function isEmailConfigured(): boolean {
   return resolveEmailChain().targets.length > 0;
-}
-
-/** The address every email is sent from, after EMAIL_FROM / legacy fallback. */
-export function emailSender(): EmailAddress {
-  return resolveEmailChain().from;
 }
 
 /** Operator-facing description of the chain, safe to log (no credentials). */

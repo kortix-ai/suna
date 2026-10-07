@@ -68,13 +68,6 @@ export function parseAssignableProjectRole(raw: unknown): ProjectRole | null {
   return v === 'manager' || v === 'member' ? v : null;
 }
 
-/** The higher-ranked of two project roles. Used when a principal's effective
- *  role comes from several sources (direct membership + group grants) — they get
- *  the strongest of the bunch. */
-export function maxProjectRole(a: ProjectRole, b: ProjectRole): ProjectRole {
-  return PROJECT_ROLE_RANK[a] >= PROJECT_ROLE_RANK[b] ? a : b;
-}
-
 /** Owner and admin are the account-manager tier: implicit Manager on every
  *  project in the account. */
 export function isAccountManager(role: AccountRole | string | null): boolean {

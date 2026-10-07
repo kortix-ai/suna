@@ -174,12 +174,3 @@ export function initialTriggerScheduleSlot(
 ): Date | null {
   return nextTriggerScheduleSlot(spec, now, { ...options, includePastOneOff: true });
 }
-
-export function advanceTriggerScheduleSlot(
-  spec: Pick<TriggerScheduleSpec, 'type' | 'enabled' | 'cron' | 'runAt' | 'timezone'>,
-  scheduledFor: Date,
-  options: { jitterKey?: string; jitterWindowMs?: number } = {},
-): Date | null {
-  if (spec.runAt) return null;
-  return nextTriggerScheduleSlot(spec, scheduledFor, options);
-}

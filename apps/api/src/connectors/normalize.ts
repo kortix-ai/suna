@@ -491,36 +491,3 @@ function boundedPlainSchema(node: unknown): Record<string, unknown> | null {
 }
 
 /* ─── dispatch ───────────────────────────────────────────────────────────── */
-
-import { channelCatalog } from './channels';
-
-/** Source material a connector needs normalized, by provider. */
-type NormalizeInput =
-  | { provider: 'openapi'; doc: any }
-  | { provider: 'graphql'; introspection: any }
-  | { provider: 'mcp'; tools: McpToolLike[] }
-  | { provider: 'http'; routes: HttpRouteSpec[] }
-  | { provider: 'pipedream'; actions: PipedreamActionLike[]; app: string }
-  | { provider: 'composio'; tools: ComposioToolLike[]; toolkit: string }
-  | { provider: 'channel'; platform: string };
-
-export function normalize(input: NormalizeInput): NormalizedAction[] {
-  switch (input.provider) {
-    case 'openapi':
-      return normalizeOpenApi(input.doc);
-    case 'graphql':
-      return normalizeGraphql(input.introspection);
-    case 'mcp':
-      return normalizeMcp(input.tools);
-    case 'pipedream':
-      return normalizePipedream(input.actions, input.app);
-    case 'composio':
-      return normalizeComposio(input.tools, input.toolkit);
-    case 'http':
-      return normalizeHttp(input.routes);
-    case 'channel':
-      return channelCatalog(input.platform);
-    default:
-      return [];
-  }
-}

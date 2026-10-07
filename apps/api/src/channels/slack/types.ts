@@ -18,20 +18,6 @@ export interface LiveTurn {
   originatingEvent: SlackEvent;
 }
 
-export interface PendingAsk {
-  askId: string;
-  questions: QuestionInfo[];
-  resolve: (answers: string[][]) => void;
-  expiry: number;
-  channel: string;
-  messageTs: string | null;
-  token: string;
-  sessionId: string;
-  projectId: string;
-  teamId: string;
-  originatingEvent: SlackEvent;
-}
-
 export type ProjectResolution =
   | { kind: 'project'; projectId: string }
   | { kind: 'ambiguous'; projectIds: string[] }

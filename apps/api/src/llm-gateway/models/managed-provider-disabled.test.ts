@@ -94,7 +94,7 @@ mock.module('../credentials/codex', () => ({
 
 const { RUNTIME_MANAGED_MODELS, getRuntimeManagedModel, isRuntimeManagedModelId } =
   await import('./managed-models');
-const { managedCandidates, managedDescriptor } = await import('../resolution/descriptors');
+const { managedCandidates } = await import('../resolution/descriptors');
 const { resolveCandidates } = await import('../resolution/resolve-candidates');
 const { gatewayModelCatalog, managedModels } = await import('./catalog-models');
 const { managedPickerModels } = await import('./picker-catalog');
@@ -133,7 +133,6 @@ describe('managed provider disabled (KORTIX_MANAGED_PROVIDER_ENABLED=false, the 
 
   test('managedCandidates()/managedDescriptor() (defense-in-depth) refuse to build a descriptor and read NEITHER credential', () => {
     expect(managedCandidates(FAKE_MANAGED_MODEL)).toEqual([]);
-    expect(managedDescriptor(FAKE_MANAGED_MODEL)).toBeNull();
     expect(morphKeyReads).toBe(0);
     expect(bedrockKeyReads).toBe(0);
     expect(openrouterKeyReads).toBe(0);

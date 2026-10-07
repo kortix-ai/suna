@@ -14,7 +14,6 @@ export const SLACK_TEAM_ID = 'SLACK_TEAM_ID';
 export const SLACK_BOT_USER_ID = 'SLACK_BOT_USER_ID';
 export const SLACK_TEAM_NAME = 'SLACK_TEAM_NAME';
 
-export const TELEGRAM_BOT_TOKEN = 'TELEGRAM_BOT_TOKEN';
 export const TELEGRAM_WEBHOOK_SECRET = 'TELEGRAM_WEBHOOK_SECRET';
 
 export async function loadTelegramWebhookSecretForProject(
@@ -442,12 +441,6 @@ export async function loadAgentMailApiKeyForInbox(
     return readSecret(projectId, `${AGENTMAIL_API_KEY}${suffix}`);
   }
   return null;
-}
-
-export async function loadAgentMailWebhookSecretForProject(
-  projectId: string,
-): Promise<string | null> {
-  return readSecret(projectId, AGENTMAIL_WEBHOOK_SECRET);
 }
 
 export async function loadAgentMailWebhookSecretForInbox(

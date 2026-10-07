@@ -42,17 +42,6 @@ export function managedGithubInstallId(): string | null {
 }
 
 /**
- * The stored account type for the App-installation owner (install-callback
- * records `account.type` straight off the installation payload). `undefined`
- * when it was never recorded; callers fall back to a live `isOrgAccount`
- * lookup in that case (see `managedAdminAuth` below).
- */
-export function managedGithubOwnerType(): 'User' | 'Organization' | undefined {
-  const backend = resolveGitBackend();
-  return backend?.kind === 'app' ? (backend.ownerType ?? undefined) : undefined;
-}
-
-/**
  * A straight org token for the instance backend — the "one server-side key"
  * model. Simpler to operate than an App install, at the cost of a long-lived
  * org-wide token. Either way the token stays server-side: the sandbox only

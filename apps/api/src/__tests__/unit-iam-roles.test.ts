@@ -12,19 +12,14 @@
 import { describe, test, expect } from 'bun:test';
 import {
   isAccountManager,
-  maxProjectRole,
   normalizeProjectRole,
   parseAssignableProjectRole,
   PROJECT_ROLE_RANK,
 } from '../iam/roles';
 
 describe('project role rank', () => {
-  test('manager outranks member, and maxProjectRole picks the stronger', () => {
+  test('manager outranks member', () => {
     expect(PROJECT_ROLE_RANK.manager).toBeGreaterThan(PROJECT_ROLE_RANK.member);
-    expect(maxProjectRole('member', 'member')).toBe('member');
-    expect(maxProjectRole('member', 'manager')).toBe('manager');
-    expect(maxProjectRole('manager', 'member')).toBe('manager');
-    expect(maxProjectRole('manager', 'manager')).toBe('manager');
   });
 });
 

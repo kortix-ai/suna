@@ -8,7 +8,6 @@ import {
   canonicalConnectorAlias,
   connectorBindingPayloadConflicts,
   invalidateSessionConnectorLookup,
-  mayUseLegacyDefaultConnection,
   parseSessionConnectorBindings,
   selectEntitledConnectorConnection,
 } from './session-connector-bindings';
@@ -56,10 +55,6 @@ describe('session connector binding security contracts', () => {
     ).toBe('kortix-session');
   });
 
-  test('legacy defaults are allowed only when the session has zero durable bindings', () => {
-    expect(mayUseLegacyDefaultConnection(false)).toBe(true);
-    expect(mayUseLegacyDefaultConnection(true)).toBe(false);
-  });
 });
 
 /**

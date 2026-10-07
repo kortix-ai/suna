@@ -20,8 +20,6 @@ export {
 } from './tier-facts';
 
 export const TOKEN_PRICE_MULTIPLIER = 1.2;
-export const DEFAULT_TOKEN_COST = 0.000002;
-export const CREDITS_PER_DOLLAR = 100;
 
 /** One-time credit grant per machine provisioned ($5 = 500 display credits). */
 export const MACHINE_CREDIT_BONUS = 5;
@@ -70,8 +68,6 @@ export const TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD = 15;
 export const TYPICAL_LLM_BUDGET_PER_SEAT_USD = 10;
 
 // Per-second customer compute prices live in platform/providers/compute-rates.ts.
-/** Stopped-but-not-destroyed sandboxes pay a fraction of the disk rate. v2: not billed; reserved for future. */
-export const COMPUTE_ARCHIVE_DISK_MULTIPLIER = 0.25;
 
 // Auto-topup defaults for per-seat accounts scale with seat count.
 // effectiveThreshold = AUTO_TOPUP_DEFAULT_THRESHOLD_PER_SEAT × seat_count
@@ -84,7 +80,6 @@ const AUTO_TOPUP_DEFAULT_AMOUNT_PER_SEAT = 20;
 
 // Sensible caps for the per-seat plan. Effectively uncapped for normal use.
 export const MAX_PROJECTS_PER_ACCOUNT = 200;
-export const MAX_CONCURRENT_SANDBOXES_PER_SEAT = 3;
 export const MAX_SEATS_PER_ACCOUNT = 100;
 
 export type BillingModel = 'legacy' | 'per_seat' | 'credit';
@@ -604,10 +599,6 @@ function getStripePrices(): StripePriceConfig {
   }
 }
 
-export function getProductId(): string {
-  return getStripePrices().productId;
-}
-
 export function getComputeProductId(): string {
   return getStripePrices().computeProductId;
 }
@@ -703,6 +694,7 @@ export function getBillingPeriodByPriceId(
   return null;
 }
 
+/** Every tier row. The plan-catalog parity test reads the table through it. */
 export function getAllTiers(): TierConfig[] {
   return Object.values(TIERS);
 }
@@ -734,10 +726,6 @@ export function getMonthlyCredits(tierName: string): number {
   return getTier(tierName).monthlyCredits;
 }
 
-export function canPurchaseCredits(tierName: string): boolean {
-  return getTier(tierName).canPurchaseCredits;
-}
-
 /**
  * Whether a tier unlocks the full model catalog — i.e. the premium LLM gateway
  * (Claude/GPT/Gemini/…), not just OpenCode's built-in Zen models.
@@ -756,32 +744,9 @@ export function tierGrantsAllModels(tierName: string): boolean {
   return getTier(tierName).models.includes('all');
 }
 
-/**
- * Whether a resolved billing tier is blocked from Kortix-managed models.
- *
- * The environment argument remains for source compatibility. It has no effect.
- * `free`, `none`, and unknown tiers are blocked in every environment.
- */
-export function accountIsFreeTierForModels(
-  tierName: string,
-  _env: string = config.INTERNAL_KORTIX_ENV,
-): boolean {
-  return !tierGrantsAllModels(tierName);
-}
-
 /** Full entitlement set for a tier (enterprise feature gates). */
 export function getTierEntitlements(tierName: string): TierEntitlements {
   return getTier(tierName).entitlements;
-}
-
-/**
- * Whether a tier unlocks a specific enterprise feature (SSO, SCIM, …). The
- * single source of truth for plan-gating the identity surfaces — used by the
- * IAM route guard and the /scim/v2 data-plane middleware. Only the
- * `enterprise` tier returns true today.
- */
-export function tierHasEntitlement(tierName: string, key: keyof TierEntitlements): boolean {
-  return getTierEntitlements(tierName)[key] === true;
 }
 
 /** Returns the per-seat Stripe price ID for the current environment. */
@@ -861,10 +826,6 @@ export function getTierOrder(tierName: string): number {
 
 export function isUpgrade(fromTier: string, toTier: string): boolean {
   return getTierOrder(toTier) > getTierOrder(fromTier);
-}
-
-export function isDowngrade(fromTier: string, toTier: string): boolean {
-  return getTierOrder(toTier) < getTierOrder(fromTier);
 }
 
 // ─── RevenueCat (mobile billing — untouched) ─────────────────────────────────
