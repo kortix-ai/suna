@@ -23,7 +23,7 @@
 import { appDeployments, appRuntimes, apps } from '@kortix/db';
 import { and, count, eq, inArray, isNull } from 'drizzle-orm';
 import { config } from '../config';
-import { assertAppBudgetAvailable } from './budget';
+import { assertAppBudgetAvailable, maxAppMonthlyBudgetUsd } from './budget';
 import { checkBillingAdmission } from '../billing/services/billing-gate';
 import { getTier } from '../billing/services/tiers';
 import { resolveAccountTier } from '../shared/account-limits';
@@ -33,7 +33,7 @@ import { SANDBOX_SPEC_LIMITS } from '../snapshots/dockerfile-layer';
 /** An App machine may not exceed what a session sandbox may. */
 export const APP_MACHINE_LIMITS = SANDBOX_SPEC_LIMITS;
 
-export const MAX_APP_MONTHLY_BUDGET_USD = 100_000;
+export { MAX_APP_MONTHLY_BUDGET_USD } from './budget';
 
 /** App runtime statuses that hold provider compute. */
 const LIVE_APP_RUNTIME_STATUSES = ['provisioning', 'starting', 'running'] as const;
@@ -95,7 +95,7 @@ export function assertAppMachineWithinLimits(machine: AppMachineRequest): void {
 
 export function assertAppBudgetWithinLimits(budgetUsd: number | undefined): void {
   if (budgetUsd === undefined) return;
-  const max = positiveIntEnv('KORTIX_APPS_MAX_MONTHLY_BUDGET_USD') ?? MAX_APP_MONTHLY_BUDGET_USD;
+  const max = maxAppMonthlyBudgetUsd();
   if (budgetUsd < 0 || budgetUsd > max) {
     throw new AppLimitError(
       'app_budget_out_of_range',

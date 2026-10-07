@@ -107,4 +107,8 @@ describe('default App budget', () => {
     expect(defaultAppBudgetUsd({ ...standard, alwaysOn: false })).toBe(5);
     expect(defaultAppBudgetUsd({ cpuCores: 8, memoryGb: 32, diskGb: 10, alwaysOn: false })).toBe(5);
   });
+
+  test('a derived budget never exceeds the operator maximum', () => {
+    expect(defaultAppBudgetUsd({ cpuCores: 1, memoryGb: 2, diskGb: 10, alwaysOn: true }, undefined, 50)).toBe(50);
+  });
 });

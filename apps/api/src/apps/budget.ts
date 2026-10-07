@@ -3,6 +3,7 @@ import { and, eq, gte } from 'drizzle-orm';
 import { monthStartUtc, monthlyComputeColumns, sumMonthlyComputeCost } from '../billing/services/compute-accrual';
 import { calculateComputeCost } from '../billing/services/compute-metering';
 import type { ProviderName } from '../platform/providers';
+import { config } from '../config';
 import { db } from '../shared/db';
 
 /** A month of wall clock: 730 hours, the figure cloud price lists use. */
@@ -35,8 +36,17 @@ export const DEFAULT_APP_MONTHLY_BUDGET_USD = 5;
 export function defaultAppBudgetUsd(
   app: AppMachine & { alwaysOn: boolean },
   provider?: ProviderName,
+  max = maxAppMonthlyBudgetUsd(),
 ): number {
-  return app.alwaysOn ? Math.ceil(appMonthlyEstimateUsd(app, provider)) : DEFAULT_APP_MONTHLY_BUDGET_USD;
+  if (!app.alwaysOn) return DEFAULT_APP_MONTHLY_BUDGET_USD;
+  return Math.min(Math.ceil(appMonthlyEstimateUsd(app, provider)), max);
+}
+
+export const MAX_APP_MONTHLY_BUDGET_USD = 100_000;
+
+/** The highest monthly budget an App may have: the operator's `KORTIX_APPS_MAX_MONTHLY_BUDGET_USD`, default 100,000. */
+export function maxAppMonthlyBudgetUsd(): number {
+  return config.KORTIX_APPS_MAX_MONTHLY_BUDGET_USD;
 }
 
 export interface AppBudgetWarning {
