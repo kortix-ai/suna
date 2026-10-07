@@ -497,6 +497,17 @@ flow(
       );
       r.status(400);
     });
+    // KRTX-1721: the first of 6 fields is seconds, so this fires every 30 s.
+    await ctx.step('a cron that fires more than once a minute → 400 naming the 60-second minimum', async () => {
+      const r = await owner.post(
+        '/v1/projects/:projectId/triggers',
+        { name: 'x', type: 'cron', cron: '*/30 * * * * *', timezone: 'UTC', prompt_template: 'x' },
+        { params },
+      );
+      r.status(400);
+      const error = String(r.json<{ error?: string }>()?.error ?? '');
+      if (!error.includes('60 seconds')) throw new Error(`error does not name the minimum: ${error}`);
+    });
     await ctx.step('missing prompt_template → 400', async () => {
       const r = await owner.post(
         '/v1/projects/:projectId/triggers',
@@ -1285,5 +1296,58 @@ flow(
     } finally {
       sb.dispose();
     }
+  },
+);
+
+// TRG-17 — a trigger's listing says when it runs next, and a manual fire that
+// fails is recorded on the trigger like a failed cron fire (KRTX-1743). Before,
+// a failed manual or webhook fire answered 500 and left `last_status` as it
+// was, and no surface showed the next run.
+flow(
+  'TRG-17',
+  {
+    domain: 'triggers',
+    routes: [
+      'POST /v1/projects/:projectId/triggers',
+      'GET /v1/projects/:projectId/triggers',
+      'POST /v1/projects/:projectId/triggers/:slug/fire',
+    ],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== 'local') return; // the local stack runs no sandbox, so a fire fails after authorization
+    const p = await ctx.fixtures.project({ managedGit: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: p.id };
+    const digest = async () =>
+      (await owner.get('/v1/projects/:projectId/triggers', { params }))
+        .status(200)
+        .json<{ triggers: Array<{ slug: string; next_fire_at?: string | null; last_status?: string | null; last_error?: string | null }> }>()
+        .triggers.find((t) => t.slug === 'digest');
+
+    await ctx.step('a daily cron trigger lists its next run, within a day of now', async () => {
+      (
+        await owner.post(
+          '/v1/projects/:projectId/triggers',
+          { name: 'Digest', type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'Summarize.' },
+          { params },
+        )
+      ).status(201);
+      const next = Date.parse(String((await digest())?.next_fire_at ?? ''));
+      const now = Date.now();
+      if (!(next > now - 60_000 && next < now + 25 * 60 * 60 * 1000)) {
+        throw new Error(`next_fire_at is ${String((await digest())?.next_fire_at)}`);
+      }
+    });
+
+    await ctx.step('a manual fire that fails is recorded on the trigger: last_status failed, with the error', async () => {
+      const fired = await owner.post('/v1/projects/:projectId/triggers/:slug/fire', {}, { params: { ...params, slug: 'digest' } });
+      fired.status(500);
+      const error = fired.json<{ error?: string }>()?.error ?? '';
+      const after = await digest();
+      if (after?.last_status !== 'failed') throw new Error(`last_status is ${String(after?.last_status)}`);
+      if (!after.last_error || !error.startsWith(after.last_error.slice(0, 40))) {
+        throw new Error(`last_error "${String(after?.last_error)}" is not the fire's error "${error}"`);
+      }
+    });
   },
 );

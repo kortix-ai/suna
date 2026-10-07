@@ -290,7 +290,13 @@ mock.module('../projects/lib/fast-boot-git-hint', () => ({
   resolveFastBootGitHintWithCache: async () => undefined,
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test
+// (readRepoFileBytes, added for the project-files route, broke this file).
+const actualGit = await import('../projects/git');
 mock.module('../projects/git', () => ({
+  ...actualGit,
   MergeConflictError: class MergeConflictError extends Error {},
   createRemoteSessionBranch: async () => {
     branchCreateCalls += 1;

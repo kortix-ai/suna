@@ -288,7 +288,11 @@ function CreditTopUpModal({
   accountLoading,
 }: CreditTopUpModalProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tBanner = useTranslations('hardcodedUi.componentsSessionSessionErrorBanner');
   const createPortal = useCreatePortalSession();
+  // KRTX-1720: buying credits and auto top-up need `billing.write` (owners by
+  // default); the API answers a member 403. A member is told who can act.
+  const canManageBilling = accountState?.can_manage_billing !== false;
   // Copy is DERIVED, never written here. The title used to be hardcoded
   // `'Out of credits'` with a single `payment_failed` branch, so this modal
   // announced an emergency to every account that opened it — including one
@@ -364,17 +368,23 @@ function CreditTopUpModal({
               modal and the pane are not two dialects of one control. Both
               components render their own heading and no chrome, so the card
               supplies the border and the hairline and nothing repeats. */}
-          <div className="bg-popover rounded-md border">
-            <section className="space-y-3 px-4 py-4">
-              <h3 className="text-foreground text-sm font-medium">
-                {tI18nComplete.raw('textd22feb61298b')}
-              </h3>
-              <CreditTopupSection />
-            </section>
-            <div className="border-t px-4 py-4">
-              <AutoTopupCard fetchSettings showSaveButton />
+          {canManageBilling ? (
+            <div className="bg-popover rounded-md border">
+              <section className="space-y-3 px-4 py-4">
+                <h3 className="text-foreground text-sm font-medium">
+                  {tI18nComplete.raw('textd22feb61298b')}
+                </h3>
+                <CreditTopupSection />
+              </section>
+              <div className="border-t px-4 py-4">
+                <AutoTopupCard fetchSettings showSaveButton />
+              </div>
             </div>
-          </div>
+          ) : (
+            <p className="text-muted-foreground text-sm" data-testid="topup-ask-owner">
+              {tBanner.raw('askOwnerToAddCredits')}
+            </p>
+          )}
         </ModalBody>
 
         <ModalFooter className="pt-4 pb-5 sm:justify-start">
