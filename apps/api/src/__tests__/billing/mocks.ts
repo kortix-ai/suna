@@ -162,6 +162,12 @@ export function registerGlobalMocks() {
       delete: () => ({
         where: async () => ({ rowCount: 0 }),
       }),
+      // The sweep soft-deletes the account's sessions before their boxes.
+      update: () => ({
+        set: () => ({
+          where: () => Object.assign(Promise.resolve([]), { returning: async () => [] }),
+        }),
+      }),
       transaction: async <T,>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(db),
       // The bounded chunk deletes are raw SQL; a count below the chunk size ends the loop.
       execute: async () => [{ n: 0 }],
