@@ -96,6 +96,14 @@ import {
   type BlockKind,
   type StackContext,
 } from '@/lib/markdown/markdown-layout';
+import {
+  nodeText,
+  TABLE_CELL_PADDING_X,
+  TABLE_CELL_PADDING_Y,
+  tableCellAlign,
+  tableColumnWidths,
+  tableSections,
+} from '@/lib/markdown/table-layout';
 import { openLink } from '@/lib/utils/open-link';
 
 // The component's own module, not the package root: the root also exports
@@ -221,21 +229,6 @@ function stack(nodes: AstNode[], children: React.ReactNode[], context: StackCont
 function hasParent(parents: AstNode[], type: string): boolean {
   return parents.some((parent) => parent.type === type);
 }
-
-/** Plain text of an AST node. */
-function nodeText(node: AstNode | undefined): string {
-  if (!node) return '';
-  if (node.content) return node.content;
-  return (node.children ?? []).map(nodeText).join('');
-}
-
-/** Roobert average advance at `text-sm`, for estimating table column widths. */
-const TABLE_CHAR_WIDTH = 7.7;
-const TABLE_CELL_PADDING_X = web(4);
-const TABLE_CELL_PADDING_Y = web(2);
-const TABLE_MIN_COLUMN = 44;
-/** Body cells wrap past this width; headers never wrap (`whitespace-nowrap`). */
-const TABLE_MAX_BODY_TEXT = 240;
 
 /** Web's `MarkdownCode` routing: Mermaid first, then math fences, then code. */
 function FencedCode({ node, isDark }: { node: AstNode; isDark: boolean }) {
@@ -500,32 +493,11 @@ function renderCellContent(cell: AstNode, isDark: boolean, palette: MarkdownPale
  * `text-sm`, `bg-muted` header, `px-4 py-2` cells, row dividers.
  */
 function MarkdownTable({ node, palette, isDark }: { node: AstNode; palette: MarkdownPalette; isDark: boolean }) {
-  const sections: { isHeader: boolean; rows: AstNode[][] }[] = [];
-  for (const section of node.children ?? []) {
-    const isHeader = section.type === 'thead';
-    const rows: AstNode[][] = [];
-    for (const row of section.children ?? []) {
-      if (row.type === 'tr') rows.push((row.children ?? []).filter((c) => c.type === 'th' || c.type === 'td'));
-    }
-    if (rows.length > 0) sections.push({ isHeader, rows });
-  }
-
+  const sections = tableSections(node);
   const colCount = Math.max(0, ...sections.flatMap((s) => s.rows.map((r) => r.length)));
   if (colCount === 0) return <View />;
 
-  const colWidths: number[] = [];
-  for (let col = 0; col < colCount; col++) {
-    let header = 0;
-    let body = 0;
-    for (const section of sections) {
-      for (const row of section.rows) {
-        const width = nodeText(row[col]).length * TABLE_CHAR_WIDTH;
-        if (section.isHeader) header = Math.max(header, width);
-        else body = Math.max(body, Math.min(width, TABLE_MAX_BODY_TEXT));
-      }
-    }
-    colWidths.push(Math.max(Math.max(header, body) + 2 * TABLE_CELL_PADDING_X, TABLE_MIN_COLUMN));
-  }
+  const colWidths = tableColumnWidths(sections, colCount);
 
   let rowIndex = 0;
   return (
@@ -565,7 +537,7 @@ function MarkdownTable({ node, palette, isDark }: { node: AstNode; palette: Mark
                           fontSize: TYPE.sm.fontSize,
                           lineHeight: TYPE.sm.lineHeight,
                           color: palette.strong,
-                          textAlign: 'left',
+                          textAlign: tableCellAlign(cell),
                         }}
                       >
                         {renderCellContent(cell, isDark, palette)}
