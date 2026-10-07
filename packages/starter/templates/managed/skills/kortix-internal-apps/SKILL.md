@@ -13,8 +13,8 @@ you verify the deployed app yourself before you report.
 
 ```text
 member's browser ──▶ Kortix App (static UI, access: project)
-      │                 └─ GET /_kortix/backend-token  ──▶ JWT naming the member
-      └──── websocket ──▶ Kortix Backend (Convex)  ── ctx.auth.getUserIdentity()
+      │                 └─ kortixAppBackendToken()     ──▶ JWT naming the member + groups
+      └──── websocket ──▶ Kortix Backend (Convex)  ── requireKortixMember(identity)
 ```
 
 ## Prerequisites
@@ -49,9 +49,13 @@ memory/<app>.md                # what you built, URLs, how to redeploy
    Read `convex/_generated/ai/guidelines.md`.
 3. **Schema + sign-in.** `convex/schema.ts` with indexes for every filter,
    `convex/auth.config.ts` and `convex/lib/auth.ts` from kortix-backends
-   (references/sign-in.md). Store `identity.subject` as owner/author ids.
+   (references/sign-in.md), built on `requireKortixMember` from `@kortix/sdk`
+   (`npm i @kortix/sdk` in the backend and the App). Store `me.userId` as
+   owner/author ids. Use Kortix groups (`{ groups: ["Finance"] }`) or roles
+   (`{ roles: ["owner", "admin"] }`) for who may do what; do not build a user
+   or role table the team already has in Kortix.
 4. **Functions.** Every public query and mutation calls `requireMember(ctx)`
-   first. Put multi-row changes (move a card, close a deal) in one mutation so
+   (or `requireMember(ctx, { groups: [...] })`) first. Put multi-row changes (move a card, close a deal) in one mutation so
    they are atomic. Add an `internal` seed.
 5. **Deploy and test the backend.**
    ```sh

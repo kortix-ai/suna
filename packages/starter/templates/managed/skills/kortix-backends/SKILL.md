@@ -75,7 +75,7 @@ the session branch like any other code.
 | `kortix backends get <name> [--json]` | `url` (Convex client URL), `site_url` (HTTP actions), status. |
 | `kortix backends dashboard <name>` | Link to the backend's admin dashboard in Kortix (data, functions, logs, files, schedules, env). Give it to the user so they can inspect what you built. |
 | `kortix backends env <name>` | Shell exports for the Convex CLI (admin). Use with `eval`. |
-| `kortix backends token <name>` | A one-hour sign-in token naming you (see Sign-in). |
+| `kortix backends token <name>` | A 15-minute sign-in token naming you, with your groups and role (see Sign-in). |
 | `kortix backends deploy <name> --dir <path>` | Create if missing, then deploy. |
 | `kortix backends resize <name> --cpu N --memory GB --disk GB` | Resize (see Size, backups and restore). |
 | `kortix backends backups <name>` · `snapshot <name>` · `restore <name> <id>` | Backups and point-in-time restore. |
@@ -138,11 +138,21 @@ export default {
 };
 ```
 
-Then in any function, `await ctx.auth.getUserIdentity()` returns the member
-(`subject` = Kortix user id, `email`, `name`) or `null` for an anonymous call.
+Then every function reads the member with `@kortix/sdk` (`npm i @kortix/sdk`):
+
+```ts
+import { requireKortixMember } from "@kortix/sdk";
+const me = requireKortixMember(await ctx.auth.getUserIdentity());                      // any member
+const me = requireKortixMember(await ctx.auth.getUserIdentity(), { groups: ["Finance"] }); // one Kortix group
+```
+
+`me` is `{ userId, email, name, picture, groups, groupIds, role, accountId,
+projectId }`. Anonymous or outside the group throws `KortixMemberError`.
 **The backend URL is public: every public function that reads or writes
-non-public data must reject a `null` identity.** Who gets a token, the React
-wiring, and the helper to copy: [references/sign-in.md](references/sign-in.md).
+non-public data must call it first.** The helper to copy, the App wiring
+(`convex.setAuth(kortixAppBackendToken("main"))`), group and role rules, and
+providers for people who are not Kortix members:
+[references/sign-in.md](references/sign-in.md).
 
 ## Wire an App to the backend
 
@@ -150,8 +160,9 @@ The `url` is public, not secret. A static or SPA frontend reads it at build
 time: put `VITE_CONVEX_URL=<url>` (Vite) or `NEXT_PUBLIC_CONVEX_URL=<url>`
 (Next.js) in the App's committed `.env.production`, build, and deploy the built
 directory with kortix-apps. A server-rendered App reads `CONVEX_URL` at runtime
-from the App's `env` in `kortix.yaml`. The App fetches its sign-in token from
-`/_kortix/backend-token` on its own origin (references/sign-in.md). The full
+from the App's `env` in `kortix.yaml`. The App sends a sign-in token with
+`convex.setAuth(kortixAppBackendToken("main"))` from `@kortix/sdk`
+(references/sign-in.md). The full
 recipe is kortix-internal-apps.
 
 ## Read and write data as an agent
@@ -185,7 +196,7 @@ the link from `kortix backends dashboard <name>`.
   (`backend.credentials.read`). Never print, log, commit or paste it, and never
   put it in an App, a bundle, `kortix.yaml` or a chat. Keep it in the shell via
   `eval "$(kortix backends env <name>)"`.
-- Sign-in tokens are one-hour bearer tokens. Never commit or log them either.
+- Sign-in tokens are 15-minute bearer tokens. Never commit or log them either.
 - A deployment env var set with `npx convex env set` is readable by anyone with
   the admin key; put third-party credentials there only when an action needs
   them.

@@ -946,6 +946,21 @@ read it per request; in the browser, `kortixAppViewerToken()` replaces a token
 the API refused (after an access-policy change) and replays the call once.
 Guide: `/docs/sdk/apps`.
 
+### One member on every runtime: groups, roles, backends
+
+```ts
+convex.setAuth(kortixAppBackendToken('main'));                                   // App → Kortix Backend
+const me = requireKortixMember(await ctx.auth.getUserIdentity(), { groups: ['Finance'] });  // backend function
+const caller = await verifyKortixMemberToken(bearer);                           // any server (KORTIX_AUTH_* env)
+const viewer = readKortixMember(await fetchKortixAppViewer());                  // browser, no backend
+```
+
+`readKortixMember` reads every shape Kortix vouches with (gate answer, signed
+header, backend token) into one `KortixMember`: `userId`, `email`, `name`,
+`picture`, `groups`, `groupIds`, `role`, `accountId`, `projectId`.
+`requireKortixMember` throws `KortixMemberError` (`unauthenticated` |
+`forbidden`). WebCrypto only; no dependency. Guide: `/docs/sdk/apps`.
+
 ### Headless sign-in (your users, straight through the API)
 
 ```ts

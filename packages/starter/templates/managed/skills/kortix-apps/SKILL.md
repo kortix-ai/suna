@@ -162,11 +162,15 @@ Backend (load `kortix-backends`; for a whole internal app load
   (`--type static --spa`). `kortix apps deploy` has no flag for build-time
   variables. A server-rendered App reads `CONVEX_URL` from `env` in
   `kortix.yaml` at runtime.
-- **Sign-in:** the App's Convex client fetches `GET /_kortix/backend-token?backend=<name>`
-  from its own origin (`convex.setAuth(...)`). Kortix answers with a one-hour
-  token naming the viewer, so backend functions know who is calling. Needs a
-  signed-in viewer: access `private`, `project` or `restricted`, and `--viewer`
-  not `off`. A `public` or `password` App gets `401`.
+- **Sign-in:** `convex.setAuth(kortixAppBackendToken("<name>"))` from
+  `@kortix/sdk`. It fetches `GET /_kortix/backend-token?backend=<name>` on the
+  App's own origin: a 15-minute token naming the viewer, with their Kortix
+  groups and role, refreshed before it expires. Needs a signed-in viewer:
+  access `private`, `project` or `restricted`, and `--viewer` not `off`. A
+  `public` or `password` App gets `401`.
+- **Who is looking, without a backend:** `fetchKortixAppViewer()` returns the
+  viewer's id, name, picture, groups and role from `/_kortix/viewer`;
+  `readKortixMember(viewer)` gives the same member shape a backend sees.
 - **Never** put the backend admin key in an App, a bundle or App `env`.
 
 ## Verify

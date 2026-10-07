@@ -280,8 +280,8 @@ export function registerBackendsRoutes(): void {
       if (row.status !== 'running') {
         return c.json({ error: `backend is ${effectiveStatus(row)}`, code: 'backend_not_running' }, 409);
       }
-      const identity = await resolveAppViewerIdentity(loaded.userId);
-      const minted = backendMemberToken(row, { userId: loaded.userId, email: identity.email });
+      const identity = await resolveAppViewerIdentity(loaded.userId, row.accountId);
+      const minted = backendMemberToken(row, { userId: loaded.userId, ...identity });
       if (!minted) {
         return c.json({ error: 'this backend predates Kortix sign-in; create a new backend', code: 'backend_auth_unavailable' }, 409);
       }

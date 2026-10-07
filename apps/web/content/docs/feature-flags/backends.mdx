@@ -160,11 +160,24 @@ export default {
 };
 ```
 
-`await ctx.auth.getUserIdentity()` then returns the member (`subject` = Kortix
-user id, `email`, `name`), or `null` for an anonymous call. The backend URL is
-public, so every function that touches non-public data must reject `null`.
+Read and enforce the member with `@kortix/sdk`:
 
-Kortix mints one-hour tokens:
+```ts
+import { requireKortixMember } from "@kortix/sdk";
+
+const me = requireKortixMember(await ctx.auth.getUserIdentity());
+const finance = requireKortixMember(await ctx.auth.getUserIdentity(), { groups: ["Finance"] });
+```
+
+`me` carries `userId`, `email`, `name`, `picture`, `groups` (Kortix group
+names), `groupIds`, `role` (account role), `accountId` and `projectId`. An
+anonymous caller, or one outside the groups or roles, throws
+`KortixMemberError`. The backend URL is public, so every function that touches
+non-public data must call it first. Kortix groups need the Enterprise plan;
+roles work on every plan.
+
+Kortix mints 15-minute tokens, so a member you remove loses backend access
+within 15 minutes. The App gate refuses them at once:
 
 | Caller | Token source |
 |---|---|
@@ -180,13 +193,17 @@ the built directory. A server-rendered App reads `CONVEX_URL` from its `env` in
 
 ```ts
 import { ConvexReactClient } from "convex/react";
+import { kortixAppBackendToken } from "@kortix/sdk";
 
 const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL);
-convex.setAuth(async () => {
-  const res = await fetch("/_kortix/backend-token?backend=main");
-  return res.ok ? (await res.json()).token : null;
-});
+convex.setAuth(kortixAppBackendToken("main"));
 ```
+
+Any other server verifies the same token with
+`verifyKortixMemberToken(token)`, which reads `KORTIX_AUTH_JWKS`,
+`KORTIX_AUTH_ISSUER` and `KORTIX_AUTH_AUDIENCE`. For people who are not
+Kortix members, add a second auth provider (Convex Auth, Clerk, WorkOS) next
+to the Kortix one.
 
 ## Agents
 

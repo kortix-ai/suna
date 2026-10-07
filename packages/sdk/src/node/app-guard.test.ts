@@ -179,3 +179,31 @@ describe('the guards fail closed', () => {
     expect((await guard.requireGroup(req, [])).viewer).toBeUndefined();
   });
 });
+
+describe('the whole member, on both paths', () => {
+  test('the gate path carries name, group names and role', async () => {
+    const guard = createKortixAppGuard({ secret: SECRET, backendUrl: 'https://api.example/v1' });
+    const viewer = await guard.viewer(
+      gatedRequest(await signedHeader({ ...BASE, groupIds: ['g-fin'], groups: ['Finance'], name: 'Ada', role: 'admin' })),
+    );
+    expect(viewer).toMatchObject({ name: 'Ada', groups: ['Finance'], groupIds: ['g-fin'], role: 'admin' });
+  });
+
+  test('requireGroup accepts a group name as well as an id', async () => {
+    const guard = createKortixAppGuard({ secret: SECRET, backendUrl: 'https://api.example/v1' });
+    const req = gatedRequest(await signedHeader({ ...BASE, groupIds: ['g-fin'], groups: ['Finance'] }));
+    expect((await guard.requireGroup(req, ['Finance'])).viewer?.userId).toBe('u1');
+    expect((await guard.requireGroup(req, ['Legal'])).viewer).toBeUndefined();
+  });
+
+  test('the sign-in path reads group names from the same lookup', async () => {
+    const guard = createKortixAppGuard({
+      backendUrl: 'https://api.example/v1',
+      auth: { viewer: async () => ({ userId: 'u1', email: 'a@b.test', token: 't', accounts: [{ account_id: 'acc-1' }] }), signInUrl: () => '/signin' } as never,
+      fetch: async () => Response.json({ groups: [{ group_id: 'g-fin', name: 'Finance' }] }),
+    });
+    const viewer = await guard.viewer(new Request('https://app.example/'));
+    expect(viewer).toMatchObject({ groupIds: ['g-fin'], groups: ['Finance'] });
+    expect((await guard.requireGroup(new Request('https://app.example/'), ['Finance'])).viewer?.userId).toBe('u1');
+  });
+});

@@ -182,7 +182,7 @@ On your App's server, the gate signs the identity into every request:
 import { readAppViewer, createAppViewerKortix } from '@kortix/sdk/server';
 
 const viewer = await readAppViewer(request);
-// { userId, email, groupIds, accountId, appId, accessMode, token }
+// { userId, email, name, picture, groupIds, groups, role, projectId, accountId, appId, accessMode, token }
 if (!viewer) return new Response('Not found', { status: 404 });
 
 // and, for an `api`-scoped App, act as them:
@@ -203,7 +203,7 @@ on `PATCH /projects/:id/apps/:appId/access`:
 
 | Scope | Your App receives |
 |---|---|
-| `identity` (default) | The viewer's id, email and group ids, plus a `profile email` token. Enough to show each person their own data. |
+| `identity` (default) | The viewer's id, email, name, picture, account role, and Kortix groups (ids and names, in this App's account only), plus a `profile email` token. Enough to show each person their own data and to gate by group. |
 | `api` | The above, and a token that acts **as** that person on the Kortix API — bounded by their own role. |
 | `off` | Nothing. |
 
@@ -236,6 +236,58 @@ access policy changes.
 
 An App served on its **own domain** (not `*.apps.kortix.com`) has no gate in
 front of it — use [Sign in with Kortix](/docs/sdk/sign-in) there instead.
+
+## One member, on every runtime
+
+Kortix vouches for the same person in three places: the browser asks the gate
+(`/_kortix/viewer`), the App's server reads the signed header, and a
+[Kortix Backend](/docs/feature-flags/backends) receives a Kortix-signed token.
+`readKortixMember` turns each of those shapes into one `KortixMember`, and
+`requireKortixMember` decides who may proceed. No framework and no dependency:
+the same code runs in a browser, Node, Bun, a Worker and a Convex function.
+
+```ts
+import {
+  readKortixMember, requireKortixMember, verifyKortixMemberToken,
+  kortixAppBackendToken, fetchKortixAppViewer, KortixMemberError,
+} from '@kortix/sdk';
+
+// Browser: who is looking (null when nobody).
+const me = readKortixMember(await fetchKortixAppViewer());
+
+// Browser → backend: a token fetcher for a client's auth callback.
+convex.setAuth(kortixAppBackendToken('main'));
+
+// Backend function: the runtime verified the token; enforce the rules.
+const member = requireKortixMember(await ctx.auth.getUserIdentity(), { groups: ['Finance'] });
+
+// Any other server: verify the bearer here. No options = the KORTIX_AUTH_* env.
+const caller = await verifyKortixMemberToken(bearer);
+```
+
+| Field | Value |
+|---|---|
+| `userId` | Kortix user id. Stable; key rows on it. |
+| `email`, `name`, `picture` | From the member's profile. `null` when unknown. |
+| `groups`, `groupIds` | The member's Kortix groups in this account, by name and by id. |
+| `role` | Account role: `owner`, `admin` or `member`. |
+| `accountId`, `projectId` | Where the App or backend lives. |
+
+`requireKortixMember(claims, { groups, roles })` returns the member or throws
+`KortixMemberError` with `code` `unauthenticated` (nobody, or a token that
+failed a check) or `forbidden` (outside the groups or roles). Each list means
+"any one of these"; a group matches by name or id; an empty list admits nobody.
+
+`verifyKortixMemberToken` checks the ES256 signature, expiry (60 s skew),
+issuer and audience. It takes the key set as an object, JSON text, the `data:`
+URI Kortix writes into `KORTIX_AUTH_JWKS`, or an https URL. Every failure,
+including a missing key set, throws: nothing passes unchecked.
+
+Backend tokens last 15 minutes and carry `sub`, `email`, `name`, `picture`,
+`groups`, `group_ids`, `role`, `account_id` and `project_id`. A member you
+remove from the project or a group loses backend access within one token
+lifetime; the App gate refuses them on the next page load. Kortix groups need
+the Enterprise plan; roles work on every plan.
 
 ## Manage access
 

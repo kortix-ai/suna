@@ -34,8 +34,16 @@ import type { KortixAuth } from './auth';
 export interface KortixGuardedViewer {
   userId: string;
   email: string | null;
+  /** Display name, when the source carries one. */
+  name?: string | null;
+  /** Profile picture URL, when the source carries one. */
+  picture?: string | null;
   /** Always populated: from the signed header, or fetched on the sign-in path. */
   groupIds: string[];
+  /** Names of the same groups, when the source carries them. */
+  groups?: string[];
+  /** The viewer's account role, when the source carries it. */
+  role?: string | null;
   accountId: string;
   /** Which route proved this identity. For diagnostics — never for authorization. */
   source: 'app-gate' | 'kortix-sign-in';
@@ -73,6 +81,7 @@ export interface KortixAppGuard {
 
 interface CacheEntry {
   groupIds: string[];
+  groups: string[];
   at: number;
 }
 
@@ -110,11 +119,16 @@ export function createKortixAppGuard(options: KortixAppGuardOptions = {}): Korti
    * unreadable membership list as "no restriction" is how a transient 500
    * becomes an open door.
    */
-  async function fetchGroups(accountId: string, userId: string, token: string): Promise<string[]> {
+  async function fetchGroups(
+    accountId: string,
+    userId: string,
+    token: string,
+  ): Promise<{ groupIds: string[]; groups: string[] }> {
+    const none = { groupIds: [], groups: [] };
     const key = `${accountId}:${userId}`;
     const hit = cache.get(key);
-    if (hit && now() - hit.at < ttl) return hit.groupIds;
-    if (!options.backendUrl) return [];
+    if (hit && now() - hit.at < ttl) return hit;
+    if (!options.backendUrl) return none;
 
     try {
       const base = stripTrailingSlashes(options.backendUrl);
@@ -122,15 +136,19 @@ export function createKortixAppGuard(options: KortixAppGuardOptions = {}): Korti
         `${base}/accounts/${encodeURIComponent(accountId)}/iam/members/${encodeURIComponent(userId)}/groups`,
         { headers: { accept: 'application/json', authorization: `Bearer ${token}` } },
       );
-      if (!res.ok) return [];
-      const body = (await res.json()) as { groups?: Array<{ group_id?: string; groupId?: string }> };
-      const ids = (body.groups ?? [])
-        .map((g) => g.group_id ?? g.groupId)
-        .filter((id): id is string => typeof id === 'string');
-      cache.set(key, { groupIds: ids, at: now() });
-      return ids;
+      if (!res.ok) return none;
+      const body = (await res.json()) as {
+        groups?: Array<{ group_id?: string; groupId?: string; name?: string }>;
+      };
+      const rows = body.groups ?? [];
+      const found = {
+        groupIds: rows.map((g) => g.group_id ?? g.groupId).filter((id): id is string => typeof id === 'string'),
+        groups: rows.map((g) => g.name).filter((name): name is string => typeof name === 'string'),
+      };
+      cache.set(key, { ...found, at: now() });
+      return found;
     } catch {
-      return [];
+      return none;
     }
   }
 
@@ -143,7 +161,11 @@ export function createKortixAppGuard(options: KortixAppGuardOptions = {}): Korti
       return {
         userId: gated.userId,
         email: gated.email,
+        name: gated.name ?? null,
+        picture: gated.picture ?? null,
         groupIds: gated.groupIds ?? [],
+        groups: gated.groups ?? [],
+        role: gated.role ?? null,
         accountId: gated.accountId,
         source: 'app-gate',
         token: gated.token,
@@ -155,10 +177,14 @@ export function createKortixAppGuard(options: KortixAppGuardOptions = {}): Korti
     if (!signedIn) return null;
 
     const accountId = signedIn.accounts?.[0]?.account_id ?? '';
+    const membership = accountId
+      ? await fetchGroups(accountId, signedIn.userId, signedIn.token)
+      : { groupIds: [], groups: [] };
     return {
       userId: signedIn.userId,
       email: signedIn.email ?? null,
-      groupIds: accountId ? await fetchGroups(accountId, signedIn.userId, signedIn.token) : [],
+      groupIds: membership.groupIds,
+      groups: membership.groups,
       accountId,
       source: 'kortix-sign-in',
       token: signedIn.token,
@@ -203,7 +229,8 @@ export function createKortixAppGuard(options: KortixAppGuardOptions = {}): Korti
       // caller. It means the opposite here, so a config bug that produces `[]`
       // closes the resource instead of opening it to everyone.
       if (groupIds.length === 0) return { response: refuse() };
-      const allowed = groupIds.some((id) => found.groupIds.includes(id));
+      // A group id or a group name: names are unique within the account.
+      const allowed = groupIds.some((group) => found.groupIds.includes(group) || (found.groups ?? []).includes(group));
       return allowed ? { viewer: found } : { response: refuse() };
     },
   };

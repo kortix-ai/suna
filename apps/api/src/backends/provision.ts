@@ -167,7 +167,11 @@ export async function getLiveBackend(projectId: string, backendId: string): Prom
 /** Mints a Kortix sign-in token for this member, or null when the backend predates sign-in. */
 export function backendMemberToken(row: BackendRow, subject: BackendTokenSubject) {
   if (!row.authKeyEnc) return null;
-  return mintBackendToken(row.backendId, decryptProjectSecret(row.projectId, row.authKeyEnc), subject);
+  return mintBackendToken(row.backendId, decryptProjectSecret(row.projectId, row.authKeyEnc), {
+    ...subject,
+    accountId: row.accountId,
+    projectId: row.projectId,
+  });
 }
 
 /** A live, running backend of this project by name, or null. */

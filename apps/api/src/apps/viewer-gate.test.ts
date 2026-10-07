@@ -48,9 +48,13 @@ mock.module('./access', () => ({
 
 mock.module('./viewer', () => ({
   ...realViewer,
-  resolveAppViewerIdentity: async (userId: string) => ({
+  resolveAppViewerIdentity: async (userId: string, accountId?: string) => ({
     email: `${userId}@example.test`,
+    name: 'Viewer Name',
+    picture: null,
     groupIds: [GROUP_ID],
+    // Names and the role exist only when the gate scopes the lookup to the App's account.
+    ...(accountId === ACCOUNT_ID ? { groups: ['Finance'], role: 'member' } : {}),
   }),
   mintAppViewerToken: async (
     app: { appId: string; viewerTokenScope: string },
@@ -303,9 +307,14 @@ describe('GET /_kortix/viewer', () => {
       app_id: APP_ID,
       access_mode: 'restricted',
       account_id: ACCOUNT_ID,
+      project_id: appRow().projectId,
       user_id: USER_ID,
       email: `${USER_ID}@example.test`,
+      name: 'Viewer Name',
+      picture: null,
       group_ids: [GROUP_ID],
+      groups: ['Finance'],
+      role: 'member',
       scopes: ['profile', 'email'],
       access_token: 'kortix_oat_minted',
       expires_at: expect.any(String),

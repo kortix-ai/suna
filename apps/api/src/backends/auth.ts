@@ -15,13 +15,21 @@
  *     algorithm: "ES256",
  *   }] };
  *
- * Inside a function, `ctx.auth.getUserIdentity()` then names the member:
- * `subject` = Kortix user id, `email`, `name`.
+ * Inside a function, `ctx.auth.getUserIdentity()` then names the member, and
+ * `requireKortixMember` from `@kortix/sdk` reads it: `sub` (Kortix user id),
+ * `email`, `name`, `picture`, `groups` (names in the account), `group_ids`,
+ * `role` (account role), `account_id`, `project_id`. Any other server verifies
+ * the same token with `verifyKortixMemberToken` and the KORTIX_AUTH_* env.
+ *
+ * Fifteen minutes: the App gate re-checks access on every page load, but a
+ * token already handed out keeps working until it expires, so its lifetime is
+ * how long a removed member can still reach the backend. Clients refresh it
+ * before expiry without the viewer noticing.
  */
 
 import { createPrivateKey, createPublicKey, generateKeyPairSync, sign } from 'node:crypto';
 
-export const BACKEND_TOKEN_TTL_SECONDS = 60 * 60;
+export const BACKEND_TOKEN_TTL_SECONDS = 15 * 60;
 
 const b64url = (input: Buffer | string) => Buffer.from(input).toString('base64url');
 
@@ -58,6 +66,15 @@ export function backendAuthEnv(backendId: string, privatePem: string): Record<st
 export interface BackendTokenSubject {
   userId: string;
   email: string | null;
+  name?: string | null;
+  picture?: string | null;
+  /** Group names in the backend's account. */
+  groups?: string[];
+  groupIds?: string[];
+  /** Account role. */
+  role?: string | null;
+  accountId?: string | null;
+  projectId?: string | null;
 }
 
 /** A JWT the backend accepts for this member, valid for BACKEND_TOKEN_TTL_SECONDS. */
@@ -76,7 +93,14 @@ export function mintBackendToken(
       sub: subject.userId,
       iat: now,
       exp,
-      ...(subject.email ? { email: subject.email, name: subject.email } : {}),
+      ...(subject.email ? { email: subject.email } : {}),
+      ...(subject.name ? { name: subject.name } : {}),
+      ...(subject.picture ? { picture: subject.picture } : {}),
+      groups: subject.groups ?? [],
+      group_ids: subject.groupIds ?? [],
+      ...(subject.role ? { role: subject.role } : {}),
+      ...(subject.accountId ? { account_id: subject.accountId } : {}),
+      ...(subject.projectId ? { project_id: subject.projectId } : {}),
     }),
   );
   // JOSE wants the raw r||s signature, not DER.

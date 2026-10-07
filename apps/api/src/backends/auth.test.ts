@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createPublicKey, verify } from 'node:crypto';
-import { backendAuthEnv, generateBackendAuthKey, mintBackendToken } from './auth';
+import { requireKortixMember, verifyKortixMemberToken } from '@kortix/sdk';
+import { BACKEND_TOKEN_TTL_SECONDS, backendAuthEnv, generateBackendAuthKey, mintBackendToken } from './auth';
 
 const BACKEND = '7328f996-b417-4a76-994e-a7d38e8f1a28';
 
@@ -26,9 +27,9 @@ describe('Kortix sign-in for Backends', () => {
       sub: 'user-1',
       email: 'a@example.test',
       iat: 1_000,
-      exp: 1_000 + 3600,
+      exp: 1_000 + 900,
     });
-    expect(expiresAt.getTime()).toBe((1_000 + 3600) * 1000);
+    expect(expiresAt.getTime()).toBe((1_000 + 900) * 1000);
     const ok = verify(
       'sha256',
       Buffer.from(`${h}.${p}`),
@@ -49,5 +50,42 @@ describe('Kortix sign-in for Backends', () => {
       Buffer.from(s!, 'base64url'),
     );
     expect(ok).toBe(false);
+  });
+});
+
+describe('the token carries the whole member, and the SDK reads it', () => {
+  const subject = {
+    userId: 'user-1',
+    email: 'ada@example.test',
+    name: 'Ada Lovelace',
+    picture: 'https://example.test/ada.png',
+    groups: ['Finance'],
+    groupIds: ['g-fin'],
+    role: 'admin',
+    accountId: 'acct-1',
+    projectId: 'proj-1',
+  };
+
+  test('15 minutes: a removed member loses backend access within one token', () => {
+    expect(BACKEND_TOKEN_TTL_SECONDS).toBe(900);
+  });
+
+  test('a real name, never the email as the name', () => {
+    const { token } = mintBackendToken(BACKEND, generateBackendAuthKey(), { userId: 'u', email: 'u@example.test' });
+    const payload = JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString());
+    expect(payload.name).toBeUndefined();
+  });
+
+  test('verifyKortixMemberToken accepts it with exactly the env Kortix writes into the backend', async () => {
+    const pem = generateBackendAuthKey();
+    const env = backendAuthEnv(BACKEND, pem);
+    const { token } = mintBackendToken(BACKEND, pem, subject);
+    const member = await verifyKortixMemberToken(token, {
+      jwks: env.KORTIX_AUTH_JWKS,
+      issuer: env.KORTIX_AUTH_ISSUER,
+      audience: env.KORTIX_AUTH_AUDIENCE,
+    });
+    expect(member).toEqual({ ...subject });
+    expect(requireKortixMember(member, { groups: ['Finance'], roles: ['admin'] }).userId).toBe('user-1');
   });
 });

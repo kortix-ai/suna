@@ -325,7 +325,7 @@ export async function appViewerContextHeader(
   const userId = resolveAppViewerUserId(request, url, app);
   if (!userId) return null;
   const [identity, minted] = await Promise.all([
-    resolveAppViewerIdentity(userId),
+    resolveAppViewerIdentity(userId, app.accountId),
     scope === 'api'
       ? mintAppViewerToken(
           {
@@ -350,7 +350,12 @@ export async function appViewerContextHeader(
         appId: app.appId,
         userId,
         email: identity.email,
+        name: identity.name ?? null,
+        picture: identity.picture ?? null,
         groupIds: identity.groupIds,
+        groups: identity.groups ?? [],
+        role: identity.role ?? null,
+        projectId: app.projectId,
         accountId: app.accountId,
         accessMode: app.accessMode,
       },
@@ -442,8 +447,8 @@ export async function appBackendTokenResponse(
       { status: 404, headers: noStore },
     );
   }
-  const identity = await resolveAppViewerIdentity(viewer.userId);
-  const minted = backendMemberToken(backend, { userId: viewer.userId, email: identity.email });
+  const identity = await resolveAppViewerIdentity(viewer.userId, app.accountId);
+  const minted = backendMemberToken(backend, { userId: viewer.userId, ...identity });
   if (!minted) {
     return Response.json(
       { error: 'backend_auth_unavailable', error_description: 'This backend predates Kortix sign-in.' },
@@ -471,7 +476,7 @@ export async function appViewerEndpointResponse(
   if (viewer instanceof Response) return viewer;
   const { userId, agentViewer } = viewer;
   const [identity, minted] = await Promise.all([
-    resolveAppViewerIdentity(userId),
+    resolveAppViewerIdentity(userId, app.accountId),
     agentViewer
       ? Promise.resolve(null)
       : mintAppViewerToken(
@@ -484,9 +489,14 @@ export async function appViewerEndpointResponse(
       app_id: app.appId,
       access_mode: app.accessMode,
       account_id: app.accountId,
+      project_id: app.projectId,
       user_id: userId,
       email: identity.email,
+      name: identity.name ?? null,
+      picture: identity.picture ?? null,
       group_ids: identity.groupIds,
+      groups: identity.groups ?? [],
+      role: identity.role ?? null,
       scopes: minted?.scopes ?? [],
       access_token: minted?.accessToken ?? null,
       expires_at: minted?.expiresAt.toISOString() ?? null,
