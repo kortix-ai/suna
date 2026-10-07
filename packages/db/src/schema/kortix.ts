@@ -2142,6 +2142,25 @@ export const chatEventDedup = kortixSchema.table(
   (table) => [index('idx_chat_event_dedup_expiry').on(table.expiresAt)],
 );
 
+// One row per agent permission ask that sent a push: the cross-replica claim
+// behind "one push per (session, request id)" (api notifications/permission-push.ts).
+export const permissionPushClaims = kortixSchema.table(
+  'permission_push_claims',
+  {
+    sessionId: text('session_id').notNull(),
+    requestId: text('request_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.sessionId, table.requestId] }),
+    foreignKey({
+      name: 'permission_push_claims_session_fk',
+      columns: [table.sessionId],
+      foreignColumns: [projectSessions.sessionId],
+    }).onDelete('cascade'),
+  ],
+);
+
 // Single-row-per-lock advisory lease for cross-replica leader election (the
 // scheduler / sweepers elect one leader so background work doesn't double-run
 // across ECS tasks). Previously SQL-migration-only; folded into the schema so
