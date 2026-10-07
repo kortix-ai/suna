@@ -482,9 +482,12 @@ function BackendRow({
           leave and truncates, so the row's menu never scrolls out of view. */}
       <TableCell className="w-full max-w-0">
         {backend.url ? (
-          <span className="flex items-center gap-1" onClick={own}>
+          <span className="flex items-center gap-1">
             <code className="text-muted-foreground min-w-0 truncate font-mono text-xs">{backend.url}</code>
-            <CopyButton code={backend.url} size="sm" className="shrink-0" />
+            {/* Only the copy button keeps its click; the URL text opens the row like any cell. */}
+            <span className="shrink-0" onClick={own}>
+              <CopyButton code={backend.url} size="sm" />
+            </span>
           </span>
         ) : (
           <span className="text-muted-foreground">—</span>

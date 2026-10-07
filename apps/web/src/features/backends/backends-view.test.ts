@@ -43,7 +43,10 @@ test('one click anywhere on a row opens the backend; its own controls do not', (
   // The copy button and the menu (whose items render in a portal, and React
   // events bubble through portals) stop the click before the row sees it.
   expect(view).toContain('<TableCell onClick={own}>');
-  expect(view).toContain('<span className="flex items-center gap-1" onClick={own}>');
+  expect(view).toContain('<span className="shrink-0" onClick={own}>');
+  // The URL is the widest cell: guarding all of it made a click in the middle
+  // of the row do nothing. Only the copy button keeps its own click.
+  expect(view).not.toContain('<span className="flex items-center gap-1" onClick={own}>');
 });
 
 test('write actions are gated and the admin key is never rendered', () => {
