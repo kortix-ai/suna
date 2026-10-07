@@ -89,6 +89,7 @@ import {
   describeLastRun,
   describeRunLocation,
   describeSecurity,
+  describeNextRun,
   describeWhen,
   triggerName,
   triggerStatus,
@@ -192,6 +193,7 @@ export function ScheduleDetailSheet({
 
   // The edit panels change the trigger: `project.trigger.update`.
   const canWrite = controls.canUpdate;
+  const nextRun = describeNextRun(trigger);
   const isCron = trigger.type === 'cron';
   const status = triggerStatus(trigger.enabled, tI18nComplete);
   const KindIcon = isCron ? TimerIcon : WebhooksLogoIcon;
@@ -245,7 +247,10 @@ export function ScheduleDetailSheet({
                   {status.label}
                 </Badge>
               </div>
-              <SheetDescription className="text-xs">{describeWhen(trigger)}</SheetDescription>
+              <SheetDescription className="text-xs">
+                {describeWhen(trigger)}
+                {nextRun ? ` · ${nextRun}` : null}
+              </SheetDescription>
             </div>
           </div>
 
