@@ -12207,28 +12207,6 @@ test('anonymous Supabase refresh race is noise only on the landing page', () => 
   }), true);
 });
 
-test('unknown input-stream failures remain reportable, including frameless global rejections', () => {
-  const event = {
-    exception: { values: [{
-      value: 'Error in input stream',
-      mechanism: { type: 'auto.browser.global_handlers.onunhandledrejection', handled: false },
-    }] },
-  };
-  assert.equal(shouldIgnoreSentryBrowserNoise(event), false);
-  for (const filename of ['apps/web/src/features/file-renderers/pdf/pdf-viewer.tsx', 'app:///_next/static/chunks/app.js']) {
-    assert.equal(shouldIgnoreSentryBrowserNoise({ exception: { values: [{
-      ...event.exception.values[0], stacktrace: { frames: [{ filename }] },
-    }] } }), false);
-  }
-  for (const mechanism of [{ type: 'generic', handled: true }, { type: 'auto.browser.global_handlers.onunhandledrejection', handled: true }, undefined]) {
-    assert.equal(shouldIgnoreSentryBrowserNoise({ exception: { values: [{
-      value: 'Error in input stream', mechanism,
-    }] } }), false);
-  }
-  for (const value of ['Error in input stream: invalid data', 'error in input stream', 'Error in output stream']) {
-    assert.equal(shouldIgnoreSentryBrowserNoise({ exception: { values: [{ ...event.exception.values[0], value }] } }), false);
-  }
-  assert.equal(shouldIgnoreBrowserRuntimeNoise({ message: 'Error in input stream' }), false);
 // ---------------------------------------------------------------------------
 // `NotAllowedError: The play method is not allowed by the user agent or the
 // platform in the current context, possibly because the user denied
@@ -12420,4 +12398,28 @@ test('the timed-out window-message anchor stays specific to the extension channe
       `expected "${message}" to keep reporting`,
     );
   }
+});
+
+test('unknown input-stream failures remain reportable, including frameless global rejections', () => {
+  const event = {
+    exception: { values: [{
+      value: 'Error in input stream',
+      mechanism: { type: 'auto.browser.global_handlers.onunhandledrejection', handled: false },
+    }] },
+  };
+  assert.equal(shouldIgnoreSentryBrowserNoise(event), false);
+  for (const filename of ['apps/web/src/features/file-renderers/pdf/pdf-viewer.tsx', 'app:///_next/static/chunks/app.js']) {
+    assert.equal(shouldIgnoreSentryBrowserNoise({ exception: { values: [{
+      ...event.exception.values[0], stacktrace: { frames: [{ filename }] },
+    }] } }), false);
+  }
+  for (const mechanism of [{ type: 'generic', handled: true }, { type: 'auto.browser.global_handlers.onunhandledrejection', handled: true }, undefined]) {
+    assert.equal(shouldIgnoreSentryBrowserNoise({ exception: { values: [{
+      value: 'Error in input stream', mechanism,
+    }] } }), false);
+  }
+  for (const value of ['Error in input stream: invalid data', 'error in input stream', 'Error in output stream']) {
+    assert.equal(shouldIgnoreSentryBrowserNoise({ exception: { values: [{ ...event.exception.values[0], value }] } }), false);
+  }
+  assert.equal(shouldIgnoreBrowserRuntimeNoise({ message: 'Error in input stream' }), false);
 });
