@@ -4,12 +4,12 @@ import {
   projectSessionConnectorBindings,
   projectSessionPublicShares,
   projectSessions,
-  projects,
   sessionSandboxes,
 } from '@kortix/db';
 import { and, desc, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { db } from './db';
+import { qualifiedColumn } from './sql-qualified-column';
 import { previewOriginFor } from '../sandbox-proxy/preview-hosts';
 import { OPENCODE_PORTS } from './opencode-ports';
 
@@ -464,12 +464,11 @@ export async function resolvePublicShare(
       externalId: sessionSandboxes.externalId,
       sandboxStatus: sessionSandboxes.status,
       sessionMetadata: projectSessions.metadata,
-      projectStatus: projects.status,
+      projectStatus: sql<string | null>`(SELECT p.status::text FROM kortix.projects p WHERE p.project_id = ${qualifiedColumn(projectSessionPublicShares.projectId)})`,
     })
     .from(projectSessionPublicShares)
     .leftJoin(sessionSandboxes, eq(sessionSandboxes.sessionId, projectSessionPublicShares.sessionId))
     .leftJoin(projectSessions, eq(projectSessions.sessionId, projectSessionPublicShares.sessionId))
-    .leftJoin(projects, eq(projects.projectId, projectSessionPublicShares.projectId))
     .where(eq(projectSessionPublicShares.tokenHash, publicShareTokenHash(token)))
     .limit(1);
 
@@ -487,7 +486,7 @@ export async function resolvePublicShare(
   }
   // The same for a deleted workspace (KRTX-1714): the delete archives the
   // project, and the revoke route answers 404 after it.
-  if (row.projectStatus !== 'active') {
+  if (row.projectStatus === 'archived') {
     return { ok: false as const, status: 410, error: 'Share link revoked' };
   }
   // Fail closed for links created before personal-connection sharing was
