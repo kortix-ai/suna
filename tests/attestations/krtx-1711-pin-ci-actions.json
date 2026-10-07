@@ -1,5 +1,5 @@
 {
-  "source_hash": "b4160ace0ba7fb486eeccd3ff1390a87fd8cb98334c116bd96f13f4954e6eaef",
+  "source_hash": "6eac972858c88be0a58ea18e48e9f6abe7beb33403c7213799230a44deeccb16",
   "diff_files": [
     ".github/scripts/audit-actions.mjs",
     ".github/workflows/build-staging.yml",
@@ -30,13 +30,13 @@
     "tests/unit/sandbox-workflow.test.ts",
     "tests/unit/web-ecs-workflow.test.ts"
   ],
-  "diff_hash": "4cbe1e4413010997224977593d02194afbdd6b610f0ac79e3616cc4bbc28bbaa",
-  "head": "6887a0261f31fcd90b80abfdc41d54ac34727ad3",
+  "diff_hash": "a2164de48d4e48fa8363e15f2742285a89f0d0633b1ca082e9497c06b2566b16",
+  "head": "1f8fc6d0c3c064a6f0668c4969f5a3c2797b1f9d",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-06T19:42:34.293Z"
+  "at": "2026-10-07T07:18:02.481Z"
 }
