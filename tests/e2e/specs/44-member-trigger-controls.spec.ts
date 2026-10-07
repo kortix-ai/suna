@@ -61,11 +61,28 @@ test('44 — a member gets Run now on a trigger, and no Pause or Delete', async 
     const projectId = project.id;
     await api(ownerAuth.access_token, 'POST', `/accounts/${accountId}/members`, { email: memberEmail, role: 'member' }, 201);
     await api(ownerAuth.access_token, 'PUT', `/projects/${projectId}/access/${member.id}`, { role: 'member' });
+    // Members are deny-by-default for agents, and a fire runs the trigger's
+    // agent: the member also needs the agent, as any real setup grants it.
+    await api(
+      ownerAuth.access_token,
+      'POST',
+      `/accounts/${accountId}/iam/assignments`,
+      {
+        principal_type: 'user',
+        principal_id: member.id,
+        role_key: 'agent-user',
+        scope_type: 'project',
+        scope_id: projectId,
+        object_type: 'agent',
+        object_id: 'kortix',
+      },
+      201,
+    );
     await api(
       ownerAuth.access_token,
       'POST',
       `/projects/${projectId}/triggers`,
-      { name: TRIGGER, type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'Summarize the day.' },
+      { name: TRIGGER, type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'Summarize the day.', agent: 'kortix' },
       201,
     );
 
@@ -80,6 +97,8 @@ test('44 — a member gets Run now on a trigger, and no Pause or Delete', async 
       await expect(sheet.getByRole('button', { name: 'More actions' })).toHaveCount(0);
     });
 
+    // The local stack runs no sandbox, so the run itself fails after the
+    // authorization this step is about: the API must not answer 403.
     await test.step('Run now reaches the fire route, and the API does not refuse the member', async () => {
       const fire = page.waitForResponse(
         (r) => r.request().method() === 'POST' && /\/v1\/projects\/[^/]+\/triggers\/[^/]+\/fire$/.test(r.url()),
