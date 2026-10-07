@@ -16,6 +16,20 @@ export function connectorDataPlane(projectId?: string) {
     /** Call one `<connector>.<action>` tool. */
     call: <T = unknown>(...a: DropFirst<Parameters<typeof P.callConnector<T>>>) =>
       P.callConnector<T>(projectId, ...a),
+    /**
+     * `call` with args and `output` typed by the {@link P.ConnectorArgs} /
+     * {@link P.ConnectorResult} registry that `kortix connectors types` generates.
+     * Same request and result as `call(\`${slug}.${action}\`, args, options)`.
+     */
+    callAction: <S extends string, A extends string>(
+      slug: S,
+      action: A,
+      args: P.ConnectorArgs<S, A>,
+      options?: P.ConnectorCallOptions,
+    ) =>
+      P.callConnector<unknown>(projectId, `${slug}.${action}`, args, options) as Promise<
+        P.ConnectorCallResult<unknown, P.ConnectorResult<S, A>>
+      >,
     /** The accounts a connector can be called as, default first. */
     accounts: (...a: DropFirst<Parameters<typeof P.listConnectorAccounts>>) =>
       P.listConnectorAccounts(projectId, ...a),

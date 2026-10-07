@@ -741,6 +741,43 @@ call. After `upstream_timeout` or a client-side abort, the call may have run
 upstream: check its effect before you repeat a write (a sent email, a created
 record).
 
+### Typed calls from code
+
+`kortix connectors types` writes a TypeScript declaration file for every
+action you can call. Each action gets its argument type from its input schema
+and its result type from its output schema. The result type describes the
+call's `output` field.
+
+```sh
+kortix connectors types --out src/kortix-connectors.d.ts
+kortix connectors types --connector linear,github --out src/kortix-connectors.d.ts
+```
+
+Include the file in your `tsconfig.json`. Then call through `callAction`:
+
+```ts
+import { createKortix } from '@kortix/sdk';
+
+const connectors = createKortix({ backendUrl, getToken }).project(projectId).connectors;
+const result = await connectors.callAction('linear', 'list_issues', { team: 'CORE' });
+if (result.ok) console.log(result.output?.issues.length);
+```
+
+`callAction(slug, action, args, options)` sends the same request as
+`call('<slug>.<action>', args, options)` and returns the same result. Only
+the types differ: a missing or unknown argument is a compile error, and
+`output` has the generated type. An action that is not in the file accepts
+any object and returns `output: unknown`.
+
+- OpenAPI, HTTP, MCP and GraphQL connectors publish an output schema when
+  their source declares one. A GraphQL result is typed as an object.
+- Managed connectors (Composio, Pipedream) publish no output schema. Their
+  result is `unknown`. The CLI names them after it writes the file.
+- Re-run the command after you add a connector or it syncs a new version.
+- The catalog returns output schemas only on request:
+  `GET /connectors/projects/{projectId}/catalog?include_output_schemas=true`
+  adds `outputSchema` to each action (`null` when none is stored).
+
 ### When a call is denied
 
 A denied call answers `{ ok: false, status: "denied", reason, hint }`. `reason` is a stable code; `hint` says what to do.

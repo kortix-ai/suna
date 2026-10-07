@@ -130,11 +130,16 @@ function isConnectorDenialReason(reason: string): reason is ConnectorDenialReaso
 // from a scoped session token) and the project-EXPLICIT routes
 // (project from the path, any valid principal). One implementation, two faces.
 const catalogResponse = async (deps: ConnectorRouterDeps, c: any, p: ConnectorPrincipal) => {
-  const query = c.req.valid('query') as { slug?: string; include_schemas?: 'true' | 'false' };
+  const query = c.req.valid('query') as {
+    slug?: string;
+    include_schemas?: 'true' | 'false';
+    include_output_schemas?: 'true' | 'false';
+  };
   const slug = query.slug?.trim() || undefined;
   const connectors = await deps.listCatalog(p, {
     slug,
     includeSchemas: query.include_schemas !== 'false',
+    includeOutputSchemas: query.include_output_schemas === 'true',
   });
   return c.json({ connectors });
 };

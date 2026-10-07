@@ -68,6 +68,22 @@ await connectors.call('microsoft-graph.sendmail', {
 A Connector defines callable tools. A Connection stores one authorization for
 that Connector. Credentials remain server-side and never enter the sandbox.
 
+#### Typed calls
+
+`kortix connectors types --out kortix-connectors.d.ts` writes a declaration
+file that fills `ConnectorActionRegistry`. `callAction` then types `args` and
+`output` from it. The request and the result are the same as `call`:
+
+```ts
+const r = await connectors.callAction('linear', 'list_issues', { team: 'CORE' });
+r.output?.issues; // typed from the action's output schema
+```
+
+An action outside the file accepts any object and returns `output: unknown`.
+Managed Composio and Pipedream connectors publish no output schema, so their
+`output` stays `unknown`. `ConnectorArgs<'linear', 'list_issues'>` and
+`ConnectorResult<'linear', 'list_issues'>` name the same types.
+
 #### Choose which account a call runs as
 
 One Connector can hold the project's shared account and each member's own. List

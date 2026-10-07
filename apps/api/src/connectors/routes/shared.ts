@@ -18,6 +18,7 @@ export const CatalogActionSchema = z
     description: z.string(),
     risk: z.string(),
     inputSchema: z.any().nullable(),
+    outputSchema: z.any().nullable().optional(),
   })
   .openapi('ConnectorCatalogAction');
 export const CatalogAccountSchema = z
@@ -148,6 +149,8 @@ export const CatalogQuerySchema = z.object({
    *  sandboxes run a baked CLI that reads schemas from these routes, so the
    *  default must match what those clients were built against. */
   include_schemas: z.enum(['true', 'false']).optional(),
+  /** `true` adds each action's `outputSchema`. Absent means OMIT. */
+  include_output_schemas: z.enum(['true', 'false']).optional(),
 });
 
 /**

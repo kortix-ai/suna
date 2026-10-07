@@ -16,7 +16,39 @@ export interface ConnectorAction {
   description: string;
   risk: 'read' | 'write' | 'destructive';
   inputSchema: Record<string, unknown> | null;
+  /**
+   * JSON Schema of the call's `output`. Present only when the catalog was read
+   * with `includeOutputSchemas`; `null` when the connector publishes none
+   * (managed Composio and Pipedream connectors).
+   */
+  outputSchema?: Record<string, unknown> | null;
 }
+
+/**
+ * The typed connector actions of a project, keyed by connector slug, then
+ * action path. Empty in the SDK: `kortix connectors types --out <file>`
+ * generates a declaration file that fills it by module augmentation.
+ * {@link ConnectorArgs} and {@link ConnectorResult} read it.
+ */
+export interface ConnectorActionRegistry {}
+
+/** The args of `<S>.<A>` from {@link ConnectorActionRegistry}, else any object. */
+export type ConnectorArgs<S extends string, A extends string> = S extends keyof ConnectorActionRegistry
+  ? A extends keyof ConnectorActionRegistry[S]
+    ? ConnectorActionRegistry[S][A] extends { args: infer T }
+      ? T
+      : Record<string, unknown>
+    : Record<string, unknown>
+  : Record<string, unknown>;
+
+/** The call `output` of `<S>.<A>` from {@link ConnectorActionRegistry}, else `unknown`. */
+export type ConnectorResult<S extends string, A extends string> = S extends keyof ConnectorActionRegistry
+  ? A extends keyof ConnectorActionRegistry[S]
+    ? ConnectorActionRegistry[S][A] extends { result: infer T }
+      ? T
+      : unknown
+    : unknown
+  : unknown;
 
 /** One connector as exposed by the callable project catalog. */
 export interface ConnectorCatalogEntry {
@@ -46,11 +78,30 @@ export interface ConnectorTool {
   risk: ConnectorAction['risk'];
   description: string;
   inputSchema: ConnectorAction['inputSchema'];
+  /** See {@link ConnectorAction.outputSchema}. Set by {@link describeConnectorTool}. */
+  outputSchema?: ConnectorAction['outputSchema'];
 }
 
-export interface ConnectorCallResult<T = unknown> {
+/**
+ * `T` types `data`, the raw upstream answer. `O` types `output`, the payload
+ * without the binding's envelope; {@link ConnectorResult} supplies it for a
+ * generated action.
+ */
+export interface ConnectorCallResult<T = unknown, O = unknown> {
   ok: boolean;
   data?: T;
+  /**
+   * The payload without the binding's envelope: Composio `data.result`, MCP
+   * `structuredContent ?? content`, GraphQL `data.data`, otherwise `data`.
+   * Absent from servers that predate it.
+   */
+  output?: O;
+  /** The action's binding: `openapi`, `http`, `mcp`, `graphql`, `composio`, … */
+  binding?: string;
+  /** The upstream HTTP status, or `null` when the upstream gave none. */
+  upstream_status?: number | null;
+  /** A failure the upstream reported inside a 2xx (MCP `isError`, GraphQL `errors`). */
+  upstream_error?: string;
   risk?: ConnectorAction['risk'];
   status?: string;
   reason?: string;
@@ -116,6 +167,11 @@ export interface GetConnectorCatalogOptions {
    * `slug` instead.
    */
   includeSchemas?: boolean;
+  /**
+   * Add each action's `outputSchema`. Omitted by default: no bulk reader
+   * needs it. `kortix connectors types` and `describeConnectorTool` set it.
+   */
+  includeOutputSchemas?: boolean;
 }
 
 export async function getConnectorCatalog(
@@ -127,6 +183,7 @@ export async function getConnectorCatalog(
   if (options?.includeSchemas !== undefined) {
     params.set('include_schemas', String(options.includeSchemas));
   }
+  if (options?.includeOutputSchemas) params.set('include_output_schemas', 'true');
   const query = params.toString() ? `?${params.toString()}` : '';
   const result = unwrap(
     await backendApi.get<{ connectors?: ConnectorCatalogEntry[] }>(
@@ -189,7 +246,11 @@ export async function describeConnectorTool(
   // Match by slug, never take the first entry: an API that predates the
   // `slug` filter answers the whole catalog, and the CLI ships separately.
   const connector = (
-    await getConnectorCatalog(projectId, { slug: connectorSlug, includeSchemas: true })
+    await getConnectorCatalog(projectId, {
+      slug: connectorSlug,
+      includeSchemas: true,
+      includeOutputSchemas: true,
+    })
   ).find((entry) => entry.slug === connectorSlug);
   if (!connector) return null;
   for (const action of connector.actions) {
@@ -202,6 +263,7 @@ export async function describeConnectorTool(
         risk: action.risk,
         description: action.description || action.name,
         inputSchema: action.inputSchema,
+        outputSchema: action.outputSchema ?? null,
       };
     }
   }

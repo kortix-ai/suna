@@ -41,6 +41,13 @@ token supplies the project context.
   `accounts()`, or the selector words `me` / `project`. The result's
   `account` field says which one actually ran — read it back rather than
   assuming.
+- `callAction(slug, action, args, options)` is `call` with types: the same
+  request and result, but `args` and `output` come from the file
+  `kortix connectors types --out <file>.d.ts` writes. A missing or unknown
+  argument is a compile error. Without the file, or for an action not in it,
+  `args` is any object and `output` is `unknown`. Managed Composio and
+  Pipedream connectors publish no output schema: their `output` stays
+  `unknown`.
 - `uploadAttachment(content, input)` uploads an attachment for a later call.
 
 `call` returns `ConnectorCallResult<T>`. Every non-2xx answer throws
@@ -79,6 +86,7 @@ Inspect the catalog first:
 kortix connectors ls
 kortix connectors discover "reply to email"
 kortix connectors show email_email_inbox_bjgk.reply_message
+kortix connectors types --out kortix-connectors.d.ts   # types for callAction
 ```
 
 Then save the workflow as TypeScript:

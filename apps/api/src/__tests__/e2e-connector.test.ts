@@ -13,6 +13,7 @@ import {
   type DefaultMode,
   type ConnectorPrincipal,
   type ConnectorRouterDeps,
+  type ListCatalogOptions,
   type ProjectPoliciesViewResponse,
   type ProjectPolicyView,
 } from '../connectors/router';
@@ -314,6 +315,23 @@ describe('GET /catalog', () => {
     expect(json.connectors[0].actions[0]).toMatchObject({ path: 'charges.create', risk: 'write' });
   });
 
+  test('include_output_schemas=true asks the catalog for output schemas; absent leaves them out', async () => {
+    const seen: Array<ListCatalogOptions | undefined> = [];
+    const original = deps.listCatalog;
+    deps.listCatalog = async (p, options) => {
+      seen.push(options);
+      return original(p, options);
+    };
+    try {
+      await req('/catalog?include_output_schemas=true', { headers: { 'x-test-user': ALICE } });
+      await req('/catalog', { headers: { 'x-test-user': ALICE } });
+    } finally {
+      deps.listCatalog = original;
+    }
+    expect(seen[0]?.includeOutputSchemas).toBe(true);
+    expect(seen[1]?.includeOutputSchemas).toBe(false);
+  });
+
   test('connector with no credential hidden until connected', async () => {
     world.credentials.delete('conn-stripe|shared');
     expect(
@@ -334,7 +352,14 @@ describe('POST /call', () => {
       }),
     });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, data: { id: 'ch_1', paid: true }, risk: 'write' });
+    expect(await res.json()).toEqual({
+      ok: true,
+      data: { id: 'ch_1', paid: true },
+      risk: 'write',
+      binding: 'openapi',
+      output: { id: 'ch_1', paid: true },
+      upstream_status: 200,
+    });
     expect(world.upstream[0]!.headers.Authorization).toBe('Bearer sk_live_xyz');
     expect(JSON.parse(world.upstream[0]!.body!)).toEqual({ amount: 999 });
     expect(world.executions.at(-1)).toMatchObject({ status: 'ok', actingUserId: ALICE });
@@ -385,6 +410,8 @@ describe('POST /call', () => {
       ok: false,
       status: 'error',
       reason: 'OAuth2 token request failed (503): temporarily_unavailable',
+      binding: null,
+      upstream_status: null,
     });
   });
 

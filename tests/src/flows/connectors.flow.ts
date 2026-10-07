@@ -4286,3 +4286,132 @@ flow(
     }
   },
 );
+
+// ── CONN-TYPES-1 — output schemas in the catalog and `kortix connectors types` ──
+// The catalog adds each action's `outputSchema` only on request
+// (`include_output_schemas=true`), so the sandbox catalog payload does not grow.
+// `kortix connectors types` reads it and writes the `ConnectorActionRegistry`
+// augmentation: typed args, typed `result` where an output schema exists, and
+// `result: unknown` where none does.
+flow(
+  'CONN-TYPES-1',
+  {
+    domain: 'connectors',
+    requires: ['database'],
+    timeoutMs: 180_000,
+    routes: ['GET /v1/connectors/projects/:projectId/catalog'],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== 'local') {
+      await ctx.step('deployed targets cannot seed connector actions directly: skipped', async () => {});
+      return;
+    }
+    const p = await ctx.fixtures.project();
+    const { Client: PgClient } = await import('pg');
+    const db = new PgClient({ connectionString: ctx.env.databaseUrl as string, ssl: false });
+    const stamp = Date.now().toString(36);
+    const slug = { typed: `ke2e-types-${stamp}`, untyped: `ke2e-untyped-${stamp}` };
+    const input = { type: 'object', properties: { team: { type: 'string' }, limit: { type: 'integer' } }, required: ['team'] };
+    const output = {
+      type: 'object',
+      properties: { issues: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } } },
+      required: ['issues'],
+    };
+    const sb = new CliSandbox('conn-types-1');
+    const catalog = (query: Record<string, string>) =>
+      ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/connectors/projects/:projectId/catalog', { params: { projectId: p.id }, query });
+
+    try {
+      await db.connect();
+      await ctx.step('seed one connector with an output schema and one without', async () => {
+        const owner = await db.query<{ account_id: string }>(
+          `SELECT account_id FROM kortix.projects WHERE project_id = $1`,
+          [p.id],
+        );
+        const accountId = owner.rows[0]?.account_id;
+        if (!accountId) throw new Error('project has no account');
+        for (const [connectorSlug, outputSchema] of [
+          [slug.typed, output],
+          [slug.untyped, null],
+        ] as const) {
+          const row = await db.query<{ connector_id: string }>(
+            `INSERT INTO kortix.connectors (account_id, project_id, slug, name, provider_type, config, status)
+             VALUES ($1, $2, $3, $3, 'openapi', '{"auth":{"type":"none"}}'::jsonb, 'active') RETURNING connector_id`,
+            [accountId, p.id, connectorSlug],
+          );
+          const connectorId = row.rows[0]?.connector_id;
+          if (!connectorId) throw new Error('connector insert returned no id');
+          await db.query(
+            `INSERT INTO kortix.connector_connections (account_id, project_id, connector_id, owner_type, label, status, is_default, metadata)
+             VALUES ($1, $2, $3, 'project', $4, 'active', true, $5::jsonb)`,
+            [accountId, p.id, connectorId, connectorSlug, JSON.stringify({ provider: 'openapi', connector_slug: connectorSlug })],
+          );
+          await db.query(
+            `INSERT INTO kortix.connector_actions (connector_id, path, name, description, input_schema, output_schema, risk, binding)
+             VALUES ($1, 'list_issues', 'list_issues', 'List issues', $2::jsonb, $3::jsonb, 'read', '{"kind":"openapi","method":"GET","path":"/issues"}'::jsonb)`,
+            [connectorId, JSON.stringify(input), outputSchema ? JSON.stringify(outputSchema) : null],
+          );
+        }
+      });
+
+      await ctx.step('GET catalog without include_output_schemas → 200, actions carry no outputSchema key', async () => {
+        const r = await catalog({ slug: slug.typed });
+        r.status(200).body().has('$.connectors[0].actions[0].path', 'list_issues');
+        const action = r.json<{ connectors: Array<{ actions: Array<Record<string, unknown>> }> }>().connectors[0]?.actions[0];
+        if (!action || 'outputSchema' in action) throw new Error(`outputSchema leaked: ${JSON.stringify(action)}`);
+      });
+
+      await ctx.step('GET catalog with include_output_schemas=true → the stored schema, null where none is stored', async () => {
+        (await catalog({ slug: slug.typed, include_output_schemas: 'true' }))
+          .status(200)
+          .body()
+          .has('$.connectors[0].actions[0].outputSchema.required[0]', 'issues');
+        (await catalog({ slug: slug.untyped, include_output_schemas: 'true' }))
+          .status(200)
+          .body()
+          .has('$.connectors[0].actions[0].outputSchema', null);
+      });
+
+      await ctx.step('the CLI logs in with an owner token → exit 0', async () => {
+        const login = await sb.login(await ctx.fixtures.pat(), { noProject: true });
+        throwIfCliInfraFailure(login, 'kortix login');
+        if (login.exitCode !== 0) throw new Error(`login: exit ${login.exitCode}: ${login.all.slice(0, 600)}`);
+      });
+
+      await ctx.step('kortix connectors types --out → exit 0 and a registry with typed args and result', async () => {
+        const r = await sb.run([
+          'connectors', 'types', '--connector', `${slug.typed},${slug.untyped}`,
+          '--out', 'types/kortix-connectors.d.ts', '--project', p.id,
+        ]);
+        throwIfCliInfraFailure(r, 'kortix connectors types');
+        if (r.exitCode !== 0) throw new Error(`types: exit ${r.exitCode}: ${r.all.slice(0, 800)}`);
+        if (!r.stdout.includes(`No output schema (result is unknown): ${slug.untyped}`)) {
+          throw new Error(`summary does not name the untyped connector: ${r.stdout}`);
+        }
+        const file = sb.readFile('types/kortix-connectors.d.ts');
+        for (const expected of [
+          "declare module '@kortix/sdk' {",
+          'interface ConnectorActionRegistry {',
+          `"${slug.typed}": {`,
+          'team: string;',
+          'limit?: number;',
+          'issues: {',
+          'id: string;',
+        ]) {
+          if (!file.includes(expected)) throw new Error(`generated file lacks ${JSON.stringify(expected)}:\n${file}`);
+        }
+        if (!new RegExp(`"${slug.untyped}": \\{[\\s\\S]*?result: unknown;`).test(file)) {
+          throw new Error(`untyped connector result is not unknown:\n${file}`);
+        }
+      });
+    } finally {
+      sb.dispose();
+      await db
+        .query(`DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = ANY($2)`, [p.id, Object.values(slug)])
+        .catch(() => {});
+      await db.end().catch(() => {});
+    }
+  },
+);
