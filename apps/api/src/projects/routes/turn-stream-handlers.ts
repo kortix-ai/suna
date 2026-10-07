@@ -473,15 +473,19 @@ export async function settleTurnEnd(
 // bootstrapped (or reused after a restart). Persist it as the durable pin so
 // the Kortix session resolves to the LIVE root with NO dependency on a browser
 // ever opening it — closing the null-pin gap that left Slack/trigger/cron
-// sessions resolving lazily onto the wrong (orphaned) root. The sandbox token
-// is already scoped to this project (checked above); the daemon only ever
-// reports its own pin-file root, never a subagent.
+// sessions resolving lazily onto the wrong (orphaned) root. Sandbox credential
+// only, like every other durable write in this file: the daemon only ever
+// reports its own pin-file root, never a subagent, and the sleeve has already
+// refused any sandbox token that is not scoped to this exact session.
 export async function pinOpencodeSession(
   c: RelayResponder,
   body: TurnStreamBody,
+  authenticatedSandboxId: string | null,
   projectId: string,
   sessionId: string,
 ): Promise<Response> {
+  const denial = requireSandboxCredential(c, authenticatedSandboxId, 'runtime_session');
+  if (denial) return denial;
   const ocId = body.runtime_session_id?.trim();
   if (!ocId) return c.json({ error: 'runtime_session_id is required' }, 400);
   const updated = await db
