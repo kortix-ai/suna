@@ -5,56 +5,46 @@
  * can open. A reminder is a trigger scoped to one session (API:
  * `routes/session-reminders.ts`); this page is the place to see what will
  * fire next and to pause or remove one, since each fire is a model turn.
+ *
+ * The shell: header, toolbar, then the List (rows + schedule rail) or the
+ * Calendar. View, range and session filter live in the URL.
  */
 
-import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import Hint from '@/components/ui/hint';
-import { InlineMeta } from '@/components/ui/inline-meta';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
-import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { FeatureGateScreen } from '@/features/workspace/feature-gate-screen';
 import { ProjectPageHeader } from '@/features/workspace/project-layout/project-page-header';
-import { useLocale, useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
-import type { ProjectReminder, SessionReminderState } from '@kortix/sdk';
+import { useTranslations } from '@/i18n/use-translations';
+import type { SessionReminderState } from '@kortix/sdk';
 import { useFeatureFlag, useProjectReminders } from '@kortix/sdk/react';
-import {
-  AlarmIcon,
-  ArrowUpRightIcon,
-  PauseIcon,
-  PlayIcon,
-  TrashIcon,
-  XIcon,
-} from '@phosphor-icons/react';
+import { AlarmIcon, ArrowUpRightIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useState } from 'react';
-import { formatFireTime, reminderTitle } from './reminder-format';
+import { useMemo, useState, type ReactNode } from 'react';
+import { ReminderCalendarNav } from './reminder-calendar-nav';
+import { ReminderCalendarView } from './reminder-calendar-view';
+import { ReminderList } from './reminder-list';
+import { rowsForTab } from './reminder-list-model';
+import {
+  ReminderSessionFilter,
+  reminderSessions,
+  ReminderStateTabs,
+  RemindersToolbar,
+  ReminderViewSwitch,
+} from './reminders-toolbar';
+import { ScheduleRail, ScheduleRailSkeleton } from './schedule-rail';
 import { useNow, useRefetchAfterFire } from './use-refetch-after-fire';
+import { useRemindersUrlState } from './use-reminders-url-state';
 
-const TABS: readonly SessionReminderState[] = ['active', 'paused', 'done'];
-
-/** Status tile per the tinted-icon pattern: yellow = pending, green = done, red = stopped by an error. */
-function tone(reminder: ProjectReminder) {
-  if (reminder.last_error) return { tile: 'bg-kortix-red/15', icon: 'text-kortix-red' };
-  if (reminder.state === 'active')
-    return { tile: 'bg-kortix-yellow/15', icon: 'text-kortix-yellow' };
-  if (reminder.state === 'done') return { tile: 'bg-kortix-green/15', icon: 'text-kortix-green' };
-  return { tile: 'bg-muted', icon: 'text-muted-foreground' };
-}
+const DOCS_HREF = '/docs/connect/reminders';
 
 function RemindersHeader({ projectId }: { projectId: string }) {
   const t = useTranslations('reminders');
   return (
     <ProjectPageHeader title={t('title')} href={`/projects/${projectId}/reminders`}>
       <Link
-        href="/docs/connect/reminders"
+        href={DOCS_HREF}
         target="_blank"
         rel="noopener noreferrer"
         prefetch={false}
@@ -67,242 +57,135 @@ function RemindersHeader({ projectId }: { projectId: string }) {
   );
 }
 
+/** No reminders anywhere in the project: the first-run state, no toolbar. */
+function RemindersEmpty() {
+  const t = useTranslations('reminders');
+  return (
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center">
+      <span className="bg-kortix-purple/15 flex size-10 items-center justify-center rounded-md">
+        <AlarmIcon weight="fill" className="text-kortix-purple size-6" />
+      </span>
+      <EmptyState
+        size="sm"
+        title={t('emptyTitle')}
+        description={t('emptyDescription')}
+        action={
+          <Button asChild variant="outline" size="sm" className="gap-1.5">
+            <Link href={DOCS_HREF} target="_blank" rel="noopener noreferrer" prefetch={false}>
+              {t('docs')}
+              <ArrowUpRightIcon className="size-3.5 shrink-0" aria-hidden />
+            </Link>
+          </Button>
+        }
+      />
+    </div>
+  );
+}
+
 export function ProjectRemindersView({ projectId }: { projectId: string }) {
   const t = useTranslations('reminders');
-  const locale = useLocale();
-  const router = useRouter();
-  const pathname = usePathname();
-  const sessionFilter = useSearchParams().get('session');
+  const url = useRemindersUrlState();
   const gate = useFeatureFlag(projectId, 'reminders');
   const reminders = useProjectReminders(gate.enabled ? projectId : null);
   useRefetchAfterFire(reminders.data?.reminders, reminders.refetch);
   const now = useNow();
   const [tab, setTab] = useState<SessionReminderState>('active');
-  const [removing, setRemoving] = useState<ProjectReminder | null>(null);
 
-  const all = (reminders.data?.reminders ?? []).filter(
-    (reminder) => !sessionFilter || reminder.session_id === sessionFilter,
+  const list = reminders.data?.reminders;
+  const all = useMemo(() => list ?? [], [list]);
+  // Stable between renders: the calendar model memoizes on it.
+  const scoped = useMemo(
+    () => (url.session ? all.filter((r) => r.session_id === url.session) : all),
+    [all, url.session],
   );
-  const rows = all.filter((reminder) => reminder.state === tab);
-  const filteredSessionName = sessionFilter ? (all[0]?.session_name ?? t('untitledSession')) : '';
+  // A failed background refetch keeps the loaded rows; only a first load can fail.
+  const loaded = !reminders.isLoading && !!reminders.data;
 
-  const schedule = (reminder: ProjectReminder) =>
-    reminder.cron
-      ? t('cron', { expression: `${reminder.cron} ${reminder.timezone}` })
-      : reminder.every
-        ? t('every', { period: reminder.every })
-        : t('once');
-
-  const timing = (reminder: ProjectReminder) => {
-    if (reminder.state === 'active' && reminder.next_fire_at) {
-      return t('nextFire', { time: formatFireTime(reminder.next_fire_at, locale, now) });
-    }
-    if (reminder.last_fired_at) {
-      return t('firedAt', { time: formatFireTime(reminder.last_fired_at, locale, now) });
-    }
-    return reminder.state === 'paused' ? t('pausedLabel') : null;
-  };
-
-  const setEnabled = (reminder: ProjectReminder, enabled: boolean) => {
-    reminders.update.mutate(
-      { sessionId: reminder.session_id as string, reminderId: reminder.id, enabled },
-      {
-        onSuccess: () => successToast(enabled ? t('resumed') : t('paused')),
-        onError: (error) => errorToast(error instanceof Error ? error.message : t('updateFailed')),
-      },
+  let body: ReactNode;
+  if (gate.isLoading) {
+    body = <Skeleton className="m-4 h-14 rounded-md" />;
+  } else if (!gate.enabled) {
+    body = <FeatureGateScreen featureName={t('title')} description={t('gateDescription')} />;
+  } else if (loaded && all.length === 0 && !url.session) {
+    body = <RemindersEmpty />;
+  } else {
+    body = (
+      <>
+        <RemindersToolbar
+          leading={
+            url.view === 'list' ? (
+              <ReminderStateTabs value={tab} onChange={setTab} />
+            ) : (
+              <ReminderCalendarNav now={now} />
+            )
+          }
+        >
+          <ReminderSessionFilter
+            sessions={reminderSessions(all)}
+            value={url.session}
+            onChange={(session) => url.set({ session })}
+          />
+          <ReminderViewSwitch value={url.view} onChange={(view) => url.set({ view })} />
+        </RemindersToolbar>
+        {reminders.isError && !reminders.data ? (
+          <div className="flex min-h-0 flex-1 items-center justify-center">
+            <ErrorState
+              size="sm"
+              title={t('loadFailed')}
+              action={
+                <Button variant="outline" size="sm" onClick={() => void reminders.refetch()}>
+                  {t('retry')}
+                </Button>
+              }
+            />
+          </div>
+        ) : url.view === 'calendar' ? (
+          <ReminderCalendarView
+            projectId={projectId}
+            query={reminders}
+            reminders={scoped}
+            now={now}
+          />
+        ) : (
+          <div className="flex min-h-0 flex-1">
+            <ReminderList
+              projectId={projectId}
+              query={reminders}
+              rows={rowsForTab(scoped, tab)}
+              tab={tab}
+              now={now}
+              footer={
+                url.session && loaded ? (
+                  <p className="text-muted-foreground flex items-center justify-center gap-1 border-t px-4 py-3 text-xs">
+                    {t('filterFooter', { count: scoped.length, total: all.length })}
+                    <span aria-hidden>·</span>
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="h-auto p-0 text-xs"
+                      onClick={() => url.set({ session: null })}
+                    >
+                      {t('clearFilter')}
+                    </Button>
+                  </p>
+                ) : null
+              }
+            />
+            {reminders.isLoading ? (
+              <ScheduleRailSkeleton />
+            ) : (
+              <ScheduleRail reminders={scoped} now={now} />
+            )}
+          </div>
+        )}
+      </>
     );
-  };
-
-  const confirmRemove = () => {
-    if (!removing) return;
-    reminders.remove.mutate(
-      { sessionId: removing.session_id as string, reminderId: removing.id },
-      {
-        onSuccess: () => {
-          successToast(t('removed'));
-          setRemoving(null);
-        },
-        onError: (error) => errorToast(error instanceof Error ? error.message : t('updateFailed')),
-      },
-    );
-  };
+  }
 
   return (
     <div className="flex h-svh flex-col overflow-hidden">
       <RemindersHeader projectId={projectId} />
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-2xl space-y-5 px-4 py-10 pb-20 lg:py-20">
-          <p className="text-muted-foreground text-sm">{t('description')}</p>
-
-          <div className="space-y-4">
-            {gate.enabled ? (
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <Tabs value={tab} onValueChange={(value) => setTab(value as SessionReminderState)}>
-                  <TabsListCompact>
-                    {TABS.map((value) => (
-                      <TabsTriggerCompact key={value} value={value}>
-                        {t(
-                          value === 'active'
-                            ? 'tabActive'
-                            : value === 'paused'
-                              ? 'tabPaused'
-                              : 'tabDone',
-                        )}
-                        <Badge variant="secondary" size="sm">
-                          {all.filter((reminder) => reminder.state === value).length}
-                        </Badge>
-                      </TabsTriggerCompact>
-                    ))}
-                  </TabsListCompact>
-                </Tabs>
-                {sessionFilter ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="gap-1.5"
-                    onClick={() => router.replace(pathname)}
-                    aria-label={t('clearFilter')}
-                  >
-                    <span className="max-w-60 truncate">
-                      {t('sessionFilter', { name: filteredSessionName })}
-                    </span>
-                    <XIcon className="size-3.5 shrink-0" />
-                  </Button>
-                ) : null}
-              </div>
-            ) : null}
-
-            {gate.isLoading ? (
-              <Skeleton className="h-14 rounded-md" />
-            ) : !gate.enabled ? (
-              <FeatureGateScreen featureName={t('title')} description={t('gateDescription')} />
-            ) : reminders.isLoading ? (
-              <div className="space-y-2">
-                {[0, 1, 2].map((key) => (
-                  <Skeleton key={key} className="h-14 rounded-md" />
-                ))}
-              </div>
-            ) : reminders.isError ? (
-              <ErrorState
-                size="sm"
-                title={t('loadFailed')}
-                action={
-                  <Button variant="outline" size="sm" onClick={() => void reminders.refetch()}>
-                    {t('retry')}
-                  </Button>
-                }
-              />
-            ) : all.length === 0 ? (
-              <EmptyState
-                icon={AlarmIcon}
-                size="sm"
-                title={t('emptyTitle')}
-                description={t('emptyDescription')}
-                action={
-                  <Button asChild variant="outline" size="sm" className="gap-1.5">
-                    <Link
-                      href="/docs/connect/reminders"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      prefetch={false}
-                    >
-                      {t('docs')}
-                      <ArrowUpRightIcon className="size-3.5 shrink-0" aria-hidden />
-                    </Link>
-                  </Button>
-                }
-              />
-            ) : rows.length === 0 ? (
-              <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-                {t('emptyTabDescription')}
-              </p>
-            ) : (
-              <ul className="space-y-2" data-testid="reminder-list">
-                {rows.map((reminder) => {
-                  const colors = tone(reminder);
-                  const when = timing(reminder);
-                  return (
-                    <li
-                      key={reminder.id}
-                      data-reminder-id={reminder.id}
-                      className="bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5"
-                    >
-                      <span
-                        className={cn(
-                          'flex size-9 shrink-0 items-center justify-center rounded-sm',
-                          colors.tile,
-                        )}
-                      >
-                        <AlarmIcon weight="fill" className={cn('size-5', colors.icon)} />
-                      </span>
-                      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                        <p
-                          className="text-foreground truncate text-sm font-medium"
-                          title={reminder.prompt}
-                        >
-                          {reminderTitle(reminder)}
-                        </p>
-                        <InlineMeta>
-                          <span className="shrink-0">{schedule(reminder)}</span>
-                          {when ? <span className="shrink-0">{when}</span> : null}
-                          <HoverPrefetchLink
-                            href={`/projects/${projectId}/sessions/${reminder.session_id}`}
-                            className="hover:text-foreground truncate transition-colors"
-                          >
-                            {reminder.session_name ?? t('untitledSession')}
-                          </HoverPrefetchLink>
-                        </InlineMeta>
-                        {reminder.last_error ? (
-                          <p className="text-kortix-red text-xs">{reminder.last_error}</p>
-                        ) : null}
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1">
-                        {reminder.state !== 'done' ? (
-                          <Hint label={reminder.state === 'active' ? t('pause') : t('resume')}>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              aria-label={reminder.state === 'active' ? t('pause') : t('resume')}
-                              disabled={reminders.update.isPending}
-                              onClick={() => setEnabled(reminder, reminder.state !== 'active')}
-                            >
-                              {reminder.state === 'active' ? (
-                                <PauseIcon className="size-4 shrink-0" />
-                              ) : (
-                                <PlayIcon className="size-4 shrink-0" />
-                              )}
-                            </Button>
-                          </Hint>
-                        ) : null}
-                        <Hint label={t('remove')}>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label={t('remove')}
-                            onClick={() => setRemoving(reminder)}
-                          >
-                            <TrashIcon className="size-4 shrink-0" />
-                          </Button>
-                        </Hint>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-        </div>
-      </div>
-      <ConfirmDialog
-        open={!!removing}
-        onOpenChange={(open) => !open && setRemoving(null)}
-        title={t('removeTitle')}
-        description={t('removeDescription')}
-        confirmLabel={t('remove')}
-        confirmVariant="destructive"
-        isPending={reminders.remove.isPending}
-        onConfirm={confirmRemove}
-      />
+      {body}
     </div>
   );
 }

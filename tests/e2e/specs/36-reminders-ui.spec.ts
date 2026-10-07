@@ -76,7 +76,7 @@ test.describe('36 — Reminders UI', () => {
       await expect(list).toContainText('Did the vendor reply?');
       await expect(list).toContainText('Every 1h');
       await expect(list).toContainText('Vendor follow-up');
-      const nav = page.getByRole('link', { name: 'Reminders', exact: true });
+      const nav = page.getByRole('link', { name: /^Reminders\b/ });
       await expect(nav).toBeVisible();
 
       // Pause the recurring one: the PATCH carries enabled:false and the row leaves the Active tab.
@@ -136,7 +136,8 @@ test.describe('36 — Reminders UI', () => {
       await expect(page.getByText('Post the launch checklist')).toBeVisible();
       await page.getByRole('link', { name: 'Manage reminders' }).click();
       await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/reminders\\?session=${sessionId}`));
-      await expect(page.getByRole('button', { name: 'Show all sessions' })).toContainText('Vendor follow-up');
+      await expect(page.getByTestId('reminder-session-filter')).toContainText('Vendor follow-up');
+      await expect(page.getByRole('button', { name: 'Show all sessions' })).toBeVisible();
 
       expect(pageErrors).toEqual([]);
     } finally {
