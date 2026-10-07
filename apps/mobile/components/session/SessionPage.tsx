@@ -97,6 +97,7 @@ import {
   promptRuntimeMessage,
   rejectQuestion,
   SESSION_PROMPTS_IDLE_POLL_MS,
+  useProjectSession,
   usePermissionSelfHeal,
   useQuestionSelfHeal,
   useRuntimeCommands,
@@ -114,6 +115,7 @@ import {
   groupMessagesIntoTurns,
   listSessionPrompts,
   retrySessionPrompt,
+  sessionPromptActions,
   type SessionPrompt,
   type SessionPromptDelivery,
   resolveWorkingTurn,
@@ -1011,6 +1013,16 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       senderOf(prompt.message_id) ?? (prompt.wire_message_id ? senderOf(prompt.wire_message_id) : null),
     [senderOf],
   );
+  // A queued prompt runs as its author: only they send it now, and they or a
+  // session manager remove it. The API answers 403 to anyone else.
+  const managesSession =
+    useProjectSession(projectId ?? undefined, projectSessionId, {
+      enabled: !!projectId && !!projectSessionId,
+    }).data?.can_manage_lifecycle !== false;
+  const queuedActions = useCallback(
+    (prompt: SessionPrompt) => sessionPromptActions(prompt, { userId: viewerId, managesSession }),
+    [viewerId, managesSession],
+  );
   // The last turn as displayed. Turns are sorted for display, and store order
   // can differ, so the spacer and pending questions follow this id.
   const lastTurnId = turns.length > 0 ? turns[turns.length - 1].userMessage.info.id : undefined;
@@ -1875,6 +1887,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
           onSendNow={handleQueueSendNow}
           isDark={isDark}
           senderOf={queuedSender}
+          actionsOf={queuedActions}
         />,
       );
     }
@@ -1890,6 +1903,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     handleQueueSendNow,
     isDark,
     queuedSender,
+    queuedActions,
   ]);
 
   // ── Older history (COR-144) ─────────────────────────────────────────────
@@ -2353,10 +2367,13 @@ function QueuePanel({
   onSendNow,
   isDark,
   senderOf,
+  actionsOf,
 }: {
   messages: SessionPrompt[];
   /** The prompt's sender avatar in a shared session, else null. */
   senderOf?: (prompt: SessionPrompt) => AvatarPerson | null;
+  /** What the viewer may do to the prompt (`sessionPromptActions`). */
+  actionsOf?: (prompt: SessionPrompt) => { own: boolean; removable: boolean };
   expanded: boolean;
   /** The agent is working: Send now stops the current reply first. */
   busy: boolean;
@@ -2407,7 +2424,9 @@ function QueuePanel({
       {expanded && messages.length > 0 && (
         <View style={{ maxHeight: 176 }}>
           <ScrollView showsVerticalScrollIndicator={false} nestedScrollEnabled>
-            {messages.map((qm) => (
+            {messages.map((qm) => {
+              const actions = actionsOf?.(qm) ?? { own: true, removable: true };
+              return (
               <View
                 key={qm.prompt_id}
                 style={{
@@ -2436,28 +2455,33 @@ function QueuePanel({
                     </Text>
                   ) : null}
                 </View>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="rounded-full"
-                  onPress={() => onSendNow(qm.prompt_id)}
-                  accessibilityLabel="Send now"
-                  accessibilityHint={busy ? 'Stops the current reply and sends this message' : undefined}
-                >
-                  <Text>Send now</Text>
-                </Button>
+                {actions.own && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="rounded-full"
+                    onPress={() => onSendNow(qm.prompt_id)}
+                    accessibilityLabel="Send now"
+                    accessibilityHint={busy ? 'Stops the current reply and sends this message' : undefined}
+                  >
+                    <Text>Send now</Text>
+                  </Button>
+                )}
                 {/* 40pt box + the Button's default 2pt hit slop = 44pt target. */}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="rounded-full"
-                  onPress={() => onRemove(qm.prompt_id)}
-                  accessibilityLabel="Remove from queue"
-                >
-                  <XIcon size={16} color={mutedText} />
-                </Button>
+                {actions.removable && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="rounded-full"
+                    onPress={() => onRemove(qm.prompt_id)}
+                    accessibilityLabel="Remove from queue"
+                  >
+                    <XIcon size={16} color={mutedText} />
+                  </Button>
+                )}
               </View>
-            ))}
+              );
+            })}
           </ScrollView>
         </View>
       )}

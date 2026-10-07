@@ -1954,6 +1954,7 @@
     "queuedCount": "{count} in Warteschlange",
     "editingQueued": "Wird bearbeitet",
     "steerNextStep": "Wird beim nächsten Schritt gelesen",
+    "queuedByAnotherMember": "Von einem anderen Mitglied gesendet. Nur diese Person kann sie bearbeiten oder senden.",
     "steerFallbackUnsupported": "Wartet auf diesen Durchlauf. Diese Sitzung nimmt während eines Durchlaufs keine Nachrichten an.",
     "steerFallbackNotPrompter": "Wartet auf diesen Durchlauf. Ein anderes Mitglied hat ihn gestartet.",
     "steerFallbackTurnEnded": "Läuft als eigener Durchlauf. Der Durchlauf war zuerst beendet.",

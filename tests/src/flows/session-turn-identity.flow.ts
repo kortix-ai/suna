@@ -15,6 +15,7 @@ import { isKe2eRetryableError } from '../core/client';
 import { waitFor } from '../core/poll';
 import type { Principal } from '../core/types';
 import { subscribe } from '../fixtures/billing';
+import { createDatabaseSession, seedDatabaseRunningFirstPrompt } from '../fixtures/database-project';
 import { mintWireMessageId, readTranscript, waitForSessionReady } from '../fixtures/session-run';
 
 const probe = (nonce: string) =>
@@ -88,5 +89,123 @@ flow(
     await turn(ctx.P.OWNER, 'the owner', 1);
     await turn(admin, 'an account admin', 2);
     await turn(ctx.P.OWNER, 'the owner', 3);
+  },
+);
+
+/**
+ * SESS-47 — a queued prompt runs as its author, so only its author writes it.
+ *
+ * The drain binds the session credential to the prompt's author (SESS-39), so
+ * a prompt runs with its author's role, budget and connections. Another member
+ * who could edit, send now or Stop-and-send it would run their own text as the
+ * author. Removal is the author's, or a session manager's. Local: the session
+ * is seeded in the database with a first prompt on its way, so every prompt
+ * sent afterwards waits and no sandbox is needed.
+ */
+flow(
+  'SESS-47',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: [
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'PATCH /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId/retry',
+      'DELETE /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    const member = await team.addMember('member');
+    await team.grantProjectRole(project.id, member.userId!, 'member');
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const asMember = ctx.client.as(member);
+    // The owner's session, open to the whole project.
+    const sessionId = await createDatabaseSession(ctx.env, {
+      projectId: project.id,
+      accountId: team.id,
+      userId: ctx.P.OWNER.userId!,
+      visibility: 'project',
+    });
+    ctx.track('session', sessionId, { projectId: project.id });
+    await seedDatabaseRunningFirstPrompt(ctx.env, {
+      projectId: project.id,
+      sessionId,
+      accountId: team.id,
+      userId: ctx.P.OWNER.userId!,
+    });
+    const params = { projectId: project.id, sessionId };
+    const PROMPTS = '/v1/projects/:projectId/sessions/:sessionId/prompts';
+    const PROMPT = '/v1/projects/:projectId/sessions/:sessionId/prompts/:promptId';
+    type Listed = { prompt_id: string; full_text: string; author_user_id?: string | null };
+    const send = async (as: typeof owner, text: string) => {
+      const r = await as.post(
+        PROMPTS,
+        {
+          client_message_id: crypto.randomUUID(),
+          message_id: mintWireMessageId(),
+          remint_on_delivery: false,
+          parts: [{ type: 'text', text }],
+          placement: 'composer',
+          delivery: 'queue',
+        },
+        { params },
+      );
+      r.status([200, 202]);
+      return r.json<{ prompt_id: string }>().prompt_id;
+    };
+    const listed = async (promptId: string) => {
+      const r = await owner.get(PROMPTS, { params });
+      r.status(200);
+      return r.json<{ prompts: Listed[] }>().prompts.find((p) => p.prompt_id === promptId);
+    };
+    const notAuthor = (r: Awaited<ReturnType<typeof owner.get>>) =>
+      r.status(403).body().has('$.code', 'not_prompt_author');
+
+    let ownerPrompt = '';
+    await ctx.step('the owner queues a prompt; the list names the owner as its author', async () => {
+      ownerPrompt = await send(owner, 'owner text');
+      const row = await listed(ownerPrompt);
+      if (!row) throw new Error("the owner's prompt is not listed");
+      if (row.author_user_id !== ctx.P.OWNER.userId) {
+        throw new Error(`author_user_id is ${String(row.author_user_id)}, expected the owner`);
+      }
+    });
+
+    await ctx.step('another member cannot edit it → 403 not_prompt_author; the text is unchanged', async () => {
+      notAuthor(await asMember.patch(PROMPT, { text: 'member text' }, { params: { ...params, promptId: ownerPrompt } }));
+      const row = await listed(ownerPrompt);
+      if (row?.full_text !== 'owner text') throw new Error(`text changed to ${String(row?.full_text)}`);
+    });
+
+    await ctx.step('… nor Stop and send it, nor send it now → 403', async () => {
+      notAuthor(await asMember.patch(PROMPT, { delivery: 'interrupt' }, { params: { ...params, promptId: ownerPrompt } }));
+      notAuthor(await asMember.post(`${PROMPT}/retry`, {}, { params: { ...params, promptId: ownerPrompt } }));
+    });
+
+    await ctx.step('… nor remove it → 403; it is still listed', async () => {
+      notAuthor(await asMember.del(PROMPT, { params: { ...params, promptId: ownerPrompt } }));
+      if (!(await listed(ownerPrompt))) throw new Error("the member's DELETE removed the owner's prompt");
+    });
+
+    await ctx.step('the author edits it → 200, and the new text is listed', async () => {
+      const r = await owner.patch(PROMPT, { text: 'owner edited' }, { params: { ...params, promptId: ownerPrompt } });
+      r.status(200).body().has('$.full_text', 'owner edited').has('$.author_user_id', ctx.P.OWNER.userId!);
+    });
+
+    let memberPrompt = '';
+    await ctx.step('the member queues and edits their own prompt → 200', async () => {
+      memberPrompt = await send(asMember, 'member text');
+      const r = await asMember.patch(PROMPT, { text: 'member edited' }, { params: { ...params, promptId: memberPrompt } });
+      r.status(200).body().has('$.full_text', 'member edited').has('$.author_user_id', member.userId!);
+    });
+
+    await ctx.step("the session's owner removes the member's prompt → 200, and it leaves the list", async () => {
+      const r = await owner.del(PROMPT, { params: { ...params, promptId: memberPrompt } });
+      r.status(200);
+      if (await listed(memberPrompt)) throw new Error("the member's prompt is still listed");
+    });
   },
 );

@@ -1954,6 +1954,7 @@
     "queuedCount": "{count} u redu",
     "editingQueued": "Уређивање",
     "steerNextStep": "Чита се у следећем кораку",
+    "queuedByAnotherMember": "Послао други члан. Само тај члан може да је измени или пошаље.",
     "steerFallbackUnsupported": "Чека овај потез. Ова сесија не прима поруке током потеза.",
     "steerFallbackNotPrompter": "Чека овај потез. Покренуо га је други члан.",
     "steerFallbackTurnEnded": "Покреће се као засебан потез. Потез се завршио раније.",

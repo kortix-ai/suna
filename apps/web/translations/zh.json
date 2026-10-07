@@ -1954,6 +1954,7 @@
     "queuedCount": "{count} 条排队中",
     "editingQueued": "编辑中",
     "steerNextStep": "在下一步读取",
+    "queuedByAnotherMember": "由其他成员发送。只有该成员可以编辑或发送。",
     "steerFallbackUnsupported": "等待本轮结束。此会话无法在一轮进行中接收消息。",
     "steerFallbackNotPrompter": "等待本轮结束。本轮由其他成员发起。",
     "steerFallbackTurnEnded": "作为独立的一轮运行。本轮已先结束。",

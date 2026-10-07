@@ -1954,6 +1954,7 @@
     "queuedCount": "{count} in coda",
     "editingQueued": "In modifica",
     "steerNextStep": "Letto al passo successivo",
+    "queuedByAnotherMember": "Inviato da un altro membro. Solo quella persona può modificarlo o inviarlo.",
     "steerFallbackUnsupported": "Attende questo turno. Questa sessione non accetta messaggi durante un turno.",
     "steerFallbackNotPrompter": "Attende questo turno. Lo ha avviato un altro membro.",
     "steerFallbackTurnEnded": "Viene eseguito come turno a sé. Il turno è terminato prima.",
