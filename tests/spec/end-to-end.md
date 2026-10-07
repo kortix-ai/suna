@@ -741,7 +741,7 @@ Cleanup removes the machine and temporary files.
 
 ### Ops (platform admin)
 
-`OPS-1` `GET /ops/overview` → `requireAdmin` (platform admin/super_admin) → 200; non-admin → 403.
+`OPS-1` `GET /ops/overview` → `requireAdmin` (platform admin/super_admin) → 200 with `api`, `totals`, `sessions`, `sandboxes`, `queues`, `audit`, `usage`, `observability`, `migrations`; derived counts agree with their maps; ANON → 401; non-admin → 403.
 
 ### Admin console API (platform admin)
 
