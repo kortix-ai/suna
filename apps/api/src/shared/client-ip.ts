@@ -63,13 +63,14 @@ export function clientKeyFromHeaders(header: HeaderReader): string {
  * the client sent, so its first hop is attacker-controlled. A caller who
  * exfiltrated a session token can therefore set `x-forwarded-for` to the pinned
  * sandbox address and replay the token from anywhere; they cannot forge
- * `cf-connecting-ip`. The xff/x-real-ip fallback stays for deployments that do
- * not sit behind Cloudflare.
+ * `cf-connecting-ip`. The fallback for deployments that do not sit behind Cloudflare
+ * is `clientIpFromHeaders`. `cf-connecting-ip` is trustworthy only while the
+ * origin accepts Cloudflare traffic alone (the ALB ingress CIDRs in Terraform).
  */
 export function egressIpFromHeaders(header: HeaderReader): string | null {
   const cf = header('cf-connecting-ip')?.trim();
   if (cf) return cf;
-  const xff = header('x-forwarded-for');
-  const first = xff ? xff.split(',')[0]?.trim() : undefined;
-  return first || header('x-real-ip')?.trim() || null;
+  // Not behind Cloudflare: the leftmost xff entry is client-written, so use the
+  // trusted-hop rule, never `split(',')[0]`.
+  return clientIpFromHeaders(header);
 }

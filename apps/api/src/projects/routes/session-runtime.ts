@@ -45,6 +45,7 @@ export function registerSessionRuntimeRoutes(): void {
         query: z.object({
           wait_ms: z.string().optional(),
           repository_mode: z.enum(['previous']).optional(),
+          keep_stopped: z.enum(['1']).optional(),
         }),
       },
       responses: {
@@ -158,6 +159,8 @@ export function registerSessionRuntimeRoutes(): void {
         projectId,
         sessionId,
         waitMs,
+        keepStopped: c.req.query('keep_stopped') === '1',
+        signal: c.req.raw.signal,
       });
       stl.mark(`open-session:${result.start.stage}`);
       // THE RUNTIME IS UP — mirror what is already in it, once.

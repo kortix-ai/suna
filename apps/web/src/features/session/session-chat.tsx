@@ -12,6 +12,7 @@ import { useQueuedDraftStore, useQueuedDrafts } from '@/stores/queued-draft-stor
 import {
   type SandboxLifecycle,
   type SessionPrompt,
+  type SessionPromptDelivery,
   type SessionPromptPart,
   hasRetryingAssistantTurn,
   isTextPart,
@@ -44,7 +45,7 @@ import {
   SUGGESTION_MENU_SELECTOR,
   shouldCountEscape,
 } from './esc-to-stop';
-import { isFirstPromptRow, projectQueueRows } from './queue-projection';
+import { composerSendDelivery, isFirstPromptRow, projectQueueRows } from './queue-projection';
 import { useQueuedPromptEdit } from './queued-prompt-edit';
 import { createQueueUndoAction } from './queued-message-restore';
 import { CompactionMarker, CompactionSummaryBody } from './turn/compaction-card';
@@ -1358,14 +1359,25 @@ export function SessionChat({
     // by the effect above, i.e. AFTER the render that first sees a row.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [promptInbox.prompts, sessionId, messages, firstTurnClaim]);
+  // A queued prompt runs as its author: only they edit or send it, and the
+  // session's managers may remove it. Same cache entry as the header's read.
+  const viewerManagesSession =
+    useProjectSession(projectId, projectSessionId ?? undefined, {
+      enabled: !!projectId && !!projectSessionId,
+    }).data?.can_manage_lifecycle !== false;
+  const queuedPromptViewer = useMemo(
+    () => ({ userId: viewer?.id, managesSession: viewerManagesSession }),
+    [viewer?.id, viewerManagesSession],
+  );
   const queueRows = useMemo(
     () =>
       projectQueueRows({
         prompts: promptInbox.prompts,
         transcriptMessageIds: transcriptClaimedIds,
         drafts: queuedDrafts,
+        viewer: queuedPromptViewer,
       }),
-    [promptInbox.prompts, transcriptClaimedIds, queuedDrafts],
+    [promptInbox.prompts, transcriptClaimedIds, queuedDrafts, queuedPromptViewer],
   );
   // A posted draft whose row the inbox no longer lists was delivered or
   // removed; nothing reads it again.
@@ -1476,6 +1488,16 @@ export function SessionChat({
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [promptInbox.retry],
+  );
+
+  // "Stop and send": the waiting row becomes Quick Queue. The running turn
+  // ends after its running tool, then this row runs.
+  const handleStopAndSendQueuedMessage = useCallback(
+    (id: string) => {
+      void promptInbox.interrupt(id).catch(() => errorToast(tQueue('stopAndSendFailed')));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [promptInbox.interrupt],
   );
 
   // Associate stashed command info with the newest user message when messages
@@ -2412,6 +2434,8 @@ export function SessionChat({
         commitsRewind?: boolean;
         /** Quick Queue paints a transcript bubble; Queue List adds a row above the composer. */
         placement?: 'transcript' | 'composer';
+        /** How the prompt reaches a running turn (`composerSendDelivery`). */
+        delivery?: SessionPromptDelivery;
       },
     ) => {
       setCommandError(null);
@@ -2524,6 +2548,7 @@ export function SessionChat({
         }));
       }
       const placement = overrides?.placement ?? 'transcript';
+      const delivery = overrides?.delivery;
       // Placement decides WHERE the send waits: Quick Queue paints its bubble in
       // the transcript now, Queue List draws a row above the composer. Busy
       // state or earlier live rows decide only whether it waits at all.
@@ -2534,6 +2559,7 @@ export function SessionChat({
         useQueuedDraftStore.getState().add(sessionId, {
           clientMessageId,
           placement,
+          ...(delivery ? { delivery } : {}),
           text: rawText,
           files: attachedFiles,
           createdAtMs: sentAtMs,
@@ -2776,6 +2802,7 @@ export function SessionChat({
             }
             const created = await promptInbox.enqueue({
               placement,
+              ...(delivery ? { delivery } : {}),
               clientMessageId,
               messageId: messageID,
               parts: mappedParts,
@@ -3608,6 +3635,7 @@ export function SessionChat({
         }}
         onRemove={(id) => void handleRemoveQueuedMessage(id)}
         onRetry={handleRetryQueuedMessage}
+        onStopAndSend={effectiveBusy ? handleStopAndSendQueuedMessage : undefined}
         editing={queueEdit.editing}
         onCancelEdit={queueEdit.cancel}
       />
@@ -3621,6 +3649,8 @@ export function SessionChat({
       handleResumeQueue,
       handleRemoveQueuedMessage,
       handleRetryQueuedMessage,
+      handleStopAndSendQueuedMessage,
+      effectiveBusy,
     ],
   );
 
@@ -4331,6 +4361,7 @@ export function SessionChat({
                               pendingPrompt={pendingPrompt}
                               onRetryQueued={stableRetryQueued}
                               onRemoveQueued={stableRemoveQueued}
+                              queuedPromptViewer={queuedPromptViewer}
                               interruptedBeforeRun={interruptedTurnIds.has(
                                 turn.userMessage.info.id,
                               )}
@@ -4517,7 +4548,14 @@ export function SessionChat({
                 autoFocus={deferComposerFocus ? false : undefined}
                 onSend={async (text, files, mentions, attachments, placement) => {
                   if (await queueEdit.save(text)) return;
-                  await handleSend(text, files, mentions, attachments, { placement });
+                  // Enter while a turn runs steers it (D9.1); Cmd/Ctrl+Enter is Queue List.
+                  await handleSend(
+                    text,
+                    files,
+                    mentions,
+                    attachments,
+                    composerSendDelivery(placement ?? 'transcript', isBusyRef.current),
+                  );
                 }}
                 prefill={composerPrefill}
                 onPrefillApplied={(id) => {

@@ -138,11 +138,16 @@ suite('legacy public.credit_ledger created_by FK index (throwaway Postgres)', ()
       'postgres:16-alpine', '-c', 'fsync=off', '-c', 'synchronous_commit=off', '-c', 'full_page_writes=off',
     ]);
     if (!up.ok) throw new Error(`could not start test container: ${up.stderr}`);
+    // Poll until ready and let the last poll be the proof: a second poll
+    // after the loop races a loaded Docker daemon (a failed exec reads as
+    // "not ready") and throws right after a successful poll.
+    let ready = false;
     for (let i = 0; i < 60; i++) {
-      if (pgReady()) break;
+      ready = pgReady();
+      if (ready) break;
       await Bun.sleep(1000);
     }
-    if (!pgReady()) throw new Error('test Postgres never became ready');
+    if (!ready) throw new Error('test Postgres never became ready');
 
     // Legacy path: the pre-baseline table exists BEFORE any migration runs.
     psql(LEGACY_TABLE_SQL);
