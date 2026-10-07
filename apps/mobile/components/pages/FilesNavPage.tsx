@@ -40,7 +40,6 @@ import { useColorScheme } from 'nativewind';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { getAuthToken } from '@/api/config';
 import type { SandboxFile } from '@/api/types';
 import { PatchDiffView } from '@/components/diff/PatchDiffView';
 import { FilePreview, FilePreviewBottomInsetContext, getFilePreviewType } from '@/components/files/FilePreviewRenderers';
@@ -84,7 +83,7 @@ import {
   useProjectFileHistory,
   useProjectFiles,
 } from '@/lib/projects/hooks';
-import { projectArchiveUrl } from '@/lib/projects/projects-client';
+import { projectArchiveRequest } from '@/lib/projects/projects-client';
 import type { ProjectBranch, ProjectCommit, ProjectFileEntry } from '@/lib/projects/projects-client';
 import { relativeTime } from '@/lib/projects/triggers-format';
 import { THEME } from '@/lib/utils/theme';
@@ -135,18 +134,17 @@ const NO_CHILDREN: { dirs: string[]; files: ProjectFileEntry[] } = { dirs: [], f
  * `downloadAsync` writes the body whatever the status: a 401 or 404 body used
  * to be saved as `name.zip` (COR-155). A non-2xx status deletes the temp
  * file and throws the message; the caller toasts it. A good body is saved on
- * the device (`saveFileToDevice`), never shared.
+ * the device (`saveFileToDevice`), never shared. `request` is the SDK's
+ * `{ url, headers }` for the download.
  */
-async function downloadAndSave(url: string, filename: string, withAuth: boolean): Promise<SaveToDeviceResult> {
+async function downloadAndSave(
+  request: { url: string; headers: Record<string, string> },
+  filename: string,
+): Promise<SaveToDeviceResult> {
   const target = `${FileSystem.cacheDirectory}${filename}`;
   let status: number | undefined;
   try {
-    const headers: Record<string, string> = {};
-    if (withAuth) {
-      const token = await getAuthToken();
-      if (token) headers.Authorization = `Bearer ${token}`;
-    }
-    status = (await FileSystem.downloadAsync(url, target, { headers })).status;
+    status = (await FileSystem.downloadAsync(request.url, target, { headers: request.headers })).status;
   } catch (error) {
     await FileSystem.deleteAsync(target, { idempotent: true }).catch(() => {});
     throw error;
@@ -644,7 +642,8 @@ export function FilesNavPage({
     setDownloadingDir(true);
     try {
       const name = (path ? basename(path) : 'workspace') || 'workspace';
-      const result = await downloadAndSave(projectArchiveUrl(projectId, ref_, path || undefined), `${name}.zip`, true);
+      const request = await projectArchiveRequest(projectId, ref_, path || undefined);
+      const result = await downloadAndSave(request, `${name}.zip`);
       if (result.status === 'saved') {
         haptics.success();
         toast.success(`Saved to ${result.folder}`);

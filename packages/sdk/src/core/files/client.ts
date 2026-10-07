@@ -10,6 +10,7 @@
 import { getClient, RuntimeNotReadyError } from '../runtime/client';
 import { getActiveRuntimeUrl } from '../session/server-store/active';
 import { authenticatedFetch } from '../http/auth';
+import { type AuthenticatedRequest, authenticatedRequest } from '../http/authenticated-request';
 import { ApiError } from '../http/api/errors';
 import type {
   FileContent,
@@ -183,6 +184,17 @@ async function readFileRaw(filePath: string, fallbackMime?: string, baseUrl?: st
     return new Blob([blob], { type: fallbackMime });
   }
   return blob;
+}
+
+/**
+ * Daemon `GET /file/raw` as a request the host sends itself, for a host that
+ * streams the bytes to disk (React Native's `FileSystem.downloadAsync`) so a
+ * large file never enters the JS heap. The caller checks the status and treats
+ * a `text/html` body for a non-HTML file as a failure (a misrouted SPA shell).
+ */
+export function fileDownloadRequest(filePath: string, baseUrl?: string): Promise<AuthenticatedRequest> {
+  const base = requireBaseUrl(baseUrl);
+  return authenticatedRequest(`${base}/file/raw?path=${encodeURIComponent(toDaemonPath(filePath))}`);
 }
 
 /** Read a file as a Blob — prefers `/file/raw`, falls back to base64 `/file/content`. */
