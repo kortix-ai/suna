@@ -18,7 +18,7 @@ let existing: boolean;
 let createdName = 'main';
 let size = { cpu: 1, memory_gb: 2, disk_gb: 10 };
 let resizePolls = 0;
-let snapshots: Array<{ snapshot_id: string; created_at: string; size_bytes: number | null }> = [];
+let snapshots: Array<{ snapshot_id: string; created_at: string; size_bytes: number | null; kind?: string; expires_at?: string | null }> = [];
 let resizeFailure: string | null = null;
 let failResize = false;
 let dashboardUrl: string | null = 'https://dev-backend-99999999888847778666555555555555.apps.backends.test';
@@ -111,8 +111,17 @@ function startServer(): string {
         return Response.json({
           automatic: { state: 'ok', last_backup_at: '2026-01-01T00:00:00.000Z', size_bytes: 2048, interval_minutes: 60 },
           snapshots,
-          snapshot_limit: 5,
+          snapshot_limit: 10,
+          snapshot_schedule: { automatic_interval_hours: 24, automatic_retention_days: 7, resize_retention_hours: 24, last_automatic_at: '2026-01-01T03:00:00.000Z' },
         });
+      }
+      if (path.startsWith(`${base}/backends/${BACKEND_ID}/snapshots/`) && req.method === 'DELETE') {
+        const id = path.slice(`${base}/backends/${BACKEND_ID}/snapshots/`.length);
+        if (!snapshots.some((row) => row.snapshot_id === id)) {
+          return Response.json({ error: 'no such snapshot on this backend', code: 'snapshot_not_found' }, { status: 404 });
+        }
+        snapshots = snapshots.filter((row) => row.snapshot_id !== id);
+        return new Response(null, { status: 204 });
       }
       if (path === `${base}/backends/${BACKEND_ID}/snapshots` && req.method === 'POST') {
         return Response.json({ snapshot_id: 'snap-new', created_at: '2026-01-02T00:00:00.000Z' }, { status: 201 });
@@ -224,7 +233,10 @@ beforeEach(() => {
   resizePolls = 0;
   resizeFailure = null;
   failResize = false;
-  snapshots = [{ snapshot_id: 'snap-1', created_at: '2026-01-01T00:00:00.000Z', size_bytes: 1048576 }];
+  snapshots = [
+    { snapshot_id: 'snap-1', created_at: '2026-01-01T00:00:00.000Z', size_bytes: 1048576, kind: 'manual', expires_at: null },
+    { snapshot_id: 'snap-auto', created_at: '2026-01-01T03:00:00.000Z', size_bytes: 1048576, kind: 'automatic', expires_at: '2026-01-08T03:00:00.000Z' },
+  ];
   dashboardUrl = 'https://dev-backend-99999999888847778666555555555555.apps.backends.test';
   health = null;
 });
@@ -257,7 +269,7 @@ describe('kortix backends', () => {
   test('--help lists every subcommand', async () => {
     const r = await runCli(['backends', '--help'], join(tmp, 'none.json'));
     expect(r.code).toBe(0);
-    for (const sub of ['list | ls', 'create <name>', 'resize <name|id>', 'backups <name|id>', 'snapshot <name|id>', 'restore <name|id> <snapshot-id>', 'get <name|id>', 'dashboard <name|id>', 'connect <name|id>', 'env <name|id>', 'deploy <name>', 'delete <name|id>', 'logs <name|id>', 'rotate-key <name|id>']) {
+    for (const sub of ['list | ls', 'create <name>', 'resize <name|id>', 'backups <name|id>', 'snapshot <name|id>', 'delete-snapshot <name|id> <snapshot-id>', 'restore <name|id> <snapshot-id>', 'get <name|id>', 'dashboard <name|id>', 'connect <name|id>', 'env <name|id>', 'deploy <name>', 'delete <name|id>', 'logs <name|id>', 'rotate-key <name|id>']) {
       expect(r.stdout).toContain(sub);
     }
   });
@@ -509,17 +521,38 @@ describe('kortix backends', () => {
     expect(r.stderr).toContain('out of capacity');
   });
 
-  test('backups prints the automatic backup line and a snapshot table; --json is the raw payload', async () => {
+  test('backups prints the automatic backup, the schedule and each snapshot with kind and expiry; --json is the raw payload', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['backends', 'backups', 'main', '--project', PROJECT], config);
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('automatic');
     expect(r.stdout).toContain('every 60 min');
-    expect(r.stdout).toContain('snap-1');
     expect(r.stdout).toContain('1.0 MB');
-    expect(r.stdout).toContain('snapshots  1 of 5 kept');
+    expect(r.stdout).toContain('snapshots  2 · 1 of 10 manual');
+    expect(r.stdout).toContain('daily snapshot every 24 h, kept 7 days');
+    expect(r.stdout).toContain('resize snapshots kept 24 h');
+    expect(r.stdout).toMatch(/snap-1\s+manual\s+.*when deleted/);
+    expect(r.stdout).toMatch(/snap-auto\s+automatic\s+2026-01-01.*2026-01-08/);
     const json = await runCli(['backends', 'backups', 'main', '--project', PROJECT, '--json'], config);
-    expect(JSON.parse(json.stdout).snapshots[0].snapshot_id).toBe('snap-1');
+    const parsed = JSON.parse(json.stdout);
+    expect(parsed.snapshots[1]).toMatchObject({ snapshot_id: 'snap-auto', kind: 'automatic', expires_at: '2026-01-08T03:00:00.000Z' });
+    expect(parsed.snapshot_schedule.automatic_retention_days).toBe(7);
+  });
+
+  test('delete-snapshot --yes DELETEs one snapshot; without --yes and no terminal it deletes nothing; an unknown id fails', async () => {
+    const config = writeConfig(startServer());
+    const refused = await runCli(['backends', 'delete-snapshot', 'main', 'snap-1', '--project', PROJECT], config);
+    expect(refused.code).not.toBe(0);
+    expect(calls.some((c) => c.method === 'DELETE' && c.path.includes('/snapshots/'))).toBe(false);
+    const r = await runCli(['backends', 'delete-snapshot', 'main', 'snap-1', '--yes', '--project', PROJECT, '--json'], config);
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.stdout)).toEqual({ deleted: true, snapshot_id: 'snap-1' });
+    expect(calls.find((c) => c.method === 'DELETE' && c.path.endsWith(`/backends/${BACKEND_ID}/snapshots/snap-1`))).toBeDefined();
+    const missing = await runCli(['backends', 'delete-snapshot', 'main', 'snap-1', '--yes', '--project', PROJECT], config);
+    expect(missing.code).toBe(1);
+    expect(missing.stderr).toContain('no such snapshot');
+    const usage = await runCli(['backends', 'delete-snapshot', 'main', '--yes', '--project', PROJECT], config);
+    expect(usage.code).toBe(2);
   });
 
   test('connect prints the Connect snippets for every tab and never reads the admin key', async () => {

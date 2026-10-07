@@ -3,7 +3,15 @@ import { expect, test } from 'bun:test';
 import { resolve } from 'node:path';
 import { BACKEND_NAME_PATTERN } from './backends-view';
 import { backendEnvText } from './backend-connect-dialog';
-import { formatBackupSize, sizeChanges, sizeDraft, sizeFieldValid, sizeMin } from './backend-dialogs';
+import {
+  formatBackupSize,
+  manualSnapshotCount,
+  sizeChanges,
+  sizeDraft,
+  sizeFieldValid,
+  sizeMin,
+  timeUntil,
+} from './backend-dialogs';
 
 const root = resolve(import.meta.dir, '../..');
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8');
@@ -120,4 +128,17 @@ test('the backend page shows the last automatic backup, its schedule and the sna
   expect(detail).toContain('automatic.interval_minutes');
   expect(detail).toContain('snapshot_limit: limit');
   expect(detail).toContain('data-testid="backend-backup-summary"');
+});
+
+test('snapshot expiry reads as a future time; a passed expiry is null', () => {
+  const now = Date.parse('2026-10-07T00:00:00.000Z');
+  const at = (ms: number) => new Date(now + ms).toISOString();
+  expect(timeUntil(at(-1), now)).toBeNull();
+  expect(timeUntil(at(30 * 60_000), now)).toMatch(/30/);
+  expect(timeUntil(at(24 * 3_600_000), now)).toMatch(/24/);
+  expect(timeUntil(at(7 * 86_400_000), now)).toMatch(/7/);
+});
+
+test('only manual snapshots (and snapshots from servers without kinds) count against the limit', () => {
+  expect(manualSnapshotCount([{ kind: 'manual' }, { kind: 'automatic' }, { kind: 'resize' }, {}])).toBe(2);
 });

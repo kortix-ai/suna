@@ -165,7 +165,7 @@ Commit the Convex code on the session branch like any other code.
 | `kortix backends token <name>` | A 15-minute sign-in token. A person's own login: names that person, with groups and role. An agent session: names the agent (`kind: "agent"`), with no groups and no role. |
 | `kortix backends deploy <name> --dir <path> [--create]` | Deploy. `--create` creates a missing backend first. |
 | `kortix backends resize <name> --cpu N --memory GB --disk GB` | Resize (see Size, backups and restore). |
-| `kortix backends backups <name>` · `snapshot <name>` · `restore <name> <id>` | Backups and point-in-time restore. |
+| `kortix backends backups <name>` · `snapshot <name>` · `delete-snapshot <name> <id>` · `restore <name> <id>` | Backups, snapshots (with kind and expiry) and point-in-time restore. |
 | `kortix backends delete <name> --yes` | Delete the machine and every document and file. |
 
 A name is lowercase letters, digits and dashes, starting with a letter. A
@@ -288,6 +288,8 @@ scheduler all live in the backend. Do not add a second database next to it.
   - A corrupt data directory keeps Convex from starting. Kortix is alerted
     after 3 failed health probes (15 minutes). Restore the newest snapshot
     with the user's consent.
+  - Snapshots live on the machine's host. A host loss can take them with it;
+    the automatic backup is the copy off the host.
 
   Tell the user this before they store data they cannot re-create, and keep
   an export of such data (`npx convex export --include-file-storage`) on
@@ -315,18 +317,27 @@ changes.
 ```sh
 kortix backends create main --cpu 2 --memory 4 --disk 20   # default 1 vCPU / 1 GB / 10 GB
 kortix backends resize main --cpu 4 --memory 8             # seconds of downtime; disk only grows
-kortix backends backups main                                # automatic backup + snapshots
-kortix backends snapshot main                               # point-in-time copy (newest 5 kept)
+kortix backends backups main                                # automatic backup, schedule, snapshots with kind and expiry
+kortix backends snapshot main                               # manual point-in-time copy, kept until deleted
+kortix backends delete-snapshot main <snapshot-id> --yes    # free a manual slot (10 per backend)
 kortix backends restore main <snapshot-id> --yes            # roll back; later changes are lost
 ```
 
 - **Automatic backup:** Kortix copies the machine to object storage every hour.
   It recovers the backend after a host loss. Nothing to configure.
 - **Snapshot:** data, files, functions and env vars at one moment. Take one
-  before a migration, a bulk import, or anything you might want to undo. A
-  resize takes one for you.
+  before a migration, a bulk import, or anything you might want to undo.
+  Kinds: `manual` (yours, kept until deleted, 10 per backend; the 11th answers
+  `409 snapshot_limit`), `automatic` (Kortix, daily, kept 7 days) and `resize`
+  (Kortix, before a resize, kept 24 h). `expires_at` says when Kortix deletes
+  one; Kortix deletes nothing else.
 - **Restore:** rolls the running backend back in place, in seconds. Every
-  change after the snapshot is gone, so confirm with the user first.
+  change after the snapshot is gone, so confirm with the user first. A
+  snapshot from before a resize cannot be restored (`409
+  snapshot_predates_resize`): it holds the old machine size.
+- One operation at a time: snapshot, restore and delete-snapshot answer `409
+  backend_busy` while a resize, restore, rotation or recovery runs. Wait for
+  `operation` to clear (`kortix backends get <name>`), then retry.
 - Limits: 1–16 vCPU, 1–32 GB memory, 10–100 GB disk (disk can only grow).
 - For portable copies outside Kortix:
   `npx convex export --path <file>.zip --include-file-storage`. Without

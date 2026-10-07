@@ -20,10 +20,14 @@
  *    level, which alerts. The probe is also the meter: a running machine has
  *    an open compute window (workload_type `backend`) and its liveness is
  *    recorded; a machine that is not running has its window closed.
- * 5. Orphans (./lifecycle.ts): retry failed machine deletes; once an hour,
+ * 5. Snapshots: every running backend of an active project gets a daily
+ *    automatic snapshot (kept 7 days), and expired automatic and resize
+ *    snapshots are deleted (./operations.ts). At most SNAPSHOT_JOBS_PER_TICK
+ *    start per tick, each under the `snapshotting` lock.
+ * 6. Orphans (./lifecycle.ts): retry failed machine deletes; once an hour,
  *    delete backend machines no live row references.
  *
- * Steps 1 and 2 and the repairs in step 3 run detached: they heartbeat, so a
+ * Steps 1, 2 and 5 and the repairs in step 4 run detached: they heartbeat, so a
  * later tick never starts a second copy, and a process that dies mid-way is
  * taken over again.
  */
@@ -46,11 +50,14 @@ import {
   OPERATION_STALE_MS,
   type PlatinumSandboxState,
   type RecoveryAction,
+  automaticSnapshotDue,
   backendOperation,
   claimOperation,
+  expiredSnapshotIds,
   readMachine,
   recoverBackend,
   releaseOperation,
+  runSnapshotMaintenance,
 } from './operations';
 import { BACKEND_PROVIDER, type BackendRow, discardMachine, provisionBackend } from './provision';
 
@@ -60,6 +67,8 @@ export const UNHEALTHY_ALERT_AFTER = 3;
 /** Disk use at which the probe warns. */
 export const DISK_WARN_PCT = 80;
 const PROBE_CONCURRENCY = 4;
+/** Snapshot jobs started per tick: spreads the first daily round of a fleet over several ticks. */
+export const SNAPSHOT_JOBS_PER_TICK = 4;
 
 export interface BackendHealth {
   ok: boolean;
@@ -84,10 +93,17 @@ export interface BackendSweepResult {
   parked: number;
   unparked: number;
   machinesDeleted: number;
+  /** Snapshot jobs started: a daily automatic snapshot, expired snapshots to delete, or both. */
+  snapshotJobs: number;
   errors: number;
 }
 
-const INTERRUPTED_NAMES: Record<string, string> = { resizing: 'resize', rotating_key: 'admin key rotation' };
+const INTERRUPTED_NAMES: Record<string, string> = {
+  resizing: 'resize',
+  rotating_key: 'admin key rotation',
+  snapshotting: 'snapshot',
+  restoring: 'restore',
+};
 
 const staleBefore = () => new Date(Date.now() - OPERATION_STALE_MS).toISOString();
 
@@ -280,7 +296,8 @@ async function meter(row: BackendRow, machineState: string | null): Promise<void
   }
 }
 
-async function probeRunning(result: BackendSweepResult): Promise<void> {
+/** Running backends of active projects: the ones the probe and the snapshot job act on. */
+async function runningActiveBackends(): Promise<BackendRow[]> {
   const rows = await db
     .select({ backend: projectBackends })
     .from(projectBackends)
@@ -295,7 +312,11 @@ async function probeRunning(result: BackendSweepResult): Promise<void> {
         eq(projects.status, 'active'),
       ),
     );
-  const idle = rows.map((r) => r.backend).filter((row) => !backendOperation(row));
+  return rows.map((r) => r.backend);
+}
+
+async function probeRunning(result: BackendSweepResult): Promise<void> {
+  const idle = (await runningActiveBackends()).filter((row) => !backendOperation(row));
   const healths = await mapWithConcurrency(idle, PROBE_CONCURRENCY, (row) =>
     probeBackend(row).catch((error) => {
       result.errors += 1;
@@ -311,6 +332,22 @@ async function probeRunning(result: BackendSweepResult): Promise<void> {
   }
 }
 
+/** 5. Daily automatic snapshots and snapshot expiry. */
+async function snapshotStep(result: BackendSweepResult): Promise<void> {
+  const now = Date.now();
+  for (const row of await runningActiveBackends()) {
+    if (result.snapshotJobs >= SNAPSHOT_JOBS_PER_TICK) return;
+    if (backendOperation(row)) continue;
+    const takeAutomatic = automaticSnapshotDue(row, now);
+    if (!takeAutomatic && expiredSnapshotIds(row, now).length === 0) continue;
+    if (!(await claimOperation(row.backendId, 'snapshotting'))) continue;
+    result.snapshotJobs += 1;
+    void runSnapshotMaintenance(row, takeAutomatic).catch((error) =>
+      logger.error('[backends] snapshot job crashed', { backendId: row.backendId, error: String(error) }),
+    );
+  }
+}
+
 export const EMPTY_BACKEND_SWEEP: BackendSweepResult = {
   resumed: 0,
   failedProvisions: 0,
@@ -321,6 +358,7 @@ export const EMPTY_BACKEND_SWEEP: BackendSweepResult = {
   parked: 0,
   unparked: 0,
   machinesDeleted: 0,
+  snapshotJobs: 0,
   errors: 0,
 };
 
@@ -341,7 +379,7 @@ async function orphanStep(result: BackendSweepResult): Promise<void> {
 export async function sweepBackends(): Promise<BackendSweepResult> {
   const result = { ...EMPTY_BACKEND_SWEEP };
   if (!isPlatinumConfigured()) return result;
-  for (const step of [resumeProvisions, takeOverOperations, parkStep, probeRunning, orphanStep]) {
+  for (const step of [resumeProvisions, takeOverOperations, parkStep, probeRunning, snapshotStep, orphanStep]) {
     await step(result).catch((error) => {
       result.errors += 1;
       logger.warn('[backends] sweep step failed', { step: step.name, error: String(error) });

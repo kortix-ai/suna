@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createBackend,
   createBackendSnapshot,
+  deleteBackendSnapshot,
   deleteBackend,
   getBackendBackups,
   listBackends,
@@ -61,7 +62,7 @@ export function useProjectBackends(projectId: string | null | undefined) {
   return { ...query, create, remove, resize, restore, rotateAdminKey };
 }
 
-/** Automatic backup state and snapshots of one backend, plus a take-snapshot mutation. */
+/** Automatic backup state and snapshots of one backend, plus take-snapshot and delete-snapshot mutations. */
 export function useProjectBackendBackups(
   projectId: string | null | undefined,
   backendId: string | null | undefined,
@@ -79,5 +80,9 @@ export function useProjectBackendBackups(
     mutationFn: () => createBackendSnapshot(projectId as string, backendId as string),
     onSuccess: () => queryClient.invalidateQueries({ queryKey }),
   });
-  return { ...query, snapshot };
+  const deleteSnapshot = useMutation({
+    mutationFn: (snapshotId: string) => deleteBackendSnapshot(projectId as string, backendId as string, snapshotId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+  });
+  return { ...query, snapshot, deleteSnapshot };
 }

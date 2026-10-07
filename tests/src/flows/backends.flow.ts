@@ -33,6 +33,7 @@ flow(
       "POST /v1/projects/:projectId/backends/:backendId/token",
       "GET /v1/projects/:projectId/backends/:backendId/backups",
       "POST /v1/projects/:projectId/backends/:backendId/snapshots",
+      "DELETE /v1/projects/:projectId/backends/:backendId/snapshots/:snapshotId",
       "POST /v1/projects/:projectId/backends/:backendId/restore",
       "POST /v1/projects/:projectId/backends/:backendId/rotate-admin-key",
       "GET /v1/projects/:projectId/backends/:backendId/logs",
@@ -80,7 +81,7 @@ flow(
       );
     });
 
-    await ctx.step("flag off: resize, token, backups, snapshot, restore → 403 feature_disabled", async () => {
+    await ctx.step("flag off: resize, token, backups, snapshot, delete snapshot, restore → 403 feature_disabled", async () => {
       expectDisabled(
         await owner.patch("/v1/projects/:projectId/backends/:backendId", { cpu: 2 }, { params: backendParams }),
       );
@@ -92,6 +93,11 @@ flow(
       );
       expectDisabled(
         await owner.post("/v1/projects/:projectId/backends/:backendId/snapshots", {}, { params: backendParams }),
+      );
+      expectDisabled(
+        await owner.del("/v1/projects/:projectId/backends/:backendId/snapshots/:snapshotId", {
+          params: { ...backendParams, snapshotId: "snap_none" },
+        }),
       );
       expectDisabled(
         await owner.post(

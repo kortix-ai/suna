@@ -29,12 +29,13 @@ branch on it. See [Feature flags](/docs/feature-flags).
 | `backends.token(backendId)` | `POST …/backends/:id/token` | A 15-minute Kortix sign-in token naming the caller, for `client.setAuth` |
 | `backends.resize(backendId, { cpu?, memory_gb?, disk_gb? })` | `PATCH …/backends/:id` | Starts a resize. Returns at once with `operation: 'resizing'` |
 | `backends.waitForOperation(backendId)` | polls `GET …/backends/:id` | Resolves when `operation` is `null`; rejects with `last_operation_error` when the operation failed, or after 10 minutes |
-| `backends.backups(backendId)` | `GET …/backends/:id/backups` | Reads the automatic backup state and the snapshots, newest first |
-| `backends.snapshot(backendId)` | `POST …/backends/:id/snapshots` | Takes a snapshot now. The backend keeps the newest 5 |
-| `backends.restore(backendId, snapshotId)` | `POST …/backends/:id/restore` | Rolls the backend back to a snapshot. Resolves with the running backend |
+| `backends.backups(backendId)` | `GET …/backends/:id/backups` | Reads the automatic backup state, the snapshot schedule and the snapshots, newest first, each with its `kind` and `expires_at` |
+| `backends.snapshot(backendId)` | `POST …/backends/:id/snapshots` | Takes a manual snapshot now. It stays until deleted; a backend holds 10 |
+| `backends.deleteSnapshot(backendId, snapshotId)` | `DELETE …/backends/:id/snapshots/:snapshotId` | Deletes one snapshot of any kind |
+| `backends.restore(backendId, snapshotId)` | `POST …/backends/:id/restore` | Rolls the backend back to a snapshot. Resolves once the machine runs the snapshot and Convex answers |
 | `backends.rotateAdminKey(backendId)` | `POST …/backends/:id/rotate-admin-key` | Replaces the admin key; every key read before stops working. Convex restarts (about 1 s). Resolves with the backend |
 | `backends.logs(backendId, { lines? })` | `GET …/backends/:id/logs` | The last `lines` (1 to 1000, default 200) of the Convex process log, as one string |
-| `backends.remove(backendId)` | `DELETE …/backends/:id` | Deletes the backend and its machine |
+| `backends.remove(backendId)` | `DELETE …/backends/:id` | Deletes the backend, its machine and its snapshots |
 
 `create` answers at once with `status: 'provisioning'`. Boot takes about 3 to 5
 seconds, and up to a few minutes on a region's first image build. Call
@@ -46,8 +47,19 @@ is at most 63 characters.
 ## Resize, back up, restore
 
 Limits: `cpu` 1 to 16, `memory_gb` 1 to 32, `disk_gb` 10 to 100. A disk grows
-but never shrinks. `resize`, `snapshot`, and `restore` need the
-`project.backend.write` permission. `backups` needs `project.backend.read`.
+but never shrinks. `resize`, `snapshot`, `deleteSnapshot` and `restore` need
+the `project.backend.write` permission. `backups` needs `project.backend.read`.
+
+A snapshot has one of three kinds:
+
+| `kind` | Who takes it | Kept |
+|---|---|---|
+| `manual` | A member or agent, with `snapshot` | Until deleted. A backend holds 10; the 11th answers `409 snapshot_limit` |
+| `automatic` | Kortix, once a day | 7 days. The newest one stays past its expiry until a newer one exists |
+| `resize` | Kortix, before a resize | 24 hours |
+
+`expires_at` says when Kortix deletes an `automatic` or `resize` snapshot. It is
+`null` for a `manual` one. Kortix never deletes a snapshot without that date.
 
 ```ts
 const backends = kortix.project(projectId).backends;
@@ -56,10 +68,13 @@ await backends.resize(backendId, { cpu: 2, memory_gb: 4 });
 const resized = await backends.waitForOperation(backendId); // restarts on the new size
 
 const { snapshot_id } = await backends.snapshot(backendId);
-const { automatic, snapshots } = await backends.backups(backendId);
+const { automatic, snapshots, snapshot_schedule } = await backends.backups(backendId);
 
 // Every change after the snapshot is lost.
 await backends.restore(backendId, snapshot_id);
+
+// Free a manual slot.
+await backends.deleteSnapshot(backendId, snapshots.at(-1)!.snapshot_id);
 ```
 
 While a resize runs, the backend has `operation: 'resizing'`. When it fails,
@@ -67,7 +82,17 @@ While a resize runs, the backend has `operation: 'resizing'`. When it fails,
 
 `resize` answers `400` with `invalid_size`, `disk_shrink_unsupported`, or
 `size_unchanged`, and `409` with `backend_busy` or `backend_not_running`.
-`restore` answers `400` with `snapshot_not_found`.
+`snapshot`, `deleteSnapshot` and `restore` answer `409` with `backend_busy`
+while another operation runs: one operation at a time per backend, and
+`operation` reads `snapshotting` or `restoring` while theirs runs. `snapshot`
+answers `409` with `snapshot_limit`. `deleteSnapshot` answers `404` with
+`snapshot_not_found`. `restore` answers `400` with `snapshot_not_found`, `409`
+with `snapshot_predates_resize`, and `502` with `restore_unhealthy`.
+
+A snapshot holds the CPU, memory and disk image of the moment it was taken. A
+snapshot taken before an applied resize therefore cannot be restored
+(`snapshot_predates_resize`): take a snapshot at the new size, or resize again.
+The `resize` snapshot undoes a resize that failed before the size changed.
 
 ## Rotate the admin key, read the log, check health
 
@@ -125,13 +150,15 @@ Every type below is exported from `@kortix/sdk`.
 |---|---|
 | `ProjectBackend` | `backend_id`, `project_id`, `name`, `status`, `url`, `site_url`, `dashboard_url`, `cpu`, `memory_gb`, `disk_gb`, `error`, `operation`, `last_operation_error`, `health` (the last `ProjectBackendHealth`; `null` before the first probe), `auth_env` (the public `KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE` and `KORTIX_AUTH_JWKS` values; `null` for a backend created before Kortix sign-in), `convex_version` (the matching `convex` npm CLI version), `created_at`, `updated_at` |
 | `ProjectBackendStatus` | `'provisioning' \| 'running' \| 'error' \| 'deleted'` |
-| `ProjectBackendOperation` | `'resizing' \| 'rotating_key' \| 'recovering'` |
+| `ProjectBackendOperation` | `'resizing' \| 'rotating_key' \| 'recovering' \| 'snapshotting' \| 'restoring'` |
 | `ProjectBackendHealth` | `ok`, `checked_at`, `machine_state` (`running`, `stopped`, …, `missing`), `failures` (failed probes in a row), `error`, `disk_used_pct`, `repair` (`'started' \| 'restored_from_backup' \| null`) |
 | `GetBackendLogsOptions` | `lines` (1 to 1000, default 200) |
 | `ProjectBackendSize` | `cpu`, `memory_gb`, `disk_gb`, all optional |
 | `CreateProjectBackendInput` | `name`, plus the optional size fields |
-| `ProjectBackendBackups` | `automatic` (`state`, `last_backup_at`, `size_bytes`, `interval_minutes`), `snapshots` and `snapshot_limit` (how many snapshots the backend keeps) |
-| `ProjectBackendSnapshot` | `snapshot_id`, `created_at`, `size_bytes` |
+| `ProjectBackendBackups` | `automatic` (`state`, `last_backup_at`, `size_bytes`, `interval_minutes`), `snapshots`, `snapshot_limit` (how many manual snapshots the backend holds) and `snapshot_schedule` |
+| `ProjectBackendSnapshot` | `snapshot_id`, `created_at`, `size_bytes`, `kind`, `expires_at` (`null` for a manual snapshot) |
+| `ProjectBackendSnapshotKind` | `'manual' \| 'automatic' \| 'resize'` |
+| `ProjectBackendSnapshotSchedule` | `automatic_interval_hours`, `automatic_retention_days`, `resize_retention_hours`, `last_automatic_at` |
 | `ProjectBackendCredentials` | `url`, `site_url`, `admin_key`, `env` |
 
 `url` and `site_url` are `null` until the backend runs.
@@ -202,7 +229,8 @@ operation. `projectBackendsKey(projectId)` is the query key.
 ### useProjectBackendBackups(projectId, backendId, enabled?)
 
 The automatic backup state and snapshots of one backend, plus a `snapshot`
-mutation that takes a snapshot and refreshes the query.
+mutation that takes a snapshot and a `deleteSnapshot` mutation (`snapshotId`)
+that deletes one. Both refresh the query.
 
 ## Errors
 

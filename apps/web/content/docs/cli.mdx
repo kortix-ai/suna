@@ -687,9 +687,10 @@ Manages the project's self-hosted Convex backends. Each backend runs in its own 
 | `kortix backends list [--json]` | List backends with status and URL. |
 | `kortix backends create <name> [--cpu <1-16>] [--memory <1-32>] [--disk <10-100>] [--json]` | Create and boot a backend. Memory and disk are in GB. Default size: 1 vCPU, 1 GB, 10 GB. Takes seconds, or minutes on the first image build. |
 | `kortix backends resize <name\|id> [--cpu N] [--memory GB] [--disk GB] [--no-wait] [--json]` | Change the machine size. Needs at least one size flag. A disk never shrinks. Waits until the resize ends and prints the new size. `--no-wait` returns when it starts. |
-| `kortix backends backups <name\|id> [--json]` | Show the automatic backup (last time, size, interval) and the snapshots, newest first. |
-| `kortix backends snapshot <name\|id> [--json]` | Take a snapshot now. The backend keeps the newest 5. |
-| `kortix backends restore <name\|id> <snapshot-id> [--yes] [--json]` | Roll the backend back to a snapshot. Every change after the snapshot is lost. Asks first unless `--yes`. |
+| `kortix backends backups <name\|id> [--json]` | Show the automatic backup (last time, size, interval), the snapshot schedule, and the snapshots, newest first, each with its kind (`manual`, `automatic`, `resize`) and expiry. |
+| `kortix backends snapshot <name\|id> [--json]` | Take a manual snapshot now. It stays until deleted. A backend holds 10 manual snapshots; Kortix also keeps a daily snapshot for 7 days and a snapshot before each resize for 24 hours. |
+| `kortix backends delete-snapshot <name\|id> <snapshot-id> [--yes] [--json]` | Delete one snapshot. Asks first unless `--yes`. |
+| `kortix backends restore <name\|id> <snapshot-id> [--yes] [--json]` | Roll the backend back to a snapshot. Every change after the snapshot is lost. A snapshot taken before a resize cannot be restored. Asks first unless `--yes`. |
 | `kortix backends get <name\|id> [--json]` | Show one backend, with its last health probe (machine state, disk use) and any operation in flight. `list` marks a backend whose probe failed `unhealthy`. |
 | `kortix backends logs <name\|id> [--lines <1-1000>] [--json]` | Print the end of the Convex process log (default 200 lines): startup, crashes, restarts, request lines. Function logs: `npx convex logs`. |
 | `kortix backends rotate-key <name\|id> [--yes] [--json]` | Replace the admin key. Every key read before stops working. Convex restarts for about 1 s; data, files and environment variables stay. Asks first unless `--yes`. |

@@ -439,6 +439,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'PATCH /v1/projects/:projectId/backends/:backendId': { action: 'backend.resize', title: 'Resize a backend' },
   'GET /v1/projects/:projectId/backends/:backendId/backups': { action: 'backend.backups.view', title: 'List backend backups' },
   'POST /v1/projects/:projectId/backends/:backendId/snapshots': { action: 'backend.snapshot.create', title: 'Take a backend snapshot' },
+  'DELETE /v1/projects/:projectId/backends/:backendId/snapshots/:snapshotId': { action: 'backend.snapshot.delete', title: 'Delete a backend snapshot' },
   'POST /v1/projects/:projectId/backends/:backendId/restore': { action: 'backend.snapshot.restore', title: 'Restore a backend snapshot' },
   'POST /v1/projects/:projectId/backends/:backendId/token': { action: 'backend.token.mint', title: 'Mint a backend sign-in token' },
   'GET /v1/projects/:projectId/backends/:backendId/credentials': { action: 'backend.credentials.view', title: 'Read backend admin credentials', events: ['backend.credentials.read'] },

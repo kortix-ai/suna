@@ -56,6 +56,7 @@ describe('Kortix Backends React Query bindings', () => {
     expect(backups.queryKey).toEqual(qk.project.backendBackups('project-1', 'b1'));
     expect((useProjectBackendBackups('project-1', 'b1', false) as any).enabled).toBe(false);
     backups.snapshot.onSuccess();
-    expect(invalidated).toEqual([qk.project.backendBackups('project-1', 'b1')]);
+    backups.deleteSnapshot.onSuccess();
+    expect(invalidated).toEqual([qk.project.backendBackups('project-1', 'b1'), qk.project.backendBackups('project-1', 'b1')]);
   });
 });

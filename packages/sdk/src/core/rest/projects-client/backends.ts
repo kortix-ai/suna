@@ -9,8 +9,10 @@ export type ProjectBackendStatus = 'provisioning' | 'running' | 'error' | 'delet
  * A day-two operation in flight. `rotating_key`: an admin-key rotation.
  * `recovering`: Kortix is starting the machine, or restoring it from its last
  * automatic backup, after a failed health probe or an interrupted operation.
+ * `snapshotting`: a snapshot is taken or deleted (the machine pauses for the
+ * copy). `restoring`: a snapshot restore.
  */
-export type ProjectBackendOperation = 'resizing' | 'rotating_key' | 'recovering';
+export type ProjectBackendOperation = 'resizing' | 'rotating_key' | 'recovering' | 'snapshotting' | 'restoring';
 
 /** The last health probe of a running backend. Kortix probes every 5 minutes. */
 export interface ProjectBackendHealth {
@@ -250,10 +252,34 @@ export async function waitForBackendOperation(
   }
 }
 
+/**
+ * Who made a snapshot, which decides how long it stays. `manual`: a member or
+ * agent took it; it stays until deleted. `automatic`: the daily snapshot, kept
+ * 7 days. `resize`: taken before a resize, kept 24 hours.
+ */
+export type ProjectBackendSnapshotKind = 'manual' | 'automatic' | 'resize';
+
 export interface ProjectBackendSnapshot {
   snapshot_id: string;
   created_at: string;
   size_bytes: number | null;
+  /** Absent on servers older than this field: read it as `manual`. */
+  kind?: ProjectBackendSnapshotKind;
+  /**
+   * When Kortix deletes the snapshot; `null` for a manual one. The newest
+   * automatic snapshot stays past its expiry until a newer one exists.
+   * Absent on servers older than this field.
+   */
+  expires_at?: string | null;
+}
+
+/** When Kortix takes and deletes snapshots on its own. */
+export interface ProjectBackendSnapshotSchedule {
+  automatic_interval_hours: number;
+  automatic_retention_days: number;
+  resize_retention_hours: number;
+  /** The last automatic snapshot; `null` before the first. */
+  last_automatic_at: string | null;
 }
 
 export interface ProjectBackendBackups {
@@ -265,8 +291,14 @@ export interface ProjectBackendBackups {
   };
   /** Newest first. */
   snapshots: ProjectBackendSnapshot[];
-  /** How many snapshots the backend keeps. Absent on servers older than this field. */
+  /**
+   * How many manual snapshots the backend holds. At the limit a new one
+   * answers `409 snapshot_limit`; nothing is dropped. Older servers sent the
+   * total kept (5). Absent on servers older than this field.
+   */
   snapshot_limit?: number;
+  /** Absent on servers older than this field. */
+  snapshot_schedule?: ProjectBackendSnapshotSchedule;
 }
 
 export async function getBackendBackups(projectId: string, backendId: string): Promise<ProjectBackendBackups> {
@@ -276,18 +308,35 @@ export async function getBackendBackups(projectId: string, backendId: string): P
   );
 }
 
-/** Takes a snapshot now. The backend keeps the newest 5. */
+/**
+ * Takes a manual snapshot now; it stays until deleted. Answers `409` with
+ * `snapshot_limit` when the backend holds its limit of manual snapshots
+ * (delete one with {@link deleteBackendSnapshot}), and `backend_busy` while
+ * another operation runs. Servers since snapshot kinds also return
+ * `size_bytes`, `kind` and `expires_at`.
+ */
 export async function createBackendSnapshot(
   projectId: string,
   backendId: string,
-): Promise<{ snapshot_id: string; created_at: string }> {
+): Promise<{ snapshot_id: string; created_at: string } & Partial<ProjectBackendSnapshot>> {
   return unwrap(
-    await backendApi.post<{ snapshot_id: string; created_at: string }>(
+    await backendApi.post<{ snapshot_id: string; created_at: string } & Partial<ProjectBackendSnapshot>>(
       `/projects/${projectId}/backends/${backendId}/snapshots`,
       {},
     ),
     'Failed to snapshot backend',
   );
+}
+
+/**
+ * Deletes one snapshot of any kind and frees its storage. This cannot be
+ * undone. Answers `404` with `snapshot_not_found` and `409` with `backend_busy`.
+ */
+export async function deleteBackendSnapshot(projectId: string, backendId: string, snapshotId: string): Promise<void> {
+  const response = await backendApi.delete(
+    `/projects/${projectId}/backends/${backendId}/snapshots/${encodeURIComponent(snapshotId)}`,
+  );
+  if (!response.success) throw response.error ?? new Error('Failed to delete the backend snapshot');
 }
 
 /**
@@ -329,7 +378,13 @@ export async function getBackendLogs(
   ).log;
 }
 
-/** Rolls the backend back to a snapshot. Every change after it is lost. Answers `400` with `snapshot_not_found`. */
+/**
+ * Rolls the backend back to a snapshot. Every change after it is lost. Resolves
+ * once the machine runs the snapshot and Convex answers. Answers `400` with
+ * `snapshot_not_found`, `409` with `snapshot_predates_resize` (taken before a
+ * resize: it holds the old machine size) or `backend_busy`, and `502` with
+ * `restore_unhealthy`.
+ */
 export async function restoreBackendSnapshot(
   projectId: string,
   backendId: string,

@@ -29,6 +29,7 @@ import {
   BackendBackupsDialog,
   ResizeBackendDialog,
   backendOperationError,
+  manualSnapshotCount,
   backendSizeLabel,
 } from './backend-dialogs';
 import { BackendStatusBadge } from './backends-view';
@@ -150,7 +151,7 @@ export function BackendDetailView({
           </div>
         ) : !backend ? (
           <Notice title={t.raw('text88c4418c2c87')} body={t.raw('text992276f72e41')} />
-        ) : backend.status !== 'running' || backend.operation ? (
+        ) : backend.status !== 'running' || (backend.operation && backend.operation !== 'snapshotting') ? (
           <Notice title={backend.name} body={t.raw('text354788a1e3e5')} />
         ) : !canWrite ? (
           <Notice title={backend.name} body={t.raw('text736d4f22425d')} />
@@ -238,18 +239,19 @@ function BackupSummary({
   const backups = useProjectBackendBackups(
     projectId,
     backend.backend_id,
-    backend.status === 'running' && !backend.operation,
+    backend.status === 'running' && (!backend.operation || backend.operation === 'snapshotting'),
   );
   const data = backups.data;
   if (!data) return null;
   const { automatic, snapshots, snapshot_limit: limit } = data;
+  const manual = manualSnapshotCount(snapshots);
   const parts = [
     automatic.last_backup_at
       ? t('text423445f8efa7', { value0: relativeTime(automatic.last_backup_at) })
       : t.raw('text73db33085e5e'),
     ...(automatic.interval_minutes ? [t('text81c6ab35879a', { value0: automatic.interval_minutes })] : []),
     limit
-      ? t('text7aaebc8b5794', { value0: snapshots.length, value1: limit })
+      ? t('textd9682a5acb38', { value0: manual, value1: limit })
       : t('text67de20fb3bbd', { value0: snapshots.length }),
   ];
   return (

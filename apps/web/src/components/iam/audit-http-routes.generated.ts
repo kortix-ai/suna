@@ -419,6 +419,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|projects|:projectId|backends|:backendId|restore",
   "POST|v1|projects|:projectId|backends|:backendId|rotate-admin-key",
   "POST|v1|projects|:projectId|backends|:backendId|snapshots",
+  "DELETE|v1|projects|:projectId|backends|:backendId|snapshots|:snapshotId",
   "POST|v1|projects|:projectId|backends|:backendId|token",
   "GET|v1|projects|:projectId|branches",
   "GET|v1|projects|:projectId|change-requests",

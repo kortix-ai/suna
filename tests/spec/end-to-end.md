@@ -1463,12 +1463,13 @@ configured. Routes: `GET/POST /projects/:projectId/backends`,
 `PATCH /projects/:projectId/backends/:backendId` (resize),
 `POST /projects/:projectId/backends/:backendId/token`,
 `GET /projects/:projectId/backends/:backendId/backups`,
-`POST /projects/:projectId/backends/:backendId/{snapshots,restore}`, and the
+`POST /projects/:projectId/backends/:backendId/{snapshots,restore}`,
+`DELETE /projects/:projectId/backends/:backendId/snapshots/:snapshotId`, and the
 public issuer routes `GET /backends/:backendId/.well-known/openid-configuration`
 and `GET /backends/:backendId/jwks.json`.
 
 `BKD-1` Gated surface. Flag off: list, create, get, credentials, delete, resize,
-token, backups, snapshot, restore, rotate-admin-key and logs answer `403 {code:'feature_disabled', feature:'backends'}`. The owner's
+token, backups, snapshot, snapshot delete, restore, rotate-admin-key and logs answer `403 {code:'feature_disabled', feature:'backends'}`. The owner's
 `PATCH /projects/:projectId/features` with `backends` true, false or null
 answers `403 {code:'feature_operator_only', feature:'backends'}`, and the
 owner's `PUT /admin/api/projects/:id/features` answers 403. The platform
@@ -1495,7 +1496,20 @@ session's token names the agent's service account (`kind: "agent"`, no role,
 no groups), never its launcher; the App gate's `/_kortix/backend-token`
 re-checks a `public` App's cookie viewer (`401` once access is gone) and
 answers `403 feature_disabled` with Backends off; the logs route strips color codes
-and rejects `lines` outside 1–1000. Not asserted locally:
+and rejects `lines` outside 1–1000. Snapshots: a manual snapshot carries `kind:
+"manual"` and no expiry, and the 11th answers `409 snapshot_limit` with nothing
+deleted; snapshot, restore, snapshot delete and backend delete answer `409
+backend_busy` during a resize (backend delete stays allowed in `recovering`);
+two concurrent snapshots produce one; a restore answers only after Platinum
+reports `running` again, and one Platinum ends `stopped` answers `502
+restore_unhealthy` with the machine started again; a resize takes a `resize`
+snapshot kept 24 h outside the limit, and every snapshot older than the
+applied resize answers `409 snapshot_predates_resize`; the maintenance sweep
+takes a daily `automatic` snapshot kept 7 days, deletes an expired `resize`
+snapshot and an expired `automatic` one only when a newer one exists, and
+never a manual one; `GET …/backups` returns each snapshot's `kind` and
+`expires_at` and the `snapshot_schedule`; `DELETE …/snapshots/:snapshotId`
+answers 204, then 404 `snapshot_not_found`. Not asserted locally:
 create (`202 provisioning`), a duplicate name (`409 backend_name_taken`), the
 `backend.credentials.read` audit row, and delete. They
 need a Platinum machine and are verified on a deployed environment.

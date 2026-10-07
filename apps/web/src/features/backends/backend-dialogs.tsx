@@ -20,7 +20,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import type { UiTranslator } from '@/i18n/translator';
 import { useTranslations } from '@/i18n/use-translations';
 import { relativeTime } from '@/lib/relative-time';
-import type { ProjectBackend, ProjectBackendSize } from '@kortix/sdk';
+import type { ProjectBackend, ProjectBackendSize, ProjectBackendSnapshot } from '@kortix/sdk';
 import { useProjectBackendBackups } from '@kortix/sdk/react';
 import { useState } from 'react';
 
@@ -85,6 +85,21 @@ export function formatBackupSize(bytes: number | null): string {
   return unit === 0 ? `${value} B` : `${value.toFixed(1)} ${units[unit]}`;
 }
 
+/** A future time as "in 6 days" in the viewer's locale; null once it has passed. */
+export function timeUntil(iso: string, now = Date.now()): string | null {
+  const minutes = Math.round((Date.parse(iso) - now) / 60_000);
+  if (!Number.isFinite(minutes) || minutes <= 0) return null;
+  const format = new Intl.RelativeTimeFormat(undefined, { numeric: 'always', style: 'narrow' });
+  if (minutes < 60) return format.format(minutes, 'minute');
+  if (minutes < 48 * 60) return format.format(Math.round(minutes / 60), 'hour');
+  return format.format(Math.round(minutes / 1440), 'day');
+}
+
+/** Manual snapshots count against the limit; daily and resize snapshots do not. */
+export function manualSnapshotCount(snapshots: Pick<ProjectBackendSnapshot, 'kind'>[]): number {
+  return snapshots.filter((snapshot) => (snapshot.kind ?? 'manual') === 'manual').length;
+}
+
 /** Turns a resize, snapshot or restore API error into a sentence. */
 export function backendOperationError(error: unknown, fallback: string, t: UiTranslator): string {
   const code = (error as { code?: string } | null)?.code;
@@ -101,6 +116,12 @@ export function backendOperationError(error: unknown, fallback: string, t: UiTra
       return t.raw('textc6223308cd3f');
     case 'snapshot_not_found':
       return t.raw('text9d850085f763');
+    case 'snapshot_limit':
+      return t.raw('text4e3a1dc4819c');
+    case 'snapshot_predates_resize':
+      return t.raw('text71f6cc5e959a');
+    case 'restore_unhealthy':
+      return t.raw('texte9d5195e7f19');
     default:
       return error instanceof Error ? error.message : fallback;
   }
@@ -227,8 +248,25 @@ export function BackendBackupsDialog({
   const t = useTranslations('hardcodedUi.i18nComplete');
   const backups = useProjectBackendBackups(projectId, backend.backend_id);
   const [pendingRestore, setPendingRestore] = useState<{ snapshot_id: string; created_at: string } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{ snapshot_id: string; created_at: string } | null>(null);
   const busy = backend.operation !== null;
   const automatic = backups.data?.automatic;
+  const schedule = backups.data?.snapshot_schedule;
+  const limit = backups.data?.snapshot_limit;
+  const atLimit = limit !== undefined && manualSnapshotCount(backups.data?.snapshots ?? []) >= limit;
+  const kindLabel = (kind: ProjectBackendSnapshot['kind']) =>
+    kind === 'automatic'
+      ? t.raw('textb36c2611dcdf')
+      : kind === 'resize'
+        ? t.raw('text819a1788de99')
+        : t.raw('textb0b9fe24ffa9');
+  const expiryLabel = (snapshot: ProjectBackendSnapshot) => {
+    if (!snapshot.expires_at) return t.raw('textbee3b293c9f6');
+    const left = timeUntil(snapshot.expires_at);
+    if (left) return t('text8c3e7e71155c', { value0: left });
+    // The newest daily snapshot outlives its expiry until a newer one exists.
+    return snapshot.kind === 'automatic' ? t.raw('text68f1baa5d324') : t.raw('text424a2551d356');
+  };
 
   const takeSnapshot = async () => {
     try {
@@ -288,7 +326,7 @@ export function BackendBackupsDialog({
                       <Button
                         size="sm"
                         variant="outline"
-                        disabled={busy || backups.snapshot.isPending}
+                        disabled={busy || atLimit || backups.snapshot.isPending}
                         onClick={() => void takeSnapshot()}
                       >
                         {backups.snapshot.isPending ? <Loading className="size-4 shrink-0" /> : null}
@@ -304,20 +342,36 @@ export function BackendBackupsDialog({
                           className="bg-popover border-border flex items-center justify-between gap-3 rounded-md border px-3 py-2"
                         >
                           <span className="min-w-0 text-sm">
-                            <span className="block truncate font-mono text-xs">{snapshot.snapshot_id}</span>
+                            <span className="flex min-w-0 items-center gap-2">
+                              <span className="truncate font-mono text-xs">{snapshot.snapshot_id}</span>
+                              <Badge variant="outline" size="sm" data-testid="backend-snapshot-kind">
+                                {kindLabel(snapshot.kind)}
+                              </Badge>
+                            </span>
                             <span className="text-muted-foreground text-xs">
-                              {relativeTime(snapshot.created_at)} · {formatBackupSize(snapshot.size_bytes)}
+                              {relativeTime(snapshot.created_at)} · {formatBackupSize(snapshot.size_bytes)} ·{' '}
+                              {expiryLabel(snapshot)}
                             </span>
                           </span>
                           {canWrite ? (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={busy || restoring}
-                              onClick={() => setPendingRestore(snapshot)}
-                            >
-                              {t.raw('texta76e13b98392')}
-                            </Button>
+                            <span className="flex shrink-0 items-center gap-1">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={busy || restoring || backups.deleteSnapshot.isPending}
+                                onClick={() => setPendingDelete(snapshot)}
+                              >
+                                {t.raw('texte2d0a54968ea')}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={busy || restoring}
+                                onClick={() => setPendingRestore(snapshot)}
+                              >
+                                {t.raw('texta76e13b98392')}
+                              </Button>
+                            </span>
                           ) : null}
                         </li>
                       ))}
@@ -325,8 +379,15 @@ export function BackendBackupsDialog({
                   ) : (
                     <p className="text-muted-foreground text-sm">{t.raw('textdce32a8bd22e')}</p>
                   )}
-                  <p className="text-muted-foreground text-xs">
-                    {t.raw('text703e24c19684')}
+                  <p className="text-muted-foreground text-xs" data-testid="backend-snapshot-schedule">
+                    {schedule && limit !== undefined
+                      ? t('textcac5e168fd53', {
+                          value0: schedule.automatic_interval_hours,
+                          value1: schedule.automatic_retention_days,
+                          value2: schedule.resize_retention_hours,
+                          value3: limit,
+                        })
+                      : t.raw('text703e24c19684')}
                   </p>
                 </section>
               </div>
@@ -363,19 +424,44 @@ export function BackendBackupsDialog({
           }
         }}
       />
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => !open && !backups.deleteSnapshot.isPending && setPendingDelete(null)}
+        title={t.raw('text6f70f5ac2047')}
+        description={t('textc2ee618713fb', {
+          value0: backend.name,
+          value1: pendingDelete ? relativeTime(pendingDelete.created_at) : '',
+        })}
+        confirmLabel={t.raw('textab50f27cec49')}
+        confirmVariant="destructive"
+        isPending={backups.deleteSnapshot.isPending}
+        onConfirm={async () => {
+          if (!pendingDelete) return;
+          try {
+            await backups.deleteSnapshot.mutateAsync(pendingDelete.snapshot_id);
+            successToast(t.raw('textedc63daf62bc'));
+          } catch (error) {
+            errorToast(backendOperationError(error, t.raw('text4ac5e5c981cc'), t));
+          }
+          setPendingDelete(null);
+        }}
+      />
     </>
   );
 }
 
-/** The badge for an operation in flight: resize, admin-key rotation, or a recovery Kortix runs. */
+/** The badge for an operation in flight: resize, admin-key rotation, snapshot, restore, or a recovery Kortix runs. */
 export function BackendOperationBadge({ operation }: { operation: NonNullable<ProjectBackend['operation']> }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
-  const label =
-    operation === 'rotating_key'
-      ? t.raw('text4a75e77ccc8d')
-      : operation === 'recovering'
-        ? t.raw('text959bdc881c93')
-        : t.raw('text6f2769b24c0f');
+  const labels: Record<NonNullable<ProjectBackend['operation']>, string> = {
+    resizing: t.raw('text6f2769b24c0f'),
+    rotating_key: t.raw('text4a75e77ccc8d'),
+    recovering: t.raw('text959bdc881c93'),
+    snapshotting: t.raw('textcd08dcee6a87'),
+    restoring: t.raw('text5a4918e0201c'),
+  };
+  const label = labels[operation];
   return (
     <Badge variant="warning" className="gap-1.5">
       <Loading className="size-3 shrink-0" />

@@ -64,6 +64,8 @@ validation. A backend needs no second database.
 | What loses no acknowledged write? | A machine stop and start, a resize, and a crash of the Convex process. Kortix measured each with writers running. |
 | What can lose data? | A host crash or a hard reset of the machine. The machine disk has no file system journal yet ([kortix-ai/platinum#1450](https://github.com/kortix-ai/platinum/issues/1450)), so the last acknowledged writes can be lost, or the data directory can be left unreadable. |
 | What is the recovery point? | After a host loss, Kortix restores the machine from its last automatic backup by itself. The backup runs every hour, so up to 1 hour of writes is lost (RPO ≤ 60 minutes). An unreadable data directory keeps Convex from starting; Kortix is alerted after 3 failed health probes (15 minutes), and you restore the newest snapshot. |
+| How long does recovery take? | The health probe runs every 5 minutes and starts the restore from backup on the first probe that sees the host lost. The restore copies the disk from object storage and boots it; Kortix waits up to 10 minutes for it, then retries on the next probe. Kortix has not measured a real host loss, so the recovery time (RTO) is not stated as a number yet. |
+| Do snapshots survive a host loss? | Not reliably. Platinum keeps snapshots on the host's disk, so a lost host can take them with it. The automatic backup is the copy that lives off the host. |
 
 Keep your own copy of data you cannot re-create:
 `npx convex export --path backup.zip --include-file-storage`. Without
@@ -145,7 +147,9 @@ App's project. The backend decides what each member may do, with
 `requireKortixMember` and its `groups` and `roles`.
 
 The backend's page also shows the last automatic backup, the backup interval,
-and how many snapshots it holds against its limit. Click it to open Backups.
+and how many manual snapshots it holds against its limit. Click it to open
+Backups: every snapshot shows its kind (Manual, Daily, Before resize) and when
+Kortix deletes it.
 
 ## The admin dashboard
 
@@ -461,20 +465,43 @@ Each backend is one machine. Pick its size at creation and change it later.
 ```bash
 kortix backends create main --cpu 2 --memory 4 --disk 20
 kortix backends resize main --cpu 4 --memory 8      # seconds of downtime; disk only grows
-kortix backends backups main                         # automatic backup + snapshots
-kortix backends snapshot main                        # keeps the newest 5
+kortix backends backups main                         # automatic backup, schedule, snapshots with kind and expiry
+kortix backends snapshot main                        # a manual snapshot, kept until deleted
+kortix backends delete-snapshot main <snapshot-id>   # frees a manual slot
 kortix backends restore main <snapshot-id> --yes     # rolls back; later changes are lost
 ```
 
 | | What it is |
 |---|---|
-| Automatic backup | Kortix copies the machine to object storage every hour, to recover from a host loss. |
-| Snapshot | A point-in-time copy of the running backend: data, files, functions and environment variables. A resize takes one first. |
-| Restore | Rolls the running backend back to a snapshot in place, in seconds. |
+| Automatic backup | Kortix copies the machine to object storage every hour, to recover from a host loss. Kortix restores it by itself; you cannot pick one. |
+| Snapshot | A point-in-time copy of the running backend: data, files, functions and environment variables, plus the machine's memory. The machine pauses for the copy (seconds; up to 90 s for 8 GB of memory). |
+| Restore | Rolls the running backend back to a snapshot in place, in seconds. The call answers once the machine runs the snapshot and Convex answers. |
+
+A snapshot has a kind, and the kind decides how long it stays:
+
+| Kind | Taken by | Kept |
+|---|---|---|
+| Manual | A member or agent (`kortix backends snapshot`) | Until someone deletes it. A backend holds 10; the 11th answers `409 snapshot_limit`. |
+| Daily (`automatic`) | Kortix, once a day | 7 days. The newest daily snapshot stays past that until a newer one exists. |
+| Before resize (`resize`) | Kortix, before every resize | 24 hours. Outside the limit of 10. |
+
+Every Kortix-made snapshot shows its expiry (`expires_at`) from the moment it
+exists, and Kortix deletes it in the 5-minute maintenance pass after that time
+while the backend runs. Kortix deletes no other snapshot. One operation runs
+at a time: a snapshot, restore or snapshot delete during a resize, restore,
+rotation or recovery answers `409 backend_busy`, and `operation` reads
+`snapshotting` or `restoring` while one of them runs.
+
+A snapshot holds the CPU, memory and disk image of the moment it was taken. A
+snapshot from before an applied resize cannot be restored (`409
+snapshot_predates_resize`): restoring it would boot the old size while the
+backend records the new one. The Before resize snapshot undoes a resize that
+failed before the size changed. To undo a resize that worked, resize again
+(a disk cannot shrink).
 
 Limits: 1–16 vCPU, 1–32 GB memory, 10–100 GB disk. API: `PATCH
 /v1/projects/:id/backends/:backendId`, `GET …/backups`, `POST …/snapshots`,
-`POST …/restore`.
+`DELETE …/snapshots/:snapshotId`, `POST …/restore`.
 
 ## Health and logs
 
@@ -486,7 +513,7 @@ in the API, a **Not responding** badge in Kortix web, and a `health` line in
 | The probe finds | Kortix does |
 |---|---|
 | Convex does not answer | Records the failure. Convex's supervisor restarts a crashed Convex within 1 s. Three failed probes in a row alert Kortix. |
-| The machine is stopped | Starts it, then re-reads the admin key. `operation` reads `recovering` meanwhile. |
+| The machine is stopped | Starts it, then re-reads the admin key. `operation` reads `recovering` meanwhile. A backend in `recovering` can still be deleted. |
 | The host was lost, or Platinum removed the machine with a completed backup | Restores the machine from its last automatic backup: same URLs, data since that backup is lost (up to 1 hour). |
 | The machine no longer exists | After 3 probes the backend turns `error`. Delete it and create it again. |
 | Disk use at 80% or more | Shows **Disk N% full**. Resize the disk (`kortix backends resize <name> --disk <gb>`). |
@@ -570,7 +597,8 @@ per hour at list price, about $59 for a 30-day month. Each charge is a
 - An account that cannot pay gets `402` on create and on a resize that grows
   the machine, with the same body as every other billing gate. A shrinking
   resize is always allowed.
-- Snapshot and backup storage are not billed.
+- Snapshot and backup storage are not billed. A backend holds up to 10
+  manual, 8 daily and the Before resize snapshots, each a full disk image.
 - There is no per-backend monthly budget. The caps (3 per project, 10 per
   account) bound the spend. Delete a backend to stop its charges.
 

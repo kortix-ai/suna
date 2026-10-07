@@ -495,7 +495,8 @@ function runMaintenanceSweeps() {
     }),
     // Kortix Backends: resume provisions and operations whose API process
     // died, park an archived project's backends, probe and meter every
-    // running backend, repair a stopped or lost machine, delete orphans.
+    // running backend, repair a stopped or lost machine, take the daily
+    // snapshots and delete expired ones, delete orphans.
     () => sweepBackends().catch((err) => {
       logger.warn('[project-maintenance] backends sweep failed:', err instanceof Error ? err.message : err);
       return { ...EMPTY_BACKEND_SWEEP, errors: 1 };
@@ -582,6 +583,7 @@ function logMaintenanceCycle(
       backends.parked ||
       backends.unparked ||
       backends.machinesDeleted ||
+      backends.snapshotJobs ||
       backends.errors,
   );
   if (hadAction) {

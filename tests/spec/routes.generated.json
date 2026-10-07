@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 740,
+  "count": 741,
   "routes": [
     {
       "method": "GET",
@@ -1669,6 +1669,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/backends/:backendId/snapshots"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/backends/:backendId/snapshots/:snapshotId"
     },
     {
       "method": "POST",

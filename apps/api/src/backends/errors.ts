@@ -6,7 +6,7 @@ import { logger } from '../lib/logger';
 import { PlatinumHttpError } from '../shared/platinum';
 
 export class BackendOperationError extends Error {
-  constructor(message: string, readonly code: string, readonly status: 400 | 409 | 502 | 503 = 409) {
+  constructor(message: string, readonly code: string, readonly status: 400 | 404 | 409 | 502 | 503 = 409) {
     super(message);
   }
 }

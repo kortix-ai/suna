@@ -1,7 +1,13 @@
 import { spawn } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import type { ProjectBackend, ProjectBackendCredentials, ProjectBackendSize, ProjectHandle } from '@kortix/sdk';
+import type {
+  ProjectBackend,
+  ProjectBackendBackups,
+  ProjectBackendCredentials,
+  ProjectBackendSize,
+  ProjectHandle,
+} from '@kortix/sdk';
 import { BACKEND_CONNECT_TABS, type BackendConnectTab, backendConnectSnippets } from '@kortix/shared/backend-connect';
 
 import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
@@ -36,12 +42,20 @@ Subcommands:
                                     Waits until the resize ends, then prints the
                                     new size. --json.
     --no-wait                       Return as soon as the resize starts.
-  backups <name|id>                 Show the automatic backup and the snapshots,
-                                    newest first. --json.
-  snapshot <name|id>                Take a snapshot now. The backend keeps the
-                                    newest 5. --json.
+  backups <name|id>                 Show the automatic backup, the snapshot
+                                    schedule and the snapshots, newest first,
+                                    with each one's kind and expiry. --json.
+                                    Kinds: manual (kept until deleted, at most
+                                    10), automatic (daily, kept 7 days), resize
+                                    (taken before a resize, kept 24 hours).
+  snapshot <name|id>                Take a manual snapshot now. At 10 manual
+                                    snapshots, delete one first. --json.
+  delete-snapshot <name|id> <snapshot-id>
+                                    Delete one snapshot. --json.
+    --yes                           Skip the confirmation.
   restore <name|id> <snapshot-id>   Roll the backend back to a snapshot. Every
-                                    change after it is lost. --json.
+                                    change after it is lost. A snapshot taken
+                                    before a resize cannot be restored. --json.
     --yes                           Skip the confirmation.
   get <name|id>                     Show one backend. --json.
   dashboard <name|id>               Print the backend's admin dashboard link:
@@ -81,7 +95,8 @@ Subcommands:
                                     (about 1 s); data, files and env stay.
                                     --json.
     --yes                           Skip the confirmation.
-  delete <name|id>                  Delete the backend and its machine.
+  delete <name|id>                  Delete the backend, its machine and its
+                                    snapshots.
     --yes                           Skip the confirmation.
 
 Global options:
@@ -193,6 +208,8 @@ export async function runBackends(argv: string[]): Promise<number> {
         return await snapshotCommand(rest, common.options, common.json);
       case 'restore':
         return await restoreCommand(rest, common.options, common.json);
+      case 'delete-snapshot':
+        return await deleteSnapshotCommand(rest, common.options, common.json);
       case 'get':
       case 'show':
         return await getCommand(rest, common.options, common.json);
@@ -433,23 +450,56 @@ async function backupsCommand(rest: string[], options: ContextOptions, json: boo
     emitJson(backups);
     return 0;
   }
-  const { automatic, snapshots } = backups;
+  process.stdout.write(renderBackups(backups, target));
+  return 0;
+}
+
+/** The human `backups` output: automatic backup, schedule, then one row per snapshot. */
+export function renderBackups(backups: ProjectBackendBackups, target: string): string {
+  const { automatic, snapshots, snapshot_schedule: schedule } = backups;
   const every = automatic.interval_minutes ? ` · every ${automatic.interval_minutes} min` : '';
-  process.stdout.write(
+  const manual = snapshots.filter((row) => (row.kind ?? 'manual') === 'manual').length;
+  let out =
     `\n  ${C.bold}automatic${C.reset}  last ${formatTime(automatic.last_backup_at)} · ${formatBytes(automatic.size_bytes)}${every}\n` +
-      `  ${C.bold}snapshots${C.reset}  ${snapshots.length}${backups.snapshot_limit ? ` of ${backups.snapshot_limit} kept` : ''}\n`,
-  );
+    `  ${C.bold}snapshots${C.reset}  ${snapshots.length}${backups.snapshot_limit ? ` · ${manual} of ${backups.snapshot_limit} manual` : ''}\n`;
+  if (schedule) {
+    out +=
+      `  ${C.bold}schedule${C.reset}   daily snapshot every ${schedule.automatic_interval_hours} h, kept ${schedule.automatic_retention_days} days` +
+      ` · last ${formatTime(schedule.last_automatic_at)} · resize snapshots kept ${schedule.resize_retention_hours} h\n`;
+  }
   if (snapshots.length === 0) {
-    process.stdout.write(`\n  ${C.dim}No snapshots. Take one with kortix backends snapshot ${target}.${C.reset}\n\n`);
-    return 0;
+    return `${out}\n  ${C.dim}No snapshots. Take one with kortix backends snapshot ${target}.${C.reset}\n\n`;
   }
   const width = Math.max(11, ...snapshots.map((row) => row.snapshot_id.length));
-  process.stdout.write(`\n  ${C.bold}${pad('SNAPSHOT', width)}  ${pad('CREATED', 20)}  SIZE${C.reset}\n`);
+  out += `\n  ${C.bold}${pad('SNAPSHOT', width)}  ${pad('KIND', 9)}  ${pad('CREATED', 20)}  ${pad('EXPIRES', 20)}  SIZE${C.reset}\n`;
   for (const row of snapshots) {
-    process.stdout.write(
-      `  ${pad(row.snapshot_id, width)}  ${pad(formatTime(row.created_at), 20)}  ${formatBytes(row.size_bytes)}\n`,
-    );
+    const expires = row.expires_at ? formatTime(row.expires_at) : 'when deleted';
+    out += `  ${pad(row.snapshot_id, width)}  ${pad(row.kind ?? 'manual', 9)}  ${pad(formatTime(row.created_at), 20)}  ${pad(expires, 20)}  ${formatBytes(row.size_bytes)}\n`;
   }
+  return `${out}\n`;
+}
+
+async function deleteSnapshotCommand(rest: string[], options: ContextOptions, json: boolean): Promise<number> {
+  const yes = takeFlagBool(rest, ['--yes', '-y']);
+  const [target, snapshotId] = rest.filter((value) => !value.startsWith('-'));
+  if (!target || !snapshotId) return fail('delete-snapshot needs a backend name or id and a snapshot id');
+  const ctx = await context(options);
+  if (!ctx) return 1;
+  const backend = await scoped(ctx, () => resolveBackend(ctx.backends, target));
+  if (!yes) {
+    const ok = await confirm(
+      `Delete snapshot ${snapshotId} of backend ${C.bold}${backend.name}${C.reset}? This cannot be undone.`,
+      false,
+      { onEndOfInput: false },
+    );
+    if (!ok) {
+      process.stdout.write(`${C.dim}Cancelled.${C.reset}\n`);
+      return 0;
+    }
+  }
+  await scoped(ctx, () => ctx.backends.deleteSnapshot(backend.backend_id, snapshotId));
+  if (json) emitJson({ deleted: true, snapshot_id: snapshotId });
+  else process.stdout.write(`\n  ${status.ok(`snapshot ${snapshotId} deleted`)}\n\n`);
   process.stdout.write('\n');
   return 0;
 }
@@ -463,7 +513,7 @@ async function snapshotCommand(rest: string[], options: ContextOptions, json: bo
     ctx.backends.snapshot((await resolveBackend(ctx.backends, target)).backend_id),
   );
   if (json) emitJson(snapshot);
-  else process.stdout.write(`\n  ${status.ok(`snapshot ${snapshot.snapshot_id} taken`)}\n\n`);
+  else process.stdout.write(`\n  ${status.ok(`snapshot ${snapshot.snapshot_id} taken · kept until deleted`)}\n\n`);
   return 0;
 }
 

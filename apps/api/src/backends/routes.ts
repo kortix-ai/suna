@@ -35,7 +35,12 @@ import {
   backendOperation,
   backendProviderFailure,
   beginResize,
+  AUTOMATIC_SNAPSHOT_RETENTION_MS,
+  MAX_MANUAL_SNAPSHOTS,
+  RESIZE_SNAPSHOT_RETENTION_MS,
+  SNAPSHOT_KINDS,
   createBackendSnapshot,
+  deleteBackendSnapshot,
   listBackendBackups,
   readBackendLog,
   restoreBackendSnapshot,
@@ -80,7 +85,8 @@ const BackendObject = z
     operation: z.enum(BACKEND_OPERATIONS).nullable().openapi({
       description:
         'A day-two operation in flight: `resizing`, `rotating_key` (admin-key rotation), `recovering` (Kortix ' +
-        'is starting the machine or restoring it from its last automatic backup).',
+        'is starting the machine or restoring it from its last automatic backup), `snapshotting` (a snapshot is ' +
+        'taken or deleted; the machine pauses for the copy), `restoring` (a snapshot restore).',
     }),
     last_operation_error: z.string().nullable(),
     health: BackendHealthObject.nullable().openapi({
@@ -109,6 +115,24 @@ const SizeFields = {
   disk_gb: z.number().int().min(10).max(100).optional(),
 };
 
+const BackendSnapshot = z
+  .object({
+    snapshot_id: z.string(),
+    created_at: z.string(),
+    size_bytes: z.number().nullable(),
+    kind: z.enum(SNAPSHOT_KINDS).openapi({
+      description:
+        '`manual`: taken by a member or agent, kept until deleted. `automatic`: the daily snapshot, kept ' +
+        `${AUTOMATIC_SNAPSHOT_RETENTION_MS / 86_400_000} days. \`resize\`: taken before a resize, kept ${RESIZE_SNAPSHOT_RETENTION_MS / 3_600_000} hours.`,
+    }),
+    expires_at: z.string().nullable().openapi({
+      description:
+        'When Kortix deletes this snapshot; null for a manual one. The newest automatic snapshot stays past ' +
+        'its expiry until a newer one exists. Deletion runs in the 5-minute maintenance pass while the backend runs.',
+    }),
+  })
+  .openapi('BackendSnapshot');
+
 const BackendBackups = z
   .object({
     automatic: z.object({
@@ -117,8 +141,18 @@ const BackendBackups = z
       size_bytes: z.number().nullable(),
       interval_minutes: z.number().nullable(),
     }),
-    snapshots: z.array(z.object({ snapshot_id: z.string(), created_at: z.string(), size_bytes: z.number().nullable() })),
-    snapshot_limit: z.number().int().openapi({ description: 'How many snapshots the backend keeps; a new one drops the oldest past it.' }),
+    snapshots: z.array(BackendSnapshot).openapi({ description: 'Newest first.' }),
+    snapshot_limit: z.number().int().openapi({
+      description: `How many manual snapshots the backend holds (${MAX_MANUAL_SNAPSHOTS}). At the limit a new one answers 409 \`snapshot_limit\`; nothing is dropped.`,
+    }),
+    snapshot_schedule: z
+      .object({
+        automatic_interval_hours: z.number().int(),
+        automatic_retention_days: z.number().int(),
+        resize_retention_hours: z.number().int(),
+        last_automatic_at: z.string().nullable().openapi({ description: 'When the last automatic snapshot was taken; null before the first.' }),
+      })
+      .openapi({ description: 'When Kortix takes and deletes snapshots on its own.' }),
   })
   .openapi('BackendBackups');
 
@@ -146,6 +180,7 @@ const NameSchema = z
 
 const ProjectParams = z.object({ projectId: z.string().uuid() });
 const BackendParams = z.object({ projectId: z.string().uuid(), backendId: z.string().uuid() });
+const SnapshotParams = BackendParams.extend({ snapshotId: z.string().min(1).max(128) });
 
 function serialize(row: BackendRow) {
   const status = effectiveStatus(row) as (typeof STATUSES)[number];
@@ -502,7 +537,8 @@ export function registerBackendsRoutes(): void {
       summary: 'List backups and snapshots', ...auth,
       description:
         '`automatic`: Kortix copies the backend machine to object storage on a schedule, for recovery from a ' +
-        'host loss. `snapshots`: point-in-time copies you take and can restore, newest first (the newest 5 are kept).',
+        'host loss (Kortix restores it on its own; data since the last copy is lost). `snapshots`: point-in-time ' +
+        'copies you can restore, newest first, each with its `kind` and `expires_at`.',
       request: { params: BackendParams },
       responses: { 200: json(BackendBackups, 'Backups'), ...errors(400, 403, 404, 409, 502, 503) },
     }),
@@ -526,10 +562,13 @@ export function registerBackendsRoutes(): void {
     createRoute({
       method: 'post', path: '/{projectId}/backends/{backendId}/snapshots', tags: ['backends'],
       summary: 'Take a snapshot', ...auth,
-      description: 'A point-in-time copy of the running backend (data, files, functions). Keeps the newest 5.',
+      description:
+        'A manual point-in-time copy of the running backend (data, files, functions), kept until deleted. ' +
+        `A backend holds ${MAX_MANUAL_SNAPSHOTS} manual snapshots; the next answers 409 \`snapshot_limit\`. The machine pauses ` +
+        'for the copy (seconds; 8 GB of memory takes up to 90 s). 409 `backend_busy` while another operation runs.',
       request: { params: BackendParams },
       responses: {
-        201: json(z.object({ snapshot_id: z.string(), created_at: z.string() }), 'Snapshot'),
+        201: json(BackendSnapshot, 'Snapshot'),
         ...errors(400, 403, 404, 409, 502, 503),
       },
     }),
@@ -554,8 +593,10 @@ export function registerBackendsRoutes(): void {
       method: 'post', path: '/{projectId}/backends/{backendId}/restore', tags: ['backends'],
       summary: 'Restore a snapshot', ...auth,
       description:
-        'Rolls the backend back to one of its snapshots: every change after it is lost. Answers when the backend ' +
-        'is healthy again (seconds).',
+        'Rolls the backend back to one of its snapshots: every change after it is lost. Answers when the machine ' +
+        'runs the snapshot and Convex answers (seconds), so a write after the answer is never undone by the restore. ' +
+        'A snapshot taken before an applied resize holds the old machine size: 409 `snapshot_predates_resize`. ' +
+        '409 `backend_busy` while another operation runs. Read the admin key again afterwards when it was ever rotated.',
       request: {
         params: BackendParams,
         body: { content: { 'application/json': { schema: z.object({ snapshot_id: z.string().min(1) }) } }, required: true },
@@ -576,7 +617,34 @@ export function registerBackendsRoutes(): void {
         if (answer) return answer;
         throw error;
       }
-      return c.json({ backend: serialize(row) }, 200);
+      return c.json({ backend: serialize((await getLiveBackend(projectId, backendId)) ?? row) }, 200);
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'delete', path: '/{projectId}/backends/{backendId}/snapshots/{snapshotId}', tags: ['backends'],
+      summary: 'Delete a snapshot', ...auth,
+      description:
+        'Deletes one snapshot of any kind and frees its storage. This cannot be undone. 404 `snapshot_not_found` ' +
+        'when the backend has no such snapshot; 409 `backend_busy` while another operation runs.',
+      request: { params: SnapshotParams },
+      responses: { 204: { description: 'Deleted' }, ...errors(400, 403, 404, 409, 502, 503) },
+    }),
+    async (c) => {
+      const { projectId, backendId, snapshotId } = c.req.valid('param');
+      const loaded = await authorizedProject(c, projectId, true);
+      if (loaded instanceof Response) return loaded;
+      const row = await getLiveBackend(projectId, backendId);
+      if (!row) return c.json({ error: 'Not found' }, 404);
+      try {
+        await deleteBackendSnapshot(row, snapshotId);
+      } catch (error) {
+        const answer = operationError(c, error);
+        if (answer) return answer;
+        throw error;
+      }
+      return c.body(null, 204);
     },
   );
 
@@ -584,9 +652,12 @@ export function registerBackendsRoutes(): void {
     createRoute({
       method: 'delete', path: '/{projectId}/backends/{backendId}', tags: ['backends'],
       summary: 'Delete a backend', ...auth,
-      description: 'Deletes the machine and every document and file in it. This cannot be undone.',
+      description:
+        'Deletes the machine, its snapshots and every document and file in it. This cannot be undone. ' +
+        '409 `backend_busy` during a resize, restore, snapshot or key rotation; allowed during `recovering`, ' +
+        'so a broken backend can always be deleted.',
       request: { params: BackendParams },
-      responses: { 204: { description: 'Deleted' }, ...errors(403, 404, 502) },
+      responses: { 204: { description: 'Deleted' }, ...errors(403, 404, 409, 502) },
     }),
     async (c) => {
       const { projectId, backendId } = c.req.valid('param');
@@ -594,6 +665,10 @@ export function registerBackendsRoutes(): void {
       if (loaded instanceof Response) return loaded;
       const row = await getLiveBackend(projectId, backendId);
       if (!row) return c.json({ error: 'Not found' }, 404);
+      const busy = backendOperation(row);
+      if (busy && busy !== 'recovering') {
+        return c.json({ error: `the backend is ${busy}; delete it when that finishes`, code: 'backend_busy' }, 409);
+      }
       try {
         await deleteBackend(row);
       } catch (error) {

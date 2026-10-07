@@ -5,6 +5,7 @@ import {
   createBackend,
   createBackendSnapshot,
   deleteBackend,
+  deleteBackendSnapshot,
   getBackendBackups,
   resizeBackend,
   restoreBackendSnapshot,
@@ -20,6 +21,8 @@ import {
   type ProjectBackendBackups,
   type ProjectBackendCredentials,
   type ProjectBackendHealth,
+  type ProjectBackendSnapshot,
+  type ProjectBackendSnapshotSchedule,
 } from './backends';
 
 type Call = { url: string; method: string; body: unknown };
@@ -285,4 +288,42 @@ test('A backend carries its last health probe and the new operation kinds', () =
   const recovering: ProjectBackend = { ...backend, operation: 'recovering', health };
   const rotating: ProjectBackend = { ...backend, operation: 'rotating_key', health: null };
   expect([recovering.operation, rotating.operation]).toEqual(['recovering', 'rotating_key']);
+});
+
+test('deleteBackendSnapshot DELETEs one snapshot; 404 snapshot_not_found and 409 backend_busy reject with their code', async () => {
+  responses.push({ status: 204 });
+  await deleteBackendSnapshot('project-1', backend.backend_id, 'snap_01');
+  expect(last()).toMatchObject({
+    method: 'DELETE',
+    url: `http://backend.test/v1/projects/project-1/backends/${backend.backend_id}/snapshots/snap_01`,
+  });
+  responses.push({ status: 404, body: { error: 'no such snapshot on this backend', code: 'snapshot_not_found' } });
+  await expect(deleteBackendSnapshot('project-1', backend.backend_id, 'nope')).rejects.toMatchObject({ code: 'snapshot_not_found' });
+  responses.push({ status: 409, body: { error: 'busy', code: 'backend_busy' } });
+  await expect(deleteBackendSnapshot('project-1', backend.backend_id, 'snap_01')).rejects.toMatchObject({ code: 'backend_busy' });
+});
+
+test('snapshots carry their kind and expiry, backups the schedule; snapshotting and restoring are operations', async () => {
+  const schedule: ProjectBackendSnapshotSchedule = {
+    automatic_interval_hours: 24,
+    automatic_retention_days: 7,
+    resize_retention_hours: 24,
+    last_automatic_at: '2026-10-07T00:00:00.000Z',
+  };
+  const daily: ProjectBackendSnapshot = {
+    snapshot_id: 'snap_auto',
+    created_at: '2026-10-07T00:00:00.000Z',
+    size_bytes: 10,
+    kind: 'automatic',
+    expires_at: '2026-10-14T00:00:00.000Z',
+  };
+  responses.push({ body: { automatic: { state: null, last_backup_at: null, size_bytes: null, interval_minutes: 60 }, snapshots: [daily], snapshot_limit: 10, snapshot_schedule: schedule } });
+  const backups: ProjectBackendBackups = await getBackendBackups('project-1', backend.backend_id);
+  expect(backups.snapshots[0]).toEqual(daily);
+  expect(backups.snapshot_schedule).toEqual(schedule);
+  responses.push({ status: 201, body: { snapshot_id: 's3', created_at: '2026-10-07T00:00:00.000Z', size_bytes: 1, kind: 'manual', expires_at: null } });
+  expect(await createBackendSnapshot('project-1', backend.backend_id)).toMatchObject({ kind: 'manual', expires_at: null });
+  const snapshotting: ProjectBackend = { ...backend, operation: 'snapshotting' };
+  const restoring: ProjectBackend = { ...backend, operation: 'restoring' };
+  expect([snapshotting.operation, restoring.operation]).toEqual(['snapshotting', 'restoring']);
 });

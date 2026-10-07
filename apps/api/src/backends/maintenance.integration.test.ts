@@ -16,7 +16,17 @@ import { createAccountToken } from '../repositories/account-tokens';
 import { insertIntoView } from '../__tests__/helpers/compat-views';
 import { decryptProjectSecret, encryptProjectSecret } from '../projects/surface';
 import { MAX_PROVISION_ATTEMPTS, UNHEALTHY_ALERT_AFTER, sweepBackends } from './maintenance';
-import { BackendOperationError, claimOperation, restoreBackendSnapshot, rotateBackendAdminKey } from './operations';
+import {
+  AUTOMATIC_SNAPSHOT_RETENTION_MS,
+  BackendOperationError,
+  MAX_MANUAL_SNAPSHOTS,
+  RESIZE_SNAPSHOT_RETENTION_MS,
+  claimOperation,
+  createBackendSnapshot,
+  restoreBackendSnapshot,
+  rotateBackendAdminKey,
+  runResize,
+} from './operations';
 import { type BackendRow, discardMachine } from './provision';
 import { ORPHAN_MACHINE_GRACE_MS, deleteAccountBackends, reapOrphanBackendMachines } from './lifecycle';
 import { sandboxOwnershipMarker } from '../platform/sandbox-ownership';
@@ -29,7 +39,9 @@ import { sandboxOwnershipMarker } from '../platform/sandbox-ownership';
 // (H4), the logs route returns the process log without color codes (L1), an
 // archived project's backends park and come back (D9), account deletion
 // deletes machines and snapshots (D9), orphaned machines are deleted (B5), and
-// a running backend is metered (D11).
+// a running backend is metered (D11), and snapshots keep their kind, cap and
+// expiry, run under the operation lock, and restore only once Platinum has
+// restored (D22, H5, N2, N3).
 
 type Machine = {
   state: string;
@@ -42,6 +54,11 @@ type Machine = {
   backupSecret?: number;
   autoResume?: boolean;
   snapshots?: string[];
+  /** GETs a restore answers `resuming` before it ends. */
+  restorePolls?: number;
+  resumingLeft?: number;
+  /** The state a restore ends in: `running` by default, `stopped` for a failed restore. */
+  restoreEndsIn?: string;
   /** Listed by GET /v1/sandboxes; a machine without it is not listed. */
   metadata?: Record<string, unknown>;
   createdAt?: string;
@@ -57,6 +74,9 @@ const keyFor = (id: string) => `synthetic|${id}-secret-${machines.get(id)?.secre
 const machineOf = (path: string) => /^\/v1\/sandboxes\/([^/?]+)/.exec(path)?.[1] ?? '';
 /** Machines whose DELETE answers 500. */
 const failDelete = new Set<string>();
+/** Snapshot creation times; a snapshot not listed here was taken 2026-10-07T00:00:00Z. */
+const snapshotTimes = new Map<string, string>();
+let snapshotSeq = 0;
 
 // One fake Convex per machine is overkill: every machine's URL is this one,
 // tagged with the machine id in the path prefix.
@@ -109,10 +129,26 @@ const platinum = Bun.serve({
     if (!m) return Response.json({ error: 'sandbox not found', code: 'sandbox_not_found' }, { status: 404 });
     if (req.method === 'GET' && sub === '') {
       if (m.state === 'deleted' && !m.recoverable) return Response.json({ code: 'sandbox_not_found' }, { status: 404 });
+      // Platinum restores on the host after answering: `resuming` for a while, then the end state.
+      if (m.state === 'resuming' && (m.resumingLeft = (m.resumingLeft ?? 0) - 1) < 0) m.state = m.restoreEndsIn ?? 'running';
       return Response.json({ ...m, ...(m.recoverable ? { recoverable: true } : {}) });
     }
     if (req.method === 'GET' && sub === '/usage') return Response.json({ disk_used_pct: 42 });
-    if (req.method === 'GET' && sub === '/snapshots') return Response.json((m.snapshots ?? []).map((sid) => ({ id: sid, createdAt: '2026-10-07T00:00:00Z' })));
+    if (req.method === 'GET' && sub === '/snapshots') {
+      return Response.json((m.snapshots ?? []).map((sid) => ({ id: sid, createdAt: snapshotTimes.get(sid) ?? '2026-10-07T00:00:00Z', sizeBytes: 1024 })));
+    }
+    if (req.method === 'POST' && sub === '/snapshot') {
+      if (m.state !== 'running') return Response.json({ code: 'sandbox_not_running' }, { status: 409 });
+      const sid = `snap-${++snapshotSeq}`;
+      m.snapshots = [...(m.snapshots ?? []), sid];
+      snapshotTimes.set(sid, new Date().toISOString());
+      return Response.json({ id: sid, sandbox_id: id, size_bytes: 1024 });
+    }
+    if (req.method === 'POST' && sub === '/resize') {
+      const body = (await req.json()) as { cpu: number; ram_mb: number; disk_gb: number };
+      Object.assign(m, { cpu: body.cpu, ramMb: body.ram_mb, diskGb: body.disk_gb, state: 'running' });
+      return Response.json({ state: 'running' });
+    }
     if (req.method === 'DELETE' && sub.startsWith('/snapshots/')) {
       m.snapshots = (m.snapshots ?? []).filter((sid) => sid !== sub.slice('/snapshots/'.length));
       return Response.json({ deleted: true });
@@ -138,8 +174,11 @@ const platinum = Bun.serve({
       return Response.json({ state: 'restoring' });
     }
     if (req.method === 'POST' && sub === '/restore') {
+      if (m.state !== 'running') return Response.json({ code: 'sandbox_not_running' }, { status: 409 });
       m.secret = m.backupSecret ?? m.secret;
-      return Response.json({ state: 'running' });
+      m.state = 'resuming';
+      m.resumingLeft = m.restorePolls ?? 0;
+      return Response.json({ state: 'resuming' });
     }
     if (req.method === 'DELETE' && sub === '') {
       if (failDelete.has(id)) return Response.json({ error: 'synthetic failure' }, { status: 500 });
@@ -620,5 +659,203 @@ describe('metering (D11)', () => {
     } finally {
       config.KORTIX_BILLING_INTERNAL_ENABLED = saved;
     }
+  });
+});
+
+describe('snapshots (D22, H5, N2, N3)', () => {
+  const route = (method: string, path: string, body?: unknown) =>
+    app.request(`/v1/projects/${PROJECT}/backends${path}`, {
+      method,
+      headers: { Authorization: `Bearer ${secret}`, 'content-type': 'application/json' },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : method === 'POST' ? { body: '{}' } : {}),
+    });
+  const errorCode = (error: unknown) => (error as BackendOperationError).code;
+  const getsOf = (id: string) => calls.filter((c) => c === `GET /v1/sandboxes/${id}`).length;
+
+  test(`a manual snapshot is labelled manual with no expiry; the ${MAX_MANUAL_SNAPSHOTS + 1}th answers snapshot_limit and nothing is dropped`, async () => {
+    const row = await runningBackend('snap-cap', {});
+    const first = await createBackendSnapshot(row);
+    expect(first).toMatchObject({ kind: 'manual', expires_at: null, size_bytes: 1024 });
+    for (let i = 1; i < MAX_MANUAL_SNAPSHOTS; i += 1) await createBackendSnapshot(await read(row.backendId));
+    const held = [...machines.get('sbx-snap-cap')!.snapshots!];
+    expect(held).toHaveLength(MAX_MANUAL_SNAPSHOTS);
+    const error = await createBackendSnapshot(await read(row.backendId)).catch((e: unknown) => e);
+    expect(errorCode(error)).toBe('snapshot_limit');
+    expect(machines.get('sbx-snap-cap')!.snapshots).toEqual(held);
+    expect(calls.filter((c) => c.startsWith('DELETE /v1/sandboxes/sbx-snap-cap/snapshots/'))).toHaveLength(0);
+    expect(meta(await read(row.backendId)).operation).toBeUndefined();
+  });
+
+  test('snapshot, restore and snapshot delete answer backend_busy during another operation (H5)', async () => {
+    const row = await runningBackend('snap-busy', { snapshots: ['snap-busy-1'] });
+    expect(await claimOperation(row.backendId, 'resizing')).toBe(true);
+    const busy = await read(row.backendId);
+    expect(errorCode(await createBackendSnapshot(busy).catch((e: unknown) => e))).toBe('backend_busy');
+    expect(errorCode(await restoreBackendSnapshot(busy, 'snap-busy-1').catch((e: unknown) => e))).toBe('backend_busy');
+    const del = await route('DELETE', `/${row.backendId}/snapshots/snap-busy-1`);
+    expect(del.status).toBe(409);
+    expect((await del.json()).code).toBe('backend_busy');
+    const delBackend = await route('DELETE', `/${row.backendId}`);
+    expect(delBackend.status).toBe(409);
+    expect((await delBackend.json()).code).toBe('backend_busy');
+    expect(machines.has('sbx-snap-busy')).toBe(true);
+    expect(calls).not.toContain('POST /v1/sandboxes/sbx-snap-busy/snapshot');
+    expect(calls).not.toContain('POST /v1/sandboxes/sbx-snap-busy/restore');
+  });
+
+  test('two concurrent snapshot requests: one runs, the other answers backend_busy', async () => {
+    const row = await runningBackend('snap-race', {});
+    const results = await Promise.allSettled([createBackendSnapshot(row), createBackendSnapshot(row)]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const rejected = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+    expect(errorCode(rejected.reason)).toBe('backend_busy');
+  });
+
+  test('a restore answers only after Platinum reports running again (N3)', async () => {
+    const row = await runningBackend('snap-n3', { snapshots: ['snap-n3-1'], restorePolls: 3 });
+    const before = getsOf('sbx-snap-n3');
+    await restoreBackendSnapshot(row, 'snap-n3-1');
+    expect(machines.get('sbx-snap-n3')!.state).toBe('running');
+    // 3 polls answered `resuming`, the 4th `running`.
+    expect(getsOf('sbx-snap-n3') - before).toBeGreaterThanOrEqual(4);
+    expect(meta(await read(row.backendId)).operation).toBeUndefined();
+  });
+
+  test('a restore that Platinum ends stopped answers restore_unhealthy; recovery starts the machine', async () => {
+    const row = await runningBackend('snap-fail', { snapshots: ['snap-fail-1'], restorePolls: 1, restoreEndsIn: 'stopped' });
+    const error = await restoreBackendSnapshot(row, 'snap-fail-1').catch((e: unknown) => e);
+    expect(errorCode(error)).toBe('restore_unhealthy');
+    expect(calls).toContain('POST /v1/sandboxes/sbx-snap-fail/start');
+    expect(machines.get('sbx-snap-fail')!.state).toBe('running');
+    const after = await read(row.backendId);
+    expect(meta(after).operation).toBeUndefined();
+    expect(meta(after).lastOperationError).toContain('restore failed');
+  });
+
+  test('a resize takes a resize snapshot kept 24 h outside the cap; a snapshot older than the resize cannot be restored (N2)', async () => {
+    const row = await runningBackend('snap-resize', { snapshots: ['snap-before'] });
+    snapshotTimes.set('snap-before', new Date(Date.now() - 60_000).toISOString());
+    expect(await claimOperation(row.backendId, 'resizing')).toBe(true);
+    await runResize(await read(row.backendId), { cpu: 2, memoryGb: 2, diskGb: 20 });
+    const after = await read(row.backendId);
+    expect([after.cpu, after.memoryGb, after.diskGb]).toEqual([2, 2, 20]);
+    expect(meta(after).operation).toBeUndefined();
+    expect(typeof meta(after).lastResizeAt).toBe('string');
+    const labels = meta(after).snapshotLabels as Record<string, { kind: string; expiresAt: string }>;
+    const [resizeId, label] = Object.entries(labels)[0]!;
+    expect(label.kind).toBe('resize');
+    expect(Math.abs(Date.parse(label.expiresAt) - (Date.now() + RESIZE_SNAPSHOT_RETENTION_MS))).toBeLessThan(60_000);
+    // The user's snapshot survived the resize.
+    expect(machines.get('sbx-snap-resize')!.snapshots).toEqual(['snap-before', resizeId]);
+
+    for (const id of ['snap-before', resizeId]) {
+      const error = await restoreBackendSnapshot(after, id).catch((e: unknown) => e);
+      expect(errorCode(error)).toBe('snapshot_predates_resize');
+    }
+    expect(calls).not.toContain('POST /v1/sandboxes/sbx-snap-resize/restore');
+    // A snapshot at the new size restores.
+    const fresh = await createBackendSnapshot(await read(row.backendId));
+    await restoreBackendSnapshot(await read(row.backendId), fresh.snapshot_id);
+    expect(calls).toContain('POST /v1/sandboxes/sbx-snap-resize/restore');
+
+    const listed = await (await route('GET', `/${row.backendId}/backups`)).json();
+    expect(listed.snapshot_limit).toBe(MAX_MANUAL_SNAPSHOTS);
+    expect(listed.snapshot_schedule).toEqual({ automatic_interval_hours: 24, automatic_retention_days: 7, resize_retention_hours: 24, last_automatic_at: null });
+    const kinds = Object.fromEntries(listed.snapshots.map((s: { snapshot_id: string; kind: string; expires_at: string | null }) => [s.snapshot_id, [s.kind, s.expires_at === null]]));
+    expect(kinds).toEqual({ 'snap-before': ['manual', true], [resizeId]: ['resize', false], [fresh.snapshot_id]: ['manual', true] });
+  });
+
+  test('the daily job: a due backend gets an automatic snapshot kept 7 days; a fresh one does not', async () => {
+    const due = await runningBackend('snap-daily', {}, { createdAt: ago(25 * 3_600_000) });
+    const fresh = await runningBackend('snap-daily-fresh', {});
+    const result = await sweepBackends();
+    expect(result.snapshotJobs).toBeGreaterThanOrEqual(1);
+    const after = await eventually(() => read(due.backendId), (r) => !meta(r).operation && Boolean(meta(r).lastAutomaticSnapshotAt));
+    const [id, label] = Object.entries(meta(after).snapshotLabels as Record<string, { kind: string; expiresAt: string }>)[0]!;
+    expect(label.kind).toBe('automatic');
+    expect(Math.abs(Date.parse(label.expiresAt) - (Date.now() + AUTOMATIC_SNAPSHOT_RETENTION_MS))).toBeLessThan(60_000);
+    expect(machines.get('sbx-snap-daily')!.snapshots).toEqual([id]);
+    expect(meta(after).lastOperationError).toBeUndefined();
+    expect(machines.get('sbx-snap-daily-fresh')!.snapshots ?? []).toEqual([]);
+    // Not due again within 24 h.
+    await sweepBackends();
+    expect(machines.get('sbx-snap-daily')!.snapshots).toEqual([id]);
+    expect(meta(await read(fresh.backendId)).lastAutomaticSnapshotAt).toBeUndefined();
+    const listed = await (await route('GET', `/${due.backendId}/backups`)).json();
+    expect(listed.snapshot_schedule.last_automatic_at).toBe(meta(after).lastAutomaticSnapshotAt);
+  });
+
+  test('expiry: an expired resize snapshot goes; an expired automatic one goes only when a newer automatic exists; manual stays', async () => {
+    const past = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
+    const future = (h: number) => new Date(Date.now() + h * 3_600_000).toISOString();
+    const row = await runningBackend('snap-expire', { snapshots: ['m-1', 'r-old', 'a-old', 'a-new'] }, {
+      metadata: {
+        lastAutomaticSnapshotAt: new Date().toISOString(),
+        snapshotLabels: {
+          'r-old': { kind: 'resize', expiresAt: past(1) },
+          'a-old': { kind: 'automatic', expiresAt: past(2) },
+          'a-new': { kind: 'automatic', expiresAt: future(100) },
+        },
+      },
+    });
+    const lone = await runningBackend('snap-expire-lone', { snapshots: ['a-only'] }, {
+      metadata: { lastAutomaticSnapshotAt: new Date().toISOString(), snapshotLabels: { 'a-only': { kind: 'automatic', expiresAt: past(5) } } },
+    });
+    await sweepBackends();
+    const after = await eventually(() => read(row.backendId), (r) => !meta(r).operation && !('r-old' in meta(r).snapshotLabels));
+    expect(machines.get('sbx-snap-expire')!.snapshots).toEqual(['m-1', 'a-new']);
+    expect(Object.keys(meta(after).snapshotLabels)).toEqual(['a-new']);
+    // The newest automatic snapshot outlives its expiry until a newer one exists.
+    expect(machines.get('sbx-snap-expire-lone')!.snapshots).toEqual(['a-only']);
+    expect(meta(await read(lone.backendId)).operation).toBeUndefined();
+  });
+
+  test('DELETE a snapshot: 204, gone with its label; an unknown id → 404 snapshot_not_found', async () => {
+    const row = await runningBackend('snap-delete', { snapshots: ['d-1', 'd-2'] }, {
+      metadata: { snapshotLabels: { 'd-2': { kind: 'automatic', expiresAt: new Date(Date.now() + 3_600_000).toISOString() } } },
+    });
+    expect((await route('DELETE', `/${row.backendId}/snapshots/d-2`)).status).toBe(204);
+    expect(machines.get('sbx-snap-delete')!.snapshots).toEqual(['d-1']);
+    expect(meta(await read(row.backendId)).snapshotLabels).toEqual({});
+    const missing = await route('DELETE', `/${row.backendId}/snapshots/nope`);
+    expect(missing.status).toBe(404);
+    expect((await missing.json()).code).toBe('snapshot_not_found');
+    const taken = await route('POST', `/${row.backendId}/snapshots`);
+    expect(taken.status).toBe(201);
+    expect(await taken.json()).toMatchObject({ kind: 'manual', expires_at: null });
+  });
+
+  test('a backend in `recovering` can still be deleted', async () => {
+    const row = await runningBackend('snap-recovering-delete', {});
+    expect(await claimOperation(row.backendId, 'recovering')).toBe(true);
+    expect((await route('DELETE', `/${row.backendId}`)).status).toBe(204);
+    expect(machines.has('sbx-snap-recovering-delete')).toBe(false);
+  });
+});
+
+describe('snapshot labels without a snapshot', () => {
+  test('a label Platinum never listed is dropped, so it never shields an expired daily snapshot', async () => {
+    const past = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
+    const future = (h: number) => new Date(Date.now() + h * 3_600_000).toISOString();
+    const row = await runningBackend('snap-phantom', { snapshots: ['a-real'] }, {
+      metadata: {
+        lastAutomaticSnapshotAt: past(30),
+        automaticSnapshotAttemptAt: past(2),
+        snapshotLabels: {
+          'a-real': { kind: 'automatic', expiresAt: past(1) },
+          // Labelled 2 h ago, never completed on the host.
+          'a-phantom': { kind: 'automatic', expiresAt: future(7 * 24 - 2) },
+        },
+      },
+    });
+    await sweepBackends();
+    const after = await eventually(() => read(row.backendId), (r) => !meta(r).operation && Boolean(meta(r).lastAutomaticSnapshotAt) && Date.parse(meta(r).lastAutomaticSnapshotAt) > Date.now() - 60_000);
+    const labels = meta(after).snapshotLabels as Record<string, { kind: string }>;
+    expect(labels['a-phantom']).toBeUndefined();
+    // The new daily snapshot is taken first, so the expired real one goes in the same job.
+    expect(machines.get('sbx-snap-phantom')!.snapshots!.includes('a-real')).toBe(false);
+    expect(Object.keys(labels)).toHaveLength(1);
+    expect(Object.values(labels)[0]!.kind).toBe('automatic');
+    expect(machines.get('sbx-snap-phantom')!.snapshots).toEqual(Object.keys(labels));
   });
 });

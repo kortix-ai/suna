@@ -150,6 +150,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Declined account invitation': 'text46e6297e3f9e',
   'Deducted credits for LLM usage': 'text02dcf007425f',
   'Deducted credits for agent run': 'text7ca079c260d4',
+  'Delete a backend snapshot': 'text581e89ae1f08',
   'Deleted IAM policy': 'textbb4db6a8ee1a',
   'Deleted IAM role': 'text0975bebd3619',
   'Deleted Kortix App': 'text2fa5960eb241',
