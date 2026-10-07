@@ -1,5 +1,5 @@
 {
-  "source_hash": "37d2ef7291792b6bd833ff5d47ff759c5d15f04cf5cab0a0a50374062827f45f",
+  "source_hash": "cfe458bc59f615ab0f0dca6b09a27f8d593693fc01d27b8dc7d4d74365accf76",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-06T204658Z-key-a-cached-migrated-database-on-every-clock-input-its-migr.md",
@@ -9,13 +9,13 @@
     "tests/src/core/db-suites.ts",
     "tests/unit/db-suites.test.ts"
   ],
-  "diff_hash": "46bf0e4a57c7420c5e7c741238c8ed1ae649ae294646ba23a5595ab27ee43487",
-  "head": "bd05df6e1135630d6717dac5e753a5523510b3fe",
+  "diff_hash": "c5b7a38c8e1af0586de6cbe0a279f8356a5230283370b2845b64430c1c9eb9c8",
+  "head": "6d8915b4080a09215f7b27dc89620a762d2b384c",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-07T09:02:06.983Z"
+  "at": "2026-10-07T09:49:30.412Z"
 }
