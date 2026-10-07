@@ -2202,6 +2202,12 @@
       }
     }
   },
+  "ssoRequired": {
+    "title": "Accedi con il single sign-on",
+    "description": "La tua organizzazione richiede il single sign-on per questo account. Esci, poi continua con la tua email di lavoro per accedere tramite il provider di identità della tua azienda.",
+    "signOut": "Esci e usa l'SSO",
+    "notNow": "Non ora"
+  },
   "auth": {
     "haveReferralCode": "Hai un codice referral?",
     "referralCode": "Codice Referral",
