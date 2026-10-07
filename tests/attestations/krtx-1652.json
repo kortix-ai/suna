@@ -1,11 +1,18 @@
 {
-  "source_hash": "6abdfa3b1a31c3b643c06c570b550be484ae094f2436031e476e51397223ba40",
-  "head": "b6178906a901ad6ccb78617f0108102e9358a8eb",
+  "source_hash": "32b39b84a4b8764177a52616c57d913346ef5b7d195c419f5a32962552ab7ff7",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-07T053500Z-a-test-seam-only-protects-the-box-if-every-path-to-a-real-write-is-closed.md",
+    "scripts/install.sh",
+    "tests/unit/install-sh.test.ts"
+  ],
+  "diff_hash": "8370e1fc95abc3780793ac7e392092cc775eedf52c88b124d869f70943d293fc",
+  "head": "f52f078bd2c4111695ad780cadb92e855a4d65eb",
   "passed": false,
   "lanes": {
-    "core": "pass",
+    "core": "fail",
     "packages": "skipped-sandbox-image",
     "db-suites": "fail"
   },
-  "at": "2026-10-07T05:41:21.685Z"
+  "at": "2026-10-07T06:20:14.172Z"
 }
