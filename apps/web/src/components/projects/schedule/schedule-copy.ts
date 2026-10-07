@@ -33,6 +33,18 @@ export function isTriggerKind(type: ProjectTrigger['type']): type is TriggerKind
   return type === 'cron' || type === 'webhook';
 }
 
+/**
+ * Triggers the customer wrote. The starter ships every new project a
+ * `harness-reflector` cron that keeps the project's memory current; it is
+ * infrastructure, not something the customer configured, so the Triggers page
+ * must not show it (KRTX-1299). `agent` matches the shipped template exactly;
+ * `slug` covers a renamed trigger on the same agent.
+ */
+export function isCustomerTrigger(trigger: ProjectTrigger): boolean {
+  if (trigger.agent !== 'harness-reflector') return true;
+  return trigger.slug !== 'harness-reflector' && trigger.slug !== 'harness-reflector-daily';
+}
+
 /* ─── Time of day ───────────────────────────────────────────────────────── */
 
 function pad2(value: number): string {

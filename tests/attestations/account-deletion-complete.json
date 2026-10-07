@@ -1,0 +1,18 @@
+{
+  "source_hash": "402a3c0aa1a807d7e24197e6a015628844cd86ad780516331715424730f2f333",
+  "diff_files": [
+    "apps/api/src/billing/repositories/account-deletion.ts",
+    "apps/api/src/billing/services/account-deletion.ts",
+    "apps/api/src/billing/services/integration-account-deletion.test.ts",
+    "apps/api/src/config.ts"
+  ],
+  "diff_hash": "b4cbd16f0dbbb598565dd926ebe93f7ea4b8c3fb6fb69382879b36ff185652fa",
+  "head": "3f74ef9e8a49cf177a8fd0c05c164057267d47a8",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-07T10:40:21.059Z"
+}

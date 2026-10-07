@@ -316,6 +316,8 @@ Fires on `POST /v1/webhooks/projects/{projectId}/{slug}`. Kortix checks the requ
 1. **HMAC signature** — header `X-Kortix-Signature: sha256=<hmac>` (the `sha256=` prefix is optional) or the GitHub-compatible `X-Hub-Signature-256`. HMAC-SHA256 over the raw request body, using the secret named by `secret_env`.
 2. **Static token**, only when no signature header is present, for senders that cannot HMAC-sign a body. Send the secret as `X-Kortix-Token: <secret>`, `Authorization: Bearer <secret>`, or `Authorization: Basic <base64(user:secret)>` (the password half is the token).
 
+`kortix triggers info <slug>` prints this scheme — the header, the algorithm, and a sample request signed with a `$SECRET` placeholder — and `--json` carries it as `webhook_signing`. The dashboard's trigger sheet shows the same sample request.
+
 | Status | Meaning |
 | --- | --- |
 | 202 | Signature or token valid. Body is `{ status: "fired" \| "queued" \| "deduped", session_id, ... }`. |

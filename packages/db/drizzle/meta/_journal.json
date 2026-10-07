@@ -859,12 +859,26 @@
     {
       "idx": 122,
       "version": "7",
+      "when": 1791333377505,
+      "tag": "20261007003617_gateway_logs_session_rollup_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1791358200000,
+      "tag": "20261007073000_session_sandboxes_runtime_wake_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
       "when": 1791365887483,
       "tag": "20261007093807_apps_static_hosting",
       "breakpoints": true
     },
     {
-      "idx": 123,
+      "idx": 125,
       "version": "7",
       "when": 1791369023739,
       "tag": "20261007103023_apps_always_on",

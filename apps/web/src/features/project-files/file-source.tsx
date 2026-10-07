@@ -10,8 +10,9 @@ import { useBinaryBlob } from './hooks/use-binary-blob';
 
 /**
  * Project git-ref data source for the shared file viewer/modal. Downloads are
- * ref-scoped (need projectId/ref from <ProjectFilesProvider>) and binary blobs
- * are stubbed (this view is read-only), so the adapter is built per-render.
+ * ref-scoped (need projectId/ref from <ProjectFilesProvider>); binary blobs
+ * come from `GET /files/raw`, so the same previews render here as in a live
+ * session workspace. The adapter is built per-render.
  */
 export function useProjectFileSource(): FileSource {
   const ctx = useProjectContext();

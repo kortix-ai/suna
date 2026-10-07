@@ -1,6 +1,6 @@
 {
-  "id": "a1f1a671-9613-4cdd-804a-75cbc8a21750",
-  "prevId": "562fd1ae-f6ab-4c4d-95f9-a8d68fb62972",
+  "id": "cbe88056-53c2-490d-aa93-240a3bfc12e5",
+  "prevId": "ab93cebe-ce01-4df9-beb0-2039d90c6eea",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -10155,6 +10155,34 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "idx_gateway_logs_project_session_time": {
+          "name": "idx_gateway_logs_project_session_time",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"gateway_request_logs\".\"session_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -19400,6 +19428,48 @@
           ],
           "isUnique": false,
           "where": "\"kortix\".\"session_sandboxes\".\"external_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_session_sandboxes_wake_id": {
+          "name": "idx_session_sandboxes_wake_id",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "(\"metadata\" ->> 'runtimeWakeId')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_session_sandboxes_wake_cleanup_until": {
+          "name": "idx_session_sandboxes_wake_cleanup_until",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "(\"metadata\" ->> 'runtimeWakeCleanupUntilAt')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
