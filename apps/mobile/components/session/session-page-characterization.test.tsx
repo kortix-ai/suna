@@ -1552,20 +1552,17 @@ describe('SessionPage render work', () => {
     expect(overlay).toBeTruthy();
     expect(overlay.props.style).toMatchObject({ top: 0, bottom: 0 });
     expect(overlay.props.pointerEvents).toBe('box-none');
-    // No opaque fill between the chat and the composer: a fade is the only
-    // backing, and it takes no taps.
+    // No colour around the composer: from the composer up to the overlay,
+    // nothing paints a fill, and the overlay holds no gradient. The chat shows
+    // everywhere but under the composer card, which keeps its own surface.
     const block = byTestID('session-composer-block');
     expect(ancestors(composer)).toContain(block);
-    for (const node of [block, ...ancestors(composer).slice(0, ancestors(composer).indexOf(block))]) {
+    for (const node of ancestors(composer).slice(0, ancestors(composer).indexOf(overlay) + 1)) {
       for (const style of flat(node.props.style)) expect(style.backgroundColor).toBeUndefined();
     }
-    const fades = tree!.root.findAll((node) => typeof node.type === 'function' && Array.isArray(node.props.colors));
-    const backing = fades.find((node) => node.parent === block);
-    expect(backing).toBeTruthy();
-    for (const fade of fades) {
-      expect(fade.props.pointerEvents).toBe('none');
-      expect(ancestors(fade)).toContain(overlay);
-    }
+    // Counts, not nodes: a failing diff of test instances prints for minutes.
+    const gradients = tree!.root.findAll((node) => typeof node.type === 'function' && Array.isArray(node.props.colors));
+    expect(gradients.filter((node) => ancestors(node).includes(overlay)).length).toBe(0);
 
     // The list's end padding: the measured composer area plus the inset.
     const endPadding = () => byTestID('session-list-end-padding').props.style.height;

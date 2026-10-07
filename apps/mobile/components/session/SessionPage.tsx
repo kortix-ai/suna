@@ -39,7 +39,6 @@ import Reanimated, {
   withTiming,
   interpolate,
 } from 'react-native-reanimated';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { useColorScheme } from 'nativewind';
@@ -302,7 +301,6 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const pageBackground = isDark ? THEME.dark.background : THEME.light.background;
   const insets = useSafeAreaInsets();
   // Top inset for the message list. The chrome is the floating menu button
   // only (the static header bar is gone, COR-140): the list would start under
@@ -2154,25 +2152,12 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
         <View pointerEvents="box-none" style={FILL}>
         {heroMounted ? <FreshSessionHero opacity={heroOpacity} visible={showFreshHero} /> : null}
 
-        {/* The fade into the composer: chat text never meets the input. */}
-        <LinearGradient
-          colors={[withAlpha(pageBackground, 0), withAlpha(pageBackground, COMPOSER_TOP_ALPHA)]}
-          style={COMPOSER_FADE}
-          pointerEvents="none"
-        />
-
         <ScrollToBottomButton visible={showScrollButton} onPress={jumpToEnd} />
         </View>
 
-      {/* No fill of its own: the fade goes on down to the bottom edge, and the
-          chat stays faintly visible in the gutters and under the home
-          indicator. The composer and question cards keep their own surface. */}
+      {/* No fill: the chat shows in the gutters, the gaps and under the home
+          indicator. Only the composer and question cards paint a surface. */}
       <Reanimated.View testID="session-composer-block" style={bottomAreaStyle}>
-      <LinearGradient
-        colors={[withAlpha(pageBackground, COMPOSER_TOP_ALPHA), withAlpha(pageBackground, COMPOSER_BOTTOM_ALPHA)]}
-        style={COMPOSER_OVERLAY}
-        pointerEvents="none"
-      />
       {/* The composer area, without the inset: the list's end padding. */}
       <View testID="session-composer-area" onLayout={handleComposerAreaLayout}>
       {/* Sandbox health pill — full-width row immediately above the chat
@@ -2272,13 +2257,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
 export const SessionPage = React.memo(SessionPageImpl);
 
 const FILL = { flex: 1 } as const;
-/** Fills its parent: the overlay over the message area, the composer's fade. */
+/** Fills its parent: the overlay over the message area. */
 const COMPOSER_OVERLAY = { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 } as const;
-/** The 24pt fade at the bottom of the area above the composer. */
-const COMPOSER_FADE = { position: 'absolute', right: 0, bottom: 0, left: 0, height: 24 } as const;
-/** The page background's alpha at the composer's top edge and at the bottom edge. */
-const COMPOSER_TOP_ALPHA = 0.7;
-const COMPOSER_BOTTOM_ALPHA = 0.92;
 
 /**
  * The list's `KeyboardGestureArea`, offset by the composer's height. The height
@@ -2346,7 +2326,7 @@ function ScrollToBottomButton({ visible, onPress }: { visible: boolean; onPress:
       importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}
       // Bottom-right, directly above the composer: the 16pt project edge
       // (`px-4`) on the right; 10pt above the composer's top edge, over the
-      // 24pt fade there (`zIndex`).
+      // list (`zIndex`).
       style={[{ position: 'absolute', right: 16, bottom: 10, zIndex: 20 }, style]}
     >
       <Button
