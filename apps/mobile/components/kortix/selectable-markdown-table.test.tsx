@@ -26,6 +26,7 @@ mock.module('react-native', () => ({
 }));
 mock.module('react-native-uitextview', () => ({ UITextView: host('uitextview') }));
 mock.module('react-native-gesture-handler', () => ({ ScrollView: host('gh-scroll') }));
+mock.module('expo-linear-gradient', () => ({ LinearGradient: host('linear-gradient') }));
 mock.module('react-native-reanimated', () => ({ default: { View: host('animated-view') }, Easing: { bezier: () => 0 }, Keyframe: class { duration() { return this; } } }));
 mock.module('@gorhom/bottom-sheet', () => ({ BottomSheetModal: none, BottomSheetView: none, TouchableOpacity: none }));
 mock.module('react-native-markdown-display', () => ({ default: none, MarkdownIt: () => ({ use: () => ({}) }) }));
@@ -83,20 +84,37 @@ afterEach(() => {
   tree = undefined;
 });
 
-/** Renders the table and returns its rows: each row's cell Views and their text nodes. */
-function renderRows(markdown: string) {
+let renders = 0;
+// One palette for the render and the assertions: the stub THEME mints a new token per read.
+let palette: ReturnType<typeof markdownPalette>;
+
+function renderTable(markdown: string) {
   const table = parser(markdown, (nodes) => nodes, MarkdownIt({ typographer: true })).find((n) => n.type === 'table');
   if (!table) throw new Error('no table in AST');
+  renders = 0;
+  palette = markdownPalette(false);
   act(() => {
-    tree = create(<MarkdownTable node={table as never} palette={markdownPalette(false)} isDark={false} />);
+    tree = create(
+      <React.Profiler id="table" onRender={() => renders++}>
+        <MarkdownTable node={table as never} palette={palette} isDark={false} />
+      </React.Profiler>,
+    );
   });
-  const root = tree!.root;
+  return tree!.root;
+}
+
+/** Renders the table and returns its rows: each row's style, cell Views and their text nodes. */
+function renderRows(markdown: string) {
+  const root = renderTable(markdown);
   const rows = root.findAll((n) => n.type === 'view' && flatten(n.props.style).flexDirection === 'row');
   return rows.map((row) =>
-    row.children.map((cell) => {
-      const view = cell as (typeof rows)[number];
-      return { style: flatten(view.props.style), text: view.findByType('uitextview' as never) };
-    }),
+    Object.assign(
+      row.children.map((cell) => {
+        const view = cell as (typeof rows)[number];
+        return { style: flatten(view.props.style), text: view.findByType('uitextview' as never) };
+      }),
+      { rowStyle: flatten(row.props.style) },
+    ),
   );
 }
 
@@ -137,4 +155,94 @@ test('every cell in a column has the same flexBasis, header and body, and the lo
   expect(bases[0][0] as number).toBeGreaterThan(240);
   expect(bases[2][0] as number).toBeLessThan(bases[0][0] as number);
   for (const row of rows) for (const cell of row) expect(cell.style.flexShrink).toBe(0);
+});
+
+test('the table draws a full grid: a rounded outer border, a divider above every row after the first and left of every column after the first', () => {
+  const root = renderTable(ALIGNED);
+  const frame = flatten(hostParent(root.findByType('gh-scroll' as never)).props.style);
+  expect(frame).toMatchObject({ borderWidth: 1, borderColor: palette.border, overflow: 'hidden' });
+  expect(frame.borderRadius as number).toBeGreaterThan(0);
+
+  const rows = renderRows(ALIGNED);
+  expect(rows.map((r) => r.rowStyle.borderTopWidth)).toEqual([0, 1, 1]);
+  for (const row of rows) {
+    expect(row.rowStyle.borderTopColor).toBe(palette.border);
+    expect(row.map((c) => c.style.borderLeftWidth)).toEqual([0, 1, 1]);
+    for (const cell of row) expect(cell.style.borderLeftColor).toBe(palette.border);
+  }
+});
+
+type Node = ReturnType<typeof renderTable>;
+/** The nearest host element above `node` (the stubs wrap every host in a function component). */
+function hostParent(node: Node): Node {
+  let parent = node.parent;
+  while (parent && typeof parent.type !== 'string') parent = parent.parent;
+  return parent!;
+}
+
+const fades = (root: ReturnType<typeof renderTable>) =>
+  ['left', 'right'].filter((side) => root.findAll((n) => n.props.testID === `table-fade-${side}` && typeof n.type === 'string').length > 0);
+
+function scrollTo(root: ReturnType<typeof renderTable>, x: number, content: number, viewport: number) {
+  act(() => {
+    root.findByType('gh-scroll' as never).props.onScroll({
+      nativeEvent: { contentOffset: { x, y: 0 }, contentSize: { width: content, height: 100 }, layoutMeasurement: { width: viewport, height: 100 } },
+    });
+  });
+}
+
+test('a table that fits its viewport shows no edge fade', () => {
+  const root = renderTable(ALIGNED);
+  const scroll = root.findByType('gh-scroll' as never);
+  act(() => {
+    scroll.props.onLayout({ nativeEvent: { layout: { x: 0, y: 0, width: 300, height: 100 } } });
+    scroll.props.onContentSizeChange(300, 100);
+  });
+  expect(fades(root)).toEqual([]);
+});
+
+test('a wider table fades its right edge at the start, both edges mid-scroll, and only the left edge at the end', () => {
+  const root = renderTable(ALIGNED);
+  const scroll = root.findByType('gh-scroll' as never);
+  expect(scroll.props.scrollEventThrottle).toBe(16);
+  act(() => {
+    scroll.props.onLayout({ nativeEvent: { layout: { x: 0, y: 0, width: 300, height: 100 } } });
+    scroll.props.onContentSizeChange(700, 100);
+  });
+  expect(fades(root)).toEqual(['right']);
+
+  scrollTo(root, 150, 700, 300);
+  expect(fades(root)).toEqual(['left', 'right']);
+
+  // Further frames that flip no edge do not re-render the table.
+  const before = renders;
+  scrollTo(root, 160, 700, 300);
+  scrollTo(root, 200, 700, 300);
+  expect(renders).toBe(before);
+
+  scrollTo(root, 400, 700, 300);
+  expect(fades(root)).toEqual(['left']);
+
+  scrollTo(root, 0, 700, 300);
+  expect(fades(root)).toEqual(['right']);
+});
+
+test('the fade is clipped by the frame, takes no touches, and fades the header row from the header colour', () => {
+  const root = renderTable(ALIGNED);
+  const scroll = root.findByType('gh-scroll' as never);
+  const header = root.findAll((n) => n.type === 'view' && flatten(n.props.style).flexDirection === 'row')[0];
+  act(() => {
+    header.props.onLayout({ nativeEvent: { layout: { x: 0, y: 0, width: 700, height: 32 } } });
+    scroll.props.onLayout({ nativeEvent: { layout: { x: 0, y: 0, width: 300, height: 100 } } });
+    scroll.props.onContentSizeChange(700, 100);
+  });
+  const fade = root.find((n) => n.props.testID === 'table-fade-right' && typeof n.type === 'string');
+  expect(hostParent(fade)).toBe(hostParent(scroll));
+  expect(fade.props.pointerEvents).toBe('none');
+  expect(flatten(fade.props.style)).toMatchObject({ position: 'absolute', right: 0, top: 0, bottom: 0, width: 24 });
+  const [headerFade, bodyFade] = fade.findAllByType('linear-gradient' as never);
+  expect(flatten(headerFade.props.style).height).toBe(32);
+  // Opaque at the edge (the last stop on the right side).
+  expect(headerFade.props.colors.at(-1)).toBe(palette.tableHeader);
+  expect(bodyFade.props.colors.at(-1)).toBe(palette.tableBody);
 });

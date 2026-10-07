@@ -53,6 +53,7 @@ import {
 } from 'react-native';
 import { UITextView } from 'react-native-uitextview';
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
+import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { Easing, Keyframe } from 'react-native-reanimated';
 import type { MarkdownTextInput as MarkdownTextInputComponent } from '@expensify/react-native-live-markdown';
 import Markdown, { MarkdownIt, type MarkdownProps } from 'react-native-markdown-display';
@@ -65,7 +66,7 @@ import {
   darkMarkdownStyle,
 } from '@/lib/utils/live-markdown-config';
 import { useColorScheme } from 'nativewind';
-import { MOTION, THEME } from '@/lib/utils/theme';
+import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
 import { FONT_FAMILY } from '@/lib/utils/fonts';
 import * as Clipboard from 'expo-clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -488,11 +489,31 @@ function renderCellContent(cell: AstNode, isDark: boolean, palette: MarkdownPale
   });
 }
 
+/** Width of the fade at a table edge that has more columns past it. */
+const TABLE_FADE_WIDTH = 24;
+
 /**
  * Web: `border rounded-md` wrapper that scrolls horizontally, `w-full` table in
- * `text-sm`, `bg-muted` header, `px-4 py-2` cells, row dividers.
+ * `text-sm`, `bg-muted` header, `px-4 py-2` cells. Mobile draws the full grid
+ * (a divider between every row and every column), and fades an edge while
+ * more columns lie past it. The frame holds the border, so it stays put while
+ * the content scrolls.
  */
 export function MarkdownTable({ node, palette, isDark }: { node: AstNode; palette: MarkdownPalette; isDark: boolean }) {
+  const [fade, setFade] = useState({ left: false, right: false });
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const scroll = useRef({ x: 0, content: 0, viewport: 0, left: false, right: false });
+  // Sets state only when an edge flips, not on every scroll frame.
+  const updateFade = useCallback(() => {
+    const s = scroll.current;
+    const left = s.x > 1;
+    const right = s.x + s.viewport < s.content - 1;
+    if (left === s.left && right === s.right) return;
+    s.left = left;
+    s.right = right;
+    setFade({ left, right });
+  }, []);
+
   const sections = tableSections(node);
   const colCount = Math.max(0, ...sections.flatMap((s) => s.rows.map((r) => r.length)));
   if (colCount === 0) return <View />;
@@ -501,8 +522,34 @@ export function MarkdownTable({ node, palette, isDark }: { node: AstNode; palett
 
   let rowIndex = 0;
   return (
-    <View style={{ borderWidth: 1, borderColor: palette.border, borderRadius: RADIUS.md, overflow: 'hidden' }}>
-      <GHScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ minWidth: '100%' }}>
+    <View
+      style={{
+        borderWidth: 1,
+        borderColor: palette.border,
+        borderRadius: RADIUS.md,
+        overflow: 'hidden',
+        backgroundColor: palette.tableBody,
+      }}
+    >
+      <GHScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ minWidth: '100%' }}
+        scrollEventThrottle={16}
+        onScroll={(e) => {
+          const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+          Object.assign(scroll.current, { x: contentOffset.x, content: contentSize.width, viewport: layoutMeasurement.width });
+          updateFade();
+        }}
+        onContentSizeChange={(width) => {
+          scroll.current.content = width;
+          updateFade();
+        }}
+        onLayout={(e) => {
+          scroll.current.viewport = e.nativeEvent.layout.width;
+          updateFade();
+        }}
+      >
         <View style={{ flexGrow: 1 }}>
           {sections.map((section, sIdx) =>
             section.rows.map((cells, rIdx) => {
@@ -510,6 +557,8 @@ export function MarkdownTable({ node, palette, isDark }: { node: AstNode; palett
               return (
                 <View
                   key={`${sIdx}-${rIdx}`}
+                  // GFM has one header row: the fade paints its colour over that height.
+                  onLayout={section.isHeader && rIdx === 0 ? (e) => setHeaderHeight(e.nativeEvent.layout.height) : undefined}
                   style={{
                     flexDirection: 'row',
                     borderTopWidth: divider ? 1 : 0,
@@ -524,6 +573,8 @@ export function MarkdownTable({ node, palette, isDark }: { node: AstNode; palett
                         flexBasis: colWidths[cIdx],
                         flexGrow: 1,
                         flexShrink: 0,
+                        borderLeftWidth: cIdx > 0 ? 1 : 0,
+                        borderLeftColor: palette.border,
                         paddingHorizontal: TABLE_CELL_PADDING_X,
                         paddingVertical: TABLE_CELL_PADDING_Y,
                       }}
@@ -550,6 +601,25 @@ export function MarkdownTable({ node, palette, isDark }: { node: AstNode; palett
           )}
         </View>
       </GHScrollView>
+      {fade.left ? <TableEdgeFade side="left" headerHeight={headerHeight} palette={palette} /> : null}
+      {fade.right ? <TableEdgeFade side="right" headerHeight={headerHeight} palette={palette} /> : null}
+    </View>
+  );
+}
+
+/** A fade from the table's fill (opaque at the edge) to clear: the header colour over the header row, the body fill below. */
+function TableEdgeFade({ side, headerHeight, palette }: { side: 'left' | 'right'; headerHeight: number; palette: MarkdownPalette }) {
+  const colors = (fill: string) => (side === 'left' ? [fill, withAlpha(fill, 0)] : [withAlpha(fill, 0), fill]) as [string, string];
+  return (
+    <View
+      testID={`table-fade-${side}`}
+      pointerEvents="none"
+      style={{ position: 'absolute', top: 0, bottom: 0, [side]: 0, width: TABLE_FADE_WIDTH }}
+    >
+      {headerHeight > 0 ? (
+        <LinearGradient colors={colors(palette.tableHeader)} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ height: headerHeight }} />
+      ) : null}
+      <LinearGradient colors={colors(palette.tableBody)} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flex: 1 }} />
     </View>
   );
 }
