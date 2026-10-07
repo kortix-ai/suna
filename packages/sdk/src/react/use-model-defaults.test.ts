@@ -136,7 +136,15 @@ describe('model defaults from the session-open snapshot', () => {
     expect(value.resolveDefaultFor('coder')).toEqual({ providerID: 'kortix', modelID: 'google/gemini-agent' });
 
     releaseDetail();
-    await settle();
+    // A fixed 10 ms sleep is a lane-load race: under parallel workers the
+    // /detail response can land after the sleep, so the update fires outside
+    // act and the assertion reads the pre-response render. Wait, bounded and
+    // inside act, until the response has actually landed.
+    await act(async () => {
+      for (let i = 0; i < 100 && !value.llmGatewayEnabled; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    });
     expect(value.llmGatewayEnabled).toBe(true);
     expect(value.data).toEqual(DEFAULTS as never);
     expect(requests.filter((url) => url.includes('/model-defaults'))).toHaveLength(0);
