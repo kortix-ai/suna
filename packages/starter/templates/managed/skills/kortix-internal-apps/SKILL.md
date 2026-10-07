@@ -1,6 +1,6 @@
 ---
 name: kortix-internal-apps
-description: "Recipe for building and shipping a complete internal business app on Kortix: a Kortix Backend (Convex: data, server logic, realtime, Kortix sign-in) plus a Kortix App (the UI), committed to the project repo, deployed, and verified end to end. Use when the user asks for an internal tool, a business app, a CRM, tracker, dashboard, portal, inventory, booking, approval or ticketing system, a 'full-stack app', or any app the team will log in to and use. Load kortix-backends and kortix-apps with it."
+description: "Recipe for building and shipping a complete internal business app on Kortix: a Kortix Backend (Convex: data, server logic, realtime, Kortix sign-in) plus a Kortix App (the UI), committed to the project repo, deployed, and verified end to end. Load ONLY when the `backends` and `apps` features are on in this project (`kortix projects features` lists both as enabled) or the user names Kortix Backends. Then use it when the user asks for an internal tool, a business app, a CRM, tracker, dashboard, portal, inventory, booking, approval or ticketing system, a 'full-stack app', or any app the team will log in to and use. When either feature is off, do not load it: build the app with the project's own storage and code. Load kortix-backends and kortix-apps with it."
 ---
 
 # Internal apps on Kortix
@@ -19,10 +19,17 @@ member's browser ──▶ Kortix App (static UI, access: project)
 
 ## Prerequisites
 
-`kortix projects features` must show `apps` and `backends` enabled. If either
-is off, stop and tell the user to contact Kortix to enable it for the project
-(neither is listed in Settings).
-Do not work around a disabled feature.
+`kortix projects features` must show `apps` and `backends` enabled. Kortix
+enables each one per project; Settings lists neither, and you cannot enable
+them.
+
+**When either is off, do not stop and do not use this recipe.** Build the app
+the user asked for with what the project has: the project's own storage and
+code, and a Kortix App per kortix-apps when `apps` is on. Tell the user once
+that Kortix can enable the missing feature (name it) for a managed backend
+with Kortix sign-in. Do not repeat it, and do not wait for an answer before
+you build. Never call a `kortix backends` command or write Convex code for a
+Kortix backend while `backends` is off.
 
 ## Layout (project repo)
 

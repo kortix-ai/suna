@@ -394,9 +394,13 @@ lives in the project repo (`backends/<name>/`) and ships with
 `kortix backends deploy <name> --dir backends/<name>`. Experimental, off by
 default (feature flag `backends`).
 
-**Load the system skills:** `kortix-backends` before you create or change a
-backend or write Convex code; `kortix-internal-apps` when the user wants a
-complete app (backend + UI + sign-in) built, deployed and verified.
+**Check the flag first:** `kortix backends list` exits `0` only when Backends
+is on in this project. When it is on, load `kortix-backends` before you create
+or change a backend or write Convex code, and `kortix-internal-apps` when the
+user wants a complete app (backend + UI + sign-in) built, deployed and
+verified. When it is off, do not load either skill and do not stop: build with
+the project's own storage and code, and tell the user once that Kortix can
+enable Backends.
 </backends>
 
 <marketplace>

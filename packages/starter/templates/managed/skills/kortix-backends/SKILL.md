@@ -1,6 +1,6 @@
 ---
 name: kortix-backends
-description: "Build, deploy and operate Kortix Backends: full backends powered by self-hosted Convex (database, server functions, realtime queries, file storage, crons, full-text and vector search) with built-in Kortix sign-in. Use when an App or an agent needs persistent data, live updates, server-side logic, uploads, schedules or search; when the user asks for a database, an API, a backend, a data model, auth, or 'store this'; and before writing any Convex code. For a complete internal business app (backend + UI + sign-in) load kortix-internal-apps too."
+description: "Build, deploy and operate Kortix Backends: self-hosted Convex (database, server functions, realtime queries, file storage, crons, full-text and vector search) with built-in Kortix sign-in. Load ONLY when the `backends` feature is on in this project (`kortix backends list` exits 0) or the user names a Kortix Backend. Then use it when an App or an agent needs persistent data, live updates, server-side logic, uploads, schedules or search; when the user asks for a database, an API, a backend, a data model, auth, or 'store this'; and before writing any Convex code. When the feature is off, do not load it: build with the project's own storage and code. For a complete internal business app (backend + UI + sign-in) load kortix-internal-apps too."
 ---
 
 # Kortix Backends
@@ -13,9 +13,15 @@ members in to it.
 
 Backends is an experimental project feature flag (`backends`), off by default
 and available only where Kortix runs Platinum machines. While it is off, every
-`kortix backends` command says so and exits `1`. Backends is enabled per
-project by Kortix (it is not listed in Settings): tell the user to contact
-Kortix, and stop.
+`kortix backends` command says so and exits `1`. Kortix enables it per project;
+Settings does not list it, and you cannot enable it.
+
+**When the flag is off, do not stop.** Do the task without a Kortix backend:
+use the storage and code the project already has (files in the project repo,
+a database the project already uses, or a server App per kortix-apps). Tell
+the user once that Kortix can enable Backends for the project if they want a
+managed Convex backend with Kortix sign-in. Do not repeat it, and do not wait
+for an answer before you build.
 
 ## When to use one
 
