@@ -57,11 +57,13 @@ const future = new Date(Date.now() + 14 * DAY).toISOString();
 
 withDb('scheduled account deletions — real PostgreSQL', () => {
   test('executes a due pending request and leaves future, cancelled and long-overdue ones alone', async () => {
-    const accDue = crypto.randomUUID();
+    // The due account is the requester's personal account (its id is the
+    // user id), so the routine also deletes the requester's login.
+    const userDue = crypto.randomUUID();
+    const accDue = userDue;
     const accStale = crypto.randomUUID();
     const accFuture = crypto.randomUUID();
     const accCancelled = crypto.randomUUID();
-    const userDue = crypto.randomUUID();
 
     await db.insert(creditAccounts).values({
       accountId: accDue,
