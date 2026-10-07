@@ -73,7 +73,10 @@ import {
   type MentionSegment,
   type MentionSourceRef,
 } from '../mention-segments';
-import { parseChannelMessage } from './channel-message';
+import { parseChannelMessage, slackConversationName, type ChannelMessageInfo } from './channel-message';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
+import { useChannelBindings } from '@/hooks/channels/use-channel-bindings';
+import { useParams } from 'next/navigation';
 import { CHANNEL_BRAND_COLOR, ChannelBrandMark, channelPlatformLabel } from './channel-brand';
 import {
   parseAgentMentionReferences,
@@ -137,6 +140,96 @@ export const BUBBLE_TEXT = cn(
 export const BUBBLE_SURFACE = cn(
   'bg-sidebar dark:bg-muted text-foreground flex max-w-full flex-col px-3.5 py-2.5 select-none rounded-lg',
 );
+
+/**
+ * Where a channel message came from, in the pill's hover card: the platform,
+ * the channel or chat it was posted in, and who posted it. A Slack prompt
+ * written before channel names were recorded carries a bare id (`C0DEV`); the
+ * project's Slack bindings name it, read only while this card is open. A Teams
+ * conversation id names nothing a person reads, so Teams shows no channel row.
+ */
+export function ChannelOrigin({ info, platform }: { info: ChannelMessageInfo; platform: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const projectId = useParams<{ id?: string }>()?.id ?? null;
+  const bareSlackId = info.platform === 'Slack' && /^[CDG][A-Z0-9]+$/.test(info.context);
+  const { data } = useChannelBindings(bareSlackId ? projectId : null);
+  const binding = bareSlackId
+    ? data?.bindings.find((b) => b.platform === 'slack' && b.channelId === info.context)
+    : undefined;
+  const channel = info.platform === 'Teams' ? '' : (binding && slackConversationName(binding)) || info.context;
+  const rows = [
+    { label: tI18nComplete('textce4683e7013a'), value: channel },
+    { label: tI18nComplete('text218197693424'), value: info.userName },
+  ].filter((row) => row.value);
+  return (
+    <div className="flex flex-col gap-2 px-3.5 py-3 text-xs">
+      <div className="text-foreground flex items-center gap-1.5 font-medium">
+        <ChannelBrandMark platform={info.platform} className="size-3.5 shrink-0" />
+        {platform}
+      </div>
+      <dl className="flex flex-col gap-1">
+        {rows.map((row) => (
+          <div key={row.label} className="flex items-baseline gap-3">
+            <dt className="text-muted-foreground w-14 shrink-0">{row.label}</dt>
+            <dd className="text-foreground min-w-0 truncate">{row.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+/**
+ * A message that arrived from a chat channel (Slack / Microsoft Teams /
+ * Telegram): a source pill — mark, platform, sender — over the same bubble a
+ * typed message gets. Every `@name` in the text (`@Kortix`, `@KortixDev`,
+ * `@here`) is a `MentionChip`, the chip the composer draws, static because a
+ * channel mention opens nothing here. Exported for `/debug/channel-message`.
+ */
+export function ChannelMessage({
+  info,
+  actions,
+}: {
+  info: ChannelMessageInfo;
+  actions?: React.ReactNode;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const platform = channelPlatformLabel(info.platform, tI18nComplete);
+  return (
+    <div className="flex flex-col items-end gap-1.5">
+      <HoverCard openDelay={300} closeDelay={100}>
+        <HoverCardTrigger asChild>
+          <button
+            type="button"
+            className="bg-foreground/5 text-muted-foreground hover:bg-foreground/10 focus-visible:ring-ring inline-flex max-w-[80%] items-center gap-1.5 rounded-full py-0.5 pr-2.5 pl-2 text-xs transition-colors duration-(--duration-normal) focus-visible:ring-2 focus-visible:outline-none"
+          >
+            <ChannelBrandMark platform={info.platform} className="size-3 shrink-0" />
+            <span style={{ color: CHANNEL_BRAND_COLOR[info.platform] }}>{platform}</span>
+            <span aria-hidden="true">·</span>
+            <span className="text-foreground truncate font-medium">{info.userName}</span>
+          </button>
+        </HoverCardTrigger>
+        <HoverCardContent align="end" className="w-60 p-0">
+          <ChannelOrigin info={info} platform={platform} />
+        </HoverCardContent>
+      </HoverCard>
+      {info.messageText && (
+        <div className={cn(BUBBLE_SURFACE, 'max-w-[80%]')}>
+          <div className={BUBBLE_TEXT}>
+            {buildMentionSegments({ text: info.messageText }).map((segment, i) =>
+              segment.type ? (
+                <MentionChip key={i} kind="user" label={segment.text.slice(1)} />
+              ) : (
+                <span key={i}>{segment.text}</span>
+              ),
+            )}
+          </div>
+        </div>
+      )}
+      {actions}
+    </div>
+  );
+}
 
 export interface NormalizedAttachment {
   key: string;
@@ -1589,29 +1682,7 @@ export function UserMessage({
 
   // Channel messages (Slack / Microsoft Teams / Telegram): a branded card with the sender
   if (channelMessageInfo) {
-    const brandColor = CHANNEL_BRAND_COLOR[channelMessageInfo.platform];
-    return (
-      <div className="flex flex-col items-end gap-1">
-        <div className="border-border/60 bg-muted/40 inline-flex max-w-[80%] flex-col gap-1.5 rounded-lg border px-4 py-2.5">
-          <div className="flex items-center gap-2">
-            <ChannelBrandMark platform={channelMessageInfo.platform} />
-            <span className="text-xs font-medium" style={{ color: brandColor }}>
-              {channelPlatformLabel(channelMessageInfo.platform, tI18nComplete)}
-            </span>
-            <span className="text-muted-foreground text-xs">·</span>
-            <span className="text-foreground text-sm font-medium">
-              {channelMessageInfo.userName}
-            </span>
-          </div>
-          {channelMessageInfo.messageText && (
-            <div className="text-foreground text-sm wrap-break-word">
-              {channelMessageInfo.messageText}
-            </div>
-          )}
-        </div>
-        {actions}
-      </div>
-    );
+    return <ChannelMessage info={channelMessageInfo} actions={actions} />;
   }
 
   if (reminderInfo) {
