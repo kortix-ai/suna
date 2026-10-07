@@ -12,9 +12,9 @@ import { resolve } from 'node:path';
 const SCRIPT = resolve(import.meta.dir, '..', '..', '..', '..', 'scripts', 'hermetic-test-env.sh');
 
 /** Source the script under a poisoned ambient environment (the developer
- *  laptop case: a stored login plus ambient KORTIX_* exports) and print the
- *  config path it leaves behind. */
-function sourceHermeticEnv(): { config: string; token: string } {
+ *  laptop case: a stored login plus ambient KORTIX_* exports) and return the
+ *  lines it is asked to print, unjoined. */
+function sourceHermeticEnv(): string[] {
   const proc = Bun.spawnSync({
     cmd: [
       'bash',
@@ -28,13 +28,17 @@ function sourceHermeticEnv(): { config: string; token: string } {
       KORTIX_TOKEN: 'kortix_pat_devs_own_login',
     },
   });
-  const [config = '', token = ''] = proc.stdout.toString().trim().split('\n');
-  return { config, token };
+  return proc.stdout.toString().split('\n');
 }
 
 describe('hermetic test env', () => {
   test('points the CLI config store at a fresh suite-owned path', () => {
-    const { config, token } = sourceHermeticEnv();
+    // Index the two printed lines separately: the config path itself never
+    // contains a newline, so a missing export reads as an empty line and is
+    // attributed to its own variable, not shifted onto the next one.
+    const lines = sourceHermeticEnv();
+    const config = lines[0] ?? '';
+    const token = lines[1] ?? '';
     // The stored login itself never survives the script.
     expect(token).toBe('unset');
     // KORTIX_CONFIG_FILE: exported (never falls back to the ambient default

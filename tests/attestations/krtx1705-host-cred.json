@@ -1,11 +1,32 @@
 {
-  "source_hash": "df1071259af0b85edffcb9f7e50ed6f6f14b7b14ba6e8ee82fe96e0039eee0f5",
-  "head": "cc0f4880f257d572825ae06b9ddb9ce14a291a6b",
+  "source_hash": "3c5f336a450cb43dcbd88165f302c75330ed4997a39634d825725cd0b8d78ed0",
+  "diff_files": [
+    "apps/api/src/__tests__/e2e-connector-faces.test.ts",
+    "apps/cli/src/__tests__/connector-mcp-secret-call.test.ts",
+    "apps/cli/src/__tests__/connectors-mcp-handshake.test.ts",
+    "apps/cli/src/__tests__/connectors-session-flag.test.ts",
+    "apps/cli/src/__tests__/hermetic-test-env.test.ts",
+    "apps/cli/src/__tests__/host-notice.test.ts",
+    "apps/cli/src/__tests__/host-selection.blackbox.test.ts",
+    "apps/cli/src/__tests__/mcp-plain-errors.characterization.test.ts",
+    "apps/cli/src/__tests__/mcp-tools-list.characterization.test.ts",
+    "apps/cli/src/__tests__/sandbox-auth.test.ts",
+    "apps/cli/src/__tests__/sandboxes-local-blackbox.test.ts",
+    "apps/cli/src/api/auth.ts",
+    "apps/cli/src/command-helpers.ts",
+    "apps/cli/src/connector-gateway/gateway.ts",
+    "apps/cli/src/connector-gateway/mint-connect-link.test.ts",
+    "apps/cli/src/host-notice.ts",
+    "packages/shared/src/host-config/config.ts",
+    "scripts/hermetic-test-env.sh"
+  ],
+  "diff_hash": "2cc56cb83bf1734bf789722b6cce5dc78f0043f0dacf21d3c831a073811bbff5",
+  "head": "3c9fd70644b1717aab100d7a3f607a22b5a5d93a",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-07T12:14:55.947Z"
+  "at": "2026-10-07T12:25:38.084Z"
 }

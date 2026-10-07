@@ -241,6 +241,36 @@ describe('plain commands vs an explicitly selected stored host (KRTX-1705)', () 
     expect(ctx?.projectId).toBe('proj_link');
     expect(ctx?.auth.token).toBe('kortix_pat_session');
   });
+
+  it('keeps the connector data plane on the injected identity even with a selection', () => {
+    seedOwnHost({ default_project: { project_id: 'proj_own', account_id: 'acct_own' } });
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_API_URL = 'https://session.example/v1';
+    process.env.KORTIX_PROJECT_ID = 'proj_session';
+    expect(useHost('own')).toBe(true);
+
+    // A session only ever invokes `kortix connectors` / `kortix connectors
+    // mcp` (template runtime fingerprint): the data plane stays pinned to the
+    // injected identity and the session's own project — the selection must
+    // never redirect it at the selected host.
+    const ctx = connectorProjectContext();
+    expect(ctx.projectId).toBe('proj_session');
+  });
+
+  it('scopes stored-credential project resolution to the selected host, as --host does', () => {
+    seedOwnHost({ default_project: { project_id: 'proj_own', account_id: 'acct_own' } });
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_API_URL = 'https://session.example/v1';
+    process.env.KORTIX_PROJECT_ID = 'proj_session';
+    expect(useHost('own')).toBe(true);
+
+    // Callers that pair the id with the stored host credential (access
+    // grants, projects clone/info/open/rm) must not read the ambient project
+    // id — it belongs to the injected deployment and would 404.
+    expect(resolveProjectId(undefined, { hostScoped: true })).toBe('proj_own');
+    // The ambient chain itself stays untouched for the env-pinned callers.
+    expect(resolveProjectId()).toBe('proj_session');
+  });
 });
 
 describe('env token vs .kortix/link.json host', () => {

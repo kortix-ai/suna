@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { defaultProject } from './api/config.ts';
+import { defaultProject, markerActive } from './api/config.ts';
 import { sandboxEnvValue } from './api/sandbox-env.ts';
 
 /**
@@ -85,9 +85,22 @@ export function clearLink(cwd = process.cwd()): void {
  *   3. .kortix/link.json in cwd (per-repo binding)
  *   4. the active host's global default project (`kortix projects use`)
  * Returns null if none of those are set.
+ *
+ * `hostScoped` marks callers that pair the result with the stored active
+ * host's credential (no `--host` given): when an explicit in-sandbox
+ * `hosts use` selection owns plain resolution (markerActive, KRTX-1705), the
+ * ambient chain — steps 2 and 3, both bound to the injected deployment —
+ * must not pair with that credential, so the selected host's default project
+ * takes over, exactly as an explicit `--host` resolves. The connector data
+ * plane (pinned to the injected identity) must keep the ambient chain and
+ * omits the flag.
  */
-export function resolveProjectId(projectArg?: string): string | null {
+export function resolveProjectId(
+  projectArg?: string,
+  opts?: { hostScoped?: boolean },
+): string | null {
   if (projectArg) return projectArg;
+  if (opts?.hostScoped && markerActive()) return defaultProject()?.project_id ?? null;
   const envProjectId = sandboxEnvValue('KORTIX_PROJECT_ID');
   if (envProjectId) return envProjectId;
   const link = loadLink();

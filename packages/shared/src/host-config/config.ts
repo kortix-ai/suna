@@ -222,6 +222,20 @@ export function hasEnvTokenHost(): boolean {
   return Boolean(sandboxCliToken());
 }
 
+/** True when an explicit in-sandbox `hosts use` selection owns plain
+ *  resolution: the marker matches the active host and that host holds a
+ *  token. The ambient project chain (KORTIX_PROJECT_ID, the directory link)
+ *  belongs to the injected deployment, so stored-credential callers must skip
+ *  it — exactly as an explicit `--host` resolves. The marker stays active
+ *  after the injected env disappears (it lives in the config file), so this
+ *  does not require the env token to be present. */
+export function markerActive(config: Config = loadConfig()): boolean {
+  const stored = config.hosts[config.active];
+  return Boolean(
+    config.sandbox_selected && config.sandbox_selected === config.active && stored?.token,
+  );
+}
+
 /** The synthetic host the platform delegation env would resolve to — null
  *  when no KORTIX_TOKEN is injected. Its url is the injected base the
  *  ambient project ids belong to. */
@@ -239,8 +253,9 @@ export function envTokenHost(): Host | null {
 }
 
 export function activeHost(): Host | null {
-  const envToken = sandboxCliToken();
-  if (envToken) {
+  const config = loadConfig();
+  const stored = config.hosts[config.active];
+  if (sandboxCliToken()) {
     // Explicit in-sandbox selection (KRTX-1705): `kortix hosts use <name>`
     // ran while the delegation env was injected, so plain commands act as the
     // selected stored credential — with its own url, exactly like `--host`.
@@ -248,12 +263,9 @@ export function activeHost(): Host | null {
     // default): a KORTIX_TOKEN on a machine with a stored `kortix login` is
     // the env identity, and the sandbox's injected env cannot carry the
     // marker to flip it.
-    const config = loadConfig();
-    const stored = config.hosts[config.active];
-    if (stored?.token && config.sandbox_selected === config.active) return stored;
+    if (stored?.token && markerActive(config)) return stored;
     return envTokenHost();
   }
-  const config = loadConfig();
   const host = config.hosts[config.active];
   if (!host) return null;
   const envApiUrl = sandboxEnvValue('KORTIX_API_URL');

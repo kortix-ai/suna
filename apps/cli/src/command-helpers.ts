@@ -8,6 +8,7 @@ import {
   getHost,
   hasEnvTokenHost,
   listHosts,
+  markerActive,
 } from './api/config.ts';
 import { ApiError, clientFromAuth, type ApiClient } from './api/client.ts';
 import { loadLink, resolveProjectRef } from './project-link.ts';
@@ -78,17 +79,11 @@ export function resolveProjectAuth(opts: { hostArg?: string } = {}): {
   // not the link's env fallback above): the command acts as the selected
   // stored host, so the ambient project chain (KORTIX_PROJECT_ID) — which
   // belongs to the injected deployment — must not pair with this credential.
-  // Downstream, resolveProjectContext then scopes the project the way --host
-  // does.
+  // markerActive (not envWins) because the marker stays active after the
+  // injected env disappears. Downstream, resolveProjectContext then scopes
+  // the project the way --host does.
   let hostScoped = false;
-  if (
-    !opts.hostArg &&
-    !hostName &&
-    !fellBackToEnv &&
-    auth?.token &&
-    hasEnvTokenHost() &&
-    !activeHostEntry().envWins
-  ) {
+  if (!opts.hostArg && !hostName && !fellBackToEnv && auth?.token && markerActive()) {
     hostScoped = true;
   }
   return { hostName, auth, hostScoped };
