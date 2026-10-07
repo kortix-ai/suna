@@ -129,6 +129,12 @@ kortix apps access <app> --viewer api
 - On the App's server, build one client per request:
   `createAppViewerKortix(request, { backendUrl })` from `@kortix/sdk/server`.
   Do not store the token across requests.
+- In the browser (a static App has no server), call the API through the gate
+  on the App's own origin:
+  `createKortix({ backendUrl: '/_kortix/api/v1', getToken: kortixAppViewerToken() })`
+  from `@kortix/sdk`. Never use `https://api.kortix.com/v1` from the browser:
+  the API refuses an App origin's CORS preflight. The gate path needs
+  `--viewer api` and answers `403 viewer_api_disabled` without it.
 - Never give the App a personal PAT or API key to run every viewer's sessions.
   Kortix records each session as the credential's owner, so every viewer's
   chat becomes that one person's private session.

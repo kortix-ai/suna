@@ -14,6 +14,7 @@ import { appPublicStatusResponse, publicDeploymentStatus, appPublicBudgetRespons
 import { loadPublicAppState, loadPublicApp, ensureAppRuntimeRunning, appRuntimeNeedsWake } from './public-proxy-runtime';
 import { appUpstreamHeaders, appPublicResponseHeaders } from './public-proxy-headers';
 import { serveStaticDeployment } from './static-site';
+import { APP_API_PROXY_PREFIX, appApiProxyResponse } from './public-proxy-api';
 const ACTIVITY_LEASE_MS = 60_000;
 type LoadedApp = Omit<NonNullable<Awaited<ReturnType<typeof loadPublicApp>>>, 'agentPrincipal'>;
 
@@ -46,7 +47,14 @@ async function recordAppActivity(app: LoadedApp['app'], runtimeId: string, now: 
   ]);
 }
 
-export async function handleAppPublicRequest(request: Request): Promise<Response | null> {
+/**
+ * `forwardApi` dispatches a request to the API in-process; it serves
+ * `/_kortix/api/v1/*` (public-proxy-api.ts). Without it that path is the App's.
+ */
+export async function handleAppPublicRequest(
+  request: Request,
+  forwardApi?: (request: Request) => Promise<Response>,
+): Promise<Response | null> {
   const url = new URL(request.url);
   const matched = resolveAppRequest(request, url);
   if (!matched) return null;
@@ -64,6 +72,9 @@ export async function handleAppPublicRequest(request: Request): Promise<Response
   // must never wake a sleeping sandbox.
   if (url.pathname === '/_kortix/viewer') {
     return appViewerEndpointResponse(request, url, gateApp);
+  }
+  if (forwardApi && url.pathname.startsWith(`${APP_API_PROXY_PREFIX}/`)) {
+    return appApiProxyResponse(request, url, matched.publicHost, gateApp, forwardApi);
   }
   // A static App has no runtime: its files are served from storage here, past
   // the same access gate, with no wake, meter or upstream.

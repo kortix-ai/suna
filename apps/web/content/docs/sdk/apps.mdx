@@ -180,7 +180,7 @@ import { createKortix, kortixAppViewerToken } from '@kortix/sdk';
 import { useKortixAppViewer } from '@kortix/sdk/react';
 
 const kortix = createKortix({
-  backendUrl: 'https://api.kortix.com/v1',
+  backendUrl: '/_kortix/api/v1',             // the gate, on your App's own origin
   getToken: kortixAppViewerToken(),          // the viewer's own App-scoped token
 });
 
@@ -189,6 +189,22 @@ function Header() {
   return <span>{status === 'viewer' ? viewer.email : 'Signed out'}</span>;
 }
 ```
+
+The browser calls `/_kortix/api/v1/*` on your App's own origin, never
+`https://api.kortix.com/v1` directly: the API answers no CORS preflight from
+an App origin, so a direct call fails in the browser. The gate forwards each
+call to the Kortix API as the signed-in viewer, with the viewer's App-scoped
+token. Rules:
+
+- It needs `viewer_token_scope: 'api'`. Otherwise it answers
+  `403 viewer_api_disabled`.
+- It acts only for a viewer the gate signed in (Kortix login or an access
+  link). With none, it answers `401 no_viewer_identity`.
+- It answers a request from the App's own origin only. A cross-site request
+  answers `403 cross_site_request`.
+- It forwards `/v1/*` except `/v1/oauth/*` and MCP endpoints, which answer
+  `404`. Your App's cookie and its own `Authorization` header never reach the
+  API, and the API cannot set a cookie on your App.
 
 On your App's server, the gate signs the identity into every request:
 

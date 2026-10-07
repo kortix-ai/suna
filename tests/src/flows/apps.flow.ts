@@ -855,6 +855,25 @@ flow(
         (await asToken(next.access_token).get("/v1/projects/:projectId", { params: projectParams })).status(200);
       });
 
+      await ctx.step("a browser App reaches the API on its own origin: /_kortix/api/v1/accounts/me answers as the viewer; the App's cookie never reaches the API; a cross-site call gets 403", async () => {
+        const cookie = await signIn();
+        const me = await gate("/_kortix/api/v1/accounts/me", { cookie, "sec-fetch-site": "same-origin" });
+        if (me.status !== 200 || me.body?.user_id !== viewerPrincipal.userId || me.body?.token_context?.auth_type !== "oauth") {
+          throw new Error(`expected 200 as the viewer through the gate, got ${me.status} ${me.text.slice(0, 300)}`);
+        }
+        if (me.headers.get("set-cookie")) throw new Error("the App API path set a cookie on the App origin");
+        const read = await gate(`/_kortix/api/v1/projects/${project.id}`, { cookie, "sec-fetch-site": "same-origin" });
+        if (read.status !== 200 || read.body?.project_id !== project.id) {
+          throw new Error(`expected the viewer's project through the gate, got ${read.status} ${read.text.slice(0, 300)}`);
+        }
+        const crossSite = await gate("/_kortix/api/v1/accounts/me", { cookie, "sec-fetch-site": "cross-site" });
+        if (crossSite.status !== 403 || crossSite.body?.error !== "cross_site_request") {
+          throw new Error(`expected 403 cross_site_request, got ${crossSite.status} ${crossSite.text.slice(0, 200)}`);
+        }
+        const oauth = await gate("/_kortix/api/v1/oauth/clients", { cookie, "sec-fetch-site": "same-origin" });
+        if (oauth.status !== 404) throw new Error(`expected 404 for /v1/oauth through the gate, got ${oauth.status}`);
+      });
+
       await ctx.step("kortix apps access --viewer identity switches the scope and keeps mode and members", async () => {
         const cli = new CliSandbox("app6");
         try {
@@ -877,12 +896,16 @@ flow(
         }
       });
 
-      await ctx.step("an identity-scoped App's token names the viewer but opens no project route (403)", async () => {
+      await ctx.step("an identity-scoped App's token names the viewer but opens no project route (403); its /_kortix/api path answers 403 viewer_api_disabled", async () => {
         const session = await viewerToken(await signIn());
         if (JSON.stringify(session.scopes) !== JSON.stringify(["profile", "email"]) || !session.access_token) {
           throw new Error(`identity scope returned ${JSON.stringify(session.scopes)}`);
         }
         (await asToken(session.access_token).get("/v1/projects/:projectId", { params: projectParams })).status(403);
+        const proxied = await gate("/_kortix/api/v1/accounts/me", { cookie: await signIn(), "sec-fetch-site": "same-origin" });
+        if (proxied.status !== 403 || proxied.body?.error !== "viewer_api_disabled") {
+          throw new Error(`expected 403 viewer_api_disabled through the gate, got ${proxied.status} ${proxied.text.slice(0, 200)}`);
+        }
       });
 
       await ctx.step("an App that shares nothing answers /_kortix/viewer with 404 viewer_disabled", async () => {
