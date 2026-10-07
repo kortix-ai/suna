@@ -93,15 +93,17 @@ function setUpNotifications() {
 }
 
 export function PushNotificationsBridge() {
-  const { isAuthenticated } = useAuthContext();
+  const { isAuthenticated, mfaRequired } = useAuthContext();
+  // A session that owes the TOTP code gets no pushes and opens no session.
+  const signedIn = isAuthenticated && !mfaRequired;
   const router = useRouter();
   const navigationRef = useNavigationContainerRef();
   const segments = useSegments() as string[];
   const { id: routeProjectId } = useGlobalSearchParams<{ id?: string }>();
   const pendingOpen = usePushStore((s) => s.pendingOpen);
 
-  const isAuthenticatedRef = useRef(isAuthenticated);
-  isAuthenticatedRef.current = isAuthenticated;
+  const signedInRef = useRef(signedIn);
+  signedInRef.current = signedIn;
 
   // Channels, handler, and the tap listener. The last response covers a tap
   // that launched the app before this listener existed.
@@ -124,14 +126,14 @@ export function PushNotificationsBridge() {
   // foreground without a token: the user may have allowed it in Settings.
   // That check waits until the resume work that cannot wait has run.
   useEffect(() => {
-    if (!isAuthenticated || !remotePushSupported()) return;
+    if (!signedIn || !remotePushSupported()) return;
     void syncPushRegistration();
     return addResumeListener(() => {
-      if (isAuthenticatedRef.current && !usePushStore.getState().token) {
+      if (signedInRef.current && !usePushStore.getState().token) {
         void syncPushRegistration();
       }
     }, PUSH_RESUME_DELAY_MS);
-  }, [isAuthenticated]);
+  }, [signedIn]);
 
   // Preference toggles → server, debounced.
   useEffect(() => {
@@ -140,7 +142,7 @@ export function PushNotificationsBridge() {
       if (state.preferences === prev.preferences) return;
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
-        if (isAuthenticatedRef.current) void syncPushPreferences();
+        if (signedInRef.current) void syncPushPreferences();
       }, PREFERENCE_SYNC_DEBOUNCE_MS);
     });
     return () => {
@@ -158,7 +160,7 @@ export function PushNotificationsBridge() {
   useEffect(() => {
     if (!pendingOpen || pendingOpen.navigated) return;
     const move = notificationOpenMove({
-      signedIn: isAuthenticated,
+      signedIn,
       rootSegment,
       currentProjectId,
       targetProjectId: pendingOpen.projectId,
@@ -176,7 +178,7 @@ export function PushNotificationsBridge() {
     } catch (error) {
       log.warn('[PUSH] Could not open the tapped session:', error);
     }
-  }, [pendingOpen, isAuthenticated, rootSegment, currentProjectId, navigationRef, router]);
+  }, [pendingOpen, signedIn, rootSegment, currentProjectId, navigationRef, router]);
 
   return null;
 }

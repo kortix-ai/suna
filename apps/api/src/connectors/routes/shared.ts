@@ -18,6 +18,7 @@ export const CatalogActionSchema = z
     description: z.string(),
     risk: z.string(),
     inputSchema: z.any().nullable(),
+    outputSchema: z.any().nullable().optional(),
   })
   .openapi('ConnectorCatalogAction');
 export const CatalogAccountSchema = z
@@ -94,6 +95,12 @@ export const CallResponseSchema = z
         owner_type: z.string(),
       })
       .optional(),
+    // Additive call contract. `data` keeps the raw upstream answer.
+    binding: z.string().nullable().optional(),
+    output: z.any().optional(),
+    upstream_status: z.number().int().nullable().optional(),
+    upstream_error: z.string().optional(),
+    retry_after_seconds: z.number().int().optional(),
   })
   .passthrough()
   .openapi('ConnectorCallResult');
@@ -142,6 +149,8 @@ export const CatalogQuerySchema = z.object({
    *  sandboxes run a baked CLI that reads schemas from these routes, so the
    *  default must match what those clients were built against. */
   include_schemas: z.enum(['true', 'false']).optional(),
+  /** `true` adds each action's `outputSchema`. Absent means OMIT. */
+  include_output_schemas: z.enum(['true', 'false']).optional(),
 });
 
 /**
