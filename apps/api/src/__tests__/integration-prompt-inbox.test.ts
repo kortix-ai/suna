@@ -16,11 +16,13 @@ import {
   INBOX_ORDER_BACKOFF_MS,
   admitInboxPrompt,
   hasLaterReleasedSibling,
+  liveInboxAdmissionDeps,
   sessionHoldsTurnAuthority,
 } from '../projects/session-lifecycle/inbox-admission';
 import {
   confirmInboxPromptConsumed,
   reconcileForwardedPrompts,
+  steerTargetAtTurnEnd,
 } from '../projects/session-lifecycle/consumption';
 import {
   deleteInboxPrompt,
@@ -28,6 +30,7 @@ import {
   enqueueReleasingHold,
   holdInboxPrompts,
   inboxSendState,
+  interruptInboxPrompt,
   listInboxPrompts,
   releaseInboxHold,
   sessionHasHoldMark,
@@ -37,7 +40,7 @@ import { remintForRepair } from '../projects/session-lifecycle/inbox-placement';
 import { requeueAbandonedPrompt } from '../projects/session-lifecycle/redelivery';
 import { findInboxRowIdByMessageId } from '../projects/session-lifecycle/cancel-forwarded';
 import { settleInboxHoldAfterStop } from '../projects/session-lifecycle/inbox-hold-settle';
-import { acceptSandboxTurn } from '../projects/sandbox-turn-lifecycle';
+import { acceptSandboxTurn, completeSandboxTurn } from '../projects/sandbox-turn-lifecycle';
 import {
   type SessionLifecycleCommandRow,
   claimDueLifecycleCommands,
@@ -67,6 +70,8 @@ async function enqueue(
     createdAt?: string;
     clientSentAtMs?: number;
     placement?: 'transcript' | 'composer';
+    delivery?: 'steer' | 'queue' | 'interrupt';
+    actorUserId?: string;
   } = {},
 ): Promise<SessionLifecycleCommandRow> {
   const { row } = await enqueueContinueSessionCommand({
@@ -74,13 +79,14 @@ async function enqueue(
     projectId: PROJECT_ID,
     accountId: ACCOUNT_ID,
     sessionId: SESSION_ID,
-    actorUserId: null,
+    actorUserId: overrides.actorUserId ?? null,
     text: 'say hi',
     idempotencyKey: `prompt:${SESSION_ID}:${clientMessageId}`,
     clientMessageId,
     wireMessageId: overrides.wireMessageId ?? WIRE_ID,
     clientSentAtMs: overrides.clientSentAtMs,
     ...(overrides.placement ? { placement: overrides.placement } : {}),
+    ...(overrides.delivery ? { delivery: overrides.delivery } : {}),
     parts: [{ type: 'text', text: 'say hi' }],
     overrides: { agent: 'build', model: null, variant: null, directory: '/workspace' },
   });
@@ -2092,5 +2098,134 @@ describe('editing a queued prompt — the queue list pencil', () => {
     expect(await editInboxPrompt(SESSION_ID, automation.commandId, 'x')).toEqual({
       outcome: 'missing',
     });
+  });
+});
+
+describe('steering (R10)', () => {
+  const PROMPTER = crypto.randomUUID();
+  const OTHER = crypto.randomUUID();
+  const TURN_ID = 'msg_000000000001SteerTurnPrompt';
+  const STEER_ID = 'msg_000000000005SteerMessageAa';
+  const activeTurn = {
+    'turn-s': { token: 'turn-s', state: 'active', opencodeSessionId: 'ses_root', messageId: TURN_ID, startedAtMs: 1 },
+  };
+  let capabilities: string[] | null = ['runtime.turns.v1', 'session.steer'];
+  // The live gate with one stub: the box's `/kortix/health` capabilities.
+  const admit = (row: SessionLifecycleCommandRow) =>
+    admitInboxPrompt(row, {
+      ...liveInboxAdmissionDeps,
+      steer: { ...liveInboxAdmissionDeps.steer!, capabilities: async () => capabilities },
+    });
+
+  /** The running turn: the prompter's prompt, forwarded, and its active record. */
+  async function runningTurn() {
+    const prompt = await enqueue('s_turn', { wireMessageId: TURN_ID, actorUserId: PROMPTER, clientSentAtMs: Date.now() - 60_000 });
+    await markCommandForwarded(await hold(prompt), SESSION_ID, TURN_ID);
+    await setBox('active', activeTurn);
+  }
+  /** A steer row, claimed the way the drain claims it. */
+  async function claimedSteer(clientMessageId: string, actorUserId: string, wireMessageId = STEER_ID, sentAt = Date.now()) {
+    const row = await enqueue(clientMessageId, {
+      wireMessageId, actorUserId, delivery: 'steer', placement: 'composer', clientSentAtMs: sentAt,
+    });
+    const lease = await hold(row);
+    return { ...row, status: 'running' as const, lockedBy: lease.lockedBy };
+  }
+
+  beforeEach(() => {
+    capabilities = ['runtime.turns.v1', 'session.steer'];
+  });
+
+  test('the enqueue stores delivery and the derived placement; the view serves them', async () => {
+    await enqueue('s_view', { delivery: 'steer', placement: 'composer' });
+    const [listed] = await listInboxPrompts(SESSION_ID, 200);
+    expect(listed.payload).toMatchObject({ delivery: 'steer', placement: 'composer' });
+  });
+
+  test("the turn's prompter steers into the live turn, past an older Queue List row", async () => {
+    await runningTurn();
+    await enqueue('s_older_queue', {
+      wireMessageId: 'msg_000000000002OlderQueueRowAa', placement: 'composer', delivery: 'queue',
+      actorUserId: PROMPTER, clientSentAtMs: Date.now() - 30_000,
+    });
+    const steer = await claimedSteer('s_steer', PROMPTER);
+    expect(await admit(steer)).toEqual({ admit: true, steerInto: TURN_ID });
+    expect((await readRow(steer.commandId)).payload).toMatchObject({ delivery: 'steer' });
+  });
+
+  test('a steer waits for an OLDER steer row still pending', async () => {
+    await runningTurn();
+    await enqueue('s_first', {
+      wireMessageId: 'msg_000000000003FirstSteerRowAa', delivery: 'steer', placement: 'composer',
+      actorUserId: PROMPTER, clientSentAtMs: Date.now() - 10_000,
+    });
+    const second = await claimedSteer('s_second', PROMPTER);
+    expect(await admit(second)).toMatchObject({ admit: false, reason: 'older_prompt_pending' });
+    expect((await readRow(second.commandId)).payload).toMatchObject({ delivery: 'steer' });
+  });
+
+  test("another member's steer falls back to queue (not_prompter) and waits for the turn", async () => {
+    await runningTurn();
+    const steer = await claimedSteer('s_other', OTHER);
+    expect(await admit(steer)).toMatchObject({ admit: false, reason: 'turn_active' });
+    expect((await readRow(steer.commandId)).payload).toMatchObject({
+      delivery: 'queue', steerFallback: 'not_prompter', placement: 'composer',
+    });
+  });
+
+  test('a runtime without session.steer falls back unsupported, written once', async () => {
+    await runningTurn();
+    capabilities = ['runtime.turns.v1'];
+    const steer = await claimedSteer('s_unsupported', PROMPTER);
+    expect(await admit(steer)).toMatchObject({ admit: false, reason: 'turn_active' });
+    expect((await readRow(steer.commandId)).payload).toMatchObject({ delivery: 'queue', steerFallback: 'unsupported' });
+    // Once a queue row, always a queue row: a later admission writes nothing.
+    capabilities = ['runtime.turns.v1', 'session.steer'];
+    await admit({ ...steer, payload: (await readRow(steer.commandId)).payload as Record<string, unknown> });
+    expect((await readRow(steer.commandId)).payload).toMatchObject({ steerFallback: 'unsupported' });
+  });
+
+  test('steer_read closes the forwarded steer row as delivered', async () => {
+    await runningTurn();
+    const steer = await claimedSteer('s_read', PROMPTER);
+    await markCommandForwarded(steer, SESSION_ID, STEER_ID, { steeredIntoMessageId: TURN_ID });
+    expect((await readRow(steer.commandId)).result).toMatchObject({
+      status: 'forwarded', forwarded_message_id: STEER_ID, steered_into_message_id: TURN_ID,
+    });
+    expect(await confirmInboxPromptConsumed(SESSION_ID, STEER_ID)).toBe('confirmed');
+    expect((await readRow(steer.commandId)).result).toMatchObject({ status: 'delivered', steered_into_message_id: TURN_ID });
+  });
+
+  test('a turn end that names the steered message closes the turn the steer went into', async () => {
+    await runningTurn();
+    const steer = await claimedSteer('s_end', PROMPTER);
+    await markCommandForwarded(steer, SESSION_ID, STEER_ID, { steeredIntoMessageId: TURN_ID });
+    const identity = { runtimeSessionId: 'ses_root', messageId: STEER_ID };
+    expect((await completeSandboxTurn(SESSION_ID, 'idle', identity)).outcome).toBe('identity_mismatch');
+    expect(await steerTargetAtTurnEnd(SESSION_ID, STEER_ID)).toBe(TURN_ID);
+    expect((await readRow(steer.commandId)).result).toMatchObject({ status: 'delivered' });
+    expect((await completeSandboxTurn(SESSION_ID, 'idle', { ...identity, messageId: TURN_ID })).outcome).toBe('closed');
+    // No steer row names an ordinary message.
+    expect(await steerTargetAtTurnEnd(SESSION_ID, TURN_ID)).toBeNull();
+  });
+
+  test('"Stop and send" turns a queued row into Quick Queue; a row on its way is a 409', async () => {
+    const queued = await enqueue('s_interrupt', { delivery: 'queue', placement: 'composer' });
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET result = '{"admission_reason": "turn_active", "admission_refusals": 3}'::jsonb,
+             available_at = now() + interval '1 hour'
+       WHERE command_id = ${queued.commandId}::uuid`);
+    const converted = await interruptInboxPrompt(SESSION_ID, queued.commandId);
+    expect(converted.outcome).toBe('edited');
+    const after = await readRow(queued.commandId);
+    expect(after.payload).toMatchObject({ delivery: 'interrupt', placement: 'transcript', remintOnDelivery: true });
+    expect(after.result).toEqual({ promoted: true });
+    expect(promptState({ status: 'queued', result: after.result as Record<string, unknown> }).state).toBe('queued');
+
+    const forwarded = await enqueue('s_interrupt_fwd', { wireMessageId: 'msg_000000000009ForwardedRowAaa' });
+    await markCommandForwarded(await hold(forwarded), SESSION_ID, 'msg_000000000009ForwardedRowAaa');
+    expect(await interruptInboxPrompt(SESSION_ID, forwarded.commandId)).toEqual({ outcome: 'delivering' });
+    expect(await interruptInboxPrompt(SESSION_ID, crypto.randomUUID())).toEqual({ outcome: 'missing' });
   });
 });

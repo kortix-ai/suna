@@ -262,3 +262,86 @@ describe('boundaryWaitDecision — the bounded fallback for a silent interrupt',
     });
   });
 });
+
+describe('steer admission (R10)', () => {
+  const ACTOR = 'user-a';
+  const steerRow = (overrides: Partial<SessionLifecycleCommandRow> = {}) =>
+    row({
+      actorUserId: ACTOR,
+      payload: { text: 'also check the tests', delivery: 'steer', placement: 'composer', wireMessageId: 'msg_steer' },
+      ...overrides,
+    });
+  type Box = { status: string; metadata: Record<string, unknown>; externalId: string };
+  const liveBox = async (): Promise<Box> => ({ status: 'active', metadata: { activeTurns: activeTurn('t1') }, externalId: 'box-1' });
+  function steerDeps(over: {
+    capabilities?: string[] | null;
+    prompter?: string | null;
+    olderSteer?: boolean;
+    olderQueue?: boolean;
+    sandbox?: typeof liveBox;
+  } = {}) {
+    const fallbacks: string[] = [];
+    const deps = {
+      readSandbox: over.sandbox ?? liveBox,
+      hasInFlightPrompt: async () => false,
+      hasOlderPendingPrompt: async () => over.olderQueue ?? false,
+      steer: {
+        capabilities: async () => (over.capabilities === undefined ? ['session.steer'] : over.capabilities),
+        turnPrompter: async (_s: string, messageId: string) => {
+          expect(messageId).toBe('msg_1');
+          return over.prompter === undefined ? ACTOR : over.prompter;
+        },
+        hasOlderSteerPrompt: async () => over.olderSteer ?? false,
+        recordFallback: async (_r: SessionLifecycleCommandRow, reason: string) => {
+          fallbacks.push(reason);
+        },
+      },
+    };
+    return { deps, fallbacks };
+  }
+
+  test('the prompter steers into the live turn, past an older Queue List row', async () => {
+    const { deps, fallbacks } = steerDeps({ olderQueue: true });
+    expect(await admitInboxPrompt(steerRow(), deps)).toEqual({ admit: true, steerInto: 'msg_1' });
+    expect(fallbacks).toEqual([]);
+  });
+
+  test('an older steer row still pending holds it, without a fallback', async () => {
+    const { deps, fallbacks } = steerDeps({ olderSteer: true });
+    expect(await admitInboxPrompt(steerRow(), deps)).toMatchObject({ admit: false, reason: 'older_prompt_pending' });
+    expect(fallbacks).toEqual([]);
+  });
+
+  test('a runtime without session.steer falls back to queue for good and waits for the turn', async () => {
+    const { deps, fallbacks } = steerDeps({ capabilities: ['runtime.turns.v1'] });
+    expect(await admitInboxPrompt(steerRow(), deps)).toMatchObject({ admit: false, reason: 'turn_active' });
+    expect(fallbacks).toEqual(['unsupported']);
+  });
+
+  test("another member's turn falls back not_prompter; a turn with no inbox row too", async () => {
+    for (const prompter of ['user-b', null]) {
+      const { deps, fallbacks } = steerDeps({ prompter });
+      expect(await admitInboxPrompt(steerRow(), deps)).toMatchObject({ admit: false, reason: 'turn_active' });
+      expect(fallbacks).toEqual(['not_prompter']);
+    }
+  });
+
+  test('an unreadable capability list or a turn still being delivered waits and stays steer', async () => {
+    const unreadable = steerDeps({ capabilities: null });
+    expect(await admitInboxPrompt(steerRow(), unreadable.deps)).toMatchObject({ admit: false, reason: 'turn_active' });
+    const delivering = steerDeps({
+      sandbox: async () => ({
+        status: 'active',
+        metadata: { activeTurns: { t1: { token: 't1', state: 'delivering', opencodeSessionId: 'ses_1', messageId: 'msg_1', startedAtMs: 1 } } },
+        externalId: 'box-1',
+      }),
+    });
+    expect(await admitInboxPrompt(steerRow(), delivering.deps)).toMatchObject({ admit: false, reason: 'turn_active' });
+    expect([...unreadable.fallbacks, ...delivering.fallbacks]).toEqual([]);
+  });
+
+  test('with no live turn a steer row is an ordinary prompt: it starts a turn', async () => {
+    const { deps } = steerDeps({ sandbox: async () => ({ status: 'active', metadata: {}, externalId: 'box-1' }) });
+    expect(await admitInboxPrompt(steerRow(), deps)).toEqual({ admit: true });
+  });
+});

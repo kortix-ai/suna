@@ -12,6 +12,8 @@ export interface SSEStreamOptions {
   onEvent?: (event: string, data: string) => void;
   onOpen?: () => void;
   onError?: (error: Error) => void;
+  /** The server ended the stream cleanly. Not called on `close()` or an error. */
+  onClose?: () => void;
   signal?: AbortSignal;
 }
 
@@ -39,12 +41,14 @@ export function createSSEStream(options: SSEStreamOptions): SSEStream {
     onEvent,
     onOpen,
     onError,
+    onClose,
     signal: externalSignal,
   } = options;
 
   const listeners = new Map<string, Set<(data: string) => void>>();
   let abortController: AbortController | null = null;
   let closed = false;
+  let lastEventId = '';
 
   function emit(event: string, data: string) {
     onEvent?.(event, data);
@@ -61,10 +65,14 @@ export function createSSEStream(options: SSEStreamOptions): SSEStream {
 
   async function connect() {
     if (closed) return;
-    abortController = new AbortController();
-    const signal = externalSignal
-      ? AbortSignal.any([abortController.signal, externalSignal])
-      : abortController.signal;
+    const attempt = new AbortController();
+    abortController = attempt;
+    // `AbortSignal.any` is missing on React Native and older Safari. Link by hand.
+    if (externalSignal) {
+      if (externalSignal.aborted) attempt.abort();
+      else externalSignal.addEventListener('abort', () => attempt.abort(), { once: true });
+    }
+    const signal = attempt.signal;
 
     try {
       const headers: Record<string, string> = {
@@ -74,6 +82,7 @@ export function createSSEStream(options: SSEStreamOptions): SSEStream {
       if (method !== 'GET' && body !== undefined) {
         headers['Content-Type'] = 'application/json';
       }
+      if (lastEventId) headers['Last-Event-ID'] = lastEventId;
       const response = await fetch(url, {
         method,
         headers,
@@ -91,29 +100,49 @@ export function createSSEStream(options: SSEStreamOptions): SSEStream {
       const decoder = new TextDecoder();
       let buffer = '';
       let currentEvent = 'message';
-      let currentData = '';
+      let dataLines: string[] = [];
+
+      const processLine = (line: string) => {
+        if (line === '') {
+          // An event with no `data:` dispatches nothing but still ends the frame.
+          if (dataLines.length > 0) emit(currentEvent, dataLines.join('\n'));
+          currentEvent = 'message';
+          dataLines = [];
+          return;
+        }
+        if (line.startsWith(':')) return; // comment
+        const colon = line.indexOf(':');
+        const field = colon === -1 ? line : line.slice(0, colon);
+        let value = colon === -1 ? '' : line.slice(colon + 1);
+        if (value.startsWith(' ')) value = value.slice(1);
+        if (field === 'event') currentEvent = value.trim() || 'message';
+        else if (field === 'data') dataLines.push(value);
+        else if (field === 'id' && !value.includes('\0')) lastEventId = value;
+      };
+      // Lines end in CRLF, LF or a lone CR. A chunk may end between CR and LF:
+      // hold a trailing CR back until the next chunk shows whether an LF follows.
+      const consume = (final: boolean) => {
+        let held = '';
+        if (!final && buffer.endsWith('\r')) {
+          held = '\r';
+          buffer = buffer.slice(0, -1);
+        }
+        const lines = buffer.split(/\r\n|\n|\r/);
+        buffer = (lines.pop() ?? '') + held;
+        for (const line of lines) processLine(line);
+      };
 
       while (!closed) {
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-        for (const line of lines) {
-          if (line === '') {
-            if (currentData) {
-              emit(currentEvent, currentData.trimEnd());
-              currentEvent = 'message';
-              currentData = '';
-            }
-          } else if (line.startsWith('event: ')) {
-            currentEvent = line.slice(7).trim();
-          } else if (line.startsWith('data: ')) {
-            currentData += (currentData ? '\n' : '') + line.slice(6);
-          } else if (line.startsWith('data:')) {
-            currentData += (currentData ? '\n' : '') + line.slice(5);
-          }
-        }
+        consume(false);
+      }
+      if (!closed) {
+        buffer += decoder.decode();
+        consume(true);
+        // A frame cut off at end of stream is incomplete: the spec discards it.
+        onClose?.();
       }
     } catch (cause) {
       if (closed) return;

@@ -63,6 +63,15 @@ export function useMfa() {
 
   const startEnrollMutation = useMutation({
     mutationFn: async () => {
+      // An unverified factor is an enrollment someone walked away from (a
+      // closed tab, a reload). It can never sign anyone in, and it holds the
+      // friendly name the new one wants, so clear it before starting over.
+      const { data: listed } = await supabase.auth.mfa.listFactors();
+      for (const stale of listed?.all ?? []) {
+        if (stale.factor_type === 'totp' && stale.status === 'unverified') {
+          await supabase.auth.mfa.unenroll({ factorId: stale.id });
+        }
+      }
       const { data, error } = await supabase.auth.mfa.enroll({
         factorType: 'totp',
         friendlyName: `Authenticator (${new Date().toISOString().slice(0, 10)})`,
@@ -115,9 +124,17 @@ export function useMfa() {
 
   const cancelEnroll = () => {
     // Abandoning enrollment leaves an unverified factor behind — clean it up
-    // so the list doesn't accumulate ghosts.
-    if (enrolling) removeFactorMutation.mutate(enrolling.factorId);
+    // so the list doesn't accumulate ghosts. Silently: the person cancelled,
+    // they did not remove a factor, so no "Factor removed" toast. A failed
+    // cleanup is harmless — the next enrollment clears unverified factors.
+    if (enrolling) {
+      void supabaseMFAService
+        .unenrollFactor(enrolling.factorId)
+        .catch(() => {})
+        .finally(() => queryClient.invalidateQueries({ queryKey: MFA_FACTORS_QUERY_KEY }));
+    }
     setEnrolling(null);
+    setEnrollCode('');
   };
 
   return {

@@ -3,8 +3,11 @@ import { createHash } from 'node:crypto';
 
 // Prompt delivery is the one MUTATING call on the sandbox proxy: POSTing the
 // same body twice to opencode enqueues the user's message twice (the 3x-queued
-// bug). opencode has no idempotency of its own, so the proxy must never re-send
-// a prompt body it may already have delivered. This tiny in-memory cache records
+// bug). opencode does not refuse a repeated messageID. The daemon does, on both
+// harnesses (pi from its persisted transcript, OpenCode by reading the message
+// OpenCode persisted), but only for boxes whose daemon has that check (R9.4,
+// 2026-10-06) and only when the request carries a messageID. This cache stays
+// the replica-local first line and the only line for older daemons. It records
 // each prompt delivery by its Idempotency-Key, its wire messageID, or a
 // content-hash fallback (see `promptDeliveryKey`'s precedence) so a duplicate
 // inbound request — a client resend, a queued-command retry after a wake, or
@@ -31,7 +34,7 @@ import { createHash } from 'node:crypto';
  * path list happened to double as "is this non-idempotent" — so adding an
  * endpoint to one concern silently meant opting into the other, and forgetting
  * to meant opting out of every safety guard at once. Env sync keeps its own
- * predicate in `routes/preview.ts`; this one answers only "may the proxy send
+ * predicate in `pre-prompt-env-sync.ts`; this one answers only "may the proxy send
  * this body twice?".
  */
 export function isNonIdempotentSessionWrite(
@@ -111,12 +114,12 @@ export function deliveryKeyIdentifiesOneSubmission(key: string): boolean {
 // `DEDUPE_TTL_MS >= UNDELIVERED_PROMPT_STARVATION_MS`; deriving one from the
 // other makes that an invariant instead of a comment two files have to stay
 // in sync by hand. `session-lifecycle` already imports from `sandbox-proxy`
-// (session-lifecycle/runtime-client.ts -> `../../sandbox-proxy/routes/preview`), so this follows the
+// (session-lifecycle/runtime-client.ts -> `../../sandbox-proxy/forward`), so this follows the
 // SAME existing module-boundary direction rather than opening a new one.
 export const DEDUPE_TTL_MS = 10 * 60_000;
 const MAX_ENTRIES = 2_000;
 
-// replica-local: a retry on another replica is caught by the daemon, which dedupes admitted prompts.
+// replica-local: a retry on another replica is caught by the daemon's messageID check (both harnesses, daemons with R9.4); older daemons have none.
 const seen = new Map<string, number>(); // key -> expiresAt (ms epoch)
 
 // Map preserves insertion order, so the oldest entries live at the front: trim
@@ -142,7 +145,8 @@ function evict(now: number): void {
  *     `/message` from the SDK). This is the DURABLE identity: the id is the
  *     one thing about a prompt that survives its body being re-serialized,
  *     because opencode persists the user message under exactly the id the
- *     sender supplies and refuses a second message under the same id.
+ *     sender supplies. opencode itself does not refuse a second message under
+ *     the same id; the daemon does (see the header).
  *
  *     The original rationale here — "opencode is the arbiter of 'has this
  *     already been answered?' BY ID ORDER" — is no longer true everywhere:

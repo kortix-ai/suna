@@ -87,6 +87,9 @@ mock.module('../runtime-client', () => ({
   // mock stays complete for the import chain, never called on this path.
   removeStrandedOpencodeMessage: async () => false,
   PromptNeverLandedError: class PromptNeverLandedError extends Error {},
+  SteerNotTaken: class SteerNotTaken extends Error {
+    name = 'SteerNotTaken';
+  },
   postPrompt: async () => {
     throw new Error('not expected: a refused row never delivers');
   },

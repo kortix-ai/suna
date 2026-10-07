@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { interpretAcquireResult, runsSingletonWorkers, shouldDemote } from '../shared/leader-election';
+import { interpretAcquireResult, runsSingletonWorkers, shouldDemote, withTimeout } from '../shared/leader-election';
 
 const ME = 'host-123-abc';
 const OTHER = 'host-999-xyz';
@@ -96,5 +96,17 @@ describe('runsSingletonWorkers (dead-weight-leader guard)', () => {
 
   test('only literal "false" disables a flag — "0"/"no"/"" still count as on', () => {
     expect(runsSingletonWorkers({ KORTIX_TRIGGER_SCHEDULER_ENABLED: '0' })).toBe(true);
+  });
+});
+
+describe('withTimeout (a hung lease query must not hide an expired lease)', () => {
+  test('resolves with the work result when it settles in time', async () => {
+    expect(await withTimeout(Promise.resolve(7), 1_000)).toBe(7);
+  });
+
+  test('rejects and cancels the work when it never settles', async () => {
+    let cancelled = false;
+    await expect(withTimeout(new Promise(() => {}), 20, () => (cancelled = true))).rejects.toThrow('timed out after 20ms');
+    expect(cancelled).toBe(true);
   });
 });

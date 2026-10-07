@@ -1002,7 +1002,7 @@ describe('SessionPage message queue', () => {
   const inboxPosts = () =>
     fetchCalls.filter((c) => c.method === 'POST' && c.url.endsWith('/projects/proj-1/sessions/ps-1/prompts'));
 
-  test('a queued message goes to the server inbox in order with the composer overrides', async () => {
+  test('a message sent while the agent works steers the running turn', async () => {
     await renderPage();
     const options = { agent: 'builder', model: { providerID: 'prov', modelID: 'mod' }, variant: 'high' };
     await act(async () => {
@@ -1010,7 +1010,9 @@ describe('SessionPage message queue', () => {
       await composerProps.onEnqueue('second', {});
     });
     expect(inboxPosts().map((c) => (c.body as any).parts[0].text)).toEqual(['first', 'second']);
+    // `steer` keeps `placement: 'composer'`: an older API reads it as a queued row.
     expect(inboxPosts()[0].body).toMatchObject({
+      delivery: 'steer',
       placement: 'composer',
       overrides: { agent: 'builder', model: { providerID: 'prov', modelID: 'mod' }, variant: 'high' },
     });
@@ -1388,6 +1390,39 @@ describe('SessionPage render work', () => {
     seedTurns(['one']);
     await renderPage();
     expect(heroMounted()).toBe(false);
+  });
+
+  test('pauses the working turn motion while its row is scrolled out of the viewport', async () => {
+    const user = userMsg('one');
+    seedRows([user, assistantMsg('partial', user.info.id)]);
+    runtimeValue = { ...runtimeValue, isBusy: true };
+    await renderPage();
+    const working = () => turnProps.findLast((p) => p.isWorkingTurn);
+    const id = user.info.id;
+    expect(working().onScreen).toBe(true);
+    expect(listProps.viewabilityConfig).toEqual({ itemVisiblePercentThreshold: 1 });
+    const handler = listProps.onViewableItemsChanged;
+    await act(async () => handler({ viewableItems: [] }));
+    expect(working().onScreen).toBe(false);
+    expect(listProps.onViewableItemsChanged).toBe(handler);
+    await act(async () => handler({ viewableItems: [{ key: id }] }));
+    expect(working().onScreen).toBe(true);
+  });
+
+  test('a new working turn below the viewport stays paused without a new viewability event', async () => {
+    const first = userMsg('one');
+    seedRows([first, assistantMsg('done', first.info.id)]);
+    await renderPage();
+    await act(async () => listProps.onViewableItemsChanged({ viewableItems: [{ key: first.info.id }] }));
+    const next = userMsg('two');
+    runtimeValue = { ...runtimeValue, isBusy: true };
+    await act(async () => {
+      appendMessages([next, assistantMsg('partial', next.info.id)]);
+      await sleep(15);
+    });
+    const working = turnProps.findLast((p) => p.isWorkingTurn);
+    expect(working.turn.userMessage.info.id).toBe(next.info.id);
+    expect(working.onScreen).toBe(false);
   });
 
   test('a stream delta and a new runtime object keep renderItem and Stop, and a stranded prompt stays interrupted', async () => {

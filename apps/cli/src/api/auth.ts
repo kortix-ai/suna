@@ -77,6 +77,16 @@ export function loadAuth(): Auth | null {
   return host ? hostToAuth(host) : null;
 }
 
+/**
+ * The token the config store holds now for the host `auth` names, or null when
+ * the active host differs. A long-lived local proxy calls it per request, so a
+ * `kortix login` in another terminal reaches it without a restart.
+ */
+export function currentTokenFor(auth: Auth): string | null {
+  const stored = loadAuth();
+  return stored && sameApiBase(stored.api_base, auth.api_base) ? stored.token : null;
+}
+
 /** Load a specific named host's auth (for --host overrides). */
 export function loadAuthForHost(name: string): Auth | null {
   const host = getHost(name);

@@ -16,6 +16,7 @@ import { makeOpenApiApp, json, errors, auth } from '../../openapi';
 import {
   refundLlmReservation,
   reserveEstimatedLlmCredits,
+  settleHeldLlmReservation,
   settleLlmReservation,
 } from '../services/llm-reservation';
 import { KORTIX_MARKUP } from '../../config';
@@ -159,8 +160,7 @@ llm.openapi(
         route: '/v1/router/chat/completions',
         logPrefix: 'LLM router stream billing',
         sessionId,
-        noUsageWarning: `[LLM] Stream ${modelId}: no usage data found in stream — billing skipped`,
-        noUsageRefund: `LLM router reservation refund after missing stream usage: ${modelId}`,
+        noUsageWarning: `[LLM] Stream ${modelId}: no usage data found in stream — settling at the held amount`,
         errorRefund: `LLM router reservation refund after stream usage error: ${modelId}`,
         scanErrorLog: '[LLM] Error extracting usage from stream for billing:',
         refundFailedLog: '[LLM] LLM router reservation refund failed:',
@@ -230,10 +230,17 @@ llm.openapi(
         `[LLM] ${modelId}: ${usage.promptTokens}/${usage.completionTokens} tokens${cacheInfo}, cost=$${cost.toFixed(6)}`,
       );
     } else {
-      await refundLlmReservation(
+      await settleHeldLlmReservation({
         reservation,
-        `LLM router reservation refund after missing usage: ${modelId}`,
-      );
+        accountId,
+        modelId,
+        actor,
+        logPrefix: 'LLM router billing',
+        provider: 'openrouter',
+        route: '/v1/router/chat/completions',
+        upstreamStatus: response.status,
+        sessionId,
+      });
     }
 
     return c.json(responseBody);

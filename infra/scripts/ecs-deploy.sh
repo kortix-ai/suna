@@ -13,7 +13,9 @@
 #                 [--database-migrated] [--no-wait] [--wait-for serving|stable]
 #                 [--dry-run]
 #
-#   env        dev | staging | prod | prod-use2-shadow
+#   env        dev | staging | prod | prod-use2-shadow | dev-use2 | staging-euw2
+#              (dev-use2 and staging-euw2 are the region-consolidation stacks:
+#              infra/terraform/environments/dev-us-east-2 and staging-eu-west-2)
 #   image      full image ref to pin, e.g. kortix/kortix-api:dev-481dc551
 #   --version  explicit KORTIX_VERSION to stamp into the task-def env. When
 #              omitted, it is DERIVED from the image tag if the tag is a clean
@@ -131,7 +133,23 @@ gateway_target_for_env() {
     staging) printf '%s' 'https://gateway-staging-ecs-fargate.kortix.com' ;;
     prod) printf '%s' 'https://gateway-ecs-fargate.kortix.com' ;;
     prod-use2-shadow) printf '%s' 'https://gateway-use2-shadow.kortix.com' ;;
+    dev-use2) printf '%s' 'https://gateway-dev-use2.kortix.com' ;;
+    staging-euw2) printf '%s' 'https://gateway-staging-euw2.kortix.com' ;;
     *) echo "unknown gateway environment: $1" >&2; return 2 ;;
+  esac
+}
+
+# Sets REGION, SERVICE_PREFIX (cluster/service name stem) and SECRET_NAME.
+configure_env_coordinates() {
+  case "$1" in
+    dev)              REGION="us-west-2"; SERVICE_PREFIX="kortix-dev";          SECRET_NAME="kortix-dev-env" ;;
+    staging)          REGION="us-west-2"; SERVICE_PREFIX="kortix-staging";      SECRET_NAME="kortix-staging-env" ;;
+    prod)             REGION="eu-west-2"; SERVICE_PREFIX="kortix-prod";         SECRET_NAME="kortix-prod-env" ;;
+    prod-use2-shadow) REGION="us-east-2"; SERVICE_PREFIX="kortix-prod-use2";    SECRET_NAME="kortix-prod-us-east-2-env" ;;
+    # Same secret name as dev/staging, a separate copy in the stack's region.
+    dev-use2)         REGION="us-east-2"; SERVICE_PREFIX="kortix-dev-use2";     SECRET_NAME="kortix-dev-env" ;;
+    staging-euw2)     REGION="eu-west-2"; SERVICE_PREFIX="kortix-staging-euw2"; SECRET_NAME="kortix-staging-env" ;;
+    *) echo "unknown env: $1" >&2; return 2 ;;
   esac
 }
 
@@ -489,29 +507,7 @@ esac
 [ -n "$VERSION_OVERRIDE" ] || VERSION_OVERRIDE="$(derive_version_from_image "$IMAGE")"
 
 # ── per-environment coordinates ──────────────────────────────────────────────
-case "$ENV" in
-  dev)
-    REGION="us-west-2"
-    SERVICE_PREFIX="kortix-dev"
-    SECRET_NAME="kortix-dev-env"
-    ;;
-  staging)
-    REGION="us-west-2"
-    SERVICE_PREFIX="kortix-staging"
-    SECRET_NAME="kortix-staging-env"
-    ;;
-  prod)
-    REGION="eu-west-2"
-    SERVICE_PREFIX="kortix-prod"
-    SECRET_NAME="kortix-prod-env"
-    ;;
-  prod-use2-shadow)
-    REGION="us-east-2"
-    SERVICE_PREFIX="kortix-prod-use2"
-    SECRET_NAME="kortix-prod-us-east-2-env"
-    ;;
-  *) echo "unknown env: $ENV" >&2; exit 2 ;;
-esac
+configure_env_coordinates "$ENV" || exit 2
 
 if [ "$DRY_RUN" != "1" ] \
   && { [ "$ENV" = "prod" ] || [ "$ENV" = "prod-use2-shadow" ]; } \

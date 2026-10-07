@@ -1,10 +1,16 @@
 import { sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
-import { and, eq, inArray, ne, sql } from 'drizzle-orm';
+import type { RuntimeCapability } from '@kortix/api-contract/runtime-relay';
+import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { sandboxOpencodeEndpoint } from '../opencode-mapping';
 import { RUNNING_SANDBOX_STATUSES, storedSandboxTurns, type StoredSandboxTurn } from '../session-turn-ledger';
 import { inboxFollowsRow, inboxPrecedesRow } from './inbox-order';
 import { reconcileInboxTurn } from './inbox-turn-recovery';
+import { runtimeCapabilities } from './runtime-fetch';
 import type { InboxAdmissionReason, SessionLifecycleCommandRow } from './store';
+import { recordSteerFallback } from './command-transitions';
+import { notHeldSql } from './delivery-state';
+import { wireMessageIdMatches } from './wire-id-match';
 
 /**
  * The inbox's admission gate.
@@ -81,7 +87,8 @@ function admissionRefusals(result: unknown): number {
  *  written into `result.admission_reason` and served as `GET .../prompts`'
  *  `reason`, where a second value may well appear again. */
 export type InboxAdmission =
-  | { admit: true }
+  /** `steerInto`: post to `/steer`; the running turn of that message reads it. */
+  | { admit: true; steerInto?: string }
   | {
       admit: false;
       reason: InboxAdmissionReason;
@@ -135,11 +142,13 @@ export interface InboxAdmissionDeps {
    *  authority `sessionHoldsTurnAuthority` reads. */
   readSandbox: (
     sessionId: string,
-  ) => Promise<{ status: string; metadata: Record<string, unknown> | null } | null>;
+  ) => Promise<{ status: string; metadata: Record<string, unknown> | null; externalId?: string | null } | null>;
   hasOlderPendingPrompt: (sessionId: string, row: SessionLifecycleCommandRow) => Promise<boolean>;
   /** Is another prompt of this session ALREADY CLAIMED and mid-delivery?
    *  Separate from the ordering read because it binds even a promoted row. */
   hasInFlightPrompt: (sessionId: string, exceptCommandId: string) => Promise<boolean>;
+  /** The reads a `steer` row needs. Absent: a steer row is admitted as a queue row. */
+  steer?: SteerAdmissionDeps;
 }
 
 /**
@@ -226,11 +235,27 @@ export function newestStoredTurn(turns: StoredSandboxTurn[]): StoredSandboxTurn 
   return newest;
 }
 
-const liveDeps: InboxAdmissionDeps = {
+export interface SteerAdmissionDeps {
+  /** `/kortix/health` `capabilities` of the box; null when the read failed. */
+  capabilities: (externalId: string | null | undefined, actorUserId: string | null) => Promise<string[] | null>;
+  /** The actor of the inbox row the running turn's message id names; null when no row does. */
+  turnPrompter: (sessionId: string, messageId: string) => Promise<string | null>;
+  /** An OLDER steer row of the session is queued or claimed (not held). */
+  hasOlderSteerPrompt: (sessionId: string, row: SessionLifecycleCommandRow) => Promise<boolean>;
+  recordFallback: (row: SessionLifecycleCommandRow, reason: 'unsupported' | 'not_prompter') => Promise<void>;
+}
+
+const STEER_CAPABILITY: RuntimeCapability = 'session.steer';
+
+export const liveInboxAdmissionDeps: InboxAdmissionDeps = {
   reconcileTurn: reconcileInboxTurn,
   async readSandbox(sessionId) {
     const [box] = await db
-      .select({ status: sessionSandboxes.status, metadata: sessionSandboxes.metadata })
+      .select({
+        status: sessionSandboxes.status,
+        metadata: sessionSandboxes.metadata,
+        externalId: sessionSandboxes.externalId,
+      })
       .from(sessionSandboxes)
       .where(eq(sessionSandboxes.sessionId, sessionId))
       .limit(1);
@@ -248,7 +273,7 @@ const liveDeps: InboxAdmissionDeps = {
           // A HELD row is deliberately out of the line — the user stopped it.
           // Counting it would wedge every prompt they send afterwards behind a
           // row that is, by construction, never due.
-          sql`COALESCE(${sessionLifecycleCommands.result}->>'held', '') <> 'true'`,
+          notHeldSql,
           inboxPrecedesRow(row),
           // Explicitly not itself. The tuple predicate already excludes this
           // row, but a row that blocks on itself waits for ever if a concurrent
@@ -274,11 +299,96 @@ const liveDeps: InboxAdmissionDeps = {
       .limit(1);
     return !!running;
   },
+  steer: {
+    capabilities: (externalId, actorUserId) =>
+      runtimeCapabilities(externalId ?? undefined, () =>
+        sandboxOpencodeEndpoint(externalId!, actorUserId ?? undefined)),
+    async turnPrompter(sessionId, messageId) {
+      const [prompt] = await db
+        .select({ actorUserId: sessionLifecycleCommands.actorUserId })
+        .from(sessionLifecycleCommands)
+        .where(
+          and(
+            eq(sessionLifecycleCommands.sessionId, sessionId),
+            eq(sessionLifecycleCommands.commandType, 'continue_session'),
+            wireMessageIdMatches(messageId),
+          ),
+        )
+        .orderBy(desc(sessionLifecycleCommands.createdAt))
+        .limit(1);
+      return prompt?.actorUserId ?? null;
+    },
+    async hasOlderSteerPrompt(sessionId, row) {
+      const [older] = await db
+        .select({ commandId: sessionLifecycleCommands.commandId })
+        .from(sessionLifecycleCommands)
+        .where(
+          and(
+            eq(sessionLifecycleCommands.sessionId, sessionId),
+            eq(sessionLifecycleCommands.commandType, 'continue_session'),
+            inArray(sessionLifecycleCommands.status, ['queued', 'running']),
+            notHeldSql,
+            sql`${sessionLifecycleCommands.payload}->>'delivery' = 'steer'`,
+            inboxPrecedesRow(row),
+            ne(sessionLifecycleCommands.commandId, row.commandId),
+          ),
+        )
+        .limit(1);
+      return !!older;
+    },
+    recordFallback: (row, reason) => recordSteerFallback(row, reason),
+  },
 };
+
+/**
+ * A `steer` row and a running turn (R10). Admitted as a steer when the turn
+ * is one active turn with a message id, the runtime lists `session.steer`,
+ * the row's actor is the turn's prompter (D9.3), and no OLDER steer row is
+ * pending or in flight. Older Queue List rows do not block a steer.
+ *
+ * - A failed capability or prompter check falls back to `queue` for good
+ *   (`recordFallback`) and returns `fallback`: the caller continues with the
+ *   queue gate.
+ * - A turn still being delivered, an unreadable capability list, or an older
+ *   steer row: the row waits and stays `steer`.
+ */
+async function admitSteer(
+  row: SessionLifecycleCommandRow,
+  sandbox: { metadata: Record<string, unknown> | null; externalId?: string | null } | null,
+  steer: SteerAdmissionDeps,
+  retryAfterMs: number,
+): Promise<InboxAdmission | 'fallback'> {
+  const turns = storedSandboxTurns(sandbox?.metadata);
+  // Same fragile pattern the queue interrupt had: one entry that outlived its
+  // end relay would make exactly-one fail and silently park the steer behind
+  // the whole run. The newest entry is the turn that is running.
+  const active = newestStoredTurn(turns);
+  if (active?.state !== 'active' || !active.messageId) {
+    return { admit: false, reason: 'turn_active', retryAfterMs };
+  }
+  const sessionId = row.sessionId!;
+  const [capabilities, prompter, olderSteer] = await Promise.all([
+    steer.capabilities(sandbox?.externalId, row.actorUserId),
+    steer.turnPrompter(sessionId, active.messageId),
+    steer.hasOlderSteerPrompt(sessionId, row),
+  ]);
+  if (capabilities === null) return { admit: false, reason: 'turn_active', retryAfterMs };
+  const fallback = !capabilities.includes(STEER_CAPABILITY)
+    ? 'unsupported'
+    : !row.actorUserId || prompter !== row.actorUserId
+      ? 'not_prompter'
+      : null;
+  if (fallback) {
+    await steer.recordFallback(row, fallback);
+    return 'fallback';
+  }
+  if (olderSteer) return { admit: false, reason: 'older_prompt_pending', retryAfterMs };
+  return { admit: true, steerInto: active.messageId };
+}
 
 export async function admitInboxPrompt(
   row: SessionLifecycleCommandRow,
-  deps: InboxAdmissionDeps = liveDeps,
+  deps: InboxAdmissionDeps = liveInboxAdmissionDeps,
 ): Promise<InboxAdmission> {
   // A row with no session cannot be ordered or gated. Admit it so the drain
   // reaches its own honest failure instead of requeueing it for ever.
@@ -313,6 +423,16 @@ export async function admitInboxPrompt(
   // an interrupt at the next tool boundary, but it is still never forwarded
   // into that turn: the terminal relay admits it as its own turn afterward.
   let sandbox = await sandboxRead;
+  const payload = row.payload as { delivery?: unknown; wireMessageId?: unknown } | null;
+  if (
+    deps.steer &&
+    payload?.delivery === 'steer' &&
+    typeof payload.wireMessageId === 'string' &&
+    sessionHoldsTurnAuthority(sandbox)
+  ) {
+    const steered = await admitSteer(row, sandbox, deps.steer, orderBackoffMs);
+    if (steered !== 'fallback') return steered;
+  }
   if (sessionHoldsTurnAuthority(sandbox)) {
     // Only the head may reconcile or arm an interrupt. Quick Queue sorts ahead
     // of every Queue List row (`inbox-order.ts`), so its head arms the
@@ -392,7 +512,7 @@ export async function hasLaterReleasedSibling(row: SessionLifecycleCommandRow): 
         eq(sessionLifecycleCommands.sessionId, row.sessionId),
         eq(sessionLifecycleCommands.commandType, 'continue_session'),
         inArray(sessionLifecycleCommands.status, ['queued', 'running']),
-        sql`COALESCE(${sessionLifecycleCommands.result}->>'held', '') <> 'true'`,
+        notHeldSql,
         sql`${sessionLifecycleCommands.payload}->>'releasedBatchId' = ${batchId}`,
         inboxFollowsRow(row),
         ne(sessionLifecycleCommands.commandId, row.commandId),
