@@ -8,6 +8,7 @@ import {
   fail,
 } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
+import { sleep } from '@kortix/shared/guards';
 
 const HELP = help`Usage: kortix sessions wait-for <session-id> [options]
 
@@ -55,8 +56,6 @@ export function classifyWaitPoll(
 export function isAuthoritativelySettled(status: string): boolean {
   return status === 'completed';
 }
-
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export async function runSessionsWaitFor(argv: string[]): Promise<number> {
   const rest = [...argv];

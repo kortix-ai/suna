@@ -1208,7 +1208,6 @@ function selfHostStatus(flags: GlobalFlags): number {
       drift: report?.drift ?? null,
       lock: report?.lock ?? null,
     }, null, 2)}\n`);
-    compose(flags.instance, ['ps']);
     return 0;
   }
 

@@ -25,7 +25,7 @@ import {
   tokenRejectedLine,
 } from '../command-helpers.ts';
 import { appendGitExcludeEntries } from '../git-exclude.ts';
-import { authHeaderArgs } from '../git-ops.ts';
+import { authGitEnv } from '../git-ops.ts';
 import { configureProjectGitAuth, resolveProjectGitTarget } from '../project-git.ts';
 import {
   clearLink,
@@ -1118,12 +1118,16 @@ async function projectsClone(
     }
   }
 
-  const args = target.token
-    ? [...authHeaderArgs(target.repoUrl, target.token, target.username), 'clone', target.repoUrl]
-    : ['clone', target.repoUrl];
+  const args = ['clone', target.repoUrl];
   if (destination) args.push(destination);
 
-  const cloned = spawnSync('git', args, { stdio: 'inherit' });
+  const cloned = spawnSync('git', args, {
+    stdio: 'inherit',
+    // The token travels in the environment, never in argv (see `authGitEnv`).
+    env: target.token
+      ? { ...process.env, ...authGitEnv(target.repoUrl, target.token, target.username) }
+      : undefined,
+  });
   if (cloned.error) {
     process.stderr.write(`${status.err(`Could not start git: ${cloned.error.message}`)}\n`);
     return 1;
@@ -1352,7 +1356,8 @@ async function projectsInfo(arg?: string, json = false, hostArg?: string): Promi
   if (!located) return 1;
   const p = located.located.project;
   if (json) {
-    emitJson(p);
+    // The API's wire name for the id is `project_id`; scripts read `.id`.
+    emitJson({ id: p.project_id, ...p });
     return 0;
   }
   process.stdout.write('\n');

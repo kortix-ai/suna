@@ -53,6 +53,9 @@ export function bindSessionLifecycleSecurity(ctx: SessionBindingContext) {
       /** Replace a waiting prompt's text in place; sends nothing. */
       edit: (promptId: string, text: string) =>
         P.editSessionPrompt(ctx.projectId, ctx.sessionId, promptId, text),
+      /** "Stop and send": a waiting prompt becomes Quick Queue. */
+      interrupt: (promptId: string) =>
+        P.interruptSessionPrompt(ctx.projectId, ctx.sessionId, promptId),
       /** Hold (or release) the whole queue — what the Stop button writes. */
       hold: (held: boolean) => P.holdSessionPrompts(ctx.projectId, ctx.sessionId, held),
     },

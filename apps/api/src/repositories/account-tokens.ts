@@ -219,16 +219,37 @@ export async function createAccountToken(
   };
 }
 
-/** List tokens for an account. If `projectId` is provided, narrows to
- *  tokens scoped to that project (useful for the per-project token
- *  management UI). Never returns secret data. */
+/**
+ * List the account's LIVE tokens — the rows a `tokens ls`-style listing may
+ * still act on. If `projectId` is provided, narrows to tokens scoped to that
+ * project (the per-project token management surface). Never returns secret
+ * data.
+ *
+ * Dead rows are excluded by the predicate every other reader of this table
+ * applies (`validateAccountToken`, `updateLastUsedThrottled`):
+ * `status='active'` AND `revoked_at IS NULL`. The two columns are not tied by
+ * any DB constraint, so a row can be revoked with its `status` still reading
+ * active — the auth middleware refuses such a row (2026-09-26: the
+ * release-gate sweep's direct `UPDATE … SET revoked_at` left 186 session
+ * tokens authenticating). Listing one would offer an operator a row whose
+ * revoke answers 404 "token not found or already revoked", which is exactly
+ * the reported defect: `kortix tokens ls` kept listing session tokens their
+ * deleted sessions had already revoked, and revoking each 404'd.
+ *
+ * Deliberately NOT narrowed: `listPersonalAccountTokens` (`?mine=true`, a
+ * person's own settings page) keeps returning revoked keys as history,
+ * explicitly marked — a person sees what happened to their own keys.
+ */
 export async function listAccountTokens(
   accountId: string,
   projectId?: string,
 ): Promise<AccountTokenListEntry[]> {
-  const filter = projectId
-    ? and(eq(accountTokens.accountId, accountId), eq(accountTokens.projectId, projectId))
-    : eq(accountTokens.accountId, accountId);
+  const filter = and(
+    eq(accountTokens.accountId, accountId),
+    projectId ? eq(accountTokens.projectId, projectId) : undefined,
+    eq(accountTokens.status, 'active'),
+    isNull(accountTokens.revokedAt),
+  );
   return db
     .select({
       tokenId: accountTokens.tokenId,

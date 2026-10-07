@@ -382,6 +382,35 @@ export async function resumeStoppedSandboxByExternalId(externalId: string): Prom
   });
 }
 
+/**
+ * Stop reasons a keep-alive poll must never undo: the user pressed Stop, or
+ * Kortix's own idle policy parked the box. Only a provider-originated park
+ * (and a row with no reason) is worth waking from a poll.
+ */
+const DELIBERATE_STOP_REASONS: ReadonlySet<string> = new Set([
+  'manual',
+  'deadline_expired',
+  'run_cap',
+  'idle_grace',
+  'boot_floor_expired',
+  'wedged_backlog_remediation',
+]);
+
+/**
+ * `/start?keep_stopped=1` is the open tab's keep-alive poll. A tab left open
+ * must not wake a box the user stopped or the idle reaper parked: that kept
+ * boxes alive for as long as a tab stayed open. An ordinary open (no flag)
+ * is the explicit resume and always wakes.
+ */
+export function keepStoppedRefusesWake(
+  keepStopped: boolean | undefined,
+  row: { metadata: unknown } | undefined,
+): boolean {
+  if (!keepStopped) return false;
+  const reason = (row?.metadata as Record<string, unknown> | null | undefined)?.stopReason;
+  return typeof reason === 'string' && DELIBERATE_STOP_REASONS.has(reason);
+}
+
 export function isMissingRuntimeError(error: unknown): boolean {
   if (isProviderNotFound(error)) return true;
   // legacy: Daytona answers a start on a box whose container is gone with a

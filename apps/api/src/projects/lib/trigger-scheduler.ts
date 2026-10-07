@@ -1,5 +1,6 @@
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
+import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { isLeader } from '../../shared/leader-election';
 import { claimDueScheduleSlots, claimTriggerExecutions, markTriggerExecutionDispatched, markTriggerExecutionFailed, markTriggerExecutionSkipped, markTriggerExecutionSucceeded, type TriggerExecutionRow } from '../trigger-execution-store';
@@ -228,8 +229,14 @@ export async function drainTriggerExecutionQueue(
       workerId: `trigger-execution:${process.pid}:${now.getTime()}`,
       limit: triggerScheduleClaimLimit(),
     });
+    // A throw outside the execution's own try (the project read, the failure
+    // mark) must not reject the drain while sibling fires still run: the
+    // in-flight guard would clear under them.
     const outcomes = await mapWithConcurrency(rows, triggerExecutionConcurrency(), (row) =>
-      executeTriggerExecution(row),
+      executeTriggerExecution(row).catch((error): 'failed' => {
+        logger.error('[trigger-executions] execution threw', { executionId: row.executionId, error: error instanceof Error ? error.message : String(error) });
+        return 'failed';
+      }),
     );
     const result = { fired: 0, queued: 0, failed: 0, skipped: 0 };
     for (const outcome of outcomes) result[outcome] += 1;
