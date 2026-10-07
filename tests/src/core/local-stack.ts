@@ -678,6 +678,12 @@ export async function ensureLocalStack(
           SCHEDULER_ENABLED: "false",
           // OAU-7 replays a rotated refresh token after this window; keep it short.
           KORTIX_OAUTH_REFRESH_GRACE_MS: "2000",
+          // The api lane's MCP+OAU flows register OAuth clients from one test
+          // address and sit exactly on the register limiter's prod default
+          // (30/hour): 4 of 6 local runs failed 2-4 flows on a marginal 429,
+          // the failing flows differing per run. Prod keeps the 30 default
+          // (apps/api/src/oauth/index.ts); a local run raises the env.
+          KORTIX_OAUTH_REGISTER_PER_HOUR: "100000",
           KORTIX_TRIGGER_SCHEDULER_ENABLED: "false",
           KORTIX_WORKERS_ENABLED: "false",
           // The App deploy route kicks its worker directly, so the general
