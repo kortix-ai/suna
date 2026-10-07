@@ -5,16 +5,18 @@
  * `projects/lib/turn-start-convergence.ts` reads it, and putting it in either
  * of those closes an import cycle through `config-releases/desired.ts` — which
  * bun resolves as `Cannot access 'dbConfigReleaseLedger' before initialization`
- * at module load, in every test file that touches the graph. It imports
- * nothing.
+ * at module load, in every test file that touches the graph. It imports only
+ * the shared `bumpBounded` helper.
  *
  * It is an OPTIMISATION, never an authority. A miss costs one convergence
  * attempt; it can never make a box look current when it is not, because the
  * only writer is a daemon's own report of what it serves.
  */
 
+import { bumpBounded } from '../shared/ttl-memo';
+
 /** How long the API trusts its last observation of what a box runs. */
-export const RUNNING_TTL_MS = 10 * 60_000;
+const RUNNING_TTL_MS = 10 * 60_000;
 const MAX_TRACKED_SESSIONS = 20_000;
 
 const runningReleases = new Map<string, { releaseId: string | null; at: number }>();
@@ -25,13 +27,7 @@ const runningReleases = new Map<string, { releaseId: string | null; at: number }
  * reload, or a convergence answer.
  */
 export function noteRunningRelease(sessionId: string, releaseId: string | null): void {
-  if (runningReleases.size >= MAX_TRACKED_SESSIONS) {
-    // A Map preserves insertion order, so this evicts the oldest entry.
-    const oldest = runningReleases.keys().next();
-    if (!oldest.done) runningReleases.delete(oldest.value);
-  }
-  runningReleases.delete(sessionId);
-  runningReleases.set(sessionId, { releaseId, at: Date.now() });
+  bumpBounded(runningReleases, sessionId, { releaseId, at: Date.now() }, MAX_TRACKED_SESSIONS);
 }
 
 /** What the API last saw this box running, or `undefined` when it does not know. */

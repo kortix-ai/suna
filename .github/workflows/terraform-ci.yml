@@ -6,7 +6,7 @@ name: Terraform CI
 # variable TF_PLAN_ROLE_ARN is set, so it can't fail before that role is provisioned.
 
 on:
-  # A pull request into `main` runs no CI. Release pull requests are the gate.
+  # A pull request into `dev` runs no CI. Release pull requests are the gate.
   pull_request:
     branches: [staging, prod]
     paths:
@@ -52,7 +52,7 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: ${{ env.TF_VERSION }}
@@ -95,7 +95,7 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: terraform-linters/setup-tflint@1cf010d3c7aef302051ccdb68c14c5dc2efa34ef # v6.3.1
         with:
           tflint_version: v0.54.0
@@ -115,7 +115,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Checkov
         uses: bridgecrewio/checkov-action@444c9db6fa75e2d9c19ebf1fde7322089be9009e # v12.3125.0
         with:
@@ -146,7 +146,7 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # An unset role would silently skip the audit, which reads as a pass.
       # A control that cannot run must fail loudly instead.
       - name: require audit role
@@ -187,7 +187,7 @@ jobs:
           - infra/terraform/security-baseline
           - infra/terraform/compliance-monitoring
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Every environments/* root declares a `cloudflare` provider. Without a
       # token the provider fails to authenticate and the plan errors out before
       # it can report drift — which is how this job has been failing since
@@ -296,7 +296,7 @@ jobs:
           run_ids="$(
             gh api -X GET \
               "repos/${GITHUB_REPOSITORY}/actions/workflows/terraform-ci.yml/runs" \
-              -f branch=main -f per_page=15 \
+              -f branch=dev -f per_page=15 \
               --jq '.workflow_runs[] | select(.status == "completed") | .id'
           )"
           for id in $run_ids; do
@@ -315,7 +315,7 @@ jobs:
           done
 
           if [ "$newest" = "0" ]; then
-            echo "::error::No successful \`drift detection\` job in the last 15 terraform-ci runs on main. Drift detection is not running."
+            echo "::error::No successful \`drift detection\` job in the last 15 terraform-ci runs on dev. Drift detection is not running."
             exit 1
           fi
 

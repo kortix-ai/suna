@@ -3,8 +3,8 @@
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
+import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
 import { TextShimmer } from '@/components/ui/text-shimmer';
-import { prefersPreviewLink, safeHttpUrl } from '@kortix/shared';
 import {
   isShowContentUnavailable,
   isShowPayloadEmpty,
@@ -32,12 +32,15 @@ import {
   showDomain,
   ShowFileActions,
   showFileTypeIcon,
+  ShowHoverCard,
+  showHoverDetails,
   useServicePreview,
 } from '@/features/session/tool/shared/show-helpers';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
+import { prefersPreviewLink, safeHttpUrl } from '@kortix/shared';
 import { GlobeIcon as Globe } from '@phosphor-icons/react';
 import { createContext, type ReactNode, useContext, useMemo, useState } from 'react';
 
@@ -161,6 +164,27 @@ export function ShowTool({ part, sessionId }: ToolProps) {
     ? activeItemLabel || title || `${items!.length} items`
     : title || (type === 'error' ? 'Error' : type === 'url' ? subtitleDomain || 'Link' : 'Output');
 
+  const hoverTarget = {
+    path: activePath,
+    url: activeUrl,
+    title: activeTitle,
+  };
+
+  // While the app behind a website preview builds, binds or reconnects, the
+  // header shows the preview's own dot-matrix glyph in place of the desktop
+  // icon. The title or URL seeds it, so each preview keeps one glyph.
+  const startingIcon =
+    isWebsitePreview && preview.appStarting ? (
+      <SessionDotMatrix sessionId={preview.matrixSeed} size={14} className="shrink-0" />
+    ) : null;
+
+  // While the card's preview loads, every port tab shows its own glyph,
+  // seeded by that tab's title or URL.
+  const portTabIcon = (item: ShowCarouselItem) =>
+    parseLocalhostUrl(item.url || '') ? (
+      <SessionDotMatrix sessionId={item.title || item.url} size={14} className="shrink-0" />
+    ) : null;
+
   const headerIcon = isCarousel ? currentItem?.type || 'image' : isWebsitePreview ? 'url' : type;
 
   // Inline card header owns the toolbar. Panel keeps the actions inside the
@@ -226,29 +250,12 @@ export function ShowTool({ part, sessionId }: ToolProps) {
     // vanish — an invisible `show` reads as "the tool never ran". A quiet
     // one-line note keeps the action in the transcript without resurrecting
     // the big "File not found" card this gate was built to avoid (#3966).
-    const fallbackHref = safeHttpUrl(activeUrl);
     body = (
-      <div
-        className={cn(
-          'text-muted-foreground flex items-center gap-2 px-4 py-3 text-xs',
-          fill && 'h-full items-center justify-center',
-        )}
-      >
-        <span className="truncate">
-          {tHardcodedUi.raw('i18nComplete.textb99fa6c06150')}
-          {displayTitle ? ` — ${displayTitle}` : ''}
-        </span>
-        {fallbackHref && (
-          <a
-            href={fallbackHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-foreground/70 hover:text-foreground shrink-0 underline underline-offset-2"
-          >
-            {tHardcodedUi.raw('i18nComplete.textaab63f85c7f1')}
-          </a>
-        )}
-      </div>
+      <ShowUnavailableNote
+        isWebsitePreview={isWebsitePreview}
+        href={isWebsitePreview ? null : safeHttpUrl(activeUrl)}
+        fill={fill}
+      />
     );
   } else {
     body = (
@@ -331,18 +338,26 @@ export function ShowTool({ part, sessionId }: ToolProps) {
             activeIndex={activeIndex}
             onSelect={setCarouselIndex}
             label={title}
+            tabIcon={startingIcon ? portTabIcon : undefined}
           />
         ) : (
-          <div className="text-foreground flex min-w-0 items-center gap-2 px-1 text-xs [&>svg]:size-4">
-            {(running && !type && !items) || currentItem?.status === 'pending' ? (
-              <Loading className="text-muted-foreground size-4 shrink-0" />
-            ) : (
-              showFileTypeIcon(headerIcon, activePath || undefined, undefined, activeUrl)
-            )}
-            <span className="min-w-0 truncate" title={displayTitle}>
-              {displayTitle}
-            </span>
-          </div>
+          <ShowHoverCard target={hoverTarget}>
+            <div className="text-foreground flex min-w-0 cursor-pointer items-center gap-2 px-1 text-xs [&>svg]:size-4">
+              {(running && !type && !items) || currentItem?.status === 'pending' ? (
+                <Loading className="text-muted-foreground size-4 shrink-0" />
+              ) : (
+                (startingIcon ??
+                showFileTypeIcon(headerIcon, activePath || undefined, undefined, activeUrl))
+              )}
+              {/* No native `title` when the hover card already names the target. */}
+              <span
+                className="min-w-0 truncate"
+                title={showHoverDetails(hoverTarget) ? undefined : displayTitle}
+              >
+                {displayTitle}
+              </span>
+            </div>
+          </ShowHoverCard>
         )}
         {inlineToolbar ? (
           <div className="flex shrink-0 items-center gap-1">{inlineToolbar}</div>
@@ -352,5 +367,51 @@ export function ShowTool({ part, sessionId }: ToolProps) {
     </div>
   );
 }
+
+/**
+ * The row a `show` keeps when its artifact did not load. A website preview
+ * names its target in the card header already, and the header owns refresh,
+ * so the row states the outcome and the next step. A plain link keeps
+ * "Open link": it is the only way to the target.
+ */
+export function ShowUnavailableNote({
+  isWebsitePreview,
+  href,
+  fill = false,
+}: {
+  isWebsitePreview: boolean;
+  href: string | null;
+  fill?: boolean;
+}) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  return (
+    <div
+      className={cn(
+        'flex flex-col items-start gap-0.5 px-3 py-3 text-xs',
+        fill && 'h-full justify-center px-6',
+      )}
+    >
+      <span className="text-foreground font-medium">
+        {tHardcodedUi.raw('i18nComplete.textb99fa6c06150')}
+      </span>
+      {isWebsitePreview ? (
+        <span className="text-muted-foreground">
+          {tHardcodedUi.raw('i18nComplete.showPreviewUnavailableHint')}
+        </span>
+      ) : null}
+      {href && (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-muted-foreground hover:text-foreground decoration-border mt-1 underline underline-offset-2 transition-colors hover:decoration-current"
+        >
+          {tHardcodedUi.raw('i18nComplete.textaab63f85c7f1')}
+        </a>
+      )}
+    </div>
+  );
+}
+
 ToolRegistry.register('show', ShowTool);
 ToolRegistry.register('show-user', ShowTool);

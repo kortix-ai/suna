@@ -48,13 +48,13 @@ let ctl: string
 let lifecycle: Opencode | null
 
 const ENV_KEYS = [
-  'KORTIX_COMPILED_RUNTIME_FORMAT',
   'KORTIX_CONTINUATION_DISABLED',
   'KORTIX_LLM_PROXY_URL',
   'KORTIX_LLM_CATALOG_FILE',
   'KORTIX_LLM_BASE_URL',
   'KORTIX_TOKEN',
   'KORTIX_RUNTIME_STATE_DIR',
+  'KORTIX_BAKED_LLM_CATALOG_PATH',
 ] as const
 const savedEnv = new Map<string, string | undefined>()
 
@@ -344,16 +344,13 @@ describe('spawn and readiness', () => {
   }, 90_000)
 
   test('the spawn env carries the Kortix-managed values over conflicting inputs', async () => {
-    // Compiled boot: the binary embeds a models snapshot; a remote refresh is
-    // network contention. Passive continuation is a platform decision a
-    // project or daemon env value cannot turn back on.
-    process.env.KORTIX_COMPILED_RUNTIME_FORMAT = 'kortix.compiled-runtime.v1'
+    // Passive continuation is a platform decision a project or daemon env
+    // value cannot turn back on.
     process.env.KORTIX_CONTINUATION_DISABLED = 'false'
     const r = rig()
     const pid = await startReady(r)
 
     expect(spawnEnv(pid)).toMatchObject({
-      OPENCODE_DISABLE_MODELS_FETCH: '1',
       KORTIX_CONTINUATION_DISABLED: '1',
     })
   }, 30_000)
@@ -790,6 +787,9 @@ describe('agent .md model refs', () => {
   function useGateway(): void {
     process.env.KORTIX_LLM_PROXY_URL = 'http://127.0.0.1:9/v1'
     process.env.KORTIX_LLM_CATALOG_FILE = join(root, 'no-catalog.json')
+    // A Kortix sandbox carries the image's own baked catalog at the default
+    // baked path; hide it so this rig pins the no-catalog registration set.
+    process.env.KORTIX_BAKED_LLM_CATALOG_PATH = join(root, 'no-baked-catalog.json')
   }
 
   test('gateway mode routes every .md model through kortix, after the config dir', async () => {
@@ -882,6 +882,9 @@ describe('a model a turn names', () => {
     process.env.KORTIX_LLM_BASE_URL = `http://127.0.0.1:${gateway.port}/v1`
     process.env.KORTIX_TOKEN = 'kortix_pat_test'
     process.env.KORTIX_LLM_CATALOG_FILE = join(root, 'no-catalog.json')
+    // A Kortix box bakes the real catalog at the well-known path; it must not
+    // answer for the absent file above (its model defs would beat the listing).
+    process.env.KORTIX_BAKED_LLM_CATALOG_PATH = join(root, 'no-baked-catalog.json')
     process.env.KORTIX_RUNTIME_STATE_DIR = join(root, 'state')
     resetManagedModelsStateForTests()
     return gateway

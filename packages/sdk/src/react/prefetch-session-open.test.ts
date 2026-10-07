@@ -3,7 +3,7 @@ import { QueryClient } from '@tanstack/react-query';
 
 import { configureKortix } from '../core/http/config';
 import { claimOpenBundle, resetSessionOpenBundles } from '../core/session/open-bundle';
-import { prefetchSessionOpen, resetSessionOpenPrefetches } from './prefetch-session-open';
+import { prefetchSessionOpen, prefetchedSessionCount, resetSessionOpenPrefetches } from './prefetch-session-open';
 import { qk } from './query-keys';
 
 /**
@@ -93,4 +93,21 @@ describe('prefetchSessionOpen', () => {
     await expect(prefetchSessionOpen(client, 'P1', 'S1')).resolves.toBeUndefined();
     client.clear();
   });
+});
+
+test('the prefetch ledger drops entries whose suppression window has passed (04#11)', async () => {
+  mockFetch();
+  const realNow = Date.now;
+  let now = 1_000_000;
+  Date.now = () => now;
+  try {
+    const queryClient = new QueryClient();
+    for (let i = 0; i < 300; i++) await prefetchSessionOpen(queryClient, 'P1', `S${i}`);
+    expect(prefetchedSessionCount()).toBe(300);
+    now += 60_000; // every entry is now past the 30 s window
+    await prefetchSessionOpen(queryClient, 'P1', 'S-new');
+    expect(prefetchedSessionCount()).toBeLessThan(10);
+  } finally {
+    Date.now = realNow;
+  }
 });

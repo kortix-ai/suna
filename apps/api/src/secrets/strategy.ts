@@ -262,10 +262,19 @@ export interface OutboundRequestShape {
 function hostMatches(pattern: string, host: string): boolean {
   if (!pattern.startsWith('*.')) return pattern === host;
   const suffix = pattern.slice(1); // ".example.com"
-  // A single wildcard label: `*.a.com` matches `b.a.com`, NOT `a.com` itself and
-  // NOT `evil-a.com`. Requiring the dot is what stops
-  // `api.anthropic.com.attacker.tld` from satisfying `*.anthropic.com`.
-  return host.endsWith(suffix) && host.length > suffix.length;
+  // A single wildcard label: `*.a.com` matches EXACTLY ONE deeper label
+  // (`b.a.com`), NOT `a.com` itself, NOT `evil-a.com`, and NOT a host two or
+  // more labels deeper (`a.b.a.com`) — on a delegated or multi-tenant zone
+  // those deeper labels are DNS the policy author never declared, and TLS
+  // certificate semantics refuse them for a single-label wildcard too.
+  // Requiring the dot is what stops `api.anthropic.com.attacker.tld` from
+  // satisfying `*.anthropic.com`; requiring the same label count is what
+  // stops the deeper host.
+  return (
+    host.endsWith(suffix) &&
+    host.length > suffix.length &&
+    host.split('.').length === suffix.split('.').length
+  );
 }
 
 function pathMatches(pattern: string | undefined, path: string): boolean {

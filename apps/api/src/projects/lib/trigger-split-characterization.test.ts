@@ -19,7 +19,7 @@ describe('trigger split characterization', () => {
 
   test('webhook payload keeps parsed body and selected headers', async () => {
     const app = new Hono();
-    app.post('/', (c) => c.json(webhookPayload(c, '{"event":"synthetic"}')));
+    app.post('/', (c) => c.json(webhookPayload((name) => c.req.header(name), '{"event":"synthetic"}')));
     const response = await app.request('/', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'user-agent': 'synthetic-agent' },

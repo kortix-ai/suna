@@ -106,7 +106,7 @@ mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   acceptSandboxTurn: async () => true,
   abandonSandboxTurn: async () => true,
 }));
-mock.module('../../projects/routes/shared', () => ({
+mock.module('../../projects/session-open', () => ({
   resumeStoppedSandboxByExternalId: async (externalId: string) => {
     counts.resumeStopped += 1;
     return Boolean(externalId);
@@ -289,6 +289,27 @@ describe('forwardToSandbox refusal branches', () => {
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: 'not found' });
     expect(fetchCalls).toBe(0);
+  });
+
+  test('an encoded spelling of /kortix/env or the base reset is refused like the plain one', async () => {
+    const env = await forward({ method: 'POST', path: '/kortix/%65nv', port: 8000, body: bodyOf({ FOO: 'bar' }) });
+    expect(env.status).toBe(404);
+    const reset = await forward({ path: '/kortix/r%65fresh', query: '?base=1', port: 8000 });
+    expect(reset.status).toBe(403);
+    expect(fetchCalls).toBe(0);
+  });
+
+  test('an ambiguous path on the daemon port is a 400; an app port keeps its escapes', async () => {
+    for (const path of ['/kortix/a%2Fb', '/kortix/%zz', '/kortix/%2e%2e/env']) {
+      const res = await forward({ path, port: 8000 });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'invalid request path', code: 'INVALID_PATH' });
+    }
+    expect(fetchCalls).toBe(0);
+    recordingFetch(new Response('app', { status: 200 }));
+    const app = await forward({ path: '/a%2Fb', port: 3000 });
+    expect(app.status).toBe(200);
+    expect(String(lastFetch?.url)).toContain('/a%2Fb');
   });
 
   test('the destructive base reset is refused with its code; a plain refresh is not', async () => {
@@ -597,11 +618,13 @@ describe('forwardToSandbox authentication failures', () => {
     expect(await retry.json()).not.toEqual({ status: 'duplicate', deduplicated: true });
   });
 
-  // pi (and OpenCode's boot steps) refuse with another text, and a W6 daemon
-  // adds `code: runtime_not_ready`. Both must release the claim too.
-  for (const [name, body] of [
-    ['the daemon text of a pi runtime', '{"error":"sandbox runtime not ready","phase":"starting"}'],
-    ['the runtime_not_ready code', '{"code":"runtime_not_ready","error":"starting","phase":"starting"}'],
+  // pi (and OpenCode's boot steps) refuse with another text, a W6 daemon adds
+  // `code: runtime_not_ready`, and every daemon names its boot phase in
+  // `X-Kortix-Boot-Phase`. Each must release the claim on its own.
+  for (const [name, body, headers] of [
+    ['the daemon text of a pi runtime', '{"error":"sandbox runtime not ready","phase":"starting"}', {}],
+    ['the runtime_not_ready code', '{"code":"runtime_not_ready","error":"starting","phase":"starting"}', {}],
+    ['only the boot-phase header', '{"error":"starting"}', { 'X-Kortix-Boot-Phase': 'opencode-starting' }],
   ] as const) {
     test(`a not-ready 503 with ${name} passes through and releases the dedupe claim`, async () => {
       const args = {
@@ -611,7 +634,7 @@ describe('forwardToSandbox authentication failures', () => {
         body: bodyOf({ parts: [{ type: 'text', text: 'hi' }] }),
         headers: jsonHeaders({ 'idempotency-key': `nr-${name}` }),
       } as const;
-      queueFetch(new Response(body, { status: 503 }));
+      queueFetch(new Response(body, { status: 503, headers }));
       const first = await forward(args);
       expect(first.status).toBe(503);
       expect(await first.text()).toBe(body);
@@ -622,6 +645,22 @@ describe('forwardToSandbox authentication failures', () => {
       expect(await retry.json()).not.toEqual({ status: 'duplicate', deduplicated: true });
     });
   }
+
+  test('a 503 that only mentions "not ready" in an unrelated body keeps the claim', async () => {
+    const args = {
+      method: 'POST',
+      path: '/session/sess-1/message',
+      port: 8000,
+      body: bodyOf({ parts: [{ type: 'text', text: 'hi' }] }),
+      headers: jsonHeaders({ 'idempotency-key': 'nr-ambiguous' }),
+    } as const;
+    queueFetch(new Response('{"error":"gateway not ready","code":"upstream_unavailable"}', { status: 503 }));
+    expect((await forward(args)).status).toBe(503);
+
+    // The runtime may hold the message: the retry dedupes instead of re-sending.
+    const retry = await forward(args);
+    expect(await retry.json()).toEqual({ status: 'duplicate', deduplicated: true });
+  });
 });
 
 // ── redirects, CORS, cookies — originMode vs the path form ───────────────────

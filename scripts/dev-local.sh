@@ -116,6 +116,12 @@ ensure_dev_tunnel() {
   local api_origin="http://localhost:${api_port}"
   local default_provider="${ALLOWED_SANDBOX_PROVIDERS%%,*}"
 
+  # Callers below (the watchdog and the supervised API loop) read
+  # TUNNEL_URL_FILE on every dev run: every exit path leaves the current
+  # callback URL on disk — the quick-tunnel URL when we manage one, else the
+  # effective KORTIX_URL itself (a preset URL or the localhost skip path).
+  TUNNEL_URL_FILE="${TUNNEL_URL_FILE:-$(mktemp -t kortix-tunnel-url.XXXXXX)}"
+
   # Respect an explicit public KORTIX_URL (named tunnel, staging API, …) — but
   # only if it actually ANSWERS. FAA: a stale/bogus value (e.g. a dead quick-
   # tunnel URL or a leftover like https://api.trycloudflare.com baked into .env)
@@ -126,6 +132,7 @@ ensure_dev_tunnel() {
   if [[ -n "${KORTIX_URL:-}" && "$KORTIX_URL" != http://localhost:* && "$KORTIX_URL" != http://127.0.0.1:* ]]; then
     if curl -fsS -m 6 "${KORTIX_URL%/}/health" >/dev/null 2>&1; then
       echo "[dev] Using KORTIX_URL from environment: $KORTIX_URL"
+      printf '%s' "$KORTIX_URL" > "$TUNNEL_URL_FILE"
       return 0
     fi
     echo "[dev] ⚠️  KORTIX_URL=$KORTIX_URL is set but UNREACHABLE (sandboxes would get a dead callback URL → blank session UI) — ignoring it and starting a fresh tunnel."
@@ -136,6 +143,7 @@ ensure_dev_tunnel() {
   # Honor an explicit opt-out too.
   if [[ "${KORTIX_DEV_TUNNEL:-auto}" == "0" || ( "$default_provider" != "daytona" && "$default_provider" != "platinum" ) ]]; then
     export KORTIX_URL="$api_origin"
+    printf '%s' "$api_origin" > "$TUNNEL_URL_FILE"
     echo "[dev] Tunnel skipped — KORTIX_URL=$KORTIX_URL"
     if [[ "$default_provider" == "daytona" ]]; then
       echo "[dev] ⚠️  Default sandbox provider is Daytona (cloud) but the tunnel is off —"
@@ -178,7 +186,6 @@ ensure_dev_tunnel() {
   fi
 
   export KORTIX_URL="$url"
-  TUNNEL_URL_FILE="${TUNNEL_URL_FILE:-$(mktemp -t kortix-tunnel-url.XXXXXX)}"
   printf '%s' "$url" > "$TUNNEL_URL_FILE"
   echo "[dev] ✅ Cloud sandbox callback ready: KORTIX_URL=$KORTIX_URL"
 }
@@ -370,6 +377,66 @@ ensure_deps() {
   if ! (cd "$ROOT_DIR" && pnpm install); then
     echo "[dev] ❌ pnpm install failed — fix the error above and re-run 'pnpm dev'." >&2
     exit 1
+  fi
+}
+
+# One session cookie for the route warmup, minted through the local Supabase
+# admin API: first user's email → magic-link hashed token → verify → the
+# compact base64url session blob the sb-kortix-auth-token cookie carries.
+# Every step is optional: an unset SUPABASE_SERVICE_ROLE_KEY or any failure
+# returns empty and warm_frontend_routes warms unauthed instead.
+mint_warm_cookie() {
+  [[ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ]] || return 0
+  local email
+  email="$(curl -s -m 5 "http://127.0.0.1:54321/auth/v1/admin/users?per_page=1" \
+    -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+    | python3 -c 'import json,sys; us=json.load(sys.stdin).get("users",[]); print(us[0]["email"] if us else "")' 2>/dev/null || true)"
+  [[ -n "$email" ]] || return 0
+  local ht
+  ht="$(curl -s -m 5 "http://127.0.0.1:54321/auth/v1/admin/generate_link" \
+    -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+    -H 'content-type: application/json' -d "{\"type\":\"magiclink\",\"email\":\"$email\"}" \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin).get("hashed_token",""))' 2>/dev/null || true)"
+  [[ -n "$ht" ]] || return 0
+  curl -s -m 5 "http://127.0.0.1:54321/auth/v1/verify" \
+    -H "apikey: ${SUPABASE_ANON_KEY:-${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}}" \
+    -H 'content-type: application/json' -d "{\"type\":\"magiclink\",\"token_hash\":\"$ht\"}" 2>/dev/null \
+    | python3 -c '
+import json, base64, sys
+d = json.load(sys.stdin)
+if "access_token" in d:
+    s = {"access_token": d["access_token"], "token_type": "bearer", "expires_in": d.get("expires_in", 3600),
+         "expires_at": d.get("expires_at", 9999999999), "refresh_token": d["refresh_token"], "user": d.get("user", {})}
+    print("base64-" + base64.urlsafe_b64encode(json.dumps(s, separators=(",", ":")).encode()).decode().rstrip("="))
+' 2>/dev/null || true
+}
+
+# Warm the heavy frontend routes in the background of `pnpm dev` so the FIRST
+# human navigation doesn't pay Turbopack's on-demand compile (measured:
+# /projects/[id] 16.1s, /projects/[id]/sessions/[sessionId] 5.2s — which read
+# as "creating a session takes 6+ seconds" when it was the ROUTE compiling,
+# not the sandbox). An UNAUTHED hit compiles the bundle but redirects before
+# the page's module graph ever evaluates — the first real (authed) navigation
+# then paid 4-6s of module eval anyway (measured: authed render #1 4.5s,
+# #2 0.28s) — so mint a real session and warm WITH it, falling back to
+# compile-only warming when no cookie can be minted. The header is a scalar
+# expanded with ${var:+…}, not an array: an empty array under set -u is fatal
+# on macOS bash 3.2 (the same class kill_dev_ports guards below), and it once
+# killed this warmup silently.
+warm_frontend_routes() {
+  local base="http://localhost:${WEB_PORT:-3000}"
+  until curl -sf -o /dev/null -m 2 "$base" 2>/dev/null; do sleep 2; done
+
+  local cookie="$(mint_warm_cookie)"
+  local auth_header=""
+  [[ -n "$cookie" ]] && auth_header="Cookie: sb-kortix-auth-token-${WEB_PORT:-3000}=$cookie"
+  for p in "/projects" "/projects/warmup-id" "/projects/warmup-id/sessions/warmup-id" "/projects/warmup-id/files"; do
+    curl -s -o /dev/null -m 120 ${auth_header:+-H "$auth_header"} "$base$p" || true
+  done
+  if [[ -n "$cookie" ]]; then
+    echo "[dev] ✅ frontend routes pre-rendered AUTHED — first navigation ~0.3s"
+  else
+    echo "[dev] ✅ frontend routes pre-compiled (unauthed — first navigation still pays module eval)"
   fi
 }
 
@@ -769,59 +836,14 @@ else
   FRONTEND_PID=$!
 
   # Pre-compile the heavy routes so the FIRST human navigation doesn't pay
-  # Turbopack's on-demand compile (measured: /projects/[id] 16.1s,
-  # /projects/[id]/sessions/[sessionId] 5.2s — which read as "creating a
-  # session takes 6+ seconds" when it was the ROUTE compiling, not the
-  # sandbox). Unauthenticated requests still compile the route bundle before
-  # the auth redirect, so dummy ids are fine.
-  (
-    until curl -sf -o /dev/null -m 2 "http://localhost:${WEB_PORT:-3000}" 2>/dev/null; do sleep 2; done
-    # An UNAUTHED hit compiles the bundle but redirects before the page's
-    # module graph ever evaluates — the first real (authed) navigation then
-    # paid 4-6s of module eval anyway (measured: authed render #1 4.5s,
-    # #2 0.28s). Mint a real session via the local supabase admin API and
-    # warm WITH it; falls back to unauthed compile-only warming.
-    WARM_COOKIE=""
-    if [[ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ]]; then
-      _email="$(curl -s -m 5 "http://127.0.0.1:54321/auth/v1/admin/users?per_page=1" \
-        -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
-        | python3 -c 'import json,sys; us=json.load(sys.stdin).get("users",[]); print(us[0]["email"] if us else "")' 2>/dev/null || true)"
-      if [[ -n "$_email" ]]; then
-        _ht="$(curl -s -m 5 "http://127.0.0.1:54321/auth/v1/admin/generate_link" \
-          -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
-          -H 'content-type: application/json' -d "{\"type\":\"magiclink\",\"email\":\"$_email\"}" \
-          | python3 -c 'import json,sys; print(json.load(sys.stdin).get("hashed_token",""))' 2>/dev/null || true)"
-        if [[ -n "$_ht" ]]; then
-          _anon="${SUPABASE_ANON_KEY:-${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}}"
-          curl -s -m 5 "http://127.0.0.1:54321/auth/v1/verify" -H "apikey: $_anon" \
-            -H 'content-type: application/json' -d "{\"type\":\"magiclink\",\"token_hash\":\"$_ht\"}" > /tmp/kortix-warm-session.json 2>/dev/null || true
-          WARM_COOKIE="$(python3 - <<'PYC' 2>/dev/null || true
-import json, base64
-d = json.load(open('/tmp/kortix-warm-session.json'))
-if 'access_token' in d:
-    s = {"access_token": d["access_token"], "token_type": "bearer", "expires_in": d.get("expires_in", 3600),
-         "expires_at": d.get("expires_at", 9999999999), "refresh_token": d["refresh_token"], "user": d.get("user", {})}
-    raw = json.dumps(s, separators=(',', ':'))
-    print('base64-' + base64.urlsafe_b64encode(raw.encode()).decode().rstrip('='))
-PYC
-)"
-          rm -f /tmp/kortix-warm-session.json
-        fi
-      fi
-    fi
-    _hdr=()
-    [[ -n "$WARM_COOKIE" ]] && _hdr=(-H "Cookie: sb-kortix-auth-token-${WEB_PORT:-3000}=$WARM_COOKIE")
-    for p in "/projects" "/projects/warmup-id" "/projects/warmup-id/sessions/warmup-id" "/projects/warmup-id/files"; do
-      curl -s -o /dev/null -m 120 "${_hdr[@]}" "http://localhost:${WEB_PORT:-3000}$p" || true
-    done
-    if [[ -n "$WARM_COOKIE" ]]; then
-      echo "[dev] ✅ frontend routes pre-rendered AUTHED — first navigation ~0.3s"
-    else
-      echo "[dev] ✅ frontend routes pre-compiled (unauthed — first navigation still pays module eval)"
-    fi
-  ) &
+  # Turbopack's on-demand compile. Unauthenticated requests still compile the
+  # route bundle before the auth redirect, so dummy ids are fine.
+  warm_frontend_routes &
 
-  start_tunnel_watchdog
+  # Only a quick tunnel this script started can rot and rotate — a preset
+  # KORTIX_URL or the localhost skip path never gets a watchdog (and never
+  # rotates, so the supervised loop below just runs the API once).
+  [[ -n "${TUNNEL_PID:-}" ]] && start_tunnel_watchdog
 
   echo "[dev] Starting API (supervised — auto-restarts on tunnel rotation)..."
   cd "$ROOT_DIR"

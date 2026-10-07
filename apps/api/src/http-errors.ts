@@ -13,7 +13,7 @@ import {
 } from './projects/git/mirror';
 import { resolvePrefixEscape } from './sandbox-proxy/prefix-escape';
 import { previewBaseDomain } from './sandbox-proxy/preview-hosts';
-import { deadCredentialLogDecision, isDeadCredential } from './shared/dead-credential-log';
+import { deadCredentialLogDecision, deadCredentialLogKey, isDeadCredential } from './shared/dead-credential-log';
 import { inspectDatabaseError } from './shared/database-errors';
 import { isDaytonaRateLimitError } from './shared/daytona-rate-limit';
 import { isDaytonaTransientProviderError } from './shared/daytona-transient';
@@ -25,7 +25,7 @@ import { isPlatinumSandboxNotRunningError } from './shared/platinum';
 function handleSandboxProxyAbort(err: Error, c: Context, errName: string, path: string): Response | null {
   // Suppress SSE/long-poll abort noise — these are expected timeouts on sandbox proxy,
   // not real errors. The client reconnects automatically.
-  const isAbort = errName === 'DOMException' || err.message?.includes('The operation was aborted');
+  const isAbort = errName === 'DOMException' || err.name === 'AbortError';
   const isSandboxProxy = path.includes('/p/') && path.includes('/global/event');
   if (isAbort && isSandboxProxy) {
     return c.json({ error: true, message: 'Request timeout', status: 504 }, 504);
@@ -257,7 +257,10 @@ function handleHttpException(err: HTTPException, c: Context, method: string, pat
     // the response; see shared/dead-credential-log.ts. Every other HTTPException
     // keeps its per-request line.
     if (isDeadCredential(err)) {
-      const { log, suppressed } = deadCredentialLogDecision(`${method} ${path.replace(/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}/gi, ':id')} ${err.status} ${reason}`, Date.now());
+      // The bucket key normalizes the route's and the reason's token ids out
+      // (deadCredentialLogKey), so KRTX-1564's named refusal cannot shard the
+      // window one bucket per token. The line itself keeps the id.
+      const { log, suppressed } = deadCredentialLogDecision(deadCredentialLogKey(method, path, err.status, reason), Date.now());
       if (log) appLogger.warn(line, { ...fields, suppressed });
     } else {
       appLogger[level](line, fields);

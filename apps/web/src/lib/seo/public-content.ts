@@ -1,13 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import type { Block } from '@/components/blog/blog-content';
 import { PRICING_PLANS } from '@/features/billing/pricing-plans';
 import { ROLES } from '@/features/marketing/solutions/registry';
-import { BLOG_POSTS } from '@/lib/blog-posts';
 import { CANONICAL_ORIGIN, siteMetadata } from '@/lib/site-metadata';
 
-export type PublicContentKind = 'marketing' | 'blog' | 'docs' | 'use-case';
+// The blog is not listed here: it is its own app (kortix-ai/marketing), served
+// at /blog through a next.config.ts rewrite, with its own sitemap, llms.txt and
+// Markdown twins under /blog. robots.txt and llms.txt point at them.
+export type PublicContentKind = 'marketing' | 'docs' | 'use-case';
 
 export type PublicContentRecord = {
   kind: PublicContentKind;
@@ -54,7 +55,6 @@ export const STATIC_PUBLIC_ROUTES = [
   '/agent-computer',
   '/agents-and-skills',
   '/automations',
-  '/blog',
   '/careers',
   '/changelog',
   '/channels',
@@ -87,14 +87,14 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   {
     kind: 'marketing',
     slug: 'contact',
-    title: 'Contact Kortix',
+    title: 'Contact sales and book a demo',
     description: 'Request a tailored Kortix walkthrough for cloud, VPC, or on-prem deployment.',
     htmlPath: '/contact',
   },
   {
     kind: 'marketing',
     slug: 'about',
-    title: 'About Kortix',
+    title: 'About',
     description:
       'Our mission: take a company from human to AGI, and let it keep every byte of itself on the way there.',
     htmlPath: '/about',
@@ -103,14 +103,14 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   {
     kind: 'marketing',
     slug: 'legal',
-    title: 'Kortix legal',
+    title: 'Legal',
     description: 'Kortix terms of service and privacy policy.',
     htmlPath: '/legal',
   },
   {
     kind: 'marketing',
     slug: 'marketplace',
-    title: 'Kortix Marketplace',
+    title: 'Marketplace: agents, skills and project templates',
     description:
       'Browse skills, agents, and commands from every source. Add them to a Kortix project in one click.',
     htmlPath: '/marketplace',
@@ -118,7 +118,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   {
     kind: 'marketing',
     slug: 'developers',
-    title: 'Kortix for developers',
+    title: 'Developers: CLI, SDK and API for AI agents',
     description:
       'Build with Kortix from the terminal: drive projects, sessions, and agents through the CLI and SDK, wire triggers and connectors, and land every change through a reviewed change request.',
     htmlPath: '/developers',
@@ -127,7 +127,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   {
     kind: 'marketing',
     slug: 'careers',
-    title: 'Careers at Kortix',
+    title: 'Careers',
     description:
       'Open positions at Kortix — Marketing / Content, Sales, FDE / Services, Product / Eng, Product / R&D. Belgrade, Serbia and San Francisco. We hire for prolonged ownership.',
     htmlPath: '/careers',
@@ -135,23 +135,15 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   {
     kind: 'marketing',
     slug: 'changelog',
-    title: 'Kortix Changelog',
+    title: 'Changelog',
     description:
       'Every Kortix release, straight from the source. New features, fixes, and improvements — versioned and dated.',
     htmlPath: '/changelog',
   },
   {
     kind: 'marketing',
-    slug: 'blog',
-    title: 'Kortix Blog',
-    description:
-      'Field notes on building, running, and governing AI agents that do real work — from the team building Kortix.',
-    htmlPath: '/blog',
-  },
-  {
-    kind: 'marketing',
     slug: 'use-cases',
-    title: 'Kortix Use Cases',
+    title: 'Use cases: AI agents doing real company work',
     description:
       'How teams put a workforce of AI agents to work — the loops they engineer, the deliverables they ship, and the reviewed changes that make the company better every day.',
     htmlPath: '/use-cases',
@@ -159,14 +151,14 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   {
     kind: 'marketing',
     slug: 'download',
-    title: 'Download Kortix',
+    title: 'Download the desktop app and CLI',
     description: 'Get Kortix for macOS, Windows, Linux, iOS, and Android.',
     htmlPath: '/download',
   },
   {
     kind: 'marketing',
     slug: 'enterprise',
-    title: 'Kortix Enterprise',
+    title: 'Enterprise AI agents: SSO, SCIM, audit, your VPC',
     description: PRICING_PLANS.find((plan) => plan.id === 'enterprise')?.note,
     htmlPath: '/enterprise',
     markdownPath: '/markdown/enterprise.md',
@@ -174,7 +166,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   {
     kind: 'marketing',
     slug: 'pricing',
-    title: 'Kortix pricing',
+    title: 'Pricing',
     description: 'Current plans and included features.',
     htmlPath: '/pricing',
     markdownPath: '/markdown/pricing.md',
@@ -182,7 +174,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   {
     kind: 'marketing',
     slug: 'support',
-    title: 'Kortix support',
+    title: 'Support',
     description:
       'Reach Kortix support by email or Discord, read the answers to the questions people ask most, and find the account deletion steps.',
     htmlPath: '/support',
@@ -196,7 +188,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   {
     kind: 'marketing',
     slug: 'agent-computer',
-    title: 'Kortix Agent Computer',
+    title: 'Agent Computer: a cloud computer per session',
     description:
       'Every Kortix session gets its own computer: an isolated Linux machine that clones your repo, cuts a branch named after the session, and runs OpenCode. Work lands through a change request a person approves.',
     htmlPath: '/agent-computer',
@@ -205,7 +197,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   {
     kind: 'marketing',
     slug: 'agents-and-skills',
-    title: 'Kortix Agents & Skills',
+    title: 'AI agents and skills as files in git',
     description:
       'A Kortix agent is a markdown persona with a deny-by-default reach into connectors, secrets and skills. A skill is the markdown that encodes how your company does one job. Both are files in your repo, versioned and reviewed.',
     htmlPath: '/agents-and-skills',
@@ -214,7 +206,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   {
     kind: 'marketing',
     slug: 'automations',
-    title: 'Kortix Automations',
+    title: 'AI agent automations on cron and webhooks',
     description:
       'Cron schedules and signed webhooks start Kortix sessions with nobody present. Each trigger names the agent it runs as, carries a prompt template, and lands its work through a change request a person approves.',
     htmlPath: '/automations',
@@ -223,7 +215,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   {
     kind: 'marketing',
     slug: 'channels',
-    title: 'Kortix Channels',
+    title: 'AI agents in Slack and Microsoft Teams',
     description:
       'Connect Slack or Microsoft Teams to a Kortix project and a message in a thread starts a session. The agent works on its own cloud computer and replies in the same thread. Email is in preview.',
     htmlPath: '/channels',
@@ -232,7 +224,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   {
     kind: 'marketing',
     slug: 'company-as-code',
-    title: 'Company as Code',
+    title: 'Company as Code: your company in one git repo',
     description:
       'A Kortix project is a git repo, and that repo is the company. kortix.yaml and the OpenCode config define it; agents, skills and memory are files beside your code. Every change is a commit a person approves.',
     htmlPath: '/company-as-code',
@@ -241,7 +233,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   {
     kind: 'marketing',
     slug: 'connectors',
-    title: 'Kortix connectors',
+    title: 'Connectors: 3,000+ apps for AI agents',
     description:
       'Connect 3,000+ apps, MCP servers, OpenAPI, GraphQL and raw HTTP once for the whole company. Agents reach them through one scoped token — credentials stay server-side, every action is allowed, gated, or blocked, and every call is logged.',
     htmlPath: '/connectors',
@@ -255,7 +247,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     // inside the session, readable by any command the agent runs,
     // and the default sandbox provider
     // is not a microVM. The narrower claims below are the true ones.
-    title: 'Kortix Security',
+    title: 'AI agent security: isolation, permissions, audit',
     description:
       'How Kortix is built to survive a security review: an isolated machine per session, connector credentials brokered server-side that never enter that machine, permissions for people and agents, human approval gates, and a change request between an agent and main.',
     htmlPath: '/security',
@@ -264,7 +256,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   {
     kind: 'marketing',
     slug: 'self-hosted',
-    title: 'Self-host Kortix',
+    title: 'Self-hosted AI agents on your infrastructure',
     description:
       'Run the same Kortix on your own box. One Docker Compose stack, the same images the managed cloud runs, your database and your files on disk you control. kortix self-host start, then kortix hosts use selfhost.',
     htmlPath: '/self-hosted',
@@ -280,7 +272,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   {
     kind: 'marketing',
     slug: 'solutions',
-    title: 'Kortix Solutions by role',
+    title: 'AI agents for every team',
     description:
       'One platform, eight teams with completely different work. What sales, marketing, product, engineering, finance, people, IT and data science can each hand off — and what comes back.',
     htmlPath: '/solutions',
@@ -610,23 +602,6 @@ function sourceDocuments(kind: 'docs' | 'use-case'): SourceDocument[] {
   });
 }
 
-function blogRecords(): PublicContentRecord[] {
-  const records: (PublicContentRecord & { lastModified: string })[] = [];
-  for (const post of BLOG_POSTS) {
-    if (process.env.NODE_ENV === 'production' && post.draft) continue;
-    records.push({
-      kind: 'blog' as const,
-      slug: post.slug,
-      title: post.title,
-      description: post.description,
-      htmlPath: `/blog/${post.slug}`,
-      markdownPath: `/markdown/blog/${post.slug}.md`,
-      lastModified: `${post.date}T00:00:00.000Z`,
-    });
-  }
-  return records.sort((a, b) => b.lastModified.localeCompare(a.lastModified));
-}
-
 export function areUseCasesPublic(): boolean {
   return process.env.NEXT_PUBLIC_USE_CASES_ENABLED !== 'false';
 }
@@ -637,52 +612,9 @@ export function getPublicContentRecords(
   const includeUseCases = options.includeUseCases ?? areUseCasesPublic();
   return [
     ...marketingRecordsWithTimestamps(),
-    ...blogRecords(),
     ...sourceDocuments('docs'),
     ...(includeUseCases ? sourceDocuments('use-case') : []),
   ];
-}
-
-function blocksToMarkdown(blocks: Block[]): string {
-  return blocks
-    .map((block) => {
-      switch (block.type) {
-        case 'lead':
-        case 'p':
-          return block.text;
-        case 'h2':
-          return `## ${block.text}`;
-        case 'ul':
-          return block.items.map((item) => `- ${item}`).join('\n');
-        case 'code':
-          return `\`\`\`\n${block.code}\n\`\`\``;
-        case 'callout':
-          return block.text
-            .split('\n')
-            .map((line) => `> ${line}`)
-            .join('\n');
-        case 'logos':
-          return `${block.label ? `${block.label}\n\n` : ''}${block.items
-            .map((item) => `- ${item.name} (${item.domain})`)
-            .join('\n')}`;
-        case 'verdict':
-          return `### Choose ${block.themLabel} if\n\n${block.them}\n\n### Choose Kortix if\n\n${block.kortix}`;
-        case 'compare': {
-          const escapeCell = (value: string) => value.replaceAll('|', '\\|').replaceAll('\n', ' ');
-          return [
-            `| Dimension | ${escapeCell(block.them)} | Kortix |`,
-            '| --- | --- | --- |',
-            ...block.rows.map(
-              (row) =>
-                `| ${escapeCell(row.dimension)} | ${escapeCell(row.them)} | ${escapeCell(row.kortix)} |`,
-            ),
-          ].join('\n');
-        }
-        case 'cta':
-          return `## ${block.title}${block.body ? `\n\n${block.body}` : ''}`;
-      }
-    })
-    .join('\n\n');
 }
 
 function documentHeader(record: PublicContentRecord): string {
@@ -733,20 +665,6 @@ export function resolvePublicMarkdown(pathSegments: string[]): {
 
   if (record.kind === 'marketing') {
     return { record, markdown: `${renderMarketingMarkdown(record)}\n` };
-  }
-
-  if (record.kind === 'blog') {
-    const post = BLOG_POSTS.find((item) => item.slug === record.slug);
-    if (!post) return null;
-    const byline = [
-      `Published: ${post.date}`,
-      `Author: ${post.author}`,
-      `Tags: ${post.tags.join(', ')}`,
-    ];
-    return {
-      record,
-      markdown: `${documentHeader(record)}\n\n${byline.join('\n')}\n\n${blocksToMarkdown(post.blocks)}\n`,
-    };
   }
 
   const source = sourceDocuments(record.kind).find((item) => item.markdownPath === markdownPath);

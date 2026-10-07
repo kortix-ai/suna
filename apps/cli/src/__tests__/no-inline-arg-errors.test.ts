@@ -18,14 +18,12 @@ const COMMANDS_DIR = resolve(import.meta.dir, '..', 'commands');
 
 const ALLOWED: Record<'inlineArgError' | 'helpPreamble' | 'parseFlags', readonly string[]> = {
   inlineArgError: [
-    'access.ts',
     'agents.ts',
     'connectors.ts',
     'grants.ts',
     'marketplace.ts',
     'projects.ts',
     'registry.ts',
-    'secrets.ts',
     'self-host.ts',
     'sessions-chat.ts',
     'sessions-connect.ts',
@@ -35,10 +33,9 @@ const ALLOWED: Record<'inlineArgError' | 'helpPreamble' | 'parseFlags', readonly
     'sessions-share.ts',
     'sessions.ts',
     'system-skills.ts',
-    'triggers.ts',
   ],
-  helpPreamble: ['access.ts', 'agents.ts', 'connectors.ts', 'grants.ts', 'marketplace.ts', 'secrets.ts', 'triggers.ts'],
-  parseFlags: ['init.ts', 'marketplace.ts', 'system-skills.ts', 'validate.ts'],
+  helpPreamble: ['connectors.ts'],
+  parseFlags: ['marketplace.ts', 'system-skills.ts'],
 };
 
 /** `process.stderr.write(`${status.err(X)}\n`)` directly followed by `return 2`. */

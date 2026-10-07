@@ -38,6 +38,12 @@
  * which is precisely the state a user watching a waking box needs to see. The
  * response is 200 from the first byte in every one of those cases.
  *
+ * ─── `?channels=control` ───────────────────────────────────────────────────
+ * Serves the control channel and the stream's own hello/heartbeat, and nothing
+ * else: no sandbox read, no daemon attach. Its reconciler reads the queue only,
+ * at the slow cadence (`ControlReconcilerMode`). The SDK's prompt queue reads
+ * it (`openSessionControlStream`). The default serves both channels.
+ *
  * ─── THIS ROUTE NEVER WAKES A BOX ──────────────────────────────────────────
  * It attaches only when the sandbox row ALREADY says `active`. Waking is
  * `POST .../start`'s job and only its job; a read that could start a sandbox
@@ -59,7 +65,7 @@ import {
   sessionIsTombstoned,
 } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 import { isUuid } from '../../shared/validate';
 import {
   CONTROL_EPOCH,
@@ -86,6 +92,12 @@ export const RUNTIME_ATTACH_BACKOFF_MS = [1_000, 2_000, 5_000, 10_000, 20_000, 3
 
 /** How long to wait before re-checking a sandbox that is not `active`. */
 export const RUNTIME_IDLE_RECHECK_MS = 5_000;
+/**
+ * A live daemon attachment that yields no frame for `stallMs` is dead: the
+ * daemon heartbeats every 15 s, so 45 s is three missed beats. Mutable so a
+ * test can shrink it.
+ */
+export const runtimeStreamTimings = { stallMs: 45_000 };
 
 /** Frames the daemon may send that mean the projection changed underneath us. */
 const PROJECTION_INVALIDATING_EVENTS = new Set([
@@ -148,229 +160,238 @@ function parseCursorQuery(c: {
   };
 }
 
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/sessions/{sessionId}/events',
-    tags: ['sessions'],
-    summary: 'Stream live events of a session',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string(), sessionId: z.string() }),
-      query: z.object({
-        since: z.string().optional(),
-        epoch: z.string().optional(),
-        since_control: z.string().optional(),
-        cepoch: z.string().optional(),
-      }),
-    },
-    responses: {
-      200: {
-        description:
-          'A never-ending text/event-stream multiplexing the sandbox runtime channel ' +
-          '(daemon seq/epoch, forwarded verbatim) and the control channel (cseq/cepoch).',
-        content: { 'text/event-stream': { schema: z.any() } },
+export function registerSessionStreamRoutes(): void {
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/sessions/{sessionId}/events',
+      tags: ['sessions'],
+      summary: 'Stream live events of a session',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        query: z.object({
+          since: z.string().optional(),
+          epoch: z.string().optional(),
+          since_control: z.string().optional(),
+          cepoch: z.string().optional(),
+          /** `control`: the control channel only, no daemon attach. Default: both. */
+          channels: z.enum(['all', 'control']).optional(),
+        }),
       },
-      ...errors(400, 404),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const sessionId = c.req.param('sessionId');
-    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+      responses: {
+        200: {
+          description:
+            'A never-ending text/event-stream multiplexing the sandbox runtime channel ' +
+            '(daemon seq/epoch, forwarded verbatim) and the control channel (cseq/cepoch).',
+          content: { 'text/event-stream': { schema: z.any() } },
+        },
+        ...errors(400, 404),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const sessionId = c.req.param('sessionId');
+      if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
-    // The SAME gate `open-bundle` applies, for the same reason: this stream
-    // carries strictly the facts that route already serves, so it must not be
-    // reachable by anyone who could not have asked for them one at a time.
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_SESSION_READ,
-    );
-    const visible = await loadVisibleSession(
-      loaded,
-      sessionId,
-      callerKortixSessionId(c),
-      callerKortixSessionId(c),
-    );
-    if (!visible) return c.json({ error: 'Not found' }, 404);
-    if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
-
-    const cursor = parseCursorQuery(c);
-    const userId = String(c.get('userId') ?? loaded.userId ?? '');
-    const accountId = String(loaded.row.accountId);
-
-    const abort = new AbortController();
-    const runtime: StreamCursor = { epoch: cursor.epoch, seq: cursor.seq };
-
-    const encoder = new TextEncoder();
-    let closed = false;
-    let controllerRef: ReadableStreamDefaultController<Uint8Array> | null = null;
-
-    const writeRaw = (payload: string): void => {
-      if (closed || !controllerRef) return;
-      try {
-        controllerRef.enqueue(encoder.encode(payload));
-      } catch {
-        closed = true;
-        abort.abort();
-      }
-    };
-
-    /** A frame that advances neither cursor (status, hello, our heartbeat). */
-    const writeMeta = (event: string, data: Record<string, unknown>): void => {
-      writeRaw(`event: ${event}\ndata: ${JSON.stringify({ ...data, channel: 'stream' })}\n\n`);
-    };
-
-    const writeControl = (event: ControlEvent): void => {
-      writeRaw(
-        `event: ${event.type}\nid: ${encodeStreamId(runtime, CONTROL_EPOCH, event.cseq)}\n` +
-          `data: ${JSON.stringify(event)}\n\n`,
+      // The SAME gate `open-bundle` applies, for the same reason: this stream
+      // carries strictly the facts that route already serves, so it must not be
+      // reachable by anyone who could not have asked for them one at a time.
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_SESSION_READ,
       );
-    };
+      const visible = await loadVisibleSession(
+        loaded,
+        sessionId,
+        callerKortixSessionId(c),
+        callerKortixSessionId(c),
+      );
+      if (!visible) return c.json({ error: 'Not found' }, 404);
+      if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
 
-    // A client resuming inside THIS process's control epoch has already applied
-    // everything up to its cursor. Seeding the write watermark from it is what
-    // stops the open-snapshot from re-sending four frames the client already
-    // holds — measured on the live stack: a reconnect at cseq=4 re-delivered
-    // cseq 1..4 before this. A resync clears it below, because a client that
-    // could not be replayed exactly must get the whole picture again.
-    let lastControlCseq: number | null =
-      cursor.cepoch === CONTROL_EPOCH && typeof cursor.cseq === 'number' ? cursor.cseq : null;
-    const writeControlOnce = (event: ControlEvent): void => {
-      if (lastControlCseq !== null && event.cseq <= lastControlCseq) return;
-      lastControlCseq = event.cseq;
-      writeControl(event);
-    };
+      const cursor = parseCursorQuery(c);
+      const controlOnly = c.req.query('channels') === 'control';
+      const userId = String(c.get('userId') ?? loaded.userId ?? '');
+      const accountId = String(loaded.row.accountId);
 
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controllerRef = controller;
+      const abort = new AbortController();
+      const runtime: StreamCursor = { epoch: cursor.epoch, seq: cursor.seq };
 
-        const reconciler = acquireControlReconciler(sessionId, projectId);
-        let heartbeat: ReturnType<typeof setInterval> | null = null;
+      const encoder = new TextEncoder();
+      let closed = false;
+      let controllerRef: ReadableStreamDefaultController<Uint8Array> | null = null;
 
-        // Replay + live listener in the SAME synchronous tick — the handoff
-        // property WS-Z1's bus documents. Nothing can be published between
-        // reading the ring and registering, so nothing is lost or duplicated.
-        let replaying = true;
-        const queued: ControlEvent[] = [];
-        const subscription = subscribeControlEvents(
-          sessionId,
-          { sinceCseq: cursor.cseq, cepoch: cursor.cepoch },
-          (event) => {
-            if (replaying) queued.push(event);
-            else writeControlOnce(event);
-          },
-        );
-
-        writeMeta('kortix.stream.hello', {
-          type: 'kortix.stream.hello',
-          session_id: sessionId,
-          project_id: projectId,
-          at: Date.now(),
-          control: {
-            cepoch: CONTROL_EPOCH,
-            head_cseq: subscription.headCseq,
-            since: cursor.cseq,
-          },
-          runtime: {
-            attached: false,
-            requested_since: cursor.seq,
-            requested_epoch: cursor.epoch,
-          },
-        });
-
-        if (subscription.resync) {
-          // Never silent. The client is told the gap could not be replayed and
-          // is then handed a complete snapshot of every subsystem — which is
-          // possible only because a control frame is a snapshot, not a delta.
-          writeRaw(
-            `event: kortix.control.resync\ndata: ${JSON.stringify(subscription.resync)}\n\n`,
-          );
-          // The client's cursor is void. Everything below is written again.
-          lastControlCseq = null;
+      const writeRaw = (payload: string): void => {
+        if (closed || !controllerRef) return;
+        try {
+          controllerRef.enqueue(encoder.encode(payload));
+        } catch {
+          closed = true;
+          abort.abort();
         }
-        for (const event of subscription.replay) writeControlOnce(event);
+      };
 
-        void (async () => {
-          // The current snapshot of every subsystem, taken once the reconciler
-          // has read them at least once. A client therefore never has to wait a
-          // reconcile interval to learn the queue it already knows how to draw.
-          await reconciler.ready();
-          if (closed) return;
-          for (const event of reconciler.snapshot()) writeControlOnce(event);
-          replaying = false;
-          for (const event of queued) writeControlOnce(event);
-          queued.length = 0;
-        })();
+      /** A frame that advances neither cursor (status, hello, our heartbeat). */
+      const writeMeta = (event: string, data: Record<string, unknown>): void => {
+        writeRaw(`event: ${event}\ndata: ${JSON.stringify({ ...data, channel: 'stream' })}\n\n`);
+      };
 
-        // Our own TYPED heartbeat — not a `:` comment. An SSE parser swallows
-        // comments without yielding anything, so a comment keeps TCP warm while
-        // leaving every liveness watchdog blind (the 2026-08-26 prod defect).
-        heartbeat = setInterval(() => {
-          writeMeta('kortix.stream.heartbeat', {
-            type: 'kortix.stream.heartbeat',
+      const writeControl = (event: ControlEvent): void => {
+        writeRaw(
+          `event: ${event.type}\nid: ${encodeStreamId(runtime, CONTROL_EPOCH, event.cseq)}\n` +
+            `data: ${JSON.stringify(event)}\n\n`,
+        );
+      };
+
+      // A client resuming inside THIS process's control epoch has already applied
+      // everything up to its cursor. Seeding the write watermark from it is what
+      // stops the open-snapshot from re-sending four frames the client already
+      // holds — measured on the live stack: a reconnect at cseq=4 re-delivered
+      // cseq 1..4 before this. A resync clears it below, because a client that
+      // could not be replayed exactly must get the whole picture again.
+      let lastControlCseq: number | null =
+        cursor.cepoch === CONTROL_EPOCH && typeof cursor.cseq === 'number' ? cursor.cseq : null;
+      const writeControlOnce = (event: ControlEvent): void => {
+        if (lastControlCseq !== null && event.cseq <= lastControlCseq) return;
+        lastControlCseq = event.cseq;
+        writeControl(event);
+      };
+
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controllerRef = controller;
+
+          const reconciler = acquireControlReconciler(
+            sessionId,
+            projectId,
+            controlOnly ? 'queue' : 'full',
+          );
+          let heartbeat: ReturnType<typeof setInterval> | null = null;
+
+          // Replay + live listener in the SAME synchronous tick — the handoff
+          // property WS-Z1's bus documents. Nothing can be published between
+          // reading the ring and registering, so nothing is lost or duplicated.
+          let replaying = true;
+          const queued: ControlEvent[] = [];
+          const subscription = subscribeControlEvents(
+            sessionId,
+            { sinceCseq: cursor.cseq, cepoch: cursor.cepoch },
+            (event) => {
+              if (replaying) queued.push(event);
+              else writeControlOnce(event);
+            },
+          );
+
+          writeMeta('kortix.stream.hello', {
+            type: 'kortix.stream.hello',
+            session_id: sessionId,
+            project_id: projectId,
             at: Date.now(),
-            runtime_seq: runtime.seq,
-            control_cseq: lastControlCseq,
+            control: {
+              cepoch: CONTROL_EPOCH,
+              head_cseq: subscription.headCseq,
+              since: cursor.cseq,
+            },
+            runtime: {
+              attached: false,
+              requested_since: cursor.seq,
+              requested_epoch: cursor.epoch,
+            },
           });
-        }, STREAM_HEARTBEAT_MS);
-        (heartbeat as unknown as { unref?: () => void }).unref?.();
 
-        void pumpRuntime({
-          sessionId,
-          projectId,
-          accountId,
-          userId,
-          runtime,
-          abort,
-          isClosed: () => closed,
-          controlCseq: () => lastControlCseq,
-          writeMeta,
-          writeRaw,
-        });
-
-        abort.signal.addEventListener('abort', () => {
-          if (heartbeat) clearInterval(heartbeat);
-          heartbeat = null;
-          subscription.unsubscribe();
-          reconciler.release();
-          replaying = false;
-          if (!closed) {
-            closed = true;
-            try {
-              controller.close();
-            } catch {
-              // Already closed by the client hanging up.
-            }
+          if (subscription.resync) {
+            // Never silent. The client is told the gap could not be replayed and
+            // is then handed a complete snapshot of every subsystem — which is
+            // possible only because a control frame is a snapshot, not a delta.
+            writeRaw(
+              `event: kortix.control.resync\ndata: ${JSON.stringify(subscription.resync)}\n\n`,
+            );
+            // The client's cursor is void. Everything below is written again.
+            lastControlCseq = null;
           }
-        });
-      },
-      cancel() {
-        closed = true;
-        abort.abort();
-      },
-    });
+          for (const event of subscription.replay) writeControlOnce(event);
 
-    return new Response(stream, {
-      status: 200,
-      headers: {
-        'Content-Type': 'text/event-stream; charset=utf-8',
-        // `no-transform` matters as much as `no-cache`: an intermediary that
-        // "helpfully" compresses or buffers an event stream breaks it.
-        'Cache-Control': 'no-cache, no-transform',
-        Connection: 'keep-alive',
-        'X-Accel-Buffering': 'no',
-        'X-Kortix-Control-Epoch': CONTROL_EPOCH,
-      },
-    }) as any;
-  },
-);
+          void (async () => {
+            // The current snapshot of every subsystem, taken once the reconciler
+            // has read them at least once. A client therefore never has to wait a
+            // reconcile interval to learn the queue it already knows how to draw.
+            await reconciler.ready();
+            if (closed) return;
+            for (const event of reconciler.snapshot()) writeControlOnce(event);
+            replaying = false;
+            for (const event of queued) writeControlOnce(event);
+            queued.length = 0;
+          })();
+
+          // Our own TYPED heartbeat — not a `:` comment. An SSE parser swallows
+          // comments without yielding anything, so a comment keeps TCP warm while
+          // leaving every liveness watchdog blind (the 2026-08-26 prod defect).
+          heartbeat = setInterval(() => {
+            writeMeta('kortix.stream.heartbeat', {
+              type: 'kortix.stream.heartbeat',
+              at: Date.now(),
+              runtime_seq: runtime.seq,
+              control_cseq: lastControlCseq,
+            });
+          }, STREAM_HEARTBEAT_MS);
+          (heartbeat as unknown as { unref?: () => void }).unref?.();
+
+          if (!controlOnly) void pumpRuntime({
+            sessionId,
+            projectId,
+            accountId,
+            userId,
+            runtime,
+            abort,
+            isClosed: () => closed,
+            controlCseq: () => lastControlCseq,
+            writeMeta,
+            writeRaw,
+          });
+
+          abort.signal.addEventListener('abort', () => {
+            if (heartbeat) clearInterval(heartbeat);
+            heartbeat = null;
+            subscription.unsubscribe();
+            reconciler.release();
+            replaying = false;
+            if (!closed) {
+              closed = true;
+              try {
+                controller.close();
+              } catch {
+                // Already closed by the client hanging up.
+              }
+            }
+          });
+        },
+        cancel() {
+          closed = true;
+          abort.abort();
+        },
+      });
+
+      return new Response(stream, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          // `no-transform` matters as much as `no-cache`: an intermediary that
+          // "helpfully" compresses or buffers an event stream breaks it.
+          'Cache-Control': 'no-cache, no-transform',
+          Connection: 'keep-alive',
+          'X-Accel-Buffering': 'no',
+          'X-Kortix-Control-Epoch': CONTROL_EPOCH,
+        },
+      }) as any;
+    },
+  );
+}
 
 interface PumpArgs {
   sessionId: string;
@@ -451,11 +472,30 @@ async function pumpRuntime(args: PumpArgs): Promise<void> {
       continue;
     }
 
+    // One controller per attachment: the caller's abort and the stall watchdog
+    // both end THIS attempt, and the next loop pass re-attaches on the ladder.
+    const attachment = new AbortController();
+    const onCallerAbort = (): void => attachment.abort(args.abort.signal.reason);
+    args.abort.signal.addEventListener('abort', onCallerAbort, { once: true });
+    let stallTimer: ReturnType<typeof setTimeout> | undefined;
+    const armStallWatchdog = (): void => {
+      clearTimeout(stallTimer);
+      stallTimer = setTimeout(
+        () => attachment.abort(new Error('runtime_stream_stalled')),
+        runtimeStreamTimings.stallMs,
+      );
+    };
+    const endAttachment = (): void => {
+      clearTimeout(stallTimer);
+      args.abort.signal.removeEventListener('abort', onCallerAbort);
+    };
+
     const opened = await openRuntimeEventStream(
       { externalId: sandbox.externalId, userId: args.userId },
-      { since: args.runtime.seq, epoch: args.runtime.epoch, signal: args.abort.signal },
+      { since: args.runtime.seq, epoch: args.runtime.epoch, signal: attachment.signal },
     );
     if (!opened.ok) {
+      endAttachment();
       announceDown(opened.reason);
       const delay =
         RUNTIME_ATTACH_BACKOFF_MS[Math.min(attempt, RUNTIME_ATTACH_BACKOFF_MS.length - 1)]!;
@@ -480,16 +520,27 @@ async function pumpRuntime(args: PumpArgs): Promise<void> {
     // request's response path.
     void refreshProjection(args, 'attach');
 
+    armStallWatchdog();
     try {
       for await (const frame of parseSseFrames(opened.body)) {
         if (args.isClosed() || args.abort.signal.aborted) break;
+        armStallWatchdog();
         forwardRuntimeFrame(args, frame.event, frame.data);
       }
       announceDown('stream_ended');
     } catch (error) {
+      // The watchdog aborted the attempt (the caller did not): name it, whatever
+      // text the transport put on the resulting read error.
+      const stalled = attachment.signal.aborted && !args.abort.signal.aborted;
       announceDown(
-        error instanceof Error && error.message ? error.message.slice(0, 200) : 'stream_error',
+        stalled
+          ? 'runtime_stream_stalled'
+          : error instanceof Error && error.message
+            ? error.message.slice(0, 200)
+            : 'stream_error',
       );
+    } finally {
+      endAttachment();
     }
     await sleep(RUNTIME_ATTACH_BACKOFF_MS[0]!, args.abort.signal);
   }

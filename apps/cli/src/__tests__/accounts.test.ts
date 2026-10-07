@@ -186,6 +186,28 @@ describe('kortix accounts', () => {
 });
 
 describe('kortix projects use', () => {
+  for (const body of [
+    { error: 'Project lookup unavailable' },
+    {},
+    null,
+    { project_id: 'proj_x', name: 'Beta' },
+    { project_id: 'proj_x', account_id: 42, name: 'Beta' },
+    { project_id: '', account_id: 'account_2', name: 'Beta' },
+  ]) {
+    test(`rejects an invalid project response: ${JSON.stringify(body)}`, async () => {
+      mockApi((url) => url.endsWith('/projects/proj_x')
+        ? new Response(JSON.stringify(body), { status: 200, headers: JSON_HEADERS })
+        : undefined);
+      const before = loadConfig();
+      expect(await runProjects(['use', 'proj_x'])).toBe(1);
+      expect(stripAnsi(stderr)).toContain('Invalid project response');
+      if (body && 'error' in body && typeof body.error === 'string') expect(stderr).toContain(body.error);
+      expect(stderr).not.toContain('TypeError');
+      expect(loadConfig()).toEqual(before);
+      expect(stdout).toBe('');
+    });
+  }
+
   test('sets the default project and switches the active account to its account', async () => {
     mockApi((url) => {
       if (url === 'https://api.test/v1/projects/proj_x') {
@@ -219,6 +241,20 @@ describe('kortix projects use', () => {
     const out = stripAnsi(stdout);
     expect(out).toContain('Default project: Beta');
     expect(out).toContain('now active');
+  });
+});
+
+describe('kortix projects use (picker)', () => {
+  test('rejects a bad /projects list and one bad row without touching state', async () => {
+    mockApi((url) => url === 'https://api.test/v1/projects' || url === 'https://api.test/v1/projects?account_id=account_1'
+      ? new Response(JSON.stringify([{ project_id: 'proj_x', account_id: 'account_2', name: 'Beta' }, {}]), { status: 200, headers: JSON_HEADERS })
+      : undefined);
+    const before = loadConfig();
+    expect(await runProjects(['use'])).toBe(1);
+    expect(stripAnsi(stderr)).toContain('Invalid project response');
+    expect(stderr).not.toContain('TypeError');
+    expect(loadConfig()).toEqual(before);
+    expect(stdout).toBe('');
   });
 });
 
@@ -308,6 +344,35 @@ describe('kortix projects use --host', () => {
     const code = await runProjects(['use', 'proj_other', '--host', 'other']);
     expect(code).toBe(0);
     expect(requests).toEqual(['https://api.other/v1/projects/proj_other']);
+  });
+
+  test('ignores the sandbox env file when --host names a logged-in host', async () => {
+    writeTwoHostConfig();
+    // The env-FILE variant of the same override: inside a sandbox the
+    // platform sources agent-env.sh into every shell, so the four env vars
+    // are unset on the process yet `sandboxEnvValue` still resolves them
+    // from the file. BASH_ENV pointing at a temp agent-env.sh takes
+    // priority over the real /dev/shm path (candidatePaths), which keeps
+    // this hermetic on machines that have the file.
+    delete process.env.KORTIX_DISABLE_SANDBOX_ENV_FILE;
+    const envFile = join(tmp, 'agent-env.sh');
+    writeFileSync(
+      envFile,
+      "export KORTIX_TOKEN='tok_sandbox'\nexport KORTIX_API_URL='https://api.sandbox'\n",
+      'utf8',
+    );
+    process.env.BASH_ENV = envFile;
+    mockOtherProject();
+
+    const code = await runProjects(['use', 'proj_other', '--host', 'other']);
+    expect(code).toBe(0);
+    expect(requests).toEqual(['https://api.other/v1/projects/proj_other']);
+    // The default binds on the named host's entry, not the ambient env host.
+    expect(loadConfig().hosts.other?.default_project).toEqual({
+      project_id: 'proj_other',
+      account_id: 'account_9',
+      name: 'Other',
+    });
   });
 
   test('switches the named host active account, not the ambient one', async () => {

@@ -414,8 +414,7 @@ export async function retryTransientGitMirror(deps: {
 }): Promise<void> {
   const maxAttempts = deps.maxAttempts ?? MIRROR_RETRY_MAX_ATTEMPTS;
   const delayMs = deps.delayMs ?? MIRROR_RETRY_DELAY_MS;
-  const sleep =
-    deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const sleep = deps.sleep ?? Bun.sleep;
   let lastErr: unknown = null;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {

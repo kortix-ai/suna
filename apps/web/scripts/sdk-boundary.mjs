@@ -1,6 +1,7 @@
-import { readFileSync, readdirSync } from 'node:fs';
-import { extname, join, relative } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import ts from 'typescript';
+import { sourceFiles } from '../../../scripts/lib/sdk-boundary-scan.mjs';
 
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx']);
 const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
@@ -148,23 +149,6 @@ function isQueryKey(array) {
   );
 }
 
-function productionSourceFiles(root) {
-  const files = [];
-  const visit = (directory) => {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      const absolute = join(directory, entry.name);
-      if (entry.isDirectory()) {
-        visit(absolute);
-        continue;
-      }
-      if (!SOURCE_EXTENSIONS.has(extname(entry.name)) || TEST_FILE.test(entry.name)) continue;
-      files.push(absolute);
-    }
-  };
-  visit(root);
-  return files.sort();
-}
-
 function lineOf(sourceFile, node) {
   return sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
 }
@@ -181,6 +165,26 @@ function networkPathViolation(value) {
   return FORBIDDEN_KORTIX_NETWORK_PATHS.some((pattern) => pattern.test(value));
 }
 
+// A `fetch` whose URL is built from the backend base is a hand-rolled Kortix
+// API call, whatever its path: the path denylist above cannot name every route.
+const BACKEND_BASE = /\b(?:BACKEND_URL|backendUrl|getBackendUrl|getApiUrl)\b/;
+
+/** The initializer of the `const`/`let` named `identifier`, searched outward. */
+function initializerOf(identifier) {
+  for (let node = identifier.parent; node; node = node.parent) {
+    if (!ts.isBlock(node) && !ts.isSourceFile(node)) continue;
+    for (const statement of node.statements) {
+      if (!ts.isVariableStatement(statement)) continue;
+      for (const declaration of statement.declarationList.declarations) {
+        if (ts.isIdentifier(declaration.name) && declaration.name.text === identifier.text) {
+          return declaration.initializer;
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
 function networkTargetText(node) {
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
   if (ts.isTemplateExpression(node)) {
@@ -193,7 +197,11 @@ function networkTargetText(node) {
 
 export function scanSdkBoundary(sourceRoot) {
   const violations = [];
-  for (const absolute of productionSourceFiles(sourceRoot)) {
+  for (const absolute of sourceFiles(sourceRoot, {
+    extensions: SOURCE_EXTENSIONS,
+    skip: (path) => TEST_FILE.test(path),
+    sort: true,
+  })) {
     const code = readFileSync(absolute, 'utf8');
     const sourceFile = ts.createSourceFile(
       absolute,
@@ -319,13 +327,18 @@ export function scanSdkBoundary(sourceRoot) {
         (node.expression.text === 'fetch' || node.expression.text === 'EventSource') &&
         node.arguments[0]
       ) {
-        const target = networkTargetText(node.arguments[0]);
-        if (target && networkPathViolation(target)) {
+        const argument = node.arguments[0];
+        const urlNode = ts.isIdentifier(argument) ? (initializerOf(argument) ?? argument) : argument;
+        const target = networkTargetText(argument) || networkTargetText(urlNode);
+        if (
+          (target && networkPathViolation(target)) ||
+          (node.expression.text === 'fetch' && BACKEND_BASE.test(urlNode.getText(sourceFile)))
+        ) {
           violations.push({
             file,
             line: lineOf(sourceFile, node),
             kind: 'host-kortix-network',
-            source: target,
+            source: target || urlNode.getText(sourceFile),
           });
         }
       }

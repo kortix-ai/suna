@@ -103,16 +103,6 @@ export async function secretAudienceSubject(input: {
   return { personId, agentId };
 }
 
-/** The person half of `secretAudienceSubject`. */
-export async function secretAudiencePerson(input: {
-  projectId: string;
-  accountId?: string | null;
-  sessionId?: string | null;
-  actorUserId?: string | null;
-}): Promise<string | null> {
-  return (await secretAudienceSubject(input)).personId;
-}
-
 /**
  * Keep the values the subject may use; each kept row carries its reach. A
  * project with no `secret` grant answers from one grant read and never looks

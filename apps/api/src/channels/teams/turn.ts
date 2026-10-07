@@ -1,8 +1,7 @@
-import { and, eq, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, lt, sql } from 'drizzle-orm';
 import { registerSessionFailureNotifier } from '../../shared/session-failure-notifier';
 import { chatThreads, chatTurnStreams } from '@kortix/db';
 import { db } from '../../shared/db';
-import { runWorkerTick } from '../../shared/audit-scope';
 import { config } from '../../config';
 import { classifyTurnError, TEAMS_TURN_ERROR_COMMANDS, type TurnErrorInfo } from '../slack/errors';
 import { sessionWebUrl } from '../slack/util';
@@ -660,6 +659,7 @@ export async function sweepStaleTeamsTurns(): Promise<void> {
         sql`${chatTurnStreams.channelRef}->>'platform' = 'teams'`,
       ),
     )
+    .orderBy(asc(chatTurnStreams.updatedAt))
     .limit(50);
   for (const row of stale) {
     // Thirty minutes without a step is not proof of a dead run: one long
@@ -681,9 +681,7 @@ export async function sweepStaleTeamsTurns(): Promise<void> {
   }
 }
 
-setInterval(() => {
-  runWorkerTick('teams-turn-gc', sweepStaleTeamsTurns).catch((err) => console.warn('[teams-webhook] gc tick failed', err));
-}, 5 * 60 * 1000).unref();
+export { startTeamsTurnGc, stopTeamsTurnGc } from '../../workers/teams-turn-gc-worker';
 
 /**
  * Does the runtime's turn ledger still hold a live turn for this session?

@@ -159,3 +159,53 @@ describe('sessionTurnMetaRows', () => {
     expect(rows[0]?.value).toContain('2 minutes ago');
   });
 });
+
+describe('sessionTurnMetaRows — the model that answered', () => {
+  const tokens = { input: 100, output: 50, reasoning: 0, cacheRead: 0, cacheWrite: 0 };
+  const rowsOf = (input: Partial<Parameters<typeof sessionTurnMetaRows>[0]>) =>
+    sessionTurnMetaRows({ endedAt: NOW - 5_000, now: NOW, durationMs: 3_000, cost: null, ...input }, testUiTranslator);
+
+  // Incident 2026-10-02: a Kortix model answered a turn asked of a ChatGPT
+  // model. The transcript priced it at the ChatGPT model: $0.
+  test('a fallback turn names the model that answered, the model it replaced, and what Kortix billed', () => {
+    expect(
+      rowsOf({
+        cost: { cost: 0, tokens },
+        served: { models: ['GLM 5.3 Flash'], fallbackFrom: 'GPT-6.1 Sol (ChatGPT)', billedCost: 0.75 },
+      }),
+    ).toEqual([
+      { label: 'Finished', value: '5 seconds ago' },
+      { label: 'Duration', value: '3s' },
+      { label: 'Model', value: 'GLM 5.3 Flash' },
+      { label: 'In place of', value: 'GPT-6.1 Sol (ChatGPT)' },
+      { label: 'Cost', value: '$0.75' },
+      { label: 'Tokens', value: '150' },
+    ]);
+  });
+
+  test('a fallback turn never shows the estimate for the model that did not answer', () => {
+    const rows = rowsOf({
+      cost: { cost: 4.2, tokens },
+      served: { models: ['GPT-6.1 Sol (ChatGPT)'], fallbackFrom: 'Claude Sonnet 5.5', billedCost: 0 },
+    });
+    expect(rows.map((row) => row.label)).toEqual(['Finished', 'Duration', 'Model', 'In place of', 'Tokens']);
+  });
+
+  test('a turn its own model answered names the model and keeps the estimate', () => {
+    const rows = rowsOf({
+      cost: { cost: 0.42, tokens },
+      served: { models: ['GLM 5.3 Flash', 'Kimi K3'], fallbackFrom: null, billedCost: 0.4 },
+    });
+    expect(rows).toContainEqual({ label: 'Model', value: 'GLM 5.3 Flash, Kimi K3' });
+    expect(rows).toContainEqual({ label: 'Cost', value: '$0.42' });
+    expect(rows.map((row) => row.label)).not.toContain('In place of');
+  });
+
+  test('a turn with no answered request has no Model row', () => {
+    expect(rowsOf({ served: { models: [], fallbackFrom: null, billedCost: 0 } }).map((row) => row.label)).toEqual([
+      'Finished',
+      'Duration',
+    ]);
+  });
+});
+

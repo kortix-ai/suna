@@ -69,6 +69,7 @@ import { parseSessionAttachmentRef } from '@kortix/shared';
 import { and, count, eq, sql } from 'drizzle-orm';
 
 import { db } from '../../shared/db';
+import { isRecord } from '@kortix/shared/guards';
 
 /** Messages read from the box per capture. A turn adds one user message and a
  *  handful of assistant steps, so this is many turns of headroom; everything
@@ -228,9 +229,6 @@ function sanitizeShowPayload(
   }
   return Object.keys(out).length > 0 ? out : null;
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /** A tool call that has ended. OpenCode's schema gives both a required
  *  `input`, which is what `mirrorPartsAreStripped` relies on. */

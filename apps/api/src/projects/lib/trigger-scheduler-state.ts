@@ -17,7 +17,6 @@ export interface TriggerSchedulerHealth {
   lastSweepDurationMs: number | null;
   lastResult: {
     projects: number;
-    projectFailures: number;
     scanned: number;
     fired: number;
     queued: number;
@@ -70,10 +69,6 @@ export const schedulerHealth: TriggerSchedulerHealth = {
   lastExecutionResult: null,
   lastExecutionError: null,
 };
-export function getTriggerSchedulerHealth(): TriggerSchedulerHealth {
-  return schedulerHealth;
-}
-
 export function initialCatalogBackfillIncomplete(
   health: Pick<
     TriggerSchedulerHealth,
@@ -125,51 +120,11 @@ export function manifestCatalogBatchSize(): number {
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 100;
 }
 
-/**
- * Resolve `p`, or reject once `ms` elapses. The underlying work is NOT
- * cancellable (JS has no promise cancellation), but rejecting lets the caller
- * move on / clear its guard instead of blocking forever on a hung await.
- */
-export async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      p,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
+// Callers read only `error.message` and pass budgets > 0, so the shared
+// helper (TimeoutError, same message, non-positive = unbounded) is identical.
+export { withTimeout } from '../../shared/with-timeout';
 
-/**
- * Map all items through a bounded worker pool.
- *
- * The output order matches the input order.
- */
-export async function mapWithConcurrency<T, R>(
-  items: readonly T[],
-  configuredConcurrency: number,
-  worker: (item: T, index: number) => Promise<R>,
-): Promise<R[]> {
-  if (items.length === 0) return [];
-  const concurrency = Math.max(1, Math.min(items.length, Math.floor(configuredConcurrency) || 1));
-  const results = new Array<R>(items.length);
-  let nextIndex = 0;
-
-  const runWorker = async () => {
-    while (nextIndex < items.length) {
-      const index = nextIndex;
-      nextIndex += 1;
-      results[index] = await worker(items[index]!, index);
-    }
-  };
-
-  await Promise.all(Array.from({ length: concurrency }, () => runWorker()));
-  return results;
-}
+export { mapWithConcurrency } from '../../shared/map-with-concurrency';
 
 /**
  * Pure stall check: is the leader's scheduler failing to make progress? Surfaced

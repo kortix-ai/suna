@@ -21,10 +21,14 @@
     "catalog": "bun bin/ke2e.ts catalog",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "@kortix/api-contract": "workspace:*"
+  },
   "devDependencies": {
     "@axe-core/playwright": "^4.10.2",
     "@playwright/test": "^1.61.0",
     "@types/bun": "latest",
+    "smol-toml": "^1.3.0",
     "@types/pg": "^8.11.0",
     "pg": "^8.13.0",
     "typescript": "^5.5.0",

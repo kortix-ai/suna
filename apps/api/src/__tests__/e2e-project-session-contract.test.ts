@@ -78,8 +78,6 @@ let computeReopenCalls = 0;
 let opencodeEnsureReason: 'unchanged' | 'healed' | 'not_ready' | 'unreachable' = 'unchanged';
 /** The signed daemon endpoint `/start` reads the runtime capabilities from. Null: unresolvable. */
 let runtimeEndpoint: { url: string; headers: Record<string, string> } | null = null;
-let activeSessionCount = 0;
-let accountSessionLimit = 1;
 let sessionRow: typeof projectSessions.$inferSelect | null;
 let lastSessionInsertValues: Record<string, unknown> | null = null;
 const lifecycleCommandInserts: Array<Record<string, unknown>> = [];
@@ -155,8 +153,6 @@ function resetState() {
   computeReopenCalls = 0;
   opencodeEnsureReason = 'unchanged';
   runtimeEndpoint = null;
-  activeSessionCount = 0;
-  accountSessionLimit = 1;
   lastSessionInsertValues = null;
   lifecycleCommandInserts.length = 0;
   lifecycleDrainClaimWhere = null;
@@ -351,7 +347,6 @@ mock.module('../projects/git', () => ({
 }));
 
 mock.module('../snapshots/builder', () => ({
-  ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async () => ({
     snapshotName: 'kortix-default-test',
     slug: 'default',
@@ -614,6 +609,8 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 
 mock.module('../shared/resolve-account', () => ({
   resolveAccountId: async () => ACCOUNT_ID,
+}));
+mock.module('../middleware/resolve-account', () => ({
   resolveScopedAccountId: async () => ACCOUNT_ID,
 }));
 
@@ -635,17 +632,8 @@ mock.module('../repositories/account-tokens', () => ({
   validateAccountToken: async () => null,
 }));
 
-// Pin the concurrent-session cap to 1 regardless of env mode so this test
-// always exercises the rate-limit branch — the real implementation bypasses
-// the cap when KORTIX_BILLING_INTERNAL_ENABLED is false.
 mock.module('../shared/account-limits', () => ({
   resolveAccountTier: async () => 'free',
-  maxConcurrentSessionsForTier: () => 1,
-  resolveAccountSessionLimit: async () => ({
-    tier: 'free',
-    limit: accountSessionLimit,
-    source: 'tier',
-  }),
   sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),
   maxProjectsForAccount: async () => 100,
   FREE_TIER_PROJECT_LIMIT: 1,
@@ -768,8 +756,6 @@ mock.module('../shared/db', () => ({
             return Promise.resolve([]);
           },
           limit: async () => {
-            if (fields && Object.keys(fields).includes('activeCount'))
-              return [{ activeCount: activeSessionCount }];
             if (table === projectSecrets) {
               return secretRows.filter((row) => row.name === 'KORTIX_GIT_AUTH_TOKEN').slice(0, 1);
             }
@@ -1141,9 +1127,10 @@ mock.module('../projects/prompt-attachments', () => ({
   },
 }));
 
-const { projectsApp } = await import('../projects/index');
+const { projectsApp, registerAllProjectRoutes } = await import('../projects/index');
+registerAllProjectRoutes();
 const { encryptProjectSecret } = await import('../projects/secrets');
-const { resumeStoppedSandbox } = await import('../projects/routes/shared');
+const { resumeStoppedSandbox } = await import('../projects/session-open');
 const { TITLE_SOURCE_MAX_CHARS } = await import('../projects/session-title-generate');
 const { invalidateSandbox, resolveSandboxIngress } = await import('../sandbox-proxy/backend');
 const { reconcileSandboxStoppedByExternalId } = await import(
@@ -4287,8 +4274,6 @@ describe('project session API contract', () => {
   test('a warm session is created without a prompt or a title source', async () => {
     const app = createApp();
     sessionRow = null;
-    // A warm create keeps one slot free for a real start.
-    accountSessionLimit = 2;
 
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/warm`, {
       method: 'POST',
@@ -4432,8 +4417,8 @@ describe('project session API contract', () => {
     });
 
     expect(res.status).toBe(201);
-    expect(res.headers.get('X-RateLimit-Limit')).toBe('1');
-    expect(res.headers.get('X-RateLimit-Remaining')).toBe('0');
+    expect(res.headers.get('X-RateLimit-Limit')).toBeNull();
+    expect(res.headers.get('X-RateLimit-Remaining')).toBeNull();
     const body = await res.json();
     expect(body.session_id).toMatch(/^[0-9a-f-]{36}$/);
     expect(body.session_id).toBe(body.sandbox_id);
@@ -4703,8 +4688,7 @@ describe('project session API contract', () => {
     expect(await missing.json()).toMatchObject({ error: 'Not found' });
   });
 
-  test('rejects concurrent session cap before creating a git branch', async () => {
-    activeSessionCount = 1;
+  test('never refuses a create for the number of sessions already running', async () => {
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
@@ -4712,14 +4696,8 @@ describe('project session API contract', () => {
       body: JSON.stringify({ provider: 'daytona' }),
     });
 
-    expect(res.status).toBe(429);
-    expect(res.headers.get('X-RateLimit-Remaining')).toBe('0');
-    expect(await res.json()).toMatchObject({
-      code: 'concurrent_session_limit',
-      limit: 1,
-      active_sessions: 1,
-    });
-    expect(branchCreateCalls).toBe(0);
-    expect(sandboxProvisionCalls).toBe(0);
+    expect(res.status).toBe(201);
+    expect(res.headers.get('X-RateLimit-Remaining')).toBeNull();
+    expect(await res.json()).not.toHaveProperty('code', 'concurrent_session_limit');
   });
 });

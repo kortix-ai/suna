@@ -564,9 +564,9 @@ cd packages/db && bun scripts/verify-live-schema.ts
 ```
 
 The nightly `DB Drift Sentinel` (`.github/workflows/db-drift.yml`,
-`prod-presence`) runs the same comparison against prod, and the deploy-prod
-`verify-schema` job runs it before the ECS roll when the
-`ENABLE_PROD_SCHEMA_GATE` repository variable is `true`.
+`prod-presence`) runs the same comparison against prod. No deploy-prod job
+runs it before the ECS roll: the former `verify-schema` job was removed because
+it never gated `deploy-ecs`.
 
 ---
 

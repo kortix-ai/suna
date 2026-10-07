@@ -5,10 +5,10 @@ import { pauseComputeSession, startComputeSession } from '../billing/services/co
 import { config, type SandboxProviderName } from '../config';
 import { db } from '../shared/db';
 import { resolveFeatureFlag } from '../feature-flags/registry';
-import { agentPrincipalEnabled } from './access';
 import { assertAppComputeAllowed } from './limits';
 import { AppHostingProvider } from './hosting';
 import { appWakeSupersededResponse } from './public-proxy-status';
+import { logger } from '../lib/logger';
 const WAKE_LEASE_MS = 2 * 60_000;
 
 export async function loadPublicAppState(routeKey: string) {
@@ -40,8 +40,8 @@ export async function loadPublicAppState(routeKey: string) {
     app,
     deployment: deployment ?? null,
     runtime: runtime ?? null,
-    /** The project's `agent_principal` flag — the App gate's §2.5 switch. */
-    agentPrincipal: agentPrincipalEnabled(loaded.projectMetadata),
+    /** A governed agent is judged as itself (§2.5); there is no off switch. */
+    agentPrincipal: true,
   };
 }
 
@@ -183,7 +183,13 @@ export async function ensureAppRuntimeRunning(
     return await publishWake(app, loaded, leased, owner, hosting);
   } catch (error) {
     const stoppedAt = await stopWakingRuntime(loaded.runtime.runtimeId, owner);
-    await pauseComputeSession(loaded.runtime.runtimeId, stoppedAt).catch(() => {});
+    await pauseComputeSession(loaded.runtime.runtimeId, stoppedAt).catch((pauseErr) =>
+      // compute-invariant-sweep closes it later; until then the window bills.
+      logger.error('[apps] failed wake left the compute window open', {
+        runtimeId: loaded.runtime.runtimeId,
+        error: pauseErr instanceof Error ? pauseErr.message : String(pauseErr),
+      }),
+    );
     throw error;
   }
 }

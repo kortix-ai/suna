@@ -89,7 +89,7 @@ android {
 
     namespace 'com.kortix.app'
     defaultConfig {
-        applicationId 'com.kortix.app'
+        applicationId 'com.kortix.application'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

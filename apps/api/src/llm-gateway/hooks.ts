@@ -205,17 +205,26 @@ export async function authorizeRequest(
 }
 
 /**
- * Apply the LLM wallet gate only to accounts that can spend wallet credits on
- * Kortix-managed models. Free-tier wallets fund sandbox compute only.
+ * Apply the LLM wallet gate to every request that can spend wallet credits on
+ * Kortix-managed models.
+ *
+ * An account without the managed-models entitlement (BYOK-only, whether by
+ * tier, trial, or operator override) settles its own keys and ChatGPT
+ * subscription at billingMode 'none' — nothing for this gate to fund — so the
+ * legacy non-deferred auth call (no model resolved yet) skips it. The one
+ * exception is the platform default: the ONE managed model every tier may use
+ * (KRTX-1067), which settles as credits. The deferred gateway path calls this
+ * only for a Kortix-billed request it already resolved (`creditsRequest`), so
+ * the floor applies there for every account — without it a drained free
+ * wallet ran platform-default turns with no admission hold and the settle
+ * (which never enforces a floor) drove the balance negative.
  */
 export async function assertLlmBillingActive(
   accountId: string,
+  opts?: { creditsRequest?: boolean },
 ): Promise<{ holdUsd?: number } | void> {
-  // Accounts without the managed-models entitlement (BYOK-only, whether by
-  // tier, trial, or operator override) never spend wallet credits on managed
-  // inference — their wallets fund sandbox compute only, so skip the LLM gate.
   if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
-    if (!(await accountMayUseManagedModels(accountId))) return;
+    if (!(await accountMayUseManagedModels(accountId)) && !opts?.creditsRequest) return;
   }
   return assertBillingActive(accountId);
 }
@@ -474,6 +483,10 @@ export async function persistGatewayTrace(trace: GatewayTrace): Promise<void> {
     metadata: {
       ...trace.metadata,
       ...(trace.attemptFailures?.length ? { attemptFailures: trace.attemptFailures } : {}),
+      // Read by `sessionModelUsage`: the session screen names the model that
+      // answered, and the model it stood in for.
+      ...(trace.servedModel ? { servedModel: trace.servedModel } : {}),
+      ...(trace.fallbackFrom ? { fallbackFrom: trace.fallbackFrom } : {}),
     },
   });
   // Non-blocking: never let telemetry delay the caller or affect the trace write.

@@ -372,7 +372,7 @@ function startCliE2eServer() {
       }
       if (url.pathname === '/v1/projects/proj_e2e' && req.method === 'DELETE') {
         archived = true;
-        return Response.json({ ok: true, archived: true, repo_deleted: url.searchParams.get('purge') === 'true' });
+        return Response.json({ ok: true, archived: true, repo_deleted: true });
       }
       if (url.pathname === '/v1/projects/proj_e2e/sessions/sess_connect' && req.method === 'GET') {
         return Response.json({
@@ -994,9 +994,12 @@ describe('kortix CLI black-box behavior', () => {
     expect(relink.code).toBe(0);
     expect(existsSync(join(root, '.kortix', 'link.json'))).toBe(true);
 
-    const removeProject = await runCli(['projects', 'rm', 'proj_e2e', '--purge', '--yes'], root, { KORTIX_CONFIG_FILE: configFile });
+    const removeProject = await runCli(['projects', 'rm', 'proj_e2e', '--yes'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(removeProject.code).toBe(0);
-    expect(removeProject.stdout).toContain('Archived');
+    // Deleting the project deletes its managed git repo: the result line says
+    // Deleted, never Archived, and the repo line follows.
+    expect(removeProject.stdout).toContain('Deleted');
+    expect(removeProject.stdout).not.toContain('Archived');
     expect(removeProject.stdout).toContain('managed git repo deleted');
     expect(existsSync(join(root, '.kortix', 'link.json'))).toBe(false);
 
@@ -1009,7 +1012,7 @@ describe('kortix CLI black-box behavior', () => {
       ['GET', '/v1/marketplace/items/agent-browser', null],
       ['GET', '/v1/projects/proj_e2e', null],
       ['GET', '/v1/projects/proj_e2e', null],
-      ['DELETE', '/v1/projects/proj_e2e?purge=true', null],
+      ['DELETE', '/v1/projects/proj_e2e', null],
     ]);
     expect(requests.every((r) => r.authorization === 'Bearer tok_blackbox')).toBe(true);
   }, 30_000);

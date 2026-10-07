@@ -59,12 +59,12 @@ shared layer.
 | --- | --- | --- |
 | `src/types/**` | `src/types/**` | none, and no runtime code at all |
 | `src/lib/**` | the shared layer | none |
-| `src/services/<name>/**` | its own folder, the services `SERVICES` declares for it, the shared layer | `egress-shim`: `node-forge`, `@kortix/api-contract` |
+| `src/services/<name>/**` | its own folder, the services `SERVICES` declares for it, the shared layer | `egress-shim`: `node-forge`, `@kortix/api-contract`. `monitor`, `runtime-assets`: `@kortix/api-contract` |
 | `src/harness/harness.ts` | the harness, all services, the shared layer | none |
-| `src/harness/{open-code,pi}/**` | its own folder, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract`. `open-code`: `bun:sqlite`. `pi`: `@earendil-works/*`, `typebox` |
+| `src/harness/{open-code,pi}/**` | its own folder, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract`. `open-code`: `bun:sqlite`. `pi`: `@earendil-works/*`, `typebox`, `@kortix/sdk/wire-message-id` |
 | `src/harness/{contract,shared}/**` | `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract` (the daemon-to-API wire, `runtime-relay`) |
 | `src/routes/**` | `src/routes/**`, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `hono`, `@kortix/api-contract` |
-| `src/app/**`, `src/main.ts` | everything above except adapter internals | `hono` |
+| `src/app/**`, `src/main.ts` | everything above except adapter internals | `hono`, `@kortix/api-contract` |
 | anything else under `src/` | nothing: a file outside every layer fails the lint | — |
 
 Consequences:
@@ -102,9 +102,13 @@ path outside `src/` (another package, `package.json`) stays relative. The
 `kortixd/import-style` lint rule enforces both directions and fixes them:
 `bun run lint --fix`.
 
-Files that another package imports (`src/harness/open-code/fallback-models.ts`,
-`src/services/egress-shim/rules.ts`) have no imports, because that package's
-typecheck does not know this `@/`.
+No other package imports or reads `src/`, and `src/` imports no other app
+(`tests/unit/kortixd-package-boundary.test.ts`). A value the daemon shares with
+apps/api, the CLI or `@kortix/shared` lives in `packages/api-contract` and both
+sides import it. The daemon reaches those files, and the SDK's import-free
+`wire-message-id.ts`, through tsconfig paths. `KORTIXD_SHARED_SOURCES`
+(`@kortix/api-contract/sandbox-layout`) lists them: apps/api fingerprints them
+with this source, and the Dockerfiles copy them (`src/__tests__/shared-sources.test.ts`).
 
 ## OpenCode names (E18 ratchet)
 
@@ -224,10 +228,9 @@ and `package.json` work around. Each one was measured, not assumed:
   dependencies there, so `@types/node` is a declared devDependency. Without it,
   every `node:*` import reports `Cannot find module`. A bare built-in name
   (`crypto`, `fs`) does not resolve under pnpm even then, so a
-  `no-restricted-imports` rule rejects it and names the `node:` form. It stays at the version
-  `bun-types` resolves in `pnpm-lock.yaml` (20.19.43): `apps/api` typechecks
-  daemon source through a test, and a second `@types/node` version in that
-  program breaks its typecheck.
+  `no-restricted-imports` rule rejects it and names the `node:` form. It is
+  declared `^20`, like apps/web, so pnpm keeps one `@types/node` for the
+  monorepo (the `^22` catalog entry moves 18 transitive `@types/*` packages).
 - A tsconfig-aliased file outside the plugin root (`@kortix/api-contract`)
   arrives as an absolute path. The egress-shim entry allows the absolute and the
   root-relative form.

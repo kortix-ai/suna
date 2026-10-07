@@ -128,6 +128,8 @@
     "chooseSharedKeys": "Escolha as chaves partilhadas que esta sessão pode usar.",
     "sessionKeyPool": "Conjunto de chaves da sessão",
     "sharedSessionKeys": "Esta sessão está partilhada com o projeto, por isso aqui só funcionam as chaves partilhadas com todo o projeto. As chaves atribuídas a si funcionam nas suas sessões privadas.",
+    "promptedSessionKeys": "Outro membro escreveu nesta sessão, por isso já não age pelo seu proprietário. Aqui só funcionam chaves partilhadas com todo o projeto.",
+    "noPersonSessionKeys": "Esta sessão não age por nenhuma pessoa: começou antes de existirem chaves pessoais, ou sem supervisão. Aqui só funcionam chaves partilhadas com todo o projeto. Inicie uma nova sessão para usar as suas próprias chaves.",
     "projectDefaultShort": "Padrão do projeto",
     "rateLimitDescription": "O gateway alterna entre as chaves selecionadas quando um fornecedor indica um limite de pedidos.",
     "enableGateway": "Ative o gateway LLM nas definições do projeto para usar conjuntos de chaves.",
@@ -194,6 +196,12 @@
   "newWorkspace": {
     "title": "Criar um projeto",
     "description": "Um projeto reúne seus agentes, arquivos e sessões.",
+    "handoff": {
+      "validating": "A validar",
+      "creating_repository": "A criar o repositório",
+      "registering": "A registar o projeto",
+      "seeding": "A preparar os ficheiros iniciais"
+    },
     "templateSeed": "Este projeto será iniciado com o modelo escolhido.",
     "account": {
       "label": "Conta",
@@ -259,10 +267,6 @@
       "heading": "Dê a <project></project> uma tarefa real.",
       "fallbackName": "este espaço",
       "confetti": "Jogar confete"
-    },
-    "runtime": {
-      "metaLabel": "Ambiente Meta",
-      "metaDescription": "O Meta usa uma sandbox mínima fixa e inicia sessões especializadas para o trabalho do projeto."
     },
     "sandbox": {
       "label": "Modelo de sandbox",
@@ -581,7 +585,7 @@
       "keepMyAccount": "Manter minha conta",
       "deleteDialogTitle": "Excluir sua conta?",
       "immediateWarning": "Isso exclui sua conta imediatamente. Não há período de carência e não há como desfazê-lo.",
-      "gracePeriodWarning": "Sua conta está programada para exclusão após um período de carência de 30 dias, durante o qual você pode cancelar.",
+      "gracePeriodWarning": "Sua conta será programada para exclusão após um período de carência de 30 dias, durante o qual você pode cancelar.",
       "whenDeleted": "Quando sua conta for excluída:",
       "agentsDeleted": "Cada agente que você possui é excluído",
       "threadsDeleted": "Todas as sessões e mensagens são excluídas",
@@ -615,20 +619,20 @@
       "twoFactorDescription": "Um segundo fator mantém sua conta segura mesmo que seu login seja comprometido.",
       "authenticatorApp": "Aplicativo autenticador",
       "authenticatorDescription": "Adicione um aplicativo autenticador (TOTP) como segundo fator.",
-      "sessionVerified": "Sessão verificada",
-      "enrolled": "Configurado",
+      "statusOn": "Ativado · Pedido no login e antes de alterações sensíveis",
       "addAuthenticatorApp": "Adicionar aplicativo autenticador",
       "factorsLoadFailed": "Não foi possível carregar seus aplicativos autenticadores",
       "retry": "Tentar novamente",
       "factorsUnchanged": "Suas configurações de dois fatores permanecem inalteradas – esta é apenas a lista que não carrega.",
       "noFactorEnrolled": "Nenhum segundo fator configurado",
       "noFactorDescription": "Se sua organização exigir MFA, você não poderá executar ações protegidas até configurar um aplicativo autenticador aqui.",
-      "scanTitle": "Digitalize com seu aplicativo autenticador",
-      "scanDescription": "Use 1Password, Google Authenticator ou qualquer aplicativo TOTP – em seguida, insira o código de 6 dígitos exibido.",
+      "scanTitle": "Escaneie com o celular",
+      "scanDescription": "Abra qualquer aplicativo autenticador e escaneie este código.",
       "qrAlt": "Código QR de inscrição TOTP",
-      "manualSecret": "Segredo de entrada manual",
-      "sixDigitCode": "Código de 6 dígitos",
-      "verifyAndEnable": "Verifique e ative",
+      "manualSecret": "Não consegue escanear? Digite esta chave",
+      "codeTitle": "Digite o código",
+      "codeDescription": "Digite os 6 dígitos que seu aplicativo mostra. A verificação é automática.",
+      "verifyAndEnable": "Verificar",
       "cancel": "Cancelar",
       "removeFactorTitle": "Remover esse fator?",
       "removeFactorDescription": "Se sua organização exigir MFA e este for seu único fator verificado, você não terá acesso a ações bloqueadas até se inscrever novamente.",
@@ -642,7 +646,20 @@
       "verified": "Verificado",
       "unverified": "Não verificado",
       "signedOutOtherDevices": "Desconectado dos seus outros dispositivos",
-      "signOutOtherDevicesFailed": "Não foi possível desconectar outros dispositivos"
+      "signOutOtherDevicesFailed": "Não foi possível desconectar outros dispositivos",
+      "currentDevice": "Este navegador",
+      "deviceSignedInAt": "Conectado em {date}",
+      "noDevices": "Nenhum dispositivo conectado",
+      "noDevicesDescription": "Você não está conectado em nenhum dispositivo neste momento.",
+      "devicesLoadFailed": "Não foi possível carregar seus dispositivos conectados",
+      "deviceName": "{browser} em {os}",
+      "unknownDevice": "Dispositivo desconhecido",
+      "deviceLastActive": "Última atividade: {date}",
+      "signOutDevice": "Sair",
+      "signedOutDevice": "Sessão encerrada nesse dispositivo",
+      "signOutDeviceFailed": "Não foi possível encerrar a sessão nesse dispositivo",
+      "copyIp": "Copiar endereço IP",
+      "ipCopied": "Endereço IP copiado"
     },
     "appearance": {
       "theme": "Tema",
@@ -831,9 +848,10 @@
         "sessions": "Todas as sessões deste projeto, com arquivos, histórico e resultados",
         "automation": "Todas as execuções agendadas e gatilhos — eles param imediatamente",
         "integrations": "Todas as integrações conectadas, segredos e chaves de API deste projeto",
+        "managedRepo": "O repositório Git gerenciado pela Kortix deste projeto, com cada commit incluído",
         "access": "O acesso de toda a equipe — ninguém poderá acessar este projeto novamente"
       },
-      "reassurance": "O repositório Git conectado não é excluído. Todo código já enviado permanece no lugar.",
+      "reassurance": "Os repositórios Git que você mesmo conectou não são excluídos. Todo código já enviado permanece no lugar.",
       "keepWorkspace": "Manter projeto"
     },
     "sandbox": {
@@ -1112,7 +1130,7 @@
       "noMatches": "Nenhum resultado para {query}.",
       "emptyTitle": "Nenhum recurso experimental",
       "emptyDescription": "Esta instalação não oferece sinalizadores de recurso por projeto.",
-      "permission": "Você precisa de permissão para editar a personalização do projeto para alterar um recurso.",
+      "permission": "Você precisa da permissão de configurações do projeto para alterar um sinalizador de recurso.",
       "updateFailed": "Não foi possível atualizar {key}",
       "flags": {
         "marketplace": {
@@ -1145,7 +1163,7 @@
         },
         "warm_sessions": {
           "name": "Sessões aquecidas",
-          "description": "Mantenha um sandbox pronto para iniciar sessões imediatamente. O sandbox ocioso usa computação e uma vaga de sessão simultânea."
+          "description": "Mantenha um sandbox pronto para iniciar sessões imediatamente. O sandbox ocioso usa computação."
         },
         "secrets_egress": {
           "name": "Segredos protegidos pela rede",
@@ -1155,17 +1173,9 @@
           "name": "Segredos de provedor compartilhados",
           "description": "Os membros conectam as próprias assinaturas do ChatGPT e chaves de provedor, compartilham quando necessário e escolhem quais cada sessão usa."
         },
-        "pi_worker": {
-          "name": "Ambiente do worker Pi (compilado)",
-          "description": "Execute sessões com o ambiente experimental do worker Pi."
-        },
         "pi_harness": {
           "name": "Harness Pi (na sandbox)",
           "description": "Executa as sessões com o harness Pi dentro da sandbox da sessão em vez do OpenCode. Desativado, `runtime: pi` no manifesto continua a selecionar o Pi."
-        },
-        "agent_principal": {
-          "name": "Agentes como principais",
-          "description": "Os agentes agem como eles mesmos: com suas permissões do Kortix, limitadas pela sua função. Quem executa um agente adiciona apenas as próprias contas."
         },
         "config_releases": {
           "name": "Versões de configuração",
@@ -1537,6 +1547,7 @@
         "email": "E-mail",
         "scheduled": "Agendado",
         "webhook": "Webhook",
+        "manual": "Manual",
         "all": "Todos"
       },
       "statusValue": {
@@ -1723,7 +1734,8 @@
     },
     "restart": {
       "label": "Reiniciar sessão",
-      "pending": "Reiniciando…"
+      "pending": "Reiniciando…",
+      "ownerOnly": "Somente o proprietário da sessão ou um gerente do projeto pode reiniciar esta sessão."
     }
   },
   "modelSelector": {
@@ -1914,7 +1926,6 @@
     "messageInput": "Campo de mensagem",
     "attachFiles": "Anexar arquivos",
     "selectAgent": "Selecionar agente",
-    "agentLockedHint": "Não é possível trocar de agente numa sessão já iniciada.",
     "noModel": "Nenhum modelo",
     "thinkingEffort": "Esforço de raciocínio",
     "sessionOverrides": "Substituições da sessão",
@@ -1943,6 +1954,13 @@
     "queuedFiles": "{count, plural, one {# arquivo} other {# arquivos}}",
     "queuedCount": "{count} na fila",
     "editingQueued": "Editando",
+    "steerNextStep": "Lido no próximo passo",
+    "queuedByAnotherMember": "Enviada por outro membro. Só essa pessoa pode editá-la ou enviá-la.",
+    "steerFallbackUnsupported": "Aguarda este turno. Esta sessão não aceita mensagens durante um turno.",
+    "steerFallbackNotPrompter": "Aguarda este turno. Outro membro o iniciou.",
+    "steerFallbackTurnEnded": "Executa como um turno próprio. O turno terminou antes.",
+    "stopAndSend": "Parar e enviar",
+    "stopAndSendFailed": "Não foi possível parar e enviar essa mensagem",
     "submitEdit": "Enviar",
     "collapseQueue": "Recolher fila",
     "expandQueue": "Expandir fila"
@@ -1981,7 +1999,11 @@
       "topupWalletHint": "Recarregue o saldo para manter seus agentes em execução.",
       "addCredits": "Adicionar créditos",
       "billingPortal": "Portal de faturamento",
-      "portalDescription": "Gerencie sua assinatura, métodos de pagamento e faturas."
+      "portalDescription": "Gerencie sua assinatura, métodos de pagamento e faturas.",
+      "cancelSubscription": "Cancelar assinatura",
+      "cancelSubscriptionDescription": "Seu plano permanece ativo até o fim do período de faturamento atual e depois encerra. Você pode reativá-lo até lá.",
+      "reactivateSubscription": "Reativar assinatura",
+      "commitmentCancelHint": "Seu compromisso vai até {date}. Você poderá cancelar depois."
     },
     "topup": {
       "minimum": "A recarga mínima é de {amount}.",
@@ -2266,7 +2288,7 @@
     },
     "unified": {
       "welcome": "Bem-vindo ao Kortix",
-      "tagline": "O AI Management System de código aberto",
+      "tagline": "O AI Operating System de código aberto",
       "email": "E-mail",
       "emailPlaceholder": "Seu endereço de e-mail",
       "password": "Senha",
@@ -2956,7 +2978,7 @@
       "line19JsxTextTCareWhatYouCallItWeCare": "liga para como você chama isso. A gente se importa que você",
       "line19JsxTextVeBuiltSomethingRealFeltEveryEdgeOf": "tenha criado algo real, sentido cada detalhe difícil disso e não",
       "line19JsxTextTStopUntilItWasRight": "tenha parado até ficar certo.",
-      "line24JsxTextAnExtremelySmallTightKnitTeamBuildingThe": "Uma equipe extremamente pequena e muito unida construindo o sistema operacional para empresas autônomas. Todo mundo aqui compartilha a mesma característica: o impulso inato de pegar o caos e transformá-lo em sistemas que rodam sozinhos.",
+      "line24JsxTextAnExtremelySmallTightKnitTeamBuildingThe": "Uma equipe extremamente pequena e muito unida construindo o AI Operating System de código aberto. Todo mundo aqui compartilha a mesma característica: o impulso inato de pegar o caos e transformá-lo em sistemas que funcionam sozinhos.",
       "line46JsxTextOpenPosition": "Vaga aberta",
       "line53JsxTextYouAreWhatYouAreYouDriveWhat": "Você é o que você é. Você move o que precisa mover. Uma pessoa independente, com perfil de fundador, que se encaixe ou não na definição acima.",
       "line55JsxTextSanFranciscoOrAnywhereButWe": "San Francisco, ou qualquer lugar, mas a gente",
@@ -3237,7 +3259,7 @@
       "line173JsxTextNoSpamWeOnlyUseThisToPrepare": "Sem spam. Usamos isso apenas para preparar sua demo.",
       "heroEyebrow": "Enterprise",
       "heroTitle": "Implante agentes internos. Mantenha o controle de cada ação.",
-      "heroDescription": "O Kortix é o centro de comando de IA de código aberto onde toda a sua infraestrutura de agentes — agentes, permissões, conectores, agendamentos — vive em um repositório Git. Auditável, reversível e implantável na nuvem, em uma VPC ou no seu próprio hardware.",
+      "heroDescription": "Cada agente, permissão, conector e segredo é um arquivo que você controla: revisável, reversível e implantável na nuvem, em uma VPC ou no seu próprio hardware.",
       "heroMicroline": "SSO · RBAC · Logs de auditoria · Auto-hospedagem · Código aberto",
       "talkToSalesCta": "Solicitar demo",
       "comparePlansCta": "Comparar planos",
@@ -3251,7 +3273,7 @@
       "proofStatLoggedLabel": "Consultas, leituras de segredos e escritas no banco de dados — cada uma atribuída e aguardando sua revisão.",
       "proofStatConnectorsTab": "Conectores",
       "proofStatConnectorsTitle": "Mais de 3.000 ferramentas no seu stack",
-      "proofStatConnectorsLabel": "CRMs, bancos de dados e ferramentas internas — governados a partir de uma única central de comando.",
+      "proofStatConnectorsLabel": "CRMs, bancos de dados e ferramentas internas — governados a partir de um único AI Operating System.",
       "proofStatAlwaysOnTab": "Sempre ativo",
       "proofStatAlwaysOnTitle": "Agentes 24/7 que nunca batem ponto",
       "proofStatAlwaysOnLabel": "Concilie durante a noite, faça triagem de tickets no fim de semana e responda a eventos enquanto sua equipe está offline.",
@@ -3618,7 +3640,7 @@
       "line338JsxTextTalkToSales": "Falar com vendas",
       "line339JsxTextSeePricing": "Ver preços",
       "line342JsxTextOpenSourceSSORBACOnPremNoLock": "Open source · SSO, RBAC e on-prem · Sem lock-in",
-      "heroCommandCenter": "Contrate um colega de trabalho com IA",
+      "heroCommandCenter": "O AI Operating System para uma força de trabalho de agentes.",
       "heroAiWorkforce": "que faz trabalho de verdade.",
       "heroDescription": "Conecte suas ferramentas e adicione o Kortix ao Slack. Ele aprende como você trabalha, lembra o contexto ao longo do tempo e entrega trabalho pronto em todo o seu stack — do Slack, workspace web ou CLI.",
       "startBuildingCta": "Começar a construir",
@@ -3651,7 +3673,7 @@
       "splitBuildersPointTwo": "Run many agents in parallel",
       "splitBuildersPointThree": "Git handles review, rollback, and conflicts",
       "differentScreenEyebrow": "Toda superfície",
-      "differentScreenSectionTitle": "Uma central de comando. Todas as formas como sua equipe trabalha.",
+      "differentScreenSectionTitle": "Chat, Slack, Teams ou o seu próprio produto.",
       "differentScreenSectionDescription": "Hand work to your agents from the browser, your phone, Slack, the terminal, or a pipeline. Review what ships, see what's waiting on you, and spot what your project still needs before the next run.",
       "surfaceWebWorkspace": "Workspace web",
       "surfaceMobileApp": "App móvel",
@@ -3720,7 +3742,7 @@
       "enterpriseLearnMore": "Saiba mais sobre enterprise",
       "ctaBadge": "Começar",
       "statConnectors": "Connectors, out of the box",
-      "statCommandCenter": "Command center for everything",
+      "statCommandCenter": "sistema operacional para tudo",
       "statAlwaysOn": "Agentes sempre ativos",
       "statOpenSelfHostable": "Open & self-hostable",
       "workforceMapEyebrow": "Plataforma aberta",
@@ -3906,7 +3928,7 @@
       "storyUseCaseAnalyticsOutput": "Uma tabela de resultados, gráfico, consulta e explicação que sua equipe pode compartilhar ou continuar refinando.",
       "storyUseCaseCompetitiveTrigger": "Um concorrente lança, altera preços ou surge em um negócio.",
       "storyUseCaseCompetitiveOutput": "Um battlecard com posicionamento, objeções, pontos de prova e a próxima comunicação recomendada.",
-      "heroEyebrow": "O sistema de gerenciamento de IA de código aberto",
+      "heroEyebrow": "O AI Operating System de código aberto",
       "heroTrustStrip": "Código aberto · Qualquer modelo, suas chaves · Auto-host, VPC ou local",
       "problemEyebrow": "A lacuna da IA",
       "problemTitle": "Seus melhores funcionários têm superpoderes de IA. O resto da sua empresa não.",
@@ -4512,12 +4534,12 @@
       "line206JsxTextKortixInitCompanyOs": "kortix init empresa-os",
       "line282JsxTextIntroducingCompanyOs": "Apresentando | Company OS",
       "line288JsxTextRunYourCompanyOnAgentsYouOwn": "Toque sua empresa com agentes que pertencem a você",
-      "line291JsxTextKortixTurnsOneRepoIntoAnAiCommand": "O Kortix transforma um repo em uma central de comando de IA: agentes, gatilhos, ferramentas, memória, projetos, aprovações e entregáveis em um só workspace.",
+      "line291JsxTextKortixTurnsOneRepoIntoAnAiCommand": "O Kortix transforma um repo em um AI Operating System: agentes, gatilhos, ferramentas, memória, projetos, aprovações e entregáveis em um só workspace.",
       "line298JsxTextGetStarted": "Começar",
       "line303JsxTextRequestDemo": "Solicitar demo",
       "line374JsxAttrLabelBuiltFor": "Criado para",
       "line397JsxTextKortixIsTheOperatingFrameworkForAutonomousCompany": "O Kortix é o framework operacional para trabalho empresarial autônomo: declare o workspace, execute sessões em ambientes isolados e mantenha as mudanças importantes revisáveis.",
-      "line495JsxTextKortixIsTheAiCommandCenterForYour": "O Kortix é a central de comando de IA da sua empresa.",
+      "line495JsxTextKortixIsTheAiCommandCenterForYour": "O Kortix é o AI Operating System da sua empresa.",
       "line497JsxTextItTurnsAProjectRepoIntoALiving": "Ele transforma um repo de projeto em um workspace empresarial vivo, onde agentes planejam, operam entre ferramentas, produzem entregáveis finalizados e deixam uma trilha revisável."
     },
     "appInvitesInviteidPage": {
@@ -4547,13 +4569,13 @@
       "accept": "Aceitar"
     },
     "appLayout": {
-      "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – O centro de comando de IA para a sua empresa",
-      "line197JsxAttrContentACloudComputerWhereAiAgentsRunYour": "O Kortix é o centro de comando de IA de código aberto para a sua empresa: um único lugar para criar, executar e governar agentes de IA que conectam mais de 3.000 ferramentas e entregam trabalho real, não apenas chat.",
-      "line198JsxAttrContentKortixAutonomousCompanyOperatingSystemAiAgentsSelf": "Kortix, centro de comando de IA, agentes de IA, força de trabalho de IA, plataforma de IA de código aberto, agentes de IA auto-hospedados, automação com IA, orquestração de agentes, empresa nativa de IA, criar agentes de IA, conectar mais de 3.000 ferramentas, operações de IA",
-      "line199JsxAttrContentKortixTheAutonomousCompanyOperatingSystem": "Kortix – O centro de comando de IA para a sua empresa",
-      "line200JsxAttrContentACloudComputerWhereAiAgentsRunYour": "O Kortix é o centro de comando de IA de código aberto para a sua empresa: um único lugar para criar, executar e governar agentes de IA que conectam mais de 3.000 ferramentas e entregam trabalho real, não apenas chat.",
-      "line206JsxAttrContentKortixTheAutonomousCompanyOperatingSystem": "Kortix – O centro de comando de IA para a sua empresa",
-      "line207JsxAttrContentACloudComputerWhereAiAgentsRunYour": "O Kortix é o centro de comando de IA de código aberto para a sua empresa: um único lugar para criar, executar e governar agentes de IA que conectam mais de 3.000 ferramentas e entregam trabalho real, não apenas chat.",
+      "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – O AI Operating System de código aberto",
+      "line197JsxAttrContentACloudComputerWhereAiAgentsRunYour": "O Kortix é o AI Operating System de código aberto para a sua empresa: um único lugar para criar, executar e governar agentes de IA que conectam mais de 3.000 ferramentas e entregam trabalho real, não apenas chat.",
+      "line198JsxAttrContentKortixAutonomousCompanyOperatingSystemAiAgentsSelf": "Kortix, AI Operating System, AI OS, agentes de IA, força de trabalho de IA, plataforma de IA de código aberto, agentes de IA auto-hospedados, automação com IA, orquestração de agentes, empresa nativa de IA, criar agentes de IA, conectar mais de 3.000 ferramentas, operações de IA",
+      "line199JsxAttrContentKortixTheAutonomousCompanyOperatingSystem": "Kortix – O AI Operating System de código aberto",
+      "line200JsxAttrContentACloudComputerWhereAiAgentsRunYour": "O Kortix é o AI Operating System de código aberto para a sua empresa: um único lugar para criar, executar e governar agentes de IA que conectam mais de 3.000 ferramentas e entregam trabalho real, não apenas chat.",
+      "line206JsxAttrContentKortixTheAutonomousCompanyOperatingSystem": "Kortix – O AI Operating System de código aberto",
+      "line207JsxAttrContentACloudComputerWhereAiAgentsRunYour": "O Kortix é o AI Operating System de código aberto para a sua empresa: um único lugar para criar, executar e governar agentes de IA que conectam mais de 3.000 ferramentas e entregam trabalho real, não apenas chat.",
       "line209JsxAttrContentKortix": "@kortix",
       "line214JsxAttrContentAppId6754448524AppArgumentKortix": "app-id=6754448524, app-argument=kortix://"
     },
@@ -8241,7 +8263,7 @@
     "autoAppPresentationSlidesPlatformJsxTextForTeams733bb9d9": "Para empresas",
     "autoAppPresentationSlidesPlatformJsxTextUseItLikeChat53e3e05e": "Uma força de trabalho de IA que você realmente controla",
     "autoAppPresentationSlidesPlatformJsxAttrEyebrowEverywhereYourTeam780b5c60": "Toda superfície",
-    "autoAppPresentationSlidesPlatformJsxAttrTitleChatSlackTeams59488d51": "Uma central de comando. Todas as formas como sua equipe trabalha.",
+    "autoAppPresentationSlidesPlatformJsxAttrTitleChatSlackTeams59488d51": "Chat, Slack, Teams ou o seu próprio produto.",
     "autoAppPresentationSlidesPlatformJsxAttrTitleBuiltOnFiles64c977e2": "Construído sobre arquivos que você consegue abrir de verdade.",
     "autoAppPresentationSlidesPlatformJsxAttrEyebrowEnterpriseSecurityc11469d2": "Enterprise e segurança",
     "autoAppPresentationSlidesPlatformJsxAttrTitleHardIsolationd585df5c": "Isolamento forte",
@@ -8606,8 +8628,8 @@
     "autoAppPresentationDeckJsxAttrLabelFullscreenF28aed7ac": "Tela cheia (F)",
     "autoAppPresentationDeckJsxTextKortix28fe100d": "Kortix ·",
     "autoAppPresentationDeckJsxAttrAriaLabelCloseOverviewf408b52c": "Fechar visão geral",
-    "autoAppPresentationSlidesEngJsxTextAutonomousCompanyOperatingSystem84a0b7da": "Sistema Operacional de Empresa Autônoma",
-    "autoAppPresentationSlidesEngJsxTextTheAICommandCentera5f1f9b6": "O centro de comando da IA",
+    "autoAppPresentationSlidesEngJsxTextAutonomousCompanyOperatingSystem84a0b7da": "AI Operating System",
+    "autoAppPresentationSlidesEngJsxTextTheAICommandCentera5f1f9b6": "O AI Operating System",
     "autoAppPresentationSlidesEngJsxTextForYourCompany25d27be8": "para sua empresa",
     "autoAppPresentationSlidesEngJsxTextOnePlaceToBuild6874ebc8": "Um lugar para construir, administrar e governar sua empresa nativa de IA.",
     "autoAppPresentationSlidesEngJsxAttrEyebrowHowWeGot7d55e2ea": "Como chegamos aqui",
@@ -8617,8 +8639,8 @@
     "autoAppPresentationSlidesEngJsxAttrLabelRaisedUS2fe5bf64": "Criado · EUA",
     "autoAppPresentationSlidesEngJsxAttrLabelViaGitHubFund874e057f": "através do Fundo GitHub",
     "autoAppPresentationSlidesEngJsxTextSoWhatIsKortixf6e68e29": "Então, o que é Kortix hoje?",
-    "autoAppPresentationSlidesEngJsxTextTheAICommandCenteraa567525": "O centro de comando de IA para sua empresa.",
-    "autoAppPresentationSlidesEngJsxTextACommandCenterFor5691f67e": "Um centro de comando para a empresa: você conecta as ferramentas, convida os membros da equipe e os agentes de IA trabalham nos seus dados internos.",
+    "autoAppPresentationSlidesEngJsxTextTheAICommandCenteraa567525": "O AI Operating System para sua empresa.",
+    "autoAppPresentationSlidesEngJsxTextACommandCenterFor5691f67e": "Um sistema operacional para a empresa: você conecta as ferramentas, convida os membros da equipe e os agentes de IA trabalham nos seus dados internos.",
     "autoAppPresentationSlidesEngJsxAttrTitlePlatformInterfaceOverview68617c3b": "Visão geral da interface da plataforma.",
     "autoAppPresentationSlidesEngJsxAttrEyebrowTheModele0cce1a2": "O modelo",
     "autoAppPresentationSlidesEngJsxAttrTitleASharedMachinef4a64064": "Uma máquina compartilhada, onde o conhecimento da empresa se acumula ao longo do tempo.",
@@ -8663,8 +8685,8 @@
     "autoAppPresentationSlidesEngJsxTextDomKortixAi2c244da6": "dom@kortix.ai",
     "autoAppPresentationSlidesEngJsxTextOrOnLinkedIn13b1c035": "– ou no LinkedIn.",
     "autoAppPresentationSlidesPlatformJsxTextCurlFsSLHttpsKortix8ac787c7": "curl -fsSL https://kortix.com/install | festa",
-    "autoAppPresentationSlidesPlatformJsxTextAutonomousCompanyOperatingSystem23597d7f": "Sistema Operacional de Empresa Autônoma",
-    "autoAppPresentationSlidesPlatformJsxTextTheAICommandCentera4b5f603": "O centro de comando da IA",
+    "autoAppPresentationSlidesPlatformJsxTextAutonomousCompanyOperatingSystem23597d7f": "AI Operating System",
+    "autoAppPresentationSlidesPlatformJsxTextTheAICommandCentera4b5f603": "O AI Operating System",
     "autoAppPresentationSlidesPlatformJsxTextForYourCompany6715feb7": "para sua empresa",
     "autoAppPresentationSlidesPlatformJsxTextOneRepoOneConfig711a8921": "Um repositório. Uma configuração. Uma força de trabalho de agentes de IA que faz o trabalho real — e tudo é código que você possui.",
     "autoAppPresentationSlidesPlatformJsxTextStartBuildinge2f47368": "Comece a construir",
@@ -8672,7 +8694,7 @@
     "autoAppPresentationSlidesPlatformJsxTextACompanyIsGoing0251c6e0": "Uma empresa será um repositório git.",
     "autoAppPresentationSlidesPlatformJsxTextNotAMetaphorLiterally9692a187": "Não é uma metáfora – literalmente algo que você pode clonar. Seus agentes, as habilidades que desenvolveu, a forma como o trabalho é realizado, todos os fatos que aprendeu",
     "autoAppPresentationSlidesPlatformJsxTextWhatItIsf8717422": "O que é isso",
-    "autoAppPresentationSlidesPlatformJsxTextTheAICommandCenterafc65ccf": "O centro de comando de IA para sua empresa",
+    "autoAppPresentationSlidesPlatformJsxTextTheAICommandCenterafc65ccf": "O AI Operating System para sua empresa",
     "autoAppPresentationSlidesPlatformJsxTextInPlainLanguage8d30ff19": "Em linguagem simples",
     "autoAppPresentationSlidesPlatformJsxTextACloudComputerWhere43543f17": "Um computador em nuvem onde agentes de IA administram sua empresa",
     "autoAppPresentationSlidesPlatformJsxAttrEyebrowWhyNowbc13f666": "Por que agora",
@@ -8689,7 +8711,7 @@
     "autoAppPresentationSlidesPlatformJsxAttrBodyAToyOr30c5182d": "Um brinquedo ou uma gaiola é a escolha real na mesa hoje – e é estúpida. Kortix é o que você constrói quando recusa ambos.",
     "autoAppPresentationSlidesPlatformJsxTextMostAIToolsGivede7eebf9": "A maioria das ferramentas de IA oferece uma caixa de bate-papo.",
     "autoAppPresentationSlidesPlatformJsxTextKortixGivesYouA2de643b9": "Kortix oferece a você um",
-    "autoAppPresentationSlidesPlatformJsxTextCommandCenterf5978255": "centro de comando.",
+    "autoAppPresentationSlidesPlatformJsxTextCommandCenterf5978255": "sistema operacional de IA completo.",
     "autoAppPresentationSlidesPlatformJsxTextOnePlaceWhereYour1521a0b5": "Um lugar onde todos os seus agentes, habilidades, conectores, automações e memória vivem — e uma força de trabalho que produz resultados reais: decks, repo",
     "autoAppPresentationSlidesPlatformJsxTextAKortixProjectIsa8e122a4": "Um projeto Kortix é um repositório git, e esse repositório",
     "autoAppPresentationSlidesPlatformJsxTextTheCompanyTheWhole7610bc22": "a empresa. A coisa toda é definida por dois arquivos – tudo o que passa são arquivos que você pode ler e um agente pode editar.",
@@ -8707,29 +8729,29 @@
     "autoAppPresentationSlidesPlatformJsxTextZeroCrossover86ad5f52": "Cruzamento zero.",
     "autoAppPresentationSlidesPlatformJsxTextRunThousandsOfAgents9a3f93e4": "Execute milhares de agentes na mesma configuração ao mesmo tempo — cada um isolado, cada um alimentando o trabalho por meio de solicitações de mudança. Quando dois mudam",
     "autoAppPresentationSlidesPlatformJsxTextThisIsTheOnly74f58f8b": "Esta é a única maneira de uma força de trabalho de IA ser mais do que uma apresentação de slides.",
-    "autoAppPresentationSlidesPlatformJsxAttrEyebrowWhatSInc726d2c3": "O que há no centro de comando",
+    "autoAppPresentationSlidesPlatformJsxAttrEyebrowWhatSInc726d2c3": "O que há no AI OS",
     "autoAppPresentationSlidesPlatformJsxAttrTitleOnePlaceYourf7c09691": "Um lugar onde toda a sua operação de IA é executada.",
-    "autoAppPresentationSlidesPlatformJsxAttrEyebrowCommandCenterAgentse0677a55": "Centro de comando · Agentes",
+    "autoAppPresentationSlidesPlatformJsxAttrEyebrowCommandCenterAgentse0677a55": "AI OS · Agentes",
     "autoAppPresentationSlidesPlatformJsxAttrLeadMarkdownPersonasWith298b95be": "Personas de markdown com um alcance rápido e com escopo restrito em ferramentas e recursos - um por função ou tarefa. Instalável com um clique e ab",
-    "autoAppPresentationSlidesPlatformJsxAttrEyebrowCommandCenterSkillse923e1ca": "Centro de comando · Habilidades",
+    "autoAppPresentationSlidesPlatformJsxAttrEyebrowCommandCenterSkillse923e1ca": "AI OS · Habilidades",
     "autoAppPresentationSlidesPlatformJsxAttrLeadThePartThat99be6c94": "A parte que compõe. Markdown mais scripts que codificam como sua empresa realiza um trabalho específico - escrito uma vez e compartilhado em todas as sessões",
-    "autoAppPresentationSlidesPlatformJsxAttrEyebrowCommandCenterConnectorscc0dd429": "Centro de comando · Conectores",
+    "autoAppPresentationSlidesPlatformJsxAttrEyebrowCommandCenterConnectorscc0dd429": "AI OS · Conectores",
     "autoAppPresentationSlidesPlatformJsxAttrTitleConnectEverythingOnce90dc9225": "Conecte tudo de uma vez.",
     "autoAppPresentationSlidesPlatformJsxAttrLead1ClickConnectbd49b095": "Conecte-se com um clique a mais de 3.000 aplicativos, além de qualquer serviço MCP, OpenAPI, GraphQL ou HTTP. A sandbox vê tudo isso através de um proxy com um único",
-    "autoAppPresentationSlidesPlatformJsxTextCommandCenterSecrets582ab7fe": "Centro de comando · Segredos",
+    "autoAppPresentationSlidesPlatformJsxTextCommandCenterSecrets582ab7fe": "AI OS · Segredos",
     "autoAppPresentationSlidesPlatformJsxTextOneTokenNotNinetya67633e0": "Um token, não noventa.",
     "autoAppPresentationSlidesPlatformJsxTextKeysOAuthAndModel44974f3c": "Chaves, OAuth e credenciais de modelo residem em um local controlado: criptografado, com escopo definido por pessoa e por grupo, enviado para a sandbox em tempo de execução",
     "autoAppPresentationSlidesPlatformJsxText1KORTIXTOKEN7cd8465b": "1 KORTIX_TOKEN",
     "autoAppPresentationSlidesPlatformJsxTextSandboxScopedAudited1023f72c": "sandbox · escopo · auditado",
-    "autoAppPresentationSlidesPlatformJsxAttrEyebrowCommandCenterChannels1e28ad0b": "Centro de comando · Canais",
+    "autoAppPresentationSlidesPlatformJsxAttrEyebrowCommandCenterChannels1e28ad0b": "AI OS · Canais",
     "autoAppPresentationSlidesPlatformJsxAttrTitleWhereYourPeople5a92eefb": "Onde seu povo já está.",
     "autoAppPresentationSlidesPlatformJsxAttrLeadSlackTeamsTelegram3e7973c3": "Slack, Equipes, Telegram, WhatsApp, SMS, e-mail. Um clique ativa um bot que inicia sessões onde quer que sua equipe trabalhe – mesmos agentes, sa",
-    "autoAppPresentationSlidesPlatformJsxAttrEyebrowCommandCenterTriggers9dd9b5f3": "Centro de comando · Gatilhos",
+    "autoAppPresentationSlidesPlatformJsxAttrEyebrowCommandCenterTriggers9dd9b5f3": "AI OS · Gatilhos",
     "autoAppPresentationSlidesPlatformJsxAttrTitleItRunsWithout0222686a": "Funciona sem você.",
     "autoAppPresentationSlidesPlatformJsxAttrLeadCronAndSignedc7137017": "Cron e webhooks assinados geram sessões automaticamente – acione uma todas as manhãs ou inicialize uma no instante em que algo acontecer. O ramo principal eu",
     "autoAppPresentationSlidesPlatformJsxAttrEyebrowHowWorkLands0010e2ce": "Como funciona o trabalho",
     "autoAppPresentationSlidesPlatformJsxAttrLeadTheReviewedMerge785e3799": "A fusão revisada em direção ao principal - e a única maneira de o trabalho chegar. É o equivalente a CI/CD, mas para o trabalho de uma organização em vez de j",
-    "autoAppPresentationSlidesPlatformJsxTextCommandCenterMemoryb48a08fa": "Centro de comando · Memória",
+    "autoAppPresentationSlidesPlatformJsxTextCommandCenterMemoryb48a08fa": "AI OS · Memória",
     "autoAppPresentationSlidesPlatformJsxTextALivingCompanyBrain7ed9d8a3": "Um cérebro de empresa vivo.",
     "autoAppPresentationSlidesPlatformJsxTextFilesForNowAndf51cbec0": "Arquivos por enquanto e um sistema que aprende mais tarde: analise cada sessão e cada fonte conectada e mantenha uma foto da empresa que",
     "autoAppPresentationSlidesPlatformJsxAttrEyebrowMembersGroupsRolesed169530": "Membros, grupos e funções",
@@ -9091,7 +9113,7 @@
     "autoComponentsProjectsPersonalOnboardingWelcomeJsxAttrAriaLabelWelcome436613af": "Bem-vindo do Marko",
     "autoComponentsProjectsPersonalOnboardingWelcomeJsxTextHeyIMe9d73cdb": "Ei, eu sou Marko",
     "autoComponentsProjectsPersonalOnboardingWelcomeJsxTextFounderCEOKortix4be58c34": "Fundador e CEO, Kortix",
-    "autoComponentsProjectsPersonalOnboardingWelcomeJsxTextWantAHandf0a0c56c": "Quer ajuda para configurar o centro de comando de IA da sua empresa?",
+    "autoComponentsProjectsPersonalOnboardingWelcomeJsxTextWantAHandf0a0c56c": "Quer ajuda para configurar o AI Operating System da sua empresa?",
     "autoComponentsProjectsPersonalOnboardingWelcomeJsxTextBookADemo7f3fc2d5": "Agende uma demonstração",
     "autoComponentsProjectsPersonalOnboardingWelcomeJsxAttrTitleBookA33a960c8": "Agende uma ligação com Marko",
     "autoComponentsProjectsPersonalOnboardingWelcomeJsxAttrDescriptionACouple5d67eddc": "Alguns detalhes rápidos para que Marko possa personalizar a ligação.",
@@ -9120,7 +9142,7 @@
     "autoComponentsProjectsProjectAccessBoundaryJsxTextCheckAgain9f1e6458": "Verifique novamente",
     "autoComponentsProjectsProjectAccessBoundaryJsxTextRequestAccess870ec6e1": "Solicitar acesso",
     "autoComponentsProjectsProjectOnboardingWizardJsxAttrCloseClassNameTextMuted496fbb2b": "text-muted-foreground hover:bg-muted hover:text-foreground",
-    "autoComponentsProjectsProjectOnboardingWizardJsxTextYourCommandCenterb0571c60": "Seu centro de comando está pronto. Descreva uma tarefa no compositor e seu agente começará a trabalhar.",
+    "autoComponentsProjectsProjectOnboardingWizardJsxTextYourCommandCenterb0571c60": "Seu AI OS está pronto. Descreva uma tarefa no compositor e seu agente começará a trabalhar.",
     "autoComponentsProjectsProjectOnboardingWizardJsxTextStartBuilding342653ba": "Comece a construir",
     "autoComponentsProjectsProjectOnboardingWizardJsxText3000Connectors0d987bba": "Mais de 3.000 conectores às quais você pode se conectar — OAuth, MCP, REST e as ferramentas que sua equipe já utiliza.",
     "autoComponentsProjectsProjectOnboardingWizardJsxTextToMakeIt58c5adb1": "Para torná-lo verdadeiramente seu, desenvolva:",
@@ -9410,7 +9432,9 @@
     "i18nComplete": {
       "authEmailRateLimit": "Não foi possível enviar o e-mail. Tente novamente em cerca de uma hora.",
       "authRequestRateLimit": "Muitas solicitações. Tente novamente em alguns minutos.",
+      "text1a9030082a20": "Criar habilidade",
       "text25ab55af92b1": "Envio do anexo iniciado",
+      "text38e64d6a8162": "Faz commit de um SKILL.md no branch padrão do projeto. Não precisa de modelo nem de chat.",
       "text40078a553439": "Bloco do anexo enviado",
       "text4c7f8000aabd": "Envio do anexo concluído",
       "text91420d2587c2": "Envio do anexo removido",
@@ -9461,10 +9485,8 @@
       "text0154297a0f48": "Qualquer fase",
       "text01676385135f": "É um rascunho — e deixa isso claro",
       "text016cec7c484d": "Conector revogado",
-      "text016e549e6831": "Substituição do máximo de sessões simultâneas",
       "text017245d54fdb": "no Slack.",
       "text018069eabbfd": "A definição",
-      "text018912e44371": "Checkout compilado do projeto baixado",
       "text019929eebb12": "Atribua funções em Membros (conta) ou Projetos (por projeto). As funções personalizadas aparecem no mesmo seletor das funções integradas.",
       "text01a556bb9792": "A função da pessoa e a permissão declarada do agente precisam autorizar a ação.",
       "text01b50fe973da": "Atualizar saúde do provisionamento",
@@ -9610,12 +9632,12 @@
       "text0606f7bed0bb": "Greenhouse e outros sistemas de candidatos",
       "text0615570f9ea1": "Claude",
       "text061ea77f739e": "Falha ao exportar CSV",
-      "text06272d336a8c": "A Kortix é o AI Management System de código aberto, que você pode hospedar por conta própria, com qualquer modelo. Comece um projeto de graça.",
+      "text06272d336a8c": "A Kortix é o AI Operating System de código aberto, que você pode hospedar por conta própria, com qualquer modelo. Comece um projeto de graça.",
       "text062aba2180ea": "Mesclar é um poder separado",
       "text062b7c4143e2": "Sua própria branch, criada por sessão",
       "text062bccfdad1c": "Nenhum sandbox corresponde a esta pesquisa",
       "text062dddbbb151": "Uma fronteira sem ecossistema não é estável",
-      "text06346e4d9c35": "Você precisa da permissão de gravação personalizada do projeto para alterar um sinalizador de recurso.",
+      "text6d484ed8c1a0": "Você precisa da permissão de configurações do projeto para alterar um sinalizador de recurso.",
       "text06475633ed3e": "Última atividade",
       "text064f6ac1a789": "Popover",
       "text065f04fd94d6": "Altere o que {value0} {value1} pode fazer em {value2}.",
@@ -9834,7 +9856,7 @@
       "text0cbeb39b2ff0": "Documento PDF",
       "text0cc5a54b089c": "Acompanhe uma sessão ao vivo, veja o diff de cada mudança em um agente ou skill e entregue o trabalho por uma solicitação de mudança.",
       "text0cc7557652be": "acesso.",
-      "text0cc8e13decfa": "O centro de comando do Kortix",
+      "text0cc8e13decfa": "O AI OS do Kortix",
       "text0cd1e319b6e2": "Um trigger nomeia um agente e herda exatamente as permissões desse agente — os conectores, segredos e habilidades listados pelo bloco dele em kortix.yaml, e nada mais. Um agente sem permissões não tem acesso.",
       "text0ce6beab574f": "A personalização é deliberadamente somente leitura. Pressionar “Criar novo” ou “Editar” abre uma sessão que edita os arquivos em uma branch e abre uma solicitação de alteração para você revisar e mesclar. Não existe um botão que altere silenciosamente o comportamento de um agente amanhã.",
       "text0ced428dea65": "Use suas próprias chaves — Anthropic, OpenAI ou modelos locais — ou execute na computação da Kortix.",
@@ -9886,6 +9908,9 @@
       "text0e498a7ede47": "{value0} ativado",
       "text0e52f6b9d025": "Markdown",
       "text4cab70e9226b": "Salvar como PDF",
+      "text9bf06a86c934": "Nova habilidade",
+      "texta38668224f1a": "Criar com um formulário",
+      "textb25ab5d5e2a5": "Habilidade criada",
       "textce87352f1102": "Este arquivo é grande demais para salvar como PDF. Baixe o arquivo Markdown.",
       "text3b0c86f182b0": "Não foi possível preparar o PDF.",
       "text0e570ca6fabe": "Fonte",
@@ -10200,7 +10225,7 @@
       "text1801bed8cea5": "Falha ao copiar — selecione e copie manualmente",
       "text18038f7fc7e0": "A concessão será removida automaticamente neste horário.",
       "text1803aa5595d8": "Carregando seus projetos…",
-      "text1806843c0554": "O sistema de gerenciamento de IA open source",
+      "text1806843c0554": "O AI Operating System de código aberto",
       "text18093cad2644": "Modal",
       "text180bbb19a1b2": "O runbook que vive na cabeça de uma pessoa",
       "text1814e0a6cb50": "Ver modelos disponíveis",
@@ -10234,7 +10259,7 @@
       "text18d67c992b71": "Nome de exibição",
       "text18d7a47acb40": "Estudos de caso e casos de uso estão a caminho. Volte em breve.",
       "text18d93a94d067": "De volta ao Kortix, acompanhe o status em tempo real abaixo enquanto envia ou espera a sincronização — não é preciso alternar entre abas para verificar.",
-      "text18f31a325716": "Sobre a Kortix – O AI Management System de código aberto",
+      "text18f31a325716": "Sobre a Kortix – O AI Operating System de código aberto",
       "text18fb4a5618b9": "A mesma visualização de parâmetros usada nas aprovações ao vivo.",
       "text18fdd549b2ed": "Novo",
       "text1903bc11a8e9": "Deve corresponder exatamente ao proprietário do recurso do token.",
@@ -10256,7 +10281,6 @@
       "text197300839f83": "Copiar \"{value0}\"",
       "text19766ed6ccb2": "Cancelar",
       "text197da3e17a78": "Device Authorization",
-      "text197f9370a831": "Limite do plano",
       "text19890c7ac88a": "Falha ao carregar o acesso ao projeto",
       "text1994b6869b97": "ID da entidade SP",
       "text19962f19ebb6": "# Clientes",
@@ -10388,7 +10412,7 @@
       "text1d5b40338c62": "Sair da conta",
       "text1d6d3a460fb1": "Documento DOCX",
       "text1d72184afeaf": "Passe de fazer perguntas a executar o trabalho.",
-      "text1d7a4d1f09bb": "Estamos construindo o AI Management System de código aberto. Toda empresa deveria ser dona de tudo.",
+      "text1d7a4d1f09bb": "Estamos construindo o AI Operating System de código aberto. Toda empresa deveria ser dona de tudo.",
       "text1d7bec01eefe": "Código aberto, para que o harness nunca seja aquilo que prende você",
       "text1d826553e961": "Revisar alterações propostas pelos seus agentes",
       "text1d8297cfb60c": "Harness agêntico",
@@ -10662,7 +10686,7 @@
       "text250ab151e9cc": "Seu IdP acrescenta",
       "text2515f730f2e2": "Reutiliza nosso DB e backups existentes. É a opção mais simples de operar.",
       "text2518d1e2e3d1": "Ir para a mensagem",
-      "text2522f9d16f3b": "Centro de comando",
+      "text2522f9d16f3b": "O AI OS",
       "text25330787f710": "+3",
       "text2534086de9fe": "Mostrar painel",
       "text2534e74d5120": "O que o agente deve alterar?",
@@ -10890,7 +10914,7 @@
       "text2be1f843485e": "{value0} {value1} ficará bloqueado até que se inscrevam no MFA:",
       "text2bf4ee86ea70": "Testar login único",
       "text2bf623481fd8": "Defina o padrão desejado",
-      "text2bf70270bfde": "AI Management System de código aberto: seus agentes, skills, memória e conectores em um repositório que é seu. Qualquer modelo. Hospedagem própria ou nuvem.",
+      "text2bf70270bfde": "AI Operating System de código aberto: seus agentes, skills, memória e conectores em um repositório que é seu. Qualquer modelo. Hospedagem própria ou nuvem.",
       "text2bfc3471571e": "Aprovações",
       "text2c014f8f8986": "Cursor",
       "text2c063e7ab5f6": "A receita da máquina em que uma sessão é executada e o registro de cada vez que Kortix preparou uma.",
@@ -11028,7 +11052,7 @@
       "text2fea30b8d515": "Os agentes atuam por meio de um único token Kortix com escopo",
       "text2fec4da809fd": "agents/invoice-clerk.md",
       "text2ff3e0bff1fd": "ID do tenant do Azure AD",
-      "text2ff50f0be011": "O que a Kortix realmente é: o sistema aberto de gestão de IA, camada por camada",
+      "text2ff50f0be011": "O que a Kortix realmente é: o AI Operating System de código aberto, camada por camada",
       "text30015841ce75": "Metadados do servidor OAuth lidos",
       "text30094e0bec00": "Fazer",
       "text3015112f4f45": "Um kit que qualquer entrevistador pode aplicar.",
@@ -11223,7 +11247,7 @@
       "text365642325b8f": "Conecte primeiro o SAML SSO para que os usuários provisionados possam entrar.",
       "text3658d6e18a94": "separated divide o bloco em tiles individuais com espaço entre eles. Cada tile possui sua própria moldura e recorte, sem depender de uma moldura compartilhada.",
       "text365987d015f7": "Próxima ação",
-      "text3661bf7ae497": "Notas de campo sobre criar, executar e governar agentes de IA que realizam trabalho real — da equipe que está criando o centro de comando Kortix.",
+      "text3661bf7ae497": "Notas de campo sobre criar, executar e governar agentes de IA que realizam trabalho real — da equipe que está criando o AI Operating System da Kortix.",
       "text366487a11e4c": "Sessões ativas",
       "text3664895579f0": "Exportar",
       "text3668377bfd48": "Marca isolada, sem bloco, object-contain.",
@@ -11724,13 +11748,12 @@
       "text443590eec311": "Quem não é desenvolvedor publica skills como markdown; a Kortix cuida do branch, da solicitação de alteração e do merge nos bastidores. Versionado, revisável, auditável.",
       "text44368adad746": "Postgres",
       "text4441b4b45947": "Token não encontrado",
-      "text445cf0a2abfa": "A Kortix está construindo o AI Management System de código aberto. Uma empresa é dona de tudo: cada agente, todos os seus dados, cada skill, cada conector, a memória e toda a configuração, na própria infraestrutura.",
+      "text445cf0a2abfa": "A Kortix está construindo o AI Operating System de código aberto. Uma empresa é dona de tudo: cada agente, todos os seus dados, cada skill, cada conector, a memória e toda a configuração, na própria infraestrutura.",
       "text445d14bb67ec": "Entra ID → Aplicações empresariais",
       "text445d576b5175": "Cada prompt de agente, cada skill, cada fato lembrado e cada grant é texto em um único repo. Não há console para percorrer nem exportação para solicitar.",
       "text445d71b74731": "Confronta o razão com o extrato, agrupa as divergências por causa provável e sinaliza as realmente ambíguas em vez de forçar uma correspondência. A lista de não conciliados é o entregável; uma execução limpa que escondeu três problemas não serve.",
       "text446f4eabf99f": "Para que serve este agente",
       "text4471a7e4e487": "# Resposta a incidentes",
-      "text44912abd87c3": "Sessões simultâneas",
       "text449992e55737": "Mais de 3.000 apps com um clique",
       "text449a509f5f87": "RBAC avançado",
       "text44a57b22e03d": "Alerta",
@@ -12468,7 +12491,7 @@
       "text58f9595c7f1d": "Um echo bloqueado retorna como [REDACTED]",
       "text58fd308928dd": "Adicionar gatilho",
       "text59004552be50": "\"{value0}\" movido para cá",
-      "text590b2d04d8a8": "Abra o centro de comando e dê uma tarefa real a um agente.",
+      "text590b2d04d8a8": "Abra seu AI OS e dê uma tarefa real a um agente.",
       "text590d36262e11": "{value0} adicionado — clique em Connect para autorizar",
       "text59136943c199": "Prompts da sessão enfileirados visualizados",
       "text5918414053b3": "Para Okta, Microsoft Entra ID, Google Workspace e GitHub, o Cloudflare Access envia automaticamente um atributo SAML \"groups\" — não há nada a adicionar aqui; apenas confirme que ele está presente. Para qualquer outro IdP upstream, adicione uma declaração de atributo SAML com Name \"groups\" e selecione a declaração do IdP que contém a associação a grupos.",
@@ -12895,7 +12918,6 @@
       "text654f8c9688a8": "Leituras executam, gravações aguardam",
       "text65511e543224": "Adicione mais um parâmetro com Field name \"groups\". No menu Value, selecione \"User Roles\" (é essa opção que envia os nomes das funções do usuário — o conceito separado de \"Groups\" do OneLogin é outro atributo). Marque \"Include in SAML assertion\" E ative a opção de múltiplos valores para que cada função seja enviada como seu próprio valor.",
       "text65562e698ff8": "Como uma página de lista ou de gestão é montada: cabeçalho, barra de busca, linhas, estado vazio.",
-      "text655a03fa2bea": "Faça upgrade do seu plano para obter um limite maior ou entre em contato com a equipe da Kortix para aumentá-lo na sua conta.",
       "text655c32fb8455": "surname",
       "text655d15facaf2": "Todos os membros do projeto podem abrir estas sessões.",
       "text6562d4f7e6fb": "A função básica da conta. Sem acesso implícito a projetos — vê apenas os projetos aos quais foi adicionado, diretamente ou por meio de um grupo.",
@@ -13479,7 +13501,7 @@
       "text75df4f0c9e91": "Mais de 3.000 conectores, mais de 60 habilidades e agentes prontos para seu setor.",
       "text75ea39919673": "Sobrepõe edições recentes da página inicial — resolva antes de publicar",
       "text75f33cdfc8e5": "Incompleto",
-      "text75f8cf60c514": "Kortix – o AI Management System de código aberto.",
+      "text75f8cf60c514": "Kortix – o AI Operating System de código aberto.",
       "text76020fe09cc6": "Qualquer runtime",
       "text762303303083": "Código de login verificado",
       "text762abdafcd6c": "Funções personalizadas e permissões por recurso.",
@@ -14445,6 +14467,7 @@
       "text895ce927db2e": "Chat pessoal",
       "text28c7d3f8b75d": "Chat em grupo",
       "text72b5b0c53de9": "Respondeu no Microsoft Teams",
+      "textedac6130dac7": "Faz commit de um SKILL.md no repositório sem uma sessão de chat.",
       "textfc73e9ad2dae": "Respondeu no Slack",
       "text8faf56a14a8d": "Respondeu no Telegram",
       "text8ccfe10f2f2d": "Publicar no seu catálogo do Teams",
@@ -14803,7 +14826,7 @@
       "text9ba9dd084952": "Adicionar conexão do projeto",
       "text9bae517c4742": "Token SCIM gerado — ambos os valores permanecem visíveis pelo restante desta configuração",
       "text9bb725005055": "Antes",
-      "text9bba728a8ca7": "Claude Cowork, ChatGPT Work e os demais caminham para sistemas completos de gestão de agentes que uma empresa inteira executa. Essa é a direção do setor. A diferença é que você nunca será dono deles.",
+      "text9bba728a8ca7": "Claude Cowork, ChatGPT Work e os demais caminham para sistemas operacionais de IA completos, nos quais uma empresa inteira funciona. Essa é a direção do setor. A diferença é que você nunca será dono deles.",
       "text9bd1c37ed121": "Mencione seu agente em qualquer canal.",
       "text9bd290d1b0ce": "As mais recentes falhas de provisionamento, com a classe que a API lhes atribuiu.",
       "text9bd88f2485ac": "Desktop",
@@ -15834,6 +15857,7 @@
       "textb9819d569c9a": "Provisione alguns sandboxes para que o tempo e o resultado apareçam aqui.",
       "textb99e1742613b": "- slug: morning-brief",
       "textb99fa6c06150": "Pré-visualização indisponível",
+      "showPreviewUnavailableHint": "O app não respondeu. Inicie-o na sua sessão e atualize.",
       "textb9acc1017895": "Crie um grupo Kortix para cada grupo enviado pelo seu IdP — sem mapeamento por grupo.",
       "textb9ad2f00fba7": "alterações necessárias",
       "textb9addc023078": "marko@kortix.com",
@@ -16306,7 +16330,7 @@
       "textc6a5e338a7cc": "Nuvem gerenciada, sua VPC privada ou sua própria rede local.",
       "textc6b12eb62d1c": "Atualização da configuração do agente disponível",
       "textc6bd146b2125": "personalizar configurar configuração recursos visão geral central",
-      "textc6bfaece0982": "Estamos construindo o AI Management System de código aberto.",
+      "textc6bfaece0982": "Estamos construindo o AI Operating System de código aberto.",
       "textc6c23265e620": "Falha ao adicionar colaborador",
       "textc6c90c48b495": "Faça upgrade para baixar seu {value0} e muito mais",
       "textc6cfe6e4f129": "Preto",
@@ -16432,7 +16456,6 @@
       "textca3bcc681e99": "O Directory Sync envia usuários e grupos do Entra proativamente — as desativações são aplicadas sem esperar um login. Ele reutiliza o mesmo aplicativo empresarial já registrado para o SAML SSO; não é preciso criar outro.",
       "textca3f00ae4063": "Configurações · Sinalizadores de recursos",
       "textca3ff6018449": "Pesquisar no CSV",
-      "textca41e8913ee7": "Limite de sessões para toda a conta. Em branco, herda o limite do plano.",
       "textca44d7470fff": "3 instruções, 0 erros.",
       "textca519bb35fbb": "Ativar aplicativo",
       "textca566c8968e7": "Login efetuado",
@@ -16572,7 +16595,7 @@
       "textce18e358bf01": "Experimente um termo diferente.",
       "textce1e609b7bf5": "Somente portas do sandbox",
       "textce281df2e934": "Esmaecido, inerte e fora da ordem de tabulação.",
-      "textce34af36d804": "Kortix – O AI Management System de código aberto",
+      "textce34af36d804": "Kortix – O AI Operating System de código aberto",
       "textce3a4968d879": "Exporte ou transmita",
       "textce3b4016393e": "Instalando runtime",
       "textce3e84298c57": "Reproduza, corrija e abra a solicitação de alteração",
@@ -17016,7 +17039,6 @@
       "textdaaf5ab03267": "Não definido — usando as instruções padrão",
       "textdacd5f120ffe": "Credenciais criptografadas, intermediadas no servidor e nunca entregues ao modelo.",
       "textdad35b178f11": "Entra admin center — lista Enterprise applications com New application destacado",
-      "textdae85d16887b": "Máximo de sessões simultâneas",
       "textdaee28c0c883": "Tudo isso é seu.",
       "textdaee7606b339": "Redefinir",
       "textdaf44c9faf1b": "Não foi possível carregar o histórico de versões",
@@ -17197,7 +17219,6 @@
       "textdf80c0ee2f08": "Agentes e skills",
       "textdf8e32d18dbd": "Tudo o que você puder acessar",
       "textdf964376e432": "xoxb-...",
-      "textdf9658428180": "Insira o código de 6 dígitos enviado para seu email",
       "textdfa16aeaca13": "O repositório deste espaço de trabalho está hospedado em {value0}, que não oferece suporte a convites de colaboradores do Kortix. Gerencie o acesso onde o repositório reside.",
       "textdfa2cff42f0c": "Sem experiência em sistemas",
       "textdfad83e7eb69": "{value0} são gerentes implícitos em todos os projetos ativos na conta.",
@@ -17425,7 +17446,7 @@
       "texte5ee1e7e84aa": "Sessão expirada",
       "texte5fb560ba65a": "Na aba SSO, copie a \"Issuer URL\" (é um endpoint de metadados hospedado e ativo) e cole-a abaixo — mantenha a opção \"Dynamic configuration\" selecionada. Prefira isso a colar XML: a URL hospedada é atualizada automaticamente se o OneLogin trocar o certificado de assinatura.",
       "texte5fd643538b9": "Conta · Registro de auditoria",
-      "texte60053964d37": "A Kortix é o sistema operacional de IA de código aberto onde o conhecimento da sua empresa se multiplica. Conecte suas ferramentas, implante um agente e comece a acumular seu próprio capital de tokens. Grátis para começar, hospedar por conta própria e ser dono.",
+      "texte60053964d37": "A Kortix é o AI Operating System de código aberto onde o conhecimento da sua empresa se multiplica. Conecte suas ferramentas, implante um agente e comece a acumular seu próprio capital de tokens. Grátis para começar, grátis para hospedar por conta própria.",
       "texte600bb5b5953": "A associação a repositórios e organizações também é acesso — e é o acesso que mais costuma sobreviver ao motivo original. Lê o estado da organização e relata o que não corresponde às suas funções documentadas.",
       "texte61180e0dd8a": "Link expirado",
       "texte6158ee80566": "declaração) para grupos IAM específicos.",
@@ -17637,7 +17658,7 @@
       "textebab65dedf4d": "Sua solicitação de acesso foi enviada. Entraremos em contato!",
       "textebaf8698b938": "- Abra uma thread e publique todas as atualizações nela",
       "textebafb00209f1": "Atribuir a Grupos",
-      "textebb63fcaf908": "Apresentamos a Kortix: o AI Management System de código aberto",
+      "textebb63fcaf908": "Apresentamos a Kortix: o AI Operating System de código aberto",
       "textebc05a2f34f6": "- slug: python",
       "textebeaf332d3c9": "−83,800",
       "textebfeebd13e38": "Aplicativo SaaS → Configuration",
@@ -17689,7 +17710,6 @@
       "texted13dee8f1f7": "O repositório é a empresa. Faça um fork, crie uma branch, reverta ou entregue-o a uma nova máquina — toda a configuração vem junto.",
       "texted1596a9787f": "Usar um token de acesso",
       "texted1d87390f65": "Emita um atributo de grupo (por exemplo, chamado groups) que liste os grupos do usuário.",
-      "texted21e91b4d87": "Runtime compilado do worker pi baixado",
       "texted26c1af81cf": "Ferramentas de escrita",
       "texted2d94ab1136": "Entre no centro de administração do Microsoft Entra (entra.microsoft.com) como administrador do seu tenant.",
       "texted2e59c337d0": "Narrativa",
@@ -17868,7 +17888,6 @@
       "textf27a58a42762": "Não foi possível carregar o arquivo",
       "textf27bcbb5e1e2": "Dispensável",
       "textf27c4fdb823a": "O Cloudflare Access transmite o email por padrão. Adicione os outros atributos lidos pelo Kortix — id, firstName, lastName — como \"SAML attribute statements\": cada um é um Name associado à declaração do IdP upstream (um menu com as declarações do seu método de login).",
-      "textf27e24caeef3": "Runtime compilado da sessão baixado",
       "textf29674479db4": "Conectando ao OpenAI…",
       "textf297f631ba78": "Ele reúne o que cada entrevistador escreveu, organizado pelo scorecard, não por quem digitou mais, e destaca onde dois entrevistadores discordaram. Expor a discordância é o objetivo. Resol­vê-la é tarefa do painel.",
       "textf29ad8b8092c": "O nome do atributo (groups) deve corresponder à declaração de grupo do Kortix, preenchida previamente na etapa de conexão. O Cloudflare repassa os NOMES dos grupos enviados pelo IdP upstream.",
@@ -18832,9 +18851,7 @@
       "textb0f59e5a2722": "Login OAuth do provedor de modelos iniciado",
       "text0dd455816ef6": "Recriação do snapshot de sandbox iniciada",
       "text40cef5fd1dbd": "Build do modelo de sandbox iniciado",
-      "text09917783e494": "Ambiente da sessão iniciado",
       "text18065b39fc81": "Kortix App interrompido",
-      "textb88830cc18af": "Ambiente da sessão interrompido",
       "text464b0b69fd48": "Eventos do túnel do computador transmitidos",
       "text970caaaceccc": "Solicitação transmitida via relay de segredos",
       "text64a93d38e11a": "Resposta do relay de segredos transmitida",
@@ -18993,7 +19010,6 @@
       "text5ed3e15fac9f": "Transição do provedor de sandbox visualizada",
       "text70a61d85334a": "Sessão visualizada",
       "textd7aa05eaf609": "Livro-razão de custos da sessão visualizado",
-      "text4e22b3354b8f": "Ambiente da sessão visualizado",
       "text48b65bbc9863": "Política de sessão visualizada",
       "text7c649f4bf685": "Pool de segredos de provedor da sessão visualizado",
       "text3fd349f95ce2": "Escopo da sessão visualizado",
@@ -19069,14 +19085,14 @@
       "textf164e4b031dc": "Presença na sessão atualizada",
       "text9e6a0b0a06c2": "Visualizou os autores das mensagens da sessão",
       "textea2f51bfe21c": "Visualizou os participantes da sessão",
-      "text5f58426c214e": "Estamos construindo o AI Management System de código aberto. Toda empresa deveria ser dona de tudo.",
+      "text5f58426c214e": "Estamos construindo o AI Operating System de código aberto. Toda empresa deveria ser dona de tudo.",
       "textf729ef1ea584": "Conciliação de licenças e assentos",
       "text7912f8e97c06": "Um gatilho cron abre a revisão trimestral de acesso e a reconciliação mensal de licenças. Os gatilhos identificam o agente como executor, então a sessão sem supervisão tem exatamente o mesmo alcance que a sessão acompanhada — nada além.",
-      "textbc0deb1bab41": "A Kortix é o AI Management System de código aberto, que você pode hospedar por conta própria, com qualquer modelo. Comece um projeto de graça.",
-      "text0c5b38410c06": "Apresentamos a Kortix: o AI Management System de código aberto",
+      "textbc0deb1bab41": "A Kortix é o AI Operating System de código aberto, que você pode hospedar por conta própria, com qualquer modelo. Comece um projeto de graça.",
+      "text0c5b38410c06": "Apresentamos a Kortix: o AI Operating System de código aberto",
       "textf216fe1b31a2": "Comece com um departamento, conecte as ferramentas que ele já usa e transforme o fluxo de trabalho em um projeto baseado em git que o cliente pode possuir.",
-      "textdcb3e70ce4dc": "Kortix – o AI Management System de código aberto.",
-      "text1345783053b5": "Kortix vs Claude Cowork: um assistente desktop ou um AI Management System para a empresa?",
+      "textdcb3e70ce4dc": "Kortix – o AI Operating System de código aberto.",
+      "text1345783053b5": "Kortix vs Claude Cowork: um assistente desktop ou um AI Operating System para a empresa?",
       "textd90da51ca5c2": "O Claude Cowork executa apenas modelos da Anthropic, na nuvem da Anthropic ou na sua conta do Bedrock, Google Cloud ou Microsoft Foundry, sem self-hosting. Veja onde uma empresa deixa de caber nele.",
       "text0216eab899cb": "Consultorias precisam de um único repo para os agentes dos seus clientes",
       "text3059f4c530b3": "Por que consultorias precisam de um único repo git para os agentes, a memória, os conectores, as políticas e o trabalho auditável dos seus clientes.",
@@ -19116,6 +19132,10 @@
       "textda4bd8bdfe42": "Outras pessoas precisam da aprovação do proprietário da sessão para participar.",
       "text5dae52a3f448": "{count, plural, one {# canal} other {# canais}}",
       "text5097881a690f": "Tópico: {title}",
+      "servedModelRow": "Modelo",
+      "servedModelInPlaceOf": "No lugar de",
+      "servedModelBadge": "Executando em {model}",
+      "servedModelBarDescription": "{requested} não respondeu à última solicitação",
       "text414cc580557b": "Prompt da sessão na fila editado",
       "text52867b778586": "Um kortix.yaml.",
       "textd0dfd435b2f4": "Sua força de trabalho de IA, como código.",
@@ -19204,12 +19224,57 @@
       "textd4586396b9ba": "Os agentes podem usar a CLI por conta própria?",
       "text9e52157faaab": "Sim. A mesma CLI do Kortix roda em cada sandbox, já autenticada, então os agentes usam exatamente os mesmos comandos que você.",
       "text48b78a9ab65b": "Como as execuções ficam isoladas?",
-      "text4af0b7d8bfb1": "Cada sessão roda no seu próprio sandbox, no seu próprio branch git. Nada é compartilhado entre execuções."
+      "text4af0b7d8bfb1": "Cada sessão roda no seu próprio sandbox, no seu próprio branch git. Nada é compartilhado entre execuções.",
+      "text39207bf34111": "Habilidades relacionadas",
+      "text73112526c03a": "O turno do agente falhou. Nenhum motivo foi informado.",
+      "text0e5f7f6732e0": "Bifurcar conversa",
+      "text32ad3abe4479": "Falha ao bifurcar a conversa",
+      "text85b7a59cdbd5": "Agente da plataforma",
+      "textd9c0c74b514b": "Meta é um agente da plataforma que coordena o seu trabalho. A configuração dele é fixa: você pode iniciar uma sessão com ele, mas ele não pode ser configurado aqui.",
+      "text6c4af31cd4ab": "Sessão encerrada neste dispositivo, mas o servidor não pôde confirmar o término da sessão.",
+      "text228359b08506": "Fale com vendas e agende uma demo",
+      "text9d2ac301f9b3": "Marketplace: agentes, habilidades e modelos de projeto",
+      "text9673e23783ee": "Desenvolvedores: CLI, SDK e API para agentes de IA",
+      "textb39694bde847": "Casos de uso: agentes de IA no trabalho real",
+      "text2d077d6a915b": "Baixe o app para desktop e a CLI",
+      "texte5328779436c": "Agentes de IA corporativos: SSO, SCIM, auditoria, sua VPC",
+      "text09aa31d75506": "Agent Computer: um computador na nuvem por sessão",
+      "text3e8ba93514fa": "Agentes de IA e habilidades como arquivos no git",
+      "text81707b679d49": "Automações de agentes de IA com cron e webhooks",
+      "textd49c86c33af1": "Agentes de IA no Slack e no Microsoft Teams",
+      "textab8ee7418b44": "Company as Code: sua empresa em um repo git",
+      "text08c07aa26d80": "Conectores: mais de 3.000 apps para agentes de IA",
+      "textb5ddb92c2667": "Segurança de agentes de IA: isolamento e permissões",
+      "text111f5fe94248": "Agentes de IA self-hosted na sua infraestrutura",
+      "text3ed734962d72": "Agentes de IA para cada equipe",
+      "text1f66405c0804": "Agentes de IA para equipes de engenharia",
+      "text68f3fc697c04": "Agentes de IA para equipes de produto",
+      "text1ab765e55460": "Agentes de IA para equipes de TI",
+      "texte74f82904cfe": "Agentes de IA para equipes de ciência de dados",
+      "text6a66bdc6dbb8": "Agentes de IA para equipes de RH e recrutamento",
+      "text09e71792c6c3": "Agentes de IA para equipes de vendas",
+      "textaaab3a59b808": "Agentes de IA para equipes de marketing",
+      "text8f480bae8d16": "Agentes de IA para equipes de finanças",
+      "text6243d930fc1c": "AI Operating System",
+      "textc959682e0398": "Visualizou os dispositivos conectados",
+      "text976811d9540a": "Desconectou um dispositivo",
+      "text6f417aa88601": "Gastos do gateway LLM por origem listados",
+      "textc96cd610ba08": "Chave de provedor compartilhada tentada novamente após o limite de uso"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
       "description": "Qualquer pessoa com o link pode ver isto sem iniciar sessão. O link fica ativo até você revogá-lo.",
-      "confirm": "Criar link"
+      "confirm": "Criar link",
+      "liveTitle": "Link público",
+      "liveDescription": "Qualquer pessoa com o link pode vê-lo sem entrar.",
+      "liveCount": "{count} links apontam para cá; revogá-los desativa todos.",
+      "copy": "Copiar",
+      "revoke": "{count, plural, one {Revogar link} other {Revogar # links}}",
+      "createDescription": "Qualquer pessoa com o link pode ver isto sem entrar.",
+      "expiresAfter": "Expira após",
+      "cancel": "Cancelar",
+      "expiryNever": "Nunca",
+      "expiryDays": "{count, plural, one {# dia} other {# dias}}"
     },
     "publicTranscriptShare": {
       "sectionTitle": "Link público",
@@ -19332,750 +19397,6 @@
     "dismiss": "Fechar",
     "emailCopied": "Endereço de e-mail copiado"
   },
-  "starterPrompts": {
-    "items": {
-      "company-memory": {
-        "label": "Integre seu agente",
-        "prompt": "Integre-me. Pergunte sobre minha empresa — o que fazemos, quem são nossos clientes, quem faz parte da equipe, nossos produtos e nossas principais prioridades. Salve o que aprender na memória do projeto para se lembrar disso em todas as sessões futuras e, quando terminar, abra uma solicitação de mudança para que eu possa revisar."
-      },
-      "agent-create": {
-        "label": "Crie um agente",
-        "prompt": "Crie um agente especialista para uma tarefa que minha empresa realiza com frequência. Escreva o prompt dele em `agents/`, conceda a ele apenas as permissões de que realmente precisa em `kortix.yaml` e abra uma solicitação de mudança para que eu possa lê-lo antes de entrar em produção. Escolha a tarefa que me pouparia mais tempo e diga por que a escolheu."
-      },
-      "agent-team": {
-        "label": "Monte uma equipe de agentes",
-        "prompt": "Projete uma pequena equipe de agentes para minha empresa — três ou quatro especialistas, cada um com uma função específica e uma permissão restrita — e explique como eles passam o trabalho de um para o outro. Documente tudo e abra uma única solicitação de mudança com o conjunto completo."
-      },
-      "skill-write": {
-        "label": "Escreva uma habilidade",
-        "prompt": "Transforme algo que minha empresa faz sempre da mesma maneira em uma habilidade em `skills/`, para que todas as sessões futuras já saibam como fazer. Escolha a de maior valor, escreva-a corretamente com as etapas e as armadilhas e abra uma solicitação de mudança."
-      },
-      "skill-from-runbook": {
-        "label": "Converta hábito em habilidade",
-        "prompt": "Continuo explicando o mesmo processo para você. Documente-o como uma habilidade reutilizável, com as etapas, as entradas e a aparência de uma boa saída; depois, abra uma solicitação de mudança. Pergunte-me em uma frase qual processo devo documentar se não conseguir descobrir pela memória."
-      },
-      "agent-review": {
-        "label": "Revise meus agentes",
-        "prompt": "Leia todos os agentes deste projeto — seus prompts e suas permissões — e diga quais são vagos, quais têm permissões excessivas e quais se sobrepõem. Proponha as correções em uma única solicitação de mudança."
-      },
-      "grants-audit": {
-        "label": "Audite o alcance dos agentes",
-        "prompt": "Audite `kortix.yaml`: para cada agente, liste os conectores, segredos e habilidades aos quais ele pode ter acesso e sinalize tudo o que recebeu `all` sem precisar disso. Proponha um conjunto mais restrito em uma solicitação de mudança."
-      },
-      "trigger-daily": {
-        "label": "Agende um briefing diário",
-        "prompt": "Configure um gatilho cron que seja executado todas as manhãs dos dias úteis, reúna o que mudou neste projeto e escreva um briefing curto para mim. Adicione-o a `kortix.yaml`, mantenha-o desativado e diga-me a única linha que devo alterar quando quiser ativá-lo."
-      },
-      "trigger-weekly": {
-        "label": "Agende um relatório semanal",
-        "prompt": "Configure um gatilho cron semanal que produza o relatório que, de outra forma, eu escreveria manualmente na sexta-feira. Adicione-o desativado a `kortix.yaml` e mostre exatamente o que ele teria produzido nesta semana."
-      },
-      "trigger-webhook": {
-        "label": "Inicie trabalho por webhook",
-        "prompt": "Configure um gatilho de webhook assinado para que outro sistema possa iniciar um trabalho aqui. Adicione-o a `kortix.yaml`, diga-me a URL e qual segredo contém a chave de assinatura e escreva o prompt que ele dispara."
-      },
-      "connector-setup": {
-        "label": "Conecte uma ferramenta que uso",
-        "prompt": "Diga-me qual conector vale a pena configurar primeiro para uma empresa como a minha, o que ele permitiria que você realmente fizesse depois de conectado e o que precisaria da minha aprovação."
-      },
-      "memory-curate": {
-        "label": "Organize a memória do projeto",
-        "prompt": "Leia a memória do projeto, encontre o que está desatualizado, duplicado ou vago e reescreva-a para que uma sessão nova obtenha a verdade de uma só vez. Abra uma solicitação de mudança com o diff."
-      },
-      "memory-gaps": {
-        "label": "Encontre seus pontos cegos",
-        "prompt": "Analise a memória do projeto e diga as dez coisas que você precisaria saber para fazer meu trabalho bem, mas que atualmente não sabe. Faça as perguntas em uma única lista numerada que eu possa responder em uma só mensagem."
-      },
-      "harness-improve": {
-        "label": "Melhore a si mesmo",
-        "prompt": "Analise o que as sessões recentes deste projeto realmente fizeram, encontre onde você ficou bloqueado ou repetiu trabalho e refine os prompts, as habilidades e a memória que causaram isso. Abra uma única solicitação de mudança intitulada `harness: …`."
-      },
-      "cr-open": {
-        "label": "Abra sua 1ª solicitação",
-        "prompt": "Escolha a melhoria mais útil que você pode fazer neste projeto agora, implemente-a e abra uma solicitação de mudança explicando o que mudou e por quê. Mantenha-a pequena o suficiente para que eu possa revisá-la em dois minutos."
-      },
-      "repo-tour": {
-        "label": "Explique meu próprio repositório",
-        "prompt": "Faça um tour por este projeto como ele está agora — o que está configurado, quais agentes existem, o que está conectado, o que está vazio — e me diga as três coisas que vale a pena configurar em seguida."
-      },
-      "agent-onboarder": {
-        "label": "Crie um agente de integração",
-        "prompt": "Crie um agente cuja função seja integrar novas pessoas à minha empresa: ele responde às perguntas delas com base no que sabe, indica os documentos certos e sinaliza o que não conseguiu responder. Abra uma solicitação de mudança."
-      },
-      "agent-watcher": {
-        "label": "Crie um monitor de concorrentes",
-        "prompt": "Crie um agente e um gatilho semanal que monitorem nossos concorrentes e me informem apenas o que realmente mudou. Adicione ambos ao repositório desativados e mostre uma amostra do resultado desta semana."
-      },
-      "agent-inbox": {
-        "label": "Crie um triador de inbox",
-        "prompt": "Crie um agente que faça a triagem de uma caixa de entrada — separando o que precisa de mim, o que precisa de resposta e o que pode esperar — e escreva um resumo curto. Abra uma solicitação de mudança com o agente e suas permissões."
-      },
-      "csv-dashboard": {
-        "label": "Transforme CSV em dashboard",
-        "prompt": "Estou anexando um CSV bruto. Crie um dashboard de verdade a partir dele — com os gráficos que realmente expliquem os dados, em uma página que eu possa abrir — e envie-me a URL. Se nada estiver anexado, avise-me em uma linha, em vez de ficar aguardando."
-      },
-      "csv-charts": {
-        "label": "Crie gráficos para este CSV",
-        "prompt": "Estou anexando um CSV. Escolha o gráfico certo para cada pergunta que os dados respondem, crie-os e inclua uma legenda em cada um explicando o que ele mostra. Não use gráficos de pizza, a menos que um gráfico de pizza seja realmente adequado."
-      },
-      "spreadsheet-analysis": {
-        "label": "Entenda esta planilha",
-        "prompt": "Leia a planilha que anexei, encontre os padrões e os valores fora do padrão e escreva um resumo curto do que eu realmente devo fazer a respeito. Se nada estiver anexado, avise-me em uma linha, em vez de ficar aguardando."
-      },
-      "metrics-dashboard": {
-        "label": "Crie um dashboard de métricas",
-        "prompt": "Crie um dashboard ao vivo com os números que uma empresa como a minha acompanha semanalmente, como um aplicativo web funcional, e envie-me a URL. Aproveite o que puder da memória do projeto e, ao final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "kpi-wall": {
-        "label": "Crie um painel de KPIs",
-        "prompt": "Crie uma única página que mostre se a empresa está no caminho certo — os cinco números que importam, cada um com sua meta e tendência. Faça um aplicativo web funcional e envie-me a URL."
-      },
-      "sheet-to-app": {
-        "label": "Transforme planilha em app",
-        "prompt": "Estou anexando uma planilha que minha equipe edita manualmente. Transforme-a em um aplicativo web adequado, com um formulário e uma tabela, para que ninguém a desconfigure novamente, e envie-me a URL."
-      },
-      "crm-lite": {
-        "label": "Crie um CRM leve",
-        "prompt": "Crie um CRM leve como um aplicativo web funcional — empresas, contatos, etapa do negócio e próxima ação — preenchido com algumas linhas realistas para que eu possa vê-lo funcionando. Envie-me a URL."
-      },
-      "task-board": {
-        "label": "Crie um quadro de tarefas",
-        "prompt": "Crie um quadro de tarefas como um aplicativo web funcional — com colunas, movimentação entre elas por arrastar e soltar, e memória do que eu fiz. Envie-me a URL."
-      },
-      "intake-form": {
-        "label": "Crie um formulário de coleta",
-        "prompt": "Crie um formulário de coleta como um aplicativo web funcional — com as perguntas que um novo cliente deve responder antes da primeira conversa — e salve as respostas em um local onde eu possa lê-las. Envie-me a URL."
-      },
-      "pricing-calculator": {
-        "label": "Crie uma calculadora de preços",
-        "prompt": "Crie uma calculadora de preços como um aplicativo web funcional para que um potencial cliente possa estimar quanto pagaria e envie-me a URL. Aproveite o que puder da memória do projeto e, ao final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "feedback-board": {
-        "label": "Crie um quadro de feedback",
-        "prompt": "Crie um quadro de feedback de clientes como um aplicativo web funcional — para enviar uma ideia, votar positivamente e definir um status para cada uma — e envie-me a URL."
-      },
-      "inventory-tracker": {
-        "label": "Criar um controle de estoque",
-        "prompt": "Crie um controle de estoque como um aplicativo web funcional — itens, quantidades, alertas de estoque baixo — e envie a URL."
-      },
-      "status-page": {
-        "label": "Criar uma página de status",
-        "prompt": "Crie uma página de status como um aplicativo web funcional — componentes, estado atual e histórico de incidentes — e envie a URL."
-      },
-      "clean-data": {
-        "label": "Limpar meus dados",
-        "prompt": "Estou anexando uma planilha desorganizada. Limpe-a — colunas consistentes, datas corrigidas, texto sem espaços extras e sem duplicatas — e me forneça um registro de todas as alterações feitas."
-      },
-      "runway": {
-        "label": "Calcular meu runway",
-        "prompt": "Estou anexando nossos números. Calcule nossa taxa de queima e quantos meses de runway temos, mostre os cálculos para que eu possa questioná-los e diga quais são as duas alavancas que mais influenciam esse resultado."
-      },
-      "budget-variance": {
-        "label": "Comparar orçamento e realizado",
-        "prompt": "Estou anexando nosso orçamento e os valores realizados. Mostre onde estamos acima e abaixo do previsto, classifique as diferenças por tamanho e diga quais merecem nossa atenção."
-      },
-      "cashflow-forecast": {
-        "label": "Prever nosso caixa",
-        "prompt": "Estou anexando nossas transações. Crie uma previsão de fluxo de caixa para os próximos seis meses, seja explícito sobre as premissas e sinalize o mês em que nosso caixa ficará apertado."
-      },
-      "unit-economics": {
-        "label": "Calcular a economia unitária",
-        "prompt": "Calcule quanto um cliente realmente nos custa e quanto ele vale — aquisição, entrega, suporte e retenção — e diga qual número devemos corrigir primeiro. Use o que puder da memória do projeto e, ao final, liste tudo o que precisou estimar em vez de parar para me perguntar."
-      },
-      "pricing-model": {
-        "label": "Modelar uma mudança de preço",
-        "prompt": "Modele o que acontece se mudarmos nossos preços — o empacotamento, a matemática por usuário e o efeito na receita em três níveis de adoção. Entregue a planilha e uma recomendação em um parágrafo."
-      },
-      "invoice-reconcile": {
-        "label": "Conciliar minhas faturas",
-        "prompt": "Estou anexando faturas e uma exportação bancária. Faça a correspondência entre elas, liste o que não foi correspondido em ambas as direções e diga o que parece ser uma cobrança duplicada."
-      },
-      "expense-categorise": {
-        "label": "Categorizar nossos gastos",
-        "prompt": "Estou anexando nossas despesas. Categorize-as, detalhe os gastos por categoria e por mês, descubra o que está crescendo mais rápido e indique as três despesas que devo cortar primeiro."
-      },
-      "subscription-audit": {
-        "label": "Encontrar gastos desperdiçados",
-        "prompt": "Estou anexando os extratos dos nossos cartões. Encontre todas as cobranças recorrentes, sinalize as que parecem não utilizadas ou duplicadas e totalize quanto o cancelamento delas economizaria por ano."
-      },
-      "ar-chase": {
-        "label": "Cobrar faturas em aberto",
-        "prompt": "Estou anexando nossas contas a receber. Calcule quem deve quanto e há quanto tempo, depois redija o e-mail de cobrança para cada caso — firme, mas não rude — ordenado pelo valor em risco."
-      },
-      "financial-model": {
-        "label": "Criar um modelo financeiro",
-        "prompt": "Crie um modelo financeiro simples — receita, custos, caixa e runway — orientado por uma aba de premissas que eu possa alterar, com um gráfico do caixa ao longo do tempo. Use o que puder da memória do projeto e, ao final, liste tudo o que precisou estimar em vez de parar para me perguntar."
-      },
-      "cohort-revenue": {
-        "label": "Analisar coortes de receita",
-        "prompt": "Estou anexando dados de receita dos clientes. Crie uma análise de coortes, diga em um parágrafo se a retenção está melhorando e mostre qual coorte mudou."
-      },
-      "headcount-cost": {
-        "label": "Planejar custos de contratação",
-        "prompt": "Crie um plano de contratação em uma planilha — cargo, quando contratar, custo total e o que isso viabiliza — totalizado por mês em relação ao nosso runway."
-      },
-      "margin-analysis": {
-        "label": "Encontre minhas melhores margens",
-        "prompt": "Estou anexando dados de vendas. Calcule a margem por produto, cliente e canal e diga o que deveríamos vender mais e o que está silenciosamente dando prejuízo."
-      },
-      "board-metrics": {
-        "label": "Monte métricas do conselho",
-        "prompt": "Monte o pacote de números que um conselho espera — crescimento, queima de caixa, runway, retenção e pipeline — como gráficos, com uma leitura de uma linha para cada um. Use o que puder da memória do projeto e, no final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "pitch-deck": {
-        "label": "Monte uma apresentação",
-        "prompt": "Monte uma apresentação de 10 slides apresentando minha empresa: o que fazemos, para quem é, o problema, como funciona e por que agora. Escreva o texto e crie os slides — não me entregue apenas um esboço. Use o que puder da memória do projeto e, no final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "deck-from-doc": {
-        "label": "Converta doc em apresentação",
-        "prompt": "Estou anexando um documento. Transforme-o em uma apresentação que funcione em uma reunião — uma ideia por slide, com notas do apresentador abaixo — em vez de colar os parágrafos nos slides."
-      },
-      "investor-update": {
-        "label": "Atualização para investidores",
-        "prompt": "Monte a atualização deste mês para investidores — destaques, métricas, pontos negativos e em que preciso de ajuda. Busque os números em vez de me pedir que eu os forneça. Use o que puder da memória do projeto e, no final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "board-deck": {
-        "label": "Apresentação para o conselho",
-        "prompt": "Monte uma apresentação para o conselho — onde estamos em relação ao plano, as três decisões que preciso do conselho e os riscos que não vou esconder. Use o que puder da memória do projeto e, no final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "sales-deck": {
-        "label": "Monte uma apresentação de vendas",
-        "prompt": "Monte uma apresentação de vendas para uma primeira conversa — o problema deles, nossa resposta, evidências e o próximo passo — com notas do apresentador. Use o que puder da memória do projeto e, no final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "data-slide": {
-        "label": "Transforme números em slides",
-        "prompt": "Estou anexando dados. Monte os três slides que contam a história deles — um gráfico por slide e uma frase de conclusão para cada um — prontos para apresentar."
-      },
-      "pdf-report": {
-        "label": "Relatório PDF profissional",
-        "prompt": "Pegue o que temos trabalhado e organize-o como um relatório PDF de verdade — capa, sumário, números de página e gráficos — que eu possa enviar a um cliente sem editar."
-      },
-      "proposal": {
-        "label": "Escreva uma proposta",
-        "prompt": "Escreva uma proposta para o cliente — o problema conforme ele o descreveu, o que faríamos, o plano e o preço, deixando o número como um placeholder. Use o que puder da memória do projeto e, no final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "one-pager": {
-        "label": "Escreva um one-pager",
-        "prompt": "Escreva um one-pager sobre minha empresa que eu possa enviar antes de uma reunião — o que fazemos, para quem, por que importa e o que fazer em seguida. Use o que puder da memória do projeto e, no final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "contract-explain": {
-        "label": "Explique um contrato",
-        "prompt": "Estou anexando um contrato. Explique-o em linguagem simples — as obrigações, o dinheiro, as condições de rescisão e as datas — e depois liste as perguntas que devo levar a um advogado. Não me diga se devo assinar."
-      },
-      "meeting-actions": {
-        "label": "Transforme anotações em ações",
-        "prompt": "Vou colar minhas anotações da reunião a seguir. Transforme-as em decisões, responsáveis e datas, e diga claramente o que ficou sem resolução."
-      },
-      "weekly-report": {
-        "label": "Escreva o relatório semanal",
-        "prompt": "Escreva o relatório da empresa desta semana — o que avançou, o que não avançou e com o que devo me preocupar — consultando o repositório e a memória em vez de me perguntar."
-      },
-      "case-study": {
-        "label": "Escreva um estudo de caso",
-        "prompt": "Escreva um estudo de caso de cliente — a situação, o que mudou e o resultado — usando um codinome se eu não tiver fornecido um cliente real. Publique-o como uma página e me envie a URL."
-      },
-      "hard-email": {
-        "label": "Escreva o e-mail difícil",
-        "prompt": "Ajude-me a escrever o e-mail que venho adiando — um aumento de preço, um atraso ou uma notícia ruim. Pergunte qual deles em uma única linha e, em seguida, dê-me três versões, da mais direta à mais delicada."
-      },
-      "competitor-teardown": {
-        "label": "Analise um concorrente a fundo",
-        "prompt": "Escolha nosso concorrente mais próximo e faça uma análise completa: posicionamento, preços, o que ele lança, o que os clientes elogiam e criticam e os dois pontos em que podemos superá-lo. Cite todas as fontes."
-      },
-      "pricing-benchmark": {
-        "label": "Compare nossos preços",
-        "prompt": "Pesquise quanto produtos comparáveis cobram, organize tudo em uma única tabela com os pacotes e o cálculo por assento e diga onde nos posicionamos e se isso é intencional."
-      },
-      "lead-list": {
-        "label": "Monte uma lista de leads",
-        "prompt": "Monte uma lista de 25 empresas que se encaixem no perfil dos nossos clientes, explicando por que cada uma se encaixa e indicando a melhor pessoa para contatar. Em uma planilha, com fontes."
-      },
-      "investor-list": {
-        "label": "Monte uma lista de investidores",
-        "prompt": "Monte uma lista de investidores que investem em empresas como a minha no nosso estágio — fundo, sócio, um investimento recente relevante e o caminho mais fácil para chegar até eles. Em uma planilha, com fontes."
-      },
-      "market-sizing": {
-        "label": "Dimensione meu mercado",
-        "prompt": "Dimensione o mercado para o qual estou vendendo, de cima para baixo e de baixo para cima, e mostre os cálculos e as fontes para que eu possa questionar os números."
-      },
-      "review-mining": {
-        "label": "Analise avaliações rivais",
-        "prompt": "Leia as avaliações públicas dos nossos concorrentes, extraia o que as pessoas elogiam e criticam repetidamente e transforme isso nas três coisas que devemos dizer no nosso site."
-      },
-      "industry-catchup": {
-        "label": "Atualize-me sobre meu setor",
-        "prompt": "Atualize-me sobre meu setor no último mês — o que foi lançado, quem captou investimento e o que mudou — depois diga quais dois itens realmente importam para nós e por quê."
-      },
-      "keyword-research": {
-        "label": "Buscas dos compradores",
-        "prompt": "Pesquise o que nossos compradores realmente buscam, agrupe por intenção e diga quais são as cinco páginas que vale a pena escrever primeiro. Em uma planilha, com fontes."
-      },
-      "buyer-research": {
-        "label": "Pesquise meus compradores",
-        "prompt": "Pesquise as pessoas que compram produtos como o meu — onde elas se reúnem, do que reclamam e quais palavras usam para descrever o problema. Cite as fontes."
-      },
-      "regulation-scan": {
-        "label": "Analise as regras aplicáveis",
-        "prompt": "Pesquise as regras e normas aplicáveis a uma empresa como a minha, resuma em linguagem simples o que cada uma exige e sinalize o que devo levar a um advogado em vez de tomar alguma medida por conta própria."
-      },
-      "events-list": {
-        "label": "Encontre eventos relevantes",
-        "prompt": "Encontre as conferências e encontros onde nossos compradores realmente estarão este ano — data, local, custo e se vale a pena participar. Em uma planilha."
-      },
-      "landing-page": {
-        "label": "Publique uma landing page",
-        "prompt": "Crie uma landing page para meu produto e publique-a. Aproveite o que puder da memória do projeto e, no final, liste tudo o que precisou presumir, em vez de parar para me perguntar. Envie-me a URL ativa quando estiver no ar."
-      },
-      "pricing-page": {
-        "label": "Publique uma página de preços",
-        "prompt": "Escreva e publique uma página de preços — os níveis, o que está incluído em cada um e as objeções que a página precisa responder. Aproveite o que puder da memória do projeto e, no final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "docs-site": {
-        "label": "Publique um site de documentação",
-        "prompt": "Crie e publique um pequeno site de documentação para meu produto — primeiros passos, os conceitos principais e um tutorial. Aproveite o que puder da memória do projeto e, no final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "changelog-page": {
-        "label": "Publique um changelog",
-        "prompt": "Crie e publique uma página de changelog e escreva as entradas recentes com base no histórico deste repositório, em vez de me perguntar o que foi lançado."
-      },
-      "comparison-page": {
-        "label": "Publique uma página comparativa",
-        "prompt": "Crie e publique uma comparação honesta entre nós e nossa alternativa mais próxima — mostrando em que cada um se destaca. Pesquise o outro lado em vez de inventar informações."
-      },
-      "seo-pass": {
-        "label": "Faça uma revisão de SEO",
-        "prompt": "Audite meu site em relação a SEO — títulos, descrições, headings, texto alternativo, links internos e sitemap — corrija o que puder e liste o que precisa de uma decisão minha."
-      },
-      "homepage-rewrite": {
-        "label": "Reescreva minha homepage",
-        "prompt": "Reescreva minha homepage para que a primeira tela diga o que fazemos, para quem é e qual é o próximo passo. Publique-a e mostre o antes e o depois lado a lado."
-      },
-      "waitlist-page": {
-        "label": "Crie página de lista de espera",
-        "prompt": "Crie e publique uma página de lista de espera para algo que estou prestes a lançar — um título, a promessa e um campo para capturar um e-mail. Aproveite o que puder da memória do projeto e, no final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "blog-post": {
-        "label": "Escreva e publique um post",
-        "prompt": "Escreva um post sobre algo que minha empresa realmente conhece, publique-o em nosso site e envie-me a URL. Escolha o tema mais útil para nossos compradores e explique por quê."
-      },
-      "faq-page": {
-        "label": "Escreva uma página de FAQ",
-        "prompt": "Escreva e publique uma FAQ respondendo às dez perguntas que um comprador de primeira viagem realmente faz. Aproveite o que puder da memória do projeto e, no final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "careers-page": {
-        "label": "Crie uma página de carreiras",
-        "prompt": "Crie e publique uma página de carreiras — como trabalhamos, para quais funções estamos contratando e como se candidatar. Aproveite o que puder da memória do projeto e, no final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "storefront-copy": {
-        "label": "Escreva o texto da listagem",
-        "prompt": "Escreva o texto da nossa listagem para um marketplace ou uma loja de aplicativos — o título, a apresentação curta, a descrição completa e as capturas de tela que devo fazer."
-      },
-      "cold-email": {
-        "label": "Crie uma sequência de emails",
-        "prompt": "Escreva uma sequência de quatro cold emails para nosso cliente ideal — curtos, específicos, sem bajulação — e diga o objetivo de cada um."
-      },
-      "launch-announcement": {
-        "label": "Escreva um anúncio de lançamento",
-        "prompt": "Escreva o anúncio de lançamento da nossa próxima versão em três formatos — um post, um e-mail e uma linha — todos transmitindo a mesma mensagem."
-      },
-      "newsletter": {
-        "label": "Rascunhe a newsletter",
-        "prompt": "Rascunhe a newsletter de clientes deste mês — o que foi lançado, o que aprendemos e uma coisa útil que eles podem colocar em prática."
-      },
-      "social-calendar": {
-        "label": "Planeje o conteúdo",
-        "prompt": "Planeje um mês de conteúdo — tema, peça, canal e data — em uma planilha que eu possa entregar a outra pessoa."
-      },
-      "linkedin-posts": {
-        "label": "Escreva posts para uma semana",
-        "prompt": "Escreva posts para uma semana sobre o que estamos desenvolvendo — uma ideia por post, escritos como uma pessoa, sem iscas para gerar engajamento."
-      },
-      "positioning": {
-        "label": "Aprimore nosso posicionamento",
-        "prompt": "Escreva nosso posicionamento: a categoria, para quem é, a alternativa e a única coisa que fazemos melhor. Dê-me três opções, recomende uma e explique por quê."
-      },
-      "icp-definition": {
-        "label": "Defina nosso cliente ideal",
-        "prompt": "Descreva para quem realmente somos — a empresa, a pessoa e o gatilho que faz essa pessoa procurar uma solução — e para quem devemos dizer não."
-      },
-      "objection-handling": {
-        "label": "Responda às objeções",
-        "prompt": "Liste as objeções que recebemos nas vendas e escreva a resposta honesta para cada uma — sem desconversar."
-      },
-      "win-loss": {
-        "label": "Analise ganhos e perdas",
-        "prompt": "Estou anexando nossos negócios recentes. Encontre os padrões no que ganhamos e perdemos e diga qual mudança teria maior impacto na taxa de conversão."
-      },
-      "interview-guide": {
-        "label": "Escreva perguntas para clientes",
-        "prompt": "Escreva as perguntas para uma entrevista com um cliente que realmente nos ensinem algo — abertas, sem induzir respostas — e diga o que devo observar em cada resposta."
-      },
-      "referral-program": {
-        "label": "Crie um programa de indicação",
-        "prompt": "Crie um programa de indicação para meu produto — o incentivo, a mecânica e o texto — e diga como ele poderia ser abusado."
-      },
-      "brand-voice": {
-        "label": "Escreva nosso guia de voz",
-        "prompt": "Escreva nosso guia de voz de marca — como soamos e como não soamos — com reescritas de antes e depois de textos reais do nosso site."
-      },
-      "code-review": {
-        "label": "Revise meu código",
-        "prompt": "Revise o código neste repositório como um engenheiro sênior faria — priorize a correção e depois a clareza. Forneça uma lista priorizada, começando pelo pior problema, e abra uma solicitação de alteração para as correções das quais você tem certeza."
-      },
-      "write-tests": {
-        "label": "Escreva os testes que faltam",
-        "prompt": "Encontre o código neste repositório que causaria mais problemas se quebrasse e não tem testes, escreva os testes e abra uma solicitação de alteração. Diga o que você deliberadamente não cobriu e por quê."
-      },
-      "fix-bug": {
-        "label": "Corrija um bug que vou descrever",
-        "prompt": "Vou descrever um bug. Reproduza-o primeiro neste repositório, depois corrija a causa em vez do sintoma, adicione um teste que o teria detectado e abra uma solicitação de alteração."
-      },
-      "explain-codebase": {
-        "label": "Explique este codebase",
-        "prompt": "Apresente este codebase — o que ele faz, como está organizado, onde fica a lógica importante e quais são as três coisas que confundiriam um engenheiro novo."
-      },
-      "refactor-file": {
-        "label": "Organize um arquivo confuso",
-        "prompt": "Encontre o arquivo neste repositório que está fazendo coisas demais, divida-o seguindo suas separações naturais sem alterar o comportamento e abra uma solicitação de alteração. Comprove que o comportamento não mudou usando os testes."
-      },
-      "deps-upgrade": {
-        "label": "Atualize minhas dependências",
-        "prompt": "Verifique as dependências deste repositório em busca de versões desatualizadas e vulneráveis, atualize o que for seguro, execute os testes e abra uma solicitação de alteração listando tudo que exige uma decisão humana."
-      },
-      "readme": {
-        "label": "Escreva o README",
-        "prompt": "Escreva o README que este repositório deveria ter — o que ele é, como executá-lo e como trabalhar nele — com base no código, não em suposições. Abra uma solicitação de alteração."
-      },
-      "ci-setup": {
-        "label": "Configure a CI",
-        "prompt": "Configure a integração contínua para este repositório — instalação, verificação de tipos, lint e testes — para que uma solicitação de alteração me diga se é segura antes que eu a leia. Abra isso como uma solicitação de alteração."
-      },
-      "api-client": {
-        "label": "Escreva um cliente de API",
-        "prompt": "Escreva um cliente tipado para uma API que preciso chamar, já com tratamento de erros e novas tentativas, além de um teste usando uma resposta registrada. Pergunte qual API em uma linha."
-      },
-      "security-review": {
-        "label": "Revise o código por riscos",
-        "prompt": "Revise este repositório em busca dos problemas de segurança que realmente acontecem — segredos no código-fonte, entradas não validadas, verificações de autorização ausentes — e abra uma solicitação de alteração para o que você puder corrigir com segurança."
-      },
-      "perf-audit": {
-        "label": "Encontre o que está lento",
-        "prompt": "Encontre os caminhos mais lentos deste projeto, meça em vez de supor e diga qual mudança ajudaria mais. Mostre os números antes e depois."
-      },
-      "error-handling": {
-        "label": "Adicione tratamento de erros",
-        "prompt": "Encontre onde este código falha silenciosamente ou lança algo que uma pessoa não consegue resolver, corrija para que toda falha diga o que aconteceu e o que fazer, e abra uma solicitação de alteração."
-      },
-      "db-migration": {
-        "label": "Crie uma migração de banco",
-        "prompt": "Escreva a migração de que preciso para o esquema deste projeto, incluindo o rollback, e diga o que aconteceria com as linhas existentes. Abra uma solicitação de alteração em vez de executá-la."
-      },
-      "api-docs": {
-        "label": "Documente minha API",
-        "prompt": "Documente a API deste projeto a partir do código — todas as rotas, suas entradas, respostas e erros — e publique como uma página que eu possa enviar para alguém."
-      },
-      "dead-code": {
-        "label": "Encontre código morto",
-        "prompt": "Encontre o código deste repositório que não é mais alcançado, comprove isso usando o grafo de importações em vez de apenas olhar, e abra uma solicitação de alteração para removê-lo."
-      },
-      "branch-explain": {
-        "label": "Explique o que mudou",
-        "prompt": "Leia o histórico recente deste repositório e diga o que realmente mudou e por quê, na ordem que faça sentido para alguém que estava ausente."
-      },
-      "api-to-sheet": {
-        "label": "Leve uma API para uma planilha",
-        "prompt": "Extraia de uma API os dados de que preciso e mantenha-os em uma planilha que eu consiga ler de verdade. Pergunte qual API em uma linha, depois crie tudo e mostre a primeira extração."
-      },
-      "recurring-export": {
-        "label": "Agende exportação recorrente",
-        "prompt": "Configure uma exportação que seja executada conforme uma agenda e deixe os dados onde preciso, como um gatilho em `kortix.yaml`. Mostre a saída de uma execução antes de deixá-la ativada."
-      },
-      "page-monitor": {
-        "label": "Monitore mudanças na página",
-        "prompt": "Monitore uma página importante para mim e avise apenas quando algo significativo mudar — não a cada alteração de espaço em branco. Configure isso como um gatilho agendado e mostre a diferença de hoje."
-      },
-      "scraper": {
-        "label": "Crie um scraper para mim",
-        "prompt": "Crie um scraper para um site que eu indicar, coloque os resultados em algum lugar que eu possa consultar e explique claramente o que ele fará quando a estrutura da página mudar."
-      },
-      "reconcile-systems": {
-        "label": "Concilie dois sistemas",
-        "prompt": "Estou anexando exportações de dois sistemas que deveriam estar de acordo. Encontre todas as linhas em que eles divergem, diga qual lado parece estar errado e me dê a lista para corrigir."
-      },
-      "alert-threshold": {
-        "label": "Avise-me quando um número mudar",
-        "prompt": "Configure uma verificação que monitore um número importante para mim e me avise quando ele ultrapassar um limite que eu definir — não um relatório diário que vou parar de ler. Adicione isso como um gatilho."
-      },
-      "form-to-sheet": {
-        "label": "Formulário para planilha",
-        "prompt": "Pegue as respostas de um formulário que já usamos e coloque-as automaticamente em uma planilha, sem duplicatas e com os tipos corretos."
-      },
-      "digest-sources": {
-        "label": "Resuma minhas fontes diariamente",
-        "prompt": "Escolha as poucas fontes que realmente preciso acompanhar e configure um gatilho diário que as leia e me envie apenas o que mudou e por que isso importa."
-      },
-      "job-description": {
-        "label": "Escrever uma descrição de vaga",
-        "prompt": "Escreva a descrição da vaga para a função que eu mais preciso preencher — o que a pessoa realmente fará nos primeiros 90 dias, não uma lista de habilidades desejáveis. Aproveite o que puder da memória do projeto e, no final, liste tudo o que precisou supor, em vez de parar para me fazer perguntas."
-      },
-      "cv-screen": {
-        "label": "Triar currículos para mim",
-        "prompt": "Estou anexando currículos e a descrição da vaga. Avalie cada um com base no que o trabalho realmente exige, classifique-os e diga claramente com quais dois eu devo conversar e por quê."
-      },
-      "interview-plan": {
-        "label": "Planeje as entrevistas",
-        "prompt": "Crie o processo de entrevistas para uma função — quem pergunta o quê, em que ordem e o que cada etapa pretende descobrir. Inclua as perguntas."
-      },
-      "role-scorecard": {
-        "label": "Escrever um scorecard da função",
-        "prompt": "Escreva um scorecard para uma função — os resultados pelos quais ela é responsável, como saberíamos que está indo bem e como seria uma situação de fracasso aos 90 dias. Aproveite o que puder da memória do projeto e, no final, liste tudo o que precisou supor, em vez de parar para me fazer perguntas."
-      },
-      "onboarding-plan": {
-        "label": "Crie um plano 30-60-90",
-        "prompt": "Escreva um plano de 30-60-90 dias para alguém que está entrando na minha empresa — o que essa pessoa deve ler, com quem deve se reunir e pelo que será responsável ao final de cada etapa. Aproveite o que puder da memória do projeto e, no final, liste tudo o que precisou supor, em vez de parar para me fazer perguntas."
-      },
-      "team-handbook": {
-        "label": "Escreva o manual da equipe",
-        "prompt": "Escreva o manual que uma pessoa nova lê na primeira semana — como trabalhamos, onde as coisas ficam, a quem pedir ajuda e como é um bom trabalho — com base no que já está neste repositório e na memória."
-      },
-      "reference-questions": {
-        "label": "Perguntas para referências",
-        "prompt": "Escreva as perguntas de checagem de referências que realmente me diriam algo — específicas e difíceis de responder com banalidades — além de explicar como soaria uma resposta ruim."
-      },
-      "comp-bands": {
-        "label": "Criar faixas de remuneração",
-        "prompt": "Pesquise quanto as pessoas nas nossas funções recebem no nosso mercado e crie faixas salariais honestas, com a justificativa. Cite suas fontes."
-      },
-      "review-template": {
-        "label": "Escrever um modelo de avaliação",
-        "prompt": "Escreva o modelo de avaliação de desempenho para a minha empresa — curto, específico e focado em resultados, não em personalidade — além de explicar como conduzir a conversa."
-      },
-      "offer-letter": {
-        "label": "Criar uma carta de oferta",
-        "prompt": "Crie uma carta de oferta para uma função, deixando os valores como placeholders, e sinalize quais cláusulas um advogado deveria analisar, em vez de decidir por conta própria."
-      },
-      "help-centre": {
-        "label": "Criar uma central de ajuda",
-        "prompt": "Crie e publique uma central de ajuda para o meu produto — com os artigos de que as pessoas realmente precisam, escritos com base no que está neste repositório — e envie-me a URL."
-      },
-      "canned-replies": {
-        "label": "Escreva respostas prontas",
-        "prompt": "Escreva as respostas salvas para as perguntas que respondemos repetidamente — úteis, humanas e curtas o suficiente para que alguém realmente as use."
-      },
-      "support-triage": {
-        "label": "Faça a triagem do suporte",
-        "prompt": "Estou anexando nossos tickets em aberto. Separe-os entre o que precisa de mim, o que precisa de uma resposta e o que pode ser encerrado, e crie as respostas para o segundo grupo."
-      },
-      "incident-note": {
-        "label": "Nota de incidente para clientes",
-        "prompt": "Algo deu errado e preciso avisar os clientes. Escreva a nota — o que aconteceu, quem foi afetado e o que estamos fazendo — com honestidade, sem rodeios e sem transferir a culpa."
-      },
-      "faq-from-tickets": {
-        "label": "Transformar tickets em um FAQ",
-        "prompt": "Estou anexando nossos tickets de suporte. Encontre as perguntas que continuam se repetindo, escreva as respostas uma vez e publique-as como uma página de FAQ."
-      },
-      "churn-analysis": {
-        "label": "Entenda por que as pessoas saem",
-        "prompt": "Estou anexando nossos dados de churn e quaisquer motivos de cancelamento. Encontre os padrões reais, separe-os do ruído e diga qual é a única coisa que vale a pena corrigir primeiro."
-      },
-      "nps-analysis": {
-        "label": "Analise o feedback dos clientes",
-        "prompt": "Estou anexando o feedback dos clientes. Agrupe-o por tema, diga o que as pessoas adoram e o que continuam pedindo, e cite as frases que valem a pena colocar na parede."
-      },
-      "onboarding-emails": {
-        "label": "Escreva e-mails de onboarding",
-        "prompt": "Escreva os e-mails que um novo cliente recebe nas duas primeiras semanas — cada um conquistando seu lugar ao ensinar algo, não apenas ao fazer um acompanhamento. Aproveite o que puder da memória do projeto e, ao final, liste tudo o que precisou supor, em vez de parar para me perguntar."
-      },
-      "refund-policy": {
-        "label": "Crie política de reembolso",
-        "prompt": "Elabore uma política de reembolso justa e inequívoca, publique-a e sinalize tudo o que um advogado deveria revisar antes de ela entrar no ar."
-      },
-      "vendor-list": {
-        "label": "Fornecedores e renovações",
-        "prompt": "Descubra todas as ferramentas e fornecedores pelos quais pagamos, quanto custa cada um e quando ocorre a renovação. Coloque tudo em uma planilha e sinalize as renovações dos próximos 60 dias."
-      },
-      "meeting-agenda": {
-        "label": "Escreva a pauta da reunião",
-        "prompt": "Escreva a pauta de uma próxima reunião que terei — as decisões a tomar, o material a ler antes e um tempo previsto para cada item."
-      },
-      "ops-review": {
-        "label": "Faça minha revisão semanal",
-        "prompt": "Faça minha revisão semanal: busque o que mudou neste repositório e na memória, diga o que avançou, o que atrasou e quais são as três coisas que merecem minha atenção na segunda-feira."
-      },
-      "process-map": {
-        "label": "Mapeie o fluxo do nosso trabalho",
-        "prompt": "Mapeie como o trabalho realmente flui pela minha empresa, da solicitação à entrega, identifique onde ele fica parado e proponha a única mudança que mais ajudaria. Aproveite o que puder da memória do projeto e, ao final, liste tudo o que precisou supor, em vez de parar para me perguntar."
-      },
-      "okr-draft": {
-        "label": "Elabore as metas deste trimestre",
-        "prompt": "Elabore as metas deste trimestre — três objetivos, resultados mensuráveis para cada um e o que explicitamente não faremos. Aproveite o que puder da memória do projeto e, ao final, liste tudo o que precisou supor, em vez de parar para me perguntar."
-      },
-      "decision-log": {
-        "label": "Comece um registro de decisões",
-        "prompt": "Leia o histórico e a memória deste repositório, reconstrua as decisões que de fato foram tomadas e os motivos, e registre-as em um log de decisões ao qual eu possa continuar adicionando informações."
-      },
-      "risk-register": {
-        "label": "Crie um registro de riscos",
-        "prompt": "Liste o que poderia realisticamente dar errado para uma empresa como a minha, classifique os riscos por probabilidade e impacto e indique a medida mais barata para reduzir cada um. Aproveite o que puder da memória do projeto e, ao final, liste tudo o que precisou supor, em vez de parar para me perguntar."
-      },
-      "asset-inventory": {
-        "label": "Inventarie nossas contas",
-        "prompt": "Descubra todas as contas, domínios e serviços dos quais esta empresa depende, quem controla cada um e o que deixaria de funcionar se perdêssemos o acesso. Aproveite o que puder da memória do projeto e, ao final, liste tudo o que precisou supor, em vez de parar para me perguntar."
-      },
-      "sop-library": {
-        "label": "Crie nossa biblioteca de POPs",
-        "prompt": "Transforme as tarefas que minha empresa realiza repetidamente em procedimentos escritos, organizados para que alguém encontre o procedimento certo em dez segundos. Comece pelos três de maior valor."
-      },
-      "calendar-audit": {
-        "label": "Audite como uso meu tempo",
-        "prompt": "Estou anexando a exportação do meu calendário. Diga onde meu tempo realmente vai, quais reuniões não têm um resultado claro e o que devo cortar ou encurtar."
-      },
-      "north-star": {
-        "label": "Defina nossa métrica norteadora",
-        "prompt": "Descubra o único número que melhor indica se esta empresa está funcionando, defenda-o em comparação com os dois candidatos seguintes e diga como o mediríamos. Aproveite o que puder da memória do projeto e, ao final, liste tudo o que precisou supor, em vez de parar para me perguntar."
-      },
-      "tracking-plan": {
-        "label": "Plano para rastrear eventos",
-        "prompt": "Escreva o plano de rastreamento de eventos do meu produto — os eventos que vale a pena capturar, suas propriedades e as perguntas que cada um responde. Ignore os que ninguém vai consultar."
-      },
-      "ab-test-design": {
-        "label": "Crie um teste A/B",
-        "prompt": "Crie um experimento para uma mudança que estou considerando — a hipótese, a métrica, o tamanho da amostra e por quanto tempo ele precisa rodar para que seus resultados tenham significado."
-      },
-      "experiment-analysis": {
-        "label": "Analise um experimento",
-        "prompt": "Estou anexando os resultados de um experimento. Diga-me se a diferença é real, quanto ela valeria se lançássemos a mudança e seja honesto se a resposta for inconclusiva."
-      },
-      "funnel-analysis": {
-        "label": "Encontre onde o funil vaza",
-        "prompt": "Estou anexando dados do funil. Encontre a etapa em que perdemos mais pessoas, quantifique quanto vale corrigi-la e sugira o que tentar."
-      },
-      "retention-curve": {
-        "label": "Trace nossa retenção",
-        "prompt": "Estou anexando dados de uso. Trace a retenção ao longo do tempo, diga-me se a curva se estabiliza e o que isso indica sobre termos encontrado o product-market fit."
-      },
-      "segment-analysis": {
-        "label": "Ache os melhores clientes",
-        "prompt": "Estou anexando dados de clientes. Descubra qual segmento tem a melhor retenção e paga mais, e diga-me o que eles têm em comum e que poderíamos segmentar deliberadamente."
-      },
-      "dashboard-spec": {
-        "label": "Decida o que medir",
-        "prompt": "Diga-me quais números esta empresa realmente deveria acompanhar semanalmente e quais são métricas de vaidade; depois, crie o dashboard para os que restarem."
-      },
-      "brand-palette": {
-        "label": "Escolha uma paleta de marca",
-        "prompt": "Monte uma paleta de marca e uma escala tipográfica para minha empresa — as cores, onde cada uma é usada e as taxas de contraste — como uma referência de uma página que eu possa entregar a qualquer pessoa."
-      },
-      "design-review": {
-        "label": "Revise meu design",
-        "prompt": "Analise meu site ou produto e revise o design — hierarquia, espaçamento, tipografia, cor e contraste. Dê-me uma lista priorizada, começando pelo pior problema, com o que deve ser alterado."
-      },
-      "logo-brief": {
-        "label": "Escreva um briefing de logo",
-        "prompt": "Escreva o briefing que eu entregaria a um designer para criar nosso logo — o que a empresa é, a sensação que deve transmitir, o que evitar e três direções que valem a pena explorar. Aproveite o que puder da memória do projeto e, no final, liste tudo que você precisou supor em vez de parar para me perguntar."
-      },
-      "slide-template": {
-        "label": "Crie um modelo de slides",
-        "prompt": "Crie um modelo reutilizável de slides para minha empresa — layouts de título, seção, conteúdo, métrica e citação — e salve-o para que futuras apresentações comecem a partir dele."
-      },
-      "social-templates": {
-        "label": "Crie modelos para redes sociais",
-        "prompt": "Crie os modelos de imagem que reutilizamos nas publicações das redes sociais, usando nossas próprias cores e tipografia, e salve-os para que fiquem a uma edição de estarem prontos."
-      },
-      "email-template": {
-        "label": "Crie um modelo de e-mail",
-        "prompt": "Crie o modelo de e-mail HTML que enviamos — legível no celular, com degradação elegante e sem exigir imagens para fazer sentido — e salve-o no repositório."
-      },
-      "ui-audit": {
-        "label": "Audite a consistência da UI",
-        "prompt": "Percorra nosso produto e encontre onde a mesma coisa aparece diferente em dois lugares — botões, espaçamento, texto e estados — e liste as correções começando pelas mais urgentes."
-      },
-      "icon-set": {
-        "label": "Escolha um conjunto de ícones",
-        "prompt": "Escolha um conjunto de ícones que combine com nossa marca, explique por que ele combina e mostre-o aplicado aos dez lugares em que mais usamos ícones."
-      },
-      "privacy-policy": {
-        "label": "Crie política de privacidade",
-        "prompt": "Redija uma política de privacidade que descreva o que realmente fazemos com os dados, em vez de usar texto genérico, e liste todas as afirmações que um advogado precisa confirmar antes de ela entrar em vigor."
-      },
-      "terms-of-service": {
-        "label": "Redigir termos de serviço",
-        "prompt": "Redija termos de serviço para meu produto em linguagem simples e sinalize todas as cláusulas que precisam ser avaliadas por um advogado, em vez de decidir por conta própria."
-      },
-      "security-questionnaire": {
-        "label": "Questionário de segurança",
-        "prompt": "Estou anexando um questionário de segurança de um cliente. Redija respostas honestas com base no que é realmente verdade sobre este projeto e marque claramente tudo o que eu preciso verificar por conta própria."
-      },
-      "dpa-checklist": {
-        "label": "Verifique contratos de dados",
-        "prompt": "Liste os contratos de tratamento de dados de que uma empresa como a minha normalmente precisa, o que cada um abrange e quais parecem estar faltando. Sinalize o que devo levar a um advogado."
-      },
-      "sow-draft": {
-        "label": "Redigir um escopo de trabalho",
-        "prompt": "Redija um escopo de trabalho — entregáveis, marcos, o que está fora do escopo e o que preciso do cliente. Sinalize tudo que um advogado deveria analisar. Aproveite o que puder da memória do projeto e, no final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "nda-explain": {
-        "label": "Explicar um NDA",
-        "prompt": "Estou anexando um NDA. Explique em linguagem simples com o que eu estaria concordando, o que há de incomum nele e quais perguntas fazer antes de assinar. Não me diga se devo assinar."
-      },
-      "plan-week": {
-        "label": "Planejar minha semana",
-        "prompt": "Veja o que realmente está acontecendo neste projeto e planeje minha semana — o que importa, o que pode esperar e ao que devo dizer não. Dê uma opinião clara."
-      },
-      "meeting-prep": {
-        "label": "Preparar-me para uma reunião",
-        "prompt": "Tenho uma reunião marcada. Pesquise com quem vou me reunir, reúna o que já sabemos sobre essa pessoa na memória e prepare um briefing de uma página com as três perguntas que devo fazer."
-      },
-      "catch-up": {
-        "label": "Dizer o que perdi",
-        "prompt": "Estive fora. Diga-me o que aconteceu neste projeto enquanto eu estava ausente, o que precisa de uma decisão minha e o que está pegando fogo — nessa ordem."
-      },
-      "draft-replies": {
-        "label": "Redigir minhas respostas",
-        "prompt": "Estou anexando mensagens às quais preciso responder. Redija cada resposta com a minha voz, começando pela versão mais curta aceitável, e sinalize as duas que devo tratar pessoalmente."
-      },
-      "summarise-thread": {
-        "label": "Resumir uma conversa longa",
-        "prompt": "Estou anexando uma conversa longa. Diga-me o que foi realmente acordado, o que continua em aberto e o que devo a alguém — e pule a conversa fiada."
-      },
-      "daily-standup": {
-        "label": "Escrever meu standup",
-        "prompt": "Leia o que realmente mudou neste projeto desde ontem e escreva meu standup com base nas evidências — concluído, fazendo, bloqueado — em vez de me perguntar."
-      },
-      "follow-ups": {
-        "label": "Cobrar meus acompanhamentos",
-        "prompt": "Revise as sessões recentes e a memória, encontre tudo que eu disse que faria e ainda não fiz e me dê a lista na ordem em que devo resolver cada item."
-      },
-      "reading-digest": {
-        "label": "Resumir o que salvei",
-        "prompt": "Estou anexando links e documentos que salvei e nunca li. Leia-os por mim, diga-me quais dois valeram a pena e faça um resumo adequado deles."
-      },
-      "explain-concept": {
-        "label": "Explicar isto à minha equipe",
-        "prompt": "Explique algo técnico à minha equipe usando uma linguagem que eles realmente consigam acompanhar — sem jargão, com um exemplo prático completo e as duas coisas que as pessoas geralmente entendem errado. Pergunte o tema em uma linha."
-      },
-      "training-course": {
-        "label": "Criar um curso de treinamento",
-        "prompt": "Crie um curso curto que ensine alguém a realizar uma tarefa na minha empresa de ponta a ponta — as lições, os exercícios e como essa pessoa saberá que aprendeu. Escolha a tarefa que traria mais benefícios."
-      },
-      "glossary": {
-        "label": "Escrever nosso glossário",
-        "prompt": "Escreva o glossário dos termos usados pela minha empresa — incluindo aqueles que usamos de forma diferente de todo mundo — com base no que já existe neste repositório e na memória."
-      },
-      "how-to-guide": {
-        "label": "Escrever um guia prático",
-        "prompt": "Escreva o guia prático para aquilo que as pessoas sempre me pedem para explicar, incluindo capturas de tela ou comandos quando forem úteis. Publique-o e envie-me a URL."
-      },
-      "runbook": {
-        "label": "Escrever um runbook",
-        "prompt": "Escreva um runbook para uma tarefa que minha empresa realiza repetidamente, passo a passo, para que outra pessoa possa executá-la sem precisar me perguntar. Escolha a de maior valor e diga por quê."
-      },
-      "onboarding-doc": {
-        "label": "Documento de integração",
-        "prompt": "Escreva o documento que uma nova pessoa contratada lê na primeira semana — como trabalhamos, onde as coisas ficam, a quem perguntar e como é um bom resultado. Aproveite o que puder da memória do projeto e, no final, liste tudo o que você precisou supor, em vez de parar para me perguntar."
-      }
-    }
-  },
   "repositoryAccess": {
     "label": "Acesso ao repositório do projeto",
     "enabled": "As novas sessões recebem o repositório do projeto. As permissões do Git continuam em vigor. As sessões existentes mantêm a sua configuração de acesso.",
@@ -20190,7 +19511,7 @@
     "ceilingDefault": "Teto padrão de agentes",
     "changeCeiling": "Alterar",
     "humanOnly": "Só pessoas",
-    "humanOnlyHelp": "Gerir membros, excluir o projeto e emitir credenciais ficam com pessoas.",
+    "humanOnlyHelp": "A emissão de credenciais do projeto fica com as pessoas.",
     "humanOnlyValue": "Nunca concedida",
     "effective": "Permissões efetivas",
     "effectiveHelp": "Permissões Kortix dentro da função teto, menos as permissões só para pessoas. project.read é sempre concedida.",
@@ -20220,9 +19541,7 @@
     "openWithoutGrant": "Não precisa de concessão",
     "grantNote": "O agente também precisa de project.app.read nas permissões Kortix dele.",
     "emptyTitle": "Ainda sem Apps",
-    "emptyDescription": "Os Apps implantados neste projeto aparecem aqui para o agente escolher.",
-    "flagOffHint": "Agente como principal está desligado neste projeto, então a concessão é guardada mas ainda não controla nenhum App.",
-    "featureFlags": "Feature flags"
+    "emptyDescription": "Os Apps implantados neste projeto aparecem aqui para o agente escolher."
   },
   "connectorsAppReturn": {
     "done": "Pronto. Voltar ao app Kortix"
@@ -20489,5 +19808,20 @@
     "people": "Pessoas nesta sessão: {names}",
     "peopleMore": "Pessoas nesta sessão: {names} e mais {count}",
     "more": "Mais {count} podem abrir esta sessão"
+  },
+  "demoBooking": {
+    "meetingTitle": "Demo da Kortix",
+    "stepDetails": "Seus dados",
+    "stepTime": "Escolha um horário",
+    "formTitle": "Antes de escolher um horário",
+    "formDescription": "Usaremos isso para preparar uma demonstração para sua equipe.",
+    "seeTimes": "Ver horários disponíveis",
+    "close": "Fechar",
+    "bookedLabel": "Agendamento confirmado",
+    "bookedMeta": "{minutes} min · Link no seu convite",
+    "inviteSent": "Convite enviado para {email}",
+    "reschedule": "Precisa de outro horário? Use o link do convite.",
+    "addToCalendar": "Adicionar ao calendário",
+    "done": "Concluir"
   }
 }

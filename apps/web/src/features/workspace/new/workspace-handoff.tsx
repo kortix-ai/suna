@@ -1,10 +1,13 @@
 'use client';
 
+import type { ProvisionPhase } from '@kortix/sdk';
 import { m, useReducedMotion } from 'motion/react';
-import { useTranslations } from '@/i18n/use-translations';
 
 import { KortixLogo } from '@/components/ui/kortix-logo';
 import { TextShimmer } from '@/components/ui/text-shimmer';
+import { TodoStatusIcon } from '@/features/session/tool/shared/todo-helpers';
+import { useTranslations } from '@/i18n/use-translations';
+import { cn } from '@/lib/utils';
 
 const EASE_OUT: [number, number, number, number] = [0, 0, 0.2, 1];
 
@@ -19,27 +22,44 @@ const EASE_OUT: [number, number, number, number] = [0, 0, 0.2, 1];
 const CAPTION_IN = { duration: 0.24, delay: 0.12, ease: EASE_OUT };
 
 /**
- * The bridge between `/new`'s create form and the onboarding wizard.
+ * The server's provisioning phases, in the order `runProvision` emits them
+ * (`PROVISION_PHASES`, `apps/api/src/projects/provision-core.ts`) — the same
+ * order `POST /projects/provision-stream` reports, and the catalog keys under
+ * `newWorkspace.handoff.*` (one label per phase id). The SDK's
+ * `ProvisionPhase` union mirrors that list; `satisfies` keeps every entry a
+ * real phase, and the exhaustive test in `workspace-handoff.test.tsx` fails
+ * the moment a phase exists on the wire but has no row here.
+ */
+export const HANDOFF_STEPS = [
+  'validating',
+  'creating_repository',
+  'registering',
+  'seeding',
+] as const satisfies readonly ProvisionPhase[];
+
+/**
+ * The bridge between `/new`'s create form and the created workspace's page.
  *
- * ONE component covers BOTH waiting windows, and that is the whole point:
- * 1. `create` is in flight (`submitting`) — no project id yet.
- * 2. the project exists and `/new?onboarding=<id>` is set, but the wizard is
- *    still `null` while `getProjectDetail` settles.
+ * It holds the page for the ONE waiting window there is: the create is in
+ * flight and no project id exists yet. On success the orchestration stamps the
+ * project onboarded and navigates straight to `/projects/<id>` (KRTX-1419), so
+ * there is no second window to cover and no moment where the successful create
+ * is rendered as the UI being torn down and replaced.
  *
- * These used to be two different screens — a phase checklist, then a bare
- * `size-4` spinner with a link — so the moment the create SUCCEEDED was
- * rendered as the UI being torn down and replaced. Nothing about that read as
- * progress. Holding one mark across both means the successful create has no
- * visual event at all: the mark keeps breathing and the wizard arrives on top
- * of it.
+ * The managed create reports its progress live — `useCreateWorkspace` holds
+ * the latest phase `POST /projects/provision-stream` emits, and when one has
+ * arrived this screen renders the four server steps in the server's order:
+ * finished steps carry the session todo list's own completed glyph, the step
+ * in progress the app's one spinner (`Loading`'s `ring` variant — the same
+ * geometry the pending glyph draws, so a step starting work does not swap to
+ * a fatter circle), the rest the pending dots. `aria-current="step"` marks
+ * the running row. The caption keeps the shimmer; it is still the headline,
+ * and the glyphs already carry the per-step state.
  *
- * Two ambient loops, and neither claims to know more than it does. The mark
- * pulses; the caption shimmers. That is the whole signal, because it is all
- * this screen actually knows — the create is one opaque call with no phase
- * reporting left, so a determinate bar or a step list would be inventing
- * progress. `TextShimmer` is the same treatment the session transcript's busy
- * line uses (`session-starting-loader.tsx`), so "working on it" reads the same
- * here as it does mid-session.
+ * `phase` null, absent, or not a phase this build knows renders the base
+ * screen — the GitHub sources, the plain-POST fallback, and the moment before
+ * the first frame have no steps to show, and inventing progress is the one
+ * thing this screen must never do.
  *
  * `motion-reduce:animate-none` gates the pulse: Tailwind's `animate-pulse` is
  * an infinite loop, and `globals.css` has no blanket `prefers-reduced-motion`
@@ -47,20 +67,28 @@ const CAPTION_IN = { duration: 0.24, delay: 0.12, ease: EASE_OUT };
  * shared with two other surfaces, so it is not fixed from here.)
  *
  * `role="status"` (+ the explicit `aria-live`, for ATs that do not map the
- * role) makes the caption the announced content; the mark is decoration and is
- * hidden.
+ * role) makes the caption and the step list the announced content; the mark
+ * and the glyphs are decoration and are hidden.
  */
 export function WorkspaceHandoff({
   workspaceName,
-  projectId,
+  phase,
 }: {
   workspaceName: string;
-  /** `null` during window 1 — there is nowhere to link to until the project
-   *  exists, so the escape hatch is not rendered at all rather than disabled. */
-  projectId: string | null;
+  /**
+   * The latest streamed provisioning phase from `useCreateWorkspace`, or
+   * `null`/absent when the create reports none.
+   */
+  phase?: ProvisionPhase | null;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('newWorkspace');
   const reduceMotion = useReducedMotion();
+
+  // The wire is JSON, so a newer server CAN report a phase name this build
+  // does not know. That is "no phase", not a row to invent: render the base
+  // screen exactly as an absent phase would.
+  const current = phase && HANDOFF_STEPS.includes(phase) ? HANDOFF_STEPS.indexOf(phase) : -1;
 
   return (
     <div
@@ -85,6 +113,32 @@ export function WorkspaceHandoff({
           {workspaceName ? `Creating ${workspaceName}` : tI18nComplete.raw('textbc3528a9d83c')}
         </TextShimmer>
       </m.div>
+
+      {current !== -1 && (
+        <ol className="flex w-fit flex-col gap-2.5 text-left">
+          {HANDOFF_STEPS.map((step, index) => (
+            <li
+              key={step}
+              aria-current={index === current ? 'step' : undefined}
+              className="flex items-center gap-2.5"
+            >
+              <TodoStatusIcon
+                status={
+                  index < current ? 'completed' : index === current ? 'in_progress' : 'pending'
+                }
+              />
+              <span
+                className={cn(
+                  'text-sm',
+                  index === current ? 'font-medium text-foreground' : 'text-muted-foreground',
+                )}
+              >
+                {t(`handoff.${step}`)}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
     </div>
   );
 }

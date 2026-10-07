@@ -503,9 +503,10 @@ export default function LegalPage() {
         <main className="bg-background min-h-screen">
           <div className="mx-auto max-w-6xl px-6">
             <header className="pt-28 pb-12 sm:pt-36 sm:pb-16">
-              <h1 className="text-3xl font-medium text-balance md:text-4xl lg:tracking-tight">
+              {/* A placeholder, not the page heading: the loaded page owns the one h1. */}
+              <p className="text-3xl font-medium text-balance md:text-4xl lg:tracking-tight">
                 {tI18nComplete.raw('textcad20810fc2d')}
-              </h1>
+              </p>
             </header>
           </div>
         </main>

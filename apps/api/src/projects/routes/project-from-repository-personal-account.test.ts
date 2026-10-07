@@ -152,7 +152,7 @@ mock.module('../lib/project-registration', () => ({
 }));
 
 const { projectsApp } = await import('../lib/app');
-await import('./project-from-repository');
+(await import('./project-from-repository')).registerProjectFromRepositoryRoutes();
 
 function postCreateRepo() {
   return projectsApp.request('/create-repo', {

@@ -12,6 +12,7 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import {
+  type CreateSessionPublicShareInput,
   type SessionPublicShare,
   listSessionPublicShares,
   revokeSessionPublicShare,
@@ -50,6 +51,51 @@ export function isShareLive(share: SessionPublicShare, now: number = Date.now())
   if (!share.expires_at) return true;
   const expiresAt = new Date(share.expires_at).getTime();
   return Number.isNaN(expiresAt) ? true : expiresAt > now;
+}
+
+/** A file path as the API stores it: always `/workspace/<relative path>`. */
+function workspaceFilePath(path: string): string {
+  const rel = path.replace(/^\/?workspace\/?/, '').split('/').filter(Boolean).join('/');
+  return `/workspace/${rel}`;
+}
+
+/**
+ * Every live share that already exposes what `input` would share, newest
+ * first (the order the API lists them in).
+ *
+ * Only transcripts are reused by the API; a file or preview mint always makes
+ * a new token, so one file can carry several live links. A surface that offers
+ * "Copy link" shows the newest and revokes all of them together — revoking
+ * only one left the next one live and the popover looking unchanged.
+ */
+export function findLiveSharesFor(
+  shares: readonly SessionPublicShare[],
+  input: CreateSessionPublicShareInput | null,
+  now: number = Date.now(),
+): SessionPublicShare[] {
+  if (!input) return [];
+  const live = shares.filter((share) => isShareLive(share, now));
+  if (input.file) {
+    const filePath = workspaceFilePath(input.file.path);
+    return live.filter((s) => s.resource_type === 'file' && s.file_path === filePath);
+  }
+  const preview = input.preview;
+  if (preview?.port) {
+    const path = preview.path || '/';
+    return live.filter(
+      (s) => s.resource_type === 'preview' && s.port === preview.port && s.path === path,
+    );
+  }
+  return [];
+}
+
+/** The newest live share for `input`, or null. See `findLiveSharesFor`. */
+export function findLiveShareFor(
+  shares: readonly SessionPublicShare[],
+  input: CreateSessionPublicShareInput | null,
+  now: number = Date.now(),
+): SessionPublicShare | null {
+  return findLiveSharesFor(shares, input, now)[0] ?? null;
 }
 
 /**
@@ -96,9 +142,11 @@ export function useRevokePublicShare(projectId?: string, sessionId?: string) {
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: async (shareId: string) => {
+    mutationFn: async (shareIds: string[]) => {
       if (!projectId || !sessionId) throw new Error('No session to revoke from');
-      return revokeSessionPublicShare(projectId, sessionId, shareId);
+      return Promise.all(
+        shareIds.map((shareId) => revokeSessionPublicShare(projectId, sessionId, shareId)),
+      );
     },
     onSuccess: () => {
       if (projectId && sessionId) {
@@ -114,7 +162,10 @@ export function useRevokePublicShare(projectId?: string, sessionId?: string) {
   });
 
   return {
-    revoke: (shareId: string) => mutation.mutate(shareId),
-    revokingId: mutation.isPending ? mutation.variables : null,
+    revoke: (shareId: string) => mutation.mutate([shareId]),
+    /** Revoke several links in one action, e.g. every live link to one file. */
+    revokeAll: (shareIds: string[]) => mutation.mutate(shareIds),
+    revokingId: mutation.isPending && mutation.variables?.length === 1 ? mutation.variables[0] : null,
+    isRevoking: mutation.isPending,
   };
 }

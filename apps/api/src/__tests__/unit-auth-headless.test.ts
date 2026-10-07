@@ -25,7 +25,7 @@ mock.module('../shared/db', () => ({ db: { execute: async (query: SQL) => {
   claims.add(digest);
   return [{ token_hash: digest }];
 } } }));
-mock.module('../shared/auth-audit', () => ({
+mock.module('../middleware/auth-audit', () => ({
   auditLoginFail: () => {},
   auditLoginSuccess: () => {},
   auditLogout: () => {},

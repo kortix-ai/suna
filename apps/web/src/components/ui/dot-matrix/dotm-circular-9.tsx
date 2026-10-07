@@ -19,7 +19,6 @@ function makeResolver(step: number, reducedMotion: boolean): DotAnimationResolve
     const y = row - 2;
     const ring = Math.sqrt(x * x + y * y);
     const angle = Math.atan2(y, x);
-    const t = reducedMotion || phase === 'idle' ? 0 : (step / STEP_COUNT) * Math.PI * 2;
     const cardinalCenters = [0, Math.PI / 2, Math.PI, -Math.PI / 2];
     const beaconIndex =
       Math.floor((step / STEP_COUNT) * cardinalCenters.length) % cardinalCenters.length;

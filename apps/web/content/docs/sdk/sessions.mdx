@@ -198,6 +198,27 @@ prompt. Each author is a `SessionMessageAuthor`:
 | `'member'` | `user_id`, `name`, `email` (`string \| null`) |
 | `'session'` | `session_id`, `name` (the session title), `agent` (the agent it runs, when named) |
 
+## Which model answered a turn
+
+A transcript message names the model its turn asked for. When the project's
+[fallback chain](/docs/project/models) answers from another model, only the gateway's
+request record holds the model that answered and what Kortix billed.
+
+```ts
+const { latest, billed_cost, turns } = await kortix.session(projectId, sessionId).modelUsage()
+// getSessionModelUsage(projectId, sessionId) is the same call as a function.
+
+latest?.served_model   // 'glm-5.3-flash': the model that answered the newest request
+latest?.fallback_from  // 'codex/gpt-6.1-sol' when a fallback model answered, else null
+turns[userMessageId]   // { served_models, fallback_from, billed_cost } for one turn
+```
+
+`latest` is `null` before the first answer. `billed_cost` is the USD Kortix debited for
+the session's model calls. `turns` is keyed by the runtime message id of the prompt that
+started each turn. `served_models` lists the models that answered in that turn, most
+requests first. In React, `useSessionModelUsage(projectId, sessionId)` reads the same
+record; call its `refetch()` when a turn ends.
+
 In React, `useSessionMessageAuthors(projectId, sessionId, messageCount)` reads the
 same data. Pass the transcript's message count. A new message is the only event that
 adds an author, so the query refetches when the count changes.
@@ -754,13 +775,13 @@ await kortix.session(projectId, warm.session.session_id).send("Build me a widget
 
 `ensureWarm()` creates, or returns, one unused session for the current user. It
 is the same create `sessions.create()` runs, with the project's defaults: same
-billing gate, same concurrent-session cap, same connector requirements. The only
+billing gate, same connector requirements. The only
 difference is `metadata.warm`, which hides the session from
 `sessions.list()` until its first prompt lands.
 
-Treat it as speculative. A `409 WARM_SESSION_UNAVAILABLE` means the account has
-no concurrent-session headroom to spare or the project cannot be warmed right
-now — fall through to `sessions.create()`, which reports the real reason.
+Treat it as speculative. A `409 WARM_SESSION_UNAVAILABLE` means the project
+cannot be warmed right now — fall through to `sessions.create()`, which reports
+the real reason.
 
 The warm session carries the project's DEFAULT agent and sandbox. If the user
 picks a different one, abandon it and call `sessions.create()`: an unused warm

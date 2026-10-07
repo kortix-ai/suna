@@ -5,7 +5,7 @@ import { db } from '../../shared/db';
 import { config } from '../../config';
 import { loadSlackTokenForProject } from '../install-store';
 import { openModal, updateMessage } from '../slack-api';
-import { dispatchSlackEvent, pendingPickers, spawnAgentTurn } from './dispatch';
+import { dispatchSlackEvent, spawnAgentTurn } from './dispatch';
 import { backfillSlackBindingLabel } from './binding-label';
 import { notifyAdminsOfAccessRequest } from './identity';
 import { chatUser, createChatAccessRequest, resolveChatActor } from '../core/identity';
@@ -26,7 +26,7 @@ import {
 import { SLACK_STOP_ACTION, stopSlackTurn } from './stop';
 import { isAdaptedId } from '../../projects/review-adapters';
 import { decideSlackThreadJoin } from './participants';
-import { attachPendingSlackAuthResponseUrl } from './auth-resume';
+import { attachPendingSlackAuthResponseUrl, consumePendingSlackPickerMessage } from './auth-resume';
 import { buildSlackLoginUrl, verifyLoginState } from './login';
 import { escapeMrkdwn, respondViaUrl, sessionWebUrl } from './util';
 import { handleSlashCommand } from './commands';
@@ -941,9 +941,6 @@ export async function handleBlockAction(
     );
   }
 
-  const pending = pendingPickers.get(pickerId);
-  if (pending) {
-    pendingPickers.delete(pickerId);
-    await dispatchSlackEvent(projectId, pending.envelope, turnScope(inbound));
-  }
+  const pending = await consumePendingSlackPickerMessage({ pendingId: pickerId, teamId, channelId });
+  if (pending) await dispatchSlackEvent(projectId, pending, turnScope(inbound));
 }
