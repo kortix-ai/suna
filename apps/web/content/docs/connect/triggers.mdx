@@ -32,7 +32,7 @@ kortix triggers add daily-digest --type cron \
   --prompt "Summarize yesterday's activity and save it as a daily note."
 ```
 
-`cron` is a 6-field expression: second, minute, hour, day, month, weekday. This command edits your local `kortix.yaml` only.
+`cron` is a 6-field expression: second, minute, hour, day, month, weekday. A trigger fires at most once a minute: `0 */30 * * * *` is every 30 minutes, and `*/30 * * * * *` (every 30 seconds) is refused. This command edits your local `kortix.yaml` only.
 </Step>
 
 <Step title="Ship it">
@@ -213,7 +213,7 @@ Legacy `kortix.toml` uses the same fields in a different container; see [legacy 
 | `session_id` | required for `pinned` | — | Exact session to re-prompt. |
 | `session_key` | required for `keyed` | — | Template string. Setting it alone implies `session_mode: keyed`. |
 | `filter` | no | — | Dotted path → expected string. A webhook delivery that does not match returns `200` and fires no session. |
-| `cron` | one of `cron`/`run_at`, on `type: cron` | — | 6-field expression: second minute hour day month weekday. |
+| `cron` | one of `cron`/`run_at`, on `type: cron` | — | 6-field expression: second minute hour day month weekday. Fires at most once every 60 seconds; a faster expression fails `kortix validate` and the API. |
 | `run_at` | one of `cron`/`run_at`, on `type: cron` | — | ISO-8601 timestamp. Fires once, then stays dormant. |
 | `timezone` | no, cron only | `UTC` | IANA name. |
 | `secret_env` | required, webhook only | — | Name of a project secret holding the signing key. The secret must use `broker` delivery with the `connector` consumer. |
@@ -349,4 +349,6 @@ A project-level switch stops every trigger in the project at once, independent o
 - The scheduler polls roughly every second (default 1,000 ms; configurable via `KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS`). Cron precision is best-effort to the second, even though the expression has a seconds field.
 - Each project allows 3 triggered sessions provisioning at once, by default. A fire past that returns `queued` (`202`) instead of failing, and runs once one of them finishes provisioning. There is no cap on how many sessions run at once.
 - A manual or webhook fire has a 45-second timeout. Loading the manifest has a 30-second timeout.
-- A cron fire is keyed on the due schedule slot, so a fire that timed out but actually landed does not duplicate on retry. A webhook fire is keyed on the delivery ID header, or a hash of the body and signature when the sender sends no ID.
+- A cron fire is keyed on the due schedule slot, so a fire that timed out but actually landed does not duplicate on retry.
+- A webhook delivery runs once per event. Kortix reads the event ID from `X-Kortix-Delivery-Id`, `X-GitHub-Delivery`, `X-Gitlab-Event-UUID`, `Linear-Delivery`, `webhook-id` or `svix-id`, in that order; a retry with the same ID answers `202 { status: "deduped" }` and runs nothing. `X-Request-Id` is not an event ID. Without an event ID, an identical body and signature within 10 minutes counts as the same event; after that it runs again, so a job that posts the same static body on every deploy runs on every deploy. Send `X-Kortix-Delivery-Id` with a new value per event (the sample request uses `$(uuidgen)`).
+- A delivery whose earlier attempt failed for good (for example, the account was out of credits) or whose session was deleted runs again when redelivered with the same ID. A duplicate does not change `last_fired_at`.

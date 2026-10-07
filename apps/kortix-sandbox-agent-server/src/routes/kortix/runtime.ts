@@ -16,7 +16,7 @@ export const MAX_MESSAGE_PAGE = 200
 /** Heartbeat cadence on `/events`. Three of these fit in a 60 s client budget. */
 const EVENT_HEARTBEAT_MS = 15_000
 /**
- * Frames one `/events` consumer may leave unread. The ring holds 2000; a
+ * Frames one `/events` consumer may leave unread. The ring holds 20,000; a
  * consumer further behind than this is dropped, and reconnects with its cursor
  * (replay, or a typed resync), instead of buffering every event for the life of
  * the connection.

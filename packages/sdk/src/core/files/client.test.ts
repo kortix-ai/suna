@@ -856,3 +856,10 @@ test('uploadNativeFile throws an ApiError carrying the status on a daemon failur
   expect(error).toBeInstanceOf(ApiError);
   expect((error as ApiError).status).toBe(400);
 });
+
+test('fileDownloadRequest names /file/raw for the daemon path with the bearer', async () => {
+  const request = await F.fileDownloadRequest('/workspace/docs/a b.pdf', 'http://sbx.test/p/ext-1/8000');
+  expect(request.url).toBe('http://sbx.test/p/ext-1/8000/file/raw?path=docs%2Fa%20b.pdf');
+  expect(request.headers.authorization).toBe('Bearer tok');
+  expect(calls).toHaveLength(0);
+});

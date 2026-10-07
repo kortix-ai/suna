@@ -7154,7 +7154,8 @@
     "componentsSessionSessionErrorBanner": {
       "line58JsxAttrTitleYouRanOutOfCredits": "Hai esaurito i crediti",
       "line74JsxTextEnableAutoTopUp": "Attiva la ricarica automatica",
-      "line82JsxTextBuyCredits": "Acquista crediti"
+      "line82JsxTextBuyCredits": "Acquista crediti",
+      "askOwnerToAddCredits": "Solo un proprietario dell’account può aggiungere crediti. Chiedi a uno di ricaricare."
     },
     "componentsSessionSessionFilesPanel": {
       "line80JsxTextThisSessionIsItsOwnVersion": "Questa sessione è una versione separata",

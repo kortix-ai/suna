@@ -328,7 +328,13 @@ export async function describeAccountInvite(inviteId: string) {
 
 export async function acceptAccountInvite(inviteId: string) {
   return unwrap(
-    await backendApi.post<{ account_id: string; account_role: AccountRole }>(
+    await backendApi.post<{
+      account_id: string;
+      account_role: AccountRole;
+      already_accepted?: boolean;
+      /** The projects the invite granted, in order: where to land (KRTX-1731). */
+      bootstrap_grants_applied?: Array<{ project_id: string; role: string }>;
+    }>(
       `/account-invites/${inviteId}/accept`,
       {},
     ),

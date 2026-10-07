@@ -160,3 +160,35 @@ describe('type = "monitor" never schedules', () => {
     );
   });
 });
+
+// KRTX-1721: croner reads a 6-field cron seconds-first, so a cron that steps
+// the first field fires every few seconds, and each fire starts a session.
+// New crons are refused at write time; a stored one runs at most once a minute.
+describe('a stored cron that fires more than once a minute', () => {
+  const at = new Date('2026-07-27T10:00:00.000Z');
+
+  test('advances at least 60 seconds past the previous slot', () => {
+    for (const cron of ['*/5 * * * * *', '*/30 * * * * *', '0,30 * * * * *']) {
+      expect(advanceTriggerScheduleSlot(schedule({ cron, timezone: 'UTC' }), at)?.toISOString()).toBe(
+        '2026-07-27T10:01:00.000Z',
+      );
+    }
+  });
+
+  test('keeps its floor with jitter', () => {
+    const next = advanceTriggerScheduleSlot(schedule({ cron: '*/5 * * * * *', timezone: 'UTC' }), at, {
+      jitterKey: 'trigger-a',
+      jitterWindowMs: 60_000,
+    });
+    expect(next!.getTime() - at.getTime()).toBeGreaterThanOrEqual(60_000);
+  });
+
+  test('a once-a-minute cron is unchanged', () => {
+    expect(advanceTriggerScheduleSlot(schedule({ cron: '0 * * * * *', timezone: 'UTC' }), at)?.toISOString()).toBe(
+      '2026-07-27T10:01:00.000Z',
+    );
+    expect(
+      advanceTriggerScheduleSlot(schedule({ cron: '0 */30 * * * *', timezone: 'UTC' }), at)?.toISOString(),
+    ).toBe('2026-07-27T10:30:00.000Z');
+  });
+});

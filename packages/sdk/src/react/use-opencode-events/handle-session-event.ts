@@ -1,4 +1,3 @@
-import { deleteSessionFromIDB } from '../../browser/cache/idb-sync-cache';
 import { useSyncStore } from '../../browser/stores/sync-store';
 import { isAbortError } from '../../core/http/abort-error';
 import { getClient } from '../../core/runtime/client';
@@ -103,7 +102,6 @@ function handleSessionDeletion(event: RuntimeEvent, ctx: HandlerContext) {
         queryClient.removeQueries({
           queryKey: runtimeKeys.runtimeMessages(info.id),
         });
-        deleteSessionFromIDB(info.id);
       }
       break;
     }
