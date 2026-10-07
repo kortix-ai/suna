@@ -181,7 +181,7 @@ describe.skipIf(!dockerAvailable)(
 
     afterAll(() => {
       if (!containerStarted) return;
-      Bun.spawnSync(['docker', 'rm', '-f', container], {
+      Bun.spawnSync(['docker', 'rm', '-f', '-v', container], {
         stdout: 'ignore',
         stderr: 'ignore',
       });

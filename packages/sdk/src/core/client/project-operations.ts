@@ -32,6 +32,9 @@ export function bindProjectOperations(
       ) => P.setConnectorAuthorizationStrategy(projectId, ...a),
       setCredential: (...a: DropFirst<Parameters<typeof P.setConnectorCredential>>) =>
         P.setConnectorCredential(projectId, ...a),
+      /** Disconnect: remove the connector's stored credential. */
+      deleteCredential: (...a: DropFirst<Parameters<typeof P.deleteConnectorCredential>>) =>
+        P.deleteConnectorCredential(projectId, ...a),
       setSensitive: (...a: DropFirst<Parameters<typeof P.setConnectorSensitive>>) =>
         P.setConnectorSensitive(projectId, ...a),
       connections,

@@ -7,6 +7,7 @@ import {
   countProjects,
   decideDoor,
   filterSections,
+  inviteLandingPath,
   joinDestination,
   type ProjectListResult,
 } from './project-selector-model';
@@ -162,6 +163,51 @@ describe('decideDoor — skip the selector only for one obvious answer', () => {
 
   test('a pending invite always shows the selector, even with a remembered project', () => {
     expect(decideDoor({ sections: one, inviteCount: 1, rememberedProjectId: 'p1' })).toEqual({ kind: 'select' });
+  });
+});
+
+// KRTX-1731: after an account switch (palette, invite accept) the door reopened
+// the project this browser remembered, in whatever account, and reset the
+// selected account to it. A requested account bounds the decision.
+describe('decideDoor — a requested account', () => {
+  const twoAccounts = buildAccountSections({
+    accounts: [account('a', 'owner'), account('b', 'member')],
+    lists: [list('a', [project('pa', 'a')]), list('b', [project('pb1', 'b'), project('pb2', 'b')])],
+  });
+
+  test('a remembered project outside the requested account is not opened', () => {
+    expect(
+      decideDoor({ sections: twoAccounts, inviteCount: 0, rememberedProjectId: 'pa', requestedAccountId: 'b' }),
+    ).toEqual({ kind: 'select', accountId: 'b' });
+  });
+
+  test('a remembered project inside the requested account opens', () => {
+    expect(
+      decideDoor({ sections: twoAccounts, inviteCount: 0, rememberedProjectId: 'pb2', requestedAccountId: 'b' }),
+    ).toEqual({ kind: 'open', projectId: 'pb2', accountId: 'b' });
+  });
+
+  test("the requested account's only project opens, even with a pending invite", () => {
+    expect(
+      decideDoor({ sections: twoAccounts, inviteCount: 1, rememberedProjectId: 'pb1', requestedAccountId: 'a' }),
+    ).toEqual({ kind: 'open', projectId: 'pa', accountId: 'a' });
+  });
+});
+
+describe('inviteLandingPath — where an accepted invite lands', () => {
+  test('a project invite opens the first project it granted', () => {
+    expect(
+      inviteLandingPath({ account_id: 'b', bootstrap_grants_applied: [{ project_id: 'pw', role: 'member' }] }),
+    ).toBe('/projects/pw');
+  });
+
+  test('a workspace invite goes to the door for the joined account', () => {
+    expect(inviteLandingPath({ account_id: 'b', bootstrap_grants_applied: [] })).toBe('/projects/start?account=b');
+    expect(inviteLandingPath({ account_id: 'b' })).toBe('/projects/start?account=b');
+  });
+
+  test('with no account id, the plain door', () => {
+    expect(inviteLandingPath({ account_id: null })).toBe('/projects/start');
   });
 });
 

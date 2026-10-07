@@ -1,0 +1,28 @@
+{
+  "source_hash": "ad9768cecd6fca3c93735cfb0d6b30516b2d387e93c3f8849b5c94d469297e06",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-07T183559Z-kill-the-worktree-s-test-api-before-pnpm-test-after-a-branch.md",
+    "apps/api/src/projects/lib/trigger-draft.ts",
+    "apps/api/src/projects/routes/trigger-webhooks.ts",
+    "apps/api/src/projects/routes/triggers.ts",
+    "apps/web/content/docs/connect/triggers.mdx",
+    "apps/web/src/components/projects/schedule/schedule-copy.test.ts",
+    "apps/web/src/components/projects/schedule/schedule-copy.ts",
+    "apps/web/src/components/projects/schedule/schedule-detail-sheet.tsx",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/api-contract/src/index.ts",
+    "packages/sdk/src/core/rest/projects-client/triggers.ts",
+    "tests/spec/end-to-end.md",
+    "tests/src/flows/triggers.flow.ts"
+  ],
+  "diff_hash": "612a50a4983b56adbe8c5ebc6cdb03da1c448f1050b696b0f70639a1106a1f2e",
+  "head": "f37c1a756cc12efd51b359dc806781896442d4be",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-07T18:46:17.623Z"
+}

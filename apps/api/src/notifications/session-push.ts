@@ -8,6 +8,7 @@ import { and, eq, gt, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { ABORT_END_ERROR_NAMES, type SandboxTurnCompletionOutcome } from '../projects/session-turn-ledger';
 import { db } from '../shared/db';
+import { accountMemberRow } from '../iam/membership-read';
 import { pushDeviceTokenStore, type PushDeviceTokenRow, type PushDeviceTokenStore } from './device-tokens';
 import { sendExpoPushMessages, type ExpoPushMessage, type ExpoPushResult } from './expo-push';
 
@@ -26,12 +27,16 @@ export interface SessionPushEvent {
 export interface SessionPushTarget {
   createdBy: string | null;
   title: string | null;
+  /** The session's account: a recipient must still be a member of it. */
+  accountId?: string | null;
 }
 
 export interface SessionPushDeps {
   enabled: boolean;
   loadSession(sessionId: string, projectId: string): Promise<SessionPushTarget | null>;
   isPresent?(userId: string, sessionId: string): Promise<boolean>;
+  /** False for a recipient who no longer has access to the session's account. */
+  mayReceive?(userId: string, session: SessionPushTarget): Promise<boolean>;
   store: Pick<PushDeviceTokenStore, 'listByUser' | 'deleteTokens'>;
   send(messages: ExpoPushMessage[], store: Pick<PushDeviceTokenStore, 'deleteTokens'>): Promise<ExpoPushResult>;
   /** Receives failure warnings. Defaults to `console`. */
@@ -39,7 +44,7 @@ export interface SessionPushDeps {
 }
 
 export type SessionPushOutcome =
-  | { sent: 0; reason: 'disabled' | 'no_session' | 'no_recipient' | 'no_devices' | 'present' | 'failed' }
+  | { sent: 0; reason: 'disabled' | 'no_session' | 'no_recipient' | 'no_access' | 'no_devices' | 'present' | 'failed' }
   | { sent: number; reason: 'sent'; result: ExpoPushResult };
 
 export const DEFAULT_PUSH_TITLE = 'Kortix';
@@ -134,8 +139,16 @@ export function createSessionNotifier(deps: SessionPushDeps) {
       if (!deps.enabled) return { sent: 0, reason: 'disabled' };
       const session = await deps.loadSession(event.sessionId, event.projectId);
       if (!session) return { sent: 0, reason: 'no_session' };
-      const recipients = event.recipients ?? (session.createdBy ? [session.createdBy] : []);
-      if (recipients.length === 0) return { sent: 0, reason: 'no_recipient' };
+      const named = event.recipients ?? (session.createdBy ? [session.createdBy] : []);
+      if (named.length === 0) return { sent: 0, reason: 'no_recipient' };
+      // A member who left keeps the sessions they created, and teammates keep
+      // running them. Their phone must not keep getting the titles and the
+      // agent's questions (KRTX-1722).
+      const recipients: string[] = [];
+      for (const userId of named) {
+        if (!deps.mayReceive || (await deps.mayReceive(userId, session))) recipients.push(userId);
+      }
+      if (recipients.length === 0) return { sent: 0, reason: 'no_access' };
       const messages: ExpoPushMessage[] = [];
       let present = 0;
       for (const userId of recipients) {
@@ -159,7 +172,7 @@ export function createSessionNotifier(deps: SessionPushDeps) {
 
 async function loadSessionTarget(sessionId: string, projectId: string): Promise<SessionPushTarget | null> {
   const [row] = await db
-    .select({ createdBy: projectSessions.createdBy, metadata: projectSessions.metadata })
+    .select({ createdBy: projectSessions.createdBy, metadata: projectSessions.metadata, accountId: projectSessions.accountId })
     .from(projectSessions)
     .where(and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)))
     .limit(1);
@@ -167,7 +180,7 @@ async function loadSessionTarget(sessionId: string, projectId: string): Promise<
   // `metadata.name` is the session title (owned by session-title-generate.ts).
   const meta = (row.metadata ?? {}) as Record<string, unknown>;
   const title = [meta.custom_name, meta.name].find((v): v is string => typeof v === 'string');
-  return { createdBy: row.createdBy, title: title ?? null };
+  return { createdBy: row.createdBy, title: title ?? null, accountId: row.accountId };
 }
 
 let defaultNotifier: ReturnType<typeof createSessionNotifier> | null = null;
@@ -177,6 +190,8 @@ export function notifySessionEvent(event: SessionPushEvent): Promise<SessionPush
   defaultNotifier ??= createSessionNotifier({
     enabled: config.PUSH_NOTIFICATIONS_ENABLED,
     loadSession: loadSessionTarget,
+    mayReceive: async (userId, session) =>
+      !!session.accountId && (await accountMemberRow(session.accountId, userId)).length > 0,
     isPresent: async (userId, sessionId) => {
       const rows = await db.select({ tabId: sessionPresenceLeases.tabId }).from(sessionPresenceLeases)
         .where(and(eq(sessionPresenceLeases.userId, userId), eq(sessionPresenceLeases.sessionId, sessionId), gt(sessionPresenceLeases.expiresAt, sql`now()`))).limit(1);

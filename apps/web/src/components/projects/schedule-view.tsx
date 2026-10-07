@@ -83,6 +83,7 @@ import {
 import { ScheduleCreateModal } from './schedule/schedule-create-modal';
 import { ScheduleDetailSheet } from './schedule/schedule-detail-sheet';
 import { ScheduleTable } from './schedule/schedule-table';
+import { useTriggerControls } from './schedule/trigger-controls';
 
 /**
  * Pure — no hooks, no data fetching. Renders the pause switch for a MANAGER
@@ -224,8 +225,9 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   const copy = localizedTriggersCopy(tI18nComplete);
   const kindCopy = localizedKindCopy(tI18nComplete);
   const queryClient = useQueryClient();
-  const canWrite =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE).allowed === true;
+  // One leaf per control, the same as on the Agent page (KRTX-1720).
+  const controls = useTriggerControls(projectId);
+  const canWrite = controls.canCreate;
 
   // Same entity/fetcher `TriggersActivationCard` above reads — both must share
   // this key, via `qk.project.triggers`, or a pause in one goes unseen in the
@@ -452,7 +454,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
         ) : (
           <ScheduleTable
             triggers={filtered}
-            canWrite={canWrite}
+            controls={controls}
             runningSlug={run.isPending ? (run.variables?.slug ?? null) : null}
             togglingSlug={toggle.isPending ? (toggle.variables?.slug ?? null) : null}
             onOpen={(t) => setSelectedSlug(t.slug)}
@@ -495,7 +497,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
       <ScheduleDetailSheet
         projectId={projectId}
         trigger={selected}
-        canWrite={canWrite}
+        controls={controls}
         open={!!selected}
         onOpenChange={(next) => {
           if (!next) setSelectedSlug(null);

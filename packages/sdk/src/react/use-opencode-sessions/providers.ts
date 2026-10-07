@@ -8,7 +8,7 @@ import { contract } from '../query-contracts';
 import { qk } from '../query-keys';
 import { runtimeKeys, useRuntimeReady } from './keys';
 import type { ProviderListResponse } from './keys';
-import { unwrap, getLSCache, setLSCache, LS_PROVIDERS, CACHE_SCOPE_GLOBAL } from './shared';
+import { unwrap } from './shared';
 import {
   getProjectDetail,
   getProjectLlmCatalogProviders,
@@ -16,8 +16,6 @@ import {
   listProjectSecrets,
 } from '../../core/rest/projects-client';
 import {
-  filterToGatewayProviders,
-  filterToNativeProviders,
   GATEWAY_PROVIDER_IDS,
   mergeNativeProviderLists,
   nativeProviderListFromCatalog,
@@ -63,7 +61,6 @@ export function useRuntimeProviders() {
   const projectGatewayEnabled =
     projectId ? projectDetailQuery.data?.project.experimental?.llm_gateway === true : false;
   const projectModeKnown = !projectId || projectDetailQuery.isSuccess;
-  const gatewayCacheScope = projectId ? `proj:${projectId}:gateway` : CACHE_SCOPE_GLOBAL;
   const gatewayProvidersQuery = useQuery<ProviderListResponse>({
     queryKey: ['project-providers', projectId, 'gateway'],
     queryFn: async () => {
@@ -77,15 +74,7 @@ export function useRuntimeProviders() {
         queryFn: () => getProjectModelPicker(projectId!),
         ...contract('config'),
       });
-      const providers = projectLlmCatalogToProviderList(catalog);
-      setLSCache(LS_PROVIDERS, providers, gatewayCacheScope);
-      return providers;
-    },
-    placeholderData: () => {
-      const cached = getLSCache<ProviderListResponse>(LS_PROVIDERS, gatewayCacheScope);
-      if (!providerListHasModels(cached)) return undefined;
-      const providers = filterToGatewayProviders(cached as ProviderListResponse);
-      return providerListHasModels(providers) ? providers : undefined;
+      return projectLlmCatalogToProviderList(catalog);
     },
     enabled: shouldLoadProjectModelPicker({
       projectId,
@@ -101,7 +90,6 @@ export function useRuntimeProviders() {
 
   // BYOK makes the connected model set project-specific. A provider connected
   // in one project must not leak into another or remain after removal.
-  const nativeCacheScope = projectId ? `proj:${projectId}:native` : CACHE_SCOPE_GLOBAL;
   const nativeProvidersQuery = useQuery<ProviderListResponse>({
     queryKey: projectId ? ['project-providers', projectId, 'native'] : runtimeKeys.providers(),
     queryFn: async () => {
@@ -119,35 +107,16 @@ export function useRuntimeProviders() {
       // During sandbox boot the OpenCode server frequently answers
       // /provider/list BEFORE its provider config is wired up, returning zero
       // CONNECTED providers (→ zero models). With staleTime:Infinity such an
-      // empty answer would be cached for the whole session and never refetched,
-      // AND persisted to the global localStorage cache below — poisoning the
-      // first frame of every future session too. That is the "model picker
-      // never shows up" bug. Treat a model-less response as a transient boot
-      // state: throw so React Query retries it (with backoff), and never cache
-      // or persist it.
+      // empty answer would be cached for the whole session and never refetched.
+      // That is the "model picker never shows up" bug. Treat a model-less
+      // response as a transient boot state: throw so React Query retries it
+      // (with backoff), and never cache it.
       if (!providerListHasModels(providers)) {
         throw new Error(
           'opencode provider list has no connected models yet — sandbox still warming up',
         );
       }
-
-      // Persist under the per-project scope (never the ephemeral per-sandbox
-      // server id) so a fresh session paints the right models instantly. Only
-      // genuine, model-bearing responses reach here, so the placeholder cache
-      // is never poisoned with an empty list.
-      setLSCache(LS_PROVIDERS, providers, nativeCacheScope);
       return providers;
-    },
-    // Only ever serve a model-bearing placeholder. A previously-poisoned cache
-    // (written before this guard existed) is ignored so it can't paint empty.
-    placeholderData: () => {
-      const cached = getLSCache<ProviderListResponse>(LS_PROVIDERS, nativeCacheScope);
-      if (!providerListHasModels(cached)) return undefined;
-      if (projectId) {
-        const nativeProviders = filterToNativeProviders(cached as ProviderListResponse);
-        return providerListHasModels(nativeProviders) ? nativeProviders : undefined;
-      }
-      return cached;
     },
     enabled: projectId
       ? projectModeKnown && !projectGatewayEnabled && runtimeReady

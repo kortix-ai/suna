@@ -1817,11 +1817,6 @@
       "count": 4
     }
   },
-  "src/projects/lib/session-control-reconciler.ts": {
-    "kortix-api/replica-local": {
-      "count": 1
-    }
-  },
   "src/projects/lib/session-create.ts": {
     "no-console": {
       "count": 6

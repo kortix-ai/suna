@@ -630,3 +630,57 @@ describe('UnifiedMarkdown setup links in tables', () => {
     expect(html).not.toContain('setup-link-chip');
   });
 });
+
+// ─── A link to a file in the session's workspace ────────────────────────────
+// GPT models link a file they wrote as `[label](sandbox:/workspace/…)`, others
+// as `file:///…` or a workspace-relative path. Sanitize strips the `sandbox:`
+// and `file:` schemes, rehype-harden refuses a bare relative path, and every
+// such link rendered as `label [blocked]`. In agent messages a file link opens
+// the file preview, the same as a path in prose does.
+// ────────────────────────────────────────────────────────────────────────────
+
+describe('UnifiedMarkdown — a link to a workspace file', () => {
+  const FILE_LINKS: [string, string][] = [
+    ['sandbox:/workspace/output/report.docx', '/workspace/output/report.docx'],
+    ['file:///workspace/output/report.pdf', '/workspace/output/report.pdf'],
+    ['/workspace/output/report.docx', '/workspace/output/report.docx'],
+    ['output/report.docx', 'output/report.docx'],
+    ['./report.docx', 'report.docx'],
+    ['<output/Quarterly report.docx>', 'output/Quarterly report.docx'],
+  ];
+
+  test.each(FILE_LINKS)('%s opens the file preview, never "[blocked]"', (href, path) => {
+    const html = renderToStaticMarkup(
+      withIntl(<UnifiedMarkdown trust="agent" content={`**[Word — for editing](${href})**`} />),
+    );
+
+    expect(html).not.toContain('[blocked]');
+    expect(html).not.toContain('<a');
+    expect(html).toContain('<button');
+    expect(html).toContain(`title="${path} — Click to preview"`);
+    expect(visibleText(html)).toBe('Word — for editing');
+  });
+
+  test('an app link and a web link stay links', () => {
+    const html = renderToStaticMarkup(
+      withIntl(
+        <UnifiedMarkdown
+          trust="agent"
+          content="[home](/projects/p1) and [site](https://kortix.com/a.pdf)"
+        />,
+      ),
+    );
+
+    expect(html).toContain('href="/projects/p1"');
+    expect(html).toContain('href="https://kortix.com/a.pdf"');
+    expect(html).not.toContain('<button');
+  });
+
+  test('untrusted content does not get file links', () => {
+    const html = renderToStaticMarkup(
+      withIntl(<UnifiedMarkdown trust="untrusted" content="[x](sandbox:/workspace/a.docx)" />),
+    );
+
+    expect(html).not.toContain('<button');
+  });
+});
