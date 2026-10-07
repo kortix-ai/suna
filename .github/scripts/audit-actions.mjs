@@ -16,12 +16,12 @@
  *
  * Usage: node .github/scripts/audit-actions.mjs [repo-root]
  */
-import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 
 const root = process.argv[2] ?? process.cwd();
-const dir = join(root, ".github", "workflows");
-const files = readdirSync(dir).filter((f) => f.endsWith(".yml") || f.endsWith(".yaml"));
+const dir = join(root, '.github', 'workflows');
+const files = readdirSync(dir).filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'));
 
 const CREDENTIAL_MARKERS = [
   /id-token:\s*write/,
@@ -31,8 +31,7 @@ const CREDENTIAL_MARKERS = [
 // Remote refs: `owner/repo@ref` and subpath actions (`owner/repo/path@ref`).
 // The first character must be alphanumeric so local `./...` and `docker://`
 // refs stay out; `.` is otherwise legal inside segments.
-const REMOTE_USES =
-  /uses:\s*["']?([a-zA-Z0-9][a-zA-Z0-9_.-]*(?:\/[a-zA-Z0-9_.-]+)+)@([^"'\s]+)/g;
+const REMOTE_USES = /uses:\s*["']?([a-zA-Z0-9][a-zA-Z0-9_.-]*(?:\/[a-zA-Z0-9_.-]+)+)@([^"'\s]+)/g;
 const SHA = /^[0-9a-f]{40}$/i;
 
 let remoteRefs = 0;
@@ -40,7 +39,7 @@ let pinnedRefs = 0;
 let credentialWorkflows = 0;
 let credentialViolations = 0;
 for (const file of files) {
-  const text = readFileSync(join(dir, file), "utf8");
+  const text = readFileSync(join(dir, file), 'utf8');
   const refs = [...text.matchAll(REMOTE_USES)];
   remoteRefs += refs.length;
   const unpinned = refs.filter(([, , ref]) => !SHA.test(ref));

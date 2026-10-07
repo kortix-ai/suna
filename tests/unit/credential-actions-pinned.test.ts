@@ -1,7 +1,7 @@
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { afterAll, describe, expect, test } from 'vitest';
 
 const root = resolve(import.meta.dirname, '../..');
@@ -22,7 +22,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 `;
-const pinned = vulnerable.replace('actions/checkout@v7', 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1');
+const pinned = vulnerable.replace(
+  'actions/checkout@v7',
+  'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
+);
 
 const dirs: string[] = [];
 const fixture = (workflow: string): string => {
