@@ -45,6 +45,9 @@ export interface ComposioRuntime {
           logo?: string | null;
           description?: string | null;
           categories?: Array<{ slug: string; name: string }>;
+          /** `@composio/core` camel-cases the API's `triggers_count`; the raw key survives the meta spread. */
+          triggersCount?: number;
+          triggers_count?: number;
         };
       }>
     >;

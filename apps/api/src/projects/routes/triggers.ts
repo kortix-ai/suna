@@ -28,7 +28,7 @@ import {
 import { validateWebhookSecretConfiguration } from '../lib/webhook-secret-policy';
 import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { connectorInfo, eventPayload } from '../trigger-events/deliver';
-import { listConnectorEventTypes } from '../trigger-events/catalog';
+import { listConnectorEventTypes, listEventApps, validateEventTrigger } from '../trigger-events/catalog';
 import { reconcileEventSubscriptions } from '../trigger-events/subscriptions';
 import {
   PRIVATE_TRIGGER_SESSION_ACCESS,
@@ -41,6 +41,9 @@ import {
   extractTriggers,
   findProjectTriggerBySlug,
 } from '../triggers';
+
+/** Body keys that change which event a trigger subscribes to. */
+const EVENT_BODY_KEYS = ['connector', 'event', 'event_config'];
 
 /** Merge-body keys owned by one trigger type, dropped when a PATCH changes the type. */
 const TYPE_SPECIFIC_BODY_KEYS = [
@@ -116,6 +119,62 @@ export function registerTriggersRoutes(): void {
       );
 
       return c.json(await loadTriggersForResponse(projectId, loaded.row));
+    },
+  );
+
+  // GET /v1/projects/:projectId/triggers/event-apps
+  //
+  // ⚠️ Keep registered BEFORE the `…/triggers/{slug}` routes (see `activation` below).
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/triggers/event-apps',
+      tags: ['triggers'],
+      summary: 'List the apps that can trigger an event',
+      description: 'Apps with at least one event type, with the project connector for each and whether a project-shared account is connected.',
+      ...auth,
+      request: { params: z.object({ projectId: z.string() }) },
+      responses: {
+        200: json(
+          z.object({
+            apps: z.array(z.object({
+              provider: z.string(),
+              app: z.string(),
+              name: z.string(),
+              logo: z.string().nullable(),
+              event_count: z.number(),
+              connector: z.string().nullable().openapi({ description: 'Slug of the project connector for this app, or null.' }),
+              connected: z.boolean().openapi({ description: 'The project has an active shared account for this app.' }),
+            })),
+          }),
+          'Event-capable apps',
+        ),
+        ...errors(404),
+      },
+    }),
+    async (c) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
+      );
+      const apps = await listEventApps(projectId, loaded.row.accountId);
+      return c.json({
+        apps: apps.map((a) => ({
+          provider: a.provider,
+          app: a.app,
+          name: a.name,
+          logo: a.logo,
+          event_count: a.eventCount,
+          connector: a.connector,
+          connected: a.connected,
+        })),
+      }, 200);
     },
   );
 
@@ -246,6 +305,10 @@ export function registerTriggersRoutes(): void {
 
       const draft = parseTriggerDraft(body, { existingSlug: null });
       if ('error' in draft) return c.json({ error: draft.error }, 400);
+      if (draft.event) {
+        const problem = await validateEventTrigger(projectId, draft.event);
+        if (problem) return c.json({ error: problem }, 400);
+      }
       if (draft.type === 'webhook' && draft.secretEnv) {
         const configurationError = await validateWebhookSecretConfiguration({
           projectId,
@@ -474,6 +537,10 @@ export function registerTriggersRoutes(): void {
           }
           const draft = parseTriggerDraft({ ...base, ...body, slug: slug }, { existingSlug: slug });
           if ('error' in draft) return { ok: false, error: draft.error, status: 400 };
+          if (draft.event && (body.type === 'event' || EVENT_BODY_KEYS.some((k) => k in body))) {
+            const problem = await validateEventTrigger(projectId, draft.event);
+            if (problem) return { ok: false, error: problem, status: 400 };
+          }
           if (draft.type === 'webhook' && draft.secretEnv) {
             const configurationError = await validateWebhookSecretConfiguration({
               projectId,

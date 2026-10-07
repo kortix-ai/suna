@@ -91,6 +91,27 @@ describe('listEventTypes', () => {
   });
 });
 
+describe('listApps', () => {
+  test('keeps toolkits with events, either count key, sorted by name', async () => {
+    setComposioRuntimeForTest({
+      toolkits: {
+        async get() {
+          return [
+            { slug: 'zeta', name: 'Zeta', meta: { logo: 'z.png', triggersCount: 2 } },
+            { slug: 'none', name: 'None', meta: { triggersCount: 0 } },
+            { slug: 'alpha', name: 'Alpha', meta: { triggers_count: 5 } },
+            { slug: 'bare', name: 'Bare', meta: {} },
+          ];
+        },
+      },
+    } as unknown as ComposioRuntime);
+    expect(await provider.listApps()).toEqual([
+      { app: 'alpha', name: 'Alpha', logo: null, eventCount: 5 },
+      { app: 'zeta', name: 'Zeta', logo: 'z.png', eventCount: 2 },
+    ]);
+  });
+});
+
 describe('subscribe / unsubscribe', () => {
   const connection = { connectionId: 'conn-1', connectorSlug: 'github', app: 'github', metadata: { connected_account_id: 'ca_1' } };
   test('passes user id, slug, connected account and config', async () => {

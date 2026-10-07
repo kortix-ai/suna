@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { config } from '../../config';
 import { composioConfigured, composioUserId, getComposioRuntime } from '../../connectors/composio';
-import { EventConnectionNotReadyError, type EventDelivery, EventSignatureError, type EventSourceProvider, type EventTypeInfo, type ProviderNotice } from './types';
+import { EventConnectionNotReadyError, type EventApp, type EventDelivery, EventSignatureError, type EventSourceProvider, type EventTypeInfo, type ProviderNotice } from './types';
 
 const TOLERANCE_S = 5 * 60;
 const PAGE_LIMIT = 100;
@@ -99,6 +99,17 @@ export const composioEventSource: EventSourceProvider = {
       if (!cursor) break;
     }
     return out;
+  },
+
+  async listApps() {
+    const toolkits = getComposioRuntime().toolkits;
+    if (!toolkits) throw new Error('Composio toolkit catalogue is unavailable');
+    const apps: EventApp[] = [];
+    for (const t of await toolkits.get({ limit: 1000 })) {
+      const eventCount = t.meta?.triggersCount ?? t.meta?.triggers_count ?? 0;
+      if (eventCount > 0) apps.push({ app: t.slug, name: t.name, logo: t.meta?.logo ?? null, eventCount });
+    }
+    return apps.sort((a, b) => a.name.localeCompare(b.name));
   },
 
   async subscribe({ connection, type, config: triggerConfig }) {

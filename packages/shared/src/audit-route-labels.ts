@@ -641,6 +641,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/projects/:projectId/snapshots/rebuild': { action: 'snapshot.rebuild', title: 'Started sandbox snapshot rebuild' },
   'GET /v1/projects/:projectId/triggers': { action: 'trigger.list', title: 'Listed triggers' },
   'GET /v1/projects/:projectId/triggers/event-types': { action: 'trigger.event_types.list', title: 'Listed trigger event types' },
+  'GET /v1/projects/:projectId/triggers/event-apps': { action: 'trigger.event_apps.list', title: 'Listed apps that can trigger events' },
   'POST /v1/projects/:projectId/triggers': { action: 'trigger.create', title: 'Created trigger' },
   'DELETE /v1/projects/:projectId/triggers/:slug': { action: 'trigger.delete', title: 'Deleted trigger' },
   'PATCH /v1/projects/:projectId/triggers/:slug': { action: 'trigger.update', title: 'Updated trigger' },

@@ -48,7 +48,7 @@ export function desiredHash(
 const errorText = (error: unknown): string =>
   (error instanceof Error ? error.message : String(error)).replace(/\s+/g, ' ').trim().slice(0, 500);
 
-async function resolveSource(
+export async function resolveSource(
   projectId: string,
   accountId: string,
   event: NonNullable<GitTriggerSpec['event']>,

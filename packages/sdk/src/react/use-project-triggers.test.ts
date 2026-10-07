@@ -69,3 +69,14 @@ describe('useProjectTriggerEventTypes', () => {
     expect((useProjectTriggerEventTypes(undefined, 'github') as any).enabled).toBe(false);
   });
 });
+
+describe('useProjectTriggerEventApps', () => {
+  test('keys per project and is enabled only with a project', async () => {
+    const { useProjectTriggerEventApps, projectTriggerEventAppsKey } = await import('./use-project-triggers');
+    const on = useProjectTriggerEventApps('proj-1') as any;
+    expect(on.queryKey).toEqual(projectTriggerEventAppsKey('proj-1'));
+    expect(on.queryKey).toEqual(qk.project.triggerEventApps('proj-1'));
+    expect(on.enabled).toBe(true);
+    expect((useProjectTriggerEventApps(undefined) as any).enabled).toBe(false);
+  });
+});

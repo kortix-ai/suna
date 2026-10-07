@@ -29,6 +29,7 @@ mock.module('../lib/triggers', () => ({
 const { reconcileEventSubscriptions, reconcileEventSubscriptionsFromCatalog } = await import('./subscriptions');
 const { applyNotices, deliverEvents } = await import('./deliver');
 const { setEventSourceForTest } = await import('./registry');
+const { listEventApps, validateEventTrigger } = await import('./catalog');
 const store = await import('./store');
 
 const CONFIRMATION = 'I_UNDERSTAND_THIS_DELETES_TEST_DATA';
@@ -60,6 +61,7 @@ const fake = {
   configured: () => true,
   ingressConfigured: () => true,
   listEventTypes: async () => [],
+  listApps: async () => [],
   subscribe: async ({ type, config }: { type: string; config: Record<string, unknown> }) => {
     calls.push(`subscribe:${type}`);
     if (subscribeError) throw subscribeError;
@@ -366,6 +368,36 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
       expect(await status('a')).toBe('active');
       await applyNotices('composio', [{ kind: 'connection_expired', connectionExternalId: 'ca_example', reason: 'Token expired.' }]);
       expect((await store.get(PROJECT_ID, 'a'))?.lastError).toContain('Reconnect the app');
+    });
+  });
+
+  describe('catalog', () => {
+    test('event apps carry the project connector and whether a shared account is connected', async () => {
+      setEventSourceForTest('composio', {
+        ...fake,
+        listApps: async () => [
+          { app: 'example', name: 'Example', logo: null, eventCount: 3 },
+          { app: 'other', name: 'Other', logo: 'o.png', eventCount: 1 },
+        ],
+      });
+      const entry = async () => (await listEventApps(PROJECT_ID, ACCOUNT_ID)).map((a) => [a.app, a.connector, a.connected]);
+      expect(await entry()).toEqual([['example', 'inbox', false], ['other', null, false]]);
+      await connect();
+      expect(await entry()).toEqual([['example', 'inbox', true], ['other', null, false]]);
+    });
+
+    test('validation names the bad field; an unreachable catalog skips it', async () => {
+      const item = {
+        type: 'EXAMPLE_NEW_MESSAGE', name: 'n', description: 'd', app: 'example', delivery: null, payloadSchema: null,
+        configSchema: { required: ['repo'], properties: { repo: { type: 'string', description: 'owner/name' } } },
+      };
+      setEventSourceForTest('composio', { ...fake, listEventTypes: async () => [item] });
+      const event = (type: string, config: Record<string, unknown>) => ({ connector: 'inbox', type, config });
+      expect(await validateEventTrigger(PROJECT_ID, event('EXAMPLE_NEW_MESSAGE', { repo: 'a/b' }))).toBeNull();
+      expect(await validateEventTrigger(PROJECT_ID, event('EXAMPLE_NEW_MESSAGE', {}))).toContain('repo is required (owner/name)');
+      expect(await validateEventTrigger(PROJECT_ID, event('NOPE', {}))).toContain('Unknown event NOPE for inbox');
+      setEventSourceForTest('composio', { ...fake, configured: () => false });
+      expect(await validateEventTrigger(PROJECT_ID, event('NOPE', {}))).toBeNull();
     });
   });
 });

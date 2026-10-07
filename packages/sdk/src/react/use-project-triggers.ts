@@ -5,9 +5,11 @@ import {
   createProjectTrigger,
   deleteProjectTrigger,
   fireProjectTrigger,
+  listProjectTriggerEventApps,
   listProjectTriggerEventTypes,
   listProjectTriggers,
   updateProjectTrigger,
+  type ProjectTriggerEventApps,
   type ProjectTriggerEventTypes,
   type ProjectTriggerListing,
 } from '../core/rest/projects-client';
@@ -81,6 +83,19 @@ export function useProjectTriggerEventTypes(
     queryKey: projectTriggerEventTypesKey(projectId, connector),
     queryFn: () => listProjectTriggerEventTypes(projectId as string, { connector: connector as string }),
     enabled: !!projectId && !!connector,
+    ...contract('config'),
+  });
+}
+
+export const projectTriggerEventAppsKey = (projectId: string | null | undefined) =>
+  qk.project.triggerEventApps(projectId ?? '');
+
+/** Apps that can trigger events, with this project's connector and connection state. */
+export function useProjectTriggerEventApps(projectId: string | null | undefined) {
+  return useQuery<ProjectTriggerEventApps>({
+    queryKey: projectTriggerEventAppsKey(projectId),
+    queryFn: () => listProjectTriggerEventApps(projectId as string),
+    enabled: !!projectId,
     ...contract('config'),
   });
 }

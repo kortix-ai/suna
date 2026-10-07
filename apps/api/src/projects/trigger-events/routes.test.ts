@@ -28,6 +28,7 @@ const fake = {
   configured: () => true,
   ingressConfigured: () => ingressConfigured,
   listEventTypes: async () => [],
+  listApps: async () => [],
   subscribe: async () => ({ externalId: 'ti_1' }),
   unsubscribe: async () => {},
   receive: async () => {

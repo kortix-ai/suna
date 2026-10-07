@@ -14,3 +14,9 @@ export function setEventSourceForTest(id: string, provider: EventSourceProvider 
   if (provider === undefined) overrides.delete(id);
   else overrides.set(id, provider);
 }
+
+/** Every registered, non-hidden provider. */
+export function allEventSources(): EventSourceProvider[] {
+  const ids = new Set([composioEventSource.id, ...overrides.keys()]);
+  return [...ids].flatMap((id) => eventSourceFor(id) ?? []);
+}

@@ -524,6 +524,7 @@ Specs in `[[triggers]]`; CRUD commits the manifest; runtime state and account-lo
 `TRG-18` event trigger validation — `type: event` without `connector` → `400`; without `event` → `400`; with `cron` → `400`; with `event_config` that is not an object → `400`. `type: cron` with `connector` → `400`.
 `TRG-19` app-event ingress `POST /v1/webhooks/events/:provider` — unknown provider → `404`. Provider `composio` without a matching signature → `401` when the deployment holds `COMPOSIO_WEBHOOK_SECRET`, `503` when it does not. The route needs no bearer token.
 `TRG-20` `GET /projects/:id/triggers/event-types?connector=<slug>` — `ANON → 401`; missing `connector` → `400`; unknown connector → `404`.
+`TRG-21` `GET /projects/:id/triggers/event-apps` — `ANON → 401`; the project owner → `200` with an `apps` array; the local profile has no event provider configured, so the array is empty. Event trigger create/PATCH with an event the catalog does not know validates only when the provider catalog is reachable, so the local profile skips it.
 
 **Trigger behavior with no black-box HTTP surface.** These are documented
 boundaries, not flow ids.

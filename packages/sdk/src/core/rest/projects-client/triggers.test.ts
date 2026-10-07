@@ -9,6 +9,7 @@ import type {
 } from './triggers';
 import {
   createProjectTrigger,
+  listProjectTriggerEventApps,
   listProjectTriggerEventTypes,
   listProjectTriggers,
   updateProjectTrigger,
@@ -292,6 +293,25 @@ test('listProjectTriggerEventTypes GETs event-types with the connector query and
   expect(last().url).toContain('/projects/P1/triggers/event-types?connector=my%20github');
   expect(catalog.provider).toBe('composio');
   expect(catalog.event_types[0]!.delivery).toBe('push');
+});
+
+test('listProjectTriggerEventApps GETs event-apps and returns connector and connection state', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      apps: [
+        { provider: 'composio', app: 'github', name: 'GitHub', logo: null, event_count: 4, connector: 'github', connected: true },
+        { provider: 'composio', app: 'linear', name: 'Linear', logo: 'l.png', event_count: 2, connector: null, connected: false },
+      ],
+    },
+  };
+
+  const { apps } = await listProjectTriggerEventApps('P1');
+
+  expect(last().method).toBe('GET');
+  expect(last().url).toContain('/projects/P1/triggers/event-apps');
+  expect(apps[0]!.connected).toBe(true);
+  expect(apps[1]!.connector).toBeNull();
 });
 
 test('createProjectTrigger sends an event trigger body and the listing reads event state back', async () => {

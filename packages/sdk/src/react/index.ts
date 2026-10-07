@@ -139,6 +139,8 @@ export {
   useProjectTriggers,
   projectTriggersKey,
   useProjectTriggerEventTypes,
+  useProjectTriggerEventApps,
+  projectTriggerEventAppsKey,
   projectTriggerEventTypesKey,
 } from './use-project-triggers';
 export { useProjectReminders, useSessionReminders } from './use-reminders';

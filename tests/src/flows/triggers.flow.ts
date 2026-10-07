@@ -1411,3 +1411,20 @@ flow(
     });
   },
 );
+
+flow(
+  'TRG-21',
+  { domain: 'triggers', routes: ['GET /v1/projects/:projectId/triggers/event-apps'] },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    const params = { projectId: p.id };
+    await ctx.step('ANON → 401', async () => {
+      (await ctx.client.as(ctx.P.ANON).get('/v1/projects/:projectId/triggers/event-apps', { params })).status(401);
+    });
+    await ctx.step('owner → 200 with an apps array (empty when no event provider is configured)', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/triggers/event-apps', { params });
+      r.status(200);
+      if (!Array.isArray(r.json<{ apps: unknown[] }>().apps)) throw new Error('apps must be an array');
+    });
+  },
+);

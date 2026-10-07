@@ -38,11 +38,20 @@ export type ProviderNotice =
   | { kind: 'subscription_disabled'; externalId: string; reason: string }
   | { kind: 'connection_expired'; connectionExternalId: string; reason: string };
 
+export interface EventApp {
+  app: string;
+  name: string;
+  logo: string | null;
+  eventCount: number;
+}
+
 export interface EventSourceProvider {
   id: string;
   configured(): boolean;
   ingressConfigured(): boolean;
   listEventTypes(app: string): Promise<EventTypeInfo[]>;
+  /** Apps that have at least one event type. */
+  listApps(): Promise<EventApp[]>;
   subscribe(input: {
     connection: EventSourceConnection;
     type: string;

@@ -366,3 +366,26 @@ export async function listProjectTriggerEventTypes(
     ),
   );
 }
+
+/** An app that can trigger events, with the project's state for it. */
+export interface ProjectTriggerEventApp {
+  provider: string;
+  /** Provider app slug. */
+  app: string;
+  name: string;
+  logo: string | null;
+  event_count: number;
+  /** Slug of the project's connector for this app; null until one is added. */
+  connector: string | null;
+  /** The project has an active shared account for this app. An event trigger runs on it. */
+  connected: boolean;
+}
+
+export interface ProjectTriggerEventApps {
+  apps: ProjectTriggerEventApp[];
+}
+
+/** Apps with at least one event type, with connector and connection state for this project. */
+export async function listProjectTriggerEventApps(projectId: string) {
+  return unwrap(await backendApi.get<ProjectTriggerEventApps>(`/projects/${projectId}/triggers/event-apps`));
+}
