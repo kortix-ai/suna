@@ -9,7 +9,6 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { isRecord } from '@kortix/shared/guards';
 
 /** The MCP `call` tool saves a result larger than this (pretty-printed). */
 export const SPILL_THRESHOLD_BYTES = 16 * 1024;
@@ -17,6 +16,10 @@ const PREVIEW_CHARS = 2048;
 const MAX_DEPTH = 4;
 const MAX_KEYS = 40;
 const MAX_ITEM_KEYS = 30;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
 
 function keyList(value: Record<string, unknown>): string {
   const keys = Object.keys(value);
