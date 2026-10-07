@@ -110,6 +110,7 @@ let abortResponder: () => { ok: boolean; status: number; text: string };
 let commandResponder: () => { ok: boolean; status: number; text: string };
 let abortThrows = false;
 let inboxRows: any[] = []; // what GET .../prompts answers
+const SDK_QUEUE = { prompts: [] as any[] };
 let inboxFails = false; // POST .../prompts is refused
 
 const respond = (r: () => { ok: boolean; status: number; text: string }) => ({
@@ -479,6 +480,10 @@ const mergedOverrides: Record<string, Record<string, any>> = {
     useRuntimeCommands: () => ({ data: NO_ROWS }),
     useQuestionSelfHeal: () => {},
     usePermissionSelfHeal: () => {},
+    // The live queue (R5.3) is the SDK's stream; the page's own reads, which
+    // the fetch fake answers, are what these tests drive.
+    useSessionPrompts: () => SDK_QUEUE,
+    useSessionStreamConnected: () => false,
     answerQuestion: (requestId: string, answers: string[][]) => acknowledgeQuestion('answerQuestion', requestId, answers),
     rejectQuestion: (requestId: string) => acknowledgeQuestion('rejectQuestion', requestId),
     answerPermission: spy('answerPermission'),
