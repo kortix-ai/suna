@@ -166,6 +166,9 @@ suite('gateway_request_logs per-session rollup covering index (throwaway Postgre
 
   test('the CONCURRENTLY build re-runs cleanly on a seeded table', () => {
     psql(SEED_SQL);
+    // Drop first, so the re-create below is a real concurrent build over the
+    // seeded rows, not the IF NOT EXISTS no-op over the migration's index.
+    psql(`drop index if exists kortix.${INDEX}`);
     // The SET and the CREATE go in separate psql calls: one string is an
     // implicit transaction block, and CONCURRENTLY cannot run inside one.
     psql(`set lock_timeout = '60s'`);
