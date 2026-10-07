@@ -1,0 +1,23 @@
+{
+  "source_hash": "eab9fe92dc622624afd725633e90134e847f3df938c9727bde68abd6e84e7cd1",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-platform-admin-identity.test.ts",
+    "apps/api/src/__tests__/unit-iam-entitlement-gates.test.ts",
+    "apps/api/src/accounts/iam/sso.ts",
+    "apps/api/src/iam/email-trust.ts",
+    "apps/api/src/repositories/sso.ts",
+    "apps/api/src/shared/auth-identity.ts",
+    "apps/api/src/shared/platform-roles.ts",
+    "tests/spec/end-to-end.md",
+    "tests/src/flows/sso-identity.flow.ts"
+  ],
+  "diff_hash": "c37bb4d0991d52b01e5d6d3e60756076355c838912773b1dc021ee66df29f9ca",
+  "head": "d74028eee23a5ac026275bd31c9166feffa4d4c7",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-07T10:32:31.586Z"
+}
