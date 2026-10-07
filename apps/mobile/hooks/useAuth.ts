@@ -1094,7 +1094,7 @@ export function useAuth() {
       await unregisterPushOnSignOut();
 
       const signOutError = await signOutThisDevice(supabase.auth);
-      if (signOutError) log.warn('⚠️  Sign out failed on the server:', signOutError);
+      if (signOutError) log.warn('⚠️  Sign out returned an error:', signOutError);
 
       await clearUserStorage();
 
