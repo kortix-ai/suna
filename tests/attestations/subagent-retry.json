@@ -1,0 +1,21 @@
+{
+  "source_hash": "e2e1619aac1178590b728034ea5556e2805a639a9f5923f05484c5ea653544db",
+  "diff_files": [
+    "apps/kortix-sandbox-agent-server/src/__tests__/turn-auto-resume.test.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/turn-auto-resume.ts",
+    "apps/web/src/app/[locale]/(system)/debug/subagent-failure/page.tsx",
+    "apps/web/src/features/session/tool/tool-part-renderer.test.tsx",
+    "apps/web/src/features/session/tool/tool-part-renderer.tsx",
+    "apps/web/src/features/session/tool/tools/task-tool.test.tsx",
+    "apps/web/src/features/session/tool/tools/task-tool.tsx"
+  ],
+  "diff_hash": "07368358d0af4a8b991d0f3d1daf0df1815938bc63f43b2875509759e907e6b0",
+  "head": "93ab0784084476fdf638df5f0212d8618832e9e5",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-07T15:48:07.752Z"
+}
