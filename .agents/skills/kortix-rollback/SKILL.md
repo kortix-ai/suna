@@ -9,7 +9,7 @@ The inverse of **kortix-release**. A release moves prod FORWARD onto new code; a
 rollback re-points prod at an OLDER already-released `vX.Y.Z`, reusing that
 release's prebuilt artifacts (zero rebuild). Use it when a shipped version is
 breaking and the move is "go back now, fix forward later." The next forward
-release still comes from `staging`, not directly from dev/`main`.
+release still comes from `staging`, not directly from `dev`.
 
 > A rollback is **temporary, never sticky.** It only flips image tags + re-promotes
 > an old frontend build; it never touches `VERSION` or the trunk. The next promote

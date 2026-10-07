@@ -118,7 +118,7 @@ jobs:
   #
   # Runs only from the `prod` branch (dispatch with `--ref prod`): the prod blob is
   # readable only through the prod role, which needs `environment: prod`. The
-  # nightly schedule runs on `main` and so skips this job.
+  # nightly schedule runs on `dev` and so skips this job.
   prod-presence:
     name: Prod has every object the migrations define
     if: github.ref == 'refs/heads/prod'
