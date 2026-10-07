@@ -145,10 +145,15 @@ function makeFakeHome(): string {
  * `.curlrc` that redirects github.com and api.github.com to the fixture while
  * keeping the script's URLs and TLS verification untouched.
  *
- * `stubLn` is for red runs against the BASE installer only: it has no
- * `KORTIX_BIN_DIR` seam, and this sandbox's /usr/local/bin is writable, so a
- * real link there would replace the box's installed kortix
- * (.agents/skills/learnings 2026-10-03). The stub links nothing.
+ * Every run puts two shims FIRST on `PATH`, so no run — happy path or red
+ * run, head or base — can write outside the fake home: a guarded-forwarder
+ * `ln` (real `/bin/ln` for the head's `KORTIX_BIN_DIR` symlink under the
+ * fake home, a no-op for `/usr/local/bin/*`) and a no-op `sudo` (the base
+ * installer's last-resort branch runs `sudo ln`, which would bypass the `ln`
+ * shim). A red run against the BASE installer — which has no
+ * `KORTIX_BIN_DIR` seam and falls through to /usr/local/bin — therefore
+ * links nothing on the box (.agents/skills/learnings 2026-10-03 and
+ * 2026-10-07: three real clobbers before this shim ran on every run).
  *
  * The spawn is async on purpose: the fixture HTTPS server lives in this
  * process, and a sync spawn would block the event loop that serves the TLS
@@ -157,19 +162,31 @@ function makeFakeHome(): string {
 function runInstaller(
   home: string,
   port: number,
-  opts: { stubLn?: boolean } = {},
 ): Promise<{ status: number; out: string }> {
   const pathParts: string[] = [];
-  if (opts.stubLn) {
-    // A no-op `ln` FIRST on PATH: the BASE installer (no KORTIX_BIN_DIR seam)
-    // would otherwise link into this sandbox's writable /usr/local/bin and
-    // replace the box's installed kortix (.agents/skills/learnings 2026-10-03
-    // and 2026-10-07). The stub links nothing, so every write stays in the
-    // fake home and the red run stays a red run.
-    mkdirSync(resolve(home, 'stub'));
-    writeFileSync(resolve(home, 'stub', 'ln'), '#!/bin/sh\nexit 0\n');
-    chmodSync(resolve(home, 'stub', 'ln'), 0o755);
-    pathParts.push(resolve(home, 'stub'));
+  {
+    // The shims live FIRST on PATH: real `ln` for everything under the fake
+    // home (the head installer's `KORTIX_BIN_DIR` link), a no-op for writes
+    // into /usr/local/bin (the base installer's primary branch), and a no-op
+    // `sudo` for the base's last-resort `sudo ln` branch. Every write the
+    // installers can do outside the fake home is closed off.
+    const stubDir = resolve(home, 'stub');
+    mkdirSync(stubDir);
+    writeFileSync(
+      resolve(stubDir, 'ln'),
+      [
+        '#!/bin/sh',
+        'for a in "$@"; do',
+        '  case "$a" in /usr/local/bin/*) exit 0 ;; esac',
+        'done',
+        'exec /bin/ln "$@"',
+      ].join('\n') + '\n',
+    );
+    writeFileSync(resolve(stubDir, 'sudo'), '#!/bin/sh\nexit 0\n');
+    for (const name of ['ln', 'sudo']) {
+      chmodSync(resolve(stubDir, name), 0o755);
+    }
+    pathParts.push(stubDir);
   }
   pathParts.push(resolve(home, 'bin'));
   writeFileSync(
@@ -216,7 +233,7 @@ describe('scripts/install.sh refuses an unverifiable release', () => {
     const fixture = await startFixture({ sums: `${sumsLine(sha256(BENIGN))}\n`, asset: TAMPERED });
     const home = makeFakeHome();
     try {
-      const run = await runInstaller(home, fixture.port, { stubLn: true });
+      const run = await runInstaller(home, fixture.port);
       expect(run.status).not.toBe(0);
       expect(run.out).toContain('Checksum mismatch');
       expect(existsSync(resolve(home, '.kortix/kortix'))).toBe(false);
@@ -233,7 +250,7 @@ describe('scripts/install.sh refuses an unverifiable release', () => {
     const fixture = await startFixture({ sums: null, asset: BENIGN });
     const home = makeFakeHome();
     try {
-      const run = await runInstaller(home, fixture.port, { stubLn: true });
+      const run = await runInstaller(home, fixture.port);
       expect(run.status).not.toBe(0);
       expect(run.out).toContain('no SHA256SUMS');
       expect(existsSync(resolve(home, '.kortix/kortix'))).toBe(false);
@@ -251,7 +268,7 @@ describe('scripts/install.sh refuses an unverifiable release', () => {
     });
     const home = makeFakeHome();
     try {
-      const run = await runInstaller(home, fixture.port, { stubLn: true });
+      const run = await runInstaller(home, fixture.port);
       expect(run.status).not.toBe(0);
       expect(run.out).toContain(`no checksum for ${ASSET}`);
       expect(existsSync(resolve(home, '.kortix/kortix'))).toBe(false);
