@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { qk } from './query-keys';
-import { projectSessionsPageParam, flattenProjectSessionPages } from './use-project-sessions';
+import {
+  EMPTY_SESSION_PAGE_SCAN_LIMIT,
+  flattenProjectSessionPages,
+  projectSessionsPageParam,
+  shouldScanPastEmptySessionPages,
+} from './use-project-sessions';
 import type { ProjectSessionPage } from '../core/rest/projects-client/sessions';
 
 describe('paged session-list query key', () => {
@@ -97,5 +102,30 @@ describe('filtered session-list query keys (KRTX-639)', () => {
     expect(a).not.toEqual([...qk.project.sessionChildren('P1', 'S2')] as never);
     expect(a).not.toEqual([...qk.project.sessionChildren('P1', 'S1', 'q')] as never);
     expect(a.slice(0, qk.project.sessionsScope('P1').length)).toEqual([...qk.project.sessionsScope('P1')]);
+  });
+});
+
+// KRTX-1727: the server drops sessions the viewer may not see (and deleted
+// ones) after a bounded scan, so a page can be empty and still carry a cursor.
+// Page one empty was rendered as "No sessions yet" and hid the Shared section.
+describe('shouldScanPastEmptySessionPages', () => {
+  const empty = (cursor: string | null): ProjectSessionPage => ({ items: [], next_cursor: cursor });
+  const pages = (...p: ProjectSessionPage[]) => ({ pages: p, pageParams: p.map(() => null) });
+
+  test('an empty page with a cursor is not the end: scan the next page', () => {
+    expect(shouldScanPastEmptySessionPages(pages(empty('C1')), true)).toBe(true);
+  });
+
+  test('no cursor, no data, or any loaded session: stop', () => {
+    expect(shouldScanPastEmptySessionPages(pages(empty(null)), false)).toBe(false);
+    expect(shouldScanPastEmptySessionPages(undefined, true)).toBe(false);
+    const one = { items: [{ session_id: 's1' }], next_cursor: 'C2' } as unknown as ProjectSessionPage;
+    expect(shouldScanPastEmptySessionPages(pages(empty('C1'), one), true)).toBe(false);
+  });
+
+  test('stops after the scan limit, so a viewer who sees nothing is not scanned forever', () => {
+    const limit = Array.from({ length: EMPTY_SESSION_PAGE_SCAN_LIMIT }, () => empty('C'));
+    expect(shouldScanPastEmptySessionPages(pages(...limit.slice(1)), true)).toBe(true);
+    expect(shouldScanPastEmptySessionPages(pages(...limit), true)).toBe(false);
   });
 });

@@ -33,6 +33,15 @@ let visibleSession: Record<string, unknown> | null = null;
 /** The sandbox row the pump reads before every attach attempt. */
 let sandboxRow: { externalId: string | null; status: string } | null = null;
 let sandboxQueryThrows = false;
+let sandboxSelects = 0;
+
+/** The LISTEN this process holds, driven by hand. */
+const sessionChangeWaiters = new Set<{ sessionId: string; wake: () => void }>();
+function notifySessionChanged(sessionId: string): void {
+  for (const waiter of [...sessionChangeWaiters]) {
+    if (waiter.sessionId === sessionId) waiter.wake();
+  }
+}
 
 /** What the fake daemon does when the route tries to attach. */
 let daemonAttach: (signal: AbortSignal) => Promise<
@@ -40,6 +49,11 @@ let daemonAttach: (signal: AbortSignal) => Promise<
   | { ok: false; reason: string; status: number | null }
 >;
 let attachCalls: Array<{ since: number | null; epoch: string | null }> = [];
+let healthReads = 0;
+let nextHealth: () => { ok: true; health: Record<string, unknown> } | { ok: false; reason: string } = () => ({
+  ok: true,
+  health: { status: 'ok', runtimeReady: true, capabilities: ['session.compact'], harness: { id: 'pi', ready: true, state: 'ok' } },
+});
 
 mock.module('../../shared/db', () => ({
   db: {
@@ -47,6 +61,7 @@ mock.module('../../shared/db', () => ({
       from: () => ({
         where: () => ({
           limit: async () => {
+            sandboxSelects += 1;
             if (sandboxQueryThrows) throw new Error('pool exhausted');
             return sandboxRow ? [sandboxRow] : [];
           },
@@ -57,10 +72,44 @@ mock.module('../../shared/db', () => ({
   hasDatabase: true,
 }));
 
+// Every other export stays real: modules this route imports register their
+// own NOTIFY handlers at load (`onSessionPromptsChanged`, `onSessionChanged`).
+const realPgBroadcast = await import('../../shared/pg-broadcast');
+mock.module('../../shared/pg-broadcast', () => ({
+  ...realPgBroadcast,
+  isPgBroadcastListening: () => true,
+  waitForSessionChange: (sessionId: string, ms: number, signal: AbortSignal) =>
+    new Promise<void>((resolve) => {
+      const waiter = {
+        sessionId,
+        wake: () => {
+          clearTimeout(timer);
+          sessionChangeWaiters.delete(waiter);
+          resolve();
+        },
+      };
+      const timer = setTimeout(waiter.wake, ms);
+      sessionChangeWaiters.add(waiter);
+      signal.addEventListener('abort', waiter.wake, { once: true });
+    }),
+}));
+
+let presenceRenewals: Array<{ userId: string; sessionId: string; tabId: string; extendDeadline: boolean }> = [];
+mock.module('../lib/session-presence', () => ({
+  PRESENCE_RENEW_MS: 30_000,
+  renewSessionPresence: async (userId: string, sessionId: string, tabId: string, opts: { extendDeadline: boolean }) => {
+    presenceRenewals.push({ userId, sessionId, tabId, extendDeadline: opts.extendDeadline });
+    return true;
+  },
+}));
+/** Whether the caller holds `project.session.start` (may keep the computer awake). */
+let mayStartSession = true;
+
 mock.module('../lib/access', () => ({
   ...realAccess,
   loadProjectForUser: async () => loadedProject,
   assertProjectCapability: async () => {},
+  projectCapabilityAllowed: async () => mayStartSession,
   loadVisibleSession: async () => visibleSession,
 }));
 
@@ -73,6 +122,10 @@ mock.module('../lib/session-runtime-transport', () => ({
     return daemonAttach(options.signal);
   },
   parseSseFrames: realParseSseFrames,
+  fetchRuntimeHealth: async () => {
+    healthReads += 1;
+    return nextHealth();
+  },
 }));
 
 mock.module('../lib/session-runtime-projection-refresh', () => ({
@@ -92,6 +145,8 @@ const { publishControlEvent, CONTROL_EPOCH, __resetControlEventsForTests } = con
  *  ROUTE, and a real reconciler would put a DB poll on a 5 s timer inside it. */
 let reconcilerSnapshot: unknown[] = [];
 let reconcilerModes: unknown[] = [];
+let runtimeTurnEnds: Array<{ runtimeSessionId: string; atMs: number }> = [];
+let reachability: Array<{ reachable: boolean; reason: string | null }> = [];
 mock.module('../lib/session-control-reconciler', () => ({
   acquireControlReconciler: (_sessionId: string, _projectId: string, mode: unknown) => {
     reconcilerModes.push(mode);
@@ -99,6 +154,12 @@ mock.module('../lib/session-control-reconciler', () => ({
     ready: async () => {},
     snapshot: () => reconcilerSnapshot,
     poke: () => {},
+    noteRuntimeTurnEnd: (runtimeSessionId: string, atMs: number) => {
+      runtimeTurnEnds.push({ runtimeSessionId, atMs });
+    },
+    noteRuntimeReachability: (reachable: boolean, reason: string | null) => {
+      reachability.push({ reachable, reason });
+    },
     release: () => {},
     };
   },
@@ -185,8 +246,17 @@ function daemonStream(frames: string[], keepOpenMs = 0): ReadableStream<Uint8Arr
   return new ReadableStream<Uint8Array>({
     start(controller) {
       for (const frame of frames) controller.enqueue(encoder.encode(frame));
-      if (keepOpenMs > 0) setTimeout(() => controller.close(), keepOpenMs);
-      else controller.close();
+      // The route cancels this body when its client hangs up; a close after
+      // that is a no-op on a real stream, so the fake tolerates it too.
+      const close = () => {
+        try {
+          controller.close();
+        } catch {
+          // Already cancelled by the route.
+        }
+      };
+      if (keepOpenMs > 0) setTimeout(close, keepOpenMs);
+      else close();
     },
   });
 }
@@ -196,6 +266,17 @@ beforeEach(() => {
   attachCalls = [];
   reconcilerSnapshot = [];
   sandboxQueryThrows = false;
+  sandboxSelects = 0;
+  sessionChangeWaiters.clear();
+  runtimeTurnEnds = [];
+  reachability = [];
+  presenceRenewals = [];
+  mayStartSession = true;
+  healthReads = 0;
+  nextHealth = () => ({
+    ok: true,
+    health: { status: 'ok', runtimeReady: true, capabilities: ['session.compact'], harness: { id: 'pi', ready: true, state: 'ok' } },
+  });
   loadedProject = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID }, userId: USER_ID };
   visibleSession = { row: { sessionId: SESSION_ID }, grants: [], canManageProject: true };
   sandboxRow = { externalId: 'box-1', status: 'active' };
@@ -350,7 +431,7 @@ describe('box down — the stream still serves', () => {
       ),
     });
     const response = await openStream();
-    const frames = await readFrames(response, 4);
+    const frames = await readFrames(response, 5);
     // The runtime channel ATTACHES and says UP — never a degrade-to-poll `down`.
     expect(
       frames.find((frame) => frame.event === 'kortix.runtime.status')?.data,
@@ -395,7 +476,7 @@ describe('runtime channel: forwarded verbatim, never renumbered', () => {
       ),
     });
     const response = await openStream();
-    const frames = await readFrames(response, 4);
+    const frames = await readFrames(response, 5);
 
     const status = frames.find((frame) => frame.event === 'session.status');
     expect(status).toBeDefined();
@@ -594,5 +675,191 @@ describe('?channels=control', () => {
   test('an unknown channels value is a 400', async () => {
     const response = await openStream('?channels=bogus');
     expect(response.status).toBe(400);
+  });
+});
+
+describe('R5.1: a production-grade stream', () => {
+  test('a stopped box is re-read when its row changes, not on a 5 s timer', async () => {
+    sandboxRow = { externalId: 'box-1', status: 'stopped' };
+    const response = await openStream();
+    const reader = response.body!.getReader();
+    try {
+      await Bun.sleep(300);
+      // One read at open, then the pump waits for the row to change.
+      expect(sandboxSelects).toBe(1);
+      expect(attachCalls).toHaveLength(0);
+
+      sandboxRow = { externalId: 'box-1', status: 'active' };
+      daemonAttach = async () => ({
+        ok: true,
+        epoch: 'ep-wake',
+        body: daemonStream([], 2_000),
+      });
+      notifySessionChanged(SESSION_ID);
+      await Bun.sleep(100);
+      expect(sandboxSelects).toBe(2);
+      expect(attachCalls).toHaveLength(1);
+    } finally {
+      await reader.cancel().catch(() => {});
+    }
+  });
+
+  test('a client disconnect cancels the daemon body at once, not at the next daemon frame', async () => {
+    let daemonCancelledAt: number | null = null;
+    daemonAttach = async () => ({
+      ok: true,
+      epoch: 'ep-quiet',
+      // A quiet box: no frame after attach, so only an explicit cancel ends it.
+      body: new ReadableStream<Uint8Array>({
+        cancel() {
+          daemonCancelledAt = Date.now();
+        },
+      }),
+    });
+    const response = await openStream();
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let text = '';
+    const deadline = Date.now() + 2_000;
+    while (!text.includes('"state":"up"') && Date.now() < deadline) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+    expect(text).toContain('"state":"up"');
+    const hungUpAt = Date.now();
+    await reader.cancel();
+    await Bun.sleep(200);
+    expect(daemonCancelledAt).not.toBeNull();
+    expect(daemonCancelledAt! - hungUpAt).toBeLessThan(200);
+  });
+
+  test('a client that stops reading pauses the daemon read (backpressure)', async () => {
+    let pulled = 0;
+    const encoder = new TextEncoder();
+    const filler = 'x'.repeat(1_000);
+    daemonAttach = async () => ({
+      ok: true,
+      epoch: 'ep-fast',
+      body: new ReadableStream<Uint8Array>({
+        pull(controller) {
+          pulled += 1;
+          controller.enqueue(
+            encoder.encode(
+              `event: message.part.delta\nid: ${pulled}\ndata: {"seq":${pulled},"type":"message.part.delta","at":1,"payload":{"delta":"${filler}"}}\n\n`,
+            ),
+          );
+        },
+      }),
+    });
+    const response = await openStream();
+    const reader = response.body!.getReader();
+    try {
+      // Take the first bytes, then stop reading without hanging up.
+      await reader.read();
+      await Bun.sleep(400);
+      const paused = pulled;
+      // A bounded buffer: well under 1 MB of 1 KB frames is in flight.
+      expect(paused).toBeLessThan(1_000);
+      await Bun.sleep(200);
+      expect(pulled - paused).toBeLessThan(5);
+      // Reading again resumes the daemon read.
+      for (let i = 0; i < 50; i += 1) await reader.read();
+      await Bun.sleep(50);
+      expect(pulled).toBeGreaterThan(paused);
+    } finally {
+      await reader.cancel().catch(() => {});
+    }
+  });
+});
+
+describe('R5.2: a runtime turn end reaches the reconciler at once', () => {
+  test('a LIVE kortix.turn frame is reported; a replayed one is not', async () => {
+    daemonAttach = async () => ({
+      ok: true,
+      epoch: 'ep-turn',
+      body: daemonStream(
+        [
+          // The daemon had already sequenced 5 frames when this stream attached.
+          'event: kortix.hello\ndata: {"type":"kortix.hello","epoch":"ep-turn","head_seq":5,"first_seq":1,"since":3,"at":1}\n\n',
+          // Replay: an old turn end. It must not end a newer turn.
+          'event: kortix.turn\nid: 4\ndata: {"seq":4,"type":"kortix.turn","at":2,"payload":{"opencode_session_id":"ses_root","verdict":"idle"},"session":"ses_root"}\n\n',
+          // Live: pi names `runtime_session_id`.
+          'event: kortix.turn\nid: 6\ndata: {"seq":6,"type":"kortix.turn","at":3,"payload":{"runtime_session_id":"ses_root","verdict":"idle"},"session":"ses_root"}\n\n',
+        ],
+        500,
+      ),
+    });
+    const before = Date.now();
+    await readFrames(await openStream(), 5);
+    expect(runtimeTurnEnds).toHaveLength(1);
+    expect(runtimeTurnEnds[0]!.runtimeSessionId).toBe('ses_root');
+    // Stamped on the API clock: the box clock is not the one turns start on.
+    expect(runtimeTurnEnds[0]!.atMs).toBeGreaterThanOrEqual(before);
+  });
+});
+
+describe('R5.3: the stream carries the runtime health, so clients stop probing it', () => {
+  test('attaching reads /kortix/health once and pushes it', async () => {
+    daemonAttach = async () => ({ ok: true, epoch: 'ep-h', body: daemonStream([], 800) });
+    const frames = await readFrames(await openStream(), 4, 600);
+    const health = frames.find((frame) => frame.event === 'kortix.runtime.health');
+    expect(health?.data).toMatchObject({
+      channel: 'stream',
+      health: { capabilities: ['session.compact'], harness: { id: 'pi', ready: true } },
+    });
+    expect(healthReads).toBe(1);
+    // A ready harness is what ends a wake for the server ladder.
+    expect(reachability).toContainEqual({ reachable: true, reason: null });
+  });
+
+  test('a harness still starting is re-read until it is ready, then pushed again', async () => {
+    let reads = 0;
+    nextHealth = () => {
+      reads += 1;
+      return reads < 3
+        ? { ok: true, health: { status: 'starting', harness: { id: 'opencode', ready: false, state: 'starting' } } }
+        : { ok: true, health: { status: 'ok', runtimeReady: true, harness: { id: 'opencode', ready: true, state: 'ok' } } };
+    };
+    daemonAttach = async () => ({ ok: true, epoch: 'ep-s', body: daemonStream([], 3_000) });
+    const frames = await readFrames(await openStream(), 8, 2_500);
+    const pushed = frames.filter((frame) => frame.event === 'kortix.runtime.health');
+    expect(pushed.at(-1)?.data).toMatchObject({ health: { harness: { ready: true } } });
+    // Unchanged reads are not pushed twice.
+    expect(pushed.length).toBe(2);
+  });
+
+  test('a stopped box reads no health', async () => {
+    sandboxRow = { externalId: 'box-1', status: 'stopped' };
+    await readFrames(await openStream(), 2, 300);
+    expect(healthReads).toBe(0);
+  });
+});
+
+describe('R5.3: a visible tab keeps its presence through the stream, not a 30 s PUT', () => {
+  const TAB = '66666666-6666-4666-8666-666666666666';
+
+  test('a browser login with tab_id renews that tab lease when the stream opens', async () => {
+    loadedProject = { ...loadedProject!, actor: { credential: { kind: 'jwt' } } } as never;
+    sandboxRow = { externalId: 'box-1', status: 'stopped' };
+    await readFrames(await openStream(`?tab_id=${TAB}`), 2, 200);
+    expect(presenceRenewals).toEqual([{ userId: USER_ID, sessionId: SESSION_ID, tabId: TAB, extendDeadline: true }]);
+  });
+
+  // KRTX-1729: any viewer's open tab kept the computer awake on the account's bill.
+  test('a viewer who may not start the session renews the lease without extending the computer', async () => {
+    loadedProject = { ...loadedProject!, actor: { credential: { kind: 'jwt' } } } as never;
+    mayStartSession = false;
+    sandboxRow = { externalId: 'box-1', status: 'stopped' };
+    await readFrames(await openStream(`?tab_id=${TAB}`), 2, 200);
+    expect(presenceRenewals).toEqual([{ userId: USER_ID, sessionId: SESSION_ID, tabId: TAB, extendDeadline: false }]);
+  });
+
+  test('a token caller or a malformed tab id renews nothing', async () => {
+    sandboxRow = { externalId: 'box-1', status: 'stopped' };
+    await readFrames(await openStream(`?tab_id=${TAB}`), 2, 200);
+    loadedProject = { ...loadedProject!, actor: { credential: { kind: 'jwt' } } } as never;
+    await readFrames(await openStream('?tab_id=not-a-uuid'), 2, 200);
+    expect(presenceRenewals).toEqual([]);
   });
 });

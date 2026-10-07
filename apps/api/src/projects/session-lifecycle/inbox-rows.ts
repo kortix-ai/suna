@@ -859,7 +859,9 @@ export async function enqueueReleasingHold(
       .update(sessionLifecycleCommands)
       .set({
         result: sql`${sessionLifecycleCommands.result} - 'held'`,
-        availableAt: new Date(),
+        // The database clock, which the claim compares against: an API clock
+        // ahead of it left the send not yet due.
+        availableAt: sql`clock_timestamp()`,
         updatedAt: new Date(),
       })
       .where(

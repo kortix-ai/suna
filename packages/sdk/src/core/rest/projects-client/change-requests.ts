@@ -260,3 +260,14 @@ export async function commitSessionChanges(
     ),
   );
 }
+
+/** Edit an open change request's title or description. */
+export async function updateChangeRequest(
+  projectId: string,
+  crId: string,
+  input: { title?: string; description?: string },
+) {
+  return unwrap(
+    await backendApi.patch<ChangeRequest>(`/projects/${projectId}/change-requests/${crId}`, input),
+  );
+}

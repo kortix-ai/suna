@@ -1,6 +1,6 @@
 import type { TriggerList } from '@kortix/api-contract';
 import { projectTriggerRuntime } from '@kortix/db';
-import { formatDurationSeconds } from '@kortix/manifest-schema';
+import { cronIntervalError, formatDurationSeconds } from '@kortix/manifest-schema';
 import { eq } from 'drizzle-orm';
 import { config } from '../../config';
 import { db } from '../../shared/db';
@@ -279,7 +279,7 @@ function parseCronDraft(body: Record<string, unknown>, common: DraftCommon): Tri
     const cron = normalizeString(body.cron ?? body.schedule);
     if (!cron)
       return { error: 'cron triggers must declare a `cron` expression or a one-off `run_at`' };
-    const cronError = validateTriggerCron(cron, timezone);
+    const cronError = validateTriggerCron(cron, timezone) ?? cronIntervalError(cron, timezone);
     if (cronError) return { error: cronError };
     return {
       ...common,

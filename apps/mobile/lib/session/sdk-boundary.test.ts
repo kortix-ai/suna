@@ -76,15 +76,25 @@ describe('the session runtime is the SDK', () => {
 });
 
 /**
- * The Kortix API is `@kortix/sdk`'s too. A raw `fetch`/`EventSource` to the API
- * base (`API_URL`, `BACKEND_URL`, `getApiUrl()`, …) or a use of the SDK's
- * transport internals (`backendApi`, `authenticatedFetch`) is a violation.
- * `sdk-boundary-baseline.json` lists the ones that exist today. The scan must
- * equal it: a new violation fails, and so does a fixed one still listed — move
- * the call into the SDK, then delete its baseline line. Calls to a sandbox
- * (`sandboxUrl`), Supabase or a local asset are not API calls.
+ * The Kortix API and the sandbox proxy are `@kortix/sdk`'s too. Violations:
+ * - `host-kortix-network`: a raw `fetch` / `EventSource` / `downloadAsync` to the
+ *   API base (`API_URL`, `BACKEND_URL`, `getApiUrl()`, …);
+ * - `host-sandbox-network`: the same to a sandbox proxy URL (`sandboxUrl`, `/p/`);
+ * - `host-bearer`: a host-built `Authorization: Bearer …` header (a fetch, a
+ *   download, a WebView source) — the SDK's `authenticatedRequest` makes it;
+ * - `host-kortix-api`: the SDK's transport internals (`backendApi`, `authenticatedFetch`).
+ * `sdk-boundary-baseline.json` lists the ones that exist today, each with its
+ * reason. The scan must equal it: a new violation fails, and so does a fixed one
+ * still listed — move the call into the SDK, then delete its baseline entry.
+ * Supabase and local-asset calls are not API calls. Neither is the probe of a
+ * candidate deployment before it is configured (lib/deployment/deployment.ts:
+ * `/api/runtime-config`, `/v1/auth/client-config`, `/v1/health` on an origin
+ * the user typed, through an injected `fetchImpl`): no SDK client exists for
+ * that origin yet.
  */
 const API_BASE = /\b(?:API_URL|BACKEND_URL)\b|\bget(?:Api|Backend|Platform)Url\(/;
+const SANDBOX_BASE = /\bsandboxUrl\b|\/p\//;
+const NETWORK_CALLS = new Set(['fetch', 'EventSource', 'downloadAsync']);
 const SDK_TRANSPORT = new Set(['backendApi', 'authenticatedFetch']);
 
 /** The initializer of the `const`/`let` that `id` names, searched outward. */
@@ -109,11 +119,20 @@ export function apiBoundaryViolations(file: string, code: string): string[] {
     if (ts.isIdentifier(node) && SDK_TRANSPORT.has(node.text)) out.push(`host-kortix-api\t${file}\t${node.text}`);
     const callee = ts.isCallExpression(node) || ts.isNewExpression(node) ? node.expression : null;
     const target = callee && (node as ts.CallExpression).arguments?.[0];
-    if (callee && target && ts.isIdentifier(callee) && (callee.text === 'fetch' || callee.text === 'EventSource')) {
+    const name = callee && (ts.isIdentifier(callee) ? callee.text : ts.isPropertyAccessExpression(callee) ? callee.name.text : '');
+    if (target && name && NETWORK_CALLS.has(name)) {
       const url = ts.isIdentifier(target) ? (initializerOf(target) ?? target) : target;
-      if (API_BASE.test(url.getText(source))) {
-        out.push(`host-kortix-network\t${file}\t${url.getText(source).replace(/\s+/g, ' ')}`);
-      }
+      const text = url.getText(source).replace(/\s+/g, ' ');
+      if (API_BASE.test(text)) out.push(`host-kortix-network\t${file}\t${text}`);
+      else if (SANDBOX_BASE.test(text)) out.push(`host-sandbox-network\t${file}\t${text}`);
+    }
+    const header =
+      ts.isPropertyAssignment(node) ? [node.name, node.initializer]
+      : ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isPropertyAccessExpression(node.left)
+        ? [node.left.name, node.right]
+        : null;
+    if (header && /^['"]?Authorization['"]?$/i.test(header[0].getText(source)) && /Bearer/.test(header[1].getText(source))) {
+      out.push(`host-bearer\t${file}\t${header[1].getText(source).replace(/\s+/g, ' ')}`);
     }
     ts.forEachChild(node, visit);
   };
@@ -137,13 +156,33 @@ describe('the Kortix API is the SDK', () => {
     ]);
   });
 
-  test('the scanner passes sandbox, Supabase and local-asset fetches', () => {
+  test('the scanner flags sandbox-proxy calls, downloads and host-built bearer headers', () => {
+    expect(apiBoundaryViolations('e.ts', 'fetch(`${sandboxUrl}/kortix/health`, { headers });')).toEqual([
+      'host-sandbox-network\te.ts\t`${sandboxUrl}/kortix/health`',
+    ]);
+    expect(apiBoundaryViolations('f.ts', 'await FileSystem.downloadAsync(`${API_URL}/projects/x/files/archive`, target);')).toEqual([
+      'host-kortix-network\tf.ts\t`${API_URL}/projects/x/files/archive`',
+    ]);
+    expect(apiBoundaryViolations('g.ts', 'fetch(`${base}/p/${id}/8000/file`);')).toEqual([
+      'host-sandbox-network\tg.ts\t`${base}/p/${id}/8000/file`',
+    ]);
+    expect(
+      apiBoundaryViolations('h.tsx', 'const v = <WebView source={{ uri, headers: { Authorization: `Bearer ${token}` } }} />;'),
+    ).toEqual(['host-bearer\th.tsx\t`Bearer ${token}`']);
+    expect(apiBoundaryViolations('i.ts', 'if (token) headers.Authorization = `Bearer ${token}`;')).toEqual([
+      'host-bearer\ti.ts\t`Bearer ${token}`',
+    ]);
+  });
+
+  test('the scanner passes SDK-built requests, Supabase and local-asset fetches', () => {
     expect(
       apiBoundaryViolations(
         'ok.ts',
         [
-          'fetch(`${sandboxUrl}/kortix/health`);',
+          'const r = await fileDownloadRequest(path, sandboxUrl);',
+          'await FileSystem.downloadAsync(request.url, target, { headers: request.headers });',
           'fetch(asset.uri);',
+          "fetch(url, { headers: { apikey: anonKey, Authorization: 'Basic x' } });",
           'createDeadlineFetch((input, init) => fetch(input, init));',
           "import { createKortix } from '@kortix/sdk';",
         ].join('\n'),
@@ -156,7 +195,11 @@ describe('the Kortix API is the SDK', () => {
     const actual = files.flatMap((path) =>
       /\.tsx?$/.test(path) ? apiBoundaryViolations(relative(APP_ROOT, path), readFileSync(path, 'utf8')) : [],
     );
-    const baseline = JSON.parse(readFileSync(join(import.meta.dir, 'sdk-boundary-baseline.json'), 'utf8')) as string[];
-    expect(actual).toEqual(baseline);
+    const baseline = JSON.parse(readFileSync(join(import.meta.dir, 'sdk-boundary-baseline.json'), 'utf8')) as Array<{
+      violation: string;
+      reason: string;
+    }>;
+    expect(actual).toEqual(baseline.map((entry) => entry.violation));
+    for (const entry of baseline) expect(entry.reason.trim().length).toBeGreaterThan(20);
   });
 });
