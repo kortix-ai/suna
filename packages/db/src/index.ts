@@ -101,6 +101,7 @@ export {
   sunaAccountMigrations,
   kortixApiKeys,
   accountTokens,
+  permissionPushClaims,
   workerLeaderLease,
   // Relations
   projectsRelations,
