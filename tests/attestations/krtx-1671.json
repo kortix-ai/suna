@@ -1,0 +1,16 @@
+{
+  "source_hash": "215ebc788d79f685b803422c70018a519c0e6236ff79c3923e41730cbb204b3f",
+  "diff_files": [
+    "apps/web/src/features/session/session-starting-loader.test.tsx",
+    "apps/web/src/features/session/session-starting-loader.tsx"
+  ],
+  "diff_hash": "118e4c533b23133d8f3db15f905f5639360dba6d466cab1a2eaa67d91329a5a2",
+  "head": "816da24b0fce2490c23137d2ae197c1841b9625b",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-07T05:23:10.586Z"
+}

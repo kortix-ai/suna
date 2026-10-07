@@ -848,9 +848,10 @@
         "sessions": "Todas as sessões deste projeto, com arquivos, histórico e resultados",
         "automation": "Todas as execuções agendadas e gatilhos — eles param imediatamente",
         "integrations": "Todas as integrações conectadas, segredos e chaves de API deste projeto",
+        "managedRepo": "O repositório Git gerenciado pela Kortix deste projeto, com cada commit incluído",
         "access": "O acesso de toda a equipe — ninguém poderá acessar este projeto novamente"
       },
-      "reassurance": "O repositório Git conectado não é excluído. Todo código já enviado permanece no lugar.",
+      "reassurance": "Os repositórios Git que você mesmo conectou não são excluídos. Todo código já enviado permanece no lugar.",
       "keepWorkspace": "Manter projeto"
     },
     "sandbox": {
