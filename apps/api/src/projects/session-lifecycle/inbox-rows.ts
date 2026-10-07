@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, isNotNull, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
+import { isPgBroadcastListening, waitForLifecycleCommandSettle } from '../../shared/pg-broadcast';
 import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { LIFECYCLE_CLAIM_LOCK_MS } from './command-lease';
 import { compareInboxSendOrder, inboxOrderBy } from './inbox-order';
@@ -219,7 +220,7 @@ export type InboxPromptEdit =
  * The text parts collapse into one part carrying the new text, ahead of the
  * files; `text` is the flattened copy every reader of the row shows.
  */
-export async function editInboxPrompt(
+async function editInboxPromptOnce(
   sessionId: string,
   promptId: string,
   text: string,
@@ -259,7 +260,7 @@ export async function editInboxPrompt(
  * a claimed or forwarded row is already on its way (`delivering`, a 409). A
  * Stop hold stays on the row; the next send releases it.
  */
-export async function interruptInboxPrompt(
+async function interruptInboxPromptOnce(
   sessionId: string,
   promptId: string,
   actor: InboxActor,
@@ -314,7 +315,7 @@ export async function interruptInboxPrompt(
  * drain re-reads the transcript before it re-mints and drops the delivery if
  * the prompt turns out to have been answered, so this cannot double-run.
  */
-export async function retryInboxPrompt(
+async function retryInboxPromptOnce(
   sessionId: string,
   promptId: string,
   actor: InboxActor,
@@ -429,6 +430,80 @@ export async function retryInboxPrompt(
   // no other row held this clears only this row's own marks.
   if (!releasesBatch) await releaseInboxHold(sessionId);
   return sent;
+}
+
+/**
+ * A write to a waiting row waits out a drain claim, up to this bound.
+ *
+ * The drain claims a due row (`running`) to ask admission whether the session
+ * can take it. Behind a live turn the answer is no, and `requeueForAdmission`
+ * gives the row back one round trip later. While the turn runs that repeats
+ * every 300 ms to 2 s (`INBOX_ORDER_BACKOFF_MS`). An edit, Stop and send or
+ * send now that met the claim answered 409 "already with the agent" (404 for
+ * send now) for a message that had not left. A row a drain really delivers is
+ * forwarded inside this bound, and then the refusal stands. Remove waits in
+ * its own cancel arm (`cancelForwardedPrompt`).
+ */
+const DRAIN_CLAIM_WAIT_MS = 2_000;
+const DRAIN_CLAIM_POLL_MS = 400;
+
+/** Run `write` again while it missed `promptId` only because a drain holds it. */
+async function acrossDrainClaim<T>(
+  promptId: string,
+  missed: (out: T) => boolean,
+  write: () => Promise<T>,
+): Promise<T> {
+  const deadline = Date.now() + DRAIN_CLAIM_WAIT_MS;
+  for (;;) {
+    // Armed before the write, so a give-back between the two is not missed.
+    const settle = waitForLifecycleCommandSettle(
+      promptId,
+      isPgBroadcastListening() ? deadline - Date.now() : DRAIN_CLAIM_POLL_MS,
+    );
+    const out = await write();
+    const claimed =
+      missed(out) &&
+      Date.now() < deadline &&
+      (
+        await db
+          .select({ status: sessionLifecycleCommands.status })
+          .from(sessionLifecycleCommands)
+          .where(eq(sessionLifecycleCommands.commandId, promptId))
+          .limit(1)
+      )[0]?.status === 'running';
+    if (!claimed) {
+      settle.cancel();
+      return out;
+    }
+    await settle.done;
+  }
+}
+
+const onTheWire = (out: InboxPromptEdit) => out.outcome === 'delivering';
+
+export function editInboxPrompt(
+  sessionId: string,
+  promptId: string,
+  text: string,
+  actor: InboxActor,
+): Promise<InboxPromptEdit> {
+  return acrossDrainClaim(promptId, onTheWire, () => editInboxPromptOnce(sessionId, promptId, text, actor));
+}
+
+export function interruptInboxPrompt(sessionId: string, promptId: string, actor: InboxActor): Promise<InboxPromptEdit> {
+  return acrossDrainClaim(promptId, onTheWire, () => interruptInboxPromptOnce(sessionId, promptId, actor));
+}
+
+export function retryInboxPrompt(
+  sessionId: string,
+  promptId: string,
+  actor: InboxActor,
+): Promise<SessionLifecycleCommandRow | InboxNotAuthor | null> {
+  return acrossDrainClaim(
+    promptId,
+    (out) => out === null,
+    () => retryInboxPromptOnce(sessionId, promptId, actor),
+  );
 }
 
 /**

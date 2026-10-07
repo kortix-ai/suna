@@ -2164,6 +2164,48 @@ describe('only the author writes a queued prompt', () => {
   });
 });
 
+describe("a write across the drain's admission claim", () => {
+  // Behind a live turn the drain claims a waiting row (`running`), admission
+  // refuses it and `requeueForAdmission` gives it back: every 300 ms to 2 s
+  // while the turn runs. An author's write in that window met a `running` row
+  // and answered 409 "already with the agent" (404 for send now) for a
+  // message that had not left.
+  const OTHER_MEMBER = { userId: crypto.randomUUID() };
+
+  /** Claim `row` as the drain does, then give it back after `ms`. */
+  async function claimThenRefuse(row: { commandId: string }, ms: number) {
+    const lease = await hold(row, 'admission-claim-it');
+    setTimeout(() => void requeueForAdmission(lease, 'turn_active', new Date(Date.now() + 60_000)), ms);
+  }
+
+  test('the author edits, Stop-and-sends and sends now a row the drain gives back', async () => {
+    const edited = await enqueue('q_claim_edit');
+    await claimThenRefuse(edited, 300);
+    expect((await editInboxPrompt(SESSION_ID, edited.commandId, 'say hello', AS_AUTHOR)).outcome).toBe('edited');
+
+    const interrupted = await enqueue('q_claim_interrupt');
+    await claimThenRefuse(interrupted, 300);
+    expect((await interruptInboxPrompt(SESSION_ID, interrupted.commandId, AS_AUTHOR)).outcome).toBe('edited');
+
+    const sent = await enqueue('q_claim_send_now');
+    await claimThenRefuse(sent, 300);
+    expect((await retryAsAuthor(sent.commandId))?.commandId).toBe(sent.commandId);
+    // Remove waits out the claim in the route's cancel arm (`cancelForwardedPrompt`).
+  });
+
+  // A row that stays claimed is on its way, and the refusal stands after the
+  // bound: 'a prompt already on the wire answers `delivering` …' above.
+
+  test('another member is refused at once, not after the claim', async () => {
+    const row = await enqueue('q_claim_other');
+    await hold(row, 'delivery-it');
+    const started = performance.now();
+    expect(await editInboxPrompt(SESSION_ID, row.commandId, 'x', OTHER_MEMBER)).toEqual({ outcome: 'not_author' });
+    expect(await retryInboxPrompt(SESSION_ID, row.commandId, OTHER_MEMBER)).toEqual({ outcome: 'not_author' });
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+});
+
 describe('steering (R10)', () => {
   const PROMPTER = crypto.randomUUID();
   const OTHER = crypto.randomUUID();
