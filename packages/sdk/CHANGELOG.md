@@ -281,6 +281,82 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `completeRuntimeProviderOAuth`, `setRuntimeProviderApiKey`,
   `getRuntimeConfig`, `updateRuntimeConfig` and `refreshRuntimeConfiguration`.
   Behavior is unchanged. Removed in the next major.
+- The exports in **Removed in the next major** below that were not deprecated
+  yet: the `message-queue` reducers and types, the types of the retired admin
+  hooks, `useUpdateRuntimeSession`, `useRuntimeSessionDiff`, `useInitSession`,
+  `useSendRuntimeMessage`, `useRuntimeAgent` and `useRuntimeTools`, and the
+  four `./internal/*` store subpaths. Behavior is unchanged.
+
+### Removed in the next major
+
+The removal list for the next breaking release. No first-party host
+(`apps/*`, `packages/*` other than this one) imports any name or subpath
+below: check again with `rg -w <name> apps packages -g '!packages/sdk/**'`
+before the cut. Each name carries `@deprecated <replacement>. Removed in the
+next major.`, and `src/deprecated-exports.test.ts` fails when a tag is
+missing. Every other entry under **Deprecated** above that says "Removed in
+the next major" goes in the same release.
+
+Subpaths. For each, delete the `exports` and `publishConfig.exports` keys in
+`package.json`, its row in `SUBPATH_TIERS` (`src/index.isomorphic.test.ts`),
+its entry in `NOT_ROOT_REACHABLE` (`src/root-canonical.test.ts`) when it has
+one, and its file.
+
+| Subpath | Replacement | File |
+|---|---|---|
+| `./opencode-client`, `./config`, `./auth`, `./api-client`, `./projects-client`, `./feature-flags`, `./fresh-sessions`, `./instance-routes`, `./opencode-errors`, `./platform-client`, `./event-stream`, `./files`, `./session`, `./session/url`, `./turns` | `@kortix/sdk` (the same names) | `src/deprecated/<name>.ts` (`./session/url`: `session-url.ts`) |
+| `./idb-sync-cache` | `@kortix/sdk/internal/idb-sync-cache` | `src/deprecated/idb-sync-cache.ts` |
+| `./sync-store`, `./server-store`, `./sandbox-connection-store`, `./opencode-pending-store` | none; read session state with `useSession` | `src/deprecated/<name>.ts` |
+| `./internal/sync-store`, `./internal/server-store`, `./internal/sandbox-connection-store`, `./internal/opencode-pending-store` | none; read session state with `useSession` | `src/internal/<name>.ts` (the stores in `src/browser/stores/` stay) |
+| `./message-queue` | `useSession().send` (the server orders prompts) | `src/core/session/message-queue.ts` and its test |
+
+Names.
+
+| Name | Replacement | File |
+|---|---|---|
+| `claimNext`, `completeInFlight`, `createSessionQueue`, `editQueued`, `enqueue`, `failInFlight`, `removeQueued`, `reorderQueued`, `retryFailed`, `QueuedMessage`, `QueuedMessageInput`, `SessionQueue` (root re-export block in `src/index.ts`) | `useSession().send` | `src/core/session/message-queue.ts` |
+| every export (28 hooks, 34 types) | none: the API removed the route | `src/react/use-admin-analytics.ts` (whole file) |
+| every export (8 hooks, `useRefreshFeedbackData`, 10 types) | none: the API removed the route | `src/react/use-admin-feedback.ts` (whole file) |
+| every export (4 hooks, 5 types) | none: the API removed the route | `src/react/use-system-status.ts` (whole file) |
+| `useUserBillingSummary`, `useAdminUserTransactions`, `useAdjustCredits`, `useProcessRefund` | none: the API removed the route | `src/react/use-admin-billing.ts` (whole file) |
+| `useAdminSandboxDetail`, `useAdminSandboxHealth`, `useAdminSandboxHealthBatch`, `useAdminSandboxExec`, `useAdminSandboxAction`, `useAdminSandboxRepair`, `useDeleteAdminSandbox`, `fetchAdminSandboxProxyToken`, `AdminSandboxDetail`, `ProviderMachineDetail`, `AdminInstanceLayerStatus`, `AdminInstanceLayerAction`, `AdminInstanceLayerHealth`, `AdminSandboxHealth`, `AdminSandboxHealthBatchResponse`, `ExecResult`, `ProxyTokenResult` | none: the API removed the route | `src/react/use-admin-sandboxes.ts` (`useAdminSandboxes` stays) |
+| `useAdminAccountSandboxes`, `AdminAccountSandbox` | none: the API removed the route | `src/react/use-admin-accounts.ts` |
+| `useCreateTunnelConnection`, `useTunnelPermissions`, `useGrantTunnelPermission`, `useRevokeTunnelPermission`, `useTunnelPermissionRequests`, `useApprovePermissionRequest`, `useDenyPermissionRequest`, `useTunnelAuditLogs`, `TunnelPermission`, `TunnelPermissionRequest`, `TunnelAuditLog`, `AuditLogPage`, `TunnelConnectionCreateResponse` | device auth; a connector's `require_approval` policy | `src/react/use-tunnel.ts` |
+| `useRetiredQuery`, `useRetiredMutation` (not exported) | none: no caller remains | `src/react/retired-endpoint.ts` (whole file) |
+| `useOpenCodeRuntimeReady` | `useRuntimeReady` | `src/react/use-opencode-sessions/keys.ts` |
+| `useOpenCodeSessions`, `useOpenCodeSession`, `useCreateOpenCodeSession`, `useOpenCodeSessionTodo`, `useSummarizeOpenCodeSession` | `useRuntimeSessions`, `useRuntimeSession`, `useCreateRuntimeSession`, `useRuntimeSessionTodo`, `useSummarizeRuntimeSession` | `src/react/use-opencode-sessions/sessions.ts` |
+| `useUpdateRuntimeSession`, `useUpdateOpenCodeSession` | `updateProjectSession` (`name`) | `src/react/use-opencode-sessions/sessions.ts` |
+| `useRuntimeSessionDiff`, `useOpenCodeSessionDiff` | `useRuntimeVcsDiff` | `src/react/use-opencode-sessions/sessions.ts` |
+| `useInitSession` | `useExecuteRuntimeCommand` with `command: 'init'` | `src/react/use-opencode-sessions/sessions.ts` |
+| `useDeleteOpenCodeSession` | `deleteProjectSession` | `src/react/use-opencode-sessions/sessions.ts` |
+| `useOpenCodeMessages` | `useRuntimeMessages` | `src/react/use-opencode-sessions/messages.ts` |
+| `useSendRuntimeMessage`, `useSendOpenCodeMessage` | `useSession().send` | `src/react/use-opencode-sessions/messages.ts` |
+| `useAbortOpenCodeSession` | `useAbortRuntimeSession` | `src/react/use-opencode-sessions/messages.ts` |
+| `useOpenCodeAgents`, `useRuntimeAgent`, `useOpenCodeAgent` | `useRuntimeAgents` (select by `name`) | `src/react/use-opencode-sessions/agents.ts` |
+| `useRuntimeTools`, `useOpenCodeTools`, `useOpenCodeToolIds`, `useOpenCodeSkills` | none: OpenCode-only routes | `src/react/use-opencode-sessions/tools.ts` |
+| `useOpenCodeProjects` | none: OpenCode-only route | `src/react/use-opencode-sessions/projects.ts` |
+| `useOpenCodeCurrentProject`, `useOpenCodePathInfo` | `useRuntimeCurrentProject`, `useRuntimePathInfo` | `src/react/use-opencode-sessions/projects.ts` |
+| `useOpenCodeCommands`, `useExecuteOpenCodeCommand` | `useRuntimeCommands`, `useExecuteRuntimeCommand` | `src/react/use-opencode-sessions/commands.ts` |
+| `useOpenCodeProviders` | `useRuntimeProviders` | `src/react/use-opencode-sessions/providers.ts` |
+| `useShareSession`, `useUnshareSession` | none: OpenCode-only routes | `src/react/use-opencode-sessions/sharing.ts` (whole file) |
+| `useUpdatePart`, `useDeletePart` | none: OpenCode-only routes | `src/react/use-opencode-sessions/parts.ts` (whole file) |
+| `useOpenCodeVcsDiff` | `useRuntimeVcsDiff` | `src/react/use-opencode-sessions/vcs.ts` |
+
+Also in the same change: for a whole file, delete its `export *` line in
+`src/react/index.ts` or `src/react/use-opencode-sessions/index.ts`; delete the
+lists above from
+`src/deprecated-exports.test.ts`; re-record `src/public-surface.snapshot.json`
+and `src/public-type-surface.snapshot.json` and confirm the diff only removes
+these names; drop the `@kortix/sdk/internal/server-store` entry from
+`apps/web/eslint.config.mjs`; drop the `@kortix/sdk/turns` note from
+`apps/web/content/docs/sdk/reference.mdx`. `apps/web/scripts/split-tool-renderers.ts`
+writes `@kortix/sdk/internal/sync-store` and `useOpenCodeMessages` into the
+files it generates; it reads a `.bak` file that no longer exists, so nothing
+runs it. Comments in `apps/web` and `apps/api` still name `useOpenCodeAgents`,
+`useOpenCodeCommands`, `useOpenCodeMessages`, `useSummarizeOpenCodeSession`
+and `useOpenCodeRuntimeReady`; they compile either way.
+
+The 88 `V2Event*` type aliases are already gone (see **Removed** below).
 
 ### Fixed
 - `useSession({ chatEngine: false })` no longer reads a transcript for no
@@ -356,6 +432,9 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   release. The API no longer accepts or emits that value.
 
 ### Internal
+- Deleted dead internal code: `src/react/model-lookup.ts` (a re-export no
+  entry point reached) and nine unread non-exported functions, constants,
+  variables and imports. No public name changed.
 - `src/` is now tiered: `core/` (isomorphic), `browser/`, `node/`, `react/`.
   A file's directory declares what it may import, enforced by the tripwire.
 - A bare-global tripwire (`process`/`window`/`document`/`localStorage`/
