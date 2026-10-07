@@ -71,7 +71,7 @@ flow(
       response.status(400);
     });
 
-    await ctx.step("create returns stable App policy and URL", async () => {
+    await ctx.step("create returns stable App policy and URL; an always-on App below its 24/7 estimate is warned, not refused", async () => {
       const slug = ctx.fixtures
         .name("app")
         .toLowerCase()
@@ -86,6 +86,7 @@ flow(
           memory_gb: 2,
           disk_gb: 10,
           idle_timeout_seconds: 300,
+          always_on: true,
           monthly_budget_usd: 5,
         },
         { params: projectParams },
@@ -96,7 +97,10 @@ flow(
         .exists("$.app_id")
         .exists("$.url")
         .has("$.slug", slug)
-        .has("$.desired_state", "running");
+        .has("$.desired_state", "running")
+        .has("$.always_on", true)
+        .has("$.estimated_monthly_usd", 73.48)
+        .has("$.warnings[0].code", "app_budget_below_always_on");
       appId = response.json<any>().app_id;
     });
 
@@ -116,7 +120,21 @@ flow(
         .status(200)
         .body()
         .has("$.name", "Updated ke2e App")
-        .has("$.idle_timeout_seconds", 420);
+        .has("$.idle_timeout_seconds", 420)
+        .has("$.warnings", []);
+
+      const funded = await owner.patch(
+        "/v1/projects/:projectId/apps/:appId",
+        { monthly_budget_usd: 100 },
+        { params },
+      );
+      funded.status(200).body().has("$.monthly_budget_usd", 100).has("$.warnings", []);
+      const underfunded = await owner.patch(
+        "/v1/projects/:projectId/apps/:appId",
+        { monthly_budget_usd: 10 },
+        { params },
+      );
+      underfunded.status(200).body().has("$.warnings[0].code", "app_budget_below_always_on");
     });
 
     await ctx.step(

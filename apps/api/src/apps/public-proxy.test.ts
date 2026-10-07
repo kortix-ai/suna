@@ -316,6 +316,14 @@ describe('Apps public edge', () => {
     expect(appRuntimeNeedsWake({ status: 'stopped', idleDeadlineAt: null }, now)).toBe(true);
   });
 
+  test('an always-on runtime past its idle deadline is proxied directly; a stopped one still wakes', () => {
+    const now = new Date('2026-08-07T10:30:00.000Z');
+    const pastDeadline = new Date('2026-08-07T10:00:00.000Z');
+    expect(appRuntimeNeedsWake({ status: 'running', idleDeadlineAt: pastDeadline }, now, true)).toBe(false);
+    expect(appRuntimeNeedsWake({ status: 'running', idleDeadlineAt: pastDeadline }, now, false)).toBe(true);
+    expect(appRuntimeNeedsWake({ status: 'stopped', idleDeadlineAt: null }, now, true)).toBe(true);
+  });
+
   test('direct-edge mode refuses a caller-supplied App host header', () => {
     // x-kortix-app-host is an EDGE-SIGNED field. In direct-edge mode (a
     // self-host with no Apps Worker, which `kortix self-host configure` now

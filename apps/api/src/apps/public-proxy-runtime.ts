@@ -84,11 +84,19 @@ async function waitForWake(runtimeId: string, deadline: number) {
   throw new Error('App cold start timed out');
 }
 
+/**
+ * Must this request start (or re-check) the runtime before it is proxied? A
+ * stopped one, yes. A running on-demand one past its idle deadline, yes: the
+ * idle reaper may be stopping it. A running always-on one never: nothing
+ * idle-stops it, and the keep-alive pass confirms it with the provider.
+ */
 export function appRuntimeNeedsWake(
   runtime: Pick<typeof appRuntimes.$inferSelect, 'status' | 'idleDeadlineAt'>,
   now = new Date(),
+  alwaysOn = false,
 ): boolean {
   if (runtime.status !== 'running') return true;
+  if (alwaysOn) return false;
   return Boolean(runtime.idleDeadlineAt && runtime.idleDeadlineAt.getTime() <= now.getTime());
 }
 
@@ -161,7 +169,7 @@ export async function ensureAppRuntimeRunning(
     if (!reactivated) throw new Error('App no longer exists');
     app = reactivated;
   }
-  if (!appRuntimeNeedsWake(loaded.runtime)) return loaded.runtime;
+  if (!appRuntimeNeedsWake(loaded.runtime, new Date(), app.alwaysOn)) return loaded.runtime;
   if (loaded.runtime.status === 'deleted') {
     throw new Error('App runtime cannot wake from deleted');
   }

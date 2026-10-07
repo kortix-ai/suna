@@ -92,7 +92,7 @@ export async function handleAppPublicRequest(request: Request): Promise<Response
   }
   const loaded = { app: state.app, deployment: state.deployment, runtime: state.runtime };
   const hosting = new AppHostingProvider();
-  const coldStart = appRuntimeNeedsWake(state.runtime);
+  const coldStart = appRuntimeNeedsWake(state.runtime, new Date(), state.app.alwaysOn);
   if (coldStart) {
     await enqueueCurrentAppRuntime(state.app, state.deployment).catch((error) => {
       console.warn(`[apps] runtime refresh queue failed for ${state.app.appId}:`, error);

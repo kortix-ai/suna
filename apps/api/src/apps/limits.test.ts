@@ -5,6 +5,8 @@ import {
   assertAppBudgetWithinLimits,
   assertAppMachineWithinLimits,
 } from './limits';
+import { alwaysOnBudgetWarning, appMonthlyEstimateUsd } from './budget';
+import { appRuntimeImageKey } from './deployment-worker';
 
 describe('App machine limits', () => {
   test('an App may not ask for a bigger machine than a session sandbox may', () => {
@@ -50,5 +52,35 @@ describe('App machine limits', () => {
     expect(() => assertAppBudgetWithinLimits(5)).not.toThrow();
     expect(() => assertAppBudgetWithinLimits(-1)).toThrow(AppLimitError);
     expect(() => assertAppBudgetWithinLimits(100_001)).toThrow(AppLimitError);
+  });
+});
+
+describe('always-on cost', () => {
+  const machine = { cpuCores: 1, memoryGb: 2, diskGb: 10 };
+
+  test('the default machine costs about 73 USD for a month of 24/7 at list rates', () => {
+    // 730 h × (1 × 0.0000168 + 2 × 0.0000054 + 10 × 0.000000036) USD/s
+    expect(appMonthlyEstimateUsd(machine)).toBe(73.48);
+    expect(appMonthlyEstimateUsd({ cpuCores: 2, memoryGb: 4, diskGb: 20 })).toBe(146.96);
+  });
+
+  test('warns only an always-on App whose budget is below its estimate', () => {
+    const warning = alwaysOnBudgetWarning({ ...machine, alwaysOn: true, monthlyBudgetUsd: '5.00' });
+    expect(warning).toMatchObject({
+      code: 'app_budget_below_always_on', estimated_monthly_usd: 73.48, monthly_budget_usd: 5,
+    });
+    expect(warning?.message).toContain('after about 2.1 days');
+    expect(alwaysOnBudgetWarning({ ...machine, alwaysOn: false, monthlyBudgetUsd: '5.00' })).toBeNull();
+    expect(alwaysOnBudgetWarning({ ...machine, alwaysOn: true, monthlyBudgetUsd: '73.48' })).toBeNull();
+  });
+});
+
+describe('runtime refresh key', () => {
+  test('only the supervisor digest decides a refresh, not the API release', () => {
+    expect(appRuntimeImageKey('0.13.52:appd-0123456789abcdef')).toBe('appd-0123456789abcdef');
+    expect(appRuntimeImageKey('0.13.53:appd-0123456789abcdef')).toBe(appRuntimeImageKey('0.13.52:appd-0123456789abcdef'));
+    expect(appRuntimeImageKey('0.13.53:appd-fedcba9876543210')).not.toBe(appRuntimeImageKey('0.13.52:appd-0123456789abcdef'));
+    expect(appRuntimeImageKey('custom-override')).toBe('custom-override');
+    expect(appRuntimeImageKey(null)).toBe('');
   });
 });

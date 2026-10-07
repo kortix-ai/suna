@@ -100,6 +100,9 @@ function startServer(): string {
             },
             idle_timeout_seconds: (patch.idle_timeout_seconds as number) ?? 300,
             monthly_budget_usd: (patch.monthly_budget_usd as number) ?? 5,
+            ...(patch.always_on === true && patch.monthly_budget_usd === undefined
+              ? { warnings: [{ code: 'app_budget_below_always_on', message: 'This App runs 24/7 and stops at its $5.00 budget.' }] }
+              : { warnings: [] }),
           }),
         );
       }
@@ -257,6 +260,17 @@ describe('kortix apps set', () => {
     const both = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--always-on', '--on-demand'], config);
     expect(both.code).not.toBe(0);
     expect(both.stderr).toContain('not both');
+  });
+
+  test('set prints the server\'s budget warning on stderr and keeps --json stdout parseable', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--always-on', '--json'], config);
+    expect(r.code).toBe(0);
+    expect(r.stderr).toContain('This App runs 24/7 and stops at its $5.00 budget.');
+    expect(JSON.parse(r.stdout).warnings[0].code).toBe('app_budget_below_always_on');
+    const raised = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--always-on', '--budget', '100'], config);
+    expect(raised.code).toBe(0);
+    expect(raised.stderr).not.toContain('runs 24/7');
   });
 
   test('set with no field flags exits 2 and sends nothing', async () => {

@@ -1120,8 +1120,13 @@ feature flag, off by default: a member of a flag-off project gets
 first clears any override left by a reused local fixture, then enables the flag
 via `PATCH /projects/:projectId/features` and proceeds. A
 project writer creates a unique lower-case slug and machine policy; list/get
-return the stable public URL and active deployment pointer; patch updates
-mutable policy; delete is soft and removes the App from subsequent reads.
+return the stable public URL and active deployment pointer; every App carries
+`estimated_monthly_usd` (its machine 24/7 at list compute rates, `73.48` for
+1 vCPU / 2 GiB / 10 GiB); an always-on create or a run-mode, machine or budget
+patch with a budget below that estimate succeeds with
+`warnings[0].code = 'app_budget_below_always_on'`, and `warnings: []`
+otherwise; patch updates mutable policy; delete is soft and removes the App
+from subsequent reads.
 Invalid slugs → 400; `NONMEMBER` → 403.
 
 `APP-2` Artifact and deployment boundaries —

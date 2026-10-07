@@ -103,6 +103,34 @@ export async function retireSupersededDeployments(
   return retired;
 }
 
+/**
+ * Point an App at a ready deployment (rollback). Takes the same deploy lock
+ * as retention, so the ready check reads after any retention that committed
+ * first. Without the lock, the UPDATE waited on retention's row lock and then
+ * checked the target with its old snapshot, and could move traffic to a
+ * deployment retention had just retired. Returns null when the target is not
+ * ready (anymore).
+ */
+export async function rollBackActiveDeployment(appId: string, deploymentId: string) {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${appId}))`);
+    const [target] = await tx.select({ deploymentId: appDeployments.deploymentId })
+      .from(appDeployments)
+      .where(and(
+        eq(appDeployments.deploymentId, deploymentId),
+        eq(appDeployments.appId, appId),
+        eq(appDeployments.status, 'ready'),
+      ))
+      .limit(1);
+    if (!target) return null;
+    const [row] = await tx.update(apps)
+      .set({ activeDeploymentId: deploymentId, desiredState: 'running', updatedAt: new Date() })
+      .where(eq(apps.appId, appId))
+      .returning();
+    return row ?? null;
+  });
+}
+
 const SWEEP_APPS = 50;
 const ARTIFACT_GRACE = '24 hours';
 const ARTIFACT_BATCH = 100;

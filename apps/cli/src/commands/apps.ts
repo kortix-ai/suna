@@ -22,6 +22,7 @@ import {
   mergeManifestDefaults,
   positiveInteger,
   positiveNumber,
+  alwaysOnBudgetNotice,
   provisionDeployApp,
   resolveApp,
   scoped,
@@ -71,6 +72,10 @@ Subcommands:
     --groups <ids>                  Comma-separated group ids for restricted access.
     --always-on | --on-demand       Server Apps: run 24/7 (default), or stop when
                                     idle. Static Apps run no server.
+    --budget <usd>                  Monthly compute budget. A server App stops at
+                                    it. Running 24/7 costs about $73/month for the
+                                    default machine; deploy warns when the budget
+                                    is lower.
     --no-wait                       Return after the deployment is queued.
     --wait-seconds <seconds>        Default: 1200.
   set <id|slug>                     Change an existing App. Only the flags you
@@ -232,9 +237,15 @@ async function createCommand(
   const ctx = await context(options);
   if (!ctx) return 1;
   const app = await scoped(ctx, () => ctx.apps.create(input));
+  printWarnings(app);
   if (json) emitJson(app);
   else process.stdout.write(`\n  ${status.ok(`created ${app.slug}`)}\n  ${app.url}\n\n`);
   return 0;
+}
+
+/** The server's warnings for a create or update, on stderr so `--json` stdout stays clean. */
+function printWarnings(app: App): void {
+  for (const warning of app.warnings ?? []) process.stderr.write(`${status.warn(warning.message)}\n`);
 }
 
 /** `--always-on` / `--on-demand`, consumed from `rest`; neither → the server decides. */
@@ -282,6 +293,7 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
     const found = await resolveApp(ctx.apps, target);
     return ctx.apps.update(found.app_id, input);
   });
+  printWarnings(app);
   if (json) emitJson(app);
   else {
     process.stdout.write(`\n  ${status.ok(`updated ${app.slug}`)}\n`);
@@ -353,6 +365,8 @@ async function deployCommand(
       if (flags.wait)
         deployment = await waitForDeployment(ctx.apps, app.app_id, deployment, flags.waitSeconds);
       const currentApp = flags.wait ? await ctx.apps.get(app.app_id) : app;
+      const budgetNotice = staged.source.kind === 'static' ? null : alwaysOnBudgetNotice(currentApp);
+      if (budgetNotice) process.stderr.write(`${status.warn(budgetNotice)}\n`);
       if (json) emitJson({ app: currentApp, deployment });
       else {
         process.stdout.write(

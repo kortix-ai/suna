@@ -247,9 +247,14 @@ A server App runs **always on** (the default: 24/7, restarted within 5 minutes
 if it stops, needed for cron jobs, queues and websockets) or **on demand**
 (`--on-demand`: stops after the idle timeout, wakes on the next request):
 `kortix apps set <slug> --always-on|--on-demand`, or `always_on` in
-`kortix.yaml`. Both stop at the monthly budget (`--budget`); an always-on App
-of the default size costs about 73 USD a month, so set the budget to match.
-A static App ignores all of this.
+`kortix.yaml`. Both stop at the monthly budget, and when the account can no
+longer pay. An always-on App of the default size costs about 73 USD a month
+(`estimated_monthly_usd` on the App); set the budget on deploy to match:
+`kortix apps deploy . --budget 80`. `deploy`, `create` and `set` print an
+`app_budget_below_always_on` warning on stderr when the budget is lower; tell
+the user, do not ignore it. On Daytona and E2B (self-host) an always-on App can
+be unreachable for up to 5 minutes if the provider stops its VM; on Kortix
+Cloud the VM is persistent. A static App ignores all of this.
 
 `stop` suspends a server App's compute immediately. The next authorized request
 wakes it.

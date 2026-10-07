@@ -367,6 +367,22 @@ test('an App runs always-on or on demand: create and update send always_on, and 
   expect(last().body).toEqual({ always_on: false });
 });
 
+test('an always-on App reads its monthly estimate, and create/update carry budget warnings', async () => {
+  const app: import('./apps').App = {
+    app_id: 'app-1', account_id: 'account-1', project_id: 'project-1', slug: 'demo', name: 'Demo',
+    url: 'https://demo.apps.kortix.com', access_mode: 'private', access_revision: 1, desired_state: 'running',
+    active_deployment_id: null, machine: { cpu: 1, memory_gb: 2, disk_gb: 10 }, idle_timeout_seconds: 300,
+    always_on: true, monthly_budget_usd: 5, estimated_monthly_usd: 73.48, last_request_at: null,
+    warnings: [{ code: 'app_budget_below_always_on', message: 'This App runs 24/7 …' }],
+    created_at: '2026-10-07T00:00:00.000Z', updated_at: '2026-10-07T00:00:00.000Z',
+  };
+  responses.push({ status: 201, body: app }, { body: { ...app, monthly_budget_usd: 100, warnings: [] } });
+  const created = await createApp('project-1', { slug: 'demo', name: 'Demo' });
+  expect(created.estimated_monthly_usd).toBe(73.48);
+  expect(created.warnings?.map((warning) => warning.code)).toEqual(['app_budget_below_always_on']);
+  expect((await updateApp('project-1', 'app-1', { monthly_budget_usd: 100 })).warnings).toEqual([]);
+});
+
 test('a static deployment says so: hosting_type static', () => {
   const hosting: import('./apps').AppDeployment['hosting_type'] = 'static';
   expect(hosting).toBe('static');

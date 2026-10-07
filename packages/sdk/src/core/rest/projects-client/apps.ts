@@ -47,6 +47,19 @@ export interface App {
    */
   always_on?: boolean;
   monthly_budget_usd: number;
+  /**
+   * What the App's machine costs running 24/7 for one month at list compute
+   * rates (USD). It applies to a server App; a static App runs no machine.
+   * Optional for wire compatibility with a server that predates it.
+   */
+  estimated_monthly_usd?: number;
+  /**
+   * Set on the create and update responses only. `app_budget_below_always_on`:
+   * the App runs 24/7 and its monthly budget is below `estimated_monthly_usd`,
+   * so a server App stops at the budget until the month ends. Neither call
+   * refuses it.
+   */
+  warnings?: Array<{ code: string; message: string }>;
   last_request_at: string | null;
   /**
    * May the caller OPEN this App, as opposed to merely see it listed?

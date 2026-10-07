@@ -24,7 +24,7 @@ import { AppHostingProvider } from './hosting';
 import { normalizeAppBuild, type AppSourceSpec } from './spec';
 import { publishStaticSite, staticHostingEnabled } from './static-site';
 import { retireSupersededDeployments } from './retention';
-import { AppBudgetExceededError } from './budget';
+import { AppBudgetExceededError, alwaysOnBudgetWarning } from './budget';
 import { AppAccountUnfundedError, AppLimitError, assertAppComputeAllowed } from './limits';
 import { appRuntimeArtifactDigest } from './runtime-artifacts';
 import { appDeploymentFailureDisposition } from './deployment-failures';
@@ -48,19 +48,52 @@ const LIVE_DEPLOYMENT_STATUSES = [
 type ClaimedDeployment = typeof appDeployments.$inferSelect;
 
 /**
+ * The part of a runtime version that changes the App image: the supervisor
+ * digest (`appd-<digest>`, which covers appd and caddy). The `SANDBOX_VERSION`
+ * prefix changes on every API release and changes nothing in the image, so it
+ * never triggers a refresh. A change to what `stageAppBuildContext` layers
+ * into the image must change this key too.
+ */
+export function appRuntimeImageKey(runtimeVersion: string | null): string {
+  if (!runtimeVersion) return '';
+  const at = runtimeVersion.indexOf('appd-');
+  return at >= 0 ? runtimeVersion.slice(at) : runtimeVersion;
+}
+
+/**
+ * Failures a rebuild of the same artifact on the same image key repeats
+ * exactly. Any other failure (provider, quota, timeout, a budget or
+ * concurrency refusal) may pass on a later try.
+ */
+const DETERMINISTIC_REFRESH_FAILURES = new Set([
+  'invalid_site', 'invalid_spec', 'invalid_environment', 'artifact_missing', 'artifact_not_uploaded',
+  'artifact_kind', 'digest_mismatch', 'size_mismatch', 'dockerfile_build_failed',
+  'runtime_artifact_missing', 'source_access_failed',
+]);
+/** A refresh that failed for a reason that may pass is retried at most once per hour. */
+export const REFRESH_RETRY_AFTER_MS = 60 * 60_000;
+
+/**
  * Queue one immutable rebuild when a cold runtime uses an older App supervisor.
  * The current deployment keeps serving while the replacement builds. The normal
  * activation transaction moves traffic only after the replacement is ready.
+ *
+ * A refresh that failed is not queued again for the same artifact and image
+ * key: never after a deterministic failure, and not within
+ * `REFRESH_RETRY_AFTER_MS` after any other. Before this, every cold start and
+ * every keep-alive pass queued another doomed build.
  */
 export async function enqueueCurrentAppRuntime(
   app: typeof apps.$inferSelect,
   deployment: typeof appDeployments.$inferSelect,
+  now = new Date(),
 ): Promise<boolean> {
   // A static App still running in a sandbox moves to static hosting the same
   // way a stale supervisor is replaced: one queued redeploy of the same
   // artifact, activated only once it is ready.
   const toStatic = staticHostingEnabled() && deployment.sourceKind === 'static' && deployment.hostingType === 'sandbox';
-  if (deployment.runtimeVersion === APP_RUNTIME_VERSION && !toStatic) return false;
+  const imageKey = appRuntimeImageKey(APP_RUNTIME_VERSION);
+  if (appRuntimeImageKey(deployment.runtimeVersion) === imageKey && !toStatic) return false;
   const inserted = await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${app.appId}))`);
     const [existing] = await tx.select({ deploymentId: appDeployments.deploymentId })
@@ -72,6 +105,27 @@ export async function enqueueCurrentAppRuntime(
       ))
       .limit(1);
     if (existing) return false;
+    const [lastRefresh] = await tx.select({
+      status: appDeployments.status,
+      errorCode: appDeployments.errorCode,
+      failedAt: appDeployments.failedAt,
+      runtimeVersion: appDeployments.runtimeVersion,
+    })
+      .from(appDeployments)
+      .where(and(
+        eq(appDeployments.appId, app.appId),
+        eq(appDeployments.artifactId, deployment.artifactId),
+        eq(appDeployments.actorType, 'system'),
+      ))
+      .orderBy(desc(appDeployments.version))
+      .limit(1);
+    if (
+      lastRefresh?.status === 'failed' &&
+      appRuntimeImageKey(lastRefresh.runtimeVersion) === imageKey &&
+      (DETERMINISTIC_REFRESH_FAILURES.has(lastRefresh.errorCode ?? '') ||
+        !lastRefresh.failedAt ||
+        now.getTime() - lastRefresh.failedAt.getTime() < REFRESH_RETRY_AFTER_MS)
+    ) return false;
     const [latest] = await tx.select({ version: appDeployments.version })
       .from(appDeployments)
       .where(eq(appDeployments.appId, app.appId))
@@ -468,6 +522,17 @@ export async function driveAppDeployment(
       runtimeId,
       data: { previousDeploymentId: previous },
     });
+    const budgetWarning = alwaysOnBudgetWarning(
+      { ...context.app, ...hosting.effectiveMachine(runtimeProvider, requestedMachine) },
+      runtimeProvider,
+    );
+    if (budgetWarning) {
+      await event(claimed.deploymentId, budgetWarning.code, budgetWarning.message, {
+        runtimeId,
+        level: 'warn',
+        data: { estimated_monthly_usd: budgetWarning.estimated_monthly_usd, monthly_budget_usd: budgetWarning.monthly_budget_usd },
+      });
+    }
     await auditDeploymentOutcome(auditRef, { outcome: 'activated', previousDeploymentId: previous });
     await stopPreviousRuntime(hosting, previous).catch((error) => {
       logger.error('[apps] previous runtime stop failed', {

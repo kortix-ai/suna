@@ -37,6 +37,7 @@ const WORKERS: Record<string, string> = {
   'provider-transition': 'workers/provider-transition-worker.ts',
   'app-deployments': 'apps/deployment-worker.ts',
   'app-idle-reaper': 'workers/app-idle-reaper-worker.ts',
+  'app-keep-alive': 'workers/app-idle-reaper-worker.ts',
   'audit-webhooks': 'workers/audit-webhook-worker.ts',
   'audit-reconciliation': 'workers/audit-reconciliation-worker.ts',
   'audit-partitions': 'workers/audit-partition-worker.ts',

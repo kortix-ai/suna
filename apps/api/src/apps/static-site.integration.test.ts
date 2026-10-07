@@ -11,7 +11,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { db } from '../shared/db';
-import { retireSupersededDeployments } from './retention';
+import { retireSupersededDeployments, rollBackActiveDeployment } from './retention';
 import {
   blobKey,
   publishStaticSite,
@@ -247,6 +247,38 @@ withDb('static App hosting', () => {
     expect(events.map((row) => row.type).sort()).toEqual(['deployment_activated', 'deployment_retired']);
     // Running it again retires nothing more.
     expect(await retireSupersededDeployments(APP_ID, 3)).toEqual([]);
+  });
+
+  test('a rollback racing retention never points the App at a retired deployment (50 runs)', async () => {
+    for (let run = 0; run < 50; run += 1) {
+      await db.update(apps).set({ activeDeploymentId: null }).where(eq(apps.appId, APP_ID));
+      await db.delete(appDeployments).where(eq(appDeployments.appId, APP_ID));
+      await seedDeployments(8);
+      await db.update(apps).set({ activeDeploymentId: dep(8) }).where(eq(apps.appId, APP_ID));
+
+      // keep=3 retires v1-v4; the rollback targets v1.
+      const [retired, rolledBack] = await Promise.all([
+        retireSupersededDeployments(APP_ID, 3),
+        rollBackActiveDeployment(APP_ID, dep(1)),
+      ]);
+
+      const [row] = await db.select({ active: apps.activeDeploymentId }).from(apps).where(eq(apps.appId, APP_ID));
+      const [target] = await db.select({ status: appDeployments.status }).from(appDeployments)
+        .where(eq(appDeployments.deploymentId, row!.active!));
+      expect(target?.status).toBe('ready');
+      // Exactly one side won: either the rollback moved first (v1 is live and kept)
+      // or retention did (v1 is retired and the rollback was refused).
+      if (rolledBack) expect(retired).not.toContain(dep(1));
+      else expect(retired).toContain(dep(1));
+    }
+  });
+
+  test('a rollback to a deployment of another App, or one not ready, is refused', async () => {
+    await seedDeployments(2);
+    await db.update(appDeployments).set({ status: 'failed' }).where(eq(appDeployments.deploymentId, dep(2)));
+    expect(await rollBackActiveDeployment(APP_ID, dep(2))).toBeNull();
+    expect(await rollBackActiveDeployment('00000000-0000-4000-a000-00000000dfff', dep(1))).toBeNull();
+    expect((await rollBackActiveDeployment(APP_ID, dep(1)))?.activeDeploymentId).toBe(dep(1));
   });
 
   test('blob reclaim removes only unreferenced blobs past the grace, from storage and the ledger', async () => {

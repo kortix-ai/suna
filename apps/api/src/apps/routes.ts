@@ -8,7 +8,7 @@ import {
   appRuntimes,
   apps,
 } from '@kortix/db';
-import { and, desc, eq, exists, inArray, isNull, max, ne, notInArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, max, ne, notInArray, sql } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../iam';
 import { auth, errors, json } from '../openapi';
 import { pauseComputeSession } from '../billing/services/compute-metering';
@@ -24,10 +24,11 @@ import { APP_RUNTIME_VERSION, triggerAppDeploymentWorker } from './deployment-wo
 import { AppHostingProvider } from './hosting';
 import { deploymentEventsAsLogs } from './logs';
 import { releaseDeploymentImage, releaseDeploymentImages, teardownAppRuntimes } from './images';
+import { rollBackActiveDeployment } from './retention';
 import { ensureAppRuntimeRunning, loadPublicApp } from './public-proxy';
 import { type AppSourceSpec } from './spec';
 import { appPublicUrl } from './hostnames';
-import { AppBudgetExceededError } from './budget';
+import { AppBudgetExceededError, alwaysOnBudgetWarning, appMonthlyEstimateUsd } from './budget';
 import {
   APP_MACHINE_LIMITS,
   AppAccountUnfundedError,
@@ -194,6 +195,8 @@ function serializeApp(row: typeof apps.$inferSelect, viewerCanAccess = true) {
     idle_timeout_seconds: row.idleTimeoutSeconds,
     always_on: row.alwaysOn,
     monthly_budget_usd: Number(row.monthlyBudgetUsd),
+    /** A server App's machine running 24/7 for a month at list compute rates. A static App runs none. */
+    estimated_monthly_usd: appMonthlyEstimateUsd(row, config.getDefaultProvider()),
     last_request_at: row.lastRequestAt?.toISOString() ?? null,
     viewer_can_access: viewerCanAccess,
     created_at: row.createdAt.toISOString(),
@@ -528,7 +531,8 @@ export function registerAppsRoutes(): void {
           alwaysOn: body.always_on ?? config.KORTIX_APPS_DEFAULT_ALWAYS_ON,
           monthlyBudgetUsd: body.monthly_budget_usd.toFixed(2),
         }).returning();
-        return c.json(serializeApp(row!), 201);
+        const warning = alwaysOnBudgetWarning(row!, config.getDefaultProvider());
+        return c.json({ ...serializeApp(row!), warnings: warning ? [warning] : [] }, 201);
       } catch (error) {
         // Drizzle wraps the postgres.js error, so the SQLSTATE lives on
         // error.cause.code, NOT error.code — reading error.code left this branch
@@ -664,7 +668,18 @@ export function registerAppsRoutes(): void {
         ...(body.monthly_budget_usd !== undefined ? { monthlyBudgetUsd: body.monthly_budget_usd.toFixed(2) } : {}),
         updatedAt: new Date(),
       }).where(and(eq(apps.appId, appId), eq(apps.projectId, projectId), isNull(apps.deletedAt))).returning();
-      return row ? c.json(serializeApp(row)) : c.json({ error: 'Not found' }, 404);
+      if (!row) return c.json({ error: 'Not found' }, 404);
+      // Warn only when this change touched the run mode, the machine or the budget.
+      const costChanged = [body.always_on, body.monthly_budget_usd, body.cpu, body.memory_gb, body.disk_gb]
+        .some((value) => value !== undefined);
+      const [active] = costChanged && row.activeDeploymentId
+        ? await db.select({ hostingType: appDeployments.hostingType, hostingProvider: appDeployments.hostingProvider })
+            .from(appDeployments).where(eq(appDeployments.deploymentId, row.activeDeploymentId)).limit(1)
+        : [];
+      const warning = costChanged && active?.hostingType !== 'static'
+        ? alwaysOnBudgetWarning(row, (active?.hostingProvider as SandboxProviderName | null) ?? config.getDefaultProvider())
+        : null;
+      return c.json({ ...serializeApp(row), warnings: warning ? [warning] : [] });
     },
   );
 
@@ -1062,18 +1077,9 @@ export function registerAppsRoutes(): void {
       }
 
       const previousDeploymentId = app.activeDeploymentId;
-      // A concurrent `DELETE …/deployments/:id` can delete the target after the
-      // ready check above. Move traffic only while the target is still ready.
-      const [row] = await db.update(apps)
-        .set({ activeDeploymentId: deploymentId, desiredState: 'running', updatedAt: new Date() })
-        .where(and(
-          eq(apps.appId, appId),
-          exists(db.select({ deploymentId: appDeployments.deploymentId }).from(appDeployments).where(and(
-            eq(appDeployments.deploymentId, deploymentId),
-            eq(appDeployments.status, 'ready'),
-          ))),
-        ))
-        .returning();
+      // A concurrent delete or retention can retire the target after the ready
+      // check above. Move traffic only while the target is still ready.
+      const row = await rollBackActiveDeployment(appId, deploymentId);
       if (!row) return c.json({ error: 'The rollback deployment was deleted' }, 409);
       await db.insert(appDeploymentEvents).values({
         deploymentId,
