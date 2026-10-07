@@ -19334,7 +19334,16 @@
       "text6f2769b24c0f": "Cambiando tamaño…",
       "text1af851907331": "Tamaño",
       "text5ad9ba3657f2": "Cambiar tamaño…",
-      "textf0e800ed571e": "Copias de seguridad…"
+      "textf0e800ed571e": "Copias de seguridad…",
+      "text1abb2f2abc1e": "Todos los backends",
+      "text88c4418c2c87": "Backend no encontrado",
+      "text992276f72e41": "Puede que se haya eliminado.",
+      "text354788a1e3e5": "El panel se abre cuando el backend está en ejecución.",
+      "text736d4f22425d": "El panel necesita acceso de escritura a los backends. Pídelo a un responsable del proyecto.",
+      "text6513690ca848": "Este backend se creó antes del panel. Crea un backend nuevo para tenerlo.",
+      "text19eb2c0e5dca": "Panel de Convex",
+      "text803f2313cdf4": "Abrir panel",
+      "text3ae8ca83dab7": "Abrió el panel del backend"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

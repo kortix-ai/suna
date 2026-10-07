@@ -19345,7 +19345,16 @@
       "text6f2769b24c0f": "Resizing…",
       "text1af851907331": "Size",
       "text5ad9ba3657f2": "Resize…",
-      "textf0e800ed571e": "Backups…"
+      "textf0e800ed571e": "Backups…",
+      "text1abb2f2abc1e": "All backends",
+      "text88c4418c2c87": "Backend not found",
+      "text992276f72e41": "It may have been deleted.",
+      "text354788a1e3e5": "The dashboard opens when the backend is running.",
+      "text736d4f22425d": "The dashboard needs write access to backends. Ask a project manager.",
+      "text6513690ca848": "This backend was created before the dashboard shipped. Create a new backend to get it.",
+      "text19eb2c0e5dca": "Convex dashboard",
+      "text803f2313cdf4": "Open dashboard",
+      "text3ae8ca83dab7": "Opened backend dashboard"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

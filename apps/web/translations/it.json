@@ -19334,7 +19334,16 @@
       "text6f2769b24c0f": "Ridimensionamento…",
       "text1af851907331": "Dimensione",
       "text5ad9ba3657f2": "Ridimensiona…",
-      "textf0e800ed571e": "Backup…"
+      "textf0e800ed571e": "Backup…",
+      "text1abb2f2abc1e": "Tutti i backend",
+      "text88c4418c2c87": "Backend non trovato",
+      "text992276f72e41": "Potrebbe essere stato eliminato.",
+      "text354788a1e3e5": "La dashboard si apre quando il backend è in esecuzione.",
+      "text736d4f22425d": "La dashboard richiede l’accesso in scrittura ai backend. Chiedi a un responsabile del progetto.",
+      "text6513690ca848": "Questo backend è stato creato prima della dashboard. Crea un nuovo backend per averla.",
+      "text19eb2c0e5dca": "Dashboard di Convex",
+      "text803f2313cdf4": "Apri dashboard",
+      "text3ae8ca83dab7": "Dashboard del backend aperta"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

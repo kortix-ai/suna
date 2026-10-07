@@ -26,6 +26,13 @@ export interface ProjectBackend {
   url: string | null;
   /** Convex HTTP actions URL. `null` until the backend runs. */
   site_url: string | null;
+  /**
+   * Convex's own dashboard for this backend, on a Kortix host. Frame it and
+   * answer its `dashboard-credentials-request` message with
+   * {@link getBackendCredentials}. `null` until the backend runs, and for a
+   * backend created before the dashboard shipped.
+   */
+  dashboard_url: string | null;
   cpu: number;
   memory_gb: number;
   disk_gb: number;

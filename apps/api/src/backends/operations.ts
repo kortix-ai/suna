@@ -14,7 +14,7 @@
  */
 
 import { projectBackends } from '@kortix/db';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { platinumJson } from '../shared/platinum';
 import { logger } from '../lib/logger';
@@ -45,19 +45,38 @@ function machine(row: BackendRow): string {
   return row.externalId;
 }
 
-/** The operation in flight, from row metadata. */
-export function backendOperation(row: BackendRow): 'resizing' | null {
-  return (row.metadata as { operation?: string }).operation === 'resizing' ? 'resizing' : null;
+/** A resize never takes this long; past it the API process that ran it died. */
+export const OPERATION_STALE_MS = 10 * 60_000;
+
+/** The operation in flight, from row metadata. A stale one counts as none. */
+export function backendOperation(row: BackendRow, now = Date.now()): 'resizing' | null {
+  const meta = row.metadata as { operation?: string; operationStartedAt?: string };
+  if (meta.operation !== 'resizing') return null;
+  const started = Date.parse(meta.operationStartedAt ?? '');
+  return Number.isFinite(started) && now - started > OPERATION_STALE_MS ? null : 'resizing';
 }
 
-async function setMetadata(backendId: string, patch: Record<string, unknown>): Promise<void> {
-  await db
+/**
+ * Marks the backend busy in one conditional UPDATE, so two concurrent
+ * requests cannot both start an operation. A stale marker is taken over.
+ */
+async function claimOperation(backendId: string): Promise<boolean> {
+  const staleBefore = new Date(Date.now() - OPERATION_STALE_MS).toISOString();
+  const claimed = await db
     .update(projectBackends)
     .set({
       updatedAt: new Date(),
-      metadata: sql`coalesce(${projectBackends.metadata}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb`,
+      metadata: sql`coalesce(${projectBackends.metadata}, '{}'::jsonb) || ${JSON.stringify({ operation: 'resizing', operationStartedAt: new Date().toISOString() })}::jsonb`,
     })
-    .where(eq(projectBackends.backendId, backendId));
+    .where(
+      and(
+        eq(projectBackends.backendId, backendId),
+        isNull(projectBackends.deletedAt),
+        sql`(not (coalesce(${projectBackends.metadata}, '{}'::jsonb) ? 'operation') or (${projectBackends.metadata}->>'operationStartedAt') < ${staleBefore})`,
+      ),
+    )
+    .returning({ id: projectBackends.backendId });
+  return claimed.length === 1;
 }
 
 // ── Backups and snapshots ────────────────────────────────────────────────────
@@ -118,7 +137,9 @@ export async function restoreBackendSnapshot(row: BackendRow, snapshotId: string
     method: 'POST',
     body: JSON.stringify({ snapshot_id: snapshotId }),
   });
-  await waitHealthy(row.url!);
+  await waitHealthy(row.url!).catch(() => {
+    throw new BackendOperationError('the backend did not come back healthy after the restore; retry or restore again', 'restore_unhealthy');
+  });
 }
 
 // ── Resize ───────────────────────────────────────────────────────────────────
@@ -148,9 +169,10 @@ export function targetSize(row: BackendRow, want: Partial<BackendSize>): Backend
 /** Marks the backend `resizing`; the caller then runs `runResize` in the background. */
 export async function beginResize(row: BackendRow, want: Partial<BackendSize>): Promise<BackendSize> {
   machine(row);
-  if (backendOperation(row)) throw new BackendOperationError('a resize is already running', 'backend_busy');
   const next = targetSize(row, want);
-  await setMetadata(row.backendId, { operation: 'resizing', operationStartedAt: new Date().toISOString() });
+  if (!(await claimOperation(row.backendId))) {
+    throw new BackendOperationError('a resize is already running', 'backend_busy');
+  }
   return next;
 }
 
@@ -169,13 +191,15 @@ export async function runResize(row: BackendRow, next: BackendSize): Promise<voi
       method: 'POST',
       body: JSON.stringify({ cpu: next.cpu, ram_mb: next.memoryGb * 1024, disk_gb: next.diskGb }),
     });
+    // The machine has the new size from here on, healthy or not.
+    await db
+      .update(projectBackends)
+      .set({ cpu: next.cpu, memoryGb: next.memoryGb, diskGb: next.diskGb, updatedAt: new Date() })
+      .where(and(eq(projectBackends.backendId, row.backendId), isNull(projectBackends.deletedAt)));
     await waitHealthy(row.url!);
     await db
       .update(projectBackends)
       .set({
-        cpu: next.cpu,
-        memoryGb: next.memoryGb,
-        diskGb: next.diskGb,
         updatedAt: new Date(),
         metadata: sql`(coalesce(${projectBackends.metadata}, '{}'::jsonb) - 'operation' - 'operationStartedAt' - 'lastOperationError')`,
       })

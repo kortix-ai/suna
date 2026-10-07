@@ -401,7 +401,7 @@ function BackendsTable({
   );
 }
 
-function BackendStatusBadge({ backend }: { backend: ProjectBackend }) {
+export function BackendStatusBadge({ backend }: { backend: ProjectBackend }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
   if (backend.operation) return <BackendOperationBadge />;
   if (backend.status === 'provisioning')
@@ -455,7 +455,11 @@ function BackendRow({
 
   return (
     <TableRow data-testid="backend-row" data-backend-name={backend.name}>
-      <TableCell className="font-medium">{backend.name}</TableCell>
+      <TableCell className="font-medium">
+        <Link href={`/projects/${projectId}/backends/${backend.backend_id}`} className="hover:underline">
+          {backend.name}
+        </Link>
+      </TableCell>
       <TableCell>
         <div className="flex flex-col items-start gap-1">
           <BackendStatusBadge backend={backend} />
@@ -491,6 +495,9 @@ function BackendRow({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuItem asChild>
+              <Link href={`/projects/${projectId}/backends/${backend.backend_id}`}>{t.raw('text803f2313cdf4')}</Link>
+            </DropdownMenuItem>
             {canWrite ? (
               <DropdownMenuItem disabled={backend.status !== 'running'} onClick={copyEnv}>
                 {t.raw('text3f044da00a6f')}

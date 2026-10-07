@@ -359,6 +359,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Opened Slack login link': 'texta982f7e34f86',
   'Opened Teams login link': 'text0ed4cc8a83d2',
   'Opened a member session as account admin': 'textcbccc00faa36',
+  'Opened backend dashboard': 'text3ae8ca83dab7',
   'Opened connector setup link': 'textebcbc18f1f5e',
   'Opened deployed Kortix App': 'text08aa52327e2f',
   'Opened sandbox port WebSocket': 'textfdcff3df0494',

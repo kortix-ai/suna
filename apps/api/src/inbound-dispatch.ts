@@ -7,6 +7,7 @@ import { isUuid } from './shared/validate';
 import { schemaReady } from './bootstrap';
 import { handleAppPublicRequest, resolveAppRequest } from './apps/public-proxy';
 import { prepareAppWsUpgrade } from './apps/ws-proxy';
+import { handleBackendDashboardRequest } from './backends/dashboard-host';
 // Subdomain preview routing — `p{port}-{sandboxId}.localhost:{apiPort}/...`
 // Handled at the Bun.serve level so the proxied app sees itself at root `/`
 // (Hono can't match on the Host header). See `sandbox-proxy/preview-origin.ts`.
@@ -58,6 +59,12 @@ export async function dispatchInbound(
   // ── Subdomain preview routing ──────────────────────────────────────
   // Matches `p{port}-{sandboxId}.localhost:{apiPort}` regardless of path.
   // Same per-request long-poll/SSE timeout posture as /v1/p/.
+  // A Kortix Backend's Convex dashboard, on its own Apps-domain host.
+  const dashboardResponse = await handleBackendDashboardRequest(req, url);
+  if (dashboardResponse) {
+    setInboundAuditEntrypoint('app_origin', 'backend_dashboard');
+    return dashboardResponse;
+  }
   if (resolveAppRequest(req, url)) {
     server.timeout(req, 0);
     if (isWsUpgrade) {

@@ -21,6 +21,7 @@ let resizePolls = 0;
 let snapshots: Array<{ snapshot_id: string; created_at: string; size_bytes: number | null }> = [];
 let resizeFailure: string | null = null;
 let failResize = false;
+let dashboardUrl: string | null = 'https://dev-backend-99999999888847778666555555555555.apps.backends.test';
 
 function backend(overrides: Record<string, unknown> = {}) {
   return {
@@ -30,6 +31,7 @@ function backend(overrides: Record<string, unknown> = {}) {
     status: 'running',
     url: 'https://main.backends.test',
     site_url: 'https://main-site.backends.test',
+    dashboard_url: dashboardUrl,
     ...size,
     operation: resizePolls > 0 ? 'resizing' : null,
     last_operation_error: resizeFailure,
@@ -66,6 +68,7 @@ function startServer(): string {
           status: 'active',
           metadata: {},
           experimental: { backends: backendsEnabled },
+          dashboard_url: `https://web.backends.test/projects/${PROJECT}`,
           created_at: '2026-01-01T00:00:00.000Z',
           updated_at: '2026-01-01T00:00:00.000Z',
         });
@@ -206,6 +209,7 @@ beforeEach(() => {
   resizeFailure = null;
   failResize = false;
   snapshots = [{ snapshot_id: 'snap-1', created_at: '2026-01-01T00:00:00.000Z', size_bytes: 1048576 }];
+  dashboardUrl = 'https://dev-backend-99999999888847778666555555555555.apps.backends.test';
 });
 
 afterEach(() => {
@@ -236,7 +240,7 @@ describe('kortix backends', () => {
   test('--help lists every subcommand', async () => {
     const r = await runCli(['backends', '--help'], join(tmp, 'none.json'));
     expect(r.code).toBe(0);
-    for (const sub of ['list | ls', 'create <name>', 'resize <name|id>', 'backups <name|id>', 'snapshot <name|id>', 'restore <name|id> <snapshot-id>', 'get <name|id>', 'env <name|id>', 'deploy <name>', 'delete <name|id>']) {
+    for (const sub of ['list | ls', 'create <name>', 'resize <name|id>', 'backups <name|id>', 'snapshot <name|id>', 'restore <name|id> <snapshot-id>', 'get <name|id>', 'dashboard <name|id>', 'env <name|id>', 'deploy <name>', 'delete <name|id>']) {
       expect(r.stdout).toContain(sub);
     }
   });
@@ -274,6 +278,23 @@ describe('kortix backends', () => {
     const missing = await runCli(['backends', 'get', 'nope', '--project', PROJECT], config);
     expect(missing.code).toBe(1);
     expect(missing.stderr).toContain('Backend nope not found');
+  });
+
+  test('dashboard prints the Kortix page that frames the Convex dashboard', async () => {
+    const config = writeConfig(startServer());
+    const page = `https://web.backends.test/projects/${PROJECT}/backends/${BACKEND_ID}`;
+    const r = await runCli(['backends', 'dashboard', 'main', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout.trim()).toBe(page);
+    expect(r.stderr).not.toContain('dashboard');
+    const json = await runCli(['backends', 'dashboard', BACKEND_ID, '--project', PROJECT, '--json'], config);
+    expect(JSON.parse(json.stdout)).toMatchObject({ url: page, dashboard_available: true });
+    // A backend that predates the dashboard still gets the page, plus the reason it is empty.
+    dashboardUrl = null;
+    const old = await runCli(['backends', 'dashboard', 'main', '--project', PROJECT], config);
+    expect(old.code).toBe(0);
+    expect(old.stdout.trim()).toBe(page);
+    expect(old.stderr).toContain('created before the dashboard shipped');
   });
 
   test('env prints shell exports that eval back to the exact values', async () => {

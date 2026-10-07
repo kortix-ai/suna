@@ -19334,7 +19334,16 @@
       "text6f2769b24c0f": "Wird angepasst…",
       "text1af851907331": "Größe",
       "text5ad9ba3657f2": "Anpassen…",
-      "textf0e800ed571e": "Backups…"
+      "textf0e800ed571e": "Backups…",
+      "text1abb2f2abc1e": "Alle Backends",
+      "text88c4418c2c87": "Backend nicht gefunden",
+      "text992276f72e41": "Es wurde möglicherweise gelöscht.",
+      "text354788a1e3e5": "Das Dashboard öffnet sich, sobald das Backend läuft.",
+      "text736d4f22425d": "Das Dashboard braucht Schreibzugriff auf Backends. Fragen Sie einen Projektmanager.",
+      "text6513690ca848": "Dieses Backend entstand vor dem Dashboard. Erstellen Sie ein neues Backend, um es zu erhalten.",
+      "text19eb2c0e5dca": "Convex-Dashboard",
+      "text803f2313cdf4": "Dashboard öffnen",
+      "text3ae8ca83dab7": "Backend-Dashboard geöffnet"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

@@ -769,6 +769,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/webhooks/teams/messages': { action: 'webhook.teams.activity.receive', title: 'Received Teams activity' },
   'GET /v1/webhooks/teams/oauth/callback': { action: 'channel.teams.install.complete', title: 'Completed Teams app installation' },
   'POST /v1/webhooks/telegram/:projectId': { action: 'webhook.telegram.update.receive', title: 'Received Telegram update' },
+  'ENTRY backend_dashboard': { action: 'backend.dashboard.access', title: 'Opened backend dashboard' },
   'ENTRY app_origin': { action: 'app.origin.access', title: 'Opened deployed Kortix App' },
   'ENTRY app_origin:websocket': { action: 'app.origin.websocket.connect', title: 'Opened Kortix App WebSocket' },
   'ENTRY preview_origin': { action: 'sandbox.preview.access', title: 'Opened sandbox preview' },

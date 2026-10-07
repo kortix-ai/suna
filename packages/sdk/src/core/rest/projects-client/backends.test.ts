@@ -52,6 +52,7 @@ const backend: ProjectBackend = {
   status: 'running',
   url: 'https://b.example.test',
   site_url: 'https://b-site.example.test',
+  dashboard_url: 'https://dev-backend-11111111111141118111111111111111.apps.example.test',
   cpu: 1,
   memory_gb: 2,
   disk_gb: 10,
@@ -100,6 +101,13 @@ test('Backends use the project-scoped API contract', async () => {
     method: 'DELETE',
     url: `http://backend.test/v1/projects/project-1/backends/${backend.backend_id}`,
   });
+});
+
+test('A backend carries the Convex dashboard URL Kortix web frames', async () => {
+  responses.push({ body: { backend } }, { body: { backend: { ...backend, dashboard_url: null } } });
+  const running: ProjectBackend = await getBackend('project-1', backend.backend_id);
+  expect(running.dashboard_url).toBe(backend.dashboard_url);
+  expect((await getBackend('project-1', backend.backend_id)).dashboard_url).toBeNull();
 });
 
 test('Backend errors carry the API code', async () => {

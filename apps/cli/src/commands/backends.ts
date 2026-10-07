@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import type { ProjectBackend, ProjectBackendCredentials, ProjectBackendSize, ProjectHandle } from '@kortix/sdk';
 
 import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
+import { openInBrowser } from '../browser.ts';
 import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
@@ -15,6 +16,7 @@ import {
 } from '../command-helpers.ts';
 import { confirm } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
+import { projectWebUrl } from '../web-url.ts';
 
 const HELP = help`Usage: kortix backends <subcommand> [options]
 
@@ -41,6 +43,11 @@ Subcommands:
                                     change after it is lost. --json.
     --yes                           Skip the confirmation.
   get <name|id>                     Show one backend. --json.
+  dashboard <name|id>               Print the backend's admin dashboard link:
+                                    Convex's dashboard (data, functions, logs,
+                                    files, schedules, env) inside Kortix,
+                                    signed in for you. --json.
+    --open                          Also open it in the browser.
   env <name|id>                     Print the Convex CLI credentials.
     --format shell|dotenv|json      shell (default): export lines for
                                     eval "$(kortix backends env main)".
@@ -76,6 +83,7 @@ type EnvFormat = (typeof ENV_FORMATS)[number];
 async function context(options: ContextOptions): Promise<{
   auth: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>['auth'];
   backends: BackendsHandle;
+  projectUrl: string;
 } | null> {
   const resolved = await resolveProjectContext(options);
   if (!resolved) return null;
@@ -85,11 +93,15 @@ async function context(options: ContextOptions): Promise<{
   );
   if (project.experimental?.backends !== true) {
     process.stderr.write(
-      `${status.err('Backends is not enabled for this project. Enable it in Settings → Feature flags.')}\n`,
+      `${status.err('Backends is not enabled for this project. Contact Kortix to enable it.')}\n`,
     );
     return null;
   }
-  return { auth: resolved.auth, backends: kortix.project(resolved.projectId).backends };
+  return {
+    auth: resolved.auth,
+    backends: kortix.project(resolved.projectId).backends,
+    projectUrl: projectWebUrl(resolved.auth.api_base, resolved.projectId, project.dashboard_url),
+  };
 }
 
 const scoped = <T>(ctx: Ctx, fn: () => Promise<T>) => withKortixScope(ctx.auth, fn);
@@ -165,6 +177,9 @@ export async function runBackends(argv: string[]): Promise<number> {
       case 'get':
       case 'show':
         return await getCommand(rest, common.options, common.json);
+      case 'dashboard':
+      case 'open':
+        return await dashboardCommand(rest, common.options, common.json);
       case 'env':
         return await envCommand(rest, common.options);
       case 'token':
@@ -190,6 +205,7 @@ function backendLines(backend: ProjectBackend): string {
     row('status', backend.status) +
     row('url', backend.url) +
     row('site url', backend.site_url) +
+    row('dashboard', backend.dashboard_url ? 'kortix backends dashboard ' + backend.name : null) +
     row('machine', `${backend.cpu} vCPU · ${backend.memory_gb} GB · ${backend.disk_gb} GB disk`) +
     (backend.error ? row('error', backend.error) : '')
   );
@@ -289,6 +305,37 @@ async function getCommand(rest: string[], options: ContextOptions, json: boolean
   const backend = await scoped(ctx, () => resolveBackend(ctx.backends, target));
   if (json) emitJson({ backend });
   else process.stdout.write(`\n  ${C.bold}${backend.name}${C.reset}\n${backendLines(backend)}\n`);
+  return 0;
+}
+
+/** The Kortix web page that frames the backend's Convex dashboard. */
+export function backendDashboardPage(projectUrl: string, backendId: string): string {
+  return `${projectUrl}/backends/${backendId}`;
+}
+
+async function dashboardCommand(rest: string[], options: ContextOptions, json: boolean): Promise<number> {
+  const open = takeFlagBool(rest, ['--open']);
+  const target = rest.find((value) => !value.startsWith('-'));
+  if (!target) return fail('dashboard needs a backend name or id');
+  const ctx = await context(options);
+  if (!ctx) return 1;
+  const backend = await scoped(ctx, () => resolveBackend(ctx.backends, target));
+  const url = backendDashboardPage(ctx.projectUrl, backend.backend_id);
+  if (json) {
+    emitJson({ url, dashboard_available: backend.dashboard_url !== null, backend });
+    return 0;
+  }
+  process.stdout.write(`${url}\n`);
+  if (!backend.dashboard_url) {
+    process.stderr.write(
+      `${status.warn(
+        backend.status === 'running'
+          ? 'This backend was created before the dashboard shipped. Create a new backend to get it.'
+          : `The dashboard opens when the backend is running (now: ${backend.status}).`,
+      )}\n`,
+    );
+  }
+  if (open) openInBrowser(url);
   return 0;
 }
 

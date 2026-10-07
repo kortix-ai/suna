@@ -691,6 +691,7 @@ Manages the project's self-hosted Convex backends. Each backend runs in its own 
 | `kortix backends snapshot <name\|id> [--json]` | Take a snapshot now. The backend keeps the newest 5. |
 | `kortix backends restore <name\|id> <snapshot-id> [--yes] [--json]` | Roll the backend back to a snapshot. Every change after the snapshot is lost. Asks first unless `--yes`. |
 | `kortix backends get <name\|id> [--json]` | Show one backend. |
+| `kortix backends dashboard <name\|id> [--open] [--json]` | Print the link to the backend's admin dashboard (Convex's dashboard inside Kortix, signed in for you). `--open` opens it in the browser. |
 | `kortix backends token <name\|id> [--json]` | Print a one-hour Kortix sign-in token naming you. Convex functions read you with `ctx.auth.getUserIdentity()`. |
 | `kortix backends env <name\|id> [--format shell\|dotenv\|json]` | Print the Convex CLI credentials. `shell` (default) prints `export CONVEX_SELF_HOSTED_URL=…` and `export CONVEX_SELF_HOSTED_ADMIN_KEY=…`. `dotenv` prints `KEY=value` lines for `.env.local`. `json` prints the credentials object. |
 | `kortix backends deploy <name> [--dir <path>] [-- <convex args>]` | Create the backend when it does not exist, then run `npx convex deploy` in `--dir` (default: the current directory) against it. Needs a `convex/` folder or `convex.json`. Exits with the Convex exit code. |

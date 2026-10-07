@@ -72,6 +72,7 @@ The full subcommand list:
 | `kortix backends list` | List the project's backends. `--json`. |
 | `kortix backends create <name>` | Create a backend without deploying to it. |
 | `kortix backends get <name>` | Show one backend and its status. `--json`. |
+| `kortix backends dashboard <name>` | Print the link to the backend's admin dashboard. `--open` opens it. |
 | `kortix backends env <name>` | Print the Convex CLI variables for the backend. |
 | `kortix backends deploy <name> [--dir <path>]` | Create if missing, then deploy the Convex code. |
 | `kortix backends delete <name>` | Delete the backend, its machine, and all its data. |
@@ -82,6 +83,34 @@ A new backend starts in `provisioning`. It usually becomes `running` in a few
 seconds. The first create in a region also builds the machine image and takes
 longer. A failed create ends in `error` and releases the machine. Delete it and
 create it again.
+
+## The admin dashboard
+
+Every backend has Convex's own dashboard, inside Kortix. Open the project, choose
+**Backends**, then the backend's name. The page signs the dashboard in for you.
+
+| Page | What it does |
+|---|---|
+| Health | Function calls, failure rate, cache hit rate, concurrency |
+| Data | Browse, filter, add, edit and delete documents in every table |
+| Schema | The deployed schema and its indexes |
+| Functions | Every query, mutation and action, with a runner and per-function metrics |
+| Files | Stored files: upload, download, delete |
+| Schedules | Scheduled functions and crons |
+| Logs | Live function logs |
+| History | Deploys and configuration changes |
+| Settings | Environment variables, authentication, components, integrations, usage limits |
+
+From the CLI, `kortix backends dashboard main` prints the page's link.
+`--open` also opens it in the browser.
+
+The dashboard needs `project.backend.write`, because it acts with the admin
+key. Kortix records each opening as `backend.credentials.read`. The key goes
+from the Kortix API straight into the dashboard frame. Kortix web never
+renders or stores it.
+
+A backend created before the dashboard shipped has none. Create a new backend
+and redeploy to it to get one.
 
 ## Read and write data
 

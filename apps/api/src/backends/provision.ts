@@ -19,7 +19,7 @@
  */
 
 import { projectBackends } from '@kortix/db';
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { db } from '../shared/db';
 import { PlatinumHttpError, platinumJson } from '../shared/platinum';
@@ -34,6 +34,7 @@ import {
 } from './auth';
 import {
   CONVEX_API_PORT,
+  CONVEX_DASHBOARD_PORT,
   CONVEX_IMAGE_SPEC,
   CONVEX_ORIGINS_FILE,
   CONVEX_SITE_PORT,
@@ -115,6 +116,11 @@ async function mintAdminKey(externalId: string): Promise<string> {
  * can come back empty after a hard reset. `/files/atomic` fsyncs a temp file
  * and renames it. A control plane without that route answers 404.
  */
+/** Only Kortix web may frame a backend's dashboard (CSP frame-ancestors). */
+function dashboardFrameAncestors(): string {
+  return new URL(config.FRONTEND_URL).origin;
+}
+
 async function writeOriginsFile(externalId: string, body: string): Promise<void> {
   const write = (route: string) =>
     platinumJson(`/v1/sandboxes/${externalId}/${route}?path=${encodeURIComponent(CONVEX_ORIGINS_FILE)}`, {
@@ -246,6 +252,7 @@ export async function provisionBackend(row: BackendRow, region?: string): Promis
           expose: [
             { port: CONVEX_API_PORT, public: true },
             { port: CONVEX_SITE_PORT, public: true },
+            { port: CONVEX_DASHBOARD_PORT, public: true },
           ],
           metadata: {
             'kortix.managed': await sandboxOwnershipMarker(),
@@ -265,7 +272,10 @@ export async function provisionBackend(row: BackendRow, region?: string): Promis
 
     const url = exposedOrigin(created, CONVEX_API_PORT);
     const siteUrl = exposedOrigin(created, CONVEX_SITE_PORT);
-    await writeOriginsFile(externalId, `CONVEX_CLOUD_ORIGIN=${url}\nCONVEX_SITE_ORIGIN=${siteUrl}\n`);
+    await writeOriginsFile(
+      externalId,
+      `CONVEX_CLOUD_ORIGIN=${url}\nCONVEX_SITE_ORIGIN=${siteUrl}\nKORTIX_FRAME_ANCESTORS=${dashboardFrameAncestors()}\n`,
+    );
     await waitHealthy(url);
     const adminKey = await mintAdminKey(externalId);
     // Kortix sign-in: the backend verifies member tokens with this key's public half.
@@ -280,6 +290,8 @@ export async function provisionBackend(row: BackendRow, region?: string): Promis
         siteUrl,
         adminKeyEnc: encryptProjectSecret(projectId, adminKey),
         authKeyEnc: encryptProjectSecret(projectId, authKey),
+        // This machine serves Convex's dashboard on CONVEX_DASHBOARD_PORT.
+        metadata: sql`coalesce(${projectBackends.metadata}, '{}'::jsonb) || '{"dashboard":true}'::jsonb`,
         updatedAt: new Date(),
       })
       // Only a row nobody deleted meanwhile may become `running`.

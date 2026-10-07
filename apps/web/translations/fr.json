@@ -19334,7 +19334,16 @@
       "text6f2769b24c0f": "Redimensionnement…",
       "text1af851907331": "Taille",
       "text5ad9ba3657f2": "Redimensionner…",
-      "textf0e800ed571e": "Sauvegardes…"
+      "textf0e800ed571e": "Sauvegardes…",
+      "text1abb2f2abc1e": "Tous les backends",
+      "text88c4418c2c87": "Backend introuvable",
+      "text992276f72e41": "Il a peut-être été supprimé.",
+      "text354788a1e3e5": "Le tableau de bord s’ouvre quand le backend est en marche.",
+      "text736d4f22425d": "Le tableau de bord nécessite un accès en écriture aux backends. Demandez à un responsable du projet.",
+      "text6513690ca848": "Ce backend a été créé avant le tableau de bord. Créez un nouveau backend pour l’obtenir.",
+      "text19eb2c0e5dca": "Tableau de bord Convex",
+      "text803f2313cdf4": "Ouvrir le tableau de bord",
+      "text3ae8ca83dab7": "Tableau de bord du backend ouvert"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

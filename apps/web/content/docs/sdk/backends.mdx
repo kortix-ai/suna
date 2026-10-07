@@ -93,7 +93,7 @@ Every type below is exported from `@kortix/sdk`.
 
 | Type | What it holds |
 |---|---|
-| `ProjectBackend` | `backend_id`, `project_id`, `name`, `status`, `url`, `site_url`, `cpu`, `memory_gb`, `disk_gb`, `error`, `operation`, `last_operation_error`, `created_at`, `updated_at` |
+| `ProjectBackend` | `backend_id`, `project_id`, `name`, `status`, `url`, `site_url`, `dashboard_url`, `cpu`, `memory_gb`, `disk_gb`, `error`, `operation`, `last_operation_error`, `created_at`, `updated_at` |
 | `ProjectBackendStatus` | `'provisioning' \| 'running' \| 'error' \| 'deleted'` |
 | `ProjectBackendOperation` | `'resizing'` |
 | `ProjectBackendSize` | `cpu`, `memory_gb`, `disk_gb`, all optional |
@@ -103,6 +103,14 @@ Every type below is exported from `@kortix/sdk`.
 | `ProjectBackendCredentials` | `url`, `site_url`, `admin_key`, `env` |
 
 `url` and `site_url` are `null` until the backend runs.
+
+`dashboard_url` is Convex's dashboard for the backend, on a Kortix host. Frame
+it in an `<iframe>`. The dashboard posts `{ type: 'dashboard-credentials-request' }`
+to its parent. Check `event.origin` against the dashboard URL's origin, then
+answer with `{ type: 'dashboard-credentials', adminKey, deploymentUrl,
+deploymentName }`, read with `backends.credentials(backendId)`. Post only to
+that origin. It is `null` until the backend runs, and for a backend created
+before the dashboard shipped.
 
 ## React hooks
 

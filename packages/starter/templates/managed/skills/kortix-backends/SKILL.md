@@ -73,6 +73,7 @@ the session branch like any other code.
 | `kortix backends list` | Backends and their status (`provisioning`, `running`, `error`). |
 | `kortix backends create <name>` | Create and wait, without deploying. |
 | `kortix backends get <name> [--json]` | `url` (Convex client URL), `site_url` (HTTP actions), status. |
+| `kortix backends dashboard <name>` | Link to the backend's admin dashboard in Kortix (data, functions, logs, files, schedules, env). Give it to the user so they can inspect what you built. |
 | `kortix backends env <name>` | Shell exports for the Convex CLI (admin). Use with `eval`. |
 | `kortix backends token <name>` | A one-hour sign-in token naming you (see Sign-in). |
 | `kortix backends deploy <name> --dir <path>` | Create if missing, then deploy. |
@@ -175,7 +176,8 @@ function that requires sign-in rejects it. Act as a member in one of two ways:
   client (`client.setAuth(token)`), exactly as an App does.
 
  Never run `npx convex dev` or `npx convex dashboard`
-against a Kortix backend.
+against a Kortix backend. The user's dashboard is already in Kortix: hand them
+the link from `kortix backends dashboard <name>`.
 
 ## Secrets and safety
 

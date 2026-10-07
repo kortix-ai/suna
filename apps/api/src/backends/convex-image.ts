@@ -15,6 +15,17 @@
 export const CONVEX_BACKEND_IMAGE =
   'ghcr.io/get-convex/convex-backend@sha256:d715e9ec088784407ca4ba2d3db592702cd328d02c76cdca3852c0018f2a76b4';
 
+import { readFileSync } from 'node:fs';
+
+/**
+ * Convex's own dashboard, the static export Convex publishes with the same
+ * release as CONVEX_BACKEND_IMAGE (git 5c7cb5b), verified by sha256 at build.
+ */
+const DASHBOARD_ZIP_URL =
+  'https://github.com/get-convex/convex-backend/releases/download/precompiled-2026-09-28-5c7cb5b/dashboard.zip';
+const DASHBOARD_ZIP_SHA256 = 'b4d10c8a2a19f6b0e7e0de4fa80753d0ec479655277a87b8f9be9fcb3cdefbf1';
+const DASHBOARD_SERVER = readFileSync(new URL('./dashboard-server.mjs', import.meta.url), 'utf8');
+
 /** The file Kortix writes after create: the public origins exist only once the sandbox id does. */
 export const CONVEX_ORIGINS_FILE = '/convex/origins.env';
 
@@ -24,6 +35,8 @@ cd /convex || exit 1
 while [ ! -s ${CONVEX_ORIGINS_FILE} ]; do sleep 0.2; done
 set -a; . ${CONVEX_ORIGINS_FILE}; set +a
 export DO_NOT_REQUIRE_SSL=1 DISABLE_BEACON=1 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# The Convex dashboard (port 6791), restarted if it ever exits.
+( while true; do node /usr/local/bin/convex-dashboard-server.mjs >> /var/log/convex-dashboard.log 2>&1; sleep 1; done ) &
 while true; do
   ./run_backend.sh >> /var/log/convex.log 2>&1
   echo "convex exited $? at $(date +%s)" >> /var/log/convex.log
@@ -34,6 +47,20 @@ done
 export const CONVEX_IMAGE_SPEC = {
   base_image: CONVEX_BACKEND_IMAGE,
   steps: [
+    { op: 'apt', packages: ['unzip'] },
+    {
+      op: 'run',
+      cmd:
+        `curl -fsSL ${DASHBOARD_ZIP_URL} -o /tmp/dashboard.zip` +
+        ` && echo "${DASHBOARD_ZIP_SHA256}  /tmp/dashboard.zip" | sha256sum -c -` +
+        ' && mkdir -p /opt/convex-dashboard && unzip -q /tmp/dashboard.zip -d /opt/convex-dashboard && rm /tmp/dashboard.zip',
+    },
+    {
+      op: 'copy',
+      content_b64: Buffer.from(DASHBOARD_SERVER).toString('base64'),
+      dst: '/usr/local/bin/convex-dashboard-server.mjs',
+      mode: '0644',
+    },
     {
       op: 'copy',
       content_b64: Buffer.from(SUPERVISOR).toString('base64'),
@@ -50,3 +77,5 @@ export const CONVEX_IMAGE_SPEC = {
 export const CONVEX_API_PORT = 3210;
 /** Convex HTTP actions at the root (the site URL). */
 export const CONVEX_SITE_PORT = 3211;
+/** Convex's dashboard, framed by Kortix web. */
+export const CONVEX_DASHBOARD_PORT = 6791;

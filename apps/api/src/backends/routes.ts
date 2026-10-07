@@ -22,6 +22,7 @@ import {
   listProjectBackends,
   provisionBackend,
 } from './provision';
+import { backendDashboardUrl } from './dashboard-host';
 import {
   BackendOperationError,
   backendOperation,
@@ -42,6 +43,9 @@ const BackendObject = z
     status: z.enum(STATUSES),
     url: z.string().nullable().openapi({ description: 'Convex client URL (CONVEX_URL).' }),
     site_url: z.string().nullable().openapi({ description: 'Convex HTTP actions URL.' }),
+    dashboard_url: z.string().nullable().openapi({
+      description: "Convex's dashboard for this backend. Kortix web frames it and signs it in; null on older machines.",
+    }),
     cpu: z.number().int(),
     memory_gb: z.number().int(),
     disk_gb: z.number().int(),
@@ -109,6 +113,7 @@ function serialize(row: BackendRow) {
     status,
     url: row.url,
     site_url: row.siteUrl,
+    dashboard_url: backendDashboardUrl(row),
     cpu: row.cpu,
     memory_gb: row.memoryGb,
     disk_gb: row.diskGb,

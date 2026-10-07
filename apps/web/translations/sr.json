@@ -19334,7 +19334,16 @@
       "text6f2769b24c0f": "Промена величине…",
       "text1af851907331": "Величина",
       "text5ad9ba3657f2": "Промени величину…",
-      "textf0e800ed571e": "Резервне копије…"
+      "textf0e800ed571e": "Резервне копије…",
+      "text1abb2f2abc1e": "Svi backendi",
+      "text88c4418c2c87": "Backend nije pronađen",
+      "text992276f72e41": "Možda je obrisan.",
+      "text354788a1e3e5": "Kontrolna tabla se otvara kada backend radi.",
+      "text736d4f22425d": "Kontrolnoj tabli je potreban pristup za pisanje backendima. Obratite se menadžeru projekta.",
+      "text6513690ca848": "Ovaj backend je napravljen pre kontrolne table. Napravite novi backend da biste je dobili.",
+      "text19eb2c0e5dca": "Convex kontrolna tabla",
+      "text803f2313cdf4": "Otvori kontrolnu tablu",
+      "text3ae8ca83dab7": "Otvorena kontrolna tabla backenda"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

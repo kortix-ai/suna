@@ -49,6 +49,7 @@ describe('the audit boundary wraps every entrypoint', () => {
   test('every entrypoint the dispatcher routes outside Hono names its class', () => {
     const dispatcher = functionBody('dispatchInbound');
     for (const route of [
+      "'app_origin', 'backend_dashboard'",
       "'app_origin', 'app_origin:websocket'",
       "'app_origin', 'app_origin'",
       "'preview_origin', 'preview_origin:websocket'",
