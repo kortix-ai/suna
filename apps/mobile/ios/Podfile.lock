@@ -189,6 +189,8 @@ PODS:
     - ExpoModulesCore
   - ExpoAudio (56.0.13):
     - ExpoModulesCore
+  - ExpoBlur (56.0.4):
+    - ExpoModulesCore
   - ExpoClipboard (56.0.4):
     - ExpoModulesCore
   - ExpoCrypto (56.0.5):
@@ -2659,6 +2661,7 @@ DEPENDENCIES:
   - "ExpoAppleAuthentication (from `../../../node_modules/.pnpm/expo-apple-authentication@56.0.4_expo@56.0.22_react-native@0.85.3_react@19.2.3/node_modules/expo-apple-authentication/ios`)"
   - "ExpoAsset (from `../../../node_modules/.pnpm/expo-asset@56.0.24_expo@56.0.22_react-native@0.85.3_react@19.2.3_typescript@5.9.3/node_modules/expo-asset/ios`)"
   - "ExpoAudio (from `../../../node_modules/.pnpm/expo-audio@56.0.13_expo-asset@56.0.24_expo@56.0.22_react-native@0.85.3_react@19.2.3/node_modules/expo-audio/ios`)"
+  - "ExpoBlur (from `../../../node_modules/.pnpm/expo-blur@56.0.4_expo@56.0.22_react-native@0.85.3_react@19.2.3/node_modules/expo-blur/ios`)"
   - "ExpoClipboard (from `../../../node_modules/.pnpm/expo-clipboard@56.0.4_expo@56.0.22_react-native@0.85.3_react@19.2.3/node_modules/expo-clipboard/ios`)"
   - "ExpoCrypto (from `../../../node_modules/.pnpm/expo-crypto@56.0.5_expo@56.0.22/node_modules/expo-crypto/ios`)"
   - "ExpoDevice (from `../../../node_modules/.pnpm/expo-device@56.0.4_expo@56.0.22/node_modules/expo-device/ios`)"
@@ -2817,6 +2820,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/.pnpm/expo-asset@56.0.24_expo@56.0.22_react-native@0.85.3_react@19.2.3_typescript@5.9.3/node_modules/expo-asset/ios"
   ExpoAudio:
     :path: "../../../node_modules/.pnpm/expo-audio@56.0.13_expo-asset@56.0.24_expo@56.0.22_react-native@0.85.3_react@19.2.3/node_modules/expo-audio/ios"
+  ExpoBlur:
+    :path: "../../../node_modules/.pnpm/expo-blur@56.0.4_expo@56.0.22_react-native@0.85.3_react@19.2.3/node_modules/expo-blur/ios"
   ExpoClipboard:
     :path: "../../../node_modules/.pnpm/expo-clipboard@56.0.4_expo@56.0.22_react-native@0.85.3_react@19.2.3/node_modules/expo-clipboard/ios"
   ExpoCrypto:
@@ -3073,6 +3078,7 @@ SPEC CHECKSUMS:
   ExpoAppleAuthentication: 3dd8ddd3016396a8171f06af8cc5e3e008e8eaf4
   ExpoAsset: 3f825e3c30de2d3e8a280b97602a8a607ce864fe
   ExpoAudio: 2970e2d332b52bfbb64d88564105df4b422c78a4
+  ExpoBlur: 234b3c1f42a35851428e10fa9d347701ae707c4d
   ExpoClipboard: 342ae52697ff1cf89b8849bee624a9a320e77d3c
   ExpoCrypto: cfd62630036e9bb983bcde73d564be3dbe47ceb2
   ExpoDevice: f527f8bbefa6efa12f8ef63e9038dd1d5d903697

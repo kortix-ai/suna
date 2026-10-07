@@ -54,6 +54,9 @@ const SANDBOX = 'https://sandbox.test';
 // (`KEEP_REAL`), or auto-filled with inert stand-ins by the import scan below.
 
 const Empty = () => null;
+const NO_REVIEW_ITEMS = { data: [] };
+const NO_CHANGES: never[] = [];
+const NO_ANCHORS = new Map();
 const calls: { name: string; args: any[] }[] = [];
 const spy =
   (name: string) =>
@@ -310,7 +313,8 @@ const moduleMocks: Record<string, Record<string, any>> = {
         return { remove: () => set.delete(cb) };
       },
     },
-    useReanimatedKeyboardAnimation: () => ({ progress: keyboardProgress }),
+    useKeyboardHandler: () => {},
+    useReanimatedKeyboardAnimation: () => ({ progress: keyboardProgress, height: { value: 0 } }),
   },
   'react-native-reanimated': {
     default: { View: (props: any) => props.children ?? null },
@@ -373,7 +377,10 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/components/session/SubAgentListSheet': { SubAgentListSheet: Capture(() => {}) },
   '@/components/session/ConnectProviderSheet': { ConnectProviderSheet: Capture(() => {}) },
   '@/components/session/ConnectorAuthSheet': { ConnectorAuthSheet: Capture(() => {}) },
-  '@/components/session/SessionChangeRequests': { SessionChangeRequests: Empty },
+  '@/components/review/ReviewDetailSheet': { ReviewDetailSheet: Capture(() => {}) },
+  // Stable results, as react-query's: `renderItem` must keep its identity.
+  '@/lib/review/use-review': { useReviewItems: () => NO_REVIEW_ITEMS },
+  '@/lib/session/session-change-requests': { sessionChangeRequests: () => NO_CHANGES, anchorChangeRequests: () => NO_ANCHORS },
   '@/components/session/SandboxHealthPill': { SandboxHealthPill: Capture((props: { onSwitch?: () => void }) => { healthPillProps = props; }) },
   '@/components/session/LiveUpdatesPausedPill': { LiveUpdatesPausedPill: Empty },
   '@/components/session/SandboxPreviewSheet': { SandboxPreviewSheet: Capture(() => {}) },

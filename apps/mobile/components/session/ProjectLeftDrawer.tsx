@@ -102,7 +102,7 @@ import {
   PROJECT_SESSIONS_ROUTE,
   type ProjectDrawerRoute,
 } from '@/lib/session/project-stack';
-import { buildDrawerItems, isParentExpanded, rootRowsOnly, type DrawerItem, type DrawerSectionId } from '@/lib/session/session-tree';
+import { buildDrawerItems, isParentExpanded, rootRowsOnly, uniqueSessions, type DrawerItem, type DrawerSectionId } from '@/lib/session/session-tree';
 import { parentKey, sectionKey, useSessionTreeStore } from '@/stores/session-tree-store';
 import { useAuthContext } from '@/contexts';
 import type { SessionNeedsYou } from '@/lib/session/needs-you';
@@ -328,7 +328,8 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
   // older page, a child) is left to the Review row's count.
   const needsYouSessions = useMemo(
     () =>
-      [...mineRoots, ...sharedRoots, ...automatedRoots]
+      // One row per session: the three caches can each hold it (`uniqueSessions`).
+      uniqueSessions([...mineRoots, ...sharedRoots, ...automatedRoots])
         .filter((session) => needsYouBySession.has(session.session_id))
         .sort(
           (a, b) =>

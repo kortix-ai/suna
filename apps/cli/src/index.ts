@@ -287,7 +287,7 @@ async function main(argv: string[]): Promise<number> {
   }
   const connectorMachineCommand =
     argv[0] === 'connectors' &&
-    (['call', 'discover', 'upload', 'mcp'].includes(argv[1] ?? '') ||
+    (['call', 'discover', 'upload', 'mcp', 'types'].includes(argv[1] ?? '') ||
       (argv[1] === 'show' && (argv[2] ?? '').includes('.')) ||
       ((argv[1] === 'ls' || argv[1] === 'list') &&
         argv.some((arg) => arg === '--session' || arg.startsWith('--session='))));
