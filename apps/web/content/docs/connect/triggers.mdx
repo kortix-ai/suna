@@ -32,7 +32,7 @@ kortix triggers add daily-digest --type cron \
   --prompt "Summarize yesterday's activity and save it as a daily note."
 ```
 
-`cron` is a 6-field expression: second, minute, hour, day, month, weekday. This command edits your local `kortix.yaml` only.
+`cron` is a 6-field expression: second, minute, hour, day, month, weekday. A trigger fires at most once a minute: `0 */30 * * * *` is every 30 minutes, and `*/30 * * * * *` (every 30 seconds) is refused. This command edits your local `kortix.yaml` only.
 </Step>
 
 <Step title="Ship it">
@@ -213,7 +213,7 @@ Legacy `kortix.toml` uses the same fields in a different container; see [legacy 
 | `session_id` | required for `pinned` | — | Exact session to re-prompt. |
 | `session_key` | required for `keyed` | — | Template string. Setting it alone implies `session_mode: keyed`. |
 | `filter` | no | — | Dotted path → expected string. A webhook delivery that does not match returns `200` and fires no session. |
-| `cron` | one of `cron`/`run_at`, on `type: cron` | — | 6-field expression: second minute hour day month weekday. |
+| `cron` | one of `cron`/`run_at`, on `type: cron` | — | 6-field expression: second minute hour day month weekday. Fires at most once every 60 seconds; a faster expression fails `kortix validate` and the API. |
 | `run_at` | one of `cron`/`run_at`, on `type: cron` | — | ISO-8601 timestamp. Fires once, then stays dormant. |
 | `timezone` | no, cron only | `UTC` | IANA name. |
 | `secret_env` | required, webhook only | — | Name of a project secret holding the signing key. The secret must use `broker` delivery with the `connector` consumer. |
