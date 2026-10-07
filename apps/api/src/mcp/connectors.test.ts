@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { CONNECTOR_TOOLS, denialNext, fitData, searchActions, splitTool } from './connectors';
+import { CONNECTOR_TOOLS, type Host, denialNext, fitData, runConnectorTool, searchActions, splitTool } from './connectors';
 
 const catalog = [
   {
@@ -68,4 +68,30 @@ test('every connector tool is titled, described, strict, and names project_id', 
     expect(t.inputSchema.additionalProperties).toBe(false);
     expect(t.inputSchema.required).toContain('project_id');
   }
+});
+
+describe('call_connector', () => {
+  test('a big result is fitted once: `output` (the unwrapped payload) never rides beside the preview', async () => {
+    const rows = 'y'.repeat(50_000);
+    const host = {
+      projectId: () => 'proj-1',
+      arg: (input: Record<string, unknown>, key: string) => String(input[key]),
+      optionalArg: () => undefined,
+      input: (message: string) => new Error(message),
+      text: (value: string, isError?: boolean) => ({ content: [{ type: 'text', text: value }], ...(isError ? { isError } : {}) }),
+      call: async () => ({
+        status: 200,
+        body: JSON.stringify({ ok: true, data: { provider: 'composio', result: { rows } }, output: { rows }, binding: 'composio', upstream_status: 200 }),
+      }),
+    } as unknown as Host;
+    const result = (await runConnectorTool('call_connector', { tool: 'gmail.fetch_emails', args: {} }, host)) as {
+      content: Array<{ text: string }>;
+    };
+    const text = result.content[0]!.text;
+    const reply = JSON.parse(text);
+    expect(reply.data_truncated).toBe(true);
+    expect(reply.output).toBeUndefined();
+    expect(reply.binding).toBe('composio');
+    expect(text.length).toBeLessThan(45_000);
+  });
 });

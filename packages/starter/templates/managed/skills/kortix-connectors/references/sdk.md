@@ -43,12 +43,33 @@ token supplies the project context.
   assuming.
 - `uploadAttachment(content, input)` uploads an attachment for a later call.
 
-`call` returns `ConnectorCallResult<T>`. HTTP failures throw `ApiError`, which
-includes `status` and parsed response details. A policy or connection outcome
-can return `ok: false` without throwing — this includes `reason:
-"account_required"` when several accounts are reachable, none was named, and
-none is pinned as the default: pass `account` explicitly rather than retrying
-the same call.
+`call` returns `ConnectorCallResult<T>`. Every non-2xx answer throws
+`ApiError` with `status` and the parsed body in `details`. Only a call held
+for approval (HTTP 202, `status: "pending_approval"`) returns `ok: false`
+without throwing. A denial throws (403 or 404): `reason: "account_required"`
+means several accounts are reachable, none was named, and none is pinned as
+the default. Pass `account` explicitly rather than retrying the same call.
+
+Fields of the result beside `data` (the raw upstream answer):
+
+- `output`: the payload without the binding's envelope. Composio
+  `data.result`, MCP `structuredContent ?? content`, GraphQL `data.data`,
+  otherwise `data`.
+- `binding`: `openapi`, `http`, `mcp`, `graphql`, `composio`, `pipedream`, …
+- `upstream_status`: the upstream HTTP status, or `null`.
+- `upstream_error`: set when the upstream reported a failure inside a 2xx (an
+  MCP `isError` result, GraphQL `errors` with no data). Treat it as a failure.
+
+Failures that throw:
+
+- HTTP 429 or 503: the upstream is rate-limited or unavailable.
+  `details.retry_after_seconds` (and the `Retry-After` header) says when to
+  call again. Back off; never loop without a delay.
+- HTTP 500 with `reason` starting `upstream_timeout`: the upstream did not
+  answer within 60 seconds. The call may have run. Kortix does not
+  deduplicate calls: check the effect before you repeat a write.
+- `call` aborts on the client after 30 seconds, before the gateway deadline.
+  The aborted call may still run upstream: the same check applies.
 
 ## Workflow pattern
 

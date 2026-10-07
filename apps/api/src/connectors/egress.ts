@@ -45,6 +45,7 @@ export function createConnectorEgressFetch(options: ConnectorEgressOptions = {})
         method: init.method,
         headers: init.headers,
         body: init.body,
+        signal: init.signal,
         allowHttp: true,
         allowPrivateHosts: allowPrivateHosts(),
         // Bun-only mTLS client certificate for `auth.type: mtls` connectors.

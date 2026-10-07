@@ -710,6 +710,37 @@ optional `attachment_path`), and `upload_attachment` returns a `ref`. The SDK
 equivalent is `connectors.uploadAttachment(bytes, { filename, contentType,
 connector })`, which returns `ref`.
 
+### Call results
+
+`POST /connectors/projects/{projectId}/call` answers one JSON object. These
+fields are the same for every binding (OpenAPI, HTTP, MCP, GraphQL, Composio,
+Pipedream, computers):
+
+| Field | On | Value |
+| --- | --- | --- |
+| `data` | 200 | The raw upstream answer, unchanged. |
+| `output` | 200 | The payload without the binding's envelope: Composio `data.result`, MCP `result.structuredContent ?? result.content`, GraphQL `data.data`, every other binding `data`. |
+| `binding` | 200, 500, 429, 503 | The binding that ran the call: `openapi`, `http`, `mcp`, `graphql`, `composio`, `pipedream`, `pipedream_proxy`, `postman`, `tunnel`. `null` on an error before the action resolved. |
+| `upstream_status` | 200, 500, 429, 503 | The upstream HTTP status. `null` when no upstream answered (a timeout, a refused request, a computer). Composio and Pipedream report a provider failure inside a 200, so Kortix sets `502` for it (`400` for a rejected Linear query, `429` for a rate limit). |
+| `upstream_error` | 200 | Present when the upstream reported a failure inside a 2xx answer: an MCP tool result with `isError: true` or a JSON-RPC error, or GraphQL `errors` with no data. The call still counts as run: `ok` stays `true`. |
+| `retry_after_seconds` | 429, 503 | The upstream's `Retry-After`, in seconds, when it sent one. The response also carries the `Retry-After` header. |
+
+The HTTP status of a failed call:
+
+- An upstream `429` answers `429`. An upstream `503` answers `503`. Wait
+  `retry_after_seconds` (or back off) and call again.
+- Every other upstream failure answers `500` with the cause in `reason`. The
+  gateway never answers `502` or `504`: Cloudflare replaces those bodies.
+- An upstream that does not answer within the deadline answers `500` with
+  `reason: "upstream_timeout: …"`. The deadline is 60 seconds
+  (`KORTIX_CONNECTOR_CALL_TIMEOUT_MS` on a self-hosted API). Set a client
+  timeout above it, so the gateway always answers first.
+
+A connector call is not idempotent. Kortix does not deduplicate a repeated
+call. After `upstream_timeout` or a client-side abort, the call may have run
+upstream: check its effect before you repeat a write (a sent email, a created
+record).
+
 ### When a call is denied
 
 A denied call answers `{ ok: false, status: "denied", reason, hint }`. `reason` is a stable code; `hint` says what to do.

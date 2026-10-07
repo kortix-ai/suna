@@ -94,6 +94,12 @@ export const CallResponseSchema = z
         owner_type: z.string(),
       })
       .optional(),
+    // Additive call contract. `data` keeps the raw upstream answer.
+    binding: z.string().nullable().optional(),
+    output: z.any().optional(),
+    upstream_status: z.number().int().nullable().optional(),
+    upstream_error: z.string().optional(),
+    retry_after_seconds: z.number().int().optional(),
   })
   .passthrough()
   .openapi('ConnectorCallResult');

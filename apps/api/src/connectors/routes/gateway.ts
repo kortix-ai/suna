@@ -107,12 +107,18 @@ const COMPUTER_STATES = ['computer_offline', 'computer_unpaired'];
 /**
  * HTTP status for a gateway `error`. Computer states the owner controls are
  * expected outcomes, not server faults: a 5xx invites a retry, and each retry
- * re-prompts the owner. 500, not 502, for the rest (Cloudflare eats 502 bodies).
+ * re-prompts the owner. An upstream 429 or 503 is "retry later" and keeps its
+ * status. 500, not 502 or 504, for the rest, `upstream_timeout` included:
+ * Cloudflare replaces origin 502 and 504 bodies with its own page.
  */
-export function connectorErrorHttpStatus(reason: string): 403 | 409 | 500 {
+export function connectorErrorHttpStatus(
+  reason: string,
+  upstreamStatus?: number | null,
+): 403 | 409 | 429 | 500 | 503 {
   const kind = reason.split(':', 1)[0];
   if (COMPUTER_REFUSALS.includes(kind)) return 403;
   if (COMPUTER_STATES.includes(kind)) return 409;
+  if (upstreamStatus === 429 || upstreamStatus === 503) return upstreamStatus;
   return 500;
 }
 
@@ -227,6 +233,10 @@ const callResponse = async (deps: ConnectorRouterDeps, c: any, p: ConnectorPrinc
         data: result.data,
         risk: result.risk,
         ...(result.account ? { account: result.account } : {}),
+        binding: result.binding,
+        output: result.output,
+        upstream_status: result.upstreamStatus,
+        ...(result.upstreamError ? { upstream_error: result.upstreamError } : {}),
       });
     case 'pending_approval':
       return c.json(
@@ -297,8 +307,21 @@ const callResponse = async (deps: ConnectorRouterDeps, c: any, p: ConnectorPrinc
           : 403,
       );
     }
-    default:
-      return c.json({ ok: false, status: 'error', reason: result.reason }, connectorErrorHttpStatus(result.reason));
+    default: {
+      const retryAfter = result.retryAfterSeconds;
+      if (retryAfter !== undefined) c.header('Retry-After', String(retryAfter));
+      return c.json(
+        {
+          ok: false,
+          status: 'error',
+          reason: result.reason,
+          binding: result.binding ?? null,
+          upstream_status: result.upstreamStatus ?? null,
+          ...(retryAfter === undefined ? {} : { retry_after_seconds: retryAfter }),
+        },
+        connectorErrorHttpStatus(result.reason, result.upstreamStatus),
+      );
+    }
   }
 };
 
@@ -512,6 +535,8 @@ export function registerGatewayCallRoutes(app: OpenAPIHono, deps: ConnectorRoute
         401: json(CallResponseSchema, 'Unauthorized'),
         403: json(CallResponseSchema, 'Denied'),
         404: json(CallResponseSchema, 'Connector or action not found'),
+        429: json(CallResponseSchema, 'Upstream rate limit (Retry-After when the upstream sent one)'),
+        503: json(CallResponseSchema, 'Upstream unavailable (Retry-After when the upstream sent one)'),
         // 500, NOT 502: Cloudflare replaces origin 502/504 bodies with its own
         // branded error page, which destroys the JSON `reason` before the
         // sandbox SDK can read it — the agent then sees a bare "HTTP 502" and
@@ -590,6 +615,8 @@ export function registerGatewayCallRoutes(app: OpenAPIHono, deps: ConnectorRoute
         400: json(CallResponseSchema, 'Bad request (invalid_json / missing fields)'),
         403: json(CallResponseSchema, 'Denied'),
         404: json(CallResponseSchema, 'Connector or action not found'),
+        429: json(CallResponseSchema, 'Upstream rate limit (Retry-After when the upstream sent one)'),
+        503: json(CallResponseSchema, 'Upstream unavailable (Retry-After when the upstream sent one)'),
         500: json(CallResponseSchema, 'Execution error'),
       },
     }),

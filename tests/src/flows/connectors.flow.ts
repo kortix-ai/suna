@@ -4088,3 +4088,201 @@ flow(
     }
   },
 );
+
+// ── CONN-CALL-1 — the call contract: binding, output, upstream status ───────
+// Beside `data`, a call names its `binding`, the `upstream_status` and the
+// unwrapped `output`. An upstream 429 or 503 keeps its status with Retry-After;
+// an MCP `isError` result and GraphQL `errors` without data stay HTTP 200 and
+// name the failure in `upstream_error`; a hung upstream answers 500
+// `upstream_timeout` at the gateway deadline. The upstream is runner-local, so
+// every step runs on the local target only.
+flow(
+  'CONN-CALL-1',
+  {
+    domain: 'connectors',
+    requires: ['database'],
+    timeoutMs: 150_000,
+    routes: ['POST /v1/connectors/projects/:projectId/call'],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== 'local') {
+      await ctx.step('deployed targets cannot reach a runner-local upstream: skipped', async () => {});
+      return;
+    }
+    const p = await ctx.fixtures.project();
+    const { createServer } = await import('node:http');
+    const { Client: PgClient } = await import('pg');
+    const db = new PgClient({ connectionString: ctx.env.databaseUrl as string, ssl: false });
+    const stamp = Date.now().toString(36);
+    const slug = { api: `ke2e-call-api-${stamp}`, mcp: `ke2e-call-mcp-${stamp}`, gql: `ke2e-call-gql-${stamp}` };
+
+    let slowStarted = 0;
+    let slowClosedAfterMs = -1;
+    const upstream = createServer((req, res) => {
+      const json = (status: number, body: unknown, headers: Record<string, string> = {}) => {
+        res.writeHead(status, { 'content-type': 'application/json', ...headers });
+        res.end(JSON.stringify(body));
+      };
+      if (req.url === '/api/ok') return json(200, { items: [1, 2] });
+      if (req.url === '/api/limited') return json(429, { message: 'slow down' }, { 'retry-after': '2' });
+      if (req.url === '/api/unavailable') return json(503, { message: 'maintenance' }, { 'retry-after': '30' });
+      if (req.url === '/api/slow') {
+        // Answers only after 70 s; the gateway deadline (60 s, or the local
+        // profile's KORTIX_CONNECTOR_CALL_TIMEOUT_MS) closes the socket first.
+        slowStarted = Date.now();
+        const timer = setTimeout(() => json(200, { late: true }), 70_000);
+        // `req` closes when the client drops the connection (Bun emits no
+        // `close` on an unfinished `res`).
+        req.on('close', () => {
+          clearTimeout(timer);
+          slowClosedAfterMs = Date.now() - slowStarted;
+        });
+        return;
+      }
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk: Buffer) => chunks.push(chunk));
+      req.on('end', () => {
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as { id?: number };
+        if (req.url === '/mcp') {
+          return json(200, {
+            jsonrpc: '2.0',
+            id: body.id ?? 1,
+            result: { isError: true, content: [{ type: 'text', text: 'Issue KE2E-1 does not exist' }] },
+          });
+        }
+        if (req.url === '/graphql') {
+          return json(200, { data: { issue: null }, errors: [{ message: 'Entity not found: issue' }] });
+        }
+        json(404, { message: 'no route' });
+      });
+    });
+    const port = await new Promise<number>((resolve) =>
+      upstream.listen(0, '127.0.0.1', () => resolve((upstream.address() as { port: number }).port)),
+    );
+    const base = `http://127.0.0.1:${port}`;
+    const call = (connector: string, action: string, args: Record<string, unknown> = {}) =>
+      ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/connectors/projects/:projectId/call',
+          { connector, action, args },
+          { params: { projectId: p.id }, timeoutMs: 100_000 },
+        );
+
+    try {
+      await db.connect();
+      await ctx.step('seed OpenAPI, MCP and GraphQL connectors on a runner-local upstream', async () => {
+        const owner = await db.query<{ account_id: string }>(
+          `SELECT account_id FROM kortix.projects WHERE project_id = $1`,
+          [p.id],
+        );
+        const accountId = owner.rows[0]?.account_id;
+        if (!accountId) throw new Error('project has no account');
+        const seed = async (
+          connectorSlug: string,
+          providerType: string,
+          config: Record<string, unknown>,
+          actions: Array<{ path: string; binding: Record<string, unknown> }>,
+        ) => {
+          const row = await db.query<{ connector_id: string }>(
+            `INSERT INTO kortix.connectors (account_id, project_id, slug, name, provider_type, config, status)
+             VALUES ($1, $2, $3, $4, $5, $6::jsonb, 'active') RETURNING connector_id`,
+            [accountId, p.id, connectorSlug, connectorSlug, providerType, JSON.stringify({ ...config, auth: { type: 'none' } })],
+          );
+          const connectorId = row.rows[0]?.connector_id;
+          if (!connectorId) throw new Error('connector insert returned no id');
+          await db.query(
+            `INSERT INTO kortix.connector_connections (account_id, project_id, connector_id, owner_type, label, status, is_default, metadata)
+             VALUES ($1, $2, $3, 'project', $4, 'active', true, $5::jsonb)`,
+            [accountId, p.id, connectorId, connectorSlug, JSON.stringify({ provider: providerType, connector_slug: connectorSlug })],
+          );
+          for (const action of actions) {
+            await db.query(
+              `INSERT INTO kortix.connector_actions (connector_id, path, name, description, input_schema, risk, binding)
+               VALUES ($1, $2, $3, $4, '{"type":"object"}'::jsonb, 'read', $5::jsonb)`,
+              [connectorId, action.path, action.path, action.path, JSON.stringify(action.binding)],
+            );
+          }
+        };
+        const route = (path: string) => ({ path, binding: { kind: 'openapi', method: 'GET', path: `/api/${path}`, server: base } });
+        await seed(slug.api, 'openapi', {}, [route('ok'), route('limited'), route('unavailable'), route('slow')]);
+        await seed(slug.mcp, 'mcp', { url: `${base}/mcp` }, [{ path: 'get_issue', binding: { kind: 'mcp', tool: 'get_issue' } }]);
+        await seed(slug.gql, 'graphql', { endpoint: `${base}/graphql` }, [
+          { path: 'issue', binding: { kind: 'graphql', operation: 'query', field: 'issue' } },
+        ]);
+      });
+
+      await ctx.step('an ok call → 200 with data unchanged plus binding, output and upstream_status', async () => {
+        const r = await call(slug.api, 'ok');
+        r.status(200)
+          .body()
+          .has('$.ok', true)
+          .has('$.binding', 'openapi')
+          .has('$.upstream_status', 200)
+          .has('$.data.items[1]', 2)
+          .has('$.output.items[1]', 2);
+      });
+
+      await ctx.step('upstream 429 → HTTP 429 with Retry-After: 2 and retry_after_seconds; reason unchanged', async () => {
+        const r = await call(slug.api, 'limited');
+        r.status(429)
+          .body()
+          .has('$.status', 'error')
+          .has('$.reason', 'upstream_429: {"message":"slow down"}')
+          .has('$.upstream_status', 429)
+          .has('$.retry_after_seconds', 2)
+          .has('$.binding', 'openapi');
+        if (r.header('retry-after') !== '2') throw new Error(`Retry-After: ${r.header('retry-after')}`);
+      });
+
+      await ctx.step('upstream 503 → HTTP 503 with Retry-After: 30', async () => {
+        const r = await call(slug.api, 'unavailable');
+        r.status(503).body().has('$.upstream_status', 503).has('$.retry_after_seconds', 30);
+        if (r.header('retry-after') !== '30') throw new Error(`Retry-After: ${r.header('retry-after')}`);
+      });
+
+      await ctx.step('an MCP isError result → 200 whose upstream_error carries the tool text', async () => {
+        const r = await call(slug.mcp, 'get_issue', { id: 'KE2E-1' });
+        r.status(200)
+          .body()
+          .has('$.ok', true)
+          .has('$.binding', 'mcp')
+          .has('$.upstream_error', 'Issue KE2E-1 does not exist')
+          .has('$.output[0].text', 'Issue KE2E-1 does not exist')
+          .has('$.data.result.isError', true);
+      });
+
+      await ctx.step('GraphQL errors with no data → 200 whose upstream_error names the GraphQL message', async () => {
+        const r = await call(slug.gql, 'issue', { id: 'KE2E-1', __select: 'id' });
+        r.status(200)
+          .body()
+          .has('$.binding', 'graphql')
+          .has('$.upstream_error', 'Entity not found: issue')
+          .has('$.output.issue', null);
+      });
+
+      await ctx.step('a hung upstream → 500 upstream_timeout at the deadline, and the upstream socket is closed', async () => {
+        const r = await call(slug.api, 'slow');
+        r.status(500).body().has('$.status', 'error').has('$.binding', 'openapi').has('$.upstream_status', null);
+        const reason = r.json<{ reason: string }>().reason;
+        if (!reason.startsWith(`upstream_timeout: ${slug.api}.slow did not answer within `)) {
+          throw new Error(`unexpected reason: ${reason}`);
+        }
+        await waitFor(() => slowClosedAfterMs, {
+          until: (ms) => ms >= 0,
+          timeoutMs: 5_000,
+          intervalMs: 100,
+          description: 'upstream socket closed',
+        });
+        if (slowClosedAfterMs >= 70_000) throw new Error(`the upstream ran to completion (${slowClosedAfterMs} ms)`);
+      });
+    } finally {
+      upstream.close();
+      upstream.closeAllConnections?.();
+      await db
+        .query(`DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = ANY($2)`, [p.id, Object.values(slug)])
+        .catch(() => {});
+      await db.end().catch(() => {});
+    }
+  },
+);
