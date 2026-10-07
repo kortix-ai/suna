@@ -12,9 +12,11 @@
  *   wake  = a fresh box from the current image with the same volume mounted;
  *           the daemon adopts the checkout and the pinned OpenCode root.
  *
- * Running processes and memory are lost by design. A box stopped before the
- * flag was on keeps its normal stop/resume once; its next stop copies its
- * state onto the volume first (`migrateBoxStateToVolume`).
+ * Running processes and memory are lost by design. A box that booted before the
+ * flag was on keeps its state on its own disk: its stop copies that state onto
+ * the volume first (`migrateBoxStateToVolume`), which needs the box running, so
+ * a box the provider already stopped gets a plain stop and migrates at the stop
+ * after its next resume.
  */
 
 import { projectSessions, sessionSandboxes } from '@kortix/db';
@@ -356,8 +358,11 @@ async function exec(externalId: string, script: string, timeoutMs: number): Prom
 
 /**
  * A box that booted before the flag was on: attach the session volume to it and
- * copy its state across, in the layout the entrypoint binds from. Runs once, at
- * the box's first stop under the flag; the box is still running.
+ * copy its state across, in the layout the entrypoint binds from. Runs at the
+ * box's stop under the flag while the box is still running, and on every retry:
+ * the box's own disk is the truth, so each run replaces what an earlier, failed
+ * attempt left on the volume (a box that fell back to a plain stop keeps
+ * working on its own disk after it).
  */
 export async function migrateBoxStateToVolume(externalId: string, sessionId: string): Promise<{ ms: number; bytes: number }> {
   const t0 = Date.now();
@@ -381,7 +386,8 @@ export async function migrateBoxStateToVolume(externalId: string, sessionId: str
   const root = SESSION_STATE_MOUNT;
   const copies = SESSION_STATE_DIRS.map(
     ([name, src]) =>
-      `if [ -d ${src} ] && [ ! -d ${root}/${name} ]; then mkdir -p ${root}/${name}.seed && cp -a ${src}/. ${root}/${name}.seed/ && mv ${root}/${name}.seed ${root}/${name}; fi`,
+      // Skip a directory already bound from the volume (copying it onto itself).
+      `if [ -d ${src} ] && [ "$(stat -c %d ${src})" != "$(stat -c %d ${root})" ]; then rm -rf ${root}/${name}.seed && mkdir -p ${root}/${name}.seed && cp -a ${src}/. ${root}/${name}.seed/ && rm -rf ${root}/${name} && mv ${root}/${name}.seed ${root}/${name}; fi`,
   ).join('\n');
   const script = [
     'set -eu',
@@ -458,8 +464,19 @@ export async function retireEphemeralBox(input: {
   let migrated = false;
   let migrateMs = 0;
   let commitMs = 0;
+  // A box that did not boot with the session volume (it predates the flag)
+  // keeps its state on its own disk. Only a running box can copy it across, and
+  // a volume that is merely attached (an earlier migration that failed after
+  // the attach) proves nothing about what is on it.
+  const legacy = !recordedSessionStateVolume(input.metadata);
+  if (legacy && before !== 'running' && before !== 'deleted') {
+    throw new EphemeralRetireError(
+      'migrate',
+      `box ${externalId} predates session volumes and is ${before}; its state is on its own disk, not retiring it`,
+    );
+  }
   if (before === 'running') {
-    if (!recordedSessionStateVolume(input.metadata) && !(await sandboxMountedSessionState(externalId))) {
+    if (legacy) {
       try {
         const m = await migrateBoxStateToVolume(externalId, sessionId);
         await recordSessionStateVolume(sessionId, sessionStateVolumeName(sessionId));
