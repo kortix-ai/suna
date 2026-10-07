@@ -137,7 +137,16 @@
       "privacy": "Privacy Policy"
     },
     "signOutFailed": "Unable to sign out. Check your connection and try again.",
-    "signingOut": "Signing out…"
+    "signingOut": "Signing out…",
+    "mfa": {
+      "title": "Verify it’s you",
+      "enterCode": "Enter the 6-digit code from your authenticator app.",
+      "codePlaceholder": "6-digit code",
+      "verify": "Verify",
+      "verifying": "Verifying…",
+      "invalidCode": "That code didn’t work. Check your authenticator app and try again.",
+      "useDifferentAccount": "Use a different account"
+    }
   },
   "onboarding": {
     "welcome": "See what Kortix can do",

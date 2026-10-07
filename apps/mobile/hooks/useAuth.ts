@@ -9,6 +9,7 @@ import { Platform, AppState, AppStateStatus } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { shouldUseRevenueCat } from '@/lib/billing/provider';
 import { consumeAuthCallbackState, createAuthCallbackRedirect } from '@/lib/auth/callback-state';
+import { mfaChallengeRequired, verifiedTotpFactor } from '@/lib/auth/mfa';
 import { admitMobileOAuthSession } from '@/lib/auth/mobile-admission';
 import { parsePersistedSession, sessionForNullAuthResult } from '@/lib/auth/persisted-session';
 import { sessionExpiry } from '@/lib/auth/session-expiry-monitor';
@@ -209,26 +210,30 @@ async function createSessionFromUrl(url: string) {
 /**
  * What the auth context shows. No `session`: a token refresh replaces it about
  * once an hour, and code that needs the token reads it at call time
- * (`getAuthToken`, `api/config.ts`).
+ * (`getAuthToken`, `api/config.ts`). `mfaRequired`: the session owes a TOTP
+ * code before it reaches the app (lib/auth/mfa).
  */
-export type UserState = Omit<AuthState, 'session'>;
+export type UserState = Omit<AuthState, 'session'> & { mfaRequired: boolean };
 
 /**
  * The state for a session from the restore or an auth event. The same user
  * with the same data keeps the previous object, so a token refresh does not
  * re-render every consumer of the auth context. Another user, changed user
- * data, or a change of signed-in state replaces it.
+ * data, a change of signed-in state, or a change of `mfaRequired` (a TOTP
+ * verify) replaces it.
  */
 function nextAuthState(prev: UserState, session: Session | null): UserState {
   const user = session?.user ?? null;
+  const mfaRequired = mfaChallengeRequired(session);
   if (
     !prev.isLoading &&
     prev.isAuthenticated === !!session &&
+    prev.mfaRequired === mfaRequired &&
     JSON.stringify(prev.user) === JSON.stringify(user)
   ) {
     return prev;
   }
-  return { user, isLoading: false, isAuthenticated: !!session };
+  return { user, isLoading: false, isAuthenticated: !!session, mfaRequired };
 }
 
 export function useAuth() {
@@ -239,6 +244,7 @@ export function useAuth() {
     user: null,
     isLoading: true,
     isAuthenticated: false,
+    mfaRequired: false,
   });
 
   const [error, setError] = useState<AuthError | null>(null);
@@ -1058,6 +1064,7 @@ export function useAuth() {
         user: null,
         isLoading: false,
         isAuthenticated: false,
+        mfaRequired: false,
       });
       setError(null);
     };
@@ -1121,6 +1128,32 @@ export function useAuth() {
 
   const clearOauthRejection = useCallback(() => setOauthRejection(null), []);
 
+  /**
+   * Completes the TOTP step-up with the verified TOTP factor. On success
+   * auth-js stores the aal2 session and emits MFA_CHALLENGE_VERIFIED, which
+   * clears `mfaRequired`. Returns the error (a wrong code has `code`
+   * `mfa_verification_failed`), or null. Never throws.
+   */
+  const verifyTotp = useCallback(
+    async (code: string): Promise<{ code?: string; message: string } | null> => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const factor = session ? verifiedTotpFactor(session.user) : undefined;
+        if (!factor) return { message: 'No authenticator app is set up for this account.' };
+        const { error: verifyError } = await supabase.auth.mfa.challengeAndVerify({
+          factorId: factor.id,
+          code,
+        });
+        return verifyError ? { code: verifyError.code, message: verifyError.message } : null;
+      } catch (err: any) {
+        return { message: err?.message || 'Could not verify the code.' };
+      }
+    },
+    []
+  );
+
   // Stable identity: AuthProvider passes this object as the context value, and
   // a fresh object every render re-renders every consumer.
   return useMemo(
@@ -1138,6 +1171,7 @@ export function useAuth() {
       resetPassword,
       updatePassword,
       signOut,
+      verifyTotp,
     }),
     [
       authState,
@@ -1153,6 +1187,7 @@ export function useAuth() {
       resetPassword,
       updatePassword,
       signOut,
+      verifyTotp,
     ]
   );
 }

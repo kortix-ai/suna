@@ -137,7 +137,16 @@
     "verifyEmailInstructions": "Clique no link do e-mail para verificar sua conta e faça login.",
     "browseAsGuest": "Navegar como convidado",
     "signOutFailed": "Não foi possível sair. Verifique sua conexão e tente novamente.",
-    "signingOut": "Saindo…"
+    "signingOut": "Saindo…",
+    "mfa": {
+      "title": "Confirme que é você",
+      "enterCode": "Digite o código de 6 dígitos do seu app autenticador.",
+      "codePlaceholder": "Código de 6 dígitos",
+      "verify": "Verificar",
+      "verifying": "Verificando…",
+      "invalidCode": "Esse código não funcionou. Confira seu app autenticador e tente novamente.",
+      "useDifferentAccount": "Usar outra conta"
+    }
   },
   "onboarding": {
     "welcome": "Veja o que o Kortix pode fazer",
