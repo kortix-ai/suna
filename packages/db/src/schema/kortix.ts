@@ -3670,6 +3670,16 @@ export const gatewayRequestLogs = kortixSchema.table(
       .on(table.projectId, table.createdAt)
       .where(sql`not ${table.ok}`),
     index('idx_gateway_logs_session').on(table.projectId, table.sessionId),
+    // Covering index for the per-session gateway rollup
+    // (listProjectGatewaySessionSpend, apps/api/src/shared/session-costs.ts):
+    // index-only scan in session_id order — no heap fetch, no sort. Built with
+    // INCLUDE (not expressible in drizzle-orm 0.45's index builder; the schema
+    // contract checks relation + uniqueness only) by
+    // 20261007050000009_gateway_logs_session_rollup_index.concurrent.ts — same
+    // pattern as idx_gateway_logs_project_failed_time.
+    index('idx_gateway_logs_project_session_time')
+      .on(table.projectId, table.sessionId, table.createdAt)
+      .where(sql`${table.sessionId} is not null`),
   ],
 );
 

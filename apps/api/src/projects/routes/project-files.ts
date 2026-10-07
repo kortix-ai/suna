@@ -13,6 +13,7 @@ import {
   listCommits,
   listRepoFiles,
   readRepoFile,
+  readRepoFileBytes,
   searchRepoFileNames,
 } from '../git';
 // From the leaf, not the barrel: suites that stub '../git' by listing its
@@ -265,6 +266,74 @@ export function registerProjectFilesRoutes(): void {
       // (Better Stack pattern `5b40ec1a…`). Keep `isMissingGitPathError` as a
       // backstop for genuine `GitOperationError`s carrying the raw `fatal: path
       // … does not exist in …` message from callers that bypass `readRepoFile`.
+      if (isRepoFileNotFoundError(error) || isMissingGitPathError(error)) {
+        return c.json({ error: 'File not found' }, 404);
+      }
+      throw error;
+    }
+  },
+  );
+
+  // GET /v1/projects/:projectId/files/raw?path=...&ref=...
+  // Streams a file's exact bytes. `/files/content` captures `git show` stdout as
+  // a UTF-8 string, which corrupts every byte that is not valid UTF-8, so the
+  // file previews (and downloads) on the project files page had no honest way to
+  // read a PNG, PDF or DOCX. The response is always bytes; the client classifies
+  // text vs binary (the same NUL-byte heuristic the sandbox daemon uses).
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/files/raw',
+      tags: ['files'],
+      summary: 'Read a file\u2019s raw bytes from the project repository',
+      ...auth,
+        request: {
+          params: z.object({ projectId: z.string() }),
+          query: z.object({}).passthrough(),
+        },
+      responses: {
+          200: { description: 'Raw file bytes', content: { 'application/octet-stream': { schema: z.any() } } },
+          ...errors(400, 404),
+      },
+    }),
+    async (c) => {
+    const projectId = c.req.param('projectId');
+    const path = normalizeString(c.req.query('path'));
+    if (!path) return c.json({ error: 'path query param is required' }, 400);
+    // Absolute and traversal paths can never resolve inside the repo tree —
+    // same answer as files/content.
+    if (path.startsWith('/') || path.includes('..')) {
+      return c.json({ error: 'File not found' }, 404);
+    }
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);
+
+    // Visibility isolation: a scoped-out member can't read the raw bytes of an
+    // agent/skill they aren't granted — the same 404 as a missing file, so the
+    // path isn't even confirmed to exist. Mirrors files/content (above).
+    const denier = await resourceDenierForRequest({
+      userId: loaded.userId,
+      accountId: loaded.row.accountId,
+      projectId,
+      actingTokenId: (c.get('iamTokenId') as string | undefined) ?? undefined,
+      row: loaded.row,
+    });
+    if (denier?.isDenied(path)) return c.json({ error: 'File not found' }, 404);
+
+    const ref = c.req.query('ref') || loaded.row.defaultBranch;
+    try {
+      const bytes = await readRepoFileBytes(await withProjectGitAuth(loaded.row), path, ref, { freshOnMiss: true });
+      return new Response(new Uint8Array(bytes), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Cache-Control': 'no-store',
+        },
+      });
+    } catch (error) {
+      if (isGitRefNotFoundError(error)) return c.json({ error: 'ref not found' }, 404);
       if (isRepoFileNotFoundError(error) || isMissingGitPathError(error)) {
         return c.json({ error: 'File not found' }, 404);
       }
