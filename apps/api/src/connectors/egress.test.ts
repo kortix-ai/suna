@@ -92,7 +92,8 @@ describe('connector egress fetch', () => {
     await expect(egress('https://api.example.com/x', { method: 'GET', headers: {} })).rejects.toThrow(
       /^connector_egress_blocked: /,
     );
-    expect(fetchCalls).toEqual(['https://api.example.com/x']);
+    // The hop connects to the address it resolved (DNS pin), not the name.
+    expect(fetchCalls).toEqual(['https://93.184.216.34/x']);
   });
 
   test('the refusal never echoes the URL query, where query credentials live', async () => {

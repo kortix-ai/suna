@@ -148,6 +148,8 @@ export default defineConfig({
     timeout: deployedTarget ? 45_000 : 30_000,
   },
   fullyParallel: true,
+  // A committed `test.only` would silently drop every other journey from the run.
+  forbidOnly: true,
   retries: deployedTarget ? deployedRetries : process.env.CI ? 2 : 0,
   workers,
   reporter: [

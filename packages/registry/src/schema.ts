@@ -55,16 +55,6 @@ export type ShadcnItemType = (typeof SHADCN_ITEM_TYPES)[number];
 export type KortixItemType = (typeof KORTIX_ITEM_TYPES)[number];
 export type RegistryItemType = (typeof ALL_ITEM_TYPES)[number];
 
-/** Item types that the Kortix gallery treats as first-class agent primitives. */
-export const KORTIX_PRIMITIVE_TYPES: readonly KortixItemType[] = [
-  'registry:skill',
-  'registry:agent',
-  'registry:command',
-  'registry:tool',
-  'registry:trigger',
-  'registry:connector',
-];
-
 /**
  * Target placeholders. A file's `target` may start with one of these aliases;
  * the installer expands it against the consuming project's resolved layout

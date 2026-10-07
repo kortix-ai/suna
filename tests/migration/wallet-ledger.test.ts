@@ -109,7 +109,7 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
   let honesty: typeof import('../../apps/api/src/billing/ledger-type-honesty');
 
   beforeAll(async () => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
     const up = sh([
       'docker', 'run', '-d', '--name', CONTAINER,
       '-e', 'POSTGRES_PASSWORD=postgres', '-e', 'POSTGRES_USER=postgres', '-e', 'POSTGRES_DB=postgres',
@@ -117,11 +117,16 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
       'postgres:16-alpine', '-c', 'fsync=off', '-c', 'synchronous_commit=off', '-c', 'full_page_writes=off',
     ]);
     if (!up.ok) throw new Error(`could not start test container: ${up.stderr}`);
+    // Poll until ready and let the last poll be the proof: a second poll
+    // after the loop races a loaded Docker daemon (a failed exec reads as
+    // "not ready") and throws right after a successful poll.
+    let ready = false;
     for (let i = 0; i < 60; i++) {
-      if (pgReady()) break;
+      ready = pgReady();
+      if (ready) break;
       await Bun.sleep(1000);
     }
-    if (!pgReady()) throw new Error('test Postgres never became ready');
+    if (!ready) throw new Error('test Postgres never became ready');
     const code = await runMigrate(ROOT, ports);
     if (code !== 0) throw new Error('migrations failed');
 
@@ -162,7 +167,7 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
 
   afterAll(async () => {
     await database?.$client.end({ timeout: 5 });
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
   });
 
   describe('grant', () => {
@@ -605,6 +610,20 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
       });
       expect(row!.expires_at).not.toBeNull();
       expect(account(id)).toMatchObject({ balance: 54, expiring: 50, non_expiring: 4, daily: 1 });
+    });
+
+    // reset_expiring_credits used NUMERIC(10, 2) variables: a preserved
+    // non-expiring bucket of 12.3456 became 12.35 and a debt of -0.004 became 0.
+    test('keeps the preserved non-expiring bucket and a small debt at full precision', async () => {
+      const funded = newAccount({ expiring: 3, nonExpiring: 12.3456 });
+      await wallet.reset({ accountId: funded, amount: 50, description: 'Monthly renewal', key: { event: 'in_p1' } });
+      expect(account(funded)!.non_expiring).toBeCloseTo(12.3456, 6);
+      expect(account(funded)!.balance).toBeCloseTo(62.3456, 6);
+
+      const indebted = newAccount({ nonExpiring: -0.004 });
+      await wallet.reset({ accountId: indebted, amount: 50, description: 'Monthly renewal', key: { event: 'in_p2' } });
+      expect(account(indebted)!.non_expiring).toBeCloseTo(-0.004, 6);
+      expect(account(indebted)!.balance).toBeCloseTo(49.996, 6);
     });
 
     test('a replayed reset key is a silent no-op', async () => {

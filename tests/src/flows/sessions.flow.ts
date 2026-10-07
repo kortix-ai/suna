@@ -2286,6 +2286,7 @@ flow(
     const put = (as: typeof owner, body: unknown, id = sessionId) =>
       as.put(url, body, { params: { projectId: project.id, sessionId: id } });
     const tabId = crypto.randomUUID();
+    const sandboxId = crypto.randomUUID();
     const databaseUrl = ctx.env.databaseUrl as string;
     const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
     const db = new Client({ connectionString: databaseUrl, ssl: local ? false : { rejectUnauthorized: false } });
@@ -2315,11 +2316,30 @@ flow(
         }
       });
 
+      // KRTX-1729: each presence ping granted 30 minutes, so a tab left visible
+      // kept the computer up all night. A ping grants the idle grace (15 min).
+      await ctx.step('a present owner keeps the computer awake by the idle grace, not 30 minutes', async () => {
+        await db.query(
+          `INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status)
+           VALUES ($1::uuid, $2, $3, $4, 'active')`,
+          [sandboxId, sessionId, project.accountId, project.id],
+        );
+        await db.query("UPDATE kortix.session_sandboxes SET deadline_at = now() + interval '1 minute' WHERE sandbox_id = $1::uuid", [sandboxId]);
+        (await put(owner, { tab_id: tabId, active: true })).status(200);
+        const { rows } = await db.query(
+          'SELECT extract(epoch from (deadline_at - now()))::int AS secs FROM kortix.session_sandboxes WHERE sandbox_id = $1::uuid',
+          [sandboxId],
+        );
+        const minutes = Number(rows[0]?.secs) / 60;
+        if (!(minutes > 10 && minutes <= 16)) throw new Error(`deadline is ${minutes.toFixed(1)} min away, expected the 15-min idle grace`);
+      });
+
       await ctx.step('active=false clears the lease', async () => {
         (await put(owner, { tab_id: tabId, active: false })).status(200).body().has('$.ok', true);
         if ((await leases()).length !== 0) throw new Error('lease not cleared');
       });
     } finally {
+      await db.query('DELETE FROM kortix.session_sandboxes WHERE sandbox_id = $1::uuid', [sandboxId]).catch(() => {});
       await db.end();
     }
   },

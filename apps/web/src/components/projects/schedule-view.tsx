@@ -73,6 +73,7 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   type TriggerKind,
   describeWhen,
+  isCustomerTrigger,
   isTriggerKind,
   localizedKindCopy,
   localizedTriggersCopy,
@@ -82,6 +83,7 @@ import {
 import { ScheduleCreateModal } from './schedule/schedule-create-modal';
 import { ScheduleDetailSheet } from './schedule/schedule-detail-sheet';
 import { ScheduleTable } from './schedule/schedule-table';
+import { useTriggerControls } from './schedule/trigger-controls';
 
 /**
  * Pure — no hooks, no data fetching. Renders the pause switch for a MANAGER
@@ -223,8 +225,9 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   const copy = localizedTriggersCopy(tI18nComplete);
   const kindCopy = localizedKindCopy(tI18nComplete);
   const queryClient = useQueryClient();
-  const canWrite =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE).allowed === true;
+  // One leaf per control, the same as on the Agent page (KRTX-1720).
+  const controls = useTriggerControls(projectId);
+  const canWrite = controls.canCreate;
 
   // Same entity/fetcher `TriggersActivationCard` above reads — both must share
   // this key, via `qk.project.triggers`, or a pause in one goes unseen in the
@@ -233,8 +236,8 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   const triggersQuery = useQuery({
     queryKey,
     queryFn: () => listProjectTriggers(projectId),
-    refetchInterval: 10_000,
     ...contract('config'),
+    refetchInterval: 10_000,
   });
 
   const [query, setQuery] = useState('');
@@ -313,8 +316,15 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   // Both kinds, together — the create flow is where a person picks one.
   // `isTriggerKind` also drops `monitor`-type entries: a separate
   // experimental feature that shares this backend list but not this screen.
+  // `isCustomerTrigger` then hides the reflector cron the starter seeds into
+  // every new project: hiding it keeps the empty state reachable on a fresh
+  // project without making the customer delete a trigger they never created.
+  // It still schedules and fires — this is display only.
   const triggers = useMemo(
-    () => (triggersQuery.data?.triggers ?? []).filter((t) => isTriggerKind(t.type)),
+    () =>
+      (triggersQuery.data?.triggers ?? []).filter(
+        (t) => isTriggerKind(t.type) && isCustomerTrigger(t),
+      ),
     [triggersQuery.data],
   );
   const filtered = useMemo(
@@ -444,7 +454,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
         ) : (
           <ScheduleTable
             triggers={filtered}
-            canWrite={canWrite}
+            controls={controls}
             runningSlug={run.isPending ? (run.variables?.slug ?? null) : null}
             togglingSlug={toggle.isPending ? (toggle.variables?.slug ?? null) : null}
             onOpen={(t) => setSelectedSlug(t.slug)}
@@ -487,7 +497,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
       <ScheduleDetailSheet
         projectId={projectId}
         trigger={selected}
-        canWrite={canWrite}
+        controls={controls}
         open={!!selected}
         onOpenChange={(next) => {
           if (!next) setSelectedSlug(null);

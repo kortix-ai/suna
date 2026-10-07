@@ -120,10 +120,10 @@ describe('pi config releases: boot', () => {
     })
     expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(governance('from release one'))
     expect(env.KORTIX_COMPILED_AGENT_CONFIG_ETAG).toBe(one.descriptor.compiled_governance_etag!)
-    expect(skillsOf(releases)).toEqual([`${id}/skills`])
-    expect(existsSync(join(releaseDir(root, id), 'skills', 'deploy', 'SKILL.md'))).toBe(true)
+    expect(skillsOf(releases)).toEqual([`${id}/skills`, `${id}/.kortix/opencode/skills`])
+    expect(existsSync(join(releaseDir(root, id), DIR, 'skills', 'deploy', 'SKILL.md'))).toBe(true)
     // Sealed: an agent's write fails where it happens.
-    expect(statSync(join(releaseDir(root, id), 'skills', 'deploy', 'SKILL.md')).mode & 0o222).toBe(0)
+    expect(statSync(join(releaseDir(root, id), DIR, 'skills', 'deploy', 'SKILL.md')).mode & 0o222).toBe(0)
     expect((await readBootConfigPointer(root))?.release_id).toBe(id)
     expect(releases.sourceCommit()).toBe(one.descriptor.source_commit)
     expect(releases.governanceOwned()).toBe(true)
@@ -199,7 +199,7 @@ describe('pi config releases: boot', () => {
     api.respond({
       status: 200,
       json: {
-        format: 'config-release-v1',
+        format: 'config-release-v2',
         release_id: null,
         mode: 'follow-base',
         source_commit: null,
@@ -237,7 +237,7 @@ describe('pi config releases: convergence', () => {
     expect(applied.config).toMatchObject({ release_id: two.descriptor.release_id, desired_release_id: two.descriptor.release_id, source: 'release', proven: true })
     expect(runtime.state.reconfigures).toBe(1)
     expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(governance('from release two'))
-    expect(skillsOf(releases)).toEqual([`${two.descriptor.release_id}/skills`])
+    expect(skillsOf(releases)).toEqual([`${two.descriptor.release_id}/skills`, `${two.descriptor.release_id}/.kortix/opencode/skills`])
     expect(releases.notice()).toContain(two.descriptor.source_commit!.slice(0, 12))
     expect((await readBootConfigPointer(root))?.release_id).toBe(two.descriptor.release_id!)
 
@@ -307,7 +307,7 @@ describe('pi config releases: convergence', () => {
     // The refused config was tried, then the previous one was put back.
     expect(runtime.state.reconfigures).toBe(2)
     expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(governance('from release one'))
-    expect(skillsOf(releases)).toEqual([`${one.descriptor.release_id}/skills`])
+    expect(skillsOf(releases)).toEqual([`${one.descriptor.release_id}/skills`, `${one.descriptor.release_id}/.kortix/opencode/skills`])
     expect(releases.notice()).toContain(one.descriptor.source_commit!.slice(0, 12))
     expect(Object.keys(await readQuarantine(root))).toEqual([two.descriptor.release_id!])
 
@@ -368,30 +368,30 @@ describe('pi config releases: convergence', () => {
     expect((await first).outcome).toBe('applied')
   })
 
-  test("the release's pi/ is pi's config dir: a pi skill reconfigures, an extension restarts", async () => {
-    write(repo, `${DIR}/pi/extensions/hello.ts`, 'export default function () {}\n')
+  test("the release's harnesses/pi is pi's config dir: a pi skill reconfigures, an extension restarts", async () => {
+    write(repo, 'harnesses/pi/extensions/hello.ts', 'export default function () {}\n')
     const one = release('deploy', 'from release one')
     serveRelease(api, one)
     const { releases } = create()
     await releases.boot()
-    expect(releases.piConfigDir()).toBe(join(releaseDir(root, one.descriptor.release_id!), 'pi'))
+    expect(releases.piConfigDir()).toBe(join(releaseDir(root, one.descriptor.release_id!), 'harnesses/pi'))
     const runtime = fakeRuntime()
 
-    write(repo, `${DIR}/pi/skills/native/SKILL.md`, '---\nname: native\ndescription: a pi-native skill\n---\nBody.\n')
+    write(repo, 'harnesses/pi/skills/native/SKILL.md', '---\nname: native\ndescription: a pi-native skill\n---\nBody.\n')
     const two = buildRelease(repo, commitAll(repo, 'pi skill'), DIR, { projectId: 'proj-1', governance: governance('two') })
     serveRelease(api, two)
     expect((await releases.converge(runtime)).outcome).toBe('applied')
     expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 0 })
-    expect(releases.piConfigDir()).toBe(join(releaseDir(root, two.descriptor.release_id!), 'pi'))
+    expect(releases.piConfigDir()).toBe(join(releaseDir(root, two.descriptor.release_id!), 'harnesses/pi'))
 
-    write(repo, `${DIR}/pi/extensions/hello.ts`, 'export default function () { return 2 }\n')
+    write(repo, 'harnesses/pi/extensions/hello.ts', 'export default function () { return 2 }\n')
     const three = buildRelease(repo, commitAll(repo, 'extension v2'), DIR, { projectId: 'proj-1', governance: governance('two') })
     serveRelease(api, three)
     expect((await releases.converge(runtime)).outcome).toBe('applied')
     expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 1 })
   })
 
-  test('a release without pi/ leaves pi no config dir; with releases off pi resolves the working tree', async () => {
+  test('a release without a pi config dir leaves pi none; with releases off pi resolves the working tree', async () => {
     serveRelease(api, release('deploy', 'from release one'))
     const on = create()
     await on.releases.boot()

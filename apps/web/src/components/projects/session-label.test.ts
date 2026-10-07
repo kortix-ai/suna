@@ -223,6 +223,45 @@ describe('matchesSourceFilters', () => {
     expect(matchesSourceFilters(teams, ['teams'], testUiTranslator)).toBe(true);
     expect(matchesSourceFilters(teams, ['slack'], testUiTranslator)).toBe(false);
   });
+
+  // A manual `kortix triggers fire <slug>` stamps `trigger_source: 'manual'` on
+  // the spawned session (apps/api/src/projects/routes/triggers.ts). The list
+  // must not fold that run into the trigger's declared kind: "why did this
+  // run" needs the fire origin, not just the trigger.
+  test('a manual fire of a cron trigger reads manual, not scheduled', () => {
+    const manual = makeSession({
+      metadata: { trigger_source: 'manual', trigger_type: 'cron', trigger_slug: 'dogfood-cron' },
+    });
+    const scheduled = makeSession({
+      metadata: { trigger_source: 'cron', trigger_type: 'cron', trigger_slug: 'dogfood-cron' },
+    });
+    expect(sessionSource(manual, testUiTranslator)).toMatchObject({
+      kind: 'manual',
+      triggerSlug: 'dogfood-cron',
+    });
+    expect(sessionSource(manual, testUiTranslator).label).not.toBe(
+      sessionSource(scheduled, testUiTranslator).label,
+    );
+    expect(matchesSourceFilters(manual, ['manual'], testUiTranslator)).toBe(true);
+    expect(matchesSourceFilters(manual, ['schedule'], testUiTranslator)).toBe(false);
+  });
+
+  test('a scheduled fire of the same trigger keeps its kind', () => {
+    const scheduled = makeSession({
+      metadata: { trigger_source: 'cron', trigger_type: 'cron', trigger_slug: 'dogfood-cron' },
+    });
+    const webhook = makeSession({
+      metadata: { trigger_source: 'webhook', trigger_type: 'webhook', trigger_slug: 'dogfood-hook' },
+    });
+    expect(sessionSource(scheduled, testUiTranslator)).toMatchObject({
+      kind: 'schedule',
+      triggerSlug: 'dogfood-cron',
+    });
+    expect(sessionSource(webhook, testUiTranslator)).toMatchObject({
+      kind: 'webhook',
+      triggerSlug: 'dogfood-hook',
+    });
+  });
 });
 
 describe('mention markup in titles', () => {

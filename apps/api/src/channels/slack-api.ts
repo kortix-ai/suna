@@ -18,8 +18,6 @@ const TRANSIENT_SLACK_ERRORS = new Set([
   'request_timeout',
 ]);
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
 /**
  * Slack's read methods drop a JSON body. A call site that forgot `form: true`
  * failed silently twice: users.info (2026-08-19) and conversations.info
@@ -84,7 +82,7 @@ async function slackApiCall(
         const retryAfter = Number(res.headers.get('retry-after')) || attempt;
         last = { ok: false, error: 'ratelimited' };
         if (attempt < maxAttempts) {
-          await sleep(Math.min(retryAfter, 5) * 1000);
+          await Bun.sleep(Math.min(retryAfter, 5) * 1000);
           continue;
         }
         return last;
@@ -93,7 +91,7 @@ async function slackApiCall(
         last = { ok: false, error: `http_${res.status}` };
         // May have been processed server-side — only retry idempotent calls.
         if (idempotent && attempt < maxAttempts) {
-          await sleep(attempt * 400);
+          await Bun.sleep(attempt * 400);
           continue;
         }
         return last;
@@ -103,7 +101,7 @@ async function slackApiCall(
         const err = data.error ?? '';
         // 'ratelimited' is always safe; other transient errors only for idempotent.
         if (err === 'ratelimited' || (idempotent && TRANSIENT_SLACK_ERRORS.has(err))) {
-          await sleep(attempt * 400);
+          await Bun.sleep(attempt * 400);
           continue;
         }
       }
@@ -113,13 +111,18 @@ async function slackApiCall(
       // have been sent. Either way, only retry idempotent calls.
       last = { ok: false, error: (err as Error)?.name === 'TimeoutError' ? 'timeout' : 'network_error' };
       if (idempotent && attempt < maxAttempts) {
-        await sleep(attempt * 400);
+        await Bun.sleep(attempt * 400);
         continue;
       }
       return last;
     }
   }
   return last;
+}
+
+/** files.info: the file and the conversations it is shared in. */
+export async function getFileInfo(token: string, fileId: string): Promise<SlackApiResult> {
+  return slackApiCall(token, 'files.info', { file: fileId });
 }
 
 // Posts a plain message. Returns the message ts (needed to delete it later).

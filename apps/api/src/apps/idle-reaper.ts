@@ -4,18 +4,30 @@ import { pauseComputeSession } from '../billing/services/compute-metering';
 import { type SandboxProviderName } from '../config';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
-import { runWorkerTick } from '../shared/audit-scope';
 import { AppHostingProvider } from './hosting';
 
 let running = false;
-const state = globalThis as unknown as {
-  __kortixAppsIdleTimer?: ReturnType<typeof setInterval> | null;
-};
+
+/**
+ * A reaper that died between claiming a runtime (`stopping`) and finishing the
+ * stop (a deploy, a leader flap) leaves the row `stopping`. Nothing reads that
+ * state, so the box kept running and billing. Past this age the row is handed
+ * back to `running`; the next selection stops it again, and `hosting.stop` is
+ * idempotent.
+ */
+export const STALE_STOPPING_MS = 3 * 60_000;
 
 export async function runAppIdleReaper(now = new Date()): Promise<{ candidates: number; stopped: number; errors: number }> {
   if (running) return { candidates: 0, stopped: 0, errors: 0 };
   running = true;
   try {
+    await db
+      .update(appRuntimes)
+      .set({ status: 'running', updatedAt: now })
+      .where(and(
+        eq(appRuntimes.status, 'stopping'),
+        lt(appRuntimes.updatedAt, new Date(now.getTime() - STALE_STOPPING_MS)),
+      ));
     const rows = await db
       .select({ runtime: appRuntimes, app: apps })
       .from(appRuntimes)
@@ -72,20 +84,4 @@ export async function runAppIdleReaper(now = new Date()): Promise<{ candidates: 
   }
 }
 
-export function startAppIdleReaper(): void {
-  if (process.env.KORTIX_APPS_IDLE_REAPER_ENABLED === 'false') return;
-  stopAppIdleReaper();
-  const interval = Math.max(5_000, Number(process.env.KORTIX_APPS_IDLE_REAPER_INTERVAL_MS) || 30_000);
-  state.__kortixAppsIdleTimer = setInterval(() => {
-    void runWorkerTick('app-idle-reaper', runAppIdleReaper).catch((error) => logger.error('[apps] idle reaper failed', {
-      error: error instanceof Error ? error.message : String(error),
-    }));
-  }, interval);
-}
-
-export function stopAppIdleReaper(): void {
-  if (state.__kortixAppsIdleTimer) {
-    clearInterval(state.__kortixAppsIdleTimer);
-    state.__kortixAppsIdleTimer = null;
-  }
-}
+export { startAppIdleReaper, stopAppIdleReaper } from '../workers/app-idle-reaper-worker';

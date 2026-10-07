@@ -56,4 +56,12 @@ describe('loopback subdomains — the Cloudflare WAF workaround', () => {
   test('refuses a bare .localhost with no label', () => {
     expect(validateCallback('http://.localhost:64169/callback').ok).toBe(false);
   });
+
+  test('accepts the IPv6 loopback literal', () => {
+    expect(validateCallback('http://[::1]:64169/callback').ok).toBe(true);
+  });
+
+  test('refuses a local sandbox preview host', () => {
+    expect(validateCallback('http://p3000-sbx-abc.localhost:8008/callback').ok).toBe(false);
+  });
 });

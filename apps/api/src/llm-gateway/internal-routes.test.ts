@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test';
 import { GatewayResolutionError } from '@kortix/llm-gateway';
+import { platformDefaultModelId } from './models/served-managed-models';
 
 // The internal routes the standalone gateway pod calls, through the real Hono
 // app and the real model catalog. Mocked: resolveCandidates, the servable
@@ -84,6 +85,15 @@ const actualOpencode = await import('./credentials/opencode-console');
 mock.module('./credentials/opencode-console', () => ({
   ...actualOpencode,
   refreshRefusedOpencodeLogin: async () => opencodeResult,
+}));
+
+const cooledDown: Array<[string, string, number]> = [];
+const realAccountResource = await import('../secrets/account-resource');
+mock.module('../secrets/account-resource', () => ({
+  ...realAccountResource,
+  coolDownAccountSecret: async (secretId: string, accountId: string, seconds: number) => {
+    cooledDown.push([secretId, accountId, seconds]);
+  },
 }));
 
 const { createInternalGatewayRoutes } = await import('./internal-routes');
@@ -232,13 +242,13 @@ describe('POST /models managedOnly', () => {
     expect(Object.keys(full).length).toBeGreaterThan(Object.keys(gatewayModelCatalog(undefined)).length);
   });
 
-  test('a free-tier account gets an empty managed set', async () => {
+  test('a free-tier account gets only the platform default', async () => {
     const managed = await models({
       principal: { userId: 'u', accountId: 'a', projectId: 'p', keyId: 'k', freeModelsOnly: true },
       managedOnly: true,
     });
 
-    expect(managed).toEqual({});
+    expect(Object.keys(managed)).toEqual([platformDefaultModelId()]);
   });
 });
 
@@ -362,5 +372,31 @@ describe('POST /refresh-credential', () => {
     expect((await post({ ...body, principal: { accountId: ACCOUNT, userId: USER } })).status).toBe(400);
     expect((await post(body, 'Bearer wrong')).status).toBe(401);
     expect(refreshCalls).toEqual([]);
+  });
+});
+
+describe('POST /pool-rate-limit', () => {
+  const ACCOUNT = '22222222-2222-4222-8222-222222222222';
+  const SECRET = '44444444-4444-4444-8444-444444444444';
+  const post = (seconds: number) =>
+    app().request('http://test/pool-rate-limit', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify({
+        principal: { accountId: ACCOUNT, sessionId: '55555555-5555-4555-8555-555555555555' },
+        secretId: SECRET,
+        seconds,
+      }),
+    });
+
+  // The gateway rests a ChatGPT account until its plan limit resets (days).
+  // A 60 s cap here answered 400, and no rest was recorded at all.
+  test('records a rest of days for a usage limit, and refuses one past a week and a day', async () => {
+    cooledDown.length = 0;
+    expect((await post(414_374)).status).toBe(200);
+    expect(cooledDown).toEqual([[SECRET, ACCOUNT, 414_374]]);
+    expect((await post(8 * 24 * 60 * 60 + 1)).status).toBe(400);
+    expect((await post(0)).status).toBe(400);
+    expect(cooledDown).toHaveLength(1);
   });
 });

@@ -23,8 +23,8 @@ import { chipAccessibilityLabel, chipText, type ChipKind } from '@/lib/session/m
 import { webSpace } from '@/lib/session/user-message';
 import { usePressScale } from './use-press-scale';
 
-/** The bubble's text size (web `text-[0.9rem]`). */
-const BUBBLE_FONT_SIZE = 14.4;
+/** The bubble's text size: 13, under web's `text-[0.9rem]` (`user-message.tsx` BUBBLE_TEXT_STYLE). */
+const BUBBLE_FONT_SIZE = 13;
 /** `text-[0.95em]` of the bubble text. */
 const CHIP_FONT_SIZE = BUBBLE_FONT_SIZE * 0.95;
 const CHIP_LINE_HEIGHT = 18;

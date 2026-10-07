@@ -60,7 +60,7 @@ import { SessionParticipantsSheet } from '@/components/session/SessionParticipan
 import { SubAgentHeaderChip } from '@/components/session/SubAgentHeaderChip';
 import { SubAgentListSheet } from '@/components/session/SubAgentListSheet';
 import { useComposerModels, useProjectDetail, useSessionMessageAuthors, useSessionParticipants } from '@/lib/projects/hooks';
-import { messageAvatarPerson, type AvatarPerson } from '@/lib/session/participants';
+import { messageAvatarPerson, messageSessionAuthor, type AvatarPerson } from '@/lib/session/participants';
 import { ParticipantAvatar } from '@/components/session/ParticipantAvatar';
 import { latestAssistantAgent, threadAgents } from '@/lib/session/composer-config';
 import { isModelUnavailable } from '@/lib/session/composer-model';
@@ -96,9 +96,10 @@ import {
   extractSendErrorMessage,
   promptRuntimeMessage,
   rejectQuestion,
-  SESSION_PROMPTS_IDLE_POLL_MS,
   usePermissionSelfHeal,
   useQuestionSelfHeal,
+  useSessionPrompts,
+  useSessionStreamConnected,
   useRuntimeCommands,
   useRuntimeConfig,
   useRuntimeSession,
@@ -114,7 +115,9 @@ import {
   groupMessagesIntoTurns,
   listSessionPrompts,
   retrySessionPrompt,
+  sessionPromptActions,
   type SessionPrompt,
+  type SessionPromptDelivery,
   resolveWorkingTurn,
 } from '@kortix/sdk';
 import * as Crypto from 'expo-crypto';
@@ -168,7 +171,7 @@ import { useToast } from '@/components/kortix/toast-provider';
 import { pinnedPermission } from '@/lib/session/permission-prompt';
 import { useTabStore } from '@/stores/tab-store';
 import { useMessageQueueStore } from '@/stores/message-queue-store';
-import { queueHeaderLabel } from '@/lib/session/queue-undo';
+import { queueHeaderLabel, queueRowCaption } from '@/lib/session/queue-undo';
 import { useSessionPromptRequestStore } from '@/stores/session-prompt-request-store';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import type { Command } from '@/lib/session/runtime-data';
@@ -280,6 +283,7 @@ const PULL_REFRESH_SPINNER_MS = 800;
 
 /** Keeps the first visible turn in place while older turns prepend (COR-144). */
 const MAINTAIN_FIRST_VISIBLE = { minIndexForVisible: 0 } as const;
+const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 1 } as const;
 /**
  * iOS: the list draws past its bottom edge. The keyboard is Liquid Glass and
  * shows what lies under it; the list ends at the composer, so without this
@@ -369,8 +373,12 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // runtime is bound, then the live stream. The newest page only: `loadOlder`
   // pulls the next older page (COR-144).
   const kortixSessionScope = projectId && projectSessionId ? `${projectId}/${projectSessionId}` : undefined;
+  // The session stream (R5.3): while it is up, the SDK's tail and ask polls
+  // stand down — the box's ring replays what a reconnect missed.
+  const streamConnected = useSessionStreamConnected(projectId ?? '', projectSessionId ?? '');
   const { hasOlder, isLoadingOlder, loadOlder, retryTranscript } = useSessionSync(sessionId, {
     kortixSessionScope,
+    streamConnected,
     networkEnabled: runtimeReady,
     savedChild: isSubThread,
     // The rows are read below, paced: a streamed delta does not re-render this hook.
@@ -436,8 +444,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // is lost, and the agent then waits on a blocked tool call with nothing
   // above the composer. The SDK re-reads the runtime's pending lists while a
   // question tool (or a gated tool) runs with nothing pending in the store.
-  useQuestionSelfHeal(sessionId, safeMessages, { enabled: runtimeReady });
-  usePermissionSelfHeal(sessionId, safeMessages, { enabled: runtimeReady });
+  useQuestionSelfHeal(sessionId, safeMessages, { enabled: runtimeReady && !streamConnected });
+  usePermissionSelfHeal(sessionId, safeMessages, { enabled: runtimeReady && !streamConnected });
 
   // ── Message Queue ──────────────────────────────────────────────────────
   const [queuedMessages, setQueuedMessages] = useState<SessionPrompt[]>(EMPTY_PROMPTS);
@@ -479,19 +487,27 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     return () => { cancelled = true; };
   }, [projectId, projectSessionId, sessionId, refreshQueue]);
 
-  // Every 3 s while prompts wait or the agent works. An empty queue on an idle
-  // thread is still read, every 15 s (the SDK's idle floor): the server can
-  // hand a prompt back, or another device can queue one. A send, a queue
-  // action and the end of a turn read it at once.
-  const queuePollMs = queuedMessages.length > 0 || isBusy ? 3000 : SESSION_PROMPTS_IDLE_POLL_MS;
+  // The SDK's queue (R5.3): every inbox write arrives on the session stream
+  // as a `kortix.control.queue` frame, and it polls only while that stream is
+  // down. A send and a queue action still read the list at once.
+  const sdkQueue = useSessionPrompts(projectId, projectSessionId);
+  useEffect(() => {
+    setQueueRows(sdkQueue.prompts);
+  }, [sdkQueue.prompts, setQueueRows]);
+  // One read when the page opens, so the queue paints with the page.
   useEffect(() => {
     void refreshQueue();
-    if (!projectId || !projectSessionId) return;
-    const timer = setInterval(() => void refreshQueue(), queuePollMs);
-    return () => clearInterval(timer);
-  }, [projectId, projectSessionId, refreshQueue, queuePollMs]);
+  }, [refreshQueue]);
 
-  const handleEnqueue = useCallback(async (text: string, options: PromptOptions, mentions?: TrackedMention[]) => {
+  // The composer calls this while a turn runs: the running turn reads the
+  // message at its next step (`steer`, D9.1). A prompt request from another
+  // screen waits for the turn (`queue`).
+  const handleEnqueue = useCallback(async (
+    text: string,
+    options: PromptOptions,
+    mentions?: TrackedMention[],
+    delivery: SessionPromptDelivery = 'steer',
+  ) => {
     if (!projectId || !projectSessionId) {
       toast.error('No project session to queue a prompt');
       throw new Error('No project session to queue a prompt');
@@ -509,7 +525,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     try {
       const result = await createSessionPrompt(projectId, projectSessionId, {
         clientMessageId, messageId, parts: [{ type: 'text', text: finalText }],
-        placement: 'composer', clientSentAtMs: nowMs,
+        delivery, clientSentAtMs: nowMs,
         overrides: { agent: options.agent ?? null, model: options.model ?? null, variant: options.variant ?? null },
       });
       if (result.state === 'failed') throw new Error('Prompt delivery was refused');
@@ -858,7 +874,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     const request = store.take(sessionId) ?? (projectSessionId ? store.take(projectSessionId) : null);
     if (!request) return;
     if (isBusy || hasQuestion) {
-      void handleEnqueue(request.text, {}).catch(() => {});
+      void handleEnqueue(request.text, {}, undefined, 'queue').catch(() => {});
       return;
     }
     const { agent, modelKey, variant } = resolvedRef.current;
@@ -994,12 +1010,37 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       return cache.get(messageId) ?? null;
     };
   }, [messageAuthors, participants, viewerId]);
+  // The Kortix session that sent a message (a coordinator, a spawn), same
+  // memo rule as `senderOf`.
+  // Keyed by the ids, not by `turns`: a stream delta makes a new `turns` array
+  // with the same ids, and a new array here would remake `renderItem` per delta.
+  const userMessageIdsKey = turns.map((turn) => turn.userMessage.info.id).join('\n');
+  const userMessageIds = useMemo(
+    () => (userMessageIdsKey ? userMessageIdsKey.split('\n') : []),
+    [userMessageIdsKey],
+  );
+  const sessionAuthorOf = useMemo(() => {
+    const cache = new Map<string, ReturnType<typeof messageSessionAuthor>>();
+    return (messageId: string) => {
+      if (!cache.has(messageId)) cache.set(messageId, messageSessionAuthor(messageAuthors, userMessageIds, messageId));
+      return cache.get(messageId) ?? null;
+    };
+  }, [messageAuthors, userMessageIds]);
   // A queued prompt is keyed by its own message id, or by the wire id it was
   // re-minted under; either finds its author.
   const queuedSender = useCallback(
     (prompt: SessionPrompt) =>
       senderOf(prompt.message_id) ?? (prompt.wire_message_id ? senderOf(prompt.wire_message_id) : null),
     [senderOf],
+  );
+  // A queued prompt runs as its author: only they send it now, and they or a
+  // session manager remove it. The API answers 403 to anyone else. The
+  // participants list puts the session's owner first; a project manager who is
+  // not the owner keeps only their own rows here (the web offers them Remove).
+  const managesSession = participants?.participants[0]?.is_viewer === true;
+  const queuedActions = useCallback(
+    (prompt: SessionPrompt) => sessionPromptActions(prompt, { userId: viewerId, managesSession }),
+    [viewerId, managesSession],
   );
   // The last turn as displayed. Turns are sorted for display, and store order
   // can differ, so the spacer and pending questions follow this id.
@@ -1733,6 +1774,31 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // The room follows the displayed order. Every turn gets `pendingQuestions`
   // (one stable store array) so a pending question tool part is hidden in
   // whichever turn holds it.
+  // Whether the working turn's row is inside the viewport: off screen, its
+  // shimmer and busy dot matrix stop looping (KRTX-1638). RN requires the
+  // callback to be one stable function, so it reads the id through a ref.
+  // ponytail: per turn, not per row. A tall working turn whose top is visible
+  // counts as on screen; go per row if that measurably costs frames.
+  const [workingTurnOnScreen, setWorkingTurnOnScreen] = useState(true);
+  const workingTurnIdRef = useRef(workingTurnId);
+  workingTurnIdRef.current = workingTurnId;
+  // The list re-checks viewability on a data change or the next scroll, but
+  // reports only when the viewable SET changes. This effect is the fallback
+  // for a working-turn change that leaves the set as it was (a turn appended
+  // below the viewport): recompute from the last reported set. Before the
+  // first report the set is unknown and the turn counts as on screen.
+  const viewableKeysRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const keys = viewableKeysRef.current;
+    setWorkingTurnOnScreen(keys == null || workingTurnId == null || keys.has(workingTurnId));
+  }, [workingTurnId]);
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: { key: string }[] }) => {
+    const keys = new Set(viewableItems.map((v) => v.key));
+    viewableKeysRef.current = keys;
+    const id = workingTurnIdRef.current;
+    setWorkingTurnOnScreen(id == null || keys.has(id));
+  }).current;
+
   const renderTurn = useCallback(
     ({ item, index }: { item: Turn; index: number }) => {
       const id = item.userMessage.info.id;
@@ -1778,12 +1844,14 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             queueState={interruptedIds.has(id) ? 'interrupted' : null}
             uploadStatus={failedSends[id] ? { state: 'failed', onRetry: () => handleRetrySend(id) } : undefined}
             sender={senderOf(id)}
+            sessionAuthor={sessionAuthorOf(id)}
+            onScreen={isWorkingTurn ? workingTurnOnScreen : true}
           />
           )}
         </View>
       );
     },
-    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend, senderOf],
+    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend, senderOf, sessionAuthorOf, workingTurnOnScreen],
   );
 
   const keyExtractor = useCallback((item: Turn) => item.userMessage.info.id, []);
@@ -1839,6 +1907,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
           onSendNow={handleQueueSendNow}
           isDark={isDark}
           senderOf={queuedSender}
+          actionsOf={queuedActions}
         />,
       );
     }
@@ -1854,6 +1923,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     handleQueueSendNow,
     isDark,
     queuedSender,
+    queuedActions,
   ]);
 
   // ── Older history (COR-144) ─────────────────────────────────────────────
@@ -1989,6 +2059,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
           data={turns}
           renderItem={renderTurn}
           keyExtractor={keyExtractor}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={VIEWABILITY_CONFIG}
           initialNumToRender={INITIAL_TURNS_TO_RENDER}
           maxToRenderPerBatch={5}
           windowSize={11}
@@ -2315,10 +2387,13 @@ function QueuePanel({
   onSendNow,
   isDark,
   senderOf,
+  actionsOf,
 }: {
   messages: SessionPrompt[];
   /** The prompt's sender avatar in a shared session, else null. */
   senderOf?: (prompt: SessionPrompt) => AvatarPerson | null;
+  /** What the viewer may do to the prompt (`sessionPromptActions`). */
+  actionsOf?: (prompt: SessionPrompt) => { own: boolean; removable: boolean };
   expanded: boolean;
   /** The agent is working: Send now stops the current reply first. */
   busy: boolean;
@@ -2369,7 +2444,9 @@ function QueuePanel({
       {expanded && messages.length > 0 && (
         <View style={{ maxHeight: 176 }}>
           <ScrollView showsVerticalScrollIndicator={false} nestedScrollEnabled>
-            {messages.map((qm) => (
+            {messages.map((qm) => {
+              const actions = actionsOf?.(qm) ?? { own: true, removable: true };
+              return (
               <View
                 key={qm.prompt_id}
                 style={{
@@ -2388,31 +2465,43 @@ function QueuePanel({
                   const sender = senderOf?.(qm);
                   return sender ? <ParticipantAvatar person={sender} /> : null;
                 })()}
-                <Text variant="small" numberOfLines={1} className="flex-1 leading-5">
-                  {qm.text}
-                </Text>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="rounded-full"
-                  onPress={() => onSendNow(qm.prompt_id)}
-                  accessibilityLabel="Send now"
-                  accessibilityHint={busy ? 'Stops the current reply and sends this message' : undefined}
-                >
-                  <Text>Send now</Text>
-                </Button>
+                <View className="flex-1">
+                  <Text variant="small" numberOfLines={1} className="leading-5">
+                    {qm.text}
+                  </Text>
+                  {queueRowCaption(qm) ? (
+                    <Text variant="muted" numberOfLines={2}>
+                      {queueRowCaption(qm)}
+                    </Text>
+                  ) : null}
+                </View>
+                {actions.own && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="rounded-full"
+                    onPress={() => onSendNow(qm.prompt_id)}
+                    accessibilityLabel="Send now"
+                    accessibilityHint={busy ? 'Stops the current reply and sends this message' : undefined}
+                  >
+                    <Text>Send now</Text>
+                  </Button>
+                )}
                 {/* 40pt box + the Button's default 2pt hit slop = 44pt target. */}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="rounded-full"
-                  onPress={() => onRemove(qm.prompt_id)}
-                  accessibilityLabel="Remove from queue"
-                >
-                  <XIcon size={16} color={mutedText} />
-                </Button>
+                {actions.removable && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="rounded-full"
+                    onPress={() => onRemove(qm.prompt_id)}
+                    accessibilityLabel="Remove from queue"
+                  >
+                    <XIcon size={16} color={mutedText} />
+                  </Button>
+                )}
               </View>
-            ))}
+              );
+            })}
           </ScrollView>
         </View>
       )}

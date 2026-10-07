@@ -102,7 +102,7 @@ describe.skipIf(!dockerAvailable)('local warm-session index repair — real Post
   beforeEach(() => psql(SCHEMA));
 
   afterAll(() => {
-    Bun.spawnSync(['docker', 'rm', '-f', container], { stdout: 'ignore', stderr: 'ignore' });
+    Bun.spawnSync(['docker', 'rm', '-f', '-v', container], { stdout: 'ignore', stderr: 'ignore' });
   });
 
   test('keeps the newest available row and rebuilds a valid unique index', async () => {

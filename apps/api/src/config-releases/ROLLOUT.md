@@ -2,8 +2,12 @@
 
 Config releases make a session run the base branch's **current, built**
 config, from a read-only release directory — never the session's own
-`/workspace` checkout. A release is the OpenCode config dir, the root
-`skills/`, and the pi config dir as `pi/` (`builder.ts`, `composeReleaseTree`).
+`/workspace` checkout. A release is a checkout of the base branch: the
+commit's whole tree, with the same files and folders `/workspace` holds
+(`release-tree.ts`). Each harness reads its own dirs inside it exactly as it
+reads them in `/workspace` (`harnesses/opencode`, `skills/`, `harnesses/pi`).
+The one change from the commit is per-agent plugin selection: an agent variant
+drops the plugin entry files its manifest does not select.
 Both session runtimes apply them: OpenCode swaps in a proven replacement
 process, pi reloads the release in place. Full contract:
 `apps/api/src/config-releases/`,
@@ -84,13 +88,20 @@ unbootable.
 
 **API side — which release a project's sessions get:**
 1. The base branch's current tip (the normal case, always).
-2. If that release fails in ≥ `PROJECT_QUARANTINE_SESSIONS` (2) **distinct**
-   sessions (`kortix.config_release_failures`), the project quarantines that
-   release ID and falls back to the newest release of the same variant any
-   session has **proven** (`kortix.config_releases.proven_at`).
-   Quarantine is per release ID: a new base commit produces a new release ID
-   and is assignable again immediately.
-3. If the flag is off for the project: no release is assigned at all; the session reads its workspace config
+2. If the tip's release **cannot be built** (the archive is over the limit, a
+   plugin an agent selects is missing, a git error), or it fails in ≥
+   `PROJECT_QUARANTINE_SESSIONS` (2) **distinct** sessions
+   (`kortix.config_release_failures`), the project assigns the newest release
+   of the same variant any session has **proven**
+   (`kortix.config_releases.proven_at`). Quarantine is per release ID: a new
+   base commit produces a new release ID and is assignable again immediately.
+   `GET /config` then reports `release.fallback_reason` ("The base branch's
+   latest agent config (commit …) could not be built: … / failed to load in 2
+   sessions: …. Sessions run the last config that loaded (commit …).") and the
+   web header shows "Config failed to load" with that reason.
+3. With nothing proven to fall back to, an unbuildable tip is assigned no
+   release: each box keeps what it runs, and `fallback_reason` says why.
+4. If the flag is off for the project: no release is assigned at all; the session reads its workspace config
    directory — pre-release behavior.
 
 **The meta coordinator is the exception.** A session whose agent is `meta`
@@ -113,6 +124,41 @@ quarantine (`notFromMetaSession` in `quarantine.ts`).
 S3 read/write failure (`[config-releases] store … failed`) makes the archive
 route stream a fresh build from the Git mirror instead of failing the
 request. The store is a cache; the Git mirror is always the source of truth.
+
+## Limits
+
+- The release archive is the repository at the commit, capped at 32 MiB gzip
+  and 128 MiB uncompressed (`MAX_CONFIG_ARCHIVE_BYTES` / `MAX_CONFIG_TAR_BYTES`
+  in `release-tree.ts`, matched by the daemon's `descriptor.ts` /
+  `boot-config.ts`). The company project measured 248 files, 2.6 MB
+  (2026-10-05). A repository over the cap gets no release; its sessions keep
+  the last proven one and `fallback_reason` names the cap.
+- A path the repository's `.gitattributes` marks `export-ignore` (the file or
+  one of its directories) is left out of the release tree, as `git archive`
+  would leave it out (`exportIgnoredPaths` in `release-tree.ts`, KRTX-1728).
+  The OpenCode config dir and the manifest always ship whole: the archive's
+  own `info/attributes` neutralises both attributes, so blob verification on
+  the box matches. A pruned tree is composed, so its archive URL carries the
+  commit. `kortix validate` and
+  `kortix ship` warn (never fail) when one file is 10 MiB or more or the files
+  Git stores total more than 32 MiB (`apps/cli/src/project-lint.ts`, which
+  repeats the cap). The too-large `reason` names both remedies.
+- Every commit to the base branch is a new release, because the tree changed.
+  Running sessions converge to it in the background; a prompt on a box that is
+  behind converges first.
+- A tool that imports another file of the repository by a relative path
+  (`../../../shared/x`) resolves inside the release exactly as in `/workspace`.
+- OpenCode resolves a relative `instructions` entry against the session
+  directory (`/workspace`), not its config dir. While OpenCode serves a release,
+  the platform plugin `kortix-release-instructions.js`
+  (`harness/open-code/release-instructions.ts`) rewrites each relative entry to
+  the release root, so `"rules/RULES.md"` reads the base branch's file. URLs,
+  `~/`, absolute paths and globs in a directory part keep OpenCode's own
+  resolution. The project's `AGENTS.md` is OpenCode's own lookup from
+  `/workspace` and is not rewritten.
+- The descriptor format is `config-release-v2`. A daemon built for v1 (the
+  composed layout) refuses it and keeps its running config until the
+  runtime-assets swap gives it the current daemon.
 
 ## Retention
 

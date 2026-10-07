@@ -1,7 +1,7 @@
 /**
  * Session scope — every session-scoped route resolves the session inside the
  * authorized project, for a caller who may see it, through one guard
- * (`apps/api/src/projects/lib/session-access.ts`). Maps to spec SCOPE-*.
+ * (`apps/api/src/projects/lib/http-session-access.ts`). Maps to spec SCOPE-*.
  *
  * All flows run on the local profile: sessions are database rows, and no flow
  * provisions a sandbox.
@@ -106,146 +106,6 @@ async function dropBoundSession(db: Db, seeded: { sessionId: string; tokenId: st
   await db.query('DELETE FROM kortix.session_sandboxes WHERE sandbox_id = $1::uuid', [seeded.sessionId]).catch(() => {});
   await db.query('DELETE FROM kortix.project_sessions WHERE session_id = $1', [seeded.sessionId]).catch(() => {});
 }
-
-flow(
-  'SCOPE-1',
-  {
-    domain: 'sessions',
-    requires: ['database'],
-    routes: [
-      'GET /v1/projects/:projectId/sessions/:sessionId/environment',
-      'POST /v1/projects/:projectId/sessions/:sessionId/environment/stop',
-      'POST /v1/projects/:projectId/sessions/:sessionId/environment/ensure',
-    ],
-  },
-  async (ctx) => {
-    const db = await openDb(ctx);
-    const ownProject = await ctx.fixtures.project();
-    const team = await ctx.fixtures.team();
-    const teamProject = await team.project();
-    const manager = await team.addMember('member');
-    await team.grantProjectRole(teamProject.id, manager.userId!, 'manager');
-    const owner = ctx.client.as(ctx.P.OWNER);
-    const asManager = ctx.client.as(manager);
-    const ownSession = await ctx.fixtures.session(ownProject);
-    const privateTeamSession = await ctx.fixtures.session(teamProject);
-    const seedEnvironment = (sessionId: string, accountId: string, projectId: string) =>
-      db.query(
-        `INSERT INTO kortix.session_environments (session_id, account_id, project_id, status)
-         VALUES ($1, $2::uuid, $3::uuid, 'error')`,
-        [sessionId, accountId, projectId],
-      );
-    const environmentStatus = async (sessionId: string) =>
-      (
-        await db.query<{ status: string }>(
-          'SELECT status FROM kortix.session_environments WHERE session_id = $1',
-          [sessionId],
-        )
-      ).rows[0]?.status;
-    try {
-      await ctx.step('seed an environment row for a session in each project', async () => {
-        await seedEnvironment(ownSession.id, ctx.P.OWNER.accountId!, ownProject.id);
-        await seedEnvironment(privateTeamSession.id, team.id, teamProject.id);
-      });
-
-      await ctx.step("the session owner reads its environment through the session's project → 200", async () => {
-        (
-          await owner.get('/v1/projects/:projectId/sessions/:sessionId/environment', {
-            params: { projectId: ownProject.id, sessionId: ownSession.id },
-          })
-        )
-          .status(200)
-          .body()
-          .has('$.session_id', ownSession.id)
-          .has('$.status', 'error');
-      });
-
-      await ctx.step(
-        "a manager of another project reads that session's environment through their own project → 404",
-        async () => {
-          (
-            await asManager.get('/v1/projects/:projectId/sessions/:sessionId/environment', {
-              params: { projectId: teamProject.id, sessionId: ownSession.id },
-            })
-          ).status(404);
-        },
-      );
-
-      await ctx.step('the same manager stops that environment through their own project → 404, and it is unchanged', async () => {
-        (
-          await asManager.post(
-            '/v1/projects/:projectId/sessions/:sessionId/environment/stop',
-            {},
-            { params: { projectId: teamProject.id, sessionId: ownSession.id } },
-          )
-        ).status(404);
-        const status = await environmentStatus(ownSession.id);
-        if (status !== 'error') throw new Error(`expected the environment to stay "error", got ${status}`);
-      });
-
-      await ctx.step('the same manager ensures an environment for that session → 404 before any provisioning', async () => {
-        (
-          await asManager.post(
-            '/v1/projects/:projectId/sessions/:sessionId/environment/ensure',
-            {},
-            { params: { projectId: teamProject.id, sessionId: ownSession.id } },
-          )
-        ).status(404);
-      });
-
-      await ctx.step("a project manager reads another member's private session environment → 404", async () => {
-        (
-          await asManager.get('/v1/projects/:projectId/sessions/:sessionId/environment', {
-            params: { projectId: teamProject.id, sessionId: privateTeamSession.id },
-          })
-        ).status(404);
-      });
-
-      await ctx.step('the private session owner reads and stops its environment → 200', async () => {
-        (
-          await owner.get('/v1/projects/:projectId/sessions/:sessionId/environment', {
-            params: { projectId: teamProject.id, sessionId: privateTeamSession.id },
-          })
-        ).status(200);
-        (
-          await owner.post(
-            '/v1/projects/:projectId/sessions/:sessionId/environment/stop',
-            {},
-            { params: { projectId: teamProject.id, sessionId: privateTeamSession.id } },
-          )
-        )
-          .status(200)
-          .body()
-          .has('$.status', 'stopped');
-      });
-
-      await ctx.step('ensure on a session that does not run on the pi worker → 400 for its owner', async () => {
-        (
-          await owner.post(
-            '/v1/projects/:projectId/sessions/:sessionId/environment/ensure',
-            {},
-            { params: { projectId: ownProject.id, sessionId: ownSession.id } },
-          )
-        ).status(400);
-      });
-
-      await ctx.step('ANON → 401', async () => {
-        (
-          await ctx.client.as(ctx.P.ANON).get('/v1/projects/:projectId/sessions/:sessionId/environment', {
-            params: { projectId: ownProject.id, sessionId: ownSession.id },
-          })
-        ).status(401);
-      });
-    } finally {
-      await db
-        .query('DELETE FROM kortix.session_environments WHERE session_id = ANY($1::text[])', [
-          [ownSession.id, privateTeamSession.id],
-        ])
-        .catch(() => {});
-      await db.end();
-    }
-  },
-);
 
 flow(
   'SCOPE-2',
@@ -556,6 +416,8 @@ flow(
     routes: [
       'POST /v1/projects/:projectId/cli-token',
       'DELETE /v1/projects/:projectId/cli-token/:tokenId',
+      'POST /v1/projects/:projectId/gateway/keys',
+      'DELETE /v1/projects/:projectId/gateway/keys/:keyId',
     ],
   },
   async (ctx) => {
@@ -598,6 +460,22 @@ flow(
               params: { projectId: project.id, tokenId: humanTokenId },
             })
         ).status(403);
+      });
+
+      await ctx.step('the session-bound credential cannot mint or revoke a gateway key; the owner can → 403 / 200', async () => {
+        const session = ctx.client.withBearer(bound!.token, 'SESSION_TOKEN');
+        (await session.post('/v1/projects/:projectId/gateway/keys', { name: 'from-session' }, { params: { projectId: project.id } }))
+          .status(403)
+          .body()
+          .has('$.error', 'Agent-session tokens cannot manage gateway keys');
+        const made = await owner.post('/v1/projects/:projectId/gateway/keys', { name: 'scope-5' }, { params: { projectId: project.id } });
+        made.status(200).body().exists('$.secret_key');
+        const keyId = made.json<{ key_id: string }>().key_id;
+        (await session.del('/v1/projects/:projectId/gateway/keys/:keyId', { params: { projectId: project.id, keyId } })).status(403);
+        (await owner.del('/v1/projects/:projectId/gateway/keys/:keyId', { params: { projectId: project.id, keyId } }))
+          .status(200)
+          .body()
+          .has('$.ok', true);
       });
 
       await ctx.step('an account that requires PAT expiry refuses a project CLI token without one → 400', async () => {

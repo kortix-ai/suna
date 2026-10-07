@@ -183,12 +183,11 @@ describe('the server half of the sign-out', () => {
 });
 
 describe('nothing on an identity change can wait forever', () => {
-  // `packages/sdk/src/browser/cache/idb-sync-cache.ts` `openDB()` registers
-  // `onupgradeneeded`/`onsuccess`/`onerror` and NO `onblocked`, and the file has
-  // no `onversionchange` either. A version upgrade blocked by a tab still
-  // holding the old version settles neither `success` nor `error`, and
-  // `dbPromise` is memoized so every later caller parks behind it. That is not
-  // hypothetical: `DB_VERSION` has been bumped twice in this repo's history.
+  // Before database version 4, `openDB()` in
+  // `packages/sdk/src/browser/cache/idb-sync-cache.ts` had no `onblocked`. A
+  // version upgrade blocked by a tab still holding the old version settled
+  // neither `success` nor `error`, and the memoized open parked every later
+  // caller. Version 4 rejects on `blocked`; the bound stays as the defense.
   //
   // Unbounded, that single promise could (a) stop a user signing out at all,
   // and (b) park the whole app on its loading frame at SIGN-IN, because
