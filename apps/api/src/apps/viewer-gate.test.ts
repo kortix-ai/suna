@@ -307,7 +307,7 @@ describe('GET /_kortix/viewer', () => {
       app_id: APP_ID,
       access_mode: 'restricted',
       account_id: ACCOUNT_ID,
-      project_id: appRow().projectId,
+      project_id: '66666666-6666-4666-8666-666666666666',
       user_id: USER_ID,
       email: `${USER_ID}@example.test`,
       name: 'Viewer Name',
