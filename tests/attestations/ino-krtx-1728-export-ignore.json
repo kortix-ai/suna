@@ -1,0 +1,24 @@
+{
+  "source_hash": "c38d6ac7afdf0bc1e099d1e76203b824a0bc8bb4ac25e4fc3de31bc903b703c8",
+  "diff_files": [
+    "apps/api/src/config-releases/ROLLOUT.md",
+    "apps/api/src/config-releases/builder.test.ts",
+    "apps/api/src/config-releases/release-tree.ts",
+    "apps/api/src/config-releases/serve-archive.test.ts",
+    "apps/cli/src/__tests__/repo-size.blackbox.test.ts",
+    "apps/cli/src/project-lint.ts",
+    "apps/web/content/docs/cli.mdx",
+    "apps/web/content/docs/work/runtime.mdx",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "tests/spec/end-to-end.md"
+  ],
+  "diff_hash": "1fd8df81837914f240a8c242e7e3cff5cef097fba0beda05f3e893589dc3f2fb",
+  "head": "e792e5fa7ef08a363a5f9cc663d7a96b2e9e0336",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-07T14:41:59.001Z"
+}
