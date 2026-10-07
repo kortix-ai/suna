@@ -227,6 +227,7 @@
       "create": "创建项目",
       "tryAgain": "重试",
       "upgrade": "升级方案",
+      "settings": "设置",
       "logOut": "退出登录",
       "signingOut": "正在退出",
       "back": "返回项目"
@@ -848,9 +849,10 @@
         "sessions": "此项目中的每个会话及其文件、历史记录和输出",
         "automation": "所有计划运行和触发器 — 它们会立即停止",
         "integrations": "此项目范围内的每个已连接集成、密钥和 API 密钥",
+        "managedRepo": "此项目中由 Kortix 管理的 Git 存储库及其中的所有提交",
         "access": "整个团队的访问权限 — 任何人都无法再次访问此项目"
       },
-      "reassurance": "已连接的 Git 存储库不会被删除。已推送的代码将保留在原处。",
+      "reassurance": "自行连接的 Git 存储库不会被删除。已推送的代码将保留在原处。",
       "keepWorkspace": "保留项目"
     },
     "sandbox": {
@@ -1954,6 +1956,7 @@
     "queuedCount": "{count} 条排队中",
     "editingQueued": "编辑中",
     "steerNextStep": "在下一步读取",
+    "queuedByAnotherMember": "由其他成员发送。只有该成员可以编辑或发送。",
     "steerFallbackUnsupported": "等待本轮结束。此会话无法在一轮进行中接收消息。",
     "steerFallbackNotPrompter": "等待本轮结束。本轮由其他成员发起。",
     "steerFallbackTurnEnded": "作为独立的一轮运行。本轮已先结束。",

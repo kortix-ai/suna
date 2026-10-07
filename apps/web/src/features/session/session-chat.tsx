@@ -565,6 +565,11 @@ export function SessionChat({
   // runtime is connected + healthy). We need it here too so the render logic
   // can tell "still booting" apart from "genuinely gone".
   const runtimeReady = useRuntimeReady();
+  // The model gate holds during boot too (KRTX-1667): a pre-ready send becomes a
+  // durable inbox row nobody re-checks, so a Free plan's queued prompt died at the
+  // gateway. The served catalog (`GET /model-picker`) answers before the boot
+  // window opens, and the composer's loading flags keep the gate silent while it
+  // is still in flight — queue-while-booting survives wherever a model exists.
   const allowSendBeforeReady = !!projectSessionId && !runtimeReady;
   // "The health poller GAVE UP", which `!runtimeReady` does not say — that is
   // also every ordinary boot. Only the composer notice reads it, to tell a probe
@@ -1354,14 +1359,25 @@ export function SessionChat({
     // by the effect above, i.e. AFTER the render that first sees a row.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [promptInbox.prompts, sessionId, messages, firstTurnClaim]);
+  // A queued prompt runs as its author: only they edit or send it, and the
+  // session's managers may remove it. Same cache entry as the header's read.
+  const viewerManagesSession =
+    useProjectSession(projectId, projectSessionId ?? undefined, {
+      enabled: !!projectId && !!projectSessionId,
+    }).data?.can_manage_lifecycle !== false;
+  const queuedPromptViewer = useMemo(
+    () => ({ userId: viewer?.id, managesSession: viewerManagesSession }),
+    [viewer?.id, viewerManagesSession],
+  );
   const queueRows = useMemo(
     () =>
       projectQueueRows({
         prompts: promptInbox.prompts,
         transcriptMessageIds: transcriptClaimedIds,
         drafts: queuedDrafts,
+        viewer: queuedPromptViewer,
       }),
-    [promptInbox.prompts, transcriptClaimedIds, queuedDrafts],
+    [promptInbox.prompts, transcriptClaimedIds, queuedDrafts, queuedPromptViewer],
   );
   // A posted draft whose row the inbox no longer lists was delivered or
   // removed; nothing reads it again.
@@ -4345,6 +4361,7 @@ export function SessionChat({
                               pendingPrompt={pendingPrompt}
                               onRetryQueued={stableRetryQueued}
                               onRemoveQueued={stableRemoveQueued}
+                              queuedPromptViewer={queuedPromptViewer}
                               interruptedBeforeRun={interruptedTurnIds.has(
                                 turn.userMessage.info.id,
                               )}
@@ -4590,7 +4607,7 @@ export function SessionChat({
                 sessionId={sessionId}
                 projectId={projectId}
                 providers={providers}
-                modelRequired={!allowSendBeforeReady}
+                modelRequired
                 modelsLoading={providersLoading}
                 onContextClick={handleContextClick}
                 onCompactClick={runtimeCanCompact ? handleCompactClick : undefined}

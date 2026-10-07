@@ -63,8 +63,10 @@ const ssoMappingRow = {
 };
 // Spread the real module: `mock.module` replaces it wholesale, and the SSO
 // router also imports the pure domain-verification helpers from it.
+let personalAccount = false;
 mock.module('../repositories/sso', () => ({
   ...realSsoRepository,
+  isPersonalAccount: async () => personalAccount,
   getSsoProvider: async () => ssoProviderRow,
   upsertSsoProvider: async () => ssoProviderRow,
   deleteSsoProvider: async () => true,
@@ -134,6 +136,25 @@ describe('SSO — DELETE routes bypass the entitlement gate, PUT/POST keep it', 
     expect(res.status).toBe(402);
     const body = await res.json();
     expect(body.code).toBe('entitlement_required');
+  });
+
+  test('PUT /sso/provider on a personal account is 403 sso_personal_account, before the entitlement', async () => {
+    personalAccount = true;
+    try {
+      const res = await buildApp().request(`/${ACCOUNT}/iam/sso/provider`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          supabase_sso_provider_id: '11111111-1111-1111-1111-111111111111',
+          name: 'Entra',
+          primary_domain: 'example.com',
+        }),
+      });
+      expect(res.status).toBe(403);
+      expect((await res.json()).code).toBe('sso_personal_account');
+    } finally {
+      personalAccount = false;
+    }
   });
 
   test('POST /sso/mappings still 402s on an unentitled account', async () => {

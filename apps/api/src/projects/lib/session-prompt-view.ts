@@ -170,6 +170,8 @@ export function serializePrompt(row: PromptRow): SessionPrompt {
     /** Posted without a turn (the first message of a conversation with people):
      *  no agent will answer it, so a host shows no "thinking" for it. */
     no_reply: payload.noReply === true,
+    /** The member it runs as: only they edit, send now or retry it. */
+    author_user_id: row.actorUserId ?? null,
     created_at: row.createdAt.toISOString(),
     available_at: row.availableAt.toISOString(),
   };

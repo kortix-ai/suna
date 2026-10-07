@@ -5,7 +5,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { SidebarProvider } from '@/components/ui/sidebar';
-import type { SessionPrompt, SessionTurnOutcome } from '@kortix/sdk';
+import type { ChangeRequest, SessionPrompt, SessionTurnOutcome } from '@kortix/sdk';
 import enMessages from '../../../translations/en.json';
 import { sessionAuditKey } from './session-audit-shared';
 import { TurnErrorDisplay } from './session-error-banner';
@@ -107,8 +107,41 @@ mock.module('@/features/session/composer/composer', () => ({
 }));
 const { SessionChat, deriveTurnErrorAbortState, deriveTurnErrorPresentation } =
   await import('./session-chat');
+const { changeRequestKeys } = await import(
+  '@/features/project-files/hooks/use-change-requests'
+);
 
 const errorTurn = (error?: unknown) => ({ assistantMessages: [{ info: { error } }] });
+
+const changeRequestFixture = (): ChangeRequest => ({
+  cr_id: 'cr-fixture',
+  account_id: 'account-fixture',
+  project_id: 'project-fixture',
+  number: 7,
+  title: 'synthetic files reorder',
+  description: 'a synthetic change request for the outcome pin',
+  base_ref: 'main',
+  head_ref: 'cr/synthetic',
+  status: 'open',
+  head_commit_sha: null,
+  base_commit_sha: null,
+  origin_session_id: 'project-session-fixture',
+  created_by: 'agent-fixture',
+  merged_at: null,
+  merged_by: null,
+  merge_commit_sha: null,
+  closed_at: null,
+  closed_by: null,
+  metadata: {},
+  created_at: new Date(2000).toISOString(),
+  updated_at: new Date(2000).toISOString(),
+});
+
+const seedSessionChangeRequests = (client: QueryClient, crs: ChangeRequest[]) =>
+  client.setQueryData(
+    changeRequestKeys.sessionList('project-fixture', 'project-session-fixture'),
+    { change_requests: crs },
+  );
 
 describe('SessionChat turn error presentation', () => {
   test('aborted turn stays silent without a control-plane notice', () => {
@@ -321,9 +354,9 @@ describe('SessionChat transcript rows', () => {
 // pins one section the transcript move must preserve, through the whole
 // SessionChat render, so the same assertions hold before and after the move.
 describe('SessionChat moved turn sections', () => {
-  const renderChat = () =>
+  const renderChat = (client = new QueryClient()) =>
     renderToStaticMarkup(
-      <QueryClientProvider client={new QueryClient()}>
+      <QueryClientProvider client={client}>
         <NextIntlClientProvider locale="en" messages={enMessages} onError={() => {}}>
           <SidebarProvider>
             <SessionChat
@@ -439,5 +472,51 @@ describe('SessionChat moved turn sections', () => {
     } finally {
       fixtureMessages = baseFixtureMessages;
     }
+  });
+
+  // Pin for the turn-outcome footer (KRTX-1622): the KRTX-355 session-chat
+  // split moved the `TurnFooter` comment block but dropped its
+  // `{!working && <TurnOutcomes …/>}` render, so the provider pipeline below
+  // fed a context nothing read. Both cases render through the whole
+  // SessionChat so the provider → anchor → footer path is the one under test.
+  describe('turn-outcome footer', () => {
+    test('a settled turn whose span contains this session’s change request renders its outcome card', () => {
+      fixtureMessages = [
+        userFixture('user-cr', 'open the synthetic change request'),
+        {
+          info: {
+            id: 'assistant-cr',
+            role: 'assistant',
+            parentID: 'user-cr',
+            agent: 'build',
+            time: { created: 2000 },
+          },
+          parts: [],
+        },
+      ];
+      const client = new QueryClient();
+      seedSessionChangeRequests(client, [changeRequestFixture()]);
+      try {
+        const markup = renderChat(client);
+        expect(markup).toContain('data-testid="turn-outcomes"');
+        expect(markup).toContain('synthetic files reorder');
+        expect(markup).toContain('Waiting for you');
+      } finally {
+        fixtureMessages = baseFixtureMessages;
+      }
+    });
+
+    test('a turn still working renders no outcome card yet', () => {
+      busy = true;
+      const client = new QueryClient();
+      seedSessionChangeRequests(client, [changeRequestFixture()]);
+      try {
+        // The change request postdates the only turn's start, so it anchors to
+        // the working turn; the `!working` gate is what must hide it.
+        expect(renderChat(client)).not.toContain('data-testid="turn-outcomes"');
+      } finally {
+        busy = false;
+      }
+    });
   });
 });

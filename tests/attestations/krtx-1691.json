@@ -1,0 +1,18 @@
+{
+  "source_hash": "291655ec24ce9e067a0e3d27e9587588323b57ec89a0d310d3960b656efccbe5",
+  "diff_files": [
+    "apps/web/src/components/diff/diff-view.test.ts",
+    "apps/web/src/components/diff/diff-view.tsx",
+    "apps/web/src/features/changes/change-list.test.tsx",
+    "apps/web/src/features/changes/diff-layout-toggle.test.tsx"
+  ],
+  "diff_hash": "1c540d4f3884a834acabddf099dec19f69441aab2ed3dffdbe4b46085ca1e4ee",
+  "head": "a40fcd04a518cb30d7b0d8464ad122edd0dec04f",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-06T23:39:16.819Z"
+}

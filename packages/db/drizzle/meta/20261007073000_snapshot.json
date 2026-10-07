@@ -1,6 +1,6 @@
 {
   "id": "8a629195-a998-4a1d-90d6-7c63c54e3177",
-  "prevId": "4c46d426-ec56-4654-82d7-58cad5d716c8",
+  "prevId": "3c260282-8fb7-4417-b18e-105a7c208ac1",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -9989,6 +9989,34 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_gateway_logs_project_session_time": {
+          "name": "idx_gateway_logs_project_session_time",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"gateway_request_logs\".\"session_id\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}
