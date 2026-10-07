@@ -113,6 +113,7 @@ flow(
       'PATCH /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId',
       'POST /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId/retry',
       'DELETE /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId',
+      'POST /v1/accounts/:accountId/iam/assignments',
     ],
   },
   async (ctx) => {
@@ -120,6 +121,24 @@ flow(
     const project = await team.project();
     const member = await team.addMember('member');
     await team.grantProjectRole(project.id, member.userId!, 'member');
+    // A project member runs only the agents granted to them.
+    const AGENT = 'kortix';
+    await ctx.step('the owner grants the member the agent the session runs', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/assignments',
+        {
+          principal_type: 'user',
+          principal_id: member.userId,
+          role_key: 'agent-user',
+          scope_type: 'project',
+          scope_id: project.id,
+          object_type: 'agent',
+          object_id: AGENT,
+        },
+        { params: { accountId: team.id } },
+      );
+      r.status([200, 201]);
+    });
     const owner = ctx.client.as(ctx.P.OWNER);
     const asMember = ctx.client.as(member);
     // The owner's session, open to the whole project.
@@ -150,6 +169,7 @@ flow(
           parts: [{ type: 'text', text }],
           placement: 'composer',
           delivery: 'queue',
+          overrides: { agent: AGENT },
         },
         { params },
       );
