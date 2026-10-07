@@ -1,11 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { createApiClient } from '../api/client.ts';
-import { activeHost } from '../api/config.ts';
-import { resolveProjectContext } from '../command-helpers.ts';
+import { activeHost, activeHostEntry } from '../api/config.ts';
+import { resolveProjectAuth, resolveProjectContext } from '../command-helpers.ts';
 import { connectorProjectContext } from '../connector-gateway/gateway.ts';
 import { resolveProjectId, resolveProjectRef } from '../project-link.ts';
 
@@ -102,6 +102,233 @@ describe('in-sandbox auth resolution', () => {
     process.env.KORTIX_PROJECT_ID = 'proj-from-env';
 
     expect(connectorProjectContext('proj-from-flag').projectId).toBe('proj-from-flag');
+  });
+});
+
+describe('stored active host credential vs the injected sandbox token (KRTX-1705)', () => {
+  // A sandbox can also carry a logged-in host (the dogfood flow:
+  // `kortix login --host <name> --api <url> --token <pat>` inside the box).
+  // `kortix hosts use <name>` is an explicit claim about which host plain
+  // commands serve — the same claim `--host <name>` makes per invocation —
+  // so the stored credential must outrank the delegated session identity.
+  // The env token stays the fallback for the case it exists for: no stored
+  // host credential (a sandbox CLI that never logged in must not dead-end
+  // on "not logged in").
+  const HOST_URL = 'http://127.0.0.1:9001/v1';
+  const ENV_URL = 'http://127.0.0.1:9002/v1';
+  const HOST_TOKEN = 'kortix_pat_host';
+  const ENV_TOKEN = 'kortix_pat_session';
+
+  let dir: string;
+  let config: string;
+  let savedCwd: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'kortix-cli-active-host-'));
+    config = join(dir, 'config.json');
+    process.env.KORTIX_CONFIG_FILE = config;
+    process.env.KORTIX_TOKEN = ENV_TOKEN;
+    process.env.KORTIX_API_URL = ENV_URL;
+    savedCwd = process.cwd();
+    process.chdir(dir);
+  });
+
+  afterEach(() => {
+    process.chdir(savedCwd);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** Seed a config whose active host `test` points at HOST_URL. */
+  function seedActiveHost(host: Record<string, unknown>): void {
+    writeFileSync(
+      config,
+      JSON.stringify({
+        active: 'test',
+        hosts: { test: { logged_in_at: '2026-01-01T00:00:00.000Z', ...host } },
+      }),
+    );
+  }
+
+  it('prefers the stored active host credential over the sandbox token', () => {
+    seedActiveHost({
+      url: HOST_URL,
+      token: HOST_TOKEN,
+      user_email: 'host-user@example.test',
+      account_id: 'acct_host',
+    });
+    const host = activeHost();
+    expect(host?.token).toBe(HOST_TOKEN);
+    expect(host?.url).toBe(HOST_URL);
+  });
+
+  it('names the stored host in activeHostEntry instead of `sandbox`', () => {
+    seedActiveHost({
+      url: HOST_URL,
+      token: HOST_TOKEN,
+      user_email: 'host-user@example.test',
+      account_id: 'acct_host',
+    });
+    const entry = activeHostEntry();
+    expect(entry.name).toBe('test');
+    expect(entry.host.token).toBe(HOST_TOKEN);
+    expect(entry.host.url).toBe(HOST_URL);
+  });
+
+  it('the sandbox token still wins when the active host has no stored credentials', () => {
+    seedActiveHost({ url: HOST_URL, token: '', user_id: '', user_email: '', account_id: '' });
+    expect(activeHost()?.token).toBe(ENV_TOKEN);
+    expect(activeHost()?.url).toBe(ENV_URL);
+    expect(activeHostEntry().name).toBe('sandbox');
+  });
+
+  it('keeps the KORTIX_API_URL override for a stored host without credentials', () => {
+    seedActiveHost({
+      url: 'http://127.0.0.1:9003/v1',
+      token: '',
+      user_id: '',
+      user_email: '',
+      account_id: '',
+    });
+    expect(activeHost()?.token).toBe(ENV_TOKEN);
+    expect(activeHost()?.url).toBe(ENV_URL);
+  });
+
+  it('still resolves the stored host without any sandbox injection', () => {
+    delete process.env.KORTIX_TOKEN;
+    delete process.env.KORTIX_API_URL;
+    seedActiveHost({
+      url: HOST_URL,
+      token: HOST_TOKEN,
+      user_email: 'host-user@example.test',
+      account_id: 'acct_host',
+    });
+    expect(activeHost()?.token).toBe(HOST_TOKEN);
+    expect(activeHostEntry().name).toBe('test');
+  });
+});
+
+describe('cross-deployment project scoping for the stored active host (KRTX-1705)', () => {
+  // Plain auth may now resolve to the stored active host while the sandbox
+  // env points at a different deployment. The env project id lives on the
+  // injected deployment and only 404s against the host's credential, so the
+  // project must resolve from the host's own context — the exact branch an
+  // explicit --host already uses. When both point at the SAME deployment the
+  // env project stays valid and keeps outranking the host default.
+  const HOST_URL = 'http://127.0.0.1:9001/v1';
+  const ENV_URL = 'http://127.0.0.1:9002/v1';
+
+  let dir: string;
+  let config: string;
+  let savedCwd: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'kortix-cli-host-scoped-'));
+    config = join(dir, 'config.json');
+    process.env.KORTIX_CONFIG_FILE = config;
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_API_URL = ENV_URL;
+    savedCwd = process.cwd();
+    process.chdir(dir);
+  });
+
+  afterEach(() => {
+    process.chdir(savedCwd);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function seedActiveHost(host: Record<string, unknown>): void {
+    writeFileSync(
+      config,
+      JSON.stringify({
+        active: 'test',
+        hosts: { test: { logged_in_at: '2026-01-01T00:00:00.000Z', ...host } },
+      }),
+    );
+  }
+
+  it('marks the plain cross-deployment case hostScoped', () => {
+    seedActiveHost({
+      url: HOST_URL,
+      token: 'kortix_pat_host',
+      user_email: 'host-user@example.test',
+      account_id: 'acct_host',
+    });
+    const { auth, hostScoped } = resolveProjectAuth();
+    expect(auth?.token).toBe('kortix_pat_host');
+    expect(hostScoped).toBe(true);
+  });
+
+  it('does not scope when the active host is the injected deployment', () => {
+    seedActiveHost({
+      url: ENV_URL,
+      token: 'kortix_pat_host',
+      user_email: 'host-user@example.test',
+      account_id: 'acct_host',
+    });
+    const { auth, hostScoped } = resolveProjectAuth();
+    expect(auth?.token).toBe('kortix_pat_host');
+    expect(hostScoped).toBe(false);
+  });
+
+  it('never scopes the link-host path (the link binds host and project together)', () => {
+    mkdirSync(join(dir, '.kortix'), { recursive: true });
+    writeFileSync(
+      join(dir, '.kortix', 'link.json'),
+      JSON.stringify({
+        project_id: 'proj-from-link',
+        account_id: 'acct_host',
+        host: 'test',
+        linked_at: '2026-01-01T00:00:00.000Z',
+      }),
+    );
+    seedActiveHost({
+      url: HOST_URL,
+      token: 'kortix_pat_host',
+      user_email: 'host-user@example.test',
+      account_id: 'acct_host',
+    });
+    const { hostName, auth, hostScoped } = resolveProjectAuth();
+    expect(hostName).toBe('test');
+    expect(auth?.token).toBe('kortix_pat_host');
+    expect(hostScoped).toBe(false);
+  });
+
+  it('resolveProjectContext resolves the project from the host context when host-scoped', async () => {
+    seedActiveHost({
+      url: HOST_URL,
+      token: 'kortix_pat_host',
+      user_email: 'host-user@example.test',
+      account_id: 'acct_host',
+      default_project: { project_id: 'proj-host-default', account_id: 'acct_host' },
+    });
+    process.env.KORTIX_PROJECT_ID = 'proj-from-env';
+    const ctx = await resolveProjectContext();
+    expect(ctx?.projectId).toBe('proj-host-default');
+  });
+
+  it('says clearly when a host-scoped command has no project context', async () => {
+    seedActiveHost({
+      url: HOST_URL,
+      token: 'kortix_pat_host',
+      user_email: 'host-user@example.test',
+      account_id: 'acct_host',
+    });
+    process.env.KORTIX_PROJECT_ID = 'proj-from-env';
+    const ctx = await resolveProjectContext();
+    expect(ctx).toBeNull();
+  });
+
+  it('same-deployment active host keeps the env project chain', async () => {
+    seedActiveHost({
+      url: ENV_URL,
+      token: 'kortix_pat_host',
+      user_email: 'host-user@example.test',
+      account_id: 'acct_host',
+      default_project: { project_id: 'proj-host-default', account_id: 'acct_host' },
+    });
+    process.env.KORTIX_PROJECT_ID = 'proj-from-env';
+    const ctx = await resolveProjectContext();
+    expect(ctx?.projectId).toBe('proj-from-env');
   });
 });
 
@@ -347,5 +574,296 @@ describe('API URL joining', () => {
     const client = createApiClient({ apiBase: 'https://tunnel.example/v1/', token: 't' });
     await client.get('/projects/p1/change-requests');
     expect(calls[0]).toBe('https://tunnel.example/v1/projects/p1/change-requests');
+  });
+});
+
+// ─── Black-box: the real CLI process against a real local API (KRTX-1705) ───
+
+const CLI_ENTRY = resolve(import.meta.dir, '..', 'index.ts');
+
+const HOST_NAME = 'test';
+const EMAIL = 'owner@example.test';
+const TOKEN = 'kortix_pat_machine_contract';
+const REVOKED_TOKEN = 'kortix_pat_revoked';
+// The injected sandbox identity: a SECOND API the platform points
+// KORTIX_API_URL at, with its own (different) user. When a stored active
+// host holds credentials, plain commands must never call it (KRTX-1705).
+const SESSION_EMAIL = 'session-agent@example.test';
+const SESSION_TOKEN = 'kortix_pat_session_injected';
+let decoy: ReturnType<typeof Bun.serve> | null = null;
+let decoyPort = 0;
+let decoyRequests = 0;
+
+interface MeShape {
+  user_id: string;
+  email: string;
+  token_context: Record<string, unknown>;
+  accounts: Array<{ account_id: string; slug: string; name: string; role: string }>;
+}
+
+const ME: MeShape = {
+  user_id: '11111111-1111-4111-8111-111111111111',
+  email: EMAIL,
+  token_context: {
+    auth_type: 'pat',
+    project_id: null,
+    session_id: null,
+    agent: null,
+    connectors: [],
+    kortix_permissions: ['projects:read'],
+    kortix_cli: ['projects:read'],
+  },
+  accounts: [
+    {
+      account_id: 'aaaaaaaa-1111-4111-8111-111111111111',
+      slug: 'acme',
+      name: 'Acme',
+      role: 'owner',
+    },
+    {
+      account_id: 'bbbbbbbb-2222-4222-8222-222222222222',
+      slug: 'beta',
+      name: 'Beta',
+      role: 'member',
+    },
+  ],
+};
+
+interface CliResult {
+  code: number;
+  stdout: string;
+  stderr: string;
+}
+
+let server: ReturnType<typeof Bun.serve> | null = null;
+let apiPort = 0;
+
+function startApi(): void {
+  server = Bun.serve({
+    port: 0,
+    async fetch(req) {
+      if (req.headers.get('authorization') !== `Bearer ${TOKEN}`) {
+        return Response.json({ error: 'unauthenticated' }, { status: 401 });
+      }
+      if (new URL(req.url).pathname.endsWith('/accounts/me')) {
+        return Response.json(ME);
+      }
+      return Response.json({ error: 'not found' }, { status: 404 });
+    },
+  });
+  // `Server.port` is `number | undefined` in @types/bun (unix sockets); a TCP
+  // server on an ephemeral port always has one. `?? 0` degrades to a loud
+  // connection-refused failure, never a silently wrong assertion.
+  apiPort = server.port ?? 0;
+}
+
+function startDecoyApi(): void {
+  decoy = Bun.serve({
+    port: 0,
+    async fetch(req) {
+      decoyRequests += 1;
+      if (req.headers.get('authorization') !== `Bearer ${SESSION_TOKEN}`) {
+        return Response.json({ error: 'unauthenticated' }, { status: 401 });
+      }
+      if (new URL(req.url).pathname.endsWith('/accounts/me')) {
+        return Response.json({
+          ...ME,
+          email: SESSION_EMAIL,
+          user_id: '22222222-2222-4222-8222-222222222222',
+        });
+      }
+      return Response.json({ error: 'not found' }, { status: 404 });
+    },
+  });
+  decoyPort = decoy.port ?? 0;
+}
+
+/** A throwaway HOME + multi-host config pointing `test` at the local API. */
+function seedConfig(token: string): { dir: string; config: string } {
+  const dir = mkdtempSync(join(tmpdir(), 'kortix-whoami-json-'));
+  const config = join(dir, 'config.json');
+  writeFileSync(
+    config,
+    JSON.stringify({
+      active: HOST_NAME,
+      hosts: {
+        [HOST_NAME]: {
+          url: `http://127.0.0.1:${apiPort}/v1`,
+          token,
+          user_id: ME.user_id,
+          user_email: EMAIL,
+          account_id: ME.accounts[0].account_id,
+          logged_in_at: '2026-01-01T00:00:00.000Z',
+        },
+      },
+    }),
+  );
+  return { dir, config };
+}
+
+function childEnv(
+  dir: string,
+  config: string,
+  inject: Record<string, string> = {},
+): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = {
+    ...process.env,
+    HOME: dir,
+    KORTIX_CONFIG_FILE: config,
+    KORTIX_NO_UPDATE_CHECK: '1',
+    KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
+    NO_COLOR: '1',
+    FORCE_COLOR: '0',
+  };
+  for (const key of [
+    'KORTIX_API_URL',
+    'KORTIX_TOKEN',
+    'KORTIX_FRONTEND_URL',
+    'KORTIX_PROJECT_ID',
+    'KORTIX_SESSION_ID',
+    'BASH_ENV',
+  ]) {
+    delete env[key];
+  }
+  // A test simulating the sandbox injection sets its own controlled values
+  // AFTER the scrub, so no real sandbox env from the parent process leaks in.
+  return { ...env, ...inject };
+}
+
+async function runCli(
+  args: string[],
+  dir: string,
+  config: string,
+  inject: Record<string, string> = {},
+): Promise<CliResult> {
+  const proc = Bun.spawn({
+    cmd: [process.execPath, CLI_ENTRY, ...args],
+    cwd: dir,
+    env: childEnv(dir, config, inject),
+    stdin: 'ignore',
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const timeout = setTimeout(() => proc.kill(), 30_000);
+  try {
+    const [code, stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    return { code, stdout, stderr };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+describe('machine-readable output (--json) is pure JSON on stdout, silent on stderr', () => {
+  const results = new Map<string, CliResult>();
+  const dirs: string[] = [];
+
+  beforeAll(async () => {
+    startApi();
+    startDecoyApi();
+    // One throwaway config per case: the cases run concurrently and must not
+    // share a directory one of them would clean up under another.
+    // The sandbox cases simulate the platform injection: KORTIX_TOKEN and
+    // KORTIX_API_URL point at the decoy (the "session" API), while the
+    // config's stored active host points at the real one.
+    const sandboxEnv = {
+      KORTIX_TOKEN: SESSION_TOKEN,
+      KORTIX_API_URL: `http://127.0.0.1:${decoyPort}/v1`,
+      KORTIX_PROJECT_ID: 'proj-session-injected',
+      KORTIX_SESSION_ID: 'sess-session-injected',
+    };
+    const cases: Array<[string, string[], string, Record<string, string>?]> = [
+      ['whoami --json', ['whoami', '--json'], TOKEN],
+      ['whoami --host test --json', ['whoami', '--host', HOST_NAME, '--json'], TOKEN],
+      ['accounts ls --json', ['accounts', 'ls', '--json'], TOKEN],
+      ['whoami (human)', ['whoami'], TOKEN],
+      ['whoami --json (revoked token)', ['whoami', '--json'], REVOKED_TOKEN],
+      ['whoami --json (sandbox env, stored host)', ['whoami', '--json'], TOKEN, sandboxEnv],
+      ['whoami (sandbox env, stored host)', ['whoami'], TOKEN, sandboxEnv],
+    ];
+    await Promise.all(
+      cases.map(async ([name, args, token, inject]) => {
+        const { dir, config } = seedConfig(token);
+        dirs.push(dir);
+        results.set(name, await runCli(args, dir, config, inject));
+      }),
+    );
+  }, 120_000);
+
+  afterAll(() => {
+    server?.stop(true);
+    decoy?.stop(true);
+    for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
+  });
+
+  const get = (name: string): CliResult => {
+    const result = results.get(name);
+    if (!result) throw new Error(`case not run: ${name}`);
+    return result;
+  };
+
+  test('whoami --json: stdout parses as JSON and carries the payload', () => {
+    const { code, stdout } = get('whoami --json');
+    expect(code).toBe(0);
+    const parsed = JSON.parse(stdout) as Record<string, unknown>;
+    expect(parsed.user_email).toBe(EMAIL);
+    expect(Array.isArray(parsed.accounts)).toBe(true);
+  });
+
+  test('whoami --json: stderr is empty', () => {
+    expect(get('whoami --json').stderr).toBe('');
+  });
+
+  test('whoami --host test --json: stdout parses as JSON, stderr is empty', () => {
+    const { code, stdout, stderr } = get('whoami --host test --json');
+    expect(code).toBe(0);
+    expect(stderr).toBe('');
+    const parsed = JSON.parse(stdout) as Record<string, unknown>;
+    expect(parsed.host).toBe(HOST_NAME);
+    expect(parsed.user_email).toBe(EMAIL);
+  });
+
+  test('accounts ls --json: stdout parses as a JSON array, stderr is empty', () => {
+    const { code, stdout, stderr } = get('accounts ls --json');
+    expect(code).toBe(0);
+    expect(stderr).toBe('');
+    const parsed = JSON.parse(stdout) as unknown[];
+    expect(parsed).toHaveLength(2);
+  });
+
+  test('human mode keeps the host notice on stderr', () => {
+    const { code, stdout, stderr } = get('whoami (human)');
+    expect(code).toBe(0);
+    expect(stdout).toContain(EMAIL);
+    expect(stderr).toContain(`host ${HOST_NAME}`);
+  });
+
+  test('machine mode still reports an auth failure on stderr with a non-zero exit', () => {
+    const { code, stdout, stderr } = get('whoami --json (revoked token)');
+    expect(code).toBe(1);
+    expect(stdout).toBe('');
+    expect(stderr).toContain('Token rejected');
+  });
+
+  test('whoami --json inside a sandbox acts as the stored active host, not the injected identity', () => {
+    const { code, stdout, stderr } = get('whoami --json (sandbox env, stored host)');
+    expect(code).toBe(0);
+    expect(stderr).toBe('');
+    const parsed = JSON.parse(stdout) as Record<string, unknown>;
+    expect(parsed.host).toBe(HOST_NAME);
+    expect(parsed.user_email).toBe(EMAIL);
+    expect(parsed.user_email).not.toBe(SESSION_EMAIL);
+    expect(decoyRequests).toBe(0);
+  });
+
+  test('human mode inside a sandbox names the stored host, not `sandbox`', () => {
+    const { code, stdout, stderr } = get('whoami (sandbox env, stored host)');
+    expect(code).toBe(0);
+    expect(stdout).toContain(EMAIL);
+    expect(stderr).toContain(`host ${HOST_NAME}`);
+    expect(stderr).not.toContain('host sandbox');
   });
 });

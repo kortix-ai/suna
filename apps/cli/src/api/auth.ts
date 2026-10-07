@@ -4,6 +4,7 @@ import {
   activeHost,
   activeHostName,
   configFilePath,
+  envTokenHost,
   getHost,
   removeHost,
   upsertHost,
@@ -61,7 +62,8 @@ export function sameApiBase(left: string, right: string): boolean {
 function authToHost(auth: Auth, previous?: Host | null): Host {
   return {
     ...previous,
-    dashboard_url: previous && sameApiBase(auth.api_base, previous.url) ? previous.dashboard_url : undefined,
+    dashboard_url:
+      previous && sameApiBase(auth.api_base, previous.url) ? previous.dashboard_url : undefined,
     url: auth.api_base,
     token: auth.token,
     user_id: auth.user_id,
@@ -74,6 +76,17 @@ function authToHost(auth: Auth, previous?: Host | null): Host {
 /** Load the active host's auth. Honors platform-injected sandbox CLI auth. */
 export function loadAuth(): Auth | null {
   const host = activeHost();
+  return host ? hostToAuth(host) : null;
+}
+
+/** Load ONLY the injected sandbox env identity (KORTIX_TOKEN), or null.
+ *  Unlike `loadAuth()` it never falls back to the stored active host — the
+ *  caller is declaring a session surface: it serves the session's own
+ *  project, which a stored host credential for another deployment cannot
+ *  reach. The connector data plane resolves through this so `kortix
+ *  connectors` keeps acting as the launching user inside a sandbox. */
+export function loadEnvAuth(): Auth | null {
+  const host = envTokenHost();
   return host ? hostToAuth(host) : null;
 }
 

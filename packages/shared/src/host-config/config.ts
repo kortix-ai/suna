@@ -188,19 +188,30 @@ export function deleteConfig(): void {
 // ─── Active host helpers ──────────────────────────────────────────────────
 
 /**
- * Resolve the active Host for the current invocation. Priority:
- *   1. KORTIX_TOKEN env var (synthetic ephemeral host, never persisted).
- *      It carries the session-scoped token the platform injects into a sandbox.
- *   2. KORTIX_API_URL env var (URL override for the stored active host)
- *   3. `--host` flag (handled at the call site via `getHost(name)`)
- *   4. The `active` host in config.json
+ * Resolve the active Host for the current invocation — the host plain
+ * commands (no `--host`) act against. Priority:
+ *   1. The stored `active` host, when it carries a credential. `kortix
+ *      hosts use <name>` is an explicit claim about which host plain
+ *      commands serve — the same claim `--host <name>` makes per invocation
+ *      (getHost(name): the stored credential AND the stored url, no env
+ *      override). Its output must never name one principal while acting as
+ *      another.
+ *   2. KORTIX_TOKEN env var (synthetic ephemeral host, never persisted).
+ *      It carries the session-scoped token the platform injects into a
+ *      sandbox, and stays the fallback for the case it exists for: no
+ *      stored host, or one without credentials — a sandbox CLI that never
+ *      logged in must not dead-end on "not logged in".
+ *   3. KORTIX_API_URL env var (URL override for a stored host without a
+ *      credential — a URL without a session).
+ *   An explicit `--host` still outranks all of these at the call site via
+ *   `getHost(name)`.
  */
 /**
- * True when the platform-injected `KORTIX_TOKEN` is present.
- * `activeHost()` then resolves to a
- * synthetic env host, which must outrank a `.kortix/link.json` host —
- * inside a sandbox the named host has no stored credentials, so honoring
- * the link would strand a fully-authenticated CLI on "not logged in".
+ * True when the platform-injected `KORTIX_TOKEN` is present. `activeHost()`
+ * then resolves to the synthetic env host unless the active host carries its
+ * own credential — and the env host must outrank a `.kortix/link.json` host:
+ * inside a sandbox the named host has no stored credentials, so honoring the
+ * link would strand a fully-authenticated CLI on "not logged in".
  */
 function sandboxCliToken(): string | undefined {
   return sandboxEnvValue('KORTIX_TOKEN');
@@ -210,24 +221,46 @@ export function hasEnvTokenHost(): boolean {
   return Boolean(sandboxCliToken());
 }
 
+/** The synthetic env host the platform injects into a session sandbox
+ *  (KORTIX_TOKEN + KORTIX_API_URL), or null without a token. Never
+ *  persisted: it lives exactly as long as the injection does. Session
+ *  surfaces that must serve the injected session regardless of the stored
+ *  active host (the connector data plane) resolve this explicitly via
+ *  `envTokenHost()`. */
+function sandboxEnvHost(): Host | null {
+  const token = sandboxCliToken();
+  if (!token) return null;
+  return {
+    url: sandboxEnvValue('KORTIX_API_URL') ?? DEFAULT_API_BASE,
+    token,
+    user_id: '',
+    user_email: '',
+    account_id: '',
+    logged_in_at: new Date().toISOString(),
+  };
+}
+
+/** The injected sandbox env host (KORTIX_TOKEN), or null. Unlike
+ *  `activeHost()` it ignores the stored active host entirely — the caller
+ *  is declaring that the session's own credential is the only one that can
+ *  serve it. */
+export function envTokenHost(): Host | null {
+  return sandboxEnvHost();
+}
+
+/** Re-point a stored host at the injected API base — the KORTIX_API_URL
+ *  override for a host that carries no credential (a URL without a
+ *  session; a credentialed host keeps its own url, like `--host` does). */
+function withEnvUrlOverride(host: Host): Host {
+  const envApiUrl = sandboxEnvValue('KORTIX_API_URL');
+  return envApiUrl ? { ...host, url: envApiUrl } : host;
+}
+
 export function activeHost(): Host | null {
-  const envToken = sandboxCliToken();
-  if (envToken) {
-    return {
-      url: sandboxEnvValue('KORTIX_API_URL') ?? DEFAULT_API_BASE,
-      token: envToken,
-      user_id: '',
-      user_email: '',
-      account_id: '',
-      logged_in_at: new Date().toISOString(),
-    };
-  }
   const config = loadConfig();
   const host = config.hosts[config.active];
-  if (!host) return null;
-  const envApiUrl = sandboxEnvValue('KORTIX_API_URL');
-  if (envApiUrl) return { ...host, url: envApiUrl };
-  return host;
+  if (host?.token) return host;
+  return sandboxEnvHost() ?? (host ? withEnvUrlOverride(host) : null);
 }
 
 export function getHost(name: string): Host | null {
@@ -242,13 +275,29 @@ export function listHosts(): { name: string; host: Host; active: boolean }[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export function activeHostEntry(): { name: string; host: Host } {
-  const envHost = activeHost();
-  if (sandboxCliToken() && envHost) return { name: 'sandbox', host: envHost };
-  if (sandboxEnvValue('KORTIX_API_URL') && envHost) return { name: 'env', host: envHost };
+export function activeHostEntry(): { name: string; host: Host; envWins: boolean } {
   const config = loadConfig();
-  const name = config.hosts[config.active] ? config.active : DEFAULT_HOST_NAME;
-  return { name, host: config.hosts[name] ?? defaultHost(DEFAULT_API_BASE) };
+  const host = config.hosts[config.active];
+  // Mirror activeHost()'s priority so the standing host notice names the
+  // host the command will actually act against: a credentialed active host
+  // wins (`test`), the injected sandbox token shows as `sandbox`, a bare
+  // KORTIX_API_URL override shows as `env`. `envWins` records which branch
+  // matched: true when the resolved host's url/credential comes from the
+  // injected env rather than storage — decided by priority, never by the
+  // name (a user may legitimately name a stored host "sandbox").
+  if (host?.token) return { name: config.active, host, envWins: false };
+  const envHost = sandboxEnvHost();
+  if (envHost) return { name: 'sandbox', host: envHost, envWins: true };
+  if (host) {
+    const envOverride = Boolean(sandboxEnvValue('KORTIX_API_URL'));
+    return {
+      name: envOverride ? 'env' : config.active,
+      host: withEnvUrlOverride(host),
+      envWins: envOverride,
+    };
+  }
+  const name = DEFAULT_HOST_NAME;
+  return { name, host: config.hosts[name] ?? defaultHost(DEFAULT_API_BASE), envWins: false };
 }
 
 export function activeHostName(): string | null {

@@ -6,6 +6,13 @@ import type { Auth } from './auth.ts';
 
 const originalFetch = globalThis.fetch;
 
+// Restore the real fetch after EVERY test, at file level: bun runs a
+// package's test files in one process, so a fetch stub left installed by the
+// last test would silently answer every later test file's HTTP calls.
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
+
 interface Captured {
   url: string;
   method: string;

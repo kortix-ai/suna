@@ -12,9 +12,15 @@
  *      (add/remove) and setup-link minting (connect / request_secret). Resolved
  *      through the same sandbox env-token host the rest of the CLI uses
  *      (`KORTIX_TOKEN` + `KORTIX_PROJECT_ID`).
+ *
+ * Both are SESSION surfaces: they serve the session's project with the
+ * session's credential, so they resolve the injected env identity explicitly
+ * (loadEnvAuth) and never inherit the stored active host plain commands
+ * prefer — a host credential for another deployment can reach neither this
+ * session's project nor its connector credentials.
  */
 import type { ConnectorCallResult, Kortix } from '@kortix/sdk';
-import { loadAuth } from '../api/auth.ts';
+import { loadAuth, loadEnvAuth } from '../api/auth.ts';
 import { clientFromAuth, type ApiClient } from '../api/client.ts';
 import { kortixFromAuth } from '../api/sdk.ts';
 import { resolveProjectId } from '../project-link.ts';
@@ -23,10 +29,10 @@ import { CliError, stringValue } from './io.ts';
 /**
  * The Connector gateway client — runs tool calls as the launching user.
  *
- * Resolves auth from ONE place (`activeHost()` via loadAuth), so it works
+ * Resolves the injected env identity FIRST (loadEnvAuth) so it works
  * identically:
- *   - in-sandbox: `KORTIX_TOKEN` + `KORTIX_API_URL` are
- *     injected and win;
+ *   - in-sandbox: `KORTIX_TOKEN` + `KORTIX_API_URL` are injected and serve
+ *     the session — regardless of any stored active host;
  *   - on a laptop: falls back to the host you `kortix login`'d.
  * The project comes from KORTIX_PROJECT_ID / `.kortix/link.json` / `--project`.
  * When a project is known we hit the project-explicit gateway routes (which
@@ -37,7 +43,7 @@ import { CliError, stringValue } from './io.ts';
 export type ConnectorClient = Kortix['connectors'];
 
 export function connectorClient(projectOverride?: string): ConnectorClient {
-  const auth = loadAuth();
+  const auth = loadEnvAuth() ?? loadAuth();
   if (!auth?.token) {
     throw new CliError(
       'not authenticated — run `kortix login` (or set KORTIX_TOKEN in a sandbox).',
@@ -53,13 +59,13 @@ export function connectorClient(projectOverride?: string): ConnectorClient {
 /**
  * The project-scoped kortix API client (NOT the gateway) — for connector
  * management + setup-link minting. Resolves the sandbox env-token host
- * (`activeHost()` in api/config.ts) + KORTIX_PROJECT_ID.
+ * explicitly (session surface — see the module doc) + KORTIX_PROJECT_ID.
  */
 export function connectorProjectContext(projectOverride?: string): {
   client: ApiClient;
   projectId: string;
 } {
-  const auth = loadAuth();
+  const auth = loadEnvAuth() ?? loadAuth();
   if (!auth?.token) {
     throw new CliError('not authenticated — KORTIX_TOKEN is missing.', 'MISSING_ENV');
   }
@@ -279,7 +285,8 @@ export async function setSecrets(opts: {
   projectOverride?: string;
 }): Promise<string[]> {
   const entries = Object.entries(opts.values);
-  if (entries.length === 0) throw new CliError('at least one NAME: value pair is required', 'USAGE');
+  if (entries.length === 0)
+    throw new CliError('at least one NAME: value pair is required', 'USAGE');
   const { client, projectId } = connectorProjectContext(opts.projectOverride);
   const saved: string[] = [];
   for (const [name, value] of entries) {

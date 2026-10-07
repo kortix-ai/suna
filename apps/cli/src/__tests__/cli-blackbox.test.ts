@@ -492,7 +492,7 @@ describe('kortix CLI black-box behavior', () => {
       marketplaceLabel: 'Kortix',
     });
     // Machine mode (--json) keeps stderr silent: no human host notice, so a
-    // piped or merged capture parses (see whoami-json.blackbox.test.ts).
+    // piped or merged capture parses (see sandbox-auth.test.ts, folded there).
     expect(result.stderr).toBe('');
     expect(requests).toEqual([{
       method: 'GET',

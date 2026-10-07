@@ -1,10 +1,10 @@
 import {
+  type Host,
   activeAccount,
   activeHostEntry,
   defaultProject,
   getHost,
   hasEnvTokenHost,
-  type Host,
 } from './api/config.ts';
 import { cachedTokenIdentity } from './api/token-identity.ts';
 import { resolveProjectAuth } from './command-helpers.ts';
@@ -61,11 +61,16 @@ export function resolveHostNotice(hostArg?: string): HostNotice {
     };
   }
 
-  const { name, host } = activeHostEntry();
+  // `envWins` says the injected env delegation (or its url override) — not
+  // storage — resolved this entry (KRTX-1705: a credentialed stored host
+  // serves with its own credential, so the state must not claim a session
+  // token for it).
+  const { name, host, envWins } = activeHostEntry();
+  const mode = envWins ? 'env' : 'stored';
   return {
     name,
     url: host.url,
-    authState: hostAuthState(host, hasEnvTokenHost() ? 'env' : 'stored'),
+    authState: hostAuthState(host, mode),
     ...(tokenAgent(host) ? { agent: tokenAgent(host) } : {}),
   };
 }
@@ -100,7 +105,8 @@ export function renderHostNotice(commandArgv: readonly string[]): string | null 
       : activeAccountLabel();
     if (acct) line += `${C.dim} · account ${C.reset}${acct}`;
     const proj = activeProjectLabel();
-    if (proj) line += `${C.dim} · project ${C.reset}${proj.label}${C.dim} (${proj.source})${C.reset}`;
+    if (proj)
+      line += `${C.dim} · project ${C.reset}${proj.label}${C.dim} (${proj.source})${C.reset}`;
     // Session is the leaf: shown only when we're actually inside one (a
     // sandbox run injects KORTIX_SESSION_ID), never as a persisted pointer.
     const session = activeSessionLabel();
@@ -175,9 +181,12 @@ export function renderContext(): string {
   const name = linkedHost && linkHostName ? linkHostName : active.name;
   const host = linkedHost ?? active.host;
   const signedIn = Boolean(host.token);
+  // Same winner rule as resolveHostNotice, plus the link short-circuit: a
+  // link-pinned host serves with its stored credential, never the env
+  // delegation.
   const authState = hostAuthState(
     host,
-    linkedHost ? 'stored' : hasEnvTokenHost() ? 'env' : 'stored',
+    linkedHost || !active.envWins ? 'stored' : 'env',
   );
   const agent = tokenAgent(host);
   const labelW = 7; // "account".length / "project".length / "session".length

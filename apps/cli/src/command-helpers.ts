@@ -1,13 +1,20 @@
 import { FEATURE_DISABLED_CODE } from '@kortix/sdk';
 
-import { loadAuth, loadAuthForHost, type Auth } from './api/auth.ts';
-import { activeAccount, activeHostName, getHost, hasEnvTokenHost, listHosts } from './api/config.ts';
-import { ApiError, clientFromAuth, type ApiClient } from './api/client.ts';
-import { loadLink, resolveProjectRef } from './project-link.ts';
-import { ensureDefaultProjectBinding } from './project-bind.ts';
-import { denialDetailFromBody, recordPermissionDenial } from './token-denial.ts';
-import { C, status } from './style.ts';
+import { type Auth, loadAuth, loadAuthForHost, sameApiBase } from './api/auth.ts';
+import { type ApiClient, ApiError, clientFromAuth } from './api/client.ts';
+import {
+  activeAccount,
+  activeHostName,
+  envTokenHost,
+  getHost,
+  hasEnvTokenHost,
+  listHosts,
+} from './api/config.ts';
 import type { MeResponse, ProjectSession, ProjectSummary } from './api/types.ts';
+import { ensureDefaultProjectBinding } from './project-bind.ts';
+import { loadLink, resolveProjectRef } from './project-link.ts';
+import { C, status } from './style.ts';
+import { denialDetailFromBody, recordPermissionDenial } from './token-denial.ts';
 
 interface ProjectContextOpts {
   /** Override project via --project flag or KORTIX_PROJECT_ID env. */
@@ -46,6 +53,12 @@ interface ProjectContextOpts {
 export function resolveProjectAuth(opts: { hostArg?: string } = {}): {
   hostName?: string;
   auth: Auth | null;
+  /** Plain auth resolved to the stored active host (KRTX-1705) while the
+   *  injected sandbox delegation points at a different deployment: the env
+   *  project/session ids cannot be served by this credential, so the project
+   *  must resolve from the host's own context — the branch an explicit
+   *  `--host` already uses. */
+  hostScoped?: boolean;
 } {
   const link = opts.hostArg ? null : loadLink();
   let hostName = opts.hostArg ?? link?.host ?? undefined;
@@ -56,7 +69,25 @@ export function resolveProjectAuth(opts: { hostArg?: string } = {}): {
     auth = loadAuth();
     hostName = undefined;
   }
-  return { hostName, auth };
+  // Plain commands may now act as the stored active host credential
+  // (activeHost() prefers it over the sandbox env token). The env project id
+  // belongs to the injected deployment — valid against this credential only
+  // when both point at the same deployment. A link-bound host never scopes
+  // here: the link binds host and project together, and its credential (or
+  // the env fallback) already matches the project it supplies.
+  // The ambient deployment is the injected env host's own url — the
+  // KORTIX_API_URL override when set, else the default cloud base.
+  const ambientBase = envTokenHost()?.url;
+  let hostScoped = false;
+  if (!opts.hostArg && !hostName && hasEnvTokenHost() && auth?.token) {
+    // A partial Auth without an api_base cannot prove the cross-deployment
+    // case — keep the env project chain (the pre-KRTX-1705 behavior).
+    hostScoped =
+      Boolean(auth.api_base) &&
+      ambientBase !== undefined &&
+      !sameApiBase(auth.api_base, ambientBase);
+  }
+  return { hostName, auth, hostScoped };
 }
 
 /**
@@ -100,9 +131,13 @@ export async function resolveProjectContext(
   const opts: ProjectContextOpts =
     typeof optsOrProjectArg === 'string'
       ? { projectArg: optsOrProjectArg }
-      : optsOrProjectArg ?? {};
+      : (optsOrProjectArg ?? {});
 
-  const { hostName, auth: resolvedAuth } = resolveProjectAuth({ hostArg: opts.hostArg });
+  const {
+    hostName,
+    auth: resolvedAuth,
+    hostScoped,
+  } = resolveProjectAuth({ hostArg: opts.hostArg });
   let auth: Auth | null = resolvedAuth;
   if (!auth?.token) {
     if (hostName) {
@@ -122,17 +157,24 @@ export async function resolveProjectContext(
   // host's token. Resolve the project from the named host's own context — a
   // --project pin, a link bound to that same host, or that host's stored
   // default — and say so clearly when it has none.
+  //
+  // The same scoping applies without the flag when the plain-command auth
+  // resolved to the stored active host while the sandbox delegation points
+  // elsewhere (hostScoped above): pairing the host credential with the env
+  // project id would 404 cross-deployment, exactly like --host would.
+  const scopedHost = opts.hostArg ?? (hostScoped ? (activeHostName() ?? undefined) : undefined);
   let projectId: string | null;
-  if (opts.hostArg && !opts.projectArg) {
+  if (scopedHost && !opts.projectArg) {
     const link = loadLink();
-    const linkProject = link?.host === opts.hostArg ? link.project_id : undefined;
-    const hostDefault = getHost(opts.hostArg)?.default_project;
+    const linkProject = link?.host === scopedHost ? link.project_id : undefined;
+    const hostDefault = getHost(scopedHost)?.default_project;
     projectId = linkProject ?? hostDefault?.project_id ?? null;
     if (!projectId) {
       if (!opts.quietWhenUnresolved) {
+        const source = opts.hostArg ? '(--host)' : '(the active host)';
         process.stderr.write(
-          `${status.err(`No project context on host "${opts.hostArg}".`)} Pass ` +
-            `${C.cyan}--project <id>${C.reset} (${C.cyan}kortix projects ls --host ${opts.hostArg}${C.reset} lists them).\n`,
+          `${status.err(`No project context on host "${scopedHost}" ${source}.`)} Pass ` +
+            `${C.cyan}--project <id>${C.reset} (${C.cyan}kortix projects ls${opts.hostArg ? ` --host ${opts.hostArg}` : ''}${C.reset} lists them).\n`,
         );
       }
       return null;
@@ -208,12 +250,14 @@ export interface AccountContext {
  * default account from the stored credentials. With `--host`, only that
  * host's stored account is used unless `--account` explicitly overrides it.
  */
-export function resolveAccountContext(opts: {
-  accountArg?: string;
-  hostArg?: string;
-  /** Commands on person-level routes (connected apps) run with no account. */
-  accountOptional?: boolean;
-} = {}): AccountContext | null {
+export function resolveAccountContext(
+  opts: {
+    accountArg?: string;
+    hostArg?: string;
+    /** Commands on person-level routes (connected apps) run with no account. */
+    accountOptional?: boolean;
+  } = {},
+): AccountContext | null {
   const auth = opts.hostArg ? loadAuthForHost(opts.hostArg) : loadAuth();
   if (!auth?.token) {
     if (opts.hostArg) {
@@ -226,7 +270,10 @@ export function resolveAccountContext(opts: {
     }
     return null;
   }
-  const accountId = opts.accountArg || (opts.hostArg ? auth.account_id : activeAccount()?.id || auth.account_id) || '';
+  const accountId =
+    opts.accountArg ||
+    (opts.hostArg ? auth.account_id : activeAccount()?.id || auth.account_id) ||
+    '';
   if (!accountId && !opts.accountOptional) {
     process.stderr.write(
       `${status.err('No active account. Run `kortix accounts use` or pass --account <id>.')}\n`,
@@ -321,7 +368,12 @@ export async function locateSessionAnywhere(
       }
       if (expanded) {
         return {
-          located: { client: ctx.client, auth: ctx.auth, projectId: ctx.projectId, session: expanded },
+          located: {
+            client: ctx.client,
+            auth: ctx.auth,
+            projectId: ctx.projectId,
+            session: expanded,
+          },
           switched: false,
         };
       }
@@ -356,7 +408,9 @@ export async function locateSessionAnywhere(
     ? await scanHostForSession(opts.hostArg, sessionId)
     : await scanAllHostsForSession(sessionId);
   if (!found) {
-    process.stderr.write(`${status.err(`Session ${sessionId} not found in any project you can access.`)}\n`);
+    process.stderr.write(
+      `${status.err(`Session ${sessionId} not found in any project you can access.`)}\n`,
+    );
     if (!opts.hostArg) printHostRetryHints(retryCommand);
     return null;
   }
@@ -395,14 +449,19 @@ export async function locateProjectAnywhere(
   if (primaryAuth?.token) {
     const probed = await probeProject(clientFromAuth(primaryAuth), projectId);
     if (probed !== false && !(probed instanceof ApiError)) {
-      return { located: { client: clientFromAuth(primaryAuth), auth: primaryAuth, project: probed }, switched: false };
+      return {
+        located: { client: clientFromAuth(primaryAuth), auth: primaryAuth, project: probed },
+        switched: false,
+      };
     }
     if (probed instanceof ApiError) {
       surfaceApiError(probed);
       return null;
     }
     if (pinned) {
-      process.stderr.write(`${status.err(`Project ${projectId} not found on host "${opts.hostArg}".`)}\n`);
+      process.stderr.write(
+        `${status.err(`Project ${projectId} not found on host "${opts.hostArg}".`)}\n`,
+      );
       return null;
     }
   }
@@ -424,7 +483,9 @@ export async function locateProjectAnywhere(
     };
   }
 
-  process.stderr.write(`${status.err(`Project ${projectId} not found on any host you're logged into.`)}\n`);
+  process.stderr.write(
+    `${status.err(`Project ${projectId} not found on any host you're logged into.`)}\n`,
+  );
   printHostRetryHints(retryCommand);
   return null;
 }
@@ -442,13 +503,14 @@ function printHostRetryHints(retryCommand: (hostName: string) => string): void {
     `  ${C.dim}Not logged in on those hosts yet. If it lives on one of them:${C.reset}\n`,
   );
   for (const name of names) {
-    process.stderr.write(`    ${C.cyan}kortix login --host ${name} && ${retryCommand(name)}${C.reset}\n`);
+    process.stderr.write(
+      `    ${C.cyan}kortix login --host ${name} && ${retryCommand(name)}${C.reset}\n`,
+    );
   }
 }
 
 /** result = the fetched row, false = 404 (keep looking), ApiError = a real failure. */
-const SESSION_UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SESSION_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Expand a short session-id prefix against the project's session list,
  *  returning the matched row (the list already carries it — no re-fetch). */
@@ -511,7 +573,10 @@ async function scanAllHostsForSession(sessionId: string): Promise<LocatedSession
 
 /** Scan every account on ONE named (already logged-in) host for a session
  *  id, concurrency-capped within each account's project list. */
-async function scanHostForSession(hostName: string, sessionId: string): Promise<LocatedSession | null> {
+async function scanHostForSession(
+  hostName: string,
+  sessionId: string,
+): Promise<LocatedSession | null> {
   const auth = loadAuthForHost(hostName);
   if (!auth?.token) return null;
   let me: MeResponse;
@@ -528,7 +593,9 @@ async function scanHostForSession(hostName: string, sessionId: string): Promise<
     } catch {
       continue;
     }
-    const hit = await probeConcurrently(projects, (p) => probeSession(client, p.project_id, sessionId));
+    const hit = await probeConcurrently(projects, (p) =>
+      probeSession(client, p.project_id, sessionId),
+    );
     if (hit) {
       return {
         client,
@@ -595,9 +662,7 @@ function featureDisabledMessage(err: unknown): string | null {
   // Settings → Feature flags — print it verbatim rather than paraphrasing.
   const fromBody = body?.error;
   if (typeof fromBody === 'string' && fromBody.length > 0) return fromBody;
-  return typeof carrier.message === 'string' && carrier.message.length > 0
-    ? carrier.message
-    : null;
+  return typeof carrier.message === 'string' && carrier.message.length > 0 ? carrier.message : null;
 }
 
 /** The 401 line every rejected-credential surface prints. The server's verdict

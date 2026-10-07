@@ -10,40 +10,87 @@
  * Despite its name, mintConnectLink used to POST the provider-authorization
  * route and return that raw url, silently dropping `expiresInMinutes` because
  * that route has no such parameter.
+ *
+ * The auth + project context come from the sandbox env (KORTIX_TOKEN,
+ * KORTIX_API_URL, KORTIX_PROJECT_ID) against a real local HTTP server that
+ * records every POST — no `mock.module`. Bun runs a package's test files in
+ * one process, so a module mock registered here would replace the module for
+ * every test file that runs later in the same worker.
  */
-import { expect, mock, test } from 'bun:test';
-
-import { stringValue } from './io.ts';
+import { afterEach, beforeEach, expect, test } from 'bun:test';
 
 const posts: Array<{ path: string; body: Record<string, unknown> }> = [];
 let setupLinkResponse: unknown = { url: 'https://dev.kortix.com/connect/ksl_abc', app: 'gmail' };
 let setupLinkThrows = false;
 
-mock.module('./io.ts', () => ({ CliError: class extends Error {}, stringValue }));
-mock.module('../api/auth.ts', () => ({ loadAuth: () => ({ token: 't' }) }));
-mock.module('../project-link.ts', () => ({ resolveProjectId: () => 'proj-1' }));
-mock.module('../api/sdk.ts', () => ({ kortixFromAuth: () => ({}) }));
-mock.module('../api/client.ts', () => ({
-  clientFromAuth: () => ({
-    post: async (path: string, body: Record<string, unknown>) => {
-      posts.push({ path, body });
-      if (path.includes('/connect-requests')) {
-        if (setupLinkThrows) throw new Error('409 provider unsupported');
-        return setupLinkResponse;
-      }
-      return { provider: 'composio', connectUrl: 'https://connect.composio.dev/link/lk_raw' };
-    },
-  }),
-}));
+let server: ReturnType<typeof Bun.serve> | null = null;
+let apiPort = 0;
+
+const ENV_KEYS = [
+  'KORTIX_TOKEN',
+  'KORTIX_API_URL',
+  'KORTIX_PROJECT_ID',
+  'KORTIX_SESSION_ID',
+  'BASH_ENV',
+  'KORTIX_DISABLE_SANDBOX_ENV_FILE',
+  'KORTIX_CONFIG_FILE',
+  'KORTIX_AUTH_FILE',
+] as const;
+let saved: Record<string, string | undefined>;
+
+beforeEach(() => {
+  saved = {};
+  for (const k of ENV_KEYS) {
+    saved[k] = process.env[k];
+    delete process.env[k];
+  }
+  process.env.KORTIX_TOKEN = 't';
+  process.env.KORTIX_API_URL = `http://127.0.0.1:${apiPort}`;
+  process.env.KORTIX_PROJECT_ID = 'proj-1';
+  process.env.KORTIX_DISABLE_SANDBOX_ENV_FILE = '1';
+  process.env.KORTIX_CONFIG_FILE = '/nonexistent/kortix-mint-connect-test.json';
+});
+
+afterEach(() => {
+  for (const k of ENV_KEYS) {
+    if (saved[k] === undefined) delete process.env[k];
+    else process.env[k] = saved[k];
+  }
+});
 
 const { mintConnectLink } = await import('./gateway.ts');
+
+function startApi(): void {
+  server = Bun.serve({
+    port: 0,
+    async fetch(req) {
+      if (req.method !== 'POST') return Response.json({ error: 'not found' }, { status: 404 });
+      const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+      const path = new URL(req.url).pathname;
+      posts.push({ path, body });
+      if (path.includes('/connect-requests')) {
+        if (setupLinkThrows) {
+          return Response.json({ error: '409 provider unsupported' }, { status: 409 });
+        }
+        return Response.json(setupLinkResponse);
+      }
+      return Response.json({
+        provider: 'composio',
+        connectUrl: 'https://connect.composio.dev/link/lk_raw',
+      });
+    },
+  });
+  apiPort = server.port ?? 0;
+}
+
+startApi();
 
 test('mints the Kortix connect link the transcript renders as a button', async () => {
   posts.length = 0;
   const r = await mintConnectLink({ slug: 'gmail' });
   expect(r.url).toBe('https://dev.kortix.com/connect/ksl_abc');
   expect(r.url).not.toContain('composio.dev');
-  expect(posts[0].path).toBe('/projects/proj-1/connect-requests');
+  expect(posts[0].path).toBe('/v1/projects/proj-1/connect-requests');
   expect(posts[0].body).toMatchObject({ slug: 'gmail' });
 });
 

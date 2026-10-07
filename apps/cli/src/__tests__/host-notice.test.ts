@@ -137,7 +137,7 @@ describe('host notice', () => {
     }
   });
 
-  test('shows KORTIX_API_URL override for stored user auth', () => {
+  test('a credentialed active host keeps its own url — no KORTIX_API_URL override (KRTX-1705)', () => {
     const dir = writeConfig({
       cloud: {
         url: 'https://api.kortix.com',
@@ -152,10 +152,35 @@ describe('host notice', () => {
       process.env.KORTIX_API_URL = 'https://dev-api.kortix.com/v1';
 
       const notice = renderHostNotice(['whoami']);
+      // The active host credential outranks the injected base — exactly like
+      // `--host cloud`: its own url, its own user, no env override.
+      expect(notice).toContain('host cloud');
+      expect(notice).toContain('https://api.kortix.com');
+      expect(notice).toContain('user@example.com (user)');
+      expect(notice).not.toContain('https://dev-api.kortix.com/v1');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('shows KORTIX_API_URL override for a stored host without credentials', () => {
+    const dir = writeConfig({
+      cloud: {
+        url: 'https://api.kortix.com',
+        token: '',
+        user_id: '',
+        user_email: '',
+        account_id: '',
+        logged_in_at: '',
+      },
+    });
+    try {
+      process.env.KORTIX_API_URL = 'https://dev-api.kortix.com/v1';
+
+      const notice = renderHostNotice(['whoami']);
+      // A URL without a session still re-points the logged-out host.
       expect(notice).toContain('host env');
       expect(notice).toContain('https://dev-api.kortix.com/v1');
-      expect(notice).toContain('user@example.com (user)');
-      expect(notice).not.toContain('https://api.kortix.com');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
