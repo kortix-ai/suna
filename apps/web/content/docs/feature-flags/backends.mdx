@@ -483,14 +483,16 @@ A snapshot has a kind, and the kind decides how long it stays:
 |---|---|---|
 | Manual | A member or agent (`kortix backends snapshot`) | Until someone deletes it. A backend holds 10; the 11th answers `409 snapshot_limit`. |
 | Daily (`automatic`) | Kortix, once a day | 7 days. The newest daily snapshot stays past that until a newer one exists. |
-| Before resize (`resize`) | Kortix, before every resize | 24 hours. Outside the limit of 10. |
+| Before resize (`resize`) | Kortix, before every resize | 24 hours, or until the next resize replaces it: a backend holds at most one. Outside the limit of 10. |
 
 Every Kortix-made snapshot shows its expiry (`expires_at`) from the moment it
-exists, and Kortix deletes it in the 5-minute maintenance pass after that time
-while the backend runs. Kortix deletes no other snapshot. One operation runs
-at a time: a snapshot, restore or snapshot delete during a resize, restore,
-rotation or recovery answers `409 backend_busy`, and `operation` reads
-`snapshotting` or `restoring` while one of them runs.
+exists, and Kortix deletes it in the 5-minute maintenance pass after that time,
+also while the backend is parked. A resize deletes the previous Before resize
+snapshot once its own exists. Kortix deletes no other snapshot. One operation
+runs at a time: a snapshot, restore or snapshot delete during a resize,
+restore, rotation or recovery answers `409 backend_busy`, and `operation`
+reads `snapshotting` or `restoring` while one of them runs. A backend delete
+also waits for these; while it runs, no new operation starts.
 
 A snapshot holds the CPU, memory and disk image of the moment it was taken. A
 snapshot from before an applied resize cannot be restored (`409
@@ -561,7 +563,9 @@ and clients reconnect. After it:
 A restored disk (a snapshot, or the automatic backup after a host loss)
 carries the instance secret it was taken with. If the backend's admin key was
 ever rotated, Kortix rotates it again after every restore, so a key you
-rotated away never works again. Read the admin key again after a restore.
+rotated away never works again. This holds for a restore that fails or is
+interrupted too: the recovery, or the next health probe within 5 minutes,
+rotates the key. Read the admin key again after a restore.
 
 ## Use Convex directly
 
@@ -598,7 +602,7 @@ per hour at list price, about $59 for a 30-day month. Each charge is a
   the machine, with the same body as every other billing gate. A shrinking
   resize is always allowed.
 - Snapshot and backup storage are not billed. A backend holds up to 10
-  manual, 8 daily and the Before resize snapshots, each a full disk image.
+  manual, 8 daily and 1 Before resize snapshot, each a full disk image.
 - There is no per-backend monthly budget. The caps (3 per project, 10 per
   account) bound the spend. Delete a backend to stop its charges.
 

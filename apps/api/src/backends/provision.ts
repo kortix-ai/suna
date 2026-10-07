@@ -104,16 +104,16 @@ export function effectiveStatus(row: BackendRow, now = Date.now()): BackendRow['
 }
 
 /**
- * Writes `metadata.heartbeatAt` every HEARTBEAT_MS until the returned stop is
- * called, so maintenance can tell a running provision or operation from one
- * whose API process died.
+ * Writes `metadata[field]` (default `heartbeatAt`) every HEARTBEAT_MS until the
+ * returned stop is called, so maintenance can tell a running provision,
+ * operation or delete from one whose API process died.
  */
-export function keepAlive(backendId: string): () => void {
+export function keepAlive(backendId: string, field: 'heartbeatAt' | 'deleting' = 'heartbeatAt'): () => void {
   const beat = () =>
     db
       .update(projectBackends)
       .set({
-        metadata: sql`coalesce(${projectBackends.metadata}, '{}'::jsonb) || ${JSON.stringify({ heartbeatAt: new Date().toISOString() })}::jsonb`,
+        metadata: sql`coalesce(${projectBackends.metadata}, '{}'::jsonb) || ${JSON.stringify({ [field]: new Date().toISOString() })}::jsonb`,
       })
       .where(and(eq(projectBackends.backendId, backendId), isNull(projectBackends.deletedAt)))
       .catch((error) => logger.warn('[backends] heartbeat failed', { backendId, error: String(error) }));

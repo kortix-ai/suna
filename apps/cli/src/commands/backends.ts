@@ -47,7 +47,8 @@ Subcommands:
                                     with each one's kind and expiry. --json.
                                     Kinds: manual (kept until deleted, at most
                                     10), automatic (daily, kept 7 days), resize
-                                    (taken before a resize, kept 24 hours).
+                                    (taken before a resize, kept 24 hours or
+                                    until the next resize replaces it).
   snapshot <name|id>                Take a manual snapshot now. At 10 manual
                                     snapshots, delete one first. --json.
   delete-snapshot <name|id> <snapshot-id>

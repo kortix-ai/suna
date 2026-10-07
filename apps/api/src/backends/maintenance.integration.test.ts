@@ -26,6 +26,7 @@ import {
   restoreBackendSnapshot,
   rotateBackendAdminKey,
   runResize,
+  runSnapshotMaintenance,
 } from './operations';
 import { type BackendRow, discardMachine } from './provision';
 import { ORPHAN_MACHINE_GRACE_MS, deleteAccountBackends, reapOrphanBackendMachines } from './lifecycle';
@@ -62,6 +63,12 @@ type Machine = {
   /** Listed by GET /v1/sandboxes; a machine without it is not listed. */
   metadata?: Record<string, unknown>;
   createdAt?: string;
+  /** POST /snapshot holds the request this long before the host finishes (Platinum waits up to 180 s). */
+  snapshotDelayMs?: number;
+  /** POST /snapshot takes the snapshot, then answers this status (a gateway timeout in front of Platinum). */
+  snapshotAnswers?: number;
+  /** GET /snapshots answers after this long. */
+  snapshotListDelayMs?: number;
 };
 const machines = new Map<string, Machine>();
 const calls: string[] = [];
@@ -77,6 +84,8 @@ const failDelete = new Set<string>();
 /** Snapshot creation times; a snapshot not listed here was taken 2026-10-07T00:00:00Z. */
 const snapshotTimes = new Map<string, string>();
 let snapshotSeq = 0;
+/** Machines whose snapshot POST the client hung up on before Platinum answered. */
+const abortedSnapshotPosts: string[] = [];
 
 // One fake Convex per machine is overkill: every machine's URL is this one,
 // tagged with the machine id in the path prefix.
@@ -135,13 +144,18 @@ const platinum = Bun.serve({
     }
     if (req.method === 'GET' && sub === '/usage') return Response.json({ disk_used_pct: 42 });
     if (req.method === 'GET' && sub === '/snapshots') {
+      if (m.snapshotListDelayMs) await Bun.sleep(m.snapshotListDelayMs);
       return Response.json((m.snapshots ?? []).map((sid) => ({ id: sid, createdAt: snapshotTimes.get(sid) ?? '2026-10-07T00:00:00Z', sizeBytes: 1024 })));
     }
     if (req.method === 'POST' && sub === '/snapshot') {
       if (m.state !== 'running') return Response.json({ code: 'sandbox_not_running' }, { status: 409 });
+      if (m.snapshotDelayMs) await Bun.sleep(m.snapshotDelayMs);
+      if (req.signal.aborted) abortedSnapshotPosts.push(id);
+      // The host finishes the snapshot whether or not the caller still waits.
       const sid = `snap-${++snapshotSeq}`;
       m.snapshots = [...(m.snapshots ?? []), sid];
       snapshotTimes.set(sid, new Date().toISOString());
+      if (m.snapshotAnswers) return Response.json({ error: 'synthetic gateway timeout' }, { status: m.snapshotAnswers });
       return Response.json({ id: sid, sandbox_id: id, size_bytes: 1024 });
     }
     if (req.method === 'POST' && sub === '/resize') {
@@ -857,5 +871,132 @@ describe('snapshot labels without a snapshot', () => {
     expect(Object.keys(labels)).toHaveLength(1);
     expect(Object.values(labels)[0]!.kind).toBe('automatic');
     expect(machines.get('sbx-snap-phantom')!.snapshots).toEqual(Object.keys(labels));
+  });
+});
+
+describe('snapshot request failures (review: 20 s default timeout)', () => {
+  test('a daily snapshot that takes 21 s: the POST is not aborted at the 20 s call default; the snapshot is labelled automatic', async () => {
+    const row = await runningBackend('snap-slow', { snapshotDelayMs: 21_000 }, { createdAt: ago(25 * 3_600_000) });
+    expect(await claimOperation(row.backendId, 'snapshotting')).toBe(true);
+    const result = await runSnapshotMaintenance(await read(row.backendId), true);
+    expect(result.taken).toBe(true);
+    expect(abortedSnapshotPosts).not.toContain('sbx-snap-slow');
+    const after = await read(row.backendId);
+    const ids = machines.get('sbx-snap-slow')!.snapshots!;
+    expect(ids).toHaveLength(1);
+    expect(meta(after).snapshotLabels[ids[0]!].kind).toBe('automatic');
+    expect(typeof meta(after).lastAutomaticSnapshotAt).toBe('string');
+    expect(meta(after).lastOperationError).toBeUndefined();
+  }, 60_000);
+
+  test('a snapshot POST that answers 504 after the host took the snapshot: the resize labels it resize and goes on', async () => {
+    const row = await runningBackend('snap-504', { snapshotAnswers: 504 });
+    expect(await claimOperation(row.backendId, 'resizing')).toBe(true);
+    await runResize(await read(row.backendId), { cpu: 2, memoryGb: 2, diskGb: 10 });
+    const after = await read(row.backendId);
+    expect([after.cpu, after.memoryGb]).toEqual([2, 2]);
+    expect(meta(after).lastOperationError).toBeUndefined();
+    const ids = machines.get('sbx-snap-504')!.snapshots!;
+    expect(ids).toHaveLength(1);
+    expect(meta(after).snapshotLabels[ids[0]!].kind).toBe('resize');
+  });
+});
+
+describe('restore of a rotated backend that does not finish (review: leaked key revived)', () => {
+  test('a restore that Platinum ends stopped: recovery rotates the restored secret away', async () => {
+    const row = await runningBackend('restore-fail-rotated', { snapshots: ['snap-rfr'] });
+    const leaked = keyFor('sbx-restore-fail-rotated');
+    await rotateBackendAdminKey(row);
+    Object.assign(machines.get('sbx-restore-fail-rotated')!, { backupSecret: 1, restorePolls: 1, restoreEndsIn: 'stopped' });
+    const error = await restoreBackendSnapshot(await read(row.backendId), 'snap-rfr').catch((e: unknown) => e);
+    expect((error as BackendOperationError).code).toBe('restore_unhealthy');
+    expect(machines.get('sbx-restore-fail-rotated')!.state).toBe('running');
+    expect(keyFor('sbx-restore-fail-rotated')).not.toBe(leaked);
+    const after = await read(row.backendId);
+    expect(decryptProjectSecret(PROJECT, after.adminKeyEnc!)).toBe(keyFor('sbx-restore-fail-rotated'));
+    expect(meta(after).rotateAfterRestore).toBeUndefined();
+  });
+
+  test('a restore whose API process died: the takeover rotates the restored secret away', async () => {
+    // The machine already runs the restored disk; its secret (1) is the key rotated away.
+    const row = await runningBackend('restore-crash', {}, {
+      metadata: { operation: 'restoring', operationStartedAt: ago(10 * 60_000).toISOString(), heartbeatAt: ago(5 * 60_000).toISOString(), adminKeyRotatedAt: ago(3_600_000).toISOString() },
+    });
+    const leaked = keyFor('sbx-restore-crash');
+    await sweepBackends();
+    const after = await eventually(() => read(row.backendId), (r) => !meta(r).operation);
+    expect(keyFor('sbx-restore-crash')).not.toBe(leaked);
+    expect(decryptProjectSecret(PROJECT, after.adminKeyEnc!)).toBe(keyFor('sbx-restore-crash'));
+    expect(meta(after).lastOperationError).toContain('restore was interrupted');
+  });
+
+  test('a pending rotation after a restore: the health probe rotates again', async () => {
+    const row = await runningBackend('restore-pending', {}, {
+      metadata: { adminKeyRotatedAt: ago(3_600_000).toISOString(), rotateAfterRestore: true },
+    });
+    const leaked = keyFor('sbx-restore-pending');
+    await sweepBackends();
+    const after = await eventually(() => read(row.backendId), (r) => !meta(r).operation && !meta(r).rotateAfterRestore);
+    expect(keyFor('sbx-restore-pending')).not.toBe(leaked);
+    expect(decryptProjectSecret(PROJECT, after.adminKeyEnc!)).toBe(keyFor('sbx-restore-pending'));
+  });
+});
+
+describe('delete claims the backend (review: snapshot during delete)', () => {
+  const del = (backendId: string) =>
+    app.request(`/v1/projects/${PROJECT}/backends/${backendId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${secret}` } });
+
+  test('while the delete runs, no snapshot can claim the backend', async () => {
+    const row = await runningBackend('delete-race', { snapshots: ['dr-1'], snapshotListDelayMs: 800 });
+    const deleting = del(row.backendId);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(await claimOperation(row.backendId, 'snapshotting')).toBe(false);
+    expect((await deleting).status).toBe(204);
+    expect(machines.has('sbx-delete-race')).toBe(false);
+  });
+
+  test('a failed delete clears the mark: the backend takes operations again', async () => {
+    const row = await runningBackend('delete-fails', {});
+    failDelete.add('sbx-delete-fails');
+    const failed = await del(row.backendId);
+    // The route answers 502; the API edge rewrites a 502 to 503.
+    expect(failed.status).toBe(503);
+    expect((await failed.json()).code).toBe('backend_delete_failed');
+    expect(meta(await read(row.backendId)).deleting).toBeUndefined();
+    expect(await claimOperation(row.backendId, 'snapshotting')).toBe(true);
+    failDelete.delete('sbx-delete-fails');
+  });
+});
+
+describe('resize snapshots are bounded (review: host disk)', () => {
+  test('a second resize replaces the first resize snapshot: a backend holds at most one', async () => {
+    const row = await runningBackend('resize-twice', { snapshots: ['rt-manual'] });
+    expect(await claimOperation(row.backendId, 'resizing')).toBe(true);
+    await runResize(await read(row.backendId), { cpu: 2, memoryGb: 1, diskGb: 10 });
+    const [first] = Object.keys(meta(await read(row.backendId)).snapshotLabels);
+    expect(await claimOperation(row.backendId, 'resizing')).toBe(true);
+    await runResize(await read(row.backendId), { cpu: 1, memoryGb: 1, diskGb: 10 });
+    const labels = meta(await read(row.backendId)).snapshotLabels as Record<string, { kind: string }>;
+    expect(Object.values(labels).map((l) => l.kind)).toEqual(['resize']);
+    expect(Object.keys(labels)[0]).not.toBe(first);
+    expect(machines.get('sbx-resize-twice')!.snapshots).toEqual(['rt-manual', Object.keys(labels)[0]!]);
+  });
+
+  test("a parked backend's expired resize snapshot is deleted; the backend stays parked", async () => {
+    const row = await runningBackend('parked-expiry', { state: 'stopped', autoResume: false, snapshots: ['pe-resize', 'pe-manual'] }, {
+      projectId: ARCHIVED_PROJECT,
+      metadata: {
+        parked: ago(86_400_000).toISOString(),
+        snapshotLabels: { 'pe-resize': { kind: 'resize', expiresAt: ago(3_600_000).toISOString() } },
+      },
+    });
+    await sweepBackends();
+    await eventually(() => Promise.resolve(machines.get('sbx-parked-expiry')!.snapshots!), (ids) => !ids.includes('pe-resize'));
+    const after = await eventually(() => read(row.backendId), (r) => !meta(r).operation);
+    expect(machines.get('sbx-parked-expiry')!.snapshots).toEqual(['pe-manual']);
+    expect(meta(after).snapshotLabels).toEqual({});
+    expect(typeof meta(after).parked).toBe('string');
+    expect(machines.get('sbx-parked-expiry')!.state).toBe('stopped');
+    expect(meta(after).lastAutomaticSnapshotAt).toBeUndefined();
   });
 });

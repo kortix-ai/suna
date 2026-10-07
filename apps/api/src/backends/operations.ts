@@ -11,9 +11,11 @@
  *   Three kinds, recorded in `metadata.snapshotLabels` (Platinum has no label):
  *   `manual` (taken by a user, kept until deleted, at most MAX_MANUAL_SNAPSHOTS),
  *   `automatic` (daily, kept AUTOMATIC_SNAPSHOT_RETENTION_MS) and `resize`
- *   (taken before a resize, kept RESIZE_SNAPSHOT_RETENTION_MS). A snapshot with
- *   no label is manual. Only an expired automatic or resize snapshot is deleted
- *   by Kortix, and the API shows its expiry first.
+ *   (taken before a resize, kept RESIZE_SNAPSHOT_RETENTION_MS; the next resize
+ *   replaces it, so a backend holds at most one). A snapshot with no label is
+ *   manual. Kortix deletes only an expired automatic or resize snapshot and a
+ *   resize snapshot the next resize replaces; the API shows the expiry first.
+ *   Expiry also runs for a parked backend, whose machine is stopped.
  * - Resize: stop → resize (which boots) → healthy. Verified 4 s of downtime,
  *   data intact. A snapshot is taken first. A memory snapshot restores the CPU,
  *   memory and disk image it was taken with (Platinum host agent `restoreVM`
@@ -26,7 +28,13 @@
  * - Recovery: start a stopped machine, re-spawn a lost or system-tombstoned one
  *   from its last automatic backup. Maintenance runs it (./maintenance.ts).
  * - A restore (backup or snapshot) of a backend whose admin key was ever
- *   rotated rotates it again, so a key rotated away never works again.
+ *   rotated rotates it again, so a key rotated away never works again. The
+ *   restore sets `metadata.rotateAfterRestore` before it starts, and only the
+ *   new rotation clears it: a restore that fails, or whose API process dies,
+ *   is rotated again by the recovery or by the next health probe.
+ * - Delete: `metadata.deleting` (a timestamp the delete refreshes) blocks every
+ *   new operation, so no snapshot starts on a machine whose snapshots the
+ *   delete already listed.
  *
  * One operation at a time per backend (`metadata.operation`). A running
  * operation heartbeats (`keepAlive`); one silent for OPERATION_STALE_MS lost
@@ -45,6 +53,7 @@ import {
   type BackendRow,
   type BackendSize,
   BACKEND_MACHINE_LIMITS,
+  deleteBackend,
   execInBackend,
   keepAlive,
   lastHeartbeat,
@@ -117,20 +126,84 @@ export async function claimOperation(backendId: string, kind: BackendOperationKi
       updatedAt: new Date(),
       metadata: sql`coalesce(${projectBackends.metadata}, '{}'::jsonb) || ${JSON.stringify({ operation: kind, operationStartedAt: now, heartbeatAt: now })}::jsonb`,
     })
-    .where(and(eq(projectBackends.backendId, backendId), isNull(projectBackends.deletedAt), operationFree()))
+    .where(and(eq(projectBackends.backendId, backendId), isNull(projectBackends.deletedAt), operationFree(), notDeleting()))
     .returning({ id: projectBackends.backendId });
   return claimed.length === 1;
 }
 
-/** Clears the marker. `error` becomes `last_operation_error`; success clears it. */
-export async function releaseOperation(backendId: string, error: string | null): Promise<void> {
+/** SQL: no delete runs. A delete marker the delete stopped refreshing (its API process died) no longer blocks. */
+function notDeleting(now = Date.now()) {
+  const meta = projectBackends.metadata;
+  const staleBefore = new Date(now - OPERATION_STALE_MS).toISOString();
+  return sql`(not (coalesce(${meta}, '{}'::jsonb) ? 'deleting') or (${meta}->>'deleting')::timestamptz < ${staleBefore}::timestamptz)`;
+}
+
+/**
+ * Marks the backend `deleting` in one conditional UPDATE. No operation can be
+ * claimed while the mark is fresh, so the daily snapshot job never starts a
+ * snapshot after the delete listed the snapshots. Succeeds when no operation
+ * runs, during `recovering` (a broken backend stays deletable), over a stale
+ * marker and over an earlier delete. `force` (account deletion) marks the
+ * backend whatever runs.
+ */
+async function claimDelete(backendId: string, force: boolean): Promise<boolean> {
+  const meta = projectBackends.metadata;
+  const claimed = await db
+    .update(projectBackends)
+    .set({
+      updatedAt: new Date(),
+      metadata: sql`coalesce(${meta}, '{}'::jsonb) || ${JSON.stringify({ deleting: new Date().toISOString() })}::jsonb`,
+    })
+    .where(
+      and(
+        eq(projectBackends.backendId, backendId),
+        isNull(projectBackends.deletedAt),
+        force ? undefined : sql`(${operationFree()} or ${meta}->>'operation' = 'recovering')`,
+      ),
+    )
+    .returning({ id: projectBackends.backendId });
+  return claimed.length === 1;
+}
+
+/**
+ * Deletes the backend (machine, snapshots, compute window, row) under the
+ * delete mark, refreshed while it runs. False, with nothing changed, when an
+ * operation other than `recovering` runs; never with `force`. A failed delete
+ * clears the mark, so the backend takes operations again, and throws.
+ */
+export async function deleteBackendExclusive(row: BackendRow, { force = false } = {}): Promise<boolean> {
+  if (!(await claimDelete(row.backendId, force))) return false;
+  const stopRefresh = keepAlive(row.backendId, 'deleting');
+  try {
+    await deleteBackend(row);
+    return true;
+  } catch (error) {
+    await db
+      .update(projectBackends)
+      .set({ metadata: sql`coalesce(${projectBackends.metadata}, '{}'::jsonb) - 'deleting'` })
+      .where(eq(projectBackends.backendId, row.backendId))
+      .catch(() => {});
+    throw error;
+  } finally {
+    stopRefresh();
+  }
+}
+
+/**
+ * Clears the marker. `error` becomes `last_operation_error`; success clears it.
+ * `keepParked`: the operation never started or stopped the machine (the
+ * snapshot job), so a parked backend stays parked.
+ */
+export async function releaseOperation(backendId: string, error: string | null, { keepParked = false } = {}): Promise<void> {
+  const meta = projectBackends.metadata;
+  const cleared = sql`coalesce(${meta}, '{}'::jsonb) - 'operation' - 'operationStartedAt' - 'heartbeatAt' - 'lastOperationError'`;
   await db
     .update(projectBackends)
     .set({
       updatedAt: new Date(),
       // An operation ends with the machine running, so `parked` goes too: the
       // backend of an archived project is parked again on the next tick.
-      metadata: sql`(coalesce(${projectBackends.metadata}, '{}'::jsonb) - 'operation' - 'operationStartedAt' - 'heartbeatAt' - 'lastOperationError' - 'parked') || ${JSON.stringify(error ? { lastOperationError: error.slice(0, 600) } : {})}::jsonb`,
+      metadata: sql`(${keepParked ? cleared : sql`${cleared} - 'parked'`}) || ${JSON.stringify(error ? { lastOperationError: error.slice(0, 600) } : {})}::jsonb`,
     })
     .where(eq(projectBackends.backendId, backendId));
 }
@@ -154,6 +227,8 @@ export const AUTOMATIC_SNAPSHOT_RETRY_MS = HOUR_MS;
  * after that before answering `snapshot_pending`.
  */
 const SNAPSHOT_WAIT_MS = 5 * 60_000;
+/** The budget of the snapshot POST itself: above Platinum's own 180 s wait, never the 20 s Platinum call default. */
+export const SNAPSHOT_POST_TIMEOUT_MS = 200_000;
 const RETENTION_MS: Record<Exclude<SnapshotKind, 'manual'>, number> = {
   automatic: AUTOMATIC_SNAPSHOT_RETENTION_MS,
   resize: RESIZE_SNAPSHOT_RETENTION_MS,
@@ -209,12 +284,14 @@ export function automaticSnapshotDue(row: Pick<BackendRow, 'metadata' | 'created
  * Snapshots Kortix deletes now: an expired resize snapshot, and an expired
  * automatic one when a newer automatic snapshot exists. The newest automatic
  * snapshot stays past its expiry until the next one exists, so a backend that
- * cannot snapshot (parked, failing) never loses its last one.
+ * cannot snapshot (parked, failing) never loses its last one. `listed` (the
+ * ids Platinum lists): only a listed snapshot counts as the newer one. A
+ * labelled snapshot the host has not finished may still fail.
  */
-export function expiredSnapshotIds(row: Pick<BackendRow, 'metadata'>, now = Date.now()): string[] {
+export function expiredSnapshotIds(row: Pick<BackendRow, 'metadata'>, now = Date.now(), listed?: ReadonlySet<string>): string[] {
   const labels = Object.entries(snapshotLabels(row));
   const newestAutomatic = labels
-    .filter(([, label]) => label.kind === 'automatic')
+    .filter(([id, label]) => label.kind === 'automatic' && (!listed || listed.has(id)))
     .reduce((max, [, label]) => (label.expiresAt > max ? label.expiresAt : max), '');
   return labels
     .filter(([, label]) => Date.parse(label.expiresAt) <= now)
@@ -249,6 +326,13 @@ async function mergeMetadata(backendId: string, patch: Record<string, unknown>):
     .where(eq(projectBackends.backendId, backendId));
 }
 
+async function dropMetadata(backendId: string, key: string): Promise<void> {
+  await db
+    .update(projectBackends)
+    .set({ metadata: sql`coalesce(${projectBackends.metadata}, '{}'::jsonb) - ${key}::text` })
+    .where(eq(projectBackends.backendId, backendId));
+}
+
 async function readSnapshots(externalId: string): Promise<PlatinumSnapshot[]> {
   return platinumJson<PlatinumSnapshot[]>(`/v1/sandboxes/${externalId}/snapshots`);
 }
@@ -280,23 +364,48 @@ export async function listBackendBackups(row: BackendRow) {
 /**
  * Takes one snapshot and waits until Platinum lists it (restorable). A
  * Kortix-made kind is labelled as soon as Platinum names the id, so even a
- * snapshot that completes after the wait carries its kind and expiry. The
- * caller holds the operation lock.
+ * snapshot that completes after the wait carries its kind and expiry. A POST
+ * that fails without a 4xx (a timeout, a 5xx, a reset) may still complete on
+ * the host: the first snapshot Platinum lists that did not exist before the
+ * call is this one, and it gets the label. The caller holds the operation lock,
+ * so no other snapshot of this machine starts meanwhile.
  */
 async function takeSnapshot(row: BackendRow, kind: SnapshotKind): Promise<BackendSnapshotInfo> {
   const externalId = machine(row);
-  const started = await platinumJson<{ id: string }>(`/v1/sandboxes/${externalId}/snapshot`, {
-    method: 'POST',
-    body: '{}',
-  });
-  const expiresAt = kind === 'manual' ? null : await labelSnapshot(row.backendId, started.id, kind);
+  const before = new Set((await readSnapshots(externalId)).map((s) => s.id));
+  let startedId: string | null = null;
+  let postError: unknown = null;
+  try {
+    startedId = (
+      await platinumJson<{ id: string }>(`/v1/sandboxes/${externalId}/snapshot`, {
+        method: 'POST',
+        body: '{}',
+        signal: AbortSignal.timeout(SNAPSHOT_POST_TIMEOUT_MS),
+      })
+    ).id;
+  } catch (error) {
+    // A 4xx: Platinum refused, so no snapshot exists.
+    if (error instanceof PlatinumHttpError && error.status < 500) throw error;
+    postError = error;
+    logger.warn('[backends] the snapshot request failed; waiting for the snapshot to appear', {
+      backendId: row.backendId,
+      kind,
+      error: String(error),
+    });
+  }
+  let expiresAt = startedId && kind !== 'manual' ? await labelSnapshot(row.backendId, startedId, kind) : null;
   const deadline = Date.now() + SNAPSHOT_WAIT_MS;
   for (;;) {
-    const mine = (await readSnapshots(externalId)).find((s) => s.id === started.id);
+    const listed = await readSnapshots(externalId);
+    const mine = startedId
+      ? listed.find((s) => s.id === startedId)
+      : [...listed].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).find((s) => !before.has(s.id));
     if (mine) {
+      if (!startedId && kind !== 'manual') expiresAt = await labelSnapshot(row.backendId, mine.id, kind);
       return { snapshot_id: mine.id, created_at: mine.createdAt, size_bytes: mine.sizeBytes ?? null, kind, expires_at: expiresAt };
     }
     if (Date.now() > deadline) {
+      if (postError) throw postError;
       throw new BackendOperationError('the snapshot did not complete in time; list backups to see it', 'snapshot_pending');
     }
     await new Promise((r) => setTimeout(r, 1_000));
@@ -351,8 +460,8 @@ export async function deleteBackendSnapshot(row: BackendRow, snapshotId: string)
 
 /**
  * The daily snapshot job for one backend (maintenance claimed `snapshotting`
- * for it): take the automatic snapshot when one is due, then delete expired
- * snapshots. The new snapshot first, so the one it replaces expires in the same
+ * for it): take the automatic snapshot when one is due (`takeAutomatic` is
+ * false for a parked backend), then delete expired snapshots. The new snapshot first, so the one it replaces expires in the same
  * pass. Releases the lock; a failure lands in `last_operation_error`.
  */
 export async function runSnapshotMaintenance(row: BackendRow, takeAutomatic: boolean): Promise<{ expired: number; taken: boolean }> {
@@ -387,7 +496,7 @@ export async function runSnapshotMaintenance(row: BackendRow, takeAutomatic: boo
       await unlabelSnapshot(row.backendId, snapshotId);
       delete labels[snapshotId];
     }
-    for (const snapshotId of expiredSnapshotIds({ metadata: { snapshotLabels: labels } })) {
+    for (const snapshotId of expiredSnapshotIds({ metadata: { snapshotLabels: labels } }, Date.now(), listed)) {
       await platinumJson(`/v1/sandboxes/${externalId}/snapshots/${snapshotId}`, { method: 'DELETE' }).catch((deleteError) => {
         if (!isGone(deleteError)) throw deleteError;
       });
@@ -397,7 +506,9 @@ export async function runSnapshotMaintenance(row: BackendRow, takeAutomatic: boo
     }
   });
   stopHeartbeat();
-  await releaseOperation(row.backendId, failures.length ? `The snapshot job failed (${failures.join('; ')}).` : null);
+  await releaseOperation(row.backendId, failures.length ? `The snapshot job failed (${failures.join('; ')}).` : null, {
+    keepParked: true,
+  });
   return result;
 }
 
@@ -437,9 +548,16 @@ export async function restoreBackendSnapshot(row: BackendRow, snapshotId: string
         'snapshot_predates_resize',
       );
     }
+    // Set before the restore starts: whatever ends this request, the recovery
+    // or the next probe rotates the restored secret away.
+    if (wasRotated(row)) await mergeMetadata(row.backendId, { [ROTATE_AFTER_RESTORE]: true });
     await platinumJson(`/v1/sandboxes/${externalId}/restore`, {
       method: 'POST',
       body: JSON.stringify({ snapshot_id: snapshotId }),
+    }).catch(async (error) => {
+      // A 4xx: Platinum refused, the machine still runs its own secret.
+      if (error instanceof PlatinumHttpError && error.status < 500) await dropMetadata(row.backendId, ROTATE_AFTER_RESTORE);
+      throw error;
     });
     try {
       await waitRestored(externalId);
@@ -449,8 +567,9 @@ export async function restoreBackendSnapshot(row: BackendRow, snapshotId: string
     } catch (error) {
       failure = `restore failed: ${backendFailureMessage(error)}`;
       logger.error('[backends] restore failed', { backendId: row.backendId, snapshotId, error: String(error) });
-      // Platinum ends a failed restore `stopped`; start it and seal the key it accepts.
-      await recoverBackend(row).catch((recoverError) =>
+      // Platinum ends a failed restore `stopped`; start it, rotate the restored
+      // secret away and seal the key it accepts.
+      await recoverBackend(row, { restored: true }).catch((recoverError) =>
         logger.error('[backends] recovery after a failed restore failed', { backendId: row.backendId, error: String(recoverError) }),
       );
       throw new BackendOperationError(
@@ -499,12 +618,37 @@ export async function beginResize(row: BackendRow, want: Partial<BackendSize>): 
   return next;
 }
 
-/** Safety snapshot → stop → resize (boots) → healthy → record the size. Clears `resizing` either way. */
+/**
+ * Deletes every resize snapshot but `keep`: a backend holds at most one, so a
+ * resize loop cannot fill the host disk. The newer one undoes the same resize
+ * from a later state. A failed delete waits for expiry.
+ */
+async function dropOlderResizeSnapshots(row: BackendRow, keep: string): Promise<void> {
+  for (const [snapshotId, label] of Object.entries(snapshotLabels(row))) {
+    if (label.kind !== 'resize' || snapshotId === keep) continue;
+    try {
+      await platinumJson(`/v1/sandboxes/${row.externalId}/snapshots/${snapshotId}`, { method: 'DELETE' }).catch((error) => {
+        if (!isGone(error)) throw error;
+      });
+      await unlabelSnapshot(row.backendId, snapshotId);
+      logger.info('[backends] resize snapshot replaced by a newer one', { backendId: row.backendId, snapshotId, keep });
+    } catch (error) {
+      logger.warn('[backends] could not delete the previous resize snapshot; expiry deletes it', {
+        backendId: row.backendId,
+        snapshotId,
+        error: String(error),
+      });
+    }
+  }
+}
+
+/** Safety snapshot (replacing the previous one) → stop → resize (boots) → healthy → record the size. Clears `resizing` either way. */
 export async function runResize(row: BackendRow, next: BackendSize): Promise<void> {
   const externalId = row.externalId!;
   const stopHeartbeat = keepAlive(row.backendId);
   try {
-    await takeSnapshot(row, 'resize');
+    const safety = await takeSnapshot(row, 'resize');
+    await dropOlderResizeSnapshots(row, safety.snapshot_id);
     await platinumJson(`/v1/sandboxes/${externalId}/stop`, { method: 'POST', body: '{}' });
     const deadline = Date.now() + STOP_WAIT_MS;
     while ((await platinumJson<PlatinumSandboxState>(`/v1/sandboxes/${externalId}`)).state !== 'stopped') {
@@ -578,12 +722,23 @@ exit 1`;
  * (under 1 s), and the admin key changes: read it again after a restore.
  */
 async function rotateAgainAfterRestore(row: BackendRow, externalId: string): Promise<void> {
-  if (!(row.metadata as { adminKeyRotatedAt?: string } | null)?.adminKeyRotatedAt) return;
+  if (!wasRotated(row)) return;
   logger.warn('[backends] restored a backend whose admin key was rotated; rotating again', { backendId: row.backendId });
   await execInBackend(externalId, ROTATE_INSTANCE_SECRET_SCRIPT, 30_000);
   await waitHealthy(row.url!);
   await markRotated(row.backendId);
+  await dropMetadata(row.backendId, ROTATE_AFTER_RESTORE);
 }
+
+/** Set while a restore of a rotated backend has not been rotated again. Recovery and the health probe act on it. */
+export const ROTATE_AFTER_RESTORE = 'rotateAfterRestore';
+
+const wasRotated = (row: Pick<BackendRow, 'metadata'>) =>
+  Boolean((row.metadata as { adminKeyRotatedAt?: string } | null)?.adminKeyRotatedAt);
+
+/** True when a restore of this rotated backend still waits for its rotation. */
+export const rotationPendingAfterRestore = (row: Pick<BackendRow, 'metadata'>) =>
+  wasRotated(row) && Boolean((row.metadata as Record<string, unknown> | null)?.[ROTATE_AFTER_RESTORE]);
 
 /** Records that the admin key was rotated. Rotation writes it before the secret changes, so no crash loses it. */
 async function markRotated(backendId: string): Promise<void> {
@@ -670,16 +825,19 @@ export type RecoveryAction = 'started' | 'restored_from_backup' | 'none';
  * Brings the backend back and makes the row match the machine: starts a
  * stopped machine; re-spawns a lost or system-tombstoned one from its last
  * automatic backup (same id and URLs; data since that backup is lost); waits
- * until Convex answers; seals the admin key the machine accepts now; records
- * the machine's real size. The caller holds the operation lock.
+ * until Convex answers; rotates a restored secret away (after a backup
+ * restore, `restored`: a snapshot restore that failed or was interrupted, or a
+ * pending `rotateAfterRestore`); seals the admin key the machine accepts now;
+ * records the machine's real size. The caller holds the operation lock.
  */
-export async function recoverBackend(row: BackendRow): Promise<RecoveryAction> {
+export async function recoverBackend(row: BackendRow, { restored = false } = {}): Promise<RecoveryAction> {
   const externalId = row.externalId;
   if (!externalId || !row.url) throw new BackendOperationError('backend has no machine', 'backend_not_running');
   let current = await readMachine(externalId);
   if (!current) throw new BackendOperationError('The backend machine no longer exists.', 'backend_machine_missing');
   let action: RecoveryAction = 'none';
   if (current.recoverable || current.state === 'lost') {
+    if (wasRotated(row)) await mergeMetadata(row.backendId, { [ROTATE_AFTER_RESTORE]: true });
     await platinumJson(`/v1/sandboxes/${externalId}/restore-from-backup`, { method: 'POST', body: '{}' });
     action = 'restored_from_backup';
   } else if (current.state && START_STATES.has(current.state)) {
@@ -693,7 +851,9 @@ export async function recoverBackend(row: BackendRow): Promise<RecoveryAction> {
     current = await readMachine(externalId);
   }
   await waitHealthy(row.url);
-  if (action === 'restored_from_backup') await rotateAgainAfterRestore(row, externalId);
+  if (action === 'restored_from_backup' || restored || rotationPendingAfterRestore(row)) {
+    await rotateAgainAfterRestore(row, externalId);
+  }
   await sealAdminKey(row);
   const size = {
     cpu: current.cpu,

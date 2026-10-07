@@ -24,8 +24,8 @@ import { PlatinumHttpError, platinumJson, platinumRegionControlPlane } from '../
 import { platinumUsRegion } from '../shared/platinum-region';
 import { sandboxOwnershipMarker } from '../platform/sandbox-ownership';
 import { pauseComputeSession } from '../billing/services/compute-metering';
-import { backendOperation, readMachine } from './operations';
-import { type BackendRow, PROVISION_STALE_MS, deleteBackend, deleteBackendMachine } from './provision';
+import { backendOperation, deleteBackendExclusive, readMachine } from './operations';
+import { type BackendRow, PROVISION_STALE_MS, deleteBackendMachine } from './provision';
 
 function mergeMetadata(patch: Record<string, unknown>) {
   return sql`coalesce(${projectBackends.metadata}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb`;
@@ -122,7 +122,8 @@ export async function deleteAccountBackends(accountId: string): Promise<number> 
     .select()
     .from(projectBackends)
     .where(and(eq(projectBackends.accountId, accountId), isNull(projectBackends.deletedAt)));
-  for (const row of rows) await deleteBackend(row);
+  // `force`: the account goes whatever runs; the mark stops new operations.
+  for (const row of rows) await deleteBackendExclusive(row, { force: true });
   if (rows.length > 0) logger.info('[backends] deleted the backends of a deleted account', { accountId, backends: rows.length });
   return rows.length;
 }

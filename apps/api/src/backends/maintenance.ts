@@ -22,7 +22,7 @@
  *    recorded; a machine that is not running has its window closed.
  * 5. Snapshots: every running backend of an active project gets a daily
  *    automatic snapshot (kept 7 days), and expired automatic and resize
- *    snapshots are deleted (./operations.ts). At most SNAPSHOT_JOBS_PER_TICK
+ *    snapshots are deleted (./operations.ts), on parked backends too. At most SNAPSHOT_JOBS_PER_TICK
  *    start per tick, each under the `snapshotting` lock.
  * 6. Orphans (./lifecycle.ts): retry failed machine deletes; once an hour,
  *    delete backend machines no live row references.
@@ -57,6 +57,7 @@ import {
   readMachine,
   recoverBackend,
   releaseOperation,
+  rotationPendingAfterRestore,
   runSnapshotMaintenance,
 } from './operations';
 import { BACKEND_PROVIDER, type BackendRow, discardMachine, provisionBackend } from './provision';
@@ -112,7 +113,8 @@ function startRecovery(row: BackendRow, interrupted: string | null): void {
   void (async () => {
     let error: string | null = null;
     try {
-      const action = await recoverBackend(row);
+      // An interrupted restore may have brought back a secret rotated away.
+      const action = await recoverBackend(row, { restored: interrupted === 'restoring' });
       logger.warn('[backends] recovered', { backendId: row.backendId, action, interrupted });
       if (interrupted) error = `The ${INTERRUPTED_NAMES[interrupted] ?? interrupted} was interrupted. The backend runs again; retry it.`;
     } catch (recoverError) {
@@ -231,6 +233,8 @@ export async function probeBackend(row: BackendRow): Promise<BackendHealth> {
   }
   if (machineState === 'running') {
     [error, disk] = await Promise.all([versionAnswers(row.url!), diskUsedPct(externalId)]);
+    // A restore of a rotated backend that was never rotated again: the old key works. Rotate now.
+    if (rotationPendingAfterRestore(row) && (await claimOperation(row.backendId, 'recovering'))) startRecovery(row, null);
   } else if (machineState === 'missing') {
     error = 'The backend machine no longer exists.';
   } else if (machineState && REPAIR_STATES.has(machineState)) {
@@ -296,10 +300,10 @@ async function meter(row: BackendRow, machineState: string | null): Promise<void
   }
 }
 
-/** Running backends of active projects: the ones the probe and the snapshot job act on. */
-async function runningActiveBackends(): Promise<BackendRow[]> {
+/** Live backends with a machine, and whether their project is active. An archived project's backends are parked (./lifecycle.ts). */
+async function runningBackends(): Promise<Array<{ row: BackendRow; active: boolean }>> {
   const rows = await db
-    .select({ backend: projectBackends })
+    .select({ backend: projectBackends, projectStatus: projects.status })
     .from(projectBackends)
     .innerJoin(projects, eq(projects.projectId, projectBackends.projectId))
     .where(
@@ -308,15 +312,14 @@ async function runningActiveBackends(): Promise<BackendRow[]> {
         isNull(projectBackends.deletedAt),
         isNotNull(projectBackends.externalId),
         isNotNull(projectBackends.url),
-        // An archived project's backends are parked (./lifecycle.ts); the probe would start them again.
-        eq(projects.status, 'active'),
       ),
     );
-  return rows.map((r) => r.backend);
+  return rows.map((r) => ({ row: r.backend, active: r.projectStatus === 'active' }));
 }
 
 async function probeRunning(result: BackendSweepResult): Promise<void> {
-  const idle = (await runningActiveBackends()).filter((row) => !backendOperation(row));
+  // Only active projects: the probe would start a parked machine again.
+  const idle = (await runningBackends()).filter(({ row, active }) => active && !backendOperation(row)).map(({ row }) => row);
   const healths = await mapWithConcurrency(idle, PROBE_CONCURRENCY, (row) =>
     probeBackend(row).catch((error) => {
       result.errors += 1;
@@ -332,13 +335,13 @@ async function probeRunning(result: BackendSweepResult): Promise<void> {
   }
 }
 
-/** 5. Daily automatic snapshots and snapshot expiry. */
+/** 5. Daily automatic snapshots (active projects) and snapshot expiry (parked backends too: their snapshots still fill the host disk). */
 async function snapshotStep(result: BackendSweepResult): Promise<void> {
   const now = Date.now();
-  for (const row of await runningActiveBackends()) {
+  for (const { row, active } of await runningBackends()) {
     if (result.snapshotJobs >= SNAPSHOT_JOBS_PER_TICK) return;
     if (backendOperation(row)) continue;
-    const takeAutomatic = automaticSnapshotDue(row, now);
+    const takeAutomatic = active && automaticSnapshotDue(row, now);
     if (!takeAutomatic && expiredSnapshotIds(row, now).length === 0) continue;
     if (!(await claimOperation(row.backendId, 'snapshotting'))) continue;
     result.snapshotJobs += 1;

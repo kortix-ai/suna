@@ -56,10 +56,11 @@ A snapshot has one of three kinds:
 |---|---|---|
 | `manual` | A member or agent, with `snapshot` | Until deleted. A backend holds 10; the 11th answers `409 snapshot_limit` |
 | `automatic` | Kortix, once a day | 7 days. The newest one stays past its expiry until a newer one exists |
-| `resize` | Kortix, before a resize | 24 hours |
+| `resize` | Kortix, before a resize | 24 hours, or until the next resize replaces it (at most one) |
 
 `expires_at` says when Kortix deletes an `automatic` or `resize` snapshot. It is
-`null` for a `manual` one. Kortix never deletes a snapshot without that date.
+`null` for a `manual` one. Kortix deletes a snapshot only after that date, or a
+`resize` snapshot when the next resize replaces it.
 
 ```ts
 const backends = kortix.project(projectId).backends;

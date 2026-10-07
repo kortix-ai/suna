@@ -329,8 +329,8 @@ kortix backends restore main <snapshot-id> --yes            # roll back; later c
   before a migration, a bulk import, or anything you might want to undo.
   Kinds: `manual` (yours, kept until deleted, 10 per backend; the 11th answers
   `409 snapshot_limit`), `automatic` (Kortix, daily, kept 7 days) and `resize`
-  (Kortix, before a resize, kept 24 h). `expires_at` says when Kortix deletes
-  one; Kortix deletes nothing else.
+  (Kortix, before a resize, kept 24 h or until the next resize replaces it).
+  `expires_at` says when Kortix deletes one; Kortix deletes nothing else.
 - **Restore:** rolls the running backend back in place, in seconds. Every
   change after the snapshot is gone, so confirm with the user first. A
   snapshot from before a resize cannot be restored (`409

@@ -18,7 +18,6 @@ import {
   backendAdminKey,
   backendMemberToken,
   backendPublicAuthEnv,
-  deleteBackend,
   effectiveStatus,
   getLiveBackend,
   insertBackend,
@@ -40,6 +39,7 @@ import {
   RESIZE_SNAPSHOT_RETENTION_MS,
   SNAPSHOT_KINDS,
   createBackendSnapshot,
+  deleteBackendExclusive,
   deleteBackendSnapshot,
   listBackendBackups,
   readBackendLog,
@@ -123,7 +123,8 @@ const BackendSnapshot = z
     kind: z.enum(SNAPSHOT_KINDS).openapi({
       description:
         '`manual`: taken by a member or agent, kept until deleted. `automatic`: the daily snapshot, kept ' +
-        `${AUTOMATIC_SNAPSHOT_RETENTION_MS / 86_400_000} days. \`resize\`: taken before a resize, kept ${RESIZE_SNAPSHOT_RETENTION_MS / 3_600_000} hours.`,
+        `${AUTOMATIC_SNAPSHOT_RETENTION_MS / 86_400_000} days. \`resize\`: taken before a resize, kept ${RESIZE_SNAPSHOT_RETENTION_MS / 3_600_000} hours ` +
+        'or until the next resize replaces it (a backend holds at most one).',
     }),
     expires_at: z.string().nullable().openapi({
       description:
@@ -655,7 +656,7 @@ export function registerBackendsRoutes(): void {
       description:
         'Deletes the machine, its snapshots and every document and file in it. This cannot be undone. ' +
         '409 `backend_busy` during a resize, restore, snapshot or key rotation; allowed during `recovering`, ' +
-        'so a broken backend can always be deleted.',
+        'so a broken backend can always be deleted. While the delete runs, no new operation starts.',
       request: { params: BackendParams },
       responses: { 204: { description: 'Deleted' }, ...errors(403, 404, 409, 502) },
     }),
@@ -665,12 +666,12 @@ export function registerBackendsRoutes(): void {
       if (loaded instanceof Response) return loaded;
       const row = await getLiveBackend(projectId, backendId);
       if (!row) return c.json({ error: 'Not found' }, 404);
-      const busy = backendOperation(row);
-      if (busy && busy !== 'recovering') {
-        return c.json({ error: `the backend is ${busy}; delete it when that finishes`, code: 'backend_busy' }, 409);
-      }
       try {
-        await deleteBackend(row);
+        // Claims the backend atomically: no snapshot or other operation starts while the delete runs.
+        if (!(await deleteBackendExclusive(row))) {
+          const busy = backendOperation(row) ?? 'running another operation';
+          return c.json({ error: `the backend is ${busy}; delete it when that finishes`, code: 'backend_busy' }, 409);
+        }
       } catch (error) {
         logger.error('[backends] delete failed', { projectId, backendId, error: String(error) });
         return c.json({ error: 'The backend machine could not be deleted. Try again.', code: 'backend_delete_failed' }, 502);

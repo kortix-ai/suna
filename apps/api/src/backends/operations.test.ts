@@ -84,3 +84,12 @@ describe('expiredSnapshotIds', () => {
     expect(expiredSnapshotIds(row({ snapshotLabels: { a: label('automatic', 86_400_000) } }), now)).toEqual([]);
   });
 });
+
+describe('expiredSnapshotIds with the listed snapshots', () => {
+  const label = (kind: string, ms: number) => ({ kind, expiresAt: at(ms) });
+  test('a labelled automatic snapshot Platinum does not list yet never counts as the newer one', () => {
+    const labels = { 'a-old': label('automatic', 86_400_000), 'a-pending': label('automatic', -7 * 86_400_000) };
+    expect(expiredSnapshotIds(row({ snapshotLabels: labels }), now, new Set(['a-old']))).toEqual([]);
+    expect(expiredSnapshotIds(row({ snapshotLabels: labels }), now, new Set(['a-old', 'a-pending']))).toEqual(['a-old']);
+  });
+});
