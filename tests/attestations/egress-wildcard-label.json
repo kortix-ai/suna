@@ -1,0 +1,17 @@
+{
+  "source_hash": "ff17896aa7592c0e418a43c2f581e6a1a789a7f18e3d11fb9dc10aef11a4bc10",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-sandbox-ownership.test.ts",
+    "apps/api/src/secrets/strategy.test.ts",
+    "apps/api/src/secrets/strategy.ts"
+  ],
+  "diff_hash": "2e9904df19dabf8ca600e01232e444c1015a9e9569172935fa7481c3a18af4e5",
+  "head": "e5d9e252cac0806573c2c9563b3a4901184a0e9e",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-07T05:09:25.942Z"
+}
