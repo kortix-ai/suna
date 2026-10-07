@@ -447,6 +447,51 @@ describe('admitInboxPrompt against real rows', () => {
     expect(await promoteNextInboxRow(SESSION_ID)).toBe(quickQueue.idempotencyKey);
   });
 
+  test('a refused head row carries its boundary-wait window through the result merge', async () => {
+    // KRTX-1684: the fallback needs the row to remember how long it has waited
+    // behind WHICH turn. The marker rides `requeueForAdmission`'s result
+    // merge, so the refusal counter it shares that column with must keep
+    // growing, and a later refusal without a patch must keep the window.
+    const row = await enqueue('q_boundary', { placement: 'transcript' });
+    const lease = await hold(row);
+    await setBox('active', turn);
+    expect(await admitInboxPrompt(row)).toEqual({
+      admit: false,
+      reason: 'turn_active',
+      retryAfterMs: INBOX_ORDER_BACKOFF_MS,
+      interruptAtBoundary: { opencodeSessionId: 'ses_root', messageId: WIRE_ID },
+    });
+    const sinceMs = 1_700_000_000_000;
+    expect(
+      await requeueForAdmission(lease, 'turn_active', new Date(Date.now() + INBOX_ORDER_BACKOFF_MS), {
+        boundary_wait: { opencodeSessionId: 'ses_root', messageId: WIRE_ID, sinceMs },
+      }),
+    ).toBe(true);
+    const stored = await readRow(row.commandId);
+    const result = stored.result as Record<string, unknown>;
+    expect(result.admission_reason).toBe('turn_active');
+    expect(result.admission_refusals).toBe(1);
+    expect((result.boundary_wait as Record<string, unknown>).sinceMs).toBe(sinceMs);
+
+    // A later refusal with no patch keeps the window and still grows the
+    // counter — the fallback must not disturb the backoff curve it shares
+    // the result column with.
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET status = 'running', locked_by = 'prompt-inbox-it'
+       WHERE command_id = ${row.commandId}::uuid`);
+    expect(
+      await requeueForAdmission(
+        { commandId: row.commandId, lockedBy: 'prompt-inbox-it' },
+        'turn_active',
+        new Date(Date.now() + INBOX_ORDER_BACKOFF_MS),
+      ),
+    ).toBe(true);
+    const afterSecond = ((await readRow(row.commandId)).result ?? {}) as Record<string, unknown>;
+    expect(afterSecond.admission_refusals).toBe(2);
+    expect((afterSecond.boundary_wait as Record<string, unknown>).sinceMs).toBe(sinceMs);
+  });
+
   test('the SAME metadata on a STOPPED box admits — authority dies with the runtime', async () => {
     const row = await enqueue('q_admit_stopped');
     await setBox('stopped', turn);
