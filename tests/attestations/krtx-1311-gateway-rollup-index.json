@@ -7,13 +7,13 @@
     "packages/db/src/schema/kortix.ts",
     "tests/migration/gateway-logs-session-rollup-index.test.ts"
   ],
-  "diff_hash": "913f9ba5beb1764ad3d3c43ecb25e5c4f89a88aa7ec959da6fa0d917e98ab5db",
-  "head": "d981485896d721d65118d1988e8e849bb23a725d",
+  "diff_hash": "a20ddf2638866e7a853820a9e5673f1c8f94ed11a0c19d7f2f5b18ffad93858d",
+  "head": "42f8539b185bcde497112814fc836a07da9907e2",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-07T05:41:08.184Z"
+  "at": "2026-10-07T05:42:24.610Z"
 }
