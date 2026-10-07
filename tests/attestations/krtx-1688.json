@@ -1,0 +1,20 @@
+{
+  "source_hash": "45125484c85bb5d4c9ef3a30ae1c025b083e0ac8dfac67c0512993cfeaea8e21",
+  "diff_files": [
+    "apps/api/src/__tests__/unit-connector-share.test.ts",
+    "apps/api/src/connectors/share.ts",
+    "apps/api/src/projects/lib/access.ts",
+    "apps/api/src/projects/lib/agent-session-standing.ts",
+    "apps/api/src/projects/lib/session-inventory.ts",
+    "apps/api/src/projects/lib/session-visibility.ts"
+  ],
+  "diff_hash": "e58c59abee0d13e2cac53294f85d1ec673da45e90425ade2c1a3696ad4a3d4b6",
+  "head": "5e23014dff76c772e26edb8f2c9225cf32d14ec2",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-06T12:55:07.412Z"
+}
