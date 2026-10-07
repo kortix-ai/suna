@@ -172,7 +172,7 @@ export async function dbStep(ctx: SunaMigrationContext): Promise<void> {
   const specs = (ctx.progress.sessions as SessionSpec[]) ?? [];
   const now = new Date();
 
-  await (ctx.database as any).transaction(async (tx: any) => {
+  await ctx.database.transaction(async (tx) => {
     await tx.insert(projects).values({
       projectId, accountId: ctx.accountId, name: 'Legacy (Suna) projects',
       // pushBundleAsRepo (suna-push.ts) seeds the new repo with
@@ -205,7 +205,7 @@ export async function dbStep(ctx: SunaMigrationContext): Promise<void> {
       await tx.insert(projectSessions).values({
         sessionId: crypto.randomUUID(), accountId: ctx.accountId, projectId,
         branchName: s.slug, baseRef: defaultBranch, sandboxProvider: 'daytona',
-        sandboxId: null, sandboxUrl: null, opencodeSessionId: s.opencodeSessionId,
+        sandboxId: null, sandboxUrl: null, runtimeSessionId: s.opencodeSessionId,
         // 'completed' is the truthful status for a migrated thread: it never
         // ran a turn in this system, so it is neither running nor stopped.
         // (The old reason to avoid 'stopped' — the session list hid stopped
@@ -223,7 +223,7 @@ export async function dbStep(ctx: SunaMigrationContext): Promise<void> {
             rehydrate: { opencode_session_id: s.opencodeSessionId },
           },
         },
-      } as any).onConflictDoNothing({ target: projectSessions.sessionId });
+      }).onConflictDoNothing({ target: projectSessions.sessionId });
     }
   });
 
