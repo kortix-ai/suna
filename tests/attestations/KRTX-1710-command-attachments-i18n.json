@@ -1,0 +1,25 @@
+{
+  "source_hash": "f13d29ff5010ac5c9cabeb2db3d4fa72bed14c80cacd31764fde6ca6b0fa7efb",
+  "diff_files": [
+    "apps/web/src/features/session/composer/command-attachments.test.ts",
+    "apps/web/src/features/session/composer/command-attachments.ts",
+    "apps/web/translations/de.json",
+    "apps/web/translations/en.json",
+    "apps/web/translations/es.json",
+    "apps/web/translations/fr.json",
+    "apps/web/translations/it.json",
+    "apps/web/translations/ja.json",
+    "apps/web/translations/pt.json",
+    "apps/web/translations/sr.json",
+    "apps/web/translations/zh.json"
+  ],
+  "diff_hash": "ddc99fbe81f4d6e56dede440d8f2e51df2de2d1a5639eaed602a8254433d7eff",
+  "head": "0f589b5b3381780425daeb5a2905662cde92aa79",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-07T19:26:01.795Z"
+}
