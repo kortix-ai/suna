@@ -133,7 +133,8 @@ async function startFixture(
 
 /** A HOME the test owns: every path the installer can touch lives under it. */
 function makeFakeHome(): string {
-  const home = mkdtempSync(resolve(tmpdir(), 'kortix-install-home-'));
+  // realpath: macOS tmpdir() is /var/…, a symlink to /private/var/….
+  const home = realpathSync(mkdtempSync(resolve(tmpdir(), 'kortix-install-home-')));
   mkdirSync(resolve(home, 'tmp'));
   mkdirSync(resolve(home, 'bin'));
   return home;
