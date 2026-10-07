@@ -298,7 +298,8 @@ export type { ProjectCommit, ProjectFileHistoryResponse } from '@kortix/sdk';
 /** Mobile's name for the SDK's `ProjectCommitDiffResponse`. */
 export type { ProjectCommitDiffResponse } from '@kortix/sdk';
 
-export { listProjectFiles, getProjectFileHistory, readProjectFile } from '@kortix/sdk';
+export type { ProjectDirectoryEntry, ProjectFileSearchMatch } from '@kortix/sdk';
+export { listProjectDirectory, searchProjectFiles, getProjectFileHistory, readProjectFile } from '@kortix/sdk';
 
 /** Mobile calls this with a positional `path?: string`; the SDK's
  *  `getProjectCommitDiff` (in `git-history.ts`) takes `options?: { path? }`. */

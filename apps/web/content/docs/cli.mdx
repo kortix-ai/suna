@@ -735,7 +735,7 @@ Read-only view of the project's git repo. Operates on the default branch unless 
 
 | Command | Effect |
 | --- | --- |
-| `kortix files ls [<path>]` | List files under a path. |
+| `kortix files ls [<path>]` | List files under a path, recursively. The list stops at 1,000 files and says so; narrow it with a path or use `files search`. |
 | `kortix files cat <path>` | Print a file's contents. |
 | `kortix files search <query> [--content]` | Search filenames, or file contents with `--content`. |
 | `kortix files history <path>` | Commit history for one file. |
