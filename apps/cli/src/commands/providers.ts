@@ -22,6 +22,7 @@ import {
 } from '../command-helpers.ts';
 import { readSecret, readVisible } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
+import { sleep } from '@kortix/shared/guards';
 
 const HELP = help`Usage: kortix providers <subcommand> [options]
 
@@ -500,10 +501,6 @@ async function providersRm(provider: string | undefined, opts: CtxOpts): Promise
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
 
 function formatDuration(ms: number): string {
   if (ms <= 0) return 'expired';

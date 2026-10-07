@@ -31,7 +31,6 @@ import { ProjectHomeWallpaper, ProjectHomeWelcomeBody } from './home/welcome-bod
 
 // This path is this view's public surface — the instant session shell and the
 // IAM tests already import from here, so the moved pieces keep their address.
-export { PROJECT_SETUP_TILE_ACTIONS } from './home/setup-tiles';
 export { ProjectHomeWelcomeBody } from './home/welcome-body';
 
 export interface ProjectHomeSendOptions extends ComposerOptions {
