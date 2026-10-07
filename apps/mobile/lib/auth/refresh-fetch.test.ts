@@ -31,12 +31,13 @@ describe('isDefinitiveRefreshRejection', () => {
     expect(isDefinitiveRefreshRejection(401, { error_code: 'session_expired' })).toBe(true);
     expect(isDefinitiveRefreshRejection(400, { error_code: 'user_not_found' })).toBe(true);
     expect(isDefinitiveRefreshRejection(400, { code: 'user_banned' })).toBe(true);
+    expect(isDefinitiveRefreshRejection(400, { code: 'validation_failed' })).toBe(true);
   });
 
   test('any other status, code or body is not', () => {
     expect(isDefinitiveRefreshRejection(429, { code: 'refresh_token_not_found' })).toBe(false);
     expect(isDefinitiveRefreshRejection(500, { code: 'refresh_token_not_found' })).toBe(false);
-    expect(isDefinitiveRefreshRejection(400, { code: 'validation_failed' })).toBe(false);
+    expect(isDefinitiveRefreshRejection(400, { code: 'unexpected_failure' })).toBe(false);
     expect(isDefinitiveRefreshRejection(403, { msg: 'Forbidden' })).toBe(false);
     expect(isDefinitiveRefreshRejection(403, null)).toBe(false);
     expect(isDefinitiveRefreshRejection(403, '<html>blocked</html>')).toBe(false);
@@ -58,7 +59,7 @@ describe('createRefreshGuardFetch', () => {
 
   for (const [name, response] of Object.entries({
     ...NOT_DEFINITIVE,
-    'JSON 400 with another code': () => json(400, { code: 'validation_failed' }),
+    'JSON 400 with another code': () => json(400, { code: 'unexpected_failure' }),
   })) {
     test(`throws for a ${name} refresh answer`, async () => {
       await expect(guarded(response())(REFRESH_URL, POST)).rejects.toThrow(TypeError);

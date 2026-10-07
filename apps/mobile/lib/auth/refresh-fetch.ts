@@ -24,6 +24,9 @@ export const DEFINITIVE_REFRESH_ERROR_CODES: ReadonlySet<string> = new Set([
   'session_expired',
   'user_not_found',
   'user_banned',
+  // On this endpoint GoTrue sends it only for an invalid refresh token:
+  // malformed, or a counter ahead of the database ("Not Issued By This Server").
+  'validation_failed',
 ]);
 
 /**

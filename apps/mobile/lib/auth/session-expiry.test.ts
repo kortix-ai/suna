@@ -23,7 +23,7 @@ describe('classifyRefreshResult', () => {
   });
 
   test('a GoTrue code for a dead login, or a missing session, is expired', () => {
-    for (const code of ['refresh_token_not_found', 'refresh_token_already_used', 'session_not_found']) {
+    for (const code of ['refresh_token_not_found', 'refresh_token_already_used', 'session_not_found', 'validation_failed']) {
       expect(classifyRefreshResult({ error: { name: 'AuthApiError', status: 400, code }, hasSession: false })).toBe('expired');
     }
     expect(classifyRefreshResult({ error: { name: 'AuthSessionMissingError', status: 400 }, hasSession: false })).toBe('expired');
