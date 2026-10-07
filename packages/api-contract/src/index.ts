@@ -1997,3 +1997,180 @@ export const GrantSecretToAgentResultSchema = z.object({
   adopted_governance: z.boolean(),
 });
 export type GrantSecretToAgentResult = z.infer<typeof GrantSecretToAgentResultSchema>;
+
+// ─── Kortix Capture data API (`/v1/accounts/:accountId/capture/*`) ──────────
+// What apps/api/src/capture serializes for the account switch, search,
+// episodes, workflows and exports. A Kortix API key reads the same bodies.
+
+export const CaptureRoleSchema = z.enum(['admin', 'viewer', 'member']);
+export type CaptureRole = z.infer<typeof CaptureRoleSchema>;
+
+export const CaptureWorkspaceSchema = z.object({
+  account_id: z.string(),
+  enabled: z.boolean(),
+  role: CaptureRoleSchema,
+  can_manage: z.boolean(),
+  updated_at: z.string().nullable(),
+});
+export type CaptureWorkspace = z.infer<typeof CaptureWorkspaceSchema>;
+
+export const CaptureSearchKindSchema = z.enum(['screen', 'actions', 'audio']);
+
+export const CaptureSearchHitSchema = z.object({
+  kind: CaptureSearchKindSchema,
+  id: z.string(),
+  ts: z.string(),
+  user_id: z.string(),
+  device_id: z.string(),
+  chunk_id: z.string(),
+  app: z.string().nullable(),
+  title: z.string().nullable(),
+  url: z.string().nullable(),
+  snippet: z.string(),
+});
+export type CaptureSearchHit = z.infer<typeof CaptureSearchHitSchema>;
+
+export const CaptureSearchResultSchema = z.object({
+  /** The person searched; null for an account-wide search (`scope=account`). */
+  user_id: z.string().nullable(),
+  q: z.string(),
+  hits: z.array(CaptureSearchHitSchema),
+});
+export type CaptureSearchResult = z.infer<typeof CaptureSearchResultSchema>;
+
+export const CaptureEpisodeSchema = z.object({
+  episode_id: z.string(),
+  user_id: z.string(),
+  device_id: z.string().nullable(),
+  source: z.enum(['detected', 'saved']),
+  start_at: z.string(),
+  end_at: z.string(),
+  duration_s: z.number(),
+  label: z.string().nullable(),
+  goal: z.string().nullable(),
+  outcome: z.string().nullable(),
+  outcome_status: z.enum(['succeeded', 'failed', 'abandoned']).nullable(),
+  apps: z.array(z.string()),
+  status: z.enum(['open', 'closed', 'traced', 'failed']),
+  steps_count: z.number(),
+  workflow_id: z.string().nullable(),
+  variant_key: z.string().nullable(),
+  model: z.string().nullable(),
+  cost_usd: z.number(),
+});
+export type CaptureEpisode = z.infer<typeof CaptureEpisodeSchema>;
+
+export const CaptureEpisodeListSchema = z.object({
+  episodes: z.array(CaptureEpisodeSchema),
+  /** Pass back as `before` for the next page; null on the last page. */
+  next_before: z.string().nullable(),
+});
+export type CaptureEpisodeList = z.infer<typeof CaptureEpisodeListSchema>;
+
+export const CaptureEpisodeStepSchema = z.object({
+  index: z.number(),
+  ts: z.string(),
+  verb: z.string(),
+  app: z.string().nullable(),
+  object: z.string(),
+  params: z.string().nullable(),
+  variables: z.array(z.string()),
+  keyframe_frame_id: z.string().nullable(),
+  action_id: z.string().nullable(),
+});
+export type CaptureEpisodeStep = z.infer<typeof CaptureEpisodeStepSchema>;
+
+export const CaptureEpisodeDetailSchema = CaptureEpisodeSchema.extend({ steps: z.array(CaptureEpisodeStepSchema) });
+export type CaptureEpisodeDetail = z.infer<typeof CaptureEpisodeDetailSchema>;
+
+export const CaptureWorkflowStatusSchema = z.enum(['detected', 'reviewed', 'exported']);
+
+export const CaptureWorkflowSummarySchema = z.object({
+  workflow_id: z.string(),
+  name: z.string(),
+  goal: z.string().nullable(),
+  status: CaptureWorkflowStatusSchema,
+  runs_total: z.number(),
+  runs_per_week: z.number(),
+  duration_p50_s: z.number(),
+  duration_p90_s: z.number(),
+  people_count: z.number(),
+  apps: z.array(z.string()),
+  steps_count: z.number(),
+  variants_count: z.number(),
+  success_rate: z.number().nullable(),
+  determinism: z.number(),
+  automation_hours_per_week: z.number(),
+  first_seen_at: z.string().nullable(),
+  last_seen_at: z.string().nullable(),
+  updated_at: z.string(),
+});
+export type CaptureWorkflowSummary = z.infer<typeof CaptureWorkflowSummarySchema>;
+
+export const CaptureWorkflowListSchema = z.object({
+  workflows: z.array(CaptureWorkflowSummarySchema),
+  counts: z.object({ all: z.number(), detected: z.number(), reviewed: z.number(), exported: z.number() }),
+});
+export type CaptureWorkflowList = z.infer<typeof CaptureWorkflowListSchema>;
+
+export const CaptureWorkflowStepSchema = z.object({
+  index: z.number(),
+  verb: z.string(),
+  object: z.string(),
+  app: z.string().nullable(),
+  params: z.string().nullable().optional(),
+  variables: z.array(z.string()).optional(),
+  decision: z.object({ question: z.string(), variant: z.string(), share: z.number() }).nullable().optional(),
+});
+export type CaptureWorkflowStep = z.infer<typeof CaptureWorkflowStepSchema>;
+
+export const CaptureWorkflowVariantSchema = z.object({
+  key: z.string(),
+  name: z.string(),
+  runs: z.number(),
+  share: z.number(),
+  steps_count: z.number(),
+  differs: z.array(z.number()),
+  note: z.string(),
+  question: z.string().optional(),
+});
+export type CaptureWorkflowVariant = z.infer<typeof CaptureWorkflowVariantSchema>;
+
+export const CaptureSkillRefSchema = z.object({
+  project_id: z.string(),
+  path: z.string(),
+  name: z.string(),
+  exported_at: z.string(),
+  exported_by: z.string(),
+});
+
+export const CaptureWorkflowDetailSchema = CaptureWorkflowSummarySchema.extend({
+  outcome: z.string().nullable(),
+  steps: z.array(CaptureWorkflowStepSchema),
+  variants: z.array(CaptureWorkflowVariantSchema),
+  people: z.array(z.object({ user_id: z.string(), runs: z.number(), duration_p50_s: z.number() })),
+  reviewed_by: z.string().nullable(),
+  reviewed_at: z.string().nullable(),
+  skill: CaptureSkillRefSchema.nullable(),
+  model: z.string().nullable(),
+  cost_usd: z.number(),
+});
+export type CaptureWorkflowDetail = z.infer<typeof CaptureWorkflowDetailSchema>;
+
+export const CaptureExportSchema = z.object({
+  export_id: z.string(),
+  format: z.enum(['jsonl', 'parquet']),
+  params: z.record(z.string(), z.unknown()),
+  status: z.enum(['queued', 'running', 'done', 'failed']),
+  rows: z.number().nullable(),
+  bytes: z.number().nullable(),
+  error: z.string().nullable(),
+  /** A signed URL, valid for 1 hour, once `done`. */
+  download: z.object({ url: z.string(), expires_at: z.string() }).nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export type CaptureExport = z.infer<typeof CaptureExportSchema>;
+
+export const CaptureExportListSchema = z.object({ exports: z.array(CaptureExportSchema) });
+export type CaptureExportList = z.infer<typeof CaptureExportListSchema>;

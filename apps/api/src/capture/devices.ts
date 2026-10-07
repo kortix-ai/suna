@@ -7,6 +7,7 @@
 import { captureDeviceGrants, captureDevices } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { generateDeviceCode, hashSecretKey, randomAlphanumeric } from '../shared/crypto';
+import { bearerToken } from '../shared/bearer-token';
 import { db } from '../shared/db';
 import { accountPrefix, deviceFields } from './format';
 
@@ -100,7 +101,7 @@ export async function pollDeviceGrant(deviceCode: string): Promise<PollOutcome> 
 
 /** The device behind a bearer device token, or null. Always read from the row: a revoke on any replica wins. */
 export async function deviceForToken(header: string | undefined): Promise<Device | null> {
-  const token = header?.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  const token = bearerToken(header)?.trim() ?? '';
   if (!token.startsWith(DEVICE_TOKEN_PREFIX)) return null;
   const [device] = await db
     .select()

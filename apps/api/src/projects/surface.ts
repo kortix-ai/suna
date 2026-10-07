@@ -45,3 +45,8 @@ export {
   loadManifestForEdit,
   commitManifest,
 } from './lib/triggers';
+
+// Kortix Capture's one project touchpoint: an admin publishes a workflow as a
+// skill into a project they may write (capture/intelligence-routes.ts, capture/skills.ts).
+export { loadProjectForUser } from './lib/access';
+export { commitRepoFile } from './lib/trigger-manifest';

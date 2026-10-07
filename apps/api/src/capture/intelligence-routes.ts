@@ -13,9 +13,10 @@
  * Every route answers 403 `capture_disabled` while Capture is off.
  */
 import { createRoute, z } from '@hono/zod-openapi';
+import * as C from '@kortix/api-contract';
 import { accountsRouter } from '../accounts/core/app';
 import { auth, errors, json } from '../openapi';
-import { loadProjectForUser } from '../projects/lib/access';
+import { loadProjectForUser } from '../projects/surface';
 import { auditRead, captureAccess, isResponse, refuse, type Access, type Ctx } from './account-routes';
 import { enqueueExport, exportDownload } from './exports';
 import {
@@ -39,6 +40,8 @@ import { runIntelligence } from './workers';
 
 const params = z.object({ accountId: z.string().uuid() });
 const ok = (description: string) => ({ 200: json(z.any(), description), ...errors(400, 403, 404) });
+/** A 200 with its contract schema (packages/api-contract): the handler's body is type-checked against it. */
+const typed = <S extends z.ZodTypeAny>(schema: S, description: string) => ({ 200: json(schema, description), ...errors(400, 403, 404) });
 const tags = ['capture'];
 const DAY = 86_400_000;
 
@@ -52,7 +55,8 @@ function span(c: Ctx, defaultDays: number) {
   return { from, to };
 }
 
-export function registerCaptureIntelligenceRoutes() {
+/** Overview, workflows (review, skill draft and publish) and the run-now trigger. */
+function registerCaptureWorkflowRoutes() {
   accountsRouter.openapi(
     createRoute({
       method: 'get',
@@ -91,7 +95,7 @@ export function registerCaptureIntelligenceRoutes() {
           offset: z.string().optional(),
         }),
       },
-      responses: ok('The workflows and the count per status'),
+      responses: typed(C.CaptureWorkflowListSchema, 'The workflows and the count per status'),
     }),
     async (c) => {
       const access = await captureAccess(c, { accountWide: true });
@@ -111,7 +115,7 @@ export function registerCaptureIntelligenceRoutes() {
       summary: 'One workflow: the canonical procedure, variants and decision points, who runs it, review and skill state',
       ...auth,
       request: { params: params.extend({ workflowId: z.string().uuid() }) },
-      responses: ok('The workflow'),
+      responses: typed(C.CaptureWorkflowDetailSchema, 'The workflow'),
     }),
     async (c) => {
       const access = await captureAccess(c, { accountWide: true });
@@ -144,7 +148,7 @@ export function registerCaptureIntelligenceRoutes() {
           },
         },
       },
-      responses: ok('The reviewed workflow'),
+      responses: typed(C.CaptureWorkflowDetailSchema, 'The reviewed workflow'),
     }),
     async (c) => {
       const access = await captureAccess(c, { accountWide: true });
@@ -246,7 +250,10 @@ export function registerCaptureIntelligenceRoutes() {
       return c.json({ workflow_id: w.workflowId, status: 'exported', skill: published.skill }, 200);
     },
   );
+}
 
+/** Episodes (L1) with their steps (L2). */
+function registerCaptureEpisodeRoutes() {
   accountsRouter.openapi(
     createRoute({
       method: 'get',
@@ -267,7 +274,7 @@ export function registerCaptureIntelligenceRoutes() {
           limit: z.string().optional(),
         }),
       },
-      responses: ok('Episodes, newest first, and the cursor of the next page'),
+      responses: typed(C.CaptureEpisodeListSchema, 'Episodes, newest first, and the cursor of the next page'),
     }),
     async (c) => {
       const q = c.req.valid('query');
@@ -289,7 +296,7 @@ export function registerCaptureIntelligenceRoutes() {
       summary: 'One episode with its step trace (verb, app, object, variables, keyframe)',
       ...auth,
       request: { params: params.extend({ episodeId: z.string().uuid() }) },
-      responses: ok('The episode'),
+      responses: typed(C.CaptureEpisodeDetailSchema, 'The episode with its steps'),
     }),
     async (c) => {
       const access = await captureAccess(c);
@@ -303,7 +310,10 @@ export function registerCaptureIntelligenceRoutes() {
       return c.json({ ...episodeView(e), steps: await episodeSteps(e.episodeId) }, 200);
     },
   );
+}
 
+/** Bulk exports (JSONL, Parquet). */
+function registerCaptureExportRoutes() {
   accountsRouter.openapi(
     createRoute({
       method: 'post',
@@ -326,7 +336,7 @@ export function registerCaptureIntelligenceRoutes() {
           },
         },
       },
-      responses: { 202: json(z.any(), 'The export, queued'), ...errors(400, 403, 404, 503) },
+      responses: { 202: json(C.CaptureExportSchema, 'The export, queued'), ...errors(400, 403, 404, 503) },
     }),
     async (c) => {
       const access = await captureAccess(c, { accountWide: true });
@@ -357,7 +367,7 @@ export function registerCaptureIntelligenceRoutes() {
       summary: 'The account’s last 50 exports (Capture admins)',
       ...auth,
       request: { params },
-      responses: ok('The exports'),
+      responses: typed(C.CaptureExportListSchema, 'The exports, newest first (50)'),
     }),
     async (c) => {
       const access = await captureAccess(c, { accountWide: true });
@@ -376,7 +386,7 @@ export function registerCaptureIntelligenceRoutes() {
       summary: 'One export; when done, a signed download URL valid for 1 hour (Capture admins)',
       ...auth,
       request: { params: params.extend({ exportId: z.string().uuid() }) },
-      responses: ok('The export'),
+      responses: typed(C.CaptureExportSchema, 'The export; `download` once done'),
     }),
     async (c) => {
       const access = await captureAccess(c, { accountWide: true });
@@ -388,5 +398,11 @@ export function registerCaptureIntelligenceRoutes() {
       return c.json(exportView(e, e.status === 'done' ? await exportDownload(e.objectKey) : null), 200);
     },
   );
+}
+
+export function registerCaptureIntelligenceRoutes() {
+  registerCaptureWorkflowRoutes();
+  registerCaptureEpisodeRoutes();
+  registerCaptureExportRoutes();
 }
 

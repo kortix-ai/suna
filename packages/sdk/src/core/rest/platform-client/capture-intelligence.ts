@@ -5,11 +5,10 @@
 //   L3 workflows  procedures people repeat, with variants, decision points and stats;
 //                 status detected → reviewed → exported
 //   L4 skills     a workflow drafted as a SKILL.md and published into a project
-//   L5 ask        questions answered with citations to workflows, episodes and moments
 //
 // Every call is account-scoped (Capture's tenant). Overview, workflows and
-// exports need a Capture admin or viewer (writes: admin). Episodes and Ask
-// default to your own data; an admin or viewer may widen them (audited).
+// exports need a Capture admin or viewer (writes: admin). Episodes default
+// to your own data; an admin or viewer may widen them (audited).
 
 import { backendApi } from '../../http/api-client';
 import { unwrap } from '../projects-client/shared';

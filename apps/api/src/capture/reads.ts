@@ -5,6 +5,7 @@
  */
 import { captureDevices, captureEpisodes, projectSessions, rangeOutputs, timelineChunks, timelineRanges } from '@kortix/db';
 import { and, asc, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
+import type * as C from '@kortix/api-contract';
 import { db } from '../shared/db';
 import { PolicySchema, accountPrefix, isEncrypted, liveState, objectKey, type Manifest } from './format';
 import { captureStore, captureStoreConfigured } from './store';
@@ -209,7 +210,8 @@ export async function searchTimeline(
   const rows = isoRows(
     await db.execute<Record<string, unknown>>(sql`SELECT * FROM (${sql.join(parts, sql` UNION ALL `)}) hits ORDER BY ts DESC LIMIT ${opts.limit}`),
   );
-  return rows.map(({ text, ...row }) => ({ ...row, snippet: snippet(text as string | null, opts.q) }));
+  // Each UNION arm selects the hit's columns in this order (kind, id, ts, user_id, device_id, chunk_id, app, title, url).
+  return rows.map(({ text, ...row }) => ({ ...(row as Omit<C.CaptureSearchHit, 'snippet'>), snippet: snippet(text as string | null, opts.q) }));
 }
 
 // ─── Media ───────────────────────────────────────────────────────────────────

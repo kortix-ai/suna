@@ -6,7 +6,7 @@
  */
 import { captureWorkflows } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { commitRepoFile } from '../projects/lib/trigger-manifest';
+import { commitRepoFile } from '../projects/surface';
 import { db } from '../shared/db';
 import type { WorkflowRow } from './intelligence';
 

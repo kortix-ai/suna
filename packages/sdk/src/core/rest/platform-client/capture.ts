@@ -236,7 +236,8 @@ export interface CaptureSearchHit {
 }
 
 export interface CaptureSearchResult {
-  user_id: string;
+  /** The person searched; null for an account-wide search (`scope: 'account'`). */
+  user_id: string | null;
   q: string;
   hits: CaptureSearchHit[];
 }

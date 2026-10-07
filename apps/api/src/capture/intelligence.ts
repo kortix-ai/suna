@@ -5,7 +5,6 @@
  * account (Capture's tenant); the route decides who may ask.
  */
 import {
-  accountMemberships,
   captureDevices,
   captureEpisodeSteps,
   captureEpisodes,
@@ -13,6 +12,8 @@ import {
   captureWorkflows,
 } from '@kortix/db';
 import { and, asc, count, desc, eq, gte, ilike, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
+import { countAccountMembers } from '../iam/membership-read';
+import type * as C from '@kortix/api-contract';
 import { db } from '../shared/db';
 
 export type WorkflowRow = typeof captureWorkflows.$inferSelect;
@@ -24,7 +25,7 @@ const iso = (d: Date | null | undefined) => d?.toISOString() ?? null;
 
 // ─── Workflows (L3) ──────────────────────────────────────────────────────────
 
-export function workflowSummary(w: WorkflowRow) {
+export function workflowSummary(w: WorkflowRow): C.CaptureWorkflowSummary {
   return {
     workflow_id: w.workflowId,
     name: w.name,
@@ -107,7 +108,7 @@ export async function workflowInAccount(accountId: string, workflowId: string): 
 }
 
 /** The detail: canonical steps, variants, who runs it (runs and p50 per person), review and skill state. */
-export async function workflowDetail(w: WorkflowRow) {
+export async function workflowDetail(w: WorkflowRow): Promise<C.CaptureWorkflowDetail> {
   const people = Array.from(
     await db.execute<{ user_id: string; runs: number; duration_p50_s: number }>(sql`
       SELECT user_id, count(*)::int AS runs,
@@ -118,12 +119,13 @@ export async function workflowDetail(w: WorkflowRow) {
   return {
     ...workflowSummary(w),
     outcome: w.outcome,
-    steps: w.steps,
-    variants: w.variants,
+    // jsonb columns the miner writes in exactly these shapes (capture/mining.ts).
+    steps: w.steps as unknown as C.CaptureWorkflowStep[],
+    variants: w.variants as unknown as C.CaptureWorkflowVariant[],
     people,
     reviewed_by: w.reviewedBy,
     reviewed_at: iso(w.reviewedAt),
-    skill: w.skill ?? null,
+    skill: (w.skill as C.CaptureWorkflowDetail['skill'] | undefined) ?? null,
     model: w.model,
     cost_usd: Number(w.costUsd),
   };
@@ -155,7 +157,7 @@ export async function reviewWorkflow(
 
 // ─── Episodes (L1) and steps (L2) ────────────────────────────────────────────
 
-export function episodeView(e: EpisodeRow) {
+export function episodeView(e: EpisodeRow): C.CaptureEpisode {
   return {
     episode_id: e.episodeId,
     user_id: e.userId,
@@ -220,7 +222,7 @@ export async function episodeInAccount(accountId: string, episodeId: string): Pr
   return row ?? null;
 }
 
-export async function episodeSteps(episodeId: string) {
+export async function episodeSteps(episodeId: string): Promise<C.CaptureEpisodeStep[]> {
   const rows = await db
     .select()
     .from(captureEpisodeSteps)
@@ -253,7 +255,7 @@ export async function overview(accountId: string, span: { from: Date; to: Date }
              AND end_at > ${s.from.toISOString()}::timestamptz AND start_at < ${s.to.toISOString()}::timestamptz`),
       )[0]!.s,
     );
-  const [members] = await db.select({ n: count() }).from(accountMemberships).where(eq(accountMemberships.accountId, accountId));
+  const [members] = await countAccountMembers(accountId);
   const [recording] = Array.from(
     await db.execute<{ n: number }>(sql`
       SELECT count(DISTINCT user_id)::int AS n FROM kortix.timeline_chunks
@@ -305,7 +307,7 @@ export async function overview(accountId: string, span: { from: Date; to: Date }
 
 export type ExportRow = typeof captureExports.$inferSelect;
 
-export function exportView(e: ExportRow, url: { url: string; expires_at: string } | null = null) {
+export function exportView(e: ExportRow, url: { url: string; expires_at: string } | null = null): C.CaptureExport {
   return {
     export_id: e.exportId,
     format: e.format as 'jsonl' | 'parquet',

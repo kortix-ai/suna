@@ -10,8 +10,9 @@
  *   viewer  every member's devices and timeline (each read audited), no writes.
  *   member  their own devices and timeline only.
  */
-import { accountMemberships, accounts, captureMembers, captureWorkspaces } from '@kortix/db';
+import { accounts, captureMembers, captureWorkspaces } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
+import { accountMemberRow } from '../iam/membership-read';
 import { accountRoleFor, accountRoleMap, accountRolesForUser, type AccountRoleKey } from '../iam/read-models';
 import { db } from '../shared/db';
 import { DEFAULT_POLICY, PolicySchema, type CapturePolicy } from './format';
@@ -137,10 +138,6 @@ export async function captureAccountsFor(userId: string): Promise<Array<{ accoun
 
 /** True when the person is still a member of the account (devices of former members stop). */
 export async function isAccountMember(accountId: string, userId: string): Promise<boolean> {
-  const [row] = await db
-    .select({ userId: accountMemberships.userId })
-    .from(accountMemberships)
-    .where(and(eq(accountMemberships.accountId, accountId), eq(accountMemberships.userId, userId)))
-    .limit(1);
+  const [row] = await accountMemberRow(accountId, userId);
   return Boolean(row);
 }

@@ -100,6 +100,8 @@ const STARTS: Record<string, string> = {
   startAccountDeletionSchedule: 'account-deletion',
   startSlackTurnGc: 'slack-turn-gc',
   startTeamsTurnGc: 'teams-turn-gc',
+  startCaptureWorkers: 'capture-index-reader',
+  startJobWorker: 'job-queue',
   startTeamsBotTokenRefresh: 'not a worker: in-memory Teams bot token',
   startEventLoopLagSampler: 'not a worker: measures this process event-loop lag',
   startSessionLifecycleWorker: 'session-lifecycle',

@@ -19,12 +19,13 @@
  * Capture is off for the account. The queries live in reads.ts.
  */
 import { createRoute, type OpenAPIHono, z } from '@hono/zod-openapi';
+import * as C from '@kortix/api-contract';
 import type { Context } from 'hono';
 import { accountsRouter } from '../accounts/core/app';
 import { accountRoleFor } from '../iam/read-models';
 import { auth, errors, json } from '../openapi';
 import { callerKortixSessionId } from '../middleware/caller-session';
-import { getRequestOnBehalfOf } from '../projects/lib/on-behalf-of';
+import { getRequestOnBehalfOf } from '../middleware/on-behalf-of';
 import { supabaseAuth } from '../middleware/auth';
 import { recordAuditEvent } from '../shared/audit';
 import type { AppEnv } from '../types';
@@ -250,7 +251,7 @@ async function frameResponse(c: Ctx, access: Access, frameId: string) {
 
 // ─── Workspace: the account switch, your role, the members ──────────────────
 
-export function registerCaptureRoutes() {
+function registerCaptureWorkspaceRoutes() {
 accountsRouter.openapi(
   createRoute({
     method: 'get',
@@ -259,7 +260,7 @@ accountsRouter.openapi(
     summary: 'The account’s Capture workspace: on or off, your Capture role, and whether you may turn it on',
     ...auth,
     request: { params },
-    responses: ok('The workspace'),
+    responses: { 200: json(C.CaptureWorkspaceSchema, 'The workspace'), ...errors(400, 403, 404) },
   }),
   async (c) => {
     const { accountId } = c.req.valid('param');
@@ -290,7 +291,7 @@ accountsRouter.openapi(
     summary: 'Turn Capture on or off for the account (account owners and admins)',
     ...auth,
     request: { params, body: { content: { 'application/json': { schema: z.object({ enabled: z.boolean() }) } } } },
-    responses: ok('The workspace'),
+    responses: { 200: json(C.CaptureWorkspaceSchema, 'The workspace'), ...errors(400, 403, 404) },
   }),
   async (c) => {
     const { accountId } = c.req.valid('param');
@@ -384,9 +385,10 @@ accountsRouter.openapi(
     return c.json(member, 200);
   },
 );
+}
 
 // ─── Devices ─────────────────────────────────────────────────────────────────
-
+function registerCaptureDevicesRoutes() {
 accountsRouter.openapi(
   createRoute({
     method: 'get',
@@ -468,9 +470,10 @@ accountsRouter.openapi(
     return c.json(await assetUrl(access.accountId, device.deviceId, name), 200);
   },
 );
+}
 
 // ─── Policy ──────────────────────────────────────────────────────────────────
-
+function registerCapturePolicyRoutes() {
 accountsRouter.openapi(
   createRoute({
     method: 'get',
@@ -536,9 +539,10 @@ accountsRouter.openapi(
     return c.json(deviceView((await deviceInAccount(access.accountId, device.deviceId))!), 200);
   },
 );
+}
 
 // ─── Timeline ────────────────────────────────────────────────────────────────
-
+function registerCaptureTimelineRoutes() {
 accountsRouter.openapi(
   createRoute({
     method: 'get',
@@ -621,7 +625,7 @@ accountsRouter.openapi(
       params,
       query: searchQuery,
     },
-    responses: ok('Hits, newest first'),
+    responses: { 200: json(C.CaptureSearchResultSchema, 'Hits, newest first'), ...errors(400, 403, 404) },
   }),
   async (c) => {
     const query = c.req.valid('query');
@@ -630,9 +634,10 @@ accountsRouter.openapi(
     return searchResponse(c, access, query);
   },
 );
+}
 
 // ─── Media ───────────────────────────────────────────────────────────────────
-
+function registerCaptureMediaRoutes() {
 accountsRouter.openapi(
   createRoute({
     method: 'get',
@@ -668,9 +673,10 @@ accountsRouter.openapi(
     return c.json({ chunk_id: chunk.chunkId, kind: chunk.kind, video: await mediaUrl(chunk, 'video'), audio: await mediaUrl(chunk, 'audio') }, 200);
   },
 );
+}
 
 // ─── Ranges ──────────────────────────────────────────────────────────────────
-
+function registerCaptureRangesRoutes() {
 /** A range of this account the caller may read. Another member's is audited for admins and viewers, "not found" otherwise. */
 async function loadRange(c: Ctx, access: Access, rangeId: string) {
   const range = await rangeInAccount(access.accountId, rangeId);
@@ -786,9 +792,10 @@ accountsRouter.openapi(
     return c.json({ range_id: range.rangeId, queued }, 202);
   },
 );
+}
 
 // ─── People (managers) ───────────────────────────────────────────────────────
-
+function registerCapturePeopleRoutes() {
 accountsRouter.openapi(
   createRoute({
     method: 'get',
@@ -807,8 +814,19 @@ accountsRouter.openapi(
     return c.json({ from: span.from.toISOString(), to: span.to.toISOString(), people: await peopleSummary(access.accountId, span) }, 200);
   },
 );
-
 }
+
+/** Every account-scoped Capture route, in dispatch order. */
+export function registerCaptureRoutes() {
+  registerCaptureWorkspaceRoutes();
+  registerCaptureDevicesRoutes();
+  registerCapturePolicyRoutes();
+  registerCaptureTimelineRoutes();
+  registerCaptureMediaRoutes();
+  registerCaptureRangesRoutes();
+  registerCapturePeopleRoutes();
+}
+
 
 // ─── The agent tool: /v1/capture/me/* (account from the token) ──────────────
 
@@ -850,7 +868,7 @@ export function registerCaptureAgentRoutes(app: OpenAPIHono<AppEnv>) {
       ...auth,
       middleware: [supabaseAuth] as const,
       request: { query: searchQuery.omit({ user_id: true, scope: true }) },
-      responses: ok('Hits, newest first'),
+      responses: { 200: json(C.CaptureSearchResultSchema, 'Hits, newest first'), ...errors(400, 403, 404) },
     }),
     async (c) => {
       const access = await meAccess(c);

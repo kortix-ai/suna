@@ -15,7 +15,7 @@
  *
  * The data side is devices.ts.
  */
-import { createRoute, z } from '@hono/zod-openapi';
+import { createRoute, type OpenAPIHono, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { config } from '../config';
 import { lookupEmailsByUserIds } from '../accounts/core/owner-emails';
@@ -108,9 +108,8 @@ const AccountChoiceSchema = z.object({ account_id: z.string(), name: z.string() 
 
 
 
-export function createCaptureRouter() {
-  const app = makeOpenApiApp<AppEnv>();
-
+/** The device half (RFC 8628): authorize, token, and the storage credentials a device token buys. */
+function registerDeviceIssuerRoutes(app: OpenAPIHono<AppEnv>) {
   app.openapi(
     createRoute({
       method: 'post',
@@ -303,7 +302,10 @@ export function createCaptureRouter() {
       }
     },
   );
+}
 
+/** The person half: read a sign-in by its code, approve it into an account, or deny it. */
+function registerDeviceGrantRoutes(app: OpenAPIHono<AppEnv>) {
   app.openapi(
     createRoute({
       method: 'get',
@@ -409,7 +411,12 @@ export function createCaptureRouter() {
       return c.json(grantView(denied), 200);
     },
   );
+}
 
+export function createCaptureRouter() {
+  const app = makeOpenApiApp<AppEnv>();
+  registerDeviceIssuerRoutes(app);
+  registerDeviceGrantRoutes(app);
   registerCaptureAgentRoutes(app);
   return app;
 }
