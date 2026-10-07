@@ -256,10 +256,24 @@ async function scopeAnswer(scope: Scope, kind: ChannelReadScope, input: ChannelR
     // A file shared nowhere belongs to no conversation.
     const owners = ids.length ? [...(await channelOwners(scope, ids)).values()] : ['none' as const];
     if (owners.some((owner) => readable(scope, owner))) return { data };
+    // A file posted in a thread this project owns is readable in any channel,
+    // as `get_thread` is: the thread's owner wins over its channel's.
+    const roots = sharedThreads(file);
+    if (roots.length && [...(await threadOwners(scope, roots)).values()].includes('mine')) return { data };
     const subject = `Slack file ${typeof file.id === 'string' ? file.id : ''}`.trim();
     return deny(refusalMessage(scope, owners.includes('other') ? 'other' : 'none', subject));
   }
   return { data };
+}
+
+/** The Slack threads a file is shared in: each share's `thread_ts`, else its own `ts`. */
+function sharedThreads(file: Record<string, unknown>): string[] {
+  const shares = isRecord(file.shares) ? file.shares : {};
+  return [shares.public, shares.private]
+    .flatMap((byChannel) => (isRecord(byChannel) ? Object.values(byChannel) : []))
+    .flatMap((list) => (Array.isArray(list) ? list : []))
+    .map((share) => (isRecord(share) ? (share.thread_ts ?? share.ts) : null))
+    .filter((ts): ts is string => typeof ts === 'string' && SLACK_TS.test(ts));
 }
 
 /* ─── ids ───────────────────────────────────────────────────────────────────── */

@@ -1595,7 +1595,7 @@ function TurnUserBubble(
           editPending={editPending}
           onEditCancel={onEditCancel}
           onEditSend={onEditSend}
-          leadingStatus={
+          deliveryStatus={
             queuedStatus === 'failed' ? (
               <QueuedPromptFailure
                 lastError={pendingPrompt?.last_error}
