@@ -146,9 +146,10 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 
 `ME-1` `GET /accounts/me` → 200 user + memberships. `ANON` → 401.
 `ACCT-1` `GET /accounts` → list memberships (auto-claims pending plain account invites by email; an invite carrying a project grant waits for Join via `INV-8`). The caller's personal account is never named after their email (KRTX-638): a new account gets a suggested name — first name, work-email company, or the personal email's leading letters — and `/projects` asks a brand-new user to confirm it once, then shows the project selector (it never forwards to `/new`).
-`ACCT-2` `POST /accounts {name}` → 201 team account, caller = `owner` (an `account_memberships` identity row plus an account-scope `owner` assignment).
+`ACCT-2` `POST /accounts {name}` → 201 team account, caller = `owner` (an `account_memberships` identity row plus an account-scope `owner` assignment). No name → 400 `Validation failed`; a 256-character name → 400 `name is too long`.
 `ACCT-3` `GET /accounts/:id` → member → 200; `NONMEMBER` → 403.
-`ACCT-4` `PATCH /accounts/:id {name}` → `ACCOUNT_WRITE` (OWNER/ADMIN) → 200; `MEMBER` → 403.
+`ACCT-4` `PATCH /accounts/:id {name}` → `ACCOUNT_WRITE` (OWNER/ADMIN) → 200; `MEMBER` → 403. The response carries the new `name`.
+`ACCT-5` A new identity with pending plain invites: its first `GET /accounts` or `GET /accounts/me` creates the personal account (`account_id` = user id, `owner`, `is_primary_owner:true`) before it claims the invites. The list then holds the personal account plus every inviting account at the invite's role. A repeat call adds nothing. A user who already holds a membership gets no retroactive personal account.
 
 ### Members
 
@@ -162,7 +163,7 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 
 ### Invites (accept side)
 
-`INV-1` `GET /accounts/:id/invites` → member → list pending.
+`INV-1` `GET /accounts/:id/invites` → member → list pending. Owners and admins see `{invite_id, email, initial_role, invited_by, invite_url}`; members see `[]`; NONMEMBER → 403. The invite email is trimmed and lower-cased. A member cannot resend or self-promote (403). Cancel removes the invite from the list.
 `INV-2` `DELETE /accounts/:id/invites/:inviteId` / `POST /accounts/:id/invites/:inviteId/resend` → `MEMBER_INVITE`.
 `INV-3` `GET /account-invites/:inviteId` → describe pending invite (auth; redacts on email mismatch).
 `INV-4` `POST /account-invites/:inviteId/accept` → 200 membership created (rate-limited); already accepted by this user → 200 `{already_accepted:true}`; **expired → 410**; wrong email → 403.
@@ -287,7 +288,8 @@ DB `projects` (`status active|archived`, unique `(account_id, repo_url)`). Soft 
 
 ### Project access (membership)
 
-`PACC-1` `GET /projects/:id/access` → `read` → members + effective project roles.
+`PACC-1` `GET /projects/:id/access` → `read` → members + effective project roles. `PUT` a role on the account owner → 200 `{project_role:null, effective_project_role:"manager", has_implicit_access:true}`.
+`PACC-8` `GET /projects/:id/access` omits `account_members` rows whose `user_id` is not an auth user.
 `PACC-2` `POST /projects/:id/access/invite {email,role}` → `manage`. **Existing Kortix user → 200** — `ensureOrgMembership` auto-adds them to the org as `member` then grants the project role (account-manager target → implicit access, `project_role:null`). **Email with no Kortix account yet → 201 `{status:"invited", invite_id, invite_url, project_role}`** — an account invitation with a `bootstrap_grant` is created/merged idempotently. After signup the invitee sees it in `GET /account-invites` (`INV-8`) and lands on the project when they join. Nothing is auto-accepted. Missing email / bad role → 400; non-account-member caller → 403 (`loadProjectForUser` — 404 only when the project row is missing/archived).
 `PACC-3` `PUT /projects/:id/access/:userId {role}` → `manage`.
 `PACC-4` `DELETE /projects/:id/access/:userId` → `manage`.
@@ -1281,7 +1283,8 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `GW-10` Every internal gateway control route rejects a request without internal credentials.
 `GW-12` Internal gateway authorization rejects a request without internal credentials.
 `GW-13` `GET /v1/usage` exhausts the `group_by` enum and its per-value response shape: `provider` rows carry `provider` only, `day` rows carry `day` only, `model` rows carry both `provider` and `model` — never a field from another grouping. A malformed `start` or `end` timestamp is a 400 boundary distinct from an inverted window, and a window containing no `usage_events` returns 200 with zeroed totals and an empty `breakdown`, never 404 or 500.
-`INV-6` A pending account invite admits the invited user and applies the project bootstrap grant.
+`INV-6` A pending account invite admits the invited user and applies the project bootstrap grant. Describe as the addressee carries `account_id`, `email`, `initial_role`, `inviter_email`. Another user who later holds the address cannot use the accepted invite → 409.
+`INV-9` An expired pending invite: accept → 410, and `GET /accounts/:id/invites` omits it. Resend → 200 with a future `expires_at`, the invite is listed again, and accept → 200.
 `INV-7` Invite accept and decline are email-bound, idempotent where documented, and cannot be used by another user.
 `MEM-6` Changing an account role reconciles project grants so account-wide permissions do not retain stale project rows.
 `MEM-7` `POST /accounts/:id/members {email,role,project_grants}` grants project access alongside the invite: applied immediately for an existing user, staged on the pending invite and applied on accept for a new one. A grant naming a project outside the caller's account is rejected. Grants are ignored for `admin`/`owner` invites (implicit access already covers every project).
