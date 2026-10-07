@@ -10,12 +10,12 @@
     "apps/api/src/projects/session-open/session-open-readiness.ts"
   ],
   "diff_hash": "5631db14f0ee8a71705d98f9958befc6e3d94e285aec59ea7cca289614165401",
-  "head": "6cd4984a14298124f19ac7b1c5f6c46762a3360a",
+  "head": "5666f60ac681fcbd2d84bf84db9fc8e3b3f1cbe6",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-06T13:57:00.814Z"
+  "at": "2026-10-07T06:18:09.654Z"
 }
