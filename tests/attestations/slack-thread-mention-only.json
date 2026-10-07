@@ -1,0 +1,34 @@
+{
+  "source_hash": "52a571ccc4a7dd800f975bff2ee371ca7350a747f91c2bbb33bb5a3b2073b4c6",
+  "diff_files": [
+    "apps/api/src/__tests__/unit-slack-classify-event.test.ts",
+    "apps/api/src/__tests__/unit-slack-questions.test.ts",
+    "apps/api/src/__tests__/unit-slack-session-selection.test.ts",
+    "apps/api/src/channels/slack/agent-picker.ts",
+    "apps/api/src/channels/slack/dispatch.ts",
+    "apps/api/src/channels/slack/home.ts",
+    "apps/api/src/channels/slack/interactivity.ts",
+    "apps/api/src/channels/slack/participants.ts",
+    "apps/api/src/channels/slack/questions.ts",
+    "apps/api/src/channels/slack/review-cards.ts",
+    "apps/api/src/channels/slack/session.ts",
+    "apps/api/src/channels/slack/types.ts",
+    "apps/api/src/connectors/channels.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/shared/turn-relay.ts",
+    "apps/sandbox/slack-cli/channels/slack.ts",
+    "apps/web/content/docs/connect/slack.mdx",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/starter/src/embedded.generated.json",
+    "packages/starter/templates/managed/skills/kortix-slack/SKILL.md",
+    "packages/starter/templates/marketplace/runtime/skills/control-pane-ops/SKILL.md"
+  ],
+  "diff_hash": "c77bc0c17decc6f7c168ee65ac165bed16dcf2a72c496e33632a8b5ec9405252",
+  "head": "5ced7d3fa0af788fcbc06f1bfb21f765b8a78101",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-07T11:50:43.197Z"
+}
