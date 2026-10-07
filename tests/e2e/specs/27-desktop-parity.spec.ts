@@ -530,8 +530,21 @@ for (const runtime of runtimes) {
         const connectors = page
           .locator(".kx-titlebar-tabs")
           .getByRole("tab", { name: "Connectors", exact: true });
+        const isConnectorList = (response: import("@playwright/test").Response) =>
+          new URL(response.url()).pathname ===
+            `/v1/connectors/projects/${project!.id}/connectors` &&
+          response.request().method() === "GET";
+        // The page just mounted fetches its connectors too. Let that request
+        // finish before the reload: one that starts in the few ms between
+        // `reloadStartedAt` and the reload's own document passes the start-time
+        // filter below, and the reload then discards its body (gate 37548429782:
+        // "Response body is not available for a response that was navigated away").
+        const mountedFetch = page
+          .waitForResponse(isConnectorList, { timeout: 10_000 })
+          .catch(() => undefined);
         await connectors.click();
         await expect(page).toHaveURL(/\/customize\/connectors/);
+        await mountedFetch;
         // A fresh document must also load real data, independent of the agent
         // editor's cached connector query. Do not accept a Next.js page GET.
         // Only a request the RELOADED document started counts: the page just
@@ -541,9 +554,7 @@ for (const runtime of runtimes) {
         const reloadStartedAt = Date.now();
         const response = page.waitForResponse(
           (response) =>
-            new URL(response.url()).pathname ===
-              `/v1/connectors/projects/${project!.id}/connectors` &&
-            response.request().method() === "GET" &&
+            isConnectorList(response) &&
             response.request().timing().startTime >= reloadStartedAt,
         );
         await page.reload();
