@@ -184,7 +184,7 @@ export function ChannelOrigin({ info, platform }: { info: ChannelMessageInfo; pl
  * Telegram): a source pill — mark, platform, sender — over the same bubble a
  * typed message gets. Every `@name` in the text (`@Kortix`, `@KortixDev`,
  * `@here`) is a `MentionChip`, the chip the composer draws, static because a
- * channel mention opens nothing here. Exported for `/debug/channel-message`.
+ * channel mention opens nothing here. Exported for `channel-message-card.test.tsx`.
  */
 export function ChannelMessage({
   info,
