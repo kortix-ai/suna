@@ -21,6 +21,9 @@ export { resetIdentityState } from './reset-identity-state';
 // and type). This is the single source of truth the web UI binds to.
 export * from './opencode';
 export { useRuntimeSupports } from './use-runtime-supports';
+// The session's one live connection (R5.3). `useSession` mounts it; a host that
+// runs its own copy of a poll (self-heal, sync) gates it on this.
+export { useSessionStreamConnected } from './use-session-stream';
 
 // `useSession`'s reply/error-classification surface — not (yet) re-exported by
 // `./opencode`'s explicit barrel list, so re-exported directly here.

@@ -6,7 +6,6 @@ import Purchases, {
 } from 'react-native-purchases';
 import RevenueCatUI from 'react-native-purchases-ui';
 import { Platform } from 'react-native';
-import { API_URL, getAuthHeaders } from '@/api/config';
 import { log } from '@/lib/logger';
 
 // Public API keys - these are safe to hardcode (designed to be in client apps)
@@ -38,7 +37,6 @@ export interface RevenueCatSubscriptionInfo {
 
 let isConfigured = false;
 let initializationPromise: Promise<void> | null = null;
-let customerInfoListenerAdded = false;
 let lastSetEmail: string | null = null;
 let lastSetUserId: string | null = null;
 let currentInitializationParams: { userId: string; email?: string; canTrack: boolean } | null =
@@ -59,7 +57,6 @@ export async function logoutRevenueCat(): Promise<void> {
     await Purchases.logOut();
     isConfigured = false;
     initializationPromise = null;
-    customerInfoListenerAdded = false;
     lastSetEmail = null;
     lastSetUserId = null;
     currentInitializationParams = null;
@@ -67,7 +64,6 @@ export async function logoutRevenueCat(): Promise<void> {
     log.rcError('Logout error:', error);
     isConfigured = false;
     initializationPromise = null;
-    customerInfoListenerAdded = false;
     lastSetEmail = null;
     lastSetUserId = null;
     currentInitializationParams = null;
@@ -124,14 +120,6 @@ export async function initializeRevenueCat(
       } catch (emailError) {
         log.rcWarn('Could not update email:', emailError);
       }
-    }
-
-    // Add listener if tracking is enabled and listener hasn't been added yet
-    if (canTrack && !customerInfoListenerAdded) {
-      Purchases.addCustomerInfoUpdateListener((customerInfo) => {
-        notifyBackendOfPurchase(customerInfo);
-      });
-      customerInfoListenerAdded = true;
     }
 
     // Update user ID if it changed
@@ -193,13 +181,6 @@ export async function initializeRevenueCat(
         } catch (emailError) {
           log.rcError('Error setting email:', emailError);
         }
-      }
-
-      if (canTrack && !customerInfoListenerAdded) {
-        Purchases.addCustomerInfoUpdateListener((customerInfo) => {
-          notifyBackendOfPurchase(customerInfo);
-        });
-        customerInfoListenerAdded = true;
       }
 
       isConfigured = true;
@@ -304,8 +285,7 @@ export async function getOfferingById(
 export async function purchasePackage(
   pkg: PurchasesPackage,
   email?: string,
-  expectedUserId?: string,
-  onSyncComplete?: (response: SyncResponse) => void | Promise<void>
+  expectedUserId?: string
 ): Promise<CustomerInfo> {
   try {
 
@@ -386,9 +366,9 @@ export async function purchasePackage(
       throw purchaseError;
     }
 
+    // The API learns of the purchase from RevenueCat's webhook
+    // (POST /v1/billing/webhooks/revenuecat); the app sends nothing.
     log.rc('Purchase successful for user:', customerInfo.originalAppUserId);
-
-    await notifyBackendOfPurchase(customerInfo, onSyncComplete);
 
     return customerInfo;
   } catch (error: any) {
@@ -443,63 +423,6 @@ export function getSubscriptionInfo(customerInfo: CustomerInfo): RevenueCatSubsc
     productIdentifier: activeEntitlement.productIdentifier,
     isSandbox: customerInfo.requestDate !== undefined,
   };
-}
-
-export interface SyncResponse {
-  status:
-    | 'pending_webhook'
-    | 'synced'
-    | 'already_synced'
-    | 'no_active_subscription'
-    | 'unknown_product'
-    | 'processing';
-  message?: string;
-  product_id?: string;
-  tier?: string;
-  credits_granted?: number;
-}
-
-async function notifyBackendOfPurchase(
-  customerInfo: CustomerInfo,
-  onSyncComplete?: (response: SyncResponse) => void | Promise<void>
-): Promise<SyncResponse | null> {
-  try {
-    const headers = await getAuthHeaders();
-
-    const response = await fetch(`${API_URL}/billing/revenuecat/sync`, {
-      method: 'POST',
-      headers: {
-        ...headers,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        customer_info: {
-          original_app_user_id: customerInfo.originalAppUserId,
-          entitlements: Object.keys(customerInfo.entitlements.active),
-          active_subscriptions: customerInfo.activeSubscriptions,
-          non_subscriptions: customerInfo.nonSubscriptionTransactions,
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      log.rcWarn('Backend sync failed:', response.status, errorText);
-      return null;
-    }
-
-    const result = (await response.json()) as SyncResponse;
-    log.rc('Sync result:', result.status, result.tier || '');
-
-    if (onSyncComplete) {
-      await onSyncComplete(result);
-    }
-
-    return result;
-  } catch (error) {
-    log.rcError('Error syncing with backend:', error);
-    return null;
-  }
 }
 
 export async function checkSubscriptionStatus(): Promise<{
@@ -587,11 +510,7 @@ export async function presentPaywall(
     const cancelled = result === PAYWALL_RESULT.CANCELLED;
     const restored = result === PAYWALL_RESULT.RESTORED;
 
-    if (purchased || restored) {
-      log.rc('Purchase completed, syncing...');
-      const customerInfo = await Purchases.getCustomerInfo();
-      await notifyBackendOfPurchase(customerInfo);
-    }
+    if (purchased || restored) log.rc('Purchase completed');
 
     return { purchased: purchased || restored, cancelled };
   } catch (error: any) {

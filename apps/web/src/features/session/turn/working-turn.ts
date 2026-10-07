@@ -9,6 +9,7 @@ export {
   resolveWorkingTurn,
   shouldSuppressWorkingTurnBusy,
   turnIsConfirmedActive,
+  turnRendersQueued,
   workingTurnDrawsBusyRow,
 } from '@kortix/sdk';
 export type { WorkingTurnResolution } from '@kortix/sdk';

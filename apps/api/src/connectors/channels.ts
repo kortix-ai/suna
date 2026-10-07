@@ -143,7 +143,7 @@ const SLACK_ACTIONS: ChannelActionDef[] = [
     verb: 'POST',
     name: 'Send message',
     description:
-      'Post a message to a Slack channel or thread. Provide `channel` plus `text` and/or Block Kit `blocks`; set `thread_ts` to reply in a thread. From a session, the thread is bound to that session, so human replies in it come back to it; `thread_binding` in the result reports whether the bind held.',
+      'Post a message to a Slack channel or thread. Provide `channel` plus `text` and/or Block Kit `blocks`; set `thread_ts` to reply in a thread. From a session, the thread is bound to that session, so a human reply in it comes back to it when it @mentions the bot (any reply in a DM); `thread_binding` in the result reports whether the bind held.',
     risk: 'write',
     properties: {
       channel: { type: 'string', description: 'Channel ID (e.g. C0123) or user ID for a DM.' },

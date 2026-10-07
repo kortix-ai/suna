@@ -2202,6 +2202,12 @@
       }
     }
   },
+  "ssoRequired": {
+    "title": "Entrar com login único",
+    "description": "Sua organização exige login único (SSO) para esta conta. Saia e continue com seu e-mail de trabalho para entrar pelo provedor de identidade da sua empresa.",
+    "signOut": "Sair e usar SSO",
+    "notNow": "Agora não"
+  },
   "auth": {
     "haveReferralCode": "Tens um código de indicação?",
     "referralCode": "Código de Indicação",

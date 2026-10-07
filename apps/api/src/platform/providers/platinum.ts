@@ -58,6 +58,7 @@ import { createHash } from 'node:crypto';
 import { SANDBOX_VERSION, config } from '../../config';
 import { currentInstanceId } from '../../projects/instance-scope';
 import { isOpencodePort } from '../../shared/opencode-ports';
+import { logger } from '../../lib/logger';
 import { platinumJson, platinumJsonResponse, type PlatinumHttpError } from '../../shared/platinum';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
 import { serviceKeyForExternalId } from '../service-key';
@@ -143,6 +144,8 @@ interface PlatinumSandboxPage {
   rows?: PlatinumSandbox[];
   total?: number;
   has_more?: boolean;
+  /** Present on a merged multi-region list: the peers asked and the ones that did not answer. */
+  regions?: { asked?: string[]; unavailable?: Array<{ region: string; error?: string }> };
 }
 /**
  * A box created before `auto_resume: false` shipped (see create) still lets any
@@ -910,13 +913,24 @@ export class PlatinumProvider implements SandboxProvider {
   > {
     const owner = await sandboxOwnershipMarker();
     const out: Array<{ externalId: string; createdAt: Date | null }> = [];
-    const limit = 100;
+    const limit = 200; // Platinum's maximum page size.
+    // `state=running` keeps the scan to the running set (tens of rows). An
+    // unfiltered list holds every archived box too (10k+ in the shared org),
+    // sorts newest first, and hid any running box past the page cap.
+    // `regions=all` merges every region; a merged scan above row 10000 is
+    // refused (`pagination_limit`), which the running set never reaches.
     // Bounded page count as well as page size: a paginator that never reports
     // `has_more: false` must not spin this sweep forever.
     for (let offset = 0, page = 0; page < 50; offset += limit, page++) {
       const body = await platinumJson<PlatinumSandboxPage>(
-        `/v1/sandboxes?paginated=true&limit=${limit}&offset=${offset}`,
+        `/v1/sandboxes?paginated=true&limit=${limit}&offset=${offset}&state=running&regions=all`,
       );
+      const unavailable = body.regions?.unavailable ?? [];
+      if (unavailable.length) {
+        logger.warn(
+          `[platinum] running-box scan missed regions: ${unavailable.map((r) => r.region).join(',')}`,
+        );
+      }
       const rows = body.rows ?? [];
       for (const sandbox of rows) {
         if (!sandbox.id) continue;

@@ -27,6 +27,9 @@ export function bindSessionLifecycleResources(ctx: SessionBindingContext) {
     },
     start: (...a: DropFirst2<Parameters<typeof P.startProjectSession>>) =>
       P.startProjectSession(ctx.projectId, ctx.sessionId, ...a),
+    /** `start`, but a failed request rejects with the API error instead of yielding `null`. */
+    startOrThrow: (...a: DropFirst2<Parameters<typeof P.startProjectSessionOrThrow>>) =>
+      P.startProjectSessionOrThrow(ctx.projectId, ctx.sessionId, ...a),
     restart: () => {
       // Restart preserves the established sandbox identity, but readiness
       // and the proxy connection must still be resolved again after reboot.

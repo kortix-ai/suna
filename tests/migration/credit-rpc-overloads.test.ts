@@ -100,7 +100,7 @@ const suite = dockerOk ? describe : describe.skip;
 
 suite('credit RPC overload resolution (throwaway Postgres)', () => {
   beforeAll(async () => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
     const up = sh([
       'docker',
       'run',
@@ -141,7 +141,7 @@ suite('credit RPC overload resolution (throwaway Postgres)', () => {
   }, 240_000);
 
   afterAll(() => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
   });
 
   test('no wallet function has two overloads with overlapping callable arity', () => {

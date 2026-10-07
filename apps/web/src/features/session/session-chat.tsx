@@ -61,6 +61,7 @@ import {
   resolveWorkingTurn,
   shouldSuppressWorkingTurnBusy,
   turnIsConfirmedActive,
+  turnRendersQueued,
   workingTurnDrawsBusyRow,
 } from './turn/working-turn';
 
@@ -1025,22 +1026,6 @@ export function SessionChat({
     [messages, working.serverOpenTurnToken],
   );
 
-  const hasPendingUserReply = useMemo(() => {
-    if (!messages || messages.length === 0) return false;
-    let lastUserIdx = -1;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].info.role === 'user') {
-        lastUserIdx = i;
-        break;
-      }
-    }
-    if (lastUserIdx === -1) return false;
-    for (let i = lastUserIdx + 1; i < messages.length; i++) {
-      if (messages[i].info.role === 'assistant') return false;
-    }
-    return true;
-  }, [messages]);
-
   // The working projection, plus compaction — which `projectWorking`
   // deliberately knows nothing about, because a compaction is not a turn and
   // `GET .../turn` reports none for it.
@@ -1110,103 +1095,6 @@ export function SessionChat({
     [modelUsage, local.model.list],
   );
   const servedModelOfTurn = useMemo(() => turnServedModelResolver(local.model.list), [local.model.list]);
-
-  // Render-driven only: the session is working, or the transcript shows a user
-  // message nothing has answered yet. The transcript-inference terms are gone —
-  // "is a turn running" has one authority now.
-  const expectAssistantResponse = isServerBusy || hasPendingUserReply;
-
-  const shouldRecoveryPoll = expectAssistantResponse;
-
-  const streamCacheKey = `opencode_stream_cache:${sessionId}`;
-  const streamCacheRestoredRef = useRef<string | null>(null);
-
-  // Restore cached streaming prefix after refresh when SSE resumes from the
-  // current point but backend hydrate has not yet returned the in-progress text.
-  // Runs at most once per cache key to prevent re-triggering when the store
-  // update causes `messages` to change (which would re-fire this effect).
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!shouldRecoveryPoll) return;
-    if (!messages || messages.length === 0) return;
-
-    let cached: {
-      messageID: string;
-      parentID?: string;
-      partID: string;
-      text: string;
-      updatedAt: number;
-    } | null = null;
-    try {
-      const raw = sessionStorage.getItem(streamCacheKey);
-      cached = raw ? JSON.parse(raw) : null;
-    } catch {
-      cached = null;
-    }
-    if (!cached || !cached.messageID || !cached.partID || !cached.text) return;
-    // Ignore stale cache entries.
-    if (Date.now() - (cached.updatedAt || 0) > 30 * 60 * 1000) return;
-    // Prevent re-running after a successful restore for this exact cache entry.
-    const cacheFingerprint = `${cached.messageID}:${cached.partID}:${cached.text.length}`;
-    if (streamCacheRestoredRef.current === cacheFingerprint) return;
-
-    const store = useSessionStateStore.getState();
-    const currentMsgs = store.getMessages(sessionId);
-    let latestUserId: string | undefined;
-    for (let i = currentMsgs.length - 1; i >= 0; i--) {
-      if (currentMsgs[i].info.role === 'user') {
-        latestUserId = currentMsgs[i].info.id;
-        break;
-      }
-    }
-    if (hasPendingUserReply) {
-      // For a fresh pending turn we must have an exact parent match.
-      // If cached parentID is missing or mismatched, the cache likely
-      // belongs to an older turn and would prepend stale mid-stream text.
-      if (!cached.parentID || !latestUserId || cached.parentID !== latestUserId) {
-        return;
-      }
-    }
-    const hasMsg = currentMsgs.some((m) => m.info.id === cached!.messageID);
-    const hasAnyUser = currentMsgs.some((m) => m.info.role === 'user');
-
-    if (!hasMsg) {
-      // Only create a synthetic assistant message if we can safely attach
-      // it to an existing user turn.
-      if (!hasAnyUser) return;
-      const parentID = cached.parentID ?? latestUserId;
-      if (hasPendingUserReply && !parentID) return;
-      if (parentID) {
-        const parentExists = currentMsgs.some((m) => m.info.id === parentID);
-        if (!parentExists) return;
-      }
-      store.upsertMessage(sessionId, {
-        id: cached.messageID,
-        sessionID: sessionId,
-        role: 'assistant',
-        parentID,
-      } as any);
-    }
-
-    const currentParts = store.parts[cached.messageID] ?? [];
-    const existing = currentParts.find((p) => p.id === cached!.partID) as any;
-    const existingText = typeof existing?.text === 'string' ? existing.text : '';
-    if (cached.text.length <= existingText.length) {
-      // Already restored or surpassed — mark as done.
-      streamCacheRestoredRef.current = cacheFingerprint;
-      return;
-    }
-
-    streamCacheRestoredRef.current = cacheFingerprint;
-    store.upsertPart(cached.messageID, {
-      ...(existing ?? {}),
-      id: cached.partID,
-      messageID: cached.messageID,
-      sessionID: sessionId,
-      type: 'text',
-      text: cached.text,
-    } as any);
-  }, [messages, sessionId, shouldRecoveryPoll, streamCacheKey, hasPendingUserReply]);
 
   // WHICH INBOX ROWS ARE ALREADY ON SCREEN — the queued list above the composer
   // (`projectQueueRows`, `QueuedPromptList`) lists only the rest.
@@ -4353,11 +4241,16 @@ export function SessionChat({
                               }
                               suppressBusyIndicator={suppressWorkingTurnBusy}
                               awaitingUser={awaitingUserInput}
-                              pending={
-                                !confirmedActive &&
-                                (Boolean(pendingPrompt) ||
-                                  pendingTurnIds.has(turn.userMessage.info.id))
-                              }
+                              // An idle send stays in the inbox until delivery,
+                              // but nothing runs ahead of it: queued only while
+                              // it waits behind a turn (`turnRendersQueued`).
+                              pending={turnRendersQueued({
+                                turnId: turn.userMessage.info.id,
+                                resolution: workingTurn,
+                                sessionWorking: lastTurnWorking,
+                                confirmedActive,
+                                inboxPrompt: pendingPrompt,
+                              })}
                               pendingPrompt={pendingPrompt}
                               onRetryQueued={stableRetryQueued}
                               onRemoveQueued={stableRemoveQueued}

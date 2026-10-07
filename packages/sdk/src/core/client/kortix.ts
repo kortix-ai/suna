@@ -122,6 +122,11 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     connectStatus,
     /** Public marketplace catalog browse + sources (`/v1/marketplace/*`, not project-scoped). */
     marketplace,
+    /** Push device registration for a native app (`/v1/notifications/device-token`). */
+    notifications: {
+      registerDeviceToken: P.registerDeviceToken,
+      unregisterDeviceToken: P.unregisterDeviceToken,
+    },
     /** The pasted-API-key UX check — `GET /accounts/me`, never throws. */
     validateToken: P.validateToken,
     /** Escape hatch: the typed opencode client for the active sandbox. */

@@ -24,6 +24,9 @@ const excludedPrefixes = [
   // Generated black-box reports contain captured API response history. They
   // are evidence, not a shipped source or documentation surface.
   'tests/test-results/',
+  // Test attestations list the paths a branch changed, which can include the
+  // excluded migration test below by name. Run metadata, not a surface.
+  'tests/attestations/',
 ];
 const excludedFiles = new Set([
   // Migration acceptance coverage must construct the retired value to prove
