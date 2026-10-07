@@ -97,7 +97,6 @@ import {
   promptRuntimeMessage,
   rejectQuestion,
   SESSION_PROMPTS_IDLE_POLL_MS,
-  useProjectSession,
   usePermissionSelfHeal,
   useQuestionSelfHeal,
   useRuntimeCommands,
@@ -1014,11 +1013,10 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     [senderOf],
   );
   // A queued prompt runs as its author: only they send it now, and they or a
-  // session manager remove it. The API answers 403 to anyone else.
-  const managesSession =
-    useProjectSession(projectId ?? undefined, projectSessionId, {
-      enabled: !!projectId && !!projectSessionId,
-    }).data?.can_manage_lifecycle !== false;
+  // session manager remove it. The API answers 403 to anyone else. The
+  // participants list puts the session's owner first; a project manager who is
+  // not the owner keeps only their own rows here (the web offers them Remove).
+  const managesSession = participants?.participants[0]?.is_viewer === true;
   const queuedActions = useCallback(
     (prompt: SessionPrompt) => sessionPromptActions(prompt, { userId: viewerId, managesSession }),
     [viewerId, managesSession],
