@@ -259,6 +259,7 @@ const rnNative: Record<string, any> = {
     removeEventListener() {},
   },
   StyleSheet: { create: (s: any) => s, flatten: (s: any) => s, hairlineWidth: 1 },
+  useWindowDimensions: () => ({ width: 390, height: 800, scale: 3, fontScale: 1 }),
   Dimensions: { get: () => ({ width: 390, height: 844, scale: 3, fontScale: 1 }) },
   I18nManager: { isRTL: false, allowRTL() {}, forceRTL() {} },
   PixelRatio: { get: () => 3, getFontScale: () => 1 },
@@ -1577,9 +1578,10 @@ describe('SessionPage render work', () => {
       });
     await layoutComposerArea(150.4);
     expect(endPadding()).toBe(184);
-    // The fade covers the same height plus 36pt above the composer.
+    // The fade is the bottom 2% of the screen, whatever the composer does.
     const fadeHeight = () => flat(byTestID('session-composer-fade').props.style).reduce((h, st) => st.height ?? h, 0);
-    expect(fadeHeight()).toBe(220);
+    expect(fadeHeight()).toBe(16);
+    const restingFade = fadeHeight();
     // The room counts the covered height: 600 − 184 − 200 − 24 = 192.
     await layoutTranscript(576, [200]);
     expect(spacerHeight()).toBe(192);
@@ -1594,7 +1596,7 @@ describe('SessionPage render work', () => {
     expect(endPadding()).toBe(207);
     keyboardProgress.value = 1;
     expect(endPadding()).toBe(190);
-    expect(fadeHeight()).toBe(226);
+    expect(fadeHeight()).toBe(restingFade);
   });
 
   test('while the keyboard moves a shrinking room waits for it to stop, a growing room commits at once', async () => {

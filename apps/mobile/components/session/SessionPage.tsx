@@ -21,6 +21,7 @@ import {
   Platform,
   RefreshControl,
   StyleSheet,
+  useWindowDimensions,
   type LayoutChangeEvent,
   type NativeSyntheticEvent,
   type NativeScrollEvent,
@@ -346,11 +347,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const endPaddingStyle = useAnimatedStyle(() => ({
     height: composerAreaHeight.value + bottomInset * (1 - keyboardProgress.value),
   }));
-  // The project drawer's bottom fade: from COMPOSER_FADE_ABOVE over the
-  // composer down to the screen edge, following the composer like the padding.
-  const composerFadeStyle = useAnimatedStyle(() => ({
-    height: composerAreaHeight.value + bottomInset * (1 - keyboardProgress.value) + COMPOSER_FADE_ABOVE,
-  }));
+  // The project drawer's bottom fade, over the last COMPOSER_FADE_SHARE of the screen.
+  const composerFadeHeight = Math.round(useWindowDimensions().height * COMPOSER_FADE_SHARE);
   /** The end padding as the room reads it (the UI thread's last value). */
   const endPaddingNow = useCallback(
     () => composerAreaHeightRef.current + bottomInsetRef.current * (1 - keyboardProgress.value),
@@ -2157,13 +2155,13 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             on the keyboard. `box-none`: taps reach the list everywhere but
             on the composer. */}
         <View pointerEvents="box-none" style={COMPOSER_OVERLAY}>
-        <Reanimated.View testID="session-composer-fade" pointerEvents="none" style={[COMPOSER_FADE, composerFadeStyle]}>
+        <View testID="session-composer-fade" pointerEvents="none" style={[COMPOSER_FADE, { height: composerFadeHeight }]}>
           <LinearGradient
             colors={[withAlpha(pageBackground, 0), withAlpha(pageBackground, 0.85), withAlpha(pageBackground, 1)]}
             locations={[0, 0.45, 1]}
             style={StyleSheet.absoluteFill}
           />
-        </Reanimated.View>
+        </View>
         <View pointerEvents="box-none" style={FILL}>
         {heroMounted ? <FreshSessionHero opacity={heroOpacity} visible={showFreshHero} /> : null}
 
@@ -2273,9 +2271,10 @@ export const SessionPage = React.memo(SessionPageImpl);
 const FILL = { flex: 1 } as const;
 /** Fills its parent: the overlay over the message area. */
 const COMPOSER_OVERLAY = { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 } as const;
-/** The project drawer's bottom fade (`ProjectLeftDrawer`): 36pt over the controls, to the screen edge. */
+/** The project drawer's bottom fade colours (`ProjectLeftDrawer`), at the screen's bottom edge. */
 const COMPOSER_FADE = { position: 'absolute', right: 0, bottom: 0, left: 0 } as const;
-const COMPOSER_FADE_ABOVE = 36;
+/** The fade's height as a share of the screen height. */
+const COMPOSER_FADE_SHARE = 0.02;
 
 /**
  * The list's `KeyboardGestureArea`, offset by the composer's height. The height
