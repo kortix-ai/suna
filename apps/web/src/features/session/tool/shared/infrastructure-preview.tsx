@@ -223,6 +223,7 @@ export function ServicePreviewActions({
         'autoFeaturesSessionToolRenderersJsxTextOpenPrivatePreview0d54e929',
       )}
       secondaryIcon={ArrowSquareOutIcon}
+      secondaryIconClassName="size-4.5"
       onSecondary={openInBrowser}
       secondaryDisabled={!navigationEnabled || !previewUrl}
       secondaryDisabledClassName="cursor-not-allowed opacity-50"
