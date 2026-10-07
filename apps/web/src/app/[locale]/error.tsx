@@ -7,6 +7,7 @@ import {
   recordRuntimeNotReady,
   type RuntimeNotReadyStreak,
 } from '@/lib/runtime-not-ready-budget';
+import { reloadForChunkLoadError } from '@/lib/chunk-load-recovery';
 import { isRuntimeStartingError } from '@kortix/sdk';
 import * as Sentry from '@sentry/nextjs';
 import { useTranslations } from '@/i18n/use-translations';
@@ -43,6 +44,13 @@ export default function Error({
   // Set once the silent retry has run for its whole budget. From then on the
   // card below renders, so a runtime that never comes up is not a blank window.
   const [retryExhausted, setRetryExhausted] = useState(false);
+  // A stale-deploy chunk-load failure self-heals with exactly one reload; while
+  // it lands this boundary renders nothing instead of flashing the crash card.
+  const [reloading, setReloading] = useState(false);
+
+  useEffect(() => {
+    if (reloadForChunkLoadError(error)) setReloading(true);
+  }, [error]);
 
   const handleReset = () => {
     try {
@@ -97,6 +105,8 @@ export default function Error({
     console.error('[Kortix Home Error]', error);
     Sentry.captureException(error);
   }, [error, runtimeNotReady]);
+
+  if (reloading) return null;
 
   if (runtimeNotReady && !retryExhausted) {
     // Render NOTHING while the budget lasts. "Sandbox still loading" is a
