@@ -3084,9 +3084,6 @@
     },
     "no-console": {
       "count": 3
-    },
-    "no-restricted-properties": {
-      "count": 1
     }
   },
   "src/tunnel/core/cluster-forwarder.ts": {
