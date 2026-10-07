@@ -106,6 +106,14 @@ flow(
       const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/credit-breakdown");
       r.status(OWNER_READ);
     });
+    await ctx.step("a team member with no credit row of their own reads an all-zero breakdown, not an error", async () => {
+      const team = await ctx.fixtures.team();
+      const member = await team.addMember("member");
+      const r = await ctx.client.as(member).get("/v1/billing/credit-breakdown");
+      r.status(OWNER_READ);
+      if (r.statusCode !== 200) return;
+      r.body().has("$.total", 0).has("$.expiring", 0).has("$.non_expiring", 0).has("$.daily", 0);
+    });
     await ctx.step("ANON cannot read the credit breakdown → 401", async () => {
       const r = await ctx.client.as(ctx.P.ANON).get("/v1/billing/credit-breakdown");
       r.status(401);
@@ -120,9 +128,16 @@ flow(
       r.status(401);
     });
 
-    await ctx.step("OWNER reads the visible tier configurations", async () => {
+    await ctx.step("OWNER reads the visible tiers: free and pro listed, the internal none tier hidden", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/tier-configurations");
       r.status(OWNER_READ);
+      if (r.statusCode !== 200) return;
+      const tiers = r.json<{ tiers: Array<{ name: string; display_name: string; monthly_price: number }> }>().tiers;
+      const names = tiers.map((t) => t.name);
+      if (!names.includes("free") || !names.includes("pro")) throw new Error(`expected free and pro, got ${JSON.stringify(names)}`);
+      if (names.includes("none")) throw new Error("the internal `none` tier is listed");
+      const pro = tiers.find((t) => t.name === "pro")!;
+      if (pro.display_name !== "Pro" || pro.monthly_price !== 20) throw new Error(`unexpected pro tier: ${JSON.stringify(pro)}`);
     });
     await ctx.step("ANON cannot read tier-configurations → 401 (auth-gated, not public)", async () => {
       const r = await ctx.client.as(ctx.P.ANON).get("/v1/billing/tier-configurations");
@@ -201,6 +216,110 @@ flow(
       if (r.statusCode === 200) {
         r.body().has("$.success", true).has("$.cost", 0);
       }
+    });
+    await ctx.step("OWNER: negative-amount deduct-usage is a no-op 200 with cost 0 (never a credit)", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/billing/deduct-usage", { amount: -5 });
+      r.status([200, 404]);
+      if (r.statusCode === 200) r.body().has("$.success", true).has("$.cost", 0);
+    });
+  },
+);
+
+// BILL-7b — the debit path BILL-7 cannot reach without credit. The platform
+// admin grants a fresh account $5 non-expiring; the account then debits
+// through /deduct-usage and /deduct and reads every movement back. A debit
+// beyond the balance → 402 and moves nothing.
+flow(
+  "BILL-7b",
+  {
+    domain: "billing",
+    requires: ["admin"],
+    routes: [
+      "POST /v1/admin/api/accounts/:id/credits",
+      "GET /v1/billing/credit-breakdown",
+      "GET /v1/billing/usage-history",
+      "POST /v1/billing/deduct-usage",
+      "POST /v1/billing/deduct",
+    ],
+  },
+  async (ctx) => {
+    const user = await ctx.fixtures.user({ label: "BILL-7b" });
+    const asUser = ctx.client.as(user);
+    const admin = ctx.client.withBearer(ctx.env.adminToken!, "ADMIN_TOKEN");
+    const close = (a: number, b: number) => Math.abs(a - b) < 1e-4;
+    type Breakdown = { total: number; expiring: number; non_expiring: number; daily: number };
+    type Usage = { totalCredits: number; totalDebits: number; count: number };
+    const breakdown = async () => {
+      const r = await asUser.get("/v1/billing/credit-breakdown");
+      r.status(200);
+      return r.json<Breakdown>();
+    };
+    const usage = async () => {
+      const r = await asUser.get("/v1/billing/usage-history", { query: { days: "7" } });
+      r.status(200);
+      return r.json<Usage>();
+    };
+
+    let base!: Breakdown;
+    let baseUsage!: Usage;
+    await ctx.step("baseline: the breakdown and the 7-day usage summary read as numbers", async () => {
+      base = await breakdown();
+      baseUsage = await usage();
+      for (const [k, v] of Object.entries({ ...base, ...baseUsage })) {
+        if (typeof v !== "number" || Number.isNaN(v)) throw new Error(`${k}: expected a number, got ${JSON.stringify(v)}`);
+      }
+    });
+    await ctx.step("admin grants $5 non-expiring → total and non_expiring each rise by exactly 5", async () => {
+      (await admin.post(
+        "/v1/admin/api/accounts/:id/credits",
+        { amount: 5, description: "ke2e BILL-7b grant", isExpiring: false },
+        { params: { id: user.accountId! } },
+      )).status(200).body().has("$.ok", true);
+      const after = await breakdown();
+      if (!close(after.total, base.total + 5) || !close(after.non_expiring, base.non_expiring + 5)) {
+        throw new Error(`expected +5 on total and non_expiring: before=${JSON.stringify(base)} after=${JSON.stringify(after)}`);
+      }
+    });
+    const usageAmount = 0.25;
+    await ctx.step("deduct-usage $0.25 → 200 with that cost, the new balance, and a transaction id", async () => {
+      const r = await asUser.post("/v1/billing/deduct-usage", { amount: usageAmount, description: "ke2e BILL-7b usage" });
+      r.status(200).body().has("$.success", true).exists("$.transaction_id");
+      const body = r.json<{ cost: number; new_balance: number }>();
+      if (!close(body.cost, usageAmount)) throw new Error(`cost ${body.cost}, expected ${usageAmount}`);
+      if (!close(body.new_balance, base.total + 5 - usageAmount)) {
+        throw new Error(`new_balance ${body.new_balance}, expected ${base.total + 5 - usageAmount}`);
+      }
+    });
+    let tokenCost = 0;
+    await ctx.step("deduct 1M+1M tokens of a priced model → 200, cost > 0, the balance falls by exactly that cost", async () => {
+      const r = await asUser.post("/v1/billing/deduct", {
+        prompt_tokens: 1_000_000,
+        completion_tokens: 1_000_000,
+        model: "glm-5.3-flash",
+      });
+      r.status(200).body().has("$.success", true).exists("$.transaction_id");
+      const body = r.json<{ cost: number; new_balance: number }>();
+      if (!(body.cost > 0)) throw new Error(`expected a positive cost, got ${body.cost}`);
+      tokenCost = body.cost;
+      const expected = base.total + 5 - usageAmount - tokenCost;
+      if (!close(body.new_balance, expected)) throw new Error(`new_balance ${body.new_balance}, expected ${expected}`);
+      const after = await breakdown();
+      if (!close(after.total, expected)) throw new Error(`breakdown total ${after.total}, expected ${expected}`);
+    });
+    await ctx.step("deduct-usage beyond the balance → 402 insufficient credits, balance unchanged", async () => {
+      const before = await breakdown();
+      const r = await asUser.post("/v1/billing/deduct-usage", { amount: 1_000_000 });
+      r.status(402).body().matches("$.error", /^Insufficient credits/);
+      const after = await breakdown();
+      if (!close(after.total, before.total)) throw new Error(`a refused debit moved the balance: ${before.total} → ${after.total}`);
+    });
+    await ctx.step("usage-history counts the grant and both debits: +5 credits, +(0.25 + token cost) debits, +3 rows", async () => {
+      const after = await usage();
+      if (!close(after.totalCredits - baseUsage.totalCredits, 5)) throw new Error(`credits delta ${after.totalCredits - baseUsage.totalCredits}`);
+      if (!close(after.totalDebits - baseUsage.totalDebits, usageAmount + tokenCost)) {
+        throw new Error(`debits delta ${after.totalDebits - baseUsage.totalDebits}, expected ${usageAmount + tokenCost}`);
+      }
+      if (after.count - baseUsage.count !== 3) throw new Error(`ledger rows delta ${after.count - baseUsage.count}, expected 3`);
     });
   },
 );

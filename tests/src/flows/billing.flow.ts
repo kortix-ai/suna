@@ -288,6 +288,8 @@ flow(
       'POST /v1/billing/sync-seat-quantity',
       'POST /v1/billing/sync-subscription',
       'POST /v1/billing/confirm-checkout-session',
+      'POST /v1/billing/deduct',
+      'POST /v1/billing/deduct-usage',
     ],
   },
   async (ctx) => {
@@ -328,6 +330,17 @@ flow(
         session_id: 'cs_test_member_blocked',
       });
       r.status(403);
+    });
+    await ctx.step('MEMBER cannot debit the team wallet via /deduct or /deduct-usage → 403 billing.write', async () => {
+      const deduct = await asMember.post('/v1/billing/deduct', {
+        account_id: team.id,
+        prompt_tokens: 1000,
+        completion_tokens: 500,
+        model: 'glm-5.3-flash',
+      });
+      deduct.status(403).body().has('$.action', 'billing.write');
+      const usage = await asMember.post('/v1/billing/deduct-usage', { account_id: team.id, amount: 5 });
+      usage.status(403).body().has('$.action', 'billing.write');
     });
     await ctx.step('ANON cannot start a team subscription checkout → 401', async () => {
       const r = await ctx.client.as(ctx.P.ANON).post('/v1/billing/create-per-seat-checkout', {
@@ -762,21 +775,70 @@ flow(
     routes: [
       'POST /v1/billing/account/request-deletion',
       'POST /v1/billing/account/cancel-deletion',
+      'GET /v1/billing/account/deletion-status',
     ],
   },
   async (ctx) => {
     const victim = await ctx.fixtures.user({ label: 'DEL-2b' });
     const asVictim = ctx.client.as(victim);
 
-    await ctx.step('schedule deletion via billing mirror mount → 200', async () => {
-      const r = await asVictim.post('/v1/billing/account/request-deletion', {
-        reason: 'ke2e-mirror',
-      });
-      r.status(200);
+    let scheduledFor = '';
+    await ctx.step('schedule via the billing mirror with an empty body → 200 with a cancellable 14-day schedule', async () => {
+      const r = await asVictim.post('/v1/billing/account/request-deletion', {});
+      r.status(200).body().has('$.success', true).exists('$.id').has('$.can_cancel', true).has('$.grace_period_days', 14);
+      scheduledFor = r.json<{ deletion_scheduled_for: string }>().deletion_scheduled_for;
+      const days = (Date.parse(scheduledFor) - Date.now()) / 86_400_000;
+      if (!(days > 13.9 && days <= 14)) throw new Error(`deletion_scheduled_for ${scheduledFor} is ${days} days out, expected 14`);
     });
-    await ctx.step('cancel deletion via billing mirror mount → 200', async () => {
+    await ctx.step('deletion-status reads the same pending request: cancellable, same schedule, requested_at set', async () => {
+      const r = await asVictim.get('/v1/billing/account/deletion-status');
+      r.status(200).body().has('$.has_pending_deletion', true).has('$.can_cancel', true).exists('$.requested_at');
+      const got = r.json<{ deletion_scheduled_for: string }>().deletion_scheduled_for;
+      if (Date.parse(got) !== Date.parse(scheduledFor)) throw new Error(`status schedule ${got} != request schedule ${scheduledFor}`);
+    });
+    await ctx.step('cancel via the billing mirror → 200 {success: true}', async () => {
       const r = await asVictim.post('/v1/billing/account/cancel-deletion', {});
-      r.status(200);
+      r.status(200).body().has('$.success', true).has('$.message', 'Account deletion cancelled');
+    });
+  },
+);
+
+/**
+ * DEL-5 — deletion is an owner act. `addMember` inserts the membership
+ * directly, so the member has no personal account and resolves the TEAM as
+ * its primary account. Every deletion route refuses the member with 403
+ * `account.delete`, and the team survives.
+ */
+flow(
+  'DEL-5',
+  {
+    domain: 'billing',
+    routes: [
+      'GET /v1/billing/account/deletion-status',
+      'POST /v1/billing/account/request-deletion',
+      'POST /v1/billing/account/cancel-deletion',
+      'DELETE /v1/billing/account/delete-immediately',
+      'GET /v1/accounts/:accountId',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const member = await team.addMember('member');
+    const asMember = ctx.client.as(member);
+
+    await ctx.step('MEMBER reads the team deletion-status → 403 account.delete', async () => {
+      (await asMember.get('/v1/billing/account/deletion-status')).status(403).body().has('$.action', 'account.delete');
+    });
+    await ctx.step('MEMBER cannot request, cancel, or run deletion → 403 account.delete each', async () => {
+      (await asMember.post('/v1/billing/account/request-deletion', { reason: 'ke2e member' }))
+        .status(403).body().has('$.action', 'account.delete');
+      (await asMember.post('/v1/billing/account/cancel-deletion', {}))
+        .status(403).body().has('$.action', 'account.delete');
+      (await asMember.del('/v1/billing/account/delete-immediately'))
+        .status(403).body().has('$.action', 'account.delete');
+    });
+    await ctx.step('the team survives: OWNER reads it → 200', async () => {
+      (await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId', { params: { accountId: team.id } })).status(200);
     });
   },
 );
