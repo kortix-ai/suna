@@ -255,7 +255,7 @@ export function AppDetailModal({
                         </span>
                         {isServer && app.estimated_monthly_usd ? (
                           <span className="text-muted-foreground ml-auto pl-3 text-xs tabular-nums">
-                            {tI18nComplete('texte15cb9ffae7f', { value0: `$${Math.round(app.estimated_monthly_usd)}` })}
+                            {tI18nComplete('texte15cb9ffae7f', { value0: Math.round(app.estimated_monthly_usd) })}
                           </span>
                         ) : null}
                       </DropdownMenuCheckboxItem>
@@ -465,9 +465,12 @@ function DeploymentRow({
         {/* "Live" is the state of THIS version, so the active one says so and the
             rest report their own build outcome. Showing both — a `ready` badge
             and a separate "Live" word on the same row — said one thing twice. */}
-        <Badge size="xs" variant={active ? 'success' : appCopy.deployment[deployment.status].tone}>
-          {active ? appCopy.deployment.ready.label : appCopy.deployment[deployment.status].label}
-        </Badge>
+        {/* An earlier ready version is not live: its Restore button says what it is. */}
+        {active || deployment.status !== 'ready' ? (
+          <Badge size="xs" variant={active ? 'success' : appCopy.deployment[deployment.status].tone}>
+            {active ? appCopy.deployment.ready.label : appCopy.deployment[deployment.status].label}
+          </Badge>
+        ) : null}
         {/* Age, not `hosting_provider`. That field is the name of the sandbox
             fleet the build landed on ("daytona", "platinum") — infrastructure
             this reader neither chose nor can change, printed where the one fact

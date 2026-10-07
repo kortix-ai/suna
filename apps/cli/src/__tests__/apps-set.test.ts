@@ -13,6 +13,7 @@ let tmp: string;
 let server: ReturnType<typeof Bun.serve> | null = null;
 let calls: Array<{ method: string; path: string; body: unknown }> = [];
 let appsEnabled = true;
+let rollbackBody: unknown = null;
 
 function writeConfig(apiBase: string): string {
   const path = join(tmp, 'config.json');
@@ -105,6 +106,18 @@ function startServer(): string {
               : { warnings: [] }),
           }),
         );
+      }
+      if (path === `/v1/projects/${PROJECT}/apps/${APP_ID}/deployments` && req.method === 'GET') {
+        return Response.json({
+          deployments: [
+            { deployment_id: 'dep-v2', version: 2, status: 'ready' },
+            { deployment_id: 'dep-v1', version: 1, status: 'ready' },
+          ],
+        });
+      }
+      if (path === `/v1/projects/${PROJECT}/apps/${APP_ID}/rollback` && req.method === 'POST') {
+        rollbackBody = await req.json().catch(() => null);
+        return Response.json(app({ active_deployment_id: 'dep-v1' }));
       }
       return Response.json({ error: 'not found' }, { status: 404 });
     },
@@ -307,3 +320,26 @@ describe('kortix apps set', () => {
     expect(patchCall()).toBeUndefined();
   });
 });
+
+describe('kortix apps rollback', () => {
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'kortix-apps-rollback-'));
+    process.env = { ...ORIGINAL_ENV };
+    calls = [];
+    appsEnabled = true;
+    rollbackBody = null;
+  });
+
+  afterEach(() => {
+    server?.stop(true);
+    server = null;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  test('accepts a version (v1) as the target, the form `apps show` prints', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['apps', 'rollback', 'storefront', 'v1', '--project', PROJECT], config);
+    expect({ code: r.code, body: rollbackBody }).toEqual({ code: 0, body: { deployment_id: 'dep-v1' } });
+  });
+});
+

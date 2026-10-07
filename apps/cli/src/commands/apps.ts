@@ -96,7 +96,7 @@ Subcommands:
   logs <id|slug> [deployment-id]    Read runtime logs. --after N --limit N.
   start <id|slug>                   Permit requests and start the App.
   stop <id|slug>                    Suspend now. The next authorized request wakes it.
-  rollback <id|slug> <deployment>   Move traffic to a ready deployment.
+  rollback <id|slug> <id|vN>        Move traffic to a ready deployment.
   access <id|slug>                  Read or update access. --mode, --password, --members, --groups.
     --viewer off|identity|api       What the App is told about its viewer. api = a token
                                     that acts as them on the Kortix API (their role caps it).
@@ -493,7 +493,8 @@ async function rollbackCommand(
   if (!ctx) return 1;
   const app = await scoped(ctx, async () => {
     const found = await resolveApp(ctx.apps, positional[0]!);
-    return ctx.apps.rollback(found.app_id, positional[1]!);
+    const deployment = resolveDeploymentTarget(await ctx.apps.deployments.list(found.app_id), positional[1]!);
+    return ctx.apps.rollback(found.app_id, deployment.deployment_id);
   });
   if (json) emitJson(app);
   else
