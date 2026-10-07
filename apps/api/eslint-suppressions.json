@@ -1214,11 +1214,6 @@
       "count": 1
     }
   },
-  "src/lib/deployment-region.ts": {
-    "no-restricted-properties": {
-      "count": 1
-    }
-  },
   "src/lib/email/providers/smtp.ts": {
     "kortix-api/replica-local": {
       "count": 1
@@ -3230,7 +3225,7 @@
   },
   "src/shared/preview-ownership.ts": {
     "kortix-api/layers": {
-      "count": 5
+      "count": 4
     },
     "kortix-api/replica-local": {
       "count": 4

@@ -281,6 +281,34 @@ describe('Slack reads decided on the answer', () => {
     await answered(await gate({ shared: false }, 'slack', 'file_info', { file: 'F0FILE' }), file([]));
   });
 
+  // A reply in a thread this project's session owns can carry a file, in a
+  // channel no project is bound to (or another project's). The prompt tells the
+  // agent to download it; the channel alone refused it.
+  test('file_info: readable when it is shared in a thread this project owns, in any channel', async () => {
+    const threaded = { shared: true, channels: { C0OTHER: [OTHER] }, threads: { '100.1': MINE, '300.3': OTHER } };
+    const file = (shares: Record<string, unknown>) => ({
+      ok: true,
+      file: { id: 'F0FILE', channels: Object.keys(shares), groups: [], ims: [], shares: { public: shares } },
+    });
+    await answered(
+      await gate(threaded, 'slack', 'file_info', { file: 'F0FILE' }),
+      file({ C0OTHER: [{ ts: '100.2', thread_ts: '100.1' }] }),
+    );
+    await answered(
+      await gate(threaded, 'slack', 'file_info', { file: 'F0FILE' }),
+      file({ C0UNBOUND: [{ ts: '100.3', thread_ts: '100.1' }] }),
+    );
+    expect(
+      await answerRefusal(await gate(threaded, 'slack', 'file_info', { file: 'F0FILE' }), file({ C0OTHER: [{ ts: '200.2' }] })),
+    ).toContain('belongs to another Kortix project');
+    expect(
+      await answerRefusal(
+        await gate(threaded, 'slack', 'file_info', { file: 'F0FILE' }),
+        file({ C0UNBOUND: [{ ts: '300.4', thread_ts: '300.3' }] }),
+      ),
+    ).toContain('connected to more than one Kortix project');
+  });
+
   test('search_messages runs only while this project is alone in the workspace', async () => {
     expect(refusalOf(await gate({ shared: true }, 'slack', 'search_messages', { query: 'in:#secret' }))).toContain(
       'a search cannot be limited to this project',

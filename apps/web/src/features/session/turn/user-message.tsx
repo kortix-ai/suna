@@ -916,7 +916,7 @@ export function UserMessageActions({
   rewindPromptText,
   onRewind,
   rewindDisabled,
-  leadingStatus,
+  deliveryStatus,
 }: {
   /** Epoch milliseconds, or `null` when the backend never stamped one. */
   timestamp: number | null;
@@ -929,11 +929,11 @@ export function UserMessageActions({
   onRewind?: (messageId: string, text: string) => void;
   rewindDisabled?: boolean;
   /**
-   * Rendered before `leading` and ALWAYS visible — a queued prompt's delivery
-   * failure and its recovery actions (`QueuedPromptFailure`). Waiting and
-   * sending prompts render no words; the bubble's queue tone carries them.
+   * ALWAYS visible, at the row's right edge — a queued prompt's delivery
+   * progress (`QueuedPromptProgress`) or its failure and recovery actions
+   * (`QueuedPromptFailure`).
    */
-  leadingStatus?: React.ReactNode;
+  deliveryStatus?: React.ReactNode;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // Copy stays available while the agent is busy / rewind is locked.
@@ -942,7 +942,7 @@ export function UserMessageActions({
   const hasMeta = timestamp !== null || Boolean(edited);
 
   // Nothing to say and nothing to do — don't leave an empty row behind.
-  if (!hasMeta && !copyText && !leadingStatus) return null;
+  if (!hasMeta && !copyText && !deliveryStatus) return null;
 
   return (
     // The fade sits on the ROW, so the timestamp and the buttons reveal
@@ -950,12 +950,14 @@ export function UserMessageActions({
     // it. `opacity`, never mounting: the row holds its height whether or not
     // the pointer is over the turn, so nothing in the transcript reflows.
     // The status word (when there is one) sits OUTSIDE the fade: it is the
-    // one thing on this row a user must not have to hover to learn.
+    // one thing on this row a user must not have to hover to learn. It is the
+    // LAST child, pinned to the right edge: the faded group still takes its
+    // width, and the server stamp lands while a prompt is still `delivering`,
+    // so a status to its left slid 56px for a frame before it vanished.
     <div className="flex w-full items-center justify-end gap-2">
-      {leadingStatus}
       <div
         className={cn(
-          'flex items-center gap-2 transition-opacity duration-150',
+          'flex items-center gap-2 transition-opacity duration-normal',
           // `max-md:opacity-100` — the reveal is a DESKTOP affordance only.
           //
           // A touch screen has no hover, so under 768px this row would sit
@@ -1010,6 +1012,7 @@ export function UserMessageActions({
           </div>
         )}
       </div>
+      {deliveryStatus}
     </div>
   );
 }
@@ -1160,7 +1163,7 @@ export function UserMessage({
   editPending,
   onEditCancel,
   onEditSend,
-  leadingStatus,
+  deliveryStatus,
   pendingAttachments,
   uploadStatus,
   pendingText,
@@ -1198,8 +1201,8 @@ export function UserMessage({
   onEditCancel?: () => void;
   /** Send the edit: stage the rewind at this message and deliver `text`. */
   onEditSend?: (messageId: string, text: string, kept: NormalizedAttachment[]) => void;
-  /** See `UserMessageActions.leadingStatus`. */
-  leadingStatus?: React.ReactNode;
+  /** See `UserMessageActions.deliveryStatus`. */
+  deliveryStatus?: React.ReactNode;
   /**
    * The files this message's Send carried, in send order. The runtime streams
    * a message's parts text-first and the file parts seconds later; these keep
@@ -1366,7 +1369,7 @@ export function UserMessage({
       rewindPromptText={rewindPromptText}
       onRewind={onRewind}
       rewindDisabled={rewindDisabled}
-      leadingStatus={leadingStatus}
+      deliveryStatus={deliveryStatus}
     />
   );
 

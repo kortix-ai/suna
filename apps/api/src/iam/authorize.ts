@@ -841,6 +841,17 @@ export function customRoleAllows(
  */
 const NEVER_CACHE_EMPTY_OBJECT_TYPES: ReadonlySet<string> = new Set(['agent', 'connection', 'secret']);
 
+/**
+ * Object types whose grants are never cached, empty or not. A secret value's
+ * or connector account's audience narrows and widens per object, so a cached
+ * map of any size on a replica that did not see the write is a stale over- or
+ * under-grant: on the v0.13.52 gate (SEC-AUD-1/2/4) a value saved for a group
+ * read as open to everyone, and a session holding a person-only value could be
+ * shared. One indexed query per check is the price of every replica reading
+ * the current audience.
+ */
+const NEVER_CACHE_OBJECT_TYPES: ReadonlySet<string> = new Set(['connection', 'secret']);
+
 interface ObjectGrantPrincipal {
   principalType: string;
   principalId: string;
@@ -900,7 +911,7 @@ const loadObjectGrants = ttlMemo({
     return map;
   },
   shouldCache: (map, _projectId, objectType) =>
-    map.size > 0 || !NEVER_CACHE_EMPTY_OBJECT_TYPES.has(objectType),
+    !NEVER_CACHE_OBJECT_TYPES.has(objectType) && (map.size > 0 || !NEVER_CACHE_EMPTY_OBJECT_TYPES.has(objectType)),
 });
 registerProjectScopedMemo(loadObjectGrants);
 
