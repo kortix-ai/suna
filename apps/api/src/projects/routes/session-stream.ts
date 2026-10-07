@@ -75,6 +75,7 @@ import {
   assertProjectCapability,
   loadProjectForUser,
   loadVisibleSession,
+  projectCapabilityAllowed,
   sessionIsTombstoned,
 } from '../lib/access';
 import { projectsApp } from '../lib/app';
@@ -269,14 +270,25 @@ export function registerSessionStreamRoutes(): void {
       // themselves: the same gates `/start` and `/restart` apply. Anyone else
       // sees the ladder's state and never triggers it.
       const ladderActor = controlOnly ? null : await wakeLadderActorFor(c, projectId, sessionId, visible);
-      // Presence is a human browser tab's: the same gate `PUT .../presence` applies.
+      // Presence is a human browser tab's: the same gates `PUT .../presence`
+      // applies, including who may keep the computer awake (KRTX-1729).
       const presenceTabId = c.req.query('tab_id');
       const presenceRenewal =
         presenceTabId &&
         isUuid(presenceTabId) &&
         loaded.actor?.credential.kind === 'jwt' &&
         !callerKortixSessionId(c)
-          ? { userId: String(loaded.userId), tabId: presenceTabId }
+          ? {
+              userId: String(loaded.userId),
+              tabId: presenceTabId,
+              extendDeadline: await projectCapabilityAllowed(
+                c,
+                String(loaded.userId),
+                String(loaded.row.accountId),
+                projectId,
+                PROJECT_ACTIONS.PROJECT_SESSION_START,
+              ),
+            }
           : null;
       const userId = String(c.get('userId') ?? loaded.userId ?? '');
       const accountId = String(loaded.row.accountId);
@@ -428,7 +440,9 @@ export function registerSessionStreamRoutes(): void {
           let presenceTimer: ReturnType<typeof setInterval> | null = null;
           if (presenceRenewal) {
             const renew = () =>
-              void renewSessionPresence(presenceRenewal.userId, sessionId, presenceRenewal.tabId).catch(() => {});
+              void renewSessionPresence(presenceRenewal.userId, sessionId, presenceRenewal.tabId, {
+                extendDeadline: presenceRenewal.extendDeadline,
+              }).catch(() => {});
             renew();
             presenceTimer = setInterval(renew, PRESENCE_RENEW_MS);
             (presenceTimer as unknown as { unref?: () => void }).unref?.();
