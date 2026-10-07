@@ -1,11 +1,25 @@
 {
-  "source_hash": "42c9d73b381a9af6341c20ada27a16bdd09c002807f248d85f96268c9532c560",
-  "head": "b6178906a901ad6ccb78617f0108102e9358a8eb",
+  "source_hash": "de32515ce18217b4da1f80fc5f9fbd858155cae9553fd94c3d70b3a7d43b6780",
+  "diff_files": [
+    "apps/cli/src/__tests__/cli-blackbox.test.ts",
+    "apps/cli/src/__tests__/host-notice.test.ts",
+    "apps/cli/src/__tests__/sandbox-auth.test.ts",
+    "apps/cli/src/__tests__/whoami-json.blackbox.test.ts",
+    "apps/cli/src/api/auth.ts",
+    "apps/cli/src/api/client.test.ts",
+    "apps/cli/src/command-helpers.ts",
+    "apps/cli/src/connector-gateway/gateway.ts",
+    "apps/cli/src/connector-gateway/mint-connect-link.test.ts",
+    "apps/cli/src/host-notice.ts",
+    "packages/shared/src/host-config/config.ts"
+  ],
+  "diff_hash": "0b897fc370d521fb40df841018d051e37cafb1a04a8abbe740c06589875be289",
+  "head": "17da280b32b5781ef8ea81979a5123a7c4e1fac8",
   "passed": false,
   "lanes": {
     "core": "fail",
     "packages": "skipped-sandbox-image",
     "db-suites": "fail"
   },
-  "at": "2026-10-07T07:23:14.194Z"
+  "at": "2026-10-07T08:53:10.919Z"
 }
