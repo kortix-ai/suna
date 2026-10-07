@@ -1,0 +1,25 @@
+{
+  "source_hash": "f4ec7f20b0f72ef8a37e3fc3a3e351249863e4a788ea817a8278af9321c2f2fe",
+  "diff_files": [
+    "apps/api/src/projects/session-lifecycle/inbox-rows.ts",
+    "apps/web/src/features/workspace/project-sessions/project-sessions-view.tsx",
+    "apps/web/src/features/workspace/project-sidebar/project-session-list-helpers.test.ts",
+    "apps/web/src/features/workspace/project-sidebar/project-session-list-helpers.ts",
+    "apps/web/src/features/workspace/project-sidebar/project-session-list.tsx",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/sdk/src/public-surface.snapshot.json",
+    "packages/sdk/src/public-type-surface.snapshot.json",
+    "packages/sdk/src/react/use-project-sessions.test.ts",
+    "packages/sdk/src/react/use-project-sessions.ts",
+    "tests/e2e/specs/43-shared-sessions-past-page-one.spec.ts"
+  ],
+  "diff_hash": "0dbd7f9b2c03800cd80bfd412658f0dac32e7badf22e1d05a9fb94169e73e522",
+  "head": "61bc38920730ba77bfdc590e5620492f163dc604",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-07T16:57:11.918Z"
+}
