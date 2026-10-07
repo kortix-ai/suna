@@ -637,6 +637,8 @@ export async function ensureLocalStack(
           // Only this exact host is exempt from the connector egress check;
           // every other private address stays refused.
           KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: "127.0.0.1",
+          // CONN-CALL-1 waits out the connector upstream deadline (60 s by default).
+          KORTIX_CONNECTOR_CALL_TIMEOUT_MS: "15000",
           PORT: String(apiPort),
           KORTIX_APPS_LOCAL: "true",
           KORTIX_APPS_LOCAL_PORT: String(apiPort),
