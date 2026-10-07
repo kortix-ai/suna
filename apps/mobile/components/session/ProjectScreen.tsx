@@ -131,9 +131,6 @@ const Pages = {
   get SettingsNavPage(): typeof import('@/components/pages/SettingsNavPage').SettingsNavPage {
     return require('@/components/pages/SettingsNavPage').SettingsNavPage;
   },
-  get MemoryPage(): typeof import('@/components/pages/MemoryPage').MemoryPage {
-    return require('@/components/pages/MemoryPage').MemoryPage;
-  },
   get AppsPage(): typeof import('@/components/pages/AppsPage').AppsPage {
     return require('@/components/pages/AppsPage').AppsPage;
   },
@@ -585,8 +582,7 @@ export function ProjectScreen() {
              PageHeader hamburger opens the drawer. A page that takes `onBack`
              gets handlePageBack: back to the thread it was opened over, else
              project home. Entry points: Review (drawer), Browser (a preview
-             card or tool link), a project (a project_select/create tool row).
-             Memory has no entry point (COR-156: re-add one or delete it). */
+             card or tool link), a project (a project_select/create tool row). */
           activePageId === 'page:review' && PAGE_TABS[activePageId] ? (
             <Pages.ReviewPage
               page={PAGE_TABS[activePageId]}
@@ -598,8 +594,6 @@ export function ProjectScreen() {
             <Pages.BrowserPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
           ) : activePageId === 'page:apps' && PAGE_TABS[activePageId] ? (
             <Pages.AppsPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
-          ) : activePageId === 'page:memory' && PAGE_TABS[activePageId] ? (
-            <Pages.MemoryPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
           ) : activePageId.startsWith('page:project:') ? (
             <Pages.ProjectDetailPage
               projectId={activePageId.replace('page:project:', '')}
