@@ -25,7 +25,8 @@ const files = readdirSync(dir).filter((f) => f.endsWith('.yml') || f.endsWith('.
 
 const CREDENTIAL_MARKERS = [
   /id-token:\s*write/,
-  /uses:\s*\.\/\.github\/actions\/aws-env/,
+  // The local aws-env action lives at ./.aws-env/.github/actions/aws-env.
+  /uses:\s*\.\/\.aws-env\/\.github\/actions\/aws-env/,
   /AWS_[A-Z_]+:\s*\$\{\{\s*secrets\./,
 ];
 // Remote refs: `owner/repo@ref` and subpath actions (`owner/repo/path@ref`).

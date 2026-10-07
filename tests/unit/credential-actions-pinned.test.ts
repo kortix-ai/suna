@@ -70,7 +70,7 @@ describe('credential-holding workflows pin remote actions to SHAs', () => {
     expect(failed.stderr).toMatch(/fixture\.yml: github\/codeql-action\/init@v4/);
     const pinnedSubpath = vulnerable.replace(
       'actions/checkout@v7',
-      'github/codeql-action/init@7999b86c43a865dc79d8923397f35af22de63401 # v4',
+      'github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4',
     );
     const r = run(fixture(pinnedSubpath));
     expect(r.stdout).toMatch(/credentialWorkflowViolations=0\b/);
