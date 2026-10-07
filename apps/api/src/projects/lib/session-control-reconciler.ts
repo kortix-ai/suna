@@ -38,7 +38,7 @@
  *
  * The same holds for the box row and the title: a trigger NOTIFYs
  * `kortix_session_changed` on every client-visible write (status, live turns,
- * wake fields, title; migration 20261006182246238), so turn, runtime and
+ * wake fields, title; migration 20261007140000000), so turn, runtime and
  * session frames follow the write on every replica too.
  *
  * ─── EVERY EMISSION IS A FULL SNAPSHOT ─────────────────────────────────────
@@ -321,7 +321,7 @@ export function pokeControlReconciler(sessionId: string): void {
 }
 
 onSessionPromptsChanged(pokeControlReconciler);
-// A box, live-turn, wake or title write (migration 20261006182246238).
+// A box, live-turn, wake or title write (migration 20261007140000000).
 onSessionChanged(pokeControlReconciler);
 
 /** Run the timer at the cadence the holders need. A no-op when it already does. */
