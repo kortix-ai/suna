@@ -157,7 +157,6 @@ test('a failed detail read self-heals on the mounted page and opens the gated mo
   // The gate opened, the model list was fetched, and the page rendered it.
   expect(counts.picker).toBe(1);
   expect(modelCount).toBe(0);
-  expect(modelCount).toBeGreaterThanOrEqual(0);
 
   await act(async () => root?.unmount());
   client.clear();
