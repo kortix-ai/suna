@@ -1,4 +1,5 @@
 import { isWebhookEventProcessed, recordWebhookEvent } from './webhook-concurrency';
+import { logger } from '../../lib/logger';
 import { WebhookError } from '../../errors';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { applyStripeSync } from './account-write-owner';
@@ -7,6 +8,7 @@ import { wallet } from '../wallet';
 import { cancelFreeSubscriptionForUpgrade } from './subscriptions';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 import { resolveAccountId } from '../../shared/resolve-account';
+import { config } from '../../config';
 
 /**
  * A deleted account keeps its row (ledger history, audit) but is terminal:
@@ -42,6 +44,14 @@ export async function processRevenueCatWebhook(body: any) {
     return { received: true, event_type: eventType, skipped: true };
   }
 
+  // A store sandbox purchase (App Store sandbox, TestFlight, Play test track)
+  // spends no real money. Production credit must never follow it: every new
+  // sandbox event id would otherwise grant again.
+  if (event.environment === 'SANDBOX' && config.INTERNAL_KORTIX_ENV === 'prod') {
+    logger.warn(`[RevenueCat] Ignoring SANDBOX ${eventType} (${eventId}) on production`);
+    return { received: true, event_type: eventType, skipped: true };
+  }
+
   const accountId = await resolveAccountId(appUserId);
 
   console.log(`[RevenueCat] Processing ${eventType} for ${appUserId} -> ${accountId}`);
@@ -58,6 +68,9 @@ export async function processRevenueCatWebhook(body: any) {
     case 'CANCELLATION':
     case 'EXPIRATION':
       await handleRevenueCatCancellation(accountId, event);
+      if (eventType === 'CANCELLATION' && event.cancel_reason === 'CUSTOMER_SUPPORT') {
+        await clawBackRevenueCatRefund(accountId, event, dedupeKey);
+      }
       break;
 
     case 'UNCANCELLATION':
@@ -123,7 +136,13 @@ async function handleRevenueCatPurchase(accountId: string, event: any, dedupeKey
     { account: existingAccount, reason: 'revenuecat.INITIAL_PURCHASE' },
   );
 
-  if (tier.monthlyCredits > 0) {
+  // A free trial paid nothing. The credit comes with the first paid RENEWAL.
+  const isTrial = event.period_type === 'TRIAL';
+  if (isTrial) {
+    logger.info(`[RevenueCat] Trial INITIAL_PURCHASE for ${accountId}: no credit granted`);
+  }
+
+  if (!isTrial && tier.monthlyCredits > 0) {
     await wallet.grant({
       accountId,
       amount: tier.monthlyCredits,
@@ -135,7 +154,7 @@ async function handleRevenueCatPurchase(accountId: string, event: any, dedupeKey
   }
 
   const { MACHINE_CREDIT_BONUS } = await import('./tiers');
-  if (MACHINE_CREDIT_BONUS > 0) {
+  if (!isTrial && MACHINE_CREDIT_BONUS > 0) {
     try {
       await wallet.grant({
         accountId,
@@ -305,4 +324,26 @@ async function handleRevenueCatBillingIssue(accountId: string, event: any) {
   );
 
   console.log(`[RevenueCat] Billing issue: ${accountId}`);
+}
+
+/**
+ * A store refund arrives as CANCELLATION with cancel_reason CUSTOMER_SUPPORT.
+ * Take back what the purchase granted: the pack price for a credit top-up, the
+ * tier's monthly credit for a subscription. The balance may go negative.
+ * Keyed on the store transaction, so a redelivery replays.
+ */
+async function clawBackRevenueCatRefund(accountId: string, event: any, dedupeKey: string) {
+  const tierKey = mapRevenueCatProductToTier(event.product_id);
+  const dollars = tierKey ? getMonthlyCredits(tierKey) : Math.abs(Number(event.price) || 0);
+  if (dollars <= 0) return;
+
+  await wallet.grant({
+    accountId,
+    amount: -dollars,
+    kind: 'admin_debit',
+    description: `Store refund clawback: $${dollars.toFixed(2)}`,
+    expiring: false,
+    key: { event: `revenuecat-refund:${event.transaction_id ?? event.original_transaction_id ?? dedupeKey}` },
+  });
+  logger.info(`[RevenueCat] Refund clawback: -$${dollars} for ${accountId}`);
 }

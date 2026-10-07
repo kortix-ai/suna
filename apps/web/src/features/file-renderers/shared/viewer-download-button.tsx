@@ -8,7 +8,7 @@
  * on some viewers in both places at once. It is now a visible icon button,
  * never a menu item: one click, no hunting, and exactly one per viewer.
  *
- * `outline` rather than `ghost` so it carries the same weight as the other
+ * `outline` by default so it carries the same weight as the other
  * primary action in a toolbar (`Copy`/`Copy link`), instead of reading as one
  * more muted tool beside zoom and search.
  */
@@ -24,9 +24,13 @@ export function ViewerDownloadButton({
   onDownload,
   pending = false,
   disabled = false,
+  variant = 'outline',
   className,
 }: {
   onDownload: () => void;
+  /** `ghost` where every neighbouring control is ghost — the session detail
+   *  header. */
+  variant?: 'outline' | 'ghost';
   /** The bytes are still being fetched — the button spins and ignores clicks,
    *  so a slow download is not started twice. */
   pending?: boolean;
@@ -40,7 +44,7 @@ export function ViewerDownloadButton({
     <Hint label={label} side="bottom">
       <Button
         type="button"
-        variant="outline"
+        variant={variant}
         size="icon"
         onClick={onDownload}
         disabled={disabled || pending}

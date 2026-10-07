@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   PROVIDER_CATALOG_ID,
   PROVIDER_ENV_VARS,
+  coolingSecrets,
   isProviderConnected,
   runProviders,
 } from '../commands/providers.ts';
@@ -117,5 +118,21 @@ describe('provider positional help', () => {
     }
     expect(chunks.join('')).toContain('Usage: kortix providers login <provider>');
     expect(errors.join('')).toBe('');
+  });
+});
+
+describe('providers retry — which stored accounts end their cooldown', () => {
+  const now = Date.parse('2026-10-06T12:00:00Z');
+  const rows = [
+    { secret_id: 'a', label: 'ChatGPT A', provider_id: 'codex', cooldown_until: '2026-10-10T00:00:00Z' },
+    { secret_id: 'b', label: 'ChatGPT B', provider_id: 'codex', cooldown_until: null },
+    { secret_id: 'c', label: 'Old rest', provider_id: 'codex', cooldown_until: '2026-10-01T00:00:00Z' },
+    { secret_id: 'd', label: 'Anthropic', provider_id: 'anthropic', cooldown_until: '2026-10-06T13:00:00Z' },
+  ];
+  test('only accounts still cooling down; openai, chatgpt and codex all name ChatGPT connections', () => {
+    for (const name of ['openai', 'chatgpt', 'codex']) expect(coolingSecrets(rows, name, now).map((r) => r.secret_id)).toEqual(['a']);
+  });
+  test('with no provider, every cooling account', () => {
+    expect(coolingSecrets(rows, undefined, now).map((r) => r.secret_id)).toEqual(['a', 'd']);
   });
 });

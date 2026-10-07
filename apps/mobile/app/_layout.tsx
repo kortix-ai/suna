@@ -66,7 +66,7 @@ import Constants from 'expo-constants';
 import { configureKortix } from '@kortix/sdk';
 import EventSource from 'react-native-sse';
 import { createSseTransport } from '@/lib/session/sse-transport';
-import { API_URL, getAuthToken } from '@/api/config';
+import { API_URL, kortixGetToken } from '@/api/config';
 import {
   clearWebRegistrationHandoff,
   consumeAuthCallbackState,
@@ -94,7 +94,7 @@ if (__DEV__ && Platform.OS !== 'web' && typeof XMLHttpRequest === 'function') {
 // through to `backendApi`/`projects-client` instead of hand-rolling fetch.
 configureKortix({
   backendUrl: API_URL,
-  getToken: getAuthToken,
+  getToken: kortixGetToken,
   clientVersion: Constants.expoConfig?.version ? `mobile/${Constants.expoConfig.version}` : undefined,
   // The live session stream arrives over `react-native-sse` (an XHR wire); the
   // SDK keeps reconnect, resume and the reducer (lib/session/sse-transport.ts).

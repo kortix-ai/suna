@@ -79,15 +79,11 @@ import rules, and where new code goes; `bun run lint` enforces them.
    It only reads files off disk, so it comes up first and stays up regardless
    of repo/harness state — previews work while the agent is still booting.
    Non-fatal: a bind failure is logged and `static_web_port` reports `null`.
-3. The sandbox entrypoint downloads and verifies the compiled `server.mjs` when
-   compiled boot is enabled. `prefer` executes it with baked-agent fallback.
-   `shadow` verifies it and executes the baked agent. `required` fails closed.
-4. Materialize the project repo in `/workspace/.kortix` through the
+3. Materialize the project repo in `/workspace/.kortix` through the
    config-provider coordinator (`src/services/config-provider/config-provider.ts`). A
    baked checkout that IS the session's base is adopted first, in every mode.
    Then `KORTIX_PROJECT_SNAPSHOT_MODE` selects the transport: `git` (default)
-   is the legacy path — compiled checkout (`KORTIX_COMPILED_BOOT_MODE`
-   `prefer`/`required`), image-baked scaffold + API delta, or `git clone`;
+   is the legacy path — image-baked scaffold + API delta, or `git clone`;
    `prefer-s3` fetches the PREPARED boot object pinned in
    `KORTIX_PROJECT_SNAPSHOT_PIN` from object storage (descriptor from the Git
    proxy, presigned GET into a stage file with the hash and the tar-header
@@ -104,20 +100,20 @@ import rules, and where new code goes; `bun run lint` enforces them.
    the optional history backfill until the runtime is actually ready and the
    hydration has settled. Materialization failures are logged but non-fatal in
    non-required modes.
-5. Inject managed system skills into the project's skills dir: root `skills/`
+4. Inject managed system skills into the project's skills dir: root `skills/`
    (root layout) or `<config dir>/skills` (legacy `.kortix/opencode`).
-6. Resolve `OPENCODE_CONFIG_DIR`.
-7. Start the OpenCode REST supervisor in the project directory
+5. Resolve `OPENCODE_CONFIG_DIR`.
+6. Start the OpenCode REST supervisor in the project directory
    (`opencode serve --port <internal> --hostname 127.0.0.1`).
    If the binary isn't found we keep going and report `opencode: 'starting'`.
-8. Start the Hono proxy on `0.0.0.0:KORTIX_SERVICE_PORT`.
+7. Start the Hono proxy on `0.0.0.0:KORTIX_SERVICE_PORT`.
 
    Steps 5 to 7 are the OpenCode harness. With `KORTIX_HARNESS=pi` the daemon
    starts pi in its own process instead: no child process, no internal port and
    no `OPENCODE_CONFIG_DIR`. pi reads the managed skills from the image's
    overlay directory and the project's `skills/`
    ([harness README](src/harness/README.md), "The pi harness").
-9. Trap signals; on shutdown, drain proxy + static web + kill child processes.
+8. Trap signals; on shutdown, drain proxy + static web + kill child processes.
 
 ## Routes
 
@@ -142,8 +138,6 @@ import rules, and where new code goes; `bun run lint` enforces them.
   "repo": "https://github.com/owner/name.git",
   "branch": "main",
   "commit_sha": "abc123...",
-  "compiled_boot_mode": "prefer",
-  "compiled_checkout": true,
   "runtime": { "running": { "harness": "opencode", "harness_version": "1.18.23", "…": "…" } },
   "harness": {
     "id": "opencode",
@@ -153,7 +147,7 @@ import rules, and where new code goes; `bun run lint` enforces them.
     "error": null,
     "session": { "id": "ses_…", "required": true },
     "turn": null,
-    "details": { "pid": 4567, "port": 4096, "compiled_runtime": true }
+    "details": { "pid": 4567, "port": 4096 }
   },
   "opencode": "ok",
   "opencode_pid": 4567,
@@ -166,7 +160,9 @@ import rules, and where new code goes; `bun run lint` enforces them.
 - `harness` is the selected harness's closed block (E19). `runtimeReady` is
   computed once in `routes/kortix/health.ts` from the host's repo checks and
   `harness.ready`. `capabilities` lists the session features the runtime
-  serves (E1): all ten on OpenCode, `session.subagents` on pi.
+  serves (E1): all eleven on OpenCode 1.18.15 and later (`session.steer` is
+  absent on an older or unknown version); `session.subagents`,
+  `session.compact`, `session.commands` and `session.steer` on pi.
 - `opencode`, `opencode_pid`, `opencode_port`, `opencode_session_id` and
   `opencode_session_required` are the pre-W3 flat names of the block's fields
   (`routes/kortix/legacy-names.ts`), kept for an API built before W3.
@@ -181,11 +177,6 @@ import rules, and where new code goes; `bun run lint` enforces them.
   shows up, plain probing resumes 10 s after the spawn.
 - `repo`, `branch`, `commit_sha` come from `git` in `KORTIX_PROJECT_TARGET` and
   are `null` when no repo has been materialized.
-- `compiled_boot_mode` reports `off`, `shadow`, `prefer`, or `required`.
-- `compiled_checkout` is `true` only when the current repo came from a verified
-  compiled checkout.
-- `compiled_runtime` is `true` only when `server.mjs` launched the daemon.
-- `compiled_runtime_source_sha` is the exact Git SHA compiled into `server.mjs`.
 
 ### `POST /kortix/refresh`
 
@@ -220,12 +211,9 @@ KORTIX_BRANCH_FETCH_ATTEMPTS=60
 KORTIX_BRANCH_FETCH_DELAY=0.25
 KORTIX_DEFAULT_OPENCODE_CONFIG_DIR=/ephemeral/kortix-master/opencode
 KORTIX_PROJECT_AUTO_CLONE=0
-KORTIX_COMPILED_BOOT_MODE=off
 KORTIX_PROJECT_SNAPSHOT_MODE=git          # git | prefer-s3 | require-s3 (src/services/config-provider)
 KORTIX_PROJECT_SNAPSHOT_PIN=              # <sha>:<archive-sha256>:<bytes> of a PREPARED archive, set by the API
 KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR=       # base64 JSON of the presigned download descriptor for that pin, signed by the API at session create; first attempt only, the proxy route is the fallback
-KORTIX_COMPILED_RUNTIME_FORMAT=
-KORTIX_COMPILED_RUNTIME_SOURCE_SHA=
 KORTIX_REPO_URL=
 KORTIX_BRANCH_NAME=
 KORTIX_GITHUB_TOKEN=
@@ -268,8 +256,8 @@ binary's own lifecycle; the default (no subcommand) and `serve` boot the daemon.
 | `kortixd --health-check`         | Smoke-test: boot a health server on an ephemeral port, exit 0.   |
 | `kortixd --help`                 | Usage.                                                            |
 
-The daemon also keeps its two pre-existing subcommands: `git-credential`
-(git execs it as a credential helper) and `install-compiled-runtime`.
+The daemon also keeps its pre-existing `git-credential` subcommand (git execs
+it as a credential helper).
 
 ### Self-update reliability
 

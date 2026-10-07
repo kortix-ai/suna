@@ -24,6 +24,7 @@ import {
   opencodeSessionInFlight,
 } from './opencode-turn-state'
 import { readOpenCodeSessionPin } from './runtime-state'
+import { opencodeSupportsSteer, runningOpencodeVersion } from './turns'
 
 import type { OpenCodeBootState } from './boot-state'
 
@@ -166,10 +167,6 @@ async function readOpenCodeHealth(
         // API's PTY proxy reaches opencode directly (the daemon cannot carry a
         // WebSocket), so it must not assume 4096.
         port: opencode.getActivePort(),
-        // Only the OpenCode lifecycle consumes the compiled runtime.
-        compiled_runtime: process.env.KORTIX_COMPILED_RUNTIME_FORMAT === 'kortix.compiled-runtime.v1',
-        compiled_runtime_format: process.env.KORTIX_COMPILED_RUNTIME_FORMAT || null,
-        compiled_runtime_source_sha: process.env.KORTIX_COMPILED_RUNTIME_SOURCE_SHA || null,
         // How often the periodic reconcile floor runs, so "why hasn't this
         // healed yet" has an answer bound to a number.
         runtime_truth_tick_interval_ms: runtimeTruthTickIntervalMs(),
@@ -242,7 +239,11 @@ export function createOpenCodeDiagnosticsService(
 ): HarnessDiagnosticsService {
   return {
     // Every session feature the pi harness answers 501 for is native here.
-    capabilities: [...RUNTIME_CAPABILITIES],
+    // Steering needs OpenCode 1.18.15 or later; an unknown version does not list it.
+    capabilities: async () => {
+      const steer = opencodeSupportsSteer(await runningOpencodeVersion())
+      return RUNTIME_CAPABILITIES.filter((capability) => capability !== 'session.steer' || steer === true)
+    },
     catalogSnapshot: catalogSnapshotForHealth,
     health: (context, query) => readOpenCodeHealth(context, opencode, query),
     report: (context, tail) => readOpenCodeDiagnosticReport(opencode, home, context, tail),

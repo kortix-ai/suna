@@ -16,11 +16,12 @@ import { accountSessionActivity } from '@kortix/db';
 import { db } from '../shared/db';
 import { supabaseAuth } from '../middleware/auth';
 import type { AppEnv } from '../types';
-import { auditLogout } from '../shared/auth-audit';
+import { auditLogout } from '../middleware/auth-audit';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { gotrue } from './gotrue';
 import { forgetJwtLiveness } from '../shared/jwt-liveness';
 import { readJsonObject } from '../shared/http-body';
+import { bearerToken } from '../shared/bearer-token';
 
 export const authRouter = makeOpenApiApp<AppEnv>();
 
@@ -109,8 +110,7 @@ authRouter.openapi(
 // ./headless.ts, mounted on the same /v1/auth prefix ahead of this router.
 
 function bearerOf(c: any): string | null {
-  const header = c.req.header('Authorization') ?? '';
-  return header.startsWith('Bearer ') ? header.slice(7).trim() || null : null;
+  return bearerToken(c.req.header('Authorization'))?.trim() || null;
 }
 
 authRouter.openapi(

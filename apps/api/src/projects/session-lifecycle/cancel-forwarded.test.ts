@@ -169,3 +169,52 @@ describe('cancelForwardedPrompt — the tip read and its failure ladder', () => 
     expect(closedTurns).toEqual([TARGET]);
   });
 });
+
+describe('cancelForwardedPrompt — a steer pi has not read (R10)', () => {
+  const STEER = wireId(T + 2_000, 'STEERSTEERSTE');
+  const steerRow = {
+    ...(inboxRow as object),
+    result: { status: 'forwarded', forwarded_message_id: STEER, steered_into_message_id: TARGET },
+  } as never;
+  // The running turn: its prompt and a step newer than the steer, parented on the prompt.
+  const tipBody = {
+    messages: [
+      { info: { id: TARGET, role: 'user', time: { created: T } }, parts: [{ id: 'prt_u' }] },
+      { info: { id: wireId(T + 3_000, 'STEPSTEPSTEPS'), role: 'assistant', parentID: TARGET, time: { created: T + 3_000 } }, parts: [] },
+    ],
+    has_more: false,
+  };
+  function box(deleteStatus: number) {
+    globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
+      if (String(url).endsWith('/kortix/health')) return Response.json({ capabilities: ['runtime.turns.v1', 'session.steer'] });
+      if ((init?.method ?? 'GET') === 'DELETE') {
+        deletedMessages.push(decodeURIComponent(String(url)));
+        return new Response(null, { status: deleteStatus });
+      }
+      return Response.json(tipBody);
+    }) as unknown as typeof fetch;
+  }
+
+  beforeEach(async () => {
+    selectResults = [steerRow];
+    (await import('./runtime-fetch')).__resetRuntimeTurnVerbsMemo();
+  });
+
+  test('absent from the transcript, it is withdrawn through the runtime DELETE', async () => {
+    box(200);
+    expect((await cancelForwardedPrompt(SESSION_ID, PROMPT_ID)).outcome).toBe('cancelled');
+    expect(deletedMessages).toEqual([
+      `https://box.test/p/${EXTERNAL_ID}/8000/kortix/runtime/messages/${OC_SESSION_ID}/${STEER}`,
+    ]);
+  });
+
+  test('a 409 from the DELETE means the turn read it: answered, the row stays', async () => {
+    box(409);
+    expect(await cancelForwardedPrompt(SESSION_ID, PROMPT_ID)).toEqual({ outcome: 'answered' });
+  });
+
+  test('a refused DELETE is unreachable', async () => {
+    box(503);
+    expect(await cancelForwardedPrompt(SESSION_ID, PROMPT_ID)).toEqual({ outcome: 'unreachable' });
+  });
+});
