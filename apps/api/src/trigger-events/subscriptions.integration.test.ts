@@ -230,6 +230,37 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
     expect(await store.listByProject(PROJECT_ID)).toEqual([]);
   });
 
+  test('losing the account unsubscribes the live instance, and its deliveries no longer fire', async () => {
+    await connect();
+    await catalog(spec('a'));
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
+    expect(await status('a')).toBe('active');
+    await testDb().delete(connectorConnections).where(eq(connectorConnections.connectionId, CONNECTION_ID));
+    calls.length = 0;
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
+    const row = await store.get(PROJECT_ID, 'a');
+    expect(row?.status).toBe('needs_connection');
+    expect(row?.externalId).toBeNull();
+    expect(calls).toEqual(['unsubscribe:ti_EXAMPLE_NEW_MESSAGE_{}']);
+    const tally = await deliverEvents('composio', [
+      { externalId: 'ti_EXAMPLE_NEW_MESSAGE_{}', eventId: 'msg_late', type: 'EXAMPLE_NEW_MESSAGE', occurredAt: new Date().toISOString(), data: {} },
+    ]);
+    expect(tally.fired).toBe(0);
+    expect(fires).toHaveLength(0);
+  });
+
+  test('a row that is not active never fires, even if the provider still delivers', async () => {
+    await connect();
+    await catalog(spec('a'));
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
+    await store.markErrorByExternalId('composio', 'ti_EXAMPLE_NEW_MESSAGE_{}', 'disabled upstream');
+    const tally = await deliverEvents('composio', [
+      { externalId: 'ti_EXAMPLE_NEW_MESSAGE_{}', eventId: 'msg_parked', type: 'EXAMPLE_NEW_MESSAGE', occurredAt: new Date().toISOString(), data: {} },
+    ]);
+    expect(tally).toEqual({ fired: 0, skipped: 1, ignored: 0, failed: 0 });
+    expect(fires).toHaveLength(0);
+  });
+
   test('a connection the provider cannot use yet reads needs_connection, not error', async () => {
     const { EventConnectionNotReadyError } = await import('./types');
     await connect({ metadata: {} });

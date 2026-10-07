@@ -61,6 +61,7 @@ import {
   claimDeletionRequest,
   releaseDeletionRequest,
 } from '../repositories/account-deletion';
+import { releaseProjectEventSubscriptions } from '../../trigger-events/subscriptions';
 
 const GRACE_PERIOD_DAYS = 14;
 const ACTIVE_DELETION_REQUEST_EXISTS = 'An active deletion request already exists for this account';
@@ -570,6 +571,15 @@ async function deleteAccountData(accountId: string, keepRequestId?: string): Pro
   await deleteInChunks(sessionLifecycleCommands, eq(sessionLifecycleCommands.accountId, accountId));
   await deleteInChunks(sessionTurns, inAccountSessions(sessionTurns.sessionId));
   await deleteInChunks(sessionPendingQuestions, inAccountSessions(sessionPendingQuestions.sessionId));
+
+  // Provider-side app-event instances live outside our database: release them
+  // before the cascade drops the rows that name them.
+  for (const { projectId } of await db
+    .select({ projectId: projects.projectId })
+    .from(projects)
+    .where(eq(projects.accountId, accountId))) {
+    await releaseProjectEventSubscriptions(projectId);
+  }
 
   await db.transaction(async (tx) => {
     // Scopes for the child rows that carry no account_id of their own.

@@ -149,15 +149,18 @@ async function reconcileOne(
     eventType: event.type,
   };
   if (resolved.kind !== 'ok') {
-    // Keep the old instance id: a later delete must still unsubscribe it.
+    // The account can no longer feed this trigger: drop the row's instance first,
+    // so no delivery outlives the access that allowed it.
     await store.upsert({
       ...base,
       connectionId: null,
-      externalId: prev?.externalId ?? null,
+      externalId: null,
       desiredHash: desiredHash(providerId, null, event.type, event.config),
       status: resolved.kind,
       lastError: resolved.message,
     });
+    const provider = eventSourceFor(providerId);
+    if (provider && prev?.externalId) await unsubscribeIfUnreferenced(provider, prev.externalId);
     return;
   }
   const { provider, connection } = resolved;
@@ -241,5 +244,24 @@ export async function reconcileEventSubscriptionsFromCatalog(projectId: string, 
     await reconcileEventSubscriptions(projectId, accountId, rows.map((r) => r.spec as unknown as GitTriggerSpec));
   } catch (error) {
     logger.warn('[trigger-events] catalog reconcile failed', { projectId, error: errorText(error) });
+  }
+}
+
+/**
+ * A project is leaving (archive, account deletion): unsubscribe every provider
+ * instance it holds and drop its rows. Lock-free and best-effort per row, so a
+ * concurrent reconcile cannot make it skip the project. Never throws.
+ */
+export async function releaseProjectEventSubscriptions(projectId: string): Promise<void> {
+  try {
+    for (const row of await store.listByProject(projectId)) {
+      try {
+        await removeStale(row);
+      } catch (error) {
+        logger.warn('[trigger-events] release failed', { projectId, slug: row.slug, error: errorText(error) });
+      }
+    }
+  } catch (error) {
+    logger.warn('[trigger-events] release aborted', { projectId, error: errorText(error) });
   }
 }

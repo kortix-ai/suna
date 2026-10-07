@@ -174,7 +174,8 @@ function ScheduleTableRow({
   const security = describeSecurity(trigger, tI18nComplete);
   const KindIcon =
     kind === 'cron' ? TimerIcon : kind === 'event' ? LightningIcon : WebhooksLogoIcon;
-  const eventStatus = trigger.event ? describeEventStatus(trigger.event) : null;
+  // A paused trigger holds no subscription: its tile already says Paused.
+  const eventStatus = trigger.event && trigger.enabled ? describeEventStatus(trigger.event) : null;
   const lastRun = describeLastRun(
     kind === 'event'
       ? (trigger.event?.last_event_at ?? trigger.last_fired_at)

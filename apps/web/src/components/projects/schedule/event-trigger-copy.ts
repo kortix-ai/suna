@@ -7,7 +7,7 @@
  * id first and never asks a person to write JSON.
  */
 
-import type { ProjectTrigger, ProjectTriggerEvent, ProjectTriggerEventType } from '@kortix/sdk';
+import type { ProjectTriggerEvent, ProjectTriggerEventType } from '@kortix/sdk';
 
 type JsonSchema = Record<string, unknown>;
 
@@ -65,12 +65,6 @@ export function describeEventStatus(event: ProjectTriggerEvent): EventStatusCopy
     default:
       return { label: 'Activating', variant: 'muted', detail: null };
   }
-}
-
-export function isEventTrigger(
-  trigger: ProjectTrigger,
-): trigger is ProjectTrigger & { event: ProjectTriggerEvent } {
-  return trigger.type === 'event' && trigger.event !== null;
 }
 
 /** Where a person connects an account for a connector: the Connectors page, detail open. */

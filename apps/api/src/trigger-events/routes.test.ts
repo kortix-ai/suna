@@ -14,7 +14,7 @@ mock.module('./deliver', () => ({
 }));
 
 const { projectWebhooksApp } = await import('../projects/lib/app');
-const { registerEventIngressRoutes } = await import('./routes');
+const { EVENT_INGRESS_MAX_BYTES, registerEventIngressRoutes } = await import('./routes');
 const { setEventSourceForTest } = await import('./registry');
 const { EventSignatureError } = await import('./types');
 
@@ -78,5 +78,16 @@ describe('POST /v1/webhooks/events/:provider', () => {
   test('500 when any fire failed, so the provider retries', async () => {
     tally = { fired: 1, skipped: 0, ignored: 0, failed: 1 };
     expect((await post('composio')).status).toBe(500);
+  });
+
+  test('413 for a body over the cap, before the provider reads it', async () => {
+    let read = false;
+    setEventSourceForTest('composio', { ...fake, receive: async () => { read = true; return { deliveries: [], notices: [] }; } });
+    const res = await projectWebhooksApp.request('/events/composio', {
+      method: 'POST',
+      body: 'x'.repeat(EVENT_INGRESS_MAX_BYTES + 1),
+    });
+    expect(res.status).toBe(413);
+    expect(read).toBe(false);
   });
 });

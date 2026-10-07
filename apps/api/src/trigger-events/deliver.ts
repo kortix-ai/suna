@@ -74,6 +74,9 @@ async function deliverToRow(
   row: store.EventSubscriptionRow,
   delivery: EventDelivery,
 ): Promise<'fired' | 'skipped' | 'failed'> {
+  // Only a live subscription fires: an errored or parked row (revoked or narrowed
+  // account) must not feed sessions while its provider instance winds down.
+  if (row.status !== 'active') return 'skipped';
   const [project] = await db.select().from(projects).where(eq(projects.projectId, row.projectId)).limit(1);
   if (!project || project.status !== 'active') return 'skipped';
   if (triggersPausedForProject(project.metadata)) return 'skipped';

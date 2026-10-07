@@ -1,5 +1,6 @@
 /** Public ingress for app events: `POST /v1/webhooks/events/:provider`, authenticated by the provider's signature. */
 import { createRoute, z } from '@hono/zod-openapi';
+import { bodyLimit } from 'hono/body-limit';
 import { errors, json } from '../openapi';
 import { projectWebhooksApp } from '../projects/lib/app';
 import { bindIntegrationPrincipal } from '../shared/audit-scope';
@@ -14,7 +15,14 @@ const IngressResultSchema = z.object({
   ignored: z.number(),
 });
 
+/** A provider event is a few KB; the cap bounds what an unauthenticated caller makes us buffer before the signature check. */
+export const EVENT_INGRESS_MAX_BYTES = 1024 * 1024;
+
 export function registerEventIngressRoutes(): void {
+  projectWebhooksApp.use(
+    '/events/*',
+    bodyLimit({ maxSize: EVENT_INGRESS_MAX_BYTES, onError: (c) => c.json({ error: 'Payload too large' }, 413) }),
+  );
   projectWebhooksApp.openapi(createRoute({
     method: 'post',
     path: '/events/{provider}',
@@ -26,7 +34,7 @@ export function registerEventIngressRoutes(): void {
     request: { params: z.object({ provider: z.string() }) },
     responses: {
       200: json(IngressResultSchema, 'Every delivery fired, skipped or ignored'),
-      ...errors(401, 404, 500, 503),
+      ...errors(401, 404, 413, 500, 503),
     },
   }), async (c) => {
     const provider = eventSourceFor(c.req.param('provider'));
