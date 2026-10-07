@@ -1,0 +1,17 @@
+{
+  "source_hash": "6100b2d80df46b760dd7dbc1a8f89d291eda678264803ca35da25bca8ee68a16",
+  "diff_files": [
+    "apps/api/src/projects/routes/project-audit-ingestion.test.ts",
+    "apps/api/src/projects/routes/project-audit.ts",
+    "apps/web/src/lib/seo/content-timestamps.json"
+  ],
+  "diff_hash": "d2389692ae59a8e2f64e117893cf1f96c142c04a905a8401dbcd566b314856e5",
+  "head": "31e1c515cb560079e57257eaf876b6aa4d3a2144",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-07T21:40:25.516Z"
+}
