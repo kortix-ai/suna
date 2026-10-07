@@ -9,6 +9,7 @@
  * To add an icon: add its import + export pair here (alphabetical), then
  * import it from `@/lib/icons` at the call site.
  */
+import { AlarmIcon as AlarmGlyph } from 'phosphor-react-native/src/icons/Alarm';
 import { ArchiveIcon as ArchiveGlyph } from 'phosphor-react-native/src/icons/Archive';
 import { ArrowClockwiseIcon as ArrowClockwiseGlyph } from 'phosphor-react-native/src/icons/ArrowClockwise';
 import { ArrowCounterClockwiseIcon as ArrowCounterClockwiseGlyph } from 'phosphor-react-native/src/icons/ArrowCounterClockwise';
@@ -196,6 +197,7 @@ import { XIcon as XGlyph } from 'phosphor-react-native/src/icons/X';
 
 import { withAppWeight, withFixedWeight } from './bind';
 
+export const AlarmIcon = withAppWeight(AlarmGlyph, 'AlarmIcon');
 export const ArchiveIcon = withAppWeight(ArchiveGlyph, 'ArchiveIcon');
 export const ArrowClockwiseIcon = withAppWeight(ArrowClockwiseGlyph, 'ArrowClockwiseIcon');
 export const ArrowCounterClockwiseIcon = withAppWeight(ArrowCounterClockwiseGlyph, 'ArrowCounterClockwiseIcon');

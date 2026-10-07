@@ -191,7 +191,7 @@ mock.module('../../shared/db', () => {
     execute: async () => {
       chunkDeleteStatements++;
       if (deleteError) throw deleteError;
-      return [{ n: 0 }];
+      return [];
     },
   };
   return { db };

@@ -545,6 +545,17 @@ flow(
       );
       r.status(400);
     });
+    // KRTX-1721: the first of 6 fields is seconds, so this fires every 30 s.
+    await ctx.step('a cron that fires more than once a minute → 400 naming the 60-second minimum', async () => {
+      const r = await owner.post(
+        '/v1/projects/:projectId/triggers',
+        { name: 'x', type: 'cron', cron: '*/30 * * * * *', timezone: 'UTC', prompt_template: 'x' },
+        { params },
+      );
+      r.status(400);
+      const error = String(r.json<{ error?: string }>()?.error ?? '');
+      if (!error.includes('60 seconds')) throw new Error(`error does not name the minimum: ${error}`);
+    });
     await ctx.step('missing prompt_template → 400', async () => {
       const r = await owner.post(
         '/v1/projects/:projectId/triggers',
@@ -1336,121 +1347,55 @@ flow(
   },
 );
 
-// ── TRG-17: webhook ingress against a REAL webhook trigger (contract TRG-7) ──
-// TRG-7 and SEC-F probe only a bogus project. Here the trigger, its secret and
-// the signature are real. Triggers are paused first: the pause check runs AFTER
-// authentication (routes/trigger-webhooks.ts), so an authenticated delivery
-// answers 200 `skipped` and never creates a session or a sandbox.
+// TRG-17 — a trigger's listing says when it runs next, and a manual fire that
+// fails is recorded on the trigger like a failed cron fire (KRTX-1743). Before,
+// a failed manual or webhook fire answered 500 and left `last_status` as it
+// was, and no surface showed the next run.
 flow(
   'TRG-17',
   {
     domain: 'triggers',
     routes: [
-      'POST /v1/projects/:projectId/secrets',
-      'DELETE /v1/projects/:projectId/secrets/:name',
       'POST /v1/projects/:projectId/triggers',
       'GET /v1/projects/:projectId/triggers',
-      'PATCH /v1/projects/:projectId/triggers/:slug',
-      'PATCH /v1/projects/:projectId/triggers/activation',
-      'POST /v1/webhooks/projects/:projectId/:slug',
+      'POST /v1/projects/:projectId/triggers/:slug/fire',
     ],
   },
   async (ctx) => {
+    if (ctx.env.target !== 'local') return; // the local stack runs no sandbox, so a fire fails after authorization
     const p = await ctx.fixtures.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     const params = { projectId: p.id };
-    const secret = `ke2e-hook-${crypto.randomUUID()}`;
-    const rawBody = JSON.stringify({ action: 'opened' });
-    const sign = (payload: string, key = secret) => `sha256=${createHmac('sha256', key).update(payload).digest('hex')}`;
-    const deliver = (headers: Record<string, string>, slug = 'hook', projectId = p.id) =>
-      ctx.client.as(ctx.P.ANON).post('/v1/webhooks/projects/:projectId/:slug', rawBody, {
-        params: { projectId, slug },
-        raw: true,
-        headers: { 'content-type': 'application/json', ...headers },
-      });
-    const rejected = async (headers: Record<string, string>, slug?: string) => {
-      (await deliver(headers, slug)).status(401).body().has('$.error', 'Invalid webhook signature');
-    };
-    const accepted = async (headers: Record<string, string>) => {
-      (await deliver(headers)).status(200).body().has('$.status', 'skipped');
-    };
-    const webhookTrigger = (slug: string, secretEnv: string) => ({
-      name: slug,
-      slug,
-      type: 'webhook',
-      secret_env: secretEnv,
-      prompt_template: 'New {{ body.action }}',
-    });
-    type Listed = { triggers: Array<{ slug: string; name: string; type: string; secret_env: string | null; webhook_url: string | null }> };
-    const listed = async (): Promise<Listed['triggers']> => {
-      const r = await owner.get('/v1/projects/:projectId/triggers', { params });
-      r.status(200);
-      return r.json<Listed>().triggers;
-    };
+    const digest = async () =>
+      (await owner.get('/v1/projects/:projectId/triggers', { params }))
+        .status(200)
+        .json<{ triggers: Array<{ slug: string; next_fire_at?: string | null; last_status?: string | null; last_error?: string | null }> }>()
+        .triggers.find((t) => t.slug === 'digest');
 
-    await ctx.step('webhook trigger naming a missing secret → 409 webhook_secret_missing; nothing listed', async () => {
-      const r = await owner.post('/v1/projects/:projectId/triggers', webhookTrigger('missing-hook', 'NO_SUCH_HOOK_SECRET'), { params });
-      r.status(409).body().has('$.code', 'webhook_secret_missing');
-      if ((await listed()).some((t) => t.slug === 'missing-hook')) throw new Error('a refused webhook trigger was committed');
-    });
-
-    await ctx.step('webhook trigger naming a sandbox-delivered secret → 409 webhook_secret_delivery_mismatch', async () => {
-      (await owner.post('/v1/projects/:projectId/secrets', { name: 'SANDBOX_HOOK_SECRET', value: 'sandbox-only' }, { params })).status([200, 201]);
-      const r = await owner.post('/v1/projects/:projectId/triggers', webhookTrigger('sandbox-hook', 'SANDBOX_HOOK_SECRET'), { params });
-      r.status(409).body().has('$.code', 'webhook_secret_delivery_mismatch');
-    });
-
-    await ctx.step('connector-delivered secret → 201; the listing carries secret_env and the public webhook_url', async () => {
-      (await owner.post('/v1/projects/:projectId/secrets', { name: 'HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params }))
-        .status(200).body().has('$.strategy', 'broker').has('$.consumer', 'connector');
-      (await owner.post('/v1/projects/:projectId/triggers', webhookTrigger('hook', 'HOOK_SECRET'), { params })).status(201);
-      const row = (await listed()).find((t) => t.slug === 'hook');
-      if (!row || row.type !== 'webhook' || row.secret_env !== 'HOOK_SECRET' || !row.webhook_url?.endsWith(`/v1/webhooks/projects/${p.id}/hook`)) {
-        throw new Error(`webhook trigger listing is wrong: ${JSON.stringify(row)}`);
+    await ctx.step('a daily cron trigger lists its next run, within a day of now', async () => {
+      (
+        await owner.post(
+          '/v1/projects/:projectId/triggers',
+          { name: 'Digest', type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'Summarize.' },
+          { params },
+        )
+      ).status(201);
+      const next = Date.parse(String((await digest())?.next_fire_at ?? ''));
+      const now = Date.now();
+      if (!(next > now - 60_000 && next < now + 25 * 60 * 60 * 1000)) {
+        throw new Error(`next_fire_at is ${String((await digest())?.next_fire_at)}`);
       }
     });
 
-    await ctx.step('pause triggers server-side → 200, triggers_paused true', async () => {
-      (await owner.patch('/v1/projects/:projectId/triggers/activation', { paused: true }, { params })).status(200).body().has('$.triggers_paused', true);
-    });
-
-    await ctx.step('malformed project id or slug → 400 before any lookup', async () => {
-      (await deliver({}, 'hook', 'not-a-uuid')).status(400).body().has('$.error', 'Invalid project id');
-      (await deliver({}, 'Bad_Slug')).status(400).body().has('$.error', 'Invalid trigger slug');
-    });
-
-    await ctx.step('no credential header, an unknown slug, a wrong signature → the same 401', async () => {
-      await rejected({});
-      await rejected({ 'x-kortix-signature': sign(rawBody) }, 'no-such-hook');
-      await rejected({ 'x-kortix-signature': sign(rawBody, 'wrong-secret') });
-    });
-
-    await ctx.step('a valid X-Kortix-Signature or X-Hub-Signature-256 authenticates → 200 skipped (paused)', async () => {
-      await accepted({ 'x-kortix-signature': sign(rawBody) });
-      await accepted({ 'x-hub-signature-256': sign(rawBody) });
-    });
-
-    await ctx.step('X-Kortix-Timestamp signs <timestamp>.<body>: 1 h stale or 1 h ahead → 401, current → 200', async () => {
-      const now = Math.floor(Date.now() / 1000);
-      const stamped = (ts: number) => ({ 'x-kortix-timestamp': String(ts), 'x-kortix-signature': sign(`${ts}.${rawBody}`) });
-      await rejected(stamped(now - 3600));
-      await rejected(stamped(now + 3600));
-      await accepted(stamped(now));
-    });
-
-    await ctx.step('static token: a wrong X-Kortix-Token → 401; the secret as X-Kortix-Token or Bearer → 200', async () => {
-      await rejected({ 'x-kortix-token': 'nope' });
-      await accepted({ 'x-kortix-token': secret });
-      await accepted({ authorization: `Bearer ${secret}` });
-    });
-
-    await ctx.step('the secret loses connector delivery → a signed delivery is 401; PATCH → 409 webhook_secret_delivery_mismatch', async () => {
-      (await owner.del('/v1/projects/:projectId/secrets/:name', { params: { ...params, name: 'HOOK_SECRET' } })).status(200);
-      (await owner.post('/v1/projects/:projectId/secrets', { name: 'HOOK_SECRET', value: secret }, { params })).status([200, 201]);
-      await rejected({ 'x-kortix-signature': sign(rawBody) });
-      const r = await owner.patch('/v1/projects/:projectId/triggers/:slug', { name: 'Renamed hook' }, { params: { ...params, slug: 'hook' } });
-      r.status(409).body().has('$.code', 'webhook_secret_delivery_mismatch');
-      if ((await listed()).find((t) => t.slug === 'hook')?.name !== 'hook') throw new Error('a refused PATCH changed the trigger');
+    await ctx.step('a manual fire that fails is recorded on the trigger: last_status failed, with the error', async () => {
+      const fired = await owner.post('/v1/projects/:projectId/triggers/:slug/fire', {}, { params: { ...params, slug: 'digest' } });
+      fired.status(500);
+      const error = fired.json<{ error?: string }>()?.error ?? '';
+      const after = await digest();
+      if (after?.last_status !== 'failed') throw new Error(`last_status is ${String(after?.last_status)}`);
+      if (!after.last_error || !error.startsWith(after.last_error.slice(0, 40))) {
+        throw new Error(`last_error "${String(after?.last_error)}" is not the fire's error "${error}"`);
+      }
     });
   },
 );
@@ -1645,5 +1590,124 @@ flow(
     } finally {
       rmSync(work, { recursive: true, force: true });
     }
+  },
+);
+
+// ── TRG-20: webhook ingress against a REAL webhook trigger (contract TRG-7) ──
+// TRG-7 and SEC-F probe only a bogus project. Here the trigger, its secret and
+// the signature are real. Triggers are paused first: the pause check runs AFTER
+// authentication (routes/trigger-webhooks.ts), so an authenticated delivery
+// answers 200 `skipped` and never creates a session or a sandbox.
+flow(
+  'TRG-20',
+  {
+    domain: 'triggers',
+    routes: [
+      'POST /v1/projects/:projectId/secrets',
+      'DELETE /v1/projects/:projectId/secrets/:name',
+      'POST /v1/projects/:projectId/triggers',
+      'GET /v1/projects/:projectId/triggers',
+      'PATCH /v1/projects/:projectId/triggers/:slug',
+      'PATCH /v1/projects/:projectId/triggers/activation',
+      'POST /v1/webhooks/projects/:projectId/:slug',
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project({ managedGit: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: p.id };
+    const secret = `ke2e-hook-${crypto.randomUUID()}`;
+    const rawBody = JSON.stringify({ action: 'opened' });
+    const sign = (payload: string, key = secret) => `sha256=${createHmac('sha256', key).update(payload).digest('hex')}`;
+    const deliver = (headers: Record<string, string>, slug = 'hook', projectId = p.id) =>
+      ctx.client.as(ctx.P.ANON).post('/v1/webhooks/projects/:projectId/:slug', rawBody, {
+        params: { projectId, slug },
+        raw: true,
+        headers: { 'content-type': 'application/json', ...headers },
+      });
+    const rejected = async (headers: Record<string, string>, slug?: string) => {
+      (await deliver(headers, slug)).status(401).body().has('$.error', 'Invalid webhook signature');
+    };
+    const accepted = async (headers: Record<string, string>) => {
+      (await deliver(headers)).status(200).body().has('$.status', 'skipped');
+    };
+    const webhookTrigger = (slug: string, secretEnv: string) => ({
+      name: slug,
+      slug,
+      type: 'webhook',
+      secret_env: secretEnv,
+      prompt_template: 'New {{ body.action }}',
+    });
+    type Listed = { triggers: Array<{ slug: string; name: string; type: string; secret_env: string | null; webhook_url: string | null }> };
+    const listed = async (): Promise<Listed['triggers']> => {
+      const r = await owner.get('/v1/projects/:projectId/triggers', { params });
+      r.status(200);
+      return r.json<Listed>().triggers;
+    };
+
+    await ctx.step('webhook trigger naming a missing secret → 409 webhook_secret_missing; nothing listed', async () => {
+      const r = await owner.post('/v1/projects/:projectId/triggers', webhookTrigger('missing-hook', 'NO_SUCH_HOOK_SECRET'), { params });
+      r.status(409).body().has('$.code', 'webhook_secret_missing');
+      if ((await listed()).some((t) => t.slug === 'missing-hook')) throw new Error('a refused webhook trigger was committed');
+    });
+
+    await ctx.step('webhook trigger naming a sandbox-delivered secret → 409 webhook_secret_delivery_mismatch', async () => {
+      (await owner.post('/v1/projects/:projectId/secrets', { name: 'SANDBOX_HOOK_SECRET', value: 'sandbox-only' }, { params })).status([200, 201]);
+      const r = await owner.post('/v1/projects/:projectId/triggers', webhookTrigger('sandbox-hook', 'SANDBOX_HOOK_SECRET'), { params });
+      r.status(409).body().has('$.code', 'webhook_secret_delivery_mismatch');
+    });
+
+    await ctx.step('connector-delivered secret → 201; the listing carries secret_env and the public webhook_url', async () => {
+      (await owner.post('/v1/projects/:projectId/secrets', { name: 'HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params }))
+        .status(200).body().has('$.strategy', 'broker').has('$.consumer', 'connector');
+      (await owner.post('/v1/projects/:projectId/triggers', webhookTrigger('hook', 'HOOK_SECRET'), { params })).status(201);
+      const row = (await listed()).find((t) => t.slug === 'hook');
+      if (!row || row.type !== 'webhook' || row.secret_env !== 'HOOK_SECRET' || !row.webhook_url?.endsWith(`/v1/webhooks/projects/${p.id}/hook`)) {
+        throw new Error(`webhook trigger listing is wrong: ${JSON.stringify(row)}`);
+      }
+    });
+
+    await ctx.step('pause triggers server-side → 200, triggers_paused true', async () => {
+      (await owner.patch('/v1/projects/:projectId/triggers/activation', { paused: true }, { params })).status(200).body().has('$.triggers_paused', true);
+    });
+
+    await ctx.step('malformed project id or slug → 400 before any lookup', async () => {
+      (await deliver({}, 'hook', 'not-a-uuid')).status(400).body().has('$.error', 'Invalid project id');
+      (await deliver({}, 'Bad_Slug')).status(400).body().has('$.error', 'Invalid trigger slug');
+    });
+
+    await ctx.step('no credential header, an unknown slug, a wrong signature → the same 401', async () => {
+      await rejected({});
+      await rejected({ 'x-kortix-signature': sign(rawBody) }, 'no-such-hook');
+      await rejected({ 'x-kortix-signature': sign(rawBody, 'wrong-secret') });
+    });
+
+    await ctx.step('a valid X-Kortix-Signature or X-Hub-Signature-256 authenticates → 200 skipped (paused)', async () => {
+      await accepted({ 'x-kortix-signature': sign(rawBody) });
+      await accepted({ 'x-hub-signature-256': sign(rawBody) });
+    });
+
+    await ctx.step('X-Kortix-Timestamp signs <timestamp>.<body>: 1 h stale or 1 h ahead → 401, current → 200', async () => {
+      const now = Math.floor(Date.now() / 1000);
+      const stamped = (ts: number) => ({ 'x-kortix-timestamp': String(ts), 'x-kortix-signature': sign(`${ts}.${rawBody}`) });
+      await rejected(stamped(now - 3600));
+      await rejected(stamped(now + 3600));
+      await accepted(stamped(now));
+    });
+
+    await ctx.step('static token: a wrong X-Kortix-Token → 401; the secret as X-Kortix-Token or Bearer → 200', async () => {
+      await rejected({ 'x-kortix-token': 'nope' });
+      await accepted({ 'x-kortix-token': secret });
+      await accepted({ authorization: `Bearer ${secret}` });
+    });
+
+    await ctx.step('the secret loses connector delivery → a signed delivery is 401; PATCH → 409 webhook_secret_delivery_mismatch', async () => {
+      (await owner.del('/v1/projects/:projectId/secrets/:name', { params: { ...params, name: 'HOOK_SECRET' } })).status(200);
+      (await owner.post('/v1/projects/:projectId/secrets', { name: 'HOOK_SECRET', value: secret }, { params })).status([200, 201]);
+      await rejected({ 'x-kortix-signature': sign(rawBody) });
+      const r = await owner.patch('/v1/projects/:projectId/triggers/:slug', { name: 'Renamed hook' }, { params: { ...params, slug: 'hook' } });
+      r.status(409).body().has('$.code', 'webhook_secret_delivery_mismatch');
+      if ((await listed()).find((t) => t.slug === 'hook')?.name !== 'hook') throw new Error('a refused PATCH changed the trigger');
+    });
   },
 );

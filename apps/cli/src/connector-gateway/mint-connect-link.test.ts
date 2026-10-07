@@ -16,11 +16,14 @@ import { expect, mock, test } from 'bun:test';
 import { stringValue } from './io.ts';
 
 const posts: Array<{ path: string; body: Record<string, unknown> }> = [];
-let setupLinkResponse: unknown = { url: 'https://dev.kortix.com/connect/ksl_abc', app: 'gmail' };
+const setupLinkResponse: unknown = { url: 'https://dev.kortix.com/connect/ksl_abc', app: 'gmail' };
 let setupLinkThrows = false;
 
 mock.module('./io.ts', () => ({ CliError: class extends Error {}, stringValue }));
-mock.module('../api/auth.ts', () => ({ loadAuth: () => ({ token: 't' }) }));
+mock.module('../api/auth.ts', () => ({
+  loadAuth: () => ({ token: 't' }),
+  loadEnvAuth: () => null,
+}));
 mock.module('../project-link.ts', () => ({ resolveProjectId: () => 'proj-1' }));
 mock.module('../api/sdk.ts', () => ({ kortixFromAuth: () => ({}) }));
 mock.module('../api/client.ts', () => ({

@@ -18,6 +18,7 @@ import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useAuth } from '@/features/providers/auth-provider';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { useAppHome } from '@/lib/onboarding/use-app-home';
+import { inviteLandingPath } from '@/features/workspace/project-selector/project-selector-model';
 import {
   acceptAccountInvite,
   declineAccountInvite,
@@ -75,12 +76,11 @@ export default function InvitePage() {
       if (!current) throw new Error('Invite is still loading');
       return { kind: 'account' as const, data: await acceptAccountInvite(inviteId!) };
     },
-    onSuccess: () => {
-      // Land a newly-joined member straight in a project of the account they
-      // just joined, not the account settings page and not the projects list.
-      // The door (not the remembered project) because that cookie still names a
-      // project in the account they came from.
-      router.replace(PROJECT_LANDING_PATH);
+    onSuccess: (result) => {
+      // Land a newly-joined member in the project the invite granted, or in the
+      // account they just joined. The plain door reopened the project this
+      // browser remembered, in the account they came from (KRTX-1731).
+      router.replace(inviteLandingPath(result.data));
     },
   });
 
@@ -106,7 +106,7 @@ export default function InvitePage() {
     // "wrong account" state instead. Auto-claimed invites (already accepted on
     // first sign-in) use the same destination as a manual accept.
     if (!item || !inv?.email_matches_caller || !inv.accepted_at) return;
-    router.replace(PROJECT_LANDING_PATH);
+    router.replace(inviteLandingPath({ account_id: inv.account_id ?? null }));
   }, [inviteQuery.data, router]);
 
   if (authLoading || !user || inviteQuery.isLoading) {

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { CRON_MIN_INTERVAL_SECONDS, cronIntervalError } from '@kortix/manifest-schema';
 import { Cron } from 'croner';
 
 export interface TriggerScheduleSpec {
@@ -153,6 +154,11 @@ export function nextTriggerScheduleSlot(
   const error = validateTriggerCron(spec.cron, spec.timezone);
   if (error) throw new Error(error);
   const cron = new Cron(spec.cron, { paused: true, timezone: spec.timezone });
+  // KRTX-1721: writes refuse a cron that fires more than once a minute. A
+  // stored one (written before the floor) runs at most once a minute.
+  if (cronIntervalError(spec.cron, spec.timezone)) {
+    return cron.nextRun(new Date(after.getTime() + CRON_MIN_INTERVAL_SECONDS * 1000 - 1));
+  }
   if (!options.jitterKey) return cron.nextRun(after);
   const jitterMs = cronJitterMs(
     cron,
