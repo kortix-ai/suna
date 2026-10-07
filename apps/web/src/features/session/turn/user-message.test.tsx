@@ -85,6 +85,21 @@ describe('UserMessage actions', () => {
     expect(markup).not.toContain('aria-label="Edit message and rewind session"');
   });
 
+  test('the delivery status sits at the right edge, after the hover-revealed meta', () => {
+    // The faded meta group keeps its width while invisible, and the server
+    // stamp lands while the prompt is still delivering. A status to its left
+    // jumped sideways when the stamp arrived.
+    const markup = renderText('ship the thing', {
+      message: stamped,
+      onRewind: () => {},
+      rewindDisabled: true,
+      deliveryStatus: <span data-queued-status="sending">Sending</span>,
+    });
+    const status = markup.indexOf('data-queued-status="sending"');
+    expect(markup.indexOf('<time')).toBeGreaterThan(-1);
+    expect(status).toBeGreaterThan(markup.indexOf('<time'));
+    expect(status).toBeGreaterThan(markup.indexOf('aria-label="Copy code"'));
+  });
 });
 
 describe('UserMessage renders the composer chip, not its own treatment', () => {

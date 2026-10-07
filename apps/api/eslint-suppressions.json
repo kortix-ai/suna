@@ -1214,11 +1214,6 @@
       "count": 1
     }
   },
-  "src/lib/deployment-region.ts": {
-    "no-restricted-properties": {
-      "count": 1
-    }
-  },
   "src/lib/email/providers/smtp.ts": {
     "kortix-api/replica-local": {
       "count": 1

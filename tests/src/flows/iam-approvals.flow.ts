@@ -56,13 +56,19 @@ flow(
     });
 
     await ctx.step('one requester is capped at 10 new requests an hour → 429 on the 11th', async () => {
+      // The cap is replica-local, like every limiter in middleware/rate-limit.ts:
+      // a fleet of N API replicas allows 10 × N. Only the single-replica local
+      // profile can assert the 11th; a deployed target asserts the first 10.
+      const exact = ctx.env.target === 'local';
       const spammer = await ctx.fixtures.user({ label: 'IAM-27-SPAM' });
       for (let i = 0; i < 11; i++) {
         const p = await team.project();
         const r = await ctx.client
           .as(spammer)
           .post('/v1/projects/:projectId/access-requests', {}, { params: { projectId: p.id } });
-        r.status(i < 10 ? 201 : 429);
+        if (i < 10) r.status(201);
+        else if (exact) r.status(429);
+        else r.status([201, 429]);
       }
     });
 
