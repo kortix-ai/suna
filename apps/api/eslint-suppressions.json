@@ -178,9 +178,6 @@
     }
   },
   "src/app.ts": {
-    "kortix-api/projects-surface": {
-      "count": 1
-    },
     "no-restricted-syntax": {
       "count": 1
     }
@@ -2687,19 +2684,6 @@
       "count": 3
     }
   },
-  "src/projects/suna-migration/suna-migration-routes.ts": {
-    "no-restricted-imports": {
-      "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 3
-    }
-  },
-  "src/projects/suna-migration/suna-migration-worker.ts": {
-    "no-restricted-properties": {
-      "count": 1
-    }
-  },
   "src/projects/trigger-entry.ts": {
     "no-restricted-properties": {
       "count": 1
@@ -3501,14 +3485,6 @@
   "src/workers/slack-turn-gc-worker.ts": {
     "no-console": {
       "count": 1
-    }
-  },
-  "src/workers/suna-migration-worker.ts": {
-    "kortix-api/projects-surface": {
-      "count": 1
-    },
-    "no-restricted-properties": {
-      "count": 2
     }
   },
   "src/workers/teams-turn-gc-worker.ts": {
