@@ -36,6 +36,10 @@ printf '%s\n' "$push_refs" | sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check
 # made with --no-verify.
 printf '%s\n' "$push_refs" | sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-binary-dumps.sh" push
 
+# No new migration that sorts before origin/dev's newest: checkOrder on every
+# deployed DB refuses it and the next deploy stops at migrate.
+printf '%s\n' "$push_refs" | sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-migration-order.sh"
+
 # Tests ran locally on the files this PR changed. `pnpm test` writes
 # tests/attestations/<branch>.json; verify-attestation.mjs finds the file the
 # pushed commit's diff adds (else <pushed branch>.json, else the legacy

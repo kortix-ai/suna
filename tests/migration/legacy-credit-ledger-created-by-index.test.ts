@@ -130,7 +130,7 @@ const suite = dockerOk ? describe : describe.skip;
 
 suite('legacy public.credit_ledger created_by FK index (throwaway Postgres)', () => {
   beforeAll(async () => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
     const up = sh([
       'docker', 'run', '-d', '--name', CONTAINER,
       '-e', 'POSTGRES_PASSWORD=postgres', '-e', 'POSTGRES_USER=postgres', '-e', 'POSTGRES_DB=postgres',
@@ -162,7 +162,7 @@ suite('legacy public.credit_ledger created_by FK index (throwaway Postgres)', ()
   }, 240_000);
 
   afterAll(() => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
   });
 
   test('the legacy table FK gains a valid covering index named for the baseline column', () => {

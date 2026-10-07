@@ -19,6 +19,7 @@ import {
 // From the leaf, not the barrel: suites that stub '../git' by listing its
 // exports would otherwise lose these names and fail at import.
 import { BRANCH_LIST_MAX_LIMIT, filterBranchesForResponse } from '../git/branches';
+import { listRepoDirectory } from '../git/files';
 import { createRoute, z } from '@hono/zod-openapi';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { resourceDenierForRequest } from '../lib/project-resources';
@@ -31,6 +32,9 @@ function isMissingGitPathError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error || '');
   return /^fatal: path '.+' does not exist in '.+'$/m.test(message);
 }
+
+/** Entry cap of the recursive `GET /files` list (no `depth`). */
+const RECURSIVE_LIST_LIMIT = 1000;
 
 export function registerProjectFilesRoutes(): void {
   // GET /v1/projects/:projectId/files
@@ -58,16 +62,14 @@ export function registerProjectFilesRoutes(): void {
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);
 
     const gitProject = await withProjectGitAuth(loaded.row);
-    let files: Awaited<ReturnType<typeof listRepoFiles>> = [];
-    try {
-      files = await listRepoFiles(gitProject, c.req.query('ref') || loaded.row.defaultBranch, c.req.query('path'), { freshOnMiss: true });
-    } catch (error) {
+    const ref = c.req.query('ref') || loaded.row.defaultBranch;
+    const unavailable = (error: unknown) => {
       console.warn('[projects] repo file listing unavailable', {
         projectId,
         error: error instanceof Error ? error.message : String(error),
       });
       c.header('X-Kortix-Repo-Status', 'unavailable');
-    }
+    };
     // Visibility isolation: drop files of agents/skills this member is scoped out
     // of. No-op (one memo check) when the project scopes nothing.
     const denier = await resourceDenierForRequest({
@@ -77,8 +79,30 @@ export function registerProjectFilesRoutes(): void {
       actingTokenId: (c.get('iamTokenId') as string | undefined) ?? undefined,
       row: loaded.row,
     });
+
+    // `depth=1`: one folder level, complete up to its own entry cap. The Files
+    // tree reads this; the recursive list below cuts at 1,000 files (KRTX-1723).
+    if (c.req.query('depth') === '1') {
+      let listing: Awaited<ReturnType<typeof listRepoDirectory>> = { entries: [], truncated: false };
+      try {
+        listing = await listRepoDirectory(gitProject, ref, c.req.query('path'), { freshOnMiss: true });
+      } catch (error) {
+        unavailable(error);
+      }
+      const entries = denier ? listing.entries.filter((e) => !denier.isDenied(e.path)) : listing.entries;
+      return c.json({ entries, truncated: listing.truncated });
+    }
+
+    let files: Awaited<ReturnType<typeof listRepoFiles>> = [];
+    try {
+      files = await listRepoFiles(gitProject, ref, c.req.query('path'), { freshOnMiss: true });
+    } catch (error) {
+      unavailable(error);
+    }
     const visible = denier ? files.filter((f) => !denier.isDenied(f.path)) : files;
-    return c.json(visible.slice(0, 1000));
+    // The recursive list stays capped for its callers; it says so when it is.
+    if (visible.length > RECURSIVE_LIST_LIMIT) c.header('X-Kortix-Truncated', '1');
+    return c.json(visible.slice(0, RECURSIVE_LIST_LIMIT));
   },
   );
 

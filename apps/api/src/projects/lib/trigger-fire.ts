@@ -11,6 +11,7 @@ import { renderSessionKey } from './trigger-payload';
 import { keepRunFailure } from '../trigger-execution-store';
 import { TRIGGER_REUSE_RETIRED_AT } from './trigger-run-outcome';
 import { disableSessionReminder, reminderPromptText } from './session-reminders';
+import { accountMemberRow } from '../../iam/membership-read';
 import type { TriggerFireSource } from './trigger-webhook-auth';
 import { claimTriggerCreate, releaseTriggerCreate, triggerCreateKey } from './trigger-create-claim';
 
@@ -259,7 +260,7 @@ async function enqueueTriggerPrompt(input: {
   model?: string | null;
   /** `actor` is a person whose deferred prompt this is: the turn acts as them. */
   bindTurnIdentity?: boolean;
-}): Promise<'queued' | 'no-session' | 'failed'> {
+}): Promise<'queued' | 'deduped' | 'no-session' | 'failed'> {
   // Scoped to the trigger's own project and account. A pinned `session_id` is
   // manifest text, so a session of any other project is "no session" here and
   // the fire falls through to the trigger's own reuse/create path.
@@ -279,7 +280,7 @@ async function enqueueTriggerPrompt(input: {
   const sessionMeta = (session.metadata ?? {}) as Record<string, unknown>;
   if (typeof sessionMeta.deletedAt === 'string') return 'no-session';
 
-  await enqueueContinueSessionCommand({
+  const { deduped } = await enqueueContinueSessionCommand({
     source: `trigger:${input.source}`,
     projectId: input.project.projectId,
     accountId: input.project.accountId,
@@ -293,6 +294,8 @@ async function enqueueTriggerPrompt(input: {
     overrides: triggerModelOverride(input.model, projectLlmGatewayEnabled(input.project.metadata)),
     ...(input.bindTurnIdentity ? { bindTurnIdentity: true } : {}),
   });
+  // The same delivery again: its prompt is already queued or delivered (KRTX-1735).
+  if (deduped) return 'deduped';
   // Fast path only — the 1 s lifecycle worker is the delivery guarantee. Targeted
   // when the fire has a key: an untargeted kick delivers whichever row is oldest.
   drainSessionLifecycleQueue(
@@ -338,9 +341,9 @@ export async function fireGitTrigger(input: {
   if (spec.reminder) return fireSessionReminder(input, actor);
 
   const sessionKey = renderSessionKey(spec, payload);
-  const queuedSessionId = await queueExistingTriggerSession(input, actor, sessionKey);
-  if (queuedSessionId) {
-    return { status: 'queued', sessionId: queuedSessionId, reason: 'prompt queued for delivery' };
+  const queued = await queueExistingTriggerSession(input, actor, sessionKey);
+  if (queued) {
+    return { status: 'queued', sessionId: queued.sessionId, deduped: queued.deduped, reason: 'prompt queued for delivery' };
   }
   const createKey = triggerCreateKey({
     projectId: project.projectId,
@@ -356,7 +359,9 @@ export async function fireGitTrigger(input: {
     for (let attempt = 0; attempt < CREATE_WAIT_ATTEMPTS; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, CREATE_WAIT_POLL_MS));
       const joined = await queueExistingTriggerSession(input, actor, sessionKey);
-      if (joined) return { status: 'queued', sessionId: joined, reason: 'prompt queued for delivery' };
+      if (joined) {
+        return { status: 'queued', sessionId: joined.sessionId, deduped: joined.deduped, reason: 'prompt queued for delivery' };
+      }
     }
     return createGitTriggerSession(input, actor, sessionKey);
   }
@@ -386,6 +391,17 @@ async function fireSessionReminder(
   const { spec, project } = input;
   const sessionId = spec.pinnedSessionId;
   const author = spec.reminder?.promptAuthorUserId;
+  // A person's reminder runs as that person. Once they leave the account it
+  // has no one to run as: it pauses instead of firing as someone who no longer
+  // has access (KRTX-1722).
+  if (author && !(await accountMemberRow(project.accountId, author))[0]) {
+    await disableSessionReminder(project.projectId, spec.slug, new Date());
+    return {
+      status: 'failed',
+      error: "The reminder's author is no longer a member of this account, so the reminder is now paused",
+      errorCode: 'reminder_author_left',
+    };
+  }
   const outcome = sessionId
     ? await enqueueTriggerPrompt({
         project, sessionId, actor: author ?? actor, text: reminderPromptText(spec), source: 'reminder',
@@ -394,8 +410,8 @@ async function fireSessionReminder(
         bindTurnIdentity: !!author,
       })
     : 'no-session';
-  if (outcome === 'queued') {
-    return { status: 'queued', sessionId: sessionId!, reason: 'prompt queued for delivery' };
+  if (outcome === 'queued' || outcome === 'deduped') {
+    return { status: 'queued', sessionId: sessionId!, deduped: outcome === 'deduped', reason: 'prompt queued for delivery' };
   }
   await disableSessionReminder(project.projectId, spec.slug, new Date());
   return {
@@ -409,14 +425,17 @@ async function queueExistingTriggerSession(
   input: Parameters<typeof fireGitTrigger>[0],
   actor: string,
   sessionKey: string | null,
-): Promise<string | null> {
+): Promise<{ sessionId: string; deduped: boolean } | null> {
   const { spec, project, renderedPrompt, source } = input;
-  const queue = async (sessionId: string) =>
-    enqueueTriggerPrompt({
+  // The session the prompt went to, or null when that session is unusable.
+  const queue = async (sessionId: string) => {
+    const outcome = await enqueueTriggerPrompt({
       project, sessionId, actor, text: renderedPrompt, source,
       triggerSlug: spec.slug, model: spec.model,
       idempotencyKey: input.idempotencyKey ?? null,
     });
+    return outcome === 'queued' || outcome === 'deduped' ? { sessionId, deduped: outcome === 'deduped' } : null;
+  };
 
   // Session pinning — when a trigger opts into `session_mode = "pinned"`, always
   // re-prompt the EXACT session the user chose (`spec.pinnedSessionId`), not
@@ -424,8 +443,8 @@ async function queueExistingTriggerSession(
   // is gone/unresumable we degrade gracefully: fall through to the `reuse` block
   // (the trigger's own last session), then to a brand-new session.
   if (spec.sessionMode === 'pinned' && spec.pinnedSessionId) {
-    const outcome = await queue(spec.pinnedSessionId);
-    if (outcome === 'queued') return spec.pinnedSessionId;
+    const pinned = await queue(spec.pinnedSessionId);
+    if (pinned) return pinned;
     // outcome === 'no-session' | 'failed' → pinned session is gone/unusable;
     // fall through to the reuse/create fallback below.
   }
@@ -444,8 +463,8 @@ async function queueExistingTriggerSession(
   if (sessionKey) {
     const keyed = await findKeyedTriggerSession(project.projectId, spec.slug, sessionKey);
     if (keyed) {
-      const outcome = await queue(keyed.sessionId);
-      if (outcome === 'queued') return keyed.sessionId;
+      const queuedKeyed = await queue(keyed.sessionId);
+      if (queuedKeyed) return queuedKeyed;
       // Unusable session for this key → fall through and create a fresh one,
       // which becomes the canonical session for the key going forward.
     }
@@ -454,12 +473,12 @@ async function queueExistingTriggerSession(
   if (spec.sessionMode === 'reuse' || spec.sessionMode === 'pinned') {
     const reusable = await findReusableTriggerSession(project.projectId, spec.slug);
     if (reusable) {
-      const outcome = await queue(reusable.sessionId);
-      if (outcome === 'queued') {
+      const queuedReuse = await queue(reusable.sessionId);
+      if (queuedReuse) {
         // The prompt is durably queued (drain retries until delivered or
         // dead-letters loudly) — treat as a successful fire so the scheduler
         // records last_fired_at and doesn't immediately create a dupe.
-        return reusable.sessionId;
+        return queuedReuse;
       }
       // outcome === 'no-session' | 'failed' → canonical session is unusable;
       // fall through to create a fresh one below.

@@ -332,6 +332,15 @@ export async function executeQueuedCreate(
 async function executeCreateSession(
   command: CreateSessionCommand,
 ): Promise<SessionLifecycleResult> {
+  // A deleted workspace starts no session (KRTX-1714). Every create path meets
+  // here, and the chat channels load the project by id with no status filter.
+  if (command.project.status === 'archived') {
+    return {
+      status: 'failed',
+      retryable: false,
+      error: { status: 404, body: { error: 'This workspace was deleted', code: 'project_archived' } },
+    };
+  }
   const metadata = {
     source: command.source,
     ...(command.metadata ?? {}),

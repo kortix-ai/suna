@@ -166,6 +166,7 @@ mock.module('../projects/git', () => ({
   listRepoFiles: async () => [],
   loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),
   readRepoFile: async () => '',
+  readRepoFileBytes: async () => Buffer.alloc(0),
   readManifestFromRepo: async () => null,
   invalidateProjectMirror: () => {},
   remoteBranchExists: async () => remoteBranchAfterSeed,
