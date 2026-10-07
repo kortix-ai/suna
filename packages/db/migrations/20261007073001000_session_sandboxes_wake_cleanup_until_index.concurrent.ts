@@ -3,7 +3,7 @@
 // Builds the index the runtime-wake fence reconcile scans with for its second
 // OR arm (`metadata->>'runtimeWakeCleanupUntilAt' ~ <ISO regex> AND > <param>
 // AND metadata->>'runtimeWakeLateStartStoppedAt' IS NULL`). See the sibling
-// migration `20261006203300000_session_sandboxes_wake_id_index.concurrent.ts`
+// migration `20261007073000000_session_sandboxes_wake_id_index.concurrent.ts`
 // for the KRTX-1308 evidence and the shape notes (`status` as the leading key;
 // NOT partial on `external_id IS NOT NULL`, because the planner needs the
 // whole-table null fraction of the indexed expression to estimate the OR arms
