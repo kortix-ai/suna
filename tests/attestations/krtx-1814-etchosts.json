@@ -1,0 +1,17 @@
+{
+  "source_hash": "20dfb7efcc45c0ee0d1d0bec3bc03ddf317559c5d5aa5a1af3d59055e1824ccd",
+  "diff_files": [
+    "apps/api/src/snapshots/template-runtime-fingerprint.ts",
+    "apps/sandbox/entrypoint.sh",
+    "packages/shared/src/sandbox/__tests__/layer-render.test.ts"
+  ],
+  "diff_hash": "a5363530df011e72620974280b8a6aa990427f07aa6414042073bdb6bafd85bc",
+  "head": "b4eee4fb19e4b92f5baa8c68a86e15eaa05784be",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-07T11:45:32.422Z"
+}
