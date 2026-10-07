@@ -380,11 +380,15 @@ function makeDeps(): ConnectorRouterDeps {
   };
 }
 
-/** Minimal child env: the spawned CLI must not adopt this sandbox's injected env file. */
+/** Minimal child env: the spawned CLI must not adopt this sandbox's injected
+ *  env file, nor this machine's stored CLI login (the hermetic suite points
+ *  KORTIX_CONFIG_FILE at a fresh path — children inherit nothing, so the
+ *  child must carry it explicitly). */
 const spawnEnv = () => ({
   PATH: process.env.PATH,
   HOME: process.env.HOME,
   KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
+  KORTIX_CONFIG_FILE: process.env.KORTIX_CONFIG_FILE,
   KORTIX_API_URL: apiUrl,
   KORTIX_TOKEN: TOKEN,
 });

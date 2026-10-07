@@ -1012,7 +1012,13 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   }, [messageAuthors, participants, viewerId]);
   // The Kortix session that sent a message (a coordinator, a spawn), same
   // memo rule as `senderOf`.
-  const userMessageIds = useMemo(() => turns.map((turn) => turn.userMessage.info.id), [turns]);
+  // Keyed by the ids, not by `turns`: a stream delta makes a new `turns` array
+  // with the same ids, and a new array here would remake `renderItem` per delta.
+  const userMessageIdsKey = turns.map((turn) => turn.userMessage.info.id).join('\n');
+  const userMessageIds = useMemo(
+    () => (userMessageIdsKey ? userMessageIdsKey.split('\n') : []),
+    [userMessageIdsKey],
+  );
   const sessionAuthorOf = useMemo(() => {
     const cache = new Map<string, ReturnType<typeof messageSessionAuthor>>();
     return (messageId: string) => {
