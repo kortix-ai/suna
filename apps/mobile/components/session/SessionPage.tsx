@@ -96,9 +96,10 @@ import {
   extractSendErrorMessage,
   promptRuntimeMessage,
   rejectQuestion,
-  SESSION_PROMPTS_IDLE_POLL_MS,
   usePermissionSelfHeal,
   useQuestionSelfHeal,
+  useSessionPrompts,
+  useSessionStreamConnected,
   useRuntimeCommands,
   useRuntimeConfig,
   useRuntimeSession,
@@ -372,8 +373,12 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // runtime is bound, then the live stream. The newest page only: `loadOlder`
   // pulls the next older page (COR-144).
   const kortixSessionScope = projectId && projectSessionId ? `${projectId}/${projectSessionId}` : undefined;
+  // The session stream (R5.3): while it is up, the SDK's tail and ask polls
+  // stand down — the box's ring replays what a reconnect missed.
+  const streamConnected = useSessionStreamConnected(projectId ?? '', projectSessionId ?? '');
   const { hasOlder, isLoadingOlder, loadOlder, retryTranscript } = useSessionSync(sessionId, {
     kortixSessionScope,
+    streamConnected,
     networkEnabled: runtimeReady,
     savedChild: isSubThread,
     // The rows are read below, paced: a streamed delta does not re-render this hook.
@@ -439,8 +444,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // is lost, and the agent then waits on a blocked tool call with nothing
   // above the composer. The SDK re-reads the runtime's pending lists while a
   // question tool (or a gated tool) runs with nothing pending in the store.
-  useQuestionSelfHeal(sessionId, safeMessages, { enabled: runtimeReady });
-  usePermissionSelfHeal(sessionId, safeMessages, { enabled: runtimeReady });
+  useQuestionSelfHeal(sessionId, safeMessages, { enabled: runtimeReady && !streamConnected });
+  usePermissionSelfHeal(sessionId, safeMessages, { enabled: runtimeReady && !streamConnected });
 
   // ── Message Queue ──────────────────────────────────────────────────────
   const [queuedMessages, setQueuedMessages] = useState<SessionPrompt[]>(EMPTY_PROMPTS);
@@ -482,17 +487,17 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     return () => { cancelled = true; };
   }, [projectId, projectSessionId, sessionId, refreshQueue]);
 
-  // Every 3 s while prompts wait or the agent works. An empty queue on an idle
-  // thread is still read, every 15 s (the SDK's idle floor): the server can
-  // hand a prompt back, or another device can queue one. A send, a queue
-  // action and the end of a turn read it at once.
-  const queuePollMs = queuedMessages.length > 0 || isBusy ? 3000 : SESSION_PROMPTS_IDLE_POLL_MS;
+  // The SDK's queue (R5.3): every inbox write arrives on the session stream
+  // as a `kortix.control.queue` frame, and it polls only while that stream is
+  // down. A send and a queue action still read the list at once.
+  const sdkQueue = useSessionPrompts(projectId, projectSessionId);
+  useEffect(() => {
+    setQueueRows(sdkQueue.prompts);
+  }, [sdkQueue.prompts, setQueueRows]);
+  // One read when the page opens, so the queue paints with the page.
   useEffect(() => {
     void refreshQueue();
-    if (!projectId || !projectSessionId) return;
-    const timer = setInterval(() => void refreshQueue(), queuePollMs);
-    return () => clearInterval(timer);
-  }, [projectId, projectSessionId, refreshQueue, queuePollMs]);
+  }, [refreshQueue]);
 
   // The composer calls this while a turn runs: the running turn reads the
   // message at its next step (`steer`, D9.1). A prompt request from another

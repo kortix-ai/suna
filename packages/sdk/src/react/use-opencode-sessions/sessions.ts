@@ -9,7 +9,7 @@ import { useCurrentRuntime } from '../use-current-runtime';
 import { useRuntimeSupports } from '../use-runtime-supports';
 import type { Session } from '../../core/runtime/runtime-types';
 import { runtimeKeys, useRuntimeReady } from './keys';
-import { unwrap, getLSCache, setLSCache, LS_SESSIONS, canQueryRuntimeSession } from './shared';
+import { unwrap, canQueryRuntimeSession } from './shared';
 import { NoCompactionModelError } from './no-compaction-model-error';
 import { SESSION_SYNC_PAGE_SIZE } from '../../core/session-sync/session-sync-controller';
 
@@ -29,11 +29,8 @@ export function useRuntimeSessions(enabled = true) {
       const client = getClient();
       const result = await client.session.list({ limit: 10000 });
       const sessions = unwrap(result);
-      const sorted = sessions.sort((a: Session, b: Session) => b.time.updated - a.time.updated);
-      setLSCache(LS_SESSIONS, sorted);
-      return sorted;
+      return sessions.sort((a: Session, b: Session) => b.time.updated - a.time.updated);
     },
-    placeholderData: () => getLSCache<Session[]>(LS_SESSIONS),
     enabled: runtimeReady && enabled,
     staleTime: 5 * 60 * 1000,
     gcTime: 5 * 60 * 1000,

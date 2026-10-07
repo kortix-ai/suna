@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  WEBHOOK_DELIVERY_ID_HEADER,
   WEBHOOK_SIGNATURE_ALGORITHM,
   WEBHOOK_SIGNATURE_HEADER,
   buildWebhookSampleRequest,
@@ -24,5 +25,11 @@ describe('buildWebhookSampleRequest', () => {
     );
     expect(sample).toContain('# $SECRET is the signing key you saved for this webhook');
     expect(WEBHOOK_SIGNATURE_ALGORITHM).toContain('HMAC-SHA256');
+  });
+
+  test('names the event, so a retry runs once and the next deploy runs again (KRTX-1735)', () => {
+    const sample = buildWebhookSampleRequest('https://api.example.test/v1/webhooks/projects/p/h');
+    expect(sample).toContain(`-H "${WEBHOOK_DELIVERY_ID_HEADER}: $(uuidgen)"`);
+    expect(sample).toContain('# X-Kortix-Delivery-Id names this event');
   });
 });

@@ -1,0 +1,25 @@
+{
+  "source_hash": "173f5799b48a9adc9fd10e7d3bcd00b4406431c65bcbf738fd1b8ab447ab0990",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-webhook-delivery-key.test.ts",
+    "apps/api/src/projects/lib/trigger-fire.ts",
+    "apps/api/src/projects/lib/triggers-fire-durable.test.ts",
+    "apps/api/src/projects/lib/webhook-delivery.test.ts",
+    "apps/api/src/projects/lib/webhook-delivery.ts",
+    "apps/api/src/projects/routes/trigger-webhooks.ts",
+    "apps/web/content/docs/connect/triggers.mdx",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/shared/src/webhook-signing.test.ts",
+    "packages/shared/src/webhook-signing.ts",
+    "tests/unit/retired-local-provider.test.ts"
+  ],
+  "diff_hash": "e4317967bd76e0545a699b8ef59cbebbf451754e60c0e782520bfc9bc51ccea9",
+  "head": "1e6ed824253bb3e769ae78349d2a8f3961a1941c",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-07T13:35:45.538Z"
+}
