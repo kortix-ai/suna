@@ -38,7 +38,7 @@ mock.module('../opencode-mapping', () => ({
   sandboxOpencodeEndpoint: async () => ({ url: 'https://daemon.test', headers: {} }),
 }));
 
-const { SteerNotTaken, postPrompt, readSessionMessageTip, removeRuntimeMessage } = await import('./runtime-client');
+const { SteerNotTaken, postPrompt, readSessionMessageTip, retractRuntimeMessage } = await import('./runtime-client');
 const { __resetRuntimeTurnVerbsMemo } = await import('./runtime-fetch');
 
 let capabilities: string[] = [];
@@ -147,7 +147,7 @@ describe('session runtime reads', () => {
     };
     const tip = await readSessionMessageTip(session, { limit: 8 });
     expect(tip?.map((m) => m.id)).toEqual(['msg_a']);
-    expect(await removeRuntimeMessage(session, 'msg_a')).toBe(true);
+    expect(await retractRuntimeMessage(session, 'msg_a')).toEqual({ outcome: 'retracted' });
     expect(fetched).toEqual(['GET /kortix/runtime/messages/ses_1?limit=8', 'DELETE /kortix/runtime/messages/ses_1/msg_a']);
   });
 
@@ -177,6 +177,55 @@ describe('session runtime reads', () => {
   });
 });
 
+describe('retractRuntimeMessage (R7.1)', () => {
+  const retractPath = '/kortix/runtime/messages/ses_1/msg_a/retract';
+
+  test('a daemon with runtime.retract.v1 decides: retracted, gone, read, refused', async () => {
+    capabilities = ['runtime.turns.v1', 'runtime.retract.v1'];
+    pages[retractPath] = () => Response.json({ retracted: true }, { headers: { 'X-Kortix-Turn-Verb': '1' } });
+    expect(await retractRuntimeMessage(session, 'msg_a', ['prt_1'])).toEqual({ outcome: 'retracted' });
+    expect(fetched).toEqual([`POST ${retractPath}`]);
+
+    pages[retractPath] = resourceMissing;
+    expect(await retractRuntimeMessage(session, 'msg_a')).toEqual({ outcome: 'gone' });
+    pages[retractPath] = () =>
+      Response.json({ code: 'message_read', error: 'a model call read this message' }, { status: 409, headers: { 'X-Kortix-Turn-Verb': '1' } });
+    expect(await retractRuntimeMessage(session, 'msg_a')).toEqual({ outcome: 'read' });
+    pages[retractPath] = () => Response.json({ code: 'RUNTIME_NOT_READY' }, { status: 503, headers: { 'X-Kortix-Turn-Verb': '1' } });
+    expect(await retractRuntimeMessage(session, 'msg_a')).toEqual({ outcome: 'refused', status: 503, detail: '{"code":"RUNTIME_NOT_READY"}' });
+    // A 409 that is not "read" is a refusal, not a read.
+    pages[retractPath] = () => Response.json({ error: 'other' }, { status: 409, headers: { 'X-Kortix-Turn-Verb': '1' } });
+    expect((await retractRuntimeMessage(session, 'msg_a')).outcome).toBe('refused');
+    // Never the delete spelling on a daemon that serves the retract.
+    expect(fetched.every((call) => call === `POST ${retractPath}`)).toBe(true);
+  });
+
+  test('an older daemon gets the delete spelling: whole message, then its parts while the loop runs', async () => {
+    capabilities = ['runtime.turns.v1'];
+    pages['/kortix/runtime/messages/ses_1/msg_a'] = () =>
+      Response.json({ error: 'busy' }, { status: 409, headers: { 'X-Kortix-Turn-Verb': '1' } });
+    expect(await retractRuntimeMessage(session, 'msg_a', ['prt_1', 'prt_2'])).toEqual({ outcome: 'retracted' });
+    expect(fetched).toEqual([
+      'DELETE /kortix/runtime/messages/ses_1/msg_a',
+      'DELETE /session/ses_1/message/msg_a/part/prt_1?directory=%2Fworkspace',
+      'DELETE /session/ses_1/message/msg_a/part/prt_2?directory=%2Fworkspace',
+    ]);
+    // With no parts to empty, its 409 (the loop runs) reads as read, as it always has.
+    expect(await retractRuntimeMessage(session, 'msg_a')).toEqual({ outcome: 'read' });
+    // A refused part delete is a refusal with its status.
+    pages['/session/ses_1/message/msg_a/part/prt_1?directory=%2Fworkspace'] = () => new Response('no', { status: 500 });
+    expect(await retractRuntimeMessage(session, 'msg_a', ['prt_1'])).toEqual({ outcome: 'refused', status: 500, detail: 'no' });
+  });
+
+  test('a daemon that lists the retract but lost the route in place falls back to the delete spelling', async () => {
+    capabilities = ['runtime.turns.v1', 'runtime.retract.v1'];
+    pages[retractPath] = routeMissing;
+    expect(await retractRuntimeMessage(session, 'msg_a')).toEqual({ outcome: 'retracted' });
+    expect(fetched[0]).toBe(`POST ${retractPath}`);
+    expect(fetched.slice(1).some((call) => call.startsWith('DELETE '))).toBe(true);
+  });
+});
+
 describe('a daemon that stops serving the Kortix routes (an in-place rollback)', () => {
   test('a prompt the daemon has no route for is delivered once over prompt_async, under the legacy route\'s key', async () => {
     capabilities = ['runtime.turns.v1'];
@@ -196,14 +245,14 @@ describe('a daemon that stops serving the Kortix routes (an in-place rollback)',
   test('a message removal the daemon has no route for is sent on the legacy route', async () => {
     capabilities = ['runtime.turns.v1'];
     pages['/kortix/runtime/messages/ses_1/msg_a'] = routeMissing;
-    expect(await removeRuntimeMessage(session, 'msg_a')).toBe(true);
+    expect(await retractRuntimeMessage(session, 'msg_a')).toEqual({ outcome: 'retracted' });
     expect(fetched).toEqual(['DELETE /kortix/runtime/messages/ses_1/msg_a', 'DELETE /session/ses_1/message/msg_a?directory=%2Fworkspace']);
   });
 
   test('a Kortix verb answering 404 for the resource is taken at its word', async () => {
     capabilities = ['runtime.turns.v1'];
     pages['/kortix/runtime/messages/ses_1/msg_gone'] = resourceMissing;
-    expect(await removeRuntimeMessage(session, 'msg_gone')).toBe(true);
+    expect(await retractRuntimeMessage(session, 'msg_gone')).toEqual({ outcome: 'gone' });
     expect(fetched).toEqual(['DELETE /kortix/runtime/messages/ses_1/msg_gone']);
     forwardAnswers['/kortix/runtime/sessions/ses_1/prompt'] = resourceMissing;
     expect(await deliver()).toBe('failed');

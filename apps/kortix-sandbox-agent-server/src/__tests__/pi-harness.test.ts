@@ -2416,7 +2416,7 @@ describe('pi steering', () => {
     // Read: it cannot be withdrawn any more.
     const removed = await r.user(`/kortix/runtime/messages/${root}/${steered}`, { method: 'DELETE' })
     expect(removed.status).toBe(409)
-    expect(await removed.json()).toEqual({ error: 'message is already running' })
+    expect(await removed.json()).toEqual({ code: 'message_read', error: 'a model call read this message' })
   })
 
   test('two messages steered before one boundary arrive together, in send order', async () => {
@@ -2551,5 +2551,122 @@ describe('pi steering', () => {
     // The refused id stored nothing, so it may now be sent as a prompt.
     expect((await post(r, `/kortix/runtime/sessions/${root}/prompt`, { message_id: idle, parts: [{ type: 'text', text: 'now a prompt' }] })).status).toBe(202)
     await waitFor(() => seen.ends.length === 2)
+  })
+})
+
+describe('pi retract (R7.1)', () => {
+  const post = (r: Rig, path: string, body: unknown) =>
+    r.user(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  const root = (r: Rig) => r.service.runtime()!.rootId
+  const send = (r: Rig, messageId: string, text: string, extra: Record<string, unknown> = {}) =>
+    post(r, `/kortix/runtime/sessions/${root(r)}/prompt`, { message_id: messageId, parts: [{ type: 'text', text }], ...extra })
+  const retract = (r: Rig, messageId: string) => post(r, `/kortix/runtime/messages/${root(r)}/${messageId}/retract`, {})
+  const page = async (r: Rig) =>
+    (await r.bearer(`/kortix/runtime/messages/${root(r)}`).then((res) => res.json())) as WirePage
+  const sendTimeId = async (r: Rig) => {
+    const clock = new MessageIdClock()
+    for (const message of (await page(r)).messages) clock.observe(String(message.info.id))
+    return clock.mint(Date.now())
+  }
+  const turnRelays = () => {
+    const seen = { begins: [] as string[], ends: [] as string[] }
+    const hooks: PiRuntimeHooks = {
+      onTurnBegin: ({ messageId }) => void seen.begins.push(messageId),
+      onTurnEnd: ({ messageId }) => void seen.ends.push(messageId),
+    }
+    return { seen, hooks }
+  }
+  const TURN = 'msg_0198e2a4b0c3RETRACTTURN001'
+
+  test('health lists runtime.retract.v1', async () => {
+    const r = await boot({ script: [] })
+    const health = (await r.bearer('/kortix/health').then((res) => res.json())) as { capabilities: string[] }
+    expect(health.capabilities).toContain('runtime.retract.v1')
+  })
+
+  test('a prompt queued behind the running turn is retracted: it leaves the wire, never runs, and may be sent again', async () => {
+    const { seen, hooks } = turnRelays()
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 0.6; echo done' } }, { text: 'first done' }, { text: 'resent answer' }], hooks })
+    const before = gateway.sent.length
+    expect((await send(r, TURN, 'run the tool')).status).toBe(202)
+    await waitForRunningTool(r, root(r))
+    const queued = await sendTimeId(r)
+    expect((await send(r, queued, 'QUEUED-GONE')).status).toBe(202)
+    expect((await page(r)).messages.some((m) => m.info.id === queued)).toBe(true)
+
+    const retracted = await retract(r, queued)
+    expect(retracted.status).toBe(200)
+    expect(retracted.headers.get('X-Kortix-Turn-Verb')).toBe('1')
+    expect(await retracted.json()).toEqual({ retracted: true })
+    expect((await page(r)).messages.some((m) => m.info.id === queued)).toBe(false)
+    expect((await retract(r, queued)).status).toBe(404)
+
+    await waitFor(() => seen.ends.length === 1)
+    await Bun.sleep(150)
+    // Only the running turn ran, and no model request carried the retracted text.
+    expect(seen.begins).toEqual([TURN])
+    expect(gateway.sent.slice(before).some((messages) => JSON.stringify(messages).includes('QUEUED-GONE'))).toBe(false)
+
+    // A retracted id is not on record: a release may send it again.
+    expect((await send(r, queued, 'QUEUED-AGAIN')).status).toBe(202)
+    await waitFor(() => seen.ends.length === 2)
+    expect(seen.begins).toEqual([TURN, queued])
+  })
+
+  test('the running turn and an answered message are read; an unknown id is 404', async () => {
+    const { seen, hooks } = turnRelays()
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 0.6; echo done' } }, { text: 'done' }], hooks })
+    expect((await send(r, TURN, 'run the tool')).status).toBe(202)
+    await waitForRunningTool(r, root(r))
+    const running = await retract(r, TURN)
+    expect(running.status).toBe(409)
+    expect(await running.json()).toEqual({ code: 'message_read', error: 'a model call read this message' })
+    await waitFor(() => seen.ends.length === 1)
+    expect((await retract(r, TURN)).status).toBe(409)
+    expect((await retract(r, 'msg_0198e2a4b0c3UNKNOWNMSG0001')).status).toBe(404)
+    expect((await page(r)).messages.some((m) => m.info.id === TURN)).toBe(true)
+  })
+
+  test('a no_reply message starts no turn; retracted before a turn reads it, no model call ever gets it', async () => {
+    const { seen, hooks } = turnRelays()
+    const r = await boot({ script: [{ text: 'answered the second' }, { text: 'answered the third' }], hooks })
+    const silent = await sendTimeId(r)
+    expect((await send(r, silent, 'NOREPLY-GONE', { no_reply: true })).status).toBe(202)
+    await waitFor(() => (r.service.runtime()!.idle()))
+    expect((await page(r)).messages.some((m) => m.info.id === silent)).toBe(true)
+    // `no_reply` on the Kortix route persists the message and runs nothing.
+    await Bun.sleep(100)
+    expect(seen.begins).toEqual([])
+
+    expect(await retract(r, silent).then((res) => res.json())).toEqual({ retracted: true })
+    expect((await page(r)).messages.some((m) => m.info.id === silent)).toBe(false)
+
+    const kept = await sendTimeId(r)
+    expect((await send(r, kept, 'NOREPLY-KEPT', { no_reply: true })).status).toBe(202)
+    const before = gateway.sent.length
+    const next = await sendTimeId(r)
+    expect((await send(r, next, 'the second')).status).toBe(202)
+    await waitFor(() => seen.ends.length === 1)
+    const sent = JSON.stringify(gateway.sent[before])
+    expect(sent).toContain('NOREPLY-KEPT')
+    expect(sent).not.toContain('NOREPLY-GONE')
+    // The turn read the kept one: it can no longer be taken back.
+    expect((await retract(r, kept)).status).toBe(409)
+  })
+
+  test('the DELETE verb an older API sends retracts a queued prompt too', async () => {
+    const { seen, hooks } = turnRelays()
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 0.6; echo done' } }, { text: 'first done' }], hooks })
+    expect((await send(r, TURN, 'run the tool')).status).toBe(202)
+    await waitForRunningTool(r, root(r))
+    const queued = await sendTimeId(r)
+    expect((await send(r, queued, 'QUEUED-DELETED')).status).toBe(202)
+    expect((await r.user(`/kortix/runtime/messages/${root(r)}/${queued}`, { method: 'DELETE' })).status).toBe(200)
+    const legacy = await sendTimeId(r)
+    expect((await send(r, legacy, 'QUEUED-LEGACY')).status).toBe(202)
+    expect((await r.user(`/session/${root(r)}/message/${legacy}`, { method: 'DELETE' })).status).toBe(200)
+    await waitFor(() => seen.ends.length === 1)
+    await Bun.sleep(150)
+    expect(seen.begins).toEqual([TURN])
   })
 })

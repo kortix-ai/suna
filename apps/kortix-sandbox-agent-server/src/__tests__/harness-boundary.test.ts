@@ -60,7 +60,7 @@ describe('harness ownership boundary', () => {
         report: unexpected, logSources: () => [], readLog: unexpected,
       },
       queries: { bind: () => queries },
-      turns: { prompt: unexpected, steer: unexpected, abort: unexpected, readMessage: unexpected, removeMessage: unexpected, agents: unexpected },
+      turns: { prompt: unexpected, steer: unexpected, abort: unexpected, readMessage: unexpected, removeMessage: unexpected, retractMessage: unexpected, agents: unexpected },
       background: { start: unexpected },
       assets: {
         harness: 'test', componentNames: [], resolveConfigDir: async () => '/tmp', injectSkills: async () => {},

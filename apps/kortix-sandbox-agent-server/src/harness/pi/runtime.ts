@@ -205,6 +205,8 @@ interface Turn {
    * run that starts afterwards is cut at `agent_start`.
    */
   stopRequested?: boolean
+  /** Taken back before it started (`retract`): its queue slot runs nothing. */
+  retracted?: boolean
 }
 
 /** A steered message no turn has read yet. `message` is the object handed to `agent.steer()`. */
@@ -289,6 +291,10 @@ export class PiRuntime {
   private status: 'idle' | 'busy' = 'idle'
   /** Turns admitted and not yet finished, the running one included. */
   private pendingTurns = 0
+  /** Prompts admitted behind the running work that have not started: a turn, or a `noReply` message before its queue slot. */
+  private readonly waiting = new Map<string, { retracted?: boolean }>()
+  /** `noReply` messages in pi's context that no model call has read, with their session entry. */
+  private readonly unreadNoReply = new Map<string, string>()
   private readonly completedTurns = new Map<string, 'idle' | 'error'>()
   /** The retry state of the root turn in flight (transient-retry.ts). */
   private turnRetry: TransientRetry | null = null
@@ -590,10 +596,15 @@ export class PiRuntime {
       // OpenCode `noReply`: the next turn's model sees this message, and none
       // runs now. On the serial queue so it lands between turns, and persisted
       // so a box that sleeps before anyone answers still has it.
+      const slot: { retracted?: boolean } = {}
+      this.waiting.set(messageId, slot)
       const done = (this.queue = this.queue.then(() => {
+        if (this.waiting.get(messageId) === slot) this.waiting.delete(messageId)
+        if (slot.retracted) return
         const images = this.images(input)
         const session = this.pi!.session
-        session.sessionManager.appendMessage({ role: 'user', content: images.length ? [{ type: 'text', text: input.text }, ...images] : input.text, timestamp: this.now() })
+        const entryId = session.sessionManager.appendMessage({ role: 'user', content: images.length ? [{ type: 'text', text: input.text }, ...images] : input.text, timestamp: this.now() })
+        this.unreadNoReply.set(messageId, entryId)
         session.refreshContext()
         this.completedTurns.set(messageId, 'idle')
         this.persist()
@@ -603,6 +614,7 @@ export class PiRuntime {
     let resolve!: (outcome: TurnOutcome) => void
     const outcome = new Promise<TurnOutcome>((r) => (resolve = r))
     const turn: Turn = { messageId, input, resolve, outcome }
+    this.waiting.set(messageId, turn)
     this.pendingTurns += 1
     this.queue = this.queue
       .then(() => this.runTurn(turn))
@@ -664,6 +676,41 @@ export class PiRuntime {
   }
 
   /**
+   * Take back a user message no model call has read: an unread steered
+   * message, a prompt queued behind the running work, or a `noReply` message
+   * no turn has read. Its frames leave the wire and pi's context, and the id
+   * may be sent again. `read` when a model call read it (its turn runs or
+   * ran), null when the root holds no such message.
+   */
+  retract(messageId: string): 'retracted' | 'read' | null {
+    const steered = this.withdrawSteer(messageId)
+    if (steered) return steered === 'removed' ? 'retracted' : 'read'
+    const waiting = this.waiting.get(messageId)
+    if (waiting) {
+      waiting.retracted = true
+      this.waiting.delete(messageId)
+      this.removeUserMessage(messageId)
+      return 'retracted'
+    }
+    const entryId = this.unreadNoReply.get(messageId)
+    if (entryId && this.pi) {
+      this.unreadNoReply.delete(messageId)
+      // Null omits the entry from the model context, as `omitFailedAttempt` does.
+      this.pi.session.sessionManager.appendContextEdit(entryId, null)
+      this.pi.session.refreshContext()
+      this.completedTurns.delete(messageId)
+      this.removeUserMessage(messageId)
+      return 'retracted'
+    }
+    return this.knows(messageId) ? 'read' : null
+  }
+
+  private removeUserMessage(messageId: string): void {
+    this.publish({ type: 'message.removed', properties: { sessionID: this.rootId, messageID: messageId } })
+    this.persist()
+  }
+
+  /**
    * Summarize the conversation now (`/session/:id/summarize`). It runs between
    * turns on the serial queue; the wire carries its progress and its result.
    */
@@ -672,7 +719,11 @@ export class PiRuntime {
     const session = this.pi.session
     this.pendingTurns += 1
     this.queue = this.queue
-      .then(() => session.compact())
+      .then(() => {
+        // The summary reads every message in the context.
+        this.unreadNoReply.clear()
+        return session.compact()
+      })
       // The failure is on the wire (`compaction_end`); nothing else waits for it.
       .catch((err) => logger.warn('[pi] compaction failed', { err: err instanceof Error ? err.message : String(err) }))
       .finally(() => {
@@ -763,6 +814,13 @@ export class PiRuntime {
   }
 
   private async runTurn(turn: Turn): Promise<void> {
+    if (this.waiting.get(turn.messageId) === turn) this.waiting.delete(turn.messageId)
+    if (turn.retracted) {
+      turn.resolve('aborted')
+      return
+    }
+    // The turn's first model call reads every `noReply` message before it.
+    this.unreadNoReply.clear()
     const agent = this.agent!
     this.active = turn
     this.turnParent = turn.messageId

@@ -107,11 +107,10 @@ when no turn runs (nothing is stored, the caller sends a prompt);
   replies after it name it as `parentID`. OpenCode: the first assistant
   `message.updated` whose `parentID` is the steered id. Both relay `steer_read`
   once per id (`shared/turn-relay.ts`).
-- **Withdraw.** `DELETE /kortix/runtime/messages/:sid/:mid` on an unread
-  steered message removes it (pi: 200, from kortixd's queue in front of
-  `agent.steer()`; pi can only clear its queue, so the rest are steered again in
-  order). A read one answers `409 { error: 'message is already running' }`.
-  OpenCode keeps its own DELETE semantics.
+- **Withdraw.** The retract (below) on an unread steered message removes it
+  (pi: from kortixd's queue in front of `agent.steer()`; pi can only clear its
+  queue, so the rest are steered again in order). A read one answers
+  `409 { code: 'message_read' }`.
 - **Leftovers (pi).** A turn that ends on its own with unread steered messages
   starts the next turn with them, in the same queue slot: the first is its
   prompt, the rest are read before its first model call. A stopped turn (Stop,
@@ -121,6 +120,27 @@ when no turn runs (nothing is stored, the caller sends a prompt);
   it does not run extension `input` handlers, `/skill:` or prompt-template
   expansion (a prompt does). Unread steered messages live in memory: a daemon
   restart loses them.
+
+## Retract
+
+`POST /kortix/runtime/messages/:sid/:mid/retract` takes back a user message no
+model call has read (`runtime.retract.v1` in `/kortix/health` `capabilities`),
+behind the same auth, readiness gate and `X-Kortix-Turn-Verb` header. apps/api
+uses it to cancel a forwarded prompt, to hold forwarded prompts after a Stop,
+and to re-place a stranded prompt. Answers: `200 { retracted: true }`; `404`
+when the session holds no such message; `409 { code: 'message_read' }` when a
+model call read it (its turn runs or ran), and it stays.
+
+- **pi** decides from its own state: an unread steered message, a prompt
+  admitted behind the running work that has not started, and a `no_reply`
+  message no turn has read (pi omits its session entry from the model context)
+  are retracted. A retracted id may be sent again. The `DELETE` verb and the
+  compatibility `DELETE /session/:id/message/:mid` answer the same way, so an
+  older API gets the fix too.
+- **OpenCode** cannot tell a read message from an unread one, so apps/api
+  proves "unread" from the transcript first (`reachedPlacement`). The adapter
+  deletes the message whole when idle; when the loop runs and refuses that, it
+  deletes every part, and OpenCode's loop skips a user message with no parts.
 
 ## The pi harness
 
