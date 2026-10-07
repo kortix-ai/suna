@@ -160,7 +160,7 @@ export function ConnectMcpModal({
 }
 
 // The secondary fill sits close to the row; a ring on hover marks the target.
-const ACTION_CLASS = 'hover:border-ring hover:border hover:ring-ring/15 hover:ring-2 hit-area-debug hit-area-y-3 hit-area-l-3 shrink-0';
+const ACTION_CLASS = 'hover:border-ring hover:border hover:ring-ring/15 hover:ring-2 hit-area-y-3 hit-area-l-3 shrink-0';
 
 /** The client's own one-click action: copy the URL or its command, or open its deep link. */
 function ClientAction({ client, url }: { client: Client; url: string }) {
