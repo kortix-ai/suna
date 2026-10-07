@@ -89,6 +89,15 @@ export function middleTruncateFilename(name: string, max = 22): string {
   return `${name.slice(0, head)}…${name.slice(-tail)}`;
 }
 
+/** A tile previews the head of the paste only: the clamp shows four lines, and the DOM need not hold 100 kB. */
+export const PASTE_PREVIEW_CHARS = 400;
+
+/**
+ * A paste is a page, not a file (Jay, 2026-10-08, Paper P4): the tile's height,
+ * one step wider (`w-32`) for the text, with a folded top-right corner.
+ */
+const PASTE_SURFACE = `${TILE_SURFACE.replace('size-28', 'h-28 w-32')} rounded-tr-xl group/paste`;
+
 export interface AttachmentTileProps {
   filename: string;
   mime?: string;
@@ -103,6 +112,9 @@ export interface AttachmentTileProps {
   onOpen?: () => void;
   className?: string;
   title?: string;
+  /** Pasted text. When set, the tile shows its first lines in place of the
+   *  name, and the badge reads `pasted` in place of the extension. */
+  preview?: string;
 }
 
 export function AttachmentTile({
@@ -114,8 +126,9 @@ export function AttachmentTile({
   onOpen,
   className,
   title,
+  preview,
 }: AttachmentTileProps) {
-  const ext = attachmentExtension(filename, mime);
+  const ext = preview !== undefined ? 'pasted' : attachmentExtension(filename, mime);
   const split = splitFilenameForTile(filename);
   // Uppercase, and that is what centres it. The badge centres the font's
   // content area — Roobert Mono ascends 1.016em and descends 0.234em, so that
@@ -131,7 +144,17 @@ export function AttachmentTile({
       {ext}
     </Badge>
   ) : null;
-  const surface = cn(TILE_SURFACE, onOpen && TILE_INTERACTIVE, className);
+  const surface = cn(
+    preview !== undefined ? PASTE_SURFACE : TILE_SURFACE,
+    onOpen && TILE_INTERACTIVE,
+    // `bg-accent` equals `bg-popover` in dark (#141414), so the shared hover
+    // is invisible there and the fold's swap below would vanish. `bg-muted`
+    // differs from the resting fill in both themes (#ededed / #1c1c1c).
+    onOpen && preview !== undefined && 'hover:bg-muted',
+    // A paste tile does not shrink on press (Jay, 2026-10-08).
+    onOpen && preview !== undefined && 'active:scale-100',
+    className,
+  );
   const tileTitle = title ?? filename;
 
   // A picture is the whole tile: no badge over it. The image says what it is
@@ -142,6 +165,32 @@ export function AttachmentTile({
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={picture} alt={filename} className="size-full object-cover" draggable={false} />
       {corner && <span className="absolute right-2 bottom-2 flex">{corner}</span>}
+    </>
+  ) : preview !== undefined ? (
+    <>
+      <span className="flex size-full flex-col justify-between gap-1 px-2.5 pt-2 pb-2.5">
+        {/* A glimpse of the text itself, fading out at the bottom instead of
+            ending on an ellipsis. The first line reads as
+            the page's title; no count here, the side panel carries it. */}
+        <span className="text-muted-foreground first-line:text-foreground min-h-0 min-w-0 flex-1 overflow-hidden text-[11px] leading-tight break-words whitespace-pre-wrap mask-b-from-60% mask-b-to-100% first-line:font-medium">
+          {preview}
+        </span>
+        <span className="flex items-end justify-between gap-1">
+          {badge}
+          {corner && <span className="flex shrink-0">{corner}</span>}
+        </span>
+      </span>
+      {/* The folded corner, painted last so it sits over the text like a real
+          dog-ear. A hovered tile goes `bg-muted`, the fold's own resting
+          fill; the fold then takes the tile's resting fill (`bg-popover`), so
+          the corner still reads as turned, in light and dark. */}
+      <span
+        aria-hidden
+        className={cn(
+          'bg-muted border-border absolute -top-px -right-px size-5 rounded-bl-sm border-b border-l',
+          onOpen && 'group-hover/paste:bg-popover transition-colors duration-fast',
+        )}
+      />
     </>
   ) : (
     <>

@@ -489,3 +489,43 @@ describe('AttachmentTiles', () => {
     expect(closes).toBe(opens + 1); // +1: the tile's own opening tag sits before `tileStart`
   });
 });
+
+describe('pasted-text tiles in the tray', () => {
+  const paste = { id: 'a1b2c3d4', text: 'first line\nsecond line' };
+
+  test('a paste alone draws the tray: its preview, the pasted badge, and a remove control', () => {
+    const markup = renderToStaticMarkup(
+      <AttachmentTiles files={[]} onRemove={() => {}} pastes={[paste]} onRemovePaste={() => {}} />,
+    );
+    expect(markup).toContain('first line\nsecond line');
+    expect(markup).toMatch(/uppercase[^>]*>pasted<\/span>/);
+    expect(markup).toContain('aria-label="Remove pasted text"');
+  });
+
+  test('pastes lead the row, ahead of the files', () => {
+    const markup = renderToStaticMarkup(
+      <AttachmentTiles
+        files={[localDoc('report.pdf')]}
+        onRemove={() => {}}
+        pastes={[paste]}
+        onRemovePaste={() => {}}
+      />,
+    );
+    expect(markup.indexOf('first line')).toBeLessThan(markup.indexOf('report.pdf'));
+  });
+
+  test('without onOpenPaste the tile is inert: no button, no press feel', () => {
+    const markup = renderToStaticMarkup(
+      <AttachmentTiles files={[]} onRemove={() => {}} pastes={[paste]} />,
+    );
+    expect(markup).not.toContain('<button');
+    expect(markup).not.toContain('cursor-pointer');
+  });
+
+  test('with onOpenPaste the tile is a button', () => {
+    const markup = renderToStaticMarkup(
+      <AttachmentTiles files={[]} onRemove={() => {}} pastes={[paste]} onOpenPaste={() => {}} />,
+    );
+    expect(markup).toContain('<button type="button" title="Pasted text"');
+  });
+});

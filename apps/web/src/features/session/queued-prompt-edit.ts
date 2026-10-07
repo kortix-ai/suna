@@ -118,7 +118,13 @@ export async function saveQueuedPromptEdit(
   const edit = openEdit(host.key);
   if (!edit) return false;
   setEdit(host.key, null);
-  const next = edit.rawText.replace(edit.editText, () => text.trim());
+  // The LAST match: the composer writes quotes and pastes ahead of the typed
+  // words, so an earlier match can sit inside a paste body.
+  const at = edit.rawText.lastIndexOf(edit.editText);
+  const next =
+    at === -1
+      ? edit.rawText
+      : edit.rawText.slice(0, at) + text.trim() + edit.rawText.slice(at + edit.editText.length);
   if (next === edit.rawText) return true;
   // This tab's own copy of the message outranks the server's row: drop it, so
   // the row shows the edit.

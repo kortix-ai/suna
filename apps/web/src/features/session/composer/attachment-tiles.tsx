@@ -17,6 +17,7 @@
  */
 
 import type { PromptAttachmentItem } from '@kortix/sdk';
+import type { PastedContent } from '@kortix/shared';
 import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -28,7 +29,12 @@ import { cn } from '@/lib/utils';
 import { convertHeicBlobToJpeg, isHeicFile } from '@/lib/utils/heic-convert';
 import { holdConvertedPreview } from '../sent-attachment-previews';
 
-import { AttachmentRemoveButton, AttachmentTile, isPreviewableImage } from '../attachment-tile';
+import {
+  AttachmentRemoveButton,
+  AttachmentTile,
+  PASTE_PREVIEW_CHARS,
+  isPreviewableImage,
+} from '../attachment-tile';
 import {
   attachmentFailureReason,
   attachmentFailureRetryable,
@@ -243,18 +249,41 @@ export function AttachmentTiles({
   uploads = [],
   onRemove,
   onRetry,
+  pastes = [],
+  onRemovePaste,
+  onOpenPaste,
 }: {
   files: AttachedFile[];
   uploads?: readonly PromptAttachmentItem[];
   onRemove: (index: number) => void;
   onRetry?: (id: string) => void;
+  /** Pasted-text tiles. They lead the row, ahead of the files. */
+  pastes?: readonly PastedContent[];
+  onRemovePaste?: (id: string) => void;
+  /** Pressing a paste tile opens its text. Without it the tile is inert. */
+  onOpenPaste?: (paste: PastedContent) => void;
 }) {
   const t = useTranslations('hardcodedUi.composerAttachments');
   const copy = attachmentTileCopy(t);
-  if (files.length === 0) return null;
+  if (files.length === 0 && pastes.length === 0) return null;
 
   return (
     <ul className="flex flex-wrap gap-2 px-3">
+      {pastes.map((paste) => (
+        // The same `contents` li + `relative` box split as the file tiles below.
+        <li key={`paste:${paste.id}`} className="contents">
+          <div className="group relative">
+            <AttachmentTile
+              filename="Pasted text"
+              preview={paste.text.slice(0, PASTE_PREVIEW_CHARS)}
+              onOpen={onOpenPaste ? () => onOpenPaste(paste) : undefined}
+            />
+            {onRemovePaste && (
+              <AttachmentRemoveButton filename="pasted text" onRemove={() => onRemovePaste(paste.id)} />
+            )}
+          </div>
+        </li>
+      ))}
       {files.map((af, i) => {
         const name = attachmentName(af);
         const uploadId = af.kind === 'remote' ? undefined : af.uploadId;

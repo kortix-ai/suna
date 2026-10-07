@@ -7,6 +7,7 @@ import {
   type SessionPromptViewer,
 } from '@kortix/sdk';
 import { isOptimisticSessionPrompt } from '@kortix/sdk/react';
+import { splitPastedContent } from '@kortix/shared';
 import {
   parseAgentMentionReferences,
   parseFileMentionReferences,
@@ -90,14 +91,29 @@ export interface QueueProjection {
 }
 
 /** A prompt's visible words: the transport blocks the send path appends
- *  (reply context, upload refs, mention refs) stripped back out. */
-export function cleanPromptText(text: string): { text: string; fileCount: number } {
-  const withoutReply = stripReplyContexts(text);
+ *  (pastes, reply context, upload refs, mention refs) stripped back out. */
+export function cleanPromptText(text: string): {
+  text: string;
+  fileCount: number;
+  /** Present when the prompt carries `<pasted_content>` blocks. */
+  pasteCount?: number;
+} {
+  const { text: withoutPastes, pastes } = splitPastedContent(text);
+  const withoutReply = stripReplyContexts(withoutPastes);
   const uploads = parseFileReferences(withoutReply);
   const withoutSessions = parseSessionReferences(uploads.cleanText).cleanText;
   const withoutFiles = parseFileMentionReferences(withoutSessions).cleanText;
   const withoutAgents = parseAgentMentionReferences(withoutFiles).cleanText;
-  return { text: withoutAgents.trim(), fileCount: uploads.files.length };
+  return {
+    text: withoutAgents.trim(),
+    fileCount: uploads.files.length,
+    ...(pastes.length > 0 ? { pasteCount: pastes.length } : {}),
+  };
+}
+
+/** A queued row's line: the visible words, or `Pasted text` for a prompt that is only pastes. */
+function rowText(cleaned: ReturnType<typeof cleanPromptText>): string {
+  return cleaned.text || (cleaned.pasteCount ? 'Pasted text' : '');
 }
 
 function onScreen(prompt: SessionPrompt, transcriptIds: ReadonlySet<string> | undefined): boolean {
@@ -159,7 +175,7 @@ export function projectQueueRows(input: {
     rows.push({
       id: prompt.prompt_id,
       clientMessageId: prompt.client_message_id,
-      text: draft?.text ?? cleaned.text,
+      text: rowText(draft ? cleanPromptText(draft.text) : cleaned),
       attachmentCount,
       state,
       ...(state === 'failed' && prompt.last_error ? { lastError: prompt.last_error } : {}),
@@ -185,7 +201,7 @@ export function projectQueueRows(input: {
     rows.push({
       id: `draft:${draft.clientMessageId}`,
       clientMessageId: draft.clientMessageId,
-      text: draft.text,
+      text: rowText(cleanPromptText(draft.text)),
       attachmentCount: draft.files.length,
       state: 'sending',
       removable: false,

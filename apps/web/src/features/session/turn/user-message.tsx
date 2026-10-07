@@ -13,7 +13,13 @@ import {
  *  user-message card. Full-width card, no reference chips. */
 
 import { useTranslations } from '@/i18n/use-translations';
-import { sanitizePromptUploadFilename } from '@kortix/shared';
+import {
+  expandPastedContent,
+  sanitizePromptUploadFilename,
+  serializePromptWithPastes,
+  splitPastedContent,
+  type PastedContent,
+} from '@kortix/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
@@ -55,6 +61,7 @@ import {
 import {
   AttachmentRemoveButton,
   AttachmentTile,
+  PASTE_PREVIEW_CHARS,
   TILE_INTERACTIVE,
   TILE_SURFACE,
   isPreviewableImage,
@@ -331,6 +338,13 @@ export interface NormalizedAttachment {
   mime?: string;
   src?: string;
   path?: string;
+  /** A `<pasted_content>` block: drawn as a text tile that opens its full text. */
+  pasted?: PastedContent;
+}
+
+/** The tile of one paste. Keyed by the paste id, so the optimistic and sent turns draw the same tile. */
+export function pastedAttachment(paste: PastedContent): NormalizedAttachment {
+  return { key: `pasted:${paste.id}`, filename: 'Pasted text', pasted: paste };
 }
 
 interface OrderedUploadReference {
@@ -348,6 +362,8 @@ interface ParsedAttachmentContent {
    *  quote markers left in `textAfterFiles` index into this array. */
   quotes: string[];
   uploads: OrderedUploadReference[];
+  /** Every `<pasted_content>` block across all text parts, in order. */
+  pastes: PastedContent[];
 }
 
 /**
@@ -379,6 +395,7 @@ function parseAttachmentContent(parts: readonly Part[]): ParsedAttachmentContent
   const cleanTextParts: string[] = [];
   const uploads: OrderedUploadReference[] = [];
   const quotes: string[] = [];
+  const pastes: PastedContent[] = [];
 
   parts.forEach((part, sourcePartIndex) => {
     if (
@@ -390,7 +407,11 @@ function parseAttachmentContent(parts: readonly Part[]): ParsedAttachmentContent
       return;
     }
 
-    const rawPartText = stripSystemPtyText((part as TextPart).text);
+    // Pastes come out FIRST: a paste is the user's text, so a `<file>` or
+    // `<reply_context>` inside one is paste content, not a ref.
+    const pasted = splitPastedContent(stripSystemPtyText((part as TextPart).text));
+    const rawPartText = pasted.text;
+    pastes.push(...pasted.pastes);
     rawTextParts.push(rawPartText);
 
     // Each part is parsed on its own, so its markers count from 0. Shift them
@@ -415,6 +436,7 @@ function parseAttachmentContent(parts: readonly Part[]): ParsedAttachmentContent
     textAfterFiles: cleanTextParts.join('\n'),
     quotes,
     uploads,
+    pastes,
   };
 }
 
@@ -713,10 +735,13 @@ function StoredAttachmentFile({ file }: { file: NormalizedAttachment }) {
 export function MessageAttachments({
   attachments,
   status,
+  onOpenPastedContent,
 }: {
   attachments: NormalizedAttachment[];
   /** A failed send — see {@link AttachmentUploadStatus}. */
   status?: AttachmentUploadStatus;
+  /** Opens a paste's full text. Absent (no side panel), a paste tile is inert. */
+  onOpenPastedContent?: (id: string, text: string) => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tComposerAttachments = useTranslations('hardcodedUi.composerAttachments');
@@ -767,6 +792,23 @@ export function MessageAttachments({
               );
             }
 
+            const { pasted } = file;
+            if (pasted) {
+              return (
+                <li key={file.key} className="contents">
+                  <AttachmentTile
+                    filename={file.filename}
+                    preview={pasted.text.slice(0, PASTE_PREVIEW_CHARS)}
+                    onOpen={
+                      onOpenPastedContent
+                        ? () => onOpenPastedContent(pasted.id, pasted.text)
+                        : undefined
+                    }
+                  />
+                </li>
+              );
+            }
+
             if (isImageAttachment(file)) {
               return (
                 <li key={file.key} className="contents">
@@ -810,6 +852,29 @@ export function MessageAttachments({
       )}
     </div>
   );
+}
+
+/**
+ * A paste's full text, in the side panel's detail view. Its one action, Copy,
+ * sits in the panel header (`PastedTextCopy`): the text is already in the
+ * chat, so there is nothing to download or add.
+ */
+export function PastedTextBody({ text }: { text: string }) {
+  return (
+    <pre className="bg-popover text-foreground rounded-md border px-4 py-3 font-mono text-xs break-words whitespace-pre-wrap select-text">
+      {text}
+    </pre>
+  );
+}
+
+export function PastedTextCopy({ text }: { text: string }) {
+  return <CopyButton code={text} size="sm" />;
+}
+
+/** Word and character counts for the panel header. */
+export function pastedTextCounts(text: string) {
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+  return { words, chars: text.length };
 }
 
 // ============================================================================
@@ -895,12 +960,12 @@ export function editablePromptText(
   command?: { name: string; args?: string } | null,
 ): string {
   if (command) {
-    // A command's args carry its quotes too (the composer writes them ahead
-    // of the args).
-    const args = command.args ? stripReplyContexts(command.args) : '';
+    // A command's args carry its quotes and pastes too (the composer writes
+    // them ahead of the args). The pastes stay as the editor's tiles.
+    const args = command.args ? stripReplyContexts(splitPastedContent(command.args).text) : '';
     return `/${command.name}${args ? ` ${args}` : ''}`;
   }
-  const withoutReply = stripReplyContexts(copyText);
+  const withoutReply = stripReplyContexts(splitPastedContent(copyText).text);
   const withoutUploads = parseFileReferences(withoutReply).cleanText;
   const withoutProjects = parseProjectReferences(withoutUploads).cleanText;
   const withoutFiles = parseFileMentionReferences(withoutProjects).cleanText;
@@ -916,7 +981,8 @@ export function editablePromptText(
  * part; the API writes a saved copy into the sandbox again. An upload whose
  * saved copy is missing is still in the sandbox, so its `<file>` ref is resent
  * as text, joined under the trimmed `text` (refs alone when the text is blank).
- * A tile with neither source has nothing to resend.
+ * A tile with neither source has nothing to resend. A kept paste is written
+ * back as its `<pasted_content>` block, ahead of the text, as the composer does.
  */
 export function editResendAttachments(
   kept: readonly NormalizedAttachment[],
@@ -927,7 +993,12 @@ export function editResendAttachments(
 } {
   const files: AttachedFile[] = [];
   const refs: string[] = [];
-  for (const { src, path, filename, mime: kind } of kept) {
+  const pastes: PastedContent[] = [];
+  for (const { src, path, filename, mime: kind, pasted } of kept) {
+    if (pasted) {
+      pastes.push(pasted);
+      continue;
+    }
     const mime = kind || 'application/octet-stream';
     if (src && (isSessionAttachmentRef(src) || !path)) {
       const isImage = isPreviewableImage(filename, mime);
@@ -938,7 +1009,8 @@ export function editResendAttachments(
   }
   const joined = refs.join('\n');
   const body = text.trim();
-  return { files, text: joined ? (body ? `${body}\n\n${joined}` : joined) : text };
+  const withRefs = joined ? (body ? `${body}\n\n${joined}` : joined) : text;
+  return { files, text: serializePromptWithPastes(withRefs, pastes) };
 }
 
 // ============================================================================
@@ -1260,7 +1332,12 @@ export function UserMessageEditor({
           {kept.map((file) => (
             <li key={file.key} className="contents">
               <div className="group relative">
-                {isImageAttachment(file) ? (
+                {file.pasted ? (
+                  <AttachmentTile
+                    filename={file.filename}
+                    preview={file.pasted.text.slice(0, PASTE_PREVIEW_CHARS)}
+                  />
+                ) : isImageAttachment(file) ? (
                   <AttachmentImage file={file} />
                 ) : (
                   <AttachmentTile filename={file.filename} mime={file.mime} />
@@ -1322,6 +1399,22 @@ export function UserMessageEditor({
 // User Message
 // ============================================================================
 
+/** The message's own text parts, joined: what the edit-from-here editor starts from. */
+function messagePromptText(parts: readonly Part[]): string {
+  const lines: string[] = [];
+  for (const p of parts) {
+    if (!isTextPart(p) || (p as TextPart).synthetic || (p as TextPart & { ignored?: boolean }).ignored) continue;
+    const stripped = stripSystemPtyText((p as TextPart).text);
+    if (stripped.trim()) lines.push(stripped);
+  }
+  return lines.join('\n').trim();
+}
+
+/** What "Copy message" copies: the prompt with each paste as its text, not its XML. */
+export function userMessageCopyText(parts: readonly Part[]): string {
+  return expandPastedContent(messagePromptText(parts));
+}
+
 export function UserMessage({
   message,
   author,
@@ -1341,6 +1434,7 @@ export function UserMessage({
   pendingAttachments,
   uploadStatus,
   pendingText,
+  onOpenPastedContent,
 }: {
   message: MessageWithParts;
   /** Who wrote this message, from the server's prompt record. */
@@ -1393,6 +1487,8 @@ export function UserMessage({
    * it the bubble blanked for that window (2026-09-06).
    */
   pendingText?: string;
+  /** See `MessageAttachments.onOpenPastedContent`. */
+  onOpenPastedContent?: (id: string, text: string) => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
@@ -1406,6 +1502,7 @@ export function UserMessage({
     textAfterFiles,
     quotes,
     uploads: uploadedFiles,
+    pastes: partPastes,
   } = useMemo(() => parseAttachmentContent(message.parts), [message.parts]);
   const { cleanText: textAfterProjects } = useMemo(
     () => parseProjectReferences(textAfterFiles),
@@ -1437,7 +1534,7 @@ export function UserMessage({
 
   // Both attachment routes, drawn as one strip. `uploadedFiles` used to be
   // parsed and then discarded — see `normalizeAttachments`.
-  const allAttachments = useMemo(
+  const fileAttachments = useMemo(
     () =>
       mergeSentAttachments(normalizeAttachments(message.parts, uploadedFiles), pendingAttachments),
     [message.parts, uploadedFiles, pendingAttachments],
@@ -1484,28 +1581,43 @@ export function UserMessage({
    * dependency — a `const` read from a dependency array before its own
    * initializer runs is a TDZ throw, not a stale value.
    */
+  // The composer writes a command's pastes into its args and `split.before`
+  // (`planDraftSubmission`), so both halves lose their blocks here.
   const commandSplit = commandInfo?.split;
+  const commandBefore = useMemo(
+    () => splitPastedContent(commandSplit?.before ?? ''),
+    [commandSplit?.before],
+  );
+  const commandArgs = useMemo(
+    () => splitPastedContent(effectiveCommandInfo?.args ?? ''),
+    [effectiveCommandInfo?.args],
+  );
   const bodyText = effectiveCommandInfo
     ? commandSplit
       ? commandSplit.after
-      : (effectiveCommandInfo.args ?? '')
+      : commandArgs.text
     : // While this message has no text part of its own (the store is swapping
     // in the runtime's echo), the sender's copy keeps the bubble on screen.
     text || (pendingText ?? '');
 
-  const copyText = useMemo(() => {
-    const lines: string[] = [];
-    for (const p of message.parts) {
-      if (!isTextPart(p) || (p as TextPart).synthetic || (p as any).ignored) continue;
-      const stripped = stripSystemPtyText((p as TextPart).text);
-      if (stripped.trim()) lines.push(stripped);
-    }
-    return lines.join('\n').trim();
-  }, [message.parts]);
+  // Pastes lead the strip, as in the composer. A command carries each one up to
+  // three times (template, args, `split.before`): one tile per paste id.
+  const allAttachments = useMemo(() => {
+    const seen = new Set<string>();
+    const pastes = [...partPastes, ...commandBefore.pastes, ...commandArgs.pastes].filter((paste) => {
+      if (seen.has(paste.id)) return false;
+      seen.add(paste.id);
+      return true;
+    });
+    return pastes.length > 0 ? [...pastes.map(pastedAttachment), ...fileAttachments] : fileAttachments;
+  }, [partPastes, commandBefore.pastes, commandArgs.pastes, fileAttachments]);
+
+  const promptText = useMemo(() => messagePromptText(message.parts), [message.parts]);
+  const copyText = useMemo(() => expandPastedContent(promptText), [promptText]);
 
   const rewindPromptText = useMemo(() => {
-    return editablePromptText(copyText, effectiveCommandInfo);
-  }, [copyText, effectiveCommandInfo]);
+    return editablePromptText(promptText, effectiveCommandInfo);
+  }, [promptText, effectiveCommandInfo]);
 
   // Detect a channel message (Slack / Microsoft Teams / Telegram): the API
   // scaffolds these prompts with ids and turn instructions the person never
@@ -1644,7 +1756,7 @@ export function UserMessage({
    */
   const quotedPieces = useMemo<QuotedBodyPiece[] | null>(() => {
     if (effectiveCommandInfo) {
-      const before = parseReplyContexts(commandSplit?.before ?? '');
+      const before = parseReplyContexts(commandBefore.text);
       const after = parseReplyContexts(bodyText);
       if (before.quotes.length === 0 && after.quotes.length === 0) return null;
       return splitAtQuoteMarkers(
@@ -1654,7 +1766,7 @@ export function UserMessage({
     }
     if (quotes.length === 0) return null;
     return splitAtQuoteMarkers(bodyText, quotes);
-  }, [quotes, effectiveCommandInfo, commandSplit, bodyText]);
+  }, [quotes, effectiveCommandInfo, commandBefore.text, bodyText]);
 
   const sessionHref = useProjectSessionHref();
 
@@ -1693,7 +1805,7 @@ export function UserMessage({
      silently jumped to the front. */
   const commandLead = effectiveCommandInfo ? (
     <>
-      {commandSplit?.before ? <span>{commandSplit.before} </span> : null}
+      {commandBefore.text ? <span>{commandBefore.text} </span> : null}
       <MentionChip kind="command" label={effectiveCommandInfo.name} />
       {bodyText ? ' ' : null}
     </>
@@ -1804,7 +1916,11 @@ export function UserMessage({
       {showAuthor && author?.kind === 'session' && <MessageAuthorLabel author={author} />}
       {/* A kept failed send with no files still states its failure, with Retry. */}
       {(allAttachments.length > 0 || uploadStatus?.state === 'failed') && (
-        <MessageAttachments attachments={allAttachments} status={uploadStatus} />
+        <MessageAttachments
+          attachments={allAttachments}
+          status={uploadStatus}
+          onOpenPastedContent={onOpenPastedContent}
+        />
       )}
 
       {systemNotifications.length > 0 && (
