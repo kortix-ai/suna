@@ -1131,24 +1131,27 @@ export function useAuth() {
   /**
    * Completes the TOTP step-up with the verified TOTP factor. On success
    * auth-js stores the aal2 session and emits MFA_CHALLENGE_VERIFIED, which
-   * clears `mfaRequired`. Returns the error (a wrong code has `code`
-   * `mfa_verification_failed`), or null. Never throws.
+   * clears `mfaRequired`. Returns the error's `code` only (a wrong code is
+   * `mfa_verification_failed`; the screen localizes by it), or null. Never throws.
    */
   const verifyTotp = useCallback(
-    async (code: string): Promise<{ code?: string; message: string } | null> => {
+    async (code: string): Promise<{ code?: string } | null> => {
       try {
+        // An expired token refreshes here; offline that returns the error, not a session.
         const {
           data: { session },
+          error: sessionError,
         } = await supabase.auth.getSession();
+        if (sessionError) return { code: sessionError.code };
         const factor = session ? verifiedTotpFactor(session.user) : undefined;
-        if (!factor) return { message: 'No authenticator app is set up for this account.' };
+        if (!factor) return {};
         const { error: verifyError } = await supabase.auth.mfa.challengeAndVerify({
           factorId: factor.id,
           code,
         });
-        return verifyError ? { code: verifyError.code, message: verifyError.message } : null;
-      } catch (err: any) {
-        return { message: err?.message || 'Could not verify the code.' };
+        return verifyError ? { code: verifyError.code } : null;
+      } catch {
+        return {};
       }
     },
     []

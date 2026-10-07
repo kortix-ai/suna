@@ -145,6 +145,7 @@
       "verify": "Verify",
       "verifying": "Verifying…",
       "invalidCode": "That code didn’t work. Check your authenticator app and try again.",
+      "verifyFailed": "Could not verify the code. Check your connection and try again.",
       "useDifferentAccount": "Use a different account"
     }
   },

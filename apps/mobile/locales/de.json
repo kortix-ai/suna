@@ -145,6 +145,7 @@
       "verify": "Bestätigen",
       "verifying": "Wird bestätigt…",
       "invalidCode": "Dieser Code hat nicht funktioniert. Prüfe deine Authenticator-App und versuche es erneut.",
+      "verifyFailed": "Der Code konnte nicht geprüft werden. Prüfe deine Verbindung und versuche es erneut.",
       "useDifferentAccount": "Anderes Konto verwenden"
     }
   },

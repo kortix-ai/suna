@@ -15,7 +15,7 @@ interface AuthContextType extends UserState {
   resetPassword: (data: { email: string }) => Promise<any>;
   updatePassword: (newPassword: string) => Promise<any>;
   signOut: () => Promise<any>;
-  verifyTotp: (code: string) => Promise<{ code?: string; message: string } | null>;
+  verifyTotp: (code: string) => Promise<{ code?: string } | null>;
   error: any;
   oauthRejection: string | null;
   clearOauthRejection: () => void;

@@ -145,6 +145,7 @@
       "verify": "验证",
       "verifying": "正在验证…",
       "invalidCode": "该验证码无效。请检查身份验证器应用后重试。",
+      "verifyFailed": "无法验证该验证码。请检查网络连接后重试。",
       "useDifferentAccount": "使用其他账户"
     }
   },

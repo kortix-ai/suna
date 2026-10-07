@@ -20,6 +20,7 @@ const { act, create } = require('react-test-renderer') as {
 type Listener = (event: string, session: unknown) => Promise<void> | void;
 let listener: Listener | null = null;
 let restoredSession: unknown = null;
+let getSessionError: unknown = null;
 
 const noop = () => {};
 const empty = () => ({});
@@ -28,7 +29,10 @@ mock.module('@/api/supabase', () => ({
   SUPABASE_AUTH_STORAGE_KEY: 'sb-test-auth-token',
   supabase: {
     auth: {
-      getSession: async () => ({ data: { session: restoredSession } }),
+      getSession: async () =>
+        getSessionError
+          ? { data: { session: null }, error: getSessionError }
+          : { data: { session: restoredSession } },
       onAuthStateChange: (fn: Listener) => {
         listener = fn;
         return { data: { subscription: { unsubscribe: () => (listener = null) } } };
@@ -105,6 +109,7 @@ beforeEach(async () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   seen = [];
   restoredSession = session('t0', user('user-a'));
+  getSessionError = null;
   const client = new QueryClient();
   await act(async () => {
     tree = create(
@@ -178,4 +183,11 @@ test('a TOTP verify releases the code screen for the same user', async () => {
   expect(seen.at(-1)).not.toBe(owing!);
   expect(seen.at(-1)?.mfaRequired).toBe(false);
   expect(seen.at(-1)?.isAuthenticated).toBe(true);
+});
+
+test('a failed token refresh reaches the code screen as that error, not as "no factor"', async () => {
+  // getSession refreshes an expired token; offline it returns no session and the error.
+  getSessionError = { code: 'network_error', message: 'Network request failed' };
+  const result = await seen.at(-1)!.verifyTotp('123456');
+  expect(result).toEqual({ code: 'network_error' });
 });

@@ -145,6 +145,7 @@
       "verify": "Verificar",
       "verifying": "Verificando…",
       "invalidCode": "Esse código não funcionou. Confira seu app autenticador e tente novamente.",
+      "verifyFailed": "Não foi possível verificar o código. Confira sua conexão e tente novamente.",
       "useDifferentAccount": "Usar outra conta"
     }
   },

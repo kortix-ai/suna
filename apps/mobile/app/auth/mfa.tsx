@@ -50,7 +50,9 @@ export default function MfaScreen() {
       // Success: the routing gates leave this screen.
       if (error) {
         setErrorMessage(
-          error.code === 'mfa_verification_failed' ? t('auth.mfa.invalidCode') : error.message
+          error.code === 'mfa_verification_failed'
+            ? t('auth.mfa.invalidCode')
+            : t('auth.mfa.verifyFailed')
         );
       }
     },
