@@ -1,19 +1,19 @@
 {
-  "source_hash": "eeb36830dc8026b5db8a2eb2ea6e86931080548ddf4f66ae67d4427097ddaf4e",
+  "source_hash": "0c682c6c4011038bc2d2ab5184fb9f2aa35fd747033548517ab91d80dd8b0238",
   "diff_files": [
     "packages/db/drizzle/meta/20261004061656_snapshot.json",
     "packages/db/drizzle/meta/_journal.json",
-    "packages/db/migrations/20261004173000008_gateway_logs_session_rollup_index.concurrent.ts",
+    "packages/db/migrations/20261007050000009_gateway_logs_session_rollup_index.concurrent.ts",
     "packages/db/src/schema/kortix.ts",
     "tests/migration/gateway-logs-session-rollup-index.test.ts"
   ],
-  "diff_hash": "89a5f912d7e8e4b18ecc4df69aec99dbde75fdfe952587b18a817ffa96395adb",
-  "head": "25cdc50b525205eab44043ae117950d7c44567b1",
+  "diff_hash": "14a29b0ac63e979dd4b51232293e470e69509d2c4e2498a657883d9841ea19b8",
+  "head": "df0702fa65d92caf20ccb45ce68045f2bc3c247a",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-07T00:16:07.550Z"
+  "at": "2026-10-07T00:30:22.282Z"
 }
