@@ -1,5 +1,5 @@
 {
-  "source_hash": "1f28694212fbce871f7e2675828054bab3cba98e409abba08c49c1dfd9e9b314",
+  "source_hash": "fd66ca6b3ab4e9f877e106cf4e452816494ba1c422c28630fd1e74faf5a00112",
   "diff_files": [
     "apps/web/src/features/session/tool/shared/infrastructure-preview.tsx",
     "apps/web/src/features/session/tool/shared/show-helpers.tsx",
@@ -7,13 +7,13 @@
     "apps/web/src/features/session/tool/shared/tool-action-bar.tsx",
     "apps/web/src/lib/seo/content-timestamps.json"
   ],
-  "diff_hash": "d22f6dc0a9869c3739404882725c5a034c28a59debc3967645c5210770fca2e0",
-  "head": "2d0f0f4d79c3402006dfca217dc252e196dc16b9",
+  "diff_hash": "64d2c9a4d47b46976fdecb97d91533975105e74338676da6f2cd849266404652",
+  "head": "318fa2e080c01f6e7916f2af3f146b1ce86949c3",
   "passed": true,
   "lanes": {
     "packages": "pass",
     "core": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-07T21:06:29.310Z"
+  "at": "2026-10-07T22:54:39.051Z"
 }
