@@ -719,7 +719,7 @@ Pipedream, computers):
 | Field | On | Value |
 | --- | --- | --- |
 | `data` | 200 | The raw upstream answer, unchanged. |
-| `output` | 200 | The payload without the binding's envelope: Composio `data.result`, MCP `result.structuredContent ?? result.content`, GraphQL `data.data`, every other binding `data`. |
+| `output` | 200 | The payload without the binding's envelope: Composio `data.result`, MCP `result.structuredContent ?? result.content`, GraphQL `data.data`. Absent when it equals `data` (OpenAPI, HTTP, Postman, channel, Pipedream and computer calls), so the body carries the payload once: read `output ?? data`. The SDK fills it in. |
 | `binding` | 200, 500, 429, 503 | The binding that ran the call: `openapi`, `http`, `mcp`, `graphql`, `composio`, `pipedream`, `pipedream_proxy`, `postman`, `tunnel`. `null` on an error before the action resolved. |
 | `upstream_status` | 200, 500, 429, 503 | The upstream HTTP status. `null` when no upstream answered (a timeout, a refused request, a computer). Composio and Pipedream report a provider failure inside a 200, so Kortix sets `502` for it (`400` for a rejected Linear query, `429` for a rate limit). |
 | `upstream_error` | 200 | Present when the upstream reported a failure inside a 2xx answer: an MCP tool result with `isError: true` or a JSON-RPC error, or GraphQL `errors` with no data. The call still counts as run: `ok` stays `true`. |
@@ -731,6 +731,9 @@ The HTTP status of a failed call:
   `retry_after_seconds` (or back off) and call again.
 - Every other upstream failure answers `500` with the cause in `reason`. The
   gateway never answers `502` or `504`: Cloudflare replaces those bodies.
+- An upstream answer larger than 64 MiB answers `500` with
+  `reason: "upstream_response_too_large: …"`. Kortix stops reading at the
+  limit. Ask for a smaller page or a filter.
 - An upstream that does not answer within the deadline answers `500` with
   `reason: "upstream_timeout: …"`. The deadline is 60 seconds
   (`KORTIX_CONNECTOR_CALL_TIMEOUT_MS` on a self-hosted API). Set a client

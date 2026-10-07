@@ -154,6 +154,18 @@ describe('handleCall() upstream status and deadline', () => {
     expect(res.retryAfterSeconds).toBeLessThanOrEqual(30);
   });
 
+  test('every http-family upstream read carries the response size cap', async () => {
+    let cap: number | undefined;
+    await handleCall(
+      gatewayDeps(async (init) => {
+        cap = (init as { maxResponseBytes?: number }).maxResponseBytes;
+        return { status: 200, body: '{}' };
+      }),
+      INPUT,
+    );
+    expect(cap).toBe(64 * 1024 * 1024);
+  });
+
   test('a hung http upstream → upstream_timeout at the deadline, and the request is aborted', async () => {
     let aborted = false;
     const started = Date.now();
@@ -229,7 +241,8 @@ describe('POST /call wire contract', () => {
       }),
     );
 
-  test('200 carries binding, output and upstream_status beside data', async () => {
+  test('200 carries binding and upstream_status beside data; output only when it differs from data', async () => {
+    // openapi `output` is `data` itself: sending both doubled every response body.
     const res = await post(router(async () => ({ status: 200, body: '{"items":[1]}' })));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
@@ -237,9 +250,23 @@ describe('POST /call wire contract', () => {
       data: { items: [1] },
       risk: 'read',
       binding: 'openapi',
-      output: { items: [1] },
       upstream_status: 200,
     });
+  });
+
+  test('200 from a GraphQL binding carries the unwrapped output', async () => {
+    const graphql = createConnectorRouter({
+      resolvePrincipal: async () => ({}) as ConnectorPrincipal,
+      resolveProjectPrincipal: async () =>
+        ({ userId: 'user-1', accountId: 'acct-1', projectId: 'proj-1', sessionId: null, subject: { userId: 'user-1', groupIds: [] } }) as ConnectorPrincipal,
+      makeGatewayDeps: () =>
+        gatewayDeps(async () => ({ status: 200, body: '{"data":{"issue":{"id":"i1"}}}' }), {
+          loadAction: async () => action({ kind: 'graphql', operation: 'query', field: 'issue' }),
+        }),
+    } as unknown as ConnectorRouterDeps);
+    const body = (await (await post(graphql)).json()) as Record<string, unknown>;
+    expect(body.data).toEqual({ data: { issue: { id: 'i1' } } });
+    expect(body.output).toEqual({ issue: { id: 'i1' } });
   });
 
   test('upstream 429 → HTTP 429, Retry-After header, retry_after_seconds, reason unchanged', async () => {

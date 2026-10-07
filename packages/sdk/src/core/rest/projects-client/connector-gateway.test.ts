@@ -205,6 +205,26 @@ test('call accepts one tool identifier and sends the canonical gateway payload',
   });
 });
 
+test('call fills output from data when a server omits it as a copy of data', async () => {
+  // The API sends `output` only when it differs from `data` (an unwrapped envelope).
+  responseBody = { ok: true, data: { items: [1] }, risk: 'read', binding: 'openapi', upstream_status: 200 };
+  expect(await callConnector('project-one', 'crm.list', {})).toEqual({
+    ok: true,
+    data: { items: [1] },
+    output: { items: [1] },
+    risk: 'read',
+    binding: 'openapi',
+    upstream_status: 200,
+  });
+});
+
+test('call keeps an unwrapped output and leaves a pre-contract server without one', async () => {
+  responseBody = { ok: true, data: { result: { n: 1 } }, output: { n: 1 }, binding: 'composio', upstream_status: 200 };
+  expect((await callConnector('project-one', 'gmail.list', {})).output).toEqual({ n: 1 });
+  responseBody = { ok: true, data: { result: { n: 1 } }, risk: 'read' };
+  expect('output' in (await callConnector('project-one', 'gmail.list', {}))).toBe(false);
+});
+
 test('call sends approval_context outside args so it never reaches the provider', async () => {
   responseBody = { ok: true, data: null, risk: 'write' };
   await callConnector('project-one', 'gmail.send_draft', { draft_id: 'd1' }, {

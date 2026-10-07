@@ -357,7 +357,6 @@ describe('POST /call', () => {
       data: { id: 'ch_1', paid: true },
       risk: 'write',
       binding: 'openapi',
-      output: { id: 'ch_1', paid: true },
       upstream_status: 200,
     });
     expect(world.upstream[0]!.headers.Authorization).toBe('Bearer sk_live_xyz');

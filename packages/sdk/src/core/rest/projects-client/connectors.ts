@@ -93,7 +93,8 @@ export interface ConnectorCallResult<T = unknown, O = unknown> {
   /**
    * The payload without the binding's envelope: Composio `data.result`, MCP
    * `structuredContent ?? content`, GraphQL `data.data`, otherwise `data`.
-   * Absent from servers that predate it.
+   * The API sends it only when it differs from `data`; `callConnector` fills
+   * it in. Absent from servers that predate it (no `binding`).
    */
   output?: O;
   /** The action's binding: `openapi`, `http`, `mcp`, `graphql`, `composio`, … */
@@ -324,7 +325,7 @@ export async function callConnector<T = unknown>(
   const { connector, action } = parseConnectorTool(tool);
   const account = options.account?.trim();
   const approvalContext = options.approvalContext?.trim();
-  return unwrap(
+  const result = unwrap(
     await backendApi.post<ConnectorCallResult<T>>(
       connectorGatewayPath(projectId, 'call'),
       // The key is omitted rather than sent as null: the gateway reads its
@@ -338,6 +339,10 @@ export async function callConnector<T = unknown>(
       },
     ),
   );
+  // A server that names the binding omits `output` when it equals `data`, so
+  // the body carries the payload once. A server without `binding` predates `output`.
+  if (result.ok && result.binding !== undefined && !('output' in result)) result.output = result.data;
+  return result;
 }
 
 /**

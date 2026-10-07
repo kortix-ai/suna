@@ -60,8 +60,38 @@ export function createConnectorEgressFetch(options: ConnectorEgressOptions = {})
     }
     // `headers` carries `Mcp-Session-Id` back to the MCP session handshake in
     // call.ts. Without it every MCP call to a stateful server re-initializes.
-    return { status: res.status, ok: res.ok, text: () => res.text(), headers: res.headers };
+    return {
+      status: res.status,
+      ok: res.ok,
+      text: () => (init.maxResponseBytes ? readCapped(res, init.maxResponseBytes) : res.text()),
+      headers: res.headers,
+    };
   };
+}
+
+/** The body as UTF-8 text; rejects once it passes `maxBytes`, without buffering the rest. */
+async function readCapped(res: Response, maxBytes: number): Promise<string> {
+  const tooLarge = () => new Error(`upstream_response_too_large: the upstream answer exceeds ${maxBytes} bytes`);
+  if (Number(res.headers.get('content-length')) > maxBytes) {
+    await res.body?.cancel().catch(() => {});
+    throw tooLarge();
+  }
+  if (!res.body) return '';
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maxBytes) {
+      await reader.cancel().catch(() => {});
+      throw tooLarge();
+    }
+    chunks.push(value);
+  }
+  // Keep a leading BOM, as Bun's Response.text() does.
+  return new TextDecoder('utf-8', { ignoreBOM: true }).decode(Buffer.concat(chunks));
 }
 
 /** The connector gateway's fetch. */

@@ -239,7 +239,9 @@ const callResponse = async (deps: ConnectorRouterDeps, c: any, p: ConnectorPrinc
         risk: result.risk,
         ...(result.account ? { account: result.account } : {}),
         binding: result.binding,
-        output: result.output,
+        // `output` is `data` itself for most bindings: send it only when it
+        // differs, so the body holds the payload once. The SDK fills it in.
+        ...(result.output === result.data ? {} : { output: result.output }),
         upstream_status: result.upstreamStatus,
         ...(result.upstreamError ? { upstream_error: result.upstreamError } : {}),
       });

@@ -61,7 +61,8 @@ Fields of the result beside `data` (the raw upstream answer):
 
 - `output`: the payload without the binding's envelope. Composio
   `data.result`, MCP `structuredContent ?? content`, GraphQL `data.data`,
-  otherwise `data`.
+  otherwise `data`. The API sends `output` only when it differs from `data`;
+  the SDK fills it in, so `result.output` is always set on a 200.
 - `binding`: `openapi`, `http`, `mcp`, `graphql`, `composio`, `pipedream`, …
 - `upstream_status`: the upstream HTTP status, or `null`.
 - `upstream_error`: set when the upstream reported a failure inside a 2xx (an
@@ -72,6 +73,8 @@ Failures that throw:
 - HTTP 429 or 503: the upstream is rate-limited or unavailable.
   `details.retry_after_seconds` (and the `Retry-After` header) says when to
   call again. Back off; never loop without a delay.
+- HTTP 500 with `reason` starting `upstream_response_too_large`: the
+  upstream answer exceeded 64 MiB. Ask for less (a page size, a filter).
 - HTTP 500 with `reason` starting `upstream_timeout`: the upstream did not
   answer within 60 seconds. The call may have run. Kortix does not
   deduplicate calls: check the effect before you repeat a write.

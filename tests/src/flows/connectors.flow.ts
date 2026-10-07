@@ -4212,7 +4212,7 @@ flow(
         ]);
       });
 
-      await ctx.step('an ok call → 200 with data unchanged plus binding, output and upstream_status', async () => {
+      await ctx.step('an ok openapi call → 200 with data, binding and upstream_status; no output copy of data', async () => {
         const r = await call(slug.api, 'ok');
         r.status(200)
           .body()
@@ -4220,7 +4220,7 @@ flow(
           .has('$.binding', 'openapi')
           .has('$.upstream_status', 200)
           .has('$.data.items[1]', 2)
-          .has('$.output.items[1]', 2);
+          .has('$.output', undefined);
       });
 
       await ctx.step('upstream 429 → HTTP 429 with Retry-After: 2 and retry_after_seconds; reason unchanged', async () => {
@@ -4480,7 +4480,7 @@ flow(
         .status(200)
         .body()
         .has('$.ok', true)
-        .has('$.output.rows[0].id', 'deal-1')
+        .has('$.data.rows[0].id', 'deal-1')
         .has('$.account.label', label)
         .has('$.account.owner_type', ownerType);
     };

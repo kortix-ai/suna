@@ -437,6 +437,13 @@ export type CallResult =
       retryAfterSeconds?: number;
     };
 
+/**
+ * The largest upstream answer a call reads. The body is held as text, parsed,
+ * and serialized again into the `/call` response, so the API holds several
+ * copies of it at once.
+ */
+const MAX_UPSTREAM_RESPONSE_BYTES = 64 * 1024 * 1024;
+
 /** Reason prefix of a call that hit the upstream deadline. */
 export const UPSTREAM_TIMEOUT = 'upstream_timeout';
 
@@ -1175,7 +1182,7 @@ async function runConnectorAction(
           args: providerArgs,
           paramHints: paramHintsFromSchema(action.inputSchema),
           appAuthorization,
-          fetchImpl: (url, init) => deps.fetchImpl(url, { ...init, signal }),
+          fetchImpl: (url, init) => deps.fetchImpl(url, { ...init, signal, maxResponseBytes: MAX_UPSTREAM_RESPONSE_BYTES }),
         }),
       );
       // Channel platforms (Slack) reply HTTP 200 with an `{ ok:false, error }`

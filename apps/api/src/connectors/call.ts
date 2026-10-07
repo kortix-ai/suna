@@ -791,6 +791,8 @@ export type FetchImpl = (
     tls?: { cert: string; key: string; ca?: string };
     /** Aborts the request at the gateway's call deadline. */
     signal?: AbortSignal;
+    /** `text()` rejects with `upstream_response_too_large` past this many bytes. */
+    maxResponseBytes?: number;
   },
 ) => Promise<{
   status: number;
