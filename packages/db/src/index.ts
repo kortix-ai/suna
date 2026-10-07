@@ -129,6 +129,8 @@ export {
   appArtifacts,
   appDeployments,
   appRuntimes,
+  appSiteFiles,
+  appSiteBlobs,
   appDeploymentEvents,
   sessionPendingQuestions,
   yoloMemberTokens,

@@ -13,6 +13,7 @@ import { resolveAppRequest, verifyAppEdgeRequest } from './public-proxy-edge';
 import { appPublicStatusResponse, publicDeploymentStatus, appPublicBudgetResponse, appPublicUnavailableResponse, appProviderStoppedResponse, appColdStartUpstreamResponse } from './public-proxy-status';
 import { loadPublicAppState, loadPublicApp, ensureAppRuntimeRunning, appRuntimeNeedsWake } from './public-proxy-runtime';
 import { appUpstreamHeaders, appPublicResponseHeaders } from './public-proxy-headers';
+import { serveStaticDeployment } from './static-site';
 const ACTIVITY_LEASE_MS = 60_000;
 type LoadedApp = Omit<NonNullable<Awaited<ReturnType<typeof loadPublicApp>>>, 'agentPrincipal'>;
 
@@ -34,6 +35,22 @@ export async function handleAppPublicRequest(request: Request): Promise<Response
   // must never wake a sleeping sandbox.
   if (url.pathname === '/_kortix/viewer') {
     return appViewerEndpointResponse(request, url, gateApp);
+  }
+  // A static App has no runtime: its files are served from storage here, past
+  // the same access gate, with no wake, meter or upstream.
+  if (
+    state.deployment?.hostingType === 'static' &&
+    state.deployment.status === 'ready' &&
+    state.deployment.deploymentId === state.app.activeDeploymentId
+  ) {
+    return serveStaticDeployment({
+      request,
+      url,
+      accountId: state.app.accountId,
+      deploymentId: state.deployment.deploymentId,
+      spa: (state.deployment.runtimeSpec as { spa?: boolean }).spa === true,
+      publicApp: state.app.accessMode === 'public',
+    });
   }
   const viewer = await appViewerContextHeader(request, url, state.app);
   if (

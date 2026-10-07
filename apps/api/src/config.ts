@@ -221,6 +221,12 @@ const envSchema = z.object({
   // KORTIX_URL fatal-required, mounts the proxy-auth gate, hides /v1/setup.
   // Set to true on managed/cloud deployments; leave false for self-host + dev.
   KORTIX_BILLING_INTERNAL_ENABLED: optBoolFalse,
+  // Kortix Apps: a `static` App is served by the API from content-addressed
+  // storage, with no runtime. `false` builds it into a sandbox, as before.
+  KORTIX_APPS_STATIC_HOSTING: optBoolTrue,
+  // Ready deployments an App keeps besides its active one (rollback targets).
+  // Older ones are retired: runtime, image, files and archive are freed.
+  KORTIX_APPS_RETAINED_DEPLOYMENTS: optInt(5),
   // Global background-worker switch. API-only and migration-shadow deployments
   // keep request handling active while disabling every recurring write loop.
   KORTIX_WORKERS_ENABLED: optBoolTrue,
@@ -1213,6 +1219,8 @@ export const config = {
   KORTIX_PREVIEW_BASE_DOMAIN: env.KORTIX_PREVIEW_BASE_DOMAIN,
   // Single master switch — see schema docstring above.
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
+  KORTIX_APPS_STATIC_HOSTING: env.KORTIX_APPS_STATIC_HOSTING,
+  KORTIX_APPS_RETAINED_DEPLOYMENTS: Math.max(1, env.KORTIX_APPS_RETAINED_DEPLOYMENTS),
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: env.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
   KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: env.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS

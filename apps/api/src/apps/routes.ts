@@ -964,6 +964,13 @@ export function registerAppsRoutes(): void {
         const app = await visibleApp(projectId, appId, loaded.userId);
         if (!app) return c.json({ error: 'Not found' }, 404);
         if (!app.activeDeploymentId) return c.json({ error: 'App has no active deployment' }, 409);
+        const [active] = await db.select({ hostingType: appDeployments.hostingType }).from(appDeployments)
+          .where(eq(appDeployments.deploymentId, app.activeDeploymentId)).limit(1);
+        if (active?.hostingType === 'static') {
+          // Served from storage: there is no compute to start or stop.
+          const [row] = await db.update(apps).set({ desiredState: action === 'start' ? 'running' : 'stopped', updatedAt: new Date() }).where(eq(apps.appId, appId)).returning();
+          return c.json(serializeApp(row!));
+        }
         const [row] = await db.update(apps).set({ desiredState: action === 'start' ? 'running' : 'stopped', updatedAt: new Date() }).where(eq(apps.appId, appId)).returning();
         if (action === 'stop') {
           const [runtime] = await db.select().from(appRuntimes).where(and(
@@ -1023,11 +1030,13 @@ export function registerAppsRoutes(): void {
       const { deployment_id: deploymentId } = c.req.valid('json');
       const [deployment] = await db.select().from(appDeployments).where(and(eq(appDeployments.deploymentId, deploymentId), eq(appDeployments.appId, appId), eq(appDeployments.status, 'ready'))).limit(1);
       if (!deployment) return c.json({ error: 'Only a ready deployment can receive rollback traffic' }, 409);
-      const [targetRuntime] = await db.select().from(appRuntimes)
+      // A static deployment is served from storage: nothing to start.
+      const isStatic = deployment.hostingType === 'static';
+      const [targetRuntime] = isStatic ? [] : await db.select().from(appRuntimes)
         .where(eq(appRuntimes.deploymentId, deploymentId))
         .orderBy(desc(appRuntimes.createdAt))
         .limit(1);
-      if (!targetRuntime) return c.json({ error: 'Rollback deployment has no runtime' }, 409);
+      if (!isStatic && !targetRuntime) return c.json({ error: 'Rollback deployment has no runtime' }, 409);
 
       const [runningApp] = await db.update(apps)
         .set({ desiredState: 'running', updatedAt: new Date() })
@@ -1035,7 +1044,7 @@ export function registerAppsRoutes(): void {
         .returning();
       const hosting = new AppHostingProvider();
       try {
-        await ensureAppRuntimeRunning({ app: runningApp!, deployment, runtime: targetRuntime }, hosting);
+        if (targetRuntime) await ensureAppRuntimeRunning({ app: runningApp!, deployment, runtime: targetRuntime }, hosting);
       } catch (error) {
         await db.update(apps).set({ desiredState: app.desiredState, updatedAt: new Date() })
           .where(eq(apps.appId, appId));
@@ -1064,7 +1073,7 @@ export function registerAppsRoutes(): void {
       if (!row) return c.json({ error: 'The rollback deployment was deleted' }, 409);
       await db.insert(appDeploymentEvents).values({
         deploymentId,
-        runtimeId: targetRuntime.runtimeId,
+        runtimeId: targetRuntime?.runtimeId ?? null,
         type: 'deployment_rollback',
         message: 'Rollback deployment is serving traffic',
         data: { previousDeploymentId },

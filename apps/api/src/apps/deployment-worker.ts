@@ -22,6 +22,8 @@ import { resolveAppRuntimeEnvironment } from './environment';
 import { APP_VIEWER_SECRET_ENV, appViewerSecret } from './viewer';
 import { AppHostingProvider } from './hosting';
 import { normalizeAppBuild, type AppSourceSpec } from './spec';
+import { publishStaticSite, staticHostingEnabled } from './static-site';
+import { retireSupersededDeployments } from './retention';
 import { AppBudgetExceededError } from './budget';
 import { AppAccountUnfundedError, AppLimitError, assertAppComputeAllowed } from './limits';
 import { appRuntimeArtifactDigest } from './runtime-artifacts';
@@ -54,7 +56,11 @@ export async function enqueueCurrentAppRuntime(
   app: typeof apps.$inferSelect,
   deployment: typeof appDeployments.$inferSelect,
 ): Promise<boolean> {
-  if (deployment.runtimeVersion === APP_RUNTIME_VERSION) return false;
+  // A static App still running in a sandbox moves to static hosting the same
+  // way a stale supervisor is replaced: one queued redeploy of the same
+  // artifact, activated only once it is ready.
+  const toStatic = staticHostingEnabled() && deployment.sourceKind === 'static' && deployment.hostingType === 'sandbox';
+  if (deployment.runtimeVersion === APP_RUNTIME_VERSION && !toStatic) return false;
   const inserted = await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${app.appId}))`);
     const [existing] = await tx.select({ deploymentId: appDeployments.deploymentId })
@@ -234,7 +240,8 @@ async function deploymentContext(deploymentId: string) {
 async function activateDeployment(input: {
   appId: string;
   deploymentId: string;
-  runtimeId: string;
+  /** Null for a static deployment: it has no runtime. */
+  runtimeId: string | null;
   owner: string;
 }): Promise<string | null> {
   return db.transaction(async (tx) => {
@@ -264,10 +271,12 @@ async function activateDeployment(input: {
       )
       .returning({ deploymentId: appDeployments.deploymentId });
     if (updated.length === 0) throw new Error(`lost deployment lease ${input.deploymentId}`);
-    await tx
-      .update(appRuntimes)
-      .set({ status: 'running', startedAt: now, updatedAt: now })
-      .where(eq(appRuntimes.runtimeId, input.runtimeId));
+    if (input.runtimeId) {
+      await tx
+        .update(appRuntimes)
+        .set({ status: 'running', startedAt: now, updatedAt: now })
+        .where(eq(appRuntimes.runtimeId, input.runtimeId));
+    }
     await tx
       .update(apps)
       .set({ activeDeploymentId: input.deploymentId, desiredState: 'running', updatedAt: now })
@@ -390,6 +399,10 @@ export async function driveAppDeployment(
       createdBy: claimed.createdBy,
     };
     state.auditRef = auditRef;
+    if (staticHostingEnabled() && (context.deployment.buildSpec as { source?: { kind?: string } }).source?.kind === 'static') {
+      await driveStaticDeployment({ claimed, owner, hosting, context, auditRef, state });
+      return;
+    }
     const provider = selectedProvider(context.deployment.hostingProvider);
     state.runtimeProvider = provider;
     await setDeploymentStatus(claimed.deploymentId, owner, 'validating', {
@@ -452,12 +465,106 @@ export async function driveAppDeployment(
         error: error instanceof Error ? error.message : String(error),
       });
     });
+    await retireSupersededDeployments(context.app.appId).catch((error) => {
+      logger.error('[apps] deployment retention failed', {
+        appId: context.app.appId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
   } catch (error) {
     await recordDeploymentFailure({ claimed, owner, hosting, state, error });
   } finally {
     clearInterval(heartbeat);
     if (state.temporaryRoot) await rm(state.temporaryRoot, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+/**
+ * A static deployment: validate and unpack the archive, publish its files to
+ * content-addressed storage, then activate. No image, no runtime, no compute.
+ */
+async function driveStaticDeployment(input: {
+  claimed: ClaimedDeployment;
+  owner: string;
+  hosting: AppHostingProvider;
+  context: DeploymentContext;
+  auditRef: DeploymentAuditRef;
+  state: DeploymentDriveState;
+}): Promise<void> {
+  const { claimed, owner, hosting, context, auditRef, state } = input;
+  await setDeploymentStatus(claimed.deploymentId, owner, 'validating', {
+    hostingType: 'static',
+    hostingProvider: null,
+    error: null,
+    errorCode: null,
+  });
+  await event(claimed.deploymentId, 'validation_started', 'Validating App artifact');
+  const sourceDir = await prepareDeploymentSource(context, state);
+  const { rawBuildSpec, source, normalized, runtimeEnvironment } = await resolveDeploymentBuild(context, sourceDir);
+  if (Object.keys(runtimeEnvironment.env).length > 0) {
+    await event(
+      claimed.deploymentId,
+      'environment_ignored',
+      'A static App runs no server: its environment variables and secrets are not used',
+      { level: 'warn' },
+    );
+  }
+  await setDeploymentStatus(claimed.deploymentId, owner, 'building', {
+    sourceKind: normalized.sourceKind,
+    runtimeSpec: normalized.runtimeSpec,
+    buildSpec: { ...rawBuildSpec, source, normalized: normalized.buildSpec },
+    providerBuildId: null,
+  });
+  await event(claimed.deploymentId, 'site_publish_started', 'Publishing static files');
+  const root = String((normalized.buildSpec as { root?: string }).root ?? '.');
+  let published;
+  try {
+    published = await publishStaticSite({
+      deploymentId: claimed.deploymentId,
+      accountId: context.app.accountId,
+      root: root === '.' ? sourceDir! : join(sourceDir!, root),
+    });
+  } catch (error) {
+    // A file or layout problem in the artifact never fixes itself on retry.
+    const message = error instanceof Error ? error.message : String(error);
+    if (/static root|holds no files|at most|exceeds/.test(message)) {
+      throw new PermanentAppDeploymentError(message, 'invalid_site');
+    }
+    throw error;
+  }
+  await event(
+    claimed.deploymentId,
+    'site_published',
+    `Published ${published.files} files (${published.uploadedBlobs} new, ${published.reusedBlobs} unchanged)`,
+    { data: { ...published } },
+  );
+  const [stillLive] = await db.select({ appId: apps.appId }).from(apps)
+    .where(and(eq(apps.appId, context.app.appId), isNull(apps.deletedAt)))
+    .limit(1);
+  if (!stillLive) throw new PermanentAppDeploymentError('App was deleted during the build', 'not_found');
+  await setDeploymentStatus(claimed.deploymentId, owner, 'checking');
+  const previous = await activateDeployment({
+    appId: context.app.appId,
+    deploymentId: claimed.deploymentId,
+    runtimeId: null,
+    owner,
+  });
+  await event(claimed.deploymentId, 'deployment_activated', 'Deployment is serving traffic', {
+    data: { previousDeploymentId: previous, hosting: 'static' },
+  });
+  await auditDeploymentOutcome(auditRef, { outcome: 'activated', previousDeploymentId: previous });
+  await stopPreviousRuntime(hosting, previous).catch((error) => {
+    logger.error('[apps] previous runtime stop failed', {
+      deploymentId: previous,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+  await retireSupersededDeployments(context.app.appId).catch((error) => {
+    logger.error('[apps] deployment retention failed', {
+      appId: context.app.appId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
 }
 
 /** Download, verify and unpack an archive artifact. Returns its source directory (none for an OCI image). */
