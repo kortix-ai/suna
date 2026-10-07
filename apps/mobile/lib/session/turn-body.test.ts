@@ -19,6 +19,7 @@ import {
   suppressWorkingTurnBusy,
   toDisplayPath,
   transcriptBusyRowVisible,
+  turnBodyLayout,
   turnErrorIsAbort,
   turnErrorText,
   turnHasReasoning,
@@ -541,5 +542,48 @@ describe('transcriptBusyRowVisible (web "busy with no turn to attach it to")', (
   test('shown when busy and no turn draws the row', () => {
     expect(transcriptBusyRowVisible({ isBusy: true, workingTurnId: null, suppressWorkingTurnBusy: false })).toBe(true);
     expect(transcriptBusyRowVisible({ isBusy: true, workingTurnId: 'a', suppressWorkingTurnBusy: true })).toBe(true);
+  });
+});
+
+describe('turnBodyLayout (KRTX-1678: one render tree for the whole stream)', () => {
+  const base = { hasAssistantContent: true, hasReasoning: false, showInlineContent: false, isCommand: false };
+
+  test('reply text stays in the segments list from first token to settled, so the first tool call does not remount it', () => {
+    // The stream's states, in order: text only → first tool call → settled.
+    const states = [
+      { ...base, working: true, hasSteps: false },
+      { ...base, working: true, hasSteps: true },
+      { ...base, working: false, hasSteps: true },
+    ];
+    for (const state of states) expect(turnBodyLayout(state)).toEqual({ segments: true, text: 'segments' });
+  });
+
+  test('a text-only turn keeps the same tree when it settles', () => {
+    expect(turnBodyLayout({ ...base, working: true, hasSteps: false })).toEqual(
+      turnBodyLayout({ ...base, working: false, hasSteps: false }),
+    );
+  });
+
+  test('inline content (text + answered questions) owns its text', () => {
+    expect(turnBodyLayout({ ...base, working: false, hasSteps: false, showInlineContent: true })).toEqual({
+      segments: false,
+      text: 'inline',
+    });
+  });
+
+  test('a slash-command reply streams in its card until the turn has steps', () => {
+    expect(turnBodyLayout({ ...base, isCommand: true, working: true, hasSteps: false })).toEqual({
+      segments: true,
+      text: 'response',
+    });
+    expect(turnBodyLayout({ ...base, isCommand: true, working: false, hasSteps: false })).toEqual({
+      segments: false,
+      text: 'response',
+    });
+    expect(turnBodyLayout({ ...base, isCommand: true, working: true, hasSteps: true }).text).toBe('segments');
+  });
+
+  test('no assistant message yet → no segments list', () => {
+    expect(turnBodyLayout({ ...base, hasAssistantContent: false, working: true, hasSteps: false }).segments).toBe(false);
   });
 });

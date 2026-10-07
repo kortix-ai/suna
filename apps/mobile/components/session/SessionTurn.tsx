@@ -11,12 +11,14 @@
  *   turn is off screen (`onScreen` false) nothing sweeps and the dot matrix holds.)
  *   2. segments (`space-y-3`) — bursts (`ActivityBurst`: thinking, tool rows,
  *      file chips), standalone tools (`ToolPartRenderer`: deliverables,
- *      sub-agents, calls with a pending permission), and prose between bursts
- *   3. inline content (text + answered questions in natural order), or the
- *      response of a text-only turn (plain, or in a slash-command card)
+ *      sub-agents, calls with a pending permission), and the reply text — for
+ *      the whole stream, so the first tool call never remounts it (KRTX-1678)
+ *   3. inline content (text + answered questions in natural order), or a
+ *      slash-command reply in its card
  *   4. busy slot (`space-y-2`) — `SessionRetryDisplay` + `SessionBusyIndicator`
  *   5. turn error — `TurnErrorDisplay` (an abort renders nothing)
- *   6. action bar — Copy + turn details, whenever the turn is not working
+ *   6. change requests the turn opened — `SessionChangeRequests`, when not working
+ *   7. action bar — Copy + turn details, whenever the turn is not working
  *
  * A compaction turn is one `CompactionMarker` (running / landed) or one
  * `CompactionFailedRow` — no user message, no body (web `isCompaction`
@@ -71,9 +73,11 @@ import {
   turnErrorText,
   turnHasReasoning,
   turnHasSteps,
+  turnBodyLayout,
   turnResponse,
   type TurnBodyTurn,
 } from '@/lib/session/turn-body';
+import type { ChangeItem } from '@/lib/session/session-change-requests';
 import { BUSY_RETRY_LABEL } from '@/lib/session/busy-status';
 import { webSpace, type MessageAttachment, type QueuedPromptState } from '@/lib/session/user-message';
 import { SessionBusyIndicator, useTurnBusyStatus } from './session-busy-indicator';
@@ -87,6 +91,7 @@ import { CommandOutputCard } from './turn/command-output';
 import { CompactionFailedRow, CompactionMarker } from './turn/compaction-divider';
 import { TextPartBlock } from './turn/text-part';
 import { TurnActions } from './turn/turn-actions';
+import { SessionChangeRequests } from './SessionChangeRequests';
 import { UserMessage, type UserMessageUploadStatus } from './turn/user-message';
 
 /** Web turn root `space-y-2.5`. */
@@ -143,6 +148,10 @@ interface SessionTurnProps {
    * shimmer and busy dot matrix hold still (KRTX-1638). Defaults to on screen.
    */
   onScreen?: boolean;
+  /** The change requests this turn opened (`anchorChangeRequests`). One stable array per turn. */
+  changeRequests?: readonly ChangeItem[];
+  /** Opens the review sheet for one change request. Must be stable. */
+  onOpenChangeRequest?: (id: string) => void;
 }
 
 const EMPTY_QUESTIONS: QuestionRequest[] = Object.freeze([]) as unknown as QuestionRequest[];
@@ -172,6 +181,8 @@ function SessionTurnImpl({
   uploadStatus,
   sender,
   onScreen = true,
+  changeRequests,
+  onOpenChangeRequest,
 }: SessionTurnProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -337,9 +348,17 @@ function SessionTurnImpl({
   }
 
   const body: React.ReactNode[] = [];
+  const layout = turnBodyLayout({
+    working,
+    hasSteps,
+    hasReasoning,
+    hasAssistantContent,
+    showInlineContent,
+    isCommand: !!commandForTurn,
+  });
 
   // 2. Segments
-  if ((working || hasSteps || hasReasoning) && hasAssistantContent) {
+  if (layout.segments) {
     body.push(
       <TurnLiveContext.Provider key="segments" value={working}>
         <View style={{ gap: SEGMENT_STACK_GAP }}>
@@ -378,8 +397,8 @@ function SessionTurnImpl({
                 </LoopMotionContext.Provider>
               );
             }
-            // A text-only turn renders its response below instead.
-            if (!hasSteps) return null;
+            // Text renders here for the whole stream (`turnBodyLayout`).
+            if (layout.text !== 'segments') return null;
             const text = segment.part.text?.trim();
             if (!text) return null;
             return (
@@ -397,19 +416,14 @@ function SessionTurnImpl({
   }
 
   // 3. Response / inline content
-  // The streaming reply and the finished reply share the key "response" and
-  // the same element tree, so the reply keeps its views when the turn ends
-  // instead of remounting (a re-parse, re-highlight and image reload). A
-  // slash-command reply streams in its card with the chrome off.
-  if (working && !hasSteps && !showInlineContent && response) {
+  // A slash-command reply streams in its card with the chrome off. The
+  // streaming and the finished card share the key "response", so the reply
+  // keeps its views when the turn ends instead of remounting.
+  if (layout.text === 'response' && commandForTurn && response) {
     body.push(
-      commandForTurn ? (
-        <CommandOutputCard key="response" name={commandForTurn.name} chrome={false}>
-          <TextPartBlock text={response} isDark={isDark} isStreaming />
-        </CommandOutputCard>
-      ) : (
-        <TextPartBlock key="response" text={response} isDark={isDark} isStreaming />
-      ),
+      <CommandOutputCard key="response" name={commandForTurn.name} chrome={!working}>
+        <TextPartBlock text={response} isDark={isDark} isStreaming={working} />
+      </CommandOutputCard>,
     );
   }
   if (showInlineContent && inlineItems) {
@@ -439,17 +453,6 @@ function SessionTurnImpl({
       </LoopMotionContext.Provider>,
     );
   } else {
-    if (!working && !hasSteps && response) {
-      body.push(
-        commandForTurn ? (
-          <CommandOutputCard key="response" name={commandForTurn.name}>
-            <TextPartBlock text={response} isDark={isDark} />
-          </CommandOutputCard>
-        ) : (
-          <TextPartBlock key="response" text={response} isDark={isDark} />
-        ),
-      );
-    }
     if (!hasSteps && !working && !hasReasoning && answeredQuestions.length > 0) {
       body.push(
         <View key="answered" style={{ marginTop: SEGMENT_STACK_GAP, gap: SMALL_STACK_GAP }}>
@@ -498,7 +501,13 @@ function SessionTurnImpl({
     );
   }
 
-  // 6. Action bar
+  // 6. Change requests — what this turn left behind (web `TurnOutcomes`).
+  // Gated on `!working` as on web: an outcome is a settled fact.
+  if (!working && changeRequests && changeRequests.length > 0 && onOpenChangeRequest) {
+    body.push(<SessionChangeRequests key="change-requests" items={changeRequests} onOpen={onOpenChangeRequest} />);
+  }
+
+  // 7. Action bar
   if (showTurnActions({ working })) {
     body.push(<TurnActions key="actions" turn={turn} response={copyText} costInfo={costInfo} />);
   }
