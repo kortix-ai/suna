@@ -16,6 +16,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import * as C from '@kortix/api-contract';
 import { accountsRouter } from '../accounts/core/app';
 import { auth, errors, json } from '../openapi';
+import { readJsonObject } from '../shared/http-body';
 import { loadProjectForUser } from '../projects/surface';
 import { auditRead, captureAccess, isResponse, refuse, type Access, type Ctx } from './account-routes';
 import { enqueueExport, exportDownload } from './exports';
@@ -180,8 +181,8 @@ function registerCaptureWorkflowRoutes() {
       const denied = adminOnly(c, access);
       if (denied) return denied as never;
       if (access.sessionId) return refuse(c, 403, 'capture_forbidden', 'An agent cannot start the pipelines') as never;
-      const body = (await c.req.json().catch(() => ({}))) as { mining_only?: boolean };
-      return c.json(await runIntelligence(access.accountId, { miningOnly: body?.mining_only === true }), 202);
+      const body = await readJsonObject(c);
+      return c.json(await runIntelligence(access.accountId, { miningOnly: body.mining_only === true }), 202);
     },
   );
 

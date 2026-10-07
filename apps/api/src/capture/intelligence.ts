@@ -15,6 +15,7 @@ import { and, asc, count, desc, eq, gte, ilike, isNull, lt, or, sql, type SQL } 
 import { countAccountMembers } from '../iam/membership-read';
 import type * as C from '@kortix/api-contract';
 import { db } from '../shared/db';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 
 export type WorkflowRow = typeof captureWorkflows.$inferSelect;
 export type EpisodeRow = typeof captureEpisodes.$inferSelect;
@@ -66,7 +67,7 @@ export async function listWorkflows(accountId: string, query: WorkflowQuery) {
   }
   if (query.app) filters.push(sql`${captureWorkflows.apps} ? ${query.app}`);
   if (query.userId) {
-    filters.push(sql`EXISTS (SELECT 1 FROM kortix.capture_episodes e WHERE e.workflow_id = ${captureWorkflows.workflowId} AND e.user_id = ${query.userId}::uuid)`);
+    filters.push(sql`EXISTS (SELECT 1 FROM kortix.capture_episodes e WHERE e.workflow_id = ${qualifiedColumn(captureWorkflows.workflowId)} AND e.user_id = ${query.userId}::uuid)`);
   }
   const counts = Object.fromEntries(
     (
