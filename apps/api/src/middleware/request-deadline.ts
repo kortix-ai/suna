@@ -92,7 +92,6 @@ const EXEMPT_FRAGMENTS = [
   '/registry/update', // registry item update — same git-bound path,
   // plus its GET .../updates drift-listing route
   '/snapshots', // sandbox template builds
-  '/suna-migration', // OG Suna → opencode migration runs
   '/legacy-migration', // legacy VM → project migration runs
   '/oauth/', // provider OAuth device flow — `start` spawns
   // OpenCode + waits for the device challenge, which

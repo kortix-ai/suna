@@ -44,7 +44,6 @@ import { opsApp } from './ops';
 import { platformApp } from './platform';
 import { sandboxWebhooksApp } from './platform/webhooks/routes';
 import { projectWebhooksApp, projectsApp, registerAllProjectRoutes } from './projects';
-import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
 import { router } from './router';
 import { runtimeAssetsApp } from './runtime-assets';
 import { sandboxProxyApp } from './sandbox-proxy';
@@ -161,7 +160,6 @@ app.use('/v1/platform/boot-timeline', supabaseAuth);
 app.use('/v1/platform/runtime-projection', supabaseAuth);
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 registerAllProjectRoutes();
-registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 // /v1/mcp — the hosted MCP server, bound to the caller's token like the CLI.
 // It answers its own 401 with an OAuth challenge, so no auth middleware here.
