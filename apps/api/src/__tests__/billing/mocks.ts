@@ -170,7 +170,7 @@ export function registerGlobalMocks() {
       }),
       transaction: async <T,>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(db),
       // The bounded chunk deletes are raw SQL; a count below the chunk size ends the loop.
-      execute: async () => [{ n: 0 }],
+      execute: async () => [],
     };
     return {
       db,
