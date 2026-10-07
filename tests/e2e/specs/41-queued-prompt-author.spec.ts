@@ -138,7 +138,7 @@ test("41 — only a queued prompt's author edits or sends it", async ({ page, br
         placement: "composer",
         delivery: "queue",
         overrides: { agent: AGENT },
-      });
+      }, 202);
     // The member's row first, the owner's last: Up opens the newest row the
     // viewer may edit, so an Up that ignored the author would open the owner's.
     const memberPrompt = (await queue(memberAuth.access_token, MEMBER_ROW)).prompt_id;
