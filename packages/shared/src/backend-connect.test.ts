@@ -46,6 +46,13 @@ describe('backendConnectSnippets', () => {
     );
   });
 
+  test('a backend on a URL issuer also names its public key set URL', () => {
+    const issuer = 'https://api.example.test/v1/backends/99999999-8888-4777-8666-555555555555';
+    const env = code('outside-verify-env', backendConnectSnippets({ ...backend, auth_env: { ...backend.auth_env, KORTIX_AUTH_ISSUER: issuer } }));
+    expect(env).toContain(`KORTIX_AUTH_ISSUER=${issuer}\n`);
+    expect(env.split('\n').at(-1)).toBe(`# KORTIX_AUTH_JWKS=${issuer}/jwks.json`);
+  });
+
   test('admin is the CLI: deploy, env, Convex commands, dashboard; never a key', () => {
     const admin = code('admin-cli');
     expect(admin).toContain('kortix backends deploy crm --dir backends/crm');

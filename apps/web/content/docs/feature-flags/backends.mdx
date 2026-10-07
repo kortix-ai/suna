@@ -244,7 +244,24 @@ convex.setAuth(kortixAppBackendToken("main"));
 
 Any other server verifies the same token with
 `verifyKortixMemberToken(token)`, which reads `KORTIX_AUTH_JWKS`,
-`KORTIX_AUTH_ISSUER` and `KORTIX_AUTH_AUDIENCE`. For people who are not
+`KORTIX_AUTH_ISSUER` and `KORTIX_AUTH_AUDIENCE`.
+
+The issuer is a public URL on the Kortix API:
+`https://<api host>/v1/backends/<backend_id>`. Kortix fixes it when it
+creates the backend. Two public routes at that URL need no credential:
+
+| Route | Answers |
+|---|---|
+| `GET <issuer>/.well-known/openid-configuration` | `issuer` and `jwks_uri` (OpenID Provider metadata for verifiers; no authorization endpoint) |
+| `GET <issuer>/jwks.json` | The backend's public ES256 key as a JSON Web Key Set |
+
+So a JOSE library or an API gateway finds the key from the token's `iss`
+alone, and `verifyKortixMemberToken` takes `KORTIX_AUTH_JWKS=<issuer>/jwks.json`
+in place of the inline value. A backend created before the issuer was a URL
+moves to its URL issuer when the Kortix API next starts. Its tokens from before
+the move get one 401, and Convex clients then fetch a new token. A server that
+copied the old `KORTIX_AUTH_ISSUER` must copy the new value from `auth_env`.
+For people who are not
 Kortix members, add a second auth provider (Convex Auth, Clerk, WorkOS) next
 to the Kortix one.
 

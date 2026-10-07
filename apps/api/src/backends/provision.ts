@@ -18,9 +18,11 @@
  * once the edge does.
  */
 
+import { randomUUID } from 'node:crypto';
 import { projectBackends } from '@kortix/db';
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { config } from '../config';
+import { oauthIssuer } from '../oauth/discovery';
 import { db } from '../shared/db';
 import { PlatinumHttpError, platinumJson } from '../shared/platinum';
 import { sandboxOwnershipMarker } from '../platform/sandbox-ownership';
@@ -29,6 +31,7 @@ import {
   type BackendTokenSubject,
   backendAuthEnv,
   generateBackendAuthKey,
+  legacyBackendIssuer,
   mintBackendToken,
   setBackendEnv,
 } from './auth';
@@ -172,10 +175,24 @@ export async function getLiveBackend(projectId: string, backendId: string): Prom
   return row ?? null;
 }
 
+/**
+ * The issuer a new backend's tokens carry: the public API origin (KORTIX_URL),
+ * where ./discovery.ts serves its OpenID configuration and key set. Stored on
+ * the row and never recomputed, so a later KORTIX_URL change moves no backend.
+ */
+export function newBackendIssuer(backendId: string): string {
+  return `${oauthIssuer()}/v1/backends/${backendId}`;
+}
+
+/** The issuer this backend's environment expects. */
+export function backendIssuer(row: BackendRow): string {
+  return row.authIssuer ?? legacyBackendIssuer(row.backendId);
+}
+
 /** Mints a Kortix sign-in token for this member, or null when the backend predates sign-in. */
 export function backendMemberToken(row: BackendRow, subject: BackendTokenSubject) {
   if (!row.authKeyEnc) return null;
-  return mintBackendToken(row.backendId, decryptProjectSecret(row.projectId, row.authKeyEnc), {
+  return mintBackendToken(row.backendId, backendIssuer(row), decryptProjectSecret(row.projectId, row.authKeyEnc), {
     ...subject,
     accountId: row.accountId,
     projectId: row.projectId,
@@ -185,7 +202,7 @@ export function backendMemberToken(row: BackendRow, subject: BackendTokenSubject
 /** The public KORTIX_AUTH_* values that verify this backend's tokens, or null when it predates sign-in. */
 export function backendPublicAuthEnv(row: BackendRow) {
   if (!row.authKeyEnc) return null;
-  const env = backendAuthEnv(row.backendId, decryptProjectSecret(row.projectId, row.authKeyEnc));
+  const env = backendAuthEnv(row.backendId, backendIssuer(row), decryptProjectSecret(row.projectId, row.authKeyEnc));
   return {
     KORTIX_AUTH_ISSUER: env.KORTIX_AUTH_ISSUER!,
     KORTIX_AUTH_AUDIENCE: env.KORTIX_AUTH_AUDIENCE!,
@@ -245,9 +262,12 @@ export async function insertBackend(input: {
       );
     }
     // The live-name unique index makes a duplicate name throw here, before any machine exists.
+    const backendId = randomUUID();
     const [row] = await tx
       .insert(projectBackends)
       .values({
+        backendId,
+        authIssuer: newBackendIssuer(backendId),
         projectId: input.projectId,
         accountId: input.accountId,
         name: input.name,
@@ -317,7 +337,7 @@ export async function provisionBackend(row: BackendRow, region?: string): Promis
     const adminKey = await mintAdminKey(externalId);
     // Kortix sign-in: the backend verifies member tokens with this key's public half.
     const authKey = generateBackendAuthKey();
-    await setBackendEnv(url, adminKey, backendAuthEnv(backendId, authKey));
+    await setBackendEnv(url, adminKey, backendAuthEnv(backendId, backendIssuer(row), authKey));
 
     const [ready] = await db
       .update(projectBackends)
@@ -347,6 +367,63 @@ export async function provisionBackend(row: BackendRow, region?: string): Promis
       .catch(() => {});
     throw error;
   }
+}
+
+/**
+ * Moves every running backend still on the placeholder issuer to its real one.
+ * Convex re-reads `auth.config.ts` when an environment variable changes (no
+ * redeploy; verified on CONVEX_BACKEND_IMAGE), so from the env write on, the
+ * backend accepts only new-issuer tokens. A token minted before it gets 401;
+ * Convex clients then fetch a fresh token, which carries the new issuer.
+ *
+ * The row is claimed and the env written in one transaction: a failed env
+ * write rolls the claim back, and the backend keeps working on the old issuer.
+ * One backend at a time, so the pass holds one pooled connection.
+ *
+ * ponytail: runs once per leadership term (bootstrap). A backend that was
+ * unreachable then moves on the next deploy; it works on the old issuer meanwhile.
+ */
+export async function moveBackendIssuers(): Promise<{ moved: number; failed: number }> {
+  const rows = await db
+    .select()
+    .from(projectBackends)
+    .where(
+      and(
+        isNull(projectBackends.authIssuer),
+        isNull(projectBackends.deletedAt),
+        eq(projectBackends.status, 'running'),
+        isNotNull(projectBackends.authKeyEnc),
+        isNotNull(projectBackends.adminKeyEnc),
+        isNotNull(projectBackends.url),
+      ),
+    );
+  let moved = 0;
+  let failed = 0;
+  for (const row of rows) {
+    const issuer = newBackendIssuer(row.backendId);
+    try {
+      await db.transaction(async (tx) => {
+        const [claimed] = await tx
+          .update(projectBackends)
+          .set({ authIssuer: issuer, updatedAt: new Date() })
+          .where(and(eq(projectBackends.backendId, row.backendId), isNull(projectBackends.authIssuer)))
+          .returning({ backendId: projectBackends.backendId });
+        if (!claimed) return;
+        await setBackendEnv(row.url!, backendAdminKey({ ...row, adminKeyEnc: row.adminKeyEnc! }), {
+          KORTIX_AUTH_ISSUER: issuer,
+        });
+        moved += 1;
+      });
+    } catch (error) {
+      failed += 1;
+      logger.warn('[backends] issuer move failed; the backend keeps its old issuer', {
+        backendId: row.backendId,
+        error: String(error),
+      });
+    }
+  }
+  if (rows.length > 0) logger.info('[backends] issuer move', { candidates: rows.length, moved, failed });
+  return { moved, failed };
 }
 
 /** Delete the machine (its data goes with it), then retire the row. */

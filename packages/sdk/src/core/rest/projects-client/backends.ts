@@ -44,7 +44,9 @@ export interface ProjectBackend {
   /**
    * Public values that verify this backend's member tokens: no secret. Put
    * them in the environment of any server that calls `verifyKortixMemberToken`.
-   * `null` for a backend created before Kortix sign-in; absent on servers
+   * `KORTIX_AUTH_ISSUER` is a public URL: `<issuer>/jwks.json` serves the same
+   * key set as `KORTIX_AUTH_JWKS`, and `<issuer>/.well-known/openid-configuration`
+   * names it. `null` for a backend created before Kortix sign-in; absent on servers
    * older than this field.
    */
   auth_env?: {

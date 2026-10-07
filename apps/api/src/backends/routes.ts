@@ -24,6 +24,7 @@ import {
   provisionBackend,
 } from './provision';
 import { backendDashboardUrl } from './dashboard-host';
+import { BACKEND_TOKEN_TTL_SECONDS } from './auth';
 import { CONVEX_CLI_VERSION } from './convex-image';
 import {
   BackendOperationError,
@@ -61,7 +62,8 @@ const BackendObject = z
       .openapi({
         description:
           'Public values that verify this backend\'s member tokens (no secret). Set them on any server that calls ' +
-          '`verifyKortixMemberToken`. null for a backend created before Kortix sign-in.',
+          '`verifyKortixMemberToken`. `KORTIX_AUTH_ISSUER` is a public URL: `<issuer>/jwks.json` serves the key set ' +
+          'and `<issuer>/.well-known/openid-configuration` names it. null for a backend created before Kortix sign-in.',
       }),
     convex_version: z.string().openapi({
       description: 'The `convex` npm CLI version that matches this backend. Deploy with `npx convex@<version> deploy`.',
@@ -285,7 +287,7 @@ export function registerBackendsRoutes(): void {
       method: 'post', path: '/{projectId}/backends/{backendId}/token', tags: ['backends'],
       summary: 'Mint a Kortix sign-in token for the backend', ...auth,
       description:
-        'A 15-minute JWT naming the caller (`subject` = Kortix user id, `email`). The backend verifies it ' +
+        `A ${BACKEND_TOKEN_TTL_SECONDS / 60}-minute JWT naming the caller (\`subject\` = Kortix user id, \`email\`). The backend verifies it ` +
         'with the key Kortix wrote into its environment; read it in a function with `ctx.auth.getUserIdentity()`.',
       request: { params: BackendParams },
       responses: { 200: json(BackendToken, 'Token'), ...errors(403, 404, 409) },

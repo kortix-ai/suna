@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 736,
+  "count": 738,
   "routes": [
     {
       "method": "GET",
@@ -825,6 +825,14 @@
     {
       "method": "POST",
       "path": "/v1/auth/verify-otp"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/backends/:backendId/.well-known/openid-configuration"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/backends/:backendId/jwks.json"
     },
     {
       "method": "GET",

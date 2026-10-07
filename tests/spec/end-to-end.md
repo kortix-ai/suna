@@ -1459,7 +1459,13 @@ in its own always-on Platinum machine (1 vCPU, 1 GB, 10 GB). `backends` is an
 experimental per-project flag, off by default, available only where Platinum is
 configured. Routes: `GET/POST /projects/:projectId/backends`,
 `GET/DELETE /projects/:projectId/backends/:backendId`,
-`GET /projects/:projectId/backends/:backendId/credentials`.
+`GET /projects/:projectId/backends/:backendId/credentials`,
+`PATCH /projects/:projectId/backends/:backendId` (resize),
+`POST /projects/:projectId/backends/:backendId/token`,
+`GET /projects/:projectId/backends/:backendId/backups`,
+`POST /projects/:projectId/backends/:backendId/{snapshots,restore}`, and the
+public issuer routes `GET /backends/:backendId/.well-known/openid-configuration`
+and `GET /backends/:backendId/jwks.json`.
 
 `BKD-1` Gated surface. Flag off: list, create, get, credentials, delete, resize,
 token, backups, snapshot and restore answer `403 {code:'feature_disabled', feature:'backends'}`. The owner's
@@ -1471,8 +1477,11 @@ operator's `PUT /admin/api/projects/:id/features` with `backends: true` answers
 is configured the flag resolves on: list answers 200 with a `backends` array, and
 an invalid name answers 400 before any machine is requested. Where it is not, the
 flag resolves off and every route keeps the same 403. A `NONMEMBER` gets 403/404
-and an `ANON` caller gets 401. The caps under concurrency, `Cache-Control:
-no-store` on credentials and token, and `convex_version` are asserted by the
+and an `ANON` caller gets 401. The issuer routes need no credential: an
+unknown backend answers 404 and a malformed id 400. The caps under concurrency,
+`Cache-Control: no-store` on credentials and token, `convex_version`, the stored
+issuer, the issuer discovery and key set (verified against a minted token), and
+the issuer move are asserted by the
 DB suites `apps/api/src/backends/*.integration.test.ts`. Not asserted locally:
 create (`202 provisioning`), a duplicate name (`409 backend_name_taken`), the
 `backend.credentials.read` audit row, and delete. They

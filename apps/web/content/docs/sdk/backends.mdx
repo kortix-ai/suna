@@ -117,6 +117,17 @@ import { verifyKortixMemberToken } from '@kortix/sdk';
 const member = await verifyKortixMemberToken(bearer); // throws KortixMemberError
 ```
 
+`KORTIX_AUTH_ISSUER` is a public URL, `https://<api host>/v1/backends/<backend_id>`.
+`<issuer>/.well-known/openid-configuration` names `<issuer>/jwks.json`, the
+backend's public key set; both routes need no credential. To fetch the key set
+instead of holding it inline, pass its URL:
+
+```ts
+const member = await verifyKortixMemberToken(bearer, {
+  jwks: `${process.env.KORTIX_AUTH_ISSUER}/jwks.json`, // fetched once per process
+});
+```
+
 `kortix backends connect <name>` prints this and every other way to reach the
 backend. **Connect** on the backend in Kortix web shows the same snippets.
 

@@ -280,8 +280,10 @@ failed a check) or `forbidden` (outside the groups or roles). Each list means
 
 `verifyKortixMemberToken` checks the ES256 signature, expiry (60 s skew),
 issuer and audience. It takes the key set as an object, JSON text, the `data:`
-URI Kortix writes into `KORTIX_AUTH_JWKS`, or an https URL. Every failure,
-including a missing key set, throws: nothing passes unchecked.
+URI Kortix writes into `KORTIX_AUTH_JWKS`, or an https URL. A backend's key
+set URL is `<KORTIX_AUTH_ISSUER>/jwks.json`, public and named by
+`<issuer>/.well-known/openid-configuration`. Every failure, including a missing
+key set, throws: nothing passes unchecked.
 
 Backend tokens last 15 minutes and carry `sub`, `email`, `name`, `picture`,
 `groups`, `group_ids`, `role`, `account_id` and `project_id`. A member you

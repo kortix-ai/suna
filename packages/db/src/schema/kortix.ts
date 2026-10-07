@@ -1714,6 +1714,12 @@ export const projectBackends = kortixSchema.table(
     adminKeyEnc: text('admin_key_enc'),
     /** ES256 private key that signs Kortix sign-in tokens for this backend, sealed like the admin key. */
     authKeyEnc: text('auth_key_enc'),
+    /**
+     * The `iss` of this backend's sign-in tokens: `<public API origin>/v1/backends/<id>`,
+     * fixed at creation. Null on a backend that still uses the old placeholder
+     * issuer until `moveBackendIssuers` moves it.
+     */
+    authIssuer: text('auth_issuer'),
     /** The backend image the machine boots, by template id. */
     template: text('template'),
     cpu: integer('cpu').notNull(),

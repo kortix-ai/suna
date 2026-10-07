@@ -1,9 +1,17 @@
 import { describe, expect, test } from 'bun:test';
 import { createPublicKey, verify } from 'node:crypto';
 import { requireKortixMember, verifyKortixMemberToken } from '@kortix/sdk';
-import { BACKEND_TOKEN_TTL_SECONDS, backendAuthEnv, generateBackendAuthKey, mintBackendToken } from './auth';
+import {
+  BACKEND_TOKEN_TTL_SECONDS,
+  backendAuthEnv,
+  backendJwks,
+  backendOpenIdConfiguration,
+  generateBackendAuthKey,
+  mintBackendToken,
+} from './auth';
 
 const BACKEND = '7328f996-b417-4a76-994e-a7d38e8f1a28';
+const ISSUER = `https://api.example.test/v1/backends/${BACKEND}`;
 
 function jwksFromEnv(env: Record<string, string>) {
   const b64 = env.KORTIX_AUTH_JWKS!.replace('data:text/plain;charset=utf-8;base64,', '');
@@ -13,8 +21,8 @@ function jwksFromEnv(env: Record<string, string>) {
 describe('Kortix sign-in for Backends', () => {
   test('a minted token verifies against the JWKS written into the backend', () => {
     const pem = generateBackendAuthKey();
-    const env = backendAuthEnv(BACKEND, pem);
-    const { token, expiresAt } = mintBackendToken(BACKEND, pem, { userId: 'user-1', email: 'a@example.test' }, 1_000);
+    const env = backendAuthEnv(BACKEND, ISSUER, pem);
+    const { token, expiresAt } = mintBackendToken(BACKEND, ISSUER, pem, { userId: 'user-1', email: 'a@example.test' }, 1_000);
     const [h, p, s] = token.split('.');
     const header = JSON.parse(Buffer.from(h!, 'base64url').toString());
     const payload = JSON.parse(Buffer.from(p!, 'base64url').toString());
@@ -40,9 +48,9 @@ describe('Kortix sign-in for Backends', () => {
   });
 
   test("another backend's key does not verify the token", () => {
-    const token = mintBackendToken(BACKEND, generateBackendAuthKey(), { userId: 'u', email: null }).token;
+    const token = mintBackendToken(BACKEND, ISSUER, generateBackendAuthKey(), { userId: 'u', email: null }).token;
     const [h, p, s] = token.split('.');
-    const otherJwk = jwksFromEnv(backendAuthEnv(BACKEND, generateBackendAuthKey())).keys[0]!;
+    const otherJwk = jwksFromEnv(backendAuthEnv(BACKEND, ISSUER, generateBackendAuthKey())).keys[0]!;
     const ok = verify(
       'sha256',
       Buffer.from(`${h}.${p}`),
@@ -71,15 +79,15 @@ describe('the token carries the whole member, and the SDK reads it', () => {
   });
 
   test('a real name, never the email as the name', () => {
-    const { token } = mintBackendToken(BACKEND, generateBackendAuthKey(), { userId: 'u', email: 'u@example.test' });
+    const { token } = mintBackendToken(BACKEND, ISSUER, generateBackendAuthKey(), { userId: 'u', email: 'u@example.test' });
     const payload = JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString());
     expect(payload.name).toBeUndefined();
   });
 
   test('verifyKortixMemberToken accepts it with exactly the env Kortix writes into the backend', async () => {
     const pem = generateBackendAuthKey();
-    const env = backendAuthEnv(BACKEND, pem);
-    const { token } = mintBackendToken(BACKEND, pem, subject);
+    const env = backendAuthEnv(BACKEND, ISSUER, pem);
+    const { token } = mintBackendToken(BACKEND, ISSUER, pem, subject);
     const member = await verifyKortixMemberToken(token, {
       jwks: env.KORTIX_AUTH_JWKS,
       issuer: env.KORTIX_AUTH_ISSUER,
@@ -87,5 +95,28 @@ describe('the token carries the whole member, and the SDK reads it', () => {
     });
     expect(member).toEqual({ ...subject });
     expect(requireKortixMember(member, { groups: ['Finance'], roles: ['admin'] }).userId).toBe('user-1');
+  });
+});
+
+describe('issuer discovery', () => {
+  test('the token names the issuer it was given; the discovery document points at its key set', async () => {
+    const pem = generateBackendAuthKey();
+    const { token } = mintBackendToken(BACKEND, ISSUER, pem, { userId: 'u', email: null });
+    const payload = JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString());
+    expect(payload.iss).toBe(ISSUER);
+    expect(backendOpenIdConfiguration(ISSUER)).toMatchObject({
+      issuer: ISSUER,
+      jwks_uri: `${ISSUER}/jwks.json`,
+      id_token_signing_alg_values_supported: ['ES256'],
+    });
+  });
+
+  test('the served key set is the public key only, and verifies the token', async () => {
+    const pem = generateBackendAuthKey();
+    const jwks = backendJwks(BACKEND, pem);
+    expect(Object.keys(jwks.keys[0]!).sort()).toEqual(['alg', 'crv', 'kid', 'kty', 'use', 'x', 'y']);
+    const { token } = mintBackendToken(BACKEND, ISSUER, pem, { userId: 'u', email: null });
+    const member = await verifyKortixMemberToken(token, { jwks, issuer: ISSUER, audience: BACKEND });
+    expect(member.userId).toBe('u');
   });
 });

@@ -1,9 +1,20 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, projectBackends, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
+import { config } from '../config';
 import { db } from '../shared/db';
 import { inspectDatabaseError } from '../shared/database-errors';
-import { BackendLimitError, MAX_BACKENDS_PER_ACCOUNT, MAX_BACKENDS_PER_PROJECT, insertBackend } from './provision';
+import { encryptProjectSecret } from '../projects/surface';
+import { generateBackendAuthKey, legacyBackendIssuer } from './auth';
+import {
+  BackendLimitError,
+  MAX_BACKENDS_PER_ACCOUNT,
+  MAX_BACKENDS_PER_PROJECT,
+  backendMemberToken,
+  getLiveBackend,
+  insertBackend,
+  moveBackendIssuers,
+} from './provision';
 
 // insertBackend counts and inserts under one per-account advisory lock, so
 // concurrent creates cannot overshoot the project cap (3) or the account cap
@@ -82,5 +93,77 @@ describe('insertBackend caps', () => {
     const error = await create(OTHER_PROJECT, OTHER_ACCOUNT, 'dup').catch((e: unknown) => e);
     expect(error).not.toBeInstanceOf(BackendLimitError);
     expect(inspectDatabaseError(error)?.pgCode).toBe('23505');
+  });
+});
+
+describe('sign-in issuer', () => {
+  const apiOrigin = (config.KORTIX_URL ?? '').replace(/\/+$/, '').replace(/\/v1$/, '');
+  const issuerOf = (token: string) => JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString()).iss;
+
+  test('a new backend stores <public API origin>/v1/backends/<id> at creation', async () => {
+    const row = await create(OTHER_PROJECT, OTHER_ACCOUNT, 'issuer');
+    expect(apiOrigin).toMatch(/^https?:\/\//);
+    expect(row.authIssuer).toBe(`${apiOrigin}/v1/backends/${row.backendId}`);
+  });
+
+  test('the move writes the new issuer into the backend env, then mints with it; a failed write keeps the old one', async () => {
+    const envWrites: unknown[] = [];
+    const ok = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        envWrites.push({ path: new URL(req.url).pathname, auth: req.headers.get('authorization'), body: await req.json() });
+        return new Response(null, { status: 200 });
+      },
+    });
+    const down = Bun.serve({ port: 0, fetch: () => new Response('boom', { status: 500 }) });
+    try {
+      const legacy = async (name: string, url: string) => {
+        const backendId = crypto.randomUUID();
+        await db.insert(projectBackends).values({
+          backendId,
+          projectId: PROJECTS[4]!,
+          accountId: ACCOUNT,
+          name,
+          status: 'running',
+          provider: 'platinum',
+          url,
+          adminKeyEnc: encryptProjectSecret(PROJECTS[4]!, 'synthetic-admin|key'),
+          authKeyEnc: encryptProjectSecret(PROJECTS[4]!, generateBackendAuthKey()),
+          cpu: 1,
+          memoryGb: 1,
+          diskGb: 10,
+        });
+        return backendId;
+      };
+      const movedId = await legacy('legacy-ok', `http://127.0.0.1:${ok.port}`);
+      const stuckId = await legacy('legacy-down', `http://127.0.0.1:${down.port}`);
+      const before = (await getLiveBackend(PROJECTS[4]!, movedId))!;
+      expect(issuerOf(backendMemberToken(before, { userId: 'u', email: null })!.token)).toBe(legacyBackendIssuer(movedId));
+
+      expect(await moveBackendIssuers()).toEqual({ moved: 1, failed: 1 });
+
+      const issuer = `${apiOrigin}/v1/backends/${movedId}`;
+      expect(envWrites).toEqual([
+        {
+          path: '/api/update_environment_variables',
+          auth: 'Convex synthetic-admin|key',
+          body: { changes: [{ name: 'KORTIX_AUTH_ISSUER', value: issuer }] },
+        },
+      ]);
+      const after = (await getLiveBackend(PROJECTS[4]!, movedId))!;
+      expect(after.authIssuer).toBe(issuer);
+      expect(issuerOf(backendMemberToken(after, { userId: 'u', email: null })!.token)).toBe(issuer);
+      const stuck = (await getLiveBackend(PROJECTS[4]!, stuckId))!;
+      expect(stuck.authIssuer).toBeNull();
+      expect(issuerOf(backendMemberToken(stuck, { userId: 'u', email: null })!.token)).toBe(legacyBackendIssuer(stuckId));
+
+      // A second pass writes nothing for the moved backend.
+      envWrites.length = 0;
+      expect(await moveBackendIssuers()).toEqual({ moved: 0, failed: 1 });
+      expect(envWrites).toEqual([]);
+    } finally {
+      ok.stop(true);
+      down.stop(true);
+    }
   });
 });

@@ -34,6 +34,8 @@ flow(
       "GET /v1/projects/:projectId/backends/:backendId/backups",
       "POST /v1/projects/:projectId/backends/:backendId/snapshots",
       "POST /v1/projects/:projectId/backends/:backendId/restore",
+      "GET /v1/backends/:backendId/.well-known/openid-configuration",
+      "GET /v1/backends/:backendId/jwks.json",
     ],
   },
   async (ctx) => {
@@ -148,6 +150,17 @@ flow(
 
     await ctx.step("ANON → 401", async () => {
       (await ctx.client.as(ctx.P.ANON).get("/v1/projects/:projectId/backends", { params })).status(401);
+    });
+
+    await ctx.step("ANON issuer discovery: an unknown backend → 404, a malformed id → 400", async () => {
+      const anon = ctx.client.as(ctx.P.ANON);
+      (
+        await anon.get("/v1/backends/:backendId/.well-known/openid-configuration", {
+          params: { backendId: UNKNOWN_ID },
+        })
+      ).status(404);
+      (await anon.get("/v1/backends/:backendId/jwks.json", { params: { backendId: UNKNOWN_ID } })).status(404);
+      (await anon.get("/v1/backends/:backendId/jwks.json", { params: { backendId: "not-a-uuid" } })).status(400);
     });
 
     await ctx.step("cleanup: clear the flag override (operator route)", async () => {

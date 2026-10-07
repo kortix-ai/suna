@@ -233,6 +233,8 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'GET /v1/auth/user': { action: 'auth.user.read', title: 'Viewed the signed-in user' },
   'PATCH /v1/auth/user': { action: 'auth.profile.update', title: 'Updated profile' },
   'POST /v1/auth/verify-otp': { action: 'auth.otp.verify', title: 'Verified a sign-in code' },
+  'GET /v1/backends/:backendId/.well-known/openid-configuration': { action: 'backend.issuer.metadata.read', title: 'Read backend issuer metadata' },
+  'GET /v1/backends/:backendId/jwks.json': { action: 'backend.issuer.keys.read', title: 'Read backend signing keys' },
   'GET /v1/billing/account-state': { action: 'billing.account_state.read', title: 'Viewed billing status' },
   'GET /v1/billing/account-state/minimal': { action: 'billing.account_state.summary.read', title: 'Viewed billing summary' },
   'POST /v1/billing/account/cancel-deletion': 'POST /v1/account/cancel-deletion',

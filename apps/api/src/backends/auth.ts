@@ -15,6 +15,11 @@
  *     algorithm: "ES256",
  *   }] };
  *
+ * The issuer is a real URL, `<public API origin>/v1/backends/<id>`, stored on
+ * the row at creation and never recomputed. Any other verifier discovers the
+ * key set from it: `<issuer>/.well-known/openid-configuration` names
+ * `<issuer>/jwks.json` (public routes in ./discovery.ts).
+ *
  * Inside a function, `ctx.auth.getUserIdentity()` then names the member, and
  * `requireKortixMember` from `@kortix/sdk` reads it: `sub` (Kortix user id),
  * `email`, `name`, `picture`, `groups` (names in the account), `group_ids`,
@@ -44,22 +49,41 @@ function keyId(backendId: string): string {
 }
 
 /**
- * The issuer a backend's tokens carry. Compared as a string only (the JWKS is
- * inline), so it must never move: an issuer built from KORTIX_URL would break
- * every backend the day that URL changes.
+ * The placeholder issuer of backends created before the issuer was a URL. Not
+ * a reachable host. `moveBackendIssuers` moves such a backend to its real one.
  */
-export function backendIssuer(backendId: string): string {
+export function legacyBackendIssuer(backendId: string): string {
   return `https://kortix.com/backends/${backendId}`;
 }
 
-/** The three variables the backend's `auth.config.ts` reads. */
-export function backendAuthEnv(backendId: string, privatePem: string): Record<string, string> {
+/** The public half of the backend's key, as a JSON Web Key Set. */
+export function backendJwks(backendId: string, privatePem: string) {
   const jwk = createPublicKey(createPrivateKey(privatePem)).export({ format: 'jwk' });
-  const jwks = JSON.stringify({ keys: [{ ...jwk, kid: keyId(backendId), alg: 'ES256', use: 'sig' }] });
+  return { keys: [{ ...jwk, kid: keyId(backendId), alg: 'ES256', use: 'sig' }] };
+}
+
+/** The three variables the backend's `auth.config.ts` reads. */
+export function backendAuthEnv(backendId: string, issuer: string, privatePem: string): Record<string, string> {
+  const jwks = JSON.stringify(backendJwks(backendId, privatePem));
   return {
-    KORTIX_AUTH_ISSUER: backendIssuer(backendId),
+    KORTIX_AUTH_ISSUER: issuer,
     KORTIX_AUTH_AUDIENCE: backendId,
     KORTIX_AUTH_JWKS: `data:text/plain;charset=utf-8;base64,${Buffer.from(jwks).toString('base64')}`,
+  };
+}
+
+/**
+ * OpenID Provider metadata for verifiers only: Kortix signs these tokens
+ * itself, so there is no authorization endpoint to name.
+ */
+export function backendOpenIdConfiguration(issuer: string) {
+  return {
+    issuer,
+    jwks_uri: `${issuer}/jwks.json`,
+    id_token_signing_alg_values_supported: ['ES256'],
+    subject_types_supported: ['public'],
+    response_types_supported: ['id_token'],
+    claims_supported: ['iss', 'aud', 'sub', 'iat', 'exp', 'email', 'name', 'picture', 'groups', 'group_ids', 'role', 'account_id', 'project_id'],
   };
 }
 
@@ -80,6 +104,7 @@ export interface BackendTokenSubject {
 /** A JWT the backend accepts for this member, valid for BACKEND_TOKEN_TTL_SECONDS. */
 export function mintBackendToken(
   backendId: string,
+  issuer: string,
   privatePem: string,
   subject: BackendTokenSubject,
   now = Math.floor(Date.now() / 1000),
@@ -88,7 +113,7 @@ export function mintBackendToken(
   const header = b64url(JSON.stringify({ alg: 'ES256', typ: 'JWT', kid: keyId(backendId) }));
   const payload = b64url(
     JSON.stringify({
-      iss: backendIssuer(backendId),
+      iss: issuer,
       aud: backendId,
       sub: subject.userId,
       iat: now,

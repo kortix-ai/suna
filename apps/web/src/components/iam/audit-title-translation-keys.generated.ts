@@ -396,6 +396,8 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Read OAuth server metadata': 'text30015841ce75',
   'Read OpenID configuration': 'text872227a135cd',
   'Read backend admin credentials': 'text59db25d6a41f',
+  'Read backend issuer metadata': 'textcf54801410ac',
+  'Read backend signing keys': 'text8dd0c59bb496',
   'Read project connector': 'text1550a96d28fa',
   'Read the sign-in configuration': 'textef01adfb4372',
   'Received AgentMail inbound email': 'textedd7314bf11c',

@@ -206,6 +206,10 @@ async function startSingletonWorkers() {
   // the first session anywhere lands on a cache hit. Idempotent + best-effort;
   // the session-boot graceful path is the lazy fallback if this is skipped.
   kickStartupPreBuild();
+  // Backends still on the placeholder sign-in issuer move to their real one.
+  void import('./backends/provision')
+    .then((m) => m.moveBackendIssuers())
+    .catch((error) => appLogger.warn('[backends] issuer move did not run', { error: String(error) }));
   startSunaMigrationWorker();
   // Resume durable sandbox-provider migrations (prepare→verify→activate) that
   // were mid-flight when the API last stopped — a crash at building/ready/

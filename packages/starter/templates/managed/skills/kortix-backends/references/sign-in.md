@@ -31,7 +31,10 @@ If `requireKortixMember` is not exported, the installed SDK is too old:
 
 Kortix writes the public key into the backend's environment at creation:
 `KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE`, `KORTIX_AUTH_JWKS` (inline; the
-backend fetches nothing).
+backend fetches nothing). `KORTIX_AUTH_ISSUER` is a public URL,
+`https://<api host>/v1/backends/<backend_id>`: `<issuer>/jwks.json` serves the
+same public key and `<issuer>/.well-known/openid-configuration` names it. Both
+need no credential.
 
 ## Backend: accept the token
 
@@ -156,6 +159,10 @@ import { verifyKortixMemberToken, requireKortixMember, KortixMemberError } from 
 const member = await verifyKortixMemberToken(bearerToken);   // throws KortixMemberError
 requireKortixMember(member, { groups: ["Finance"] });
 ```
+
+To fetch the key set instead of copying it, set
+`KORTIX_AUTH_JWKS=<KORTIX_AUTH_ISSUER>/jwks.json`. The SDK fetches it once per
+process. `kortix backends connect <name>` prints these values.
 
 ## Who gets a token
 

@@ -19385,7 +19385,9 @@
       "textc0e20f6d5a3a": "Connect…",
       "texta064b3f41933": "Accept Kortix sign-in tokens in the backend (Kortix sets these variables)",
       "textb046e155c93a": "Admin key",
-      "textfb195abf4173": "Call a query over HTTP"
+      "textfb195abf4173": "Call a query over HTTP",
+      "textcf54801410ac": "Read backend issuer metadata",
+      "text8dd0c59bb496": "Read backend signing keys"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

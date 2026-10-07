@@ -959,7 +959,10 @@ const viewer = readKortixMember(await fetchKortixAppViewer());                  
 header, backend token) into one `KortixMember`: `userId`, `email`, `name`,
 `picture`, `groups`, `groupIds`, `role`, `accountId`, `projectId`.
 `requireKortixMember` throws `KortixMemberError` (`unauthenticated` |
-`forbidden`). WebCrypto only; no dependency. Guide: `/docs/sdk/apps`.
+`forbidden`). `verifyKortixMemberToken` takes the key set inline or as an https
+URL; a backend's is `<KORTIX_AUTH_ISSUER>/jwks.json` (public, named by
+`<issuer>/.well-known/openid-configuration`). WebCrypto only; no dependency.
+Guide: `/docs/sdk/apps`.
 
 ### Headless sign-in (your users, straight through the API)
 

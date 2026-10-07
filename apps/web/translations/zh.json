@@ -19374,7 +19374,9 @@
       "textc0e20f6d5a3a": "连接…",
       "texta064b3f41933": "在后端接受 Kortix 登录令牌（这些变量由 Kortix 设置）",
       "textb046e155c93a": "管理密钥",
-      "textfb195abf4173": "通过 HTTP 调用查询"
+      "textfb195abf4173": "通过 HTTP 调用查询",
+      "textcf54801410ac": "已读取后端签发方元数据",
+      "text8dd0c59bb496": "已读取后端签名密钥"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

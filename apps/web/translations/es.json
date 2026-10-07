@@ -19374,7 +19374,9 @@
       "textc0e20f6d5a3a": "Conectar…",
       "texta064b3f41933": "Acepta los tokens de inicio de sesión de Kortix en el backend (Kortix define estas variables)",
       "textb046e155c93a": "Clave de administrador",
-      "textfb195abf4173": "Llama a una query por HTTP"
+      "textfb195abf4173": "Llama a una query por HTTP",
+      "textcf54801410ac": "Metadatos del emisor del backend leídos",
+      "text8dd0c59bb496": "Claves de firma del backend leídas"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

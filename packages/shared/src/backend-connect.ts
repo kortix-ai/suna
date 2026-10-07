@@ -195,15 +195,19 @@ export function backendConnectSnippets(target: BackendConnectTarget): BackendCon
     },
   ];
   if (target.auth_env && Object.keys(target.auth_env).length > 0) {
+    const lines = Object.entries(target.auth_env).map(([key, value]) => `${key}=${value}`);
+    // A URL issuer serves its key set; older backends carry a placeholder issuer that serves nothing.
+    const issuer = target.auth_env.KORTIX_AUTH_ISSUER;
+    if (issuer && /\/v1\/backends\/[^/]+$/.test(issuer)) {
+      lines.push('', '# Or fetch the key set instead of the inline value (cached per process):', `# KORTIX_AUTH_JWKS=${issuer}/jwks.json`);
+    }
     snippets.push({
       id: 'outside-verify-env',
       tab: 'outside',
       title: "Your server's environment (public values, not secrets)",
       file: '.env',
       language: 'dotenv',
-      code: Object.entries(target.auth_env)
-        .map(([key, value]) => `${key}=${value}`)
-        .join('\n'),
+      code: lines.join('\n'),
     });
   }
   snippets.push({

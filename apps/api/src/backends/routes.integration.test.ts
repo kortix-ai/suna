@@ -19,6 +19,8 @@ const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
 const MANAGER = crypto.randomUUID();
 const RUNNING = crypto.randomUUID();
+const ISSUED = crypto.randomUUID();
+const ISSUER = `https://api.example.test/v1/backends/${ISSUED}`;
 const ADMIN_KEY = 'synthetic-admin|key';
 
 let secret = '';
@@ -56,6 +58,22 @@ beforeAll(async () => {
     siteUrl: 'https://main-site.backends.example.test',
     adminKeyEnc: encryptProjectSecret(PROJECT, ADMIN_KEY),
     authKeyEnc: encryptProjectSecret(PROJECT, generateBackendAuthKey()),
+    cpu: 1,
+    memoryGb: 1,
+    diskGb: 10,
+  });
+  await db.insert(projectBackends).values({
+    backendId: ISSUED,
+    projectId: PROJECT,
+    accountId: ACCOUNT,
+    name: 'issued',
+    status: 'running',
+    provider: 'platinum',
+    url: 'https://issued.backends.example.test',
+    siteUrl: 'https://issued-site.backends.example.test',
+    adminKeyEnc: encryptProjectSecret(PROJECT, ADMIN_KEY),
+    authKeyEnc: encryptProjectSecret(PROJECT, generateBackendAuthKey()),
+    authIssuer: ISSUER,
     cpu: 1,
     memoryGb: 1,
     diskGb: 10,
@@ -134,6 +152,39 @@ describe('backend routes', () => {
     expect(body.code).toBe('backend_limit');
     expect(body.error).toContain('at most 3 backends');
     const rows = await db.select().from(projectBackends).where(eq(projectBackends.projectId, PROJECT));
-    expect(rows.map((r) => r.name).sort()).toEqual(['main', 'second', 'third']);
+    expect(rows.map((r) => r.name).sort()).toEqual(['issued', 'main', 'second', 'third']);
+  });
+});
+
+describe('public issuer discovery (no auth)', () => {
+  const get = (path: string) => app.request(`/v1/backends${path}`);
+
+  test('openid-configuration names the stored issuer and its key set, cacheable', async () => {
+    const res = await get(`/${ISSUED}/.well-known/openid-configuration`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('public, max-age=3600');
+    const body = await res.json();
+    expect(body.issuer).toBe(ISSUER);
+    expect(body.jwks_uri).toBe(`${ISSUER}/jwks.json`);
+  });
+
+  test('jwks.json holds the public key only and verifies the token route\'s token', async () => {
+    const res = await get(`/${ISSUED}/jwks.json`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('public, max-age=3600');
+    const jwks = await res.json();
+    expect(jwks.keys).toHaveLength(1);
+    expect(jwks.keys[0].d).toBeUndefined();
+    const { token } = await (await call('POST', `/${ISSUED}/token`, {})).json();
+    const member = await verifyKortixMemberToken(token, { jwks, issuer: ISSUER, audience: ISSUED });
+    expect(member.userId).toBe(MANAGER);
+    const { backend } = await (await call('GET', `/${ISSUED}`)).json();
+    expect(backend.auth_env.KORTIX_AUTH_ISSUER).toBe(ISSUER);
+  });
+
+  test('unknown, placeholder-issuer and malformed ids answer 404, 404, 400', async () => {
+    expect((await get(`/${crypto.randomUUID()}/jwks.json`)).status).toBe(404);
+    expect((await get(`/${RUNNING}/.well-known/openid-configuration`)).status).toBe(404);
+    expect((await get('/not-a-uuid/jwks.json')).status).toBe(400);
   });
 });
