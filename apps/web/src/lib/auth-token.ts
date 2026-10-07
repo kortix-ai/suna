@@ -21,6 +21,7 @@
  */
 
 import { createClient } from '@/lib/supabase/client';
+import { sleep } from '@kortix/shared/guards';
 
 /** Max retries for token acquisition (getSession + refreshSession fallback) */
 const TOKEN_MAX_RETRIES = 2;
@@ -73,10 +74,6 @@ let fetchTokenImpl: (force: boolean) => Promise<string | null> = (force) => fetc
 
 /** Set by a 401: the next real fetch skips the stored session and refreshes it. */
 let forceRefreshNext = false;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 /**
  * Get the current Supabase access token with caching + deduplication.

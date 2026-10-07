@@ -78,7 +78,6 @@ mock.module('@/features/workspace/project-layout/sidebar-toggle', () => ({
 }));
 mock.module('./home/access-requests-bell', () => ({ AccessRequestsBell: () => null }));
 mock.module('./home/sandbox-picker', () => ({ SandboxPicker: () => null }));
-mock.module('./home/setup-tiles', () => ({ PROJECT_SETUP_TILE_ACTIONS: [] }));
 mock.module('./home/first-chat', () => ({
   FirstChat: (props: ComponentProps<typeof FirstChat>) => {
     firstChat = props;

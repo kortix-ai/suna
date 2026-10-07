@@ -3797,7 +3797,22 @@ flow(
 
       await ctx.step('a grant to everyone in the project opens it to all three again', async () => {
         (await grant({ type: 'project', id: project.id })).status(201);
-        for (const who of callers.keys()) await expectResolved(who);
+        // Widening is eventually consistent across API replicas: another
+        // replica can serve its pre-widen object-grant map
+        // (`apps/api/src/iam/authorize.ts` `loadObjectGrants`, ~15 s TTL,
+        // invalidated only on the writing replica). Measured on staging with
+        // 6 replicas: 403 for ~14 s, then 404 on every call. The lag only
+        // denies, so the resolved answer is polled past the TTL, never a
+        // single read (the narrowing steps above stay single reads).
+        for (const who of callers.keys()) {
+          const resolved = await waitFor(() => call(who), {
+            until: (r) => r.statusCode === 404 && r.json<{ reason?: string }>().reason === 'action_not_found',
+            timeoutMs: 25_000,
+            intervalMs: 1_000,
+            description: `${who}: the project-wide grant reaches the replica that serves it`,
+          });
+          resolved.status(404).body().has('$.ok', false).has('$.reason', 'action_not_found');
+        }
       });
     } finally {
       const cleanup = [
