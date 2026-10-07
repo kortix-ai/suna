@@ -590,6 +590,7 @@ flow(
       'GET /health',
       'GET /v1/health',
       'POST /v1/access/check-email',
+      'POST /v1/access/request-access',
       'GET /v1/accounts/me',
       'POST /v1/router/chat/completions',
     ],
@@ -691,24 +692,18 @@ flow(
       }
     });
 
-    await ctx.step('content-type confusion returns no 5xx', async () => {
-      for (const candidate of [
-        {
-          contentType: 'application/xml',
-          body: '<root><email>x@example.com</email></root>',
-        },
-        {
-          contentType: 'application/x-www-form-urlencoded',
-          body: 'email=x@example.com&role=admin',
-        },
-        { contentType: 'text/plain', body: 'not-json' },
-      ]) {
-        const response = await ctx.client.post('/v1/access/check-email', candidate.body, {
-          raw: true,
-          headers: { 'content-type': candidate.contentType },
-        });
-        if (response.statusCode >= 500) {
-          throw new Error(`${candidate.contentType} returned ${response.statusCode}`);
+    await ctx.step('content-type confusion → 400 Validation failed on both public access routes, never a 5xx', async () => {
+      for (const path of ['/v1/access/check-email', '/v1/access/request-access']) {
+        for (const candidate of [
+          { contentType: 'application/xml', body: '<root><email>x@example.com</email></root>' },
+          { contentType: 'application/x-www-form-urlencoded', body: 'email=x@example.com&role=admin' },
+          { contentType: 'text/plain', body: 'not-json' },
+        ]) {
+          const response = await ctx.client.post(path, candidate.body, {
+            raw: true,
+            headers: { 'content-type': candidate.contentType },
+          });
+          response.status(400).body().has('$.error', true).has('$.message', 'Validation failed').has('$.status', 400);
         }
       }
     });
