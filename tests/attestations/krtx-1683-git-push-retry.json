@@ -1,0 +1,17 @@
+{
+  "source_hash": "59283b206c5afdbdcbaec40ad1a88419d3177253f9c810e466bb80b1be16d221",
+  "diff_files": [
+    "apps/api/src/projects/git/branches-push-transient.test.ts",
+    "apps/api/src/projects/git/mirror.ts",
+    "apps/api/src/projects/lib/commit-manifest-cas.test.ts"
+  ],
+  "diff_hash": "8642ece51e89d096a263f84147c45b2fd8b14a9e402a3878af0a914963352074",
+  "head": "fa1189658eaf661d7a74c61b7e22f3e608afce39",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-06T14:08:39.759Z"
+}

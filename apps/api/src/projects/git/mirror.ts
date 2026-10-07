@@ -317,10 +317,32 @@ export function isGitOperationError(err: unknown): err is GitOperationError {
 const TRANSIENT_MIRROR_ERROR_PATTERN =
   /repository '[^']*' not found|could not resolve host|temporary failure in name resolution|network is unreachable|couldn't connect to server|connection (?:reset|refused|timed out|closed)|remote end hung up unexpectedly|early eof|rpc failed|the requested url returned error: 5\d\d|operation timed out|timed out|ssl_error|gnutls_handshake|tls handshake/i;
 
+/**
+ * A push the REMOTE rejected with its own server-side 5xx reason (KRTX-1683,
+ * Better Stack FE pattern `a1ed728e…`):
+ *
+ *   ! [remote rejected] <sha> -> main (Internal Server Error)
+ *   error: failed to push some refs to 'https://github.com/<org>/<repo>.git'
+ *
+ * GitHub's receive-pack 500'd mid-receive. The remote tip does NOT move, so
+ * re-pushing the same commit is safe, and a retry seconds later is what
+ * recovered the observed incident (the same POST returned 200 ~8s later).
+ * Neither the transient pattern above (no "returned error: 5xx" text) nor the
+ * policy pattern below (no rule-violation phrase) matches it, so the raw git
+ * stderr surfaced as a `Failed to commit …` 502 that paged Sentry from the
+ * connector-add flow. Anchored on the push subcommand and the explicit 5xx
+ * refusal reasons so a policy rejection (its own classifier) and a permanent
+ * reason like `insufficient permission` stay loud, and a `[remote rejected]`
+ * seen in a fetch error is not reclassified.
+ */
+const REMOTE_PUSH_TRANSIENT_REJECTION_PATTERN =
+  /\[remote rejected\][^\n]*\((?:internal server error|internal error)\)/i;
+
 export function isTransientGitMirrorError(err: unknown): err is GitOperationError {
   if (!isGitOperationError(err)) return false;
   if (err.kind === 'timeout') return true;
   const text = `${err.message}\n${err.stderr}\n${err.stdout}`;
+  if (err.gitArgs[0] === 'push' && REMOTE_PUSH_TRANSIENT_REJECTION_PATTERN.test(text)) return true;
   return TRANSIENT_MIRROR_ERROR_PATTERN.test(text);
 }
 
