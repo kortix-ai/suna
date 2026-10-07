@@ -8,7 +8,6 @@ export type TableAstNode = {
   children?: TableAstNode[];
 };
 
-export type TableAlign = 'left' | 'center' | 'right';
 
 /** Roobert average advance at `text-sm`, for estimating table column widths. */
 const TABLE_CHAR_WIDTH = 7.7;
@@ -23,17 +22,6 @@ export function nodeText(node: TableAstNode | undefined): string {
   if (!node) return '';
   if (node.content) return node.content;
   return (node.children ?? []).map(nodeText).join('');
-}
-
-/**
- * GFM column alignment. markdown-it puts `:---:` and `---:` on every `th` and
- * `td` of the column as `attributes.style` (`text-align:center|right`); `:---`
- * and no marker are left.
- */
-export function tableCellAlign(cell: TableAstNode | undefined): TableAlign {
-  const style = cell?.attributes?.style;
-  const align = typeof style === 'string' ? /text-align:\s*(left|center|right)/.exec(style)?.[1] : undefined;
-  return align === 'center' || align === 'right' ? align : 'left';
 }
 
 export type TableSection<N extends TableAstNode = TableAstNode> = { isHeader: boolean; rows: N[][] };

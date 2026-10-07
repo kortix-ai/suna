@@ -133,20 +133,12 @@ const ALIGNED = [
   `| ${'a very long cell that must wrap inside its column '.repeat(6)} | **bold** | 333 |`,
 ].join('\n');
 
-test('GFM columns render their alignment on every cell text node, header included', () => {
+test('every column is left-aligned, header included, even with GFM :---: and ---: markers', () => {
   const rows = renderRows(ALIGNED);
   expect(rows).toHaveLength(3);
   for (const row of rows) {
-    expect(row.map((c) => flatten(c.text.props.style).textAlign)).toEqual(['left', 'center', 'right']);
-  }
-});
-
-test('each cell anchors its text at the column edge: left by default, centre and right for GFM columns', () => {
-  for (const row of renderRows(ALIGNED)) {
-    expect(row.map((c) => c.style.alignItems)).toEqual(['flex-start', 'center', 'flex-end']);
-  }
-  for (const row of renderRows('| a | b |\n|---|---|\n| 1 | 2 |')) {
-    expect(row.map((c) => c.style.alignItems)).toEqual(['flex-start', 'flex-start']);
+    expect(row.map((c) => flatten(c.text.props.style).textAlign)).toEqual(['left', 'left', 'left']);
+    expect(row.map((c) => c.style.alignItems)).toEqual(['flex-start', 'flex-start', 'flex-start']);
   }
 });
 

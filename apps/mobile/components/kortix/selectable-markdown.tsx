@@ -101,7 +101,6 @@ import {
   nodeText,
   TABLE_CELL_PADDING_X,
   TABLE_CELL_PADDING_Y,
-  tableCellAlign,
   fitColumnWidths,
   tableColumnWidths,
   tableSections,
@@ -501,7 +500,6 @@ function renderCellContent(cell: AstNode, isDark: boolean, palette: MarkdownPale
 /** Width of the fade at a table edge that has more columns past it. */
 const TABLE_FADE_WIDTH = 24;
 const TABLE_BORDER_WIDTH = 0.5;
-const CELL_ALIGN_ITEMS = { left: 'flex-start', center: 'center', right: 'flex-end' } as const;
 
 /**
  * Web: `border rounded-md` wrapper that scrolls horizontally, `w-full` table in
@@ -585,8 +583,9 @@ export function MarkdownTable({ node, palette, isDark }: { node: AstNode; palett
                       key={cIdx}
                       style={{
                         width: colWidths[cIdx],
-                        // Yoga places the text, sized to its content, at the column's edge.
-                        alignItems: CELL_ALIGN_ITEMS[tableCellAlign(cell)],
+                        // Every column is left-aligned: GFM `:---:` / `---:` markers are
+                        // ignored, and Yoga places the text, sized to its content, at the left edge.
+                        alignItems: 'flex-start',
                         borderLeftWidth: cIdx > 0 ? TABLE_BORDER_WIDTH : 0,
                         borderLeftColor: palette.border,
                         paddingHorizontal: TABLE_CELL_PADDING_X,
@@ -602,7 +601,7 @@ export function MarkdownTable({ node, palette, isDark }: { node: AstNode; palett
                           fontSize: TYPE.sm.fontSize,
                           lineHeight: TYPE.sm.lineHeight,
                           color: palette.strong,
-                          textAlign: tableCellAlign(cell),
+                          textAlign: 'left',
                         }}
                       >
                         {renderCellContent(cell, isDark, palette)}

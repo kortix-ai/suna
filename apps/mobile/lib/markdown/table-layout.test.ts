@@ -7,7 +7,6 @@ import {
   fitColumnWidths,
   nodeText,
   TABLE_CELL_PADDING_X,
-  tableCellAlign,
   tableColumnWidths,
   tableSections,
   type TableAstNode,
@@ -51,23 +50,6 @@ describe('table column alignment', () => {
     expect(rows[2][2].attributes?.style).toBe('text-align:right');
   });
 
-  test(':--- is left, :---: is centered, ---: is right, in the header and every body row', () => {
-    for (const row of rows) {
-      expect(row.map(tableCellAlign)).toEqual(['left', 'center', 'right']);
-    }
-  });
-
-  test('a table with no alignment markers is left-aligned, including cells with code, links and bold', () => {
-    const plain = tableSections(parseTable('| a | b |\n|---|---|\n| `x` | [l](https://example.com) |\n| **b** | $y$ |'));
-    for (const row of plain.flatMap((s) => s.rows)) {
-      expect(row.map(tableCellAlign)).toEqual(['left', 'left']);
-    }
-  });
-
-  test('a cell without attributes is left', () => {
-    expect(tableCellAlign(undefined)).toBe('left');
-    expect(tableCellAlign({ type: 'td' })).toBe('left');
-  });
 });
 
 describe('table column widths', () => {
