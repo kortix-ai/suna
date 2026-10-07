@@ -130,6 +130,10 @@ describe('withStaleChunkRecovery', () => {
 
   afterEach(() => {
     Reflect.deleteProperty(globalThis, 'window');
+    // Fake timers are process-wide in bun. Left on, they hang the next test
+    // file in this worker that waits on a real timer (the whole apps/web run
+    // stalled at 0% CPU behind sign-out-sequence.test.ts).
+    jest.useRealTimers();
     setSystemTime();
   });
 
