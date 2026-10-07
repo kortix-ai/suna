@@ -9,6 +9,13 @@ import { getCreditBalance } from '../repositories/credit-accounts';
 import { getTransactionsSummary } from '../repositories/transactions';
 import type { TokenUsageRequest } from '../../types';
 import { makeOpenApiApp, json, errors, auth } from '../../openapi';
+import { resolveBillingWriteAccountId } from '../http-require-billing-write';
+
+/** `Idempotency-Key` makes a client retry replay instead of charging again. */
+function idempotencyKey(c: { req: { header(name: string): string | undefined } }, accountId: string) {
+  const header = c.req.header('Idempotency-Key');
+  return header ? { request: `deduct:${accountId}:${header.slice(0, 200)}` } : null;
+}
 
 export const creditsRouter = makeOpenApiApp<AppEnv>();
 
@@ -45,7 +52,8 @@ creditsRouter.openapi(
     },
   }),
   async (c) => {
-    const accountId = c.get('userId');
+    // Client-supplied amounts: only a caller who may change billing may debit.
+    const accountId = await resolveBillingWriteAccountId(c, 'body');
     // Manual parse: the existing contract accepts the raw TokenUsageRequest and
     // never rejects on missing/zero fields (cost<=0 short-circuits to success).
     const body = await c.req.json<TokenUsageRequest>();
@@ -67,7 +75,7 @@ creditsRouter.openapi(
       amount: cost,
       description: `LLM: ${body.model} (${body.prompt_tokens}/${body.completion_tokens} tokens)`,
       kind: 'usage',
-      key: null,
+      key: idempotencyKey(c, accountId),
     });
 
     return c.json({
@@ -100,7 +108,8 @@ creditsRouter.openapi(
     },
   }),
   async (c) => {
-    const accountId = c.get('userId');
+    // Client-supplied amounts: only a caller who may change billing may debit.
+    const accountId = await resolveBillingWriteAccountId(c, 'body');
     // Manual parse: contract accepts missing/zero amount (short-circuits to success).
     const body = await c.req.json<{ amount: number; description?: string }>();
 
@@ -113,7 +122,7 @@ creditsRouter.openapi(
       amount: body.amount,
       description: body.description || `Agent run usage: $${body.amount.toFixed(4)}`,
       kind: 'usage',
-      key: null,
+      key: idempotencyKey(c, accountId),
     });
 
     return c.json({

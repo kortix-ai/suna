@@ -51,6 +51,8 @@ export const runtimeVerbPaths = {
   abort: (sessionId: string) => `/kortix/runtime/sessions/${segment(sessionId)}/abort`,
   agents: (directory: string) => `/kortix/runtime/agents?directory=${segment(directory)}`,
   prompt: (sessionId: string) => `/kortix/runtime/sessions/${segment(sessionId)}/prompt`,
+  /** Hand a message to the RUNNING turn (`session.steer`). Not a turn start. */
+  steer: (sessionId: string) => `/kortix/runtime/sessions/${segment(sessionId)}/steer`,
   state: '/kortix/runtime/state',
 } as const;
 
@@ -120,6 +122,11 @@ export function turnVerbMissing(externalId: string | undefined, res: Response): 
   if (res.status !== 404 || res.headers.get(TURN_VERB_HEADER)) return false;
   if (externalId) capabilitiesMemo.delete(externalId);
   return true;
+}
+
+/** Forget one sandbox's capabilities: its daemon refused a verb it listed. */
+export function forgetRuntimeCapabilities(externalId: string | undefined): void {
+  if (externalId) capabilitiesMemo.delete(externalId);
 }
 
 /** Test-only. */

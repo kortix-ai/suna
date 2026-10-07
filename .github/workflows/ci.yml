@@ -4,10 +4,10 @@ name: CI
 # (SOC 2 CC8.1 — automated checks run on every change before review/merge).
 
 on:
-  # A push or pull request into `main` runs no CI (Actions minutes, 2026-10-03):
+  # A push or pull request into `dev` runs no CI (Actions minutes, 2026-10-03):
   # the developer runs `pnpm test` in their box. Release pull requests
   # (`staging`, `prod`) are the gate. A weekly schedule runs every job as a
-  # safety net on `main`.
+  # safety net on `dev`.
   pull_request:
     branches: [staging, prod]
   schedule:
@@ -85,6 +85,9 @@ jobs:
               - '.github/workflows/ci.yml'
               - 'tsconfig.base.json'
               - 'apps/kortix-sandbox-agent-server/**'
+              # Bundled into the daemon (KORTIXD_SHARED_SOURCES).
+              - 'packages/api-contract/src/**'
+              - 'packages/sdk/src/core/session/wire-message-id.ts'
             sandbox_image:
               - '.github/workflows/ci.yml'
               - 'apps/sandbox/Dockerfile'
@@ -242,10 +245,6 @@ jobs:
         run: bun install --frozen-lockfile
         working-directory: apps/kortix-sandbox-agent-server
 
-      - name: Install worker dependencies
-        run: bun install --frozen-lockfile
-        working-directory: apps/kortix-worker
-
       - name: Typecheck
         run: bun run typecheck
         working-directory: apps/kortix-sandbox-agent-server
@@ -376,7 +375,7 @@ jobs:
 
   desktop-installer-smoke:
     name: Desktop installer smoke
-    # Skip on PRs that don't touch desktop code. Push-to-main builds (desktop.yml)
+    # Skip on PRs that don't touch desktop code. Push-to-dev builds (desktop.yml)
     # still cover the full signed release artifacts.
     needs: changes
     if: needs.changes.outputs.desktop == 'true' || github.event_name != 'pull_request'
@@ -426,7 +425,7 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Trivy filesystem (fail on CRITICAL)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:

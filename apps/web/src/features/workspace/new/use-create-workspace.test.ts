@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import {
   ApiError,
@@ -452,12 +454,12 @@ describe('runCreateAttempt', () => {
 /**
  * `runCreate` is the full sequence `create()` actually runs: mint/reuse the
  * key -> provision -> on success, clear the key -> prime the cache ->
- * invalidate -> write the cookie -> enter onboarding. `runCreateAttempt`
- * above only covers the provision sub-step; NONE of those tests would fail
- * if a future edit dropped `clearAttemptKey`, or moved it after
- * `enterOnboarding` — a stale key left behind is exactly what lets a later
- * create with the same name silently return the OLD project instead of
- * making a new one.
+ * invalidate -> write the cookie -> stamp onboarded -> hand off to the
+ * project page. `runCreateAttempt` above only covers the provision sub-step;
+ * NONE of those tests would fail if a future edit dropped `clearAttemptKey`,
+ * or moved it after `enterProject` — a stale key left behind is exactly what
+ * lets a later create with the same name silently return the OLD project
+ * instead of making a new one.
  *
  * Every seam is injected (`CreateOrchestrationClient`), never
  * `mock.module('@kortix/sdk', ...)` — process-wide in this monorepo and a
@@ -489,12 +491,14 @@ describe('runCreate: the full create() orchestration', () => {
       attemptKeyFor,
       clearAttemptKey,
       runCreateAttempt: async () => fakeProject('created'),
+      onPhase: () => {},
       createGitHubRepoProject: async () => fakeProject('created-github'),
       importGitHubRepoProject: async () => fakeProject('imported-github'),
       primeProjectCache: () => {},
       invalidateProjects: () => {},
       writeLastProjectId: () => {},
-      enterOnboarding: () => {},
+      completeOnboarding: async () => {},
+      enterProject: () => {},
       now: () => 1_000,
       ...overrides,
     };
@@ -520,7 +524,7 @@ describe('runCreate: the full create() orchestration', () => {
     expect(nextKey).not.toBe(sentKeys[0]);
   });
 
-  test('MANDATORY: on success, the key is cleared BEFORE cache priming, invalidation, the cookie write, or entering onboarding', async () => {
+  test('MANDATORY: on success, the key is cleared BEFORE cache priming, invalidation, the cookie write, the onboarding stamp, or the handoff', async () => {
     const order: string[] = [];
     const state = { ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'acct-owner' };
 
@@ -531,23 +535,28 @@ describe('runCreate: the full create() orchestration', () => {
         clearAttemptKey(fingerprint);
       },
       runCreateAttempt: async () => fakeProject('created-order'),
+      onPhase: () => {},
       createGitHubRepoProject: async () => fakeProject('created-order'),
       importGitHubRepoProject: async () => fakeProject('created-order'),
       primeProjectCache: () => order.push('primeCache'),
       invalidateProjects: () => order.push('invalidate'),
       writeLastProjectId: () => order.push('writeCookie'),
-      enterOnboarding: () => order.push('enterOnboarding'),
+      completeOnboarding: async () => {
+        order.push('stampOnboarding');
+      },
+      enterProject: () => order.push('enterProject'),
       now: () => 1_000,
     });
 
-    // The exact sequence, not just "clearKey happened before enterOnboarding"
+    // The exact sequence, not just "clearKey happened before enterProject"
     // — a reorder among the other steps must fail this too.
     expect(order).toEqual([
       'clearKey',
       'primeCache',
       'invalidate',
       'writeCookie',
-      'enterOnboarding',
+      'stampOnboarding',
+      'enterProject',
     ]);
   });
 
@@ -597,7 +606,8 @@ describe('runCreate: the full create() orchestration', () => {
       // Composes the REAL retry engine (already covered by its own suite
       // above) with a fake low-level provisionProject/wait, so this proves
       // genuine retry behaviour, not a restated assumption.
-      runCreateAttempt: (payload) =>
+      onPhase: () => {},
+      runCreateAttempt: (payload, onPhase) =>
         runCreateAttempt(payload, {
           provisionProject: async (input) => {
             provisionCalls += 1;
@@ -620,7 +630,8 @@ describe('runCreate: the full create() orchestration', () => {
       primeProjectCache: () => {},
       invalidateProjects: () => {},
       writeLastProjectId: () => {},
-      enterOnboarding: () => {},
+      completeOnboarding: async () => {},
+      enterProject: () => {},
       now: () => 1_000,
     });
 
@@ -653,43 +664,85 @@ describe('runCreate: the full create() orchestration', () => {
     expect(cookieCalls).toEqual([['user-42', 'created-cookie']]);
   });
 
-  test('enters onboarding on /new for the created project, and does not leave /new', async () => {
-    const entered: string[] = [];
-    const client = {
-      ...noopClient(),
-      runCreateAttempt: async () => fakeProject('created-nav'),
-      enterOnboarding: (projectId: string) => entered.push(projectId),
-    };
-    await runCreate(
-      { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
-      [OWNER_ACCOUNT],
-      'user-1',
-      client,
-    );
-    expect(entered).toEqual(['created-nav']);
-  });
-
-  // A create must NOT stamp the new project onboarded — stamping is what made
-  // the wizard render `null` on arrival. The guard against the stamping seam
-  // coming back is `CreateOrchestrationClient` not declaring it, which `tsc`
-  // enforces at every call site; this test proves the orchestration runs to
-  // completion through the seams that client DOES declare.
-  test('does not mark the new project onboarded', async () => {
-    const client = { ...noopClient(), runCreateAttempt: async () => fakeProject('created') };
+  /**
+   * The create's handoff contract (KRTX-1419): a successful create must land
+   * the user on the project they just created — it stamps the project
+   * onboarded (the same PATCH the wizard's own exits use) and then navigates
+   * to `/projects/<id>`. It used to redirect to `/new?onboarding=<id>`, which
+   * mounted the full-screen wizard over the page and held the user until they
+   * completed three steps or clicked "Skip for now" — the project page was
+   * never reached without a click.
+   */
+  test('on success, stamps the project onboarded, then hands off to the project page', async () => {
+    const stamps: string[] = [];
+    const handoffs: string[] = [];
     const result = await runCreate(
       { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
       [OWNER_ACCOUNT],
       'user-1',
-      client,
+      {
+        ...noopClient(),
+        runCreateAttempt: async () => fakeProject('created-handoff'),
+        completeOnboarding: async (projectId) => {
+          stamps.push(projectId);
+        },
+        enterProject: (projectId) => handoffs.push(projectId),
+      },
     );
     expect(result.ok).toBe(true);
+    expect(stamps).toEqual(['created-handoff']);
+    // The stamp precedes the handoff: the project shell's wizard reads the
+    // stamped metadata on arrival, so it can never mount over the landing.
+    expect(handoffs).toEqual(['created-handoff']);
+    expect(stamps.length).toBe(1);
+    expect(handoffs.length).toBe(1);
   });
 
-  test('a non-retryable failure never touches the cache, the cookie, or onboarding', async () => {
+  /**
+   * The stamp is best-effort: a failed PATCH must not keep the user off the
+   * project that already exists (the same policy as the wizard's own exits,
+   * `completeThenNotify`). The accepted failure mode is the wizard running
+   * the next time they open the workspace, not a dead handoff screen.
+   */
+  test('a failed onboarding stamp still hands off to the project page', async () => {
+    const handoffs: string[] = [];
+    const result = await runCreate(
+      { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
+      [OWNER_ACCOUNT],
+      'user-1',
+      {
+        ...noopClient(),
+        runCreateAttempt: async () => fakeProject('created-stamp-fail'),
+        completeOnboarding: async () => {
+          throw new ApiError('network down', { status: 0 });
+        },
+        enterProject: (projectId) => handoffs.push(projectId),
+      },
+    );
+    expect(result.ok).toBe(true);
+    expect(handoffs).toEqual(['created-stamp-fail']);
+  });
+
+  /**
+   * The direction of the stamp is part of the contract: `completed: true` is
+   * what makes the project shell's wizard render null on arrival, and the
+   * wiring is the one place the literal lives. The hook cannot render in this
+   * harness (no jsdom; `mock.module` is process-wide across a non-isolated run
+   * — see `new-workspace-errors.test.ts` for the same technique), so the
+   * wiring line is pinned by scan instead of behavior.
+   */
+  test('the wiring stamps completed: true — a cleared flag would trap the user in the shell wizard', () => {
+    const hook = readFileSync(join(import.meta.dir, 'use-create-workspace.ts'), 'utf8');
+    expect(hook).toContain('setProjectOnboardingComplete(projectId, true)');
+    expect(hook).not.toContain('setProjectOnboardingComplete(projectId, false)');
+  });
+
+  test('a non-retryable failure never touches the cache, the cookie, the stamp, or the handoff', async () => {
     const err = new ApiError('Bad Gateway', { status: 502 });
     const primeCalls: unknown[] = [];
     const cookieCalls: unknown[] = [];
     const entered: string[] = [];
+    const stamped: string[] = [];
 
     const result = await runCreate(
       { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
@@ -702,13 +755,17 @@ describe('runCreate: the full create() orchestration', () => {
         },
         primeProjectCache: () => primeCalls.push('called'),
         writeLastProjectId: () => cookieCalls.push('called'),
-        enterOnboarding: (projectId) => entered.push(projectId),
+        completeOnboarding: async (projectId: string) => {
+          stamped.push(projectId);
+        },
+        enterProject: (projectId) => entered.push(projectId),
       },
     );
 
     expect(result.ok).toBe(false);
     expect(primeCalls).toEqual([]);
     expect(cookieCalls).toEqual([]);
+    expect(stamped).toEqual([]);
     expect(entered).toEqual([]);
   });
 
@@ -833,7 +890,7 @@ describe('runCreate: the full create() orchestration', () => {
     expect(mintCalls).toEqual([]);
   });
 
-  test('every source runs the SAME success path — cache, invalidate, cookie, onboarding', async () => {
+  test('every source runs the SAME success path — cache, invalidate, cookie, stamp, handoff', async () => {
     // The routing differs; what happens after a project exists must not.
     for (const state of [
       { ...INITIAL_FORM_STATE, name: 'a', accountId: 'acct-owner', source: 'managed' as const },
@@ -859,10 +916,19 @@ describe('runCreate: the full create() orchestration', () => {
         primeProjectCache: () => order.push('primeCache'),
         invalidateProjects: () => order.push('invalidate'),
         writeLastProjectId: () => order.push('writeCookie'),
-        enterOnboarding: () => order.push('enterOnboarding'),
+        completeOnboarding: async () => {
+          order.push('stampOnboarding');
+        },
+        enterProject: () => order.push('enterProject'),
       });
       expect(result.ok).toBe(true);
-      expect(order).toEqual(['primeCache', 'invalidate', 'writeCookie', 'enterOnboarding']);
+      expect(order).toEqual([
+        'primeCache',
+        'invalidate',
+        'writeCookie',
+        'stampOnboarding',
+        'enterProject',
+      ]);
     }
   });
 
@@ -893,6 +959,130 @@ describe('runCreate: the full create() orchestration', () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toBe(err);
+  });
+
+  /**
+   * The streamed provisioning phases (KRTX-1543). The managed create reports
+   * `validating -> creating_repository -> registering -> seeding` live over
+   * `POST /projects/provision-stream`, and `/new`'s handoff renders them as
+   * they arrive. The sink is the orchestration client's `onPhase` field: the
+   * managed source forwards every streamed phase to it, the GitHub sources
+   * never fire it (neither of their routes streams phases), and the
+   * plain-POST fallback clears it through the `onPhase(null)`
+   * `runProvisionAttempt` already owns.
+   */
+  describe('the phase sink (KRTX-1543)', () => {
+    test('MANDATORY: the managed source forwards every streamed phase to the onPhase sink, in stream order', async () => {
+      const phases: (ProvisionPhase | null)[] = [];
+
+      const result = await runCreate(
+        { ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'acct-owner' },
+        [OWNER_ACCOUNT],
+        'user-1',
+        {
+          ...noopClient(),
+          onPhase: (phase) => phases.push(phase),
+          runCreateAttempt: async (_payload, onPhase) => {
+            onPhase('validating');
+            onPhase('creating_repository');
+            onPhase('registering');
+            onPhase('seeding');
+            return fakeProject('created-phases');
+          },
+        },
+      );
+
+      expect(result.ok).toBe(true);
+      expect(phases).toEqual(['validating', 'creating_repository', 'registering', 'seeding']);
+    });
+
+    test('the onPhase sink reaches runCreateAttempt itself, not a private copy of it', async () => {
+      // The forwarding must hand THE client's own sink to runCreateAttempt —
+      // `runProvisionAttempt(payload, onPhase)` — so the fallback's
+      // `onPhase(null)` clears the same state the phases filled. A sink that
+      // dead-ends inside runCreate leaves the UI frozen on the last streamed
+      // phase after the stream falls back.
+      const phases: (ProvisionPhase | null)[] = [];
+      const sink = (phase: ProvisionPhase | null) => phases.push(phase);
+
+      const result = await runCreate(
+        { ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'acct-owner' },
+        [OWNER_ACCOUNT],
+        'user-1',
+        {
+          ...noopClient(),
+          onPhase: sink,
+          runCreateAttempt: async (_payload, onPhase) => {
+            expect(onPhase).toBe(sink);
+            onPhase('validating');
+            return fakeProject('created-sink-identity');
+          },
+        },
+      );
+
+      expect(result.ok).toBe(true);
+      expect(phases).toEqual(['validating']);
+    });
+
+    test('a GitHub source fires no phase — neither route streams', async () => {
+      const phases: (ProvisionPhase | null)[] = [];
+      const result = await runCreate(
+        {
+          ...INITIAL_FORM_STATE,
+          name: 'Portal',
+          accountId: 'acct-owner',
+          source: 'github-import' as const,
+          installationId: '84',
+          repoFullName: 'acme/portal',
+        },
+        [OWNER_ACCOUNT],
+        'user-1',
+        {
+          ...noopClient(),
+          onPhase: (phase) => phases.push(phase),
+        },
+      );
+
+      expect(result.ok).toBe(true);
+      expect(phases).toEqual([]);
+    });
+
+    test('a managed import fires no phase — link-repository does not stream', async () => {
+      const phases: (ProvisionPhase | null)[] = [];
+      const result = await runCreate(
+        {
+          ...INITIAL_FORM_STATE,
+          name: 'Portal',
+          accountId: 'acct-owner',
+          repoFullName: 'owner/portal',
+        },
+        [OWNER_ACCOUNT],
+        'user-1',
+        {
+          ...noopClient(),
+          onPhase: (phase) => phases.push(phase),
+        },
+      );
+
+      expect(result.ok).toBe(true);
+      expect(phases).toEqual([]);
+    });
+
+    test('the hook wiring: holds the phase in state, resets it per create, and hands the setter to the orchestration', () => {
+      // The hook cannot render in this harness (no jsdom; `mock.module` is
+      // process-wide across a non-isolated run — see the stamp-wiring test
+      // above for the same technique), so the wiring lines are pinned by scan.
+      const hook = readFileSync(join(import.meta.dir, 'use-create-workspace.ts'), 'utf8');
+      expect(hook).toContain('useState<ProvisionPhase | null>(null)');
+      // Reset per create: a retry must not start on the previous attempt's
+      // last phase.
+      expect(hook).toContain('setPhase(null)');
+      // The hook's own setter is the orchestration sink.
+      expect(hook).toContain('onPhase: setPhase');
+      // ...and it is threaded to the streaming attempt, so the fallback's
+      // `onPhase(null)` clears it.
+      expect(hook).toContain('runProvisionAttempt(payload, onPhase)');
+    });
   });
 });
 

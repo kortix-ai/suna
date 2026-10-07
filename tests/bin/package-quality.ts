@@ -12,9 +12,8 @@ const skipSdkTests = process.env.KORTIX_PACKAGE_SKIP_SDK_TESTS === '1';
  * environment (KORTIX_TOKEN, KORTIX_PROJECT_ID, KORTIX_SUPERVISED, …) and
  * writes it to /dev/shm/kortix/agent-env.sh, which the CLI reads through
  * `sandboxEnvValue()`. Workspace suites inherit that identity and then fail
- * on tests that need a CI-shaped env (a compiled runtime rejects a foreign
- * KORTIX_PROJECT_ID; a supervised box refuses binary downloads; a direct
- * KORTIX_REPO_URL is refused). On a laptop or a GitHub runner none of these
+ * on tests that need a CI-shaped env (a supervised box refuses binary
+ * downloads; a direct KORTIX_REPO_URL is refused). On a laptop or a GitHub runner none of these
  * vars exist, so dropping them here reproduces exactly what CI sees. Suites
  * that need a value set it themselves (apps/api/scripts/test.env, per-test
  * setup); the Kortix-shared `sandboxEnvValue()` path is cut off with
@@ -34,8 +33,7 @@ function hermeticWorkspaceEnv(): Record<string, string | undefined> {
     // The session also exports BASH_ENV=/dev/shm/kortix/agent-env.sh. A bash
     // script started while the stack under test has written that file sources
     // it at startup and injects the host's project identity into every test
-    // worker (the compiled-runtime identity checks then fail on the ambient
-    // value). Dropping it here reproduces CI, where BASH_ENV is unset.
+    // worker. Dropping it here reproduces CI, where BASH_ENV is unset.
     if (name === 'BASH_ENV') continue;
     env[name] = value;
   }
@@ -90,6 +88,9 @@ async function rejectFocusedTests(): Promise<void> {
       String.raw`\b(describe|test|it)\.only\(`,
       'apps',
       'packages',
+      'tests',
+      '-g',
+      '*.spec.ts',
       '-g',
       '*.test.ts',
       '-g',
@@ -201,9 +202,16 @@ await runAll([
   run(['node', 'scripts/stage-npm-publish.test.mjs']),
   run(['node', 'scripts/publish-npm-package.test.mjs']),
   run(['node', '--test', 'scripts/check-blocked-terms.test.mjs']),
+  run(['node', '--test', 'scripts/dev-local.test.mjs']),
   run(['node', '--test', 'scripts/prod-us-east-2/*.test.mjs']),
 ]);
 await rejectFocusedTests();
+// apps/web's download-layout test launches Playwright Chromium. CI installs
+// the browser in the workflow before this lane; a worker sandbox that runs the
+// lane bare does not, and the test then fails with "Executable doesn't exist".
+// `playwright install` is idempotent (near-instant when the browser is
+// present) and honors PLAYWRIGHT_BROWSERS_PATH, so a CI cache still hits.
+await run(['pnpm', '--dir', 'tests', 'run', 'playwright:install']);
 await runAll([
   run(['pnpm', '--filter', '@kortix/sdk', 'typecheck']),
   run(['pnpm', '--filter', '@kortix/sdk', 'run', 'smoke:install']),
@@ -222,6 +230,13 @@ await runAll([
 // agent server sequential. Concurrent isolated Bun workers can spin indefinitely.
 await runAll([
   runWorkspaceTests(['kortix-api'], 1),
+  // Bun runs TypeScript without checking types, so the API and CLI unit tests
+  // pass with type errors. tsc is single-threaded (~105 s API, ~18 s CLI of
+  // CPU), so it rides inside this wave next to the two test chains instead of
+  // adding a wave. apps/web is not here: its `tsc` has a documented baseline of
+  // known `@types/bun` errors and needs a baseline filter first.
+  run(['pnpm', '--filter', 'kortix-api', 'typecheck']),
+  run(['pnpm', '--filter', '@kortix/cli', 'typecheck']),
   (async () => {
     await runWorkspaceTests(['@kortix/cli'], 1);
     await runWorkspaceTests(['kortixd'], 1);
@@ -249,9 +264,3 @@ await runAll([
     2,
   ),
 ]);
-// apps/kortix-worker sits outside the pnpm workspace (own bun.lock, supply-chain
-// cooldown), so the workspace fan-out above cannot reach it. Install its deps
-// the way the sandbox-agent job does in ci.yml, then run its tests here — no
-// lane ran them before this.
-await run(['bun', 'install', '--frozen-lockfile'], { cwd: resolve(root, 'apps/kortix-worker') });
-await run(['bun', 'test', 'src/'], { cwd: resolve(root, 'apps/kortix-worker') });

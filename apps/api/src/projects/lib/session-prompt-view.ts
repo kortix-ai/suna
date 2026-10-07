@@ -10,9 +10,16 @@
  * Pure. No database, no auth: the caller owns both.
  */
 
+import {
+  type SessionPrompt,
+  type SessionPromptDelivery,
+  SessionPromptDeliverySchema,
+  SessionPromptSteerFallbackSchema,
+} from '@kortix/api-contract';
 import { sessionLifecycleCommands } from '@kortix/db';
 import { DELIVERY_FAILURE_COPY } from '../session-lifecycle/types';
 import { PROMPT_TEXT_PREVIEW_CHARS } from '../session-lifecycle/prompt-parts';
+import { isForwarded, isHeld } from '../session-lifecycle/delivery-state';
 
 export type PromptRow = typeof sessionLifecycleCommands.$inferSelect;
 
@@ -48,11 +55,11 @@ export function promptState(row: Pick<PromptRow, 'status' | 'result'>): {
   // button put it there, and only an explicit send or "send now" takes it out.
   // It outranks the markers below: a held row is not in line at all, and that
   // is true of a forwarded row Stop paused just as much as of a queued one.
-  if (result.held === true) return { state: 'waiting', reason: 'held' };
+  if (isHeld(result)) return { state: 'waiting', reason: 'held' };
   // Then FORWARDED, above `running`: this is a `succeeded` row, so every branch
   // below would otherwise fall through to `queued` and show a prompt that is
   // already at OpenCode as if it had never been sent.
-  if (result.status === 'forwarded') return { state: 'delivering', reason: 'forwarded' };
+  if (isForwarded(result)) return { state: 'delivering', reason: 'forwarded' };
   // A claim only checks admission. It must not flash Sending during a live turn.
   if (row.status === 'running' && typeof result.delivery_started_at === 'string') {
     return { state: 'delivering', reason: null };
@@ -104,12 +111,25 @@ function promptAttachments(payload: Record<string, unknown>): Array<{
   return attachments;
 }
 
-export function serializePrompt(row: PromptRow) {
+/**
+ * The row's delivery mode. A row from before steering has none: `transcript`
+ * is `interrupt` (Quick Queue), everything else `queue`.
+ */
+export function promptDelivery(payload: Record<string, unknown>): SessionPromptDelivery {
+  const parsed = SessionPromptDeliverySchema.safeParse(payload.delivery);
+  if (parsed.success) return parsed.data;
+  return payload.placement === 'transcript' ? 'interrupt' : 'queue';
+}
+
+export function serializePrompt(row: PromptRow): SessionPrompt {
   const payload = (row.payload ?? {}) as Record<string, unknown>;
   const result = (row.result ?? {}) as Record<string, unknown>;
   const { state, reason } = promptState(row);
+  const steerFallback = SessionPromptSteerFallbackSchema.safeParse(payload.steerFallback);
   return {
     placement: payload.placement === 'transcript' ? 'transcript' as const : 'composer' as const,
+    delivery: promptDelivery(payload),
+    steer_fallback: steerFallback.success ? steerFallback.data : null,
     full_text: typeof payload.text === 'string' ? payload.text : '',
     prompt_id: row.commandId,
     client_message_id: typeof payload.clientMessageId === 'string' ? payload.clientMessageId : '',
@@ -150,6 +170,8 @@ export function serializePrompt(row: PromptRow) {
     /** Posted without a turn (the first message of a conversation with people):
      *  no agent will answer it, so a host shows no "thinking" for it. */
     no_reply: payload.noReply === true,
+    /** The member it runs as: only they edit, send now or retry it. */
+    author_user_id: row.actorUserId ?? null,
     created_at: row.createdAt.toISOString(),
     available_at: row.availableAt.toISOString(),
   };

@@ -20,7 +20,7 @@ import { matchesInternalToken, weakInternalTokenWarnings } from './internal-auth
 import { gatewayModelCatalog } from './models/catalog-models';
 import { servableProjectCatalog } from './models/servable-catalog';
 import { resolveCandidates } from './resolution/resolve-candidates';
-import { coolDownAccountSecret } from '../secrets/account-resource';
+import { MAX_ACCOUNT_SECRET_REST_SECONDS, coolDownAccountSecret } from '../secrets/account-resource';
 import { refreshRefusedCodexAccountLogin } from './credentials/codex';
 import { refreshRefusedOpencodeLogin } from './credentials/opencode-console';
 import { codexDescriptor } from './resolution/descriptors';
@@ -103,7 +103,7 @@ export function createInternalGatewayRoutes() {
   app.post('/pool-rate-limit', async (c) => {
     const parsed = z.object({
       principal: z.object({ accountId: z.string().uuid(), sessionId: z.string().uuid() }),
-      secretId: z.string().uuid(), seconds: z.number().int().min(1).max(60),
+      secretId: z.string().uuid(), seconds: z.number().int().min(1).max(MAX_ACCOUNT_SECRET_REST_SECONDS),
     }).safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'Invalid pool rate limit' }, 400);
     await coolDownAccountSecret(parsed.data.secretId, parsed.data.principal.accountId, parsed.data.seconds);
@@ -170,8 +170,9 @@ export function createInternalGatewayRoutes() {
     }
     // `managedOnly` backs the standalone gateway's `GET /models?scope=managed`
     // — the compact managed lineup a sandbox fetches on boot. Dropping the
-    // projectId is what selects MANAGED_ONLY; free-tier accounts still get an
-    // empty managed set.
+    // projectId is what selects MANAGED_ONLY: a free-tier caller gets the
+    // platform default alone (an empty set when the deployment serves none),
+    // every other managed model stays paid (KRTX-1067).
     return c.json({
       models: gatewayModelCatalog(managedOnly === true ? undefined : p.projectId, {
         freeManagedOnly: !!p.freeModelsOnly,
@@ -182,7 +183,11 @@ export function createInternalGatewayRoutes() {
   app.post('/billing', async (c) => {
     const { accountId } = await c.req.json();
     try {
-      const result = await assertLlmBillingActive(accountId);
+      // The pod calls this only for a Kortix-billed request it already
+      // resolved (`simple-handler.ts` gates admitCharge on billingMode), so
+      // the wallet floor applies to every account here — the platform default
+      // included (KRTX-1067).
+      const result = await assertLlmBillingActive(accountId as string, { creditsRequest: true });
       return c.json({ active: true, holdUsd: result?.holdUsd });
     } catch (err) {
       return c.json({

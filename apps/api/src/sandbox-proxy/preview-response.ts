@@ -20,6 +20,20 @@ export const STRIP_FORWARD_HEADERS = new Set([
   'x-kortix-wire-id-placed',
   'host',
   'authorization',
+  // `X-Kortix-Token` is an accepted preview credential (middleware/auth-combined);
+  // it must not reach a user app any more than `Authorization` does.
+  'x-kortix-token',
+  'proxy-authorization',
+  // RFC 9110 hop-by-hop fields: they describe the client's connection, not ours.
+  // A client `Transfer-Encoding` next to a re-framed buffered body is a desync
+  // risk on a pooled upstream connection.
+  'connection',
+  'keep-alive',
+  'proxy-authenticate',
+  'te',
+  'trailer',
+  'transfer-encoding',
+  'upgrade',
   'cookie',
   'traceparent',
   'x-request-id',

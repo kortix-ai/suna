@@ -21,6 +21,7 @@ import {
 } from './store';
 import { INBOX_ORDER_BACKOFF_MS } from './inbox-admission';
 import { withCommandLeaseHeartbeat } from './command-lease';
+import { claimsStopped, forgetClaim, trackClaims } from './claim-handover';
 import { claimDueSessionInboxSiblings } from './inbox-rows';
 import { compareInboxSendOrder } from './inbox-order';
 import type { QueuedCreateSessionPayload } from './types';
@@ -73,6 +74,8 @@ async function drainSessionLifecycleQueueTick(
   if (input.idempotencyKey && burst && input.coalesce !== false) {
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
+  // A shutdown began: another replica takes the work (`handBackClaims`).
+  if (claimsStopped()) return { claimed: 0, succeeded: 0, failed: 0, queued: 0, released: 0 };
   const rows = await claimDueLifecycleCommands({
     workerId,
     limit: input.limit ?? 10,
@@ -91,6 +94,7 @@ async function drainSessionLifecycleQueueTick(
       rows.push(...siblings.filter((sib) => !rows.some((r) => r.commandId === sib.commandId)));
     }
   }
+  trackClaims(rows);
   const out = { claimed: rows.length, succeeded: 0, failed: 0, queued: 0, released: 0 };
 
   // INSTANCE SCOPE (local dev on a shared DB — projects/instance-scope.ts).
@@ -118,6 +122,7 @@ async function drainSessionLifecycleQueueTick(
           error: err instanceof Error ? err.message : String(err),
         });
       });
+      forgetClaim(row);
       logger.info('[session-lifecycle] command belongs to another instance — released', {
         commandId: row.commandId,
         sessionId: row.sessionId,
@@ -150,7 +155,7 @@ async function drainSessionLifecycleQueueTick(
   // Every claimed row runs under its lease: the lock is renewed while the row
   // is in hand, and every write that ends the claim names the lease.
   const runRow = (row: SessionLifecycleCommandRow): Promise<void> =>
-    withCommandLeaseHeartbeat(row, () => runClaimedRow(row));
+    withCommandLeaseHeartbeat(row, () => runClaimedRow(row)).finally(() => forgetClaim(row));
 
   async function runClaimedRow(row: SessionLifecycleCommandRow): Promise<void> {
     if (row.commandType === 'continue_session') {
@@ -273,6 +278,7 @@ async function drainSessionLifecycleQueueTick(
             'older_prompt_pending',
             new Date(Date.now() + INBOX_ORDER_BACKOFF_MS),
           );
+          forgetClaim(sibling);
           out.queued += 1;
         }
         await runRow(batch[0]);

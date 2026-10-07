@@ -6,7 +6,7 @@ import { config } from '../../config';
 import { filterAccessibleObjects } from '../../iam';
 import { actorForUser } from '../../iam/actor';
 import {
-  continueSession as continueLifecycleSession,
+  deliverThroughQueue,
   createSession as createLifecycleSession,
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
 } from '../../projects/session-lifecycle';
@@ -29,7 +29,7 @@ import {
 } from './turn';
 import type { SlackEnvelope, SlackEvent } from './types';
 import { slackMessageLabels, type SlackMessageLabels } from './labels';
-import { promptModelOverride } from '../vision-model';
+import { modelReadsImages, NO_VISION_NOTE, promptModelOverride } from '../vision-model';
 import {
   type ChannelModelScope,
   agentGrantEnvFor,
@@ -39,7 +39,7 @@ import {
 } from '../model-access';
 
 const defaultSlackSessionLifecycle = {
-  continueSession: continueLifecycleSession,
+  deliverFollowUp: deliverThroughQueue,
   createSession: createLifecycleSession,
   resolveProjectAutomationActor: resolveLifecycleAutomationActor,
 };
@@ -54,15 +54,22 @@ export function resetSlackSessionLifecycleForTest() {
   slackSessionLifecycle = defaultSlackSessionLifecycle;
 }
 
+/** One Slack message, whichever events (message, app_mention) carry it. */
+export function slackFollowUpKey(teamId: string, event: SlackEvent): string {
+  return `slack:${teamId}:${event.channel ?? ''}:${event.ts}`;
+}
+
 export async function deliverSlackFollowUpToSession(input: {
   sessionId: string;
   text: string;
   userId?: string | null;
   /** This turn only — see channels/vision-model.ts. */
   model?: string | null;
+  idempotencyKey: string;
 }) {
-  return slackSessionLifecycle.continueSession({
+  return slackSessionLifecycle.deliverFollowUp({
     source: 'slack',
+    idempotencyKey: input.idempotencyKey,
     sessionId: input.sessionId,
     text: input.text,
     userId: input.userId,
@@ -95,7 +102,10 @@ async function slackTurnScope(
   });
 }
 
-/** Keep a thread’s model unless it can no longer run. */
+/**
+ * Keep a thread’s model unless it can no longer run. `imagesUnavailable`: the
+ * message carries an image and no model in reach can read it.
+ */
 export async function slackFollowUpModel(input: {
   project: { projectId: string; accountId: string; metadata: unknown };
   userId: string;
@@ -103,7 +113,7 @@ export async function slackFollowUpModel(input: {
   event: SlackEvent;
   /** The session row, when the caller already read it. */
   session?: { createdBy: string | null; metadata: unknown; agentName: string | null };
-}): Promise<string | null> {
+}): Promise<{ model: string | null; imagesUnavailable: boolean }> {
   const row =
     input.session ??
     (
@@ -113,21 +123,23 @@ export async function slackFollowUpModel(input: {
         .where(eq(projectSessions.sessionId, input.sessionId))
         .limit(1)
     )[0];
-  const pinned = (row?.metadata as Record<string, unknown> | null)?.opencode_model;
-  return planChannelFollowUp({
+  const raw = (row?.metadata as Record<string, unknown> | null)?.opencode_model;
+  const pinned = typeof raw === 'string' && raw.trim() ? raw.trim() : null;
+  const hasImage = slackMessageHasImage(input.event);
+  const model = await planChannelFollowUp({
     projectId: input.project.projectId,
     accountId: input.project.accountId,
     userId: input.userId,
     scope: await slackTurnScope(input.project, input.event, input.userId),
-    session: {
-      sessionId: input.sessionId,
-      ownerUserId: row?.createdBy ?? null,
-      pinnedModel: typeof pinned === 'string' && pinned.trim() ? pinned.trim() : null,
-    },
+    session: { sessionId: input.sessionId, ownerUserId: row?.createdBy ?? null, pinnedModel: pinned },
     chosenModel: null,
-    hasImage: slackMessageHasImage(input.event),
+    hasImage,
     agentGrantEnv: agentGrantEnvFor(input.project.projectId, row?.agentName),
   });
+  return {
+    model,
+    imagesUnavailable: hasImage && !model && !modelReadsImages(input.project.projectId, pinned),
+  };
 }
 
 // Claim a new thread before creating its session; concurrent messages join it.
@@ -341,11 +353,18 @@ async function joinExistingThread(
     ? await waitForThreadSession(teamId, threadId, projectId, lostClaim ? 8_000 : 0)
     : null;
   if (sessionId) {
+    const plan = await slackFollowUpModel({ project, userId: actorUserId, sessionId, event });
     await deliverSlackFollowUpToSession({
       sessionId,
-      text: renderFollowUpPrompt(envelope, event, await slackMessageLabels({ projectId, teamId, event })),
+      idempotencyKey: slackFollowUpKey(teamId ?? '', event),
+      text: renderFollowUpPrompt(
+        envelope,
+        event,
+        await slackMessageLabels({ projectId, teamId, event }),
+        plan.imagesUnavailable,
+      ),
       userId: actorUserId,
-      model: await slackFollowUpModel({ project, userId: actorUserId, sessionId, event }),
+      model: plan.model,
     });
     return undefined;
   }
@@ -474,7 +493,12 @@ function labelled(label: string | null | undefined, id: string): string {
   return label ? `${label} (${id})` : id;
 }
 
-export function renderFollowUpPrompt(envelope: SlackEnvelope, event: SlackEvent, labels?: SlackMessageLabels): string {
+export function renderFollowUpPrompt(
+  envelope: SlackEnvelope,
+  event: SlackEvent,
+  labels?: SlackMessageLabels,
+  imagesUnavailable = false,
+): string {
   const user = labelled(labels?.user, event.user ?? 'unknown');
   const channel = labelled(labels?.channel, event.channel ?? 'unknown');
   const text = labels?.text ?? event.text ?? '';
@@ -487,6 +511,7 @@ export function renderFollowUpPrompt(envelope: SlackEnvelope, event: SlackEvent,
     '',
     text,
     renderFileInfo(event),
+    ...(imagesUnavailable ? [NO_VISION_NOTE] : []),
     '',
     TURN_INSTRUCTIONS,
   ].join('\n');

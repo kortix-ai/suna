@@ -25,7 +25,7 @@ import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { isPgBroadcastListening, waitForLifecycleCommandSettle } from '../../shared/pg-broadcast';
 import { closeSandboxTurnByMessageId } from '../sandbox-turn-lifecycle';
-import { readSessionMessageTip, removeRuntimeMessage, resolveSessionOpencodeEndpoint } from './runtime-client';
+import { deleteRuntimeMessage, readSessionMessageTip, removeRuntimeMessage, resolveSessionOpencodeEndpoint } from './runtime-client';
 import { sessionRuntimeFetch } from './runtime-fetch';
 import { legacyRuntimePaths } from './legacy-runtime-rest';
 import { reachedPlacement, strandedPlacement, type PlacementTipMessage } from './forwarded-placement';
@@ -135,6 +135,22 @@ export async function cancelForwardedPrompt(
     // Answered, or a step has read it (it is being answered right now).
     if (verdict.answered) return { outcome: 'answered' };
     if (!verdict.stranded && reachedPlacement(tip, id)) return { outcome: 'answered' };
+  }
+
+  // A STEER pi has not read is in no transcript: kortixd holds it in front of
+  // the turn and publishes it when the turn reads it. Only its DELETE takes it
+  // back: 2xx removed, 404 gone, 409 read (R10).
+  if (present.length === 0 && typeof result.steered_into_message_id === 'string') {
+    for (const id of targetIds) {
+      let status: number;
+      try {
+        status = (await deleteRuntimeMessage(resolved, id)).status;
+      } catch {
+        return { outcome: 'unreachable' };
+      }
+      if (status === 409) return { outcome: 'answered' };
+      if (status >= 300 && status !== 404) return { outcome: 'unreachable' };
+    }
   }
 
   // Take the copies out. Whole-message first (works while idle); when the

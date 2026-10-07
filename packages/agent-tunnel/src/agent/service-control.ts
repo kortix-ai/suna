@@ -5,7 +5,6 @@ import {
   pauseService,
   restartService,
   resumeService,
-  startService,
   stopService,
   uninstallService,
 } from './service';
@@ -34,7 +33,9 @@ export function acquireTunnelLease(): TunnelLease {
     resumeService() {
       if (!serviceWasActive || resumed) return;
       resumed = true;
-      startService();
+      // The drift-safe resume: a unit an app update has moved is reinstalled
+      // before it starts, or the service would run a runner that is gone.
+      resumeService();
     },
   };
 }

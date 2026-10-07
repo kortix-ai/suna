@@ -580,6 +580,17 @@ describe('resolveCandidates — managed model tier gating', () => {
     expect(getAccountTier).not.toHaveBeenCalled();
   });
 
+  // KRTX-1067: the platform default is the ONE managed model every tier may
+  // use — the fresh free-tier account must be able to send its first message.
+  test('a free-tier account resolves the platform default', async () => {
+    config.LLM_GATEWAY_DEFAULT_MODEL = 'deepseek-v4.1-flash';
+    runtimeManagedModel = { id: 'deepseek-v4.1-flash' };
+
+    const candidates = await resolveCandidates(principal({ freeModelsOnly: true }), 'deepseek-v4.1-flash');
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({ provider: 'kortix-managed', resolvedModel: 'deepseek-v4.1-flash' });
+  });
+
   // Both refusals keep the machine-readable `plan_upgrade_required`; clients
   // branch on the code. The copy differs: a free plan is told to upgrade, a
   // paid plan without managed models is told to bring a key, never to upgrade.
@@ -681,6 +692,34 @@ describe('resolveCandidates — codex + unknown provider', () => {
     await expect(resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-5.5'))
       .rejects.toMatchObject({ code, retryAfterSeconds });
     expect(resolveCodexCredential).not.toHaveBeenCalled();
+  });
+
+  // A rest longer than a rate limit is ChatGPT's plan limit (days). "Cooling
+  // down" and a 60 s retry told a prod Slack thread to try again in a minute.
+  test('a selected Codex pool resting for days says its usage limit and when it resets, with no retry', async () => {
+    pooledEnabled = true;
+    pooledSecrets = { configured: true, coolingDown: true, retryAfterSeconds: 414_374, secrets: [] };
+    const refusal = await resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-6.1-sol').catch((e) => e);
+    expect(refusal).toMatchObject({ code: 'provider_pool_rate_limited', retryAfterSeconds: undefined });
+    // 414374 s is 4.8 days: rounded, not floored.
+    expect(refusal.message).toBe('All selected ChatGPT connections reached their usage limit. The first resets in 5 days.');
+    expect(refusal.suggestion).toBe('Choose another model, or connect another ChatGPT account.');
+  });
+
+  // Dev showed "resets in 3 days" for a rest of 4 days less a few seconds.
+  test('a rest just under a whole number of days reads as that number', async () => {
+    pooledEnabled = true;
+    pooledSecrets = { configured: true, coolingDown: true, retryAfterSeconds: 4 * 86_400 - 30, secrets: [] };
+    const refusal = await resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-6.1-sol').catch((e) => e);
+    expect(refusal.message).toBe('All selected ChatGPT connections reached their usage limit. The first resets in 4 days.');
+  });
+
+  test('every shared ChatGPT account resting for hours names the hours', async () => {
+    pooledEnabled = true;
+    sharedSecrets = { coolingDown: true, retryAfterSeconds: 3 * 3600 + 100, secrets: [] };
+    const refusal = await resolveCandidates(principal({ sessionId: 's', personalUserId: null }), 'codex/gpt-6').catch((e) => e);
+    expect(refusal.message).toBe('All ChatGPT connections shared with this project reached their usage limit. The first resets in 3 hours.');
+    expect(refusal.retryAfterSeconds).toBeUndefined();
   });
 
   test('selected Codex account descriptor retains its credential and pool references', async () => {

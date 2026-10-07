@@ -2,9 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { SessionCreateInputSchema } from '@kortix/api-contract';
 import { projectSessionConnectorBindings, projectSessionGrants, projectSessionRuntimeContexts, projectSessions, sessionLifecycleCommands, sessionProviderSecretPools } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
-import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG, PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
+import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG } from '@kortix/shared';
 import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { type SandboxProviderName, config } from '../../config';
@@ -21,6 +20,7 @@ import {
 } from '../../connectors/share';
 import { setContextField } from '../../lib/request-context';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import {
   isModelServableForAccount,
   resolveEffectiveModel,
@@ -50,14 +50,13 @@ import {
   repositoryAccessFromLoadedAgents,
   legacyReadWorkspaceFromLoadedAgents,
 } from '../agents';
-import { createRemoteSessionBranch , resolveCommitSha } from '../git';
+import { createRemoteSessionBranch } from '../git';
 import { convertPendingPromptToInboxRow } from '../session-lifecycle/pending-prompt';
 
 import { validateNativeOpencodeModelRef } from './session-model-change';
 import { listResolvedProjectSecrets, parseSessionSecretsAllowlist, secretKeyCollisionInAllowlist } from '../secrets';
 
 
-import { resolveManifestRuntime } from './compile-agent-config';
 import { withProjectGitAuth } from './git';
 import { repositoryGeneration } from './repository-generation';
 import { resolveFastBootGitHintWithCache } from './fast-boot-git-hint';
@@ -90,27 +89,39 @@ import { projectSessionMetadataMerge } from './session-metadata-merge';
 import { transitionSession } from '../session-lifecycle/status-transitions';
 import { mergeSessionSandboxEnv, parseSessionRuntimeContext } from './session-runtime-context';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
-import { buildPiWorkerSessionEnvVars } from './session-runtime-env';
 import { resolvePlatformMetaSandbox } from './platform-meta-agent';
-import { prebuildCompiledBootArtifacts } from '../../git-proxy/compiled-prebuild';
 
 import {
   resolveProjectSnapshotMode,
   resolveProjectSnapshotPinForSession,
 } from '../../git-proxy/project-snapshot';
 
-import { buildSessionSandboxEnvVars, deriveKortixApiBase, proxyGitUrl } from './session-sandbox-env-build';
+import { buildSessionSandboxEnvVars, deriveKortixApiBase } from './session-sandbox-env-build';
 import { sandboxCallbackUnreachableReason, sandboxCallbackDeadTunnelReason } from './session-callback-probe';
+/** Every status a failed create answers with. Routes that create a session
+ *  declare these, so the published spec lists them. */
+export const SESSION_CREATE_ERROR_STATUSES = [400, 402, 403, 404, 409, 429, 500, 503] as const;
+export type SessionCreateErrorStatus = (typeof SESSION_CREATE_ERROR_STATUSES)[number];
+
+/** A status from an HTTPException thrown inside the create, narrowed to the
+ *  declared set. Nothing in the insert throws one outside it today; an
+ *  undeclared 4xx would answer 400 rather than a status the spec omits. */
+function sessionCreateErrorStatus(status: number): SessionCreateErrorStatus {
+  return (SESSION_CREATE_ERROR_STATUSES as readonly number[]).includes(status)
+    ? (status as SessionCreateErrorStatus)
+    : 400;
+}
+
+// `sendSessionCreateError` answers a failed create on the Hono response, so it
+// lives in `http-session-create-error.ts`. Re-exported here so every importer
+// keeps working.
+export { sendSessionCreateError } from './http-session-create-error';
+
 export type SessionCreateError = {
-  status: number;
+  status: SessionCreateErrorStatus;
   body: Record<string, unknown>;
   headers?: Record<string, string>;
 };
-
-export function sendSessionCreateError(c: Context, error: SessionCreateError) {
-  for (const [key, value] of Object.entries(error.headers ?? {})) c.header(key, value);
-  return c.json(error.body, error.status as any);
-}
 
 /** The fields postgres.js attaches to a `Failed query:` error (pg error codes). */
 type PostgresErrorFields = {
@@ -224,51 +235,28 @@ async function loadParentSessionGrants(
   return { visibility: parent.visibility, grants };
 }
 
-export async function createProjectSession(input: {
-  attachmentSourceCommandId?: string;
-  /** The `create_session` command to link the new session to, atomically. */
-  createCommandId?: string;
-  project: ProjectRow;
-  userId: string;
-  requestingPrincipalType: 'human' | 'service_account';
-  body: Record<string, unknown>;
-  metadata?: Record<string, unknown>;
-  extraEnvVars?: Record<string, string>;
-  request?: RequestAuditContext;
-  /**
-   * Sessions default to private (owner-only). Automation callers (triggers,
-   * Slack/Telegram channels) pass 'project' — those sessions belong to the
-   * project, not to the stand-in owner they're attributed to, and would
-   * otherwise be invisible to everyone but the account's first owner.
-   */
-  visibility?: 'private' | 'project' | 'restricted';
-  /**
-   * Caller's token kind (auth.ts `authType`), its apiKeyType (user | sandbox,
-   * for authType==='apiKey'), and whether the token operates from inside a
-   * running session (`inSession`: session-bound or agent-scoped). Combined with
-   * the invocation source these derive the session ORIGIN — never trusted from
-   * the body. A programmatic customer credential (service_account, pat, or a
-   * 'user' apiKey) that is NOT in-session resolves to 'backend' and may set
-   * backend-only override fields. See session-origin.ts.
-   */
-  authType?: string | null;
-  apiKeyType?: string | null;
-  inSession?: boolean | null;
-  /** The caller's own session when the credential is session-bound (the
-   *  connector PAT injected into a sandbox). Used only to stop meta→meta
-   *  recursion — a meta coordinator must spawn project agents, not itself. */
-  callerSessionId?: string | null;
-  /** The request-time capability verdict for operator-managed (non-member)
-   * connections. Personal connections ignore this and remain owner-only. */
-  mayManageSystemConnections?: boolean;
-}): Promise<{
-  row?: ProjectSessionRow;
-  error?: SessionCreateError;
-  pendingPromptIdempotencyKey?: string | null;
-}> {
-  const { project, userId, body } = input;
-  const projectId = project.projectId;
-  const accountId = project.accountId;
+type CreateProjectSessionInput = Parameters<typeof createProjectSession>[0];
+/** A create step either refuses the create or hands its results on. */
+type SessionCreateStep<T> = { error: SessionCreateError } | ({ error?: undefined } & T);
+type LoadedProjectAgents = Awaited<ReturnType<typeof loadProjectAgents>>;
+type ParentSession = Awaited<ReturnType<typeof loadParentSession>>;
+type SessionSharing = ReturnType<typeof resolveInheritedSessionSharing>;
+type SessionOrigin = ReturnType<typeof inheritParentOrigin>;
+type SessionRuntimeContextValue = Extract<ReturnType<typeof parseSessionRuntimeContext>, { ok: true }>['context'];
+type ParsedSessionConnectorBindings = Extract<ReturnType<typeof parseSessionConnectorBindings>, { ok: true }>;
+type ValidatedSessionConnectorBindings = Extract<
+  Awaited<ReturnType<typeof validateSessionConnectorBindings>>,
+  { ok: true }
+>['bindings'];
+type PendingPromptConversion = ReturnType<typeof convertPendingPromptToInboxRow>;
+type SessionCreateMetadata = ReturnType<typeof buildSessionCreateMetadata>['metadata'];
+
+/** The session's sharing: explicit, or inherited from the spawning session. */
+async function resolveSessionSharing(
+  input: CreateProjectSessionInput,
+  accountId: string,
+  projectId: string,
+): Promise<{ parentSession: ParentSession; visibility: SessionSharing['visibility']; inheritedGrants: SecretGrant[] }> {
   // A session spawned by ANOTHER running session (a sub-agent/coordinator
   // worker, via that session's own bound token) inherits the SPAWNING
   // session's sharing instead of defaulting to private — see
@@ -283,6 +271,14 @@ export async function createProjectSession(input: {
     input.visibility,
     parentSharing,
   );
+  return { parentSession, visibility, inheritedGrants };
+}
+
+/** Parse the request's runtime context and connector bindings; a malformed one answers 400. */
+function parseSessionCreateBody(body: Record<string, unknown>): SessionCreateStep<{
+  parsedRuntimeContext: Extract<ReturnType<typeof parseSessionRuntimeContext>, { ok: true }>;
+  parsedConnectorBindings: ParsedSessionConnectorBindings;
+}> {
   const parsedRuntimeContext = parseSessionRuntimeContext(body.runtime_context);
   if (!parsedRuntimeContext.ok) {
     return {
@@ -307,36 +303,53 @@ export async function createProjectSession(input: {
       },
     };
   }
+  return { parsedRuntimeContext, parsedConnectorBindings };
+}
 
-  // `inherit_unbound` is a benign binding modifier: when this session binds any
-  // connector, unbound aliases keep resolving to the PROJECT DEFAULT instead of
-  // failing closed. It can only ever inherit the project default (never another
-  // owner's connection), so unlike secrets it is NOT origin-gated.
-  //
-  // An ABSENT `inherit_unbound` defaults to `true`. A session that binds SOME
-  // connectors keeps the project-default fallback for the rest unless the caller
-  // EXPLICITLY opts into fail-closed with `inherit_unbound: false` (the
-  // composer's "I picked these specific connections, turn the others off"
-  // signal). Defaulting absent→true matches the re-scope path (routes/session-scope.ts), which
-  // deliberately never flips this flag on a scope save. Before this, a caller
-  // sending `connector_bindings: {...}` without `inherit_unbound` left it
-  // `false`, hiding EVERY unbound connector from `kortix connectors ls`
-  // / `kortix connectors call` — the whole catalog went empty.
-  let inheritUnbound = body.inherit_unbound !== false;
-  const connectorBindingsConfigured = body.connector_bindings !== undefined;
+/** MANDATORY DECLARED AGENTS: an undeclared agent answers 400 before any row exists. */
+function checkDeclaredSessionAgent(params: {
+  project: ProjectRow;
+  agentName: string;
+  loadedAgents: LoadedProjectAgents;
+  platformMetaAgent: boolean;
+  projectDefaultAgent: string | null;
+}): { error: SessionCreateError } | null {
+  const { project, agentName, loadedAgents, platformMetaAgent, projectDefaultAgent } = params;
+  // MANDATORY DECLARED AGENTS (flagged — Phase 2). Only projects "subject" to enforcement (the
+  // platform-wide flag, or a project stamped `metadata.require_declared_agents`
+  // at creation) pay for this: an extra manifest read, done synchronously here so
+  // an undeclared agent is REJECTED with an explicit 400 before any row is
+  // inserted or sandbox provisioned — never left to resolve to the permissive
+  // null grant `resolveAgentGrant` falls back to on a later hiccup (see the
+  // `.catch` in session-sandbox.ts `mintConnectorToken`, which must stay
+  // fail-safe for NON-subject projects). Non-subject projects take the exact
+  // same path as before this flag existed (zero added I/O, zero behavior change).
+  if (
+    !platformMetaAgent &&
+    projectRequiresDeclaredAgents(project.metadata, config.KORTIX_REQUIRE_DECLARED_AGENTS)
+  ) {
+    const governed = resolveGovernedAgentGrant(agentName, loadedAgents, {
+      subject: true,
+      projectDefaultAgent,
+    });
+    if (!governed.ok) {
+      return { error: { status: 400, body: { error: governed.error, code: governed.code } } };
+    }
+  }
+  return null;
+}
 
-  // Origin is a POLICY CLASS derived from the caller's token kind (authType)
-  // + invocation source (metadata.source), NEVER the body. It gates which
-  // override fields the caller may set.
-  const origin = inheritParentOrigin(
-    resolveSessionOrigin({
-      authType: input.authType,
-      apiKeyType: input.apiKeyType,
-      inSession: input.inSession,
-      source: (input.metadata as Record<string, unknown> | undefined)?.source as string | undefined,
-    }),
-    parentSession?.origin,
-  );
+/**
+ * Backend-only per-session secrets allowlist: origin gate, shape, then
+ * existence and env-key collisions against the project's runtime secrets.
+ */
+async function validateSessionSecretsAllowlist(params: {
+  body: Record<string, unknown>;
+  origin: SessionOrigin;
+  projectId: string;
+  userId: string;
+}): Promise<SessionCreateStep<{ secretsAllowlist: string[] | null }>> {
+  const { body, origin, projectId, userId } = params;
   // Backend-only per-session secrets allowlist. Presence-gate on the raw body
   // FIRST (a non-backend caller that even mentions the field is rejected, before
   // shape is considered), then validate shape, then existence — narrowing the
@@ -399,8 +412,24 @@ export async function createProjectSession(input: {
       };
     }
   }
+  return { secretsAllowlist };
+}
 
-  const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
+/** Resolve the session's agent: explicit request, meta coordinator, manifest or mirrored default. */
+async function resolveSessionAgent(params: {
+  input: CreateProjectSessionInput;
+  projectId: string;
+}): Promise<
+  SessionCreateStep<{
+    loadedAgents: LoadedProjectAgents;
+    projectDefaultAgent: string | null;
+    agentName: string;
+    platformMetaAgent: boolean;
+    repositoryAccess: boolean;
+  }>
+> {
+  const { input, projectId } = params;
+  const { project, body } = input;
   const loadedAgents = await loadProjectAgents(project, {
     // The same freshness the per-prompt grant read asks for (`MirrorRefresh`):
     // no `ls-remote` when the branch tip was proven inside the interval.
@@ -473,7 +502,31 @@ export async function createProjectSession(input: {
       },
     };
   }
+  return { loadedAgents, projectDefaultAgent, agentName, platformMetaAgent, repositoryAccess };
+}
 
+/**
+ * Resolve and validate the session model, and the provider key selection a
+ * pooled-key model needs. Runs before the billing hold.
+ */
+async function resolveSessionModel(params: {
+  input: CreateProjectSessionInput;
+  accountId: string;
+  projectId: string;
+  agentName: string;
+  loadedAgents: LoadedProjectAgents;
+  visibility: SessionSharing['visibility'];
+  origin: SessionOrigin;
+}): Promise<
+  SessionCreateStep<{
+    llmGatewayEnabled: boolean;
+    providerSecretPools: Record<string, string[]> | undefined;
+    opencodeModel: string | null;
+    opencodeModelSource: ModelSource | null;
+  }>
+> {
+  const { input, accountId, projectId, agentName, loadedAgents, visibility, origin } = params;
+  const { project, userId, body } = input;
   const freeModelsOnly = !(await accountMayUseManagedModels(accountId));
   const llmGatewayEnabled = projectLlmGatewayEnabled(project.metadata);
   const pooledProviderSecrets = resolveFeatureFlag(project.metadata, 'pooled_provider_secrets');
@@ -601,9 +654,14 @@ export async function createProjectSession(input: {
         freeModelsOnly,
         providerSecretPools,
       });
+      // The platform default is servable for every tier (KRTX-1067), so a
+      // fresh free account boots pinned to it instead of to nothing — an
+      // unpinned session was exactly the dead composer of the bug report.
       const concreteModel =
         resolved.model ??
-        (!freeModelsOnly ? config.LLM_GATEWAY_DEFAULT_MODEL : null);
+        (freeModelsOnly
+          ? platformDefaultModelId() || null
+          : config.LLM_GATEWAY_DEFAULT_MODEL);
       if (concreteModel) {
         opencodeModel = toOpencodeModelRef(concreteModel);
         opencodeModelSource = resolved.model ? resolved.source : 'platform';
@@ -621,7 +679,21 @@ export async function createProjectSession(input: {
       };
     }
   }
+  return { llmGatewayEnabled, providerSecretPools, opencodeModel, opencodeModelSource };
+}
 
+/** Every explicitly bound connector must be granted to the agent and resolve to a usable connection. */
+async function validateSessionConnectorsForAgent(params: {
+  input: CreateProjectSessionInput;
+  accountId: string;
+  projectId: string;
+  agentName: string;
+  loadedAgents: LoadedProjectAgents;
+  parsedConnectorBindings: ParsedSessionConnectorBindings;
+  visibility: SessionSharing['visibility'];
+}): Promise<SessionCreateStep<{ validatedConnectorBindings: { ok: true; bindings: ValidatedSessionConnectorBindings } }>> {
+  const { input, accountId, projectId, agentName, loadedAgents, parsedConnectorBindings, visibility } = params;
+  const { userId } = input;
   // Every connector this session binds explicitly must be granted to the
   // session's agent. Nothing is required any more: an unconnected connector no
   // longer refuses the create, it denies at the call with a connect link.
@@ -678,27 +750,20 @@ export async function createProjectSession(input: {
       },
     };
   }
-  // MANDATORY DECLARED AGENTS (flagged — Phase 2). Only projects "subject" to enforcement (the
-  // platform-wide flag, or a project stamped `metadata.require_declared_agents`
-  // at creation) pay for this: an extra manifest read, done synchronously here so
-  // an undeclared agent is REJECTED with an explicit 400 before any row is
-  // inserted or sandbox provisioned — never left to resolve to the permissive
-  // null grant `resolveAgentGrant` falls back to on a later hiccup (see the
-  // `.catch` in session-sandbox.ts `mintConnectorToken`, which must stay
-  // fail-safe for NON-subject projects). Non-subject projects take the exact
-  // same path as before this flag existed (zero added I/O, zero behavior change).
-  if (
-    !platformMetaAgent &&
-    projectRequiresDeclaredAgents(project.metadata, config.KORTIX_REQUIRE_DECLARED_AGENTS)
-  ) {
-    const governed = resolveGovernedAgentGrant(agentName, loadedAgents, {
-      subject: true,
-      projectDefaultAgent,
-    });
-    if (!governed.ok) {
-      return { error: { status: 400, body: { error: governed.error, code: governed.code } } };
-    }
-  }
+  return { validatedConnectorBindings };
+}
+
+/** Pick the sandbox template slug and the sandbox provider for the session. */
+async function resolveSessionSandboxPlacement(params: {
+  project: ProjectRow;
+  body: Record<string, unknown>;
+  agentName: string;
+  loadedAgents: LoadedProjectAgents;
+  platformMetaAgent: boolean;
+}): Promise<
+  SessionCreateStep<{ sandboxSlug: string; providerLocked: boolean; providerName: SandboxProviderName }>
+> {
+  const { project, body, agentName, loadedAgents, platformMetaAgent } = params;
   // Explicit request wins. The selected agent environment is next. The
   // project default and platform default remain the final fallbacks.
   const projectDefaultSandboxSlug = normalizeString(
@@ -753,59 +818,21 @@ export async function createProjectSession(input: {
   const providerName: SandboxProviderName = providerLocked
     ? (picked as { provider: string }).provider as SandboxProviderName
     : await selectProvider();
+  return { sandboxSlug, providerLocked, providerName };
+}
 
-  const callbackUnreachable =
-    sandboxCallbackUnreachableReason() ?? (await sandboxCallbackDeadTunnelReason());
-  if (callbackUnreachable) {
-    return {
-      error: { status: 503, body: { error: callbackUnreachable, code: 'KORTIX_URL_UNREACHABLE' } },
-    };
-  }
-
-  // Validate the requested sandbox template up front so the user gets a clean
-  // 400 instead of an async session-failed if they typed a slug that doesn't
-  // exist. The platform default is always valid.
-  // Harness/worker split: with the project's pi_worker flag on AND the manifest
-  // declaring `runtime: pi`, the session boots the shared pi worker image and
-  // its compiled runtime artifact instead of the OpenCode stack. Both gates or
-  // nothing — the flag alone only compiles artifacts, the manifest alone is
-  // inert, and any resolution failure falls back to the OpenCode path.
-  let piWorkerBoot = false;
-  let piWorkerSha: string | null = null;
-  if (!platformMetaAgent && resolveFeatureFlag(project.metadata, 'pi_worker')) {
-    try {
-      const authedProject = await withProjectGitAuth(project);
-      const ref = (baseRef ?? '').trim() || project.defaultBranch;
-      // One round trip, not two: the runtime read and the tip resolution are
-      // independent, and both sit on the POST /sessions critical path. A
-      // non-pi manifest wastes one ls-remote-sized read; a pi manifest saves
-      // a full sequential git hop.
-      const [runtime, sha] = await Promise.all([
-        resolveManifestRuntime(authedProject, baseRef),
-        resolveCommitSha(authedProject, ref).catch(() => null),
-      ]);
-      if (runtime === 'pi' && sha) {
-        piWorkerSha = sha;
-        piWorkerBoot = true;
-        sandboxSlug = PI_WORKER_SANDBOX_SLUG;
-      } else if (runtime === 'pi') {
-        console.warn(
-          `[sessions] pi manifest on ${projectId} but tip resolution for '${ref}' failed; booting OpenCode path`,
-        );
-      }
-    } catch (err) {
-      console.warn(
-        `[sessions] pi worker resolution failed for ${projectId}; booting OpenCode path:`,
-        err instanceof Error ? err.message : err,
-      );
-    }
-  }
-
+/** A non-default sandbox template must exist in the project before the session row does. */
+async function validateSessionSandboxTemplate(params: {
+  project: ProjectRow;
+  projectId: string;
+  platformMetaAgent: boolean;
+  sandboxSlug: string;
+}): Promise<{ error: SessionCreateError } | null> {
+  const { project, projectId, platformMetaAgent, sandboxSlug } = params;
   if (
     !platformMetaAgent &&
     sandboxSlug &&
-    sandboxSlug !== DEFAULT_SANDBOX_SLUG &&
-    sandboxSlug !== PI_WORKER_SANDBOX_SLUG
+    sandboxSlug !== DEFAULT_SANDBOX_SLUG
   ) {
     try {
       await resolveTemplate(
@@ -828,7 +855,11 @@ export async function createProjectSession(input: {
       };
     }
   }
+  return null;
+}
 
+/** Billing admission for the project's owning account; a refusal answers 402. */
+async function checkSessionBillingAdmission(accountId: string): Promise<{ error: SessionCreateError } | null> {
   const billingCheck = await checkBillingAdmission(accountId);
   if (!billingCheck.ok) {
     return {
@@ -855,7 +886,22 @@ export async function createProjectSession(input: {
       },
     };
   }
+  return null;
+}
 
+/** The session id, the first-turn authority, and the durable first prompt. */
+function resolveSessionIdentity(params: {
+  input: CreateProjectSessionInput;
+  projectId: string;
+  accountId: string;
+}): SessionCreateStep<{
+  sessionId: string;
+  initialPrompt: string | null;
+  initialTurn: ReturnType<typeof prepareInitialSandboxTurn> | null;
+  pendingPromptConversion: PendingPromptConversion | null;
+}> {
+  const { input, projectId, accountId } = params;
+  const { userId, body } = input;
   const requestedSessionId = normalizeString(body.session_id ?? body.sessionId);
   if (requestedSessionId && !isUuid(requestedSessionId)) {
     return { error: { status: 400, body: { error: 'Invalid session id' } } };
@@ -892,6 +938,49 @@ export async function createProjectSession(input: {
       },
     };
   }
+  return { sessionId, initialPrompt, initialTurn, pendingPromptConversion };
+}
+
+/** The initiator and the metadata the session row is created with. */
+function buildSessionCreateMetadata(params: {
+  input: CreateProjectSessionInput;
+  projectId: string;
+  accountId: string;
+  sessionId: string;
+  origin: SessionOrigin;
+  agentName: string;
+  visibility: SessionSharing['visibility'];
+  providerName: SandboxProviderName;
+  validatedConnectorBindings: { bindings: ValidatedSessionConnectorBindings };
+  secretsAllowlist: string[] | null;
+  initialPrompt: string | null;
+  pendingPromptConversion: PendingPromptConversion | null;
+  opencodeModel: string | null;
+  opencodeModelSource: ModelSource | null;
+  parentSession: ParentSession;
+  repositoryAccess: boolean;
+  sandboxSlug: string;
+}) {
+  const {
+    input,
+    projectId,
+    accountId,
+    sessionId,
+    origin,
+    agentName,
+    visibility,
+    providerName,
+    validatedConnectorBindings,
+    secretsAllowlist,
+    initialPrompt,
+    pendingPromptConversion,
+    opencodeModel,
+    opencodeModelSource,
+    parentSession,
+    repositoryAccess,
+    sandboxSlug,
+  } = params;
+  const { project, userId, body } = input;
   // A name supplied at create is an EXPLICIT, user-chosen name — the same thing
   // `PATCH /sessions/:id` writes when the user renames. It belongs in
   // `metadata.custom_name`, NOT `metadata.name`: `name` is the auto-title slot
@@ -988,10 +1077,650 @@ export async function createProjectSession(input: {
       delegation_depth: auditAttribution.delegationDepth,
     },
   };
+  return { initiator, metadata };
+}
+
+/** Session row, create-command link, key pools, context, first prompt, bindings and grants: one transaction. */
+async function insertSessionAndBindings(
+  params: {
+    input: CreateProjectSessionInput;
+    sessionId: string;
+    accountId: string;
+    projectId: string;
+    baseRef: string;
+    providerName: SandboxProviderName;
+    agentName: string;
+    visibility: SessionSharing['visibility'];
+    origin: SessionOrigin;
+    parentSession: ParentSession;
+    initiator: SessionInitiator;
+    secretsAllowlist: string[] | null;
+    connectorBindingsConfigured: boolean;
+    inheritUnbound: boolean;
+    metadata: SessionCreateMetadata;
+    providerSecretPools: Record<string, string[]> | undefined;
+    pendingPromptConversion: PendingPromptConversion | null;
+    inheritedGrants: SecretGrant[];
+  },
+  runtimeContext: SessionRuntimeContextValue,
+  connectorBindings: ValidatedSessionConnectorBindings,
+): Promise<ProjectSessionRow> {
+  const {
+    input,
+    sessionId,
+    accountId,
+    projectId,
+    baseRef,
+    providerName,
+    agentName,
+    visibility,
+    origin,
+    parentSession,
+    initiator,
+    secretsAllowlist,
+    connectorBindingsConfigured,
+    inheritUnbound,
+    metadata,
+    providerSecretPools,
+    pendingPromptConversion,
+    inheritedGrants,
+  } = params;
+  const { userId, body } = input;
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+    .insert(projectSessions)
+    .values({
+      sessionId,
+      accountId,
+      projectId,
+      branchName: sessionId,
+      baseRef,
+      sandboxProvider: providerName,
+      sandboxId: sessionId,
+      // Do not set opencodeSessionId during wrapper-session creation.
+      // Runtime root discovery persists it only after OpenCode creates its root.
+      agentName,
+      status: 'provisioning',
+      // Sessions are private to their creator by default; share via the
+      // session-header control (visibility = project | restricted).
+      createdBy: userId,
+      visibility,
+      origin,
+      parentSessionId: parentSession?.sessionId ?? null,
+      initiatorType: initiator.type,
+      initiatorId: initiator.id,
+      secretsAllowlist,
+      labels: SessionCreateInputSchema.shape.labels.parse(body.labels) ?? [],
+      connectorBindingsConfigured,
+      connectorBindingsInheritUnbound: inheritUnbound,
+      metadata,
+      updatedAt: new Date(),
+    })
+    .returning();
+  if (!row) throw new Error('Session insert returned no row');
+  if (input.createCommandId) {
+    // Same transaction as the session row: a create command whose worker
+    // dies after this commit is reclaimed WITH its session id, and
+    // executeQueuedCreate returns this session instead of provisioning a
+    // second one.
+    await tx
+      .update(sessionLifecycleCommands)
+      .set({ sessionId, updatedAt: new Date() })
+      .where(
+        and(
+          eq(sessionLifecycleCommands.commandId, input.createCommandId),
+          eq(sessionLifecycleCommands.commandType, 'create_session'),
+          isNull(sessionLifecycleCommands.sessionId),
+        ),
+      );
+  }
+  if (providerSecretPools && Object.keys(providerSecretPools).length > 0) {
+    await tx.insert(sessionProviderSecretPools).values(
+      Object.entries(providerSecretPools).map(([providerId, secretIds]) => ({ sessionId, providerId, secretIds })),
+    );
+  }
+  if (runtimeContext !== undefined) {
+      await tx
+        .insert(projectSessionRuntimeContexts)
+        .values({
+          sessionId,
+           context: runtimeContext,
+           byteSize: new TextEncoder().encode(JSON.stringify(runtimeContext))
+            .byteLength,
+        })
+        .returning({ sessionId: projectSessionRuntimeContexts.sessionId });
+  }
+    if (pendingPromptConversion?.rowValues) {
+      // Same transaction as the session row: either the session exists WITH
+      // its first prompt durable, or neither does. No conflict handling —
+      // `sessionId` is fresh here, so the idempotency key cannot collide
+      // without the projectSessions PK colliding first.
+      const insertPrompt = tx
+        .insert(sessionLifecycleCommands)
+        .values(pendingPromptConversion.rowValues);
+      // Only a handle prompt reads its payload back, for binding. A legacy
+      // prompt can carry up to 12 MiB of data-URL parts it never needs again.
+      if ((pendingPromptConversion.rowValues.payload.parts as Array<{ attachment_id?: string }> | undefined)?.some((part) => part.attachment_id)) {
+        const [promptCommand] = await insertPrompt.returning({
+          commandId: sessionLifecycleCommands.commandId,
+          accountId: sessionLifecycleCommands.accountId,
+          projectId: sessionLifecycleCommands.projectId,
+          actorUserId: sessionLifecycleCommands.actorUserId,
+          payload: sessionLifecycleCommands.payload,
+        });
+        if (promptCommand) {
+          const { bindPromptAttachments } = await import('../prompt-attachments');
+          await bindPromptAttachments(tx, promptCommand, input.attachmentSourceCommandId);
+        }
+      } else {
+        await insertPrompt.returning({ commandId: sessionLifecycleCommands.commandId });
+      }
+    }
+    if (connectorBindings.length > 0) {
+      await tx
+        .insert(projectSessionConnectorBindings)
+        .values(
+           connectorBindings.map((binding) => ({
+            sessionId,
+            accountId,
+            projectId,
+            connectorAlias: binding.alias,
+            connectorId: binding.connectorId,
+            connectionId: binding.connectionId,
+            source: 'request' as const,
+            createdBy: userId,
+          })),
+        )
+        .returning({ sessionId: projectSessionConnectorBindings.sessionId });
+    }
+    if (inheritedGrants.length > 0) {
+      await tx.insert(projectSessionGrants).values(
+        inheritedGrants.map((g) => ({
+          sessionId,
+          principalType: g.principalType,
+          principalId: g.principalId,
+        })),
+      );
+    }
+    return row;
+  });
+}
+
+/** Merge telemetry into the new session's metadata. */
+async function mergeCreatedSessionMetadata(sessionId: string, extra: Record<string, unknown>): Promise<void> {
+  await db
+    .update(projectSessions)
+    .set({
+      metadata: projectSessionMetadataMerge(extra),
+      updatedAt: new Date(),
+    })
+    .where(eq(projectSessions.sessionId, sessionId));
+}
+
+/** The project snapshot pin the new session boots with (S3 config provider). */
+async function resolveCreatedSessionProjectSnapshot(
+  params: { project: ProjectRow; projectId: string; sessionId: string; baseRef: string; tl: ProvisionTimeline },
+  fastBootGitHint: Awaited<ReturnType<typeof resolveFastBootGitHintWithCache>> | undefined,
+) {
+  const { project, projectId, sessionId, baseRef, tl } = params;
+  // S3 config provider: pin a PREPARED archive for the exact base tip
+  // and presign its download descriptor right here (local signing, no
+  // bucket call on the create path), or record the miss and queue the
+  // build for the next session. One indexed read.
+  const projectSnapshotMode = resolveProjectSnapshotMode(project.metadata);
+  const projectSnapshot =
+    projectSnapshotMode === 'git'
+      ? { pin: null, descriptor: null, cache: 'unconfigured' as const }
+      : await resolveProjectSnapshotPinForSession({
+          projectId,
+          ref: baseRef,
+          commitSha: fastBootGitHint?.baseSha,
+          repoUrl: project.repoUrl,
+        }).catch((err) => {
+          console.warn('[project-snapshot] pin lookup failed; session boots from git', {
+            projectId,
+            sessionId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          return { pin: null, descriptor: null, cache: 'miss' as const };
+        });
+  if (projectSnapshotMode !== 'git') {
+    tl.mark(`project-snapshot-${projectSnapshot.cache}`);
+  }
+  return {
+    fastBootGitHint,
+    projectSnapshotMode,
+    projectSnapshotPin: projectSnapshot.pin,
+    projectSnapshotDescriptor: projectSnapshot.descriptor,
+  };
+}
+
+/** Push the session branch to origin in the background and record the outcome. */
+function publishCreatedSessionBranch(params: {
+  body: Record<string, unknown>;
+  repositoryAccess: boolean;
+  projectWithGitAuthPromise: ReturnType<typeof withProjectGitAuth>;
+  sessionId: string;
+  baseRef: string;
+  tl: ProvisionTimeline;
+}): void {
+  const { body, repositoryAccess, projectWithGitAuthPromise, sessionId, baseRef, tl } = params;
+  // Origin branch creation is publishing work, not readiness work. The
+  // sandbox now creates the session branch locally from the base checkout
+  // immediately, so this remote push runs fully in the background. The
+  // metadata writes that record success/failure are pure telemetry —
+  // fire-and-forget so they never block the IIFE itself.
+  const branchAlreadyCreated =
+    body.branch_already_created === true || body.branchAlreadyCreated === true;
+  const branchPromise: Promise<void> = !repositoryAccess || branchAlreadyCreated
+    ? Promise.resolve()
+    : projectWithGitAuthPromise
+        .then((projectWithGitAuth) =>
+        createRemoteSessionBranch(projectWithGitAuth, sessionId, baseRef),
+        )
+        .then(() => {
+        tl.mark('branch-pushed');
+        void mergeCreatedSessionMetadata(sessionId, {
+            remote_branch: {
+              status: 'ready',
+              branch: sessionId,
+              updated_at: new Date().toISOString(),
+            },
+        }).catch(() => {});
+      });
+  branchPromise.catch((err) => {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[projects] Remote branch creation failed for session ${sessionId}:`, err);
+    void mergeCreatedSessionMetadata(sessionId, {
+      remote_branch: {
+        status: 'failed',
+        branch: sessionId,
+        error: message.slice(0, 500),
+        updated_at: new Date().toISOString(),
+      },
+    }).catch(() => {});
+  });
+}
+
+/** Build the env, publish the branch, and kick off provisionSessionSandbox() for a new session row. */
+async function provisionCreatedSession(params: {
+  input: CreateProjectSessionInput;
+  sessionId: string;
+  projectId: string;
+  accountId: string;
+  baseRef: string;
+  agentName: string;
+  opencodeModel: string | null;
+  llmGatewayEnabled: boolean;
+  platformMetaAgent: boolean;
+  repositoryAccess: boolean;
+  providerName: SandboxProviderName;
+  providerLocked: boolean;
+  initialTurn: ReturnType<typeof prepareInitialSandboxTurn> | null;
+  sandboxSlug: string;
+}): Promise<void> {
+  const {
+    input,
+    sessionId,
+    projectId,
+    accountId,
+    baseRef,
+    agentName,
+    opencodeModel,
+    llmGatewayEnabled,
+    platformMetaAgent,
+    repositoryAccess,
+    providerName,
+    providerLocked,
+    initialTurn,
+    sandboxSlug,
+  } = params;
+  const { project, userId, body } = input;
+  const tl = new ProvisionTimeline(sessionId, 'session-create');
+  try {
+    // Resolve git auth and user env concurrently. Git auth is needed for
+    // background freshness checks / remote branch publishing, but a warm
+    // session can boot from an existing ready snapshot without waiting for it.
+    const projectWithGitAuthPromise = withProjectGitAuth(project).then((gitProject) => {
+      tl.mark('git-auth');
+      return gitProject;
+    });
+    // Resolve the base tip from the API's existing mirror and package its
+    // one-commit scaffold delta. This moves the small object transfer into
+    // sandbox creation and removes the slow in-guest Git negotiation.
+    // Best-effort + timeout-guarded (never block create): on failure/timeout
+    // the hint is omitted → daemon delta-fetches as before. Runs CONCURRENTLY
+    // with gitAuth (folded into the env-build chain, not awaited inline).
+    let fastBootHintTimeout: ReturnType<typeof setTimeout> | undefined;
+    // Default on (KORTIX_FAST_GIT_BOOT_ENABLED): the hint is what lets the
+    // daemon boot with ZERO proxied git requests (scaffold + delta) and spawn
+    // OpenCode before the checkout. Bounded by the 2 s race below; a miss
+    // just means the daemon's fetch fallback.
+    const fastBootGitHintPromise =
+      config.KORTIX_FAST_GIT_BOOT_ENABLED
+      ? Promise.race([
+          projectWithGitAuthPromise
+            .then((projectWithGitAuth) =>
+              resolveFastBootGitHintWithCache(
+                projectWithGitAuth,
+                baseRef,
+                project.metadata,
+              ),
+            )
+            .catch(() => undefined),
+          new Promise<undefined>((resolve) => {
+            fastBootHintTimeout = setTimeout(() => resolve(undefined), 2_000);
+          }),
+        ]).finally(() => {
+          if (fastBootHintTimeout) clearTimeout(fastBootHintTimeout);
+        })
+      : Promise.resolve(undefined);
+    const envPromise = fastBootGitHintPromise
+      .then((fastBootGitHint) =>
+        resolveCreatedSessionProjectSnapshot({ project, projectId, sessionId, baseRef, tl }, fastBootGitHint),
+      )
+      .then(({ fastBootGitHint, projectSnapshotMode, projectSnapshotPin, projectSnapshotDescriptor }) =>
+        buildSessionSandboxEnvVars({
+          accountId,
+          projectId,
+          sessionId,
+          userId,
+          repoUrl: project.repoUrl,
+          baseRef,
+          agentName,
+          opencodeModel,
+          llmGatewayEnabled,
+          platformMetaAgent,
+          freshSession: true,
+          projectSnapshotMode,
+          projectSnapshotPin,
+          projectSnapshotDescriptor,
+          baseSha: fastBootGitHint?.baseSha,
+          gitDeltaBundleBase64: fastBootGitHint?.gitDeltaBundleBase64,
+          gitDeltaBundleRemote: fastBootGitHint?.gitDeltaBundleRemote,
+          gitDeltaParentSha: fastBootGitHint?.gitDeltaParentSha,
+          gitDeltaParentCommitBase64: fastBootGitHint?.gitDeltaParentCommitBase64,
+          defaultBranch: project.defaultBranch,
+          manifestPath: project.manifestPath,
+          repositoryAccess,
+        }),
+      )
+      .then((envVars) => {
+        tl.mark('env-vars');
+        return envVars;
+      });
+
+    publishCreatedSessionBranch({ body, repositoryAccess, projectWithGitAuthPromise, sessionId, baseRef, tl });
+
+    // Not awaited here: provisioning reads it only when it builds the provider
+    // input, so the env build overlaps the image check and the token mint.
+    const extraEnvVars = envPromise.then((env) => {
+      return mergeSessionSandboxEnv(env, input.extraEnvVars);
+    });
+
+    const provisionPromise = provisionSessionSandbox({
+      sandboxId: sessionId,
+      accountId,
+      projectId,
+      userId,
+      agentName,
+      allowProjectImage: projectImageAllowedForSession(agentName, repositoryAccess),
+      provider: providerName,
+      providerLocked,
+      metadata: {
+        session_id: sessionId,
+        project_id: projectId,
+        ...(input.metadata ?? {}),
+      },
+      initialTurn,
+      extraEnvVars,
+      projectMetadata: project.metadata,
+      gitProject: {
+        projectId,
+        repoUrl: project.repoUrl,
+        defaultBranch: project.defaultBranch,
+        manifestPath: project.manifestPath,
+        gitAuthToken: null,
+      },
+      resolveGitProject: async () => projectWithGitAuthPromise,
+      baseRef,
+      sandboxSlug,
+    });
+
+    // provisionSessionSandbox returns once its row is inserted; provider
+    // create and remote branch push both continue in detached background work.
+    await provisionPromise;
+    tl.mark('kicked');
+    const sessionStartTimeline = tl.log();
+    // Fire-and-forget: the timeline write is pure telemetry. Awaiting it
+    // here used to add ~30-80ms of DB round-trip to every session start.
+    void mergeCreatedSessionMetadata(sessionId, { session_start_timeline: sessionStartTimeline }).catch(() => {});
+  } catch (err) {
+    const message = (err as Error)?.message || 'Sandbox provisioning failed';
+    console.error(`[projects] Failed to kick off sandbox for session ${sessionId}:`, err);
+    try {
+      // Merge, never re-write the create-time snapshot: by the time
+      // provisioning fails the row may already carry a generated title,
+      // remote_branch or the start timeline. A session deleted meanwhile
+      // keeps its tombstone.
+      await transitionSession('fail', sessionId, {
+        error: message,
+        metadata: { provisioning_error: message },
+      });
+    } catch (markErr) {
+      console.error(`[projects] Failed to mark session ${sessionId} failed:`, markErr);
+    }
+    // Surface the failure to the originating channel (Slack) so the thread
+    // doesn't sit on a ⏳ until the 30-min GC. No-op for non-channel sessions.
+    notifySessionProvisioningFailed(sessionId, message);
+  }
+}
+
+export async function createProjectSession(input: {
+  attachmentSourceCommandId?: string;
+  /** The `create_session` command to link the new session to, atomically. */
+  createCommandId?: string;
+  project: ProjectRow;
+  userId: string;
+  requestingPrincipalType: 'human' | 'service_account';
+  body: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  extraEnvVars?: Record<string, string>;
+  request?: RequestAuditContext;
+  /**
+   * Sessions default to private (owner-only). Automation callers (triggers,
+   * Slack/Telegram channels) pass 'project' — those sessions belong to the
+   * project, not to the stand-in owner they're attributed to, and would
+   * otherwise be invisible to everyone but the account's first owner.
+   */
+  visibility?: 'private' | 'project' | 'restricted';
+  /**
+   * Caller's token kind (auth.ts `authType`), its apiKeyType (user | sandbox,
+   * for authType==='apiKey'), and whether the token operates from inside a
+   * running session (`inSession`: session-bound or agent-scoped). Combined with
+   * the invocation source these derive the session ORIGIN — never trusted from
+   * the body. A programmatic customer credential (service_account, pat, or a
+   * 'user' apiKey) that is NOT in-session resolves to 'backend' and may set
+   * backend-only override fields. See session-origin.ts.
+   */
+  authType?: string | null;
+  apiKeyType?: string | null;
+  inSession?: boolean | null;
+  /** The caller's own session when the credential is session-bound (the
+   *  connector PAT injected into a sandbox). Used only to stop meta→meta
+   *  recursion — a meta coordinator must spawn project agents, not itself. */
+  callerSessionId?: string | null;
+  /** The request-time capability verdict for operator-managed (non-member)
+   * connections. Personal connections ignore this and remain owner-only. */
+  mayManageSystemConnections?: boolean;
+}): Promise<{
+  row?: ProjectSessionRow;
+  error?: SessionCreateError;
+  pendingPromptIdempotencyKey?: string | null;
+}> {
+  const { project, userId, body } = input;
+  const projectId = project.projectId;
+  const accountId = project.accountId;
+  const { parentSession, visibility, inheritedGrants } = await resolveSessionSharing(
+    input,
+    accountId,
+    projectId,
+  );
+  const parsedBody = parseSessionCreateBody(body);
+  if (parsedBody.error) return { error: parsedBody.error };
+  const { parsedRuntimeContext, parsedConnectorBindings } = parsedBody;
+
+  // `inherit_unbound` is a benign binding modifier: when this session binds any
+  // connector, unbound aliases keep resolving to the PROJECT DEFAULT instead of
+  // failing closed. It can only ever inherit the project default (never another
+  // owner's connection), so unlike secrets it is NOT origin-gated.
+  //
+  // An ABSENT `inherit_unbound` defaults to `true`. A session that binds SOME
+  // connectors keeps the project-default fallback for the rest unless the caller
+  // EXPLICITLY opts into fail-closed with `inherit_unbound: false` (the
+  // composer's "I picked these specific connections, turn the others off"
+  // signal). Defaulting absent→true matches the re-scope path (routes/session-scope.ts), which
+  // deliberately never flips this flag on a scope save. Before this, a caller
+  // sending `connector_bindings: {...}` without `inherit_unbound` left it
+  // `false`, hiding EVERY unbound connector from `kortix connectors ls`
+  // / `kortix connectors call` — the whole catalog went empty.
+  let inheritUnbound = body.inherit_unbound !== false;
+  const connectorBindingsConfigured = body.connector_bindings !== undefined;
+
+  // Origin is a POLICY CLASS derived from the caller's token kind (authType)
+  // + invocation source (metadata.source), NEVER the body. It gates which
+  // override fields the caller may set.
+  const origin = inheritParentOrigin(
+    resolveSessionOrigin({
+      authType: input.authType,
+      apiKeyType: input.apiKeyType,
+      inSession: input.inSession,
+      source: (input.metadata as Record<string, unknown> | undefined)?.source as string | undefined,
+    }),
+    parentSession?.origin,
+  );
+  const secretsCheck = await validateSessionSecretsAllowlist({ body, origin, projectId, userId });
+  if (secretsCheck.error) return { error: secretsCheck.error };
+  const { secretsAllowlist } = secretsCheck;
+
+  const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
+  const agent = await resolveSessionAgent({ input, projectId });
+  if (agent.error) return { error: agent.error };
+  const { loadedAgents, projectDefaultAgent, agentName, platformMetaAgent, repositoryAccess } = agent;
+
+  const model = await resolveSessionModel({
+    input,
+    accountId,
+    projectId,
+    agentName,
+    loadedAgents,
+    visibility,
+    origin,
+  });
+  if (model.error) return { error: model.error };
+  const { llmGatewayEnabled, providerSecretPools, opencodeModel, opencodeModelSource } = model;
+
+  const connectors = await validateSessionConnectorsForAgent({
+    input,
+    accountId,
+    projectId,
+    agentName,
+    loadedAgents,
+    parsedConnectorBindings,
+    visibility,
+  });
+  if (connectors.error) return { error: connectors.error };
+  const { validatedConnectorBindings } = connectors;
+  const declaredAgentCheck = checkDeclaredSessionAgent({
+    project,
+    agentName,
+    loadedAgents,
+    platformMetaAgent,
+    projectDefaultAgent,
+  });
+  if (declaredAgentCheck) return declaredAgentCheck;
+  const placement = await resolveSessionSandboxPlacement({
+    project,
+    body,
+    agentName,
+    loadedAgents,
+    platformMetaAgent,
+  });
+  if (placement.error) return { error: placement.error };
+  let { sandboxSlug } = placement;
+  const { providerLocked, providerName } = placement;
+
+  const callbackUnreachable =
+    sandboxCallbackUnreachableReason() ?? (await sandboxCallbackDeadTunnelReason());
+  if (callbackUnreachable) {
+    return {
+      error: { status: 503, body: { error: callbackUnreachable, code: 'KORTIX_URL_UNREACHABLE' } },
+    };
+  }
+
+  // Validate the requested sandbox template up front so the user gets a clean
+  // 400 instead of an async session-failed if they typed a slug that doesn't
+  // exist. The platform default is always valid.
+  const templateCheck = await validateSessionSandboxTemplate({
+    project,
+    projectId,
+    platformMetaAgent,
+    sandboxSlug,
+  });
+  if (templateCheck) return templateCheck;
+
+  const billingCheck = await checkSessionBillingAdmission(accountId);
+  if (billingCheck) return billingCheck;
+
+  const identity = resolveSessionIdentity({ input, projectId, accountId });
+  if (identity.error) return { error: identity.error };
+  const { sessionId, initialPrompt, initialTurn, pendingPromptConversion } = identity;
+  const { initiator, metadata } = buildSessionCreateMetadata({
+    input,
+    projectId,
+    accountId,
+    sessionId,
+    origin,
+    agentName,
+    visibility,
+    providerName,
+    validatedConnectorBindings,
+    secretsAllowlist,
+    initialPrompt,
+    pendingPromptConversion,
+    opencodeModel,
+    opencodeModelSource,
+    parentSession,
+    repositoryAccess,
+    sandboxSlug,
+  });
 
   let sessionRow: ProjectSessionRow | null = null;
   try {
-    sessionRow = await insertSessionAndBindings(parsedRuntimeContext.context, validatedConnectorBindings.bindings);
+    sessionRow = await insertSessionAndBindings(
+      {
+        input,
+        sessionId,
+        accountId,
+        projectId,
+        baseRef,
+        providerName,
+        agentName,
+        visibility,
+        origin,
+        parentSession,
+        initiator,
+        secretsAllowlist,
+        connectorBindingsConfigured,
+        inheritUnbound,
+        metadata,
+        providerSecretPools,
+        pendingPromptConversion,
+        inheritedGrants,
+      },
+      parsedRuntimeContext.context,
+      validatedConnectorBindings.bindings,
+    );
   } catch (error) {
     // Besides a randomUUID() collision on the PK / (project_id, branch_name)
     // unique index, `sandbox_provider` is an ENUM: a provider this env enables
@@ -1002,135 +1731,13 @@ export async function createProjectSession(input: {
     // Session, context and connection bindings are one transaction. Nothing is
     // visible and provisioning never starts when any child insert fails.
     if (error instanceof HTTPException && error.status < 500) {
-      return { error: { status: error.status, body: await error.getResponse().json() } };
+      return {
+        error: { status: sessionCreateErrorStatus(error.status), body: await error.getResponse().json() },
+      };
     }
     // Never return `(error as Error).message`: postgres.js embeds the whole
     // statement and its parameters in it (see `resolveSessionInsertFailure`).
     return { error: resolveSessionInsertFailure(error) };
-  }
-
-  async function insertSessionAndBindings(
-    runtimeContext: Extract<typeof parsedRuntimeContext, { ok: true }>['context'],
-    connectorBindings: Extract<typeof validatedConnectorBindings, { ok: true }>['bindings'],
-  ): Promise<ProjectSessionRow> {
-    return db.transaction(async (tx) => {
-      const [row] = await tx
-      .insert(projectSessions)
-      .values({
-        sessionId,
-        accountId,
-        projectId,
-        branchName: sessionId,
-        baseRef,
-        sandboxProvider: providerName,
-        sandboxId: sessionId,
-        // Do not set opencodeSessionId during wrapper-session creation.
-        // Runtime root discovery persists it only after OpenCode creates its root.
-        agentName,
-        status: 'provisioning',
-        // Sessions are private to their creator by default; share via the
-        // session-header control (visibility = project | restricted).
-        createdBy: userId,
-        visibility,
-        origin,
-        parentSessionId: parentSession?.sessionId ?? null,
-        initiatorType: initiator.type,
-        initiatorId: initiator.id,
-        secretsAllowlist,
-        labels: SessionCreateInputSchema.shape.labels.parse(body.labels) ?? [],
-        connectorBindingsConfigured,
-        connectorBindingsInheritUnbound: inheritUnbound,
-        metadata,
-        updatedAt: new Date(),
-      })
-      .returning();
-    if (!row) throw new Error('Session insert returned no row');
-    if (input.createCommandId) {
-      // Same transaction as the session row: a create command whose worker
-      // dies after this commit is reclaimed WITH its session id, and
-      // executeQueuedCreate returns this session instead of provisioning a
-      // second one.
-      await tx
-        .update(sessionLifecycleCommands)
-        .set({ sessionId, updatedAt: new Date() })
-        .where(
-          and(
-            eq(sessionLifecycleCommands.commandId, input.createCommandId),
-            eq(sessionLifecycleCommands.commandType, 'create_session'),
-            isNull(sessionLifecycleCommands.sessionId),
-          ),
-        );
-    }
-    if (providerSecretPools && Object.keys(providerSecretPools).length > 0) {
-      await tx.insert(sessionProviderSecretPools).values(
-        Object.entries(providerSecretPools).map(([providerId, secretIds]) => ({ sessionId, providerId, secretIds })),
-      );
-    }
-    if (runtimeContext !== undefined) {
-        await tx
-          .insert(projectSessionRuntimeContexts)
-          .values({
-            sessionId,
-             context: runtimeContext,
-             byteSize: new TextEncoder().encode(JSON.stringify(runtimeContext))
-              .byteLength,
-          })
-          .returning({ sessionId: projectSessionRuntimeContexts.sessionId });
-    }
-      if (pendingPromptConversion?.rowValues) {
-        // Same transaction as the session row: either the session exists WITH
-        // its first prompt durable, or neither does. No conflict handling —
-        // `sessionId` is fresh here, so the idempotency key cannot collide
-        // without the projectSessions PK colliding first.
-        const insertPrompt = tx
-          .insert(sessionLifecycleCommands)
-          .values(pendingPromptConversion.rowValues);
-        // Only a handle prompt reads its payload back, for binding. A legacy
-        // prompt can carry up to 12 MiB of data-URL parts it never needs again.
-        if ((pendingPromptConversion.rowValues.payload.parts as Array<{ attachment_id?: string }> | undefined)?.some((part) => part.attachment_id)) {
-          const [promptCommand] = await insertPrompt.returning({
-            commandId: sessionLifecycleCommands.commandId,
-            accountId: sessionLifecycleCommands.accountId,
-            projectId: sessionLifecycleCommands.projectId,
-            actorUserId: sessionLifecycleCommands.actorUserId,
-            payload: sessionLifecycleCommands.payload,
-          });
-          if (promptCommand) {
-            const { bindPromptAttachments } = await import('../prompt-attachments');
-            await bindPromptAttachments(tx, promptCommand, input.attachmentSourceCommandId);
-          }
-        } else {
-          await insertPrompt.returning({ commandId: sessionLifecycleCommands.commandId });
-        }
-      }
-      if (connectorBindings.length > 0) {
-        await tx
-          .insert(projectSessionConnectorBindings)
-          .values(
-             connectorBindings.map((binding) => ({
-              sessionId,
-              accountId,
-              projectId,
-              connectorAlias: binding.alias,
-              connectorId: binding.connectorId,
-              connectionId: binding.connectionId,
-              source: 'request' as const,
-              createdBy: userId,
-            })),
-          )
-          .returning({ sessionId: projectSessionConnectorBindings.sessionId });
-      }
-      if (inheritedGrants.length > 0) {
-        await tx.insert(projectSessionGrants).values(
-          inheritedGrants.map((g) => ({
-            sessionId,
-            principalType: g.principalType,
-            principalId: g.principalId,
-          })),
-        );
-      }
-      return row;
-    });
   }
 
   if (sessionRow === null) {
@@ -1159,302 +1766,22 @@ export async function createProjectSession(input: {
 
   // Fire-and-forget sandbox provisioning. The dashboard polls the sandbox
   // status endpoint and shows the ConnectingScreen during the long tail.
-  void provisionCreatedSession();
-
-  async function provisionCreatedSession() {
-    const tl = new ProvisionTimeline(sessionId, 'session-create');
-    try {
-      // Resolve git auth and user env concurrently. Git auth is needed for
-      // background freshness checks / remote branch publishing, but a warm
-      // session can boot from an existing ready snapshot without waiting for it.
-      const projectWithGitAuthPromise = withProjectGitAuth(project).then((gitProject) => {
-        tl.mark('git-auth');
-        return gitProject;
-      });
-      // Resolve the base tip from the API's existing mirror and package its
-      // one-commit scaffold delta. This moves the small object transfer into
-      // sandbox creation and removes the slow in-guest Git negotiation.
-      // Best-effort + timeout-guarded (never block create): on failure/timeout
-      // the hint is omitted → daemon delta-fetches as before. Runs CONCURRENTLY
-      // with gitAuth (folded into the env-build chain, not awaited inline).
-      let fastBootHintTimeout: ReturnType<typeof setTimeout> | undefined;
-      // Default on (KORTIX_FAST_GIT_BOOT_ENABLED): the hint is what lets the
-      // daemon boot with ZERO proxied git requests (scaffold + delta) and spawn
-      // OpenCode before the checkout. Bounded by the 2 s race below; a miss
-      // just means the daemon's fetch fallback.
-      // The worker path never clones: the scaffold/delta hint is pure waste
-      // there, and the hint alone holds the env build for up to 2 s.
-      const fastBootGitHintPromise =
-        !piWorkerBoot && config.KORTIX_FAST_GIT_BOOT_ENABLED
-        ? Promise.race([
-            projectWithGitAuthPromise
-              .then((projectWithGitAuth) =>
-                resolveFastBootGitHintWithCache(
-                  projectWithGitAuth,
-                  baseRef,
-                  project.metadata,
-                ),
-              )
-              .catch(() => undefined),
-            new Promise<undefined>((resolve) => {
-              fastBootHintTimeout = setTimeout(() => resolve(undefined), 2_000);
-            }),
-          ]).finally(() => {
-            if (fastBootHintTimeout) clearTimeout(fastBootHintTimeout);
-          })
-        : Promise.resolve(undefined);
-      // OpenCode compiled-boot artifacts serve the daemon path only; a worker
-      // boot fetches its own per-commit pi artifact instead.
-      if (!piWorkerBoot && config.KORTIX_COMPILED_BOOT_MODE !== 'off') {
-        void Promise.all([projectWithGitAuthPromise, fastBootGitHintPromise])
-          .then(([projectWithGitAuth, hint]) =>
-            hint?.baseSha
-              ? prebuildCompiledBootArtifacts(
-                  projectWithGitAuth,
-                  baseRef,
-                  hint.baseSha,
-                  proxyGitUrl(projectId),
-                )
-              : null,
-          )
-          .then((artifacts) => {
-            if (!artifacts) return;
-            console.info('[compiled-boot] session artifacts ready', {
-              projectId,
-              sessionId,
-              ref: baseRef,
-              sourceSha: artifacts.runtime.sourceSha,
-              checkoutCache: artifacts.checkout.cacheHit ? 'hit' : 'miss',
-              runtimeCache: artifacts.runtime.cacheHit ? 'hit' : 'miss',
-            });
-          })
-          .catch((error) => {
-            console.warn('[compiled-boot] session artifact prebuild failed', {
-              projectId,
-              sessionId,
-              ref: baseRef,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          });
-      }
-      // Worker boots skip the OpenCode env build entirely: the compiled
-      // artifact already carries the agent map, v0 grants the worker no
-      // project secrets (the gateway resolves BYOK server-side per request),
-      // and nothing clones. Measured on dev 2026-08-27, the full chain
-      // (hint race + compiled config + secret grant + secrets snapshot) cost
-      // 1.1–2.4 s of every cold pi boot.
-      const envPromise = piWorkerBoot
-        ? Promise.resolve(
-            buildPiWorkerSessionEnvVars({
-              projectId,
-              sessionId,
-              agentName,
-              // Only an EXPLICIT session model may override the baked agent
-              // model — the platform/project fallback resolution exists for
-              // the OpenCode path and must not clobber the artifact's own
-              // model (KORTIX_MODEL wins over the bake inside the worker).
-              // Stripped to the native ref: the worker's env path takes the
-              // value verbatim, unlike the baked path which de-prefixes.
-              opencodeModel:
-                opencodeModelSource === 'explicit' && opencodeModel
-                  ? opencodeModel.replace(/^kortix\//, '')
-                  : null,
-              apiUrl: deriveKortixApiBase(),
-              frontendUrl: sandboxFrontendBaseUrl(),
-            }),
-          ).then((envVars) => {
-            tl.mark('env-vars');
-            return envVars;
-          })
-        : fastBootGitHintPromise
-        .then(async (fastBootGitHint) => {
-          // S3 config provider: pin a PREPARED archive for the exact base tip
-          // and presign its download descriptor right here (local signing, no
-          // bucket call on the create path), or record the miss and queue the
-          // build for the next session. One indexed read.
-          const projectSnapshotMode = resolveProjectSnapshotMode(project.metadata);
-          const projectSnapshot =
-            projectSnapshotMode === 'git'
-              ? { pin: null, descriptor: null, cache: 'unconfigured' as const }
-              : await resolveProjectSnapshotPinForSession({
-                  projectId,
-                  ref: baseRef,
-                  commitSha: fastBootGitHint?.baseSha,
-                  repoUrl: project.repoUrl,
-                }).catch((err) => {
-                  console.warn('[project-snapshot] pin lookup failed; session boots from git', {
-                    projectId,
-                    sessionId,
-                    error: err instanceof Error ? err.message : String(err),
-                  });
-                  return { pin: null, descriptor: null, cache: 'miss' as const };
-                });
-          if (projectSnapshotMode !== 'git') {
-            tl.mark(`project-snapshot-${projectSnapshot.cache}`);
-          }
-          return {
-            fastBootGitHint,
-            projectSnapshotMode,
-            projectSnapshotPin: projectSnapshot.pin,
-            projectSnapshotDescriptor: projectSnapshot.descriptor,
-          };
-        })
-        .then(({ fastBootGitHint, projectSnapshotMode, projectSnapshotPin, projectSnapshotDescriptor }) =>
-          buildSessionSandboxEnvVars({
-            accountId,
-            projectId,
-            sessionId,
-            userId,
-            repoUrl: project.repoUrl,
-            baseRef,
-            agentName,
-            opencodeModel,
-            llmGatewayEnabled,
-            platformMetaAgent,
-            freshSession: true,
-            projectSnapshotMode,
-            projectSnapshotPin,
-            projectSnapshotDescriptor,
-            baseSha: fastBootGitHint?.baseSha,
-            gitDeltaBundleBase64: fastBootGitHint?.gitDeltaBundleBase64,
-            gitDeltaBundleRemote: fastBootGitHint?.gitDeltaBundleRemote,
-            gitDeltaParentSha: fastBootGitHint?.gitDeltaParentSha,
-            gitDeltaParentCommitBase64: fastBootGitHint?.gitDeltaParentCommitBase64,
-            defaultBranch: project.defaultBranch,
-            manifestPath: project.manifestPath,
-            repositoryAccess,
-          }),
-        )
-        .then((envVars) => {
-          tl.mark('env-vars');
-          return envVars;
-        });
-
-      const mergeSessionMetadata = async (extra: Record<string, unknown>) => {
-        await db
-          .update(projectSessions)
-          .set({
-            metadata: projectSessionMetadataMerge(extra),
-            updatedAt: new Date(),
-          })
-          .where(eq(projectSessions.sessionId, sessionId));
-      };
-
-      // Origin branch creation is publishing work, not readiness work. The
-      // sandbox now creates the session branch locally from the base checkout
-      // immediately, so this remote push runs fully in the background. The
-      // metadata writes that record success/failure are pure telemetry —
-      // fire-and-forget so they never block the IIFE itself.
-      const branchAlreadyCreated =
-        body.branch_already_created === true || body.branchAlreadyCreated === true;
-      const branchPromise: Promise<void> = !repositoryAccess || branchAlreadyCreated
-        ? Promise.resolve()
-        : projectWithGitAuthPromise
-            .then((projectWithGitAuth) =>
-            createRemoteSessionBranch(projectWithGitAuth, sessionId, baseRef),
-            )
-            .then(() => {
-            tl.mark('branch-pushed');
-            void mergeSessionMetadata({
-                remote_branch: {
-                  status: 'ready',
-                  branch: sessionId,
-                  updated_at: new Date().toISOString(),
-                },
-            }).catch(() => {});
-          });
-      branchPromise.catch((err) => {
-        const message = err instanceof Error ? err.message : String(err);
-        console.warn(`[projects] Remote branch creation failed for session ${sessionId}:`, err);
-        void mergeSessionMetadata({
-          remote_branch: {
-            status: 'failed',
-            branch: sessionId,
-            error: message.slice(0, 500),
-            updated_at: new Date().toISOString(),
-          },
-        }).catch(() => {});
-      });
-
-      // Not awaited here: provisioning reads it only when it builds the provider
-      // input, so the env build overlaps the image check and the token mint.
-      const extraEnvVars = envPromise.then((env) => {
-        const merged = mergeSessionSandboxEnv(env, input.extraEnvVars);
-        return piWorkerBoot && piWorkerSha
-          ? {
-              ...merged,
-              // The worker's entrypoint composes the artifact URL from these
-              // plus KORTIX_API_URL/KORTIX_PROJECT_ID/KORTIX_TOKEN it
-              // already receives.
-              KORTIX_PI_RUNTIME_REF: (baseRef ?? '').trim() || project.defaultBranch,
-              KORTIX_PI_RUNTIME_SHA: piWorkerSha,
-            }
-          : merged;
-      });
-
-      const provisionPromise = provisionSessionSandbox({
-        sandboxId: sessionId,
-        accountId,
-        projectId,
-        userId,
-        agentName,
-        allowProjectImage: piWorkerBoot
-          ? false
-          : projectImageAllowedForSession(agentName, repositoryAccess),
-        // v0 pins the worker to Daytona: the entrypoint override in
-        // ensurePiWorkerImage is only exercised there so far. Lift once the
-        // other adapters' entrypoint handling is verified.
-        provider: piWorkerBoot ? 'daytona' : providerName,
-        providerLocked: piWorkerBoot ? true : providerLocked,
-        metadata: {
-          session_id: sessionId,
-          project_id: projectId,
-          ...(piWorkerBoot ? { pi_worker_boot: true } : {}),
-          ...(input.metadata ?? {}),
-        },
-        initialTurn,
-        extraEnvVars,
-        projectMetadata: project.metadata,
-        gitProject: {
-          projectId,
-          repoUrl: project.repoUrl,
-          defaultBranch: project.defaultBranch,
-          manifestPath: project.manifestPath,
-          gitAuthToken: null,
-        },
-        resolveGitProject: async () => projectWithGitAuthPromise,
-        baseRef,
-        sandboxSlug,
-      });
-
-      // provisionSessionSandbox returns once its row is inserted; provider
-      // create and remote branch push both continue in detached background work.
-      await provisionPromise;
-      tl.mark('kicked');
-      const sessionStartTimeline = tl.log();
-      // Fire-and-forget: the timeline write is pure telemetry. Awaiting it
-      // here used to add ~30-80ms of DB round-trip to every session start.
-      void mergeSessionMetadata({ session_start_timeline: sessionStartTimeline }).catch(() => {});
-    } catch (err) {
-      const message = (err as Error)?.message || 'Sandbox provisioning failed';
-      console.error(`[projects] Failed to kick off sandbox for session ${sessionId}:`, err);
-      try {
-        // Merge, never re-write the create-time snapshot: by the time
-        // provisioning fails the row may already carry a generated title,
-        // remote_branch or the start timeline. A session deleted meanwhile
-        // keeps its tombstone.
-        await transitionSession('fail', sessionId, {
-          error: message,
-          metadata: { provisioning_error: message },
-        });
-      } catch (markErr) {
-        console.error(`[projects] Failed to mark session ${sessionId} failed:`, markErr);
-      }
-      // Surface the failure to the originating channel (Slack) so the thread
-      // doesn't sit on a ⏳ until the 30-min GC. No-op for non-channel sessions.
-      notifySessionProvisioningFailed(sessionId, message);
-    }
-  }
+  void provisionCreatedSession({
+    input,
+    sessionId,
+    projectId,
+    accountId,
+    baseRef,
+    agentName,
+    opencodeModel,
+    llmGatewayEnabled,
+    platformMetaAgent,
+    repositoryAccess,
+    providerName,
+    providerLocked,
+    initialTurn,
+    sandboxSlug,
+  });
 
   return {
     row: sessionRow,

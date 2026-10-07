@@ -2,14 +2,18 @@ import { describe, expect, test } from 'bun:test';
 import { MANAGED_FLAGSHIP_MODEL_ID } from '@kortix/llm-catalog/lite';
 import type { ProviderListResponse } from '../runtime/runtime-types';
 
-import type { ProjectLlmCatalogResponse, ProjectLlmCatalogProvidersResponse } from '../rest/projects-client';
+import type {
+  ProjectLlmCatalogProvidersResponse,
+  ProjectLlmCatalogResponse,
+} from '../rest/projects-client';
 import type { ModelDefaultsResponse } from '../rest/projects-client/model-defaults';
 import { resolveComposerModel, resolveModelDefault } from './composer-model';
 import type { FlatModel } from './model-flatten';
-import { createModelVisibility, modelInDefaultView } from './model-visibility';
+import { createModelVisibility, hasUsableModel, modelInDefaultView } from './model-visibility';
+import { PLATFORM_DEFAULT_MODEL_ID } from '@kortix/llm-catalog/lite';
 import {
-  filterToNativeProviders,
   LLM_PROVIDER_CREDENTIALS,
+  filterToNativeProviders,
   mergeNativeProviderLists,
   mergeProjectSecretConnectedProviders,
   nativeProviderListFromCatalog,
@@ -112,7 +116,10 @@ describe('pickerProviderList', () => {
       ),
     );
     expect(list).toEqual(
-      mergeNativeProviderLists(nativeProviderListFromCatalog(LLM_CATALOG_PROVIDERS, SECRETS), runtime),
+      mergeNativeProviderLists(
+        nativeProviderListFromCatalog(LLM_CATALOG_PROVIDERS, SECRETS),
+        runtime,
+      ),
     );
     expect(list?.all?.map((p) => p.id)).toEqual(['anthropic', 'opencode']);
     expect(list?.connected).not.toContain('kortix');
@@ -175,14 +182,28 @@ describe('createModelVisibility', () => {
       connectedProviderIds: new Set(['anthropic']),
     });
     expect(paid({ providerID: 'kortix', modelID: 'glm-5.3-flash' })).toBe(true);
-    expect(paid({ providerID: 'kortix', modelID: 'anthropic/claude-opus-4-8', provider: 'anthropic' })).toBe(
-      true,
-    );
+    expect(
+      paid({ providerID: 'kortix', modelID: 'anthropic/claude-opus-4-8', provider: 'anthropic' }),
+    ).toBe(true);
     const free = createModelVisibility({ catalogModels: gateway, freeTier: true });
     expect(free({ providerID: 'kortix', modelID: 'glm-5.3-flash' })).toBe(false);
-    expect(free({ providerID: 'kortix', modelID: 'anthropic/claude-opus-4-8', provider: 'anthropic' })).toBe(
-      false,
-    );
+    expect(
+      free({ providerID: 'kortix', modelID: 'anthropic/claude-opus-4-8', provider: 'anthropic' }),
+    ).toBe(false);
+  });
+
+  test('gateway: the platform default shows on free tier too (KRTX-1067)', () => {
+    const gateway = [flat('kortix', PLATFORM_DEFAULT_MODEL_ID), flat('kortix', 'glm-5.3-flash')];
+    const free = createModelVisibility({ catalogModels: gateway, freeTier: true });
+    expect(free({ providerID: 'kortix', modelID: PLATFORM_DEFAULT_MODEL_ID })).toBe(true);
+    expect(free({ providerID: 'kortix', modelID: 'glm-5.3-flash' })).toBe(false);
+  });
+
+  test('hasUsableModel: the platform default alone counts as usable on free tier (KRTX-1067)', () => {
+    expect(
+      hasUsableModel([flat('kortix', PLATFORM_DEFAULT_MODEL_ID)], { freeTier: true }),
+    ).toBe(true);
+    expect(hasUsableModel([flat('kortix', 'glm-5.3-flash')], { freeTier: true })).toBe(false);
   });
 });
 
@@ -191,8 +212,12 @@ describe('modelInDefaultView', () => {
   const model = flat('openrouter', 'acme/fast-1');
 
   test('a search reveals everything; gateway models always show; the selection always shows', () => {
-    expect(modelInDefaultView(model, { search: '', isStoreVisible: hidden, selected: null })).toBe(false);
-    expect(modelInDefaultView(model, { search: 'acme', isStoreVisible: hidden, selected: null })).toBe(true);
+    expect(modelInDefaultView(model, { search: '', isStoreVisible: hidden, selected: null })).toBe(
+      false,
+    );
+    expect(
+      modelInDefaultView(model, { search: 'acme', isStoreVisible: hidden, selected: null }),
+    ).toBe(true);
     expect(
       modelInDefaultView(flat('kortix', 'glm-5.3-flash'), {
         search: '',
@@ -226,17 +251,36 @@ describe('resolveModelDefault', () => {
       providerID: 'kortix',
       modelID: 'anthropic/claude-opus-4-8',
     });
-    expect(resolveModelDefault(data, 'kortix')).toEqual({ providerID: 'kortix', modelID: 'glm-5.3-flash' });
-    expect(resolveModelDefault({ ...data, projectDefault: null } as ModelDefaultsResponse, undefined)).toEqual({
+    expect(resolveModelDefault(data, 'kortix')).toEqual({
+      providerID: 'kortix',
+      modelID: 'glm-5.3-flash',
+    });
+    expect(
+      resolveModelDefault({ ...data, projectDefault: null } as ModelDefaultsResponse, undefined),
+    ).toEqual({
       providerID: 'kortix',
       modelID: 'kimi-k3',
     });
   });
 
-  test('a free-tier account never resolves the platform default', () => {
+  test('a free-tier account resolves the platform default (KRTX-1067)', () => {
+    // The gateway serves the platform default to every tier (KRTX-1067), so
+    // the client resolves it instead of leaving a fresh free account with no
+    // model and a disabled Send.
     expect(
       resolveModelDefault(
         { ...data, projectDefault: null, freeTier: true } as ModelDefaultsResponse,
+        undefined,
+      ),
+    ).toEqual({ providerID: 'kortix', modelID: 'kimi-k3' });
+  });
+
+  test('a null platform default resolves to nothing, not a crash', () => {
+    // The API answers `platformDefault: null` when the gateway has no platform
+    // fallback configured; the wire type says `string | null` to match it.
+    expect(
+      resolveModelDefault(
+        { ...data, projectDefault: null, platformDefault: null } as ModelDefaultsResponse,
         undefined,
       ),
     ).toBeUndefined();
@@ -283,21 +327,25 @@ describe('resolveComposerModel', () => {
       model: key('anthropic', 'claude-opus-4-8'),
       fallback: key('anthropic', 'claude-sonnet-4-6'),
     });
-    expect(resolveComposerModel({ ...base, globalDefault: key('openai', 'gpt-5.5') }).model).toEqual(
-      key('openai', 'gpt-5.5'),
-    );
-    expect(resolveComposerModel({ ...base, agentModel: key('anthropic', 'claude-opus-4-8') }).model).toEqual(
-      key('anthropic', 'claude-opus-4-8'),
-    );
+    expect(
+      resolveComposerModel({ ...base, globalDefault: key('openai', 'gpt-5.5') }).model,
+    ).toEqual(key('openai', 'gpt-5.5'));
+    expect(
+      resolveComposerModel({ ...base, agentModel: key('anthropic', 'claude-opus-4-8') }).model,
+    ).toEqual(key('anthropic', 'claude-opus-4-8'));
   });
 
   test('fallback: config model > recent > provider default > first model of a connected provider', () => {
     expect(
-      resolveComposerModel({ models, providers, configModel: 'anthropic/claude-opus-4-8' }).fallback,
+      resolveComposerModel({ models, providers, configModel: 'anthropic/claude-opus-4-8' })
+        .fallback,
     ).toEqual(key('anthropic', 'claude-opus-4-8'));
     expect(
-      resolveComposerModel({ models, providers, recent: [key('x', 'y'), key('anthropic', 'claude-opus-4-8')] })
-        .fallback,
+      resolveComposerModel({
+        models,
+        providers,
+        recent: [key('x', 'y'), key('anthropic', 'claude-opus-4-8')],
+      }).fallback,
     ).toEqual(key('anthropic', 'claude-opus-4-8'));
     // Provider order (`all`) decides; anthropic's configured default wins.
     expect(resolveComposerModel({ models, providers }).fallback).toEqual(

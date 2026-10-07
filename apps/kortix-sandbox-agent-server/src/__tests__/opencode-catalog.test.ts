@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { BUNDLED_MANAGED_MODELS, MINIMAL_FALLBACK_MODELS } from '@/harness/open-code/fallback-models'
+import { BUNDLED_MANAGED_MODELS, MINIMAL_FALLBACK_MODELS } from '@kortix/api-contract/fallback-models'
 import {
   buildOpencodeConfigContent,
   catalogIsDegraded,
@@ -77,11 +77,16 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
+  // Settle the fire-and-forget prefetch while THIS test's fetch stub is still
+  // current. An attempt that outlives its test re-reads globalThis.fetch on
+  // every retry, so an unsettled prefetch fires its retries into the next
+  // test's stub (or the real network) after the restore below.
+  await settleManagedModelsPrefetch()
   globalThis.fetch = realFetch
   resetManagedModelsStateForTests()
   resetManagedReconcileForTests()
   await Promise.all(tempDirs.splice(0).map((d) => rm(d, { recursive: true, force: true })))
-})
+}, 15_000)
 
 describe('managed listing fetch', () => {
   test('asks the gateway for the picker scope only', async () => {
@@ -221,8 +226,16 @@ describe('boot config composition', () => {
   // cannot bind its port until this config is written, so the build must never
   // wait on a fetch — a hanging gateway has to cost ~0ms, not the fetch budget.
   test('a hanging gateway costs the config build no time at all', async () => {
-    globalThis.fetch = (async () => {
-      await new Promise((r) => setTimeout(r, 60_000))
+    // Honor the abort signal the real fetch honors, so the afterEach's settle
+    // is bounded by the per-try timeout instead of this 60 s sleep.
+    globalThis.fetch = (async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, 60_000)
+        init?.signal?.addEventListener('abort', () => {
+          clearTimeout(timer)
+          reject(new Error('aborted'))
+        }, { once: true })
+      })
       return new Response('{}', { status: 200 })
     }) as unknown as typeof fetch
 

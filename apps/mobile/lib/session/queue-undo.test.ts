@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { queueHeaderLabel, restoreQueued } from './queue-undo';
+import { queueHeaderLabel, queueRowCaption, restoreQueued } from './queue-undo';
 
 const m = (id: string, sessionId = 's1') => ({ id, sessionId, text: id, timestamp: 0 });
 
@@ -41,5 +41,28 @@ describe('queueHeaderLabel', () => {
   test('reads "Up next · N"', () => {
     expect(queueHeaderLabel(1)).toBe('Up next · 1');
     expect(queueHeaderLabel(3)).toBe('Up next · 3');
+  });
+});
+
+describe('queueRowCaption', () => {
+  test('a steered message says the agent reads it at its next step', () => {
+    expect(queueRowCaption({ delivery: 'steer' })).toBe('Read at next step');
+  });
+
+  test('a fallen-back message says why it waits', () => {
+    expect(queueRowCaption({ delivery: 'queue', steer_fallback: 'unsupported' })).toBe(
+      'Waits for this turn. This session cannot take messages mid-turn.',
+    );
+    expect(queueRowCaption({ delivery: 'queue', steer_fallback: 'not_prompter' })).toBe(
+      'Waits for this turn. Another member started it.',
+    );
+    expect(queueRowCaption({ delivery: 'queue', steer_fallback: 'turn_ended' })).toBe(
+      'Runs as its own turn. The turn ended first.',
+    );
+  });
+
+  test('a plain queued message, or one from an older server, has no caption', () => {
+    expect(queueRowCaption({ delivery: 'queue', steer_fallback: null })).toBeNull();
+    expect(queueRowCaption({})).toBeNull();
   });
 });

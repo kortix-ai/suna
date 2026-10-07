@@ -36,3 +36,20 @@ export function holdLiveStart(
   }
   return TRANSPORT_REASONS.has(next.reason ?? '') ? previous : next;
 }
+
+/**
+ * What one `/start` fetch is, given what the tab already knows.
+ *
+ * - `skip`: the tab shows the session ready and is in the background. Polling
+ *   then keeps a box alive for nobody; the next visible fetch revalidates.
+ * - `keep-stopped`: the tab shows it ready and is in the foreground. This is a
+ *   keep-alive poll: it must report a stop, never undo one.
+ * - `open`: anything else is an open (or a wake in flight) and may wake the box.
+ */
+export function liveStartPollMode(
+  previous: SessionStartResult | null | undefined,
+  documentHidden: boolean,
+): 'skip' | 'keep-stopped' | 'open' {
+  if (previous?.stage !== 'ready') return 'open';
+  return documentHidden ? 'skip' : 'keep-stopped';
+}

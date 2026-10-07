@@ -82,7 +82,6 @@ import {
   useDeleteAccountImmediately,
   useRequestAccountDeletion,
 } from '@/hooks/account/use-account-deletion';
-import { isBillingEnabled } from '@/lib/config';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 import { SettingsTabHeader } from '../settings-tab-header';
@@ -184,8 +183,12 @@ export const DEFAULT_PROFILE_TAB_COPY: ProfileTabCopy = {
   deleteDialogTitle: 'Delete your account?',
   immediateWarning:
     'This deletes your account right away. There is no grace period and no way to undo it.',
+  // Conditional, not present tense: nothing is scheduled yet while this
+  // dialog is open — the line describes what choosing the option does
+  // (KRTX-1403: "is scheduled" read as an already-scheduled deletion while
+  // GET /v1/account/deletion-status reported none).
   gracePeriodWarning:
-    'Your account is scheduled for deletion after a 30-day grace period, during which you can cancel.',
+    'Your account will be scheduled for deletion after a 30-day grace period, during which you can cancel.',
   whenDeleted: 'When your account is deleted:',
   agentsDeleted: 'Every agent you own is deleted',
   threadsDeleted: 'Every thread and message is deleted',
@@ -300,7 +303,6 @@ export function ProfileTabView({
   isCancelingDeletion = false,
   copy: copyOverrides = {},
 }: ProfileTabViewProps) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const copy: ProfileTabCopy = {
     ...DEFAULT_PROFILE_TAB_COPY,
     ...copyOverrides,
@@ -510,8 +512,15 @@ export function ProfileTabView({
                       id="profile-delete-confirm"
                       value={deleteConfirmText}
                       onChange={(e) => onDeleteConfirmTextChange(e.target.value)}
-                      placeholder={tI18nComplete.raw('text6197595503f0')}
+                      // No placeholder: the word the user must type must not
+                      // sit in the field before anything is typed. With a
+                      // "delete" placeholder the dialog never looks empty, so
+                      // a carried-over confirmation could not be seen
+                      // (KRTX-1403). The label above already shows the word.
                       autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="none"
+                      spellCheck={false}
                     />
                   </div>
                 </ModalBody>
@@ -744,18 +753,28 @@ export function ProfileTab() {
   const requestDeletion = useRequestAccountDeletion();
   const cancelDeletion = useCancelAccountDeletion();
   const deleteImmediately = useDeleteAccountImmediately();
-  const accountDeletionSupported =
-    isBillingEnabled() && (deletionStatus?.supported ?? !isCheckingDeletionStatus);
+  // The API decides: its deletion-status route answers on every deployment
+  // that deletes accounts, self-hosted ones included (billing on or off).
+  const accountDeletionSupported = deletionStatus?.supported ?? !isCheckingDeletionStatus;
 
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showCancelDeletionDialog, setShowCancelDeletionDialog] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deletionType, setDeletionType] = useState<DeletionType>('grace-period');
 
-  const closeDeleteDialog = () => {
-    setShowDeleteDialog(false);
+  // Every open starts the dialog fresh: no confirmation word and no carried
+  // option from a previous attempt. Resetting here — not only on close —
+  // holds no matter which path dismissed the dialog last time, the same
+  // invariant `TypeToConfirmDialog` buys by mounting its body inside the
+  // portal (KRTX-1403).
+  const openDeleteDialog = () => {
     setDeleteConfirmText('');
     setDeletionType('grace-period');
+    setShowDeleteDialog(true);
+  };
+
+  const closeDeleteDialog = () => {
+    setShowDeleteDialog(false);
   };
 
   const handleConfirmDelete = async () => {
@@ -815,7 +834,7 @@ export function ProfileTab() {
       hasPendingDeletion={deletionStatus?.has_pending_deletion ?? false}
       deletionScheduledForLabel={formatDate(deletionStatus?.deletion_scheduled_for)}
       showDeleteDialog={showDeleteDialog}
-      onOpenDeleteDialog={() => setShowDeleteDialog(true)}
+      onOpenDeleteDialog={openDeleteDialog}
       onCloseDeleteDialog={closeDeleteDialog}
       deletionType={deletionType}
       onDeletionTypeChange={setDeletionType}

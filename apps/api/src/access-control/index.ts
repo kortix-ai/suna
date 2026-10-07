@@ -6,7 +6,7 @@ import { errors, json, makeOpenApiApp } from '../openapi';
 import { ssoEnforcedForEmail } from '../repositories/sso';
 import { areSignupsEnabled, canSignUp } from '../shared/access-control-cache';
 import { db } from '../shared/db';
-import { createCheckEmailRateLimitMiddleware } from '../shared/rate-limit';
+import { createCheckEmailRateLimitMiddleware } from '../middleware/rate-limit';
 
 export const accessControlApp = makeOpenApiApp();
 

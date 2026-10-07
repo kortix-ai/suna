@@ -22,10 +22,19 @@ export const DAEMON_TURN_STREAM_KINDS = [
   'runtime_session',
   'turn_begin',
   'end',
+  /**
+   * The running turn read a steered message (`turn_message_id`) at a step
+   * boundary. apps/api closes that message's inbox row as delivered.
+   */
+  'steer_read',
 ] as const;
 export type DaemonTurnStreamKind = (typeof DAEMON_TURN_STREAM_KINDS)[number];
 
-/** A daemon `turn-stream` frame. Channel-content kinds (`step`, `answer`) carry more fields. */
+/**
+ * A `turn-stream` frame. The daemon sends the lifecycle kinds above; the
+ * in-sandbox channel CLI (`apps/sandbox/slack-cli`) sends the content kinds
+ * `step` and `answer` with `text` and the fields after it.
+ */
 export const TurnStreamRelayBodySchema = z
   .object({
     session_id: z.string(),
@@ -42,6 +51,16 @@ export const TurnStreamRelayBodySchema = z
     error_provider: z.string().optional(),
     /** The daemon's `TurnErrorCode` (`./transcript`). Absent from a daemon built before W5. */
     error_code: z.string().optional(),
+    text: z.string().optional(),
+    detail: z.string().optional(),
+    output: z.string().optional(),
+    sources: z.array(z.object({ url: z.string().optional(), text: z.string().optional() })).optional(),
+    /** Slack Block Kit blocks. */
+    blocks: z.array(z.unknown()).optional(),
+    /** A Teams Adaptive Card. */
+    card: z.record(z.string(), z.unknown()).optional(),
+    /** A Teams form card. */
+    form: z.record(z.string(), z.unknown()).optional(),
   })
   .passthrough();
 export type TurnStreamRelayBody = z.infer<typeof TurnStreamRelayBodySchema>;
@@ -75,15 +94,105 @@ export const RuntimeProjectionRelayBodySchema = z.object({
 export type RuntimeProjectionRelayBody = z.infer<typeof RuntimeProjectionRelayBodySchema>;
 
 /**
+ * One sanitized runtime event in an audit batch: identity, digests and
+ * redacted summaries, never raw tool input or output. apps/api validates each
+ * field itself and rejects the batch with the failing index.
+ */
+export const RuntimeAuditEventSchema = z.object({
+  /** sha256 hex of the event's identity. */
+  event_id: z.string(),
+  /** Stable identity for one observed emission. Retries preserve it. */
+  source_revision: z.string(),
+  type: z.string(),
+  occurred_at: z.string(),
+  runtime_session_id: z.string().nullable(),
+  turn_id: z.string().nullable(),
+  message_id: z.string().nullable(),
+  tool_call_id: z.string().nullable(),
+  execution_id: z.string().nullable(),
+  agent_id: z.string().nullable(),
+  agent_name: z.string().nullable(),
+  correlation_id: z.string().nullable(),
+  causation_id: z.string().nullable(),
+  delegation_depth: z.number().int(),
+  outcome: z.enum(['success', 'failure', 'denied', 'pending']),
+  phase: z.string(),
+  input_summary: z.record(z.string(), z.unknown()),
+  output_summary: z.record(z.string(), z.unknown()).nullable(),
+  input_sha256: z.string(),
+  output_sha256: z.string().nullable(),
+  error_code: z.string().nullable(),
+  /** apps/api never stores it: an error string can carry a prompt. */
+  error_message: z.string().nullable(),
+  metadata: z.record(z.string(), z.unknown()),
+});
+export type RuntimeAuditEvent = z.infer<typeof RuntimeAuditEventSchema>;
+
+/**
  * `POST /v1/projects/:projectId/sessions/:sessionId/audit/events`. `source`
  * and `harness` describe every event in the batch; a daemon built before them
  * sends neither, and its events are OpenCode's.
  */
-export interface RuntimeAuditBatch {
-  source?: 'runtime';
-  harness?: string;
-  events: unknown[];
-}
+export const RuntimeAuditBatchSchema = z.object({
+  source: z.literal('runtime').optional(),
+  harness: z.string().optional(),
+  events: z.array(RuntimeAuditEventSchema),
+});
+export type RuntimeAuditBatch = z.infer<typeof RuntimeAuditBatchSchema>;
+
+/** One boot milestone: a label and the ms since the daemon booted (`main.ts` `bootTime`). */
+export const BootMarkSchema = z.object({ label: z.string(), atMs: z.number() });
+export type BootMark = z.infer<typeof BootMarkSchema>;
+
+/** `POST /v1/platform/boot-timeline`, once per boot when the runtime is first ready. */
+export const BootTimelineRelayBodySchema = z.object({
+  session_id: z.string(),
+  timeline: z.array(BootMarkSchema),
+});
+export type BootTimelineRelayBody = z.infer<typeof BootTimelineRelayBodySchema>;
+
+/** Longest monitor ingest batch one POST may carry. */
+export const MONITOR_INGEST_MAX_EVENTS = 50;
+/** Longest serialized monitor line apps/api stores; longer lines truncate with a marker. */
+export const MONITOR_LINE_MAX_BYTES = 8 * 1024;
+export const MONITOR_EVENT_KINDS = ['event', 'lifecycle'] as const;
+export type MonitorEventKind = (typeof MONITOR_EVENT_KINDS)[number];
+
+/** One monitor output line in an ingest batch. `seq` restarts per `box_epoch`. */
+export const MonitorWireEventSchema = z.object({
+  slug: z.string(),
+  seq: z.number().int().nonnegative(),
+  kind: z.enum(MONITOR_EVENT_KINDS),
+  /** The parsed JSON line, or `{ raw: "<line>" }` when it does not parse. */
+  line: z.record(z.string(), z.unknown()),
+  emitted_at: z.string(),
+});
+export type MonitorWireEvent = z.infer<typeof MonitorWireEventSchema>;
+
+/** `POST /v1/projects/:projectId/monitors/ingest`, from the project's monitor box. */
+export const MonitorIngestRelayBodySchema = z.object({
+  /** This boot of the monitor runner. A superseded epoch answers 409. */
+  box_epoch: z.string(),
+  events: z.array(MonitorWireEventSchema).max(MONITOR_INGEST_MAX_EVENTS),
+});
+export type MonitorIngestRelayBody = z.infer<typeof MonitorIngestRelayBodySchema>;
+
+/** The daemon's 404 body for a `/kortix/*` route it does not serve. apps/api maps it to 501 on share links. */
+export const UNKNOWN_DAEMON_ROUTE_ERROR = 'unknown kortix route';
+
+/**
+ * How long the daemon's `POST /file/import` may download, fsync and rename
+ * before it aborts. The API proxy gives an import attempt more than this, so
+ * the daemon always answers first.
+ */
+export const DAEMON_FILE_IMPORT_TIMEOUT_MS = 120_000;
+
+/**
+ * The runtime REST routes (`POST /session/:id/<verb>`) whose response waits for
+ * the whole turn. The daemon proxy and the API proxy give them the long bound;
+ * a short one aborts a turn that is still computing.
+ */
+export const BLOCKING_TURN_VERBS = ['message', 'command', 'summarize'] as const;
 
 /**
  * Rewrite the pre-W3 names an older daemon sends to the names above: the
@@ -139,6 +248,11 @@ export const RUNTIME_CAPABILITIES = [
   'session.attach',
   /** A runtime config document a client may read and patch (`/global/config`). */
   'session.config',
+  /**
+   * A message sent during a turn is read by that turn at its next step
+   * boundary (`POST /kortix/runtime/sessions/:id/steer`). The turn does not stop.
+   */
+  'session.steer',
 ] as const;
 export type RuntimeCapability = (typeof RUNTIME_CAPABILITIES)[number];
 
@@ -148,6 +262,13 @@ export type RuntimeCapability = (typeof RUNTIME_CAPABILITIES)[number];
  * and `GET /kortix/runtime/agents`. Listed in `capabilities` beside the runtime's own.
  */
 export const RUNTIME_TURNS_CAPABILITY = 'runtime.turns.v1' as const;
+
+/**
+ * `code` on the daemon's `409` to `POST /kortix/runtime/sessions/:id/steer`:
+ * no turn is running, so nothing can read the message. The caller sends it as
+ * a prompt instead.
+ */
+export const STEER_NO_ACTIVE_TURN_CODE = 'no_active_turn' as const;
 
 /** The `schema` of the `/kortix/runtime/state` document. */
 export const KORTIX_RUNTIME_SCHEMA = 'kortix.runtime.v1' as const;

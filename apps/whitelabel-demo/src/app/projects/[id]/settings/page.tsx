@@ -9,38 +9,39 @@ import { MembersTab } from '@/components/settings/members-tab';
 import { PoliciesTab } from '@/components/settings/policies-tab';
 import { SecretsTab } from '@/components/settings/secrets-tab';
 import { TriggersTab } from '@/components/settings/triggers-tab';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
-import { cn } from '@/lib/utils';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { cn, fmtDate } from '@/lib/utils';
 import type { ExperimentalFeatureView, KortixProject } from '@kortix/sdk';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink, GitBranch } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-function fmtDate(value: unknown): string {
-  if (!value) return '—';
-  const d = new Date(value as string);
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString();
-}
-
-const TABS = [
-  'general',
-  'capabilities',
-  'secrets',
-  'members',
-  'connectors',
-  'triggers',
-  'policies',
-] as const;
+/**
+ * One registry drives BOTH the tab list and the tab panels: adding a tab is
+ * one row plus its import, never a second place to forget.
+ */
+const TABS: ReadonlyArray<{
+  name: string;
+  render: (projectId: string) => React.ReactNode;
+}> = [
+  { name: 'general', render: () => <GeneralTab /> },
+  { name: 'capabilities', render: (id) => <CapabilitiesTab projectId={id} /> },
+  { name: 'secrets', render: (id) => <SecretsTab projectId={id} /> },
+  { name: 'members', render: (id) => <MembersTab projectId={id} /> },
+  { name: 'connectors', render: (id) => <ConnectorsTab projectId={id} /> },
+  { name: 'triggers', render: (id) => <TriggersTab projectId={id} /> },
+  { name: 'policies', render: (id) => <PoliciesTab projectId={id} /> },
+];
 
 export default function SettingsPage() {
   const projectId = String(useParams().id);
@@ -51,33 +52,17 @@ export default function SettingsPage() {
           <h1 className="text-xl font-semibold tracking-tight">Project settings</h1>
           <Tabs defaultValue="general" className="mt-6">
             <TabsList className="flex-wrap">
-              {TABS.map((t) => (
-                <TabsTrigger key={t} value={t} className="capitalize">
-                  {t}
+              {TABS.map((tab) => (
+                <TabsTrigger key={tab.name} value={tab.name} className="capitalize">
+                  {tab.name}
                 </TabsTrigger>
               ))}
             </TabsList>
-            <TabsContent value="general" className="mt-5">
-              <GeneralTab />
-            </TabsContent>
-            <TabsContent value="capabilities" className="mt-5">
-              <CapabilitiesTab projectId={projectId} />
-            </TabsContent>
-            <TabsContent value="secrets" className="mt-5">
-              <SecretsTab projectId={projectId} />
-            </TabsContent>
-            <TabsContent value="members" className="mt-5">
-              <MembersTab projectId={projectId} />
-            </TabsContent>
-            <TabsContent value="connectors" className="mt-5">
-              <ConnectorsTab projectId={projectId} />
-            </TabsContent>
-            <TabsContent value="triggers" className="mt-5">
-              <TriggersTab projectId={projectId} />
-            </TabsContent>
-            <TabsContent value="policies" className="mt-5">
-              <PoliciesTab projectId={projectId} />
-            </TabsContent>
+            {TABS.map((tab) => (
+              <TabsContent key={tab.name} value={tab.name} className="mt-5">
+                {tab.render(projectId)}
+              </TabsContent>
+            ))}
           </Tabs>
         </div>
       </div>
@@ -187,8 +172,8 @@ function GeneralTab() {
           <InfoRow label="Project ID" value={projectId} mono />
           {p?.account_id && <InfoRow label="Account" value={p.account_id} mono />}
           {p?.status && <InfoRow label="Status" value={p.status} />}
-          <InfoRow label="Created" value={fmtDate(p?.created_at)} />
-          <InfoRow label="Last updated" value={fmtDate(p?.updated_at)} />
+          <InfoRow label="Created" value={fmtDate(p?.created_at, '—')} />
+          <InfoRow label="Last updated" value={fmtDate(p?.updated_at, '—')} />
         </dl>
       </Card>
 

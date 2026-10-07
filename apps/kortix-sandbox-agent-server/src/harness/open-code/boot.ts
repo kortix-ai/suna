@@ -1,10 +1,9 @@
 import type { RuntimePermissionRequest, RuntimeQuestionRequest } from '@kortix/api-contract/transcript'
 import { retryUntilInitialSessionEstablished, maybeCreateInitialOpencodeSession, finalizeOrphanedTurn, unrequestedAbortCause, finalizeInitialSession, markSeedBakedSession } from './initial-session'
-import { relayInitialTurnAcceptedToApi, claimInitialTurnFromApi, reconcileInitialTurnAcceptanceToApi, createInitialOpenCodeSession, INITIAL_TURN_PICKUP_GRACE_MS } from './initial-prompt'
-import { getClaimedInitialTurn } from './initial-turn-claim'
-export { resetClaimedInitialTurnForTests, initialSessionRetryDelayMs, finalizeInitialSession, retryUntilInitialSessionEstablished, publishInitialOpenCodeSessionAfterPrompt, finalizeOrphanedTurn, waitForOpencodeRootReadiness, resolveExistingRoot, reusedRootAlreadyDelivered, unrequestedAbortCause } from './initial-session'
+import { reconcileInitialTurnAcceptanceToApi, createInitialOpenCodeSession, INITIAL_TURN_PICKUP_GRACE_MS } from './initial-prompt'
+export { initialSessionRetryDelayMs, finalizeInitialSession, retryUntilInitialSessionEstablished, publishInitialOpenCodeSessionAfterPrompt, finalizeOrphanedTurn, waitForOpencodeRootReadiness, resolveExistingRoot, reusedRootAlreadyDelivered, unrequestedAbortCause } from './initial-session'
 export type { ExistingRootResult } from './initial-session'
-export { createInitialOpenCodeSession, deliverInitialOpenCodePrompt, relayInitialTurnAcceptedToApi, claimInitialTurnFromApi, relayInitialTurnAbandonedToApi, reconcileInitialTurnAcceptanceToApi, waitForInitialSessionCreate, resolveOpencodeModel, buildInitialPromptBody, INITIAL_TURN_PICKUP_GRACE_MS } from './initial-prompt'
+export { createInitialOpenCodeSession, deliverInitialOpenCodePrompt, reconcileInitialTurnAcceptanceToApi, waitForInitialSessionCreate, resolveOpencodeModel, buildInitialPromptBody, INITIAL_TURN_PICKUP_GRACE_MS } from './initial-prompt'
 export type { InitialTurnAcceptanceReconciliation } from './initial-prompt'
 import { armSeedAdoption, runWarmSeedMode } from './warm-seed'
 import { relayTurnBeginAfterInitialAcceptance, relayTurnBeginToApi, relayTurnEndToApi, reconcileFinishedFirstTurn, isRootOpencodeSession } from './turn-relay'
@@ -28,6 +27,7 @@ import {
 import { logger } from '@/lib/log/logger'
 import {
   catalogIsDegraded,
+  bakedCatalogPath,
   hasKortixLlmGateway,
   missingManagedModelIds,
   refreshGatewayCatalogFile,
@@ -78,6 +78,7 @@ import {
   type TurnEndFrame,
 } from '../shared/turn-relay'
 import { relayQuestionToApi } from './question-relay'
+import { observeSteerRead } from './turns'
 import { readControlPlaneEnv, sandboxRelayContext } from '@/lib/kortix-api/relay-context'
 import { observeIdleForRunaway } from './runaway-turn-guard'
 import {
@@ -563,7 +564,7 @@ export async function reconcileManagedModels(
       return
     }
     const written = writeManagedOverlayCatalogFile({
-      currentCatalogFile: process.env.KORTIX_LLM_CATALOG_FILE ?? '/opt/kortix/llm-catalog.json',
+      currentCatalogFile: process.env.KORTIX_LLM_CATALOG_FILE ?? bakedCatalogPath(),
       targetCatalogFile:
         opts.catalogTargetFile ?? `${OPENCODE_HOME}/.config/kortix-llm-catalog.session.json`,
       managed: live,
@@ -694,6 +695,7 @@ async function startSessionRuntime(
     try {
       publishOpenCodeEvent(kortixEventBus(), event)
       runtimeStateStore()?.noteEvent(event)
+      observeSteerRead(event)
       // A catalog-moving frame re-pushes the projection (debounced, etag-gated).
       if (event.type && CATALOG_MOVING_EVENT_TYPES.has(event.type)) {
         scheduleRuntimeProjectionPush(event.type)
@@ -814,13 +816,13 @@ async function startSessionRuntime(
   }
   let initialTurnAcceptanceSettled = false
   const initialTurnAcceptancePending = () =>
-    !initialTurnAcceptanceSettled && getClaimedInitialTurn() !== null
+    !initialTurnAcceptanceSettled && initialTurnClaim() !== null
   let initialTurnAcceptanceInFlight = false
   const reconcileInitialTurnAcceptance = async () => {
     if (initialTurnAcceptanceSettled || initialTurnAcceptanceInFlight) return
     const opencodeSessionId = bootState.initialRuntimeSessionId
-    const turnToken = getClaimedInitialTurn()?.turnToken
-    const messageId = getClaimedInitialTurn()?.messageId
+    const turnToken = initialTurnClaim()?.turnToken
+    const messageId = initialTurnClaim()?.messageId
     if (!opencodeSessionId || !turnToken || !messageId) return
     initialTurnAcceptanceInFlight = true
     try {

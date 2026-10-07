@@ -57,6 +57,11 @@ export function chooseEffectiveModel(params: {
   projectDefault?: string | null;
   accountDefault?: string | null;
   freeModelsOnly?: boolean;
+  /** The caller's resolved platform default: the ONE managed model free tier
+   *  may use (KRTX-1067). A parameter, not a config read — this module stays
+   *  pure, and the batch-mocked config of one test cannot steer another's
+   *  cached chain decision. */
+  platformDefault?: string | null;
 }): { model: string | null; source: ModelSource } {
   let candidate: string | null = null;
   let source: ModelSource = 'platform';
@@ -71,9 +76,17 @@ export function chooseEffectiveModel(params: {
     source = 'account';
   }
   if (!candidate) return { model: null, source: 'platform' };
-  // Free tier cannot use managed Kortix models; the chosen candidate is dropped
-  // to the platform default rather than falling through to a broader layer.
-  if (params.freeModelsOnly && isManagedRef(candidate)) return { model: null, source: 'platform' };
+  // Free tier cannot use managed Kortix models beyond the platform default —
+  // the one managed model every tier may use (KRTX-1067). The chosen candidate
+  // is dropped to the platform default rather than falling through to a
+  // broader layer (see choose-default-model.test).
+  if (
+    params.freeModelsOnly &&
+    isManagedRef(candidate) &&
+    toWireModel(candidate) !== params.platformDefault
+  ) {
+    return { model: null, source: 'platform' };
+  }
   return { model: candidate, source };
 }
 
