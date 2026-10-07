@@ -754,6 +754,8 @@ const envSchema = z.object({
 
   // ── Composio Connect (optional — powers provider-neutral connector connect) ─
   COMPOSIO_API_KEY: optStr,
+  // Optional: signing secret of the Composio project webhook subscription; required to receive app-event triggers.
+  COMPOSIO_WEBHOOK_SECRET: optStr,
   // Optional: required only when importing a public Postman workspace URL.
   // Exported collection JSON and Postman-managed Git repositories need no key.
   POSTMAN_API_KEY: optStr,
@@ -1263,6 +1265,7 @@ export const config = {
 
   // ─── Composio Connect (Connector connect provider) ─────────────────────────
   COMPOSIO_API_KEY: env.COMPOSIO_API_KEY,
+  COMPOSIO_WEBHOOK_SECRET: env.COMPOSIO_WEBHOOK_SECRET,
   POSTMAN_API_KEY: env.POSTMAN_API_KEY,
 
   // ─── Search Providers ──────────────────────────────────────────────────────

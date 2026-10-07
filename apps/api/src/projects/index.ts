@@ -17,6 +17,7 @@
 import { projectWebhooksApp, projectsApp } from './lib/app';
 import { registerProjectsRoutes } from './routes/projects';
 import { registerTriggerWebhooksRoutes } from './routes/trigger-webhooks';
+import { registerEventIngressRoutes } from '../trigger-events/routes';
 import { registerProjectGitRoutes } from './routes/project-git';
 import { registerGithubInstallationsRoutes } from './routes/github-installations';
 import { registerGithubRepositoriesRoutes } from './routes/github-repositories';
@@ -96,6 +97,7 @@ export function registerAllProjectRoutes(): void {
   // middleware first (its first statement), then the remaining route groups.
   registerProjectsRoutes();
   registerTriggerWebhooksRoutes();
+  registerEventIngressRoutes();
   registerProjectGitRoutes();
   registerGithubInstallationsRoutes();
   registerGithubRepositoriesRoutes();

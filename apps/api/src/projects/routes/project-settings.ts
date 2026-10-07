@@ -1,4 +1,5 @@
 /** Project settings: onboarding, deletion, feature flags, and the sandbox provider override. */
+import { reconcileEventSubscriptions } from '../../trigger-events/subscriptions';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json, lenientBody } from '../../openapi';
@@ -267,6 +268,8 @@ export function registerProjectSettingsRoutes(): void {
       .returning();
 
     if (!row) return c.json({ error: 'Not found' }, 404);
+    // No desired triggers: drops every app-event subscription and unsubscribes the provider instances.
+    await reconcileEventSubscriptions(projectId, row.accountId, []);
     return c.json({ ok: true, archived: true, repo_deleted: repoDeleted });
   },
   );

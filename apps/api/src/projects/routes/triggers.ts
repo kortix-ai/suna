@@ -27,6 +27,11 @@ import {
 } from '../lib/triggers';
 import { validateWebhookSecretConfiguration } from '../lib/webhook-secret-policy';
 import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
+import { connectorInfo, eventPayload } from '../../trigger-events/deliver';
+import { eventSourceFor } from '../../trigger-events/registry';
+import { reconcileEventSubscriptions } from '../../trigger-events/subscriptions';
+import { connectors } from '@kortix/db';
+import type { EventTypeInfo } from '../../trigger-events/types';
 import {
   PRIVATE_TRIGGER_SESSION_ACCESS,
   parseTriggerSessionAccess,
@@ -38,6 +43,12 @@ import {
   extractTriggers,
   findProjectTriggerBySlug,
 } from '../triggers';
+
+/** Merge-body keys owned by one trigger type, dropped when a PATCH changes the type. */
+const TYPE_SPECIFIC_BODY_KEYS = [
+  'cron', 'run_at', 'timezone', 'secret_env', 'run', 'mode', 'interval',
+  'expect_event_within', 'connector', 'event', 'event_config',
+] as const;
 
 // Body keys that change the trigger's *repo manifest* (committed to git). A PATCH
 // whose body touches none of these has nothing to commit, so we skip git entirely
@@ -64,7 +75,14 @@ const TRIGGER_MANIFEST_KEYS = [
   'session_key',
   'sessionKey',
   'filter',
+  'connector',
+  'event',
+  'event_config',
 ] as const;
+
+/** Provider event catalogs change rarely and cost several provider calls. */
+const EVENT_TYPE_CACHE_MS = 10 * 60_000;
+const eventTypeCache = new Map<string, { expires: number; items: EventTypeInfo[] }>();
 
 export function registerTriggersRoutes(): void {
   // GET /v1/projects/:projectId/triggers
@@ -107,6 +125,90 @@ export function registerTriggersRoutes(): void {
     },
   );
 
+  // GET /v1/projects/:projectId/triggers/event-types?connector=<slug>
+  //
+  // ⚠️ Keep registered BEFORE the `…/triggers/{slug}` routes (see `activation` below).
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/triggers/event-types',
+      tags: ['triggers'],
+      summary: 'List the app events a connector can trigger on',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        query: z.object({ connector: z.string().min(1).openapi({ description: 'Connector slug.' }) }),
+      },
+      responses: {
+        200: json(
+          z.object({
+            provider: z.string(),
+            app: z.string(),
+            event_types: z.array(z.object({
+              type: z.string(),
+              name: z.string(),
+              description: z.string(),
+              app: z.string(),
+              delivery: z.enum(['poll', 'push']).nullable(),
+              config_schema: z.record(z.string(), z.any()),
+              payload_schema: z.record(z.string(), z.any()).nullable(),
+            })),
+          }),
+          'Event types of the connector app',
+        ),
+        ...errors(400, 404, 409, 502),
+      },
+    }),
+    async (c) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
+      );
+      const slug = c.req.query('connector')?.trim();
+      if (!slug) return c.json({ error: 'connector is required' }, 400);
+      const [connector] = await db
+        .select({ provider: connectors.providerType })
+        .from(connectors)
+        .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
+        .limit(1);
+      if (!connector) return c.json({ error: `Connector "${slug}" not found` }, 404);
+      const { app } = await connectorInfo(projectId, slug);
+      const provider = eventSourceFor(connector.provider);
+      if (!provider || !provider.configured() || !app) {
+        return c.json({ error: 'event_source_unavailable' }, 409);
+      }
+      const key = `${provider.id}:${app}`;
+      let types = eventTypeCache.get(key);
+      if (!types || types.expires < Date.now()) {
+        try {
+          types = { expires: Date.now() + EVENT_TYPE_CACHE_MS, items: await provider.listEventTypes(app) };
+        } catch (error) {
+          return c.json({ error: `Could not list ${app} events: ${error instanceof Error ? error.message : String(error)}` }, 502);
+        }
+        eventTypeCache.set(key, types);
+      }
+      return c.json({
+        provider: provider.id,
+        app,
+        event_types: types.items.map((t) => ({
+          type: t.type,
+          name: t.name,
+          description: t.description,
+          app: t.app,
+          delivery: t.delivery,
+          config_schema: t.configSchema,
+          payload_schema: t.payloadSchema,
+        })),
+      }, 200);
+    },
+  );
+
   projectsApp.openapi(
     createRoute({
       method: 'post',
@@ -120,7 +222,7 @@ export function registerTriggersRoutes(): void {
         params: z.object({ projectId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
             name: z.string().openapi({ description: 'Trigger name. The slug derives from it.' }),
-            type: z.enum(['cron', 'webhook', 'monitor']).openapi({ description: 'cron runs on a schedule, webhook runs on an HTTP call, monitor supervises a command.' }),
+            type: z.enum(['cron', 'webhook', 'monitor', 'event']).openapi({ description: 'cron runs on a schedule, webhook runs on an HTTP call, monitor supervises a command, event runs when an app event happens on a connector.' }),
             prompt_template: z.string().openapi({ description: 'Prompt the agent receives on each fire. Webhook payload templates like {{ body.x }} are allowed.' }),
             slug: z.string().optional().openapi({ description: 'Explicit slug (a-z, 0-9, _, -). Defaults to a slug of name.' }),
             agent: z.string().optional().openapi({ description: 'Agent to run. Default "default".' }),
@@ -130,6 +232,9 @@ export function registerTriggersRoutes(): void {
             run_at: z.string().optional().openapi({ description: 'ISO-8601 instant for a one-off cron trigger.' }),
             timezone: z.string().optional().openapi({ description: 'IANA timezone for cron. Default UTC.' }),
             secret_env: z.string().optional().openapi({ description: 'Project secret holding the webhook signing secret. Required for a webhook trigger.' }),
+            connector: z.string().optional().openapi({ description: 'Connector slug the event happens on. Required for an event trigger.' }),
+            event: z.string().optional().openapi({ description: 'Provider event type id, such as GITHUB_PULL_REQUEST_EVENT. Required for an event trigger.' }),
+            event_config: z.record(z.string(), z.any()).optional().openapi({ description: 'Provider event config. Event triggers only.' }),
             run: z.string().optional().openapi({ description: 'Repo-relative command a monitor supervises. Required for a monitor.' }),
             mode: z.enum(['poll', 'stream']).optional().openapi({ description: 'Monitor mode. Required for a monitor.' }),
             interval: z.string().optional().openapi({ description: 'Poll period such as 5m. Monitors with mode poll only.' }),
@@ -217,7 +322,9 @@ export function registerTriggersRoutes(): void {
         return c.json({ error: result.error }, result.status as 400 | 409 | 502);
       }
       if (!committedManifest) throw new Error('trigger create completed without a manifest');
-      await reconcileProjectTriggerRuntime(projectId, extractTriggers(committedManifest).specs);
+      const createdSpecs = extractTriggers(committedManifest).specs;
+      await reconcileProjectTriggerRuntime(projectId, createdSpecs);
+      await reconcileEventSubscriptions(projectId, loaded.row.accountId, createdSpecs);
       await setTriggerSessionAccess({
         projectId,
         accountId: loaded.row.accountId,
@@ -318,6 +425,9 @@ export function registerTriggersRoutes(): void {
             run_at: z.string().optional().openapi({ description: 'ISO-8601 instant for a one-off trigger.' }),
             timezone: z.string().optional().openapi({ description: 'IANA timezone.' }),
             secret_env: z.string().optional().openapi({ description: 'Webhook signing secret name.' }),
+            connector: z.string().optional().openapi({ description: 'Connector slug of an event trigger.' }),
+            event: z.string().optional().openapi({ description: 'Provider event type id of an event trigger.' }),
+            event_config: z.record(z.string(), z.any()).optional().openapi({ description: 'Provider event config of an event trigger.' }),
             session_mode: z.enum(['fresh', 'reuse', 'pinned', 'keyed']).optional().openapi({ description: 'Session reuse mode.' }),
             session_id: z.string().optional().openapi({ description: 'Session to pin.' }),
             session_key: z.string().optional().openapi({ description: 'Session key template.' }),
@@ -380,6 +490,11 @@ export function registerTriggersRoutes(): void {
           const patchesKey = 'session_key' in body || 'sessionKey' in body;
           const patchesMode = 'session_mode' in body || 'sessionMode' in body;
           if (patchesKey && !patchesMode) delete base.session_mode;
+          // A type change starts from the shared fields only: the old type's wiring
+          // (cron, secret, monitor command, event source) would fail the new type.
+          if (typeof body.type === 'string' && body.type !== current.type) {
+            for (const key of TYPE_SPECIFIC_BODY_KEYS) delete base[key];
+          }
           const draft = parseTriggerDraft({ ...base, ...body, slug: slug }, { existingSlug: slug });
           if ('error' in draft) return { ok: false, error: draft.error, status: 400 };
           if (draft.type === 'webhook' && draft.secretEnv) {
@@ -424,7 +539,9 @@ export function registerTriggersRoutes(): void {
       }
       if (touchesManifest) {
         if (!committedManifest) throw new Error('trigger update completed without a manifest');
-        await reconcileProjectTriggerRuntime(projectId, extractTriggers(committedManifest).specs);
+        const updatedSpecs = extractTriggers(committedManifest).specs;
+        await reconcileProjectTriggerRuntime(projectId, updatedSpecs);
+        await reconcileEventSubscriptions(projectId, loaded.row.accountId, updatedSpecs);
       }
       if (parsedAccess?.ok) {
         await setTriggerSessionAccess({
@@ -474,6 +591,7 @@ export function registerTriggersRoutes(): void {
         return c.json({ error: 'Invalid slug' }, 400);
       }
 
+      let remainingManifest: ParsedManifest | undefined;
       const result = await mutateManifestWithRetry(
         loaded.row,
         `trigger ${slug} was being deleted`,
@@ -483,6 +601,7 @@ export function registerTriggersRoutes(): void {
           }
           const next = removeTriggerFromManifest(manifest, slug);
           manifest.raw = next.raw;
+          remainingManifest = manifest;
           return { ok: true, commitMessage: `chore: delete trigger ${slug}` };
         },
       );
@@ -497,6 +616,9 @@ export function registerTriggersRoutes(): void {
         .where(
           and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.slug, slug)),
         );
+      if (remainingManifest) {
+        await reconcileEventSubscriptions(projectId, loaded.row.accountId, extractTriggers(remainingManifest).specs);
+      }
 
       return c.json({ ok: true as const });
     },
@@ -559,9 +681,23 @@ export function registerTriggersRoutes(): void {
       );
 
       const now = new Date();
+      // An event trigger fires with an empty event, so the user can test the prompt.
+      const eventConnector = spec.event ? await connectorInfo(projectId, spec.event.connector) : null;
+      const eventRoot = spec.event && eventConnector
+        ? eventPayload({
+            spec,
+            ...eventConnector,
+            eventId: `manual-${crypto.randomUUID()}`,
+            type: spec.event.type,
+            occurredAt: now.toISOString(),
+            data: {},
+            firedAt: now,
+          })
+        : {};
       const payload = {
         trigger: { slug: spec.slug, type: spec.type, kind: 'git' },
         fired_at: now.toISOString(),
+        ...eventRoot,
         source: 'manual',
         actor: loaded.userId,
         message: { text: '', source: 'manual_test' },

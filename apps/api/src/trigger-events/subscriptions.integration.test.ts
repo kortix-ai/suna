@@ -1,0 +1,323 @@
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import {
+  accountGroups,
+  accounts,
+  connectorConnections,
+  connectors,
+  createDb,
+  type Database,
+  projectTriggerRuntime,
+  projects,
+} from '@kortix/db';
+import { eq } from 'drizzle-orm';
+import { assignRole, SYSTEM_ACTOR } from '../iam/assignments';
+import { clearAuthorizeCaches } from '../iam/authorize';
+import type { GitTriggerSpec } from '../projects/trigger-types';
+
+const fires: Array<Record<string, any>> = [];
+let fireStatus: 'fired' | 'failed' = 'fired';
+const actualTriggers = await import('../projects/lib/triggers');
+mock.module('../projects/lib/triggers', () => ({
+  ...actualTriggers,
+  fireGitTrigger: async (input: Record<string, any>) => {
+    fires.push(input);
+    return fireStatus === 'fired' ? { status: 'fired', sessionId: 'sess_synthetic' } : { status: 'failed', error: 'boom' };
+  },
+}));
+
+const { reconcileEventSubscriptions, reconcileEventSubscriptionsFromCatalog } = await import('./subscriptions');
+const { applyNotices, deliverEvents, EVENT_PROMPT_PREAMBLE } = await import('./deliver');
+const { setEventSourceForTest } = await import('./registry');
+const store = await import('./store');
+
+const CONFIRMATION = 'I_UNDERSTAND_THIS_DELETES_TEST_DATA';
+const HAS_CONFIRMED_TEST_DB = Boolean(
+  process.env.TEST_DATABASE_URL &&
+    process.env.KORTIX_TEST_DB_CONFIRM === CONFIRMATION &&
+    process.env.INTERNAL_KORTIX_ENV !== 'prod',
+);
+const describeWithDb = HAS_CONFIRMED_TEST_DB ? describe : describe.skip;
+
+const ACCOUNT_ID = '00000000-0000-4000-a000-000000009821';
+const PROJECT_ID = '00000000-0000-4000-a000-000000009822';
+const CONNECTOR_ID = '00000000-0000-4000-a000-000000009823';
+const CONNECTION_ID = '00000000-0000-4000-a000-000000009824';
+
+let integrationDb: Database | null = null;
+function testDb(): Database {
+  const url = process.env.TEST_DATABASE_URL;
+  if (!url) throw new Error('TEST_DATABASE_URL is required');
+  if (!integrationDb) integrationDb = createDb(url, { max: 4 });
+  return integrationDb;
+}
+
+// Fake provider: `subscribe` mints one id per (type, config), like Composio's idempotent upsert.
+const calls: string[] = [];
+let subscribeError: Error | null = null;
+const fake = {
+  id: 'composio',
+  configured: () => true,
+  ingressConfigured: () => true,
+  listEventTypes: async () => [],
+  subscribe: async ({ type, config }: { type: string; config: Record<string, unknown> }) => {
+    calls.push(`subscribe:${type}`);
+    if (subscribeError) throw subscribeError;
+    return { externalId: `ti_${type}_${JSON.stringify(config)}` };
+  },
+  unsubscribe: async (id: string) => {
+    calls.push(`unsubscribe:${id}`);
+  },
+  receive: async () => ({ deliveries: [], notices: [] }),
+};
+
+const spec = (slug: string, over: Partial<GitTriggerSpec> = {}, config: Record<string, unknown> = {}): GitTriggerSpec => ({
+  slug,
+  path: `kortix.yaml#triggers.${slug}`,
+  name: slug,
+  type: 'event',
+  agent: 'default',
+  model: null,
+  enabled: true,
+  promptTemplate: 'Mail {{ event.data.subject }} on {{ event.app }}',
+  cron: null,
+  runAt: null,
+  timezone: 'UTC',
+  secretEnv: null,
+  run: null,
+  monitorMode: null,
+  intervalSeconds: null,
+  expectEventWithinSeconds: null,
+  event: { connector: 'inbox', type: 'EXAMPLE_NEW_MESSAGE', config },
+  sessionMode: 'fresh',
+  pinnedSessionId: null,
+  sessionKey: null,
+  filter: null,
+  ...over,
+});
+
+async function cleanup() {
+  await testDb().delete(projects).where(eq(projects.projectId, PROJECT_ID));
+  await testDb().delete(accounts).where(eq(accounts.accountId, ACCOUNT_ID));
+}
+const connect = (over: Partial<typeof connectorConnections.$inferInsert> = {}) =>
+  testDb().insert(connectorConnections).values({
+    connectionId: CONNECTION_ID,
+    accountId: ACCOUNT_ID,
+    projectId: PROJECT_ID,
+    connectorId: CONNECTOR_ID,
+    label: 'Shared account',
+    metadata: { connected_account_id: 'ca_example' },
+    ...over,
+  });
+const catalog = async (s: GitTriggerSpec) =>
+  testDb().insert(projectTriggerRuntime).values({
+    projectId: PROJECT_ID,
+    slug: s.slug,
+    triggerType: s.type,
+    enabled: s.enabled,
+    scheduleSpec: s as unknown as Record<string, unknown>,
+  });
+const status = async (slug: string) => (await store.get(PROJECT_ID, slug))?.status;
+
+describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
+  beforeEach(async () => {
+    await cleanup();
+    calls.length = 0;
+    fires.length = 0;
+    fireStatus = 'fired';
+    subscribeError = null;
+    setEventSourceForTest('composio', fake);
+    const db = testDb();
+    await db.insert(accounts).values({ accountId: ACCOUNT_ID, name: 'Event reconcile proof' });
+    await db.insert(projects).values({
+      projectId: PROJECT_ID,
+      accountId: ACCOUNT_ID,
+      name: 'Event reconcile proof',
+      repoUrl: 'https://example.test/event-reconcile.git',
+    });
+    await db.insert(connectors).values({
+      connectorId: CONNECTOR_ID,
+      accountId: ACCOUNT_ID,
+      projectId: PROJECT_ID,
+      slug: 'inbox',
+      name: 'Inbox',
+      providerType: 'composio',
+      config: { app: 'example' },
+    });
+  });
+  afterEach(async () => {
+    setEventSourceForTest('composio', undefined);
+    await cleanup();
+  });
+
+  test('needs_connection until a shared account exists, then active; a repeat call is a no-op', async () => {
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
+    expect(await status('a')).toBe('needs_connection');
+    expect((await store.get(PROJECT_ID, 'a'))?.lastError).toContain('Connect a shared example account');
+    expect(calls).toEqual([]);
+
+    await connect();
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
+    const row = await store.get(PROJECT_ID, 'a');
+    expect(row?.status).toBe('active');
+    expect(row?.externalId).toBe('ti_EXAMPLE_NEW_MESSAGE_{}');
+    expect(row?.connectionId).toBe(CONNECTION_ID);
+
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
+    expect(calls).toEqual(['subscribe:EXAMPLE_NEW_MESSAGE']);
+  });
+
+  test('a private member account never activates a trigger', async () => {
+    await connect({ ownerType: 'member', ownerId: '00000000-0000-4000-a000-000000009899' });
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
+    expect(await status('a')).toBe('needs_connection');
+  });
+
+  test('a shared account narrowed to named people never activates a trigger', async () => {
+    const groupId = '00000000-0000-4000-a000-000000009825';
+    await connect();
+    await testDb().insert(accountGroups).values({ groupId, accountId: ACCOUNT_ID, name: 'Narrowed audience' });
+    await assignRole(SYSTEM_ACTOR, ACCOUNT_ID, {
+      principal: { type: 'group', id: groupId },
+      roleKey: 'agent-user',
+      scope: { type: 'project', id: PROJECT_ID },
+      object: { type: 'connection', id: CONNECTION_ID },
+    });
+    clearAuthorizeCaches();
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
+    expect(await status('a')).toBe('error');
+    expect((await store.get(PROJECT_ID, 'a'))?.lastError).toContain('shared with specific people only');
+    expect(calls).toEqual([]);
+    clearAuthorizeCaches();
+  });
+
+  test('the catalog path activates a pending trigger after a connection appears', async () => {
+    await catalog(spec('a'));
+    await reconcileEventSubscriptionsFromCatalog(PROJECT_ID, ACCOUNT_ID);
+    expect(await status('a')).toBe('needs_connection');
+    await connect();
+    await reconcileEventSubscriptionsFromCatalog(PROJECT_ID, ACCOUNT_ID);
+    expect(await status('a')).toBe('active');
+  });
+
+  test('a config change resubscribes and unsubscribes the old instance', async () => {
+    await connect();
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a', {}, { label: 'one' })]);
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a', {}, { label: 'two' })]);
+    expect(calls).toEqual([
+      'subscribe:EXAMPLE_NEW_MESSAGE',
+      'subscribe:EXAMPLE_NEW_MESSAGE',
+      'unsubscribe:ti_EXAMPLE_NEW_MESSAGE_{"label":"one"}',
+    ]);
+    expect((await store.get(PROJECT_ID, 'a'))?.externalId).toBe('ti_EXAMPLE_NEW_MESSAGE_{"label":"two"}');
+  });
+
+  test('two triggers on one instance: unsubscribe only when the last row goes', async () => {
+    await connect();
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a'), spec('b')]);
+    expect((await store.listByProject(PROJECT_ID)).map((r) => r.externalId)).toEqual([
+      'ti_EXAMPLE_NEW_MESSAGE_{}',
+      'ti_EXAMPLE_NEW_MESSAGE_{}',
+    ]);
+    calls.length = 0;
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('b')]);
+    expect(calls).toEqual([]);
+    expect(await store.get(PROJECT_ID, 'a')).toBeNull();
+    // A disabled trigger is no longer desired.
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('b', { enabled: false })]);
+    expect(calls).toEqual(['unsubscribe:ti_EXAMPLE_NEW_MESSAGE_{}']);
+    expect(await store.listByProject(PROJECT_ID)).toEqual([]);
+  });
+
+  test('a provider error becomes status error and never throws; the next call retries', async () => {
+    await connect();
+    subscribeError = new Error('Invalid config:\n  owner is required');
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
+    const row = await store.get(PROJECT_ID, 'a');
+    expect(row?.status).toBe('error');
+    expect(row?.lastError).toBe('Invalid config: owner is required');
+    subscribeError = null;
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
+    expect(await status('a')).toBe('active');
+  });
+
+  test('an undeclared connector and an unconfigured provider are status error', async () => {
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [
+      spec('a', { event: { connector: 'missing', type: 'X', config: {} } }),
+    ]);
+    expect((await store.get(PROJECT_ID, 'a'))?.lastError).toContain('"missing" is not declared');
+    setEventSourceForTest('composio', { ...fake, configured: () => false });
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('b')]);
+    expect((await store.get(PROJECT_ID, 'b'))?.lastError).toContain('COMPOSIO_API_KEY');
+  });
+
+  describe('delivery', () => {
+    const delivery = (over: Record<string, unknown> = {}) => ({
+      externalId: 'ti_EXAMPLE_NEW_MESSAGE_{}',
+      eventId: 'msg_synthetic1',
+      type: 'EXAMPLE_NEW_MESSAGE',
+      occurredAt: '2026-01-01T00:00:00Z',
+      data: { subject: 'Hello' },
+      ...over,
+    });
+    async function armed(over: Partial<GitTriggerSpec> = {}) {
+      await connect();
+      const s = spec('a', over);
+      await catalog(s);
+      await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [s]);
+    }
+
+    test('fires with the payload roots, the preamble and the idempotency key', async () => {
+      await armed({ filter: { 'event.data.subject': 'Hello' } });
+      expect(await deliverEvents('composio', [delivery()])).toEqual({ fired: 1, skipped: 0, ignored: 0, failed: 0 });
+      expect(fires).toHaveLength(1);
+      expect(fires[0]!.source).toBe('event');
+      expect(fires[0]!.idempotencyKey).toBe(`trigger:event:${PROJECT_ID}:a:msg_synthetic1`);
+      expect(fires[0]!.renderedPrompt).toBe(`${EVENT_PROMPT_PREAMBLE}Mail Hello on example`);
+      expect(fires[0]!.payload).toMatchObject({
+        event: { id: 'msg_synthetic1', provider: 'composio', app: 'example', connector: 'inbox', data: { subject: 'Hello' } },
+        trigger: { slug: 'a', type: 'event', kind: 'git' },
+      });
+      expect((await store.get(PROJECT_ID, 'a'))?.lastEventAt).toBeInstanceOf(Date);
+    });
+
+    test('an unknown external id is ignored and never unsubscribed', async () => {
+      await armed();
+      calls.length = 0;
+      expect(await deliverEvents('composio', [delivery({ externalId: 'ti_other_env' })])).toEqual({ fired: 0, skipped: 0, ignored: 1, failed: 0 });
+      expect(calls).toEqual([]);
+      expect(fires).toHaveLength(0);
+    });
+
+    test('a filter miss, a paused project and a disabled trigger skip', async () => {
+      await armed({ filter: { 'event.data.subject': 'Other' } });
+      expect((await deliverEvents('composio', [delivery()])).skipped).toBe(1);
+
+      await testDb().delete(projectTriggerRuntime).where(eq(projectTriggerRuntime.projectId, PROJECT_ID));
+      await catalog(spec('a', { enabled: false }));
+      expect((await deliverEvents('composio', [delivery()])).skipped).toBe(1);
+
+      await testDb().delete(projectTriggerRuntime).where(eq(projectTriggerRuntime.projectId, PROJECT_ID));
+      await catalog(spec('a'));
+      await testDb().update(projects).set({ metadata: { triggers_paused: true } }).where(eq(projects.projectId, PROJECT_ID));
+      expect((await deliverEvents('composio', [delivery()])).skipped).toBe(1);
+      expect(fires).toHaveLength(0);
+    });
+
+    test('a failed fire is counted as failed', async () => {
+      await armed();
+      fireStatus = 'failed';
+      expect((await deliverEvents('composio', [delivery()])).failed).toBe(1);
+    });
+
+    test('notices mark rows error with remediation text', async () => {
+      await armed();
+      await applyNotices('composio', [{ kind: 'subscription_disabled', externalId: 'ti_EXAMPLE_NEW_MESSAGE_{}', reason: 'Quota.' }]);
+      expect((await store.get(PROJECT_ID, 'a'))?.lastError).toContain('Quota.');
+      await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
+      expect(await status('a')).toBe('active');
+      await applyNotices('composio', [{ kind: 'connection_expired', connectionExternalId: 'ca_example', reason: 'Token expired.' }]);
+      expect((await store.get(PROJECT_ID, 'a'))?.lastError).toContain('Reconnect the app');
+    });
+  });
+});
