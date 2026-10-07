@@ -81,7 +81,8 @@ import {
   matchesQuery,
   triggerName,
 } from './schedule/schedule-copy';
-import { connectorHref } from './schedule/event-trigger-copy';
+import { appLabel } from './schedule/event-trigger-copy';
+import { useEventAppConnect } from './schedule/use-event-app-connect';
 import { ScheduleCreateModal } from './schedule/schedule-create-modal';
 import { ScheduleDetailSheet } from './schedule/schedule-detail-sheet';
 import { ScheduleTable } from './schedule/schedule-table';
@@ -243,6 +244,13 @@ export function ScheduleView({ projectId }: { projectId: string }) {
 
   const [query, setQuery] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
+  // The empty state's "App event" button opens the form past the type step.
+  const [createKind, setCreateKind] = useState<TriggerKind | null>(null);
+  const openCreate = (kind: TriggerKind | null = null) => {
+    setCreateKind(kind);
+    setCreateOpen(true);
+  };
+  const eventConnect = useEventAppConnect(projectId);
   const configure = useConfigureThread(projectId);
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProjectTrigger | null>(null);
@@ -375,7 +383,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
                 label={copy.createLabel}
                 pending={configure.pending}
                 onChat={() => configure.start(newConfigPrompt('trigger'))}
-                manual={{ onSelect: () => setCreateOpen(true) }}
+                manual={{ onSelect: () => openCreate() }}
               />
             ) : null}
           </div>
@@ -435,15 +443,26 @@ export function ScheduleView({ projectId }: { projectId: string }) {
             description={copy.emptyBody}
             action={
               canWrite ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={() => setCreateOpen(true)}
-                >
-                  <PlusIcon className="size-3.5 shrink-0" />
-                  {copy.createLabel}
-                </Button>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => openCreate()}
+                  >
+                    <PlusIcon className="size-3.5 shrink-0" />
+                    {copy.createLabel}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => openCreate('event')}
+                  >
+                    <LightningIcon className="size-3.5 shrink-0" />
+                    App event
+                  </Button>
+                </div>
               ) : undefined
             }
           />
@@ -462,7 +481,17 @@ export function ScheduleView({ projectId }: { projectId: string }) {
             onRun={(t) => run.mutate(t)}
             onToggle={(t) => toggle.mutate(t)}
             onDelete={(t) => setDeleteTarget(t)}
-            onConnect={(t) => router.push(connectorHref(projectId, t.event?.connector))}
+            onConnect={
+              eventConnect.canConnect
+                ? (t) =>
+                    t.event &&
+                    eventConnect.connect({
+                      app: t.event.app ?? t.event.connector,
+                      name: appLabel(t.event.app, t.event.connector),
+                      connector: t.event.connector,
+                    })
+                : undefined
+            }
           />
         )}
 
@@ -487,6 +516,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
         projectId={projectId}
         open={createOpen}
         onOpenChange={setCreateOpen}
+        initialKind={createKind}
         onCreated={(slug) => {
           setCreateOpen(false);
           invalidate();

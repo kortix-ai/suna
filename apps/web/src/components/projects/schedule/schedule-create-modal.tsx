@@ -44,7 +44,6 @@ import { AgentSelector, flattenModels } from '@/features/session/session-chat-in
 import { SharingPicker, type SharingSelection } from '@/features/workspace/shared/sharing-picker';
 import { cn } from '@/lib/utils';
 import {
-  type AdminConnector,
   PROJECT_SESSION_NAME_LOOKUP_LIMIT,
   type ProjectTriggerEventType,
   createProjectTrigger,
@@ -56,6 +55,7 @@ import {
   contract,
   modelKeyToWire,
   qk,
+  useProjectTriggerEventApps,
   useProjectTriggerEventTypes,
   useRuntimeProviders,
   useVisibleAgents,
@@ -83,11 +83,13 @@ import {
   defaultEventPrompt,
   describeEventStatus,
   draftToConfig,
+  parseConfigErrors,
   schemaFields,
 } from './event-trigger-copy';
 import {
   EventConfigForm,
-  EventConnectorPicker,
+  EventAppPicker,
+  type EventAppChoice,
   EventTypePicker,
   PromptVariableHints,
   SelectedEventType,
@@ -161,6 +163,7 @@ export function ScheduleCreateModal({
   onOpenChange,
   onCreated,
   initialAgent = null,
+  initialKind = null,
 }: {
   projectId: string;
   open: boolean;
@@ -170,6 +173,8 @@ export function ScheduleCreateModal({
    *  this modal for "its" triggers, so the picker lands on that agent rather
    *  than asking a question the page already answered. Still changeable. */
   initialAgent?: string | null;
+  /** Opens past the type step, e.g. the empty state's "App event" button. */
+  initialKind?: TriggerKind | null;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const [kind, setKind] = useState<TriggerKind | null>(null);
@@ -187,7 +192,9 @@ export function ScheduleCreateModal({
   const [runAt, setRunAt] = useState<string | null>(null);
   const [timezone, setTimezone] = useState('UTC');
 
-  const [connector, setConnector] = useState<AdminConnector | null>(null);
+  const [connector, setConnector] = useState<EventAppChoice | null>(null);
+  // Per-field problems from the API's 400 on a bad event config.
+  const [configErrors, setConfigErrors] = useState<Record<string, string>>({});
   const [eventType, setEventType] = useState<ProjectTriggerEventType | null>(null);
   const [configDraft, setConfigDraft] = useState<ConfigDraft>({});
   const [changingEvent, setChangingEvent] = useState(false);
@@ -223,6 +230,8 @@ export function ScheduleCreateModal({
   const configFields = useMemo(() => schemaFields(eventType?.config_schema), [eventType]);
   // The chosen event's full definition (payload schema) from the same cached
   // list the picker reads, so a refetch cannot leave the prompt hints stale.
+  const eventApps = useProjectTriggerEventApps(isEvent ? projectId : null);
+  const chosenApp = eventApps.data?.apps.find((a) => a.connector === connector?.slug) ?? null;
   const eventTypes = useProjectTriggerEventTypes(
     projectId,
     isEvent ? (connector?.slug ?? null) : null,
@@ -238,6 +247,7 @@ export function ScheduleCreateModal({
     setChangingEvent(false);
     setEventType(null);
     setConfigDraft({});
+    setConfigErrors({});
     setKind(null);
     setName('');
     setInstruction('');
@@ -262,6 +272,12 @@ export function ScheduleCreateModal({
     setError(null);
   }, [open, initialAgent]);
 
+  useEffect(() => {
+    if (!open || !initialKind) return;
+    setKind(initialKind);
+    setStep(initialKind === 'event' ? 'app' : 'what');
+  }, [open, initialKind]);
+
   /** First-step problems, in the order a person would hit them. */
   function checkWhat(): string | null {
     if (!name.trim()) return `Give this ${copy?.noun ?? 'trigger'} a name.`;
@@ -275,10 +291,11 @@ export function ScheduleCreateModal({
     return configProblem(configFields, configDraft);
   }
 
-  function pickConnector(next: AdminConnector) {
+  function pickConnector(next: EventAppChoice) {
     if (connector?.slug !== next.slug) {
       setEventType(null);
       setConfigDraft({});
+      setConfigErrors({});
     }
     setConnector(next);
     setError(null);
@@ -288,6 +305,7 @@ export function ScheduleCreateModal({
     setEventType(next);
     setChangingEvent(false);
     setConfigDraft(defaultConfigDraft(schemaFields(next.config_schema)));
+    setConfigErrors({});
     // Prefill only what the person has not typed: a second pick must not eat their words.
     if (!instruction.trim() || instruction === (eventType && defaultEventPrompt(eventType))) {
       setInstruction(defaultEventPrompt(next));
@@ -398,7 +416,9 @@ export function ScheduleCreateModal({
         {
           description: isEvent
             ? created?.event
-              ? (describeEventStatus(created.event).detail ?? 'It is live.')
+              ? created.event.status === 'needs_connection'
+                ? 'It goes live when the account is connected.'
+                : (describeEventStatus(created.event).detail ?? 'It is live.')
               : undefined
             : isCron
               ? runAt
@@ -409,7 +429,17 @@ export function ScheduleCreateModal({
       );
       if (created) onCreated(created.slug);
     },
-    onError: (err) => setError(err instanceof Error ? err.message : 'Could not create it'),
+    onError: (err) => {
+      const message = err instanceof Error ? err.message : 'Could not create it';
+      if (!isEvent) return setError(message);
+      // A bad event config comes back per field: show each under its input, on the step that has them.
+      const { byField, general } = parseConfigErrors(message, configFields);
+      if (Object.keys(byField).length > 0) {
+        setConfigErrors(byField);
+        setStep('event');
+      }
+      setError(Object.keys(byField).length > 0 ? general : message);
+    },
   });
 
   const stepLabels: Record<Step, string> = {
@@ -568,7 +598,7 @@ export function ScheduleCreateModal({
             {step === 'type'
               ? tI18nComplete.raw('textf60eb7723e40')
               : step === 'app'
-                ? 'Pick the connected app the event happens in.'
+                ? 'Pick the app the event happens in. Connect it here, or after you create the trigger.'
                 : step === 'event'
                   ? 'Pick what should start the agent.'
                   : isEvent
@@ -603,7 +633,7 @@ export function ScheduleCreateModal({
               />
             </div>
           ) : step === 'app' ? (
-            <EventConnectorPicker
+            <EventAppPicker
               projectId={projectId}
               value={connector?.slug ?? null}
               onChange={pickConnector}
@@ -625,7 +655,11 @@ export function ScheduleCreateModal({
                   <EventConfigForm
                     fields={configFields}
                     draft={configDraft}
-                    onChange={setConfigDraft}
+                    errors={configErrors}
+                    onChange={(next) => {
+                      setConfigDraft(next);
+                      setConfigErrors({});
+                    }}
                   />
                 </Field>
               ) : null}
@@ -737,7 +771,15 @@ export function ScheduleCreateModal({
               )}
 
               {isEvent ? (
-                advanced
+                <>
+                  {chosenApp && !chosenApp.connected ? (
+                    <InfoBanner tone="info" className="text-xs">
+                      {chosenApp.name} has no shared account yet. This trigger goes live when one
+                      is connected.
+                    </InfoBanner>
+                  ) : null}
+                  {advanced}
+                </>
               ) : (
                 <Disclosure className="group">
                   <DisclosureTrigger>

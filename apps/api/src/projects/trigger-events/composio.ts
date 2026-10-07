@@ -112,6 +112,9 @@ export const composioEventSource: EventSourceProvider = {
     return apps.sort((a, b) => a.name.localeCompare(b.name));
   },
 
+  // A new connector holds an empty project slot until the person signs in; only then does it carry a Composio account id.
+  connectionReady: (connection) => Boolean(str(connection.metadata.connected_account_id)),
+
   async subscribe({ connection, type, config: triggerConfig }) {
     const connectedAccountId = str(connection.metadata.connected_account_id);
     if (!connectedAccountId) {

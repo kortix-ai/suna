@@ -27,52 +27,148 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { ConnectorAppIcon } from '@/features/workspace/capabilities/connectors/connector-identity';
-import { connectorSetupStatus } from '@/features/workspace/customize/sections/connector-connection-form';
+import { AppLogo } from '@/components/projects/onboarding/app-logo';
+import Loading from '@/components/ui/loading';
+import { errorToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
-import { listConnectors, type AdminConnector, type ProjectTriggerEventType } from '@kortix/sdk';
-import { contract, qk, useProjectTriggerEventTypes } from '@kortix/sdk/react';
-import { CheckIcon, MagnifyingGlassIcon, PlusIcon } from '@phosphor-icons/react';
-import { useQuery } from '@tanstack/react-query';
-import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import type { ProjectTriggerEventType } from '@kortix/sdk';
+import { useProjectTriggerEventApps, useProjectTriggerEventTypes } from '@kortix/sdk/react';
+import { CheckIcon, LinkIcon, MagnifyingGlassIcon } from '@phosphor-icons/react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
-  connectorHref,
+  type EventApp,
   describePollHint,
+  groupEventApps,
   humanizeEventType,
   payloadVariables,
   type ConfigDraft,
   type SchemaField,
 } from './event-trigger-copy';
+import { type EventAppTarget, useEventAppConnect } from './use-event-app-connect';
 
-/* ─── Connector ─────────────────────────────────────────────────────────── */
+/* ─── App ───────────────────────────────────────────────────────────────── */
 
-/** Apps whose events a person can subscribe to. Composio is the one event source today. */
-export function eventConnectors(connectors: AdminConnector[]): AdminConnector[] {
-  return connectors.filter((c) => c.provider === 'composio' && c.status !== 'disabled');
+/** The app a trigger listens to: the project's connector slug and a name to show. */
+export interface EventAppChoice {
+  slug: string;
+  name: string;
 }
 
-export function EventConnectorPicker({
+function EventAppRow({
+  app,
+  selected,
+  busy,
+  canConnect,
+  canAdd,
+  connecting,
+  onSelect,
+  onConnect,
+}: {
+  app: EventApp;
+  selected: boolean;
+  busy: boolean;
+  canConnect: boolean;
+  canAdd: boolean;
+  connecting: boolean;
+  onSelect: () => void;
+  onConnect: () => void;
+}) {
+  const needsAdd = !app.connector;
+  return (
+    <li
+      className={cn(
+        'flex items-center gap-3 rounded-md border p-3 transition-colors',
+        selected && 'border-foreground/30 bg-accent/50',
+      )}
+    >
+      <button
+        type="button"
+        onClick={onSelect}
+        disabled={busy || (needsAdd && !canAdd)}
+        aria-pressed={selected}
+        className="hover:text-foreground flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        <AppLogo src={app.logo} />
+        <span className="min-w-0 flex-1">
+          <span className="text-foreground block truncate text-sm font-medium">{app.name}</span>
+          <span className="text-muted-foreground block text-xs">
+            {app.event_count} {app.event_count === 1 ? 'event' : 'events'}
+          </span>
+        </span>
+      </button>
+      {app.connected ? (
+        <Badge variant="kortix" size="sm">
+          Connected
+        </Badge>
+      ) : (
+        <>
+          {app.connector ? (
+            <Badge variant="warning" size="sm">
+              Needs account
+            </Badge>
+          ) : null}
+          {canConnect ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              disabled={busy}
+              onClick={onConnect}
+            >
+              {connecting ? <Loading className="size-3.5 shrink-0" /> : <LinkIcon className="size-3.5 shrink-0" />}
+              {connecting ? 'Connecting' : 'Connect'}
+            </Button>
+          ) : null}
+        </>
+      )}
+    </li>
+  );
+}
+
+/**
+ * One list of every app with events: the project's own apps first, then the
+ * rest of the catalog. Picking an app the project lacks adds it; Connect signs
+ * in as the project's shared account in a popup and the row flips to Connected.
+ */
+export function EventAppPicker({
   projectId,
   value,
   onChange,
 }: {
   projectId: string;
   value: string | null;
-  onChange: (connector: AdminConnector) => void;
+  onChange: (app: EventAppChoice) => void;
 }) {
-  // Same key and fetch as the Connectors page, so the two share one cache entry.
-  const query = useQuery({
-    queryKey: qk.project.connectors(projectId),
-    queryFn: () => listConnectors(projectId, { includeSchemas: false }),
-    ...contract('inventory'),
-  });
-  const connectors = useMemo(() => eventConnectors(query.data?.connectors ?? []), [query.data]);
+  const query = useProjectTriggerEventApps(projectId);
+  const { connect, add, connecting, canConnect, canAdd } = useEventAppConnect(projectId);
+  const [search, setSearch] = useState('');
+  const [adding, setAdding] = useState<string | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  // A picked app moves into "Your apps" at the top: bring the list back to it.
+  useEffect(() => {
+    listRef.current?.scrollTo({ top: 0 });
+  }, [value]);
+  const apps = query.data?.apps ?? [];
+  const { yours, more } = useMemo(() => groupEventApps(apps, search), [apps, search]);
+
+  async function select(app: EventApp) {
+    if (app.connector) return onChange({ slug: app.connector, name: app.name });
+    setAdding(app.app);
+    try {
+      onChange({ slug: await add(target(app)), name: app.name });
+    } catch (error) {
+      errorToast(error instanceof Error ? error.message : `Could not add ${app.name}`);
+    } finally {
+      setAdding(null);
+    }
+  }
 
   if (query.isLoading) {
     return (
       <div className="space-y-2">
+        <Skeleton className="h-14 rounded-md" />
         <Skeleton className="h-14 rounded-md" />
         <Skeleton className="h-14 rounded-md" />
       </div>
@@ -80,66 +176,84 @@ export function EventConnectorPicker({
   }
   if (query.isError) {
     return (
-      <InfoBanner tone="destructive" className="text-xs">
-        Could not load your apps. {query.error instanceof Error ? query.error.message : ''}
+      <InfoBanner tone="warning" className="text-xs" title="Could not load apps with events">
+        {query.error instanceof Error ? query.error.message : 'Try again in a moment.'}
+      </InfoBanner>
+    );
+  }
+  if (apps.length === 0) {
+    return (
+      <InfoBanner tone="warning" className="text-xs" title="No app events here yet">
+        App events are not set up on this deployment, so no app can send them yet.
       </InfoBanner>
     );
   }
 
+  const chosen = value ? (apps.find((a) => a.connector === value) ?? null) : null;
+  const renderRows = (rows: EventApp[]) =>
+    rows.map((app) => (
+      <EventAppRow
+        key={app.app}
+        app={app}
+        selected={Boolean(value) && app.connector === value}
+        busy={Boolean(adding) || Boolean(connecting)}
+        canConnect={canConnect}
+        canAdd={canAdd}
+        connecting={connecting === app.app}
+        onSelect={() => void select(app)}
+        onConnect={() =>
+          connect(target(app), (connector) => onChange({ slug: connector, name: app.name }))
+        }
+      />
+    ));
+
   return (
-    <div className="space-y-2">
-      {connectors.length === 0 ? (
-        <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
-          No apps are connected yet. Connect one, then come back to pick an event.
-        </p>
-      ) : (
-        <ul className="space-y-2">
-          {connectors.map((connector) => {
-            const connected = connectorSetupStatus(connector) === 'connected';
-            const selected = value === connector.slug;
-            return (
-              <li key={connector.slug}>
-                <button
-                  type="button"
-                  onClick={() => onChange(connector)}
-                  aria-pressed={selected}
-                  className={cn(
-                    'hover:bg-accent/50 flex w-full items-center gap-3 rounded-md border p-3 text-left transition-colors',
-                    selected && 'border-foreground/30 bg-accent/50',
-                  )}
-                >
-                  <ConnectorAppIcon connector={connector} />
-                  <span className="min-w-0 flex-1">
-                    <span className="text-foreground block truncate text-sm font-medium">
-                      {connector.name}
-                    </span>
-                    <span className="text-muted-foreground block text-xs">
-                      {connected ? 'Shared account connected' : 'No shared account yet'}
-                    </span>
-                  </span>
-                  {connected ? (
-                    <Badge variant="kortix" size="sm">
-                      Connected
-                    </Badge>
-                  ) : (
-                    <Badge variant="warning" size="sm">
-                      Needs account
-                    </Badge>
-                  )}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-      <Button asChild variant="outline" size="sm" className="gap-1.5">
-        <Link href={connectorHref(projectId)}>
-          <PlusIcon className="size-3.5 shrink-0" />
-          Connect an app
-        </Link>
-      </Button>
+    <div className="space-y-4">
+      {apps.length > 8 ? (
+        <InputGroupSearch>
+          <InputGroupSearchIcon>
+            <MagnifyingGlassIcon />
+          </InputGroupSearchIcon>
+          <InputGroupSearchInput
+            placeholder="Search apps"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            size="sm"
+          />
+        </InputGroupSearch>
+      ) : null}
+      <div ref={listRef} className="max-h-80 space-y-4 overflow-y-auto">
+        {yours.length > 0 ? (
+          <section className="space-y-2">
+            <h3 className="text-muted-foreground text-xs font-medium">Your apps</h3>
+            <ul className="space-y-2">{renderRows(yours)}</ul>
+          </section>
+        ) : null}
+        {more.length > 0 ? (
+          <section className="space-y-2">
+            {yours.length > 0 ? (
+              <h3 className="text-muted-foreground text-xs font-medium">More apps with events</h3>
+            ) : null}
+            <ul className="space-y-2">{renderRows(more)}</ul>
+          </section>
+        ) : null}
+        {yours.length === 0 && more.length === 0 ? (
+          <p className="text-muted-foreground px-3 py-6 text-center text-xs">No apps match.</p>
+        ) : null}
+      </div>
+      <p className="text-muted-foreground min-h-10 text-xs leading-relaxed text-pretty">
+        {chosen && !chosen.connected
+          ? canConnect
+            ? `It goes live when the ${chosen.name} account is connected. You can connect it now or after you create the trigger.`
+            : `You cannot connect shared accounts. Ask a project admin to connect ${chosen.name}. The trigger goes live when they do.`
+          : null}
+      </p>
     </div>
   );
+}
+
+function target(app: EventApp): EventAppTarget {
+  return { app: app.app, name: app.name, connector: app.connector };
 }
 
 /* ─── Event ─────────────────────────────────────────────────────────────── */
@@ -287,11 +401,14 @@ export function EventConfigForm({
   draft,
   onChange,
   disabled,
+  errors,
 }: {
   fields: SchemaField[];
   draft: ConfigDraft;
   onChange: (next: ConfigDraft) => void;
   disabled?: boolean;
+  /** Per-field problems from the API, shown under the input. */
+  errors?: Record<string, string>;
 }) {
   const set = (key: string, value: string) => onChange({ ...draft, [key]: value });
   return (
@@ -299,6 +416,7 @@ export function EventConfigForm({
       {fields.map((field) => {
         const id = `event-config-${field.key}`;
         const value = draft[field.key] ?? '';
+        const error = errors?.[field.key];
         return (
           <div key={field.key} className="space-y-1.5">
             {field.kind === 'boolean' ? (
@@ -327,7 +445,11 @@ export function EventConfigForm({
                     onValueChange={(v) => set(field.key, v)}
                     disabled={disabled}
                   >
-                    <SelectTrigger id={id} className="w-full cursor-pointer text-sm">
+                    <SelectTrigger
+                      id={id}
+                      aria-invalid={error ? true : undefined}
+                      className="w-full cursor-pointer text-sm"
+                    >
                       <SelectValue placeholder="Choose one" />
                     </SelectTrigger>
                     <SelectContent>
@@ -344,7 +466,8 @@ export function EventConfigForm({
                     value={value}
                     rows={3}
                     disabled={disabled}
-                    placeholder="One per line"
+                    placeholder={field.example ? `One per line, e.g. ${field.example}` : 'One per line'}
+                    aria-invalid={error ? true : undefined}
                     onChange={(e) => set(field.key, e.target.value)}
                   />
                 ) : (
@@ -353,6 +476,8 @@ export function EventConfigForm({
                     value={value}
                     disabled={disabled}
                     inputMode={field.kind === 'string' ? undefined : 'decimal'}
+                    placeholder={field.example ?? undefined}
+                    aria-invalid={error ? true : undefined}
                     onChange={(e) => set(field.key, e.target.value)}
                   />
                 )}
@@ -361,6 +486,11 @@ export function EventConfigForm({
             {field.description ? (
               <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
                 {field.description}
+              </p>
+            ) : null}
+            {error ? (
+              <p role="alert" className="text-destructive text-xs">
+                {error}
               </p>
             ) : null}
           </div>

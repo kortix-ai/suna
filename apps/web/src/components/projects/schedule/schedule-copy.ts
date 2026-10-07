@@ -388,13 +388,14 @@ export const KIND_COPY: Record<TriggerKind, KindCopy> = {
  */
 export const TRIGGERS_COPY = {
   title: 'Triggers',
-  description: 'Run an agent automatically — on a schedule, or when another app sends a signal.',
+  description:
+    'Start an agent on a schedule, when something happens in a connected app, or when a webhook is called.',
   noun: 'trigger',
   createLabel: 'New trigger',
   searchPlaceholder: 'Search triggers',
   emptyTitle: 'No triggers yet',
   emptyBody:
-    'Create one to have an agent run automatically — on a schedule, or when another app sends a signal.',
+    'Create one to start an agent on a schedule, when something happens in an app like Gmail or GitHub, or when a webhook is called.',
 } as const;
 
 export function localizedKindCopy(tI18nComplete: UiTranslator): Record<TriggerKind, KindCopy> {

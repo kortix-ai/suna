@@ -7,7 +7,11 @@
  * id first and never asks a person to write JSON.
  */
 
-import type { ProjectTriggerEvent, ProjectTriggerEventType } from '@kortix/sdk';
+import type {
+  ProjectTriggerEvent,
+  ProjectTriggerEventApp,
+  ProjectTriggerEventType,
+} from '@kortix/sdk';
 
 type JsonSchema = Record<string, unknown>;
 
@@ -89,6 +93,8 @@ export interface SchemaField {
   description: string | null;
   defaultValue: unknown;
   options: string[];
+  /** The first schema example, shown as the input placeholder. */
+  example: string | null;
 }
 
 function asRecord(value: unknown): JsonSchema | null {
@@ -106,6 +112,12 @@ function fieldKind(prop: JsonSchema): SchemaFieldKind | null {
     return !items || items.type === 'string' ? 'list' : null;
   }
   return null;
+}
+
+function firstExample(prop: JsonSchema): string | null {
+  const first = Array.isArray(prop.examples) ? prop.examples[0] : undefined;
+  if (first === undefined || first === null) return null;
+  return Array.isArray(first) ? first.map(String).join(', ') : String(first);
 }
 
 /**
@@ -137,6 +149,7 @@ export function schemaFields(schema: JsonSchema | null | undefined): SchemaField
           : null,
       defaultValue: prop.default,
       options: kind === 'enum' ? (prop.enum as unknown[]).map(String) : [],
+      example: firstExample(prop),
     });
   }
   return fields;
@@ -205,6 +218,85 @@ export function draftToConfig(fields: SchemaField[], draft: ConfigDraft): Record
     } else config[field.key] = text;
   }
   return config;
+}
+
+/**
+ * Splits the API's 400 for a bad event config, `Invalid config for X: repo is
+ * required (<description>); days must be integer (<description>).`, into one
+ * line per field so each shows under its own input. Text that names no known
+ * field stays in `general`.
+ */
+export function parseConfigErrors(
+  message: string,
+  fields: SchemaField[],
+): { byField: Record<string, string>; general: string | null } {
+  const byField: Record<string, string> = {};
+  const body = message.replace(/^Invalid config for [^:]+:\s*/, '').replace(/\.$/, '');
+  if (body === message.replace(/\.$/, '')) return { byField, general: message };
+  let last: string | null = null;
+  const general: string[] = [];
+  for (const part of body.split('; ')) {
+    const field = fields.find((f) => part.startsWith(`${f.key} `));
+    if (field) {
+      // The description prints under the input already; keep only the problem.
+      byField[field.key] = `${field.label} ${part.slice(field.key.length + 1).replace(/\s+\(.*$/, '')}.`;
+      last = field.key;
+    } else if (!last) general.push(part); // else: a description that contains "; ", already shown
+  }
+  return { byField, general: general.length ? general.join('; ') : null };
+}
+
+/* ─── App list ──────────────────────────────────────────────────────────── */
+
+/** One app in the picker. `connector` is null until the project adds it. */
+export type EventApp = ProjectTriggerEventApp;
+
+/** Apps most projects want first in the catalog; the rest follow by name. */
+const POPULAR_APPS = [
+  'gmail',
+  'github',
+  'slack',
+  'googlecalendar',
+  'linear',
+  'notion',
+  'jira',
+  'outlook',
+  'hubspot',
+  'googledrive',
+  'googlesheets',
+  'stripe',
+];
+
+/**
+ * The picker order: the project's own apps first (connected before
+ * unconnected, then by name), then the popular apps, then every other app with events by name.
+ * Returns the two groups so the list can label them.
+ */
+export function groupEventApps(
+  apps: EventApp[],
+  query: string,
+): { yours: EventApp[]; more: EventApp[] } {
+  const q = query.trim().toLowerCase();
+  const byName = (a: EventApp, b: EventApp) => a.name.localeCompare(b.name);
+  const visible = apps.filter(
+    (a) => !q || a.name.toLowerCase().includes(q) || a.app.toLowerCase().includes(q),
+  );
+  const yours = visible
+    .filter((a) => a.connector)
+    .sort((a, b) => Number(b.connected) - Number(a.connected) || byName(a, b));
+  const rank = (a: EventApp) => {
+    const i = POPULAR_APPS.indexOf(a.app);
+    return i === -1 ? POPULAR_APPS.length : i;
+  };
+  const more = visible.filter((a) => !a.connector).sort((a, b) => rank(a) - rank(b) || byName(a, b));
+  return { yours, more };
+}
+
+/** The connector slug for a new app: the app slug, or one with a suffix when taken. */
+export function newConnectorSlug(app: string, taken: readonly string[]): string {
+  const slug = app.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'app';
+  if (!taken.includes(slug)) return slug;
+  for (let n = 2; ; n++) if (!taken.includes(`${slug}-${n}`)) return `${slug}-${n}`;
 }
 
 /* ─── Delivery ──────────────────────────────────────────────────────────── */

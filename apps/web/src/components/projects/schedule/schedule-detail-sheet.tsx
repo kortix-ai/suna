@@ -345,7 +345,7 @@ export function ScheduleDetailSheet({
               {tTriggers('runFailed.nextRun')}
             </InfoBanner>
           ) : null}
-          {event ? <EventStatusBanner projectId={projectId} event={event} /> : null}
+          {event ? <EventStatusBanner projectId={projectId} event={event} canWrite={canWrite} /> : null}
           <WhatItDoesPanel
             projectId={projectId}
             trigger={trigger}
@@ -356,6 +356,7 @@ export function ScheduleDetailSheet({
           {event ? (
             <>
               <EventPanel
+                key={event.type}
                 projectId={projectId}
                 trigger={trigger}
                 event={event}

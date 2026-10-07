@@ -8,38 +8,58 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
+import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { type ProjectTrigger, type ProjectTriggerEvent, updateProjectTrigger } from '@kortix/sdk';
+import {
+  type ProjectTrigger,
+  type ProjectTriggerEvent,
+  type ProjectTriggerEventType,
+  updateProjectTrigger,
+} from '@kortix/sdk';
 import { useProjectTriggerEventTypes } from '@kortix/sdk/react';
-import { LinkIcon } from '@phosphor-icons/react';
+import { LinkIcon, PencilSimpleIcon } from '@phosphor-icons/react';
 import { useMutation } from '@tanstack/react-query';
-import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 
 import {
   appLabel,
   configProblem,
   configToDraft,
-  connectorHref,
+  defaultConfigDraft,
   describeEventStatus,
   draftToConfig,
   humanizeEventType,
+  parseConfigErrors,
   schemaFields,
 } from './event-trigger-copy';
-import { EventConfigForm } from './event-trigger-fields';
+import { EventConfigForm, EventTypePicker } from './event-trigger-fields';
 import { describeLastRun } from './schedule-copy';
 import { PanelSection, PropertyList, SaveButton } from './schedule-fields';
+import { useEventAppConnect } from './use-event-app-connect';
 
-/** The status banner at the top of the sheet: the error, or the next step. */
+/** The settings section's id: the banner's "Edit settings" jumps to it. */
+const EVENT_PANEL_ID = 'event-panel';
+
+function focusEventSettings() {
+  const panel = document.getElementById(EVENT_PANEL_ID);
+  panel?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  panel?.querySelector<HTMLElement>('input, textarea, button[role="combobox"]')?.focus();
+}
+
+/** The status banner at the top of the sheet: the error, or the next step with a way to take it. */
 export function EventStatusBanner({
   projectId,
   event,
+  canWrite,
 }: {
   projectId: string;
   event: ProjectTriggerEvent;
+  canWrite: boolean;
 }) {
+  const { connect, connecting, canConnect } = useEventAppConnect(projectId);
   const status = describeEventStatus(event);
   if (event.status === 'active' || event.status === 'pending') return null;
+  const app = appLabel(event.app, event.connector);
   return (
     <InfoBanner
       tone={event.status === 'error' ? 'destructive' : 'warning'}
@@ -48,11 +68,38 @@ export function EventStatusBanner({
     >
       <span className="block">{status.detail}</span>
       {event.status === 'needs_connection' ? (
-        <Button asChild size="sm" variant="outline" className="mt-2 w-fit gap-1.5">
-          <Link href={connectorHref(projectId, event.connector)}>
-            <LinkIcon className="size-3.5 shrink-0" />
-            Connect account
-          </Link>
+        canConnect ? (
+          <Button
+            size="sm"
+            variant="outline"
+            className="mt-2 w-fit gap-1.5"
+            disabled={Boolean(connecting)}
+            onClick={() =>
+              connect({ app: event.app ?? event.connector, name: app, connector: event.connector })
+            }
+          >
+            {connecting ? (
+              <Loading className="size-3.5 shrink-0" />
+            ) : (
+              <LinkIcon className="size-3.5 shrink-0" />
+            )}
+            {connecting ? 'Connecting' : `Connect ${app}`}
+          </Button>
+        ) : (
+          <span className="mt-1 block">
+            You cannot connect shared accounts. Ask a project admin to connect {app}. This trigger
+            goes live when they do.
+          </span>
+        )
+      ) : canWrite ? (
+        <Button
+          size="sm"
+          variant="outline"
+          className="mt-2 w-fit gap-1.5"
+          onClick={focusEventSettings}
+        >
+          <PencilSimpleIcon className="size-3.5 shrink-0" />
+          Edit settings
         </Button>
       ) : null}
     </InfoBanner>
@@ -73,36 +120,53 @@ export function EventPanel({
   onMutated: () => void;
 }) {
   const types = useProjectTriggerEventTypes(projectId, event.connector);
-  const eventType = types.data?.event_types.find((e) => e.type === event.type);
+  // A different event picked in this sheet, not saved yet.
+  const [picked, setPicked] = useState<ProjectTriggerEventType | null>(null);
+  const [changing, setChanging] = useState(false);
+  const eventType =
+    picked ?? types.data?.event_types.find((e) => e.type === event.type) ?? null;
   const fields = useMemo(() => schemaFields(eventType?.config_schema), [eventType]);
-  const saved = useMemo(() => configToDraft(fields, event.config), [fields, event.config]);
+  const saved = useMemo(
+    () => (picked ? defaultConfigDraft(fields) : configToDraft(fields, event.config)),
+    [fields, event.config, picked],
+  );
   const [draft, setDraft] = useState(saved);
+  const [errors, setErrors] = useState<Record<string, string>>({});
   useEffect(() => setDraft(saved), [saved]);
 
   const problem = configProblem(fields, draft);
-  const dirty = fields.some((f) => (draft[f.key] ?? '') !== (saved[f.key] ?? ''));
+  const dirty = picked !== null || fields.some((f) => (draft[f.key] ?? '') !== (saved[f.key] ?? ''));
 
   const save = useMutation({
     mutationFn: () =>
       updateProjectTrigger(projectId, trigger.slug, {
+        ...(picked ? { event: picked.type } : {}),
         event_config: draftToConfig(fields, draft),
       }),
     onSuccess: () => {
       successToast('Event settings saved');
+      setErrors({});
       onMutated();
     },
-    onError: (e: Error) => errorToast(e.message || 'Could not save the event settings'),
+    onError: (e: Error) => {
+      const { byField, general } = parseConfigErrors(e.message, fields);
+      setErrors(byField);
+      if (Object.keys(byField).length === 0 || general) {
+        errorToast(general ?? (e.message || 'Could not save the event settings'));
+      }
+    },
   });
 
   const status = describeEventStatus(event);
-  const editable = canWrite && fields.length > 0;
+  const editable = canWrite && (fields.length > 0 || Boolean(picked));
 
   return (
     <PanelSection
+      id={EVENT_PANEL_ID}
       title="App event"
       description="This trigger starts when the event below happens."
       action={
-        editable ? (
+        canWrite ? (
           <SaveButton
             dirty={dirty && !problem}
             pending={save.isPending}
@@ -116,7 +180,7 @@ export function EventPanel({
           { label: 'App', value: appLabel(event.app, event.connector) },
           {
             label: 'Event',
-            value: eventType?.name || humanizeEventType(event.type),
+            value: eventType?.name || humanizeEventType(picked?.type ?? event.type),
           },
           {
             label: 'Status',
@@ -129,9 +193,46 @@ export function EventPanel({
           { label: 'Last event', value: describeLastRun(event.last_event_at) },
         ]}
       />
+      {canWrite ? (
+        changing ? (
+          <div className="space-y-2 pt-1">
+            <EventTypePicker
+              projectId={projectId}
+              connector={event.connector}
+              value={picked?.type ?? event.type}
+              onChange={(next) => {
+                setPicked(next.type === event.type ? null : next);
+                setChanging(false);
+                setErrors({});
+              }}
+            />
+            <Button type="button" variant="ghost" size="sm" onClick={() => setChanging(false)}>
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-fit"
+            onClick={() => setChanging(true)}
+          >
+            Change event
+          </Button>
+        )
+      ) : null}
       {editable ? (
         <div className="space-y-2 pt-1">
-          <EventConfigForm fields={fields} draft={draft} onChange={setDraft} />
+          <EventConfigForm
+            fields={fields}
+            draft={draft}
+            errors={errors}
+            onChange={(next) => {
+              setDraft(next);
+              setErrors({});
+            }}
+          />
           {problem && dirty ? <p className="text-destructive text-xs">{problem}</p> : null}
         </div>
       ) : null}

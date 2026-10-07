@@ -52,6 +52,8 @@ export interface EventSourceProvider {
   listEventTypes(app: string): Promise<EventTypeInfo[]>;
   /** Apps that have at least one event type. */
   listApps(): Promise<EventApp[]>;
+  /** True once the shared connection has the provider-side credential `subscribe` needs. Omitted: any active connection counts. */
+  connectionReady?(connection: EventSourceConnection): boolean;
   subscribe(input: {
     connection: EventSourceConnection;
     type: string;

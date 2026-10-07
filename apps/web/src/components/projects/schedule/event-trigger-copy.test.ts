@@ -10,7 +10,10 @@ import {
   describeEventStatus,
   describePollHint,
   draftToConfig,
+  groupEventApps,
   humanizeEventType,
+  newConnectorSlug,
+  parseConfigErrors,
   payloadVariables,
   schemaFields,
 } from './event-trigger-copy';
@@ -184,5 +187,89 @@ describe('status and links', () => {
   test('links to the connector detail on the Connectors page', () => {
     expect(connectorHref('p1', 'github')).toBe('/projects/p1/customize/connectors?c=github');
     expect(connectorHref('p1')).toBe('/projects/p1/customize/connectors');
+  });
+});
+
+describe('schemaFields example', () => {
+  test('uses the first schema example as the placeholder', () => {
+    const [field] = schemaFields({
+      properties: { repo: { type: 'string', examples: ['acme/api', 'acme/web'] } },
+    });
+    expect(field.example).toBe('acme/api');
+    expect(schemaFields(configSchema)[0].example).toBeNull();
+  });
+});
+
+describe('parseConfigErrors', () => {
+  const fields = schemaFields(configSchema);
+
+  test('puts each problem under its own field and drops the description', () => {
+    const out = parseConfigErrors(
+      'Invalid config for GITHUB_X: repo is required (owner/name); limit must be integer (How many).',
+      fields,
+    );
+    expect(out.byField).toEqual({
+      repo: 'Repo is required.',
+      limit: 'Limit must be integer.',
+    });
+    expect(out.general).toBeNull();
+  });
+
+  test('keeps a message that is not a config error as a general error', () => {
+    expect(parseConfigErrors('Unknown event X for github.', fields)).toEqual({
+      byField: {},
+      general: 'Unknown event X for github.',
+    });
+  });
+
+  test('a description containing a semicolon does not leak into general', () => {
+    const out = parseConfigErrors('Invalid config for E: repo is required (a; b).', fields);
+    expect(out.byField.repo).toBe('Repo is required.');
+    expect(out.general).toBeNull();
+  });
+});
+
+describe('groupEventApps', () => {
+  const app = (name: string, connector: string | null, connected = false) => ({
+    provider: 'composio',
+    app: name.toLowerCase(),
+    name,
+    logo: null,
+    event_count: 3,
+    connector,
+    connected,
+  });
+  const apps = [
+    app('Notion', null),
+    app('Gmail', 'gmail', false),
+    app('Github', 'github', true),
+    app('Linear', null),
+  ];
+
+  test('your apps first, connected before unconnected, then the rest by name', () => {
+    const { yours, more } = groupEventApps(apps, '');
+    expect(yours.map((a) => a.name)).toEqual(['Github', 'Gmail']);
+    expect(more.map((a) => a.name)).toEqual(['Linear', 'Notion']);
+  });
+
+  test('popular apps lead the catalog', () => {
+    const { more } = groupEventApps([app('Asana', null), app('Github', null), app('Gmail', null)], '');
+    expect(more.map((a) => a.name)).toEqual(['Gmail', 'Github', 'Asana']);
+  });
+
+  test('searches name and app slug in both groups', () => {
+    const { yours, more } = groupEventApps(apps, ' li ');
+    expect(yours).toEqual([]);
+    expect(more.map((a) => a.name)).toEqual(['Linear']);
+  });
+});
+
+describe('newConnectorSlug', () => {
+  test('uses the app slug, then numbers it when taken', () => {
+    expect(newConnectorSlug('linear', [])).toBe('linear');
+    expect(newConnectorSlug('linear', ['linear'])).toBe('linear-2');
+    expect(newConnectorSlug('googlecalendar', ['googlecalendar', 'googlecalendar-2'])).toBe(
+      'googlecalendar-3',
+    );
   });
 });

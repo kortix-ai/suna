@@ -123,6 +123,10 @@ describe('subscribe / unsubscribe', () => {
     await expect(provider.subscribe({ connection: { ...connection, metadata: {} }, type: 'X', config: {} })).rejects.toBeInstanceOf(EventConnectionNotReadyError);
     expect(calls).toHaveLength(0);
   });
+  test('connectionReady is true only with a connected account id', () => {
+    expect(provider.connectionReady?.(connection)).toBe(true);
+    expect(provider.connectionReady?.({ ...connection, metadata: {} })).toBe(false);
+  });
   test('unsubscribe deletes; 404 is success; other errors throw', async () => {
     await provider.unsubscribe('ti_1');
     expect(calls[0]).toEqual(['delete', 'ti_1']);
