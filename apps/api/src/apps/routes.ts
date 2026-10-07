@@ -731,6 +731,7 @@ export function registerAppsRoutes(): void {
         .select({
           deploymentId: appDeployments.deploymentId,
           hostingProvider: appDeployments.hostingProvider,
+          providerBuildId: appDeployments.providerBuildId,
           status: appDeployments.status,
         })
         .from(appDeployments)
@@ -967,7 +968,11 @@ export function registerAppsRoutes(): void {
             eq(appDeployments.deploymentId, deploymentId),
             notInArray(appDeployments.status, [...IN_PROGRESS_DEPLOYMENT_STATUSES, 'deleted']),
           ));
-        return { kind: 'deleted' as const, hostingProvider: deployment.hostingProvider };
+        return {
+          kind: 'deleted' as const,
+          hostingProvider: deployment.hostingProvider,
+          providerBuildId: deployment.providerBuildId,
+        };
       });
       if (decision.kind === 'missing') return c.json({ error: 'Not found' }, 404);
       if (decision.kind === 'live') {
@@ -991,7 +996,12 @@ export function registerAppsRoutes(): void {
       // Platinum refuses to delete an image while a sandbox pins it, so the
       // runtime goes first. Anything left `pending` is retried by maintenance.
       await teardownAppRuntimes(runtimes);
-      const image = await releaseDeploymentImage({ deploymentId, hostingProvider: decision.hostingProvider });
+      // A shared image another deployment still uses stays; the outcome is then `none`.
+      const image = await releaseDeploymentImage({
+        deploymentId,
+        hostingProvider: decision.hostingProvider,
+        providerBuildId: decision.providerBuildId,
+      });
       await db.delete(appSiteFiles).where(eq(appSiteFiles.deploymentId, deploymentId));
       await db.insert(appDeploymentEvents).values({
         deploymentId,

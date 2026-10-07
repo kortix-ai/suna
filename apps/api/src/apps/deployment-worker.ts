@@ -29,7 +29,15 @@ import { AppBudgetExceededError, alwaysOnBudgetWarning } from './budget';
 import { AppAccountUnfundedError, AppLimitError, assertAppComputeAllowed } from './limits';
 import { appRuntimeArtifactDigest } from './runtime-artifacts';
 import { appDeploymentFailureDisposition } from './deployment-failures';
-import { appDeploymentSnapshotName } from '../snapshots/quota-gc-select';
+import {
+  AppImageQuotaExceededError,
+  appImageName,
+  buildWithImageQuotaGuard,
+  claimAppImage,
+  markAppImageReady,
+  pinnedOciReference,
+  reclaimAppDeploymentImages,
+} from './images';
 import { exponentialBackoffMs } from '../shared/backoff';
 
 export const APP_RUNTIME_VERSION =
@@ -38,6 +46,10 @@ export const APP_RUNTIME_VERSION =
 const LEASE_MS = 2 * 60_000;
 const HEARTBEAT_MS = 30_000;
 const MAX_ATTEMPTS = 3;
+/** How often a deployment asks again while another one builds the same image. */
+const IMAGE_WAIT_POLL_MS = 5_000;
+/** Longest wait for another deployment's build of the same image; then the attempt retries. */
+const IMAGE_WAIT_MAX_MS = 45 * 60_000;
 const LIVE_DEPLOYMENT_STATUSES = [
   'queued',
   'validating',
@@ -477,7 +489,7 @@ export async function driveAppDeployment(
     });
     await event(claimed.deploymentId, 'validation_started', 'Validating App artifact');
 
-    const sourceDir = await prepareDeploymentSource(context, state);
+    const { sourceDir, artifactDigest } = await prepareDeploymentSource(context, state);
     const { rawBuildSpec, source, normalized, runtimeEnvironment } = await resolveDeploymentBuild(context, sourceDir);
     await assertDeploymentComputeAllowed(context);
     const { snapshotName, requestedMachine } = await buildDeploymentImage({
@@ -489,6 +501,7 @@ export async function driveAppDeployment(
       rawBuildSpec,
       source,
       normalized,
+      artifactDigest,
     });
 
     // A build takes minutes; the App can be deleted meanwhile. Never start a
@@ -575,7 +588,7 @@ async function driveStaticDeployment(input: {
     errorCode: null,
   });
   await event(claimed.deploymentId, 'validation_started', 'Validating App artifact');
-  const sourceDir = await prepareDeploymentSource(context, state);
+  const { sourceDir } = await prepareDeploymentSource(context, state);
   const { rawBuildSpec, source, normalized, runtimeEnvironment } = await resolveDeploymentBuild(context, sourceDir);
   if (Object.keys(runtimeEnvironment.env).length > 0) {
     await event(
@@ -649,8 +662,9 @@ async function driveStaticDeployment(input: {
 async function prepareDeploymentSource(
   context: DeploymentContext,
   state: DeploymentDriveState,
-): Promise<string | undefined> {
+): Promise<{ sourceDir: string | undefined; artifactDigest: string | null }> {
   let sourceDir: string | undefined;
+  let artifactDigest: string | null = null;
   if (context.artifact.kind === 'archive') {
     if (context.artifact.status !== 'uploaded' && context.artifact.status !== 'ready') {
       throw new PermanentAppDeploymentError(
@@ -670,6 +684,7 @@ async function prepareDeploymentSource(
     if (context.artifact.sizeBytes && downloaded.sizeBytes !== context.artifact.sizeBytes) {
       throw new PermanentAppDeploymentError('Artifact size does not match finalization', 'size_mismatch');
     }
+    artifactDigest = `sha256:${downloaded.sha256}`;
     sourceDir = join(state.temporaryRoot, 'source');
     const inspection = await extractAppArchive(archivePath, sourceDir);
     await db
@@ -682,10 +697,12 @@ async function prepareDeploymentSource(
         updatedAt: new Date(),
       })
       .where(eq(appArtifacts.artifactId, context.artifact.artifactId));
-  } else if (context.artifact.kind !== 'oci_image') {
+  } else if (context.artifact.kind === 'oci_image') {
+    artifactDigest = pinnedOciReference(context.artifact.imageReference);
+  } else {
     throw new PermanentAppDeploymentError(`Unsupported artifact kind ${context.artifact.kind}`, 'artifact_kind');
   }
-  return sourceDir;
+  return { sourceDir, artifactDigest };
 }
 
 /** Normalize the build spec against the source and resolve the runtime environment. */
@@ -746,6 +763,11 @@ async function assertDeploymentComputeAllowed(context: DeploymentContext): Promi
   }
 }
 
+/**
+ * Build the deployment's image, or reuse the shared image an earlier
+ * deployment built from the same inputs (`apps/images.ts`). While another
+ * deployment builds the same image, wait for it instead of building twice.
+ */
 async function buildDeploymentImage(input: {
   claimed: ClaimedDeployment;
   owner: string;
@@ -755,40 +777,101 @@ async function buildDeploymentImage(input: {
   rawBuildSpec: Record<string, unknown>;
   source: AppSourceSpec;
   normalized: Awaited<ReturnType<typeof normalizeAppBuild>>;
+  artifactDigest: string | null;
 }): Promise<{ snapshotName: string; requestedMachine: RequestedMachine }> {
-  const { claimed, owner, hosting, context, provider, rawBuildSpec, source, normalized } = input;
-  const snapshotName = appDeploymentSnapshotName(claimed.deploymentId);
-  await setDeploymentStatus(claimed.deploymentId, owner, 'building', {
-    sourceKind: normalized.sourceKind,
-    runtimeSpec: normalized.runtimeSpec,
-    buildSpec: { ...rawBuildSpec, source, normalized: normalized.buildSpec },
-    providerBuildId: snapshotName,
-  });
-  await event(claimed.deploymentId, 'build_started', `Building ${snapshotName}`, {
-    data: { provider },
-  });
+  const { claimed, owner, hosting, context, provider, rawBuildSpec, source, normalized, artifactDigest } = input;
   const requestedMachine = {
     cpuCores: context.app.cpuCores,
     memoryGb: context.app.memoryGb,
     diskGb: context.app.diskGb,
   };
-  const buildLog = createBuildLog(claimed.deploymentId);
-  try {
-    await hosting.buildImage({
+  const snapshotName = appImageName({
+    environment: `${config.INTERNAL_KORTIX_ENV}:${config.KORTIX_URL ?? ''}`,
+    accountId: context.app.accountId,
+    provider,
+    artifactDigest,
+    deploymentId: claimed.deploymentId,
+    source,
+    dockerfile: normalized.dockerfile,
+    runtimeSpec: normalized.runtimeSpec,
+    machine: requestedMachine,
+    runtimeImageKey: appRuntimeImageKey(APP_RUNTIME_VERSION),
+  });
+  await setDeploymentStatus(claimed.deploymentId, owner, 'building', {
+    sourceKind: normalized.sourceKind,
+    runtimeSpec: normalized.runtimeSpec,
+    buildSpec: { ...rawBuildSpec, source, normalized: normalized.buildSpec },
+  });
+
+  const waitUntil = Date.now() + IMAGE_WAIT_MAX_MS;
+  let waiting = false;
+  for (;;) {
+    const claim = await claimAppImage({
+      imageName: snapshotName,
       provider,
-      snapshotName,
-      slug: context.app.slug,
-      sourceDir: normalized.sourceDir,
-      dockerfile: normalized.dockerfile,
-      runtimeSpec: normalized.runtimeSpec,
-      machine: requestedMachine,
-      logTap: { onLine: (line) => buildLog.line(line) },
+      deploymentId: claimed.deploymentId,
+      leaseOwner: owner,
     });
-  } finally {
-    // A failed build's last lines are the ones that say why: write them either way.
-    await buildLog.close();
+    if (claim === 'reuse') {
+      await event(claimed.deploymentId, 'build_reused', `Reusing ${snapshotName}: an earlier deployment built the same image`, {
+        data: { provider, image: snapshotName },
+      });
+      return { snapshotName, requestedMachine };
+    }
+    if (claim === 'build') break;
+    if (!waiting) {
+      waiting = true;
+      await event(claimed.deploymentId, 'build_waiting', `Waiting: another deployment is building ${snapshotName}`, {
+        data: { provider, image: snapshotName },
+      });
+    }
+    if (Date.now() > waitUntil) {
+      throw new Error(`Timed out waiting for another deployment to build ${snapshotName}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, IMAGE_WAIT_POLL_MS));
   }
-  await event(claimed.deploymentId, 'build_ready', 'App image is ready', { data: { provider } });
+
+  await event(claimed.deploymentId, 'build_started', `Building ${snapshotName}`, {
+    data: { provider, image: snapshotName },
+  });
+  const build = async () => {
+    const buildLog = createBuildLog(claimed.deploymentId);
+    try {
+      await hosting.buildImage({
+        provider,
+        snapshotName,
+        slug: context.app.slug,
+        sourceDir: normalized.sourceDir,
+        dockerfile: normalized.dockerfile,
+        runtimeSpec: normalized.runtimeSpec,
+        machine: requestedMachine,
+        logTap: { onLine: (line) => buildLog.line(line) },
+      });
+    } finally {
+      // A failed build's last lines are the ones that say why: write them either way.
+      await buildLog.close();
+    }
+  };
+  try {
+    await buildWithImageQuotaGuard({
+      provider,
+      build,
+      reclaim: () => reclaimAppDeploymentImages(),
+      onReclaim: (providerMessage) => event(
+        claimed.deploymentId,
+        'build_quota_reclaim',
+        `The ${provider} template quota is full; reclaiming unused App images and building once more`,
+        { level: 'warn', data: { provider, providerMessage: providerMessage.slice(0, 500) } },
+      ),
+    });
+  } catch (error) {
+    if (error instanceof AppImageQuotaExceededError) {
+      throw new PermanentAppDeploymentError(error.message, error.code);
+    }
+    throw error;
+  }
+  await markAppImageReady(snapshotName, provider);
+  await event(claimed.deploymentId, 'build_ready', 'App image is ready', { data: { provider, image: snapshotName } });
   return { snapshotName, requestedMachine };
 }
 

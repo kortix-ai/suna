@@ -128,6 +128,7 @@ export {
   appAccessGrants,
   appArtifacts,
   appDeployments,
+  appImages,
   appRuntimes,
   appSiteFiles,
   appSiteBlobs,

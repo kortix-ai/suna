@@ -62,6 +62,17 @@ only changed files, and a rollback switches traffic at once.
 in one machine on a Kortix sandbox provider. Kortix chooses the provider. A
 server App has a run mode, a machine, and a monthly budget.
 
+Deployments with the same build inputs share one image: the artifact (archive
+digest, or an OCI reference pinned with `@sha256:`), source settings,
+Dockerfile, runtime spec, machine, and App supervisor version. Environment
+variables and secrets are not build inputs. An env-only redeploy, an unchanged
+redeploy, and a retry record `build_reused` and skip the build. An OCI tag is
+pulled again on every deploy. A deployment that waits for another deployment
+building the same image records `build_waiting`. When the provider refuses a
+build for its template quota, Kortix deletes images no deployment uses and
+builds once more; a second refusal fails the deployment with
+`app_image_quota_exceeded`.
+
 ## Always on or on demand
 
 | Mode | Behavior | Use it for |
@@ -384,8 +395,9 @@ runtime. A target start failure leaves the previous deployment active.
 
 Retention: an App keeps its active deployment and the 5 newest other ready
 deployments (`KORTIX_APPS_RETAINED_DEPLOYMENTS`). After each deploy, Kortix
-retires older ready deployments: their runtime, image, static files, and
-build-log lines are freed, and they leave `show` and the deployment list.
+retires older ready deployments: their runtime, image (once no other
+deployment uses it), static files, and build-log lines are freed, and they
+leave `show` and the deployment list.
 Lifecycle events stay. A failed or cancelled deployment keeps its build log for
 14 days. Delete one deployment yourself with
 `kortix apps delete <app> --deployment <id|vN> --yes`. The live deployment

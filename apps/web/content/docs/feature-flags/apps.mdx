@@ -417,9 +417,19 @@ one. A target that fails to start leaves the current deployment serving.
 
 ## Delete deployments and Apps
 
-Each deployment builds one image on the hosting provider. Providers limit how
-many images an organization may hold, and an old deployment keeps its image so
-you can roll back to it. Delete what you no longer need:
+A server deployment runs from an image on the hosting provider. Deployments
+with the same build inputs share one image: the same artifact (archive digest,
+or an OCI reference pinned with `@sha256:`), source settings, Dockerfile,
+runtime spec, machine, and App supervisor version. A redeploy that changes only
+environment variables or secrets, an unchanged redeploy, and a retry reuse the
+image and record a `build_reused` event instead of building. An OCI tag such as
+`:latest` is pulled again on every deploy and never shares an image.
+
+Providers limit how many images an organization may hold, and an old deployment
+keeps its image so you can roll back to it. When a build hits the provider's
+template quota, Kortix deletes images no deployment uses and builds once more.
+If the quota is still full, the deployment fails with
+`app_image_quota_exceeded`. Delete what you no longer need:
 
 ```bash
 kortix apps show docs                               # v3 ready … live, v2 ready, v1 failed
@@ -433,9 +443,10 @@ kortix apps delete docs --yes                       # the App and every image it
   (`409 deployment_in_progress`). Delete it after it finishes or fails.
 - A deleted deployment leaves `show`, the deployment list, and its logs, and
   can no longer receive rollback traffic.
-- The output reports how many images were freed. An image still held by a
-  stopping runtime, or by a provider that did not answer, is reported as not
-  released yet; Kortix retries it automatically.
+- The output reports how many images were freed. An image another deployment
+  still uses stays, and that deployment reports no image of its own. An image
+  still held by a stopping runtime, or by a provider that did not answer, is
+  reported as not released yet; Kortix retries it automatically.
 
 Failed deployments and deleted Apps also release their images without any
 action: project maintenance removes them every few minutes.

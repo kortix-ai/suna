@@ -56,7 +56,11 @@ export async function releaseRetiredDeployments(deploymentIds: string[]): Promis
   // Platinum refuses to delete an image while a sandbox pins it: runtimes first.
   await teardownAppRuntimes(runtimes);
   const images = await db
-    .select({ deploymentId: appDeployments.deploymentId, hostingProvider: appDeployments.hostingProvider })
+    .select({
+      deploymentId: appDeployments.deploymentId,
+      hostingProvider: appDeployments.hostingProvider,
+      providerBuildId: appDeployments.providerBuildId,
+    })
     .from(appDeployments)
     .where(inArray(appDeployments.deploymentId, deploymentIds));
   await releaseDeploymentImages(images);
