@@ -7,7 +7,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
-import pg from 'pg';
+import { PgClient } from './helpers/pg-client';
 import {
   claimExpiredSandboxStop,
   claimManualSandboxStop,
@@ -1755,7 +1755,7 @@ describe('terminal error session authority', () => {
 // queue on it. Observe the actual PostgreSQL lock queue, not a timed sleep.
 for (const first of ['begin', 'complete'] as const) {
   test(`overlapping authority writers: ${first} takes the session lock first`, async () => {
-    const blocker = new pg.Client({ connectionString: localTestDatabaseUrl() });
+    const blocker = new PgClient({ connectionString: localTestDatabaseUrl() });
     await blocker.connect();
     let begin: Promise<unknown> | undefined;
     let complete: Promise<unknown> | undefined;

@@ -16,7 +16,6 @@
 import { resolveCommitSha } from '../projects/git/commits';
 import { invalidateProjectMirror } from '../projects/git/mirror';
 import type { GitBackedProject } from '../projects/git/types';
-import { repositoryAccessFromSessionMetadata } from '../projects/lib/session-sandbox-metadata';
 import {
   buildConfigRelease,
   toDescriptor,

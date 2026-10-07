@@ -16,7 +16,6 @@ import { sql } from 'drizzle-orm';
 import { db, hasDatabase } from '../shared/db';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
-import { loadSystemRoles } from '../iam/catalog';
 import { clearAuthorizeCaches } from '../iam/authorize';
 
 const ACCOUNT = crypto.randomUUID();

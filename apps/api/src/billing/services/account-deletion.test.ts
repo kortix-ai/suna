@@ -6,9 +6,7 @@ import {
   appDeploymentEvents,
   appDeployments,
   changeRequests,
-  connectorCalls,
   connectorConnections,
-  gatewayRequestLogs,
   impersonationGrants,
   kortixApiKeys,
   legacySandboxMigrations,
@@ -17,12 +15,9 @@ import {
   projectSessionConnectorBindings,
   projectTriggerExecutions,
   projectTriggerRuntime,
-  projects,
   providerEvents,
   reviewItems,
   sandboxes,
-  sandboxComputeSessions,
-  sessionLifecycleCommands,
   sessionPendingQuestions,
   sessionSandboxes,
   sessionTurns,
@@ -30,7 +25,6 @@ import {
   tunnelAuditLogs,
   tunnelConnections,
   tunnelDeviceAuthRequests,
-  usageEvents,
 } from '@kortix/db';
 import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';

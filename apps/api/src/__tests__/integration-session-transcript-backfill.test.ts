@@ -7,7 +7,7 @@
  */
 import { beforeEach, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { Client } from 'pg';
+import { PgClient } from './helpers/pg-client';
 import {
   backfillSessionTranscriptMirrorOnWake,
   resetTranscriptBackfillMemoForTests,
@@ -37,7 +37,7 @@ const messages = (count: number) =>
   }));
 
 test('a wake backfills an unmirrored session, repairs a headless one, and skips the rest', async () => {
-  const db = new Client({ connectionString: localTestDatabaseUrl() });
+  const db = new PgClient({ connectionString: localTestDatabaseUrl() });
   await db.connect();
   const userId = randomUUID();
   const seeded: SeededProject[] = [];
@@ -221,7 +221,7 @@ test('a wake backfills an unmirrored session, repairs a headless one, and skips 
 });
 
 test('a history the old mirror stripped is served with what it kept, read again on wake, and a 1:1 one left alone', async () => {
-  const db = new Client({ connectionString: localTestDatabaseUrl() });
+  const db = new PgClient({ connectionString: localTestDatabaseUrl() });
   await db.connect();
   const seeded: SeededProject[] = [];
   let accountId = '';

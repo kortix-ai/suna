@@ -56,7 +56,6 @@ import {
   readSessionAuditWatermark,
   readSessionControlState,
 } from './session-control-readers';
-export type { RuntimeControlState, MirrorWatermark, AuditWatermark, SessionControlState } from './session-control-readers';
 import { deriveSessionWorking } from './session-working';
 import type { SessionTurnStatus } from '@kortix/api-contract';
 import type { RuntimeControlState } from './session-control-readers';

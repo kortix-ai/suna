@@ -12,7 +12,7 @@ import { and, desc, eq, exists, inArray, isNull, max, ne, notInArray, sql } from
 import { PROJECT_ACTIONS } from '../iam';
 import { auth, errors, json } from '../openapi';
 import { pauseComputeSession } from '../billing/services/compute-metering';
-import { config, type SandboxProviderName } from '../config';
+import { type SandboxProviderName } from '../config';
 import { db } from '../shared/db';
 import { inspectDatabaseError } from '../shared/database-errors';
 import {
@@ -165,8 +165,6 @@ function sourceFromWire(input: z.infer<typeof SourceSchema>): AppSourceSpec {
       };
   }
 }
-
-export { appPublicUrl } from './hostnames';
 
 /**
  * `viewerCanAccess` is the caller's OPEN verdict, which is not the same as the

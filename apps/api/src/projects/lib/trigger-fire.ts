@@ -4,7 +4,7 @@ import type { PromptOverridesWire } from '../session-lifecycle/store';
 import { projectSessions, projectTriggerRuntime } from '@kortix/db';
 import { and, desc, eq, ne, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
-import { createSession, drainSessionLifecycleQueue, enqueueContinueSessionCommand, resolveAgentRunAttribution, resolveProjectAutomationActor } from '../session-lifecycle';
+import { createSession, drainSessionLifecycleQueue, enqueueContinueSessionCommand, resolveProjectAutomationActor } from '../session-lifecycle';
 import type { GitTriggerSpec } from '../triggers';
 import type { ProjectRow, RequestAuditContext } from './serializers';
 import { renderSessionKey } from './trigger-payload';
@@ -19,10 +19,6 @@ import { claimTriggerCreate, releaseTriggerCreate, triggerCreateKey } from './tr
  * triggers don't have a `created_by` like the DB-backed ones do — we pick
  * the account's first owner as a stable, audit-friendly stand-in.
  */
-
-export async function resolveGitTriggerActor(accountId: string): Promise<string | null> {
-  return resolveProjectAutomationActor(accountId);
-}
 
 /**
  * Resolve the identity a trigger's automated session PROVISIONS as — the
@@ -39,48 +35,6 @@ export async function resolveGitTriggerActor(accountId: string): Promise<string 
  */
 export async function resolveTriggerActor(project: ProjectRow): Promise<string | null> {
   return resolveProjectAutomationActor(project.accountId);
-}
-
-/**
- * Preserve the internal attribution helper for callers that create trigger
- * sessions outside the durable create-session action. The primary trigger
- * fire path does not call this helper. Its action applies attribution and the
- * complete access policy in one transaction.
- */
-export async function attributeFiredTriggerSession(input: {
-  project: ProjectRow;
-  sessionId: string;
-  agentName: string;
-}): Promise<void> {
-  const serviceAccountId = await resolveAgentRunAttribution({
-    accountId: input.project.accountId,
-    projectId: input.project.projectId,
-    agentName: input.agentName,
-  });
-  if (!serviceAccountId) return;
-  try {
-    await db
-      .update(projectSessions)
-      .set({ createdBy: serviceAccountId })
-      .where(eq(projectSessions.sessionId, input.sessionId));
-  } catch (err) {
-    console.warn('[triggers] failed to attribute fired session to agent service account', {
-      sessionId: input.sessionId,
-      agentName: input.agentName,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-}
-
-export async function getGitTriggerRuntime(projectId: string, slug: string) {
-  const [row] = await db
-    .select()
-    .from(projectTriggerRuntime)
-    .where(
-      and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.slug, slug)),
-    )
-    .limit(1);
-  return row ?? null;
 }
 
 export async function markGitTriggerFired(
@@ -326,7 +280,7 @@ export async function fireGitTrigger(input: {
   reason?: string;
   deduped?: boolean;
 }> {
-  const { spec, project, payload, renderedPrompt, source } = input;
+  const { spec, project, payload } = input;
   // The session's owning identity (created_by / billing / audit). Automated runs
   // never impersonate a picked human — the agent's declared scope governs access.
   // See resolveTriggerActor().

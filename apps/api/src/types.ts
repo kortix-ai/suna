@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from '@hono/zod-openapi';
 import type { AgentGrant } from '@kortix/db';
 import type { BillingState } from './billing/services/billing-state';
 

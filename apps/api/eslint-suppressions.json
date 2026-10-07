@@ -506,7 +506,7 @@
   },
   "src/channels/slack-api.ts": {
     "no-console": {
-      "count": 34
+      "count": 32
     }
   },
   "src/channels/slack-oauth.ts": {
@@ -824,7 +824,7 @@
   },
   "src/config-releases/desired.ts": {
     "kortix-api/projects-surface": {
-      "count": 4
+      "count": 3
     },
     "no-console": {
       "count": 2
@@ -985,11 +985,6 @@
   "src/connectors/materialize.ts": {
     "kortix-api/projects-surface": {
       "count": 2
-    }
-  },
-  "src/connectors/normalize.ts": {
-    "kortix-api/projects-surface": {
-      "count": 1
     }
   },
   "src/connectors/notify-session.ts": {
@@ -1295,11 +1290,6 @@
   },
   "src/llm-gateway/internal-routes.ts": {
     "no-restricted-properties": {
-      "count": 1
-    }
-  },
-  "src/llm-gateway/models/picker.ts": {
-    "kortix-api/projects-surface": {
       "count": 1
     }
   },
@@ -1613,7 +1603,7 @@
   },
   "src/platform/services/session-sandbox.ts": {
     "kortix-api/projects-surface": {
-      "count": 14
+      "count": 13
     },
     "no-console": {
       "count": 20
@@ -1888,11 +1878,6 @@
   "src/projects/lib/trigger-connector-sweep.ts": {
     "no-console": {
       "count": 3
-    }
-  },
-  "src/projects/lib/trigger-fire.ts": {
-    "no-console": {
-      "count": 1
     }
   },
   "src/projects/lib/trigger-manifest.ts": {
@@ -2199,9 +2184,6 @@
     }
   },
   "src/projects/routes/group-grants.ts": {
-    "no-restricted-imports": {
-      "count": 1
-    },
     "no-restricted-syntax": {
       "count": 4
     }
@@ -2366,9 +2348,6 @@
     "no-console": {
       "count": 2
     },
-    "no-restricted-imports": {
-      "count": 2
-    },
     "no-restricted-syntax": {
       "count": 3
     }
@@ -2448,9 +2427,6 @@
     }
   },
   "src/projects/routes/session-config.ts": {
-    "no-restricted-imports": {
-      "count": 1
-    },
     "no-restricted-syntax": {
       "count": 3
     }
@@ -3086,9 +3062,6 @@
     "no-console": {
       "count": 6
     },
-    "no-restricted-properties": {
-      "count": 2
-    },
     "no-restricted-syntax": {
       "count": 9
     }
@@ -3312,7 +3285,7 @@
       "count": 2
     },
     "no-restricted-properties": {
-      "count": 12
+      "count": 11
     }
   },
   "src/snapshots/builder-log.ts": {
