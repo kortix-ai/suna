@@ -147,16 +147,17 @@ describe('the queue boundary fallback', () => {
   });
 
   test('a fresh window inside QUEUE_BOUNDARY_FALLBACK_MS keeps waiting', async () => {
-    markerResult = {
-      boundary_wait: { ...TURN, sinceMs: Date.now() - (QUEUE_BOUNDARY_FALLBACK_MS - 1_000) },
-    };
+    // ONE clock read: the row's marker and the expectation must come from the
+    // same instant, or a 1 ms gap between two `Date.now()` reads flakes this.
+    const sinceMs = Date.now() - (QUEUE_BOUNDARY_FALLBACK_MS - 1_000);
+    markerResult = { boundary_wait: { ...TURN, sinceMs } };
     requeueCalls = [];
     abortCalls = [];
     const outcome = await executeQueuedContinue(row(markerResult));
     expect(outcome).toBe('queued');
     expect(abortCalls).toEqual([]);
     const patch = requeueCalls[0].patch as { boundary_wait: { sinceMs: number } };
-    expect(patch.boundary_wait.sinceMs).toBe(Date.now() - (QUEUE_BOUNDARY_FALLBACK_MS - 1_000));
+    expect(patch.boundary_wait.sinceMs).toBe(sinceMs);
   });
 
   test('past the window the SAME live turn is ended once, stamped first', async () => {
