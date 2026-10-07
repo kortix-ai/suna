@@ -1,0 +1,18 @@
+{
+  "source_hash": "4c4abe2cf8a8bb5374e415a9453c0c762bdc3d4edaf69c3434fb44e9e6179206",
+  "diff_files": [
+    "apps/web/src/features/workspace/new/new-workspace-form.test.ts",
+    "apps/web/src/features/workspace/new/new-workspace-form.ts",
+    "apps/web/src/features/workspace/new/use-creatable-accounts.test.ts",
+    "apps/web/src/features/workspace/new/use-creatable-accounts.ts"
+  ],
+  "diff_hash": "4ce756e7f6cb4cc66e071308093bcef8999dae3ac99a3d727c580a4d11704009",
+  "head": "c99114f2968aef234185045bf7329d9d1e22476f",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-06T14:27:45.792Z"
+}

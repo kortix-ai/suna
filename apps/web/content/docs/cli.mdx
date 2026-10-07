@@ -281,7 +281,7 @@ A command resolves "the project" in this order:
 | `kortix projects unlink` | Remove `.kortix/link.json`. |
 | `kortix projects open [<id>]` | Open a project's dashboard page in your browser. |
 | `kortix projects clone [<id>] [dir]` | Clone a project's repo through the authenticated Kortix git proxy. |
-| `kortix projects rm [<id>] [--purge] [-y\|--yes]` | Archive a project. `--purge` also deletes its managed git repo. |
+| `kortix projects rm [<id>] [-y\|--yes]` | Delete a project and its Kortix-managed git repo. Repositories you connected yourself are never touched. |
 | `kortix projects set [<id>] [--name <n>] [--branch <b>] [--manifest <path>] [--json]` | Update one project's settings. Only the fields you pass are written. Passing no field exits `2`. Alias: `update`. |
 | `kortix projects set [<id>] --icon <emoji>\|--no-icon\|--glyph <name>:<color>\|--no-glyph` | Set or remove the project's icon. |
 | `kortix projects rename [<id>] <name>` | Alias for `kortix projects set --name <name>`. |

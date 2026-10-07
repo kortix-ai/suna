@@ -674,9 +674,10 @@
         "sessions": "Every session in this project, with its files, history, and outputs",
         "automation": "All scheduled runs and triggers — they stop firing straight away",
         "integrations": "Every connected integration, secret, and API key scoped to this project",
+        "managedRepo": "The Kortix-managed git repository for this project, with every commit in it",
         "access": "Access for everyone on the team — nobody can reach this project again"
       },
-      "reassurance": "Your connected Git repository is not deleted. Any code already pushed to it stays where it is.",
+      "reassurance": "Git repositories you connected yourself are not deleted. Any code already pushed to them stays where it is.",
       "keepWorkspace": "Keep project"
     },
     "sandbox": {

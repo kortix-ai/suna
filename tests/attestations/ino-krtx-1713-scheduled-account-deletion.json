@@ -1,0 +1,32 @@
+{
+  "source_hash": "8b43451a0a682924f480309fed1a0792b00c853882079058cf7655b6d8e64a5a",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-07T072439Z-restore-real-timers-in-aftereach-of-every-bun-test-that-fake.md",
+    "apps/api/src/__tests__/unit-account-deletion-schedule.test.ts",
+    "apps/api/src/__tests__/unit-impersonation.test.ts",
+    "apps/api/src/billing/index-auth-skip.test.ts",
+    "apps/api/src/billing/index.ts",
+    "apps/api/src/billing/services/account-deletion-scheduled.integration.test.ts",
+    "apps/api/src/billing/services/account-deletion.integration.test.ts",
+    "apps/api/src/billing/services/account-deletion.test.ts",
+    "apps/api/src/billing/services/account-deletion.ts",
+    "apps/api/src/billing/services/integration-account-deletion.test.ts",
+    "apps/api/src/shared/impersonation.ts",
+    "apps/api/src/workers/account-deletion-worker.ts",
+    "apps/web/src/features/workspace/settings/tabs/profile-tab.tsx",
+    "apps/web/src/lib/chunk-reload.test.ts",
+    "tests/spec/end-to-end.md",
+    "tests/src/flows/admin.flow.ts",
+    "tests/unit/fake-timers-restored.test.ts"
+  ],
+  "diff_hash": "e052a935e71513afa2e4b2ca168caadf4bff950ea8ffd98139d9a7eda6d56177",
+  "head": "cc39293c92fb8fed71081393832ef0b8426a71fa",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-07T07:35:09.928Z"
+}

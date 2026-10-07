@@ -335,6 +335,20 @@ describe('decideImpersonation', () => {
       expect(isImpersonationForbiddenPath(path, method), `${method} ${path}`).toBe(false);
     }
   });
+
+  // The deletion routes run as the real caller, so an operator inside the
+  // customer's account would become the requester of the deletion.
+  test('account deletion is refused on both mounts; its status read stays open', () => {
+    for (const mount of ['/v1/account', '/v1/billing/account']) {
+      expect(isImpersonationForbiddenPath(`${mount}/request-deletion`, 'POST')).toBe(true);
+      expect(isImpersonationForbiddenPath(`${mount}/cancel-deletion`, 'POST')).toBe(true);
+      expect(isImpersonationForbiddenPath(`${mount}/delete-immediately`, 'DELETE')).toBe(true);
+      expect(isImpersonationForbiddenPath(`${mount}/deletion-status`, 'GET')).toBe(false);
+    }
+    // Neighbours that share the prefix are not account deletion.
+    expect(isImpersonationForbiddenPath('/v1/accounts', 'POST')).toBe(false);
+    expect(isImpersonationForbiddenPath('/v1/billing/account-state', 'POST')).toBe(false);
+  });
 });
 
 describe('impersonationExpiryFrom', () => {

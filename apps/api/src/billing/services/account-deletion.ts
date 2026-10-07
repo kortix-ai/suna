@@ -136,21 +136,30 @@ export async function cancelAccountDeletion(accountId: string) {
  *      identity: a failure here must not sign a user out of an account whose
  *      data survived (the browser signs out only when the route answered
  *      success).
- *   3. The Supabase auth user.
+ *   3. The Supabase auth user, when the account is the requester's personal
+ *      account.
+ *
+ * The requester's login goes only with their personal account, whose id is
+ * the user id (`bootstrapPersonalAccount`). Deleting any other account keeps
+ * the requester's login and leaves the sandboxes of their other accounts
+ * alone: a team account the requester owns, or a request an operator made
+ * while acting as a customer (impersonation refuses these routes now, but a
+ * pending row from before keeps the operator as its requester).
  *
  * Every step is idempotent and throws on failure, so the caller can retry the
  * whole routine. The caller owns the request row (`completed` only after this
  * returns).
  */
 async function runAccountDeletion(accountId: string, userId?: string, requestId?: string) {
-  await performDeletion(accountId, userId);
+  const requester = userId === accountId ? userId : undefined;
+  await performDeletion(accountId, requester);
   await deleteAccountData(accountId, requestId);
-  if (userId) {
-    const { error } = await getSupabase().auth.admin.deleteUser(userId);
+  if (requester) {
+    const { error } = await getSupabase().auth.admin.deleteUser(requester);
     // A user the auth schema no longer has (an admin-side delete, or a retry
     // after step 3 already ran) is the state this step produces.
     if (error && !isAuthUserNotFound(error)) throw error;
-    forgetUserJwtLiveness(userId);
+    forgetUserJwtLiveness(requester);
   }
 }
 
@@ -159,8 +168,9 @@ function isAuthUserNotFound(error: { status?: number; code?: string }): boolean 
 }
 
 /**
- * `userId` widens the sandbox sweep to every account this user OWNS, not just
- * the one the route resolved. Optional so existing callers keep compiling, but
+ * `userId` is the requester. When the account is their personal account, the
+ * sandbox sweep widens to every account they OWN and their login is deleted
+ * (see `runAccountDeletion`). Optional so existing callers keep compiling, but
  * the route should always pass it — without it a user's team-account sandboxes
  * survive the deletion. See `reclaimableAccountIds`.
  */
@@ -196,7 +206,11 @@ export async function processScheduledDeletions(): Promise<{
       processed++;
     } catch (err) {
       const msg = `Error deleting account ${request.accountId}: ${(err as Error).message}`;
-      logger.error(`[AccountDeletion] ${msg}`);
+      logger.error('[AccountDeletion] scheduled deletion failed', {
+        requestId: request.id,
+        accountId: request.accountId,
+        error: err instanceof Error ? err.message : String(err),
+      });
       errors.push(msg);
       // Back to `pending`: the next tick retries the failed step.
       await releaseDeletionRequest(request.id).catch((releaseErr) =>
