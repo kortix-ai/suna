@@ -1,6 +1,16 @@
-import { AppsView } from '@/features/apps/apps-view';
+import { redirect } from 'next/navigation';
 
-export default async function ProjectAppsPage({ params }: { params: Promise<{ id: string }> }) {
+import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import { withSearch } from '@/features/workspace/capabilities/shared/with-search';
+
+/** Retired route: Apps is a Customize tab now. Bookmarks and `?open_app=` links keep working. */
+export default async function RetiredProjectAppsRoute({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { id } = await params;
-  return <AppsView projectId={id} />;
+  redirect(withSearch(capabilityTabHref(id, 'apps'), await searchParams));
 }

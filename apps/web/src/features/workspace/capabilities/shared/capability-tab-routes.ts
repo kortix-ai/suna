@@ -31,7 +31,7 @@
  * index cards keep their own icons in their own client files.
  */
 export interface CapabilityTab {
-  key: 'agent' | 'connectors' | 'skills' | 'triggers' | 'models' | 'secrets' | 'config';
+  key: 'agent' | 'connectors' | 'skills' | 'triggers' | 'models' | 'secrets' | 'config' | 'apps' | 'backends';
   label: string;
 }
 
@@ -69,7 +69,9 @@ export interface CapabilityTab {
  * left Customize for its own full-height page (`reviewHref`): the inbox where
  * a person approves what agents do is a primary surface, not configuration.
  *
- * No tab is flag-gated.
+ * Two tabs are flag-gated, and they are not in this array: Apps and Backends
+ * (`FLAGGED_CAPABILITY_TABS` below). Everything here paints on the first
+ * frame for everyone.
  */
 export const CAPABILITY_TABS: readonly CapabilityTab[] = [
   { key: 'agent', label: 'Agents' },
@@ -79,6 +81,30 @@ export const CAPABILITY_TABS: readonly CapabilityTab[] = [
   { key: 'models', label: 'Models' },
   { key: 'secrets', label: 'Secrets' },
   { key: 'config', label: 'Settings' },
+];
+
+/**
+ * What the project ships, as opposed to what its agents are built from: the
+ * Apps it hosts and the Backends they talk to. Marko, 2026-10-07: "Apps and
+ * Backends live in Customize, not the sidebar" — two sidebar rows for two
+ * internal-only flags crowded the one column every project shares, while the
+ * Customize bar already is the place a project's resources are managed.
+ *
+ * They trail the bar after their own seam, and each one shows ONLY while its
+ * project flag is on. That is the one exception to "the bar is static", and it
+ * is safe for the reason the rule exists: they are appended after every static
+ * tab, so a flag landing late never moves a tab that was already painted. A
+ * flag still loading counts as off (fail-closed, like every flagged surface).
+ *
+ * Neither is in `TAB_PREFERENCE`: the Customize row must never LAND on a
+ * flagged tab, because the flag is off for almost every project.
+ */
+export const FLAGGED_CAPABILITY_TABS: readonly (CapabilityTab & {
+  key: 'apps' | 'backends';
+  flag: 'apps' | 'backends';
+})[] = [
+  { key: 'apps', label: 'Apps', flag: 'apps' },
+  { key: 'backends', label: 'Backends', flag: 'backends' },
 ];
 
 /**
@@ -106,6 +132,8 @@ export const CAPABILITY_SEGMENT: Record<CapabilityTab['key'], string> = {
   models: 'models',
   secrets: 'secrets',
   config: 'settings',
+  apps: 'apps',
+  backends: 'backends',
 };
 
 /** The root every capability tab hangs off (Marko, 2026-09-03: "always
@@ -137,6 +165,14 @@ export function agentHref(projectId: string, agentName: string): string {
 }
 
 /**
+ * One backend: its Convex dashboard, full height under the Customize bar.
+ * Lights the Backends tab, the way an agent's page lights Agents.
+ */
+export function backendHref(projectId: string, backendId: string): string {
+  return `${capabilityTabHref(projectId, 'backends')}/${encodeURIComponent(backendId)}`;
+}
+
+/**
  * The scope value the Connectors page reads out of `?scope=` to show Channels.
  * Exported so the three places that link to Channels — the retired
  * `/projects/<id>/channels` route, the `GRADUATED` map in `settings-tabs.ts`,
@@ -155,10 +191,11 @@ export function channelsHref(projectId: string): string {
 
 /**
  * The tab a pathname is on, matched against the shape `capabilityTabHref`
- * builds — `/projects/<id>/customize/<segment>` exactly — plus the ONE deeper
- * shape this group owns, `agentHref`'s `/projects/<id>/customize/agents/<name>`,
- * which lights the Agents tab: an agent's page is the Agents tab, opened on
- * one agent.
+ * builds — `/projects/<id>/customize/<segment>` exactly — plus the two deeper
+ * shapes this group owns: `agentHref`'s `/projects/<id>/customize/agents/<name>`,
+ * which lights the Agents tab (an agent's page is the Agents tab, opened on
+ * one agent), and `backendHref`'s `/projects/<id>/customize/backends/<id>`,
+ * which lights Backends the same way.
  *
  * The shape check is load-bearing, not defensive tidying. This used to match on
  * the LAST segment alone, which was harmless while every key was unique to this
@@ -173,7 +210,10 @@ export function activeCapabilityTab(pathname: string): CapabilityTab['key'] | nu
   const segments = pathname.split('/').filter(Boolean);
   if (segments[0] !== 'projects' || segments[2] !== 'customize') return null;
   if (segments.length === 5 && segments[3] === CAPABILITY_SEGMENT.agent) return 'agent';
+  if (segments.length === 5 && segments[3] === CAPABILITY_SEGMENT.backends) return 'backends';
   if (segments.length !== 4) return null;
-  const hit = CAPABILITY_TABS.find((t) => CAPABILITY_SEGMENT[t.key] === segments[3]);
+  const hit = [...CAPABILITY_TABS, ...FLAGGED_CAPABILITY_TABS].find(
+    (t) => CAPABILITY_SEGMENT[t.key] === segments[3],
+  );
   return hit ? hit.key : null;
 }

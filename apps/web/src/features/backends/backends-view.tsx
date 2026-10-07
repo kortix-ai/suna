@@ -1,7 +1,7 @@
 'use client';
 
-import Link from '@/components/site-link';
 import { CopyButton } from '@/components/markdown/copy-button';
+import Link from '@/components/site-link';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -36,23 +36,25 @@ import {
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
+import { backendHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { FeatureGateScreen } from '@/features/workspace/feature-gate-screen';
-import { ProjectPageHeader } from '@/features/workspace/project-layout/project-page-header';
-import { useTranslations } from '@/i18n/use-translations';
 import type { UiTranslator } from '@/i18n/translator';
+import { useTranslations } from '@/i18n/use-translations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { relativeTime } from '@/lib/relative-time';
 import { useProjectCan } from '@/lib/use-project-can';
 import { getBackendCredentials, type ProjectBackend, type ProjectBackendSize } from '@kortix/sdk';
 import { useFeatureFlag, useProjectBackends } from '@kortix/sdk/react';
 import {
-  ArrowUpRightIcon,
+  BookOpenIcon,
   DatabaseIcon,
   DotsThreeIcon,
   PlusIcon,
   TrashIcon,
 } from '@phosphor-icons/react';
-import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useState, type MouseEvent } from 'react';
 import {
   BackendBackupsDialog,
   BackendOperationBadge,
@@ -79,10 +81,8 @@ export function backendEnvText(env: Record<string, string>): string {
 /** Turns an API error into a sentence. `backend_limit` and `backend_name_taken` are the 409 codes. */
 export function backendCreateError(error: unknown, name: string, t: UiTranslator): string {
   const code = (error as { code?: string } | null)?.code;
-  if (code === 'backend_limit')
-    return t.raw('textd784a0fa435a');
-  if (code === 'backend_name_taken')
-    return t('textd55e9ebeaa95', { value0: name });
+  if (code === 'backend_limit') return t.raw('textd784a0fa435a');
+  if (code === 'backend_name_taken') return t('textd55e9ebeaa95', { value0: name });
   return error instanceof Error ? error.message : t.raw('text55cb8e9fd5d3');
 }
 
@@ -95,93 +95,84 @@ export function BackendsView({ projectId }: { projectId: string }) {
   const list = backends.data;
 
   return (
-    <div className="flex h-svh flex-col overflow-hidden">
-      <ProjectPageHeader title={t.raw('text26cbb889e198')} href={`/projects/${projectId}/backends`}>
-        {gate.enabled && canWrite && list?.length ? (
-          <div className="flex shrink-0 items-center pr-1">
-            <Button size="sm" onClick={() => setCreateOpen(true)}>
-              <PlusIcon className="size-3.5" />
-              {t.raw('textc6af0b77ba25')}
+    <>
+      <CapabilityPageShell
+        title={t.raw('text26cbb889e198')}
+        description={t.raw('text8dd10daddd77')}
+        action={
+          <div className="flex min-w-0 items-center gap-2">
+            {/* New tab: this page is often open over live work. */}
+            <Button asChild variant="secondary" size="sm" className="gap-1.5">
+              <Link
+                href="/docs/feature-flags/backends"
+                target="_blank"
+                rel="noreferrer"
+                prefetch={false}
+              >
+                <BookOpenIcon className="size-3.5 shrink-0" />
+                {t.raw('text7af023c43013')}
+              </Link>
             </Button>
+            {gate.enabled && canWrite && list?.length ? (
+              <Button size="sm" onClick={() => setCreateOpen(true)}>
+                <PlusIcon className="size-3.5" />
+                {t.raw('textc6af0b77ba25')}
+              </Button>
+            ) : null}
           </div>
-        ) : null}
-        <Link
-          href="/docs/feature-flags/backends"
-          target="_blank"
-          rel="noopener noreferrer"
-          prefetch={false}
-          className="text-muted-foreground hover:text-foreground flex w-fit flex-none items-center gap-1 px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors"
-        >
-          {t.raw('text7af023c43013')}
-          <ArrowUpRightIcon className="size-3 opacity-60" aria-hidden />
-        </Link>
-      </ProjectPageHeader>
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col gap-6 px-4 py-6 pb-20 md:px-8">
-          {gate.isLoading ? (
-            <BackendsSkeleton />
-          ) : !gate.enabled ? (
-            <FeatureGateScreen
-              featureName="Backends"
-              internalOnly
-              description={t.raw(
-                'text8dd10daddd77',
-              )}
-            />
-          ) : backends.isLoading ? (
-            <BackendsSkeleton />
-          ) : backends.isError ? (
-            <ErrorState
-              size="sm"
-              title={t.raw('textaca8aae25be5')}
-              description={(backends.error as Error).message}
-              action={
-                <Button size="sm" variant="outline" onClick={() => backends.refetch()}>
-                  {t.raw('textd8b8392e2c54')}
+        }
+      >
+        {gate.isLoading ? (
+          <BackendsSkeleton />
+        ) : !gate.enabled ? (
+          <FeatureGateScreen
+            featureName="Backends"
+            internalOnly
+            description={t.raw('text8dd10daddd77')}
+          />
+        ) : backends.isLoading ? (
+          <BackendsSkeleton />
+        ) : backends.isError ? (
+          <ErrorState
+            size="sm"
+            title={t.raw('textaca8aae25be5')}
+            description={(backends.error as Error).message}
+            action={
+              <Button size="sm" variant="outline" onClick={() => backends.refetch()}>
+                {t.raw('textd8b8392e2c54')}
+              </Button>
+            }
+          />
+        ) : list?.length ? (
+          <BackendsTable
+            projectId={projectId}
+            backends={list}
+            canWrite={canWrite}
+            onDelete={(id) => backends.remove.mutateAsync(id)}
+            deleting={backends.remove.isPending}
+            onResize={(backendId, size) => backends.resize.mutateAsync({ backendId, ...size })}
+            resizing={backends.resize.isPending}
+            onRestore={(backendId, snapshotId) =>
+              backends.restore.mutateAsync({ backendId, snapshotId })
+            }
+            restoring={backends.restore.isPending}
+          />
+        ) : (
+          <EmptyState
+            icon={DatabaseIcon}
+            title={t.raw('text311cc7fed7c7')}
+            description={canWrite ? t.raw('text1724fdec043c') : t.raw('texta5ca25099e19')}
+            action={
+              canWrite ? (
+                <Button size="sm" onClick={() => setCreateOpen(true)}>
+                  <PlusIcon className="size-3.5" />
+                  {t.raw('textc6af0b77ba25')}
                 </Button>
-              }
-            />
-          ) : list?.length ? (
-            <>
-              <p className="text-muted-foreground max-w-prose text-sm">
-                {t.raw(
-                  'text8dd10daddd77',
-                )}
-              </p>
-              <BackendsTable
-                projectId={projectId}
-                backends={list}
-                canWrite={canWrite}
-                onDelete={(id) => backends.remove.mutateAsync(id)}
-                deleting={backends.remove.isPending}
-                onResize={(backendId, size) => backends.resize.mutateAsync({ backendId, ...size })}
-                resizing={backends.resize.isPending}
-                onRestore={(backendId, snapshotId) => backends.restore.mutateAsync({ backendId, snapshotId })}
-                restoring={backends.restore.isPending}
-              />
-            </>
-          ) : (
-            <EmptyState
-              icon={DatabaseIcon}
-              title={t.raw('text311cc7fed7c7')}
-              description={
-                canWrite
-                  ? t.raw('text1724fdec043c')
-                  : t.raw('texta5ca25099e19')
-              }
-              action={
-                canWrite ? (
-                  <Button size="sm" onClick={() => setCreateOpen(true)}>
-                    <PlusIcon className="size-3.5" />
-                    {t.raw('textc6af0b77ba25')}
-                  </Button>
-                ) : undefined
-              }
-            />
-          )}
-        </div>
-      </div>
+              ) : undefined
+            }
+          />
+        )}
+      </CapabilityPageShell>
 
       {createOpen ? (
         <CreateBackendModal
@@ -190,7 +181,7 @@ export function BackendsView({ projectId }: { projectId: string }) {
           onCreate={(name) => backends.create.mutateAsync({ name })}
         />
       ) : null}
-    </div>
+    </>
   );
 }
 
@@ -242,9 +233,7 @@ function CreateBackendModal({
         >
           <ModalHeader>
             <ModalTitle>{t.raw('textc6af0b77ba25')}</ModalTitle>
-            <ModalDescription>
-              {t.raw('texte65ec54500c8')}
-            </ModalDescription>
+            <ModalDescription>{t.raw('texte65ec54500c8')}</ModalDescription>
           </ModalHeader>
           <ModalBody>
             <div className="space-y-2">
@@ -270,10 +259,7 @@ function CreateBackendModal({
                 }
                 role={apiError ? 'alert' : undefined}
               >
-                {apiError ??
-                  t.raw(
-                    'text502d7f23fab3',
-                  )}
+                {apiError ?? t.raw('text502d7f23fab3')}
               </p>
             </div>
           </ModalBody>
@@ -379,10 +365,7 @@ function BackendsTable({
         open={pendingDelete !== null}
         onOpenChange={(open) => !open && !deleting && setPendingDelete(null)}
         title={t.raw('textf2e1ab3c0d51')}
-        description={t(
-          'texta593a9f33e01',
-          { value0: pendingDelete?.name ?? '' },
-        )}
+        description={t('texta593a9f33e01', { value0: pendingDelete?.name ?? '' })}
         confirmLabel={t.raw('texte2d0a54968ea')}
         confirmVariant="destructive"
         isPending={deleting}
@@ -411,7 +394,8 @@ export function BackendStatusBadge({ backend }: { backend: ProjectBackend }) {
         {t.raw('textc2b1b8e2e039')}
       </Badge>
     );
-  if (backend.status === 'running') return <Badge variant="success">{t.raw('textf4ccae29e1bb')}</Badge>;
+  if (backend.status === 'running')
+    return <Badge variant="success">{t.raw('textf4ccae29e1bb')}</Badge>;
   if (backend.status === 'error')
     return <Badge variant="destructive">{t.raw('text54a0e8c17ebb')}</Badge>;
   return <Badge variant="muted">{t.raw('textb48ff39c2e0f')}</Badge>;
@@ -433,6 +417,8 @@ function BackendRow({
   onBackups: () => void;
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
+  const router = useRouter();
+  const href = backendHref(projectId, backend.backend_id);
 
   const copy = async (text: string, done: string) => {
     try {
@@ -442,6 +428,17 @@ function BackendRow({
       errorToast(t.raw('text4cb23f3c3b90'));
     }
   };
+
+  // One click anywhere on the row opens the backend; the name stays a real
+  // link for the keyboard and for "open in new tab".
+  const openRow = (event: MouseEvent<HTMLTableRowElement>) => {
+    if (event.defaultPrevented || window.getSelection()?.toString()) return;
+    if (event.metaKey || event.ctrlKey) window.open(href, '_blank', 'noopener');
+    else router.push(href);
+  };
+  // The copy button and the menu act on their own. React events bubble through
+  // portals, so the menu's items would otherwise also open the row.
+  const own = (event: MouseEvent) => event.stopPropagation();
 
   // The admin key goes from the API response straight to the clipboard. It is never rendered or stored.
   const copyEnv = async () => {
@@ -454,9 +451,14 @@ function BackendRow({
   };
 
   return (
-    <TableRow data-testid="backend-row" data-backend-name={backend.name}>
+    <TableRow
+      data-testid="backend-row"
+      data-backend-name={backend.name}
+      className="cursor-pointer"
+      onClick={openRow}
+    >
       <TableCell className="font-medium">
-        <Link href={`/projects/${projectId}/backends/${backend.backend_id}`} className="hover:underline">
+        <Link href={href} onClick={own} className="focus-visible:underline">
           {backend.name}
         </Link>
       </TableCell>
@@ -476,10 +478,12 @@ function BackendRow({
       <TableCell className="text-muted-foreground whitespace-nowrap">
         {backendSizeLabel(backend, t)}
       </TableCell>
-      <TableCell>
+      {/* `w-full max-w-0`: the URL takes whatever width the other columns
+          leave and truncates, so the row's menu never scrolls out of view. */}
+      <TableCell className="w-full max-w-0">
         {backend.url ? (
-          <span className="flex items-center gap-1">
-            <code className="text-muted-foreground truncate font-mono text-xs">{backend.url}</code>
+          <span className="flex items-center gap-1" onClick={own}>
+            <code className="text-muted-foreground min-w-0 truncate font-mono text-xs">{backend.url}</code>
             <CopyButton code={backend.url} size="sm" className="shrink-0" />
           </span>
         ) : (
@@ -487,7 +491,7 @@ function BackendRow({
         )}
       </TableCell>
       <TableCell className="text-muted-foreground">{relativeTime(backend.created_at)}</TableCell>
-      <TableCell>
+      <TableCell onClick={own}>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button size="icon" variant="ghost" aria-label={t.raw('text2de7b4934e29')}>
@@ -496,7 +500,7 @@ function BackendRow({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuItem asChild>
-              <Link href={`/projects/${projectId}/backends/${backend.backend_id}`}>{t.raw('text803f2313cdf4')}</Link>
+              <Link href={href}>{t.raw('text803f2313cdf4')}</Link>
             </DropdownMenuItem>
             {canWrite ? (
               <DropdownMenuItem disabled={backend.status !== 'running'} onClick={copyEnv}>
@@ -515,9 +519,7 @@ function BackendRow({
               {t.raw('textf0e800ed571e')}
             </DropdownMenuItem>
             <DropdownMenuItem
-              onClick={() =>
-                copy(backendDeployCommand(backend.name), t.raw('text5c3fa6a80824'))
-              }
+              onClick={() => copy(backendDeployCommand(backend.name), t.raw('text5c3fa6a80824'))}
             >
               {t.raw('text21de8d7ddc3e')}
             </DropdownMenuItem>

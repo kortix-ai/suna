@@ -20,17 +20,30 @@ test('copy helpers produce the documented strings', () => {
   ).toBe('CONVEX_SELF_HOSTED_URL=https://x\nCONVEX_SELF_HOSTED_ADMIN_KEY=k');
 });
 
-test('Backends discovery hides until the backends flag is on, and the page gates on it', () => {
-  const nav = read('features/workspace/project-sidebar/footer/project-backends-nav.tsx');
+test('Backends is a flag-gated Customize tab, never a sidebar row, and the page gates on it', () => {
+  const tabs = read('features/workspace/capabilities/shared/capability-tabs.tsx');
+  const routes = read('features/workspace/capabilities/shared/capability-tab-routes.ts');
   const view = read('features/backends/backends-view.tsx');
   const menu = read('lib/menu-registry.ts');
   const sidebar = read('features/workspace/project-sidebar/project-sidebar.tsx');
-  expect(nav).toContain("useFeatureFlag(projectId, 'backends')");
-  expect(nav).toContain('if (!backendsGate.enabled) return null;');
+  expect(tabs).toContain("useFeatureFlag(projectId, 'backends')");
+  expect(routes).toContain("{ key: 'backends', label: 'Backends', flag: 'backends' }");
   expect(menu).toContain("requiresFlag: 'backends'");
+  expect(menu).toContain("href: '/projects/{projectId}/customize/backends'");
+  expect(sidebar).not.toContain('ProjectBackendsNavItem');
   expect(view).toContain("useFeatureFlag(projectId, 'backends')");
   expect(view).toContain('<FeatureGateScreen');
-  expect(sidebar.indexOf('<ProjectBackendsNavItem />')).toBeGreaterThan(sidebar.indexOf('<ProjectAppsNavItem />'));
+  expect(view).toContain('<CapabilityPageShell');
+});
+
+test('one click anywhere on a row opens the backend; its own controls do not', () => {
+  const view = read('features/backends/backends-view.tsx');
+  expect(view).toContain('onClick={openRow}');
+  expect(view).toContain('const href = backendHref(projectId, backend.backend_id);');
+  // The copy button and the menu (whose items render in a portal, and React
+  // events bubble through portals) stop the click before the row sees it.
+  expect(view).toContain('<TableCell onClick={own}>');
+  expect(view).toContain('<span className="flex items-center gap-1" onClick={own}>');
 });
 
 test('write actions are gated and the admin key is never rendered', () => {

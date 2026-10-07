@@ -9,7 +9,7 @@ import { errorToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { FeatureGateScreen } from '@/features/workspace/feature-gate-screen';
-import { ProjectPageHeader } from '@/features/workspace/project-layout/project-page-header';
+import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
 import { useTranslations } from '@/i18n/use-translations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 
@@ -17,7 +17,7 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { createAppAccessSession, type App } from '@kortix/sdk';
 import { useAppAccess, useFeatureFlag, useProjectApps } from '@kortix/sdk/react';
-import { ArrowUpRightIcon, GlobeIcon } from '@phosphor-icons/react';
+import { BookOpenIcon, GlobeIcon } from '@phosphor-icons/react';
 
 import Link from '@/components/site-link';
 import { useSearchParams } from 'next/navigation';
@@ -31,13 +31,11 @@ export { DEPLOYMENT_COPY, deployNotice, appHost } from './app-shared';
 export { AppPreview, AppPreviewOverlay, PREVIEW_SPINNER_DELAY_MS, scheduleSlowPreview, PREVIEW_VIEWPORT_WIDTH, PREVIEW_VIEWPORT_HEIGHT, PREVIEW_TILE_ASPECT, previewScale } from './app-preview';
 export { APP_GRID_CONTAINER, APP_GRID_DEFAULT_COLUMNS, APP_GRID_COLUMN_OPTIONS, APP_GRID_COLUMN_ORDER, APP_GRID_COLUMNS_STORAGE_KEY, parseAppGridColumns, type AppGridColumns } from './app-density';
 
-function AppsHeader({
-  projectId,
+function AppsActions({
   columns,
   onColumnsChange,
   showColumns,
 }: {
-  projectId: string;
   columns: AppGridColumns;
   onColumnsChange: (next: AppGridColumns) => void;
   /**
@@ -45,30 +43,23 @@ function AppsHeader({
    * is no grid — the feature gate, the error state and the empty state each
    * fill the page on their own, and a column picker over any of them is a dead
    * switch. It stays visible over the SKELETON: a control that appears once
-   * loading finishes moves the two beside it on every page load.
+   * loading finishes moves the one beside it on every page load.
    */
   showColumns: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
 
   return (
-    <ProjectPageHeader title={tI18nComplete.raw('text89dd748442c1')} href={`/projects/${projectId}/apps`}>
-      {showColumns ? (
-        <div className="flex shrink-0 items-center pr-1">
-          <AppGridColumnsControl value={columns} onChange={onColumnsChange} />
-        </div>
-      ) : null}
-      <Link
-        href="/docs/feature-flags/apps"
-        target="_blank"
-        rel="noopener noreferrer"
-        prefetch={false}
-        className="text-muted-foreground hover:text-foreground flex w-fit flex-none items-center gap-1 px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors"
-      >
-        {tI18nComplete.raw('text7af023c43013')}
-        <ArrowUpRightIcon className="size-3 opacity-60" aria-hidden />
-      </Link>
-    </ProjectPageHeader>
+    <div className="flex min-w-0 items-center gap-2">
+      {showColumns ? <AppGridColumnsControl value={columns} onChange={onColumnsChange} /> : null}
+      {/* New tab: this page is often open over live work. */}
+      <Button asChild variant="secondary" size="sm" className="gap-1.5">
+        <Link href="/docs/feature-flags/apps" target="_blank" rel="noreferrer" prefetch={false}>
+          <BookOpenIcon className="size-3.5 shrink-0" />
+          {tI18nComplete.raw('text7af023c43013')}
+        </Link>
+      </Button>
+    </div>
   );
 }
 
@@ -107,46 +98,32 @@ export function AppsView({ projectId }: { projectId: string }) {
   }, [apps.data, projectId, searchParams, tI18nComplete]);
 
   return (
-    // `h-svh`, for the same reason the `(capabilities)` layout carries it:
-    // nothing above this box has a definite height (every ancestor from
-    // `<body>` down is `min-h-*` or `flex-1 overflow-hidden`), so without one
-    // the body below would never have a bound to scroll within and the WINDOW
-    // would scroll — taking the header bar with it. Bounded here, the bar needs
-    // no `sticky` and no `fixed`: it is a sibling above the only scrolling
-    // element on the page, so it structurally cannot move. `svh` (not `dvh`)
-    // assumes mobile browser chrome is visible, so the bar can never be pushed
-    // under a toolbar that reappears.
-    <div className="flex h-svh flex-col overflow-hidden">
-      <AppsHeader
-        projectId={projectId}
-        columns={gridColumns}
-        onColumnsChange={setGridColumns}
-        showColumns={
-          appsGate.isLoading || (appsGate.enabled && (apps.isLoading || !!apps.data?.length))
+    // The Apps tab of Customize: the bar above is the page's header, and the
+    // shell below is its one scroll container. `wide` keeps the gallery's
+    // 7xl column (see `CapabilityPageShell`).
+    <>
+      <CapabilityPageShell
+        wide
+        title={tI18nComplete.raw('text89dd748442c1')}
+        description={tI18nComplete.raw('text3387c31a18b3')}
+        action={
+          <AppsActions
+            columns={gridColumns}
+            onColumnsChange={setGridColumns}
+            showColumns={
+              appsGate.isLoading || (appsGate.enabled && (apps.isLoading || !!apps.data?.length))
+            }
+          />
         }
-      />
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {/* `max-w-7xl px-4` — the gallery's column, and the CONTAINER the grid
-            measures itself against (`@container/apps`). Putting the container
-            here and not on the scroll box is the point: this is the element
-            whose width the tiles actually divide, so it already accounts for
-            the cap, the gutter, and the sidebar. `px-4` matches
-            `CapabilityPageShell`'s gutter so the grid never presses flush
-            against the browser edge.
+      >
+        {/* The CONTAINER the grid measures itself against (`@container/apps`):
+            the element whose width the tiles actually divide, so it already
+            accounts for the cap, the gutter, and the sidebar.
 
             `flex min-h-full flex-col` so the one child that asks for height
             gets it: `EmptyState`/`ErrorState` are built on `Empty`, which is
-            `flex-1 … justify-center`, and with no bound to grow into they
-            collapsed to their own content and clung to the top of a tall,
-            otherwise blank page. The grid, the skeleton and the feature gate
-            take their natural height and stay at the top, unaffected. */}
-        <div
-          className={cn(
-            'mx-auto flex min-h-full w-full max-w-7xl flex-col px-4 py-6 pb-20 md:px-8',
-            APP_GRID_CONTAINER,
-          )}
-        >
+            `flex-1 … justify-center`. */}
+        <div className={cn('flex min-h-full flex-col', APP_GRID_CONTAINER)}>
           {appsGate.isLoading ? (
             <AppGridSkeleton columns={gridColumns} />
           ) : !appsGate.enabled ? (
@@ -188,7 +165,7 @@ export function AppsView({ projectId }: { projectId: string }) {
             <AppsEmptyState />
           )}
         </div>
-      </div>
+      </CapabilityPageShell>
 
       {openApp ? (
         <AppDetailModal
@@ -203,7 +180,7 @@ export function AppsView({ projectId }: { projectId: string }) {
           }}
         />
       ) : null}
-    </div>
+    </>
   );
 }
 

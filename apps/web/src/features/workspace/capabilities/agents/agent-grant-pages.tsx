@@ -1,5 +1,6 @@
 'use client';
 
+import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
  * The agent editor's Access pages — Skills, Connectors, Secrets — built from
@@ -510,7 +511,7 @@ export function AppsGrantPage({ projectId, editor }: { projectId: string; editor
       trailing={
         <GrantHeaderTrailing
           value={editor.draft.apps}
-          href={(id) => `/projects/${id}/apps`}
+          href={(id) => capabilityTabHref(id, 'apps')}
           label={t('manageApps')}
         />
       }
