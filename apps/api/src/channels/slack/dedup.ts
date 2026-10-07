@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { chatEventDedup } from '@kortix/db';
 import { db } from '../../shared/db';
 import { EVENT_DEDUPE_TTL_MS } from './app';
+import { recordClaim } from '../webhook-work';
 
 // Cross-replica dedup. Slack can redeliver the same event_id (retries); with >1
 // API replica an in-memory set only dedups within one process, so a redelivery
@@ -16,6 +17,7 @@ export async function alreadyHandled(eventId: string | undefined): Promise<boole
       .values({ eventId, expiresAt: new Date(Date.now() + EVENT_DEDUPE_TTL_MS) })
       .onConflictDoNothing({ target: chatEventDedup.eventId })
       .returning({ eventId: chatEventDedup.eventId });
+    if (inserted.length > 0) recordClaim(eventId);
     return inserted.length === 0;
   } catch (err) {
     // Never let a dedup hiccup wedge the webhook — fail open (process the event).
@@ -56,6 +58,7 @@ export async function claimInboundMessage(key: string): Promise<boolean> {
       .values({ eventId: key, expiresAt: new Date(Date.now() + EVENT_DEDUPE_TTL_MS) })
       .onConflictDoNothing({ target: chatEventDedup.eventId })
       .returning({ eventId: chatEventDedup.eventId });
+    if (inserted.length > 0) recordClaim(key);
     return inserted.length > 0;
   } catch (err) {
     console.error('[slack-webhook] inbound message claim failed (fail-open)', err);

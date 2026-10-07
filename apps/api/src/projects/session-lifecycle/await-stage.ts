@@ -28,6 +28,8 @@ export async function awaitTerminalStage(
     pollMs?: number;
     now?: () => number;
     sleepFn?: (ms: number) => Promise<void>;
+    /** The request's abort signal: a closed tab stops the loop's DB and provider reads. */
+    signal?: AbortSignal;
   },
 ): Promise<SessionStartResult> {
   if (opts.waitMs <= 0 || isTerminalStage(initial.stage) || initial.retriable === false)
@@ -37,8 +39,9 @@ export async function awaitTerminalStage(
   const pollMs = opts.pollMs ?? START_AWAIT_POLL_MS;
   const deadline = now() + Math.min(opts.waitMs, START_AWAIT_MAX_MS);
   let current = initial;
-  while (now() < deadline) {
+  while (now() < deadline && !opts.signal?.aborted) {
     await sleepFn(pollMs);
+    if (opts.signal?.aborted) break;
     const next = await resolve();
     if (!next) break;
     current = next;

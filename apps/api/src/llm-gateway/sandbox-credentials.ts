@@ -36,11 +36,3 @@ export function nativeProviderEnvNames(): string[] {
 export function isGatewayManagedEnv(name: string): boolean {
   return isManagedEnv(name);
 }
-
-export function stripGatewayManagedCredentials(env: Record<string, string>): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(env)) {
-    if (!isManagedEnv(key)) out[key] = value;
-  }
-  return out;
-}

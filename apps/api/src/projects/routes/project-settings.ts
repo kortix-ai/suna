@@ -1,6 +1,6 @@
 /** Project settings: onboarding, deletion, feature flags, and the sandbox provider override. */
 import { PROJECT_ACTIONS } from '../../iam';
-import { assertAgentScope } from '../../iam/agent-scope';
+import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -227,7 +227,6 @@ export function registerProjectSettingsRoutes(): void {
       ...auth,
         request: {
           params: z.object({ projectId: z.string() }),
-          query: z.object({ purge: z.enum(['true', 'false']).optional() }),
         },
       responses: {
           200: json(z.any(), 'OK'),
@@ -243,25 +242,22 @@ export function registerProjectSettingsRoutes(): void {
     // members through via project.write.
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DELETE);
 
-    // Release prompt attachments first. After the irreversible purge below, a
+    // Release prompt attachments first. After the repository deletion below, a
     // failed release would leave an active project without its repository; after
     // the archive, the project answers 404, so a release could never be retried.
     const { releasePromptAttachmentsForProject } = await import('../prompt-attachments');
     await releasePromptAttachmentsForProject(projectId);
 
-    // Archiving is recoverable by default. Only an explicit purge permanently
-    // deletes a Kortix-managed upstream; user-connected/BYO repositories are
-    // always left untouched. Delete before hiding the project so provider
-    // failures remain visible and retryable.
-    const purge = c.req.query('purge') === 'true';
-    let repoDeleted = false;
-    if (purge) {
-      try {
-        repoDeleted = await deleteManagedProjectRepo(loaded.row);
-      } catch (error) {
-        console.error(`[projects] failed to delete managed repo for ${projectId}:`, error);
-        return c.json({ error: 'Failed to delete managed project repository' }, 502);
-      }
+    // Deleting the project deletes the Kortix-managed upstream with it; the
+    // helper no-ops for user-connected/BYO repositories and never touches
+    // them. Delete before hiding the project so provider failures remain
+    // visible and retryable.
+    let repoDeleted: boolean;
+    try {
+      repoDeleted = await deleteManagedProjectRepo(loaded.row);
+    } catch (error) {
+      console.error(`[projects] failed to delete managed repo for ${projectId}:`, error);
+      return c.json({ error: 'Failed to delete managed project repository' }, 502);
     }
 
     const [row] = await db
@@ -303,8 +299,10 @@ export function registerProjectSettingsRoutes(): void {
   // pin (Customize → Settings). The value must be an ENABLED provider
   // (in ALLOWED_SANDBOX_PROVIDERS and with its API key configured), or null/'' to clear
   // (follow the platform default/distribution). Bypasses the distribution weights by
-  // design — pin a project to platinum even when platinum's weight is 0. Same auth as
-  // the experimental toggle (project 'manage' + project.settings.write for agents).
+  // design — pin a project to platinum even when platinum's weight is 0. Human callers
+  // only: project 'manage' + project.settings.write, and never a session principal —
+  // the pin routes EVERY new session in the project (KRTX-1681: a security-audit
+  // agent pinned its whole project to daytona to unblock its own task).
   projectsApp.openapi(
     createRoute({
       method: 'patch',
@@ -331,8 +329,21 @@ export function registerProjectSettingsRoutes(): void {
       // Floor 'read'; project.settings.write is the gate below.
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
+      // A session-bound or agent-grant token may not flip a project-wide
+      // provider pin, whatever its kortix_permissions: it reroutes every new
+      // session in the project, and the agent that wants a different runtime has
+      // the per-request `provider` on session create instead. No grant unlocks
+      // this (agent_session_forbidden); the web UI and a human's PAT pass.
+      if (isProjectSessionPrincipal(c)) {
+        return c.json(
+          {
+            error: 'Agent sessions cannot change the project sandbox provider — ask a person to change it in Customize → Settings → Sandbox',
+            code: 'agent_session_forbidden',
+          },
+          403,
+        );
+      }
       await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
-      assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
 
       // Route the change through the durable prepare→verify→activate workflow.
       // Switching to a safe target (null clear, the platform-default provider, or

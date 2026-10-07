@@ -1,5 +1,5 @@
 import type { QueuedDraft } from '@/stores/queued-draft-store';
-import type { SessionPrompt } from '@kortix/sdk';
+import type { SessionPrompt, SessionPromptDelivery, SessionPromptSteerFallback } from '@kortix/sdk';
 import { isOptimisticSessionPrompt } from '@kortix/sdk/react';
 import {
   parseAgentMentionReferences,
@@ -53,6 +53,13 @@ export interface QueueRow {
   lastError?: string;
   /** The server can still remove this prompt. */
   removable: boolean;
+  /** The running turn reads this prompt at its next step (`delivery: 'steer'`). */
+  steer?: true;
+  /** Why a steer prompt waits for the turn to end instead. */
+  steerFallback?: SessionPromptSteerFallback;
+  /** "Stop and send" can turn it into Quick Queue: it is still waiting and
+   *  not yet on the wire. */
+  interruptible: boolean;
   /** Up (or the pencil) opens it in the composer for an in-place edit. */
   takeBackEligible: boolean;
   /** The prompt's whole text as the server holds it: quotes, file and
@@ -129,6 +136,8 @@ export function projectQueueRows(input: {
     const attachmentCount = draft
       ? draft.files.length
       : Math.max(prompt.attachments?.length ?? 0, cleaned.fileCount);
+    // A server built before steering lists no `delivery`: its row is a queue row.
+    const steer = prompt.delivery === 'steer';
 
     rows.push({
       id: prompt.prompt_id,
@@ -137,7 +146,11 @@ export function projectQueueRows(input: {
       attachmentCount,
       state,
       ...(state === 'failed' && prompt.last_error ? { lastError: prompt.last_error } : {}),
-      removable: state === 'queued' || state === 'failed',
+      // A steered prompt on the wire is still unread: the server takes it back.
+      removable: state === 'queued' || state === 'failed' || (steer && state === 'delivering'),
+      ...(steer ? { steer: true as const } : {}),
+      ...(prompt.steer_fallback ? { steerFallback: prompt.steer_fallback } : {}),
+      interruptible: state === 'queued',
       // The edit changes the text in place on the server; files stay on the row.
       takeBackEligible: state === 'queued' && editText !== null,
       rawText,
@@ -156,6 +169,8 @@ export function projectQueueRows(input: {
       attachmentCount: draft.files.length,
       state: 'sending',
       removable: false,
+      ...(draft.delivery === 'steer' ? { steer: true as const } : {}),
+      interruptible: false,
       takeBackEligible: false,
       rawText: draft.text,
       editText: null,
@@ -163,4 +178,20 @@ export function projectQueueRows(input: {
   }
 
   return { rows, heldCount };
+}
+
+/**
+ * How a composer send reaches the session (D9.1).
+ *
+ * - Enter while a turn runs: `steer`. The running turn reads it at its next
+ *   step. It waits in the list above the composer until the transcript has it.
+ * - Cmd/Ctrl+Enter (`composer`): `queue` (Queue List).
+ * - Enter while idle: unchanged. It starts a turn and paints in the transcript.
+ */
+export function composerSendDelivery(
+  placement: 'transcript' | 'composer',
+  busy: boolean,
+): { placement: 'transcript' | 'composer'; delivery?: SessionPromptDelivery } {
+  if (placement === 'composer') return { placement, delivery: 'queue' };
+  return busy ? { placement: 'composer', delivery: 'steer' } : { placement };
 }

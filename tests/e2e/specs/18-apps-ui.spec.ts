@@ -439,6 +439,10 @@ test.describe('18 — Kortix Apps UI', () => {
       await page.reload({ waitUntil: 'domcontentloaded' });
       const thumbnail = seededCard.getByTestId('app-live-preview');
       await expect(thumbnail).toBeVisible();
+      // The synthetic preview shares the page origin, so the frame keeps an
+      // opaque origin: scripts run, `allow-same-origin` does not.
+      await expect(thumbnail).toHaveAttribute('sandbox', /allow-scripts/);
+      await expect(thumbnail).not.toHaveAttribute('sandbox', /allow-same-origin/);
       const scaleMatchesTile = () => thumbnail.evaluate((frame) => {
         const tile = frame.parentElement;
         if (!tile) throw new Error('preview has no tile');

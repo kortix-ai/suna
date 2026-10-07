@@ -12,6 +12,8 @@ import {
   requestedPromptAgent,
 } from '../pre-prompt-env-sync';
 import { isNonIdempotentSessionWrite } from '../prompt-dedupe';
+import { canonicalProxyPath } from '../proxy-path';
+import { carriesSessionData } from '../session-data-ports';
 import {
   agentSwitchRefusal,
   assertPreviewSandboxAccess,
@@ -97,6 +99,19 @@ export async function forwardToSandbox(
   // `redirectPrefix`/`X-Forwarded-Prefix` DO still key on the client-addressed
   // `port`, and that one is genuinely on purpose: the prefix must reflect the
   // URL the client actually used (/4096).
+  // One spelling of the path for every gate AND the upstream hop. The daemon
+  // decodes `prompt%5Fasync` to `prompt_async`; a gate reading the raw text
+  // would skip the agent-switch check, dedupe and the turn ledger. See
+  // `../proxy-path.ts`. Strict on the session-data ports, where an ambiguous
+  // path is refused; an app port keeps every escape it relies on.
+  const strictPath =
+    carriesSessionData(port) ||
+    carriesSessionData(routeSandboxIngress(record, { port, path: remainingPath, transport: 'http' }).effectivePort);
+  const canonicalPath = canonicalProxyPath(remainingPath, strictPath);
+  if (canonicalPath === null) {
+    return jsonProxyError({ error: 'invalid request path', code: 'INVALID_PATH' }, 400, origin);
+  }
+  remainingPath = canonicalPath;
   const ingressRequest = {
     port,
     path: remainingPath,

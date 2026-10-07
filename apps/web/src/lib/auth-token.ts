@@ -21,6 +21,7 @@
  */
 
 import { createClient } from '@/lib/supabase/client';
+import { sleep } from '@kortix/shared/guards';
 
 /** Max retries for token acquisition (getSession + refreshSession fallback) */
 const TOKEN_MAX_RETRIES = 2;
@@ -69,11 +70,10 @@ let inflightEpoch = 0;
  * mocking `@/lib/supabase/client` (a process-wide `mock.module` in this repo
  * — see `sign-out-sequence.test.ts`'s doc comment for why DI is preferred).
  */
-let fetchTokenImpl: () => Promise<string | null> = () => fetchToken();
+let fetchTokenImpl: (force: boolean) => Promise<string | null> = (force) => fetchToken(force);
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+/** Set by a 401: the next real fetch skips the stored session and refreshes it. */
+let forceRefreshNext = false;
 
 /**
  * Get the current Supabase access token with caching + deduplication.
@@ -112,7 +112,9 @@ export async function getSupabaseAccessToken(): Promise<string | null> {
     // time it resolves, and this call's result is stale relative to
     // whatever that write established.
     inflightEpoch = authEpoch;
-    inflight = fetchTokenImpl();
+    const force = forceRefreshNext;
+    forceRefreshNext = false;
+    inflight = fetchTokenImpl(force);
   }
   const epochAtStart = inflightEpoch;
   const pending = inflight;
@@ -208,13 +210,31 @@ export function setBootstrapAuthToken(token: string | null): void {
 }
 
 /**
+ * The SDK's 401 hook (`getToken.invalidate`). Drops the rejected token and
+ * makes the next read a forced Supabase refresh. Single flight: once the cache
+ * holds a different token (or a refresh is already in flight and the cache is
+ * empty) a late 401 on the old token changes nothing.
+ */
+function invalidateRejectedToken(rejectedToken: string): void {
+  if (bootstrapToken === rejectedToken) bootstrapToken = null;
+  else if (cachedToken !== rejectedToken) return;
+  forceRefreshNext = true;
+  setCachedAuthToken(null);
+}
+
+/** `getToken` for `configureKortix`: the cached getter plus the 401 hook. */
+export const kortixGetToken = Object.assign(() => getSupabaseAccessToken(), {
+  invalidate: invalidateRejectedToken,
+});
+
+/**
  * Test-only: point `fetchTokenImpl` at a caller-supplied stand-in, or restore
  * the real `fetchToken` when called with no argument / `undefined`. See the
  * doc comment on `fetchTokenImpl` for why this exists instead of a
  * `mock.module('@/lib/supabase/client', ...)`.
  */
-export function __setFetchTokenForTests(impl?: () => Promise<string | null>): void {
-  fetchTokenImpl = impl ?? (() => fetchToken());
+export function __setFetchTokenForTests(impl?: (force: boolean) => Promise<string | null>): void {
+  fetchTokenImpl = impl ?? ((force) => fetchToken(force));
 }
 
 /**
@@ -230,7 +250,8 @@ export function __resetAuthTokenCacheForTests(): void {
   lastClearEpoch = 0;
   inflight = null;
   inflightEpoch = 0;
-  fetchTokenImpl = () => fetchToken();
+  forceRefreshNext = false;
+  fetchTokenImpl = (force) => fetchToken(force);
 }
 
 /**
@@ -251,8 +272,21 @@ function isJwtExpired(token: string, skewSeconds = 30): boolean {
 }
 
 /** Internal: actually fetch the token from Supabase with retries. */
-async function fetchToken(): Promise<string | null> {
+async function fetchToken(force = false): Promise<string | null> {
   const supabase = createClient();
+
+  // The API rejected the stored session's token (rotated or revoked server
+  // side) though its `exp` is still in the future: only a refresh replaces it.
+  if (force) {
+    try {
+      const {
+        data: { session: refreshed },
+      } = await supabase.auth.refreshSession();
+      if (refreshed?.access_token) return refreshed.access_token;
+    } catch {
+      // Fall through to the normal read: the session may be gone.
+    }
+  }
 
   for (let attempt = 0; attempt <= TOKEN_MAX_RETRIES; attempt++) {
     try {

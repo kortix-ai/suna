@@ -1,10 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { API_URL } from '@/api/config';
+import {
+    cancelAccountDeletion,
+    deleteAccountImmediately,
+    getAccountDeletionStatus,
+    requestAccountDeletion,
+} from '@kortix/sdk';
 import { supabase } from '@/api/supabase';
 import { sessionExpiry } from '@/lib/auth/session-expiry-monitor';
 
-// Ported from web's use-account-deletion.ts (commit 325e62d).
-// Talks to the same backend routes mounted at /v1/account/*.
+// Backed by the `@kortix/sdk` account-lifecycle calls (/v1/account/*): deadline,
+// 401 replay and typed `ApiError` come from the SDK transport.
 
 export interface AccountDeletionStatus {
     has_pending_deletion: boolean;
@@ -42,22 +47,15 @@ const UNSUPPORTED_STATUS: AccountDeletionStatus = {
     supported: false,
 };
 
-async function getAuthHeaders() {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) {
-        throw new Error('Not authenticated');
-    }
-    return {
-        'Authorization': `Bearer ${session.access_token}`,
-        'Content-Type': 'application/json',
-    };
-}
+const NOT_AVAILABLE = 'Account deletion is not available in this environment yet.';
 
-async function safeJson(response: Response): Promise<any> {
+/** A 404 means the endpoint is not mounted (self-hosted without billing). */
+async function mutate<T>(run: () => Promise<T>): Promise<T> {
     try {
-        return await response.json();
-    } catch {
-        return null;
+        return await run();
+    } catch (error) {
+        if ((error as { status?: number } | null)?.status === 404) throw new Error(NOT_AVAILABLE);
+        throw error;
     }
 }
 
@@ -65,31 +63,14 @@ export function useAccountDeletionStatus(options?: { enabled?: boolean }) {
     return useQuery<AccountDeletionStatus>({
         queryKey: ACCOUNT_DELETION_QUERY_KEY,
         queryFn: async () => {
-            const headers = await getAuthHeaders();
-
-            const response = await fetch(`${API_URL}/account/deletion-status`, {
-                headers,
-            });
-
-            // 404 = endpoint not mounted (self-hosted without billing)
-            if (response.status === 404) {
-                return UNSUPPORTED_STATUS;
+            let data: Awaited<ReturnType<typeof getAccountDeletionStatus>>;
+            try {
+                data = await getAccountDeletionStatus();
+            } catch {
+                return { ...UNSUPPORTED_STATUS, supported: true };
             }
-
-            if (!response.ok) {
-                return {
-                    ...UNSUPPORTED_STATUS,
-                    supported: true,
-                };
-            }
-
-            const data = (await safeJson(response)) as Partial<AccountDeletionStatus> | null;
-            if (!data) {
-                return {
-                    ...UNSUPPORTED_STATUS,
-                    supported: true,
-                };
-            }
+            // null = 404: endpoint not mounted (self-hosted without billing)
+            if (!data) return UNSUPPORTED_STATUS;
 
             return {
                 has_pending_deletion: !!data.has_pending_deletion,
@@ -110,26 +91,8 @@ export function useRequestAccountDeletion() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async (reason?: string) => {
-            const headers = await getAuthHeaders();
-
-            const response = await fetch(`${API_URL}/account/request-deletion`, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify({ reason: reason || 'User requested deletion' }),
-            });
-
-            if (response.status === 404) {
-                throw new Error('Account deletion is not available in this environment yet.');
-            }
-
-            if (!response.ok) {
-                const error = await safeJson(response);
-                throw new Error(error?.message || error?.error || 'Failed to request account deletion');
-            }
-
-            return (await response.json()) as RequestDeletionResponse;
-        },
+        mutationFn: async (reason?: string) =>
+            (await mutate(() => requestAccountDeletion(reason || 'User requested deletion'))) as RequestDeletionResponse,
         onSuccess: (data) => {
             queryClient.setQueryData<AccountDeletionStatus>(ACCOUNT_DELETION_QUERY_KEY, {
                 has_pending_deletion: true,
@@ -146,25 +109,7 @@ export function useCancelAccountDeletion() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async () => {
-            const headers = await getAuthHeaders();
-
-            const response = await fetch(`${API_URL}/account/cancel-deletion`, {
-                method: 'POST',
-                headers,
-            });
-
-            if (response.status === 404) {
-                throw new Error('Account deletion is not available in this environment yet.');
-            }
-
-            if (!response.ok) {
-                const error = await safeJson(response);
-                throw new Error(error?.message || error?.error || 'Failed to cancel account deletion');
-            }
-
-            return (await response.json()) as CancelDeletionResponse;
-        },
+        mutationFn: async () => (await mutate(() => cancelAccountDeletion())) as CancelDeletionResponse,
         onSuccess: () => {
             queryClient.setQueryData<AccountDeletionStatus>(ACCOUNT_DELETION_QUERY_KEY, {
                 has_pending_deletion: false,
@@ -181,25 +126,7 @@ export function useDeleteAccountImmediately() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async () => {
-            const headers = await getAuthHeaders();
-
-            const response = await fetch(`${API_URL}/account/delete-immediately`, {
-                method: 'DELETE',
-                headers,
-            });
-
-            if (response.status === 404) {
-                throw new Error('Account deletion is not available in this environment yet.');
-            }
-
-            if (!response.ok) {
-                const error = await safeJson(response);
-                throw new Error(error?.message || error?.error || 'Failed to delete account immediately');
-            }
-
-            return (await response.json()) as DeleteImmediatelyResponse;
-        },
+        mutationFn: async () => (await mutate(() => deleteAccountImmediately())) as DeleteImmediatelyResponse,
         onSuccess: () => {
             // Clear deletion status since account is gone
             queryClient.setQueryData<AccountDeletionStatus>(ACCOUNT_DELETION_QUERY_KEY, {

@@ -812,20 +812,18 @@ describe('projects API contract', () => {
     expect(del.status).toBe(200);
     expect(await del.json()).toEqual({ ok: true, archived: true, repo_deleted: false });
     expect(releasedAttachmentProjects).toEqual([PROJECT_ID]);
-    expect(deleteManagedRepoCalls).toEqual([]);
+    expect(deleteManagedRepoCalls.map((project) => project.projectId)).toEqual([PROJECT_ID]);
     expect(dbState.projectRows.find((project) => project.projectId === PROJECT_ID)?.status).toBe('archived');
 
     const after = await app.request(`/v1/projects/${PROJECT_ID}`);
     expect(after.status).toBe(404);
   });
 
-  test('purges a managed repository only when explicitly requested', async () => {
+  test('deletes the managed repository with the project on every delete', async () => {
     const app = createApp();
     deleteManagedRepoResult = true;
 
-    const del = await app.request(`/v1/projects/${PROJECT_ID}?purge=true`, {
-      method: 'DELETE',
-    });
+    const del = await app.request(`/v1/projects/${PROJECT_ID}`, { method: 'DELETE' });
 
     expect(del.status).toBe(200);
     expect(await del.json()).toEqual({ ok: true, archived: true, repo_deleted: true });
@@ -839,7 +837,7 @@ describe('projects API contract', () => {
     const app = createApp();
     deleteManagedRepoError = new Error('provider unavailable');
 
-    const del = await app.request(`/v1/projects/${PROJECT_ID}?purge=true`, { method: 'DELETE' });
+    const del = await app.request(`/v1/projects/${PROJECT_ID}`, { method: 'DELETE' });
 
     expect(del.status).toBe(502);
     expect(await del.json()).toEqual({ error: 'Failed to delete managed project repository' });
@@ -847,12 +845,12 @@ describe('projects API contract', () => {
     expect(dbState.projectRows.find((project) => project.projectId === PROJECT_ID)?.status).toBe('active');
   });
 
-  test('a failed attachment release answers 500 before the irreversible repository purge', async () => {
+  test('a failed attachment release answers 500 before the repository deletion', async () => {
     const app = createApp();
     deleteManagedRepoResult = true;
     releaseAttachmentsError = new Error('database unavailable');
 
-    const del = await app.request(`/v1/projects/${PROJECT_ID}?purge=true`, { method: 'DELETE' });
+    const del = await app.request(`/v1/projects/${PROJECT_ID}`, { method: 'DELETE' });
 
     expect(del.status).toBe(500);
     // The retry finds the repository and the project exactly as they were.
