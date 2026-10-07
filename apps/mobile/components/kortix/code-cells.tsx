@@ -115,6 +115,9 @@ export function CodeCells({
         textContentType="oneTimeCode"
         autoComplete="one-time-code"
         maxLength={CODE_LENGTH}
+        // The cursor is invisible: keep it at the end, so a tap on the cells
+        // never places it mid-code and backspace removes the last digit.
+        selection={{ start: value.length, end: value.length }}
         autoFocus
         caretHidden
         accessibilityLabel={accessibilityLabel}

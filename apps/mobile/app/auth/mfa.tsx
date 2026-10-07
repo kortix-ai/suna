@@ -57,9 +57,11 @@ export default function MfaScreen() {
     [code, verifyTotp, t]
   );
 
-  // The code submits itself once complete.
+  // The code submits itself once complete. Input waits while a check runs;
+  // the field stays editable so the keyboard stays open for a retry.
   const handleCodeChange = React.useCallback(
     (digits: string) => {
+      if (verifying) return;
       setCode(digits);
       setErrorMessage(null);
       if (digits.length === CODE_LENGTH && !verifying) void handleVerify(digits);
@@ -108,7 +110,7 @@ export default function MfaScreen() {
               value={code}
               onChangeText={handleCodeChange}
               invalid={!!errorMessage}
-              editable={!busy}
+              editable={!signingOut}
               accessibilityLabel={t('auth.mfa.codeLabel')}
             />
           </View>
