@@ -79,10 +79,14 @@ export async function syncAll(options: {
   const connector = kortix.project(options.projectId).connector(options.connector);
   let pages = 0;
   let args = options.args;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  // Consecutive 429s on the current page. A page that succeeds resets it.
+  let rateLimited = 0;
+  for (;;) {
     try {
+      // More than 100 pages in total throws ConnectorPageLimitError: the
+      // listing is incomplete, so the sync fails instead of reporting success.
       for await (const page of connector.paginate(options.action, args, {
-        maxPages: 50,
+        maxPages: 100 - pages,
         next: (output, current) => {
           const cursor = (output as Record<string, unknown> | null)?.[options.cursorField];
           return typeof cursor === 'string' && cursor ? { ...current, [options.cursorArg]: cursor } : undefined;
@@ -90,6 +94,7 @@ export async function syncAll(options: {
       })) {
         await options.onPage(page);
         pages += 1;
+        rateLimited = 0;
         const cursor = (page as Record<string, unknown> | null)?.[options.cursorField];
         if (typeof cursor === 'string' && cursor) args = { ...options.args, [options.cursorArg]: cursor };
       }
@@ -98,10 +103,13 @@ export async function syncAll(options: {
       // A rate limit is the one error worth waiting out: resume from the last
       // cursor after the upstream's Retry-After. Everything else needs a human.
       if (!(error instanceof ConnectorCallError) || error.upstreamStatus !== 429) throw error;
+      rateLimited += 1;
+      if (rateLimited >= 3) {
+        throw new Error(`${options.connector}.${options.action}: rate limited 3 times in a row after ${pages} pages`);
+      }
       await new Promise((resolve) => setTimeout(resolve, (error.retryAfterSeconds ?? 5) * 1000));
     }
   }
-  throw new Error(`${options.connector}.${options.action}: still rate limited after 3 attempts`);
 }
 
 // ── (c) An external script with a PAT ───────────────────────────────────────
@@ -177,7 +185,10 @@ async function main() {
   console.log(`${pages} pages`);
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+// Run main() only as a script, so a test can import syncAll.
+if (process.argv[1]?.endsWith('13-connectors-as-code.ts')) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

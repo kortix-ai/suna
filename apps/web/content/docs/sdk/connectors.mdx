@@ -278,7 +278,11 @@ try {
 
 `paginate` runs the action once per page. `next` builds the next page's args
 from this page's output, and returns `undefined` after the last page.
-`maxPages` (default 100) stops a cursor that never ends.
+`maxPages` (default 100) bounds a cursor that never ends. When `next` still
+returns args after the last allowed page, the iterator throws
+`ConnectorPageLimitError` (`code: 'max_pages_exceeded'`). Its `nextArgs` are
+the args of the first page not fetched, so a capped listing never reads as
+complete. Resume with `paginate(action, error.nextArgs, options)`.
 
 ```ts
 for await (const page of crm.paginate('list_deals', { limit: 100 }, {
@@ -289,7 +293,19 @@ for await (const page of crm.paginate('list_deals', { limit: 100 }, {
 ```
 
 A failed page throws the same errors as `run`. Each page is a separate call,
-with its own policy check and audit event.
+with its own policy check and audit event. On a `createScopedKortix` client,
+every page runs with that client's token and backend.
+
+```ts
+import { ConnectorPageLimitError } from '@kortix/sdk';
+
+try {
+  for await (const page of crm.paginate('list_deals', args, { next, maxPages: 20 })) await save(page.deals);
+} catch (error) {
+  if (error instanceof ConnectorPageLimitError) await scheduleResume(error.nextArgs);
+  else throw error;
+}
+```
 
 ## React
 

@@ -4,6 +4,7 @@ import { configureKortix } from '../../http/config';
 import {
   ConnectorApprovalPendingError,
   ConnectorCallError,
+  ConnectorPageLimitError,
   paginateConnector,
   runConnector,
 } from './connector-run';
@@ -365,11 +366,37 @@ test('paginate yields each page and follows the cursor until next returns undefi
   ]);
 });
 
-test('paginate stops at maxPages', async () => {
+test('paginate throws ConnectorPageLimitError with the pending args when maxPages ends a cursor that continues', async () => {
   reply({ body: { ok: true, data: { next: 'again' }, binding: 'openapi', upstream_status: 200 } });
+  const seen: unknown[] = [];
+  const error = await rejection(
+    (async () => {
+      for await (const page of paginateConnector<{ next: string }>('p', 'crm', 'list', { limit: 5 }, {
+        next: (page, args) => ({ ...args, cursor: page.next }),
+        maxPages: 2,
+      })) {
+        seen.push(page);
+      }
+    })(),
+  );
+  expect(seen).toHaveLength(2);
+  expect(requests).toHaveLength(2);
+  expect(error).toBeInstanceOf(ConnectorPageLimitError);
+  expect(error.code).toBe('max_pages_exceeded');
+  expect(error.connector).toBe('crm');
+  expect(error.action).toBe('list');
+  expect(error.maxPages).toBe(2);
+  expect(error.nextArgs).toEqual({ limit: 5, cursor: 'again' });
+});
+
+test('paginate completes when the last page is exactly maxPages', async () => {
+  replies = [
+    { body: { ok: true, data: { next: 'b' }, binding: 'openapi', upstream_status: 200 } },
+    { body: { ok: true, data: { next: null }, binding: 'openapi', upstream_status: 200 } },
+  ];
   let count = 0;
-  for await (const _page of paginateConnector<{ next: string }>('p', 'crm', 'list', {}, {
-    next: (page) => ({ cursor: page.next }),
+  for await (const _page of paginateConnector<{ next: string | null }>('p', 'crm', 'list', {}, {
+    next: (page) => (page.next ? { cursor: page.next } : undefined),
     maxPages: 2,
   })) {
     count += 1;

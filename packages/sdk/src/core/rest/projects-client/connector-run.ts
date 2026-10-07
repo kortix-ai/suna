@@ -125,6 +125,30 @@ export class ConnectorApprovalPendingError extends Error {
   }
 }
 
+/**
+ * {@link paginateConnector} reached `maxPages` and `next` still returned args:
+ * the listing is incomplete. Thrown after the last allowed page was consumed.
+ * Resume with `paginate(action, error.nextArgs, options)`.
+ */
+export class ConnectorPageLimitError extends Error {
+  readonly code = 'max_pages_exceeded';
+  connector: string;
+  action: string;
+  maxPages: number;
+  /** The args of the first page not fetched. */
+  nextArgs: Record<string, unknown>;
+
+  constructor(connector: string, action: string, maxPages: number, nextArgs: Record<string, unknown>) {
+    super(`${connector}.${action} has more than ${maxPages} pages; resume with nextArgs`);
+    this.name = 'ConnectorPageLimitError';
+    this.connector = connector;
+    this.action = action;
+    this.maxPages = maxPages;
+    this.nextArgs = nextArgs;
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+
 const str = (value: unknown): string | null => (typeof value === 'string' && value ? value : null);
 
 function reasonCode(reason: string): string {
@@ -229,14 +253,19 @@ export interface ConnectorPaginateOptions<O, A> extends ConnectorCallOptions {
    * `undefined` or `null` after the last page.
    */
   next: (page: O, args: A) => A | null | undefined;
-  /** Stop after this many pages even when `next` returns args. Default 100. */
+  /**
+   * The most pages to fetch. Default 100. When `next` still returns args after
+   * the last allowed page, the iterator throws {@link ConnectorPageLimitError}
+   * with those args, so a capped listing never reads as complete.
+   */
   maxPages?: number;
 }
 
 /**
  * Yield the `output` of each page of `<slug>.<action>`. Each page is one
  * {@link runConnector} call with the same options, so a failed page throws the
- * same typed errors.
+ * same typed errors. Reaching `maxPages` with more pages left throws
+ * {@link ConnectorPageLimitError}.
  */
 export async function* paginateConnector<
   O = unknown,
@@ -250,7 +279,8 @@ export async function* paginateConnector<
 ): AsyncGenerator<O, void, undefined> {
   const { next, maxPages = 100, ...callOptions } = options;
   let pageArgs: A | null | undefined = args;
-  for (let page = 0; pageArgs && page < maxPages; page++) {
+  for (let page = 0; pageArgs; page++) {
+    if (page >= maxPages) throw new ConnectorPageLimitError(slug, action, maxPages, pageArgs);
     const output: O = await runConnector<O>(projectId, slug, action, pageArgs, callOptions);
     yield output;
     pageArgs = next(output, pageArgs);

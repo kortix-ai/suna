@@ -39,7 +39,7 @@ export KORTIX_PROJECT_ID=...                      # the project your agent lives
 | 10 | [`10-deploy-app.ts`](10-deploy-app.ts) | Create a stable App URL and deploy a public OCI image through the provider-neutral Apps API. | `bun run examples/10-deploy-app.ts` |
 | 11 | [`11-sign-in-with-kortix.ts`](11-sign-in-with-kortix.ts) | **Sign in with Kortix**: gate your own app behind Kortix identity with `createKortixAuth` — one catch-all route, `viewer()`, and a request-scoped client acting as the viewer. | `bun run examples/11-sign-in-with-kortix.ts` |
 | 12 | [`12-session-labels.ts`](12-session-labels.ts) | **Session labels and metadata**: set labels and metadata at create, update them (`null` removes a metadata key), list by label server-side, and render conditionally. | `bun run examples/12-session-labels.ts` |
-| 13 | [`13-connectors-as-code.ts`](13-connectors-as-code.ts) | **Connectors as code**: `project(id).connector(slug)` with `run`, `describe`, `accounts` and `paginate`; typed `ConnectorCallError` / `ConnectorApprovalPendingError`. Three callers: a browser App as its viewer, an unattended sync that waits out a 429, and a PAT script. | `KORTIX_CONNECTOR=github bun run examples/13-connectors-as-code.ts` |
+| 13 | [`13-connectors-as-code.ts`](13-connectors-as-code.ts) | **Connectors as code**: `project(id).connector(slug)` with `run`, `describe`, `accounts` and `paginate`; typed `ConnectorCallError` / `ConnectorApprovalPendingError`. Three callers: a browser App as its viewer, an unattended sync that waits out consecutive 429s and fails on a listing longer than 100 pages, and a PAT script. | `KORTIX_CONNECTOR=github bun run examples/13-connectors-as-code.ts` |
 
 ## Kortix as a Backend
 

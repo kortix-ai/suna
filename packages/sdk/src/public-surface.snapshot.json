@@ -17,6 +17,7 @@
     "COST_MARKUP",
     "ConnectorApprovalPendingError",
     "ConnectorCallError",
+    "ConnectorPageLimitError",
     "DEFAULT_CONTEXT_TOOL_TRIGGER_LABELS",
     "DEFAULT_TRANSCRIPT_OPTIONS",
     "DESTRUCTIVE_PHASES",
@@ -1892,6 +1893,7 @@
   "./projects-client": [
     "ConnectorApprovalPendingError",
     "ConnectorCallError",
+    "ConnectorPageLimitError",
     "FEATURE_FLAG_KEYS",
     "PROJECT_SESSION_NAME_LOOKUP_LIMIT",
     "PROJECT_SESSION_PAGE_DEFAULT_LIMIT",

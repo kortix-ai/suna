@@ -82,7 +82,8 @@ r.output?.issues; // typed from the action's output schema
 One connector as a handle: `run` returns the output itself and throws
 `ConnectorCallError` (`code`, `connectUrl`, `availableAccounts`,
 `upstreamStatus`, `retryAfterSeconds`) or `ConnectorApprovalPendingError`;
-`paginate` follows a cursor; `useConnectorQuery` (`@kortix/sdk/react`) caches a
+`paginate` follows a cursor and throws `ConnectorPageLimitError` (with
+`nextArgs`) past `maxPages`; `useConnectorQuery` (`@kortix/sdk/react`) caches a
 read. Guide: `/docs/sdk/connectors`; runnable: `examples/13-connectors-as-code.ts`.
 
 ```ts
