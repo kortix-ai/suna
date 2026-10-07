@@ -187,7 +187,7 @@ function runInstaller(
   }
   env.HOME = home;
   env.TMPDIR = resolve(home, 'tmp');
-  env.PATH = [...pathParts, env.PATH as string].join(':');
+  env.PATH = [...pathParts, process.env.PATH ?? ''].join(':');
   env.KORTIX_BIN_DIR = resolve(home, 'bin');
   env.NO_COLOR = '1';
   return new Promise((done, fail) => {
