@@ -1,20 +1,24 @@
 {
-  "source_hash": "fd11f4703fa503d9d25133ca6582859a9e805351a1f04263d4be46851bddab19",
+  "source_hash": "468cdbd3904ae56305bd8ebd641f08247ebfe933ec296755afd6ac2a1be68472",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-07T053500Z-a-test-seam-only-protects-the-box-if-every-path-to-a-real-write-is-closed.md",
+    "apps/api/src/config.ts",
+    "apps/api/src/oauth/index.ts",
     "packages/sdk/src/core/turns/text-scan.test.ts",
     "packages/sdk/src/core/turns/turns.test.ts",
     "scripts/install.sh",
-    "tests/unit/install-sh.test.ts"
+    "tests/src/core/local-stack.ts",
+    "tests/unit/install-sh.test.ts",
+    "tests/unit/vitest.config.ts"
   ],
-  "diff_hash": "06146712e322a2139490249b481941e0259770d78e4191ba4cbd4a5a78cc14de",
-  "head": "0b232e3e6bab333002bb84588afb17649136252d",
+  "diff_hash": "b6a2cd5967bc71d90e3b80ea8282802b6829726d8e227eb0fc982a126d3873ad",
+  "head": "ee937adb8d6e340d0896e6d1ef9fa6d7d4d99e7f",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-07T07:27:56.369Z"
+  "at": "2026-10-07T12:38:16.320Z"
 }
