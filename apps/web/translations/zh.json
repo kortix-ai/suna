@@ -4573,7 +4573,13 @@
       "invitationKicker": "邀请",
       "joinAccountDescription": "你将以{roleLabel}身份加入此账户，并查看所有者授予你访问权限的项目。",
       "decline": "拒绝",
-      "accept": "接受"
+      "accept": "接受",
+      "projectLabel": "项目",
+      "invitedYouToAProject": "邀请你加入一个项目",
+      "youHaveBeenInvitedToAProject": "你已受邀加入一个项目。",
+      "joinProjectDescription": "你将以{roleLabel}身份加入 {projectName}。",
+      "roleManager": "管理员",
+      "signOutAndContinue": "退出并继续"
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – 开源的 AI Operating System",

@@ -4573,7 +4573,13 @@
       "invitationKicker": "招待",
       "joinAccountDescription": "このアカウントに{roleLabel}として参加し、所有者がアクセスを許可したプロジェクトを表示できます。",
       "decline": "辞退",
-      "accept": "承諾"
+      "accept": "承諾",
+      "projectLabel": "プロジェクト",
+      "invitedYouToAProject": "があなたをプロジェクトに招待しました",
+      "youHaveBeenInvitedToAProject": "プロジェクトに招待されています。",
+      "joinProjectDescription": "{projectName} に{roleLabel}として参加します。",
+      "roleManager": "マネージャー",
+      "signOutAndContinue": "サインアウトして続ける"
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – オープンソースのAI Operating System",
