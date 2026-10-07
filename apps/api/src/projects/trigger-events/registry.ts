@@ -1,6 +1,7 @@
 import { composioEventSource } from './composio';
 import type { EventSourceProvider } from './types';
 
+// replica-local: test-only provider overrides (setEventSourceForTest); production never writes it.
 const overrides = new Map<string, EventSourceProvider | null>();
 
 export function eventSourceFor(providerId: string): EventSourceProvider | null {

@@ -10,14 +10,14 @@ import {
   projects,
 } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { assignRole, SYSTEM_ACTOR } from '../iam/assignments';
-import { clearAuthorizeCaches } from '../iam/authorize';
-import type { GitTriggerSpec } from '../projects/trigger-types';
+import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
+import { clearAuthorizeCaches } from '../../iam/authorize';
+import type { GitTriggerSpec } from '../trigger-types';
 
 const fires: Array<Record<string, any>> = [];
 let fireStatus: 'fired' | 'failed' | 'deduped' = 'fired';
-const actualTriggers = await import('../projects/lib/triggers');
-mock.module('../projects/lib/triggers', () => ({
+const actualTriggers = await import('../lib/triggers');
+mock.module('../lib/triggers', () => ({
   ...actualTriggers,
   fireGitTrigger: async (input: Record<string, any>) => {
     fires.push(input);

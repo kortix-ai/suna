@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { config } from '../config';
-import { composioConfigured, composioUserId, getComposioRuntime } from '../connectors/composio';
+import { config } from '../../config';
+import { composioConfigured, composioUserId, getComposioRuntime } from '../../connectors/composio';
 import { EventConnectionNotReadyError, type EventDelivery, EventSignatureError, type EventSourceProvider, type EventTypeInfo, type ProviderNotice } from './types';
 
 const TOLERANCE_S = 5 * 60;
@@ -56,6 +56,24 @@ function deliveryOf(type: unknown, configSchema: Record<string, unknown>): Event
   return properties && 'interval' in properties ? 'poll' : null;
 }
 
+/**
+ * The person-readable reason inside a Composio API error (`400 {"error":{"message":…}}`),
+ * and inside that, the upstream app's own validation message when Composio nests it.
+ */
+export function composioErrorMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  try {
+    const message = JSON.parse(raw.slice(raw.indexOf('{'))).error?.message;
+    if (typeof message !== 'string') return raw;
+    const nestedAt = message.indexOf('{');
+    if (nestedAt < 0) return message;
+    const detail = JSON.parse(message.slice(nestedAt)).errors?.[0]?.message;
+    return typeof detail === 'string' ? `${message.slice(0, nestedAt).replace(/[\s:]+$/, '')}: ${detail}` : message;
+  } catch {
+    return raw;
+  }
+}
+
 export const composioEventSource: EventSourceProvider = {
   id: 'composio',
   configured: () => composioConfigured(),
@@ -88,8 +106,12 @@ export const composioEventSource: EventSourceProvider = {
     if (!connectedAccountId) {
       throw new EventConnectionNotReadyError(`Finish connecting the shared ${connection.app} account to activate this trigger.`);
     }
-    const res = await triggers().create(composioUserId(connection.connectionId), type, { connectedAccountId, triggerConfig });
-    return { externalId: res.triggerId };
+    try {
+      const res = await triggers().create(composioUserId(connection.connectionId), type, { connectedAccountId, triggerConfig });
+      return { externalId: res.triggerId };
+    } catch (error) {
+      throw new Error(composioErrorMessage(error));
+    }
   },
 
   async unsubscribe(externalId) {

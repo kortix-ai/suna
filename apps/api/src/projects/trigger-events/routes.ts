@@ -1,9 +1,9 @@
 /** Public ingress for app events: `POST /v1/webhooks/events/:provider`, authenticated by the provider's signature. */
 import { createRoute, z } from '@hono/zod-openapi';
 import { bodyLimit } from 'hono/body-limit';
-import { errors, json } from '../openapi';
-import { projectWebhooksApp } from '../projects/lib/app';
-import { bindIntegrationPrincipal } from '../shared/audit-scope';
+import { errors, json } from '../../openapi';
+import { projectWebhooksApp } from '../lib/app';
+import { bindIntegrationPrincipal } from '../../shared/audit-scope';
 import { applyNotices, deliverEvents } from './deliver';
 import { eventSourceFor } from './registry';
 import { EventSignatureError } from './types';

@@ -1,5 +1,5 @@
 /** Actions on one connector connection: rename, credential, revoke, activate, default, connect. */
-import { reconcileEventSubscriptionsFromCatalog } from '../../trigger-events/subscriptions';
+import { reconcileEventSubscriptionsFromCatalog } from '../trigger-events/subscriptions';
 import { createRoute, z } from '@hono/zod-openapi';
 import {
   RenameConnectionInputSchema,

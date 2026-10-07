@@ -6,12 +6,12 @@
 import { connectorConnections, connectors, projectTriggerRuntime } from '@kortix/db';
 import { createHash } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
-import { defaultConnectionIdForConnector } from '../connectors/credentials';
-import { logger } from '../lib/logger';
-import { connectionRowIsReachable } from '../projects/lib/connection-access';
-import { loadConnectionAudience } from '../projects/lib/connection-audience';
-import type { GitTriggerSpec } from '../projects/trigger-types';
-import { db } from '../shared/db';
+import { defaultConnectionIdForConnector } from '../../connectors/credentials';
+import { logger } from '../../lib/logger';
+import { connectionRowIsReachable } from '../lib/connection-access';
+import { loadConnectionAudience } from '../lib/connection-audience';
+import type { GitTriggerSpec } from '../trigger-types';
+import { db } from '../../shared/db';
 import { eventSourceFor } from './registry';
 import * as store from './store';
 import { EventConnectionNotReadyError, type EventSourceConnection, type EventSourceProvider } from './types';

@@ -27,11 +27,9 @@ import {
 } from '../lib/triggers';
 import { validateWebhookSecretConfiguration } from '../lib/webhook-secret-policy';
 import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
-import { connectorInfo, eventPayload } from '../../trigger-events/deliver';
-import { eventSourceFor } from '../../trigger-events/registry';
-import { reconcileEventSubscriptions } from '../../trigger-events/subscriptions';
-import { connectors } from '@kortix/db';
-import type { EventTypeInfo } from '../../trigger-events/types';
+import { connectorInfo, eventPayload } from '../trigger-events/deliver';
+import { listConnectorEventTypes } from '../trigger-events/catalog';
+import { reconcileEventSubscriptions } from '../trigger-events/subscriptions';
 import {
   PRIVATE_TRIGGER_SESSION_ACCESS,
   parseTriggerSessionAccess,
@@ -79,10 +77,6 @@ const TRIGGER_MANIFEST_KEYS = [
   'event',
   'event_config',
 ] as const;
-
-/** Provider event catalogs change rarely and cost several provider calls. */
-const EVENT_TYPE_CACHE_MS = 10 * 60_000;
-const eventTypeCache = new Map<string, { expires: number; items: EventTypeInfo[] }>();
 
 export function registerTriggersRoutes(): void {
   // GET /v1/projects/:projectId/triggers
@@ -172,31 +166,14 @@ export function registerTriggersRoutes(): void {
       );
       const slug = c.req.query('connector')?.trim();
       if (!slug) return c.json({ error: 'connector is required' }, 400);
-      const [connector] = await db
-        .select({ provider: connectors.providerType })
-        .from(connectors)
-        .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
-        .limit(1);
-      if (!connector) return c.json({ error: `Connector "${slug}" not found` }, 404);
-      const { app } = await connectorInfo(projectId, slug);
-      const provider = eventSourceFor(connector.provider);
-      if (!provider || !provider.configured() || !app) {
-        return c.json({ error: 'event_source_unavailable' }, 409);
-      }
-      const key = `${provider.id}:${app}`;
-      let types = eventTypeCache.get(key);
-      if (!types || types.expires < Date.now()) {
-        try {
-          types = { expires: Date.now() + EVENT_TYPE_CACHE_MS, items: await provider.listEventTypes(app) };
-        } catch (error) {
-          return c.json({ error: `Could not list ${app} events: ${error instanceof Error ? error.message : String(error)}` }, 502);
-        }
-        eventTypeCache.set(key, types);
-      }
+      const catalog = await listConnectorEventTypes(projectId, slug);
+      if (catalog.kind === 'connector_not_found') return c.json({ error: `Connector "${slug}" not found` }, 404);
+      if (catalog.kind === 'unavailable') return c.json({ error: 'event_source_unavailable' }, 409);
+      if (catalog.kind === 'provider_error') return c.json({ error: `Could not list events: ${catalog.message}` }, 502);
       return c.json({
-        provider: provider.id,
-        app,
-        event_types: types.items.map((t) => ({
+        provider: catalog.provider,
+        app: catalog.app,
+        event_types: catalog.items.map((t) => ({
           type: t.type,
           name: t.name,
           description: t.description,

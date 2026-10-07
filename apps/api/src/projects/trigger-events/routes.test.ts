@@ -13,7 +13,7 @@ mock.module('./deliver', () => ({
   },
 }));
 
-const { projectWebhooksApp } = await import('../projects/lib/app');
+const { projectWebhooksApp } = await import('../lib/app');
 const { EVENT_INGRESS_MAX_BYTES, registerEventIngressRoutes } = await import('./routes');
 const { setEventSourceForTest } = await import('./registry');
 const { EventSignatureError } = await import('./types');

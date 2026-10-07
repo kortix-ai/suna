@@ -42,7 +42,7 @@ import {
 } from '../projects/secrets';
 import { type GitTriggerSpec, extractTriggers, readManifest } from '../projects/triggers';
 import { reconcileProjectTriggerRuntime } from '../projects/trigger-runtime-catalog';
-import { reconcileEventSubscriptions } from '../trigger-events/subscriptions';
+import { reconcileEventSubscriptions } from '../projects/surface';
 import { db } from '../shared/db';
 import { isUniqueViolation } from '../shared/postgres-errors';
 import { ensureChannelConnectorDeclared, removeChannelConnectorDeclared } from './channel-manifest';

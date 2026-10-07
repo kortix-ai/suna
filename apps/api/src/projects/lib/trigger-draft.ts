@@ -4,7 +4,7 @@ import { formatDurationSeconds } from '@kortix/manifest-schema';
 import { and, eq, inArray } from 'drizzle-orm';
 import { config } from '../../config';
 import { db } from '../../shared/db';
-import * as store from '../../trigger-events/store';
+import * as store from '../trigger-events/store';
 import { ensureProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { validateTriggerCron, validateTriggerTimezone } from '../trigger-schedule';
 import { GIT_TRIGGER_SESSION_MODES, type GitMonitorMode, type GitTriggerEventFields, type GitTriggerSessionMode, type GitTriggerSpec, type GitTriggerType, type LoadedTriggers, MANIFEST_FILENAME, type ParsedManifest, defaultTriggerSessionMode, eventOnlyKeyError, extractTriggers, parseEventFields, parseMonitorFields, readManifest, triggerSpecToTomlEntry } from '../triggers';

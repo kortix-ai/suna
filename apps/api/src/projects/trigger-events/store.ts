@@ -1,6 +1,6 @@
 import { connectorConnections, projectTriggerEventSubscriptions as subs } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { db } from '../../shared/db';
 
 export type EventSubscriptionRow = typeof subs.$inferSelect;
 export type EventSubscriptionStatus = 'active' | 'needs_connection' | 'error';

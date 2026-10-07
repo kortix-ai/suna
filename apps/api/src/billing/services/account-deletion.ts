@@ -61,7 +61,7 @@ import {
   claimDeletionRequest,
   releaseDeletionRequest,
 } from '../repositories/account-deletion';
-import { releaseProjectEventSubscriptions } from '../../trigger-events/subscriptions';
+import { releaseProjectEventSubscriptions } from '../../projects/surface';
 
 const GRACE_PERIOD_DAYS = 14;
 const ACTIVE_DELETION_REQUEST_EXISTS = 'An active deletion request already exists for this account';

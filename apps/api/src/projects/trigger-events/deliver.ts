@@ -1,17 +1,17 @@
 /** Fans one provider delivery or notice out to the event triggers subscribed to it. */
 import { connectors, projectTriggerRuntime, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import { logger } from '../lib/logger';
+import { logger } from '../../lib/logger';
 import {
   fireGitTrigger,
   markGitTriggerFired,
   renderPromptTemplate,
   triggerFilterMatches,
   triggersPausedForProject,
-} from '../projects/lib/triggers';
-import { releaseWebhookDeliveryKey } from '../projects/lib/webhook-delivery';
-import type { GitTriggerSpec } from '../projects/trigger-types';
-import { db } from '../shared/db';
+} from '../lib/triggers';
+import { releaseWebhookDeliveryKey } from '../lib/webhook-delivery';
+import type { GitTriggerSpec } from '../trigger-types';
+import { db } from '../../shared/db';
 import * as store from './store';
 import type { EventDelivery, ProviderNotice } from './types';
 
@@ -59,14 +59,14 @@ export function eventIdempotencyKey(projectId: string, slug: string, eventId: st
 export async function connectorInfo(
   projectId: string,
   slug: string,
-): Promise<{ provider: string; app: string | null }> {
+): Promise<{ found: boolean; provider: string; app: string | null }> {
   const [connector] = await db
     .select({ provider: connectors.providerType, config: connectors.config })
     .from(connectors)
     .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
     .limit(1);
   const app = (connector?.config as Record<string, unknown> | undefined)?.app;
-  return { provider: connector?.provider ?? 'unknown', app: typeof app === 'string' ? app : null };
+  return { found: Boolean(connector), provider: connector?.provider ?? 'unknown', app: typeof app === 'string' ? app : null };
 }
 
 async function deliverToRow(

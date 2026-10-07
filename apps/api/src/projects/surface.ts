@@ -45,3 +45,10 @@ export {
   loadManifestForEdit,
   commitManifest,
 } from './lib/triggers';
+
+// App-event subscriptions (consumed by connector sync/connect and account deletion).
+export {
+  reconcileEventSubscriptions,
+  reconcileEventSubscriptionsFromCatalog,
+  releaseProjectEventSubscriptions,
+} from './trigger-events/subscriptions';

@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { createHmac } from 'node:crypto';
 import { Composio } from '@composio/core';
-import { config } from '../config';
-import { setComposioRuntimeForTest, type ComposioRuntime } from '../connectors/composio';
-import { composioEventSource as provider } from './composio';
+import { config } from '../../config';
+import { setComposioRuntimeForTest, type ComposioRuntime } from '../../connectors/composio';
+import { composioEventSource as provider, composioErrorMessage } from './composio';
 import { eventSourceFor } from './registry';
 import { EventSignatureError, EventConnectionNotReadyError } from './types';
 
@@ -163,5 +163,17 @@ describe('receive: parsing', () => {
   test('unknown type is ignored; malformed JSON after a valid signature is empty', async () => {
     expect(await run(v3('composio.something.else'))).toEqual({ deliveries: [], notices: [] });
     expect(await run('not json')).toEqual({ deliveries: [], notices: [] });
+  });
+});
+
+describe('composioErrorMessage', () => {
+  test('reads the Composio message and the nested upstream validation message', () => {
+    const nested = JSON.stringify({ message: 'Validation Failed', errors: [{ message: 'The listed repositories cannot be searched.' }] });
+    const raw = `400 ${JSON.stringify({ error: { message: `Invalid polling configuration for trigger "X": ${nested}`, code: 1213 } })}`;
+    expect(composioErrorMessage(new Error(raw))).toBe('Invalid polling configuration for trigger "X": The listed repositories cannot be searched.');
+  });
+  test('a plain Composio message and a non-JSON error pass through', () => {
+    expect(composioErrorMessage(new Error('404 {"error":{"message":"Trigger not found"}}'))).toBe('Trigger not found');
+    expect(composioErrorMessage(new Error('socket hang up'))).toBe('socket hang up');
   });
 });

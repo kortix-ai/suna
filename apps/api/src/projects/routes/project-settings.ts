@@ -1,5 +1,5 @@
 /** Project settings: onboarding, deletion, feature flags, and the sandbox provider override. */
-import { releaseProjectEventSubscriptions } from '../../trigger-events/subscriptions';
+import { releaseProjectEventSubscriptions } from '../trigger-events/subscriptions';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json, lenientBody } from '../../openapi';
