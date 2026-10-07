@@ -1,4 +1,3 @@
-import { config } from '../config';
 import { logger } from '../lib/logger';
 import { runWorkerTick } from '../shared/audit-scope';
 
@@ -9,9 +8,13 @@ import { runWorkerTick } from '../shared/audit-scope';
 // executed since the schema moved to `kortix`. bootstrap.ts starts this with
 // the other singleton workers, on the elected leader only. The first tick
 // runs immediately so a new leader drains the backlog it inherited; afterwards
-// one pass a day, like the retired cron. Gated on the same billing flag as
-// the deletion routes, which are the only writers of pending requests.
-const DAY_MS = 24 * 60 * 60 * 1000;
+// one pass every 15 minutes. The auth-user-delete trigger schedules orphan
+// accounts as due-now requests, so a daily pass would leave them unreachable
+// (403) for up to a day. Idle ticks cost one indexed read. Runs with billing
+// off too: self-hosted deployments request deletions through the same routes,
+// and the auth-user-delete trigger schedules orphan accounts on every
+// deployment.
+const TICK_MS = 15 * 60 * 1000;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let stopped = true;
 let active: Promise<void> | null = null;
@@ -31,13 +34,13 @@ function schedule(delayMs: number): void {
         }),
       )
       .then(() => {
-        if (!stopped) schedule(DAY_MS);
+        if (!stopped) schedule(TICK_MS);
       });
   }, delayMs);
 }
 
 export function startAccountDeletionSchedule(): void {
-  if (!stopped || !config.KORTIX_BILLING_INTERNAL_ENABLED) return;
+  if (!stopped) return;
   stopped = false;
   schedule(0);
 }

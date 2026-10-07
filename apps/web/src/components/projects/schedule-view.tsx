@@ -233,8 +233,8 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   const triggersQuery = useQuery({
     queryKey,
     queryFn: () => listProjectTriggers(projectId),
-    refetchInterval: 10_000,
     ...contract('config'),
+    refetchInterval: 10_000,
   });
 
   const [query, setQuery] = useState('');

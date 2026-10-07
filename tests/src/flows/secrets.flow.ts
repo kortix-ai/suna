@@ -14,6 +14,7 @@ flow(
       "POST /v1/accounts/:accountId/secret-resources",
       "GET /v1/accounts/:accountId/secret-resources",
       "PUT /v1/accounts/:accountId/secret-resources/:secretId/value",
+      "POST /v1/accounts/:accountId/secret-resources/:secretId/retry",
       "DELETE /v1/accounts/:accountId/secret-resources/:secretId",
     ],
   },
@@ -47,6 +48,12 @@ flow(
         { value: "rotated-test-value" }, { params: { ...params, secretId: ids[0]! } });
       response.status(200).body().has("$.secret_id", ids[0]!);
       if ("value" in response.json<any>()) throw new Error("secret value leaked in rotation response");
+    });
+    await ctx.step("retry ends a key's cooldown for its manager; a nonmember is denied", async () => {
+      const response = await ctx.client.as(ctx.P.OWNER).post(`${path}/:secretId/retry`, {}, { params: { ...params, secretId: ids[1]! } });
+      response.status(200).body().has("$.secret_id", ids[1]!).has("$.cooldown_until", null);
+      if ("value" in response.json<any>()) throw new Error("secret value leaked in retry response");
+      (await ctx.client.as(ctx.P.NONMEMBER).post(`${path}/:secretId/retry`, {}, { params: { ...params, secretId: ids[1]! } })).status([403, 404]);
     });
     await ctx.step("delete primary; backup remains", async () => {
       (await ctx.client.as(ctx.P.OWNER).del(`${path}/:secretId`, { params: { ...params, secretId: ids[0]! } })).status(200);
@@ -357,6 +364,7 @@ flow('SEC-POOL-4', {
     'PUT /v1/accounts/:accountId/secret-resources/:secretId/access',
     'POST /v1/projects/:projectId/sessions',
     'DELETE /v1/accounts/:accountId/secret-resources/:secretId',
+    'PUT /v1/accounts/:accountId/secret-resources/:secretId/grants/:userId',
   ],
 }, async (ctx) => {
   const team = await ctx.fixtures.team();
@@ -422,6 +430,20 @@ flow('SEC-POOL-4', {
     if (!(granted.json<any>().secrets as any[]).some((secret) => secret.secret_id === secretId && secret.can_use)) throw new Error('member grant did not restore access');
     (await owner.put(accessPath, { mode: 'project', user_ids: [] }, { params: accessParams })).status(200)
       .body().has('$.access_mode', 'project');
+  });
+  await ctx.step('the grants route shares a project key only with the same checks as the access route', async () => {
+    const peer = await team.addMember('member');
+    await team.grantProjectRole(project.id, peer.userId!, 'user');
+    const outsider = await team.addMember('member');
+    const own = await ctx.client.as(member).post(path, { ...input, label: 'Member key', access_mode: 'members', user_ids: [member.userId] }, { params });
+    own.status(201);
+    const ownId = own.json<any>().secret_id as string;
+    const grant = (userId: string, as = ctx.client.as(member)) =>
+      as.put(`${path}/:secretId/grants/:userId`, {}, { params: { ...params, secretId: ownId, userId } });
+    (await grant(peer.userId!)).status(403);
+    (await grant(peer.userId!, owner)).status(200);
+    (await grant(outsider.userId!, owner)).status(400);
+    (await owner.del(`${path}/:secretId`, { params: { ...params, secretId: ownId } })).status(200);
   });
   await ctx.step('delete removes the scoped key', async () => {
     (await owner.del(`${path}/:secretId`, { params: { ...params, secretId } })).status(200);
@@ -1308,6 +1330,7 @@ flow(
       "POST /v1/projects/:projectId/secret-requests",
       "GET /v1/setup-links/secret/:token",
       "POST /v1/setup-links/secret/:token",
+      "DELETE /v1/accounts/:accountId/members/:userId",
     ],
   },
   async (ctx) => {
@@ -1424,8 +1447,60 @@ flow(
         );
       r.status(404);
     });
+
+    await ctx.step("public: replaying the used link → 409, the value is not overwritten", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post("/v1/setup-links/secret/:token", { values: { SEC7_TEST_KEY: "replayed" } }, { params: { token } });
+      r.status(409);
+    });
+
+    await ctx.step("public: a link minted by a since-removed member → 410", async () => {
+      const team = await ctx.fixtures.team();
+      const tp = await team.project();
+      const minter = await team.addMember("admin");
+      const minted = await ctx.client
+        .as(minter)
+        .post("/v1/projects/:projectId/secret-requests", { names: ["SEC7_GONE_KEY"] }, { params: { projectId: tp.id } });
+      minted.status(200);
+      const gone = minted.json<{ url: string }>().url.split("/").pop() ?? "";
+      (await ctx.client.as(ctx.P.OWNER).del("/v1/accounts/:accountId/members/:userId", {
+        params: { accountId: team.id, userId: minter.userId! },
+      })).status(200);
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post("/v1/setup-links/secret/:token", { values: { SEC7_GONE_KEY: "x" } }, { params: { token: gone } });
+      r.status(410);
+    });
   },
 );
+
+/**
+ * Assert a connector call that the secret's audience admits. On the local
+ * target it reaches the runner-local upstream with `expected`. A deployed API
+ * cannot reach this runner's 127.0.0.1: its egress guard refuses the private
+ * host only after the audience check admitted the call, so that refusal is the
+ * deployed proof of admission. A denied call returns `credential_not_shared`
+ * before egress, on every target.
+ */
+function expectAdmitted(
+  target: string,
+  r: { status(code: number): unknown; json<T>(): T },
+  seen: readonly string[],
+  expected: string,
+  what: string,
+): void {
+  if (target === 'local') {
+    r.status(200);
+    if (seen.at(-1) !== expected) throw new Error(`${what}: upstream saw ${seen.at(-1)}`);
+    return;
+  }
+  r.status(500);
+  const reason = r.json<{ reason?: string }>().reason ?? '';
+  if (!reason.startsWith('connector_egress_blocked')) {
+    throw new Error(`${what}: expected the egress refusal that follows admission, got ${reason}`);
+  }
+}
 
 // ── SEC-AUD-1 — who can use a secret value ────────────────────────────────
 // A secret value shared with specific people reaches only them: directly, or
@@ -1539,8 +1614,7 @@ flow('SEC-AUD-1', {
     });
 
     await ctx.step('the holder calls the connector → the upstream receives the holder value', async () => {
-      (await call(holder)).status(200);
-      if (seen.at(-1) !== 'Bearer payroll-holder-value') throw new Error(`upstream saw ${seen.at(-1)}`);
+      expectAdmitted(ctx.env.target, await call(holder), seen, 'Bearer payroll-holder-value', 'holder call');
     });
 
     await ctx.step('a manager outside the audience calls it → denied credential_not_shared, and nothing reaches the upstream', async () => {
@@ -1551,8 +1625,7 @@ flow('SEC-AUD-1', {
     });
 
     await ctx.step("the holder's PRIVATE session uses it; their shared session and a trigger run do not", async () => {
-      (await agentCall(await sessionToken({ visibility: 'private' }))).status(200);
-      if (seen.at(-1) !== 'Bearer payroll-holder-value') throw new Error(`private session sent ${seen.at(-1)}`);
+      expectAdmitted(ctx.env.target, await agentCall(await sessionToken({ visibility: 'private' })), seen, 'Bearer payroll-holder-value', 'private session');
       const before = seen.length;
       (await agentCall(await sessionToken({ visibility: 'project' })))
         .body().has('$.reason', 'credential_not_shared');
@@ -1569,8 +1642,7 @@ flow('SEC-AUD-1', {
 
     await ctx.step('the holder widens it to everyone ([]) → the other manager call now succeeds', async () => {
       (await share([])).status(200);
-      (await call(outsider)).status(200);
-      if (seen.at(-1) !== 'Bearer payroll-holder-value') throw new Error(`outsider call sent ${seen.at(-1)}`);
+      expectAdmitted(ctx.env.target, await call(outsider), seen, 'Bearer payroll-holder-value', 'outsider call after widening');
       const row = await listed(outsider);
       if (!row || row.usable !== true || row.shared_with.length !== 0) throw new Error(`widened view is wrong: ${JSON.stringify(row)}`);
     });
@@ -1709,8 +1781,13 @@ flow('SEC-AUD-2', {
         team, projectId: project.id, as: asHolder, userId: holder.userId!, serviceAccountId: agentSa,
         visibility: 'project', metadata: { trigger_kind: 'cron', trigger_slug: 'nightly' },
       });
-      (await trigger.client.post('/v1/connectors/call', { connector: slug, action: 'list', args: {} })).status(200);
-      if (seen.at(-1) !== 'Bearer nightly-agent-value') throw new Error(`upstream saw ${seen.at(-1)}`);
+      expectAdmitted(
+        ctx.env.target,
+        await trigger.client.post('/v1/connectors/call', { connector: slug, action: 'list', args: {} }),
+        seen,
+        'Bearer nightly-agent-value',
+        'agent trigger run',
+      );
       const before = seen.length;
       const other = await agentSessionToken(ctx, db, {
         team, projectId: project.id, as: asHolder, userId: holder.userId!, serviceAccountId: otherSa, visibility: 'project',

@@ -27,6 +27,7 @@ import { readHostHealth } from '@/harness/shared/host-health'
 import { sanitizeRuntimeEvent } from '@/harness/shared/audit-relay'
 import { AGENT_ENV_SH } from '@/harness/shared/agent-env-file'
 import type { PiRuntimeHooks } from '@/harness/pi/runtime'
+import { MessageIdClock } from '@/harness/pi/message-id'
 import { spawnSync } from 'node:child_process'
 import { registerHarnessAssets, resetHarnessAssetsForTests } from '@/services/runtime-assets/runtime-assets'
 import {
@@ -2336,5 +2337,219 @@ describe('pi slash commands', () => {
     expect(((await res.json()) as { error: string }).error).toContain('deploy')
     expect(gateway.requests.length).toBe(calls)
     expect((await command(r, root, { arguments: 'x' })).status).toBe(400)
+  })
+})
+
+describe('pi steering', () => {
+  const post = (r: Rig, path: string, body: unknown) =>
+    r.user(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  /** As apps/api sends it: the service bearer plus the service-call mark the user proxy strips. */
+  const service = (r: Rig, path: string, body: unknown) =>
+    r.bearer(path, { method: 'POST', headers: { 'content-type': 'application/json', 'X-Kortix-Service-Call': '1' }, body: JSON.stringify(body) })
+  const steer = (r: Rig, messageId: string, text: string) =>
+    service(r, `/kortix/runtime/sessions/${r.service.runtime()!.rootId}/steer`, { message_id: messageId, parts: [{ type: 'text', text }] })
+  const page = async (r: Rig) =>
+    (await r.bearer(`/kortix/runtime/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+  /** An id the client mints at send time: above every id it has seen, as the SDK does. */
+  const sendTimeId = async (r: Rig) => {
+    const clock = new MessageIdClock()
+    for (const message of (await page(r)).messages) clock.observe(String(message.info.id))
+    return clock.mint(Date.now())
+  }
+  const sentText = (index: number) => JSON.stringify(gateway.sent[index])
+  /** Hooks that record the turn and steer relays the boot would send. */
+  const relays = () => {
+    const seen = { begins: [] as string[], ends: [] as string[], reads: [] as string[] }
+    const hooks: PiRuntimeHooks = {
+      onTurnBegin: ({ messageId }) => void seen.begins.push(messageId),
+      onTurnEnd: ({ messageId }) => void seen.ends.push(messageId),
+      onSteerRead: ({ messageId }) => void seen.reads.push(messageId),
+    }
+    return { seen, hooks }
+  }
+  const TURN = 'msg_0198e2a4b0c3STEERTURN00001'
+
+  test('health lists session.steer', async () => {
+    const r = await boot({ script: [] })
+    const health = (await r.bearer('/kortix/health').then((res) => res.json())) as { capabilities: string[] }
+    expect(health.capabilities).toContain('session.steer')
+  })
+
+  test('a message steered during a tool call is read at the next step of the same turn', async () => {
+    const { seen, hooks } = relays()
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 0.6; echo tool-done' } }, { text: 'Checked the note too.' }], hooks })
+    const root = r.service.runtime()!.rootId
+    const before = gateway.sent.length
+    expect((await post(r, `/kortix/runtime/sessions/${root}/prompt`, { message_id: TURN, parts: [{ type: 'text', text: 'run the tool' }] })).status).toBe(202)
+    await waitForRunningTool(r, root)
+    const steered = await sendTimeId(r)
+    const accepted = await steer(r, steered, 'STEER-ONE also check the note')
+    expect(accepted.status).toBe(202)
+    expect(await accepted.json()).toEqual({ message_id: steered, steered: true })
+    // Not on the wire before the turn reads it.
+    expect((await page(r)).messages.some((m) => m.info.id === steered)).toBe(false)
+    await waitFor(() => seen.ends.length === 1)
+
+    // One turn, two model requests; the second carries the steered text, the first does not.
+    expect(seen.begins).toEqual([TURN])
+    expect(seen.ends).toEqual([TURN])
+    expect(gateway.sent.length - before).toBe(2)
+    expect(sentText(before)).not.toContain('STEER-ONE')
+    expect(sentText(before + 1)).toContain('STEER-ONE')
+    expect(seen.reads).toEqual([steered])
+
+    // The wire shows it after the tool step, and the reply answers it.
+    const messages = (await page(r)).messages
+    expect(messages.map((m) => [m.info.role, m.info.parentID ?? null])).toEqual([
+      ['user', null],
+      ['assistant', TURN],
+      ['user', null],
+      ['assistant', steered],
+    ])
+    expect(messages[2]!.info.id).toBe(steered)
+    expect(messages[2]!.parts[0]).toMatchObject({ type: 'text', text: 'STEER-ONE also check the note' })
+    expect(messages[1]!.parts.find((p) => p.type === 'tool')!.state.status).toBe('completed')
+
+    // pi's session store holds it, so the dump a restart restores has it.
+    const dump = JSON.parse(readFileSync(join(r.workspace, '.state', 'sess-pi-test.json'), 'utf8')) as { entries: unknown[] }
+    expect(JSON.stringify(dump.entries)).toContain('STEER-ONE')
+    // Read: it cannot be withdrawn any more.
+    const removed = await r.user(`/kortix/runtime/messages/${root}/${steered}`, { method: 'DELETE' })
+    expect(removed.status).toBe(409)
+    expect(await removed.json()).toEqual({ error: 'message is already running' })
+  })
+
+  test('two messages steered before one boundary arrive together, in send order', async () => {
+    const { seen, hooks } = relays()
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 0.6' } }, { text: 'Both handled.' }], hooks })
+    const root = r.service.runtime()!.rootId
+    const before = gateway.sent.length
+    expect((await post(r, `/kortix/runtime/sessions/${root}/prompt`, { message_id: TURN, parts: [{ type: 'text', text: 'go' }] })).status).toBe(202)
+    await waitForRunningTool(r, root)
+    const first = await sendTimeId(r)
+    expect((await steer(r, first, 'STEER-A')).status).toBe(202)
+    await Bun.sleep(2)
+    const second = await sendTimeId(r)
+    expect((await steer(r, second, 'STEER-B')).status).toBe(202)
+    await waitFor(() => seen.ends.length === 1)
+    expect(gateway.sent.length - before).toBe(2)
+    const next = sentText(before + 1)
+    expect(next.indexOf('STEER-A')).toBeGreaterThan(-1)
+    expect(next.indexOf('STEER-B')).toBeGreaterThan(next.indexOf('STEER-A'))
+    expect(seen.reads).toEqual([first, second])
+    expect((await page(r)).messages.map((m) => m.info.role)).toEqual(['user', 'assistant', 'user', 'user', 'assistant'])
+  })
+
+  test('a steered message withdrawn before the boundary never reaches the model', async () => {
+    const { seen, hooks } = relays()
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 0.6' } }, { text: 'Only one.' }], hooks })
+    const root = r.service.runtime()!.rootId
+    const before = gateway.sent.length
+    expect((await post(r, `/kortix/runtime/sessions/${root}/prompt`, { message_id: TURN, parts: [{ type: 'text', text: 'go' }] })).status).toBe(202)
+    await waitForRunningTool(r, root)
+    const withdrawn = await sendTimeId(r)
+    expect((await steer(r, withdrawn, 'STEER-GONE')).status).toBe(202)
+    await Bun.sleep(2)
+    const kept = await sendTimeId(r)
+    expect((await steer(r, kept, 'STEER-KEPT')).status).toBe(202)
+    const removed = await r.user(`/kortix/runtime/messages/${root}/${withdrawn}`, { method: 'DELETE' })
+    expect(removed.status).toBe(200)
+    await waitFor(() => seen.ends.length === 1)
+    expect(sentText(before + 1)).toContain('STEER-KEPT')
+    expect(sentText(before + 1)).not.toContain('STEER-GONE')
+    expect(seen.reads).toEqual([kept])
+    expect((await page(r)).messages.some((m) => m.info.id === withdrawn)).toBe(false)
+    expect((await r.user(`/kortix/runtime/messages/${root}/${withdrawn}`, { method: 'DELETE' })).status).toBe(404)
+  })
+
+  test('a message steered after the last step starts the next turn when the turn ends', async () => {
+    const { seen, hooks } = relays()
+    const r = await boot({
+      script: [{ text: 'first reply' }, { text: 'second reply' }],
+      hooks,
+      // Holds the turn open after its last model step: the window a late steer lands in.
+      prepare: (workspace) =>
+        void repoExtension(workspace, 'settle-late', `export default function (pi) {\n  pi.on('agent_settled', () => new Promise((resolve) => setTimeout(resolve, 800)))\n}\n`),
+    })
+    const rt = r.service.runtime()!
+    const before = gateway.sent.length
+    expect((await post(r, `/kortix/runtime/sessions/${rt.rootId}/prompt`, { message_id: TURN, parts: [{ type: 'text', text: 'go' }] })).status).toBe(202)
+    await waitFor(() => !rt.busy() && rt.activeTurnMessageId() === TURN && gateway.sent.length - before === 1)
+    await Bun.sleep(100)
+    const late = await sendTimeId(r)
+    expect((await steer(r, late, 'STEER-LATE')).status).toBe(202)
+    await waitFor(() => seen.ends.length === 2)
+    expect(seen.begins).toEqual([TURN, late])
+    expect(seen.ends).toEqual([TURN, late])
+    expect(seen.reads).toEqual([late])
+    expect(gateway.sent.length - before).toBe(2)
+    expect(sentText(before + 1)).toContain('STEER-LATE')
+    const messages = (await page(r)).messages
+    expect(messages.map((m) => [m.info.role, m.info.parentID ?? null])).toEqual([
+      ['user', null],
+      ['assistant', TURN],
+      ['user', null],
+      ['assistant', late],
+    ])
+    expect(messages[2]!.info.id).toBe(late)
+  })
+
+  test('a stopped turn drops its unread steered messages and starts nothing', async () => {
+    const { seen, hooks } = relays()
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 20' } }, { text: 'unreachable' }, { text: 'next turn' }], hooks })
+    const root = r.service.runtime()!.rootId
+    expect((await post(r, `/kortix/runtime/sessions/${root}/prompt`, { message_id: TURN, parts: [{ type: 'text', text: 'wait' }] })).status).toBe(202)
+    await waitForRunningTool(r, root)
+    const dropped = await sendTimeId(r)
+    expect((await steer(r, dropped, 'STEER-DROPPED')).status).toBe(202)
+    expect((await post(r, `/kortix/runtime/sessions/${root}/abort`, {})).status).toBe(200)
+    await waitFor(() => seen.ends.length === 1)
+    await Bun.sleep(150)
+    expect(seen.begins).toEqual([TURN])
+    expect(seen.reads).toEqual([])
+    expect((await page(r)).messages.some((m) => m.info.id === dropped)).toBe(false)
+    // Nothing is left in pi's queue: the next turn's model does not get it.
+    const before = gateway.sent.length
+    expect((await post(r, `/kortix/runtime/sessions/${root}/prompt`, { message_id: await sendTimeId(r), parts: [{ type: 'text', text: 'again' }] })).status).toBe(202)
+    await waitFor(() => seen.ends.length === 2)
+    expect(sentText(before)).not.toContain('STEER-DROPPED')
+  })
+
+  test('an idle session refuses a steer with no_active_turn and stores nothing; a repeated id is deduplicated', async () => {
+    const { seen, hooks } = relays()
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 0.6' } }, { text: 'done' }, { text: 'idle prompt' }], hooks })
+    const root = r.service.runtime()!.rootId
+    expect((await service(r, `/kortix/runtime/sessions/${root}/steer`, { parts: [{ type: 'text', text: 'no id' }] })).status).toBe(400)
+    // Only the platform may steer (D9.3 is checked there): a user through the
+    // proxy, and the bearer without the service-call mark, are refused.
+    const body = { message_id: await sendTimeId(r), parts: [{ type: 'text', text: 'around admission' }] }
+    expect((await post(r, `/kortix/runtime/sessions/${root}/steer`, body)).status).toBe(403)
+    const unmarked = await r.bearer(`/kortix/runtime/sessions/${root}/steer`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    expect(unmarked.status).toBe(403)
+    expect(await unmarked.json()).toMatchObject({ code: 'STEER_SERVICE_ONLY' })
+
+    const idle = await sendTimeId(r)
+    const refused = await steer(r, idle, 'nobody reads this')
+    expect(refused.status).toBe(409)
+    expect(refused.headers.get('X-Kortix-Turn-Verb')).toBe('1')
+    expect(await refused.json()).toEqual({ code: 'no_active_turn' })
+    expect((await page(r)).messages).toEqual([])
+
+    expect((await post(r, `/kortix/runtime/sessions/${root}/prompt`, { message_id: TURN, parts: [{ type: 'text', text: 'go' }] })).status).toBe(202)
+    await waitForRunningTool(r, root)
+    // The running turn's own id, a steered id twice, and a prompt under a steered id.
+    expect(await steer(r, TURN, 'dup').then((res) => res.json())).toEqual({ deduplicated: true })
+    const steered = await sendTimeId(r)
+    expect((await steer(r, steered, 'STEER-ONCE')).status).toBe(202)
+    const again = await steer(r, steered, 'STEER-ONCE')
+    expect(again.status).toBe(200)
+    expect(await again.json()).toEqual({ deduplicated: true })
+    const asPrompt = await post(r, `/kortix/runtime/sessions/${root}/prompt`, { message_id: steered, parts: [{ type: 'text', text: 'STEER-ONCE' }] })
+    expect(asPrompt.status).toBe(200)
+    await waitFor(() => seen.ends.length === 1)
+    expect(seen.reads).toEqual([steered])
+    // The refused id stored nothing, so it may now be sent as a prompt.
+    expect((await post(r, `/kortix/runtime/sessions/${root}/prompt`, { message_id: idle, parts: [{ type: 'text', text: 'now a prompt' }] })).status).toBe(202)
+    await waitFor(() => seen.ends.length === 2)
   })
 })

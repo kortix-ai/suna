@@ -1669,9 +1669,32 @@ flow(
           .get(`/v1/projects/:projectId/channels/teams/file?url=${encodeURIComponent(url)}`, { params: { projectId: p.id } });
         r.status(400);
       });
+
+      // One tenant, two projects: the Graph token is the tenant's, so an image
+      // in a thread another project owns is refused before a token is minted.
+      const other = await ctx.fixtures.project();
+      await withDb(ctx, async (db) => {
+        await db.query(
+          "INSERT INTO kortix.chat_installs (platform, workspace_id, project_id) VALUES ('teams', $1, $2) ON CONFLICT DO NOTHING",
+          [tenant, other.id],
+        );
+        await db.query(
+          "INSERT INTO kortix.chat_channel_bindings (platform, workspace_id, channel_id, project_id) VALUES ('teams', $1, $2, $3)",
+          [tenant, "19:ke2echan@thread.tacv2;messageid=171", other.id],
+        );
+      });
+      await ctx.step("download proxy refuses an image in another project's Teams thread → 403", async () => {
+        const url =
+          "https://graph.microsoft.com/v1.0/teams/ke2e-team/channels/19:ke2echan@thread.tacv2/messages/171/hostedContents/aWQ9/$value";
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .get(`/v1/projects/:projectId/channels/teams/file?url=${encodeURIComponent(url)}`, { params: { projectId: p.id } });
+        r.status(403).body().matches("$.error", /belongs to another Kortix project/);
+      });
     } finally {
       await withDb(ctx, async (db) => {
-        await db.query("DELETE FROM kortix.chat_installs WHERE platform = 'teams' AND project_id = $1", [p.id]);
+        await db.query("DELETE FROM kortix.chat_channel_bindings WHERE platform = 'teams' AND workspace_id = $1", [tenant]);
+        await db.query("DELETE FROM kortix.chat_installs WHERE platform = 'teams' AND workspace_id = $1", [tenant]);
       }).catch(() => {});
     }
   },

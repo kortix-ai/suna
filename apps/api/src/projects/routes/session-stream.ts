@@ -38,6 +38,12 @@
  * which is precisely the state a user watching a waking box needs to see. The
  * response is 200 from the first byte in every one of those cases.
  *
+ * ─── `?channels=control` ───────────────────────────────────────────────────
+ * Serves the control channel and the stream's own hello/heartbeat, and nothing
+ * else: no sandbox read, no daemon attach. Its reconciler reads the queue only,
+ * at the slow cadence (`ControlReconcilerMode`). The SDK's prompt queue reads
+ * it (`openSessionControlStream`). The default serves both channels.
+ *
  * ─── THIS ROUTE NEVER WAKES A BOX ──────────────────────────────────────────
  * It attaches only when the sandbox row ALREADY says `active`. Waking is
  * `POST .../start`'s job and only its job; a read that could start a sandbox
@@ -86,6 +92,12 @@ export const RUNTIME_ATTACH_BACKOFF_MS = [1_000, 2_000, 5_000, 10_000, 20_000, 3
 
 /** How long to wait before re-checking a sandbox that is not `active`. */
 export const RUNTIME_IDLE_RECHECK_MS = 5_000;
+/**
+ * A live daemon attachment that yields no frame for `stallMs` is dead: the
+ * daemon heartbeats every 15 s, so 45 s is three missed beats. Mutable so a
+ * test can shrink it.
+ */
+export const runtimeStreamTimings = { stallMs: 45_000 };
 
 /** Frames the daemon may send that mean the projection changed underneath us. */
 const PROJECTION_INVALIDATING_EVENTS = new Set([
@@ -163,6 +175,8 @@ export function registerSessionStreamRoutes(): void {
           epoch: z.string().optional(),
           since_control: z.string().optional(),
           cepoch: z.string().optional(),
+          /** `control`: the control channel only, no daemon attach. Default: both. */
+          channels: z.enum(['all', 'control']).optional(),
         }),
       },
       responses: {
@@ -202,6 +216,7 @@ export function registerSessionStreamRoutes(): void {
       if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
 
       const cursor = parseCursorQuery(c);
+      const controlOnly = c.req.query('channels') === 'control';
       const userId = String(c.get('userId') ?? loaded.userId ?? '');
       const accountId = String(loaded.row.accountId);
 
@@ -252,7 +267,11 @@ export function registerSessionStreamRoutes(): void {
         start(controller) {
           controllerRef = controller;
 
-          const reconciler = acquireControlReconciler(sessionId, projectId);
+          const reconciler = acquireControlReconciler(
+            sessionId,
+            projectId,
+            controlOnly ? 'queue' : 'full',
+          );
           let heartbeat: ReturnType<typeof setInterval> | null = null;
 
           // Replay + live listener in the SAME synchronous tick — the handoff
@@ -323,7 +342,7 @@ export function registerSessionStreamRoutes(): void {
           }, STREAM_HEARTBEAT_MS);
           (heartbeat as unknown as { unref?: () => void }).unref?.();
 
-          void pumpRuntime({
+          if (!controlOnly) void pumpRuntime({
             sessionId,
             projectId,
             accountId,
@@ -453,11 +472,30 @@ async function pumpRuntime(args: PumpArgs): Promise<void> {
       continue;
     }
 
+    // One controller per attachment: the caller's abort and the stall watchdog
+    // both end THIS attempt, and the next loop pass re-attaches on the ladder.
+    const attachment = new AbortController();
+    const onCallerAbort = (): void => attachment.abort(args.abort.signal.reason);
+    args.abort.signal.addEventListener('abort', onCallerAbort, { once: true });
+    let stallTimer: ReturnType<typeof setTimeout> | undefined;
+    const armStallWatchdog = (): void => {
+      clearTimeout(stallTimer);
+      stallTimer = setTimeout(
+        () => attachment.abort(new Error('runtime_stream_stalled')),
+        runtimeStreamTimings.stallMs,
+      );
+    };
+    const endAttachment = (): void => {
+      clearTimeout(stallTimer);
+      args.abort.signal.removeEventListener('abort', onCallerAbort);
+    };
+
     const opened = await openRuntimeEventStream(
       { externalId: sandbox.externalId, userId: args.userId },
-      { since: args.runtime.seq, epoch: args.runtime.epoch, signal: args.abort.signal },
+      { since: args.runtime.seq, epoch: args.runtime.epoch, signal: attachment.signal },
     );
     if (!opened.ok) {
+      endAttachment();
       announceDown(opened.reason);
       const delay =
         RUNTIME_ATTACH_BACKOFF_MS[Math.min(attempt, RUNTIME_ATTACH_BACKOFF_MS.length - 1)]!;
@@ -482,16 +520,27 @@ async function pumpRuntime(args: PumpArgs): Promise<void> {
     // request's response path.
     void refreshProjection(args, 'attach');
 
+    armStallWatchdog();
     try {
       for await (const frame of parseSseFrames(opened.body)) {
         if (args.isClosed() || args.abort.signal.aborted) break;
+        armStallWatchdog();
         forwardRuntimeFrame(args, frame.event, frame.data);
       }
       announceDown('stream_ended');
     } catch (error) {
+      // The watchdog aborted the attempt (the caller did not): name it, whatever
+      // text the transport put on the resulting read error.
+      const stalled = attachment.signal.aborted && !args.abort.signal.aborted;
       announceDown(
-        error instanceof Error && error.message ? error.message.slice(0, 200) : 'stream_error',
+        stalled
+          ? 'runtime_stream_stalled'
+          : error instanceof Error && error.message
+            ? error.message.slice(0, 200)
+            : 'stream_error',
       );
+    } finally {
+      endAttachment();
     }
     await sleep(RUNTIME_ATTACH_BACKOFF_MS[0]!, args.abort.signal);
   }

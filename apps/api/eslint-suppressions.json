@@ -321,9 +321,6 @@
   "src/billing/services/account-deletion.ts": {
     "kortix-api/projects-surface": {
       "count": 2
-    },
-    "no-console": {
-      "count": 14
     }
   },
   "src/billing/services/account-write-owner.ts": {
@@ -457,7 +454,7 @@
   },
   "src/channels/email/routes.ts": {
     "no-console": {
-      "count": 2
+      "count": 1
     },
     "no-restricted-syntax": {
       "count": 1
@@ -605,7 +602,7 @@
   },
   "src/channels/slack/routes.ts": {
     "no-console": {
-      "count": 6
+      "count": 1
     },
     "no-restricted-imports": {
       "count": 2
@@ -685,11 +682,6 @@
       "count": 5
     }
   },
-  "src/channels/teams/binding.ts": {
-    "kortix-api/replica-local": {
-      "count": 1
-    }
-  },
   "src/channels/teams/catalog.ts": {
     "no-console": {
       "count": 4
@@ -762,7 +754,7 @@
   },
   "src/channels/teams/routes.ts": {
     "no-console": {
-      "count": 4
+      "count": 3
     }
   },
   "src/channels/teams/session.ts": {
@@ -1222,11 +1214,6 @@
       "count": 1
     }
   },
-  "src/lib/deployment-region.ts": {
-    "no-restricted-properties": {
-      "count": 1
-    }
-  },
   "src/lib/email/providers/smtp.ts": {
     "kortix-api/replica-local": {
       "count": 1
@@ -1678,7 +1665,7 @@
       "count": 1
     }
   },
-  "src/projects/git/commits.ts": {
+  "src/projects/git/fast-boot-bundle.ts": {
     "no-console": {
       "count": 1
     }
@@ -2600,11 +2587,6 @@
       "count": 1
     }
   },
-  "src/projects/session-lifecycle/agent-availability.ts": {
-    "kortix-api/replica-local": {
-      "count": 1
-    }
-  },
   "src/projects/session-lifecycle/command-transitions.ts": {
     "no-console": {
       "count": 1
@@ -2748,9 +2730,6 @@
     }
   },
   "src/projects/trigger-entry.ts": {
-    "kortix-api/replica-local": {
-      "count": 1
-    },
     "no-restricted-properties": {
       "count": 1
     }
@@ -2805,7 +2784,7 @@
   },
   "src/router/routes/proxy/handlers.ts": {
     "no-console": {
-      "count": 13
+      "count": 12
     },
     "no-restricted-syntax": {
       "count": 5
@@ -2844,7 +2823,7 @@
   },
   "src/router/services/llm-reservation.ts": {
     "no-console": {
-      "count": 9
+      "count": 4
     }
   },
   "src/router/services/llm.ts": {
@@ -3433,9 +3412,6 @@
   "src/snapshots/templates.ts": {
     "kortix-api/projects-surface": {
       "count": 3
-    },
-    "kortix-api/replica-local": {
-      "count": 2
     },
     "no-console": {
       "count": 3

@@ -18,7 +18,10 @@ import {
   webhookSecretConfigurationError,
 } from '../lib/webhook-secret-policy';
 import { consumeProjectWebhookManifestRefreshBudget, createProjectWebhookRateLimitMiddleware } from '../../middleware/rate-limit';
+import { logger } from '../../lib/logger';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';
+
+const WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS = 300;
 
 export function registerTriggerWebhooksRoutes(): void {
   projectWebhooksApp.use('/projects/:projectId/:slug', createProjectWebhookRateLimitMiddleware());
@@ -29,13 +32,13 @@ export function registerTriggerWebhooksRoutes(): void {
     tags: ['triggers'],
     summary: 'Fire a webhook trigger',
     description:
-      'Authenticated by the trigger secret, not a bearer token: send `X-Kortix-Signature` / `X-Hub-Signature-256` (HMAC of the raw body), `X-Kortix-Token`, or `Authorization: Bearer <secret>`. The JSON body is the payload the prompt template renders.',
+      'Authenticated by the trigger secret, not a bearer token: send `X-Kortix-Signature` / `X-Hub-Signature-256` (HMAC of the raw body), `X-Kortix-Token`, or `Authorization: Bearer <secret>`. Add `X-Kortix-Timestamp` (epoch seconds, within 5 minutes) to sign `<timestamp>.<body>` and stop replay. Every pre-authentication miss answers 401. The JSON body is the payload the prompt template renders.',
     // No body schema: the handler HMACs the raw bytes, so nothing may parse them first.
     request: { params: z.object({ projectId: z.string(), slug: z.string() }) },
     responses: {
       200: json(z.object({ status: z.literal('skipped'), reason: z.string() }), 'Accepted, not fired'),
       202: json(TriggerFireResultSchema, 'Queued or fired'),
-      ...errors(400, 401, 404, 409, 500),
+      ...errors(400, 401, 500),
     },
   }), async (c) => {
     const projectId = c.req.param('projectId');
@@ -63,7 +66,14 @@ export function registerTriggerWebhooksRoutes(): void {
         eq(projects.status, 'active'),
       ))
       .limit(1);
-    if (!project) return c.json({ error: 'Not found' }, 404);
+    // Every pre-authentication miss answers the same 401 as a bad signature, so a
+    // caller holding any credential header cannot tell which projects, slugs or
+    // secret configurations exist. The reason is logged for the owner.
+    const reject = (reason: string, extra?: Record<string, unknown>) => {
+      logger.warn('[trigger-webhook] rejected before authentication', { projectId, slug, reason, ...extra });
+      return c.json({ error: 'Invalid webhook signature' }, 401);
+    };
+    if (!project) return reject('project_not_found');
 
     // Trigger CRUD can commit on another API replica. Refresh this replica's
     // mirror before authentication, but bound the unauthenticated Git work by
@@ -73,13 +83,11 @@ export function registerTriggerWebhooksRoutes(): void {
     }
     const { specs } = await loadProjectTriggers(await withProjectGitAuth(project));
     const spec = specs.find((s) => s.slug === slug);
-    if (!spec || spec.type !== 'webhook' || !spec.enabled) {
-      return c.json({ error: 'Not found' }, 404);
-    }
+    if (!spec || spec.type !== 'webhook' || !spec.enabled) return reject('trigger_not_found');
 
     const rawBody = await c.req.text();
     if (!spec.secretEnv) {
-      return c.json(webhookSecretConfigurationError('missing'), 409);
+      return reject('webhook_secret_missing');
     }
     const secret = await getProjectSecretValueForConsumer({
       projectId: project.projectId,
@@ -92,7 +100,7 @@ export function registerTriggerWebhooksRoutes(): void {
         projectId: project.projectId,
         secretEnv: spec.secretEnv,
       });
-      return c.json(configurationError ?? webhookSecretConfigurationError('unavailable'), 409);
+      return reject((configurationError ?? webhookSecretConfigurationError('unavailable')).code);
     }
 
     // Primary auth: HMAC-SHA256 signature over the raw body (GitHub-compatible).
@@ -103,8 +111,17 @@ export function registerTriggerWebhooksRoutes(): void {
     // shared bearer token; signed senders are unaffected.
     const signatureHeader =
       c.req.header('x-kortix-signature') || c.req.header('x-hub-signature-256') || null;
+    // Optional replay guard: a sender that adds `X-Kortix-Timestamp` (epoch
+    // seconds) signs `<timestamp>.<body>`; a stale or future timestamp is refused.
+    const timestampHeader = c.req.header('x-kortix-timestamp');
+    if (signatureHeader && timestampHeader) {
+      const seconds = Number(timestampHeader);
+      if (!Number.isFinite(seconds) || Math.abs(Date.now() / 1000 - seconds) > WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS) {
+        return c.json({ error: 'Invalid webhook signature' }, 401);
+      }
+    }
     const authed = signatureHeader
-      ? verifyWebhookSignature(rawBody, secret, signatureHeader)
+      ? verifyWebhookSignature(timestampHeader ? `${timestampHeader}.${rawBody}` : rawBody, secret, signatureHeader)
       : verifyWebhookToken(
           extractWebhookToken(c.req.header('x-kortix-token'), c.req.header('authorization')),
           secret,
