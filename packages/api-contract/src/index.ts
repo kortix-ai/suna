@@ -46,8 +46,7 @@ export type OkResponse = z.infer<typeof OkResponseSchema>;
  * Wire note: the serialized project fields keep their historical names
  * (`experimental`, `experimental_features`) and the override map lives at
  * `projects.metadata.experimental` — both are stable wire/storage details.
- * Code-level names are the FeatureFlag* family; the Experimental* exports
- * below are deprecated aliases kept for published-SDK compatibility.
+ * Code-level names are the FeatureFlag* family.
  */
 export const FeatureFlagMapSchema = z.object({
   marketplace: z.boolean(),
@@ -99,21 +98,6 @@ export const FeatureDisabledErrorSchema = z.object({
   feature: FeatureFlagKeySchema,
 });
 export type FeatureDisabledError = z.infer<typeof FeatureDisabledErrorSchema>;
-
-/** @deprecated Use {@link FeatureFlagMapSchema}. */
-export const ExperimentalFeatureMapSchema = FeatureFlagMapSchema;
-/** @deprecated Use {@link FeatureFlagMap}. */
-export type ExperimentalFeatureMap = FeatureFlagMap;
-/** @deprecated Use {@link FeatureFlagKeySchema}. */
-export const ExperimentalFeatureKeySchema = FeatureFlagKeySchema;
-/** @deprecated Use {@link FeatureFlagKey}. */
-export type ExperimentalFeatureKey = FeatureFlagKey;
-/** @deprecated Use {@link FEATURE_FLAG_KEYS}. */
-export const EXPERIMENTAL_FEATURE_KEYS = FEATURE_FLAG_KEYS;
-/** @deprecated Use {@link FeatureFlagViewSchema}. */
-export const ExperimentalFeatureViewSchema = FeatureFlagViewSchema;
-/** @deprecated Use {@link FeatureFlagView}. */
-export type ExperimentalFeatureView = FeatureFlagView;
 
 /** The two assignable project roles. `user`/`viewer` are deprecated aliases of
  *  `member`; `editor` was REMOVED on 2026-08-18 (folded into `manager`). None
@@ -167,8 +151,8 @@ export const ProjectSchema = z.object({
   /** UI label for the caller's effective role (not an auth decision). */
   effective_project_role: ProjectRoleSchema.nullable(),
   dashboard_url: z.string(),
-  experimental: ExperimentalFeatureMapSchema,
-  experimental_features: z.array(ExperimentalFeatureViewSchema),
+  experimental: FeatureFlagMapSchema,
+  experimental_features: z.array(FeatureFlagViewSchema),
   /** Per-project provider pin, surfaced only while still usable. */
   default_sandbox_provider: SandboxProviderSchema.nullable(),
   available_sandbox_providers: z.array(SandboxProviderSchema),
@@ -1660,6 +1644,10 @@ export const SessionPromptSchema = z.object({
   attachments: z.array(z.object({ filename: z.string(), mime: z.string() })),
   /** Posted without a turn: no agent answers it. */
   no_reply: z.boolean(),
+  /** The member who sent it. The prompt runs as this member, so only they
+   *  edit, send now or retry it; they or a session manager remove it. Null
+   *  for a prompt with no recorded sender. Absent from older servers. */
+  author_user_id: z.string().nullable().optional(),
   created_at: z.string(),
   available_at: z.string(),
 });

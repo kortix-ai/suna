@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 /**
- * `kortix triggers` as a real process, for the third trigger type.
+ * `kortix triggers` as a real process, for the third trigger type and the
+ * webhook trigger's info panel.
  * `add` edits the LOCAL kortix.yaml, so
  * those cases assert the file on disk; `ls`/`info` read the cloud, so those
  * cases assert the rendering of a served listing.
@@ -41,6 +42,34 @@ const MONITOR_TRIGGER = {
   session_key: null,
   filter: null,
   last_fired_at: null,
+  webhook_url: null,
+};
+
+const WEBHOOK_TRIGGER = {
+  ...MONITOR_TRIGGER,
+  slug: 'release-hook',
+  path: 'kortix.yaml#triggers.release-hook',
+  name: 'Release hook',
+  type: 'webhook',
+  agent: 'releaser',
+  secret_env: 'RELEASE_HOOK_SECRET',
+  run: null,
+  mode: null,
+  interval_seconds: null,
+  expect_event_within_seconds: null,
+  prompt_template: 'A release webhook arrived: {{ body.event }}',
+  webhook_url: 'https://api.kortix.test/v1/webhooks/projects/proj_hook/release-hook',
+};
+
+const CRON_TRIGGER = {
+  ...WEBHOOK_TRIGGER,
+  slug: 'nightly',
+  name: 'Nightly digest',
+  type: 'cron',
+  agent: 'default',
+  secret_env: null,
+  cron: '0 0 9 * * 1-5',
+  prompt_template: 'Summarize yesterday',
   webhook_url: null,
 };
 
@@ -519,5 +548,283 @@ describe('kortix triggers — monitors', () => {
     expect(text).toContain('secret_env: WEBHOOK_SECRET');
     expect(text).not.toContain('mode:');
     expect(text).not.toContain('run:');
+  });
+});
+
+/**
+ * `kortix triggers fire` reports the RUN's outcome, not just the fire's.
+ * A fire that the API accepts can still end in a failed run; the runtime row
+ * (`last_status`/`last_error`) records that outcome, so fire waits for it and
+ * exits non-zero with the real error.
+ */
+describe('kortix triggers fire — reports the run outcome', () => {
+  const SESSION_ID = 'b3f0c2a1-0000-4000-8000-000000000001';
+  const FAILURE_TEXT = 'Payment Required: Insufficient credits. Balance: $-0.06';
+
+  interface FireState {
+    triggers: Record<string, unknown>[];
+    /** The fire response's status and session id. */
+    fireStatus: 'fired' | 'queued';
+    /** GET of the fired session: 200 while this is set, 404 when null. */
+    session: Record<string, unknown> | null;
+    /** Flip the trigger row to failed this long after the fire POST. */
+    failAfterMs: number | null;
+    deletedSessions: string[];
+  }
+
+  let state: FireState;
+
+  function cronTrigger(): Record<string, unknown> {
+    return {
+      slug: 'dogfood-cron',
+      path: 'kortix.yaml#triggers.dogfood-cron',
+      name: 'dogfood-cron',
+      type: 'cron',
+      agent: 'default',
+      model: null,
+      enabled: true,
+      cron: '0 0 9 * * *',
+      run_at: null,
+      timezone: 'UTC',
+      secret_env: null,
+      run: null,
+      mode: null,
+      interval_seconds: null,
+      expect_event_within_seconds: null,
+      prompt_template: 'Reply pong',
+      session_mode: 'fresh',
+      session_id: null,
+      session_key: null,
+      filter: null,
+      last_fired_at: null,
+      last_status: null,
+      last_error: null,
+      last_attempt_at: null,
+      webhook_url: null,
+    };
+  }
+
+  function startFireServer(opts: { triggersEndpoint?: 'down' } = {}): string {
+    const base = `/v1/projects/${PROJECT}/triggers`;
+    server = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        const url = new URL(req.url);
+        if (opts.triggersEndpoint === 'down' && url.pathname === base && req.method === 'GET') {
+          return Response.json({ error: 'database unavailable' }, { status: 503 });
+        }
+        if (url.pathname === `${base}/dogfood-cron/fire` && req.method === 'POST') {
+          const now = new Date().toISOString();
+          // The fire route's own write: last_status fired, last_attempt_at set.
+          state.triggers = state.triggers.map((t) =>
+            t.slug === 'dogfood-cron'
+              ? { ...t, last_status: 'fired', last_error: null, last_attempt_at: now }
+              : t,
+          );
+          if (state.failAfterMs !== null) {
+            setTimeout(() => {
+              state.triggers = state.triggers.map((t) =>
+                t.slug === 'dogfood-cron'
+                  ? {
+                      ...t,
+                      last_status: 'failed',
+                      last_error: FAILURE_TEXT,
+                      last_attempt_at: new Date().toISOString(),
+                    }
+                  : t,
+              );
+            }, state.failAfterMs);
+          }
+          return Response.json(
+            {
+              status: state.fireStatus,
+              session_id: state.fireStatus === 'fired' ? SESSION_ID : null,
+              command_id: null,
+              deduped: false,
+            },
+            { status: 202 },
+          );
+        }
+        if (url.pathname === base && req.method === 'GET') {
+          return Response.json({ triggers: state.triggers, triggers_paused: false, errors: [] });
+        }
+        if (url.pathname === `/v1/projects/${PROJECT}/sessions/${SESSION_ID}`) {
+          if (req.method === 'GET') {
+            if (!state.session) return Response.json({ error: 'Not found' }, { status: 404 });
+            return Response.json(state.session);
+          }
+          if (req.method === 'DELETE') {
+            state.deletedSessions.push(SESSION_ID);
+            return Response.json({ ok: true });
+          }
+        }
+        return Response.json({ error: 'not found' }, { status: 404 });
+      },
+    });
+    return `http://127.0.0.1:${server.port}`;
+  }
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'kortix-triggers-fire-'));
+    process.env = { ...ORIGINAL_ENV };
+    writeManifest();
+    state = {
+      triggers: [cronTrigger()],
+      fireStatus: 'fired',
+      session: {
+        session_id: SESSION_ID,
+        status: 'running',
+        error: null,
+        name: null,
+        agent_name: 'default',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      failAfterMs: null,
+      deletedSessions: [],
+    };
+  });
+
+  afterEach(() => {
+    server?.stop(true);
+    server = null;
+    rmSync(tmp, { recursive: true, force: true });
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  test('a failed run exits non-zero with the real error and cleans up the session', async () => {
+    state.failAfterMs = 300;
+    const apiConfig = writeConfig(startFireServer());
+    const result = await runCli(
+      ['triggers', 'fire', 'dogfood-cron', '--wait', '8s', '--project', PROJECT],
+      apiConfig,
+    );
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(FAILURE_TEXT);
+    // The failed run's fresh session is cleaned up, so its per-session API key
+    // does not outlive the run.
+    expect(state.deletedSessions).toEqual([SESSION_ID]);
+  });
+
+  test('a run with no failure inside the window exits 0 with the session id', async () => {
+    const apiConfig = writeConfig(startFireServer());
+    const result = await runCli(
+      ['triggers', 'fire', 'dogfood-cron', '--wait', '1s', '--project', PROJECT],
+      apiConfig,
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain(SESSION_ID);
+    expect(result.stdout).toContain('no failure');
+    expect(state.deletedSessions).toEqual([]);
+  });
+
+  test('--wait 0 keeps the old fire-and-return behavior', async () => {
+    state.failAfterMs = 100;
+    const apiConfig = writeConfig(startFireServer());
+    const result = await runCli(
+      ['triggers', 'fire', 'dogfood-cron', '--wait', '0', '--project', PROJECT],
+      apiConfig,
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain(SESSION_ID);
+    expect(state.deletedSessions).toEqual([]);
+  });
+
+  test('an unreadable trigger row is reported as unwatched, never as no failure', async () => {
+    const apiConfig = writeConfig(startFireServer({ triggersEndpoint: 'down' }));
+    const result = await runCli(
+      ['triggers', 'fire', 'dogfood-cron', '--wait', '2s', '--project', PROJECT],
+      apiConfig,
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain(SESSION_ID);
+    expect(result.stdout).toContain('could not watch');
+    expect(result.stdout).not.toContain('no failure');
+  });
+
+  test('a fired session the caller cannot read exits non-zero', async () => {
+    state.session = null;
+    const apiConfig = writeConfig(startFireServer());
+    const result = await runCli(
+      ['triggers', 'fire', 'dogfood-cron', '--wait', '1s', '--project', PROJECT],
+      apiConfig,
+    );
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(SESSION_ID);
+    expect(result.stdout).not.toContain('Fired');
+  });
+
+  test('a queued fire whose run later fails exits non-zero with the error', async () => {
+    state.fireStatus = 'queued';
+    state.failAfterMs = 300;
+    const apiConfig = writeConfig(startFireServer());
+    const result = await runCli(
+      ['triggers', 'fire', 'dogfood-cron', '--wait', '8s', '--project', PROJECT],
+      apiConfig,
+    );
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(FAILURE_TEXT);
+    expect(state.deletedSessions).toEqual([]);
+  });
+});
+
+describe('kortix triggers info — webhook signing', () => {
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'kortix-triggers-'));
+    process.env = { ...ORIGINAL_ENV };
+    writeManifest();
+    config = writeConfig('http://127.0.0.1:1');
+  });
+
+  afterEach(() => {
+    server?.stop(true);
+    server = null;
+    rmSync(tmp, { recursive: true, force: true });
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  test('info shows the signing header, the algorithm and a signed sample request', async () => {
+    const apiConfig = writeConfig(startServer([WEBHOOK_TRIGGER]));
+    const result = await runCli(
+      ['triggers', 'info', 'release-hook', '--project', PROJECT],
+      apiConfig,
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('X-Kortix-Signature');
+    expect(result.stdout).toContain('HMAC-SHA256');
+    expect(result.stdout).toContain(`curl -X POST ${WEBHOOK_TRIGGER.webhook_url}`);
+    expect(result.stdout).toContain('openssl dgst -sha256 -hmac "$SECRET"');
+    // The scheme is signed with the caller's own secret (the $SECRET
+    // placeholder), like the dashboard panel — never a secret value.
+    expect(result.stdout).toContain('$SECRET is the signing key you saved for this webhook');
+  });
+
+  test('info --json carries the signing scheme a caller can act on', async () => {
+    const apiConfig = writeConfig(startServer([WEBHOOK_TRIGGER]));
+    const result = await runCli(
+      ['triggers', 'info', 'release-hook', '--project', PROJECT, '--json'],
+      apiConfig,
+    );
+    expect(result.code).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.webhook_signing).toEqual({
+      header: 'X-Kortix-Signature',
+      algorithm: 'HMAC-SHA256 over the exact raw request body',
+      sample_request: expect.stringContaining(`curl -X POST ${WEBHOOK_TRIGGER.webhook_url}`),
+    });
+    expect(parsed.webhook_signing.sample_request).toContain('X-Kortix-Signature: sha256=');
+  });
+
+  test('a cron trigger carries no signing metadata', async () => {
+    const apiConfig = writeConfig(startServer([CRON_TRIGGER]));
+    const result = await runCli(
+      ['triggers', 'info', 'nightly', '--project', PROJECT, '--json'],
+      apiConfig,
+    );
+    expect(result.code).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.webhook_signing).toBeUndefined();
+    const text = await runCli(['triggers', 'info', 'nightly', '--project', PROJECT], apiConfig);
+    expect(text.stdout).not.toContain('X-Kortix-Signature');
   });
 });

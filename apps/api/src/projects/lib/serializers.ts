@@ -428,9 +428,11 @@ function grantAdmits(list: string[], identifier: string): boolean {
  *                  rescue it — grants come only from manifest specs.
  *   `declarative`, agents non-empty — the manifest parsed and its declarations
  *                  are the complete grant set. CERTAIN either way.
- *   `declarative`, agents EMPTY — the only ambiguous state, and it is reached by
- *                  a manifest that FAILED to parse (specs empty, errors present)
- *                  or one whose agents are all disabled. Report null.
+ *   `declarative`, agents EMPTY — the only ambiguous state, and it is reached
+ *                  by a manifest that FAILED to parse (specs empty, errors
+ *                  present). Report null. (Disabled agents stay listed with
+ *                  `enabled: false` and are skipped below, so an all-disabled
+ *                  manifest reports `no_agent_grant`, not the ambiguous null.)
  *
  * Getting this backwards would be worse than useless in both directions: silent
  * on the commonest broken setup (no `agents:` block), and crying wolf on a
@@ -449,7 +451,10 @@ export function secretDeliveryBlockedReason(
   if (config.agent_discovery !== 'declarative') return null;
   const agents = config.agents;
   if (!Array.isArray(agents) || agents.length === 0) return null;
+  // The summary lists disabled agents too (enabled: false); only an agent a
+  // session could actually launch makes "granted somewhere" certain.
   const granted = agents.some((agent) => {
+    if (agent.enabled === false) return false;
     const env = agent.scope?.env;
     return Array.isArray(env) && grantAdmits(env, identifier);
   });

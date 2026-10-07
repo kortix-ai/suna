@@ -118,3 +118,32 @@ export async function projectArchiveRequest(
     `${platformConfig().backendUrl}/projects/${encodeURIComponent(projectId)}/files/archive${query}`,
   );
 }
+
+/**
+ * Fetch one project file's exact bytes at a ref.
+ *
+ * The JSON read (`readProjectFile`) carries `git show` stdout as a UTF-8
+ * string, which corrupts every byte that is not valid UTF-8 — this is the
+ * byte-accurate read the file previews and downloads need. The response is
+ * always bytes; classifying text vs binary is the caller's job (the web does
+ * it with the same NUL-byte heuristic the sandbox daemon uses).
+ */
+export async function fetchProjectFileRaw(
+  projectId: string,
+  path: string,
+  ref?: string,
+  options?: { signal?: AbortSignal },
+): Promise<Blob> {
+  const params = new URLSearchParams({ path });
+  if (ref) params.set('ref', ref);
+  const query = params.toString() ? `?${params.toString()}` : '';
+
+  const url = `${platformConfig().backendUrl || ''}/projects/${projectId}/files/raw${query}`;
+  const res = await sendChecked(
+    url,
+    { method: 'GET', ...(options?.signal ? { signal: options.signal } : {}) },
+    {},
+    'Failed to read file',
+  );
+  return await res.blob();
+}

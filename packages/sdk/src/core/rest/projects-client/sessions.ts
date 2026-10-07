@@ -1295,6 +1295,10 @@ export interface SessionPrompt {
   /** Posted without a turn: no agent answers it, so show no "thinking"
    *  state. Absent from servers older than this field. */
   no_reply?: boolean;
+  /** The member who sent it. The prompt runs as this member, so only they
+   *  edit, send now or retry it (`sessionPromptActions`). Null for a prompt
+   *  with no recorded sender; absent from servers older than this field. */
+  author_user_id?: string | null;
   created_at: string;
   available_at: string;
 }

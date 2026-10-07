@@ -36,6 +36,7 @@
 import { and, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm';
 import { chatChannelBindings, chatInstalls, chatThreads } from '@kortix/db';
 import { db } from '../shared/db';
+import { isRecord } from '@kortix/shared/guards';
 
 export const CONVERSATION_NOT_IN_PROJECT = 'conversation_not_in_project';
 
@@ -406,10 +407,6 @@ function refusalMessage(scope: Scope, owner: Owner, subject: string): string {
   return scope.platform === 'slack'
     ? `${subject} is not connected to this project, and this Slack workspace is connected to more than one Kortix project. Connect it first: run \`/kortix switch\` in that conversation and pick this project.`
     : `This project has no conversation in ${subject}, and this Microsoft 365 tenant is connected to more than one Kortix project. Mention the bot in that channel and pick this project first.`;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value != null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function listOf(data: unknown, key: string): unknown[] | null {

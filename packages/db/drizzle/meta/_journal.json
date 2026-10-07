@@ -848,6 +848,27 @@
       "when": 1791316882778,
       "tag": "20261006200122_trigger_session_lookup_index",
       "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1791331606153,
+      "tag": "20261007000646_permission_push_claims",
+      "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1791333377505,
+      "tag": "20261007003617_gateway_logs_session_rollup_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1791358200000,
+      "tag": "20261007073000_session_sandboxes_runtime_wake_indexes",
+      "breakpoints": true
     }
   ]
 }

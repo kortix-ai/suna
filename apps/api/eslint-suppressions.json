@@ -1214,11 +1214,6 @@
       "count": 1
     }
   },
-  "src/lib/deployment-region.ts": {
-    "no-restricted-properties": {
-      "count": 1
-    }
-  },
   "src/lib/email/providers/smtp.ts": {
     "kortix-api/replica-local": {
       "count": 1
@@ -1670,7 +1665,7 @@
       "count": 1
     }
   },
-  "src/projects/git/commits.ts": {
+  "src/projects/git/fast-boot-bundle.ts": {
     "no-console": {
       "count": 1
     }
