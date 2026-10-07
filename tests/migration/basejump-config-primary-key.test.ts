@@ -24,6 +24,17 @@ function psql(sql: string): string {
 }
 
 /**
+ * Host TCP probe: `docker exec pg_isready` answers over the unix socket,
+ * which initdb's temporary socket-only server satisfies while nothing serves
+ * TCP yet — the published port's proxy then accepts and closes the suite's
+ * first `psql` (`server closed the connection unexpectedly`). See
+ * worktree-migrate.test.ts for the full timeline and CI run 36153691220.
+ */
+function pgReady(): boolean {
+  return sh(['psql', url, '-tAc', 'select 1']).ok;
+}
+
+/**
  * The Supabase performance advisor's `no_primary_key` condition for one table:
  * a primary-key constraint backed by a valid unique index. `null` = flagged.
  */
@@ -117,22 +128,11 @@ suite('basejump.config primary key (throwaway Postgres)', () => {
       'full_page_writes=off',
     ]);
     if (!up.ok) throw new Error(`could not start test container: ${up.stderr}`);
-    let ready = false;
     for (let i = 0; i < 60; i++) {
-      ready = sh([
-        'docker',
-        'exec',
-        CONTAINER,
-        'pg_isready',
-        '-U',
-        'postgres',
-        '-d',
-        'postgres',
-      ]).ok;
-      if (ready) break;
+      if (pgReady()) break;
       await Bun.sleep(1000);
     }
-    if (!ready) throw new Error('test Postgres never became ready');
+    if (!pgReady()) throw new Error('test Postgres never became ready');
 
     // Prod at the next release: basejump.config already exists, keyless, when
     // the migration batch runs. Capture the RED state, then apply the whole
