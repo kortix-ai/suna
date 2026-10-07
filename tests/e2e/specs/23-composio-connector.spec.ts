@@ -214,10 +214,12 @@ test.describe("23 — Composio managed connector", () => {
       await search.fill("☃");
       const emptyResult = await emptyResponse;
       expect(emptyResult.status()).toBe(200);
+      // Wire contract (connectors/composio.ts, read by the SDK's
+      // listConnectToolkits): `items` + `cursor` + `totalPages`.
       expect(await emptyResult.json()).toMatchObject({
-        total: 0,
-        toolkits: [],
-        hasMore: false,
+        items: [],
+        cursor: null,
+        totalPages: 0,
       });
       await expect(page.getByRole("button", { name: /^Gmail\b/ })).toHaveCount(
         0,
@@ -326,12 +328,14 @@ test.describe("23 — Composio managed connector", () => {
     const isConnectPost = (url: string, method: string) =>
       method === "POST" &&
       new RegExp(`/v1/connectors/projects/${project.id}/connectors/[^/]+/connect$`).test(url);
-    const connectRequestPromise = page.waitForRequest((request) =>
-      isConnectPost(request.url(), request.method()),
-    );
-    const connectResponsePromise = page.waitForResponse((response) =>
-      isConnectPost(response.url(), response.request().method()),
-    );
+    // Settled to null on timeout: an account that is already connected sends
+    // no connect POST (release gate 37557504543 on staging).
+    const connectRequestPromise = page
+      .waitForRequest((request) => isConnectPost(request.url(), request.method()))
+      .catch(() => null);
+    const connectResponsePromise = page
+      .waitForResponse((response) => isConnectPost(response.url(), response.request().method()))
+      .catch(() => null);
     await addDialog
       .getByRole("button", { name: "Add connector", exact: true })
       .click();
@@ -372,31 +376,33 @@ test.describe("23 — Composio managed connector", () => {
     await expect(detail).toBeVisible();
     // A no-auth toolkit has nothing to authorize. The header offers Connect, or
     // the account is already connected (Reconnect) by the time the dialog
-    // opens (release gate 37548429782 on staging). Either way exactly one
-    // connect POST answers the contract below.
+    // opens (release gates 37548429782 and 37557504543 on staging), and then
+    // no connect POST is sent. Either way the API read-back below proves the
+    // active no-auth account (`is_no_auth`, a `trs_` session).
     const connectButton = detail.getByRole("button", { name: "Connect", exact: true });
     const reconnectButton = detail.getByRole("button", { name: "Reconnect", exact: true });
     await expect(connectButton.or(reconnectButton)).toBeVisible();
-    if (await connectButton.isVisible()) await connectButton.click();
+    const clickedConnect = await connectButton.isVisible();
+    if (clickedConnect) await connectButton.click();
     const connectRequest = await connectRequestPromise;
-    expect(connectRequest.url()).toMatch(new RegExp(`/connectors/${connectorSlug}/connect$`));
-    expect(connectRequest.postDataJSON() ?? {}).toEqual({});
-    const connectResponse = await connectResponsePromise;
-    expect(connectResponse.status()).toBe(200);
-    const connectBody = (await connectResponse.json()) as Record<
-      string,
-      unknown
-    >;
-    expect(connectBody).toEqual(
-      expect.objectContaining({
-        provider: "composio",
-        app: "composio_search",
-        connected: true,
-        isNoAuth: true,
-      }),
-    );
-    expect(connectBody.sessionId).toEqual(expect.stringMatching(/^trs_/));
-    expect(connectBody.connectionId).toEqual(expect.any(String));
+    if (clickedConnect) expect(connectRequest, "Connect sends one connect POST").not.toBeNull();
+    if (connectRequest) {
+      expect(connectRequest.url()).toMatch(new RegExp(`/connectors/${connectorSlug}/connect$`));
+      expect(connectRequest.postDataJSON() ?? {}).toEqual({});
+      const connectResponse = await connectResponsePromise;
+      expect(connectResponse?.status()).toBe(200);
+      const connectBody = (await connectResponse!.json()) as Record<string, unknown>;
+      expect(connectBody).toEqual(
+        expect.objectContaining({
+          provider: "composio",
+          app: "composio_search",
+          connected: true,
+          isNoAuth: true,
+        }),
+      );
+      expect(connectBody.sessionId).toEqual(expect.stringMatching(/^trs_/));
+      expect(connectBody.connectionId).toEqual(expect.any(String));
+    }
 
     await expect(
       detail.getByRole("button", { name: "Reconnect", exact: true }),
