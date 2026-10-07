@@ -9,7 +9,7 @@
  */
 
 import { changeRequests, connectorCalls, reviewItems } from '@kortix/db';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { captureException } from '../lib/sentry';
 import { db } from '../shared/db';
 import { changeRequestToReviewItem, connectorCallToReviewItem } from './review-adapters';
@@ -85,20 +85,6 @@ export async function getReviewItemById(reviewItemId: string, projectId: string)
     .where(and(eq(reviewItems.reviewItemId, reviewItemId), eq(reviewItems.projectId, projectId)))
     .limit(1);
   return row ?? null;
-}
-
-export async function listReviewItems(
-  projectId: string,
-  opts: { segment?: ReviewSegment; kind?: ReviewItemRow['kind'] } = {},
-) {
-  const where = [eq(reviewItems.projectId, projectId)];
-  if (opts.segment) where.push(inArray(reviewItems.status, statusesForSegment(opts.segment)));
-  if (opts.kind) where.push(eq(reviewItems.kind, opts.kind));
-  return db
-    .select()
-    .from(reviewItems)
-    .where(and(...where))
-    .orderBy(desc(reviewItems.createdAt));
 }
 
 /**

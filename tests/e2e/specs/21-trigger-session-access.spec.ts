@@ -518,7 +518,7 @@ test.describe('21 — Session access UI', () => {
     } finally {
       if (project) await project.dispose().catch(() => {});
       if (accountId) {
-        await api(ownerSession.access_token, 'DELETE', '/billing/account/delete-immediately', {
+        await api(ownerSession.access_token, 'DELETE', '/account/delete-immediately', {
           account_id: accountId,
         }).catch(() => {});
       }

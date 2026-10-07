@@ -8,7 +8,6 @@ import {
   SessionCreateInputSchema as ContractSessionCreateInputSchema,
   SessionCreateAcceptedSchema as ContractSessionCreateAcceptedSchema,
   SessionStartResultSchema as ContractSessionStartResultSchema,
-  TriggerSchema as ContractTriggerSchema,
   WarmProjectSessionResultSchema as ContractWarmProjectSessionResultSchema,
   ClaimWarmProjectSessionInputSchema as ContractClaimWarmProjectSessionInputSchema,
   ChangeRequestSchema as ContractChangeRequestSchema,
@@ -56,8 +55,6 @@ export const ChangeRequestSchema = ContractChangeRequestSchema.openapi('ChangeRe
 export const ChangeRequestListSchema = ContractChangeRequestListSchema.openapi('ChangeRequestList');
 
 export const SecretSchema = ContractSecretSchema.openapi('Secret');
-
-export const TriggerSchema = ContractTriggerSchema.openapi('Trigger');
 
 export const TriggerListSchema = ContractTriggerListSchema.openapi('TriggerList');
 

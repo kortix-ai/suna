@@ -16,7 +16,7 @@ import {
   UV_SHA256_ARM64,
   UV_VERSION,
 } from '@kortix/shared';
-import { SANDBOX_VERSION, config } from '../config';
+import { SANDBOX_VERSION } from '../config';
 import {
   buildRuntimeArtifactFingerprint,
   cliConnectorRuntimeArtifacts,

@@ -23,29 +23,17 @@ import {
   cancelScheduledChange,
   cancelSubscription,
   claimPerSeatBilling,
-  createCheckoutSession,
   createPerSeatCheckout,
   createPortalSession,
   getAccountState,
   purchaseCredits,
   reactivateSubscription,
-  scheduleDowngrade,
   syncSubscription,
   type AccountState,
 } from '@kortix/sdk';
 import { dollarsToCredits } from '@kortix/shared';
 
 export type { AccountState };
-
-export interface CreateCheckoutSessionRequest {
-  tier_key: string;
-  success_url: string;
-  cancel_url: string;
-  commitment_type?: string;
-  locale?: string;
-  server_type?: string;
-  location?: string;
-}
 
 export interface CreatePortalSessionRequest {
   return_url: string;
@@ -59,11 +47,6 @@ export interface PurchaseCreditsRequest {
 
 export interface CancelSubscriptionRequest {
   feedback?: string;
-}
-
-export interface ScheduleDowngradeRequest {
-  target_tier_key: string;
-  commitment_type?: string;
 }
 
 // =============================================================================
@@ -227,34 +210,6 @@ export function useAccountState(options?: UseAccountStateOptions) {
 // =============================================================================
 // MUTATION HOOKS - All invalidate account state after success
 // =============================================================================
-
-export function useCreateCheckoutSession() {
-  const queryClient = useQueryClient();
-  const accountId = useBillingAccountId();
-
-  return useMutation({
-    mutationFn: (request: CreateCheckoutSessionRequest) =>
-      createCheckoutSession({
-        accountId,
-        tierKey: request.tier_key,
-        successUrl: request.success_url,
-        cancelUrl: request.cancel_url,
-        commitmentType: request.commitment_type,
-        locale: request.locale,
-        serverType: request.server_type,
-        location: request.location,
-      }),
-    onSuccess: (data) => {
-      // Invalidate and refetch on upgrade/update - checkout redirects user anyway
-      if (data.status === 'upgraded' || data.status === 'updated') {
-        invalidateAccountState(queryClient, true, true, accountId); // Force refetch with skipCache after checkout
-      }
-      if (data.checkout_url) {
-        window.location.href = data.checkout_url;
-      }
-    },
-  });
-}
 
 // Billing v2 — start the per-seat subscription flow. If a card is on file,
 // the API creates the subscription directly and returns { status: 'subscription_created' };
@@ -425,10 +380,6 @@ export function usePurchaseCredits() {
       }
     },
   });
-}
-
-export function useScheduleDowngrade() {
-  return useBillingAction((accountId, request: ScheduleDowngradeRequest) => scheduleDowngrade(request.target_tier_key, request.commitment_type, accountId), 'text645418722dbb');
 }
 
 export function useCancelScheduledChange() {

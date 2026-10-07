@@ -72,6 +72,7 @@ export function useRuntimeAgents(options?: { directory?: string; projectId?: str
   });
 }
 
+/** @deprecated Use `useRuntimeAgents` and select by `name`. Removed in the next major. */
 export function useRuntimeAgent(agentName: string) {
   const runtimeReady = useRuntimeReady();
   return useQuery<Agent | undefined>({

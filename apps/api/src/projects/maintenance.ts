@@ -668,5 +668,3 @@ async function checkBillingInvariants(): Promise<void> {
     );
   }
 }
-
-export { startProjectMaintenance, stopProjectMaintenance } from '../workers/project-maintenance-worker';

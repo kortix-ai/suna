@@ -23,7 +23,6 @@ import { config } from '../config';
 import { ObjectStore, type ObjectBody, type PutOutcome, resolvePresignTarget } from '../object-store/s3';
 
 export { resolvePresignTarget };
-export type { PutOutcome };
 
 export const PROJECT_SNAPSHOT_FORMAT = 'project-snapshot-v2';
 export const PROJECT_SNAPSHOT_MANIFEST_NAME = 'manifest.json';
@@ -128,18 +127,9 @@ const store = new ObjectStore(() => ({
   secretAccessKey: config.KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY,
 }));
 
-export function projectSnapshotStore(): ObjectStore {
-  return store;
-}
-
 /** The client the API uses to read/write objects (its own network path). */
 export function projectSnapshotS3Client(): S3Client {
   return store.client();
-}
-
-/** The client that SIGNS download URLs — see `resolvePresignTarget`. */
-export function projectSnapshotPresignClient(): S3Client {
-  return store.presignClient();
 }
 
 export function __resetProjectSnapshotS3ClientForTests(): void {

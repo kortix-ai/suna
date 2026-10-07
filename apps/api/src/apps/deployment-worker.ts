@@ -832,5 +832,3 @@ export async function runAppDeploymentTick(): Promise<{ processed: number }> {
     if (workerRerunRequested) scheduleTriggeredTick();
   }
 }
-
-export { startAppDeploymentWorker, stopAppDeploymentWorker } from '../workers/app-deployment-worker';

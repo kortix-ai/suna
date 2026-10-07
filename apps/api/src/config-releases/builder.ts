@@ -47,7 +47,7 @@ export {
   resolveReleaseTreeSource,
   selectedOpenCodePlugins,
 } from './release-tree';
-export type { ConfigReleaseFile, ConfigReleaseVariant } from './release-tree';
+export type { ConfigReleaseVariant } from './release-tree';
 
 const CONFIG_RELEASE_FORMAT = 'config-release-v2';
 

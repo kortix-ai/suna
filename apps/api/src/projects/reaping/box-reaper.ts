@@ -63,7 +63,6 @@ import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
 import { promoteNextInboxRow } from '../session-lifecycle/store';
 import {
   REAPER_TURN_CAUSES,
-  type SandboxTurnDeliveryReconciliation,
   type SessionTurnEndReason,
   type StoredSandboxTurn,
   settleOrphanedSandboxTurns,
@@ -1086,4 +1085,4 @@ function hasFreshTurnRecord(turns: StoredSandboxTurn[], now: Date): boolean {
   });
 }
 
-export { observeSandboxTurn, type SandboxTurnReading } from '../sandbox-turn-observation';
+export { observeSandboxTurn } from '../sandbox-turn-observation';

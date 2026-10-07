@@ -83,5 +83,3 @@ export async function runAppIdleReaper(now = new Date()): Promise<{ candidates: 
     running = false;
   }
 }
-
-export { startAppIdleReaper, stopAppIdleReaper } from '../workers/app-idle-reaper-worker';
