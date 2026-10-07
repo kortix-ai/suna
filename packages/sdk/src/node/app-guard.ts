@@ -62,6 +62,14 @@ export interface KortixAppGuardOptions {
   backendUrl?: string;
   /** The App's own sign-in, from `createKortixAuth`. Omit for a gate-only App. */
   auth?: Pick<KortixAuth, 'viewer' | 'signInUrl'> | null;
+  /**
+   * The account that owns the App. Defaults to `KORTIX_APP_ACCOUNT_ID`, which
+   * Kortix sets on every App it hosts. On the sign-in path, groups are read in
+   * this account only, and a viewer outside it has none. Without it, group
+   * names are not trusted on that path (any account can create a group with
+   * the same name); group ids still match.
+   */
+  accountId?: string;
   /** How long a fetched group list stays fresh. Default 60s. */
   groupCacheTtlMs?: number;
   fetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -85,9 +93,9 @@ interface CacheEntry {
   at: number;
 }
 
-function envSecret(): string | undefined {
+function env(name: string): string | undefined {
   try {
-    return typeof process !== 'undefined' ? process.env?.KORTIX_APP_VIEWER_SECRET : undefined;
+    return typeof process !== 'undefined' ? process.env?.[name] || undefined : undefined;
   } catch {
     return undefined;
   }
@@ -104,7 +112,7 @@ export function createKortixAppGuard(options: KortixAppGuardOptions = {}): Korti
    * the difference between "this deployment shares no identity" and "this
    * deployment trusts a signature it should no longer accept".
    */
-  const resolveSecret = () => options.secret ?? envSecret();
+  const resolveSecret = () => options.secret ?? env('KORTIX_APP_VIEWER_SECRET');
   const ttl = options.groupCacheTtlMs ?? 60_000;
   const now = options.now ?? (() => Date.now());
   const fetchImpl =
@@ -176,15 +184,23 @@ export function createKortixAppGuard(options: KortixAppGuardOptions = {}): Korti
     const signedIn = await options.auth.viewer(request).catch(() => null);
     if (!signedIn) return null;
 
-    const accountId = signedIn.accounts?.[0]?.account_id ?? '';
-    const membership = accountId
+    // Sign-in proves who, not which account: `accounts` lists every account
+    // of the viewer, including ones they created themselves. Group names are
+    // unique only within an account, so names count only when read in the
+    // App's own account.
+    const appAccountId = options.accountId ?? env('KORTIX_APP_ACCOUNT_ID');
+    const accounts = signedIn.accounts ?? [];
+    const inAppAccount = Boolean(appAccountId) && accounts.some((a) => a.account_id === appAccountId);
+    const accountId = inAppAccount ? appAccountId! : (accounts[0]?.account_id ?? '');
+    // Outside the App's account, there are no groups to read.
+    const membership = accountId && (inAppAccount || !appAccountId)
       ? await fetchGroups(accountId, signedIn.userId, signedIn.token)
       : { groupIds: [], groups: [] };
     return {
       userId: signedIn.userId,
       email: signedIn.email ?? null,
       groupIds: membership.groupIds,
-      groups: membership.groups,
+      groups: inAppAccount ? membership.groups : [],
       accountId,
       source: 'kortix-sign-in',
       token: signedIn.token,
@@ -229,7 +245,8 @@ export function createKortixAppGuard(options: KortixAppGuardOptions = {}): Korti
       // caller. It means the opposite here, so a config bug that produces `[]`
       // closes the resource instead of opening it to everyone.
       if (groupIds.length === 0) return { response: refuse() };
-      // A group id or a group name: names are unique within the account.
+      // A group id or a group name. Names are unique only within one account,
+      // so the sign-in path fills `groups` only from the App's own account.
       const allowed = groupIds.some((group) => found.groupIds.includes(group) || (found.groups ?? []).includes(group));
       return allowed ? { viewer: found } : { response: refuse() };
     },

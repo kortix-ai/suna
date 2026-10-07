@@ -81,6 +81,15 @@ export function appViewerSecret(appId: string): string {
     .digest('hex');
 }
 
+/**
+ * The identity variables every App runtime gets. `KORTIX_APP_ACCOUNT_ID` names
+ * the App's account: `createKortixAppGuard` reads group names on its sign-in
+ * path in that account only, because names are unique only within one.
+ */
+export function appRuntimeIdentityEnv(app: { appId: string; accountId: string }): Record<string, string> {
+  return { [APP_VIEWER_SECRET_ENV]: appViewerSecret(app.appId), KORTIX_APP_ACCOUNT_ID: app.accountId };
+}
+
 export interface AppViewerContext {
   v: 1;
   appId: string;
