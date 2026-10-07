@@ -551,6 +551,7 @@ const KEEP_REAL = new Set([
   '@/stores/session-prompt-request-store',
   '@/stores/composer-draft-store',
   '@/components/session/tool/shared/connector-handoff-context',
+  '@/components/session/composer-bottom-fade',
 ]);
 
 const CAPTURE = [
@@ -1566,7 +1567,8 @@ describe('SessionPage render work', () => {
     const inOverlay = gradients.filter((node) => ancestors(node).includes(overlay));
     expect(inOverlay.length).toBe(1);
     expect(inOverlay[0].props.locations).toEqual([0, 0.45, 1]);
-    const fade = byTestID('session-composer-fade');
+    // The host view, not the `ComposerBottomFade` element that carries the same testID.
+    const fade = tree!.root.findAll((node) => node.props.testID === 'session-composer-fade').at(-1)!;
     expect(ancestors(inOverlay[0])).toContain(fade);
     expect(fade.props.pointerEvents).toBe('none');
 
@@ -1579,7 +1581,7 @@ describe('SessionPage render work', () => {
     await layoutComposerArea(150.4);
     expect(endPadding()).toBe(184);
     // The drawer's bottom-bar fade at 28.75%: (34 inset + 96) × 0.2875.
-    const fadeHeight = () => flat(byTestID('session-composer-fade').props.style).reduce((h, st) => st.height ?? h, 0);
+    const fadeHeight = () => flat(fade.props.style).reduce((h, st) => st.height ?? h, 0);
     expect(fadeHeight()).toBeCloseTo(37.375);
     const restingFade = fadeHeight();
     // The room counts the covered height: 600 − 184 − 200 − 24 = 192.

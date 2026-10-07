@@ -20,7 +20,6 @@ import {
   Easing,
   Platform,
   RefreshControl,
-  StyleSheet,
   type LayoutChangeEvent,
   type NativeSyntheticEvent,
   type NativeScrollEvent,
@@ -73,7 +72,7 @@ import { SessionChangeRequests } from '@/components/session/SessionChangeRequest
 import { requestPushPermissionOnce } from '@/lib/notifications/registration';
 import { Icon } from '@/components/ui/icon';
 import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
-import { LinearGradient } from 'expo-linear-gradient';
+import { ComposerBottomFade } from '@/components/session/composer-bottom-fade';
 
 import {
   addOptimisticMessage,
@@ -346,9 +345,6 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const endPaddingStyle = useAnimatedStyle(() => ({
     height: composerAreaHeight.value + bottomInset * (1 - keyboardProgress.value),
   }));
-  // The project drawer's bottom-bar fade (`ProjectLeftDrawer` `fadeHeight`:
-  // inset + 16pt gap + 44pt controls + 36pt above them), at 28.75% of its height.
-  const composerFadeHeight = (insets.bottom + DRAWER_FADE_HEIGHT) * COMPOSER_FADE_SCALE;
   /** The end padding as the room reads it (the UI thread's last value). */
   const endPaddingNow = useCallback(
     () => composerAreaHeightRef.current + bottomInsetRef.current * (1 - keyboardProgress.value),
@@ -2172,13 +2168,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             on the keyboard. `box-none`: taps reach the list everywhere but
             on the composer. */}
         <View pointerEvents="box-none" style={COMPOSER_OVERLAY}>
-        <View testID="session-composer-fade" pointerEvents="none" style={[COMPOSER_FADE, { height: composerFadeHeight }]}>
-          <LinearGradient
-            colors={[withAlpha(pageBackground, 0), withAlpha(pageBackground, 0.85), withAlpha(pageBackground, 1)]}
-            locations={[0, 0.45, 1]}
-            style={StyleSheet.absoluteFill}
-          />
-        </View>
+        <ComposerBottomFade testID="session-composer-fade" background={pageBackground} bottomInset={insets.bottom} />
         <View pointerEvents="box-none" style={FILL}>
         {heroMounted ? <FreshSessionHero opacity={heroOpacity} visible={showFreshHero} /> : null}
 
@@ -2288,12 +2278,6 @@ export const SessionPage = React.memo(SessionPageImpl);
 const FILL = { flex: 1 } as const;
 /** Fills its parent: the overlay over the message area. */
 const COMPOSER_OVERLAY = { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 } as const;
-/** The project drawer's bottom-bar fade (`ProjectLeftDrawer`), at the screen's bottom edge. */
-const COMPOSER_FADE = { position: 'absolute', right: 0, bottom: 0, left: 0 } as const;
-/** The drawer fade's height above the safe-area inset: 16pt gap + 44pt controls + 36pt above them. */
-const DRAWER_FADE_HEIGHT = 16 + 44 + 36;
-/** The session fade: a quarter of the drawer's, plus 15%. */
-const COMPOSER_FADE_SCALE = 0.2875;
 
 /**
  * The list's `KeyboardGestureArea`, offset by the composer's height. The height
