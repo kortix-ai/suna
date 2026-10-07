@@ -26,7 +26,6 @@ import { auth, errors, json } from '../../openapi';
 import { agentAuditInitiator } from '../../shared/agent-audit-attribution';
 import { AUDIT_READ_FLUSH_BARRIER_MS, flushAuditEvents } from '../../shared/audit';
 import {
-  AUDIT_STATEMENT_TIMEOUT_MS,
   auditDb,
   auditErrorSqlstate,
   isAuditContentionError,
@@ -104,11 +103,26 @@ export function auditIngestChunkSize(): number {
 const AUDIT_INGEST_RETRY_AFTER_SECONDS = 5;
 
 /**
- * A statement's worst case is the audit pool's statement timeout plus a 1 s
- * response margin. A chunk starts only when that fits the request's remaining
- * budget.
+ * Response margin held back from the chunk race so the contended 503 itself
+ * still fits inside the request deadline.
  */
 const AUDIT_INGEST_ATTEMPT_MARGIN_MS = 1_000;
+
+/**
+ * The smallest remaining budget a chunk may start with. The race below bounds
+ * a chunk at `remaining - AUDIT_INGEST_ATTEMPT_MARGIN_MS`, so starting with
+ * more than that margin left still answers the request inside its deadline —
+ * the audit pool's 10 s statement timeout is a worst case, not a prediction.
+ * Calibrating the pre-check to that worst case made the route refuse a
+ * healthy write: prod 2026-10-04→10-07 refused every batch whose auth plus
+ * handler lookups had consumed 14–21 s on a degraded main pool
+ * (`remaining_ms` 4–10.6 s, `attempted: 0`, batches of 1–36 rows) while the
+ * audit pool itself stayed healthy — zero contentions, zero races, zero queue
+ * drops in 100 h of logs. Each refusal bounced a millisecond-scale INSERT to
+ * the relay for another 5 s-later POST during exactly the windows where
+ * retries hurt most.
+ */
+const AUDIT_INGEST_MIN_RESERVE_MS = 2_000;
 
 /**
  * Rows in the smallest statement a contended ingest falls back to (half of the
@@ -305,21 +319,20 @@ async function writeIngestBatch(input: {
   let chunkSize = auditIngestChunkSize();
   let fallbacks = 0;
   for (let offset = 0; offset < toInsert.length; ) {
-    // Stay inside the request's own 25s deadline. A chunk must not start
-    // unless its worst case (the audit pool's
-    // statement timeout + margin) fits the remaining budget; the deadline
-    // middleware otherwise aborts mid-batch with an error-level
-    // `request exceeded the 25s server processing deadline` line, no
-    // `Retry-After: 5` pacing, and chunks that keep writing for a response
-    // nobody reads (prod 2026-09-28: the aborts were this route's dominant
-    // error class). Stop at that boundary and answer with the same
-    // controlled contended 503 the contention path returns — the relay holds the
-    // batch in its spool and retries with `Retry-After`, and committed
-    // chunks stay committed.
+    // Stay inside the request's own 25s deadline. The race below bounds each
+    // chunk so the deadline middleware never aborts mid-batch with an
+    // error-level `request exceeded the 25s server processing deadline`
+    // line, no `Retry-After: 5` pacing, and chunks that keep writing for a
+    // response nobody reads (prod 2026-09-28: the aborts were this route's
+    // dominant error class). A chunk starts only when the remaining budget
+    // still affords its response margin; below that, stop and answer with
+    // the same controlled contended 503 the contention path returns — the
+    // relay holds the batch in its spool and retries with `Retry-After`,
+    // and committed chunks stay committed.
     const remainingMs = remainingIngestBudgetMs(c);
-    // A chunk never starts unless its worst case (the audit pool's statement
-    // timeout plus the response margin) fits the remaining budget.
-    if (remainingMs !== null && remainingMs < AUDIT_STATEMENT_TIMEOUT_MS + AUDIT_INGEST_ATTEMPT_MARGIN_MS) {
+    // A chunk never starts unless the race that bounds it still has its
+    // response margin left (see AUDIT_INGEST_MIN_RESERVE_MS).
+    if (remainingMs !== null && remainingMs < AUDIT_INGEST_MIN_RESERVE_MS) {
       appLogger.warn('[audit] ingest budget exhausted', {
         projectId,
         sessionId,
@@ -348,9 +361,9 @@ async function writeIngestBatch(input: {
       const chunkResult =
         remainingMs === null
           ? { timedOut: false as const, value: await chunkWork }
-          // 1s held back so the contended 503 response itself still fits
-          // inside the deadline.
-          : await boundChunkWrite(chunkWork, remainingMs - 1_000);
+          // The response margin is held back so the contended 503 response
+          // itself still fits inside the deadline.
+          : await boundChunkWrite(chunkWork, remainingMs - AUDIT_INGEST_ATTEMPT_MARGIN_MS);
       if (chunkResult.timedOut) {
         // The statement keeps running off the request path. Swallow its
         // eventual rejection (a statement timeout, or the lock wait it is
@@ -360,7 +373,8 @@ async function writeIngestBatch(input: {
           projectId,
           sessionId,
           remaining_ms: remainingIngestBudgetMs(c),
-          chunk_budget_ms: remainingMs === null ? null : remainingMs - 1_000,
+          chunk_budget_ms:
+            remainingMs === null ? null : remainingMs - AUDIT_INGEST_ATTEMPT_MARGIN_MS,
           accepted: parsed.accepted,
           attempted,
           inserted: insertedCount,
