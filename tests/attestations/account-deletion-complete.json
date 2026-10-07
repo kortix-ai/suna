@@ -1,18 +1,20 @@
 {
-  "source_hash": "402a3c0aa1a807d7e24197e6a015628844cd86ad780516331715424730f2f333",
+  "source_hash": "0a59c03d84ad0451d723c1f719ac69a0ea327af5e90ddbaef9015fd0ad755f77",
   "diff_files": [
-    "apps/api/src/billing/repositories/account-deletion.ts",
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-07T155738Z-clear-every-no-action-foreign-key-into-auth-users-before-got.md",
+    "apps/api/src/__tests__/billing/mocks.ts",
+    "apps/api/src/billing/services/account-deletion.test.ts",
     "apps/api/src/billing/services/account-deletion.ts",
-    "apps/api/src/billing/services/integration-account-deletion.test.ts",
-    "apps/api/src/config.ts"
+    "apps/api/src/billing/services/integration-account-deletion.test.ts"
   ],
-  "diff_hash": "b4cbd16f0dbbb598565dd926ebe93f7ea4b8c3fb6fb69382879b36ff185652fa",
-  "head": "3f74ef9e8a49cf177a8fd0c05c164057267d47a8",
+  "diff_hash": "003bf8457e060eae747df6fb8a9e3a92cedb4bc3a5df069658cd02d7e51467a5",
+  "head": "d5ad6bf3cfc768709c4a4dbead3e430d2c2e7510",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-07T10:40:21.059Z"
+  "at": "2026-10-07T16:07:25.697Z"
 }
