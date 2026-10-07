@@ -18,6 +18,7 @@ let sessionRows: Array<{ status: string; metadata: Record<string, unknown> }> = 
 let enqueueCalls: Array<Record<string, unknown>> = [];
 let drainCalls: Array<Record<string, unknown>> = [];
 let createCalls: Array<Record<string, unknown>> = [];
+let enqueueDeduped = false;
 
 mock.module('../../config', () => ({
   config: {},
@@ -59,6 +60,7 @@ mock.module('../session-lifecycle', () => ({
   },
   enqueueContinueSessionCommand: async (input: Record<string, unknown>) => {
     enqueueCalls.push(input);
+    return { row: { commandId: 'cmd-1' }, deduped: enqueueDeduped };
   },
   resolveAgentRunAttribution: async () => null,
   resolveProjectAutomationActor: async () => 'actor-1',
@@ -84,6 +86,7 @@ beforeEach(() => {
   enqueueCalls = [];
   drainCalls = [];
   createCalls = [];
+  enqueueDeduped = false;
 });
 
 describe('fireGitTrigger — durable prompt delivery', () => {
@@ -115,6 +118,25 @@ describe('fireGitTrigger — durable prompt delivery', () => {
     // Immediate-feel fast path; the scheduler tick is the durable guarantee.
     expect(drainCalls).toHaveLength(1);
     // No direct/fresh session creation happened.
+    expect(createCalls).toHaveLength(0);
+  });
+
+  test('reuse mode: the same delivery again answers deduped and kicks no drain (KRTX-1735)', async () => {
+    reusableRows = [{ sessionId: 'sess-reuse' }];
+    sessionRows = [{ status: 'stopped', metadata: {} }];
+    enqueueDeduped = true;
+
+    const result = await fireGitTrigger({
+      spec: { ...baseSpec, sessionMode: 'reuse' } as never,
+      project,
+      payload: {},
+      renderedPrompt: 'do the thing',
+      source: 'webhook',
+      idempotencyKey: 'trigger:webhook:proj-1:daily:evt-1',
+    });
+
+    expect(result).toMatchObject({ status: 'queued', sessionId: 'sess-reuse', deduped: true });
+    expect(drainCalls).toHaveLength(0);
     expect(createCalls).toHaveLength(0);
   });
 
