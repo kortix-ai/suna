@@ -18,6 +18,7 @@ import {
   gatewayRequestLogs,
   projectSessions,
   projects,
+  sessionSandboxes,
 } from '@kortix/db';
 import { insertIntoView } from '../../__tests__/helpers/compat-views';
 
@@ -129,6 +130,37 @@ describe('scheduled deletion', () => {
     expect(await requestStatus(requestId)).toBe('completed');
     const [credit] = await db.select().from(creditAccounts).where(eq(creditAccounts.accountId, accountId));
     expect(credit?.paymentStatus).toBe('deleted');
+  });
+
+  test('an account whose session box has an established identity is deleted', async () => {
+    // kortix.guard_session_sandbox_identity() refuses to delete a session_sandboxes
+    // row that has an external_id unless its session is soft-deleted.
+    const { accountId, requestId } = await seed();
+    const [project] = await db.select().from(projects).where(eq(projects.accountId, accountId));
+    const sessionId = crypto.randomUUID();
+    await db.insert(projectSessions).values({
+      sessionId,
+      projectId: project!.projectId,
+      accountId,
+      branchName: `session/${sessionId}`,
+      createdBy: accountId,
+      status: 'stopped',
+    });
+    await db.insert(sessionSandboxes).values({
+      sandboxId: crypto.randomUUID(),
+      sessionId,
+      accountId,
+      projectId: project!.projectId,
+      provider: 'daytona',
+      externalId: `ext-${sessionId}`,
+      status: 'stopped',
+    });
+
+    const result = await processScheduledDeletions();
+
+    expect(result.errors).toEqual([]);
+    expect(await accountExists(accountId)).toBe(false);
+    expect(await requestStatus(requestId)).toBe('completed');
   });
 
   test('a failed Stripe cancel leaves the account intact and the request retryable', async () => {
@@ -258,7 +290,10 @@ describe('auth-user-delete trigger', () => {
     expect(await accountExists(accountId)).toBe(true);
     const [request] = await db.select().from(accountDeletionRequests).where(eq(accountDeletionRequests.accountId, accountId));
     expect(request?.status).toBe('pending');
-    expect(new Date(request!.scheduledFor).getTime()).toBeLessThanOrEqual(Date.now());
+    // Due now, not after a grace period. The trigger stamps the database's
+    // now(), and the Docker VM clock can run tens of ms ahead of this process.
+    const { rows: [clock] } = await superuser.query('select now() as now');
+    expect(new Date(request!.scheduledFor).getTime()).toBeLessThanOrEqual(new Date(clock.now).getTime());
 
     // The auth user is already gone: the sweep treats "user not found" as done.
     deleteUser.mockImplementation(async () => ({ error: { status: 404 } }));
@@ -307,5 +342,125 @@ describe('sweep guard', () => {
     }
     expect((await processScheduledDeletions()).processed).toBeGreaterThanOrEqual(1);
     expect(await requestStatus(scheduled.requestId)).toBe('completed');
+  });
+});
+
+describe('legacy basejump references to the auth user', () => {
+  // Prod and dev still carry the legacy `basejump` schema and public tables
+  // whose NO ACTION foreign keys block GoTrue's delete of auth.users. The
+  // migrated test database has none of them, so this block builds the same FK
+  // shape (verified against dev's catalog) and drives the real routine.
+  beforeAll(async () => {
+    await superuser.query(`
+      create schema if not exists basejump;
+      create table if not exists basejump.accounts (
+        id uuid primary key default gen_random_uuid(),
+        primary_owner_user_id uuid not null references auth.users(id),
+        personal_account boolean not null default false,
+        created_by uuid references auth.users(id),
+        updated_by uuid references auth.users(id));
+      create table if not exists basejump.invitations (
+        id uuid primary key default gen_random_uuid(),
+        invited_by_user_id uuid not null references auth.users(id));
+      create table if not exists public.agent_versions (
+        id uuid primary key default gen_random_uuid(),
+        created_by uuid references basejump.accounts(id));
+      create table if not exists public.google_oauth_tokens (
+        id uuid primary key default gen_random_uuid(),
+        user_id uuid references auth.users(id));
+      create table if not exists public.user_roles (
+        id uuid primary key default gen_random_uuid(),
+        granted_by uuid references auth.users(id));
+      create table if not exists public.admin_actions_log (
+        id uuid primary key default gen_random_uuid(),
+        admin_user_id uuid not null references auth.users(id));
+      grant all on schema basejump to postgres;
+      grant all on all tables in schema basejump to postgres;
+      grant all on public.agent_versions, public.google_oauth_tokens, public.user_roles, public.admin_actions_log to postgres;`);
+  });
+
+  /** GoTrue's delete: a real DELETE on auth.users that FK violations can refuse. */
+  function realAuthDelete() {
+    deleteUser.mockImplementation(async (id: string) => {
+      try {
+        await superuser.query(`delete from auth.users where id = $1`, [id]);
+        return { error: null };
+      } catch {
+        return { error: { status: 500 } };
+      }
+    });
+  }
+  const authUserCount = async (id: string) =>
+    Number((await superuser.query(`select count(*)::int n from auth.users where id = $1`, [id])).rows[0].n);
+
+  async function seedLegacy(userId: string, opts: { teamOwned?: boolean } = {}) {
+    const other = crypto.randomUUID();
+    await superuser.query(`insert into auth.users (id, email) values ($1, $2), ($3, $4)`, [
+      userId, `${userId}@example.test`, other, `${other}@example.test`,
+    ]);
+    const personal = (await superuser.query(
+      `insert into basejump.accounts (primary_owner_user_id, personal_account) values ($1, true) returning id`, [userId],
+    )).rows[0].id as string;
+    if (opts.teamOwned) {
+      await superuser.query(`insert into basejump.accounts (primary_owner_user_id, personal_account) values ($1, false)`, [userId]);
+    }
+    await superuser.query(`insert into public.agent_versions (created_by) values ($1)`, [personal]);
+    await superuser.query(`insert into basejump.invitations (invited_by_user_id) values ($1)`, [userId]);
+    await superuser.query(`insert into public.google_oauth_tokens (user_id) values ($1)`, [userId]);
+    // Someone else's rows that point at this user: kept, reference cleared.
+    await superuser.query(`insert into public.user_roles (granted_by) values ($1)`, [userId]);
+    await superuser.query(`insert into basejump.accounts (primary_owner_user_id, personal_account, created_by) values ($1, true, $2)`, [other, userId]);
+    return { personal, other };
+  }
+
+  test('removes the personal basejump account and clears every NO ACTION reference, so the auth delete succeeds', async () => {
+    realAuthDelete();
+    const { accountId, userId, requestId } = await seed({ subscription: false });
+    const { personal, other } = await seedLegacy(userId);
+
+    const result = await processScheduledDeletions();
+
+    expect(result.errors).toEqual([]);
+    expect(await authUserCount(userId)).toBe(0);
+    expect(await requestStatus(requestId)).toBe('completed');
+    expect(await accountExists(accountId)).toBe(false);
+    const count = async (sqlText: string, args: unknown[]) =>
+      Number((await superuser.query(sqlText, args)).rows[0].n);
+    expect(await count(`select count(*)::int n from basejump.accounts where id = $1`, [personal])).toBe(0);
+    expect(await count(`select count(*)::int n from public.agent_versions where created_by = $1`, [personal])).toBe(0);
+    expect(await count(`select count(*)::int n from basejump.invitations where invited_by_user_id = $1`, [userId])).toBe(0);
+    expect(await count(`select count(*)::int n from public.google_oauth_tokens where user_id = $1`, [userId])).toBe(0);
+    // Another user's rows survive with the reference nulled.
+    expect(await count(`select count(*)::int n from basejump.accounts where primary_owner_user_id = $1 and created_by is null`, [other])).toBe(1);
+    expect(await count(`select count(*)::int n from public.user_roles where granted_by is null`, [])).toBeGreaterThanOrEqual(1);
+  });
+
+  test('refuses to delete the login while the user owns a non-personal basejump account', async () => {
+    realAuthDelete();
+    const { userId, requestId } = await seed({ subscription: false });
+    await seedLegacy(userId, { teamOwned: true });
+
+    const result = await processScheduledDeletions();
+
+    // Earlier refusals stay pending and retry too: assert this user's error.
+    expect(result.errors.some((e) => e.includes(userId) && e.includes('basejump'))).toBe(true);
+    expect(await authUserCount(userId)).toBe(1);
+    expect(await requestStatus(requestId)).toBe('pending');
+    expect(
+      Number((await superuser.query(`select count(*)::int n from basejump.accounts where primary_owner_user_id = $1 and not personal_account`, [userId])).rows[0].n),
+    ).toBe(1);
+  });
+
+  test('refuses while the user is the actor of an admin audit row', async () => {
+    realAuthDelete();
+    const { userId, requestId } = await seed({ subscription: false });
+    await seedLegacy(userId);
+    await superuser.query(`insert into public.admin_actions_log (admin_user_id) values ($1)`, [userId]);
+
+    const result = await processScheduledDeletions();
+
+    expect(result.errors.some((e) => e.includes(userId) && e.includes('admin_actions_log'))).toBe(true);
+    expect(await authUserCount(userId)).toBe(1);
+    expect(await requestStatus(requestId)).toBe('pending');
   });
 });

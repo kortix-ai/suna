@@ -24,6 +24,8 @@ interface DriveHeaderProps {
   onRefresh: () => void;
   onDownloadDir: () => void;
   isDownloading?: boolean;
+  /** Offer "Find a file" (⌘P) in the `⋯` menu. */
+  showSearch?: boolean;
   /**
    * Draw the page-level sidebar opener. Only the standalone Files page needs
    * it: ProjectShell does not render a web opener, and the embedded session
@@ -77,6 +79,7 @@ export function DriveHeader({
   onRefresh,
   onDownloadDir,
   isDownloading,
+  showSearch = false,
   offsetForSidebarToggle = false,
 }: DriveHeaderProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -141,6 +144,7 @@ export function DriveHeader({
         onRefresh={onRefresh}
         onDownloadDir={onDownloadDir}
         isDownloading={isDownloading}
+        showSearch={showSearch}
       />
     </div>
   );

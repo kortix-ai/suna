@@ -2202,6 +2202,12 @@
       }
     }
   },
+  "ssoRequired": {
+    "title": "シングルサインオンでサインイン",
+    "description": "このアカウントでは、組織がシングルサインオンを必須にしています。サインアウトしてから、仕事用メールアドレスで続行し、会社の ID プロバイダー経由でサインインしてください。",
+    "signOut": "サインアウトして SSO を使う",
+    "notNow": "後で"
+  },
   "auth": {
     "haveReferralCode": "紹介コードをお持ちですか？",
     "referralCode": "紹介コード",
@@ -7148,7 +7154,8 @@
     "componentsSessionSessionErrorBanner": {
       "line58JsxAttrTitleYouRanOutOfCredits": "クレジットを使い切りました",
       "line74JsxTextEnableAutoTopUp": "自動チャージを有効にする",
-      "line82JsxTextBuyCredits": "クレジットを購入"
+      "line82JsxTextBuyCredits": "クレジットを購入",
+      "askOwnerToAddCredits": "クレジットを追加できるのはアカウントオーナーだけです。オーナーにチャージを依頼してください。"
     },
     "componentsSessionSessionFilesPanel": {
       "line80JsxTextThisSessionIsItsOwnVersion": "このセッションは独立したバージョンです",

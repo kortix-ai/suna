@@ -5,7 +5,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import { listProjectSecrets } from '../core/rest/projects-client';
 import { connectedGatewayProviderIdsFromSecretNames } from './provider-selection';
 import { configKeys } from './use-opencode-config';
-import { clearProjectProviderCache, runtimeKeys } from './use-opencode-sessions';
+import { runtimeKeys } from './use-opencode-sessions';
 import { qk } from './query-keys';
 
 type RefreshProjectProviderStateOptions = {
@@ -63,7 +63,6 @@ function invalidateProviderQueries(
 ): void {
   const projectProviderKey = ['project-providers', projectId];
   const fetchOptions = supersede ? undefined : { cancelRefetch: false };
-  clearProjectProviderCache(projectId);
   // FIRST, and never optional: the gateway provider list is a PROJECTION of
   // `/model-picker`, which lives under its own key at the `config` tier (60s)
   // and is read through `fetchQuery` (use-opencode-sessions/providers.ts).
@@ -87,6 +86,15 @@ function invalidateProviderQueries(
   void queryClient.refetchQueries({ queryKey: projectProviderKey, type: 'all' }, fetchOptions);
   void queryClient.invalidateQueries({ queryKey: runtimeKeys.providers() }, fetchOptions);
   void queryClient.invalidateQueries({ queryKey: configKeys.all }, fetchOptions);
+}
+
+/**
+ * Re-read the project's provider state once: the session stream saw the
+ * project's secrets version move (`kortix.control.session`), on this device or
+ * another. Keeps a read already in flight.
+ */
+export function invalidateProjectProviderQueries(queryClient: QueryClient, projectId: string): void {
+  invalidateProviderQueries(queryClient, projectId, false);
 }
 
 export function refreshProjectProviderState(

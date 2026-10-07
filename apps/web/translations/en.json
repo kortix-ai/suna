@@ -2202,6 +2202,12 @@
       }
     }
   },
+  "ssoRequired": {
+    "title": "Sign in with single sign-on",
+    "description": "Your organization requires single sign-on for this account. Sign out, then continue with your work email to sign in through your company's identity provider.",
+    "signOut": "Sign out and use SSO",
+    "notNow": "Not now"
+  },
   "auth": {
     "haveReferralCode": "Have a referral code?",
     "referralCode": "Referral Code",
@@ -7159,7 +7165,8 @@
     "componentsSessionSessionErrorBanner": {
       "line58JsxAttrTitleYouRanOutOfCredits": "You ran out of credits",
       "line74JsxTextEnableAutoTopUp": "Enable auto top-up",
-      "line82JsxTextBuyCredits": "Buy credits"
+      "line82JsxTextBuyCredits": "Buy credits",
+      "askOwnerToAddCredits": "Only an account owner can add credits. Ask one to top up."
     },
     "componentsSessionSessionFilesPanel": {
       "line80JsxTextThisSessionIsItsOwnVersion": "This session is its own version",

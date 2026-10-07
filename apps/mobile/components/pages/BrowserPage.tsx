@@ -21,7 +21,8 @@ import { Input } from '@/components/ui/input';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { getSandboxPortUrl } from '@/lib/platform/client';
 import { useTabStore, type PageTab } from '@/stores/tab-store';
-import { API_URL, getAuthToken } from '@/api/config';
+import { authenticatedRequest } from '@kortix/sdk';
+import { API_URL } from '@/api/config';
 import * as Linking from 'expo-linking';
 import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
@@ -53,7 +54,7 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
   const [canGoForward, setCanGoForward] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [authToken, setAuthToken] = useState<string | null>(null);
+  const [authHeaders, setAuthHeaders] = useState<Record<string, string> | null>(null);
 
   // Save state when unmounting (tab switch)
   const currentUrlRef = useRef(currentUrl);
@@ -88,15 +89,16 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
     return '';
   }, [initialUrl, initialPort, sandboxId, getProxyUrl]);
 
-  // Fetch auth token on mount; only set URL if no saved state
+  // Resolve the SDK's request headers (the session token) for the API origin
+  // on mount; only set URL if no saved state
   React.useEffect(() => {
-    getAuthToken().then((token) => {
-      setAuthToken(token);
+    authenticatedRequest(API_URL).then(({ headers }) => {
+      setAuthHeaders(headers);
       if (!currentUrl && resolvedInitialUrl) {
         setCurrentUrl(resolvedInitialUrl);
         setUrlInput(formatDisplayUrl(resolvedInitialUrl));
       }
-    });
+    }).catch(() => {}); // No session token: the page stays blank, as before.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolvedInitialUrl]);
 
@@ -194,7 +196,7 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
     </View>
   );
 
-  const hasPage = !!(currentUrl && authToken);
+  const hasPage = !!(currentUrl && authHeaders);
 
   return (
     <View className="flex-1 bg-background">
@@ -219,9 +221,7 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
                 // Only the trusted sandbox-proxy/API origin ever sees the live
                 // Supabase token; any other origin (a typed URL, a followed
                 // external link, a redirect off-host) must not, or it leaks.
-                headers: isTrustedProxyUrl(currentUrl, API_URL)
-                  ? { Authorization: `Bearer ${authToken}` }
-                  : undefined,
+                headers: isTrustedProxyUrl(currentUrl, API_URL) ? authHeaders ?? undefined : undefined,
               }}
               originWhitelist={['*']}
               onShouldStartLoadWithRequest={allowBrowserNavigation}

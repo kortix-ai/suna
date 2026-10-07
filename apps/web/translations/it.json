@@ -2202,6 +2202,12 @@
       }
     }
   },
+  "ssoRequired": {
+    "title": "Accedi con il single sign-on",
+    "description": "La tua organizzazione richiede il single sign-on per questo account. Esci, poi continua con la tua email di lavoro per accedere tramite il provider di identità della tua azienda.",
+    "signOut": "Esci e usa l'SSO",
+    "notNow": "Non ora"
+  },
   "auth": {
     "haveReferralCode": "Hai un codice referral?",
     "referralCode": "Codice Referral",
@@ -7148,7 +7154,8 @@
     "componentsSessionSessionErrorBanner": {
       "line58JsxAttrTitleYouRanOutOfCredits": "Hai esaurito i crediti",
       "line74JsxTextEnableAutoTopUp": "Attiva la ricarica automatica",
-      "line82JsxTextBuyCredits": "Acquista crediti"
+      "line82JsxTextBuyCredits": "Acquista crediti",
+      "askOwnerToAddCredits": "Solo un proprietario dell’account può aggiungere crediti. Chiedi a uno di ricaricare."
     },
     "componentsSessionSessionFilesPanel": {
       "line80JsxTextThisSessionIsItsOwnVersion": "Questa sessione è una versione separata",

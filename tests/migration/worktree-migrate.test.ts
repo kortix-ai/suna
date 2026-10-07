@@ -51,7 +51,7 @@ const suite = dockerOk ? describe : describe.skip;
 
 suite('worktree runMigrate (end-to-end against throwaway Postgres)', () => {
   beforeAll(async () => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
     const up = sh([
       'docker',
       'run',
@@ -85,7 +85,7 @@ suite('worktree runMigrate (end-to-end against throwaway Postgres)', () => {
   }, 120_000);
 
   afterAll(() => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
   });
 
   test('builds the kortix schema from scratch (prereqs + node-pg-migrate)', async () => {

@@ -156,7 +156,13 @@ mockIamAssignments({
   },
 });
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test
+// (readRepoFileBytes, added for the project-files route, broke this file).
+const actualGit = await import('../projects/git');
 mock.module('../projects/git', () => ({
+  ...actualGit,
   MergeConflictError: class MergeConflictError extends Error {},
   isRepoFileNotFoundError: () => false,
   grepRepoFiles: async () => [],
@@ -166,6 +172,7 @@ mock.module('../projects/git', () => ({
   listRepoFiles: async () => [],
   loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),
   readRepoFile: async () => '',
+  readRepoFileBytes: async () => Buffer.alloc(0),
   readManifestFromRepo: async () => null,
   invalidateProjectMirror: () => {},
   remoteBranchExists: async () => remoteBranchAfterSeed,
@@ -640,8 +647,13 @@ describe('POST /v1/projects/provision (managed git)', () => {
     // 'default' sentinel and any agent-scope model pin set on 'kortix' was
     // never applied (see llm-gateway/resolution/default-model.ts). Provision
     // must now stamp the mirror at creation time.
-    expect(updatedProjectSets).toHaveLength(1);
+    // Two writes, both intended: [0] the seed-state + default_agent
+    // metadataMerge, then [1] the fast-boot seed-hint cache persist
+    // (662329675f warms the hint at provision — persistFastBootGitHint writes
+    // metadata.git.fast_boot as its own best-effort project update).
+    expect(updatedProjectSets).toHaveLength(2);
     expect(updatedProjectSets[0]?.metadata).toHaveProperty('queryChunks');
+    expect(updatedProjectSets[1]?.metadata).toHaveProperty('queryChunks');
   });
 
   test('returns 503 when managed git is not configured', async () => {

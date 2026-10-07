@@ -75,6 +75,8 @@ async function callTool(args: Record<string, unknown>) {
       KORTIX_PROJECT_ID: PROJECT_ID,
       KORTIX_NO_UPDATE_CHECK: '1',
       KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
+      // The hermetic suite's fresh config store — the spawned CLI inherits nothing.
+      KORTIX_CONFIG_FILE: process.env.KORTIX_CONFIG_FILE,
       NO_COLOR: '1',
       FORCE_COLOR: '0',
     },

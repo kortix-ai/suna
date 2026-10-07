@@ -2202,6 +2202,12 @@
       }
     }
   },
+  "ssoRequired": {
+    "title": "使用单点登录",
+    "description": "你的组织要求此账户使用单点登录。请先退出，然后用工作邮箱继续，通过公司的身份提供商登录。",
+    "signOut": "退出并使用 SSO",
+    "notNow": "暂不"
+  },
   "auth": {
     "haveReferralCode": "有推荐码吗？",
     "referralCode": "推荐码",
@@ -7148,7 +7154,8 @@
     "componentsSessionSessionErrorBanner": {
       "line58JsxAttrTitleYouRanOutOfCredits": "你的额度已用完",
       "line74JsxTextEnableAutoTopUp": "启用自动充值",
-      "line82JsxTextBuyCredits": "购买额度"
+      "line82JsxTextBuyCredits": "购买额度",
+      "askOwnerToAddCredits": "只有账户所有者可以添加额度。请联系所有者充值。"
     },
     "componentsSessionSessionFilesPanel": {
       "line80JsxTextThisSessionIsItsOwnVersion": "此会话是独立版本",

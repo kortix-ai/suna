@@ -340,12 +340,14 @@ export type ComputerCallOutcome =
   | { ok: true; data: unknown }
   | {
       ok: false;
-      /** `computer_unpaired` | `computer_offline` | `computer_capability_not_approved`,
+      /** `computer_unpaired` | `computer_owner_left` (its owner left the account) |
+       *  `computer_offline` | `computer_capability_not_approved`,
        *  an access refusal on the machine (`computer_access_pending` |
        *  `computer_access_denied` | `computer_access_off`), or `error` for a
        *  failure on the machine or in the relay. */
       kind:
         | 'computer_unpaired'
+        | 'computer_owner_left'
         | 'computer_offline'
         | 'computer_capability_not_approved'
         | 'computer_access_pending'

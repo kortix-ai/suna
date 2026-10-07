@@ -353,6 +353,13 @@ export function useRuntimeReconnect() {
 
     async function check() {
       if (!alive) return;
+      // The session stream feeds the store from the server's own frames
+      // (R5.3): no probe while it does. The subscription below resumes the
+      // probe the moment the stream stops.
+      if (useSandboxConnectionStore.getState().streamDriven) {
+        scheduleNext();
+        return;
+      }
 
       let url: string | null;
       let token: string | null;
@@ -536,8 +543,12 @@ export function useRuntimeReconnect() {
     }
 
     check();
+    const unsubscribeStream = useSandboxConnectionStore.subscribe((state, previous) => {
+      if (previous.streamDriven && !state.streamDriven && alive) void check();
+    });
 
     return () => {
+      unsubscribeStream();
       alive = false;
       abortRef.current?.abort();
       if (timerRef.current) clearTimeout(timerRef.current);
