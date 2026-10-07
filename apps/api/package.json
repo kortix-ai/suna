@@ -44,7 +44,6 @@
     "@supabase/supabase-js": "^2.95.3",
     "agent-tunnel": "workspace:@kortix/agent-tunnel@*",
     "croner": "^9.0.0",
-    "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
     "e2b": "2.37.0",
     "hono": "^4.13.7",
