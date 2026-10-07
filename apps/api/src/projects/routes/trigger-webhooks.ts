@@ -5,13 +5,13 @@ import { loadProjectTriggers } from '../triggers';
 import { invalidateProjectMirror } from '../git';
 import { projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import { createHash } from 'node:crypto';
 import { createRoute, z } from '@hono/zod-openapi';
 import { errors, json } from '../../openapi';
 import { TriggerFireResultSchema, projectWebhooksApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { requestAuditContext } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
+import { releaseWebhookDeliveryKey, webhookDeliveryKey } from '../lib/webhook-delivery';
 import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
 import {
   validateWebhookSecretConfiguration,
@@ -142,22 +142,17 @@ export function registerTriggerWebhooksRoutes(): void {
       fired_at: new Date().toISOString(),
     };
     const renderedPrompt = renderPromptTemplate(spec.promptTemplate, payload);
-    const deliveryId =
-      c.req.header('x-kortix-delivery-id') ??
-      c.req.header('x-github-delivery') ??
-      c.req.header('x-request-id') ??
-      null;
-    const staticAuthFingerprint =
-      c.req.header('x-kortix-token') ??
-      c.req.header('authorization') ??
-      '';
-    const idempotencyKey = deliveryId
-      ? `trigger:webhook:${project.projectId}:${spec.slug}:${deliveryId}`
-      : `trigger:webhook:${project.projectId}:${spec.slug}:${createHash('sha256')
-        .update(rawBody)
-        .update(signatureHeader ?? '')
-        .update(staticAuthFingerprint)
-        .digest('hex')}`;
+    // One delivery runs once: keyed on the event when the sender names one,
+    // else on the body inside a replay window (projects/lib/webhook-delivery.ts).
+    const delivery = webhookDeliveryKey({
+      projectId: project.projectId,
+      slug: spec.slug,
+      header: (name) => c.req.header(name),
+      rawBody,
+      signatureHeader,
+      staticAuthFingerprint: c.req.header('x-kortix-token') ?? c.req.header('authorization') ?? '',
+    });
+    const idempotencyKey = delivery.key;
 
     // Server-side per-project kill-switch: a paused project ignores inbound
     // webhooks (acknowledged, not fired) so a repo deployed to two control planes
@@ -174,6 +169,10 @@ export function registerTriggerWebhooksRoutes(): void {
       return c.json({ status: 'skipped' as const, reason: 'delivery did not match the trigger filter' }, 200);
     }
 
+    // A key whose earlier run dead-lettered, lost its session, or (body-hash
+    // keys) aged out of the replay window answers for nothing: free it so
+    // this delivery runs instead of replaying that outcome.
+    await releaseWebhookDeliveryKey(idempotencyKey, { byEvent: delivery.byEvent });
     const result = await fireGitTrigger({
       spec,
       project,
@@ -184,10 +183,11 @@ export function registerTriggerWebhooksRoutes(): void {
       request: requestAuditContext(c),
     });
 
+    // A duplicate ran nothing: it answers `deduped` and leaves last_fired_at alone.
     if (result.status === 'queued') {
-      await markGitTriggerFired(project.projectId, spec.slug, new Date());
+      if (!result.deduped) await markGitTriggerFired(project.projectId, spec.slug, new Date());
       return c.json({
-        status: 'queued' as const,
+        status: result.deduped ? ('deduped' as const) : ('queued' as const),
         command_id: result.commandId ?? null,
         session_id: result.sessionId ?? null,
         reason: result.reason ?? null,
@@ -199,7 +199,7 @@ export function registerTriggerWebhooksRoutes(): void {
     }
     // Stamp runtime last_fired_at so the UI's "last fired N ago" matches the
     // cron-fire path even when the webhook is the actual source.
-    await markGitTriggerFired(project.projectId, spec.slug, new Date());
+    if (!result.deduped) await markGitTriggerFired(project.projectId, spec.slug, new Date());
     return c.json({
       status: result.deduped ? ('deduped' as const) : ('fired' as const),
       command_id: result.commandId ?? null,

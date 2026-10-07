@@ -290,7 +290,10 @@ describe('auth-user-delete trigger', () => {
     expect(await accountExists(accountId)).toBe(true);
     const [request] = await db.select().from(accountDeletionRequests).where(eq(accountDeletionRequests.accountId, accountId));
     expect(request?.status).toBe('pending');
-    expect(new Date(request!.scheduledFor).getTime()).toBeLessThanOrEqual(Date.now());
+    // Due now, not after a grace period. The trigger stamps the database's
+    // now(), and the Docker VM clock can run tens of ms ahead of this process.
+    const { rows: [clock] } = await superuser.query('select now() as now');
+    expect(new Date(request!.scheduledFor).getTime()).toBeLessThanOrEqual(new Date(clock.now).getTime());
 
     // The auth user is already gone: the sweep treats "user not found" as done.
     deleteUser.mockImplementation(async () => ({ error: { status: 404 } }));

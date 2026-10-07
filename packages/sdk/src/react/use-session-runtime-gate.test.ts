@@ -5,7 +5,7 @@ const source = readFileSync(new URL('./use-session.ts', import.meta.url), 'utf8'
 
 describe('useSession runtime ownership gate', () => {
   test('does not connect OpenCode transports before /start switches the sandbox', () => {
-    expect(source).toContain('useRuntimeEventStream({ enabled: switched })');
+    expect(source).toContain('useRuntimeEventStream({ enabled: switched, projectId, sessionId })');
     expect(source).toContain('networkEnabled: switched');
   });
 

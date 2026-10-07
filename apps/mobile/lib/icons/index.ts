@@ -60,7 +60,6 @@ import { DownloadIcon as DownloadGlyph } from 'phosphor-react-native/src/icons/D
 import { DownloadSimpleIcon as DownloadSimpleGlyph } from 'phosphor-react-native/src/icons/DownloadSimple';
 import { EnvelopeIcon as EnvelopeGlyph } from 'phosphor-react-native/src/icons/Envelope';
 import { ExportIcon as ExportGlyph } from 'phosphor-react-native/src/icons/Export';
-import { EyeIcon as EyeGlyph } from 'phosphor-react-native/src/icons/Eye';
 import { EyeglassesIcon as EyeglassesGlyph } from 'phosphor-react-native/src/icons/Eyeglasses';
 import { FileArchiveIcon as FileArchiveGlyph } from 'phosphor-react-native/src/icons/FileArchive';
 import { FileAudioIcon as FileAudioGlyph } from 'phosphor-react-native/src/icons/FileAudio';
@@ -173,7 +172,6 @@ import { StackIcon as StackGlyph } from 'phosphor-react-native/src/icons/Stack';
 import { StarIcon as StarGlyph } from 'phosphor-react-native/src/icons/Star';
 import { StopCircleIcon as StopCircleGlyph } from 'phosphor-react-native/src/icons/StopCircle';
 import { SunIcon as SunGlyph } from 'phosphor-react-native/src/icons/Sun';
-import { TagIcon as TagGlyph } from 'phosphor-react-native/src/icons/Tag';
 import { TargetIcon as TargetGlyph } from 'phosphor-react-native/src/icons/Target';
 import { TerminalIcon as TerminalGlyph } from 'phosphor-react-native/src/icons/Terminal';
 import { TerminalWindowIcon as TerminalWindowGlyph } from 'phosphor-react-native/src/icons/TerminalWindow';
@@ -193,7 +191,6 @@ import { WarningIcon as WarningGlyph } from 'phosphor-react-native/src/icons/War
 import { WebhooksLogoIcon as WebhooksLogoGlyph } from 'phosphor-react-native/src/icons/WebhooksLogo';
 import { WifiHighIcon as WifiHighGlyph } from 'phosphor-react-native/src/icons/WifiHigh';
 import { WifiSlashIcon as WifiSlashGlyph } from 'phosphor-react-native/src/icons/WifiSlash';
-import { WrenchIcon as WrenchGlyph } from 'phosphor-react-native/src/icons/Wrench';
 import { XCircleIcon as XCircleGlyph } from 'phosphor-react-native/src/icons/XCircle';
 import { XIcon as XGlyph } from 'phosphor-react-native/src/icons/X';
 
@@ -254,7 +251,6 @@ export const DownloadIcon = withAppWeight(DownloadGlyph, 'DownloadIcon');
 export const DownloadSimpleIcon = withAppWeight(DownloadSimpleGlyph, 'DownloadSimpleIcon');
 export const EnvelopeIcon = withAppWeight(EnvelopeGlyph, 'EnvelopeIcon');
 export const ExportIcon = withAppWeight(ExportGlyph, 'ExportIcon');
-export const EyeIcon = withAppWeight(EyeGlyph, 'EyeIcon');
 export const EyeglassesIcon = withAppWeight(EyeglassesGlyph, 'EyeglassesIcon');
 export const FileArchiveIcon = withAppWeight(FileArchiveGlyph, 'FileArchiveIcon');
 export const FileAudioIcon = withAppWeight(FileAudioGlyph, 'FileAudioIcon');
@@ -371,7 +367,6 @@ export const StackIcon = withAppWeight(StackGlyph, 'StackIcon');
 export const StarIcon = withAppWeight(StarGlyph, 'StarIcon');
 export const StopCircleIcon = withAppWeight(StopCircleGlyph, 'StopCircleIcon');
 export const SunIcon = withAppWeight(SunGlyph, 'SunIcon');
-export const TagIcon = withAppWeight(TagGlyph, 'TagIcon');
 export const TargetIcon = withAppWeight(TargetGlyph, 'TargetIcon');
 export const TerminalIcon = withAppWeight(TerminalGlyph, 'TerminalIcon');
 export const TerminalWindowIcon = withAppWeight(TerminalWindowGlyph, 'TerminalWindowIcon');
@@ -391,7 +386,6 @@ export const WarningIcon = withAppWeight(WarningGlyph, 'WarningIcon');
 export const WebhooksLogoIcon = withAppWeight(WebhooksLogoGlyph, 'WebhooksLogoIcon');
 export const WifiHighIcon = withAppWeight(WifiHighGlyph, 'WifiHighIcon');
 export const WifiSlashIcon = withAppWeight(WifiSlashGlyph, 'WifiSlashIcon');
-export const WrenchIcon = withAppWeight(WrenchGlyph, 'WrenchIcon');
 export const XCircleIcon = withAppWeight(XCircleGlyph, 'XCircleIcon');
 export const XIcon = withAppWeight(XGlyph, 'XIcon');
 
