@@ -1626,6 +1626,10 @@ export const SessionPromptSchema = z.object({
   attachments: z.array(z.object({ filename: z.string(), mime: z.string() })),
   /** Posted without a turn: no agent answers it. */
   no_reply: z.boolean(),
+  /** The member who sent it. The prompt runs as this member, so only they
+   *  edit, send now or retry it; they or a session manager remove it. Null
+   *  for a prompt with no recorded sender. Absent from older servers. */
+  author_user_id: z.string().nullable().optional(),
   created_at: z.string(),
   available_at: z.string(),
 });

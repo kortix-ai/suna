@@ -2232,6 +2232,38 @@ export const sessionSandboxes = kortixSchema.table(
     index('idx_session_sandboxes_parked_verified')
       .on(table.status, sql`(${table.metadata} ->> 'parkedVerifiedAt') ASC NULLS FIRST`)
       .where(sql`${table.externalId} is not null`),
+    // The runtime-wake fence reconcile (apps/api/src/projects/session-lifecycle/
+    // runtime-wake-maintenance.ts `reconcileRuntimeWakeFences`) runs on every
+    // maintenance pass with `WHERE status = <param> AND external_id IS NOT NULL
+    // AND ((metadata->>'runtimeWakeId' IS NOT NULL AND <wake-lease open>)
+    // OR (metadata->>'runtimeWakeCleanupUntilAt' ~ <ISO regex> AND > <param>
+    // AND metadata->>'runtimeWakeLateStartStoppedAt' IS NULL)) LIMIT 100`. Its
+    // candidate set is nearly always empty (the Supabase collector measured a
+    // mean of ~0.4 rows per call, KRTX-1308), so every pass paid a scan of
+    // every `stopped` row with an external id (~45.6k, mean 3964 ms) just to
+    // evaluate the jsonb predicates on rows that carry no wake keys. One index
+    // per OR arm serves the two arms of the predicate as a BitmapOr; the
+    // remaining jsonb conditions are rechecked on the handful of candidates.
+    //   - `status` is the leading KEY, not a partial-index predicate: the app
+    //     binds it as a query parameter, and a generic plan cannot prove
+    //     `status = $1` implies `status = 'stopped'` (same reasoning as
+    //     `idx_session_sandboxes_parked_verified` above).
+    //   - NOT partial on `external_id IS NOT NULL`, unlike the parked-verified
+    //     index: that sweep orders by the indexed expression, so it never
+    //     depends on the planner's estimates; this query does (no ORDER BY,
+    //     LIMIT 100). For the planner to prefer the BitmapOr over a scan that
+    //     "finds 100 rows soon", it must know the OR arms are rare — i.e. it
+    //     needs the whole-table null fraction of `(metadata ->> 'key')`. A
+    //     partial index's statistics describe only its own predicate's rows,
+    //     and the planner will not use them for a global estimate, so
+    //     `expr IS NOT NULL` falls back to the base column (metadata is never
+    //     null → ~1.0) and the old scan wins. Measured on a prod-shaped
+    //     PostgreSQL 15.19 rig: partial → Seq Scan (91 ms); non-partial →
+    //     BitmapOr (0.2 ms) under the app's own parameterized driver.
+    index('idx_session_sandboxes_wake_id')
+      .on(table.status, sql`(${table.metadata} ->> 'runtimeWakeId')`),
+    index('idx_session_sandboxes_wake_cleanup_until')
+      .on(table.status, sql`(${table.metadata} ->> 'runtimeWakeCleanupUntilAt')`),
   ],
 );
 
@@ -3718,6 +3750,16 @@ export const gatewayRequestLogs = kortixSchema.table(
       .on(table.projectId, table.createdAt)
       .where(sql`not ${table.ok}`),
     index('idx_gateway_logs_session').on(table.projectId, table.sessionId),
+    // Covering index for the per-session gateway rollup
+    // (listProjectGatewaySessionSpend, apps/api/src/shared/session-costs.ts):
+    // index-only scan in session_id order — no heap fetch, no sort. Built with
+    // INCLUDE (not expressible in drizzle-orm 0.45's index builder; the schema
+    // contract checks relation + uniqueness only) by
+    // 20261007050000009_gateway_logs_session_rollup_index.concurrent.ts — same
+    // pattern as idx_gateway_logs_project_failed_time.
+    index('idx_gateway_logs_project_session_time')
+      .on(table.projectId, table.sessionId, table.createdAt)
+      .where(sql`${table.sessionId} is not null`),
   ],
 );
 

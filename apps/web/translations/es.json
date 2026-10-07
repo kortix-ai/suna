@@ -227,6 +227,7 @@
       "create": "Crear proyecto",
       "tryAgain": "Intentar de nuevo",
       "upgrade": "Mejorar plan",
+      "settings": "Configuración",
       "logOut": "Cerrar sesión",
       "signingOut": "Cerrando sesión",
       "back": "Volver a los proyectos"
@@ -848,9 +849,10 @@
         "sessions": "Todas las sesiones de este proyecto, con sus archivos, historial y resultados",
         "automation": "Todas las ejecuciones programadas y los activadores — se detienen de inmediato",
         "integrations": "Todas las integraciones conectadas, secretos y claves de API de este proyecto",
+        "managedRepo": "El repositorio Git administrado por Kortix de este proyecto, con cada commit incluido",
         "access": "El acceso de todo el equipo — nadie podrá volver a acceder a este proyecto"
       },
-      "reassurance": "El repositorio Git conectado no se elimina. El código que ya se haya enviado permanece intacto.",
+      "reassurance": "Los repositorios Git que hayas conectado tú no se eliminan. El código que ya se haya enviado permanece intacto.",
       "keepWorkspace": "Conservar proyecto"
     },
     "sandbox": {
@@ -1958,6 +1960,7 @@
     "queuedCount": "{count} en cola",
     "editingQueued": "Editando",
     "steerNextStep": "Se lee en el siguiente paso",
+    "queuedByAnotherMember": "Enviado por otro miembro. Solo esa persona puede editarlo o enviarlo.",
     "steerFallbackUnsupported": "Espera a este turno. Esta sesión no acepta mensajes durante un turno.",
     "steerFallbackNotPrompter": "Espera a este turno. Lo inició otro miembro.",
     "steerFallbackTurnEnded": "Se ejecuta como su propio turno. El turno terminó antes.",
@@ -19694,20 +19697,36 @@
     "sharePrivateDescription": "Elige quién más puede usar tu cuenta. Pasa a ser una cuenta compartida, que también pueden gestionar quienes gestionan las conexiones del proyecto.",
     "ownerMeta": "Tu cuenta"
   },
+  "mfaStepUp": {
+    "title": "Verifica que eres tú",
+    "gateDescription": "Tu cuenta tiene activada la autenticación de dos factores. Introduce el código de 6 dígitos de tu app de autenticación para continuar.",
+    "actionDescription": "Esta acción requiere autenticación de dos factores. Introduce el código de 6 dígitos de tu app de autenticación para continuar.",
+    "codeLabel": "Código de 6 dígitos",
+    "verify": "Verificar",
+    "cancel": "Cancelar",
+    "signOut": "Cerrar sesión",
+    "verified": "Verificado",
+    "invalidCode": "Ese código no funcionó. Revisa tu app de autenticación e inténtalo de nuevo.",
+    "noFactorTitle": "Configura la autenticación de dos factores",
+    "noFactorDescription": "Esta acción requiere autenticación de dos factores. Añade una app de autenticación en Ajustes → Seguridad y vuelve a intentarlo."
+  },
   "connectMcp": {
-    "title": "Conectar Kortix por MCP",
-    "description": "Añade esta URL a Claude, ChatGPT, Cursor, Codex o cualquier cliente MCP. La primera vez, el cliente te pide iniciar sesión en Kortix. No hay nada que instalar.",
-    "urlLabel": "URL de MCP",
-    "addToClient": "Añádelo a tu cliente",
-    "other": "Otro",
-    "claudeSteps": "En Claude (web o escritorio), abre Configuración → Conectores → Añadir conector personalizado, pega la URL e inicia sesión.",
-    "claudeCodeHint": "Después ejecuta /mcp en Claude Code e inicia sesión.",
-    "otherHint": "ChatGPT (modo desarrollador), VS Code, Windsurf y otros clientes: añade un servidor MCP remoto con la URL de arriba o con este JSON.",
-    "addToCursor": "Añadir a Cursor",
-    "signInOnFirstUse": "Cursor te pide iniciar sesión en Kortix la primera vez.",
-    "docs": "Documentación",
+    "title": "Conecta Kortix por MCP",
+    "description": "Usa Kortix desde Claude, Claude Code, Cursor, Codex o cualquier cliente MCP. Inicias sesión una vez. Sin instalar nada.",
+    "docs": "Docs",
     "done": "Listo",
-    "copy": "Copiar"
+    "copy": "Copiar",
+    "anyClient": "Cualquier cliente MCP",
+    "add": "Añadir",
+    "copied": "Copiado",
+    "copyUrl": "Copiar URL",
+    "via": {
+      "claude": "Ajustes → Conectores",
+      "claude-code": "Un comando de terminal",
+      "cursor": "Instalación en un clic",
+      "codex": "Dos comandos de terminal",
+      "other": "VS Code, Windsurf y más"
+    }
   },
   "oauthConsent": {
     "unverifiedTitle": "App no verificada",

@@ -11,6 +11,8 @@
 //              archiveRepoSubtree, getFileAtRef, getFileHistory
 //   commits  — resolveCommitSha, listCommits, getCommit, getCommitDiff,
 //              resolveBranchTip (+ shared git-log parsing primitives)
+//   fast-boot-bundle — resolveFastBootGitHint and the scaffold-delta bundle
+//              builders (session fast-boot provisioning)
 //   branches — listBranches, createRemoteSessionBranch,
 //              deleteRemoteSessionBranch, commitFileToBranch
 //   merge    — getMergeBase, getBranchDiff, getDiffBetweenShas, previewMerge,
@@ -49,6 +51,7 @@ export {
   searchRepoFileNames,
   grepRepoFiles,
   readRepoFile,
+  readRepoFileBytes,
   readManifestFromRepo,
   archiveRepoSubtree,
   getFileAtRef,
@@ -59,13 +62,13 @@ export {
 
 export {
   resolveCommitSha,
-  resolveFastBootGitHint,
-  buildSingleParentDeltaBundle,
   listCommits,
   getCommit,
   getCommitDiff,
   resolveBranchTip,
 } from './git/commits';
+
+export { resolveFastBootGitHint } from './git/fast-boot-bundle';
 
 export {
   listBranches,

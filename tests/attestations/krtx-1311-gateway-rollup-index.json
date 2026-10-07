@@ -1,0 +1,19 @@
+{
+  "source_hash": "697ef6c2095e960ec8b76f59d88dd7cd7b456c02950a9778d83659b1c3e3f8f6",
+  "diff_files": [
+    "packages/db/drizzle/meta/20261007003617_snapshot.json",
+    "packages/db/drizzle/meta/_journal.json",
+    "packages/db/migrations/20261007050000009_gateway_logs_session_rollup_index.concurrent.ts",
+    "packages/db/src/schema/kortix.ts",
+    "tests/migration/gateway-logs-session-rollup-index.test.ts"
+  ],
+  "diff_hash": "a20ddf2638866e7a853820a9e5673f1c8f94ed11a0c19d7f2f5b18ffad93858d",
+  "head": "a4dfa9df7d6c61bd97ee6cdb1c0408ff92fe7107",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-07T06:06:52.590Z"
+}

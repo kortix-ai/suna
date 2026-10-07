@@ -1,0 +1,16 @@
+{
+  "source_hash": "acad987334f1677179fe930c7ed29aec2a11a8e9af54af60c1eb35673af462c5",
+  "diff_files": [
+    "infra/terraform/compliance-monitoring/monitoring.tf",
+    "infra/terraform/compliance-monitoring/use2-security.tf"
+  ],
+  "diff_hash": "9d7072bd4f46696601507cc1d2162925ba8aa1a574893db0c3d2fde40db43307",
+  "head": "76835be3ea93868bcc2b92ccfb5c640105cd1422",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-07T11:17:52.171Z"
+}

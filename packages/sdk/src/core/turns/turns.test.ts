@@ -654,10 +654,12 @@ describe('stripAnsi', () => {
   test('does not hang on many repeated unterminated OSC starts (ReDoS guard, /g multi-anchor)', () => {
     // str.replace with a /g regex retries the scan from every OSC start it finds;
     // without a bounded run length this is O(n^2) even though no single match is ambiguous.
+    // The bound only has to separate linear (~10 ms) from quadratic (minutes on 200k
+    // starts); 1 s failed on a loaded box at 1.03 s with the implementation linear.
     const malicious = '\x1b]'.repeat(200_000);
     const start = performance.now();
     stripAnsi(malicious);
-    expect(performance.now() - start).toBeLessThan(1000);
+    expect(performance.now() - start).toBeLessThan(5000);
   });
 });
 

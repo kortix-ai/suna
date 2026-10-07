@@ -227,6 +227,7 @@
       "create": "Направи пројекат",
       "tryAgain": "Покушај поново",
       "upgrade": "Надогради план",
+      "settings": "Подешавања",
       "logOut": "Одјави се",
       "signingOut": "Одјављивање",
       "back": "Назад на пројекте"
@@ -848,9 +849,10 @@
         "sessions": "Сваку сесију у овом пројекту, са њеним датотекама, историјом и резултатима",
         "automation": "Сва заказана покретања и окидаче — одмах престају да се извршавају",
         "integrations": "Сваку повезану интеграцију, тајну и API кључ ограничен на овај пројекат",
+        "managedRepo": "Git складиште којим управља Kortix за овај пројекат, са сваким комитом у њему",
         "access": "Приступ за цео тим — нико више не може да приступи овом пројекту"
       },
-      "reassurance": "Повезано Git складиште се не брише. Сав већ послат код остаје на свом месту.",
+      "reassurance": "Git складишта која сте сами повезали се не бришу. Сав већ послат код остаје на свом месту.",
       "keepWorkspace": "Задржи пројекат"
     },
     "sandbox": {
@@ -1958,6 +1960,7 @@
     "queuedCount": "{count} u redu",
     "editingQueued": "Уређивање",
     "steerNextStep": "Чита се у следећем кораку",
+    "queuedByAnotherMember": "Послао други члан. Само тај члан може да је измени или пошаље.",
     "steerFallbackUnsupported": "Чека овај потез. Ова сесија не прима поруке током потеза.",
     "steerFallbackNotPrompter": "Чека овај потез. Покренуо га је други члан.",
     "steerFallbackTurnEnded": "Покреће се као засебан потез. Потез се завршио раније.",
@@ -19694,20 +19697,36 @@
     "sharePrivateDescription": "Изаберите ко још може да користи ваш налог. Он постаје дељени налог, којим могу да управљају и управљачи веза пројекта.",
     "ownerMeta": "Ваш налог"
   },
+  "mfaStepUp": {
+    "title": "Potvrdite da ste vi",
+    "gateDescription": "Na vašem nalogu je uključena dvofaktorska autentifikacija. Unesite šestocifreni kod iz aplikacije za autentifikaciju da biste nastavili.",
+    "actionDescription": "Ova radnja zahteva dvofaktorsku autentifikaciju. Unesite šestocifreni kod iz aplikacije za autentifikaciju da biste nastavili.",
+    "codeLabel": "Šestocifreni kod",
+    "verify": "Potvrdi",
+    "cancel": "Otkaži",
+    "signOut": "Odjavi se",
+    "verified": "Potvrđeno",
+    "invalidCode": "Taj kod nije uspeo. Proverite aplikaciju za autentifikaciju i pokušajte ponovo.",
+    "noFactorTitle": "Podesite dvofaktorsku autentifikaciju",
+    "noFactorDescription": "Ova radnja zahteva dvofaktorsku autentifikaciju. Dodajte aplikaciju za autentifikaciju u Podešavanja → Bezbednost, pa pokušajte ponovo."
+  },
   "connectMcp": {
-    "title": "Poveži Kortix preko MCP-a",
-    "description": "Dodaj ovaj URL u Claude, ChatGPT, Cursor, Codex ili bilo koji MCP klijent. Prvi put klijent traži da se prijaviš u Kortix. Ništa se ne instalira.",
-    "urlLabel": "MCP URL",
-    "addToClient": "Dodaj ga u svoj klijent",
-    "other": "Ostalo",
-    "claudeSteps": "U Claude-u (veb ili desktop) otvori Podešavanja → Konektori → Dodaj prilagođeni konektor, nalepi URL i prijavi se.",
-    "claudeCodeHint": "Zatim pokreni /mcp u Claude Code-u i prijavi se.",
-    "otherHint": "ChatGPT (režim za programere), VS Code, Windsurf i drugi klijenti: dodaj udaljeni MCP server sa URL-om iznad ili ovim JSON-om.",
-    "addToCursor": "Dodaj u Cursor",
-    "signInOnFirstUse": "Cursor traži prijavu u Kortix pri prvom korišćenju.",
+    "title": "Povežite Kortix preko MCP-a",
+    "description": "Koristite Kortix iz Claude, Claude Code, Cursor, Codex ili bilo kog MCP klijenta. Prijavljujete se jednom. Ništa ne morate da instalirate.",
     "docs": "Dokumentacija",
     "done": "Gotovo",
-    "copy": "Kopiraj"
+    "copy": "Kopiraj",
+    "anyClient": "Bilo koji MCP klijent",
+    "add": "Dodaj",
+    "copied": "Kopirano",
+    "copyUrl": "Kopiraj URL",
+    "via": {
+      "claude": "Podešavanja → Konektori",
+      "claude-code": "Jedna komanda u terminalu",
+      "cursor": "Instalacija jednim klikom",
+      "codex": "Dve komande u terminalu",
+      "other": "VS Code, Windsurf i drugi"
+    }
   },
   "oauthConsent": {
     "unverifiedTitle": "Neverifikovana aplikacija",

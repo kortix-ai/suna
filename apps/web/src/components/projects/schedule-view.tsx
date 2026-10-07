@@ -73,6 +73,7 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   type TriggerKind,
   describeWhen,
+  isCustomerTrigger,
   isTriggerKind,
   localizedKindCopy,
   localizedTriggersCopy,
@@ -233,8 +234,8 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   const triggersQuery = useQuery({
     queryKey,
     queryFn: () => listProjectTriggers(projectId),
-    refetchInterval: 10_000,
     ...contract('config'),
+    refetchInterval: 10_000,
   });
 
   const [query, setQuery] = useState('');
@@ -313,8 +314,15 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   // Both kinds, together — the create flow is where a person picks one.
   // `isTriggerKind` also drops `monitor`-type entries: a separate
   // experimental feature that shares this backend list but not this screen.
+  // `isCustomerTrigger` then hides the reflector cron the starter seeds into
+  // every new project: hiding it keeps the empty state reachable on a fresh
+  // project without making the customer delete a trigger they never created.
+  // It still schedules and fires — this is display only.
   const triggers = useMemo(
-    () => (triggersQuery.data?.triggers ?? []).filter((t) => isTriggerKind(t.type)),
+    () =>
+      (triggersQuery.data?.triggers ?? []).filter(
+        (t) => isTriggerKind(t.type) && isCustomerTrigger(t),
+      ),
     [triggersQuery.data],
   );
   const filtered = useMemo(

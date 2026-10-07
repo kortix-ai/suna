@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach, mock } from 'bun:test';
+import { BillingError } from '../../errors';
 import {
   createMockCreditAccount,
   createMockStripeSubscription,
@@ -813,5 +814,68 @@ describe('confirmCheckoutSession: activation grant idempotency key', () => {
     const tierGrant = walletGrants.find((grant) => grant.kind === 'tier_grant');
     expect(tierGrant).toBeDefined();
     expect(tierGrant!.key).toEqual({ event: 'subscription_activation:sub_confirm_123' });
+  });
+});
+
+// ─── Checkout session retrieval: a session Stripe does not know is a 404 ────
+// The checkout-session routes take the session id from the client (the GET
+// path parameter, the confirm body). An id Stripe has never seen — arbitrary
+// input, a stale id, or one minted by a different Stripe account after the
+// key was repointed — makes `stripe.checkout.sessions.retrieve` throw
+// `StripeInvalidRequestError: No such checkout.session: <id>`. That throw
+// fell through the typed-error ladder in apps/api/src/http-errors.ts to the
+// generic 500 + Sentry path (Better Stack pattern ca919c3d…, application
+// 2346961). A missing session is an expected state: the GET route already
+// declares 404.
+
+describe('checkout session retrieval: missing session maps to a typed 404', () => {
+  const throwNoSuchCheckoutSession = () => {
+    const err: any = new Error('No such checkout.session: cs_missing_123');
+    err.type = 'StripeInvalidRequestError';
+    err.code = 'resource_missing';
+    err.statusCode = 404;
+    throw err;
+  };
+
+  test('getCheckoutSessionDetails throws BillingError 404, without echoing the id', async () => {
+    mockRegistry.stripeClient.checkout.sessions.retrieve = throwNoSuchCheckoutSession;
+
+    const { getCheckoutSessionDetails } = await import('../../billing/services/subscriptions');
+    const err: unknown = await getCheckoutSessionDetails('acc_test_123', 'cs_missing_123').then(
+      () => null,
+      (e: unknown) => e,
+    );
+
+    expect(err).toBeInstanceOf(BillingError);
+    expect((err as BillingError).statusCode).toBe(404);
+    expect((err as BillingError).message).not.toContain('cs_missing_123');
+  });
+
+  test('confirmCheckoutSession throws BillingError 404 and grants nothing', async () => {
+    mockRegistry.stripeClient.checkout.sessions.retrieve = throwNoSuchCheckoutSession;
+
+    const { confirmCheckoutSession } = await import('../../billing/services/subscriptions');
+    const err: unknown = await confirmCheckoutSession({
+      accountId: 'acc_test_123',
+      sessionId: 'cs_missing_123',
+    }).then(
+      () => null,
+      (e: unknown) => e,
+    );
+
+    expect(err).toBeInstanceOf(BillingError);
+    expect((err as BillingError).statusCode).toBe(404);
+    expect(walletGrants).toHaveLength(0);
+  });
+
+  test('a non-missing (transient) Stripe failure still rethrows raw', async () => {
+    mockRegistry.stripeClient.checkout.sessions.retrieve = async () => {
+      throw new Error('Stripe internal error');
+    };
+
+    const { getCheckoutSessionDetails } = await import('../../billing/services/subscriptions');
+    await expect(
+      getCheckoutSessionDetails('acc_test_123', 'cs_missing_123'),
+    ).rejects.toThrow('Stripe internal error');
   });
 });

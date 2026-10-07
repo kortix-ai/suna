@@ -517,6 +517,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'GET /v1/projects/:projectId/files/archive': { action: 'file.archive.download', title: 'Downloaded project files' },
   'GET /v1/projects/:projectId/files/content': { action: 'file.content.read', title: 'Viewed file content' },
   'GET /v1/projects/:projectId/files/history': { action: 'file.history.list', title: 'Viewed file history' },
+  'GET /v1/projects/:projectId/files/raw': { action: 'file.raw.read', title: 'Viewed raw file content' },
   'GET /v1/projects/:projectId/files/search': { action: 'file.search', title: 'Searched project files' },
   'GET /v1/projects/:projectId/gateway/breakdown': { action: 'gateway.breakdown.read', title: 'Viewed LLM gateway usage by model' },
   'GET /v1/projects/:projectId/gateway/budgets': { action: 'gateway.budget.list', title: 'Listed LLM gateway budgets' },

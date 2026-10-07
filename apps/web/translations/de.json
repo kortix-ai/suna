@@ -227,6 +227,7 @@
       "create": "Projekt erstellen",
       "tryAgain": "Erneut versuchen",
       "upgrade": "Tarif upgraden",
+      "settings": "Einstellungen",
       "logOut": "Abmelden",
       "signingOut": "Abmeldung läuft",
       "back": "Zurück zu den Projekten"
@@ -848,9 +849,10 @@
         "sessions": "Jede Sitzung in diesem Projekt mit Dateien, Verlauf und Ergebnissen",
         "automation": "Alle geplanten Ausführungen und Trigger — sie werden sofort beendet",
         "integrations": "Jede verbundene Integration, jedes Secret und jeden API-Schlüssel dieses Projekts",
+        "managedRepo": "Das von Kortix verwaltete Git-Repository dieses Projekts, mit jedem Commit darin",
         "access": "Den Zugriff für das gesamte Team — niemand kann diesen Projekt erneut öffnen"
       },
-      "reassurance": "Das verbundene Git-Repository wird nicht gelöscht. Bereits übertragener Code bleibt erhalten.",
+      "reassurance": "Selbst verbundene Git-Repositories werden nicht gelöscht. Bereits übertragener Code bleibt erhalten.",
       "keepWorkspace": "Projekt behalten"
     },
     "sandbox": {
@@ -1958,6 +1960,7 @@
     "queuedCount": "{count} in Warteschlange",
     "editingQueued": "Wird bearbeitet",
     "steerNextStep": "Wird beim nächsten Schritt gelesen",
+    "queuedByAnotherMember": "Von einem anderen Mitglied gesendet. Nur diese Person kann sie bearbeiten oder senden.",
     "steerFallbackUnsupported": "Wartet auf diesen Durchlauf. Diese Sitzung nimmt während eines Durchlaufs keine Nachrichten an.",
     "steerFallbackNotPrompter": "Wartet auf diesen Durchlauf. Ein anderes Mitglied hat ihn gestartet.",
     "steerFallbackTurnEnded": "Läuft als eigener Durchlauf. Der Durchlauf war zuerst beendet.",
@@ -19694,20 +19697,36 @@
     "sharePrivateDescription": "Wählen Sie, wer Ihr Konto außerdem verwenden darf. Es wird zu einem geteilten Konto, das auch die Verbindungsverwalter des Projekts verwalten können.",
     "ownerMeta": "Ihr Konto"
   },
+  "mfaStepUp": {
+    "title": "Bestätige, dass du es bist",
+    "gateDescription": "Für dein Konto ist die Zwei-Faktor-Authentifizierung aktiv. Gib den 6-stelligen Code aus deiner Authenticator-App ein, um fortzufahren.",
+    "actionDescription": "Diese Aktion erfordert Zwei-Faktor-Authentifizierung. Gib den 6-stelligen Code aus deiner Authenticator-App ein, um fortzufahren.",
+    "codeLabel": "6-stelliger Code",
+    "verify": "Bestätigen",
+    "cancel": "Abbrechen",
+    "signOut": "Abmelden",
+    "verified": "Bestätigt",
+    "invalidCode": "Dieser Code hat nicht funktioniert. Prüfe deine Authenticator-App und versuche es erneut.",
+    "noFactorTitle": "Zwei-Faktor-Authentifizierung einrichten",
+    "noFactorDescription": "Diese Aktion erfordert Zwei-Faktor-Authentifizierung. Füge unter Einstellungen → Sicherheit eine Authenticator-App hinzu und versuche es dann erneut."
+  },
   "connectMcp": {
     "title": "Kortix über MCP verbinden",
-    "description": "Füge diese URL in Claude, ChatGPT, Cursor, Codex oder einem anderen MCP-Client hinzu. Beim ersten Mal fragt der Client nach deiner Kortix-Anmeldung. Keine Installation nötig.",
-    "urlLabel": "MCP-URL",
-    "addToClient": "Zum Client hinzufügen",
-    "other": "Andere",
-    "claudeSteps": "Öffne in Claude (Web oder Desktop) Einstellungen → Connectors → Eigenen Connector hinzufügen, füge die URL ein und melde dich an.",
-    "claudeCodeHint": "Führe dann /mcp in Claude Code aus und melde dich an.",
-    "otherHint": "ChatGPT (Entwicklermodus), VS Code, Windsurf und andere Clients: Füge einen Remote-MCP-Server mit der URL oben hinzu oder nutze dieses JSON.",
-    "addToCursor": "Zu Cursor hinzufügen",
-    "signInOnFirstUse": "Cursor fragt beim ersten Aufruf nach deiner Kortix-Anmeldung.",
+    "description": "Nutze Kortix in Claude, Claude Code, Cursor, Codex oder jedem MCP-Client. Du meldest dich einmal an. Keine Installation nötig.",
     "docs": "Doku",
     "done": "Fertig",
-    "copy": "Kopieren"
+    "copy": "Kopieren",
+    "anyClient": "Beliebiger MCP-Client",
+    "add": "Hinzufügen",
+    "copied": "Kopiert",
+    "copyUrl": "URL kopieren",
+    "via": {
+      "claude": "Einstellungen → Connectors",
+      "claude-code": "Ein Terminal-Befehl",
+      "cursor": "Installation mit einem Klick",
+      "codex": "Zwei Terminal-Befehle",
+      "other": "VS Code, Windsurf und mehr"
+    }
   },
   "oauthConsent": {
     "unverifiedTitle": "Nicht verifizierte App",

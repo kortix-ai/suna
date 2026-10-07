@@ -227,6 +227,7 @@
       "create": "Créer le projet",
       "tryAgain": "Réessayer",
       "upgrade": "Mettre le forfait à niveau",
+      "settings": "Paramètres",
       "logOut": "Se déconnecter",
       "signingOut": "Déconnexion",
       "back": "Retour aux projets"
@@ -848,9 +849,10 @@
         "sessions": "Chaque session de cet projet, avec ses fichiers, son historique et ses résultats",
         "automation": "Toutes les exécutions planifiées et tous les déclencheurs — ils s'arrêtent immédiatement",
         "integrations": "Chaque intégration connectée, secret et clé API limité à cet projet",
+        "managedRepo": "Le dépôt Git géré par Kortix de cet projet, avec chaque commit qu'il contient",
         "access": "L'accès de toute l'équipe — personne ne pourra plus accéder à cet projet"
       },
-      "reassurance": "Le dépôt Git connecté n'est pas supprimé. Le code déjà envoyé reste en place.",
+      "reassurance": "Les dépôts Git que vous avez connectés vous-même ne sont pas supprimés. Le code déjà envoyé reste en place.",
       "keepWorkspace": "Conserver le projet"
     },
     "sandbox": {
@@ -1958,6 +1960,7 @@
     "queuedCount": "{count} en file",
     "editingQueued": "En cours de modification",
     "steerNextStep": "Lu à la prochaine étape",
+    "queuedByAnotherMember": "Envoyé par un autre membre. Seule cette personne peut le modifier ou l'envoyer.",
     "steerFallbackUnsupported": "Attend ce tour. Cette session n'accepte pas de messages pendant un tour.",
     "steerFallbackNotPrompter": "Attend ce tour. Un autre membre l'a lancé.",
     "steerFallbackTurnEnded": "S'exécute comme son propre tour. Le tour s'est terminé avant.",
@@ -19694,20 +19697,36 @@
     "sharePrivateDescription": "Choisissez qui d’autre peut utiliser votre compte. Il devient un compte partagé, que les gestionnaires des connexions du projet peuvent aussi gérer.",
     "ownerMeta": "Votre compte"
   },
+  "mfaStepUp": {
+    "title": "Confirmez votre identité",
+    "gateDescription": "L’authentification à deux facteurs est activée sur votre compte. Saisissez le code à 6 chiffres de votre application d’authentification pour continuer.",
+    "actionDescription": "Cette action nécessite l’authentification à deux facteurs. Saisissez le code à 6 chiffres de votre application d’authentification pour continuer.",
+    "codeLabel": "Code à 6 chiffres",
+    "verify": "Vérifier",
+    "cancel": "Annuler",
+    "signOut": "Se déconnecter",
+    "verified": "Vérifié",
+    "invalidCode": "Ce code n’a pas fonctionné. Vérifiez votre application d’authentification et réessayez.",
+    "noFactorTitle": "Configurer l’authentification à deux facteurs",
+    "noFactorDescription": "Cette action nécessite l’authentification à deux facteurs. Ajoutez une application d’authentification dans Paramètres → Sécurité, puis réessayez."
+  },
   "connectMcp": {
     "title": "Connecter Kortix via MCP",
-    "description": "Ajoutez cette URL à Claude, ChatGPT, Cursor, Codex ou tout client MCP. La première fois, le client vous demande de vous connecter à Kortix. Rien à installer.",
-    "urlLabel": "URL MCP",
-    "addToClient": "Ajoutez-le à votre client",
-    "other": "Autre",
-    "claudeSteps": "Dans Claude (web ou bureau), ouvrez Réglages → Connecteurs → Ajouter un connecteur personnalisé, collez l’URL et connectez-vous.",
-    "claudeCodeHint": "Lancez ensuite /mcp dans Claude Code et connectez-vous.",
-    "otherHint": "ChatGPT (mode développeur), VS Code, Windsurf et les autres clients : ajoutez un serveur MCP distant avec l’URL ci-dessus, ou ce JSON.",
-    "addToCursor": "Ajouter à Cursor",
-    "signInOnFirstUse": "Cursor vous demande de vous connecter à Kortix à la première utilisation.",
-    "docs": "Documentation",
+    "description": "Utilisez Kortix depuis Claude, Claude Code, Cursor, Codex ou tout client MCP. Vous vous connectez une seule fois. Rien à installer.",
+    "docs": "Docs",
     "done": "Terminé",
-    "copy": "Copier"
+    "copy": "Copier",
+    "anyClient": "N’importe quel client MCP",
+    "add": "Ajouter",
+    "copied": "Copié",
+    "copyUrl": "Copier l’URL",
+    "via": {
+      "claude": "Paramètres → Connecteurs",
+      "claude-code": "Une commande dans le terminal",
+      "cursor": "Installation en un clic",
+      "codex": "Deux commandes dans le terminal",
+      "other": "VS Code, Windsurf et plus"
+    }
   },
   "oauthConsent": {
     "unverifiedTitle": "Application non vérifiée",
