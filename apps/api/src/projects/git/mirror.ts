@@ -509,6 +509,36 @@ export function isGitRefNotFoundError(err: unknown): boolean {
   return /invalid object name|not a valid object name|unknown revision|bad revision/i.test(`${err.message}\n${err.stderr}`);
 }
 
+/** Like runGit, but stdout stays bytes: the only capture a binary blob survives. */
+export async function runGitBuffer(
+  args: string[],
+  cwd?: string,
+  auth = true,
+  authToken?: string | null,
+  extraEnv?: Record<string, string>,
+  authHost = 'github.com',
+  timeoutMs: number = GIT_DEFAULT_TIMEOUT_MS,
+  authHeaders?: Record<string, string>,
+): Promise<{ stdout: Buffer; stderr: string }> {
+  const authEnv = auth ? gitAuthEnv(authToken, authHost, authHeaders) : {};
+  try {
+    const result = await timeStage('git', () => execFileAsync('git', args, {
+      cwd,
+      encoding: 'buffer',
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...authEnv, ...(extraEnv || {}) },
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: timeoutMs,
+    }));
+    const raw = result.stdout;
+    return {
+      stdout: Buffer.isBuffer(raw) ? raw : Buffer.from(String(raw), 'utf8'),
+      stderr: result.stderr.toString(),
+    };
+  } catch (error) {
+    throw classifyGitError(error, args, timeoutMs);
+  }
+}
+
 export async function runGit(
   args: string[],
   cwd?: string,
@@ -519,22 +549,11 @@ export async function runGit(
   timeoutMs: number = GIT_DEFAULT_TIMEOUT_MS,
   authHeaders?: Record<string, string>,
 ) {
-  const authEnv = auth ? gitAuthEnv(authToken, authHost, authHeaders) : {};
-  try {
-    // `Server-Timing: git` — clone/fetch/ls-tree/show on the request path.
-    const result = await timeStage('git', () => execFileAsync('git', args, {
-      cwd,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...authEnv, ...(extraEnv || {}) },
-      maxBuffer: 10 * 1024 * 1024,
-      timeout: timeoutMs,
-    }));
-    return {
-      stdout: result.stdout.toString(),
-      stderr: result.stderr.toString(),
-    };
-  } catch (error) {
-    throw classifyGitError(error, args, timeoutMs);
-  }
+  const result = await runGitBuffer(args, cwd, auth, authToken, extraEnv, authHost, timeoutMs, authHeaders);
+  return {
+    stdout: result.stdout.toString(),
+    stderr: result.stderr,
+  };
 }
 
 /**
