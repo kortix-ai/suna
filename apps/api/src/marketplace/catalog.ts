@@ -1402,6 +1402,13 @@ export const FEATURED_MARKETPLACES: FeaturedMarketplace[] = [
     license: "MIT",
   },
   {
+    address: "CosmoBlk/email-marketing-bible",
+    label: "Email Marketing Bible",
+    owner: "CosmoBlk",
+    description: "Email marketing: flows, deliverability, copy, ESP via MCP",
+    license: "MIT",
+  },
+  {
     address: "transilienceai/communitytools",
     label: "Security Community Tools",
     owner: "transilienceai",
