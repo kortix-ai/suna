@@ -1,0 +1,18 @@
+{
+  "source_hash": "baf8f0cee3e6802ffcdd97260fbc7f1c5dc206e31eddcd1ef051b77c8d198533",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-07T125734Z-never-persist-a-value-that-names-a-listener-the-writing-proc.md",
+    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-runtime-env-survives-daemon-restart.test.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/control.ts"
+  ],
+  "diff_hash": "eab2f73c54e6f45d1036f5575d3a137d7a8e81790a4038e100df10e7471b07dd",
+  "head": "2d99692dde196e69eabb84ad0e510ca38a06399e",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-07T13:39:35.160Z"
+}
