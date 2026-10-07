@@ -463,3 +463,52 @@ flow(
     });
   },
 );
+
+// SSO-5 — SAML belongs to an organization. On a personal account its owner
+// could register an IdP that asserts any address (an operator's, say); Supabase
+// creates a separate SSO user for it (KRTX-1715).
+flow(
+  'SSO-5',
+  {
+    domain: 'iam',
+    routes: [
+      'GET /v1/accounts',
+      'GET /v1/accounts/:accountId/iam/sso/provider',
+      'PUT /v1/accounts/:accountId/iam/sso/provider',
+      'POST /v1/accounts/:accountId/iam/sso/provider/from-metadata',
+    ],
+  },
+  async (ctx) => {
+    const owner = ctx.client.as(ctx.P.OWNER);
+    let personal = '';
+    await ctx.step("the owner's personal account is the one whose id is their user id", async () => {
+      const r = await owner.get('/v1/accounts');
+      r.status(200);
+      personal = r.json<Array<{ account_id: string }>>().find((a) => a.account_id === ctx.P.OWNER.userId)?.account_id ?? '';
+      if (!personal) throw new Error('the owner has no personal account');
+    });
+
+    await ctx.step('setting up SAML on it → 403 sso_personal_account, on both routes', async () => {
+      const put = await owner.put(
+        '/v1/accounts/:accountId/iam/sso/provider',
+        { supabase_sso_provider_id: crypto.randomUUID(), name: 'Synthetic IdP', primary_domain: 'personal-sso.test' },
+        { params: { accountId: personal } },
+      );
+      put.status(403).body().has('$.code', 'sso_personal_account');
+      const fromMetadata = await owner.post(
+        '/v1/accounts/:accountId/iam/sso/provider/from-metadata',
+        { name: 'Synthetic IdP', primary_domain: 'personal-sso.test', metadata_url: 'https://idp.personal-sso.test/metadata' },
+        { params: { accountId: personal } },
+      );
+      fromMetadata.status(403).body().has('$.code', 'sso_personal_account');
+    });
+
+    await ctx.step('no provider was recorded on the personal account', async () => {
+      const r = await owner.get('/v1/accounts/:accountId/iam/sso/provider', { params: { accountId: personal } });
+      if (r.statusCode === 200) {
+        const provider = r.json<{ provider: unknown }>().provider;
+        if (provider) throw new Error(`a provider was recorded: ${JSON.stringify(provider)}`);
+      }
+    });
+  },
+);

@@ -227,6 +227,7 @@
       "create": "创建项目",
       "tryAgain": "重试",
       "upgrade": "升级方案",
+      "settings": "设置",
       "logOut": "退出登录",
       "signingOut": "正在退出",
       "back": "返回项目"
@@ -19610,20 +19611,36 @@
     "sharePrivateDescription": "选择还有谁可以使用你的账户。它会变为共享账户，项目的连接管理员也可以管理它。",
     "ownerMeta": "你的账户"
   },
+  "mfaStepUp": {
+    "title": "验证你的身份",
+    "gateDescription": "你的账户已开启双重身份验证。请输入身份验证器应用中的 6 位验证码以继续。",
+    "actionDescription": "此操作需要双重身份验证。请输入身份验证器应用中的 6 位验证码以继续。",
+    "codeLabel": "6 位验证码",
+    "verify": "验证",
+    "cancel": "取消",
+    "signOut": "退出登录",
+    "verified": "已验证",
+    "invalidCode": "该验证码无效。请检查身份验证器应用后重试。",
+    "noFactorTitle": "设置双重身份验证",
+    "noFactorDescription": "此操作需要双重身份验证。请在“设置 → 安全”中添加身份验证器应用，然后重试。"
+  },
   "connectMcp": {
     "title": "通过 MCP 连接 Kortix",
-    "description": "将此 URL 添加到 Claude、ChatGPT、Cursor、Codex 或任何 MCP 客户端。首次使用时，客户端会请你登录 Kortix。无需安装。",
-    "urlLabel": "MCP URL",
-    "addToClient": "添加到你的客户端",
-    "other": "其他",
-    "claudeSteps": "在 Claude（网页版或桌面版）中打开 设置 → 连接器 → 添加自定义连接器，粘贴 URL 并登录。",
-    "claudeCodeHint": "然后在 Claude Code 中运行 /mcp 并登录。",
-    "otherHint": "ChatGPT（开发者模式）、VS Code、Windsurf 等客户端：使用上方 URL 添加远程 MCP 服务器，或使用此 JSON。",
-    "addToCursor": "添加到 Cursor",
-    "signInOnFirstUse": "首次使用时，Cursor 会请你登录 Kortix。",
+    "description": "在 Claude、Claude Code、Cursor、Codex 或任何 MCP 客户端中使用 Kortix。只需登录一次，无需安装。",
     "docs": "文档",
     "done": "完成",
-    "copy": "复制"
+    "copy": "复制",
+    "anyClient": "任意 MCP 客户端",
+    "add": "添加",
+    "copied": "已复制",
+    "copyUrl": "复制 URL",
+    "via": {
+      "claude": "设置 → 连接器",
+      "claude-code": "一条终端命令",
+      "cursor": "一键安装",
+      "codex": "两条终端命令",
+      "other": "VS Code、Windsurf 等"
+    }
   },
   "oauthConsent": {
     "unverifiedTitle": "未验证的应用",
