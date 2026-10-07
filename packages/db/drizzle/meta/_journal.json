@@ -859,14 +859,28 @@
     {
       "idx": 122,
       "version": "7",
-      "when": 1791365071292,
-      "tag": "20261007092430_capture_timeline",
+      "when": 1791333377505,
+      "tag": "20261007003617_gateway_logs_session_rollup_index",
       "breakpoints": true
     },
     {
       "idx": 123,
       "version": "7",
-      "when": 1791365071293,
+      "when": 1791358200000,
+      "tag": "20261007073000_session_sandboxes_runtime_wake_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1791373559871,
+      "tag": "20261007092430_capture_timeline",
+      "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
+      "when": 1791373559872,
       "tag": "20261007092431_capture_intelligence",
       "breakpoints": true
     }

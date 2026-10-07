@@ -11,6 +11,7 @@ import {
 } from '@kortix/db';
 import { db } from '../shared/db';
 import { accountGroupNameRow, ssoGroupByNameRow } from '../iam/group-read';
+import { invalidateIamCacheForAccount } from '../iam/cache-invalidation';
 
 export type SsoProvider = {
   ssoProviderId: string;
@@ -41,6 +42,17 @@ export type SsoGroupMapping = {
 };
 
 // ─── Provider ─────────────────────────────────────────────────────────────
+
+/**
+ * A personal account: its id is its owner's auth user id
+ * (`bootstrapPersonalAccount`).
+ */
+export async function isPersonalAccount(accountId: string): Promise<boolean> {
+  const rows = (await db.execute(
+    sql`SELECT 1 FROM auth.users WHERE id::text = ${accountId} LIMIT 1`,
+  )) as unknown as unknown[];
+  return rows.length > 0;
+}
 
 export async function getSsoProvider(accountId: string): Promise<SsoProvider | null> {
   const [row] = await db
@@ -153,6 +165,10 @@ export async function setSsoDomainVerified(accountId: string, verified: boolean)
     .set({ domainVerifiedAt: verified ? new Date() : null, updatedAt: new Date() })
     .where(eq(accountSsoProviders.accountId, accountId))
     .returning();
+  // A verified domain turns SSO-only enforcement on or off for its members
+  // (`authorize`, `sso_required`): drop their cached verdicts now, not after
+  // the cache TTL. Break-glass depends on this.
+  await invalidateIamCacheForAccount(accountId);
   return row ?? null;
 }
 
@@ -191,6 +207,8 @@ export async function upsertSsoProvider(args: {
       })
       .where(eq(accountSsoProviders.ssoProviderId, existing.ssoProviderId))
       .returning();
+    // enforce_sso, the domain or the IdP may have changed: see setSsoDomainVerified.
+    await invalidateIamCacheForAccount(args.accountId);
     return row;
   }
   const [row] = await db
@@ -216,6 +234,7 @@ export async function deleteSsoProvider(accountId: string): Promise<boolean> {
     .delete(accountSsoProviders)
     .where(eq(accountSsoProviders.accountId, accountId))
     .returning({ ssoProviderId: accountSsoProviders.ssoProviderId });
+  await invalidateIamCacheForAccount(accountId);
   return rows.length > 0;
 }
 

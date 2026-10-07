@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowSquareOutIcon } from '@phosphor-icons/react';
+import { ArrowSquareOutIcon, CheckIcon, CopyIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,7 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
-import { CommandBlock } from '@/features/layout/connect-mcp-modal';
+import { useCopy } from '@/hooks/use-copy';
 import { useTranslations } from '@/i18n/use-translations';
 import { getEnv } from '@/lib/env-config';
 
@@ -119,5 +119,21 @@ export function CaptureApiModal({
         </ModalFooter>
       </ModalContent>
     </Modal>
+  );
+}
+
+/** A copyable block of text: the base URL or the example request. */
+function CommandBlock({ text }: { text: string }) {
+  const t = useTranslations('connectMcp');
+  const { copy, copied } = useCopy();
+  return (
+    <div className="bg-muted flex items-start rounded-md border">
+      <pre className="scrollbar-hide min-w-0 flex-1 overflow-x-auto py-2.5 pl-3 font-mono text-xs leading-relaxed">
+        <code>{text}</code>
+      </pre>
+      <Button type="button" variant="ghost" size="icon" onClick={() => copy(text)} aria-label={t('copy')} className="m-1 size-7 shrink-0">
+        {copied ? <CheckIcon className="text-kortix-green size-3.5" /> : <CopyIcon className="size-3.5" />}
+      </Button>
+    </div>
   );
 }

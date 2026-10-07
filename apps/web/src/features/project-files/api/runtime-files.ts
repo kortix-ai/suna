@@ -19,7 +19,8 @@ import type {
   RuntimeProjectInfo,
   ServerHealth,
 } from '@/features/file-browser/types';
-import { fetchProjectArchive, listProjectFiles, readProjectFile } from '@kortix/sdk';
+import { fetchProjectArchive, fetchProjectFileRaw, listProjectFiles, readProjectFile } from '@kortix/sdk';
+import { getLanguageFromExt } from '@/features/file-viewer';
 
 const READ_ONLY = 'Read-only — project files come from Git';
 
@@ -52,6 +53,8 @@ function basename(p: string): string {
   const idx = trimmed.lastIndexOf('/');
   return idx === -1 ? trimmed : trimmed.slice(idx + 1);
 }
+
+export { toRepoRelative };
 
 // ---------------------------------------------------------------------------
 // Listing
@@ -119,31 +122,116 @@ export async function listFiles(
 // Reading
 // ---------------------------------------------------------------------------
 
+/**
+ * Extensions whose preview renders from the blob pipeline (`useBinaryBlob`) or
+ * from bytes the renderer fetches itself. Their `content` field is never read,
+ * so `readFile` reports binary for them without touching the network.
+ */
+const BLOB_SERVED_EXTENSIONS = new Set([
+  // Office documents and spreadsheets (legacy formats take the binary fallback).
+  'docx', 'doc', 'pptx', 'ppt', 'xlsx', 'xls',
+  // Databases.
+  'sqlite', 'sqlite3', 'db', 'db3', 'sdb', 's3db',
+  // Media and archives.
+  'mp4', 'webm', 'mov', 'avi', 'mkv', 'm4v', 'ogv',
+  'mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a', 'opus', 'wma',
+  'zip', 'jar', 'war', 'whl', 'vsix', 'nupkg', 'xpi', 'apk',
+  // HEIC renders through the HEIC blob pipeline, never as base64 content.
+  'heic', 'heif',
+]);
+
+/** The mime types the base64 content path needs: the image data URL and pdf. */
+const BASE64_MIME_BY_EXT: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  bmp: 'image/bmp',
+  ico: 'image/x-icon',
+  avif: 'image/avif',
+  tiff: 'image/tiff',
+  tif: 'image/tiff',
+  pdf: 'application/pdf',
+};
+
+/** Git's own binary rule, and the sandbox daemon's: a NUL byte in the first
+ *  8000 bytes means binary. Text effectively never contains one. */
+function isTextBytes(bytes: Uint8Array): boolean {
+  return !bytes.subarray(0, 8000).includes(0);
+}
+
+function toBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+async function readRawBytes(projectId: string, repoPath: string, ref: string): Promise<Uint8Array> {
+  const blob = await fetchProjectFileRaw(projectId, repoPath, ref);
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
+/**
+ * Read a file at the project's git ref as the shared viewer's `FileContent`.
+ *
+ * `/files/content` answers every file as text — `git show` stdout, which is
+ * lossy for anything that is not UTF-8 — and the old adapter hard-coded
+ * `type: 'text'` on top of it, so every binary category rendered blank or as
+ * mojibake. This classifies the way the sandbox daemon does: bytes decide, and
+ * each category takes the shape its renderer consumes.
+ */
 export async function readFile(
   projectId: string,
   ref: string,
   filePath: string,
 ): Promise<FileContent> {
   const relativePath = toRepoRelative(filePath);
-  const result = await readProjectFile(projectId, relativePath, ref);
-  return {
-    type: 'text',
-    content: result.content,
-  };
+  const name = basename(relativePath);
+  const hasExtension = name.includes('.');
+  const ext = hasExtension ? name.split('.').pop()!.toLowerCase() : '';
+
+  // The renderers for these read the blob pipeline or their own bytes; fetch
+  // nothing for their unused content.
+  if (hasExtension && BLOB_SERVED_EXTENSIONS.has(ext)) {
+    return { type: 'binary', content: '', mimeType: 'application/octet-stream' };
+  }
+
+  // Images and PDFs render from base64 content — the same shape the daemon's
+  // /file/content serves for binaries.
+  if (hasExtension && BASE64_MIME_BY_EXT[ext]) {
+    const bytes = await readRawBytes(projectId, relativePath, ref);
+    return { type: 'binary', content: toBase64(bytes), encoding: 'base64', mimeType: BASE64_MIME_BY_EXT[ext] };
+  }
+
+  // A name the language table knows (code, config, markdown, csv, html…) is
+  // text, and the JSON content read is byte-safe for it.
+  if (hasExtension && getLanguageFromExt(name) !== 'plaintext') {
+    const result = await readProjectFile(projectId, relativePath, ref);
+    return { type: 'text', content: result.content };
+  }
+
+  // Unknown or missing extension: the bytes decide, text or binary.
+  const bytes = await readRawBytes(projectId, relativePath, ref);
+  if (isTextBytes(bytes)) {
+    return { type: 'text', content: new TextDecoder().decode(bytes), mimeType: 'text/plain; charset=utf-8' };
+  }
+  return { type: 'binary', content: '', mimeType: 'application/octet-stream' };
 }
 
 /**
- * Project API returns text only; binary preview is unsupported.
- * Producing an empty blob keeps consumers happy without lying about content.
+ * Read a file as a Blob of its exact bytes. Binary previews (docx, video,
+ * audio, pptx, zip, HEIC) and single-file downloads both come through here.
  */
 export async function readFileAsBlob(
   projectId: string,
   ref: string,
   filePath: string,
 ): Promise<Blob> {
-  const relativePath = toRepoRelative(filePath);
-  const result = await readProjectFile(projectId, relativePath, ref);
-  return new Blob([result.content], { type: 'text/plain;charset=utf-8' });
+  return fetchProjectFileRaw(projectId, toRepoRelative(filePath), ref);
 }
 
 export async function downloadFile(

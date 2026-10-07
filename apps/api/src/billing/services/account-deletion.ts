@@ -36,6 +36,7 @@ import {
 import { getSupabase } from '../../shared/supabase';
 import { forgetUserJwtLiveness } from '../../shared/jwt-liveness';
 import { getStripe } from '../../shared/stripe';
+import { config } from '../../config';
 import { db } from '../../shared/db';
 import { logger } from '../../lib/logger';
 import { ownedAccountRows } from '../../iam/membership-read';
@@ -184,11 +185,18 @@ export async function deleteAccountImmediately(accountId: string, userId?: strin
   return { success: true, message: 'Account deleted' };
 }
 
+/** Requests one tick executes, oldest first. The 15-minute tick takes the rest. */
+export const SWEEP_BATCH_SIZE = 25;
+
 export async function processScheduledDeletions(): Promise<{
   processed: number;
   errors: string[];
 }> {
-  const requests = await getScheduledDeletions();
+  if (config.ACCOUNT_DELETION_SWEEP_PAUSED) {
+    logger.warn('[AccountDeletion] scheduled sweep paused (ACCOUNT_DELETION_SWEEP_PAUSED)');
+    return { processed: 0, errors: [] };
+  }
+  const requests = await getScheduledDeletions(SWEEP_BATCH_SIZE);
   let processed = 0;
   const errors: string[] = [];
 
@@ -596,6 +604,21 @@ async function deleteAccountData(accountId: string, keepRequestId?: string): Pro
     await tx.delete(tunnelAuditLogs).where(eq(tunnelAuditLogs.accountId, accountId));
     await tx.delete(tunnelConnections).where(eq(tunnelConnections.accountId, accountId));
     await tx.delete(sandboxes).where(eq(sandboxes.accountId, accountId));
+    // kortix.guard_session_sandbox_identity() refuses to delete a session box
+    // that has an external_id unless its session is soft-deleted. The account is
+    // going away, so soft-delete its sessions first. Without this the delete
+    // below threw and every account with an established box failed to delete.
+    await tx
+      .update(projectSessions)
+      .set({
+        metadata: sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || jsonb_build_object('deletedAt', to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))`,
+      })
+      .where(
+        and(
+          eq(projectSessions.accountId, accountId),
+          sql`${projectSessions.metadata}->>'deletedAt' is null`,
+        ),
+      );
     await tx.delete(kortixApiKeys).where(eq(kortixApiKeys.accountId, accountId));
     await tx.delete(sessionSandboxes).where(eq(sessionSandboxes.accountId, accountId));
     await tx.delete(providerEvents).where(eq(providerEvents.accountId, accountId));

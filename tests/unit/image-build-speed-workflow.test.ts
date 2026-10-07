@@ -64,9 +64,9 @@ describe('staging image builds are native per-arch, cached, and merged', () => {
     // The sticky-disk builder is what makes an unchanged-dependency build warm.
     // Keyed by Dockerfile + platform so an arm64 leg never reads amd64 layers,
     // and so dev/preview builds of the same Dockerfile share the cache.
-    expect(job).toContain('uses: useblacksmith/setup-docker-builder@v2');
+    expect(job).toContain('uses: useblacksmith/setup-docker-builder@19215110ab936351210feebdfa5b440b4493e184 # v2.2.0');
     expect(job).toContain(`cache-key: ${DOCKERFILE[image]}:\${{ matrix.platform }}`);
-    expect(job).toContain('uses: useblacksmith/build-push-action@v2');
+    expect(job).toContain('uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2.3.0');
     // The registry cache stays alongside the sticky disk: measured 2026-08-25,
     // five consecutive sticky-disk builds of one key reused 0 layers while the
     // registry cache reused 34-45. mode=max caches intermediate stages too.
@@ -123,9 +123,9 @@ describe('dev image builds stay single-arch and cached', () => {
   it.each(IMAGES)('keeps the %s dev build on the Blacksmith layer cache', (image) => {
     const job = jobBlock(source, `build-${image}`);
 
-    expect(job).toContain('uses: useblacksmith/setup-docker-builder@v2');
+    expect(job).toContain('uses: useblacksmith/setup-docker-builder@19215110ab936351210feebdfa5b440b4493e184 # v2.2.0');
     expect(job).toContain(`cache-key: ${DOCKERFILE[image]}:linux/amd64`);
-    expect(job).toContain('uses: useblacksmith/build-push-action@v2');
+    expect(job).toContain('uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2.3.0');
     expect(job).toContain(`cache-from: type=registry,ref=kortix/kortix-${image}:dev-buildcache`);
     expect(job).toContain(
       `cache-to: type=registry,ref=kortix/kortix-${image}:dev-buildcache,mode=max`,

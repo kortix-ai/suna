@@ -7,6 +7,7 @@
 import { accountsRouter } from './core/app';
 import { supabaseAuth } from '../middleware/auth';
 import { accountSessionGate } from '../iam/session-gate';
+import { accountSsoGate } from '../middleware/sso-gate';
 import { iamRouter, registerIamRoutes } from './iam';
 import { auditRouter } from './audit';
 import { registerTokenRoutes } from './core/tokens';
@@ -33,6 +34,7 @@ accountsRouter.use('/*', async (c, next) => {
   }
   return accountSessionGate()(c, next);
 });
+accountsRouter.use('/*', accountSsoGate());
 
 // Mount IAM routes (groups/policies/roles/super-admin/effective). Sub-router
 // declares its own paths under /:accountId/iam/*, so mounting at '/' here is

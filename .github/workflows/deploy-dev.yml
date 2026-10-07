@@ -90,7 +90,7 @@ jobs:
       base: ${{ steps.base.outputs.base }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Full history so the change-diff can be taken against the SHA that dev
           # is ACTUALLY running (below), which may be many commits back. It also
@@ -149,7 +149,7 @@ jobs:
             echo "Deployed SHA unavailable ('${deployed}') — building ALL surfaces (fail-safe)"
           fi
       - name: Path filter
-        uses: dorny/paths-filter@v4
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
           # For `changed`, compare against what dev runs (empty = action's default).
@@ -345,7 +345,7 @@ jobs:
     outputs:
       image: kortix/kortix-api:dev-${{ needs.detect-changes.outputs.sha8 }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { submodules: false }
       - run: git submodule sync --recursive && git submodule update --init --recursive --remote
       - name: Set up Docker builder (Blacksmith sticky-disk layer cache)
@@ -355,11 +355,11 @@ jobs:
         # local buildx builder. The registry cache-from/cache-to below stays:
         # measured 2026-08-25, five consecutive sticky-disk builds of this key
         # reused 0 layers while the registry cache reused 34-45.
-        uses: useblacksmith/setup-docker-builder@v2
+        uses: useblacksmith/setup-docker-builder@19215110ab936351210feebdfa5b440b4493e184 # v2.2.0
         with:
           cache-key: apps/api/Dockerfile:linux/amd64
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -371,7 +371,7 @@ jobs:
           keys: |
             DOCKERHUB_USERNAME
             DOCKERHUB_TOKEN
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
@@ -387,7 +387,7 @@ jobs:
         # Bake the dev version (e.g. 0.9.7-dev.<sha8>) into the image so
         # /v1/health reports it. The immutable :dev-<sha8> tag (see `tags:`)
         # is the artifact's real identity.
-        uses: useblacksmith/build-push-action@v2
+        uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2.3.0
         with:
           context: .
           file: apps/api/Dockerfile
@@ -421,7 +421,7 @@ jobs:
     env:
       IMAGE: ${{ needs.build-api.outputs.image }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Trivy image scan (fail on fixable CRITICAL)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -433,7 +433,7 @@ jobs:
           exit-code: "1"
           format: table
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -449,7 +449,7 @@ jobs:
         with:
           username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Resolve image digest
         id: digest
         run: |
@@ -465,7 +465,7 @@ jobs:
           echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
           echo "ref=kortix/kortix-api@${DIGEST}" >> "$GITHUB_OUTPUT"
       - name: Generate SBOM
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           image: ${{ steps.digest.outputs.ref }}
           format: spdx-json
@@ -498,11 +498,11 @@ jobs:
       packages: read
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: latest
       - run: corepack enable pnpm
@@ -510,7 +510,7 @@ jobs:
         env:
           npm_config_engine_strict: "false"
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -603,9 +603,9 @@ jobs:
       KORTIX_ECS_ENV_OVERRIDES: >-
         {"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PROJECT_SNAPSHOT_MODE":"prefer-s3","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-dev-use2-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-east-2","KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE":"false","KORTIX_CAPTURE_S3_BUCKET":"kortix-dev-use2-capture-store","KORTIX_CAPTURE_S3_REGION":"us-east-2","KORTIX_CAPTURE_SQS_QUEUE_URL":"https://sqs.us-east-2.amazonaws.com/935064898258/kortix-dev-use2-capture-store-manifests","KORTIX_CAPTURE_STS_ROLE_ARN":"arn:aws:iam::935064898258:role/kortix-dev-use2-capture-store-device","AUDIT_ARCHIVE_BUCKET":"kortix-dev-use2-audit-archive","AUDIT_ARCHIVE_REGION":"us-east-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-dev-use2-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"us-east-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0","KORTIX_PLATINUM_US_REGION":"us-east"}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
@@ -697,9 +697,9 @@ jobs:
       packages: read
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -714,7 +714,7 @@ jobs:
             STAGING_EDGE_SECRET=kortix-ci-env:KORTIX_APPS_STAGING_EDGE_SECRET
             PROD_EDGE_SECRET=kortix-ci-env:KORTIX_APPS_PROD_EDGE_SECRET
             PREVIEW_EDGE_SECRET=kortix-ci-env:KORTIX_APPS_PREVIEW_EDGE_SECRET
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
       - name: Validate Apps router credentials
@@ -758,9 +758,9 @@ jobs:
       packages: read
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     steps:
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -772,7 +772,7 @@ jobs:
           keys: |
             DOCKERHUB_USERNAME
             DOCKERHUB_TOKEN
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
@@ -799,7 +799,7 @@ jobs:
       packages: read
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { submodules: false }
       - name: Set up Docker builder (Blacksmith sticky-disk layer cache)
         # Layers persist on a Blacksmith sticky disk keyed by Dockerfile+platform,
@@ -808,11 +808,11 @@ jobs:
         # local buildx builder. The registry cache-from/cache-to below stays:
         # measured 2026-08-25, five consecutive sticky-disk builds of this key
         # reused 0 layers while the registry cache reused 34-45.
-        uses: useblacksmith/setup-docker-builder@v2
+        uses: useblacksmith/setup-docker-builder@19215110ab936351210feebdfa5b440b4493e184 # v2.2.0
         with:
           cache-key: apps/llm-gateway/Dockerfile:linux/amd64
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -824,13 +824,13 @@ jobs:
           keys: |
             DOCKERHUB_USERNAME
             DOCKERHUB_TOKEN
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
       - name: Build and push (amd64)
         # Single-arch amd64 for dev (see the API build for the full rationale).
-        uses: useblacksmith/build-push-action@v2
+        uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2.3.0
         with:
           context: .
           file: apps/llm-gateway/Dockerfile
@@ -859,9 +859,9 @@ jobs:
       AWS_REGION: us-east-2
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
@@ -929,9 +929,9 @@ jobs:
       packages: read
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     steps:
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -943,7 +943,7 @@ jobs:
           keys: |
             DOCKERHUB_USERNAME
             DOCKERHUB_TOKEN
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
@@ -973,10 +973,10 @@ jobs:
     outputs:
       image: ${{ steps.tag.outputs.image }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { submodules: false }
       - run: git submodule sync --recursive && git submodule update --init --recursive --remote
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with: { node-version: 22 }
       - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile
@@ -1002,11 +1002,11 @@ jobs:
         # local buildx builder. The registry cache-from/cache-to below stays:
         # measured 2026-08-25, five consecutive sticky-disk builds of this key
         # reused 0 layers while the registry cache reused 34-45.
-        uses: useblacksmith/setup-docker-builder@v2
+        uses: useblacksmith/setup-docker-builder@19215110ab936351210feebdfa5b440b4493e184 # v2.2.0
         with:
           cache-key: apps/web/Dockerfile:linux/amd64
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -1018,13 +1018,13 @@ jobs:
           keys: |
             DOCKERHUB_USERNAME
             DOCKERHUB_TOKEN
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
       - name: Build and push (amd64)
         # Single-arch amd64 for dev (see the API build for the full rationale).
-        uses: useblacksmith/build-push-action@v2
+        uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2.3.0
         with:
           context: .
           file: apps/web/Dockerfile
@@ -1065,16 +1065,16 @@ jobs:
       AWS_REGION: us-east-2
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with: { node-version: 22 }
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -1120,14 +1120,14 @@ jobs:
       AWS_REGION: us-east-2
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -1169,7 +1169,7 @@ jobs:
       # The protection password is identical in the dev, staging, and preview
       # web blobs; the staging web blob is the single source for CI.
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -1246,9 +1246,9 @@ jobs:
       packages: read
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     steps:
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -1260,7 +1260,7 @@ jobs:
           keys: |
             DOCKERHUB_USERNAME
             DOCKERHUB_TOKEN
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
@@ -1290,13 +1290,13 @@ jobs:
     if: needs.detect-changes.outputs.cli == 'true'
     runs-on: ${{ vars.CI_RUNNER_M_2204 || 'blacksmith-4vcpu-ubuntu-2204' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: latest
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
 
@@ -1355,7 +1355,7 @@ jobs:
         run: ./artifacts/kortix-linux-x64 version
 
       - name: Upload CLI artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cli-binaries
           path: |
@@ -1385,12 +1385,12 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Download CLI artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: cli-binaries
           path: release/
@@ -1404,7 +1404,7 @@ jobs:
           git push -f origin dev-latest
 
       - name: Publish GitHub prerelease (dev-latest)
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: dev-latest
           name: dev-latest
@@ -1449,7 +1449,7 @@ jobs:
       GATEWAY_RESULT: ${{ needs.detect-changes.outputs.gateway == 'true' && needs.verify-gateway-dev-parity.result || 'unchanged' }}
       WEB_RESULT: ${{ needs.detect-changes.outputs.frontend == 'true' && needs.verify-web-dev.result || 'unchanged' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: scripts/ci
       - name: Comment on the shipped pull requests
