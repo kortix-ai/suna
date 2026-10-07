@@ -75,12 +75,15 @@ type GithubAsset = { name?: string; browser_download_url?: string; size?: number
  * never sees a broken button because GitHub was slow.
  *
  * The 10-minute revalidate keeps a burst of clicks off GitHub's rate limit.
+ * The 3 s timeout bounds a click on /download/<platform>: past it the visitor
+ * gets the releases page instead of a hanging request.
  */
 export async function getLatestRelease(): Promise<Release | null> {
   try {
     const res = await fetch(LATEST_API, {
       headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'kortix-download' },
       next: { revalidate: 600 },
+      signal: AbortSignal.timeout(3_000),
     });
     if (!res.ok) return null;
     const data = (await res.json()) as { tag_name?: string; assets?: GithubAsset[] };

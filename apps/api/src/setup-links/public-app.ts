@@ -9,10 +9,12 @@
  * is for. Same trust model as a magic link / a Pipedream connect URL.
  */
 import { createHash, randomUUID } from 'node:crypto';
-import { requestClientKey } from '../shared/client-ip';
-import { connectorConnections, connectors, projectSessions, projects } from '@kortix/db';
-import { and, eq, sql } from 'drizzle-orm';
-import { type Context, Hono, type Next } from 'hono';
+import { requestClientKey } from '../middleware/client-ip';
+import { connectorConnections, connectors, projectSecrets, projectSessions, projects } from '@kortix/db';
+import { and, eq, gt, isNull } from 'drizzle-orm';
+import { createRoute, z } from '@hono/zod-openapi';
+import { type Context, type Next } from 'hono';
+import { errors, json, lenientBody, makeOpenApiApp } from '../openapi';
 import { connectorAccountLandedSince, credentialExists } from '../connectors/credentials';
 import {
   pipedreamConfigured,
@@ -28,7 +30,9 @@ import { isValidSecretName, writeSharedProjectSecret } from '../projects/secrets
 import { clearSecretAudience, setSecretAudience } from '../projects/lib/secret-audience';
 import { resolveUserIdentities } from '../projects/lib/user-identity';
 import { db, withDbTransaction } from '../shared/db';
-import { TokenBucketRateLimiter, enforceRateLimit } from '../shared/rate-limit';
+import { projectAccountMembershipRows } from '../iam/membership-read';
+import { TokenBucketRateLimiter } from '../shared/rate-limit';
+import { enforceRateLimit } from '../middleware/rate-limit';
 import { RATE_LIMIT_EXCEEDED_ACTION } from '../shared/rate-limit-audit';
 import { resolveSetupLink } from './token';
 import { watchConnectorCompletion } from './connector-completion-watch';
@@ -41,7 +45,59 @@ import { readJsonObject } from '../shared/http-body';
 // the prompt text has always been asserted from.
 export { connectorConnectedPrompt };
 
-const setupLinksPublicApp = new Hono();
+const setupLinksPublicApp = makeOpenApiApp();
+
+// Unauthenticated on purpose: the token in the path IS the capability.
+const TokenParams = z.object({ token: z.string() });
+const LinkErrors = errors(400, 404, 410);
+/** Statuses `resolveConnectorLink` adds to a link error. */
+const ConnectorLinkErrors = errors(400, 404, 409, 410, 501, 502);
+
+const SecretLinkSchema = z.object({
+  kind: z.literal('secret'),
+  project_name: z.string(),
+  requester: z.object({ label: z.string().nullable() }).nullable(),
+  fields: z.array(
+    z.object({ name: z.string(), label: z.string().nullable(), description: z.string().nullable() }),
+  ),
+  expires_at: z.string(),
+});
+
+const SecretLinkSubmitSchema = z.object({
+  ok: z.literal(true),
+  saved: z.array(z.string()),
+  /** Set when the requesting agent cannot receive every saved value. */
+  agent: z.string().optional(),
+  withheld: z.array(z.object({ name: z.string(), reason: z.string() })).optional(),
+});
+
+const ConnectorLinkSchema = z.object({
+  kind: z.literal('connector'),
+  project_id: z.string(),
+  project_name: z.string(),
+  label: z.string().nullable(),
+  owner: z.enum(['me', 'project']),
+  slug: z.string(),
+  app: z.string().nullable(),
+  name: z.string().nullable(),
+  icon_url: z.string().nullable(),
+  /** Omitted for a token minted before `iat` existed. */
+  connected: z.boolean().optional(),
+  expires_at: z.string(),
+});
+
+const ConnectorStartSchema = z.object({
+  connect_url: z.string().nullable(),
+  connected: z.boolean().optional(),
+  already_connected: z.boolean().optional(),
+});
+
+const ConnectorFinalizeSchema = z.object({
+  connected: z.boolean(),
+  connected_as: z.string().nullable().optional(),
+  connection_id: z.string().optional(),
+  label: z.string().nullable().optional(),
+});
 
 // Same shape as createPublicSessionShareRateLimitMiddleware (public-session-shares):
 // no authenticated identity to key on, so key on the bearer token itself — every
@@ -50,6 +106,7 @@ const setupLinksPublicApp = new Hono();
 // client IP so a flood of garbage tokens (each a distinct, never-colliding key)
 // can't allocate unbounded rate-limit buckets or dodge the limit entirely.
 const TOKEN_LIKE_REGEX = /^ksl_[A-Za-z0-9_-]{8,512}$/;
+// replica-local: limit × API replicas (shared/rate-limit.ts).
 const setupLinkLimiter = new TokenBucketRateLimiter('setup_link');
 
 function createSetupLinkRateLimitMiddleware() {
@@ -98,11 +155,7 @@ async function linkRequester(
 }
 
 async function lookupLinkRequester(projectId: string, uid: string): Promise<{ id: string; label: string | null } | null> {
-  const result = await db.execute<{ found: number }>(sql`
-    select 1 as found from kortix.account_memberships m
-      join kortix.projects p on p.account_id = m.account_id
-     where p.project_id = ${projectId}::uuid and m.user_id::text = ${uid}
-     limit 1`);
+  const result = await projectAccountMembershipRows(projectId, uid);
   const rows = (result as unknown as { rows?: Array<{ found: number }> }).rows ?? result;
   if ((rows as Array<{ found: number }>).length === 0) return null;
   const identity = (await resolveUserIdentities([uid])).get(uid);
@@ -133,7 +186,14 @@ setupLinksPublicApp.use('/connectors/:token/start', createSetupLinkRateLimitMidd
 setupLinksPublicApp.use('/connectors/:token/finalize', createSetupLinkRateLimitMiddleware());
 
 // GET /v1/setup-links/secret/:token — what fields does this link ask for?
-setupLinksPublicApp.get('/secret/:token', async (c) => {
+setupLinksPublicApp.openapi(createRoute({
+  method: 'get',
+  path: '/secret/{token}',
+  tags: ['setup-links'],
+  summary: 'Read what a secret setup link asks for',
+  request: { params: TokenParams },
+  responses: { 200: json(SecretLinkSchema, 'The requested fields'), ...LinkErrors },
+}), async (c) => {
   const resolved = resolveSetupLink(c.req.param('token'));
   if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status);
   if (resolved.payload.kind !== 'secret') return c.json({ error: 'Wrong link type' }, 400);
@@ -146,7 +206,7 @@ setupLinksPublicApp.get('/secret/:token', async (c) => {
 
   const requester = await linkRequester(resolved.projectId, resolved.payload.uid);
   return c.json({
-    kind: 'secret',
+    kind: 'secret' as const,
     project_name: project.name,
     requester: requester ? { label: requester.label } : null,
     fields: resolved.payload.fields.map((f) => ({
@@ -159,7 +219,20 @@ setupLinksPublicApp.get('/secret/:token', async (c) => {
 });
 
 // POST /v1/setup-links/secret/:token — { values: { NAME: value } }
-setupLinksPublicApp.post('/secret/:token', async (c) => {
+setupLinksPublicApp.openapi(createRoute({
+  method: 'post',
+  path: '/secret/{token}',
+  tags: ['setup-links'],
+  summary: 'Submit the values a secret setup link asks for',
+  request: {
+    params: TokenParams,
+    body: { content: { 'application/json': { schema: lenientBody({
+      values: z.record(z.string(), z.string()).openapi({ description: 'Values keyed by secret name.' }),
+      only_requester: z.boolean().optional().openapi({ description: 'Keep the values to the member who asked.' }),
+    }) } } },
+  },
+  responses: { 200: json(SecretLinkSubmitSchema, 'Saved'), ...LinkErrors },
+}), async (c) => {
   const resolved = resolveSetupLink(c.req.param('token'));
   if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status);
   if (resolved.payload.kind !== 'secret') return c.json({ error: 'Wrong link type' }, 400);
@@ -184,12 +257,20 @@ setupLinksPublicApp.post('/secret/:token', async (c) => {
     }
     // "Only the person who asked" — the one audience a link holder may choose.
     // It can only narrow: the default is everyone in the project.
+    // The minter must still be in the account: a removed member's links die with them.
+    if (payload.uid && !(await linkRequester(resolved.projectId, payload.uid))) {
+      return c.json({ error: 'This link is no longer valid — ask the agent for a fresh one' }, 410);
+    }
     const requester = body?.only_requester === true ? await linkRequester(resolved.projectId, payload.uid) : null;
     if (body?.only_requester === true && !requester) {
       return c.json({ error: 'This link cannot keep the values to one person' }, 400);
     }
     const accountId = requester ? await projectAccount(resolved.projectId) : null;
 
+    // Single use per key, without a table: a key written after the link was
+    // minted is spent. The shared (non-personal) row's updated_at is the marker.
+    const mintedAt = new Date(payload.iat ?? payload.exp - 7 * 24 * 60 * 60_000);
+    let spent = 0;
     const saved: string[] = [];
     for (const [rawName, rawValue] of Object.entries(values)) {
       const name = rawName.toUpperCase();
@@ -198,6 +279,14 @@ setupLinksPublicApp.post('/secret/:token', async (c) => {
       if (!allowed.has(name) || !isValidSecretName(name)) continue;
       const value = typeof rawValue === 'string' ? rawValue : '';
       if (!value) continue;
+      const [written] = await db.select({ id: projectSecrets.secretId }).from(projectSecrets)
+        .where(and(
+          eq(projectSecrets.projectId, resolved.projectId),
+          eq(projectSecrets.identifier, name),
+          isNull(projectSecrets.ownerUserId),
+          gt(projectSecrets.updatedAt, mintedAt),
+        )).limit(1);
+      if (written) { spent++; continue; }
       const audience =
         requester && accountId
           ? { accountId, projectId: resolved.projectId, principals: [{ principal_type: 'user' as const, principal_id: requester.id }], grantedBy: requester.id }
@@ -214,20 +303,20 @@ setupLinksPublicApp.post('/secret/:token', async (c) => {
         ...(pendingId ? { secretId: pendingId } : {}),
       });
       if (audience && pendingId && secretId !== pendingId) {
-        // The key already existed: drop the pending grants, narrow the row itself.
+        // The key already existed: drop the pending grants. A link never narrows an existing row's audience.
         await clearSecretAudience({ accountId: audience.accountId, projectId: audience.projectId, secretId: pendingId });
-        await setSecretAudience({ ...audience, secretId });
       }
       saved.push(name);
     }
 
     if (saved.length === 0) {
+      if (spent > 0) return c.json({ error: 'This link was already used — ask the agent for a fresh one' }, 409);
       return c.json({ error: 'No values provided for the requested keys' }, 400);
     }
 
     return saved;
   });
-  if (result instanceof Response) return result;
+  if (result instanceof Response) return result as never;
   const saved = result;
 
   // Live-propagate so an active session sees the new value without a restart.
@@ -245,11 +334,18 @@ setupLinksPublicApp.post('/secret/:token', async (c) => {
 
   // A saved value the requesting agent cannot receive is the one outcome the
   // human must act on, and this form is the only moment they are here.
-  return c.json({ ok: true, saved, ...(reach ? { agent: reach.agent, withheld: reach.withheld } : {}) });
+  return c.json({ ok: true as const, saved, ...(reach ? { agent: reach.agent, withheld: reach.withheld } : {}) });
 });
 
 // GET /v1/setup-links/connectors/:token — which app does this link connect?
-setupLinksPublicApp.get('/connectors/:token', async (c) => {
+setupLinksPublicApp.openapi(createRoute({
+  method: 'get',
+  path: '/connectors/{token}',
+  tags: ['setup-links'],
+  summary: 'Read which app a connector setup link connects',
+  request: { params: TokenParams },
+  responses: { 200: json(ConnectorLinkSchema, 'The connector'), ...LinkErrors },
+}), async (c) => {
   const resolved = resolveSetupLink(c.req.param('token'));
   if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status);
   if (resolved.payload.kind !== 'connector') return c.json({ error: 'Wrong link type' }, 400);
@@ -271,7 +367,7 @@ setupLinksPublicApp.get('/connectors/:token', async (c) => {
         ? await connectorAccountLandedSince(identity.connectorId, uid, new Date(iat))
         : false;
   return c.json({
-    kind: 'connector',
+    kind: 'connector' as const,
     // The in-app dialog creates the account through the project's own routes,
     // as the signed-in member, so it needs the project the link belongs to.
     project_id: resolved.projectId,
@@ -279,7 +375,7 @@ setupLinksPublicApp.get('/connectors/:token', async (c) => {
     // The agent's suggested name for a new account, or null.
     label: resolved.payload.label ?? null,
     // Whose account the agent meant; the dialog preselects it. Older tokens: `me`.
-    owner: resolved.payload.owner === 'project' ? 'project' : 'me',
+    owner: resolved.payload.owner === 'project' ? ('project' as const) : ('me' as const),
     slug: resolved.payload.slug,
     app: resolved.payload.app,
     name: identity.name,
@@ -409,9 +505,16 @@ async function resolveConnectorLink(c: Context): Promise<
 // webhook (connectors/pipedream.ts createConnectToken webhook_uri + db-deps
 // pipedreamWebhook), but that path is AUXILIARY redundancy only: the client
 // polls .../finalize below, which is the authoritative persist + notify path.
-setupLinksPublicApp.post('/connectors/:token/start', async (c) => {
+setupLinksPublicApp.openapi(createRoute({
+  method: 'post',
+  path: '/connectors/{token}/start',
+  tags: ['setup-links'],
+  summary: 'Mint a hosted authorization URL for a connector setup link',
+  request: { params: TokenParams },
+  responses: { 200: json(ConnectorStartSchema, 'The URL, or already connected'), ...ConnectorLinkErrors },
+}), async (c) => {
   const link = await resolveConnectorLink(c);
-  if ('error' in link) return link.error;
+  if ('error' in link) return link.error as never;
 
   try {
     // The same provider-neutral dep the connector router uses, so Composio and
@@ -471,9 +574,21 @@ setupLinksPublicApp.post('/connectors/:token/start', async (c) => {
 // asked for the connector. Idempotent: already-connected returns connected
 // WITHOUT re-notifying, so a poll that races the first success can't spam the
 // agent with duplicate prompts.
-setupLinksPublicApp.post('/connectors/:token/finalize', async (c) => {
+setupLinksPublicApp.openapi(createRoute({
+  method: 'post',
+  path: '/connectors/{token}/finalize',
+  tags: ['setup-links'],
+  summary: 'Record the account a connector setup link connected',
+  request: {
+    params: TokenParams,
+    body: { content: { 'application/json': { schema: lenientBody({
+      connection_id: z.string().optional().openapi({ description: 'The named account the dialog created.' }),
+    }) } } },
+  },
+  responses: { 200: json(ConnectorFinalizeSchema, 'Whether the account is connected'), ...ConnectorLinkErrors, ...errors(403) },
+}), async (c) => {
   const link = await resolveConnectorLink(c);
-  if ('error' in link) return link.error;
+  if ('error' in link) return link.error as never;
 
   // The in-app dialog creates a NEW named account through the project's own
   // routes and then names it here, so the session is told about THAT account.
@@ -537,7 +652,7 @@ async function finalizeNamedAccount(
   c: Context,
   link: Exclude<Awaited<ReturnType<typeof resolveConnectorLink>>, { error: Response }>,
   connectionId: string,
-): Promise<Response> {
+) {
   const [account] = await db
     .select({
       connectionId: connectorConnections.connectionId,
@@ -574,7 +689,7 @@ async function finalizeNamedAccount(
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : 'Failed to finalize connect' }, 502);
   }
-  if (!connected) return c.json({ connected: false });
+  if (!connected) return c.json({ connected: false }, 200);
 
   if (link.sid) {
     void notifyConnectorSession(link.sid, link.projectId, link.uid, link.slug, link.app, {
@@ -587,7 +702,7 @@ async function finalizeNamedAccount(
     connected_as: connectedAs,
     connection_id: account.connectionId,
     label: account.label,
-  });
+  }, 200);
 }
 
 /** Exported for tests. The text delivered to the requesting session's agent. */
@@ -642,6 +757,9 @@ async function notifyRequestingSession(
     const { enqueueContinueSessionCommand, drainSessionLifecycleQueue } = await import(
       '../projects/session-lifecycle'
     );
+    // A key per submission only so the kick can target this row: an untargeted
+    // kick delivers whichever row is oldest-due.
+    const idempotencyKey = `secret-submitted:${sessionId}:${crypto.randomUUID()}`;
     await enqueueContinueSessionCommand({
       source: 'system:secret-submitted',
       projectId,
@@ -649,8 +767,9 @@ async function notifyRequestingSession(
       sessionId,
       actorUserId,
       text: secretSubmittedPrompt(saved, reach),
+      idempotencyKey,
     });
-    drainSessionLifecycleQueue({ limit: 1 }).catch(() => {});
+    drainSessionLifecycleQueue({ idempotencyKey, burst: false }).catch(() => {});
     console.info('[setup-links] secret submitted, session notified', { sessionId, saved });
   } catch (err) {
     console.warn('[setup-links] failed to notify session of secret submission:', err);

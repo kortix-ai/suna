@@ -288,19 +288,26 @@ export async function continueSession(
     (await transitionSession('wake', sessionId, { error: null }))
       ? session.status
       : null;
-  const outcome = await deliverAfterWake({ command, session, sessionId, userId, awakeEarly, sendPrompt, beforeSend, tl });
   // The wake above is a claim that a runtime is coming. A delivery that ends
   // with no runtime (`unreachable`, `pending`, `no-session`) takes the claim
-  // back, or the session reads `running` over a stopped box and holds a
-  // concurrent-session slot through every retry. `failed` and `not-landed`
-  // reached a live runtime, so they keep it.
-  if (wokeFrom && (outcome === 'unreachable' || outcome === 'pending' || outcome === 'no-session')) {
-    await undoDeliveryWake(sessionId, wokeFrom).catch((err) =>
+  // back, or the session reads `running` over a stopped box through every
+  // retry. So does one that throws, e.g. `InboxDeliveryPaused` from a Stop:
+  // `undoDeliveryWake` keeps the status when a box did come up. `failed` and
+  // `not-landed` reached a live runtime, so they keep it.
+  const undoWake = () =>
+    undoDeliveryWake(sessionId, wokeFrom!).catch((err) =>
       console.warn('[session-lifecycle] failed to undo the pre-delivery wake', {
         sessionId,
         error: err instanceof Error ? err.message : String(err),
       }),
     );
+  const outcome = await deliverAfterWake({ command, session, sessionId, userId, awakeEarly, sendPrompt, beforeSend, tl })
+    .catch(async (err) => {
+      if (wokeFrom) await undoWake();
+      throw err;
+    });
+  if (wokeFrom && (outcome === 'unreachable' || outcome === 'pending' || outcome === 'no-session')) {
+    await undoWake();
   }
   return outcome;
 }

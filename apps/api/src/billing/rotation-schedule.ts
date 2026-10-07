@@ -1,8 +1,20 @@
-interface BillingRotationConfig {
-  KORTIX_BILLING_INTERNAL_ENABLED: boolean;
-  KORTIX_WORKERS_ENABLED: boolean;
+// The ticks of the hourly billing sweeps. workers/billing-rotation-worker.ts
+// schedules them.
+
+export async function runTrialExpirySweep(): Promise<void> {
+  const { sweepExpiredTrials, sweepTrialMonthlyGrants } = await import('./services/trial-admin');
+  await sweepExpiredTrials();
+  await sweepTrialMonthlyGrants();
 }
 
-export function billingRotationIntervalsEnabled(config: BillingRotationConfig): boolean {
-  return config.KORTIX_BILLING_INTERNAL_ENABLED && config.KORTIX_WORKERS_ENABLED;
+export async function runYearlyCreditRotation(): Promise<void> {
+  const { processYearlyCreditRotation } = await import('./services/yearly-rotation');
+  await processYearlyCreditRotation();
 }
+
+export async function runFreeTierCreditRotation(): Promise<void> {
+  const { processFreeTierCreditRotation } = await import('./services/free-tier-rotation');
+  await processFreeTierCreditRotation();
+}
+
+export { startBillingRotation, stopBillingRotation } from '../workers/billing-rotation-worker';

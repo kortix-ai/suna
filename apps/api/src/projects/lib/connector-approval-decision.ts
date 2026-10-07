@@ -98,6 +98,10 @@ export async function decideConnectorApproval(input: {
   actorUserId: string;
   auditSource: string;
   resume: 'queue' | 'caller';
+  /** Update any chat card this decision left stale — the surface above owns
+   *  the presentation edge, so this module stays out of channels. Fire-and-
+   *  forget: a failed card update never fails the decision. */
+  updateStaleCard?: () => Promise<void>;
 }): Promise<DecideOutcome> {
   const { projectId, row, decision, note } = input;
   const existingDetail =
@@ -195,19 +199,11 @@ export async function decideConnectorApproval(input: {
   }
 
   // A card posted in a chat thread must not keep offering buttons for a call
-  // decided elsewhere. Lazy import: channels depend on projects, not back.
-  void import('../../channels/approval-card-relay')
-    .then((relay) =>
-      relay.markApprovalCardDecided({
-        projectId,
-        resultSummary: existingDetail,
-        actionPath: row.actionPath,
-        decision,
-        note,
-        actorUserId: input.actorUserId,
-      }),
-    )
-    .catch((error) => console.warn('[approvals] approval card update failed', error));
+  // decided elsewhere. Lazy in effect only — the fire is best-effort and never
+  // blocks the resolve.
+  void input.updateStaleCard?.().catch((error) =>
+    console.warn('[approvals] approval card update failed', error),
+  );
 
   return 'resolved';
 }

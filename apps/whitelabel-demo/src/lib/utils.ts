@@ -17,3 +17,10 @@ export function relativeTime(iso?: string | null): string {
   const d = Math.floor(h / 24);
   return d < 30 ? `${d}d ago` : new Date(iso).toLocaleDateString();
 }
+
+/** A locale date string, or `fallback` when the value is absent or not a date. */
+export function fmtDate(value: unknown, fallback = ''): string {
+  if (!value) return fallback;
+  const d = new Date(value as string);
+  return Number.isNaN(d.getTime()) ? fallback : d.toLocaleString();
+}

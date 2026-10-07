@@ -26,16 +26,16 @@ name: DB Migrations
 # See packages/db/MIGRATIONS.md.
 
 on:
-  # A pull request into `main` runs no CI: the developer runs `pnpm test` in
-  # their box. The push to `main` is the non-blocking post-merge check; release
+  # A pull request into `dev` runs no CI: the developer runs `pnpm test` in
+  # their box. The push to `dev` is the non-blocking post-merge check; release
   # pull requests (`staging`, `prod`) are the gate.
   push:
-    branches: [main]
+    branches: [dev]
     paths:
       - 'packages/db/**'
       - '.github/workflows/db-migrations.yml'
   pull_request:
-    branches: [staging]
+    branches: [staging, prod]
     paths:
       - 'packages/db/**'
       - '.github/workflows/db-migrations.yml'
@@ -87,16 +87,17 @@ jobs:
         run: |
           set -euo pipefail
           BASE='${{ github.event.pull_request.base.sha || github.event.before }}'
-          # Modified files directly under migrations/ (depth-1 glob excludes
+          # Modified or deleted files (--no-renames: a rename is a delete plus an add,
+          # so it cannot slip past as `R`) directly under migrations/ (depth-1 glob excludes
           # _archive/). Two pathspecs: plain .sql migrations, and the
           # .concurrent.ts CONCURRENTLY escape hatch (see MIGRATIONS.md).
-          CHANGED=$(git diff --diff-filter=M --name-only "$BASE...HEAD" -- 'packages/db/migrations/*.sql' 'packages/db/migrations/*.concurrent.ts' || true)
+          CHANGED=$(git diff --no-renames --diff-filter=MD --name-only "$BASE...HEAD" -- 'packages/db/migrations/*.sql' 'packages/db/migrations/*.concurrent.ts' || true)
           if [ -n "$CHANGED" ]; then
-            echo "::error::Migrations are immutable — these already-merged files were modified. Create a NEW migration instead of editing an existing one:"
+            echo "::error::Migrations are immutable — these already-merged files were modified, renamed, or deleted. Create a NEW migration instead of editing an existing one:"
             echo "$CHANGED"
             exit 1
           fi
-          echo "OK — no existing migration files were modified."
+          echo "OK — no existing migration files were modified, renamed, or deleted."
 
   sequence:
     name: Migrations are sequential
@@ -114,7 +115,7 @@ jobs:
           BASE_MAX=$(git ls-tree -r --name-only "$BASE" -- packages/db/migrations \
             | sed -n 's#.*/\([0-9]\{17\}\)_.*\.\(sql\|concurrent\.ts\)$#\1#p' | sort -n | tail -1 || true)
           # Migrations ADDED by this PR (both file shapes — see MIGRATIONS.md).
-          ADDED=$(git diff --diff-filter=A --name-only "$BASE...HEAD" -- 'packages/db/migrations/*.sql' 'packages/db/migrations/*.concurrent.ts' || true)
+          ADDED=$(git diff --no-renames --diff-filter=A --name-only "$BASE...HEAD" -- 'packages/db/migrations/*.sql' 'packages/db/migrations/*.concurrent.ts' || true)
           bad=0
           for f in $ADDED; do
             ts=$(basename "$f" | sed -n 's#^\([0-9]\{17\}\)_.*#\1#p')

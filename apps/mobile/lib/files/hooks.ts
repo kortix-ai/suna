@@ -1,14 +1,13 @@
 /**
  * Sandbox file hooks. Reads and the rename/delete verbs go through the
- * `@kortix/sdk` file client, each call naming its sandbox with `baseUrl`. Two
- * paths stay native because React Native cannot do them through `fetch` + Blob:
- * the download to disk (bytes never enter the JS heap) and the `{ uri }`
- * multipart upload.
+ * `@kortix/sdk` file client, each call naming its sandbox with `baseUrl`. The
+ * `{ uri }` multipart upload goes through the SDK's `uploadNativeFile`. One path
+ * stays native: the download to disk (bytes never enter the JS heap).
  */
 
 import { useMutation, useQuery, useQueryClient, type UseMutationOptions, type UseQueryOptions } from '@tanstack/react-query';
 import * as FileSystem from 'expo-file-system/legacy';
-import { deleteFile, listFiles, readBlob, readFile, renameFile } from '@kortix/sdk';
+import { deleteFile, listFiles, readBlob, readFile, renameFile, uploadNativeFile } from '@kortix/sdk';
 import { getAuthToken } from '@/api/config';
 import type { SandboxFile } from '@/api/types';
 import { normalizeFilenameToNFC } from './utils';
@@ -134,30 +133,12 @@ export function useUploadSandboxFile(
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ sandboxUrl, file, targetPath }) => {
-      const token = await getAuthToken();
-      const normalizedName = normalizeFilenameToNFC(file.name);
-      const formData = new FormData();
-      formData.append('path', targetPath);
-      formData.append('file', {
-        uri: file.uri,
-        name: normalizedName,
-        type: file.type || 'application/octet-stream',
-      } as any);
-
-      const res = await fetch(`${sandboxUrl}/file/upload`, {
-        method: 'POST',
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: formData,
-      });
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new Error(`Upload failed: ${res.status} ${text}`);
-      }
-      return res.json();
-    },
+    mutationFn: ({ sandboxUrl, file, targetPath }) =>
+      uploadNativeFile(
+        { uri: file.uri, name: normalizeFilenameToNFC(file.name), type: file.type },
+        targetPath,
+        sandboxUrl,
+      ),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: fileKeys.sandbox(variables.sandboxUrl),
@@ -187,7 +168,6 @@ export function useWriteSandboxFile(
 
   return useMutation({
     mutationFn: async ({ sandboxUrl, path: fullPath, content }) => {
-      const token = await getAuthToken();
       const slash = fullPath.lastIndexOf('/');
       const dir = slash >= 0 ? fullPath.slice(0, slash) : '';
       const name = slash >= 0 ? fullPath.slice(slash + 1) : fullPath;
@@ -201,17 +181,7 @@ export function useWriteSandboxFile(
 
       try {
         // 2. Upload to the unique temp name → lands exactly at {dir}/{tempName}.
-        const formData = new FormData();
-        formData.append('path', dir);
-        formData.append('file', { uri: localUri, name: tempName, type: 'text/plain' } as any);
-        const up = await fetch(`${sandboxUrl}/file/upload`, {
-          method: 'POST',
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-          body: formData,
-        });
-        if (!up.ok) {
-          throw new Error(`Upload failed: ${up.status} ${await up.text().catch(() => '')}`);
-        }
+        await uploadNativeFile({ uri: localUri, name: tempName, type: 'text/plain' }, dir, sandboxUrl);
 
         // 3. Rename temp → target (atomic overwrite).
         try {

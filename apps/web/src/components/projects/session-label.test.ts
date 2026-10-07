@@ -7,6 +7,7 @@ import {
   matchesSourceFilters,
   matchesStatusFilters,
   SESSION_DISPLAY_STATUS_LABELS,
+  sessionCanBeStopped,
   sessionDisplayStatus,
   sessionIsShared,
   sessionDisplayLabel,
@@ -222,6 +223,45 @@ describe('matchesSourceFilters', () => {
     expect(matchesSourceFilters(teams, ['teams'], testUiTranslator)).toBe(true);
     expect(matchesSourceFilters(teams, ['slack'], testUiTranslator)).toBe(false);
   });
+
+  // A manual `kortix triggers fire <slug>` stamps `trigger_source: 'manual'` on
+  // the spawned session (apps/api/src/projects/routes/triggers.ts). The list
+  // must not fold that run into the trigger's declared kind: "why did this
+  // run" needs the fire origin, not just the trigger.
+  test('a manual fire of a cron trigger reads manual, not scheduled', () => {
+    const manual = makeSession({
+      metadata: { trigger_source: 'manual', trigger_type: 'cron', trigger_slug: 'dogfood-cron' },
+    });
+    const scheduled = makeSession({
+      metadata: { trigger_source: 'cron', trigger_type: 'cron', trigger_slug: 'dogfood-cron' },
+    });
+    expect(sessionSource(manual, testUiTranslator)).toMatchObject({
+      kind: 'manual',
+      triggerSlug: 'dogfood-cron',
+    });
+    expect(sessionSource(manual, testUiTranslator).label).not.toBe(
+      sessionSource(scheduled, testUiTranslator).label,
+    );
+    expect(matchesSourceFilters(manual, ['manual'], testUiTranslator)).toBe(true);
+    expect(matchesSourceFilters(manual, ['schedule'], testUiTranslator)).toBe(false);
+  });
+
+  test('a scheduled fire of the same trigger keeps its kind', () => {
+    const scheduled = makeSession({
+      metadata: { trigger_source: 'cron', trigger_type: 'cron', trigger_slug: 'dogfood-cron' },
+    });
+    const webhook = makeSession({
+      metadata: { trigger_source: 'webhook', trigger_type: 'webhook', trigger_slug: 'dogfood-hook' },
+    });
+    expect(sessionSource(scheduled, testUiTranslator)).toMatchObject({
+      kind: 'schedule',
+      triggerSlug: 'dogfood-cron',
+    });
+    expect(sessionSource(webhook, testUiTranslator)).toMatchObject({
+      kind: 'webhook',
+      triggerSlug: 'dogfood-hook',
+    });
+  });
 });
 
 describe('mention markup in titles', () => {
@@ -233,5 +273,35 @@ describe('mention markup in titles', () => {
   test('stripChatMentionMarkup collapses the whitespace the tag leaves behind', () => {
     expect(stripChatMentionMarkup('<at>Kortix Dev</at>&nbsp; now count   the lines')).toBe('now count the lines');
     expect(stripChatMentionMarkup('plain')).toBe('plain');
+  });
+});
+
+describe('sessionCanBeStopped', () => {
+  test('a running session can be stopped', () => {
+    expect(sessionCanBeStopped(makeSession({ status: 'running' }))).toBe(true);
+  });
+
+  // A warm shell whose box is up is reported `provisioning` (KRTX-1466), but
+  // it still bills compute the owner can stop — the stop route reads the
+  // sandbox row, not this word. Without the warm case the Stop control
+  // vanished from the row menu and the session header of every billed shell.
+  test('a warm shell reported provisioning can be stopped', () => {
+    expect(
+      sessionCanBeStopped(makeSession({ status: 'provisioning', metadata: { warm: true } })),
+    ).toBe(true);
+  });
+
+  test('a genuinely booting session cannot be stopped', () => {
+    expect(sessionCanBeStopped(makeSession({ status: 'provisioning' }))).toBe(false);
+    expect(
+      sessionCanBeStopped(makeSession({ status: 'provisioning', metadata: {} })),
+    ).toBe(false);
+    expect(sessionCanBeStopped(makeSession({ status: 'queued' }))).toBe(false);
+  });
+
+  test('settled and failed sessions cannot be stopped', () => {
+    for (const status of ['stopped', 'failed', 'completed'] as const) {
+      expect(sessionCanBeStopped(makeSession({ status }))).toBe(false);
+    }
   });
 });

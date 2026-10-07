@@ -34,7 +34,14 @@ import { FieldLabel, InfoStrip, StepHeader } from '@/features/auth/auth-primitiv
 import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
+import {
+  armPkceResumeGuard,
+  consumePkceResumeGuard,
+  seedPkceVerifierForResume,
+  stashBrowserPkceVerifier,
+} from '@/lib/auth/pkce-resume';
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
+import { takeSignOutNotice } from '@/lib/auth/sign-out-notice';
 import { isSessionExpired } from '@/lib/auth/session-expiry';
 import {
   type CredentialsMode,
@@ -58,6 +65,47 @@ type Step = 'entry' | 'sso' | 'credentials' | 'link';
 
 const RESEND_COOLDOWN_SECONDS = 30;
 const EASE = [0.23, 1, 0.32, 1] as const;
+
+// sessionStorage key holding the address a stale-bundle recovery is handing
+// back to the form with. Consumed by the prefill effect on the next mount.
+const STALE_BUNDLE_EMAIL_KEY = 'kortix:stale-bundle-email';
+
+/**
+ * Next 16 rejects a server-action call whose id the running server does not
+ * know by throwing `UnrecognizedActionError` (the 404 response carries
+ * `x-nextjs-action-not-found: 1`). A browser holding the previous build's
+ * client bundle hits this whenever a deploy rolls underneath it: the HTML it
+ * rendered references action ids the new build no longer registers. The class
+ * name is the stable contract; the class itself is not exported from `next`.
+ */
+function isUnrecognizedActionError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { name?: unknown }).name === 'UnrecognizedActionError'
+  );
+}
+
+/**
+ * Recover a stale client bundle: reload the document once, so the browser
+ * re-fetches the build the server is actually running and the same submit
+ * succeeds. A soft refresh cannot do this — the stale action ids are baked
+ * into the already-loaded chunks. One shot per document: if the skew outlives
+ * the reload (e.g. an edge still serving the old page), the caller surfaces
+ * the error instead of looping. Returns true when it took over.
+ */
+let reloadedForStaleBundle = false;
+function recoverStaleBundle(email: string): boolean {
+  if (reloadedForStaleBundle || typeof window === 'undefined') return false;
+  reloadedForStaleBundle = true;
+  try {
+    if (email) window.sessionStorage.setItem(STALE_BUNDLE_EMAIL_KEY, email);
+  } catch {
+    // Storage full or disabled: reload without the prefill.
+  }
+  window.location.reload();
+  return true;
+}
 
 /* ─── Small shared pieces ──────────────────────────────────────────────── */
 
@@ -155,6 +203,20 @@ function AuthCardForm({
     const t = setTimeout(() => setResendIn((prev) => prev - 1), 1000);
     return () => clearTimeout(t);
   }, [step, resendIn]);
+
+  // A stale-bundle recovery reloaded the document mid-submit; put the address
+  // back so the retried submit is one click away.
+  useEffect(() => {
+    try {
+      const stashed = window.sessionStorage.getItem(STALE_BUNDLE_EMAIL_KEY);
+      if (stashed) {
+        window.sessionStorage.removeItem(STALE_BUNDLE_EMAIL_KEY);
+        setEmail(stashed);
+      }
+    } catch {
+      // sessionStorage unavailable (privacy mode): no prefill.
+    }
+  }, []);
 
   const enabledProviders = useMemo(() => {
     const raw = getEnv().AUTH_PROVIDERS || '';
@@ -274,10 +336,17 @@ function AuthCardForm({
         setSentEmail((result as any).email || target);
         setResendIn(RESEND_COOLDOWN_SECONDS);
         setStep('link');
+        // Snapshot the PKCE verifier the server action just handed this browser
+        // as a cookie. If the cookie does not survive the mailbox detour, the
+        // callback bounces the code back here and the resume effect completes
+        // the exchange from this snapshot instead of leaving the visitor on a
+        // false "expired" screen.
+        stashBrowserPkceVerifier();
       } else if (result && 'message' in result) {
         failWith((result as any).message as string);
       }
     } catch (err: any) {
+      if (isUnrecognizedActionError(err) && recoverStaleBundle(target)) return;
       if (err?.digest?.startsWith('NEXT_REDIRECT')) return;
       failWith(err?.message || t('errors.unexpected'));
     } finally {
@@ -334,7 +403,9 @@ function AuthCardForm({
         return 'handled';
       }
       // Work domain with no SAML provider.
-    } catch {
+    } catch (err) {
+      // A stale bundle's action-id failure must reach the recovery, not read as "no SAML provider".
+      if (isUnrecognizedActionError(err)) throw err;
       // SAML not enabled on this Supabase, or a transient error.
     }
     return 'none';
@@ -364,6 +435,9 @@ function AuthCardForm({
         const domain = emailDomain(trimmed) ?? trimmed;
         failWith(t('sso.notConfigured', { domain }));
       }
+    } catch (err) {
+      if (isUnrecognizedActionError(err) && recoverStaleBundle(trimmed)) return;
+      failWith(t('errors.unexpected'));
     } finally {
       setPendingAction(null);
     }
@@ -396,9 +470,27 @@ function AuthCardForm({
 
       // Magic link is the default path: Continue emails a link and lands the
       // user on the link step (the link signs in existing accounts and
-      // registers new ones — no mode needed). Password-only deployments go
-      // through the existence check instead, so the password step opens
-      // already knowing whether this is a sign-in or a registration.
+      // registers new ones — no mode needed). One exception: an EXISTING
+      // account opens the password form directly — the link stays one
+      // explicit choice away ("Email me a link instead") and no auth email is
+      // sent until the customer asks for it. (Whether the account's password
+      // is one the visitor still knows is not observable server-side — GoTrue
+      // stores a random hash for passwordless users too — so the existence
+      // check is the signal we act on, and the password screen itself carries
+      // both escape hatches: "Forgot your password?" and the link.) New
+      // accounts and a degraded existence check keep the magic-link default
+      // (the link action re-checks closed/SSO server-side). Password-only
+      // deployments go through the existence check below, so the password
+      // step opens already knowing whether this is a sign-in or a
+      // registration.
+      if (magicLinkEnabled && passwordEnabled) {
+        const { mode: resolved } = await resolveAuthMode(trimmed);
+        if (resolved === 'signin') {
+          setCredMode('signin');
+          setStep('credentials');
+          return;
+        }
+      }
       if (magicLinkEnabled) {
         await sendMagic(trimmed, 'continue');
         return;
@@ -416,6 +508,9 @@ function AuthCardForm({
       }
       setCredMode(resolved);
       setStep('credentials');
+    } catch (err) {
+      if (isUnrecognizedActionError(err) && recoverStaleBundle(trimmed)) return;
+      failWith(t('errors.unexpected'));
     } finally {
       setPendingAction(null);
     }
@@ -447,6 +542,9 @@ function AuthCardForm({
       }
       setCredMode(resolved);
       setStep('credentials');
+    } catch (err) {
+      if (isUnrecognizedActionError(err) && recoverStaleBundle(target)) return;
+      failWith(t('errors.unexpected'));
     } finally {
       setPendingAction(null);
     }
@@ -518,6 +616,7 @@ function AuthCardForm({
 
       await establishSessionAndRedirect(result);
     } catch (err: any) {
+      if (isUnrecognizedActionError(err) && recoverStaleBundle(email.trim())) return;
       if (err?.digest?.startsWith('NEXT_REDIRECT')) return;
       failWith(err?.message || t('errors.unexpected'));
     } finally {
@@ -815,6 +914,7 @@ const STALE_SESSION_FALLBACK_MS = 2500;
 
 function AuthContent() {
   const t = useTranslations('auth.unified');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const router = useRouter();
   const searchParams = useSearchParams();
   const { supabase, user, session, isLoading } = useAuth();
@@ -824,6 +924,41 @@ function AuthContent() {
   const mobileCallbackState =
     searchParams.get('mobile_callback') === '1' ? searchParams.get('state') : null;
   const hasStartedMobileHandoff = useRef(false);
+  const hasResumedPkceCode = useRef(false);
+
+  // A bounced-back PKCE code: the server-side exchange in /auth/callback failed
+  // because this browser's verifier cookie did not survive the mailbox detour,
+  // and the code is still fresh and unconsumed. Re-seed the verifier this tab
+  // snapshotted when the send ran and re-enter the callback, whose normal
+  // exchange and success path (return-URL demotion, terms stamp, billing-aware
+  // landing) then run unchanged. One shot: a re-seeded exchange that still
+  // bounces goes to the resend screen, never a loop. The params are stripped
+  // first so a refresh cannot re-arm a spent resume.
+  const pkceResumeCode = searchParams.get('pkce_code');
+  useEffect(() => {
+    if (!pkceResumeCode || hasResumedPkceCode.current || isLoading) return;
+    hasResumedPkceCode.current = true;
+    const url = new URL(window.location.href);
+    url.searchParams.delete('pkce_code');
+    window.history.replaceState(null, '', url.toString());
+    const resendUrl = new URL('/auth', window.location.origin);
+    resendUrl.searchParams.set('expired', 'true');
+    if (returnUrl) resendUrl.searchParams.set('returnUrl', returnUrl);
+    if (consumePkceResumeGuard(pkceResumeCode) || !seedPkceVerifierForResume()) {
+      // The re-seeded exchange already bounced once, or this tab holds no
+      // snapshot (the link was opened elsewhere) and no cookie. The exchange
+      // cannot complete here either way — the resend screen is the honest
+      // landing, with the return URL preserved for the next attempt.
+      window.location.assign(resendUrl.toString());
+      return;
+    }
+    armPkceResumeGuard(pkceResumeCode);
+    const target = new URL('/auth/callback', window.location.origin);
+    target.searchParams.set('code', pkceResumeCode);
+    if (returnUrl) target.searchParams.set('returnUrl', returnUrl);
+    window.location.assign(target.toString());
+  }, [pkceResumeCode, isLoading, returnUrl]);
+
 
   // `useAuth()`'s `user` can be stale: it's seeded from whatever session the
   // client already had cached, and only gets corrected once something
@@ -838,6 +973,17 @@ function AuthContent() {
 
   const [forceForm, setForceForm] = useState(false);
   const trustedUser = !!user && !sessionExpired && !forceForm;
+
+  // A failed sign-out says so, ONCE, on the document it lands on. The
+  // sign-out ends on a document load to `/auth`, so `runSignOut` cannot raise
+  // a toast in the document it is leaving — it stashes the notice instead
+  // (`sign-out-notice.ts`), and this effect reads and clears it. Read-and-
+  // clear keeps every later `/auth` visit in the same tab silent.
+  useEffect(() => {
+    if (takeSignOutNotice()) {
+      errorToast(tI18nComplete.raw('text6c4af31cd4ab'));
+    }
+  }, [tI18nComplete]);
 
   // A web session may already exist when the mobile user returns to this page.
   // Preserve the native handoff instead of routing that browser session to the

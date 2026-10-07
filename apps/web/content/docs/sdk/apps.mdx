@@ -55,7 +55,7 @@ Access is the App's own authorization policy:
 
 | Method | Wraps | What it does |
 |---|---|---|
-| `apps.access.get(appId)` | `GET …/apps/:id/access` | Reads the policy. Needs `project.customize.write` |
+| `apps.access.get(appId)` | `GET …/apps/:id/access` | Reads the policy. Needs `project.app.read` |
 | `apps.access.update(appId, input)` | `PATCH …/apps/:id/access` | Replaces the policy and bumps its revision |
 | `apps.access.session(appId)` | `POST …/apps/:id/access-session` | Mints a five-minute URL that exchanges into a host-only cookie |
 

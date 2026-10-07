@@ -12,8 +12,8 @@
  *   POST   /device-auth/:code/deny    — deny request
  */
 
-import { createRoute, z } from '@hono/zod-openapi';
-import { requestClientKey } from '../../shared/client-ip';
+import { createRoute, z, type OpenAPIHono } from '@hono/zod-openapi';
+import { requestClientKey } from '../../middleware/client-ip';
 import { createHash } from 'node:crypto';
 import { eq, and, desc, gt, sql } from 'drizzle-orm';
 import { tunnelConnections, tunnelDeviceAuthRequests, tunnelPermissions } from '@kortix/db';
@@ -40,7 +40,8 @@ import { readJsonObject } from '../../shared/http-body';
 import { isUuid } from '../../shared/validate';
 import { tunnelRelay } from '../core/relay';
 import { isTunnelConnectionLive } from '../core/cluster-forwarder';
-import { retireSupersededRegistrations } from './connections';
+import { retireSupersededRegistrations } from '../registrations';
+import { bearerToken } from '../../shared/bearer-token';
 
 const DEVICE_AUTH_TTL_MS = 5 * 60_000;
 /**
@@ -225,14 +226,16 @@ export function createDeviceAuthPublicRouter() {
     async (c: any) => {
       const code = c.req.param('code');
       const authHeader = c.req.header('Authorization');
-      const bearerSecret = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
+      const bearerSecret = bearerToken(authHeader) ?? undefined;
       const secret = bearerSecret;
 
       if (!secret) {
         return c.json({ error: 'device auth secret required' }, 400);
       }
 
-      const rl = tunnelRateLimiter.check('deviceAuthPoll', devicePollRateLimitKey(c, secret));
+      const rl = tunnelRateLimiter.check('deviceAuthPollIp', requestClientKey(c)).allowed
+        ? tunnelRateLimiter.check('deviceAuthPoll', devicePollRateLimitKey(c, secret))
+        : { allowed: false, retryAfterMs: 60_000 };
       if (!rl.allowed) {
         return c.json({ error: 'Too many requests', retryAfterMs: rl.retryAfterMs }, 429);
       }
@@ -287,6 +290,14 @@ export function createDeviceAuthPublicRouter() {
 export function createDeviceAuthRouter() {
   const router = makeOpenApiApp<AppEnv>();
 
+  registerDeviceAuthInfoRoute(router);
+  registerDeviceAuthApproveRoute(router);
+  registerDeviceAuthDenyRoute(router);
+
+  return router;
+}
+
+function registerDeviceAuthInfoRoute(router: OpenAPIHono<AppEnv>): void {
   // GET /:code/info — fetch request details for approval page
   router.openapi(
     createRoute({
@@ -363,7 +374,9 @@ export function createDeviceAuthRouter() {
       return c.json({ ...request, registered });
     },
   );
+}
 
+function registerDeviceAuthApproveRoute(router: OpenAPIHono<AppEnv>): void {
   // POST /:code/approve — pair the machine + add it to a project as an account
   router.openapi(
     createRoute({
@@ -610,7 +623,9 @@ export function createDeviceAuthRouter() {
       return c.json({ success: true, ...result });
     },
   );
+}
 
+function registerDeviceAuthDenyRoute(router: OpenAPIHono<AppEnv>): void {
   // POST /:code/deny — deny request
   router.openapi(
     createRoute({
@@ -651,6 +666,4 @@ export function createDeviceAuthRouter() {
       return c.json({ success: true });
     },
   );
-
-  return router;
 }

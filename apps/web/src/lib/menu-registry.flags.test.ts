@@ -1,5 +1,4 @@
 import { CAPABILITY_TABS } from '@/features/workspace/capabilities/shared/capability-tab-routes';
-import { visibleCapabilityTabs } from '@/features/workspace/capabilities/shared/capability-tabs';
 import { settingsPaletteGroups } from '@/features/workspace/settings-palette-items';
 import { FEATURE_FLAG_KEYS } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
@@ -9,16 +8,16 @@ import { menuRegistry } from './menu-registry';
 
 /**
  * `requiresFlag` is only a gate if EVERY consumer honours it. Before this, the
- * command palette filtered on it and `sidebar-right.tsx` did not — so the first
+ * command palette filtered on it and the legacy right rail did not — so the first
  * flagged item to gain `showIn: ['rightSidebar']` would have leaked a disabled
- * feature into the nav. These tests pin all three halves: the declaration, the
- * two consumers, and the flag map that resolves an arbitrary key.
+ * feature into the nav. The rail is deleted (KRTX-1012); these tests pin the
+ * declaration, the one surviving consumer, and the flag map that resolves an
+ * arbitrary key.
  */
 const root = resolve(import.meta.dir, '..');
 const registrySource = readFileSync(join(root, 'lib/menu-registry.ts'), 'utf8');
 const flagMapSource = readFileSync(join(root, 'lib/use-project-feature-flags.ts'), 'utf8');
 const paletteSource = readFileSync(join(root, 'features/workspace/command-palette.tsx'), 'utf8');
-const sidebarSource = readFileSync(join(root, 'components/sidebar/sidebar-right.tsx'), 'utf8');
 
 describe('menu registry feature-flag gating', () => {
   test('the field is named requiresFlag and typed FeatureFlagKey', () => {
@@ -42,7 +41,7 @@ describe('menu registry feature-flag gating', () => {
     // a permanent sidebar row and this palette row, so it is no longer a
     // Customize capability tab. Neither entry point declares a flag. Voice and
     // Marketplace have no flag any more: both were removed from the product.
-    const keys = visibleCapabilityTabs({}).map((tab) => tab.key);
+    const keys = CAPABILITY_TABS.map((tab) => tab.key);
     expect(keys).not.toContain('review');
     expect(keys).not.toContain('voice');
     expect(keys).not.toContain('marketplace');
@@ -87,16 +86,6 @@ describe('menu registry feature-flag gating', () => {
     expect(paletteSource).toContain(
       'if (item.requiresFlag && !projectFlags[item.requiresFlag]) continue;',
     );
-  });
-
-  test('the right sidebar filters on requiresFlag too, fail-closed', () => {
-    expect(sidebarSource).toContain('useProjectFeatureFlags(routeProjectId)');
-    expect(sidebarSource).toContain(
-      '(item: MenuItemDef) => !item.requiresFlag || featureFlags[item.requiresFlag]',
-    );
-    expect(sidebarSource).toContain('filterClusters(getNavItemsClustered(');
-    expect(sidebarSource).toContain('const quickActionClusters = localizeClusters(');
-    expect(sidebarSource).toContain('const navClusters = localizeClusters(');
   });
 });
 

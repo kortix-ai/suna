@@ -4,7 +4,7 @@ import type { ProjectSummary } from '../api/types.ts';
 import { loadLink } from '../project-link.ts';
 import { resolveProjectCloneTarget } from './projects.ts';
 
-export type GitCredentialRequest = Record<string, string>;
+type GitCredentialRequest = Record<string, string>;
 
 export function parseGitCredentialRequest(raw: string): GitCredentialRequest {
   const result: GitCredentialRequest = {};
@@ -39,7 +39,7 @@ function canonicalGitUrl(value: string): string | null {
   }
 }
 
-export interface ResolvedGitCredential {
+interface ResolvedGitCredential {
   username: string;
   password: string;
 }
@@ -93,7 +93,9 @@ export async function runGitCredential(argv: string[]): Promise<number> {
   try {
     project = await client.get<ProjectSummary>(`/projects/${link.project_id}`);
   } catch (error) {
-    process.stderr.write(`Kortix Git could not load the linked project: ${(error as Error).message}\n`);
+    process.stderr.write(
+      `Kortix Git could not load the linked project: ${(error as Error).message}\n`,
+    );
     process.stdout.write('quit=true\n\n');
     return 0;
   }
@@ -110,7 +112,9 @@ export async function runGitCredential(argv: string[]): Promise<number> {
         ),
     });
   } catch (error) {
-    process.stderr.write(`Kortix Git could not mint a repository credential: ${(error as Error).message}\n`);
+    process.stderr.write(
+      `Kortix Git could not mint a repository credential: ${(error as Error).message}\n`,
+    );
     process.stdout.write('quit=true\n\n');
     return 0;
   }

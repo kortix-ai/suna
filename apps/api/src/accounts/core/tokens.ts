@@ -1,8 +1,8 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { eq } from 'drizzle-orm';
 import { json, errors, auth } from '../../openapi';
-import { accountMembers, accounts } from '@kortix/db';
+import { accounts } from '@kortix/db';
 import { db } from '../../shared/db';
+import { userAccountNameRows } from '../../iam/membership-read';
 import { accountRolesForUser } from '../../iam/read-models';
 import { resolveAccountId } from '../../shared/resolve-account';
 import {
@@ -15,6 +15,7 @@ import {
 } from '../../repositories/account-tokens';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf, type Actor } from '../../iam/actor';
+import { isUuid } from '../../shared/validate';
 import { loadProjectForUser } from '../../projects/lib/access';
 import {
   accountsRouter,
@@ -93,14 +94,7 @@ accountsRouter.openapi(
       // `account_members` says WHICH accounts; `role_assignments` says at what
       // role — the same split GET /accounts uses.
       const [rows, rolesByAccount] = await Promise.all([
-        db
-          .select({
-            accountId: accountMembers.accountId,
-            name: accounts.name,
-          })
-          .from(accountMembers)
-          .innerJoin(accounts, eq(accountMembers.accountId, accounts.accountId))
-          .where(eq(accountMembers.userId, userId)),
+        userAccountNameRows(userId),
         accountRolesForUser(userId),
       ]);
       return rows.map((r) => ({ ...r, accountRole: rolesByAccount.get(r.accountId) ?? 'member' }));
@@ -342,12 +336,18 @@ accountsRouter.openapi(
     },
     responses: {
       200: json(OkSchema, 'Revocation result'),
-      ...errors(401, 403, 404),
+      ...errors(400, 401, 403, 404),
     },
   }),
   async (c: any) => {
   const userId = c.get('userId') as string;
   const tokenId = c.req.param('tokenId');
+  // A non-UUID id would reach the uuid-typed `account_tokens.token_id` query
+  // and surface as a 500 `22P02` (shared/validate.ts). A client-input error is
+  // answered as one, before any account or token lookup runs.
+  if (!isUuid(tokenId)) {
+    return c.json({ error: `"${tokenId}" is not a valid token id (a token id is a UUID)` }, 400);
+  }
   const queryAccount = c.req.query('account_id') ?? undefined;
 
   let accountId: string;

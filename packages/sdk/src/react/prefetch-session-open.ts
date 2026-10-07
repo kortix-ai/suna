@@ -16,6 +16,12 @@ import { qk } from './query-keys';
 const PREFETCH_WINDOW_MS = 30_000;
 
 const lastPrefetchAt = new Map<string, number>();
+const PREFETCH_LEDGER_PRUNE_AT = 200;
+
+/** Tests only. Not exported from the package. */
+export function prefetchedSessionCount(): number {
+  return lastPrefetchAt.size;
+}
 
 /** Tests only — a module singleton with no reset is a test that passes
  *  because of the one before it. Not exported from the package. */
@@ -47,6 +53,13 @@ export function prefetchSessionOpen(
   const nowMs = Date.now();
   const previous = lastPrefetchAt.get(scope);
   if (previous !== undefined && nowMs - previous < PREFETCH_WINDOW_MS) return Promise.resolve();
+  // An entry past its window suppresses nothing: drop it, so a long-lived
+  // window that hovers thousands of sessions does not grow this forever.
+  if (lastPrefetchAt.size >= PREFETCH_LEDGER_PRUNE_AT) {
+    for (const [key, at] of lastPrefetchAt) {
+      if (nowMs - at >= PREFETCH_WINDOW_MS) lastPrefetchAt.delete(key);
+    }
+  }
   lastPrefetchAt.set(scope, nowMs);
 
   openSessionBundle(projectId, sessionId);

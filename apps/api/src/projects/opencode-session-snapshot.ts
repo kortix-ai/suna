@@ -7,7 +7,8 @@ import type { ProjectSessionRow } from './lib/serializers';
 import { projectSessionMetadataMerge } from './lib/session-metadata-merge';
 import { readRuntimeLeg } from './lib/session-runtime-projection';
 import { refreshRuntimeProjection } from './lib/session-runtime-projection-refresh';
-import type { OpencodeSessionLite } from './opencode-mapping';
+import type { RuntimeSessionSnapshot } from '@kortix/api-contract';
+import { normalizeRuntimeSessionSnapshot } from './lib/runtime-session-snapshot';
 
 // Keeps `metadata.opencode_sessions` — the scoped list of the runtime's
 // conversations (root + subagent children) under a session's canonical root —
@@ -28,57 +29,8 @@ const RETRY_DELAY_MS = 40_000;
 
 const pending = new Set<string>();
 
-type OpenCodeSessionSnapshot = {
-  id: string;
-  title: string | null;
-  parent_id: string | null;
-  project_id: string | null;
-  created_at: number | null;
-  updated_at: number | null;
-  archived_at: number | null;
-};
+type OpenCodeSessionSnapshot = RuntimeSessionSnapshot;
 
-type OpenCodeSessionLike = OpencodeSessionLite & {
-  title?: string | null;
-  parent_id?: string | null;
-  parentId?: string | null;
-  projectID?: string | null;
-  project_id?: string | null;
-  projectId?: string | null;
-  created_at?: number | null;
-  createdAt?: number | null;
-  updated_at?: number | null;
-  updatedAt?: number | null;
-  archived_at?: number | null;
-  archivedAt?: number | null;
-};
-
-function stringOrNull(value: unknown): string | null {
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
-}
-
-function numberOrNull(...values: unknown[]): number | null {
-  for (const value of values) {
-    if (typeof value === 'number' && Number.isFinite(value)) return value;
-  }
-  return null;
-}
-
-function normalizeSnapshot(session: OpenCodeSessionLike): OpenCodeSessionSnapshot | null {
-  const id = stringOrNull(session.id);
-  if (!id) return null;
-  return {
-    id,
-    title: stringOrNull(session.title),
-    parent_id: stringOrNull(session.parentID ?? session.parent_id ?? session.parentId),
-    project_id: stringOrNull(session.projectID ?? session.project_id ?? session.projectId),
-    created_at: numberOrNull(session.time?.created, session.created_at, session.createdAt),
-    updated_at: numberOrNull(session.time?.updated, session.updated_at, session.updatedAt),
-    archived_at: numberOrNull(session.time?.archived, session.archived_at, session.archivedAt),
-  };
-}
-
-/** Resolve each session's canonical root by walking `parent_id` to the top. */
 function rootResolver(entries: OpenCodeSessionSnapshot[]) {
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
   const rootById = new Map<string, string>();
@@ -142,7 +94,7 @@ export async function syncOpencodeSessionSnapshot(
   if (sessions?.known !== true || !Array.isArray(sessions.value)) return row;
 
   const snapshots = sessions.value
-    .map((session) => normalizeSnapshot(session as OpenCodeSessionLike))
+    .map(normalizeRuntimeSessionSnapshot)
     .filter((session): session is OpenCodeSessionSnapshot => Boolean(session));
   if (snapshots.length === 0) return row;
 

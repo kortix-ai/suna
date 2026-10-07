@@ -80,6 +80,9 @@ function seedLegacyShape(): void {
       primary_owner_user_id uuid not null,
       personal_account boolean not null default true,
       name text,
+      -- Prod has both audit columns; the FK-covering-index migration indexes them.
+      created_by uuid,
+      updated_by uuid,
       created_at timestamptz not null default now()
     );
     alter table basejump.accounts enable row level security;
@@ -126,18 +129,14 @@ suite('basejump.accounts RLS initplan (throwaway Postgres)', () => {
       'full_page_writes=off',
     ]);
     if (!up.ok) throw new Error(`could not start test container: ${up.stderr}`);
+    // Host TCP probe: `docker exec pg_isready` answers over the unix socket,
+    // which initdb's temporary socket-only server satisfies while nothing
+    // serves TCP yet — the published port's proxy then accepts and closes the
+    // suite's first `psql` (`server closed the connection unexpectedly`). See
+    // worktree-migrate.test.ts for the full timeline and CI run 36153691220.
     let ready = false;
     for (let i = 0; i < 60; i++) {
-      ready = sh([
-        'docker',
-        'exec',
-        CONTAINER,
-        'pg_isready',
-        '-U',
-        'postgres',
-        '-d',
-        'postgres',
-      ]).ok;
+      ready = sh(['psql', url, '-tAc', 'select 1']).ok;
       if (ready) break;
       await Bun.sleep(1000);
     }

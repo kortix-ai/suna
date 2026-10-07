@@ -15,18 +15,18 @@ import { canonicalConnectorAlias } from '../shared/connector-alias';
  * that hasn't adopted `[[agents]]`) imposes no restriction.
  */
 import { buildDenialError } from './denial-message';
-import type { Context } from 'hono';
 import type { AgentGrant } from '@kortix/db';
 
-/** Read the agent grant off the request context (set by the auth middleware). */
-export function getAgentGrant(c: Context): AgentGrant | null {
-  return (c.get('agentGrant') as AgentGrant | null | undefined) ?? null;
-}
-
-export function isProjectSessionPrincipal(c: Context): boolean {
-  if (c.get('authType') === 'supabase') return false;
-  return c.get('sessionId') != null || getAgentGrant(c) != null;
-}
+// The request readers (`getAgentGrant`, `isProjectSessionPrincipal`,
+// `isBorrowedSessionPrincipal`, `assertAgentScope`) read the Hono context, so
+// they live in `middleware/agent-scope.ts`. Re-exported here so every importer
+// keeps working.
+export {
+  getAgentGrant,
+  isProjectSessionPrincipal,
+  isBorrowedSessionPrincipal,
+  assertAgentScope,
+} from '../middleware/agent-scope';
 
 /**
  * MANIFEST-INPUT NORMALIZATION, and nothing else.
@@ -60,7 +60,7 @@ const MANIFEST_ACTION_ALIASES = DEPRECATED_KORTIX_PERMISSION_ALIASES;
  */
 export function canonicalizeGrantActions(grant: AgentGrant | null): AgentGrant | null {
   if (!grant || grant.permissions === 'all') return grant;
-  const canonical = grant.permissions.map((a) => MANIFEST_ACTION_ALIASES[a] ?? a);
+  const canonical = grant.permissions.flatMap((a) => MANIFEST_ACTION_ALIASES[a] ?? [a]);
   return { ...grant, permissions: [...new Set(canonical)] };
 }
 
@@ -144,11 +144,10 @@ export function agentMayUseEnv(grant: AgentGrant | null, identifier: string): bo
 }
 
 /**
- * Throw 403 if the request is an agent-session token whose grant does not
- * include `action`. No-op for non-agent tokens (null grant).
+ * Throw 403 if `grant` (an agent session's) does not include `action`. No-op
+ * for a null grant (a non-agent token).
  */
-export function assertAgentScope(c: Context, action: string): void {
-  const grant = getAgentGrant(c);
+export function assertAgentGrantAllows(grant: AgentGrant | null, action: string): void {
   if (agentMayPerform(grant, action)) return;
   throw buildDenialError(
     action,

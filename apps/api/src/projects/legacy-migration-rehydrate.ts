@@ -29,8 +29,6 @@ import { getDaytona } from '../shared/daytona';
 import { db } from '../shared/db';
 import { downloadOpencodeArchive } from './legacy-migration-storage';
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
 export interface LegacyRehydrateSpec {
   sourceSandboxId: string;
   opencodeSessionId: string | null;
@@ -234,7 +232,7 @@ async function waitForOpencodeProjectId(
     } catch {
       /* opencode not up yet */
     }
-    await sleep(3000);
+    await Bun.sleep(3000);
   }
   return null;
 }

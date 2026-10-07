@@ -12,7 +12,7 @@ import { logger } from '../log/logger'
  * projects — mostly `POST turn-stream`, also `audit/events` and
  * `runtime-assets/manifest` — one box posting for a full 12h after its lease
  * closed. Every call site retries a transient failure on its own schedule
- * (`opencode-audit-relay.ts`'s exponential backoff, `claimInitialTurnFromApi`'s
+ * (`opencode-audit-relay.ts`'s exponential backoff, `claimInitialTurn`'s
  * 3-attempt ladder, …) because most 401/5xx responses ARE transient. A dead
  * session token never recovers — no retry schedule, however patient, is the
  * right answer — so this is a SEPARATE signal, orthogonal to each call site's
@@ -61,8 +61,11 @@ import { logger } from '../log/logger'
  */
 // Keep terminal credential-state reasons aligned with validateToken in
 // apps/api/src/repositories/account-tokens.ts. Other responses reset the streak.
+// KRTX-1564: a dead row is now NAMED in the refusal (`project token <id> is
+// revoked`); the bare `<kind> token <id> is revoked` form classifies the same
+// terminal state — a message-shape change is not a change in terminality.
 const SESSION_TOKEN_DEAD_PATTERN =
-  /session token is not active|pat not found or revoked|pat expired|pat auto-revoked due to inactivity/i
+  /session token is not active|pat not found or revoked|pat expired|pat auto-revoked due to inactivity|token [0-9a-f-]{36} is revoked/i
 
 /** Consecutive dead-token signals before the breaker reports the credential dead. */
 export const SESSION_TOKEN_DEAD_TRIP_THRESHOLD = 5

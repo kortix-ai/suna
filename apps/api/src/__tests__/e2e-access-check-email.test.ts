@@ -12,29 +12,22 @@ mock.module('../config', () => ({
   },
 }));
 
-mock.module('postgres', () => {
-  const factory = () => {
-    const sql = (_strings: TemplateStringsArray, ...values: unknown[]) => {
-      const email = String(values[0] ?? '').toLowerCase();
-      return Promise.resolve(existingEmails.has(email) ? [{ exists: 1 }] : []);
-    };
-    sql.end = async () => {};
-    return sql;
-  };
-  return { default: factory };
-});
-
+// userExistsInAuth reads auth.users through the shared pool: answer from the
+// email value interpolated into the query.
 mock.module('../shared/db', () => ({
   db: {
     insert: () => ({ values: async () => {} }),
+    execute: async (query: { queryChunks?: unknown[] }) => {
+      const values = (query.queryChunks ?? []).filter((chunk): chunk is string => typeof chunk === 'string');
+      return values.some((value) => existingEmails.has(value.toLowerCase())) ? [{ found: 1 }] : [];
+    },
   },
 }));
 
 mock.module('../shared/access-control-cache', () => ({
   areSignupsEnabled: () => signupsOpen,
   canSignUp: (email: string) => signupsOpen || allowlisted.has(email.toLowerCase()),
-  startAccessControlCache: () => {},
-  stopAccessControlCache: () => {},
+  refreshAccessControlCache: async () => {},
 }));
 
 // The same rule as the real `ssoEnforcedForEmail`: enforcement needs a

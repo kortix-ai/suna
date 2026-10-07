@@ -101,7 +101,6 @@ import {
   useQuestionSelfHeal,
   useRuntimeCommands,
   useRuntimeConfig,
-  useRuntimePendingStore,
   useRuntimeSession,
   useRuntimeSessions,
   useSessionMessages,
@@ -115,7 +114,9 @@ import {
   groupMessagesIntoTurns,
   listSessionPrompts,
   retrySessionPrompt,
+  sessionPromptActions,
   type SessionPrompt,
+  type SessionPromptDelivery,
   resolveWorkingTurn,
 } from '@kortix/sdk';
 import * as Crypto from 'expo-crypto';
@@ -150,9 +151,11 @@ import { optimisticUserParts } from '@/lib/session/optimistic-parts';
 import { draftKey } from '@/lib/session/composer-draft';
 import {
   buildSessionRefsBlock,
+  editResendAttachments,
   interruptedTurnIds,
   rewindHiddenMessageIds,
   webSpace,
+  type MessageAttachment,
 } from '@/lib/session/user-message';
 import {
   hasCompactionTurn as findCompactionTurn,
@@ -167,7 +170,7 @@ import { useToast } from '@/components/kortix/toast-provider';
 import { pinnedPermission } from '@/lib/session/permission-prompt';
 import { useTabStore } from '@/stores/tab-store';
 import { useMessageQueueStore } from '@/stores/message-queue-store';
-import { queueHeaderLabel } from '@/lib/session/queue-undo';
+import { queueHeaderLabel, queueRowCaption } from '@/lib/session/queue-undo';
 import { useSessionPromptRequestStore } from '@/stores/session-prompt-request-store';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import type { Command } from '@/lib/session/runtime-data';
@@ -279,6 +282,7 @@ const PULL_REFRESH_SPINNER_MS = 800;
 
 /** Keeps the first visible turn in place while older turns prepend (COR-144). */
 const MAINTAIN_FIRST_VISIBLE = { minIndexForVisible: 0 } as const;
+const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 1 } as const;
 /**
  * iOS: the list draws past its bottom edge. The keyboard is Liquid Glass and
  * shows what lies under it; the list ends at the composer, so without this
@@ -490,7 +494,15 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     return () => clearInterval(timer);
   }, [projectId, projectSessionId, refreshQueue, queuePollMs]);
 
-  const handleEnqueue = useCallback(async (text: string, options: PromptOptions, mentions?: TrackedMention[]) => {
+  // The composer calls this while a turn runs: the running turn reads the
+  // message at its next step (`steer`, D9.1). A prompt request from another
+  // screen waits for the turn (`queue`).
+  const handleEnqueue = useCallback(async (
+    text: string,
+    options: PromptOptions,
+    mentions?: TrackedMention[],
+    delivery: SessionPromptDelivery = 'steer',
+  ) => {
     if (!projectId || !projectSessionId) {
       toast.error('No project session to queue a prompt');
       throw new Error('No project session to queue a prompt');
@@ -508,7 +520,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     try {
       const result = await createSessionPrompt(projectId, projectSessionId, {
         clientMessageId, messageId, parts: [{ type: 'text', text: finalText }],
-        placement: 'composer', clientSentAtMs: nowMs,
+        delivery, clientSentAtMs: nowMs,
         overrides: { agent: options.agent ?? null, model: options.model ?? null, variant: options.variant ?? null },
       });
       if (result.state === 'failed') throw new Error('Prompt delivery was refused');
@@ -857,7 +869,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     const request = store.take(sessionId) ?? (projectSessionId ? store.take(projectSessionId) : null);
     if (!request) return;
     if (isBusy || hasQuestion) {
-      void handleEnqueue(request.text, {}).catch(() => {});
+      void handleEnqueue(request.text, {}, undefined, 'queue').catch(() => {});
       return;
     }
     const { agent, modelKey, variant } = resolvedRef.current;
@@ -922,7 +934,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   }, []);
 
   const handleEditSend = useCallback(
-    async (messageId: string, text: string) => {
+    async (messageId: string, text: string, kept: MessageAttachment[] = []) => {
       const current = runtimeRef.current;
       if (!current || !runtimeReady || editPendingRef.current) return;
       editPendingRef.current = true;
@@ -951,7 +963,9 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       if (agent?.name) options.agent = agent.name;
       if (modelKey) options.model = modelKey;
       if (variant) options.variant = variant;
-      await handleSend(text, options);
+      // The kept attachments go again: a saved copy as a URL part, a path-only upload as its ref.
+      const { fileParts, text: sendText } = editResendAttachments(kept, text);
+      await handleSend(sendText, options, undefined, { fileParts, files: [] });
     },
     [runtimeReady, sessionId, handleSend, toast],
   );
@@ -997,6 +1011,15 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     (prompt: SessionPrompt) =>
       senderOf(prompt.message_id) ?? (prompt.wire_message_id ? senderOf(prompt.wire_message_id) : null),
     [senderOf],
+  );
+  // A queued prompt runs as its author: only they send it now, and they or a
+  // session manager remove it. The API answers 403 to anyone else. The
+  // participants list puts the session's owner first; a project manager who is
+  // not the owner keeps only their own rows here (the web offers them Remove).
+  const managesSession = participants?.participants[0]?.is_viewer === true;
+  const queuedActions = useCallback(
+    (prompt: SessionPrompt) => sessionPromptActions(prompt, { userId: viewerId, managesSession }),
+    [viewerId, managesSession],
   );
   // The last turn as displayed. Turns are sorted for display, and store order
   // can differ, so the spacer and pending questions follow this id.
@@ -1661,15 +1684,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // Question reply/reject handlers
   const handleQuestionReply = useCallback(
     async (requestId: string, answers: string[][]) => {
-      if (!runtimeReady) return;
-      // Optimistically remove it. The SDK's pending store remembers answered
-      // ids, so no later read of the runtime's list can bring it back.
-      useRuntimePendingStore.getState().removeQuestion(requestId);
-      try {
-        await answerQuestion(requestId, answers);
-      } catch (err: any) {
-        log.error('Failed to reply to question:', err?.message || err);
-      }
+      if (!runtimeReady) throw new Error('Runtime not ready');
+      await answerQuestion(requestId, answers);
     },
     [runtimeReady],
   );
@@ -1696,14 +1712,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
 
   const handleQuestionReject = useCallback(
     async (requestId: string) => {
-      if (!runtimeReady) return;
-      useRuntimePendingStore.getState().removeQuestion(requestId);
-      try {
-        await rejectQuestion(requestId);
-      } catch (err: any) {
-        log.error('Failed to reject question:', err?.message || err);
-      }
-      // Also abort the session (matches frontend behavior)
+      if (!runtimeReady) throw new Error('Runtime not ready');
+      await rejectQuestion(requestId);
       handleStop();
     },
     [runtimeReady, handleStop],
@@ -1743,6 +1753,31 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // The room follows the displayed order. Every turn gets `pendingQuestions`
   // (one stable store array) so a pending question tool part is hidden in
   // whichever turn holds it.
+  // Whether the working turn's row is inside the viewport: off screen, its
+  // shimmer and busy dot matrix stop looping (KRTX-1638). RN requires the
+  // callback to be one stable function, so it reads the id through a ref.
+  // ponytail: per turn, not per row. A tall working turn whose top is visible
+  // counts as on screen; go per row if that measurably costs frames.
+  const [workingTurnOnScreen, setWorkingTurnOnScreen] = useState(true);
+  const workingTurnIdRef = useRef(workingTurnId);
+  workingTurnIdRef.current = workingTurnId;
+  // The list re-checks viewability on a data change or the next scroll, but
+  // reports only when the viewable SET changes. This effect is the fallback
+  // for a working-turn change that leaves the set as it was (a turn appended
+  // below the viewport): recompute from the last reported set. Before the
+  // first report the set is unknown and the turn counts as on screen.
+  const viewableKeysRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const keys = viewableKeysRef.current;
+    setWorkingTurnOnScreen(keys == null || workingTurnId == null || keys.has(workingTurnId));
+  }, [workingTurnId]);
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: { key: string }[] }) => {
+    const keys = new Set(viewableItems.map((v) => v.key));
+    viewableKeysRef.current = keys;
+    const id = workingTurnIdRef.current;
+    setWorkingTurnOnScreen(id == null || keys.has(id));
+  }).current;
+
   const renderTurn = useCallback(
     ({ item, index }: { item: Turn; index: number }) => {
       const id = item.userMessage.info.id;
@@ -1788,12 +1823,13 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             queueState={interruptedIds.has(id) ? 'interrupted' : null}
             uploadStatus={failedSends[id] ? { state: 'failed', onRetry: () => handleRetrySend(id) } : undefined}
             sender={senderOf(id)}
+            onScreen={isWorkingTurn ? workingTurnOnScreen : true}
           />
           )}
         </View>
       );
     },
-    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend, senderOf],
+    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend, senderOf, workingTurnOnScreen],
   );
 
   const keyExtractor = useCallback((item: Turn) => item.userMessage.info.id, []);
@@ -1849,6 +1885,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
           onSendNow={handleQueueSendNow}
           isDark={isDark}
           senderOf={queuedSender}
+          actionsOf={queuedActions}
         />,
       );
     }
@@ -1864,6 +1901,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     handleQueueSendNow,
     isDark,
     queuedSender,
+    queuedActions,
   ]);
 
   // ── Older history (COR-144) ─────────────────────────────────────────────
@@ -1999,6 +2037,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
           data={turns}
           renderItem={renderTurn}
           keyExtractor={keyExtractor}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={VIEWABILITY_CONFIG}
           initialNumToRender={INITIAL_TURNS_TO_RENDER}
           maxToRenderPerBatch={5}
           windowSize={11}
@@ -2325,10 +2365,13 @@ function QueuePanel({
   onSendNow,
   isDark,
   senderOf,
+  actionsOf,
 }: {
   messages: SessionPrompt[];
   /** The prompt's sender avatar in a shared session, else null. */
   senderOf?: (prompt: SessionPrompt) => AvatarPerson | null;
+  /** What the viewer may do to the prompt (`sessionPromptActions`). */
+  actionsOf?: (prompt: SessionPrompt) => { own: boolean; removable: boolean };
   expanded: boolean;
   /** The agent is working: Send now stops the current reply first. */
   busy: boolean;
@@ -2379,7 +2422,9 @@ function QueuePanel({
       {expanded && messages.length > 0 && (
         <View style={{ maxHeight: 176 }}>
           <ScrollView showsVerticalScrollIndicator={false} nestedScrollEnabled>
-            {messages.map((qm) => (
+            {messages.map((qm) => {
+              const actions = actionsOf?.(qm) ?? { own: true, removable: true };
+              return (
               <View
                 key={qm.prompt_id}
                 style={{
@@ -2398,31 +2443,43 @@ function QueuePanel({
                   const sender = senderOf?.(qm);
                   return sender ? <ParticipantAvatar person={sender} /> : null;
                 })()}
-                <Text variant="small" numberOfLines={1} className="flex-1 leading-5">
-                  {qm.text}
-                </Text>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="rounded-full"
-                  onPress={() => onSendNow(qm.prompt_id)}
-                  accessibilityLabel="Send now"
-                  accessibilityHint={busy ? 'Stops the current reply and sends this message' : undefined}
-                >
-                  <Text>Send now</Text>
-                </Button>
+                <View className="flex-1">
+                  <Text variant="small" numberOfLines={1} className="leading-5">
+                    {qm.text}
+                  </Text>
+                  {queueRowCaption(qm) ? (
+                    <Text variant="muted" numberOfLines={2}>
+                      {queueRowCaption(qm)}
+                    </Text>
+                  ) : null}
+                </View>
+                {actions.own && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="rounded-full"
+                    onPress={() => onSendNow(qm.prompt_id)}
+                    accessibilityLabel="Send now"
+                    accessibilityHint={busy ? 'Stops the current reply and sends this message' : undefined}
+                  >
+                    <Text>Send now</Text>
+                  </Button>
+                )}
                 {/* 40pt box + the Button's default 2pt hit slop = 44pt target. */}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="rounded-full"
-                  onPress={() => onRemove(qm.prompt_id)}
-                  accessibilityLabel="Remove from queue"
-                >
-                  <XIcon size={16} color={mutedText} />
-                </Button>
+                {actions.removable && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="rounded-full"
+                    onPress={() => onRemove(qm.prompt_id)}
+                    accessibilityLabel="Remove from queue"
+                  >
+                    <XIcon size={16} color={mutedText} />
+                  </Button>
+                )}
               </View>
-            ))}
+              );
+            })}
           </ScrollView>
         </View>
       )}

@@ -24,6 +24,17 @@ export class InsufficientCreditsError extends BillingError {
   }
 }
 
+/**
+ * The wallet could not answer: pool exhausted, statement timeout, deadlock,
+ * lost connection. NOT a refusal. The account may have funds. Retryable.
+ */
+export class WalletUnavailableError extends BillingError {
+  constructor(message = 'Billing is temporarily unavailable. Retry shortly.') {
+    super(message, 503);
+    this.name = 'WalletUnavailableError';
+  }
+}
+
 export class SubscriptionError extends BillingError {
   constructor(message: string) {
     super(message);

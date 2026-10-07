@@ -69,6 +69,20 @@ export interface AALResponse {
 }
 
 /**
+ * True when this session must pass a TOTP challenge before the app grants it
+ * access: a verified TOTP factor is enrolled but the session itself is still
+ * below aal2 — a fresh first-factor sign-in (KRTX-1386). A session that is
+ * already aal2 verified the factor this sign-in; a session whose next level is
+ * aal1 has no verified factor to challenge; a verified phone factor does not
+ * enforce here, because its challenge needs an SMS round trip this flow does
+ * not drive.
+ */
+export function mfaChallengeRequired(aal?: AALResponse | null): boolean {
+  if (!aal || aal.current_level === 'aal2' || aal.next_level !== 'aal2') return false;
+  return (aal.factors ?? []).some((f) => f.status === 'verified' && f.factor_type === 'totp');
+}
+
+/**
  * Extract a human-readable message from an unknown thrown value. Preserves the
  * previous `error.message` behaviour for Error instances and Supabase error
  * objects (plain objects carrying a `message`), without using `any`.

@@ -19,14 +19,10 @@ describe('loadConfig env contract', () => {
     // Defaults a box boots with.
     ['clone depth defaults to a shallow depth-1 clone', {}, { cloneDepth: 1 }],
     ['no partial-clone filter by default (measured slower)', {}, { cloneFilter: '' }],
-    ['compiled boot defaults to off', {}, { compiledBootMode: 'off' }],
     ['the one-time branch restore is off by default', {}, { sessionBranchRestore: false }],
     // Mappings.
     ['depth 0 opts back into a full-history clone', { KORTIX_CLONE_DEPTH: '0' }, { cloneDepth: 0 }],
     ['an explicit depth is honoured', { KORTIX_CLONE_DEPTH: '25' }, { cloneDepth: 25 }],
-    ['compiled boot mode shadow', { KORTIX_COMPILED_BOOT_MODE: 'shadow' }, { compiledBootMode: 'shadow' }],
-    ['compiled boot mode prefer', { KORTIX_COMPILED_BOOT_MODE: 'prefer' }, { compiledBootMode: 'prefer' }],
-    ['compiled boot mode required', { KORTIX_COMPILED_BOOT_MODE: 'required' }, { compiledBootMode: 'required' }],
     ['the sandbox credential comes from KORTIX_TOKEN', { KORTIX_TOKEN: 'sandbox-token' }, { sandboxToken: 'sandbox-token' }],
     ['KORTIX_SESSION_BRANCH_RESTORE=1 arms the one-time branch restore', { KORTIX_SESSION_BRANCH_RESTORE: '1' }, { sessionBranchRestore: true }],
     [
@@ -48,7 +44,6 @@ describe('loadConfig env contract', () => {
 
   test.each([
     ['a negative clone depth', { KORTIX_CLONE_DEPTH: '-1' }],
-    ['an unknown compiled boot mode', { KORTIX_COMPILED_BOOT_MODE: 'enabled' }],
   ])('rejects %s instead of passing it to git', (_name, env) => {
     expect(() => loadConfig({ ...BASE_ENV, ...env } as NodeJS.ProcessEnv)).toThrow()
   })

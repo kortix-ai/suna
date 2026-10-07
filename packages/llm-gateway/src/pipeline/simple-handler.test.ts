@@ -74,8 +74,11 @@ describe('simple gateway pipeline', () => {
         hooks: {
           ...hooks([], []),
           resolveUpstream: async () => [
-            { ...primary, baseUrl: upstream.url.toString(), poolSecretId: 'first', apiKey: 'first' },
-            { ...primary, baseUrl: upstream.url.toString(), poolSecretId: 'second', apiKey: 'second' },
+            // Loopback by address: `upstream.url` reports `localhost`, which does
+            // not resolve on a platform sandbox — the pool would answer 502
+            // (connection refused) instead of exercising the 429 failover.
+            { ...primary, baseUrl: `http://127.0.0.1:${upstream.port}`, poolSecretId: 'first', apiKey: 'first' },
+            { ...primary, baseUrl: `http://127.0.0.1:${upstream.port}`, poolSecretId: 'second', apiKey: 'second' },
           ],
           notePoolRateLimit: async (_principal, secretId) => { cooldowns.push(secretId); },
         },
@@ -469,6 +472,49 @@ describe('simple gateway pipeline', () => {
     expect(usage).toHaveLength(1);
     expect(usage[0]).toMatchObject({ promptTokens: 10, completionTokens: 4 });
     expect(traces).toHaveLength(1);
+  });
+
+  test('a non-stream 200 with no usage object settles an estimate, not zero tokens', async () => {
+    const usage: UsageEvent[] = [];
+    const body = JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'z'.repeat(800) } }] });
+    const response = await handleChatCompletions(
+      {
+        hooks: hooks(usage, []),
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async () => new Response(body, { headers: { 'content-type': 'application/json' } }),
+      },
+      {
+        authorization: 'Bearer token',
+        rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'p'.repeat(4_000) }] }),
+      },
+    );
+    expect(await response.text()).toBe(body);
+    expect(usage).toHaveLength(1);
+    // 800 output chars / 4 = 200 tokens; 4,000 prompt chars / 4 + framing >= 1,000 tokens.
+    expect(usage[0]).toMatchObject({ usageEstimated: true, completionTokens: 200 });
+    expect(usage[0]!.promptTokens).toBeGreaterThanOrEqual(1_000);
+  });
+
+  test('a non-stream 200 whose body read fails settles the prompt estimate', async () => {
+    const usage: UsageEvent[] = [];
+    const broken = new Response(
+      new ReadableStream<Uint8Array>({ start: (controller) => controller.error(new Error('connection reset')) }),
+      { headers: { 'content-type': 'application/json' } },
+    );
+    await handleChatCompletions(
+      {
+        hooks: hooks(usage, []),
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async () => broken,
+      },
+      {
+        authorization: 'Bearer token',
+        rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'p'.repeat(4_000) }] }),
+      },
+    ).catch(() => undefined);
+    expect(usage).toHaveLength(1);
+    expect(usage[0]).toMatchObject({ usageEstimated: true, completionTokens: 0 });
+    expect(usage[0]!.promptTokens).toBeGreaterThanOrEqual(1_000);
   });
 
   // An error frame before any output served nothing: the client gets the
@@ -1024,7 +1070,7 @@ describe('managed models present as Kortix (descriptor.publicProvider)', () => {
       '"message":"Upstream error from Decart: Requested token count exceeds the model\'s maximum context length of 1048576 tokens."}}\n\n';
     const { response, text, calls } = await runManaged(
       (url) =>
-        url.startsWith('https://morph.example')
+        new URL(url).hostname === 'morph.example'
           ? new Response('{"error":{"message":"Invalid request","type":"invalid_request_error"}}', { status: 400 })
           : new Response(`: OPENROUTER PROCESSING\n\n${overflow}data: [DONE]\n\n`, {
               status: 200, headers: { 'content-type': 'text/event-stream' },
@@ -1203,10 +1249,20 @@ describe('model fallback chains (route.fallbackModels)', () => {
       attempts: 2,
       resolvedModel: 'fallback-model',
       candidatesTried: ['primary-upstream', 'fallback-upstream:fallback-model'],
+      // The route ids a session can show: what answered, and what it stood in for.
+      servedModel: 'fallback-model',
+      fallbackFrom: 'primary-model',
     });
     expect(traces.at(-1)?.attemptFailures?.map((f) => [f.provider, f.routeModel, f.status])).toEqual([
       ['primary-upstream', 'primary-model', 503],
     ]);
+  });
+
+  test('a request its own model answers names that model and no fallback', async () => {
+    const { response, traces } = await run({ respond: () => ok('from primary') });
+    expect(response.status).toBe(200);
+    expect(traces.at(-1)).toMatchObject({ ok: true, servedModel: 'primary-model' });
+    expect(traces.at(-1)).not.toHaveProperty('fallbackFrom');
   });
 
   // Incident 2026-09-28: a routed model the provider would not serve (404 —

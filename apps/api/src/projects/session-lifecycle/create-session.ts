@@ -32,7 +32,7 @@ import type {
   SessionLifecyclePostCreateAction,
   SessionLifecycleResult,
 } from './types';
-import { continueSession } from './continue-session';
+import { deliverThroughQueue } from './follow-up-delivery';
 import { drainSessionLifecycleQueue } from './drain';
 
 export async function createSession(
@@ -42,7 +42,7 @@ export async function createSession(
   const backpressure =
     queuePolicy === 'never'
       ? null
-      : await sessionBackpressureState(command.project.accountId, command.project.projectId);
+      : await sessionBackpressureState(command.project.projectId);
   const shouldQueue =
     queuePolicy === 'always' || (queuePolicy === 'on_backpressure' && backpressure?.shouldQueue);
   const reason = shouldQueue ? (backpressure?.reason ?? 'queued by policy') : null;
@@ -318,7 +318,6 @@ export async function executeQueuedCreate(
     extraEnvVars: payload.extraEnvVars,
     visibility: payload.visibility,
     mayManageSystemConnections: payload.mayManageSystemConnections,
-    enforceAccountCap: payload.enforceAccountCap,
     queuePolicy: 'never',
     postCreate: payload.postCreate,
     // Replay the origin-derivation signals captured at enqueue time so a
@@ -344,7 +343,6 @@ async function executeCreateSession(
     userId: command.userId,
     requestingPrincipalType: command.requestingPrincipalType,
     body: command.body,
-    enforceAccountCap: command.enforceAccountCap,
     metadata,
     extraEnvVars: command.extraEnvVars,
     request: command.request,
@@ -360,7 +358,6 @@ async function executeCreateSession(
     return {
       status: 'failed',
       error: result.error,
-      headers: result.headers,
       retryable: isRetryableCreateError(result.error.status),
     };
   }
@@ -378,7 +375,6 @@ async function executeCreateSession(
     status: 'created',
     sessionId: result.row!.sessionId,
     row: result.row,
-    headers: result.headers,
     retryable: true,
   };
 }
@@ -387,12 +383,8 @@ export async function applyPostCreateActions(input: {
   projectId: string;
   sessionId: string;
   actions?: SessionLifecyclePostCreateAction[];
-  // F2: the CREATE command's own commandId, when this create can be retried
-  // against the same row (the idempotency-key and queued-create paths — see
-  // call sites). Forwarded to `continueSession` so `postPrompt`'s
-  // `Idempotency-Key` stays stable across those retries. Omitted by the
-  // one-shot, non-retryable create path, which falls back to a fresh
-  // `randomUUID()` per call inside `continueSession`.
+  // ponytail: unused since `deliver_prompt` is a queue row keyed by the session
+  // (`post-create:<sessionId>`); drop it with its two call sites.
   commandId?: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!input.actions?.length) return { ok: true };
@@ -407,16 +399,15 @@ export async function applyPostCreateActions(input: {
           sessionId: input.sessionId,
         });
       } else if (action.type === 'deliver_prompt') {
-        const outcome = await continueSession(
-          {
-            source: action.source,
-            sessionId: input.sessionId,
-            text: action.text,
-            userId: action.userId ?? undefined,
-          },
-          input.commandId,
-        );
-        if (outcome !== 'delivered') {
+        // One initial prompt per session: a retried create dedupes on the key.
+        const outcome = await deliverThroughQueue({
+          source: action.source,
+          idempotencyKey: `post-create:${input.sessionId}`,
+          sessionId: input.sessionId,
+          text: action.text,
+          userId: action.userId ?? undefined,
+        });
+        if (outcome !== 'delivered' && outcome !== 'queued') {
           return { ok: false, error: `initial prompt delivery ${outcome}` };
         }
       } else if (action.type === 'apply_trigger_session_access') {

@@ -66,21 +66,10 @@ export const PROJECTION_MAX_BYTES = 256 * 1024;
 
 export type RuntimeProjectionSource = 'daemon_push' | 'api_pull';
 
-/** Identity the live runtime would also produce. See the ghost rule above. */
-export interface RuntimeProjectionIdentity {
-  /** The document format (`kortix.runtime.v1`); null from a daemon built before W5. */
-  schema: string | null;
-  /** `opencode` or `pi`; null from a daemon built before W5. */
-  harness: string | null;
-  runtime_session_id: string | null;
-  harness_version: string | null;
-  /** The pre-W5 names of `runtime_session_id` and `harness_version`, for an older client. */
-  opencode_session_id: string | null;
-  opencode_version: string | null;
-  daemon_build: number | null;
-  agent_config_etag: string | null;
-  head_seq: Record<string, number> | null;
-}
+/** Identity the live runtime would also produce. See the ghost rule above.
+ *  The wire shape lives in `@kortix/api-contract`. */
+export type { RuntimeProjectionIdentity } from '@kortix/api-contract';
+import type { RuntimeProjectionIdentity } from '@kortix/api-contract';
 
 export interface StoredRuntimeProjection {
   sessionId: string;

@@ -15,11 +15,9 @@
  * express: there is no `Actor` without a credential. It is built ONCE, in
  * `middleware/auth.ts`, from the branch that authenticated the request.
  */
-import type { Context } from 'hono';
 import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { accountTokens, readStoredAgentGrant, roleAssignments, serviceAccounts, type AgentGrant } from '@kortix/db';
 import { createHash } from 'node:crypto';
-import { requestClientIp } from '../shared/client-ip';
 import { db } from '../shared/db';
 import { ttlMemo } from '../shared/ttl-memo';
 import { registerPrincipalScopedMemo } from './cache-invalidation';
@@ -72,11 +70,9 @@ export type Credential =
       agentGrant: AgentGrant | null;
       serviceAccountId: string;
       activated: boolean;
-      /** The project flag `agent_principal` is on and the grant is governed:
-       *  the session
-       *  authorizes AS the agent, capped by its ceiling, never as the
-       *  launcher. Optional so a literal built by an older caller reads as
-       *  the legacy model. */
+      /** The grant is governed: the session authorizes AS the agent, capped
+       *  by its ceiling, never as the launcher. Optional so a literal built
+       *  by an older caller reads as ungoverned. */
       agentPrincipal?: boolean;
       /** The human this session acts on behalf of, or null for an unattended
        *  run or once another human prompted it (spec §2.3). Decides personal
@@ -163,7 +159,7 @@ export function credentialProjectId(actor: Actor): string | null {
 
 /**
  * True when this request authorizes under the agent-principal model: an agent
- * session whose project has `agent_principal` on and whose grant is governed.
+ * session whose grant is governed.
  */
 export function isAgentPrincipalActor(actor: Actor): boolean {
   return actor.credential.kind === 'agent_session' && actor.credential.agentPrincipal === true;
@@ -172,9 +168,8 @@ export function isAgentPrincipalActor(actor: Actor): boolean {
 /**
  * The human an agent session acts on behalf of (spec §2.3), or null: an
  * unattended run, a session another human prompted, or any non-agent
- * credential. Read from the token binding (15 s memo); a clear busts the
- * memo on the writing replica. For the per-request fresh value read the
- * `onBehalfOfUserId` context field set by the auth middleware.
+ * credential. The value the auth middleware read for this request; null for
+ * an actor built out of band, whose reader must read the token row itself.
  */
 export function credentialOnBehalfOf(actor: Actor): string | null {
   return actor.credential.kind === 'agent_session' ? (actor.credential.onBehalfOfUserId ?? null) : null;
@@ -192,11 +187,14 @@ const TTL_MS = (() => {
   return Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : 15_000;
 })();
 
-interface TokenBinding {
+export interface TokenBinding {
   projectId: string | null;
   agentGrant: AgentGrant | null;
   serviceAccountId: string | null;
-  onBehalfOfUserId: string | null;
+  /** Only on the binding the auth middleware read this request. The memo below
+   *  never carries it: every turn rewrites it (`bindSessionTurnIdentity`), and a
+   *  15 s copy on another replica would name the previous prompter. */
+  onBehalfOfUserId?: string | null;
 }
 
 /**
@@ -220,7 +218,6 @@ const loadTokenBinding = ttlMemo({
         projectId: accountTokens.projectId,
         agentGrant: accountTokens.agentGrant,
         serviceAccountId: accountTokens.serviceAccountId,
-        onBehalfOfUserId: accountTokens.onBehalfOfUserId,
       })
       .from(accountTokens)
       .where(eq(accountTokens.tokenId, tokenId))
@@ -230,7 +227,6 @@ const loadTokenBinding = ttlMemo({
           projectId: row.projectId,
           agentGrant: readStoredAgentGrant(row.agentGrant),
           serviceAccountId: row.serviceAccountId ?? null,
-          onBehalfOfUserId: row.onBehalfOfUserId ?? null,
         }
       : null;
   },
@@ -294,60 +290,10 @@ export { loadServiceAccountActivation };
 
 // ─── Building the actor ─────────────────────────────────────────────────────
 
-/**
- * Build the Actor for this request from the Hono context.
- *
- * `accountId` defaults to whatever the auth branch resolved. Routes that
- * resolve a different account (the common dashboard case, where the account
- * comes from the path) pass it explicitly — the credential is unchanged, only
- * the account the verdict is asked about.
- *
- * Returns null only when the request carries no identity at all.
- */
-export async function buildActor(c: Context, accountIdOverride?: string): Promise<Actor | null> {
-  const userId = c.get('userId') as string | undefined;
-  const accountId = accountIdOverride ?? (c.get('accountId') as string | undefined) ?? '';
-  if (!userId) return null;
-
-  const ctx = {
-    ip: requestClientIp(c) ?? undefined,
-    mfaAal: (c.get('mfaAal') as string | undefined) ?? undefined,
-  };
-
-  const authType = c.get('authType') as string | undefined;
-
-  if (authType === 'service_account') {
-    return { userId, accountId, credential: { kind: 'service_account', serviceAccountId: userId }, ctx };
-  }
-
-  if (authType === 'apiKey') {
-    // Sandbox / legacy API-key bearer. auth.ts maps `userId` to the ACCOUNT id
-    // for these, so there is no IAM principal behind them.
-    return { userId, accountId, credential: { kind: 'sandbox' }, ctx };
-  }
-
-  const tokenId = c.get('iamTokenId') as string | undefined;
-  if (authType === 'pat' && tokenId) {
-    // The PAT branch of auth already read this token's row to validate it
-    // (`patPrincipal` stores its binding fields). Same row, same request and
-    // fresher than the memo, so a second `account_tokens` read is pure
-    // latency: one more database round trip on every PAT request.
-    const seeded = c.get('iamTokenBinding') as (TokenBinding & { tokenId: string }) | undefined;
-    return {
-      userId,
-      accountId,
-      credential: await tokenCredential(
-        tokenId,
-        accountId,
-        (c.get('sessionId') as string | undefined) ?? null,
-        seeded?.tokenId === tokenId ? seeded : undefined,
-      ),
-      ctx,
-    };
-  }
-
-  return { userId, accountId, credential: { kind: 'jwt' }, ctx };
-}
+// The request-to-Actor bridge (`buildActor`, `actorFor`, `actorOf`) reads the
+// Hono context, so it lives in `middleware/actor.ts`. Re-exported here so every
+// importer and every `mock.module('…/iam/actor')` keeps working.
+export { buildActor, actorFor, actorOf } from '../middleware/actor';
 
 /**
  * Classify a token id into its credential variant. Shared by `buildActor` and
@@ -355,7 +301,7 @@ export async function buildActor(c: Context, accountIdOverride?: string): Promis
  * arrived on a Hono request or was resolved out of band (the git proxy, the
  * connector runtime, the project-resource list filter).
  */
-async function tokenCredential(
+export async function tokenCredential(
   tokenId: string,
   accountId: string,
   sessionId: string | null,
@@ -378,7 +324,9 @@ async function tokenCredential(
       serviceAccountId,
       activated,
       agentPrincipal,
-      onBehalfOfUserId: binding?.onBehalfOfUserId ?? null,
+      // Fresh from this request's auth read; null out of band, where readers
+      // that need it read the token row themselves (git-proxy/audit.ts).
+      onBehalfOfUserId: known?.onBehalfOfUserId ?? null,
     };
   }
   // A null binding for a PAT means the token row is gone (revoked). Keeping
@@ -440,33 +388,3 @@ export function actorForServiceAccount(serviceAccountId: string, accountId: stri
     ctx: {},
   };
 }
-
-/**
- * The request's Actor, rebuilt when a route asks about a DIFFERENT account than
- * the one auth resolved. The cached actor on the context is the common case
- * (PAT/service-account requests, where auth already knew the account).
- */
-export async function actorFor(c: Context, accountId: string): Promise<Actor | null> {
-  const cached = c.get('actor') as Actor | undefined;
-  if (cached && cached.accountId === accountId) return cached;
-  return buildActor(c, accountId);
-}
-
-/**
- * THE gate helper: the actor for this request, asked about this account.
- *
- * Every route-level authorization call takes its actor from here, so "I forgot
- * the credential" is not expressible — there is no overload that omits it and
- * no nullable to fall through.
- *
- * It never returns null. A request that carries no identity at all yields an
- * actor with an EMPTY user id, which resolves to no principal and is denied
- * `not_a_member` by every gate. That is deliberately the same outcome as
- * before: `authorizeV2` was handed an undefined userId, reached the engine, and
- * denied there. Turning it into a 401 here would change a 403 into a 401 on
- * every route at once, which is a contract change, not a refactor.
- */
-export async function actorOf(c: Context, accountId: string): Promise<Actor> {
-  return (await actorFor(c, accountId)) ?? { userId: '', accountId, credential: { kind: 'jwt' }, ctx: {} };
-}
-

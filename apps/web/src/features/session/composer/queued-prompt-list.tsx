@@ -8,6 +8,12 @@ import { CaretUpIcon, PencilSimpleIcon, TrashIcon, XIcon } from '@phosphor-icons
 import { Fragment, useId, useState } from 'react';
 import type { QueueRow } from '../queue-projection';
 
+const STEER_FALLBACK_KEY = {
+  unsupported: 'steerFallbackUnsupported',
+  not_prompter: 'steerFallbackNotPrompter',
+  turn_ended: 'steerFallbackTurnEnded',
+} as const;
+
 export interface QueuedPromptListProps {
   rows: readonly QueueRow[];
   heldCount: number;
@@ -16,6 +22,9 @@ export interface QueuedPromptListProps {
   onEdit?: (promptId: string) => void;
   onRemove?: (promptId: string) => void;
   onRetry?: (promptId: string) => void;
+  /** "Stop and send": the turn ends after its running tool, then this row
+   *  runs. Pass it only while a turn runs. */
+  onStopAndSend?: (promptId: string) => void;
   /** The row the composer is editing. It stays in its slot, drawn as the
    *  editing row, until Submit saves the new text or Cancel drops the edit. */
   editing?: { promptId: string } | null;
@@ -30,6 +39,7 @@ export function QueuedPromptList({
   onEdit,
   onRemove,
   onRetry,
+  onStopAndSend,
   editing = null,
   onCancelEdit,
 }: QueuedPromptListProps) {
@@ -155,6 +165,18 @@ export function QueuedPromptList({
                           {t('queuedFiles', { count: row.attachmentCount })}
                         </span>
                       )}
+                      {row.fromAnotherMember && (
+                        <p className="text-muted-foreground text-xs" data-queued-author="other">
+                          {t('queuedByAnotherMember')}
+                        </p>
+                      )}
+                      {!failed && (row.steer || row.steerFallback) && (
+                        <p className="text-muted-foreground text-xs" data-queued-delivery>
+                          {row.steerFallback
+                            ? t(STEER_FALLBACK_KEY[row.steerFallback])
+                            : t('steerNextStep')}
+                        </p>
+                      )}
                       {failed && (
                         <p className="text-kortix-red text-xs" role="status" title={row.lastError}>
                           {copy.raw('textcd5f943d5863')}
@@ -180,7 +202,17 @@ export function QueuedPromptList({
                           <PencilSimpleIcon className="size-3.5" />
                         </Button>
                       )}
-                      {failed && onRetry && (
+                      {row.interruptible && onStopAndSend && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="xs"
+                          onClick={() => onStopAndSend(row.id)}
+                        >
+                          {t('stopAndSend')}
+                        </Button>
+                      )}
+                      {row.retryable && onRetry && (
                         <Button
                           type="button"
                           variant="ghost"

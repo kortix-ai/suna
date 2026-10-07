@@ -10,7 +10,7 @@
 import { chatUserIdentities, connectorCalls, projectSessions } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { approvalPreviewReviewable } from '../connectors/args-preview';
-import type { ApprovalDecision } from '../projects/lib/connector-approval-decision';
+import type { ApprovalDecision, PendingApprovalRow } from '../projects/lib/connector-approval-decision';
 import { db } from '../shared/db';
 import { loadSlackTokenForProject } from './install-store';
 import { postBlocks, updateBlocks } from './slack-api';
@@ -122,6 +122,13 @@ async function recordCard(executionId: string, card: ChatApprovalCardRef): Promi
     .where(eq(connectorCalls.executionId, executionId));
 }
 
+/** The result summary's object shape, or null when the row carries none. */
+function summaryOf(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
 function cardRefOf(resultSummary: Record<string, unknown>): ChatApprovalCardRef | null {
   const card = resultSummary.chat_card as Record<string, unknown> | undefined;
   if (card?.platform === 'slack' && card.team_id && card.channel && card.ts) return card as ChatApprovalCardRef;
@@ -149,13 +156,15 @@ async function decidedByLabel(userId: string, teamId: string): Promise<string> {
 /** Replace a posted card's buttons with the outcome. No card, no-op. */
 export async function markApprovalCardDecided(input: {
   projectId: string;
-  resultSummary: Record<string, unknown>;
-  actionPath: string;
+  /** The decided call: its PRE-decision row (the card ref rides on the summary). */
+  row: PendingApprovalRow;
   decision: ApprovalDecision;
   note: string;
   actorUserId: string;
 }): Promise<void> {
-  const card = cardRefOf(input.resultSummary);
+  const { actionPath } = input.row;
+  const summary = summaryOf(input.row.resultSummary);
+  const card = summary ? cardRefOf(summary) : null;
   if (!card) return;
   if (card.platform === 'teams') {
     const ref = await conversationRefForSession(card.session_id);
@@ -163,7 +172,7 @@ export async function markApprovalCardDecided(input: {
       await updateCard(
         ref,
         card.activity_id,
-        buildTeamsApprovalOutcomeCard({ actionPath: input.actionPath, decision: input.decision, note: input.note, decidedBy: 'a teammate in Kortix' }),
+        buildTeamsApprovalOutcomeCard({ actionPath, decision: input.decision, note: input.note, decidedBy: 'a teammate in Kortix' }),
       );
     }
     return;
@@ -171,18 +180,17 @@ export async function markApprovalCardDecided(input: {
   const token = await loadSlackTokenForProject(input.projectId);
   if (!token) return;
   const blocks = buildApprovalOutcomeBlocks({
-    actionPath: input.actionPath,
+    actionPath,
     decision: input.decision,
     decidedBy: await decidedByLabel(input.actorUserId, card.team_id),
     note: input.note,
-    approvalContext:
-      typeof input.resultSummary.approval_context === 'string' ? input.resultSummary.approval_context : null,
+    approvalContext: typeof summary?.approval_context === 'string' ? summary.approval_context : null,
   });
   await updateBlocks(
     token,
     card.channel,
     card.ts,
-    `${input.decision === 'approve' ? 'Approved' : 'Denied'}: ${input.actionPath}`,
+    `${input.decision === 'approve' ? 'Approved' : 'Denied'}: ${actionPath}`,
     blocks,
   );
 }

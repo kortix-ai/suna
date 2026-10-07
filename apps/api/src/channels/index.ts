@@ -45,14 +45,15 @@ export {
 } from "./slack-manifest";
 export {
   slackWebhookApp,
+  registerSlackWebhookRoutes,
   relayTurnStep,
   relayTurnAnswer,
   relayTurnEnd,
 } from "./slack-webhook";
-export { teamsWebhookApp } from "./teams-webhook";
+export { teamsWebhookApp, registerTeamsWebhookRoutes } from "./teams-webhook";
 export { teamsIdentityApp } from "./teams/identity-routes";
 export { teamsOauthApp } from "./teams-oauth";
-export { startTeamsBotTokenRefresh, prewarmTeamsBotToken } from "./teams-auth";
+export { prewarmTeamsBotToken } from "./teams-auth";
 export {
   saveTeamsInstall,
   deleteTeamsInstall,
@@ -65,7 +66,7 @@ export {
   type TeamsInstallInput,
   type TeamsPublishState,
 } from "./install-store";
-export { emailWebhookApp } from "./email-webhook";
+export { emailWebhookApp, registerEmailWebhookRoutes } from "./email-webhook";
 export { telegramWebhookApp } from "./telegram-webhook";
 export { slackOauthApp, buildSlackInstallUrl } from "./slack-oauth";
 export { slackIdentityApp } from "./slack/identity-routes";

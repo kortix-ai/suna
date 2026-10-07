@@ -38,6 +38,7 @@ import {
   invalidateIamCacheForProjectResources,
 } from './cache-invalidation';
 import { pendingPrincipalId, type Actor, type PrincipalRef } from './actor';
+import { notAnAudienceGrant } from './audience-grants';
 
 export type AssignmentSource = 'manual' | 'scim' | 'sso' | 'invite' | 'system';
 
@@ -1034,7 +1035,11 @@ export async function deleteAccountScopeAssignments(accountId: string, userId: s
   invalidateIamCacheForUser(userId);
 }
 
-/** The project-scope sibling of `deleteAccountScopeAssignments`. */
+/**
+ * The project-scope sibling of `deleteAccountScopeAssignments`. Keeps the
+ * person's audience grants (`audience-grants.ts`): deleting the last one would
+ * share an "Only you" value with the whole project.
+ */
 export async function deleteProjectScopeAssignments(accountId: string, userId: string): Promise<void> {
   await db
     .delete(roleAssignments)
@@ -1044,6 +1049,7 @@ export async function deleteProjectScopeAssignments(accountId: string, userId: s
         eq(roleAssignments.principalType, 'user'),
         eq(roleAssignments.principalId, userId),
         eq(roleAssignments.scopeType, 'project'),
+        notAnAudienceGrant(),
       ),
     );
   invalidateIamCacheForUser(userId);

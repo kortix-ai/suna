@@ -42,8 +42,12 @@ Done when `git branch --show-current` prints the canonical branch inside its wor
 - Use the Conventional Commits subject style that `git log` shows:
   `fix(sandbox): …`, `feat(web): …`, `refactor(api): …`, `docs(repo): …`.
 - `pnpm install` arms `.githooks`. The hooks encrypt staged `.env` files, block plaintext
-  secrets, and refuse blocked customer terms. When a hook fires, fix the content and commit
-  again. Keep the hooks on every commit (never `--no-verify`).
+  secrets, refuse blocked customer terms, and refuse a crash dump or a file over 20 MB. When a
+  hook fires, fix the content and commit again. Keep the hooks on every commit (never
+  `--no-verify`).
+- Stage files by name: `git add <path> <path>`. Never `git add -A`, `git add .`, or
+  `git commit -a` outside one named directory. A blanket add once committed a worker's core
+  dump, and a core dump holds every secret in the process environment.
 - Ship the tests with the behaviour change (the **testing** skill).
 
 Done when the commit exists and the hooks passed.
@@ -54,7 +58,9 @@ Run the narrowest relevant test first, then `pnpm test` (the **testing** skill).
 the changed behaviour on your worktree's stack: `pnpm worktree start <slug>` prints the web
 and API ports. Exercise the real surface: the HTTP route with `curl`, the real CLI process,
 or the page with agent-browser. No CI lane runs these for you before the merge.
-`pnpm test` writes `tests/test-attestation.json`: commit it. The pre-push hook and the
+`pnpm test` writes `tests/attestations/<branch>.json` and deletes every other file
+there: commit `tests/attestations/` (`git add -A tests/attestations`). If a merge of
+`origin/main` conflicts on the legacy `tests/test-attestation.json`, delete it. The pre-push hook and the
 merge gate run `pnpm test:verify` against the pushed head and reject a stale or red
 attestation. Never push with `--no-verify`.
 
@@ -77,11 +83,15 @@ ab() { agent-browser --session "$SESSION" "$@"; }
 # Sign in before recording, so the video never shows an auth form.
 .agents/skills/contributing/scripts/preview-sign-in.sh "$S" "$SESSION"   # prints the synthetic email
 
-mkdir -p output/pr
+# Absolute paths only: the agent-browser daemon is shared by every session on
+# the machine and resolves a relative path against the cwd of whichever
+# session started it, which can be another worktree.
+OUT="$PWD/output/pr"
+mkdir -p "$OUT"
 ab set viewport 1440 900
 ab open "$S/<changed route>"
 ab wait --load networkidle          # record a rendered page, not a hydrating one
-ab record start output/pr/demo.mp4 --cursor
+ab record start "$OUT/demo.mp4" --cursor
 #   Drive the change: `ab snapshot -i`, then `ab click @eN`, `ab fill @eN …`.
 #   Put `ab wait 800` between actions so a person can follow.
 ab record stop

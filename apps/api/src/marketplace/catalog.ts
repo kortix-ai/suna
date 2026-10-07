@@ -40,6 +40,7 @@ import {
 } from "@kortix/registry";
 import type { MarketplaceSource } from "./sources-store";
 import { safeEgressFetch } from "../shared/ssrf-guard";
+import { mapWithConcurrency } from "../shared/map-with-concurrency";
 
 export interface ItemCapabilities {
   secrets: string[];
@@ -1051,25 +1052,6 @@ function startExternalBuild(): Promise<Catalog> {
 
 type LoadedRegistry = Awaited<ReturnType<typeof loadRegistry>>;
 
-async function forEachWithConcurrency<T>(
-  values: readonly T[],
-  concurrency: number,
-  operation: (value: T, index: number) => Promise<void>,
-): Promise<void> {
-  let nextIndex = 0;
-  const workers = Array.from(
-    { length: Math.min(concurrency, values.length) },
-    async () => {
-      while (nextIndex < values.length) {
-        const index = nextIndex;
-        nextIndex += 1;
-        await operation(values[index]!, index);
-      }
-    },
-  );
-  await Promise.all(workers);
-}
-
 async function buildExternalCatalog(): Promise<Catalog> {
   const refs = await externalRefs();
   CACHE.pending = refs.length;
@@ -1095,7 +1077,7 @@ async function buildExternalCatalog(): Promise<Catalog> {
   // Resolve sources concurrently with isolation — one slow/huge/dead source
   // neither blocks the others nor sinks the catalog; each folds in the instant
   // it arrives so the list streams Kortix-first, then source-by-source.
-  await forEachWithConcurrency(
+  await mapWithConcurrency(
     refs,
     MARKETPLACE_EXTERNAL_BUILD_CONCURRENCY,
     async ({ ref, sourceId }, i) => {

@@ -1,3 +1,4 @@
+import { BoundedMap } from '../shared/bounded-map';
 import { config } from '../config';
 
 export const BOT_CONNECTOR_SCOPE = 'https://api.botframework.com/.default';
@@ -10,7 +11,7 @@ interface CachedToken {
   expiresAt: number;
 }
 
-const tokenCache = new Map<string, CachedToken>();
+const tokenCache = new BoundedMap<string, CachedToken>(200);
 
 export function teamsConfigured(): boolean {
   return Boolean(config.MICROSOFT_APP_ID && config.MICROSOFT_APP_PASSWORD);
@@ -35,6 +36,11 @@ function resolveCreds(creds?: TeamsBotCreds | null): TeamsBotCreds {
   return { appId: config.MICROSOFT_APP_ID, appPassword: config.MICROSOFT_APP_PASSWORD };
 }
 
+// One mint per credential at a time: every inbound activity on a cold cache used
+// to call the token endpoint on its own.
+const minting = new Map<string, Promise<string>>();
+const TOKEN_FETCH_TIMEOUT_MS = 10_000;
+
 export async function mintTeamsToken({ scope, tenantId, creds }: MintOpts): Promise<string> {
   const resolved = resolveCreds(creds);
   const tenant = tenantId || config.MICROSOFT_APP_TENANT;
@@ -42,6 +48,14 @@ export async function mintTeamsToken({ scope, tenantId, creds }: MintOpts): Prom
 
   const cached = tokenCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.token;
+  const pending = minting.get(cacheKey);
+  if (pending) return pending;
+  const mint = fetchTeamsToken(resolved, tenant, scope, cacheKey).finally(() => minting.delete(cacheKey));
+  minting.set(cacheKey, mint);
+  return mint;
+}
+
+async function fetchTeamsToken(resolved: TeamsBotCreds, tenant: string, scope: string, cacheKey: string): Promise<string> {
 
   const body = new URLSearchParams({
     grant_type: 'client_credentials',
@@ -54,6 +68,7 @@ export async function mintTeamsToken({ scope, tenantId, creds }: MintOpts): Prom
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body.toString(),
+    signal: AbortSignal.timeout(TOKEN_FETCH_TIMEOUT_MS),
   });
 
   const text = await res.text();
@@ -150,13 +165,10 @@ export async function prewarmTeamsBotToken(): Promise<boolean> {
 /** Keep the bot-connector token warm for the life of the process. */
 export const TEAMS_TOKEN_REFRESH_MS = 50 * 60 * 1000;
 
-export function startTeamsBotTokenRefresh(): ReturnType<typeof setInterval> | null {
-  if (!teamsConfigured()) return null;
-  void prewarmTeamsBotToken();
-  const timer = setInterval(() => {
-    tokenCache.delete(`${config.MICROSOFT_APP_ID}|${config.MICROSOFT_APP_TENANT}|${BOT_CONNECTOR_SCOPE}`);
-    void prewarmTeamsBotToken();
-  }, TEAMS_TOKEN_REFRESH_MS);
-  timer.unref();
-  return timer;
+/** Drop the cached bot-connector token and mint a fresh one. */
+export function refreshTeamsBotToken(): Promise<boolean> {
+  tokenCache.delete(`${config.MICROSOFT_APP_ID}|${config.MICROSOFT_APP_TENANT}|${BOT_CONNECTOR_SCOPE}`);
+  return prewarmTeamsBotToken();
 }
+
+export { startTeamsBotTokenRefresh, stopTeamsBotTokenRefresh } from '../workers/teams-bot-token-refresh-worker';

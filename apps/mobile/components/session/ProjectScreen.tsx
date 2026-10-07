@@ -15,7 +15,8 @@
  * It is the layout of app/projects/[id]/: a nested stack of project home
  * (index), at most one covering route: the open page, thread, or connecting
  * session (view), Sessions, Files, or Account, and the sub-pages pushed over
- * it (page: project Settings, Schedules, Secrets). Every project page shows
+ * it (page: project Settings, Schedules, Secrets; Files over the thread,
+ * from the session ··· sheet). Every project page shows
  * the hamburger and the drawer opens on it, except a sub-page, which shows
  * Go back. Android back from a sub-page pops it; from a covering route it
  * returns to project home; from project home it does nothing. Only the
@@ -57,6 +58,7 @@ import {
   drawerThreadMove,
   shownProjectSessionId,
   projectEdgeGesture,
+  projectViewKey,
   type SubPageId,
 } from '@/lib/session/project-stack';
 import { ProjectSwitcherSheet } from '@/components/projects/ProjectSwitcherSheet';
@@ -120,6 +122,9 @@ const Pages = {
   get SchedulesPage(): typeof import('@/components/pages/SchedulesPage').SchedulesPage {
     return require('@/components/pages/SchedulesPage').SchedulesPage;
   },
+  get FilesNavPage(): typeof import('@/components/pages/FilesNavPage').FilesNavPage {
+    return require('@/components/pages/FilesNavPage').FilesNavPage;
+  },
   get ReviewPage(): typeof import('@/components/pages/ReviewPage').ReviewPage {
     return require('@/components/pages/ReviewPage').ReviewPage;
   },
@@ -128,6 +133,9 @@ const Pages = {
   },
   get MemoryPage(): typeof import('@/components/pages/MemoryPage').MemoryPage {
     return require('@/components/pages/MemoryPage').MemoryPage;
+  },
+  get AppsPage(): typeof import('@/components/pages/AppsPage').AppsPage {
+    return require('@/components/pages/AppsPage').AppsPage;
   },
   get ProjectDetailPage(): typeof import('@/components/pages/ProjectDetailPage').ProjectDetailPage {
     return require('@/components/pages/ProjectDetailPage').ProjectDetailPage;
@@ -465,6 +473,12 @@ export function ProjectScreen() {
     !scopeReady ||
     (!activePageId && !activeSessionId && !connectingProjectSessionId);
   isHomeRef.current = isHome;
+  const viewKey = projectViewKey({
+    isHome,
+    activePageId,
+    activeSessionId,
+    connectingSessionId: connectingProjectSessionId,
+  });
 
   // The thread renders only once the context holds its sandbox. Until then it
   // shows the connecting view, so SessionPage never starts its sync and
@@ -582,6 +596,8 @@ export function ProjectScreen() {
             />
           ) : activePageId === 'page:browser' && PAGE_TABS[activePageId] ? (
             <Pages.BrowserPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
+          ) : activePageId === 'page:apps' && PAGE_TABS[activePageId] ? (
+            <Pages.AppsPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
           ) : activePageId === 'page:memory' && PAGE_TABS[activePageId] ? (
             <Pages.MemoryPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
           ) : activePageId.startsWith('page:project:') ? (
@@ -696,10 +712,16 @@ export function ProjectScreen() {
           return <Pages.SecretsNavPage page={page} projectId={projectId} onBack={onBack} />;
         case 'page:members':
           return <Pages.MembersNavPage page={page} projectId={projectId} onBack={onBack} />;
+        case 'page:files-nav':
+          return <Pages.FilesNavPage page={page} projectId={projectId} onBack={onBack} />;
       }
     },
     [projectId, openSubPage]
   );
+
+  // The session ··· sheet's Files row (KRTX-1636): the project's Files as a
+  // sub-page over the thread, so back returns to that thread.
+  const openFilesOverThread = useCallback(() => openSubPage('page:files-nav'), [openSubPage]);
 
   // Project home — Kortix symbol, composer.
   // Memoized: a stable element lets React skip home when only `drawerOpen`
@@ -733,6 +755,7 @@ export function ProjectScreen() {
       home: homeContent,
       view: viewContent,
       isHome,
+      viewKey,
       homeKey,
       goHome,
       newSession: returnHome,
@@ -750,6 +773,7 @@ export function ProjectScreen() {
       homeContent,
       viewContent,
       isHome,
+      viewKey,
       homeKey,
       goHome,
       returnHome,
@@ -848,7 +872,7 @@ export function ProjectScreen() {
       {/* One session actions sheet (COR-140 Task 5): the thread's "···", the
           Sessions page's long press, and the drawer's session row long press
           all open it through `openSessionActions` (ProjectRouteValue). */}
-      <SessionActionsSheet ref={actionsSheetRef} projectId={projectId} />
+      <SessionActionsSheet ref={actionsSheetRef} projectId={projectId} onOpenFiles={openFilesOverThread} />
 
       {/* The project/account switcher (COR-124), opened by the drawer's
           switcher row. A picked project closes the drawer too. */}

@@ -201,6 +201,12 @@ describe('isProxiedBaseReset', () => {
 // this proxy strips; that strip is proven at the route in
 // __tests__/e2e-preview-proxy.test.ts.
 describe('the forward strip list', () => {
+  test('credential and hop-by-hop headers never reach a user app', () => {
+    for (const name of ['x-kortix-token', 'proxy-authorization', 'transfer-encoding', 'connection', 'upgrade', 'te', 'trailer', 'keep-alive']) {
+      expect(STRIP_FORWARD_HEADERS.has(name)).toBe(true);
+    }
+  });
+
   test('the strip list is matched case-insensitively, as headers are', () => {
     // Headers arrive in whatever case the client sent; the forward loop
     // lowercases before testing membership, so the entry must be lowercase.
@@ -403,9 +409,9 @@ describe('isConnectionRefusedError', () => {
   });
 });
 
-// The unreachable-port page reconstructs the address the browser is on from the
-// preview host headers (the sign-in hand-off carries it), falling back to ''.
-test('the unreachable-port page carries the reconstructed browser address', async () => {
+// The unreachable-port page never prints the sandbox address: it is an
+// internal host, and the card header already names the preview (KRTX-1644).
+test('the unreachable-port page does not print the browser address', async () => {
   const res = portUnreachableResponse({
     port: 3000,
     status: 502,
@@ -414,7 +420,7 @@ test('the unreachable-port page carries the reconstructed browser address', asyn
     reason: 'x',
     hop: 'upstream_port',
   });
-  expect(await res.text()).toContain('https://p.example');
+  expect(await res.text()).not.toContain('p.example');
 });
 
 test('without host headers the page simply omits the address', async () => {

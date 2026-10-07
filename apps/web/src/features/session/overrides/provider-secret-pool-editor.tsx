@@ -17,7 +17,7 @@ import { ChatGptAccountsDialog } from '@/features/providers/chatgpt-accounts-dia
 import { needsReconnection } from '@/features/workspace/customize/sections/view/account-secret-access';
 import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import { Field, FieldLabel } from '@/components/ui/field';
-import { keysForSession, normalizePoolSelection, type ProviderPoolDrafts, sessionPersonalUser } from './provider-pool-draft';
+import { keysForSession, normalizePoolSelection, sessionPersonalKeys, type PersonalKeysReason, type ProviderPoolDrafts } from './provider-pool-draft';
 
 function useResources(projectId: string) {
   const project = useQuery({ queryKey: ['provider-pool-project', projectId], queryFn: () => getProjectDetail(projectId) });
@@ -49,10 +49,16 @@ function ChatGptAccountsButton({ projectId, variant, action, disabled }: {
 
 /** A shared session never uses a member's own ChatGPT account, so it gets the
  *  reason instead of a connect button that could not help it. */
-function NoPoolKeys({ projectId, shared = false }: { projectId: string; shared?: boolean }) {
+const PERSONAL_KEYS_NOTE: Record<PersonalKeysReason, 'sharedSessionKeys' | 'promptedSessionKeys' | 'noPersonSessionKeys'> = {
+  shared: 'sharedSessionKeys',
+  prompted_by_another_member: 'promptedSessionKeys',
+  no_person: 'noPersonSessionKeys',
+};
+
+function NoPoolKeys({ projectId, shared = false, reason = null }: { projectId: string; shared?: boolean; reason?: PersonalKeysReason | null }) {
   const t = useTranslations('pooledSecrets');
   return <div className="space-y-2"><p className="text-muted-foreground text-xs">{t('addSharedKey')}</p>
-    {shared && <p className="text-muted-foreground text-xs">{t('sharedSessionKeys')}</p>}
+    {shared && <p className="text-muted-foreground text-xs">{t(PERSONAL_KEYS_NOTE[reason ?? 'shared'])}</p>}
     <div className="flex flex-wrap items-center gap-2">
       {!shared && <ChatGptAccountsButton projectId={projectId} variant="secondary" action="connect" />}
       <Button size="sm" variant={shared ? 'secondary' : 'outline-ghost'} asChild><Link href={`/projects/${projectId}/customize/models`}>{t('manageKeys')}</Link></Button>
@@ -110,10 +116,10 @@ function PoolChoices({ projectId, providers, providerId, onProviderChange, keys,
   </>;
 }
 
-function PoolEditorShell({ projectId, usable, providers, loading, error, fetching, retry, shared = false, saving, readOnly, selection, onChange }: {
+function PoolEditorShell({ projectId, usable, providers, loading, error, fetching, retry, shared = false, reason = null, saving, readOnly, selection, onChange }: {
   projectId: string; usable: AccountSecretResource[]; providers: string[];
   loading: boolean; error: boolean; fetching: boolean; retry: () => void;
-  shared?: boolean; saving?: boolean; readOnly?: boolean;
+  shared?: boolean; reason?: PersonalKeysReason | null; saving?: boolean; readOnly?: boolean;
   selection: (provider: string) => string[] | null | undefined;
   onChange: (provider: string, ids: string[] | null) => void;
 }) {
@@ -125,13 +131,13 @@ function PoolEditorShell({ projectId, usable, providers, loading, error, fetchin
   if (loading) return <div role="status" aria-label={t('loadingKeys')}><Loading /></div>;
   if (error) return <ErrorState size="sm" title={t('keysLoadError')}
     action={<Button size="sm" variant="secondary" disabled={fetching} onClick={retry}>{common('retry')}</Button>} />;
-  if (!providers.length) return <NoPoolKeys projectId={projectId} shared={shared} />;
+  if (!providers.length) return <NoPoolKeys projectId={projectId} shared={shared} reason={reason} />;
   return <div className="space-y-3">
     <PoolChoices projectId={projectId} providers={providers} providerId={activeProvider} onProviderChange={setProviderId}
       keys={usable.filter((secret) => secret.provider_id === activeProvider)} selected={value ?? []} configured={value != null}
       disabled={saving} readOnly={readOnly} personalKeys={!shared}
       onChange={(ids) => onChange(activeProvider, ids)} onReset={() => onChange(activeProvider, null)} />
-    {shared && <p className="text-muted-foreground text-xs">{t('sharedSessionKeys')}</p>}
+    {shared && <p className="text-muted-foreground text-xs">{t(PERSONAL_KEYS_NOTE[reason ?? 'shared'])}</p>}
     {readOnly && <p className="text-muted-foreground text-xs">{t('readOnlyPool')}</p>}
   </div>;
 }
@@ -145,13 +151,15 @@ export function ProviderSecretPoolEditor({ projectId, sessionId, drafts, onChang
 }) {
   const { project, resources } = useResources(projectId);
   const pools = useSessionProviderSecretPools(projectId, sessionId);
-  // Only keys this session can use when it runs: a shared session never
-  // reaches a key granted to one member (the server refuses the save).
-  const personalUser = sessionPersonalUser(useProjectSession(projectId, sessionId).data);
+  // Only keys this session can use when it runs: a session that acts for
+  // nobody (shared, prompted by another member, or older than on_behalf_of)
+  // never reaches a key granted to one member (the server refuses the save).
+  const personal = sessionPersonalKeys(useProjectSession(projectId, sessionId).data, pools.data);
+  const personalUser = personal.user;
   const shared = personalUser === null;
   const usable = keysForSession(usableKeys(resources.data?.secrets), personalUser);
   const providers = [...new Set([...usable.map((secret) => secret.provider_id!), ...(pools.data?.pools ?? []).map((pool) => pool.provider_id), ...Object.keys(drafts)])].sort();
-  return <PoolEditorShell projectId={projectId} usable={usable} providers={providers} shared={shared} saving={saving}
+  return <PoolEditorShell projectId={projectId} usable={usable} providers={providers} shared={shared} reason={personal.reason} saving={saving}
     readOnly={!pools.data?.can_edit} loading={project.isLoading || resources.isLoading || pools.isLoading}
     error={project.isError || resources.isError || pools.isError}
     fetching={project.isFetching || resources.isFetching || pools.isFetching}

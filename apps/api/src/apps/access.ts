@@ -1,13 +1,14 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { accountGroups, accountMembers, appAccessGrants, apps, type AgentGrant } from '@kortix/db';
+import { appAccessGrants, apps, type AgentGrant } from '@kortix/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { resolveShareSubject, type SecretGrant, type ShareSubject } from '../connectors/share';
 import { config } from '../config';
 import { authorize, PROJECT_ACTIONS } from '../iam';
 import { actorForToken, actorForUser } from '../iam/actor';
 import { agentMayOpenApp } from '../iam/agent-scope';
-import { resolveFeatureFlag, type FeatureFlagKey } from '../feature-flags/registry';
 import { db } from '../shared/db';
+import { accountMembersAmong } from '../iam/membership-read';
+import { accountGroupsAmong } from '../iam/group-read';
 
 export type AppAccessMode = 'private' | 'project' | 'restricted' | 'public' | 'password';
 export type AppAccessTokenKind = 'kortix' | 'password';
@@ -98,21 +99,9 @@ export function verifyAppAccessToken(
  *
  * An agent-session credential (a `kortix_pat_` bound to a session, carrying the
  * running agent's grant) is judged as the AGENT, not as the human who launched
- * the session — but only on a project whose `agent_principal` flag is on.
- * Flag OFF, or a null grant (ungoverned project), keeps today's human
- * decision (`appAccessibleToUser`) byte for byte.
+ * the session. A null grant (ungoverned project) keeps the human decision
+ * (`appAccessibleToUser`).
  */
-
-/**
- * The project feature flag that switches governed agents to the §2 model.
- * Registered by the IAM lane; until it exists `resolveFeatureFlag` answers
- * false for an unknown key, which is exactly "flag OFF".
- */
-const AGENT_PRINCIPAL_FLAG = 'agent_principal' as FeatureFlagKey;
-
-export function agentPrincipalEnabled(projectMetadata: unknown): boolean {
-  return resolveFeatureFlag(projectMetadata, AGENT_PRINCIPAL_FLAG);
-}
 
 /**
  * Pure: may this agent session open the App? The §2.5 table.
@@ -315,22 +304,8 @@ export async function validateAppAccessPrincipals(
   const memberIds = [...new Set(input.memberIds)];
   const groupIds = [...new Set(input.groupIds)];
   const [memberRows, groupRows] = await Promise.all([
-    memberIds.length > 0
-      ? db.select({ userId: accountMembers.userId })
-          .from(accountMembers)
-          .where(and(
-            eq(accountMembers.accountId, accountId),
-            inArray(accountMembers.userId, memberIds),
-          ))
-      : [],
-    groupIds.length > 0
-      ? db.select({ groupId: accountGroups.groupId })
-          .from(accountGroups)
-          .where(and(
-            eq(accountGroups.accountId, accountId),
-            inArray(accountGroups.groupId, groupIds),
-          ))
-      : [],
+    memberIds.length > 0 ? accountMembersAmong(accountId, memberIds) : [],
+    groupIds.length > 0 ? accountGroupsAmong(accountId, groupIds) : [],
   ]);
   const existingMemberIds = new Set(memberRows.map((row) => row.userId));
   const missingMemberId = memberIds.find((id) => !existingMemberIds.has(id));
