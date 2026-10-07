@@ -4,10 +4,11 @@
  * as a sub-page over the thread, from the session ··· sheet's Files row
  * (`page:files-nav`, KRTX-1636: Go back in the hamburger's place, which
  * returns to that thread).
- * A READ-ONLY git-repo browser: the `/files` endpoint returns a FLAT recursive
- * file list, so folders are derived client-side from the paths. Browse by
- * version (branch), open a file, see its history, and download a file or a
- * folder as a zip. No write, rename or delete: project files come from git.
+ * A READ-ONLY git-repo browser: each folder is one `GET /files?depth=1` read
+ * (KRTX-1723: the recursive list stopped at 1,000 files and hid every folder
+ * after them). Browse by version (branch), open a file, see its history, and
+ * download a file or a folder as a zip. No write, rename or delete: project
+ * files come from git.
  *
  * Layout (Jay, 2026-09-22):
  * - `PageHeader` with the large title and the `···`; no controls beside it.
@@ -18,8 +19,9 @@
  * - List: sections titled "Folders" and "Files", rows of `SettingsRow` in
  *   `SettingsGroupItem`s. Grid: 2-up tiles. Both are one virtualised
  *   `FlatList` (`buildFilesListItems`, COR-155).
- * - Search covers the whole tree, not the open folder (`searchFileTree`,
- *   COR-155); each result shows its folder under its name.
+ * - Search covers the whole repository, not the open folder: the server
+ *   matches filenames, and `searchFileTree` ranks them and adds the folders
+ *   their paths name (COR-155). Each result shows its folder under its name.
  * - The pinned bar (`PinnedBar`, the project drawer's bottom bar): version ·
  *   sort · list/grid `Tabs` · download, floating over a fade of the page.
  *   Refresh is a pull on the list; there is no button.
@@ -32,7 +34,7 @@
  * (`sheet-push`) and a checkpoint pushes its diff in after it.
  */
 
-import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { BackHandler, Platform, Pressable, RefreshControl, ScrollView, View, type ListRenderItem } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
@@ -62,7 +64,7 @@ import { FileGlyph } from '@/components/files/file-icons';
 import { downloadFailureMessage } from '@/lib/files/download-status';
 import { saveFileToDevice, type SaveToDeviceResult } from '@/lib/files/save-to-device';
 import { buildFilesListItems, type FilesListItem } from '@/lib/files/files-list-items';
-import { indexChildren, searchFileTree, searchResultLocation } from '@/lib/files/tree-search';
+import { directoryChildren, searchFileTree, searchResultLocation, type TreeSearchEntry } from '@/lib/files/tree-search';
 import { folderTone } from '@/lib/files/folder-tone';
 import { haptics } from '@/lib/haptics';
 import {
@@ -81,10 +83,11 @@ import {
   useProjectCommitDiff,
   useProjectFileContent,
   useProjectFileHistory,
-  useProjectFiles,
+  useProjectDirectory,
+  useProjectFileSearch,
 } from '@/lib/projects/hooks';
 import { projectArchiveRequest } from '@/lib/projects/projects-client';
-import type { ProjectBranch, ProjectCommit, ProjectFileEntry } from '@/lib/projects/projects-client';
+import type { ProjectBranch, ProjectCommit } from '@/lib/projects/projects-client';
 import { relativeTime } from '@/lib/projects/triggers-format';
 import { THEME } from '@/lib/utils/theme';
 
@@ -125,10 +128,11 @@ const EMPTY_ITEMS: FilesListItem<FileRow>[] = [];
 const BAR_CONTROL_HEIGHT = 40;
 const SHEET_SNAP_POINTS = ['100%'];
 
-/** Stable while the files query loads: a new `[]` each render re-runs every memo below. */
-const NO_ENTRIES: ProjectFileEntry[] = [];
-/** A folder with no children (`indexChildren` has no key for it). */
-const NO_CHILDREN: { dirs: string[]; files: ProjectFileEntry[] } = { dirs: [], files: [] };
+/** Stable while a query loads: a new `[]` each render re-runs every memo below. */
+const NO_ENTRIES: TreeSearchEntry[] = [];
+const NO_CHILDREN: { dirs: string[]; files: TreeSearchEntry[] } = { dirs: [], files: [] };
+/** A keystroke waits this long before it becomes a server search. */
+const SEARCH_DEBOUNCE_MS = 200;
 
 /**
  * `downloadAsync` writes the body whatever the status: a 401 or 404 body used
@@ -492,13 +496,14 @@ export function FilesNavPage({
     if (!ref_ && defaultBranch) setRef(defaultBranch);
   }, [defaultBranch, ref_]);
 
-  const filesQuery = useProjectFiles(projectId, ref_);
-  const entries = filesQuery.data ?? NO_ENTRIES;
-  // Every folder's children in one pass per file list, so a folder tap is a lookup.
-  const childrenByDir = useMemo(() => indexChildren(entries), [entries]);
+  const dirQuery = useProjectDirectory(projectId, ref_, path);
+  const children = useMemo(
+    () => (dirQuery.data ? directoryChildren(dirQuery.data.entries) : NO_CHILDREN),
+    [dirQuery.data],
+  );
 
   const rows = useMemo<SandboxFile[]>(() => {
-    const { dirs, files } = childrenByDir.get(path) ?? NO_CHILDREN;
+    const { dirs, files } = children;
     const cmp = (a: string, b: string) => {
       if (sortBy === 'type') {
         const t = ext(a).localeCompare(ext(b));
@@ -521,32 +526,40 @@ export function FilesNavPage({
       ...otherDirs.map((d) => mk(d, path ? `${path}/${d}` : d, 'directory')),
       ...fileNodes.map((f) => mk(basename(f.path), f.path, 'file', f.size)),
     ];
-  }, [childrenByDir, path, sortBy, sortOrder]);
+  }, [children, path, sortBy, sortOrder]);
 
-  // Search covers the whole tree, not only this folder (COR-155): the files
-  // query already holds every path. A result shows its folder.
-  // The list follows the typed text at deferred priority, so a keystroke
-  // updates the field first. Cleared text applies at once: a folder tap and
-  // Go up clear the search, and must not show the old results for a render.
-  const deferredSearch = useDeferredValue(search);
-  const query = search ? deferredSearch : '';
+  // Search covers the whole repository, not only this folder (COR-155): the
+  // server matches filenames. A result shows its folder.
+  // A keystroke updates the field first and searches after a short pause.
+  // Cleared text applies at once: a folder tap and Go up clear the search,
+  // and must not show the old results for a render.
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [search]);
+  const query = search ? debouncedSearch : '';
   const searching = query.trim().length > 0;
+  const searchQuery = useProjectFileSearch(projectId, ref_, query);
+  const matches = searchQuery.data ?? NO_ENTRIES;
   const visible = useMemo<FileRow[]>(() => {
     if (!searching) return rows;
-    return searchFileTree(entries, query).map((r) => ({
+    return searchFileTree(matches, query).map((r) => ({
       name: r.name,
       path: r.path,
       type: r.type,
       size: r.size,
       parent: r.parent,
     }));
-  }, [entries, rows, query, searching]);
+  }, [matches, rows, query, searching]);
   const folders = useMemo(() => visible.filter((r) => r.type === 'directory'), [visible]);
   const files = useMemo(() => visible.filter((r) => r.type === 'file'), [visible]);
   const listItems = useMemo(() => buildFilesListItems(folders, files, viewMode), [folders, files, viewMode]);
   const segments = path ? path.split('/').filter(Boolean) : [];
 
-  const listLoading = filesQuery.isLoading || (!ref_ && branchesQuery.isLoading);
+  // The list on screen: a folder level, or the search results.
+  const listQuery = searching ? searchQuery : dirQuery;
+  const listLoading = listQuery.isLoading || (!ref_ && branchesQuery.isLoading);
 
   // Back inside a folder goes up one folder, not to project home (Jay,
   // 2026-09-22). Registered after ProjectScreen's handler, so it runs first.
@@ -659,13 +672,13 @@ export function FilesNavPage({
   const [pulling, setPulling] = useState(false);
   const refresh = () => {
     setPulling(true);
-    void Promise.all([filesQuery.refetch(), branchesQuery.refetch()]).finally(() => setPulling(false));
+    void Promise.all([listQuery.refetch(), branchesQuery.refetch()]).finally(() => setPulling(false));
   };
 
   const emptyLabel = listLoading
     ? null
-    : filesQuery.isError
-      ? ((filesQuery.error as Error)?.message ?? 'Unable to load the files')
+    : listQuery.isError
+      ? ((listQuery.error as Error)?.message ?? 'Unable to load the files')
       : visible.length === 0
         ? query
           ? 'No matching files'
@@ -760,7 +773,7 @@ export function FilesNavPage({
                   <Text variant="muted" className="text-center">
                     {emptyLabel}
                   </Text>
-                  {filesQuery.isError ? (
+                  {listQuery.isError ? (
                     <Button variant="secondary" size="lg" className="rounded-full" onPress={refresh}>
                       <Text>Try again</Text>
                     </Button>

@@ -4,8 +4,8 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
-import { GitOperationError, isGitPathNotFoundError } from './mirror';
-import { isRepoFileNotFoundError, readRepoFileBytes, RepoFileNotFoundError } from './files';
+import { GitOperationError, isGitPathNotFoundError, runGit as realRunGit } from './mirror';
+import { isRepoFileNotFoundError, listRepoDirectory, readRepoFileBytes, RepoFileNotFoundError } from './files';
 
 // `readRepoFile` imports `runGit` + `refreshMirror` from `./mirror`. We mock the
 // module so `runGit` is controllable per-test (returns stdout, throws a
@@ -275,6 +275,45 @@ async function initRealRepo() {
   runGitImpl = realRunGitFn;
   await execFileAsyncBytes('git', ['init', '-b', 'main', repoPath], { env: BYTES_ENV });
 }
+
+// KRTX-1723: the Files tree was built from a recursive list cut at 1,000
+// files, so every folder that sorted after file 1,000 was missing.
+describe('listRepoDirectory', () => {
+  async function bigRepo() {
+    await initRealRepo();
+    const files: Record<string, string> = { 'README.md': 'hi\n', 'z/last.txt': 'last\n' };
+    for (let i = 0; i < 1200; i++) files[`a/f${String(i).padStart(4, '0')}.txt`] = `${i}\n`;
+    await commitFiles(files);
+  }
+
+  test('lists one level of the root: every folder and file, with its type', async () => {
+    await bigRepo();
+    expect(await listRepoDirectory(project, 'main', null)).toEqual({
+      entries: [
+        { path: 'README.md', type: 'file', size: 3 },
+        { path: 'a', type: 'directory' },
+        { path: 'z', type: 'directory' },
+      ],
+      truncated: false,
+    });
+  });
+
+  test('lists one level of a folder, complete past 1,000 entries', async () => {
+    await bigRepo();
+    const listing = await listRepoDirectory(project, 'main', 'a');
+    expect(listing.truncated).toBe(false);
+    expect(listing.entries).toHaveLength(1200);
+    expect(listing.entries.at(-1)).toEqual({ path: 'a/f1199.txt', type: 'file', size: 5 });
+    expect((await listRepoDirectory(project, 'main', 'z')).entries).toEqual([{ path: 'z/last.txt', type: 'file', size: 5 }]);
+  });
+
+  test('a folder over the entry cap says so', async () => {
+    await bigRepo();
+    const listing = await listRepoDirectory(project, 'main', 'a', { limit: 500 });
+    expect(listing.entries).toHaveLength(500);
+    expect(listing.truncated).toBe(true);
+  });
+});
 
 describe('readRepoFileBytes', () => {
   test('returns a committed binary file byte-accurate', async () => {
