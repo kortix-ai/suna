@@ -27,4 +27,6 @@ export type OpenSessionArgs = {
   };
   projectId: string;
   sessionId: string;
+  /** Keep-alive poll: report a deliberately stopped box, never wake it. */
+  keepStopped?: boolean;
 };

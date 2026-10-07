@@ -4,7 +4,7 @@ import { ApiError, clientFromAuth } from '../api/client.ts';
 import { activeHostName, defaultProject, listHosts } from '../api/config.ts';
 import type { AccountMembership, MeResponse } from '../api/types.ts';
 import { takeFlags } from '../command-argv.ts';
-import { emitJson, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import { emitJson, takeFlagBool, takeFlagValue, tokenRejectedLine } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
 
 const HELP = help`Usage: kortix whoami [options]
@@ -66,9 +66,7 @@ export async function performWhoami(opts: PerformWhoamiOptions): Promise<number>
     me = await clientFromAuth(auth).get<MeResponse>('/accounts/me');
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) {
-      process.stderr.write(
-        `${status.err('Token rejected. Run `kortix login` to re-authenticate.')}\n`,
-      );
+      process.stderr.write(`${status.err(tokenRejectedLine(err.message))}\n`);
       return 1;
     }
     process.stderr.write(`${status.err((err as Error).message)}\n`);

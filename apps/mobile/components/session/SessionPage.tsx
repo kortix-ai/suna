@@ -115,6 +115,7 @@ import {
   listSessionPrompts,
   retrySessionPrompt,
   type SessionPrompt,
+  type SessionPromptDelivery,
   resolveWorkingTurn,
 } from '@kortix/sdk';
 import * as Crypto from 'expo-crypto';
@@ -168,7 +169,7 @@ import { useToast } from '@/components/kortix/toast-provider';
 import { pinnedPermission } from '@/lib/session/permission-prompt';
 import { useTabStore } from '@/stores/tab-store';
 import { useMessageQueueStore } from '@/stores/message-queue-store';
-import { queueHeaderLabel } from '@/lib/session/queue-undo';
+import { queueHeaderLabel, queueRowCaption } from '@/lib/session/queue-undo';
 import { useSessionPromptRequestStore } from '@/stores/session-prompt-request-store';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import type { Command } from '@/lib/session/runtime-data';
@@ -492,7 +493,15 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     return () => clearInterval(timer);
   }, [projectId, projectSessionId, refreshQueue, queuePollMs]);
 
-  const handleEnqueue = useCallback(async (text: string, options: PromptOptions, mentions?: TrackedMention[]) => {
+  // The composer calls this while a turn runs: the running turn reads the
+  // message at its next step (`steer`, D9.1). A prompt request from another
+  // screen waits for the turn (`queue`).
+  const handleEnqueue = useCallback(async (
+    text: string,
+    options: PromptOptions,
+    mentions?: TrackedMention[],
+    delivery: SessionPromptDelivery = 'steer',
+  ) => {
     if (!projectId || !projectSessionId) {
       toast.error('No project session to queue a prompt');
       throw new Error('No project session to queue a prompt');
@@ -510,7 +519,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     try {
       const result = await createSessionPrompt(projectId, projectSessionId, {
         clientMessageId, messageId, parts: [{ type: 'text', text: finalText }],
-        placement: 'composer', clientSentAtMs: nowMs,
+        delivery, clientSentAtMs: nowMs,
         overrides: { agent: options.agent ?? null, model: options.model ?? null, variant: options.variant ?? null },
       });
       if (result.state === 'failed') throw new Error('Prompt delivery was refused');
@@ -859,7 +868,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     const request = store.take(sessionId) ?? (projectSessionId ? store.take(projectSessionId) : null);
     if (!request) return;
     if (isBusy || hasQuestion) {
-      void handleEnqueue(request.text, {}).catch(() => {});
+      void handleEnqueue(request.text, {}, undefined, 'queue').catch(() => {});
       return;
     }
     const { agent, modelKey, variant } = resolvedRef.current;
@@ -2417,9 +2426,16 @@ function QueuePanel({
                   const sender = senderOf?.(qm);
                   return sender ? <ParticipantAvatar person={sender} /> : null;
                 })()}
-                <Text variant="small" numberOfLines={1} className="flex-1 leading-5">
-                  {qm.text}
-                </Text>
+                <View className="flex-1">
+                  <Text variant="small" numberOfLines={1} className="leading-5">
+                    {qm.text}
+                  </Text>
+                  {queueRowCaption(qm) ? (
+                    <Text variant="muted" numberOfLines={2}>
+                      {queueRowCaption(qm)}
+                    </Text>
+                  ) : null}
+                </View>
                 <Button
                   variant="secondary"
                   size="sm"

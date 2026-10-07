@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 
 // The real script under test. Each scenario gets its own throwaway git repo
-// with a local `refs/remotes/origin/main` so no network is touched.
+// with a local `refs/remotes/origin/dev` so no network is touched.
 const SCRIPT = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'verify-attestation.mjs');
 const repos: string[] = [];
 
@@ -23,13 +23,13 @@ function run(cwd: string, ...args: string[]) {
   });
   return { status: r.status, out: `${r.stdout}${r.stderr}` };
 }
-/** Fresh repo: one `main` commit, origin/main ref pinned to it, the script in tests/. */
+/** Fresh repo: one `dev` commit, origin/dev ref pinned to it, the script in tests/. */
 function initRepo() {
   // realpath: macOS temp dirs are symlinks, and verify-attestation.mjs guards
   // its CLI with a realpath compare of argv[1] against import.meta.url.
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'attest-diff-')));
   repos.push(dir);
-  git(dir, 'init', '-q', '-b', 'main');
+  git(dir, 'init', '-q', '-b', 'dev');
   git(dir, 'config', 'user.email', 't@t.t');
   git(dir, 'config', 'user.name', 't');
   git(dir, 'config', 'commit.gpgsign', 'false');
@@ -37,20 +37,20 @@ function initRepo() {
   copyFileSync(SCRIPT, join(dir, 'tests', 'verify-attestation.mjs'));
   writeFileSync(join(dir, 'shared.txt'), 's\n');
   writeFileSync(join(dir, 'other.txt'), 'o\n');
-  // main as it is before per-PR attestations: one shared legacy file.
+  // dev as it is before per-PR attestations: one shared legacy file.
   writeFileSync(join(dir, 'tests', 'test-attestation.json'), '{"legacy":true}\n');
   git(dir, 'add', '-A');
   git(dir, 'commit', '-qm', 'init');
-  git(dir, 'update-ref', 'refs/remotes/origin/main', head(dir));
+  git(dir, 'update-ref', 'refs/remotes/origin/dev', head(dir));
   return dir;
 }
-/** Advance origin/main by a commit that touches only `other.txt` (unrelated to any PR file). */
+/** Advance origin/dev by a commit that touches only `other.txt` (unrelated to any PR file). */
 function moveMain(dir: string) {
-  git(dir, 'checkout', '-q', 'main');
+  git(dir, 'checkout', '-q', 'dev');
   writeFileSync(join(dir, 'other.txt'), `o-${Date.now()}\n`);
   git(dir, 'add', '-A');
-  git(dir, 'commit', '-qm', 'main moves');
-  git(dir, 'update-ref', 'refs/remotes/origin/main', head(dir));
+  git(dir, 'commit', '-qm', 'dev moves');
+  git(dir, 'update-ref', 'refs/remotes/origin/dev', head(dir));
 }
 /** PR branch that changes only pr.txt, then writes a green attestation and commits it. */
 function attestPrBranch(
@@ -59,7 +59,7 @@ function attestPrBranch(
   branch = 'pr',
   file = 'pr.txt',
 ) {
-  git(dir, 'checkout', '-q', '-b', branch, 'main');
+  git(dir, 'checkout', '-q', '-b', branch, 'dev');
   writeFileSync(join(dir, file), 'v1\n');
   git(dir, 'add', '-A');
   git(dir, 'commit', '-qm', 'pr change');
@@ -77,11 +77,11 @@ function reattest(dir: string) {
   git(dir, 'commit', '-qm', 're-attest');
   return head(dir);
 }
-/** Merge `branch` into main (a PR merge) and move origin/main to it. */
+/** Merge `branch` into dev (a PR merge) and move origin/dev to it. */
 function mergeIntoMain(dir: string, branch: string) {
-  git(dir, 'checkout', '-q', 'main');
+  git(dir, 'checkout', '-q', 'dev');
   git(dir, 'merge', '--no-ff', '--no-edit', '-q', branch);
-  git(dir, 'update-ref', 'refs/remotes/origin/main', head(dir));
+  git(dir, 'update-ref', 'refs/remotes/origin/dev', head(dir));
 }
 /** True when merging `b` into `a` is textually clean (what GitHub calls MERGEABLE). */
 function mergesClean(dir: string, a: string, b: string) {
@@ -102,15 +102,15 @@ afterEach(() => {
 const GIT_TIMEOUT = { timeout: 60_000 };
 
 describe('attestation keyed to the PR diff', GIT_TIMEOUT, () => {
-  it('1: an unrelated origin/main merge keeps verify green', () => {
+  it('1: an unrelated origin/dev merge keeps verify green', () => {
     const dir = initRepo();
     const attested = attestPrBranch(dir);
     expect(run(dir, 'verify', '--rev', attested).status).toBe(0);
 
-    // Merge an origin/main change that touches only other.txt (not a PR file).
+    // Merge an origin/dev change that touches only other.txt (not a PR file).
     moveMain(dir);
     git(dir, 'checkout', '-q', 'pr');
-    git(dir, 'merge', '--no-edit', '-q', 'main');
+    git(dir, 'merge', '--no-edit', '-q', 'dev');
     const merged = head(dir);
 
     // The PR's own file (pr.txt) is unchanged, so the attestation stays valid.
@@ -141,24 +141,24 @@ describe('attestation keyed to the PR diff', GIT_TIMEOUT, () => {
 });
 
 describe('one attestation file per PR', GIT_TIMEOUT, () => {
-  it('a: two PRs off the same main stay mergeable after one of them merges', () => {
+  it('a: two PRs off the same dev stay mergeable after one of them merges', () => {
     const dir = initRepo();
     attestPrBranch(dir, GREEN, 'feat/a', 'a.txt');
     attestPrBranch(dir, GREEN, 'feat/b', 'b.txt');
     mergeIntoMain(dir, 'feat/a');
-    expect(mergesClean(dir, 'refs/remotes/origin/main', 'feat/b')).toBe(true);
+    expect(mergesClean(dir, 'refs/remotes/origin/dev', 'feat/b')).toBe(true);
     expect(tracked(dir, 'feat/b')).toContain('tests/attestations/feat-b.json');
     expect(tracked(dir, 'feat/b')).not.toContain('tests/test-attestation.json'); // legacy pruned
   });
 
-  it('b: an unrelated main merge into B keeps verify --rev B green', () => {
+  it('b: an unrelated dev merge into B keeps verify --rev B green', () => {
     const dir = initRepo();
     attestPrBranch(dir, GREEN, 'feat/a', 'a.txt');
     attestPrBranch(dir, GREEN, 'feat/b', 'b.txt');
     mergeIntoMain(dir, 'feat/a');
     moveMain(dir);
     git(dir, 'checkout', '-q', 'feat/b');
-    git(dir, 'merge', '--no-edit', '-q', 'main');
+    git(dir, 'merge', '--no-edit', '-q', 'dev');
     // Detached checkout (the merge gate's worktree): the PR's own file is found from the diff.
     git(dir, 'checkout', '-q', '--detach', 'feat/b');
     const r = run(dir, 'verify', '--rev', head(dir));
@@ -184,21 +184,21 @@ describe('one attestation file per PR', GIT_TIMEOUT, () => {
     attestPrBranch(dir, GREEN, 'feat/c', 'c.txt');
     attestPrBranch(dir, GREEN, 'feat/a', 'a.txt');
     mergeIntoMain(dir, 'feat/a');
-    expect(tracked(dir, 'main')).toContain('tests/attestations/feat-a.json');
+    expect(tracked(dir, 'dev')).toContain('tests/attestations/feat-a.json');
     for (const branch of ['feat/b', 'feat/c']) {
       git(dir, 'checkout', '-q', branch);
-      git(dir, 'merge', '--no-edit', '-q', 'main');
+      git(dir, 'merge', '--no-edit', '-q', 'dev');
       expect(existsSync(join(dir, 'tests/attestations/feat-a.json'))).toBe(true);
       const rev = reattest(dir);
       expect(tracked(dir, rev)).not.toContain('tests/attestations/feat-a.json');
       expect(run(dir, 'verify', '--rev', rev).status).toBe(0);
     }
     mergeIntoMain(dir, 'feat/b');
-    expect(mergesClean(dir, 'refs/remotes/origin/main', 'feat/c')).toBe(true);
-    // On main (no diverging merge-base) the full-tree hash ignores other PRs' files.
-    git(dir, 'checkout', '-q', 'main');
+    expect(mergesClean(dir, 'refs/remotes/origin/dev', 'feat/c')).toBe(true);
+    // On dev (no diverging merge-base) the full-tree hash ignores other PRs' files.
+    git(dir, 'checkout', '-q', 'dev');
     const onMain = reattest(dir);
-    expect(tracked(dir, onMain)).toContain('tests/attestations/main.json');
+    expect(tracked(dir, onMain)).toContain('tests/attestations/dev.json');
     expect(run(dir, 'verify', '--rev', onMain, '--strict').status).toBe(0);
   });
 
@@ -222,7 +222,7 @@ describe('one attestation file per PR', GIT_TIMEOUT, () => {
     attestPrBranch(dir, GREEN, 'feat/b', 'b.txt'); // older, green
     attestPrBranch(dir, ['core=pass', 'packages=fail', 'db-suites=pass'], 'feat/red', 'red.txt'); // newer, red
     git(dir, 'checkout', '-q', 'feat/b');
-    git(dir, 'merge', '--no-edit', '-q', 'feat/red'); // B merges another PR branch directly, not via main
+    git(dir, 'merge', '--no-edit', '-q', 'feat/red'); // B merges another PR branch directly, not via dev
     const rev = head(dir);
     git(dir, 'checkout', '-q', '--detach');
     expect(run(dir, 'verify', '--rev', rev, '--branch', 'feat/b').status).toBe(0);

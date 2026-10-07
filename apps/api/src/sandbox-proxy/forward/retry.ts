@@ -257,6 +257,7 @@ async function handleUpstreamFailureStatus(
 
   if (upstream.status >= 300 && upstream.status < 400) {
     await turn.abandon();
+    if (promptDedupeKey) releasePromptDelivery(promptDedupeKey);
     const respHeaders = clientResponseHeaders(upstream.headers, origin);
     const safeLocation = sanitizeRedirectLocation(
       previewUrl,
@@ -273,6 +274,8 @@ async function handleUpstreamFailureStatus(
 
   if (upstream.status === 401 && serviceKey && userId) {
     await turn.abandon();
+    // Refused before the daemon ran the prompt: the retry must deliver.
+    if (promptDedupeKey) releasePromptDelivery(promptDedupeKey);
     console.warn(`[PREVIEW] Sandbox ${sandboxId}:${port} rejected signed user context`);
     return jsonProxyError({ error: 'sandbox proxy authentication rejected' }, 502, origin);
   }
@@ -375,8 +378,10 @@ async function handleUpstreamFailureStatus(
       await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
       return 'retry';
     }
-    // Not a Daytona stopped error — pass through.
+    // Not a Daytona stopped error — a definitive 400, never enqueued. Pass it
+    // through and let a same-key retry deliver.
     await turn.abandon();
+    if (promptDedupeKey) releasePromptDelivery(promptDedupeKey);
     const errHeaders = clientResponseHeaders(upstream.headers, origin);
     return new Response(bodyText, {
       status: upstream.status,

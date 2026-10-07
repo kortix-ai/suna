@@ -7,7 +7,8 @@ import {
   resolveSandboxIngress,
   routeSandboxIngress,
 } from '../backend';
-import { requiresSessionVisibility } from '../session-data-ports';
+import { canonicalProxyPath } from '../proxy-path';
+import { carriesSessionData, requiresSessionVisibility } from '../session-data-ports';
 import { resumeAndReloadSandbox, shouldWakeStoppedSandboxForWsAttach } from './wake';
 
 // === WebSocket upstream resolution =============================================
@@ -37,7 +38,10 @@ export async function resolvePreviewWsUpstream(opts: {
   | { ok: true; url: string; headers: Record<string, string> }
   | { ok: false; status: number; message: string }
 > {
-  const { sandboxId, userId, remainingPath, queryString } = opts;
+  const { sandboxId, userId, queryString } = opts;
+  // Same single spelling as the HTTP forwarder (`../proxy-path.ts`).
+  const remainingPath = canonicalProxyPath(opts.remainingPath, carriesSessionData(opts.upstreamPort));
+  if (remainingPath === null) return { ok: false, status: 400, message: 'invalid request path' };
   const callerSessionId = opts.callerSessionId;
   const boundCredentialSessionId = opts.boundCredentialSessionId;
 

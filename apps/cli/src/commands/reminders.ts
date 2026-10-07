@@ -15,6 +15,7 @@ import {
   fail,
   missing,
   resolveProjectContext,
+  shortId,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
@@ -122,6 +123,7 @@ export async function runReminders(argv: string[], shortcut = false): Promise<nu
     return fail(`Unknown subcommand "${sub}". Run \`kortix reminders --help\`.`);
   }
 
+  const implicitSession = flags.session === undefined;
   let sessionRef = flags.session ?? process.env.KORTIX_SESSION_ID;
   if (!sessionRef) return missing('--session <id>. Inside a session it defaults to $KORTIX_SESSION_ID');
 
@@ -189,6 +191,17 @@ export async function runReminders(argv: string[], shortcut = false): Promise<nu
     else process.stdout.write(`${status.ok(`Removed ${id}`)}\n`);
     return 0;
   } catch (err) {
+    // The env session belongs to the sandbox's own host. Against a linked or
+    // --host project elsewhere the API 404s with a bare "Not found" that reads
+    // like a platform failure — name the mismatch and the flag instead. A bad
+    // reminder id 404s too ("Reminder not found"); keep the server's text.
+    const body = (err as { body?: { error?: unknown } })?.body;
+    if (implicitSession && (err as { status?: unknown })?.status === 404 && body?.error === 'Not found') {
+      process.stderr.write(
+        `${status.err(`Session ${shortId(sessionRef)} (from $KORTIX_SESSION_ID) not found in this project (${ctx.auth.api_base}). Pass --session <id> to target a session on this host.`)}\n`,
+      );
+      return 1;
+    }
     const code = surfaceApiError(err);
     if ((err as { body?: { code?: unknown } })?.body?.code === 'feature_disabled') {
       process.stderr.write(`  ${C.dim}Turn it on: kortix projects features enable reminders${C.reset}\n`);
