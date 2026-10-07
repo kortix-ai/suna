@@ -1,5 +1,5 @@
 {
-  "source_hash": "3d1ad14b54f6c5d1bdca23a3a75472884f90fe32f97e9f3ee1965d2138744740",
+  "source_hash": "940394a0b2b2bc017831c14335d286015e70fc7d75e9bcfe396aeac776cdc914",
   "diff_files": [
     "apps/cli/DESIGN.md",
     "apps/cli/src/__tests__/triggers.test.ts",
@@ -8,13 +8,13 @@
     "apps/web/content/docs/cli.mdx",
     "apps/web/content/docs/connect/triggers.mdx"
   ],
-  "diff_hash": "c84191f35109304f45b0c9db833f150e47c27b960dc382de2bca4e24b281375f",
-  "head": "ae2de77221fa2bb4a73b13214a57aad8a33557b0",
+  "diff_hash": "eb0da7730df8051bd9dd6e46593b212c6e39b1fa104d13f915006af68e47a010",
+  "head": "9351366478f4c2f285bdb19d701d08ac45f27b99",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-06T21:53:19.197Z"
+  "at": "2026-10-07T07:26:44.705Z"
 }
