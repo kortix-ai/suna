@@ -419,6 +419,7 @@ export async function appBackendTokenResponse(
   request: Request,
   url: URL,
   app: AppAccessRow & { viewerTokenScope?: string | null },
+  verifyUserAccess: AppUserAccessVerifier = appAccessibleToUser,
 ): Promise<Response> {
   const noStore = { 'cache-control': 'no-store' };
   if (normalizeViewerTokenScope(app.viewerTokenScope) === 'off') {
@@ -433,13 +434,26 @@ export async function appBackendTokenResponse(
   if (viewer.agentViewer) {
     // As on /_kortix/viewer: an agent session must not act as the human who launched it.
     return Response.json(
-      { error: 'agent_viewer', error_description: 'An agent session mints its own token: POST /v1/projects/{projectId}/backends/{backendId}/token.' },
+      { error: 'agent_viewer', error_description: 'An agent session mints a token naming the agent: POST /v1/projects/{projectId}/backends/{backendId}/token.' },
       { status: 403, headers: noStore },
+    );
+  }
+  // A public App lets every request through, so nothing re-checked the gate
+  // cookie: a member removed after redeeming a link kept minting backend
+  // tokens for the cookie's 8 h. A token is a credential, so re-check access.
+  if (app.accessMode === 'public' && !(await verifyUserAccess(app, viewer.userId))) {
+    return Response.json(
+      { error: 'no_viewer_identity', error_description: 'The signed-in viewer no longer has access to this App.', access_mode: app.accessMode },
+      { status: 401, headers: noStore },
     );
   }
   // Loaded on use: the backends service pulls the project graph, which the App
   // gate's hot path (and every hand-written module mock of it) does not need.
-  const { backendMemberToken, getRunningBackendByName } = await import('../backends/provision');
+  const { backendMemberToken, backendsEnabled, getRunningBackendByName } = await import('../backends/provision');
+  if (!(await backendsEnabled(app.projectId))) {
+    const { featureDisabledBody } = await import('../feature-flags/gate');
+    return Response.json(featureDisabledBody('backends'), { status: 403, headers: noStore });
+  }
   const backend = await getRunningBackendByName(app.projectId, name);
   if (!backend) {
     return Response.json(

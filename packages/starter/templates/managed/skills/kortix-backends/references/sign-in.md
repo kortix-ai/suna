@@ -219,13 +219,14 @@ process. `kortix backends connect <name>` prints these values.
 
 | Caller | How | Notes |
 | --- | --- | --- |
-| A person using a Kortix App | `kortixAppBackendToken("<name>")` (wraps `GET /_kortix/backend-token?backend=<name>` on the App's own origin) | Needs a signed-in viewer: access `private`, `project` or `restricted`, and `--viewer` not `off`. A `public` or `password` App gets `401`. |
-| You (an agent) or a script | `kortix backends token <name>` · `POST /v1/projects/{projectId}/backends/{backendId}/token` · SDK `kortix.project(id).backends.token(backendId)` | Names the caller, with groups and role. |
+| A person using a Kortix App | `kortixAppBackendToken("<name>")` (wraps `GET /_kortix/backend-token?backend=<name>` on the App's own origin) | Needs a signed-in viewer and `--viewer` not `off`. A `public` App has one only when the person opened it through Kortix or an access link, and Kortix re-checks their access on every token. An anonymous visitor and a `password` App get `401`. |
+| You (an agent) or a script | `kortix backends token <name>` · `POST /v1/projects/{projectId}/backends/{backendId}/token` · SDK `kortix.project(id).backends.token(backendId)` | A person's own credential: names that person, with groups and role. An agent session: names the agent (`sub` = its service account id, `kind: "agent"`), with no groups and no role, so `groups` or `roles` rules refuse it. |
 | Admin tooling | `npx convex run --identity '{"subject":"…","issuer":"<KORTIX_AUTH_ISSUER>","groups":["Finance"]}' fn args` | Admin key only; for testing auth rules. |
 
-An agent session that calls an App's `/_kortix/backend-token` with its own
-Kortix token (`$KORTIX_TOKEN`) gets `403 agent_viewer`: it must not act as
-the person who launched it. Use `kortix backends token`. A browser opened on
+An agent session never gets a token that names the person who launched it.
+Calling an App's `/_kortix/backend-token` with its own Kortix token
+(`$KORTIX_TOKEN`) answers `403 agent_viewer`; `kortix backends token` answers
+a token that names the agent. A browser opened on
 a `kortix apps access-link` URL carries that link's sign-in cookie, so the App
 gets a token for the user the link was minted for. That is how you test the
 App as a member (kortix-internal-apps).
@@ -251,7 +252,8 @@ Call the route the App calls, from the App's origin, and read the code:
 
 | Answer from `/_kortix/backend-token` | Cause | Fix |
 | --- | --- | --- |
-| `401 no_viewer_identity` | No Kortix session on the request, or the App is `public` or `password` | Open the App through Kortix or an access link; set access `private`, `project` or `restricted`. |
+| `401 no_viewer_identity` | No Kortix session on the request, a `password` App, or a `public` App whose viewer lost access | Open the App through Kortix or an access link; set access `private`, `project` or `restricted`. |
+| `403 feature_disabled` | The project has Backends off | Ask Kortix to enable Backends for the project. |
 | `403 agent_viewer` | An agent session's own token | `kortix backends token <name>`. |
 | `404 viewer_disabled` | The App's viewer is `off` | `kortix apps access <app> --viewer identity`. |
 | `404 backend_not_found` | No running backend with that name in the App's project | Check `kortix backends list` and the name in `kortixAppBackendToken("<name>")`. |
@@ -359,7 +361,7 @@ eval "$(kortix backends env main)" && cd backends/main
 ISS=$(npx convex env get KORTIX_AUTH_ISSUER)
 npx convex run tasks:list '{}'      # admin, no identity → your function must reject
 npx convex run --identity "{\"subject\":\"u1\",\"issuer\":\"$ISS\",\"email\":\"a@example.com\",\"name\":\"A\",\"groups\":[\"Finance\"]}" tasks:create '{"title":"x"}'
-kortix backends token main          # a real token naming you, with your groups
+kortix backends token main          # a real token; in a session it names the agent (no groups, no role)
 ```
 
 `--identity` without `"issuer"` uses `https://convex.test`, which

@@ -27,9 +27,10 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { projectBackends } from '@kortix/db';
+import { projectBackends, projects } from '@kortix/db';
 import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { config } from '../config';
+import { resolveFeatureFlag } from '../feature-flags/registry';
 import { oauthIssuer } from '../oauth/discovery';
 import { db } from '../shared/db';
 import { PlatinumHttpError, platinumJson } from '../shared/platinum';
@@ -326,6 +327,12 @@ export function backendPublicAuthEnv(row: BackendRow) {
     KORTIX_AUTH_AUDIENCE: env.KORTIX_AUTH_AUDIENCE!,
     KORTIX_AUTH_JWKS: env.KORTIX_AUTH_JWKS!,
   };
+}
+
+/** Whether the project has the `backends` flag on. Fail-closed: a missing project is off. */
+export async function backendsEnabled(projectId: string): Promise<boolean> {
+  const [row] = await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  return Boolean(row) && resolveFeatureFlag(row!.metadata, 'backends');
 }
 
 /** A live, running backend of this project by name, or null. */

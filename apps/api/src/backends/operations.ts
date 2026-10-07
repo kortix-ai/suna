@@ -16,6 +16,8 @@
  *   401 BadAdminKey; documents, files and environment variables are kept).
  * - Recovery: start a stopped machine, re-spawn a lost or system-tombstoned one
  *   from its last automatic backup. Maintenance runs it (./maintenance.ts).
+ * - A restore (backup or snapshot) of a backend whose admin key was ever
+ *   rotated rotates it again, so a key rotated away never works again.
  *
  * One operation at a time per backend (`metadata.operation`). A running
  * operation heartbeats (`keepAlive`); one silent for OPERATION_STALE_MS lost
@@ -184,8 +186,7 @@ export async function restoreBackendSnapshot(row: BackendRow, snapshotId: string
   await waitHealthy(row.url!).catch(() => {
     throw new BackendOperationError('the backend did not come back healthy after the restore; retry or restore again', 'restore_unhealthy');
   });
-  // A snapshot taken before an admin-key rotation brings the old instance
-  // secret back; Kortix must hold the key the machine accepts now.
+  await rotateAgainAfterRestore(row, externalId);
   await sealAdminKey(row);
 }
 
@@ -288,6 +289,32 @@ echo 'convex did not stop' >&2
 exit 1`;
 
 /**
+ * A restored disk (automatic backup or snapshot) carries the instance secret
+ * it was taken with. When the admin key was ever rotated, that can be the
+ * secret of a key someone rotated away from because it leaked. Rotating again
+ * makes sure the old key never comes back. It costs one more Convex restart
+ * (under 1 s), and the admin key changes: read it again after a restore.
+ */
+async function rotateAgainAfterRestore(row: BackendRow, externalId: string): Promise<void> {
+  if (!(row.metadata as { adminKeyRotatedAt?: string } | null)?.adminKeyRotatedAt) return;
+  logger.warn('[backends] restored a backend whose admin key was rotated; rotating again', { backendId: row.backendId });
+  await execInBackend(externalId, ROTATE_INSTANCE_SECRET_SCRIPT, 30_000);
+  await waitHealthy(row.url!);
+  await markRotated(row.backendId);
+}
+
+/** Records that the admin key was rotated. Rotation writes it before the secret changes, so no crash loses it. */
+async function markRotated(backendId: string): Promise<void> {
+  await db
+    .update(projectBackends)
+    .set({
+      updatedAt: new Date(),
+      metadata: sql`coalesce(${projectBackends.metadata}, '{}'::jsonb) || ${JSON.stringify({ adminKeyRotatedAt: new Date().toISOString() })}::jsonb`,
+    })
+    .where(eq(projectBackends.backendId, backendId));
+}
+
+/**
  * Replaces the backend's admin key: every key handed out before stops working.
  * Convex derives admin keys from its instance secret, so the secret changes
  * and Convex restarts (under 1 s). Data, files and environment variables stay.
@@ -300,6 +327,7 @@ export async function rotateBackendAdminKey(row: BackendRow): Promise<void> {
   }
   const stopHeartbeat = keepAlive(row.backendId);
   try {
+    await markRotated(row.backendId);
     await execInBackend(externalId, ROTATE_INSTANCE_SECRET_SCRIPT, 30_000);
     await waitHealthy(row.url!);
     await sealAdminKey(row);
@@ -383,6 +411,7 @@ export async function recoverBackend(row: BackendRow): Promise<RecoveryAction> {
     current = await readMachine(externalId);
   }
   await waitHealthy(row.url);
+  if (action === 'restored_from_backup') await rotateAgainAfterRestore(row, externalId);
   await sealAdminKey(row);
   const size = {
     cpu: current.cpu,

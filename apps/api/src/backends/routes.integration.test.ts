@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
-import { accountMembers, accounts, projectBackends, projectMembers, projects } from '@kortix/db';
+import { accountMembers, accounts, projectBackends, projectMembers, projectSessions, projects, serviceAccounts, sessionSandboxes } from '@kortix/db';
 import { config } from '../config';
 import { db } from '../shared/db';
 import { app } from '../index';
@@ -10,6 +10,8 @@ import { encryptProjectSecret } from '../projects/surface';
 import { verifyKortixMemberToken } from '@kortix/sdk';
 import { generateBackendAuthKey } from './auth';
 import { CONVEX_CLI_VERSION } from './convex-image';
+import { appAccessCookieName, createAppAccessToken } from '../apps/access';
+import { appBackendTokenResponse } from '../apps/public-proxy-access';
 
 // The backend routes against the real DB, with no Platinum call: the
 // credentials and token responses must not be cached (L4), every backend names
@@ -22,9 +24,13 @@ const RUNNING = crypto.randomUUID();
 const ISSUED = crypto.randomUUID();
 const ISSUER = `https://api.example.test/v1/backends/${ISSUED}`;
 const ADMIN_KEY = 'synthetic-admin|key';
+const AGENT_SA = crypto.randomUUID();
+const AGENT_SESSION = crypto.randomUUID();
 
 let secret = '';
 let tokenId = '';
+let agentSecret = '';
+let agentTokenId = '';
 const originalPlatinumKey = config.PLATINUM_API_KEY;
 
 beforeAll(async () => {
@@ -46,6 +52,28 @@ beforeAll(async () => {
   const token = await createAccountToken({ accountId: ACCOUNT, userId: MANAGER, name: 'backend-routes-test' });
   tokenId = token.tokenId;
   secret = token.secretKey;
+  // An agent session the owner launched: its token row names the owner as
+  // `user_id` and the agent's service account.
+  await db.insert(serviceAccounts).values({
+    serviceAccountId: AGENT_SA, accountId: ACCOUNT, name: `agent-${AGENT_SA}`,
+    secretHash: `sa-${AGENT_SA}`, publicPrefix: 'kortix_sa_backend', createdBy: MANAGER,
+  });
+  await db.insert(projectSessions).values({
+    sessionId: AGENT_SESSION, accountId: ACCOUNT, projectId: PROJECT, branchName: `session/${AGENT_SESSION}`,
+    createdBy: MANAGER, visibility: 'project', status: 'running',
+  });
+  await db.insert(sessionSandboxes).values({
+    sandboxId: crypto.randomUUID(), sessionId: AGENT_SESSION, accountId: ACCOUNT, projectId: PROJECT,
+    externalId: 'sbx-agent-synthetic', provider: 'platinum', status: 'active',
+    baseUrl: 'http://127.0.0.1:9', config: {}, deadlineAt: new Date(Date.now() + 60 * 60 * 1000),
+  });
+  const agentToken = await createAccountToken({
+    accountId: ACCOUNT, userId: MANAGER, name: 'agent session', projectId: PROJECT,
+    sessionId: AGENT_SESSION, serviceAccountId: AGENT_SA,
+    agentGrant: { agent: 'kortix', permissions: 'all', connectors: 'all', env: 'all' },
+  });
+  agentTokenId = agentToken.tokenId;
+  agentSecret = agentToken.secretKey;
   await db.insert(projectBackends).values({
     backendId: RUNNING,
     projectId: PROJECT,
@@ -82,16 +110,17 @@ beforeAll(async () => {
 
 afterAll(async () => {
   config.PLATINUM_API_KEY = originalPlatinumKey;
-  await db.execute(sql`delete from kortix.account_tokens where token_id = ${tokenId}`);
+  await db.execute(sql`delete from kortix.account_tokens where token_id in (${tokenId}, ${agentTokenId})`);
+  await db.delete(serviceAccounts).where(eq(serviceAccounts.accountId, ACCOUNT));
   await db.delete(projectBackends).where(eq(projectBackends.accountId, ACCOUNT));
   await db.delete(projects).where(eq(projects.accountId, ACCOUNT));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
 });
 
-const call = (method: string, path: string, body?: unknown) =>
+const call = (method: string, path: string, body?: unknown, bearer = secret) =>
   app.request(`/v1/projects/${PROJECT}/backends${path}`, {
     method,
-    headers: { Authorization: `Bearer ${secret}`, 'content-type': 'application/json' },
+    headers: { Authorization: `Bearer ${bearer}`, 'content-type': 'application/json' },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
 
@@ -133,6 +162,25 @@ describe('backend routes', () => {
     expect(member.projectId).toBe(PROJECT);
   });
 
+  test('an agent session gets a token naming the agent, never the owner who launched it', async () => {
+    const res = await call('POST', `/${RUNNING}/token`, {}, agentSecret);
+    expect(res.status).toBe(200);
+    const { backend } = await (await call('GET', `/${RUNNING}`)).json();
+    const { token } = await res.json();
+    expect(JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString()).kind).toBe('agent');
+    const member = await verifyKortixMemberToken(token, {
+      jwks: backend.auth_env.KORTIX_AUTH_JWKS,
+      issuer: backend.auth_env.KORTIX_AUTH_ISSUER,
+      audience: backend.auth_env.KORTIX_AUTH_AUDIENCE,
+    });
+    expect(member.userId).toBe(AGENT_SA);
+    expect(member.userId).not.toBe(MANAGER);
+    expect(member.role).toBeNull();
+    expect(member.email).toBeNull();
+    expect(member.groups).toEqual([]);
+    expect(member.groupIds).toEqual([]);
+  });
+
   test('a create past the project cap answers 409 backend_limit and inserts nothing', async () => {
     await db.insert(projectBackends).values(
       ['second', 'third'].map((name) => ({
@@ -153,6 +201,42 @@ describe('backend routes', () => {
     expect(body.error).toContain('at most 3 backends');
     const rows = await db.select().from(projectBackends).where(eq(projectBackends.projectId, PROJECT));
     expect(rows.map((r) => r.name).sort()).toEqual(['issued', 'main', 'second', 'third']);
+  });
+});
+
+describe('GET /_kortix/backend-token on the App gate', () => {
+  const APP = crypto.randomUUID();
+  const gateApp = (accessMode: string) => ({
+    appId: APP, accountId: ACCOUNT, projectId: PROJECT, name: 'gate-test', accessMode,
+    accessPasswordHash: null, accessRevision: 1, createdBy: MANAGER, updatedAt: new Date(),
+    viewerTokenScope: 'identity',
+  });
+  const ask = (accessMode: string, userId: string) => {
+    const cookie = createAppAccessToken({ appId: APP, kind: 'kortix', userId, revision: 1, expiresAt: new Date(Date.now() + 60_000) });
+    const url = new URL('https://gate-test.apps.example.test/_kortix/backend-token?backend=main');
+    const request = new Request(url, { headers: { cookie: `${appAccessCookieName()}=${cookie}` } });
+    return appBackendTokenResponse(request, url, gateApp(accessMode));
+  };
+
+  test('a public App: a member with a gate cookie gets a token', async () => {
+    expect((await ask('public', MANAGER)).status).toBe(200);
+  });
+
+  test('a public App: a cookie of someone who lost access mints nothing', async () => {
+    const res = await ask('public', crypto.randomUUID());
+    expect(res.status).toBe(401);
+    expect((await res.json()).error).toBe('no_viewer_identity');
+  });
+
+  test('the project with backends off: 403 feature_disabled', async () => {
+    await db.update(projects).set({ metadata: { experimental: { backends: false } } }).where(eq(projects.projectId, PROJECT));
+    try {
+      const res = await ask('public', MANAGER);
+      expect(res.status).toBe(403);
+      expect((await res.json()).code).toBe('feature_disabled');
+    } finally {
+      await db.update(projects).set({ metadata: { experimental: { backends: true } } }).where(eq(projects.projectId, PROJECT));
+    }
   });
 });
 

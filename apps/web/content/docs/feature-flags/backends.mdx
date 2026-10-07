@@ -246,7 +246,7 @@ within 15 minutes. The App gate refuses them at once:
 | Caller | Token source |
 |---|---|
 | A person in a Kortix App | `GET /_kortix/backend-token?backend=<name>` on the App's own origin |
-| An agent, script or CLI | `kortix backends token <name>`, `POST /v1/projects/:id/backends/:backendId/token`, SDK `backends.token(id)` |
+| An agent, script or CLI | `kortix backends token <name>`, `POST /v1/projects/:id/backends/:backendId/token`, SDK `backends.token(id)`. An agent session's token names the agent (`kind: "agent"`), with no groups and no role. |
 
 ## Use a backend from an App
 
@@ -306,7 +306,8 @@ In the examples, `CONVEX_URL` is the backend's `url` and `CONVEX_SITE_URL`
 its `site_url` (`kortix backends get main --json`).
 
 **1. Get a member token.** It lasts 15 minutes and names the caller, with
-their groups and role.
+their groups and role. In an agent session it names the agent, with no groups
+and no role.
 
 ```bash
 TOKEN=$(kortix backends token main)
@@ -530,9 +531,10 @@ and clients reconnect. After it:
 - Member sign-in tokens keep working: they use a different key.
 - A dashboard open in Kortix web signs in again after a reload.
 
-Restoring a snapshot taken before a rotation brings the old instance secret
-back, so the old admin key works again. Kortix re-reads the key after every
-restore. Rotate again after such a restore.
+A restored disk (a snapshot, or the automatic backup after a host loss)
+carries the instance secret it was taken with. If the backend's admin key was
+ever rotated, Kortix rotates it again after every restore, so a key you
+rotated away never works again. Read the admin key again after a restore.
 
 ## Use Convex directly
 

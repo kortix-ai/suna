@@ -1489,7 +1489,12 @@ provision resumes on its Idempotency-Key and reaches `running`, one interrupted
 `last_operation_error`, the health probe records `health` and starts a stopped
 machine, restores a tombstoned one from backup, and turns a missing one `error`
 after 3 probes; admin-key rotation seals the key Convex accepts and answers
-`409 backend_busy` during another operation; the logs route strips color codes
+`409 backend_busy` during another operation; a backup or snapshot restore of a
+rotated backend rotates again, so the rotated-away key never returns; an agent
+session's token names the agent's service account (`kind: "agent"`, no role,
+no groups), never its launcher; the App gate's `/_kortix/backend-token`
+re-checks a `public` App's cookie viewer (`401` once access is gone) and
+answers `403 feature_disabled` with Backends off; the logs route strips color codes
 and rejects `lines` outside 1–1000. Not asserted locally:
 create (`202 provisioning`), a duplicate name (`409 backend_name_taken`), the
 `backend.credentials.read` audit row, and delete. They

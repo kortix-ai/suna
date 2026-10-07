@@ -135,7 +135,7 @@ migration, a bulk import or a destructive backfill.
 kortix backends logs main --lines 200                  # process log: crashes, restarts
 timeout 20 npx convex logs --history 50                # function logs; it never exits by itself
 npx convex run tasks:list '{}'                         # admin, no identity: must FAIL
-TOKEN=$(kortix backends token main)                    # a real member token naming you
+TOKEN=$(kortix backends token main)                    # a real token: in a session it names the agent, not you
 curl -s "$(kortix backends get main --json | python3 -c 'import sys,json;print(json.load(sys.stdin)["backend"]["url"])')/api/query" \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"path":"tasks:list","args":{},"format":"json"}'  # must answer "status":"success"
@@ -162,7 +162,7 @@ Commit the Convex code on the session branch like any other code.
 | `kortix backends dashboard <name>` | Link to the backend's admin dashboard in Kortix. If `--json` shows `dashboard_available: false`, use the Convex CLI. |
 | `kortix backends connect <name> [--json]` | Working code to reach the backend from an App, from outside, and from the CLI. No secret. |
 | `kortix backends env <name>` | Shell exports for the Convex CLI (admin). Use with `eval`. |
-| `kortix backends token <name>` | A 15-minute sign-in token naming you, with your groups and role. |
+| `kortix backends token <name>` | A 15-minute sign-in token. A person's own login: names that person, with groups and role. An agent session: names the agent (`kind: "agent"`), with no groups and no role. |
 | `kortix backends deploy <name> --dir <path> [--create]` | Deploy. `--create` creates a missing backend first. |
 | `kortix backends resize <name> --cpu N --memory GB --disk GB` | Resize (see Size, backups and restore). |
 | `kortix backends backups <name>` · `snapshot <name>` · `restore <name> <id>` | Backups and point-in-time restore. |

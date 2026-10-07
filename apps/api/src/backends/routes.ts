@@ -10,6 +10,7 @@ import { requireFeatureFlag } from '../feature-flags/gate';
 import { resolveSessionSandboxRegion } from '../platform/services/sandbox-region';
 import type { AppEnv } from '../types';
 import { resolveAppViewerIdentity } from '../apps/viewer';
+import { actorOf } from '../middleware/actor';
 import { checkBillingAdmission } from '../billing/services/billing-gate';
 import {
   BackendLimitError,
@@ -340,7 +341,9 @@ export function registerBackendsRoutes(): void {
       summary: 'Mint a Kortix sign-in token for the backend', ...auth,
       description:
         `A ${BACKEND_TOKEN_TTL_SECONDS / 60}-minute JWT naming the caller (\`subject\` = Kortix user id, \`email\`). The backend verifies it ` +
-        'with the key Kortix wrote into its environment; read it in a function with `ctx.auth.getUserIdentity()`.',
+        'with the key Kortix wrote into its environment; read it in a function with `ctx.auth.getUserIdentity()`. ' +
+        'An agent session gets a token naming its agent (`subject` = service account id, `kind: "agent"`, no role, no groups), ' +
+        'never the human who launched it.',
       request: { params: BackendParams },
       responses: { 200: json(BackendToken, 'Token'), ...errors(403, 404, 409) },
     }),
@@ -353,8 +356,16 @@ export function registerBackendsRoutes(): void {
       if (row.status !== 'running') {
         return c.json({ error: `backend is ${effectiveStatus(row)}`, code: 'backend_not_running' }, 409);
       }
-      const identity = await resolveAppViewerIdentity(loaded.userId, row.accountId);
-      const minted = backendMemberToken(row, { userId: loaded.userId, ...identity });
+      // An agent session's credential names the human who launched it. A token
+      // for that id would carry the human's role and groups, so the agent gets
+      // one naming its own service account, with no role and no groups.
+      const { credential } = await actorOf(c, row.accountId);
+      const minted = backendMemberToken(
+        row,
+        credential.kind === 'agent_session'
+          ? { userId: credential.serviceAccountId, email: null, kind: 'agent' }
+          : { userId: loaded.userId, ...(await resolveAppViewerIdentity(loaded.userId, row.accountId)) },
+      );
       if (!minted) {
         return c.json({ error: 'this backend predates Kortix sign-in; create a new backend', code: 'backend_auth_unavailable' }, 409);
       }
@@ -423,8 +434,8 @@ export function registerBackendsRoutes(): void {
         'Replaces the admin key. Every key read before stops working (401). Convex derives admin keys from its ' +
         'instance secret, so the secret changes and Convex restarts (about 1 s of downtime; clients reconnect). ' +
         'Documents, files and environment variables stay. Upload URLs not yet used and open pagination cursors ' +
-        'stop working. Read the new key from `/credentials`. Restoring a snapshot taken before a rotation brings ' +
-        'the old key back: rotate again after such a restore.',
+        'stop working. Read the new key from `/credentials`. A restore (snapshot or automatic backup) of a backend ' +
+        'whose key was ever rotated rotates it again, so a rotated-away key never works again: read the key again after a restore.',
       request: { params: BackendParams },
       responses: { 200: json(z.object({ backend: BackendObject }), 'Rotated'), ...errors(400, 403, 404, 409, 502, 503) },
     }),

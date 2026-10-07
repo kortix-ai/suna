@@ -84,8 +84,9 @@ if (health && !health.ok) console.warn(health.machine_state, health.error);
 ```
 
 Rotation keeps documents, files, functions and environment variables. It
-invalidates upload URLs not yet used and open pagination cursors. Restoring a
-snapshot taken before a rotation brings the old key back: rotate again.
+invalidates upload URLs not yet used and open pagination cursors. After a restore
+(snapshot or automatic backup) of a backend whose key was ever rotated, Kortix
+rotates it again: read the key again.
 `rotateAdminKey` and `logs` need `project.backend.write`. `rotateAdminKey`
 answers `409` with `backend_busy` while another operation runs.
 

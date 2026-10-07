@@ -16,7 +16,7 @@ import { createAccountToken } from '../repositories/account-tokens';
 import { insertIntoView } from '../__tests__/helpers/compat-views';
 import { decryptProjectSecret, encryptProjectSecret } from '../projects/surface';
 import { MAX_PROVISION_ATTEMPTS, UNHEALTHY_ALERT_AFTER, sweepBackends } from './maintenance';
-import { BackendOperationError, claimOperation, rotateBackendAdminKey } from './operations';
+import { BackendOperationError, claimOperation, restoreBackendSnapshot, rotateBackendAdminKey } from './operations';
 import { type BackendRow, discardMachine } from './provision';
 import { ORPHAN_MACHINE_GRACE_MS, deleteAccountBackends, reapOrphanBackendMachines } from './lifecycle';
 import { sandboxOwnershipMarker } from '../platform/sandbox-ownership';
@@ -38,6 +38,8 @@ type Machine = {
   ramMb: number;
   diskGb: number;
   secret: number;
+  /** The instance secret on the disk a backup or snapshot restore brings back. */
+  backupSecret?: number;
   autoResume?: boolean;
   snapshots?: string[];
   /** Listed by GET /v1/sandboxes; a machine without it is not listed. */
@@ -48,6 +50,8 @@ const machines = new Map<string, Machine>();
 const calls: string[] = [];
 const listPages: string[] = [];
 let convexDown = false;
+/** Every rotation writes a secret no machine had before. */
+let secretSeq = 100;
 
 const keyFor = (id: string) => `synthetic|${id}-secret-${machines.get(id)?.secret ?? 0}`;
 const machineOf = (path: string) => /^\/v1\/sandboxes\/([^/?]+)/.exec(path)?.[1] ?? '';
@@ -130,7 +134,12 @@ const platinum = Bun.serve({
     if (req.method === 'POST' && sub === '/restore-from-backup') {
       m.state = 'running';
       m.recoverable = false;
+      m.secret = m.backupSecret ?? m.secret;
       return Response.json({ state: 'restoring' });
+    }
+    if (req.method === 'POST' && sub === '/restore') {
+      m.secret = m.backupSecret ?? m.secret;
+      return Response.json({ state: 'running' });
     }
     if (req.method === 'DELETE' && sub === '') {
       if (failDelete.has(id)) return Response.json({ error: 'synthetic failure' }, { status: 500 });
@@ -141,7 +150,7 @@ const platinum = Bun.serve({
       const script = ((await req.json()) as { cmd: string[] }).cmd[2]!;
       if (script.includes('generate_admin_key.sh')) return Response.json({ result: { exit_code: 0, stdout: `Admin key:\n${keyFor(id)}\n` } });
       if (script.includes('instance_secret.next')) {
-        m.secret += 1;
+        m.secret = ++secretSeq;
         return Response.json({ result: { exit_code: 0, stdout: '' } });
       }
       if (script.includes('tail -n')) {
@@ -376,6 +385,30 @@ describe('admin-key rotation (H4)', () => {
     expect(sealed).toBe(keyFor('sbx-rotate'));
     expect(meta(after).operation).toBeUndefined();
     expect(meta(after).lastOperationError).toBeUndefined();
+  });
+
+  test('a restore from a backup taken before the rotation rotates again: the leaked key never comes back', async () => {
+    const row = await runningBackend('rotate-restore', {});
+    const leaked = keyFor('sbx-rotate-restore');
+    await rotateBackendAdminKey(row);
+    expect(typeof meta(await read(row.backendId)).adminKeyRotatedAt).toBe('string');
+    // The host is lost before the next hourly backup: the backup still holds the old secret.
+    Object.assign(machines.get('sbx-rotate-restore')!, { state: 'deleted', recoverable: true, backupSecret: 1 });
+    await sweepBackends();
+    const after = await eventually(() => read(row.backendId), (r) => !meta(r).operation);
+    expect(calls).toContain('POST /v1/sandboxes/sbx-rotate-restore/restore-from-backup');
+    expect(keyFor('sbx-rotate-restore')).not.toBe(leaked);
+    expect(decryptProjectSecret(PROJECT, after.adminKeyEnc!)).toBe(keyFor('sbx-rotate-restore'));
+  });
+
+  test('a snapshot restore after a rotation rotates again', async () => {
+    const row = await runningBackend('rotate-snapshot', { snapshots: ['snap-old'] });
+    const leaked = keyFor('sbx-rotate-snapshot');
+    await rotateBackendAdminKey(row);
+    machines.get('sbx-rotate-snapshot')!.backupSecret = 1;
+    await restoreBackendSnapshot(await read(row.backendId), 'snap-old');
+    expect(keyFor('sbx-rotate-snapshot')).not.toBe(leaked);
+    expect(decryptProjectSecret(PROJECT, (await read(row.backendId)).adminKeyEnc!)).toBe(keyFor('sbx-rotate-snapshot'));
   });
 
   test('a rotation during another operation answers backend_busy and changes nothing', async () => {

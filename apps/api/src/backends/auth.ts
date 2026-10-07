@@ -23,7 +23,9 @@
  * Inside a function, `ctx.auth.getUserIdentity()` then names the member, and
  * `requireKortixMember` from `@kortix/sdk` reads it: `sub` (Kortix user id),
  * `email`, `name`, `picture`, `groups` (names in the account), `group_ids`,
- * `role` (account role), `account_id`, `project_id`. Any other server verifies
+ * `role` (account role), `account_id`, `project_id`. A token minted for an
+ * agent session names the agent's service account and carries `kind: "agent"`,
+ * no role and no groups. Any other server verifies
  * the same token with `verifyKortixMemberToken` and the KORTIX_AUTH_* env.
  *
  * Fifteen minutes: the App gate re-checks access on every page load, but a
@@ -83,7 +85,7 @@ export function backendOpenIdConfiguration(issuer: string) {
     id_token_signing_alg_values_supported: ['ES256'],
     subject_types_supported: ['public'],
     response_types_supported: ['id_token'],
-    claims_supported: ['iss', 'aud', 'sub', 'iat', 'exp', 'email', 'name', 'picture', 'groups', 'group_ids', 'role', 'account_id', 'project_id'],
+    claims_supported: ['iss', 'aud', 'sub', 'iat', 'exp', 'email', 'name', 'picture', 'groups', 'group_ids', 'role', 'account_id', 'project_id', 'kind'],
   };
 }
 
@@ -99,6 +101,8 @@ export interface BackendTokenSubject {
   role?: string | null;
   accountId?: string | null;
   projectId?: string | null;
+  /** `agent` when the subject is an agent's service account, not a person. */
+  kind?: 'agent';
 }
 
 /** A JWT the backend accepts for this member, valid for BACKEND_TOKEN_TTL_SECONDS. */
@@ -126,6 +130,7 @@ export function mintBackendToken(
       ...(subject.role ? { role: subject.role } : {}),
       ...(subject.accountId ? { account_id: subject.accountId } : {}),
       ...(subject.projectId ? { project_id: subject.projectId } : {}),
+      ...(subject.kind ? { kind: subject.kind } : {}),
     }),
   );
   // JOSE wants the raw r||s signature, not DER.
