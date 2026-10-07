@@ -110,8 +110,19 @@ describe('external directory updates', () => {
 
   test('does not introduce polling for other freshness tiers', () => {
     for (const tier of ['live', 'config', 'inventory', 'volatile'] as const) {
-      expect(contract(tier)).not.toHaveProperty('refetchInterval');
+      // No unconditional polling: a healthy entry must never get a periodic
+      // refetch (that is the directory tier's job, and the source of the page
+      // churn this pin exists to prevent). The only refetchInterval member is
+      // the error fail-safe, a FUNCTION — and it returns false for every state
+      // a healthy query passes through, so TanStack schedules no timer at all
+      // for a pending, fulfilled, or stale-data entry.
+      const interval = contract(tier).refetchInterval;
+      expect(typeof interval).toBe('function');
       expect(contract(tier)).not.toHaveProperty('refetchOnWindowFocus');
+      const fn = interval as unknown as (query: { state: { status: string; data?: unknown; errorUpdateCount: number } }) => number | false;
+      expect(fn({ state: { status: 'pending', data: undefined, errorUpdateCount: 0 } })).toBe(false);
+      expect(fn({ state: { status: 'success', data: {}, errorUpdateCount: 0 } })).toBe(false);
+      expect(fn({ state: { status: 'error', data: { stale: true }, errorUpdateCount: 3 } })).toBe(false);
     }
   });
 });
