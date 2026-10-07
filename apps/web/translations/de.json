@@ -2200,6 +2200,12 @@
       }
     }
   },
+  "ssoRequired": {
+    "title": "Mit Single Sign-On anmelden",
+    "description": "Ihre Organisation verlangt Single Sign-On für dieses Konto. Melden Sie sich ab und fahren Sie dann mit Ihrer geschäftlichen E-Mail-Adresse fort, um sich über den Identitätsanbieter Ihres Unternehmens anzumelden.",
+    "signOut": "Abmelden und SSO verwenden",
+    "notNow": "Nicht jetzt"
+  },
   "auth": {
     "haveReferralCode": "Hast du einen Empfehlungscode?",
     "referralCode": "Empfehlungscode",

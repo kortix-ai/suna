@@ -2200,6 +2200,12 @@
       }
     }
   },
+  "ssoRequired": {
+    "title": "Se connecter avec l'authentification unique",
+    "description": "Votre organisation exige l'authentification unique pour ce compte. Déconnectez-vous, puis continuez avec votre e-mail professionnel pour vous connecter via le fournisseur d'identité de votre entreprise.",
+    "signOut": "Se déconnecter et utiliser le SSO",
+    "notNow": "Pas maintenant"
+  },
   "auth": {
     "haveReferralCode": "Tu as un code de parrainage?",
     "referralCode": "Code de Parrainage",

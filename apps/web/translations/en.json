@@ -2200,6 +2200,12 @@
       }
     }
   },
+  "ssoRequired": {
+    "title": "Sign in with single sign-on",
+    "description": "Your organization requires single sign-on for this account. Sign out, then continue with your work email to sign in through your company's identity provider.",
+    "signOut": "Sign out and use SSO",
+    "notNow": "Not now"
+  },
   "auth": {
     "haveReferralCode": "Have a referral code?",
     "referralCode": "Referral Code",
