@@ -46,9 +46,14 @@ export {
   commitManifest,
 } from './lib/triggers';
 
-// App-event subscriptions (consumed by connector sync/connect and account deletion).
-export {
-  reconcileEventSubscriptions,
-  reconcileEventSubscriptionsFromCatalog,
-  releaseProjectEventSubscriptions,
-} from './trigger-events/subscriptions';
+// App-event subscriptions (consumed by connector sync/connect and account
+// deletion). Loaded on first call: their import chain reaches back into
+// connectors/, which imports this file, and an eager re-export closes that cycle
+// with a half-initialized module.
+const eventSubscriptions = () => import('./trigger-events/subscriptions');
+export const reconcileEventSubscriptions: typeof import('./trigger-events/subscriptions').reconcileEventSubscriptions =
+  async (...args) => (await eventSubscriptions()).reconcileEventSubscriptions(...args);
+export const reconcileEventSubscriptionsFromCatalog: typeof import('./trigger-events/subscriptions').reconcileEventSubscriptionsFromCatalog =
+  async (...args) => (await eventSubscriptions()).reconcileEventSubscriptionsFromCatalog(...args);
+export const releaseProjectEventSubscriptions: typeof import('./trigger-events/subscriptions').releaseProjectEventSubscriptions =
+  async (...args) => (await eventSubscriptions()).releaseProjectEventSubscriptions(...args);
