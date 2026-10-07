@@ -94,7 +94,7 @@ const suite = dockerOk ? describe : describe.skip;
 
 suite('gateway_request_logs per-session rollup covering index (throwaway Postgres)', () => {
   beforeAll(async () => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
     const up = sh([
       'docker',
       'run',
@@ -131,7 +131,7 @@ suite('gateway_request_logs per-session rollup covering index (throwaway Postgre
   }, 480_000);
 
   afterAll(() => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
   });
 
   test('the migration builds a VALID covering index with the exact key order, INCLUDE columns and partial predicate', () => {

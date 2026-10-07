@@ -3,6 +3,7 @@
 import { backendApi } from '../../http/api-client';
 import { sendChecked } from '../../http/transport';
 import { platformConfig } from '../../http/config';
+import { type AuthenticatedRequest, authenticatedRequest } from '../../http/authenticated-request';
 import { unwrap, type ProjectFileEntry } from './shared';
 
 export async function listProjectFiles(
@@ -97,6 +98,25 @@ export async function fetchProjectArchive(
   const url = `${platformConfig().backendUrl || ''}/projects/${projectId}/files/archive${query}`;
   const res = await sendChecked(url, { method: 'GET' }, { timeoutMs: ARCHIVE_TIMEOUT_MS }, 'Failed to download');
   return await res.blob();
+}
+
+/**
+ * The archive download of {@link fetchProjectArchive} as a request the host
+ * sends itself, for a host that streams the zip to disk (React Native's
+ * `FileSystem.downloadAsync`) instead of reading it into a Blob.
+ */
+export async function projectArchiveRequest(
+  projectId: string,
+  ref: string,
+  path?: string,
+): Promise<AuthenticatedRequest> {
+  const params = new URLSearchParams();
+  if (ref) params.set('ref', ref);
+  if (path) params.set('path', path);
+  const query = params.toString() ? `?${params.toString()}` : '';
+  return authenticatedRequest(
+    `${platformConfig().backendUrl}/projects/${encodeURIComponent(projectId)}/files/archive${query}`,
+  );
 }
 
 /**

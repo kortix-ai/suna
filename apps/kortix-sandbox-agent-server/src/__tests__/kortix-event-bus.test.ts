@@ -177,3 +177,36 @@ describe('ring bounds', () => {
     expect(bus.subscribe(() => {}, { since: 9_990, epoch: 'e1' }).replay).toHaveLength(10)
   })
 })
+
+describe('R5.1: the ring holds a reconnect, bounded by bytes', () => {
+  test('a reconnect after 10,000 token deltas on the default ring replays them all', () => {
+    // A busy box with subagents streams thousands of deltas a minute. The old
+    // 2,000-envelope ring turned a short network blip into a resync and a
+    // transcript refetch for every open session.
+    const bus = new KortixEventBus('e1')
+    bus.publish('session.status', { sessionID: 'ses_a' })
+    for (let i = 0; i < 10_000; i++) {
+      bus.publish('message.part.delta', { sessionID: 'ses_a', messageID: 'msg_1', delta: 'tok ' })
+    }
+    const sub = bus.subscribe(() => {}, { since: 1, epoch: 'e1' })
+    expect(sub.resync).toBeNull()
+    expect(sub.replay).toHaveLength(10_000)
+  })
+
+  test('the ring drops the oldest envelopes past its byte budget', () => {
+    const bus = new KortixEventBus('e1', 1_000, () => 0, 1_100)
+    for (let i = 0; i < 10; i++) bus.publish('x', { text: 'y'.repeat(300) })
+    // 349-350 bytes each on the wire: three fit in 1,100 bytes.
+    expect(bus.firstSeq).toBe(8)
+    const sub = bus.subscribe(() => {}, { since: 2, epoch: 'e1' })
+    expect(sub.resync).toMatchObject({ reason: 'gap-too-old', first_seq: 8 })
+  })
+
+  test('one envelope larger than the budget is still kept, alone', () => {
+    const bus = new KortixEventBus('e1', 1_000, () => 0, 100)
+    bus.publish('x', { text: 'small' })
+    bus.publish('x', { text: 'z'.repeat(500) })
+    expect(bus.firstSeq).toBe(2)
+    expect(bus.subscribe(() => {}, { since: 1, epoch: 'e1' }).replay.map((e) => e.seq)).toEqual([2])
+  })
+})

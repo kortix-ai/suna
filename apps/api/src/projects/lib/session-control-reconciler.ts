@@ -36,6 +36,11 @@
  * in one round trip, whichever replica served the write. Without the LISTEN
  * the cadence above is the ceiling, as before.
  *
+ * The same holds for the box row and the title: a trigger NOTIFYs
+ * `kortix_session_changed` on every client-visible write (status, live turns,
+ * wake fields, title; migration 20261006182246238), so turn, runtime and
+ * session frames follow the write on every replica too.
+ *
  * ─── EVERY EMISSION IS A FULL SNAPSHOT ─────────────────────────────────────
  * See `session-control-events.ts`. A frame carries its subsystem's whole state,
  * so a client that missed one is corrected by the next rather than corrupted by
@@ -45,9 +50,60 @@
 import { listInboxPrompts } from '../session-lifecycle/inbox-rows';
 import { serializePrompt } from './session-prompt-view';
 import { readSessionTurnState } from './session-turn-read';
-import { readRuntimeControlState, readMirrorWatermark, readSessionAuditWatermark } from './session-control-readers';
-export type { RuntimeControlState, MirrorWatermark, AuditWatermark } from './session-control-readers';
-import { onSessionPromptsChanged } from '../../shared/pg-broadcast';
+import {
+  readRuntimeControlState,
+  readMirrorWatermark,
+  readSessionAuditWatermark,
+  readSessionControlState,
+} from './session-control-readers';
+export type { RuntimeControlState, MirrorWatermark, AuditWatermark, SessionControlState } from './session-control-readers';
+import { deriveSessionWorking } from './session-working';
+import type { SessionTurnStatus } from '@kortix/api-contract';
+import type { RuntimeControlState } from './session-control-readers';
+import {
+  WAKE_MAX_RESTARTS,
+  claimWakeLadderStep,
+  nextWakeLadderStep,
+  resetWakeLadder,
+} from '../session-lifecycle/attended-wake-ladder';
+import type { StartSessionCommand } from '../session-lifecycle/types';
+import { logger } from '../../lib/logger';
+
+/**
+ * A watcher the ladder may act as. `authorize` re-runs the `/start` and
+ * `/restart` gates from fresh reads right before each step and answers null
+ * once the watcher may not (`wake-ladder-authorization.ts`).
+ */
+export interface WakeLadderActor {
+  authorize: () => Promise<Pick<StartSessionCommand, 'loaded' | 'visible'> | null>;
+}
+
+/** The wake ladder as a client draws it (`kortix.control.runtime` `wake_ladder`). */
+export interface WakeLadderView {
+  /** `idle`: no wake, or the runtime answered. `exhausted`: every step was spent. */
+  status: 'idle' | 'waking' | 'escalating' | 'exhausted';
+  retried: boolean;
+  restarts: number;
+  max_restarts: number;
+  /** When the server last saw the wake change (ISO), while one runs. */
+  silent_since: string | null;
+}
+
+interface LadderState {
+  actors: Set<WakeLadderActor>;
+  /** What the server last observed of the wake, and since when. */
+  fingerprint: string | null;
+  sinceMs: number;
+  /** The harness answered `ready` on this replica's stream. */
+  reachable: boolean;
+  /** It answered in this episode: a later drop is not a wake. */
+  latched: boolean;
+  /** `wake_started_at` of the episode the latch belongs to. */
+  episodeWake: string | null;
+  downReason: string | null;
+  acting: boolean;
+}
+import { onSessionChanged, onSessionPromptsChanged } from '../../shared/pg-broadcast';
 import {
   publishControlEvent,
   type ControlEvent,
@@ -117,8 +173,17 @@ interface Reconciler {
    * a scan of all tenants' `connector_calls`.
    */
   projectId: string | null;
+  /** The last turn read, so a runtime turn end can re-decide `working` without a read. */
+  lastTurn: SessionTurnStatus | null;
+  /** The last queue read, for the same reason. */
+  lastPrompts: Array<{ state: string; reason: string | null; client_sent_at_ms?: number | null }>;
+  /** Newest `kortix.turn` end per runtime session id, seen on this replica's streams. */
+  runtimeTurnEnds: Map<string, number>;
+  lastRuntime: RuntimeControlState | null;
+  ladder: LadderState;
 }
 
+// replica-local: one reconciler per watched session per process; every replica converges from the DB.
 const reconcilers = new Map<string, Reconciler>();
 
 export interface ControlReconcilerHandle {
@@ -128,6 +193,14 @@ export interface ControlReconcilerHandle {
   snapshot(): ControlEvent[];
   /** Force a read now — used right after an action the caller knows changed things. */
   poke(): void;
+  /**
+   * The daemon reported a turn of `runtimeSessionId` ended at `atMs`
+   * (`kortix.turn` on the runtime channel). Re-decides `working` at once from
+   * the last turn read; the ledger close that follows is the next read's job.
+   */
+  noteRuntimeTurnEnd(runtimeSessionId: string, atMs: number): void;
+  /** This replica's stream saw the harness answer (`reachable`) or the box go away. */
+  noteRuntimeReachability(reachable: boolean, reason?: string | null): void;
   release(): void;
 }
 
@@ -140,6 +213,8 @@ export function acquireControlReconciler(
   sessionId: string,
   projectId: string | null = null,
   mode: ControlReconcilerMode = 'full',
+  /** Set when the holder may start and restart the session (wake ladder). */
+  actor: WakeLadderActor | null = null,
 ): ControlReconcilerHandle {
   sweepIdleReconcilers();
   let reconciler = reconcilers.get(sessionId);
@@ -161,6 +236,20 @@ export function acquireControlReconciler(
       tickAgain: false,
       idleSince: null,
       projectId,
+      lastTurn: null,
+      lastPrompts: [],
+      runtimeTurnEnds: new Map(),
+      lastRuntime: null,
+      ladder: {
+        actors: new Set(),
+        fingerprint: null,
+        sinceMs: Date.now(),
+        reachable: false,
+        latched: false,
+        episodeWake: null,
+        downReason: null,
+        acting: false,
+      },
     };
     reconcilers.set(sessionId, reconciler);
   }
@@ -172,6 +261,7 @@ export function acquireControlReconciler(
   const needsPass = !target.timer || (full && target.fullRefs === 0);
   target.refs += 1;
   if (full) target.fullRefs += 1;
+  if (actor) target.ladder.actors.add(actor);
   target.idleSince = null;
   schedule(sessionId, target);
   if (needsPass) void tick(sessionId, target);
@@ -182,9 +272,24 @@ export function acquireControlReconciler(
     snapshot: () =>
       [...target.latest.values()].sort((a, b) => a.cseq - b.cseq),
     poke: () => void tick(sessionId, target),
+    noteRuntimeTurnEnd: (runtimeSessionId, atMs) => {
+      const previous = target.runtimeTurnEnds.get(runtimeSessionId);
+      if (previous !== undefined && previous >= atMs) return;
+      target.runtimeTurnEnds.set(runtimeSessionId, atMs);
+      emitTurn(sessionId, target);
+    },
+    noteRuntimeReachability: (reachable, reason = null) => {
+      const ladder = target.ladder;
+      ladder.reachable = reachable;
+      ladder.downReason = reachable ? null : reason;
+      if (reachable) ladder.latched = true;
+      emitRuntime(sessionId, target);
+      void driveWakeLadder(sessionId, target);
+    },
     release: () => {
       if (released) return;
       released = true;
+      if (actor) target.ladder.actors.delete(actor);
       target.refs -= 1;
       if (full) target.fullRefs -= 1;
       if (target.refs > 0) schedule(sessionId, target);
@@ -216,6 +321,8 @@ export function pokeControlReconciler(sessionId: string): void {
 }
 
 onSessionPromptsChanged(pokeControlReconciler);
+// A box, live-turn, wake or title write (migration 20261006182246238).
+onSessionChanged(pokeControlReconciler);
 
 /** Run the timer at the cadence the holders need. A no-op when it already does. */
 function schedule(sessionId: string, reconciler: Reconciler): void {
@@ -264,19 +371,22 @@ async function tick(sessionId: string, reconciler: Reconciler): Promise<void> {
     const observedAt = new Date().toISOString();
     // No full holder: the queue is the only subsystem anyone reads.
     const full = reconciler.fullRefs > 0;
-    const [turn, queue, runtime, mirror, audit] = await Promise.allSettled([
+    const [turn, queue, runtime, mirror, audit, session] = await Promise.allSettled([
       full ? readSessionTurnState(sessionId) : null,
       listInboxPrompts(sessionId, PROMPT_LIST_LIMIT),
       full ? readRuntimeControlState(sessionId) : null,
       full ? readMirrorWatermark(sessionId) : null,
       full ? readSessionAuditWatermark(sessionId, reconciler) : null,
+      full ? readSessionControlState(sessionId) : null,
     ]);
 
-    if (full && turn.status === 'fulfilled') {
-      emit(sessionId, reconciler, 'kortix.control.turn', { known: true, ...turn.value });
+    if (queue.status === 'fulfilled') reconciler.lastPrompts = queue.value.map(serializePrompt);
+    if (full && turn.status === 'fulfilled' && turn.value) {
+      reconciler.lastTurn = turn.value;
+      emitTurn(sessionId, reconciler);
     }
     if (queue.status === 'fulfilled') {
-      const prompts = queue.value.map(serializePrompt);
+      const prompts = reconciler.lastPrompts as ReturnType<typeof serializePrompt>[];
       emit(
         sessionId,
         reconciler,
@@ -293,14 +403,20 @@ async function tick(sessionId: string, reconciler: Reconciler): Promise<void> {
         { observed_at: observedAt },
       );
     }
-    if (full && runtime.status === 'fulfilled') {
-      emit(sessionId, reconciler, 'kortix.control.runtime', runtime.value);
+    if (full && runtime.status === 'fulfilled' && runtime.value) {
+      reconciler.lastRuntime = runtime.value;
+      observeWake(reconciler);
+      emitRuntime(sessionId, reconciler);
+      void driveWakeLadder(sessionId, reconciler);
     }
     if (full && mirror.status === 'fulfilled') {
       emit(sessionId, reconciler, 'kortix.control.mirror', mirror.value);
     }
     if (full && audit.status === 'fulfilled') {
       emit(sessionId, reconciler, 'kortix.control.audit', audit.value);
+    }
+    if (full && session.status === 'fulfilled') {
+      emit(sessionId, reconciler, 'kortix.control.session', session.value);
     }
   } catch {
     // `allSettled` above means this is unreachable in practice; the guard is
@@ -314,6 +430,154 @@ async function tick(sessionId: string, reconciler: Reconciler): Promise<void> {
       if (reconciler.refs > 0) void tick(sessionId, reconciler);
     }
   }
+}
+
+const WAKE_GAVE_UP_REASONS = new Set(['runtime_wake_failed', 'runtime_boot_failed']);
+
+/** Does the ladder watch this box now? Only a wake that has not answered yet. */
+function ladderApplies(runtime: RuntimeControlState, ladder: LadderState): boolean {
+  if (!runtime.external_id || ladder.reachable || ladder.latched) return false;
+  return (
+    runtime.waking ||
+    WAKE_GAVE_UP_REASONS.has(runtime.stop_reason ?? '') ||
+    runtime.sandbox_status === 'active' ||
+    runtime.sandbox_status === 'provisioning'
+  );
+}
+
+/** Restart the silence clock on any change the server can observe. */
+function observeWake(reconciler: Reconciler): void {
+  const runtime = reconciler.lastRuntime;
+  if (!runtime) return;
+  const ladder = reconciler.ladder;
+  // A NEW wake (the box was stopped and is woken again) starts a new episode.
+  if (runtime.wake_started_at && runtime.wake_started_at !== ladder.episodeWake) {
+    ladder.episodeWake = runtime.wake_started_at;
+    if (!ladder.reachable) ladder.latched = false;
+  }
+  const fingerprint = JSON.stringify([
+    runtime.sandbox_status,
+    runtime.waking,
+    runtime.wake_provider_status,
+    runtime.wake_started_at,
+    runtime.wake_progress_at,
+    runtime.stop_reason,
+    ladder.downReason,
+  ]);
+  if (fingerprint !== ladder.fingerprint) {
+    ladder.fingerprint = fingerprint;
+    ladder.sinceMs = Date.now();
+  }
+}
+
+function wakeLadderView(reconciler: Reconciler): WakeLadderView {
+  const runtime = reconciler.lastRuntime!;
+  const budget = runtime.wake_ladder_budget;
+  const applies = ladderApplies(runtime, reconciler.ladder);
+  const exhausted = budget.retried && budget.restarts >= WAKE_MAX_RESTARTS;
+  return {
+    status: !applies ? 'idle' : exhausted ? 'exhausted' : budget.retried ? 'escalating' : 'waking',
+    retried: budget.retried,
+    restarts: budget.restarts,
+    max_restarts: WAKE_MAX_RESTARTS,
+    silent_since: applies ? new Date(reconciler.ladder.sinceMs).toISOString() : null,
+  };
+}
+
+/** The runtime frame: the box row plus the server wake ladder. */
+function emitRuntime(sessionId: string, reconciler: Reconciler): void {
+  if (!reconciler.lastRuntime) return;
+  emit(sessionId, reconciler, 'kortix.control.runtime', {
+    ...reconciler.lastRuntime,
+    wake_ladder: wakeLadderView(reconciler),
+  });
+}
+
+/**
+ * Take the ladder's next step for this session, if one is due. At most one
+ * step runs per replica at a time, and the row claim makes it one per box.
+ */
+async function driveWakeLadder(sessionId: string, reconciler: Reconciler): Promise<void> {
+  const ladder = reconciler.ladder;
+  const runtime = reconciler.lastRuntime;
+  if (ladder.acting || !runtime) return;
+  if (!ladderApplies(runtime, ladder)) {
+    const spent = runtime.wake_ladder_budget.retried || runtime.wake_ladder_budget.restarts > 0;
+    if (ladder.latched && spent) await resetWakeLadder(sessionId).catch(() => {});
+    return;
+  }
+  const actor = ladder.actors.values().next().value as WakeLadderActor | undefined;
+  if (!actor) return;
+  const nowMs = Date.now();
+  const observation = {
+    silentMs: nowMs - ladder.sinceMs,
+    serverGaveUp: WAKE_GAVE_UP_REASONS.has(runtime.stop_reason ?? ''),
+    nowMs,
+  };
+  const budget = runtime.wake_ladder_budget;
+  // Cheap pre-check on the last read, so an ordinary tick opens no transaction.
+  const due = nextWakeLadderStep(observation, {
+    retried: budget.retried,
+    restarts: budget.restarts,
+    lastActionMs: budget.last_action_ms,
+  });
+  if (due !== 'retry-start' && due !== 'restart') return;
+  ladder.acting = true;
+  let acted = false;
+  try {
+    // Authorization is asked NOW, not when the stream opened: access revoked
+    // since then ends this watcher's part in the ladder.
+    const authorized = await actor.authorize();
+    if (!authorized) {
+      ladder.actors.delete(actor);
+      return;
+    }
+    // Same gate as `/start`: a step resumes or provisions compute.
+    const { checkBillingAdmission } = await import('../../billing/services/billing-gate');
+    if (!(await checkBillingAdmission(authorized.loaded.row.accountId)).ok) return;
+    const { step } = await claimWakeLadderStep(sessionId, observation);
+    if (step !== 'retry-start' && step !== 'restart') return;
+    const projectId = authorized.loaded.row.projectId;
+    logger.info('[wake-ladder] escalating a quiet wake', {
+      sessionId,
+      step,
+      silentMs: observation.silentMs,
+    });
+    if (step === 'retry-start') {
+      const { startSession } = await import('../session-lifecycle/start-session');
+      await startSession({ source: 'ui', ...authorized, projectId, sessionId });
+    } else {
+      const { restartSession } = await import('../session-lifecycle/actions');
+      await restartSession({ loaded: authorized.loaded, session: authorized.visible.row, projectId, sessionId });
+    }
+    // A step is progress: the next one waits a full silence window again.
+    ladder.sinceMs = Date.now();
+    acted = true;
+  } catch (error) {
+    logger.warn('[wake-ladder] step failed', {
+      sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  } finally {
+    ladder.acting = false;
+    // Re-read only after a step ran. A refused step (billing, another replica's
+    // claim) waits for the next ordinary pass, or it would retry in a loop.
+    if (acted && reconciler.refs > 0) void tick(sessionId, reconciler);
+  }
+}
+
+/** The turn frame: the last turn read plus the server's `working` verdict. */
+function emitTurn(sessionId: string, reconciler: Reconciler): void {
+  if (!reconciler.lastTurn) return;
+  emit(sessionId, reconciler, 'kortix.control.turn', {
+    known: true,
+    ...reconciler.lastTurn,
+    working: deriveSessionWorking(
+      reconciler.lastTurn,
+      reconciler.lastPrompts,
+      reconciler.runtimeTurnEnds,
+    ),
+  });
 }
 
 /**
