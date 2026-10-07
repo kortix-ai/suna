@@ -1406,7 +1406,10 @@ export async function enforceDriveMounts(
     };
     const mounts = recordedDriveMounts(row.metadata);
     const ids = [...new Set(mounts.map((m) => m.driveId))].filter((id) => !scoped || scoped.has(id));
-    const live = row.provider === 'platinum' && !!row.externalId && row.status === 'active';
+    // A running synced box goes the live way too: it keeps a downgraded drive
+    // read-only and pushes what it has not sent before losing write access.
+    const live =
+      row.status === 'active' && ((row.provider === 'platinum' && !!row.externalId) || isDriveSyncBox(row));
     if (live) {
       for (const driveId of ids) {
         try {
