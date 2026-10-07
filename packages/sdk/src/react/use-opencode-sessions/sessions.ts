@@ -153,6 +153,7 @@ export function useDeleteOpenCodeSession() {
   });
 }
 
+/** @deprecated Rename with `updateProjectSession` (`name`). Removed in the next major. */
 export function useUpdateRuntimeSession() {
   const queryClient = useQueryClient();
 
@@ -227,6 +228,7 @@ export function useForkSession() {
   });
 }
 
+/** @deprecated Use `useRuntimeVcsDiff`. Removed in the next major. */
 export function useRuntimeSessionDiff(sessionId: string) {
   const runtimeReady = useRuntimeReady();
   const canQuerySession = canQueryRuntimeSession(sessionId);
@@ -389,6 +391,7 @@ export function useSummarizeRuntimeSession() {
 // Init Hook — analyze project and create AGENTS.md (via /init command)
 // ============================================================================
 
+/** @deprecated Use `useExecuteRuntimeCommand` with `command: 'init'`. Removed in the next major. */
 export function useInitSession() {
   const queryClient = useQueryClient();
 
