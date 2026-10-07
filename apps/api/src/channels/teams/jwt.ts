@@ -1,5 +1,6 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { config } from '../../config';
+import { bearerToken } from '../../shared/bearer-token';
 
 const BOT_FRAMEWORK_ISSUERS = [
   'https://api.botframework.com',
@@ -23,7 +24,7 @@ export async function validateInboundActivityJwt(
   serviceUrl?: string,
   expectedAppId?: string | null,
 ): Promise<boolean> {
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  const token = bearerToken(authHeader);
   const audience = expectedAppId || config.MICROSOFT_APP_ID;
   if (!token || !audience) return false;
   try {
@@ -33,7 +34,9 @@ export async function validateInboundActivityJwt(
       audience,
     });
     const claimedServiceUrl = typeof payload.serviceurl === 'string' ? payload.serviceurl : null;
-    if (serviceUrl && claimedServiceUrl && claimedServiceUrl.replace(/\/+$/, '') !== serviceUrl.replace(/\/+$/, '')) {
+    // The Bot Framework puts the activity's service URL in every inbound token.
+    // A token without the claim cannot prove it was issued for this activity.
+    if (serviceUrl && (!claimedServiceUrl || claimedServiceUrl.replace(/\/+$/, '') !== serviceUrl.replace(/\/+$/, ''))) {
       return false;
     }
     return true;

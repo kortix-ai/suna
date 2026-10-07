@@ -99,6 +99,9 @@ let dbPath: string
 function buildDb(messages = 6, attachmentBytes = 120_000): void {
   const db = new Database(dbPath, { create: true })
   db.exec('PRAGMA journal_mode = WAL')
+  // A throwaway temp database: durability costs real fsyncs, and on a loaded
+  // worker sandbox that pushed the beforeEach past bun's 5 s default.
+  db.exec('PRAGMA synchronous = OFF')
   db.exec(`
     CREATE TABLE session (id text PRIMARY KEY, project_id text NOT NULL, parent_id text, slug text NOT NULL,
       directory text NOT NULL, title text NOT NULL, version text NOT NULL, revert text, agent text, model text,
@@ -517,7 +520,7 @@ describe('GET /events (SSE)', () => {
     const bus = kortixEventBus()
     for (let i = 1; i <= 5; i++) publishOpenCodeEvent(bus, { type: 'message.part.delta', properties: { i } })
 
-    const res = await app.request('http://d/events?since=2', { headers: auth })
+    const res = await app.request(`http://d/events?since=2&epoch=${bus.epoch}`, { headers: auth })
     // hello + replay(3,4,5) + live(6,7)
     const framesPromise = readFrames(res, 6)
     await Bun.sleep(20)
@@ -559,6 +562,30 @@ describe('GET /events (SSE)', () => {
     expect(events[2]).toMatchObject({ type: 'session.idle', seq: 6 })
   })
 
+  test('a consumer that never reads is dropped once its queue passes the cap, never buffered forever', async () => {
+    const { app } = makeRouter()
+    const bus = kortixEventBus()
+    const res = await app.request('http://d/events', { headers: auth })
+    // Nothing reads the body: every frame queues in the stream.
+    for (let i = 0; i < 1_500; i++) publishOpenCodeEvent(bus, { type: 'message.part.delta', properties: { i } })
+    const reader = res.body!.getReader()
+    let frames = 0
+    const deadline = Date.now() + 2_000
+    for (;;) {
+      const chunk = await Promise.race([
+        reader.read(),
+        new Promise<{ done: true; value: undefined }>((r) => setTimeout(() => r({ done: true, value: undefined }), Math.max(0, deadline - Date.now()))),
+      ])
+      if (chunk.done) break
+      frames += 1
+    }
+    // The stream ENDED (client reconnects with its cursor) and queued at most the cap + hello.
+    expect(Date.now()).toBeLessThan(deadline)
+    expect(frames).toBeLessThan(1_100)
+    // A later event reaches no listener of the dropped stream: publish must not grow its queue.
+    publishOpenCodeEvent(bus, { type: 'x', properties: {} })
+  })
+
   test('the heartbeat is a TYPED event every 15 s and carries no seq', async () => {
     // Capture the stream's interval instead of sleeping 15 s. What matters is
     // the WIRE FORM: a `:` comment would be swallowed by every SSE parser and
@@ -587,6 +614,24 @@ describe('GET /events (SSE)', () => {
     const data = dataOf(heartbeat!)
     expect(data.type).toBe('kortix.heartbeat')
     expect(data).not.toHaveProperty('seq')
+  })
+
+  test('a reader that falls too far behind is dropped, so its queue stays bounded', async () => {
+    // The API stops reading while its own client is slow (R5.1 backpressure).
+    // The daemon then ends this stream instead of queueing without limit; the
+    // API reconnects with its cursor and the ring replays what it missed.
+    const { app } = makeRouter()
+    const bus = kortixEventBus()
+    const res = await app.request('http://d/events', { headers: auth })
+    for (let i = 0; i < 10_000; i++) {
+      publishOpenCodeEvent(bus, { type: 'message.part.delta', properties: { i } })
+    }
+    expect(bus.subscriberCount).toBe(0)
+    const frames = await readFrames(res, 20_000, 2_000)
+    // hello + at most the bounded backlog, then the end of the stream.
+    expect(frames.length).toBeLessThan(5_000)
+    // The ring still holds everything the reader missed.
+    expect(bus.subscribe(() => {}, { since: 0, epoch: bus.epoch }).replay).toHaveLength(10_000)
   })
 
   test('cancelling the stream unsubscribes', async () => {

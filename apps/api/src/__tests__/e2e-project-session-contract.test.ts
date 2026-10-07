@@ -290,7 +290,13 @@ mock.module('../projects/lib/fast-boot-git-hint', () => ({
   resolveFastBootGitHintWithCache: async () => undefined,
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test
+// (readRepoFileBytes, added for the project-files route, broke this file).
+const actualGit = await import('../projects/git');
 mock.module('../projects/git', () => ({
+  ...actualGit,
   MergeConflictError: class MergeConflictError extends Error {},
   createRemoteSessionBranch: async () => {
     branchCreateCalls += 1;
@@ -303,6 +309,7 @@ mock.module('../projects/git', () => ({
   grepRepoFiles: async () => [],
   loadProjectConfig: async () => ({}),
   readRepoFile: async () => '',
+  readRepoFileBytes: async () => Buffer.alloc(0),
   // connector/sync.ts imports these from the same barrel; a wholesale module mock
   // that omits them makes the whole file fail to LOAD with a SyntaxError, which
   // reads as "the suite is broken" rather than "the mock is short two names".
@@ -347,7 +354,6 @@ mock.module('../projects/git', () => ({
 }));
 
 mock.module('../snapshots/builder', () => ({
-  ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async () => ({
     snapshotName: 'kortix-default-test',
     slug: 'default',
@@ -610,6 +616,8 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 
 mock.module('../shared/resolve-account', () => ({
   resolveAccountId: async () => ACCOUNT_ID,
+}));
+mock.module('../middleware/resolve-account', () => ({
   resolveScopedAccountId: async () => ACCOUNT_ID,
 }));
 
@@ -1126,9 +1134,10 @@ mock.module('../projects/prompt-attachments', () => ({
   },
 }));
 
-const { projectsApp } = await import('../projects/index');
+const { projectsApp, registerAllProjectRoutes } = await import('../projects/index');
+registerAllProjectRoutes();
 const { encryptProjectSecret } = await import('../projects/secrets');
-const { resumeStoppedSandbox } = await import('../projects/routes/shared');
+const { resumeStoppedSandbox } = await import('../projects/session-open');
 const { TITLE_SOURCE_MAX_CHARS } = await import('../projects/session-title-generate');
 const { invalidateSandbox, resolveSandboxIngress } = await import('../sandbox-proxy/backend');
 const { reconcileSandboxStoppedByExternalId } = await import(

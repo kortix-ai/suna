@@ -18,8 +18,7 @@ export async function waitForConcurrentE2BBuild(
 ): Promise<void> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const pollMs = opts.pollMs ?? DEFAULT_POLL_MS;
-  const sleep =
-    opts.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
+  const sleep = opts.sleep ?? Bun.sleep;
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() <= deadline) {

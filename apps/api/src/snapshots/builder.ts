@@ -32,7 +32,7 @@ import {
 import { canServeLastKnownGoodRuntime } from './runtime-freshness';
 import { openBuildLog, closeBuildLogReady, closeBuildLogFailed, recentlyBuiltSnapshotNames, PREDECESSOR_PRUNE_PROTECT_MS } from './builder-log';
 import { waitForProviderBuild, findFirstActiveSnapshot, maybeSwapAgent, ensureMetaSandboxImage, SnapshotBuildError } from './runtime-images';
-import { claimSnapshotBuild, releaseSnapshotBuild, waitForSnapshotBuildRelease } from './build-claim';
+import { claimSnapshotBuild, holdSnapshotBuild, releaseSnapshotBuild, waitForSnapshotBuildRelease } from './build-claim';
 import { enabledTemplateBuildProviders } from './provider-coverage';
 import { config, type SandboxProviderName } from '../config';
 import { logger } from '../lib/logger';
@@ -47,7 +47,7 @@ export type { SandboxTemplateView } from './template-prebuilds';
 export { resolveTemplateBySlug as resolveTemplate };
 export { listSnapshotBuilds, reconcileStaleBuilds, buildLogProviderCandidates, shouldReconcileProviderState, recentlyBuiltStrict } from './builder-log';
 export type { ProjectSnapshotBuildSummary } from './builder-log';
-export { META_RUNTIME_SPEC, PI_WORKER_RUNTIME_SPEC, ensureMetaSandboxImage, ensurePiWorkerImage, metaSnapshotName, piWorkerSnapshotName, reapSupersededMetaSnapshots, reapSupersededPiWorkerSnapshots } from './runtime-images';
+export { META_RUNTIME_SPEC, ensureMetaSandboxImage, metaSnapshotName, reapSupersededMetaSnapshots } from './runtime-images';
 export { kickPreBuild, kickRoutedPreBuild, templateBuildProviders, kickProjectTemplatePrebuilds } from './template-prebuilds';
 
 export type SnapshotBuildSource =
@@ -71,7 +71,7 @@ export interface EnsureSandboxImageResult {
   contentHash: string;
   built: boolean;
   isDefault: boolean;
-  runtimeProfile?: 'standard' | 'meta' | 'pi-worker';
+  runtimeProfile?: 'standard' | 'meta';
   /**
    * The size this image was built with, which is the size the box boots with.
    * Compute metering bills from it. Absent only for a result constructed
@@ -335,6 +335,7 @@ export async function ensureSandboxImage(
         await waitForSnapshotBuildRelease(buildKey);
         return BUILT_BY_PEER;
       }
+      const stopHeartbeat = holdSnapshotBuild(buildKey);
       try {
         return await runInlineBuild(project, template, identity, {
           state,
@@ -344,6 +345,7 @@ export async function ensureSandboxImage(
           publish,
         });
       } finally {
+        stopHeartbeat();
         await releaseSnapshotBuild(buildKey).catch((err) =>
           logger.warn('[snapshots] build claim release failed (expires on its own)', { buildKey, error: err instanceof Error ? err.message : String(err) }),
         );
@@ -594,23 +596,27 @@ function startupPreBuild(): void {
           `[snapshots] startup pre-build (${providerId}): default image ${r.snapshotName} ${r.built ? 'built' : 'ready'}`,
         ),
       )
-      .catch((err) =>
+      .catch((err) => {
+        // A failed pre-build is retried by the next leader term, not skipped for the process lifetime.
+        startupPreBuildKicked = false;
         console.warn(
           `[snapshots] startup pre-build of platform default failed (${providerId}):`,
           err instanceof Error ? err.message : err,
-        ),
-      );
+        );
+      });
     void ensureMetaSandboxImage({ source: 'startup', provider: providerId })
       .then((r) =>
         console.log(
           `[snapshots] startup pre-build (${providerId}): meta image ${r.snapshotName} ${r.built ? 'built' : 'ready'}`,
         ),
       )
-      .catch((err) =>
+      .catch((err) => {
+        // A failed pre-build is retried by the next leader term, not skipped for the process lifetime.
+        startupPreBuildKicked = false;
         console.warn(
           `[snapshots] startup pre-build of platform meta failed (${providerId}):`,
           err instanceof Error ? err.message : err,
-        ),
-      );
+        );
+      });
   }
 }

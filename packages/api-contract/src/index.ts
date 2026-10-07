@@ -46,8 +46,7 @@ export type OkResponse = z.infer<typeof OkResponseSchema>;
  * Wire note: the serialized project fields keep their historical names
  * (`experimental`, `experimental_features`) and the override map lives at
  * `projects.metadata.experimental` — both are stable wire/storage details.
- * Code-level names are the FeatureFlag* family; the Experimental* exports
- * below are deprecated aliases kept for published-SDK compatibility.
+ * Code-level names are the FeatureFlag* family.
  */
 export const FeatureFlagMapSchema = z.object({
   marketplace: z.boolean(),
@@ -60,7 +59,6 @@ export const FeatureFlagMapSchema = z.object({
   reminders: z.boolean(),
   warm_sessions: z.boolean(),
   secrets_egress: z.boolean(),
-  pi_worker: z.boolean(),
   pooled_provider_secrets: z.boolean(),
   pi_harness: z.boolean(),
   config_releases: z.boolean(),
@@ -100,21 +98,6 @@ export const FeatureDisabledErrorSchema = z.object({
   feature: FeatureFlagKeySchema,
 });
 export type FeatureDisabledError = z.infer<typeof FeatureDisabledErrorSchema>;
-
-/** @deprecated Use {@link FeatureFlagMapSchema}. */
-export const ExperimentalFeatureMapSchema = FeatureFlagMapSchema;
-/** @deprecated Use {@link FeatureFlagMap}. */
-export type ExperimentalFeatureMap = FeatureFlagMap;
-/** @deprecated Use {@link FeatureFlagKeySchema}. */
-export const ExperimentalFeatureKeySchema = FeatureFlagKeySchema;
-/** @deprecated Use {@link FeatureFlagKey}. */
-export type ExperimentalFeatureKey = FeatureFlagKey;
-/** @deprecated Use {@link FEATURE_FLAG_KEYS}. */
-export const EXPERIMENTAL_FEATURE_KEYS = FEATURE_FLAG_KEYS;
-/** @deprecated Use {@link FeatureFlagViewSchema}. */
-export const ExperimentalFeatureViewSchema = FeatureFlagViewSchema;
-/** @deprecated Use {@link FeatureFlagView}. */
-export type ExperimentalFeatureView = FeatureFlagView;
 
 /** The two assignable project roles. `user`/`viewer` are deprecated aliases of
  *  `member`; `editor` was REMOVED on 2026-08-18 (folded into `manager`). None
@@ -168,8 +151,8 @@ export const ProjectSchema = z.object({
   /** UI label for the caller's effective role (not an auth decision). */
   effective_project_role: ProjectRoleSchema.nullable(),
   dashboard_url: z.string(),
-  experimental: ExperimentalFeatureMapSchema,
-  experimental_features: z.array(ExperimentalFeatureViewSchema),
+  experimental: FeatureFlagMapSchema,
+  experimental_features: z.array(FeatureFlagViewSchema),
   /** Per-project provider pin, surfaced only while still usable. */
   default_sandbox_provider: SandboxProviderSchema.nullable(),
   available_sandbox_providers: z.array(SandboxProviderSchema),
@@ -1432,6 +1415,8 @@ export const TriggerSchema = z.object({
   last_status: z.string().nullable(),
   last_error: z.string().nullable(),
   last_attempt_at: z.string().nullable(),
+  /** When an enabled cron trigger runs next: the slot the scheduler claims, jitter included. Null for a webhook trigger. */
+  next_fire_at: z.string().nullable().optional(),
   webhook_url: z.string().nullable(),
 });
 export type Trigger = z.infer<typeof TriggerSchema>;
@@ -1574,17 +1559,60 @@ export const SessionTurnFailureSchema = z.object({
 });
 export type SessionTurnFailure = z.infer<typeof SessionTurnFailureSchema>;
 
+/**
+ * Is the session working, decided ONCE by the server (R5.2). Clients show this
+ * instead of combining their own signals. `working` while a live turn runs that
+ * the runtime has not reported ended, or while a prompt is on its way to the
+ * runtime (`pending_delivery`). Ordered by the control frame's `cseq`.
+ */
+export const SessionWorkingSchema = z.object({
+  state: z.enum(['working', 'idle']),
+  /** When this state began (ISO), or null when the server does not know. */
+  since: z.string().nullable(),
+  /** The newest live turn, or null. */
+  turn_token: z.string().nullable(),
+  /** No live turn yet, but a prompt is queued for or being handed to the runtime. */
+  pending_delivery: z.boolean(),
+});
+export type SessionWorking = z.infer<typeof SessionWorkingSchema>;
+
 /** `GET .../turn`. `turns` empty means idle; it is a list because a session
  *  can hold more than one open turn. */
 export const SessionTurnStatusSchema = z.object({
   turns: z.array(SessionTurnSchema),
   last_ended: SessionTurnEndedSchema.optional(),
   recent_failures: z.array(SessionTurnFailureSchema).optional(),
+  /** Present on the session stream's `kortix.control.turn` frame. */
+  working: SessionWorkingSchema.optional(),
 });
 export type SessionTurnStatus = z.infer<typeof SessionTurnStatusSchema>;
 
 export const SessionPromptPlacementSchema = z.enum(['transcript', 'composer']);
 export type SessionPromptPlacement = z.infer<typeof SessionPromptPlacementSchema>;
+
+/**
+ * How a prompt reaches a session whose turn is running.
+ * - `steer`: the running turn reads it at its next step boundary; the turn
+ *   does not stop. Needs the runtime capability `session.steer` and the
+ *   turn's own prompter; otherwise the row falls back to `queue`.
+ * - `queue` (Queue List): waits for the turn to end, then runs as its own turn.
+ * - `interrupt` (Quick Queue, "Stop and send"): ends the turn after the
+ *   running tool, then runs as its own turn.
+ * With no turn running, all three start a turn. `placement` is derived:
+ * `interrupt` is `transcript`, the other two are `composer`.
+ */
+export const SessionPromptDeliverySchema = z.enum(['steer', 'queue', 'interrupt']);
+export type SessionPromptDelivery = z.infer<typeof SessionPromptDeliverySchema>;
+
+/**
+ * Why a `steer` row was delivered as `queue` instead:
+ * - `unsupported`: the session's runtime does not list `session.steer`
+ *   (OpenCode 1.18.14 or earlier, or an older daemon).
+ * - `not_prompter`: the running turn belongs to another member.
+ * - `turn_ended`: the turn ended before the message reached it.
+ */
+export const SessionPromptSteerFallbackSchema = z.enum(['unsupported', 'not_prompter', 'turn_ended']);
+export type SessionPromptSteerFallback = z.infer<typeof SessionPromptSteerFallbackSchema>;
 
 /** A delivered prompt has no state: it is in the transcript. */
 export const SessionPromptStateSchema = z.enum(['queued', 'delivering', 'waiting', 'failed']);
@@ -1593,6 +1621,10 @@ export type SessionPromptState = z.infer<typeof SessionPromptStateSchema>;
 /** One row of the durable prompt inbox, as `serializePrompt` emits it. */
 export const SessionPromptSchema = z.object({
   placement: SessionPromptPlacementSchema,
+  /** Absent from an API built before steering: read it as `placement` implies. */
+  delivery: SessionPromptDeliverySchema.optional(),
+  /** Set when a `steer` row fell back to `queue`; `delivery` then reads `queue`. */
+  steer_fallback: SessionPromptSteerFallbackSchema.nullable().optional(),
   /** Full accepted text. `text` is the capped preview. */
   full_text: z.string(),
   prompt_id: z.string(),
@@ -1614,6 +1646,10 @@ export const SessionPromptSchema = z.object({
   attachments: z.array(z.object({ filename: z.string(), mime: z.string() })),
   /** Posted without a turn: no agent answers it. */
   no_reply: z.boolean(),
+  /** The member who sent it. The prompt runs as this member, so only they
+   *  edit, send now or retry it; they or a session manager remove it. Null
+   *  for a prompt with no recorded sender. Absent from older servers. */
+  author_user_id: z.string().nullable().optional(),
   created_at: z.string(),
   available_at: z.string(),
 });

@@ -16,7 +16,39 @@ export interface ConnectorAction {
   description: string;
   risk: 'read' | 'write' | 'destructive';
   inputSchema: Record<string, unknown> | null;
+  /**
+   * JSON Schema of the call's `output`. Present only when the catalog was read
+   * with `includeOutputSchemas`; `null` when the connector publishes none
+   * (managed Composio and Pipedream connectors).
+   */
+  outputSchema?: Record<string, unknown> | null;
 }
+
+/**
+ * The typed connector actions of a project, keyed by connector slug, then
+ * action path. Empty in the SDK: `kortix connectors types --out <file>`
+ * generates a declaration file that fills it by module augmentation.
+ * {@link ConnectorArgs} and {@link ConnectorResult} read it.
+ */
+export interface ConnectorActionRegistry {}
+
+/** The args of `<S>.<A>` from {@link ConnectorActionRegistry}, else any object. */
+export type ConnectorArgs<S extends string, A extends string> = S extends keyof ConnectorActionRegistry
+  ? A extends keyof ConnectorActionRegistry[S]
+    ? ConnectorActionRegistry[S][A] extends { args: infer T }
+      ? T
+      : Record<string, unknown>
+    : Record<string, unknown>
+  : Record<string, unknown>;
+
+/** The call `output` of `<S>.<A>` from {@link ConnectorActionRegistry}, else `unknown`. */
+export type ConnectorResult<S extends string, A extends string> = S extends keyof ConnectorActionRegistry
+  ? A extends keyof ConnectorActionRegistry[S]
+    ? ConnectorActionRegistry[S][A] extends { result: infer T }
+      ? T
+      : unknown
+    : unknown
+  : unknown;
 
 /** One connector as exposed by the callable project catalog. */
 export interface ConnectorCatalogEntry {
@@ -46,11 +78,31 @@ export interface ConnectorTool {
   risk: ConnectorAction['risk'];
   description: string;
   inputSchema: ConnectorAction['inputSchema'];
+  /** See {@link ConnectorAction.outputSchema}. Set by {@link describeConnectorTool}. */
+  outputSchema?: ConnectorAction['outputSchema'];
 }
 
-export interface ConnectorCallResult<T = unknown> {
+/**
+ * `T` types `data`, the raw upstream answer. `O` types `output`, the payload
+ * without the binding's envelope; {@link ConnectorResult} supplies it for a
+ * generated action.
+ */
+export interface ConnectorCallResult<T = unknown, O = unknown> {
   ok: boolean;
   data?: T;
+  /**
+   * The payload without the binding's envelope: Composio `data.result`, MCP
+   * `structuredContent ?? content`, GraphQL `data.data`, otherwise `data`.
+   * The API sends it only when it differs from `data`; `callConnector` fills
+   * it in. Absent from servers that predate it (no `binding`).
+   */
+  output?: O;
+  /** The action's binding: `openapi`, `http`, `mcp`, `graphql`, `composio`, … */
+  binding?: string;
+  /** The upstream HTTP status, or `null` when the upstream gave none. */
+  upstream_status?: number | null;
+  /** A failure the upstream reported inside a 2xx (MCP `isError`, GraphQL `errors`). */
+  upstream_error?: string;
   risk?: ConnectorAction['risk'];
   status?: string;
   reason?: string;
@@ -116,6 +168,11 @@ export interface GetConnectorCatalogOptions {
    * `slug` instead.
    */
   includeSchemas?: boolean;
+  /**
+   * Add each action's `outputSchema`. Omitted by default: no bulk reader
+   * needs it. `kortix connectors types` and `describeConnectorTool` set it.
+   */
+  includeOutputSchemas?: boolean;
 }
 
 export async function getConnectorCatalog(
@@ -127,6 +184,7 @@ export async function getConnectorCatalog(
   if (options?.includeSchemas !== undefined) {
     params.set('include_schemas', String(options.includeSchemas));
   }
+  if (options?.includeOutputSchemas) params.set('include_output_schemas', 'true');
   const query = params.toString() ? `?${params.toString()}` : '';
   const result = unwrap(
     await backendApi.get<{ connectors?: ConnectorCatalogEntry[] }>(
@@ -189,7 +247,11 @@ export async function describeConnectorTool(
   // Match by slug, never take the first entry: an API that predates the
   // `slug` filter answers the whole catalog, and the CLI ships separately.
   const connector = (
-    await getConnectorCatalog(projectId, { slug: connectorSlug, includeSchemas: true })
+    await getConnectorCatalog(projectId, {
+      slug: connectorSlug,
+      includeSchemas: true,
+      includeOutputSchemas: true,
+    })
   ).find((entry) => entry.slug === connectorSlug);
   if (!connector) return null;
   for (const action of connector.actions) {
@@ -202,6 +264,7 @@ export async function describeConnectorTool(
         risk: action.risk,
         description: action.description || action.name,
         inputSchema: action.inputSchema,
+        outputSchema: action.outputSchema ?? null,
       };
     }
   }
@@ -251,7 +314,17 @@ export interface ConnectorCallOptions {
    * what it says). Displayed as unverified; never sent to the provider.
    */
   approvalContext?: string | null;
+  /**
+   * Client deadline in ms. Default 90 000: above the gateway's 60 s upstream
+   * deadline, so the gateway answers `upstream_timeout` before the client
+   * gives up. After a client-side timeout the call may still have run.
+   */
+  timeoutMs?: number;
+  /** Aborts the request. The call may still have run upstream. */
+  signal?: AbortSignal;
 }
+
+const CONNECTOR_CALL_TIMEOUT_MS = 90_000;
 
 export async function callConnector<T = unknown>(
   projectId: string | undefined,
@@ -262,7 +335,7 @@ export async function callConnector<T = unknown>(
   const { connector, action } = parseConnectorTool(tool);
   const account = options.account?.trim();
   const approvalContext = options.approvalContext?.trim();
-  return unwrap(
+  const result = unwrap(
     await backendApi.post<ConnectorCallResult<T>>(
       connectorGatewayPath(projectId, 'call'),
       // The key is omitted rather than sent as null: the gateway reads its
@@ -274,8 +347,13 @@ export async function callConnector<T = unknown>(
         ...(account ? { account } : {}),
         ...(approvalContext ? { approval_context: approvalContext } : {}),
       },
+      { timeout: options.timeoutMs ?? CONNECTOR_CALL_TIMEOUT_MS, signal: options.signal },
     ),
   );
+  // A server that names the binding omits `output` when it equals `data`, so
+  // the body carries the payload once. A server without `binding` predates `output`.
+  if (result.ok && result.binding !== undefined && !('output' in result)) result.output = result.data;
+  return result;
 }
 
 /**
@@ -1324,6 +1402,10 @@ export type ConnectorConnectOwner = 'project' | 'me';
 export interface ConnectorConnectOptions {
   /** Owner for the account this authorization creates. Defaults to `me`. */
   owner?: ConnectorConnectOwner;
+  /** Where the hosted flow sends the browser after success (a native app's deep link). */
+  successRedirectUri?: string;
+  /** Where the hosted flow sends the browser after a failure. */
+  errorRedirectUri?: string;
 }
 
 /**
@@ -1343,7 +1425,11 @@ export async function connectorConnect(
       `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/connect`,
       // Omitted rather than null when unset: the API reads the key's presence
       // to apply its own default, and an old client sends no key at all.
-      options.owner ? { owner: options.owner } : {},
+      {
+        ...(options.owner ? { owner: options.owner } : {}),
+        ...(options.successRedirectUri ? { success_redirect_uri: options.successRedirectUri } : {}),
+        ...(options.errorRedirectUri ? { error_redirect_uri: options.errorRedirectUri } : {}),
+      },
     ),
   );
 }
@@ -1866,6 +1952,15 @@ export async function setConnectorCredential(
     await backendApi.put<{ ok: boolean }>(
       `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/credential`,
       input,
+    ),
+  );
+}
+
+/** Disconnect a connector: remove its stored credential. */
+export async function deleteConnectorCredential(projectId: string, slug: string) {
+  return unwrap(
+    await backendApi.delete<{ ok: boolean }>(
+      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/credential`,
     ),
   );
 }

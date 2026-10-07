@@ -27,6 +27,7 @@ import {
 import { eq } from 'drizzle-orm';
 import { config } from '../../config';
 import { db } from '../../shared/db';
+import { accountMemberRow } from '../../iam/membership-read';
 import { buildRequestSummary, finishAuditLog, startAuditLog } from './audit-logger';
 import { isTunnelConnectionLive, relayRpcToConnectedAgent } from './cluster-forwarder';
 import { checkPermission } from './permission-checker';
@@ -235,6 +236,7 @@ export type ComputerCallOutcome =
       ok: false;
       kind:
         | 'computer_unpaired'
+        | 'computer_owner_left'
         | 'computer_offline'
         | 'computer_capability_not_approved'
         | ComputerAccessErrorKind
@@ -328,6 +330,15 @@ export async function executeComputerCall(input: {
       ok: false,
       kind: 'computer_unpaired',
       message: 'This computer was unpaired. Pair it again to use it.',
+    };
+  }
+  // A paired machine keeps its owner after the owner leaves the account. Its
+  // agents must not keep reaching that person's disk and shell (KRTX-1722).
+  if (machine.ownerUserId && !(await accountMemberRow(input.accountId, machine.ownerUserId))[0]) {
+    return {
+      ok: false,
+      kind: 'computer_owner_left',
+      message: `${machine.name} belongs to someone who is no longer a member of this account, so it cannot be used here.`,
     };
   }
   const online = isTunnelConnectionLive(machine);

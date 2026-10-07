@@ -135,3 +135,13 @@ describe('escapeCurrencyDollars', () => {
     expect(escapeCurrencyDollars(null as unknown as string)).toBeNull();
   });
 });
+
+describe('KaTeX size limits', () => {
+  test('clamps an agent-authored oversized rule', async () => {
+    const { default: katex } = await import('katex');
+    const { KATEX_RENDER_OPTIONS } = await import('./katex-markdown');
+    const html = katex.renderToString('\\rule{99999em}{1em}', KATEX_RENDER_OPTIONS);
+    expect(html).toContain('border-right-width:20em');
+    expect(html).not.toContain('border-right-width:99999');
+  });
+});

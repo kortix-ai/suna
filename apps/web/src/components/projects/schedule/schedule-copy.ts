@@ -33,6 +33,18 @@ export function isTriggerKind(type: ProjectTrigger['type']): type is TriggerKind
   return type === 'cron' || type === 'webhook';
 }
 
+/**
+ * Triggers the customer wrote. The starter ships every new project a
+ * `harness-reflector` cron that keeps the project's memory current; it is
+ * infrastructure, not something the customer configured, so the Triggers page
+ * must not show it (KRTX-1299). `agent` matches the shipped template exactly;
+ * `slug` covers a renamed trigger on the same agent.
+ */
+export function isCustomerTrigger(trigger: ProjectTrigger): boolean {
+  if (trigger.agent !== 'harness-reflector') return true;
+  return trigger.slug !== 'harness-reflector' && trigger.slug !== 'harness-reflector-daily';
+}
+
 /* ─── Time of day ───────────────────────────────────────────────────────── */
 
 function pad2(value: number): string {
@@ -162,6 +174,19 @@ export function describeWhen(trigger: ProjectTrigger): string {
   if (trigger.run_at) return describeOneOff(trigger.run_at);
   if (trigger.cron) return describeCadence(trigger.cron);
   return CUSTOM_TIMING_LABEL;
+}
+
+/**
+ * "Next run Oct 8, 11:12", in the viewer's time zone, for an enabled cron
+ * trigger; null when there is none. The time is the slot the scheduler
+ * claims, jitter included, so it can sit up to 30 minutes past the
+ * expression's own slot (KRTX-1743).
+ */
+export function describeNextRun(trigger: ProjectTrigger): string | null {
+  if (!trigger.enabled || !trigger.next_fire_at) return null;
+  const at = new Date(trigger.next_fire_at);
+  if (Number.isNaN(at.getTime())) return null;
+  return `Next run ${at.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
 }
 
 /* ─── Names ─────────────────────────────────────────────────────────────── */

@@ -162,6 +162,41 @@ describe('manifest compare-and-swap routing', () => {
     expect(JSON.stringify(result)).not.toContain('github.com/example');
   });
 
+  test('returns a safe retryable response when the remote rejects the push with a server error (KRTX-1683)', async () => {
+    // Better Stack FE pattern `a1ed728e…`: GitHub's receive-pack answered the
+    // push itself with `! [remote rejected] <sha> -> main (Internal Server
+    // Error)`. The old fallback surfaced the raw git stderr as a 502 the
+    // frontend pages on; the classifier now owns it as a transient failure.
+    const stderr = [
+      'To https://github.com/example/connectors.git',
+      ' ! [remote rejected] 0123456789abcdef0123456789abcdef01234567 -> main (Internal Server Error)',
+      "error: failed to push some refs to 'https://github.com/example/connectors.git'",
+    ].join('\n');
+    commitError = new mirror.GitOperationError({
+      kind: 'failed',
+      message: stderr,
+      gitArgs: ['push', '--force-with-lease=refs/heads/main:abc', 'origin', 'def:refs/heads/main'],
+      exitCode: 1,
+      stderr,
+    });
+
+    const result = await commitManifest(
+      project,
+      {
+        schemaVersion: 2,
+        format: 'yaml',
+        path: 'kortix.yaml',
+        revision: 'a'.repeat(40),
+        candidatePaths: ['kortix.yaml', 'kortix.yml', 'kortix.toml'],
+        raw: { kortix_version: 2, connectors: [] },
+      },
+      'manifest write during a GitHub incident',
+    );
+
+    expect(result).toEqual({ error: 'git mirror is temporarily unavailable', status: 503 });
+    expect(JSON.stringify(result)).not.toContain('github.com/example');
+  });
+
   test('keeps the GitHub Contents API for unguarded writes', async () => {
     const result = await commitManifest(
       project,

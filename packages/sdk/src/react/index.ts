@@ -12,6 +12,9 @@ export {
   type ConnectorPopupOpener,
 } from './connector-setup';
 
+// One connector action's output as a cached query, with typed connector errors.
+export { useConnectorQuery, type ConnectorQueryOptions } from './use-connector-query';
+
 // The one call a host makes on every identity change (sign-out, a different
 // user signing in) to drop the SDK's per-user in-memory session state.
 export { resetIdentityState } from './reset-identity-state';
@@ -21,6 +24,9 @@ export { resetIdentityState } from './reset-identity-state';
 // and type). This is the single source of truth the web UI binds to.
 export * from './opencode';
 export { useRuntimeSupports } from './use-runtime-supports';
+// The session's one live connection (R5.3). `useSession` mounts it; a host that
+// runs its own copy of a poll (self-heal, sync) gates it on this.
+export { useSessionStreamConnected } from './use-session-stream';
 
 // `useSession`'s reply/error-classification surface — not (yet) re-exported by
 // `./opencode`'s explicit barrel list, so re-exported directly here.
@@ -135,6 +141,7 @@ export { useAccountSecretResources, useSessionProviderSecretPools } from './use-
 export { useProjectTriggers, projectTriggersKey } from './use-project-triggers';
 export { useProjectReminders, useSessionReminders } from './use-reminders';
 export { useSessionMessageAuthors } from './use-session-message-authors';
+export { useSessionModelUsage } from './use-session-model-usage';
 export { useChangeRequests, changeRequestsKey } from './use-change-requests';
 export { useGatewayRoutingPolicy, gatewayRoutingPolicyKey } from './use-gateway-routing-policy';
 export {
@@ -151,6 +158,7 @@ export {
 // `instanceof`-match it without reaching into the hook's internal path.
 export { NoCompactionModelError } from './use-opencode-sessions/no-compaction-model-error';
 export * from './use-admin-accounts';
+export * from './use-admin-role';
 export * from './use-admin-projects';
 export * from './use-admin-analytics';
 export * from './use-admin-activity-analytics';

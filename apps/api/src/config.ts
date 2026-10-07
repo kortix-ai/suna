@@ -144,6 +144,9 @@ const envSchema = z.object({
 
   // ── Database (REQUIRED) ──────────────────────────────────────────────────
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required — cannot start without a database'),
+  // Debug only: append each SQL statement the API pool sends (whitespace-normalized
+  // text, no params) as one line to this file. Empty = off.
+  KORTIX_SQL_TRACE: optStr,
 
   // ── Supabase (REQUIRED) ──────────────────────────────────────────────────
   SUPABASE_URL: z
@@ -221,6 +224,9 @@ const envSchema = z.object({
   // Global background-worker switch. API-only and migration-shadow deployments
   // keep request handling active while disabling every recurring write loop.
   KORTIX_WORKERS_ENABLED: optBoolTrue,
+  // Kill switch for the scheduled account-deletion sweep. True skips every
+  // scheduled run; immediate deletion is unaffected. Default off (sweep runs).
+  ACCOUNT_DELETION_SWEEP_PAUSED: optBoolFalse,
   /**
    * Enforce the sandbox egress pin on the secret-broker route (default ON).
    *
@@ -572,30 +578,12 @@ const envSchema = z.object({
   // template row still references. On by default; boot auto-heal covers the rare
   // cross-env race where another env's row pointed at the reaped (identical) name.
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: optBoolTrue,
-  // Pi worker pool (harness/worker split P1.8): keep this many PARKED boxes of
-  // the shared pi-worker snapshot per environment, claimed at session create
-  // (a claim skips provider create + box boot, ~4s of the cold path measured
-  // on dev 2026-08-27). 0 = off. Pure accelerator: claim failure falls back to
-  // an ordinary cold create.
-  KORTIX_PI_WORKER_POOL_TARGET: optInt(0),
-  // Parked boxes older than this are reaped and replaced; also the Daytona
-  // auto-stop backstop a parked box is created with, so an orphaned box
-  // reclaims itself even if every API instance dies.
-  KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES: optInt(60),
   // The fresh-session Git fast path: KORTIX_SESSION_FRESH, the base-tip +
   // scaffold-delta hint (inline or remote bundle), and the OpenCode config-dir
   // hint that lets the daemon spawn OpenCode before the checkout. Default ON;
   // `false` restores the pre-2026-08-27 create-time contract. The daemon side
   // is additive and falls back to the clone path without these hints.
   KORTIX_FAST_GIT_BOOT_ENABLED: optBoolTrue,
-  // Experimental compiled boot path. The API builds a verified checkout and
-  // OpenCode launcher for one exact Git SHA. `off` preserves the clone and
-  // baked-agent path. `shadow` verifies both artifacts without using them.
-  // `prefer` uses both artifacts with legacy fallback. `required` fails closed.
-  KORTIX_COMPILED_BOOT_MODE: z
-    .enum(['off', 'shadow', 'prefer', 'required'])
-    .optional()
-    .default('off'),
   // ── Project snapshot archives (S3 config provider) ─────────────────────
   // A fresh session materializes its project from a prebuilt `.tar.gz` in S3
   // instead of a Git clone. `git` (default) never attempts S3 and is the
@@ -892,6 +880,13 @@ const envSchema = z.object({
   MAILTRAP_SIGNUPS_LIST_ID: optStr,
   // Additional list for work-email signups (founder "book a call" flow).
   MAILTRAP_BUSINESS_SIGNUPS_LIST_ID: optStr,
+
+  // ── Signup webhook (signup → sales factory) ─────────────────────────────
+  // Every genuinely new account POSTs one `account.signup` event here, signed
+  // `X-Kortix-Signature: sha256=<HMAC-SHA256 of the raw body>` with the secret.
+  // Inert unless both are set (accounts/signup-webhook.ts).
+  SIGNUP_WEBHOOK_URL: optStr,
+  SIGNUP_WEBHOOK_SECRET: optStr,
 
   // ── Better Stack Observability (optional — graceful degradation) ────────
   BETTERSTACK_API_LOG_TOKEN: optStr, // Logtail source token for structured logs
@@ -1218,6 +1213,10 @@ export const config = {
 
   // ─── Internal Deployment Controls ─────────────────────────────────────────
   INTERNAL_KORTIX_ENV: env.INTERNAL_KORTIX_ENV as InternalKortixEnv,
+  // True only when the deploy set the variable. An unset variable falls back to
+  // 'dev' above, and the router credit gate must not read that fallback as a
+  // dev exemption (see router/services/credit-gate-env.ts).
+  INTERNAL_KORTIX_ENV_EXPLICIT: Boolean(process.env.INTERNAL_KORTIX_ENV),
   // Empty string reads as unset: the launchers always export the var, and a
   // blank value must not turn into an instance called "".
   KORTIX_INSTANCE_ID: env.KORTIX_INSTANCE_ID || undefined,
@@ -1225,6 +1224,7 @@ export const config = {
   // Single master switch — see schema docstring above.
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
+  ACCOUNT_DELETION_SWEEP_PAUSED: env.ACCOUNT_DELETION_SWEEP_PAUSED,
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: env.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
   KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: env.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS
     .split(',')
@@ -1244,6 +1244,7 @@ export const config = {
 
   // ─── Database ──────────────────────────────────────────────────────────────
   DATABASE_URL: env.DATABASE_URL,
+  KORTIX_SQL_TRACE: env.KORTIX_SQL_TRACE,
 
   // ─── Supabase ──────────────────────────────────────────────────────────────
   SUPABASE_URL: env.SUPABASE_URL,
@@ -1370,10 +1371,7 @@ export const config = {
   DAYTONA_TARGET: env.DAYTONA_TARGET,
   DAYTONA_WEBHOOK_SECRET: env.DAYTONA_WEBHOOK_SECRET,
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
-  KORTIX_PI_WORKER_POOL_TARGET: env.KORTIX_PI_WORKER_POOL_TARGET,
-  KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES: env.KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES,
   KORTIX_FAST_GIT_BOOT_ENABLED: env.KORTIX_FAST_GIT_BOOT_ENABLED,
-  KORTIX_COMPILED_BOOT_MODE: env.KORTIX_COMPILED_BOOT_MODE,
   KORTIX_PROJECT_SNAPSHOT_MODE: env.KORTIX_PROJECT_SNAPSHOT_MODE,
   KORTIX_PROJECT_SNAPSHOT_S3_BUCKET: env.KORTIX_PROJECT_SNAPSHOT_S3_BUCKET,
   KORTIX_PROJECT_SNAPSHOT_S3_REGION: env.KORTIX_PROJECT_SNAPSHOT_S3_REGION,
@@ -1541,6 +1539,10 @@ export const config = {
   MAILTRAP_SIGNUPS_LIST_ID: env.MAILTRAP_SIGNUPS_LIST_ID,
   MAILTRAP_BUSINESS_SIGNUPS_LIST_ID: env.MAILTRAP_BUSINESS_SIGNUPS_LIST_ID,
 
+  // ─── Signup webhook (signup → sales factory) ──────────────────────────────
+  SIGNUP_WEBHOOK_URL: env.SIGNUP_WEBHOOK_URL,
+  SIGNUP_WEBHOOK_SECRET: env.SIGNUP_WEBHOOK_SECRET,
+
   // ─── Stray env vars (centralized from other files) ────────────────────────
   CORS_ALLOWED_ORIGINS: env.CORS_ALLOWED_ORIGINS,
   KORTIX_MASTER_URL: env.KORTIX_MASTER_URL,
@@ -1634,6 +1636,12 @@ const TOOL_PRICING: Record<string, ToolPricing> = {
     baseCost: 0.01,
     perResultCost: 0,
     markupMultiplier: 1.5,
+  },
+  // Crawl status polls cost nothing upstream, so they cost nothing here.
+  proxy_firecrawl_status: {
+    baseCost: 0,
+    perResultCost: 0,
+    markupMultiplier: 1,
   },
   proxy_context7: {
     baseCost: 0.001,

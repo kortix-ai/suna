@@ -17,7 +17,6 @@ import {
   UV_VERSION,
 } from '@kortix/shared';
 import { SANDBOX_VERSION, config } from '../config';
-import { snapshotEmbedsAgentForBootMode } from './compiled-runtime-fingerprint';
 import {
   buildRuntimeArtifactFingerprint,
   cliConnectorRuntimeArtifacts,
@@ -205,7 +204,12 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // Without both, a cold box answered `runtime.running` with nulls until its
 // first reconcile finished — ~140 s on a preview box — and paid a full overlay
 // download plus a ~210 MB re-hash to get there.
-const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v49';
+// v50: the entrypoint's root block repairs /etc/hosts to 0644 before the
+// privilege drop. Platinum writes it 0700 root:root at every boot, so the
+// runtime user cannot read it and `localhost` never resolves — Bun fetch to
+// an http://localhost origin dials ::1 and fails (db-suites red on every
+// fresh worker sandbox until a manual chmod; KRTX-1814).
+const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v50';
 
 // The runtime layer bakes source artifacts into every template's rootfs. The
 // first set is the kortix-agent binary (its source, package.json and the shared
@@ -231,6 +235,9 @@ const NON_AGENT_RUNTIME_ARTIFACTS = [
   // includes @kortix/sdk because the compiled CLI owns the Connector client.
   ...cliConnectorRuntimeArtifacts(CLI_ROOT),
 ];
+
+/** Every runtime input of the snapshot: the daemon binary's sources, then the rest. */
+export const RUNTIME_ARTIFACTS = [...AGENT_RUNTIME_ARTIFACTS, ...NON_AGENT_RUNTIME_ARTIFACTS];
 // Both version strings fold in the layer/opencode/browser/sandbox constants — all
 // NON-agent inputs (bumped when the layer/opencode/browser change, not the agent
 // binary), so they belong in BOTH fingerprints. The per-process cache re-walks the
@@ -278,7 +285,7 @@ export async function currentRuntimeArtifactFingerprint(): Promise<string> {
   runtimeFingerprintInflight = buildRuntimeArtifactFingerprint({
     sandboxVersion: sandboxVersionStr(),
     opencodeVersion: OPENCODE_VERSION,
-    artifacts: runtimeArtifactsForBootMode(config.KORTIX_COMPILED_BOOT_MODE),
+    artifacts: [...RUNTIME_ARTIFACTS],
   })
     .then((value) => {
       runtimeFingerprintCache = { key, value };
@@ -290,17 +297,6 @@ export async function currentRuntimeArtifactFingerprint(): Promise<string> {
       throw err;
     });
   return runtimeFingerprintInflight;
-}
-
-export function runtimeArtifactsForBootMode(
-  mode: 'off' | 'shadow' | 'prefer' | 'required',
-): Array<(typeof AGENT_RUNTIME_ARTIFACTS)[number] | (typeof NON_AGENT_RUNTIME_ARTIFACTS)[number]> {
-  // In prefer/required mode server.mjs carries the daemon. Daemon source is no
-  // longer an image input, so changing it must not mint an 8 GB snapshot.
-  // Shadow/off still execute the baked daemon and retain the original identity.
-  return snapshotEmbedsAgentForBootMode(mode)
-    ? [...AGENT_RUNTIME_ARTIFACTS, ...NON_AGENT_RUNTIME_ARTIFACTS]
-    : [...NON_AGENT_RUNTIME_ARTIFACTS];
 }
 
 /**

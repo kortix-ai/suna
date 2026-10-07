@@ -28,6 +28,7 @@ import {
   completeSandboxTurn,
 } from '../sandbox-turn-lifecycle';
 import { drainSessionLifecycleQueue } from '../session-lifecycle';
+import { confirmInboxPromptConsumed, steerTargetAtTurnEnd } from '../session-lifecycle/consumption';
 import { reconcileForwardedTurnsAtEnd } from '../session-lifecycle/forwarded-strand-reconcile';
 import { promoteNextInboxRow } from '../session-lifecycle/store';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
@@ -225,17 +226,24 @@ async function settleTurnLedger(sessionId: string, body: TurnStreamBody, childSe
   // event. Returning before this write finished made a transient DB failure
   // look successful, so the daemon deduped the event and the active record
   // survived until reaper reconciliation.
-  const turnCompletion = await completeSandboxTurn(
-    sessionId,
-    status,
-    {
-      runtimeSessionId:
-        typeof body.runtime_session_id === 'string' ? body.runtime_session_id : undefined,
-      messageId: typeof body.turn_message_id === 'string' ? body.turn_message_id : undefined,
-    },
-    errorInfo,
-    childSession ? childIdleGraceMs() : undefined,
-  );
+  const identity = {
+    runtimeSessionId:
+      typeof body.runtime_session_id === 'string' ? body.runtime_session_id : undefined,
+    messageId: typeof body.turn_message_id === 'string' ? body.turn_message_id : undefined,
+  };
+  const complete = (messageId: string | undefined) =>
+    completeSandboxTurn(sessionId, status, { ...identity, messageId }, errorInfo, childSession ? childIdleGraceMs() : undefined);
+  let turnCompletion = await complete(identity.messageId);
+  // An end that names no open turn may name a STEERED message (R10): OpenCode
+  // ends on the last assistant's parent. Close the turn the steer went into.
+  // Asked only on a miss, so an ordinary end costs no extra read.
+  if (
+    identity.messageId &&
+    (turnCompletion.outcome === 'identity_mismatch' || turnCompletion.outcome === 'no_active_turn')
+  ) {
+    const steeredInto = await steerTargetAtTurnEnd(sessionId, identity.messageId);
+    if (steeredInto && turnCompletion.outcome === 'identity_mismatch') turnCompletion = await complete(steeredInto);
+  }
   // The memory guard reports its cause in a frame of its own, after the
   // abort. A daemon built before 2026-09-21 sends it with no
   // `turn_message_id` and `error_retryable: true`, which settles nothing
@@ -465,15 +473,19 @@ export async function settleTurnEnd(
 // bootstrapped (or reused after a restart). Persist it as the durable pin so
 // the Kortix session resolves to the LIVE root with NO dependency on a browser
 // ever opening it — closing the null-pin gap that left Slack/trigger/cron
-// sessions resolving lazily onto the wrong (orphaned) root. The sandbox token
-// is already scoped to this project (checked above); the daemon only ever
-// reports its own pin-file root, never a subagent.
+// sessions resolving lazily onto the wrong (orphaned) root. Sandbox credential
+// only, like every other durable write in this file: the daemon only ever
+// reports its own pin-file root, never a subagent, and the sleeve has already
+// refused any sandbox token that is not scoped to this exact session.
 export async function pinOpencodeSession(
   c: RelayResponder,
   body: TurnStreamBody,
+  authenticatedSandboxId: string | null,
   projectId: string,
   sessionId: string,
 ): Promise<Response> {
+  const denial = requireSandboxCredential(c, authenticatedSandboxId, 'runtime_session');
+  if (denial) return denial;
   const ocId = body.runtime_session_id?.trim();
   if (!ocId) return c.json({ error: 'runtime_session_id is required' }, 400);
   const updated = await db
@@ -482,6 +494,24 @@ export async function pinOpencodeSession(
     .where(and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)))
     .returning({ sessionId: projectSessions.sessionId });
   return c.json({ ok: updated.length > 0 });
+}
+
+// The running turn READ a steered message at a step boundary (R10): its inbox
+// row is delivered. Sandbox credential only, like the other daemon-reported
+// turn kinds.
+export async function readSteer(
+  c: RelayResponder,
+  body: TurnStreamBody,
+  sessionId: string,
+  authenticatedSandboxId: string | null,
+): Promise<Response | null> {
+  if (!authenticatedSandboxId) {
+    return requireSandboxCredential(c, authenticatedSandboxId, 'steer_read');
+  }
+  const messageId = body.turn_message_id?.trim();
+  if (!messageId) return c.json({ error: 'turn_message_id is required' }, 400);
+  const outcome = await confirmInboxPromptConsumed(sessionId, messageId);
+  return c.json({ ok: outcome !== 'no_prompt', outcome });
 }
 
 /** The content-bearing `step` / `answer` relay, and the deny-by-default fall-through. */

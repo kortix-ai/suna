@@ -40,7 +40,7 @@
  * a time. `unit-feature-flag-drift.test.ts` compares contract <-> SDK <->
  * registry and catches 1/3/5 only. List every holder before you start:
  *
- *   rg -l "meta_agent" --glob '!node_modules' . | xargs rg -l "pi_worker"
+ *   rg -l "meta_agent" --glob '!node_modules' . | xargs rg -l "pi_harness"
  *
  * The UI renders straight from {@link buildFeatureFlagCatalog}, so a new entry
  * lights up in Settings automatically. `unit-feature-flags.test.ts` pins the
@@ -283,22 +283,10 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcementNote: 'Session selection and provider credential resolution reject or ignore resource secrets while disabled.',
   },
   {
-    key: 'pi_worker',
-    name: 'Pi Worker Runtime (compiled)',
-    description:
-      'Compile boot artifacts for every push: a pi-based worker runtime .mjs per commit (agent config from kortix.yaml baked in at that exact sha, downloadable per ref+sha) plus the OpenCode compiled-boot artifacts for this project even where KORTIX_COMPILED_BOOT_MODE is off. Harness/worker split experiment. Sessions boot ON the worker when the manifest also sets `runtime: pi`; without that manifest line sessions keep the OpenCode path.',
-    stability: 'experimental',
-    available: () => true,
-    // Explicit opt-in per project. Off ⇒ no artifact is compiled on push and
-    // the download route answers 403.
-    platformDefault: () => false,
-    enforcement: 'routes',
-  },
-  {
     key: 'pi_harness',
     name: 'Pi Harness (in-sandbox)',
     description:
-      'Run sessions on the pi agent harness inside the ordinary session sandbox instead of OpenCode (KORTIX_HARNESS=pi in kortixd). Same repo layout, same agents and skills, same wire to the UI; pi starts in-process in ~100 ms after the checkout. On ⇒ every new or restarted session of this project boots pi. Off ⇒ the manifest decides: `runtime: pi` still boots pi, anything else boots OpenCode. pi calls models only through the LLM gateway: with `llm_gateway` off, sessions boot OpenCode. Distinct from `pi_worker`, which is the split worker/environment topology.',
+      'Run sessions on the pi agent harness inside the ordinary session sandbox instead of OpenCode (KORTIX_HARNESS=pi in kortixd). Same repo layout, same agents and skills, same wire to the UI; pi starts in-process in ~100 ms after the checkout. On ⇒ every new or restarted session of this project boots pi. Off ⇒ the manifest decides: `runtime: pi` still boots pi, anything else boots OpenCode. pi calls models only through the LLM gateway: with `llm_gateway` off, sessions boot OpenCode.',
     stability: 'experimental',
     available: () => true,
     platformDefault: () => false,

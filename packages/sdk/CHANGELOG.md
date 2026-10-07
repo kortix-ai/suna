@@ -6,6 +6,11 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- `ConnectorPageLimitError` (`code: 'max_pages_exceeded'`, `connector`,
+  `action`, `maxPages`, `nextArgs`): `paginateConnector` and
+  `connector(slug).paginate` throw it when `maxPages` (default 100) ends a
+  cursor that still has pages. Resume with `nextArgs`. A capped listing no
+  longer completes as if it were whole.
 - `ChannelBinding` gains optional `channelUnavailable`: Slack answered that the
   conversation is deleted or out of the bot's reach. Slack bindings now carry
   `channelName` (a channel without `#`, the other person's name for a DM, the
@@ -277,6 +282,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Behavior is unchanged. Removed in the next major.
 
 ### Fixed
+- `createScopedKortix` (`@kortix/sdk/server`) runs every `next`, `return`
+  and `throw` of a returned async generator inside its scope. Before, each
+  `connector(slug).paginate` page ran outside the scope and used the
+  process-global config: another client's token and backend.
 - `useSession({ chatEngine: false })` no longer reads a transcript for no
   session. Its inner `useSessionSync('')` went busy with the session, and the
   busy to idle step started `GET /session//message`, which answered 400 and

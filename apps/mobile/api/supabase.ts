@@ -5,6 +5,7 @@ import 'react-native-url-polyfill/auto';
 import { resolveLocalUrl } from '@/lib/utils/resolve-local-url';
 import { log } from '@/lib/logger';
 import { createDeadlineFetch } from '@/lib/utils/with-deadline';
+import { createRefreshGuardFetch } from '@/lib/auth/refresh-fetch';
 import { resolveEndpoints } from '@/lib/deployment/deployment';
 import { activeDeployment } from '@/lib/deployment/store';
 
@@ -48,15 +49,22 @@ export const SUPABASE_AUTH_STORAGE_KEY = (() => {
 })();
 
 /**
- * Auth calls abort after 15 s. React Native's Android HTTP client has no
- * timeout, so a stalled token refresh would otherwise hang sign-in and session
- * restore forever. Storage uploads are not capped: they can run longer.
+ * The client's fetch:
+ * - Auth calls abort after 15 s. React Native's Android HTTP client has no
+ *   timeout, so a stalled token refresh would otherwise hang sign-in and
+ *   session restore forever. Storage uploads are not capped: they can run
+ *   longer.
+ * - A token refresh answer that is not ok and not a definitive GoTrue
+ *   rejection becomes a network error (`lib/auth/refresh-fetch.ts`). auth-js
+ *   then keeps the stored session and retries, instead of signing out.
  */
 const AUTH_REQUEST_TIMEOUT_MS = 15_000;
-const authDeadlineFetch = createDeadlineFetch((input, init) => fetch(input, init), {
-  timeoutMs: AUTH_REQUEST_TIMEOUT_MS,
-  shouldTimeout: (url) => url.includes('/auth/v1/'),
-});
+const authFetch = createRefreshGuardFetch(
+  createDeadlineFetch((input, init) => fetch(input, init), {
+    timeoutMs: AUTH_REQUEST_TIMEOUT_MS,
+    shouldTimeout: (url) => url.includes('/auth/v1/'),
+  })
+);
 
 /**
  * Supabase client instance with AsyncStorage for session persistence
@@ -78,7 +86,7 @@ export const supabase = (() => {
       global: {
         // The wrapper has fetch's call signature; `typeof fetch` also carries
         // static members no caller uses.
-        fetch: authDeadlineFetch as typeof fetch,
+        fetch: authFetch as typeof fetch,
       },
     });
   } catch (error) {

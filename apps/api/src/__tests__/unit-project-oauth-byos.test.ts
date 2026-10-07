@@ -121,7 +121,7 @@ mock.module('../shared/audit', () => ({
 }));
 
 const { projectsApp } = await import('../projects/lib/app');
-await import('../projects/routes/provider-oauth');
+(await import('../projects/routes/provider-oauth')).registerProviderOauthRoutes();
 
 function app(userId: string) {
   const hono = new Hono();

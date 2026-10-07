@@ -24,7 +24,7 @@ import {
   loadVisibleSession,
   projectCapabilityAllowed,
 } from '../lib/access';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 import { resolveSessionPersonalOwner } from '../lib/personal-resources';
 import { secretAudienceSubject } from '../lib/secret-audience';
 import { resolveSessionAgentGrant } from '../lib/secret-grant';

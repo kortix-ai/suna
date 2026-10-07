@@ -68,8 +68,23 @@ export function turnHasSteps(allParts: ReadonlyArray<PartEntry>): boolean {
   });
 }
 
-export function turnHasReasoning(allParts: ReadonlyArray<PartEntry>): boolean {
-  return allParts.some(({ part }) => isReasoningPart(part) && !!part.text?.trim());
+/**
+ * The turn's parts without reasoning. Mobile never shows thinking, so every
+ * rule below reads these parts, not the raw ones.
+ */
+export function withoutReasoning<T extends PartEntry>(allParts: ReadonlyArray<T>): T[] {
+  return allParts.filter(({ part }) => !isReasoningPart(part));
+}
+
+/**
+ * The parts the busy label reads. A thought stays in, with its text blanked, so
+ * the label is a bare "Thinking..." (the SDK's status scan returns the last
+ * tool's phrase otherwise) and no thought text or heading reaches the screen.
+ */
+export function busyStatusParts<T extends PartEntry>(rawParts: ReadonlyArray<T>): T[] {
+  return rawParts.map((entry) =>
+    isReasoningPart(entry.part) ? { ...entry, part: { ...entry.part, text: '' } } : entry,
+  );
 }
 
 // ─── Answered questions ──────────────────────────────────────────────────────
@@ -234,6 +249,46 @@ export function lastTextPartId(segments: ReadonlyArray<Segment>): string | undef
     if (segment.kind === 'text') return segment.part.id;
   }
   return undefined;
+}
+
+// ─── Layout ──────────────────────────────────────────────────────────────────
+
+export interface TurnBodyLayout {
+  /** The segments list (bursts, standalone rows, and text when `text` is 'segments') renders. */
+  segments: boolean;
+  /**
+   * Where the reply text renders:
+   * - 'segments': each text part in the segments list, keyed by its part id;
+   * - 'response': one block, in the slash-command card;
+   * - 'inline': the inline content (text + answered questions).
+   */
+  text: 'segments' | 'response' | 'inline';
+}
+
+/**
+ * Where each part of a turn renders (KRTX-1678). The reply text stays in the
+ * segments list for the whole stream: it does not depend on `working` or on
+ * whether a tool ran yet. A text-only reply that moved into the segments list
+ * on the first tool call remounted mid-stream, a visible jump, and the
+ * streaming block showed only the active message while the settled one joined
+ * every message. A slash-command reply keeps its card until a step arrives.
+ */
+export function turnBodyLayout({
+  working,
+  hasSteps,
+  hasAssistantContent,
+  showInlineContent,
+  isCommand,
+}: {
+  working: boolean;
+  hasSteps: boolean;
+  hasAssistantContent: boolean;
+  showInlineContent: boolean;
+  isCommand: boolean;
+}): TurnBodyLayout {
+  const text = showInlineContent ? 'inline' : isCommand && !hasSteps ? 'response' : 'segments';
+  const segments = hasAssistantContent && (text === 'segments' || working || hasSteps);
+  return { segments, text };
 }
 
 // ─── Response ────────────────────────────────────────────────────────────────

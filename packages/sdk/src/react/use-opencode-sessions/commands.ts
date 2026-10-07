@@ -5,7 +5,7 @@ import { getClient } from '../../core/runtime/client';
 import type { Command } from '../../core/runtime/runtime-types';
 import { useRuntimeSupports } from '../use-runtime-supports';
 import { runtimeKeys, useRuntimeReady } from './keys';
-import { unwrap, asRuntimeList, cachedRuntimeList, setLSCache, LS_COMMANDS } from './shared';
+import { unwrap, asRuntimeList } from './shared';
 
 // ============================================================================
 // Command Hooks
@@ -18,13 +18,12 @@ import { unwrap, asRuntimeList, cachedRuntimeList, setLSCache, LS_COMMANDS } fro
  * or proxy that answers with an object body used to hand that value straight
  * to the render, where `for (const cmd of commands)` threw
  * `TypeError: t is not iterable` and killed the whole session view (dev,
- * 2026-08-23). `asRuntimeList` normalizes the response and `cachedRuntimeList`
- * treats a corrupt localStorage placeholder as a miss, so every consumer
+ * 2026-08-23). `asRuntimeList` normalizes the response, so every consumer
  * (`detectCommandFromText`, the slash menu, command attachments) can iterate
  * the result unconditionally.
  *
  * Slash commands are a runtime capability (`session.commands`): a runtime
- * without them (pi) is never asked, and the list stays empty.
+ * without them is never asked, and the list stays empty.
  */
 export function useRuntimeCommands() {
   const runtimeReady = useRuntimeReady();
@@ -34,11 +33,8 @@ export function useRuntimeCommands() {
     queryFn: async () => {
       const client = getClient();
       const result = await client.command.list();
-      const commands = asRuntimeList<Command>(unwrap(result));
-      setLSCache(LS_COMMANDS, commands);
-      return commands;
+      return asRuntimeList<Command>(unwrap(result));
     },
-    placeholderData: () => cachedRuntimeList<Command>(LS_COMMANDS),
     enabled: runtimeReady && supported,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,

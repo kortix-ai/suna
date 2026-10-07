@@ -6,6 +6,7 @@ import { ORPHANED_PROMPT_MIN_AGE_MS } from '../reaper-constants';
 import { db } from '../../shared/db';
 import { PROMPT_NEVER_RAN_END_REASONS } from './redelivery';
 import { wireMessageIdMatches } from './wire-id-match';
+import { forwardedSql, notStopPausedSql } from './delivery-state';
 
 /**
  * The other end of a FORWARDED prompt.
@@ -122,7 +123,7 @@ const liveDeps: ConsumptionDeps = {
           // and a row already `delivered` is finished, so both are no-ops —
           // which is what makes the call idempotent under two witnesses.
           eq(sessionLifecycleCommands.status, 'succeeded'),
-          sql`${sessionLifecycleCommands.result}->>'status' = 'forwarded'`,
+          forwardedSql,
           // The SAME id predicate every other reader matches on
           // (`wire-id-match.ts`), so none of them can disagree about which row
           // a wire id names. It was NOT the same until 2026-08-20: this one
@@ -180,12 +181,12 @@ const liveDeps: ConsumptionDeps = {
         and(
           eq(sessionLifecycleCommands.commandType, 'continue_session'),
           eq(sessionLifecycleCommands.status, 'succeeded'),
-          sql`${sessionLifecycleCommands.result}->>'status' = 'forwarded'`,
+          forwardedSql,
           // A STOP-PAUSED row is parked by the user, not stranded by a missing
           // witness. Force-closing it would make the prompt they stopped
           // disappear from their queue instead of waiting there for them to
           // send it again.
-          sql`COALESCE(${sessionLifecycleCommands.result}->>'stop_paused', '') <> 'true'`,
+          notStopPausedSql,
           lte(sessionLifecycleCommands.updatedAt, olderThan),
         ),
       )
@@ -396,4 +397,30 @@ export async function reconcileForwardedPrompts(
     }
   }
   return out;
+}
+
+/**
+ * A turn end that names a STEER row's id (R10). OpenCode ends a turn on the
+ * last assistant's `parentID`, which after a steer is the steered message, not
+ * the message that opened the turn. Returns the turn's own message id
+ * (`result.steered_into_message_id`) and confirms the steer row consumed; null
+ * when no steer row of this session carries the id. One read, served by the
+ * session index; the caller asks only when the end matched no open turn.
+ */
+export async function steerTargetAtTurnEnd(sessionId: string, messageId: string): Promise<string | null> {
+  const [steer] = await db
+    .select({ into: sql<string | null>`${sessionLifecycleCommands.result}->>'steered_into_message_id'` })
+    .from(sessionLifecycleCommands)
+    .where(
+      and(
+        eq(sessionLifecycleCommands.sessionId, sessionId),
+        eq(sessionLifecycleCommands.commandType, 'continue_session'),
+        sql`${sessionLifecycleCommands.result} ? 'steered_into_message_id'`,
+        wireMessageIdMatches(messageId),
+      ),
+    )
+    .limit(1);
+  if (!steer?.into) return null;
+  await confirmInboxPromptConsumed(sessionId, messageId);
+  return steer.into;
 }

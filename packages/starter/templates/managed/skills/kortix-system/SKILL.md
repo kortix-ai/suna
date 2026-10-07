@@ -105,8 +105,8 @@ Rules for both harnesses:
   (`<change-requests>` below).
 - `web_search`, `image_search`, `scrape_webpage`, `memory` and `show` exist
   on both harnesses, with the same names and arguments.
-- pi does not have rewind, compaction, slash commands, MCP servers or a todo
-  tool. `references/pi/overview.md` lists the differences.
+- pi does not have rewind, MCP servers or a todo tool.
+  `references/pi/overview.md` lists the differences.
 </harnesses>
 
 <capabilities>
@@ -215,6 +215,7 @@ Kortix cloud state — not just files in the repo. Examples:
 | "stop / wake a session, share it, or publish a preview link" | `kortix sessions stop|start <id>` · `sessions share <id> --mode …` · `sessions links <id> create --port 3000` |
 | "queue a prompt for later / see or reorder the queue" | `kortix sessions chat <id> -p "…" --queue` · `kortix sessions queue <id> ls|now|rm|hold|release` |
 | "approve / deny a pending connector call" | `kortix sessions approvals <id> ls|approve|deny` |
+| "call Gmail / a CRM / any connector from an App, a Convex backend or a script" | `@kortix/sdk` through the connector gateway, never a raw provider key · `kortix system-skills get kortix-connectors` (**From apps and backends**) |
 | "edit files in another session's sandbox" | `kortix sessions files <id> ls|write|mv|rm|find` |
 | "what needs review? approve / reject / request changes" | `kortix review ls` · `kortix review act <id> approve` · `kortix cr request-changes <cr> --message` |
 | "edit a trigger live (schedule, conditions, agent, model)" | `kortix triggers set <slug> --cron … --filter k=v` · `triggers add … --apply` |
@@ -563,7 +564,9 @@ When you, as an agent, have changes you believe should persist:
    with base can't be applied, and the conflict is yours to fix, not
    the reviewer's.
 2. **Commit on the session branch.** Small, working commits. Never
-   rewrite history that isn't yours.
+   rewrite history that isn't yours. Run `kortix validate` first, and
+   never commit a large binary or generated file (see `<gotchas>`:
+   keep big static assets out of Git).
 3. **Push the branch.** This step is NOT optional — a commit that
    never leaves the sandbox produces an empty, un-appliable CR:
    ```sh
@@ -987,6 +990,18 @@ Things that surprise people:
   keeping, the next move is *always* `kortix cr open`, never a force
   push, never asking the user to copy files out. See the
   `<change-requests>` section above.
+- **Keep big static assets out of Git.** Every session builds its agent
+  config from the whole repository at the base commit (`git archive`, so
+  history and `.git` do not count). Above 32 MiB compressed or 128 MiB
+  uncompressed that build fails, and every session runs the platform
+  default config without the project's agents. Put videos, images,
+  datasets, model weights and generated media in object storage (S3, R2,
+  GCS) or a CDN, and download them at runtime. Add build output (`dist/`,
+  `out/`, `node_modules/`) to `.gitignore`. `kortix validate` warns about
+  any file of 10 MiB or more and a repository over 32 MiB; run it before
+  you commit. A path that must stay in Git but that no agent reads can be
+  left out of the agent config with `<path> export-ignore` in
+  `.gitattributes`.
 - **Triggers live in `kortix.yaml`, not as files.** Old Kortix shipped
   triggers under `.opencode/triggers/<slug>.md` — that's gone.
   Centralized in the manifest now, parsed as `triggers:`.

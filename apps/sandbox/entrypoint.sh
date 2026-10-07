@@ -25,6 +25,10 @@ case ":${PATH:-}:" in
 esac
 export PATH
 
+# No core dumps: a crash dump carries the process environment, secrets included.
+# Set before the privilege drop so the hard limit binds every descendant.
+ulimit -c 0 2>/dev/null || true
+
 if [ "$(id -u)" -eq 0 ] && id kortix >/dev/null 2>&1; then
   # TEMPORARY: Platinum starts with /dev/shm as a plain directory and low
   # nofile limits. Both settings must be repaired before the privilege drop.
@@ -32,6 +36,11 @@ if [ "$(id -u)" -eq 0 ] && id kortix >/dev/null 2>&1; then
     || { mkdir -p /dev/shm && mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs /dev/shm; } 2>/dev/null \
     || true
   chmod 1777 /dev/shm 2>/dev/null || true
+  # TEMPORARY: Platinum writes /etc/hosts as 0700 root:root at every boot, so
+  # the runtime user cannot read it and `localhost` never resolves — a Bun
+  # fetch to an http://localhost origin then dials ::1 and fails with
+  # "Unable to connect". The content is already correct; only the mode is.
+  chmod 644 /etc/hosts 2>/dev/null || true
   ulimit -Hn 1048576 2>/dev/null || true
   ulimit -Sn 1048576 2>/dev/null || true
   # kortix.yaml `container_runtime: true` sets KORTIX_CONTAINER_RUNTIME=1 in the
@@ -250,33 +259,6 @@ mkdir -p "${AGENT_STATE_DIR}" 2>/dev/null || true
 export KORTIX_SUPERVISED=1
 export KORTIX_AGENT_STATE_DIR="${AGENT_STATE_DIR}"
 
-COMPILED_RUNTIME_PATH=""
-COMPILED_RUNTIME_ACTIVE=0
-case "${KORTIX_COMPILED_BOOT_MODE:-off}" in
-  off) ;;
-  shadow|prefer|required)
-    bootstrap_agent="$(select_agent)"
-    if COMPILED_RUNTIME_PATH="$("${bootstrap_agent}" install-compiled-runtime)" \
-      && [ -f "${COMPILED_RUNTIME_PATH}" ]; then
-      echo "[entrypoint] verified compiled server.mjs at ${COMPILED_RUNTIME_PATH}" >&2
-      case "${KORTIX_COMPILED_BOOT_MODE}" in
-        prefer|required) COMPILED_RUNTIME_ACTIVE=1 ;;
-      esac
-    else
-      COMPILED_RUNTIME_PATH=""
-      if [ "${KORTIX_COMPILED_BOOT_MODE}" = "required" ]; then
-        echo "[entrypoint] compiled runtime is required but unavailable" >&2
-        exit 1
-      fi
-      echo "[entrypoint] compiled runtime unavailable; using baked agent" >&2
-    fi
-    ;;
-  *)
-    echo "[entrypoint] invalid KORTIX_COMPILED_BOOT_MODE=${KORTIX_COMPILED_BOOT_MODE}" >&2
-    exit 1
-    ;;
-esac
-
 echo "[entrypoint] daemon takeover (cwd=/, workspace=${WORKSPACE})" >&2
 while :; do
   # A staged binary from the previous run is installed before launch, never
@@ -286,23 +268,11 @@ while :; do
   agent_bin="$(select_agent)"
   started=$(date +%s)
   set +e
-  if [ "${COMPILED_RUNTIME_ACTIVE}" -eq 1 ]; then
-    KORTIX_AGENT_BIN="${agent_bin}" node "${COMPILED_RUNTIME_PATH}" "$@"
-  else
-    "${agent_bin}" "$@"
-  fi
+  "${agent_bin}" "$@"
   status=$?
   set -e
   ran=$(( $(date +%s) - started ))
 
-  if [ "${COMPILED_RUNTIME_ACTIVE}" -eq 1 ] \
-     && { [ "${status}" -eq 78 ] || [ "${status}" -eq 127 ]; } \
-     && [ "${KORTIX_COMPILED_BOOT_MODE}" = "prefer" ]; then
-    echo "[entrypoint] compiled runtime rejected launch; falling back to baked agent" >&2
-    COMPILED_RUNTIME_ACTIVE=0
-    early_exits=0
-    continue
-  fi
 
   if [ "${status}" -eq "${SWAP_CODE}" ]; then
     echo "[entrypoint] daemon requested update swap (ran ${ran}s)" >&2

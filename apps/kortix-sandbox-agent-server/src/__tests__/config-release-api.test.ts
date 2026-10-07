@@ -14,7 +14,7 @@ import {
   fetchConfigReleaseDescriptor,
     type ConfigReleaseApi,
 } from '@/services/config-release/api-client'
-import { parseConfigReleaseDescriptor } from '@/services/config-release/descriptor'
+import { MAX_CONFIG_ARCHIVE_BYTES, parseConfigReleaseDescriptor } from '@/services/config-release/descriptor'
 import {
   SESSION_TOKEN_DEAD_TRIP_THRESHOLD,
   resetSessionTokenHealthForTests,
@@ -141,9 +141,9 @@ describe('parseConfigReleaseDescriptor', () => {
     }
   })
 
-  test('refuses an archive larger than 4 MiB and a non-literal config dir', () => {
+  test('refuses an archive larger than the cap and a non-literal config dir', () => {
     const big = valid()
-    big.archive!.bytes = 4 * 1024 * 1024 + 1
+    big.archive!.bytes = MAX_CONFIG_ARCHIVE_BYTES + 1
     expect(() => parseConfigReleaseDescriptor(big)).toThrow()
     const magic = valid()
     magic.config_dir = ':(top)*'

@@ -68,6 +68,36 @@ await connectors.call('microsoft-graph.sendmail', {
 A Connector defines callable tools. A Connection stores one authorization for
 that Connector. Credentials remain server-side and never enter the sandbox.
 
+#### Typed calls
+
+`kortix connectors types --out kortix-connectors.d.ts` writes a declaration
+file that fills `ConnectorActionRegistry`. `callAction` then types `args` and
+`output` from it. The request and the result are the same as `call`:
+
+```ts
+const r = await connectors.callAction('linear', 'list_issues', { team: 'CORE' });
+r.output?.issues; // typed from the action's output schema
+```
+
+One connector as a handle: `run` returns the output itself and throws
+`ConnectorCallError` (`code`, `connectUrl`, `availableAccounts`,
+`upstreamStatus`, `retryAfterSeconds`) or `ConnectorApprovalPendingError`;
+`paginate` follows a cursor and throws `ConnectorPageLimitError` (with
+`nextArgs`) past `maxPages`; `useConnectorQuery` (`@kortix/sdk/react`) caches a
+read. Guide: `/docs/sdk/connectors`; runnable: `examples/13-connectors-as-code.ts`.
+
+```ts
+const linear = kortix.project(projectId).connector('linear');
+const { issues } = await linear.run('list_issues', { team: 'CORE' });
+await linear.describe(); // actions with input and output schemas
+await linear.accounts();
+```
+
+An action outside the file accepts any object and returns `output: unknown`.
+Managed Composio and Pipedream connectors publish no output schema, so their
+`output` stays `unknown`. `ConnectorArgs<'linear', 'list_issues'>` and
+`ConnectorResult<'linear', 'list_issues'>` name the same types.
+
 #### Choose which account a call runs as
 
 One Connector can hold the project's shared account and each member's own. List
@@ -106,6 +136,25 @@ await project.setupLinks.requestConnector({ slug: 'gmail', owner: 'project' });
 
 `owner` defaults to `me`. Creating a `project`-owned account requires
 `project.connector.write`.
+
+#### Call from an App, a Convex action, or a script
+
+The call is the same everywhere. The credential decides which accounts it
+reaches:
+
+| Where the code runs | `createKortix` options | Acts as | Reaches |
+|---|---|---|---|
+| App, browser | `backendUrl: '/_kortix/api/v1'`, `getToken: kortixAppViewerToken()` | the viewer | shared accounts the viewer may use, and the viewer's own private accounts |
+| App, server | `createAppViewerKortix(request, { backendUrl })` | the viewer | the same |
+| Convex action, App job with no viewer | `getToken: async () => process.env.KORTIX_API_KEY!` (a `kortix_sa_…` service account bearer a person minted) | the service account | shared accounts nobody narrowed; never a private account |
+| External program, CI | `getToken: async () => process.env.KORTIX_API_KEY!` (a `kortix_pat_…`) | you | your shared and private accounts |
+
+The browser path needs the App's viewer scope set to `api`
+(`kortix apps access <app> --viewer api`); with `identity` a call answers
+`403 insufficient_scope`. A service account answers `403` until a person
+grants it a project role (`kortix access grant --service-account <id> --role
+member --project <id>`). Never put a provider API key in an App or a Convex
+deployment when a connector exists. Guide: `/docs/sdk/connectors`.
 
 ### Upload prompt attachments before Send
 
@@ -401,6 +450,16 @@ most 16,384 characters of JSON. Example: `examples/12-session-labels.ts`.
 `{ authors, initial_author }`: `authors` maps a runtime message id to a `SessionMessageAuthor`,
 `{ kind: 'member', user_id, name, email, avatar_url }` or `{ kind: 'session', session_id, name, agent? }`.
 In React, `useSessionMessageAuthors(projectId, sessionId, messageCount)` reads the same data.
+
+### Which model answered a turn
+
+`kortix.session(projectId, sessionId).modelUsage()` (or `getSessionModelUsage`) returns
+`{ latest, billed_cost, turns }` from the gateway's request record. `latest` is
+`{ served_model, fallback_from, at }` for the newest answered request: `served_model` is the model
+that answered, and `fallback_from` is the routed model when a fallback model answered in its place.
+`turns` maps the runtime message id of each prompt to `{ served_models, fallback_from, billed_cost }`.
+A transcript message carries only the model its turn asked for. In React,
+`useSessionModelUsage(projectId, sessionId)` reads the same record.
 
 ### React runtime
 
@@ -1025,6 +1084,31 @@ current tool call. `composer` waits for the active response to finish. Each
 placement keeps submission order. A row without placement keeps its submission
 order ahead of `composer` entries and is presented as `composer`.
 
+### Prompt delivery: steer, queue, interrupt
+
+`createSessionPrompt` and `enqueue` also accept `delivery: 'steer' | 'queue' |
+'interrupt'`. It decides how a prompt reaches a running turn:
+
+- `steer`: the running turn reads the prompt at its next step boundary. The
+  turn does not stop.
+- `queue` (Queue List): the prompt waits for the turn to end.
+- `interrupt` (Quick Queue): the turn ends after its running tool, then the
+  prompt runs.
+
+With no turn running, every mode starts a turn. When only `delivery` is given,
+the SDK also sends the placement it implies (`interrupt` → `transcript`, the
+others → `composer`), so an API built before steering treats a steer prompt as
+a Queue List entry.
+
+A steer prompt falls back to `queue` when the runtime cannot take messages
+mid-turn, when another member's turn is running, or when the turn ended first.
+The row then reads `delivery: 'queue'` and `steer_fallback: 'unsupported' |
+'not_prompter' | 'turn_ended'`.
+
+`interruptSessionPrompt` (`session.prompts.interrupt`,
+`useSessionPrompts().interrupt`) is "Stop and send": it turns a row still
+waiting in the queue into Quick Queue. A row already on the wire answers `409`.
+
 `SessionPrompt.full_text` preserves complete text for rendering after reload;
 `text` remains the bounded preview. List responses expose attachment names and
 MIME types without attachment bytes. Removal responses retain the complete
@@ -1041,8 +1125,9 @@ after admission succeeds. A confirmed active turn clears the pending presentatio
 even if the previous inbox snapshot still lists that prompt. Runtime activity
 preserves the active turn's message ID during this handoff.
 
-Web calls Enter **Quick Queue** and Command/Ctrl+Enter **Queue List**. Both
-advance automatically; Quick Queue entries run first. Queue List entries stay editable
+Web sends Enter while a turn runs as **steer**, Command/Ctrl+Enter as **Queue
+List**, and "Stop and send" on a queued row as **Quick Queue**. Enter on an idle
+session starts a turn. Queued entries advance automatically; Quick Queue entries run first. Queue List entries stay editable
 until delivery begins. Stop pauses pending entries; Resume releases that hold.
 
 Pass the inbox IDs, in queue order, as `pendingMessageIds` to
@@ -1054,6 +1139,12 @@ Queue acceptance and runtime execution are separate states. Each distinct submis
 appears immediately, including while a previous POST is pending. The working hook
 updates `pendingDelivery` when the same turn becomes active, without waiting for
 a different turn ID or timestamp.
+
+`useSessionPrompts` reads queue changes from the session's control stream
+(`GET .../sessions/:id/events?channels=control`, one connection per session per
+client). Every write of an inbox row arrives as a `kortix.control.queue` frame,
+whichever API replica served the write. The `GET .../prompts` poll runs only
+while that stream is not connected, and a reconnect reads the list once.
 
 
 ### Why a turn ended

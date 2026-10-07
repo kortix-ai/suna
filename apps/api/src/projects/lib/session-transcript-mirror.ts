@@ -69,6 +69,7 @@ import { parseSessionAttachmentRef } from '@kortix/shared';
 import { and, count, eq, sql } from 'drizzle-orm';
 
 import { db } from '../../shared/db';
+import { isRecord } from '@kortix/shared/guards';
 
 /** Messages read from the box per capture. A turn adds one user message and a
  *  handful of assistant steps, so this is many turns of headroom; everything
@@ -229,9 +230,6 @@ function sanitizeShowPayload(
   return Object.keys(out).length > 0 ? out : null;
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 /** A tool call that has ended. OpenCode's schema gives both a required
  *  `input`, which is what `mirrorPartsAreStripped` relies on. */
 const isSettledToolStatus = (status: unknown) => status === 'completed' || status === 'error';
@@ -254,6 +252,38 @@ function stringBudget(total: number) {
       return kept;
     },
   };
+}
+
+/**
+ * Postgres jsonb cannot store a string whose text carries U+0000 or an
+ * unpaired surrogate: the INSERT that carries one fails with
+ * `unsupported Unicode escape sequence — \u0000 cannot be converted to text.`
+ * (SQLSTATE 22P05), and the mirror write is deterministic on its content — one
+ * such message retried the same doomed transaction at every turn end (568 warn
+ * lines in one prod hour, KRTX-1701).
+ *
+ * The projection therefore makes every string it emits storable: U+0000 and a
+ * lone surrogate become U+FFFD. The test is unicode-aware (`/u`), so an astral
+ * character's surrogate halves never match — emoji and every BMP char pass
+ * through untouched. Well-formed text pays only the scan.
+ */
+const JSONB_UNSAFE = /[\0\uD800-\uDFFF]/u;
+
+const jsonbSafeText = (text: string): string =>
+  JSONB_UNSAFE.test(text) ? text.replace(/[\0\uD800-\uDFFF]/gu, '\uFFFD') : text;
+
+/** Pure: every string in a JSON value, keys included, is storable as jsonb. */
+function jsonbSafeValue(value: Record<string, unknown>): Record<string, unknown>;
+function jsonbSafeValue(value: Array<Record<string, unknown>>): Array<Record<string, unknown>>;
+function jsonbSafeValue(value: unknown): unknown {
+  if (typeof value === 'string') return jsonbSafeText(value);
+  if (Array.isArray(value)) return value.map(jsonbSafeValue);
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value)) out[jsonbSafeText(key)] = jsonbSafeValue(item);
+    return out;
+  }
+  return value;
 }
 
 /**
@@ -675,7 +705,7 @@ export function mirrorRowsFromOpencodePayload(payload: unknown): MirrorMessage[]
     if (!info) continue;
     const id = typeof info.id === 'string' ? info.id.trim() : '';
     if (!id) continue;
-    rows.push({ info, parts: sanitizeParts(msg.parts) });
+    rows.push({ info: jsonbSafeValue(info), parts: jsonbSafeValue(sanitizeParts(msg.parts)) });
   }
   return rows;
 }

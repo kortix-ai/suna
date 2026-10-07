@@ -218,6 +218,7 @@ package**. JSON output.
 | `kortix connectors call <connector> <action> '<json>' --reason "<text>"` | Describe the effect for the human approver when a policy holds the call. Pass it on every write whose args are only ids (`send_draft`, deletes, merges). The approver sees it labelled as your description, next to the arguments. |
 | `kortix connectors call <connector> <action> @args.json --attach <file>` | Attach a file from `/workspace/{output,artifacts,reports,deliverables}`. The gateway writes it into the action's attachments array as the provider's item (e.g. Microsoft Graph `body.message.attachments`). `@file` / `-` read large args. |
 | `kortix connectors call <connector> <action> '<json>' --out <file>` | Write the full JSON result to `<file>` (parent dirs created). Stdout gets only `saved_to`, `bytes`, and `shape` (keys, array lengths, `pageInfo`). Use it for results too large to read; query the file with `jq` or `bun`. |
+| `kortix connectors types [--connector <a,b>] --out <file>` | Write TypeScript types for the callable actions (`declare module '@kortix/sdk'`). Use it before writing SDK code: `connectors.callAction(slug, action, args)` then type-checks args and `output`. Composio/Pipedream results stay `unknown`. |
 | `kortix connectors upload <file> --connector <slug>` | Stage one file; prints `ref` (`{"$kortix_attachment":"<id>"}`) to place in args — an attachments[] element or a base64 field such as `contentBytes`. |
 | `kortix connectors add <slug> --provider composio --app <toolkit> --apply` | Add a managed SaaS connector now, commit it to `kortix.yaml` on main, and sync it. |
 | `kortix connectors rm <slug> --apply` | Remove a connector from `kortix.yaml` on main and sync it. |
@@ -394,7 +395,8 @@ increasing.
 #### Inside a sandbox — the typical agent flow
 
 ```sh
-# 1. Commit on the session branch
+# 1. Check the project, then commit on the session branch
+kortix validate
 git add .
 git commit -m "Add release-notes skill"
 
@@ -450,6 +452,19 @@ title. Sorted newest first.
 | `kortix update` | Re-runs `curl -fsSL kortix.com/install | bash` to pull the latest binary. |
 | `kortix uninstall` | Removes the binary, /usr/local/bin shim, and `~/.config/kortix/`. `--keep-auth` keeps the token. |
 | `kortix version` | Print the CLI version. |
+
+### Validate and ship
+
+| Command | What it does |
+| --- | --- |
+| `kortix validate` | Checks `kortix.yaml` against the schema, lints sandbox Dockerfiles and agent wiring, and warns when the files in Git are large (a file of 10 MiB or more, or more than 32 MiB in total). Exit `0` with warnings, `1` on an error. `--json` prints the report. |
+| `kortix ship` | Runs the `kortix validate` checks, commits, and pushes the current branch to the project repo (laptop flow). An error stops the ship; a warning never does. `--no-verify` skips the checks. |
+
+A session builds its agent config from the whole repository. Above 32 MiB
+compressed that build fails and the session runs the platform default
+config, so the size warning names the largest files. Move them to object
+storage (S3, R2, GCS), or mark paths no agent reads `export-ignore` in
+`.gitattributes`.
 
 ### Project scaffold
 

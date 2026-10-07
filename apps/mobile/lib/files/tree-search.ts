@@ -1,8 +1,8 @@
 /**
- * Search over a project's whole file tree (COR-155). The `/files` endpoint
- * returns a flat recursive list of files, so the Files page already holds the
- * whole tree: search covers every folder, not only the one on screen. Folders
- * are derived from the file paths, the same way the page derives them.
+ * Search results and folder rows of the Files page (COR-155, KRTX-1723).
+ * The server searches the whole repository by filename; `searchFileTree`
+ * ranks those files and derives the folders their paths name, so a folder
+ * search still finds the folder. `directoryChildren` splits one folder level.
  *
  * Pure: no React, no React Native.
  */
@@ -123,39 +123,19 @@ export function searchFileTree(entries: readonly TreeSearchEntry[], query: strin
 }
 
 /**
- * The immediate children of every folder of a flat file list, built in one
- * pass: `get(dir)` is what scanning every entry for `dir/` returned (`''` is
- * the root). A folder with no children has no key. Dirs and files keep entry
- * order.
+ * One folder level (`GET /files?depth=1`) as the page's rows: folder names and
+ * files, in entry order.
  */
-export function indexChildren<T extends { path: string }>(
-  entries: readonly T[],
-): Map<string, { dirs: string[]; files: T[] }> {
-  const sets = new Map<string, { dirs: Set<string>; files: T[] }>();
-  const at = (dir: string) => {
-    let children = sets.get(dir);
-    if (!children) sets.set(dir, (children = { dirs: new Set(), files: [] }));
-    return children;
-  };
+export function directoryChildren(
+  entries: readonly { path: string; type: 'file' | 'directory'; size?: number }[],
+): { dirs: string[]; files: TreeSearchEntry[] } {
+  const dirs: string[] = [];
+  const files: TreeSearchEntry[] = [];
   for (const entry of entries) {
-    const p = entry.path;
-    // `dir` is null after a leading slash: `''` is the root, not that folder.
-    let dir: string | null = '';
-    let start = 0;
-    while (start < p.length) {
-      const slash = p.indexOf('/', start);
-      if (slash === -1) {
-        if (dir !== null) at(dir).files.push(entry);
-        break;
-      }
-      if (dir !== null) at(dir).dirs.add(p.slice(start, slash));
-      dir = slash === 0 ? null : p.slice(0, slash);
-      start = slash + 1;
-    }
+    if (entry.type === 'directory') dirs.push(basename(entry.path));
+    else files.push({ path: entry.path, size: entry.size ?? null });
   }
-  const out = new Map<string, { dirs: string[]; files: T[] }>();
-  for (const [dir, { dirs, files }] of sets) out.set(dir, { dirs: [...dirs], files });
-  return out;
+  return { dirs, files };
 }
 
 /** The folder line under a search result: "src/app", or "Files" at the root. */

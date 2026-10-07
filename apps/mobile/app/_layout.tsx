@@ -31,6 +31,7 @@ import { OfflineBanner } from '@/components/kortix/OfflineBanner';
 import { SessionEndedDialog } from '@/components/kortix/SessionEndedDialog';
 import { PushNotificationsBridge } from '@/components/notifications/PushNotificationsBridge';
 import { reportUnauthorized } from '@/lib/auth/session-expiry-monitor';
+import { authRedirect } from '@/lib/auth/mfa';
 import {
   GlobalUpgradeSheet,
   SandboxUpgradeGateListener,
@@ -63,10 +64,10 @@ import { installHapticsGate } from '@/lib/haptics';
 import { installLoopbackRewrite } from '@/lib/utils/loopback-xhr';
 import { resolveLocalUrl } from '@/lib/utils/resolve-local-url';
 import Constants from 'expo-constants';
-import { configureKortix } from '@kortix/sdk';
+import { createKortix } from '@kortix/sdk';
 import EventSource from 'react-native-sse';
 import { createSseTransport } from '@/lib/session/sse-transport';
-import { API_URL, getAuthToken } from '@/api/config';
+import { API_URL, kortixGetToken } from '@/api/config';
 import {
   clearWebRegistrationHandoff,
   consumeAuthCallbackState,
@@ -87,14 +88,13 @@ if (__DEV__ && Platform.OS !== 'web' && typeof XMLHttpRequest === 'function') {
   installLoopbackRewrite(XMLHttpRequest, resolveLocalUrl);
 }
 
-// Wire the SDK's single app-specific seam once at startup, before any screen
-// mounts. `backendUrl`/`getToken` reuse mobile's own env resolution and
-// Supabase token source (api/config.ts) unchanged — this just injects them
-// into @kortix/sdk so `lib/projects/projects-client.ts` and friends can call
-// through to `backendApi`/`projects-client` instead of hand-rolling fetch.
-configureKortix({
+// The app's one @kortix/sdk client, created at startup before any screen
+// mounts. `backendUrl`/`getToken` reuse mobile's env resolution and Supabase
+// token source (api/config.ts). Screens call the SDK's standalone functions,
+// which read this same process-wide config.
+createKortix({
   backendUrl: API_URL,
-  getToken: getAuthToken,
+  getToken: kortixGetToken,
   clientVersion: Constants.expoConfig?.version ? `mobile/${Constants.expoConfig.version}` : undefined,
   // The live session stream arrives over `react-native-sse` (an XHR wire); the
   // SDK keeps reconnect, resume and the reducer (lib/session/sse-transport.ts).
@@ -642,7 +642,7 @@ function QueryCachePersistence() {
  * loader at boot — the splash — and the first screen is the destination.
  */
 function SplashGate() {
-  const { isLoading: authLoading, isAuthenticated } = useAuthContext();
+  const { isLoading: authLoading, isAuthenticated, mfaRequired } = useAuthContext();
   const segment = (useSegments() as string[])[0];
   const landingSettled = useBootStore((s) => s.landingSettled);
   const timedOut = useBootStore((s) => s.timedOut);
@@ -655,20 +655,21 @@ function SplashGate() {
         timedOut,
         fontsReady: true,
         authLoading,
-        authenticated: isAuthenticated,
+        // A session that owes a TOTP code lands on /auth/mfa, like a signed-out one on /auth.
+        authenticated: isAuthenticated && !mfaRequired,
         segment,
         landingSettled,
       })
     ) {
       hideSplash();
     }
-  }, [splashHidden, timedOut, authLoading, isAuthenticated, segment, landingSettled]);
+  }, [splashHidden, timedOut, authLoading, isAuthenticated, mfaRequired, segment, landingSettled]);
 
   return null;
 }
 
 function AuthProtection({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading: authLoading } = useAuthContext();
+  const { isAuthenticated, mfaRequired, isLoading: authLoading } = useAuthContext();
   const segments = useSegments();
   const router = useRouter();
 
@@ -676,29 +677,15 @@ function AuthProtection({ children }: { children: React.ReactNode }) {
     // Don't do anything while auth is loading
     if (authLoading) return;
 
-    // Wait for segments
-    if (!segments || segments.length < 1) return;
-
-    const currentSegment = segments[0] as string | undefined;
-    const inAuthGroup = currentSegment === 'auth';
-    // Index/splash screen has no segment or empty segment
-    const onSplashScreen = !currentSegment;
-
-    // RULE 1: Unauthenticated users can only be on auth or splash screens
-    if (!isAuthenticated && !inAuthGroup && !onSplashScreen) {
-      log.log('🚫 Unauthenticated user on protected route, redirecting to /auth');
-      router.replace('/auth');
-      return;
+    // Signed out: only the auth screens. A session that owes a TOTP code: only
+    // /auth/mfa. Signed in: never the auth screens, so back navigation and
+    // gestures cannot show them (lib/auth/mfa authRedirect).
+    const to = authRedirect({ isAuthenticated, mfaRequired, segments });
+    if (to) {
+      log.log(`🚫 Route not allowed for this auth state, redirecting to ${to}`);
+      router.replace(to);
     }
-
-    // RULE 2: Authenticated users should NEVER see auth screens
-    // This prevents back navigation/gestures from showing auth to logged-in users
-    if (isAuthenticated && inAuthGroup) {
-      log.log('🚫 Authenticated user on auth screen, redirecting to the last project');
-      router.replace('/');
-      return;
-    }
-  }, [isAuthenticated, authLoading, segments, router]);
+  }, [isAuthenticated, mfaRequired, authLoading, segments, router]);
 
   return <>{children}</>;
 }

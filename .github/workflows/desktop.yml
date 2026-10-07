@@ -2,10 +2,10 @@ name: Desktop
 
 # Desktop (Electron) DEV build — kept OUT of Deploy Dev on purpose. The desktop
 # app is a thin shell around the web app that changes rarely and needs slow,
-# signed macOS/Windows runners, so building it on every main push would be
+# signed macOS/Windows runners, so building it on every dev push would be
 # wasteful and would gate the fast API/frontend/CLI path on scarce runners.
 #
-# It builds only when manually dispatched (since 2026-10-03: a push to main
+# It builds only when manually dispatched (since 2026-10-03: a push to dev
 # touching apps/desktop-electron/** no longer builds; macOS bills at 10x and
 # Windows at 2x GitHub-hosted minutes). Signed installers are published to the mutable `desktop-dev-latest` prerelease.
 #
@@ -65,9 +65,9 @@ jobs:
               apps/desktop-electron/dist/*.AppImage
               apps/desktop-electron/dist/latest-linux.yml
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
 
@@ -76,7 +76,7 @@ jobs:
 
       # The app bundles the computer agent (packages/agent-tunnel), built with
       # bun by scripts/ensure-runtime.js before electron-builder runs.
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: latest
 
@@ -105,7 +105,7 @@ jobs:
       # are read in case they are added later.
       - name: Check out the aws-env action
         if: runner.os != 'Windows'
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -203,7 +203,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload installer artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.files }}
@@ -220,12 +220,12 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Download desktop artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: desktop-artifacts/
           pattern: desktop-*
@@ -250,7 +250,7 @@ jobs:
           git push -f origin desktop-dev-latest
 
       - name: Publish GitHub prerelease (desktop-dev-latest)
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: desktop-dev-latest
           name: desktop-dev-latest

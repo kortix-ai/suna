@@ -193,7 +193,13 @@ mock.module('../middleware/auth', () => ({
   },
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test
+// (readRepoFileBytes, added for the project-files route, broke this file).
+const actualGit = await import('../projects/git');
 mock.module('../projects/git', () => ({
+  ...actualGit,
   MergeConflictError: class MergeConflictError extends Error {},
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],
@@ -202,6 +208,7 @@ mock.module('../projects/git', () => ({
   listRepoFiles: async () => [],
   loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),
   readRepoFile: async () => '',
+  readRepoFileBytes: async () => Buffer.alloc(0),
   isRepoFileNotFoundError: () => false,
   readManifestFromRepo: async () => null,
   invalidateProjectMirror: () => {},
@@ -239,7 +246,6 @@ mock.module('../projects/git', () => ({
 // resolves cleanly. We stub the helpers projects/index calls so the
 // fire-and-forget snapshot kickoff in the create paths is a no-op here.
 mock.module('../snapshots/builder', () => ({
-  ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async () => ({
     snapshotName: 'kortix-default-test',
     slug: 'default',
@@ -668,7 +674,8 @@ mock.module('../shared/db', () => ({
   db: starterDbMock,
 }));
 
-const { projectsApp } = await import('../projects/index');
+const { projectsApp, registerAllProjectRoutes } = await import('../projects/index');
+registerAllProjectRoutes();
 const { ACCOUNT_ACTIONS } = await import('../iam');
 const { buildStarterFiles } = await import('../projects/starter');
 

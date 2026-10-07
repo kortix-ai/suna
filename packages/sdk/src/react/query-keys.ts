@@ -335,6 +335,14 @@ export const qk = {
     /** `getSessionTurn` — server truth about the turns running right now. */
     sessionTurn: (id: string, sessionId: string) =>
       [...qk.project.session(id, sessionId), 'turn'] as const,
+    /** The session stream's `kortix.control.runtime` frame: the box and the
+     *  server wake ladder. Written by the stream only; never fetched. */
+    sessionRuntimeControl: (id: string, sessionId: string) =>
+      [...qk.project.session(id, sessionId), 'runtime-control'] as const,
+    /** The session stream's `kortix.control.audit` watermark (pending count +
+     *  newest instants). A host re-reads its audit list when it moves. */
+    sessionAuditWatermark: (id: string, sessionId: string) =>
+      [...qk.project.session(id, sessionId), 'audit-watermark'] as const,
 
     connectors: (id: string) => [...qk.project.scope(id), 'connectors'] as const,
     /** One connector's config — `getConnectorConfig(id, slug)`. */
@@ -346,6 +354,11 @@ export const qk = {
      *  so pass `connection` (the connection id, or a stable stand-in for one not
      *  created yet): two connections of one connector must not share an entry.
      *  Without it, the key is the per-connector prefix every entry sits under. */
+    /** One connector action's output — `useConnectorQuery`. Under
+     *  `connectorConfig(id, slug)`, so invalidating a connector (a new account
+     *  connected) refetches its calls. */
+    connectorCall: (id: string, slug: string, action: string, args: unknown, account?: string | null) =>
+      [...qk.project.connectorConfig(id, slug), 'call', action, account ?? null, args] as const,
     connectorOAuth2Discovery: (id: string, slug: string, connection?: string) =>
       connection === undefined
         ? ([...qk.project.connectorConfig(id, slug), 'oauth2-discovery'] as const)
@@ -391,6 +404,9 @@ export const qk = {
     /** `getSessionMessageAuthors` — `GET /projects/:id/sessions/:sid/message-authors`. */
     sessionMessageAuthors: (id: string, sessionId: string) =>
       [...qk.project.scope(id), 'session-message-authors', sessionId] as const,
+    /** `getSessionModelUsage` — `GET /projects/:id/sessions/:sid/model-usage`. */
+    sessionModelUsage: (id: string, sessionId: string) =>
+      [...qk.project.scope(id), 'session-model-usage', sessionId] as const,
 
     /**
      * `readProjectFile(id, path)` — a single-file source read, used by the

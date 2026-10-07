@@ -876,7 +876,7 @@ export function CommandPalette() {
     (s) => s.preferences.conversationDensity ?? 'normal',
   );
   const billingEnabled = isBillingEnabled();
-  // What the active session's runtime serves (E1): a pi session has no compact.
+  // What the active session's runtime serves (E1): a control shows only with its capability.
   const runtimeCapabilities = useRuntimeConnectionStore((s) => s.runtimeCapabilities);
 
   // The project's own agents from the Kortix project config, filtered by the
@@ -1384,15 +1384,13 @@ export function CommandPalette() {
   const handleSelectAccount = useCallback(
     (a: KortixAccount) => {
       setSelectedAccountId(a.account_id);
-      // The landing door, NOT `latestProjectPath`: the last-project cookie
-      // names a project in the account just left, which still passes the
-      // ownership check (it's scoped by user, not account) and would open
-      // the wrong account's workspace. Same rule `account-switcher.tsx`
-      // follows after creating an account.
+      // The landing door for THIS account (`?account=`). The plain door
+      // reopened the project the browser remembered, in the account just
+      // left, and set the selected account back to it (KRTX-1731).
       // nav-contract: prefetch-only — a cmdk row activated by keyboard, and the
       // push must follow `setSelectedAccountId`. The 'accounts' page effect
       // warms it.
-      router.push(PROJECT_LANDING_PATH);
+      router.push(`${PROJECT_LANDING_PATH}?account=${encodeURIComponent(a.account_id)}`);
       close();
     },
     [setSelectedAccountId, router, close],
