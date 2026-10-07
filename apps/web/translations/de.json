@@ -848,9 +848,10 @@
         "sessions": "Jede Sitzung in diesem Projekt mit Dateien, Verlauf und Ergebnissen",
         "automation": "Alle geplanten Ausführungen und Trigger — sie werden sofort beendet",
         "integrations": "Jede verbundene Integration, jedes Secret und jeden API-Schlüssel dieses Projekts",
+        "managedRepo": "Das von Kortix verwaltete Git-Repository dieses Projekts, mit jedem Commit darin",
         "access": "Den Zugriff für das gesamte Team — niemand kann diesen Projekt erneut öffnen"
       },
-      "reassurance": "Das verbundene Git-Repository wird nicht gelöscht. Bereits übertragener Code bleibt erhalten.",
+      "reassurance": "Selbst verbundene Git-Repositories werden nicht gelöscht. Bereits übertragener Code bleibt erhalten.",
       "keepWorkspace": "Projekt behalten"
     },
     "sandbox": {
@@ -1954,6 +1955,7 @@
     "queuedCount": "{count} in Warteschlange",
     "editingQueued": "Wird bearbeitet",
     "steerNextStep": "Wird beim nächsten Schritt gelesen",
+    "queuedByAnotherMember": "Von einem anderen Mitglied gesendet. Nur diese Person kann sie bearbeiten oder senden.",
     "steerFallbackUnsupported": "Wartet auf diesen Durchlauf. Diese Sitzung nimmt während eines Durchlaufs keine Nachrichten an.",
     "steerFallbackNotPrompter": "Wartet auf diesen Durchlauf. Ein anderes Mitglied hat ihn gestartet.",
     "steerFallbackTurnEnded": "Läuft als eigener Durchlauf. Der Durchlauf war zuerst beendet.",

@@ -165,6 +165,11 @@ export function QueuedPromptList({
                           {t('queuedFiles', { count: row.attachmentCount })}
                         </span>
                       )}
+                      {row.fromAnotherMember && (
+                        <p className="text-muted-foreground text-xs" data-queued-author="other">
+                          {t('queuedByAnotherMember')}
+                        </p>
+                      )}
                       {!failed && (row.steer || row.steerFallback) && (
                         <p className="text-muted-foreground text-xs" data-queued-delivery>
                           {row.steerFallback
@@ -207,7 +212,7 @@ export function QueuedPromptList({
                           {t('stopAndSend')}
                         </Button>
                       )}
-                      {failed && onRetry && (
+                      {row.retryable && onRetry && (
                         <Button
                           type="button"
                           variant="ghost"

@@ -505,7 +505,7 @@ test('removing an expired queued command gives Undo a fresh owner-scoped attachm
   const id = await ready();
   const first = await enqueue(id);
   await expire(id);
-  expect((await deleteInboxPrompt(sessionId, first.row.commandId)).outcome).toBe('deleted');
+  expect((await deleteInboxPrompt(sessionId, first.row.commandId, { userId: scope.userId })).outcome).toBe('deleted');
   await cleanupExpiredPromptAttachments();
   const restored = await enqueue(id);
   expect(restored.row.payload.parts).toEqual([
