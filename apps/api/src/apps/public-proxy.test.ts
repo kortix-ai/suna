@@ -541,6 +541,17 @@ describe('Apps public edge', () => {
     expect(result.get('content-security-policy-report-only')).toBe("img-src 'self'");
   });
 
+  test('an App cannot mark its own response shareable at the edge, and the API origin never caches it', () => {
+    const result = appPublicResponseHeaders(new Headers({
+      'cache-control': 'public, max-age=31536000, immutable',
+      'x-kortix-edge-cacheable': 'public',
+    }));
+
+    expect(result.get('x-kortix-edge-cacheable')).toBeNull();
+    expect(result.get('cloudflare-cdn-cache-control')).toBe('no-store');
+    expect(result.get('cache-control')).toBe('public, max-age=31536000, immutable');
+  });
+
   test('allows a self-host frontend origin to frame its own App previews', () => {
     const original = config.FRONTEND_URL;
     try {

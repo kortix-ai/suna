@@ -31,7 +31,7 @@ import { db } from '../shared/db';
 import { mapWithConcurrency } from '../shared/map-with-concurrency';
 import { getSupabase } from '../shared/supabase';
 import { retryAppArtifactStorage } from './artifacts';
-import { appPublicResponseHeaders } from './public-proxy-headers';
+import { APP_EDGE_CACHEABLE_HEADER, appPublicResponseHeaders } from './public-proxy-headers';
 
 export const APP_SITE_BUCKET = 'app-sites';
 export const MAX_SITE_FILE_BYTES = 50 * 1024 * 1024;
@@ -236,14 +236,18 @@ export function isNavigation(request: Request, pathname: string): boolean {
   return !last.includes('.') || (request.headers.get('accept') ?? '').includes('text/html');
 }
 
-// A content hash in the file name: 8+ characters mixing upper case, lower case
-// and digits (Vite, esbuild, webpack), or Next.js's immutable static output.
-const HASHED_NAME = /[.-](?=[A-Za-z0-9_]*[0-9])(?=[A-Za-z0-9_]*[A-Z])(?=[A-Za-z0-9_]*[a-z])[A-Za-z0-9_]{8,}\.[a-z0-9]+$/;
+// Build output with a content hash in the file name: Next.js's _next/static/,
+// or a file under assets/ (Vite) or static/js|css|media/ (Create React App)
+// whose name ends in a segment of 8+ characters with a digit or an upper-case
+// letter before the extension (or ".chunk.js"). Plain words
+// ("logo-original.png") and files outside those directories revalidate: a
+// mutable file marked immutable stays stale in browsers for a year.
+const HASHED_BUILD_OUTPUT = /(?:^|\/)(?:assets|static\/(?:js|css|media))\/(?:[^/]+\/)*[^/]*[.-](?=[A-Za-z0-9_-]*[0-9A-Z])[A-Za-z0-9_-]{8,}(?:\.chunk)?\.[a-z0-9]+$/;
 
 export function siteCacheControl(path: string, publicApp: boolean): string {
   const scope = publicApp ? 'public' : 'private';
   if (path.endsWith('.html')) return `${scope}, no-cache`;
-  if (path.startsWith('_next/static/') || HASHED_NAME.test(path)) {
+  if (path.startsWith('_next/static/') || HASHED_BUILD_OUTPUT.test(path)) {
     return `${scope}, max-age=31536000, immutable`;
   }
   return `${scope}, max-age=0, must-revalidate`;
@@ -385,7 +389,10 @@ export async function serveStaticDeployment(input: {
     etag,
     'accept-ranges': 'bytes',
     'x-content-type-options': 'nosniff',
+    // On the 304 too: a cache must not reuse one encoding for another client.
+    vary: 'accept-encoding',
   }));
+  if (input.publicApp) headers.set(APP_EDGE_CACHEABLE_HEADER, 'public');
   const ifNoneMatch = (request.headers.get('if-none-match') ?? '').split(/\s*,\s*/).map((tag) => tag.replace(/^W\//, ''));
   if (resolved.status === 200 && ifNoneMatch.includes(`"${file.sha256}"`)) {
     return new Response(null, { status: 304, headers });
@@ -401,7 +408,6 @@ export async function serveStaticDeployment(input: {
   }
   // A range is served from the identity bytes; anything else may be compressed.
   const encoding = range ? null : chooseEncoding(request.headers.get('accept-encoding'), file.contentType, bytes.byteLength);
-  headers.set('vary', 'accept-encoding');
   if (encoding) headers.set('content-encoding', encoding);
   const body = range ? bytes.subarray(range.start, range.end + 1) : encoding ? encode(file.sha256, encoding, bytes) : bytes;
   if (range) headers.set('content-range', `bytes ${range.start}-${range.end}/${bytes.byteLength}`);

@@ -185,7 +185,23 @@ withDb('static App hosting', () => {
 
     const asset = await serve('/assets/index-D8j1YYcB.js');
     expect(asset.headers.get('cache-control')).toBe('private, max-age=31536000, immutable');
+    // A private App's files never reach the shared edge cache.
+    expect(asset.headers.get('x-kortix-edge-cacheable')).toBeNull();
+    expect(asset.headers.get('cloudflare-cdn-cache-control')).toBe('no-store');
     expect(asset.headers.get('content-type')).toContain('javascript');
+
+    // A public App's files are marked shareable; the Worker caches only the immutable ones.
+    const publicAsset = await serveStaticDeployment({
+      request: new Request('https://app.test/assets/index-D8j1YYcB.js'),
+      url: new URL('https://app.test/assets/index-D8j1YYcB.js'),
+      accountId: ACCOUNT_ID,
+      deploymentId: dep(1),
+      spa: true,
+      publicApp: true,
+      storage,
+    });
+    expect(publicAsset.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    expect(publicAsset.headers.get('x-kortix-edge-cacheable')).toBe('public');
 
     const deepLink = await serve('/deals/42', { headers: { accept: 'text/html' } });
     expect(deepLink.status).toBe(200);
@@ -193,7 +209,9 @@ withDb('static App hosting', () => {
     expect((await serve('/assets/missing.js')).status).toBe(404);
 
     const etag = page.headers.get('etag')!;
-    expect((await serve('/', { headers: { 'if-none-match': etag } })).status).toBe(304);
+    const notModified = await serve('/', { headers: { 'if-none-match': etag } });
+    expect(notModified.status).toBe(304);
+    expect(notModified.headers.get('vary')).toBe('accept-encoding');
 
     const head = await serve('/assets/index-D8j1YYcB.js', { method: 'HEAD' });
     expect(head.status).toBe(200);

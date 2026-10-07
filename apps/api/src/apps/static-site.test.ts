@@ -55,12 +55,30 @@ describe('siteCacheControl', () => {
     expect(siteCacheControl('index.html', true)).toBe('public, no-cache');
   });
   test('hashed build output is immutable for a year', () => {
-    for (const path of ['assets/index-D8j1YYcB.js', 'assets/style.4fA9kQ2z.css', '_next/static/chunks/main.js']) {
+    for (const path of [
+      'assets/index-D8j1YYcB.js',
+      'assets/style.4fA9kQ2z.css',
+      'assets/index-4f3a9c1b.js',
+      'app/assets/vendor-DiwrgTda.js',
+      'static/css/main.a1b2c3d4.css',
+      'static/js/787.f5c2e1a9.chunk.js',
+      '_next/static/chunks/main.js',
+    ]) {
       expect(siteCacheControl(path, true)).toBe('public, max-age=31536000, immutable');
     }
   });
   test('names that only look long are not treated as hashed', () => {
-    for (const path of ['my-component.js', 'logo.png', 'assets/background.jpg', 'jquery-3.6.0.min.js']) {
+    for (const path of [
+      'my-component.js',
+      'logo.png',
+      'assets/background.jpg',
+      'assets/logo-original.png',
+      'assets/jquery-3.6.0.min.js',
+      'jquery-3.6.0.min.js',
+      'img/team-Photo2024.jpg',
+      'docs/Report-Q3Final2.pdf',
+      'main.a1b2c3d4.css',
+    ]) {
       expect(siteCacheControl(path, true)).toBe('public, max-age=0, must-revalidate');
     }
   });

@@ -51,6 +51,14 @@ Kortix Backend is static. Use `bundle` only when the build must run on Kortix
 (it then runs in a machine). Use a Dockerfile when the App needs a server
 process, native packages, or custom runtime behavior.
 
+Static caching: HTML and every other file revalidate on each request (ETag,
+`304`). Build output with a content hash in its name is immutable for a year:
+`_next/static/`, and files under `assets/` or `static/js|css|media/` named like
+`index-D8j1YYcB.js`. Never overwrite such a file in place; let the bundler
+rename it. A public App's immutable files are also cached at the Kortix edge.
+After a switch to private or a delete, edge copies stay reachable by exact URL
+for up to 1 hour.
+
 Before building generated output, inspect `package.json` and the lockfile. Run
 the declared `build` script with the repository's package manager. Do not assume
 `pnpm` when the project uses npm, Yarn, or Bun.
