@@ -118,7 +118,7 @@ export const RUNTIME_IDLE_RECHECK_MS = 5_000;
 export const runtimeStreamTimings = { stallMs: 45_000 };
 
 /** The same wait with the LISTEN held: a `kortix_session_changed` NOTIFY
- *  (migration 20261006182246238) ends it the moment the box row changes, so
+ *  (migration 20261007140000000) ends it the moment the box row changes, so
  *  this is only the backstop for a lost NOTIFY. */
 export const RUNTIME_IDLE_BACKSTOP_MS = 60_000;
 

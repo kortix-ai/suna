@@ -11,6 +11,7 @@ import { renderSessionKey } from './trigger-payload';
 import { keepRunFailure } from '../trigger-execution-store';
 import { TRIGGER_REUSE_RETIRED_AT } from './trigger-run-outcome';
 import { disableSessionReminder, reminderPromptText } from './session-reminders';
+import { accountMemberRow } from '../../iam/membership-read';
 import type { TriggerFireSource } from './trigger-webhook-auth';
 import { claimTriggerCreate, releaseTriggerCreate, triggerCreateKey } from './trigger-create-claim';
 
@@ -390,6 +391,17 @@ async function fireSessionReminder(
   const { spec, project } = input;
   const sessionId = spec.pinnedSessionId;
   const author = spec.reminder?.promptAuthorUserId;
+  // A person's reminder runs as that person. Once they leave the account it
+  // has no one to run as: it pauses instead of firing as someone who no longer
+  // has access (KRTX-1722).
+  if (author && !(await accountMemberRow(project.accountId, author))[0]) {
+    await disableSessionReminder(project.projectId, spec.slug, new Date());
+    return {
+      status: 'failed',
+      error: "The reminder's author is no longer a member of this account, so the reminder is now paused",
+      errorCode: 'reminder_author_left',
+    };
+  }
   const outcome = sessionId
     ? await enqueueTriggerPrompt({
         project, sessionId, actor: author ?? actor, text: reminderPromptText(spec), source: 'reminder',
