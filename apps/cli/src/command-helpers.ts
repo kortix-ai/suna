@@ -1,7 +1,14 @@
 import { FEATURE_DISABLED_CODE } from '@kortix/sdk';
 
-import { loadAuth, loadAuthForHost, type Auth } from './api/auth.ts';
-import { activeAccount, activeHostName, getHost, hasEnvTokenHost, listHosts } from './api/config.ts';
+import { loadAuth, loadAuthForHost, loadEnvAuth, type Auth } from './api/auth.ts';
+import {
+  activeAccount,
+  activeHostEntry,
+  activeHostName,
+  getHost,
+  hasEnvTokenHost,
+  listHosts,
+} from './api/config.ts';
 import { ApiError, clientFromAuth, type ApiClient } from './api/client.ts';
 import { loadLink, resolveProjectRef } from './project-link.ts';
 import { ensureDefaultProjectBinding } from './project-bind.ts';
@@ -46,17 +53,45 @@ interface ProjectContextOpts {
 export function resolveProjectAuth(opts: { hostArg?: string } = {}): {
   hostName?: string;
   auth: Auth | null;
+  /** Plain auth resolved to the stored active host through an in-sandbox
+   *  `hosts use` selection (KRTX-1705) while the injected delegation points
+   *  elsewhere: the env project/session ids cannot be served by this
+   *  credential, so the project must resolve from the host's own context —
+   *  the branch an explicit `--host` already uses. */
+  hostScoped?: boolean;
 } {
   const link = opts.hostArg ? null : loadLink();
   let hostName = opts.hostArg ?? link?.host ?? undefined;
   let auth = hostName ? loadAuthForHost(hostName) : loadAuth();
   // A link naming a host with no stored credentials must not dead-end the CLI
-  // inside a sandbox: the injected env token stays the fallback there.
+  // inside a sandbox: the injected env token stays the fallback there — and
+  // it stays the INJECTED identity even when an in-sandbox `hosts use`
+  // selected another host (loadEnvAuth, KRTX-1705): the link's project
+  // belongs to the deployment the link names, never to the selection.
+  let fellBackToEnv = false;
   if (!auth?.token && !opts.hostArg && hasEnvTokenHost()) {
-    auth = loadAuth();
+    auth = loadEnvAuth();
     hostName = undefined;
+    fellBackToEnv = true;
   }
-  return { hostName, auth };
+  // The marker only ever wins for plain resolution (no --host, no link, and
+  // not the link's env fallback above): the command acts as the selected
+  // stored host, so the ambient project chain (KORTIX_PROJECT_ID) — which
+  // belongs to the injected deployment — must not pair with this credential.
+  // Downstream, resolveProjectContext then scopes the project the way --host
+  // does.
+  let hostScoped = false;
+  if (
+    !opts.hostArg &&
+    !hostName &&
+    !fellBackToEnv &&
+    auth?.token &&
+    hasEnvTokenHost() &&
+    !activeHostEntry().envWins
+  ) {
+    hostScoped = true;
+  }
+  return { hostName, auth, hostScoped };
 }
 
 /**
@@ -102,7 +137,7 @@ export async function resolveProjectContext(
       ? { projectArg: optsOrProjectArg }
       : optsOrProjectArg ?? {};
 
-  const { hostName, auth: resolvedAuth } = resolveProjectAuth({ hostArg: opts.hostArg });
+  const { hostName, auth: resolvedAuth, hostScoped } = resolveProjectAuth({ hostArg: opts.hostArg });
   let auth: Auth | null = resolvedAuth;
   if (!auth?.token) {
     if (hostName) {
@@ -122,17 +157,24 @@ export async function resolveProjectContext(
   // host's token. Resolve the project from the named host's own context — a
   // --project pin, a link bound to that same host, or that host's stored
   // default — and say so clearly when it has none.
+  //
+  // The same scoping applies without the flag when an in-sandbox `hosts use`
+  // selected the active host (KRTX-1705): plain commands act as that host, so
+  // pairing its credential with the injected project id would 404
+  // cross-deployment, exactly like --host would.
+  const scopedHost = opts.hostArg ?? (hostScoped ? (activeHostName() ?? undefined) : undefined);
   let projectId: string | null;
-  if (opts.hostArg && !opts.projectArg) {
+  if (scopedHost && !opts.projectArg) {
     const link = loadLink();
-    const linkProject = link?.host === opts.hostArg ? link.project_id : undefined;
-    const hostDefault = getHost(opts.hostArg)?.default_project;
+    const linkProject = link?.host === scopedHost ? link.project_id : undefined;
+    const hostDefault = getHost(scopedHost)?.default_project;
     projectId = linkProject ?? hostDefault?.project_id ?? null;
     if (!projectId) {
       if (!opts.quietWhenUnresolved) {
+        const source = opts.hostArg ? '(--host)' : '(the active host)';
         process.stderr.write(
-          `${status.err(`No project context on host "${opts.hostArg}".`)} Pass ` +
-            `${C.cyan}--project <id>${C.reset} (${C.cyan}kortix projects ls --host ${opts.hostArg}${C.reset} lists them).\n`,
+          `${status.err(`No project context on host "${scopedHost}" ${source}.`)} Pass ` +
+            `${C.cyan}--project <id>${C.reset} (${C.cyan}kortix projects ls${opts.hostArg ? ` --host ${opts.hostArg}` : ''}${C.reset} lists them).\n`,
         );
       }
       return null;

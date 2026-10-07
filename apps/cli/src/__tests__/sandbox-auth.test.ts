@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { createApiClient } from '../api/client.ts';
-import { activeHost } from '../api/config.ts';
+import { activeHost, useHost } from '../api/config.ts';
 import { resolveProjectContext } from '../command-helpers.ts';
 import { connectorProjectContext } from '../connector-gateway/gateway.ts';
 import { resolveProjectId, resolveProjectRef } from '../project-link.ts';
@@ -102,6 +102,144 @@ describe('in-sandbox auth resolution', () => {
     process.env.KORTIX_PROJECT_ID = 'proj-from-env';
 
     expect(connectorProjectContext('proj-from-flag').projectId).toBe('proj-from-flag');
+  });
+});
+
+describe('plain commands vs an explicitly selected stored host (KRTX-1705)', () => {
+  // The issue: inside a sandbox, `kortix hosts use <name>` must make plain
+  // commands honor that host's stored credential — while a KORTIX_TOKEN the
+  // platform merely injects (or a script exports) must keep outranking the
+  // stored login. The selection is an explicit in-sandbox act, so its marker
+  // can only live in the config file, never in the injected env.
+  const OWN_HOST = {
+    url: 'https://own.example/v1',
+    token: 'kortix_pat_own',
+    user_id: 'user_own',
+    user_email: 'owner@own.example',
+    account_id: 'acct_own',
+    logged_in_at: '2026-01-01T00:00:00.000Z',
+  };
+
+  let configDir: string;
+  let savedCwd: string;
+
+  /** Seed a config file whose active host `own` is logged in. */
+  function seedOwnHost(extra: Record<string, unknown> = {}): void {
+    configDir = mkdtempSync(join(tmpdir(), 'kortix-cli-selected-'));
+    const file = join(configDir, 'config.json');
+    writeFileSync(
+      file,
+      JSON.stringify({ active: 'own', hosts: { own: { ...OWN_HOST, ...extra } } }, null, 2),
+    );
+    process.env.KORTIX_CONFIG_FILE = file;
+  }
+
+  beforeEach(() => {
+    savedCwd = process.cwd();
+  });
+
+  afterEach(() => {
+    process.chdir(savedCwd);
+    rmSync(configDir, { recursive: true, force: true });
+  });
+
+  /** A linked project directory whose named host has NO stored credentials —
+   *  the standard sandbox workspace (the link binds the session's project). */
+  function enterLinkedProject(): void {
+    const dir = mkdtempSync(join(tmpdir(), 'kortix-cli-selected-link-'));
+    mkdirSync(join(dir, '.kortix'), { recursive: true });
+    writeFileSync(
+      join(dir, '.kortix', 'link.json'),
+      JSON.stringify({
+        project_id: 'proj_link',
+        account_id: 'acct_link',
+        host: 'cloud',
+        host_url: 'https://session.example/v1',
+        linked_at: '2026-01-01T00:00:00.000Z',
+      }),
+    );
+    process.chdir(dir);
+  }
+
+  it('keeps env-over-stored when the stored host was never selected in-sandbox', () => {
+    seedOwnHost();
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_API_URL = 'https://session.example/v1';
+
+    const host = activeHost();
+    expect(host?.token).toBe('kortix_pat_session');
+    expect(host?.url).toBe('https://session.example/v1');
+  });
+
+  it('acts as the stored host after `kortix hosts use` ran inside the sandbox', () => {
+    seedOwnHost();
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_API_URL = 'https://session.example/v1';
+
+    expect(useHost('own')).toBe(true);
+    const host = activeHost();
+    expect(host?.token).toBe('kortix_pat_own');
+    // The stored credential is bound to its own deployment — the injected
+    // KORTIX_API_URL must not re-point it (same as `--host own`).
+    expect(host?.url).toBe('https://own.example/v1');
+  });
+
+  it('keeps env-over-stored when `hosts use` ran outside a sandbox', () => {
+    seedOwnHost();
+    expect(useHost('own')).toBe(true);
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_API_URL = 'https://session.example/v1';
+
+    const host = activeHost();
+    expect(host?.token).toBe('kortix_pat_session');
+  });
+
+  it('re-selecting a host outside the sandbox clears an earlier in-sandbox selection', () => {
+    seedOwnHost();
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_API_URL = 'https://session.example/v1';
+    expect(useHost('own')).toBe(true);
+
+    // The user carries the same config to a machine without the delegation.
+    delete process.env.KORTIX_TOKEN;
+    delete process.env.KORTIX_API_URL;
+    expect(useHost('own')).toBe(true);
+
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_API_URL = 'https://session.example/v1';
+    expect(activeHost()?.token).toBe('kortix_pat_session');
+  });
+
+  it('with an in-sandbox selection, a project-scoped command resolves the project from the selected host when the injected base differs', async () => {
+    seedOwnHost({
+      default_project: { project_id: 'proj_own', account_id: 'acct_own' },
+    });
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_API_URL = 'https://session.example/v1';
+    process.env.KORTIX_PROJECT_ID = 'proj_session';
+    expect(useHost('own')).toBe(true);
+
+    const ctx = await resolveProjectContext({});
+    // The ambient project id belongs to the injected deployment; pairing it
+    // with the selected host's credential would 404 cross-deployment — the
+    // same branch an explicit `--host own` already uses.
+    expect(ctx?.projectId).toBe('proj_own');
+  });
+
+  it('keeps the linked directory project when its host has no stored credentials, even with a selection', async () => {
+    seedOwnHost();
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_API_URL = 'https://session.example/v1';
+    process.env.KORTIX_PROJECT_ID = 'proj_session';
+    expect(useHost('own')).toBe(true);
+    enterLinkedProject();
+
+    // The link is the most specific binding and its project lives on the
+    // deployment the link names — the env fallback (not the selection) pairs
+    // with it, exactly as without a selection.
+    const ctx = await resolveProjectContext({});
+    expect(ctx?.projectId).toBe('proj_link');
+    expect(ctx?.auth.token).toBe('kortix_pat_session');
   });
 });
 
