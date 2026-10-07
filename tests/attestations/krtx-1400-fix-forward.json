@@ -1,0 +1,26 @@
+{
+  "source_hash": "1fa776d517ccf68b4655f0e3cb61f29bba7aeb8c0302da8b8a5b20b547b0230b",
+  "diff_files": [
+    ".agents/skills/testing/SKILL.md",
+    ".githooks/pre-push",
+    "AGENTS.md",
+    "apps/api/package.json",
+    "apps/api/src/__tests__/e2e-create-repo-starter.test.ts",
+    "apps/api/src/__tests__/e2e-project-session-contract.test.ts",
+    "apps/api/src/__tests__/e2e-projects-provision.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/agent-env-file.test.ts",
+    "tests/src/core/local-runner.ts",
+    "tests/unit/local-runner.test.ts",
+    "tests/unit/test-attestation.test.ts",
+    "tests/verify-attestation.mjs"
+  ],
+  "diff_hash": "96180aa9ad8a1ca200af9d6d4ce263b647d67b55c4143dd522f92ba2aa8d2fd5",
+  "head": "0fe54ee0714d11a9a10c8e6f9d2564e7f75f59f3",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-07T18:11:31.011Z"
+}

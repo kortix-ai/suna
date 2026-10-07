@@ -14,36 +14,18 @@
 import {
   burstSummary,
   burstSummaryLabel,
-  formatDuration,
   isReasoningPart,
   isToolPart,
   mergeBurstSteps,
   normalizeActivityToolName,
   parseReadOutput,
   partOutcome,
-  reasoningIsRunning,
   stepLabel,
   type BurstStep,
   type BurstSummary,
   type Part,
   type ToolPart,
 } from '@kortix/sdk';
-
-// ─── Thinking ────────────────────────────────────────────────────────────────
-
-/**
- * The thought row's label. `formatDuration` returns '' under 1000ms, so a
- * sub-second or untimed thought reads "Thinking", never "0s".
- *
- * `liveElapsedMs` is measured on the client from the moment the row went live
- * (web `useLiveElapsedMs`), not from the part's `time.start`: a restored
- * transcript's start stamp would render "Thinking for 4h".
- */
-export function thoughtLabel(running: boolean, liveElapsedMs: number, durationMs?: number): string {
-  const elapsed = formatDuration(running ? liveElapsedMs : (durationMs ?? 0));
-  if (!elapsed) return 'Thinking';
-  return running ? `Thinking for ${elapsed}` : `Thought for ${elapsed}`;
-}
 
 // ─── Disclosure ──────────────────────────────────────────────────────────────
 
@@ -79,17 +61,6 @@ export function disclosureBodyMaxHeight(progress: number, contentHeight: number)
   if (progress >= 1) return DISCLOSURE_UNCAPPED_HEIGHT;
   if (progress <= 0) return 0;
   return Math.max(0, contentHeight) * progress;
-}
-
-// ─── Thought body ────────────────────────────────────────────────────────────
-
-/**
- * A thought still being written sits in web's `max-h-54` scroll area, pinned to
- * the newest words. A finished thought shows in full, and the transcript
- * scrolls (a deliberate departure from web's permanent cap).
- */
-export function thoughtBodyCapped(running: boolean): boolean {
-  return running;
 }
 
 /** Top/bottom fade visibility for a scroll area (web `FadedScrollArea`). */
@@ -143,7 +114,6 @@ export function burstIsRunning(
   return parts.some((part) => {
     const status = (part as { state?: { status?: string } }).state?.status;
     if (status === 'pending' || status === 'running') return true;
-    if (isReasoningPart(part)) return reasoningIsRunning(part);
     return false;
   });
 }
@@ -173,10 +143,12 @@ export interface BurstView {
 }
 
 export function burstView(
-  parts: ReadonlyArray<Part>,
+  allParts: ReadonlyArray<Part>,
   working: boolean,
   isTrailing = false,
 ): BurstView {
+  // Mobile never shows thinking: a thought is not a step, in the row or the sheet.
+  const parts = allParts.filter((part) => !isReasoningPart(part));
   const running = burstIsRunning(parts, working, isTrailing);
   const merged = mergeBurstSteps(parts, (p) => stepLabel(p).tier);
   // An answered question owns its row, so it never shares a group row.
@@ -190,7 +162,7 @@ export function burstView(
     running,
     steps,
     summary,
-    title: steps.length === 1 && steps[0]?.kind === 'thought' ? 'Thinking' : burstSummaryLabel(summary, running),
+    title: burstSummaryLabel(summary, running),
     hidden: steps.length === 0,
   };
 }
