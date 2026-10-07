@@ -140,10 +140,21 @@ test.describe("23 — Composio managed connector", () => {
         expect(items).toContainEqual(
           expect.objectContaining({ slug: name.toLowerCase() }),
         );
-        for (const item of query.trim().length < 3 ? items : []) {
-          expect(
-            `${item.name} ${item.slug} ${item.description ?? ""}`.toLowerCase(),
-          ).toContain(query.trim().toLowerCase());
+        // A short query must not return fuzzy noise. The search matches a
+        // name, slug, category name or description (`matchRank` in
+        // composio-catalog-search.ts), and the response carries no category
+        // names, so assert the ranking instead: every name/slug match comes
+        // before any category or description match. Composio filed Brevo
+        // under "Email Newsletters", which matches "sl" (gate 37548429782).
+        if (query.trim().length < 3) {
+          const q = query.trim().toLowerCase();
+          const nameMatch = (item: { name: string; slug: string }) =>
+            `${item.name} ${item.slug}`.toLowerCase().includes(q);
+          const firstOther = items.findIndex((item: { name: string; slug: string }) => !nameMatch(item));
+          if (firstOther >= 0) {
+            expect(items.slice(firstOther).some(nameMatch), `name matches rank first for "${q}"`).toBe(false);
+          }
+          expect(nameMatch(items[0]), `the top result for "${q}" matches by name`).toBe(true);
         }
         await expect(
           page.getByRole("button", { name: new RegExp(`^${name}\\b`) }).first(),
@@ -312,6 +323,15 @@ test.describe("23 — Composio managed connector", () => {
           .endsWith(`/v1/connectors/projects/${project.id}/connectors`) &&
         response.request().method() === "POST",
     );
+    const isConnectPost = (url: string, method: string) =>
+      method === "POST" &&
+      new RegExp(`/v1/connectors/projects/${project.id}/connectors/[^/]+/connect$`).test(url);
+    const connectRequestPromise = page.waitForRequest((request) =>
+      isConnectPost(request.url(), request.method()),
+    );
+    const connectResponsePromise = page.waitForResponse((response) =>
+      isConnectPost(response.url(), response.request().method()),
+    );
     await addDialog
       .getByRole("button", { name: "Add connector", exact: true })
       .click();
@@ -350,29 +370,17 @@ test.describe("23 — Composio managed connector", () => {
     await expect(page).toHaveURL(new RegExp(`[?&]c=${connectorSlug}(?:&|$)`));
     const detail = page.getByRole("dialog", { name: "Composio Search" });
     await expect(detail).toBeVisible();
-    await expect(
-      detail.getByRole("button", { name: "Connect", exact: true }),
-    ).toBeVisible();
-
-    const connectRequestPromise = page.waitForRequest(
-      (request) =>
-        request
-          .url()
-          .endsWith(
-            `/v1/connectors/projects/${project.id}/connectors/${connectorSlug}/connect`,
-          ) && request.method() === "POST",
-    );
-    const connectResponsePromise = page.waitForResponse(
-      (response) =>
-        response
-          .url()
-          .endsWith(
-            `/v1/connectors/projects/${project.id}/connectors/${connectorSlug}/connect`,
-          ) && response.request().method() === "POST",
-    );
-    await detail.getByRole("button", { name: "Connect", exact: true }).click();
+    // A no-auth toolkit has nothing to authorize. The header offers Connect, or
+    // the account is already connected (Reconnect) by the time the dialog
+    // opens (release gate 37548429782 on staging). Either way exactly one
+    // connect POST answers the contract below.
+    const connectButton = detail.getByRole("button", { name: "Connect", exact: true });
+    const reconnectButton = detail.getByRole("button", { name: "Reconnect", exact: true });
+    await expect(connectButton.or(reconnectButton)).toBeVisible();
+    if (await connectButton.isVisible()) await connectButton.click();
     const connectRequest = await connectRequestPromise;
-    expect(connectRequest.postDataJSON()).toEqual({});
+    expect(connectRequest.url()).toMatch(new RegExp(`/connectors/${connectorSlug}/connect$`));
+    expect(connectRequest.postDataJSON() ?? {}).toEqual({});
     const connectResponse = await connectResponsePromise;
     expect(connectResponse.status()).toBe(200);
     const connectBody = (await connectResponse.json()) as Record<
@@ -653,7 +661,16 @@ test.describe("23 — Composio managed connector", () => {
     expect((await revokeResponse).status()).toBe(200);
     await expect(dialog).not.toBeVisible();
     await expect(row.getByTestId("account-visibility")).toHaveText("Everyone in project");
-    await expect(row.getByText("Not shared with you")).toHaveCount(0);
+    // `usable` reads the per-replica object-grant memo; `shared_with` reads the
+    // rows. Another API replica keeps the revoked grant for up to the 15 s IAM
+    // cache window (same rule IAM-40 waits out), so the first read after the
+    // save can still say "Not shared with you". The page only refetches on a
+    // load: reload until a read lands past the window.
+    await expect(async () => {
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await expect(row.getByTestId("account-visibility")).toHaveText("Everyone in project");
+      await expect(row.getByText("Not shared with you")).toHaveCount(0, { timeout: 5_000 });
+    }).toPass({ timeout: 45_000, intervals: [2_000, 5_000] });
 
     expect(pageErrors, `client errors: ${pageErrors.join(" | ")}`).toEqual([]);
   });

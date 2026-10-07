@@ -75,7 +75,7 @@ export async function confirmPromptLanded(input: PromptLandingProofInput): Promi
       return 'unknown';
     }
     if (attempt < attempts - 1 && delayMs > 0) {
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      await Bun.sleep(delayMs);
     }
   }
   return 'missing';

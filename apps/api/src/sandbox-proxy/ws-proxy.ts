@@ -2,7 +2,7 @@
 // Preview WebSocket reverse-proxy
 //
 // The path-based preview proxy (`/v1/p/{sandboxId}/{port}/*`) is an HTTP-only
-// reverse proxy (see routes/preview.ts). Browser WebSocket clients — today the
+// reverse proxy (see forward/). Browser WebSocket clients — today the
 // xterm PTY terminal — need a real upgrade, which Hono/`fetch()` can't do; the
 // upgrade has to happen at the `Bun.serve()` level.
 //
@@ -24,7 +24,7 @@
 
 import { authenticatePreviewPrincipalDetailed } from './preview-auth';
 import { bindPreviewResource, bindPreviewSession } from './preview-audit';
-import { resolvePreviewWsUpstream } from './routes/preview';
+import { resolvePreviewWsUpstream } from './forward';
 import { classifyPtyWebSocketPath } from '../platform/providers/pty-ingress';
 import { OPENCODE_PRIMARY_PORT, isOpencodePort } from '../shared/opencode-ports';
 import { healthRuntimePort } from '@kortix/api-contract/runtime-relay';

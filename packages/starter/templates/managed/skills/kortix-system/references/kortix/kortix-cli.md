@@ -394,7 +394,8 @@ increasing.
 #### Inside a sandbox — the typical agent flow
 
 ```sh
-# 1. Commit on the session branch
+# 1. Check the project, then commit on the session branch
+kortix validate
 git add .
 git commit -m "Add release-notes skill"
 
@@ -450,6 +451,19 @@ title. Sorted newest first.
 | `kortix update` | Re-runs `curl -fsSL kortix.com/install | bash` to pull the latest binary. |
 | `kortix uninstall` | Removes the binary, /usr/local/bin shim, and `~/.config/kortix/`. `--keep-auth` keeps the token. |
 | `kortix version` | Print the CLI version. |
+
+### Validate and ship
+
+| Command | What it does |
+| --- | --- |
+| `kortix validate` | Checks `kortix.yaml` against the schema, lints sandbox Dockerfiles and agent wiring, and warns when the files in Git are large (a file of 10 MiB or more, or more than 32 MiB in total). Exit `0` with warnings, `1` on an error. `--json` prints the report. |
+| `kortix ship` | Runs the `kortix validate` checks, commits, and pushes the current branch to the project repo (laptop flow). An error stops the ship; a warning never does. `--no-verify` skips the checks. |
+
+A session builds its agent config from the whole repository. Above 32 MiB
+compressed that build fails and the session runs the platform default
+config, so the size warning names the largest files. Move them to object
+storage (S3, R2, GCS), or mark paths no agent reads `export-ignore` in
+`.gitattributes`.
 
 ### Project scaffold
 

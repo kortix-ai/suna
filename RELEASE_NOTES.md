@@ -1,28 +1,35 @@
-See the model behind each answer, pi 1.0, and config releases that follow your repository
+Steer a running turn, live queue state, and spend by source
 
 ## New
 
-- **See the model behind each answer.** A session shows which model answered and what the answer cost.
-- **pi 1.0.** The pi harness is on pi 1.0. It brings compaction and slash commands, and pi now runs only inside the sandbox.
-- **Config releases follow your repository.** A release is a checkout of the base branch with the repository's own layout. An unbuildable or quarantined tip no longer drops a session's configuration without notice.
-- **Security settings:** a redesigned authenticator-app enrollment, and a list of every signed-in device. Signing a device out stops its access at once.
-- **Viewers:** the session file and App viewers show an address bar. App previews show calmer loading and build states, and hover cards name running ports and links as well as files.
-- **Mobile:** an updated app, with JavaScript changes now delivered as over-the-air updates. It adds channel cards for Slack and Teams prompts and one progress indicator per running turn. The Files row opens the Files page, and the project's Apps are listed.
-- **Downloads:** the desktop installer has a drag-to-install window, and /download links to the App Store and Google Play listings.
-- **The website** describes Kortix as the open-source AI Operating System.
+- **Steer a running turn.** A message sent with Enter while the agent works reaches the running turn at its next step, and the turn does not stop. The message waits above the composer as "Read at next step". Cmd/Ctrl+Enter still queues a message for after the turn, and a queued message has a "Stop and send" action. The CLI has `kortix sessions chat --steer`.
+- **Live queue state.** The queue above the composer updates from the session stream instead of a once-a-second poll.
+- **Spend by source.** LLM credit usage shows which trigger, member or caller spent it.
+- **Trigger templates** can use `cron.scheduled_date` and `cron.scheduled_hour`.
+- **CLI:** `kortix validate` warns about large repositories, and `kortix ship` runs it first.
+- **New skill form:** a skill can be created from a form without a model.
+- The new-project handoff shows each provisioning step as it happens.
 
 ## Improved
 
-- When a ChatGPT usage limit is reached, the gateway falls back to the project's model chain and says when the limit resets.
-- A failed sandbox template build names its cause.
-- Adding a member by email is faster.
-- Sandbox shells no longer write core dumps.
+- A ChatGPT connection that reached its plan limit is tried again after 15 minutes, and its owner can retry it at once.
+- pi compacts the conversation at a token budget instead of at the model's full window.
+- A sandbox that cannot start because the provider's storage quota is full says so.
+- A slow session restore shows as waiting, not as stalled or failed.
+- A scheduled account deletion now runs when it is due. It removes the account's data and login, cancels the subscription and stops the sandboxes.
+- Members no longer see Restart, Stop or Delete on sessions they cannot control. A manually fired trigger is labeled as manual.
 
 ## Fixed
 
-- Editing a sent prompt keeps its attachments, and so does editing a prompt queued while the session boots.
-- A manual trigger run no longer fails when it races a new session that creates the same agent identity.
-- Relative OpenCode instructions read from the release, not from the workspace.
-- The demo booking confirmation stays open until you close it.
-- The Kortix web app is patched against three new vulnerabilities in its dependencies.
-
+- YAML and JSON files preview again.
+- A 401 makes every app fetch a fresh token.
+- Usage metering closes gaps where a stream could go unbilled, and refunds are clawed back correctly.
+- Monthly renewals keep credit balances to the full four decimals.
+- An "Only you" secret stays private when its holder's role or group changes.
+- Only live account tokens are listed, and a 401 from a revoked token names it.
+- Security hardening: tenant isolation for invites, usage and setup links, agent app preview isolation, MFA step-up, and sandbox proxy access checks.
+- The API finishes in-flight work on shutdown and retries webhooks until they are acknowledged.
+- CLI fixes for `projects link --host`, `approvals ls` and change requests.
+- Slack and Teams file downloads stay inside the project.
+- An approval request sends one notification, not one per server.
+- A change to who can use a secret or a connected account applies on every server at once.

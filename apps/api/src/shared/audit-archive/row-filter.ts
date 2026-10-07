@@ -4,6 +4,7 @@
  * added to the other; `export-page.integration.test.ts` runs both over the same rows.
  */
 import type { AuditFilterInput } from '../../accounts/audit-filters';
+import { escapeLike } from '../sql-like';
 
 /** The first day audit rows can carry `credential_kind` (same floor as buildFilters). */
 const CREDENTIAL_KIND_SINCE = '2026-09-30T00:00:00.000000Z';
@@ -16,22 +17,30 @@ export function normalizeInstant(value: string): string {
 }
 
 /**
- * SQL LIKE (`%` any run, `_` one character, no escape character) without building a RegExp from
+ * SQL LIKE (`%` any run, `_` one character, `\` escapes the next character) without building a RegExp from
  * user input: a greedy two-pointer match that backtracks only to the last `%`, so it is
  * O(value x pattern) worst case and never exponential (CodeQL/strix ReDoS, CWE-1333).
  */
 export function matchesLike(value: string, pattern: string, caseInsensitive: boolean): boolean {
   const v = caseInsensitive ? value.toLowerCase() : value;
-  const p = caseInsensitive ? pattern.toLowerCase() : pattern;
+  const source = caseInsensitive ? pattern.toLowerCase() : pattern;
+  // Tokens: a literal character, `_` (one), or `%` (any run). A backslash makes the next character literal.
+  const p: Array<{ kind: 'lit' | 'one' | 'any'; ch: string }> = [];
+  for (let i = 0; i < source.length; i += 1) {
+    const ch = source[i]!;
+    if (ch === '\\' && i + 1 < source.length) p.push({ kind: 'lit', ch: source[++i]! });
+    else p.push({ kind: ch === '%' ? 'any' : ch === '_' ? 'one' : 'lit', ch });
+  }
   let vi = 0;
   let pi = 0;
   let starP = -1;
   let starV = 0;
   while (vi < v.length) {
-    if (pi < p.length && (p[pi] === '_' || (p[pi] !== '%' && p[pi] === v[vi]))) {
+    const token = p[pi];
+    if (token && (token.kind === 'one' || (token.kind === 'lit' && token.ch === v[vi]))) {
       vi += 1;
       pi += 1;
-    } else if (pi < p.length && p[pi] === '%') {
+    } else if (token?.kind === 'any') {
       starP = pi;
       starV = vi;
       pi += 1;
@@ -43,7 +52,7 @@ export function matchesLike(value: string, pattern: string, caseInsensitive: boo
       return false;
     }
   }
-  while (pi < p.length && p[pi] === '%') pi += 1;
+  while (p[pi]?.kind === 'any') pi += 1;
   return pi === p.length;
 }
 
@@ -67,14 +76,15 @@ export function rowMatches(row: Record<string, unknown>, accountId: string, inpu
   const action = text(row.action) ?? '';
   if (input.actionPrefix) {
     const prefix = input.actionPrefix;
+    const escaped = escapeLike(prefix);
     const like = (pattern: string) => matchesLike(action, pattern, false);
     if (prefix === 'connector.') {
       if (!(like('connector.%') || like('computer.%'))) return false;
     } else if (prefix.includes('.') && !prefix.endsWith('.')) {
-      if (!(action === prefix || like(`${prefix}.%`))) return false;
-    } else if (!like(`${prefix}%`)) return false;
+      if (!(action === prefix || like(`${escaped}.%`))) return false;
+    } else if (!like(`${escaped}%`)) return false;
   }
-  if (input.resourceType && !matchesLike(text(row.resource_type) ?? '', `${input.resourceType}%`, false)) return false;
+  if (input.resourceType && !matchesLike(text(row.resource_type) ?? '', `${escapeLike(input.resourceType)}%`, false)) return false;
 
   // Compare microsecond strings; a Date bound is milliseconds, like the SQL parameter.
   if (input.sinceRaw) {
@@ -86,7 +96,7 @@ export function rowMatches(row: Record<string, unknown>, accountId: string, inpu
     if (!Number.isNaN(until.getTime()) && at > normalizeInstant(until.toISOString())) return false;
   }
   if (input.q) {
-    const term = `%${input.q}%`;
+    const term = `%${escapeLike(input.q)}%`;
     const columns = ['action', 'resource_type', 'resource_id', 'session_id', 'request_id', 'trace_id', 'correlation_id', 'project_id'];
     if (!columns.some((column) => matchesLike(text(row[column]) ?? '', term, true))) return false;
   }

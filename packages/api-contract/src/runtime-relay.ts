@@ -22,6 +22,11 @@ export const DAEMON_TURN_STREAM_KINDS = [
   'runtime_session',
   'turn_begin',
   'end',
+  /**
+   * The running turn read a steered message (`turn_message_id`) at a step
+   * boundary. apps/api closes that message's inbox row as delivered.
+   */
+  'steer_read',
 ] as const;
 export type DaemonTurnStreamKind = (typeof DAEMON_TURN_STREAM_KINDS)[number];
 
@@ -243,6 +248,11 @@ export const RUNTIME_CAPABILITIES = [
   'session.attach',
   /** A runtime config document a client may read and patch (`/global/config`). */
   'session.config',
+  /**
+   * A message sent during a turn is read by that turn at its next step
+   * boundary (`POST /kortix/runtime/sessions/:id/steer`). The turn does not stop.
+   */
+  'session.steer',
 ] as const;
 export type RuntimeCapability = (typeof RUNTIME_CAPABILITIES)[number];
 
@@ -252,6 +262,13 @@ export type RuntimeCapability = (typeof RUNTIME_CAPABILITIES)[number];
  * and `GET /kortix/runtime/agents`. Listed in `capabilities` beside the runtime's own.
  */
 export const RUNTIME_TURNS_CAPABILITY = 'runtime.turns.v1' as const;
+
+/**
+ * `code` on the daemon's `409` to `POST /kortix/runtime/sessions/:id/steer`:
+ * no turn is running, so nothing can read the message. The caller sends it as
+ * a prompt instead.
+ */
+export const STEER_NO_ACTIVE_TURN_CODE = 'no_active_turn' as const;
 
 /** The `schema` of the `/kortix/runtime/state` document. */
 export const KORTIX_RUNTIME_SCHEMA = 'kortix.runtime.v1' as const;

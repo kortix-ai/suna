@@ -121,9 +121,26 @@ function parseFrontmatter(raw: string | null) {
   for (const line of raw.slice(3, end).split(/\r?\n/)) {
     const match = line.match(/^([A-Za-z0-9_-]+):\s*(.+)$/);
     if (!match) continue;
-    meta[match[1]] = match[2].trim().replace(/^["']|["']$/g, '');
+    meta[match[1]] = frontmatterScalar(match[2]);
   }
   return meta;
+}
+
+/** Read one scalar the way a YAML writer may have serialized it. A
+ *  double-quoted scalar carries escapes (a writer like `stringifyYaml` emits
+ *  one whenever the text needs quoting); strip the quotes and unescape its
+ *  two escapes. Single-quoted and plain scalars carry no backslash escapes:
+ *  unwrap a matched quote pair, and leave a lone quote character — a plain
+ *  scalar may end in one (`Deploy "v1"`) — exactly where it is. */
+function frontmatterScalar(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    return trimmed.slice(1, -1).replace(/\\(["\\])/g, '$1');
+  }
+  if (trimmed.length >= 2 && trimmed.startsWith("'") && trimmed.endsWith("'")) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
 }
 
 function agentNameFromPath(path: string) {

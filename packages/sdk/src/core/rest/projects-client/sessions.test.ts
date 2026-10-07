@@ -1,6 +1,7 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import { clearSessionFresh, isSessionFresh } from '../../http/fresh-sessions';
+import { onSessionStopped } from '../../http/session-stopped';
 import type {
   CreateProjectSessionInput,
   ProjectSession,
@@ -24,6 +25,7 @@ import {
   deleteSessionPrompt,
   editSessionPrompt,
   ensureWarmProjectSession,
+  interruptSessionPrompt,
   findActiveTranscriptShare,
   getProjectSession,
   getProjectSessionConfigState,
@@ -1186,6 +1188,21 @@ test('stopProjectSession POSTs to /stop', async () => {
   expect(result.status).toBe('stopped');
 });
 
+test('stopProjectSession tells the open session hook, but only when the stop succeeded (05#1)', async () => {
+  const heard: string[] = [];
+  const off = onSessionStopped((id) => heard.push(id));
+  try {
+    nextResponse = { status: 409, body: { error: 'Session is not running' } };
+    await stopProjectSession('P1', 'S-fail').catch(() => {});
+    expect(heard).toEqual([]);
+    nextResponse = { status: 200, body: { ok: true, session_id: 'S-ok', status: 'stopped' } };
+    await stopProjectSession('P1', 'S-ok');
+    expect(heard).toEqual(['S-ok']);
+  } finally {
+    off();
+  }
+});
+
 test('getProjectSessionScope reads canonical session scope', async () => {
   const scope = {
     secrets_allowlist: ['GMAIL_TOKEN'],
@@ -1324,6 +1341,60 @@ test('createSessionPrompt preserves explicit queue placement on the wire', async
     });
     expect(last().body).toMatchObject({ placement });
   }
+});
+
+test('createSessionPrompt sends the delivery mode with the placement it implies', async () => {
+  // An API built before steering reads only `placement`, so the derived
+  // placement keeps its meaning there: `interrupt` paints in the transcript,
+  // `steer` and `queue` wait in the composer list (a steer row is a plain
+  // Queue List row on an older API).
+  const cases = [
+    ['steer', 'composer'],
+    ['queue', 'composer'],
+    ['interrupt', 'transcript'],
+  ] as const;
+  for (const [delivery, placement] of cases) {
+    nextResponse = {
+      status: 202,
+      body: { prompt_id: 'cmd-d', state: 'queued', message_id: 'msg_a', deduped: false },
+    };
+    await createSessionPrompt('P1', 'S1', {
+      clientMessageId: `delivery-${delivery}`,
+      messageId: 'msg_a',
+      parts: [{ type: 'text', text: 'look at the logs too' }],
+      delivery,
+    });
+    expect(last().body).toMatchObject({ delivery, placement });
+  }
+});
+
+test('createSessionPrompt keeps an explicit placement beside the delivery mode', async () => {
+  nextResponse = {
+    status: 202,
+    body: { prompt_id: 'cmd-d', state: 'queued', message_id: 'msg_a', deduped: false },
+  };
+  await createSessionPrompt('P1', 'S1', {
+    clientMessageId: 'explicit',
+    messageId: 'msg_a',
+    parts: [{ type: 'text', text: 'x' }],
+    placement: 'composer',
+    delivery: 'steer',
+  });
+  expect(last().body).toMatchObject({ delivery: 'steer', placement: 'composer' });
+});
+
+test('createSessionPrompt sends no delivery field when the caller names none', async () => {
+  nextResponse = {
+    status: 202,
+    body: { prompt_id: 'cmd-d', state: 'queued', message_id: 'msg_a', deduped: false },
+  };
+  await createSessionPrompt('P1', 'S1', {
+    clientMessageId: 'plain',
+    messageId: 'msg_a',
+    parts: [{ type: 'text', text: 'x' }],
+  });
+  expect(last().body).not.toHaveProperty('delivery');
+  expect(last().body).not.toHaveProperty('placement');
 });
 
 test('createSessionPrompt asks for a server re-mint only when the caller says its id is stale', async () => {
@@ -1470,6 +1541,35 @@ test('editSessionPrompt PATCHes the row text in place and returns the row', asyn
   expect(last().body).toEqual({ text: 'say hello' });
   expect(result.text).toBe('say hello');
   expect(result.message_id).toBe('msg_a');
+});
+
+test('interruptSessionPrompt PATCHes the row to interrupt delivery and returns the row', async () => {
+  // "Stop and send": a row still waiting in the queue becomes Quick Queue. The
+  // running turn ends after its running tool, then this row runs.
+  nextResponse = {
+    status: 200,
+    body: {
+      prompt_id: 'cmd-1',
+      placement: 'transcript',
+      delivery: 'interrupt',
+      steer_fallback: null,
+      client_message_id: 'q_1',
+      message_id: 'msg_a',
+      state: 'queued',
+      reason: null,
+      text: 'stop and do this',
+      attempts: 0,
+      last_error: null,
+      created_at: '2026-08-18T00:00:00.000Z',
+      available_at: '2026-08-18T00:00:00.000Z',
+    },
+  };
+  const result = await interruptSessionPrompt('P1', 'S1', 'cmd-1');
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/prompts/cmd-1');
+  expect(last().method).toBe('PATCH');
+  expect(last().body).toEqual({ delivery: 'interrupt' });
+  expect(result.delivery).toBe('interrupt');
+  expect(result.placement).toBe('transcript');
 });
 
 test('holdSessionPrompts POSTs .../prompts/hold with the flag and returns the queue', async () => {

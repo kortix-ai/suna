@@ -12,7 +12,7 @@
  * through the shared provider registry.
  */
 
-import { and, eq, isNull, ne, or } from 'drizzle-orm';
+import { and, eq, ne, or } from 'drizzle-orm';
 import { sandboxTemplates, projects } from '@kortix/db';
 type DbSandboxTemplate = typeof sandboxTemplates.$inferSelect;
 import { db } from '../shared/db';
@@ -41,7 +41,8 @@ export {
   currentNonAgentRuntimeFingerprint,
   RUNTIME_ARTIFACTS,
 } from './template-runtime-fingerprint';
-import { getSandboxProvider, type SandboxProviderAdapter } from './providers';
+import { getSandboxProvider } from './providers';
+import { BoundedMap } from '../shared/bounded-map';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
@@ -97,7 +98,7 @@ export interface ResolvedTemplate {
  * a manifest mutation (CR merge handles its own reconciliation).
  */
 const TOML_SYNC_TTL_MS = 60_000;
-const tomlSyncCache = new Map<string, number>();
+const tomlSyncCache = new BoundedMap<string, number>(2_000);
 
 /**
  * Per-project cache of the resolved template list. Burst session-boot scenarios
@@ -107,7 +108,7 @@ const tomlSyncCache = new Map<string, number>();
  * (templates only change via CRUD which already invalidates).
  */
 const TEMPLATE_LIST_TTL_MS = 5_000;
-const templateListCache = new Map<string, { at: number; value: ResolvedTemplate[] }>();
+const templateListCache = new BoundedMap<string, { at: number; value: ResolvedTemplate[] }>(500);
 
 /** Invalidate the in-memory template list cache for a project. Called from
  *  the CRUD endpoints after a create / update / delete. */
@@ -238,25 +239,6 @@ export async function resolveDefaultTemplate(): Promise<ResolvedTemplate> {
     .where(and(eq(sandboxTemplates.slug, DEFAULT_SANDBOX_SLUG), eq(sandboxTemplates.isShared, true)))
     .limit(1);
   return shared ? rowToResolved(shared) : synthesizedDefault();
-}
-
-/**
- * Fetch a single template row by (project, slug) — DB-only, no synthesis.
- * Used by CRUD operations that must operate on a concrete row.
- */
-export async function getTemplateRow(
-  projectId: string | null,
-  slug: string,
-): Promise<DbSandboxTemplate | null> {
-  const conds = [eq(sandboxTemplates.slug, slug)];
-  if (projectId === null) conds.push(isNull(sandboxTemplates.projectId));
-  else conds.push(eq(sandboxTemplates.projectId, projectId));
-  const [row] = await db
-    .select()
-    .from(sandboxTemplates)
-    .where(and(...conds))
-    .limit(1);
-  return row ?? null;
 }
 
 export async function getTemplateById(templateId: string): Promise<DbSandboxTemplate | null> {

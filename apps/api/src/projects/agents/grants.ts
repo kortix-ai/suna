@@ -12,7 +12,7 @@ import type { AgentSpec, LoadedAgents } from './types';
  * The non-binding agent sentinel. `project_sessions.agent_name` defaults to this
  * literal and NO agent is ever named `default` — the runtime resolves it to
  * OpenCode's configured `default_agent` (a general-purpose agent). Kept in sync
- * with the proxy's copy (sandbox-proxy/routes/preview.ts).
+ * with the proxy's copy (sandbox-proxy/pre-prompt-env-sync.ts).
  */
 export const DEFAULT_AGENT_SENTINEL = 'default';
 

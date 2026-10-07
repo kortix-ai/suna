@@ -309,7 +309,10 @@ async function build(
         ...withGovernance,
         config_dir: configDir,
         config_tree_id: composed ? null : treeId,
-        reason: `the repository at ${commit.slice(0, 12)} exceeds the ${archiveLimit ?? MAX_CONFIG_ARCHIVE_BYTES}-byte config archive limit`,
+        reason:
+          `the repository at ${commit.slice(0, 12)} exceeds the ${archiveLimit ?? MAX_CONFIG_ARCHIVE_BYTES}-byte config archive limit. ` +
+          'Move large static files out of Git into object storage (S3, R2, GCS), or mark paths no agent reads ' +
+          '`export-ignore` in .gitattributes. `kortix validate` lists the largest files.',
       });
     }
     throw error;
