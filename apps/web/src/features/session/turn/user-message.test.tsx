@@ -199,12 +199,12 @@ describe('UserMessageBubble — a clamped message is expandable without swallowi
 
   test('the expand affordance is a real button, named and stateful', () => {
     const collapsed = renderBubble();
-    expect(collapsed).toContain('aria-label="Expand message"');
+    expect(collapsed).toContain('>Show more</button>');
     expect(collapsed).toContain('aria-expanded="false"');
     expect(collapsed).toContain('aria-controls="m1-text"');
 
     const open = renderBubble({ expanded: true });
-    expect(open).toContain('aria-label="Collapse message"');
+    expect(open).toContain('>Show less</button>');
     expect(open).toContain('aria-expanded="true"');
   });
 
@@ -225,7 +225,7 @@ describe('UserMessageBubble — a clamped message is expandable without swallowi
 
   test('an unclamped bubble offers no expand control and no ARIA state at all', () => {
     const markup = renderBubble({ canExpand: false });
-    expect(markup).not.toContain('aria-label="Expand message"');
+    expect(markup).not.toContain('Show more');
     expect(markup).not.toContain('aria-expanded');
     expect(markup).not.toContain('role="button"');
     // The chip is still the one and only control.
@@ -1338,5 +1338,59 @@ describe('UserMessage member author', () => {
     expect(renderWith(MEMBER, false)).not.toContain('Sent by');
     expect(renderWith(MEMBER, false)).not.toContain('data-slot="avatar"');
     expect(renderWith(undefined, true)).toBe(renderWith(undefined, false));
+  });
+});
+
+describe('UserMessage platform prompts', () => {
+  const renderText = (text: string) =>
+    renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" timeZone="UTC" messages={enMessages}>
+          <TooltipProvider>
+            <UserMessage
+              message={{ ...message, parts: [{ ...message.parts[0], text }] } as MessageWithParts}
+              sessionId="session-1"
+              ownsPlan={false}
+            />
+          </TooltipProvider>
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+
+  test('a reminder fire is a source pill over a plain bubble, not the raw header', () => {
+    const markup = renderText(
+      '[REMINDER reminder.0123456789ab — one-time scheduled check-in on this session, not a new user message.]\n\nCheck whether the vendor replied.',
+    );
+    expect(markup).toContain('data-testid="reminder-turn"');
+    expect(markup).toContain('data-testid="message-source"');
+    expect(markup).toContain('>Reminder</span>');
+    expect(markup).toContain('>One-time</span>');
+    expect(markup).toContain('Check whether the vendor replied.');
+    expect(markup).not.toContain('[REMINDER');
+  });
+
+  test('a trigger fire names the trigger in the pill and the prompt in the bubble', () => {
+    const markup = renderText(
+      '<trigger_event>{"trigger":"daily-digest","data":{"manual":true}}</trigger_event>\nWrite the daily digest.',
+    );
+    expect(markup).toContain('data-testid="trigger-turn"');
+    expect(markup).toContain('data-testid="message-source"');
+    expect(markup).toContain('>daily-digest</span>');
+    expect(markup).toContain('Write the daily digest.');
+    expect(markup).not.toContain('trigger_event');
+  });
+});
+
+describe('UserMessageBubble clamp toggle', () => {
+  test('only the Show more button toggles: the bubble carries no click affordance', () => {
+    const markup = renderToStaticMarkup(
+      <NextIntlClientProvider locale="en" timeZone="UTC" messages={enMessages}>
+        <UserMessageBubble canExpand expanded={false} onToggle={() => {}} textId="m1-text">
+          long text
+        </UserMessageBubble>
+      </NextIntlClientProvider>,
+    );
+    expect(markup).not.toContain('cursor-pointer');
+    expect(markup).toContain('>Show more</button>');
   });
 });
