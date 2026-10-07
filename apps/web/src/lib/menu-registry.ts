@@ -744,7 +744,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/apps',
+    href: '/projects/{projectId}/apps',
     requiresProject: true,
     requiresFlag: 'apps',
     keywords: 'apps deploy deployments serverless docker static hosting urls',

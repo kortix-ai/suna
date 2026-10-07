@@ -170,10 +170,11 @@ describe('CapabilityTabs stays pinned to the top', () => {
   });
 });
 
-describe('CapabilityTabs: Apps and Backends', () => {
+describe('CapabilityTabs: Backends', () => {
   const bar = readFileSync(fileURLToPath(new URL('./capability-tabs.tsx', import.meta.url)), 'utf8');
-  test('they paint only while their flag is on, after every static tab and before Members', () => {
-    expect(bar).toContain("useFeatureFlag(projectId, 'apps').enabled");
+  test('Backends paints only while its flag is on, after every static tab and before Members', () => {
+    // Apps is a sidebar row again (Marko, 2026-10-07), not a Customize tab.
+    expect(bar).not.toContain("useFeatureFlag(projectId, 'apps')");
     expect(bar).toContain("useFeatureFlag(projectId, 'backends').enabled");
     const library = bar.indexOf('{library.map(renderTab)}');
     const shipped = bar.indexOf('{shipped.map(renderTab)}');

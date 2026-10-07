@@ -36,6 +36,7 @@ const LIST_FILES = [
   'project-settings-nav.tsx',
   'footer/project-files-nav.tsx',
   'footer/project-reminders-nav.tsx',
+  'footer/project-apps-nav.tsx',
 ] as const;
 
 describe('sidebar prefetch contract', () => {

@@ -10,12 +10,8 @@ const appsSource = () => ['apps-view', 'app-detail', 'app-shared', 'app-preview'
   .join('\n');
 
 test('every Apps discovery surface hides until the apps feature flag is on', () => {
-  const tabs = readFileSync(
-    resolve(root, 'features/workspace/capabilities/shared/capability-tabs.tsx'),
-    'utf8',
-  );
-  const routes = readFileSync(
-    resolve(root, 'features/workspace/capabilities/shared/capability-tab-routes.ts'),
+  const nav = readFileSync(
+    resolve(root, 'features/workspace/project-sidebar/footer/project-apps-nav.tsx'),
     'utf8',
   );
   const menu = readFileSync(resolve(root, 'lib/menu-registry.ts'), 'utf8');
@@ -23,29 +19,44 @@ test('every Apps discovery surface hides until the apps feature flag is on', () 
 
   // ONE gating primitive everywhere — the SDK's `useFeatureFlag`, never a
   // per-feature hook and never a hand-rolled `experimental?.apps` read.
-  expect(tabs).toContain("useFeatureFlag(projectId, 'apps')");
-  expect(tabs).toContain('FLAGGED_CAPABILITY_TABS.filter((tab) => enabled[tab.flag])');
-  expect(routes).toContain("{ key: 'apps', label: 'Apps', flag: 'apps' }");
+  expect(nav).toContain("useFeatureFlag(projectId, 'apps')");
+  expect(nav).toContain('if (!appsGate.enabled) return null;');
   expect(menu).toContain("requiresFlag: 'apps'");
   expect(view).toContain("useFeatureFlag(projectId, 'apps')");
+  expect(nav).not.toContain('useAppsFeatureEnabled');
   expect(view).not.toContain('useAppsFeatureEnabled');
 });
 
 test('Apps is an ordinary feature flag — nothing calls it experimental', () => {
-  expect(appsSource()).not.toContain('Experimental');
+  // Apps shipped labelled Experimental on every surface. It is now a STABLE
+  // flag: still opt-in per project, but no badge on the sidebar entry and none
+  // on the page header. The stability badge in Settings → Feature flags is
+  // rendered from the registry's `stability`, so that list follows on its own.
+  const nav = readFileSync(
+    resolve(root, 'features/workspace/project-sidebar/footer/project-apps-nav.tsx'),
+    'utf8',
+  );
+  const view = appsSource();
+
+  expect(nav).not.toContain('Experimental');
+  expect(view).not.toContain('Experimental');
 });
 
-test('Apps is a Customize tab, not a sidebar row (Marko, 2026-10-07)', () => {
+test('Apps sits with Customize in the sidebar, not in the bottom alert group', () => {
   const sidebar = readFileSync(
     resolve(root, 'features/workspace/project-sidebar/project-sidebar.tsx'),
     'utf8',
   );
-  const menu = readFileSync(resolve(root, 'lib/menu-registry.ts'), 'utf8');
-  expect(sidebar).not.toContain('ProjectAppsNavItem');
-  expect(menu).toContain("href: '/projects/{projectId}/customize/apps'");
-  // The retired route still resolves, carrying `?open_app=` deep links along.
-  const retired = readFileSync(resolve(root, 'app/[locale]/(app)/projects/[id]/apps/page.tsx'), 'utf8');
-  expect(retired).toContain("redirect(withSearch(capabilityTabHref(id, 'apps'), await searchParams))");
+
+  // It is a project surface you configure and operate, so it belongs on the
+  // Customize row — not below Files among the bottom-anchored alerts, which
+  // shift as late-arriving billing and sandbox state lands.
+  const customizeAt = sidebar.indexOf('<ProjectCustomizeNavItem />');
+  const appsAt = sidebar.indexOf('<ProjectAppsNavItem />');
+  const filesAt = sidebar.indexOf('<ProjectFilesNavItem />');
+  expect(customizeAt).toBeGreaterThan(-1);
+  expect(appsAt).toBeGreaterThan(customizeAt);
+  expect(appsAt).toBeLessThan(filesAt);
 });
 
 test('the Apps page cannot enable Apps — activation lives only in Feature flags', () => {
@@ -80,21 +91,49 @@ test('Apps UI is operational only and has no creation action or modal', () => {
   expect(view).not.toContain('Create App');
   expect(view).toContain('kortix apps deploy .');
   expect(view).toContain('<iframe');
-  expect(view).toContain('<CapabilityPageShell\n        wide');
+  expect(view).toContain('max-w-7xl px-4');
 });
 
-test('the Apps header is the Customize bar plus the shared page shell', () => {
+test('the Apps header is the capability tab bar, not a settings masthead', () => {
   const view = appsSource();
-  // The bar above is the Customize tab bar; the page draws no bar of its own
-  // and no second sidebar opener.
-  expect(view).not.toContain('<ProjectPageHeader');
+  const tabs = readFileSync(
+    resolve(root, 'features/workspace/capabilities/shared/capability-tabs.tsx'),
+    'utf8',
+  );
+
+  // The exact bar contract, read off the file that owns it — if the tab row is
+  // ever restyled this fails rather than letting Apps drift into a second
+  // dialect of page chrome.
+  // Apps draws it through `ProjectPageHeader`, the one header the standalone
+  // project pages (Review, Files, Reminders, Apps) share.
+  const header = readFileSync(
+    resolve(root, 'features/workspace/project-layout/project-page-header.tsx'),
+    'utf8',
+  );
+  const BAR = 'relative flex shrink-0 items-center gap-1 border-b px-2';
+  expect(tabs).toContain(`kx-titlebar-row kx-capability-titlebar ${BAR}`);
+  expect(header).toContain(`kx-titlebar-row kx-capability-titlebar ${BAR}`);
+  expect(view).toContain('<ProjectPageHeader');
+
+  // `CustomizeSectionWrapper` is the settings-section shell: an 80px centred
+  // masthead that scrolls away with the content. Apps is an operational grid
+  // and owns a pinned bar instead.
   expect(view).not.toContain('CustomizeSectionWrapper');
-  expect(view).not.toContain('<SidebarToggle');
+  expect(view).not.toContain('showSidebarToggleButton');
+
+  // One sidebar opener for every view — the shared `SidebarToggle`, in flow,
+  // never a second copy absolutely positioned at top-2 left-2 over the macOS
+  // traffic lights. The rule and the control are both pinned in
+  // workspace/project-layout/sidebar-toggle.test.ts.
+  expect(header).toContain('<SidebarToggle />');
+  expect(view).not.toContain('sidebarOpenerLabel');
+  expect(view).not.toContain('placement="floating"');
   expect(view).not.toContain('absolute top-2 left-2');
-  // One heading, one header group, one scroll container: the same shell every
-  // Customize tab uses, in its wide column.
-  expect(view).toContain('<CapabilityPageShell');
-  expect(view).not.toContain('h-svh');
+
+  // The bar pins only because this box has a definite height; every ancestor
+  // is `min-h-*` or `flex-1 overflow-hidden`, so without it the window scrolls
+  // and takes the bar with it.
+  expect(view).toContain('flex h-svh flex-col overflow-hidden');
 });
 
 test('an App card shows the App, not a stock glyph standing in for it', () => {
@@ -141,6 +180,35 @@ test("a card caption is the App's name and its state — not its hostname", () =
   // The URL is not gone from the product — the detail layer still names it on
   // the control that opens the App.
   expect(view).toContain('appHost(app.url)');
+});
+
+test('the Apps row matches the row contract of the group it sits in', () => {
+  // The sidebar has TWO row conventions. The top group (New session, Customize)
+  // pads with px-3 and rests muted; the bottom group (Files, Settings) does
+  // neither. Apps moved from the bottom group to the top one and kept the old
+  // class list, so its icon and label sat ~8px left of its neighbours and read a
+  // shade darker — visibly out of line.
+  const apps = readFileSync(
+    resolve(root, 'features/workspace/project-sidebar/footer/project-apps-nav.tsx'),
+    'utf8',
+  );
+  const customize = readFileSync(
+    resolve(root, 'features/workspace/project-sidebar/project-settings-nav.tsx'),
+    'utf8',
+  );
+
+  // Restyled by 973ca118aa (2026-09-02): the group's rows dropped the explicit
+  // padding/size utilities and now inherit them from `SidebarMenuButton`, so
+  // the shared string is just the group hook, the foreground token, and the
+  // positioning context. Both rows moved together; only this constant lagged,
+  // which is exactly the drift the assertion below exists to catch.
+  const ROW = 'group/menu-button text-sidebar-foreground relative';
+  // The same string the sibling rows in this group use — if that contract is
+  // ever restyled, this fails rather than letting Apps silently drift out.
+  expect(customize).toContain(ROW);
+  expect(apps).toContain(ROW);
+  // The glyph keeps its box on a narrow sidebar, like its neighbours.
+  expect(apps).toContain('<span className="shrink-0">');
 });
 
 test('an App with no deployment never claims to be Running', () => {
@@ -265,25 +333,22 @@ test('the Apps grid is a gallery: bordered thumbnails, captions hanging below', 
   // dead switch, so the header takes an explicit flag rather than always
   // rendering it.
   const header = view.slice(
-    view.indexOf('function AppsActions('),
+    view.indexOf('function AppsHeader('),
     view.indexOf('export function AppsView('),
   );
   expect(header).toContain('showColumns');
-  expect(header).toContain('{showColumns ? <AppGridColumnsControl');
+  expect(header).toContain('{showColumns ? (');
 
   // The gallery column is also the grid's measuring box. A `@lg/apps:` variant
   // with no `@container/apps` ancestor compiles and then never matches, so the
-  // grid would silently stay one column forever. The gutter is the shell's
-  // padding, outside the container, so the ladder stays container-based.
-  // The column is the shell's WIDE one (max-w-7xl, md:px-8): a 5xl column
-  // made four-across tiles 230px (e56c580271, reverted by e6c4ba0b62).
-  const shell = readFileSync(
-    resolve(root, 'features/workspace/capabilities/shared/capability-page-shell.tsx'),
-    'utf8',
-  );
-  expect(view).toContain('<CapabilityPageShell\n        wide');
-  expect(shell).toContain("'mx-auto w-full max-w-7xl space-y-5 px-4 py-10 pb-20 md:px-8 lg:py-14'");
-  expect(view).toContain("cn('flex min-h-full flex-col', APP_GRID_CONTAINER)");
+  // grid would silently stay one column forever.
+  // `px-4 md:px-8` — the gutter is the one thing here that may key off the
+  // VIEWPORT rather than the container: it is this element's own padding, and
+  // this element IS `@container/apps`, so it cannot query itself. The column
+  // ladder inside it stays container-based.
+  expect(view).toContain('max-w-7xl flex-col px-4 py-6 pb-20 md:px-8');
+  expect(view).not.toContain('max-w-5xl flex-col');
+  expect(view).toContain('APP_GRID_CONTAINER,');
   expect(view).toContain("export const APP_GRID_CONTAINER = '@container/apps';");
 
   // The thumbnail is the only bordered surface; the caption is page text under

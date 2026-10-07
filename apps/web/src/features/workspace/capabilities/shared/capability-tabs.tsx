@@ -128,9 +128,9 @@ function MembersLaunchLink({ projectId }: { projectId: string }) {
  * content area (`CapabilityAccessGate`): a tab the caller may not read still
  * shows, and opening it shows a no-access state instead of the page.
  *
- * One exception, by flag rather than by permission: Apps and Backends
- * (`useShippedTabs`) paint once their project flag is on. They trail every
- * static tab, so their arrival moves nothing that was already painted.
+ * One exception, by flag rather than by permission: Backends
+ * (`useShippedTabs`) paints once its project flag is on. It trails every
+ * static tab, so its arrival moves nothing that was already painted.
  */
 /**
  * The hairline between Agents and everything an agent draws on (Skills
@@ -153,17 +153,16 @@ function GroupSeam() {
 }
 
 /**
- * Apps and Backends: what the project ships. Each paints only while its flag
+ * Backends: what the project ships. It paints only while its flag
  * is on, after a seam of its own and after every static tab, so a flag that
  * lands late never moves a tab already on screen (see
  * `FLAGGED_CAPABILITY_TABS`). Loading counts as off.
  */
 function useShippedTabs(projectId: string): CapabilityTab[] {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const apps = useFeatureFlag(projectId, 'apps').enabled;
   const backends = useFeatureFlag(projectId, 'backends').enabled;
-  const enabled = { apps, backends };
-  const label = { apps: tI18nComplete.raw('text89dd748442c1'), backends: tI18nComplete.raw('text26cbb889e198') };
+  const enabled = { backends };
+  const label = { backends: tI18nComplete.raw('text26cbb889e198') };
   return FLAGGED_CAPABILITY_TABS.filter((tab) => enabled[tab.flag]).map((tab) => ({
     key: tab.key,
     label: label[tab.key],

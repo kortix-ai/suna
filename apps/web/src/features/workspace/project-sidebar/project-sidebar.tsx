@@ -15,6 +15,7 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { openCommandPalette } from '@/features/workspace/open-command-palette';
+import { ProjectAppsNavItem } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
 import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
 import { ProjectChatGptConnectNavItem } from '@/features/workspace/project-sidebar/footer/project-chatgpt-connect-nav';
 import { ComputerConnectModal } from '@/features/tunnel/computer-connect';
@@ -235,6 +236,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               </SidebarMenuItem>
 
               <ProjectCustomizeNavItem />
+              <ProjectAppsNavItem />
             </SidebarMenu>
           </SidebarGroup>
 

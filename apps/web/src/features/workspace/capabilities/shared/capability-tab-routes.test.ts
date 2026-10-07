@@ -140,23 +140,19 @@ describe('activeCapabilityTab', () => {
   });
 });
 
-describe('FLAGGED_CAPABILITY_TABS (Marko, 2026-10-07: Apps and Backends live in Customize)', () => {
-  test('Apps then Backends, each behind its own flag, and neither in the static bar', () => {
-    expect(FLAGGED_CAPABILITY_TABS.map((t) => [t.key, t.flag])).toEqual([
-      ['apps', 'apps'],
-      ['backends', 'backends'],
-    ]);
+describe('FLAGGED_CAPABILITY_TABS (Marko, 2026-10-07: Backends live in Customize, Apps in the sidebar)', () => {
+  test('Backends behind its flag; Apps is not a Customize tab; neither in the static bar', () => {
+    expect(FLAGGED_CAPABILITY_TABS.map((t) => [t.key, t.flag])).toEqual([['backends', 'backends']]);
     // A flagged tab is never part of the static list: the Customize row lands
     // on the first static tab, and almost no project has these flags on.
     expect(CAPABILITY_TABS.map((t) => t.key)).not.toContain('apps');
     expect(CAPABILITY_TABS.map((t) => t.key)).not.toContain('backends');
   });
 
-  test('they live under /customize and light their tab, a backend lighting Backends', () => {
-    expect(capabilityTabHref('p1', 'apps')).toBe('/projects/p1/customize/apps');
+  test('Backends lives under /customize and lights its tab, a backend lighting Backends', () => {
     expect(capabilityTabHref('p1', 'backends')).toBe('/projects/p1/customize/backends');
     expect(backendHref('p1', 'b-1')).toBe('/projects/p1/customize/backends/b-1');
-    expect(activeCapabilityTab('/projects/p1/customize/apps')).toBe('apps');
+    expect(activeCapabilityTab('/projects/p1/customize/apps')).toBeNull();
     expect(activeCapabilityTab('/projects/p1/customize/backends')).toBe('backends');
     expect(activeCapabilityTab('/projects/p1/customize/backends/b-1')).toBe('backends');
     // Only the Backends tab owns a deeper shape besides Agents.

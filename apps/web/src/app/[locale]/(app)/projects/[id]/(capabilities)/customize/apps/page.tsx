@@ -1,11 +1,15 @@
-'use client';
+import { redirect } from 'next/navigation';
 
-import { useParams } from 'next/navigation';
+import { withSearch } from '@/features/workspace/capabilities/shared/with-search';
 
-import { AppsView } from '@/features/apps/apps-view';
-
-/** /projects/[id]/customize/apps — the Apps tab. Shown in the bar only while the `apps` flag is on. */
-export default function ProjectAppsPage() {
-  const { id: projectId } = useParams<{ id: string }>();
-  return <AppsView projectId={projectId} />;
+/** Retired tab: Apps is a sidebar page again (Marko, 2026-10-07). Links from the Customize era keep working. */
+export default async function RetiredCustomizeAppsRoute({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const { id } = await params;
+  redirect(withSearch(`/projects/${id}/apps`, await searchParams));
 }

@@ -31,7 +31,7 @@
  * index cards keep their own icons in their own client files.
  */
 export interface CapabilityTab {
-  key: 'agent' | 'connectors' | 'skills' | 'triggers' | 'models' | 'secrets' | 'config' | 'apps' | 'backends';
+  key: 'agent' | 'connectors' | 'skills' | 'triggers' | 'models' | 'secrets' | 'config' | 'backends';
   label: string;
 }
 
@@ -85,25 +85,22 @@ export const CAPABILITY_TABS: readonly CapabilityTab[] = [
 
 /**
  * What the project ships, as opposed to what its agents are built from: the
- * Apps it hosts and the Backends they talk to. Marko, 2026-10-07: "Apps and
- * Backends live in Customize, not the sidebar" — two sidebar rows for two
- * internal-only flags crowded the one column every project shares, while the
- * Customize bar already is the place a project's resources are managed.
+ * Backends its Apps talk to. Marko, 2026-10-07: Backends live in Customize;
+ * Apps stay a sidebar row (`project-apps-nav.tsx`), as before.
  *
- * They trail the bar after their own seam, and each one shows ONLY while its
+ * A flagged tab trails the bar after its own seam, and shows ONLY while its
  * project flag is on. That is the one exception to "the bar is static", and it
  * is safe for the reason the rule exists: they are appended after every static
  * tab, so a flag landing late never moves a tab that was already painted. A
  * flag still loading counts as off (fail-closed, like every flagged surface).
  *
- * Neither is in `TAB_PREFERENCE`: the Customize row must never LAND on a
+ * None is in `TAB_PREFERENCE`: the Customize row must never LAND on a
  * flagged tab, because the flag is off for almost every project.
  */
 export const FLAGGED_CAPABILITY_TABS: readonly (CapabilityTab & {
-  key: 'apps' | 'backends';
-  flag: 'apps' | 'backends';
+  key: 'backends';
+  flag: 'backends';
 })[] = [
-  { key: 'apps', label: 'Apps', flag: 'apps' },
   { key: 'backends', label: 'Backends', flag: 'backends' },
 ];
 
@@ -132,7 +129,6 @@ export const CAPABILITY_SEGMENT: Record<CapabilityTab['key'], string> = {
   models: 'models',
   secrets: 'secrets',
   config: 'settings',
-  apps: 'apps',
   backends: 'backends',
 };
 
