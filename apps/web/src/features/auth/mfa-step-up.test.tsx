@@ -111,7 +111,7 @@ mock.module('@/components/ui/button', () => ({
 mock.module('@/components/ui/dot-matrix/session-dot-matrix', () => ({
   SessionDotMatrix: () => createElement('span', null, 'matrix'),
 }));
-mock.module('@/features/icon/icons/kortix', () => ({ Kortix: host('svg') }));
+mock.module('@/components/ui/kortix-logo', () => ({ KortixLogo: host('svg') }));
 mock.module('@/components/ui/loading', () => ({
   default: (props: Record<string, unknown>) => createElement('span', props, 'loading'),
 }));

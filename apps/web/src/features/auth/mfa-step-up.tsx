@@ -34,9 +34,9 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
 import { InfoBanner } from '@/components/ui/info-banner';
+import { KortixLogo } from '@/components/ui/kortix-logo';
 import Loading from '@/components/ui/loading';
 import { successToast } from '@/components/ui/toast';
-import { Kortix } from '@/features/icon/icons/kortix';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { invalidateTokenCache } from '@/lib/auth-token';
 import { mfaChallengeRequired, supabaseMFAService } from '@/lib/supabase/mfa';
@@ -136,9 +136,10 @@ export function MfaChallengeDialog({ open, dismissible, onDismiss, onVerified }:
         hideCloseButton
         className="bg-background inset-0 flex h-dvh max-w-none translate-x-0 translate-y-0 items-center justify-center overflow-y-auto rounded-none border-0 p-6 shadow-none data-[state=closed]:zoom-out-100 data-[state=open]:zoom-in-100 sm:max-w-none sm:rounded-none"
       >
-        <Kortix className="absolute top-7 left-8 size-5" />
         <div className="flex w-full max-w-sm flex-col">
-          <DialogTitle className="text-xl font-medium tracking-tight">{t('title')}</DialogTitle>
+          {/* The mark above the title, as on the (auth) pages. */}
+          <KortixLogo variant="icon" size={22} className="text-foreground" />
+          <DialogTitle className="mt-6 text-xl font-medium tracking-tight">{t('title')}</DialogTitle>
           <DialogDescription className="text-muted-foreground mt-3 text-sm text-pretty">
             {dismissible ? t('actionDescription') : t('gateDescription')}
           </DialogDescription>
@@ -171,16 +172,16 @@ export function MfaChallengeDialog({ open, dismissible, onDismiss, onVerified }:
                   {t('invalidCode')}
                 </p>
               ) : null}
-              <div className="border-border mt-10 flex items-center justify-between border-t pt-5">
+              <div className="mt-10 flex items-center justify-between">
                 {dismissible ? (
-                  <Button type="button" variant="ghost" onClick={() => onDismiss?.()}>
+                  <Button type="button" variant="secondary" onClick={() => onDismiss?.()}>
                     {t('cancel')}
                   </Button>
                 ) : (
                   // Escape hatch for a lost authenticator: the same sign-out every
                   // in-app control runs. Without it the non-dismissible gate would be
                   // a lockout with no way back to /auth.
-                  <Button type="button" variant="ghost" onClick={() => void performSignOut()}>
+                  <Button type="button" variant="secondary" onClick={() => void performSignOut()}>
                     {t('signOut')}
                   </Button>
                 )}
@@ -203,13 +204,13 @@ export function MfaChallengeDialog({ open, dismissible, onDismiss, onVerified }:
                 {t('noFactorDescription')}
               </InfoBanner>
               {dismissible ? (
-                <Button type="button" variant="ghost" className="self-start" onClick={() => onDismiss?.()}>
+                <Button type="button" variant="secondary" className="self-start" onClick={() => onDismiss?.()}>
                   {t('cancel')}
                 </Button>
               ) : (
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="secondary"
                   className="self-start"
                   onClick={() => void performSignOut()}
                 >
@@ -249,8 +250,8 @@ function CodeCells({
         invalid
           ? 'border-destructive'
           : cells.includes(active)
-            ? 'border-foreground ring-border ring-3'
-            : 'border-border',
+            ? 'border-ring  ring-ring/15  ring-3'
+            : 'border-ring',
       )}
     >
       {cells.map((i) => (
