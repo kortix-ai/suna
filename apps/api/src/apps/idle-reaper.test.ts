@@ -24,6 +24,8 @@ const { runAppIdleReaper } = await import('./idle-reaper');
 describe('app idle reaper', () => {
   test('hands a stale `stopping` runtime back to `running` before it selects idle runtimes', async () => {
     await runAppIdleReaper(new Date());
-    expect(calls).toEqual(['update:running', 'select']);
+    // The always-on keep-alive pass (`runAppKeepAlive`) runs after the idle pass
+    // and issues its own selects; only the idle pass's order is asserted here.
+    expect(calls.slice(0, 2)).toEqual(['update:running', 'select']);
   });
 });
