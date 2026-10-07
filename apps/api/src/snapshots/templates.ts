@@ -16,6 +16,7 @@ import { and, eq, ne, or } from 'drizzle-orm';
 import { sandboxTemplates, projects } from '@kortix/db';
 type DbSandboxTemplate = typeof sandboxTemplates.$inferSelect;
 import { db } from '../shared/db';
+import { DEFAULT_CPU, DEFAULT_DISK_GB, DEFAULT_MEMORY_GB } from './build-context';
 import { isWarmBuildSlug, templateSlugFromBuildSlug } from './build-slug';
 import { metadataMerge } from '../projects/lib/metadata-merge';
 import { isReapableTemplatePredecessor } from './predecessor-reap-policy';
@@ -43,14 +44,6 @@ export {
 } from './template-runtime-fingerprint';
 import { getSandboxProvider } from './providers';
 import { BoundedMap } from '../shared/bounded-map';
-const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
-const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
-const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
-
-function readPositiveIntEnv(name: string, fallback: number): number {
-  const raw = Number.parseInt(process.env[name] || '', 10);
-  return Number.isFinite(raw) && raw > 0 ? raw : fallback;
-}
 
 /** Pretty resolved view used by both the boot path and the UI. */
 export interface ResolvedTemplate {

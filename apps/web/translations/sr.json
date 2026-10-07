@@ -7158,7 +7158,8 @@
     "componentsSessionSessionErrorBanner": {
       "line58JsxAttrTitleYouRanOutOfCredits": "Понестало вам је кредита",
       "line74JsxTextEnableAutoTopUp": "Омогући аутоматско допуњавање",
-      "line82JsxTextBuyCredits": "Купите кредите"
+      "line82JsxTextBuyCredits": "Купите кредите",
+      "askOwnerToAddCredits": "Само власник налога може да дода кредите. Замолите власника да допуни."
     },
     "componentsSessionSessionFilesPanel": {
       "line80JsxTextThisSessionIsItsOwnVersion": "Ова сесија је сопствена верзија",

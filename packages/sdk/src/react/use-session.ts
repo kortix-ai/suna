@@ -67,6 +67,7 @@ import type { ModelKey } from './use-model-store';
 import { useRuntimeEventStream } from './use-opencode-events';
 import { useSessionStream } from './use-session-stream';
 import { sessionStreamConnected } from '../core/session/control-stream';
+import { watchHumanPresence } from './human-presence';
 import { formatModelString } from './use-opencode-local';
 import {
   type AbortSettlement,
@@ -976,7 +977,7 @@ export async function answerPermission(
 }
 
 export interface UseSessionOptions {
-  /** Renew this browser tab's presence while the signed-in session view is visible. */
+  /** Hold this browser tab's presence lease while the signed-in view is visible and used (input in the last 10 min). */
   browserPresence?: boolean;
   /** Long-poll budget (ms) the client requests on `/start`; the server clamps it. */
   waitMs?: number;
@@ -1089,27 +1090,21 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   } = options;
 
   // One presence id per mounted view. The session stream carries it, and the
-  // server renews a visible tab's lease while the stream is open (R5.3).
+  // server renews the lease while the stream is open (R5.3). The lease exists
+  // only while a person used the page recently, not while a tab is merely
+  // visible (KRTX-1729, `human-presence.ts`).
   const [presenceTabId] = useState(() => (browserPresence ? crypto.randomUUID() : null));
   useEffect(() => {
     if (!browserPresence || !presenceTabId || !projectId || !sessionId) return;
     const tab_id = presenceTabId;
     const handle = createKortix(platformConfig()).session(projectId, sessionId);
-    const send = (active: boolean) => {
-      void handle.presence({ tab_id, active }).catch(() => {});
-    };
-    const visibility = () => send(!document.hidden);
-    visibility();
-    // The fallback while the stream is down: the renewal the stream would do.
-    const interval = window.setInterval(() => {
-      if (!document.hidden && !sessionStreamConnected(projectId, sessionId)) send(true);
-    }, 30_000);
-    document.addEventListener('visibilitychange', visibility);
-    return () => {
-      window.clearInterval(interval);
-      document.removeEventListener('visibilitychange', visibility);
-      send(false);
-    };
+    return watchHumanPresence(
+      { doc: document, win: window },
+      (active) => {
+        void handle.presence({ tab_id, active }).catch(() => {});
+      },
+      () => sessionStreamConnected(projectId, sessionId),
+    );
   }, [browserPresence, presenceTabId, projectId, sessionId]);
 
   // 1. Drive /start until the runtime is ready (the server long-polls each tick).

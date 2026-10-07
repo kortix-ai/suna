@@ -7158,7 +7158,8 @@
     "componentsSessionSessionErrorBanner": {
       "line58JsxAttrTitleYouRanOutOfCredits": "Você ficou sem créditos",
       "line74JsxTextEnableAutoTopUp": "Ativar recarga automática",
-      "line82JsxTextBuyCredits": "Comprar créditos"
+      "line82JsxTextBuyCredits": "Comprar créditos",
+      "askOwnerToAddCredits": "Só um proprietário da conta pode adicionar créditos. Peça a um que recarregue."
     },
     "componentsSessionSessionFilesPanel": {
       "line80JsxTextThisSessionIsItsOwnVersion": "Esta sessão é sua própria versão",

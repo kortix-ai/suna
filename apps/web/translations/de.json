@@ -7158,7 +7158,8 @@
     "componentsSessionSessionErrorBanner": {
       "line58JsxAttrTitleYouRanOutOfCredits": "Dein Guthaben ist aufgebraucht",
       "line74JsxTextEnableAutoTopUp": "Automatische Aufladung aktivieren",
-      "line82JsxTextBuyCredits": "Guthaben kaufen"
+      "line82JsxTextBuyCredits": "Guthaben kaufen",
+      "askOwnerToAddCredits": "Nur ein Kontoinhaber kann Guthaben hinzufügen. Bitte einen Inhaber, aufzuladen."
     },
     "componentsSessionSessionFilesPanel": {
       "line80JsxTextThisSessionIsItsOwnVersion": "Diese Session ist ihre eigene Version",

@@ -3407,9 +3407,6 @@
     },
     "no-console": {
       "count": 3
-    },
-    "no-restricted-properties": {
-      "count": 1
     }
   },
   "src/snapshots/tmp-reaper.ts": {

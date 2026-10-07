@@ -68,6 +68,36 @@ await connectors.call('microsoft-graph.sendmail', {
 A Connector defines callable tools. A Connection stores one authorization for
 that Connector. Credentials remain server-side and never enter the sandbox.
 
+#### Typed calls
+
+`kortix connectors types --out kortix-connectors.d.ts` writes a declaration
+file that fills `ConnectorActionRegistry`. `callAction` then types `args` and
+`output` from it. The request and the result are the same as `call`:
+
+```ts
+const r = await connectors.callAction('linear', 'list_issues', { team: 'CORE' });
+r.output?.issues; // typed from the action's output schema
+```
+
+One connector as a handle: `run` returns the output itself and throws
+`ConnectorCallError` (`code`, `connectUrl`, `availableAccounts`,
+`upstreamStatus`, `retryAfterSeconds`) or `ConnectorApprovalPendingError`;
+`paginate` follows a cursor and throws `ConnectorPageLimitError` (with
+`nextArgs`) past `maxPages`; `useConnectorQuery` (`@kortix/sdk/react`) caches a
+read. Guide: `/docs/sdk/connectors`; runnable: `examples/13-connectors-as-code.ts`.
+
+```ts
+const linear = kortix.project(projectId).connector('linear');
+const { issues } = await linear.run('list_issues', { team: 'CORE' });
+await linear.describe(); // actions with input and output schemas
+await linear.accounts();
+```
+
+An action outside the file accepts any object and returns `output: unknown`.
+Managed Composio and Pipedream connectors publish no output schema, so their
+`output` stays `unknown`. `ConnectorArgs<'linear', 'list_issues'>` and
+`ConnectorResult<'linear', 'list_issues'>` name the same types.
+
 #### Choose which account a call runs as
 
 One Connector can hold the project's shared account and each member's own. List
@@ -106,6 +136,25 @@ await project.setupLinks.requestConnector({ slug: 'gmail', owner: 'project' });
 
 `owner` defaults to `me`. Creating a `project`-owned account requires
 `project.connector.write`.
+
+#### Call from an App, a Convex action, or a script
+
+The call is the same everywhere. The credential decides which accounts it
+reaches:
+
+| Where the code runs | `createKortix` options | Acts as | Reaches |
+|---|---|---|---|
+| App, browser | `backendUrl: '/_kortix/api/v1'`, `getToken: kortixAppViewerToken()` | the viewer | shared accounts the viewer may use, and the viewer's own private accounts |
+| App, server | `createAppViewerKortix(request, { backendUrl })` | the viewer | the same |
+| Convex action, App job with no viewer | `getToken: async () => process.env.KORTIX_API_KEY!` (a `kortix_sa_…` service account bearer a person minted) | the service account | shared accounts nobody narrowed; never a private account |
+| External program, CI | `getToken: async () => process.env.KORTIX_API_KEY!` (a `kortix_pat_…`) | you | your shared and private accounts |
+
+The browser path needs the App's viewer scope set to `api`
+(`kortix apps access <app> --viewer api`); with `identity` a call answers
+`403 insufficient_scope`. A service account answers `403` until a person
+grants it a project role (`kortix access grant --service-account <id> --role
+member --project <id>`). Never put a provider API key in an App or a Convex
+deployment when a connector exists. Guide: `/docs/sdk/connectors`.
 
 ### Upload prompt attachments before Send
 

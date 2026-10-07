@@ -881,6 +881,13 @@ const envSchema = z.object({
   // Additional list for work-email signups (founder "book a call" flow).
   MAILTRAP_BUSINESS_SIGNUPS_LIST_ID: optStr,
 
+  // ── Signup webhook (signup → sales factory) ─────────────────────────────
+  // Every genuinely new account POSTs one `account.signup` event here, signed
+  // `X-Kortix-Signature: sha256=<HMAC-SHA256 of the raw body>` with the secret.
+  // Inert unless both are set (accounts/signup-webhook.ts).
+  SIGNUP_WEBHOOK_URL: optStr,
+  SIGNUP_WEBHOOK_SECRET: optStr,
+
   // ── Better Stack Observability (optional — graceful degradation) ────────
   BETTERSTACK_API_LOG_TOKEN: optStr, // Logtail source token for structured logs
   BETTERSTACK_API_LOG_HOST: optStr, // Logtail ingesting host (e.g. s1234.us-east-9.betterstackdata.com)
@@ -1531,6 +1538,10 @@ export const config = {
   MAILTRAP_ACCOUNT_ID: env.MAILTRAP_ACCOUNT_ID,
   MAILTRAP_SIGNUPS_LIST_ID: env.MAILTRAP_SIGNUPS_LIST_ID,
   MAILTRAP_BUSINESS_SIGNUPS_LIST_ID: env.MAILTRAP_BUSINESS_SIGNUPS_LIST_ID,
+
+  // ─── Signup webhook (signup → sales factory) ──────────────────────────────
+  SIGNUP_WEBHOOK_URL: env.SIGNUP_WEBHOOK_URL,
+  SIGNUP_WEBHOOK_SECRET: env.SIGNUP_WEBHOOK_SECRET,
 
   // ─── Stray env vars (centralized from other files) ────────────────────────
   CORS_ALLOWED_ORIGINS: env.CORS_ALLOWED_ORIGINS,

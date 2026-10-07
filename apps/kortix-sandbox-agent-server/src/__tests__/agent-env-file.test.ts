@@ -43,9 +43,12 @@ describe('writeAgentEnvFile', () => {
 
     writeAgentEnvFile(store, { sh })
 
-    // Daytona starts sandboxes with an unlimited core size; raise it first.
+    // Daytona starts sandboxes with an unlimited core size; raise the soft limit
+    // first so the sourced guard has to clamp it back down. A hardened container
+    // refuses the raise (hard limit 0, soft already pinned at 0) — ignore that
+    // refusal and always run the shell: the guard must end it at 0 either way.
     const result = Bun.spawnSync(
-      ['bash', '-c', 'ulimit -c unlimited && BASH_ENV="$1" bash -c "ulimit -c"', '_', sh],
+      ['bash', '-c', 'ulimit -c unlimited 2>/dev/null; BASH_ENV="$1" bash -c "ulimit -c"', '_', sh],
       { env: { PATH: process.env.PATH ?? '/usr/bin:/bin' } },
     )
     expect(result.stdout.toString().trim()).toBe('0')

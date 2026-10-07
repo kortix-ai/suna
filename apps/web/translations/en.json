@@ -7169,7 +7169,8 @@
     "componentsSessionSessionErrorBanner": {
       "line58JsxAttrTitleYouRanOutOfCredits": "You ran out of credits",
       "line74JsxTextEnableAutoTopUp": "Enable auto top-up",
-      "line82JsxTextBuyCredits": "Buy credits"
+      "line82JsxTextBuyCredits": "Buy credits",
+      "askOwnerToAddCredits": "Only an account owner can add credits. Ask one to top up."
     },
     "componentsSessionSessionFilesPanel": {
       "line80JsxTextThisSessionIsItsOwnVersion": "This session is its own version",

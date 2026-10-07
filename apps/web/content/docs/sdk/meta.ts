@@ -10,6 +10,7 @@ export default defineMeta({
     'sessions',
     'apps',
     'backends',
+    'connectors',
     'react',
     'reference',
   ],

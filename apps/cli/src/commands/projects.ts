@@ -1123,7 +1123,7 @@ async function projectsClone(
   destination?: string,
   hostArg?: string,
 ): Promise<number> {
-  const id = arg ?? resolveProjectId();
+  const id = resolveProjectId(arg, { hostScoped: !hostArg });
   if (!id) {
     process.stderr.write(
       `${status.err('No project selected. Run `kortix projects use`, link a directory, or pass an id.')}\n`,
@@ -1376,7 +1376,7 @@ function renderProjectTable(
 }
 
 async function projectsInfo(arg?: string, json = false, hostArg?: string): Promise<number> {
-  const id = arg ?? resolveProjectId();
+  const id = resolveProjectId(arg, { hostScoped: !hostArg });
   if (!id) {
     process.stderr.write(
       `${status.err('No project linked. Run `kortix projects link` or pass an id.')}\n`,
@@ -1650,7 +1650,7 @@ async function projectsUnlink(): Promise<number> {
 }
 
 async function projectsOpen(arg?: string, hostArg?: string): Promise<number> {
-  const id = arg ?? resolveProjectId();
+  const id = resolveProjectId(arg, { hostScoped: !hostArg });
   if (!id) {
     process.stderr.write(`${status.err('No project linked. Pass an id or link first.')}\n`);
     return 1;
@@ -1683,7 +1683,7 @@ async function projectsRm(args: string[]): Promise<number> {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
   }
-  const id = rest.find((a) => !a.startsWith('-')) ?? resolveProjectId();
+  const id = rest.find((a) => !a.startsWith('-')) ?? resolveProjectId(undefined, { hostScoped: !hostArg });
   if (!id) {
     process.stderr.write(
       `${status.err('No project to remove.')} Pass an id or run inside a linked project.\n`,

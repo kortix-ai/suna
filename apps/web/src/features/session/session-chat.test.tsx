@@ -235,6 +235,21 @@ describe('SessionChat transcript rows', () => {
     }
   });
 
+  // An edit rewinds the failed message and sends a new one; the ledger keeps the
+  // old failure under a message id the transcript no longer holds.
+  test('a persisted failure clears once a later message is sent, as after an edit', () => {
+    persistedOutcome = { atMs: 100000, recent_failures: [{ message_id: 'rewound-prompt', ended_at: new Date(0).toISOString(), error: null }] };
+    try {
+      fixtureMessages = baseFixtureMessages;
+      expect(renderChat()).not.toContain('Agent turn failed. No reason was reported.');
+      persistedOutcome = { atMs: 100000, recent_failures: [{ message_id: 'rewound-prompt', ended_at: new Date(50).toISOString(), error: null }] };
+      expect(renderChat()).toContain('Agent turn failed. No reason was reported.');
+    } finally {
+      persistedOutcome = {};
+      fixtureMessages = baseFixtureMessages;
+    }
+  });
+
   test('persisted failures already represented by transcript rows are not repeated', () => {
     persistedOutcome = { recent_failures: [{ message_id: 'user-fixture', ended_at: null, error: { name: 'Error', message: 'synthetic persisted failure' } }] };
     try {
