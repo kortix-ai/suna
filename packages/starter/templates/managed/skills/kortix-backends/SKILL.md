@@ -354,9 +354,11 @@ kortix backends restore main <snapshot-id> --yes            # roll back; later c
   uses.
 - Up to 3 backends per project and 10 per account; one machine each (scale up
   with resize, not out).
-- The backend URL is the machine's provider URL. It does not change while the
-  backend lives. There is no stable Kortix hostname and no upgrade in place: a
-  backend keeps the Convex image it was created with.
+- The backend `url` (`<env>-convex-<id>.<apps domain>`) and `site_url`
+  (`<env>-convex-site-<id>.…`) are Kortix hosts. They never change while the
+  backend lives, so commit them in an App's `.env.production`. Kortix proxies
+  them, WebSocket included; the machine itself is not reachable. There is no
+  upgrade in place: a backend keeps the Convex image it was created with.
 - `npx convex export` covers data and files, not environment variables or
   pending scheduled jobs. Keep env var names (not values) in the repo.
 - `kortix backends delete` destroys all data. Export first when it matters.

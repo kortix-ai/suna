@@ -140,14 +140,3 @@ export function mintBackendToken(
   });
   return { token: `${header}.${payload}.${b64url(signature)}`, expiresAt: new Date(exp * 1000) };
 }
-
-/** Sets deployment environment variables through the backend's admin API (what `npx convex env set` calls). */
-export async function setBackendEnv(url: string, adminKey: string, env: Record<string, string>): Promise<void> {
-  const res = await fetch(`${url}/api/update_environment_variables`, {
-    method: 'POST',
-    signal: AbortSignal.timeout(20_000),
-    headers: { Authorization: `Convex ${adminKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ changes: Object.entries(env).map(([name, value]) => ({ name, value })) }),
-  });
-  if (!res.ok) throw new Error(`setting backend environment failed: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
-}

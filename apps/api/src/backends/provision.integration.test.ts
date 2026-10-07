@@ -111,13 +111,32 @@ describe('sign-in issuer', () => {
     const ok = Bun.serve({
       port: 0,
       fetch: async (req) => {
-        envWrites.push({ path: new URL(req.url).pathname, auth: req.headers.get('authorization'), body: await req.json() });
+        envWrites.push({
+          path: new URL(req.url).pathname,
+          auth: req.headers.get('authorization'),
+          edgeToken: req.headers.get('x-pt-preview-token'),
+          body: await req.json(),
+        });
         return new Response(null, { status: 200 });
       },
     });
     const down = Bun.serve({ port: 0, fetch: () => new Response('boom', { status: 500 }) });
+    // Kortix reaches a machine through its private Platinum exposure: the fake
+    // control plane exposes machine `sbx-ok` at `ok` and `sbx-down` at `down`.
+    const platinum = Bun.serve({
+      port: 0,
+      fetch: (req) => {
+        const [, , , id, sub] = new URL(req.url).pathname.split('/');
+        if (sub !== 'expose') return Response.json({ id, state: 'running' });
+        const origin = id!.endsWith('-ok') ? ok.url.origin : down.url.origin;
+        return Response.json({ port: 3210, public: false, url: `${origin}/?t=synthetic-edge-token` });
+      },
+    });
+    const saved = { key: config.PLATINUM_API_KEY, url: config.PLATINUM_API_URL };
+    config.PLATINUM_API_KEY = 'pt_synthetic_issuer_move';
+    config.PLATINUM_API_URL = `http://127.0.0.1:${platinum.port}`;
     try {
-      const legacy = async (name: string, url: string) => {
+      const legacy = async (name: string, externalId: string) => {
         const backendId = crypto.randomUUID();
         await db.insert(projectBackends).values({
           backendId,
@@ -126,7 +145,8 @@ describe('sign-in issuer', () => {
           name,
           status: 'running',
           provider: 'platinum',
-          url,
+          externalId,
+          url: `https://legacy-${name}.example`,
           adminKeyEnc: encryptProjectSecret(PROJECTS[4]!, 'synthetic-admin|key'),
           authKeyEnc: encryptProjectSecret(PROJECTS[4]!, generateBackendAuthKey()),
           cpu: 1,
@@ -135,8 +155,9 @@ describe('sign-in issuer', () => {
         });
         return backendId;
       };
-      const movedId = await legacy('legacy-ok', `http://127.0.0.1:${ok.port}`);
-      const stuckId = await legacy('legacy-down', `http://127.0.0.1:${down.port}`);
+      const suffix = crypto.randomUUID().slice(0, 8);
+      const movedId = await legacy('legacy-ok', `sbx-${suffix}-ok`);
+      const stuckId = await legacy('legacy-down', `sbx-${suffix}-down`);
       const before = (await getLiveBackend(PROJECTS[4]!, movedId))!;
       expect(issuerOf(backendMemberToken(before, { userId: 'u', email: null })!.token)).toBe(legacyBackendIssuer(movedId));
 
@@ -147,6 +168,7 @@ describe('sign-in issuer', () => {
         {
           path: '/api/update_environment_variables',
           auth: 'Convex synthetic-admin|key',
+          edgeToken: 'synthetic-edge-token',
           body: { changes: [{ name: 'KORTIX_AUTH_ISSUER', value: issuer }] },
         },
       ]);
@@ -162,8 +184,11 @@ describe('sign-in issuer', () => {
       expect(await moveBackendIssuers()).toEqual({ moved: 0, failed: 1 });
       expect(envWrites).toEqual([]);
     } finally {
+      config.PLATINUM_API_KEY = saved.key;
+      config.PLATINUM_API_URL = saved.url;
       ok.stop(true);
       down.stop(true);
+      platinum.stop(true);
     }
   });
 });

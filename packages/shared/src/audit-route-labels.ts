@@ -777,6 +777,8 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'GET /v1/webhooks/teams/oauth/callback': { action: 'channel.teams.install.complete', title: 'Completed Teams app installation' },
   'POST /v1/webhooks/telegram/:projectId': { action: 'webhook.telegram.update.receive', title: 'Received Telegram update' },
   'ENTRY backend_dashboard': { action: 'backend.dashboard.access', title: 'Opened backend dashboard' },
+  'ENTRY backend_host': { action: 'backend.host.access', title: 'Called backend Convex host' },
+  'ENTRY backend_host:websocket': { action: 'backend.host.websocket.connect', title: 'Opened backend Convex WebSocket' },
   'ENTRY app_origin': { action: 'app.origin.access', title: 'Opened deployed Kortix App' },
   'ENTRY app_origin:websocket': { action: 'app.origin.websocket.connect', title: 'Opened Kortix App WebSocket' },
   'ENTRY preview_origin': { action: 'sandbox.preview.access', title: 'Opened sandbox preview' },

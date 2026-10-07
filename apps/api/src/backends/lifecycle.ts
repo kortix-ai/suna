@@ -20,6 +20,7 @@ import { projectBackends, projects } from '@kortix/db';
 import { and, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
+import { isUuid } from '../shared/validate';
 import { PlatinumHttpError, platinumJson, platinumRegionControlPlane } from '../shared/platinum';
 import { platinumUsRegion } from '../shared/platinum-region';
 import { sandboxOwnershipMarker } from '../platform/sandbox-ownership';
@@ -274,11 +275,6 @@ export async function reapOrphanBackendMachines(
     }
   }
   return result;
-}
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-function isUuid(value: string): boolean {
-  return UUID.test(value);
 }
 
 /** Test-only. */

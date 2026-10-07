@@ -11,8 +11,10 @@
  *    was interrupted.
  * 3. Park and unpark (./lifecycle.ts): the backends of an archived project
  *    stop, those of a project that is active again come back.
- * 4. Probe: every running backend of an active project. Platinum's view of the
- *    machine plus `GET <url>/version` (5 s) and disk use. The result is
+ * 4. Move: a backend that still stores its Platinum URLs moves to its Kortix
+ *    hosts (./hosts.ts): new Convex origins, private ports, new URLs.
+ * 4b. Probe: every running backend of an active project. Platinum's view of the
+ *    machine plus `GET /version` (5 s, through the private exposure) and disk use. The result is
  *    `metadata.health` (the API's `health`). A stopped machine is started; a
  *    lost or system-tombstoned one is restored from its last automatic backup.
  *    A machine Platinum no longer has turns the row `error` after
@@ -60,7 +62,10 @@ import {
   rotationPendingAfterRestore,
   runSnapshotMaintenance,
 } from './operations';
-import { BACKEND_PROVIDER, type BackendRow, discardMachine, provisionBackend } from './provision';
+import { BACKEND_PROVIDER, type BackendRow, discardMachine, moveBackendToKortixHosts, provisionBackend } from './provision';
+import { CONVEX_API_PORT } from './convex-image';
+import { backendPublicUrls } from './hosts';
+import { machineFetch } from './machine';
 
 export const MAX_PROVISION_ATTEMPTS = 3;
 /** Consecutive failed probes before an error-level log, and before a missing machine turns the row `error`. */
@@ -68,6 +73,8 @@ export const UNHEALTHY_ALERT_AFTER = 3;
 /** Disk use at which the probe warns. */
 export const DISK_WARN_PCT = 80;
 const PROBE_CONCURRENCY = 4;
+/** Backends moved to their Kortix hosts per tick. Each move restarts Convex once (about a second). */
+export const HOST_MOVES_PER_TICK = 4;
 /** Snapshot jobs started per tick: spreads the first daily round of a fleet over several ticks. */
 export const SNAPSHOT_JOBS_PER_TICK = 4;
 
@@ -96,6 +103,8 @@ export interface BackendSweepResult {
   machinesDeleted: number;
   /** Snapshot jobs started: a daily automatic snapshot, expired snapshots to delete, or both. */
   snapshotJobs: number;
+  /** Backends moved from their Platinum URLs to their Kortix hosts. */
+  movedToHosts: number;
   errors: number;
 }
 
@@ -196,9 +205,9 @@ function previousFailures(row: BackendRow): number {
   return typeof health?.failures === 'number' ? health.failures : 0;
 }
 
-async function versionAnswers(url: string): Promise<string | null> {
+async function versionAnswers(externalId: string): Promise<string | null> {
   try {
-    const res = await fetch(`${url}/version`, { signal: AbortSignal.timeout(5_000) });
+    const res = await machineFetch(externalId, CONVEX_API_PORT, '/version', { signal: AbortSignal.timeout(5_000) });
     return res.ok ? null : `Convex answered HTTP ${res.status}`;
   } catch (error) {
     return error instanceof DOMException && error.name === 'TimeoutError'
@@ -232,7 +241,7 @@ export async function probeBackend(row: BackendRow): Promise<BackendHealth> {
     error = `Kortix could not read the machine state (${backendFailureMessage(probeError)})`;
   }
   if (machineState === 'running') {
-    [error, disk] = await Promise.all([versionAnswers(row.url!), diskUsedPct(externalId)]);
+    [error, disk] = await Promise.all([versionAnswers(externalId), diskUsedPct(externalId)]);
     // A restore of a rotated backend that was never rotated again: the old key works. Rotate now.
     if (rotationPendingAfterRestore(row) && (await claimOperation(row.backendId, 'recovering'))) startRecovery(row, null);
   } else if (machineState === 'missing') {
@@ -335,6 +344,30 @@ async function probeRunning(result: BackendSweepResult): Promise<void> {
   }
 }
 
+/**
+ * 4. A backend created before the Kortix hosts still stores its Platinum
+ * URLs: move it (./provision.ts moveBackendToKortixHosts) under the
+ * `recovering` lock. Active projects only: a parked machine is stopped. A
+ * move that fails is retried next tick; the backend keeps working meanwhile.
+ */
+async function moveHostsStep(result: BackendSweepResult): Promise<void> {
+  const pending = (await runningBackends()).filter(
+    ({ row, active }) => active && !backendOperation(row) && row.url !== backendPublicUrls(row.backendId).url,
+  );
+  for (const { row } of pending.slice(0, HOST_MOVES_PER_TICK)) {
+    if (!(await claimOperation(row.backendId, 'recovering'))) continue;
+    try {
+      await moveBackendToKortixHosts(row);
+      result.movedToHosts += 1;
+    } catch (error) {
+      result.errors += 1;
+      logger.warn('[backends] move to the Kortix hosts failed; retried next tick', { backendId: row.backendId, error: String(error) });
+    }
+    // No `last_operation_error`: the user did not start this, and nothing changed for them.
+    await releaseOperation(row.backendId, null).catch(() => {});
+  }
+}
+
 /** 5. Daily automatic snapshots (active projects) and snapshot expiry (parked backends too: their snapshots still fill the host disk). */
 async function snapshotStep(result: BackendSweepResult): Promise<void> {
   const now = Date.now();
@@ -362,6 +395,7 @@ export const EMPTY_BACKEND_SWEEP: BackendSweepResult = {
   unparked: 0,
   machinesDeleted: 0,
   snapshotJobs: 0,
+  movedToHosts: 0,
   errors: 0,
 };
 
@@ -382,7 +416,7 @@ async function orphanStep(result: BackendSweepResult): Promise<void> {
 export async function sweepBackends(): Promise<BackendSweepResult> {
   const result = { ...EMPTY_BACKEND_SWEEP };
   if (!isPlatinumConfigured()) return result;
-  for (const step of [resumeProvisions, takeOverOperations, parkStep, probeRunning, snapshotStep, orphanStep]) {
+  for (const step of [resumeProvisions, takeOverOperations, parkStep, moveHostsStep, probeRunning, snapshotStep, orphanStep]) {
     await step(result).catch((error) => {
       result.errors += 1;
       logger.warn('[backends] sweep step failed', { step: step.name, error: String(error) });

@@ -44,9 +44,12 @@ export interface ProjectBackend {
   project_id: string;
   name: string;
   status: ProjectBackendStatus;
-  /** Convex client URL (`CONVEX_URL`). `null` until the backend runs. */
+  /**
+   * Convex client URL (`CONVEX_URL`): a Kortix host that stays the same for
+   * the backend's life. `null` until the backend runs.
+   */
   url: string | null;
-  /** Convex HTTP actions URL. `null` until the backend runs. */
+  /** Convex HTTP actions URL, a second Kortix host. `null` until the backend runs. */
   site_url: string | null;
   /**
    * Convex's own dashboard for this backend, on a Kortix host. Frame it and

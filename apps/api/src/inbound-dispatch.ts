@@ -7,7 +7,7 @@ import { isUuid } from './shared/validate';
 import { schemaReady } from './bootstrap';
 import { handleAppPublicRequest, resolveAppRequest } from './apps/public-proxy';
 import { prepareAppWsUpgrade } from './apps/ws-proxy';
-import { handleBackendDashboardRequest } from './backends/dashboard-host';
+import { handleBackendHostRequest, prepareBackendWsUpgrade, resolveBackendRequest } from './backends/hosts';
 // Subdomain preview routing — `p{port}-{sandboxId}.localhost:{apiPort}/...`
 // Handled at the Bun.serve level so the proxied app sees itself at root `/`
 // (Hono can't match on the Host header). See `sandbox-proxy/preview-origin.ts`.
@@ -59,11 +59,23 @@ export async function dispatchInbound(
   // ── Subdomain preview routing ──────────────────────────────────────
   // Matches `p{port}-{sandboxId}.localhost:{apiPort}` regardless of path.
   // Same per-request long-poll/SSE timeout posture as /v1/p/.
-  // A Kortix Backend's Convex dashboard, on its own Apps-domain host.
-  const dashboardResponse = await handleBackendDashboardRequest(req, url);
-  if (dashboardResponse) {
-    setInboundAuditEntrypoint('app_origin', 'backend_dashboard');
-    return dashboardResponse;
+  // A Kortix Backend's hosts on the Apps domain: its Convex API (sync
+  // WebSocket included), its HTTP actions, and its Convex dashboard.
+  const backendHost = resolveBackendRequest(req, url);
+  if (backendHost) {
+    server.timeout(req, 0);
+    if (backendHost.kind === 'dashboard') {
+      setInboundAuditEntrypoint('app_origin', 'backend_dashboard');
+    } else if (isWsUpgrade) {
+      setInboundAuditEntrypoint('app_origin', 'backend_host:websocket');
+      const prepared = await prepareBackendWsUpgrade(req, url, backendHost);
+      if (!prepared.ok) return Response.json({ error: prepared.message }, { status: prepared.status });
+      if (server.upgrade(req, { data: prepared.data })) return undefined;
+      return Response.json({ error: 'Backend WebSocket upgrade failed' }, { status: 500 });
+    } else {
+      setInboundAuditEntrypoint('app_origin', 'backend_host');
+    }
+    return handleBackendHostRequest(req, url, backendHost);
   }
   if (resolveAppRequest(req, url)) {
     server.timeout(req, 0);

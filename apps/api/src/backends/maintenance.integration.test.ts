@@ -29,6 +29,7 @@ import {
   runSnapshotMaintenance,
 } from './operations';
 import { type BackendRow, discardMachine } from './provision';
+import { backendPublicUrls } from './hosts';
 import { ORPHAN_MACHINE_GRACE_MS, deleteAccountBackends, reapOrphanBackendMachines } from './lifecycle';
 import { sandboxOwnershipMarker } from '../platform/sandbox-ownership';
 
@@ -87,14 +88,23 @@ let snapshotSeq = 0;
 /** Machines whose snapshot POST the client hung up on before Platinum answered. */
 const abortedSnapshotPosts: string[] = [];
 
+/** Machine ports exposed privately (POST /expose with public: false), by `<machine>:<port>`. */
+const privatePorts = new Set<string>();
+/** Origins each machine's Convex runs with (the last origins file written, once its restart script ran). */
+const runningOrigins = new Map<string, string>();
+const writtenOrigins = new Map<string, string>();
+const edgeToken = (id: string) => `synthetic-edge-token-${id}`;
+
 // One fake Convex per machine is overkill: every machine's URL is this one,
-// tagged with the machine id in the path prefix.
+// tagged with the machine id in the path prefix. Like Platinum's edge, it
+// refuses a request without the machine's private-exposure token.
 const convex = Bun.serve({
   port: 0,
   fetch(req) {
     const url = new URL(req.url);
     const [, id, ...rest] = url.pathname.split('/');
     const path = `/${rest.join('/')}`;
+    if (req.headers.get('x-pt-preview-token') !== edgeToken(id!)) return new Response('token required', { status: 404 });
     if (convexDown) return new Response('down', { status: 503 });
     if (path === '/version') return new Response('unknown');
     if (path === '/api/check_admin_key') {
@@ -131,7 +141,7 @@ const platinum = Bun.serve({
       return Response.json({
         id: newId,
         state: 'running',
-        exposed: [3210, 3211, 6791].map((port) => ({ port, url: convexUrl(newId), public: true })),
+        exposed: ((body as { expose?: Array<{ port: number; public: boolean }> }).expose ?? []).map((e) => ({ port: e.port, public: e.public })),
       });
     }
     const m = machines.get(id);
@@ -143,6 +153,11 @@ const platinum = Bun.serve({
       return Response.json({ ...m, ...(m.recoverable ? { recoverable: true } : {}) });
     }
     if (req.method === 'GET' && sub === '/usage') return Response.json({ disk_used_pct: 42 });
+    if (req.method === 'POST' && sub === '/expose') {
+      const body = (await req.json()) as { port: number; public: boolean };
+      if (!body.public) privatePorts.add(`${id}:${body.port}`);
+      return Response.json({ port: body.port, public: body.public, url: `${convexUrl(id)}?t=${edgeToken(id)}` });
+    }
     if (req.method === 'GET' && sub === '/snapshots') {
       if (m.snapshotListDelayMs) await Bun.sleep(m.snapshotListDelayMs);
       return Response.json((m.snapshots ?? []).map((sid) => ({ id: sid, createdAt: snapshotTimes.get(sid) ?? '2026-10-07T00:00:00Z', sizeBytes: 1024 })));
@@ -176,7 +191,10 @@ const platinum = Bun.serve({
       m.state = 'stopped';
       return Response.json({ state: 'stopping' });
     }
-    if (req.method === 'PUT' && sub.startsWith('/files')) return Response.json({ ok: true });
+    if (req.method === 'PUT' && sub.startsWith('/files')) {
+      if (url.searchParams.get('path') === '/convex/origins.env') writtenOrigins.set(id, await req.text());
+      return Response.json({ ok: true });
+    }
     if (req.method === 'POST' && sub === '/start') {
       m.state = 'running';
       return Response.json({ state: 'running' });
@@ -205,6 +223,12 @@ const platinum = Bun.serve({
       if (script.includes('instance_secret.next')) {
         m.secret = ++secretSeq;
         return Response.json({ result: { exit_code: 0, stdout: '' } });
+      }
+      if (script.includes('--convex-origin')) {
+        const want = /--convex-origin (\S+) /.exec(script)![1]!;
+        if (runningOrigins.get(id) === want) return Response.json({ result: { exit_code: 0, stdout: 'unchanged\n' } });
+        runningOrigins.set(id, /CONVEX_CLOUD_ORIGIN=(\S+)/.exec(writtenOrigins.get(id) ?? '')?.[1] ?? '');
+        return Response.json({ result: { exit_code: 0, stdout: 'restarted\n' } });
       }
       if (script.includes('tail -n')) {
         return Response.json({ result: { exit_code: 0, stdout: `\u001b[32m INFO\u001b[0m started (${script.match(/tail -n (\d+)/)![1]} lines)\nconvex exited 1 at 1700000000\n` } });
@@ -258,17 +282,20 @@ const ago = (ms: number) => new Date(Date.now() - ms);
 async function runningBackend(name: string, machine: Partial<Machine>, extra: Partial<BackendRow> = {}): Promise<BackendRow> {
   const externalId = `sbx-${name}`;
   machines.set(externalId, { state: 'running', cpu: 1, ramMb: 1024, diskGb: 10, secret: 1, ...machine });
+  const backendId = extra.backendId ?? crypto.randomUUID();
   const [row] = await db
     .insert(projectBackends)
     .values({
+      backendId,
       projectId: PROJECT,
       accountId: ACCOUNT,
       name,
       status: 'running',
       provider: 'platinum',
       externalId,
-      url: convexUrl(externalId),
-      siteUrl: convexUrl(externalId),
+      // Already on its Kortix hosts; `legacy-hosts` below starts on Platinum URLs.
+      url: backendPublicUrls(backendId).url,
+      siteUrl: backendPublicUrls(backendId).siteUrl,
       adminKeyEnc: encryptProjectSecret(extra.projectId ?? PROJECT, keyFor(externalId)),
       cpu: 1,
       memoryGb: 1,
@@ -311,6 +338,11 @@ describe('resume an interrupted provision (H6)', () => {
     expect(done.externalId).toBe(`sbx-backend-${row!.backendId}`);
     expect(decryptProjectSecret(PROJECT, done.adminKeyEnc!)).toBe(keyFor(done.externalId!));
     expect(meta(done).provisionAttempts).toBe(2);
+    // A new backend is born on its Kortix hosts, with Convex running on them.
+    expect(done.url).toBe(backendPublicUrls(done.backendId).url);
+    expect(done.siteUrl).toBe(backendPublicUrls(done.backendId).siteUrl);
+    expect(writtenOrigins.get(done.externalId!)).toContain(`CONVEX_CLOUD_ORIGIN=${done.url}\n`);
+    expect(writtenOrigins.get(done.externalId!)).toContain(`CONVEX_SITE_ORIGIN=${done.siteUrl}\n`);
     expect(calls).toContain(`POST /v1/sandboxes key=kortix-backend-${row!.backendId}`);
     // A provision that heartbeats is left alone, however old the row.
     expect((await read(fresh.backendId)).status).toBe('provisioning');
@@ -353,6 +385,36 @@ describe('take over an interrupted operation (H6)', () => {
     await sweepBackends();
     expect(meta(await read(row.backendId)).operation).toBe('resizing');
     expect(machines.get('sbx-resize-alive')!.state).toBe('stopped');
+  });
+});
+
+describe('Kortix hosts', () => {
+  test('a backend on its Platinum URLs moves to its Kortix hosts: new Convex origins, private ports, new URLs; a second sweep changes nothing', async () => {
+    const row = await runningBackend('legacy-hosts', {}, { url: 'https://3210-sbx-legacy-hosts.example', siteUrl: 'https://3211-sbx-legacy-hosts.example' });
+    runningOrigins.set('sbx-legacy-hosts', 'https://3210-sbx-legacy-hosts.example');
+    const result = await sweepBackends();
+    expect(result.movedToHosts).toBe(1);
+    const after = await read(row.backendId);
+    const hosts = backendPublicUrls(row.backendId);
+    expect({ url: after.url, siteUrl: after.siteUrl }).toEqual({ url: hosts.url, siteUrl: hosts.siteUrl });
+    expect(runningOrigins.get('sbx-legacy-hosts')).toBe(hosts.url);
+    expect([3210, 3211, 6791].filter((port) => privatePorts.has(`sbx-legacy-hosts:${port}`))).toEqual([3210, 3211, 6791]);
+    expect(meta(after).operation).toBeUndefined();
+    expect(meta(after).health).toMatchObject({ ok: true, machine_state: 'running' });
+
+    expect((await sweepBackends()).movedToHosts).toBe(0);
+    expect((await read(row.backendId)).url).toBe(hosts.url);
+  });
+
+  test('a move that fails leaves the backend on its old URLs, unlocked, for the next tick', async () => {
+    const row = await runningBackend('legacy-down', {}, { url: 'https://3210-sbx-legacy-down.example', siteUrl: 'https://3211-sbx-legacy-down.example' });
+    machines.delete('sbx-legacy-down');
+    const result = await sweepBackends();
+    expect(result.movedToHosts).toBe(0);
+    const after = await read(row.backendId);
+    expect(after.url).toBe('https://3210-sbx-legacy-down.example');
+    expect(meta(after).operation).not.toBe('recovering');
+    await db.update(projectBackends).set({ status: 'deleted', deletedAt: new Date() }).where(eq(projectBackends.backendId, row.backendId));
   });
 });
 

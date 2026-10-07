@@ -53,6 +53,7 @@ import {
   type BackendRow,
   type BackendSize,
   BACKEND_MACHINE_LIMITS,
+  applyBackendOrigins,
   deleteBackend,
   execInBackend,
   keepAlive,
@@ -561,7 +562,9 @@ export async function restoreBackendSnapshot(row: BackendRow, snapshotId: string
     });
     try {
       await waitRestored(externalId);
-      await waitHealthy(row.url!);
+      await waitHealthy(externalId);
+      // The snapshot may predate the move to the Kortix hosts.
+      await applyBackendOrigins(row);
       await rotateAgainAfterRestore(row, externalId);
       await sealAdminKey(row);
     } catch (error) {
@@ -675,7 +678,7 @@ export async function runResize(row: BackendRow, next: BackendSize): Promise<voi
     await pauseComputeSession(row.backendId).catch((error) =>
       logger.warn('[backends] could not close the compute window after a resize', { backendId: row.backendId, error: String(error) }),
     );
-    await waitHealthy(row.url!);
+    await waitHealthy(externalId);
     await releaseOperation(row.backendId, null);
   } catch (error) {
     logger.error('[backends] resize failed', { backendId: row.backendId, error: String(error) });
@@ -725,7 +728,7 @@ async function rotateAgainAfterRestore(row: BackendRow, externalId: string): Pro
   if (!wasRotated(row)) return;
   logger.warn('[backends] restored a backend whose admin key was rotated; rotating again', { backendId: row.backendId });
   await execInBackend(externalId, ROTATE_INSTANCE_SECRET_SCRIPT, 30_000);
-  await waitHealthy(row.url!);
+  await waitHealthy(externalId);
   await markRotated(row.backendId);
   await dropMetadata(row.backendId, ROTATE_AFTER_RESTORE);
 }
@@ -766,7 +769,7 @@ export async function rotateBackendAdminKey(row: BackendRow): Promise<void> {
   try {
     await markRotated(row.backendId);
     await execInBackend(externalId, ROTATE_INSTANCE_SECRET_SCRIPT, 30_000);
-    await waitHealthy(row.url!);
+    await waitHealthy(externalId);
     await sealAdminKey(row);
     await releaseOperation(row.backendId, null);
   } catch (error) {
@@ -850,7 +853,9 @@ export async function recoverBackend(row: BackendRow, { restored = false } = {})
     await new Promise((r) => setTimeout(r, 1_000));
     current = await readMachine(externalId);
   }
-  await waitHealthy(row.url);
+  await waitHealthy(externalId);
+  // A backup or an old memory image may run Convex with other origins.
+  await applyBackendOrigins(row);
   if (action === 'restored_from_backup' || restored || rotationPendingAfterRestore(row)) {
     await rotateAgainAfterRestore(row, externalId);
   }

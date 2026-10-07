@@ -50,6 +50,8 @@ describe('the audit boundary wraps every entrypoint', () => {
     const dispatcher = functionBody('dispatchInbound');
     for (const route of [
       "'app_origin', 'backend_dashboard'",
+      "'app_origin', 'backend_host'",
+      "'app_origin', 'backend_host:websocket'",
       "'app_origin', 'app_origin:websocket'",
       "'app_origin', 'app_origin'",
       "'preview_origin', 'preview_origin:websocket'",

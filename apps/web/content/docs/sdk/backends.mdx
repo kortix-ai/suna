@@ -162,7 +162,9 @@ Every type below is exported from `@kortix/sdk`.
 | `ProjectBackendSnapshotSchedule` | `automatic_interval_hours`, `automatic_retention_days`, `resize_retention_hours`, `last_automatic_at` |
 | `ProjectBackendCredentials` | `url`, `site_url`, `admin_key`, `env` |
 
-`url` and `site_url` are `null` until the backend runs.
+`url` and `site_url` are `null` until the backend runs. Both are Kortix hosts
+that stay the same for the backend's life (see
+[Backends](/docs/feature-flags/backends)).
 
 `auth_env` holds no secret. Set its three values in the environment of any
 server of your own that receives a member token, then verify the token there:

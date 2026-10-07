@@ -24,7 +24,7 @@ import {
   listProjectBackends,
   provisionBackend,
 } from './provision';
-import { backendDashboardUrl } from './dashboard-host';
+import { backendDashboardUrl, backendPublicUrls } from './hosts';
 import { BACKEND_TOKEN_TTL_SECONDS } from './auth';
 import { CONVEX_CLI_VERSION } from './convex-image';
 import {
@@ -73,8 +73,10 @@ const BackendObject = z
     project_id: z.string().uuid(),
     name: z.string(),
     status: z.enum(STATUSES),
-    url: z.string().nullable().openapi({ description: 'Convex client URL (CONVEX_URL).' }),
-    site_url: z.string().nullable().openapi({ description: 'Convex HTTP actions URL.' }),
+    url: z.string().nullable().openapi({
+      description: 'Convex client URL (CONVEX_URL): the backend\'s Kortix host, fixed for the backend\'s life.',
+    }),
+    site_url: z.string().nullable().openapi({ description: 'Convex HTTP actions URL: a second Kortix host, fixed for the backend\'s life.' }),
     dashboard_url: z.string().nullable().openapi({
       description: "Convex's dashboard for this backend. Kortix web frames it and signs it in; null on older machines.",
     }),
@@ -194,8 +196,9 @@ function serialize(row: BackendRow) {
     project_id: row.projectId,
     name: row.name,
     status,
-    url: row.url,
-    site_url: row.siteUrl,
+    // The Kortix hosts, also for a row maintenance has not moved off its Platinum URLs yet.
+    url: row.url ? backendPublicUrls(row.backendId).url : null,
+    site_url: row.siteUrl ? backendPublicUrls(row.backendId).siteUrl : null,
     dashboard_url: backendDashboardUrl(row),
     cpu: row.cpu,
     memory_gb: row.memoryGb,
@@ -343,11 +346,12 @@ export function registerBackendsRoutes(): void {
       if (loaded instanceof Response) return loaded;
       const row = await getLiveBackend(projectId, backendId);
       if (!row) return c.json({ error: 'Not found' }, 404);
-      const { url, siteUrl, adminKeyEnc } = row;
-      if (row.status !== 'running' || !url || !siteUrl || !adminKeyEnc) {
+      const { adminKeyEnc } = row;
+      if (row.status !== 'running' || !row.url || !row.siteUrl || !adminKeyEnc) {
         return c.json({ error: `backend is ${effectiveStatus(row)}`, code: 'backend_not_running' }, 409);
       }
       const adminKey = backendAdminKey({ ...row, adminKeyEnc });
+      const { url, siteUrl } = backendPublicUrls(row.backendId);
       // The admin key controls the backend: no cache (browser, proxy, CDN) may keep it.
       c.header('Cache-Control', 'no-store');
       await recordAuditEvent({

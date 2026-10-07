@@ -71,12 +71,22 @@ Keep your own copy of data you cannot re-create:
 `npx convex export --path backup.zip --include-file-storage`. Without
 `--include-file-storage` the export holds no files.
 
-A backend has two public URLs:
+A backend has two public URLs, both Kortix hosts under the Apps domain:
 
-| Field | Use it for |
-|---|---|
-| `url` | The Convex client (`CONVEX_URL`). It is public, not secret. |
-| `site_url` | Convex HTTP actions. |
+| Field | Host | Use it for |
+|---|---|---|
+| `url` | `https://<env>-convex-<id>.<apps domain>` | The Convex client (`CONVEX_URL`): queries, mutations, the realtime WebSocket, and the admin API (`npx convex …`). It is public, not secret. |
+| `site_url` | `https://<env>-convex-site-<id>.<apps domain>` | Convex HTTP actions. |
+
+`<id>` is the backend id without dashes. Both hosts stay the same for the
+backend's life: a restore, a resize, or a new machine does not change them.
+Convex builds file storage URLs and `process.env.CONVEX_SITE_URL` from them.
+The Kortix API proxies both hosts to the backend's machine, HTTP and
+WebSocket. The machine's own ports are private: they refuse every request
+that does not come through Kortix. On a local stack the hosts are
+`http://bc-<id>.apps.localhost:<api port>` and `http://bs-<id>.apps.localhost:<api port>`.
+A backend created before these hosts moves to them within 5 minutes of the
+deploy that ships them (Convex restarts once, about 1 second).
 
 The admin key is secret. It controls the backend's code and data.
 

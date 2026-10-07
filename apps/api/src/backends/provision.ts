@@ -5,9 +5,12 @@
  * Create is two steps. `insertBackend` claims the name and answers at once.
  * `provisionBackend` then runs in the background (≈3 s on a warm image, up to
  * a few minutes the first time a region builds the image): create the machine
- * with public 3210/3211, write the origins file the supervisor waits for, wait
- * for `/version`, mint the admin key inside the machine, seal it, mark
- * `running`. Any failure marks the row `error` and deletes the machine.
+ * with 3210/3211/6791 exposed PRIVATELY, write the origins file the supervisor
+ * waits for (the backend's Kortix hosts, ./hosts.ts), wait for `/version`,
+ * mint the admin key inside the machine, seal it, mark `running`. Any failure
+ * marks the row `error` and deletes the machine. Kortix reaches the machine
+ * only through Platinum's private exposure (./machine.ts); clients reach it
+ * only through the Kortix hosts.
  *
  * A provision writes `metadata.heartbeatAt` every HEARTBEAT_MS. One whose
  * heartbeat stops (the API process died: a deploy, an OOM) is resumed by
@@ -42,7 +45,6 @@ import {
   generateBackendAuthKey,
   legacyBackendIssuer,
   mintBackendToken,
-  setBackendEnv,
 } from './auth';
 import {
   CONVEX_API_PORT,
@@ -52,6 +54,8 @@ import {
   CONVEX_SITE_PORT,
 } from './convex-image';
 import { backendFailureMessage } from './errors';
+import { backendPublicUrls } from './hosts';
+import { backendIngress, machineFetch } from './machine';
 import { logger } from '../lib/logger';
 import { endComputeSession } from '../billing/services/compute-metering';
 
@@ -72,10 +76,7 @@ export type BackendSize = { cpu: number; memoryGb: number; diskGb: number };
 const CREATE_WAIT_MS = 10 * 60_000;
 const HEALTH_WAIT_MS = 60_000;
 
-type PlatinumCreated = {
-  id: string;
-  exposed?: Array<{ port: number; url: string; public: boolean }>;
-};
+type PlatinumCreated = { id: string };
 type PlatinumExec = { result?: { stdout?: string; stderr?: string; exit_code?: number }; error?: string };
 
 export type BackendRow = typeof projectBackends.$inferSelect;
@@ -122,18 +123,15 @@ export function keepAlive(backendId: string, field: 'heartbeatAt' | 'deleting' =
   return () => clearInterval(timer);
 }
 
-function exposedOrigin(created: PlatinumCreated, port: number): string {
-  const url = created.exposed?.find((e) => e.port === port)?.url;
-  if (!url) throw new Error(`the machine has no public URL for port ${port}`);
-  return url.split('?')[0]!.replace(/\/+$/, '');
-}
+/** The ports a backend machine serves. Each is exposed privately: only Kortix holds the edge token. */
+export const BACKEND_PORTS = [CONVEX_API_PORT, CONVEX_SITE_PORT, CONVEX_DASHBOARD_PORT] as const;
 
-export async function waitHealthy(url: string): Promise<void> {
+export async function waitHealthy(externalId: string): Promise<void> {
   const deadline = Date.now() + HEALTH_WAIT_MS;
   let last = '';
   while (Date.now() < deadline) {
     try {
-      const res = await fetch(`${url}/version`, { signal: AbortSignal.timeout(5_000) });
+      const res = await machineFetch(externalId, CONVEX_API_PORT, '/version', { signal: AbortSignal.timeout(5_000) });
       if (res.ok) return;
       last = `HTTP ${res.status}`;
     } catch (err) {
@@ -169,12 +167,12 @@ async function mintAdminKey(externalId: string): Promise<string> {
 }
 
 /** Convex answers 200 once it accepts the key. Polled: Convex can answer /version before it serves admin routes. */
-async function verifyAdminKey(url: string, adminKey: string): Promise<void> {
+async function verifyAdminKey(externalId: string, adminKey: string): Promise<void> {
   const deadline = Date.now() + HEALTH_WAIT_MS;
   let last = '';
   while (Date.now() < deadline) {
     try {
-      const res = await fetch(`${url}/api/check_admin_key`, {
+      const res = await machineFetch(externalId, CONVEX_API_PORT, '/api/check_admin_key', {
         headers: { Authorization: `Convex ${adminKey}` },
         signal: AbortSignal.timeout(5_000),
       });
@@ -196,7 +194,7 @@ async function verifyAdminKey(url: string, adminKey: string): Promise<void> {
 export async function sealAdminKey(row: BackendRow): Promise<void> {
   if (!row.externalId || !row.url) throw new Error('backend has no machine');
   const adminKey = await mintAdminKey(row.externalId);
-  await verifyAdminKey(row.url, adminKey);
+  await verifyAdminKey(row.externalId, adminKey);
   await db
     .update(projectBackends)
     .set({ adminKeyEnc: encryptProjectSecret(row.projectId, adminKey), updatedAt: new Date() })
@@ -212,6 +210,92 @@ export async function sealAdminKey(row: BackendRow): Promise<void> {
 /** Only Kortix web may frame a backend's dashboard (CSP frame-ancestors). */
 function dashboardFrameAncestors(): string {
   return new URL(config.FRONTEND_URL).origin;
+}
+
+/** Sets deployment environment variables through the backend's admin API (what `npx convex env set` calls). */
+export async function setBackendEnv(externalId: string, adminKey: string, env: Record<string, string>): Promise<void> {
+  const res = await machineFetch(externalId, CONVEX_API_PORT, '/api/update_environment_variables', {
+    method: 'POST',
+    signal: AbortSignal.timeout(20_000),
+    headers: { Authorization: `Convex ${adminKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ changes: Object.entries(env).map(([name, value]) => ({ name, value })) }),
+  });
+  if (!res.ok) throw new Error(`setting backend environment failed: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+}
+
+/**
+ * What the supervisor exports before it starts Convex. CONVEX_CLOUD_ORIGIN and
+ * CONVEX_SITE_ORIGIN become `--convex-origin` / `--convex-site`: the URLs
+ * Convex puts in file storage URLs and in `process.env.CONVEX_CLOUD_URL` /
+ * `CONVEX_SITE_URL`. They are the backend's Kortix hosts.
+ */
+export function backendOriginsFile(backendId: string): string {
+  const { url, siteUrl } = backendPublicUrls(backendId);
+  return `CONVEX_CLOUD_ORIGIN=${url}\nCONVEX_SITE_ORIGIN=${siteUrl}\nKORTIX_FRAME_ANCESTORS=${dashboardFrameAncestors()}\n`;
+}
+
+/**
+ * Restarts the supervisor when the running Convex has other origins than
+ * `want`; prints `unchanged` or `restarted`. The supervisor reads the origins
+ * file once at start, so restarting Convex alone keeps the old ones. pt-init
+ * (PID 1) only reaps the old supervisor; a new one is started in its own
+ * session. Convex is down for about a second. Every pattern is written so it
+ * cannot match this script's own `bash -c` command line.
+ */
+export function restartWithOriginsScript(want: string): string {
+  if (!/^https?:\/\/[a-z0-9.:-]+$/.test(want)) throw new Error('invalid backend origin');
+  return `set -e
+p='^\\./convex-local-backend '
+pid=$(pgrep -f "$p" | head -n 1 || true)
+if [ -n "$pid" ] && tr '\\0' ' ' < /proc/$pid/cmdline | grep -qF -- '--convex-origin ${want} '; then echo unchanged; exit 0; fi
+pkill -9 -f '^/bin/bash /usr/local/bin/[c]onvex-sup' || true
+pkill -f "$p" || true
+pkill -f '[c]onvex-dashboard-server' || true
+for i in $(seq 150); do
+  pgrep -f "$p" > /dev/null || break
+  if [ "$i" = 100 ]; then pkill -9 -f "$p" || true; fi
+  sleep 0.1
+done
+sup=/usr/local/bin/convex
+setsid nohup "$sup-sup" < /dev/null > /dev/null 2>&1 &
+for i in $(seq 300); do
+  if curl -fsS http://127.0.0.1:${CONVEX_API_PORT}/version > /dev/null 2>&1; then echo restarted; exit 0; fi
+  sleep 0.1
+done
+echo 'convex did not come back' >&2
+exit 1`;
+}
+
+/**
+ * Points the running Convex at the backend's Kortix hosts: writes the origins
+ * file, then restarts the supervisor if Convex still runs with other origins.
+ * Idempotent: a backend already on its hosts costs one exec and no restart.
+ * Runs after the move to the hosts, and after anything that can bring back an
+ * older disk or memory image (a snapshot restore, a backup restore, a start).
+ */
+export async function applyBackendOrigins(row: BackendRow): Promise<'unchanged' | 'restarted'> {
+  if (!row.externalId) throw new Error('backend has no machine');
+  await writeOriginsFile(row.externalId, backendOriginsFile(row.backendId));
+  const out = await execInBackend(row.externalId, restartWithOriginsScript(backendPublicUrls(row.backendId).url), 45_000);
+  return out.trim().endsWith('restarted') ? 'restarted' : 'unchanged';
+}
+
+/**
+ * Moves a backend created before the Kortix hosts onto them: Convex gets the
+ * new origins, every port becomes private, and the row stores the new URLs.
+ * The machine's Platinum URLs answer only with Kortix's token from then on.
+ * Safe to repeat. The caller holds the operation lock.
+ */
+export async function moveBackendToKortixHosts(row: BackendRow): Promise<void> {
+  if (!row.externalId) throw new Error('backend has no machine');
+  const result = await applyBackendOrigins(row);
+  for (const port of BACKEND_PORTS) await backendIngress(row.externalId, port);
+  const { url, siteUrl } = backendPublicUrls(row.backendId);
+  await db
+    .update(projectBackends)
+    .set({ url, siteUrl, updatedAt: new Date() })
+    .where(and(eq(projectBackends.backendId, row.backendId), isNull(projectBackends.deletedAt)));
+  logger.info('[backends] moved to the Kortix hosts', { backendId: row.backendId, convex: result });
 }
 
 async function writeOriginsFile(externalId: string, body: string): Promise<void> {
@@ -430,13 +514,9 @@ export async function provisionBackend(row: BackendRow, region?: string): Promis
           ram_mb: row.memoryGb * 1024,
           disk_gb: row.diskGb,
           ...(region ? { region } : {}),
-          // Convex clients cannot send Platinum's preview token, so both ports
-          // are public; the admin key guards the admin API, as on Convex Cloud.
-          expose: [
-            { port: CONVEX_API_PORT, public: true },
-            { port: CONVEX_SITE_PORT, public: true },
-            { port: CONVEX_DASHBOARD_PORT, public: true },
-          ],
+          // Private: Platinum's edge wants Kortix's token. Clients use the
+          // Kortix hosts, which the API proxies (./hosts.ts).
+          expose: BACKEND_PORTS.map((port) => ({ port, public: false })),
           metadata: {
             'kortix.managed': await sandboxOwnershipMarker(),
             'kortix.env': config.INTERNAL_KORTIX_ENV,
@@ -453,17 +533,13 @@ export async function provisionBackend(row: BackendRow, region?: string): Promis
       .set({ externalId, updatedAt: new Date() })
       .where(eq(projectBackends.backendId, backendId));
 
-    const url = exposedOrigin(created, CONVEX_API_PORT);
-    const siteUrl = exposedOrigin(created, CONVEX_SITE_PORT);
-    await writeOriginsFile(
-      externalId,
-      `CONVEX_CLOUD_ORIGIN=${url}\nCONVEX_SITE_ORIGIN=${siteUrl}\nKORTIX_FRAME_ANCESTORS=${dashboardFrameAncestors()}\n`,
-    );
-    await waitHealthy(url);
+    const { url, siteUrl } = backendPublicUrls(backendId);
+    await writeOriginsFile(externalId, backendOriginsFile(backendId));
+    await waitHealthy(externalId);
     const adminKey = await mintAdminKey(externalId);
     // Kortix sign-in: the backend verifies member tokens with this key's public half.
     const authKey = generateBackendAuthKey();
-    await setBackendEnv(url, adminKey, backendAuthEnv(backendId, backendIssuer(row), authKey));
+    await setBackendEnv(externalId, adminKey, backendAuthEnv(backendId, backendIssuer(row), authKey));
 
     const [ready] = await db
       .update(projectBackends)
@@ -522,7 +598,7 @@ export async function moveBackendIssuers(): Promise<{ moved: number; failed: num
         eq(projectBackends.status, 'running'),
         isNotNull(projectBackends.authKeyEnc),
         isNotNull(projectBackends.adminKeyEnc),
-        isNotNull(projectBackends.url),
+        isNotNull(projectBackends.externalId),
       ),
     );
   let moved = 0;
@@ -537,7 +613,7 @@ export async function moveBackendIssuers(): Promise<{ moved: number; failed: num
           .where(and(eq(projectBackends.backendId, row.backendId), isNull(projectBackends.authIssuer)))
           .returning({ backendId: projectBackends.backendId });
         if (!claimed) return;
-        await setBackendEnv(row.url!, backendAdminKey({ ...row, adminKeyEnc: row.adminKeyEnc! }), {
+        await setBackendEnv(row.externalId!, backendAdminKey({ ...row, adminKeyEnc: row.adminKeyEnc! }), {
           KORTIX_AUTH_ISSUER: issuer,
         });
         moved += 1;
