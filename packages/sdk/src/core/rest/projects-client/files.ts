@@ -24,6 +24,43 @@ export async function listProjectFiles(
   );
 }
 
+/** One entry of a folder listing: a file, or a folder to open with another call. */
+export interface ProjectDirectoryEntry {
+  /** Repository-relative path. */
+  path: string;
+  type: 'file' | 'directory';
+  /** Bytes of a file. A folder has none. */
+  size?: number;
+}
+
+export interface ProjectDirectoryListing {
+  entries: ProjectDirectoryEntry[];
+  /** The folder has more entries than one response carries. */
+  truncated: boolean;
+}
+
+/**
+ * The immediate children of one folder (`path`, or the repository root).
+ * Unlike `listProjectFiles`, which returns a recursive list cut at 1,000
+ * files, every folder is complete up to its own entry cap.
+ */
+export async function listProjectDirectory(
+  projectId: string,
+  options?: { ref?: string; path?: string },
+) {
+  const params = new URLSearchParams();
+  if (options?.ref) params.set('ref', options.ref);
+  if (options?.path) params.set('path', options.path);
+  params.set('depth', '1');
+  return unwrap(
+    await backendApi.get<ProjectDirectoryListing>(
+      `/projects/${projectId}/files?${params.toString()}`,
+      // Same manager-tier gate as listProjectFiles: the view renders its own error state.
+      { showErrors: false },
+    ),
+  );
+}
+
 export interface ProjectFileSearchMatch {
   path: string;
   /** Present for content search (git grep). */

@@ -171,6 +171,23 @@ export function joinDestination(invite: MyAccountInvite): string | null {
 }
 
 /**
+ * Where an accepted invite lands (KRTX-1731): the first project it granted,
+ * or, for a workspace invite, the door for the joined account. The plain door
+ * reopened the project this browser remembered, in the account the user came
+ * from.
+ */
+export function inviteLandingPath(accepted: {
+  account_id: string | null;
+  bootstrap_grants_applied?: ReadonlyArray<{ project_id: string }>;
+}): string {
+  const first = accepted.bootstrap_grants_applied?.[0];
+  if (first) return `/projects/${first.project_id}`;
+  return accepted.account_id
+    ? `/projects/start?account=${encodeURIComponent(accepted.account_id)}`
+    : '/projects/start';
+}
+
+/**
  * `/projects/start` — open a project directly, or show the selector.
  *
  * The selector is skipped only when there is exactly one obvious answer:
@@ -178,16 +195,27 @@ export function joinDestination(invite: MyAccountInvite): string | null {
  *  - the user has exactly one project in total.
  * A pending invite always shows the selector, so an invite is never skipped
  * past on the way into a project.
+ *
+ * `requestedAccountId` (`/projects/start?account=<id>`, after an account
+ * switch or an invite accept) bounds both answers to that account, and wins
+ * over a pending invite: the user just chose where to go (KRTX-1731).
  */
-export type DoorDecision = { kind: 'open'; projectId: string; accountId: string } | { kind: 'select' };
+export type DoorDecision =
+  | { kind: 'open'; projectId: string; accountId: string }
+  | { kind: 'select'; accountId?: string };
 
 export function decideDoor(input: {
   sections: AccountSection[];
   inviteCount: number;
   rememberedProjectId: string | null;
+  requestedAccountId?: string | null;
 }): DoorDecision {
-  if (input.inviteCount > 0) return { kind: 'select' };
-  const all = input.sections.flatMap((section) => section.projects);
+  const requested = input.requestedAccountId ?? null;
+  const select: DoorDecision = requested ? { kind: 'select', accountId: requested } : { kind: 'select' };
+  if (input.inviteCount > 0 && !requested) return select;
+  const all = input.sections
+    .flatMap((section) => section.projects)
+    .filter((project) => !requested || project.account_id === requested);
   if (input.rememberedProjectId) {
     const remembered = all.find((project) => project.project_id === input.rememberedProjectId);
     if (remembered) {
@@ -197,5 +225,5 @@ export function decideDoor(input: {
   if (all.length === 1) {
     return { kind: 'open', projectId: all[0].project_id, accountId: all[0].account_id };
   }
-  return { kind: 'select' };
+  return select;
 }

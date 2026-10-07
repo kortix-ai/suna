@@ -88,7 +88,7 @@ import { CommandOutputCard } from './turn/command-output';
 import { CompactionFailedRow, CompactionMarker } from './turn/compaction-divider';
 import { TextPartBlock } from './turn/text-part';
 import { TurnActions } from './turn/turn-actions';
-import { UserMessage, type UserMessageUploadStatus } from './turn/user-message';
+import { UserMessage, type SessionSourceAuthor, type UserMessageUploadStatus } from './turn/user-message';
 
 /** Web turn root `space-y-2.5`. */
 const TURN_STACK_GAP = webSpace(2.5);
@@ -139,6 +139,8 @@ interface SessionTurnProps {
   uploadStatus?: UserMessageUploadStatus;
   /** Who sent this turn's prompt. Set only in a session with two or more people. */
   sender?: AvatarPerson | null;
+  /** Another Kortix session sent this prompt — see `UserMessage`. */
+  sessionAuthor?: SessionSourceAuthor | null;
   /**
    * False while the working turn is scrolled out of the list's viewport: its
    * shimmer and busy dot matrix hold still (KRTX-1638). Defaults to on screen.
@@ -172,6 +174,7 @@ function SessionTurnImpl({
   queueState,
   uploadStatus,
   sender,
+  sessionAuthor,
   onScreen = true,
 }: SessionTurnProps) {
   const { colorScheme } = useColorScheme();
@@ -282,6 +285,7 @@ function SessionTurnImpl({
       queueState={queueState}
       uploadStatus={uploadStatus}
       sender={sender}
+      sessionAuthor={sessionAuthor}
     />
   );
 

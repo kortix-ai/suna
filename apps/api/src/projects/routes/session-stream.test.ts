@@ -94,19 +94,22 @@ mock.module('../../shared/pg-broadcast', () => ({
     }),
 }));
 
-let presenceRenewals: Array<{ userId: string; sessionId: string; tabId: string }> = [];
+let presenceRenewals: Array<{ userId: string; sessionId: string; tabId: string; extendDeadline: boolean }> = [];
 mock.module('../lib/session-presence', () => ({
   PRESENCE_RENEW_MS: 30_000,
-  renewSessionPresence: async (userId: string, sessionId: string, tabId: string) => {
-    presenceRenewals.push({ userId, sessionId, tabId });
+  renewSessionPresence: async (userId: string, sessionId: string, tabId: string, opts: { extendDeadline: boolean }) => {
+    presenceRenewals.push({ userId, sessionId, tabId, extendDeadline: opts.extendDeadline });
     return true;
   },
 }));
+/** Whether the caller holds `project.session.start` (may keep the computer awake). */
+let mayStartSession = true;
 
 mock.module('../lib/access', () => ({
   ...realAccess,
   loadProjectForUser: async () => loadedProject,
   assertProjectCapability: async () => {},
+  projectCapabilityAllowed: async () => mayStartSession,
   loadVisibleSession: async () => visibleSession,
 }));
 
@@ -268,6 +271,7 @@ beforeEach(() => {
   runtimeTurnEnds = [];
   reachability = [];
   presenceRenewals = [];
+  mayStartSession = true;
   healthReads = 0;
   nextHealth = () => ({
     ok: true,
@@ -839,7 +843,16 @@ describe('R5.3: a visible tab keeps its presence through the stream, not a 30 s 
     loadedProject = { ...loadedProject!, actor: { credential: { kind: 'jwt' } } } as never;
     sandboxRow = { externalId: 'box-1', status: 'stopped' };
     await readFrames(await openStream(`?tab_id=${TAB}`), 2, 200);
-    expect(presenceRenewals).toEqual([{ userId: USER_ID, sessionId: SESSION_ID, tabId: TAB }]);
+    expect(presenceRenewals).toEqual([{ userId: USER_ID, sessionId: SESSION_ID, tabId: TAB, extendDeadline: true }]);
+  });
+
+  // KRTX-1729: any viewer's open tab kept the computer awake on the account's bill.
+  test('a viewer who may not start the session renews the lease without extending the computer', async () => {
+    loadedProject = { ...loadedProject!, actor: { credential: { kind: 'jwt' } } } as never;
+    mayStartSession = false;
+    sandboxRow = { externalId: 'box-1', status: 'stopped' };
+    await readFrames(await openStream(`?tab_id=${TAB}`), 2, 200);
+    expect(presenceRenewals).toEqual([{ userId: USER_ID, sessionId: SESSION_ID, tabId: TAB, extendDeadline: false }]);
   });
 
   test('a token caller or a malformed tab id renews nothing', async () => {

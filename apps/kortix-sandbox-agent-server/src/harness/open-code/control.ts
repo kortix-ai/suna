@@ -69,9 +69,13 @@ const RELEASE_OWNED_ENV_NAMES = new Set(['KORTIX_COMPILED_AGENT_CONFIG', 'KORTIX
  * would only risk racing that path for no benefit. The rest
  * (`KORTIX_SECRET_CAPABILITIES` foremost) have no such re-derivation and are
  * delivered ONLY by a live `/kortix/env` push — see `writeOpencodeRuntimeEnvSnapshot`.
+ *
+ * `KORTIX_LLM_PROXY_URL` is excluded too: it names a listener the OLD process
+ * owned. Restored, it makes boot.ts skip starting the proxy, and OpenCode then
+ * sends every model request to a closed port (prod 2026-10-01..07).
  */
 const PERSISTED_OPENCODE_ENV_NAMES = [...OPENCODE_RUNTIME_ENV_NAMES].filter(
-  (name) => !RELEASE_OWNED_ENV_NAMES.has(name),
+  (name) => !RELEASE_OWNED_ENV_NAMES.has(name) && name !== 'KORTIX_LLM_PROXY_URL',
 )
 
 /**

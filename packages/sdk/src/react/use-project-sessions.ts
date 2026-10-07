@@ -15,6 +15,7 @@
  */
 
 import { useInfiniteQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import {
   listProjectSessionsPage,
   type ListProjectSessionsOptions,
@@ -60,6 +61,28 @@ export function flattenProjectSessionPages(
   return flat;
 }
 
+/**
+ * How many pages the list reads on its own while every page so far was empty.
+ * Each server page scans a bounded number of rows, so 5 pages cover about
+ * 2,400 newer rows the viewer cannot see. Past that, the viewer presses
+ * Load more.
+ */
+export const EMPTY_SESSION_PAGE_SCAN_LIMIT = 5;
+
+/**
+ * Whether to read the next page on its own (KRTX-1727). The server drops rows
+ * the viewer may not see, and deleted ones, after a bounded scan, so a page
+ * can be empty and still carry a cursor. That is not an empty list.
+ */
+export function shouldScanPastEmptySessionPages(
+  data: { pages: ProjectSessionPage[]; pageParams: unknown[] } | undefined,
+  hasNextPage: boolean,
+): boolean {
+  if (!data || !hasNextPage) return false;
+  if (data.pages.length >= EMPTY_SESSION_PAGE_SCAN_LIMIT) return false;
+  return data.pages.every((page) => page.items.length === 0);
+}
+
 export interface UseProjectSessionsOptions
   extends Pick<ListProjectSessionsOptions, 'scope' | 'limit' | 'parent' | 'startedBy' | 'q' | 'labels'> {
   enabled?: boolean;
@@ -101,8 +124,19 @@ export function useProjectSessions(projectId: string, options?: UseProjectSessio
     },
   });
 
+  const isScanning = shouldScanPastEmptySessionPages(query.data, query.hasNextPage);
+  const { isFetching, fetchNextPage } = query;
+  useEffect(() => {
+    if (isScanning && !isFetching) void fetchNextPage();
+  }, [isScanning, isFetching, fetchNextPage]);
+
   return {
     ...query,
+    /**
+     * True while every page so far was empty and the list reads the next one
+     * on its own. Render it as loading, never as "no sessions".
+     */
+    isScanning,
     /**
      * Every page loaded so far, flattened and de-duplicated.
      *

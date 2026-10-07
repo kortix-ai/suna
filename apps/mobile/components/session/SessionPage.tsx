@@ -60,7 +60,7 @@ import { SessionParticipantsSheet } from '@/components/session/SessionParticipan
 import { SubAgentHeaderChip } from '@/components/session/SubAgentHeaderChip';
 import { SubAgentListSheet } from '@/components/session/SubAgentListSheet';
 import { useComposerModels, useProjectDetail, useSessionMessageAuthors, useSessionParticipants } from '@/lib/projects/hooks';
-import { messageAvatarPerson, type AvatarPerson } from '@/lib/session/participants';
+import { messageAvatarPerson, messageSessionAuthor, type AvatarPerson } from '@/lib/session/participants';
 import { ParticipantAvatar } from '@/components/session/ParticipantAvatar';
 import { latestAssistantAgent, threadAgents } from '@/lib/session/composer-config';
 import { isModelUnavailable } from '@/lib/session/composer-model';
@@ -1032,6 +1032,22 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       return cache.get(messageId) ?? null;
     };
   }, [messageAuthors, participants, viewerId]);
+  // The Kortix session that sent a message (a coordinator, a spawn), same
+  // memo rule as `senderOf`.
+  // Keyed by the ids, not by `turns`: a stream delta makes a new `turns` array
+  // with the same ids, and a new array here would remake `renderItem` per delta.
+  const userMessageIdsKey = turns.map((turn) => turn.userMessage.info.id).join('\n');
+  const userMessageIds = useMemo(
+    () => (userMessageIdsKey ? userMessageIdsKey.split('\n') : []),
+    [userMessageIdsKey],
+  );
+  const sessionAuthorOf = useMemo(() => {
+    const cache = new Map<string, ReturnType<typeof messageSessionAuthor>>();
+    return (messageId: string) => {
+      if (!cache.has(messageId)) cache.set(messageId, messageSessionAuthor(messageAuthors, userMessageIds, messageId));
+      return cache.get(messageId) ?? null;
+    };
+  }, [messageAuthors, userMessageIds]);
   // A queued prompt is keyed by its own message id, or by the wire id it was
   // re-minted under; either finds its author.
   const queuedSender = useCallback(
@@ -1864,13 +1880,14 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             queueState={interruptedIds.has(id) ? 'interrupted' : null}
             uploadStatus={failedSends[id] ? { state: 'failed', onRetry: () => handleRetrySend(id) } : undefined}
             sender={senderOf(id)}
+            sessionAuthor={sessionAuthorOf(id)}
             onScreen={isWorkingTurn ? workingTurnOnScreen : true}
           />
           )}
         </View>
       );
     },
-    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend, senderOf, workingTurnOnScreen],
+    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend, senderOf, sessionAuthorOf, workingTurnOnScreen],
   );
 
   const keyExtractor = useCallback((item: Turn) => item.userMessage.info.id, []);
