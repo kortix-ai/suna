@@ -102,5 +102,9 @@ export async function appApiProxyResponse(
   // Nothing the API sets may land as a cookie on the App's origin.
   const out = new Headers(response.headers);
   out.delete('set-cookie');
+  // The viewer's own response. Cloudflare keys the API host on host + path, not
+  // the App host, so a stored copy would reach a caller who never signed in.
+  out.set('cache-control', 'private, no-store');
+  out.set('cloudflare-cdn-cache-control', 'no-store');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers: out });
 }

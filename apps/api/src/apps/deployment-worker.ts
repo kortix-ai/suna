@@ -598,7 +598,8 @@ async function driveStaticDeployment(input: {
     published = await publishStaticSite({
       deploymentId: claimed.deploymentId,
       accountId: context.app.accountId,
-      root: root === '.' ? sourceDir! : join(sourceDir!, root),
+      sourceDir: sourceDir!,
+      root,
     });
   } catch (error) {
     // A file or layout problem in the artifact never fixes itself on retry.

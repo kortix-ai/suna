@@ -102,6 +102,18 @@ describe('the App API path', () => {
     }
   });
 
+  test('a forwarded response is never stored by a shared cache, whatever the API sent', async () => {
+    const request = new Request(`https://${HOST}/_kortix/api/v1/p/ext/3000/app.js`, { headers: sameOrigin() });
+    const response = await appApiProxyResponse(request, new URL(request.url), HOST, appRow(), async () =>
+      new Response('console.log(1)', {
+        headers: { 'content-type': 'text/javascript', 'cache-control': 'public, max-age=600' },
+      }));
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cloudflare-cdn-cache-control')).toBe('no-store');
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(await response.text()).toBe('console.log(1)');
+  });
+
   test('forwards a write body', async () => {
     const response = await call('/_kortix/api/v1/projects/p/connectors/call', {
       method: 'POST',

@@ -120,3 +120,94 @@ describe('chooseEncoding', () => {
     expect(chooseEncoding(null, 'text/css', 5000)).toBeNull();
   });
 });
+
+describe('compression bounds', () => {
+  test('a body over the in-memory compression limit is served as identity', async () => {
+    const { chooseEncoding, MAX_COMPRESS_BYTES } = await import('./static-site');
+    expect(chooseEncoding('br, gzip', 'text/plain; charset=utf-8', MAX_COMPRESS_BYTES)).toBe('br');
+    expect(chooseEncoding('br, gzip', 'text/plain; charset=utf-8', MAX_COMPRESS_BYTES + 1)).toBeNull();
+    expect(chooseEncoding('gzip', 'application/json', 50 * 1024 * 1024)).toBeNull();
+  });
+
+  test('the compressed-body cache stays under its byte budget', async () => {
+    const { encodeSiteBody, siteCaches, resetStaticSiteCaches, MAX_COMPRESS_BYTES } = await import('./static-site');
+    const { randomBytes } = await import('node:crypto');
+    const { gunzipSync } = await import('node:zlib');
+    resetStaticSiteCaches();
+    const budget = siteCaches.encoded.budget;
+    // Random bytes do not compress: each entry stays close to its input size.
+    const count = Math.ceil(budget / MAX_COMPRESS_BYTES) + 2;
+    const body = new Uint8Array(randomBytes(MAX_COMPRESS_BYTES));
+    for (let i = 0; i < count; i += 1) {
+      const out = await encodeSiteBody(`sha-${i}`, 'gzip', body);
+      expect(gunzipSync(out).byteLength).toBe(body.byteLength);
+    }
+    expect(siteCaches.encoded.bytes).toBeGreaterThan(0);
+    expect(siteCaches.encoded.bytes).toBeLessThanOrEqual(budget);
+    resetStaticSiteCaches();
+  });
+});
+
+describe('ByteLru', () => {
+  test('evicts the least recently used entries by total bytes and never keeps an oversized value', async () => {
+    const { ByteLru } = await import('./static-site');
+    const cache = new ByteLru<string>(100);
+    cache.set('a', 'a', 40);
+    cache.set('b', 'b', 40);
+    expect(cache.get('a')).toBe('a'); // a is now the most recent
+    cache.set('c', 'c', 40);
+    expect(cache.get('b')).toBeUndefined();
+    expect(cache.get('a')).toBe('a');
+    expect(cache.bytes).toBe(80);
+    cache.set('a', 'a2', 10);
+    expect(cache.bytes).toBe(50);
+    cache.set('huge', 'huge', 101);
+    expect(cache.get('huge')).toBeUndefined();
+    expect(cache.bytes).toBe(50);
+  });
+});
+
+describe('static error responses', () => {
+  test('405 carries the Cloudflare no-store header', async () => {
+    const { serveStaticDeployment } = await import('./static-site');
+    const response = await serveStaticDeployment({
+      request: new Request('https://app.test/', { method: 'POST' }),
+      url: new URL('https://app.test/'),
+      accountId: '00000000-0000-4000-a000-000000000001',
+      deploymentId: '00000000-0000-4000-a000-000000000002',
+      spa: false,
+      publicApp: true,
+    });
+    expect(response.status).toBe(405);
+    expect(response.headers.get('cloudflare-cdn-cache-control')).toBe('no-store');
+    expect(response.headers.get('allow')).toBe('GET, HEAD');
+  });
+});
+
+describe('publishStaticSite containment', () => {
+  test('a static root reached through a symlinked directory is refused before any file is read', async () => {
+    const { publishStaticSite } = await import('./static-site');
+    const { mkdtemp, mkdir, rm, symlink, writeFile } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const outside = await mkdtemp(join(tmpdir(), 'kortix-static-outside-'));
+    const source = await mkdtemp(join(tmpdir(), 'kortix-static-source-'));
+    try {
+      await mkdir(join(outside, 'site'));
+      await writeFile(join(outside, 'site', 'secret.txt'), 'host file');
+      await symlink(outside, join(source, 'link'));
+      const reads: string[] = [];
+      await expect(publishStaticSite({
+        deploymentId: '00000000-0000-4000-a000-000000000002',
+        accountId: '00000000-0000-4000-a000-000000000001',
+        sourceDir: source,
+        root: 'link/site',
+        storage: { put: async (key) => { reads.push(key); }, get: async () => null, remove: async () => {} },
+      })).rejects.toThrow(/static root resolves outside the artifact/);
+      expect(reads).toEqual([]);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+      await rm(source, { recursive: true, force: true });
+    }
+  });
+});

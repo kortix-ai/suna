@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { accounts, appArtifacts, appDeploymentEvents, appDeployments, appSiteBlobs, appSiteFiles, apps, projects } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
+import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,6 +16,7 @@ import { createBuildLog } from './build-log';
 import { retireSupersededDeployments, rollBackActiveDeployment, sweepAppRetention } from './retention';
 import {
   blobKey,
+  MAX_COMPRESS_BYTES,
   publishStaticSite,
   reclaimAppSiteBlobs,
   resetStaticSiteCaches,
@@ -132,7 +134,7 @@ withDb('static App hosting', () => {
       'b.txt': 'same',
     });
     roots.push(v1);
-    const first = await publishStaticSite({ deploymentId: dep(1), accountId: ACCOUNT_ID, root: v1, storage });
+    const first = await publishStaticSite({ deploymentId: dep(1), accountId: ACCOUNT_ID, sourceDir: v1, storage });
     expect(first).toEqual({ files: 4, bytes: first.bytes, uploadedBlobs: 3, reusedBlobs: 0 });
     expect(storage.objects.size).toBe(3);
 
@@ -143,12 +145,12 @@ withDb('static App hosting', () => {
       'b.txt': 'same',
     });
     roots.push(v2);
-    const second = await publishStaticSite({ deploymentId: dep(2), accountId: ACCOUNT_ID, root: v2, storage });
+    const second = await publishStaticSite({ deploymentId: dep(2), accountId: ACCOUNT_ID, sourceDir: v2, storage });
     expect(second.uploadedBlobs).toBe(1);
     expect(second.reusedBlobs).toBe(2);
     // A retried publish is idempotent: no upload, no duplicate rows.
     const putsBefore = storage.puts;
-    await publishStaticSite({ deploymentId: dep(2), accountId: ACCOUNT_ID, root: v2, storage });
+    await publishStaticSite({ deploymentId: dep(2), accountId: ACCOUNT_ID, sourceDir: v2, storage });
     expect(storage.puts).toBe(putsBefore);
     const rows = await db.select().from(appSiteFiles).where(eq(appSiteFiles.deploymentId, dep(2)));
     expect(rows.map((row) => row.path).sort()).toEqual(['a.txt', 'assets/index-Q9x2LmP4.js', 'b.txt', 'index.html']);
@@ -164,7 +166,7 @@ withDb('static App hosting', () => {
       'big.js': 'x'.repeat(4096),
     });
     roots.push(root);
-    await publishStaticSite({ deploymentId: dep(1), accountId: ACCOUNT_ID, root, storage });
+    await publishStaticSite({ deploymentId: dep(1), accountId: ACCOUNT_ID, sourceDir: root, storage });
     const serve = (path: string, init: RequestInit = {}) =>
       serveStaticDeployment({
         request: new Request(`https://app.test${path}`, init),
@@ -234,6 +236,51 @@ withDb('static App hosting', () => {
     expect((await serve('/video.bin', { headers: { range: 'bytes=50-60' } })).status).toBe(416);
 
     expect((await serve('/', { method: 'POST' })).status).toBe(405);
+
+    // Error answers carry the Cloudflare no-store header like every App response.
+    const missing = await serve('/assets/missing.js');
+    expect(missing.status).toBe(404);
+    expect(missing.headers.get('cloudflare-cdn-cache-control')).toBe('no-store');
+    storage.objects.delete(blobKey(ACCOUNT_ID, createHash('sha256').update('0123456789').digest('hex')));
+    resetStaticSiteCaches();
+    const gone = await serve('/video.bin');
+    expect(gone.status).toBe(503);
+    expect(gone.headers.get('cloudflare-cdn-cache-control')).toBe('no-store');
+    expect(gone.headers.get('retry-after')).toBe('5');
+  });
+
+  test('a body over 4 MiB is served uncompressed, and concurrent requests share one storage read', async () => {
+    await seedDeployments(1, 'building');
+    const storage = memoryStorage();
+    let gets = 0;
+    const get = storage.get.bind(storage);
+    storage.get = async (key: string) => {
+      gets += 1;
+      await Bun.sleep(100); // a storage download takes time; requests arrive meanwhile
+      return get(key);
+    };
+    const large = 'x'.repeat(MAX_COMPRESS_BYTES + 1);
+    const root = await site({ 'data.json': large });
+    roots.push(root);
+    await publishStaticSite({ deploymentId: dep(1), accountId: ACCOUNT_ID, sourceDir: root, storage });
+    const serve = () =>
+      serveStaticDeployment({
+        request: new Request('https://app.test/data.json?x=1', { headers: { 'accept-encoding': 'br, gzip' } }),
+        url: new URL('https://app.test/data.json?x=1'),
+        accountId: ACCOUNT_ID,
+        deploymentId: dep(1),
+        spa: false,
+        publicApp: true,
+        storage,
+      });
+    const responses = await Promise.all([serve(), serve(), serve()]);
+    expect(gets).toBe(1);
+    for (const response of responses) {
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-encoding')).toBeNull();
+      expect(response.headers.get('content-length')).toBe(String(large.length));
+    }
+    expect(await responses[0]!.text()).toBe(large);
   });
 
   test('retention keeps the active and the newest N others, frees their files, keeps the history', async () => {

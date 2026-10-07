@@ -12,9 +12,11 @@
  *     private `app-sites` bucket (`<account_id>/<sha256>`), and the deployment
  *     records its manifest in `app_site_files` (path → blob, size, type).
  *     Unchanged files across deploys are not uploaded again.
- *   - Serve: the manifest (immutable per deployment) and small blobs are cached
- *     in process. Hashed assets are cacheable for a year; HTML revalidates.
- *     Content is `private` to caches unless the App is public.
+ *   - Serve: the manifest (immutable per deployment), small blobs and their
+ *     compressed bodies are cached in process, each cache bounded by bytes.
+ *     A body over 4 MiB is served uncompressed. Hashed assets are cacheable
+ *     for a year; HTML revalidates. Content is `private` to caches unless the
+ *     App is public.
  *   - Activate and roll back: flip `apps.active_deployment_id`. Nothing boots.
  *
  * Blobs are freed by `reclaimAppSiteBlobs` once no live manifest names them.
@@ -23,9 +25,10 @@
 import { appSiteBlobs, appSiteFiles } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
-import { brotliCompressSync, constants as zlib, gzipSync } from 'node:zlib';
-import { lstat, readdir, readFile } from 'node:fs/promises';
-import { join, posix } from 'node:path';
+import { brotliCompress, constants as zlib, gzip } from 'node:zlib';
+import { lstat, readdir, readFile, realpath } from 'node:fs/promises';
+import { isAbsolute, join, posix, relative, resolve } from 'node:path';
+import { promisify } from 'node:util';
 import { config } from '../config';
 import { db } from '../shared/db';
 import { mapWithConcurrency } from '../shared/map-with-concurrency';
@@ -128,23 +131,43 @@ export interface PublishResult {
 }
 
 /**
- * Stores the files under `root` for one deployment. Idempotent: a retried
- * publish re-uploads nothing it already stored and re-inserts no row.
+ * `root` inside `sourceDir`, as a real path. Refused when it leaves `sourceDir`
+ * or any of its components is a symlink: this process reads the files on the
+ * API host and may publish them on a public URL.
+ */
+async function containedRoot(sourceDir: string, root: string): Promise<string> {
+  const base = await realpath(sourceDir);
+  const lexical = resolve(base, root);
+  const fromBase = relative(base, lexical);
+  const real = await realpath(lexical).catch(() => null);
+  if (fromBase.startsWith('..') || isAbsolute(fromBase) || (real !== null && real !== lexical)) {
+    throw new Error('The static root resolves outside the artifact');
+  }
+  const rootStat = real === null ? null : await lstat(real);
+  if (!rootStat?.isDirectory()) throw new Error('The static root is not a directory in the artifact');
+  return real!;
+}
+
+/**
+ * Stores the files under `sourceDir`/`root` (default `.`) for one deployment.
+ * Idempotent: a retried publish re-uploads nothing it already stored and
+ * re-inserts no row.
  */
 export async function publishStaticSite(input: {
   deploymentId: string;
   accountId: string;
-  root: string;
+  sourceDir: string;
+  root?: string;
   storage?: SiteStorage;
 }): Promise<PublishResult> {
   const storage = input.storage ?? supabaseSiteStorage;
-  const rootStat = await lstat(input.root).catch(() => null);
-  if (!rootStat?.isDirectory()) throw new Error('The static root is not a directory in the artifact');
-  const paths = await listFiles(input.root);
+  const root = await containedRoot(input.sourceDir, input.root ?? '.');
+  // `listFiles` skips symlinks, so no file below the real root leaves it.
+  const paths = await listFiles(root);
   if (paths.length === 0) throw new Error('The static root holds no files');
 
   const files = await mapWithConcurrency(paths, UPLOAD_CONCURRENCY, async (path) => {
-    const bytes = new Uint8Array(await readFile(join(input.root, path)));
+    const bytes = new Uint8Array(await readFile(join(root, path)));
     if (bytes.byteLength > MAX_SITE_FILE_BYTES) {
       throw new Error(`${path} exceeds ${MAX_SITE_FILE_BYTES} bytes`);
     }
@@ -185,7 +208,7 @@ export async function publishStaticSite(input: {
   });
   const missing = [...unique.values()].filter((file) => !stored.has(file.sha256));
   await mapWithConcurrency(missing, UPLOAD_CONCURRENCY, async (file) => {
-    const bytes = new Uint8Array(await readFile(join(input.root, file.path)));
+    const bytes = new Uint8Array(await readFile(join(root, file.path)));
     await storage.put(blobKey(input.accountId, file.sha256), bytes, file.contentType);
     await db
       .insert(appSiteBlobs)
@@ -270,13 +293,61 @@ export function parseRange(header: string | null, size: number): { start: number
   return start > end || start >= size ? 'invalid' : { start, end };
 }
 
-// replica-local: a published manifest never changes, so each replica's copy is
-// exact; a replica that has not cached one reads it from the database.
-const manifests = new Map<string, Map<string, SiteFile>>();
-const MANIFEST_CACHE = 500;
+/** A replica-local LRU bounded by total bytes. A value over the budget is not kept. */
+export class ByteLru<V> {
+  private readonly entries = new Map<string, { value: V; size: number }>();
+  bytes = 0;
+  constructor(readonly budget: number) {}
+
+  get(key: string): V | undefined {
+    const hit = this.entries.get(key);
+    if (!hit) return undefined;
+    this.entries.delete(key);
+    this.entries.set(key, hit);
+    return hit.value;
+  }
+
+  set(key: string, value: V, size: number): void {
+    if (size > this.budget) return;
+    const old = this.entries.get(key);
+    if (old) {
+      this.entries.delete(key);
+      this.bytes -= old.size;
+    }
+    while (this.bytes + size > this.budget) {
+      const [oldest, entry] = this.entries.entries().next().value!;
+      this.entries.delete(oldest);
+      this.bytes -= entry.size;
+    }
+    this.entries.set(key, { value, size });
+    this.bytes += size;
+  }
+
+  clear(): void {
+    this.entries.clear();
+    this.bytes = 0;
+  }
+}
+
+const MIB = 1024 * 1024;
+/** Bodies above this are never cached or compressed in process. */
+export const MAX_COMPRESS_BYTES = 4 * MIB;
+
+// replica-local, never stale: a published manifest never changes, and blobs
+// and their compressed bodies are content-addressed (the key is the SHA-256).
+export const siteCaches = {
+  manifests: new ByteLru<Map<string, SiteFile>>(64 * MIB),
+  blobs: new ByteLru<Uint8Array>(128 * MIB),
+  encoded: new ByteLru<Uint8Array>(64 * MIB),
+};
+
+/** Estimated heap bytes of one manifest: UTF-16 strings plus per-row overhead. */
+function manifestBytes(rows: SiteFile[]): number {
+  return rows.reduce((sum, row) => sum + 2 * (row.path.length + row.contentType.length + row.sha256.length) + 200, 0);
+}
 
 export async function loadSiteManifest(deploymentId: string): Promise<Map<string, SiteFile>> {
-  const hit = manifests.get(deploymentId);
+  const hit = siteCaches.manifests.get(deploymentId);
   if (hit) return hit;
   const rows = await db
     .select({
@@ -288,74 +359,64 @@ export async function loadSiteManifest(deploymentId: string): Promise<Map<string
     .from(appSiteFiles)
     .where(eq(appSiteFiles.deploymentId, deploymentId));
   const manifest = new Map(rows.map((row) => [row.path, row]));
-  if (manifest.size > 0) {
-    if (manifests.size >= MANIFEST_CACHE) manifests.delete(manifests.keys().next().value!);
-    manifests.set(deploymentId, manifest);
-  }
+  if (manifest.size > 0) siteCaches.manifests.set(deploymentId, manifest, manifestBytes(rows));
   return manifest;
 }
 
-// replica-local: blobs are content-addressed (the key is the SHA-256), so a
-// cached copy can never disagree with storage; replicas only differ in hits.
-const blobs = new Map<string, Uint8Array>();
-let blobBytes = 0;
-const BLOB_CACHE_BYTES = 128 * 1024 * 1024;
-const BLOB_CACHE_ENTRY_BYTES = 4 * 1024 * 1024;
+// replica-local: concurrent requests for one blob on this replica share one
+// storage read; another replica reads its own copy, which is identical.
+const blobReads = new Map<string, Promise<Uint8Array | null>>();
 
-async function readBlob(storage: SiteStorage, key: string): Promise<Uint8Array | null> {
-  const hit = blobs.get(key);
-  if (hit) {
-    blobs.delete(key);
-    blobs.set(key, hit);
-    return hit;
+function readBlob(storage: SiteStorage, key: string): Promise<Uint8Array | null> {
+  const hit = siteCaches.blobs.get(key);
+  if (hit) return Promise.resolve(hit);
+  let read = blobReads.get(key);
+  if (!read) {
+    read = storage.get(key).then((bytes) => {
+      if (bytes && bytes.byteLength <= MAX_COMPRESS_BYTES) siteCaches.blobs.set(key, bytes, bytes.byteLength);
+      return bytes;
+    }).finally(() => blobReads.delete(key));
+    blobReads.set(key, read);
   }
-  const bytes = await storage.get(key);
-  if (bytes && bytes.byteLength <= BLOB_CACHE_ENTRY_BYTES) {
-    while (blobBytes + bytes.byteLength > BLOB_CACHE_BYTES && blobs.size > 0) {
-      const [oldest, value] = blobs.entries().next().value!;
-      blobs.delete(oldest);
-      blobBytes -= value.byteLength;
-    }
-    blobs.set(key, bytes);
-    blobBytes += bytes.byteLength;
-  }
-  return bytes;
+  return read;
 }
 
 export function resetStaticSiteCaches(): void {
-  manifests.clear();
-  blobs.clear();
-  blobBytes = 0;
-  encoded.clear();
+  for (const cache of Object.values(siteCaches)) cache.clear();
 }
 
 const COMPRESSIBLE = /^(text\/|application\/(javascript|json|xml|wasm|manifest\+json)|image\/svg\+xml)/;
 const MIN_COMPRESS_BYTES = 1024;
-// replica-local: compressed bytes of a content-addressed blob; never stale.
-const encoded = new Map<string, Uint8Array>();
-const ENCODED_CACHE_ENTRIES = 2_000;
+const brotliAsync = promisify(brotliCompress);
+const gzipAsync = promisify(gzip);
 
 /** The best encoding the client accepts for this file, or null for identity. */
 export function chooseEncoding(acceptEncoding: string | null, contentType: string, size: number): 'br' | 'gzip' | null {
-  if (size < MIN_COMPRESS_BYTES || !COMPRESSIBLE.test(contentType)) return null;
+  if (size < MIN_COMPRESS_BYTES || size > MAX_COMPRESS_BYTES || !COMPRESSIBLE.test(contentType)) return null;
   const accepted = (acceptEncoding ?? '').toLowerCase();
   if (/\bbr\b/.test(accepted)) return 'br';
   if (/\bgzip\b/.test(accepted)) return 'gzip';
   return null;
 }
 
-function encode(sha256: string, encoding: 'br' | 'gzip', bytes: Uint8Array): Uint8Array {
+/** The compressed body, off the event loop (zlib thread pool), cached by content. */
+export async function encodeSiteBody(sha256: string, encoding: 'br' | 'gzip', bytes: Uint8Array): Promise<Uint8Array> {
   const key = `${encoding}:${sha256}`;
-  const hit = encoded.get(key);
+  const hit = siteCaches.encoded.get(key);
   if (hit) return hit;
-  const out = encoding === 'br'
-    ? new Uint8Array(brotliCompressSync(bytes, { params: { [zlib.BROTLI_PARAM_QUALITY]: 5 } }))
-    : new Uint8Array(gzipSync(bytes, { level: 6 }));
-  if (bytes.byteLength <= BLOB_CACHE_ENTRY_BYTES) {
-    if (encoded.size >= ENCODED_CACHE_ENTRIES) encoded.delete(encoded.keys().next().value!);
-    encoded.set(key, out);
-  }
+  const out = new Uint8Array(encoding === 'br'
+    ? await brotliAsync(bytes, { params: { [zlib.BROTLI_PARAM_QUALITY]: 5 } })
+    : await gzipAsync(bytes, { level: 6 }));
+  siteCaches.encoded.set(key, out, out.byteLength);
   return out;
+}
+
+/** A plain-text answer that, like every App response, no Cloudflare cache keeps. */
+function plain(status: number, body: string, extra: Record<string, string> = {}): Response {
+  return new Response(body, {
+    status,
+    headers: appPublicResponseHeaders(new Headers({ 'content-type': 'text/plain; charset=utf-8', ...extra })),
+  });
 }
 
 /** Answers one request for a static deployment. The caller already passed the access gate. */
@@ -370,7 +431,7 @@ export async function serveStaticDeployment(input: {
 }): Promise<Response> {
   const { request, url } = input;
   if (request.method !== 'GET' && request.method !== 'HEAD') {
-    return new Response('Method not allowed', { status: 405, headers: { allow: 'GET, HEAD' } });
+    return plain(405, 'Method not allowed', { allow: 'GET, HEAD' });
   }
   const manifest = await loadSiteManifest(input.deploymentId);
   const resolved = resolveSitePath(url.pathname, (path) => manifest.has(path), {
@@ -378,7 +439,7 @@ export async function serveStaticDeployment(input: {
     navigation: isNavigation(request, url.pathname),
   });
   if (!resolved) {
-    return new Response('Not found', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } });
+    return plain(404, 'Not found');
   }
   const file = manifest.get(resolved.path)!;
   // Weak: the identity, gzip and Brotli bodies share it (RFC 9110 §8.8.1).
@@ -399,7 +460,7 @@ export async function serveStaticDeployment(input: {
   }
   const bytes = await readBlob(input.storage ?? supabaseSiteStorage, blobKey(input.accountId, file.sha256));
   if (!bytes) {
-    return new Response('This file is temporarily unavailable', { status: 503, headers: { 'retry-after': '5' } });
+    return plain(503, 'This file is temporarily unavailable', { 'retry-after': '5' });
   }
   const range = resolved.status === 200 ? parseRange(request.headers.get('range'), bytes.byteLength) : null;
   if (range === 'invalid') {
@@ -409,7 +470,7 @@ export async function serveStaticDeployment(input: {
   // A range is served from the identity bytes; anything else may be compressed.
   const encoding = range ? null : chooseEncoding(request.headers.get('accept-encoding'), file.contentType, bytes.byteLength);
   if (encoding) headers.set('content-encoding', encoding);
-  const body = range ? bytes.subarray(range.start, range.end + 1) : encoding ? encode(file.sha256, encoding, bytes) : bytes;
+  const body = range ? bytes.subarray(range.start, range.end + 1) : encoding ? await encodeSiteBody(file.sha256, encoding, bytes) : bytes;
   if (range) headers.set('content-range', `bytes ${range.start}-${range.end}/${bytes.byteLength}`);
   headers.set('content-length', String(body.byteLength));
   return new Response(request.method === 'HEAD' ? null : (body as Uint8Array<ArrayBuffer>), {
