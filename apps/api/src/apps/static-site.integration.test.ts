@@ -11,7 +11,8 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { db } from '../shared/db';
-import { retireSupersededDeployments, rollBackActiveDeployment } from './retention';
+import { createBuildLog } from './build-log';
+import { retireSupersededDeployments, rollBackActiveDeployment, sweepAppRetention } from './retention';
 import {
   blobKey,
   publishStaticSite,
@@ -247,6 +248,44 @@ withDb('static App hosting', () => {
     expect(events.map((row) => row.type).sort()).toEqual(['deployment_activated', 'deployment_retired']);
     // Running it again retires nothing more.
     expect(await retireSupersededDeployments(APP_ID, 3)).toEqual([]);
+  });
+
+  test('batched build log lines read back in the order they were printed', async () => {
+    await seedDeployments(1, 'building');
+    const log = createBuildLog(dep(1));
+    for (let i = 0; i < 450; i += 1) log.line(`line ${i}`);
+    await log.close();
+    const rows = await db.select({ message: appDeploymentEvents.message, level: appDeploymentEvents.level })
+      .from(appDeploymentEvents)
+      .where(and(eq(appDeploymentEvents.deploymentId, dep(1)), eq(appDeploymentEvents.type, 'build_log')))
+      .orderBy(appDeploymentEvents.createdAt);
+    expect(rows.map((row) => row.message)).toEqual(Array.from({ length: 450 }, (_, i) => `line ${i}`));
+    expect(new Set(rows.map((row) => row.level))).toEqual(new Set(['debug']));
+  });
+
+  test('the sweep drops a failed deployment build log after 14 days and keeps its lifecycle events', async () => {
+    await seedDeployments(3, 'failed');
+    const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000);
+    await db.update(appDeployments).set({ updatedAt: daysAgo(15) }).where(eq(appDeployments.deploymentId, dep(1)));
+    await db.update(appDeployments).set({ updatedAt: daysAgo(13) }).where(eq(appDeployments.deploymentId, dep(2)));
+    await db.update(appDeployments).set({ status: 'ready', updatedAt: daysAgo(30) }).where(eq(appDeployments.deploymentId, dep(3)));
+    for (let i = 1; i <= 3; i += 1) {
+      await db.insert(appDeploymentEvents).values([
+        { deploymentId: dep(i), type: 'build_log', message: 'line' },
+        { deploymentId: dep(i), type: 'deployment_failed', message: 'failed' },
+      ]);
+    }
+
+    const result = await sweepAppRetention(5);
+
+    expect(result.failedBuildLogLines).toBe(1);
+    const left = await db.select({ id: appDeploymentEvents.deploymentId, type: appDeploymentEvents.type })
+      .from(appDeploymentEvents)
+      .where(inArray(appDeploymentEvents.deploymentId, [dep(1), dep(2), dep(3)]));
+    const types = (n: number) => left.filter((row) => row.id === dep(n)).map((row) => row.type).sort();
+    expect(types(1)).toEqual(['deployment_failed']);
+    expect(types(2)).toEqual(['build_log', 'deployment_failed']);
+    expect(types(3)).toEqual(['build_log', 'deployment_failed']);
   });
 
   test('a rollback racing retention never points the App at a retired deployment (50 runs)', async () => {

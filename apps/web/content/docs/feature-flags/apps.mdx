@@ -139,7 +139,9 @@ always wins over the block.
 | `monthly_budget_usd` | `5` | `0` to `100000`, or the operator's `KORTIX_APPS_MAX_MONTHLY_BUDGET_USD` |
 
 Static Apps ignore the machine, idle timeout and run mode: they have no
-runtime.
+runtime. They serve while they have an active deployment, so
+`kortix apps start` and `kortix apps stop` answer `409 static_app_no_runtime`.
+Delete the App to take it offline.
 
 ### Always on, or on demand
 
@@ -206,7 +208,11 @@ An App keeps its active deployment and the 5 newest other ready ones as
 rollback targets (`KORTIX_APPS_RETAINED_DEPLOYMENTS`). Older deployments are
 retired after every deploy: their runtime, image, files and build logs are
 freed, and they leave the deployment list. Archives no remaining deployment
-uses are deleted a day after upload.
+uses are deleted a day after upload. A failed or cancelled deployment keeps its
+build log for 14 days.
+
+A build log keeps the first 2,500 and the last 2,500 lines; a
+`log_truncated` event records how many lines in between were dropped.
 
 Apps reject a machine larger than the limits instead of clamping it. An App
 records its requested spec and bills off that record, so a silent downgrade
@@ -416,7 +422,14 @@ project's Apps with live state, a signed preview of each running App, and the
 access controls. Deploying is `kortix apps deploy .`.
 
 An App with no active deployment reads **Not deployed**, never **Running**. A
-suspended App's preview issues the request that wakes it.
+static App with an active deployment always reads **Running**. A suspended
+server App's preview issues the request that wakes it.
+
+The App's **Earlier versions** drawer states how it runs (static site, or a
+server that is always on or on demand, with its monthly budget) and how many
+earlier versions it keeps. Each version unfolds to its events and build log; a
+failed deploy's **Update failed** badge opens that log. A server App's menu
+holds **Monthly budget**, which shows the 24/7 estimate for its machine.
 
 Kortix opens `*.apps.kortix.com` and `*.apps.localhost` on their direct origin
 rather than through a session's web forward proxy. That preserves the host-only

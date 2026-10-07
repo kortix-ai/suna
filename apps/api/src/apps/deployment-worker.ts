@@ -20,6 +20,7 @@ import { listResolvedProjectSecrets } from '../projects/secrets';
 import { downloadAppArtifact, extractAppArchive } from './artifacts';
 import { resolveAppRuntimeEnvironment } from './environment';
 import { APP_VIEWER_SECRET_ENV, appViewerSecret } from './viewer';
+import { createBuildLog } from './build-log';
 import { AppHostingProvider } from './hosting';
 import { normalizeAppBuild, type AppSourceSpec } from './spec';
 import { publishStaticSite, staticHostingEnabled } from './static-site';
@@ -769,20 +770,22 @@ async function buildDeploymentImage(input: {
     memoryGb: context.app.memoryGb,
     diskGb: context.app.diskGb,
   };
-  await hosting.buildImage({
-    provider,
-    snapshotName,
-    slug: context.app.slug,
-    sourceDir: normalized.sourceDir,
-    dockerfile: normalized.dockerfile,
-    runtimeSpec: normalized.runtimeSpec,
-    machine: requestedMachine,
-    logTap: {
-      onLine: (line) => {
-        void event(claimed.deploymentId, 'build_log', line.slice(0, 4_000), { level: 'debug' });
-      },
-    },
-  });
+  const buildLog = createBuildLog(claimed.deploymentId);
+  try {
+    await hosting.buildImage({
+      provider,
+      snapshotName,
+      slug: context.app.slug,
+      sourceDir: normalized.sourceDir,
+      dockerfile: normalized.dockerfile,
+      runtimeSpec: normalized.runtimeSpec,
+      machine: requestedMachine,
+      logTap: { onLine: (line) => buildLog.line(line) },
+    });
+  } finally {
+    // A failed build's last lines are the ones that say why: write them either way.
+    await buildLog.close();
+  }
   await event(claimed.deploymentId, 'build_ready', 'App image is ready', { data: { provider } });
   return { snapshotName, requestedMachine };
 }

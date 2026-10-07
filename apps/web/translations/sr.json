@@ -19262,7 +19262,20 @@
       "text6f417aa88601": "Потрошња LLM гејтвеја по извору излистана",
       "textc96cd610ba08": "Ponovo pokušan deljeni ključ provajdera nakon ograničenja korišćenja",
       "text044ba8a9ae43": "Uvek uključena",
-      "textb2fceee88a51": "Radi 24/7. Zaustavlja se samo kad dostigne mesečni budžet."
+      "textb2fceee88a51": "Radi 24/7. Zaustavlja se samo kad dostigne mesečni budžet.",
+      "texted76c66b7a8d": "Serverska aplikacija se zaustavlja kada njen računarski trošak ovog meseca dostigne budžet. Ponovo se pokreće sledećeg meseca ili kada ga povećate.",
+      "text89ea53a8d7ac": "Budžet ${value0} mesečno",
+      "text4972b5f3b4f5": "Budžet u USD mesečno",
+      "textad954fb2accd": "Budžet je ažuriran",
+      "text163de9edcec1": "Sakrij log",
+      "text04957fa46a70": "Čuva {value0} ranijih verzija",
+      "textc247593b2c0f": "Mesečni budžet",
+      "text80c652c4eeec": "Još nema događaja.",
+      "text51f92f318c20": "Rad 24/7 košta oko ${value0} mesečno po cenovniku računarskih resursa.",
+      "textaef7de28d529": "Server",
+      "text34b66838fe48": "Prikaži log",
+      "text903b49a91e18": "Statički sajt",
+      "text245c1e26ba4c": "Log nije mogao da se učita."
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

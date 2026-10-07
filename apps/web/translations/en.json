@@ -19273,7 +19273,20 @@
       "text6f417aa88601": "Listed LLM gateway spend by source",
       "textc96cd610ba08": "Retried pooled provider key after rate limit",
       "text044ba8a9ae43": "Always on",
-      "textb2fceee88a51": "Runs 24/7. Stops only at its monthly budget."
+      "textb2fceee88a51": "Runs 24/7. Stops only at its monthly budget.",
+      "texted76c66b7a8d": "A server App stops when its compute this month reaches the budget. It starts again next month or when you raise it.",
+      "text89ea53a8d7ac": "Budget ${value0} a month",
+      "text4972b5f3b4f5": "Budget in USD per month",
+      "textad954fb2accd": "Budget updated",
+      "text163de9edcec1": "Hide log",
+      "text04957fa46a70": "Keeps {value0} earlier versions",
+      "textc247593b2c0f": "Monthly budget",
+      "text80c652c4eeec": "No events yet.",
+      "text51f92f318c20": "Running 24/7 costs about ${value0} a month at list compute rates.",
+      "textaef7de28d529": "Server",
+      "text34b66838fe48": "Show log",
+      "text903b49a91e18": "Static site",
+      "text245c1e26ba4c": "The log could not be loaded."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

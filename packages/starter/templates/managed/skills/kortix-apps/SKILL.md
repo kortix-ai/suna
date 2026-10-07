@@ -177,8 +177,8 @@ Do not stop at a `ready` status.
 6. For non-public Apps, fetch the stable URL without credentials and confirm it
    returns `401` before testing authorized access.
 7. A static App stops here: it has no runtime to stop or wake, and
-   `kortix apps show <slug> --json` shows `hosting_type: "static"` on its
-   deployment. For a server App, run `kortix apps stop <slug> --json`. The command returns only after the
+   `kortix apps show <slug> --json` shows `hosting_type: "static"` on the App
+   and its deployment. For a server App, run `kortix apps stop <slug> --json`. The command returns only after the
    provider stop call and runtime-state write complete. Confirm
    `desired_state` is `stopped`. Request the stable URL with the existing
    App-host cookie without running `start`.
@@ -242,6 +242,11 @@ kortix apps stop <slug>
 kortix apps rollback <slug> <deployment-id>
 kortix apps delete <slug> --yes
 ```
+
+`start` and `stop` apply to a server App. A static App has no runtime: both
+answer `409 static_app_no_runtime`, `kortix apps ls` prints `static` as its
+state, and it serves while it has an active deployment. Delete it to take it
+offline.
 
 A server App runs **always on** (the default: 24/7, restarted within 5 minutes
 if it stops, needed for cron jobs, queues and websockets) or **on demand**

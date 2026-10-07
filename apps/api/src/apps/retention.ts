@@ -13,7 +13,8 @@
  *   - static files: the manifest rows go, so `reclaimAppSiteBlobs` can free
  *     blobs no remaining deployment names;
  *   - build logs: the per-line `build_log` events go; lifecycle events stay,
- *     so the history still says what happened;
+ *     so the history still says what happened. A failed or cancelled
+ *     deployment's build log goes `FAILED_BUILD_LOG_DAYS` after it ended;
  *   - archives: `reclaimAppArtifacts` deletes an archive once no live
  *     deployment uses it.
  */
@@ -132,19 +133,24 @@ export async function rollBackActiveDeployment(appId: string, deploymentId: stri
 }
 
 const SWEEP_APPS = 50;
+/** Days a failed or cancelled deployment keeps its build log: long enough to read why it failed. */
+export const FAILED_BUILD_LOG_DAYS = 14;
+const BUILD_LOG_DELETE_BATCH = 5_000;
 const ARTIFACT_GRACE = '24 hours';
 const ARTIFACT_BATCH = 100;
 
 /**
  * Maintenance: apply retention to every App that has more ready deployments
  * than it keeps (catches up Apps deployed before retention existed), drop the
- * static files of every dead deployment (a deleted App's included), and
- * delete unused archives.
+ * static files of every dead deployment (a deleted App's included), drop the
+ * build log of failed and cancelled deployments after `FAILED_BUILD_LOG_DAYS`,
+ * and delete unused archives.
  */
 export async function sweepAppRetention(keep = config.KORTIX_APPS_RETAINED_DEPLOYMENTS): Promise<{
   apps: number;
   retired: number;
   siteFilesReleased: number;
+  failedBuildLogLines: number;
   artifacts: number;
 }> {
   const over = await db
@@ -172,11 +178,23 @@ export async function sweepAppRetention(keep = config.KORTIX_APPS_RETAINED_DEPLO
       limit 50
     )`);
 
+  const failedBuildLogs = await db.execute(sql`
+    delete from ${appDeploymentEvents}
+    where event_id in (
+      select e.event_id from ${appDeploymentEvents} e
+      join ${appDeployments} d on d.deployment_id = e.deployment_id
+      where e.type = 'build_log'
+        and d.status in ('failed', 'cancelled')
+        and d.updated_at < now() - make_interval(days => ${FAILED_BUILD_LOG_DAYS})
+      limit ${BUILD_LOG_DELETE_BATCH}
+    )`);
+
   const artifacts = await reclaimAppArtifacts();
   return {
     apps: over.length,
     retired,
     siteFilesReleased: Number((deadFiles as unknown as { count?: number }).count ?? 0),
+    failedBuildLogLines: Number((failedBuildLogs as unknown as { count?: number }).count ?? 0),
     artifacts,
   };
 }

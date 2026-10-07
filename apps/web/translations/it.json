@@ -19262,7 +19262,20 @@
       "text6f417aa88601": "Spesa del gateway LLM per origine elencata",
       "textc96cd610ba08": "Chiave del provider condivisa riprovata dopo il limite di utilizzo",
       "text044ba8a9ae43": "Sempre attiva",
-      "textb2fceee88a51": "Funziona 24/7. Si ferma solo al raggiungimento del budget mensile."
+      "textb2fceee88a51": "Funziona 24/7. Si ferma solo al raggiungimento del budget mensile.",
+      "texted76c66b7a8d": "Un'App server si ferma quando il calcolo di questo mese raggiunge il budget. Riparte il mese successivo o quando lo aumenti.",
+      "text89ea53a8d7ac": "Budget ${value0} al mese",
+      "text4972b5f3b4f5": "Budget in USD al mese",
+      "textad954fb2accd": "Budget aggiornato",
+      "text163de9edcec1": "Nascondi log",
+      "text04957fa46a70": "Conserva {value0} versioni precedenti",
+      "textc247593b2c0f": "Budget mensile",
+      "text80c652c4eeec": "Ancora nessun evento.",
+      "text51f92f318c20": "L'esecuzione 24/7 costa circa ${value0} al mese ai prezzi di listino.",
+      "textaef7de28d529": "Server",
+      "text34b66838fe48": "Mostra log",
+      "text903b49a91e18": "Sito statico",
+      "text245c1e26ba4c": "Impossibile caricare il log."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

@@ -54,6 +54,19 @@ export interface App {
    */
   estimated_monthly_usd?: number;
   /**
+   * How the active deployment is hosted. `static`: served from storage, with
+   * no runtime: it serves whatever `desired_state` says, and start/stop
+   * answer `409 static_app_no_runtime`. `sandbox`: a server App. `null`: not
+   * deployed yet. Optional for wire compatibility with a server that
+   * predates it.
+   */
+  hosting_type?: 'sandbox' | 'static' | null;
+  /**
+   * Ready deployments the App keeps besides its active one, as rollback
+   * targets. Older ones are retired. Optional for wire compatibility.
+   */
+  retained_deployments?: number;
+  /**
    * Set on the create and update responses only. `app_budget_below_always_on`:
    * the App runs 24/7 and its monthly budget is below `estimated_monthly_usd`,
    * so a server App stops at the budget until the month ends. Neither call

@@ -129,16 +129,26 @@ export function resolveDeploymentTarget(
   throw new Error(`Deployment ${target} not found${known ? ` (deployments: ${known})` : ''}`);
 }
 
+/**
+ * The STATE column. A static App has no runtime: it serves while it has an
+ * active deployment, whatever `desired_state` says, so it reads `static`.
+ */
+export function appStateLabel(app: Pick<App, 'desired_state' | 'hosting_type' | 'active_deployment_id'>): string {
+  if (!app.active_deployment_id) return 'undeployed';
+  if (app.hosting_type === 'static') return 'static';
+  return app.desired_state;
+}
+
 function renderApps(apps: App[]): number {
   if (apps.length === 0) {
     process.stdout.write(`\n  ${C.dim}No Apps deployed.${C.reset}\n\n`);
     return 0;
   }
   const slugWidth = Math.max(4, ...apps.map((app) => app.slug.length));
-  process.stdout.write(`\n  ${C.bold}${pad('SLUG', slugWidth)}  STATE     URL${C.reset}\n`);
+  process.stdout.write(`\n  ${C.bold}${pad('SLUG', slugWidth)}  STATE      URL${C.reset}\n`);
   for (const app of apps) {
     process.stdout.write(
-      `  ${pad(app.slug, slugWidth)}  ${pad(app.desired_state, 9)} ${app.url}\n`,
+      `  ${pad(app.slug, slugWidth)}  ${pad(appStateLabel(app), 10)} ${app.url}\n`,
     );
   }
   process.stdout.write('\n');
@@ -395,7 +405,13 @@ async function showCommand(
   });
   if (json) emitJson(result);
   else {
-    process.stdout.write(`\n  ${C.bold}${result.app.name}${C.reset}\n  ${result.app.url}\n`);
+    const app = result.app;
+    const hosting = app.hosting_type === 'static'
+      ? 'static · served from storage, no runtime'
+      : app.hosting_type === 'sandbox'
+        ? `server · ${app.always_on ? 'always on' : 'on demand'} · ${app.desired_state} · budget $${app.monthly_budget_usd}/mo`
+        : 'not deployed';
+    process.stdout.write(`\n  ${C.bold}${app.name}${C.reset}\n  ${app.url}\n  ${C.dim}${hosting}${C.reset}\n`);
     for (const deployment of result.deployments) {
       const live =
         deployment.deployment_id === result.app.active_deployment_id

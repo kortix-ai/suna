@@ -12,7 +12,7 @@ import {
 import { and, eq } from 'drizzle-orm';
 import { config } from '../config';
 import type { AppHostingProvider, AppMachineSpec, AppdStatus } from './hosting';
-import { ensureAppRuntimeRunning, handleAppPublicRequest, loadPublicApp } from './public-proxy';
+import { ensureAppRuntimeRunning, handleAppPublicRequest, loadPublicApp, loadPublicAppState } from './public-proxy';
 import { APP_RUNTIME_VERSION, enqueueCurrentAppRuntime } from './deployment-worker';
 
 const CONFIRMATION = 'I_UNDERSTAND_THIS_DELETES_TEST_DATA';
@@ -144,6 +144,23 @@ function effectiveMachine(_provider: string, machine: AppMachineSpec): AppMachin
 describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
   beforeEach(cleanup);
   afterEach(cleanup);
+
+  test('one load returns the active deployment; a static one skips the runtime', async () => {
+    await seedStoppedRuntime();
+    const server = await loadPublicAppState(ROUTE_KEY);
+    expect(server?.deployment?.deploymentId).toBe(DEPLOYMENT_ID);
+    expect(server?.runtime?.runtimeId).toBe(RUNTIME_ID);
+
+    await testDb().update(appDeployments).set({ hostingType: 'static', sourceKind: 'static' })
+      .where(eq(appDeployments.deploymentId, DEPLOYMENT_ID));
+    const staticState = await loadPublicAppState(ROUTE_KEY);
+    expect(staticState?.deployment?.deploymentId).toBe(DEPLOYMENT_ID);
+    expect(staticState?.deployment?.hostingType).toBe('static');
+    expect(staticState?.runtime).toBeNull();
+
+    await testDb().update(projects).set({ metadata: {} }).where(eq(projects.projectId, PROJECT_ID));
+    expect(await loadPublicAppState(ROUTE_KEY)).toBeNull();
+  });
 
   test('public handler rejects an unsigned edge request before loading the App', async () => {
     const previous = process.env.KORTIX_APPS_ALLOW_DIRECT_EDGE;

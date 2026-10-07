@@ -179,7 +179,24 @@ export { appPublicUrl } from './hostnames';
  * Defaults to true so the single-App serializations that have already run the
  * check are not forced to restate it.
  */
-function serializeApp(row: typeof apps.$inferSelect, viewerCanAccess = true) {
+type AppHostingType = 'sandbox' | 'static';
+
+/** The hosting type of each App's active deployment, in one query. */
+async function activeHostingTypes(rows: Array<typeof apps.$inferSelect>): Promise<Map<string, AppHostingType>> {
+  const ids = rows.map((row) => row.activeDeploymentId).filter((id): id is string => !!id);
+  if (ids.length === 0) return new Map();
+  const found = await db.select({ deploymentId: appDeployments.deploymentId, hostingType: appDeployments.hostingType })
+    .from(appDeployments).where(inArray(appDeployments.deploymentId, ids));
+  return new Map(found.map((row) => [row.deploymentId, row.hostingType as AppHostingType]));
+}
+
+/** One App as JSON, with its active deployment's hosting type. */
+async function appJson(row: typeof apps.$inferSelect) {
+  const hosting = await activeHostingTypes([row]);
+  return serializeApp(row, true, row.activeDeploymentId ? hosting.get(row.activeDeploymentId) ?? null : null);
+}
+
+function serializeApp(row: typeof apps.$inferSelect, viewerCanAccess = true, hostingType: AppHostingType | null = null) {
   return {
     app_id: row.appId,
     account_id: row.accountId,
@@ -195,8 +212,12 @@ function serializeApp(row: typeof apps.$inferSelect, viewerCanAccess = true) {
     idle_timeout_seconds: row.idleTimeoutSeconds,
     always_on: row.alwaysOn,
     monthly_budget_usd: Number(row.monthlyBudgetUsd),
+    /** `static`: served from storage, no runtime. `sandbox`: a server App. null: never deployed. */
+    hosting_type: hostingType,
+    /** Ready deployments kept besides the active one (rollback targets). */
+    retained_deployments: config.KORTIX_APPS_RETAINED_DEPLOYMENTS,
     /** A server App's machine running 24/7 for a month at list compute rates. A static App runs none. */
-    estimated_monthly_usd: appMonthlyEstimateUsd(row, config.getDefaultProvider()),
+    estimated_monthly_usd: hostingType === 'static' ? 0 : appMonthlyEstimateUsd(row, config.getDefaultProvider()),
     last_request_at: row.lastRequestAt?.toISOString() ?? null,
     viewer_can_access: viewerCanAccess,
     created_at: row.createdAt.toISOString(),
@@ -341,7 +362,12 @@ export function registerAppsRoutes(): void {
         .orderBy(desc(apps.createdAt));
       const visible = await filterAppsVisibleToUser(rows, loaded.userId);
       const openable = await appsOpenableByUser(visible, loaded.userId);
-      return c.json({ apps: visible.map((row) => serializeApp(row, openable.has(row.appId))) });
+      const hosting = await activeHostingTypes(visible);
+      return c.json({ apps: visible.map((row) => serializeApp(
+        row,
+        openable.has(row.appId),
+        row.activeDeploymentId ? hosting.get(row.activeDeploymentId) ?? null : null,
+      )) });
     },
   );
 
@@ -625,7 +651,7 @@ export function registerAppsRoutes(): void {
       const loaded = await authorizedProject(c, projectId);
       if (loaded instanceof Response) return loaded;
       const row = await visibleApp(projectId, appId, loaded.userId);
-      return row ? c.json(serializeApp(row)) : c.json({ error: 'Not found' }, 404);
+      return row ? c.json(await appJson(row)) : c.json({ error: 'Not found' }, 404);
     },
   );
 
@@ -672,14 +698,14 @@ export function registerAppsRoutes(): void {
       // Warn only when this change touched the run mode, the machine or the budget.
       const costChanged = [body.always_on, body.monthly_budget_usd, body.cpu, body.memory_gb, body.disk_gb]
         .some((value) => value !== undefined);
-      const [active] = costChanged && row.activeDeploymentId
+      const [active] = row.activeDeploymentId
         ? await db.select({ hostingType: appDeployments.hostingType, hostingProvider: appDeployments.hostingProvider })
             .from(appDeployments).where(eq(appDeployments.deploymentId, row.activeDeploymentId)).limit(1)
         : [];
       const warning = costChanged && active?.hostingType !== 'static'
         ? alwaysOnBudgetWarning(row, (active?.hostingProvider as SandboxProviderName | null) ?? config.getDefaultProvider())
         : null;
-      return c.json({ ...serializeApp(row), warnings: warning ? [warning] : [] });
+      return c.json({ ...serializeApp(row, true, (active?.hostingType as AppHostingType | undefined) ?? null), warnings: warning ? [warning] : [] });
     },
   );
 
@@ -986,9 +1012,13 @@ export function registerAppsRoutes(): void {
         const [active] = await db.select({ hostingType: appDeployments.hostingType }).from(appDeployments)
           .where(eq(appDeployments.deploymentId, app.activeDeploymentId)).limit(1);
         if (active?.hostingType === 'static') {
-          // Served from storage: there is no compute to start or stop.
-          const [row] = await db.update(apps).set({ desiredState: action === 'start' ? 'running' : 'stopped', updatedAt: new Date() }).where(eq(apps.appId, appId)).returning();
-          return c.json(serializeApp(row!));
+          // Served from storage: there is no runtime to start or stop. The
+          // static path ignores desired_state, so writing it would only make
+          // the App read "stopped" while it serves. Unpublish = delete the App.
+          return c.json({
+            error: 'A static App has no runtime to start or stop. It serves while it has an active deployment; delete the App to take it offline.',
+            code: 'static_app_no_runtime',
+          }, 409);
         }
         const [row] = await db.update(apps).set({ desiredState: action === 'start' ? 'running' : 'stopped', updatedAt: new Date() }).where(eq(apps.appId, appId)).returning();
         if (action === 'stop') {
@@ -1029,7 +1059,7 @@ export function registerAppsRoutes(): void {
             }, 503);
           }
         }
-        return c.json(serializeApp(row!));
+        return c.json(serializeApp(row!, true, 'sandbox'));
       },
     );
   }
@@ -1105,7 +1135,7 @@ export function registerAppsRoutes(): void {
           await pauseComputeSession(previousRuntime.runtimeId, stoppedAt);
         }
       }
-      return c.json(serializeApp(row!));
+      return c.json(serializeApp(row!, true, deployment.hostingType as AppHostingType));
     },
   );
 }

@@ -11,27 +11,31 @@ import { appWakeSupersededResponse } from './public-proxy-status';
 import { logger } from '../lib/logger';
 const WAKE_LEASE_MS = 2 * 60_000;
 
+/**
+ * One query for the App, its project's `apps` flag and its active deployment.
+ * A static deployment needs nothing more, so a static asset costs one query
+ * (the manifest and blobs are cached per replica). Only a server App reads its
+ * runtime. The App row is never cached: an access change, a rollback and a
+ * delete take effect on the next request on every replica.
+ */
 export async function loadPublicAppState(routeKey: string) {
   const [loaded] = await db
-    .select({ app: apps, projectMetadata: projects.metadata })
+    .select({ app: apps, projectMetadata: projects.metadata, active: appDeployments })
     .from(apps)
     .innerJoin(projects, eq(projects.projectId, apps.projectId))
+    .leftJoin(appDeployments, eq(appDeployments.deploymentId, apps.activeDeploymentId))
     .where(and(eq(apps.routeKey, routeKey), isNull(apps.deletedAt)))
     .limit(1);
-  const app = loaded?.app;
   if (!loaded || !resolveFeatureFlag(loaded.projectMetadata, 'apps')) return null;
-  if (!app) return null;
-  let [deployment] = app.activeDeploymentId
-    ? await db.select().from(appDeployments)
-        .where(eq(appDeployments.deploymentId, app.activeDeploymentId)).limit(1)
-    : [];
+  const app = loaded.app;
+  let deployment = loaded.active ?? undefined;
   if (!deployment) {
     [deployment] = await db.select().from(appDeployments)
       .where(eq(appDeployments.appId, app.appId))
       .orderBy(desc(appDeployments.createdAt))
       .limit(1);
   }
-  const [runtime] = deployment?.status === 'ready'
+  const [runtime] = deployment?.status === 'ready' && deployment.hostingType !== 'static'
     ? await db.select().from(appRuntimes)
         .where(eq(appRuntimes.deploymentId, deployment.deploymentId))
         .orderBy(desc(appRuntimes.createdAt)).limit(1)

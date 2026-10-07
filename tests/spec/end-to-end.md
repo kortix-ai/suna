@@ -1230,13 +1230,19 @@ immutable`; a page navigation to an unknown path → the SPA shell; a missing
 asset → **404**; `If-None-Match` with the ETag → **304**. A redeploy of one
 changed file logs `(1 new, 2 unchanged)` and serves the new page at once.
 `POST /projects/:projectId/apps/:appId/rollback` to v1 → **200** and v1 is
-served (no runtime starts). After 8 deploys the deployment list holds exactly
+served (no runtime starts). `GET /projects/:projectId/apps` lists the App
+with `hosting_type: "static"`, `estimated_monthly_usd: 0` and
+`retained_deployments: 5`. `POST …/start` and `POST …/stop` → **409**
+`static_app_no_runtime`; `kortix apps stop` exits 1 with that explanation,
+`kortix apps ls` prints `static` in the STATE column, and the App keeps
+serving. After 8 deploys the deployment list holds exactly
 v3–v8 `ready` (the active one and the 5 newest others,
 `KORTIX_APPS_RETAINED_DEPLOYMENTS`); v1 and v2 are retired. The local profile
 runs the worker with `KORTIX_APPS_WORKER_ENABLED=static`, so static
 deployments complete while sandbox deployments stay `queued` for APP-7.
 `apps/api/src/apps/static-site.integration.test.ts` proves deduplication,
-range requests, retention's freed files and blob reclaim on PostgreSQL.
+range requests, retention's freed files, blob reclaim, batched build-log
+ordering and the 14-day drop of a failed deployment's build log on PostgreSQL.
 
 ---
 

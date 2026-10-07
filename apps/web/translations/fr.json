@@ -19262,7 +19262,20 @@
       "text6f417aa88601": "Dépenses de la passerelle LLM par source répertoriées",
       "textc96cd610ba08": "Clé fournisseur mutualisée réessayée après la limite d’utilisation",
       "text044ba8a9ae43": "Toujours active",
-      "textb2fceee88a51": "Fonctionne 24 h/24, 7 j/7. Ne s’arrête qu’à son budget mensuel."
+      "textb2fceee88a51": "Fonctionne 24 h/24, 7 j/7. Ne s’arrête qu’à son budget mensuel.",
+      "texted76c66b7a8d": "Une App serveur s'arrête quand son calcul de ce mois atteint le budget. Elle redémarre le mois suivant ou quand vous l'augmentez.",
+      "text89ea53a8d7ac": "Budget ${value0} par mois",
+      "text4972b5f3b4f5": "Budget en USD par mois",
+      "textad954fb2accd": "Budget mis à jour",
+      "text163de9edcec1": "Masquer le journal",
+      "text04957fa46a70": "Conserve {value0} versions précédentes",
+      "textc247593b2c0f": "Budget mensuel",
+      "text80c652c4eeec": "Aucun événement pour l'instant.",
+      "text51f92f318c20": "Tourner 24/7 coûte environ ${value0} par mois aux tarifs de calcul catalogue.",
+      "textaef7de28d529": "Serveur",
+      "text34b66838fe48": "Afficher le journal",
+      "text903b49a91e18": "Site statique",
+      "text245c1e26ba4c": "Le journal n'a pas pu être chargé."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

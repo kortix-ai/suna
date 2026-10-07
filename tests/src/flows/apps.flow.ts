@@ -1066,6 +1066,9 @@ flow(
       "GET /v1/projects/:projectId/apps/:appId/deployments/:deploymentId",
       "GET /v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs",
       "POST /v1/projects/:projectId/apps/:appId/rollback",
+      "GET /v1/projects/:projectId/apps",
+      "POST /v1/projects/:projectId/apps/:appId/start",
+      "POST /v1/projects/:projectId/apps/:appId/stop",
       "DELETE /v1/projects/:projectId/apps/:appId",
     ],
   },
@@ -1168,6 +1171,29 @@ flow(
         rolled.status(200).body().has("$.active_deployment_id", versions[0]);
         const home = await page("/");
         if (!home.text.includes("<title>v1</title>")) throw new Error(`v1 is not served after rollback`);
+      });
+
+      await ctx.step("a static App lists as hosting_type static with no estimate; start and stop answer 409 static_app_no_runtime on the API and the CLI; it keeps serving", async () => {
+        const list = await owner.get("/v1/projects/:projectId/apps", { params: projectParams });
+        list.status(200);
+        const row = (list.json<any>().apps as Array<Record<string, unknown>>).find((app) => app.app_id === appId);
+        if (row?.hosting_type !== "static" || row.estimated_monthly_usd !== 0 || row.retained_deployments !== 5) {
+          throw new Error(`expected hosting_type static, estimate 0, retained 5: ${JSON.stringify(row)}`);
+        }
+        (await owner.post("/v1/projects/:projectId/apps/:appId/start", {}, { params: { ...projectParams, appId } }))
+          .status(409).body().has("$.code", "static_app_no_runtime");
+        (await owner.post("/v1/projects/:projectId/apps/:appId/stop", {}, { params: { ...projectParams, appId } }))
+          .status(409).body().has("$.code", "static_app_no_runtime");
+        const stop = await cli.run(["apps", "stop", appId, "--project", project.id]);
+        if (stop.exitCode !== 1 || !stop.stderr.includes("no runtime to start or stop")) {
+          throw new Error(`kortix apps stop: exit ${stop.exitCode}, stderr ${stop.stderr}`);
+        }
+        const ls = await cli.run(["apps", "ls", "--project", project.id]);
+        if (ls.exitCode !== 0 || !new RegExp(`${slug}\\s+static\\s`).test(ls.stdout)) {
+          throw new Error(`kortix apps ls does not print static: ${ls.stdout}`);
+        }
+        const home = await page("/");
+        if (home.status !== 200 || !home.text.includes("<title>v1</title>")) throw new Error(`not served after stop: ${home.status}`);
       });
 
       await ctx.step("retention: after 8 deploys the App keeps its active deployment and the 5 newest others", async () => {

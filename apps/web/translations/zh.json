@@ -19262,7 +19262,20 @@
       "text6f417aa88601": "已按来源列出 LLM 网关支出",
       "textc96cd610ba08": "在速率限制后重试了共享提供商密钥",
       "text044ba8a9ae43": "始终运行",
-      "textb2fceee88a51": "全天候运行。仅在达到每月预算时停止。"
+      "textb2fceee88a51": "全天候运行。仅在达到每月预算时停止。",
+      "texted76c66b7a8d": "服务器应用在本月算力费用达到预算时停止。下个月或你提高预算后会再次启动。",
+      "text89ea53a8d7ac": "预算每月 ${value0}",
+      "text4972b5f3b4f5": "每月预算（美元）",
+      "textad954fb2accd": "预算已更新",
+      "text163de9edcec1": "隐藏日志",
+      "text04957fa46a70": "保留 {value0} 个早期版本",
+      "textc247593b2c0f": "每月预算",
+      "text80c652c4eeec": "暂无事件。",
+      "text51f92f318c20": "按标价算力费率，全天候运行每月约 ${value0}。",
+      "textaef7de28d529": "服务器",
+      "text34b66838fe48": "显示日志",
+      "text903b49a91e18": "静态站点",
+      "text245c1e26ba4c": "无法加载日志。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

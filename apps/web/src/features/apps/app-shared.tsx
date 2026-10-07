@@ -92,14 +92,16 @@ export function appHost(url: string): string {
  * it is intent, not fact — an App that has never been deployed reports
  * `running` and has no runtime at all. Every surface must therefore read
  * `active_deployment_id` first, and it does so here rather than in each of the
- * three places that used to re-derive it.
+ * three places that used to re-derive it. A static App is live whenever it
+ * has an active deployment (`hosting_type`).
  */
 export function appStatus(
   app: App,
   tI18nComplete: UiTranslator,
 ): { deployed: boolean; live: boolean; label: string; dot: string } {
   const deployed = Boolean(app.active_deployment_id);
-  const live = deployed && app.desired_state === 'running';
+  // A static App has no runtime: it serves whatever `desired_state` says.
+  const live = deployed && (app.desired_state === 'running' || app.hosting_type === 'static');
   return {
     deployed,
     live,
@@ -184,7 +186,7 @@ export function DeployCommand({ code, className }: { code: string; className?: s
         className,
       )}
     >
-      <span aria-hidden className="text-muted-foreground/50 shrink-0 font-mono text-xs select-none">
+      <span aria-hidden className="text-muted-foreground shrink-0 font-mono text-xs select-none">
         $
       </span>
       <code className="text-foreground truncate font-mono text-xs">{code}</code>

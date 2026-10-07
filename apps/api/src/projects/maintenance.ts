@@ -421,7 +421,7 @@ function runMaintenanceSweeps() {
     async () => {
       const retention = await sweepAppRetention().catch((err) => {
         logger.warn('[project-maintenance] App retention failed:', err instanceof Error ? err.message : err);
-        return { apps: 0, retired: 0, siteFilesReleased: 0, artifacts: 0, errors: 1 };
+        return { apps: 0, retired: 0, siteFilesReleased: 0, failedBuildLogLines: 0, artifacts: 0, errors: 1 };
       });
       const images = await reclaimAppDeploymentImages().catch((err) => {
         logger.warn('[project-maintenance] App image reclaim failed:',

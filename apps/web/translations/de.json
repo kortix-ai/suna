@@ -19262,7 +19262,20 @@
       "text6f417aa88601": "LLM-Gateway-Ausgaben nach Quelle aufgelistet",
       "textc96cd610ba08": "Gepoolten Anbieterschlüssel nach Ratenlimit erneut versucht",
       "text044ba8a9ae43": "Immer an",
-      "textb2fceee88a51": "Läuft rund um die Uhr. Stoppt nur bei Erreichen des Monatsbudgets."
+      "textb2fceee88a51": "Läuft rund um die Uhr. Stoppt nur bei Erreichen des Monatsbudgets.",
+      "texted76c66b7a8d": "Eine Server-App stoppt, wenn ihre Rechenkosten in diesem Monat das Budget erreichen. Sie startet im nächsten Monat wieder oder wenn Sie das Budget erhöhen.",
+      "text89ea53a8d7ac": "Budget ${value0} pro Monat",
+      "text4972b5f3b4f5": "Budget in USD pro Monat",
+      "textad954fb2accd": "Budget aktualisiert",
+      "text163de9edcec1": "Log ausblenden",
+      "text04957fa46a70": "Behält {value0} frühere Versionen",
+      "textc247593b2c0f": "Monatsbudget",
+      "text80c652c4eeec": "Noch keine Ereignisse.",
+      "text51f92f318c20": "Ein Betrieb rund um die Uhr kostet zu Listenpreisen etwa ${value0} pro Monat.",
+      "textaef7de28d529": "Server",
+      "text34b66838fe48": "Log anzeigen",
+      "text903b49a91e18": "Statische Website",
+      "text245c1e26ba4c": "Das Log konnte nicht geladen werden."
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

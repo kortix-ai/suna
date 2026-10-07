@@ -19262,7 +19262,20 @@
       "text6f417aa88601": "Gasto de la pasarela de LLM por origen consultado",
       "textc96cd610ba08": "Clave de proveedor compartida reintentada tras el límite de uso",
       "text044ba8a9ae43": "Siempre activa",
-      "textb2fceee88a51": "Funciona 24/7. Solo se detiene al alcanzar su presupuesto mensual."
+      "textb2fceee88a51": "Funciona 24/7. Solo se detiene al alcanzar su presupuesto mensual.",
+      "texted76c66b7a8d": "Una App de servidor se detiene cuando su cómputo de este mes alcanza el presupuesto. Vuelve a arrancar el mes siguiente o cuando lo aumentas.",
+      "text89ea53a8d7ac": "Presupuesto ${value0} al mes",
+      "text4972b5f3b4f5": "Presupuesto en USD al mes",
+      "textad954fb2accd": "Presupuesto actualizado",
+      "text163de9edcec1": "Ocultar registro",
+      "text04957fa46a70": "Conserva {value0} versiones anteriores",
+      "textc247593b2c0f": "Presupuesto mensual",
+      "text80c652c4eeec": "Aún no hay eventos.",
+      "text51f92f318c20": "Funcionar 24/7 cuesta unos ${value0} al mes a tarifas de cómputo de lista.",
+      "textaef7de28d529": "Servidor",
+      "text34b66838fe48": "Mostrar registro",
+      "text903b49a91e18": "Sitio estático",
+      "text245c1e26ba4c": "No se pudo cargar el registro."
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
