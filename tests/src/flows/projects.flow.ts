@@ -4,6 +4,7 @@
 import { ProjectSchema } from "@kortix/api-contract";
 import { flow } from "../core/flow";
 import { waitFor } from "../core/poll";
+import { fundDatabaseAccount } from "../fixtures/database-project";
 
 flow("PROJ-1", { domain: "projects", tags: ["smoke"], routes: ["GET /v1/projects"] }, async (ctx) => {
   await ctx.step("OWNER lists projects; every row matches the contract Project", async () => {
@@ -37,7 +38,10 @@ flow("PROJ-1", { domain: "projects", tags: ["smoke"], routes: ["GET /v1/projects
   });
 });
 
-flow("PROJ-3", { domain: "projects", requires: ["managedGit"], routes: ["POST /v1/projects/provision"] }, async (ctx) => {
+flow("PROJ-3", { domain: "projects", requires: ["managedGit"], routes: ["POST /v1/projects/provision", "GET /v1/projects/managed-git/status"] }, async (ctx) => {
+  await ctx.step("managed-git status reports configured:true on a managed-git target", async () => {
+    (await ctx.client.as(ctx.P.OWNER).get("/v1/projects/managed-git/status")).status(200).body().has("$.configured", true);
+  });
   await ctx.step("managed provision → 201 with repo", async () => {
     const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/provision", { name: ctx.fixtures.name("prov") });
     // 502 can occur transiently when the managed git host is rate-limited/unavailable.
@@ -371,5 +375,68 @@ flow(
       rmSync(work, { recursive: true, force: true });
       await db.end();
     }
+  },
+);
+
+flow(
+  "PROJ-40",
+  { domain: "projects", routes: ["GET /v1/projects/managed-git/status", "POST /v1/projects/provision", "GET /v1/projects"] },
+  async (ctx) => {
+    const owner = ctx.client.as(ctx.P.OWNER);
+    await ctx.step("provision into an account the caller is not a member of → 403", async () => {
+      const foreign = ctx.P.NONMEMBER.accountId;
+      if (!foreign) throw new Error("NONMEMBER fixture has no account id");
+      const r = await owner.post("/v1/projects/provision", { name: ctx.fixtures.name("foreign-acct"), account_id: foreign });
+      r.status(403).body().has("$.message", "You do not have access to this account");
+    });
+    const status = await owner.get("/v1/projects/managed-git/status");
+    status.status(200);
+    const { configured, provider } = status.json<{ configured: boolean; provider: string }>();
+    if (!configured) {
+      await ctx.step("managed git unconfigured → POST /provision 503 naming the provider; no project registered", async () => {
+        const name = ctx.fixtures.name("unconfigured");
+        const r = await owner.post("/v1/projects/provision", { name });
+        r.status(503).body().has("$.error", `Managed git provider "${provider}" is not configured on this server`);
+        const list = await owner.get("/v1/projects");
+        list.status(200);
+        if (list.json<Array<{ name: string }>>().some((project) => project.name === name)) throw new Error("a refused provision registered a project");
+      });
+    }
+  },
+);
+
+// PROJ-41 — the per-account project cap on POST /v1/projects, which calls the
+// same quota check as /provision before any GitHub lookup. PROJ-18 owns the
+// deployed cap through /provision; the local profile enforces billing itself.
+flow(
+  "PROJ-41",
+  { domain: "projects", requires: ["database"], routes: ["POST /v1/projects", "DELETE /v1/projects/:projectId"] },
+  async (ctx) => {
+    if (ctx.env.target !== "local") return;
+    const team = await ctx.fixtures.team();
+    const first = await team.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const create = () =>
+      owner.post("/v1/projects", { account_id: team.id, name: ctx.fixtures.name("quota-probe"), repo_url: "https://github.com/example-org/quota-probe" });
+    await ctx.step("free team account at its 1-project cap → 403 project_limit_reached {limit:1,count:1}", async () => {
+      (await create())
+        .status(403)
+        .body()
+        .has("$.code", "project_limit_reached")
+        .has("$.limit", 1)
+        .has("$.count", 1)
+        .has("$.error", "Free accounts are limited to 1 project. Upgrade to a paid plan to create more.");
+    });
+    await ctx.step("archiving the one project frees the slot → the create passes the cap and stops at the GitHub App check (409)", async () => {
+      (await owner.del("/v1/projects/:projectId", { params: { projectId: first.id } })).status(200);
+      const r = await create();
+      r.status(409);
+      if (r.json<any>()?.code === "project_limit_reached") throw new Error("an archived project still consumed the slot");
+    });
+    await ctx.step("a paid plan lifts the free cap → 409 at the GitHub App check, not 403", async () => {
+      await team.project();
+      await fundDatabaseAccount(ctx.env, team.id);
+      (await create()).status(409);
+    });
   },
 );
