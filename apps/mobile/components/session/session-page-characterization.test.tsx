@@ -1552,9 +1552,9 @@ describe('SessionPage render work', () => {
     expect(overlay).toBeTruthy();
     expect(overlay.props.style).toMatchObject({ top: 0, bottom: 0 });
     expect(overlay.props.pointerEvents).toBe('box-none');
-    // No colour around the composer: from the composer up to the overlay,
-    // nothing paints a fill, and the overlay holds no gradient. The chat shows
-    // everywhere but under the composer card, which keeps its own surface.
+    // No fill around the composer: from the composer up to the overlay,
+    // nothing paints a background. The only backing is the project drawer's
+    // bottom fade, which takes no touches.
     const block = byTestID('session-composer-block');
     expect(ancestors(composer)).toContain(block);
     for (const node of ancestors(composer).slice(0, ancestors(composer).indexOf(overlay) + 1)) {
@@ -1562,7 +1562,12 @@ describe('SessionPage render work', () => {
     }
     // Counts, not nodes: a failing diff of test instances prints for minutes.
     const gradients = tree!.root.findAll((node) => typeof node.type === 'function' && Array.isArray(node.props.colors));
-    expect(gradients.filter((node) => ancestors(node).includes(overlay)).length).toBe(0);
+    const inOverlay = gradients.filter((node) => ancestors(node).includes(overlay));
+    expect(inOverlay.length).toBe(1);
+    expect(inOverlay[0].props.locations).toEqual([0, 0.45, 1]);
+    const fade = byTestID('session-composer-fade');
+    expect(ancestors(inOverlay[0])).toContain(fade);
+    expect(fade.props.pointerEvents).toBe('none');
 
     // The list's end padding: the measured composer area plus the inset.
     const endPadding = () => byTestID('session-list-end-padding').props.style.height;
@@ -1572,6 +1577,9 @@ describe('SessionPage render work', () => {
       });
     await layoutComposerArea(150.4);
     expect(endPadding()).toBe(184);
+    // The fade covers the same height plus 36pt above the composer.
+    const fadeHeight = () => flat(byTestID('session-composer-fade').props.style).reduce((h, st) => st.height ?? h, 0);
+    expect(fadeHeight()).toBe(220);
     // The room counts the covered height: 600 − 184 − 200 − 24 = 192.
     await layoutTranscript(576, [200]);
     expect(spacerHeight()).toBe(192);
@@ -1586,6 +1594,7 @@ describe('SessionPage render work', () => {
     expect(endPadding()).toBe(207);
     keyboardProgress.value = 1;
     expect(endPadding()).toBe(190);
+    expect(fadeHeight()).toBe(226);
   });
 
   test('while the keyboard moves a shrinking room waits for it to stop, a growing room commits at once', async () => {

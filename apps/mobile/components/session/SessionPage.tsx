@@ -20,6 +20,7 @@ import {
   Easing,
   Platform,
   RefreshControl,
+  StyleSheet,
   type LayoutChangeEvent,
   type NativeSyntheticEvent,
   type NativeScrollEvent,
@@ -72,6 +73,7 @@ import { SessionChangeRequests } from '@/components/session/SessionChangeRequest
 import { requestPushPermissionOnce } from '@/lib/notifications/registration';
 import { Icon } from '@/components/ui/icon';
 import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import {
   addOptimisticMessage,
@@ -301,6 +303,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const pageBackground = isDark ? THEME.dark.background : THEME.light.background;
   const insets = useSafeAreaInsets();
   // Top inset for the message list. The chrome is the floating menu button
   // only (the static header bar is gone, COR-140): the list would start under
@@ -342,6 +345,11 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   bottomInsetRef.current = bottomInset;
   const endPaddingStyle = useAnimatedStyle(() => ({
     height: composerAreaHeight.value + bottomInset * (1 - keyboardProgress.value),
+  }));
+  // The project drawer's bottom fade: from COMPOSER_FADE_ABOVE over the
+  // composer down to the screen edge, following the composer like the padding.
+  const composerFadeStyle = useAnimatedStyle(() => ({
+    height: composerAreaHeight.value + bottomInset * (1 - keyboardProgress.value) + COMPOSER_FADE_ABOVE,
   }));
   /** The end padding as the room reads it (the UI thread's last value). */
   const endPaddingNow = useCallback(
@@ -2149,14 +2157,20 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             on the keyboard. `box-none`: taps reach the list everywhere but
             on the composer. */}
         <View pointerEvents="box-none" style={COMPOSER_OVERLAY}>
+        <Reanimated.View testID="session-composer-fade" pointerEvents="none" style={[COMPOSER_FADE, composerFadeStyle]}>
+          <LinearGradient
+            colors={[withAlpha(pageBackground, 0), withAlpha(pageBackground, 0.85), withAlpha(pageBackground, 1)]}
+            locations={[0, 0.45, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+        </Reanimated.View>
         <View pointerEvents="box-none" style={FILL}>
         {heroMounted ? <FreshSessionHero opacity={heroOpacity} visible={showFreshHero} /> : null}
 
         <ScrollToBottomButton visible={showScrollButton} onPress={jumpToEnd} />
         </View>
 
-      {/* No fill: the chat shows in the gutters, the gaps and under the home
-          indicator. Only the composer and question cards paint a surface. */}
+      {/* No fill of its own: the fade behind it is the project drawer's. */}
       <Reanimated.View testID="session-composer-block" style={bottomAreaStyle}>
       {/* The composer area, without the inset: the list's end padding. */}
       <View testID="session-composer-area" onLayout={handleComposerAreaLayout}>
@@ -2259,6 +2273,9 @@ export const SessionPage = React.memo(SessionPageImpl);
 const FILL = { flex: 1 } as const;
 /** Fills its parent: the overlay over the message area. */
 const COMPOSER_OVERLAY = { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 } as const;
+/** The project drawer's bottom fade (`ProjectLeftDrawer`): 36pt over the controls, to the screen edge. */
+const COMPOSER_FADE = { position: 'absolute', right: 0, bottom: 0, left: 0 } as const;
+const COMPOSER_FADE_ABOVE = 36;
 
 /**
  * The list's `KeyboardGestureArea`, offset by the composer's height. The height
