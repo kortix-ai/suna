@@ -179,6 +179,36 @@ describe('matchRule', () => {
     expect(matchRule(wild, { host: 'evil-anthropic.com', method: 'GET', path: '/' })).toBeNull();
   });
 
+  test('THE DEPTH ATTACK: a single-label wildcard matches exactly ONE deeper label', () => {
+    // `*.anthropic.com` covers one label — the TLS-certificate convention a
+    // policy author eyeballs. A suffix match of any depth also admits
+    // `a.b.anthropic.com`, and on a delegated or multi-tenant zone those
+    // deeper labels are DNS the policy author never declared.
+    const wild = policy([{ host: '*.anthropic.com' }]);
+    expect(matchRule(wild, { host: 'api.anthropic.com', method: 'GET', path: '/' })).toBeTruthy();
+    expect(matchRule(wild, { host: 'a.b.anthropic.com', method: 'GET', path: '/' })).toBeNull();
+  });
+
+  test('a stored one-label wildcard policy admits one label and refuses two', () => {
+    // The confirmed report, through the real stored-policy path: the parser
+    // accepts `*.example-platform.com`, so the matcher is the only gate, and
+    // it must keep admitting the one-label host the policy names.
+    const parsed = parseEgressPolicy({
+      rules: [{ host: '*.example-platform.com' }],
+      inject: { kind: 'header', name: 'x-api-key' },
+    });
+    if (!parsed.ok) throw new Error('a one-label wildcard policy must parse');
+    expect(
+      matchRule(parsed.policy, { host: 'tenant.example-platform.com', method: 'POST', path: '/' }),
+    ).toBeTruthy();
+    expect(
+      matchRule(
+        parsed.policy,
+        { host: 'anything.tenant.example-platform.com', method: 'POST', path: '/' },
+      ),
+    ).toBeNull();
+  });
+
   test('a wildcard matches a subdomain but NOT the apex', () => {
     const wild = policy([{ host: '*.anthropic.com' }]);
     expect(matchRule(wild, { host: 'api.anthropic.com', method: 'GET', path: '/' })).toBeTruthy();
