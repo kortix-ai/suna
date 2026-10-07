@@ -6,14 +6,14 @@
 import type { Context, MiddlewareHandler } from 'hono';
 import { ssoRequiredFor } from '../iam/authorize';
 import { buildDenialError } from '../iam/denial-message';
+import { isUuid } from '../shared/validate';
 import { actorOf } from './actor';
-
-const ACCOUNT_PATH = /^\/v1\/accounts\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\/|$)/i;
 
 export function accountSsoGate(): MiddlewareHandler {
   return async (c: Context, next) => {
-    const accountId = ACCOUNT_PATH.exec(c.req.path)?.[1];
-    if (accountId && (await ssoRequiredFor(await actorOf(c, accountId)))) {
+    // `/v1/accounts/<accountId>/...`
+    const accountId = c.req.path.split('/')[3];
+    if (accountId && isUuid(accountId) && (await ssoRequiredFor(await actorOf(c, accountId)))) {
       throw buildDenialError('account.read', 'sso_required');
     }
     await next();

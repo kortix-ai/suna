@@ -661,7 +661,7 @@ async function resolvePrincipalUncached(
           SELECT 1
             FROM kortix.account_sso_providers enforcing
             JOIN auth.users person ON person.id::text = ${pid}
-           WHERE enforcing.account_id = ${accounts.accountId}
+           WHERE enforcing.account_id = ${qualifiedColumn(accounts.accountId)}
              AND enforcing.enforce_sso
              AND enforcing.domain_verified_at IS NOT NULL
              AND enforcing.primary_domain = split_part(lower(trim(person.email)), '@', 2)
