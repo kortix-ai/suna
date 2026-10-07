@@ -160,6 +160,7 @@ withDb('static App hosting', () => {
       'index.html': '<!doctype html><title>shell</title>',
       'assets/index-D8j1YYcB.js': 'console.log("hello")',
       'video.bin': '0123456789',
+      'big.js': 'x'.repeat(4096),
     });
     roots.push(root);
     await publishStaticSite({ deploymentId: dep(1), accountId: ACCOUNT_ID, root, storage });
@@ -197,6 +198,15 @@ withDb('static App hosting', () => {
     expect(head.status).toBe(200);
     expect(head.headers.get('content-length')).toBe(String('console.log("hello")'.length));
     expect(await head.text()).toBe('');
+
+    // Compression: Brotli when accepted, decoding to the exact stored bytes.
+    const big = await serve('/big.js', { headers: { 'accept-encoding': 'br, gzip' } });
+    expect(big.headers.get('content-encoding')).toBe('br');
+    expect(big.headers.get('vary')).toBe('accept-encoding');
+    const { brotliDecompressSync } = await import('node:zlib');
+    expect(brotliDecompressSync(Buffer.from(await big.arrayBuffer())).toString()).toBe('x'.repeat(4096));
+    expect((await serve('/big.js')).headers.get('content-encoding')).toBeNull();
+    expect((await serve('/', { headers: { 'if-none-match': etag.replace(/^W\//, '') } })).status).toBe(304);
 
     const partial = await serve('/video.bin', { headers: { range: 'bytes=2-5' } });
     expect(partial.status).toBe(206);

@@ -19259,7 +19259,9 @@
       "textc959682e0398": "Visualizou os dispositivos conectados",
       "text976811d9540a": "Desconectou um dispositivo",
       "text6f417aa88601": "Gastos do gateway LLM por origem listados",
-      "textc96cd610ba08": "Chave de provedor compartilhada tentada novamente após o limite de uso"
+      "textc96cd610ba08": "Chave de provedor compartilhada tentada novamente após o limite de uso",
+      "text044ba8a9ae43": "Sempre ativa",
+      "textb2fceee88a51": "Funciona 24/7. Só para ao atingir o orçamento mensal."
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

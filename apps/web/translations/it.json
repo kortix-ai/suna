@@ -19259,7 +19259,9 @@
       "textc959682e0398": "Ha visualizzato i dispositivi connessi",
       "text976811d9540a": "Ha disconnesso un dispositivo",
       "text6f417aa88601": "Spesa del gateway LLM per origine elencata",
-      "textc96cd610ba08": "Chiave del provider condivisa riprovata dopo il limite di utilizzo"
+      "textc96cd610ba08": "Chiave del provider condivisa riprovata dopo il limite di utilizzo",
+      "text044ba8a9ae43": "Sempre attiva",
+      "textb2fceee88a51": "Funziona 24/7. Si ferma solo al raggiungimento del budget mensile."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

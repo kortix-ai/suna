@@ -227,6 +227,9 @@ const envSchema = z.object({
   // Ready deployments an App keeps besides its active one (rollback targets).
   // Older ones are retired: runtime, image, files and archive are freed.
   KORTIX_APPS_RETAINED_DEPLOYMENTS: optInt(5),
+  // New server Apps run 24/7 unless the request says otherwise. Existing Apps
+  // keep their own setting. Static Apps have no runtime and ignore it.
+  KORTIX_APPS_DEFAULT_ALWAYS_ON: optBoolTrue,
   // Global background-worker switch. API-only and migration-shadow deployments
   // keep request handling active while disabling every recurring write loop.
   KORTIX_WORKERS_ENABLED: optBoolTrue,
@@ -1221,6 +1224,7 @@ export const config = {
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
   KORTIX_APPS_STATIC_HOSTING: env.KORTIX_APPS_STATIC_HOSTING,
   KORTIX_APPS_RETAINED_DEPLOYMENTS: Math.max(1, env.KORTIX_APPS_RETAINED_DEPLOYMENTS),
+  KORTIX_APPS_DEFAULT_ALWAYS_ON: env.KORTIX_APPS_DEFAULT_ALWAYS_ON,
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: env.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
   KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: env.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS

@@ -19270,7 +19270,9 @@
       "textc959682e0398": "Viewed signed-in devices",
       "text976811d9540a": "Signed a device out",
       "text6f417aa88601": "Listed LLM gateway spend by source",
-      "textc96cd610ba08": "Retried pooled provider key after rate limit"
+      "textc96cd610ba08": "Retried pooled provider key after rate limit",
+      "text044ba8a9ae43": "Always on",
+      "textb2fceee88a51": "Runs 24/7. Stops only at its monthly budget."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

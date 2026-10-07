@@ -862,6 +862,13 @@
       "when": 1791365887483,
       "tag": "20261007093807_apps_static_hosting",
       "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1791369023739,
+      "tag": "20261007103023_apps_always_on",
+      "breakpoints": true
     }
   ]
 }

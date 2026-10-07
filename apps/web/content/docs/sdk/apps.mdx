@@ -82,8 +82,11 @@ console.log(app.url, deployment.status); // https://…apps.kortix.com  queued
 ```
 
 `create` accepts the machine and budget fields too: `cpu`, `memory_gb`,
-`disk_gb`, `idle_timeout_seconds`, and `monthly_budget_usd`. Omit them for the
-defaults.
+`disk_gb`, `idle_timeout_seconds`, `always_on`, and `monthly_budget_usd`. Omit
+them for the defaults. `always_on: true` runs a server App 24/7 (cron jobs,
+workers, websockets); `false` stops it after `idle_timeout_seconds` and wakes it
+on the next request. Both stop at the monthly budget. A static App has no
+runtime and ignores both.
 
 Wait for the deployment by polling its status:
 
@@ -260,8 +263,8 @@ Every type below is exported from `@kortix/sdk`.
 
 | Type | What it holds |
 |---|---|
-| `App` | Identity, `url`, `access_mode`, `access_revision`, `desired_state`, `active_deployment_id`, `machine`, `idle_timeout_seconds`, `monthly_budget_usd`, `last_request_at`, `viewer_can_access` |
-| `AppDeployment` | `version`, `status`, `source_kind`, `hosting_provider`, `runtime_spec`, `build_spec`, `error_code`, `attempt_count`, `created_by`, `actor_type`, `source_session_id` |
+| `App` | Identity, `url`, `access_mode`, `access_revision`, `desired_state`, `active_deployment_id`, `machine`, `idle_timeout_seconds`, `always_on`, `monthly_budget_usd`, `last_request_at`, `viewer_can_access` |
+| `AppDeployment` | `version`, `status`, `source_kind`, `hosting_type` (`static`: served from storage, no runtime; `sandbox`: its own machine), `hosting_provider`, `runtime_spec`, `build_spec`, `error_code`, `attempt_count`, `created_by`, `actor_type`, `source_session_id` |
 | `AppDeploymentDetail` | One `deployment` plus its `events` |
 | `AppAccessConfig` | `mode`, `revision`, `member_ids`, `group_ids`, `password_configured` |
 | `AppAccessMode` | `'private' \| 'project' \| 'restricted' \| 'public' \| 'password'` |

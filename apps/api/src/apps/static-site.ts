@@ -23,6 +23,7 @@
 import { appSiteBlobs, appSiteFiles } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
+import { brotliCompressSync, constants as zlib, gzipSync } from 'node:zlib';
 import { lstat, readdir, readFile } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 import { config } from '../config';
@@ -321,6 +322,36 @@ export function resetStaticSiteCaches(): void {
   manifests.clear();
   blobs.clear();
   blobBytes = 0;
+  encoded.clear();
+}
+
+const COMPRESSIBLE = /^(text\/|application\/(javascript|json|xml|wasm|manifest\+json)|image\/svg\+xml)/;
+const MIN_COMPRESS_BYTES = 1024;
+// replica-local: compressed bytes of a content-addressed blob; never stale.
+const encoded = new Map<string, Uint8Array>();
+const ENCODED_CACHE_ENTRIES = 2_000;
+
+/** The best encoding the client accepts for this file, or null for identity. */
+export function chooseEncoding(acceptEncoding: string | null, contentType: string, size: number): 'br' | 'gzip' | null {
+  if (size < MIN_COMPRESS_BYTES || !COMPRESSIBLE.test(contentType)) return null;
+  const accepted = (acceptEncoding ?? '').toLowerCase();
+  if (/\bbr\b/.test(accepted)) return 'br';
+  if (/\bgzip\b/.test(accepted)) return 'gzip';
+  return null;
+}
+
+function encode(sha256: string, encoding: 'br' | 'gzip', bytes: Uint8Array): Uint8Array {
+  const key = `${encoding}:${sha256}`;
+  const hit = encoded.get(key);
+  if (hit) return hit;
+  const out = encoding === 'br'
+    ? new Uint8Array(brotliCompressSync(bytes, { params: { [zlib.BROTLI_PARAM_QUALITY]: 5 } }))
+    : new Uint8Array(gzipSync(bytes, { level: 6 }));
+  if (bytes.byteLength <= BLOB_CACHE_ENTRY_BYTES) {
+    if (encoded.size >= ENCODED_CACHE_ENTRIES) encoded.delete(encoded.keys().next().value!);
+    encoded.set(key, out);
+  }
+  return out;
 }
 
 /** Answers one request for a static deployment. The caller already passed the access gate. */
@@ -346,7 +377,8 @@ export async function serveStaticDeployment(input: {
     return new Response('Not found', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } });
   }
   const file = manifest.get(resolved.path)!;
-  const etag = `"${file.sha256}"`;
+  // Weak: the identity, gzip and Brotli bodies share it (RFC 9110 §8.8.1).
+  const etag = `W/"${file.sha256}"`;
   const headers = appPublicResponseHeaders(new Headers({
     'content-type': file.contentType,
     'cache-control': siteCacheControl(resolved.path, input.publicApp),
@@ -354,7 +386,8 @@ export async function serveStaticDeployment(input: {
     'accept-ranges': 'bytes',
     'x-content-type-options': 'nosniff',
   }));
-  if (resolved.status === 200 && (request.headers.get('if-none-match') ?? '').split(/\s*,\s*/).includes(etag)) {
+  const ifNoneMatch = (request.headers.get('if-none-match') ?? '').split(/\s*,\s*/).map((tag) => tag.replace(/^W\//, ''));
+  if (resolved.status === 200 && ifNoneMatch.includes(`"${file.sha256}"`)) {
     return new Response(null, { status: 304, headers });
   }
   const bytes = await readBlob(input.storage ?? supabaseSiteStorage, blobKey(input.accountId, file.sha256));
@@ -366,7 +399,11 @@ export async function serveStaticDeployment(input: {
     headers.set('content-range', `bytes */${bytes.byteLength}`);
     return new Response(null, { status: 416, headers });
   }
-  const body = range ? bytes.subarray(range.start, range.end + 1) : bytes;
+  // A range is served from the identity bytes; anything else may be compressed.
+  const encoding = range ? null : chooseEncoding(request.headers.get('accept-encoding'), file.contentType, bytes.byteLength);
+  headers.set('vary', 'accept-encoding');
+  if (encoding) headers.set('content-encoding', encoding);
+  const body = range ? bytes.subarray(range.start, range.end + 1) : encoding ? encode(file.sha256, encoding, bytes) : bytes;
   if (range) headers.set('content-range', `bytes ${range.start}-${range.end}/${bytes.byteLength}`);
   headers.set('content-length', String(body.byteLength));
   return new Response(request.method === 'HEAD' ? null : (body as Uint8Array<ArrayBuffer>), {

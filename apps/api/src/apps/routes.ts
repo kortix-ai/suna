@@ -192,6 +192,7 @@ function serializeApp(row: typeof apps.$inferSelect, viewerCanAccess = true) {
     active_deployment_id: row.activeDeploymentId,
     machine: { cpu: row.cpuCores, memory_gb: row.memoryGb, disk_gb: row.diskGb },
     idle_timeout_seconds: row.idleTimeoutSeconds,
+    always_on: row.alwaysOn,
     monthly_budget_usd: Number(row.monthlyBudgetUsd),
     last_request_at: row.lastRequestAt?.toISOString() ?? null,
     viewer_can_access: viewerCanAccess,
@@ -496,6 +497,7 @@ export function registerAppsRoutes(): void {
           memory_gb: MemorySchema.default(2),
           disk_gb: DiskSchema.default(10),
           idle_timeout_seconds: z.number().int().min(120).max(86400).default(300),
+          always_on: z.boolean().optional(),
           monthly_budget_usd: z.number().min(0).max(100000).default(5),
         }) } } },
       },
@@ -523,6 +525,7 @@ export function registerAppsRoutes(): void {
           routeKey: randomBytes(8).toString('hex'), createdBy: loaded.userId,
           cpuCores: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb,
           idleTimeoutSeconds: body.idle_timeout_seconds,
+          alwaysOn: body.always_on ?? config.KORTIX_APPS_DEFAULT_ALWAYS_ON,
           monthlyBudgetUsd: body.monthly_budget_usd.toFixed(2),
         }).returning();
         return c.json(serializeApp(row!), 201);
@@ -630,7 +633,7 @@ export function registerAppsRoutes(): void {
         body: { content: { 'application/json': { schema: z.object({
           name: z.string().min(1).max(200).optional(), cpu: CpuSchema.optional(),
           memory_gb: MemorySchema.optional(), disk_gb: DiskSchema.optional(),
-          idle_timeout_seconds: z.number().int().min(120).max(86400).optional(), monthly_budget_usd: z.number().min(0).max(100000).optional(),
+          idle_timeout_seconds: z.number().int().min(120).max(86400).optional(), always_on: z.boolean().optional(), monthly_budget_usd: z.number().min(0).max(100000).optional(),
         }) } } },
       },
       responses: { 200: json(AppObject, 'App'), ...errors(400, 403, 404) },
@@ -657,6 +660,7 @@ export function registerAppsRoutes(): void {
         ...(body.memory_gb !== undefined ? { memoryGb: body.memory_gb } : {}),
         ...(body.disk_gb !== undefined ? { diskGb: body.disk_gb } : {}),
         ...(body.idle_timeout_seconds !== undefined ? { idleTimeoutSeconds: body.idle_timeout_seconds } : {}),
+        ...(body.always_on !== undefined ? { alwaysOn: body.always_on } : {}),
         ...(body.monthly_budget_usd !== undefined ? { monthlyBudgetUsd: body.monthly_budget_usd.toFixed(2) } : {}),
         updatedAt: new Date(),
       }).where(and(eq(apps.appId, appId), eq(apps.projectId, projectId), isNull(apps.deletedAt))).returning();

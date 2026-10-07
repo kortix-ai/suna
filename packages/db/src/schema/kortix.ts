@@ -4106,6 +4106,12 @@ export const apps = kortixSchema.table(
     diskGb: integer('disk_gb').default(10).notNull(),
     idleTimeoutSeconds: integer('idle_timeout_seconds').default(300).notNull(),
     /**
+     * Run 24/7 instead of stopping after `idle_timeout_seconds`: kept running
+     * by maintenance (cron jobs, workers and websockets keep working), still
+     * capped by `monthly_budget_usd`. A static App has no runtime and ignores it.
+     */
+    alwaysOn: boolean('always_on').default(false).notNull(),
+    /**
      * What the Apps gate hands this App about the person looking at it.
      *
      * `identity` (default) — a signed viewer header on every request plus a

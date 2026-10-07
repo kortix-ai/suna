@@ -17,6 +17,35 @@ import { serveStaticDeployment } from './static-site';
 const ACTIVITY_LEASE_MS = 60_000;
 type LoadedApp = Omit<NonNullable<Awaited<ReturnType<typeof loadPublicApp>>>, 'agentPrincipal'>;
 
+const ACTIVITY_WRITE_EVERY_MS = 10_000;
+// replica-local: a write throttle only. Each replica records a runtime's
+// activity at most once per window; the lease it writes (60 s) outlives the
+// window, so a busy App never looks idle, whichever replica served it.
+const lastActivityWrite = new Map<string, number>();
+
+/**
+ * Mark an App active. Throttled to one write set per runtime per 10 s: a
+ * request used to cost three writes up front and one more to clear its lease
+ * after the response. The lease now simply expires, so the idle reaper sees an
+ * App go idle at most 60 s after its last request.
+ */
+async function recordAppActivity(app: LoadedApp['app'], runtimeId: string, now: Date): Promise<void> {
+  const last = lastActivityWrite.get(runtimeId) ?? 0;
+  if (now.getTime() - last < ACTIVITY_WRITE_EVERY_MS) return;
+  if (lastActivityWrite.size > 10_000) lastActivityWrite.clear();
+  lastActivityWrite.set(runtimeId, now.getTime());
+  await Promise.all([
+    db.update(apps).set({ lastRequestAt: now, updatedAt: now }).where(eq(apps.appId, app.appId)),
+    db.update(appRuntimes).set({
+      lastRequestAt: now,
+      activityLeaseUntil: new Date(now.getTime() + ACTIVITY_LEASE_MS),
+      idleDeadlineAt: new Date(now.getTime() + app.idleTimeoutSeconds * 1000),
+      updatedAt: now,
+    }).where(eq(appRuntimes.runtimeId, runtimeId)),
+    markComputeSessionAlive(runtimeId, now),
+  ]);
+}
+
 export async function handleAppPublicRequest(request: Request): Promise<Response | null> {
   const url = new URL(request.url);
   const matched = resolveAppRequest(request, url);
@@ -96,18 +125,7 @@ async function proxyRunningApp(
     }
     return appPublicUnavailableResponse(request, loaded.app);
   }
-  const now = new Date();
-  const leaseUntil = new Date(now.getTime() + ACTIVITY_LEASE_MS);
-  await Promise.all([
-    db.update(apps).set({ lastRequestAt: now, updatedAt: now }).where(eq(apps.appId, loaded.app.appId)),
-    db.update(appRuntimes).set({
-      lastRequestAt: now,
-      activityLeaseUntil: leaseUntil,
-      idleDeadlineAt: new Date(now.getTime() + loaded.app.idleTimeoutSeconds * 1000),
-      updatedAt: now,
-    }).where(eq(appRuntimes.runtimeId, runtime.runtimeId)),
-    markComputeSessionAlive(runtime.runtimeId, now),
-  ]);
+  await recordAppActivity(loaded.app, runtime.runtimeId, new Date());
 
   const replayableRequest = request.method === 'GET' || request.method === 'HEAD';
   const fetchUpstream = async () => {
@@ -221,8 +239,6 @@ async function respondFromUpstream(
     responseHeaders.delete(name);
   }
   if (!upstream.body || request.method === 'HEAD') {
-    await db.update(appRuntimes).set({ activityLeaseUntil: null, updatedAt: new Date() })
-      .where(eq(appRuntimes.runtimeId, runtime.runtimeId));
     return new Response(null, { status: upstream.status, statusText: upstream.statusText, headers: responseHeaders });
   }
 
@@ -244,11 +260,7 @@ async function respondFromUpstream(
     // already owns that failure, so consume it instead of emitting an
     // unhandled rejection from this fire-and-forget stream.
     .catch(() => {})
-    .finally(() => {
-      clearInterval(renew);
-      void db.update(appRuntimes).set({ activityLeaseUntil: null, updatedAt: new Date() })
-        .where(eq(appRuntimes.runtimeId, runtime.runtimeId));
-    });
+    .finally(() => clearInterval(renew));
   return new Response(stream.readable, {
     status: upstream.status,
     statusText: upstream.statusText,

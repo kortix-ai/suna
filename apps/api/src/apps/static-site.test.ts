@@ -90,3 +90,15 @@ describe('siteContentType', () => {
     expect(siteContentType('blob.unknownext')).toBe('application/octet-stream');
   });
 });
+
+describe('chooseEncoding', () => {
+  test('Brotli first, then gzip; small files and binaries stay identity', async () => {
+    const { chooseEncoding } = await import('./static-site');
+    expect(chooseEncoding('gzip, deflate, br', 'text/javascript; charset=utf-8', 5000)).toBe('br');
+    expect(chooseEncoding('gzip', 'text/html; charset=utf-8', 5000)).toBe('gzip');
+    expect(chooseEncoding('gzip, br', 'image/svg+xml', 5000)).toBe('br');
+    expect(chooseEncoding('gzip, br', 'image/png', 5000)).toBeNull();
+    expect(chooseEncoding('gzip, br', 'text/css', 200)).toBeNull();
+    expect(chooseEncoding(null, 'text/css', 5000)).toBeNull();
+  });
+});

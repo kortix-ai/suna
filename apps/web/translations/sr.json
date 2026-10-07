@@ -19259,7 +19259,9 @@
       "textc959682e0398": "Pregledao prijavljene uređaje",
       "text976811d9540a": "Odjavio uređaj",
       "text6f417aa88601": "Потрошња LLM гејтвеја по извору излистана",
-      "textc96cd610ba08": "Ponovo pokušan deljeni ključ provajdera nakon ograničenja korišćenja"
+      "textc96cd610ba08": "Ponovo pokušan deljeni ključ provajdera nakon ograničenja korišćenja",
+      "text044ba8a9ae43": "Uvek uključena",
+      "textb2fceee88a51": "Radi 24/7. Zaustavlja se samo kad dostigne mesečni budžet."
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

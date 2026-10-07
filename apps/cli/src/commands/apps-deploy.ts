@@ -406,6 +406,7 @@ export async function provisionDeployApp(
       ...(manifestBlock?.idle_timeout_seconds !== undefined
         ? { idle_timeout_seconds: manifestBlock.idle_timeout_seconds }
         : {}),
+      ...(manifestBlock?.always_on !== undefined ? { always_on: manifestBlock.always_on } : {}),
       ...(manifestBlock?.monthly_budget_usd !== undefined
         ? { monthly_budget_usd: manifestBlock.monthly_budget_usd }
         : {}),

@@ -765,6 +765,7 @@ async function provisionDeploymentRuntime(input: {
     name: `app-${context.app.routeKey}-v${context.deployment.version}`,
     snapshotName,
     machine: requestedMachine,
+    alwaysOn: context.app.alwaysOn,
     // The App verifies `x-kortix-app-viewer` with this. Derived per App, so
     // it is not the platform secret and rotating the platform secret rotates
     // every App's. `KORTIX_*` is reserved from user-supplied env, so this

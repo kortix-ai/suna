@@ -46,6 +46,8 @@ export interface StartAppRuntimeInput {
   snapshotName: string;
   machine: AppMachineSpec;
   envVars?: Record<string, string>;
+  /** An always-on App: the provider must never auto-stop it (Platinum: auto_stop_minutes 0). */
+  alwaysOn?: boolean;
 }
 
 export interface AppRuntimeHandle extends ProvisionResult {
@@ -137,6 +139,8 @@ export class AppHostingProvider {
       resourceSpec: input.machine,
       publishedPorts: [APP_CONTROL_PORT, APP_INGRESS_PORT],
       envVars: { ...input.envVars, KORTIX_APPD_TOKEN: token },
+      // On-demand Apps keep the provider's idle backstop; always-on ones opt out of it.
+      ...(input.alwaysOn ? { autoStopInterval: 0 } : {}),
     });
     try {
       await provider.ensureAppRuntimeStarted(result.externalId);

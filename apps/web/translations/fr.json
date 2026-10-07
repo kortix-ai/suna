@@ -19259,7 +19259,9 @@
       "textc959682e0398": "A consulté les appareils connectés",
       "text976811d9540a": "A déconnecté un appareil",
       "text6f417aa88601": "Dépenses de la passerelle LLM par source répertoriées",
-      "textc96cd610ba08": "Clé fournisseur mutualisée réessayée après la limite d’utilisation"
+      "textc96cd610ba08": "Clé fournisseur mutualisée réessayée après la limite d’utilisation",
+      "text044ba8a9ae43": "Toujours active",
+      "textb2fceee88a51": "Fonctionne 24 h/24, 7 j/7. Ne s’arrête qu’à son budget mensuel."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

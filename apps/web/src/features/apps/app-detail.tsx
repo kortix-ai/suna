@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
 
 import Loading from '@/components/ui/loading';
@@ -62,6 +62,9 @@ export function AppDetailModal({
   const status = appStatus(app, tI18nComplete);
   const notice = deployNotice(latest, tI18nComplete);
   const running = app.desired_state === 'running';
+  // A static App is served from storage: no runtime to start, stop or keep on.
+  const isStatic =
+    deployments.data?.find((row) => row.deployment_id === app.active_deployment_id)?.hosting_type === 'static';
   const busy = apps.start.isPending || apps.stop.isPending || apps.remove.isPending;
   const liveUrl = access.session.data?.url ?? app.url;
 
@@ -140,7 +143,7 @@ export function AppDetailModal({
                 `ghost` for the same reason — chrome, not an action. */}
             <div className="flex shrink-0 items-center gap-2">
               <ButtonGroup>
-                {canDeploy ? (
+                {canDeploy && !isStatic ? (
                   <Hint
                     label={
                       running
@@ -212,6 +215,20 @@ export function AppDetailModal({
                           }
                         </span>
                       </DropdownMenuItem>
+                    ) : null}
+                    {canWrite && !isStatic ? (
+                      <DropdownMenuCheckboxItem
+                        checked={app.always_on === true}
+                        disabled={apps.update.isPending}
+                        onCheckedChange={(on) =>
+                          apps.update.mutate({ appId: app.app_id, input: { always_on: on } })
+                        }
+                      >
+                        <span className="flex flex-col">
+                          {tI18nComplete.raw('text044ba8a9ae43')}
+                          <span className="text-muted-foreground text-xs">{tI18nComplete.raw('textb2fceee88a51')}</span>
+                        </span>
+                      </DropdownMenuCheckboxItem>
                     ) : null}
                     <DropdownMenuItem onClick={() => setVersionsOpen((value) => !value)}>
                       <ClockCounterClockwiseIcon className="size-3.5 shrink-0" />

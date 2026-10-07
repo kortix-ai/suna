@@ -38,6 +38,14 @@ export interface App {
   active_deployment_id: string | null;
   machine: AppMachineSpec;
   idle_timeout_seconds: number;
+  /**
+   * `true`: the App runs 24/7 (cron jobs, workers, websockets keep working)
+   * until its monthly budget is reached. `false`: it stops after
+   * `idle_timeout_seconds` without requests and wakes on the next one.
+   * Ignored by a static App, which has no runtime. Optional for wire
+   * compatibility with a server that predates it.
+   */
+  always_on?: boolean;
   monthly_budget_usd: number;
   last_request_at: string | null;
   /**
@@ -64,6 +72,8 @@ export interface CreateAppInput {
   memory_gb?: number;
   disk_gb?: number;
   idle_timeout_seconds?: number;
+  /** Run 24/7. Defaults to the server's setting (Kortix Cloud: `true`). */
+  always_on?: boolean;
   monthly_budget_usd?: number;
 }
 
@@ -73,6 +83,7 @@ export interface UpdateAppInput {
   memory_gb?: number;
   disk_gb?: number;
   idle_timeout_seconds?: number;
+  always_on?: boolean;
   monthly_budget_usd?: number;
 }
 
@@ -191,7 +202,8 @@ export interface AppDeployment {
   version: number;
   status: AppDeploymentStatus;
   source_kind: AppSourceKind;
-  hosting_type: 'sandbox';
+  /** `static`: served from storage, no runtime. `sandbox`: runs in its own machine. */
+  hosting_type: 'sandbox' | 'static';
   hosting_provider: AppHostingProvider | null;
   runtime_spec: Record<string, unknown>;
   build_spec: Record<string, unknown>;

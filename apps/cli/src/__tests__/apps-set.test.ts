@@ -246,6 +246,19 @@ describe('kortix apps set', () => {
     expect(JSON.parse(r.stdout).monthly_budget_usd).toBe(9);
   });
 
+  test('set --always-on / --on-demand send always_on; both at once is refused before any request', async () => {
+    const config = writeConfig(startServer());
+    const on = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--always-on'], config);
+    expect(on.code).toBe(0);
+    expect(patchCall()?.body).toEqual({ always_on: true });
+    const off = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--on-demand'], config);
+    expect(off.code).toBe(0);
+    expect(calls.filter((c) => c.method === 'PATCH').at(-1)?.body).toEqual({ always_on: false });
+    const both = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--always-on', '--on-demand'], config);
+    expect(both.code).not.toBe(0);
+    expect(both.stderr).toContain('not both');
+  });
+
   test('set with no field flags exits 2 and sends nothing', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['apps', 'set', 'storefront', '--project', PROJECT], config);

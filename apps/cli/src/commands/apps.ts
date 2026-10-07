@@ -44,7 +44,10 @@ Subcommands:
     --cpu <cores>                   Default: 1.
     --memory <gb>                   Default: 2.
     --disk <gb>                     Default: 10.
-    --idle-timeout <seconds>        Default: 300.
+    --idle-timeout <seconds>        Default: 300. Only for --on-demand.
+    --always-on | --on-demand       Run 24/7, or stop when idle and wake on the
+                                    next request. A static App has no runtime
+                                    and ignores both.
     --budget <usd>                  Monthly compute budget. Default: 5.
   deploy [path]                     Deploy a directory or .tar.gz archive.
     --manifest-app <name>           Use one apps.<name> block from kortix.yaml.
@@ -77,6 +80,7 @@ Subcommands:
     --memory-gb <gb>                Alias: --memory.
     --disk-gb <gb>                  Alias: --disk.
     --idle-timeout <seconds>        120-86400.
+    --always-on | --on-demand       Run 24/7, or stop when idle.
     --budget <usd>                  Monthly compute budget.
   show <id|slug>                    Show an App and its deployments. --json.
   logs <id|slug> [deployment-id]    Read runtime logs. --after N --limit N.
@@ -221,6 +225,7 @@ async function createCommand(
       '--idle-timeout',
     ),
     monthly_budget_usd: positiveNumber(takeFlagValue(rest, ['--budget']), '--budget'),
+    ...runMode(rest),
   };
   const ctx = await context(options);
   if (!ctx) return 1;
@@ -228,6 +233,14 @@ async function createCommand(
   if (json) emitJson(app);
   else process.stdout.write(`\n  ${status.ok(`created ${app.slug}`)}\n  ${app.url}\n\n`);
   return 0;
+}
+
+/** `--always-on` / `--on-demand`, consumed from `rest`; neither → the server decides. */
+function runMode(rest: string[]): { always_on?: boolean } {
+  const alwaysOn = takeFlagBool(rest, ['--always-on']);
+  const onDemand = takeFlagBool(rest, ['--on-demand']);
+  if (alwaysOn && onDemand) throw new Error('Pass --always-on or --on-demand, not both');
+  return alwaysOn ? { always_on: true } : onDemand ? { always_on: false } : {};
 }
 
 /**
@@ -247,6 +260,7 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
   const disk = positiveInteger(takeFlagValue(rest, ['--disk-gb', '--disk']), '--disk-gb');
   const idle = positiveInteger(takeFlagValue(rest, ['--idle-timeout']), '--idle-timeout');
   const budget = positiveNumber(takeFlagValue(rest, ['--budget']), '--budget');
+  Object.assign(input, runMode(rest));
   const target = rest.find((value) => !value.startsWith('-'));
   if (!target) return fail('set needs an App id or slug');
   if (name !== undefined) input.name = name;
@@ -257,7 +271,7 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
   if (budget !== undefined) input.monthly_budget_usd = budget;
   if (Object.keys(input).length === 0) {
     return fail(
-      'set needs at least one of --name, --cpu, --memory-gb, --disk-gb, --idle-timeout, --budget',
+      'set needs at least one of --name, --cpu, --memory-gb, --disk-gb, --idle-timeout, --always-on, --on-demand, --budget',
     );
   }
   const ctx = await context(options);

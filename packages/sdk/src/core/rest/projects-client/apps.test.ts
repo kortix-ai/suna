@@ -351,3 +351,23 @@ test('DeleteAppDeploymentResult.image is exactly released, pending, or none', ()
   const exact: Equal<DeleteAppDeploymentResult['image'], 'released' | 'pending' | 'none'> = true;
   expect(exact).toBe(true);
 });
+
+test('an App runs always-on or on demand: create and update send always_on, and the App reads it back', async () => {
+  const app: import('./apps').App = {
+    app_id: 'app-1', account_id: 'account-1', project_id: 'project-1', slug: 'demo', name: 'Demo',
+    url: 'https://demo.apps.kortix.com', access_mode: 'private', access_revision: 1, desired_state: 'running',
+    active_deployment_id: null, machine: { cpu: 1, memory_gb: 2, disk_gb: 10 }, idle_timeout_seconds: 300,
+    always_on: false, monthly_budget_usd: 5, last_request_at: null,
+    created_at: '2026-10-07T00:00:00.000Z', updated_at: '2026-10-07T00:00:00.000Z',
+  };
+  responses.push({ status: 201, body: { ...app, always_on: true } }, { body: app });
+  expect((await createApp('project-1', { slug: 'demo', name: 'Demo', always_on: true })).always_on).toBe(true);
+  expect(last().body).toMatchObject({ always_on: true });
+  expect((await updateApp('project-1', 'app-1', { always_on: false })).always_on).toBe(false);
+  expect(last().body).toEqual({ always_on: false });
+});
+
+test('a static deployment says so: hosting_type static', () => {
+  const hosting: import('./apps').AppDeployment['hosting_type'] = 'static';
+  expect(hosting).toBe('static');
+});

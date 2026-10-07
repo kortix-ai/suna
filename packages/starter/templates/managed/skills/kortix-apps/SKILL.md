@@ -34,7 +34,7 @@ Use the narrowest source type that preserves the App behavior:
 | --- | --- |
 | HTML, CSS, JavaScript | `--type static` |
 | Prebuilt Vite or React `dist/` | deploy `dist/ --type static --spa` |
-| Vite or React source | `--type bundle --spa` |
+| Vite or React source | build it here (`npm run build`), then deploy `dist/ --type static --spa` |
 | Next.js static export | set `output: 'export'`, build, then deploy `out/ --type static --spa` |
 | Next.js server runtime | Dockerfile, command, and port `3000` |
 | Any custom HTTP service | Dockerfile, command, and target port |
@@ -44,11 +44,12 @@ Deploy build output from disk; do not commit it. Add `dist/` and `out/` to
 from it (`kortix validate` warns).
 | Existing public container image | `--image`, command, and target port |
 
-Prefer a prebuilt static directory for generated artifacts. It removes the
-remote package-install phase and gives the lowest deployment latency. Use
-`bundle` when the server must produce a reproducible build from source. Use a
-Dockerfile when the App needs a server process, native packages, or custom
-runtime behavior.
+Prefer a prebuilt static directory. A `static` App runs no server: Kortix
+stores the files and serves them itself, so a deploy takes seconds, it never
+cold-starts, it costs no compute, and a rollback is instant. A frontend with a
+Kortix Backend is static. Use `bundle` only when the build must run on Kortix
+(it then runs in a machine). Use a Dockerfile when the App needs a server
+process, native packages, or custom runtime behavior.
 
 Before building generated output, inspect `package.json` and the lockfile. Run
 the declared `build` script with the repository's package manager. Do not assume
@@ -175,7 +176,9 @@ Do not stop at a `ready` status.
 5. For a service, fetch its readiness endpoint and one real application route.
 6. For non-public Apps, fetch the stable URL without credentials and confirm it
    returns `401` before testing authorized access.
-7. Run `kortix apps stop <slug> --json`. The command returns only after the
+7. A static App stops here: it has no runtime to stop or wake, and
+   `kortix apps show <slug> --json` shows `hosting_type: "static"` on its
+   deployment. For a server App, run `kortix apps stop <slug> --json`. The command returns only after the
    provider stop call and runtime-state write complete. Confirm
    `desired_state` is `stopped`. Request the stable URL with the existing
    App-host cookie without running `start`.
@@ -240,7 +243,19 @@ kortix apps rollback <slug> <deployment-id>
 kortix apps delete <slug> --yes
 ```
 
-`stop` suspends compute immediately. The next authorized request wakes the App.
+A server App runs **always on** (the default: 24/7, restarted within 5 minutes
+if it stops, needed for cron jobs, queues and websockets) or **on demand**
+(`--on-demand`: stops after the idle timeout, wakes on the next request):
+`kortix apps set <slug> --always-on|--on-demand`, or `always_on` in
+`kortix.yaml`. Both stop at the monthly budget (`--budget`); an always-on App
+of the default size costs about 73 USD a month, so set the budget to match.
+A static App ignores all of this.
+
+`stop` suspends a server App's compute immediately. The next authorized request
+wakes it.
+
+An App keeps its active deployment and the 5 newest other ready ones for
+rollback; older ones are retired automatically.
 Rollback accepts only a ready immutable deployment. Delete is destructive and
 removes the stable identity and its runtimes.
 
