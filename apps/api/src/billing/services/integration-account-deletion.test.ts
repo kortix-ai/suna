@@ -1,0 +1,268 @@
+/**
+ * Integration test (real local DB): scheduled and immediate account deletion
+ * run ONE routine (data, then the auth user), claim each request atomically,
+ * keep a failed run retryable, and the auth-user-delete trigger hands orphan
+ * accounts to that routine instead of deleting them itself.
+ *
+ * Stripe and the Supabase auth admin API are the only fakes; everything else
+ * (rows, FK cascade, trigger, claim SQL) is the real schema.
+ */
+import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { eq, sql } from 'drizzle-orm';
+import pg from 'pg';
+import {
+  accountDeletionRequests,
+  accountMembers,
+  accounts,
+  creditAccounts,
+  gatewayRequestLogs,
+  projectSessions,
+  projects,
+} from '@kortix/db';
+import { insertIntoView } from '../../__tests__/helpers/compat-views';
+
+const stripeCancel = mock(async (_id: string) => ({}));
+const deleteUser = mock(async (_id: string): Promise<{ error: null | { status: number } }> => ({ error: null }));
+
+const realStripe = await import('../../shared/stripe');
+const realSupabase = await import('../../shared/supabase');
+mock.module('../../shared/stripe', () => ({ ...realStripe, getStripe: () => ({ subscriptions: { cancel: stripeCancel } }) }));
+mock.module('../../shared/supabase', () => ({ ...realSupabase, getSupabase: () => ({ auth: { admin: { deleteUser } } }) }));
+
+const { db } = await import('../../shared/db');
+const { processScheduledDeletions, deleteAccountImmediately } = await import('./account-deletion');
+const { claimDeletionRequest } = await import('../repositories/account-deletion');
+
+const superuser = new pg.Client({ connectionString: process.env.TEST_DATABASE_SUPERUSER_URL });
+const past = () => new Date(Date.now() - 60_000).toISOString();
+
+/**
+ * A requester and the account they asked to delete. By default the account is
+ * their personal account, whose id is the user id (`bootstrapPersonalAccount`).
+ * `team` seeds an account with its own id; `requester` files the request as
+ * someone who is not a member at all.
+ */
+async function seed(opts: { logs?: number; subscription?: boolean; team?: boolean; requester?: string } = {}) {
+  const userId = crypto.randomUUID();
+  const accountId = opts.team ? crypto.randomUUID() : userId;
+  await db.insert(accounts).values({ accountId, name: 'deletion-test' });
+  await db.insert(projects).values({
+    projectId: crypto.randomUUID(),
+    accountId,
+    name: 'p1',
+    repoUrl: 'https://example.com/p1.git',
+  });
+  await db.insert(creditAccounts).values({
+    accountId,
+    balance: '5',
+    ...(opts.subscription === false ? {} : { stripeSubscriptionId: `sub_${accountId}` }),
+  });
+  await insertIntoView(db, accountMembers, [{ userId, accountId, accountRole: 'owner' }]);
+  if (opts.logs) {
+    await db.execute(sql`
+      INSERT INTO kortix.gateway_request_logs
+        (request_id, account_id, requested_model, resolved_model, provider, status, ok)
+      SELECT 'r' || g, ${accountId}::uuid, 'm', 'm', 'p', 200, true FROM generate_series(1, ${opts.logs}) g`);
+  }
+  const [request] = await db
+    .insert(accountDeletionRequests)
+    .values({ accountId, userId: opts.requester ?? userId, scheduledFor: past(), status: 'pending' })
+    .returning();
+  return { accountId, userId, requestId: request!.id };
+}
+
+/** A user's personal account with one running session. */
+async function seedRunningPersonalAccount() {
+  const userId = crypto.randomUUID();
+  const projectId = crypto.randomUUID();
+  const sessionId = crypto.randomUUID();
+  await db.insert(accounts).values({ accountId: userId, name: 'bystander' });
+  await insertIntoView(db, accountMembers, [{ userId, accountId: userId, accountRole: 'owner' }]);
+  await db.insert(projects).values({ projectId, accountId: userId, name: 'p1', repoUrl: 'https://example.com/b.git' });
+  await db.insert(projectSessions).values({
+    sessionId,
+    projectId,
+    accountId: userId,
+    branchName: `session/${sessionId}`,
+    createdBy: userId,
+    status: 'running',
+  });
+  return { userId, sessionId };
+}
+const sessionStatus = async (id: string) =>
+  (await db.select().from(projectSessions).where(eq(projectSessions.sessionId, id)))[0]?.status;
+
+const accountExists = async (id: string) =>
+  (await db.select().from(accounts).where(eq(accounts.accountId, id))).length === 1;
+const requestStatus = async (id: string) =>
+  (await db.select().from(accountDeletionRequests).where(eq(accountDeletionRequests.id, id)))[0]?.status;
+const logCount = async (id: string) =>
+  (await db.select().from(gatewayRequestLogs).where(eq(gatewayRequestLogs.accountId, id))).length;
+
+beforeAll(async () => {
+  await superuser.connect();
+});
+afterAll(async () => {
+  await superuser.end();
+});
+beforeEach(() => {
+  stripeCancel.mockClear();
+  deleteUser.mockClear();
+  stripeCancel.mockImplementation(async () => ({}));
+  deleteUser.mockImplementation(async () => ({ error: null }));
+});
+
+describe('scheduled deletion', () => {
+  test('deletes data across chunk boundaries, then the auth user, and keeps the receipt', async () => {
+    const { accountId, userId, requestId } = await seed({ logs: 5_001 });
+    expect(await logCount(accountId)).toBe(5_001);
+
+    const result = await processScheduledDeletions();
+
+    expect(result.errors).toEqual([]);
+    expect(await accountExists(accountId)).toBe(false);
+    expect(await logCount(accountId)).toBe(0);
+    expect(stripeCancel).toHaveBeenCalledWith(`sub_${accountId}`);
+    expect(deleteUser).toHaveBeenCalledWith(userId);
+    expect(await requestStatus(requestId)).toBe('completed');
+    const [credit] = await db.select().from(creditAccounts).where(eq(creditAccounts.accountId, accountId));
+    expect(credit?.paymentStatus).toBe('deleted');
+  });
+
+  test('a failed Stripe cancel leaves the account intact and the request retryable', async () => {
+    const { accountId, requestId } = await seed();
+    stripeCancel.mockImplementationOnce(async () => {
+      throw new Error('stripe down');
+    });
+
+    const first = await processScheduledDeletions();
+    expect(first.errors.length).toBe(1);
+    expect(await accountExists(accountId)).toBe(true);
+    expect(deleteUser).not.toHaveBeenCalled();
+    expect(await requestStatus(requestId)).toBe('pending');
+
+    const second = await processScheduledDeletions();
+    expect(second.errors).toEqual([]);
+    expect(await accountExists(accountId)).toBe(false);
+    expect(await requestStatus(requestId)).toBe('completed');
+  });
+
+  test('a failed auth user delete leaves the request retryable; the retry completes it', async () => {
+    const { accountId, requestId } = await seed();
+    deleteUser.mockImplementationOnce(async () => ({ error: { status: 500 } }));
+
+    await processScheduledDeletions();
+    expect(await requestStatus(requestId)).toBe('pending');
+
+    await processScheduledDeletions();
+    expect(await accountExists(accountId)).toBe(false);
+    expect(await requestStatus(requestId)).toBe('completed');
+  });
+
+  test('two concurrent workers run the irreversible steps once', async () => {
+    const { accountId, requestId } = await seed();
+
+    await Promise.all([processScheduledDeletions(), processScheduledDeletions()]);
+
+    expect(stripeCancel).toHaveBeenCalledTimes(1);
+    expect(deleteUser).toHaveBeenCalledTimes(1);
+    expect(await accountExists(accountId)).toBe(false);
+    expect(await requestStatus(requestId)).toBe('completed');
+  });
+
+  test('a request cancelled after the batch was loaded is not claimed', async () => {
+    const { requestId } = await seed();
+    await db.update(accountDeletionRequests).set({ status: 'cancelled' }).where(eq(accountDeletionRequests.id, requestId));
+
+    expect(await claimDeletionRequest(requestId)).toBeNull();
+  });
+
+  test('a stale processing claim is reclaimed; a fresh one is not', async () => {
+    const { requestId } = await seed();
+    await db
+      .update(accountDeletionRequests)
+      .set({ status: 'processing', processingStartedAt: sql`now()` })
+      .where(eq(accountDeletionRequests.id, requestId));
+    expect(await claimDeletionRequest(requestId)).toBeNull();
+
+    await db
+      .update(accountDeletionRequests)
+      .set({ processingStartedAt: sql`now() - interval '2 hours'` })
+      .where(eq(accountDeletionRequests.id, requestId));
+    expect((await claimDeletionRequest(requestId))?.status).toBe('processing');
+  });
+});
+
+describe('whose login goes', () => {
+  // Deleting a team account is not deleting the person: the owner keeps their
+  // login and the sessions of their other accounts.
+  test('a team account is deleted; its owner keeps their login and other accounts', async () => {
+    const owner = await seedRunningPersonalAccount();
+    const { accountId, requestId } = await seed({ team: true, requester: owner.userId });
+    await insertIntoView(db, accountMembers, [{ userId: owner.userId, accountId, accountRole: 'owner' }]);
+
+    const result = await processScheduledDeletions();
+
+    expect(result.errors).toEqual([]);
+    expect(await accountExists(accountId)).toBe(false);
+    expect(deleteUser).not.toHaveBeenCalled();
+    expect(await accountExists(owner.userId)).toBe(true);
+    expect(await sessionStatus(owner.sessionId)).toBe('running');
+    expect(await requestStatus(requestId)).toBe('completed');
+  });
+
+  // A request an operator filed while acting as the customer names the
+  // operator as its requester. It deletes the customer's account and never
+  // the operator's login or sessions.
+  test("a request filed by a non-member never deletes the requester's login or sessions", async () => {
+    const operator = await seedRunningPersonalAccount();
+    const { accountId, requestId } = await seed({ requester: operator.userId });
+
+    const result = await processScheduledDeletions();
+
+    expect(result.errors).toEqual([]);
+    expect(await accountExists(accountId)).toBe(false);
+    expect(deleteUser).not.toHaveBeenCalled();
+    expect(await accountExists(operator.userId)).toBe(true);
+    expect(await sessionStatus(operator.sessionId)).toBe('running');
+    expect(await requestStatus(requestId)).toBe('completed');
+  });
+});
+
+describe('immediate deletion', () => {
+  test('runs the same routine: data, then the auth user', async () => {
+    const { accountId, userId, requestId } = await seed({ logs: 3 });
+
+    await deleteAccountImmediately(accountId, userId);
+
+    expect(await accountExists(accountId)).toBe(false);
+    expect(deleteUser).toHaveBeenCalledWith(userId);
+    expect(stripeCancel).toHaveBeenCalledTimes(1);
+    expect(await requestStatus(requestId)).toBe('completed');
+  });
+});
+
+describe('auth-user-delete trigger', () => {
+  test('schedules the orphan account for the sweep instead of deleting it', async () => {
+    const userId = crypto.randomUUID();
+    const accountId = userId;
+    await superuser.query(`insert into auth.users (id, email) values ($1, $2)`, [userId, `${userId}@example.test`]);
+    await db.insert(accounts).values({ accountId, name: 'orphan' });
+    await db.insert(creditAccounts).values({ accountId, balance: '0' });
+    await insertIntoView(db, accountMembers, [{ userId, accountId, accountRole: 'owner' }]);
+
+    await superuser.query(`delete from auth.users where id = $1`, [userId]);
+
+    expect(await accountExists(accountId)).toBe(true);
+    const [request] = await db.select().from(accountDeletionRequests).where(eq(accountDeletionRequests.accountId, accountId));
+    expect(request?.status).toBe('pending');
+    expect(new Date(request!.scheduledFor).getTime()).toBeLessThanOrEqual(Date.now());
+
+    // The auth user is already gone: the sweep treats "user not found" as done.
+    deleteUser.mockImplementation(async () => ({ error: { status: 404 } }));
+    const result = await processScheduledDeletions();
+    expect(result.errors).toEqual([]);
+    expect(await accountExists(accountId)).toBe(false);
+    expect(await requestStatus(request!.id)).toBe('completed');
+  });
+});

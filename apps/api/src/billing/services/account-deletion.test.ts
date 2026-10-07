@@ -49,9 +49,7 @@ const ORPHAN_ACCOUNT_TABLES = [
   appDeploymentEvents,
   appDeployments,
   changeRequests,
-  connectorCalls,
   connectorConnections,
-  gatewayRequestLogs,
   impersonationGrants,
   kortixApiKeys,
   legacySandboxMigrations,
@@ -62,16 +60,11 @@ const ORPHAN_ACCOUNT_TABLES = [
   providerEvents,
   reviewItems,
   sandboxes,
-  sandboxComputeSessions,
-  sessionLifecycleCommands,
-  sessionPendingQuestions,
   sessionSandboxes,
-  sessionTurns,
   sunaAccountMigrations,
   tunnelAuditLogs,
   tunnelConnections,
   tunnelDeviceAuthRequests,
-  usageEvents,
 ];
 
 /**
@@ -102,6 +95,7 @@ let sessionsSettled: Array<{ sessionId: string }> = [];
 let sessionUpdateError: Error | null = null;
 
 let deletedRows: Array<{ table: unknown; condition: unknown }> = [];
+let chunkDeleteStatements = 0;
 let deleteError: Error | null = null;
 
 let stops: string[] = [];
@@ -152,6 +146,7 @@ mock.module('../../shared/db', () => {
       where: (cond: unknown) => Promise<{ rowCount: number }>;
     };
     transaction: <T>(fn: (tx: FakeDb) => Promise<T>) => Promise<T>;
+    execute: (query: unknown) => Promise<Array<{ n: number }>>;
   }
   const db: FakeDb = {
     select: () => ({
@@ -197,6 +192,13 @@ mock.module('../../shared/db', () => {
     // the same fake, which is exactly what the tests assert about (the sweep
     // statements issued inside one transaction).
     transaction: <T,>(fn: (tx: FakeDb) => Promise<T>): Promise<T> => fn(db),
+    // The bounded chunk deletes run outside the transaction as raw SQL; their
+    // real behavior is covered by integration-account-deletion.test.ts.
+    execute: async () => {
+      chunkDeleteStatements++;
+      if (deleteError) throw deleteError;
+      return [{ n: 0 }];
+    },
   };
   return { db };
 });
@@ -262,7 +264,10 @@ mock.module('../repositories/account-deletion', () => ({
   createDeletionRequest: async () => ({ id: 'req-1' }),
   cancelDeletionRequest: async () => undefined,
   markDeletionCompleted: async (id: string) => { completedRequests.push(id); },
+  countOverdueBacklog: async () => 0,
   getScheduledDeletions: async () => scheduledRequests,
+  claimDeletionRequest: async (id: string) => scheduledRequests.find((r: { id: string }) => r.id === id) ?? null,
+  releaseDeletionRequest: async () => undefined,
 }));
 
 const { deleteAccountImmediately, reclaimableAccountIds, processScheduledDeletions } = await import('./account-deletion');
@@ -277,6 +282,14 @@ function whereParams(condition: unknown): unknown[] {
   return dialect.sqlToQuery(condition as SQL).params;
 }
 
+/** The WHERE condition the deletion swept `table` with. */
+function swept(table: unknown): unknown {
+  return deletedRows.find((d) => d.table === table)?.condition;
+}
+
+/** A user deleting their personal account: its id is the user id. */
+const ME = 'user-1';
+
 beforeEach(() => {
   sandboxRows = [];
   sandboxQueryError = null;
@@ -288,6 +301,7 @@ beforeEach(() => {
   sessionsSettled = [];
   sessionUpdateError = null;
   deletedRows = [];
+  chunkDeleteStatements = 0;
   deleteError = null;
   stops = [];
   removes = [];
@@ -339,9 +353,9 @@ describe('reclaimableAccountIds', () => {
 
 describe('deleteAccountImmediately — sandbox reclaim', () => {
   test('stops AND removes every reclaimable box across every account the user owns', async () => {
-    // 2 accounts × 2 boxes. Before this change the sweep saw only acct-1's
-    // boxes, because the route resolves the earliest-joined account and nothing
-    // widened it.
+    // 2 accounts × 2 boxes. Before this change the sweep saw only the personal
+    // account's boxes, because the route resolves the earliest-joined account
+    // and nothing widened it.
     ownedAccountRows = [{ accountId: 'acct-2' }];
     sandboxRows = [
       { sandboxId: 'sb-1', provider: 'daytona', externalId: 'ext-1' },
@@ -350,7 +364,7 @@ describe('deleteAccountImmediately — sandbox reclaim', () => {
       { sandboxId: 'sb-4', provider: 'platinum', externalId: 'ext-4' },
     ];
 
-    await deleteAccountImmediately('acct-1', 'user-1');
+    await deleteAccountImmediately(ME, ME);
 
     expect(stops.sort()).toEqual(['ext-1', 'ext-2', 'ext-3', 'ext-4']);
     expect(removes.sort()).toEqual(['ext-1', 'ext-2', 'ext-3', 'ext-4']);
@@ -362,10 +376,10 @@ describe('deleteAccountImmediately — sandbox reclaim', () => {
   test('both owned accounts and every reclaimable status reach the sandbox query', async () => {
     ownedAccountRows = [{ accountId: 'acct-2' }];
 
-    await deleteAccountImmediately('acct-1', 'user-1');
+    await deleteAccountImmediately(ME, ME);
 
     const values = whereParams(sandboxWhereArg);
-    expect(values).toContain('acct-1');
+    expect(values).toContain(ME);
     expect(values).toContain('acct-2');
     // `active` alone was the old filter. A box that died during provisioning or
     // whose last control-plane call errored still exists at the provider and
@@ -458,10 +472,10 @@ describe('deleteAccountImmediately — session settle', () => {
     ownedAccountRows = [{ accountId: 'acct-2' }];
     sessionsSettled = [{ sessionId: 's-1' }, { sessionId: 's-2' }];
 
-    await deleteAccountImmediately('acct-1', 'user-1');
+    await deleteAccountImmediately(ME, ME);
 
     const values = whereParams(sessionUpdateWhereArg);
-    expect(values).toContain('acct-1');
+    expect(values).toContain(ME);
     expect(values).toContain('acct-2');
     for (const status of ['queued', 'branching', 'provisioning', 'running']) expect(values).toContain(status);
     for (const status of ['stopped', 'failed', 'completed']) expect(values).not.toContain(status);
@@ -497,6 +511,8 @@ describe('deleteAccountImmediately — account data deletion', () => {
     for (const table of ORPHAN_ACCOUNT_TABLES) {
       expect(swept.has(table)).toBe(true);
     }
+    // The seven unbounded tables go in chunked statements outside the transaction.
+    expect(chunkDeleteStatements).toBe(7);
     // Every account_id-bound sweep is bound to the deleting account. The
     // sweeps scoped through a subquery of the account's project/session/app
     // ids (these tables have no account_id index) are covered by the
@@ -508,31 +524,31 @@ describe('deleteAccountImmediately — account data deletion', () => {
   });
 
   test('the account data is deleted before the auth identity is dropped', async () => {
-    await deleteAccountImmediately('acct-1', 'user-1');
+    await deleteAccountImmediately(ME, ME);
 
     // A failed sweep must not sign a user out of an account whose data
     // survived, so the data deletion completes before the identity goes.
     expect(deletedRows.length).toBeGreaterThan(0);
-    expect(deletedUsers).toEqual(['user-1']);
+    expect(deletedUsers).toEqual([ME]);
   });
 
   test('a failed sweep aborts the deletion without dropping the auth identity', async () => {
     deleteError = new Error('sweep failed');
 
-    await expect(deleteAccountImmediately('acct-1', 'user-1')).rejects.toThrow('sweep failed');
+    await expect(deleteAccountImmediately(ME, ME)).rejects.toThrow('sweep failed');
 
     expect(deletedUsers).toEqual([]);
     expect(completedRequests).toEqual([]);
   });
 
   test('a pending request row is swept with the account data', async () => {
-    activeRequest = { id: 'req-1', userId: 'user-1' };
+    activeRequest = { id: 'req-1', userId: ME };
 
-    await deleteAccountImmediately('acct-1', 'user-1');
+    await deleteAccountImmediately(ME, ME);
 
     const swept = new Map<unknown, unknown>(deletedRows.map((d) => [d.table, d.condition]));
     expect(swept.has(accountDeletionRequests)).toBe(true);
-    expect(deletedUsers).toEqual(['user-1']);
+    expect(deletedUsers).toEqual([ME]);
     expect(completedRequests).toEqual(['req-1']);
   });
 });
@@ -540,41 +556,71 @@ describe('deleteAccountImmediately — account data deletion', () => {
 describe('account deletion — auth lifecycle', () => {
   test('deletes the auth user and rejects all previously cached tokens promptly', async () => {
     liveness.__setJwtLivenessLoaderForTests(async () =>
-      deletedUsers.includes('user-1') ? null : { id: 'user-1', email: '' });
+      deletedUsers.includes(ME) ? null : { id: ME, email: '' });
     const exp = Math.floor(Date.now() / 1000) + 3600;
     expect(await liveness.confirmJwtLive('old-token-1', exp)).not.toBeNull();
     expect(await liveness.confirmJwtLive('old-token-2', exp)).not.toBeNull();
-    await deleteAccountImmediately('acct-1', 'user-1');
-    expect(deletedUsers).toEqual(['user-1']);
+    await deleteAccountImmediately(ME, ME);
+    expect(deletedUsers).toEqual([ME]);
     expect(await liveness.confirmJwtLive('old-token-1', exp)).toBeNull();
     expect(await liveness.confirmJwtLive('old-token-2', exp)).toBeNull();
   });
 
   test('does not report success when GoTrue refuses deletion', async () => {
     deleteUserError = new Error('auth deletion failed');
-    await expect(deleteAccountImmediately('acct-1', 'user-1')).rejects.toThrow('auth deletion failed');
+    await expect(deleteAccountImmediately(ME, ME)).rejects.toThrow('auth deletion failed');
   });
 });
 
 test('immediate deletion uses the pending requester when no user id is supplied', async () => {
-  activeRequest = { id: 'req-1', userId: 'user-1' };
-  await deleteAccountImmediately('acct-1');
-  expect(deletedUsers).toEqual(['user-1']);
+  activeRequest = { id: 'req-1', userId: ME };
+  await deleteAccountImmediately(ME);
+  expect(deletedUsers).toEqual([ME]);
   expect(completedRequests).toEqual(['req-1']);
 });
 
-test('scheduled account deletion does not delete its historical requester identity', async () => {
-  scheduledRequests = [{ id: 'req-1', accountId: 'acct-1', userId: 'user-1' }];
+test('scheduled account deletion deletes the account data, then its requester identity', async () => {
+  scheduledRequests = [{ id: 'req-1', accountId: ME, userId: ME }];
   expect(await processScheduledDeletions()).toEqual({ processed: 1, errors: [] });
-  expect(deletedUsers).toEqual([]);
+  expect(deletedRows.length).toBeGreaterThan(0);
+  expect(deletedUsers).toEqual([ME]);
   expect(completedRequests).toEqual(['req-1']);
 });
 
 test('failed auth deletion leaves the pending request incomplete', async () => {
-  activeRequest = { id: 'req-1', userId: 'user-1' };
+  activeRequest = { id: 'req-1', userId: ME };
   deleteUserError = new Error('auth deletion failed');
-  await expect(deleteAccountImmediately('acct-1')).rejects.toThrow('auth deletion failed');
+  await expect(deleteAccountImmediately(ME)).rejects.toThrow('auth deletion failed');
   expect(completedRequests).toEqual([]);
+});
+
+// The requester's login goes only with their personal account (id == user id).
+describe("deleting an account that is not the requester's personal account", () => {
+  test('a team account the requester owns: data deleted, login and other accounts kept', async () => {
+    ownedAccountRows = [{ accountId: ME }, { accountId: 'acct-2' }];
+    sandboxRows = [{ sandboxId: 'sb-1', provider: 'daytona', externalId: 'ext-1' }];
+
+    await deleteAccountImmediately('acct-1', ME);
+
+    expect(whereParams(swept(accounts))).toContain('acct-1');
+    expect(deletedUsers).toEqual([]);
+    expect(whereParams(sandboxWhereArg)).toEqual(expect.arrayContaining(['acct-1']));
+    expect(whereParams(sandboxWhereArg)).not.toContain(ME);
+    expect(whereParams(sandboxWhereArg)).not.toContain('acct-2');
+    expect(whereParams(sessionUpdateWhereArg)).not.toContain(ME);
+  });
+
+  test('a scheduled request filed by someone else (an operator acting as the customer) never deletes them', async () => {
+    ownedAccountRows = [{ accountId: 'operator-1' }];
+    scheduledRequests = [{ id: 'req-1', accountId: 'acct-1', userId: 'operator-1' }];
+
+    expect(await processScheduledDeletions()).toEqual({ processed: 1, errors: [] });
+
+    expect(whereParams(swept(accounts))).toContain('acct-1');
+    expect(deletedUsers).toEqual([]);
+    expect(whereParams(sessionUpdateWhereArg)).not.toContain('operator-1');
+    expect(completedRequests).toEqual(['req-1']);
+  });
 });
 
 test('a GoTrue confirmation racing deletion cannot restore cached liveness', async () => {
@@ -586,8 +632,8 @@ test('a GoTrue confirmation racing deletion cannot restore cached liveness', asy
     return calls === 1 ? pendingAnswer : null;
   });
   const pending = liveness.confirmJwtLive('racing-token', Math.floor(Date.now() / 1000) + 3600);
-  await deleteAccountImmediately('acct-1', 'user-1');
-  release({ id: 'user-1', email: '' });
+  await deleteAccountImmediately(ME, ME);
+  release({ id: ME, email: '' });
   expect(await pending).toBeNull();
   expect(liveness.jwtLivenessCacheSize()).toBe(0);
 });

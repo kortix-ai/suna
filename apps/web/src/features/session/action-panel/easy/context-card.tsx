@@ -46,6 +46,7 @@ import type { ContextItem } from '../shared/derive-panels';
 import type { StepFamily } from '../shared/narration';
 import { familyForTool, narrateFailedStep, narrateStep } from '../shared/narration';
 import type { Detail } from './detail-view';
+import { safeHttpUrl } from '@kortix/shared';
 import { ToolParts } from './detail-view';
 import { PanelCard } from './panel-card';
 import { StepIcon } from './step-icon';
@@ -202,7 +203,7 @@ function WebSourceList({ items }: { items: ContextItem[] }) {
       {items.map((it) => (
         <li key={`${it.callID}:${it.url ?? it.label}`}>
           <a
-            href={it.url}
+            href={safeHttpUrl(it.url) ?? undefined}
             target="_blank"
             rel="noreferrer noopener"
             className={cn(ROW, 'hover:bg-muted cursor-pointer justify-between gap-4')}

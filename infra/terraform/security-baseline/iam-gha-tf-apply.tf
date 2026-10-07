@@ -13,8 +13,8 @@
 # (iam-gha-prod-use2-terraform.tf). The environment name alone is not enough,
 # because it says nothing about which branch ran: terraform-apply.yml therefore
 # refuses to mint credentials unless the checked-out commit is reachable from
-# its required `trusted_branch` (dev -> main, staging -> staging, prod -> prod,
-# infra-global -> main). Set the matching deployment-branch restriction on each
+# its required `trusted_branch` (dev -> dev, staging -> staging, prod -> prod,
+# infra-global -> dev). Set the matching deployment-branch restriction on each
 # environment as well.
 #
 # PERMISSIONS: PowerUserAccess plus a narrow inline IAM grant, matching the
@@ -133,8 +133,8 @@ resource "aws_iam_role_policy" "gha_tf_apply_iam" {
 # controls.
 #
 # Containment on top of that: the OIDC subject is pinned to
-# `environment:infra-global` (restrict that environment to the `main` deployment
-# branch), terraform-apply-global.yml runs only on push to main, and the Deny at
+# `environment:infra-global` (restrict that environment to the `dev` deployment
+# branch), terraform-apply-global.yml runs only on push to dev, and the Deny at
 # the end blocks minting a long-lived human credential that would outlive the
 # workflow run.
 resource "aws_iam_role" "gha_tf_apply_global" {

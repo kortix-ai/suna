@@ -12,22 +12,26 @@ describe('local test runner', () => {
       .toEqual(['bun', 'tests/bin/agentic.ts', '--tag', 'live-session']);
     expect(() => buildLocalTestPlan(['--agentic-only', '--full'])).toThrow('choose only one');
   });
-  it('runs the REST flows, SDK, DB suites, runner unit tests, and route coverage concurrently by default', () => {
+  it('runs the REST flows, DB suites, runner unit tests, and route coverage concurrently; the SDK after them', () => {
     const plan = buildLocalTestPlan([]);
 
     expect(plan.mode).toBe('core');
     expect(plan.lanes.map((lane) => lane.name)).toEqual([
       'api-cli-flows',
-      'sdk',
       'db-suites',
       'flow-runner-unit',
       'route-coverage',
       'worktree-unit',
+      'sdk',
       'package-quality',
     ]);
     // Package quality is its own stage: the attestation's `packages` lane.
-    expect(plan.stages).toHaveLength(2);
-    expect(plan.stages[1]?.map((lane) => lane.name)).toEqual(['package-quality']);
+    // The SDK gets one too: it owns the gate's only wall-clock assertions
+    // (the ReDoS guards), which the start burst of the heavy lanes pushes
+    // past their bounds (PR #9266 measured 1272 ms against 1000 ms there).
+    expect(plan.stages).toHaveLength(3);
+    expect(plan.stages[1]?.map((lane) => lane.name)).toEqual(['sdk']);
+    expect(plan.stages[2]?.map((lane) => lane.name)).toEqual(['package-quality']);
     expect(plan.lanes.find((lane) => lane.name === 'db-suites')?.command).toEqual([
       'bun',
       'tests/bin/db-suites.ts',
@@ -75,7 +79,8 @@ describe('local test runner', () => {
       env: { KORTIX_PACKAGE_SKIP_SDK_TESTS: '1' },
     });
     expect(plan.stages.map((stage) => stage.map((lane) => lane.name))).toEqual([
-      ['api-cli-flows', 'sdk', 'db-suites', 'flow-runner-unit', 'route-coverage', 'worktree-unit'],
+      ['api-cli-flows', 'db-suites', 'flow-runner-unit', 'route-coverage', 'worktree-unit'],
+      ['sdk'],
       ['browser'],
       ['package-quality'],
     ]);

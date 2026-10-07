@@ -35,7 +35,7 @@ let sandboxRow: { externalId: string | null; status: string } | null = null;
 let sandboxQueryThrows = false;
 
 /** What the fake daemon does when the route tries to attach. */
-let daemonAttach: () => Promise<
+let daemonAttach: (signal: AbortSignal) => Promise<
   | { ok: true; body: ReadableStream<Uint8Array>; epoch: string | null }
   | { ok: false; reason: string; status: number | null }
 >;
@@ -67,10 +67,10 @@ mock.module('../lib/access', () => ({
 mock.module('../lib/session-runtime-transport', () => ({
   openRuntimeEventStream: async (
     _target: unknown,
-    options: { since?: number | null; epoch?: string | null },
+    options: { since?: number | null; epoch?: string | null; signal: AbortSignal },
   ) => {
     attachCalls.push({ since: options.since ?? null, epoch: options.epoch ?? null });
-    return daemonAttach();
+    return daemonAttach(options.signal);
   },
   parseSseFrames: realParseSseFrames,
 }));
@@ -84,24 +84,29 @@ mock.module('../lib/session-runtime-projection', () => ({
   readRuntimeLeg: async () => ({ known: false, reason: 'no_projection' }),
 }));
 
+const { runtimeStreamTimings } = await import('./session-stream');
 const controlEvents = await import('../lib/session-control-events');
 const { publishControlEvent, CONTROL_EPOCH, __resetControlEventsForTests } = controlEvents;
 
 /** The reconciler is replaced with a hand-driven one: this file is about the
  *  ROUTE, and a real reconciler would put a DB poll on a 5 s timer inside it. */
 let reconcilerSnapshot: unknown[] = [];
+let reconcilerModes: unknown[] = [];
 mock.module('../lib/session-control-reconciler', () => ({
-  acquireControlReconciler: () => ({
+  acquireControlReconciler: (_sessionId: string, _projectId: string, mode: unknown) => {
+    reconcilerModes.push(mode);
+    return {
     ready: async () => {},
     snapshot: () => reconcilerSnapshot,
     poke: () => {},
     release: () => {},
-  }),
+    };
+  },
   publishRuntimeStateFrame: () => null,
 }));
 
 const { projectsApp } = await import('../lib/app');
-await import('./session-stream');
+(await import('./session-stream')).registerSessionStreamRoutes();
 
 function buildApp() {
   const app = new Hono<{ Variables: { userId: string; authType: string } }>();
@@ -246,6 +251,54 @@ describe('the stream opens, always', () => {
     expect((hello!.data.runtime as Record<string, unknown>).requested_since).toBe(41);
     expect((hello!.data.runtime as Record<string, unknown>).requested_epoch).toBe('ep_1');
     expect((hello!.data.control as Record<string, unknown>).cepoch).toBe(CONTROL_EPOCH);
+  });
+});
+
+/** A daemon body that sends one hello frame, then goes silent but for the abort. */
+function silentDaemonBody(signal: AbortSignal): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(
+        encoder.encode(
+          'event: kortix.hello\ndata: {"type":"kortix.hello","epoch":"ep-s","head_seq":0,"first_seq":0,"since":null,"at":1}\n\n',
+        ),
+      );
+      // A real fetch body errors when its request signal aborts.
+      signal.addEventListener('abort', () => controller.error(new Error('aborted')), { once: true });
+    },
+  });
+}
+
+describe('a live attachment that goes silent (05#3)', () => {
+  test('no frame inside the stall budget aborts the attempt and says why', async () => {
+    const original = runtimeStreamTimings.stallMs;
+    runtimeStreamTimings.stallMs = 150;
+    try {
+      daemonAttach = async (signal) => ({ ok: true, epoch: 'ep-s', body: silentDaemonBody(signal) });
+      const response = await openStream();
+      const frames = await readFrames(response, 5, 2_500);
+      expect(
+        frames.some(
+          (f) => f.event === 'kortix.runtime.status' && f.data.state === 'down' && f.data.reason === 'runtime_stream_stalled',
+        ),
+      ).toBe(true);
+    } finally {
+      runtimeStreamTimings.stallMs = original;
+    }
+  });
+
+  test('a client that disconnects aborts the daemon attachment even though no frame arrives', async () => {
+    let attachSignal: AbortSignal | null = null;
+    daemonAttach = async (signal) => {
+      attachSignal = signal;
+      return { ok: true, epoch: 'ep-s', body: silentDaemonBody(signal) };
+    };
+    const response = await openStream();
+    await readFrames(response, 2, 500); // reads, then cancels the reader = disconnect
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(attachSignal).not.toBeNull();
+    expect((attachSignal as unknown as AbortSignal).aborted).toBe(true);
   });
 });
 
@@ -511,5 +564,35 @@ describe('control replay and resync', () => {
     const frames = await readFrames(await openStream(), 4, 600);
     const queues = frames.filter((frame) => frame.event === 'kortix.control.queue');
     expect(queues).toHaveLength(1);
+  });
+});
+
+describe('?channels=control', () => {
+  test('serves control frames and heartbeats only: no sandbox read, no daemon attach', async () => {
+    const response = await openStream('?channels=control');
+    expect(response.status).toBe(200);
+    setTimeout(() => publishControlEvent(SESSION_ID, 'kortix.control.queue', { prompts: [] }), 30);
+    const frames = await readFrames(response, 2, 400);
+
+    expect(frames.map((frame) => frame.event)).toEqual(['kortix.stream.hello', 'kortix.control.queue']);
+    expect(frames[1]!.data).toMatchObject({ channel: 'control', cseq: 1 });
+    // The id still carries both cursors, with a blank runtime position.
+    expect(frames[1]!.id).toBe(`||${CONTROL_EPOCH}|1`);
+    expect(attachCalls).toHaveLength(0);
+    expect(frames.some((frame) => frame.event === 'kortix.runtime.status')).toBe(false);
+    // The queue is all it serves, so its reconciler reads the queue only.
+    expect(reconcilerModes.at(-1)).toBe('queue');
+  });
+
+  test('the default (no channels) still attaches the runtime', async () => {
+    const response = await openStream();
+    await readFrames(response, 2, 400);
+    expect(attachCalls.length).toBeGreaterThan(0);
+    expect(reconcilerModes.at(-1)).toBe('full');
+  });
+
+  test('an unknown channels value is a 400', async () => {
+    const response = await openStream('?channels=bogus');
+    expect(response.status).toBe(400);
   });
 });
