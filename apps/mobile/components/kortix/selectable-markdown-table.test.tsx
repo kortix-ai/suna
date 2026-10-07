@@ -29,7 +29,11 @@ mock.module('react-native-gesture-handler', () => ({ ScrollView: host('gh-scroll
 mock.module('expo-linear-gradient', () => ({ LinearGradient: host('linear-gradient') }));
 mock.module('react-native-reanimated', () => ({ default: { View: host('animated-view') }, Easing: { bezier: () => 0 }, Keyframe: class { duration() { return this; } } }));
 mock.module('@gorhom/bottom-sheet', () => ({ BottomSheetModal: none, BottomSheetView: none, TouchableOpacity: none }));
-mock.module('react-native-markdown-display', () => ({ default: none, MarkdownIt: () => ({ use: () => ({}) }) }));
+// The renderer stub reports the table surface it would hand to `MarkdownTable`.
+mock.module('react-native-markdown-display', () => ({
+  default: () => React.createElement('markdown', { surface: React.useContext(MarkdownSurfaceContext) }),
+  MarkdownIt: () => ({ use: () => ({}) }),
+}));
 mock.module('@expensify/react-native-live-markdown/src/MarkdownTextInput', () => ({ default: none }));
 mock.module('expo-haptics', () => ({}));
 mock.module('expo-clipboard', () => ({}));
@@ -60,7 +64,7 @@ mock.module('@/components/markdown/markdown-image', () => ({
   MarkdownImageGallery: none,
   MarkdownImagesContext: React.createContext(null),
 }));
-mock.module('@/lib/markdown/markdown-image', () => ({ groupImageBlocks: noop, imageSourceKey: String }));
+mock.module('@/lib/markdown/markdown-image', () => ({ groupImageBlocks: (blocks: string[]) => blocks.map((text, index) => ({ kind: 'markdown', index, text })), imageSourceKey: String }));
 mock.module('@/lib/utils/open-link', () => ({ openLink: async () => {} }));
 
 const appRequire = createRequire(import.meta.url);
@@ -70,13 +74,15 @@ const MarkdownIt = createRequire(join(libraryRoot, 'package.json'))('markdown-it
 type Ast = { type: string; children: Ast[] };
 let parser: (source: string, renderer: (nodes: Ast[]) => unknown, md: unknown) => Ast[];
 let MarkdownTable: typeof import('./selectable-markdown').MarkdownTable;
+let SelectableMarkdownText: typeof import('./selectable-markdown').SelectableMarkdownText;
+let MarkdownSurfaceContext: typeof import('./selectable-markdown').MarkdownSurfaceContext;
 let markdownPalette: typeof import('@/components/markdown/markdown-theme').markdownPalette;
 let tree: ReactTestRenderer | undefined;
 
 beforeAll(async () => {
   Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
   parser = (await import(join(libraryRoot, 'src/lib/parser.js'))).default;
-  ({ MarkdownTable } = await import('./selectable-markdown'));
+  ({ MarkdownTable, SelectableMarkdownText, MarkdownSurfaceContext } = await import('./selectable-markdown'));
   ({ markdownPalette } = await import('@/components/markdown/markdown-theme'));
 });
 afterEach(() => {
@@ -88,7 +94,7 @@ let renders = 0;
 // One palette for the render and the assertions: the stub THEME mints a new token per read.
 let palette: ReturnType<typeof markdownPalette>;
 
-function renderTable(markdown: string) {
+function renderTable(markdown: string, surface?: string) {
   const table = parser(markdown, (nodes) => nodes, MarkdownIt({ typographer: true })).find((n) => n.type === 'table');
   if (!table) throw new Error('no table in AST');
   renders = 0;
@@ -96,7 +102,9 @@ function renderTable(markdown: string) {
   act(() => {
     tree = create(
       <React.Profiler id="table" onRender={() => renders++}>
-        <MarkdownTable node={table as never} palette={palette} isDark={false} />
+        <MarkdownSurfaceContext.Provider value={surface}>
+          <MarkdownTable node={table as never} palette={palette} isDark={false} />
+        </MarkdownSurfaceContext.Provider>
       </React.Profiler>,
     );
   });
@@ -245,4 +253,33 @@ test('the fade is clipped by the frame, takes no touches, and fades the header r
   // Opaque at the edge (the last stop on the right side).
   expect(headerFade.props.colors.at(-1)).toBe(palette.tableHeader);
   expect(bodyFade.props.colors.at(-1)).toBe(palette.tableBody);
+});
+
+test('on another surface the frame fill and the body fades take that surface colour; the header fade keeps the header colour', () => {
+  const root = renderTable(ALIGNED, 'hsl(0 0% 7.8%)');
+  const scroll = root.findByType('gh-scroll' as never);
+  const header = root.findAll((n) => n.type === 'view' && flatten(n.props.style).flexDirection === 'row')[0];
+  act(() => {
+    header.props.onLayout({ nativeEvent: { layout: { x: 0, y: 0, width: 700, height: 32 } } });
+    scroll.props.onLayout({ nativeEvent: { layout: { x: 0, y: 0, width: 300, height: 100 } } });
+    scroll.props.onContentSizeChange(700, 100);
+  });
+  scrollTo(root, 150, 700, 300);
+  expect(flatten(hostParent(scroll).props.style).backgroundColor).toBe('hsl(0 0% 7.8%)');
+  for (const side of ['left', 'right']) {
+    const fade = root.find((n) => n.props.testID === `table-fade-${side}` && typeof n.type === 'string');
+    const [headerFade, bodyFade] = fade.findAllByType('linear-gradient' as never);
+    expect(headerFade.props.colors).toContain(palette.tableHeader);
+    expect(bodyFade.props.colors).toContain('hsl(0 0% 7.8%)');
+    expect(bodyFade.props.colors).not.toContain(palette.tableBody);
+  }
+});
+
+test('SelectableMarkdownText hands its surface to the tables inside it, and none by default', () => {
+  act(() => {
+    tree = create(<SelectableMarkdownText isDark={false} surface="hsl(0 0% 7.8%)">{'| a |\n|---|\n| b |'}</SelectableMarkdownText>);
+  });
+  expect(tree!.root.findByType('markdown' as never).props.surface).toBe('hsl(0 0% 7.8%)');
+  act(() => tree!.update(<SelectableMarkdownText isDark={false}>{'| a |\n|---|\n| b |'}</SelectableMarkdownText>));
+  expect(tree!.root.findByType('markdown' as never).props.surface).toBeUndefined();
 });

@@ -164,6 +164,11 @@ export interface SelectableMarkdownTextProps {
    * Sandbox images load either way.
    */
   remoteImages?: MarkdownRemoteImages;
+  /**
+   * The colour behind the text, when it is not the page background (a sheet,
+   * a card). Tables fill with it, and their edge fades start from it.
+   */
+  surface?: string;
 }
 
 /**
@@ -192,6 +197,9 @@ function handleLibraryLinkPress(url: string): boolean {
  * blocks read it to hold highlighting and follow the newest line.
  */
 const OpenFenceContext = createContext(false);
+
+/** `SelectableMarkdownTextProps.surface`, for the tables below. */
+export const MarkdownSurfaceContext = createContext<string | undefined>(undefined);
 
 type AstNode = {
   key: string;
@@ -500,6 +508,7 @@ const TABLE_FADE_WIDTH = 24;
  * the content scrolls.
  */
 export function MarkdownTable({ node, palette, isDark }: { node: AstNode; palette: MarkdownPalette; isDark: boolean }) {
+  const fill = useContext(MarkdownSurfaceContext) ?? palette.tableBody;
   const [fade, setFade] = useState({ left: false, right: false });
   const [headerHeight, setHeaderHeight] = useState(0);
   const scroll = useRef({ x: 0, content: 0, viewport: 0, left: false, right: false });
@@ -528,7 +537,7 @@ export function MarkdownTable({ node, palette, isDark }: { node: AstNode; palett
         borderColor: palette.border,
         borderRadius: RADIUS.md,
         overflow: 'hidden',
-        backgroundColor: palette.tableBody,
+        backgroundColor: fill,
       }}
     >
       <GHScrollView
@@ -601,14 +610,14 @@ export function MarkdownTable({ node, palette, isDark }: { node: AstNode; palett
           )}
         </View>
       </GHScrollView>
-      {fade.left ? <TableEdgeFade side="left" headerHeight={headerHeight} palette={palette} /> : null}
-      {fade.right ? <TableEdgeFade side="right" headerHeight={headerHeight} palette={palette} /> : null}
+      {fade.left ? <TableEdgeFade side="left" headerHeight={headerHeight} header={palette.tableHeader} body={fill} /> : null}
+      {fade.right ? <TableEdgeFade side="right" headerHeight={headerHeight} header={palette.tableHeader} body={fill} /> : null}
     </View>
   );
 }
 
 /** A fade from the table's fill (opaque at the edge) to clear: the header colour over the header row, the body fill below. */
-function TableEdgeFade({ side, headerHeight, palette }: { side: 'left' | 'right'; headerHeight: number; palette: MarkdownPalette }) {
+function TableEdgeFade({ side, headerHeight, header, body }: { side: 'left' | 'right'; headerHeight: number; header: string; body: string }) {
   const colors = (fill: string) => (side === 'left' ? [fill, withAlpha(fill, 0)] : [withAlpha(fill, 0), fill]) as [string, string];
   return (
     <View
@@ -617,9 +626,9 @@ function TableEdgeFade({ side, headerHeight, palette }: { side: 'left' | 'right'
       style={{ position: 'absolute', top: 0, bottom: 0, [side]: 0, width: TABLE_FADE_WIDTH }}
     >
       {headerHeight > 0 ? (
-        <LinearGradient colors={colors(palette.tableHeader)} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ height: headerHeight }} />
+        <LinearGradient colors={colors(header)} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ height: headerHeight }} />
       ) : null}
-      <LinearGradient colors={colors(palette.tableBody)} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flex: 1 }} />
+      <LinearGradient colors={colors(body)} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flex: 1 }} />
     </View>
   );
 }
@@ -1075,7 +1084,7 @@ function IOSSelectableMarkdown({ text, isDark, isStreaming }: { text: string; is
  * the `UITextView` native view, a double tap opens a selection sheet instead.
  */
 export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = memo(
-  function SelectableMarkdownText({ children, isDark: isDarkProp, isStreaming, remoteImages = 'placeholder' }: SelectableMarkdownTextProps) {
+  function SelectableMarkdownText({ children, isDark: isDarkProp, isStreaming, remoteImages = 'placeholder', surface }: SelectableMarkdownTextProps) {
     const { colorScheme } = useColorScheme();
     const isDark = isDarkProp ?? colorScheme === 'dark';
 
@@ -1084,11 +1093,13 @@ export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = mem
 
     return (
       <MarkdownImagesContext.Provider value={remoteImages}>
-        {Platform.OS === 'ios' && !IOS_TEXT_VIEW ? (
-          <IOSSelectableMarkdown text={text} isDark={isDark} isStreaming={isStreaming} />
-        ) : (
-          <MarkdownBlocks text={text} isDark={isDark} isStreaming={isStreaming} />
-        )}
+        <MarkdownSurfaceContext.Provider value={surface}>
+          {Platform.OS === 'ios' && !IOS_TEXT_VIEW ? (
+            <IOSSelectableMarkdown text={text} isDark={isDark} isStreaming={isStreaming} />
+          ) : (
+            <MarkdownBlocks text={text} isDark={isDark} isStreaming={isStreaming} />
+          )}
+        </MarkdownSurfaceContext.Provider>
       </MarkdownImagesContext.Provider>
     );
   },
