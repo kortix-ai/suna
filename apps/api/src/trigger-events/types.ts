@@ -63,3 +63,11 @@ export class EventSignatureError extends Error {
     this.name = 'EventSignatureError';
   }
 }
+
+/** `subscribe` was given a connection the provider cannot use yet (not authorized). */
+export class EventConnectionNotReadyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'EventConnectionNotReadyError';
+  }
+}

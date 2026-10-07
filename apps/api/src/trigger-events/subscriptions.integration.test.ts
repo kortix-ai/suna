@@ -229,6 +229,15 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
     expect(await store.listByProject(PROJECT_ID)).toEqual([]);
   });
 
+  test('a connection the provider cannot use yet reads needs_connection, not error', async () => {
+    const { EventConnectionNotReadyError } = await import('./types');
+    await connect({ metadata: {} });
+    subscribeError = new EventConnectionNotReadyError('Finish connecting the shared example account to activate this trigger.');
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
+    expect(await status('a')).toBe('needs_connection');
+    expect((await store.get(PROJECT_ID, 'a'))?.lastError).toContain('Finish connecting');
+  });
+
   test('a provider error becomes status error and never throws; the next call retries', async () => {
     await connect();
     subscribeError = new Error('Invalid config:\n  owner is required');

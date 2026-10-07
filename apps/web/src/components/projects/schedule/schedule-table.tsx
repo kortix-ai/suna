@@ -44,6 +44,8 @@ import type { ProjectTrigger } from '@kortix/sdk';
 import {
   CopyIcon,
   DotsThreeIcon,
+  LightningIcon,
+  LinkIcon,
   PauseIcon,
   PlayIcon,
   TimerIcon,
@@ -52,6 +54,7 @@ import {
   WebhooksLogoIcon,
 } from '@phosphor-icons/react';
 
+import { describeEventStatus } from './event-trigger-copy';
 import {
   describeLastRun,
   describeSecurity,
@@ -83,6 +86,8 @@ export interface ScheduleTableProps {
   onRun: (trigger: ProjectTrigger) => void;
   onToggle: (trigger: ProjectTrigger) => void;
   onDelete: (trigger: ProjectTrigger) => void;
+  /** Opens the connect flow for an app-event trigger that needs an account. */
+  onConnect?: (trigger: ProjectTrigger) => void;
 }
 
 /** A mixed list of schedules and webhooks — the type comes off each row's
@@ -97,6 +102,7 @@ export function ScheduleTable({
   onRun,
   onToggle,
   onDelete,
+  onConnect,
 }: ScheduleTableProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
@@ -130,6 +136,7 @@ export function ScheduleTable({
             onRun={() => onRun(trigger)}
             onToggle={() => onToggle(trigger)}
             onDelete={() => onDelete(trigger)}
+            onConnect={onConnect ? () => onConnect(trigger) : undefined}
           />
         ))}
       </TableBody>
@@ -146,6 +153,7 @@ function ScheduleTableRow({
   onRun,
   onToggle,
   onDelete,
+  onConnect,
 }: {
   trigger: ProjectTrigger;
   canWrite: boolean;
@@ -155,6 +163,7 @@ function ScheduleTableRow({
   onRun: () => void;
   onToggle: () => void;
   onDelete: () => void;
+  onConnect?: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tTriggers = useTranslations('triggers');
@@ -163,7 +172,14 @@ function ScheduleTableRow({
   const status = triggerStatus(trigger.enabled, tI18nComplete);
   const when = describeWhen(trigger);
   const security = describeSecurity(trigger, tI18nComplete);
-  const KindIcon = kind === 'cron' ? TimerIcon : WebhooksLogoIcon;
+  const KindIcon =
+    kind === 'cron' ? TimerIcon : kind === 'event' ? LightningIcon : WebhooksLogoIcon;
+  const eventStatus = trigger.event ? describeEventStatus(trigger.event) : null;
+  const lastRun = describeLastRun(
+    kind === 'event'
+      ? (trigger.event?.last_event_at ?? trigger.last_fired_at)
+      : trigger.last_fired_at,
+  );
   // A run that failed outranks Active/Paused on the tile: it is the one
   // state the owner has to act on.
   const failed = trigger.last_status === 'failed';
@@ -221,6 +237,15 @@ function ScheduleTableRow({
             <Badge variant={security.signed ? 'kortix' : 'warning'} size="sm">
               {security.label}
             </Badge>
+          ) : eventStatus ? (
+            <>
+              <Badge variant={eventStatus.variant} size="sm">
+                {eventStatus.label}
+              </Badge>
+              {eventStatus.label === 'Error' && eventStatus.detail ? (
+                <p className="text-muted-foreground truncate text-xs">{eventStatus.detail}</p>
+              ) : null}
+            </>
           ) : null}
         </div>
       </TableCell>
@@ -230,7 +255,7 @@ function ScheduleTableRow({
       </TableCell>
 
       <TableCell className="text-muted-foreground hidden align-middle text-sm whitespace-nowrap tabular-nums md:table-cell">
-        {describeLastRun(trigger.last_fired_at)}
+        {lastRun}
       </TableCell>
 
       <TableCell className="align-middle">
@@ -243,6 +268,7 @@ function ScheduleTableRow({
           onRun={onRun}
           onToggle={onToggle}
           onDelete={onDelete}
+          onConnect={onConnect}
         />
       </TableCell>
     </TableRow>
@@ -258,6 +284,7 @@ function RowActions({
   onRun,
   onToggle,
   onDelete,
+  onConnect,
 }: {
   trigger: ProjectTrigger;
   canWrite: boolean;
@@ -267,6 +294,7 @@ function RowActions({
   onRun: () => void;
   onToggle: () => void;
   onDelete: () => void;
+  onConnect?: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // Safe: `ScheduleView` filters every list to `isTriggerKind` before it
@@ -312,6 +340,12 @@ function RowActions({
         {canWrite ? (
           <>
             <DropdownMenuSeparator />
+            {kind === 'event' && trigger.event?.status === 'needs_connection' && onConnect ? (
+              <DropdownMenuItem onClick={onConnect}>
+                <LinkIcon className="size-3.5 shrink-0" />
+                Connect account
+              </DropdownMenuItem>
+            ) : null}
             <DropdownMenuItem onClick={onRun}>
               <PlayIcon weight="fill" className="size-3.5 shrink-0" />
               {tI18nComplete.raw('text0991397702fa')}

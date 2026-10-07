@@ -68,6 +68,7 @@ import {
   WarningIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
 
 import {
@@ -80,6 +81,7 @@ import {
   matchesQuery,
   triggerName,
 } from './schedule/schedule-copy';
+import { connectorHref } from './schedule/event-trigger-copy';
 import { ScheduleCreateModal } from './schedule/schedule-create-modal';
 import { ScheduleDetailSheet } from './schedule/schedule-detail-sheet';
 import { ScheduleTable } from './schedule/schedule-table';
@@ -220,6 +222,7 @@ function TriggerActivationMenu({ projectId }: { projectId: string }) {
 }
 
 export function ScheduleView({ projectId }: { projectId: string }) {
+  const router = useRouter();
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const copy = localizedTriggersCopy(tI18nComplete);
   const kindCopy = localizedKindCopy(tI18nComplete);
@@ -459,6 +462,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
             onRun={(t) => run.mutate(t)}
             onToggle={(t) => toggle.mutate(t)}
             onDelete={(t) => setDeleteTarget(t)}
+            onConnect={(t) => router.push(connectorHref(projectId, t.event?.connector))}
           />
         )}
 

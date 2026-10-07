@@ -5,8 +5,10 @@ import {
   createProjectTrigger,
   deleteProjectTrigger,
   fireProjectTrigger,
+  listProjectTriggerEventTypes,
   listProjectTriggers,
   updateProjectTrigger,
+  type ProjectTriggerEventTypes,
   type ProjectTriggerListing,
 } from '../core/rest/projects-client';
 import { contract } from './query-contracts';
@@ -63,4 +65,22 @@ export function useProjectTriggers(projectId: string | null | undefined) {
   });
 
   return { ...query, create, update, remove, fire };
+}
+
+export const projectTriggerEventTypesKey = (
+  projectId: string | null | undefined,
+  connector: string | null | undefined,
+) => qk.project.triggerEventTypes(projectId ?? '', connector ?? '');
+
+/** App events a connector can trigger on. Idle until a connector is chosen. */
+export function useProjectTriggerEventTypes(
+  projectId: string | null | undefined,
+  connector: string | null | undefined,
+) {
+  return useQuery<ProjectTriggerEventTypes>({
+    queryKey: projectTriggerEventTypesKey(projectId, connector),
+    queryFn: () => listProjectTriggerEventTypes(projectId as string, { connector: connector as string }),
+    enabled: !!projectId && !!connector,
+    ...contract('config'),
+  });
 }

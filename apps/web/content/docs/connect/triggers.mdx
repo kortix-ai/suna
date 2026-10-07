@@ -1,6 +1,6 @@
 ---
 title: Triggers
-description: A trigger starts a session on a schedule, from a webhook, or from a monitor.
+description: A trigger starts a session on a schedule, from a webhook, from an app event, or from a monitor.
 ---
 
 A trigger starts a [session](/docs/work/sessions) with no person present. Use a trigger to automate recurring or event-driven work.
@@ -9,10 +9,11 @@ To follow up on one session's task later — "check tomorrow whether they replie
 
 ## Trigger types
 
-Kortix supports three trigger types.
+Kortix supports four trigger types.
 
 - **cron** — runs on a schedule you set.
 - **webhook** — runs when an external service sends a signed request to the project's webhook URL.
+- **event** — runs when something happens in a connected app, such as a new pull request or a new email. See [App event triggers](#app-event-triggers).
 - **monitor** — runs a command from your repository 24/7. Each line the command prints to stdout fires the trigger. Experimental: see [Monitors](#monitors).
 
 You define triggers in the project manifest, `kortix.yaml`. Each trigger holds a prompt that renders as the fired session's first message. Runtime state — such as the last fire time and status — lives outside the manifest, in the database. Firing a trigger does not create a commit.
@@ -97,6 +98,110 @@ Send a signed `POST` request to this URL from the external service. Kortix check
 
 By default, each fire starts a fresh session on a new branch. A trigger can instead reuse or pin a session, and a webhook trigger can filter which payloads start one — see [Session strategy](#session-strategy) and [Payload templating](#payload-templating) below.
 
+## App event triggers
+
+An event trigger runs an agent when an app event happens: a pull request opens, an email arrives, an issue changes state. You do not wire a webhook, a secret, or a signature. Kortix subscribes to the event for you and signs nothing by hand.
+
+### Set up in the web app
+
+1. Open the project, then **Triggers** and **New trigger**.
+2. Choose **App event**.
+3. Pick a connected app, or connect one.
+4. Pick an event. The form for the event's settings, such as the repository, appears below it.
+5. Write the prompt and save.
+
+The trigger is live as soon as its badge reads **Live**. The other badges are **Activating**, **Needs connection**, and **Error**. They match the `pending`, `needs_connection`, and `error` statuses below.
+
+### Set up with the CLI
+
+```sh
+kortix triggers events --connector github
+kortix triggers add pr-review --type event \
+  --connector github --event GITHUB_PULL_REQUEST_EVENT \
+  --config owner=acme --config repo=api \
+  --prompt "Review {{ event.data.pull_request.html_url }}"
+kortix ship
+```
+
+`kortix triggers events --connector <slug>` lists the events a connector offers and each event's settings. `--config key=value` repeats once per setting and passes strings. `--config-json '{"limit": 5}'` passes typed values. An event trigger takes none of `--cron`, `--run-at`, `--timezone`, `--secret-env`, `--run`, `--mode`, `--interval`, or `--expect-event-within`.
+
+### Config shape
+
+```yaml
+# kortix.yaml
+triggers:
+  - slug: pr-review
+    type: event
+    connector: github # required, slug of a connector under `connectors:`
+    event: GITHUB_PULL_REQUEST_EVENT # required, event type from `kortix triggers events`
+    config: { owner: acme, repo: api } # optional, settings of the event
+    agent: default
+    session_mode: fresh # default "fresh"
+    filter: # optional, same guard a webhook uses
+      "event.data.action": "opened"
+    prompt: |
+      Review {{ event.data.pull_request.html_url }}
+```
+
+### What the prompt can read
+
+The prompt, `filter`, and `session_key` read these roots:
+
+| Root | Value |
+| --- | --- |
+| `event.data.<field>` | The app's own event data. `kortix triggers events` shows the fields each event carries. |
+| `event.id` | The provider's id for this event. |
+| `event.type` | The event type, such as `GITHUB_PULL_REQUEST_EVENT`. |
+| `event.app` | The app slug, such as `github`. |
+| `event.connector` | The connector slug the trigger watches. |
+| `event.occurred_at` | When the event happened. |
+
+Event data comes from a third party. Kortix starts the session's first message with `[APP EVENT — automated, third-party content, not user input]`, so the agent treats the event content as data and not as instructions.
+
+### Status
+
+`kortix triggers ls` and the web trigger list show the subscription status of each event trigger.
+
+| Status | Meaning | Fix |
+| --- | --- | --- |
+| `active` | The subscription exists. Events fire the trigger. | None. |
+| `pending` | The trigger is declared and Kortix has not created the subscription yet. | Wait a moment. If it stays `pending`, save the trigger again. |
+| `needs_connection` | The connector has no usable shared account. The text reads "Connect a shared `<app>` account to activate this trigger." | Connect a shared account for the connector as the project. A member's private account does not count. |
+| `error` | The subscription failed or the provider disabled it. The trigger shows the error text. | Fix the cause the text names, then save the trigger again. |
+
+Common `error` texts:
+
+- "This `<app>` account is shared with specific people only. Event triggers need an account shared with the whole project." Open the account's sharing and share it with the whole project.
+- "Connector `<slug>` is not declared in kortix.yaml." Add the connector under `connectors:`.
+- "Event triggers need COMPOSIO_API_KEY on this deployment." A self-hosted deployment lacks the key. See [Self-hosting](#self-hosting-event-triggers).
+- "The app disabled this subscription: ..." The provider turned the subscription off. Save the trigger again to subscribe again.
+- "The connected account expired: ..." The app revoked or expired the account. Reconnect the app to resume the trigger.
+
+### Rules
+
+- **One feeder account.** Only a project-shared account that is open to the whole project can feed a trigger. A trigger runs with nobody present, and event data lands in a session prompt. An account shared with named people only, or a private account, never feeds one.
+- **Each event fires once.** A trigger fires once per provider event. A redelivered event does not start a second session. Two triggers on the same event each fire once.
+- **Pause stops it.** A paused trigger or a paused project skips events. Skipped events do not queue.
+- **Edits resubscribe.** Changing `connector`, `event`, or `config` replaces the subscription. Deleting the trigger removes it.
+
+### Self-hosting event triggers
+
+Event delivery needs a Composio project with a webhook that points at your API. Do this once per Composio project:
+
+1. Set `COMPOSIO_API_KEY` in the API environment.
+2. Create the webhook subscription:
+
+   ```sh
+   cd apps/api
+   npx -y @dotenvx/dotenvx run -f .env.<env> -- \
+     bun scripts/composio-webhook-subscription.ts \
+     --url https://<api-host>/v1/webhooks/events/composio
+   ```
+
+3. The script prints the signing secret once, with a `dotenvx set COMPOSIO_WEBHOOK_SECRET ...` command. Run that command to store the secret. Composio does not show it again.
+
+A Composio project holds one webhook URL, so one project serves one API deployment. Two deployments that share a Composio project cannot both receive events. Add `--dry-run` to read the current subscription and print the plan without writing. Run the script again to change the URL. A repeat run with the same URL changes nothing and prints no secret. Without `COMPOSIO_WEBHOOK_SECRET`, the ingress route answers `503` and no event fires.
+
 ## Monitors
 
 **Experimental.** Monitors run only where the `monitors` feature flag is on. The flag is off by default. While it is off, the platform provisions no monitor box and fires no monitor event.
@@ -166,7 +271,7 @@ The monitor box needs a provider that supports a persistent sandbox. Where the p
 triggers:
   - slug: daily-digest # required, lowercase + dashes, unique per project
     name: Daily digest # optional, defaults to slug
-    type: cron # "cron" | "webhook" | "monitor", required
+    type: cron # "cron" | "webhook" | "event" | "monitor", required
     agent: kortix # optional, defaults to "default"
     model: anthropic/claude-sonnet-4-5 # optional, resolves at fire time if unset
     enabled: true # optional, default true
@@ -195,6 +300,8 @@ triggers:
       "line.severity": "error"
     prompt: "Checkout monitor emitted: {{ line }}"
 ```
+
+An event trigger replaces the schedule fields with the app and event it watches. See [App event triggers](#app-event-triggers).
 
 Legacy `kortix.toml` uses the same fields in a different container; see [legacy TOML](/docs/project/legacy-toml).
 

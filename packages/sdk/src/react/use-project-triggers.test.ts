@@ -57,3 +57,15 @@ describe('useProjectTriggers (query-key stability + invalidation wiring)', () =>
     expect(a.queryKey).not.toEqual(b.queryKey);
   });
 });
+
+describe('useProjectTriggerEventTypes', () => {
+  test('keys on the connector and is enabled only when project and connector are set', async () => {
+    const { useProjectTriggerEventTypes, projectTriggerEventTypesKey } = await import('./use-project-triggers');
+    const on = useProjectTriggerEventTypes('proj-1', 'github') as any;
+    expect(on.queryKey).toEqual(projectTriggerEventTypesKey('proj-1', 'github'));
+    expect(on.queryKey).toEqual(qk.project.triggerEventTypes('proj-1', 'github'));
+    expect(on.enabled).toBe(true);
+    expect((useProjectTriggerEventTypes('proj-1', null) as any).enabled).toBe(false);
+    expect((useProjectTriggerEventTypes(undefined, 'github') as any).enabled).toBe(false);
+  });
+});

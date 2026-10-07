@@ -1,13 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { config } from '../config';
 import { composioConfigured, composioUserId, getComposioRuntime } from '../connectors/composio';
-import {
-  EventSignatureError,
-  type EventDelivery,
-  type EventSourceProvider,
-  type EventTypeInfo,
-  type ProviderNotice,
-} from './types';
+import { EventConnectionNotReadyError, type EventDelivery, EventSignatureError, type EventSourceProvider, type EventTypeInfo, type ProviderNotice } from './types';
 
 const TOLERANCE_S = 5 * 60;
 const PAGE_LIMIT = 100;
@@ -92,7 +86,7 @@ export const composioEventSource: EventSourceProvider = {
   async subscribe({ connection, type, config: triggerConfig }) {
     const connectedAccountId = str(connection.metadata.connected_account_id);
     if (!connectedAccountId) {
-      throw new Error(`Connection ${connection.connectionId} has no connected_account_id; reconnect the ${connection.app} account.`);
+      throw new EventConnectionNotReadyError(`Finish connecting the shared ${connection.app} account to activate this trigger.`);
     }
     const res = await triggers().create(composioUserId(connection.connectionId), type, { connectedAccountId, triggerConfig });
     return { externalId: res.triggerId };

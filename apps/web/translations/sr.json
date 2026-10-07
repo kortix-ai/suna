@@ -1548,6 +1548,7 @@
         "email": "Е-пошта",
         "scheduled": "Заказано",
         "webhook": "Webhook",
+        "event": "Događaj aplikacije",
         "manual": "Ручно",
         "all": "Све"
       },

@@ -1548,6 +1548,7 @@
         "email": "電子メール",
         "scheduled": "スケジュール済み",
         "webhook": "Webhook",
+        "event": "アプリイベント",
         "manual": "手動",
         "all": "すべて"
       },

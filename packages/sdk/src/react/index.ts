@@ -132,7 +132,12 @@ export {
 } from './use-accounts';
 export { useProjectSecrets, projectSecretsKey } from './use-project-secrets';
 export { useAccountSecretResources, useSessionProviderSecretPools } from './use-provider-secrets';
-export { useProjectTriggers, projectTriggersKey } from './use-project-triggers';
+export {
+  useProjectTriggers,
+  projectTriggersKey,
+  useProjectTriggerEventTypes,
+  projectTriggerEventTypesKey,
+} from './use-project-triggers';
 export { useProjectReminders, useSessionReminders } from './use-reminders';
 export { useSessionMessageAuthors } from './use-session-message-authors';
 export { useSessionModelUsage } from './use-session-model-usage';

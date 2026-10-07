@@ -11,7 +11,7 @@ import { unwrap } from './shared';
 // in `project_trigger_runtime` so a fire doesn't amplify into a git commit.
 // ---------------------------------------------------------------------------
 
-export type ProjectTriggerType = 'cron' | 'webhook' | 'monitor';
+export type ProjectTriggerType = 'cron' | 'webhook' | 'monitor' | 'event';
 
 /**
  * How the platform runs a `type: monitor` trigger's `run` command:
@@ -41,6 +41,22 @@ export interface TriggerSessionAccess {
   mode: 'private' | 'project' | 'members';
   memberIds: string[];
   groupIds: string[];
+}
+
+/** Subscription state of a `type: event` trigger. */
+export interface ProjectTriggerEvent {
+  connector: string;
+  /** Provider event type id, e.g. `GITHUB_PULL_REQUEST_EVENT`. */
+  type: string;
+  config: Record<string, unknown>;
+  /** Event source provider derived from the connector (e.g. `composio`). Null when unresolved. */
+  provider: string | null;
+  /** Provider app slug (e.g. `github`). Null when unresolved. */
+  app: string | null;
+  /** `pending` = declared but no subscription yet. */
+  status: 'active' | 'needs_connection' | 'error' | 'pending';
+  error: string | null;
+  last_event_at: string | null;
 }
 
 /** Parsed trigger spec — what the listing endpoint returns. */
@@ -81,6 +97,8 @@ export interface ProjectTrigger {
    * monitor can never fail silently. Null when the monitor declares none.
    */
   expect_event_within_seconds: number | null;
+  /** For type='event' only — see {@link ProjectTriggerEvent}. Null otherwise. */
+  event: ProjectTriggerEvent | null;
   prompt_template: string;
   /** Session strategy — see {@link ProjectTriggerSessionMode}. */
   session_mode: ProjectTriggerSessionMode;
@@ -175,6 +193,12 @@ export interface CreateProjectTriggerInput {
   interval?: string;
   /** For type='monitor'. Silence watchdog as a duration literal; floor 5m. */
   expect_event_within?: string;
+  /** Required for type='event'. Connector slug the event happens on. */
+  connector?: string;
+  /** Required for type='event'. Provider event type id from {@link listProjectTriggerEventTypes}. */
+  event?: string;
+  /** For type='event'. Provider event config, shaped by the event type's `config_schema`. */
+  event_config?: Record<string, unknown>;
   /**
    * Session strategy across fires. Omit for the type's default — 'fresh' on
    * cron/webhook, 'reuse' on monitor (a monitor fires repeatedly by design, so
@@ -218,6 +242,12 @@ export interface UpdateProjectTriggerInput {
   interval?: string | null;
   /** For type='monitor'. Duration literal, floor 5m. null clears the watchdog. */
   expect_event_within?: string | null;
+  /** For type='event'. Connector slug. */
+  connector?: string;
+  /** For type='event'. Provider event type id. */
+  event?: string;
+  /** For type='event'. Replaces the provider event config. */
+  event_config?: Record<string, unknown>;
   session_mode?: ProjectTriggerSessionMode;
   session_id?: string | null;
   /** See {@link CreateProjectTriggerInput.session_key}. null clears it. */
@@ -298,6 +328,41 @@ export async function fireProjectTrigger(projectId: string, slug: string) {
     await backendApi.post<FireProjectTriggerResponse>(
       `/projects/${projectId}/triggers/${slug}/fire`,
       {},
+    ),
+  );
+}
+
+/** One app event a connector can trigger on. */
+export interface ProjectTriggerEventType {
+  type: string;
+  name: string;
+  description: string;
+  app: string;
+  /** How the provider delivers it; null when unknown. */
+  delivery: 'poll' | 'push' | null;
+  /** JSON Schema of the `event_config` this event accepts. */
+  config_schema: Record<string, unknown>;
+  /** JSON Schema of the `event.data` a prompt template reads. Null when unpublished. */
+  payload_schema: Record<string, unknown> | null;
+}
+
+export interface ProjectTriggerEventTypes {
+  provider: string;
+  app: string;
+  event_types: ProjectTriggerEventType[];
+}
+
+/**
+ * The app events a connector can trigger on. Throws 404 for an unknown
+ * connector and 409 `event_source_unavailable` when its provider has no event source.
+ */
+export async function listProjectTriggerEventTypes(
+  projectId: string,
+  params: { connector: string },
+) {
+  return unwrap(
+    await backendApi.get<ProjectTriggerEventTypes>(
+      `/projects/${projectId}/triggers/event-types?connector=${encodeURIComponent(params.connector)}`,
     ),
   );
 }

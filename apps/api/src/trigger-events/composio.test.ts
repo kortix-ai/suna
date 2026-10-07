@@ -5,7 +5,7 @@ import { config } from '../config';
 import { setComposioRuntimeForTest, type ComposioRuntime } from '../connectors/composio';
 import { composioEventSource as provider } from './composio';
 import { eventSourceFor } from './registry';
-import { EventSignatureError } from './types';
+import { EventSignatureError, EventConnectionNotReadyError } from './types';
 
 const SECRET = 'test-secret-not-base64!';
 const writable = config as { COMPOSIO_WEBHOOK_SECRET?: string };
@@ -98,8 +98,8 @@ describe('subscribe / unsubscribe', () => {
     expect(res).toEqual({ externalId: 'ti_synthetic1' });
     expect(calls[0]).toEqual(['create', 'kortix-connection:conn-1', 'GITHUB_PULL_REQUEST_EVENT', { connectedAccountId: 'ca_1', triggerConfig: { repo: 'api' } }]);
   });
-  test('throws without connected_account_id', async () => {
-    await expect(provider.subscribe({ connection: { ...connection, metadata: {} }, type: 'X', config: {} })).rejects.toThrow('connected_account_id');
+  test('an unauthorized connection (no connected_account_id) is not ready', async () => {
+    await expect(provider.subscribe({ connection: { ...connection, metadata: {} }, type: 'X', config: {} })).rejects.toBeInstanceOf(EventConnectionNotReadyError);
     expect(calls).toHaveLength(0);
   });
   test('unsubscribe deletes; 404 is success; other errors throw', async () => {

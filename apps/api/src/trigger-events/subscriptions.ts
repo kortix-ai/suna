@@ -14,7 +14,7 @@ import type { GitTriggerSpec } from '../projects/trigger-types';
 import { db } from '../shared/db';
 import { eventSourceFor } from './registry';
 import * as store from './store';
-import type { EventSourceConnection, EventSourceProvider } from './types';
+import { EventConnectionNotReadyError, type EventSourceConnection, type EventSourceProvider } from './types';
 
 type Resolution =
   | { kind: 'ok'; provider: EventSourceProvider; connection: EventSourceConnection }
@@ -182,7 +182,7 @@ async function reconcileOne(
       connectionId: connection.connectionId,
       externalId: prev?.externalId ?? null,
       desiredHash: hash,
-      status: 'error',
+      status: error instanceof EventConnectionNotReadyError ? 'needs_connection' : 'error',
       lastError: errorText(error),
     });
   }

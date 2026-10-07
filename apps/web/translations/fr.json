@@ -1548,6 +1548,7 @@
         "email": "Courriel",
         "scheduled": "Programmée",
         "webhook": "Webhook",
+        "event": "Événement d'app",
         "manual": "Manuel",
         "all": "Tous"
       },

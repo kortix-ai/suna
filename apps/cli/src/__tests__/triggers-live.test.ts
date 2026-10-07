@@ -59,6 +59,7 @@ function triggerList(overrides: Record<string, unknown> = {}) {
         secret_env: null,
         webhook_url: null,
         last_fired_at: null,
+        event: null,
         ...overrides,
       },
     ],
@@ -180,6 +181,40 @@ describe('kortix triggers — the live (--apply) path', () => {
       },
     });
     expect(r.stdout).toContain('digest (cron) live on the project');
+  });
+
+  test('add --apply --type event POSTs connector, event, and event_config', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(
+      ['triggers', 'add', 'new-pr', '--apply', '--type', 'event', '--connector', 'github', '--event', 'GITHUB_PULL_REQUEST_EVENT', '--config', 'owner=acme', '--config-json', '{"draft":false}', '--prompt', 'Review {{ event.data.title }}', '--project', PROJECT],
+      config,
+    );
+    expect(r.code).toBe(0);
+    expect(calls[0].body).toEqual({
+      slug: 'new-pr',
+      name: 'new-pr',
+      type: 'event',
+      prompt_template: 'Review {{ event.data.title }}',
+      enabled: true,
+      connector: 'github',
+      event: 'GITHUB_PULL_REQUEST_EVENT',
+      event_config: { draft: false, owner: 'acme' },
+    });
+    expect(r.stdout).toContain('new-pr (event) live on the project');
+  });
+
+  test('add --apply rejects event misuse before any request', async () => {
+    const config = writeConfig(startServer());
+    const base = ['triggers', 'add', 'x', '--apply', '--prompt', 'p', '--project', PROJECT];
+    const cron = await runCli([...base, '--type', 'event', '--connector', 'github', '--event', 'E', '--cron', '0 0 9 * * *'], config);
+    expect(cron.code).toBe(2);
+    expect(cron.stderr).toContain('--cron is not valid on an event trigger');
+    const stray = await runCli([...base, '--cron', '0 0 9 * * *', '--event', 'E'], config);
+    expect(stray.code).toBe(2);
+    expect(stray.stderr).toContain('--event is only valid on an event trigger');
+    const missing = await runCli([...base, '--type', 'event', '--event', 'E'], config);
+    expect(missing.code).toBe(2);
+    expect(calls).toEqual([]);
   });
 
   test('add --apply --run-at sends a one-off instead of a cron', async () => {

@@ -62,6 +62,7 @@ import {
   modelKeyToWire,
   qk,
   useFeatureFlag,
+  useProjectTriggerEventTypes,
   useRuntimeProviders,
   useVisibleAgents,
 } from '@kortix/sdk/react';
@@ -69,6 +70,7 @@ import { buildWebhookSampleRequest } from '@kortix/shared';
 import {
   CaretDownIcon,
   DotsThreeIcon,
+  LightningIcon,
   PauseIcon,
   PencilSimpleIcon,
   PlayIcon,
@@ -81,6 +83,8 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { triggerSessionAccessCopy } from './trigger-session-access-copy';
 
+import { describeEventStatus, payloadVariables } from './event-trigger-copy';
+import { EventPanel, EventStatusBanner } from './event-trigger-panel';
 import {
   CUSTOM_TIMING_LABEL,
   type SessionMode,
@@ -190,8 +194,14 @@ export function ScheduleDetailSheet({
   if (!trigger) return null;
 
   const isCron = trigger.type === 'cron';
-  const status = triggerStatus(trigger.enabled, tI18nComplete);
-  const KindIcon = isCron ? TimerIcon : WebhooksLogoIcon;
+  const event = trigger.type === 'event' ? trigger.event : null;
+  const baseStatus = triggerStatus(trigger.enabled, tI18nComplete);
+  // A paused event trigger reads Paused; an enabled one reads its subscription state.
+  const eventStatus = event && trigger.enabled ? describeEventStatus(event) : null;
+  const status = eventStatus
+    ? { ...baseStatus, label: eventStatus.label as typeof baseStatus.label }
+    : baseStatus;
+  const KindIcon = isCron ? TimerIcon : event ? LightningIcon : WebhooksLogoIcon;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -238,7 +248,10 @@ export function ScheduleDetailSheet({
                 <SheetTitle className="truncate text-base font-semibold tracking-tight">
                   {triggerName(trigger)}
                 </SheetTitle>
-                <Badge variant={status.active ? 'kortix' : 'muted'} size="sm">
+                <Badge
+                  variant={eventStatus ? eventStatus.variant : status.active ? 'kortix' : 'muted'}
+                  size="sm"
+                >
                   {status.label}
                 </Badge>
               </div>
@@ -287,7 +300,7 @@ export function ScheduleDetailSheet({
                   <DropdownMenuItem variant="destructive" onClick={onDelete}>
                     <TrashIcon className="size-3.5 shrink-0" />
                     {tI18nComplete.raw('texte2d0a54968ea')}
-                    {isCron ? 'schedule' : 'webhook'}
+                    {isCron ? 'schedule' : event ? 'app event' : 'webhook'}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -332,6 +345,7 @@ export function ScheduleDetailSheet({
               {tTriggers('runFailed.nextRun')}
             </InfoBanner>
           ) : null}
+          {event ? <EventStatusBanner projectId={projectId} event={event} /> : null}
           <WhatItDoesPanel
             projectId={projectId}
             trigger={trigger}
@@ -339,7 +353,23 @@ export function ScheduleDetailSheet({
             onMutated={onMutated}
           />
 
-          {isCron ? (
+          {event ? (
+            <>
+              <EventPanel
+                projectId={projectId}
+                trigger={trigger}
+                event={event}
+                canWrite={canWrite}
+                onMutated={onMutated}
+              />
+              <ConditionsPanel
+                projectId={projectId}
+                trigger={trigger}
+                canWrite={canWrite}
+                onMutated={onMutated}
+              />
+            </>
+          ) : isCron ? (
             <WhenItRunsPanel
               projectId={projectId}
               trigger={trigger}
@@ -411,6 +441,22 @@ function WhatItDoesPanel({
   onMutated: () => void;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const eventTypes = useProjectTriggerEventTypes(
+    projectId,
+    trigger.type === 'event' ? (trigger.event?.connector ?? null) : null,
+  );
+  const placeholders =
+    trigger.type === 'event'
+      ? [
+          '{{ event.data }}',
+          ...payloadVariables(
+            eventTypes.data?.event_types.find((e) => e.type === trigger.event?.type)
+              ?.payload_schema,
+          )
+            .slice(0, 6)
+            .map((v) => v.token),
+        ]
+      : PLACEHOLDERS;
   const [name, setName] = useState(trigger.name);
   const [instruction, setInstruction] = useState(trigger.prompt_template);
 
@@ -480,7 +526,7 @@ function WhatItDoesPanel({
         />
         <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
           {tI18nComplete.raw('textb560dc33f1db')}{' '}
-          {PLACEHOLDERS.map((p, i) => (
+          {placeholders.map((p, i) => (
             <span key={p}>
               {i > 0 ? ', ' : ''}
               <code className="font-mono">{p}</code>

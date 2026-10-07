@@ -108,6 +108,7 @@ need a running session. Each mirrors a method on the
 | `useAccountSecretResources(accountId)` | Account provider-secret metadata and use grants. Values are never returned. |
 | `useSessionProviderSecretPools(projectId, sessionId)` | Configured pools, including empty selections; `setPool` updates one provider and refreshes the session cache. |
 | `useProjectTriggers(projectId)` | Triggers: list, create, update, remove, fire. |
+| `useProjectTriggerEventTypes(projectId, connector)` | The app events a connector can trigger on. Idle until `connector` is set. |
 | `useChangeRequests(projectId, status?)` | Change requests: list, open, merge, close, request changes. |
 | `useRuntimeSupports(capability)` | Whether the open session's runtime serves a feature (`session.rewind`, `session.compact`, …), from the `/kortix/health` answers the runtime-reconnect poller reads. `true` until the first answer. See [What the runtime supports](/docs/sdk/sessions#what-the-runtime-supports). |
 | `resetRuntimeQueries(queryClient)` | Not a hook. Drops every cached runtime query (sessions, messages, agents, commands, diffs). Call it after the session's runtime is replaced by a restart or a config reload, so the next read comes from the new runtime. |

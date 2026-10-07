@@ -1548,6 +1548,7 @@
         "email": "Email",
         "scheduled": "Scheduled",
         "webhook": "Webhook",
+        "event": "App event",
         "manual": "Manual",
         "all": "All"
       },

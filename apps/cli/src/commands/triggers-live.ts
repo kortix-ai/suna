@@ -11,7 +11,7 @@ import {
   type CtxOpts,
 } from '../command-helpers.ts';
 import { C, status } from '../style.ts';
-import { parseMonitorFlags } from './triggers-manifest.ts';
+import { parseEventFlags, parseMonitorFlags, strayEventFlag } from './triggers-manifest.ts';
 
 // ── The LIVE path (--apply, and every `set`) ───────────────────────────────
 //
@@ -88,10 +88,14 @@ export async function triggersAddLive(
 ): Promise<number> {
   if (!slug) return missing('a trigger slug');
   const type = (tf.type ?? 'cron').toLowerCase();
-  if (type !== 'cron' && type !== 'webhook' && type !== 'monitor') {
-    return fail('--type must be cron, webhook, or monitor.');
+  if (type !== 'cron' && type !== 'webhook' && type !== 'monitor' && type !== 'event') {
+    return fail('--type must be cron, webhook, monitor, or event.');
   }
   if (!tf.prompt) return fail('--prompt is required.');
+  if (type !== 'event') {
+    const stray = strayEventFlag(tf);
+    if (stray) return fail(stray);
+  }
   if (tf.cron && tf.runAt) return fail('--cron and --run-at are exclusive — pass one.');
   if (type === 'cron' && !tf.cron && !tf.runAt) {
     return fail('cron triggers need --cron "<6-field expr>" or --run-at <iso>.');
@@ -123,6 +127,12 @@ export async function triggersAddLive(
     body.timezone = tf.timezone ?? 'UTC';
   } else if (type === 'webhook') {
     body.secret_env = tf.secretEnv;
+  } else if (type === 'event') {
+    const event = parseEventFlags(tf);
+    if ('error' in event) return fail(event.error);
+    body.connector = event.connector;
+    body.event = event.event;
+    if (Object.keys(event.config).length > 0) body.event_config = event.config;
   } else {
     // A monitor rejects cron/webhook wiring outright, so send only its own
     // fields — the same validation `kortix triggers add` runs locally.
@@ -199,6 +209,9 @@ export async function triggersSetLive(
     ...(tf.agent ? { agent: tf.agent } : {}),
     ...(tf.model ? { model: tf.model } : {}),
     ...(tf.secretEnv ? { secret_env: tf.secretEnv } : {}),
+    ...(tf.connector ? { connector: tf.connector } : {}),
+    ...(tf.event ? { event: tf.event } : {}),
+    ...(tf.eventConfig ? { event_config: JSON.parse(tf.eventConfig) } : {}),
     ...(enabled === undefined ? {} : { enabled }),
     ...sessionFields(tf),
     ...(access ? { session_access: access } : {}),

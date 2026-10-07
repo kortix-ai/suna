@@ -9,6 +9,7 @@ import type {
 } from './triggers';
 import {
   createProjectTrigger,
+  listProjectTriggerEventTypes,
   listProjectTriggers,
   updateProjectTrigger,
 } from './triggers';
@@ -52,6 +53,7 @@ const MONITOR_WIRE_ENTRY = {
   mode: 'poll',
   interval_seconds: 60,
   expect_event_within_seconds: 86400,
+  event: null,
   prompt_template: 'Checkout monitor emitted: {{ line }}',
   session_mode: 'reuse',
   session_id: null,
@@ -262,4 +264,70 @@ test('the public trigger access type rejects unknown modes', () => {
   };
 
   expect([access, badAccess]).toHaveLength(2);
+});
+
+test('listProjectTriggerEventTypes GETs event-types with the connector query and returns the typed catalog', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      provider: 'composio',
+      app: 'github',
+      event_types: [
+        {
+          type: 'GITHUB_PULL_REQUEST_EVENT',
+          name: 'Pull request',
+          description: 'A pull request changed.',
+          app: 'github',
+          delivery: 'push',
+          config_schema: { type: 'object' },
+          payload_schema: null,
+        },
+      ],
+    },
+  };
+
+  const catalog = await listProjectTriggerEventTypes('P1', { connector: 'my github' });
+
+  expect(last().method).toBe('GET');
+  expect(last().url).toContain('/projects/P1/triggers/event-types?connector=my%20github');
+  expect(catalog.provider).toBe('composio');
+  expect(catalog.event_types[0]!.delivery).toBe('push');
+});
+
+test('createProjectTrigger sends an event trigger body and the listing reads event state back', async () => {
+  const input: CreateProjectTriggerInput = {
+    name: 'PR opened',
+    type: 'event',
+    prompt_template: 'Review {{ event.data.title }}',
+    connector: 'github',
+    event: 'GITHUB_PULL_REQUEST_EVENT',
+    event_config: { repo: 'acme/app' },
+  };
+  const event: NonNullable<ProjectTrigger['event']> = {
+    connector: 'github',
+    type: 'GITHUB_PULL_REQUEST_EVENT',
+    config: { repo: 'acme/app' },
+    provider: 'composio',
+    app: 'github',
+    status: 'needs_connection',
+    error: null,
+    last_event_at: null,
+  };
+  nextResponse = {
+    status: 200,
+    body: { triggers: [{ ...MONITOR_WIRE_ENTRY, type: 'event', event }], errors: [] },
+  };
+
+  const listing = await createProjectTrigger('P1', input);
+
+  expect(last().body).toEqual(input);
+  const type: ProjectTriggerType = listing.triggers[0]!.type;
+  expect(type).toBe('event');
+  expect(listing.triggers[0]!.event?.status).toBe('needs_connection');
+});
+
+test('updateProjectTrigger accepts event_config', async () => {
+  const input: UpdateProjectTriggerInput = { event_config: { repo: 'acme/other' } };
+  await updateProjectTrigger('P1', 's', input);
+  expect(last().body).toEqual(input);
 });

@@ -188,11 +188,41 @@ export interface ProjectSessionInitiator {
 /** A `type: monitor` trigger's shape. */
 export type MonitorMode = 'poll' | 'stream';
 
+/** A `type: event` trigger's source + subscription state. */
+export interface ProjectTriggerEvent {
+  connector: string;
+  type: string;
+  config: Record<string, unknown>;
+  provider: string | null;
+  app: string | null;
+  status: 'active' | 'needs_connection' | 'error' | 'pending';
+  error: string | null;
+  last_event_at: string | null;
+}
+
+/** One event type from `GET /projects/:id/triggers/event-types`. */
+export interface TriggerEventType {
+  type: string;
+  name: string;
+  description: string;
+  app: string;
+  delivery: 'poll' | 'push' | null;
+  /** JSON Schema of the event's `config`. */
+  config_schema: Record<string, unknown>;
+  payload_schema: Record<string, unknown> | null;
+}
+
+export interface TriggerEventTypesResponse {
+  provider: string;
+  app: string;
+  event_types: TriggerEventType[];
+}
+
 export interface ProjectTrigger {
   slug: string;
   path: string;
   name: string;
-  type: 'cron' | 'webhook' | 'monitor';
+  type: 'cron' | 'webhook' | 'monitor' | 'event';
   agent: string;
   enabled: boolean;
   cron: string | null;
@@ -208,6 +238,8 @@ export interface ProjectTrigger {
   interval_seconds: number | null;
   /** monitor only — the silence watchdog in whole seconds. */
   expect_event_within_seconds: number | null;
+  /** type=event only; null for every other type. */
+  event?: ProjectTriggerEvent | null;
   prompt_template: string;
   /** 'fresh' (default) mints a new session per fire; 'reuse' re-prompts one persistent session. */
   session_mode: 'fresh' | 'reuse';
