@@ -69,8 +69,14 @@ import {
 import type { StartSessionCommand } from '../session-lifecycle/types';
 import { logger } from '../../lib/logger';
 
-/** A watcher allowed to start and restart the session: the ladder acts as them. */
-export type WakeLadderActor = Pick<StartSessionCommand, 'loaded' | 'visible'>;
+/**
+ * A watcher the ladder may act as. `authorize` re-runs the `/start` and
+ * `/restart` gates from fresh reads right before each step and answers null
+ * once the watcher may not (`wake-ladder-authorization.ts`).
+ */
+export interface WakeLadderActor {
+  authorize: () => Promise<Pick<StartSessionCommand, 'loaded' | 'visible'> | null>;
+}
 
 /** The wake ladder as a client draws it (`kortix.control.runtime` `wake_ladder`). */
 export interface WakeLadderView {
@@ -519,12 +525,19 @@ async function driveWakeLadder(sessionId: string, reconciler: Reconciler): Promi
   ladder.acting = true;
   let acted = false;
   try {
+    // Authorization is asked NOW, not when the stream opened: access revoked
+    // since then ends this watcher's part in the ladder.
+    const authorized = await actor.authorize();
+    if (!authorized) {
+      ladder.actors.delete(actor);
+      return;
+    }
     // Same gate as `/start`: a step resumes or provisions compute.
     const { checkBillingAdmission } = await import('../../billing/services/billing-gate');
-    if (!(await checkBillingAdmission(actor.loaded.row.accountId)).ok) return;
+    if (!(await checkBillingAdmission(authorized.loaded.row.accountId)).ok) return;
     const { step } = await claimWakeLadderStep(sessionId, observation);
     if (step !== 'retry-start' && step !== 'restart') return;
-    const projectId = actor.loaded.row.projectId;
+    const projectId = authorized.loaded.row.projectId;
     logger.info('[wake-ladder] escalating a quiet wake', {
       sessionId,
       step,
@@ -532,10 +545,10 @@ async function driveWakeLadder(sessionId: string, reconciler: Reconciler): Promi
     });
     if (step === 'retry-start') {
       const { startSession } = await import('../session-lifecycle/start-session');
-      await startSession({ source: 'ui', ...actor, projectId, sessionId });
+      await startSession({ source: 'ui', ...authorized, projectId, sessionId });
     } else {
       const { restartSession } = await import('../session-lifecycle/actions');
-      await restartSession({ loaded: actor.loaded, session: actor.visible.row, projectId, sessionId });
+      await restartSession({ loaded: authorized.loaded, session: authorized.visible.row, projectId, sessionId });
     }
     // A step is progress: the next one waits a full silence window again.
     ladder.sinceMs = Date.now();

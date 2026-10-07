@@ -67,6 +67,8 @@ import { sessionSandboxes } from '@kortix/db';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
+import { reauthorizeWakeLadderActor } from '../lib/wake-ladder-authorization';
+import { actorOf } from '../../iam/actor';
 import { auth, errors } from '../../openapi';
 import { db } from '../../shared/db';
 import {
@@ -266,7 +268,7 @@ export function registerSessionStreamRoutes(): void {
       // The server wake ladder acts as a watcher who could press Restart
       // themselves: the same gates `/start` and `/restart` apply. Anyone else
       // sees the ladder's state and never triggers it.
-      const ladderActor = controlOnly ? null : await wakeLadderActorFor(c, projectId, visible);
+      const ladderActor = controlOnly ? null : await wakeLadderActorFor(c, projectId, sessionId, visible);
       // Presence is a human browser tab's: the same gate `PUT .../presence` applies.
       const presenceTabId = c.req.query('tab_id');
       const presenceRenewal =
@@ -827,8 +829,11 @@ async function refreshProjection(args: PumpArgs, trigger: string): Promise<void>
 async function wakeLadderActorFor(
   c: Context,
   projectId: string,
-  visible: { row: WakeLadderActor['visible']['row']; canManageLifecycle?: boolean },
+  sessionId: string,
+  visible: { row: { agentName: string | null }; canManageLifecycle?: boolean },
 ): Promise<WakeLadderActor | null> {
+  // A cheap pre-filter at open. The real decision is `authorize()`, asked
+  // again right before every step (Strix CWE-863).
   if (!visible.canManageLifecycle) return null;
   if (c.get('authType') === 'apiKey' && c.get('apiKeyType') === 'user') return null;
   try {
@@ -836,7 +841,18 @@ async function wakeLadderActorFor(
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return null;
     await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName);
-    return { loaded, visible: { row: visible.row } };
+    const actor = await actorOf(c, loaded.row.accountId);
+    // An agent's own stream never drives restarts of its session.
+    if (actor.credential.kind === 'agent_session') return null;
+    const authorization = {
+      actor,
+      onBehalfOf: c.get('onBehalfOfUserId') as string | null | undefined,
+      isServiceAccount: c.get('authType') === 'service_account',
+      userId: loaded.userId,
+      projectId,
+      sessionId,
+    };
+    return { authorize: () => reauthorizeWakeLadderActor(authorization) };
   } catch {
     return null;
   }

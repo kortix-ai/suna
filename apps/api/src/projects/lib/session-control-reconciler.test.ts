@@ -745,9 +745,18 @@ describe('R5.2: the server owns session state', () => {
 });
 
 describe('R5.2: the server wake ladder', () => {
-  const actor = {
+  const authorized = {
     loaded: { row: { projectId: 'project-owner', accountId: 'account-1' }, userId: 'user-owner' },
     visible: { row: { status: 'active', sandboxProvider: 'platinum', baseRef: null, agentName: null, runtimeSessionId: null, accountId: 'account-1' } },
+  };
+  let authorizeCalls = 0;
+  let stillAllowed = true;
+  // Re-asked right before every step (Strix CWE-863): never a snapshot.
+  const actor = {
+    authorize: async () => {
+      authorizeCalls += 1;
+      return stillAllowed ? authorized : null;
+    },
   } as never;
   const wakingRow = () => ({
     status: 'active',
@@ -817,6 +826,20 @@ describe('R5.2: the server wake ladder', () => {
     expect(ladderSteps).toEqual([]);
     const runtime = handle.snapshot().find((event) => event.type === 'kortix.control.runtime');
     expect((runtime!.payload as { wake_ladder: { status: string } }).wake_ladder.status).toBe('idle');
+    handle.release();
+  });
+
+  test('a watcher whose access was revoked after the stream opened never triggers a step', async () => {
+    stillAllowed = false;
+    authorizeCalls = 0;
+    sandboxRow = wakingRow();
+    const handle = acquireControlReconciler(`${SESSION}-revoked`, 'project-owner', 'full', actor);
+    await handle.ready();
+    await quietFor(handle, 200_000);
+    expect(authorizeCalls).toBeGreaterThan(0);
+    expect(ladderSteps).toEqual([]);
+    expect(ladderWrites).toEqual([]);
+    stillAllowed = true;
     handle.release();
   });
 
