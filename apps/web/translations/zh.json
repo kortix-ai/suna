@@ -2202,6 +2202,12 @@
       }
     }
   },
+  "ssoRequired": {
+    "title": "使用单点登录",
+    "description": "你的组织要求此账户使用单点登录。请先退出，然后用工作邮箱继续，通过公司的身份提供商登录。",
+    "signOut": "退出并使用 SSO",
+    "notNow": "暂不"
+  },
   "auth": {
     "haveReferralCode": "有推荐码吗？",
     "referralCode": "推荐码",

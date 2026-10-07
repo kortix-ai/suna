@@ -18,6 +18,7 @@ import {
   gatewayRequestLogs,
   projectSessions,
   projects,
+  sessionSandboxes,
 } from '@kortix/db';
 import { insertIntoView } from '../../__tests__/helpers/compat-views';
 
@@ -129,6 +130,37 @@ describe('scheduled deletion', () => {
     expect(await requestStatus(requestId)).toBe('completed');
     const [credit] = await db.select().from(creditAccounts).where(eq(creditAccounts.accountId, accountId));
     expect(credit?.paymentStatus).toBe('deleted');
+  });
+
+  test('an account whose session box has an established identity is deleted', async () => {
+    // kortix.guard_session_sandbox_identity() refuses to delete a session_sandboxes
+    // row that has an external_id unless its session is soft-deleted.
+    const { accountId, requestId } = await seed();
+    const [project] = await db.select().from(projects).where(eq(projects.accountId, accountId));
+    const sessionId = crypto.randomUUID();
+    await db.insert(projectSessions).values({
+      sessionId,
+      projectId: project!.projectId,
+      accountId,
+      branchName: `session/${sessionId}`,
+      createdBy: accountId,
+      status: 'stopped',
+    });
+    await db.insert(sessionSandboxes).values({
+      sandboxId: crypto.randomUUID(),
+      sessionId,
+      accountId,
+      projectId: project!.projectId,
+      provider: 'daytona',
+      externalId: `ext-${sessionId}`,
+      status: 'stopped',
+    });
+
+    const result = await processScheduledDeletions();
+
+    expect(result.errors).toEqual([]);
+    expect(await accountExists(accountId)).toBe(false);
+    expect(await requestStatus(requestId)).toBe('completed');
   });
 
   test('a failed Stripe cancel leaves the account intact and the request retryable', async () => {
