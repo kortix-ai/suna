@@ -1,7 +1,6 @@
 {
-  "source_hash": "35fd2117da167208f3b61d7053f08f3dea8020a99860142b3ad318ee53726af5",
+  "source_hash": "76e8326daa0b4a32dff152b4fc573c61069e411c9c293e0634b9072f7c5a476c",
   "diff_files": [
-    "apps/api/src/__tests__/integration-sandbox-ownership.test.ts",
     "apps/cli/src/__tests__/cli-blackbox.test.ts",
     "apps/cli/src/__tests__/host-notice.test.ts",
     "apps/cli/src/__tests__/sandbox-auth.test.ts",
@@ -18,13 +17,13 @@
     "packages/sdk/src/core/turns/turns.test.ts",
     "packages/shared/src/host-config/config.ts"
   ],
-  "diff_hash": "3fea9ccef422f061b020c10c75962ba8058ee678362a05935c7a6329e1334b5c",
-  "head": "ddb1a4c08506f241631a9e02c92edc98a1a11e6b",
+  "diff_hash": "cb78808cbdbeba57d789a3640cdb7b75d7a6165922c6dc122464e827b978f9dc",
+  "head": "2f9ce507fbba1d4503351fd74a785e556a65c90e",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-07T09:56:48.750Z"
+  "at": "2026-10-07T10:09:29.458Z"
 }
