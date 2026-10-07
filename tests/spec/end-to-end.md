@@ -586,7 +586,7 @@ GitHub is **outbound only** (repo create, Contents API commits, installation-tok
 `GH-5` git transport resolution (`resolveProjectGitAuth`): managed GitHub (fresh repo-scoped installation token) / GitHub App / `project_secret` token / server PAT / none.
 `GH-6` `PUT /projects/:id/git-credential` (BYO) → `manage` → set git auth secret; already server-managed → 409.
 `GH-7` `POST /projects/:id/git-token` → mint a fresh managed-GitHub installation token; **409 for BYO**; 503 if managed Git is unavailable.
-`GH-8` `GET/POST/DELETE /projects/:id/cli-token[/:tokenId]` → project-scoped CLI tokens.
+`GH-8` `GET/POST/DELETE /projects/:id/cli-token[/:tokenId]` → project-scoped CLI tokens. The list hides session-bound tokens (the runtime's per-session `KORTIX_TOKEN`) and reports the count as `session_tokens`.
 
 ### `kortix ship` (alias `deploy`)
 
@@ -1042,7 +1042,7 @@ account exits non-zero with the manage-connections reason (the API's `403`).
 `CR-11` `GET/POST /projects/:id/change-requests` → NONMEMBER → 403/404.
 `CR-12` `GET /projects/:id/change-requests` → ANON → 401.
 `PROJ-9` `POST /projects/:id/manifest/validate {raw,format?}` → 200 {valid,issues}; missing raw → 400. `raw` is parsed as TOML or YAML — the format is derived from the project's configured `manifestPath` first, falls back to an explicit `format:"toml"|"yaml"` in the body, and defaults to `toml` for back-compat. A `kortix.yaml`-configured project's `raw` YAML validates correctly instead of silently mis-parsing as TOML.
-`PROJ-10` `POST /projects/:id/cli-token` → 201 project PAT; `GET` → 200; `DELETE /:tokenId` → 200; unknown → 404.
+`PROJ-10` `POST /projects/:id/cli-token` → 201 project PAT; `GET` → 200, hides session-bound tokens (the runtime's per-session `KORTIX_TOKEN`) and reports them as `session_tokens`; `DELETE /:tokenId` → 200; unknown → 404.
 `PSKILL-1` `POST /projects/:id/skills {name,description?}` (`manage`, gated `project.skill.write`) → 201 `{ok,slug,path}` and commits `skills/<slug>/SKILL.md` onto the default branch (the model-free form path behind Customize → Skills → New: the chat path needs a model, which a fresh free account lacks). The slug derives from the name (`slugifySlug`, shared with the UI's folder preview). The frontmatter is real YAML (`stringifyYaml`, one line per scalar), and the summary's frontmatter reader unescapes a double-quoted scalar, so a quoted description round-trips into `GET /projects/:id` `config.skills`. The committed file reads back through `GET /projects/:id/files/content`. Same slug again → 409; blank name → 400; ANON → 401; NONMEMBER → 403/404.
 `PROJ-11` `PATCH /projects/:id/onboarding {completed}` → 200; NONMEMBER → 403/404.
 `PROJ-12` `GET /projects/:id/version-diff?from&into` → 200; missing → 400; same ref → is_same_ref.
