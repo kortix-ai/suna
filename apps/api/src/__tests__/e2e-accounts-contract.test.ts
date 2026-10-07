@@ -305,6 +305,9 @@ mock.module('../iam/authorize', () => {
       }
     },
     listAccessible: async () => ({ mode: 'all' }),
+    // The accounts router's SSO-only gate (middleware/sso-gate.ts). No account
+    // in this suite enforces SSO.
+    ssoRequiredFor: async () => false,
     filterAccessibleObjects: async (
       _actor: unknown,
       _p: string,
