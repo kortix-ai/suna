@@ -39,9 +39,10 @@ import {
 export {
   currentRuntimeArtifactFingerprint,
   currentNonAgentRuntimeFingerprint,
-  runtimeArtifactsForBootMode,
+  RUNTIME_ARTIFACTS,
 } from './template-runtime-fingerprint';
 import { getSandboxProvider, type SandboxProviderAdapter } from './providers';
+import { BoundedMap } from '../shared/bounded-map';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
@@ -97,7 +98,7 @@ export interface ResolvedTemplate {
  * a manifest mutation (CR merge handles its own reconciliation).
  */
 const TOML_SYNC_TTL_MS = 60_000;
-const tomlSyncCache = new Map<string, number>();
+const tomlSyncCache = new BoundedMap<string, number>(2_000);
 
 /**
  * Per-project cache of the resolved template list. Burst session-boot scenarios
@@ -107,7 +108,7 @@ const tomlSyncCache = new Map<string, number>();
  * (templates only change via CRUD which already invalidates).
  */
 const TEMPLATE_LIST_TTL_MS = 5_000;
-const templateListCache = new Map<string, { at: number; value: ResolvedTemplate[] }>();
+const templateListCache = new BoundedMap<string, { at: number; value: ResolvedTemplate[] }>(500);
 
 /** Invalidate the in-memory template list cache for a project. Called from
  *  the CRUD endpoints after a create / update / delete. */

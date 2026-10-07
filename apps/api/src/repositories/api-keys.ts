@@ -222,7 +222,9 @@ export async function validateSecretKey(secretKey: string): Promise<ApiKeyValida
     if (!row) {
       // No second probe query here: a miss must cost one indexed lookup, not
       // two, because anyone can present an unknown token.
-      console.warn(`[validateSecretKey] Token not found in DB. hash=${secretKeyHashes[0]!.slice(0, 16)}... prefix="${secretKey.slice(0, 20)}..."`);
+      // Family prefix only (`kortix_pat_`): any further character of a presented
+      // key, or of its hash, is credential material.
+      console.warn(`[validateSecretKey] Token not found in DB. family=${secretKey.match(/^kortix_[a-z]+_|^kortix_/)?.[0] ?? 'unknown'}`);
       return { isValid: false, error: 'API key not found or invalid' };
     }
 

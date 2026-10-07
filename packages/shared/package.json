@@ -17,6 +17,7 @@
     "./sandbox-runtime-artifact": "./src/sandbox-runtime-artifact.ts",
     "./connector-sections": "./src/connector-sections.ts",
     "./code-language": "./src/code-language.ts",
+    "./preview-state-page": "./src/preview-state-page.ts",
     "./markdown-math": "./src/markdown-math.ts",
     "./tool-output": "./src/tool-output/index.ts",
     "./tool-output/testing": "./src/tool-output/testing.ts",

@@ -32,7 +32,7 @@ const {
   createPublicSessionShareRateLimitMiddleware,
   createProjectWebhookRateLimitMiddleware,
   resetRateLimiters,
-} = await import('../shared/rate-limit');
+} = await import('../middleware/rate-limit');
 const { sessionLlmPolicyForTier } = await import('../shared/account-limits');
 
 describe('audited rate limits', () => {

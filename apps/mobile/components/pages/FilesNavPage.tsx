@@ -1,5 +1,9 @@
 /**
  * FilesNavPage — the project's repo files (web parity: features/project-files).
+ * Opens from the drawer's Files pill (the `files` route: the hamburger) and,
+ * as a sub-page over the thread, from the session ··· sheet's Files row
+ * (`page:files-nav`, KRTX-1636: Go back in the hamburger's place, which
+ * returns to that thread).
  * A READ-ONLY git-repo browser: the `/files` endpoint returns a FLAT recursive
  * file list, so folders are derived client-side from the paths. Browse by
  * version (branch), open a file, see its history, and download a file or a
@@ -8,8 +12,9 @@
  * Layout (Jay, 2026-09-22):
  * - `PageHeader` with the large title and the `···`; no controls beside it.
  * - Search, then the breadcrumb (chips, never clipped). Inside a folder the
- *   hamburger stays (Jay, 2026-09-22: no Go back in its place, on any page);
- *   a crumb, or Android back, goes up one folder, never to home.
+ *   hamburger (or, as a sub-page, Go back) stays: a crumb, or Android back,
+ *   goes up one folder, never to home. Go back on the sub-page leaves the
+ *   page from any folder.
  * - List: sections titled "Folders" and "Files", rows of `SettingsRow` in
  *   `SettingsGroupItem`s. Grid: 2-up tiles. Both are one virtualised
  *   `FlatList` (`buildFilesListItems`, COR-155).
@@ -87,6 +92,8 @@ import { THEME } from '@/lib/utils/theme';
 interface FilesNavPageProps {
   page: { id: string; label: string };
   projectId: string;
+  /** As a sub-page: Go back in place of the hamburger. */
+  onBack?: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
   isDrawerOpen?: boolean;
@@ -455,6 +462,7 @@ function FileTile({
 export function FilesNavPage({
   page,
   projectId,
+  onBack,
   onOpenDrawer,
   onOpenRightDrawer,
   isDrawerOpen,
@@ -669,11 +677,11 @@ export function FilesNavPage({
 
   return (
     <View className="flex-1 bg-background">
-      {/* Inside a folder, Go back takes the hamburger's place and goes up one
-          folder; the title is the folder's name. */}
+      {/* Inside a folder the title is the folder's name. */}
       <PageHeader
         title={path ? basename(path) : page.label}
-        onOpenDrawer={onOpenDrawer}
+        onBack={onBack}
+        onOpenDrawer={onBack ? undefined : onOpenDrawer}
         onOpenRightDrawer={onOpenRightDrawer}
         isDrawerOpen={isDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}

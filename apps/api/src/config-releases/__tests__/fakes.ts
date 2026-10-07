@@ -40,6 +40,10 @@ export class MemoryConfigReleaseLedger implements ConfigReleaseLedger {
   async quarantined(projectId: string, releaseIds: string[], threshold: number) {
     return new Set(releaseIds.filter((id) => this.failingSessions(projectId, id) >= threshold));
   }
+  async failureReason(projectId: string, releaseId: string) {
+    const rows = this.failures.filter((row) => row.projectId === projectId && row.releaseId === releaseId && row.reason);
+    return rows.at(-1)?.reason ?? null;
+  }
   async lastProven(projectId: string, variant: string, threshold: number) {
     const rows = this.assigned
       .filter(

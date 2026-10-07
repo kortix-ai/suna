@@ -12,8 +12,6 @@ export interface SessionRuntimeEnvInput {
   opencodeModel?: string | null;
   /** Project file delivery mode selected by the session's agent. */
   repositoryAccess?: boolean;
-  /** Experimental compiled checkout and OpenCode launcher rollout mode. */
-  compiledBootMode?: 'off' | 'shadow' | 'prefer' | 'required';
   /** True only for a newly-created session branch that still equals base. */
   freshSession?: boolean;
   /** Replacement runtime must fetch the existing remote session branch once. */
@@ -99,8 +97,6 @@ export function auditRelayEnvPassthrough(
 
 export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<string, string> {
   const allowsFullRepository = input.repositoryAccess ?? true;
-  const compiledBootMode = input.compiledBootMode ?? 'off';
-  const compiledBootEnabled = compiledBootMode !== 'off';
   const projectGitEnv: Record<string, string> = allowsFullRepository
     ? {
         KORTIX_REPO_URL: input.repoUrl,
@@ -111,15 +107,12 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     : {};
   // A brand-new session's branch IS the base tip: the daemon creates it
   // locally and materializes from the baked scaffold + the API's delta, so no
-  // in-sandbox `git fetch` runs at all. This used to hide behind the
-  // compiled-boot experiment; measured 2026-08-27 on dev,
-  // the two proxied fetches it removes cost 5.4 s + 2.6 s of a 7.9 s
+  // in-sandbox `git fetch` runs at all. The two proxied fetches it removes cost 5.4 s + 2.6 s of a 7.9 s
   // `repo-materialized`, measured on dev 2026-08-27.
   const fastGitBootEnv: Record<string, string> =
     allowsFullRepository && input.freshSession
       ? {
           KORTIX_SESSION_FRESH: '1',
-          ...(compiledBootEnabled ? { KORTIX_COMPILED_BOOT_MODE: compiledBootMode } : {}),
           ...(input.baseSha ? { KORTIX_BASE_SHA: input.baseSha } : {}),
           ...(input.gitDeltaBundleBase64
             ? { KORTIX_GIT_DELTA_BUNDLE_BASE64: input.gitDeltaBundleBase64 }
@@ -204,48 +197,5 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
           KORTIX_COMPILED_AGENT_CONFIG_ETAG: agentConfigEtag(input.compiledAgentConfig) ?? '',
         }
       : {}),
-  };
-}
-
-/**
- * The minimal env for a pi worker boot. The per-commit compiled artifact
- * already carries the agent map (its etag is what /kortix/health reports), the
- * v0 worker receives no project secrets (the gateway resolves BYOK server-side
- * per request), and nothing clones — so none of buildSessionRuntimeEnv's
- * git/scaffold work and none of buildSessionSandboxEnvVars' secret work
- * applies. Synchronous on purpose: this map must never put a network read on
- * the provision critical path (the OpenCode env chain it replaces cost
- * 1.1–2.4 s per cold boot, measured on dev 2026-08-27).
- *
- * KORTIX_TOKEN and KORTIX_LLM_BASE_URL are injected by
- * provisionSessionSandbox(); KORTIX_PI_RUNTIME_REF/SHA are threaded by the
- * session-create call; KORTIX_API_URL/KORTIX_FRONTEND_URL are also guaranteed
- * at the provider boundary (daytona.ts) — set here too so the map is
- * self-sufficient.
- */
-export function buildPiWorkerSessionEnvVars(input: {
-  projectId: string;
-  sessionId: string;
-  agentName: string;
-  apiUrl: string;
-  frontendUrl?: string;
-  opencodeModel?: string | null;
-}): Record<string, string> {
-  return {
-    KORTIX_PROJECT_ID: input.projectId,
-    KORTIX_SESSION_ID: input.sessionId,
-    KORTIX_SERVICE_PORT: '8000',
-    // Both names: KORTIX_AGENT_NAME is the fleet convention (daemon,
-    // dashboards); KORTIX_AGENT is what the worker's baked-config overlay
-    // reads to select a non-default agent (apps/kortix-worker/src/main.ts).
-    KORTIX_AGENT_NAME: input.agentName,
-    KORTIX_AGENT: input.agentName,
-    KORTIX_API_URL: input.apiUrl,
-    ...(input.frontendUrl ? { KORTIX_FRONTEND_URL: input.frontendUrl } : {}),
-    // No repo checkout exists on a worker box.
-    KORTIX_PROJECT_AUTO_CLONE: '0',
-    // The resolved session model override. The worker maps it onto the
-    // gateway exactly like a baked model ref (env wins over bake).
-    ...(input.opencodeModel ? { KORTIX_MODEL: input.opencodeModel } : {}),
   };
 }

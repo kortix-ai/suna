@@ -84,7 +84,7 @@ function run(fixture: Fixture) {
     const number = fixture.pulls?.[sha];
     put(
       `repos/kortix-ai/suna/commits/${sha}/pulls`,
-      number ? [{ number, merged_at: '2026-09-26T17:00:00Z', base: { ref: 'main' } }] : [],
+      number ? [{ number, merged_at: '2026-09-26T17:00:00Z', base: { ref: 'dev' } }] : [],
     );
     if (number) {
       put(`repos/kortix-ai/suna/pulls/${number}`, { number, merged_at: '2026-09-26T17:00:00Z' });
@@ -175,7 +175,7 @@ describe('announce-dev-live.sh', () => {
     const body = r.body('repos/kortix-ai/suna/issues/7751/comments');
     expect(body).toContain('### Not live on dev yet');
     expect(body).toContain('| Web · dev.kortix.com | deploy failure |');
-    expect(body).toContain('The next deploy from `main` retries');
+    expect(body).toContain('The next deploy from `dev` retries');
   });
 
   it('never claims live when /health reports another commit', () => {

@@ -64,6 +64,8 @@ export interface BillingDeductResult {
   reason?: string;
   transactionId?: string;
   error?: string;
+  /** The wallet could not answer (infra fault, not a refusal). The caller answers 503. */
+  retryable?: boolean;
 }
 
 // === Context Types ===

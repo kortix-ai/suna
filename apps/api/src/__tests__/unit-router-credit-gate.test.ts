@@ -7,17 +7,24 @@ import { creditGateExemptEnv } from '../router/services/credit-gate-env';
 // account because billing internal is intentionally enabled on dev.
 describe('creditGateExemptEnv', () => {
   test('dev and preview are exempt from the internal credit gate', () => {
-    expect(creditGateExemptEnv('dev')).toBe(true);
-    expect(creditGateExemptEnv('preview')).toBe(true);
+    expect(creditGateExemptEnv('dev', true)).toBe(true);
+    expect(creditGateExemptEnv('preview', true)).toBe(true);
   });
 
   test('prod and staging keep the real credit gate', () => {
-    expect(creditGateExemptEnv('prod')).toBe(false);
-    expect(creditGateExemptEnv('staging')).toBe(false);
+    expect(creditGateExemptEnv('prod', true)).toBe(false);
+    expect(creditGateExemptEnv('staging', true)).toBe(false);
+  });
+
+  test('an UNSET INTERNAL_KORTIX_ENV (config falls back to dev) is not exempt: the gate fails closed', () => {
+    expect(creditGateExemptEnv('dev', false)).toBe(false);
+    expect(creditGateExemptEnv('preview', false)).toBe(false);
   });
 
   test('no-arg form matches the explicit call for the ambient env', () => {
     const ambient = process.env.INTERNAL_KORTIX_ENV || 'dev';
-    expect(creditGateExemptEnv()).toBe(creditGateExemptEnv(ambient));
+    expect(creditGateExemptEnv()).toBe(
+      creditGateExemptEnv(ambient, Boolean(process.env.INTERNAL_KORTIX_ENV)),
+    );
   });
 });

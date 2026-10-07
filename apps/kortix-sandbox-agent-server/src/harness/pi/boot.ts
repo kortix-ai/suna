@@ -20,6 +20,7 @@ import {
   relayPermission,
   relayQuestion,
   relayRuntimeSession,
+  relaySteerRead,
   relayTurnAccepted,
   relayTurnBegin,
   relayTurnEnd,
@@ -105,6 +106,9 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
       void relayTurnEnd({ runtimeSessionId: rootId, messageId, status, error }).then((settled) => {
         if (settled) relayedTurnEnds.add(messageId)
       })
+    },
+    onSteerRead: ({ rootId, messageId }) => {
+      void relaySteerRead(rootId, messageId)
     },
     onQuestionAsked: (request, answer) => {
       void relayQuestion(request).then((answers) => {

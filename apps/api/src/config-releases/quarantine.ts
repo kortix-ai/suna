@@ -46,6 +46,8 @@ export interface ConfigReleaseLedger {
   recordFailure(input: { projectId: string; releaseId: string; sessionId: string; reason: string | null }): Promise<void>;
   /** Of `releaseIds`, the ones that failed in `threshold` or more distinct sessions. */
   quarantined(projectId: string, releaseIds: string[], threshold: number): Promise<Set<string>>;
+  /** The newest reason a session reported for `releaseId`, or null. */
+  failureReason(projectId: string, releaseId: string): Promise<string | null>;
   /** The newest proven release of `variant`, skipping quarantined ones. */
   lastProven(projectId: string, variant: string, threshold: number): Promise<ProvenRelease | null>;
 }
@@ -112,6 +114,22 @@ export const dbConfigReleaseLedger: ConfigReleaseLedger = {
       .groupBy(configReleaseFailures.releaseId)
       .having(sql`count(distinct ${configReleaseFailures.sessionId}) >= ${threshold}`);
     return new Set(rows.map((row) => row.releaseId));
+  },
+  async failureReason(projectId, releaseId) {
+    const [row] = await db
+      .select({ reason: configReleaseFailures.reason })
+      .from(configReleaseFailures)
+      .where(
+        and(
+          eq(configReleaseFailures.projectId, projectId),
+          eq(configReleaseFailures.releaseId, releaseId),
+          isNotNull(configReleaseFailures.reason),
+          notFromMetaSession,
+        ),
+      )
+      .orderBy(desc(configReleaseFailures.createdAt))
+      .limit(1);
+    return row?.reason ?? null;
   },
   async lastProven(projectId, variant, threshold) {
     const quarantinedIds = db
