@@ -1,16 +1,16 @@
 {
-  "source_hash": "2ee976d5dc5a8f7afd9d5736414ed70c5d94f7b2fb1415c2ff20707eaaff3ffc",
+  "source_hash": "fea27ee5fe963530be5032285da817315088b2f2f9143744111762baf852667a",
   "diff_files": [
     "apps/web/src/features/session/tool/tools/session-list-background-tool.test.tsx",
     "apps/web/src/features/session/tool/tools/session-list-background-tool.tsx"
   ],
   "diff_hash": "3ea0228dcaa7771d0e520242534029d796e396e620bb53bba0412ff6dc571769",
-  "head": "13c1a9d05181e7745caa5b09d3d1363421c87351",
+  "head": "97f02753f9aeec3aae5ca081732c597a4cc7a31a",
   "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "skipped-sandbox-image",
+    "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-07T16:39:22.450Z"
+  "at": "2026-10-07T20:21:01.531Z"
 }
