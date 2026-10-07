@@ -1,0 +1,226 @@
+---
+title: Connectors from code
+description: Call a connector from an App, a Convex action, or an external program, with the right Kortix credential.
+---
+
+A connector call from code is one request to the Kortix connector gateway,
+made with `@kortix/sdk`. The gateway holds the provider credential, applies
+the project's policy, picks the account, calls the provider, and writes the
+audit event. Your code holds only a Kortix credential.
+
+This page shows the four places code calls a connector from, and which
+credential each one uses. For connectors, accounts, and policy, read
+[Connectors](/docs/connect/connectors).
+
+:::info[The working rule]
+The Kortix credential decides which accounts a call can use. Never put a
+provider API key in an App or a Convex deployment when a connector for that
+provider exists: a raw key skips the project's policy, approvals, and audit.
+:::
+
+## Pick the credential
+
+| Where the code runs | Credential | Acts as | Accounts it reaches |
+|---|---|---|---|
+| An App, in the browser | The App viewer token, through `/_kortix/api/v1` on the App's own origin | The person viewing the App | Shared accounts that person may use, and that person's own private accounts |
+| An App, on its server | The App viewer token in `x-kortix-app-viewer-token` | The person viewing the App | The same as in the browser |
+| A Convex action, or an App job with no viewer | A service account bearer (`kortix_sa_…`) | The service account | Shared accounts that nobody narrowed. Never a private account, never a narrowed account |
+| An external program or CI job | A personal access token (`kortix_pat_…`) | You | Shared accounts you may use, and your own private accounts |
+
+A session sandbox carries its own `KORTIX_TOKEN`. Its reach is the agent's
+connector grant: see [Grant an agent access](/docs/connect/connectors#grant-an-agent-access).
+
+The call is the same for every credential:
+
+```ts
+import { createKortix } from '@kortix/sdk';
+
+const kortix = createKortix({ backendUrl, getToken });
+const connectors = kortix.project(projectId).connectors;
+
+const result = await connectors.call('crm.list_deals', { stage: 'won' }, {
+  account: 'Team CRM', // a label, a connection id, `me`, or `project`
+});
+result.output;  // the provider payload, without the binding's envelope
+result.account; // { connection_id, label, owner_type }: the account that ran
+```
+
+Omit `account` to use the caller's own default account first, then the
+project's. For typed `args` and `output`, generate a declaration file with
+`kortix connectors types` and call `callAction`: see
+[Typed calls from code](/docs/connect/connectors#typed-calls-from-code).
+
+## From an App in the browser
+
+The App calls the Kortix API through its own origin. The Apps gate answers
+`/_kortix/api/v1/*` on the App's hostname and forwards the request to the
+Kortix API. The browser makes no cross-origin request, so no CORS rule is
+involved.
+
+1. Give the App a viewer token that can call the API:
+
+```bash
+kortix apps access <app> --viewer api
+```
+
+2. Point the SDK at the same-origin path, with the viewer token:
+
+```ts
+import { createKortix, kortixAppViewerToken } from '@kortix/sdk';
+
+const kortix = createKortix({
+  backendUrl: '/_kortix/api/v1',
+  getToken: kortixAppViewerToken(),
+});
+
+const deals = await kortix
+  .project(projectId)
+  .connectors.call('crm.list_deals', { stage: 'won' });
+```
+
+- The call runs as the person who opened the App, inside their own role.
+- With `--viewer identity` (the default) the token has no `kortix` scope. A
+  connector call answers `403` with `insufficient_scope`.
+- The viewer token reaches every project the viewer can read, not only the
+  App's project. Pass the App's own `projectId` on every call.
+
+## From an App's server
+
+The gate puts a live viewer token on every request it forwards. Build one
+client per request:
+
+```ts
+import { createAppViewerKortix } from '@kortix/sdk/server';
+
+export async function GET(request: Request) {
+  const kortix = await createAppViewerKortix(request, {
+    backendUrl: 'https://api.kortix.com/v1',
+  });
+  const deals = await kortix
+    .project(projectId)
+    .connectors.call('crm.list_deals', { stage: 'won' });
+  return Response.json(deals.output);
+}
+```
+
+Do not store the token across requests. It lasts one hour, and an
+access-policy change revokes it. See
+[Your App already knows who is looking](/docs/sdk/apps#your-app-already-knows-who-is-looking).
+
+## From a Convex action
+
+Code that runs with no viewer (a Convex cron, an action, a webhook handler)
+needs its own credential. Kortix does not mint one for App or backend code.
+A person creates a service account and stores its bearer in the deployment.
+
+1. A person creates the service account. The bearer prints once. An agent
+   session cannot create one.
+
+```bash
+kortix tokens service-accounts new crm-sync --description "Convex CRM sync"
+```
+
+2. Give it a role on the project. A new service account holds no
+   permissions, and every call answers `403` until it has one.
+
+```bash
+kortix access grant --service-account <service-account-id> --role member --project <project-id>
+```
+
+3. Store the bearer and the target in the Convex deployment:
+
+```bash
+npx convex env set KORTIX_API_URL https://api.kortix.com/v1
+npx convex env set KORTIX_PROJECT_ID <project-id>
+npx convex env set KORTIX_API_KEY <kortix_sa_…>
+```
+
+4. Call the connector from a Node action:
+
+```ts
+'use node';
+import { internalAction } from './_generated/server';
+import { createKortix } from '@kortix/sdk';
+
+export const syncDeals = internalAction({
+  args: {},
+  handler: async () => {
+    const kortix = createKortix({
+      backendUrl: process.env.KORTIX_API_URL!,
+      getToken: async () => process.env.KORTIX_API_KEY!,
+    });
+    const result = await kortix
+      .project(process.env.KORTIX_PROJECT_ID!)
+      .connectors.call('crm.list_deals', { stage: 'won' });
+    return result.output;
+  },
+});
+```
+
+- The service account reaches only shared accounts that nobody narrowed.
+  Naming a private or a narrowed account answers `403`
+  `connector_not_connected`. Share the account with the whole project, or
+  keep the call in the browser, where it runs as the viewer.
+- Anyone who holds the deployment's admin key can read its environment
+  variables, the bearer included.
+- `@kortix/sdk` is verified on Node. Use a `'use node'` action. The default
+  Convex runtime is not verified.
+- To revoke the credential, disable or delete the service account:
+  `kortix tokens service-accounts disable <id>`. Every call then answers
+  `401`.
+
+A server App job with no viewer uses the same service account. Store the
+bearer as a project secret and map it into the App in `kortix.yaml`. Names
+that start with `KORTIX_` are reserved for Kortix:
+
+```yaml
+apps:
+  crm:
+    secrets:
+      CRM_SYNC_TOKEN: crm-sync-service-account
+```
+
+## From an external program
+
+A script on your machine or a CI job uses a personal access token. It acts as
+you. Bind it to one project so it can never reach another:
+
+```bash
+kortix tokens new crm-export --project <project-id> --expires 90d
+```
+
+```ts
+import { createKortix } from '@kortix/sdk';
+
+const kortix = createKortix({
+  backendUrl: 'https://api.kortix.com/v1',
+  getToken: async () => process.env.KORTIX_API_KEY!,
+});
+const deals = await kortix
+  .project(process.env.KORTIX_PROJECT_ID!)
+  .connectors.call('crm.list_deals', { stage: 'won' });
+```
+
+The token carries your whole connector reach in that project, your private
+accounts included. For unattended work that must not run as one person, use a
+service account.
+
+## Errors
+
+Every non-2xx answer throws `ApiError`. `status` is the HTTP status and
+`details` is the parsed body.
+
+| Answer | Meaning | What to do |
+|---|---|---|
+| `202`, `ok: false`, `status: "pending_approval"` | A policy holds the call for a person's approval | Show `approval_url` to a person. Do not repeat the call in a loop |
+| `401` | The credential is invalid, expired, revoked, or disabled | Get a new credential |
+| `403` `insufficient_scope` | An App viewer token without the `kortix` scope | Set the App to `--viewer api` |
+| `403` `forbidden` | The credential has no role on the project | Grant a project role |
+| `403` `connector_not_connected` | No account this credential may use, or the named account is outside its reach | Read `available_accounts`, or share the account |
+| `403` `account_required` | Several accounts are reachable, none was named, and none is pinned | Pass `account` |
+| `403` `credential_not_shared` | The connector's credential secret is not shared with this caller | Share the secret with the caller |
+| `429`, `503` | The provider is rate-limited or unavailable | Wait `retry_after_seconds`, then repeat |
+| `500` `upstream_timeout: …` | The provider did not answer within 60 s. The call may have run | Check the effect before you repeat a write |
+
+See [Call results](/docs/connect/connectors#call-results) for the result
+fields.

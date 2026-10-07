@@ -129,6 +129,86 @@ for (const message of listed.data?.messages ?? []) {
 }
 ```
 
+## Calling from an App, a backend, or a script
+
+The call is the same as above. Only `createKortix` changes, and the
+credential decides which accounts the call reaches. The public docs page is
+`/docs/sdk/connectors`.
+
+**App, browser.** Set the App to `kortix apps access <app> --viewer api`.
+The gate answers `/_kortix/api/v1/*` on the App's own origin, so no CORS rule
+is involved:
+
+```ts
+import { createKortix, kortixAppViewerToken } from '@kortix/sdk';
+
+const kortix = createKortix({ backendUrl: '/_kortix/api/v1', getToken: kortixAppViewerToken() });
+const deals = await kortix.project(projectId).connectors.call('crm.list_deals', { stage: 'won' });
+```
+
+The call runs as the viewer: shared accounts they may use and their own
+private accounts. With `--viewer identity` it answers `403
+insufficient_scope`. The viewer token reaches every project the viewer can
+read: always pass the App's own `projectId`.
+
+**App, server.** One client per request, never a stored token:
+
+```ts
+import { createAppViewerKortix } from '@kortix/sdk/server';
+
+const kortix = await createAppViewerKortix(request, { backendUrl: 'https://api.kortix.com/v1' });
+```
+
+**Convex action, or an App job with no viewer.** Kortix does not mint a
+credential for App or backend code. A person creates a service account:
+
+```sh
+kortix tokens service-accounts new crm-sync --description "Convex CRM sync"   # bearer prints once
+kortix access grant --service-account <id> --role member --project <project-id>
+npx convex env set KORTIX_API_URL https://api.kortix.com/v1
+npx convex env set KORTIX_PROJECT_ID <project-id>
+npx convex env set KORTIX_API_KEY <kortix_sa_…>
+```
+
+An agent session cannot run the first two commands. Ask the person, then
+write the action:
+
+```ts
+'use node';
+import { internalAction } from './_generated/server';
+import { createKortix } from '@kortix/sdk';
+
+export const syncDeals = internalAction({
+  args: {},
+  handler: async () => {
+    const kortix = createKortix({
+      backendUrl: process.env.KORTIX_API_URL!,
+      getToken: async () => process.env.KORTIX_API_KEY!,
+    });
+    const result = await kortix
+      .project(process.env.KORTIX_PROJECT_ID!)
+      .connectors.call('crm.list_deals', { stage: 'won' });
+    return result.output;
+  },
+});
+```
+
+- Use a `'use node'` action. The SDK is not verified in the default Convex
+  runtime.
+- The service account reaches only shared accounts nobody narrowed. A
+  private or narrowed account answers `403 connector_not_connected`.
+- Without a project role, every call answers `403`.
+- Anyone with the deployment admin key reads the bearer from the Convex env.
+- `kortix tokens service-accounts disable <id>` revokes it: calls answer `401`.
+
+For a server App job, store the bearer as a project secret and map it in
+`kortix.yaml` (`apps.<slug>.secrets: { CRM_SYNC_TOKEN: <secret-name> }`).
+Names that start with `KORTIX_` are reserved and fail validation.
+
+**External program or CI.** A personal access token acts as its owner,
+private accounts included. Bind it to one project:
+`kortix tokens new crm-export --project <project-id> --expires 90d`.
+
 ## Safety rules
 
 - Never put provider credentials in scripts or repository files.

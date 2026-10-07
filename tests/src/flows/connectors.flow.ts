@@ -4415,3 +4415,219 @@ flow(
     }
   },
 );
+
+// ── CONN-IDENT-1 — the identities code calls a connector with ──
+// sdk/connectors.mdx names four callers: an App in the browser and on its
+// server (the App viewer token), unattended code such as a Convex action (a
+// service account), and an external program (a personal access token). Each
+// one reaches a different set of accounts on the same connector.
+flow(
+  'CONN-IDENT-1',
+  {
+    domain: 'connectors',
+    requires: ['database', 'appHost'],
+    timeoutMs: 180_000,
+    routes: [
+      'POST /v1/connectors/projects/:projectId/call',
+      'PATCH /v1/projects/:projectId/features',
+      'POST /v1/projects/:projectId/apps',
+      'PATCH /v1/projects/:projectId/apps/:appId/access',
+      'POST /v1/projects/:projectId/apps/:appId/access-session',
+      'DELETE /v1/projects/:projectId/apps/:appId',
+      'POST /v1/accounts/:accountId/iam/service-accounts',
+      'DELETE /v1/accounts/:accountId/iam/service-accounts/:saId',
+      'POST /v1/accounts/:accountId/iam/assignments',
+    ],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== 'local') {
+      await ctx.step('deployed targets cannot reach a runner-local upstream: skipped', async () => {});
+      return;
+    }
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const project = await team.project();
+    const projectParams = { projectId: project.id };
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const viewerPrincipal = await team.addMember('member');
+    const { createServer } = await import('node:http');
+    const { Client: PgClient } = await import('pg');
+    const db = new PgClient({ connectionString: ctx.env.databaseUrl as string, ssl: false });
+    const stamp = Date.now().toString(36);
+    const slug = `ke2e-ident-${stamp}`;
+    const SHARED = 'Team CRM';
+    const PRIVATE = 'Viewer CRM';
+    const apiOrigin = ctx.env.apiUrl.replace(/\/v1$/, '');
+    let appId = '';
+    let appHost = '';
+    let saId = '';
+    let sharedConnectionId = '';
+
+    const upstream = createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ rows: [{ id: 'deal-1' }] }));
+    });
+    const port = await new Promise<number>((resolve) =>
+      upstream.listen(0, '127.0.0.1', () => resolve((upstream.address() as { port: number }).port)),
+    );
+    const call = (client: typeof owner, account?: string) =>
+      client.post(
+        '/v1/connectors/projects/:projectId/call',
+        { connector: slug, action: 'list_deals', args: {}, ...(account ? { account } : {}) },
+        { params: projectParams, timeoutMs: 60_000 },
+      );
+    const ranAs = async (client: typeof owner, account: string | undefined, label: string, ownerType: string) => {
+      (await call(client, account))
+        .status(200)
+        .body()
+        .has('$.ok', true)
+        .has('$.output.rows[0].id', 'deal-1')
+        .has('$.account.label', label)
+        .has('$.account.owner_type', ownerType);
+    };
+    const notConnected = async (client: typeof owner, account: string) => {
+      (await call(client, account)).status(403).body().has('$.reason', 'connector_not_connected');
+    };
+
+    // The gate at the App's own hostname, as APP-6 drives it.
+    const gate = async (pathAndQuery: string, headers: Record<string, string> = {}) => {
+      const response = await fetch(`${apiOrigin}${pathAndQuery}`, {
+        headers: { accept: 'application/json', 'x-kortix-app-host': appHost, ...headers },
+        redirect: 'manual',
+      });
+      const text = await response.text();
+      let body: any = null;
+      try { body = text ? JSON.parse(text) : null; } catch { body = null; }
+      return { status: response.status, headers: response.headers, body, text };
+    };
+    const viewerToken = async (): Promise<{ scopes: string[]; access_token: string }> => {
+      const session = await ctx.client.as(viewerPrincipal).post(
+        '/v1/projects/:projectId/apps/:appId/access-session',
+        {},
+        { params: { ...projectParams, appId } },
+      );
+      session.status(200);
+      const link = new URL(session.json<any>().url);
+      const redeemed = await gate(`${link.pathname}${link.search}`);
+      const cookie = redeemed.headers.get('set-cookie')?.split(';')[0] ?? '';
+      if (redeemed.status !== 303 || !cookie) throw new Error(`access link did not sign in: ${redeemed.status}`);
+      const r = await gate('/_kortix/viewer', { cookie });
+      if (r.status !== 200 || !r.body?.access_token) throw new Error(`/_kortix/viewer: ${r.status} ${r.text.slice(0, 200)}`);
+      return r.body;
+    };
+    const setViewerScope = async (scope: 'api' | 'identity') => {
+      (await owner.patch('/v1/projects/:projectId/apps/:appId/access',
+        { mode: 'restricted', member_ids: [viewerPrincipal.userId], viewer_token_scope: scope },
+        { params: { ...projectParams, appId } })).status(200);
+    };
+
+    try {
+      await db.connect();
+      await ctx.step('seed one connector with a shared account and the viewer\'s own private account', async () => {
+        await team.grantProjectRole(project.id, viewerPrincipal.userId!, 'member');
+        const connector = await db.query<{ connector_id: string }>(
+          `INSERT INTO kortix.connectors (account_id, project_id, slug, name, provider_type, config, status)
+           VALUES ($1, $2, $3, $3, 'openapi', '{"auth":{"type":"none"}}'::jsonb, 'active') RETURNING connector_id`,
+          [team.id, project.id, slug],
+        );
+        const connectorId = connector.rows[0]!.connector_id;
+        await db.query(
+          `INSERT INTO kortix.connector_actions (connector_id, path, name, description, input_schema, risk, binding)
+           VALUES ($1, 'list_deals', 'list_deals', 'List deals', '{"type":"object"}'::jsonb, 'read', $2::jsonb)`,
+          [connectorId, JSON.stringify({ kind: 'openapi', method: 'GET', path: '/deals', server: `http://127.0.0.1:${port}` })],
+        );
+        const account = async (ownerType: 'project' | 'member', ownerId: string | null, label: string) => {
+          const row = await db.query<{ connection_id: string }>(
+            `INSERT INTO kortix.connector_connections
+               (account_id, project_id, connector_id, owner_type, owner_id, label, status, is_default, metadata)
+             VALUES ($1, $2, $3, $4, $5, $6, 'active', true, $7::jsonb) RETURNING connection_id`,
+            [team.id, project.id, connectorId, ownerType, ownerId, label,
+              JSON.stringify({ provider: 'openapi', connector_slug: slug })],
+          );
+          return row.rows[0]!.connection_id;
+        };
+        sharedConnectionId = await account('project', null, SHARED);
+        await account('member', viewerPrincipal.userId!, PRIVATE);
+      });
+
+      await ctx.step('an external program with a personal access token acts as its owner: the shared account, never the viewer\'s', async () => {
+        const pat = ctx.client.withBearer(await ctx.fixtures.pat({ name: ctx.fixtures.name('ident-pat') }), 'pat');
+        await ranAs(pat, undefined, SHARED, 'project');
+        await notConnected(pat, PRIVATE);
+      });
+
+      await ctx.step('an App viewer token (api scope) acts as the viewer: their private account and the shared one', async () => {
+        (await owner.patch('/v1/projects/:projectId/features', { feature: 'apps', enabled: true },
+          { params: projectParams })).status(200);
+        const created = await owner.post('/v1/projects/:projectId/apps',
+          { slug: `ident-${stamp}`, name: 'ke2e connector identities' }, { params: projectParams });
+        created.status(201);
+        appId = created.json<any>().app_id;
+        appHost = new URL(created.json<any>().url).hostname;
+        await setViewerScope('api');
+        const token = await viewerToken();
+        const asViewer = ctx.client.withBearer(token.access_token, 'app-viewer-token');
+        await ranAs(asViewer, PRIVATE, PRIVATE, 'member');
+        await ranAs(asViewer, SHARED, SHARED, 'project');
+      });
+
+      await ctx.step('an identity-scoped App viewer token cannot call a connector (403 insufficient_scope)', async () => {
+        await setViewerScope('identity');
+        const token = await viewerToken();
+        if (token.scopes.includes('kortix')) throw new Error(`identity scope returned ${JSON.stringify(token.scopes)}`);
+        const refused = await call(ctx.client.withBearer(token.access_token, 'app-viewer-identity'), SHARED);
+        refused.status(403);
+        if (!refused.text().includes('insufficient_scope')) throw new Error(`expected insufficient_scope: ${refused.text()}`);
+      });
+
+      await ctx.step('a service account with no project role is refused; with the member role it reaches the shared account only', async () => {
+        const created = await owner.post('/v1/accounts/:accountId/iam/service-accounts',
+          { name: ctx.fixtures.name('ident-sa'), description: 'Convex action' }, { params: { accountId: team.id } });
+        created.status(201);
+        saId = created.json<any>().service_account_id;
+        const sa = ctx.client.withBearer(created.json<any>().secret, 'service-account');
+        if (!created.json<any>().secret?.startsWith('kortix_sa_')) throw new Error('no kortix_sa_ bearer');
+        (await call(sa)).status(403);
+        (await owner.post('/v1/accounts/:accountId/iam/assignments', {
+          principal_type: 'service_account', principal_id: saId, role_key: 'member',
+          scope_type: 'project', scope_id: project.id,
+        }, { params: { accountId: team.id } })).status(201);
+        // IAM verdicts are cached per API task for up to 15 s.
+        await waitFor(async () => (await call(sa)).statusCode, {
+          until: (status) => status === 200,
+          timeoutMs: 30_000,
+          intervalMs: 2_000,
+          description: 'service account call after the role grant',
+        });
+        await ranAs(sa, undefined, SHARED, 'project');
+        await notConnected(sa, PRIVATE);
+
+        // Narrow the shared account to the viewer: a service account never
+        // reaches a narrowed account.
+        (await owner.post('/v1/accounts/:accountId/iam/assignments', {
+          principal_type: 'user', principal_id: viewerPrincipal.userId, role_key: 'agent-user',
+          scope_type: 'project', scope_id: project.id, object_type: 'connection', object_id: sharedConnectionId,
+        }, { params: { accountId: team.id } })).status(201);
+        await waitFor(async () => (await call(sa, SHARED)).statusCode, {
+          until: (status) => status === 403,
+          timeoutMs: 30_000,
+          intervalMs: 2_000,
+          description: 'narrowed account leaves the service account reach',
+        });
+        await notConnected(sa, SHARED);
+      });
+    } finally {
+      upstream.close();
+      upstream.closeAllConnections?.();
+      if (saId) {
+        await owner.del('/v1/accounts/:accountId/iam/service-accounts/:saId', {
+          params: { accountId: team.id, saId },
+        }).catch(() => {});
+      }
+      if (appId) {
+        await owner.del('/v1/projects/:projectId/apps/:appId', { params: { ...projectParams, appId } }).catch(() => {});
+      }
+      await db.query(`DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = $2`, [project.id, slug]).catch(() => {});
+      await db.end().catch(() => {});
+    }
+  },
+);
