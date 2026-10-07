@@ -21,7 +21,6 @@ import {
   Platform,
   RefreshControl,
   StyleSheet,
-  useWindowDimensions,
   type LayoutChangeEvent,
   type NativeSyntheticEvent,
   type NativeScrollEvent,
@@ -347,8 +346,9 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const endPaddingStyle = useAnimatedStyle(() => ({
     height: composerAreaHeight.value + bottomInset * (1 - keyboardProgress.value),
   }));
-  // The project drawer's bottom fade, over the last COMPOSER_FADE_SHARE of the screen.
-  const composerFadeHeight = Math.round(useWindowDimensions().height * COMPOSER_FADE_SHARE);
+  // The project drawer's bottom-bar fade (`ProjectLeftDrawer` `fadeHeight`:
+  // inset + 16pt gap + 44pt controls + 36pt above them), at half its height.
+  const composerFadeHeight = (insets.bottom + DRAWER_FADE_HEIGHT) * COMPOSER_FADE_SCALE;
   /** The end padding as the room reads it (the UI thread's last value). */
   const endPaddingNow = useCallback(
     () => composerAreaHeightRef.current + bottomInsetRef.current * (1 - keyboardProgress.value),
@@ -2271,10 +2271,12 @@ export const SessionPage = React.memo(SessionPageImpl);
 const FILL = { flex: 1 } as const;
 /** Fills its parent: the overlay over the message area. */
 const COMPOSER_OVERLAY = { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 } as const;
-/** The project drawer's bottom fade colours (`ProjectLeftDrawer`), at the screen's bottom edge. */
+/** The project drawer's bottom-bar fade (`ProjectLeftDrawer`), at the screen's bottom edge. */
 const COMPOSER_FADE = { position: 'absolute', right: 0, bottom: 0, left: 0 } as const;
-/** The fade's height as a share of the screen height. */
-const COMPOSER_FADE_SHARE = 0.02;
+/** The drawer fade's height above the safe-area inset: 16pt gap + 44pt controls + 36pt above them. */
+const DRAWER_FADE_HEIGHT = 16 + 44 + 36;
+/** The session fade is half the drawer's. */
+const COMPOSER_FADE_SCALE = 0.5;
 
 /**
  * The list's `KeyboardGestureArea`, offset by the composer's height. The height

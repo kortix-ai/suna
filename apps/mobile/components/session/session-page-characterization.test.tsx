@@ -1578,9 +1578,9 @@ describe('SessionPage render work', () => {
       });
     await layoutComposerArea(150.4);
     expect(endPadding()).toBe(184);
-    // The fade is the bottom 2% of the screen, whatever the composer does.
+    // The drawer's bottom-bar fade at half height: (34 inset + 96) / 2.
     const fadeHeight = () => flat(byTestID('session-composer-fade').props.style).reduce((h, st) => st.height ?? h, 0);
-    expect(fadeHeight()).toBe(16);
+    expect(fadeHeight()).toBe(65);
     const restingFade = fadeHeight();
     // The room counts the covered height: 600 − 184 − 200 − 24 = 192.
     await layoutTranscript(576, [200]);
