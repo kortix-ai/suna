@@ -131,6 +131,46 @@ export async function setDatabaseEnterpriseDemo(
 }
 
 /** Record a failed run on a trigger, as the API does when a trigger session's turn ends with an error. */
+/**
+ * The session's first prompt, claimed and on its way (`running`, locked for
+ * 10 minutes). Every prompt sent after it waits behind it
+ * (`older_prompt_pending`), so a local run can drive the queued-prompt routes
+ * without a sandbox. The row runs as `userId`.
+ */
+export async function seedDatabaseRunningFirstPrompt(
+  env: Env,
+  input: { projectId: string; sessionId: string; accountId: string; userId: string },
+  open: OpenProjectDb = openProjectDb,
+): Promise<void> {
+  const databaseUrl = assertDatabaseFixtureAllowed(env, "seed a running prompt for");
+  const client = await open(databaseUrl);
+  try {
+    await client.query(
+      `INSERT INTO kortix.session_lifecycle_commands
+         (command_type, source, status, project_id, session_id, account_id,
+          actor_user_id, idempotency_key, payload, result, locked_by, locked_until)
+       VALUES ('continue_session', 'ui', 'running', $1, $2, $3, $4, $5, $6::jsonb,
+         $7::jsonb, 'ke2e-first-prompt-fixture', now() + interval '10 minutes')`,
+      [
+        input.projectId,
+        input.sessionId,
+        input.accountId,
+        input.userId,
+        `prompt:${input.sessionId}:pending-first`,
+        JSON.stringify({
+          text: "first prompt",
+          clientMessageId: `pending:${input.sessionId}`,
+          remintOnDelivery: true,
+          parts: [{ type: "text", text: "first prompt" }],
+        }),
+        JSON.stringify({ delivery_started_at: new Date().toISOString() }),
+      ],
+    );
+  } finally {
+    await client.end();
+  }
+}
+
 export async function setDatabaseTriggerRunFailed(
   env: Env,
   input: { projectId: string; slug: string; error: string },

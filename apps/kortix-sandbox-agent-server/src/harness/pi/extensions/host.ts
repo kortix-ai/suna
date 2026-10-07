@@ -183,6 +183,8 @@ export interface PiSessionInput {
   skillAllowed: (name: string) => boolean
   /** The provider the agent streams through; pi checks it has auth before a prompt. */
   provider: Provider | undefined
+  /** pi `compaction` settings from the runtime (per-model reserves: model.ts `compactionSettings`). */
+  compaction?: object
 }
 
 export interface PiSession {
@@ -315,9 +317,14 @@ export async function createPiSession(input: PiSessionInput): Promise<PiSession>
     new ScopedSettingsStorage({
       // Kortix owns retry: a failed turn is the product's to retry (a silent pi retry would
       // double-bill and reorder the wire). pi's compaction is on (its own default), and the
-      // runtime puts it on the wire. `retry` lives in storage, not `applyOverrides`:
-      // `loader.reload()` re-reads storage and drops overrides.
-      global: JSON.stringify({ ...globalSettings, packages: system.kept, retry: { enabled: false } }),
+      // runtime puts it on the wire, at the runtime's token budget. `retry` and `compaction` live in
+      // storage, not `applyOverrides`: `loader.reload()` re-reads storage and drops overrides.
+      global: JSON.stringify({
+        ...globalSettings,
+        packages: system.kept,
+        retry: { enabled: false },
+        compaction: { ...(globalSettings.compaction as object | undefined), ...input.compaction },
+      }),
       project: JSON.stringify({ ...projectSettings, packages: project.kept }),
     }),
     { projectTrusted: true },

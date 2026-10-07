@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -8,16 +9,24 @@ import type { ProjectSummary } from '../api/types.ts';
 import { resolveProjectCloneTarget } from '../commands/projects.ts';
 import { reconcileShippedManifest } from '../commands/ship-connectors.ts';
 import { runShip } from '../commands/ship.ts';
-import { authHeaderArgs, linkGitHubBackedProject } from '../git-ops.ts';
+import { authGitEnv, linkGitHubBackedProject } from '../git-ops.ts';
 import { resolveProjectGitTarget } from '../project-git.ts';
 
-test('managed git auth headers honor the provider-selected username', () => {
-  const args = authHeaderArgs('https://kortix.code.storage/demo.git', 'jwt-token', 't');
-  expect(args.at(-1)).toStartWith(
-    'http.https://kortix.code.storage/.extraheader=Authorization: Basic ',
-  );
-  const encoded = args.at(-1)?.split('Authorization: Basic ')[1];
-  expect(encoded && Buffer.from(encoded, 'base64').toString('utf8')).toBe('t:jwt-token');
+test('managed git auth header honors the provider-selected username and never enters argv', () => {
+  const env = authGitEnv('https://kortix.code.storage/demo.git', 'jwt-token', 't');
+  const n = Number(env.GIT_CONFIG_COUNT) - 1;
+  expect(env[`GIT_CONFIG_KEY_${n}`]).toBe('http.https://kortix.code.storage/.extraheader');
+  const value = env[`GIT_CONFIG_VALUE_${n}`];
+  expect(value).toStartWith('Authorization: Basic ');
+  expect(Buffer.from(value.split('Basic ')[1]!, 'base64').toString('utf8')).toBe('t:jwt-token');
+
+  // The real git reads it back from the environment alone.
+  const read = spawnSync('git', ['config', '--get-all', 'http.https://kortix.code.storage/.extraheader'], {
+    encoding: 'utf8',
+    env: { ...process.env, ...env },
+  });
+  expect(read.stdout.trim()).toBe(value);
+  expect(read.status).toBe(0);
 });
 
 function project(overrides: Partial<ProjectSummary> = {}): ProjectSummary {

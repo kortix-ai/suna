@@ -2,8 +2,12 @@
 
 Config releases make a session run the base branch's **current, built**
 config, from a read-only release directory — never the session's own
-`/workspace` checkout. A release is the OpenCode config dir, the root
-`skills/`, and the pi config dir as `pi/` (`builder.ts`, `composeReleaseTree`).
+`/workspace` checkout. A release is a checkout of the base branch: the
+commit's whole tree, with the same files and folders `/workspace` holds
+(`release-tree.ts`). Each harness reads its own dirs inside it exactly as it
+reads them in `/workspace` (`harnesses/opencode`, `skills/`, `harnesses/pi`).
+The one change from the commit is per-agent plugin selection: an agent variant
+drops the plugin entry files its manifest does not select.
 Both session runtimes apply them: OpenCode swaps in a proven replacement
 process, pi reloads the release in place. Full contract:
 `apps/api/src/config-releases/`,
@@ -123,21 +127,33 @@ request. The store is a cache; the Git mirror is always the source of truth.
 
 ## Limits
 
-- The release archive is capped at 32 MiB gzip and 128 MiB uncompressed
-  (`MAX_CONFIG_ARCHIVE_BYTES` / `MAX_CONFIG_TAR_BYTES` in `release-tree.ts`,
-  matched by the daemon's `descriptor.ts` / `boot-config.ts`). It holds the
-  OpenCode config dir, the root `skills/` and the pi config dir. A daemon
-  older than the 32 MiB cap refuses a descriptor over 4 MiB and keeps its
-  running config until it updates.
-- A release holds only those three trees. A config file that points OUTSIDE
-  them — an `instructions` entry such as `../../rules/RULES.md`, or a tool that
-  imports `../../../shared/x` — resolves with the flag off (the checkout has
-  the file) and does not with the flag on. A missing instruction is skipped
-  silently by OpenCode. A missing import fails every tool, so the release
-  fails its proof and the session keeps its last proven config. Keep such
-  files inside the config dir.
-- A project with no OpenCode config dir still gets a release when it has root
-  `skills/` or a pi config dir: they ship on an empty OpenCode config dir.
+- The release archive is the repository at the commit, capped at 32 MiB gzip
+  and 128 MiB uncompressed (`MAX_CONFIG_ARCHIVE_BYTES` / `MAX_CONFIG_TAR_BYTES`
+  in `release-tree.ts`, matched by the daemon's `descriptor.ts` /
+  `boot-config.ts`). The company project measured 248 files, 2.6 MB
+  (2026-10-05). A repository over the cap gets no release; its sessions keep
+  the last proven one and `fallback_reason` names the cap.
+- `git archive` honors `export-ignore` in `.gitattributes`, so a tracked path
+  no agent reads can stay out of the release. `kortix validate` and
+  `kortix ship` warn (never fail) when one file is 10 MiB or more or the files
+  Git stores total more than 32 MiB (`apps/cli/src/project-lint.ts`, which
+  repeats the cap). The too-large `reason` names both remedies.
+- Every commit to the base branch is a new release, because the tree changed.
+  Running sessions converge to it in the background; a prompt on a box that is
+  behind converges first.
+- A tool that imports another file of the repository by a relative path
+  (`../../../shared/x`) resolves inside the release exactly as in `/workspace`.
+- OpenCode resolves a relative `instructions` entry against the session
+  directory (`/workspace`), not its config dir. While OpenCode serves a release,
+  the platform plugin `kortix-release-instructions.js`
+  (`harness/open-code/release-instructions.ts`) rewrites each relative entry to
+  the release root, so `"rules/RULES.md"` reads the base branch's file. URLs,
+  `~/`, absolute paths and globs in a directory part keep OpenCode's own
+  resolution. The project's `AGENTS.md` is OpenCode's own lookup from
+  `/workspace` and is not rewritten.
+- The descriptor format is `config-release-v2`. A daemon built for v1 (the
+  composed layout) refuses it and keeps its running config until the
+  runtime-assets swap gives it the current daemon.
 
 ## Retention
 

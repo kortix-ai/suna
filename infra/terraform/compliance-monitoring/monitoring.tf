@@ -61,7 +61,7 @@ locals {
   }
   euw2_compliance_waf_albs = {
     for arn, alb in local.euw2_albs : arn => alb
-    if alb.name != "kortix-prod-web-alb"
+    if !contains(["kortix-prod-web-alb", "kortix-staging-euw2-web-alb"], alb.name)
   }
   alarm_tags = {
     ManagedBy = "kortix-compliance"

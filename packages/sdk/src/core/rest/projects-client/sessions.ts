@@ -2,6 +2,7 @@
 
 import { type ApiClientOptions, ApiError, backendApi } from '../../http/api-client';
 import { markSessionFresh } from '../../http/fresh-sessions';
+import { noteSessionStopped } from '../../http/session-stopped';
 import type { AuditEvent } from './audit';
 import { type ConnectorSharing, unwrap } from './shared';
 
@@ -1218,9 +1219,43 @@ export interface SessionPromptOverrides {
  */
 export type SessionPromptState = 'queued' | 'delivering' | 'waiting' | 'failed';
 
+/**
+ * How a prompt reaches a session whose turn is running.
+ * - `steer`: the running turn reads it at its next step boundary. The turn
+ *   does not stop.
+ * - `queue` (Queue List): waits for the turn to end, then runs as its own turn.
+ * - `interrupt` (Quick Queue, "Stop and send"): ends the turn after the
+ *   running tool, then runs as its own turn.
+ * With no turn running, all three start a turn.
+ */
+export type SessionPromptDelivery = 'steer' | 'queue' | 'interrupt';
+
+/**
+ * Why a `steer` prompt was delivered as `queue` instead:
+ * - `unsupported`: the session's runtime cannot take a message mid-turn.
+ * - `not_prompter`: the running turn belongs to another member.
+ * - `turn_ended`: the turn ended before the message reached it.
+ */
+export type SessionPromptSteerFallback = 'unsupported' | 'not_prompter' | 'turn_ended';
+
+/** The placement a delivery mode implies: `interrupt` paints in the
+ *  transcript, `steer` and `queue` wait in the composer list. */
+function placementForDelivery(
+  delivery: SessionPromptDelivery | undefined,
+): 'transcript' | 'composer' | undefined {
+  if (!delivery) return undefined;
+  return delivery === 'interrupt' ? 'transcript' : 'composer';
+}
+
 export interface SessionPrompt {
   /** Pending presentation only; both placements use the same automatic FIFO. */
   placement?: 'transcript' | 'composer';
+  /** Absent from servers built before steering: read it as `placement`
+   *  implies (`transcript` = `interrupt`, `composer` = `queue`). */
+  delivery?: SessionPromptDelivery;
+  /** Set when a `steer` prompt fell back to `queue`; `delivery` then reads
+   *  `queue`. Null or absent otherwise. */
+  steer_fallback?: SessionPromptSteerFallback | null;
   /** Full accepted text for pending messages after reload. Absent on older servers. */
   full_text?: string;
   prompt_id: string;
@@ -1259,6 +1294,10 @@ export interface SessionPrompt {
   /** Posted without a turn: no agent answers it, so show no "thinking"
    *  state. Absent from servers older than this field. */
   no_reply?: boolean;
+  /** The member who sent it. The prompt runs as this member, so only they
+   *  edit, send now or retry it (`sessionPromptActions`). Null for a prompt
+   *  with no recorded sender; absent from servers older than this field. */
+  author_user_id?: string | null;
   created_at: string;
   available_at: string;
 }
@@ -1277,8 +1316,12 @@ export interface CreateSessionPromptResult {
 }
 
 export interface CreateSessionPromptInput {
-  /** Pending presentation; omitted preserves the legacy composer queue. */
+  /** Pending presentation; omitted preserves the legacy composer queue. When
+   *  only `delivery` is given, the placement it implies is sent. */
   placement?: 'transcript' | 'composer';
+  /** How the prompt reaches a running turn. Omitted: `placement` decides, as
+   *  before steering (`transcript` = `interrupt`, `composer` = `queue`). */
+  delivery?: SessionPromptDelivery;
   clientMessageId: string;
   messageId: string;
   parts: SessionPromptPart[];
@@ -1315,6 +1358,8 @@ export async function createSessionPrompt(
   sessionId: string,
   input: CreateSessionPromptInput,
 ): Promise<CreateSessionPromptResult> {
+  // An API built before steering ignores `delivery` and reads `placement`.
+  const placement = input.placement ?? placementForDelivery(input.delivery);
   return unwrap(
     await backendApi.post<CreateSessionPromptResult>(
       `/projects/${projectId}/sessions/${sessionId}/prompts`,
@@ -1322,7 +1367,8 @@ export async function createSessionPrompt(
         client_message_id: input.clientMessageId,
         message_id: input.messageId,
         parts: input.parts,
-        ...(input.placement ? { placement: input.placement } : {}),
+        ...(placement ? { placement } : {}),
+        ...(input.delivery ? { delivery: input.delivery } : {}),
         ...(input.overrides ? { overrides: input.overrides } : {}),
         ...(input.remintOnDelivery ? { remint_on_delivery: true } : {}),
         ...(typeof input.clientSentAtMs === 'number'
@@ -1410,6 +1456,26 @@ export async function editSessionPrompt(
     await backendApi.patch<SessionPrompt>(
       `/projects/${projectId}/sessions/${sessionId}/prompts/${promptId}`,
       { text },
+      // The caller toasts its own message; the host sink would add a second.
+      { showErrors: false },
+    ),
+  );
+}
+
+/**
+ * "Stop and send": turn a prompt still waiting in the queue into Quick Queue
+ * (`delivery: 'interrupt'`). The running turn ends after its running tool,
+ * then this prompt runs. A row already on the wire answers `409`.
+ */
+export async function interruptSessionPrompt(
+  projectId: string,
+  sessionId: string,
+  promptId: string,
+): Promise<SessionPrompt> {
+  return unwrap(
+    await backendApi.patch<SessionPrompt>(
+      `/projects/${projectId}/sessions/${sessionId}/prompts/${promptId}`,
+      { delivery: 'interrupt' },
       // The caller toasts its own message; the host sink would add a second.
       { showErrors: false },
     ),
@@ -1511,12 +1577,14 @@ export async function restartProjectSession(projectId: string, sessionId: string
 
 /** Manual pause: stops the running sandbox in place, resumable via start(). */
 export async function stopProjectSession(projectId: string, sessionId: string) {
-  return unwrap(
+  const stopped = unwrap(
     await backendApi.post<{ ok: boolean; session_id: string; status: string }>(
       `/projects/${projectId}/sessions/${sessionId}/stop`,
       {},
     ),
   );
+  noteSessionStopped(sessionId);
+  return stopped;
 }
 
 /**
@@ -2031,6 +2099,49 @@ export async function getSessionMessageAuthors(
   return unwrap(
     await backendApi.get<SessionMessageAuthors>(
       `/projects/${projectId}/sessions/${sessionId}/message-authors`,
+      { showErrors: false },
+    ),
+  );
+}
+
+/** The model that answered a request, read from the gateway's request record. */
+export interface SessionServedModel {
+  /** Route id of the model that answered, as the model picker names it. */
+  served_model: string;
+  /** The model the request was routed to, when a fallback model answered in
+   *  its place. Null when the routed model answered. */
+  fallback_from: string | null;
+  at: string;
+}
+
+/** The models that answered one turn, and what Kortix billed for it. */
+export interface SessionTurnModelUsage {
+  /** Route ids of the models that answered in this turn, most requests first. */
+  served_models: string[];
+  fallback_from: string | null;
+  /** What Kortix debited for this turn's model calls, in USD. */
+  billed_cost: number;
+}
+
+export interface SessionModelUsage {
+  /** The newest answered model request. Null before the first answer. */
+  latest: SessionServedModel | null;
+  /** What Kortix debited for the session's model calls, in USD. */
+  billed_cost: number;
+  /** Keyed by the runtime message id of the prompt that started each turn. */
+  turns: Record<string, SessionTurnModelUsage>;
+}
+
+/** Which model answered a session's turns and what Kortix billed for them,
+ *  from the gateway's request record. The runtime transcript records only the
+ *  model a turn asked for, so it cannot show a fallback or its cost. */
+export async function getSessionModelUsage(
+  projectId: string,
+  sessionId: string,
+): Promise<SessionModelUsage> {
+  return unwrap(
+    await backendApi.get<SessionModelUsage>(
+      `/projects/${projectId}/sessions/${sessionId}/model-usage`,
       { showErrors: false },
     ),
   );

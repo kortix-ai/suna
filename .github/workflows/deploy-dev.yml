@@ -1,6 +1,6 @@
 name: Deploy Dev
 
-# DEV pipeline. `main` is the dev branch. A deliberate `workflow_dispatch`
+# DEV pipeline. `dev` is the dev branch. A deliberate `workflow_dispatch`
 # deploys the surfaces that changed vs what dev currently runs. Deploys QUEUE: an
 # in-flight deploy always finishes, and only the newest waiting run follows (see the
 # `on:` and `concurrency:` blocks). Every merged pull request gets one "Live on
@@ -8,15 +8,15 @@ name: Deploy Dev
 # `workflow_dispatch` can force all/frontend on demand. Builds are versioned
 # `<next>-dev.<sha8>`, where <next> is one patch above the latest published release
 # tag (see detect-changes). So dev tracks prod's version line automatically
-# and `main` carries no release-version bump.
+# and `dev` carries no release-version bump.
 #
 #   - API image   → kortix/kortix-api:dev-<sha8> + :dev-latest, deployed to dev
 #                   via ECS Fargate. dev-api.kortix.com
 #                   is a Cloudflare Worker routing to the ECS service
 #                   (see infra/cloudflare/workers/api-router).
 #   - Frontend    → kortix/kortix-frontend:dev-<sha8> + :dev-latest, deployed to
-#                   the dedicated kortix-dev-web ECS Fargate service at
-#                   dev.kortix.com. Vercel is disabled for main.
+#                   the dedicated kortix-dev-use2-web ECS Fargate service at
+#                   dev.kortix.com. Vercel is disabled for dev.
 #   - CLI         → 4 cross-compiled binaries published to the mutable
 #                   `dev-latest` GitHub prerelease (default API base dev-api),
 #                   plus the 4 `kortix-tui` binaries `kortix tui` downloads.
@@ -31,14 +31,14 @@ name: Deploy Dev
 
 on:
   # DEV deploys only on an explicit dispatch (since 2026-10-03: Actions minutes).
-  # A push to `main` does NOT deploy. Run `gh workflow run deploy-dev.yml -f
-  # surface=changed` (or `all`) to deploy main HEAD. `changed` diffs against
+  # A push to `dev` does NOT deploy. Run `gh workflow run deploy-dev.yml -f
+  # surface=changed` (or `all`) to deploy dev HEAD. `changed` diffs against
   # dev-api's live SHA, so one dispatch ships every merge since the last deploy.
   # A dispatch that lands while a deploy runs waits for it; see `concurrency:`.
   workflow_dispatch:
     inputs:
       surface:
-        description: What to deploy (main HEAD)
+        description: What to deploy (dev HEAD)
         type: choice
         required: true
         default: changed
@@ -90,7 +90,7 @@ jobs:
       base: ${{ steps.base.outputs.base }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Full history so the change-diff can be taken against the SHA that dev
           # is ACTUALLY running (below), which may be many commits back. It also
@@ -99,7 +99,7 @@ jobs:
       # Dev builds are a pre-release of the UPCOMING version, derived from the
       # latest published release tag (vX.Y.Z tags are created only when a
       # release lands on `prod`). So dev always tracks prod: prod 0.9.6 → dev
-      # `0.9.7-dev.<sha8>`. No VERSION-file bump on `main` is needed. This was
+      # `0.9.7-dev.<sha8>`. No VERSION-file bump on `dev` is needed. This was
       # its own job; computing it here removes one runner hand-off (~30 s) from
       # every surface's critical path.
       - name: Derive dev version from the latest release tag
@@ -149,7 +149,7 @@ jobs:
             echo "Deployed SHA unavailable ('${deployed}') — building ALL surfaces (fail-safe)"
           fi
       - name: Path filter
-        uses: dorny/paths-filter@v4
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
           # For `changed`, compare against what dev runs (empty = action's default).
@@ -183,8 +183,8 @@ jobs:
               - 'infra/scripts/render-web-env.mjs'
               - 'infra/scripts/sync-web-env.sh'
               - 'infra/scripts/sync-web-dns.mjs'
-              - 'infra/terraform/environments/dev/**'
-              - 'infra/terraform/environments/dev-web/**'
+              - 'infra/terraform/environments/dev-us-east-2/**'
+              - 'infra/terraform/environments/dev-web-us-east-2/**'
               - 'infra/terraform/modules/ecs-api/**'
               - 'infra/terraform/security-baseline/iam-gha-ecs-deploy.tf'
               - '.github/workflows/deploy-dev.yml'
@@ -210,8 +210,8 @@ jobs:
             # and was applied by hand; those inputs are committed now, so the
             # root is applied like any other (see terraform-apply.yml).
             terraform:
-              - 'infra/terraform/environments/dev/**'
-              - 'infra/terraform/environments/dev-web/**'
+              - 'infra/terraform/environments/dev-us-east-2/**'
+              - 'infra/terraform/environments/dev-web-us-east-2/**'
               - 'infra/terraform/modules/**'
               - '.github/workflows/terraform-apply.yml'
               - '.github/workflows/deploy-dev.yml'
@@ -266,7 +266,7 @@ jobs:
 
   # ── Apply dev Terraform before any image rolls ──────────────────────────────
   # Infrastructure first, then the image that runs on it. Two roots, applied in
-  # order: environments/dev (API + gateway ALB/ECS/DNS) then environments/dev-web
+  # order: environments/dev-us-east-2 (API + gateway) then dev-web-us-east-2
   # (the frontend service). Both are skipped when nothing under the dev roots
   # changed, and both are skipped entirely until the repo variable
   # TF_APPLY_ROLE_ARN_DEV is set — so merging this before the IAM role exists
@@ -275,11 +275,11 @@ jobs:
   #
   # The `github.ref` condition keeps the documented "manual branch run" of this
   # workflow working: terraform-apply.yml refuses any commit that is not on
-  # `main`, so on a branch dispatch these jobs would fail and block the image
+  # `dev`, so on a branch dispatch these jobs would fail and block the image
   # deploys. Skipping is the correct outcome there — a branch run deploys
   # images, never infrastructure.
 
-  # environments/dev is the API root. It plans `api_image`, so it waits for
+  # environments/dev-us-east-2 is the API root. It plans `api_image`, so it waits for
   # build-api: the value must be an image that exists, and the freshly pushed
   # :dev-<sha8> tag is the one this run is about to roll onto ECS. build-api only
   # pushes to Docker Hub, so infrastructure still converges before anything
@@ -292,19 +292,19 @@ jobs:
       ${{ always()
         && needs.detect-changes.outputs.terraform == 'true'
         && vars.TF_APPLY_ROLE_ARN_DEV != ''
-        && github.ref == 'refs/heads/main'
+        && github.ref == 'refs/heads/dev'
         && (needs.build-api.result == 'success' || needs.build-api.result == 'skipped') }}
     permissions:
       contents: read
       id-token: write
     uses: ./.github/workflows/terraform-apply.yml
     with:
-      tf_root: infra/terraform/environments/dev
+      tf_root: infra/terraform/environments/dev-us-east-2
       api_image: ${{ needs.build-api.outputs.image || 'kortix/kortix-api:dev-latest' }}
-      aws_region: us-west-2
+      aws_region: us-east-2
       role_arn: ${{ vars.TF_APPLY_ROLE_ARN_DEV }}
       github_environment: dev
-      trusted_branch: main
+      trusted_branch: dev
       cloudflare: true
       allow_deletes: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_deletes || false }}
 
@@ -315,18 +315,18 @@ jobs:
       ${{ always()
         && needs.detect-changes.outputs.terraform == 'true'
         && vars.TF_APPLY_ROLE_ARN_DEV != ''
-        && github.ref == 'refs/heads/main'
+        && github.ref == 'refs/heads/dev'
         && (needs.terraform-dev-api.result == 'success' || needs.terraform-dev-api.result == 'skipped') }}
     permissions:
       contents: read
       id-token: write
     uses: ./.github/workflows/terraform-apply.yml
     with:
-      tf_root: infra/terraform/environments/dev-web
-      aws_region: us-west-2
+      tf_root: infra/terraform/environments/dev-web-us-east-2
+      aws_region: us-east-2
       role_arn: ${{ vars.TF_APPLY_ROLE_ARN_DEV }}
       github_environment: dev
-      trusted_branch: main
+      trusted_branch: dev
       cloudflare: true
       allow_deletes: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_deletes || false }}
 
@@ -345,7 +345,7 @@ jobs:
     outputs:
       image: kortix/kortix-api:dev-${{ needs.detect-changes.outputs.sha8 }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { submodules: false }
       - run: git submodule sync --recursive && git submodule update --init --recursive --remote
       - name: Set up Docker builder (Blacksmith sticky-disk layer cache)
@@ -355,11 +355,11 @@ jobs:
         # local buildx builder. The registry cache-from/cache-to below stays:
         # measured 2026-08-25, five consecutive sticky-disk builds of this key
         # reused 0 layers while the registry cache reused 34-45.
-        uses: useblacksmith/setup-docker-builder@v2
+        uses: useblacksmith/setup-docker-builder@19215110ab936351210feebdfa5b440b4493e184 # v2.2.0
         with:
           cache-key: apps/api/Dockerfile:linux/amd64
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -371,7 +371,7 @@ jobs:
           keys: |
             DOCKERHUB_USERNAME
             DOCKERHUB_TOKEN
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
@@ -387,7 +387,7 @@ jobs:
         # Bake the dev version (e.g. 0.9.7-dev.<sha8>) into the image so
         # /v1/health reports it. The immutable :dev-<sha8> tag (see `tags:`)
         # is the artifact's real identity.
-        uses: useblacksmith/build-push-action@v2
+        uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2.3.0
         with:
           context: .
           file: apps/api/Dockerfile
@@ -421,7 +421,7 @@ jobs:
     env:
       IMAGE: ${{ needs.build-api.outputs.image }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Trivy image scan (fail on fixable CRITICAL)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -433,7 +433,7 @@ jobs:
           exit-code: "1"
           format: table
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -449,7 +449,7 @@ jobs:
         with:
           username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Resolve image digest
         id: digest
         run: |
@@ -498,11 +498,11 @@ jobs:
       packages: read
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: latest
       - run: corepack enable pnpm
@@ -510,7 +510,7 @@ jobs:
         env:
           npm_config_engine_strict: "false"
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -519,6 +519,7 @@ jobs:
       - name: Read credentials from AWS Secrets Manager
         uses: ./.aws-env/.github/actions/aws-env
         with:
+          aws-region: us-east-2
           keys: |
             DATABASE_URL=kortix-dev-env:DATABASE_URL
       - name: Apply pending migrations (node-pg-migrate; halts on failure)
@@ -551,7 +552,7 @@ jobs:
       id-token: write # OIDC → ECS deploy role
       contents: read
     env:
-      AWS_REGION: us-west-2
+      AWS_REGION: us-east-2
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
       # Non-secret task environment. KORTIX_PREVIEW_BASE_DOMAIN is the wildcard
       # every sandbox preview origin sits under; it is declared, never derived
@@ -563,7 +564,7 @@ jobs:
       # surface=all dispatch can enable it after the rollout gates pass.
       #
       # KORTIX_PROJECT_SNAPSHOT_S3_BUCKET/REGION name the bucket Terraform owns
-      # in infra/terraform/environments/dev (module.project_snapshots; the task
+      # in infra/terraform/environments/dev-us-east-2 (module.project_snapshots; the task
       # role's grant comes with it). Naming the bucket turns on the PRODUCER
       # (the leader worker prepares snapshots). Removing the two keys (or an
       # unapplied Terraform) leaves the API on the Git path: the config
@@ -580,7 +581,7 @@ jobs:
       #
       # KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE presigns sandbox downloads for
       # <bucket>.s3-accelerate.amazonaws.com (transfer_acceleration = true on
-      # the bucket module in infra/terraform/environments/dev keeps the endpoint
+      # the bucket module in infra/terraform/environments/dev-us-east-2 keeps the endpoint
       # active). Measured OFF on 2026-09-16 (PR #7303): the accelerated endpoint
       # made the daemon's boot-time download close short on 14 of 20 Platinum
       # boots (0 of 30 plain), and each retry cost more than the ~300 ms the
@@ -600,11 +601,11 @@ jobs:
       # s3:DeleteObject, and expiry is safe because the archive is a cache the
       # API rebuilds from its Git mirror.
       KORTIX_ECS_ENV_OVERRIDES: >-
-        {"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PROJECT_SNAPSHOT_MODE":"prefer-s3","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-west-2","KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE":"false","AUDIT_ARCHIVE_BUCKET":"kortix-dev-audit-archive","AUDIT_ARCHIVE_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0","KORTIX_PLATINUM_US_REGION":"us-east"}
+        {"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PROJECT_SNAPSHOT_MODE":"prefer-s3","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-dev-use2-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-east-2","KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE":"false","AUDIT_ARCHIVE_BUCKET":"kortix-dev-use2-audit-archive","AUDIT_ARCHIVE_REGION":"us-east-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-dev-use2-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"us-east-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0","KORTIX_PLATINUM_US_REGION":"us-east"}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
@@ -638,7 +639,7 @@ jobs:
           container="release-gate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           trap 'docker rm -f "$container" >/dev/null 2>&1 || true; rm -rf "$work"' EXIT
           ECS_DEPLOY_RENDERED_ENV_FILE="$work/task-env.json" \
-            bash infra/scripts/ecs-deploy.sh dev "$API_IMAGE" --version "$KORTIX_VERSION_STAMP" --dry-run >/dev/null
+            bash infra/scripts/ecs-deploy.sh dev-use2 "$API_IMAGE" --version "$KORTIX_VERSION_STAMP" --dry-run >/dev/null
           if [ ! -s "$work/task-env.json" ]; then
             echo "::warning title=Dev release gate::the dev ECS service is not active; skipping"
             exit 0
@@ -681,7 +682,7 @@ jobs:
       # the computed dev version even if the image's baked string ever diverges
       # (retags, rebuilds) — same parity rule as staging/prod.
       - name: Roll the dev ECS service onto the freshly-built image
-        run: bash infra/scripts/ecs-deploy.sh dev "${{ needs.build-api.outputs.image }}" --version "${{ needs.detect-changes.outputs.version }}" --wait-for serving
+        run: bash infra/scripts/ecs-deploy.sh dev-use2 "${{ needs.build-api.outputs.image }}" --version "${{ needs.detect-changes.outputs.version }}" --wait-for serving
 
   deploy-apps-router:
     name: Deploy Kortix Apps router
@@ -696,9 +697,9 @@ jobs:
       packages: read
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -713,7 +714,7 @@ jobs:
             STAGING_EDGE_SECRET=kortix-ci-env:KORTIX_APPS_STAGING_EDGE_SECRET
             PROD_EDGE_SECRET=kortix-ci-env:KORTIX_APPS_PROD_EDGE_SECRET
             PREVIEW_EDGE_SECRET=kortix-ci-env:KORTIX_APPS_PREVIEW_EDGE_SECRET
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
       - name: Validate Apps router credentials
@@ -757,9 +758,9 @@ jobs:
       packages: read
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     steps:
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -771,7 +772,7 @@ jobs:
           keys: |
             DOCKERHUB_USERNAME
             DOCKERHUB_TOKEN
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
@@ -798,7 +799,7 @@ jobs:
       packages: read
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { submodules: false }
       - name: Set up Docker builder (Blacksmith sticky-disk layer cache)
         # Layers persist on a Blacksmith sticky disk keyed by Dockerfile+platform,
@@ -807,11 +808,11 @@ jobs:
         # local buildx builder. The registry cache-from/cache-to below stays:
         # measured 2026-08-25, five consecutive sticky-disk builds of this key
         # reused 0 layers while the registry cache reused 34-45.
-        uses: useblacksmith/setup-docker-builder@v2
+        uses: useblacksmith/setup-docker-builder@19215110ab936351210feebdfa5b440b4493e184 # v2.2.0
         with:
           cache-key: apps/llm-gateway/Dockerfile:linux/amd64
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -823,13 +824,13 @@ jobs:
           keys: |
             DOCKERHUB_USERNAME
             DOCKERHUB_TOKEN
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
       - name: Build and push (amd64)
         # Single-arch amd64 for dev (see the API build for the full rationale).
-        uses: useblacksmith/build-push-action@v2
+        uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2.3.0
         with:
           context: .
           file: apps/llm-gateway/Dockerfile
@@ -855,19 +856,19 @@ jobs:
       id-token: write
       contents: read
     env:
-      AWS_REGION: us-west-2
+      AWS_REGION: us-east-2
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
       - name: Roll the dev ECS gateway service onto the immutable image
         run: |
           bash infra/scripts/ecs-deploy.sh \
-            dev \
+            dev-use2 \
             "kortix/kortix-gateway:dev-${GITHUB_SHA::8}" \
             --service gateway \
             --wait-for serving \
@@ -887,7 +888,7 @@ jobs:
           set -euo pipefail
           endpoints=(
             "public|https://gateway-dev.kortix.com/health/live"
-            "ecs|https://gateway-dev-ecs-fargate.kortix.com/health/live"
+            "ecs|https://gateway-dev-use2.kortix.com/health/live"
           )
           for attempt in $(seq 1 40); do
             all_match=true
@@ -928,9 +929,9 @@ jobs:
       packages: read
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     steps:
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -942,7 +943,7 @@ jobs:
           keys: |
             DOCKERHUB_USERNAME
             DOCKERHUB_TOKEN
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
@@ -972,10 +973,10 @@ jobs:
     outputs:
       image: ${{ steps.tag.outputs.image }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { submodules: false }
       - run: git submodule sync --recursive && git submodule update --init --recursive --remote
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with: { node-version: 22 }
       - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile
@@ -1001,11 +1002,11 @@ jobs:
         # local buildx builder. The registry cache-from/cache-to below stays:
         # measured 2026-08-25, five consecutive sticky-disk builds of this key
         # reused 0 layers while the registry cache reused 34-45.
-        uses: useblacksmith/setup-docker-builder@v2
+        uses: useblacksmith/setup-docker-builder@19215110ab936351210feebdfa5b440b4493e184 # v2.2.0
         with:
           cache-key: apps/web/Dockerfile:linux/amd64
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -1017,13 +1018,13 @@ jobs:
           keys: |
             DOCKERHUB_USERNAME
             DOCKERHUB_TOKEN
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
       - name: Build and push (amd64)
         # Single-arch amd64 for dev (see the API build for the full rationale).
-        uses: useblacksmith/build-push-action@v2
+        uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2.3.0
         with:
           context: .
           file: apps/web/Dockerfile
@@ -1047,9 +1048,9 @@ jobs:
   deploy-web-ecs:
     name: Deploy frontend to dev (ECS Fargate)
     needs: [detect-changes, build-frontend, terraform-dev-api, terraform-dev]
-    # Same soft dependency as deploy-api-ecs: environments/dev-web owns the web
+    # Same soft dependency as deploy-api-ecs: environments/dev-web-us-east-2 owns the web
     # ALB, WAF association, and task roles this image runs behind, and
-    # environments/dev must have converged before it.
+    # environments/dev-us-east-2 must have converged before it.
     if: >-
       ${{ always()
         && needs.detect-changes.outputs.frontend == 'true'
@@ -1061,19 +1062,19 @@ jobs:
       id-token: write
       contents: read
     env:
-      AWS_REGION: us-west-2
+      AWS_REGION: us-east-2
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with: { node-version: 22 }
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -1097,7 +1098,7 @@ jobs:
       - name: Roll the Dev web service onto the immutable image
         run: |
           bash infra/scripts/ecs-deploy.sh \
-            dev \
+            dev-use2 \
             "${{ needs.build-frontend.outputs.image }}" \
             --service web \
             --wait-for serving \
@@ -1116,17 +1117,17 @@ jobs:
       id-token: write
       contents: read
     env:
-      AWS_REGION: us-west-2
+      AWS_REGION: us-east-2
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -1142,7 +1143,7 @@ jobs:
         run: |
           set -euo pipefail
           alb="$(aws elbv2 describe-load-balancers \
-            --names kortix-dev-web-alb \
+            --names kortix-dev-use2-web-alb \
             --query 'LoadBalancers[0].DNSName' \
             --output text)"
           node infra/scripts/sync-web-dns.mjs dev "$alb"
@@ -1168,7 +1169,7 @@ jobs:
       # The protection password is identical in the dev, staging, and preview
       # web blobs; the staging web blob is the single source for CI.
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -1245,9 +1246,9 @@ jobs:
       packages: read
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     steps:
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -1259,7 +1260,7 @@ jobs:
           keys: |
             DOCKERHUB_USERNAME
             DOCKERHUB_TOKEN
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
@@ -1289,13 +1290,13 @@ jobs:
     if: needs.detect-changes.outputs.cli == 'true'
     runs-on: ${{ vars.CI_RUNNER_M_2204 || 'blacksmith-4vcpu-ubuntu-2204' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: latest
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
 
@@ -1354,7 +1355,7 @@ jobs:
         run: ./artifacts/kortix-linux-x64 version
 
       - name: Upload CLI artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cli-binaries
           path: |
@@ -1384,12 +1385,12 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Download CLI artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: cli-binaries
           path: release/
@@ -1403,7 +1404,7 @@ jobs:
           git push -f origin dev-latest
 
       - name: Publish GitHub prerelease (dev-latest)
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: dev-latest
           name: dev-latest
@@ -1430,7 +1431,7 @@ jobs:
     name: Announce live on dev
     needs: [detect-changes, deploy-api-ecs, verify-gateway-dev-parity, verify-web-dev]
     if: ${{ always() && !cancelled()
-      && github.ref == 'refs/heads/main'
+      && github.ref == 'refs/heads/dev'
       && (needs.detect-changes.outputs.api == 'true'
         || needs.detect-changes.outputs.gateway == 'true'
         || needs.detect-changes.outputs.frontend == 'true') }}
@@ -1448,7 +1449,7 @@ jobs:
       GATEWAY_RESULT: ${{ needs.detect-changes.outputs.gateway == 'true' && needs.verify-gateway-dev-parity.result || 'unchanged' }}
       WEB_RESULT: ${{ needs.detect-changes.outputs.frontend == 'true' && needs.verify-web-dev.result || 'unchanged' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: scripts/ci
       - name: Comment on the shipped pull requests

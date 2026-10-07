@@ -169,7 +169,7 @@ values. Evidence that contains real data stays local: the gitignored
 into a tracked file.
 
 **If you find customer data** in the tree or in a PR, remove it in the same
-branch and say so. Do not rewrite history on `main`. Report the SHA to the user
+branch and say so. Do not rewrite history on `dev`. Report the SHA to the user
 instead.
 
 **A guard enforces this on every commit and push.**
@@ -249,35 +249,35 @@ in before any non-trivial change. **Do not create a branch by reflex.**
 **Pack more into one branch, not less.** A follow-up fix, a rename cleanup, a
 stale-reference sweep, and the change that caused them all belong on the same
 branch and land together. Splitting one objective across several branches is how
-a half-finished cutover reaches `main` in pieces — each piece green alone, the
+a half-finished cutover reaches `dev` in pieces — each piece green alone, the
 whole thing broken.
 
 Sub-branches are allowed. Agents may cut working branches off the canonical
-branch and merge back into it. **A sub-branch never opens a PR against `main`.**
+branch and merge back into it. **A sub-branch never opens a PR against `dev`.**
 Only the canonical branch does.
 
 Carve-outs where you just proceed: read-only investigation and questions, and
 trivial single-file typo/comment fixes on the current branch.
 
-## Default delivery: verify in your box, self-merge to `main`, verify on dev
+## Default delivery: verify in your box, self-merge to `dev`, verify on dev
 
-`main` is the dev trunk. A merge does not deploy: dev deploys only on a deliberate
-dispatch, but **merging to `main` still lands your change in everyone's next
-deploy and next `main` checkout.** It is not a save point.
+`dev` is the dev trunk. A merge does not deploy: dev deploys only on a deliberate
+dispatch, but **merging to `dev` still lands your change in everyone's next
+deploy and next `dev` checkout.** It is not a save point.
 
 **The development machine does the work. CI does not.** Every test, preview,
 and demo for a change runs in your own box: the worktree's local stack, the
 local test suite, and agent-browser against the local web app. A pull request
-into `main` runs **no** GitHub Actions job and is mergeable the moment it opens.
+into `dev` runs **no** GitHub Actions job and is mergeable the moment it opens.
 Nothing runs automatically before the merge. A person can ask for CI on one PR,
 in the rare case they want it, by adding a label: `test` runs the six `Tests` lanes once, on the head SHA at that moment; `preview` deploys the branch on Platinum once (~7 min), with no test run. A push never re-runs either: re-add the label.
 Never add a label by default or from automation. CI otherwise runs in two places:
 
 | Where | What runs | Blocks? |
 |---|---|---|
-| Pull request into `main` | nothing, unless a person adds `test` (~9 min suite, once) or `preview` (~7 min deploy, once) | no |
-| Push to `main` (after the merge) | only cheap guards: `secret-scan`, `secrets-guard`, and path-gated `DB Migrations` / `i18n-catalogs` / `Terraform Apply Global` / `deploy-api-router-dev`. No dev deploy, no `Tests`, no `CI`, no `CodeQL`, no `Desktop`, no `drata`. | no |
-| Dispatch or schedule on `main` | `Deploy Dev`: `gh workflow run deploy-dev.yml -f surface=changed` (or `all`, `frontend`), `Desktop`: dispatch only. `Tests`: daily. `CI`, `CodeQL`: weekly. `drata`: daily. | no |
+| Pull request into `dev` | nothing, unless a person adds `test` (~9 min suite, once) or `preview` (~7 min deploy, once) | no |
+| Push to `dev` (after the merge) | only cheap guards: `secret-scan`, `secrets-guard`, and path-gated `DB Migrations` / `i18n-catalogs` / `Terraform Apply Global` / `deploy-api-router-dev`. No dev deploy, no `Tests`, no `CI`, no `CodeQL`, no `Desktop`, no `drata`. | no |
+| Dispatch or schedule on `dev` | `Deploy Dev`: `gh workflow run deploy-dev.yml -f surface=changed` (or `all`, `frontend`), `Desktop`: dispatch only. `Tests`: daily. `CI`, `CodeQL`: weekly. `drata`: daily. | no |
 | Pull request into `staging` (release candidate) | full CI: `Tests`, `CI`, `CodeQL`, scanners, `DB Migrations`, Terraform | yes, by the release discipline |
 | Pull request into `prod` (Promote to Production) | full CI plus `Tests - release` against deployed staging | yes, required check |
 
@@ -285,12 +285,12 @@ Never add a label by default or from automation. CI otherwise runs in two places
 `tests/attestations/<branch>.json` on a green run (`/` and every char outside
 `[A-Za-z0-9._-]` become `-`; a detached HEAD writes `detached-<short-sha>.json`):
 `diff_files` + `diff_hash` (the files the PR itself changed —
-`git diff origin/main...HEAD` — and their sha256, minus every attestation file),
-`source_hash` (full-tree fallback for a direct main push), `head`, `passed`,
+`git diff origin/dev...HEAD` — and their sha256, minus every attestation file),
+`source_hash` (full-tree fallback for a direct dev push), `head`, `passed`,
 per-lane results, `at`. The same write deletes every other file in
 `tests/attestations/` and the legacy `tests/test-attestation.json`. Commit
 `tests/attestations/`. One file per branch means two PRs never edit the same
-path, so a merge to `main` never makes another PR conflict on its attestation.
+path, so a merge to `dev` never makes another PR conflict on its attestation.
 The `.githooks/pre-push` hook recomputes the diff from the pushed commit and
 rejects the push when the attestation is stale, red, or missing. Never bypass
 it with `--no-verify`: the merge gate runs
@@ -299,15 +299,15 @@ stale/red/missing (`--strict` exits `3` when `db-suites` is skipped). Verify
 reads the attestation file the PR's diff adds or edits under
 `tests/attestations/` (with several, the `--branch` match, else the newest
 `at`), else `<branch>.json` at the rev, else the legacy file. A branch that still
-carries the legacy file and conflicts on it after a merge of `origin/main`:
+carries the legacy file and conflicts on it after a merge of `origin/dev`:
 delete it and re-run `pnpm test`.
-The attestation stays green after a merge of `origin/main` that touches other
+The attestation stays green after a merge of `origin/dev` that touches other
 files; it goes stale only when a file the PR itself changed is edited after the
 run — then re-run `pnpm test`. Lanes: `core`, `packages`, `db-suites`, plus `browser` when run. With no
 Docker (a factory sandbox) `db-suites` (API/CLI flows + DB suites) records
 `skipped-no-db`; on a Kortix sandbox image `packages` records
 `skipped-sandbox-image`. These are the only two skips, and neither is a pass:
-on `main` the DB is gated after the merge (path-gated `DB Migrations`) and by the
+on `dev` the DB is gated after the merge (path-gated `DB Migrations`) and by the
 staging promote, and the scheduled clean-runner `Tests` run backs up `packages`.
 
 1. Work on the canonical branch in its worktree. Commit as often as you want.
@@ -316,12 +316,12 @@ staging promote, and the scheduled clean-runner `Tests` run backs up `packages`.
    (`pnpm worktree start <slug>`) and drive the changed behavior through it: the
    HTTP route, the real CLI process, or the page with agent-browser. There is
    no CI lane to catch what you skip.
-3. Open the PR against `main` and follow the **contributing** skill: it fills
+3. Open the PR against `dev` and follow the **contributing** skill: it fills
    the PR template and attaches the demo video you recorded against your local
    stack. Do not add `test` or `preview` unless you need that one explicit run.
-4. Merge `main` into the canonical branch daily. A branch that diverges for weeks
+4. Merge `dev` into the canonical branch daily. A branch that diverges for weeks
    detonates on merge exactly like a 1,500-line PR does.
-5. **Self-merge to `main` when the change is verified. Do not wait for the
+5. **Self-merge to `dev` when the change is verified. Do not wait for the
    user's approval.** Speed matters: a verified change that sits unmerged is
    waste. Verified means all of these are true:
    - the relevant local checks ran with real inputs and outputs (rule 2), and
@@ -329,10 +329,10 @@ staging promote, and the scheduled clean-runner `Tests` run backs up `packages`.
    - the PR is mergeable (no conflict);
    - rule 6 holds when the change touches a client-facing runtime contract.
    A failing check blocks the merge until you fix it or state why it is
-   unrelated (for example, the same test fails on `main`). Squash-merge
+   unrelated (for example, the same test fails on `dev`). Squash-merge
    (`gh pr merge <pr> --squash`), then finish rules 7 and 8. A merge is not
    the end of the work: dev verification is still yours.
-   The only machine-enforced rule on `main` and `staging` is that every change
+   The only machine-enforced rule on `dev` and `staging` is that every change
    arrives through a pull request — no required approvals, no required status
    checks, no bypass actors. The bar is what you verified.
    **The release gates do not change.** Merging into `staging` or `prod`,
@@ -352,9 +352,9 @@ staging promote, and the scheduled clean-runner `Tests` run backs up `packages`.
    surface that failed. The surfaces and their checks are in
    `.github/workflows/deploy-dev.yml`. No suite runs on the merge push: the
    attestation (`pnpm test:verify`) was the gate, and the scheduled daily
-   `Tests` run on `main` is the backstop. A red scheduled run comments the
+   `Tests` run on `dev` is the backstop. A red scheduled run comments the
    failing lanes and every commit since the last green run. The author whose
-   commit broke `main` fixes forward. If `main` is still red 1 hour after the
+   commit broke `dev` fixes forward. If `dev` is still red 1 hour after the
    comment, anyone may revert the culprit PR. A red run never blocks a merge or
    a deploy.
 8. Re-run the user-visible behavior against `https://dev.kortix.com` and/or
@@ -417,8 +417,9 @@ these as standing rules whenever you touch the data/runtime layer:
   process. A feature one harness lacks is a capability, not a harness check:
   `GET /kortix/health` lists `capabilities` (`RUNTIME_CAPABILITIES` in
   `packages/api-contract/src/runtime-relay.ts`), and a client gates the
-  control with `runtimeSupports`. OpenCode lists all ten; pi lists
-  `session.subagents`, `session.compact` and `session.commands`. pi does not
+  control with `runtimeSupports`. OpenCode lists all eleven (`session.steer`
+  only on OpenCode 1.18.15 or later); pi lists `session.subagents`,
+  `session.compact`, `session.commands` and `session.steer`. pi does not
   serve rewind, MCP servers, the todo list, shell turns, part edits or
   `session.attach`.
   The harness rules and the pi gap list are in
@@ -547,8 +548,8 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   test profile. Stop an ordinary development stack before either command.
 - Every root run writes lane and total timings to
   `tests/test-results/local/benchmark-<timestamp>.json`.
-- Run the suite in your box before merging into `main`: the narrowest relevant
-  command first, then `pnpm test`. A pull request into `main` runs no CI job
+- Run the suite in your box before merging into `dev`: the narrowest relevant
+  command first, then `pnpm test`. A pull request into `dev` runs no CI job
   unless a person adds `test` or `preview`. Your machine is the pre-merge gate.
 - Every Linux CI job runs on Blacksmith through `runs-on: ${{ vars.CI_RUNNER_<tier>
   || '<label>' }}`. Setting a `CI_RUNNER_<tier>` repository variable to a
@@ -562,15 +563,15 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   `tests/bin/package-quality.ts` must not be raised. Each lane is the unchanged
   root command at the exact requested SHA; browser lanes install Chromium and
   prestart Supabase first. Do not add CI-only test logic.
-- The six lanes run daily on `main` (`schedule`), on a pull request into `staging`,
+- The six lanes run daily on `dev` (`schedule`), on a pull request into `staging`,
   once when a person adds the `test` label to a pull request, and on manual
-  dispatch. A push to `main` does not run them (Actions minutes, 2026-10-03). A
+  dispatch. A push to `dev` does not run them (Actions minutes, 2026-10-03). A
   scheduled run blocks nothing: a red run comments the failing lanes on the
-  `main` HEAD commit. A pull request into `prod` runs
+  `dev` HEAD commit. A pull request into `prod` runs
   `tests-release.yml` against deployed staging instead.
 - `tests/unit/sandbox-workflow.test.ts` fails when any workflow except the
   label-gated `tests.yml` and `deploy-preview.yml` triggers on a pull request
-  into `main`, and pins both label gates to the label-added event.
+  into `dev`, and pins both label gates to the label-added event.
 - Release tests run `pnpm test -- --target-full` against deployed staging. They block
   production when API or gateway health reports a SHA other than
   `RELEASE_SOURCE_SHA`, when any API flow is excluded, or when a configured
@@ -606,13 +607,13 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 
 ### Release topology — dev, staging, prod
 
-- **`main` = dev trunk.** It is the repo default branch and deploys to
+- **`dev` = dev trunk.** It is the repo default branch and deploys to
   `dev.kortix.com` / `dev-api.kortix.com`. Direct pushes are allowed; breaking or
   incomplete development can live here while it is being shaken out.
 - **`staging` = release-candidate branch.** Nothing should land on staging unless
   it is intended to be production-ready. Human/code changes enter staging by PR:
-  the default path is promoting `main`'s CURRENT HEAD (do not wait for a green
-  main push run first — the staging PR's own checks are the gate), or a
+  the default path is promoting `dev`'s CURRENT HEAD (do not wait for a green
+  dev push run first — the staging PR's own checks are the gate), or a
   targeted branch -> `staging` for a selective hotfix candidate. Staging
   deploys to `staging.kortix.com` / `staging-api.kortix.com` and must use the
   staging data plane, not dev or prod. The full promote-and-gate flow, the
@@ -656,9 +657,31 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 - `pnpm --filter kortix-api lint` runs in the `Tests` packages lane. Its rules
   are in `apps/api/eslint.config.mjs`: layered imports, no Drizzle in route
   files, no `(c: any)`, no `process.env` outside `config.ts`, no
-  `console.*`, and a `replica-local:` comment on every empty module-level
-  `Map`/`Set`. Background timers are guarded by
+  `console.*`, a `replica-local:` comment on every empty module-level
+  `Map`/`Set`, and no import into `projects/` from outside it except
+  `projects/index.ts` or `projects/surface.ts`. Background timers are guarded by
   `apps/api/src/__tests__/unit-worker-scope-wiring.test.ts` instead.
+
+### API code conventions (`apps/api/src`)
+
+- **Routes register explicitly.** A route module exports
+  `register<Name>Routes()`. The module that mounts the router calls it right
+  before `app.route()` (`app.ts`, `accounts/index.ts`, `router/index.ts`).
+  Never register at import time. Call order is dispatch order.
+- **No service imports a route module.** Shared logic lives in a service file
+  next to the routes (for example `projects/session-open/`).
+- **Services take an `Actor`, never a Hono `Context`.** The route reads the
+  request through `middleware/` and `http-*.ts` helpers, builds the actor
+  (`middleware/actor.ts`, memoized per request), and calls the service with
+  plain values. Parse `Authorization: Bearer` with `shared/bearer-token.ts`.
+- **Every background loop lives in `workers/<name>-worker.ts`.** The worker
+  owns its timer, start/stop and `runWorkerTick` call. The tick stays an
+  exported service function. `bootstrap.ts` imports every loop from `workers/`.
+- **`iam/` reads the membership, group and role tables.** Use the read models
+  in `iam/membership-read.ts`, `iam/group-read.ts` and `iam/role-read.ts`.
+- **No function longer than 300 lines.** Split long functions into named steps.
+- **SQL trace:** `KORTIX_SQL_TRACE=<file>` appends every pool statement to the
+  file. Diff two traces to prove a refactor runs the same SQL.
 - `apps/api/eslint-suppressions.json` holds the violations that existed when
   each rule was added. A new violation fails. A fixed one fails until you run
   `pnpm --filter kortix-api lint:prune` and commit the smaller file. Never

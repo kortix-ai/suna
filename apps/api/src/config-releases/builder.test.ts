@@ -21,7 +21,6 @@ import {
   configReleaseId,
   isTreeObject,
   listConfigFiles,
-  MAX_CONFIG_ARCHIVE_BYTES,
   storeConfigArchive,
   toDescriptor,
 } from './builder';
@@ -177,24 +176,25 @@ function seedRootLayout(extra: Record<string, string> = {}): string {
 }
 
 describe('buildConfigRelease on the root project layout', () => {
-  test('composes harnesses/opencode with the root skills, and the archive holds exactly the listed files', async () => {
+  test('releases the whole commit tree, at the paths the repository uses, and the archive holds exactly the listed files', async () => {
     const sha = seedRootLayout();
     const release = await buildConfigRelease(project, sha, 'project', { store });
     const mirror = await refreshMirror(project);
 
     expect(release.reason).toBeNull();
     expect(release.config_dir).toBe('harnesses/opencode');
-    // A composed tree: not the config dir's own tree, and absent from the mirror.
-    expect(release.config_tree_id).not.toBe(run('git', ['rev-parse', `${sha}:harnesses/opencode`], mirror));
-    expect(await isTreeObject(mirror, release.config_tree_id!)).toBe(false);
-    expect(release.archive?.url).toBe(
-      `/v1/projects/${project.projectId}/config-archives/${release.config_tree_id}?commit=${sha}`,
-    );
+    // The commit's own root tree: the same files a checkout holds in /workspace.
+    expect(release.config_tree_id).toBe(run('git', ['rev-parse', `${sha}^{tree}`], mirror));
+    expect(release.archive?.url).toBe(`/v1/projects/${project.projectId}/config-archives/${release.config_tree_id}`);
+    expect(release.files?.map(([path]) => path)).toEqual(run('git', ['ls-tree', '-r', '--name-only', sha], mirror).split('\n').sort());
     expect(release.files?.map(([path]) => path)).toEqual([
-      'opencode.jsonc',
+      'agents/kortix.md',
+      'harnesses/opencode/opencode.jsonc',
+      'harnesses/opencode/tools/hello.ts',
+      'kortix.yaml',
       'skills/demo/SKILL.md',
       'skills/demo/reference.md',
-      'tools/hello.ts',
+      'skills/notes/readme.txt',
     ]);
 
     const archive = store.objects.get(configArchiveKey(project.projectId, release.config_tree_id!));
@@ -251,81 +251,29 @@ describe('buildConfigRelease on the root project layout', () => {
     }
   });
 
-  test('a root skill replaces the config dir skill of the same name; the others stay', async () => {
-    const sha = commit(
-      {
-        'kortix.yaml': MANIFEST('first'),
-        '.kortix/opencode/opencode.jsonc': '{}\n',
-        '.kortix/opencode/agents/kortix.md': AGENT,
-        '.kortix/opencode/skills/demo/SKILL.md': 'legacy demo\n',
-        '.kortix/opencode/skills/other/SKILL.md': 'legacy other\n',
-        'skills/demo/SKILL.md': 'root demo\n',
-      },
-      'mixed layout',
-    );
-    const release = await buildConfigRelease(project, sha, 'project', { store });
-    const mirror = await refreshMirror(project);
-    const byPath = new Map(release.files!.map(([path, , blob]) => [path, blob]));
-    expect(byPath.get('skills/demo/SKILL.md')).toBe(run('git', ['rev-parse', `${sha}:skills/demo/SKILL.md`], mirror));
-    expect(byPath.get('skills/other/SKILL.md')).toBe(
-      run('git', ['rev-parse', `${sha}:.kortix/opencode/skills/other/SKILL.md`], mirror),
-    );
-    expect(byPath.has('agents/kortix.md')).toBe(true);
-  });
-
-  test('the pi config dir rides along as pi/; the OpenCode files and skills stay where they were', async () => {
+  test('every file keeps its repository path: the pi config dir, an explicit pi.config_dir, and files outside every config dir', async () => {
     const sha = seedRootLayout({
       'harnesses/pi/extensions/guard.ts': 'export default () => {}\n',
       'harnesses/pi/skills/native/SKILL.md': '---\nname: native\n---\nA pi skill.\n',
-      'harnesses/pi/settings.json': '{}\n',
+      'team/pi/prompts/review.md': 'Review.\n',
+      'shared/helper.ts': 'export const HELPER = 1\n',
+      'AGENTS.md': 'Project rules.\n',
     });
     const release = await buildConfigRelease(project, sha, 'project', { store });
-    const mirror = await refreshMirror(project);
-
-    expect(release.reason).toBeNull();
-    expect(release.config_dir).toBe('harnesses/opencode');
-    expect(release.files?.map(([path]) => path)).toEqual([
-      'opencode.jsonc',
-      'pi/extensions/guard.ts',
-      'pi/settings.json',
-      'pi/skills/native/SKILL.md',
-      'skills/demo/SKILL.md',
-      'skills/demo/reference.md',
-      'tools/hello.ts',
-    ]);
-    const byPath = new Map(release.files!.map(([path, , blob]) => [path, blob]));
-    expect(byPath.get('pi/extensions/guard.ts')).toBe(run('git', ['rev-parse', `${sha}:harnesses/pi/extensions/guard.ts`], mirror));
-    const dir = extract(store.objects.get(configArchiveKey(project.projectId, release.config_tree_id!))!);
-    for (const [path, , blob] of release.files!) expect(blobOf(join(dir, path))).toBe(blob);
+    const paths = release.files!.map(([path]) => path);
+    for (const path of ['harnesses/pi/extensions/guard.ts', 'harnesses/pi/skills/native/SKILL.md', 'team/pi/prompts/review.md', 'shared/helper.ts', 'AGENTS.md']) {
+      expect(paths).toContain(path);
+    }
+    expect(paths.some((path) => path.startsWith('pi/'))).toBe(false);
   });
 
-  test('a pi-only change moves the release; an explicit pi.config_dir is the only pi dir read', async () => {
-    const base = seedRootLayout({ 'harnesses/pi/skills/native/SKILL.md': 'v1\n' });
+  test('any change to a tracked file moves the release', async () => {
+    const base = seedRootLayout();
     const first = await buildConfigRelease(project, base, 'project', { store });
-    const changed = commit({ 'harnesses/pi/skills/native/SKILL.md': 'v2\n' }, 'pi skill v2');
+    const changed = commit({ 'src/app.ts': 'console.log(2)\n' }, 'code only');
     const second = await buildConfigRelease(project, changed, 'project', { store });
     expect(second.release_id).not.toBe(first.release_id);
-
-    const explicit = commit(
-      {
-        'kortix.yaml': `${ROOT_MANIFEST}pi:\n  config_dir: team/pi\n`,
-        'team/pi/prompts/review.md': 'Review.\n',
-      },
-      'explicit pi dir',
-    );
-    const third = await buildConfigRelease(project, explicit, 'project', { store });
-    const paths = third.files!.map(([path]) => path);
-    expect(paths).toContain('pi/prompts/review.md');
-    expect(paths.some((path) => path.startsWith('pi/skills/'))).toBe(false);
-  });
-
-  test('a legacy project with an unrelated root skills/ folder keeps its exact tree ID', async () => {
-    seed();
-    const sha = commit({ 'skills/notes/readme.txt': 'code, not a skill\n' }, 'unrelated folder');
-    const release = await buildConfigRelease(project, sha, 'project', { store });
-    const mirror = await refreshMirror(project);
-    expect(release.config_tree_id).toBe(run('git', ['rev-parse', `${sha}:.kortix/opencode`], mirror));
-    expect(release.archive?.url).toBe(`/v1/projects/${project.projectId}/config-archives/${release.config_tree_id}`);
+    expect(second.files!.map(([path]) => path)).toContain('src/app.ts');
   });
 });
 
@@ -334,9 +282,9 @@ describe('buildConfigRelease', () => {
     const sha = seed();
     const release = await buildConfigRelease(project, sha, 'project', { store });
     const mirror = await refreshMirror(project);
-    const tree = run('git', ['rev-parse', `${sha}:.kortix/opencode`], mirror);
+    const tree = run('git', ['rev-parse', `${sha}^{tree}`], mirror);
 
-    expect(release.format).toBe('config-release-v1');
+    expect(release.format).toBe('config-release-v2');
     expect(release.source_commit).toBe(sha);
     expect(release.config_dir).toBe('.kortix/opencode');
     expect(release.config_tree_id).toBe(tree);
@@ -349,11 +297,13 @@ describe('buildConfigRelease', () => {
     );
     expect(release.archive?.url).toBe(`/v1/projects/${project.projectId}/config-archives/${tree}`);
     expect(release.files?.map(([path]) => path)).toEqual([
-      'agents/kortix.md',
-      'agents/reviewer.md',
-      'opencode.jsonc',
-      'skills/demo/SKILL.md',
-      'tools/hello.ts',
+      '.kortix/opencode/agents/kortix.md',
+      '.kortix/opencode/agents/reviewer.md',
+      '.kortix/opencode/opencode.jsonc',
+      '.kortix/opencode/skills/demo/SKILL.md',
+      '.kortix/opencode/tools/hello.ts',
+      'kortix.yaml',
+      'src/app.ts',
     ]);
 
     const key = configArchiveKey(project.projectId, tree);
@@ -362,7 +312,7 @@ describe('buildConfigRelease', () => {
     expect(release.archive?.bytes).toBe(stored!.length);
 
     // Every file in the archive is in `files`, with its exact blob ID, and the
-    // paths are relative to the config dir root.
+    // paths are relative to the repository root.
     const dir = extract(stored!);
     for (const [path, mode, blob] of release.files!) {
       expect(mode).toBe('100644');
@@ -386,13 +336,13 @@ describe('buildConfigRelease', () => {
     const sha = git('rev-parse', 'HEAD');
 
     const release = await buildConfigRelease(project, sha, 'project', { store });
-    const linked = release.files!.find(([path]) => path === 'linked.md');
+    const linked = release.files!.find(([path]) => path === '.kortix/opencode/linked.md');
     expect(linked?.[1]).toBe('120000');
-    expect(release.files!.some(([path]) => path === 'vendor')).toBe(false);
+    expect(release.files!.some(([path]) => path === '.kortix/opencode/vendor')).toBe(false);
 
     const dir = extract(store.objects.get(configArchiveKey(project.projectId, release.config_tree_id!))!);
-    expect(lstatSync(join(dir, 'linked.md')).isSymbolicLink()).toBe(true);
-    expect(blobOf(join(dir, 'linked.md'))).toBe(linked![2]);
+    expect(lstatSync(join(dir, '.kortix/opencode/linked.md')).isSymbolicLink()).toBe(true);
+    expect(blobOf(join(dir, '.kortix/opencode/linked.md'))).toBe(linked![2]);
   });
 
   test('one config tree gives identical archive bytes on every build', async () => {
@@ -426,37 +376,30 @@ describe('buildConfigRelease', () => {
 
     const archive = store.objects.get(configArchiveKey(project.projectId, release.config_tree_id!))!;
     const dir = extract(archive);
-    expect(readFileSync(join(dir, 'secret-notes.md'), 'utf8')).toBe('kept verbatim\n');
-    expect(readFileSync(join(dir, 'version.txt'), 'utf8')).toBe('commit $Format:%H$\n');
+    expect(readFileSync(join(dir, '.kortix/opencode/secret-notes.md'), 'utf8')).toBe('kept verbatim\n');
+    expect(readFileSync(join(dir, '.kortix/opencode/version.txt'), 'utf8')).toBe('commit $Format:%H$\n');
     for (const [path, , blob] of release.files!) expect(blobOf(join(dir, path))).toBe(blob);
-    expect(release.files!.map(([path]) => path)).toContain('secret-notes.md');
+    expect(release.files!.map(([path]) => path)).toContain('.kortix/opencode/secret-notes.md');
 
     const again = await buildConfigArchive(mirror, release.config_tree_id!);
     expect(again.equals(archive)).toBe(true);
   });
 
-  test('a commit outside the config dir keeps the release ID; governance-only changes it', async () => {
+  test('a code-only commit and a governance-only commit each move the release', async () => {
     const first = seed();
     const a = await buildConfigRelease(project, first, 'project', { store });
 
     const unrelated = commit({ 'src/app.ts': 'console.log(2)\n' }, 'app only');
     const b = await buildConfigRelease(project, unrelated, 'project', { store });
-    expect(b.release_id).toBe(a.release_id);
-    expect(b.config_tree_id).toBe(a.config_tree_id);
+    expect(b.config_tree_id).not.toBe(a.config_tree_id);
+    expect(b.release_id).not.toBe(a.release_id);
+    expect(b.compiled_governance_etag).toBe(a.compiled_governance_etag);
 
     const governance = commit({ 'kortix.yaml': MANIFEST('second') }, 'governance only');
     const c = await buildConfigRelease(project, governance, 'project', { store });
-    expect(c.config_tree_id).toBe(a.config_tree_id);
-    expect(c.compiled_governance_etag).not.toBe(a.compiled_governance_etag);
-    expect(c.release_id).not.toBe(a.release_id);
-    // One archive serves all three.
-    expect(store.objects.size).toBe(1);
-
-    const files = commit({ '.kortix/opencode/skills/demo/SKILL.md': '---\nname: demo\n---\nv2\n' }, 'skill body');
-    const d = await buildConfigRelease(project, files, 'project', { store });
-    expect(d.config_tree_id).not.toBe(a.config_tree_id);
-    expect(d.release_id).not.toBe(c.release_id);
-    expect(store.objects.size).toBe(2);
+    expect(c.compiled_governance_etag).not.toBe(b.compiled_governance_etag);
+    expect(c.release_id).not.toBe(b.release_id);
+    expect(store.objects.size).toBe(3);
   });
 
   test('the agent variant compiles one agent and shares the archive', async () => {
@@ -479,22 +422,9 @@ describe('buildConfigRelease', () => {
     expect(release.reason).toContain('compiled governance failed');
   });
 
-  test('a commit with no config dir produces a governance-only release', async () => {
-    const sha = commit({ 'kortix.yaml': MANIFEST('first'), 'README.md': 'x\n' }, 'no config');
-    const release = await buildConfigRelease(project, sha, 'project', { store });
-    expect(release.release_id).toBe(
-      createHash('sha256').update(`:${release.compiled_governance_etag}`).digest('hex'),
-    );
-    expect(release.config_dir).toBeNull();
-    expect(release.archive).toBeNull();
-    expect(release.files).toBeNull();
-    expect(release.reason).toBe('the commit has no OpenCode config dir');
-    expect(release.compiled_governance).not.toBeNull();
-  });
-
   // 2026-10-05: a pi project with no OpenCode config dir got a governance-only
   // release, and pi lost its root skills and its own config dir.
-  test('a commit with no OpenCode config dir still releases the root skills and the pi config dir', async () => {
+  test('a commit with no OpenCode config dir still releases its whole tree, with no config dir named', async () => {
     const sha = commit(
       {
         'kortix.yaml': MANIFEST('first'),
@@ -507,12 +437,8 @@ describe('buildConfigRelease', () => {
     expect(release.reason).toBeNull();
     expect(release.release_id).toMatch(/^[0-9a-f]{64}$/);
     expect(release.archive).not.toBeNull();
-    expect(release.config_dir).toBeString();
-    expect(release.files!.map(([path]) => path).sort()).toEqual(['pi/skills/native/SKILL.md', 'skills/demo/SKILL.md']);
-    expect(store.objects.size).toBe(1);
-    const tar = gunzipSync([...store.objects.values()][0]!).toString('latin1');
-    expect(tar).toContain('skills/demo/SKILL.md');
-    expect(tar).toContain('pi/skills/native/SKILL.md');
+    expect(release.config_dir).toBeNull();
+    expect(release.files!.map(([path]) => path)).toEqual(['harnesses/pi/skills/native/SKILL.md', 'kortix.yaml', 'skills/demo/SKILL.md']);
   });
 
   // Prod 2026-10-02: the meta coordinator's box has no project checkout and its
@@ -534,24 +460,25 @@ describe('buildConfigRelease', () => {
     expect((await buildConfigRelease(project, moved, 'meta', { store })).release_id).toBe(first.release_id);
   });
 
-  test('a config dir over the archive limit produces no release', async () => {
+  test('a repository over the archive limit produces no release', async () => {
     const sha = commit(
       {
         'kortix.yaml': MANIFEST('first'),
         '.kortix/opencode/opencode.json': '{}\n',
-        // Random bytes do not compress: the gzip stays above the limit.
-        '.kortix/opencode/blob.bin': randomBytes(MAX_CONFIG_ARCHIVE_BYTES + 4096),
+        // Random bytes do not compress: 64 KiB stays over the 32 KiB test cap.
+        '.kortix/opencode/blob.bin': randomBytes(64 * 1024),
       },
       'huge',
     );
-    const release = await buildConfigRelease(project, sha, 'project', { store });
+    const release = await buildConfigRelease(project, sha, 'project', { store, archiveLimit: 32 * 1024 });
     expect(release.release_id).toBeNull();
     expect(release.config_tree_id).toMatch(/^[0-9a-f]{40}$/);
-    expect(release.reason).toContain(`exceeds the ${MAX_CONFIG_ARCHIVE_BYTES}-byte archive limit`);
+    expect(release.reason).toContain(`exceeds the ${32 * 1024}-byte config archive limit`);
+    expect(release.reason).toContain('`kortix validate` lists the largest files');
     expect(store.objects.size).toBe(0);
     // The answer is a fact of the commit: every box's descriptor request (one
     // per minute per box) must not rebuild and gzip the whole tree again.
-    expect(await buildConfigRelease(project, sha, 'project', { store })).toBe(release);
+    expect(await buildConfigRelease(project, sha, 'project', { store, archiveLimit: 32 * 1024 })).toBe(release);
 
     const mirror = await refreshMirror(project);
     await expect(buildConfigArchive(mirror, release.config_tree_id!, 1024)).rejects.toBeInstanceOf(
@@ -565,7 +492,7 @@ describe('buildConfigRelease', () => {
     const release = await buildConfigRelease(project, sha, 'project', { store });
     expect(release.release_id).toMatch(/^[0-9a-f]{64}$/);
     expect(release.archive?.bytes).toBeGreaterThan(0);
-    expect(release.files?.length).toBe(5);
+    expect(release.files?.length).toBe(7);
   });
 
   test('caches by (project, commit, variant)', async () => {

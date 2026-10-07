@@ -13,7 +13,7 @@ Every row in the [audit log](/docs/accounts#audit-log) carries an `action`: `dom
 - A route with two actions (`secret.strategy.update` or `secret.strategy.changed`) records the second when its handler records that event, for example only for a real change. That event, with its before and after state, is then the request's row.
 - Rows written before 2026-09-24 carry `METHOD /template` as their action. The web app and the CLI show them with the same titles.
 
-This page lists 696 route actions and 64 other events.
+This page lists 700 route actions and 64 other events.
 
 ## `account.`
 
@@ -358,6 +358,7 @@ This page lists 696 route actions and 64 other events.
 | `gateway.routing_policy.update` | Updated gateway routing policy | `PUT /v1/projects/:projectId/gateway/routing-policy` |
 | `gateway.series.read` | Viewed LLM gateway daily usage | `GET /v1/projects/:projectId/gateway/series` |
 | `gateway.session_spend.list` | Listed LLM gateway spend by session | `GET /v1/projects/:projectId/gateway/sessions` |
+| `gateway.source_spend.list` | Listed LLM gateway spend by source | `GET /v1/projects/:projectId/gateway/sources` |
 
 ## `git.`
 
@@ -720,6 +721,7 @@ This page lists 696 route actions and 64 other events.
 | `secret.account_resource.delete` | Deleted pooled provider key | `DELETE /v1/accounts/:accountId/secret-resources/:secretId` |
 | `secret.account_resource.grant` | Granted pooled provider key | `PUT /v1/accounts/:accountId/secret-resources/:secretId/grants/:userId` |
 | `secret.account_resource.list` | Listed pooled provider keys | `GET /v1/accounts/:accountId/secret-resources` |
+| `secret.account_resource.retry` | Retried pooled provider key after rate limit | `POST /v1/accounts/:accountId/secret-resources/:secretId/retry` |
 | `secret.account_resource.revoke` | Revoked pooled provider key grant | `DELETE /v1/accounts/:accountId/secret-resources/:secretId/grants/:userId` |
 | `secret.account_resource.rotate` | Rotated pooled provider key | `PUT /v1/accounts/:accountId/secret-resources/:secretId/value` |
 | `secret.agent.grant` | Granted secret to an agent | `POST /v1/projects/:projectId/secrets/:identifier/grant` |
@@ -756,6 +758,7 @@ This page lists 696 route actions and 64 other events.
 | `session.list` | Listed project sessions | `GET /v1/projects/:projectId/sessions` |
 | `session.message_authors.read` | Viewed session message authors | `GET /v1/projects/:projectId/sessions/:sessionId/message-authors` |
 | `session.model.update` | Changed session model | `PUT /v1/projects/:projectId/sessions/:sessionId/model` |
+| `session.model_usage.read` | Viewed session model usage | `GET /v1/projects/:projectId/sessions/:sessionId/model-usage` |
 | `session.participants.list` | Viewed session participants | `GET /v1/projects/:projectId/sessions/:sessionId/participants` |
 | `session.permission.notify` | Relayed session permission request | `POST /v1/projects/:projectId/turn-permission` |
 | `session.presence.update` | Updated session presence | `PUT /v1/projects/:projectId/sessions/:sessionId/presence` |
@@ -818,6 +821,7 @@ This page lists 696 route actions and 64 other events.
 
 | Action | Title | Route |
 | --- | --- | --- |
+| `skill.create` | Created project skill | `POST /v1/projects/:projectId/skills` |
 | `skill.system.file.read` | Viewed Kortix system skill file | `GET /v1/skills/:name/file` |
 | `skill.system.list` | Listed Kortix system skills | `GET /v1/skills` |
 | `skill.system.read` | Viewed Kortix system skill | `GET /v1/skills/:name` |

@@ -169,6 +169,12 @@ The local config is the maximum boundary. The server cannot widen configured
 filesystem paths, blocked paths, shell commands, timeouts, file sizes, or desktop
 features.
 
+A `shell` grant is local code execution. The allow list matches the executable
+name exactly and the block list also matches every path ending in that name
+(`/bin/rm` is `rm`). Arguments are not restricted: an allowed `git`, `find`, or
+`python` can run any code through its own flags. Grant `shell` only to a session
+you trust with this computer.
+
 ## Computer Use driver
 
 Agent Tunnel never downloads or executes a desktop driver. Install `cua-driver`

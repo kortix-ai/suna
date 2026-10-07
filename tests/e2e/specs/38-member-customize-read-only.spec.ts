@@ -95,13 +95,18 @@ test.describe('38 — a project member sees Customize read-only', () => {
       // The tab bar is static (#9042): every label paints on the first frame.
       // Access is decided in the body, per tab, by that tab's own read leaf.
       const noAccess = page.locator('[data-slot="capability-no-access"]');
+      // Let the tab's reads settle before asserting. Staging is a protected
+      // Vercel preview: its injected toolbar (vercel.live feedback) keeps a
+      // connection the trace never closes, so networkidle can wait forever
+      // (gate 37548429782). Bound it, as 09-admin-console and 30-git-connections do.
+      const settle = () => page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined);
       await expect(page.getByRole('tab', { name: 'Agents' })).toBeVisible({ timeout: 60_000 });
-      await page.waitForLoadState('networkidle');
+      await settle();
       await expect(noAccess).toHaveCount(0);
 
       await page.getByRole('tab', { name: 'Triggers' }).click();
       await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/customize/triggers`));
-      await page.waitForLoadState('networkidle');
+      await settle();
       await expect(noAccess).toHaveCount(0);
 
       // A tab whose read leaf the member lacks shows the no-access body and
@@ -115,7 +120,7 @@ test.describe('38 — a project member sees Customize read-only', () => {
         await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/customize/${segment}`));
         await expect(noAccess).toBeVisible();
       }
-      await page.waitForLoadState('networkidle');
+      await settle();
 
       expect(forbidden).toEqual([]);
     } finally {

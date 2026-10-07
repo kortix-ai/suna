@@ -45,6 +45,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { ProviderName, SandboxExecResult } from '../../platform/providers';
 import { CONFIG_RELEASE_CAPABILITY } from './session-config-release';
+import { exponentialBackoffMs } from '../../shared/backoff';
+import { isRecord } from '@kortix/shared/guards';
 
 /**
  * The in-box script ships as a sidecar file, not a template literal: bash is
@@ -91,8 +93,11 @@ export const LEGACY_BOOTSTRAP_MAX_ATTEMPTS = 3;
  * fine": widening the wait is the point.
  */
 export function legacyBootstrapCooldownMs(attempts: number): number {
-  const exponent = Math.max(0, attempts - 1);
-  return Math.min(LEGACY_BOOTSTRAP_MAX_COOLDOWN_MS, LEGACY_BOOTSTRAP_COOLDOWN_MS * 2 ** exponent);
+  return exponentialBackoffMs({
+    attempt: attempts,
+    baseMs: LEGACY_BOOTSTRAP_COOLDOWN_MS,
+    capMs: LEGACY_BOOTSTRAP_MAX_COOLDOWN_MS,
+  });
 }
 /** A `running` stamp older than this is a crashed attempt, not a live one. */
 export const LEGACY_BOOTSTRAP_STALE_RUNNING_MS = 20 * 60 * 1000;
@@ -177,10 +182,6 @@ export interface RuntimeClassification {
   staleReasons: StaleReason[];
   /** Human-readable specifics for `stale` AND `blocked` — which component failed, how long a swap has been pending, why this box is blocked. Empty for `current`/`legacy`/`not-ok`/`unreachable`. */
   detail: string[];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function shaField(running: Record<string, unknown>, key: string): string | null {
@@ -737,169 +738,20 @@ export async function bootstrapLegacyRuntime(
   const record = readRecord(input.metadata);
   const check = readCheck(input.metadata);
 
-  // Cheap gates first — none of these touch the box.
-  if (record?.state === 'running') {
-    const startedMs = Date.parse(record.lastAttemptAt);
-    if (Number.isFinite(startedMs) && nowMs - startedMs < LEGACY_BOOTSTRAP_STALE_RUNNING_MS) {
-      return { outcome: 'skipped-in-progress' };
-    }
-  }
-  if (!input.force && check && check.klass === 'current') {
-    const atMs = Date.parse(check.at);
-    if (Number.isFinite(atMs) && nowMs - atMs < LEGACY_CHECK_TTL_MS) {
-      return { outcome: 'skipped-recent-check' };
-    }
-  }
+  const probed = await probeRuntimeForBootstrap(input, deps, nowMs, nowIso, record, check);
+  if ('result' in probed) return probed.result;
+  const { classification, deadDaemonOnRunningBox, expectedRunningAssets } = probed;
 
-  const health = await deps.fetchHealth();
-  // #7859 owns the classification (sha-to-sha against this deploy's manifest);
-  // this module owns what to DO with each class.
-  const expectedRunningAssets = await deps.expectedRunningAssets?.();
-  let classification = classifyDaemonHealth(health, expectedRunningAssets ?? undefined);
-  if (classification.klass === 'not-ok') return { outcome: 'unreachable', classification };
-  // A DEAD DAEMON ON A RUNNING BOX. Silence alone means nothing — a stopped box
-  // answers exactly the same way, and there is nothing there to repair. The
-  // provider's own state is what tells the two apart, and it is asked only
-  // here, on the rare path.
-  //
-  // Measured on dev 2026-09-27: the row was parked, the daemon's dead-token
-  // breaker tripped 69 s later and shut it down with exit 0, and Platinum's
-  // pt-init — which launches the chain once and never again — left the VM up
-  // with nothing serving on it. The provider reported `running`, our row
-  // reported `active`, every ingress port answered 502, and the control plane
-  // still accepted a prompt against it. This module's own relaunch fixed it in
-  // 11 s by hand; it had refused to try because `unreachable` returned here.
-  //
-  // Only `unreachable` takes this branch. A daemon that ANSWERS is classified,
-  // and a `blocked` (pinned) daemon is never relaunched by this path or any
-  // other — it is handled immediately below.
-  //
-  // Uncertainty stays a skip: a provider that cannot answer is not evidence.
-  let deadDaemonOnRunningBox = false;
-  if (classification.klass === 'unreachable') {
-    const running = deps.providerRunning
-      ? await deps.providerRunning().catch(() => false)
-      : false;
-    if (!running) return { outcome: 'unreachable', classification };
-    // TWO SILENT READS, never one. An 8 s ingress timeout, a restarting proxy
-    // or a GC pause reads exactly like a corpse, and a relaunch kills PTYs and
-    // restages assets under whoever is using the box. This is
-    // `decideStoppedObservation`'s asymmetry applied to the probe instead of
-    // the provider's state field: uncertainty fails toward the LIVE box, so the
-    // daemon gets a second chance to speak. If it takes it, this pass simply
-    // continues with what it said.
-    await deps.sleep(DEAD_DAEMON_CONFIRM_MS);
-    const second = classifyDaemonHealth(await deps.fetchHealth(), expectedRunningAssets ?? undefined);
-    if (second.klass === 'unreachable') {
-      // Both reads crossed the provider ingress, and an ingress that times out
-      // reads exactly like a corpse (prod 2026-09-29: ~18 min of edge timeouts
-      // to a healthy daemon). The box's own loopback is the authority, asked
-      // before any record, token or script touches the box.
-      const loopback = await deps
-        .exec(['bash', '-c', `curl -fsS --max-time 3 -o /dev/null ${LOOPBACK_HEALTH_URL}`], LOOPBACK_PROBE_TIMEOUT_MS)
-        .catch(() => null);
-      if (loopback?.exitCode === 0) {
-        deps.log('daemon answers on the box loopback; the ingress was silent, nothing to repair', {
-          sandboxId: input.sandboxId,
-          externalId: input.externalId,
-        });
-        return { outcome: 'not-legacy', detail: 'daemon alive in the box; the ingress was unreachable', classification };
-      }
-      deadDaemonOnRunningBox = true;
-      deps.log('daemon gone on a running box; relaunching the runtime chain', {
-        sandboxId: input.sandboxId,
-        externalId: input.externalId,
-        provider: input.provider,
-      });
-    } else {
-      classification = second;
-      if (classification.klass === 'not-ok') return { outcome: 'unreachable', classification };
-    }
-  }
-  if (classification.klass === 'blocked') {
-    // The daemon's own supervisor already tried, rolled back, and latched
-    // updates off. Repairing again would relaunch into the same rollback —
-    // never loop on it. Record the check so it stays visible, and stop.
-    await deps.patchMetadata({
-      [LEGACY_CHECK_METADATA_KEY]: {
-        at: nowIso,
-        klass: 'blocked',
-        staleReasons: [],
-      } satisfies LegacyCheckRecord,
-    });
-    deps.log('daemon is pinned after a rollback — blocked, not repaired', {
-      sandboxId: input.sandboxId,
-      detail: classification.detail,
-    });
-    return { outcome: 'skipped-blocked', detail: classification.detail.join('; '), classification };
-  }
-  if (classification.klass === 'current' && classification.runtimeBuild === null) {
-    // A current daemon that has not finished (or has failed) its first
-    // convergence pass: not legacy, nothing for this module to do yet.
-    return { outcome: 'not-legacy', detail: 'daemon current, convergence pending', classification };
-  }
-  if (classification.klass === 'current' && input.force) {
-    // Operator-forced re-run on a current daemon: its OpenCode install failed
-    // (a 2026-07 image's pnpm 8, for one), or an operator wants the chain
-    // relaunched so the daemon re-detects a freshly installed binary. The
-    // script is idempotent — agent and entrypoint are skipped when already at
-    // the manifest — so a re-run is "fix the floor, relaunch, converge again".
-    deps.log('forced re-run on a current daemon', {
-      sandboxId: input.sandboxId,
-      opencodeComponent: classification.opencodeComponent,
-    });
-  } else if (classification.klass === 'current') {
-    const patch: Record<string, unknown> = {
-      [LEGACY_CHECK_METADATA_KEY]: { at: nowIso, klass: 'current', staleReasons: [] } satisfies LegacyCheckRecord,
-    };
-    // A bootstrap that was mid-flight is proven done by a current daemon.
-    if (record && record.state !== 'converged') {
-      patch[LEGACY_BOOTSTRAP_METADATA_KEY] = {
-        ...record,
-        state: 'converged',
-        finishedAt: nowIso,
-        to: { ...(record.to ?? {}), runtimeBuild: classification.runtimeBuild },
-      } satisfies LegacyBootstrapRecord;
-    }
-    await deps.patchMetadata(patch);
-    return { outcome: 'not-legacy', classification };
-  }
-
-  // Legacy or stale. Budget and cooldown are per manifest build: a new deploy
-  // earns a fresh set of attempts, a box that keeps failing on the same build
-  // does not.
-  const build = await deps.manifestBuild();
-  const sameBuild = record?.manifestBuild === build;
-  const attempts = sameBuild && record ? record.attempts : 0;
-  if (record && sameBuild && record.state === 'failed') {
-    if (attempts >= LEGACY_BOOTSTRAP_MAX_ATTEMPTS && !input.force) {
-      return { outcome: 'skipped-exhausted', detail: `${attempts} attempts on build ${build}`, classification };
-    }
-    const lastMs = Date.parse(record.lastAttemptAt);
-    // ESCALATING per-box backoff (30m, 60m, 120m, …, capped): a box that has
-    // failed repeatedly is retried less often each time, not on a flat 30m
-    // cadence forever — the repair-storm guard for a box that CANNOT be
-    // repaired but has not yet spent its attempt budget.
-    if (!input.force && Number.isFinite(lastMs) && nowMs - lastMs < legacyBootstrapCooldownMs(attempts)) {
-      return { outcome: 'skipped-cooldown', classification };
-    }
-  }
-  if (record && sameBuild && record.state === 'staged' && !deadDaemonOnRunningBox) {
-    // Daytona/E2B: staged and waiting for the provider's next start. Nothing
-    // to redo until a current daemon proves it or the build moves on. A box
-    // with no daemon is the exception: nothing will start it again, so
-    // "converges at next start" is a promise that can never be kept.
-    return { outcome: 'staged', detail: 'already staged; converges at next start', classification };
-  }
-
-  // Never under a running turn. OpenCode's own busy state is the authority —
-  // the ledger can hold a zombie turn on exactly the boxes this exists for.
-  // OpenCode is proxied BY the daemon, so a dead daemon is also why OpenCode
-  // says nothing. That is one fact, not two, and it cannot gate its own repair.
-  const status = deadDaemonOnRunningBox ? {} : await deps.fetchOpencodeStatus();
-  if (!opencodeIdle(status)) {
-    return { outcome: 'skipped-busy', detail: status ? 'opencode busy' : 'opencode unreachable', classification };
-  }
+  const budgeted = await checkBootstrapBudget(
+    input,
+    deps,
+    nowMs,
+    record,
+    classification,
+    deadDaemonOnRunningBox,
+  );
+  if ('result' in budgeted) return budgeted.result;
+  const { build, attempts } = budgeted;
 
   const running: LegacyBootstrapRecord = {
     state: 'running',
@@ -927,42 +779,271 @@ export async function bootstrapLegacyRuntime(
     reason: input.reason,
   });
 
-  const finish = async (
-    state: LegacyBootstrapState,
-    extra: Partial<LegacyBootstrapRecord>,
-    outcome: LegacyBootstrapOutcome,
-    detail?: string,
-  ): Promise<LegacyBootstrapResult> => {
-    const finished: LegacyBootstrapRecord = {
-      ...running,
-      ...extra,
-      state,
-      finishedAt: new Date(deps.now()).toISOString(),
-    };
-    await deps.patchMetadata({ [LEGACY_BOOTSTRAP_METADATA_KEY]: finished });
-    await deps.audit({
-      outcome: state === 'failed' ? 'failure' : 'success',
-      phase: state,
-      summary: {
-        attempt: finished.attempts,
-        strategy,
-        reason: input.reason,
-        from: finished.from ?? null,
-        to: finished.to ?? null,
-        detail: detail ?? null,
-      },
-      error: finished.error,
-    });
-    deps.log(`legacy runtime bootstrap ${state}`, {
-      sandboxId: input.sandboxId,
-      externalId: input.externalId,
-      outcome,
-      detail,
-      error: finished.error,
-    });
-    return { outcome, detail, classification };
+  const attempt: BootstrapAttempt = {
+    input,
+    deps,
+    strategy,
+    running,
+    classification,
+    expectedRunningAssets,
   };
+  const ran = await runBootstrapScript(attempt);
+  if ('result' in ran) return ran.result;
+  return settleBootstrapReport(attempt, ran.execResult, ran.report);
+}
 
+/**
+ * The gates before any repair: the cheap metadata gates, then the daemon's own
+ * health. Returns the classification to repair against, or the final result.
+ */
+async function probeRuntimeForBootstrap(
+  input: LegacyBootstrapInput,
+  deps: LegacyBootstrapDeps,
+  nowMs: number,
+  nowIso: string,
+  record: LegacyBootstrapRecord | null,
+  check: LegacyCheckRecord | null,
+): Promise<
+  | { result: LegacyBootstrapResult }
+  | {
+      classification: RuntimeClassification;
+      deadDaemonOnRunningBox: boolean;
+      expectedRunningAssets: ExpectedRunningAssets | null | undefined;
+    }
+> {
+  // Cheap gates first — none of these touch the box.
+  if (record?.state === 'running') {
+    const startedMs = Date.parse(record.lastAttemptAt);
+    if (Number.isFinite(startedMs) && nowMs - startedMs < LEGACY_BOOTSTRAP_STALE_RUNNING_MS) {
+      return { result: { outcome: 'skipped-in-progress' } };
+    }
+  }
+  if (!input.force && check && check.klass === 'current') {
+    const atMs = Date.parse(check.at);
+    if (Number.isFinite(atMs) && nowMs - atMs < LEGACY_CHECK_TTL_MS) {
+      return { result: { outcome: 'skipped-recent-check' } };
+    }
+  }
+
+  const health = await deps.fetchHealth();
+  // #7859 owns the classification (sha-to-sha against this deploy's manifest);
+  // this module owns what to DO with each class.
+  const expectedRunningAssets = await deps.expectedRunningAssets?.();
+  let classification = classifyDaemonHealth(health, expectedRunningAssets ?? undefined);
+  if (classification.klass === 'not-ok') return { result: { outcome: 'unreachable', classification } };
+  // A DEAD DAEMON ON A RUNNING BOX. Silence alone means nothing — a stopped box
+  // answers exactly the same way, and there is nothing there to repair. The
+  // provider's own state is what tells the two apart, and it is asked only
+  // here, on the rare path.
+  //
+  // Measured on dev 2026-09-27: the row was parked, the daemon's dead-token
+  // breaker tripped 69 s later and shut it down with exit 0, and Platinum's
+  // pt-init — which launches the chain once and never again — left the VM up
+  // with nothing serving on it. The provider reported `running`, our row
+  // reported `active`, every ingress port answered 502, and the control plane
+  // still accepted a prompt against it. This module's own relaunch fixed it in
+  // 11 s by hand; it had refused to try because `unreachable` returned here.
+  //
+  // Only `unreachable` takes this branch. A daemon that ANSWERS is classified,
+  // and a `blocked` (pinned) daemon is never relaunched by this path or any
+  // other — it is handled immediately below.
+  //
+  // Uncertainty stays a skip: a provider that cannot answer is not evidence.
+  let deadDaemonOnRunningBox = false;
+  if (classification.klass === 'unreachable') {
+    const running = deps.providerRunning
+      ? await deps.providerRunning().catch(() => false)
+      : false;
+    if (!running) return { result: { outcome: 'unreachable', classification } };
+    // TWO SILENT READS, never one. An 8 s ingress timeout, a restarting proxy
+    // or a GC pause reads exactly like a corpse, and a relaunch kills PTYs and
+    // restages assets under whoever is using the box. This is
+    // `decideStoppedObservation`'s asymmetry applied to the probe instead of
+    // the provider's state field: uncertainty fails toward the LIVE box, so the
+    // daemon gets a second chance to speak. If it takes it, this pass simply
+    // continues with what it said.
+    await deps.sleep(DEAD_DAEMON_CONFIRM_MS);
+    const second = classifyDaemonHealth(await deps.fetchHealth(), expectedRunningAssets ?? undefined);
+    if (second.klass === 'unreachable') {
+      // Both reads crossed the provider ingress, and an ingress that times out
+      // reads exactly like a corpse (prod 2026-09-29: ~18 min of edge timeouts
+      // to a healthy daemon). The box's own loopback is the authority, asked
+      // before any record, token or script touches the box.
+      const loopback = await deps
+        .exec(['bash', '-c', `curl -fsS --max-time 3 -o /dev/null ${LOOPBACK_HEALTH_URL}`], LOOPBACK_PROBE_TIMEOUT_MS)
+        .catch(() => null);
+      if (loopback?.exitCode === 0) {
+        deps.log('daemon answers on the box loopback; the ingress was silent, nothing to repair', {
+          sandboxId: input.sandboxId,
+          externalId: input.externalId,
+        });
+        return { result: { outcome: 'not-legacy', detail: 'daemon alive in the box; the ingress was unreachable', classification } };
+      }
+      deadDaemonOnRunningBox = true;
+      deps.log('daemon gone on a running box; relaunching the runtime chain', {
+        sandboxId: input.sandboxId,
+        externalId: input.externalId,
+        provider: input.provider,
+      });
+    } else {
+      classification = second;
+      if (classification.klass === 'not-ok') return { result: { outcome: 'unreachable', classification } };
+    }
+  }
+  if (classification.klass === 'blocked') {
+    // The daemon's own supervisor already tried, rolled back, and latched
+    // updates off. Repairing again would relaunch into the same rollback —
+    // never loop on it. Record the check so it stays visible, and stop.
+    await deps.patchMetadata({
+      [LEGACY_CHECK_METADATA_KEY]: {
+        at: nowIso,
+        klass: 'blocked',
+        staleReasons: [],
+      } satisfies LegacyCheckRecord,
+    });
+    deps.log('daemon is pinned after a rollback — blocked, not repaired', {
+      sandboxId: input.sandboxId,
+      detail: classification.detail,
+    });
+    return { result: { outcome: 'skipped-blocked', detail: classification.detail.join('; '), classification } };
+  }
+  if (classification.klass === 'current' && classification.runtimeBuild === null) {
+    // A current daemon that has not finished (or has failed) its first
+    // convergence pass: not legacy, nothing for this module to do yet.
+    return { result: { outcome: 'not-legacy', detail: 'daemon current, convergence pending', classification } };
+  }
+  if (classification.klass === 'current' && input.force) {
+    // Operator-forced re-run on a current daemon: its OpenCode install failed
+    // (a 2026-07 image's pnpm 8, for one), or an operator wants the chain
+    // relaunched so the daemon re-detects a freshly installed binary. The
+    // script is idempotent — agent and entrypoint are skipped when already at
+    // the manifest — so a re-run is "fix the floor, relaunch, converge again".
+    deps.log('forced re-run on a current daemon', {
+      sandboxId: input.sandboxId,
+      opencodeComponent: classification.opencodeComponent,
+    });
+  } else if (classification.klass === 'current') {
+    const patch: Record<string, unknown> = {
+      [LEGACY_CHECK_METADATA_KEY]: { at: nowIso, klass: 'current', staleReasons: [] } satisfies LegacyCheckRecord,
+    };
+    // A bootstrap that was mid-flight is proven done by a current daemon.
+    if (record && record.state !== 'converged') {
+      patch[LEGACY_BOOTSTRAP_METADATA_KEY] = {
+        ...record,
+        state: 'converged',
+        finishedAt: nowIso,
+        to: { ...(record.to ?? {}), runtimeBuild: classification.runtimeBuild },
+      } satisfies LegacyBootstrapRecord;
+    }
+    await deps.patchMetadata(patch);
+    return { result: { outcome: 'not-legacy', classification } };
+  }
+  return { classification, deadDaemonOnRunningBox, expectedRunningAssets };
+}
+
+/** The per-build attempt budget, the cooldown and the idle gate for a legacy or stale box. */
+async function checkBootstrapBudget(
+  input: LegacyBootstrapInput,
+  deps: LegacyBootstrapDeps,
+  nowMs: number,
+  record: LegacyBootstrapRecord | null,
+  classification: RuntimeClassification,
+  deadDaemonOnRunningBox: boolean,
+): Promise<{ result: LegacyBootstrapResult } | { build: number | null; attempts: number }> {
+  // Legacy or stale. Budget and cooldown are per manifest build: a new deploy
+  // earns a fresh set of attempts, a box that keeps failing on the same build
+  // does not.
+  const build = await deps.manifestBuild();
+  const sameBuild = record?.manifestBuild === build;
+  const attempts = sameBuild && record ? record.attempts : 0;
+  if (record && sameBuild && record.state === 'failed') {
+    if (attempts >= LEGACY_BOOTSTRAP_MAX_ATTEMPTS && !input.force) {
+      return { result: { outcome: 'skipped-exhausted', detail: `${attempts} attempts on build ${build}`, classification } };
+    }
+    const lastMs = Date.parse(record.lastAttemptAt);
+    // ESCALATING per-box backoff (30m, 60m, 120m, …, capped): a box that has
+    // failed repeatedly is retried less often each time, not on a flat 30m
+    // cadence forever — the repair-storm guard for a box that CANNOT be
+    // repaired but has not yet spent its attempt budget.
+    if (!input.force && Number.isFinite(lastMs) && nowMs - lastMs < legacyBootstrapCooldownMs(attempts)) {
+      return { result: { outcome: 'skipped-cooldown', classification } };
+    }
+  }
+  if (record && sameBuild && record.state === 'staged' && !deadDaemonOnRunningBox) {
+    // Daytona/E2B: staged and waiting for the provider's next start. Nothing
+    // to redo until a current daemon proves it or the build moves on. A box
+    // with no daemon is the exception: nothing will start it again, so
+    // "converges at next start" is a promise that can never be kept.
+    return { result: { outcome: 'staged', detail: 'already staged; converges at next start', classification } };
+  }
+
+  // Never under a running turn. OpenCode's own busy state is the authority —
+  // the ledger can hold a zombie turn on exactly the boxes this exists for.
+  // OpenCode is proxied BY the daemon, so a dead daemon is also why OpenCode
+  // says nothing. That is one fact, not two, and it cannot gate its own repair.
+  const status = deadDaemonOnRunningBox ? {} : await deps.fetchOpencodeStatus();
+  if (!opencodeIdle(status)) {
+    return { result: { outcome: 'skipped-busy', detail: status ? 'opencode busy' : 'opencode unreachable', classification } };
+  }
+  return { build, attempts };
+}
+
+/** One repair attempt after its `running` record is written. */
+interface BootstrapAttempt {
+  input: LegacyBootstrapInput;
+  deps: LegacyBootstrapDeps;
+  strategy: RelaunchStrategy;
+  running: LegacyBootstrapRecord;
+  classification: RuntimeClassification;
+  expectedRunningAssets: ExpectedRunningAssets | null | undefined;
+}
+
+/** Write the attempt's final record, audit it and log it. */
+async function finishBootstrap(
+  attempt: BootstrapAttempt,
+  state: LegacyBootstrapState,
+  extra: Partial<LegacyBootstrapRecord>,
+  outcome: LegacyBootstrapOutcome,
+  detail?: string,
+): Promise<LegacyBootstrapResult> {
+  const { input, deps, strategy, running, classification } = attempt;
+  const finished: LegacyBootstrapRecord = {
+    ...running,
+    ...extra,
+    state,
+    finishedAt: new Date(deps.now()).toISOString(),
+  };
+  await deps.patchMetadata({ [LEGACY_BOOTSTRAP_METADATA_KEY]: finished });
+  await deps.audit({
+    outcome: state === 'failed' ? 'failure' : 'success',
+    phase: state,
+    summary: {
+      attempt: finished.attempts,
+      strategy,
+      reason: input.reason,
+      from: finished.from ?? null,
+      to: finished.to ?? null,
+      detail: detail ?? null,
+    },
+    error: finished.error,
+  });
+  deps.log(`legacy runtime bootstrap ${state}`, {
+    sandboxId: input.sandboxId,
+    externalId: input.externalId,
+    outcome,
+    detail,
+    error: finished.error,
+  });
+  return { outcome, detail, classification };
+}
+
+/** Run the repair script on the box with a repair credential and, on Platinum, a rotated token. */
+async function runBootstrapScript(
+  attempt: BootstrapAttempt,
+): Promise<
+  { result: LegacyBootstrapResult } | { execResult: SandboxExecResult; report: ScriptReport | null }
+> {
+  const { input, deps, strategy } = attempt;
   let execResult: SandboxExecResult;
   // Never let the box's own credential decide whether its repair can run.
   const repair = await deps.mintRepairToken?.().catch((error) => {
@@ -1012,14 +1093,33 @@ export async function bootstrapLegacyRuntime(
     const message = error instanceof Error ? error.message : String(error);
     await commitToken(null);
     await releaseRepair();
-    return finish('failed', { error: `exec: ${message}`.slice(0, 500) }, 'failed', 'provider exec failed');
+    return {
+      result: await finishBootstrap(
+        attempt,
+        'failed',
+        { error: `exec: ${message}`.slice(0, 500) },
+        'failed',
+        'provider exec failed',
+      ),
+    };
   }
   await releaseRepair();
   const report = parseScriptReport(execResult);
   await commitToken(report ? report.token_rotated === true : null);
+  return { execResult, report };
+}
+
+/** Act on the script's report: fail, defer, stage, or wait for the relaunched daemon to converge. */
+async function settleBootstrapReport(
+  attempt: BootstrapAttempt,
+  execResult: SandboxExecResult,
+  report: ScriptReport | null,
+): Promise<LegacyBootstrapResult> {
+  const { input, deps, running, classification, expectedRunningAssets } = attempt;
   if (!report) {
     const tail = (execResult.stderr || execResult.stdout).trim().slice(-400);
-    return finish(
+    return finishBootstrap(
+      attempt,
       'failed',
       { error: `no report (exit ${execResult.exitCode}): ${tail}`.slice(0, 500) },
       'failed',
@@ -1027,7 +1127,8 @@ export async function bootstrapLegacyRuntime(
     );
   }
   if (!report.ok) {
-    return finish(
+    return finishBootstrap(
+      attempt,
       'failed',
       { error: `${report.stage}: ${report.error ?? 'unknown'}`.slice(0, 500) },
       'failed',
@@ -1044,7 +1145,7 @@ export async function bootstrapLegacyRuntime(
   }
   const to = { agentSha256: report.agent_sha256, entrypointSha256: report.entrypoint_sha256 };
   if (report.stage === 'staged') {
-    return finish('staged', { to }, 'staged', 'staged; converges at the provider\'s next start');
+    return finishBootstrap(attempt, 'staged', { to }, 'staged', 'staged; converges at the provider\'s next start');
   }
 
   // Relaunched. The new daemon must now report a runtime block AND a serving
@@ -1062,7 +1163,8 @@ export async function bootstrapLegacyRuntime(
     // component still catching up, or `running` not yet re-reported this
     // pass) and the failure is just as final either way.
     if (after.opencodeComponent === 'failed') {
-      return finish(
+      return finishBootstrap(
+        attempt,
         'failed',
         { to: { ...to, runtimeBuild: after.runtimeBuild }, error: 'daemon converged but its OpenCode install failed (see /kortix/diag runtime.reasons.opencode)' },
         'failed',
@@ -1078,7 +1180,7 @@ export async function bootstrapLegacyRuntime(
       await deps.patchMetadata({
         [LEGACY_CHECK_METADATA_KEY]: { at: new Date(deps.now()).toISOString(), klass: 'current', staleReasons: [] } satisfies LegacyCheckRecord,
       });
-      const converged = await finish('converged', { to: { ...to, runtimeBuild: after.runtimeBuild } }, 'converged');
+      const converged = await finishBootstrap(attempt, 'converged', { to: { ...to, runtimeBuild: after.runtimeBuild } }, 'converged');
       // `updated` = this daemon installed OpenCode during its boot pass. Daemon
       // builds before the restart re-detection fix keep spawning the binary
       // they memoised at boot, so one more relaunch is what makes the installed
@@ -1109,7 +1211,8 @@ export async function bootstrapLegacyRuntime(
     }
     await deps.sleep(LEGACY_BOOTSTRAP_POLL_MS);
   }
-  return finish(
+  return finishBootstrap(
+    attempt,
     'failed',
     {
       to,

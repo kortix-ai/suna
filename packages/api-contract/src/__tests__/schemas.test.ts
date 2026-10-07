@@ -3,7 +3,6 @@ import {
   ConnectorAuthorizationStrategySchema,
   ConnectionSchema,
   ConnectionMetadataSchema,
-  EXPERIMENTAL_FEATURE_KEYS,
   FEATURE_FLAG_KEYS,
   FeatureFlagStabilitySchema,
   ErrorEnvelopeSchema,
@@ -725,10 +724,6 @@ describe('envelopes', () => {
       'config_releases',
       'us_region',
     ]);
-  });
-
-  test('EXPERIMENTAL_FEATURE_KEYS is a deprecated alias of the same list', () => {
-    expect(EXPERIMENTAL_FEATURE_KEYS).toBe(FEATURE_FLAG_KEYS);
   });
 
   test('stability admits stable — a settled feature can still ship behind a flag', () => {
