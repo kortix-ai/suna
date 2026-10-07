@@ -179,7 +179,11 @@ import {
   groupMessagesIntoTurns,
 } from '@/ui';
 import { isAbortError, turnEndNotice } from '@kortix/sdk';
-import { failureShownByTurn, persistedFailureText } from '@/features/session/persisted-turn-failure';
+import {
+  failureShownByTurn,
+  failureSupersededByTurn,
+  persistedFailureText,
+} from '@/features/session/persisted-turn-failure';
 import {
   type AbortSettlement,
   type KortixSendError,
@@ -4431,6 +4435,7 @@ export function SessionChat({
                     ].filter((failure) =>
                       !isAbortError(failure.error) &&
                       !failureShownByTurn(failure, turns) &&
+                      !failureSupersededByTurn(failure, turns) &&
                       (!failure.error?.message || failure.error.message !== commandError?.message),
                     ).map((failure) => {
                       const messageId = failure.message_id ?? 'persisted-turn-failure';
