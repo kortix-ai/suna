@@ -59,7 +59,11 @@ const IDLE_STATUS = { type: 'idle' } as SessionStatus;
  * Network synchronization lives in the framework-free SessionSyncController.
  */
 interface UseSessionSyncOptions {
-  /** The session stream is connected (R5.3): no liveness or verify reads. */
+  /**
+   * The session stream is connected (R5.3): no liveness or verify reads.
+   * Omit it when this hook does not watch the stream; another hook on the same
+   * session then decides.
+   */
   streamConnected?: boolean;
   mirror?: SessionTranscriptSyncEnvelope | null;
   /**
@@ -483,8 +487,13 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
           ? 'absent'
           : 'loading';
 
+  // The controller is shared by every hook on this session. Only a hook that
+  // passes `streamConnected` speaks for the stream; one that omits it (an
+  // export dialog) must not switch the verification poll back on.
   useEffect(() => {
-    controller.setStreamReliable(options.streamConnected === true);
+    if (options.streamConnected === undefined) return;
+    controller.setStreamReliable(options.streamConnected);
+    return () => controller.setStreamReliable(false);
   }, [controller, options.streamConnected]);
 
   useEffect(() => {
