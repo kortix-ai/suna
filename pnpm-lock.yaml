@@ -1126,9 +1126,6 @@ importers:
       emojibase-data:
         specifier: ^17.0.0
         version: 17.0.0(emojibase@17.0.0)
-      fast-xml-parser:
-        specifier: ^5.10.1
-        version: 5.11.1
       file-saver:
         specifier: ^2.0.5
         version: 2.0.5
@@ -1147,18 +1144,12 @@ importers:
       i18next:
         specifier: ^26.3.6
         version: 26.4.2(typescript@5.9.3)
-      jspdf:
-        specifier: ^4.2.1
-        version: 4.2.1
       jszip:
         specifier: ^3.10.1
         version: 3.10.2
       katex:
         specifier: ^0.16.22
         version: 0.16.47
-      lodash:
-        specifier: ^4.18.1
-        version: 4.18.1
       marked:
         specifier: ^15.0.7
         version: 15.0.12
@@ -1177,9 +1168,6 @@ importers:
       next-themes:
         specifier: ^0.4.6
         version: 0.4.6(react-dom@19.3.0)(react@19.3.0)
-      node-forge:
-        specifier: ^1.4.0
-        version: 1.4.0
       papaparse:
         specifier: ^5.5.2
         version: 5.7.0
@@ -1198,9 +1186,6 @@ importers:
       pptx-react-viewer:
         specifier: ^1.15.0
         version: 1.25.5(fast-xml-parser@5.11.1)(framer-motion@12.43.0)(i18next@26.4.2)(jspdf@4.2.1)(jszip@3.10.2)(lucide-react@1.51.0)(react-dom@19.3.0)(react-i18next@17.0.14)(react-icons@5.7.0)(react@19.3.0)
-      pptx-viewer-core:
-        specifier: ^1.2.8
-        version: 1.6.10(node-forge@1.4.0)(xml-crypto@6.1.2)
       radix-ui:
         specifier: ^1.6.0
         version: 1.6.7(@types/react-dom@19.2.3)(@types/react@19.2.18)(react-dom@19.3.0)(react@19.3.0)
@@ -1228,9 +1213,6 @@ importers:
       react-resizable-panels:
         specifier: ^3.0.6
         version: 3.0.6(react-dom@19.3.0)(react@19.3.0)
-      react-responsive-carousel:
-        specifier: ^3.2.23
-        version: 3.2.23
       recharts:
         specifier: ^3.2.1
         version: 3.10.1(@types/react@19.2.18)(react-dom@19.3.0)(react-is@19.3.0)(react@19.3.0)(redux@5.0.1)
@@ -1297,9 +1279,6 @@ importers:
       vaul:
         specifier: ^1.1.2
         version: 1.1.2(@types/react-dom@19.2.3)(@types/react@19.2.18)(react-dom@19.3.0)(react@19.3.0)
-      xml-crypto:
-        specifier: ^6.1.2
-        version: 6.1.2
       zod:
         specifier: ^3.25.76
         version: 3.25.76
@@ -15519,11 +15498,6 @@ packages:
       - supports-color
     dev: false
 
-  /@xmldom/is-dom-node@1.0.1:
-    resolution: {integrity: sha512-CJDxIgE5I0FH+ttq/Fxy6nRpxP70+e2O048EPe85J2use3XKdatVM7dDVvFNjQudd9B49NPoZ+8PG49zj4Er8Q==}
-    engines: {node: '>= 16'}
-    dev: false
-
   /@xmldom/xmldom@0.8.15:
     resolution: {integrity: sha512-/5NV/vDALVFDXgLmfsy9TRCBlKwO2LNBFzpzvb9iIj+jR+eSc6DLYYvVOdivT/jm7MtU6TebYuRmzEOI7w40UA==}
     engines: {node: '>=10.0.0'}
@@ -18919,10 +18893,6 @@ packages:
     transitivePeerDependencies:
       - supports-color
     dev: true
-
-  /emf-converter@1.6.0:
-    resolution: {integrity: sha512-SZQDkHFB5QnH4YoqtHfIG+DdZ0JV3iW8kq0BDQXFRQyGz8rhiKow7jDarsJYCT/5+uZdsR1GRyE9BcW1+Pgwew==}
-    dev: false
 
   /emmet@2.4.11:
     resolution: {integrity: sha512-23QPJB3moh/U9sT4rQzGgeyyGIrcM+GH5uVYg2C6wZIxAIJq7Ng3QLT79tl8FUwDXhyq9SusfknOrofAKqvgyQ==}
@@ -25304,10 +25274,6 @@ packages:
   /ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
 
-  /mtx-decompressor@1.6.0:
-    resolution: {integrity: sha512-YJ+ULX3VTzDK/k+h35xCrFey/vMyNTdKflCUtX/DPurR3KdhHKXC5bhslLFPY0jyODrwNWJJxSqvnBiGATRsRQ==}
-    dev: false
-
   /muggle-string@0.4.1:
     resolution: {integrity: sha512-VNTrAak/KhO2i8dqqnqnAHOa3cYBwXEZe9h+D5h/1ZqFSTEFHdM65lR7RoIqq3tBBYavsOXV84NoHXZ0AkPyqQ==}
     dev: false
@@ -26694,29 +26660,6 @@ packages:
       - bufferutil
       - supports-color
       - utf-8-validate
-    dev: false
-
-  /pptx-viewer-core@1.6.10(node-forge@1.4.0)(xml-crypto@6.1.2):
-    resolution: {integrity: sha512-rK4v6JNHc3UKFbT8ZaPmrnMNsNnDHlkdXLmlqyJhHVZt7mHOVPESvSj08IAXcZampDb6Pvnh5HlQCQKM1fhGJA==}
-    hasBin: true
-    peerDependencies:
-      '@xmldom/xmldom': 0.8.15
-      node-forge: ^1.3.0
-      xml-crypto: ^6.0.0
-    peerDependenciesMeta:
-      '@xmldom/xmldom':
-        optional: true
-      node-forge:
-        optional: true
-      xml-crypto:
-        optional: true
-    dependencies:
-      emf-converter: 1.6.0
-      fast-xml-parser: 5.11.1
-      jszip: 3.10.2
-      mtx-decompressor: 1.6.0
-      node-forge: 1.4.0
-      xml-crypto: 6.1.2
     dev: false
 
   /preact@10.29.8:
@@ -31932,15 +31875,6 @@ packages:
       os-paths: 4.4.0
     dev: false
 
-  /xml-crypto@6.1.2:
-    resolution: {integrity: sha512-leBOVQdVi8FvPJrMYoum7Ici9qyxfE4kVi+AkpUoYCSXaQF4IlBm1cneTK9oAxR61LpYxTx7lNcsnBIeRpGW2w==}
-    engines: {node: '>=16'}
-    dependencies:
-      '@xmldom/is-dom-node': 1.0.1
-      '@xmldom/xmldom': 0.8.15
-      xpath: 0.0.33
-    dev: false
-
   /xml-naming@0.3.0:
     resolution: {integrity: sha512-ghig2TBE/H11aOVgmahA3MhimvkBr6JIYknH/Dhdk10nXwdbIqBJsbfMxpvFPG8bAw77gN29aQWvKpmVoPlvPQ==}
     engines: {node: '>=16.0.0'}
@@ -31960,11 +31894,6 @@ packages:
   /xmlbuilder@15.1.1:
     resolution: {integrity: sha512-yMqGBqtXyeN1e3TGYvgNgDVZ3j84W4cwkOXQswghol6APgZWaff9lnbvN7MHYJOiXsvGPXtjTYJEiC9J2wv9Eg==}
     engines: {node: '>=8.0'}
-
-  /xpath@0.0.33:
-    resolution: {integrity: sha512-NNXnzrkDrAzalLhIUc01jO2mOzXGXh1JwPgkihcLLzw98c0WgYDmmjSh1Kl3wzaxSVWMuA+fe0WTWOBDWCBmNA==}
-    engines: {node: '>=0.6.0'}
-    dev: false
 
   /xtend@4.0.2:
     resolution: {integrity: sha512-LKYU1iAXJXUgAXn9URjiu+MWhyUXHsvfp7mcuYm9dSUKK0/CjtrUwFAxD82/mCWbtLsGjFIad0wIsod4zrTAEQ==}
