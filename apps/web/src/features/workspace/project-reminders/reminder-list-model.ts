@@ -4,8 +4,6 @@ import { expandFires } from './reminder-schedule';
 /** The rail's heatmap: 6 week columns of 7 weekday rows, from this week's Monday. */
 export const RAIL_WEEKS = 6;
 export const RAIL_DAYS = RAIL_WEEKS * 7;
-/** "Most frequent" ranks reminders by their fires in this window. */
-const FREQUENT_WINDOW_MS = 14 * 86_400_000;
 
 const time = (iso: string | null | undefined) => {
   const at = iso ? Date.parse(iso) : NaN;
@@ -45,8 +43,6 @@ export type RailModel = {
   /** Index of today in `counts`. */
   today: number;
   total: number;
-  /** Top 3 reminders by upcoming fires in the next 14 days. */
-  frequent: { reminder: ProjectReminder; count: number }[];
   /** A cron reminder is in scope: it is left out of every count above. */
   hasCron: boolean;
 };
@@ -67,7 +63,6 @@ export function railModel(all: readonly ProjectReminder[], now: number): RailMod
   const todayIndex = (today.getDay() + 6) % 7;
   const monday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - todayIndex);
   const counts: number[] = [];
-  const perReminder = new Map<string, { reminder: ProjectReminder; count: number }>();
   let total = 0;
   for (let day = 0; day < RAIL_DAYS; day++) {
     const from = Math.max(now, dayEdge(monday, day));
@@ -75,20 +70,12 @@ export function railModel(all: readonly ProjectReminder[], now: number): RailMod
     const fires = from < to ? expandFires(reminders, from, to, now).filter((f) => !f.past) : [];
     counts.push(fires.length);
     total += fires.length;
-    for (const fire of fires) {
-      if (fire.at >= now + FREQUENT_WINDOW_MS) continue;
-      const entry = perReminder.get(fire.reminder.id) ?? { reminder: fire.reminder, count: 0 };
-      entry.count++;
-      perReminder.set(fire.reminder.id, entry);
-    }
   }
-  const frequent = [...perReminder.values()].sort((a, b) => b.count - a.count).slice(0, 3);
   return {
     start: monday.getTime(),
     counts,
     today: todayIndex,
     total,
-    frequent,
     hasCron: reminders.length < all.length,
   };
 }

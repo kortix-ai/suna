@@ -98,6 +98,8 @@ export function ProjectRemindersView({ projectId }: { projectId: string }) {
     () => (url.session ? all.filter((r) => r.session_id === url.session) : all),
     [all, url.session],
   );
+  // Sorted once per data, filter or tab change, not on every 30 s clock tick.
+  const rows = useMemo(() => rowsForTab(scoped, tab), [scoped, tab]);
   // A failed background refetch keeps the loaded rows; only a first load can fail.
   const loaded = !reminders.isLoading && !!reminders.data;
 
@@ -151,7 +153,7 @@ export function ProjectRemindersView({ projectId }: { projectId: string }) {
             <ReminderList
               projectId={projectId}
               query={reminders}
-              rows={rowsForTab(scoped, tab)}
+              rows={rows}
               tab={tab}
               now={now}
               footer={

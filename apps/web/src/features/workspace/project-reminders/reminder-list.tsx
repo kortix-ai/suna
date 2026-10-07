@@ -5,7 +5,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { useTranslations } from '@/i18n/use-translations';
 import type { ProjectReminder, SessionReminderState } from '@kortix/sdk';
 import type { useProjectReminders } from '@kortix/sdk/react';
-import { useState, type ReactNode } from 'react';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { reminderTitle } from './reminder-format';
 import { ReminderRow, ReminderRowSkeleton, type RowPending } from './reminder-row';
 
@@ -30,6 +30,16 @@ export function useReminderActions(query: RemindersQuery) {
       { onSuccess: () => successToast(enabled ? t('resumed') : t('paused')), onError: failed },
     );
   };
+
+  // Stable identities for the memoized rows: the handlers read the latest
+  // render through a ref, so a clock tick or a mutation state change does not
+  // hand every row a new callback and re-render the whole list.
+  const latest = useRef(setEnabled);
+  latest.current = setEnabled;
+  const toggle = useCallback(
+    (reminder: ProjectReminder) => latest.current(reminder, reminder.state !== 'active'),
+    [],
+  );
 
   const confirmRemove = () => {
     if (!removing || query.update.isPending || query.remove.isPending) return;
@@ -78,7 +88,7 @@ export function useReminderActions(query: RemindersQuery) {
     />
   );
 
-  return { setEnabled, setRemoving, busy, pendingAction, dialog };
+  return { setEnabled, toggle, setRemoving, busy, pendingAction, dialog };
 }
 
 /** The left column: one tab's rows, its loading and empty states, and the filter footer. */
@@ -109,9 +119,7 @@ export function ReminderList({
           ))}
         </ul>
       ) : rows.length === 0 ? (
-        <p className="text-muted-foreground px-4 py-10 text-center text-sm">
-          {t(EMPTY_TAB[tab])}
-        </p>
+        <p className="text-muted-foreground px-4 py-10 text-center text-sm">{t(EMPTY_TAB[tab])}</p>
       ) : (
         <ul className="divide-y" data-testid="reminder-list">
           {rows.map((reminder) => (
@@ -122,8 +130,8 @@ export function ReminderList({
               now={now}
               pending={actions.pendingAction(reminder)}
               disabled={actions.busy}
-              onToggle={() => actions.setEnabled(reminder, reminder.state !== 'active')}
-              onRemove={() => actions.setRemoving(reminder)}
+              onToggle={actions.toggle}
+              onRemove={actions.setRemoving}
             />
           ))}
         </ul>

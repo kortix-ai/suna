@@ -19706,8 +19706,6 @@
     "dayFires": "{date} · {count, plural, other {# ターン}}",
     "legendLess": "少",
     "legendMore": "多",
-    "mostFrequent": "実行回数が多い順",
-    "turnCount": "{count, plural, other {# ターン}}",
     "railCronNote": "cron スケジュールはここでは数えられません。",
     "calendarWeek": "週",
     "calendarMonth": "月",

@@ -19706,8 +19706,6 @@
     "dayFires": "{date} · {count, plural, one {# потез} few {# потеза} other {# потеза}}",
     "legendLess": "Мање",
     "legendMore": "Више",
-    "mostFrequent": "Најчешћи",
-    "turnCount": "{count, plural, one {# потез} few {# потеза} other {# потеза}}",
     "railCronNote": "Cron распореди се овде не рачунају.",
     "calendarWeek": "Недеља",
     "calendarMonth": "Месец",

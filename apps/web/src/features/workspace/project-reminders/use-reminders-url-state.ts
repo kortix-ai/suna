@@ -1,10 +1,13 @@
 'use client';
 
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import { useCallback } from 'react';
 
 export type RemindersView = 'list' | 'calendar';
 export type RemindersRange = 'week' | 'month';
-export type RemindersUrlPatch = Partial<Record<'view' | 'range' | 'session' | 'date', string | null>>;
+export type RemindersUrlPatch = Partial<
+  Record<'view' | 'range' | 'session' | 'date', string | null>
+>;
 
 /** A param at its default value is left out of the URL. */
 const DEFAULTS: Record<string, string> = { view: 'list', range: 'week' };
@@ -27,15 +30,18 @@ export function remindersQuery(current: string, patch: RemindersUrlPatch): strin
  */
 export function useRemindersUrlState() {
   const params = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
   const view: RemindersView = params.get('view') === 'calendar' ? 'calendar' : 'list';
   const range: RemindersRange = params.get('range') === 'month' ? 'month' : 'week';
 
-  const set = (patch: RemindersUrlPatch) => {
-    const query = remindersQuery(params.toString(), patch);
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  };
+  // `history.replaceState`, not `router.replace`: every param here is client
+  // state, and `router.replace` refetched the route's server payload on each
+  // filter click. Next syncs `useSearchParams` with the native History API.
+  // Reads `location.search` so two calls in one tick do not drop a patch.
+  const set = useCallback((patch: RemindersUrlPatch) => {
+    const query = remindersQuery(window.location.search, patch);
+    const path = window.location.pathname;
+    window.history.replaceState(null, '', query ? `${path}?${query}` : path);
+  }, []);
 
   return { view, range, session: params.get('session'), date: params.get('date'), set };
 }

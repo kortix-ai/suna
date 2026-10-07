@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import type { ProjectReminder } from '@kortix/sdk';
+import { describe, expect, test } from 'bun:test';
 import { heatLevel, RAIL_DAYS, railModel, rowsForTab } from './reminder-list-model';
 import { remindersQuery } from './use-reminders-url-state';
 
@@ -88,7 +88,6 @@ describe('railModel', () => {
     expect(model.counts.slice(0, 2)).toEqual([0, 0]);
     expect(model.counts[2]).toBe(1);
     expect(model.total).toBe(RAIL_DAYS - 2);
-    expect(model.frequent).toEqual([{ reminder: daily, count: 14 }]);
   });
 
   test('the 5-minute floor is counted in full, not capped per call', () => {
@@ -100,36 +99,48 @@ describe('railModel', () => {
     expect(model.total).toBeGreaterThan(2000);
   });
 
-  test('paused reminders and fires beyond the grid add nothing; top 3 by count', () => {
+  test('paused reminders and fires beyond the grid add nothing', () => {
+    const active = [
+      reminder({ id: 'a', every_seconds: 86_400, next_fire_at: iso(NOW + HOUR) }),
+      reminder({ id: 'b', every_seconds: 43_200, next_fire_at: iso(NOW + HOUR) }),
+      reminder({ id: 'c', next_fire_at: iso(NOW + HOUR) }),
+      reminder({ id: 'd', every_seconds: 21_600, next_fire_at: iso(NOW + HOUR) }),
+    ];
     const model = railModel(
       [
-        reminder({ id: 'paused', state: 'paused', every_seconds: 3600, next_fire_at: iso(NOW + HOUR) }),
+        reminder({
+          id: 'paused',
+          state: 'paused',
+          every_seconds: 3600,
+          next_fire_at: iso(NOW + HOUR),
+        }),
         reminder({ id: 'far', next_fire_at: iso(NOW + 60 * DAY) }),
-        reminder({ id: 'a', every_seconds: 86_400, next_fire_at: iso(NOW + HOUR) }),
-        reminder({ id: 'b', every_seconds: 43_200, next_fire_at: iso(NOW + HOUR) }),
-        reminder({ id: 'c', next_fire_at: iso(NOW + HOUR) }),
-        reminder({ id: 'd', every_seconds: 21_600, next_fire_at: iso(NOW + HOUR) }),
+        ...active,
       ],
       NOW,
     );
-    expect(model.frequent.map((entry) => entry.reminder.id)).toEqual(['d', 'b', 'a']);
+    expect(model.total).toBe(railModel(active, NOW).total);
+    expect(model.total).toBeGreaterThan(0);
   });
 
   test('cron reminders are left out of every count and flagged', () => {
     const daily = reminder({ id: 'daily', every_seconds: 86_400, next_fire_at: iso(NOW + HOUR) });
-    const cron = reminder({ id: 'cron', cron: '0 9 * * *', timezone: 'UTC', next_fire_at: iso(NOW + 2 * HOUR) });
+    const cron = reminder({
+      id: 'cron',
+      cron: '0 9 * * *',
+      timezone: 'UTC',
+      next_fire_at: iso(NOW + 2 * HOUR),
+    });
     const model = railModel([daily, cron], NOW);
     expect(model.hasCron).toBe(true);
     expect(model.total).toBe(RAIL_DAYS - 2);
     expect(model.counts[2]).toBe(1);
-    expect(model.frequent.map((entry) => entry.reminder.id)).toEqual(['daily']);
     expect(railModel([daily], NOW).hasCron).toBe(false);
   });
 
   test('no active reminders: zero fires', () => {
     const model = railModel([reminder({ state: 'done', last_fired_at: iso(NOW - HOUR) })], NOW);
     expect(model.total).toBe(0);
-    expect(model.frequent).toEqual([]);
   });
 });
 
@@ -148,7 +159,9 @@ describe('remindersQuery', () => {
     expect(remindersQuery('', { view: 'calendar' })).toBe('view=calendar');
     expect(remindersQuery('view=calendar&session=s1', { view: 'list' })).toBe('session=s1');
     expect(remindersQuery('session=s1', { session: null })).toBe('');
-    expect(remindersQuery('session=s1', { range: 'month', date: undefined })).toBe('session=s1&range=month');
+    expect(remindersQuery('session=s1', { range: 'month', date: undefined })).toBe(
+      'session=s1&range=month',
+    );
     expect(remindersQuery('range=month', { range: 'week' })).toBe('');
   });
 });

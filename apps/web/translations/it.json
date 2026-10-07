@@ -19706,8 +19706,6 @@
     "dayFires": "{date} · {count, plural, one {# turno} other {# turni}}",
     "legendLess": "Meno",
     "legendMore": "Più",
-    "mostFrequent": "Più frequenti",
-    "turnCount": "{count, plural, one {# turno} other {# turni}}",
     "railCronNote": "Le pianificazioni cron non sono conteggiate qui.",
     "calendarWeek": "Settimana",
     "calendarMonth": "Mese",

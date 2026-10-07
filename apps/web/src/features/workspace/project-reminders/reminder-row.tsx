@@ -10,6 +10,7 @@ import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import type { ProjectReminder } from '@kortix/sdk';
 import { AlarmIcon, PauseIcon, PlayIcon, TrashIcon } from '@phosphor-icons/react';
+import { memo } from 'react';
 import { formatFireTime, reminderTitle, scheduleLabel } from './reminder-format';
 
 /** Status tile per the tinted-icon pattern: yellow = pending, green = done, red = stopped by an error. */
@@ -34,7 +35,12 @@ const ROW = 'relative flex items-center gap-3 px-4 py-2.5';
 const TIME_COLUMN = 'w-44 shrink-0 truncate whitespace-nowrap text-right text-xs tabular-nums';
 const ACTIONS_COLUMN = 'relative z-10 flex w-16 shrink-0 items-center justify-end gap-1';
 
-export function ReminderRow({
+/**
+ * Memoized: a long list re-renders only the rows whose reminder, pending
+ * state or clock reading changed. The handlers take the reminder, so the list
+ * passes the same two callbacks to every row.
+ */
+export const ReminderRow = memo(function ReminderRow({
   reminder,
   projectId,
   now,
@@ -48,8 +54,8 @@ export function ReminderRow({
   now: number;
   pending: RowPending;
   disabled: boolean;
-  onToggle: () => void;
-  onRemove: () => void;
+  onToggle: (reminder: ProjectReminder) => void;
+  onRemove: (reminder: ProjectReminder) => void;
 }) {
   const t = useTranslations('reminders');
   const locale = useLocale();
@@ -125,7 +131,7 @@ export function ReminderRow({
               aria-label={toggleLabel}
               aria-disabled={disabled || undefined}
               className={pending ? undefined : LOCKED}
-              onClick={disabled ? undefined : onToggle}
+              onClick={disabled ? undefined : () => onToggle(reminder)}
             >
               {pending === 'toggle' ? (
                 <Loading className="size-4" />
@@ -144,7 +150,7 @@ export function ReminderRow({
             aria-label={t('remove')}
             aria-disabled={disabled || undefined}
             className={pending ? undefined : LOCKED}
-            onClick={disabled ? undefined : onRemove}
+            onClick={disabled ? undefined : () => onRemove(reminder)}
           >
             {pending === 'remove' ? (
               <Loading className="size-4" />
@@ -156,7 +162,7 @@ export function ReminderRow({
       </div>
     </li>
   );
-}
+});
 
 /** A loading row with the same geometry as `ReminderRow`. */
 export function ReminderRowSkeleton() {

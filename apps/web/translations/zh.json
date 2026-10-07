@@ -19706,8 +19706,6 @@
     "dayFires": "{date} · {count, plural, other {# 轮}}",
     "legendLess": "少",
     "legendMore": "多",
-    "mostFrequent": "最频繁",
-    "turnCount": "{count, plural, other {# 轮}}",
     "railCronNote": "此处不统计 cron 计划。",
     "calendarWeek": "周",
     "calendarMonth": "月",

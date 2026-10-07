@@ -19706,8 +19706,6 @@
     "dayFires": "{date} · {count, plural, one {# Durchlauf} other {# Durchläufe}}",
     "legendLess": "Weniger",
     "legendMore": "Mehr",
-    "mostFrequent": "Am häufigsten",
-    "turnCount": "{count, plural, one {# Durchlauf} other {# Durchläufe}}",
     "railCronNote": "Cron-Zeitpläne werden hier nicht gezählt.",
     "calendarWeek": "Woche",
     "calendarMonth": "Monat",
