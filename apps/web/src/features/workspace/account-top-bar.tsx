@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeftIcon, CaretDownIcon, SignOutIcon } from '@phosphor-icons/react';
+import { ArrowLeftIcon, CaretDownIcon, GearSixIcon, SignOutIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
@@ -9,6 +9,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import Loading from '@/components/ui/loading';
@@ -91,6 +92,21 @@ export function AccountTopBar({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
+            {/* Settings must be reachable from every account-level page,
+                regardless of project count: with no projects this menu was
+                Log out only, and /settings/profile had no link at all
+                (KRTX-1327). A real anchor, so the menu closes on navigate. */}
+            <DropdownMenuItem asChild>
+              <Link href="/settings/profile" prefetch>
+                <GearSixIcon />
+                {t('actions.settings')}
+              </Link>
+            </DropdownMenuItem>
+
+            {/* Log out is the only row that ends something, so it gets its own
+                group — the last item in a menu is the one a slipped pointer
+                lands on. */}
+            <DropdownMenuSeparator />
             <DropdownMenuItem disabled={signingOut} onSelect={onLogOut}>
               <SignOutIcon />
               {signingOut ? t('actions.signingOut') : t('actions.logOut')}

@@ -1,6 +1,7 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import { listProjectFiles, readProjectFile } from './files';
+import { invalidateTokenCache } from '../../http/auth';
+import { fetchProjectFileRaw, listProjectFiles, readProjectFile } from './files';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
 let nextResponse: { status: number; body: unknown } = { status: 200, body: {} };
@@ -67,4 +68,39 @@ test('readProjectFile is a silent background read — a 403 never hits the globa
   } finally {
     configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
   }
+});
+
+test('fetchProjectFileRaw GETs /projects/:id/files/raw and returns the exact bytes', async () => {
+  // A prior test file's token config caches through this module: re-configure
+  // and drop the cache so the auth header assertion is deterministic.
+  configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  invalidateTokenCache();
+  const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0xfe]);
+  let seen: { url: string; method: string; authorization: string | null } | null = null;
+  globalThis.fetch = mock(async (url: unknown, opts: RequestInit = {}) => {
+    seen = {
+      url: String(url),
+      method: opts.method ?? 'GET',
+      authorization: new Headers(opts.headers).get('authorization'),
+    };
+    return new Response(bytes, {
+      status: 200,
+      headers: { 'content-type': 'application/octet-stream' },
+    });
+  }) as unknown as typeof fetch;
+
+  const blob = await fetchProjectFileRaw('P1', 'assets/logo.png', 'main');
+
+  expect(seen!.url).toContain('/projects/P1/files/raw?path=assets%2Flogo.png&ref=main');
+  expect(seen!.method).toBe('GET');
+  // Other test files reconfigure the token provider concurrently; the contract
+  // here is that the raw read attaches the configured Bearer token.
+  expect(seen!.authorization).toMatch(/^Bearer \S+$/);
+  // Byte-accurate: a text read of this file would have replaced 0xff 0xfe.
+  expect(new Uint8Array(await blob.arrayBuffer())).toEqual(bytes);
+});
+
+test('fetchProjectFileRaw rejects on a non-ok response instead of returning bytes', async () => {
+  globalThis.fetch = mock(async () => new Response('File not found', { status: 404 })) as unknown as typeof fetch;
+  await expect(fetchProjectFileRaw('P1', 'missing.png', 'main')).rejects.toThrow('File not found');
 });

@@ -12,7 +12,7 @@ import {
 } from '@kortix/manifest-schema';
 import { validateRef } from '../git-ref';
 import { listCommits } from './commits';
-import { type MirrorRefresh, isGitPathNotFoundError, isGitRefNotFoundError, normalizeTreePath, refreshMirror, runGit, runGitCapture, spawn } from './mirror';
+import { type MirrorRefresh, isGitPathNotFoundError, isGitRefNotFoundError, normalizeTreePath, refreshMirror, runGit, runGitBuffer, runGitCapture, spawn } from './mirror';
 import { cachedGitRead, resolveRefSha } from './read-cache';
 import type {
   GetFileAtRefResult,
@@ -167,6 +167,45 @@ const isExplicitBranch = (project: GitBackedProject, ref?: string, opts?: FreshO
 /** A "path does not exist" failure is an expected client condition, not a server bug. */
 function missingFileError(err: unknown, normalized: string, treeRef: string): unknown {
   return isGitPathNotFoundError(err) ? new RepoFileNotFoundError(normalized, treeRef, err) : err;
+}
+
+/**
+ * Read a file's exact bytes at a ref (`git cat-file blob`).
+ *
+ * `readRepoFile` captures `git show` stdout as a UTF-8 string, which mangles
+ * every byte that is not valid UTF-8 — a PNG, PDF or DOCX read through it is
+ * corrupted before it leaves the API. This is the byte-accurate read the raw
+ * file route (`GET /files/raw`) serves, so previews and downloads of binary
+ * project files carry the real bytes. Unlike the string read it does not go
+ * through the read cache, whose sizing assumes strings.
+ */
+export async function readRepoFileBytes(
+  project: GitBackedProject,
+  filePath: string,
+  ref?: string,
+  opts?: FreshOnMiss,
+): Promise<Buffer> {
+  const normalized = normalizeTreePath(filePath);
+  if (!normalized) throw new Error('File path is required');
+  const treeRef = validateRef(ref || project.defaultBranch);
+  const repoPath = await refreshMirror(project);
+  const cat = (at: string) => runGitBuffer(['cat-file', 'blob', `${at}:${normalized}`], repoPath, false);
+  try {
+    const sha = await resolveRefSha(repoPath, treeRef);
+    return sha ? (await cat(sha)).stdout : (await cat(treeRef)).stdout;
+  } catch (err) {
+    // Same fresh-on-miss retry as the string read: a branch that a push created
+    // or moved since the last fetch reads as "not found" until the refresh
+    // interval passes; one ref-scoped fetch settles it.
+    if (!(isMissingAtRef(err) && isExplicitBranch(project, ref, opts))) throw missingFileError(err, normalized, treeRef);
+    const fresh = await refreshMirror(project, true, { freshRef: treeRef });
+    try {
+      const sha = await resolveRefSha(fresh, treeRef);
+      return sha ? (await cat(sha)).stdout : (await cat(treeRef)).stdout;
+    } catch (retryErr) {
+      throw missingFileError(retryErr, normalized, treeRef);
+    }
+  }
 }
 
 async function readFileAt(repoPath: string, treeRef: string, normalized: string): Promise<string> {
