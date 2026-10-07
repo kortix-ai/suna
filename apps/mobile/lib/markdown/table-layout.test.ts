@@ -21,6 +21,7 @@ const SOURCE = [
 ].join('\n');
 
 // The library's own parser, as the app runs it, so the AST has the rendered shape.
+// Process-global: relies on `bun test --isolate` so it cannot leak into other files.
 mock.module('react-native', () => ({ StyleSheet: { flatten: (style: unknown) => style } }));
 const appRequire = createRequire(import.meta.url);
 const libraryRoot = realpathSync(join(appRequire.resolve('react-native-markdown-display/package.json'), '..'));

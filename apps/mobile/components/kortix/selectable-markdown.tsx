@@ -492,7 +492,7 @@ function renderCellContent(cell: AstNode, isDark: boolean, palette: MarkdownPale
  * Web: `border rounded-md` wrapper that scrolls horizontally, `w-full` table in
  * `text-sm`, `bg-muted` header, `px-4 py-2` cells, row dividers.
  */
-function MarkdownTable({ node, palette, isDark }: { node: AstNode; palette: MarkdownPalette; isDark: boolean }) {
+export function MarkdownTable({ node, palette, isDark }: { node: AstNode; palette: MarkdownPalette; isDark: boolean }) {
   const sections = tableSections(node);
   const colCount = Math.max(0, ...sections.flatMap((s) => s.rows.map((r) => r.length)));
   if (colCount === 0) return <View />;
