@@ -7154,7 +7154,8 @@
     "componentsSessionSessionErrorBanner": {
       "line58JsxAttrTitleYouRanOutOfCredits": "クレジットを使い切りました",
       "line74JsxTextEnableAutoTopUp": "自動チャージを有効にする",
-      "line82JsxTextBuyCredits": "クレジットを購入"
+      "line82JsxTextBuyCredits": "クレジットを購入",
+      "askOwnerToAddCredits": "クレジットを追加できるのはアカウントオーナーだけです。オーナーにチャージを依頼してください。"
     },
     "componentsSessionSessionFilesPanel": {
       "line80JsxTextThisSessionIsItsOwnVersion": "このセッションは独立したバージョンです",

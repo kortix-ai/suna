@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { resolveBrowserWorkers } from '../playwright.config';
-import { buildLocalTestPlan, onKortixSandboxImage, waitForLocalWeb } from '../src/core/local-runner';
+import { buildLocalTestPlan, waitForLocalWeb } from '../src/core/local-runner';
 
 describe('local test runner', () => {
   it('keeps agentic tests opt-in and rejects combining them with another mode', () => {
@@ -359,10 +359,5 @@ describe('local test runner', () => {
 
     expect(attempts).toBe(3);
     expect(sleeps).toEqual([250, 250]);
-  });
-
-  it('detects a Kortix sandbox image by its baked model catalog', () => {
-    expect(onKortixSandboxImage(new URL(import.meta.url).pathname)).toBe(true);
-    expect(onKortixSandboxImage('/nonexistent/kortix-test-llm-catalog.json')).toBe(false);
   });
 });

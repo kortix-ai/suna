@@ -12,6 +12,7 @@ import { withProjectGitAuth } from '../lib/git';
 import { requestAuditContext } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import { releaseWebhookDeliveryKey, webhookDeliveryKey } from '../lib/webhook-delivery';
+import { markGitTriggerAttemptFailed } from '../lib/trigger-fire';
 import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
 import {
   validateWebhookSecretConfiguration,
@@ -195,7 +196,10 @@ export function registerTriggerWebhooksRoutes(): void {
       }, 202);
     }
     if (result.status === 'failed') {
-      return c.json({ error: result.error ?? 'Failed to fire trigger' }, 500);
+      const error = result.error ?? 'Failed to fire trigger';
+      // Recorded like a failed cron fire, so the trigger says it failed (KRTX-1743).
+      await markGitTriggerAttemptFailed(project.projectId, spec.slug, new Date(), error).catch(() => {});
+      return c.json({ error }, 500);
     }
     // Stamp runtime last_fired_at so the UI's "last fired N ago" matches the
     // cron-fire path even when the webhook is the actual source.

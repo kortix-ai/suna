@@ -11,6 +11,7 @@ export * from './access';
 export * from './secrets';
 export * from './account-secret-resources';
 export * from './connectors';
+export * from './connector-run';
 export * from './policies';
 export * from './sandbox';
 export * from './files';

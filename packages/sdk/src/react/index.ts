@@ -12,6 +12,9 @@ export {
   type ConnectorPopupOpener,
 } from './connector-setup';
 
+// One connector action's output as a cached query, with typed connector errors.
+export { useConnectorQuery, type ConnectorQueryOptions } from './use-connector-query';
+
 // The one call a host makes on every identity change (sign-out, a different
 // user signing in) to drop the SDK's per-user in-memory session state.
 export { resetIdentityState } from './reset-identity-state';

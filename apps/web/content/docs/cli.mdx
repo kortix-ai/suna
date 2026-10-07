@@ -653,6 +653,7 @@ Connectors an agent calls as tools. `add`, `rm`, and `policy set` edit the local
 | `kortix connectors credential <slug> [value]` | Set a connector's credential. |
 | `kortix connectors connect <slug>` | Start a one-click connect flow. |
 | `kortix connectors link <slug> [--expires <min>]` | Mint a shareable connect link for a human. |
+| `kortix connectors types [--connector <a,b>] [--out <file>]` | Write TypeScript types for every callable action: a `declare module '@kortix/sdk'` file that types `connectors.callAction(slug, action, args)` args and `output`. Managed Composio and Pipedream connectors publish no output schema, so their result is `unknown`. Without `--out` it prints to stdout. |
 | `kortix connectors accounts <slug> [--default <label\|id>] [--json]` | List the accounts your calls may run as, with the identity each is connected as. `--default` pins one. |
 | `kortix connectors connections ls [--all] [--json]` | List connections with label, `CONNECTED AS`, owner, `WHO CAN USE` (`owner only`, `everyone`, or the grant labels, with `(not you)` when you list it only to manage it), status, and default. |
 | `kortix connectors connections rename <id> <label…>` | Rename a connection. Only the label changes; no re-authorization. |

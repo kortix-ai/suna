@@ -59,6 +59,26 @@ import {
   validateTriggerAgentRefsV2,
 } from './index.v2';
 
+/**
+ * The shortest gap between two fires of a cron trigger (KRTX-1721). Every fire
+ * starts or prompts a session, and croner reads a 6-field cron seconds-first:
+ * a step of 30 in the first of 6 fields is every 30 seconds, not 30 minutes.
+ */
+export const CRON_MIN_INTERVAL_SECONDS = 60;
+/** Fires sampled for the shortest gap: enough for an irregular list such as `0,1 0 * * * *`. */
+const CRON_INTERVAL_SAMPLE = 32;
+
+/** Why `cron` fires more than once a minute, or null. `cron` must parse. */
+export function cronIntervalError(cron: string, timezone = 'UTC'): string | null {
+  const runs = new Cron(cron, { paused: true, timezone }).nextRuns(CRON_INTERVAL_SAMPLE);
+  for (let i = 1; i < runs.length; i++) {
+    if (runs[i]!.getTime() - runs[i - 1]!.getTime() < CRON_MIN_INTERVAL_SECONDS * 1000) {
+      return `cron "${cron}" fires more than once a minute. A trigger fires at most once every ${CRON_MIN_INTERVAL_SECONDS} seconds. In a 6-field cron the first field is seconds: "0 */30 * * * *" is every 30 minutes.`;
+    }
+  }
+  return null;
+}
+
 export {
   AGENTS_DIR,
   AGENT_FILE_PATTERN,
@@ -1262,8 +1282,10 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], 
             ? entry.timezone.trim()
             : 'UTC';
         if (isValidIanaTimeZone(timezone)) {
+          let parsed = false;
           try {
             new Cron(cron, { paused: true, timezone });
+            parsed = true;
           } catch (error) {
             issues.push({
               path: `${where}.cron`,
@@ -1273,6 +1295,8 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], 
               severity: 'error',
             });
           }
+          const intervalError = parsed ? cronIntervalError(cron, timezone) : null;
+          if (intervalError) issues.push({ path: `${where}.cron`, message: intervalError, severity: 'error' });
         }
       }
       if (entry.timezone !== undefined && typeof entry.timezone !== 'string') {
