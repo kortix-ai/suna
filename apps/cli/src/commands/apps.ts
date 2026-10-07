@@ -23,6 +23,7 @@ import {
   positiveInteger,
   positiveNumber,
   alwaysOnBudgetNotice,
+  runCostLine,
   provisionDeployApp,
   resolveApp,
   scoped,
@@ -49,7 +50,8 @@ Subcommands:
     --always-on | --on-demand       Run 24/7, or stop when idle and wake on the
                                     next request. A static App has no runtime
                                     and ignores both.
-    --budget <usd>                  Monthly compute budget. Default: 5.
+    --budget <usd>                  Monthly compute budget. Default: the 24/7
+                                    estimate for an always-on App, 5 on demand.
   deploy [path]                     Deploy a directory or .tar.gz archive.
     --manifest-app <name>           Use one apps.<name> block from kortix.yaml.
     --app <id|slug>                 Existing App. Omit to create one.
@@ -73,9 +75,9 @@ Subcommands:
     --always-on | --on-demand       Server Apps: run 24/7 (default), or stop when
                                     idle. Static Apps run no server.
     --budget <usd>                  Monthly compute budget. A server App stops at
-                                    it. Running 24/7 costs about $73/month for the
-                                    default machine; deploy warns when the budget
-                                    is lower.
+                                    it. Default for a new always-on App: its 24/7
+                                    estimate (about $73/month on the default
+                                    machine). Deploy warns when it is lower.
     --no-wait                       Return after the deployment is queued.
     --wait-seconds <seconds>        Default: 1200.
   set <id|slug>                     Change an existing App. Only the flags you
@@ -250,8 +252,14 @@ async function createCommand(
   const app = await scoped(ctx, () => ctx.apps.create(input));
   printWarnings(app);
   if (json) emitJson(app);
-  else process.stdout.write(`\n  ${status.ok(`created ${app.slug}`)}\n  ${app.url}\n\n`);
+  else process.stdout.write(`\n  ${status.ok(`created ${app.slug}`)}\n  ${app.url}\n${costBlock(app)}\n`);
   return 0;
+}
+
+/** The run-cost line for a server App, indented under the result; empty when none applies. */
+function costBlock(app: App): string {
+  const line = runCostLine(app);
+  return line ? `  ${C.dim}${line}${C.reset}\n` : '';
 }
 
 /** The server's warnings for a create or update, on stderr so `--json` stdout stays clean. */
@@ -315,7 +323,7 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
       `  ${C.dim}${pad('idle timeout', 14)}${C.reset}${app.idle_timeout_seconds}s\n`,
     );
     process.stdout.write(
-      `  ${C.dim}${pad('budget', 14)}${C.reset}$${app.monthly_budget_usd}/mo\n\n`,
+      `  ${C.dim}${pad('budget', 14)}${C.reset}$${app.monthly_budget_usd}/mo\n${costBlock(app)}\n`,
     );
   }
   return 0;
@@ -381,7 +389,7 @@ async function deployCommand(
       if (json) emitJson({ app: currentApp, deployment });
       else {
         process.stdout.write(
-          `\n  ${status.ok(`deployment ${deployment.status}`)}\n  ${currentApp.url}\n\n`,
+          `\n  ${status.ok(`deployment ${deployment.status}`)}\n  ${currentApp.url}\n${staged.source.kind === 'static' ? '' : costBlock(currentApp)}\n`,
         );
       }
       return 0;

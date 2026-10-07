@@ -153,7 +153,7 @@ Apps.
 | `disk_gb` | `10` | `1` to `500` GiB |
 | `idle_timeout_seconds` | `300` | `120` to `86400`. Only for an on-demand App |
 | `always_on` | `true` for a new App | `true` or `false` |
-| `monthly_budget_usd` | `5` | `0` to `100000`, or the operator's `KORTIX_APPS_MAX_MONTHLY_BUDGET_USD` |
+| `monthly_budget_usd` | The 24/7 estimate of the machine, rounded up to a whole dollar (74 for the default machine), when the App is always on; `5` on demand | `0` to `100000`, or the operator's `KORTIX_APPS_MAX_MONTHLY_BUDGET_USD` |
 
 Static Apps ignore the machine, idle timeout and run mode: they have no
 runtime. They serve while they have an active deployment, so
@@ -199,6 +199,17 @@ next deployment. On Platinum that VM keeps its idle backstop (12 hours without
 traffic by default); keep-alive restarts it within 5 minutes if it stops.
 
 #### Budget
+
+A new always-on App with no explicit budget gets its 24/7 estimate, rounded up
+to a whole dollar, as its monthly budget: 74 USD for the default machine, 60
+USD for 1 vCPU and 1 GiB. It does not stop mid-month on its own default.
+`create`, `deploy` and `set` print the cost, for example `Runs 24/7 on 1 vCPU /
+2 GB: about $73/month (budget $74)`, and the web app shows it beside **Always
+on**. A derived budget follows later changes to the machine or the run mode
+(on demand returns to 5 USD). Passing a budget (`monthly_budget_usd`,
+`--budget`) always wins: Kortix never changes it afterwards. A static App costs
+nothing and has no machine to size. Apps created before this default keep the
+budget they have.
 
 An always-on App of the default machine (1 vCPU, 2 GiB, 10 GiB disk) costs
 about 73 USD a month at list compute rates. The App's `estimated_monthly_usd`

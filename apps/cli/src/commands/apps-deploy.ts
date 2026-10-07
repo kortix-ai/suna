@@ -445,6 +445,19 @@ export async function provisionDeployApp(
 }
 
 /**
+ * What a server App costs: "Runs 24/7 on 1 vCPU / 2 GB: about $73/month (budget $74)".
+ * Null for an on-demand or static App, or when the server predates the estimate.
+ */
+export function runCostLine(app: App): string | null {
+  const estimate = app.estimated_monthly_usd;
+  if (!app.always_on || !estimate || app.hosting_type === 'static') return null;
+  return (
+    `Runs 24/7 on ${app.machine.cpu} vCPU / ${app.machine.memory_gb} GB: ` +
+    `about $${Math.round(estimate)}/month (budget $${app.monthly_budget_usd})`
+  );
+}
+
+/**
  * The warning for a server App that runs 24/7 on a monthly budget below what
  * its machine costs for a month: it stops at the budget until the month ends.
  * Null when it does not apply, or when the server predates the estimate.

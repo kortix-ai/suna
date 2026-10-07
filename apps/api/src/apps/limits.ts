@@ -33,8 +33,6 @@ import { SANDBOX_SPEC_LIMITS } from '../snapshots/dockerfile-layer';
 /** An App machine may not exceed what a session sandbox may. */
 export const APP_MACHINE_LIMITS = SANDBOX_SPEC_LIMITS;
 
-/** Per-App monthly compute safety limit — the spec default, now bounded. */
-export const DEFAULT_APP_MONTHLY_BUDGET_USD = 5;
 export const MAX_APP_MONTHLY_BUDGET_USD = 100_000;
 
 /** App runtime statuses that hold provider compute. */

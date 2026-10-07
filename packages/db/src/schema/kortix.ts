@@ -4171,6 +4171,12 @@ export const apps = kortixSchema.table(
     monthlyBudgetUsd: numeric('monthly_budget_usd', { precision: 12, scale: 2 })
       .default('5.00')
       .notNull(),
+    /**
+     * false: the budget is the derived default (an always-on App's 24/7 estimate
+     * for its size) and follows size changes. true: a person set it. Rows that
+     * predate the column are true, so no existing budget moves.
+     */
+    monthlyBudgetExplicit: boolean('monthly_budget_explicit').default(true).notNull(),
     lastRequestAt: timestamp('last_request_at', { withTimezone: true }),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

@@ -83,7 +83,10 @@ console.log(app.url, deployment.status); // https://…apps.kortix.com  queued
 
 `create` accepts the machine and budget fields too: `cpu`, `memory_gb`,
 `disk_gb`, `idle_timeout_seconds`, `always_on`, and `monthly_budget_usd`. Omit
-them for the defaults. `always_on: true` runs a server App 24/7 (websockets,
+them for the defaults. Without `monthly_budget_usd`, an always-on App gets its
+`estimated_monthly_usd` rounded up to a whole dollar and an on-demand App gets
+5. That derived budget follows later `update` calls that change the machine or
+`always_on`; a budget you send is never changed. `always_on: true` runs a server App 24/7 (websockets,
 background loops); `false` stops it after `idle_timeout_seconds` and wakes it
 on the next request. Both stop at the monthly budget. A static App has no
 runtime and ignores both.

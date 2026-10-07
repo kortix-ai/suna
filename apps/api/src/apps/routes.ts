@@ -29,7 +29,7 @@ import { rollBackActiveDeployment } from './retention';
 import { ensureAppRuntimeRunning, loadPublicApp } from './public-proxy';
 import { type AppSourceSpec } from './spec';
 import { appPublicUrl } from './hostnames';
-import { AppBudgetExceededError, alwaysOnBudgetWarning, appMonthlyEstimateUsd } from './budget';
+import { AppBudgetExceededError, alwaysOnBudgetWarning, appMonthlyEstimateUsd, defaultAppBudgetUsd } from './budget';
 import {
   APP_MACHINE_LIMITS,
   AppAccountUnfundedError,
@@ -528,7 +528,7 @@ export function registerAppsRoutes(): void {
           disk_gb: DiskSchema.default(10),
           idle_timeout_seconds: z.number().int().min(120).max(86400).default(300),
           always_on: z.boolean().optional(),
-          monthly_budget_usd: z.number().min(0).max(100000).default(5),
+          monthly_budget_usd: z.number().min(0).max(100000).optional(),
         }) } } },
       },
       responses: { 201: json(AppObject, 'App'), ...errors(400, 402, 403, 404, 409) },
@@ -550,13 +550,17 @@ export function registerAppsRoutes(): void {
         throw error;
       }
       try {
+        const alwaysOn = body.always_on ?? config.KORTIX_APPS_DEFAULT_ALWAYS_ON;
+        const budget = body.monthly_budget_usd
+          ?? defaultAppBudgetUsd({ cpuCores: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb, alwaysOn }, config.getDefaultProvider());
         const [row] = await db.insert(apps).values({
           accountId: loaded.row.accountId, projectId, slug, name: body.name.trim(),
           routeKey: randomBytes(8).toString('hex'), createdBy: loaded.userId,
           cpuCores: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb,
           idleTimeoutSeconds: body.idle_timeout_seconds,
-          alwaysOn: body.always_on ?? config.KORTIX_APPS_DEFAULT_ALWAYS_ON,
-          monthlyBudgetUsd: body.monthly_budget_usd.toFixed(2),
+          alwaysOn,
+          monthlyBudgetUsd: budget.toFixed(2),
+          monthlyBudgetExplicit: body.monthly_budget_usd !== undefined,
         }).returning();
         const warning = alwaysOnBudgetWarning(row!, config.getDefaultProvider());
         return c.json({ ...serializeApp(row!), warnings: warning ? [warning] : [] }, 201);
@@ -673,7 +677,8 @@ export function registerAppsRoutes(): void {
       const { projectId, appId } = c.req.param();
       const loaded = await authorizedProject(c, projectId, 'write');
       if (loaded instanceof Response) return loaded;
-      if (!(await visibleApp(projectId, appId, loaded.userId))) {
+      const current = await visibleApp(projectId, appId, loaded.userId);
+      if (!current) {
         return c.json({ error: 'Not found' }, 404);
       }
       const body = c.req.valid('json');
@@ -685,6 +690,17 @@ export function registerAppsRoutes(): void {
         if (refusal) return refusal;
         throw error;
       }
+      // A budget nobody set follows the machine and run mode; one a person set never moves.
+      const nextMachine = {
+        cpuCores: body.cpu ?? current.cpuCores,
+        memoryGb: body.memory_gb ?? current.memoryGb,
+        diskGb: body.disk_gb ?? current.diskGb,
+        alwaysOn: body.always_on ?? current.alwaysOn,
+      };
+      const machineChanged = [body.cpu, body.memory_gb, body.disk_gb, body.always_on].some((value) => value !== undefined);
+      const derivedBudget = body.monthly_budget_usd === undefined && !current.monthlyBudgetExplicit && machineChanged
+        ? defaultAppBudgetUsd(nextMachine, config.getDefaultProvider())
+        : undefined;
       const [row] = await db.update(apps).set({
         ...(body.name !== undefined ? { name: body.name.trim() } : {}),
         ...(body.cpu !== undefined ? { cpuCores: body.cpu } : {}),
@@ -692,7 +708,8 @@ export function registerAppsRoutes(): void {
         ...(body.disk_gb !== undefined ? { diskGb: body.disk_gb } : {}),
         ...(body.idle_timeout_seconds !== undefined ? { idleTimeoutSeconds: body.idle_timeout_seconds } : {}),
         ...(body.always_on !== undefined ? { alwaysOn: body.always_on } : {}),
-        ...(body.monthly_budget_usd !== undefined ? { monthlyBudgetUsd: body.monthly_budget_usd.toFixed(2) } : {}),
+        ...(body.monthly_budget_usd !== undefined ? { monthlyBudgetUsd: body.monthly_budget_usd.toFixed(2), monthlyBudgetExplicit: true } : {}),
+        ...(derivedBudget !== undefined ? { monthlyBudgetUsd: derivedBudget.toFixed(2) } : {}),
         updatedAt: new Date(),
       }).where(and(eq(apps.appId, appId), eq(apps.projectId, projectId), isNull(apps.deletedAt))).returning();
       if (!row) return c.json({ error: 'Not found' }, 404);

@@ -137,6 +137,42 @@ flow(
       underfunded.status(200).body().has("$.warnings[0].code", "app_budget_below_always_on");
     });
 
+    await ctx.step("an always-on App with no budget defaults to its 24/7 estimate; an explicit budget never moves; on demand stays $5", async () => {
+      let counter = 0;
+      const slugFor = (label: string) =>
+        `${ctx.fixtures.name(label).toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 50)}-${++counter}`;
+      const create = async (body: Record<string, unknown>) => {
+        const response = await owner.post(
+          "/v1/projects/:projectId/apps",
+          { slug: slugFor("bd"), name: "ke2e budget", ...body },
+          { params: projectParams },
+        );
+        response.status(201);
+        return response.json<any>().app_id as string;
+      };
+      const patch = (id: string, body: Record<string, unknown>) =>
+        owner.patch("/v1/projects/:projectId/apps/:appId", body, { params: { ...projectParams, appId: id } });
+
+      const derived = await create({ always_on: true });
+      const read = await owner.get("/v1/projects/:projectId/apps/:appId", { params: { ...projectParams, appId: derived } });
+      read.status(200).body().has("$.monthly_budget_usd", 74);
+      (await patch(derived, { memory_gb: 1 })).status(200).body().has("$.monthly_budget_usd", 60).has("$.warnings", []);
+      (await patch(derived, { always_on: false })).status(200).body().has("$.monthly_budget_usd", 5);
+      (await patch(derived, { always_on: true, memory_gb: 2 })).status(200).body().has("$.monthly_budget_usd", 74);
+
+      const explicit = await create({ always_on: true, monthly_budget_usd: 200 });
+      (await patch(explicit, { memory_gb: 1 })).status(200).body().has("$.monthly_budget_usd", 200);
+      const pinned = await create({ always_on: true });
+      (await patch(pinned, { monthly_budget_usd: 90 })).status(200).body().has("$.monthly_budget_usd", 90);
+      (await patch(pinned, { memory_gb: 1 })).status(200).body().has("$.monthly_budget_usd", 90);
+
+      const onDemand = await create({ always_on: false });
+      (await patch(onDemand, { cpu: 2 })).status(200).body().has("$.monthly_budget_usd", 5);
+      for (const id of [derived, explicit, pinned, onDemand]) {
+        (await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...projectParams, appId: id } })).status(200);
+      }
+    });
+
     await ctx.step(
       "cross-project principal cannot inspect the App",
       async () => {

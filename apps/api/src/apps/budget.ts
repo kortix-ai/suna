@@ -24,6 +24,21 @@ export function appMonthlyEstimateUsd(machine: AppMachine, provider?: ProviderNa
   return Math.round(cost * 100) / 100;
 }
 
+/** Monthly budget of an on-demand App when nobody sets one. */
+export const DEFAULT_APP_MONTHLY_BUDGET_USD = 5;
+
+/**
+ * The budget an App gets when nobody sets one. An always-on App gets its 24/7
+ * estimate rounded up to a whole dollar, so it does not stop mid-month on its
+ * own default. An on-demand App gets the flat default.
+ */
+export function defaultAppBudgetUsd(
+  app: AppMachine & { alwaysOn: boolean },
+  provider?: ProviderName,
+): number {
+  return app.alwaysOn ? Math.ceil(appMonthlyEstimateUsd(app, provider)) : DEFAULT_APP_MONTHLY_BUDGET_USD;
+}
+
 export interface AppBudgetWarning {
   code: 'app_budget_below_always_on';
   message: string;

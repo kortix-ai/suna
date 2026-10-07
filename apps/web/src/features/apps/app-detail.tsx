@@ -253,6 +253,11 @@ export function AppDetailModal({
                           {tI18nComplete.raw('text044ba8a9ae43')}
                           <span className="text-muted-foreground text-xs">{tI18nComplete.raw('textb2fceee88a51')}</span>
                         </span>
+                        {isServer && app.estimated_monthly_usd ? (
+                          <span className="text-muted-foreground ml-auto pl-3 text-xs tabular-nums">
+                            {tI18nComplete('texte15cb9ffae7f', { value0: `$${Math.round(app.estimated_monthly_usd)}` })}
+                          </span>
+                        ) : null}
                       </DropdownMenuCheckboxItem>
                     ) : null}
                     <DropdownMenuItem onClick={() => setVersionsOpen((value) => !value)}>

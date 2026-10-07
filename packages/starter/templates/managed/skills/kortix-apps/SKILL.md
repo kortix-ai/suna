@@ -188,8 +188,8 @@ Do not stop at a `ready` status.
 
    `hosting_type` is `static` for a static App and `sandbox` for a server App.
    For a server App, confirm `always_on` and `monthly_budget_usd` are the values
-   you chose. When `always_on` is `true`, `monthly_budget_usd` must be at least
-   `estimated_monthly_usd`.
+   you chose. When `always_on` is `true`, `monthly_budget_usd` should be at least
+   `estimated_monthly_usd` (the default already is).
 
 Every App:
 
@@ -305,12 +305,15 @@ A server App runs in one of two modes. Choose the mode on the first deploy:
 
 Both modes stop at the App's monthly compute budget, and when the account can
 no longer pay. The URL then shows the budget or paused page until the next
-month or until the user raises the budget. The default budget is 5 USD. An
-always-on App of the default machine costs about 73 USD a month
-(`estimated_monthly_usd` on the App), so the default budget stops it after
-about 2 days.
+month or until the user raises the budget. A new always-on App with no
+`--budget` gets its 24/7 estimate (`estimated_monthly_usd`) rounded up to a whole
+dollar: 74 USD for the default machine of about 73 USD a month. An on-demand App
+gets 5 USD. The CLI prints a line such as `Runs 24/7 on 1 vCPU / 2 GB: about
+$73/month (budget $74)`; tell the user that cost. A budget you pass always wins
+and never changes by itself. To spend less, use `--on-demand` or a smaller
+machine (`--memory-gb 1` is about 59 USD a month).
 
-For an always-on App, set the budget on the first deploy:
+To set an explicit budget on the first deploy:
 
 ```bash
 kortix apps deploy . --slug api --type dockerfile --always-on --budget 80 \

@@ -95,10 +95,12 @@ Every 5 minutes a keep-alive pass:
 3. Rebuilds at most 5 always-on Apps per pass whose App supervisor image is
    out of date.
 
-**Budget.** The default `monthly_budget_usd` is `5`. An always-on App of the
-default machine (1 vCPU, 2 GiB, 10 GiB disk) costs about 73 USD a month at
-list compute rates, so the default budget stops it after about 2 days, until
-the month ends. The App object reports `estimated_monthly_usd`: its machine
+**Budget.** A new always-on App with no `monthly_budget_usd` gets its
+24/7 estimate rounded up to a whole dollar (74 for the default machine: 1 vCPU,
+2 GiB, 10 GiB disk, about 73 USD a month at list compute rates). A derived
+budget follows later machine and run-mode changes; one you set never changes.
+An on-demand App gets `5`. The CLI prints `Runs 24/7 on 1 vCPU / 2 GB: about
+$73/month (budget $74)`. The App object reports `estimated_monthly_usd`: its machine
 running 24/7 for a month (`0` for a static App). When an always-on App's budget
 is below that estimate, `create`, `set`, and `deploy` warn with
 `app_budget_below_always_on` (stderr in the CLI, and a deployment event) and do
@@ -209,7 +211,7 @@ the block's `resources`, `idle_timeout_seconds`, `always_on`, and
 | `readiness_path` | Server Apps: HTTP path polled before activation. Default `/`. |
 | `always_on` | Server Apps: `true` runs 24/7, `false` runs on demand. Default `true` for a new App. |
 | `idle_timeout_seconds` | On-demand server Apps: stop after no traffic. Minimum `120`; default `300`. |
-| `monthly_budget_usd` | Server Apps: monthly compute budget. Default `5`. |
+| `monthly_budget_usd` | Server Apps: monthly compute budget. Default: the 24/7 estimate rounded up to a whole dollar when always on, `5` on demand. |
 | `resources` | Server Apps: `cpu`, `memory_gb`, and `disk_gb`. Defaults `1`, `2`, and `10`. |
 | `env` | Server Apps: non-secret runtime key/value pairs. |
 | `secrets` | Server Apps: runtime environment key to project secret **identifier** mapping. |

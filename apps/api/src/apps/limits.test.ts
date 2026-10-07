@@ -5,7 +5,7 @@ import {
   assertAppBudgetWithinLimits,
   assertAppMachineWithinLimits,
 } from './limits';
-import { alwaysOnBudgetWarning, appMonthlyEstimateUsd } from './budget';
+import { DEFAULT_APP_MONTHLY_BUDGET_USD, alwaysOnBudgetWarning, appMonthlyEstimateUsd, defaultAppBudgetUsd } from './budget';
 import { appRuntimeImageKey } from './deployment-worker';
 
 describe('App machine limits', () => {
@@ -82,5 +82,29 @@ describe('runtime refresh key', () => {
     expect(appRuntimeImageKey('0.13.53:appd-fedcba9876543210')).not.toBe(appRuntimeImageKey('0.13.52:appd-0123456789abcdef'));
     expect(appRuntimeImageKey('custom-override')).toBe('custom-override');
     expect(appRuntimeImageKey(null)).toBe('');
+  });
+});
+
+describe('default App budget', () => {
+  const small = { cpuCores: 1, memoryGb: 1, diskGb: 10 };
+  const standard = { cpuCores: 1, memoryGb: 2, diskGb: 10 };
+
+  test('an always-on App defaults to its 24/7 estimate rounded up to a whole dollar', () => {
+    for (const machine of [small, standard]) {
+      const budget = defaultAppBudgetUsd({ ...machine, alwaysOn: true });
+      expect(Number.isInteger(budget)).toBe(true);
+      expect(budget).toBe(Math.ceil(appMonthlyEstimateUsd(machine)));
+      expect(budget).toBeGreaterThanOrEqual(appMonthlyEstimateUsd(machine));
+      expect(alwaysOnBudgetWarning({ ...machine, alwaysOn: true, monthlyBudgetUsd: budget })).toBeNull();
+    }
+    expect(defaultAppBudgetUsd({ ...standard, alwaysOn: true })).toBeGreaterThan(
+      defaultAppBudgetUsd({ ...small, alwaysOn: true }),
+    );
+  });
+
+  test('an on-demand App keeps the flat default, whatever its size', () => {
+    expect(DEFAULT_APP_MONTHLY_BUDGET_USD).toBe(5);
+    expect(defaultAppBudgetUsd({ ...standard, alwaysOn: false })).toBe(5);
+    expect(defaultAppBudgetUsd({ cpuCores: 8, memoryGb: 32, diskGb: 10, alwaysOn: false })).toBe(5);
   });
 });

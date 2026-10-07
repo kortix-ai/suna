@@ -1127,7 +1127,10 @@ return the stable public URL and active deployment pointer; every App carries
 1 vCPU / 2 GiB / 10 GiB); an always-on create or a run-mode, machine or budget
 patch with a budget below that estimate succeeds with
 `warnings[0].code = 'app_budget_below_always_on'`, and `warnings: []`
-otherwise; patch updates mutable policy; delete is soft and removes the App
+otherwise; a create without `monthly_budget_usd` gets a derived budget: the
+24/7 estimate rounded up to a whole dollar (`74` for 1 vCPU / 2 GiB) when the
+App is always on, `5` on demand; a derived budget follows later machine and
+run-mode patches, a budget a person sent never moves; patch updates mutable policy; delete is soft and removes the App
 from subsequent reads.
 Invalid slugs → 400; `NONMEMBER` → 403.
 

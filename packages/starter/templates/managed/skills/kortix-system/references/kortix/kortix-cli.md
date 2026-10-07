@@ -144,7 +144,7 @@ when no selected project has the feature enabled.
 | `kortix apps ls [--json]` | List the project's Apps, state (`static` for a static App), and stable URL. |
 | `kortix apps create <slug> [--name …]` | Create an App identity without deploying source. Flags: `--cpu`, `--memory`, `--disk`, `--idle-timeout`, `--always-on\|--on-demand`, `--budget`. |
 | `kortix apps deploy [path]` | Upload and deploy a directory or `.tar.gz`. Auto-detects static, bundle, or Dockerfile source; pass `--type`. Waits until ready by default. |
-| `kortix apps deploy … --always-on\|--on-demand --budget <usd>` | Server Apps: set the run mode and the monthly compute budget (default 5 USD). Warns on stderr (`app_budget_below_always_on`) when an always-on App's budget is below its 24/7 estimate. |
+| `kortix apps deploy … --always-on\|--on-demand --budget <usd>` | Server Apps: set the run mode and the monthly compute budget (default: the 24/7 estimate of the machine, rounded up, when always on; 5 USD on demand). Prints the cost. Warns on stderr (`app_budget_below_always_on`) when an always-on App's budget is below its 24/7 estimate. |
 | `kortix apps deploy --manifest-app <name>` | Use one v2 `kortix.yaml` `apps.<name>` block. A sole App block is selected automatically for bare `deploy`. |
 | `kortix apps deploy --image <ref> --command <argv> --port <n>` | Deploy a public OCI image. `--command` accepts a JSON string array or shell-like string. |
 | `kortix apps set <id-or-slug>` | Change an App: `--name`, `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--always-on\|--on-demand`, `--budget`. Run mode and budget apply within 5 minutes; a machine change applies to the next deployment. |

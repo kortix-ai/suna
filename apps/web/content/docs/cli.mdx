@@ -366,7 +366,7 @@ Deploys and operates the project's Kortix Apps: each App has one stable URL and 
 | --- | --- |
 | `kortix apps ls [--json]` | List Apps with state (`static` for a static App) and URL. |
 | `kortix apps deploy <dir> --type static [--spa]` | Publish a built directory as a static App. Build first (`npm run build`), then deploy the output directory. |
-| `kortix apps deploy . --type dockerfile --command <argv> --port <n> [--always-on\|--on-demand] [--budget <usd>]` | Build and run a server App. A new App is always on with a 5 USD budget unless you pass otherwise. |
+| `kortix apps deploy . --type dockerfile --command <argv> --port <n> [--always-on\|--on-demand] [--budget <usd>]` | Build and run a server App. A new App is always on. Its budget is the 24/7 estimate of its machine, rounded up to a whole dollar (74 USD by default), unless you pass `--budget`; on demand it is 5 USD. The command prints the cost, for example `Runs 24/7 on 1 vCPU / 2 GB: about $73/month (budget $74)`. |
 | `kortix apps deploy --image <ref> --command <argv> --port <n>` | Run a public OCI image as a server App. |
 | `kortix apps deploy --manifest-app <name>` | Deploy one `apps.<name>` block of a v2 `kortix.yaml`. |
 | `kortix apps set <app> [--always-on\|--on-demand] [--budget <usd>] [--cpu N] [--memory-gb N] [--disk-gb N] [--idle-timeout <s>]` | Change an App. Run mode and budget apply within 5 minutes; a machine change applies to the next deployment. |
@@ -378,7 +378,7 @@ Deploys and operates the project's Kortix Apps: each App has one stable URL and 
 | `kortix apps access-link <app> [--json]` | A five-minute signed browser URL. Treat it as a secret. |
 | `kortix apps delete <app> [--deployment <id\|vN>] --yes` | Delete the App, or one deployment that is not live. |
 
-An always-on App of the default machine costs about 73 USD a month. When its budget is lower, `deploy`, `create`, and `set` print `app_budget_below_always_on` on stderr; the App stops at the budget until the month ends.
+An always-on App of the default machine costs about 73 USD a month. When an explicit budget is lower, `deploy`, `create`, and `set` print `app_budget_below_always_on` on stderr; the App stops at the budget until the month ends.
 
 ### Sessions
 

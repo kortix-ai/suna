@@ -415,6 +415,21 @@ describe('kortix apps deploy (characterization)', () => {
     expect(serverRun.stderr).not.toContain('runs 24/7');
   });
 
+  test('a server deploy prints the 24/7 cost line; a static deploy and an on-demand App do not', async () => {
+    appFields = { always_on: true, estimated_monthly_usd: 73.48, monthly_budget_usd: 74 };
+    writeFileSync(join(tmp, 'bundle.tar.gz'), new Uint8Array([0x1f, 0x8b, 8, 0]));
+    mkdirSync(join(tmp, 'site'), { recursive: true });
+    writeFileSync(join(tmp, 'site', 'package.json'), '{"name":"site"}\n');
+    const config = writeConfig(startServer());
+    const server = await runCli(['apps', 'deploy', 'site', '--project', PROJECT], config);
+    expect(server.stdout).toContain('Runs 24/7 on 1 vCPU / 2 GB: about $73/month (budget $74)');
+    const staticRun = await runCli(['apps', 'deploy', 'bundle.tar.gz', '--project', PROJECT], config);
+    expect(staticRun.stdout).not.toContain('Runs 24/7');
+    appFields = { always_on: false, estimated_monthly_usd: 73.48 };
+    const onDemand = await runCli(['apps', 'deploy', 'site', '--project', PROJECT], config);
+    expect(onDemand.stdout).not.toContain('Runs 24/7');
+  });
+
   test('--budget must be a positive number', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['apps', 'deploy', 'site', '--budget', 'lots', '--project', PROJECT], config);
