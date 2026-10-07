@@ -1,0 +1,22 @@
+{
+  "source_hash": "dcf599864548933395b28516138ba8377b54638417d1d9fe1bdfb8b36b64ef71",
+  "diff_files": [
+    "apps/web/src/app/[locale]/(app)/invites/[inviteId]/page.tsx",
+    "apps/web/src/app/[locale]/(app)/projects/start/page.tsx",
+    "apps/web/src/features/workspace/command-palette.tsx",
+    "apps/web/src/features/workspace/project-selector/project-selector-model.test.ts",
+    "apps/web/src/features/workspace/project-selector/project-selector-model.ts",
+    "packages/sdk/src/core/rest/projects-client/accounts.ts",
+    "tests/e2e/specs/08-accounts-project-access.spec.ts",
+    "tests/e2e/specs/45-invite-lands-in-invited-project.spec.ts"
+  ],
+  "diff_hash": "869155f0a0a93066ded179484d117cad6fb03d49432bb6ceaf86eb2afff92451",
+  "head": "fad0a4dc5396a49db291e4fd975c0c1f3824ab2a",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-07T17:46:27.086Z"
+}
