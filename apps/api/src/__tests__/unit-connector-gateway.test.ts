@@ -187,6 +187,21 @@ describe('handleCall — denials', () => {
 });
 
 describe('handleCall — upstream + errors', () => {
+  test('a credential resolution failure (OAuth2 token refresh) is an error with its message, audited, never sent upstream', async () => {
+    // Native OAuth2 client credentials (16d230808a) mint a token per call; a
+    // failed mint must answer a structured error the agent can read.
+    const { deps, records, fetchCalls } = makeDeps();
+    deps.resolveCredential = async () => {
+      throw new Error('OAuth2 token request failed (503): temporarily_unavailable');
+    };
+    expect(await handleCall(deps, baseInput)).toEqual({
+      status: 'error',
+      reason: 'OAuth2 token request failed (503): temporarily_unavailable',
+    });
+    expect(records.at(-1)).toMatchObject({ status: 'error' });
+    expect(fetchCalls).toHaveLength(0);
+  });
+
   test('non-2xx upstream → error with the body excerpt (agent sees the real cause)', async () => {
     const { deps } = makeDeps({ fetchStatus: 402, fetchBody: '{"error":"declined"}' });
     expect(await handleCall(deps, baseInput)).toEqual({

@@ -690,6 +690,46 @@ flow(
 );
 
 /**
+ * DEL-5 — deletion is an owner act. `addMember` inserts the membership
+ * directly, so the member has no personal account and resolves the TEAM as
+ * its primary account. Every deletion route refuses the member with 403
+ * `account.delete`, and the team survives.
+ */
+flow(
+  'DEL-5',
+  {
+    domain: 'billing',
+    routes: [
+      'GET /v1/account/deletion-status',
+      'POST /v1/account/request-deletion',
+      'POST /v1/account/cancel-deletion',
+      'DELETE /v1/account/delete-immediately',
+      'GET /v1/accounts/:accountId',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const member = await team.addMember('member');
+    const asMember = ctx.client.as(member);
+
+    await ctx.step('MEMBER reads the team deletion-status → 403 account.delete', async () => {
+      (await asMember.get('/v1/account/deletion-status')).status(403).body().has('$.action', 'account.delete');
+    });
+    await ctx.step('MEMBER cannot request, cancel, or run deletion → 403 account.delete each', async () => {
+      (await asMember.post('/v1/account/request-deletion', { reason: 'ke2e member' }))
+        .status(403).body().has('$.action', 'account.delete');
+      (await asMember.post('/v1/account/cancel-deletion', {}))
+        .status(403).body().has('$.action', 'account.delete');
+      (await asMember.del('/v1/account/delete-immediately'))
+        .status(403).body().has('$.action', 'account.delete');
+    });
+    await ctx.step('the team survives: OWNER reads it → 200', async () => {
+      (await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId', { params: { accountId: team.id } })).status(200);
+    });
+  },
+);
+
+/**
  * BILL-17 — admitting a prompt debits nothing.
  *
  * `checkBillingActive` takes a real $0.01 admission hold, and only an LLM

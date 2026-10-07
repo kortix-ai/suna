@@ -1,4 +1,8 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+
+// OPS-1 (tests/src/flows/ops.flow.ts) asserts the 200 body over real HTTP.
+// This file keeps the fault injection HTTP cannot reach: one query rejects,
+// the dashboard still answers 200 with only that metric degraded.
 import { Hono } from 'hono';
 
 /**
@@ -92,52 +96,13 @@ function happyPathResults(): ResultOrThrow[] {
   ];
 }
 
-describe('ops overview dashboard API', () => {
+describe('ops overview degrades one failed query instead of failing the dashboard', () => {
   beforeEach(() => {
     process.env.BETTERSTACK_API_LOG_TOKEN = 'log-token-test';
     process.env.BETTERSTACK_API_LOG_HOST = 'logs.example.test';
     process.env.BETTERSTACK_API_SENTRY_DSN = 'https://example@sentry.test/1';
     process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = 'https://otel.example.test/v1/traces';
     executeResults = happyPathResults();
-  });
-
-  test('returns production support signals for API, queues, audit, usage, and migrations', async () => {
-    const res = await app().request('/v1/ops/overview');
-    expect(res.status).toBe(200);
-    const body = await res.json();
-
-    expect(body.api).toEqual({
-      status: 'ok',
-      env: 'dev',
-      billing_enabled: false,
-      tunnel: { enabled: true, connectedAgents: 2 },
-    });
-    expect(body.totals).toMatchObject({
-      accounts: 2,
-      projects: 3,
-      active_legacy_sandboxes: 1,
-    });
-    expect(body.sessions.by_status).toMatchObject({ running: 4, failed: 1 });
-    expect(body.sandboxes.by_provider).toMatchObject({ daytona: 2, platinum: 2 });
-    expect(body.queues.queued_total).toBe(0);
-    expect(body.queues.trigger_events_by_status).toEqual({});
-    expect(body.queues.channel_events_by_status).toEqual({});
-    expect(body.audit.events_24h).toBe(9);
-    expect(body.audit.recent[0]).toMatchObject({ action: 'POST /v1/projects' });
-    expect(body.usage).toMatchObject({
-      calls_24h: 7,
-      cost_usd_24h: 0.123456,
-    });
-    expect(body.observability).toEqual({
-      managed_logs_configured: true,
-      managed_log_host: 'logs.example.test',
-      error_tracking_configured: true,
-      structured_request_logs_enabled: true,
-      trace_headers_enabled: true,
-      otlp_exporter_configured: true,
-      otlp_request_spans_enabled: true,
-    });
-    expect(body.migrations.by_status).toMatchObject({ applied: 1 });
   });
 
   test('degrades audit_events_24h to null (not a 500) when its count query times out', async () => {

@@ -106,6 +106,14 @@ flow(
       const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/credit-breakdown");
       r.status(OWNER_READ);
     });
+    await ctx.step("a team member with no credit row of their own reads an all-zero breakdown, not an error", async () => {
+      const team = await ctx.fixtures.team();
+      const member = await team.addMember("member");
+      const r = await ctx.client.as(member).get("/v1/billing/credit-breakdown");
+      r.status(OWNER_READ);
+      if (r.statusCode !== 200) return;
+      r.body().has("$.total", 0).has("$.expiring", 0).has("$.non_expiring", 0).has("$.daily", 0);
+    });
     await ctx.step("ANON cannot read the credit breakdown → 401", async () => {
       const r = await ctx.client.as(ctx.P.ANON).get("/v1/billing/credit-breakdown");
       r.status(401);
@@ -120,9 +128,16 @@ flow(
       r.status(401);
     });
 
-    await ctx.step("OWNER reads the visible tier configurations", async () => {
+    await ctx.step("OWNER reads the visible tiers: free and pro listed, the internal none tier hidden", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/tier-configurations");
       r.status(OWNER_READ);
+      if (r.statusCode !== 200) return;
+      const tiers = r.json<{ tiers: Array<{ name: string; display_name: string; monthly_price: number }> }>().tiers;
+      const names = tiers.map((t) => t.name);
+      if (!names.includes("free") || !names.includes("pro")) throw new Error(`expected free and pro, got ${JSON.stringify(names)}`);
+      if (names.includes("none")) throw new Error("the internal `none` tier is listed");
+      const pro = tiers.find((t) => t.name === "pro")!;
+      if (pro.display_name !== "Pro" || pro.monthly_price !== 20) throw new Error(`unexpected pro tier: ${JSON.stringify(pro)}`);
     });
     await ctx.step("ANON cannot read tier-configurations → 401 (auth-gated, not public)", async () => {
       const r = await ctx.client.as(ctx.P.ANON).get("/v1/billing/tier-configurations");
