@@ -764,7 +764,7 @@ A trigger starts a session from a schedule, a webhook, or a monitor (experimenta
 | `kortix triggers set <slug> [options]` | Change a live trigger. Only the flags you pass are written. Always applies now — there is no local form. Alias: `update`. |
 | `kortix triggers rm <slug> [--apply]` | Remove a trigger from `kortix.yaml`, or from the cloud project now with `--apply`. |
 | `kortix triggers info <slug> [--json]` | Show one trigger. |
-| `kortix triggers fire <slug>` | Fire a trigger manually. |
+| `kortix triggers fire <slug>` | Fire a trigger manually and wait for the run outcome: a failed run exits non-zero with its error, and the fired run's fresh session is cleaned up (a run queued into an existing session is left in place). `--wait <dur>` bounds the wait (default `90s`; `0` returns as soon as the fire is accepted). |
 | `kortix triggers enable <slug> [--apply]` / `disable <slug> [--apply]` | Turn one trigger on or off. |
 | `kortix triggers pause` / `resume` | Deactivate or reactivate every trigger on the project, server-side. |
 
