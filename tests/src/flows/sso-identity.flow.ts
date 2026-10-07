@@ -512,3 +512,84 @@ flow(
     });
   },
 );
+
+// SSO-6 — SSO only is enforced by the API on every credential, not only by the
+// web sign-in form. A password identity in the enforced domain still held a
+// JWT from GoTrue (a direct password grant, mobile, a social sign-in), and the
+// API accepted it everywhere (KRTX-1716).
+flow(
+  'SSO-6',
+  {
+    domain: 'iam',
+    routes: [
+      'POST /v1/accounts/:accountId/members',
+      'PUT /v1/accounts/:accountId/iam/sso/provider',
+      'PUT /v1/admin/api/accounts/:id/sso-domain-verification',
+      'GET /v1/accounts/:accountId',
+      'GET /v1/projects/:projectId',
+      'DELETE /v1/accounts/:accountId/iam/sso/provider',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const project = await team.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const domain = `${ctx.fixtures.name('sso-only')}.test`.toLowerCase();
+    const supabaseProviderId = crypto.randomUUID();
+    const params = { accountId: team.id };
+    const passwordPerson = await ctx.fixtures.userWithEmail(`admin@${domain}`);
+    const ssoPerson = await ctx.fixtures.userWithEmail(`member@${domain}`);
+    const elsewhere = await team.addMember('member');
+    // An account member reads a project only with a project role.
+    await team.grantProjectRole(project.id, elsewhere.userId!, 'member');
+    let sso: Client;
+
+    await ctx.step('two people on the domain join the account; one of them signs in through the IdP', async () => {
+      for (const person of [passwordPerson, ssoPerson]) {
+        const r = await owner.post('/v1/accounts/:accountId/members', { email: person.email, role: 'admin' }, { params });
+        r.status([200, 201]);
+      }
+      sso = ctx.client.withBearer(await ssoFixtureToken(ctx.env, ssoPerson, supabaseProviderId, []), 'SSO-only');
+    });
+
+    const reads = async (client: Client) => [
+      (await client.get('/v1/accounts/:accountId', { params })).statusCode,
+      (await client.get('/v1/projects/:projectId', { params: { projectId: project.id } })).statusCode,
+    ];
+
+    await ctx.step('before enforcement every member reads the account and its project', async () => {
+      await saveProvider(ctx, team.id, { supabaseProviderId, domain, enforceSso: true });
+      for (const client of [ctx.client.as(passwordPerson), sso, ctx.client.as(elsewhere)]) {
+        const codes = await reads(client);
+        if (codes.join() !== '200,200') throw new Error(`expected 200,200 before verification, got ${codes}`);
+      }
+    });
+
+    await ctx.step('with the domain verified, the password identity gets 403 sso_required on the account and the project', async () => {
+      (await operatorVerifies(ctx, team.id, true)).status(200).body().has('$.domain_verified', true);
+      const asPassword = ctx.client.as(passwordPerson);
+      (await asPassword.get('/v1/accounts/:accountId', { params })).status(403).body().has('$.code', 'sso_required');
+      (await asPassword.get('/v1/projects/:projectId', { params: { projectId: project.id } }))
+        .status(403)
+        .body()
+        .has('$.code', 'sso_required');
+    });
+
+    await ctx.step("the IdP's own identity, a member outside the domain, and the owner keep working", async () => {
+      for (const [label, client] of [['sso', sso], ['elsewhere', ctx.client.as(elsewhere)], ['owner', owner]] as const) {
+        const codes = await reads(client);
+        if (codes.join() !== '200,200') throw new Error(`${label}: expected 200,200, got ${codes}`);
+      }
+    });
+
+    await ctx.step('break-glass: an operator marks the domain unverified and the password identity reads again', async () => {
+      (await operatorVerifies(ctx, team.id, false)).status(200).body().has('$.domain_verified', false);
+      const codes = await reads(ctx.client.as(passwordPerson));
+      if (codes.join() !== '200,200') throw new Error(`expected 200,200 after break-glass, got ${codes}`);
+    });
+
+    await ctx.step('cleanup: remove the provider', async () => {
+      (await owner.del('/v1/accounts/:accountId/iam/sso/provider', { params })).status(200);
+    });
+  },
+);
