@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { accountIsFreeTierForModels as realAccountIsFreeTierForModels } from '../billing/services/tiers';
-
 let accountTier = 'per_seat';
 let billingCalls = 0;
 
@@ -86,7 +85,7 @@ mock.module('../billing/services/billing-gate', () => ({
   },
 }));
 
-const { authorizeRequest } = await import('./hooks');
+const { authorizeRequest, assertLlmBillingActive } = await import('./hooks');
 const { BillingGateError } = await import('../billing/services/billing-gate');
 
 describe('authorizeRequest — billing 402 carries the real reason, not a hardcoded constant', () => {
@@ -152,5 +151,40 @@ describe('authorizeRequest — billing 402 carries the real reason, not a hardco
     expect(result.ok).toBe(true);
     expect(billingCalls).toBe(0);
     if (result.ok) expect(result.principal.billingHold).toBeUndefined();
+  });
+});
+
+describe('assertLlmBillingActive — the wallet floor follows the credits request, not just the entitlement', () => {
+  beforeEach(() => {
+    accountTier = 'per_seat';
+    billingCalls = 0;
+  });
+
+  test('an entitlement-less account skips the gate for a request that spends nothing', async () => {
+    accountTier = 'free';
+
+    await assertLlmBillingActive('acct-1');
+
+    expect(billingCalls).toBe(0);
+  });
+
+  // KRTX-1067: the platform default is the ONE managed model an
+  // entitlement-less account can run, and it settles as credits — so the
+  // deferred gateway path (which calls this only for a Kortix-billed request
+  // it already resolved) must take the admission hold for it too. Without
+  // this, a drained free wallet runs platform-default turns with no floor and
+  // the settle drives the balance negative.
+  test('a Kortix-billed request takes the hold for an entitlement-less account', async () => {
+    accountTier = 'free';
+
+    await assertLlmBillingActive('acct-1', { creditsRequest: true });
+
+    expect(billingCalls).toBe(1);
+  });
+
+  test('a Kortix-billed request still gates when the account is entitled', async () => {
+    await assertLlmBillingActive('acct-1', { creditsRequest: true });
+
+    expect(billingCalls).toBe(1);
   });
 });

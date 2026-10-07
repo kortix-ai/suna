@@ -47,8 +47,10 @@ const confirmed = Boolean(
 );
 const withDb = confirmed ? describe : describe.skip;
 
-const ACCOUNT_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
+// The user's personal account: its id is the user id, so deleting it also
+// deletes the user's login.
+const ACCOUNT_ID = USER_ID;
 const OTHER_ACCOUNT_ID = '33333333-3333-4333-8333-333333333333';
 const OTHER_USER_ID = '44444444-4444-4444-8444-444444444444';
 const PROJECT_ID = '55555555-5555-4555-8555-555555555555';
@@ -261,8 +263,8 @@ withDb('account deletion on PostgreSQL', () => {
     // deletion transaction fail mid-sweep with a test-only trigger, then
     // prove nothing was deleted — and that removing the trigger completes
     // the same deletion.
-    const failAccount = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
     const failUser = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const failAccount = failUser;
     const failProject = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
     for (const statement of [
       sql`INSERT INTO kortix.accounts (account_id, name) VALUES (${failAccount}, 'deletion-fail')`,
