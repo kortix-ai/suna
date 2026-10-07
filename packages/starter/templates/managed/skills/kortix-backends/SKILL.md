@@ -1,6 +1,6 @@
 ---
 name: kortix-backends
-description: "Build, deploy and operate Kortix Backends: self-hosted Convex (database, server functions, realtime queries, file storage, crons, full-text and vector search) with built-in Kortix sign-in. Load ONLY when the `backends` feature is on in this project (`kortix backends list` exits 0) or the user names a Kortix Backend. Then use it when an App or an agent needs persistent data, live updates, server-side logic, uploads, schedules or search; when the user asks for a database, an API, a backend, a data model, auth, or 'store this'; and before writing any Convex code. When the feature is off, do not load it: build with the project's own storage and code. For a complete internal business app (backend + UI + sign-in) load kortix-internal-apps too."
+description: "Build, deploy and operate Kortix Backends: self-hosted Convex (database, server functions, realtime queries, file storage, crons, full-text and vector search) with built-in Kortix sign-in. Load ONLY when the `backends` feature is on in this project (`kortix backends list` exits 0, or `kortix projects info --json` has `experimental.backends: true`) or the user names a Kortix Backend. Then use it when an App or an agent needs persistent data, live updates, server-side logic, uploads, schedules or search; when the user asks for a database, an API, a backend, a data model, auth, or 'store this'; and before writing any Convex code. When the feature is off, do not load it: build with the project's own storage and code. For a complete internal business app (backend + UI + sign-in) load kortix-internal-apps too."
 ---
 
 # Kortix Backends
@@ -60,76 +60,152 @@ key, so the Convex code can live anywhere:
 
 Deploy from the project repo unless the user says otherwise.
 
-## The loop
+## The loop: six steps
+
+Every backend task runs these six steps in order. Skip none: step 3 keeps you
+from breaking what exists, and step 5 is the proof.
+
+**1. Install** (once per backend directory):
 
 ```sh
 mkdir -p backends/main && cd backends/main
-npm init -y >/dev/null && npm install convex   # once
-npx convex ai-files install                    # once: Convex's agent rules + skills (below)
-# write convex/schema.ts, convex/*.ts, convex/auth.config.ts
-cd - && kortix backends deploy main --dir backends/main --create
+npm init -y >/dev/null && npm install convex @kortix/sdk
+npm install -D typescript @types/node   # so every deploy typechecks
+npx convex ai-files install             # Convex's agent rules and skills (below)
+```
+
+Read `convex/_generated/ai/guidelines.md` before your first change. Pin
+`convex` to the backend's `convex_version` (`kortix backends get main --json`)
+when they differ: a newer CLI can need backend APIs this backend lacks.
+Check that `@kortix/sdk` exports `requireKortixMember` (references/sign-in.md,
+"SDK version").
+
+**2. Connect.** Create the backend if `kortix backends list` does not show it,
+then load the admin credentials into this shell only:
+
+```sh
+kortix backends create main                 # only when it does not exist yet
+eval "$(kortix backends env main)"          # CONVEX_SELF_HOSTED_URL + _ADMIN_KEY
+kortix backends connect main                # how an App, a script or a server reaches it
+npx convex codegen --init                   # once: convex/tsconfig.json and convex/_generated
+```
+
+TypeScript 7 (the current `typescript` on npm) loads no `@types` package by
+default: add
+`"types": ["node"]` to `compilerOptions` in `convex/tsconfig.json`, or every
+`process.env` fails the typecheck.
+
+**3. Discover** what is already there before you change anything:
+
+```sh
+npx convex function-spec                    # every deployed function, its args and returns
+npx convex data                             # tables
+npx convex data tasks --limit 20            # the 20 newest rows of one table
+npx convex env list --names-only            # env var names; never print the values
+kortix backends get main                    # status, size, health
+```
+
+Read the code in `backends/main/convex/` too. When the deployed functions and
+the repo code differ, ask the user which one is current.
+
+**4. Change.** Edit the code, then push it and the data:
+
+```sh
+cd - && kortix backends deploy main --dir backends/main     # --create only for a new backend
+npx convex env set SOME_API_BASE https://api.example.com    # a secret: omit the value, pipe it in on stdin
+npx convex env remove SOME_API_BASE
+npx convex run tasks:create '{"title":"…"}'                  # run a function as admin
+npx convex import --table tasks --append tasks.jsonl         # bulk data in
+npx convex export --path /tmp/main.zip --include-file-storage # data and files out
 ```
 
 `kortix backends deploy <name> --dir <path>` waits until the backend runs
 (seconds; up to 10 minutes on a region's first image build), then runs
 `convex deploy` there with the backend's credentials. It uses the project's own
-`node_modules/.bin/convex`, or `npx convex@<convex_version>` (the version the
-backend pins, in `kortix backends get <name> --json`). When no backend has that
-name, `deploy` exits `1` and lists the existing names: check the name, and pass
-`--create` only when you mean to create a new backend. A project holds at most
-3 backends and an account 10 (`backend_limit`). Read the
-output: a type error or a schema that existing documents violate fails the
-deploy before anything changes. Fix and deploy again. Commit the Convex code on
-the session branch like any other code.
+`node_modules/.bin/convex`, or `npx convex@<convex_version>`. When no backend
+has that name, `deploy` exits `1` and lists the existing names: check the name,
+and pass `--create` only when you mean to create a new backend. A type error,
+or a schema that existing documents violate, fails the deploy before anything
+changes. Fix and deploy again. Take `kortix backends snapshot main` before a
+migration, a bulk import or a destructive backfill.
+
+**5. Verify** with real calls, never with the deploy output alone:
+
+```sh
+kortix backends logs main --lines 200                  # process log: crashes, restarts
+timeout 20 npx convex logs --history 50                # function logs; it never exits by itself
+npx convex run tasks:list '{}'                         # admin, no identity: must FAIL
+TOKEN=$(kortix backends token main)                    # a real member token naming you
+curl -s "$(kortix backends get main --json | python3 -c 'import sys,json;print(json.load(sys.stdin)["backend"]["url"])')/api/query" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"path":"tasks:list","args":{},"format":"json"}'  # must answer "status":"success"
+```
+
+An App's UI is verified in the browser (kortix-internal-apps).
+
+**6. Hand over.** Give the user the dashboard link and the way in:
+
+```sh
+kortix backends dashboard main     # Convex's dashboard inside Kortix: data, functions, logs, files
+kortix backends connect main       # snippets for an App, a script, their own server
+```
+
+Commit the Convex code on the session branch like any other code.
 
 | Command | Use |
 | --- | --- |
 | `kortix backends list` | Backends and their status (`provisioning`, `running`, `error`). |
-| `kortix backends create <name>` | Create and wait, without deploying. |
-| `kortix backends get <name> [--json]` | `url` (Convex client URL), `site_url` (HTTP actions), status, and `health` (the last 5-minute probe: machine state, disk use). |
-| `kortix backends logs <name> [--lines N]` | The Convex process log (startup, crashes, restarts, request lines). Read it when the backend answers errors or `health` fails. |
+| `kortix backends create <name>` | Create and wait, without deploying. `--cpu`, `--memory`, `--disk`. |
+| `kortix backends get <name> [--json]` | `url` (Convex client URL), `site_url` (HTTP actions), status, `convex_version`, and `health` (the last 5-minute probe: machine state, disk use). |
+| `kortix backends logs <name> [--lines N]` | The Convex process log (startup, crashes, restarts, request lines). |
 | `kortix backends rotate-key <name> --yes` | Replace the admin key; every key read before stops working. About 1 s of restart; data stays. |
-| `kortix backends dashboard <name>` | Link to the backend's admin dashboard in Kortix (data, functions, logs, files, schedules, env). Give it to the user so they can inspect what you built. |
-| `kortix backends connect <name> [--json]` | Working code to reach the backend: from an App, from outside (member token, HTTP API, your own server), from the CLI. No secret. The same snippets as Connect in Kortix web; give the user this when they ask how to use the backend. |
+| `kortix backends dashboard <name>` | Link to the backend's admin dashboard in Kortix. If `--json` shows `dashboard_available: false`, use the Convex CLI. |
+| `kortix backends connect <name> [--json]` | Working code to reach the backend from an App, from outside, and from the CLI. No secret. |
 | `kortix backends env <name>` | Shell exports for the Convex CLI (admin). Use with `eval`. |
-| `kortix backends token <name>` | A 15-minute sign-in token naming you, with your groups and role (see Sign-in). |
+| `kortix backends token <name>` | A 15-minute sign-in token naming you, with your groups and role. |
 | `kortix backends deploy <name> --dir <path> [--create]` | Deploy. `--create` creates a missing backend first. |
 | `kortix backends resize <name> --cpu N --memory GB --disk GB` | Resize (see Size, backups and restore). |
 | `kortix backends backups <name>` · `snapshot <name>` · `restore <name> <id>` | Backups and point-in-time restore. |
 | `kortix backends delete <name> --yes` | Delete the machine and every document and file. |
 
 A name is lowercase letters, digits and dashes, starting with a letter. A
-project holds up to 3 backends. On `error`, delete the backend and create it
-again.
+project holds up to 3 backends and an account 10 (`409 backend_limit`). On
+`error`, delete the backend and create it again.
+
+Never run `npx convex dev` or `npx convex dashboard` against a Kortix backend:
+both need a Convex Cloud login. The dashboard is in Kortix.
 
 ## Convex's own agent material: install it at runtime
 
 Convex publishes rules and task skills for coding agents. They override what
-you remember about Convex. Install them in every backend directory, then read
-them:
-
-```sh
-cd backends/main && npx convex ai-files install
-```
+you remember about Convex. `npx convex ai-files install` writes:
 
 - `convex/_generated/ai/guidelines.md` — the Convex coding rules. **Read it
   before your first change**, and again when a deploy fails on something you do
   not understand.
-- `.agents/skills/convex*/SKILL.md` — task skills: `convex-design`,
-  `convex-auth`, `convex-crons`, `convex-migrate`, `convex-test`,
-  `convex-reviewer`, `convex-optimize`, `convex-seed`, `convex-agent` and more.
-  Read the one that matches the task.
-- `AGENTS.md`, `CLAUDE.md`, `skills-lock.json` — commit them with the backend.
+- Task skills (`convex-design`, `convex-auth`, `convex-crons`, `convex-migrate`,
+  `convex-test`, `convex-agent` and more) in each coding agent's skill path,
+  for example `.agents/skills/convex*/SKILL.md`. Read the one that matches the
+  task.
+- `AGENTS.md`, `CLAUDE.md` (Convex sections) — commit them with the backend.
 
 Refresh with `npx convex ai-files update` after upgrading `convex`. Index of the
 official docs for agents: https://docs.convex.dev/llms.txt.
 
-A Kortix backend is **self-hosted** Convex. Ignore anything in that material
-that needs Convex Cloud: `npx convex dev` login, deploy keys, preview
-deployments, dashboard.convex.dev, custom domains (`convex-domains`), log
-streams, and the Convex AI gateway. Convex Auth is not needed: use Kortix
-sign-in. Where Convex material and this skill disagree on deploying,
-credentials or auth, this skill wins.
+A Kortix backend is **self-hosted** Convex. Where Convex material and this
+skill disagree on deploying, credentials or auth, this skill wins. These parts
+of Convex need Convex Cloud and do not exist here:
+
+| Convex Cloud feature | On a Kortix backend |
+| --- | --- |
+| `npx convex dev`, deploy keys, preview deployments | `kortix backends deploy`; one deployment per backend |
+| dashboard.convex.dev, `npx convex dashboard` | `kortix backends dashboard <name>` |
+| `npx convex insights` | `kortix backends get` (health) and `npx convex logs` |
+| Convex AI gateway (`@convex-dev/agent` without a key) | Call the model provider from an action with your own key in an env var |
+| Custom domains (`convex-domains`) | Not available; the URLs are fixed per backend |
+| Log streams, exception reporting (Sentry, Datadog) | `kortix backends logs`, `npx convex logs`; send errors from an action yourself |
+| Scheduled cloud backups ("Backup automatically") | Kortix's hourly automatic backup and snapshots (below) |
+| Streaming export (Fivetran) | `npx convex export` |
 
 Code patterns (schema, queries, mutations, actions, HTTP actions, crons, file
 storage, search, migrations): [references/convex-patterns.md](references/convex-patterns.md).
@@ -137,76 +213,85 @@ storage, search, migrations): [references/convex-patterns.md](references/convex-
 ## Sign-in: every backend knows the signed-in Kortix member
 
 Kortix writes three variables into every backend at creation
-(`KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE`, `KORTIX_AUTH_JWKS`). Add this
-file and deploy:
+(`KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE`, `KORTIX_AUTH_JWKS`). Add
+`convex/auth.config.ts` and `convex/lib/auth.ts` exactly as
+[references/sign-in.md](references/sign-in.md) shows, and deploy. Then every
+public function starts with:
 
 ```ts
-// convex/auth.config.ts
-export default {
-  providers: [
-    {
-      type: "customJwt",
-      issuer: process.env.KORTIX_AUTH_ISSUER!,
-      applicationID: process.env.KORTIX_AUTH_AUDIENCE!,
-      jwks: process.env.KORTIX_AUTH_JWKS!,
-      algorithm: "ES256",
-    },
-  ],
-};
-```
-
-Then every function reads the member with `@kortix/sdk` (`npm i @kortix/sdk`):
-
-```ts
-import { requireKortixMember } from "@kortix/sdk";
-const me = requireKortixMember(await ctx.auth.getUserIdentity());                      // any member
-const me = requireKortixMember(await ctx.auth.getUserIdentity(), { groups: ["Finance"] }); // one Kortix group
+const me = await requireMember(ctx);                          // any Kortix member
+const me = await requireMember(ctx, { groups: ["Finance"] }); // one Kortix group
 ```
 
 `me` is `{ userId, email, name, picture, groups, groupIds, role, accountId,
-projectId }`. Anonymous or outside the group throws `KortixMemberError`.
-**The backend URL is public: every public function that reads or writes
-non-public data must call it first.** The helper to copy, the App wiring
-(`convex.setAuth(kortixAppBackendToken("main"))`), group and role rules, and
-providers for people who are not Kortix members:
-[references/sign-in.md](references/sign-in.md).
+projectId }`. Anonymous, outside the group, or signed in through another
+provider throws `KortixMemberError`. **The backend URL is public: every public
+function that reads or writes non-public data must call it first.**
 
-## Wire an App to the backend
+`requireKortixMember` comes from `@kortix/sdk`. It is newer than the npm
+release 0.13.52: check with `npm view @kortix/sdk version` and the test in
+sign-in.md, which also gives the fallback until the release is on npm.
 
-The `url` is public, not secret. A static or SPA frontend reads it at build
-time: put `VITE_CONVEX_URL=<url>` (Vite) or `NEXT_PUBLIC_CONVEX_URL=<url>`
-(Next.js) in the App's committed `.env.production`, build, and deploy the built
-directory with kortix-apps. A server-rendered App reads `CONVEX_URL` at runtime
-from the App's `env` in `kortix.yaml`. The App sends a sign-in token with
-`convex.setAuth(kortixAppBackendToken("main"))` from `@kortix/sdk`
-(references/sign-in.md). The full
-recipe is kortix-internal-apps.
+sign-in.md is the one place for the details: the App wiring
+(`convex.setAuth(kortixAppBackendToken("main"))`, the build-time backend URL),
+who gets a token, groups and roles, troubleshooting, and Convex Auth for
+customers who are not Kortix members. kortix-internal-apps is the full recipe
+for an App on a backend.
 
-## Read and write data as an agent
+## Call Kortix and connectors from the backend
 
-```sh
-eval "$(kortix backends env main)"            # admin credentials into this shell only
-cd backends/main
-npx convex data                               # tables
-npx convex data tasks --limit 20              # rows
-npx convex run tasks:create '{"title":"…"}'   # run a function as admin
-npx convex env set SOME_API_BASE https://…    # deployment env var for actions
-npx convex logs                               # function logs
-kortix backends logs main --lines 200         # process log: crashes, restarts
-npx convex export --path /tmp/backup.zip      # data + files
-```
+A Convex action can call Kortix connectors (Gmail, a CRM, any connected
+system) through `@kortix/sdk`. Prefer a connector over a raw provider API key:
+the connector gateway applies the project's policy, approvals and audit.
 
-An admin call has no identity: `ctx.auth.getUserIdentity()` is `null`, so a
-function that requires sign-in rejects it. Act as a member in one of two ways:
+- **The credential is a human step.** Kortix does not mint a credential for
+  backend code. Ask the user to create a service account and grant it a role:
+  `kortix tokens service-accounts new <name>` (the bearer prints once) and
+  `kortix access grant --service-account <id> --role member --project <id>`.
+  An agent session cannot do this for them. They store the bearer with
+  `npx convex env set KORTIX_API_KEY` (value on stdin). Build the rest while
+  you wait.
+- Set `KORTIX_API_URL` (the Kortix API with `/v1`, `https://api.kortix.com/v1`
+  on Kortix cloud) and `KORTIX_PROJECT_ID` with `npx convex env set`. A
+  `"use node"` action then runs `createKortix({ backendUrl:
+  process.env.KORTIX_API_URL!, getToken: async () => process.env.KORTIX_API_KEY! })`
+  and calls `.project(process.env.KORTIX_PROJECT_ID!).connectors.call(...)`.
+- A service account reaches only the project's shared connector accounts,
+  never a member's private account.
+- To start an agent from the backend, POST the project's webhook trigger from
+  an action, with its secret in a Convex env var (kortix-system, scheduling).
 
-- `npx convex run --identity '{"subject":"<user-id>","email":"a@example.com"}' tasks:create '{…}'`
-  — admin only, fastest for testing your auth rules.
-- `kortix backends token main` — a real token naming you; send it with a Convex
-  client (`client.setAuth(token)`), exactly as an App does.
+Recipes and error answers: kortix-connectors.
 
- Never run `npx convex dev` or `npx convex dashboard`
-against a Kortix backend. The user's dashboard is already in Kortix: hand them
-the link from `kortix backends dashboard <name>`.
+## Database and durability
+
+Convex itself is the database: documents, indexes, file storage and the
+scheduler all live in the backend. Do not add a second database next to it.
+
+- **Storage:** Convex keeps its data in SQLite on the machine disk. Kortix
+  measured SQLite against Postgres 17 in the same 2 vCPU machine: the same
+  throughput and median latency (Convex's own CPU is the limit), 3.6× less
+  disk for the same documents, and a lower realtime push p99 (0.25 s against
+  1.45 s). SQLite is the default and the only option today.
+- **External Postgres** is a possible future opt-in. It does not scale a
+  backend out: Convex still runs as one process on one machine. Scale up with
+  `kortix backends resize`.
+- **Writes:** Convex caps writes at about 4 MiB/s per backend
+  (`TooManyWrites`). Batch a bulk import and retry with backoff.
+- **What is safe:** a machine stop and start, a resize, and a crash of the
+  Convex process lose no acknowledged write (measured).
+- **What is not yet safe:** the machine disk has no file system journal
+  (kortix-ai/platinum#1450). A host crash or a hard reset of the machine can
+  lose the last acknowledged writes or corrupt the data directory.
+  - After a host loss, Kortix restores the machine from its last automatic
+    backup by itself: **up to 1 hour of writes is lost (RPO ≤ 60 min).**
+  - A corrupt data directory keeps Convex from starting. Kortix is alerted
+    after 3 failed health probes (15 minutes). Restore the newest snapshot
+    with the user's consent.
+
+  Tell the user this before they store data they cannot re-create, and keep
+  an export of such data (`npx convex export --include-file-storage`) on
+  their own schedule.
 
 ## Secrets and safety
 
@@ -219,8 +304,8 @@ the link from `kortix backends dashboard <name>`.
   again. Tell the user: every `.env.local` holding the old key needs the new one.
 - Sign-in tokens are 15-minute bearer tokens. Never commit or log them either.
 - A deployment env var set with `npx convex env set` is readable by anyone with
-  the admin key; put third-party credentials there only when an action needs
-  them.
+  the admin key. Put a third-party credential there only when an action needs
+  it, and set it from stdin so it stays out of the shell history.
 
 ## Size, backups and restore
 
@@ -243,19 +328,24 @@ kortix backends restore main <snapshot-id> --yes            # roll back; later c
 - **Restore:** rolls the running backend back in place, in seconds. Every
   change after the snapshot is gone, so confirm with the user first.
 - Limits: 1–16 vCPU, 1–32 GB memory, 10–100 GB disk (disk can only grow).
-- For portable copies outside Kortix, `npx convex export` (data and files).
+- For portable copies outside Kortix:
+  `npx convex export --path <file>.zip --include-file-storage`. Without
+  `--include-file-storage` the export has no files.
 - Kortix probes every backend every 5 minutes, starts a stopped machine, and
   restores a lost one from its last automatic backup by itself (data since that
   backup is lost). `operation: recovering` shows while it does.
 
-## Limits
+## Cost and limits
 
-- Up to 3 backends per project; one machine each (single node: scale up with
-  resize, not out); always on; not metered while experimental.
-- Data is SQLite on the machine disk, backed up with the disk. Writes are capped
-  by Convex at about 4 MiB/s.
-- No preview deployments and no AI gateway for `@convex-dev/agent` (call a
-  model provider from an action).
+- A backend is billed like a sandbox: reserved CPU, memory and disk × the time
+  the machine runs. The default size costs about $59 for a 30-day month at list
+  price. It is always on: it never idles to a stop. Delete a backend nobody
+  uses.
+- Up to 3 backends per project and 10 per account; one machine each (scale up
+  with resize, not out).
+- The backend URL is the machine's provider URL. It does not change while the
+  backend lives. There is no stable Kortix hostname and no upgrade in place: a
+  backend keeps the Convex image it was created with.
 - `npx convex export` covers data and files, not environment variables or
   pending scheduled jobs. Keep env var names (not values) in the repo.
 - `kortix backends delete` destroys all data. Export first when it matters.

@@ -40,7 +40,7 @@ is `available` only when `PLATINUM_API_KEY` is set. See
 | Property | Value |
 |---|---|
 | Runtime | Self-hosted Convex, one instance per machine |
-| Storage | SQLite on the machine disk |
+| Storage | SQLite on the machine disk. See [Database and durability](#database-and-durability). |
 | Machine | One per backend. Default 1 vCPU, 1 GB memory, 10 GB disk; resizable to 16 vCPU, 32 GB, 100 GB. |
 | Uptime | Always on. The machine never idles to a stop. |
 | Billing | Reserved CPU, memory and disk × the time the machine runs. See [Billing](#billing). |
@@ -48,6 +48,26 @@ is `available` only when `PLATINUM_API_KEY` is set. See
 | Name | Lowercase letters, digits, and dashes. Starts with a letter. 63 characters at most. |
 
 Your data lives on the machine disk. Kortix backs it up with the machine disk.
+
+## Database and durability
+
+Convex is the database. Documents, indexes, file storage and the scheduler all
+live in the backend, with transactions, realtime queries and schema
+validation. A backend needs no second database.
+
+| Question | Answer |
+|---|---|
+| Where is the data? | Convex's SQLite files on the machine disk, next to the uploaded files. |
+| Why SQLite? | Kortix measured SQLite against Postgres 17 in the same 2 vCPU machine. Throughput and median latency were the same: Convex's own CPU use is the limit, not the database. SQLite used 3.6× less disk for the same 200,000 documents (476 MB against 1,705 MB), booted 0.85 s faster, and had a lower realtime push p99 (0.25 s against 1.45 s). |
+| Can I use Postgres? | Not today. An external Postgres is a possible future opt-in. It would not scale a backend out: Convex still runs as one process on one machine. Resize to scale up. |
+| How fast can it write? | Convex caps writes at about 4 MiB/s per backend and answers `TooManyWrites` above it. Batch bulk imports and retry with backoff. |
+| What loses no acknowledged write? | A machine stop and start, a resize, and a crash of the Convex process. Kortix measured each with writers running. |
+| What can lose data? | A host crash or a hard reset of the machine. The machine disk has no file system journal yet ([kortix-ai/platinum#1450](https://github.com/kortix-ai/platinum/issues/1450)), so the last acknowledged writes can be lost, or the data directory can be left unreadable. |
+| What is the recovery point? | After a host loss, Kortix restores the machine from its last automatic backup by itself. The backup runs every hour, so up to 1 hour of writes is lost (RPO ≤ 60 minutes). An unreadable data directory keeps Convex from starting; Kortix is alerted after 3 failed health probes (15 minutes), and you restore the newest snapshot. |
+
+Keep your own copy of data you cannot re-create:
+`npx convex export --path backup.zip --include-file-storage`. Without
+`--include-file-storage` the export holds no files.
 
 A backend has two public URLs:
 
@@ -247,6 +267,11 @@ Any other server verifies the same token with
 `verifyKortixMemberToken(token)`, which reads `KORTIX_AUTH_JWKS`,
 `KORTIX_AUTH_ISSUER` and `KORTIX_AUTH_AUDIENCE`.
 
+`requireKortixMember`, `readKortixMember` and `kortixAppBackendToken` need an
+`@kortix/sdk` release newer than 0.13.52. Check with
+`node -e "import('@kortix/sdk').then((m) => console.log(typeof m.requireKortixMember))"`:
+it prints `function` when the installed SDK has them.
+
 The issuer is a public URL on the Kortix API:
 `https://<api host>/v1/backends/<backend_id>`. Kortix fixes it when it
 creates the backend. Two public routes at that URL need no credential:
@@ -255,6 +280,13 @@ creates the backend. Two public routes at that URL need no credential:
 |---|---|
 | `GET <issuer>/.well-known/openid-configuration` | `issuer` and `jwks_uri` (OpenID Provider metadata for verifiers; no authorization endpoint) |
 | `GET <issuer>/jwks.json` | The backend's public ES256 key as a JSON Web Key Set |
+
+So a JOSE library or an API gateway finds the key from the token's `iss`
+alone, and `verifyKortixMemberToken` takes `KORTIX_AUTH_JWKS=<issuer>/jwks.json`
+in place of the inline value. A backend created before the issuer was a URL
+moves to its URL issuer when the Kortix API next starts. Its tokens from before
+the move get one 401, and Convex clients then fetch a new token. A server that
+copied the old `KORTIX_AUTH_ISSUER` must copy the new value from `auth_env`.
 
 Any viewer the App admits gets a token for any running backend of the App's
 project: `?backend=<name>` picks it, and Kortix does not bind an App to its
@@ -265,22 +297,161 @@ a `restricted` App lists who are not project members. Check `groups` or
 `roles` in every function that reads or writes data not meant for all of
 them.
 
-So a JOSE library or an API gateway finds the key from the token's `iss`
-alone, and `verifyKortixMemberToken` takes `KORTIX_AUTH_JWKS=<issuer>/jwks.json`
-in place of the inline value. A backend created before the issuer was a URL
-moves to its URL issuer when the Kortix API next starts. Its tokens from before
-the move get one 401, and Convex clients then fetch a new token. A server that
-copied the old `KORTIX_AUTH_ISSUER` must copy the new value from `auth_env`.
-For people who are not
-Kortix members, add a second auth provider (Convex Auth, Clerk, WorkOS) next
-to the Kortix one.
+## Access from outside
+
+The backend URL is public. Every path below works from anywhere: a script, a
+service, CI, or your own server. Each one sends either a member token (the
+functions see a Kortix member) or the admin key (no identity, full control).
+In the examples, `CONVEX_URL` is the backend's `url` and `CONVEX_SITE_URL`
+its `site_url` (`kortix backends get main --json`).
+
+**1. Get a member token.** It lasts 15 minutes and names the caller, with
+their groups and role.
+
+```bash
+TOKEN=$(kortix backends token main)
+```
+
+```ts
+import { createKortix } from "@kortix/sdk";
+
+const kortix = createKortix({
+  backendUrl: "https://api.kortix.com/v1",
+  getToken: async () => process.env.KORTIX_TOKEN!,   // a personal access token
+});
+const { token } = await kortix.project(projectId).backends.token(backendId);
+```
+
+**2. Call a function over HTTP.** `POST <url>/api/query`, `/api/mutation` or
+`/api/action`. The answer is `{"status":"success","value":…}` or
+`{"status":"error","errorMessage":…}`.
+
+```bash
+curl -s "$CONVEX_URL/api/query" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"path":"tasks:list","args":{},"format":"json"}'
+```
+
+**3. Use the Convex client from Node or Bun.** `ConvexHttpClient` takes the
+token as a string. `ConvexClient` (live subscriptions) takes a function and
+asks it again before the token expires.
+
+```ts
+import { ConvexHttpClient, ConvexClient } from "convex/browser";
+
+const http = new ConvexHttpClient(process.env.CONVEX_URL!);
+http.setAuth(token);
+const tasks = await http.query("tasks:list" as any, {});
+
+const live = new ConvexClient(process.env.CONVEX_URL!);
+live.setAuth(async () => (await kortix.project(projectId).backends.token(backendId)).token);
+live.onUpdate("tasks:list" as any, {}, (rows) => console.log(rows.length));
+```
+
+**4. Use the Python client.**
+
+```python
+from convex import ConvexClient  # pip install convex
+
+client = ConvexClient(convex_url)
+client.set_auth(token)
+print(client.query("tasks:list"))
+```
+
+**5. Call an HTTP action.** Routes in `convex/http.ts` answer on `site_url`.
+They are public: authenticate inside the handler.
+
+```bash
+curl -s "$CONVEX_SITE_URL/webhooks/crm" -H "Authorization: Bearer $TOKEN" -d '{}'
+```
+
+**6. Verify the token on your own server.** Set the three public
+`KORTIX_AUTH_*` values from `auth_env` (or `kortix backends connect main`),
+then:
+
+```ts
+import { verifyKortixMemberToken } from "@kortix/sdk";
+
+const member = await verifyKortixMemberToken(bearer);   // checks signature, issuer, audience, expiry
+```
+
+**7. Act as admin.** The admin key bypasses sign-in and runs any function,
+including internal ones. Use it for tooling, never in an App or a browser.
+
+```bash
+eval "$(kortix backends env main)"     # CONVEX_SELF_HOSTED_URL, CONVEX_SELF_HOSTED_ADMIN_KEY
+npx convex run tasks:list '{}'
+npx convex data tasks --limit 20
+npx convex export --path backup.zip --include-file-storage
+npx convex mcp start                   # the Convex MCP server for an AI tool
+```
+
+`kortix backends connect main` prints paths 1, 2, 5 and 6 with the backend's
+real URLs filled in.
+
+### Convex Cloud features a backend does not have
+
+A Kortix backend runs the same open-source Convex backend as Convex Cloud.
+Convex documents these features for Convex Cloud only, or on a paid Convex
+plan:
+
+| Convex Cloud feature | On a Kortix backend |
+|---|---|
+| `npx convex dev`, deploy keys, preview deployments | `kortix backends deploy`; one deployment per backend |
+| dashboard.convex.dev, `npx convex dashboard` | The dashboard inside Kortix (`kortix backends dashboard`) |
+| `npx convex insights` (the CLI says it is for Convex Cloud only) | `kortix backends get` (health) and `npx convex logs` |
+| AI Gateway for models called from actions (Convex: unavailable when self-hosting) | Call the model provider from an action with your own key in an environment variable |
+| Custom domains (Convex Pro) | Not available: the URLs are fixed for the backend's life |
+| Log streams and exception reporting (Convex Pro) | `kortix backends logs`, `npx convex logs`; send errors from an action yourself |
+| Scheduled backups in the Convex dashboard (Convex Pro) | Kortix's hourly automatic backup and snapshots |
+| Streaming export to Fivetran (Convex Pro) | `npx convex export` |
+
+## Customers who are not Kortix members
+
+Kortix sign-in is for the project's own people and stays the primary
+provider. When an App also serves customers, add Convex Auth (password, magic
+link, OTP or OAuth) to the same backend as a second provider. Convex's CLI does
+not set Convex Auth up on a self-hosted backend; the manual setup works:
+
+1. `npm i @convex-dev/auth @auth/core@^0.41.1` in the backend.
+2. Generate an RS256 key pair (Convex's `generateKeys.mjs`) and set
+   `JWT_PRIVATE_KEY` and `JWKS` with `npx convex env set <NAME> --from-file <file>`,
+   and `SITE_URL` to the customer App's URL.
+3. Add `{ domain: process.env.CONVEX_SITE_URL, applicationID: "convex" }` to
+   `providers` in `convex/auth.config.ts`, after the Kortix provider.
+4. Add `convex/auth.ts` (`convexAuth({ providers: [Password] })`),
+   `auth.addHttpRoutes(http)` in `convex/http.ts`, and `...authTables` in the
+   schema.
+5. Tell the two kinds of user apart by the token issuer:
+
+```ts
+// Staff: only a token Kortix signed.
+const identity = await ctx.auth.getUserIdentity();
+if (identity?.issuer !== process.env.KORTIX_AUTH_ISSUER) throw new Error("Sign in with Kortix.");
+const member = requireKortixMember(identity);
+
+// Customers: only a token Convex Auth signed.
+if (identity?.issuer !== process.env.CONVEX_SITE_URL) throw new Error("Sign in to continue.");
+const customerId = await getAuthUserId(ctx);
+```
+
+`requireKortixMember` alone accepts any identity with a subject, a Convex
+Auth customer included. Check the issuer first in every staff function.
+Kortix verified this setup end to end on the backend's Convex image: a
+customer token is refused by staff functions, and a member token is refused
+by customer functions. The customer UI is a separate `public` App that uses
+`ConvexAuthProvider` from `@convex-dev/auth/react`.
 
 ## Agents
 
 Agents in Kortix sessions load the `kortix-backends` system skill before they
 write Convex code, and `kortix-internal-apps` when they build a complete app.
-Both tell the agent to install Convex's own agent rules and skills at runtime
-(`npx convex ai-files install`).
+The skill runs every backend task in six steps: install (`npm i convex`,
+`npx convex ai-files install`), connect (`kortix backends env`), discover
+(`npx convex function-spec`, `data`, `env list --names-only`), change
+(`kortix backends deploy`, `npx convex env set`, `run`, `import`), verify
+(logs and a real member token from `kortix backends token`), and hand over
+(`kortix backends dashboard`).
 
 ## Size, backups and restore
 
@@ -417,12 +588,15 @@ per hour at list price, about $59 for a 30-day month. Each charge is a
 - One machine per backend: it scales up (resize), not out.
 - `npx convex dashboard` does not work against a self-hosted backend. Use
   the dashboard in Kortix (`kortix backends dashboard <name>`).
-- Convex Auth needs manual setup. Custom JWT or OIDC authentication through
-  `auth.config.ts` works.
-- Convex cloud features are absent: preview deployments, the AI gateway for
-  `@convex-dev/agent`, and audit logs.
+- Convex Auth needs the manual setup above. Custom JWT or OIDC
+  authentication through `auth.config.ts` works.
+- Convex Cloud-only features are absent (see the table above).
 - A backend keeps the image it was created with. Image fixes (the log cap,
-  a newer Convex) reach new backends only.
+  a newer Convex) reach new backends only. There is no in-place upgrade.
+- The backend URL is the machine's provider URL, fixed for the backend's
+  life. There is no stable Kortix hostname for a backend.
+- Durability depends on a journaled machine disk that is not shipped yet. See
+  [Database and durability](#database-and-durability).
 - `npx convex export` covers data and files. It does not cover environment
   variables or pending scheduled jobs.
 

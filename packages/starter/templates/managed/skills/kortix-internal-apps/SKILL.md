@@ -52,21 +52,29 @@ apps/<app>/                    # Kortix App (kortix-apps)
   .env.production              # VITE_CONVEX_URL=<backend url> (public)
   src/convex.ts                # ConvexReactClient + setAuth
 memory/<app>.md                # what you built, URLs, how to redeploy
+.gitignore                     # **/node_modules and apps/*/dist: never commit them
 ```
+
+A repository over 32 MiB breaks every session (kortix-system, `<gotchas>`).
+Create `.gitignore` before the first `npm install`.
 
 ## Build it, in this order
 
 1. **Model the domain.** Turn the request into tables, fields, relations and
    the 5–10 actions people take. Write it down in `memory/<app>.md` first.
-2. **Backend scaffold.** `mkdir -p backends/main && cd backends/main && npm init -y && npm install convex && npx convex ai-files install`.
-   Read `convex/_generated/ai/guidelines.md`.
+2. **Backend scaffold.** Steps 1 and 2 of the six-step loop in
+   kortix-backends (install, connect). Read
+   `convex/_generated/ai/guidelines.md`.
 3. **Schema + sign-in.** `convex/schema.ts` with indexes for every filter,
    `convex/auth.config.ts` and `convex/lib/auth.ts` from kortix-backends
    (references/sign-in.md), built on `requireKortixMember` from `@kortix/sdk`
-   (`npm i @kortix/sdk` in the backend and the App). Store `me.userId` as
-   owner/author ids. Use Kortix groups (`{ groups: ["Finance"] }`) or roles
-   (`{ roles: ["owner", "admin"] }`) for who may do what; do not build a user
-   or role table the team already has in Kortix.
+   (`npm i @kortix/sdk` in the backend and the App). If the installed SDK
+   does not export it yet, use the fallback in sign-in.md, "SDK version".
+   Store `me.userId` as owner/author ids. Use Kortix roles
+   (`{ roles: ["owner", "admin"] }`) or Kortix groups (`{ groups: ["Finance"] }`)
+   for who may do what. Groups need the Enterprise plan: without it the
+   `groups` claim is empty and a group rule refuses everyone, so use roles.
+   Do not build a user or role table the team already has in Kortix.
 4. **Functions.** Every public query and mutation calls `requireMember(ctx)`
    (or `requireMember(ctx, { groups: [...] })`) first. Put multi-row changes (move a card, close a deal) in one mutation so
    they are atomic. Add an `internal` seed.
@@ -78,7 +86,8 @@ memory/<app>.md                # what you built, URLs, how to redeploy
    eval "$(kortix backends env main)" && cd backends/main
    npx convex run seed:run
    npx convex run <domain>:list '{}'     # must FAIL: no identity
-   npx convex run --identity '{"subject":"test-user","email":"test@example.com","name":"Test"}' <domain>:create '{…}'
+   ISS=$(npx convex env get KORTIX_AUTH_ISSUER)
+   npx convex run --identity "{\"subject\":\"test-user\",\"issuer\":\"$ISS\",\"name\":\"Test\"}" <domain>:create '{…}'
    ```
 6. **UI.** Vite + React + TypeScript (`npm create vite@latest apps/<app> -- --template react-ts`),
    `npm install convex`. Wire `src/convex.ts` exactly as kortix-backends
@@ -111,7 +120,21 @@ memory/<app>.md                # what you built, URLs, how to redeploy
    `--access project` lets every project member in. Use `restricted` with
    `--members/--groups` for a smaller audience. Never `public` for internal
    data: a public App has no signed-in member, so sign-in fails by design.
-9. **Commit** backend, App, `memory/<app>.md` on the session branch.
+9. **Integrations** (only when the app calls other systems: a CRM sync, a
+   Slack notice on approval). Call them from a backend action through Kortix
+   connectors, never with a raw API key: kortix-backends, "Call Kortix and
+   connectors from the backend". The service account it needs is a human
+   step: ask for it, and build everything else meanwhile.
+10. **Ship**, once every check in Verify below passed. Commit the backend, the App and `memory/<app>.md`, push the
+    session branch, and open a change request (kortix-system,
+    `<change-requests>`):
+    ```sh
+    git add backends apps memory .gitignore && git commit -m "feat: <app>"
+    git push origin HEAD
+    kortix cr open --title "<App name>: internal app" --description "Backend main + App <app>. URL: <app url>"
+    ```
+    The deployed App runs from your session's build; the CR is how the code
+    reaches `main` so the next session can change it. Never merge your own CR.
 
 ## Verify before you report (mandatory)
 
@@ -123,21 +146,17 @@ Report nothing as done until each check passed. Paste the evidence.
    ```sh
    kortix apps access-link <app> --json      # → access_session.url (5 min)
    ```
-   Open `access_session.url` with `agent-browser` (load its skill). Drive the
+   `agent-browser` is installed in the sandbox: load its guide with
+   `agent-browser skills get core`. Open `access_session.url` with it. Drive the
    main flow through the UI: create, edit, move or close, delete. Assert the
    visible result after each step, and that the signed-in name appears.
 3. **Realtime:** open a second `agent-browser` session on a fresh access link,
    change something in the first, and assert the second shows it without a
    reload.
-4. **Report** the App URL (`kortix apps show <app> --json` → `url`), the flows you ran,
-   and anything you could not verify.
-
-If the App hostname does not resolve from your sandbox (a developer's local
-Kortix stack serves Apps on `*.apps.localhost`), serve the built `dist/` from a
-tiny local server that answers `GET /_kortix/backend-token` with
-`kortix backends token <name> --json`, and run steps 2–3 against it: that is the
-same build, backend, Kortix token and realtime path. Say in the report that you
-verified this way, and give the user the App URL and the flows to click.
+4. **Report** the App URL (`kortix apps show <app> --json` → `url`), the CR
+   link, the flows you ran, and anything you could not verify. If the App URL
+   does not resolve from your sandbox, say so in the report and give the user
+   the flows to click.
 
 ## Redeploy after a change
 
@@ -153,3 +172,41 @@ cd apps/<app> && npm run build && cd - && kortix apps deploy ./apps/<app>/dist -
 
 A schema change that existing rows violate fails the deploy: add new fields as
 `v.optional(...)` and backfill (kortix-backends references/convex-patterns.md).
+
+## Operate
+
+**Cost.** The backend is one always-on machine, billed like a sandbox:
+reserved CPU, memory and disk × wall-clock time, about $59 for a 30-day month
+at the default size (kortix-backends, "Cost and limits"). The App's cost is
+in kortix-apps. Tell the user both before you hand over.
+
+**Rollback.** Keep every backend change compatible with the App build that
+is live now: add before you remove (a new optional field, then the UI that
+uses it, then the cleanup). Then each half rolls back alone:
+
+| What broke | Undo |
+| --- | --- |
+| The UI | `kortix apps rollback <app> <deployment-id>` (ids in `kortix apps show <app> --json`) |
+| Backend code | `git checkout <good-sha> -- backends/main/convex`, then `kortix backends deploy main --dir backends/main`, then commit |
+| Data | `kortix backends restore main <snapshot-id> --yes`, only with the user's consent: it drops every later change |
+
+**Observe.**
+
+| Question | Command |
+| --- | --- |
+| Did the App deploy? | `kortix apps show <app> --json` (deployments and their events) |
+| Do functions fail? | `timeout 20 npx convex logs --history 100` |
+| Does Convex crash or restart? | `kortix backends logs main --lines 200`, `kortix backends get main` (health) |
+| Does sign-in fail? | kortix-backends references/sign-in.md, "Troubleshoot sign-in" |
+| What does the data look like? | `kortix backends dashboard main` |
+
+**An agent calls the App's API.** This applies only to an App with its own
+server API (a Dockerfile App). A backend-only internal app does not need it:
+an agent uses `npx convex run` or `kortix backends token`. Register the App's
+API as a project connector whose base URL is the App URL (kortix-connectors,
+`<adding-connectors>`), and call it with `kortix connectors call`. For an App
+of the same project on `https`, the connector gateway adds a 60-second App
+assertion. The App gate verifies it, resolves it to the session's own token,
+and applies the App's access policy to that session. Neither the agent nor
+the App handles a Kortix credential. Never paste a personal token into the App
+instead.

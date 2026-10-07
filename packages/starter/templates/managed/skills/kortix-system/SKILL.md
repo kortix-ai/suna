@@ -1,6 +1,6 @@
 ---
 name: kortix-system
-description: "Canonical reference for Kortix projects, Apps, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, system skills, and the two session harnesses, pi and OpenCode. Covers `kortix.yaml` versions 1 and 2, serverless App deployments, harness configuration (`harnesses/pi/`, `harnesses/opencode/`), session identity, credential boundaries, and the complete pi and OpenCode references. Load when the user asks how Kortix works, what Kortix can do, how to deploy an App, how an agent discovers platform instructions, how to customize or configure this project's agents (create or fix an agent, subagent, skill, tool, plugin, extension, pi package, command, MCP server, model or permission rule; edit `opencode.jsonc`), how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, or how to schedule and automate work."
+description: "Canonical reference for Kortix projects, Apps, Kortix Backends (Convex) and internal business apps, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, system skills, and the two session harnesses, pi and OpenCode. Covers `kortix.yaml` versions 1 and 2, serverless App deployments, harness configuration (`harnesses/pi/`, `harnesses/opencode/`), session identity, credential boundaries, and the complete pi and OpenCode references. Load when the user asks how Kortix works, what Kortix can do, how to deploy an App, how an agent discovers platform instructions, how to customize or configure this project's agents (create or fix an agent, subagent, skill, tool, plugin, extension, pi package, command, MCP server, model or permission rule; edit `opencode.jsonc`), how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, or how to schedule and automate work."
 ---
 
 <skill name="kortix-system">
@@ -169,6 +169,8 @@ Load this skill when the user asks any of:
 - "How does an agent retrieve the current Kortix system instructions?"
 - "How do I customize the sandbox image?"
 - "How do I deploy a website, Dockerfile, or OCI image?" / "How do Kortix Apps work?"
+- "I need a database / a backend / an API for my app" / "Build an internal
+  tool or app the team logs in to" (route through `<backends>`)
 - "How do I create an agent, a subagent or a reusable skill?"
 - "How do I register an MCP server?"
 - "How do I tighten permissions for the build agent?"
@@ -401,6 +403,21 @@ user wants a complete app (backend + UI + sign-in) built, deployed and
 verified. When it is off, do not load either skill and do not stop: build with
 the project's own storage and code, and tell the user once that Kortix can
 enable Backends.
+
+**Build a product: which skill owns it.** Check the flags first:
+`kortix projects info --json` → `experimental.apps` and
+`experimental.backends`.
+
+| The user wants | Load | Runs on |
+| --- | --- | --- |
+| A website or UI with no stored data | `kortix-apps` | An App |
+| An app with data, login or realtime | `kortix-internal-apps` (+ `kortix-backends`, `kortix-apps`) | A backend (one always-on machine, billed like a sandbox) + an App |
+| A database or API only | `kortix-backends` | A backend |
+| A call to an external system from an App or a backend | `kortix-connectors` | The connector gateway |
+| Agent work on a schedule or an event | `<scheduling>` here, `references/scheduling.md` | A session per run |
+
+When `apps` or `backends` is off, the rows that need it fall back to the
+project's own web-app skills (`webapp`, `web-publishing-and-deployments`).
 </backends>
 
 <marketplace>

@@ -107,15 +107,23 @@ export const move = mutation({
 
 ## Actions (external APIs)
 
+When Kortix has a connector for the system (Gmail, a CRM, an OpenAPI or MCP
+server), call it through `@kortix/sdk` instead of a raw API key: the gateway
+applies the project's policy, approvals and audit (SKILL.md, "Call Kortix and
+connectors from the backend"). Use a raw `fetch` with a key only for an API
+that has no connector:
+
 ```ts
 "use node"; // only when you need Node APIs or npm packages that need Node
 import { action } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import { requireMember } from "./lib/auth";
 
 export const enrich = action({
   args: { companyId: v.id("companies") },
   handler: async (ctx, { companyId }) => {
+    await requireMember(ctx);   // a public action is callable by anyone with the URL
     const company = await ctx.runQuery(internal.companies.get, { companyId });
     const res = await fetch(`${process.env.ENRICH_API_BASE}/lookup?domain=${company.domain}`, {
       headers: { authorization: `Bearer ${process.env.ENRICH_API_KEY}` },
@@ -125,9 +133,9 @@ export const enrich = action({
 });
 ```
 
-Set the variables with `npx convex env set NAME value` (after
-`eval "$(kortix backends env main)"`). Record the names, never the values, in
-the backend's README.
+Set the variables with `npx convex env set NAME` and the value on stdin
+(after `eval "$(kortix backends env main)"`). Record the names, never the
+values, in the backend's README.
 
 ## HTTP actions (webhooks, public APIs)
 
@@ -175,7 +183,10 @@ export const attach = mutation({
   args: { taskId: v.id("tasks"), storageId: v.id("_storage") },
   handler: async (ctx, a) => { await requireMember(ctx); await ctx.db.patch(a.taskId, { attachment: a.storageId }); },
 });
-export const fileUrl = query({ args: { storageId: v.id("_storage") }, handler: async (ctx, a) => ctx.storage.getUrl(a.storageId) });
+export const fileUrl = query({
+  args: { storageId: v.id("_storage") },
+  handler: async (ctx, a) => { await requireMember(ctx); return await ctx.storage.getUrl(a.storageId); },
+});
 ```
 
 Client: call `uploadUrl`, `POST` the file body to it, read `{ storageId }` from
