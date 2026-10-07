@@ -1,5 +1,5 @@
 {
-  "source_hash": "bcf438fed72d65919d8215fdfa94c6dff66fd4c7a59ba25df3cfb7d62936955e",
+  "source_hash": "c2495cb9df8f73806cf993a49eed31889393153bacf162f529504e0ed014227e",
   "diff_files": [
     "apps/api/src/__tests__/e2e-connector-faces.test.ts",
     "apps/cli/src/__tests__/connector-gateway-pin.test.ts",
@@ -25,12 +25,12 @@
     "scripts/hermetic-test-env.sh"
   ],
   "diff_hash": "ff51663225a25651ec767742f9e6365f12e29d1095f2f48457de94f3abfa2cbd",
-  "head": "57b1f1f76192e400f4074865aec34a22368aa156",
+  "head": "91f104084c397481e2c6a0d7dde2d93babd3f48b",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-07T13:51:12.833Z"
+  "at": "2026-10-07T14:08:25.575Z"
 }
