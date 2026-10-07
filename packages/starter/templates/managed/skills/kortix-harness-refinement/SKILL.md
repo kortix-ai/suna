@@ -15,7 +15,7 @@ here. It has four components, all in git:
 | **Sub-agents** | `agents/*.md` | Specialist agents the orchestrator invokes |
 | **Skills** | `skills/<name>/SKILL.md` | Reusable routines: text heuristics and guides |
 | **Tools** | `harnesses/opencode/tools/*.ts` (OpenCode sessions), `harnesses/pi/extensions/*.ts` (pi sessions) | Executable code: wrappers, scripts, automations |
-| **Memory** | `memory/` | Persistent facts, strategies, observations |
+| **Memory** | `memory/<repo>/` (memory repos) | Persistent facts, strategies, observations |
 
 Projects created before 2026-09 keep agents, skills and tools under
 `.kortix/opencode/` and memory under `.kortix/memory/`. Both layouts work.
@@ -27,7 +27,8 @@ session runs. Prompts, sub-agents, skills and memory serve both.
 
 **Refinement** means: read your recent trajectory, find where the harness
 failed you, and fix the harness — not just the immediate task. A memory
-edit is readable on your next turn: memory is plain files. An edit to an
+edit is readable on your next turn and is pushed at once: memory lives in
+its own repos, outside any change request. An edit to an
 agent prompt, skill, or tool reaches sessions once its change request
 merges; a running session loads it with `kortix sessions reload <session id>`.
 You do not restart, and the value compounds over the life of the project.
@@ -89,10 +90,13 @@ tool the trajectory shows raising exceptions. Prefer editing an existing
 skill over creating a near-duplicate. Keep skills one directory level
 deep under `skills/` (nested SKILL.md files register as phantom entries).
 
-**Pass 4 — Memory (ΔM).** Follow the `kortix-memory` skill's rubric with
-the `memory` tool: fill gaps the trajectory exposed, update stale
-entries, demote or delete entries about areas the project has moved past.
-Keep `MEMORY.md` in sync.
+**Pass 4 — Memory (ΔM), the dreaming pass.** Follow the `kortix-memory`
+skill with the `memory` tool: add patterns the trajectory exposed, merge
+duplicates, remove outdated entries, and check sources to resolve
+contradictions. Keep each `MEMORY.md` index in sync. Every memory write is
+committed and pushed straight to its memory repo; memory never goes into
+the harness change request. (A session without memory repos keeps memory
+in the project's `memory/` folder, which does go through the CR.)
 
 Scope discipline: fix what the trajectory shows. Do not speculatively
 rewrite components with no observed failure. Most refinement runs should

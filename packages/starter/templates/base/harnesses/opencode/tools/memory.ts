@@ -4,17 +4,17 @@
  * Same six commands (view / create / str_replace / insert / delete /
  * rename), the same return strings the model is trained to read, and the
  * same security model as the official `BetaLocalFilesystemMemoryTool`
- * reference backend — but rooted at the project's real `memory/`
- * folder instead of a virtual `/memories` mount.
+ * reference backend.
  *
- * Because every write is an ordinary file change under `memory/`,
- * memory edits flow through the normal Kortix change-request pipeline
- * (and the `harness-reflector` agent) exactly like code.
- *
- * Paths are repo-relative and MUST live under `memory`
- * (e.g. `memory/overview.md`). Nothing is auto-injected: the agent
- * rules + this tool's description carry the memory protocol — `view` your
- * memory before starting a task, and record durable progress as you go.
+ * Two homes for `memory/` paths:
+ *  - Memory repos. When the Kortix daemon cloned the session's memory repos
+ *    (git repos that follow the Agent Memory Repo spec) under `~/memory/`, it
+ *    leaves `~/memory/.repos.json`. Paths are then `memory/<repo>/…`, and every
+ *    write is committed and pushed at once: no change request. A push that
+ *    loses a race is rebased and retried; a real conflict comes back as an
+ *    error with this session's diff, and the remote version stays on disk.
+ *  - Otherwise, the project's own `memory/` folder, whose edits land on `main`
+ *    through the normal change-request flow.
  *
  * Security (ported verbatim from the hardened SDK source, post-CVE):
  *  - path boundary check uses a trailing separator so a sibling dir like
@@ -30,6 +30,9 @@ import { tool } from "./lib/tool";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
 
 /** Repo-relative root every memory path must live under. */
 const MEMORY_PREFIX = "memory";
@@ -374,14 +377,14 @@ async function rename(oldPath: string, newPath: string, dir: string): Promise<st
 
 export default tool({
   description:
-    "Persistent project memory — read, write, and curate the project brain in `memory/`. " +
-    "This is the canonical way to work with memory; use it instead of the generic read/edit/write tools for anything under `memory/`. " +
-    "Memory persists across sessions and is shared with the whole team via the repo, so write durable facts here. " +
-    "ALWAYS `view` `memory` before starting a task to recover prior context, and record durable progress as you go — your context window may reset at any time.\n\n" +
-    "Paths are repo-relative and MUST start with `memory` (e.g. `memory/overview.md`). " +
-    "Keep memory coherent and organized: prefer editing existing files, rename or delete stale ones, and don't create new files unless a topic deserves its own page. " +
-    "Always keep `memory/MEMORY.md` (the index) in sync — one line per sub-file. " +
-    "Never store secrets, tokens, or PII. Edits land on `main` through the normal change-request flow.\n\n" +
+    "Persistent memory: read, write, and curate what this project and its people know, in `memory/`. " +
+    "Use it instead of the generic read/edit/write tools for anything under `memory/`. " +
+    "When the session has memory repos (listed in your instructions), `memory/company/` is the company memory everyone in the project shares and `memory/<user>/` is the personal memory of the user it names; " +
+    "every write is committed and pushed at once, so other sessions see it, and a write that collides with another session comes back as an error with both versions to reconcile. " +
+    "Otherwise `memory/` is a folder of the project repo and edits land on `main` through a change request.\n\n" +
+    "Each repo has a `MEMORY.md` index that is loaded at session start; keep it short and link topic files from its `## Index` with `[[path]]`. " +
+    "Entries are one-line bullets ending in `[source: <this session link>; added: YYYY-MM-DD]`. Update or remove stale entries instead of adding contradicting ones. " +
+    "Write each fact to the repo of whoever it belongs to. Never store secrets, tokens, or credentials.\n\n" +
     "Commands: `view` (dir listing or file with line numbers; optional view_range), `create` (new file), " +
     "`str_replace` (replace a unique snippet), `insert` (insert at a line), `delete` (remove file/dir), `rename` (move file/dir).",
   args: {
@@ -392,7 +395,7 @@ export default tool({
       .string()
       .optional()
       .describe(
-        "Repo-relative path under `memory` (e.g. `memory/overview.md`). Required for view, create, str_replace, insert, delete.",
+        "Path under `memory` (e.g. `memory/company/MEMORY.md`, or `memory/overview.md` without memory repos). Required for view, create, str_replace, insert, delete.",
       ),
     view_range: tool.schema
       .array(tool.schema.number())
@@ -417,38 +420,140 @@ export default tool({
   },
 
   async execute(args, context) {
-    const dir = context.directory;
-    try {
-      switch (args.command) {
-        case "view":
-          if (!args.path) return "Error: `path` is required for view.";
-          return await view(args.path, args.view_range, dir);
-        case "create":
-          if (!args.path) return "Error: `path` is required for create.";
-          if (args.file_text === undefined) return "Error: `file_text` is required for create.";
-          return await create(args.path, args.file_text, dir);
-        case "str_replace":
-          if (!args.path) return "Error: `path` is required for str_replace.";
-          if (args.old_str === undefined) return "Error: `old_str` is required for str_replace.";
-          if (args.new_str === undefined) return "Error: `new_str` is required for str_replace.";
-          return await strReplace(args.path, args.old_str, args.new_str, dir);
-        case "insert":
-          if (!args.path) return "Error: `path` is required for insert.";
-          if (args.insert_line === undefined) return "Error: `insert_line` is required for insert.";
-          if (args.insert_text === undefined) return "Error: `insert_text` is required for insert.";
-          return await insert(args.path, args.insert_line, args.insert_text, dir);
-        case "delete":
-          if (!args.path) return "Error: `path` is required for delete.";
-          return await del(args.path, dir);
-        case "rename":
-          if (!args.old_path) return "Error: `old_path` is required for rename.";
-          if (!args.new_path) return "Error: `new_path` is required for rename.";
-          return await rename(args.old_path, args.new_path, dir);
-        default:
-          return `Error: unknown command`;
-      }
-    } catch (err: any) {
-      return `Error: ${err?.message ?? String(err)}`;
-    }
+    const repos = readRepoManifest();
+    if (!repos) return runCommand(args, context.directory);
+    const paths = args.command === "rename" ? [args.old_path, args.new_path] : [args.path];
+    if (args.command === "view" || paths.some((p) => !p)) return runCommand(args, path.dirname(REPO_ROOT));
+    const refused = checkRepoWrite(repos, args.command, paths as string[]);
+    if (refused) return refused;
+    await refreshRepo(paths[0] as string);
+    const result = await runCommand(args, path.dirname(REPO_ROOT));
+    return syncRepoWrite(repos, args.command, paths as string[], result);
   },
 });
+
+async function runCommand(args: Record<string, any>, dir: string): Promise<string> {
+  try {
+    switch (args.command) {
+      case "view":
+        if (!args.path) return "Error: `path` is required for view.";
+        return await view(args.path, args.view_range, dir);
+      case "create":
+        if (!args.path) return "Error: `path` is required for create.";
+        if (args.file_text === undefined) return "Error: `file_text` is required for create.";
+        return await create(args.path, args.file_text, dir);
+      case "str_replace":
+        if (!args.path) return "Error: `path` is required for str_replace.";
+        if (args.old_str === undefined) return "Error: `old_str` is required for str_replace.";
+        if (args.new_str === undefined) return "Error: `new_str` is required for str_replace.";
+        return await strReplace(args.path, args.old_str, args.new_str, dir);
+      case "insert":
+        if (!args.path) return "Error: `path` is required for insert.";
+        if (args.insert_line === undefined) return "Error: `insert_line` is required for insert.";
+        if (args.insert_text === undefined) return "Error: `insert_text` is required for insert.";
+        return await insert(args.path, args.insert_line, args.insert_text, dir);
+      case "delete":
+        if (!args.path) return "Error: `path` is required for delete.";
+        return await del(args.path, dir);
+      case "rename":
+        if (!args.old_path) return "Error: `old_path` is required for rename.";
+        if (!args.new_path) return "Error: `new_path` is required for rename.";
+        return await rename(args.old_path, args.new_path, dir);
+      default:
+        return `Error: unknown command`;
+    }
+  } catch (err: any) {
+    return `Error: ${err?.message ?? String(err)}`;
+  }
+}
+
+// ── memory repos ──────────────────────────────────────────────────────────
+
+/** Where the Kortix daemon clones the session's memory repos. */
+const REPO_ROOT = path.join(homedir(), MEMORY_PREFIX);
+const MEMORY_BRANCH = "main";
+const WRITE_SUCCESS = /^(File created successfully|The memory file has been edited|The file .* has been edited\.|Successfully (deleted|renamed))/;
+
+type RepoManifest = { repos: Array<{ name: string; label: string }>; source: string | null };
+
+function readRepoManifest(): RepoManifest | null {
+  try {
+    const value = JSON.parse(readFileSync(path.join(REPO_ROOT, ".repos.json"), "utf8")) as RepoManifest;
+    return Array.isArray(value.repos) && value.repos.length > 0 ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function splitRepoPath(p: string): { repo: string; rel: string } | null {
+  const parts = p.replace(/^\.\//, "").split("/").filter(Boolean);
+  if (parts[0] !== MEMORY_PREFIX || parts.length < 2) return null;
+  return { repo: parts[1]!, rel: parts.slice(2).join("/") };
+}
+
+function checkRepoWrite(manifest: RepoManifest, command: string, paths: string[]): string | null {
+  const names = manifest.repos.map((r) => r.name);
+  const targets = paths.map(splitRepoPath);
+  for (const [i, t] of targets.entries()) {
+    if (!t || !names.includes(t.repo)) {
+      return `Error: memory paths start with one of ${names.map((n) => `memory/${n}/`).join(", ")}; got ${paths[i]}`;
+    }
+    if (!t.rel) return `Error: ${command} works on files inside memory/${t.repo}/, not on the repo itself`;
+  }
+  if (new Set(targets.map((t) => t!.repo)).size > 1) {
+    return "Error: rename cannot move files between memory repos; create the file in the other repo and delete this one";
+  }
+  return null;
+}
+
+function git(args: string[], cwd: string): Promise<{ code: number; out: string }> {
+  return new Promise((resolve) => {
+    execFile("git", args, { cwd, timeout: 60_000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } }, (err, stdout, stderr) => {
+      resolve({ code: err ? ((err as any).code ?? 1) : 0, out: `${stdout}${stderr}`.trim() });
+    });
+  });
+}
+
+/** Before a write, catch up with what other sessions pushed, so only truly simultaneous edits collide. */
+async function refreshRepo(p: string): Promise<void> {
+  const target = splitRepoPath(p);
+  if (!target) return;
+  const cwd = path.join(REPO_ROOT, target.repo);
+  if ((await git(["fetch", "--quiet", "origin"], cwd)).code !== 0) return;
+  if ((await git(["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${MEMORY_BRANCH}`], cwd)).code !== 0) return;
+  if ((await git(["rebase", "--quiet", `origin/${MEMORY_BRANCH}`], cwd)).code !== 0) await git(["rebase", "--abort"], cwd);
+}
+
+/** Commit the write and push it at once; rebase and retry when another session pushed first. */
+async function syncRepoWrite(manifest: RepoManifest, command: string, paths: string[], result: string): Promise<string> {
+  if (!WRITE_SUCCESS.test(result)) return result;
+  const targets = paths.map((p) => splitRepoPath(p)!);
+  const cwd = path.join(REPO_ROOT, targets[0]!.repo);
+  const rels = targets.map((t) => t.rel);
+  const message = `${command} ${rels.join(" -> ")}${manifest.source ? `\n\nsource: ${manifest.source}` : ""}`;
+  const added = await git(["add", "-A", "--", ...rels], cwd);
+  if (added.code !== 0) return `${result}\nWarning: the change is on disk but was not committed: ${added.out}`;
+  if ((await git(["diff", "--cached", "--quiet"], cwd)).code === 0) return result;
+  const committed = await git(["commit", "--quiet", "-m", message], cwd);
+  if (committed.code !== 0) return `${result}\nWarning: the change is on disk but was not committed: ${committed.out}`;
+  let lastError = "";
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const pushed = await git(["push", "--quiet", "origin", `HEAD:refs/heads/${MEMORY_BRANCH}`], cwd);
+    if (pushed.code === 0) return `${result}\nCommitted and pushed.`;
+    lastError = pushed.out;
+    if ((await git(["fetch", "--quiet", "origin"], cwd)).code !== 0) break;
+    const rebased = await git(["rebase", `origin/${MEMORY_BRANCH}`], cwd);
+    if (rebased.code !== 0) {
+      const conflicted = (await git(["diff", "--name-only", "--diff-filter=U"], cwd)).out;
+      await git(["rebase", "--abort"], cwd);
+      const mine = (await git(["show", "--format=", "HEAD"], cwd)).out;
+      await git(["reset", "--hard", `origin/${MEMORY_BRANCH}`], cwd);
+      return (
+        `Error: Not saved: another session changed ${conflicted.split("\n").join(", ") || "the same lines"} at the same time. ` +
+        "Their version is now on disk. Read the file again and re-apply your change on top of it. Your change was:\n" +
+        mine.slice(0, 4000)
+      );
+    }
+  }
+  return `${result}\nCommitted locally; the push failed and is retried with the next memory write (${lastError.slice(0, 300)}).`;
+}

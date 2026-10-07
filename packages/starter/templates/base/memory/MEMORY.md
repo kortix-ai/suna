@@ -1,16 +1,12 @@
-# Project Memory
+# Memory: {{projectName}}
 
-The **project brain** for `{{projectName}}` — durable, team-shared notes
-this project keeps about itself (purpose, connections, conventions,
-decisions, gotchas). It lives in git and is curated through change
-requests.
+<!--
+The project's memory index, in the Agent Memory Repo format. Every session
+loads it. Keep it short: one-line bullets every session needs, each ending in
+[source: <session link>; added: YYYY-MM-DD], then links to topic files.
+When this project gets its company memory repo, the first session imports
+this folder into it and that repo becomes the source of truth.
+Load the kortix-memory skill to work with memory.
+-->
 
-This file is the **index**. It starts mostly empty — agents read it
-first with the `memory` tool and add entries here (or split a topic into
-its own sub-file) as the project grows. The **harness-reflector** agent
-keeps it tidy on a schedule.
-
-To work with memory, load the **kortix-memory** skill.
-
-<!-- Add one line per sub-file as you create them, e.g.:
-- [connections.md](connections.md) — third parties, MCP servers, channels -->
+## Index

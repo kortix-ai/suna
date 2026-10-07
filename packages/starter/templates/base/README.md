@@ -10,7 +10,7 @@ A session of this project runs one agent harness: OpenCode (the default) or pi
 | `kortix.yaml` | Agents and what each may access, triggers, env. |
 | `agents/<name>.md` | One file per agent: frontmatter + prompt. `kortix.yaml` names it as `agents.<name>.file`. |
 | `skills/<name>/SKILL.md` | Skills. Every agent harness loads them. |
-| `memory/` | The project brain. Load the `kortix-memory` skill to work with it. |
+| `memory/` | The project's starting memory. The first session copies it into the project's company memory repo, which is the memory from then on. Load the `kortix-memory` skill to work with it. |
 | `harnesses/opencode/` | Files only OpenCode reads: `opencode.jsonc`, `plugins/`, `tools/`. |
 | `harnesses/pi/` | Files only pi reads: `extensions/`, `prompts/`, `settings.json`. Not created by default. |
 

@@ -39,21 +39,21 @@ only for a package that is not pre-installed; no venvs or
 
 ## Memory
 
-This project has a **memory** — a project brain at `memory/`,
-read and written with the `memory` tool. The protocol:
+You have **memory**: the company memory every session in this project
+shares, and the personal memory of the user you work with. Each
+`MEMORY.md` index is already in your context; your instructions list the
+repos and this session's link.
 
-- **`view` `memory` before starting a task.** Read the index
-  (`MEMORY.md`), then `view` the sub-files it points at that are
-  relevant. Nothing is auto-injected — if you don't look, you work
-  blind to what the project already knows.
-- **Record durable knowledge as you go** with the `memory` tool
-  (`create` / `str_replace` / `insert`) — conventions, connections,
-  decisions, gotchas. Assume interruption: your context can reset, and
-  only what's written to `memory/` survives.
-- Use the `memory` tool (not generic `read`/`edit`/`write`) for
-  anything under `memory/`. Load the `kortix-memory` skill
-  (`kortix skills get kortix-memory` if it is not on disk) for the
-  rubric on what's worth remembering and how edits reach `main`.
+- **Search before you start.** Follow the index links, or `view` and
+  `grep` under `memory/` for what the task needs.
+- **Record durable knowledge as you go** with the `memory` tool:
+  conventions, connections, decisions, gotchas, the user's preferences.
+  Each write is committed and pushed at once, so assume interruption and
+  write early.
+- **Write each fact to its owner's repo**: team knowledge to
+  `memory/company/`, one person's preferences to their personal repo.
+- Load the `kortix-memory` skill (`kortix skills get kortix-memory` if it
+  is not on disk) for the entry format and what's worth remembering.
 
 ## Working with Kortix
 

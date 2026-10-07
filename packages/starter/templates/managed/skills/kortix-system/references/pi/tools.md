@@ -16,7 +16,7 @@ any of them. A pi extension or a pi package can add more (`extensions.md`).
 | `web_search` | Searches the web (Tavily). Batch queries with `|||`. | `websearch` |
 | `image_search` | Searches for images (Serper). Batch queries with `|||`. | `websearch` |
 | `scrape_webpage` | Fetches pages as markdown (Firecrawl). Comma-separated URLs. | `webfetch` |
-| `memory` | Reads and writes the project brain in `memory/`. | `edit` (`read` for the `view` command) |
+| `memory` | Reads and writes memory under `memory/`: the memory repos, each write committed and pushed at once (or the project's `memory/` folder in a session without them). | `edit` (`read` for the `view` command) |
 | `show` | Shows a file, an image, a URL or inline content to the user. | `show` |
 
 `web_search`, `image_search`, `scrape_webpage`, `memory` and `show` have the
