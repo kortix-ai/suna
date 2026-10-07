@@ -1,0 +1,29 @@
+{
+  "source_hash": "4f71bc1bbb9759ebb83593563318b3fc76a556fd86a13a458bfcd88f272691e8",
+  "diff_files": [
+    "apps/api/src/__tests__/e2e-create-repo-starter.test.ts",
+    "apps/api/src/__tests__/e2e-project-session-contract.test.ts",
+    "apps/api/src/__tests__/e2e-projects-provision.test.ts",
+    "apps/api/src/__tests__/integration-archived-project-doors.test.ts",
+    "apps/api/src/__tests__/unit-channel-start-error.test.ts",
+    "apps/api/src/apps/public-proxy-runtime.ts",
+    "apps/api/src/channels/start-error.ts",
+    "apps/api/src/llm-gateway/gateway-keys.ts",
+    "apps/api/src/projects/session-lifecycle/continue-session.ts",
+    "apps/api/src/projects/session-lifecycle/create-session.ts",
+    "apps/api/src/shared/session-public-shares.ts",
+    "apps/web/src/components/iam/audit-http-routes.generated.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "tests/spec/end-to-end.md",
+    "tests/src/flows/projects.flow.ts"
+  ],
+  "diff_hash": "d154060ecac851ec5d276489be96cefea8e4d38b0a22d25c2b3a432a01a5bc50",
+  "head": "2cdd75dfd0e946b681a89074dd8fd7f2882cbd7d",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-07T12:42:43.933Z"
+}
