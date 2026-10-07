@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import type { OpencodeTurnError } from '@/harness/open-code/events';
-import { createTurnAutoResumer, isTransientTurnError } from '@/harness/open-code/turn-auto-resume';
+import {
+  createTurnAutoResumer,
+  interruptedSubagents,
+  isTransientTurnError,
+  type MessageRows,
+} from '@/harness/open-code/turn-auto-resume';
 
 describe('isTransientTurnError', () => {
   test('the prod failure — OpenRouter mid-stream idle timeout (JSON-quoted message)', () => {
@@ -90,18 +95,25 @@ const IDLE_TIMEOUT: OpencodeTurnError = {
   message: '"Upstream idle timeout exceeded"',
 };
 
+interface LastMessageFixture {
+  role: string;
+  error?: boolean;
+  completed?: boolean;
+  parts?: unknown[];
+}
+
 interface Harness {
   resumer: ReturnType<typeof createTurnAutoResumer>;
   prompts: Array<{ url: string; body: unknown }>;
   sessionReads: number;
-  setLastMessage: (m: { role: string; error?: boolean; completed?: boolean } | null) => void;
+  setLastMessage: (m: LastMessageFixture | null) => void;
   setIsRoot: (v: boolean) => void;
   setRevertStaged: (v: boolean) => void;
   advance: (ms: number) => void;
 }
 
 function makeHarness(): Harness {
-  let lastMessage: { role: string; error?: boolean; completed?: boolean } | null = {
+  let lastMessage: LastMessageFixture | null = {
     role: 'assistant',
     error: true,
     completed: true,
@@ -119,7 +131,7 @@ function makeHarness(): Harness {
       return new Response('{}', { status: 200 });
     }
     if (url.includes('/message')) {
-      const rows = lastMessage
+      const rows: MessageRows = lastMessage
         ? [
             {
               info: {
@@ -127,6 +139,7 @@ function makeHarness(): Harness {
                 ...(lastMessage.error ? { error: { name: 'UnknownError' } } : {}),
                 time: lastMessage.completed ? { completed: clock } : {},
               },
+              ...(lastMessage.parts ? { parts: lastMessage.parts } : {}),
             },
           ]
         : [];
@@ -344,5 +357,213 @@ describe('createTurnAutoResumer', () => {
       expect(await resumer.maybeResume('ses_root', IDLE_TIMEOUT)).toBe(false);
       expect(h.prompts.length).toBe(0);
     });
+  });
+});
+
+// ── KRTX-1746: an interrupted subagent must be resumed, not re-dispatched ────
+//
+// The reporter's session: a task (subagent) call was in flight when the root
+// turn died of a transient provider error. The auto-resume re-prompted the
+// model with "re-run it if it did not complete" — so the model re-dispatched
+// the SAME prompt as a NEW subagent, and the failed child's work was lost.
+//
+// The shapes below are the runtime's own, read off opencode 1.18.23 in a
+// reproduction (mock provider, child requests failing): a failed task part
+// ends `status: 'error'` with `state.error` carrying `task_id: <childId>` and
+// `state.metadata` retained (`{parentSessionId, sessionId, model}`); a turn
+// cut while the task ran leaves the part `running` with the same metadata.
+
+/** The failed-dispatch shape, verbatim from the reproduction. */
+const FAILED_TASK_PART = {
+  type: 'tool',
+  tool: 'task',
+  callID: 'call_task_1',
+  state: {
+    status: 'error',
+    input: {
+      description: 'Report on the widget',
+      prompt: 'Write the quarterly report on the widget. TASK_MARKER_ALFA.',
+      subagent_type: 'general',
+    },
+    metadata: {
+      parentSessionId: 'ses_root',
+      sessionId: 'ses_ee95c107bffe49S04KWqZ5tjcc',
+      model: { providerID: 'mock', modelID: 'fail-model' },
+    },
+    error:
+      'Subagent failed (task_id: ses_ee95c107bffe49S04KWqZ5tjcc): This model does not support assistant message prefill. The conversation must end with a user message.',
+  },
+};
+
+describe('interruptedSubagents', () => {
+  test('the failed dispatch is read off the part exactly as the runtime wrote it', () => {
+    const found = interruptedSubagents([{ info: { role: 'assistant' }, parts: [FAILED_TASK_PART] }]);
+    expect(found).toHaveLength(1);
+    expect(found[0]?.taskId).toBe('ses_ee95c107bffe49S04KWqZ5tjcc');
+    expect(found[0]?.failed).toBe(true);
+    expect(found[0]?.description).toBe('Report on the widget');
+  });
+
+  test('the failure reason in state.error travels into the prompt note', () => {
+    const found = interruptedSubagents([{ info: { role: 'assistant' }, parts: [FAILED_TASK_PART] }]);
+    expect(found[0]?.error).toContain('assistant message prefill');
+  });
+
+  test('a turn cut mid-task resumes the still-running subagent (dangling dispatch)', () => {
+    const dangling = {
+      type: 'tool',
+      tool: 'task',
+      callID: 'call_task_2',
+      state: {
+        status: 'running',
+        input: { description: 'Sweep the logs', prompt: 'Sweep the logs.', subagent_type: 'general' },
+        metadata: { parentSessionId: 'ses_root', sessionId: 'ses_dangling9fffeDDq2ZEVfkmBA' },
+      },
+    };
+    const found = interruptedSubagents([{ info: { role: 'assistant' }, parts: [dangling] }]);
+    expect(found).toHaveLength(1);
+    expect(found[0]?.taskId).toBe('ses_dangling9fffeDDq2ZEVfkmBA');
+    expect(found[0]?.failed).toBe(false);
+  });
+
+  test('completed dispatches and non-task tools are never referenced', () => {
+    const completed = {
+      type: 'tool',
+      tool: 'task',
+      callID: 'call_task_3',
+      state: {
+        status: 'completed',
+        input: { description: 'Done already' },
+        output: 'All good.',
+        metadata: { parentSessionId: 'ses_root', sessionId: 'ses_finishedXXffeDDq2ZEVfkmB' },
+      },
+    };
+    const bashError = {
+      type: 'tool',
+      tool: 'bash',
+      callID: 'call_bash_1',
+      state: { status: 'error', input: { command: 'ls' }, metadata: { sessionId: 'ses_bogus1ffeDDq2ZEVfkmBA' }, error: 'boom' },
+    };
+    const ocTwin = {
+      type: 'tool',
+      tool: 'oc-task',
+      callID: 'call_oc_1',
+      state: {
+        status: 'error',
+        input: {},
+        metadata: { sessionId: 'ses_octwin9fffeDDq2ZEVfkmBA' },
+        error: 'Subagent failed (task_id: ses_octwin9fffeDDq2ZEVfkmBA): x',
+      },
+    };
+    expect(interruptedSubagents([{ info: { role: 'assistant' }, parts: [completed] }])).toHaveLength(0);
+    expect(interruptedSubagents([{ info: { role: 'assistant' }, parts: [bashError] }])).toHaveLength(0);
+    expect(interruptedSubagents([{ info: { role: 'assistant' }, parts: [ocTwin] }])).toHaveLength(0);
+    expect(interruptedSubagents([])).toHaveLength(0);
+    expect(interruptedSubagents([{ info: { role: 'user' }, parts: [FAILED_TASK_PART] }])).toHaveLength(0);
+  });
+
+  test('a child id named only in the error text still counts (metadata can lag)', () => {
+    const noMetadata = {
+      type: 'tool',
+      tool: 'task',
+      callID: 'call_task_4',
+      state: {
+        status: 'error',
+        input: { description: 'Err text only' },
+        error: 'Subagent failed (task_id: ses_errtext12ffeDDq2ZEVfkmBA): NoSession key',
+      },
+    };
+    const found = interruptedSubagents([{ info: { role: 'assistant' }, parts: [noMetadata] }]);
+    expect(found).toHaveLength(1);
+    expect(found[0]?.taskId).toBe('ses_errtext12ffeDDq2ZEVfkmBA');
+  });
+});
+
+describe('createTurnAutoResumer — interrupted subagent (KRTX-1746)', () => {
+  test('the resume prompt names the failed subagent and resumes it by task_id', async () => {
+    const h = makeHarness();
+    h.setLastMessage({
+      role: 'assistant',
+      error: true,
+      completed: true,
+      parts: [FAILED_TASK_PART],
+    });
+    expect(await h.resumer.maybeResume('ses_root', IDLE_TIMEOUT)).toBe(true);
+    expect(h.prompts.length).toBe(1);
+    const part = (h.prompts[0]?.body as { parts: Array<{ text: string }> }).parts[0];
+    expect(part?.text).toContain('ses_ee95c107bffe49S04KWqZ5tjcc');
+    expect(part?.text).toContain('task_id');
+    // The blind re-dispatch is named as the thing NOT to do.
+    expect(part?.text).toMatch(/not.*new subagent|instead of starting/i);
+    // The failure reason travels into the prompt.
+    expect(part?.text).toContain('assistant message prefill');
+  });
+
+  test('a turn cut mid-task resumes the dangling subagent by the same task_id', async () => {
+    const h = makeHarness();
+    h.setLastMessage({
+      role: 'assistant',
+      error: true,
+      completed: true,
+      parts: [
+        {
+          type: 'tool',
+          tool: 'task',
+          callID: 'call_task_2',
+          state: {
+            status: 'running',
+            input: { description: 'Sweep the logs' },
+            metadata: { parentSessionId: 'ses_root', sessionId: 'ses_dangling9fffeDDq2ZEVfkmBA' },
+          },
+        },
+      ],
+    });
+    expect(await h.resumer.maybeResume('ses_root', IDLE_TIMEOUT)).toBe(true);
+    const part = (h.prompts[0]?.body as { parts: Array<{ text: string }> }).parts[0];
+    expect(part?.text).toContain('ses_dangling9fffeDDq2ZEVfkmBA');
+    expect(part?.text).toContain('task_id');
+  });
+
+  test('a finished subagent changes nothing about the resume prompt', async () => {
+    const h = makeHarness();
+    h.setLastMessage({
+      role: 'assistant',
+      error: true,
+      completed: true,
+      parts: [
+        {
+          type: 'tool',
+          tool: 'task',
+          callID: 'call_task_3',
+          state: {
+            status: 'completed',
+            input: { description: 'Done already' },
+            output: 'All good.',
+            metadata: { parentSessionId: 'ses_root', sessionId: 'ses_finishedXXffeDDq2ZEVfkmB' },
+          },
+        },
+      ],
+    });
+    expect(await h.resumer.maybeResume('ses_root', IDLE_TIMEOUT)).toBe(true);
+    const part = (h.prompts[0]?.body as { parts: Array<{ text: string }> }).parts[0];
+    expect(part?.text).not.toContain('ses_finishedXXffeDDq2ZEVfkmB');
+    expect(part?.text).not.toContain('task_id');
+  });
+
+  test('a runtime-fault resume stays short — nothing ran, so no subagent paragraph', async () => {
+    const h = makeHarness();
+    h.setLastMessage({
+      role: 'assistant',
+      error: true,
+      completed: true,
+      parts: [FAILED_TASK_PART],
+    });
+    expect(
+      await h.resumer.maybeResume('ses_root', { name: 'MessageAbortedError', message: 'Aborted' }, {
+        cause: 'runtime-fault',
+      }),
+    ).toBe(true);
+    const part = (h.prompts[0]?.body as { parts: Array<{ text: string }> }).parts[0];
+    expect(part?.text).not.toContain('ses_ee95c107bffe49S04KWqZ5tjcc');
   });
 });
