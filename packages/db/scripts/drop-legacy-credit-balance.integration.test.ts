@@ -151,7 +151,7 @@ describe.skipIf(!dockerAvailable)(
 
     afterAll(() => {
       if (!containerStarted) return;
-      Bun.spawnSync(['docker', 'rm', '-f', container], { stdout: 'ignore', stderr: 'ignore' });
+      Bun.spawnSync(['docker', 'rm', '-f', '-v', container], { stdout: 'ignore', stderr: 'ignore' });
     });
 
     test('drops the table, its policies and add_credits, and a second apply is a no-op', () => {
