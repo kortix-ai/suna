@@ -127,6 +127,16 @@ injects its adapters.
 | `resolveConnectorStart({ start, finalize })` | The `/start` outcome rule: hosted url → popup, already connected → finalize once, otherwise the error message. |
 | `nextConnectorPollDelay(attempt, elapsedMs)` | The bounded poll schedule (3 s first, 5 s after, stops at 5 minutes). |
 
+## Connector data
+
+`useConnectorQuery(projectId, slug, action, args, { account, enabled, staleTime })`
+reads one connector action's output as a cached query. `error` is a
+`ConnectorCallError`: render a connect button from `error.connectUrl`, or an
+account picker from `error.availableAccounts`. Use it only for an action that
+reads; every fetch runs the action and writes an audit event. The output stays
+fresh for 30 s, focus never refetches, and only an upstream `429` or `503` is
+retried. See [Connectors from code](/docs/sdk/connectors#react).
+
 ## Start the open read early
 
 `prefetchSessionOpen(queryClient, projectId, sessionId)` starts the session-open

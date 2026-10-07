@@ -6,8 +6,9 @@ name: Mobile OTA
 #
 #   Deploy Prod succeeded  -> channel `production` (store builds), so the JS
 #                             ships with the API it was released with
-#   workflow_dispatch      -> the chosen channel: `dev` for dev-backend builds,
-#                             or a production hotfix or re-run
+#   workflow_dispatch      -> the chosen channel: `dev` ships the dev branch to
+#                             dev-backend builds; `production` ships the `prod`
+#                             branch, never unreleased dev code
 #
 # No push trigger: since 2026-10-03 a push to dev starts only cheap guards and
 # path-gated infra (tests/unit/sandbox-workflow.test.ts, Actions minutes).
@@ -66,7 +67,9 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          # A manual production run ships `prod`, the released code, not the branch
+          # the button ran from: store builds call the production API.
+          ref: ${{ github.event.workflow_run.head_sha || (inputs.channel == 'production' && 'prod') || github.sha }}
           # The script diffs against the commit of the channel's last update.
           fetch-depth: 0
 

@@ -43,10 +43,10 @@ describe('evaluate attestation', () => {
     expect(evaluate(att(), touching).code).toBe(0);
     expect(evaluate(skipped, other).code).toBe(0);
   });
-  it('packages may be skipped-sandbox-image (owner rule: the Kortix image breaks those tests at base); --strict never lets it pass', () => {
+  it('no skip exists for packages: any skipped-sandbox-image lane value is not green', () => {
     const a = att({ lanes: lanes({ packages: 'skipped-sandbox-image', 'db-suites': 'skipped-no-db' }) });
-    expect(evaluate(a, cur()).code).toBe(0);
-    expect(evaluate(a, cur(), REQUIRED_LANES, true).code).toBe(3);
+    expect(evaluate(a, cur()).code).toBe(1);
+    expect(evaluate(a, cur()).reason).toContain('packages');
     expect(evaluate(att({ lanes: lanes({ core: 'skipped-sandbox-image' }) }), cur()).code).toBe(1);
     expect(evaluate(att({ lanes: lanes({ 'db-suites': 'skipped-sandbox-image' }) }), cur()).code).toBe(1);
   });

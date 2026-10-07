@@ -1,6 +1,6 @@
 import type { TriggerList } from '@kortix/api-contract';
 import { connectors, projectTriggerRuntime } from '@kortix/db';
-import { formatDurationSeconds } from '@kortix/manifest-schema';
+import { cronIntervalError, formatDurationSeconds } from '@kortix/manifest-schema';
 import { and, eq, inArray } from 'drizzle-orm';
 import { config } from '../../config';
 import { db } from '../../shared/db';
@@ -107,6 +107,8 @@ export async function loadTriggersForResponse(
       last_status: runtimeBySlug.get(spec.slug)?.lastStatus ?? null,
       last_error: runtimeBySlug.get(spec.slug)?.lastError ?? null,
       last_attempt_at: runtimeBySlug.get(spec.slug)?.lastAttemptAt?.toISOString() ?? null,
+      // The slot the scheduler claims next, jitter included (KRTX-1743).
+      next_fire_at: runtimeBySlug.get(spec.slug)?.nextFireAt?.toISOString() ?? null,
       webhook_url: spec.type === 'webhook' ? buildPublicWebhookUrl(projectId, spec.slug) : null,
     })),
     // Server-side activation state for this project's whole trigger set. When
@@ -353,7 +355,7 @@ function parseCronDraft(body: Record<string, unknown>, common: DraftCommon): Tri
     const cron = normalizeString(body.cron ?? body.schedule);
     if (!cron)
       return { error: 'cron triggers must declare a `cron` expression or a one-off `run_at`' };
-    const cronError = validateTriggerCron(cron, timezone);
+    const cronError = validateTriggerCron(cron, timezone) ?? cronIntervalError(cron, timezone);
     if (cronError) return { error: cronError };
     return {
       ...common,

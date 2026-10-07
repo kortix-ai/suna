@@ -4,6 +4,7 @@ import type { ProjectTrigger } from '@kortix/sdk';
 
 import { testUiTranslator } from '@/i18n/test-translator';
 import {
+  describeNextRun,
   CUSTOM_TIMING_LABEL,
   describeCadence,
   describeConditions,
@@ -324,5 +325,21 @@ describe('matchesQuery — searches what is on screen', () => {
 
   test('a paused row is findable by its status word', () => {
     expect(matchesQuery(trigger({ enabled: false }), 'paused', testUiTranslator)).toBe(true);
+  });
+});
+
+// KRTX-1743: no surface showed when a cron trigger runs next, and a run can
+// start up to 30 minutes after its slot (jitter).
+describe('describeNextRun', () => {
+  test('an enabled cron trigger names its next run', () => {
+    const text = describeNextRun(trigger({ type: 'cron', enabled: true, next_fire_at: '2026-10-08T09:12:00.000Z' }));
+    expect(text).toStartWith('Next run ');
+    expect(text).toContain('Oct');
+  });
+
+  test('no next run: a webhook, a paused trigger, or an older API', () => {
+    expect(describeNextRun(trigger({ type: 'webhook', enabled: true, next_fire_at: null }))).toBeNull();
+    expect(describeNextRun(trigger({ type: 'cron', enabled: false, next_fire_at: '2026-10-08T09:12:00.000Z' }))).toBeNull();
+    expect(describeNextRun(trigger({ type: 'cron', enabled: true }))).toBeNull();
   });
 });

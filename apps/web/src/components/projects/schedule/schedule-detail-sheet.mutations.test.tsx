@@ -222,7 +222,11 @@ type Mounted = {
   flush: () => Promise<void>;
 };
 
-function mountSheet(triggerOverrides: TriggerOverrides = {}, canWrite = true): Mounted {
+function mountSheet(
+  triggerOverrides: TriggerOverrides = {},
+  canWrite = true,
+  controls?: { canCreate: boolean; canFire: boolean; canUpdate: boolean; canDelete: boolean },
+): Mounted {
   const queryClient = new QueryClient();
   let mutated = 0;
   let mounted: ReactTestRenderer | undefined;
@@ -234,7 +238,7 @@ function mountSheet(triggerOverrides: TriggerOverrides = {}, canWrite = true): M
         createElement(ScheduleDetailSheet, {
           projectId: 'proj-1',
           trigger: { ...baseTrigger, ...triggerOverrides },
-          canWrite,
+          controls: controls ?? { canCreate: canWrite, canFire: canWrite, canUpdate: canWrite, canDelete: canWrite },
           open: true,
           onOpenChange: () => {},
           onRun: () => {},
@@ -691,5 +695,28 @@ describe('the header toggle', () => {
     expectPatch({ enabled: false });
     expect(toastCalls.map((t) => t.kind)).toEqual(['success']);
     expect(sheet.onMutated()).toBe(1);
+  });
+});
+
+// KRTX-1720: Run now, Pause and Delete each follow their own leaf.
+describe('header controls follow one leaf each', () => {
+  const none = { canCreate: false, canFire: false, canUpdate: false, canDelete: false };
+
+  test('a member who may only fire gets Run now, and no Pause', () => {
+    const sheet = mountSheet({}, false, { ...none, canFire: true });
+    expect(sheet.buttonsWithin(null, 'Run now')).toHaveLength(1);
+    expect(sheet.buttonsWithin(null, 'Pause')).toHaveLength(0);
+  });
+
+  test('an update-only role gets Pause, and no Run now', () => {
+    const sheet = mountSheet({}, false, { ...none, canUpdate: true });
+    expect(sheet.buttonsWithin(null, 'Pause')).toHaveLength(1);
+    expect(sheet.buttonsWithin(null, 'Run now')).toHaveLength(0);
+  });
+
+  test('no leaf: no header control at all', () => {
+    const sheet = mountSheet({}, false, none);
+    expect(sheet.buttonsWithin(null, 'Run now')).toHaveLength(0);
+    expect(sheet.buttonsWithin(null, 'Pause')).toHaveLength(0);
   });
 });

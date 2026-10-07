@@ -1,6 +1,7 @@
 import { test, expect, beforeEach } from 'bun:test';
 import { runWithKortix, createScopedKortix, forwardKortixRequest } from './server';
 import { backendApi } from '../core/http/api-client';
+import { configureKortix } from '../core/http/config';
 
 // Importing `./server` pulls in `./platform/config-node`, which registers the
 // AsyncLocalStorage resolver as an import-time side effect — this file is
@@ -139,6 +140,37 @@ test('createScopedKortix scopes calls reached through id-bound handles minted at
 
   expect(requests[0].url).toContain('/projects/PID1/secrets');
   expect(requests[0].auth).toBe('Bearer scoped-tok');
+});
+
+test('createScopedKortix runs every connector paginate page under the scoped config, not a conflicting global one', async () => {
+  globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+    const req = input as Request;
+    const auth = init?.headers ? new Headers(init.headers).get('Authorization') : req.headers?.get?.('Authorization') ?? null;
+    requests.push({ url: req.url ?? String(input), auth });
+    const page = requests.length;
+    return new Response(
+      JSON.stringify({ ok: true, output: { next: page < 3 ? `c${page}` : null }, binding: 'openapi', upstream_status: 200 }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+  }) as unknown as typeof fetch;
+
+  // Another client in the same process owns the process-global config.
+  configureKortix({ backendUrl: 'http://global.local/v1', getToken: async () => 'GLOBAL_ADMIN' });
+  const tenant = createScopedKortix({ backendUrl: 'http://tenant.local/v1', getToken: async () => 'TENANT_A' });
+
+  const pages: unknown[] = [];
+  for await (const page of tenant.project('p1').connector('crm').paginate('list', {}, {
+    next: (output: any) => (output.next ? { cursor: output.next } : undefined),
+  })) {
+    pages.push(page);
+  }
+
+  expect(pages).toHaveLength(3);
+  expect(requests).toHaveLength(3);
+  for (const request of requests) {
+    expect(request.url).toBe('http://tenant.local/v1/connectors/projects/p1/call');
+    expect(request.auth).toBe('Bearer TENANT_A');
+  }
 });
 
 test('forwardKortixRequest owns wrapper authentication, body buffering, and response sanitization', async () => {

@@ -81,6 +81,7 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
+import type { TriggerControls } from './trigger-controls';
 import { triggerSessionAccessCopy } from './trigger-session-access-copy';
 
 import { describeEventStatus, payloadVariables } from './event-trigger-copy';
@@ -92,6 +93,7 @@ import {
   describeLastRun,
   describeRunLocation,
   describeSecurity,
+  describeNextRun,
   describeWhen,
   triggerName,
   triggerStatus,
@@ -159,7 +161,7 @@ function useTriggerUpdate<TInput = void>(
 export function ScheduleDetailSheet({
   projectId,
   trigger,
-  canWrite,
+  controls,
   open,
   onOpenChange,
   onRun,
@@ -169,7 +171,7 @@ export function ScheduleDetailSheet({
 }: {
   projectId: string;
   trigger: ProjectTrigger | null;
-  canWrite: boolean;
+  controls: TriggerControls;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onRun: () => void;
@@ -193,6 +195,9 @@ export function ScheduleDetailSheet({
 
   if (!trigger) return null;
 
+  // The edit panels change the trigger: `project.trigger.update`.
+  const canWrite = controls.canUpdate;
+  const nextRun = describeNextRun(trigger);
   const isCron = trigger.type === 'cron';
   const event = trigger.type === 'event' ? trigger.event : null;
   const baseStatus = triggerStatus(trigger.enabled, tI18nComplete);
@@ -255,37 +260,45 @@ export function ScheduleDetailSheet({
                   {status.label}
                 </Badge>
               </div>
-              <SheetDescription className="text-xs">{describeWhen(trigger)}</SheetDescription>
+              <SheetDescription className="text-xs">
+                {describeWhen(trigger)}
+                {nextRun ? ` · ${nextRun}` : null}
+              </SheetDescription>
             </div>
           </div>
 
-          {canWrite ? (
+          {controls.canFire || controls.canUpdate || controls.canDelete ? (
             <div className="flex items-center gap-1.5">
-              <Button size="sm" className="gap-1.5" onClick={onRun} disabled={running}>
-                {running ? (
-                  <Loading className="size-3.5 shrink-0" />
-                ) : (
-                  <PlayIcon weight="fill" className="size-3.5 shrink-0" />
-                )}
-                {tI18nComplete.raw('text0991397702fa')}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5"
-                onClick={() => toggle.mutate(!trigger.enabled)}
-                disabled={toggle.isPending}
-              >
-                {toggle.isPending ? (
-                  <Loading className="size-3.5 shrink-0" />
-                ) : status.active ? (
-                  <PauseIcon weight="fill" className="size-3.5 shrink-0" />
-                ) : (
-                  <PlayIcon weight="fill" className="size-3.5 shrink-0" />
-                )}
-                {status.active ? 'Pause' : 'Resume'}
-              </Button>
+              {controls.canFire ? (
+                <Button size="sm" className="gap-1.5" onClick={onRun} disabled={running}>
+                  {running ? (
+                    <Loading className="size-3.5 shrink-0" />
+                  ) : (
+                    <PlayIcon weight="fill" className="size-3.5 shrink-0" />
+                  )}
+                  {tI18nComplete.raw('text0991397702fa')}
+                </Button>
+              ) : null}
+              {controls.canUpdate ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  onClick={() => toggle.mutate(!trigger.enabled)}
+                  disabled={toggle.isPending}
+                >
+                  {toggle.isPending ? (
+                    <Loading className="size-3.5 shrink-0" />
+                  ) : status.active ? (
+                    <PauseIcon weight="fill" className="size-3.5 shrink-0" />
+                  ) : (
+                    <PlayIcon weight="fill" className="size-3.5 shrink-0" />
+                  )}
+                  {status.active ? 'Pause' : 'Resume'}
+                </Button>
+              ) : null}
               <div className="min-w-2 flex-1" />
+              {controls.canDelete ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -304,6 +317,7 @@ export function ScheduleDetailSheet({
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              ) : null}
             </div>
           ) : null}
         </SheetHeader>

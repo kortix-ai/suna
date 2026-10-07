@@ -179,6 +179,19 @@ export function describeWhen(trigger: ProjectTrigger): string {
   return CUSTOM_TIMING_LABEL;
 }
 
+/**
+ * "Next run Oct 8, 11:12", in the viewer's time zone, for an enabled cron
+ * trigger; null when there is none. The time is the slot the scheduler
+ * claims, jitter included, so it can sit up to 30 minutes past the
+ * expression's own slot (KRTX-1743).
+ */
+export function describeNextRun(trigger: ProjectTrigger): string | null {
+  if (!trigger.enabled || !trigger.next_fire_at) return null;
+  const at = new Date(trigger.next_fire_at);
+  if (Number.isNaN(at.getTime())) return null;
+  return `Next run ${at.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
+}
+
 /* ─── Names ─────────────────────────────────────────────────────────────── */
 
 /** Never blank: falls back to what the automation does, then to its kind. */

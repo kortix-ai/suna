@@ -25,6 +25,9 @@ import {
   specToBody,
   upsertTriggerInManifest,
 } from '../lib/triggers';
+// From the leaf, not the barrel: suites that stub '../lib/triggers' by listing
+// its exports would otherwise lose this name.
+import { markGitTriggerAttemptFailed } from '../lib/trigger-fire';
 import { validateWebhookSecretConfiguration } from '../lib/webhook-secret-policy';
 import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { connectorInfo, eventPayload } from '../trigger-events/deliver';
@@ -771,7 +774,10 @@ export function registerTriggersRoutes(): void {
         );
       }
       if (result.status === 'failed') {
-        return c.json({ error: result.error ?? 'Failed to fire trigger' }, 500);
+        const error = result.error ?? 'Failed to fire trigger';
+        // Recorded like a failed cron fire, so the trigger says it failed (KRTX-1743).
+        await markGitTriggerAttemptFailed(projectId, slug, now, error).catch(() => {});
+        return c.json({ error }, 500);
       }
       await markGitTriggerFired(projectId, slug, now);
       return c.json(

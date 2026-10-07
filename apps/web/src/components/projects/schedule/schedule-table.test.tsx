@@ -38,7 +38,7 @@ function row(trigger: ProjectTrigger): string {
   return renderToStaticMarkup(
     <ScheduleTable
       triggers={[trigger]}
-      canWrite
+      controls={{ canCreate: true, canFire: true, canUpdate: true, canDelete: true }}
       runningSlug={null}
       togglingSlug={null}
       onOpen={() => {}}
