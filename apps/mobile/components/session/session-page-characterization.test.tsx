@@ -94,6 +94,7 @@ const viewProps: any[] = []; // every mounted react-native View's props
 let composerRenders = 0; // how many times SessionChatInput rendered
 let gestureAreaProps: any = null; // KeyboardGestureArea's latest props
 let safeInsets = { top: 0, bottom: 0, left: 0, right: 0 }; // useSafeAreaInsets' answer
+const keyboardProgress = { value: 0 }; // keyboard-controller's progress, 0 down → 1 up
 /** keyboard-controller's `KeyboardEvents` listeners, by event name. */
 const keyboardListeners = new Map<string, Set<() => void>>();
 const keyboardEvent = (name: string) => keyboardListeners.get(name)?.forEach((cb) => cb());
@@ -308,15 +309,17 @@ const moduleMocks: Record<string, Record<string, any>> = {
         return { remove: () => set.delete(cb) };
       },
     },
-    useReanimatedKeyboardAnimation: () => ({ progress: { value: 0 } }),
+    useReanimatedKeyboardAnimation: () => ({ progress: keyboardProgress }),
   },
   'react-native-reanimated': {
     default: { View: (props: any) => props.children ?? null },
     View: (props: any) => props.children ?? null,
     Easing: { bezier: () => 0 },
-    useAnimatedStyle: () => ({}),
+    // Read at assertion time, as the UI thread would apply it now.
+    useAnimatedStyle: (worklet: () => Record<string, unknown>) =>
+      new Proxy({}, { get: (_target, key: string) => worklet()[key] }),
     useReducedMotion: () => false,
-    useSharedValue: (v: number) => ({ value: v }),
+    useSharedValue: (v: number) => React.useRef({ value: v }).current,
     withTiming: (v: number) => v,
     interpolate: () => 0,
   },
@@ -751,6 +754,7 @@ beforeEach(() => {
   composerRenders = 0;
   gestureAreaProps = null;
   safeInsets = { top: 0, bottom: 0, left: 0, right: 0 };
+  keyboardProgress.value = 0;
   keyboardListeners.clear();
   wakingComposerProps = null;
   markdownActionsValue = null;
@@ -1532,6 +1536,7 @@ describe('SessionPage render work', () => {
     safeInsets = { top: 0, bottom: 34, left: 0, right: 0 };
     seedTurns(['one']);
     await renderPage();
+    const byTestID = (id: string) => tree!.root.find((node) => node.props.testID === id);
     const composer = tree!.root.find(
       (node) => typeof node.type === 'function' && node.props.inputNativeID === `composer-input-${SID}`,
     );
@@ -1540,37 +1545,50 @@ describe('SessionPage render work', () => {
       for (let at = node.parent; at; at = at.parent) chain.push(at);
       return chain;
     };
+    const flat = (style: any): any[] => (Array.isArray(style) ? style.flatMap(flat) : style ? [style] : []);
     const isOverlay = (node: any) => node.type === RNView && node.props.style?.position === 'absolute';
-    // The composer and the fade sit in an absolute overlay, not below the list.
+    // The composer sits in an absolute overlay over the list, not below it.
     const overlay = ancestors(composer).find(isOverlay);
     expect(overlay).toBeTruthy();
     expect(overlay.props.style).toMatchObject({ top: 0, bottom: 0 });
     expect(overlay.props.pointerEvents).toBe('box-none');
-    const fade = tree!.root.find((node) => typeof node.type === 'function' && Array.isArray(node.props.colors));
-    expect(fade.props.pointerEvents).toBe('none');
-    expect(ancestors(fade)).toContain(overlay);
+    // No opaque fill between the chat and the composer: a fade is the only
+    // backing, and it takes no taps.
+    const block = byTestID('session-composer-block');
+    expect(ancestors(composer)).toContain(block);
+    for (const node of [block, ...ancestors(composer).slice(0, ancestors(composer).indexOf(block))]) {
+      for (const style of flat(node.props.style)) expect(style.backgroundColor).toBeUndefined();
+    }
+    const fades = tree!.root.findAll((node) => typeof node.type === 'function' && Array.isArray(node.props.colors));
+    const backing = fades.find((node) => node.parent === block);
+    expect(backing).toBeTruthy();
+    for (const fade of fades) {
+      expect(fade.props.pointerEvents).toBe('none');
+      expect(ancestors(fade)).toContain(overlay);
+    }
 
     // The list's end padding: the measured composer area plus the inset.
-    const composerArea = ancestors(composer).filter((node) => node.type === RNView && node.props.onLayout)[1];
-    await act(async () => {
-      composerArea.props.onLayout({ nativeEvent: { layout: { height: 150.4 } } });
-    });
-    const paddingHeight = () =>
-      tree!.root.findAll((node) => node.type === RNView && node.props.style?.height === 184).length;
-    expect(paddingHeight()).toBe(1);
+    const endPadding = () => byTestID('session-list-end-padding').props.style.height;
+    const layoutComposerArea = (height: number) =>
+      act(async () => {
+        byTestID('session-composer-area').props.onLayout({ nativeEvent: { layout: { height } } });
+      });
+    await layoutComposerArea(150.4);
+    expect(endPadding()).toBe(184);
     // The room counts the covered height: 600 − 184 − 200 − 24 = 192.
     await layoutTranscript(576, [200]);
     expect(spacerHeight()).toBe(192);
 
-    // The keyboard covers the home indicator: the inset leaves the padding.
-    await act(async () => {
-      keyboardEvent('keyboardWillShow');
-    });
-    expect(tree!.root.findAll((node) => node.type === RNView && node.props.style?.height === 150).length).toBe(1);
-    await act(async () => {
-      keyboardEvent('keyboardWillHide');
-    });
-    expect(paddingHeight()).toBe(1);
+    // It follows the composer as it grows (a second line, a chip).
+    await layoutComposerArea(190);
+    expect(endPadding()).toBe(224);
+
+    // It follows the keyboard's progress, frame by frame, not its events:
+    // the inset goes as the keyboard covers the home indicator.
+    keyboardProgress.value = 0.5;
+    expect(endPadding()).toBe(207);
+    keyboardProgress.value = 1;
+    expect(endPadding()).toBe(190);
   });
 
   test('while the keyboard moves a shrinking room waits for it to stop, a growing room commits at once', async () => {
