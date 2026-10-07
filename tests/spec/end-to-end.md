@@ -276,14 +276,14 @@ Supabase marks every SAML-asserted email as verified and does not compare it wit
 
 DB `projects` (`status active|archived`, unique `(account_id, repo_url)`). Soft delete → `archived`.
 
-`PROJ-1` `GET /projects` → OWNER/ADMIN: all account projects; `MEMBER`: only the projects they hold an assignment on; `NONMEMBER`: empty/own only.
-`PROJ-2` `POST /projects {repo_url,name}` (BYO) → `PROJECT_CREATE` (OWNER/ADMIN) → 201, creator granted `manager`, snapshot build kicked. `MEMBER` → 403. Non-GitHub `repo_url` → 400.
+`PROJ-1` `GET /projects` → OWNER/ADMIN: all account projects; `MEMBER`: only the projects they hold an assignment on; `NONMEMBER`: empty/own only. Account owners read `effective_project_role: manager` on every row; a member's row carries the granted `project_role`.
+`PROJ-2` `POST /projects {repo_url,name}` (BYO) → `PROJECT_CREATE` (OWNER/ADMIN) → 201, creator granted `manager`, snapshot build kicked. `MEMBER` → 403. Non-GitHub `repo_url` → 400. Missing `repo_url` → 400 `repo_url is required`.
 `PROJ-3` `POST /projects/provision {name,provider?:github}` (managed) → `PROJECT_CREATE` → 201 `{push_token,repo_id,repo_url}`. Unconfigured managed GitHub backend → 503; instance backend installed on a personal GitHub account → 409 `code:github_personal_account_create_unsupported`.
 `PROJ-4` `POST /projects/create-repo {name,private?}` (new GitHub repo) → `PROJECT_CREATE` → 201; no account GitHub App install → 409 + `install_url`; a personal GitHub account (`owner_type: User`) on an App installation token → 409 `code:github_personal_account_create_unsupported` before any GitHub call, because GitHub rejects that token on `POST /user/repos`; an unknown or non-cloneable `source_item_id` → 400 before any upstream call; auto-dedupes name collision.
 `PROJ-14` `POST /projects/provision-stream {name,provider?:github}` uses the same provision core as `PROJ-3`. An authorized request returns `200 text/event-stream` with data-only JSON frames. It emits ordered `phase` frames and exactly one terminal `done` or `error` frame. An unsupported provider emits `phase:validating`, then `error` with `status:400`, before any external call. ANON → 401 before the stream opens.
-`PROJ-5` `GET /projects/:id` → `read` → 200 (bumps `last_opened_at`); archived → 404; `NONMEMBER` → 403.
-`PROJ-6` `GET /projects/:id/detail` → `read` → 200 project + parsed `kortix.yaml` (agents/skills/env) + file list.
-`PROJ-7` `PATCH /projects/:id {name,default_branch,manifest_path}` → `manage` (M_MANAGER/OWNER/ADMIN) → 200; M_EDITOR/M_VIEWER → 403.
+`PROJ-5` `GET /projects/:id` → `read` → 200 (bumps `last_opened_at`); archived → 404; `NONMEMBER` → 403. A later read carries the stamped `last_opened_at`.
+`PROJ-6` `GET /projects/:id/detail` → `read` → 200 project + parsed `kortix.yaml` (agents/skills/env) + file list. The project carries `effective_project_role`; `file_count` equals the listed files.
+`PROJ-7` `PATCH /projects/:id {name,default_branch,manifest_path}` → `manage` (M_MANAGER/OWNER/ADMIN) → 200; M_EDITOR/M_VIEWER → 403. A `repo_url` in the body is ignored; a project `member` → 403.
 `PROJ-8` `DELETE /projects/:id` → `manage` → 200 status `archived`; M_EDITOR → 403.
 
 ### Project access (membership)
@@ -458,15 +458,15 @@ The preview proxy is `/p/:sandboxId/:port/*` (`combinedAuth` + rate-limit). `:sa
 Repo files are read-only over the project API; live edits happen in the sandbox (OpenCode file API via proxy) or via manifest commits. All git reads are `read`.
 
 `FILE-1` `GET /projects/:id/files?ref=&path=` → file/dir listing.
-`FILE-2` `GET /projects/:id/files/content?path=&ref=` → file text; **absent `path` param → 400**; non-existent file path is uncaught → surfaces 500 (not 404).
+`FILE-2` `GET /projects/:id/files/content?path=&ref=` → file text; **absent `path` param → 400**; a path the repository does not hold, an absolute path, or a traversal path → 404 `File not found`, never a 500.
 `FILE-3` `GET /projects/:id/files/search?q=&content=1&ref=&limit=` → filename + grep.
 `FILE-4` `GET /projects/:id/files/history?path=` → commit history for path.
-`FILE-5` `GET /projects/:id/files/archive?path=&ref=` → zip stream.
+`FILE-5` `GET /projects/:id/files/archive?path=&ref=` → zip stream. → `application/zip`, `attachment; filename="workspace.zip"` (a subtree is named after its folder); an absolute `path` → 400 `Invalid path`.
 `FILE-6` `GET /projects/:id/branches` → authoritative remote branch refs without cloning repository history. A warm server mirror can add commit metadata and ahead/behind counts. Cold responses keep those optional display fields empty or `null`.
 `FILE-7` `GET /projects/:id/commits?ref=&path=` · `GET …/commits/:sha` · `GET …/commits/:sha/diff`.
 `FILE-8` `GET /projects/:id/version-diff?from=|head=&into=|base=` → diff between two refs (params are `from`/`head` and `into`/`base` — there is **no `to`**).
 `FILE-9` live file CRUD inside sandbox → through proxy to the daemon's `/file` API on `:8000` (create/read/update/delete/list). Durable truth = git repo; sandbox tree is ephemeral.
-`FILE-11` Read-after-push at a branch ref. After a push creates a new branch, `GET /projects/:id/files/content?path=&ref=<branch>` and `GET /projects/:id/files?ref=<branch>` answer at once with the pushed file, although the server mirror fetched inside the last refresh interval. A pushed update of an existing file (default branch reads) keeps the interval; an unknown branch → 404 `ref not found`. Local target only (the push goes straight to the bare repository).
+`FILE-11` Read-after-push at a branch ref. After a push creates a new branch, `GET /projects/:id/files/content?path=&ref=<branch>` and `GET /projects/:id/files?ref=<branch>` answer at once with the pushed file, although the server mirror fetched inside the last refresh interval. A pushed update of an existing file (default branch reads) keeps the interval; an unknown branch → 404 `ref not found`. Local target only (the push goes straight to the bare repository). A `path` lists and archives only that subtree at the ref.
 `FILE-12` `GET /projects/:id/files/raw?path=&ref=` → the file's exact bytes (`git cat-file blob`), the byte-accurate read behind binary previews and downloads. **Absent `path` param → 400**; missing path → 404; a text file's bytes decode to exactly what `files/content` returns as text; ANON → 401.
 
 ---

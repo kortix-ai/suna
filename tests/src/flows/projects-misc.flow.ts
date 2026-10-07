@@ -16,6 +16,10 @@ import { bindDatabaseSessionCredential, createDatabaseSession } from '../fixture
 // a real 201 needs a GitHub App install + reachable repo, which the harness
 // can't guarantee.
 flow('PROJ-2', { domain: 'projects', routes: ['POST /v1/projects'] }, async (ctx) => {
+  await ctx.step('missing repo_url → 400 repo_url is required', async () => {
+    (await ctx.client.as(ctx.P.OWNER).post('/v1/projects', { name: ctx.fixtures.name('byo') }))
+      .status(400).body().has('$.error', 'repo_url is required');
+  });
   await ctx.step('non-GitHub repo_url → 400', async () => {
     const r = await ctx.client
       .as(ctx.P.OWNER)
