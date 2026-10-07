@@ -870,6 +870,61 @@ flow(
   },
 );
 
+// GH-21 — a BYO host token is a platform git credential, never a runtime
+// project secret: it is stored encrypted in project_git_credentials and the
+// secrets surface neither lists nor deletes it.
+flow(
+  "GH-21",
+  {
+    domain: "git",
+    requires: ["database"],
+    routes: [
+      "PUT /v1/projects/:projectId/git-credential",
+      "GET /v1/projects/:projectId/secrets",
+      "DELETE /v1/projects/:projectId/secrets/:name",
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project({ metadata: { git: { provider: "gitlab", auth: { method: "none" } } } });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: project.id };
+    const token = `glpat-ke2e-${crypto.randomUUID()}`;
+    await ctx.step("a BYO GitLab token is stored as a platform git credential → 200, never echoed", async () => {
+      const r = await owner.put("/v1/projects/:projectId/git-credential", { token }, { params });
+      r.status(200)
+        .body()
+        .has("$.configured", true)
+        .has("$.provider", "gitlab")
+        .has("$.git_connection.provider", "gitlab")
+        .has("$.git_connection.auth_method", "project_credential")
+        .has("$.git_connection.status", "connected");
+      if (r.text().includes(token)) throw new Error("the git credential response echoed the token");
+    });
+    await ctx.step("the credential is not a runtime project secret: not listed, KORTIX_GIT_AUTH_TOKEN not deletable", async () => {
+      const listed = await owner.get("/v1/projects/:projectId/secrets", { params });
+      listed.status(200);
+      const items = listed.json<{ items: Array<{ name?: string; identifier?: string }> }>().items;
+      if (items.some((i) => i.name === "KORTIX_GIT_AUTH_TOKEN" || i.identifier === "KORTIX_GIT_AUTH_TOKEN")) {
+        throw new Error("the git credential is listed as a project secret");
+      }
+      if (listed.text().includes(token)) throw new Error("the secrets list leaked the token");
+      (await owner.del("/v1/projects/:projectId/secrets/:name", { params: { ...params, name: "KORTIX_GIT_AUTH_TOKEN" } })).status(403);
+    });
+    await ctx.step("storage: one encrypted gitlab credential row, zero project secret rows", async () => {
+      const creds = await withDb(ctx, async (db) =>
+        (await db.query<{ provider: string; value_enc: string }>("SELECT provider, value_enc FROM kortix.project_git_credentials WHERE project_id = $1::uuid", [project.id])).rows,
+      );
+      if (creds.length !== 1 || creds[0]!.provider !== "gitlab" || creds[0]!.value_enc.includes(token)) {
+        throw new Error(`git credential rows: ${JSON.stringify(creds.map((c) => c.provider))}`);
+      }
+      const secrets = await withDb(ctx, async (db) =>
+        (await db.query<{ n: number }>("SELECT count(*)::int AS n FROM kortix.project_secrets WHERE project_id = $1::uuid", [project.id])).rows[0]?.n,
+      );
+      if (secrets !== 0) throw new Error(`expected no project secret rows, found ${secrets}`);
+    });
+  },
+);
+
 // Account membership is not project access. A personal token minted in the
 // project's own account used to skip the project role in the Git proxy, so an
 // account member with no role on a project could clone it and push `main`.
