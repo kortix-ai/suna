@@ -28,7 +28,11 @@ const CREDENTIAL_MARKERS = [
   /uses:\s*\.\/\.github\/actions\/aws-env/,
   /AWS_[A-Z_]+:\s*\$\{\{\s*secrets\./,
 ];
-const REMOTE_USES = /uses:\s*["']?([a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+)@([^"'\s]+)/g;
+// Remote refs: `owner/repo@ref` and subpath actions (`owner/repo/path@ref`).
+// The first character must be alphanumeric so local `./...` and `docker://`
+// refs stay out; `.` is otherwise legal inside segments.
+const REMOTE_USES =
+  /uses:\s*["']?([a-zA-Z0-9][a-zA-Z0-9_.-]*(?:\/[a-zA-Z0-9_.-]+)+)@([^"'\s]+)/g;
 const SHA = /^[0-9a-f]{40}$/i;
 
 let remoteRefs = 0;

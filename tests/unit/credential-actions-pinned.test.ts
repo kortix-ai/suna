@@ -56,4 +56,21 @@ describe('credential-holding workflows pin remote actions to SHAs', () => {
     const plain = vulnerable.replace('permissions:\n  id-token: write\n', '');
     expect(run(fixture(plain)).status).toBe(0);
   });
+
+  test('a mutable subpath action ref in a credential-holding workflow fails the gate, a pinned one passes', () => {
+    const vulnerableSubpath = vulnerable.replace(
+      'actions/checkout@v7',
+      'github/codeql-action/init@v4',
+    );
+    const failed = run(fixture(vulnerableSubpath));
+    expect(failed.status, failed.stderr).toBe(1);
+    expect(failed.stderr).toMatch(/fixture\.yml: github\/codeql-action\/init@v4/);
+    const pinnedSubpath = vulnerable.replace(
+      'actions/checkout@v7',
+      'github/codeql-action/init@7999b86c43a865dc79d8923397f35af22de63401 # v4',
+    );
+    const r = run(fixture(pinnedSubpath));
+    expect(r.stdout).toMatch(/credentialWorkflowViolations=0\b/);
+    expect(r.status).toBe(0);
+  });
 });
