@@ -13,6 +13,8 @@ const row = (over: Partial<QueueRow> & { id: string }): QueueRow => ({
   attachmentCount: 0,
   state: 'queued',
   removable: true,
+  // As the projection sets it for the author's own failed row.
+  retryable: over.state === 'failed',
   interruptible: true,
   takeBackEligible: true,
   rawText: over.text ?? `text ${over.id}`,

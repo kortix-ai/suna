@@ -1932,6 +1932,7 @@
     "queuedCount": "{count} Queued",
     "editingQueued": "Editing",
     "steerNextStep": "Read at next step",
+    "queuedByAnotherMember": "Sent by another member. Only they can edit or send it.",
     "steerFallbackUnsupported": "Waits for this turn. This session cannot take messages mid-turn.",
     "steerFallbackNotPrompter": "Waits for this turn. Another member started it.",
     "steerFallbackTurnEnded": "Runs as its own turn. The turn ended first.",
