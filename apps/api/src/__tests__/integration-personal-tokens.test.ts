@@ -173,6 +173,8 @@ describe('listPersonalAccountTokens', () => {
         SERVICE_ACCOUNT_BEARER,
       ].sort(),
     );
+    expect(ids).not.toContain(REVOKED_SESSION_TOKEN);
+    expect(ids).not.toContain(ZOMBIE_TOKEN);
   });
 
   test('the project list carries the session_id discriminator key-list surfaces filter on', async () => {
@@ -185,8 +187,6 @@ describe('listPersonalAccountTokens', () => {
     expect(byId.get(PROJECT_SESSION_TOKEN)?.sessionId).toEqual(
       expect.any(String),
     );
-    expect(ids).not.toContain(REVOKED_SESSION_TOKEN);
-    expect(ids).not.toContain(ZOMBIE_TOKEN);
   });
 });
 

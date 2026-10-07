@@ -82,11 +82,11 @@ mock.module('../lib/access', () => ({
   projectCapabilityAllowed: async () => true,
 }));
 
-// Registers project-credentials.ts's routes onto the shared `projectsApp`
+// Registers project-credentials.ts's routes (registerProjectCredentialsRoutes) onto the shared `projectsApp`
 // singleton. projects.ts (which attaches the `supabaseAuth` middleware) is
 // deliberately NOT imported, so this request needs no Authorization header.
 const { projectsApp } = await import('../lib/app');
-await import('./project-credentials');
+(await import('./project-credentials')).registerProjectCredentialsRoutes();
 
 function get() {
   return projectsApp.request(`/${PROJECT_ID}/cli-token`, { method: 'GET' });
