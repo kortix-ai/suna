@@ -1,0 +1,17 @@
+{
+  "source_hash": "0f334420f559c024255ca5f4b60dd489c741d08416f939d7e8eb8f2068c04b26",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-prompt-inbox.test.ts",
+    "apps/api/src/projects/session-lifecycle/inbox-rows.ts",
+    "apps/web/src/lib/seo/content-timestamps.json"
+  ],
+  "diff_hash": "431a3e99158358bf7a108388e4ddbf41d9db553c8a1a458098b76ed0fae2e140",
+  "head": "649dc9101079504cab4ee595edd61541bb04b9e4",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-07T10:11:02.731Z"
+}
