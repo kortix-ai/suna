@@ -72,7 +72,11 @@ mock.module('../../shared/db', () => ({
   hasDatabase: true,
 }));
 
+// Every other export stays real: modules this route imports register their
+// own NOTIFY handlers at load (`onSessionPromptsChanged`, `onSessionChanged`).
+const realPgBroadcast = await import('../../shared/pg-broadcast');
 mock.module('../../shared/pg-broadcast', () => ({
+  ...realPgBroadcast,
   isPgBroadcastListening: () => true,
   waitForSessionChange: (sessionId: string, ms: number, signal: AbortSignal) =>
     new Promise<void>((resolve) => {
