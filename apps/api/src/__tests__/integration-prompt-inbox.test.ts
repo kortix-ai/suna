@@ -2193,6 +2193,26 @@ describe("a write across the drain's admission claim", () => {
     // Remove waits out the claim in the route's cancel arm (`cancelForwardedPrompt`).
   });
 
+  test('a row given back between the write and its explanation is never "missing"', async () => {
+    // The claim began before the DELETE and ended before the read that
+    // explains the miss: the route answered 404 for a row still waiting. The
+    // window is about one statement wide, so the give-back sweeps across it.
+    const outcomes = new Set<string>();
+    for (let i = 0; i < 40; i += 1) {
+      const row = await enqueue(`q_moved_${i}`);
+      const lease = await hold(row, 'admission-claim-it');
+      const giveBack = new Promise<void>((resolve) =>
+        setTimeout(() => void requeueForAdmission(lease, 'turn_active', new Date()).then(() => resolve()), i % 4),
+      );
+      const removed = await deleteInboxPrompt(SESSION_ID, row.commandId, AS_AUTHOR);
+      await giveBack;
+      outcomes.add(removed.outcome);
+      // A claimed row is the route's cancel arm to wait out; a waiting row is removed.
+      expect(['deleted', 'delivering']).toContain(removed.outcome);
+    }
+    expect(outcomes.has('missing')).toBe(false);
+  });
+
   // A row that stays claimed is on its way, and the refusal stands after the
   // bound: 'a prompt already on the wire answers `delivering` …' above.
 

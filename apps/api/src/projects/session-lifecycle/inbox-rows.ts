@@ -121,7 +121,7 @@ export async function deleteInboxRowsWithAttachmentGrace(predicate: SQL | undefi
   });
 }
 
-export async function deleteInboxPrompt(
+async function deleteInboxPromptOnce(
   sessionId: string,
   promptId: string,
   actor: InboxActor,
@@ -433,27 +433,34 @@ async function retryInboxPromptOnce(
 }
 
 /**
- * A write to a waiting row waits out a drain claim, up to this bound.
+ * A write to a waiting row is carried across the drain moving that row.
  *
  * The drain claims a due row (`running`) to ask admission whether the session
  * can take it. Behind a live turn the answer is no, and `requeueForAdmission`
  * gives the row back one round trip later. While the turn runs that repeats
- * every 300 ms to 2 s (`INBOX_ORDER_BACKOFF_MS`). An edit, Stop and send or
- * send now that met the claim answered 409 "already with the agent" (404 for
- * send now) for a message that had not left. A row a drain really delivers is
- * forwarded inside this bound, and then the refusal stands. Remove waits in
- * its own cancel arm (`cancelForwardedPrompt`).
+ * every 300 ms to 2 s (`INBOX_ORDER_BACKOFF_MS`). Two races followed:
+ *
+ * - The write met the claim: 409 "already with the agent" (404 for send now)
+ *   for a message that had not left. The write now waits out the claim, up to
+ *   `DRAIN_CLAIM_WAIT_MS`. A row a drain really delivers is forwarded inside
+ *   that bound, and then the refusal stands. Remove does not wait here: its
+ *   cancel arm (`cancelForwardedPrompt`) already does.
+ * - The claim began before the write and ended before the read that explains
+ *   the miss: a 404 for a row that is still waiting. A row that moved between
+ *   the two statements is written again, up to `MOVED_RETRIES` times.
  */
 const DRAIN_CLAIM_WAIT_MS = 2_000;
 const DRAIN_CLAIM_POLL_MS = 400;
+const MOVED_RETRIES = 2;
 
-/** Run `write` again while it missed `promptId` only because a drain holds it. */
 async function acrossDrainClaim<T>(
   promptId: string,
   missed: (out: T) => boolean,
   write: () => Promise<T>,
+  opts: { waitOutClaim: boolean } = { waitOutClaim: true },
 ): Promise<T> {
   const deadline = Date.now() + DRAIN_CLAIM_WAIT_MS;
+  let moved = 0;
   for (;;) {
     // Armed before the write, so a give-back between the two is not missed.
     const settle = waitForLifecycleCommandSettle(
@@ -461,25 +468,33 @@ async function acrossDrainClaim<T>(
       isPgBroadcastListening() ? deadline - Date.now() : DRAIN_CLAIM_POLL_MS,
     );
     const out = await write();
-    const claimed =
-      missed(out) &&
-      Date.now() < deadline &&
-      (
-        await db
+    const [row] = missed(out)
+      ? await db
           .select({ status: sessionLifecycleCommands.status })
           .from(sessionLifecycleCommands)
           .where(eq(sessionLifecycleCommands.commandId, promptId))
           .limit(1)
-      )[0]?.status === 'running';
-    if (!claimed) {
-      settle.cancel();
-      return out;
+      : [];
+    if (row?.status === 'running' && opts.waitOutClaim && Date.now() < deadline) {
+      await settle.done;
+      continue;
     }
-    await settle.done;
+    settle.cancel();
+    if (row && row.status !== 'running' && moved < MOVED_RETRIES) {
+      moved += 1;
+      continue;
+    }
+    return out;
   }
 }
 
-const onTheWire = (out: InboxPromptEdit) => out.outcome === 'delivering';
+const notTaken = (out: { outcome: string }) => out.outcome === 'delivering' || out.outcome === 'missing';
+
+export function deleteInboxPrompt(sessionId: string, promptId: string, actor: InboxActor): Promise<InboxPromptDeletion> {
+  return acrossDrainClaim(promptId, notTaken, () => deleteInboxPromptOnce(sessionId, promptId, actor), {
+    waitOutClaim: false,
+  });
+}
 
 export function editInboxPrompt(
   sessionId: string,
@@ -487,11 +502,11 @@ export function editInboxPrompt(
   text: string,
   actor: InboxActor,
 ): Promise<InboxPromptEdit> {
-  return acrossDrainClaim(promptId, onTheWire, () => editInboxPromptOnce(sessionId, promptId, text, actor));
+  return acrossDrainClaim(promptId, notTaken, () => editInboxPromptOnce(sessionId, promptId, text, actor));
 }
 
 export function interruptInboxPrompt(sessionId: string, promptId: string, actor: InboxActor): Promise<InboxPromptEdit> {
-  return acrossDrainClaim(promptId, onTheWire, () => interruptInboxPromptOnce(sessionId, promptId, actor));
+  return acrossDrainClaim(promptId, notTaken, () => interruptInboxPromptOnce(sessionId, promptId, actor));
 }
 
 export function retryInboxPrompt(
