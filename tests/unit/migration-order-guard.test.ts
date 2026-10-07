@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 const SCRIPT = join(import.meta.dirname, '..', '..', 'scripts', 'check-migration-order.sh');
 const DIR = 'packages/db/migrations';
 
-function repo() {
+function repo(devRef = 'refs/remotes/origin/dev') {
   const dir = mkdtempSync(join(tmpdir(), 'migration-order-'));
   const git = (...args: string[]) =>
     spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { cwd: dir, encoding: 'utf8' });
@@ -24,11 +24,11 @@ function repo() {
   };
   git('init', '-q', '-b', 'dev');
   add('20261007073001000_newest_on_dev.sql');
-  git('update-ref', 'refs/remotes/origin/dev', 'HEAD');
+  if (devRef) git('update-ref', devRef, 'HEAD');
   git('switch', '-q', '-c', 'feature');
   const push = (sha: string, ref = 'refs/heads/feature') =>
     spawnSync('sh', [SCRIPT], { cwd: dir, encoding: 'utf8', input: `${ref} ${sha} ${ref} ${'0'.repeat(40)}\n` });
-  return { add, push };
+  return { add, push, git };
 }
 
 describe('migration-order guard', () => {
@@ -47,6 +47,31 @@ describe('migration-order guard', () => {
   it('refuses an older concurrent migration too', () => {
     const { add, push } = repo();
     expect(push(add('20261006182246238_idx.concurrent.ts')).status).toBe(1);
+  });
+
+  it('reads upstream/dev in a fork checkout whose origin has no dev', () => {
+    const { add, push } = repo('refs/remotes/upstream/dev');
+    const r = push(add('20261006182246238_old.sql'));
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain(`${DIR}/20261006182246238_old.sql`);
+  });
+
+  it('compares against the newer of a stale origin/dev and upstream/dev', () => {
+    const { add, push, git } = repo();
+    const fork = git('rev-parse', 'HEAD').stdout.trim();
+    git('switch', '-q', 'dev');
+    git('update-ref', 'refs/remotes/upstream/dev', add('20261007140000000_newer_on_upstream.sql'));
+    git('update-ref', 'refs/remotes/origin/dev', fork);
+    git('switch', '-q', 'feature');
+    git('merge', '-q', 'dev');
+    expect(push(add('20261007100000000_between.sql')).status).toBe(1);
+  });
+
+  it('warns and allows the push when no dev ref exists', () => {
+    const { add, push } = repo('');
+    const r = push(add('20261006182246238_old.sql'));
+    expect(r.status).toBe(0);
+    expect(r.stderr).toContain('check skipped');
   });
 
   it('allows a branch with no new migration', () => {
