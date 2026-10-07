@@ -1,21 +1,22 @@
 {
-  "source_hash": "3047430a3f45b5b16b5813b96b8b81f1890f9dab68c3c0c71fbaa4e8a3193903",
+  "source_hash": "b38b7f319dbc57aa304438ad19fa1d37cd24a90c84d42e9b02b8276dff4a8c55",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-07T140831Z-before-a-merge-re-check-that-the-branch-s-new-migration-sort.md",
     ".githooks/pre-push",
+    "apps/web/src/lib/seo/content-timestamps.json",
     "packages/sdk/src/react/use-session-sync.test.ts",
     "packages/sdk/src/react/use-session-sync.ts",
     "scripts/check-migration-order.sh",
     "tests/unit/migration-order-guard.test.ts"
   ],
-  "diff_hash": "8ac0616b9a0331cb32e5570e2c101b26188b21f05ed037ad948d89980af31f67",
-  "head": "ef2a6a093093cc5c830ac96e0e5bdb9d12cca79b",
+  "diff_hash": "a196faa6a843deff01a607840867de0570b07fb261cf7705489037ef17ccb99f",
+  "head": "1b9badc5c33125cf8647d91c3cc06424870da134",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-07T14:44:38.467Z"
+  "at": "2026-10-07T15:02:48.886Z"
 }
