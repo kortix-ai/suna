@@ -9,11 +9,11 @@
  * platform admin (KRTX-1715).
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import pg from 'pg';
+import { PgClient } from './helpers/pg-client';
 
 const { getPlatformRole, isSelfHostOperator } = await import('../shared/platform-roles');
 
-const superuser = new pg.Client({ connectionString: process.env.TEST_DATABASE_SUPERUSER_URL });
+const superuser = new PgClient({ connectionString: process.env.TEST_DATABASE_SUPERUSER_URL });
 const OPERATOR_EMAIL = `operator-${crypto.randomUUID()}@example.test`;
 const COLLEAGUE_EMAIL = `colleague-${crypto.randomUUID()}@example.test`;
 const ORIGINAL_ALLOWLIST = process.env.KORTIX_PLATFORM_ADMIN_EMAILS;
