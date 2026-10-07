@@ -3,30 +3,22 @@ import type { RecordedDriveMount } from './service';
 import { isDriveSyncBox, syncMountAllows } from './sync';
 
 const DRIVE = 'd1';
-const me: RecordedDriveMount = { driveId: DRIVE, kind: 'personal', mountPath: '/drives/me', readOnly: true, role: 'me' };
-const fromAgents: RecordedDriveMount = {
-  driveId: DRIVE,
-  kind: 'personal',
-  mountPath: '/drives/from-agents',
-  readOnly: false,
-  role: 'me',
-  subdir: '/From agents',
-  fromAgents: true,
-};
+const company: RecordedDriveMount = { driveId: DRIVE, kind: 'project', mountPath: '/drives/company', readOnly: true, subdir: '/Company' };
+const specs: RecordedDriveMount = { driveId: DRIVE, kind: 'project', mountPath: '/drives/specs', readOnly: false, subdir: '/Company/Specs' };
 
 describe('drive sync authorization', () => {
-  test('a read-only own drive with its writable From agents folder: read everywhere, write only in the folder', () => {
-    const mounts = [me, fromAgents];
-    expect(syncMountAllows(mounts, DRIVE, '/notes.md', 'read')).toBe(true);
-    expect(syncMountAllows(mounts, DRIVE, '/notes.md', 'write')).toBe(false);
-    expect(syncMountAllows(mounts, DRIVE, '/From agents/out.md', 'write')).toBe(true);
+  test('a read-only folder with a writable folder inside it: read in both, write only in the inner one', () => {
+    const mounts = [company, specs];
+    expect(syncMountAllows(mounts, DRIVE, '/Company/notes.md', 'read')).toBe(true);
+    expect(syncMountAllows(mounts, DRIVE, '/Company/notes.md', 'write')).toBe(false);
+    expect(syncMountAllows(mounts, DRIVE, '/Company/Specs/out.md', 'write')).toBe(true);
     // A sibling whose name only starts like the folder is outside it.
-    expect(syncMountAllows(mounts, DRIVE, '/From agents2/out.md', 'write')).toBe(false);
+    expect(syncMountAllows(mounts, DRIVE, '/Company/Specs2/out.md', 'write')).toBe(false);
   });
 
-  test('a folder mount alone reads nothing outside its folder, and other drives read as missing', () => {
-    expect(syncMountAllows([fromAgents], DRIVE, '/private.md', 'read')).toBe(false);
-    expect(syncMountAllows([me, fromAgents], 'other', '/x', 'read')).toBe(false);
+  test('a folder mount reads nothing outside its folder, and other drives read as missing', () => {
+    expect(syncMountAllows([specs], DRIVE, '/Users/ana/private.md', 'read')).toBe(false);
+    expect(syncMountAllows([company, specs], 'other', '/x', 'read')).toBe(false);
   });
 
   test('only a non-Platinum box marked at boot is a synced box', () => {

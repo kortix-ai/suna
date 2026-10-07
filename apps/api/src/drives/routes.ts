@@ -1,7 +1,7 @@
-// /v1/drives: drives a user owns or shares with their account, their files
-// and their history. Every route below the list resolves the drive first and
-// answers 404 for a drive the caller may not see, so a drive id is never an
-// oracle for another user's personal drive.
+// /v1/drives: a project's Files. One drive per project; every route below the
+// list resolves the drive and the caller's access at the path it touches.
+// A folder the caller may not see answers 404, so a path is never an oracle
+// for someone's private folder.
 
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
@@ -11,39 +11,48 @@ import { combinedAuth } from '../middleware/auth';
 import { rejectSandboxTokens } from '../middleware/reject-sandbox-tokens';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { loadProjectForUser } from '../projects/lib/access';
-import { getAccountMembership } from '../projects/lib/user-identity';
+import { ensureAgentServiceAccount } from '../repositories/service-accounts';
 import { db } from '../shared/db';
-import { resolveScopedAccountId } from '../shared/resolve-account';
 import { isUuid } from '../shared/validate';
 import type { AppEnv } from '../types';
-import { accountMembers, driveConflicts, driveGrants, drives, projects } from '@kortix/db';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { type AccountRole, type DriveAccess, accessAtLeast, driveAccess, normalizeDrivePath } from './access';
-import {
-  type DriveRow,
-  type GrantSubject,
-  accessFor,
-  createDrive,
-  detachDriveEverywhere,
-  driveStats,
-  enforceDriveMounts,
-  ensureDefaultPersonalDrive,
-  getDrive,
-  listDriveGrants,
-  listDrivesFor,
-  openConflictCounts,
-  readDriveVolume,
-  userEmails,
-  removeDriveGrant,
-  setDriveGrant,
-  toDriveJson,
-  writeDriveVolume,
-} from './service';
+import { accountGroups, accountMembers, driveConflicts, projectSessions, roleAssignments, serviceAccounts } from '@kortix/db';
+import { and, eq, inArray, isNotNull, like, or, sql } from 'drizzle-orm';
+import { normalizeDrivePath } from './access';
 import { noteDriveWrite } from './conflicts';
 import {
+  COMPANY_DIR,
+  type FolderAccess,
+  type FolderGrant,
+  type FolderLevel,
+  type FolderSubject,
+  USERS_DIR,
+  folderAccess,
+  folderAccessAtLeast,
+  folderVisible,
+  grantableFolder,
+  grantsCovering,
+  pathWithinFolder,
+  personalFolderOf,
+} from './folders';
+import {
+  type DriveRow,
+  driveStats,
+  enforceDriveMounts,
+  ensurePersonalFolder,
+  ensureProjectDrive,
+  getDrive,
+  groupIdsOf,
+  listFolderGrants,
+  openConflictRows,
+  readDriveVolume,
+  removeFolderGrant,
+  setFolderGrant,
+  toDriveJson,
+  userEmails,
+  writeDriveVolume,
+} from './service';
+import {
   DriveStorageError,
-  deleteDriveVolume,
-  getDriveVolume,
   listVolumeCommits,
   listVolumeFiles,
   moveVolumeFile,
@@ -60,45 +69,42 @@ const FOLDER_MARKER = '.keep';
 
 type DriveContext = Context<AppEnv>;
 
+const AccessSchema = z.enum(['none', 'read', 'write', 'manage']);
+const LevelSchema = z.enum(['read', 'write', 'manage']);
+
 const DriveSchema = z
   .object({
     driveId: z.string(),
     accountId: z.string(),
-    kind: z.enum(['personal', 'agent', 'company']),
+    projectId: z.string(),
+    kind: z.literal('project'),
     name: z.string(),
-    ownerUserId: z.string().nullable(),
-    projectId: z.string().nullable(),
-    agentName: z.string().nullable(),
-    isDefault: z.boolean(),
     sizeBytes: z.number().nullable(),
     sizeLimitBytes: z.number().nullable(),
     fileCount: z.number().nullable(),
     lastChangeAt: z.string().nullable(),
     createdAt: z.string(),
     updatedAt: z.string(),
-    mountPath: z.string(),
-    access: z.enum(['read', 'write', 'manage']),
-    shared: z.boolean(),
-    ownerEmail: z.string().nullable().optional(),
+    access: AccessSchema,
+    personalFolder: z.string().nullable(),
     openConflicts: z.number(),
-    projectAccess: z.enum(['read', 'write']).nullable().optional(),
-    agentGrants: z.array(z.object({ agentName: z.string(), access: z.enum(['read', 'write']) })).optional(),
   })
   .openapi('Drive');
 
-const DriveGrantSchema = z
+const FolderGrantSchema = z
   .object({
     grantId: z.string(),
-    type: z.enum(['project', 'user', 'agent']),
-    projectId: z.string().nullable(),
-    projectName: z.string().nullable(),
-    userId: z.string().nullable(),
-    userEmail: z.string().nullable(),
-    agentName: z.string().nullable(),
-    access: z.enum(['read', 'write']),
-    createdAt: z.string(),
+    path: z.string(),
+    /** Granted on a folder above this one. */
+    inherited: z.boolean(),
+    /** Made by Kortix: a person's own folder, the default for Company. */
+    system: z.boolean(),
+    principalType: z.enum(['user', 'group', 'agent', 'project']),
+    principalId: z.string(),
+    label: z.string(),
+    level: LevelSchema,
   })
-  .openapi('DriveGrant');
+  .openapi('FolderGrant');
 
 const DriveConflictSchema = z
   .object({
@@ -116,6 +122,10 @@ const DriveEntrySchema = z
     type: z.enum(['file', 'dir', 'symlink']),
     size: z.number(),
     mtime: z.number(),
+    /** What the caller may do with this entry. */
+    access: AccessSchema,
+    /** The folder has sharing of its own (grants made on it). */
+    shared: z.boolean().optional(),
   })
   .openapi('DriveEntry');
 
@@ -129,7 +139,6 @@ const DriveVersionSchema = z
   })
   .openapi('DriveVersion');
 
-const DriveName = z.string().trim().min(1).max(80);
 const DriveParams = z.object({ driveId: z.string() });
 const PathQuery = z.object({ path: z.string().optional() });
 
@@ -145,13 +154,8 @@ function fail(status: 400 | 403 | 404 | 409 | 413 | 503, message: string, code?:
 
 function callerId(c: DriveContext): string {
   const userId = c.get('userId');
-  if (!userId) fail(403, 'Drives require a signed-in user');
+  if (!userId) fail(403, 'Files require a signed-in user');
   return userId;
-}
-
-async function roleIn(userId: string, accountId: string): Promise<AccountRole | null> {
-  const m = await getAccountMembership(userId, accountId);
-  return (m?.accountRole as AccountRole | undefined) ?? null;
 }
 
 /** Project access as a yes or no: the loader answers a refusal with its own 403. */
@@ -164,37 +168,55 @@ async function mayUseProject(c: DriveContext, projectId: string, action: 'read' 
   }
 }
 
+interface Caller {
+  drive: DriveRow;
+  userId: string;
+  subject: FolderSubject;
+  grants: FolderGrant[];
+  personalFolder: string;
+}
+
 /**
- * The drive and the caller's access to it; a drive the caller cannot see is a
- * 404. An agent drive belongs to its project as well as the account: reading
- * it needs read access to that project, changing its files needs the right to
- * run the project's sessions (which can already change them through the agent).
- * A company drive reaches a member only through a grant: to them, or to a
- * project they may run sessions in; read or write as granted. A drive granted
- * or shared read-only answers 403 to a write.
+ * The person behind the request, as the folder rules see them: a project
+ * admin (may change the project) manages every folder but people's own; who
+ * may run sessions in the project reaches grants to the whole project; and
+ * grants to them or their teams.
  */
-async function loadDrive(c: DriveContext, need: Exclude<DriveAccess, 'none'> = 'write') {
+async function callerOn(c: DriveContext, drive: DriveRow): Promise<Caller> {
   const userId = callerId(c);
+  const projectId = drive.projectId!;
+  if (!(await mayUseProject(c, projectId, 'read'))) fail(404, 'Files not found');
+  const [projectMember, admin, groupIds] = await Promise.all([
+    mayUseProject(c, projectId, 'session'),
+    mayUseProject(c, projectId, 'write'),
+    groupIdsOf(userId, drive.accountId),
+  ]);
+  let grants = await listFolderGrants(drive);
+  const personalFolder = await ensurePersonalFolder(drive, userId, grants);
+  if (!grants.some((g) => g.path === personalFolder)) grants = await listFolderGrants(drive);
+  return { drive, userId, grants, personalFolder, subject: { userId, groupIds, projectMember, admin } };
+}
+
+async function loadDrive(c: DriveContext): Promise<Caller> {
   const driveId = c.req.param('driveId') ?? '';
   const drive = isUuid(driveId) ? await getDrive(driveId) : null;
-  if (!drive) fail(404, 'Drive not found');
-  const access = await accessFor(drive, userId, await roleIn(userId, drive.accountId), {
-    mayUseProject: (projectId) => mayUseProject(c, projectId, 'session'),
-  });
-  if (access === 'none') fail(404, 'Drive not found');
-  if (drive.kind === 'agent') {
-    if (!drive.projectId || !(await mayUseProject(c, drive.projectId, 'read'))) fail(404, 'Drive not found');
-    if (need !== 'read' && !(await mayUseProject(c, drive.projectId, need === 'manage' ? 'write' : 'session'))) {
-      fail(403, 'You cannot change this project’s agent drive');
-    }
+  if (!drive || drive.kind !== 'project' || !drive.projectId) fail(404, 'Files not found');
+  return callerOn(c, drive);
+}
+
+/** The caller's access at `path`; 404 for a path they may not see, 403 when they see it but need more. */
+function need(caller: Caller, path: string, level: FolderLevel): FolderAccess {
+  const access = folderAccess(path, caller.grants, caller.subject);
+  if (!folderVisible(path, caller.grants, caller.subject)) fail(404, 'File or folder not found');
+  if (!folderAccessAtLeast(access, level)) {
+    fail(403, level === 'manage' ? 'You cannot change who has access to this folder' : level === 'write' ? 'You can only view this folder' : 'You cannot open this folder');
   }
-  if (need === 'manage' && access !== 'manage') {
-    fail(403, drive.kind === 'personal' ? 'Only the drive’s owner can change this drive' : 'Only an account admin can change this drive');
-  }
-  if (need === 'write' && !accessAtLeast(access, 'write')) {
-    fail(403, drive.kind === 'company' ? 'This drive is granted to you read-only' : 'This drive is shared with you read-only');
-  }
-  return { drive, userId, access };
+  return access;
+}
+
+/** Folders that hold the tree together: never moved, deleted or renamed. */
+function structural(path: string, caller: Caller): boolean {
+  return path === '/' || path === USERS_DIR || path === COMPANY_DIR || personalFolderOf(path) === path || path === caller.personalFolder;
 }
 
 function drivePath(raw: string | undefined, opts: { allowRoot: boolean }): string {
@@ -212,17 +234,10 @@ async function withStorage<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-async function driveJson(drive: DriveRow, access: Exclude<DriveAccess, 'none'>, viewerId: string) {
-  const stats = drive.platinumVolumeId
-    ? await getDriveVolume(drive.platinumVolumeName, AbortSignal.timeout(3_000)).catch(() => null)
-    : null;
-  const conflicts = await openConflictCounts([drive.driveId]);
-  return toDriveJson(drive, access, stats, { viewerId, openConflicts: conflicts.get(drive.driveId) ?? 0 });
-}
-
 const notFound = (): never => fail(404, 'File or folder not found');
 
 const baseName = (p: string) => p.split('/').filter(Boolean).pop() ?? '';
+const parentOf = (p: string) => p.slice(0, p.lastIndexOf('/')) || '/';
 
 function versionKind(kind: string): z.infer<typeof DriveVersionSchema>['kind'] {
   if (kind === 'init' || kind === 'fork') return 'created';
@@ -237,402 +252,57 @@ function versionAuthor(commit: VolumeCommit): z.infer<typeof DriveVersionSchema>
   return 'system';
 }
 
+/** Running sessions of the project pick up a sharing change at once, and stopped ones never come back with more. */
+function enforceProject(drive: DriveRow): void {
+  void enforceDriveMounts({ projectId: drive.projectId! }).catch((err) =>
+    console.error('[drives] enforcing folder access failed:', err),
+  );
+}
+
 export const drivesApp = makeOpenApiApp<AppEnv>();
 
 drivesApp.use('*', combinedAuth);
-// An agent's own drive reaches it as a mount; its sandbox token has no reason
-// to browse the account's drives over the API.
+// A session's folders reach it as mounts; its sandbox token has no reason to
+// browse the project's Files over the API.
 drivesApp.use('*', rejectSandboxTokens);
 drivesApp.use('*', async (c, next) => {
-  if (c.get('authType') === 'pat' && c.get('sessionId')) fail(403, 'Session tokens cannot access drives');
+  if (c.get('authType') === 'pat' && c.get('sessionId')) fail(403, 'Session tokens cannot access Files');
   await next();
 });
 
-// GET /v1/drives
+// GET /v1/drives?projectId=
 drivesApp.openapi(
   createRoute({
     method: 'get',
     path: '/',
     tags: ['drives'],
-    summary: 'List the caller’s drives',
-    description:
-      'Creates the caller’s default personal drive on first use. With `projectId`, also lists that project’s agent drives and marks each company drive with its grant to the project.',
+    summary: 'The project’s Files',
+    description: 'Creates the project’s drive and the caller’s own folder (`/Users/<name>`) on first use.',
     ...auth,
-    request: { query: z.object({ projectId: z.string().optional(), account_id: z.string().optional() }) },
-    responses: { 200: json(z.object({ drives: z.array(DriveSchema) }), 'Drives'), ...errors(401, 403, 404) },
+    request: { query: z.object({ projectId: z.string() }) },
+    responses: { 200: json(z.object({ drives: z.array(DriveSchema) }), 'Files'), ...errors(401, 403, 404) },
   }),
   async (c: any) => {
-    const userId = callerId(c);
     const projectId = c.req.query('projectId');
-    let accountId: string;
-    if (projectId) {
-      const loaded = await loadProjectForUser(c, projectId, 'read');
-      if (!loaded) fail(404, 'Project not found');
-      const gate = requireFeatureFlag(c, loaded.row.metadata, 'drives');
-      if (gate) return gate;
-      accountId = loaded.row.accountId;
-    } else {
-      accountId = c.get('accountId') ?? (await resolveScopedAccountId(c, 'query'));
-    }
-    const role = await roleIn(userId, accountId);
-    if (!role) fail(403, 'You do not have access to this account');
-    await ensureDefaultPersonalDrive(accountId, userId);
-    const listed = await listDrivesFor({
-      accountId,
-      userId,
-      projectId: projectId || undefined,
-      grantContext: { mayUseProject: (id) => mayUseProject(c, id, 'session') },
-    });
-    const [stats, conflicts, owners] = await Promise.all([
-      driveStats(listed.map((l) => l.drive)),
-      openConflictCounts(listed.map((l) => l.drive.driveId)),
-      userEmails(listed.filter((l) => l.sharedAccess).map((l) => l.drive.ownerUserId ?? '')),
-    ]);
+    if (!projectId || !isUuid(projectId)) fail(400, 'projectId is required');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) fail(404, 'Project not found');
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'drives');
+    if (gate) return gate;
+    const drive = await ensureProjectDrive(loaded.row.accountId, projectId);
+    const caller = await callerOn(c, drive);
+    const [stats, conflicts] = await Promise.all([driveStats(drive), openConflictRows(drive.driveId)]);
+    const visible = conflicts.filter((r) => folderAccess(r.path, caller.grants, caller.subject) !== 'none');
     return c.json({
-      drives: listed.flatMap((l) => {
-        const access = driveAccess(l.drive, { userId, accountRole: role, granted: l.sharedAccess ?? l.granted ?? null });
-        return access === 'none'
-          ? []
-          : [
-              toDriveJson(l.drive, access, stats.get(l.drive.driveId) ?? null, {
-                viewerId: userId,
-                openConflicts: conflicts.get(l.drive.driveId) ?? 0,
-                ...(l.sharedAccess ? { ownerEmail: owners.get(l.drive.ownerUserId ?? '') ?? null } : {}),
-                ...(l.projectAccess !== undefined ? { projectAccess: l.projectAccess } : {}),
-                ...(l.agentGrants !== undefined ? { agentGrants: l.agentGrants } : {}),
-              }),
-            ];
-      }),
+      drives: [
+        toDriveJson(drive, {
+          access: folderAccess('/', caller.grants, caller.subject),
+          personalFolder: caller.personalFolder,
+          openConflicts: visible.length,
+          stats,
+        }),
+      ],
     });
-  },
-);
-
-// POST /v1/drives
-drivesApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/',
-    tags: ['drives'],
-    summary: 'Create a drive',
-    description: 'A `company` drive needs an account owner or admin. `account_id` picks the account (default: the caller’s primary).',
-    ...auth,
-    request: {
-      body: {
-        required: true,
-        content: {
-          'application/json': {
-            schema: z.object({
-              name: DriveName,
-              kind: z.enum(['personal', 'company']),
-              account_id: z.string().optional(),
-            }),
-          },
-        },
-      },
-    },
-    responses: { 201: json(DriveSchema, 'Created drive'), ...errors(400, 401, 403) },
-  }),
-  async (c: any) => {
-    const userId = callerId(c);
-    const body = c.req.valid('json') as { name: string; kind: 'personal' | 'company' };
-    const accountId = c.get('accountId') ?? (await resolveScopedAccountId(c, 'body'));
-    const role = await roleIn(userId, accountId);
-    if (!role) fail(403, 'You do not have access to this account');
-    if (body.kind === 'company' && role !== 'owner' && role !== 'admin') {
-      fail(403, 'Only an account owner or admin can create a company drive');
-    }
-    const drive = await createDrive({ accountId, userId, kind: body.kind, name: body.name });
-    const access = driveAccess(drive, { userId, accountRole: role });
-    return c.json(toDriveJson(drive, access === 'none' ? 'write' : access, null, { viewerId: userId }), 201);
-  },
-);
-
-// PATCH /v1/drives/:driveId
-drivesApp.openapi(
-  createRoute({
-    method: 'patch',
-    path: '/{driveId}',
-    tags: ['drives'],
-    summary: 'Rename a drive',
-    ...auth,
-    request: {
-      params: DriveParams,
-      body: { required: true, content: { 'application/json': { schema: z.object({ name: DriveName }) } } },
-    },
-    responses: { 200: json(DriveSchema, 'Drive'), ...errors(400, 401, 403, 404) },
-  }),
-  async (c: any) => {
-    const { drive, access, userId } = await loadDrive(c, 'manage');
-    const { name } = c.req.valid('json') as { name: string };
-    const [row] = await db
-      .update(drives)
-      .set({ name, updatedAt: new Date() })
-      .where(eq(drives.driveId, drive.driveId))
-      .returning();
-    return c.json(await driveJson(row!, access, userId));
-  },
-);
-
-// DELETE /v1/drives/:driveId
-drivesApp.openapi(
-  createRoute({
-    method: 'delete',
-    path: '/{driveId}',
-    tags: ['drives'],
-    summary: 'Delete a drive and its files',
-    description:
-      'A default personal drive cannot be deleted. The drive is taken out of every session that mounts it first; its storage is removed in the background.',
-    ...auth,
-    request: { params: DriveParams },
-    responses: { 204: { description: 'Deleted' }, ...errors(401, 403, 404, 409) },
-  }),
-  async (c: any) => {
-    const { drive } = await loadDrive(c, 'manage');
-    if (drive.kind === 'personal' && drive.isDefault) fail(409, 'Your default drive cannot be deleted');
-    await detachDriveEverywhere(drive.driveId);
-    if (drive.platinumVolumeId) {
-      // Storage that is still held (a mount mid-detach) goes later: the row's
-      // delete trigger queued the volume, and the drive worker retries it.
-      await deleteDriveVolume(drive.platinumVolumeName).catch((err) =>
-        console.warn(`[drives] volume of deleted drive ${drive.driveId} left for the cleanup worker:`, err?.message ?? err),
-      );
-    }
-    await db.delete(drives).where(eq(drives.driveId, drive.driveId));
-    return c.body(null, 204);
-  },
-);
-
-// GET /v1/drives/:driveId/grants
-drivesApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{driveId}/grants',
-    tags: ['drives'],
-    summary: 'List where a drive is granted',
-    description: 'Projects, people and agents the drive mounts for. Needs manage access to the drive.',
-    ...auth,
-    request: { params: DriveParams },
-    responses: { 200: json(z.object({ grants: z.array(DriveGrantSchema) }), 'Grants'), ...errors(401, 403, 404) },
-  }),
-  async (c: any) => {
-    const { drive } = await loadDrive(c, 'manage');
-    return c.json({ grants: await grantsJson(drive.driveId) });
-  },
-);
-
-const GrantBody = z.object({
-  type: z.enum(['project', 'user', 'agent']).optional(),
-  projectId: z.string().optional(),
-  userId: z.string().optional(),
-  agentName: z.string().trim().min(1).max(128).optional(),
-  access: z.enum(['read', 'write']).optional(),
-});
-
-// POST /v1/drives/:driveId/grants
-drivesApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{driveId}/grants',
-    tags: ['drives'],
-    summary: 'Grant a drive to a project, a person or an agent',
-    description:
-      'A company drive (account owner or admin): `project` mounts it in every session of the project, `user` in every session that person starts, `agent` in every session of that agent. ' +
-      'A personal drive (its owner): `user` shares it with a colleague (read or write), `agent` with `write` lets that agent write the whole drive in the owner’s sessions. ' +
-      'Granting the same subject again changes its access. `type` defaults to `project`, `access` to `write`.',
-    ...auth,
-    request: {
-      params: DriveParams,
-      body: { required: true, content: { 'application/json': { schema: GrantBody } } },
-    },
-    responses: { 200: json(DriveGrantSchema, 'Grant'), ...errors(400, 401, 403, 404) },
-  }),
-  async (c: any) => {
-    const { drive, userId } = await loadDrive(c, 'manage');
-    const body = c.req.valid('json') as z.infer<typeof GrantBody>;
-    const type = body.type ?? 'project';
-    const access = body.access ?? 'write';
-    if (drive.kind === 'agent') fail(400, 'An agent drive is not granted; attach it to a session instead');
-    if (drive.kind === 'personal' && type === 'project') fail(400, 'A personal drive mounts only in its owner’s sessions; share it with a person instead');
-    if (drive.kind === 'personal' && type === 'agent' && access !== 'write') {
-      fail(400, 'Agents already read your drive in your sessions; an agent grant on it is for full write');
-    }
-    let subject: GrantSubject;
-    if (type === 'user') {
-      if (!body.userId || !isUuid(body.userId)) fail(400, 'userId is required');
-      if (body.userId === drive.ownerUserId) fail(400, 'The owner already has this drive');
-      const [member] = await db
-        .select({ userId: accountMembers.userId })
-        .from(accountMembers)
-        .where(and(eq(accountMembers.accountId, drive.accountId), eq(accountMembers.userId, body.userId)))
-        .limit(1);
-      if (!member) fail(404, 'That person is not a member of this account');
-      subject = { type: 'user', userId: body.userId };
-    } else {
-      if (!body.projectId || !isUuid(body.projectId)) fail(400, 'projectId is required');
-      const [project] = await db
-        .select({ accountId: projects.accountId })
-        .from(projects)
-        .where(eq(projects.projectId, body.projectId))
-        .limit(1);
-      if (!project || project.accountId !== drive.accountId) fail(404, 'Project not found');
-      if (type === 'agent') {
-        if (!body.agentName) fail(400, 'agentName is required');
-        subject = { type: 'agent', projectId: body.projectId, agentName: body.agentName };
-      } else {
-        subject = { type: 'project', projectId: body.projectId };
-      }
-    }
-    const row = await setDriveGrant(drive.driveId, subject, access, userId);
-    // A downgrade to read takes write away from running sessions now.
-    if (access === 'read') await enforceDriveMounts({ driveIds: [drive.driveId] });
-    const [json] = (await grantsJson(drive.driveId)).filter((g) => g.grantId === row.grantId);
-    return c.json(json!);
-  },
-);
-
-// DELETE /v1/drives/:driveId/grants/:grantId
-drivesApp.openapi(
-  createRoute({
-    method: 'delete',
-    path: '/{driveId}/grants/{grantId}',
-    tags: ['drives'],
-    summary: 'Remove a grant',
-    description:
-      'Sessions that no longer reach the drive lose it at once: running sandboxes unmount it (or remount it read-only when another grant still gives read), and later ones never mount it.',
-    ...auth,
-    request: { params: z.object({ driveId: z.string(), grantId: z.string() }) },
-    responses: { 204: { description: 'Removed' }, ...errors(401, 403, 404) },
-  }),
-  async (c: any) => {
-    const { drive } = await loadDrive(c, 'manage');
-    const grantId = c.req.param('grantId');
-    if (!isUuid(grantId)) fail(404, 'Grant not found');
-    const rows = await db
-      .delete(driveGrants)
-      .where(and(eq(driveGrants.driveId, drive.driveId), eq(driveGrants.grantId, grantId)))
-      .returning({ id: driveGrants.grantId });
-    if (!rows.length) fail(404, 'Grant not found');
-    await enforceDriveMounts({ driveIds: [drive.driveId] });
-    return c.body(null, 204);
-  },
-);
-
-// DELETE /v1/drives/:driveId/grants?projectId=... (and userId / agentName)
-drivesApp.openapi(
-  createRoute({
-    method: 'delete',
-    path: '/{driveId}/grants',
-    tags: ['drives'],
-    summary: 'Remove the grant to one subject',
-    description: 'Like removing a grant by id: sessions that no longer reach the drive lose it at once.',
-    ...auth,
-    request: {
-      params: DriveParams,
-      query: z.object({ projectId: z.string().optional(), userId: z.string().optional(), agentName: z.string().optional() }),
-    },
-    responses: { 204: { description: 'Removed' }, ...errors(400, 401, 403, 404) },
-  }),
-  async (c: any) => {
-    const { drive } = await loadDrive(c, 'manage');
-    const projectId = c.req.query('projectId');
-    const userId = c.req.query('userId');
-    const agentName = c.req.query('agentName');
-    let subject: GrantSubject;
-    if (userId && isUuid(userId)) subject = { type: 'user', userId };
-    else if (projectId && isUuid(projectId) && agentName) subject = { type: 'agent', projectId, agentName };
-    else if (projectId && isUuid(projectId)) subject = { type: 'project', projectId };
-    else fail(400, 'Name the subject: projectId, userId, or projectId with agentName');
-    if (!(await removeDriveGrant(drive.driveId, subject))) fail(404, 'Grant not found');
-    await enforceDriveMounts({ driveIds: [drive.driveId] });
-    return c.body(null, 204);
-  },
-);
-
-async function grantsJson(driveId: string): Promise<Array<z.infer<typeof DriveGrantSchema>>> {
-  const rows = await listDriveGrants(driveId);
-  const projectIds = [...new Set(rows.map((r) => r.projectId).filter((p): p is string => !!p))];
-  const userIds = [...new Set(rows.map((r) => r.userId).filter((u): u is string => !!u))];
-  const names = new Map(
-    projectIds.length
-      ? (
-          await db.select({ id: projects.projectId, name: projects.name }).from(projects).where(inArray(projects.projectId, projectIds))
-        ).map((p) => [p.id, p.name])
-      : [],
-  );
-  const emails = new Map<string, string | null>();
-  if (userIds.length) {
-    const found = (await db.execute(
-      sql`SELECT id::text AS id, email FROM auth.users WHERE id = ANY(${`{${userIds.join(',')}}`}::uuid[])`,
-    )) as unknown as Array<{ id: string; email: string | null }>;
-    for (const u of found) emails.set(u.id, u.email);
-  }
-  return rows.map((r) => ({
-    grantId: r.grantId,
-    type: r.subjectType as 'project' | 'user' | 'agent',
-    projectId: r.projectId,
-    projectName: r.projectId ? (names.get(r.projectId) ?? null) : null,
-    userId: r.userId,
-    userEmail: r.userId ? (emails.get(r.userId) ?? null) : null,
-    agentName: r.agentName,
-    access: r.access === 'read' ? 'read' : 'write',
-    createdAt: r.createdAt.toISOString(),
-  }));
-}
-
-// GET /v1/drives/:driveId/conflicts
-drivesApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{driveId}/conflicts',
-    tags: ['drives'],
-    summary: 'List open conflict copies',
-    description:
-      'Files Kortix kept beside the original when two writers changed it at once, named `<name> (conflict <date> <time>)<ext>`. A copy leaves this list when it is deleted or renamed, or when someone dismisses it.',
-    ...auth,
-    request: { params: DriveParams },
-    responses: { 200: json(z.object({ conflicts: z.array(DriveConflictSchema) }), 'Open conflicts'), ...errors(401, 404) },
-  }),
-  async (c: any) => {
-    const { drive } = await loadDrive(c, 'read');
-    const rows = await db
-      .select()
-      .from(driveConflicts)
-      .where(and(eq(driveConflicts.driveId, drive.driveId), isNull(driveConflicts.resolvedAt), isNull(driveConflicts.dismissedAt)))
-      .orderBy(driveConflicts.detectedAt);
-    return c.json({
-      conflicts: rows.map((r) => ({
-        conflictId: r.conflictId,
-        path: r.path,
-        originalPath: r.originalPath,
-        detectedAt: r.detectedAt.toISOString(),
-      })),
-    });
-  },
-);
-
-// POST /v1/drives/:driveId/conflicts/:conflictId/dismiss
-drivesApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{driveId}/conflicts/{conflictId}/dismiss',
-    tags: ['drives'],
-    summary: 'Dismiss a conflict notice',
-    description: 'Hides the notice and keeps the copy on the drive.',
-    ...auth,
-    request: { params: z.object({ driveId: z.string(), conflictId: z.string() }) },
-    responses: { 204: { description: 'Dismissed' }, ...errors(401, 403, 404) },
-  }),
-  async (c: any) => {
-    const { drive, userId } = await loadDrive(c);
-    const conflictId = c.req.param('conflictId');
-    if (!isUuid(conflictId)) fail(404, 'Conflict not found');
-    const rows = await db
-      .update(driveConflicts)
-      .set({ dismissedAt: new Date(), dismissedBy: userId })
-      .where(and(eq(driveConflicts.driveId, drive.driveId), eq(driveConflicts.conflictId, conflictId)))
-      .returning({ id: driveConflicts.conflictId });
-    if (!rows.length) fail(404, 'Conflict not found');
-    return c.body(null, 204);
   },
 );
 
@@ -643,22 +313,44 @@ drivesApp.openapi(
     path: '/{driveId}/files',
     tags: ['drives'],
     summary: 'List a folder',
+    description: 'Only what the caller may see. Folders shared with the caller appear even before anything was written to them.',
     ...auth,
     request: { params: DriveParams, query: PathQuery },
-    responses: { 200: json(z.object({ entries: z.array(DriveEntrySchema) }), 'Folder entries'), ...errors(400, 401, 404, 503) },
+    responses: { 200: json(z.object({ entries: z.array(DriveEntrySchema), access: AccessSchema }), 'Folder entries'), ...errors(400, 401, 404, 503) },
   }),
   async (c: any) => {
-    const { drive } = await loadDrive(c, 'read');
+    const caller = await loadDrive(c);
+    const { drive, grants, subject } = caller;
     const path = drivePath(c.req.query('path'), { allowRoot: true });
-    const entries = await withStorage(() =>
-      readDriveVolume(drive, (volume) => listVolumeFiles(volume, path, false), () => []),
-    );
+    if (path !== '/') need(caller, path, 'read');
+    const raw = await withStorage(() => readDriveVolume(drive, (volume) => listVolumeFiles(volume, path, false), () => []));
+    const entries = raw
+      .filter((e) => !(e.type === 'file' && baseName(e.path) === FOLDER_MARKER && Number(e.size) === 0))
+      .filter((e) => !(e.type === 'dir' && e.path === '/lost+found'))
+      // Kortix's own bookkeeping (the fold job's markers) is not a folder of anyone's.
+      .filter((e) => !e.path.startsWith('/.kortix'))
+      .map((e) => ({ path: e.path, name: baseName(e.path), type: e.type, size: Number(e.size ?? 0), mtime: Number(e.mtime ?? 0) }));
+    // Folders that exist only as grants so far (a new person's folder, Company
+    // before the first write): shown, so the tree can be walked to them.
+    const seen = new Set(entries.map((e) => e.path));
+    const virtual = new Set<string>();
+    for (const g of grants) {
+      if (!pathWithinFolder(g.path, path) || g.path === path) continue;
+      const child = `${path === '/' ? '' : path}/${g.path.slice(path === '/' ? 1 : path.length + 1).split('/')[0]}`;
+      if (!seen.has(child)) virtual.add(child);
+    }
+    if (path === '/' && !seen.has(USERS_DIR)) virtual.add(USERS_DIR);
+    for (const v of virtual) entries.push({ path: v, name: baseName(v), type: 'dir', size: 0, mtime: 0 });
+    const sharedPaths = new Set(grants.filter((g) => g.source !== 'system').map((g) => g.path));
     return c.json({
+      access: folderAccess(path, grants, subject),
       entries: entries
-        .filter((e) => !(e.type === 'file' && baseName(e.path) === FOLDER_MARKER && Number(e.size) === 0))
-        // The filesystem's own recovery folder is not a drive folder.
-        .filter((e) => !(e.type === 'dir' && e.path === '/lost+found'))
-        .map((e) => ({ path: e.path, name: baseName(e.path), type: e.type, size: Number(e.size ?? 0), mtime: Number(e.mtime ?? 0) })),
+        .filter((e) => folderVisible(e.path, grants, subject))
+        .map((e) => ({
+          ...e,
+          access: folderAccess(e.path, grants, subject),
+          ...(e.type === 'dir' && sharedPaths.has(e.path) ? { shared: true } : {}),
+        })),
     });
   },
 );
@@ -680,10 +372,11 @@ drivesApp.openapi(
     },
   }),
   async (c: any) => {
-    const { drive } = await loadDrive(c, 'read');
+    const caller = await loadDrive(c);
     const path = drivePath(c.req.query('path'), { allowRoot: false });
+    need(caller, path, 'read');
     const upstream = await withStorage(() =>
-      readDriveVolume(drive, (volume) => readVolumeFile(volume, path, c.req.header('range') ?? undefined), notFound),
+      readDriveVolume(caller.drive, (volume) => readVolumeFile(volume, path, c.req.header('range') ?? undefined), notFound),
     );
     const headers = new Headers({
       'content-type': 'application/octet-stream',
@@ -714,20 +407,22 @@ drivesApp.openapi(
     request: { params: DriveParams, query: z.object({ path: z.string() }) },
     responses: {
       200: json(z.object({ path: z.string(), size: z.number() }), 'Uploaded'),
-      ...errors(400, 401, 404, 409, 413, 503),
+      ...errors(400, 401, 403, 404, 409, 413, 503),
     },
   }),
   async (c: any) => {
-    const { drive } = await loadDrive(c);
+    const caller = await loadDrive(c);
     const path = drivePath(c.req.query('path'), { allowRoot: false });
+    if (parentOf(path) === '/' || parentOf(path) === USERS_DIR) fail(400, 'Put files in a folder');
+    need(caller, path, 'write');
     const declared = Number(c.req.header('content-length') ?? NaN);
     if (Number.isFinite(declared) && declared > MAX_DRIVE_UPLOAD_BYTES) fail(413, 'File is too large');
     const body = new Uint8Array(await c.req.arrayBuffer());
     if (body.byteLength > MAX_DRIVE_UPLOAD_BYTES) fail(413, 'File is too large');
     const written = await withStorage(() =>
-      writeDriveVolume(drive, (volume) => writeVolumeFile(volume, path, body, { overwrite: true })),
+      writeDriveVolume(caller.drive, (volume) => writeVolumeFile(volume, path, body, { overwrite: true })),
     );
-    noteDriveWrite(drive.driveId);
+    noteDriveWrite(caller.drive.driveId);
     return c.json({ path: written.path, size: written.size });
   },
 );
@@ -739,24 +434,47 @@ drivesApp.openapi(
     path: '/{driveId}/files/mkdir',
     tags: ['drives'],
     summary: 'Create a folder',
+    description: 'A new top-level folder needs a project admin; inside a folder, write access to it.',
     ...auth,
     request: {
       params: DriveParams,
       body: { required: true, content: { 'application/json': { schema: z.object({ path: z.string() }) } } },
     },
-    responses: { 200: json(z.object({ path: z.string() }), 'Folder'), ...errors(400, 401, 404, 409, 503) },
+    responses: { 200: json(z.object({ path: z.string() }), 'Folder'), ...errors(400, 401, 403, 404, 409, 503) },
   }),
   async (c: any) => {
-    const { drive } = await loadDrive(c);
+    const caller = await loadDrive(c);
     const path = drivePath((c.req.valid('json') as { path: string }).path, { allowRoot: false });
+    if (parentOf(path) === USERS_DIR) fail(400, 'People’s folders are made by Kortix');
+    need(caller, path, 'write');
     await withStorage(() =>
-      writeDriveVolume(drive, (volume) =>
+      writeDriveVolume(caller.drive, (volume) =>
         writeVolumeFile(volume, `${path}/${FOLDER_MARKER}`, new Uint8Array(), { overwrite: false }),
       ),
     );
     return c.json({ path });
   },
 );
+
+/** Grants on `from` or below it follow a moved folder. */
+async function moveGrants(drive: DriveRow, from: string, to: string): Promise<boolean> {
+  const rows = await db
+    .update(roleAssignments)
+    .set({
+      objectId: sql`${to} || substr(${roleAssignments.objectId}, ${from.length + 1})`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(roleAssignments.scopeType, 'project'),
+        eq(roleAssignments.scopeId, drive.projectId!),
+        eq(roleAssignments.objectType, 'folder'),
+        or(eq(roleAssignments.objectId, from), like(roleAssignments.objectId, `${from.replace(/[\\%_]/g, '\\$&')}/%`)),
+      ),
+    )
+    .returning({ id: roleAssignments.assignmentId });
+  return rows.length > 0;
+}
 
 // POST /v1/drives/:driveId/files/move
 drivesApp.openapi(
@@ -765,22 +483,29 @@ drivesApp.openapi(
     path: '/{driveId}/files/move',
     tags: ['drives'],
     summary: 'Move or rename a file or folder',
-    description: 'Refuses to overwrite: an existing destination answers 409.',
+    description: 'Refuses to overwrite: an existing destination answers 409. A folder’s sharing moves with it.',
     ...auth,
     request: {
       params: DriveParams,
       body: { required: true, content: { 'application/json': { schema: z.object({ from: z.string(), to: z.string() }) } } },
     },
-    responses: { 200: json(z.object({ from: z.string(), to: z.string() }), 'Moved'), ...errors(400, 401, 404, 409, 503) },
+    responses: { 200: json(z.object({ from: z.string(), to: z.string() }), 'Moved'), ...errors(400, 401, 403, 404, 409, 503) },
   }),
   async (c: any) => {
-    const { drive } = await loadDrive(c);
+    const caller = await loadDrive(c);
     const body = c.req.valid('json') as { from: string; to: string };
     const from = drivePath(body.from, { allowRoot: false });
     const to = drivePath(body.to, { allowRoot: false });
     if (to === from || to.startsWith(`${from}/`)) fail(400, 'A folder cannot be moved into itself');
-    await withStorage(() => readDriveVolume(drive, (volume) => moveVolumeFile(volume, from, to), notFound));
-    noteDriveWrite(drive.driveId);
+    if (structural(from, caller)) fail(400, 'This folder cannot be moved or renamed');
+    if (parentOf(to) === '/' || parentOf(to) === USERS_DIR) fail(400, 'Put files in a folder');
+    need(caller, from, 'write');
+    need(caller, to, 'write');
+    // Moving a shared folder changes who can reach it: only someone who may change its sharing.
+    if (caller.grants.some((g) => g.source !== 'system' && pathWithinFolder(g.path, from))) need(caller, from, 'manage');
+    await withStorage(() => readDriveVolume(caller.drive, (volume) => moveVolumeFile(volume, from, to), notFound));
+    if (await moveGrants(caller.drive, from, to)) enforceProject(caller.drive);
+    noteDriveWrite(caller.drive.driveId);
     return c.json({ from, to });
   },
 );
@@ -792,17 +517,299 @@ drivesApp.openapi(
     path: '/{driveId}/files',
     tags: ['drives'],
     summary: 'Delete a file or folder',
-    description: 'A folder with contents needs `recursive=true`.',
+    description: 'A folder with contents needs `recursive=true`. Its sharing goes with it.',
     ...auth,
     request: { params: DriveParams, query: z.object({ path: z.string(), recursive: z.string().optional() }) },
-    responses: { 204: { description: 'Deleted' }, ...errors(400, 401, 404, 409, 503) },
+    responses: { 204: { description: 'Deleted' }, ...errors(400, 401, 403, 404, 409, 503) },
+  }),
+  async (c: any) => {
+    const caller = await loadDrive(c);
+    const path = drivePath(c.req.query('path'), { allowRoot: false });
+    if (structural(path, caller)) fail(400, 'This folder cannot be deleted');
+    need(caller, path, 'write');
+    const shared = caller.grants.filter((g) => g.grantId && pathWithinFolder(g.path, path));
+    if (shared.some((g) => g.source !== 'system')) need(caller, path, 'manage');
+    const recursive = c.req.query('recursive') === 'true' || c.req.query('recursive') === '1';
+    await withStorage(() => readDriveVolume(caller.drive, (volume) => removeVolumeFile(volume, path, recursive), notFound));
+    for (const g of shared) await removeFolderGrant(caller.drive, g.grantId!);
+    if (shared.length) enforceProject(caller.drive);
+    noteDriveWrite(caller.drive.driveId);
+    return c.body(null, 204);
+  },
+);
+
+// ─── Sharing ──────────────────────────────────────────────────────────────
+
+async function grantLabels(drive: DriveRow, grants: FolderGrant[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const users = grants.filter((g) => g.principalType === 'user').map((g) => g.principalId);
+  const groups = grants.filter((g) => g.principalType === 'group').map((g) => g.principalId);
+  const agents = grants.filter((g) => g.principalType === 'agent').map((g) => g.principalId);
+  const [emails, groupRows, agentRows] = await Promise.all([
+    userEmails(users),
+    groups.length
+      ? db.select({ id: accountGroups.groupId, name: accountGroups.name }).from(accountGroups).where(inArray(accountGroups.groupId, groups))
+      : Promise.resolve([] as Array<{ id: string; name: string }>),
+    agents.length
+      ? db
+          .select({ id: serviceAccounts.serviceAccountId, name: serviceAccounts.agentName })
+          .from(serviceAccounts)
+          .where(inArray(serviceAccounts.serviceAccountId, agents))
+      : Promise.resolve([] as Array<{ id: string; name: string | null }>),
+  ]);
+  for (const [id, email] of emails) out.set(`user:${id}`, email);
+  for (const g of groupRows) out.set(`group:${g.id}`, g.name);
+  for (const a of agentRows) out.set(`agent:${a.id}`, a.name ?? 'agent');
+  out.set(`project:${drive.projectId}`, 'Everyone in this project');
+  return out;
+}
+
+// GET /v1/drives/:driveId/access?path=
+drivesApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{driveId}/access',
+    tags: ['drives'],
+    summary: 'Who has access to a folder',
+    description: 'The grants on the folder and the ones it inherits from folders above it.',
+    ...auth,
+    request: { params: DriveParams, query: z.object({ path: z.string() }) },
+    responses: {
+      200: json(
+        z.object({ path: z.string(), access: AccessSchema, grantable: z.boolean(), grants: z.array(FolderGrantSchema) }),
+        'Folder access',
+      ),
+      ...errors(400, 401, 404),
+    },
+  }),
+  async (c: any) => {
+    const caller = await loadDrive(c);
+    const path = drivePath(c.req.query('path'), { allowRoot: true });
+    const access = path === '/' ? folderAccess('/', caller.grants, caller.subject) : need(caller, path, 'read');
+    const covering = grantsCovering(path, caller.grants);
+    const labels = await grantLabels(caller.drive, covering);
+    return c.json({
+      path,
+      access,
+      grantable: grantableFolder(path),
+      grants: covering.map((g) => ({
+        grantId: g.grantId!,
+        path: g.path,
+        inherited: g.path !== path,
+        system: g.source === 'system',
+        principalType: g.principalType,
+        principalId: g.principalId,
+        label: labels.get(`${g.principalType}:${g.principalId}`) ?? g.principalId,
+        level: g.level,
+      })),
+    });
+  },
+);
+
+const ShareBody = z.object({
+  path: z.string(),
+  principalType: z.enum(['user', 'group', 'agent', 'project']),
+  /** A user id, a team (group) id, or for `agent` the agent's name. Ignored for `project`. */
+  principalId: z.string().min(1).max(128).optional(),
+  level: LevelSchema,
+});
+
+// PUT /v1/drives/:driveId/access
+drivesApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/{driveId}/access',
+    tags: ['drives'],
+    summary: 'Share a folder',
+    description:
+      'Gives a person, a team, an agent or everyone in the project `read`, `write` or `manage` on a folder and everything below it. Sharing again changes the level. ' +
+      'Running sessions pick the change up at once.',
+    ...auth,
+    request: { params: DriveParams, body: { required: true, content: { 'application/json': { schema: ShareBody } } } },
+    responses: { 200: json(z.object({ grantId: z.string() }), 'Shared'), ...errors(400, 401, 403, 404) },
+  }),
+  async (c: any) => {
+    const caller = await loadDrive(c);
+    const body = c.req.valid('json') as z.infer<typeof ShareBody>;
+    const path = drivePath(body.path, { allowRoot: false });
+    if (!grantableFolder(path)) fail(400, 'Share a folder inside Files');
+    need(caller, path, 'manage');
+    const { drive } = caller;
+    let principalId: string;
+    if (body.principalType === 'project') {
+      principalId = drive.projectId!;
+    } else if (body.principalType === 'agent') {
+      const name = body.principalId?.trim();
+      if (!name) fail(400, 'Name the agent');
+      // An agent's identity is its service account; the first share makes it.
+      const known = await db
+        .select({ name: projectSessions.agentName })
+        .from(projectSessions)
+        .where(and(eq(projectSessions.projectId, drive.projectId!), eq(projectSessions.agentName, name)))
+        .limit(1);
+      const existing = await db
+        .select({ id: serviceAccounts.serviceAccountId })
+        .from(serviceAccounts)
+        .where(and(eq(serviceAccounts.projectId, drive.projectId!), eq(serviceAccounts.agentName, name)))
+        .limit(1);
+      if (!known.length && !existing.length && name !== 'default') fail(404, 'No agent by that name in this project');
+      principalId = existing[0]?.id ?? (await ensureAgentServiceAccount({ accountId: drive.accountId, projectId: drive.projectId!, agentName: name }));
+    } else {
+      if (!body.principalId || !isUuid(body.principalId)) fail(400, 'principalId is required');
+      principalId = body.principalId;
+      if (body.principalType === 'user') {
+        if (path === caller.personalFolder && principalId === caller.userId) fail(400, 'This is already your folder');
+        const [member] = await db
+          .select({ userId: accountMembers.userId })
+          .from(accountMembers)
+          .where(and(eq(accountMembers.accountId, drive.accountId), eq(accountMembers.userId, principalId)))
+          .limit(1);
+        if (!member) fail(404, 'That person is not a member of this account');
+      }
+    }
+    const grantId = await setFolderGrant({
+      drive,
+      path,
+      principal: { type: body.principalType, id: principalId },
+      level: body.level,
+      grantedBy: caller.userId,
+    });
+    enforceProject(drive);
+    return c.json({ grantId });
+  },
+);
+
+// DELETE /v1/drives/:driveId/access/:grantId
+drivesApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{driveId}/access/{grantId}',
+    tags: ['drives'],
+    summary: 'Stop sharing a folder with someone',
+    description: 'Running sessions that no longer reach the folder lose it at once; later ones never mount it.',
+    ...auth,
+    request: { params: z.object({ driveId: z.string(), grantId: z.string() }) },
+    responses: { 204: { description: 'Removed' }, ...errors(400, 401, 403, 404) },
+  }),
+  async (c: any) => {
+    const caller = await loadDrive(c);
+    const grantId = c.req.param('grantId');
+    const grant = isUuid(grantId) ? caller.grants.find((g) => g.grantId === grantId) : undefined;
+    if (!grant) fail(404, 'Grant not found');
+    if (grant.source === 'system' && grant.principalType === 'user' && personalFolderOf(grant.path) === grant.path) {
+      fail(400, 'A person always has their own folder');
+    }
+    need(caller, grant.path, 'manage');
+    await removeFolderGrant(caller.drive, grantId);
+    enforceProject(caller.drive);
+    return c.body(null, 204);
+  },
+);
+
+// GET /v1/drives/:driveId/principals
+drivesApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{driveId}/principals',
+    tags: ['drives'],
+    summary: 'Who a folder can be shared with',
+    description: 'The account’s people and teams and the project’s agents.',
+    ...auth,
+    request: { params: DriveParams },
+    responses: {
+      200: json(
+        z.object({
+          people: z.array(z.object({ id: z.string(), label: z.string() })),
+          teams: z.array(z.object({ id: z.string(), label: z.string() })),
+          agents: z.array(z.object({ id: z.string(), label: z.string() })),
+        }),
+        'Principals',
+      ),
+      ...errors(401, 404),
+    },
   }),
   async (c: any) => {
     const { drive } = await loadDrive(c);
-    const path = drivePath(c.req.query('path'), { allowRoot: false });
-    const recursive = c.req.query('recursive') === 'true' || c.req.query('recursive') === '1';
-    await withStorage(() => readDriveVolume(drive, (volume) => removeVolumeFile(volume, path, recursive), notFound));
-    noteDriveWrite(drive.driveId);
+    const [members, teams, agentRows, saRows] = await Promise.all([
+      db.select({ userId: accountMembers.userId }).from(accountMembers).where(eq(accountMembers.accountId, drive.accountId)),
+      db.select({ id: accountGroups.groupId, name: accountGroups.name }).from(accountGroups).where(eq(accountGroups.accountId, drive.accountId)),
+      db
+        .selectDistinct({ name: projectSessions.agentName })
+        .from(projectSessions)
+        .where(eq(projectSessions.projectId, drive.projectId!)),
+      db
+        .select({ name: serviceAccounts.agentName })
+        .from(serviceAccounts)
+        .where(and(eq(serviceAccounts.projectId, drive.projectId!), isNotNull(serviceAccounts.agentName))),
+    ]);
+    const emails = await userEmails(members.map((m) => m.userId));
+    const agents = [...new Set(['default', ...agentRows.map((a) => a.name), ...saRows.map((a) => a.name ?? '')].filter(Boolean))].sort();
+    return c.json({
+      people: members.map((m) => ({ id: m.userId, label: emails.get(m.userId) ?? m.userId })),
+      teams: teams.map((t) => ({ id: t.id, label: t.name })),
+      agents: agents.map((name) => ({ id: name, label: name })),
+    });
+  },
+);
+
+// ─── Conflicts and versions ───────────────────────────────────────────────
+
+// GET /v1/drives/:driveId/conflicts
+drivesApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{driveId}/conflicts',
+    tags: ['drives'],
+    summary: 'List open conflict copies',
+    description:
+      'Files Kortix kept beside the original when two writers changed it at once, named `<name> (conflict <date> <time>)<ext>`, in folders the caller can see.',
+    ...auth,
+    request: { params: DriveParams },
+    responses: { 200: json(z.object({ conflicts: z.array(DriveConflictSchema) }), 'Open conflicts'), ...errors(401, 404) },
+  }),
+  async (c: any) => {
+    const caller = await loadDrive(c);
+    const rows = (await openConflictRows(caller.drive.driveId)).filter(
+      (r) => folderAccess(r.path, caller.grants, caller.subject) !== 'none',
+    );
+    return c.json({
+      conflicts: rows.map((r) => ({
+        conflictId: r.conflictId,
+        path: r.path,
+        originalPath: r.originalPath,
+        detectedAt: r.detectedAt.toISOString(),
+      })),
+    });
+  },
+);
+
+// POST /v1/drives/:driveId/conflicts/:conflictId/dismiss
+drivesApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{driveId}/conflicts/{conflictId}/dismiss',
+    tags: ['drives'],
+    summary: 'Dismiss a conflict notice',
+    description: 'Hides the notice and keeps the copy.',
+    ...auth,
+    request: { params: z.object({ driveId: z.string(), conflictId: z.string() }) },
+    responses: { 204: { description: 'Dismissed' }, ...errors(401, 403, 404) },
+  }),
+  async (c: any) => {
+    const caller = await loadDrive(c);
+    const conflictId = c.req.param('conflictId');
+    if (!isUuid(conflictId)) fail(404, 'Conflict not found');
+    const [row] = await db
+      .select({ path: driveConflicts.path })
+      .from(driveConflicts)
+      .where(and(eq(driveConflicts.driveId, caller.drive.driveId), eq(driveConflicts.conflictId, conflictId)))
+      .limit(1);
+    if (!row) fail(404, 'Conflict not found');
+    need(caller, row.path, 'write');
+    await db
+      .update(driveConflicts)
+      .set({ dismissedAt: new Date(), dismissedBy: caller.userId })
+      .where(eq(driveConflicts.conflictId, conflictId));
     return c.body(null, 204);
   },
 );
@@ -813,14 +820,16 @@ drivesApp.openapi(
     method: 'get',
     path: '/{driveId}/versions',
     tags: ['drives'],
-    summary: 'List a drive’s versions, newest first',
+    summary: 'List the project’s Files versions, newest first',
+    description: 'Project admins only: a version is the whole drive.',
     ...auth,
     request: { params: DriveParams },
-    responses: { 200: json(z.object({ versions: z.array(DriveVersionSchema) }), 'Versions'), ...errors(401, 404, 503) },
+    responses: { 200: json(z.object({ versions: z.array(DriveVersionSchema) }), 'Versions'), ...errors(401, 403, 404, 503) },
   }),
   async (c: any) => {
-    const { drive } = await loadDrive(c, 'read');
-    const commits = await withStorage(() => readDriveVolume(drive, (volume) => listVolumeCommits(volume), () => []));
+    const caller = await loadDrive(c);
+    if (!caller.subject.admin) fail(403, 'Only a project admin can see versions of Files');
+    const commits = await withStorage(() => readDriveVolume(caller.drive, (volume) => listVolumeCommits(volume), () => []));
     return c.json({
       versions: commits.map((commit) => ({
         id: commit.id,
@@ -842,28 +851,29 @@ drivesApp.openapi(
     method: 'post',
     path: '/{driveId}/restore',
     tags: ['drives'],
-    summary: 'Restore a drive to a version',
-    description: 'Adds a new version whose files equal the chosen one. Later versions stay in the history.',
+    summary: 'Restore the project’s Files to a version',
+    description: 'Project admins only. Adds a new version whose files equal the chosen one. Later versions stay in the history.',
     ...auth,
     request: {
       params: DriveParams,
       body: { required: true, content: { 'application/json': { schema: z.object({ versionId: z.string().min(1) }) } } },
     },
-    responses: { 200: json(DriveSchema, 'Drive'), ...errors(400, 401, 404, 503) },
+    responses: { 204: { description: 'Restored' }, ...errors(400, 401, 403, 404, 503) },
   }),
   async (c: any) => {
-    const { drive, access, userId } = await loadDrive(c);
+    const caller = await loadDrive(c);
+    if (!caller.subject.admin) fail(403, 'Only a project admin can restore Files');
     const { versionId } = c.req.valid('json') as { versionId: string };
     if (versionId === 'head' || !/^[A-Za-z0-9_-]{1,128}$/.test(versionId)) fail(400, 'Invalid version');
     const versionNotFound = (): never => fail(404, 'Version not found');
     try {
-      await readDriveVolume(drive, (volume) => restoreVolume(volume, versionId), versionNotFound);
+      await readDriveVolume(caller.drive, (volume) => restoreVolume(volume, versionId), versionNotFound);
     } catch (err) {
       if (err instanceof DriveStorageError && err.status === 404) versionNotFound();
       if (err instanceof DriveStorageError) fail(err.status, err.message, err.code);
       throw err;
     }
-    noteDriveWrite(drive.driveId);
-    return c.json(await driveJson(drive, access, userId));
+    noteDriveWrite(caller.drive.driveId);
+    return c.body(null, 204);
   },
 );

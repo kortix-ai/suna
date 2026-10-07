@@ -150,7 +150,11 @@ projectsApp.get(`${base}/mounts`, async (c: Ctx) => {
 
 // The drive's head commit: the daemon lists the drive again only when it moved.
 projectsApp.get(`${base}/:driveId/head`, async (c: Ctx) => {
-  const got = await driveFor(c, 'read', '/');
+  // Any folder of the drive mounted here may ask: the head is the drive's, not a folder's.
+  const mounted = await scopeOf(c);
+  if (mounted instanceof Response) return mounted;
+  const mount = mounted.synced ? mounted.mounts.find((m) => m.driveId === param(c, 'driveId')) : undefined;
+  const got = await driveFor(c, 'read', mount?.subdir ?? '/');
   if (got instanceof Response) return got;
   const head = await storage(c, () =>
     readDriveVolume(got.drive, (volume) => getDriveVolume(volume).then((v) => v.head_commit_id ?? null), () => null),
