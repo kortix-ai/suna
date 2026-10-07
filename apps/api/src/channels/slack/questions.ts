@@ -10,15 +10,16 @@ export type { QuestionInfo } from './types';
 // `question` tool until a human killed it). Each option renders as a CLICKABLE
 // button: a click fires a block_action the interactivity webhook routes back
 // into the thread as a follow-up turn carrying the chosen answer. A free-form
-// in-thread reply works too (for "Other"). Either way the answer arrives as a
+// in-thread reply that @mentions the bot works too (for "Other"). Either way the answer arrives as a
 // normal follow-up turn with full context. The sentinel is returned as the
 // question tool's "answer" so the agent resumes and ends its turn. Kept here
 // (not just in the sandbox) so an OLD sandbox image — which resumes opencode
 // from THIS response's `answers` — stays unblocked during the window between an
 // API deploy and the sandbox template rebuild.
 const QUESTION_SENTINEL =
-  '(Posted to the Slack thread. In Slack, questions are async — the user replies as ' +
-  'a normal message, which reaches you as a NEW turn with full context. Do not wait ' +
+  '(Posted to the Slack thread. In Slack, questions are async — the user answers by ' +
+  'replying in the thread, which reaches you as a NEW turn with full context. In a channel, ' +
+  'the reply reaches you only when it @mentions you; a DM reply needs no mention. Do not wait ' +
   'for an answer here; finish this turn now.)';
 
 // Renders the agent's question(s) into the live Slack thread. The sandbox owns
@@ -75,7 +76,7 @@ function renderQuestionsPlain(questions: QuestionInfo[]): string {
     });
     lines.push('');
   });
-  lines.push('↩︎ Reply in this thread to answer.');
+  lines.push('↩︎ @mention me in this thread to answer.');
   return lines.join('\n');
 }
 
@@ -116,7 +117,7 @@ function buildQuestionBlocks(questions: QuestionInfo[]): Array<Record<string, un
   });
   blocks.push({
     type: 'context',
-    elements: [{ type: 'mrkdwn', text: '↩︎  Click an option, or reply in this thread to answer.' }],
+    elements: [{ type: 'mrkdwn', text: '↩︎  Click an option, or @mention me in this thread to answer.' }],
   });
   return blocks;
 }

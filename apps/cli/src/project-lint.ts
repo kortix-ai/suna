@@ -95,10 +95,15 @@ export function lintRepoSize(dir: string): ManifestIssue[] {
   const paths = [...new Set(listed.split('\0').filter(Boolean))];
 
   // `check-attr -z` prints `<path>\0<attribute>\0<value>\0` per path and attribute.
+  // Directories are asked too: `fixtures export-ignore` marks the folder, and
+  // `git archive` (like the API's release) leaves out everything under it.
+  const ancestors = (path: string) =>
+    path.split('/').slice(0, -1).map((_, i, parts) => parts.slice(0, i + 1).join('/'));
+  const queried = [...new Set(paths.flatMap((path) => [...ancestors(path), path]))];
   const ignored = new Set<string>();
   const lfs = new Set<string>();
   const attrs =
-    git(root, ['check-attr', '-z', '--stdin', 'export-ignore', 'filter'], paths.join('\0'))?.split('\0') ?? [];
+    git(root, ['check-attr', '-z', '--stdin', 'export-ignore', 'filter'], queried.join('\0'))?.split('\0') ?? [];
   for (let i = 0; i + 2 < attrs.length; i += 3) {
     if (attrs[i + 1] === 'export-ignore' && attrs[i + 2] === 'set') ignored.add(attrs[i]!);
     if (attrs[i + 1] === 'filter' && attrs[i + 2] === 'lfs') lfs.add(attrs[i]!);
@@ -107,7 +112,7 @@ export function lintRepoSize(dir: string): ManifestIssue[] {
   let total = 0;
   const files: { path: string; bytes: number }[] = [];
   for (const path of paths) {
-    if (ignored.has(path)) continue;
+    if (ignored.has(path) || ancestors(path).some((dir) => ignored.has(dir))) continue;
     let bytes: number;
     try {
       const stat = lstatSync(join(root, path));

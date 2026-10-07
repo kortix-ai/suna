@@ -320,15 +320,47 @@ flow(
 
 flow(
   'MEM-5',
-  { domain: 'accounts', routes: ['POST /v1/accounts/:accountId/leave'] },
+  { domain: 'accounts', routes: [
+    'POST /v1/accounts/:accountId/leave',
+    'POST /v1/accounts/:accountId/iam/groups',
+    'POST /v1/accounts/:accountId/iam/groups/:groupId/members',
+    'GET /v1/accounts/:accountId/iam/groups/:groupId/members',
+  ] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const member = await team.addMember('member');
+    let groupId = '';
+    await ctx.step('the member is in a group', async () => {
+      await enableEnterpriseDemo(ctx, team.id);
+      const created = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/groups',
+        { name: ctx.fixtures.name('leaver') },
+        { params: { accountId: team.id } },
+      );
+      created.status(201);
+      groupId = created.json<any>().group_id;
+      (await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/groups/:groupId/members',
+        { userIds: [member.userId!] },
+        { params: { accountId: team.id, groupId } },
+      )).status(200).body().has('$.added', 1);
+    });
     await ctx.step('member leaves → ok', async () => {
       const r = await ctx.client
         .as(member)
         .post('/v1/accounts/:accountId/leave', {}, { params: { accountId: team.id } });
       r.status(200);
+    });
+    // KRTX-1722: leaving kept the group rows, so a re-invite restored every
+    // group grant. Removal and SCIM already delete them.
+    await ctx.step('the leaver is in no group of the account', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/groups/:groupId/members', {
+        params: { accountId: team.id, groupId },
+      });
+      r.status(200);
+      if (r.json<any>().members.some((row: any) => row.user_id === member.userId)) {
+        throw new Error('The member who left remains in the group');
+      }
     });
     await ctx.step('non-member leave → 404', async () => {
       const r = await ctx.client

@@ -61,6 +61,7 @@ import {
   resolveWorkingTurn,
   shouldSuppressWorkingTurnBusy,
   turnIsConfirmedActive,
+  turnRendersQueued,
   workingTurnDrawsBusyRow,
 } from './turn/working-turn';
 
@@ -4240,11 +4241,16 @@ export function SessionChat({
                               }
                               suppressBusyIndicator={suppressWorkingTurnBusy}
                               awaitingUser={awaitingUserInput}
-                              pending={
-                                !confirmedActive &&
-                                (Boolean(pendingPrompt) ||
-                                  pendingTurnIds.has(turn.userMessage.info.id))
-                              }
+                              // An idle send stays in the inbox until delivery,
+                              // but nothing runs ahead of it: queued only while
+                              // it waits behind a turn (`turnRendersQueued`).
+                              pending={turnRendersQueued({
+                                turnId: turn.userMessage.info.id,
+                                resolution: workingTurn,
+                                sessionWorking: lastTurnWorking,
+                                confirmedActive,
+                                inboxPrompt: pendingPrompt,
+                              })}
                               pendingPrompt={pendingPrompt}
                               onRetryQueued={stableRetryQueued}
                               onRemoveQueued={stableRemoveQueued}

@@ -2,9 +2,11 @@
  * Projects — authenticated CRUD + access. Maps to spec §13 (PROJ-1..8).
  */
 import { ProjectSchema } from "@kortix/api-contract";
+import { Client } from "../core/client";
 import { flow } from "../core/flow";
 import { waitFor } from "../core/poll";
-import { fundDatabaseAccount } from "../fixtures/database-project";
+import { createDatabaseSession, fundDatabaseAccount } from "../fixtures/database-project";
+import { seedSessionTranscript } from "../fixtures/session-transcript";
 
 flow("PROJ-1", { domain: "projects", tags: ["smoke"], routes: ["GET /v1/projects"] }, async (ctx) => {
   await ctx.step("OWNER lists projects; every row matches the contract Project", async () => {
@@ -379,7 +381,7 @@ flow(
 );
 
 flow(
-  "PROJ-40",
+  "PROJ-42",
   { domain: "projects", routes: ["GET /v1/projects/managed-git/status", "POST /v1/projects/provision", "GET /v1/projects"] },
   async (ctx) => {
     const owner = ctx.client.as(ctx.P.OWNER);
@@ -437,6 +439,78 @@ flow(
       await team.project();
       await fundDatabaseAccount(ctx.env, team.id);
       (await create()).status(409);
+    });
+  },
+);
+
+/**
+ * PROJ-40 — deleting a workspace closes its side doors (KRTX-1714). The delete
+ * archives the project, and the revoke routes answer 404 after it, so a door
+ * that ignored `projects.status` stayed open for good: a public transcript
+ * link kept rendering and a kgw_ key kept authorizing billed LLM calls.
+ */
+flow(
+  "PROJ-40",
+  {
+    domain: "projects",
+    requires: ["database"],
+    routes: [
+      "PATCH /v1/projects/:projectId/experimental",
+      "POST /v1/projects/:projectId/gateway/keys",
+      "POST /v1/projects/:projectId/sessions/:sessionId/public-shares",
+      "GET /v1/public/session-shares/:shareId/messages",
+      "POST /v1/llm/chat/completions",
+      "DELETE /v1/projects/:projectId",
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const anon = ctx.client.as(ctx.P.ANON);
+    const params = { projectId: project.id };
+    const sessionId = await createDatabaseSession(ctx.env, {
+      projectId: project.id,
+      accountId: team.id,
+      userId: ctx.P.OWNER.userId!,
+      visibility: "project",
+    });
+    ctx.track("session", sessionId, { projectId: project.id });
+    await seedSessionTranscript(ctx.env, { projectId: project.id, accountId: team.id, sessionId });
+
+    let key = "";
+    let token = "";
+    await ctx.step("the owner mints a kgw_ key and a public transcript link", async () => {
+      (await owner.patch("/v1/projects/:projectId/experimental", { feature: "llm_gateway", enabled: true }, { params }))
+        .status(200);
+      const minted = await owner.post("/v1/projects/:projectId/gateway/keys", { name: "ci" }, { params });
+      minted.status(200).body().exists("$.secret_key");
+      key = minted.json<{ secret_key: string }>().secret_key;
+      const share = await owner.post(
+        "/v1/projects/:projectId/sessions/:sessionId/public-shares",
+        { transcript: true },
+        { params: { ...params, sessionId } },
+      );
+      share.status(201);
+      token = share.json<{ share: { public_token: string } }>().share.public_token;
+    });
+
+    const gateway = () => new Client(ctx.env.gatewayUrl).withBearer(key, "PROJECT_GATEWAY_KEY");
+    const ask = () => gateway().post("/v1/llm/chat/completions", { model: "kimi-k3", max_tokens: 1, messages: [] });
+
+    await ctx.step("while the workspace is live: the gateway accepts the key and the link reads the transcript", async () => {
+      const r = await ask();
+      if (r.statusCode === 401) throw new Error(`the live key was refused: ${r.text().slice(0, 200)}`);
+      (await anon.get("/v1/public/session-shares/:shareId/messages", { params: { shareId: token } })).status(200);
+    });
+
+    await ctx.step("the owner deletes the workspace", async () => {
+      (await owner.del("/v1/projects/:projectId", { params })).status(200).body().has("$.archived", true);
+    });
+
+    await ctx.step("after the delete: the kgw_ key → 401 and the link → 410", async () => {
+      (await ask()).status(401);
+      (await anon.get("/v1/public/session-shares/:shareId/messages", { params: { shareId: token } })).status(410);
     });
   },
 );
