@@ -176,10 +176,13 @@ suite('kortix.session_sandboxes runtime-wake indexes (KRTX-1308)', () => {
         // and planned generically — the way a long-lived node-postgres
         // connection serves every call after the first five.
         await client.query('set plan_cache_mode = force_generic_plan');
-        const { rows: wakeRows } = await client.query<{ session_id: string }>(
-          WAKE_QUERY,
-          ['stopped', NOW, NOW, NOW, 100],
-        );
+        const { rows: wakeRows } = await client.query<{ session_id: string }>(WAKE_QUERY, [
+          'stopped',
+          NOW,
+          NOW,
+          NOW,
+          100,
+        ]);
         // Every candidate must come back, none of the negatives, none of the
         // bulk: the indexes only pre-filter, they never change the answer.
         // (Property assertions, not an exact id set: the database may hold
@@ -235,9 +238,7 @@ suite('kortix.session_sandboxes runtime-wake indexes (KRTX-1308)', () => {
         expect(wideScans).toEqual([]);
         // The OR arms must be served by their own indexes: at least one scan
         // reads an arm index (a BitmapOr member, or a single-arm index scan).
-        const armScans = nodes.filter((n) =>
-          INDEXES.some((i) => n['Index Name'] === i.name),
-        );
+        const armScans = nodes.filter((n) => INDEXES.some((i) => n['Index Name'] === i.name));
         expect(armScans.length).toBeGreaterThan(0);
         // The candidate set is tiny by design: the heap fetch that the plan
         // actually pays for is bounded by the candidates plus their in-index

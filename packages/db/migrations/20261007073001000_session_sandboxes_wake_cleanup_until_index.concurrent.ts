@@ -41,7 +41,7 @@ export const up = (pgm) => {
   // scan. Creating an index queues no analyze, and autovacuum's next pass on
   // this hot table could be hours away — analyze right here so the first
   // post-migration plan is already the bitmap one.
-  pgm.sql(`analyze kortix.session_sandboxes`);
+  pgm.sql('analyze kortix.session_sandboxes');
 };
 
 // Most CONCURRENTLY migrations are one-way in practice (see MIGRATIONS.md --
