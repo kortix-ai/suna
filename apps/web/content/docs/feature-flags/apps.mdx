@@ -58,10 +58,18 @@ Pick the fastest path for the result you want:
 `dockerfile` and `oci_image` require `--command` and `--port`. `static` and
 `bundle` do not.
 
+A static App holds at most 20,000 files of at most 50 MiB each; a larger site
+fails with `invalid_site`. A static App runs no server, so it ignores `env` and
+`secrets`: a deploy that sets them records an `environment_ignored` event. The
+CLI never uploads `.env*` files, so a build-time value such as `VITE_*` in
+`.env.production` reaches the App only through a build you run before the
+deploy.
+
 ## Deploy from the CLI
 
 ```bash
-kortix apps deploy .
+npm run build
+kortix apps deploy dist --type static --spa
 ```
 
 `deploy` creates the App on first use, registers an immutable artifact —
@@ -70,8 +78,8 @@ builds it, and blocks until the stable URL is ready. The wait budget is `--wait-
 default `1200`. Use `--no-wait` only when another process owns status tracking.
 
 ```bash
-kortix apps deploy dist --slug docs --access project
-kortix apps deploy . --type dockerfile --command '["node","server.js"]' --port 3000
+kortix apps deploy dist --slug docs --type static --spa --access project
+kortix apps deploy . --type dockerfile --on-demand --command '["node","server.js"]' --port 3000
 kortix apps deploy --image ghcr.io/acme/service:2026-08-07 --command '["node","server.js"]' --port 3000
 ```
 
@@ -97,8 +105,9 @@ The full subcommand list:
 
 `kortix apps set` sends only the flags you pass, and needs project write
 access. `--memory-gb` accepts `--memory` and `--disk-gb` accepts `--disk` as
-aliases. `--idle-timeout` takes 120-86400 seconds. A machine or budget change
-applies to the next deployment, not to the running runtime.
+aliases. `--idle-timeout` takes 120-86400 seconds. A machine change applies to
+the next deployment. A run-mode or budget change applies within 5 minutes,
+without a redeploy.
 
 ### Deployment defaults from `kortix.yaml`
 
@@ -111,21 +120,29 @@ apps:
     path: docs/dist
     type: static
     spa: true
-    readiness_path: /
+  api:
+    path: services/api
+    type: dockerfile
+    command: ["node", "server.js"]
+    port: 3000
+    readiness_path: /health
+    always_on: false
     idle_timeout_seconds: 300
-    monthly_budget_usd: 5
+    monthly_budget_usd: 10
     resources:
       cpu: 1
       memory_gb: 2
       disk_gb: 10
     env:
-      PUBLIC_BASE: https://kortix.com
+      PUBLIC_BASE: https://example.com
     secrets:
-      API_TOKEN: docs_api_token
+      API_TOKEN: api_token
 ```
 
-Select the block with `kortix apps deploy --manifest-app docs`. An explicit flag
-always wins over the block.
+Select a block with `kortix apps deploy --manifest-app docs`. An explicit flag
+always wins over the block. A static block needs only `path`, `type`, and
+`spa`: the run mode, budget, machine, `env`, and `secrets` apply to server
+Apps.
 
 ### Machine, idle timeout, and budget
 
@@ -149,8 +166,8 @@ A server App (`dockerfile`, `oci_image`, `bundle`) runs in one of two modes:
 
 | Mode | Behaviour | Use it for |
 |---|---|---|
-| Always on (`--always-on`, default) | Runs 24/7. Kortix restarts it within 5 minutes if it stops, and refreshes its runtime in the background. | Cron jobs, queues, workers, websockets, anything that must run without a request |
-| On demand (`--on-demand`) | Stops after `idle_timeout_seconds` without requests; the next request wakes it (cold start). | Low-traffic tools where a few seconds of wake time is fine |
+| Always on (`--always-on`, default) | Runs 24/7. Kortix restarts it within 5 minutes if it stops, and refreshes its runtime in the background. | Websockets, background loops, anything that must run without a request |
+| On demand (`--on-demand`) | Stops after `idle_timeout_seconds` without requests; the next request wakes it (cold start). | Every App that only answers requests |
 
 Every 5 minutes a keep-alive pass checks every running App and every
 always-on App:
@@ -234,7 +251,14 @@ A static App answers every request at once. HTML revalidates on every load
 for a year, text files are compressed (Brotli or gzip), a page navigation to an
 unknown path gets `index.html` when the App is an SPA, and a missing file gets
 your `404.html` with status `404`. Responses are `private` to shared caches
-unless the App is public.
+unless the App is public. On Kortix cloud, a public App's hashed build assets
+are also cached at the edge for up to 1 hour. After the App turns non-public or
+is deleted, those copies stay reachable by exact URL for up to 1 hour.
+
+App code in the browser reaches the Kortix API, as the viewer, through
+`/_kortix/api/v1/*` on the App's own origin. The Kortix API refuses a direct
+cross-origin call from an App. The path needs `--viewer api`; see
+[SDK → Apps](/docs/sdk/apps).
 
 An authorized request to a suspended server App resumes its sandbox, waits for
 readiness, and proxies that same request. You do not have to wake it first.
@@ -381,7 +405,8 @@ Move traffic back to any ready deployment:
 kortix apps rollback docs <deployment-id>
 ```
 
-Rollback starts the target deployment's runtime first, then stops the previous
+A static App's rollback moves traffic at once: nothing boots. A server App's
+rollback starts the target deployment's runtime first, then stops the previous
 one. A target that fails to start leaves the current deployment serving.
 
 ## Delete deployments and Apps
@@ -409,10 +434,12 @@ kortix apps delete docs --yes                       # the App and every image it
 Failed deployments and deleted Apps also release their images without any
 action: project maintenance removes them every few minutes.
 
-Each cold start compares the active deployment's runtime version against the
-current Kortix App runtime. The old deployment keeps serving while Kortix
-asynchronously builds one immutable replacement with the latest `kortix-appd`
-and Caddy binaries. A PostgreSQL advisory lock prevents duplicate refreshes.
+When a Kortix release changes the App supervisor image (`kortix-appd` and
+Caddy), a server App gets one immutable replacement built from the same
+artifact: on its next cold start (on demand), or in a keep-alive pass (always
+on). The old deployment keeps serving until the replacement passes readiness.
+A PostgreSQL advisory lock prevents duplicate refreshes. A static App has no
+runtime to refresh.
 
 ## The Apps page
 

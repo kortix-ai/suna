@@ -27,7 +27,7 @@ on it. See [Feature flags](/docs/feature-flags).
 | `apps.list()` | `GET /projects/:pid/apps` | Lists the project's Apps |
 | `apps.create(input)` | `POST …/apps` | Creates an App and assigns its stable URL |
 | `apps.get(appId)` | `GET …/apps/:id` | Reads one App |
-| `apps.update(appId, input)` | `PATCH …/apps/:id` | Renames it or changes machine, idle timeout, or budget |
+| `apps.update(appId, input)` | `PATCH …/apps/:id` | Renames it or changes machine, idle timeout, run mode (`always_on`), or budget. Run mode and budget apply within 5 minutes; a machine change applies to the next deployment |
 | `apps.remove(appId)` | `DELETE …/apps/:id` | Deletes the App, its runtimes, and every deployment image; returns `images: {released, pending}` |
 | `apps.start(appId)` | `POST …/apps/:id/start` | Sets `desired_state` to `running` and warms the runtime. A static App answers `409 static_app_no_runtime` |
 | `apps.stop(appId)` | `POST …/apps/:id/stop` | Suspends compute now; the next request resumes it. A static App answers `409 static_app_no_runtime`: it has no runtime and serves while it has an active deployment |
@@ -83,8 +83,8 @@ console.log(app.url, deployment.status); // https://…apps.kortix.com  queued
 
 `create` accepts the machine and budget fields too: `cpu`, `memory_gb`,
 `disk_gb`, `idle_timeout_seconds`, `always_on`, and `monthly_budget_usd`. Omit
-them for the defaults. `always_on: true` runs a server App 24/7 (cron jobs,
-workers, websockets); `false` stops it after `idle_timeout_seconds` and wakes it
+them for the defaults. `always_on: true` runs a server App 24/7 (websockets,
+background loops); `false` stops it after `idle_timeout_seconds` and wakes it
 on the next request. Both stop at the monthly budget. A static App has no
 runtime and ignores both.
 

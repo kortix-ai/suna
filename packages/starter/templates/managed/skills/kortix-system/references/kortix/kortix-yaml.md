@@ -84,14 +84,23 @@ harnesses:
 # ─── Apps ─────────────────────────────────────────────────────────
 # Local, repeatable deployment defaults. `kortix apps deploy` remains the
 # explicit deployment action; merging this file does not auto-deploy.
+# A static App (files, no machine) ignores run mode, budget, resources, env
+# and secrets. A server App runs always on (default) or on demand; always on
+# costs about 73 USD/month on the default machine, so set its budget.
 apps:
   storefront:
-    path: web
-    type: bundle
-    output_dir: dist
-    readiness_path: /
+    path: web/dist             # build first; deploy the output directory
+    type: static
+    spa: true
+  api:
+    path: services/api
+    type: dockerfile
+    command: ["node", "server.js"]
+    port: 3000
+    readiness_path: /health
+    always_on: false           # on demand: stops when idle, wakes on request
     idle_timeout_seconds: 300
-    monthly_budget_usd: 5
+    monthly_budget_usd: 10
     resources:
       cpu: 1
       memory_gb: 2

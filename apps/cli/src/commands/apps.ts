@@ -80,8 +80,9 @@ Subcommands:
     --wait-seconds <seconds>        Default: 1200.
   set <id|slug>                     Change an existing App. Only the flags you
                                     pass are sent. Needs project write access.
-                                    A machine or budget change applies to the
-                                    next deployment, not the running runtime.
+                                    A machine change applies to the next
+                                    deployment. A run-mode or budget change
+                                    applies within 5 minutes.
     --name <name>
     --cpu <cores>
     --memory-gb <gb>                Alias: --memory.
