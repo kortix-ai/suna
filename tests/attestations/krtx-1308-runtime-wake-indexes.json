@@ -1,5 +1,5 @@
 {
-  "source_hash": "fdc33312c2cc9a6c7cd9f754cc97f20a6bb9287733bc395298cf7231202aa81f",
+  "source_hash": "06aba037c95db723a9d51c0e91a4898b0da95ae679ad2253a1e79ed97ad9035b",
   "diff_files": [
     "packages/db/drizzle/meta/20261007073000_snapshot.json",
     "packages/db/drizzle/meta/_journal.json",
@@ -8,13 +8,13 @@
     "packages/db/scripts/session-sandboxes-runtime-wake-index.integration.test.ts",
     "packages/db/src/schema/kortix.ts"
   ],
-  "diff_hash": "1368f1638f0ec03c91f9559bb513410829f36ba3e1c0f475b1e9f3efb06faefc",
-  "head": "582c45512ef0aef2e1f7f0120a7a34295c47073e",
+  "diff_hash": "3524b9a977c86f1b6e547b8229289e579e020bd0d050f35032dedf03d86eca1a",
+  "head": "5fb3456f9947af72ff45937cae009608c7899c97",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-07T06:07:58.507Z"
+  "at": "2026-10-07T06:21:42.115Z"
 }
