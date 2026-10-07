@@ -58,6 +58,7 @@ import type { Command } from '@/lib/session/runtime-data';
 import { detectCommandFromText } from '@/lib/session/detect-command';
 import {
   answeredQuestionParts as selectAnsweredQuestionParts,
+  busyStatusParts,
   commandPromptText,
   compactionTurnView,
   inlineContentItems,
@@ -178,10 +179,9 @@ function SessionTurnImpl({
   const bodyTurn = turn as unknown as TurnBodyTurn;
 
   // Mobile's wire types are a local copy of the SDK's; the turn rules take SDK parts.
-  const allParts = useMemo(
-    () => withoutReasoning(collectTurnParts(turn) as unknown as ReadonlyArray<{ part: SdkPart }>),
-    [turn],
-  );
+  const rawParts = useMemo(() => collectTurnParts(turn) as unknown as ReadonlyArray<{ part: SdkPart }>, [turn]);
+  const allParts = useMemo(() => withoutReasoning(rawParts), [rawParts]);
+  const busyParts = useMemo(() => busyStatusParts(rawParts), [rawParts]);
 
   // Web: `working = isWorkingTurn && sessionWorking`. Any other turn is never working.
   const working = useMemo(
@@ -242,7 +242,7 @@ function SessionTurnImpl({
   );
   const retrySecondsLeft = useRetrySecondsLeft(retryInfo);
   // Throttled status + stall clock; "Thinking" until the turn has an assistant message.
-  const { statusText, elapsedLabel } = useTurnBusyStatus({ allParts, working, hasAssistantContent });
+  const { statusText, elapsedLabel } = useTurnBusyStatus({ allParts: busyParts, working, hasAssistantContent });
 
   // ── Compaction ──
   const compactionInfo = useMemo(() => compactionTurnInfo(turn as never), [turn]);

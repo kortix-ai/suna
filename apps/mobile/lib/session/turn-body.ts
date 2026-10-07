@@ -76,6 +76,17 @@ export function withoutReasoning<T extends PartEntry>(allParts: ReadonlyArray<T>
   return allParts.filter(({ part }) => !isReasoningPart(part));
 }
 
+/**
+ * The parts the busy label reads. A thought stays in, with its text blanked, so
+ * the label is a bare "Thinking..." (the SDK's status scan returns the last
+ * tool's phrase otherwise) and no thought text or heading reaches the screen.
+ */
+export function busyStatusParts<T extends PartEntry>(rawParts: ReadonlyArray<T>): T[] {
+  return rawParts.map((entry) =>
+    isReasoningPart(entry.part) ? { ...entry, part: { ...entry.part, text: '' } } : entry,
+  );
+}
+
 // ─── Answered questions ──────────────────────────────────────────────────────
 
 type QuestionInput = { questions?: ReadonlyArray<{ question: string }> };

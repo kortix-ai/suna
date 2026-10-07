@@ -350,14 +350,6 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     () => composerAreaHeightRef.current + bottomInsetRef.current * (1 - keyboardProgress.value),
     [keyboardProgress],
   );
-  const handleComposerAreaLayout = useCallback(
-    (e: LayoutChangeEvent) => {
-      const height = Math.round(e.nativeEvent.layout.height);
-      composerAreaHeightRef.current = height;
-      composerAreaHeight.value = height;
-    },
-    [composerAreaHeight],
-  );
   const { sandboxUrl } = useSandboxContext();
   // Declared early: `handleStop` (below) needs it for a failed-abort toast.
   const toast = useToast();
@@ -1321,6 +1313,17 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       settleRef.current();
     });
   }, []);
+
+  // A taller or shorter composer moves the end padding: settle once, like any layout change.
+  const handleComposerAreaLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      const height = Math.round(e.nativeEvent.layout.height);
+      composerAreaHeightRef.current = height;
+      composerAreaHeight.value = height;
+      scheduleSettle();
+    },
+    [composerAreaHeight, scheduleSettle],
+  );
 
   // The keyboard's start and end events bound its motion. The end sets the
   // room the motion held back, then settles once. The fallback ends a motion

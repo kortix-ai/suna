@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { segmentTurn, type Part, type ToolPart } from '@kortix/sdk';
+import { getTurnStatus, segmentTurn, type Part, type ToolPart } from '@kortix/sdk';
 
 import {
   WORKSPACE_ROOTS,
   answeredQuestionParts,
+  busyStatusParts,
   commandPromptText,
   compactionTurnView,
   hasCompactionTurn,
@@ -114,6 +115,25 @@ describe('withoutReasoning', () => {
     const parts = withoutReasoning(wrap([text('a'), reasoning('b'), tool('read')]));
     const kinds = segmentTurn(segmentInputParts(parts, new Map(), false), {}).map((s) => s.kind);
     expect(kinds).toEqual(['text', 'burst']);
+  });
+});
+
+describe('busyStatusParts', () => {
+  test('a thought after a tool reads "Thinking...", not the tool phrase', () => {
+    const parts = wrap([tool('read'), reasoning('**Plan** secret')]);
+    expect(getTurnStatus(withoutReasoning(parts) as never)).toBe('Reading files...');
+    expect(getTurnStatus(busyStatusParts(parts) as never)).toBe('Thinking...');
+  });
+
+  test('a reasoning-only working turn reads "Thinking..." and leaks no text', () => {
+    const parts = wrap([reasoning('**Heading** private')]);
+    expect(getTurnStatus(withoutReasoning(parts) as never)).toContain('Figuring out');
+    expect(getTurnStatus(busyStatusParts(parts) as never)).toBe('Thinking...');
+    expect(JSON.stringify(busyStatusParts(parts))).not.toContain('private');
+  });
+
+  test('parts after the thought still win', () => {
+    expect(getTurnStatus(busyStatusParts(wrap([reasoning('x'), tool('read')])) as never)).toBe('Reading files...');
   });
 });
 
