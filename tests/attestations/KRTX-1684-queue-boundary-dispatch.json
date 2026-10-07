@@ -1,0 +1,20 @@
+{
+  "source_hash": "284c7eef37a398f9c88ce71a1ebe72efcb139b15ea7c5d3b3cfef94791d23dca",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-prompt-inbox.test.ts",
+    "apps/api/src/projects/session-lifecycle/__tests__/queued-continue-boundary-fallback.test.ts",
+    "apps/api/src/projects/session-lifecycle/command-transitions.ts",
+    "apps/api/src/projects/session-lifecycle/inbox-admission.test.ts",
+    "apps/api/src/projects/session-lifecycle/inbox-admission.ts",
+    "apps/api/src/projects/session-lifecycle/queued-continue.ts"
+  ],
+  "diff_hash": "162508487c98d74641881e92a65dac054fd8f1d87c2a14146f1a5281233dc46b",
+  "head": "e82211cefe6233d665656658a6c5e3a660aa58c2",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-07T04:35:59.414Z"
+}
