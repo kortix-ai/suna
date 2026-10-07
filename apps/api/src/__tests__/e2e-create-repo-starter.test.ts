@@ -202,6 +202,7 @@ mock.module('../projects/git', () => ({
   listRepoFiles: async () => [],
   loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),
   readRepoFile: async () => '',
+  readRepoFileBytes: async () => Buffer.alloc(0),
   isRepoFileNotFoundError: () => false,
   readManifestFromRepo: async () => null,
   invalidateProjectMirror: () => {},
