@@ -137,11 +137,13 @@ describe('burstView', () => {
     expect(view.title).toBe('Completed 1 step');
   });
 
-  test('a lone thought gets the dedicated thinking label', () => {
-    const view = burstView([reasoning('plan', { start: 1, end: 2 })], false, false);
-    expect(view.hidden).toBe(false);
-    expect(view.title).toBe('Thinking');
-    expect(view.steps[0]?.kind).toBe('thought');
+  test('reasoning is not a step: a lone thought is hidden, and one beside a call is not counted', () => {
+    const lone = burstView([reasoning('plan', { start: 1, end: 2 })], false, false);
+    expect(lone.hidden).toBe(true);
+    expect(lone.steps).toEqual([]);
+    const mixed = burstView([reasoning('plan', { start: 1, end: 2 }), tool('bash', 'completed')], false, false);
+    expect(mixed.steps).toHaveLength(1);
+    expect(mixed.title).toBe('Completed 1 step');
   });
 
   test('a same-family group of 3 is ONE step row and summarises 3 calls', () => {

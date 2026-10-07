@@ -173,10 +173,12 @@ export interface BurstView {
 }
 
 export function burstView(
-  parts: ReadonlyArray<Part>,
+  allParts: ReadonlyArray<Part>,
   working: boolean,
   isTrailing = false,
 ): BurstView {
+  // Mobile never shows thinking: a thought is not a step, in the row or the sheet.
+  const parts = allParts.filter((part) => !isReasoningPart(part));
   const running = burstIsRunning(parts, working, isTrailing);
   const merged = mergeBurstSteps(parts, (p) => stepLabel(p).tier);
   // An answered question owns its row, so it never shares a group row.
@@ -190,7 +192,7 @@ export function burstView(
     running,
     steps,
     summary,
-    title: steps.length === 1 && steps[0]?.kind === 'thought' ? 'Thinking' : burstSummaryLabel(summary, running),
+    title: burstSummaryLabel(summary, running),
     hidden: steps.length === 0,
   };
 }

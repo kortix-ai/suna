@@ -21,9 +21,9 @@ import {
   transcriptBusyRowVisible,
   turnErrorIsAbort,
   turnErrorText,
-  turnHasReasoning,
   turnHasSteps,
   turnResponse,
+  withoutReasoning,
   type TurnBodyTurn,
 } from './turn-body';
 
@@ -97,10 +97,23 @@ describe('turnHasSteps (web SessionTurnImpl hasSteps)', () => {
   });
 });
 
-describe('turnHasReasoning', () => {
-  test('only non-blank reasoning counts', () => {
-    expect(turnHasReasoning(wrap([reasoning('  ')]))).toBe(false);
-    expect(turnHasReasoning(wrap([reasoning('plan')]))).toBe(true);
+describe('withoutReasoning', () => {
+  test('drops every reasoning part and keeps the order of the rest', () => {
+    const parts = wrap([text('a'), reasoning('private'), tool('read'), reasoning('')]);
+    expect(withoutReasoning(parts)).toEqual([parts[0], parts[2]]);
+  });
+
+  test('a reasoning-only turn has no steps and no response', () => {
+    const parts = withoutReasoning(wrap([reasoning('only thinking')]));
+    expect(parts).toEqual([]);
+    expect(turnHasSteps(parts)).toBe(false);
+    expect(segmentTurn(segmentInputParts(parts, new Map(), false), {})).toEqual([]);
+  });
+
+  test('a thought between text and a tool leaves a text segment and a burst', () => {
+    const parts = withoutReasoning(wrap([text('a'), reasoning('b'), tool('read')]));
+    const kinds = segmentTurn(segmentInputParts(parts, new Map(), false), {}).map((s) => s.kind);
+    expect(kinds).toEqual(['text', 'burst']);
   });
 });
 

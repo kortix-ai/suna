@@ -68,8 +68,12 @@ export function turnHasSteps(allParts: ReadonlyArray<PartEntry>): boolean {
   });
 }
 
-export function turnHasReasoning(allParts: ReadonlyArray<PartEntry>): boolean {
-  return allParts.some(({ part }) => isReasoningPart(part) && !!part.text?.trim());
+/**
+ * The turn's parts without reasoning. Mobile never shows thinking, so every
+ * rule below reads these parts, not the raw ones.
+ */
+export function withoutReasoning<T extends PartEntry>(allParts: ReadonlyArray<T>): T[] {
+  return allParts.filter(({ part }) => !isReasoningPart(part));
 }
 
 // ─── Answered questions ──────────────────────────────────────────────────────
