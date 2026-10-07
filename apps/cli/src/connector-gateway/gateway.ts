@@ -93,10 +93,14 @@ export async function callWithApprovalHandoff<T = unknown>(
   const account = stringValue(options.account)?.trim();
   // Same flag-typo guard for the approval context.
   const approvalContext = stringValue(options.approvalContext)?.trim();
-  return client.call<T>(`${connector}.${action}`, args, {
+  const result = await client.call<T>(`${connector}.${action}`, args, {
     ...(account ? { account } : {}),
     ...(approvalContext ? { approvalContext } : {}),
   });
+  // `output` repeats the payload of `data` without its envelope (for SDK
+  // callers). The agent reads `data`; printing both doubles every result.
+  const { output: _output, ...shown } = result as ConnectorCallResult<T> & { output?: unknown };
+  return shown;
 }
 
 interface ConnectLinkResult {

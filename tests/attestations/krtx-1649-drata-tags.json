@@ -1,0 +1,18 @@
+{
+  "source_hash": "12edbb974ed14d090b4eeec17041c9485b98551b2d348855afadedd7134c3d34",
+  "diff_files": [
+    ".github/workflows/terraform-ci.yml",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "infra/terraform/modules/audit-archive-bucket/main.tf",
+    "infra/terraform/scripts/test_audit_archive_tag_readability.py"
+  ],
+  "diff_hash": "19a5923a80c6142eb40f7cde62bad389e94279c348a2db01c2d315cec9fb8f01",
+  "head": "a9bd220ddecbcd5b6e610bc54e310e4c48979915",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-07T20:37:18.450Z"
+}

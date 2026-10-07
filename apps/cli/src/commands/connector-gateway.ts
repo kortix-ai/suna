@@ -234,6 +234,8 @@ async function show({ args, flags }: Invocation): Promise<void> {
     risk: tool.risk,
     description: tool.description,
     inputSchema: tool.inputSchema,
+    // The call's `output` shape; absent for connectors without one (Composio, Pipedream).
+    ...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
   });
 }
 
@@ -423,7 +425,7 @@ const CONNECTORS_HELP = {
   commands: {
     ls: 'kortix connectors ls — list connectors + tools this session can use',
     discover: 'kortix connectors discover "<intent>" — search tools by natural language',
-    show: "kortix connectors show <connector>.<action> — show a tool's input schema",
+    show: "kortix connectors show <connector>.<action> — show a tool's input and output schema",
     call: "kortix connectors call <connector> <action> '<json-args>'|@args.json|- [--account <label|id|me|project>] [--reason <text>] [--attach <file>]... [--attach-path <dotted.path>] — run a tool or return its approval link; the result echoes the account it ran as. With several accounts and none named/pinned, denied with reason account_required — name --account or pin a default. --attach stages a file from /workspace/{output,artifacts,reports,deliverables} and appends its reference to the action's attachments array (e.g. Microsoft Graph body.message.attachments); the gateway builds the provider's attachment item. Never put base64 in args. --reason <text> tells the human approver what the call does when policy holds it (who it emails, what it says, what it deletes); always pass it for writes whose args are only ids (send_draft, delete, merge). --out <file> writes the full JSON result to <file> and prints only { saved_to, bytes, shape } — use it for list/search calls that can return more than ~16 KB, then query the file with jq or bun",
     upload:
       'kortix connectors upload <file> --connector <slug> — stage one file; prints `ref`, the value {"$kortix_attachment":"<id>"}. Put it in call args: as an attachments[] element it becomes the provider attachment item, in a string field (contentBytes, content) it becomes the base64. Single-use, expires in 24 h',
