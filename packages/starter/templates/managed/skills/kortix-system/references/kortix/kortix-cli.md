@@ -331,6 +331,19 @@ the same state.
 | `kortix triggers fire <slug>` | Manually fire a trigger now. |
 | `kortix triggers enable <slug>` | Set `enabled = true`. |
 | `kortix triggers disable <slug>` | Set `enabled = false`. |
+| `kortix triggers events --apps [--json]` | List apps that can trigger events: event count, the project's connector, and whether a shared account is connected (`connected`, `needs account`, `no connector`). |
+| `kortix triggers events --connector <slug> [--json]` | List the events a connector offers: `TYPE`, `NAME`, `DELIVERY`. |
+| `kortix triggers events --connector <slug> --event <TYPE> [--json]` | One event in full: config fields (type, required, default, allowed values, description) and the `{{ event.data.* }}` prompt variables. |
+| `kortix triggers add <slug> --type event --connector <slug> --event <TYPE> --config <k>=<v> --prompt "…" [--apply]` | Add an event trigger. Without `--apply` it writes a `triggers:` block to the local `kortix.yaml` (`kortix ship` applies it). With `--apply` it creates the trigger now and prints its status and the next step. Online, the config is checked against the event catalog; every missing or invalid field is listed with its description. |
+| `kortix triggers set <slug> [--event <TYPE>] [--connector <slug>] [--config <k>=<v>] [--config-json '<json>']` | Change a live event trigger. `--config` merges into the current config. `--config-json` replaces it. Do not pass both. |
+
+`--config k=v` is converted to the field's type (number, boolean, comma
+list) using the catalog. `--config-json` passes typed values as-is. An event
+trigger takes none of `--cron`, `--run-at`, `--timezone`, `--secret-env`,
+`--run`, `--mode`, `--interval`, `--expect-event-within`. `triggers ls` shows
+a status word per event trigger (`live`, `pending`, `needs connection`,
+`error`). `triggers info <slug>` shows the status, the error, the last event,
+and a `Next` block with the exact command to run.
 
 ### Reminders
 
