@@ -1,18 +1,19 @@
 {
-  "source_hash": "ddc05473baab1a3aedeeeb8c241204e203a632619000559babebafdeae082d8d",
+  "source_hash": "1f28694212fbce871f7e2675828054bab3cba98e409abba08c49c1dfd9e9b314",
   "diff_files": [
     "apps/web/src/features/session/tool/shared/infrastructure-preview.tsx",
     "apps/web/src/features/session/tool/shared/show-helpers.tsx",
     "apps/web/src/features/session/tool/shared/tool-action-bar.test.tsx",
-    "apps/web/src/features/session/tool/shared/tool-action-bar.tsx"
+    "apps/web/src/features/session/tool/shared/tool-action-bar.tsx",
+    "apps/web/src/lib/seo/content-timestamps.json"
   ],
-  "diff_hash": "a64e3050abac2ca92111acf3a8bd4a620db724551437bb43b23a8f9ea017f989",
-  "head": "63ad9330682e76a1e412713989246854dab3c8a8",
+  "diff_hash": "d22f6dc0a9869c3739404882725c5a034c28a59debc3967645c5210770fca2e0",
+  "head": "2d0f0f4d79c3402006dfca217dc252e196dc16b9",
   "passed": true,
   "lanes": {
+    "packages": "pass",
     "core": "pass",
-    "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-07T18:15:24.934Z"
+  "at": "2026-10-07T21:06:29.310Z"
 }
