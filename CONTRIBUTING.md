@@ -152,8 +152,7 @@ comments, or attached media. Those are your responsibility.
 
 `apps/web/translations/<locale>.json` holds the UI text for 9 locales. Each catalog is exactly
 what `JSON.stringify(value, null, 2)` writes, and keeps its keys in the order they were added.
-Nothing at runtime reads that order, but every merge and review diff does, and
-`starterPrompts.items` must follow `STARTER_PROMPTS` (`src/lib/starter-prompts.test.ts`).
+Nothing at runtime reads that order, but every merge and review diff does.
 
 - **Merges go key by key.** `.gitattributes` routes the catalogs to an order-preserving merge
   driver, and `pnpm install` registers it (`scripts/register-merge-drivers.sh`). Two branches
