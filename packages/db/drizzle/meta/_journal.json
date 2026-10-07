@@ -862,6 +862,13 @@
       "when": 1791333377505,
       "tag": "20261007003617_gateway_logs_session_rollup_index",
       "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1791358200000,
+      "tag": "20261007073000_session_sandboxes_runtime_wake_indexes",
+      "breakpoints": true
     }
   ]
 }
