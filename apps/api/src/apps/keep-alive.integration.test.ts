@@ -9,9 +9,11 @@ import { eq } from 'drizzle-orm';
 
 const stops: string[] = [];
 const wakes: string[] = [];
+const ensured: string[] = [];
 mock.module('./hosting', () => ({
   AppHostingProvider: class {
     async stop(_provider: string, externalId: string) { stops.push(externalId); }
+    async ensureRunning(_provider: string, externalId: string) { ensured.push(externalId); }
   },
 }));
 mock.module('./public-proxy-runtime', () => ({
@@ -70,6 +72,7 @@ withDb('always-on Apps', () => {
   beforeEach(async () => {
     stops.length = 0;
     wakes.length = 0;
+    ensured.length = 0;
     await cleanup();
     await db.insert(accounts).values({ accountId: ACCOUNT_ID, name: 'keep-alive test' });
     await db.insert(projects).values({
@@ -110,5 +113,31 @@ withDb('always-on Apps', () => {
     expect(result?.budgetStopped).toBe(1);
     expect(await status(ALWAYS.rt)).toBe('stopped');
     expect(stops).toEqual([`box-${ALWAYS.rt.slice(-3)}`]);
+  });
+});
+
+withDb('always-on Apps: the provider is the truth', () => {
+  beforeEach(async () => {
+    stops.length = 0;
+    wakes.length = 0;
+    ensured.length = 0;
+    await cleanup();
+    await db.insert(accounts).values({ accountId: ACCOUNT_ID, name: 'keep-alive test' });
+    await db.insert(projects).values({
+      projectId: PROJECT_ID, accountId: ACCOUNT_ID, name: 'keep-alive test',
+      repoUrl: 'https://example.test/keep-alive.git', metadata: { experimental: { apps: true } },
+    });
+    await db.insert(appArtifacts).values({ artifactId: ARTIFACT_ID, accountId: ACCOUNT_ID, projectId: PROJECT_ID, kind: 'archive', status: 'ready' });
+  });
+  afterEach(cleanup);
+
+  test('an always-on runtime recorded running is confirmed with the provider (a VM that died is started); on-demand is left alone', async () => {
+    await seed(ALWAYS, true, { status: 'running', idleDeadlineAt: null });
+    await seed(DEMAND, false, { status: 'running', idleDeadlineAt: new Date(Date.now() + 600_000) });
+
+    const result = await runAppKeepAlive(new Date(), true);
+
+    expect(ensured).toEqual([`box-${ALWAYS.rt.slice(-3)}`]);
+    expect(result?.confirmed).toBe(1);
   });
 });

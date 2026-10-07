@@ -69,6 +69,8 @@ Subcommands:
     --password <value>              Required for new password-protected Apps.
     --members <ids>                 Comma-separated member ids for restricted access.
     --groups <ids>                  Comma-separated group ids for restricted access.
+    --always-on | --on-demand       Server Apps: run 24/7 (default), or stop when
+                                    idle. Static Apps run no server.
     --no-wait                       Return after the deployment is queued.
     --wait-seconds <seconds>        Default: 1200.
   set <id|slug>                     Change an existing App. Only the flags you

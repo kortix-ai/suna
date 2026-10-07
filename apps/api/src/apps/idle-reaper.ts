@@ -103,7 +103,9 @@ let lastKeepAliveAt = 0;
  *      never sleeps needs the check here.
  *   2. Keep running: an always-on App whose runtime stopped (a crash, the
  *      provider's backstop, a budget raised again) is started, through the
- *      same entitlement, concurrency and budget checks as a wake.
+ *      same entitlement, concurrency and budget checks as a wake; one the
+ *      database records as running is confirmed with the provider, which
+ *      starts it if it died behind Kortix's back.
  *   3. Refresh: an always-on App never cold-starts, so its stale supervisor
  *      (or its static App still on a sandbox) is queued for the same immutable
  *      rebuild a cold start would queue.
@@ -112,6 +114,7 @@ export async function runAppKeepAlive(now = new Date(), force = false): Promise<
   budgetStopped: number;
   started: number;
   refreshed: number;
+  confirmed: number;
 } | null> {
   if (!force && now.getTime() - lastKeepAliveAt < KEEP_ALIVE_EVERY_MS) return null;
   lastKeepAliveAt = now.getTime();
@@ -122,6 +125,7 @@ export async function runAppKeepAlive(now = new Date(), force = false): Promise<
   let budgetStopped = 0;
   let started = 0;
   let refreshed = 0;
+  let confirmed = 0;
 
   const running = await db
     .select({ runtime: appRuntimes, app: apps })
@@ -168,6 +172,20 @@ export async function runAppKeepAlive(now = new Date(), force = false): Promise<
       .where(eq(appRuntimes.deploymentId, deployment.deploymentId))
       .orderBy(desc(appRuntimes.createdAt))
       .limit(1);
+    if (runtime?.status === 'running') {
+      // The row says running; the provider is the truth. A VM that crashed or
+      // was stopped behind Kortix's back is started again here, idempotently.
+      try {
+        await hosting.ensureRunning(runtime.provider as SandboxProviderName, runtime.externalId);
+        confirmed += 1;
+      } catch (error) {
+        logger.warn('[apps] always-on App is not running at its provider', {
+          appId: app.appId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      continue;
+    }
     if (!runtime || runtime.status !== 'stopped') continue;
     try {
       await ensureAppRuntimeRunning({ app, deployment, runtime }, hosting);
@@ -181,7 +199,7 @@ export async function runAppKeepAlive(now = new Date(), force = false): Promise<
       });
     }
   }
-  return { budgetStopped, started, refreshed };
+  return { budgetStopped, started, refreshed, confirmed };
 }
 
 export { startAppIdleReaper, stopAppIdleReaper } from '../workers/app-idle-reaper-worker';

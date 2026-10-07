@@ -176,6 +176,8 @@ interface DeployFlags {
   password?: string;
   memberIds?: string[];
   groupIds?: string[];
+  /** `--always-on` / `--on-demand`: applied to a new App, or to the existing one. */
+  alwaysOn?: boolean;
 }
 
 export function deployFlags(rest: string[]): DeployFlags {
@@ -195,6 +197,9 @@ export function deployFlags(rest: string[]): DeployFlags {
   if (spa && noSpa) throw new Error('Use only one of --spa and --no-spa');
   const waitSeconds =
     positiveInteger(takeFlagValue(rest, ['--wait-seconds']), '--wait-seconds') ?? 1200;
+  const alwaysOn = takeFlagBool(rest, ['--always-on']);
+  const onDemand = takeFlagBool(rest, ['--on-demand']);
+  if (alwaysOn && onDemand) throw new Error('Pass --always-on or --on-demand, not both');
   return {
     app: takeFlagValue(rest, ['--app']),
     slug: takeFlagValue(rest, ['--slug']),
@@ -219,6 +224,7 @@ export function deployFlags(rest: string[]): DeployFlags {
     password: takeFlagValue(rest, ['--password']),
     memberIds: csv(takeFlagValue(rest, ['--members'])),
     groupIds: csv(takeFlagValue(rest, ['--groups'])),
+    alwaysOn: alwaysOn ? true : onDemand ? false : undefined,
   };
 }
 
@@ -388,8 +394,10 @@ export async function provisionDeployApp(
   manifestDefaults: ManifestAppDefaults | null,
   sourcePath: string | undefined,
 ): Promise<App> {
+  const runMode = flags.alwaysOn === undefined ? {} : { always_on: flags.alwaysOn };
   if (flags.app) {
-    return resolveApp(apps, flags.app);
+    const app = await resolveApp(apps, flags.app);
+    return flags.alwaysOn === undefined || app.always_on === flags.alwaysOn ? app : apps.update(app.app_id, runMode);
   }
   if (manifestDefaults) {
     const manifestBlock = manifestDefaults.block;
@@ -407,6 +415,7 @@ export async function provisionDeployApp(
         ? { idle_timeout_seconds: manifestBlock.idle_timeout_seconds }
         : {}),
       ...(manifestBlock?.always_on !== undefined ? { always_on: manifestBlock.always_on } : {}),
+      ...runMode,
       ...(manifestBlock?.monthly_budget_usd !== undefined
         ? { monthly_budget_usd: manifestBlock.monthly_budget_usd }
         : {}),
@@ -423,7 +432,7 @@ export async function provisionDeployApp(
     ? flags.image.split('/').pop()!.split(':')[0]!
     : basename(sourcePath!);
   const slug = slugFrom(flags.slug ?? inferred);
-  return apps.create({ slug, name: flags.name ?? slug });
+  return apps.create({ slug, name: flags.name ?? slug, ...runMode });
 }
 
 /**
