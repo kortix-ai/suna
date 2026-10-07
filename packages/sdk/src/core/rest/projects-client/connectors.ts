@@ -314,7 +314,17 @@ export interface ConnectorCallOptions {
    * what it says). Displayed as unverified; never sent to the provider.
    */
   approvalContext?: string | null;
+  /**
+   * Client deadline in ms. Default 90 000: above the gateway's 60 s upstream
+   * deadline, so the gateway answers `upstream_timeout` before the client
+   * gives up. After a client-side timeout the call may still have run.
+   */
+  timeoutMs?: number;
+  /** Aborts the request. The call may still have run upstream. */
+  signal?: AbortSignal;
 }
+
+const CONNECTOR_CALL_TIMEOUT_MS = 90_000;
 
 export async function callConnector<T = unknown>(
   projectId: string | undefined,
@@ -337,6 +347,7 @@ export async function callConnector<T = unknown>(
         ...(account ? { account } : {}),
         ...(approvalContext ? { approval_context: approvalContext } : {}),
       },
+      { timeout: options.timeoutMs ?? CONNECTOR_CALL_TIMEOUT_MS, signal: options.signal },
     ),
   );
   // A server that names the binding omits `output` when it equals `data`, so

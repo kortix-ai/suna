@@ -766,6 +766,16 @@ const result = await connectors.callAction('linear', 'list_issues', { team: 'COR
 if (result.ok) console.log(result.output?.issues.length);
 ```
 
+The connector handle reads the same file, and `run` returns the typed output
+itself or throws a typed error (see [Connectors from code](/docs/sdk/connectors#errors)):
+
+```ts
+const issues = await createKortix({ backendUrl, getToken })
+  .project(projectId)
+  .connector('linear')
+  .run('list_issues', { team: 'CORE' });
+```
+
 `callAction(slug, action, args, options)` sends the same request as
 `call('<slug>.<action>', args, options)` and returns the same result. Only
 the types differ: a missing or unknown argument is a compile error, and

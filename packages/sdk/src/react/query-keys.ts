@@ -346,6 +346,11 @@ export const qk = {
      *  so pass `connection` (the connection id, or a stable stand-in for one not
      *  created yet): two connections of one connector must not share an entry.
      *  Without it, the key is the per-connector prefix every entry sits under. */
+    /** One connector action's output — `useConnectorQuery`. Under
+     *  `connectorConfig(id, slug)`, so invalidating a connector (a new account
+     *  connected) refetches its calls. */
+    connectorCall: (id: string, slug: string, action: string, args: unknown, account?: string | null) =>
+      [...qk.project.connectorConfig(id, slug), 'call', action, account ?? null, args] as const,
     connectorOAuth2Discovery: (id: string, slug: string, connection?: string) =>
       connection === undefined
         ? ([...qk.project.connectorConfig(id, slug), 'oauth2-discovery'] as const)

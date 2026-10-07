@@ -30,25 +30,43 @@ provider exists: a raw key skips the project's policy, approvals, and audit.
 A session sandbox carries its own `KORTIX_TOKEN`. Its reach is the agent's
 connector grant: see [Grant an agent access](/docs/connect/connectors#grant-an-agent-access).
 
-The call is the same for every credential:
+The call is the same for every credential. `connector(slug)` is one
+connector of the project:
 
 ```ts
 import { createKortix } from '@kortix/sdk';
 
 const kortix = createKortix({ backendUrl, getToken });
-const connectors = kortix.project(projectId).connectors;
+const crm = kortix.project(projectId).connector('crm');
 
-const result = await connectors.call('crm.list_deals', { stage: 'won' }, {
+const deals = await crm.run('list_deals', { stage: 'won' }, {
   account: 'Team CRM', // a label, a connection id, `me`, or `project`
 });
-result.output;  // the provider payload, without the binding's envelope
-result.account; // { connection_id, label, owner_type }: the account that ran
+// `deals` is the provider payload, without the binding's envelope.
 ```
 
+| Method | Returns |
+|---|---|
+| `run(action, args, options)` | The action's `output`. Throws a typed error for every other outcome: see [Errors](#errors) |
+| `call(action, args, options)` | The raw result (`ok`, `data`, `output`, `account`, `binding`, …). A `202` resolves with `ok: false` |
+| `describe()` | The connector with every action's input and output schema, or `null` |
+| `describe(action)` | One action with its input and output schema, or `null` |
+| `accounts()` | The accounts this credential may run the connector as, default first |
+| `paginate(action, args, { next, maxPages })` | An async iterator over each page's `output`: see [Pages](#pages) |
+| `uploadAttachment(content, input)` | An attachment reference for a later call of this connector |
+
+`kortix.connector(slug)` is the same handle for a token that carries its
+project (a session token, or a token bound to one project).
+
 Omit `account` to use the caller's own default account first, then the
-project's. For typed `args` and `output`, generate a declaration file with
-`kortix connectors types` and call `callAction`: see
-[Typed calls from code](/docs/connect/connectors#typed-calls-from-code).
+project's. `run` and `call` wait 90 seconds (`timeoutMs`), above the gateway's
+60 s upstream deadline, and accept an `AbortSignal` (`signal`).
+
+For typed `args` and output, generate a declaration file with
+`kortix connectors types`: see
+[Typed calls from code](/docs/connect/connectors#typed-calls-from-code). The
+handle reads it, so `run('list_deals', { stage: 1 })` is a compile error and
+the result has the generated type.
 
 ## From an App in the browser
 
@@ -75,7 +93,7 @@ const kortix = createKortix({
 
 const deals = await kortix
   .project(projectId)
-  .connectors.call('crm.list_deals', { stage: 'won' });
+  .connector('crm').run('list_deals', { stage: 'won' });
 ```
 
 - The call runs as the person who opened the App, inside their own role.
@@ -98,8 +116,8 @@ export async function GET(request: Request) {
   });
   const deals = await kortix
     .project(projectId)
-    .connectors.call('crm.list_deals', { stage: 'won' });
-  return Response.json(deals.output);
+    .connector('crm').run('list_deals', { stage: 'won' });
+  return Response.json(deals);
 }
 ```
 
@@ -151,8 +169,8 @@ export const syncDeals = internalAction({
     });
     const result = await kortix
       .project(process.env.KORTIX_PROJECT_ID!)
-      .connectors.call('crm.list_deals', { stage: 'won' });
-    return result.output;
+      .connector('crm').run('list_deals', { stage: 'won' });
+    return result;
   },
 });
 ```
@@ -198,7 +216,7 @@ const kortix = createKortix({
 });
 const deals = await kortix
   .project(process.env.KORTIX_PROJECT_ID!)
-  .connectors.call('crm.list_deals', { stage: 'won' });
+  .connector('crm').run('list_deals', { stage: 'won' });
 ```
 
 The token carries your whole connector reach in that project, your private
@@ -207,20 +225,90 @@ service account.
 
 ## Errors
 
-Every non-2xx answer throws `ApiError`. `status` is the HTTP status and
-`details` is the parsed body.
+`run` and `paginate` throw one of two errors. Nothing is retried for you: a
+connector call is not idempotent.
 
-| Answer | Meaning | What to do |
+```ts
+import { ConnectorApprovalPendingError, ConnectorCallError } from '@kortix/sdk';
+
+try {
+  return await crm.run('create_deal', { name: 'Acme renewal' });
+} catch (error) {
+  if (error instanceof ConnectorApprovalPendingError) return showLink(error.approvalUrl);
+  if (error instanceof ConnectorCallError && error.connectUrl) return showConnect(error.connectUrl);
+  if (error instanceof ConnectorCallError && error.upstreamStatus === 429) {
+    return retryLater(error.retryAfterSeconds);
+  }
+  throw error;
+}
+```
+
+`ConnectorCallError` extends `ApiError`. Its fields:
+
+- `status`: the HTTP status of the Kortix answer. `200` for `upstream_error`.
+- `code`: the machine reason. `upstream_<status>` when the upstream answered
+  with a failure (`upstream_429`, `upstream_404`). `upstream_error` when the
+  upstream reported a failure inside a 2xx (an MCP `isError` result, GraphQL
+  `errors` with no data). Otherwise the gateway's reason, for example
+  `connector_not_connected`, `account_required`, `upstream_timeout`,
+  `computer_offline`, `invalid_json`; `connector_error` when it is free text.
+- `reason`: the full reason text. `message`: the server's explanation.
+- `upstreamStatus`, `retryAfterSeconds`, `binding`.
+- `connectUrl`, `hint`, `availableAccounts`, `requestedAccount`.
+- `details`: the parsed body.
+
+`ConnectorApprovalPendingError` (not an `ApiError`) has `executionId`,
+`approvalUrl`, `approvalSummary`, `approvalInstructions` and `retryable`.
+
+`call` resolves `200` and `202` and throws a plain `ApiError` for the rest.
+
+| Answer | `run` throws | What to do |
 |---|---|---|
-| `202`, `ok: false`, `status: "pending_approval"` | A policy holds the call for a person's approval | Show `approval_url` to a person. Do not repeat the call in a loop |
-| `401` | The credential is invalid, expired, revoked, or disabled | Get a new credential |
-| `403` `insufficient_scope` | An App viewer token without the `kortix` scope | Set the App to `--viewer api` |
-| `403` `forbidden` | The credential has no role on the project | Grant a project role |
-| `403` `connector_not_connected` | No account this credential may use, or the named account is outside its reach | Read `available_accounts`, or share the account |
-| `403` `account_required` | Several accounts are reachable, none was named, and none is pinned | Pass `account` |
-| `403` `credential_not_shared` | The connector's credential secret is not shared with this caller | Share the secret with the caller |
-| `429`, `503` | The provider is rate-limited or unavailable | Wait `retry_after_seconds`, then repeat |
-| `500` `upstream_timeout: …` | The provider did not answer within 60 s. The call may have run | Check the effect before you repeat a write |
+| `202`, `status: "pending_approval"` | `ConnectorApprovalPendingError` | Show `approvalUrl` to a person. Do not repeat the call in a loop |
+| `401` | `ConnectorCallError` | Get a new credential |
+| `403` `insufficient_scope` | `ConnectorCallError` | Set the App to `--viewer api` |
+| `403` `forbidden` | `ConnectorCallError` | Grant a project role |
+| `403` `connector_not_connected` | `ConnectorCallError` with `connectUrl` when a person can connect one | Show `connectUrl`, or read `availableAccounts` |
+| `403` `account_required` | `ConnectorCallError` with `availableAccounts` | Pass `account` |
+| `403` `credential_not_shared` | `ConnectorCallError` | Share the secret with the caller |
+| `429`, `503` | `ConnectorCallError` with `upstreamStatus` and `retryAfterSeconds` | Wait, then repeat |
+| `500` `upstream_timeout: …` | `ConnectorCallError` | The call may have run. Check the effect before you repeat a write |
+
+## Pages
+
+`paginate` runs the action once per page. `next` builds the next page's args
+from this page's output, and returns `undefined` after the last page.
+`maxPages` (default 100) stops a cursor that never ends.
+
+```ts
+for await (const page of crm.paginate('list_deals', { limit: 100 }, {
+  next: (page, args) => (page.next_cursor ? { ...args, cursor: page.next_cursor } : undefined),
+})) {
+  await save(page.deals);
+}
+```
+
+A failed page throws the same errors as `run`. Each page is a separate call,
+with its own policy check and audit event.
+
+## React
+
+`useConnectorQuery` from `@kortix/sdk/react` reads one action's output as a
+cached query:
+
+```tsx
+import { ConnectorCallError } from '@kortix/sdk';
+import { useConnectorQuery } from '@kortix/sdk/react';
+
+const { data, error, isLoading } = useConnectorQuery(projectId, 'crm', 'list_deals', { stage: 'won' });
+if (error instanceof ConnectorCallError && error.connectUrl) return <a href={error.connectUrl}>Connect CRM</a>;
+```
+
+- Use it only for an action that reads. Every fetch runs the action and
+  writes an audit event.
+- The output stays fresh for 30 seconds (`staleTime`). A window focus does
+  not refetch.
+- Only an upstream `429` or `503` is retried, twice, after `Retry-After`.
 
 See [Call results](/docs/connect/connectors#call-results) for the result
 fields.

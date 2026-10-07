@@ -9,7 +9,7 @@ import type { RuntimeClient } from '../runtime/client';
 import { bindProjectAccessResources } from './project-access-resources';
 import { bindProjectAccessSecurity } from './project-access-security';
 import { projectConnections } from './project-connections';
-import { connectorDataPlane } from './project-connectors';
+import { connectorDataPlane, connectorHandle } from './project-connectors';
 import { bindProjectCore } from './project-core';
 import { bindProjectOperations } from './project-operations';
 import { bindProjectPlatformResources } from './project-platform-resources';
@@ -89,6 +89,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       ...bindProjectOperations(projectId, connections),
       ...bindProjectPlatformResources(projectId),
       ...bindProjectPlatformSecurity(projectId),
+      /** One connector of this project: `run`, `call`, `describe`, `accounts`, `paginate`. */
+      connector: <S extends string>(slug: S) => connectorHandle(projectId, slug),
       session: (sessionId: string) =>
         session(projectId, sessionId, config, resolvePreviewOptsForSandbox),
     };
@@ -107,6 +109,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     projects,
     /** Connector calls scoped by an agent/session token when no project id is available. */
     connectors: connectorDataPlane(),
+    /** One connector in the token's scope (a project-scoped token or a session token). */
+    connector: <S extends string>(slug: S) => connectorHandle(undefined, slug),
     project,
     session: (projectId: string, sessionId: string) =>
       session(projectId, sessionId, config, resolvePreviewOptsForSandbox),

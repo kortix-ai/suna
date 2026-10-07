@@ -79,6 +79,19 @@ const r = await connectors.callAction('linear', 'list_issues', { team: 'CORE' })
 r.output?.issues; // typed from the action's output schema
 ```
 
+One connector as a handle: `run` returns the output itself and throws
+`ConnectorCallError` (`code`, `connectUrl`, `availableAccounts`,
+`upstreamStatus`, `retryAfterSeconds`) or `ConnectorApprovalPendingError`;
+`paginate` follows a cursor; `useConnectorQuery` (`@kortix/sdk/react`) caches a
+read. Guide: `/docs/sdk/connectors`; runnable: `examples/13-connectors-as-code.ts`.
+
+```ts
+const linear = kortix.project(projectId).connector('linear');
+const { issues } = await linear.run('list_issues', { team: 'CORE' });
+await linear.describe(); // actions with input and output schemas
+await linear.accounts();
+```
+
 An action outside the file accepts any object and returns `output: unknown`.
 Managed Composio and Pipedream connectors publish no output schema, so their
 `output` stays `unknown`. `ConnectorArgs<'linear', 'list_issues'>` and

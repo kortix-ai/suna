@@ -50,6 +50,36 @@ token supplies the project context.
   `unknown`.
 - `uploadAttachment(content, input)` uploads an attachment for a later call.
 
+## One connector: `connector(slug)`
+
+`kortix.project(id).connector(slug)` (or `kortix.connector(slug)` with a
+session token) binds one connector. Prefer it in new code:
+
+```ts
+const crm = kortix.project(projectId).connector('crm');
+const deals = await crm.run('list_deals', { stage: 'won' }); // the output itself
+await crm.describe();            // every action with input and output schema
+await crm.describe('list_deals'); // one action
+await crm.accounts();            // accounts this caller may use, default first
+for await (const page of crm.paginate('list_deals', { limit: 100 }, {
+  next: (page, args) => (page.next_cursor ? { ...args, cursor: page.next_cursor } : undefined),
+})) { /* one page's output; maxPages defaults to 100 */ }
+```
+
+`run` returns `output` and throws for everything else:
+
+- `ConnectorApprovalPendingError` (HTTP 202): `approvalUrl`, `executionId`.
+  Show the link to the human; do not loop.
+- `ConnectorCallError` (extends `ApiError`): `status`, `code` (the machine
+  reason: `connector_not_connected`, `account_required`, `upstream_timeout`,
+  `upstream_429`, `upstream_error` for a failure inside a 2xx, …), `reason`,
+  `connectUrl`, `availableAccounts`, `upstreamStatus`, `retryAfterSeconds`,
+  `binding`, `hint`.
+
+`call(action, args)` on the handle is the raw result, as above. With the file
+from `kortix connectors types`, `run`, `call` and `paginate` type their args
+and output.
+
 `call` returns `ConnectorCallResult<T>`. Every non-2xx answer throws
 `ApiError` with `status` and the parsed body in `details`. Only a call held
 for approval (HTTP 202, `status: "pending_approval"`) returns `ok: false`
@@ -78,8 +108,9 @@ Failures that throw:
 - HTTP 500 with `reason` starting `upstream_timeout`: the upstream did not
   answer within 60 seconds. The call may have run. Kortix does not
   deduplicate calls: check the effect before you repeat a write.
-- `call` aborts on the client after 30 seconds, before the gateway deadline.
-  The aborted call may still run upstream: the same check applies.
+- `call` and `run` abort on the client after 90 seconds (`timeoutMs`), after
+  the gateway deadline. A client-side abort (`signal`, a shorter `timeoutMs`)
+  may leave the call running upstream: the same check applies.
 
 ## Workflow pattern
 
@@ -146,7 +177,7 @@ is involved:
 import { createKortix, kortixAppViewerToken } from '@kortix/sdk';
 
 const kortix = createKortix({ backendUrl: '/_kortix/api/v1', getToken: kortixAppViewerToken() });
-const deals = await kortix.project(projectId).connectors.call('crm.list_deals', { stage: 'won' });
+const deals = await kortix.project(projectId).connector('crm').run('list_deals', { stage: 'won' });
 ```
 
 The call runs as the viewer: shared accounts they may use and their own
@@ -190,8 +221,8 @@ export const syncDeals = internalAction({
     });
     const result = await kortix
       .project(process.env.KORTIX_PROJECT_ID!)
-      .connectors.call('crm.list_deals', { stage: 'won' });
-    return result.output;
+      .connector('crm').run('list_deals', { stage: 'won' });
+    return result;
   },
 });
 ```
