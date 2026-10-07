@@ -29,7 +29,7 @@ const ports: Ports = { ...computePorts(0), sbDb: PORT };
 const URL = `postgresql://postgres:postgres@127.0.0.1:${PORT}/postgres`;
 // The ledger stores basename-minus-extension, so the .concurrent.ts file is
 // `..._drop_yolo_profiles_email_index.concurrent`.
-const MIGRATION = '20261003102854962_drop_yolo_profiles_email_index';
+const MIGRATION = '20261004175018263_drop_yolo_profiles_email_index';
 
 function psql(sql: string): string {
   const res = sh(['psql', URL, '-v', 'ON_ERROR_STOP=1', '-tAc', sql]);
