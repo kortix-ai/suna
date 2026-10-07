@@ -77,6 +77,16 @@ describe('kortix validate — repository size', () => {
     expect(validate(cwd).size).toBeUndefined();
   }, SPAWN_TEST_MS);
 
+  // KRTX-1728: `fixtures export-ignore` names the directory. `git archive` and
+  // the API's release leave the whole folder out; the check must agree.
+  test('a directory marked export-ignore does not count, as in the release', () => {
+    const cwd = project();
+    mkdirSync(join(cwd, 'fixtures/deep'), { recursive: true });
+    writeFileSync(join(cwd, 'fixtures/deep/dump.sql'), Buffer.alloc(11 * MiB));
+    writeFileSync(join(cwd, '.gitattributes'), 'fixtures export-ignore\n');
+    expect(validate(cwd).size).toBeUndefined();
+  }, SPAWN_TEST_MS);
+
   test('a Git LFS file counts as its pointer, the bytes git archive ships', () => {
     const cwd = project();
     mkdirSync(join(cwd, 'assets'));

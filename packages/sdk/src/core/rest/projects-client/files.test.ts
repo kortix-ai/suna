@@ -1,7 +1,7 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import { invalidateTokenCache } from '../../http/auth';
-import { fetchProjectFileRaw, listProjectFiles, projectArchiveRequest, readProjectFile } from './files';
+import { fetchProjectFileRaw, listProjectDirectory, listProjectFiles, projectArchiveRequest, readProjectFile } from './files';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
 let nextResponse: { status: number; body: unknown } = { status: 200, body: {} };
@@ -45,6 +45,27 @@ test('listProjectFiles is a silent background read — a 403 never hits the glob
   } finally {
     configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
   }
+});
+
+// KRTX-1723: the recursive list stops at 1,000 files, so a tree built from it
+// lost every folder that sorts after file 1,000. One level per request instead.
+test('listProjectDirectory GETs one level of a folder (depth=1) and keeps the truncation flag', async () => {
+  nextResponse = {
+    status: 200,
+    body: { entries: [{ path: 'src/lib', type: 'directory' }, { path: 'src/index.ts', type: 'file' }], truncated: false },
+  };
+  const result = await listProjectDirectory('P1', { ref: 'main', path: 'src' });
+  expect(last().url).toContain('/projects/P1/files?ref=main&path=src&depth=1');
+  expect(result).toEqual({
+    entries: [{ path: 'src/lib', type: 'directory' }, { path: 'src/index.ts', type: 'file' }],
+    truncated: false,
+  });
+});
+
+test('listProjectDirectory at the root sends no path', async () => {
+  nextResponse = { status: 200, body: { entries: [], truncated: false } };
+  await listProjectDirectory('P1');
+  expect(last().url).toMatch(/\/projects\/P1\/files\?depth=1$/);
 });
 
 test('readProjectFile GETs /projects/:id/files/content with path/ref query', async () => {

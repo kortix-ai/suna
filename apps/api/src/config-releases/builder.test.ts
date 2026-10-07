@@ -385,6 +385,40 @@ describe('buildConfigRelease', () => {
     expect(again.equals(archive)).toBe(true);
   });
 
+  // KRTX-1728: the too-large reason, the docs and `kortix validate` tell an
+  // owner to mark big paths export-ignore. The release used to ship them
+  // anyway, so the remedy changed nothing and the repository stayed over the cap.
+  test('a path the repository marks export-ignore is left out of the release, outside the config dir', async () => {
+    seed();
+    const sha = commit(
+      {
+        '.gitattributes': 'assets/** export-ignore\nfixtures export-ignore\n',
+        // Random bytes do not compress: each stays over the 32 KiB test cap.
+        'assets/hero.bin': randomBytes(48 * 1024),
+        'assets/deep/clip.bin': randomBytes(48 * 1024),
+        'fixtures/big.json': randomBytes(48 * 1024),
+        // The config dir is exempt: what it marks export-ignore still ships verbatim.
+        '.kortix/opencode/.gitattributes': 'secret-notes.md export-ignore\n',
+        '.kortix/opencode/secret-notes.md': 'kept verbatim\n',
+      },
+      'export-ignored assets',
+    );
+    const release = await buildConfigRelease(project, sha, 'project', { store, archiveLimit: 32 * 1024 });
+    expect(release.reason ?? null).toBeNull();
+    expect(release.release_id).not.toBeNull();
+
+    const paths = release.files!.map(([path]) => path);
+    expect(paths.filter((path) => path.startsWith('assets/') || path.startsWith('fixtures/'))).toEqual([]);
+    expect(paths).toEqual(expect.arrayContaining(['.gitattributes', 'src/app.ts', '.kortix/opencode/secret-notes.md']));
+
+    const dir = extract(store.objects.get(configArchiveKey(project.projectId, release.config_tree_id!))!);
+    expect(existsSync(join(dir, 'assets'))).toBe(false);
+    expect(existsSync(join(dir, 'fixtures'))).toBe(false);
+    expect(readFileSync(join(dir, '.kortix/opencode/secret-notes.md'), 'utf8')).toBe('kept verbatim\n');
+    // On-box blob verification: every listed file is in the archive, byte for byte.
+    for (const [path, , blob] of release.files!) expect(blobOf(join(dir, path))).toBe(blob);
+  });
+
   test('a code-only commit and a governance-only commit each move the release', async () => {
     const first = seed();
     const a = await buildConfigRelease(project, first, 'project', { store });

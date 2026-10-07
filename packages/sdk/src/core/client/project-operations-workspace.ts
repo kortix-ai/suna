@@ -7,6 +7,9 @@ export function bindProjectOperationsWorkspace(projectId: string) {
     files: {
       list: (options?: Parameters<typeof P.listProjectFiles>[1]) =>
         P.listProjectFiles(projectId, options),
+      /** One folder level, complete up to its entry cap (not cut at 1,000 recursive files). */
+      listDirectory: (options?: Parameters<typeof P.listProjectDirectory>[1]) =>
+        P.listProjectDirectory(projectId, options),
       read: (path: string, ref?: string) => P.readProjectFile(projectId, path, ref),
       search: (...a: DropFirst<Parameters<typeof P.searchProjectFiles>>) =>
         P.searchProjectFiles(projectId, ...a),
