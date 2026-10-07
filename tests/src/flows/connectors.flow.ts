@@ -756,6 +756,7 @@ flow(
       'POST /v1/projects/:projectId/connections/:connectionId/connect/finalize',
       'PUT /v1/projects/:projectId/connections/:connectionId/credential',
       'PUT /v1/projects/:projectId/connections/:connectionId/revoke',
+      'DELETE /v1/projects/:projectId/connections/:connectionId',
       'POST /v1/projects/:projectId/connections/me',
     ],
   },
@@ -928,7 +929,7 @@ flow(
     });
 
     await ctx.step(
-      'revoke the connection (terminal state — no DELETE route exists) → 200 ok',
+      'revoke the connection (the row stays listed and can be reactivated) → 200 ok',
       async () => {
         const r = await ctx.client
           .as(ctx.P.OWNER)
@@ -971,6 +972,32 @@ flow(
           });
         r.status(404);
       }
+    });
+
+    await ctx.step('disconnect removes the unbound account → 200, and the list no longer has it', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del('/v1/projects/:projectId/connections/:connectionId', {
+          params: { projectId: p.id, connectionId },
+        });
+      r.status(200).body().has('$.ok', true);
+      const listed = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/connections', { params: { projectId: p.id } });
+      listed.status(200);
+      const ids = listed
+        .json<{ connections: Array<{ connection_id: string }> }>()
+        .connections.map((c) => c.connection_id);
+      if (ids.includes(connectionId)) throw new Error(`removed connection ${connectionId} is still listed`);
+    });
+
+    await ctx.step('disconnect an already-removed connection → 404', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del('/v1/projects/:projectId/connections/:connectionId', {
+          params: { projectId: p.id, connectionId },
+        });
+      r.status(404);
     });
   },
 );
