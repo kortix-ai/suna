@@ -9,6 +9,7 @@ import {
   triggerFilterMatches,
   triggersPausedForProject,
 } from '../projects/lib/triggers';
+import { releaseWebhookDeliveryKey } from '../projects/lib/webhook-delivery';
 import type { GitTriggerSpec } from '../projects/trigger-types';
 import { db } from '../shared/db';
 import * as store from './store';
@@ -102,19 +103,25 @@ async function deliverToRow(
   });
   if (!triggerFilterMatches(spec, payload)) return 'skipped';
 
+  const idempotencyKey = eventIdempotencyKey(row.projectId, row.slug, delivery.eventId);
   try {
+    // A provider retry of an event whose run dead-lettered or lost its session
+    // runs again instead of replaying that outcome (webhook-delivery.ts).
+    await releaseWebhookDeliveryKey(idempotencyKey, { byEvent: true });
     const result = await fireGitTrigger({
       spec,
       project,
       payload,
       renderedPrompt: `${EVENT_PROMPT_PREAMBLE}${renderPromptTemplate(spec.promptTemplate, payload)}`,
       source: 'event',
-      idempotencyKey: eventIdempotencyKey(row.projectId, row.slug, delivery.eventId),
+      idempotencyKey,
     });
     if (result.status === 'failed') {
       logger.warn('[trigger-events] fire failed', { projectId: row.projectId, slug: row.slug, error: result.error });
       return 'failed';
     }
+    // A duplicate ran nothing: it leaves last_fired_at and last_event_at alone.
+    if (result.deduped) return 'skipped';
     await markGitTriggerFired(row.projectId, row.slug, new Date(), result.status);
     await store.touchLastEvent(row.projectId, row.slug);
     return 'fired';

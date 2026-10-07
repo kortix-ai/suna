@@ -15,13 +15,14 @@ import { clearAuthorizeCaches } from '../iam/authorize';
 import type { GitTriggerSpec } from '../projects/trigger-types';
 
 const fires: Array<Record<string, any>> = [];
-let fireStatus: 'fired' | 'failed' = 'fired';
+let fireStatus: 'fired' | 'failed' | 'deduped' = 'fired';
 const actualTriggers = await import('../projects/lib/triggers');
 mock.module('../projects/lib/triggers', () => ({
   ...actualTriggers,
   fireGitTrigger: async (input: Record<string, any>) => {
     fires.push(input);
-    return fireStatus === 'fired' ? { status: 'fired', sessionId: 'sess_synthetic' } : { status: 'failed', error: 'boom' };
+    if (fireStatus === 'failed') return { status: 'failed', error: 'boom' };
+    return { status: 'fired', sessionId: 'sess_synthetic', deduped: fireStatus === 'deduped' };
   },
 }));
 
@@ -311,6 +312,13 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
       await testDb().update(projects).set({ metadata: { triggers_paused: true } }).where(eq(projects.projectId, PROJECT_ID));
       expect((await deliverEvents('composio', [delivery()])).skipped).toBe(1);
       expect(fires).toHaveLength(0);
+    });
+
+    test('a provider retry of a fired event is skipped and leaves last_event_at alone', async () => {
+      await armed();
+      fireStatus = 'deduped';
+      expect((await deliverEvents('composio', [delivery()])).skipped).toBe(1);
+      expect((await store.get(PROJECT_ID, 'a'))?.lastEventAt).toBeNull();
     });
 
     test('a failed fire is counted as failed', async () => {
