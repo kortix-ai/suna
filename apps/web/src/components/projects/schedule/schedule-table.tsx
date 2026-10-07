@@ -41,6 +41,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { copyToClipboard } from '@/lib/utils/clipboard';
 import type { ProjectTrigger } from '@kortix/sdk';
+import type { TriggerControls } from './trigger-controls';
 import {
   CopyIcon,
   DotsThreeIcon,
@@ -74,7 +75,7 @@ async function copyWebhookAddress(
 
 export interface ScheduleTableProps {
   triggers: ProjectTrigger[];
-  canWrite: boolean;
+  controls: TriggerControls;
   /** Slug of the row whose run is in flight, if any. */
   runningSlug: string | null;
   /** Slug of the row whose pause/resume is in flight, if any. */
@@ -90,7 +91,7 @@ export interface ScheduleTableProps {
  *  one table. */
 export function ScheduleTable({
   triggers,
-  canWrite,
+  controls,
   runningSlug,
   togglingSlug,
   onOpen,
@@ -123,7 +124,7 @@ export function ScheduleTable({
           <ScheduleTableRow
             key={trigger.slug}
             trigger={trigger}
-            canWrite={canWrite}
+            controls={controls}
             running={runningSlug === trigger.slug}
             toggling={togglingSlug === trigger.slug}
             onOpen={() => onOpen(trigger)}
@@ -139,7 +140,7 @@ export function ScheduleTable({
 
 function ScheduleTableRow({
   trigger,
-  canWrite,
+  controls,
   running,
   toggling,
   onOpen,
@@ -148,7 +149,7 @@ function ScheduleTableRow({
   onDelete,
 }: {
   trigger: ProjectTrigger;
-  canWrite: boolean;
+  controls: TriggerControls;
   running: boolean;
   toggling: boolean;
   onOpen: () => void;
@@ -236,7 +237,7 @@ function ScheduleTableRow({
       <TableCell className="align-middle">
         <RowActions
           trigger={trigger}
-          canWrite={canWrite}
+          controls={controls}
           busy={running || toggling}
           active={status.active}
           onOpen={onOpen}
@@ -251,7 +252,7 @@ function ScheduleTableRow({
 
 function RowActions({
   trigger,
-  canWrite,
+  controls,
   busy,
   active,
   onOpen,
@@ -260,7 +261,7 @@ function RowActions({
   onDelete,
 }: {
   trigger: ProjectTrigger;
-  canWrite: boolean;
+  controls: TriggerControls;
   busy: boolean;
   active: boolean;
   onOpen: () => void;
@@ -309,21 +310,25 @@ function RowActions({
             {tI18nComplete.raw('text7c4e5224f9d4')}
           </DropdownMenuItem>
         ) : null}
-        {canWrite ? (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={onRun}>
+        {controls.canFire || controls.canUpdate ? <DropdownMenuSeparator /> : null}
+        {controls.canFire ? (
+          <DropdownMenuItem onClick={onRun}>
+            <PlayIcon weight="fill" className="size-3.5 shrink-0" />
+            {tI18nComplete.raw('text0991397702fa')}
+          </DropdownMenuItem>
+        ) : null}
+        {controls.canUpdate ? (
+          <DropdownMenuItem onClick={onToggle}>
+            {active ? (
+              <PauseIcon weight="fill" className="size-3.5 shrink-0" />
+            ) : (
               <PlayIcon weight="fill" className="size-3.5 shrink-0" />
-              {tI18nComplete.raw('text0991397702fa')}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onToggle}>
-              {active ? (
-                <PauseIcon weight="fill" className="size-3.5 shrink-0" />
-              ) : (
-                <PlayIcon weight="fill" className="size-3.5 shrink-0" />
-              )}
-              {active ? 'Pause' : 'Resume'}
-            </DropdownMenuItem>
+            )}
+            {active ? 'Pause' : 'Resume'}
+          </DropdownMenuItem>
+        ) : null}
+        {controls.canDelete ? (
+          <>
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onClick={onDelete}>
               <TrashIcon className="size-3.5 shrink-0" />
