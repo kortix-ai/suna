@@ -30,6 +30,7 @@ let sandboxRow: Record<string, unknown> | null = null;
 let ownedRow: Record<string, unknown> | null = null;
 let sessionRow: Record<string, unknown> | null = null;
 let updateRows: Array<{ sessionId: string }> = [];
+const updateSets: Array<Record<string, unknown>> = [];
 let loadedProject: { row: { accountId: string; projectId: string }; userId: string } | null = {
   row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID },
   userId: USER_ID,
@@ -81,9 +82,12 @@ const databaseMock = {
     }),
   }),
   update: (_table: unknown) => ({
-    set: (_values: Record<string, unknown>) => ({
-      where: () => ({ returning: async () => updateRows }),
-    }),
+    set: (values: Record<string, unknown>) => {
+      updateSets.push(values);
+      return {
+        where: () => ({ returning: async () => updateRows }),
+      };
+    },
   }),
 };
 
@@ -239,6 +243,7 @@ beforeEach(() => {
   ownedRow = { sessionId: SESSION_ID, metadata: {} };
   sessionRow = session();
   updateRows = [{ sessionId: SESSION_ID }];
+  updateSets.length = 0;
   loadedProject = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID }, userId: USER_ID };
   loadProjectCalls.length = 0;
   capabilityCalls.length = 0;
@@ -329,6 +334,31 @@ describe('POST /v1/projects/:projectId/turn-stream — sandbox-credential walls'
     const response = await post({ session_id: SESSION_ID, kind: 'turn_begin' });
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({ error: 'turn_begin requires a sandbox token' });
+  });
+
+  // The durable root pin is daemon-reported state about the caller's OWN
+  // session. A project member without the session's sandbox credential is
+  // refused before any validation, and no UPDATE reaches the database.
+  test('runtime_session requires a sandbox token and writes nothing', async () => {
+    const response = await post({
+      session_id: SESSION_ID,
+      kind: 'runtime_session',
+      runtime_session_id: 'oc_member_chosen',
+    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: 'runtime_session requires a sandbox token' });
+    expect(updateSets).toEqual([]);
+  });
+
+  test('the pre-W3 runtime_session alias hits the same wall', async () => {
+    const response = await post({
+      session_id: SESSION_ID,
+      kind: 'opencode_session',
+      opencode_session_id: 'oc_member_chosen',
+    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: 'runtime_session requires a sandbox token' });
+    expect(updateSets).toEqual([]);
   });
 
   test('a sandbox credential not scoped to the project is refused', async () => {
@@ -495,27 +525,33 @@ describe('POST /v1/projects/:projectId/turn-stream — lifecycle acknowledgement
   });
 
   test('runtime_session requires the id, then reports whether a row was updated', async () => {
-    const missing = await post({ session_id: SESSION_ID, kind: 'runtime_session' });
+    const missing = await post({ session_id: SESSION_ID, kind: 'runtime_session' }, sandboxCtx);
     expect(missing.status).toBe(400);
     expect(await missing.json()).toEqual({ error: 'runtime_session_id is required' });
 
     updateRows = [];
-    const response = await post({
-      session_id: SESSION_ID,
-      kind: 'runtime_session',
-      runtime_session_id: ' oc_root ',
-    });
+    const response = await post(
+      {
+        session_id: SESSION_ID,
+        kind: 'runtime_session',
+        runtime_session_id: ' oc_root ',
+      },
+      sandboxCtx,
+    );
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: false });
   });
 
   test('a pre-W3 daemon pins with kind opencode_session and opencode_session_id', async () => {
     updateRows = [];
-    const response = await post({
-      session_id: SESSION_ID,
-      kind: 'opencode_session',
-      opencode_session_id: 'oc_root',
-    });
+    const response = await post(
+      {
+        session_id: SESSION_ID,
+        kind: 'opencode_session',
+        opencode_session_id: 'oc_root',
+      },
+      sandboxCtx,
+    );
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: false });
   });

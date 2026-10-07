@@ -102,6 +102,21 @@ describe('eagerlyProvisionAgentIdentities', () => {
     expect(byKey.has('p|bad')).toBe(false);
   });
 
+  test('a disabled registered agent gets no eager identity', async () => {
+    // The config summary lists disabled agents too (enabled: false); only an
+    // agent a session can launch gets an identity in the picker.
+    const byKey = new Map<string, AgentIdentity>();
+    await eagerlyProvisionAgentIdentities('acc', [project('p')], byKey, {
+      loadConfig: async () => ({ agents: [{ name: 'live' }, { name: 'off', enabled: false }] }),
+      ensureAccount: async ({ agentName }) => `sa-${agentName}`,
+      concurrency: 8,
+      perProjectBudgetMs: 1_000,
+      phaseBudgetMs: 5_000,
+    });
+    expect(byKey.has('p|live')).toBe(true);
+    expect(byKey.has('p|off')).toBe(false);
+  });
+
   test('a project already present in byKey is never re-provisioned', async () => {
     const byKey = new Map<string, AgentIdentity>();
     byKey.set('p|default', {

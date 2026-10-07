@@ -202,7 +202,7 @@ export function registerTurnStreamRoutes(): void {
             },
           });
         case 'runtime_session':
-          return pinOpencodeSession(c, body, projectId, sessionId);
+          return pinOpencodeSession(c, body, authenticatedSandboxId, projectId, sessionId);
         default:
           return relayContent(c, body, sessionId);
       }
