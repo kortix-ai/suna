@@ -38,7 +38,7 @@ mock.module('../opencode-mapping', () => ({
   sandboxOpencodeEndpoint: async () => ({ url: 'https://daemon.test', headers: {} }),
 }));
 
-const { SteerNotTaken, postPrompt, readSessionMessageTip, retractRuntimeMessage } = await import('./runtime-client');
+const { SteerNotTaken, postPrompt, readSessionMessageTip, retractRuntimeMessage, updateLegacyRuntimePart } = await import('./runtime-client');
 const { __resetRuntimeTurnVerbsMemo } = await import('./runtime-fetch');
 
 let capabilities: string[] = [];
@@ -223,6 +223,21 @@ describe('retractRuntimeMessage (R7.1)', () => {
     expect(await retractRuntimeMessage(session, 'msg_a')).toEqual({ outcome: 'retracted' });
     expect(fetched[0]).toBe(`POST ${retractPath}`);
     expect(fetched.slice(1).some((call) => call.startsWith('DELETE '))).toBe(true);
+  });
+});
+
+describe('updateLegacyRuntimePart (R7.3)', () => {
+  const part = { externalId: 'ext-1', opencodeSessionId: 'ses_1', sessionId: 'sess-1', userId: 'user-1', messageId: 'msg_1', partId: 'prt_1', text: '<file/>' };
+  const partPath = '/session/ses_1/message/msg_1/part/prt_1';
+
+  test('a runtime that edits parts answers updated; one that edits none (501) answers unsupported; any other refusal throws', async () => {
+    forwardAnswers[partPath] = () => Response.json({ id: 'prt_1' });
+    expect(await updateLegacyRuntimePart(part)).toBe('updated');
+    expect(forwarded.at(-1)).toMatchObject({ method: 'PATCH', path: partPath, body: { id: 'prt_1', type: 'text', text: '<file/>' } });
+    forwardAnswers[partPath] = () => Response.json({ code: 'feature_not_supported' }, { status: 501 });
+    expect(await updateLegacyRuntimePart(part)).toBe('unsupported');
+    forwardAnswers[partPath] = () => new Response('boom', { status: 500 });
+    await expect(updateLegacyRuntimePart(part)).rejects.toThrow('legacy attachment part update failed (500)');
   });
 });
 

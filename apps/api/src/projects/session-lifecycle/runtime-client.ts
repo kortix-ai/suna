@@ -587,9 +587,10 @@ export async function readLegacyRuntimeMessage(
   return (await response.json()) as LegacyRuntimeMessage;
 }
 
+/** `unsupported` when the runtime edits no parts: `501` (pi). Any other refusal throws. */
 export async function updateLegacyRuntimePart(
   input: LegacyRuntimePartTarget & { messageId: string; partId: string; text: string },
-): Promise<void> {
+): Promise<'updated' | 'unsupported'> {
   const body = new TextEncoder().encode(
     JSON.stringify({
       id: input.partId,
@@ -610,9 +611,11 @@ export async function updateLegacyRuntimePart(
     body.buffer as ArrayBuffer,
     config.KORTIX_URL ?? '',
   );
+  if (response.status === 501) return 'unsupported';
   if (!response.ok) {
     throw new Error(`legacy attachment part update failed (${response.status})`);
   }
+  return 'updated';
 }
 
 /**
