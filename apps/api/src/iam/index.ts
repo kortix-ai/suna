@@ -78,7 +78,6 @@ export {
   normalizeProjectRole,
   parseAssignableProjectRole,
   isAccountManager,
-  PROJECT_ROLE_RANK,
   PROJECT_ROLE_INPUT_ERROR,
   type AccountRole,
   type ProjectRole,

@@ -61,21 +61,6 @@ export interface QuotaGcResult {
   dryRun: boolean;
 }
 
-export type DaytonaProjectImageAdmissionReason =
-  | 'allowed'
-  | 'provider_not_configured'
-  | 'org_list_failed'
-  | 'referenced_names_failed'
-  | 'budget_unresolved'
-  | 'deferred_candidates'
-  | 'org_target_reached';
-
-export interface DaytonaProjectImageAdmission {
-  allowed: boolean;
-  reason: DaytonaProjectImageAdmissionReason;
-  quota: QuotaGcResult;
-}
-
 export interface SnapshotQuotaIo {
   isConfigured(): boolean;
   listSnapshots(): Promise<SnapshotLike[]>;

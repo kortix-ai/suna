@@ -18,12 +18,6 @@
 export type AccountRole = 'owner' | 'admin' | 'member';
 export type ProjectRole = 'manager' | 'member';
 
-/** Ordering for "the strongest role wins" folds. */
-export const PROJECT_ROLE_RANK: Record<ProjectRole, number> = {
-  member: 1,
-  manager: 2,
-};
-
 /**
  * Coerce a STORED role value (a DB column, a legacy token claim, an old
  * invite's bootstrap grant) into a canonical ProjectRole. Every retired tier

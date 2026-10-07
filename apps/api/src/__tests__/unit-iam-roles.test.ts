@@ -14,14 +14,7 @@ import {
   isAccountManager,
   normalizeProjectRole,
   parseAssignableProjectRole,
-  PROJECT_ROLE_RANK,
 } from '../iam/roles';
-
-describe('project role rank', () => {
-  test('manager outranks member', () => {
-    expect(PROJECT_ROLE_RANK.manager).toBeGreaterThan(PROJECT_ROLE_RANK.member);
-  });
-});
 
 describe('the two parsers', () => {
   // The removed `editor` role: stored values FOLD (a read must never fail on a

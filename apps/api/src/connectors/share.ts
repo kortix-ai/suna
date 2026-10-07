@@ -25,8 +25,6 @@ import {
 import { db } from '../shared/db';
 import { groupIdsOfUser } from '../iam/group-read';
 
-export type ShareScope = 'project' | 'restricted';
-
 export interface SecretGrant {
   principalType: 'member' | 'group';
   principalId: string;

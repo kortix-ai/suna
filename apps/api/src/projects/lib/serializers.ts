@@ -824,10 +824,6 @@ export function serializeTemplate(t: Awaited<ReturnType<typeof listSandboxTempla
   };
 }
 
-const PROJECT_ROLES = ['manager', 'member'] as const;
-
-export type ProjectGroupGrantRole = (typeof PROJECT_ROLES)[number];
-
 /**
  * Parse a bounded positive integer query parameter, or report why it is invalid.
  * Shared by every paged read route (transcript, voice transcript, approvals).

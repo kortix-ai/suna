@@ -530,17 +530,3 @@ export function resolveSecretDelivery(input: SecretDeliveryInput): SecretDeliver
   if (!input.sessionId) return withheld('no_session');
   return { emit: 'handle', strategy };
 }
-
-/** True when this row puts SOMETHING under its env KEY — a real value or a
- *  handle. The single predicate both the env map and the name list are built
- *  from, so the two cannot disagree. */
-export function emitsValue(delivery: SecretDelivery): boolean {
-  return delivery.emit !== 'nothing';
-}
-
-export interface DeliveredSecret {
-  /** The env var KEY (`project_secrets.name`). Several identifiers may share
-   *  one — that is a supported project shape, not a conflict. */
-  key: string;
-  delivery: SecretDelivery;
-}

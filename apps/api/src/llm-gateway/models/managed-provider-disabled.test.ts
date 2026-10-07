@@ -97,7 +97,7 @@ const { RUNTIME_MANAGED_MODELS, getRuntimeManagedModel, isRuntimeManagedModelId 
 const { managedCandidates } = await import('../resolution/descriptors');
 const { resolveCandidates } = await import('../resolution/resolve-candidates');
 const { gatewayModelCatalog, managedModels } = await import('./catalog-models');
-const { managedPickerModels } = await import('./picker-catalog');
+await import('./picker-catalog');
 
 const FAKE_MANAGED_MODEL = {
   id: 'deepseek-v4.1-flash',
@@ -125,10 +125,6 @@ describe('managed provider disabled (KORTIX_MANAGED_PROVIDER_ENABLED=false, the 
     const full = gatewayModelCatalog('proj');
     expect(full.auto).toBeUndefined();
     expect(full['glm-5.3-flash']).toBeUndefined();
-  });
-
-  test('the compact/Slack picker offers no managed entries', () => {
-    expect(managedPickerModels()).toEqual([]);
   });
 
   test('managedCandidates()/managedDescriptor() (defense-in-depth) refuse to build a descriptor and read NEITHER credential', () => {

@@ -27,14 +27,6 @@ export const LIVE_TRANSITION_STATUSES = [
   'activating',
 ] as const satisfies readonly ProviderTransitionStatus[];
 
-/** Statuses that never change again. */
-export const TERMINAL_TRANSITION_STATUSES = [
-  'activated',
-  'failed',
-  'superseded',
-  'cancelled',
-] as const satisfies readonly ProviderTransitionStatus[];
-
 /**
  * The resolved, buildable identity a transition prepares + verifies. Two
  * transitions with the same identity build the SAME image, so this is also the

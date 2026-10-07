@@ -32,7 +32,6 @@ export type {
   GetCommitDiffOptions,
   CommitDiff,
   GetFileHistoryOptions,
-  GetFileAtRefResult,
   BranchDiffSummary,
   MergePreview,
   MergeOptions,
