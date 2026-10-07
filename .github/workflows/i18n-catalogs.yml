@@ -3,22 +3,22 @@ name: i18n-catalogs
 # Translation catalogs (apps/web/translations/*.json) keep the order their keys
 # were added in. On 2026-09-22 a conflict resolution rebuilt all nine through
 # an unordered key set (merge aba5055432, landed in ea09f2f6a8): 473 of 840
-# objects per catalog changed order and nothing flagged it before main. The
-# only order assertion, src/lib/starter-prompts.test.ts, runs in the packages
-# lane, which a plain pull request into main skips.
+# objects per catalog changed order and nothing flagged it before dev. The
+# only order assertion, a unit test in the packages lane, was removed with its
+# subject, and a plain pull request into dev skips that lane.
 #
 # This job compares the pull request, merged into its base, with the base: every
 # catalog must be canonical and must keep the base's key order. The logic is the
 # script, so the same check runs locally:
 #   node apps/web/scripts/i18n-catalogs.mjs check --base=origin/dev
-# An intentional reorder (for example STARTER_PROMPTS changed order) is allowed
+# An intentional reorder (for example a deliberate key regroup) is allowed
 # by the `i18n-reorder` label on a release pull request, and on a push by the
 # commit trailer `I18n-Reorder: intentional`; the canonical check still runs.
 # `.githooks/pre-commit` runs the same order check before the commit exists.
 
 on:
-  # A pull request into `main` runs no CI: the developer runs `pnpm test` in
-  # their box. The push to `main` is the non-blocking post-merge check; release
+  # A pull request into `dev` runs no CI: the developer runs `pnpm test` in
+  # their box. The push to `dev` is the non-blocking post-merge check; release
   # pull requests (`staging`, `prod`) are the gate.
   push:
     branches: [dev]

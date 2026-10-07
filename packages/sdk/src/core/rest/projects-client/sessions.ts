@@ -2,6 +2,7 @@
 
 import { type ApiClientOptions, ApiError, backendApi } from '../../http/api-client';
 import { markSessionFresh } from '../../http/fresh-sessions';
+import { noteSessionStopped } from '../../http/session-stopped';
 import type { AuditEvent } from './audit';
 import { type ConnectorSharing, unwrap } from './shared';
 
@@ -1293,6 +1294,10 @@ export interface SessionPrompt {
   /** Posted without a turn: no agent answers it, so show no "thinking"
    *  state. Absent from servers older than this field. */
   no_reply?: boolean;
+  /** The member who sent it. The prompt runs as this member, so only they
+   *  edit, send now or retry it (`sessionPromptActions`). Null for a prompt
+   *  with no recorded sender; absent from servers older than this field. */
+  author_user_id?: string | null;
   created_at: string;
   available_at: string;
 }
@@ -1572,12 +1577,14 @@ export async function restartProjectSession(projectId: string, sessionId: string
 
 /** Manual pause: stops the running sandbox in place, resumable via start(). */
 export async function stopProjectSession(projectId: string, sessionId: string) {
-  return unwrap(
+  const stopped = unwrap(
     await backendApi.post<{ ok: boolean; session_id: string; status: string }>(
       `/projects/${projectId}/sessions/${sessionId}/stop`,
       {},
     ),
   );
+  noteSessionStopped(sessionId);
+  return stopped;
 }
 
 /**

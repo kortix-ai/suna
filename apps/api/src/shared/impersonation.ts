@@ -212,6 +212,7 @@ const IMPERSONATION_FORBIDDEN_ROUTES: ForbiddenRoute[] = [
   // covered one of four mutating families; block the subtree. Listing is a
   // read and stays open.
   { re: /^\/v1\/tunnel(\/|$)/ },
+<<<<<<< HEAD
   // Durable project persistence. Each of these ships operator-chosen content
   // in the customer's project after the grant ends: a sandbox template is a
   // Dockerfile built into future sessions; a change-request merge lands
@@ -224,6 +225,28 @@ const IMPERSONATION_FORBIDDEN_ROUTES: ForbiddenRoute[] = [
   { re: /^\/v1\/projects\/[^/]+\/apps(?!\/[^/]+\/access-session$)(\/|$)/ },
   // Repository / provider replacement rides PATCH on the project itself.
   { re: /^\/v1\/projects\/[^/]+$/, methods: ['PATCH'] },
+||||||| 6ed42dc192
+=======
+  // Durable project persistence. Each of these ships operator-chosen content
+  // in the customer's project after the grant ends: a sandbox template is a
+  // Dockerfile built into future sessions; a change-request merge lands
+  // `kortix.yaml` (agent scope, triggers); a provider OAuth start binds a
+  // login; an App deploy serves operator code. Trigger and secret writes stay
+  // open on purpose (team decision recorded in unit-impersonation.test.ts).
+  { re: /^\/v1\/projects\/[^/]+\/sandbox-templates(\/|$)/ },
+  { re: /^\/v1\/projects\/[^/]+\/change-requests\/[^/]+\/merge$/ },
+  { re: /^\/v1\/projects\/[^/]+\/oauth(\/|$)/ },
+  { re: /^\/v1\/projects\/[^/]+\/apps(?!\/[^/]+\/access-session$)(\/|$)/ },
+  // Repository / provider replacement rides PATCH on the project itself.
+  { re: /^\/v1\/projects\/[^/]+$/, methods: ['PATCH'] },
+  // Account deletion, both mounts. The deletion routes run as the REAL
+  // caller: the request row records the operator as the requester, and the
+  // deletion sweeps the sandboxes of every account the requester owns. An
+  // operator inside the customer's account would schedule or run the
+  // teardown of their own accounts. Deletion is the customer's decision;
+  // the status read stays open for support.
+  { re: /^\/v1\/(billing\/)?account(\/|$)/ },
+>>>>>>> origin/dev
 ];
 
 /** HTTP methods that cannot change state, so cannot create durable access. */

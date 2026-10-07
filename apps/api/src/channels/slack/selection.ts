@@ -215,11 +215,17 @@ export async function loadProjectAgentGovernance(projectId: string): Promise<Pro
   }
   const config = await loadProjectConfig(gitProject, files);
   return {
-    agents: config.agents.map((a) => ({
-      name: a.name,
-      description: a.description ?? null,
-      mode: a.mode ?? null,
-    })),
+    // Launchable agents only: the config summary lists every registered agent
+    // (a disabled one with `enabled: false`, for the project's own management
+    // surfaces), but a channel picker must not offer — and the binding check
+    // must not accept — an agent no session can launch.
+    agents: config.agents
+      .filter((a) => a.enabled !== false)
+      .map((a) => ({
+        name: a.name,
+        description: a.description ?? null,
+        mode: a.mode ?? null,
+      })),
     declared: config.agent_discovery === 'declarative',
   };
 }

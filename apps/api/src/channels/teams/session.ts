@@ -41,7 +41,7 @@ import {
   startTurn,
 } from './turn';
 import { sessionWebUrl } from '../slack/util';
-import { modelReadsImages, promptModelOverride } from '../vision-model';
+import { modelReadsImages, NO_VISION_NOTE, promptModelOverride } from '../vision-model';
 import {
   type ChannelModelScope,
   planChannelFollowUp,
@@ -825,15 +825,6 @@ const TURN_INSTRUCTIONS = [
   '- Use `teams send` for a question only when it is genuinely open-ended prose with nothing to pick from. A numbered list of choices in a message is the wrong shape — the user cannot tap it.',
   '- Deliver the final answer with `teams send` (text, or an Adaptive Card via --card-file). One `teams send` per turn — it finalizes the live message.',
   '- Put a link the user should open (connect an app, open a PR, review a draft) alone on its own line as `[Short action](url)` — Teams renders it as a button.',
-].join('\n');
-
-const NO_VISION_NOTE = [
-  '',
-  'IMPORTANT: no image-capable model is available in this project, so you',
-  'cannot see the attached image even after downloading it. Do not call `read`',
-  'on it and do not look for OCR tools. Tell the user plainly that you cannot',
-  'view images here, ask them to paste the text or describe it, and mention',
-  'that a project admin can enable an image-capable model.',
 ].join('\n');
 
 function renderAttachments(activity: TeamsActivity): string[] {

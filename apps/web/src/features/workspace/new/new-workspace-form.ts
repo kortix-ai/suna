@@ -56,6 +56,23 @@ export function filterCreatableAccounts(accounts: KortixAccount[], permissions: 
 }
 
 /**
+ * Can this user create a project in this account, right now?
+ *
+ * `probeAllowed` is the settled `project.create` verdict from
+ * `GET /accounts/{id}/iam/members/{uid}/effective`; `undefined` means the probe
+ * has not answered yet (in flight or failed). The probe is the authority once
+ * it answers — a custom role can grant creation to a member, and the MFA
+ * step-up gate can deny an owner. Until then the account's own role answers,
+ * because owner/admin carry `project.create` in the canonical model, so a
+ * fresh owner's first render of /projects (KRTX-1700) shows the create state
+ * instead of "Ask an owner or admin for access" while the probe is in flight.
+ */
+export function canCreateInAccount(account: KortixAccount, probeAllowed: boolean | undefined): boolean {
+  if (probeAllowed !== undefined) return probeAllowed;
+  return account.account_role === 'owner' || account.account_role === 'admin';
+}
+
+/**
  * Which creatable account `/new` should pre-select.
  *
  * Preference order:

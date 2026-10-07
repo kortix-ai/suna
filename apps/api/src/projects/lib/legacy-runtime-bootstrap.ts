@@ -46,6 +46,7 @@ import { fileURLToPath } from 'node:url';
 import type { ProviderName, SandboxExecResult } from '../../platform/providers';
 import { CONFIG_RELEASE_CAPABILITY } from './session-config-release';
 import { exponentialBackoffMs } from '../../shared/backoff';
+import { isRecord } from '@kortix/shared/guards';
 
 /**
  * The in-box script ships as a sidecar file, not a template literal: bash is
@@ -181,10 +182,6 @@ export interface RuntimeClassification {
   staleReasons: StaleReason[];
   /** Human-readable specifics for `stale` AND `blocked` — which component failed, how long a swap has been pending, why this box is blocked. Empty for `current`/`legacy`/`not-ok`/`unreachable`. */
   detail: string[];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function shaField(running: Record<string, unknown>, key: string): string | null {

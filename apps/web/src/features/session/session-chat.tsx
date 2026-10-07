@@ -1354,14 +1354,25 @@ export function SessionChat({
     // by the effect above, i.e. AFTER the render that first sees a row.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [promptInbox.prompts, sessionId, messages, firstTurnClaim]);
+  // A queued prompt runs as its author: only they edit or send it, and the
+  // session's managers may remove it. Same cache entry as the header's read.
+  const viewerManagesSession =
+    useProjectSession(projectId, projectSessionId ?? undefined, {
+      enabled: !!projectId && !!projectSessionId,
+    }).data?.can_manage_lifecycle !== false;
+  const queuedPromptViewer = useMemo(
+    () => ({ userId: viewer?.id, managesSession: viewerManagesSession }),
+    [viewer?.id, viewerManagesSession],
+  );
   const queueRows = useMemo(
     () =>
       projectQueueRows({
         prompts: promptInbox.prompts,
         transcriptMessageIds: transcriptClaimedIds,
         drafts: queuedDrafts,
+        viewer: queuedPromptViewer,
       }),
-    [promptInbox.prompts, transcriptClaimedIds, queuedDrafts],
+    [promptInbox.prompts, transcriptClaimedIds, queuedDrafts, queuedPromptViewer],
   );
   // A posted draft whose row the inbox no longer lists was delivered or
   // removed; nothing reads it again.
@@ -4345,6 +4356,7 @@ export function SessionChat({
                               pendingPrompt={pendingPrompt}
                               onRetryQueued={stableRetryQueued}
                               onRemoveQueued={stableRemoveQueued}
+                              queuedPromptViewer={queuedPromptViewer}
                               interruptedBeforeRun={interruptedTurnIds.has(
                                 turn.userMessage.info.id,
                               )}

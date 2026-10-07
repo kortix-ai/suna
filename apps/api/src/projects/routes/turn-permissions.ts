@@ -106,8 +106,9 @@ export function registerTurnPermissionsRoutes(): void {
         return c.json({ error: `request_id exceeds ${MAX_REQUEST_ID_CHARS} characters` }, 400);
       }
 
-      // Fire-and-forget, one push per request id (notifications/permission-push.ts).
-      const notified = permissionPushGate.notify({ sessionId, projectId, requestId });
+      // One push per request id across replicas; the push itself is not awaited
+      // (notifications/permission-push.ts).
+      const notified = await permissionPushGate.notify({ sessionId, projectId, requestId });
       return c.json({ ok: true, notified });
     },
   );

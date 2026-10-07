@@ -23,6 +23,7 @@ billingApp.route('/webhooks', webhooksRouter);
 // Alias: /webhook → /webhooks (some providers send to singular form)
 billingApp.route('/webhook', webhooksRouter);
 
+<<<<<<< HEAD
 // Auth-skip is an exact prefix match on the mounted path. A substring test
 // (`includes('/webhook')`) would skip auth on any future param route whose
 // value contains the word.
@@ -33,6 +34,23 @@ export const isBillingGateExemptPath = (path: string) => BILLING_GATE_EXEMPT_PAT
 
 // Auth for all billing routes except webhooks and the cron endpoints (they
 // verify a signature or the internal bearer themselves).
+||||||| 6ed42dc192
+// Auth for all billing routes except webhooks
+=======
+// Auth-skip is an exact prefix match on the mounted path. A substring test
+// (`includes('/webhook')`) would skip auth on any future param route whose
+// value contains the word.
+const UNAUTHENTICATED_BILLING_PATH = /^\/v1\/billing\/(webhooks?|cron)(\/|$)/;
+// `account` is account deletion: every deployment owes it, billing or not. Its
+// billing steps (Stripe cancel, wallet forfeit) find nothing to do without
+// billing.
+const BILLING_GATE_EXEMPT_PATH = /^\/v1\/billing\/(account-state|account|webhooks|cron)(\/|$)/;
+export const isUnauthenticatedBillingPath = (path: string) => UNAUTHENTICATED_BILLING_PATH.test(path);
+export const isBillingGateExemptPath = (path: string) => BILLING_GATE_EXEMPT_PATH.test(path);
+
+// Auth for all billing routes except webhooks and the cron endpoints (they
+// verify a signature or the internal bearer themselves).
+>>>>>>> origin/dev
 billingApp.use('*', async (c, next) => {
   if (isUnauthenticatedBillingPath(c.req.path)) return next();
   return supabaseAuth(c, next);
@@ -60,17 +78,13 @@ billingApp.route('/', subscriptionsRouter);
 billingApp.route('/', paymentsRouter);
 billingApp.route('/', creditsRouter);
 
-// Account deletion (mounted at /v1/billing/account/*)
+// Account deletion (mounted at /v1/billing/account/*). Exempt from the billing
+// gate above: a self-hosted deployment deletes accounts too.
 billingApp.route('/account', accountDeletionRouter);
 
-// Backwards-compatible account deletion API (mounted at /v1/account/*)
+// Backwards-compatible account deletion API (mounted at /v1/account/*). No
+// billing gate, for the same reason.
 accountDeletionApp.use('*', supabaseAuth);
-accountDeletionApp.use('*', async (c, next) => {
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
-    return c.json({ error: 'Billing is not enabled', billing_disabled: true }, 404);
-  }
-  return next();
-});
 accountDeletionApp.route('/', accountDeletionRouter);
 
 function timingSafeStringEqual(a: string, b: string): boolean {
