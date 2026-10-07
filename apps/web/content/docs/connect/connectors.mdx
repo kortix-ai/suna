@@ -773,6 +773,10 @@ any object and returns `output: unknown`.
   their source declares one. A GraphQL result is typed as an object.
 - Managed connectors (Composio, Pipedream) publish no output schema. Their
   result is `unknown`. The CLI names them after it writes the file.
+- Each `$defs` entry becomes one named type (`KortixConnectorDef<n>_<name>`),
+  so a recursive schema stays finite. A schema that cannot compile (a union
+  that contains itself) or whose types pass 256 KB for one action becomes
+  `unknown`.
 - Re-run the command after you add a connector or it syncs a new version.
 - The catalog returns output schemas only on request:
   `GET /connectors/projects/{projectId}/catalog?include_output_schemas=true`

@@ -75,6 +75,28 @@ const CATALOG = {
           },
           outputSchema: { type: 'object', properties: { ok: { const: true } }, required: ['ok'] },
         },
+        {
+          // A remote MCP server's schema: self-recursive, plus a direct union/intersection cycle.
+          path: 'get_tree',
+          name: 'get_tree',
+          description: 'Get a tree',
+          risk: 'read',
+          inputSchema: { type: 'object', properties: {} },
+          outputSchema: {
+            $defs: {
+              Node: {
+                type: 'object',
+                properties: { name: { type: 'string' }, children: { type: 'array', items: { $ref: '#/$defs/Node' } } },
+                required: ['name'],
+              },
+              Loop: { anyOf: [{ $ref: '#/$defs/Pool' }, { type: 'string' }] },
+              Pool: { allOf: [{ $ref: '#/$defs/Loop' }, { type: 'object', properties: { n: { type: 'number' } } }] },
+            },
+            type: 'object',
+            properties: { root: { $ref: '#/$defs/Node' }, loop: { $ref: '#/$defs/Loop' } },
+            required: ['root'],
+          },
+        },
       ],
     },
     {
@@ -153,7 +175,7 @@ describe('kortix connectors types', () => {
     const r = await kortix(['--out', 'types/kortix-connectors.d.ts']);
     expect(r.exitCode).toBe(0);
     expect(searches).toEqual(['?include_schemas=true&include_output_schemas=true']);
-    expect(r.stdout).toContain('Wrote 3 actions across 3 connectors to types/kortix-connectors.d.ts');
+    expect(r.stdout).toContain('Wrote 4 actions across 3 connectors to types/kortix-connectors.d.ts');
     expect(r.stdout).toContain('No output schema (result is unknown): ke2e-managed');
 
     const file = readFileSync(join(workdir, 'types/kortix-connectors.d.ts'), 'utf8');
@@ -166,7 +188,9 @@ describe('kortix connectors types', () => {
     expect(file).toContain('state?: "open" | "closed";');
     expect(file).toContain('title?: string | null;');
     expect(file).toContain('"next-cursor"?: string | null;');
-    expect(file).toContain('ref: string | number;');
+    expect(file).toContain('type KortixConnectorDef0_Ref = string | number;\n');
+    expect(file).toContain('ref: KortixConnectorDef0_Ref;');
+    expect(file).toMatch(/type (KortixConnectorDef\d+_Node) = \{\n {2}name: string;\n {2}children\?: \1\[\];\n\};/);
     expect(file).toContain('ok: true;');
     expect(file).toMatch(/send: \{\n\s+args: \{\n\s+to: string;\n\s+\};\n\s+result: unknown;/);
   });
@@ -186,11 +210,15 @@ export async function run() {
   // @ts-expect-error an unknown argument is rejected
   await connectors.callAction('ke2e-tracker', 'list_issues', { team: 'CORE', bogus: 1 });
   await connectors.callAction('ke2e-mcp', 'get_issue', { ref: 7 });
+  const tree = await connectors.callAction('ke2e-mcp', 'get_tree', {});
+  const grandchild: string | undefined = tree.output?.root.children?.[0]?.children?.[0]?.name;
+  // @ts-expect-error a recursive alias keeps its shape
+  const badNode: ConnectorResult<'ke2e-mcp', 'get_tree'> = { root: { name: 1 } };
   const sent = await connectors.callAction('ke2e-managed', 'send', { to: 'a' });
   const opaque: unknown = sent.output;
   // @ts-expect-error a typed output keeps its shape
   const wrong: ConnectorResult<'ke2e-tracker', 'list_issues'> = { issues: 'none' };
-  return [id, opaque, wrong];
+  return [id, opaque, wrong, grandchild, badNode];
 }
 `,
     );
