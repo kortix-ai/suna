@@ -1522,11 +1522,9 @@ function freshTokenFor(key: string): string {
       return token(64);
     case 'DASHBOARD_PASSWORD':
       return token(24);
-    case 'POSTGRES_PASSWORD':
     case 'S3_PROTOCOL_ACCESS_KEY_SECRET':
     case 'GATEWAY_INTERNAL_TOKEN':
     case 'INTERNAL_SERVICE_KEY':
-    case 'API_KEY_SECRET':
     case 'TUNNEL_SIGNING_SECRET':
       return token(32);
     case 'S3_PROTOCOL_ACCESS_KEY_ID':
@@ -1549,6 +1547,10 @@ const NON_ROTATABLE_GENERATED_REASONS: Record<string, string> = {
   SUPABASE_ANON_KEY: 'derived from SUPABASE_JWT_SECRET — run `env rotate SUPABASE_JWT_SECRET` instead.',
   SUPABASE_SERVICE_ROLE_KEY: 'derived from SUPABASE_JWT_SECRET — run `env rotate SUPABASE_JWT_SECRET` instead.',
   DASHBOARD_USERNAME: 'not a rotation target — use `env set DASHBOARD_USERNAME=<value>` to change it.',
+  API_KEY_SECRET:
+    'the encryption key of every stored secret, connector and OAuth credential and GitHub token, and the pepper of every API key, PAT and session token hash. A new value leaves all of them undecryptable, and the old value is not kept. There is no data-key rotation yet (KRTX-1719).',
+  POSTGRES_PASSWORD:
+    'the database role passwords are set once, when the data directory is first created. A new value reaches the services but not the roles, so they can no longer connect.',
   SAML_PRIVATE_KEY: 'the SAML SP signing key — rotating it changes your SP identity and breaks every already-registered IdP until you re-register with them. Set a new one deliberately with `env set SAML_PRIVATE_KEY=<base64-der>` if you understand that tradeoff.',
 };
 
@@ -2024,7 +2026,7 @@ const REQUIRED_SECRET_LABELS: Record<string, string> = {
   DASHBOARD_PASSWORD: 'Supabase Studio dashboard password (auto-generated — regenerate via `env rotate`)',
   GATEWAY_INTERNAL_TOKEN: 'Gateway internal token (auto-generated — regenerate via `env rotate`)',
   INTERNAL_SERVICE_KEY: 'Internal service key (auto-generated — regenerate via `env rotate`)',
-  API_KEY_SECRET: 'API key secret (auto-generated — regenerate via `env rotate`)',
+  API_KEY_SECRET: 'Data encryption key and token pepper (auto-generated — never rotate it: stored secrets become undecryptable)',
   TUNNEL_SIGNING_SECRET: 'Tunnel signing secret (auto-generated — regenerate via `env rotate`)',
 };
 
