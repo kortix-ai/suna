@@ -1,20 +1,19 @@
 {
-  "source_hash": "e522fe85216c884a666d220fb183270dc694f694115c7107bd1c1a8c25886522",
+  "source_hash": "3903730df0b4e3a82c0409f6a269377acc73f622ce90f9ab84b9f08b28df61cf",
   "diff_files": [
     "apps/api/eslint-suppressions.json",
     "apps/api/src/__tests__/unit-platinum-snapshot-size.test.ts",
     "apps/api/src/snapshots/build-context.ts",
     "apps/api/src/snapshots/templates-default-spec.test.ts",
-    "apps/api/src/snapshots/templates.ts",
-    "tests/migration/kortix-yolo-profiles-unused-indexes.test.ts"
+    "apps/api/src/snapshots/templates.ts"
   ],
-  "diff_hash": "da9907ac5e67d7e7d39ec0c8d56b13afefa60a8b7794afdd51f58ae15290d4d1",
-  "head": "9efaca88aa4df6cd723144adb3f725324b91d50c",
+  "diff_hash": "f4ad4a887b8fdd9cd53121b6e54a83f31148ee9b6463a741c9d02988351ab302",
+  "head": "60e435c88c73c4cca3f39c2134595340456af628",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "skipped-sandbox-image",
     "db-suites": "pass"
   },
-  "at": "2026-10-07T16:02:19.447Z"
+  "at": "2026-10-07T17:06:25.118Z"
 }
