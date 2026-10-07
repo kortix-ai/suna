@@ -1,17 +1,18 @@
 {
-  "source_hash": "20dfb7efcc45c0ee0d1d0bec3bc03ddf317559c5d5aa5a1af3d59055e1824ccd",
+  "source_hash": "6ba9b3ea914f57477ed7f881688080913d5e83304b66ce4a694e487ed3180e79",
   "diff_files": [
     "apps/api/src/snapshots/template-runtime-fingerprint.ts",
     "apps/sandbox/entrypoint.sh",
+    "apps/web/src/lib/seo/content-timestamps.json",
     "packages/shared/src/sandbox/__tests__/layer-render.test.ts"
   ],
-  "diff_hash": "a5363530df011e72620974280b8a6aa990427f07aa6414042073bdb6bafd85bc",
-  "head": "b4eee4fb19e4b92f5baa8c68a86e15eaa05784be",
+  "diff_hash": "0bde63c2b80c1764f7c7819047f6b0cd80a585f51723d176f1547d76576dfea3",
+  "head": "14297801e1bc563a14aaf3f47a9313670e61352b",
   "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "skipped-sandbox-image",
+    "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-07T11:45:32.422Z"
+  "at": "2026-10-07T20:25:12.359Z"
 }
