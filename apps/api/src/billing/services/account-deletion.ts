@@ -36,6 +36,7 @@ import {
 import { getSupabase } from '../../shared/supabase';
 import { forgetUserJwtLiveness } from '../../shared/jwt-liveness';
 import { getStripe } from '../../shared/stripe';
+import { config } from '../../config';
 import { db } from '../../shared/db';
 import { logger } from '../../lib/logger';
 import { ownedAccountRows } from '../../iam/membership-read';
@@ -184,11 +185,18 @@ export async function deleteAccountImmediately(accountId: string, userId?: strin
   return { success: true, message: 'Account deleted' };
 }
 
+/** Requests one tick executes, oldest first. The 15-minute tick takes the rest. */
+export const SWEEP_BATCH_SIZE = 25;
+
 export async function processScheduledDeletions(): Promise<{
   processed: number;
   errors: string[];
 }> {
-  const requests = await getScheduledDeletions();
+  if (config.ACCOUNT_DELETION_SWEEP_PAUSED) {
+    logger.warn('[AccountDeletion] scheduled sweep paused (ACCOUNT_DELETION_SWEEP_PAUSED)');
+    return { processed: 0, errors: [] };
+  }
+  const requests = await getScheduledDeletions(SWEEP_BATCH_SIZE);
   let processed = 0;
   const errors: string[] = [];
 
