@@ -1,7 +1,8 @@
 import { readFileSync } from '@/i18n/test-source';
 import { expect, test } from 'bun:test';
 import { resolve } from 'node:path';
-import { BACKEND_NAME_PATTERN, backendDeployCommand, backendEnvText } from './backends-view';
+import { BACKEND_NAME_PATTERN } from './backends-view';
+import { backendEnvText } from './backend-connect-dialog';
 import { formatBackupSize, sizeChanges, sizeDraft, sizeFieldValid, sizeMin } from './backend-dialogs';
 
 const root = resolve(import.meta.dir, '../..');
@@ -13,8 +14,7 @@ test('backend names follow the API rule', () => {
     expect(BACKEND_NAME_PATTERN.test(bad)).toBe(false);
 });
 
-test('copy helpers produce the documented strings', () => {
-  expect(backendDeployCommand('web-demo')).toBe('kortix backends deploy web-demo --dir backends/web-demo');
+test('the revealed admin credentials render as .env.local lines', () => {
   expect(
     backendEnvText({ CONVEX_SELF_HOSTED_URL: 'https://x', CONVEX_SELF_HOSTED_ADMIN_KEY: 'k' }),
   ).toBe('CONVEX_SELF_HOSTED_URL=https://x\nCONVEX_SELF_HOSTED_ADMIN_KEY=k');
@@ -93,4 +93,31 @@ test('Resize and Backups are row actions; resize and restore are write-gated; th
   expect(dialogs).toContain('{canWrite ? (');
   expect(dialogs).toContain('<ConfirmDialog');
   expect(dialogs).not.toContain('admin_key');
+});
+
+test('one Connect dialog replaces the copy actions; its snippets come from the shared source the CLI prints', () => {
+  const view = read('features/backends/backends-view.tsx');
+  const detail = read('features/backends/backend-detail-view.tsx');
+  const dialog = read('features/backends/backend-connect-dialog.tsx');
+  for (const source of [view, detail]) {
+    expect(source).toContain('<BackendConnectDialog');
+    expect(source).not.toContain('backendDeployCommand');
+    expect(source).not.toContain('backendEnvText');
+  }
+  expect(view).not.toContain('getBackendCredentials');
+  expect(dialog).toContain("from '@kortix/shared/backend-connect'");
+  expect(dialog).toContain('backendConnectSnippets(backend)');
+  // The admin key appears only after an explicit, write-gated Reveal that reads the audited route.
+  expect(dialog).toMatch(/const reveal = async \(\) => \{[\s\S]*getBackendCredentials\(projectId, backend\.backend_id\)/);
+  expect(dialog).toContain('onClick={() => void reveal()}');
+  expect(dialog).toContain('{canWrite ? (');
+});
+
+test('the backend page shows the last automatic backup, its schedule and the snapshot count', () => {
+  const detail = read('features/backends/backend-detail-view.tsx');
+  expect(detail).toContain('useProjectBackendBackups(');
+  expect(detail).toContain('automatic.last_backup_at');
+  expect(detail).toContain('automatic.interval_minutes');
+  expect(detail).toContain('snapshot_limit: limit');
+  expect(detail).toContain('data-testid="backend-backup-summary"');
 });

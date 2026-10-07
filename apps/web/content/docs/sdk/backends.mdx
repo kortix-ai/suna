@@ -22,11 +22,11 @@ branch on it. See [Feature flags](/docs/feature-flags).
 | Method | Wraps | What it does |
 |---|---|---|
 | `backends.list()` | `GET /projects/:pid/backends` | Lists the project's backends |
-| `backends.create({ name, cpu?, memory_gb?, disk_gb? })` | `POST …/backends` | Claims the name and starts the backend. Returns at once with status `provisioning`. Size defaults to 1 vCPU, 2 GB, 10 GB |
+| `backends.create({ name, cpu?, memory_gb?, disk_gb? })` | `POST …/backends` | Claims the name and starts the backend. Returns at once with status `provisioning`. Size defaults to 1 vCPU, 1 GB, 10 GB |
 | `backends.waitUntilRunning(backendId)` | polls `GET …/backends/:id` | Resolves with the running backend; rejects with its error, or after 15 minutes (the API's provisioning deadline; `timeoutMs` overrides it) |
 | `backends.get(backendId)` | `GET …/backends/:id` | Reads one backend |
 | `backends.credentials(backendId)` | `GET …/backends/:id/credentials` | Reads `url`, `site_url`, `admin_key`, and `env` |
-| `backends.token(backendId)` | `POST …/backends/:id/token` | A one-hour Kortix sign-in token naming the caller, for `client.setAuth` |
+| `backends.token(backendId)` | `POST …/backends/:id/token` | A 15-minute Kortix sign-in token naming the caller, for `client.setAuth` |
 | `backends.resize(backendId, { cpu?, memory_gb?, disk_gb? })` | `PATCH …/backends/:id` | Starts a resize. Returns at once with `operation: 'resizing'` |
 | `backends.waitForOperation(backendId)` | polls `GET …/backends/:id` | Resolves when `operation` is `null`; rejects with `last_operation_error` when the operation failed, or after 10 minutes |
 | `backends.backups(backendId)` | `GET …/backends/:id/backups` | Reads the automatic backup state and the snapshots, newest first |
@@ -96,16 +96,29 @@ Every type below is exported from `@kortix/sdk`.
 
 | Type | What it holds |
 |---|---|
-| `ProjectBackend` | `backend_id`, `project_id`, `name`, `status`, `url`, `site_url`, `dashboard_url`, `cpu`, `memory_gb`, `disk_gb`, `error`, `operation`, `last_operation_error`, `convex_version` (the matching `convex` npm CLI version), `created_at`, `updated_at` |
+| `ProjectBackend` | `backend_id`, `project_id`, `name`, `status`, `url`, `site_url`, `dashboard_url`, `cpu`, `memory_gb`, `disk_gb`, `error`, `operation`, `last_operation_error`, `auth_env` (the public `KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE` and `KORTIX_AUTH_JWKS` values; `null` for a backend created before Kortix sign-in), `convex_version` (the matching `convex` npm CLI version), `created_at`, `updated_at` |
 | `ProjectBackendStatus` | `'provisioning' \| 'running' \| 'error' \| 'deleted'` |
 | `ProjectBackendOperation` | `'resizing'` |
 | `ProjectBackendSize` | `cpu`, `memory_gb`, `disk_gb`, all optional |
 | `CreateProjectBackendInput` | `name`, plus the optional size fields |
-| `ProjectBackendBackups` | `automatic` (`state`, `last_backup_at`, `size_bytes`, `interval_minutes`) and `snapshots` |
+| `ProjectBackendBackups` | `automatic` (`state`, `last_backup_at`, `size_bytes`, `interval_minutes`), `snapshots` and `snapshot_limit` (how many snapshots the backend keeps) |
 | `ProjectBackendSnapshot` | `snapshot_id`, `created_at`, `size_bytes` |
 | `ProjectBackendCredentials` | `url`, `site_url`, `admin_key`, `env` |
 
 `url` and `site_url` are `null` until the backend runs.
+
+`auth_env` holds no secret. Set its three values in the environment of any
+server of your own that receives a member token, then verify the token there:
+
+```ts
+import { verifyKortixMemberToken } from '@kortix/sdk';
+
+// Reads KORTIX_AUTH_ISSUER, KORTIX_AUTH_AUDIENCE and KORTIX_AUTH_JWKS.
+const member = await verifyKortixMemberToken(bearer); // throws KortixMemberError
+```
+
+`kortix backends connect <name>` prints this and every other way to reach the
+backend. **Connect** on the backend in Kortix web shows the same snippets.
 
 `dashboard_url` is Convex's dashboard for the backend, on a Kortix host. Frame
 it in an `<iframe>`. The dashboard posts `{ type: 'dashboard-credentials-request' }`

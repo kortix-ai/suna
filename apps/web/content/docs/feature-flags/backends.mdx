@@ -85,6 +85,7 @@ The full subcommand list:
 | `kortix backends create <name>` | Create a backend without deploying to it. |
 | `kortix backends get <name>` | Show one backend and its status. `--json`. |
 | `kortix backends dashboard <name>` | Print the link to the backend's admin dashboard. `--open` opens it. |
+| `kortix backends connect <name>` | Print how to reach the backend from an App, from outside, and from the CLI. No secret. `--json`. |
 | `kortix backends env <name>` | Print the Convex CLI variables for the backend. |
 | `kortix backends deploy <name> [--dir <path>] [--create]` | Deploy the Convex code. `--create` creates a missing backend first. |
 | `kortix backends delete <name>` | Delete the backend, its machine, and all its data. |
@@ -100,6 +101,30 @@ free right now.") and releases the machine. Delete it and create it again.
 A project can have 3 backends and an account 10, across its projects. A create
 past either limit answers `409` `backend_limit`. Contact Kortix to raise the
 account limit.
+
+## Connect
+
+**Connect** on a backend (the row menu in **Customize → Backends**, or the
+button on the backend's page) shows working code to reach it, in three tabs.
+`kortix backends connect <name>` prints the same snippets; `--json` returns
+them as `{ backend, snippets: [{ id, tab, title, file, language, code }] }`.
+
+| Tab | What it shows |
+|---|---|
+| App | `npm i convex @kortix/sdk`, the `VITE_CONVEX_URL` line, `convex.setAuth(kortixAppBackendToken("<name>"))`, the backend's `convex/auth.config.ts`, and a function that calls `requireKortixMember` |
+| From outside | A member token from `kortix backends token <name>` or the SDK's `backends.token(id)`; `curl` calls to `<url>/api/query` and `<url>/api/mutation` with `Authorization: Bearer`; an HTTP action on `site_url`; `verifyKortixMemberToken` on your own server with the three public `KORTIX_AUTH_*` values |
+| CLI & admin | `kortix backends deploy`, `eval "$(kortix backends env <name>)"`, Convex CLI commands, `kortix backends dashboard`, and the admin key |
+
+The admin key stays hidden until you click **Reveal**. Reveal needs
+`project.backend.write` and writes one `backend.credentials.read` audit event.
+Closing the dialog drops the key.
+
+Any viewer a Kortix App admits can get a member token for any backend in the
+App's project. The backend decides what each member may do, with
+`requireKortixMember` and its `groups` and `roles`.
+
+The backend's page also shows the last automatic backup, the backup interval,
+and how many snapshots it holds against its limit. Click it to open Backups.
 
 ## The admin dashboard
 
@@ -274,8 +299,8 @@ Reading the credentials writes a `backend.credentials.read` audit event. See
 - Backends are not metered. A project is capped at 3.
 - Backends are always on. A backend does not stop when idle.
 - One machine per backend: it scales up (resize), not out.
-- Kortix has no dashboard for a backend yet. Use the CLI or MCP.
-  `npx convex dashboard` does not work against a self-hosted backend.
+- `npx convex dashboard` does not work against a self-hosted backend. Use
+  the dashboard in Kortix (`kortix backends dashboard <name>`).
 - Convex Auth needs manual setup. Custom JWT or OIDC authentication through
   `auth.config.ts` works.
 - Convex cloud features are absent: preview deployments, the AI gateway for

@@ -15,6 +15,7 @@ import {
   type BackendRow,
   backendAdminKey,
   backendMemberToken,
+  backendPublicAuthEnv,
   deleteBackend,
   effectiveStatus,
   getLiveBackend,
@@ -54,6 +55,14 @@ const BackendObject = z
     error: z.string().nullable(),
     operation: z.enum(['resizing']).nullable().openapi({ description: 'A day-two operation in flight.' }),
     last_operation_error: z.string().nullable(),
+    auth_env: z
+      .object({ KORTIX_AUTH_ISSUER: z.string(), KORTIX_AUTH_AUDIENCE: z.string(), KORTIX_AUTH_JWKS: z.string() })
+      .nullable()
+      .openapi({
+        description:
+          'Public values that verify this backend\'s member tokens (no secret). Set them on any server that calls ' +
+          '`verifyKortixMemberToken`. null for a backend created before Kortix sign-in.',
+      }),
     convex_version: z.string().openapi({
       description: 'The `convex` npm CLI version that matches this backend. Deploy with `npx convex@<version> deploy`.',
     }),
@@ -77,6 +86,7 @@ const BackendBackups = z
       interval_minutes: z.number().nullable(),
     }),
     snapshots: z.array(z.object({ snapshot_id: z.string(), created_at: z.string(), size_bytes: z.number().nullable() })),
+    snapshot_limit: z.number().int().openapi({ description: 'How many snapshots the backend keeps; a new one drops the oldest past it.' }),
   })
   .openapi('BackendBackups');
 
@@ -125,6 +135,7 @@ function serialize(row: BackendRow) {
     error: status === 'error' && typeof lastError === 'string' ? lastError : null,
     operation: backendOperation(row),
     last_operation_error: ((row.metadata as { lastOperationError?: unknown }).lastOperationError as string | undefined) ?? null,
+    auth_env: backendPublicAuthEnv(row),
     convex_version: CONVEX_CLI_VERSION,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
@@ -274,7 +285,7 @@ export function registerBackendsRoutes(): void {
       method: 'post', path: '/{projectId}/backends/{backendId}/token', tags: ['backends'],
       summary: 'Mint a Kortix sign-in token for the backend', ...auth,
       description:
-        'A one-hour JWT naming the caller (`subject` = Kortix user id, `email`). The backend verifies it ' +
+        'A 15-minute JWT naming the caller (`subject` = Kortix user id, `email`). The backend verifies it ' +
         'with the key Kortix wrote into its environment; read it in a function with `ctx.auth.getUserIdentity()`.',
       request: { params: BackendParams },
       responses: { 200: json(BackendToken, 'Token'), ...errors(403, 404, 409) },

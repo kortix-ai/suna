@@ -11,19 +11,21 @@ import {
 } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
 import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast, successToast } from '@/components/ui/toast';
+import { errorToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { FeatureGateScreen } from '@/features/workspace/feature-gate-screen';
 import { useTranslations } from '@/i18n/use-translations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
+import { relativeTime } from '@/lib/relative-time';
 import { getBackendCredentials, type ProjectBackend } from '@kortix/sdk';
-import { useFeatureFlag, useProjectBackends } from '@kortix/sdk/react';
+import { useFeatureFlag, useProjectBackendBackups, useProjectBackends } from '@kortix/sdk/react';
 import { ArrowLeftIcon, DatabaseIcon, DotsThreeIcon } from '@phosphor-icons/react';
 import { useEffect, useRef, useState } from 'react';
+import { BackendConnectDialog } from './backend-connect-dialog';
 import { BackendBackupsDialog, ResizeBackendDialog, backendSizeLabel } from './backend-dialogs';
-import { BackendStatusBadge, backendDeployCommand, backendEnvText } from './backends-view';
+import { BackendStatusBadge } from './backends-view';
 
 /**
  * One backend: a one-line Kortix strip over Convex's own dashboard, under the
@@ -43,18 +45,9 @@ export function BackendDetailView({
   const gate = useFeatureFlag(projectId, 'backends');
   const backends = useProjectBackends(gate.enabled ? projectId : null);
   const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_BACKEND_WRITE).allowed === true;
-  const [dialog, setDialog] = useState<'resize' | 'backups' | null>(null);
+  const [dialog, setDialog] = useState<'resize' | 'backups' | 'connect' | null>(null);
   const backend = backends.data?.find((b) => b.backend_id === backendId) ?? null;
   const listHref = capabilityTabHref(projectId, 'backends');
-
-  const copy = async (text: string, done: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      successToast(done);
-    } catch {
-      errorToast(t.raw('text4cb23f3c3b90'));
-    }
-  };
 
   return (
     // A child of the Customize layout's bounded column: the strip is fixed and
@@ -84,7 +77,20 @@ export function BackendDetailView({
                 <CopyButton code={backend.url} size="sm" className="shrink-0" />
               </span>
             ) : null}
-            <div className="ml-auto flex shrink-0 items-center">
+            <div className="ml-auto flex shrink-0 items-center gap-1">
+              <BackupSummary
+                projectId={projectId}
+                backend={backend}
+                onOpen={() => setDialog('backups')}
+              />
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={backend.status !== 'running'}
+                onClick={() => setDialog('connect')}
+              >
+                {t.raw('text1a2303ede074')}
+              </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button size="icon-sm" variant="ghost" aria-label={t.raw('text2de7b4934e29')}>
@@ -105,33 +111,6 @@ export function BackendDetailView({
                     onClick={() => setDialog('backups')}
                   >
                     {t.raw('textf0e800ed571e')}
-                  </DropdownMenuItem>
-                  {canWrite ? (
-                    <DropdownMenuItem
-                      disabled={backend.status !== 'running'}
-                      onClick={async () => {
-                        try {
-                          const credentials = await getBackendCredentials(
-                            projectId,
-                            backend.backend_id,
-                          );
-                          await copy(backendEnvText(credentials.env), t.raw('textaad2d1b4576e'));
-                        } catch (error) {
-                          errorToast(
-                            error instanceof Error ? error.message : t.raw('text9962d69a4916'),
-                          );
-                        }
-                      }}
-                    >
-                      {t.raw('text3f044da00a6f')}
-                    </DropdownMenuItem>
-                  ) : null}
-                  <DropdownMenuItem
-                    onClick={() =>
-                      copy(backendDeployCommand(backend.name), t.raw('text5c3fa6a80824'))
-                    }
-                  >
-                    {t.raw('text21de8d7ddc3e')}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -183,6 +162,14 @@ export function BackendDetailView({
           }
         />
       ) : null}
+      {backend && dialog === 'connect' ? (
+        <BackendConnectDialog
+          projectId={projectId}
+          backend={backend}
+          canWrite={canWrite}
+          onOpenChange={(open) => !open && setDialog(null)}
+        />
+      ) : null}
       {backend && dialog === 'backups' ? (
         <BackendBackupsDialog
           projectId={projectId}
@@ -196,6 +183,50 @@ export function BackendDetailView({
         />
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The last automatic backup, its schedule and the snapshot count, one line in
+ * the strip. A click opens Backups. Hidden below `xl`, where the strip has no room.
+ */
+function BackupSummary({
+  projectId,
+  backend,
+  onOpen,
+}: {
+  projectId: string;
+  backend: ProjectBackend;
+  onOpen: () => void;
+}) {
+  const t = useTranslations('hardcodedUi.i18nComplete');
+  const backups = useProjectBackendBackups(
+    projectId,
+    backend.backend_id,
+    backend.status === 'running' && !backend.operation,
+  );
+  const data = backups.data;
+  if (!data) return null;
+  const { automatic, snapshots, snapshot_limit: limit } = data;
+  const parts = [
+    automatic.last_backup_at
+      ? t('text423445f8efa7', { value0: relativeTime(automatic.last_backup_at) })
+      : t.raw('text73db33085e5e'),
+    ...(automatic.interval_minutes ? [t('text81c6ab35879a', { value0: automatic.interval_minutes })] : []),
+    limit
+      ? t('text7aaebc8b5794', { value0: snapshots.length, value1: limit })
+      : t('text67de20fb3bbd', { value0: snapshots.length }),
+  ];
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      className="text-muted-foreground hidden font-normal xl:inline-flex"
+      onClick={onOpen}
+      data-testid="backend-backup-summary"
+    >
+      {parts.join(' · ')}
+    </Button>
   );
 }
 

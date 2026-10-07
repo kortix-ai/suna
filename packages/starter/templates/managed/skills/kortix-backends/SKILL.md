@@ -88,6 +88,7 @@ the session branch like any other code.
 | `kortix backends create <name>` | Create and wait, without deploying. |
 | `kortix backends get <name> [--json]` | `url` (Convex client URL), `site_url` (HTTP actions), status. |
 | `kortix backends dashboard <name>` | Link to the backend's admin dashboard in Kortix (data, functions, logs, files, schedules, env). Give it to the user so they can inspect what you built. |
+| `kortix backends connect <name> [--json]` | Working code to reach the backend: from an App, from outside (member token, HTTP API, your own server), from the CLI. No secret. The same snippets as Connect in Kortix web; give the user this when they ask how to use the backend. |
 | `kortix backends env <name>` | Shell exports for the Convex CLI (admin). Use with `eval`. |
 | `kortix backends token <name>` | A 15-minute sign-in token naming you, with your groups and role (see Sign-in). |
 | `kortix backends deploy <name> --dir <path> [--create]` | Deploy. `--create` creates a missing backend first. |
@@ -244,8 +245,8 @@ kortix backends restore main <snapshot-id> --yes            # roll back; later c
   resize, not out); always on; not metered while experimental.
 - Data is SQLite on the machine disk, backed up with the disk. Writes are capped
   by Convex at about 4 MiB/s.
-- No preview deployments, no AI gateway for `@convex-dev/agent` (call a model
-  provider from an action), no Convex dashboard in Kortix yet (use the CLI).
+- No preview deployments and no AI gateway for `@convex-dev/agent` (call a
+  model provider from an action).
 - `npx convex export` covers data and files, not environment variables or
   pending scheduled jobs. Keep env var names (not values) in the repo.
 - `kortix backends delete` destroys all data. Export first when it matters.

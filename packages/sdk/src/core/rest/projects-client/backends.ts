@@ -42,6 +42,17 @@ export interface ProjectBackend {
   /** Why the last operation failed. Cleared by the next operation. */
   last_operation_error: string | null;
   /**
+   * Public values that verify this backend's member tokens: no secret. Put
+   * them in the environment of any server that calls `verifyKortixMemberToken`.
+   * `null` for a backend created before Kortix sign-in; absent on servers
+   * older than this field.
+   */
+  auth_env?: {
+    KORTIX_AUTH_ISSUER: string;
+    KORTIX_AUTH_AUDIENCE: string;
+    KORTIX_AUTH_JWKS: string;
+  } | null;
+  /**
    * The `convex` npm CLI version that matches this backend's Convex build.
    * Deploy with it (`npx convex@<version> deploy`) when the project has no
    * `convex` installed. Absent on servers older than this field.
@@ -150,7 +161,7 @@ export interface ProjectBackendToken {
 }
 
 /**
- * A one-hour Kortix sign-in token for the backend, naming the caller. Inside a
+ * A 15-minute Kortix sign-in token for the backend, naming the caller. Inside a
  * Convex function, `ctx.auth.getUserIdentity()` returns that member.
  */
 export async function getBackendToken(projectId: string, backendId: string): Promise<ProjectBackendToken> {
@@ -230,6 +241,8 @@ export interface ProjectBackendBackups {
   };
   /** Newest first. */
   snapshots: ProjectBackendSnapshot[];
+  /** How many snapshots the backend keeps. Absent on servers older than this field. */
+  snapshot_limit?: number;
 }
 
 export async function getBackendBackups(projectId: string, backendId: string): Promise<ProjectBackendBackups> {

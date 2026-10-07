@@ -44,7 +44,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { relativeTime } from '@/lib/relative-time';
 import { useProjectCan } from '@/lib/use-project-can';
-import { getBackendCredentials, type ProjectBackend, type ProjectBackendSize } from '@kortix/sdk';
+import type { ProjectBackend, ProjectBackendSize } from '@kortix/sdk';
 import { useFeatureFlag, useProjectBackends } from '@kortix/sdk/react';
 import {
   BookOpenIcon,
@@ -55,6 +55,7 @@ import {
 } from '@phosphor-icons/react';
 import { useRouter } from 'next/navigation';
 import { useState, type MouseEvent } from 'react';
+import { BackendConnectDialog } from './backend-connect-dialog';
 import {
   BackendBackupsDialog,
   BackendOperationBadge,
@@ -66,17 +67,6 @@ const NAME_PLACEHOLDER = 'my-backend';
 
 /** Mirrors the API: lowercase letters, digits and dashes, starting with a letter, up to 63 characters. */
 export const BACKEND_NAME_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
-
-export function backendDeployCommand(name: string): string {
-  return `kortix backends deploy ${name} --dir backends/${name}`;
-}
-
-export function backendEnvText(env: Record<string, string>): string {
-  return [
-    `CONVEX_SELF_HOSTED_URL=${env.CONVEX_SELF_HOSTED_URL ?? ''}`,
-    `CONVEX_SELF_HOSTED_ADMIN_KEY=${env.CONVEX_SELF_HOSTED_ADMIN_KEY ?? ''}`,
-  ].join('\n');
-}
 
 /** Turns an API error into a sentence. `backend_limit` and `backend_name_taken` are the 409 codes. */
 export function backendCreateError(error: unknown, name: string, t: UiTranslator): string {
@@ -309,8 +299,10 @@ function BackendsTable({
   // Hold the id, not the row: the dialog reads the live row, which the list polls.
   const [resizeId, setResizeId] = useState<string | null>(null);
   const [backupsId, setBackupsId] = useState<string | null>(null);
+  const [connectId, setConnectId] = useState<string | null>(null);
   const resizeTarget = backends.find((row) => row.backend_id === resizeId);
   const backupsTarget = backends.find((row) => row.backend_id === backupsId);
+  const connectTarget = backends.find((row) => row.backend_id === connectId);
 
   return (
     <>
@@ -337,6 +329,7 @@ function BackendsTable({
               onDelete={() => setPendingDelete(backend)}
               onResize={() => setResizeId(backend.backend_id)}
               onBackups={() => setBackupsId(backend.backend_id)}
+              onConnect={() => setConnectId(backend.backend_id)}
             />
           ))}
         </TableBody>
@@ -348,6 +341,14 @@ function BackendsTable({
           isPending={resizing}
           onOpenChange={(open) => !open && setResizeId(null)}
           onResize={(size) => onResize(resizeTarget.backend_id, size)}
+        />
+      ) : null}
+      {connectTarget ? (
+        <BackendConnectDialog
+          projectId={projectId}
+          backend={connectTarget}
+          canWrite={canWrite}
+          onOpenChange={(open) => !open && setConnectId(null)}
         />
       ) : null}
       {backupsTarget ? (
@@ -408,6 +409,7 @@ function BackendRow({
   onDelete,
   onResize,
   onBackups,
+  onConnect,
 }: {
   projectId: string;
   backend: ProjectBackend;
@@ -415,19 +417,11 @@ function BackendRow({
   onDelete: () => void;
   onResize: () => void;
   onBackups: () => void;
+  onConnect: () => void;
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
   const router = useRouter();
   const href = backendHref(projectId, backend.backend_id);
-
-  const copy = async (text: string, done: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      successToast(done);
-    } catch {
-      errorToast(t.raw('text4cb23f3c3b90'));
-    }
-  };
 
   // One click anywhere on the row opens the backend; the name stays a real
   // link for the keyboard and for "open in new tab".
@@ -439,16 +433,6 @@ function BackendRow({
   // The copy button and the menu act on their own. React events bubble through
   // portals, so the menu's items would otherwise also open the row.
   const own = (event: MouseEvent) => event.stopPropagation();
-
-  // The admin key goes from the API response straight to the clipboard. It is never rendered or stored.
-  const copyEnv = async () => {
-    try {
-      const credentials = await getBackendCredentials(projectId, backend.backend_id);
-      await copy(backendEnvText(credentials.env), t.raw('textaad2d1b4576e'));
-    } catch (error) {
-      errorToast(error instanceof Error ? error.message : t.raw('text9962d69a4916'));
-    }
-  };
 
   return (
     <TableRow
@@ -505,11 +489,9 @@ function BackendRow({
             <DropdownMenuItem asChild>
               <Link href={href}>{t.raw('text803f2313cdf4')}</Link>
             </DropdownMenuItem>
-            {canWrite ? (
-              <DropdownMenuItem disabled={backend.status !== 'running'} onClick={copyEnv}>
-                {t.raw('text3f044da00a6f')}
-              </DropdownMenuItem>
-            ) : null}
+            <DropdownMenuItem disabled={backend.status !== 'running'} onClick={onConnect}>
+              {t.raw('textc0e20f6d5a3a')}
+            </DropdownMenuItem>
             {canWrite ? (
               <DropdownMenuItem
                 disabled={backend.status !== 'running' || backend.operation !== null}
@@ -520,11 +502,6 @@ function BackendRow({
             ) : null}
             <DropdownMenuItem disabled={backend.status !== 'running'} onClick={onBackups}>
               {t.raw('textf0e800ed571e')}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => copy(backendDeployCommand(backend.name), t.raw('text5c3fa6a80824'))}
-            >
-              {t.raw('text21de8d7ddc3e')}
             </DropdownMenuItem>
             {canWrite ? (
               <>

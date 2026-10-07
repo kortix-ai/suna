@@ -182,6 +182,17 @@ export function backendMemberToken(row: BackendRow, subject: BackendTokenSubject
   });
 }
 
+/** The public KORTIX_AUTH_* values that verify this backend's tokens, or null when it predates sign-in. */
+export function backendPublicAuthEnv(row: BackendRow) {
+  if (!row.authKeyEnc) return null;
+  const env = backendAuthEnv(row.backendId, decryptProjectSecret(row.projectId, row.authKeyEnc));
+  return {
+    KORTIX_AUTH_ISSUER: env.KORTIX_AUTH_ISSUER!,
+    KORTIX_AUTH_AUDIENCE: env.KORTIX_AUTH_AUDIENCE!,
+    KORTIX_AUTH_JWKS: env.KORTIX_AUTH_JWKS!,
+  };
+}
+
 /** A live, running backend of this project by name, or null. */
 export async function getRunningBackendByName(projectId: string, name: string): Promise<BackendRow | null> {
   const [row] = await db

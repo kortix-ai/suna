@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { ProjectBackend, ProjectBackendCredentials, ProjectBackendSize, ProjectHandle } from '@kortix/sdk';
+import { BACKEND_CONNECT_TABS, type BackendConnectTab, backendConnectSnippets } from '@kortix/shared/backend-connect';
 
 import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
 import { openInBrowser } from '../browser.ts';
@@ -48,12 +49,17 @@ Subcommands:
                                     files, schedules, env) inside Kortix,
                                     signed in for you. --json.
     --open                          Also open it in the browser.
+  connect <name|id>                 Print how to reach the backend: from an App,
+                                    from outside (member token, HTTP API, your
+                                    own server), and from the CLI. The same
+                                    snippets as Connect in Kortix web. No
+                                    secret. --json.
   env <name|id>                     Print the Convex CLI credentials.
     --format shell|dotenv|json      shell (default): export lines for
                                     eval "$(kortix backends env main)".
                                     dotenv: KEY=value lines for .env.local.
                                     json: the full credentials object.
-  token <name|id>                   Print a one-hour Kortix sign-in token naming
+  token <name|id>                   Print a 15-minute Kortix sign-in token naming
                                     you. Convex functions read you with
                                     ctx.auth.getUserIdentity(). --json adds
                                     expires_at.
@@ -184,6 +190,8 @@ export async function runBackends(argv: string[]): Promise<number> {
       case 'dashboard':
       case 'open':
         return await dashboardCommand(rest, common.options, common.json);
+      case 'connect':
+        return await connectCommand(rest, common.options, common.json);
       case 'env':
         return await envCommand(rest, common.options);
       case 'token':
@@ -402,7 +410,8 @@ async function backupsCommand(rest: string[], options: ContextOptions, json: boo
   const { automatic, snapshots } = backups;
   const every = automatic.interval_minutes ? ` · every ${automatic.interval_minutes} min` : '';
   process.stdout.write(
-    `\n  ${C.bold}automatic${C.reset}  last ${formatTime(automatic.last_backup_at)} · ${formatBytes(automatic.size_bytes)}${every}\n`,
+    `\n  ${C.bold}automatic${C.reset}  last ${formatTime(automatic.last_backup_at)} · ${formatBytes(automatic.size_bytes)}${every}\n` +
+      `  ${C.bold}snapshots${C.reset}  ${snapshots.length}${backups.snapshot_limit ? ` of ${backups.snapshot_limit} kept` : ''}\n`,
   );
   if (snapshots.length === 0) {
     process.stdout.write(`\n  ${C.dim}No snapshots. Take one with kortix backends snapshot ${target}.${C.reset}\n\n`);
@@ -464,6 +473,42 @@ async function tokenCommand(rest: string[], options: ContextOptions, json: boole
   const minted = await scoped(ctx, async () => ctx.backends.token((await resolveBackend(ctx.backends, target)).backend_id));
   if (json) emitJson(minted);
   else process.stdout.write(`${minted.token}\n`);
+  return 0;
+}
+
+const CONNECT_HEADINGS: Record<BackendConnectTab, string> = {
+  app: 'App: browser code of a Kortix App',
+  outside: 'From outside: scripts, services and your own servers',
+  admin: 'CLI & admin: deploy and manage with the admin key',
+};
+
+/** The Connect dialog as text: per tab a heading, then each snippet's file and title, then its code as is. */
+export function renderConnect(backend: ProjectBackend): string {
+  const snippets = backendConnectSnippets(backend);
+  let out = '';
+  for (const tab of BACKEND_CONNECT_TABS) {
+    out += `\n${C.bold}${CONNECT_HEADINGS[tab]}${C.reset}\n`;
+    for (const snippet of snippets.filter((row) => row.tab === tab)) {
+      out += `\n${C.dim}# ${snippet.file} · ${snippet.title}${C.reset}\n${snippet.code}\n`;
+    }
+  }
+  return `${out}\n`;
+}
+
+async function connectCommand(rest: string[], options: ContextOptions, json: boolean): Promise<number> {
+  const target = rest.find((value) => !value.startsWith('-'));
+  if (!target) return fail('connect needs a backend name or id');
+  const ctx = await context(options);
+  if (!ctx) return 1;
+  const backend = await scoped(ctx, () => resolveBackend(ctx.backends, target));
+  if (json) {
+    emitJson({ backend: { backend_id: backend.backend_id, name: backend.name, url: backend.url, site_url: backend.site_url }, snippets: backendConnectSnippets(backend) });
+    return 0;
+  }
+  if (backend.status !== 'running') {
+    process.stderr.write(`${status.warn(`The backend is ${backend.status}; its URLs appear when it runs.`)}\n`);
+  }
+  process.stdout.write(renderConnect(backend));
   return 0;
 }
 

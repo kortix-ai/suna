@@ -15,6 +15,7 @@ import {
   listBackends,
   waitForBackend,
   type ProjectBackend,
+  type ProjectBackendBackups,
   type ProjectBackendCredentials,
 } from './backends';
 
@@ -224,4 +225,23 @@ test('waitForBackendOperation gives up after its timeout', async () => {
   await expect(
     waitForBackendOperation('project-1', backend.backend_id, { intervalMs: 5, timeoutMs: 20 }),
   ).rejects.toThrow(/still resizing/);
+});
+
+test('A backend carries its public sign-in values and the backups name the snapshot limit', async () => {
+  const signedIn: ProjectBackend = {
+    ...backend,
+    auth_env: {
+      KORTIX_AUTH_ISSUER: `https://kortix.example.test/backends/${backend.backend_id}`,
+      KORTIX_AUTH_AUDIENCE: backend.backend_id,
+      KORTIX_AUTH_JWKS: 'data:text/plain;charset=utf-8;base64,e30=',
+    },
+  };
+  const backups: ProjectBackendBackups = {
+    automatic: { state: 'ok', last_backup_at: '2026-10-06T00:00:00.000Z', size_bytes: 10, interval_minutes: 60 },
+    snapshots: [],
+    snapshot_limit: 5,
+  };
+  responses = [{ body: { backend: signedIn } }, { body: backups }];
+  expect((await getBackend('project-1', backend.backend_id)).auth_env?.KORTIX_AUTH_AUDIENCE).toBe(backend.backend_id);
+  expect((await getBackendBackups('project-1', backend.backend_id)).snapshot_limit).toBe(5);
 });

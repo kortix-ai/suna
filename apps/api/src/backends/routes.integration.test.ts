@@ -7,6 +7,7 @@ import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
 import { insertIntoView } from '../__tests__/helpers/compat-views';
 import { encryptProjectSecret } from '../projects/surface';
+import { verifyKortixMemberToken } from '@kortix/sdk';
 import { generateBackendAuthKey } from './auth';
 import { CONVEX_CLI_VERSION } from './convex-image';
 
@@ -97,6 +98,21 @@ describe('backend routes', () => {
     expect((await res.json()).backend.convex_version).toBe(CONVEX_CLI_VERSION);
     const list = await call('GET', '');
     expect((await list.json()).backends[0].convex_version).toBe(CONVEX_CLI_VERSION);
+  });
+
+  test('auth_env verifies the member token the token route mints (the "own server" path of Connect)', async () => {
+    const { backend } = await (await call('GET', `/${RUNNING}`)).json();
+    expect(Object.keys(backend.auth_env).sort()).toEqual(['KORTIX_AUTH_AUDIENCE', 'KORTIX_AUTH_ISSUER', 'KORTIX_AUTH_JWKS']);
+    expect(backend.auth_env.KORTIX_AUTH_AUDIENCE).toBe(RUNNING);
+    expect(JSON.stringify(backend)).not.toContain(ADMIN_KEY);
+    const { token } = await (await call('POST', `/${RUNNING}/token`, {})).json();
+    const member = await verifyKortixMemberToken(token, {
+      jwks: backend.auth_env.KORTIX_AUTH_JWKS,
+      issuer: backend.auth_env.KORTIX_AUTH_ISSUER,
+      audience: backend.auth_env.KORTIX_AUTH_AUDIENCE,
+    });
+    expect(member.userId).toBe(MANAGER);
+    expect(member.projectId).toBe(PROJECT);
   });
 
   test('a create past the project cap answers 409 backend_limit and inserts nothing', async () => {

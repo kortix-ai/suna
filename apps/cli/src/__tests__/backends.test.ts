@@ -36,6 +36,11 @@ function backend(overrides: Record<string, unknown> = {}) {
     operation: resizePolls > 0 ? 'resizing' : null,
     last_operation_error: resizeFailure,
     convex_version: '1.46.0',
+    auth_env: {
+      KORTIX_AUTH_ISSUER: `https://kortix.example.test/backends/${BACKEND_ID}`,
+      KORTIX_AUTH_AUDIENCE: BACKEND_ID,
+      KORTIX_AUTH_JWKS: 'data:text/plain;charset=utf-8;base64,e30=',
+    },
     error: null,
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
@@ -104,6 +109,7 @@ function startServer(): string {
         return Response.json({
           automatic: { state: 'ok', last_backup_at: '2026-01-01T00:00:00.000Z', size_bytes: 2048, interval_minutes: 60 },
           snapshots,
+          snapshot_limit: 5,
         });
       }
       if (path === `${base}/backends/${BACKEND_ID}/snapshots` && req.method === 'POST') {
@@ -241,7 +247,7 @@ describe('kortix backends', () => {
   test('--help lists every subcommand', async () => {
     const r = await runCli(['backends', '--help'], join(tmp, 'none.json'));
     expect(r.code).toBe(0);
-    for (const sub of ['list | ls', 'create <name>', 'resize <name|id>', 'backups <name|id>', 'snapshot <name|id>', 'restore <name|id> <snapshot-id>', 'get <name|id>', 'dashboard <name|id>', 'env <name|id>', 'deploy <name>', 'delete <name|id>']) {
+    for (const sub of ['list | ls', 'create <name>', 'resize <name|id>', 'backups <name|id>', 'snapshot <name|id>', 'restore <name|id> <snapshot-id>', 'get <name|id>', 'dashboard <name|id>', 'connect <name|id>', 'env <name|id>', 'deploy <name>', 'delete <name|id>']) {
       expect(r.stdout).toContain(sub);
     }
   });
@@ -501,8 +507,37 @@ describe('kortix backends', () => {
     expect(r.stdout).toContain('every 60 min');
     expect(r.stdout).toContain('snap-1');
     expect(r.stdout).toContain('1.0 MB');
+    expect(r.stdout).toContain('snapshots  1 of 5 kept');
     const json = await runCli(['backends', 'backups', 'main', '--project', PROJECT, '--json'], config);
     expect(JSON.parse(json.stdout).snapshots[0].snapshot_id).toBe('snap-1');
+  });
+
+  test('connect prints the Connect snippets for every tab and never reads the admin key', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['backends', 'connect', 'main', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    for (const heading of ['App: browser code of a Kortix App', 'From outside:', 'CLI & admin:']) {
+      expect(r.stdout).toContain(heading);
+    }
+    expect(r.stdout).toContain('convex.setAuth(kortixAppBackendToken("main"));');
+    expect(r.stdout).toContain('VITE_CONVEX_URL=https://main.backends.test');
+    expect(r.stdout).toContain('curl -s https://main.backends.test/api/query \\');
+    expect(r.stdout).toContain('curl -s https://main-site.backends.test/hello -H "Authorization: Bearer $TOKEN"');
+    expect(r.stdout).toContain(`KORTIX_AUTH_AUDIENCE=${BACKEND_ID}`);
+    expect(r.stdout).toContain('eval "$(kortix backends env main)"');
+    expect(r.stdout).not.toContain(ADMIN_KEY);
+    expect(calls.some((call) => call.path.endsWith('/credentials'))).toBe(false);
+
+    const json = await runCli(['backends', 'connect', 'main', '--project', PROJECT, '--json'], config);
+    expect(json.code).toBe(0);
+    const parsed = JSON.parse(json.stdout);
+    expect(parsed.backend).toEqual({ backend_id: BACKEND_ID, name: 'main', url: 'https://main.backends.test', site_url: 'https://main-site.backends.test' });
+    expect(parsed.snippets.map((s: { id: string }) => s.id)).toContain('outside-verify-env');
+    expect(parsed.snippets.find((s: { id: string }) => s.id === 'app-client').file).toBe('src/convex.ts');
+
+    const missing = await runCli(['backends', 'connect', 'nope', '--project', PROJECT], config);
+    expect(missing.code).toBe(1);
+    expect(missing.stderr).toContain('Backend nope not found');
   });
 
   test('snapshot POSTs and prints the snapshot id', async () => {

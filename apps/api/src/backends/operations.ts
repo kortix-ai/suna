@@ -94,6 +94,7 @@ export async function listBackendBackups(row: BackendRow) {
     snapshots: [...snapshots]
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .map((s) => ({ snapshot_id: s.id, created_at: s.createdAt, size_bytes: s.sizeBytes ?? null })),
+    snapshot_limit: MAX_SNAPSHOTS,
   };
 }
 
