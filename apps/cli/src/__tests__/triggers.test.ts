@@ -142,11 +142,23 @@ const EVENT_TYPES = {
       delivery: 'poll',
       config_schema: {
         type: 'object',
-        properties: { owner: { type: 'string' }, repo: { type: 'string' } },
+        properties: {
+          owner: { type: 'string', description: 'Repository owner' },
+          repo: { type: 'string', examples: ['app'] },
+          limit: { type: 'integer', default: 30 },
+        },
         required: ['owner'],
       },
-      payload_schema: null,
+      payload_schema: { type: 'object', properties: { title: { type: 'string', description: 'PR title' } } },
     },
+  ],
+};
+
+const EVENT_APPS = {
+  apps: [
+    { provider: 'composio', app: 'github', name: 'GitHub', logo: null, event_count: 12, connector: 'github', connected: true },
+    { provider: 'composio', app: 'gmail', name: 'Gmail', logo: null, event_count: 3, connector: 'gmail', connected: false },
+    { provider: 'composio', app: 'linear', name: 'Linear', logo: null, event_count: 5, connector: null, connected: false },
   ],
 };
 
@@ -155,6 +167,7 @@ function startServer(triggers: unknown[]): string {
     port: 0,
     fetch: (req) => {
       const { pathname } = new URL(req.url);
+      if (pathname.endsWith('/triggers/event-apps')) return Response.json(EVENT_APPS);
       if (pathname.endsWith('/triggers/event-types')) {
         return Response.json(EVENT_TYPES);
       }
@@ -971,12 +984,53 @@ describe('kortix triggers — events', () => {
     expect(result.stdout).toContain('GITHUB_PULL_REQUEST_EVENT');
     expect(result.stdout).toContain('Pull request');
     expect(result.stdout).toContain('poll');
-    expect(result.stdout).toContain('--config owner string (required)');
-    expect(result.stdout).toContain('--config repo string');
+    expect(result.stdout).toContain('--event <TYPE>');
     const raw = await runCli(['triggers', 'events', '--connector', 'github', '--json', '--project', PROJECT], cfg);
     expect(JSON.parse(raw.stdout)).toEqual(EVENT_TYPES);
     const noConnector = await runCli(['triggers', 'events', '--project', PROJECT], cfg);
     expect(noConnector.code).toBe(2);
+  });
+
+  test('events --event prints config fields and prompt variables', async () => {
+    const cfg = writeConfig(startServer([]));
+    const r = await runCli(['triggers', 'events', '--connector', 'github', '--event', 'GITHUB_PULL_REQUEST_EVENT', '--project', PROJECT], cfg);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('owner (string, required) — Repository owner');
+    expect(r.stdout).toContain('repo (string, optional, e.g. "app")');
+    expect(r.stdout).toContain('limit (integer, optional, default 30)');
+    expect(r.stdout).toContain('{{ event.data.title }} — PR title');
+    expect(r.stdout).toContain('delivery poll');
+    const missing = await runCli(['triggers', 'events', '--connector', 'github', '--event', 'NOPE', '--project', PROJECT], cfg);
+    expect(missing.code).toBe(1);
+    expect(missing.stderr).toContain('Unknown event NOPE');
+  });
+
+  test('events --apps lists apps with connector and state', async () => {
+    const cfg = writeConfig(startServer([]));
+    const r = await runCli(['triggers', 'events', '--apps', '--project', PROJECT], cfg);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toMatch(/github\s+12\s+github\s+connected/);
+    expect(r.stdout).toMatch(/gmail\s+3\s+gmail\s+needs account/);
+    expect(r.stdout).toMatch(/linear\s+5\s+—\s+no connector/);
+    const raw = await runCli(['triggers', 'events', '--apps', '--json', '--project', PROJECT], cfg);
+    expect(JSON.parse(raw.stdout)).toEqual(EVENT_APPS);
+  });
+
+  test('local add coerces and validates against the catalog when online', async () => {
+    config = writeConfig(startServer([]));
+    const ok = await add('--connector', 'github', '--event', 'GITHUB_PULL_REQUEST_EVENT', '--config', 'owner=acme', '--config', 'limit=5', '--project', PROJECT);
+    expect(ok.code).toBe(0);
+    expect(manifestText()).toContain('limit: 5');
+    const bad = await runCli(['triggers', 'add', 'other', '--type', 'event', '--prompt', 'p', '--connector', 'github', '--event', 'GITHUB_PULL_REQUEST_EVENT', '--project', PROJECT]);
+    expect(bad.code).not.toBe(0);
+    expect(bad.stderr).toContain('owner is required — Repository owner');
+    expect(manifestText()).not.toContain('slug: other');
+  });
+
+  test('local add offline writes as given and says it was not checked', async () => {
+    const r = await runCli(['triggers', 'add', 'x', '--type', 'event', '--prompt', 'p', '--connector', 'github', '--event', 'E'], join(tmp, 'absent.json'));
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('not checked against the event catalog');
   });
 
   test('ls and info render the connector, event, status, and error', async () => {
@@ -994,5 +1048,6 @@ describe('kortix triggers — events', () => {
     expect(info.stdout).toContain('needs connection');
     expect(info.stdout).toContain('No connected account');
     expect(info.stdout).toContain('last_event');
+    expect(info.stdout).toContain('kortix connectors connect github --owner project');
   });
 });

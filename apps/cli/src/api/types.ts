@@ -218,6 +218,23 @@ export interface TriggerEventTypesResponse {
   event_types: TriggerEventType[];
 }
 
+/** One app from `GET /projects/:id/triggers/event-apps`. */
+export interface TriggerEventApp {
+  provider: string;
+  app: string;
+  name: string;
+  logo: string | null;
+  event_count: number;
+  /** Slug of the project's connector for this app; null until one is added. */
+  connector: string | null;
+  /** The project has an active shared account for this app. */
+  connected: boolean;
+}
+
+export interface TriggerEventAppsResponse {
+  apps: TriggerEventApp[];
+}
+
 export interface ProjectTrigger {
   slug: string;
   path: string;

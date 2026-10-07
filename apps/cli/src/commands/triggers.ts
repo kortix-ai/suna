@@ -9,7 +9,6 @@ import type {
   ProjectSession,
   ProjectTrigger,
   ProjectTriggersResponse,
-  TriggerEventTypesResponse,
   TriggerFireResponse,
 } from '../api/types.ts';
 import { splitHelp } from '../command-argv.ts';
@@ -31,6 +30,7 @@ import {
   triggersSetLive,
   triggersToggleLive,
 } from './triggers-live.ts';
+import { eventNextStep, triggersEvents } from './triggers-events.ts';
 import {
   collectEventConfig,
   triggersAddLocal,
@@ -74,9 +74,14 @@ Subcommands:
                            firing. Manual \`fire\` still works.
   resume                   Re-activate this project's triggers server-side.
   info <slug> [--json]     Show one trigger in full.
+  events --apps [--json]   List apps that can trigger events, with their
+                           connector and whether a shared account is connected.
   events --connector <slug> [--json]
-                           List the app events a connector can trigger on,
-                           with each event's config fields.
+                           List the events a connector can trigger on.
+  events --connector <slug> --event <TYPE> [--json]
+                           One event in full: config fields (type, required,
+                           default, allowed values, description) and the
+                           {{ event.data.* }} prompt variables.
 
 Add options:
   --type <cron|webhook|monitor|event>
@@ -99,9 +104,21 @@ event.connector, and event.occurred_at.
   --event <TYPE>           Provider event type, e.g. GITHUB_PULL_REQUEST_CREATED
                            (required; list with \`triggers events\`).
   --config <key=value>     Event config field. Repeat for more. Values are
-                           strings.
+                           converted to the field's type (number, boolean,
+                           comma list) using the event catalog.
   --config-json <json>     Event config as a JSON object, for typed values.
-                           --config keys override it.
+                           --config keys override it. On \`set\` it REPLACES the
+                           config; bare --config MERGES into the current one.
+Online, \`add\` and \`set\` check the config against the catalog and list every
+missing or invalid field with its description. \`add --apply\` then prints the
+trigger status and the next step. Autonomous setup:
+  1. kortix triggers events --apps
+  2. kortix connectors add <slug> --provider composio --app <app> --apply
+  3. kortix connectors connect <slug> --owner project   (a person opens the link)
+  4. kortix triggers events --connector <slug> --event <TYPE>
+  5. kortix triggers add <slug> --type event --connector <slug> --event <TYPE> \\
+       --config <k>=<v> --prompt "…{{ event.data.<field> }}…" --apply
+  6. kortix triggers info <slug>   (until it prints "live")
 Event triggers take none of --cron, --run-at, --timezone, --secret-env,
 --run, --mode, --interval, or --expect-event-within.
 
@@ -157,6 +174,7 @@ export async function runTriggers(argv: string[]): Promise<number> {
   let filters: string[] = [];
   let configPairs: string[] = [];
   let configJson: string | undefined;
+  let apps = false;
   try {
     json = takeFlagBool(rest, ['--json']);
     applyRemote = takeFlagBool(rest, ['--apply']);
@@ -174,6 +192,7 @@ export async function runTriggers(argv: string[]): Promise<number> {
     filters = takeFlagValues(rest, ['--filter']);
     configPairs = takeFlagValues(rest, ['--config']);
     configJson = takeFlagValue(rest, ['--config-json']);
+    apps = takeFlagBool(rest, ['--apps']);
     tf.connector = takeFlagValue(rest, ['--connector']);
     tf.event = takeFlagValue(rest, ['--event']);
     tf.type = takeFlagValue(rest, ['--type']);
@@ -202,6 +221,7 @@ export async function runTriggers(argv: string[]): Promise<number> {
   const eventConfig = collectEventConfig(configPairs, configJson);
   if (typeof eventConfig === 'object') return fail(eventConfig.error);
   tf.eventConfig = eventConfig;
+  if (configJson !== undefined) tf.eventConfigReplace = '1';
   const ctxOpts: CtxOpts = { projectArg: projectFlag, hostArg: hostFlag };
   const positional = rest.filter((a) => !a.startsWith('-'));
 
@@ -212,7 +232,7 @@ export async function runTriggers(argv: string[]): Promise<number> {
     case 'create':
       return applyRemote
         ? triggersAddLive(positional[0], tf, disabled, { members, groups, filters }, ctxOpts, json)
-        : triggersAddLocal(positional[0], tf, disabled);
+        : triggersAddLocal(positional[0], tf, disabled, ctxOpts);
     case 'set':
     case 'update':
       // No local form: a partial edit of a [[triggers]] block would have to
@@ -239,7 +259,7 @@ export async function runTriggers(argv: string[]): Promise<number> {
     case 'resume':
       return triggersActivation(ctxOpts, false);
     case 'events':
-      return triggersEvents(tf.connector, ctxOpts, json);
+      return triggersEvents({ apps, connector: tf.connector, event: tf.event }, ctxOpts, json);
     case 'info':
     case 'show':
       return triggersInfo(positional[0], ctxOpts, json);
@@ -286,8 +306,8 @@ async function triggersLs(opts: CtxOpts, json = false): Promise<number> {
       const state = t.enabled ? `${C.green}enabled ${C.reset}` : `${C.faded}disabled${C.reset}`;
       const detail = triggerDetail(t);
       const eventNote =
-        t.type === 'event' && t.event && t.event.status !== 'active'
-          ? `  ${t.event.status === 'error' ? C.red : C.yellow}${t.event.status.replace('_', ' ')}${C.reset}`
+        t.type === 'event' && t.event
+          ? `  ${t.event.status === 'active' ? C.green : t.event.status === 'error' ? C.red : C.yellow}${eventNextStep(t).word}${C.reset}`
           : '';
       const lastFired = t.last_fired_at ? formatRelative(t.last_fired_at) : '—';
       const failed = t.last_status === 'failed' ? `  ${C.red}last run failed${C.reset}` : '';
@@ -310,63 +330,6 @@ async function triggersLs(opts: CtxOpts, json = false): Promise<number> {
   }
   process.stdout.write('\n');
   return 0;
-}
-
-async function triggersEvents(
-  connector: string | undefined,
-  opts: CtxOpts,
-  json = false,
-): Promise<number> {
-  if (!connector) return missing('--connector <slug>');
-  const ctx = await resolveProjectContext(opts);
-  if (!ctx) return 1;
-
-  let resp: TriggerEventTypesResponse;
-  try {
-    resp = await ctx.client.get<TriggerEventTypesResponse>(
-      `/projects/${ctx.projectId}/triggers/event-types?connector=${encodeURIComponent(connector)}`,
-    );
-  } catch (err) {
-    return surfaceApiError(err);
-  }
-  if (json) {
-    emitJson(resp);
-    return 0;
-  }
-  if (resp.event_types.length === 0) {
-    process.stdout.write(`  ${C.dim}${resp.app} has no event types.${C.reset}\n`);
-    return 0;
-  }
-  const typeW = Math.max(...resp.event_types.map((e) => e.type.length), 4);
-  const nameW = Math.max(...resp.event_types.map((e) => e.name.length), 4);
-  process.stdout.write(`\n  ${C.dim}${pad('TYPE', typeW)}   ${pad('NAME', nameW)}   DELIVERY${C.reset}\n`);
-  for (const e of resp.event_types) {
-    process.stdout.write(
-      `  ${pad(e.type, typeW)}   ${pad(e.name, nameW)}   ${C.faded}${e.delivery ?? '—'}${C.reset}\n`,
-    );
-    for (const f of configFields(e.config_schema)) {
-      process.stdout.write(
-        `    ${C.dim}--config ${f.name}${C.reset} ${f.type}${f.required ? ` ${C.dim}(required)${C.reset}` : ''}\n`,
-      );
-    }
-  }
-  process.stdout.write(
-    `\n  ${C.dim}${resp.event_types.length} event type${resp.event_types.length === 1 ? '' : 's'} on ${resp.app} (${resp.provider})${C.reset}\n\n`,
-  );
-  return 0;
-}
-
-/** Flatten a JSON-schema `properties` map into name / type / required rows. */
-function configFields(
-  schema: Record<string, unknown>,
-): Array<{ name: string; type: string; required: boolean }> {
-  const props = (schema.properties ?? {}) as Record<string, { type?: unknown }>;
-  const required = Array.isArray(schema.required) ? (schema.required as string[]) : [];
-  return Object.entries(props).map(([name, p]) => ({
-    name,
-    type: Array.isArray(p?.type) ? p.type.join('|') : String(p?.type ?? 'any'),
-    required: required.includes(name),
-  }));
 }
 
 /** How long `triggers fire` watches for the run outcome when --wait is not given. */
@@ -620,7 +583,7 @@ async function triggersInfo(
     if (e && Object.keys(e.config).length > 0) rows.push(['config', JSON.stringify(e.config)]);
     rows.push([
       'event_status',
-      e ? (e.status === 'error' ? `${C.red}error${C.reset}` : e.status.replace('_', ' ')) : '—',
+      e ? `${e.status === 'active' ? C.green : e.status === 'error' ? C.red : C.yellow}${eventNextStep(t).word}${C.reset}` : '—',
     ]);
     if (e?.error) rows.push(['event_error', e.error]);
     rows.push(['last_event', e?.last_event_at ?? 'never']);
@@ -643,6 +606,10 @@ async function triggersInfo(
   process.stdout.write(`  ${C.bold}${t.name}${C.reset} ${C.faded}(${t.slug})${C.reset}\n`);
   for (const [label, value] of rows) {
     process.stdout.write(`  ${C.dim}${pad(label, labelW)} ${C.reset}${value}\n`);
+  }
+  if (t.type === 'event') {
+    const next = eventNextStep(t).lines;
+    if (next.length > 0) process.stdout.write(`\n  ${C.dim}Next${C.reset}\n${next.map((l) => `    ${l}\n`).join('')}`);
   }
   if (t.type === 'webhook' && t.webhook_url) {
     process.stdout.write(`\n  ${C.dim}Sample request${C.reset}\n\n`);

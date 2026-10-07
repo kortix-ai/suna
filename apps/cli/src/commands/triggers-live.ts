@@ -1,5 +1,6 @@
 import { formatDurationSeconds } from '@kortix/manifest-schema';
-import type { ProjectTriggersResponse } from '../api/types.ts';
+import type { ApiClient } from '../api/client.ts';
+import type { ProjectTriggerEvent, ProjectTriggersResponse } from '../api/types.ts';
 import {
   
   emitJson,
@@ -11,6 +12,7 @@ import {
   type CtxOpts,
 } from '../command-helpers.ts';
 import { C, status } from '../style.ts';
+import { checkEventConfig, eventNextStep } from './triggers-events.ts';
 import { parseEventFlags, parseMonitorFlags, strayEventFlag } from './triggers-manifest.ts';
 
 // ── The LIVE path (--apply, and every `set`) ───────────────────────────────
@@ -109,6 +111,7 @@ export async function triggersAddLive(
   const access = buildSessionAccess(tf.sessionAccess, live);
   if (access && 'error' in access) return fail(access.error);
 
+  let event: ReturnType<typeof parseEventFlags> | null = null;
   const body: Record<string, unknown> = {
     slug,
     name: tf.name ?? slug,
@@ -128,11 +131,11 @@ export async function triggersAddLive(
   } else if (type === 'webhook') {
     body.secret_env = tf.secretEnv;
   } else if (type === 'event') {
-    const event = parseEventFlags(tf);
-    if ('error' in event) return fail(event.error);
-    body.connector = event.connector;
-    body.event = event.event;
-    if (Object.keys(event.config).length > 0) body.event_config = event.config;
+    const parsed = parseEventFlags(tf);
+    if ('error' in parsed) return fail(parsed.error);
+    event = parsed;
+    body.connector = parsed.connector;
+    body.event = parsed.event;
   } else {
     // A monitor rejects cron/webhook wiring outright, so send only its own
     // fields — the same validation `kortix triggers add` runs locally.
@@ -150,6 +153,13 @@ export async function triggersAddLive(
 
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
+  let eventName: string | undefined;
+  if (event && !('error' in event)) {
+    const checked = await checkEventConfig(ctx, event.connector, event.event, event.config);
+    if ('error' in checked) return fail(checked.error);
+    eventName = checked.eventName;
+    if (Object.keys(checked.config).length > 0) body.event_config = checked.config;
+  }
   let resp: ProjectTriggersResponse;
   try {
     resp = await ctx.client.post<ProjectTriggersResponse>(
@@ -167,6 +177,12 @@ export async function triggersAddLive(
     `${status.ok(`${C.bold}${slug}${C.reset} (${type}) live on the project`)} ${C.dim}(committed to kortix.yaml on main + reconciled)${C.reset}\n`,
   );
   reportWebhookUrl(resp, slug);
+  const created = resp.triggers?.find((t) => t.slug === slug);
+  if (created?.type === 'event') {
+    for (const line of eventNextStep(created, eventName).lines) {
+      process.stdout.write(`  ${C.dim}${line}${C.reset}\n`);
+    }
+  }
   return 0;
 }
 
@@ -211,7 +227,6 @@ export async function triggersSetLive(
     ...(tf.secretEnv ? { secret_env: tf.secretEnv } : {}),
     ...(tf.connector ? { connector: tf.connector } : {}),
     ...(tf.event ? { event: tf.event } : {}),
-    ...(tf.eventConfig ? { event_config: JSON.parse(tf.eventConfig) } : {}),
     ...(enabled === undefined ? {} : { enabled }),
     ...sessionFields(tf),
     ...(access ? { session_access: access } : {}),
@@ -229,12 +244,30 @@ export async function triggersSetLive(
   if (tf.timezone) {
     body.timezone = tf.timezone;
   }
-  if (Object.keys(body).length === 0) {
+  const touchesEvent = tf.connector || tf.event || tf.eventConfig;
+  if (Object.keys(body).length === 0 && !touchesEvent) {
     return fail('Pass at least one field to change (see `kortix triggers --help`).');
   }
 
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
+  if (touchesEvent) {
+    const found = await currentEvent(ctx, slug);
+    if ('problem' in found) return fail(found.problem);
+    const current = found.event;
+    const connector = tf.connector ?? current.connector;
+    const event = tf.event ?? current.type;
+    // --config-json replaces; bare --config merges. A different event
+    // starts from an empty config: the old fields belong to the old event.
+    const replace = tf.eventConfigReplace !== undefined || event !== current.type || connector !== current.connector;
+    const config = {
+      ...(replace ? {} : current.config),
+      ...(tf.eventConfig ? (JSON.parse(tf.eventConfig) as Record<string, unknown>) : {}),
+    };
+    const checked = await checkEventConfig(ctx, connector, event, config);
+    if ('error' in checked) return fail(checked.error);
+    body.event_config = checked.config;
+  }
   let resp: ProjectTriggersResponse;
   try {
     resp = await ctx.client.patch<ProjectTriggersResponse>(
@@ -252,7 +285,31 @@ export async function triggersSetLive(
   process.stdout.write(
     `${status.ok(`Updated ${C.bold}${slug}${C.reset}`)} ${C.dim}(${changed})${C.reset}\n`,
   );
+  const updated = resp.triggers?.find((t) => t.slug === slug);
+  if (touchesEvent && updated?.type === 'event') {
+    for (const line of eventNextStep(updated).lines) {
+      process.stdout.write(`  ${C.dim}${line}${C.reset}\n`);
+    }
+  }
   return 0;
+}
+
+/** The trigger's current event source, for merging a partial `set`. */
+async function currentEvent(
+  ctx: { client: ApiClient; projectId: string },
+  slug: string,
+): Promise<{ event: ProjectTriggerEvent } | { problem: string }> {
+  try {
+    const resp = await ctx.client.get<ProjectTriggersResponse>(`/projects/${ctx.projectId}/triggers`);
+    const t = resp.triggers.find((x) => x.slug === slug);
+    if (!t) return { problem: `No trigger "${slug}".` };
+    if (t.type !== 'event' || !t.event) {
+      return { problem: `${slug} is a ${t.type} trigger — --connector, --event, and --config only apply to event triggers.` };
+    }
+    return { event: t.event };
+  } catch (err) {
+    return { problem: (err as Error).message };
+  }
 }
 
 export async function triggersRmLive(

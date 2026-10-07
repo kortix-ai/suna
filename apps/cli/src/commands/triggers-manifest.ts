@@ -6,7 +6,7 @@ import {
   formatDurationSeconds,
   parseDurationSeconds,
 } from '@kortix/manifest-schema';
-import { fail, missing } from '../command-helpers.ts';
+import { type CtxOpts, fail, missing } from '../command-helpers.ts';
 import {
   appendArrayBlock,
   arrayEntryExists,
@@ -14,6 +14,7 @@ import {
   setScalarInArrayBlock,
 } from '../manifest-edit.ts';
 import { C, status } from '../style.ts';
+import { checkEventConfig, quietCatalogContext } from './triggers-events.ts';
 
 // add/rm/toggle a [[triggers]] block in the LOCAL kortix.yaml (source of
 // truth). `kortix ship` applies it; the live cloud path lives in
@@ -210,11 +211,12 @@ function parseFlagDuration(
   return { seconds };
 }
 
-export function triggersAddLocal(
+export async function triggersAddLocal(
   slug: string | undefined,
   tf: Record<string, string | undefined>,
   disabled: boolean,
-): number {
+  opts: CtxOpts = {},
+): Promise<number> {
   if (!slug) return missing('a trigger slug');
   const type = (tf.type ?? 'cron').toLowerCase();
   if (type !== 'cron' && type !== 'webhook' && type !== 'monitor' && type !== 'event') {
@@ -247,6 +249,17 @@ export function triggersAddLocal(
     const parsed = parseEventFlags(tf);
     if ('error' in parsed) return fail(parsed.error);
     event = parsed;
+    // Online: coerce + validate against the catalog so `kortix ship` does not
+    // reject what this wrote. Offline (not logged in): write it as given.
+    const ctx = await quietCatalogContext(opts);
+    const checked = await checkEventConfig(ctx, parsed.connector, parsed.event, parsed.config);
+    if ('error' in checked) return fail(checked.error);
+    event = { ...parsed, config: checked.config };
+    if (!ctx) {
+      process.stdout.write(
+        `${C.dim}Config not checked against the event catalog (not logged in).${C.reset}\n`,
+      );
+    }
   }
   try {
     if (arrayEntryExists('triggers', 'slug', slug)) {
