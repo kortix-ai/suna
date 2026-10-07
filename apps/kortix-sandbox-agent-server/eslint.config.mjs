@@ -42,6 +42,7 @@ export const SERVICES = {
   'config-release': ['skills'],
   'egress-shim': [],
   'event-bus': [],
+  memory: [],
   'llm-proxy': [],
   monitor: [],
   resources: [],

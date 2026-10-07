@@ -124,6 +124,7 @@ import {
 import { configReleaseNoticePath } from '@/services/config-release/notice'
 import { bootLinkPath, readBootLinkTarget, releaseRootOf } from '@/services/config-release/boot-config'
 import { writeReleaseInstructionsPlugin } from './release-instructions'
+import { MEMORY_INSTRUCTION_PATH } from '@/services/memory/memory-repos'
 import { opencodeTurnInFlight } from './opencode-turn-state'
 import { CONNECTORS_MCP_COMMAND } from '@kortix/api-contract/sandbox-layout'
 import { MINIMAL_FALLBACK_MODELS, BUNDLED_MANAGED_MODELS, type KortixGatewayModel } from '@kortix/api-contract/fallback-models'
@@ -394,6 +395,8 @@ export async function buildOpencodeConfigContent(
     /** The project root's `skills/`, only while OpenCode serves the working tree. */
     projectSkillsDir?: string | null
     secretCapabilitiesInstructionPath?: string | null
+    /** Every memory repo's MEMORY.md, composed at boot (services/memory/memory-repos.ts). */
+    memoryInstructionPath?: string | null
     /** The config-release notice, when one exists (config-release/notice.ts). */
     configReleaseNoticePath?: string | null
     /** OpenCode serves a config release: load the release instructions plugin (release-instructions.ts). */
@@ -513,7 +516,7 @@ export async function buildOpencodeConfigContent(
 
   // Instruction files the platform contributes. Appended, never clobbering
   // what the project's own config declares.
-  for (const instructionPath of [secretCapabilitiesInstructionPath, opts.configReleaseNoticePath]) {
+  for (const instructionPath of [secretCapabilitiesInstructionPath, opts.memoryInstructionPath, opts.configReleaseNoticePath]) {
     if (!instructionPath) continue
     const instructions = Array.isArray(out.instructions)
       ? out.instructions.filter((item): item is string => typeof item === 'string')
@@ -1052,6 +1055,7 @@ export async function writeKortixOpencodeConfig(
     injectedSkillsDir?: string | null
     projectSkillsDir?: string | null
     secretCapabilitiesInstructionPath?: string | null
+    memoryInstructionPath?: string | null
     configReleaseNoticePath?: string | null
     servesRelease?: boolean
   } = {},
@@ -1061,6 +1065,7 @@ export async function writeKortixOpencodeConfig(
     injectedSkillsDir: opts.injectedSkillsDir,
     projectSkillsDir: opts.projectSkillsDir,
     secretCapabilitiesInstructionPath: opts.secretCapabilitiesInstructionPath,
+    memoryInstructionPath: opts.memoryInstructionPath,
     configReleaseNoticePath: opts.configReleaseNoticePath,
     servesRelease: opts.servesRelease,
   })
@@ -2124,6 +2129,7 @@ export function createOpencodeLifecycle(
       projectSkillsDir: servesProject ? join(projectRoot, SKILLS_DIR) : null,
       servesRelease: !!served && releaseRootOf(served) !== null,
       secretCapabilitiesInstructionPath,
+      memoryInstructionPath: existsSync(MEMORY_INSTRUCTION_PATH) ? MEMORY_INSTRUCTION_PATH : null,
       configReleaseNoticePath: configReleaseNoticePath(),
     })
   }

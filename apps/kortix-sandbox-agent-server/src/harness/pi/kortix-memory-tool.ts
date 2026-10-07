@@ -6,8 +6,11 @@
  * model is trained to read. A refused command is a returned string, not a
  * thrown error, as in the reference backend.
  *
- * Every write is an ordinary file change under `memory/`, so memory edits
- * reach `main` through the normal change-request flow.
+ * When the session has memory repos (services/memory/memory-repos.ts), the
+ * `memory/` paths resolve under the home directory's `memory/`, where each repo
+ * is cloned, and every write is committed and pushed at once. Otherwise they
+ * resolve under the project's own `memory/` folder, whose edits reach `main`
+ * through the normal change-request flow.
  *
  * Security (ported from the hardened SDK source):
  *  - the path boundary check uses a trailing separator, so a sibling directory
@@ -23,6 +26,8 @@ import * as path from 'node:path'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 import { StringEnum } from '@earendil-works/pi-ai'
 import { Type } from 'typebox'
+
+import { checkMemoryWrite, memoryRoot, readMemoryManifest, refreshMemoryRepo, syncMemoryWrite } from '@/services/memory/memory-repos'
 
 /** Repo-relative root every memory path must live under. */
 const MEMORY_PREFIX = 'memory'
@@ -363,10 +368,22 @@ async function rename(oldPath: string, newPath: string, dir: string): Promise<st
   return `Successfully renamed ${oldPath} to ${newPath}`
 }
 
+const MEMORY_TOOL_DESCRIPTION =
+  'Persistent memory: read, write, and curate what this project and its people know, in `memory/`. ' +
+  'Use it instead of the generic read/edit/write tools for anything under `memory/`. ' +
+  'When the session has memory repos (listed in your instructions), `memory/company/` is the company memory everyone in the project shares and `memory/<user>/` is the personal memory of the user it names; ' +
+  'every write is committed and pushed at once, so other sessions see it, and a write that collides with another session comes back as an error with both versions to reconcile. ' +
+  'Otherwise `memory/` is a folder of the project repo and edits land on `main` through a change request.\n\n' +
+  'Each repo has a `MEMORY.md` index that is loaded at session start; keep it short and link topic files from its `## Index` with `[[path]]`. ' +
+  'Entries are one-line bullets ending in `[source: <this session link>; added: YYYY-MM-DD]`. Update or remove stale entries instead of adding contradicting ones. ' +
+  'Write each fact to the repo of whoever it belongs to. Never store secrets, tokens, or credentials.\n\n' +
+  'Commands: `view` (dir listing or file with line numbers; optional view_range), `create` (new file), ' +
+  '`str_replace` (replace a unique snippet), `insert` (insert at a line), `delete` (remove file/dir), `rename` (move file/dir).'
+
 const memorySchema = Type.Object({
   command: StringEnum(['view', 'create', 'str_replace', 'insert', 'delete', 'rename'] as const, { description: 'The memory operation to perform.' }),
   path: Type.Optional(
-    Type.String({ description: 'Repo-relative path under `memory` (e.g. `memory/overview.md`). Required for view, create, str_replace, insert, delete.' }),
+    Type.String({ description: 'Path under `memory` (e.g. `memory/company/MEMORY.md`, or `memory/overview.md` without memory repos). Required for view, create, str_replace, insert, delete.' }),
   ),
   view_range: Type.Optional(Type.Array(Type.Number(), { description: 'Optional [start, end] line range for `view` of a file. Use -1 for end-of-file.' })),
   file_text: Type.Optional(Type.String({ description: 'File contents. Required for `create`.' })),
@@ -378,9 +395,23 @@ const memorySchema = Type.Object({
   new_path: Type.Optional(Type.String({ description: 'Destination path. Required for `rename`.' })),
 })
 
-/** `dir` is the project checkout: every memory path resolves under `<dir>/memory`. */
-export function createMemoryTool(dir: string): AgentTool<typeof memorySchema, undefined> {
+/**
+ * `projectDir` is the project checkout: without memory repos every memory path
+ * resolves under `<projectDir>/memory`. With them, under `<home>/memory`.
+ */
+export function createMemoryTool(projectDir: string, home?: string): AgentTool<typeof memorySchema, undefined> {
   const run = async (args: Record<string, any>): Promise<string> => {
+    const root = memoryRoot(home)
+    const manifest = readMemoryManifest(root)
+    if (!manifest) return runCommand(args, projectDir)
+    const paths = args.command === 'rename' ? [args.old_path, args.new_path] : [args.path]
+    if (args.command === 'view' || paths.some((p) => typeof p !== 'string' || !p)) return runCommand(args, path.dirname(root))
+    const refused = checkMemoryWrite(manifest, args.command, paths)
+    if (refused) return refused
+    await refreshMemoryRepo(root, paths[0])
+    return syncMemoryWrite(root, manifest, args.command, paths, await runCommand(args, path.dirname(root)))
+  }
+  const runCommand = async (args: Record<string, any>, dir: string): Promise<string> => {
     const need = (...names: string[]) => names.find((name) => args[name] === undefined || (name.endsWith('path') && !args[name]))
     const missing = (name: string) => `Error: \`${name}\` is required for ${args.command}.`
     let absent: string | undefined
@@ -404,17 +435,7 @@ export function createMemoryTool(dir: string): AgentTool<typeof memorySchema, un
   return {
     name: 'memory',
     label: 'memory',
-    description:
-      'Persistent project memory — read, write, and curate the project brain in `memory/`. ' +
-      'This is the canonical way to work with memory; use it instead of the generic read/edit/write tools for anything under `memory/`. ' +
-      'Memory persists across sessions and is shared with the whole team via the repo, so write durable facts here. ' +
-      'ALWAYS `view` `memory` before starting a task to recover prior context, and record durable progress as you go — your context window may reset at any time.\n\n' +
-      'Paths are repo-relative and MUST start with `memory` (e.g. `memory/overview.md`). ' +
-      "Keep memory coherent and organized: prefer editing existing files, rename or delete stale ones, and don't create new files unless a topic deserves its own page. " +
-      'Always keep `memory/MEMORY.md` (the index) in sync — one line per sub-file. ' +
-      'Never store secrets, tokens, or PII. Edits land on `main` through the normal change-request flow.\n\n' +
-      'Commands: `view` (dir listing or file with line numbers; optional view_range), `create` (new file), ' +
-      '`str_replace` (replace a unique snippet), `insert` (insert at a line), `delete` (remove file/dir), `rename` (move file/dir).',
+    description: MEMORY_TOOL_DESCRIPTION,
     parameters: memorySchema,
     async execute(_id, args) {
       const output = await run(args).catch((err) => `Error: ${err?.message ?? String(err)}`)

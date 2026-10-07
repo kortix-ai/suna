@@ -27,6 +27,7 @@ import type { HarnessState } from '../contract/lifecycle-contract'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { logger } from '@/lib/log/logger'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '@/services/sandbox-env/secret-capabilities'
+import { MEMORY_INSTRUCTION_PATH } from '@/services/memory/memory-repos'
 import type { PiConfig } from './config'
 import { resolvePiProjectConfigDir, resolvePiSkillDirectories } from './config'
 import type { PiConfigReleases } from './config-release'
@@ -1370,6 +1371,8 @@ export class PiRuntime {
     if (skills.length > 0) parts.push(this.coding!.formatSkillsForPrompt(skills))
     const capabilities = this.readInstruction(SECRET_CAPABILITIES_INSTRUCTION_PATH)
     if (capabilities) parts.push(capabilities)
+    const memory = this.readInstruction(MEMORY_INSTRUCTION_PATH)
+    if (memory) parts.push(memory)
     const releaseNotice = this.releases?.notice()
     if (releaseNotice) parts.push(releaseNotice)
     parts.push(

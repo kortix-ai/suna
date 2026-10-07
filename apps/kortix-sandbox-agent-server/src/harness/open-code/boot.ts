@@ -40,6 +40,7 @@ import {
 } from './lifecycle'
 import { relayBootTimelineToApi } from '../shared/boot-timeline-relay'
 import { materializeProject } from '@/services/config-provider/config-provider'
+import { setupMemoryRepos } from '@/services/memory/memory-repos'
 import { registerRuntimeStateReader, scheduleRuntimeProjectionPush } from '../shared/projection-relay'
 import { ConvergeBusyError } from '@/services/config-release/release'
 import { convergeConfigRelease } from './config-release'
@@ -118,6 +119,9 @@ function registerOpenCodeStateReader(): void {
     return { doc, etag }
   })
 }
+
+/** How long the readiness gate waits for the memory repos after the checkout is ready. */
+const MEMORY_BOOT_WAIT_MS = 5_000
 
 /** Run the existing OpenCode cold/session boot behind the harness boundary. */
 export async function runOpenCode(context: HarnessBootContext & { cfg: Config; bootState: SandboxBootState }): Promise<void> {
@@ -323,6 +327,13 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
           return bootState.repoMaterializationError
         })
     : Promise.resolve(null)
+  // The memory repos clone beside the checkout. The gate below waits for them
+  // too (bounded), so the first turn's instructions carry every MEMORY.md.
+  const memoryReady = setupMemoryRepos({ workspace: cfg.projectTarget, workspaceReady: repoMaterializePromise })
+  const workspaceAndMemory = repoMaterializePromise.then(async (result) => {
+    await Promise.race([memoryReady, new Promise((resolve) => setTimeout(resolve, MEMORY_BOOT_WAIT_MS))])
+    return result
+  })
 
   // Every gateway session routes OpenCode through the localhost LLM proxy.
   // Start it before either compiled-config or checkout-config OpenCode can
@@ -348,7 +359,7 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
   const activeConfig = await bootOpenCodeConfig({
     cfg,
     opencode,
-    workspace: repoMaterializePromise,
+    workspace: workspaceAndMemory,
     mark: bootMark,
     start: async () => {
       await opencode.start()

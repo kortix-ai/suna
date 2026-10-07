@@ -99,7 +99,9 @@ describe('runOpenCode: early spawn', () => {
     expect(BOOT).not.toContain('await repoMaterializePromise')
     const bootPath = BOOT.indexOf('await bootOpenCodeConfig({')
     expect(bootPath).toBeGreaterThan(BOOT.indexOf('const repoMaterializePromise'))
-    expect(BOOT.slice(bootPath, BOOT.indexOf('onReady:', bootPath))).toContain('workspace: repoMaterializePromise')
+    // The gate also waits (bounded) for the memory repos, chained after the clone.
+    expect(BOOT).toContain('const workspaceAndMemory = repoMaterializePromise.then(')
+    expect(BOOT.slice(bootPath, BOOT.indexOf('onReady:', bootPath))).toContain('workspace: workspaceAndMemory')
     expectOrder(BOOT_PATH, ['const started = input.start()', 'await input.workspace'])
   })
 

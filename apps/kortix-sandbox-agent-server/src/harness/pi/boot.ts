@@ -40,6 +40,7 @@ import { startLlmProxy } from '@/services/llm-proxy/llm-proxy'
 import { logger } from '@/lib/log/logger'
 import { runSandboxOnBoot } from '../shared/on-boot'
 import { createProjectEnvStore } from '@/services/sandbox-env/project-env'
+import { setupMemoryRepos } from '@/services/memory/memory-repos'
 import { configureRuntimeConvergence, scheduleRuntimeAssetsReconcile } from '@/services/runtime-assets/runtime-assets'
 import { configureRuntimeTruth, startRuntimeTruthTicker } from '@/services/runtime-assets/runtime-truth'
 import { ConvergeBusyError } from '@/services/config-release/release'
@@ -168,6 +169,14 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
 
   // Fresh-boot acquisition goes through the config-provider coordinator
   // (git | prefer-s3 | require-s3), exactly as the OpenCode boot does.
+  let markWorkspace: () => void = () => {}
+  // The memory repos clone beside the checkout; the system prompt reads their
+  // MEMORY.md files once they land.
+  void setupMemoryRepos({
+    workspace: cfg.projectTarget,
+    workspaceReady: new Promise<void>((resolve) => (markWorkspace = resolve)),
+    home,
+  })
   if (cfg.autoClone) {
     bootState.workspaceReady = false
     await materializeProject(cfg, {
@@ -193,6 +202,7 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
       })
   }
   bootMark('repo-materialized')
+  markWorkspace()
   if (cfg.autoClone && !bootState.repoMaterializationError) {
     if (!bootState.deferredHistoryBackfill) scheduleHistoryBackfill(cfg, cfg.projectTarget)
     await configureRepoCredentialHelper(cfg, cfg.projectTarget).catch((err) => {
