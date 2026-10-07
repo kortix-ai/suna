@@ -24,12 +24,6 @@ const original = {
 const stops: string[] = [];
 let fleet: Record<string, unknown>[] = [];
 const server = Bun.serve({
-  // Loopback by IP, not the default advertised `localhost`: Bun.serve binds
-  // IPv4-only while bun's fetch resolves `localhost` to ::1 on hosts whose
-  // resolver offers only IPv6 for it — every call below then dies with
-  // "Unable to connect" and the reaper records a provider outage instead of
-  // the listing this suite pins its assertions to.
-  hostname: '127.0.0.1',
   port: 0,
   fetch(request) {
     const url = new URL(request.url);
