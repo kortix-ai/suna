@@ -1,5 +1,5 @@
 {
-  "id": "3a374e1b-ed02-46e2-965c-434611bca65f",
+  "id": "8a629195-a998-4a1d-90d6-7c63c54e3177",
   "prevId": "4c46d426-ec56-4654-82d7-58cad5d716c8",
   "version": "7",
   "dialect": "postgresql",
@@ -11544,6 +11544,61 @@
       "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "kortix.permission_push_claims": {
+      "name": "permission_push_claims",
+      "schema": "kortix",
+      "columns": {
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "permission_push_claims_session_fk": {
+          "name": "permission_push_claims_session_fk",
+          "tableFrom": "permission_push_claims",
+          "tableTo": "project_sessions",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "session_id"
+          ],
+          "columnsTo": [
+            "session_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "permission_push_claims_session_id_request_id_pk": {
+          "name": "permission_push_claims_session_id_request_id_pk",
+          "columns": [
+            "session_id",
+            "request_id"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
