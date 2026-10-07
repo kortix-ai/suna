@@ -271,6 +271,35 @@ describe('plain commands vs an explicitly selected stored host (KRTX-1705)', () 
     // The ambient chain itself stays untouched for the env-pinned callers.
     expect(resolveProjectId()).toBe('proj_session');
   });
+
+  it('honors a link bound to the selected host itself, as resolveProjectContext does', () => {
+    seedOwnHost();
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_API_URL = 'https://session.example/v1';
+    process.env.KORTIX_PROJECT_ID = 'proj_session';
+    expect(useHost('own')).toBe(true);
+    // A directory bound to the SELECTED host itself, naming a project that is
+    // NOT the host's global default — the link must win for this credential.
+    const dir = mkdtempSync(join(tmpdir(), 'kortix-cli-selected-self-link-'));
+    mkdirSync(join(dir, '.kortix'), { recursive: true });
+    writeFileSync(
+      join(dir, '.kortix', 'link.json'),
+      JSON.stringify({
+        project_id: 'proj_own_dir',
+        account_id: 'acct_own',
+        host: 'own',
+        host_url: 'https://own.example/v1',
+        linked_at: '2026-01-01T00:00:00.000Z',
+      }),
+    );
+    process.chdir(dir);
+
+    // The link binds THIS directory to a project on the SELECTED host — the
+    // most specific binding for exactly this credential. hostScoped must
+    // honor it, the same precedence resolveProjectContext applies, instead of
+    // falling through to the host's global default project.
+    expect(resolveProjectId(undefined, { hostScoped: true })).toBe('proj_own_dir');
+  });
 });
 
 describe('env token vs .kortix/link.json host', () => {

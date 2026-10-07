@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { defaultProject, markerActive } from './api/config.ts';
+import { activeHostName, defaultProject, markerActive } from './api/config.ts';
 import { sandboxEnvValue } from './api/sandbox-env.ts';
 
 /**
@@ -89,18 +89,24 @@ export function clearLink(cwd = process.cwd()): void {
  * `hostScoped` marks callers that pair the result with the stored active
  * host's credential (no `--host` given): when an explicit in-sandbox
  * `hosts use` selection owns plain resolution (markerActive, KRTX-1705), the
- * ambient chain — steps 2 and 3, both bound to the injected deployment —
- * must not pair with that credential, so the selected host's default project
- * takes over, exactly as an explicit `--host` resolves. The connector data
- * plane (pinned to the injected identity) must keep the ambient chain and
- * omits the flag.
+ * AMBIENT chain — the injected KORTIX_PROJECT_ID and a link bound to another
+ * host, both foreign to this credential — must not pair with it, so the
+ * selected host's default project takes over, exactly as an explicit
+ * `--host` resolves. A link bound to the SELECTED host itself stays the most
+ * specific binding for that credential and wins, the same precedence
+ * resolveProjectContext applies. The connector data plane (pinned to the
+ * injected identity) must keep the ambient chain and omits the flag.
  */
 export function resolveProjectId(
   projectArg?: string,
   opts?: { hostScoped?: boolean },
 ): string | null {
   if (projectArg) return projectArg;
-  if (opts?.hostScoped && markerActive()) return defaultProject()?.project_id ?? null;
+  if (opts?.hostScoped && markerActive()) {
+    const link = loadLink();
+    if (link?.host && link.host === activeHostName() && link.project_id) return link.project_id;
+    return defaultProject()?.project_id ?? null;
+  }
   const envProjectId = sandboxEnvValue('KORTIX_PROJECT_ID');
   if (envProjectId) return envProjectId;
   const link = loadLink();

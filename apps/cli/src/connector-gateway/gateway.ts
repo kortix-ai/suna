@@ -23,11 +23,13 @@ import { CliError, stringValue } from './io.ts';
 /**
  * The Connector gateway client — runs tool calls as the launching user.
  *
- * Resolves auth from ONE place (`activeHost()` via loadAuth), so it works
- * identically:
- *   - in-sandbox: `KORTIX_TOKEN` + `KORTIX_API_URL` are
- *     injected and win;
- *   - on a laptop: falls back to the host you `kortix login`'d.
+ * Resolves auth from ONE place, pinned to the injected session identity:
+ * `loadEnvAuth()` (the sandbox delegation env) wins, `loadAuth()` (the stored
+ * login) is only the fallback when nothing is injected. That keeps it
+ * identical in both worlds — and immune to an in-sandbox `hosts use`
+ * selection (KRTX-1705): a session only ever invokes `kortix connectors` /
+ * `kortix connectors mcp`, so the data plane always acts as the launching
+ * user, whatever the config file says.
  * The project comes from KORTIX_PROJECT_ID / `.kortix/link.json` / `--project`.
  * When a project is known we hit the project-explicit gateway routes (which
  * accept a plain user token), so `kortix connectors` is the SAME locally and in
