@@ -9,7 +9,7 @@ const ROOT = repoRoot();
 const ports: Ports = { ...computePorts(0), sbDb: PORT };
 const url = `postgresql://postgres:postgres@127.0.0.1:${PORT}/postgres`;
 
-const MIGRATION = '20261007125103888_drop_session_environments';
+const MIGRATION = '20261007151006000_drop_session_environments';
 
 function psql(sql: string): string {
   const res = sh(['psql', url, '-q', '-v', 'ON_ERROR_STOP=1', '-tAc', sql]);
