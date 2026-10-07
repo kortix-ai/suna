@@ -141,12 +141,11 @@
     "mfa": {
       "title": "Verifica que eres tú",
       "enterCode": "Introduce el código de 6 dígitos de tu app de autenticación.",
-      "codePlaceholder": "Código de 6 dígitos",
+      "codeLabel": "Código de 6 dígitos",
       "verify": "Verificar",
       "verifying": "Verificando…",
       "invalidCode": "Ese código no funcionó. Revisa tu app de autenticación e inténtalo de nuevo.",
-      "verifyFailed": "No se pudo verificar el código. Revisa tu conexión e inténtalo de nuevo.",
-      "useDifferentAccount": "Usar otra cuenta"
+      "verifyFailed": "No se pudo verificar el código. Revisa tu conexión e inténtalo de nuevo."
     }
   },
   "onboarding": {

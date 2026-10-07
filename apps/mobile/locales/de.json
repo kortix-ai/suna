@@ -141,12 +141,11 @@
     "mfa": {
       "title": "Bestätige, dass du es bist",
       "enterCode": "Gib den 6-stelligen Code aus deiner Authenticator-App ein.",
-      "codePlaceholder": "6-stelliger Code",
+      "codeLabel": "6-stelliger Code",
       "verify": "Bestätigen",
       "verifying": "Wird bestätigt…",
       "invalidCode": "Dieser Code hat nicht funktioniert. Prüfe deine Authenticator-App und versuche es erneut.",
-      "verifyFailed": "Der Code konnte nicht geprüft werden. Prüfe deine Verbindung und versuche es erneut.",
-      "useDifferentAccount": "Anderes Konto verwenden"
+      "verifyFailed": "Der Code konnte nicht geprüft werden. Prüfe deine Verbindung und versuche es erneut."
     }
   },
   "onboarding": {

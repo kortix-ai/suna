@@ -141,12 +141,11 @@
     "mfa": {
       "title": "Verify it’s you",
       "enterCode": "Enter the 6-digit code from your authenticator app.",
-      "codePlaceholder": "6-digit code",
+      "codeLabel": "6-digit code",
       "verify": "Verify",
       "verifying": "Verifying…",
       "invalidCode": "That code didn’t work. Check your authenticator app and try again.",
-      "verifyFailed": "Could not verify the code. Check your connection and try again.",
-      "useDifferentAccount": "Use a different account"
+      "verifyFailed": "Could not verify the code. Check your connection and try again."
     }
   },
   "onboarding": {

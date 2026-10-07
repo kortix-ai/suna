@@ -4,8 +4,9 @@
  * gates (`AuthProtection`, the auth layout, the start screen) send it here and
  * on to `/` once auth-js reports the aal2 session.
  *
- * The email screen's code step, without a back button: the only way out is
- * "Use a different account", which signs this device out.
+ * The email screen's layout with web's six code cells (components/kortix/
+ * code-cells). No back button: the only way out is Sign out, which signs this
+ * device out.
  */
 
 import * as React from 'react';
@@ -17,13 +18,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useTranslation } from 'react-i18next';
 
-import { PillInput } from '@/components/kortix/pill-input';
+import { CODE_LENGTH, CodeCells } from '@/components/kortix/code-cells';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { useAuthContext } from '@/contexts';
-
-/** TOTP code length; the field submits itself at this length. */
-const CODE_LENGTH = 6;
 
 export default function MfaScreen() {
   const router = useRouter();
@@ -59,10 +57,9 @@ export default function MfaScreen() {
     [code, verifyTotp, t]
   );
 
-  // Digits only; the code submits itself once complete.
+  // The code submits itself once complete.
   const handleCodeChange = React.useCallback(
-    (value: string) => {
-      const digits = value.replace(/\D/g, '').slice(0, CODE_LENGTH);
+    (digits: string) => {
       setCode(digits);
       setErrorMessage(null);
       if (digits.length === CODE_LENGTH && !verifying) void handleVerify(digits);
@@ -70,7 +67,7 @@ export default function MfaScreen() {
     [handleVerify, verifying]
   );
 
-  const handleUseDifferentAccount = React.useCallback(async () => {
+  const handleSignOut = React.useCallback(async () => {
     if (signingOut) return;
     setSigningOut(true);
     const result = await signOut().catch(() => null);
@@ -104,49 +101,42 @@ export default function MfaScreen() {
             paddingTop: 16,
             paddingBottom: insets.bottom + 16,
           }}>
-          <View>
-            <Text variant="muted">{t('auth.mfa.enterCode')}</Text>
+          <Text variant="muted">{t('auth.mfa.enterCode')}</Text>
 
-            <PillInput
+          <View className="mt-5">
+            <CodeCells
               value={code}
               onChangeText={handleCodeChange}
-              placeholder={t('auth.mfa.codePlaceholder')}
-              accessibilityLabel={t('auth.mfa.codePlaceholder')}
-              keyboardType="number-pad"
-              textContentType="oneTimeCode"
-              autoComplete="one-time-code"
-              maxLength={CODE_LENGTH}
+              invalid={!!errorMessage}
               editable={!busy}
-              autoFocus
-              style={{ marginTop: 20, fontVariant: ['tabular-nums'] }}
+              accessibilityLabel={t('auth.mfa.codeLabel')}
             />
+          </View>
 
-            {errorMessage ? (
-              <Text variant="muted" className="mt-3 text-destructive">
-                {errorMessage}
-              </Text>
-            ) : null}
+          {errorMessage ? (
+            <Text variant="muted" className="mt-3 text-destructive">
+              {errorMessage}
+            </Text>
+          ) : null}
 
+          {/* The actions sit at the bottom, as the email screen's account switch. */}
+          <View className="flex-1" />
+          <View className="gap-3 pt-8">
             <Button
               size="lg"
               variant={verifying ? 'secondary' : 'default'}
-              className="mt-3 rounded-full"
+              className="rounded-full"
               disabled={busy || code.length < CODE_LENGTH}
               onPress={() => void handleVerify()}>
               <Text>{verifying ? t('auth.mfa.verifying') : t('auth.mfa.verify')}</Text>
             </Button>
-          </View>
-
-          {/* Pinned to the bottom, as the email screen's account switch. */}
-          <View className="flex-1" />
-          <View className="pt-8">
             <Button
               size="lg"
               variant="secondary"
               className="rounded-full"
               disabled={busy}
-              onPress={() => void handleUseDifferentAccount()}>
-              <Text>{t('auth.mfa.useDifferentAccount')}</Text>
+              onPress={() => void handleSignOut()}>
+              <Text>{t('auth.signOut')}</Text>
             </Button>
           </View>
         </KeyboardAwareScrollView>

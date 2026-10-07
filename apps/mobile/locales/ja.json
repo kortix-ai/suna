@@ -141,12 +141,11 @@
     "mfa": {
       "title": "本人確認",
       "enterCode": "認証アプリの6桁のコードを入力してください。",
-      "codePlaceholder": "6桁のコード",
+      "codeLabel": "6桁のコード",
       "verify": "確認",
       "verifying": "確認中…",
       "invalidCode": "このコードは使用できませんでした。認証アプリを確認して、もう一度お試しください。",
-      "verifyFailed": "コードを確認できませんでした。接続を確認して、もう一度お試しください。",
-      "useDifferentAccount": "別のアカウントを使用"
+      "verifyFailed": "コードを確認できませんでした。接続を確認して、もう一度お試しください。"
     }
   },
   "onboarding": {

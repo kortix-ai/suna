@@ -141,12 +141,11 @@
     "mfa": {
       "title": "Confirmez votre identité",
       "enterCode": "Saisissez le code à 6 chiffres de votre application d’authentification.",
-      "codePlaceholder": "Code à 6 chiffres",
+      "codeLabel": "Code à 6 chiffres",
       "verify": "Vérifier",
       "verifying": "Vérification…",
       "invalidCode": "Ce code n’a pas fonctionné. Vérifiez votre application d’authentification et réessayez.",
-      "verifyFailed": "Impossible de vérifier le code. Vérifiez votre connexion et réessayez.",
-      "useDifferentAccount": "Utiliser un autre compte"
+      "verifyFailed": "Impossible de vérifier le code. Vérifiez votre connexion et réessayez."
     }
   },
   "onboarding": {
