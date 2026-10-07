@@ -19346,7 +19346,8 @@
       "text6513690ca848": "Ce backend a été créé avant le tableau de bord. Créez un nouveau backend pour l’obtenir.",
       "text19eb2c0e5dca": "Tableau de bord Convex",
       "text803f2313cdf4": "Ouvrir le tableau de bord",
-      "text3ae8ca83dab7": "Tableau de bord du backend ouvert"
+      "text3ae8ca83dab7": "Tableau de bord du backend ouvert",
+      "textde3486cdebb5": "Indicateur de fonctionnalité du projet défini en tant qu’administrateur"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

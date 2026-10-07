@@ -94,6 +94,8 @@ import { SettingsTabHeader } from '../settings-tab-header';
 export interface ExperimentalCopy {
   stability: Record<FeatureFlagStability, string>;
   overridden: string;
+  /** Origin line of an `operator_only` flag: only Kortix changes it. */
+  managedByKortix: string;
   defaultOn: string;
   defaultOff: string;
   search: string;
@@ -108,6 +110,7 @@ export interface ExperimentalCopy {
 export const DEFAULT_EXPERIMENTAL_COPY: ExperimentalCopy = {
   stability: { experimental: 'Experimental', beta: 'Beta', stable: 'Stable' },
   overridden: 'Overridden for this project',
+  managedByKortix: 'Managed by Kortix',
   defaultOn: 'Default on',
   defaultOff: 'Default off',
   search: 'Search features',
@@ -120,6 +123,9 @@ export const DEFAULT_EXPERIMENTAL_COPY: ExperimentalCopy = {
 };
 
 function originLabel(feature: FeatureFlagView, copy: ExperimentalCopy): string {
+  // An internal-only flag (`apps`, `backends`) is listed only while on, and
+  // `PATCH /features` refuses it to anyone but a Kortix operator.
+  if (feature.operator_only) return copy.managedByKortix;
   if (feature.overridden) return copy.overridden;
   return feature.enabled ? copy.defaultOn : copy.defaultOff;
 }
@@ -185,7 +191,7 @@ function ExperimentalFeatureRow({
           <p id={nameId} className="text-foreground text-sm font-medium">
             {feature.name}
           </p>
-          <span className="text-muted-foreground/70 text-xs">{originLabel(feature, copy)}</span>
+          <span className="text-muted-foreground text-xs">{originLabel(feature, copy)}</span>
         </div>
         <p className="text-muted-foreground mt-0.5 text-xs text-pretty">{feature.description}</p>
       </div>
@@ -194,7 +200,7 @@ function ExperimentalFeatureRow({
         <Switch
           aria-labelledby={nameId}
           checked={feature.enabled}
-          disabled={!canManage || pending}
+          disabled={!canManage || pending || feature.operator_only === true}
           onCheckedChange={(v) => onToggle(feature.key, v)}
         />
       </div>
@@ -460,6 +466,7 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
           stable: t('stability.stable'),
         },
         overridden: t('origin.overridden'),
+        managedByKortix: tI18nComplete.raw('texte9ec6c0ad396'),
         defaultOn: t('origin.defaultOn'),
         defaultOff: t('origin.defaultOff'),
         search: t('search'),

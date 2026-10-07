@@ -19346,7 +19346,8 @@
       "text6513690ca848": "Questo backend è stato creato prima della dashboard. Crea un nuovo backend per averla.",
       "text19eb2c0e5dca": "Dashboard di Convex",
       "text803f2313cdf4": "Apri dashboard",
-      "text3ae8ca83dab7": "Dashboard del backend aperta"
+      "text3ae8ca83dab7": "Dashboard del backend aperta",
+      "textde3486cdebb5": "Flag di funzionalità del progetto impostato come amministratore"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

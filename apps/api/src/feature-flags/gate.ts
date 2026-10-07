@@ -20,6 +20,9 @@ export { requireFeatureFlag } from './http-gate';
 
 export const FEATURE_DISABLED_CODE = 'feature_disabled' as const;
 
+/** 403 code: only a platform operator may write this flag (`catalogHidden`). */
+export const FEATURE_OPERATOR_ONLY_CODE = 'feature_operator_only' as const;
+
 export function featureDisabledBody(key: FeatureFlagKey): {
   error: string;
   code: typeof FEATURE_DISABLED_CODE;

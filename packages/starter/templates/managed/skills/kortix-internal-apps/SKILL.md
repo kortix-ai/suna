@@ -19,9 +19,15 @@ member's browser ──▶ Kortix App (static UI, access: project)
 
 ## Prerequisites
 
-`kortix projects features` must show `apps` and `backends` enabled. Kortix
-enables each one per project; Settings lists neither, and you cannot enable
-them.
+Both `apps` and `backends` must be on. Check either way:
+
+- `kortix projects features` lists `apps on kortix` and `backends on kortix`.
+  An internal-only flag that is off is not listed at all.
+- `kortix projects info --json` has `experimental.apps` and
+  `experimental.backends` both `true`.
+
+Kortix enables each one per project. You cannot change them:
+`kortix projects features enable` answers `feature_operator_only`.
 
 **When either is off, do not stop and do not use this recipe.** Build the app
 the user asked for with what the project has: the project's own storage and
@@ -64,9 +70,11 @@ memory/<app>.md                # what you built, URLs, how to redeploy
 4. **Functions.** Every public query and mutation calls `requireMember(ctx)`
    (or `requireMember(ctx, { groups: [...] })`) first. Put multi-row changes (move a card, close a deal) in one mutation so
    they are atomic. Add an `internal` seed.
-5. **Deploy and test the backend.**
+5. **Deploy and test the backend.** `--create` creates `main` on the first
+   deploy; later deploys omit it, so a mistyped name fails instead of starting
+   a second machine.
    ```sh
-   kortix backends deploy main --dir backends/main
+   kortix backends deploy main --dir backends/main --create
    eval "$(kortix backends env main)" && cd backends/main
    npx convex run seed:run
    npx convex run <domain>:list '{}'     # must FAIL: no identity

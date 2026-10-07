@@ -19357,7 +19357,8 @@
       "text6513690ca848": "This backend was created before the dashboard shipped. Create a new backend to get it.",
       "text19eb2c0e5dca": "Convex dashboard",
       "text803f2313cdf4": "Open dashboard",
-      "text3ae8ca83dab7": "Opened backend dashboard"
+      "text3ae8ca83dab7": "Opened backend dashboard",
+      "textde3486cdebb5": "Set project feature flag as admin"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

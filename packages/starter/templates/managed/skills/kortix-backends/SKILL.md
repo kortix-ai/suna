@@ -13,8 +13,11 @@ members in to it.
 
 Backends is an experimental project feature flag (`backends`), off by default
 and available only where Kortix runs Platinum machines. While it is off, every
-`kortix backends` command says so and exits `1`. Kortix enables it per project;
-Settings does not list it, and you cannot enable it.
+`kortix backends` command says so and exits `1`. Kortix enables it per project.
+When it is on, `kortix projects features` lists `backends on kortix` and
+`kortix projects info --json` has `experimental.backends: true`. Only Kortix
+changes it: `kortix projects features enable|disable backends` answers
+`feature_operator_only`.
 
 **When the flag is off, do not stop.** Do the task without a Kortix backend:
 use the storage and code the project already has (files in the project repo,
@@ -64,12 +67,17 @@ mkdir -p backends/main && cd backends/main
 npm init -y >/dev/null && npm install convex   # once
 npx convex ai-files install                    # once: Convex's agent rules + skills (below)
 # write convex/schema.ts, convex/*.ts, convex/auth.config.ts
-cd - && kortix backends deploy main --dir backends/main
+cd - && kortix backends deploy main --dir backends/main --create
 ```
 
-`kortix backends deploy <name> --dir <path>` creates the backend if it does not
-exist, waits until it runs (seconds; minutes on a region's first image build),
-then runs `npx convex deploy` there with the backend's credentials. Read the
+`kortix backends deploy <name> --dir <path>` waits until the backend runs
+(seconds; up to 10 minutes on a region's first image build), then runs
+`convex deploy` there with the backend's credentials. It uses the project's own
+`node_modules/.bin/convex`, or `npx convex@<convex_version>` (the version the
+backend pins, in `kortix backends get <name> --json`). When no backend has that
+name, `deploy` exits `1` and lists the existing names: check the name, and pass
+`--create` only when you mean to create a new backend. A project holds at most
+3 backends and an account 10 (`backend_limit`). Read the
 output: a type error or a schema that existing documents violate fails the
 deploy before anything changes. Fix and deploy again. Commit the Convex code on
 the session branch like any other code.
@@ -82,7 +90,7 @@ the session branch like any other code.
 | `kortix backends dashboard <name>` | Link to the backend's admin dashboard in Kortix (data, functions, logs, files, schedules, env). Give it to the user so they can inspect what you built. |
 | `kortix backends env <name>` | Shell exports for the Convex CLI (admin). Use with `eval`. |
 | `kortix backends token <name>` | A 15-minute sign-in token naming you, with your groups and role (see Sign-in). |
-| `kortix backends deploy <name> --dir <path>` | Create if missing, then deploy. |
+| `kortix backends deploy <name> --dir <path> [--create]` | Deploy. `--create` creates a missing backend first. |
 | `kortix backends resize <name> --cpu N --memory GB --disk GB` | Resize (see Size, backups and restore). |
 | `kortix backends backups <name>` · `snapshot <name>` · `restore <name> <id>` | Backups and point-in-time restore. |
 | `kortix backends delete <name> --yes` | Delete the machine and every document and file. |

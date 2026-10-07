@@ -209,7 +209,7 @@ Kortix cloud state — not just files in the repo. Examples:
 | "check back on this later / keep checking until it's done" | `kortix remind "…" --in 24h --every 1h` · `kortix reminders ls|pause|resume|rm` |
 | "show open change requests" | `kortix cr ls` |
 | "who am I? what project is this?" | `kortix whoami`, `kortix projects info` |
-| "turn on / off a feature flag (Apps, Teams, Meta Agent, …)" | `kortix projects features` · `kortix projects features enable <flag>` |
+| "turn on / off a feature flag (Reminders, Meta Agent, …)" | `kortix projects features` · `kortix projects features enable <flag>`. Apps and Backends are Kortix-managed: listed as `on kortix` only while on; only Kortix changes them. |
 | "rename the project / change its icon or default branch" | `kortix projects set --name … --icon … --branch …` |
 | "which models can this project use? set the default model" | `kortix models ls` · `kortix models default <model>` · `models enable|disable <id>` |
 | "change the default agent / an agent's scope or config" | `kortix agents default <name>` · `kortix agents scope <agent> [--secrets …] [--connectors …] [--apps …]` · `kortix agents config <agent>` |
@@ -389,7 +389,7 @@ or operating an App.
 A **Kortix backend** is a full backend for the project: a database, server
 functions, realtime queries, file storage, schedules and search, powered by
 self-hosted Convex, with built-in Kortix sign-in (functions know the signed-in
-member). One machine per backend, up to 3 per project. The Convex code usually
+member). One machine per backend, up to 3 per project and 10 per account. The Convex code usually
 lives in the project repo (`backends/<name>/`) and ships with
 `kortix backends deploy <name> --dir backends/<name>`. Experimental, off by
 default (feature flag `backends`).

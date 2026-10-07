@@ -41,6 +41,12 @@ export interface ProjectBackend {
   operation: ProjectBackendOperation | null;
   /** Why the last operation failed. Cleared by the next operation. */
   last_operation_error: string | null;
+  /**
+   * The `convex` npm CLI version that matches this backend's Convex build.
+   * Deploy with it (`npx convex@<version> deploy`) when the project has no
+   * `convex` installed. Absent on servers older than this field.
+   */
+  convex_version?: string;
   created_at: string;
   updated_at: string;
 }
@@ -88,8 +94,16 @@ export async function getBackend(projectId: string, backendId: string): Promise<
   ).backend;
 }
 
+/**
+ * How long the API lets a provision run before it reports `error` (15 min).
+ * A region's first image build (up to 10 min), the health wait and the admin
+ * key mint all run inside provisioning, so a shorter wait gives up on a
+ * backend that then becomes `running`.
+ */
+const BACKEND_PROVISION_WAIT_MS = 15 * 60_000;
+
 export interface WaitForBackendOptions {
-  /** Default 10 minutes: a region's first image build runs inside provisioning. */
+  /** Default 15 minutes: the API's own provisioning deadline. */
   timeoutMs?: number;
   /** Default 1 second. */
   intervalMs?: number;
@@ -104,7 +118,7 @@ export async function waitForBackend(
   backendId: string,
   options: WaitForBackendOptions = {},
 ): Promise<ProjectBackend> {
-  const deadline = Date.now() + (options.timeoutMs ?? 600_000);
+  const deadline = Date.now() + (options.timeoutMs ?? BACKEND_PROVISION_WAIT_MS);
   for (;;) {
     const backend = await getBackend(projectId, backendId);
     if (backend.status === 'running') return backend;

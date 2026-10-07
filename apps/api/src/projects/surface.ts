@@ -51,3 +51,6 @@ export { assertProjectCapability, loadProjectForUser } from './lib/access';
 export { projectsApp } from './lib/app';
 export { decryptProjectSecret, encryptProjectSecret } from './secrets/envelope';
 export { currentInstanceId } from './instance-scope';
+
+// Nested `projects.metadata` writes (consumed by ../feature-flags/write).
+export { metadataClearSubtreeKey, metadataMergeSubtree } from './lib/metadata-merge';

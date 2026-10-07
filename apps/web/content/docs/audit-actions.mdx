@@ -13,7 +13,7 @@ Every row in the [audit log](/docs/accounts#audit-log) carries an `action`: `dom
 - A route with two actions (`secret.strategy.update` or `secret.strategy.changed`) records the second when its handler records that event, for example only for a real change. That event, with its before and after state, is then the request's row.
 - Rows written before 2026-09-24 carry `METHOD /template` as their action. The web app and the CLI show them with the same titles.
 
-This page lists 711 route actions and 65 other events.
+This page lists 713 route actions and 65 other events.
 
 ## `account.`
 
@@ -62,6 +62,7 @@ This page lists 711 route actions and 65 other events.
 | `admin.impersonate.start` | Started account impersonation | `POST /v1/admin/api/impersonate` |
 | `admin.impersonate.stop` | Stopped account impersonation | `DELETE /v1/admin/api/impersonate/:grantId` |
 | `admin.ops.overview.read` | Viewed platform operations overview | `GET /v1/ops/overview` |
+| `admin.project.feature.set` | Set project feature flag as admin | `PUT /v1/admin/api/projects/:id/features` |
 | `admin.project.list` | Listed all platform projects | `GET /v1/admin/api/projects` |
 | `admin.sandbox.list` | Listed all platform sandboxes | `GET /v1/admin/api/sandboxes` |
 | `admin.sandbox.migrate` | Migrated sandbox to another provider | `POST /v1/admin/api/sandboxes/:sessionId/migrate` |
@@ -336,6 +337,7 @@ This page lists 711 route actions and 65 other events.
 | `file.content.read` | Viewed file content | `GET /v1/projects/:projectId/files/content` |
 | `file.history.list` | Viewed file history | `GET /v1/projects/:projectId/files/history` |
 | `file.list` | Listed project files | `GET /v1/projects/:projectId/files` |
+| `file.raw.read` | Viewed raw file content | `GET /v1/projects/:projectId/files/raw` |
 | `file.search` | Searched project files | `GET /v1/projects/:projectId/files/search` |
 
 ## `gateway.`

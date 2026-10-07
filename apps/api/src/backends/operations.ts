@@ -18,6 +18,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { platinumJson } from '../shared/platinum';
 import { logger } from '../lib/logger';
+import { BackendOperationError, backendFailureMessage } from './errors';
 import { type BackendRow, type BackendSize, BACKEND_MACHINE_LIMITS, waitHealthy } from './provision';
 
 export const MAX_SNAPSHOTS = 5;
@@ -32,11 +33,7 @@ type PlatinumSandboxState = {
 };
 type PlatinumSnapshot = { id: string; createdAt: string; sizeBytes?: number | null };
 
-export class BackendOperationError extends Error {
-  constructor(message: string, readonly code: string, readonly status: 400 | 409 = 409) {
-    super(message);
-  }
-}
+export { BackendOperationError, backendFailureMessage, backendProviderFailure } from './errors';
 
 function machine(row: BackendRow): string {
   if (row.status !== 'running' || !row.externalId || !row.url) {
@@ -215,7 +212,7 @@ export async function runResize(row: BackendRow, next: BackendSize): Promise<voi
       .update(projectBackends)
       .set({
         updatedAt: new Date(),
-        metadata: sql`(coalesce(${projectBackends.metadata}, '{}'::jsonb) - 'operation' - 'operationStartedAt') || ${JSON.stringify({ lastOperationError: `resize failed: ${String(error).slice(0, 500)}` })}::jsonb`,
+        metadata: sql`(coalesce(${projectBackends.metadata}, '{}'::jsonb) - 'operation' - 'operationStartedAt') || ${JSON.stringify({ lastOperationError: `resize failed: ${backendFailureMessage(error).slice(0, 500)}` })}::jsonb`,
       })
       .where(eq(projectBackends.backendId, row.backendId))
       .catch(() => {});

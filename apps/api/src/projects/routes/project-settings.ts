@@ -16,9 +16,11 @@ import {
 import { serializeProject } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { isPlainObject } from '../../shared/json';
-import { metadataClearSubtreeKey, metadataMerge, metadataMergeSubtree } from '../lib/metadata-merge';
-import { isFeatureFlagKey } from '../../feature-flags/registry';
-import { runFeatureFlagToggleEffects } from '../../feature-flags/toggle-effects';
+import { metadataMerge, metadataMergeSubtree } from '../lib/metadata-merge';
+import { featureFlagDef, isFeatureFlagKey, isOperatorOnlyFeatureFlag } from '../../feature-flags/registry';
+import { FEATURE_OPERATOR_ONLY_CODE } from '../../feature-flags/gate';
+import { writeProjectFeatureFlag } from '../../feature-flags/write';
+import { isPlatformAdmin } from '../../shared/platform-roles';
 import { deleteManagedProjectRepo } from '../lib/project-deletion';
 import {
   requestProviderTransition,
@@ -115,32 +117,25 @@ const patchFeatureFlagHandler = async (c: any) => {
   // Archived projects are read-only: reject BEFORE the write. The old order
   // (update, then 404 on archived) committed the metadata mutation anyway.
   if (loaded.row.status === 'archived') return c.json({ error: 'Not found' }, 404);
-  // FIX-J: `experimental` is a NESTED object, so a whole-object `||` merge of it
-  // would lose an update one level down when two flags are toggled
-  // concurrently. Re-read + merge the CURRENT `experimental` sub-object in-SQL:
-  // set writes only `experimental.<feature>`; clear removes it (dropping the
-  // whole `experimental` key once the last override is gone). The metadata key
-  // name `experimental` is a stable storage detail. Every write preserves the
-  // routing pin.
-  const metadataExpr =
-    enabled === null
-      ? metadataClearSubtreeKey('experimental', feature)
-      : metadataMergeSubtree('experimental', { [feature]: enabled });
-  const [row] = await db
-    .update(projects)
-    .set({ metadata: metadataExpr, updatedAt: new Date() })
-    .where(eq(projects.projectId, projectId))
-    .returning();
+  // An internal-only flag (`apps`, `backends`) starts billable machines, so
+  // Kortix decides it: only a platform operator writes it, never a project
+  // admin and never an agent session. An operator acting in a customer
+  // project through impersonation passes (`userId` stays the operator's).
+  if (isOperatorOnlyFeatureFlag(feature)) {
+    const operator = !isProjectSessionPrincipal(c) && (await isPlatformAdmin(c.get('userId')));
+    if (!operator) {
+      return c.json(
+        {
+          error: `${featureFlagDef(feature)?.name ?? feature} is managed by Kortix. Contact Kortix to change it.`,
+          code: FEATURE_OPERATOR_ONLY_CODE,
+          feature,
+        },
+        403,
+      );
+    }
+  }
+  const row = await writeProjectFeatureFlag(projectId, feature, enabled);
   if (!row) return c.json({ error: 'Not found' }, 404);
-  // Convergence work (connector materialization, sandbox env fan-out) runs
-  // behind the response; runFeatureFlagToggleEffects retries once and logs
-  // failures at error level. See feature-flags/toggle-effects.ts.
-  void runFeatureFlagToggleEffects({
-    key: feature,
-    projectId,
-    accountId: row.accountId,
-    metadata: row.metadata,
-  });
   return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
 };
 

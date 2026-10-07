@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import { loadEnv } from '../../src/core/env';
-import { createDatabaseProject, deleteDatabaseProject, setDatabaseEnterpriseDemo } from '../../src/fixtures/database-project';
+import { createDatabaseProject, deleteDatabaseProject, setDatabaseEnterpriseDemo, setDatabaseProjectFeature } from '../../src/fixtures/database-project';
 import { createApiJsonClient } from '../helpers/http';
 import {
   createAuthUser,
@@ -144,14 +144,16 @@ test.describe('18 — Kortix Apps UI', () => {
       // links nowhere, because Settings → Feature flags does not list it.
       await expect(page.getByText('Contact Kortix to enable it.', { exact: true })).toBeVisible();
       await expect(page.getByRole('link', { name: 'Feature flags' })).toHaveCount(0);
-      // Kortix enables it per project through the same PATCH.
+      // A project owner cannot enable it: only a Kortix operator writes it.
       await api(
         session.access_token,
         'PATCH',
         `/projects/${project.id}/features`,
         { feature: 'apps', enabled: true },
-        200,
+        403,
       );
+      // The operator writes the same override (PUT /v1/admin/api/projects/:id/features).
+      await setDatabaseProjectFeature(loadEnv(), project.id, 'apps', true);
       await page.goto(`/projects/${project.id}/apps`, {
         waitUntil: 'domcontentloaded',
       });

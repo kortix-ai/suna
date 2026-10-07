@@ -19346,7 +19346,8 @@
       "text6513690ca848": "Ovaj backend je napravljen pre kontrolne table. Napravite novi backend da biste je dobili.",
       "text19eb2c0e5dca": "Convex kontrolna tabla",
       "text803f2313cdf4": "Otvori kontrolnu tablu",
-      "text3ae8ca83dab7": "Otvorena kontrolna tabla backenda"
+      "text3ae8ca83dab7": "Otvorena kontrolna tabla backenda",
+      "textde3486cdebb5": "Постављена ознака функције пројекта као администратор"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

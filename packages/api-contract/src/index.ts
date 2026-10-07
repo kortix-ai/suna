@@ -85,6 +85,8 @@ export const FeatureFlagViewSchema = z.object({
   available: z.boolean(),
   enabled: z.boolean(),
   overridden: z.boolean(),
+  /** Internal-only flag, listed only while on. Only a platform operator can change it. */
+  operator_only: z.boolean().optional(),
 });
 export type FeatureFlagView = z.infer<typeof FeatureFlagViewSchema>;
 

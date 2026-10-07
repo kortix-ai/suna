@@ -15,6 +15,14 @@
 export const CONVEX_BACKEND_IMAGE =
   'ghcr.io/get-convex/convex-backend@sha256:d715e9ec088784407ca4ba2d3db592702cd328d02c76cdca3852c0018f2a76b4';
 
+/**
+ * The `convex` npm CLI that matches CONVEX_BACKEND_IMAGE: the newest release
+ * published before the backend's 2026-09-28 build. `kortix backends deploy`
+ * runs this version when the project has no `convex` installed, so a newer CLI
+ * that needs newer backend APIs never breaks a deploy. Bump it with the image.
+ */
+export const CONVEX_CLI_VERSION = '1.46.0';
+
 import { readFileSync } from 'node:fs';
 
 /**

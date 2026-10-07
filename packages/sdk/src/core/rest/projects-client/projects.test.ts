@@ -1052,6 +1052,22 @@ test('ExperimentalFeatureKey and ExperimentalFeatureView stay as aliases', () =>
   expect(canonical.key).toBe('apps');
 });
 
+test('FeatureFlagView marks an operator-only flag; older servers omit the field', () => {
+  const managed: FeatureFlagView = {
+    key: 'backends',
+    name: 'Backends',
+    description: 'x',
+    stability: 'experimental',
+    available: true,
+    enabled: true,
+    overridden: true,
+    operator_only: true,
+  };
+  const legacy: FeatureFlagView = { ...managed, key: 'monitors', operator_only: undefined };
+  expect(managed.operator_only).toBe(true);
+  expect(legacy.operator_only).toBeUndefined();
+});
+
 async function captureFeatureCall(
   run: () => Promise<unknown>,
 ): Promise<{ url: string; method?: string; body: string; parsed: Record<string, unknown> }> {

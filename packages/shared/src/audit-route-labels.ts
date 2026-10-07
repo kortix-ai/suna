@@ -204,6 +204,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'DELETE /v1/admin/api/impersonate/:grantId': { action: 'admin.impersonate.stop', title: 'Stopped account impersonation' },
   'GET /v1/admin/api/impersonate/active': { action: 'admin.impersonate.list', title: 'Listed active impersonation grants' },
   'GET /v1/admin/api/projects': { action: 'admin.project.list', title: 'Listed all platform projects' },
+  'PUT /v1/admin/api/projects/:id/features': { action: 'admin.project.feature.set', title: 'Set project feature flag as admin' },
   'GET /v1/admin/api/provider-analytics': { action: 'admin.sandbox_provider.analytics.read', title: 'Viewed sandbox provider analytics' },
   'GET /v1/admin/api/provider-distribution': { action: 'admin.sandbox_provider.distribution.read', title: 'Viewed sandbox provider distribution' },
   'PUT /v1/admin/api/provider-distribution': { action: 'admin.sandbox_provider.distribution.update', title: 'Updated sandbox provider distribution' },

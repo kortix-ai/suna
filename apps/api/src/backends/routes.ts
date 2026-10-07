@@ -23,9 +23,11 @@ import {
   provisionBackend,
 } from './provision';
 import { backendDashboardUrl } from './dashboard-host';
+import { CONVEX_CLI_VERSION } from './convex-image';
 import {
   BackendOperationError,
   backendOperation,
+  backendProviderFailure,
   beginResize,
   createBackendSnapshot,
   listBackendBackups,
@@ -52,6 +54,9 @@ const BackendObject = z
     error: z.string().nullable(),
     operation: z.enum(['resizing']).nullable().openapi({ description: 'A day-two operation in flight.' }),
     last_operation_error: z.string().nullable(),
+    convex_version: z.string().openapi({
+      description: 'The `convex` npm CLI version that matches this backend. Deploy with `npx convex@<version> deploy`.',
+    }),
     created_at: z.string(),
     updated_at: z.string(),
   })
@@ -120,6 +125,7 @@ function serialize(row: BackendRow) {
     error: status === 'error' && typeof lastError === 'string' ? lastError : null,
     operation: backendOperation(row),
     last_operation_error: ((row.metadata as { lastOperationError?: unknown }).lastOperationError as string | undefined) ?? null,
+    convex_version: CONVEX_CLI_VERSION,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
   };
@@ -240,6 +246,8 @@ export function registerBackendsRoutes(): void {
         return c.json({ error: `backend is ${effectiveStatus(row)}`, code: 'backend_not_running' }, 409);
       }
       const adminKey = backendAdminKey({ ...row, adminKeyEnc });
+      // The admin key controls the backend: no cache (browser, proxy, CDN) may keep it.
+      c.header('Cache-Control', 'no-store');
       await recordAuditEvent({
         accountId: loaded.row.accountId,
         projectId,
@@ -285,12 +293,21 @@ export function registerBackendsRoutes(): void {
       if (!minted) {
         return c.json({ error: 'this backend predates Kortix sign-in; create a new backend', code: 'backend_auth_unavailable' }, 409);
       }
+      c.header('Cache-Control', 'no-store');
       return c.json({ token: minted.token, expires_at: minted.expiresAt.toISOString() }, 200);
     },
   );
 
-  const operationError = (c: Context<AppEnv>, error: unknown) =>
-    error instanceof BackendOperationError ? c.json({ error: error.message, code: error.code }, error.status) : null;
+  // A provider failure answers a short mapped reason; its raw text (route,
+  // machine id, body) goes to the log only. Anything else rethrows (500).
+  const operationError = (c: Context<AppEnv>, error: unknown) => {
+    const known = error instanceof BackendOperationError ? error : backendProviderFailure(error);
+    if (!known) return null;
+    if (!(error instanceof BackendOperationError)) {
+      logger.warn('[backends] provider call failed', { path: c.req.path, code: known.code, error: String(error) });
+    }
+    return c.json({ error: known.message, code: known.code }, known.status);
+  };
 
   projectsApp.openapi(
     createRoute({
@@ -304,7 +321,7 @@ export function registerBackendsRoutes(): void {
         params: BackendParams,
         body: { content: { 'application/json': { schema: z.object(SizeFields) } }, required: true },
       },
-      responses: { 202: json(z.object({ backend: BackendObject }), 'Resizing'), ...errors(400, 403, 404, 409) },
+      responses: { 202: json(z.object({ backend: BackendObject }), 'Resizing'), ...errors(400, 403, 404, 409, 502, 503) },
     }),
     async (c) => {
       const { projectId, backendId } = c.req.valid('param');
@@ -335,7 +352,7 @@ export function registerBackendsRoutes(): void {
         '`automatic`: Kortix copies the backend machine to object storage on a schedule, for recovery from a ' +
         'host loss. `snapshots`: point-in-time copies you take and can restore, newest first (the newest 5 are kept).',
       request: { params: BackendParams },
-      responses: { 200: json(BackendBackups, 'Backups'), ...errors(400, 403, 404, 409) },
+      responses: { 200: json(BackendBackups, 'Backups'), ...errors(400, 403, 404, 409, 502, 503) },
     }),
     async (c) => {
       const { projectId, backendId } = c.req.valid('param');
@@ -361,7 +378,7 @@ export function registerBackendsRoutes(): void {
       request: { params: BackendParams },
       responses: {
         201: json(z.object({ snapshot_id: z.string(), created_at: z.string() }), 'Snapshot'),
-        ...errors(400, 403, 404, 409),
+        ...errors(400, 403, 404, 409, 502, 503),
       },
     }),
     async (c) => {
@@ -391,7 +408,7 @@ export function registerBackendsRoutes(): void {
         params: BackendParams,
         body: { content: { 'application/json': { schema: z.object({ snapshot_id: z.string().min(1) }) } }, required: true },
       },
-      responses: { 200: json(z.object({ backend: BackendObject }), 'Restored'), ...errors(400, 403, 404, 409) },
+      responses: { 200: json(z.object({ backend: BackendObject }), 'Restored'), ...errors(400, 403, 404, 409, 502, 503) },
     }),
     async (c) => {
       const { projectId, backendId } = c.req.valid('param');

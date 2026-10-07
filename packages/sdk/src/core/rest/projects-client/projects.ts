@@ -123,6 +123,13 @@ export interface FeatureFlagView {
   enabled: boolean;
   /** True when this project set an explicit choice (vs inheriting the default). */
   overridden: boolean;
+  /**
+   * True for an internal-only flag (`apps`, `backends`). The catalog lists one
+   * only while it is on, so agents and people can see it. Only a Kortix
+   * platform operator can change it: `PATCH /features` answers `403` with
+   * `feature_operator_only`. Absent on servers older than this field.
+   */
+  operator_only?: boolean;
 }
 
 /** @deprecated Renamed to {@link FeatureFlagKey}. Removed in the next major. */

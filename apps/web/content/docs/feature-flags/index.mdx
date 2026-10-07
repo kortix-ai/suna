@@ -32,11 +32,11 @@ You need the project's `project.settings.write` permission. The route answers
 The same switches are available to scripts and agents through `kortix projects features`:
 
 ```bash
-kortix projects features            # every flag: key, state, origin, stability
-kortix projects features enable apps
+kortix projects features                # every flag: key, state, origin
+kortix projects features enable reminders
 kortix projects features disable reminders
-kortix projects features reset apps  # drop the override; follow the platform default
-kortix projects features --json      # the full catalog as JSON
+kortix projects features reset reminders  # drop the override; follow the platform default
+kortix projects features --json          # the full catalog as JSON
 ```
 
 Add `--project <id>` to act on a project other than the linked/default one. A
@@ -110,10 +110,34 @@ this.
 
 ## Every flag
 
-Registry order — the same order **Settings → Feature flags** shows. `apps` and
-`backends` are internal-only: Settings does not list them, their `403` says
-"Contact Kortix to enable it.", and Kortix enables them per project with the
-same `PATCH`.
+Registry order — the same order **Settings → Feature flags** shows.
+
+### Internal-only flags: `apps` and `backends`
+
+`apps` and `backends` start billable machines, so Kortix turns them on per
+project on request.
+
+- **Off:** Settings and `kortix projects features` do not list the flag. Its
+  routes answer `403` `feature_disabled` with "Contact Kortix to enable it."
+- **On:** the catalog lists the flag with `operator_only: true`. Settings shows
+  it as **Managed by Kortix** with a locked switch. `kortix projects features`
+  shows origin `kortix`, and `kortix projects info` prints a `by kortix` line.
+  Agents read either one, or `experimental.<flag>` in `kortix projects info --json`.
+- **Writes:** `PATCH /v1/projects/:id/features` refuses the flag to every
+  caller except a Kortix platform operator. A project admin or an agent gets:
+
+```json
+{
+  "error": "Backends is managed by Kortix. Contact Kortix to change it.",
+  "code": "feature_operator_only",
+  "feature": "backends"
+}
+```
+
+Kortix operators set the flag with
+`PUT /v1/admin/api/projects/:id/features` `{ "feature": "backends", "enabled": true }`
+(`null` clears it). The audit log records `admin.project.feature.set` on the
+project.
 
 | Key | Name | Stability | Default | Enforcement |
 |---|---|---|---|---|

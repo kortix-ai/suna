@@ -531,6 +531,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Set personal secret': 'textaada5aeaaa50',
   'Set pooled provider key access': 'textbc023fc623a3',
   'Set project Git credential': 'textac7fd4684634',
+  'Set project feature flag as admin': 'textde3486cdebb5',
   'Set project secret': 'textb61c8415b2b6',
   'Set session prompt queue hold': 'text520f1939d072',
   'Set super-admin status': 'text2bc95eda6944',

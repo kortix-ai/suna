@@ -28,7 +28,7 @@ Subcommands:
   create <name>                     Create and boot a backend. Takes seconds, or
                                     minutes on the first image build. --json.
     --cpu <1-16>                    vCPUs. Default 1.
-    --memory <1-32>                 Memory in GB. Default 2.
+    --memory <1-32>                 Memory in GB. Default 1.
     --disk <10-100>                 Disk in GB. Default 10.
   resize <name|id>                  Change the machine size. Give at least one of
                                     --cpu, --memory, --disk. A disk never shrinks.
@@ -58,8 +58,12 @@ Subcommands:
                                     ctx.auth.getUserIdentity(). --json adds
                                     expires_at.
   deploy <name> [-- <convex args>]  Deploy ./convex to the backend with
-                                    npx convex deploy. Creates the backend when
-                                    it does not exist.
+                                    convex deploy: the project's own
+                                    node_modules/.bin/convex, else
+                                    npx convex@<the backend's version>.
+                                    Fails when no backend has this name.
+    --create                        Create the backend first when it does
+                                    not exist.
     --dir <path>                    Directory with convex/ or convex.json.
                                     Default: the current directory.
   delete <name|id>                  Delete the backend and its machine.
@@ -489,15 +493,33 @@ export function convexDeployEnv(
   return env;
 }
 
-function runConvexDeploy(dir: string, extra: string[], env: NodeJS.ProcessEnv): Promise<number> {
+/**
+ * The command that runs `convex deploy`. The project's own CLI wins: it is the
+ * version its code was written against. Otherwise npx runs the version the
+ * backend pins (`convex_version`), never `latest`: a newer CLI can need
+ * backend APIs this backend does not have. An API older than the field gets
+ * the unpinned CLI, as before.
+ */
+export function convexDeployCommand(dir: string, version: string | undefined): [string, string[]] {
+  const local = join(dir, 'node_modules', '.bin', 'convex');
+  if (existsSync(local)) return [local, ['deploy']];
+  return ['npx', ['--yes', version ? `convex@${version}` : 'convex', 'deploy']];
+}
+
+function runConvexDeploy(
+  dir: string,
+  command: [string, string[]],
+  extra: string[],
+  env: NodeJS.ProcessEnv,
+): Promise<number> {
   return new Promise((done) => {
-    const child = spawn('npx', ['--yes', 'convex', 'deploy', ...extra], {
+    const child = spawn(command[0], [...command[1], ...extra], {
       cwd: dir,
       env,
       stdio: 'inherit',
     });
     child.on('error', (error) => {
-      process.stderr.write(`${status.err(`could not run npx convex deploy: ${error.message}`)}\n`);
+      process.stderr.write(`${status.err(`could not run ${command[0]} ${command[1].join(' ')}: ${error.message}`)}\n`);
       done(1);
     });
     child.on('exit', (code, signal) => done(code ?? (signal ? 128 : 1)));
@@ -510,6 +532,7 @@ async function deployCommand(
   options: ContextOptions,
 ): Promise<number> {
   const dir = resolve(takeFlagValue(rest, ['--dir']) ?? '.');
+  const create = takeFlagBool(rest, ['--create']);
   const name = rest.find((value) => !value.startsWith('-'));
   if (!name) return fail('deploy needs a backend name');
   const invalid = validName(name);
@@ -520,18 +543,32 @@ async function deployCommand(
   }
   const ctx = await context(options);
   if (!ctx) return 1;
-  const credentials = await scoped(ctx, async () => {
-    let backend = findBackend(await ctx.backends.list(), name);
+  type DeployTarget =
+    | { missing: string[] }
+    | { backend: ProjectBackend; credentials: ProjectBackendCredentials };
+  const target = await scoped(ctx, async (): Promise<DeployTarget> => {
+    const rows = await ctx.backends.list();
+    let backend = findBackend(rows, name);
     if (!backend) {
+      // A typo must never start a new always-on machine.
+      if (!create) return { missing: rows.map((row) => row.name) };
       backend = await createBackend(ctx, name, false);
       process.stderr.write(`${status.ok(`created backend ${backend.name}`)}\n`);
     } else if (backend.status === 'provisioning') {
       backend = await ctx.backends.waitUntilRunning(backend.backend_id);
     }
-    return ctx.backends.credentials(backend.backend_id);
+    return { backend, credentials: await ctx.backends.credentials(backend.backend_id) };
   });
-  process.stderr.write(`${C.dim}Deploying ${dir} to ${credentials.url}${C.reset}\n`);
-  return runConvexDeploy(dir, extra, convexDeployEnv(process.env, credentials));
+  if ('missing' in target) {
+    const existing = target.missing.length > 0 ? target.missing.join(', ') : 'none';
+    process.stderr.write(
+      `${status.err(`no backend named ${name}; existing: ${existing}. Pass --create to create it.`)}\n`,
+    );
+    return 1;
+  }
+  const command = convexDeployCommand(dir, target.backend.convex_version);
+  process.stderr.write(`${C.dim}Deploying ${dir} to ${target.credentials.url} with ${command[0] === 'npx' ? `npx ${command[1][1]}` : command[0]}${C.reset}\n`);
+  return runConvexDeploy(dir, command, extra, convexDeployEnv(process.env, target.credentials));
 }
 
 async function deleteCommand(

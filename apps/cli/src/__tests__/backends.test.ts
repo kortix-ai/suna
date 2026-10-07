@@ -35,6 +35,7 @@ function backend(overrides: Record<string, unknown> = {}) {
     ...size,
     operation: resizePolls > 0 ? 'resizing' : null,
     last_operation_error: resizeFailure,
+    convex_version: '1.46.0',
     error: null,
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
@@ -334,7 +335,8 @@ describe('kortix backends', () => {
     expect(r.code).toBe(7);
     expect(r.stdout).toContain('convex says hi');
     const lines = readFileSync(log, 'utf8');
-    expect(lines).toContain('args=--yes convex deploy --typecheck disable');
+    // No local convex: npx runs the CLI version the backend pins, never `latest`.
+    expect(lines).toContain('args=--yes convex@1.46.0 deploy --typecheck disable');
     expect(lines).toContain('url=https://main.backends.test');
     expect(lines).toContain(`key=${ADMIN_KEY}`);
     expect(lines).toContain('deploy_key=unset');
@@ -353,21 +355,57 @@ describe('kortix backends', () => {
     expect(JSON.parse(asJson.stdout)).toEqual({ token: 'h.p.s', expires_at: '2026-10-06T01:00:00.000Z' });
   });
 
-  test('deploy creates the backend when it does not exist', async () => {
+  test('deploy prefers the project\'s own node_modules/.bin/convex over npx', async () => {
+    const config = writeConfig(startServer());
+    const bin = installFakeNpx();
+    const npxLog = join(tmp, 'npx.log');
+    const localLog = join(tmp, 'local.log');
+    const project = join(tmp, 'app');
+    mkdirSync(join(project, 'convex'), { recursive: true });
+    mkdirSync(join(project, 'node_modules', '.bin'), { recursive: true });
+    const local = join(project, 'node_modules', '.bin', 'convex');
+    writeFileSync(local, `#!/bin/sh\necho "args=$*" > "$LOCAL_LOG"\necho "url=$CONVEX_SELF_HOSTED_URL" >> "$LOCAL_LOG"\n`);
+    chmodSync(local, 0o755);
+    const r = await runCli(['backends', 'deploy', 'main', '--project', PROJECT, '--dir', project], config, {
+      PATH: `${bin}:${process.env.PATH}`,
+      FAKE_NPX_LOG: npxLog,
+      LOCAL_LOG: localLog,
+    });
+    expect(r.code).toBe(0);
+    expect(readFileSync(localLog, 'utf8')).toBe('args=deploy\nurl=https://main.backends.test\n');
+    expect(() => readFileSync(npxLog, 'utf8')).toThrow();
+  });
+
+  test('deploy to a name that does not exist fails, lists the existing backends, and creates nothing', async () => {
+    const config = writeConfig(startServer());
+    const bin = installFakeNpx();
+    writeFileSync(join(tmp, 'convex.json'), '{}');
+    const r = await runCli(['backends', 'deploy', 'mian', '--project', PROJECT], config, {
+      PATH: `${bin}:${process.env.PATH}`,
+      FAKE_NPX_LOG: join(tmp, 'npx.log'),
+    });
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('no backend named mian');
+    expect(r.stderr).toContain('existing: main');
+    expect(r.stderr).toContain('--create');
+    expect(calls.some((c) => c.method === 'POST')).toBe(false);
+  });
+
+  test('deploy --create creates the backend when it does not exist', async () => {
     existing = false;
     const config = writeConfig(startServer());
     const bin = installFakeNpx();
     const log = join(tmp, 'npx.log');
     writeFileSync(join(tmp, 'convex.json'), '{}');
-    const r = await runCli(['backends', 'deploy', 'main', '--project', PROJECT], config, {
+    const r = await runCli(['backends', 'deploy', 'main', '--create', '--project', PROJECT], config, {
       PATH: `${bin}:${process.env.PATH}`,
       FAKE_NPX_LOG: log,
     });
     if (r.code !== 0) console.error(`deploy exited ${r.code}\nstdout: ${r.stdout}\nstderr: ${r.stderr}`);
     expect(r.code).toBe(0);
     expect(r.stderr).toContain('created backend main');
-    expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ name: 'main' });
-    expect(readFileSync(log, 'utf8')).toContain('args=--yes convex deploy\n');
+    expect(calls.filter((c) => c.method === 'POST').map((c) => c.body)).toEqual([{ name: 'main' }]);
+    expect(readFileSync(log, 'utf8')).toContain('args=--yes convex@1.46.0 deploy\n');
   });
 
   test('deploy refuses a directory with no convex/ and no convex.json, before any API call', async () => {

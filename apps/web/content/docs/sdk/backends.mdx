@@ -23,7 +23,7 @@ branch on it. See [Feature flags](/docs/feature-flags).
 |---|---|---|
 | `backends.list()` | `GET /projects/:pid/backends` | Lists the project's backends |
 | `backends.create({ name, cpu?, memory_gb?, disk_gb? })` | `POST …/backends` | Claims the name and starts the backend. Returns at once with status `provisioning`. Size defaults to 1 vCPU, 2 GB, 10 GB |
-| `backends.waitUntilRunning(backendId)` | polls `GET …/backends/:id` | Resolves with the running backend; rejects with its error, or after 10 minutes |
+| `backends.waitUntilRunning(backendId)` | polls `GET …/backends/:id` | Resolves with the running backend; rejects with its error, or after 15 minutes (the API's provisioning deadline; `timeoutMs` overrides it) |
 | `backends.get(backendId)` | `GET …/backends/:id` | Reads one backend |
 | `backends.credentials(backendId)` | `GET …/backends/:id/credentials` | Reads `url`, `site_url`, `admin_key`, and `env` |
 | `backends.token(backendId)` | `POST …/backends/:id/token` | A one-hour Kortix sign-in token naming the caller, for `client.setAuth` |
@@ -81,7 +81,10 @@ const { env } = await backends.credentials(backend.backend_id);
 ```
 
 From a terminal, `kortix backends deploy main` does this and runs
-`npx convex deploy`. See the [CLI](/docs/cli).
+`convex deploy`: the project's own `node_modules/.bin/convex`, else
+`npx convex@<backend.convex_version>`. Pin the same version when you run the
+Convex CLI yourself: a newer CLI can need backend APIs this backend lacks. See
+the [CLI](/docs/cli).
 
 `credentials` answers `409` with `backend_not_running` until the backend runs.
 The admin key grants full access to the backend. Do not log it or ship it to a
@@ -93,7 +96,7 @@ Every type below is exported from `@kortix/sdk`.
 
 | Type | What it holds |
 |---|---|
-| `ProjectBackend` | `backend_id`, `project_id`, `name`, `status`, `url`, `site_url`, `dashboard_url`, `cpu`, `memory_gb`, `disk_gb`, `error`, `operation`, `last_operation_error`, `created_at`, `updated_at` |
+| `ProjectBackend` | `backend_id`, `project_id`, `name`, `status`, `url`, `site_url`, `dashboard_url`, `cpu`, `memory_gb`, `disk_gb`, `error`, `operation`, `last_operation_error`, `convex_version` (the matching `convex` npm CLI version), `created_at`, `updated_at` |
 | `ProjectBackendStatus` | `'provisioning' \| 'running' \| 'error' \| 'deleted'` |
 | `ProjectBackendOperation` | `'resizing'` |
 | `ProjectBackendSize` | `cpu`, `memory_gb`, `disk_gb`, all optional |
@@ -160,6 +163,14 @@ try {
 }
 ```
 
-Other answers you should handle: `409` with `backend_limit` (3 backends per
-project), `409` with `backend_name_taken`, and `502` with
-`backend_create_failed`.
+Other answers you should handle:
+
+- `409` `backend_limit`: 3 backends per project, 10 per account.
+- `409` `backend_name_taken`.
+- Resize, backups, snapshot and restore: `409` `backend_not_running` or
+  `backend_machine_missing`; `503` `backend_provider_busy` (no capacity, retry
+  in minutes), `backend_provider_timeout` or `backend_provider_unavailable`
+  (Kortix is alerted); `502` `backend_provider_error`. The `error` text is a
+  short reason. It never carries provider internals.
+
+`credentials()` and `token()` answer with `Cache-Control: no-store`.

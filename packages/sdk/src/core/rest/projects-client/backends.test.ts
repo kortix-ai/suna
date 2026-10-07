@@ -59,6 +59,7 @@ const backend: ProjectBackend = {
   error: null,
   operation: null,
   last_operation_error: null,
+  convex_version: '1.46.0',
   created_at: '2026-10-06T00:00:00.000Z',
   updated_at: '2026-10-06T00:00:00.000Z',
 };
@@ -138,6 +139,24 @@ test('waitForBackend gives up after its timeout', async () => {
   await expect(
     waitForBackend('project-1', backend.backend_id, { intervalMs: 5, timeoutMs: 20 }),
   ).rejects.toThrow(/still provisioning/);
+});
+
+test('waitForBackend by default outlasts the worst-case provision (first image build + health + exec)', async () => {
+  // The API marks a provision failed only after 15 min (PROVISION_STALE_MS).
+  // A backend that reaches running at minute 11 must resolve, not reject.
+  const realNow = Date.now;
+  let clock = realNow();
+  Date.now = () => (clock += 60_000);
+  try {
+    responses = [
+      ...Array.from({ length: 11 }, () => ({ body: { backend: { ...backend, status: 'provisioning' } } })),
+      { body: { backend } },
+    ];
+    const result = await waitForBackend('project-1', backend.backend_id, { intervalMs: 1 });
+    expect(result.status).toBe('running');
+  } finally {
+    Date.now = realNow;
+  }
 });
 
 test('getBackendToken POSTs to the token route and returns the JWT', async () => {

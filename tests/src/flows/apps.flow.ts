@@ -6,6 +6,7 @@
  */
 import { flow } from "../core/flow";
 import { CliSandbox } from "../fixtures/cli";
+import { setFeatureAsOperator } from "../fixtures/feature-flags";
 
 const UNKNOWN_ID = "00000000-0000-4000-a000-000000000000";
 
@@ -15,6 +16,8 @@ flow(
     domain: "apps",
     routes: [
       "PATCH /v1/projects/:projectId/features",
+      "PUT /v1/admin/api/projects/:id/features",
+      "GET /v1/projects/:projectId",
       "GET /v1/projects/:projectId/apps",
       "POST /v1/projects/:projectId/apps",
       "GET /v1/projects/:projectId/apps/:appId",
@@ -28,13 +31,8 @@ flow(
     const projectParams = { projectId: project.id };
     let appId = "";
 
-    await ctx.step("clear any apps flag override from a reused project", async () => {
-      const response = await owner.patch(
-        "/v1/projects/:projectId/features",
-        { feature: "apps", enabled: null },
-        { params: projectParams },
-      );
-      response.status(200);
+    await ctx.step("clear any apps flag override from a reused project (operator route)", async () => {
+      await setFeatureAsOperator(ctx, project.id, "apps", null);
     });
 
     await ctx.step("apps flag off (default) → 403 feature_disabled", async () => {
@@ -46,13 +44,26 @@ flow(
       response.body().has("$.feature", "apps");
     });
 
-    await ctx.step("enable the apps flag (canonical /features route)", async () => {
+    await ctx.step("owner cannot write the internal-only apps flag: /features → 403 feature_operator_only", async () => {
       const response = await owner.patch(
         "/v1/projects/:projectId/features",
         { feature: "apps", enabled: true },
         { params: projectParams },
       );
-      response.status(200);
+      response.status(403);
+      response.body().has("$.code", "feature_operator_only");
+      response.body().has("$.feature", "apps");
+    });
+
+    await ctx.step("a platform operator enables apps; the owner's catalog lists it read-only", async () => {
+      await setFeatureAsOperator(ctx, project.id, "apps", true);
+      const read = await owner.get("/v1/projects/:projectId", { params: projectParams });
+      read.status(200);
+      const row = (read.json() as { experimental_features: Array<{ key: string; enabled: boolean; operator_only?: boolean }> })
+        .experimental_features.find((f) => f.key === "apps");
+      if (!row || row.enabled !== true || row.operator_only !== true) {
+        throw new Error(`apps catalog row is ${JSON.stringify(row)}; want enabled + operator_only`);
+      }
     });
 
     await ctx.step("list starts empty", async () => {
@@ -153,7 +164,7 @@ flow(
   {
     domain: "apps",
     routes: [
-      "PATCH /v1/projects/:projectId/features",
+      "PUT /v1/admin/api/projects/:id/features",
       "POST /v1/projects/:projectId/apps",
       "DELETE /v1/projects/:projectId/apps/:appId",
       "POST /v1/projects/:projectId/apps/artifacts",
@@ -176,12 +187,7 @@ flow(
     const projectParams = { projectId: project.id };
 
     await ctx.step("enable the apps flag", async () => {
-      const response = await owner.patch(
-        "/v1/projects/:projectId/features",
-        { feature: "apps", enabled: true },
-        { params: projectParams },
-      );
-      response.status(200);
+      await setFeatureAsOperator(ctx, project.id, "apps", true);
     });
 
     const slug = ctx.fixtures
@@ -342,7 +348,7 @@ flow(
   {
     domain: "apps",
     routes: [
-      "PATCH /v1/projects/:projectId/features",
+      "PUT /v1/admin/api/projects/:id/features",
       "POST /v1/projects/:projectId/apps",
       "PATCH /v1/projects/:projectId/apps/:appId",
       "DELETE /v1/projects/:projectId/apps/:appId",
@@ -355,12 +361,7 @@ flow(
     let appId = "";
 
     await ctx.step("enable the apps flag", async () => {
-      const response = await owner.patch(
-        "/v1/projects/:projectId/features",
-        { feature: "apps", enabled: true },
-        { params: projectParams },
-      );
-      response.status(200);
+      await setFeatureAsOperator(ctx, project.id, "apps", true);
     });
 
     const slug = ctx.fixtures
@@ -445,7 +446,7 @@ flow(
   {
     domain: "apps",
     routes: [
-      "PATCH /v1/projects/:projectId/features",
+      "PUT /v1/admin/api/projects/:id/features",
       "GET /v1/projects/:projectId/apps",
       "POST /v1/projects/:projectId/apps",
       "GET /v1/projects/:projectId/apps/:appId",
@@ -465,12 +466,7 @@ flow(
     const teammate = ctx.client.as(editor);
 
     await ctx.step("enable the apps flag", async () => {
-      const response = await owner.patch(
-        "/v1/projects/:projectId/features",
-        { feature: "apps", enabled: true },
-        { params: projectParams },
-      );
-      response.status(200);
+      await setFeatureAsOperator(ctx, project.id, "apps", true);
     });
 
     const slug = ctx.fixtures
@@ -618,7 +614,7 @@ flow(
   {
     domain: "apps",
     routes: [
-      "PATCH /v1/projects/:projectId/features",
+      "PUT /v1/admin/api/projects/:id/features",
       "POST /v1/projects/:projectId/apps",
       "DELETE /v1/projects/:projectId/apps/:appId",
       "GET /v1/apps/edge/tls-check",
@@ -638,12 +634,7 @@ flow(
     let appHost = "";
 
     await ctx.step("enable the apps flag", async () => {
-      const response = await owner.patch(
-        "/v1/projects/:projectId/features",
-        { feature: "apps", enabled: true },
-        { params: projectParams },
-      );
-      response.status(200);
+      await setFeatureAsOperator(ctx, project.id, "apps", true);
     });
 
     await ctx.step("create an App and take its public hostname", async () => {
@@ -719,7 +710,7 @@ flow(
     requires: ["appHost"],
     timeoutMs: 180_000,
     routes: [
-      "PATCH /v1/projects/:projectId/features",
+      "PUT /v1/admin/api/projects/:id/features",
       "POST /v1/projects/:projectId/apps",
       "PATCH /v1/projects/:projectId/apps/:appId/access",
       "POST /v1/projects/:projectId/apps/:appId/access-session",
@@ -779,8 +770,7 @@ flow(
 
     try {
       await ctx.step("enable Apps; create an App restricted to the viewer that acts as them (api scope)", async () => {
-        (await owner.patch("/v1/projects/:projectId/features", { feature: "apps", enabled: true },
-          { params: projectParams })).status(200);
+        await setFeatureAsOperator(ctx, project.id, "apps", true);
         const created = await owner.post("/v1/projects/:projectId/apps", { slug, name: "ke2e viewer token" },
           { params: projectParams });
         created.status(201);
@@ -889,7 +879,7 @@ flow(
   {
     domain: "apps",
     routes: [
-      "PATCH /v1/projects/:projectId/features",
+      "PUT /v1/admin/api/projects/:id/features",
       "POST /v1/projects/:projectId/apps",
       "POST /v1/projects/:projectId/apps/artifacts",
       "POST /v1/projects/:projectId/apps/:appId/deployments",
@@ -907,11 +897,7 @@ flow(
     const IN_PROGRESS = ["queued", "validating", "building", "provisioning", "checking"];
 
     await ctx.step("enable the apps flag", async () => {
-      (await owner.patch(
-        "/v1/projects/:projectId/features",
-        { feature: "apps", enabled: true },
-        { params: projectParams },
-      )).status(200);
+      await setFeatureAsOperator(ctx, project.id, "apps", true);
     });
 
     const slug = ctx.fixtures

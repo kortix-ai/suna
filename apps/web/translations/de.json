@@ -19346,7 +19346,8 @@
       "text6513690ca848": "Dieses Backend entstand vor dem Dashboard. Erstellen Sie ein neues Backend, um es zu erhalten.",
       "text19eb2c0e5dca": "Convex-Dashboard",
       "text803f2313cdf4": "Dashboard öffnen",
-      "text3ae8ca83dab7": "Backend-Dashboard geöffnet"
+      "text3ae8ca83dab7": "Backend-Dashboard geöffnet",
+      "textde3486cdebb5": "Feature-Flag des Projekts als Admin gesetzt"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

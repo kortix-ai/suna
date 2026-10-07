@@ -17,8 +17,13 @@ for the client surface and the React hooks.
 
 ## Turn Backends on
 
-Backends is enabled per project by Kortix and is not listed in Settings →
-Feature flags. Contact Kortix to turn it on for a project.
+Backends is enabled per project by Kortix. Contact Kortix to turn it on for a
+project. While it is off, Settings → Feature flags does not list it. While it is
+on, Settings shows it as **Managed by Kortix**, `kortix projects features` lists
+`backends on kortix`, and `kortix projects info` prints `by kortix  backends`.
+Only a Kortix operator can change it: `PATCH /v1/projects/:id/features`
+answers `403` `feature_operator_only` to everyone else (see
+[Internal-only flags](/docs/feature-flags#internal-only-flags-apps-and-backends)).
 
 While the flag is off, or where Platinum is not configured:
 
@@ -61,9 +66,16 @@ The Convex code lives in your project repo. A common layout is
 kortix backends deploy main --dir backends/main
 ```
 
-`deploy` creates the backend if it does not exist, waits until it is
-`running`, then runs `npx convex deploy` in `--dir` with the backend's
-credentials. The default for `--dir` is the current directory.
+`deploy` waits until the backend is `running`, then runs `convex deploy` in
+`--dir` with the backend's credentials. The default for `--dir` is the current
+directory.
+
+- **Which Convex CLI:** the project's own `node_modules/.bin/convex` when it
+  exists. Otherwise `npx convex@<version>`, where `<version>` is the backend's
+  `convex_version` (`1.46.0` today), never the newest release.
+- **A name that does not exist:** `deploy` exits `1` and lists the existing
+  backends. It creates nothing, so a typo never starts a machine. Pass
+  `--create` to create the backend first.
 
 The full subcommand list:
 
@@ -74,15 +86,20 @@ The full subcommand list:
 | `kortix backends get <name>` | Show one backend and its status. `--json`. |
 | `kortix backends dashboard <name>` | Print the link to the backend's admin dashboard. `--open` opens it. |
 | `kortix backends env <name>` | Print the Convex CLI variables for the backend. |
-| `kortix backends deploy <name> [--dir <path>]` | Create if missing, then deploy the Convex code. |
+| `kortix backends deploy <name> [--dir <path>] [--create]` | Deploy the Convex code. `--create` creates a missing backend first. |
 | `kortix backends delete <name>` | Delete the backend, its machine, and all its data. |
 
 `--project`, `--host`, and `--json` work on every subcommand.
 
 A new backend starts in `provisioning`. It usually becomes `running` in a few
 seconds. The first create in a region also builds the machine image and takes
-longer. A failed create ends in `error` and releases the machine. Delete it and
-create it again.
+up to 10 minutes. A provision older than 15 minutes reads as `error`. A failed
+create ends in `error` with a short reason (for example "No machine capacity is
+free right now.") and releases the machine. Delete it and create it again.
+
+A project can have 3 backends and an account 10, across its projects. A create
+past either limit answers `409` `backend_limit`. Contact Kortix to raise the
+account limit.
 
 ## The admin dashboard
 

@@ -19346,7 +19346,8 @@
       "text6513690ca848": "此后端创建于控制台推出之前。请新建后端以使用控制台。",
       "text19eb2c0e5dca": "Convex 控制台",
       "text803f2313cdf4": "打开控制台",
-      "text3ae8ca83dab7": "打开了后端仪表板"
+      "text3ae8ca83dab7": "打开了后端仪表板",
+      "textde3486cdebb5": "已以管理员身份设置项目功能开关"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

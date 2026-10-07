@@ -133,9 +133,11 @@ Apps have stable URLs and immutable deployment versions. Each deployment runs
 in one provider-neutral sandbox. Public traffic wakes an idle sandbox. Manual
 stop blocks wake.
 
-The selected project must enable **Apps** under Project Settings →
-Experimental. The top-level CLI help and every `kortix apps` command stay dark
-when no selected project has the feature enabled.
+Apps is internal-only: Kortix enables it per project on request, and only
+Kortix can change it. When it is on, `kortix projects features` lists
+`apps on kortix` and `kortix projects info --json` has `experimental.apps: true`.
+When it is off, every `kortix apps` command answers `feature_disabled`
+("Contact Kortix to enable it.").
 
 | Command | Effect |
 | --- | --- |

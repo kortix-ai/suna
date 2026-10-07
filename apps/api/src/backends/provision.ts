@@ -11,8 +11,8 @@
  * left `provisioning` by a process restart reads as `error` after
  * PROVISION_STALE_MS (see `effectiveStatus`).
  *
- * ponytail: not metered. Backends are capped per project while the flag is
- * experimental; compute metering with liveness stamps is the gate to beta.
+ * ponytail: not metered. Backends are capped per project (3) and per account
+ * (10) while the flag is internal-only; compute metering is the gate to beta.
  * ponytail: always on (`persistent`). Platinum does not count an open
  * WebSocket as activity, so idle-stop would cycle every live client; add it
  * once the edge does.
@@ -39,9 +39,13 @@ import {
   CONVEX_ORIGINS_FILE,
   CONVEX_SITE_PORT,
 } from './convex-image';
+import { backendFailureMessage } from './errors';
+import { logger } from '../lib/logger';
 
 export const BACKEND_PROVIDER = 'platinum';
 export const MAX_BACKENDS_PER_PROJECT = 3;
+/** A cost guard across all of an account's projects. Kortix raises it on request. */
+export const MAX_BACKENDS_PER_ACCOUNT = 10;
 export const BACKEND_MACHINE = { cpu: 1, memoryGb: 1, diskGb: 10 } as const;
 /** Platinum's per-machine ceilings (POST /v1/sandboxes/:id/resize). Disk only grows. */
 export const BACKEND_MACHINE_LIMITS = {
@@ -77,7 +81,7 @@ export function effectiveStatus(row: BackendRow, now = Date.now()): BackendRow['
 
 function exposedOrigin(created: PlatinumCreated, port: number): string {
   const url = created.exposed?.find((e) => e.port === port)?.url;
-  if (!url) throw new Error(`platinum create returned no exposed URL for port ${port}`);
+  if (!url) throw new Error(`the machine has no public URL for port ${port}`);
   return url.split('?')[0]!.replace(/\/+$/, '');
 }
 
@@ -105,7 +109,11 @@ async function mintAdminKey(externalId: string): Promise<string> {
   });
   const key = out.result?.stdout?.trim().split('\n').pop()?.trim();
   if (out.error || out.result?.exit_code !== 0 || !key) {
-    throw new Error(`admin key generation failed: ${out.error ?? out.result?.stderr ?? 'empty output'}`);
+    logger.error('[backends] admin key generation failed', {
+      externalId,
+      error: out.error ?? out.result?.stderr?.slice(0, 2_000) ?? 'empty output',
+    });
+    throw new Error('the backend could not create its admin key');
   }
   return key;
 }
@@ -196,6 +204,11 @@ export function backendAdminKey(row: BackendRow & { adminKeyEnc: string }): stri
   return decryptProjectSecret(row.projectId, row.adminKeyEnc);
 }
 
+/**
+ * Claims a backend name. The project cap (3) and the account cap (10) are
+ * counted and the row is inserted in ONE transaction that holds a per-account
+ * advisory lock, so concurrent creates cannot overshoot either cap.
+ */
 export async function insertBackend(input: {
   projectId: string;
   accountId: string;
@@ -203,31 +216,40 @@ export async function insertBackend(input: {
   name: string;
   size?: Partial<BackendSize>;
 }): Promise<BackendRow> {
-  const live = await db
-    .select({ id: projectBackends.backendId })
-    .from(projectBackends)
-    .where(and(eq(projectBackends.projectId, input.projectId), isNull(projectBackends.deletedAt)));
-  // ponytail: count-then-insert can overshoot by one under a concurrent create; the cap is a cost guard, not a contract.
-  if (live.length >= MAX_BACKENDS_PER_PROJECT) {
-    throw new BackendLimitError(`a project can have at most ${MAX_BACKENDS_PER_PROJECT} backends`);
-  }
-
-  // The live-name unique index makes a duplicate name throw here, before any machine exists.
-  const [row] = await db
-    .insert(projectBackends)
-    .values({
-      projectId: input.projectId,
-      accountId: input.accountId,
-      name: input.name,
-      provider: BACKEND_PROVIDER,
-      cpu: input.size?.cpu ?? BACKEND_MACHINE.cpu,
-      memoryGb: input.size?.memoryGb ?? BACKEND_MACHINE.memoryGb,
-      diskGb: input.size?.diskGb ?? BACKEND_MACHINE.diskGb,
-      template: CONVEX_IMAGE_SPEC.base_image,
-      createdBy: input.userId,
-    })
-    .returning();
-  return row!;
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`kortix.backends:${input.accountId}`}))`);
+    const [counts] = await tx
+      .select({
+        account: sql<number>`count(*)::int`,
+        project: sql<number>`(count(*) filter (where ${projectBackends.projectId} = ${input.projectId}))::int`,
+      })
+      .from(projectBackends)
+      .where(and(eq(projectBackends.accountId, input.accountId), isNull(projectBackends.deletedAt)));
+    if ((counts?.project ?? 0) >= MAX_BACKENDS_PER_PROJECT) {
+      throw new BackendLimitError(`a project can have at most ${MAX_BACKENDS_PER_PROJECT} backends; delete one first`);
+    }
+    if ((counts?.account ?? 0) >= MAX_BACKENDS_PER_ACCOUNT) {
+      throw new BackendLimitError(
+        `an account can have at most ${MAX_BACKENDS_PER_ACCOUNT} backends across its projects; delete one or contact Kortix`,
+      );
+    }
+    // The live-name unique index makes a duplicate name throw here, before any machine exists.
+    const [row] = await tx
+      .insert(projectBackends)
+      .values({
+        projectId: input.projectId,
+        accountId: input.accountId,
+        name: input.name,
+        provider: BACKEND_PROVIDER,
+        cpu: input.size?.cpu ?? BACKEND_MACHINE.cpu,
+        memoryGb: input.size?.memoryGb ?? BACKEND_MACHINE.memoryGb,
+        diskGb: input.size?.diskGb ?? BACKEND_MACHINE.diskGb,
+        template: CONVEX_IMAGE_SPEC.base_image,
+        createdBy: input.userId,
+      })
+      .returning();
+    return row!;
+  });
 }
 
 export async function provisionBackend(row: BackendRow, region?: string): Promise<BackendRow> {
@@ -304,7 +326,8 @@ export async function provisionBackend(row: BackendRow, region?: string): Promis
     if (!ready) throw new Error('backend was deleted while it was provisioning');
     return ready;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    // The row carries a mapped reason; the provider's raw text stays in the log.
+    const message = backendFailureMessage(error);
     if (externalId) await deleteMachine(externalId).catch(() => {});
     await db
       .update(projectBackends)

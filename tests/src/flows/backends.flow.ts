@@ -2,6 +2,10 @@
  * Kortix Backends — a project owns up to 3 self-hosted Convex backends, each in
  * its own Platinum machine. Maps to spec section 33 (BKD-1).
  *
+ * `backends` is internal-only: a project owner gets 403
+ * `feature_operator_only` on `PATCH /features`; the run-scoped platform
+ * operator writes it through `PUT /v1/admin/api/projects/:id/features`.
+ *
  * The local profile has no Platinum, so the `backends` flag is unavailable
  * here and the surface stays closed. This flow proves that closed state. The
  * provisioning path needs a real machine and is verified on a deployed
@@ -9,6 +13,7 @@
  */
 import type { Res } from "../core/client";
 import { flow } from "../core/flow";
+import { setFeatureAsOperator } from "../fixtures/feature-flags";
 
 const UNKNOWN_ID = "00000000-0000-4000-a000-000000000000";
 
@@ -18,6 +23,7 @@ flow(
     domain: "backends",
     routes: [
       "PATCH /v1/projects/:projectId/features",
+      "PUT /v1/admin/api/projects/:id/features",
       "GET /v1/projects/:projectId/backends",
       "POST /v1/projects/:projectId/backends",
       "GET /v1/projects/:projectId/backends/:backendId",
@@ -42,13 +48,8 @@ flow(
       response.body().has("$.feature", "backends");
     };
 
-    await ctx.step("clear any backends flag override from a reused project", async () => {
-      const response = await owner.patch(
-        "/v1/projects/:projectId/features",
-        { feature: "backends", enabled: null },
-        { params },
-      );
-      response.status(200);
+    await ctx.step("clear any backends flag override from a reused project (operator route)", async () => {
+      await setFeatureAsOperator(ctx, project.id, "backends", null);
     });
 
     await ctx.step("flag off: list → 403 feature_disabled", async () => {
@@ -97,15 +98,32 @@ flow(
       );
     });
 
-    await ctx.step("enable the flag: open where Platinum is configured, closed (403) where not; never creates a machine", async () => {
-      const enable = await owner.patch(
-        "/v1/projects/:projectId/features",
-        { feature: "backends", enabled: true },
-        { params },
-      );
-      enable.status(200);
+    await ctx.step("the owner cannot enable, disable or clear backends: /features → 403 feature_operator_only", async () => {
+      for (const enabled of [true, false, null]) {
+        const response = await owner.patch(
+          "/v1/projects/:projectId/features",
+          { feature: "backends", enabled },
+          { params },
+        );
+        response.status(403);
+        response.body().has("$.code", "feature_operator_only");
+        response.body().has("$.feature", "backends");
+      }
+    });
+
+    await ctx.step("a non-operator cannot use the operator route → 403", async () => {
+      (
+        await owner.put(
+          "/v1/admin/api/projects/:id/features",
+          { feature: "backends", enabled: true },
+          { params: { id: project.id } },
+        )
+      ).status(403);
+    });
+
+    await ctx.step("an operator enables the flag: open where Platinum is configured, closed (403) where not; never creates a machine", async () => {
       // An unavailable flag resolves off, so the effective value says which world this is.
-      const effective = (enable.json() as { experimental?: { backends?: boolean } }).experimental?.backends;
+      const { enabled: effective } = await setFeatureAsOperator(ctx, project.id, "backends", true);
       if (effective) {
         const list = await owner.get("/v1/projects/:projectId/backends", { params });
         list.status(200);
@@ -132,14 +150,8 @@ flow(
       (await ctx.client.as(ctx.P.ANON).get("/v1/projects/:projectId/backends", { params })).status(401);
     });
 
-    await ctx.step("cleanup: clear the flag override", async () => {
-      (
-        await owner.patch(
-          "/v1/projects/:projectId/features",
-          { feature: "backends", enabled: null },
-          { params },
-        )
-      ).status(200);
+    await ctx.step("cleanup: clear the flag override (operator route)", async () => {
+      await setFeatureAsOperator(ctx, project.id, "backends", null);
     });
   },
 );

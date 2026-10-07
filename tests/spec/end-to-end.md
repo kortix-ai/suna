@@ -1116,9 +1116,12 @@ deployment pointer. The provider remains an implementation detail.
 `APP-1` App CRUD — `GET/POST /projects/:projectId/apps` and
 `GET/PATCH/DELETE /projects/:projectId/apps/:appId`. Apps is a per-project
 feature flag, off by default: a member of a flag-off project gets
-`403 {code:'feature_disabled', feature:'apps'}` on every apps route; the flow
-first clears any override left by a reused local fixture, then enables the flag
-via `PATCH /projects/:projectId/features` and proceeds. A
+`403 {code:'feature_disabled', feature:'apps'}` on every apps route. Apps is
+internal-only: the owner's `PATCH /projects/:projectId/features` with
+`apps: true` answers `403 {code:'feature_operator_only'}`. The flow clears any
+override left by a reused local fixture and enables the flag as the run-scoped
+platform operator through `PUT /admin/api/projects/:id/features`; the owner's
+project read then lists `apps` with `enabled: true, operator_only: true`. A
 project writer creates a unique lower-case slug and machine policy; list/get
 return the stable public URL and active deployment pointer; patch updates
 mutable policy; delete is soft and removes the App from subsequent reads.
@@ -1451,7 +1454,7 @@ a trigger run. Every denial is `403 {code, action}` (spec §4).
 
 ## 33. Kortix Backends
 
-A project owns up to 3 backends. Each backend is a self-hosted Convex instance
+A project owns up to 3 backends, an account up to 10. Each backend is a self-hosted Convex instance
 in its own always-on Platinum machine (1 vCPU, 1 GB, 10 GB). `backends` is an
 experimental per-project flag, off by default, available only where Platinum is
 configured. Routes: `GET/POST /projects/:projectId/backends`,
@@ -1459,15 +1462,20 @@ configured. Routes: `GET/POST /projects/:projectId/backends`,
 `GET /projects/:projectId/backends/:backendId/credentials`.
 
 `BKD-1` Gated surface. Flag off: list, create, get, credentials, delete, resize,
-token, backups, snapshot and restore answer `403 {code:'feature_disabled', feature:'backends'}`. `PATCH
-/projects/:projectId/features` with `backends: true` answers 200. Where Platinum
+token, backups, snapshot and restore answer `403 {code:'feature_disabled', feature:'backends'}`. The owner's
+`PATCH /projects/:projectId/features` with `backends` true, false or null
+answers `403 {code:'feature_operator_only', feature:'backends'}`, and the
+owner's `PUT /admin/api/projects/:id/features` answers 403. The platform
+operator's `PUT /admin/api/projects/:id/features` with `backends: true` answers
+200. Where Platinum
 is configured the flag resolves on: list answers 200 with a `backends` array, and
 an invalid name answers 400 before any machine is requested. Where it is not, the
 flag resolves off and every route keeps the same 403. A `NONMEMBER` gets 403/404
-and an `ANON` caller gets 401. Not asserted locally: create (`202 provisioning`),
-the 3-backend cap (`409 backend_limit`), a duplicate name (`409
-backend_name_taken`), the credentials read and its `backend.credentials.read`
-audit row, and delete. They
+and an `ANON` caller gets 401. The caps under concurrency, `Cache-Control:
+no-store` on credentials and token, and `convex_version` are asserted by the
+DB suites `apps/api/src/backends/*.integration.test.ts`. Not asserted locally:
+create (`202 provisioning`), a duplicate name (`409 backend_name_taken`), the
+`backend.credentials.read` audit row, and delete. They
 need a Platinum machine and are verified on a deployed environment.
 
 ---

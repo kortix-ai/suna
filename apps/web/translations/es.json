@@ -19346,7 +19346,8 @@
       "text6513690ca848": "Este backend se creó antes del panel. Crea un backend nuevo para tenerlo.",
       "text19eb2c0e5dca": "Panel de Convex",
       "text803f2313cdf4": "Abrir panel",
-      "text3ae8ca83dab7": "Abrió el panel del backend"
+      "text3ae8ca83dab7": "Abrió el panel del backend",
+      "textde3486cdebb5": "Indicador de función del proyecto establecido como administrador"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
