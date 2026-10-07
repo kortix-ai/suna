@@ -93,6 +93,45 @@ describe('projectQueueRows', () => {
     ]);
   });
 
+  // A queued prompt runs as its author. The API answers 403 not_prompt_author
+  // to anyone else's edit, Stop and send or retry, so none is offered.
+  test("another member's rows offer no edit, Stop and send or retry", () => {
+    const prompts = [
+      prompt({ prompt_id: 'theirs', author_user_id: 'user-b' }),
+      prompt({ prompt_id: 'theirs-failed', state: 'failed', author_user_id: 'user-b' }),
+      prompt({ prompt_id: 'mine', author_user_id: 'user-a' }),
+      prompt({ prompt_id: 'mine-failed', state: 'failed', author_user_id: 'user-a' }),
+    ];
+    const controls = (managesSession: boolean) =>
+      projectQueueRows({ prompts, viewer: { userId: 'user-a', managesSession } }).rows.map((r) => [
+        r.id,
+        r.takeBackEligible,
+        r.interruptible,
+        r.retryable,
+        r.removable,
+        r.fromAnotherMember ?? false,
+      ]);
+    expect(controls(false)).toEqual([
+      ['theirs', false, false, false, false, true],
+      ['theirs-failed', false, false, false, false, true],
+      ['mine', true, true, false, true, false],
+      ['mine-failed', false, false, true, true, false],
+    ]);
+    // A session manager may remove another member's row, and nothing else.
+    expect(controls(true)).toEqual([
+      ['theirs', false, false, false, true, true],
+      ['theirs-failed', false, false, false, true, true],
+      ['mine', true, true, false, true, false],
+      ['mine-failed', false, false, true, true, false],
+    ]);
+  });
+
+  test('without a viewer every row keeps its controls (an older API lists no author)', () => {
+    const { rows } = projectQueueRows({ prompts: [prompt({ prompt_id: 'old' })] });
+    expect(rows[0]).toMatchObject({ takeBackEligible: true, interruptible: true, removable: true });
+    expect(rows[0]?.fromAnotherMember).toBeUndefined();
+  });
+
   test('a row already on screen in the transcript is not a queued entry — by any of its ids', () => {
     const { rows } = projectQueueRows({
       prompts: [

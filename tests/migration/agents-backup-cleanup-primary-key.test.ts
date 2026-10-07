@@ -33,17 +33,6 @@ function psql(sql: string, db = 'postgres'): string {
   return res.stdout.trim();
 }
 
-/**
- * Host TCP probe: `docker exec pg_isready` answers over the unix socket,
- * which initdb's temporary socket-only server satisfies while nothing serves
- * TCP yet — the published port's proxy then accepts and closes the suite's
- * first `psql` (`server closed the connection unexpectedly`). See
- * worktree-migrate.test.ts for the full timeline and CI run 36153691220.
- */
-function pgReady(): boolean {
-  return sh(['psql', url, '-tAc', 'select 1']).ok;
-}
-
 /** Run a committed migration file with psql (plain SQL, no runner needed). */
 function runMigrationFile(db = 'postgres'): { ok: boolean; stderr: string } {
   const res = sh([
@@ -168,11 +157,18 @@ suite('agents_backup_cleanup_20250729 primary key (throwaway Postgres)', () => {
       'full_page_writes=off',
     ]);
     if (!up.ok) throw new Error(`could not start test container: ${up.stderr}`);
+    // Host TCP probe: `docker exec pg_isready` answers over the unix socket,
+    // which initdb's temporary socket-only server satisfies while nothing serves
+    // TCP yet — the published port's proxy then accepts and closes the suite's
+    // first `psql` (`server closed the connection unexpectedly`). See
+    // worktree-migrate.test.ts for the full timeline and CI run 36153691220.
+    let ready = false;
     for (let i = 0; i < 60; i++) {
-      if (pgReady()) break;
+      ready = sh(['psql', url, '-tAc', 'select 1']).ok;
+      if (ready) break;
       await Bun.sleep(1000);
     }
-    if (!pgReady()) throw new Error('test Postgres never became ready');
+    if (!ready) throw new Error('test Postgres never became ready');
 
     // Prod at the next release: the legacy backup table already exists, keyless,
     // when the migration batch runs. Capture the RED state, then apply the whole

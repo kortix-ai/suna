@@ -148,7 +148,7 @@ Pattern can clone the project-level OAuth device flow already in
 | `kortix sessions logs <session-id> [-f]`        | Stream session output                                                | `GET /v1/projects/:id/sessions/:sid/events` (SSE — exists)          |
 | `kortix sessions rm <session-id>`               | Stop + delete                                                        | `DELETE /v1/projects/:id/sessions/:sid`                             |
 | `kortix triggers ls`                            | List triggers                                                        | `GET /v1/projects/:id/triggers`                                     |
-| `kortix triggers fire <slug>`                   | Manually fire                                                        | `POST /v1/projects/:id/triggers/:slug/fire`                         |
+| `kortix triggers fire <slug>`                   | Manually fire, wait for the run outcome, exit non-zero on failure     | `POST /v1/projects/:id/triggers/:slug/fire`                         |
 | `kortix triggers enable/disable <slug>`         | Flip `enabled` in manifest                                           | `PATCH /v1/projects/:id/triggers/:slug`                             |
 | `kortix env ls/pull/push`                       | Alias of `kortix secrets` plus dotenv import/export                  | same as secrets                                                     |
 
