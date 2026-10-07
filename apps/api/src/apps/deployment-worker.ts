@@ -145,7 +145,7 @@ async function event(
  * and for the local test profile, whose providers are unreachable on purpose.
  */
 function staticOnlyWorker(): boolean {
-  return process.env.KORTIX_APPS_WORKER_ENABLED === 'static';
+  return config.KORTIX_APPS_WORKER_ENABLED === 'static';
 }
 
 export async function claimAppDeployment(
