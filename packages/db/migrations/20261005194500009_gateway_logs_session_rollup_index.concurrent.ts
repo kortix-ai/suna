@@ -18,9 +18,12 @@
 // (ANALYZE, BUFFERS): a BitmapAnd of two index bitmaps feeds a Bitmap Heap
 // Scan that touches 45,909 blocks (41,762 hit + 4,147 read, ~358 MB heap) for
 // ~346k rows, then an external-merge sort spills ~36 MB to temp just to order
-// the rows by session_id for the GroupAggregate. No existing index carries the
-// aggregated columns, so every row pays a heap fetch, and none of the existing
-// key orders yields session_id order, so every plan pays the sort.
+// the rows by session_id for the GroupAggregate. Every plan pays a heap fetch
+// per row because no existing index carries the aggregated columns. Prod's
+// current shape avoids the sort by scanning idx_gateway_logs_session
+// (project_id, session_id): with a fixed project_id its key order is already
+// session_id order. The BitmapAnd shape pays the external-merge sort on top
+// of the heap fetches.
 //
 // This index serves the whole aggregate from the index alone: keys
 // (project_id, session_id, created_at) give the GROUP BY session_id order for
