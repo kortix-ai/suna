@@ -848,9 +848,10 @@
         "sessions": "Ogni sessione in questo progetto, con file, cronologia e risultati",
         "automation": "Tutte le esecuzioni pianificate e i trigger — smettono subito di funzionare",
         "integrations": "Ogni integrazione connessa, segreto e chiave API limitata a questo progetto",
+        "managedRepo": "Il repository Git gestito da Kortix di questo progetto, con ogni commit incluso",
         "access": "L'accesso per tutto il team — nessuno potrà più raggiungere questo progetto"
       },
-      "reassurance": "Il repository Git connesso non viene eliminato. Il codice già inviato resta al suo posto.",
+      "reassurance": "I repository Git connessi personalmente non vengono eliminati. Il codice già inviato resta al suo posto.",
       "keepWorkspace": "Mantieni progetto"
     },
     "sandbox": {
@@ -1954,6 +1955,7 @@
     "queuedCount": "{count} in coda",
     "editingQueued": "In modifica",
     "steerNextStep": "Letto al passo successivo",
+    "queuedByAnotherMember": "Inviato da un altro membro. Solo quella persona può modificarlo o inviarlo.",
     "steerFallbackUnsupported": "Attende questo turno. Questa sessione non accetta messaggi durante un turno.",
     "steerFallbackNotPrompter": "Attende questo turno. Lo ha avviato un altro membro.",
     "steerFallbackTurnEnded": "Viene eseguito come turno a sé. Il turno è terminato prima.",

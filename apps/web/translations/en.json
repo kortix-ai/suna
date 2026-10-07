@@ -674,9 +674,10 @@
         "sessions": "Every session in this project, with its files, history, and outputs",
         "automation": "All scheduled runs and triggers — they stop firing straight away",
         "integrations": "Every connected integration, secret, and API key scoped to this project",
+        "managedRepo": "The Kortix-managed git repository for this project, with every commit in it",
         "access": "Access for everyone on the team — nobody can reach this project again"
       },
-      "reassurance": "Your connected Git repository is not deleted. Any code already pushed to it stays where it is.",
+      "reassurance": "Git repositories you connected yourself are not deleted. Any code already pushed to them stays where it is.",
       "keepWorkspace": "Keep project"
     },
     "sandbox": {
@@ -1931,6 +1932,7 @@
     "queuedCount": "{count} Queued",
     "editingQueued": "Editing",
     "steerNextStep": "Read at next step",
+    "queuedByAnotherMember": "Sent by another member. Only they can edit or send it.",
     "steerFallbackUnsupported": "Waits for this turn. This session cannot take messages mid-turn.",
     "steerFallbackNotPrompter": "Waits for this turn. Another member started it.",
     "steerFallbackTurnEnded": "Runs as its own turn. The turn ended first.",
