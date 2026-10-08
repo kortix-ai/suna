@@ -259,6 +259,17 @@ function enforceProject(drive: DriveRow): void {
   );
 }
 
+/** The agents a project declares that start sessions (subagents never own one). Best effort. */
+async function projectAgentNames(projectId: string): Promise<string[]> {
+  try {
+    const { listProjectAgents } = await import('../channels/slack/selection');
+    return (await listProjectAgents(projectId)).filter((a) => a.mode !== 'subagent').map((a) => a.name);
+  } catch (err) {
+    console.warn('[drives] reading the project agents failed:', err instanceof Error ? err.message : err);
+    return [];
+  }
+}
+
 export const drivesApp = makeOpenApiApp<AppEnv>();
 
 drivesApp.use('*', combinedAuth);
@@ -642,17 +653,14 @@ drivesApp.openapi(
       const name = body.principalId?.trim();
       if (!name) fail(400, 'Name the agent');
       // An agent's identity is its service account; the first share makes it.
-      const known = await db
-        .select({ name: projectSessions.agentName })
-        .from(projectSessions)
-        .where(and(eq(projectSessions.projectId, drive.projectId!), eq(projectSessions.agentName, name)))
-        .limit(1);
+      // The agent must be one the project declares (or one that already ran).
+      const declared = await projectAgentNames(drive.projectId!);
       const existing = await db
         .select({ id: serviceAccounts.serviceAccountId })
         .from(serviceAccounts)
         .where(and(eq(serviceAccounts.projectId, drive.projectId!), eq(serviceAccounts.agentName, name)))
         .limit(1);
-      if (!known.length && !existing.length && name !== 'default') fail(404, 'No agent by that name in this project');
+      if (!declared.includes(name) && !existing.length) fail(404, 'No agent by that name in this project');
       principalId = existing[0]?.id ?? (await ensureAgentServiceAccount({ accountId: drive.accountId, projectId: drive.projectId!, agentName: name }));
     } else {
       if (!body.principalId || !isUuid(body.principalId)) fail(400, 'principalId is required');
@@ -743,7 +751,9 @@ drivesApp.openapi(
         .where(and(eq(serviceAccounts.projectId, drive.projectId!), isNotNull(serviceAccounts.agentName))),
     ]);
     const emails = await userEmails(members.map((m) => m.userId));
-    const agents = [...new Set(['default', ...agentRows.map((a) => a.name), ...saRows.map((a) => a.name ?? '')].filter(Boolean))].sort();
+    const agents = [
+      ...new Set([...(await projectAgentNames(drive.projectId!)), ...agentRows.map((a) => a.name), ...saRows.map((a) => a.name ?? '')].filter(Boolean)),
+    ].sort();
     return c.json({
       people: members.map((m) => ({ id: m.userId, label: emails.get(m.userId) ?? m.userId })),
       teams: teams.map((t) => ({ id: t.id, label: t.name })),

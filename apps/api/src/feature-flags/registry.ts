@@ -350,9 +350,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
   },
   {
     key: 'drives',
-    name: 'Drive',
+    name: 'Files',
     description:
-      'Shared folders that stay in sync with sessions: your own drive, one per agent, and company drives an admin attaches to the project. New sessions see them under /drives.',
+      'The project\'s shared folders, in sync with sessions: everyone has their own private folder (their session desktop), and any folder can be shared with people, teams and agents. New sessions see the folders they may use under /drives.',
     stability: 'experimental',
     // Every drive is a Platinum volume; without Platinum there is nothing to
     // store files in.
@@ -364,8 +364,8 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcementNote:
       'Mixed, and both halves are enforced. ROUTES: GET /v1/drives?projectId= answers ' +
       '403 `feature_disabled` when off (drives/routes.ts). BEHAVIORAL: session ' +
-      'provisioning mounts no drive when off (drives/service.ts sessionVolumeMounts). ' +
-      'Routes addressed by drive id stay reachable so a drive keeps its files when a ' +
+      'provisioning mounts no folder when off (drives/service.ts sessionVolumeMounts). ' +
+      'Routes addressed by drive id stay reachable so Files keeps its contents when a ' +
       'project turns the flag off, and GET /projects/:id/sessions/:id/drives keeps ' +
       'reporting what a running sandbox actually mounted.',
   },
