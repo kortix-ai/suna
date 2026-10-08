@@ -462,6 +462,14 @@ describe('interruptedSubagents', () => {
     expect(interruptedSubagents([{ info: { role: 'user' }, parts: [FAILED_TASK_PART] }])).toHaveLength(0);
   });
 
+  test('an unrelated session mentioned in an error is not an interrupted child', () => {
+    const unrelated = {
+      type: 'tool', tool: 'task', callID: 'unrelated',
+      state: { status: 'error', error: 'Provider could not access ses_unrelated123' },
+    };
+    expect(interruptedSubagents([{ info: { role: 'assistant' }, parts: [unrelated] }])).toEqual([]);
+  });
+
   test('a child id named only in the error text still counts (metadata can lag)', () => {
     const noMetadata = {
       type: 'tool',

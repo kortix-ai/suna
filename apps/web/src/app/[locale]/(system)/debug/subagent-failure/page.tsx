@@ -38,6 +38,9 @@ const FAILED_REASON =
   'Subagent failed (task_id: ses_ee95c107bffe49S04KWqZ5tjcc): This model does not support assistant message prefill. The conversation must end with a user message.';
 
 const FAILED_TASK_PART = {
+  id: 'prt_failed_task',
+  sessionID: PARENT_SESSION,
+  messageID: 'msg_parent_failed',
   type: 'tool',
   tool: 'task',
   callID: 'call_failed_task',
@@ -48,36 +51,41 @@ const FAILED_TASK_PART = {
       description: 'Report on the widget',
       prompt: 'Write the quarterly report on the widget. TASK_MARKER_ALFA.',
     },
-    output: '',
     metadata: { parentSessionId: PARENT_SESSION, sessionId: CHILD_SESSION },
     error: FAILED_REASON,
     time: { start: 1_000, end: 3_400 },
   },
-} as unknown as ToolPart;
+} satisfies ToolPart;
 
 const ORPHAN_TASK_PART = {
   ...FAILED_TASK_PART,
+  id: 'prt_orphan_task',
+  messageID: 'msg_parent_orphan',
   callID: 'call_orphan_task',
   state: {
     ...FAILED_TASK_PART.state,
     metadata: {},
     error: 'Error: Unknown agent type: researcher is not a valid agent type. Available: general, explore',
   },
-} as unknown as ToolPart;
+} satisfies ToolPart;
 
 const COMPLETED_TASK_PART = {
+  id: 'prt_completed_task',
+  sessionID: PARENT_SESSION,
+  messageID: 'msg_parent_completed',
   type: 'tool',
   tool: 'task',
   callID: 'call_completed_task',
   state: {
     status: 'completed',
+    title: 'Report on the widget',
     input: FAILED_TASK_PART.state.input,
     output:
       'task_id: ses_ee95c107bffe49S04KWqZ5tjcc (for resuming to continue this task if needed)\n\n<task_result>\nReport written. The widget shipped 4.2M units in Q4.\n</task_result>',
     metadata: { parentSessionId: PARENT_SESSION, sessionId: CHILD_SESSION },
     time: { start: 1_000, end: 49_300 },
   },
-} as unknown as ToolPart;
+} satisfies ToolPart;
 
 /** The child session as the runtime leaves it after a failed dispatch. */
 const CHILD_MESSAGES: MessageWithParts[] = [
@@ -99,7 +107,7 @@ const CHILD_MESSAGES: MessageWithParts[] = [
         text: 'Write the quarterly report on the widget. TASK_MARKER_ALFA.',
       },
     ],
-  } as unknown as MessageWithParts,
+  },
   {
     info: {
       id: 'msg_child_reply',
@@ -117,6 +125,7 @@ const CHILD_MESSAGES: MessageWithParts[] = [
       error: {
         name: 'APIError',
         data: {
+          isRetryable: false,
           message:
             'This model does not support assistant message prefill. The conversation must end with a user message.',
         },
@@ -134,7 +143,7 @@ const CHILD_MESSAGES: MessageWithParts[] = [
         tokens: { total: 118, input: 96, output: 0, reasoning: 0, cache: { read: 0, write: 22 } },
       },
     ],
-  } as unknown as MessageWithParts,
+  },
 ];
 
 function Row({ label, part }: { label: string; part: ToolPart }) {

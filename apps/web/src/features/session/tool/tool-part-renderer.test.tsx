@@ -83,6 +83,9 @@ const UNREGISTERED = {
 // dispatch row. The errored-part shape below is the runtime's, read off
 // opencode 1.18.23 in a reproduction.
 const FAILED_TASK = {
+  id: 'part_failed_task',
+  sessionID: 'ses_root',
+  messageID: 'msg_root',
   type: 'tool',
   tool: 'task',
   callID: 'call-task-1',
@@ -93,13 +96,12 @@ const FAILED_TASK = {
       prompt: 'Write the quarterly report on the widget.',
       subagent_type: 'general',
     },
-    output: '',
     metadata: { parentSessionId: 'ses_root', sessionId: 'ses_ee95c107bffe49S04KWqZ5tjcc' },
     error:
       'Subagent failed (task_id: ses_ee95c107bffe49S04KWqZ5tjcc): This model does not support assistant message prefill. The conversation must end with a user message.',
     time: { start: 1, end: 2 },
   },
-} as unknown as ToolPart;
+} satisfies ToolPart;
 
 describe('an errored task dispatch renders as a dispatch row, not a dead error card', () => {
   test('the child thread stays openable and the failure reason stays visible', () => {
@@ -115,6 +117,26 @@ describe('an errored task dispatch renders as a dispatch row, not a dead error c
     expect(open).toContain('aria-label="Open full view"');
   });
 
+  test('a task_id in the error keeps the child thread openable without metadata', () => {
+    const part: ToolPart = {
+      id: 'part-error-only',
+      sessionID: 'ses_root',
+      messageID: 'msg_root',
+      type: 'tool',
+      tool: 'task',
+      callID: 'call-error-only',
+      state: {
+        status: 'error',
+        input: { description: 'Inspect the widget', subagent_type: 'general' },
+        error: 'Subagent failed (task_id: ses_failed123): provider rejected the request',
+        time: { start: 1, end: 2 },
+      },
+    };
+    const html = renderPanel(part, { defaultOpen: true });
+    expect(html).toContain('aria-label="Open full view"');
+    expect(html).toContain('provider rejected the request');
+  });
+
   test('an errored task without a child id keeps the generic error card', () => {
     const orphan = {
       ...FAILED_TASK,
@@ -123,7 +145,7 @@ describe('an errored task dispatch renders as a dispatch row, not a dead error c
         metadata: {},
         error: 'Unknown agent type: nope',
       },
-    } as unknown as ToolPart;
+    } satisfies ToolPart;
     const html = renderPanel(orphan);
     expect(html).not.toContain('Open full view');
     // The generic card's own trigger: humanized tool name + "failed".

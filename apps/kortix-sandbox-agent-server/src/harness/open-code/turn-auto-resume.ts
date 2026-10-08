@@ -161,7 +161,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-const SESSION_ID_IN_ERROR = /\bses_[A-Za-z0-9]+/;
+const SESSION_ID_IN_ERROR = /\btask_id:\s*(ses_[A-Za-z0-9]+)/;
 
 /**
  * Pure: the subagent dispatches the errored turn left behind, from the last
@@ -183,7 +183,7 @@ export function interruptedSubagents(rows: MessageRows): InterruptedSubagent[] {
     const metadata = isRecord(state?.metadata) ? state.metadata : undefined;
     const metaSessionId = typeof metadata?.sessionId === 'string' ? metadata.sessionId : undefined;
     const errorText = typeof state?.error === 'string' ? state.error : undefined;
-    const errorSessionId = errorText ? (errorText.match(SESSION_ID_IN_ERROR)?.[0] ?? undefined) : undefined;
+    const errorSessionId = errorText ? (errorText.match(SESSION_ID_IN_ERROR)?.[1] ?? undefined) : undefined;
     const taskId = metaSessionId ?? errorSessionId;
     if (!taskId) continue;
     const input = isRecord(state?.input) ? state.input : undefined;
