@@ -2769,7 +2769,7 @@
       "count": 4
     },
     "no-restricted-syntax": {
-      "count": 4
+      "count": 3
     }
   },
   "src/runtime-assets/index.ts": {

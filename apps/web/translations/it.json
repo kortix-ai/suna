@@ -19505,7 +19505,9 @@
       "text5a4918e0201c": "Ripristino…",
       "textd9682a5acb38": "{value0} di {value1} snapshot manuali",
       "text581e89ae1f08": "Eliminare uno snapshot del backend",
-      "text1af77a9ae95c": "Aggiungi questo backend all'App. Un'App ottiene token del visitatore solo per i backend che elenca."
+      "text1af77a9ae95c": "Aggiungi questo backend all'App. Un'App ottiene token del visitatore solo per i backend che elenca.",
+      "text2eb91a6f88aa": "1 file resta allegato. Rimuovilo per eseguire il comando, oppure rimuovi il comando per inviare il file come messaggio.",
+      "text807f9beb34b1": "{count, plural, other {# file restano allegati. Rimuovili per eseguire il comando, oppure rimuovi il comando per inviarli come messaggio.}}"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

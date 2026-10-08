@@ -19505,7 +19505,9 @@
       "text5a4918e0201c": "Wird wiederhergestellt…",
       "textd9682a5acb38": "{value0} von {value1} manuellen Snapshots",
       "text581e89ae1f08": "Backend-Snapshot löschen",
-      "text1af77a9ae95c": "Dieses Backend in der App eintragen. Eine App erhält Betrachter-Tokens nur für die Backends, die sie auflistet."
+      "text1af77a9ae95c": "Dieses Backend in der App eintragen. Eine App erhält Betrachter-Tokens nur für die Backends, die sie auflistet.",
+      "text2eb91a6f88aa": "1 Datei bleibt angehängt. Entferne sie, um den Befehl auszuführen, oder entferne den Befehl, um die Datei als Nachricht zu senden.",
+      "text807f9beb34b1": "{count, plural, other {# Dateien bleiben angehängt. Entferne sie, um den Befehl auszuführen, oder entferne den Befehl, um sie als Nachricht zu senden.}}"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
