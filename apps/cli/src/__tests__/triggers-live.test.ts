@@ -257,7 +257,7 @@ describe('kortix triggers — the live (--apply) path', () => {
       event: 'GITHUB_PULL_REQUEST_EVENT',
       event_config: { draft: false, owner: 'acme' },
     });
-    expect(r.stdout).toContain('new-pr (event) live on the project');
+    expect(r.stdout).toContain('new-pr (event) added to the project');
     expect(r.stdout).toContain('kortix connectors connect github --owner project');
     expect(r.stdout).toContain('A person must open the link');
   });
