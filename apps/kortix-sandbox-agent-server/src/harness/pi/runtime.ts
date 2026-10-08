@@ -28,8 +28,8 @@ import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { logger } from '@/lib/log/logger'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '@/services/sandbox-env/secret-capabilities'
 import { loadTools } from '@/services/tools/host'
-import type { PiConfig } from './config'
-import { resolvePiProjectConfigDir, resolvePiSkillDirectories } from './config'
+import type { PiConfig, ProjectInstructions } from './config'
+import { readProjectInstructions, resolvePiProjectConfigDir, resolvePiSkillDirectories } from './config'
 import type { PiConfigReleases } from './config-release'
 import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './extensions/host'
 import type { KortixHost, SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
@@ -166,7 +166,7 @@ export interface PiRuntimeOptions {
   sessionId: string
   hooks?: PiRuntimeHooks
   env?: NodeJS.ProcessEnv
-  /** The config release the runtime reads skills, project tools and the session notice from (config-release.ts). */
+  /** The config release the runtime reads skills, project tools, the root AGENTS.md and the session notice from (config-release.ts). */
   releases?: Pick<PiConfigReleases, 'skillDirs' | 'piConfigDir' | 'projectRoot' | 'notice'>
 }
 
@@ -279,6 +279,8 @@ export class PiRuntime {
   private projectBundle: Promise<string | null> | null = null
   private readonly children = new Map<string, ChildSession>()
   private skills: Skill[] = []
+  /** The root AGENTS.md, read with the skills: never per turn, so an edit reaches the next re-read. */
+  private instructions: ProjectInstructions | null = null
   private compiled: CompiledAgentConfig | null = null
   /** The session's agent: what a prompt that picks none runs on (`resolveAgentName`). */
   private sessionAgentName = 'build'
@@ -444,6 +446,7 @@ export class PiRuntime {
         (tool) => ({ ...tool, executionMode: 'sequential' as const }),
       )
       this.skills = await this.loadSkills()
+      this.instructions = this.loadInstructions()
       this.policy = compilePermissionPolicy(this.compiledAgent()?.permission)
       this.permissions.setPolicy(this.policy)
       const restored = this.restore()
@@ -552,6 +555,7 @@ export class PiRuntime {
     this.policy = compilePermissionPolicy(this.compiledAgent()?.permission)
     this.permissions.setPolicy(this.policy)
     this.skills = await this.loadSkills()
+    this.instructions = this.loadInstructions()
     // Extensions re-register what depends on the agent config (the task tool lists the subagents).
     await this.runner.current?.emit({ type: 'session_start', reason: 'reload' })
     this.rebuildSystemPrompt()
@@ -561,10 +565,11 @@ export class PiRuntime {
     return { changed: before !== after }
   }
 
-  /** Reload skills from disk (after a repo refresh). */
+  /** Reload skills and the root AGENTS.md from disk (after a repo refresh). */
   async reloadSkills(): Promise<number> {
     if (!this.agent) return 0
     this.skills = await this.loadSkills()
+    this.instructions = this.loadInstructions()
     this.rebuildSystemPrompt()
     return this.skills.length
   }
@@ -1271,6 +1276,13 @@ export class PiRuntime {
     return this.pi?.status() ?? { loaded: [], failed: [] }
   }
 
+  /** The root AGENTS.md in the system prompt, or null when there is none. */
+  agentsMd(): Pick<ProjectInstructions, 'source' | 'path' | 'bytes' | 'sha'> | null {
+    if (!this.instructions) return null
+    const { source, path, bytes, sha } = this.instructions
+    return { source, path, bytes, sha }
+  }
+
   private translateAndPublish(event: AgentEvent): void {
     if (!this.adapter) return
     let frames: TurnEventEmission[]
@@ -1473,6 +1485,8 @@ export class PiRuntime {
     child?: { base: string; tools: AgentTool<any, any>[]; policy: PermissionPolicy; interactive: false },
   ): string {
     const parts = [child?.base || this.compiledAgent()?.prompt?.trim() || DEFAULT_SYSTEM_PROMPT]
+    // pi's own context-file format. pi's own loader stays off (`noContextFiles`): it reads `/workspace` and its ancestors, for the root only.
+    if (this.instructions) parts.push(`<project_instructions path="${this.instructions.name}">\n${this.instructions.text}\n</project_instructions>`)
     // pi appends the working directory (and package skills) to the root's prompt.
     if (child) parts.push(`Working directory: ${this.workspace}`)
     const skills = this.skills.filter((skill) => skillGranted(child?.policy ?? this.policy, skill.name))
@@ -1490,6 +1504,13 @@ export class PiRuntime {
       ].join('\n'),
     )
     return parts.join('\n\n')
+  }
+
+  /** The root AGENTS.md of the checkout the running config decides: the release, the working tree, or none (the image default). */
+  private loadInstructions(): ProjectInstructions | null {
+    const released = this.releases?.projectRoot()
+    if (released === null) return null
+    return readProjectInstructions(released ?? this.workspace, released ? 'release' : 'workspace')
   }
 
   private readInstruction(path: string): string | null {
