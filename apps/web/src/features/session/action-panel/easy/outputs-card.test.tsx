@@ -262,8 +262,9 @@ describe('OutputRows kind-group headers on the expanded list (Task 9)', () => {
     expect(html).not.toMatch(/<p class="[^"]*text-muted-foreground[^"]*">/);
     // Fold semantics are untouched: 8 visible, 4 behind the fold — one video
     // and three decks, none of them files, so the fold's noun is "items", not
-    // "files". (The fold hides the tail of the kind-grouped list — decks group
-    // after images/videos, so they are the ones that fold away.)
+    // "files". (This fixture's own order puts the three decks after the
+    // videos, so the fold's tail here is clip3.mp4 and the three decks;
+    // production sorts by rank instead — see sortOutputs.)
     expect(html).toContain('4 more items');
   });
 
