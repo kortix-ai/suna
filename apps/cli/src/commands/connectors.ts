@@ -241,7 +241,8 @@ Subcommands:
                                     with every member; needs
                                     project.connector.write).
   connect-finalize <slug>           Confirm authorization completed. Accepts
-       [--connection-id <uuid>]     the IDs returned by \`connect\`.
+       [--owner me|project]         the IDs returned by \`connect\`. Pass the
+       [--connection-id <uuid>]     same --owner the link was started with.
        [--request-id <id>]
   apps [<query>] [--category <c>]   Search the Composio toolkit catalog — the
        [--cursor <c>] [--limit <n>]  slugs that add --provider composio --app
@@ -850,6 +851,13 @@ export async function runConnectors(argv: string[]): Promise<number> {
       case 'connect-finalize': {
         const slug = positional[0];
         if (!slug) return missing('a connector slug');
+        // Finalize the account the link authorized: `connect --owner project`
+        // starts a shared one, and the API looks for a private one by default.
+        const finalizeOwner: 'me' | 'project' | undefined =
+          f.owner === 'me' || f.owner === 'project' ? f.owner : undefined;
+        if (f.owner !== undefined && finalizeOwner === undefined) {
+          return fail('--owner must be me or project');
+        }
         const resp = await ctx.client.post<{
           provider: string;
           connected?: boolean;
@@ -857,6 +865,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
           connectionId?: string;
           isNoAuth?: boolean;
         }>(`${ex}/connectors/${encodeURIComponent(slug)}/connect/finalize`, {
+          ...(finalizeOwner ? { owner: finalizeOwner } : {}),
           ...(f.connectionId ? { connection_id: f.connectionId } : {}),
           ...(f.requestId ? { request_id: f.requestId } : {}),
         });
