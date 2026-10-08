@@ -30,6 +30,7 @@ function row(token: string, overrides: Partial<PushDeviceTokenRow> = {}): PushDe
     onQuestion: true,
     onPermission: true,
     playSound: true,
+    authSessionId: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,
