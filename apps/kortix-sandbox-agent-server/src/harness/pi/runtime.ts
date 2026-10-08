@@ -21,12 +21,13 @@ import { join } from 'node:path'
 import type { Agent, AgentEvent, AgentMessage, AgentOptions, AgentTool, BeforeToolCallContext, BeforeToolCallResult } from '@earendil-works/pi-agent-core'
 import type { ImageContent, ModelThinkingLevel } from '@earendil-works/pi-ai'
 import type { AgentSessionEvent, SessionEntry, Skill } from '@earendil-works/pi-coding-agent'
-import { KORTIX_RUNTIME_SCHEMA, type CompiledAgent, type CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
+import { KORTIX_RUNTIME_SCHEMA, toolAllowed, type CompiledAgent, type CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
 import type { KortixAssistantMessageInfo, KortixMessage, KortixMessageError, RuntimePermissionRequest, RuntimeQuestionRequest, TurnErrorCode } from '@kortix/api-contract/transcript'
 import type { HarnessState } from '../contract/lifecycle-contract'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { logger } from '@/lib/log/logger'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '@/services/sandbox-env/secret-capabilities'
+import { loadTools } from '@/services/tools/host'
 import type { PiConfig, ProjectInstructions } from './config'
 import { readProjectInstructions, resolvePiProjectConfigDir, resolvePiSkillDirectories } from './config'
 import type { PiConfigReleases } from './config-release'
@@ -165,7 +166,7 @@ export interface PiRuntimeOptions {
   sessionId: string
   hooks?: PiRuntimeHooks
   env?: NodeJS.ProcessEnv
-  /** The config release the runtime reads skills and the session notice from (config-release.ts). */
+  /** The config release the runtime reads skills, project tools, the root AGENTS.md and the session notice from (config-release.ts). */
   releases?: Pick<PiConfigReleases, 'skillDirs' | 'piConfigDir' | 'projectRoot' | 'notice'>
 }
 
@@ -256,8 +257,10 @@ export class PiRuntime {
   private selected: SelectedModel | null = null
   private core: typeof import('@earendil-works/pi-agent-core') | null = null
   private coding: typeof import('@earendil-works/pi-coding-agent') | null = null
-  /** bash/read/write/edit/glob/grep: what a child session may be given. */
+  /** bash/read/write/edit/glob/grep and the hosted tools: what a child session may be given. */
   private workspaceTools: AgentTool<any, any>[] = []
+  /** Extension tools the agent's tool access hides; they come back when it allows them again. */
+  private hiddenTools = new Set<string>()
   /** Workspace tools + `question`: the root's tools before extensions add theirs. */
   private baseTools: AgentTool<any, any>[] = []
   /** pi's AgentSession around `agent`: extensions, prompt expansion, tool registry. */
@@ -423,7 +426,8 @@ export class PiRuntime {
         retryPlan: (message) => retryStatus(this.turnRetry?.plan(message)),
         recovers: (message) => this.recovers(message),
       })
-      this.workspaceTools = createWorkspaceTools(this.workspace)
+      const hosted = await loadTools(this.projectRoot(), this.compiled?.project_tools)
+      this.workspaceTools = createWorkspaceTools(this.workspace, hosted.tools, () => ({ sessionId: this.sessionId, agent: this.agentName }))
       // The root agent runs parallel-capable; every built-in tool pins its batch to sequential,
       // so only a batch made entirely of parallel tools (task calls) runs concurrently.
       // Every built-in tool is registered; the agent's `tools` switches pick the active ones (rebuildSystemPrompt).
@@ -481,7 +485,7 @@ export class PiRuntime {
       const extensionsMs = performance.now() - extensionsStartedAt
       this.rebuildSystemPrompt()
       // The session installed the extension tool hooks; the permission policy runs first.
-      agent.beforeToolCall = this.toolGate((tool, args) => this.compiledAgent()?.tools?.[tool] === false ? 'deny' : this.permissions.rule(tool, args), true, agent.beforeToolCall)
+      agent.beforeToolCall = this.toolGate((tool, args) => (toolAllowed(this.compiledAgent()?.tools, tool) ? this.permissions.rule(tool, args) : 'deny'), true, agent.beforeToolCall)
       agent.subscribe((event) => this.onAgentEvent(event))
       this.pi.session.subscribe((event) => this.onSessionEvent(event))
       this.state = 'ok'
@@ -1049,17 +1053,18 @@ export class PiRuntime {
 
   /**
    * Re-read the base system prompt (compiled agent, skills) into pi's session,
-   * with the built-in tools the agent's `tools` switches leave on. A switch
-   * back on re-activates the tool in place: every built-in stays registered.
+   * with the tools the agent's tool access allows (`toolAllowed`). Every tool
+   * stays registered, so access granted again re-activates it in place.
    */
   private rebuildSystemPrompt(): void {
     const session = this.pi?.session
     if (!session) return
-    const switches = this.compiledAgent()?.tools
+    const allowed = (name: string) => toolAllowed(this.compiledAgent()?.tools, name)
     // ponytail: a pi package that deactivates a built-in gets it back on the next rebuild; remember package choices if one ever does.
     const builtIn = this.baseTools.map((tool) => tool.name)
-    const others = session.getActiveToolNames().filter((name) => !builtIn.includes(name))
-    session.setActiveToolsByName([...builtIn.filter((name) => switches?.[name] !== false), ...others])
+    const others = [...new Set([...session.getActiveToolNames(), ...this.hiddenTools])].filter((name) => !builtIn.includes(name))
+    this.hiddenTools = new Set(others.filter((name) => !allowed(name)))
+    session.setActiveToolsByName([...builtIn, ...others].filter(allowed))
   }
 
   // ── child sessions ───────────────────────────────────────────────────────
@@ -1101,8 +1106,8 @@ export class PiRuntime {
     }
     const selected = input.model ? this.models.select(nativeModelId(input.model)) : this.selected
     const model = { providerID: selected.providerID, modelID: selected.modelID }
-    const tools = (input.tools ? this.workspaceTools.filter((tool) => input.tools!.includes(tool.name)) : this.workspaceTools)
-      .filter((tool) => this.compiled?.agent?.[input.agent]?.tools?.[tool.name] !== false)
+    const allowed = (tool: string) => toolAllowed(this.compiledAgent()?.tools, tool) && toolAllowed(this.compiled?.agent?.[input.agent]?.tools, tool)
+    const tools = (input.tools ? this.workspaceTools.filter((tool) => input.tools!.includes(tool.name)) : this.workspaceTools).filter((tool) => allowed(tool.name))
     const policy = compilePermissionPolicy(input.permission)
     const messageId = this.clock.mint(this.now())
     this.publishUserMessage(child.id, messageId, { messageID: messageId, text: input.prompt, files: [] }, { agent: input.agent, selected })
@@ -1139,7 +1144,7 @@ export class PiRuntime {
     agent.beforeToolCall = this.toolGate((tool, args) => {
       const own = resolvePolicyRule(policy, tool, args)
       const session = this.permissions.rule(tool, args)
-      if (own === 'deny' || session === 'deny' || this.compiledAgent()?.tools?.[tool] === false || this.compiled?.agent?.[input.agent]?.tools?.[tool] === false) return 'deny'
+      if (own === 'deny' || session === 'deny' || !allowed(tool)) return 'deny'
       return own ?? session
     }, false, this.childExtensionGate())
     agent.subscribe((event) => {
@@ -1343,6 +1348,12 @@ export class PiRuntime {
   private thinkingLevel(variant: string | undefined, selected: SelectedModel | null = this.selected): ModelThinkingLevel {
     if (!selected || !variant) return 'off'
     return selected.variants.includes(variant) ? (variant as ModelThinkingLevel) : 'off'
+  }
+
+  /** Where project tools load from: the release root while a release runs, else the working tree. */
+  private projectRoot(): string | null {
+    const released = this.releases?.projectRoot()
+    return released !== undefined ? released : this.workspace
   }
 
   /** The pi-native config dir: the release's `pi/` while a release runs, else the working tree's. */

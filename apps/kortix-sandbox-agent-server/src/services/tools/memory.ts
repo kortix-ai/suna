@@ -1,7 +1,7 @@
 /**
  * memory: a 1:1 port of Anthropic's `memory_20250818` tool, rooted at the
- * project's `memory/` folder. The same tool the project template gives an
- * OpenCode session, under the same name and arguments: six commands (view /
+ * project's `memory/` folder. Every harness runs this one module, under the
+ * name and arguments the project template's tool had: six commands (view /
  * create / str_replace / insert / delete / rename) and the return strings the
  * model is trained to read. A refused command is a returned string, not a
  * thrown error, as in the reference backend.
@@ -20,9 +20,7 @@
 import { randomUUID } from 'node:crypto'
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
-import type { AgentTool } from '@earendil-works/pi-agent-core'
-import { StringEnum } from '@earendil-works/pi-ai'
-import { Type } from 'typebox'
+import type { KortixTool } from './tool'
 
 /** Repo-relative root every memory path must live under. */
 const MEMORY_PREFIX = 'memory'
@@ -363,62 +361,56 @@ async function rename(oldPath: string, newPath: string, dir: string): Promise<st
   return `Successfully renamed ${oldPath} to ${newPath}`
 }
 
-const memorySchema = Type.Object({
-  command: StringEnum(['view', 'create', 'str_replace', 'insert', 'delete', 'rename'] as const, { description: 'The memory operation to perform.' }),
-  path: Type.Optional(
-    Type.String({ description: 'Repo-relative path under `memory` (e.g. `memory/overview.md`). Required for view, create, str_replace, insert, delete.' }),
-  ),
-  view_range: Type.Optional(Type.Array(Type.Number(), { description: 'Optional [start, end] line range for `view` of a file. Use -1 for end-of-file.' })),
-  file_text: Type.Optional(Type.String({ description: 'File contents. Required for `create`.' })),
-  old_str: Type.Optional(Type.String({ description: 'Exact text to replace (must be unique in the file). Required for `str_replace`.' })),
-  new_str: Type.Optional(Type.String({ description: 'Replacement text. Required for `str_replace` (use empty string to delete).' })),
-  insert_line: Type.Optional(Type.Number({ description: 'Line number to insert after (0 = top of file). Required for `insert`.' })),
-  insert_text: Type.Optional(Type.String({ description: 'Text to insert. Required for `insert`.' })),
-  old_path: Type.Optional(Type.String({ description: 'Source path. Required for `rename`.' })),
-  new_path: Type.Optional(Type.String({ description: 'Destination path. Required for `rename`.' })),
-})
+/** Every memory path resolves under `<dir>/memory`; `dir` is the project checkout. */
+async function run(args: Record<string, any>, dir: string): Promise<string> {
+  const need = (...names: string[]) => names.find((name) => args[name] === undefined || (name.endsWith('path') && !args[name]))
+  const missing = (name: string) => `Error: \`${name}\` is required for ${args.command}.`
+  let absent: string | undefined
+  switch (args.command) {
+    case 'view':
+      return (absent = need('path')) ? missing(absent) : view(args.path, args.view_range, dir)
+    case 'create':
+      return (absent = need('path', 'file_text')) ? missing(absent) : create(args.path, args.file_text, dir)
+    case 'str_replace':
+      return (absent = need('path', 'old_str', 'new_str')) ? missing(absent) : strReplace(args.path, args.old_str, args.new_str, dir)
+    case 'insert':
+      return (absent = need('path', 'insert_line', 'insert_text')) ? missing(absent) : insert(args.path, args.insert_line, args.insert_text, dir)
+    case 'delete':
+      return (absent = need('path')) ? missing(absent) : del(args.path, dir)
+    case 'rename':
+      return (absent = need('old_path', 'new_path')) ? missing(absent) : rename(args.old_path, args.new_path, dir)
+    default:
+      return 'Error: unknown command'
+  }
+}
 
-/** `dir` is the project checkout: every memory path resolves under `<dir>/memory`. */
-export function createMemoryTool(dir: string): AgentTool<typeof memorySchema, undefined> {
-  const run = async (args: Record<string, any>): Promise<string> => {
-    const need = (...names: string[]) => names.find((name) => args[name] === undefined || (name.endsWith('path') && !args[name]))
-    const missing = (name: string) => `Error: \`${name}\` is required for ${args.command}.`
-    let absent: string | undefined
-    switch (args.command) {
-      case 'view':
-        return (absent = need('path')) ? missing(absent) : view(args.path, args.view_range, dir)
-      case 'create':
-        return (absent = need('path', 'file_text')) ? missing(absent) : create(args.path, args.file_text, dir)
-      case 'str_replace':
-        return (absent = need('path', 'old_str', 'new_str')) ? missing(absent) : strReplace(args.path, args.old_str, args.new_str, dir)
-      case 'insert':
-        return (absent = need('path', 'insert_line', 'insert_text')) ? missing(absent) : insert(args.path, args.insert_line, args.insert_text, dir)
-      case 'delete':
-        return (absent = need('path')) ? missing(absent) : del(args.path, dir)
-      case 'rename':
-        return (absent = need('old_path', 'new_path')) ? missing(absent) : rename(args.old_path, args.new_path, dir)
-      default:
-        return 'Error: unknown command'
-    }
-  }
-  return {
-    name: 'memory',
-    label: 'memory',
-    description:
-      'Persistent project memory — read, write, and curate the project brain in `memory/`. ' +
-      'This is the canonical way to work with memory; use it instead of the generic read/edit/write tools for anything under `memory/`. ' +
-      'Memory persists across sessions and is shared with the whole team via the repo, so write durable facts here. ' +
-      'ALWAYS `view` `memory` before starting a task to recover prior context, and record durable progress as you go — your context window may reset at any time.\n\n' +
-      'Paths are repo-relative and MUST start with `memory` (e.g. `memory/overview.md`). ' +
-      "Keep memory coherent and organized: prefer editing existing files, rename or delete stale ones, and don't create new files unless a topic deserves its own page. " +
-      'Always keep `memory/MEMORY.md` (the index) in sync — one line per sub-file. ' +
-      'Never store secrets, tokens, or PII. Edits land on `main` through the normal change-request flow.\n\n' +
-      'Commands: `view` (dir listing or file with line numbers; optional view_range), `create` (new file), ' +
-      '`str_replace` (replace a unique snippet), `insert` (insert at a line), `delete` (remove file/dir), `rename` (move file/dir).',
-    parameters: memorySchema,
-    async execute(_id, args) {
-      const output = await run(args).catch((err) => `Error: ${err?.message ?? String(err)}`)
-      return { content: [{ type: 'text', text: output }], details: undefined }
+export const memory: KortixTool = {
+  description:
+    'Persistent project memory — read, write, and curate the project brain in `memory/`. ' +
+    'This is the canonical way to work with memory; use it instead of the generic read/edit/write tools for anything under `memory/`. ' +
+    'Memory persists across sessions and is shared with the whole team via the repo, so write durable facts here. ' +
+    'ALWAYS `view` `memory` before starting a task to recover prior context, and record durable progress as you go — your context window may reset at any time.\n\n' +
+    'Paths are repo-relative and MUST start with `memory` (e.g. `memory/overview.md`). ' +
+    "Keep memory coherent and organized: prefer editing existing files, rename or delete stale ones, and don't create new files unless a topic deserves its own page. " +
+    'Always keep `memory/MEMORY.md` (the index) in sync — one line per sub-file. ' +
+    'Never store secrets, tokens, or PII. Edits land on `main` through the normal change-request flow.\n\n' +
+    'Commands: `view` (dir listing or file with line numbers; optional view_range), `create` (new file), ' +
+    '`str_replace` (replace a unique snippet), `insert` (insert at a line), `delete` (remove file/dir), `rename` (move file/dir).',
+  parameters: {
+    type: 'object',
+    properties: {
+      command: { type: 'string', enum: ['view', 'create', 'str_replace', 'insert', 'delete', 'rename'], description: 'The memory operation to perform.' },
+      path: { type: 'string', description: 'Repo-relative path under `memory` (e.g. `memory/overview.md`). Required for view, create, str_replace, insert, delete.' },
+      view_range: { type: 'array', items: { type: 'number' }, description: 'Optional [start, end] line range for `view` of a file. Use -1 for end-of-file.' },
+      file_text: { type: 'string', description: 'File contents. Required for `create`.' },
+      old_str: { type: 'string', description: 'Exact text to replace (must be unique in the file). Required for `str_replace`.' },
+      new_str: { type: 'string', description: 'Replacement text. Required for `str_replace` (use empty string to delete).' },
+      insert_line: { type: 'number', description: 'Line number to insert after (0 = top of file). Required for `insert`.' },
+      insert_text: { type: 'string', description: 'Text to insert. Required for `insert`.' },
+      old_path: { type: 'string', description: 'Source path. Required for `rename`.' },
+      new_path: { type: 'string', description: 'Destination path. Required for `rename`.' },
     },
-  }
+    required: ['command'],
+  },
+  execute: (args, { directory }) => run(args, directory).catch((err) => `Error: ${err?.message ?? String(err)}`),
 }

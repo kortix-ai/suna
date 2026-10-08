@@ -57,7 +57,9 @@ import {
   validateDefaultAgentV2,
   validateHarnessesV2,
   validateRuntimeV2,
+  validateToolsV2,
   validateTriggerAgentRefsV2,
+  warnUnknownAgentTools,
 } from './index.v2';
 
 /**
@@ -89,6 +91,7 @@ export {
   MEMORY_DIR,
   OPENCODE_CONFIG_DIR,
   SKILLS_DIR,
+  TOOL_FILE_PATTERN,
   agentFileCandidates,
   defaultAgentFile,
   legacyConfigDir,
@@ -96,6 +99,7 @@ export {
   opencodeConfigDirCandidates,
   piConfigDirCandidates,
   safeAgentFile,
+  safeToolFile,
   safeRepoPath,
   skillDirs,
 } from './layout';
@@ -193,6 +197,9 @@ export {
   SANDBOX_DISK_BOUNDS,
   SANDBOX_MEMORY_BOUNDS,
   SLUG_RE,
+  HARNESS_TOOL_NAMES,
+  KORTIX_TOOL_NAMES,
+  TOOL_NAME_RE,
   TRIGGER_TYPES,
   V2_RUNTIME_VALUES,
   WORKSPACE_MODES_V2,
@@ -213,12 +220,14 @@ export {
   type PermissionConfigObjectV2,
   type PermissionConfigV2,
   type GrantSetV2,
+  type AgentToolsV2,
   type AgentBlockV2,
   type AppBlockV2,
   type AppResourcesV2,
   type ManifestV2,
   type HarnessesV2,
   type PiPackageEntryV2,
+  resolveAgentTools,
   resolveGrantSet,
   validatePermissionConfig,
   validateAgentMdFrontmatter,
@@ -381,7 +390,9 @@ function validateManifestBodyV2(
   rejectChannelsV2(parsed.channels, 'channels', issues);
   validateRuntimeV2(parsed.runtime, 'runtime', issues);
   validateHarnessesV2(parsed.harnesses, 'harnesses', issues);
+  validateToolsV2(parsed.tools, 'tools', issues);
   const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues, parsed.kortix_version === 3);
+  warnUnknownAgentTools(parsed.agents, parsed.tools, issues);
   validateDefaultAgentV2(parsed.default_agent, 'default_agent', agentNames, disabledNames, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agentNames, issues);
 }

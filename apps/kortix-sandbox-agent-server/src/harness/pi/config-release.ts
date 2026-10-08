@@ -20,8 +20,11 @@
  * same dirs it reads in `/workspace`: `skills/` (and the legacy
  * `.kortix/opencode/skills`), and its own config dir (the repository's
  * `pi.config_dir`, `harnesses/pi` or `.kortix/pi`: skills, extensions, prompts,
- * `settings.json`). OpenCode's files in the release are not pi's. Extensions, prompts and settings are read when the runtime starts, so a
- * release that changes them restarts the runtime in place, while it is idle.
+ * `settings.json`), and the project tools the governance declares
+ * (kortix.yaml `tools`). OpenCode's files in the release are not pi's.
+ * Extensions, prompts, settings and project tools are read when the runtime
+ * starts, so a release that changes them restarts the runtime in place, while
+ * it is idle.
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
@@ -134,7 +137,8 @@ export interface PiConfigReleases {
    */
   piConfigDir(): string | null | undefined
   /**
-   * The checkout the running config decides, where the root `AGENTS.md` loads from:
+   * The checkout the running config decides, where project tools and the root
+   * `AGENTS.md` load from:
    * the release root, or null when it has no tree (the image default).
    * Undefined while releases are not in play: pi then reads the working tree.
    */
@@ -167,15 +171,20 @@ function piDirIn(releaseRoot: string): Promise<string | null> {
   return resolvePiProjectConfigDir({ projectTarget: releaseRoot } as HostConfig)
 }
 
-/** The release's pi-native files that only a runtime start reads: everything in pi's own config dir except its skills. */
-function startOnlyFiles(files: readonly (readonly string[])[] | null, releaseRoot: string | null, piDir: string | null): string {
-  if (!releaseRoot || !piDir) return ''
-  const prefix = `${relative(releaseRoot, piDir)}/`
-  return (files ?? [])
-    .filter(([path]) => path!.startsWith(prefix) && !path!.startsWith(`${prefix}skills/`))
-    .map(([path, , blob]) => `${path}:${blob}`)
-    .sort()
-    .join('\n')
+/**
+ * What only a runtime start reads from a release: everything in pi's own
+ * config dir except its skills, and the project tools (their declaration in
+ * the governance, and every file in the folder of each tool module).
+ */
+function startOnlyFiles(release: Pick<ReleaseManifest, 'files' | 'compiled_governance'> | null, releaseRoot: string | null, piDir: string | null): string {
+  if (!releaseRoot || !release) return ''
+  const pi = piDir ? `${relative(releaseRoot, piDir)}/` : null
+  const declared = parseCompiledAgentConfig(release.compiled_governance ?? undefined)?.project_tools ?? {}
+  const toolDirs = Object.values(declared).map((path) => path.slice(0, path.lastIndexOf('/') + 1) || path)
+  const startOnly = (path: string) =>
+    (pi !== null && path.startsWith(pi) && !path.startsWith(`${pi}skills/`)) || toolDirs.some((dir) => path.startsWith(dir))
+  const files = (release.files ?? []).filter(([path]) => startOnly(path!)).map(([path, , blob]) => `${path}:${blob}`).sort()
+  return [...(toolDirs.length > 0 ? [`tools:${JSON.stringify(declared)}`] : []), ...files].join('\n')
 }
 
 /** A release's compiled governance must parse to a config object. Null governance keeps the running one. */
@@ -433,7 +442,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
     setCurrent(next)
     try {
       await load()
-      if (restart) logger.info('[pi-config] the release changes pi extensions, prompts or settings; the runtime restarted in place')
+      if (restart) logger.info('[pi-config] the release changes pi extensions, prompts, settings or project tools; the runtime restarted in place')
       return null
     } catch (err) {
       restoreGovernance()
@@ -446,7 +455,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
   /** The start-only pi files the runtime loaded: the running release's, or the working tree's pi dir. */
   async function loadedStartOnlyFiles(): Promise<string | null> {
     if (current.source === 'release' && current.release_id) {
-      return startOnlyFiles((await readReleaseManifest(root, current.release_id))?.files ?? null, current.dir, current.piDir)
+      return startOnlyFiles(await readReleaseManifest(root, current.release_id), current.dir, current.piDir)
     }
     // Off the release path the working tree's pi dir may hold extensions: unknown, so restart.
     return current.source === 'workspace' ? null : ''
@@ -578,7 +587,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
     if (!runtime.idle()) return busy()
 
     const piDir = await piDirIn(dir)
-    const restart = (await loadedStartOnlyFiles()) !== startOnlyFiles(manifest.files, dir, piDir)
+    const restart = (await loadedStartOnlyFiles()) !== startOnlyFiles(manifest, dir, piDir)
     writeNotice(manifest, dir)
     const refused = await swap(
       runtime,
