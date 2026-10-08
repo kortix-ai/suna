@@ -34,6 +34,7 @@ import { type SQL, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import {
   NON_TURN_DEADLINE_CAP_MS,
+  PRESENCE_ONLY_CAP_MS,
   idleGraceMs,
   isWarmPoolBox,
   turnGrantMs,
@@ -100,6 +101,42 @@ function cappedDeadline(grantMs: number) {
              LEAST(
                s.active_since + make_interval(secs => ${secs(NON_TURN_DEADLINE_CAP_MS)}),
                now() + make_interval(secs => ${secs(grantMs)})))`;
+}
+
+/**
+ * Presence's horizon (KRTX-1729): the idle grace, but never past
+ * PRESENCE_ONLY_CAP_MS after the session's latest turn activity or the run's
+ * start, whichever is later. Turns are sequential, so the latest-started turn
+ * holds the latest activity, and the (session_id, started_at DESC) index finds
+ * it.
+ */
+function presenceCappedDeadline(grantMs: number) {
+  return sql`GREATEST(
+             s.deadline_at,
+             LEAST(
+               s.active_since + make_interval(secs => ${secs(NON_TURN_DEADLINE_CAP_MS)}),
+               GREATEST(
+                 s.active_since,
+                 (SELECT COALESCE(t.ended_at, t.started_at)
+                    FROM kortix.session_turns t
+                   WHERE t.session_id = s.session_id
+                   ORDER BY t.started_at DESC
+                   LIMIT 1)
+               ) + make_interval(secs => ${secs(PRESENCE_ONLY_CAP_MS)}),
+               now() + make_interval(secs => ${secs(grantMs)})))`;
+}
+
+/**
+ * The extension a present person earns: the idle grace, capped by
+ * {@link presenceCappedDeadline}. Same monotone statement shape as
+ * {@link extendSandboxDeadline}.
+ */
+export async function extendSandboxDeadlineForPresence(target: DeadlineTarget): Promise<void> {
+  await db.execute(sql`
+    UPDATE kortix.session_sandboxes s
+       SET deadline_at = ${presenceCappedDeadline(idleGraceMs())},
+           updated_at = now()
+     WHERE ${targetPredicate(target)} AND s.status IN ('active', 'provisioning')`);
 }
 
 /**
