@@ -1,11 +1,22 @@
 {
-  "source_hash": "649a93550e58cb4008428d81a40dabed53e55db213edf9cfb9eb1e6f7dad9b75",
-  "head": "28223a77dcda854cb08b083645bf9618ab2d2381",
+  "source_hash": "383625f7107500356896708a18c80ad0019ac4f75b843cb01ea687bf18b29e0d",
+  "diff_files": [
+    "apps/web/src/app/[locale]/layout.tsx",
+    "apps/web/src/components/turn-attention-badge.tsx",
+    "apps/web/src/lib/turn-broadcast.test.ts",
+    "apps/web/src/lib/turn-broadcast.ts",
+    "apps/web/src/lib/web-notifications.test.ts",
+    "apps/web/src/lib/web-notifications.ts",
+    "apps/web/src/stores/turn-attention-store.test.ts",
+    "apps/web/src/stores/turn-attention-store.ts"
+  ],
+  "diff_hash": "b91dce269c4931b51871666bcb9aee0f89d72de0b3b1a199016dd059fd524713",
+  "head": "acdb7dfd79fddda67510837865fd4e4c2b67eac0",
   "passed": false,
   "lanes": {
-    "core": "fail",
-    "packages": "skipped-sandbox-image",
-    "db-suites": "fail"
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "pass"
   },
-  "at": "2026-10-08T06:52:20.825Z"
+  "at": "2026-10-08T08:27:19.529Z"
 }
