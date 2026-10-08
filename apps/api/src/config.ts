@@ -207,6 +207,18 @@ const envSchema = z.object({
   // KORTIX_URL fatal-required, mounts the proxy-auth gate, hides /v1/setup.
   // Set to true on managed/cloud deployments; leave false for self-host + dev.
   KORTIX_BILLING_INTERNAL_ENABLED: optBoolFalse,
+  // Kortix Apps: a `static` App is served by the API from content-addressed
+  // storage, with no runtime. `false` builds it into a sandbox, as before.
+  KORTIX_APPS_STATIC_HOSTING: optBoolTrue,
+  // Ready deployments an App keeps besides its active one (rollback targets).
+  // Older ones are retired: runtime, image, files and archive are freed.
+  KORTIX_APPS_RETAINED_DEPLOYMENTS: optInt(5),
+  KORTIX_APPS_MAX_MONTHLY_BUDGET_USD: optInt(100_000),
+  // New server Apps run 24/7 unless the request says otherwise. Existing Apps
+  // keep their own setting. Static Apps have no runtime and ignore it.
+  KORTIX_APPS_DEFAULT_ALWAYS_ON: optBoolTrue,
+  // 'false' stops the Apps deployment worker; 'static' drives only static deployments.
+  KORTIX_APPS_WORKER_ENABLED: optStr,
   // Global background-worker switch. API-only and migration-shadow deployments
   // keep request handling active while disabling every recurring write loop.
   KORTIX_WORKERS_ENABLED: optBoolTrue,
@@ -709,6 +721,8 @@ const envSchema = z.object({
 
   // ── Composio Connect (optional — powers provider-neutral connector connect) ─
   COMPOSIO_API_KEY: optStr,
+  // Optional: signing secret of the Composio project webhook subscription; required to receive app-event triggers.
+  COMPOSIO_WEBHOOK_SECRET: optStr,
   // Optional: required only when importing a public Postman workspace URL.
   // Exported collection JSON and Postman-managed Git repositories need no key.
   POSTMAN_API_KEY: optStr,
@@ -1170,6 +1184,11 @@ export const config = {
   KORTIX_PREVIEW_BASE_DOMAIN: env.KORTIX_PREVIEW_BASE_DOMAIN,
   // Single master switch — see schema docstring above.
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
+  KORTIX_APPS_STATIC_HOSTING: env.KORTIX_APPS_STATIC_HOSTING,
+  KORTIX_APPS_RETAINED_DEPLOYMENTS: Math.max(1, env.KORTIX_APPS_RETAINED_DEPLOYMENTS),
+  KORTIX_APPS_MAX_MONTHLY_BUDGET_USD: Math.max(1, env.KORTIX_APPS_MAX_MONTHLY_BUDGET_USD),
+  KORTIX_APPS_DEFAULT_ALWAYS_ON: env.KORTIX_APPS_DEFAULT_ALWAYS_ON,
+  KORTIX_APPS_WORKER_ENABLED: env.KORTIX_APPS_WORKER_ENABLED,
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
   ACCOUNT_DELETION_SWEEP_PAUSED: env.ACCOUNT_DELETION_SWEEP_PAUSED,
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: env.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
@@ -1215,6 +1234,7 @@ export const config = {
 
   // ─── Composio Connect (Connector connect provider) ─────────────────────────
   COMPOSIO_API_KEY: env.COMPOSIO_API_KEY,
+  COMPOSIO_WEBHOOK_SECRET: env.COMPOSIO_WEBHOOK_SECRET,
   POSTMAN_API_KEY: env.POSTMAN_API_KEY,
 
   // ─── Search Providers ──────────────────────────────────────────────────────

@@ -37,6 +37,7 @@ import {
   MONITOR_MIN_INTERVAL_SECONDS,
   MONITOR_MODES,
   MONITOR_RUN_MAX_LENGTH,
+  EVENT_FORBIDDEN_KEYS,
   RESERVED_SANDBOX_SLUG,
   RESERVED_SLUG_PROVIDERS,
   SANDBOX_CPU_BOUNDS,
@@ -184,6 +185,7 @@ export {
   MONITOR_MIN_INTERVAL_SECONDS,
   MONITOR_MODES,
   MONITOR_RUN_MAX_LENGTH,
+  EVENT_FORBIDDEN_KEYS,
   DURATION_RE,
   formatDurationSeconds,
   parseDurationSeconds,
@@ -939,7 +941,7 @@ const APP_TYPES = new Set(['static', 'bundle', 'dockerfile', 'oci_image']);
 const APP_KEYS = new Set([
   'path', 'type', 'image', 'dockerfile', 'command', 'port', 'root', 'output_dir',
   'install_command', 'build_command', 'spa', 'readiness_path', 'idle_timeout_seconds',
-  'monthly_budget_usd', 'resources', 'env', 'secrets',
+  'always_on', 'monthly_budget_usd', 'resources', 'env', 'secrets',
 ]);
 
 function validateAppStringMap(
@@ -1035,6 +1037,9 @@ function validateAppsV2(node: unknown, path: string, issues: ManifestIssue[]): v
       issues.push({ path: `${where}.readiness_path`, message: 'must be an absolute HTTP path.', severity: 'error' });
     }
     expectBoundedIntOrAbsent(value.idle_timeout_seconds, `${where}.idle_timeout_seconds`, { min: 120, max: 86400 }, issues);
+    if (value.always_on !== undefined && typeof value.always_on !== 'boolean') {
+      issues.push({ path: `${where}.always_on`, message: 'must be true or false.', severity: 'error' });
+    }
     if (value.monthly_budget_usd !== undefined &&
         (typeof value.monthly_budget_usd !== 'number' || value.monthly_budget_usd < 0)) {
       issues.push({ path: `${where}.monthly_budget_usd`, message: 'must be a non-negative number.', severity: 'error' });
@@ -1177,6 +1182,50 @@ function validateMonitorTrigger(
       issues.push({
         path: `${where}.${key}`,
         message: 'is not valid on a monitor trigger — monitors are driven by their `run` process.',
+        severity: 'error',
+      });
+    }
+  }
+}
+
+/**
+ * `type: event` — the fourth trigger type: "when <app event> happens on
+ * <connected app>, run the agent". `connector` names a declared connector,
+ * `event` is the provider's event type id, `config` is the provider event
+ * config (validated by the provider at subscribe time, not here). Wiring for
+ * the other three types is hard-rejected — a manifest must not claim a
+ * schedule the event source never reads.
+ *
+ * MUST stay in sync with `parseTriggerEntry`'s event branch (apps/api) and
+ * `triggerSchema` in ./json-schema.ts.
+ */
+function validateEventTrigger(
+  entry: Record<string, unknown>,
+  where: string,
+  issues: ManifestIssue[],
+): void {
+  for (const key of ['connector', 'event'] as const) {
+    const value = entry[key];
+    if (typeof value !== 'string' || !value.trim()) {
+      issues.push({
+        path: `${where}.${key}`,
+        message: `event triggers must declare \`${key}\`.`,
+        severity: 'error',
+      });
+    }
+  }
+  if (entry.config !== undefined && !isTable(entry.config)) {
+    issues.push({
+      path: `${where}.config`,
+      message: 'config must be an object.',
+      severity: 'error',
+    });
+  }
+  for (const key of EVENT_FORBIDDEN_KEYS) {
+    if (entry[key] !== undefined) {
+      issues.push({
+        path: `${where}.${key}`,
+        message: 'is not valid on an event trigger — events are driven by the connected app.',
         severity: 'error',
       });
     }
@@ -1335,6 +1384,19 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], 
       }
     } else if (type === 'monitor') {
       validateMonitorTrigger(entry, where, issues);
+    } else if (type === 'event') {
+      validateEventTrigger(entry, where, issues);
+    }
+    if (type && type !== 'event' && (TRIGGER_TYPES as readonly string[]).includes(type)) {
+      for (const key of ['connector', 'event', 'config']) {
+        if (entry[key] !== undefined) {
+          issues.push({
+            path: `${where}.${key}`,
+            message: `is only valid on an event trigger (type is "${type}").`,
+            severity: 'error',
+          });
+        }
+      }
     }
     if (entry.enabled !== undefined && !isEnabledValue(entry.enabled)) {
       issues.push({

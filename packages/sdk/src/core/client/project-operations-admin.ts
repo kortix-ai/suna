@@ -16,6 +16,9 @@ export function bindProjectOperationsAdmin(projectId: string) {
     },
     triggers: {
       list: () => P.listProjectTriggers(projectId),
+      eventApps: () => P.listProjectTriggerEventApps(projectId),
+      eventTypes: (...a: DropFirst<Parameters<typeof P.listProjectTriggerEventTypes>>) =>
+        P.listProjectTriggerEventTypes(projectId, ...a),
       create: (...a: DropFirst<Parameters<typeof P.createProjectTrigger>>) =>
         P.createProjectTrigger(projectId, ...a),
       update: (...a: DropFirst<Parameters<typeof P.updateProjectTrigger>>) =>

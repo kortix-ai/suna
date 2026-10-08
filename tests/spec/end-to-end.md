@@ -511,7 +511,7 @@ DB `review_items` (per-project; `kind change|approval|output|decision|batch`, `s
 
 ---
 
-## 12. Triggers (cron + webhook + monitor; source of truth = `kortix.yaml`)
+## 12. Triggers (cron + webhook + monitor + event; source of truth = `kortix.yaml`)
 
 Specs in `[[triggers]]`; CRUD commits the manifest; runtime state and account-local session access live in `project_trigger_runtime`. Types: `cron`, `webhook`, `monitor` (experimental, behind the `monitors` feature flag). A `monitor` entry requires `run` + `mode` (`poll`|`stream`; `interval` ≥30s required iff `poll`, rejected on `stream`), rejects cron/webhook-only fields (`cron`, `schedule`, `run_at`, `timezone`, `secret_env`), and defaults `session_mode` to `reuse`. Monitor FIRING is not an end-user HTTP surface: the per-project monitor box posts to `POST /projects/:id/monitors/ingest` with its own sandbox token (coverage-allowlisted; auth/dedup/rate-limit behavior pinned in `apps/api/src/__tests__/unit-monitor-ingest-route.test.ts`), and `drainMonitorEvents` hands events to `fireGitTrigger` on the scheduler tick, beside the trigger execution queue. The local test profile excludes cloud sandboxes, so the box lifecycle is covered by unit tests plus the live verification recorded in the spec doc.
 
@@ -523,7 +523,7 @@ Specs in `[[triggers]]`; CRUD commits the manifest; runtime state and account-lo
 `TRG-7` webhook fire — `POST /webhooks/projects/:id/:slug` (**public, HMAC**). Sig header `X-Kortix-Signature` or `X-Hub-Signature-256` (`sha256=` stripped), HMAC-SHA256 over raw body vs `project_secrets[secret_env]`, constant-time. Valid → 202 fired/queued; malformed UUID/slug → 400; bad sig, unknown project, missing secret and unknown/disabled/non-webhook trigger all answer the same 401 `Invalid webhook signature` (no existence oracle; the reason is logged); optional `X-Kortix-Timestamp` (epoch seconds) signs `<timestamp>.<body>` and a delivery more than 5 minutes off → 401; fire failure → 500.
 `TRG-10` `GET /projects/:id/triggers` leaf gate — a member bound to a custom (Enterprise) project role granting `project.read` but NOT `project.trigger.read` loads the project yet is rejected 403 at `GET /triggers` (the `assertProjectCapability(project.trigger.read)` fires after the read passes); a floor `user` member (built-in role carries `project.trigger.read`) still gets 200. Scoped-agent-token variant proven at the API layer in `integration-project-read-leaf-gates-http.test.ts`.
 `TRG-11` Triggers CRUD authz boundaries — `ANON → 401` on POST/PATCH/DELETE/fire/activation; a project `member` (floor role) holds `trigger.read` + `trigger.fire` but NOT `project.write` (the `manage` floor) nor `trigger.create/update/delete` → `GET 200`, `POST/PATCH/DELETE/activation 403`, `fire` unknown-slug `404` (NOT 403 — the fire leaf passes; the 404 is the slug lookup).
-`TRG-12` `POST /projects/:id/triggers` input validation — missing `name`/`type`/`prompt_template` → `400`; bad `type` (not cron/webhook) → `400`; a cron that fires more than once a minute (`*/30 * * * * *`: the first of 6 fields is seconds) → `400` naming the 60-second minimum (KRTX-1721); invalid `session_mode` → `400`; `pinned` without `session_id` → `400`; `pinned` with a `session_id` from another project → `400`; webhook without `secret_env` → `400`; webhook with bad `secret_env` (lowercase / leading digit, not `^[A-Z_][A-Z0-9_]*$`) → `400`; cron without `cron` AND without `run_at` → `400`; cron with non-ISO `run_at` → `400`; explicit invalid slug (uppercase / leading dash, not `^[a-z0-9][a-z0-9_-]{0,127}$`) → `400`.
+`TRG-12` `POST /projects/:id/triggers` input validation — missing `name`/`type`/`prompt_template` → `400`; bad `type` (not cron/webhook/monitor/event) → `400`; a cron that fires more than once a minute (`*/30 * * * * *`: the first of 6 fields is seconds) → `400` naming the 60-second minimum (KRTX-1721); invalid `session_mode` → `400`; `pinned` without `session_id` → `400`; `pinned` with a `session_id` from another project → `400`; webhook without `secret_env` → `400`; webhook with bad `secret_env` (lowercase / leading digit, not `^[A-Z_][A-Z0-9_]*$`) → `400`; cron without `cron` AND without `run_at` → `400`; cron with non-ISO `run_at` → `400`; explicit invalid slug (uppercase / leading dash, not `^[a-z0-9][a-z0-9_-]{0,127}$`) → `400`.
 `TRG-13` `PATCH`/`DELETE`/`activation` edge cases — PATCH unknown slug → `404`; PATCH no-op body `{}` → `200` (no manifest keys, no git commit); DELETE unknown slug → `404`; DELETE invalid slug format (uppercase / leading dash) → `400` (regex gate before manifest lookup); activation pause→resume round-trip persisted on readback (`triggers_paused`); activation non-boolean / missing `paused` → `400`.
 `TRG-14` trigger-created session access — omitted `session_access` defaults to `{mode:'private',memberIds:[],groupIds:[]}`. The trigger agent service account owns created sessions. Project managers, account owners, and account admins can open and discover trigger-created sessions in every mode. An ordinary member cannot open or discover a private trigger session without an explicit member/group grant. A project manager cannot open or discover an ordinary private human session. No session inventory returns a row the caller cannot open. The sidebar, sessions page, and command palette render `Shared` on every accessible session whose `is_owner` value is false. They leave the viewer's own sessions unmarked. The ownership marker remains visible beside the session source. Session POST and PATCH reject client-supplied `source`, `trigger_kind`, and `trigger_slug` metadata, so a human session cannot forge trigger attribution. `PATCH {session_access}` accepts `private`, selected `members`, or `project`. Selected member/group ids must belong to the trigger account. Unknown or cross-account ids → `400`. Duplicate ids are removed. Empty selected access normalizes to private. Policy-only PATCH does not commit `kortix.yaml`. Saving a policy also updates prior sessions created by that trigger. Pinned sessions retain their own session sharing policy. Trigger deletion cascades its access grants.
 
@@ -534,6 +534,11 @@ Specs in `[[triggers]]`; CRUD commits the manifest; runtime state and account-lo
 `TRG-18` Backpressure (local profile). With 3 provisioning sessions, `POST …/triggers/:slug/fire` → 202 `{status:queued, reason:'project provisioning backpressure', deduped:false, command_id}`; it writes one queued `create_session` command (`source trigger:manual`, `visibility private`, the pinned model, the rendered prompt) and stamps `last_fired_at`. A signed webhook → 202 queued; the same `X-Kortix-Delivery-Id` again → `{status:deduped, deduped:true}` with the same `command_id`, and one command row exists.
 `TRG-19` `GET /triggers` with a manifest entry that fails to parse lists the good triggers and names the bad slug in `errors`. An unparseable `kortix.yaml` → 200 `{triggers:[], errors:[{slug:'(manifest)'}]}`, and the trigger runtime rows survive.
 `TRG-20` Webhook ingress on a real webhook trigger (contract `TRG-7`). `POST /triggers {type:webhook}` whose `secret_env` names no secret → 409 `webhook_secret_missing`; a sandbox-delivered secret → 409 `webhook_secret_delivery_mismatch`; a `broker`/`connector` secret → 201, and the listing carries `secret_env` and a `webhook_url` ending `/v1/webhooks/projects/<id>/<slug>`. With triggers paused, an authenticated delivery answers 200 `{status:skipped}` and creates nothing. Authenticated means a valid `X-Kortix-Signature` or `X-Hub-Signature-256`, a current `X-Kortix-Timestamp` signing `<timestamp>.<body>`, or the secret as `X-Kortix-Token` or `Authorization: Bearer`. No credential header, an unknown slug, a wrong signature or token, a timestamp 1 h off, and a secret whose delivery no longer allows `connector` each answer 401 `Invalid webhook signature`. A malformed project id or slug → 400. `PATCH` of such a trigger → 409 `webhook_secret_delivery_mismatch`.
+`TRG-21` event trigger lifecycle — `POST /projects/:id/triggers` with `type: event`, `connector`, `event` and `event_config` → `201`; the trigger lists with `type: event` and an `event` object that echoes `connector`, `type` and `config`. The connector is not declared in `kortix.yaml`, so `event.status` is `error` and `event.error` names the missing connector. `PATCH {event_config}` → `200` and the new config reads back. `DELETE` → `200` and the trigger leaves the list. The API commits the manifest and reconciles subscriptions in the same request.
+`TRG-22` event trigger validation — `type: event` without `connector` → `400`; without `event` → `400`; with `cron` → `400`; with `event_config` that is not an object → `400`. `type: cron` with `connector` → `400`.
+`TRG-23` app-event ingress `POST /v1/webhooks/events/:provider` — unknown provider → `404`. Provider `composio` without a matching signature → `401` when the deployment holds `COMPOSIO_WEBHOOK_SECRET`, `503` when it does not. The route needs no bearer token.
+`TRG-24` `GET /projects/:id/triggers/event-types?connector=<slug>` — `ANON → 401`; missing `connector` → `400`; unknown connector → `404`.
+`TRG-25` `GET /projects/:id/triggers/event-apps` — `ANON → 401`; the project owner → `200` with an `apps` array; the local profile has no event provider configured, so the array is empty. Event trigger create/PATCH with an event the catalog does not know validates only when the provider catalog is reachable, so the local profile skips it.
 
 **Trigger behavior with no black-box HTTP surface.** These are documented
 boundaries, not flow ids.
@@ -1145,8 +1150,16 @@ feature flag, off by default: a member of a flag-off project gets
 first clears any override left by a reused local fixture, then enables the flag
 via `PATCH /projects/:projectId/features` and proceeds. A
 project writer creates a unique lower-case slug and machine policy; list/get
-return the stable public URL and active deployment pointer; patch updates
-mutable policy; delete is soft and removes the App from subsequent reads.
+return the stable public URL and active deployment pointer; every App carries
+`estimated_monthly_usd` (its machine 24/7 at list compute rates, `73.48` for
+1 vCPU / 2 GiB / 10 GiB); an always-on create or a run-mode, machine or budget
+patch with a budget below that estimate succeeds with
+`warnings[0].code = 'app_budget_below_always_on'`, and `warnings: []`
+otherwise; a create without `monthly_budget_usd` gets a derived budget: the
+24/7 estimate rounded up to a whole dollar (`74` for 1 vCPU / 2 GiB) when the
+App is always on, `5` on demand; a derived budget follows later machine and
+run-mode patches, a budget a person sent never moves; patch updates mutable policy; delete is soft and removes the App
+from subsequent reads.
 Invalid slugs → 400; `NONMEMBER` → 403.
 
 `APP-2` Artifact and deployment boundaries —
@@ -1210,10 +1223,16 @@ author's. The viewer's own role is the ceiling: as a project `member` with no
 agent grant, the token's `POST /projects/:projectId/sessions` → **403**
 `no_agent_access`. An access-policy save revokes the token
 (**401** on `GET /projects/:projectId`); the next sign-in yields a different
-token that answers **200**. The real CLI process `kortix apps access <app>
+token that answers **200**. A browser App reaches the API on its own origin:
+with the App cookie and `Sec-Fetch-Site: same-origin`,
+`GET /_kortix/api/v1/accounts/me` → **200** as the viewer (`auth_type: oauth`),
+`GET /_kortix/api/v1/projects/:projectId` → **200**, and no `Set-Cookie`
+reaches the App origin. `Sec-Fetch-Site: cross-site` → **403**
+`cross_site_request`; `/_kortix/api/v1/oauth/*` → **404**. The real CLI process `kortix apps access <app>
 --viewer identity` switches the scope and keeps `restricted` and the members;
 `--viewer everything` exits non-zero. `identity` scope yields `profile email` only, and
-that token gets **403** on a project route. `off` → `/_kortix/viewer` **404**
+that token gets **403** on a project route, and `/_kortix/api/v1/*` →
+**403** `viewer_api_disabled`. `off` → `/_kortix/viewer` **404**
 `viewer_disabled`. The cross-replica case (a replica whose cache still holds a
 token revoked elsewhere) is proven in
 `apps/api/src/apps/viewer-token.integration.test.ts`.
@@ -1239,6 +1258,30 @@ rollback target. The local profile cannot finish a build, so a deployed
 environment proves a `released` image and a successful single-deployment
 delete; `apps/api/src/apps/images.integration.test.ts` proves the maintenance
 sweep that retries `pending` images.
+
+`APP-8` A static App runs no VM (`requires: appHost`). The real CLI process
+`kortix apps deploy dist --type static --spa --access public --json` returns a
+`ready` deployment with `hosting_type: "static"`: the worker publishes each file
+once per account under its SHA-256 and the API serves it at the App's own
+hostname behind the access gate. `GET /` → **200** HTML with
+`cache-control: public, no-cache`; a hashed asset → `public, max-age=31536000,
+immutable`; a page navigation to an unknown path → the SPA shell; a missing
+asset → **404**; `If-None-Match` with the ETag → **304**. A redeploy of one
+changed file logs `(1 new, 2 unchanged)` and serves the new page at once.
+`POST /projects/:projectId/apps/:appId/rollback` to v1 → **200** and v1 is
+served (no runtime starts). `GET /projects/:projectId/apps` lists the App
+with `hosting_type: "static"`, `estimated_monthly_usd: 0` and
+`retained_deployments: 5`. `POST …/start` and `POST …/stop` → **409**
+`static_app_no_runtime`; `kortix apps stop` exits 1 with that explanation,
+`kortix apps ls` prints `static` in the STATE column, and the App keeps
+serving. After 8 deploys the deployment list holds exactly
+v3–v8 `ready` (the active one and the 5 newest others,
+`KORTIX_APPS_RETAINED_DEPLOYMENTS`); v1 and v2 are retired. The local profile
+runs the worker with `KORTIX_APPS_WORKER_ENABLED=static`, so static
+deployments complete while sandbox deployments stay `queued` for APP-7.
+`apps/api/src/apps/static-site.integration.test.ts` proves deduplication,
+range requests, retention's freed files, blob reclaim, batched build-log
+ordering and the 14-day drop of a failed deployment's build log on PostgreSQL.
 
 ---
 

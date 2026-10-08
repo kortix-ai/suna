@@ -385,6 +385,9 @@ export const qk = {
     /** Immutable deployment history for one App. */
     appDeployments: (id: string, appId: string) =>
       [...qk.project.apps(id), appId, 'deployments'] as const,
+    /** One deployment and its events (build log included). */
+    appDeployment: (id: string, appId: string, deploymentId: string) =>
+      [...qk.project.appDeployments(id, appId), deploymentId] as const,
 
     /** `listProjectTriggers` — `GET /projects/:id/triggers`, the cron/webhook
      *  listing (file-defined in the repo manifest). Shared by
@@ -393,6 +396,13 @@ export const qk = {
      *  and write the identical entity through `listProjectTriggers(id)`, so
      *  they must share this one key. */
     triggers: (id: string) => [...qk.project.scope(id), 'triggers'] as const,
+
+    /** `listProjectTriggerEventTypes` — the app events one connector can trigger on. */
+    triggerEventTypes: (id: string, connector: string) =>
+      [...qk.project.triggers(id), 'event-types', connector] as const,
+
+    /** `listProjectTriggerEventApps` — the apps that can trigger events. */
+    triggerEventApps: (id: string) => [...qk.project.triggers(id), 'event-apps'] as const,
 
     /** `listProjectReminders` — `GET /projects/:id/reminders`. Also the prefix
      *  of every `sessionReminders` key, so invalidating it refreshes the

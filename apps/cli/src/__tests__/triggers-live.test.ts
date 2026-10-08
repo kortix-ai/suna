@@ -19,6 +19,51 @@ interface Call {
 let tmp: string;
 let server: ReturnType<typeof Bun.serve> | null = null;
 let calls: Call[] = [];
+let eventStatus = 'needs_connection';
+let eventError: string | null = null;
+let currentEventConfig: Record<string, unknown> = { owner: 'acme', repo: 'app' };
+
+const EVENT_TYPES = {
+  provider: 'composio',
+  app: 'github',
+  event_types: [
+    {
+      type: 'GITHUB_PULL_REQUEST_EVENT',
+      name: 'Pull request',
+      description: 'A pull request is opened',
+      app: 'github',
+      delivery: 'poll',
+      config_schema: {
+        type: 'object',
+        properties: {
+          owner: { type: 'string', description: 'Repository owner' },
+          limit: { type: 'integer', description: 'Max items' },
+          draft: { type: 'boolean' },
+          labels: { type: 'array', items: { type: 'string' } },
+          state: { type: 'string', enum: ['open', 'closed'] },
+        },
+        required: ['owner'],
+      },
+      payload_schema: null,
+    },
+  ],
+};
+
+const eventRow = (slug: string, config: Record<string, unknown>) => ({
+  slug,
+  type: 'event',
+  cron: null,
+  event: {
+    connector: 'github',
+    type: 'GITHUB_PULL_REQUEST_EVENT',
+    config,
+    provider: 'composio',
+    app: 'github',
+    status: eventStatus,
+    error: eventError,
+    last_event_at: null,
+  },
+});
 
 function writeConfig(apiBase: string): string {
   const path = join(tmp, 'config.json');
@@ -59,6 +104,7 @@ function triggerList(overrides: Record<string, unknown> = {}) {
         secret_env: null,
         webhook_url: null,
         last_fired_at: null,
+        event: null,
         ...overrides,
       },
     ],
@@ -76,8 +122,18 @@ function startServer(timezone = 'UTC'): string {
       calls.push({ method: req.method, path: url.pathname + url.search, body });
       const base = `/v1/projects/${PROJECT}/triggers`;
 
+      if (url.pathname === `${base}/event-types`) return Response.json(EVENT_TYPES);
+      if (url.pathname === base && req.method === 'GET') {
+        return Response.json(triggerList(eventRow('new-pr', currentEventConfig)));
+      }
+      if (url.pathname === `${base}/new-pr` && req.method === 'PATCH') {
+        return Response.json(triggerList(eventRow('new-pr', (body as { event_config?: Record<string, unknown> }).event_config ?? currentEventConfig)));
+      }
       if (url.pathname === base && req.method === 'POST') {
         const draft = body as Record<string, unknown>;
+        if (draft.type === 'event') {
+          return Response.json(triggerList(eventRow(String(draft.slug), draft.event_config as Record<string, unknown>)), { status: 201 });
+        }
         if (draft.type === 'webhook') {
           return Response.json(
             triggerList({
@@ -140,6 +196,8 @@ describe('kortix triggers — the live (--apply) path', () => {
     tmp = mkdtempSync(join(tmpdir(), 'kortix-triggers-'));
     process.env = { ...ORIGINAL_ENV };
     calls = [];
+    eventStatus = 'needs_connection';
+    eventError = null;
   });
 
   afterEach(() => {
@@ -180,6 +238,106 @@ describe('kortix triggers — the live (--apply) path', () => {
       },
     });
     expect(r.stdout).toContain('digest (cron) live on the project');
+  });
+
+  test('add --apply --type event POSTs connector, event, and event_config', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(
+      ['triggers', 'add', 'new-pr', '--apply', '--type', 'event', '--connector', 'github', '--event', 'GITHUB_PULL_REQUEST_EVENT', '--config', 'owner=acme', '--config-json', '{"draft":false}', '--prompt', 'Review {{ event.data.title }}', '--project', PROJECT],
+      config,
+    );
+    expect(r.code).toBe(0);
+    expect(calls.find((c) => c.method === 'POST')?.body).toEqual({
+      slug: 'new-pr',
+      name: 'new-pr',
+      type: 'event',
+      prompt_template: 'Review {{ event.data.title }}',
+      enabled: true,
+      connector: 'github',
+      event: 'GITHUB_PULL_REQUEST_EVENT',
+      event_config: { draft: false, owner: 'acme' },
+    });
+    expect(r.stdout).toContain('new-pr (event) live on the project');
+    expect(r.stdout).toContain('kortix connectors connect github --owner project');
+    expect(r.stdout).toContain('A person must open the link');
+  });
+
+  const addEvent = (config: string, ...extra: string[]) =>
+    runCli(
+      ['triggers', 'add', 'new-pr', '--apply', '--type', 'event', '--connector', 'github', '--event', 'GITHUB_PULL_REQUEST_EVENT', '--prompt', 'p', '--project', PROJECT, ...extra],
+      config,
+    );
+  const postBody = () => calls.find((c) => c.method === 'POST')?.body as Record<string, unknown> | undefined;
+
+  test('add --apply converts --config values by the catalog schema', async () => {
+    const config = writeConfig(startServer());
+    const r = await addEvent(config, '--config', 'owner=acme', '--config', 'limit=5', '--config', 'draft=true', '--config', 'labels=bug, ui', '--config', 'state=open');
+    expect(r.code).toBe(0);
+    expect(postBody()?.event_config).toEqual({ owner: 'acme', limit: 5, draft: true, labels: ['bug', 'ui'], state: 'open' });
+  });
+
+  test('add --apply lists every invalid field and sends nothing', async () => {
+    const config = writeConfig(startServer());
+    const r = await addEvent(config, '--config', 'limit=abc', '--config', 'state=merged');
+    expect(r.code).not.toBe(0);
+    expect(r.stderr).toContain('limit must be an integer (got "abc")');
+    expect(r.stderr).toContain('owner is required — Repository owner');
+    expect(r.stderr).toContain('state must be one of open, closed');
+    expect(postBody()).toBeUndefined();
+  });
+
+  test('add --apply rejects an unknown event with the events command', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['triggers', 'add', 'x', '--apply', '--type', 'event', '--connector', 'github', '--event', 'NOPE', '--prompt', 'p', '--project', PROJECT], config);
+    expect(r.code).not.toBe(0);
+    expect(r.stderr).toContain('Unknown event NOPE for github. Run `kortix triggers events --connector github`');
+    expect(postBody()).toBeUndefined();
+  });
+
+  test('add --apply prints the next step per status', async () => {
+    const config = writeConfig(startServer());
+    eventStatus = 'active';
+    const live = await addEvent(config, '--config', 'owner=acme');
+    expect(live.stdout).toContain('Live. It fires on the next Pull request.');
+    eventStatus = 'error';
+    eventError = 'repo not found';
+    const bad = await addEvent(config, '--config', 'owner=acme');
+    expect(bad.stdout).toContain('Error: repo not found');
+    expect(bad.stdout).toContain('kortix triggers set new-pr --config');
+  });
+
+  test('set --config merges into the current config', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['triggers', 'set', 'new-pr', '--config', 'limit=7', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ event_config: { owner: 'acme', repo: 'app', limit: 7 } });
+  });
+
+  test('set --config-json replaces the config', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['triggers', 'set', 'new-pr', '--config-json', '{"owner":"zed"}', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ event_config: { owner: 'zed' } });
+  });
+
+  test('set --config on a non-event trigger fails', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['triggers', 'set', 'digest', '--config', 'a=b', '--project', PROJECT], config);
+    expect(r.code).not.toBe(0);
+  });
+
+  test('add --apply rejects event misuse before any request', async () => {
+    const config = writeConfig(startServer());
+    const base = ['triggers', 'add', 'x', '--apply', '--prompt', 'p', '--project', PROJECT];
+    const cron = await runCli([...base, '--type', 'event', '--connector', 'github', '--event', 'E', '--cron', '0 0 9 * * *'], config);
+    expect(cron.code).toBe(2);
+    expect(cron.stderr).toContain('--cron is not valid on an event trigger');
+    const stray = await runCli([...base, '--cron', '0 0 9 * * *', '--event', 'E'], config);
+    expect(stray.code).toBe(2);
+    expect(stray.stderr).toContain('--event is only valid on an event trigger');
+    const missing = await runCli([...base, '--type', 'event', '--event', 'E'], config);
+    expect(missing.code).toBe(2);
+    expect(calls).toEqual([]);
   });
 
   test('add --apply --run-at sends a one-off instead of a cron', async () => {

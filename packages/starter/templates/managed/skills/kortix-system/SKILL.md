@@ -154,7 +154,8 @@ Load this skill when the user asks any of:
 - "What can you do?" / "Can you do X?" / "How does Kortix work?" / "How do I
   do Y in Kortix?" / how Kortix compares to other AI tools or assistants
 - "Schedule this / remind me later / run this every morning / on a
-  schedule" / "recurring task" / "cron job" / "webhook trigger"
+  schedule" / "recurring task" / "cron job" / "webhook trigger" / "when a PR opens /
+  an email arrives" (app event trigger)
 - "Check back on this later / follow up tomorrow / keep checking until X
   happens" — a session reminder (`kortix remind`)
 - "What does `kortix.yaml` do?" / "What is `kortix_version`?"
@@ -218,6 +219,7 @@ Kortix cloud state — not just files in the repo. Examples:
 | "call Gmail / a CRM / any connector from an App, a Convex backend or a script" | `@kortix/sdk` through the connector gateway, never a raw provider key · `kortix system-skills get kortix-connectors` (**From apps and backends**) |
 | "edit files in another session's sandbox" | `kortix sessions files <id> ls|write|mv|rm|find` |
 | "what needs review? approve / reject / request changes" | `kortix review ls` · `kortix review act <id> approve` · `kortix cr request-changes <cr> --message` |
+| "when X happens in <app>, do Y" (new email, PR, issue, calendar event, Slack message) | `kortix triggers events --apps` → `triggers events --connector <slug> --event <TYPE>` → `triggers add … --type event … --apply` · playbook: `references/scheduling.md` → App event triggers |
 | "edit a trigger live (schedule, conditions, agent, model)" | `kortix triggers set <slug> --cron … --filter k=v` · `triggers add … --apply` |
 | "who is in the account / invite someone / manage groups" | `kortix members ls|invite` · `kortix groups …` · `kortix access requests ls` |
 
@@ -340,12 +342,17 @@ sessions, sandbox files and connectors. The tool refuses `--host`, `hosts`,
 <apps>
 ## Kortix Apps — deploy a website or container
 
-An **App** is a project-scoped, serverless deployment with one stable Kortix
-URL. A deployment is immutable. A failed deployment never replaces the active
-version. The control plane starts the App sandbox on the first public request,
-keeps it running while requests arrive, and stops it after the configured idle
-timeout. `stop` suspends compute immediately. The next public request resumes
-the App and returns the original request after readiness.
+An **App** is a project-scoped deployment with one stable Kortix URL. A
+deployment is immutable. A failed deployment never replaces the active version.
+
+- A **static App** (`--type static`) is files that Kortix serves itself: no
+  machine, no cold start, no compute bill, instant rollback. Build a Vite,
+  React, or exported Next.js App here and deploy its output directory.
+- A **server App** (`--type dockerfile`, or `--image`) runs in its own machine.
+  It runs **always on** (the default for a new App, 24/7) or **on demand**
+  (`--on-demand`: stops when idle, wakes on the next request). It stops at its
+  monthly compute budget (default 5 USD). 24/7 on the default machine costs
+  about 73 USD a month, so an always-on App needs `--budget`.
 
 Apps is experimental and off by default. Enable **Apps** for the selected
 project under Project Settings → Experimental before using the CLI or SDK. The
@@ -359,9 +366,9 @@ an App password in `kortix.yaml`.
 Use the CLI from the source directory:
 
 ```sh
-kortix apps deploy .                         # auto-detect static, bundle, or Dockerfile
-kortix apps deploy ./dist --type static
-kortix apps deploy . --type dockerfile --command '["bun","run","start"]' --port 3000
+kortix apps deploy ./dist --type static --spa
+kortix apps deploy . --type dockerfile --on-demand --command '["bun","run","start"]' --port 3000
+kortix apps deploy . --type dockerfile --always-on --budget 80 --command '["bun","run","start"]' --port 3000
 kortix apps deploy --image ghcr.io/acme/api:1.4.2 --command '["/app/server"]' --port 8081
 kortix apps access storefront --mode restricted --members <member-id> --groups <group-id>
 kortix apps ls --json
@@ -373,16 +380,15 @@ the default for bare `kortix apps deploy`. The manifest stores non-secret
 environment values and maps runtime environment keys to **project secret
 identifiers**. It never stores secret values.
 
-The first release supports one public HTTP port, static sites, JavaScript
-bundles, Dockerfiles, and public OCI images. It supports HTTP streaming, SSE,
-and WebSockets. It does not support replicas, persistent volumes, UDP, private
+An App keeps its active deployment and the 5 newest other ready ones for
+rollback. A server App supports one public HTTP port, HTTP streaming, SSE, and
+WebSockets. Apps do not support replicas, persistent volumes, UDP, private
 registries, or custom domains.
 
-**Full reference:**
-`references/kortix/apps.md` — workload
-selection, manifest fields, every lifecycle command, ignore rules, secrets,
-cold starts, rollback, limits, and failure handling. Load it before deploying
-or operating an App.
+Load the `kortix-apps` system skill before you deploy or operate an App.
+**Full reference:** `references/kortix/apps.md` — workload selection, manifest
+fields, every lifecycle command, run modes and budget, ignore rules, secrets,
+cold starts, rollback, retention, limits, and failure handling.
 </apps>
 
 <marketplace>
@@ -481,7 +487,11 @@ Decide the mechanism first:
 - **Recurring project work** anyone should see (daily digest) →
   `type: cron` + `cron` (6-field croner) + `timezone` in `kortix.yaml`.
 - **One-off project job** not tied to this session → `type: cron` + `run_at`.
-- **Reacts to an external event** → `type: webhook` + `secret_env`.
+- **Reacts to an event in a connected app** ("when a PR opens", "when an
+  email arrives", "when an issue changes") → `type: event` + `connector` +
+  `event`. Kortix subscribes for you: no webhook, no secret, no signature.
+  Use `type: webhook` + `secret_env` only for a system that has no app
+  connector.
 
 For triggers, `session_mode` governs every fire: `"fresh"` (default, clean session, no chat
 history — right for monitoring/digests) vs `"reuse"` (re-prompts the same
@@ -496,16 +506,17 @@ watching — usually via `slack send`, silent otherwise), and it must be
 
 **Full references:**
 - `references/kortix/kortix-yaml.md`
-  — the complete `triggers:` field schema (cron/webhook fields, prompt
+  — the complete `triggers:` field schema (cron/webhook/event fields, prompt
   template variables, webhook signature + response codes, `session_mode`,
   the project-wide `triggers_paused` kill-switch).
 - `references/scheduling.md` — the
   operational playbook: full cron cheat-sheet + gotchas (DOM+DOW OR-not-AND
   trap, no exact-minute gates), fresh-vs-reuse guidance, notifying/
   idempotency practices in depth, the pause-and-wait re-fire pattern,
-  worked examples, and a pre-ship checklist.
+  worked examples, a pre-ship checklist, and the **App event triggers**
+  playbook (autonomous setup recipe, statuses, noise control).
 - `references/kortix/kortix-cli.md`
-  — the `kortix triggers ls/info/fire/enable/disable` and
+  — the `kortix triggers ls/info/fire/enable/disable/events/add/set` and
   `kortix reminders` command reference.
 </scheduling>
 
@@ -807,11 +818,12 @@ to see the full enum.
 </reference>
 
 <reference path="references/kortix/apps.md">
-  Kortix Apps deployment and operations reference. Covers static, bundle,
-  Dockerfile, and OCI workloads; the v2 manifest `apps:` map; archive ignore
-  rules; environment and secret mappings; stable URLs; cold wake and idle
-  stop; lifecycle commands; rollback; resource and budget limits; and current
-  first-release boundaries. Load before deploying or operating an App.
+  Kortix Apps deployment and operations reference. Covers static hosting and
+  server Apps (bundle, Dockerfile, and OCI workloads); always-on and on-demand
+  run modes and the monthly budget; the v2 manifest `apps:` map; archive
+  ignore rules; environment and secret mappings; stable URLs; cold wake and
+  idle stop; lifecycle commands; rollback and retention; resource limits; and
+  current boundaries. Load before deploying or operating an App.
 </reference>
 
 <reference path="references/kortix/marketplace.md">

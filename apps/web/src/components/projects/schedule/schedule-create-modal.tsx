@@ -37,16 +37,17 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
+import { type AutosizeTextAreaRef, Textarea } from '@/components/ui/textarea';
 import { successToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
 import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
 import { SharingPicker, type SharingSelection } from '@/features/workspace/shared/sharing-picker';
 import { cn } from '@/lib/utils';
 import {
+  PROJECT_SESSION_NAME_LOOKUP_LIMIT,
+  type ProjectTriggerEventType,
   createProjectTrigger,
   listProjectSessions,
-  PROJECT_SESSION_NAME_LOOKUP_LIMIT,
   upsertProjectSecret,
 } from '@kortix/sdk';
 import {
@@ -54,6 +55,8 @@ import {
   contract,
   modelKeyToWire,
   qk,
+  useProjectTriggerEventApps,
+  useProjectTriggerEventTypes,
   useRuntimeProviders,
   useVisibleAgents,
 } from '@kortix/sdk/react';
@@ -64,13 +67,33 @@ import {
   CaretDownIcon,
   CaretRightIcon,
   CheckIcon,
+  LightningIcon,
   TimerIcon,
   WebhooksLogoIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { triggerSessionAccessCopy } from './trigger-session-access-copy';
 
+import {
+  type ConfigDraft,
+  configProblem,
+  defaultConfigDraft,
+  defaultEventName,
+  defaultEventPrompt,
+  describeEventStatus,
+  draftToConfig,
+  parseConfigErrors,
+  schemaFields,
+} from './event-trigger-copy';
+import {
+  EventConfigForm,
+  EventAppPicker,
+  type EventAppChoice,
+  EventTypePicker,
+  PromptVariableHints,
+  SelectedEventType,
+} from './event-trigger-fields';
 import {
   KIND_COPY,
   type SessionMode,
@@ -86,7 +109,12 @@ import {
   rowsToConditions,
 } from './schedule-fields';
 
-type Step = 'type' | 'what' | 'how';
+type Step = 'type' | 'app' | 'event' | 'what' | 'how';
+
+/** The wizard's steps in order. An app event picks its app and event first. */
+function stepsFor(kind: TriggerKind | null): Step[] {
+  return kind === 'event' ? ['type', 'app', 'event', 'what', 'how'] : ['type', 'what', 'how'];
+}
 
 /**
  * A random signing key, hex-encoded.
@@ -135,6 +163,7 @@ export function ScheduleCreateModal({
   onOpenChange,
   onCreated,
   initialAgent = null,
+  initialKind = null,
 }: {
   projectId: string;
   open: boolean;
@@ -144,11 +173,14 @@ export function ScheduleCreateModal({
    *  this modal for "its" triggers, so the picker lands on that agent rather
    *  than asking a question the page already answered. Still changeable. */
   initialAgent?: string | null;
+  /** Opens past the type step, e.g. the empty state's "App event" button. */
+  initialKind?: TriggerKind | null;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const [kind, setKind] = useState<TriggerKind | null>(null);
   const copy = kind ? KIND_COPY[kind] : null;
   const isCron = kind === 'cron';
+  const isEvent = kind === 'event';
 
   const [step, setStep] = useState<Step>('type');
   const [name, setName] = useState('');
@@ -159,6 +191,14 @@ export function ScheduleCreateModal({
   const [cron, setCron] = useState('0 0 9 * * *');
   const [runAt, setRunAt] = useState<string | null>(null);
   const [timezone, setTimezone] = useState('UTC');
+
+  const [connector, setConnector] = useState<EventAppChoice | null>(null);
+  // Per-field problems from the API's 400 on a bad event config.
+  const [configErrors, setConfigErrors] = useState<Record<string, string>>({});
+  const [eventType, setEventType] = useState<ProjectTriggerEventType | null>(null);
+  const [configDraft, setConfigDraft] = useState<ConfigDraft>({});
+  const [changingEvent, setChangingEvent] = useState(false);
+  const promptRef = useRef<AutosizeTextAreaRef | null>(null);
 
   const [signingKey, setSigningKey] = useState('');
   const [secretName, setSecretName] = useState('');
@@ -187,9 +227,27 @@ export function ScheduleCreateModal({
     ...contract('inventory'),
   });
 
+  const configFields = useMemo(() => schemaFields(eventType?.config_schema), [eventType]);
+  // The chosen event's full definition (payload schema) from the same cached
+  // list the picker reads, so a refetch cannot leave the prompt hints stale.
+  const eventApps = useProjectTriggerEventApps(isEvent ? projectId : null);
+  const chosenApp = eventApps.data?.apps.find((a) => a.connector === connector?.slug) ?? null;
+  const eventTypes = useProjectTriggerEventTypes(
+    projectId,
+    isEvent ? (connector?.slug ?? null) : null,
+  );
+  const payloadSchema =
+    eventTypes.data?.event_types.find((e) => e.type === eventType?.type)?.payload_schema ??
+    eventType?.payload_schema;
+
   useEffect(() => {
     if (open) return;
     setStep('type');
+    setConnector(null);
+    setChangingEvent(false);
+    setEventType(null);
+    setConfigDraft({});
+    setConfigErrors({});
     setKind(null);
     setName('');
     setInstruction('');
@@ -214,11 +272,61 @@ export function ScheduleCreateModal({
     setError(null);
   }, [open, initialAgent]);
 
+  useEffect(() => {
+    if (!open || !initialKind) return;
+    setKind(initialKind);
+    setStep(initialKind === 'event' ? 'app' : 'what');
+  }, [open, initialKind]);
+
   /** First-step problems, in the order a person would hit them. */
   function checkWhat(): string | null {
     if (!name.trim()) return `Give this ${copy?.noun ?? 'trigger'} a name.`;
     if (!instruction.trim()) return 'Say what the agent should do.';
     return null;
+  }
+
+  function checkEvent(): string | null {
+    if (!connector) return 'Pick the app the event happens in.';
+    if (!eventType) return 'Pick the event that starts the agent.';
+    return configProblem(configFields, configDraft);
+  }
+
+  function pickConnector(next: EventAppChoice) {
+    if (connector?.slug !== next.slug) {
+      setEventType(null);
+      setConfigDraft({});
+      setConfigErrors({});
+    }
+    setConnector(next);
+    setError(null);
+  }
+
+  function pickEventType(next: ProjectTriggerEventType) {
+    setEventType(next);
+    setChangingEvent(false);
+    setConfigDraft(defaultConfigDraft(schemaFields(next.config_schema)));
+    setConfigErrors({});
+    // Prefill only what the person has not typed: a second pick must not eat their words.
+    if (!instruction.trim() || instruction === (eventType && defaultEventPrompt(eventType))) {
+      setInstruction(defaultEventPrompt(next));
+    }
+    if (!name.trim() || name === (eventType && defaultEventName(eventType))) {
+      setName(defaultEventName(next));
+    }
+    setError(null);
+  }
+
+  function insertVariable(token: string) {
+    const el = promptRef.current?.textArea;
+    const at = el?.selectionStart ?? instruction.length;
+    const end = el?.selectionEnd ?? at;
+    // Two chips in a row read as two words, not `}}{{`.
+    const text = at > 0 && !/\s/.test(instruction[at - 1]) ? ` ${token}` : token;
+    setInstruction(`${instruction.slice(0, at)}${text}${instruction.slice(end)}`);
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(at + text.length, at + text.length);
+    });
   }
 
   function checkHow(): string | null {
@@ -229,7 +337,7 @@ export function ScheduleCreateModal({
       } else if (!cron.trim()) {
         return 'Choose when this should run.';
       }
-    } else if (!signingKey.trim()) {
+    } else if (!isEvent && !signingKey.trim()) {
       return 'Add a signing key so only your app can start this.';
     }
     if (mode === 'pinned' && !pinnedSessionId) return 'Choose which session to use.';
@@ -253,7 +361,7 @@ export function ScheduleCreateModal({
       const slug = slugify(customId.trim() || trimmedName);
 
       let secretEnv: string | undefined;
-      if (!isCron) {
+      if (kind === 'webhook') {
         secretEnv =
           normalizeSecretName(secretName) ||
           `WEBHOOK_${slug.toUpperCase().replace(/[^A-Z0-9_]/g, '_')}_SECRET`;
@@ -286,7 +394,13 @@ export function ScheduleCreateModal({
           ? runAt
             ? { run_at: runAt, timezone: timezone.trim() || 'UTC' }
             : { cron: cron.trim(), timezone: timezone.trim() || 'UTC' }
-          : { secret_env: secretEnv }),
+          : isEvent
+            ? {
+                connector: connector?.slug,
+                event: eventType?.type,
+                event_config: draftToConfig(configFields, configDraft),
+              }
+            : { secret_env: secretEnv }),
       });
     },
     onSuccess: (listing) => {
@@ -294,44 +408,81 @@ export function ScheduleCreateModal({
         .filter((t) => t.type === kind && t.name === name.trim())
         .slice(-1)[0];
       successToast(
-        isCron ? tI18nComplete.raw('text84e98b45ad8b') : tI18nComplete.raw('text20bf63f7b46f'),
+        isEvent
+          ? tI18nComplete.raw('text840993da3129')
+          : isCron
+            ? tI18nComplete.raw('text84e98b45ad8b')
+            : tI18nComplete.raw('text20bf63f7b46f'),
         {
-          description: isCron
-            ? runAt
-              ? describeOneOff(runAt)
-              : describeCadence(cron.trim())
-            : 'Copy its address from the panel to finish setup.',
+          description: isEvent
+            ? created?.event
+              ? created.event.status === 'needs_connection'
+                ? tI18nComplete.raw('text2fd655fcbaad')
+                : (describeEventStatus(created.event, tI18nComplete).detail ??
+                  tI18nComplete.raw('text80273a6c8918'))
+              : undefined
+            : isCron
+              ? runAt
+                ? describeOneOff(runAt)
+                : describeCadence(cron.trim())
+              : 'Copy its address from the panel to finish setup.',
         },
       );
       if (created) onCreated(created.slug);
     },
-    onError: (err) => setError(err instanceof Error ? err.message : 'Could not create it'),
+    onError: (err) => {
+      const message = err instanceof Error ? err.message : 'Could not create it';
+      if (!isEvent) return setError(message);
+      // A bad event config comes back per field: show each under its input, on the step that has them.
+      const { byField, general } = parseConfigErrors(message, configFields);
+      if (Object.keys(byField).length > 0) {
+        setConfigErrors(byField);
+        setStep('event');
+      }
+      setError(Object.keys(byField).length > 0 ? general : message);
+    },
   });
 
   const stepLabels: Record<Step, string> = {
     type: 'Type',
+    app: 'App',
+    event: 'Event',
     what: 'What it does',
-    how: isCron ? 'When it runs' : "How it's called",
+    how: isCron ? 'When it runs' : isEvent ? 'Settings' : "How it's called",
   };
 
   const chooseKind = (next: TriggerKind) => {
     setKind(next);
     setError(null);
-    setStep('what');
+    setStep(next === 'event' ? 'app' : 'what');
+  };
+
+  const goBack = () => {
+    setError(null);
+    const order = stepsFor(kind);
+    setStep(order[Math.max(0, order.indexOf(step) - 1)]);
   };
 
   const goForward = () => {
-    const problem = checkWhat();
+    const problem =
+      step === 'app'
+        ? connector
+          ? null
+          : 'Pick the app the event happens in.'
+        : step === 'event'
+          ? checkEvent()
+          : checkWhat();
     if (problem) {
       setError(problem);
       return;
     }
     setError(null);
-    setStep('how');
+    const order = stepsFor(kind);
+    setStep(order[order.indexOf(step) + 1]);
   };
 
   const submit = () => {
-    const problem = checkWhat() ?? checkHow();
+    const problem = (isEvent ? checkEvent() : null) ?? checkWhat() ?? checkHow();
     if (problem) {
       setError(problem);
       return;
@@ -339,6 +490,99 @@ export function ScheduleCreateModal({
     setError(null);
     create.mutate();
   };
+
+  const advanced = (
+    <div className="space-y-6 pt-4">
+      <Field
+        label={tI18nComplete.raw('text345e6cf10469')}
+        hint={tI18nComplete.raw('text319d909352ff')}
+      >
+        <RunLocationFields
+          mode={mode}
+          onModeChange={(next) => {
+            setMode(next);
+            if (next !== 'pinned') setPinnedSessionId(null);
+            if (next !== 'keyed') setSessionKey('');
+          }}
+          pinnedSessionId={pinnedSessionId}
+          onPinnedSessionChange={setPinnedSessionId}
+          sessionKey={sessionKey}
+          onSessionKeyChange={setSessionKey}
+          sessions={sessions.data ?? []}
+          sessionsLoading={sessions.isLoading}
+        />
+      </Field>
+
+      <Field
+        label={tI18nComplete.raw('textbc9424d3f527')}
+        hint={tI18nComplete.raw('text8493c3761028')}
+      >
+        <SharingPicker
+          projectId={projectId}
+          value={sessionAccess}
+          onChange={setSessionAccess}
+          showHeading={false}
+          copy={triggerSessionAccessCopy(tI18nComplete)}
+        />
+      </Field>
+
+      {!isCron && (
+        <>
+          <Field
+            label={tI18nComplete.raw('text94c7226773af')}
+            hint={tI18nComplete.raw('text8e47e838d897')}
+          >
+            <ConditionsEditor rows={conditions} onChange={setConditions} />
+          </Field>
+
+          {!isEvent && (
+            <Field
+              label={tI18nComplete.raw('text301cd463a175')}
+              hint={tI18nComplete.raw('text432020e4f157')}
+            >
+              <Input
+                value={secretName}
+                onChange={(e) => setSecretName(e.target.value.toUpperCase())}
+                placeholder="WEBHOOK_MY_TRIGGER_SECRET"
+                className="font-mono text-sm"
+              />
+            </Field>
+          )}
+        </>
+      )}
+
+      <Field
+        label={tI18nComplete.raw('text7396f100afdf')}
+        hint={
+          isCron ? tI18nComplete.raw('textfb2536db879a') : tI18nComplete.raw('text9f2198f23b84')
+        }
+      >
+        <Input
+          value={customId}
+          onChange={(e) => setCustomId(e.target.value)}
+          placeholder={name.trim() ? slugify(name.trim()) : 'daily-standup-digest'}
+          maxLength={128}
+          className="font-mono text-sm"
+        />
+      </Field>
+
+      <Field
+        label={tI18nComplete.raw('textd90c143bf007')}
+        hint={tI18nComplete.raw('textbed03adbb73f')}
+      >
+        <div className="bg-card flex items-center justify-between gap-3 rounded-md border px-3 py-2.5">
+          <Label htmlFor="schedule-start-active" className="text-sm font-normal">
+            {startActive ? 'Active' : 'Paused'}
+          </Label>
+          <Switch
+            id="schedule-start-active"
+            checked={startActive}
+            onCheckedChange={setStartActive}
+          />
+        </div>
+      </Field>
+    </div>
+  );
 
   return (
     <Modal
@@ -354,11 +598,17 @@ export function ScheduleCreateModal({
           <ModalDescription>
             {step === 'type'
               ? tI18nComplete.raw('textf60eb7723e40')
-              : isCron
-                ? tI18nComplete.raw('text530f84eed1b8')
-                : tI18nComplete.raw('text8d5ac88c84ff')}
+              : step === 'app'
+                ? tI18nComplete.raw('textbd3baa5c3d2c')
+                : step === 'event'
+                  ? tI18nComplete.raw('text89acd37e88bf')
+                  : isEvent
+                    ? tI18nComplete.raw('text1ca54705a9bb')
+                    : isCron
+                      ? tI18nComplete.raw('text530f84eed1b8')
+                      : tI18nComplete.raw('text8d5ac88c84ff')}
           </ModalDescription>
-          <StepIndicator step={step} labels={stepLabels} />
+          <StepIndicator step={step} order={stepsFor(kind)} labels={stepLabels} />
         </ModalHeader>
 
         <ModalBody className="max-h-[min(64vh,600px)] space-y-6 overflow-y-auto px-5 py-5">
@@ -376,7 +626,48 @@ export function ScheduleCreateModal({
                 description={tI18nComplete.raw('textf1b28a589920')}
                 onClick={() => chooseKind('webhook')}
               />
+              <TypeCard
+                icon={LightningIcon}
+                title={tI18nComplete.raw('text5441e7146193')}
+                description={tI18nComplete.raw('texteaafc7a66ef7')}
+                onClick={() => chooseKind('event')}
+              />
             </div>
+          ) : step === 'app' ? (
+            <EventAppPicker
+              projectId={projectId}
+              value={connector?.slug ?? null}
+              onChange={pickConnector}
+            />
+          ) : step === 'event' && connector ? (
+            <>
+              {eventType && !changingEvent ? (
+                <SelectedEventType eventType={eventType} onChange={() => setChangingEvent(true)} />
+              ) : (
+                <EventTypePicker
+                  projectId={projectId}
+                  connector={connector.slug}
+                  value={eventType?.type ?? null}
+                  onChange={pickEventType}
+                />
+              )}
+              {eventType && configFields.length > 0 ? (
+                <Field
+                  label={tI18nComplete.raw('text6abe3b60f184')}
+                  hint={tI18nComplete.raw('text9f2c75e76be9')}
+                >
+                  <EventConfigForm
+                    fields={configFields}
+                    draft={configDraft}
+                    errors={configErrors}
+                    onChange={(next) => {
+                      setConfigDraft(next);
+                      setConfigErrors({});
+                    }}
+                  />
+                </Field>
+              ) : null}
+            </>
           ) : step === 'what' && copy ? (
             <>
               <Field
@@ -398,11 +689,15 @@ export function ScheduleCreateModal({
               >
                 <Textarea
                   value={instruction}
+                  ref={promptRef}
                   onChange={(e) => setInstruction(e.target.value)}
                   placeholder={tI18nComplete.raw('text2438ee64fbf9')}
                   rows={5}
                   className="leading-relaxed"
                 />
+                {isEvent ? (
+                  <PromptVariableHints payloadSchema={payloadSchema} onInsert={insertVariable} />
+                ) : null}
               </Field>
 
               <Field
@@ -450,7 +745,7 @@ export function ScheduleCreateModal({
                   />
                   {!runAt && <TimezoneField value={timezone} onChange={setTimezone} />}
                 </Field>
-              ) : (
+              ) : isEvent ? null : (
                 <Field
                   label={tI18nComplete.raw('text49395b9594c2')}
                   hint={tI18nComplete.raw('textcbdd5dc3da21')}
@@ -479,110 +774,30 @@ export function ScheduleCreateModal({
                 </Field>
               )}
 
-              <Disclosure className="group">
-                <DisclosureTrigger>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-muted-foreground -mx-2 w-[calc(100%+1rem)] justify-between px-2"
-                  >
-                    {tI18nComplete.raw('text9f088dbebd6c')}
-                    <CaretDownIcon className="size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
-                  </Button>
-                </DisclosureTrigger>
-                <DisclosureContent>
-                  <div className="space-y-6 pt-4">
-                    <Field
-                      label={tI18nComplete.raw('text345e6cf10469')}
-                      hint={tI18nComplete.raw('text319d909352ff')}
+              {isEvent ? (
+                <>
+                  {chosenApp && !chosenApp.connected ? (
+                    <InfoBanner tone="info" className="text-xs">
+                      {tI18nComplete('textf4d17716fd3b', { name: chosenApp.name })}
+                    </InfoBanner>
+                  ) : null}
+                  {advanced}
+                </>
+              ) : (
+                <Disclosure className="group">
+                  <DisclosureTrigger>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground -mx-2 w-[calc(100%+1rem)] justify-between px-2"
                     >
-                      <RunLocationFields
-                        mode={mode}
-                        onModeChange={(next) => {
-                          setMode(next);
-                          if (next !== 'pinned') setPinnedSessionId(null);
-                          if (next !== 'keyed') setSessionKey('');
-                        }}
-                        pinnedSessionId={pinnedSessionId}
-                        onPinnedSessionChange={setPinnedSessionId}
-                        sessionKey={sessionKey}
-                        onSessionKeyChange={setSessionKey}
-                        sessions={sessions.data ?? []}
-                        sessionsLoading={sessions.isLoading}
-                      />
-                    </Field>
-
-                    <Field
-                      label={tI18nComplete.raw('textbc9424d3f527')}
-                      hint={tI18nComplete.raw('text8493c3761028')}
-                    >
-                      <SharingPicker
-                        projectId={projectId}
-                        value={sessionAccess}
-                        onChange={setSessionAccess}
-                        showHeading={false}
-                        copy={triggerSessionAccessCopy(tI18nComplete)}
-                      />
-                    </Field>
-
-                    {!isCron && (
-                      <>
-                        <Field
-                          label={tI18nComplete.raw('text94c7226773af')}
-                          hint={tI18nComplete.raw('text8e47e838d897')}
-                        >
-                          <ConditionsEditor rows={conditions} onChange={setConditions} />
-                        </Field>
-
-                        <Field
-                          label={tI18nComplete.raw('text301cd463a175')}
-                          hint={tI18nComplete.raw('text432020e4f157')}
-                        >
-                          <Input
-                            value={secretName}
-                            onChange={(e) => setSecretName(e.target.value.toUpperCase())}
-                            placeholder="WEBHOOK_MY_TRIGGER_SECRET"
-                            className="font-mono text-sm"
-                          />
-                        </Field>
-                      </>
-                    )}
-
-                    <Field
-                      label={tI18nComplete.raw('text7396f100afdf')}
-                      hint={
-                        isCron
-                          ? tI18nComplete.raw('textfb2536db879a')
-                          : tI18nComplete.raw('text9f2198f23b84')
-                      }
-                    >
-                      <Input
-                        value={customId}
-                        onChange={(e) => setCustomId(e.target.value)}
-                        placeholder={name.trim() ? slugify(name.trim()) : 'daily-standup-digest'}
-                        maxLength={128}
-                        className="font-mono text-sm"
-                      />
-                    </Field>
-
-                    <Field
-                      label={tI18nComplete.raw('textd90c143bf007')}
-                      hint={tI18nComplete.raw('textbed03adbb73f')}
-                    >
-                      <div className="bg-card flex items-center justify-between gap-3 rounded-md border px-3 py-2.5">
-                        <Label htmlFor="schedule-start-active" className="text-sm font-normal">
-                          {startActive ? 'Active' : 'Paused'}
-                        </Label>
-                        <Switch
-                          id="schedule-start-active"
-                          checked={startActive}
-                          onCheckedChange={setStartActive}
-                        />
-                      </div>
-                    </Field>
-                  </div>
-                </DisclosureContent>
-              </Disclosure>
+                      {tI18nComplete.raw('text9f088dbebd6c')}
+                      <CaretDownIcon className="size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
+                    </Button>
+                  </DisclosureTrigger>
+                  <DisclosureContent>{advanced}</DisclosureContent>
+                </Disclosure>
+              )}
             </>
           )}
 
@@ -594,13 +809,8 @@ export function ScheduleCreateModal({
         </ModalBody>
 
         <ModalFooter className="mt-0 shrink-0 justify-between gap-2 px-5 py-4">
-          {step === 'how' ? (
-            <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setStep('what')}>
-              <ArrowLeftIcon className="size-4 shrink-0" />
-              {tI18nComplete.raw('text76900f1bfd16')}
-            </Button>
-          ) : step === 'what' ? (
-            <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setStep('type')}>
+          {step !== 'type' ? (
+            <Button variant="ghost" size="sm" className="gap-1.5" onClick={goBack}>
               <ArrowLeftIcon className="size-4 shrink-0" />
               {tI18nComplete.raw('text76900f1bfd16')}
             </Button>
@@ -611,7 +821,7 @@ export function ScheduleCreateModal({
             <Button variant="outline-ghost" size="sm" onClick={() => onOpenChange(false)}>
               {tI18nComplete.raw('text19766ed6ccb2')}
             </Button>
-            {step === 'type' ? null : step === 'what' ? (
+            {step === 'type' ? null : step !== 'how' ? (
               <Button size="sm" className="gap-1.5" onClick={goForward}>
                 {tI18nComplete.raw('text31fbef162594')}
                 <ArrowRightIcon className="size-4 shrink-0" />
@@ -684,9 +894,16 @@ function TypeCard({
   );
 }
 
-function StepIndicator({ step, labels }: { step: Step; labels: Record<Step, string> }) {
+function StepIndicator({
+  step,
+  order,
+  labels,
+}: {
+  step: Step;
+  order: Step[];
+  labels: Record<Step, string>;
+}) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const order: Step[] = ['type', 'what', 'how'];
   return (
     <div
       className="flex items-center gap-2 pt-3"
@@ -717,6 +934,8 @@ function StepIndicator({ step, labels }: { step: Step; labels: Record<Step, stri
               className={cn(
                 'text-xs',
                 current ? 'text-foreground font-medium' : 'text-muted-foreground',
+                // Five steps do not fit a phone-width modal with every label.
+                !current && order.length > 3 && 'hidden',
               )}
             >
               {labels[id]}

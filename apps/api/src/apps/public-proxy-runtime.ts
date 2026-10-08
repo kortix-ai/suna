@@ -11,28 +11,32 @@ import { appWakeSupersededResponse } from './public-proxy-status';
 import { logger } from '../lib/logger';
 const WAKE_LEASE_MS = 2 * 60_000;
 
+/**
+ * One query for the App, its project's `apps` flag and its active deployment.
+ * A static deployment needs nothing more, so a static asset costs one query
+ * (the manifest and blobs are cached per replica). Only a server App reads its
+ * runtime. The App row is never cached: an access change, a rollback and a
+ * delete take effect on the next request on every replica.
+ */
 export async function loadPublicAppState(routeKey: string) {
   const [loaded] = await db
-    .select({ app: apps, projectMetadata: projects.metadata })
+    .select({ app: apps, projectMetadata: projects.metadata, active: appDeployments })
     .from(apps)
     .innerJoin(projects, eq(projects.projectId, apps.projectId))
+    .leftJoin(appDeployments, eq(appDeployments.deploymentId, apps.activeDeploymentId))
     // An App of a deleted workspace is not served (KRTX-1714).
     .where(and(eq(apps.routeKey, routeKey), isNull(apps.deletedAt), eq(projects.status, 'active')))
     .limit(1);
-  const app = loaded?.app;
   if (!loaded || !resolveFeatureFlag(loaded.projectMetadata, 'apps')) return null;
-  if (!app) return null;
-  let [deployment] = app.activeDeploymentId
-    ? await db.select().from(appDeployments)
-        .where(eq(appDeployments.deploymentId, app.activeDeploymentId)).limit(1)
-    : [];
+  const app = loaded.app;
+  let deployment = loaded.active ?? undefined;
   if (!deployment) {
     [deployment] = await db.select().from(appDeployments)
       .where(eq(appDeployments.appId, app.appId))
       .orderBy(desc(appDeployments.createdAt))
       .limit(1);
   }
-  const [runtime] = deployment?.status === 'ready'
+  const [runtime] = deployment?.status === 'ready' && deployment.hostingType !== 'static'
     ? await db.select().from(appRuntimes)
         .where(eq(appRuntimes.deploymentId, deployment.deploymentId))
         .orderBy(desc(appRuntimes.createdAt)).limit(1)
@@ -85,11 +89,19 @@ async function waitForWake(runtimeId: string, deadline: number) {
   throw new Error('App cold start timed out');
 }
 
+/**
+ * Must this request start (or re-check) the runtime before it is proxied? A
+ * stopped one, yes. A running on-demand one past its idle deadline, yes: the
+ * idle reaper may be stopping it. A running always-on one never: nothing
+ * idle-stops it, and the keep-alive pass confirms it with the provider.
+ */
 export function appRuntimeNeedsWake(
   runtime: Pick<typeof appRuntimes.$inferSelect, 'status' | 'idleDeadlineAt'>,
   now = new Date(),
+  alwaysOn = false,
 ): boolean {
   if (runtime.status !== 'running') return true;
+  if (alwaysOn) return false;
   return Boolean(runtime.idleDeadlineAt && runtime.idleDeadlineAt.getTime() <= now.getTime());
 }
 
@@ -162,7 +174,7 @@ export async function ensureAppRuntimeRunning(
     if (!reactivated) throw new Error('App no longer exists');
     app = reactivated;
   }
-  if (!appRuntimeNeedsWake(loaded.runtime)) return loaded.runtime;
+  if (!appRuntimeNeedsWake(loaded.runtime, new Date(), app.alwaysOn)) return loaded.runtime;
   if (loaded.runtime.status === 'deleted') {
     throw new Error('App runtime cannot wake from deleted');
   }
