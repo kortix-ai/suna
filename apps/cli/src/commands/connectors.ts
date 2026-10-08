@@ -240,9 +240,9 @@ Subcommands:
                                     alone, the default) or \`project\` (shared
                                     with every member; needs
                                     project.connector.write).
-       [--label <name>]             Name a NEW account (a second Gmail). Mints a
-                                    link where the human confirms the name and
-                                    who can use the account.
+       [--label <name>]             Name a NEW account (a second Gmail). The
+                                    human confirms the name and who can use
+                                    the account in the setup dialog.
   connect-finalize <slug>           Confirm authorization completed. Accepts
        [--owner me|project]         the IDs returned by \`connect\`. Pass the
        [--connection-id <uuid>]     same --owner the link was started with.
