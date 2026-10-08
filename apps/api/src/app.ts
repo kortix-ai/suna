@@ -15,6 +15,7 @@ import { headlessAuthRouter } from './auth/headless';
 import { authEmailHookApp, registerSendEmailHookRoutes } from './auth/send-email-hook';
 import { accountDeletionApp, billingApp } from './billing';
 import { notificationsApp } from './notifications/routes';
+import { feedbackApp } from './feedback';
 import {
   emailWebhookApp,
   registerEmailWebhookRoutes,
@@ -141,6 +142,7 @@ app.route('/v1/usage', usageApp); // GET /v1/usage[?start&end&group_by] — acco
 app.route('/v1/billing', billingApp); // /v1/billing/account-state, /v1/billing/webhooks/*
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
 app.route('/v1/notifications', notificationsApp); // POST/DELETE /v1/notifications/device-token — mobile push registration
+app.route('/v1/feedback', feedbackApp); // POST /v1/feedback — product feedback from agents, the CLI and the web app
 // Auth for the platform routes that need an identity. Scoped to these exact
 // paths, not `/v1/platform/*`: the mount point, `/sandbox/version` and the
 // github-app setup callbacks are deliberately unauthenticated and would break.

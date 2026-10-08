@@ -96,6 +96,7 @@ const projectWebhookManifestRefreshLimiter = new TokenBucketRateLimiter(
 );
 const projectSecretWriteLimiter = new TokenBucketRateLimiter('project_secret_write');
 const llmGatewayLimiter = new TokenBucketRateLimiter('llm_gateway');
+const feedbackLimiter = new TokenBucketRateLimiter('feedback');
 
 /**
  * Per-project budget on secret WRITES (POST/PUT/PATCH/DELETE under
@@ -221,6 +222,31 @@ export function createPublicSessionShareRateLimitMiddleware() {
         resourceType: 'public_session_share',
         resourceId: shareId,
         metadata: { limiter: 'public_session_share' },
+      },
+    };
+  });
+}
+
+/**
+ * Guards the authenticated `POST /v1/feedback` endpoint. Keyed on the caller's
+ * user id — every credential type resolves one, and auth runs first on the
+ * mounted app — so one identity cannot fill the triage surface.
+ */
+export function createFeedbackRateLimitMiddleware() {
+  return createAuditedRateLimitMiddleware(feedbackLimiter, (c) => {
+    const userId = c.get('userId') as string | undefined;
+    const key = userId ? `user:${userId}` : `ip:${requestClientKey(c)}`;
+    return {
+      key,
+      policy: {
+        limit: positiveInt((config as any).KORTIX_FEEDBACK_REQS_PER_MIN, 10),
+        windowMs: 60_000,
+      },
+      auditContext: {
+        action: RATE_LIMIT_EXCEEDED_ACTION,
+        resourceType: 'feedback',
+        resourceId: userId ?? null,
+        metadata: { limiter: 'feedback' },
       },
     };
   });
@@ -369,4 +395,5 @@ export function resetRateLimiters() {
   projectWebhookManifestRefreshLimiter.reset();
   projectSecretWriteLimiter.reset();
   llmGatewayLimiter.reset();
+  feedbackLimiter.reset();
 }

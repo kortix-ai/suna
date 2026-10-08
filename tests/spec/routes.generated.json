@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 725,
+  "count": 726,
   "routes": [
     {
       "method": "GET",
@@ -1165,6 +1165,10 @@
     {
       "method": "GET",
       "path": "/v1/edge/tls-check"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/feedback"
     },
     {
       "method": "GET",

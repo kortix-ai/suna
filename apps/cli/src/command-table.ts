@@ -280,6 +280,11 @@ export const TIERS: readonly CommandTier[] = [
       {
         title: '',
         commands: [
+          {
+            name: 'feedback',
+            args: '"<message>" [--kind bug|idea|friction]',
+            blurb: 'File product feedback for the team (from a shell or an agent session)',
+          },
           { name: 'update', blurb: 'Pull the latest CLI from kortix.com/install' },
           { name: 'uninstall', blurb: 'Remove the Kortix CLI from this machine' },
           { name: 'help', blurb: 'Show this help' },
