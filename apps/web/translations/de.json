@@ -19349,7 +19349,16 @@
       "textf2f698118cc1": "App-Ereignis löschen",
       "text2dca9f542da4": "{name} verbunden",
       "text54e2237efa16": "Trigger für diese App sind jetzt live.",
-      "text2fd655fcbaad": "Er geht live, sobald das Konto verbunden ist."
+      "text2fd655fcbaad": "Er geht live, sobald das Konto verbunden ist.",
+      "text261b28a3c6bf": "Weiteres Konto verbinden",
+      "text19646ef1ab9d": "Kontobezeichnung",
+      "text0ade71c64183": "Kontobezeichnung, z. B. acme-bot",
+      "texta8f89bda4dfc": "Dieser Connector hat bereits ein Konto mit dieser Bezeichnung.",
+      "textd975792aff6e": "Standard ({account})",
+      "text26639e783252": "Konto ändern",
+      "textea56119b98e2": "App-Ereignis-Trigger",
+      "text1ee2cf623464": "Neues App-Ereignis",
+      "text974e43358191": "Noch kein Trigger startet einen Agenten bei {name}-Ereignissen."
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
