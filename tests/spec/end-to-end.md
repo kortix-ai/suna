@@ -149,6 +149,7 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 `ACCT-2` `POST /accounts {name}` → 201 team account, caller = `owner` (an `account_memberships` identity row plus an account-scope `owner` assignment). No name → 400 `Validation failed`; a 256-character name → 400 `name is too long`.
 `ACCT-3` `GET /accounts/:id` → member → 200; `NONMEMBER` → 403.
 `ACCT-4` `PATCH /accounts/:id {name}` → `ACCOUNT_WRITE` (OWNER/ADMIN) → 200; `MEMBER` → 403. The response carries the new `name`.
+`TOPUP-1` `POST /accounts/:id/top-up-requests` → a member who cannot add credits asks the owners: 202 `{notified}` and each owner with an email gets one email (balance, Open billing). The same member again within 24 h → 429 `already_requested`. A caller who can add credits (`billing.write`) → 409 `can_manage_billing`. `NONMEMBER` → 403; `ANON` → 401.
 `ACCT-5` A new identity with pending plain invites: its first `GET /accounts` or `GET /accounts/me` creates the personal account (`account_id` = user id, `owner`, `is_primary_owner:true`) before it claims the invites. The list then holds the personal account plus every inviting account at the invite's role. A repeat call adds nothing. A user who already holds a membership gets no retroactive personal account.
 
 ### Members
@@ -166,6 +167,7 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 `INV-1` `GET /accounts/:id/invites` → member → list pending. Owners and admins see `{invite_id, email, initial_role, invited_by, invite_url}`; members see `[]`; NONMEMBER → 403. The invite email is trimmed and lower-cased. A member cannot resend or self-promote (403). Cancel removes the invite from the list.
 `INV-2` `DELETE /accounts/:id/invites/:inviteId` / `POST /accounts/:id/invites/:inviteId/resend` → `MEMBER_INVITE`.
 `INV-3` `GET /account-invites/:inviteId` → describe pending invite (auth; redacts on email mismatch).
+`INV-10` A project invite's describe names the project. `POST /projects/:id/access/invite` for an address with no Kortix user → `201 {status:"invited", invite_id}`. The invitee's `GET /account-invites/:inviteId` → `projects:[{project_id, name, role}]`; anyone else → `projects: []` (KRTX-1731).
 `INV-4` `POST /account-invites/:inviteId/accept` → 200 membership created (rate-limited); already accepted by this user → 200 `{already_accepted:true}`; **expired → 410**; wrong email → 403.
 `INV-5` `POST /account-invites/:inviteId/decline` → 200; already accepted → 409; wrong email → 403; not found → 404.
 `INV-8` `GET /account-invites` → auth → 200 `{invites:[{invite_id, account_id, account_name, initial_role, inviter_email, created_at, expires_at, projects:[{project_id,name,role}]}]}`: every unexpired, unaccepted invite addressed to the caller's email, so an invitee who signed up without the email link finds it (the `/projects/start` chooser and the Switch Project menu). Another user's invites never appear; ANON → 401; an accepted invite drops out.
@@ -190,6 +192,8 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 ### Push notification device tokens (`/v1/notifications`, `supabaseAuth`)
 
 `PUSH-1` `POST /notifications/device-token {device_token, device_type: ios|android, provider?: expo, preferences?: {enabled, on_completion, on_error, on_question, on_permission, play_sound}}` → 200 `{success:true, message}`. Upsert keyed on `device_token`: a new token stores every omitted preference as `true`; a re-registration updates only the preference keys it sends; a token registered by another user moves to the caller. Empty token, token > 512 chars, unknown `device_type`, non-`expo` provider, non-boolean or unknown preference key → 400. `DELETE /notifications/device-token/:token` (URL-encoded Expo token) → 200 `{success:true, deleted}`: deletes only the caller's row; another user's token or an unknown token → `deleted:false` and the row is untouched; a repeat delete → `deleted:false`. Only a user JWT or a personal PAT may call either route: `ANON` → 401; a service account or session-scoped agent PAT → 403.
+
+`PUSH-2` A user signed in on two devices registers a push token from each. `DELETE /accounts/me/devices/:sessionId` for the second device also deletes the token that sign-in registered: the caller's later `DELETE /notifications/device-token/:token` for it → 200 `deleted:false`. The caller's own token is untouched (`deleted:true`). A push goes only to tokens whose registering sign-in still exists in `auth.sessions`; a token registered before that was recorded counts as live until its next registration.
 
 ---
 

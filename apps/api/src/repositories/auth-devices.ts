@@ -6,7 +6,7 @@
 // (`oauth_client_id`) are not devices; Connected apps lists those.
 
 import { and, eq, sql } from 'drizzle-orm';
-import { accountSessionActivity } from '@kortix/db';
+import { accountSessionActivity, pushDeviceTokens } from '@kortix/db';
 import { db } from '../shared/db';
 
 export interface SignedInDeviceRow {
@@ -39,8 +39,9 @@ export async function listSignedInDevices(userId: string): Promise<SignedInDevic
  * End one of `userId`'s sessions. Deleting the row cascades to its refresh
  * tokens, so the device cannot renew. Its access token would live until it
  * expires (~1 h); stamping `account_session_activity` makes the session gate
- * refuse it on every account-scoped route now. Returns false when the session
- * is not the caller's or no longer exists.
+ * refuse it on every account-scoped route now. The push tokens that sign-in
+ * registered go too, so its lock screen stops showing pushes (KRTX-1722).
+ * Returns false when the session is not the caller's or no longer exists.
  */
 export async function signOutDevice(userId: string, sessionId: string): Promise<boolean> {
   const deleted = (await db.execute(sql`
@@ -59,5 +60,8 @@ export async function signOutDevice(userId: string, sessionId: string): Promise<
     .where(
       and(eq(accountSessionActivity.userId, userId), eq(accountSessionActivity.sessionId, sessionId)),
     );
+  await db
+    .delete(pushDeviceTokens)
+    .where(and(eq(pushDeviceTokens.userId, userId), eq(pushDeviceTokens.authSessionId, sessionId)));
   return true;
 }
