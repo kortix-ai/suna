@@ -138,6 +138,22 @@ describe('Submit saves the edit into the same row', () => {
     });
   });
 
+  test('a typed <pasted_content> tag: the edit finds the escaped run and writes the new words escaped', async () => {
+    const typed = 'see <pasted_content id="abcd1234" chars="3">abc</pasted_content> now';
+    const raw = serializePromptWithPastes(typed, [{ id: 'aaaaaaaa', text: 'real paste' }]);
+    const cleaned = cleanPromptText(raw);
+    expect(cleaned.text).toBe(typed);
+    const { h, calls } = host([row({ rawText: raw, editText: cleaned.text, text: cleaned.text })]);
+    takeBackQueuedPrompt(h, 'prompt-1');
+
+    const edited = 'now <pasted_content id="bbbbbbbb" chars="1">x</pasted_content>';
+    expect(await saveQueuedPromptEdit(h, edited)).toBe(true);
+
+    const sent = calls.edits[0].text;
+    expect(sent).toBe(serializePromptWithPastes(edited, [{ id: 'aaaaaaaa', text: 'real paste' }]));
+    expect(splitPastedContent(sent)).toEqual({ text: edited, pastes: [{ id: 'aaaaaaaa', text: 'real paste' }] });
+  });
+
   test('unchanged words close the edit without a request', async () => {
     const { h, calls } = host([row()]);
     takeBackQueuedPrompt(h, 'prompt-1');

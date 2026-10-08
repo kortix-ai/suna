@@ -201,7 +201,8 @@ describe('AttachmentTiles', () => {
       expect(tileUnit(markup)).toMatch(
         /<\/button><span class="sr-only" aria-live="polite"><\/span><\/div>$/,
       );
-      expect(markup).not.toMatch(/\bmt-1\b|min-h-5/);
+      // A whole `mt-1` class token; the tray's own `-mt-1.5` is not one.
+      expect(markup).not.toMatch(/(?<![\w-])mt-1(?![\w.])|min-h-5/);
     }
     expect(ringTag(states[1]!)).toContain('opacity-100');
     expect(ringTag(states[1]!)).toContain('transition-opacity');
@@ -514,18 +515,28 @@ describe('pasted-text tiles in the tray', () => {
     expect(markup.indexOf('first line')).toBeLessThan(markup.indexOf('report.pdf'));
   });
 
-  test('without onOpenPaste the tile is inert: no button, no press feel', () => {
+  test('without onOpenPaste (project home) the tile is still a button: it opens PastedTextModal', () => {
     const markup = renderToStaticMarkup(
       <AttachmentTiles files={[]} onRemove={() => {}} pastes={[paste]} />,
     );
-    expect(markup).not.toContain('<button');
-    expect(markup).not.toContain('cursor-pointer');
+    expect(markup).toContain('<button type="button" title="Pasted text" aria-label="Pasted text"');
+    // The closed modal renders nothing in place.
+    expect(markup).not.toContain('role="dialog"');
   });
 
-  test('with onOpenPaste the tile is a button', () => {
+  test('with onOpenPaste the tile is a button named "Pasted text", not its preview', () => {
     const markup = renderToStaticMarkup(
       <AttachmentTiles files={[]} onRemove={() => {}} pastes={[paste]} onOpenPaste={() => {}} />,
     );
-    expect(markup).toContain('<button type="button" title="Pasted text"');
+    expect(markup).toContain('<button type="button" title="Pasted text" aria-label="Pasted text"');
+  });
+
+  test('the tray is one row that scrolls sideways, never wraps', () => {
+    const markup = renderToStaticMarkup(
+      <AttachmentTiles files={[]} onRemove={() => {}} pastes={[paste, { ...paste, id: 'b' }]} />,
+    );
+    const ul = /<ul class="([^"]*)"/.exec(markup)?.[1] ?? '';
+    for (const cls of ['overflow-x-auto', 'scrollbar-hide', 'pt-1.5']) expect(ul.split(' ')).toContain(cls);
+    expect(ul).not.toContain('flex-wrap');
   });
 });

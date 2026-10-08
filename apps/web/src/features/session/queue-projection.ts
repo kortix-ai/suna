@@ -7,7 +7,7 @@ import {
   type SessionPromptViewer,
 } from '@kortix/sdk';
 import { isOptimisticSessionPrompt } from '@kortix/sdk/react';
-import { splitPastedContent } from '@kortix/shared';
+import { neutralizePastedTags, splitPastedContent } from '@kortix/shared';
 import {
   parseAgentMentionReferences,
   parseFileMentionReferences,
@@ -154,7 +154,9 @@ export function projectQueueRows(input: {
     const draft = prompt.client_message_id ? draftsById.get(prompt.client_message_id) : undefined;
     const rawText = prompt.full_text ?? prompt.text;
     const cleaned = cleanPromptText(rawText);
-    const editText = cleaned.text && rawText.includes(cleaned.text) ? cleaned.text : null;
+    // `cleaned.text` shows typed tags restored; `rawText` holds them escaped.
+    const editText =
+      cleaned.text && rawText.includes(neutralizePastedTags(cleaned.text)) ? cleaned.text : null;
     const state: QueueRowState =
       prompt.state === 'failed'
         ? 'failed'

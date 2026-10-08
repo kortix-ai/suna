@@ -5,6 +5,8 @@ import {
   acknowledgeQuoteRequests,
   appendComposerQuote,
   classifyPaste,
+  isUndoKey,
+  popPasteUndo,
   extractReplyQuotes,
   nextPastedTextFileName,
   mergeComposerQuotes,
@@ -947,5 +949,37 @@ describe('restoreComposerQuotes — quotes that left with a draft come back at t
     const current = [{ id: 'q1', text: 'kept' }];
     expect(restoreComposerQuotes(current, [], ids())).toBe(current);
     expect(restoreComposerQuotes([], ['a', '  ', 'a'], ids())).toEqual([{ id: 'new-1', text: 'a' }]);
+  });
+});
+
+describe('tile paste undo', () => {
+  const key = (k: string, mods: Partial<KeyboardEvent> = {}) => ({
+    key: k,
+    metaKey: false,
+    ctrlKey: false,
+    shiftKey: false,
+    altKey: false,
+    isComposing: false,
+    ...mods,
+  });
+  test('Mod-z is undo; Mod-Shift-z, Alt and a bare z are not', () => {
+    expect(isUndoKey(key('z', { metaKey: true }))).toBe(true);
+    expect(isUndoKey(key('z', { ctrlKey: true }))).toBe(true);
+    expect(isUndoKey(key('Z', { metaKey: true, shiftKey: true }))).toBe(false);
+    expect(isUndoKey(key('z', { metaKey: true, altKey: true }))).toBe(false);
+    expect(isUndoKey(key('z'))).toBe(false);
+    expect(isUndoKey(key('y', { ctrlKey: true }))).toBe(false);
+    expect(isUndoKey(key('z', { metaKey: true, isComposing: true }))).toBe(false);
+  });
+  test('pops the newest live tile, skips removed ones, then leaves undo to the editor', () => {
+    const pastes = [
+      { id: 'a', text: 'A' },
+      { id: 'c', text: 'C' },
+    ];
+    const stack = ['a', 'b', 'c'];
+    expect(popPasteUndo(stack, pastes)).toBe('c');
+    expect(popPasteUndo(stack, pastes)).toBe('a'); // `b` was removed with its X
+    expect(popPasteUndo(stack, pastes)).toBeUndefined();
+    expect(stack).toEqual([]);
   });
 });

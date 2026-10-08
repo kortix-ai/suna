@@ -15,6 +15,7 @@ import {
 import { useTranslations } from '@/i18n/use-translations';
 import {
   expandPastedContent,
+  neutralizePastedTags,
   sanitizePromptUploadFilename,
   serializePromptWithPastes,
   splitPastedContent,
@@ -854,29 +855,6 @@ export function MessageAttachments({
   );
 }
 
-/**
- * A paste's full text, in the side panel's detail view. Its one action, Copy,
- * sits in the panel header (`PastedTextCopy`): the text is already in the
- * chat, so there is nothing to download or add.
- */
-export function PastedTextBody({ text }: { text: string }) {
-  return (
-    <pre className="bg-popover text-foreground rounded-md border px-4 py-3 font-mono text-xs break-words whitespace-pre-wrap select-text">
-      {text}
-    </pre>
-  );
-}
-
-export function PastedTextCopy({ text }: { text: string }) {
-  return <CopyButton code={text} size="sm" />;
-}
-
-/** Word and character counts for the panel header. */
-export function pastedTextCounts(text: string) {
-  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
-  return { words, chars: text.length };
-}
-
 // ============================================================================
 // Inline reply quotes
 // ============================================================================
@@ -1254,7 +1232,12 @@ export function UserMessageActions({
               </Hint>
             )}
 
-            <CopyButton code={copyText} size="sm" hintSide="top" />
+            <CopyButton
+              code={copyText}
+              size="sm"
+              hintSide="top"
+              label={tI18nComplete.raw('texte21f935f11d7')}
+            />
           </div>
         )}
       </div>
@@ -1344,7 +1327,7 @@ export function UserMessageEditor({
                 )}
                 {!pending && (
                   <AttachmentRemoveButton
-                    filename={file.filename}
+                    filename={file.pasted ? 'pasted text' : file.filename}
                     onRemove={() => setKept((all) => all.filter((f) => f.key !== file.key))}
                   />
                 )}
@@ -1563,7 +1546,10 @@ export function UserMessage({
 
   // Resolve effective command info: use runtime-tracked info or fall back to template matching
   const effectiveCommandInfo = useMemo(
-    () => commandInfo ?? detectCommandFromText(rawText, commands),
+    // `rawText` has the typed tags restored for display. The args are split for
+    // pastes again below, so they go back to the wire form first: a typed
+    // `<pasted_content>` must never parse as a tile.
+    () => commandInfo ?? detectCommandFromText(neutralizePastedTags(rawText), commands),
     [commandInfo, rawText, commands],
   );
 

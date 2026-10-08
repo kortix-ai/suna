@@ -58,13 +58,8 @@ import { chatPlanAnchorId } from './turn/plan-anchor';
 import { stabilizeTurns } from './turn/stable-turns';
 import { ThrottledMarkdown } from './turn/throttled-markdown';
 import { TurnViewport } from './turn/turn-viewport';
-import { InlineMeta } from '@/components/ui/inline-meta';
-import {
-  PastedTextBody,
-  PastedTextCopy,
-  pastedTextCounts,
-  UserMessage,
-} from './turn/user-message';
+import { PastedTextBody, PastedTextCopy, PastedTextMeta } from './pasted-text';
+import { UserMessage } from './turn/user-message';
 import {
   fallbackBusyRowAfterTurnId,
   freshSendHint,
@@ -3469,16 +3464,10 @@ export function SessionChat({
   // A sent paste opens the same way, keyed by its id.
   const handleOpenPastedContent = useCallback(
     (id: string, text: string) => {
-      const { words, chars } = pastedTextCounts(text);
       panelRef.current?.openDetail({
         key: `pasted:${id}`,
         title: tHardcodedUi.raw('i18nComplete.text39cfc32bd12c'),
-        meta: (
-          <InlineMeta>
-            <span>{tHardcodedUi('i18nComplete.text23d0bb29fca0', { count: words })}</span>
-            <span>{tHardcodedUi('i18nComplete.text426699d5a8c0', { count: chars })}</span>
-          </InlineMeta>
-        ),
+        meta: <PastedTextMeta text={text} />,
         actions: <PastedTextCopy text={text} />,
         padded: true,
         body: <PastedTextBody text={text} />,

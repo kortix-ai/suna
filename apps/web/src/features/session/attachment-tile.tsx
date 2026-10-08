@@ -140,7 +140,13 @@ export function AttachmentTile({
   // +1.5px, "svg" +2.7px. The `secondary` variant is `normal-case`; the
   // `uppercase` here wins in `cn`. The text stays lowercase in the DOM.
   const badge = ext ? (
-    <Badge variant="secondary" size="xs" className="font-medium uppercase">
+    // A paste tile hovers to `bg-muted`, the `secondary` fill in light (#ededed): its badge takes the
+    // tile's resting fill instead, so it stays visible on hover in both themes.
+    <Badge
+      variant="secondary"
+      size="xs"
+      className={cn('font-medium uppercase', preview !== undefined && 'bg-popover')}
+    >
       {ext}
     </Badge>
   ) : null;
@@ -170,9 +176,12 @@ export function AttachmentTile({
     <>
       <span className="flex size-full flex-col justify-between gap-1 px-2.5 pt-2 pb-2.5">
         {/* A glimpse of the text itself, fading out at the bottom instead of
-            ending on an ellipsis. The first line reads as
-            the page's title; no count here, the side panel carries it. */}
-        <span className="text-muted-foreground first-line:text-foreground min-h-0 min-w-0 flex-1 overflow-hidden text-[11px] leading-tight break-words whitespace-pre-wrap mask-b-from-60% mask-b-to-100% first-line:font-medium">
+            ending on an ellipsis. The fade is fully transparent by the top of
+            the line the box clips, so no half glyph shows. The first line reads
+            as the page's title; no count here, the side panel carries it. */}
+        {/* The `before:` float is the fold's footprint inside this box, so a long
+            first line wraps short of the dog-ear instead of running under it. */}
+        <span className="text-muted-foreground first-line:text-foreground min-h-0 min-w-0 flex-1 overflow-hidden text-[11px] leading-tight break-words whitespace-pre-wrap mask-b-from-60% mask-b-to-88% before:float-right before:h-3 before:w-3.5 first-line:font-medium">
           {preview}
         </span>
         <span className="flex items-end justify-between gap-1">
@@ -220,6 +229,8 @@ export function AttachmentTile({
       <button
         type="button"
         title={tileTitle}
+        // A paste tile's content is its preview text: name it, or the preview is its accessible name.
+        aria-label={preview !== undefined ? tileTitle : undefined}
         onClick={(event) => {
           event.stopPropagation();
           onOpen();

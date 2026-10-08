@@ -544,6 +544,32 @@ export function classifyPaste(
     : 'tile';
 }
 
+/**
+ * Mod-z (undo), not Mod-Shift-z (redo). A tile paste is `preventDefault`-ed, so
+ * the editor's history never saw it: this key removes the newest such tile
+ * first (`composer.tsx`). Cmd or Ctrl on every platform; ponytail: Ctrl-z on
+ * a Mac also takes the tile, add a platform check if anyone minds.
+ */
+export function isUndoKey(
+  e: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'shiftKey' | 'altKey' | 'isComposing'>,
+): boolean {
+  // Mid-IME composition the key belongs to the input method.
+  if (e.isComposing) return false;
+  return (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'z';
+}
+
+/** Pops the newest tile in `stack` that is still in `pastes` (one removed with its X is skipped). Mutates `stack`. */
+export function popPasteUndo(
+  stack: string[],
+  pastes: readonly PastedContent[],
+): string | undefined {
+  while (stack.length > 0) {
+    const id = stack.pop()!;
+    if (pastes.some((paste) => paste.id === id)) return id;
+  }
+  return undefined;
+}
+
 /** `pasted-text-<n>.txt`, numbered after the pasted-text files already attached. */
 export function nextPastedTextFileName(names: readonly string[]): string {
   let max = 0;

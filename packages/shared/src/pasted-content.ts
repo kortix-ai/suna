@@ -1,4 +1,4 @@
-import { removeSpans, replaceSpans, tagBlocks } from './tag-blocks';
+import { removeSpans, tagBlocks } from './tag-blocks';
 
 /** Chat pastes at or above this length become a "Pasted text" tile. */
 export const PASTE_TILE_MIN_CHARS = 1000;
@@ -12,7 +12,7 @@ export type PastedContent = { id: string; text: string };
 const TAG = 'pasted_content';
 
 export function shouldTilePaste(text: string): boolean {
-  return text.length >= PASTE_TILE_MIN_CHARS || text.split('\n').length > PASTE_TILE_MIN_LINES;
+  return text.length >= PASTE_TILE_MIN_CHARS || text.replace(/[\r\n]+$/, '').split('\n').length > PASTE_TILE_MIN_LINES;
 }
 
 /** Math.random, not crypto: this runs in Hermes/React Native without a crypto polyfill. */
@@ -38,6 +38,11 @@ export function pastedContentXml(p: PastedContent): string {
 /** Typed text must never parse as a tile: escape every opening and closing tag the user typed. */
 export function neutralizePastedTags(text: string): string {
   return text.replace(/<(\/?pasted_content)/gi, '&lt;$1');
+}
+
+/** The exact inverse of `neutralizePastedTags`: what the user typed, for display, Copy and Edit. */
+export function restorePastedTags(text: string): string {
+  return text.replace(/&lt;(\/?pasted_content)/gi, '<$1');
 }
 
 export function serializePromptWithPastes(text: string, pastes: PastedContent[]): string {
@@ -66,21 +71,28 @@ export function pastedContentBlocks(text: string): PastedBlock[] {
 /** The text without its tiles, and the tiles. Blank lines the serializer put after a block go with it. */
 export function splitPastedContent(text: string): { text: string; pastes: PastedContent[] } {
   const blocks = pastedContentBlocks(text);
-  if (blocks.length === 0) return { text, pastes: [] };
+  if (blocks.length === 0) return { text: restorePastedTags(text), pastes: [] };
   const spans = blocks.map((b) => {
     let end = b.end;
     for (let n = 0; n < 2 && text[end] === '\n'; n++) end++;
     return { index: b.index, end };
   });
   return {
-    text: removeSpans(text, spans).trim(),
+    text: restorePastedTags(removeSpans(text, spans).trim()),
     pastes: blocks.map(({ id, text: body }) => ({ id, text: body })),
   };
 }
 
-/** Each valid block replaced by its body, for "Copy message". */
+/** Each valid block replaced by its body, for "Copy message". The typed text around the blocks gets its tags back. */
 export function expandPastedContent(text: string): string {
-  return replaceSpans(text, pastedContentBlocks(text), (b) => b.text);
+  const blocks = pastedContentBlocks(text);
+  let out = '';
+  let last = 0;
+  for (const b of blocks) {
+    out += restorePastedTags(text.slice(last, b.index)) + b.text;
+    last = b.end;
+  }
+  return out + restorePastedTags(text.slice(last));
 }
 
 export function utf8Bytes(text: string): number {

@@ -208,7 +208,11 @@ function PastePage({ preview, corner }: { preview: string; corner?: ReactNode })
           justifyContent: 'space-between',
         }}
       >
-        <View style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+        {/* Web floats a spacer the fold's size so only the first line wraps short
+            of it; React Native has no floats, so every line keeps clear of the
+            fold: `paddingRight` = the fold (`webSpace(5)`) less the page's own
+            padding (`webSpace(2.5)`), plus a hair. */}
+        <View style={{ flex: 1, minHeight: 0, overflow: 'hidden', paddingRight: webSpace(3) }}>
           <Text className="text-muted-foreground" style={PREVIEW_TEXT_STYLE}>
             {/* The full style again: the `Text` primitive sets its own size,
                 which would beat the inherited 11px and make the title run big. */}
@@ -217,15 +221,19 @@ function PastePage({ preview, corner }: { preview: string; corner?: ReactNode })
             </Text>
             {rest}
           </Text>
-          {/* Web: `mask-b-from-60% mask-b-to-100%`. */}
+          {/* Web: `mask-b-from-60% mask-b-to-88%`. The bottom stays solid for
+              more than one line (13.75px), so the line the box clips is fully
+              covered: no half glyph above the badge. */}
           <LinearGradient
             pointerEvents="none"
-            colors={[withAlpha(popover, 0), popover]}
-            style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '40%' }}
+            colors={[withAlpha(popover, 0), popover, popover]}
+            locations={[0, 0.55, 1]}
+            style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '45%' }}
           />
         </View>
         <View className="flex-row items-end justify-between" style={{ gap: webSpace(1) }}>
-          <ExtensionBadge ext="pasted" />
+          {/* The tile's own fill, as on web (where it keeps the badge visible on hover). */}
+          <ExtensionBadge ext="pasted" fill="bg-popover" />
           {corner ? <View className="shrink-0 flex-row">{corner}</View> : null}
         </View>
       </View>
@@ -251,11 +259,11 @@ function PastePage({ preview, corner }: { preview: string; corner?: ReactNode })
  * px-1.5 py-[0.1rem] font-mono text-[0.8rem] font-medium tracking-tight
  * bg-secondary/80 ring-1 ring-inset ring-border/60`.
  */
-function ExtensionBadge({ ext }: { ext: string }) {
+function ExtensionBadge({ ext, fill = 'bg-secondary/80' }: { ext: string; fill?: string }) {
   return (
     <Badge
       variant="secondary"
-      className="bg-secondary/80 border-border/60 rounded-[5px]"
+      className={`${fill} border-border/60 rounded-[5px]`}
       style={{ paddingHorizontal: webSpace(1.5), paddingVertical: 0.1 * 16 }}
     >
       <Text

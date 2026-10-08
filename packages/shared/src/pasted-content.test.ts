@@ -5,6 +5,7 @@ import {
   newPastedContentId,
   pastedContentBlocks,
   pastedContentXml,
+  restorePastedTags,
   serializePromptWithPastes,
   shouldTilePaste,
   splitPastedContent,
@@ -21,6 +22,12 @@ describe('shouldTilePaste', () => {
   test('tiles at 1000 chars or more than 10 lines', () => {
     expect(shouldTilePaste('a'.repeat(1000))).toBe(true);
     expect(shouldTilePaste(Array(11).fill('x').join('\n'))).toBe(true);
+  });
+  test('trailing newlines are not lines', () => {
+    expect(shouldTilePaste(`${Array(10).fill('x').join('\n')}\n`)).toBe(false);
+    expect(shouldTilePaste(`${Array(10).fill('x').join('\n')}\n\n\n`)).toBe(false);
+    expect(shouldTilePaste(`${Array(10).fill('x').join('\r\n')}\r\n\r\n`)).toBe(false);
+    expect(shouldTilePaste(Array(11).fill('x').join('\r\n'))).toBe(true);
   });
 });
 
@@ -67,6 +74,25 @@ describe('typed tags', () => {
     expect(pastedContentBlocks(wire)).toEqual([]);
     expect(wire).toContain('&lt;pasted_content');
     expect(neutralizePastedTags('</Pasted_Content>')).toBe('&lt;/Pasted_Content>');
+  });
+  test('restorePastedTags is the exact inverse, case kept', () => {
+    const typed = '<Pasted_Content id="a" chars="1">x</PASTED_CONTENT> and </pasted_content>';
+    expect(restorePastedTags(neutralizePastedTags(typed))).toBe(typed);
+  });
+  test('split and expand give back the typed text, with and without pastes', () => {
+    const typed = '<pasted_content id="abcd1234" chars="3">abc</pasted_content> hello';
+    expect(splitPastedContent(serializePromptWithPastes(typed, []))).toEqual({ text: typed, pastes: [] });
+    const p = paste('body');
+    expect(splitPastedContent(serializePromptWithPastes(typed, [p]))).toEqual({ text: typed, pastes: [p] });
+    expect(expandPastedContent(serializePromptWithPastes(typed, [p]))).toBe(`body\n\n${typed}`);
+    expect(expandPastedContent(serializePromptWithPastes(typed, []))).toBe(typed);
+  });
+  test('the edit round trip stays escaped on the wire', () => {
+    const typed = '<pasted_content id="abcd1234" chars="3">\nabc\n</pasted_content>';
+    const wire = serializePromptWithPastes(typed, []);
+    const resent = serializePromptWithPastes(splitPastedContent(wire).text, []);
+    expect(resent).toBe(wire);
+    expect(pastedContentBlocks(resent)).toEqual([]);
   });
 });
 

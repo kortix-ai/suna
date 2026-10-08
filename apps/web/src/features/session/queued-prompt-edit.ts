@@ -5,6 +5,8 @@ import { create } from 'zustand';
 
 import { errorToast } from '@/components/ui/toast';
 import { errorMessageOf } from '@/lib/delivered-but-disconnected';
+import { neutralizePastedTags } from '@kortix/shared';
+
 import type { QueueRow } from './queue-projection';
 
 /**
@@ -120,11 +122,16 @@ export async function saveQueuedPromptEdit(
   setEdit(host.key, null);
   // The LAST match: the composer writes quotes and pastes ahead of the typed
   // words, so an earlier match can sit inside a paste body.
-  const at = edit.rawText.lastIndexOf(edit.editText);
+  // `editText` and `text` are display text: in the raw wire text their typed
+  // `<pasted_content` tags are escaped, and a new one must be escaped too.
+  const wireOld = neutralizePastedTags(edit.editText);
+  const at = edit.rawText.lastIndexOf(wireOld);
   const next =
     at === -1
       ? edit.rawText
-      : edit.rawText.slice(0, at) + text.trim() + edit.rawText.slice(at + edit.editText.length);
+      : edit.rawText.slice(0, at) +
+        neutralizePastedTags(text.trim()) +
+        edit.rawText.slice(at + wireOld.length);
   if (next === edit.rawText) return true;
   // This tab's own copy of the message outranks the server's row: drop it, so
   // the row shows the edit.

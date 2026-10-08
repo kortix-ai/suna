@@ -24,9 +24,9 @@ import {
   editResendAttachments,
   editablePromptText,
   normalizeAttachments,
-  pastedTextCounts,
   userMessageCopyText,
 } from './user-message';
+import { pastedTextCounts } from '../pasted-text';
 
 const message = {
   info: { id: 'message-1', role: 'user' },
@@ -84,7 +84,7 @@ const renderText = (text: string, props: Record<string, unknown> = {}) =>
 describe('UserMessage actions', () => {
   test('keeps copy available while rewind is disabled', () => {
     const markup = render(true);
-    expect(markup).toContain('aria-label="Copy code"');
+    expect(markup).toContain('aria-label="Copy"');
     expect(markup).not.toContain('aria-label="Edit message and rewind session"');
   });
 
@@ -101,7 +101,7 @@ describe('UserMessage actions', () => {
     const status = markup.indexOf('data-queued-status="sending"');
     expect(markup.indexOf('<time')).toBeGreaterThan(-1);
     expect(status).toBeGreaterThan(markup.indexOf('<time'));
-    expect(status).toBeGreaterThan(markup.indexOf('aria-label="Copy code"'));
+    expect(status).toBeGreaterThan(markup.indexOf('aria-label="Copy"'));
   });
 });
 
@@ -284,7 +284,7 @@ describe('UserMessage timestamp', () => {
     expect(markup).not.toContain('NaN');
     // The rest of the turn is unaffected.
     expect(markup).toContain('ship the thing');
-    expect(markup).toContain('aria-label="Copy code"');
+    expect(markup).toContain('aria-label="Copy"');
   });
 
   test('the timestamp reveals with the actions, inside the same hover row', () => {
@@ -299,7 +299,7 @@ describe('UserMessage timestamp', () => {
     // would sit outside it and these positions would invert.
     expect(fadeAt).toBeGreaterThan(-1);
     expect(markup.indexOf('<time')).toBeGreaterThan(fadeAt);
-    expect(markup.indexOf('aria-label="Copy code"')).toBeGreaterThan(fadeAt);
+    expect(markup.indexOf('aria-label="Copy"')).toBeGreaterThan(fadeAt);
 
     // Exactly one reveal — the row's. Nothing nested fades on its own.
     expect(markup.split('group-hover/turn:opacity-100').length - 1).toBe(1);
@@ -1456,9 +1456,34 @@ describe('UserMessage pasted-text tiles', () => {
       onEditCancel: () => {},
       onEditSend: () => {},
     });
-    expect(markup).toContain('aria-label="Remove Pasted text"');
+    expect(markup).toContain('aria-label="Remove pasted text"');
     expect(markup).toContain('line one of the paste');
     expect(markup).not.toContain('pasted_content');
+  });
+
+  test('a typed <pasted_content> tag shows, copies and edits as typed, as plain text', () => {
+    const typed = '<pasted_content id="abcd1234" chars="3">abc</pasted_content> hello';
+    const wire = sent(typed, []);
+    const markup = renderText(wire);
+    expect(markup).toContain('&lt;pasted_content id=&quot;abcd1234&quot; chars=&quot;3&quot;&gt;abc&lt;/pasted_content&gt; hello');
+    expect(markup).not.toContain('&amp;lt;');
+    expect(markup).not.toContain('title="Pasted text"');
+    expect(editablePromptText(wire)).toBe(typed);
+    const parts = [{ id: 'p', messageID: 'm', type: 'text', text: wire }] as never;
+    expect(userMessageCopyText(parts)).toBe(typed);
+    expect(editResendAttachments([], typed).text).toBe(wire);
+  });
+
+  test('a /command detected from its template keeps a typed tag in its args as text, never a tile', () => {
+    const typed = '<pasted_content id="abcd1234" chars="3">abc</pasted_content> hello';
+    const commands = [
+      { name: 'review', template: 'Please review the following change carefully: $ARGUMENTS' },
+    ] as never;
+    const wire = sent(`Please review the following change carefully: ${typed}`, []);
+    const markup = renderText(wire, { commands });
+    expect(markup).not.toContain('title="Pasted text"');
+    expect(markup).toContain('&lt;pasted_content id=&quot;abcd1234&quot;');
+    expect(markup).toContain('hello');
   });
 
   test('editablePromptText drops paste blocks', () => {
@@ -1487,5 +1512,9 @@ describe('pastedTextCounts', () => {
   test('an empty or blank paste has no words', () => {
     expect(pastedTextCounts('')).toEqual({ words: 0, chars: 0 });
     expect(pastedTextCounts(' \n ')).toEqual({ words: 0, chars: 3 });
+  });
+  test('an emoji is one character, not two UTF-16 units', () => {
+    expect(pastedTextCounts('🚀'.repeat(600))).toEqual({ words: 1, chars: 600 });
+    expect(pastedTextCounts('👍🏽 é')).toEqual({ words: 2, chars: 3 });
   });
 });

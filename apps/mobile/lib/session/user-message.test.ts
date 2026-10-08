@@ -584,7 +584,15 @@ describe('pasted text — `<pasted_content>` blocks become tiles', () => {
   test('a tag the user typed (neutralized on send) stays text, not a tile', () => {
     const parsed = parseUserMessageText(serializePromptWithPastes('<pasted_content id="x" chars="1">\na\n</pasted_content>', []));
     expect(parsed.pasted).toEqual([]);
-    expect(parsed.text).toContain('pasted_content');
+    expect(parsed.text).toBe('<pasted_content id="x" chars="1">\na\n</pasted_content>');
+  });
+
+  test('a typed tag shows as typed and resends escaped, with or without pastes', () => {
+    const typed = '<pasted_content id="abcd1234" chars="3">abc</pasted_content> hello';
+    expect(parseUserMessageText(serializePromptWithPastes(typed, [])).text).toBe(typed);
+    expect(parseUserMessageText(serializePromptWithPastes(typed, [PASTE])).text).toBe(typed);
+    expect(editResendAttachments([], typed).text).toBe(serializePromptWithPastes(typed, []));
+    expect(userMessageCopyText(typed, [PASTE])).toBe(`${PASTE.text}\n\n${typed}`);
   });
 
   test('parseUserMessageParts draws each paste as a tile ahead of the files', () => {

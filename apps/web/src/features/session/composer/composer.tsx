@@ -80,6 +80,8 @@ import {
 import {
   appendComposerQuote,
   classifyPaste,
+  isUndoKey,
+  popPasteUndo,
   type ComposerQuote,
   extractReplyQuotes,
   nextPastedTextFileName,
@@ -704,6 +706,20 @@ function ComposerImpl(props: SessionChatInputProps) {
     onRestore: handleDraftRestore,
   });
 
+  /**
+   * Tiles pasted since the editor last changed, newest last. A tile paste never
+   * reaches the editor's history, so Mod-z takes these back first (`isUndoKey`);
+   * any document change clears them, and undo is the editor's again.
+   */
+  const pasteUndoRef = useRef<string[]>([]);
+  const handleEditorDocChange = useCallback(
+    (doc: JSONContent, isEmpty: boolean) => {
+      pasteUndoRef.current = [];
+      handleDocChange(doc, isEmpty);
+    },
+    [handleDocChange],
+  );
+
   const { data: allSessions } = useRuntimeSessions();
 
   const primaryAgents = useMemo(
@@ -859,7 +875,9 @@ function ComposerImpl(props: SessionChatInputProps) {
       if (kind === 'inline') return;
       e.preventDefault();
       if (kind === 'tile') {
-        setPasteList((current) => [...current, { id: newPastedContentId(), text }]);
+        const id = newPastedContentId();
+        pasteUndoRef.current.push(id);
+        setPasteList((current) => [...current, { id, text }]);
         return;
       }
       const names = attachedFilesRef.current.map((af) =>
@@ -869,8 +887,21 @@ function ComposerImpl(props: SessionChatInputProps) {
         new File([text], nextPastedTextFileName(names), { type: 'text/plain' }),
       ]);
     };
+    // Capture, so this runs before the editor's own undo keymap.
+    const onKeyDownCapture = (e: KeyboardEvent) => {
+      if (!isUndoKey(e)) return;
+      const id = popPasteUndo(pasteUndoRef.current, pastesRef.current);
+      if (id === undefined) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setPasteList((current) => current.filter((paste) => paste.id !== id));
+    };
     editorElement.addEventListener('paste', onPasteCapture, true);
-    return () => editorElement.removeEventListener('paste', onPasteCapture, true);
+    editorElement.addEventListener('keydown', onKeyDownCapture, true);
+    return () => {
+      editorElement.removeEventListener('paste', onPasteCapture, true);
+      editorElement.removeEventListener('keydown', onKeyDownCapture, true);
+    };
   }, [editorElement, disabled, lockForQuestion, appendAttachedFiles, setPasteList]);
 
   /**
@@ -1821,7 +1852,7 @@ function ComposerImpl(props: SessionChatInputProps) {
     handleSubmit,
     handleArrowUpAtStart,
     setIsEmpty,
-    handleDocChange,
+    handleDocChange: handleEditorDocChange,
     allSessions,
     slashActions,
     handleSelectAction,

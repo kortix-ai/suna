@@ -370,6 +370,14 @@ describe('cleanPromptText', () => {
     expect(typed.text).toBe('summarize');
   });
 
+  test('a queued prompt with a typed <pasted_content> tag stays editable, and shows the tag as typed', () => {
+    const typed = 'see <pasted_content id="abcd1234" chars="3">abc</pasted_content> now';
+    const [row] = projectQueueRows({ prompts: [prompt({ text: serializePromptWithPastes(typed, []) })] }).rows;
+    expect(row.text).toBe(typed);
+    expect(row.editText).toBe(typed);
+    expect(row.takeBackEligible).toBe(true);
+  });
+
   test('a draft row still uploading shows the typed words, not the paste XML', () => {
     const block = serializePromptWithPastes('summarize', [{ id: 'abcd1234', text: 'pasted body' }]);
     const { rows } = projectQueueRows({

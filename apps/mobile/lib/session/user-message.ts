@@ -312,7 +312,7 @@ export function editResendAttachments(
   const joined = refs.join('\n');
   const body = text.trim();
   const withRefs = joined ? (body ? `${body}\n\n${joined}` : joined) : text;
-  return { fileParts, text: pastes.length > 0 ? serializePromptWithPastes(withRefs, pastes) : withRefs };
+  return { fileParts, text: serializePromptWithPastes(withRefs, pastes) };
 }
 
 /** What "Copy" writes: each paste as its text, not its XML, then the typed text. */
