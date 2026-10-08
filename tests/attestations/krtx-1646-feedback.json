@@ -1,0 +1,39 @@
+{
+  "source_hash": "664c5192962e5c077d7d77ff78b695d7d136e5d89c0480d0d77f485a6c86bd87",
+  "diff_files": [
+    "apps/api/src/app.ts",
+    "apps/api/src/config.ts",
+    "apps/api/src/feedback/index.test.ts",
+    "apps/api/src/feedback/index.ts",
+    "apps/api/src/feedback/rate-limit.test.ts",
+    "apps/api/src/feedback/store.integration.test.ts",
+    "apps/api/src/mcp/cli.ts",
+    "apps/api/src/middleware/rate-limit.ts",
+    "apps/cli/src/command-table.ts",
+    "apps/cli/src/commands/feedback.test.ts",
+    "apps/cli/src/commands/feedback.ts",
+    "apps/cli/src/index.ts",
+    "apps/web/content/docs/audit-actions.mdx",
+    "apps/web/content/docs/cli.mdx",
+    "apps/web/src/components/iam/audit-http-routes.generated.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/db/drizzle/meta/20261008002221_snapshot.json",
+    "packages/db/drizzle/meta/_journal.json",
+    "packages/db/migrations/20261008002221605_feedback.sql",
+    "packages/db/src/index.ts",
+    "packages/db/src/schema/kortix.ts",
+    "packages/shared/src/audit-route-labels.ts",
+    "tests/spec/end-to-end.md",
+    "tests/spec/routes.generated.json",
+    "tests/src/flows/feedback.flow.ts"
+  ],
+  "diff_hash": "51435dc26c72d67b5b1e9fb507495c55f16b5d429d63402b41d0a1fc439edaed",
+  "head": "a038e14f58e7d1bd0cfc0370f92fec65a1c24c5f",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-08T00:42:12.623Z"
+}
