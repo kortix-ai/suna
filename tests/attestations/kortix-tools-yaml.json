@@ -1,5 +1,5 @@
 {
-  "source_hash": "a723e82b7b1704e486730ad823e39486e8c0b48619559de2496adf04836bfa9f",
+  "source_hash": "d737aaa1031bd48e9fbe0e3277fe45237d1bee6044c946fb93d10da05bfba4d0",
   "diff_files": [
     "apps/api/src/mcp/cli.ts",
     "apps/api/src/projects/lib/compile-agent-config.test.ts",
@@ -68,13 +68,13 @@
     "tests/spec/end-to-end.md",
     "tests/src/flows/run-session-backlog.flow.ts"
   ],
-  "diff_hash": "6708016113c710a06f8a987f191733b26059e6120c085db32ad9ccd770aa76ff",
-  "head": "d4eb2f487e7e15341c8265786f3a687bf32ed3c8",
+  "diff_hash": "786d6d27f5ef02e6d3f2af37a3442fea5c5bd566e52decebc84766f112fb3131",
+  "head": "f98019d2aa4add5a26ad98912ffdc4bb41269fc5",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-08T20:04:22.333Z"
+  "at": "2026-10-08T20:31:52.356Z"
 }
