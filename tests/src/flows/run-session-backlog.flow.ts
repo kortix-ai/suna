@@ -1,7 +1,7 @@
 /**
  * Agent-run + session happy-path backlog.
  *
- * Maps 1:1 to spec IDs: RUN-1..8, RUN-10..15, SESS-2, SESS-3, SESS-9, SESS-12,
+ * Maps 1:1 to spec IDs: RUN-1..8, RUN-10..16, SESS-2, SESS-3, SESS-9, SESS-12,
  * FILE-8, FILE-9, GOLD-1, CHN-6, SESS-10, CONN-26.
  *
  * REALITY: every flow here needs a REAL booted sandbox and/or a funded
@@ -1639,9 +1639,9 @@ harnessFlow(
   },
 );
 
-// ─── RUN-15: the project's root AGENTS.md reaches the agent ──────────────────
+// ─── RUN-16: the project's root AGENTS.md reaches the agent ──────────────────
 harnessFlow(
-  'RUN-15',
+  'RUN-16',
   {
     domain: 'agent-run',
     requires: ['funded', 'daytona'],
@@ -1659,13 +1659,13 @@ harnessFlow(
     const project = await ctx.fixtures.project({ seed: true });
     const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
     // A NAME the conversation never held: only the system prompt can supply its value (the CFG-12 technique).
-    const name = `RUN15_PROJECT_RULE_${Date.now()}`;
-    const value = `run15-${crypto.randomUUID()}`;
+    const name = `RUN16_PROJECT_RULE_${Date.now()}`;
+    const value = `run16-${crypto.randomUUID()}`;
     const agentsMd = `# Project rules\n\n${name}: ${value}\n`;
     try {
       await ctx.step(`the project runs ${harness} and commits a root AGENTS.md`, async () => {
         if (harness === 'pi') await world.setFeature('pi_harness', true);
-        await world.commitToMain({ 'AGENTS.md': agentsMd }, 'ke2e RUN-15: a root AGENTS.md');
+        await world.commitToMain({ 'AGENTS.md': agentsMd }, 'ke2e RUN-16: a root AGENTS.md');
       });
       const { projectId, sessionId, sandboxId } = await bootSession(ctx, harness, { project });
 
