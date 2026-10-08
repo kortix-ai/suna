@@ -2036,7 +2036,9 @@
       "whenBelow": "hinzu, wenn das Guthaben unter diesen Betrag fällt:",
       "thresholdLabel": "Schwellenwert für die Aufladung in Dollar",
       "save": "Speichern",
-      "paymentNeeded": "Füge eine Zahlungsmethode hinzu, damit die automatische Aufladung ausgeführt werden kann."
+      "paymentNeeded": "Füge eine Zahlungsmethode hinzu, damit die automatische Aufladung ausgeführt werden kann.",
+      "turnedOffAfterFailure": "Die automatische Aufladung wurde am {date} ausgeschaltet: Die letzte Abbuchung ist fehlgeschlagen ({reason}). Aktualisiere die Zahlungsmethode und schalte die automatische Aufladung dann wieder ein.",
+      "lastChargeFailed": "Die letzte automatische Aufladung ist am {date} fehlgeschlagen ({reason}). Kortix versucht es erneut; nach 3 fehlgeschlagenen Abbuchungen in Folge wird die automatische Aufladung ausgeschaltet."
     },
     "title": "Abrechnung & Abonnement",
     "subscription": "Abonnement",

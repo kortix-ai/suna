@@ -9,7 +9,7 @@ import { logger } from '../../lib/logger';
 import type Stripe from 'stripe';
 import { getStripe } from '../../shared/stripe';
 import { config } from '../../config';
-import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
+import { disableAutoTopupIfEnabled, getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
 import { claimAutoTopupCharge } from '../repositories/auto-topup-claim';
 import { getCustomerByAccountId } from '../repositories/customers';
 import {
@@ -17,6 +17,8 @@ import {
   paymentMethodIdOf,
   resolveUsablePaymentMethod,
 } from './auto-topup-payment-method';
+import { notifyAutoTopupDisabled } from './auto-topup-alert';
+import { autoTopupFailure, failureDisablesAutoTopup, HARD_DECLINE_CODES } from './auto-topup-failure';
 import { resolveAccountBilling } from './billing-cache';
 import { isDeadSubscriptionStatus } from './billing-state';
 import { wallet } from '../wallet';
@@ -33,32 +35,11 @@ import {
 /** Minimum 60 seconds between successful auto-topup charges. */
 const CHARGE_COOLDOWN_MS = 60_000;
 
-/** After this many consecutive failures the auto-topup is disabled; user must re-enable. */
-const AUTO_TOPUP_MAX_CONSECUTIVE_FAILURES = 3;
-
 /** `auto_topup_disabled_reason` written when no chargeable payment method exists. */
 export const NO_PAYMENT_METHOD_REASON = 'no_payment_method';
 
 /** Backoff between failed charge attempts. Index = failure count - 1. */
 const FAILURE_BACKOFF_MS = [5 * 60_000, 30 * 60_000];
-
-/**
- * Stripe decline codes that warrant immediate auto-disable (no point retrying).
- * Anything else is treated as transient (backoff but keep enabled until the
- * consecutive-failures cap is reached).
- */
-const HARD_DECLINE_CODES = new Set([
-  'card_declined',
-  'insufficient_funds',
-  'do_not_honor',
-  'expired_card',
-  'incorrect_cvc',
-  'stolen_card',
-  'lost_card',
-  'pickup_card',
-  'fraudulent',
-  'authentication_required',
-]);
 
 /** PaymentIntent metadata key marking an auto-topup that settles asynchronously. */
 const ASYNC_SETTLEMENT_KEY = 'async_settlement';
@@ -149,12 +130,22 @@ export async function getAutoTopupSettings(
   prefetchedAccount?: Awaited<ReturnType<typeof getCreditAccount>>,
 ) {
   const account = prefetchedAccount !== undefined ? prefetchedAccount : await getCreditAccount(accountId);
-  if (!account) return { enabled: true, threshold: AUTO_TOPUP_DEFAULT_THRESHOLD, amount: AUTO_TOPUP_DEFAULT_AMOUNT };
+  if (!account) {
+    return {
+      enabled: true,
+      threshold: AUTO_TOPUP_DEFAULT_THRESHOLD,
+      amount: AUTO_TOPUP_DEFAULT_AMOUNT,
+      disabled_reason: null,
+      last_failure_reason: null,
+      last_failure_at: null,
+    };
+  }
 
   return {
     enabled: Boolean(account.autoTopupEnabled),
     threshold: Number(account.autoTopupThreshold) || AUTO_TOPUP_DEFAULT_THRESHOLD,
     amount: Number(account.autoTopupAmount) || AUTO_TOPUP_DEFAULT_AMOUNT,
+    ...autoTopupFailure(account),
   };
 }
 
@@ -427,28 +418,36 @@ function extractStripeErrorCode(err: unknown): string | null {
   return decline ?? rawDecline ?? direct ?? rawCode;
 }
 
-async function handleFailedCharge(
+/**
+ * Record a failed charge. A hard decline, or the third failure in a row, turns
+ * auto top-up off; the turn-off emails the account owners once (KRTX-1718).
+ * Exported for the real-database test of that turn-off.
+ */
+export async function handleFailedCharge(
   accountId: string,
   previousFailures: number,
   reason: string,
   hardDecline: boolean,
 ): Promise<void> {
   const nextFailures = previousFailures + 1;
-  const shouldDisable = hardDecline || nextFailures >= AUTO_TOPUP_MAX_CONSECUTIVE_FAILURES;
-  const update: Record<string, unknown> = {
+  const shouldDisable = hardDecline || failureDisablesAutoTopup(reason, nextFailures);
+  await updateCreditAccount(accountId, {
     autoTopupLastCharged: new Date().toISOString(),
     autoTopupConsecutiveFailures: nextFailures,
     autoTopupDisabledReason: reason,
-  };
-  if (shouldDisable) {
-    update.autoTopupEnabled = false;
+  } as any);
+  // Conditional, so a failure on an account that is already off (a late
+  // webhook) sends no second email.
+  if (shouldDisable && (await disableAutoTopupIfEnabled(accountId))) {
     console.warn(
       `[AutoTopup] disabling auto-topup for ${accountId} after ` +
       `${hardDecline ? 'hard decline' : `${nextFailures} consecutive failures`} (reason=${reason}). ` +
       `User must re-enable manually after fixing payment method.`,
     );
+    await notifyAutoTopupDisabled(accountId, reason).catch((err: unknown) =>
+      logger.warn('[AutoTopup] owner alert failed', { accountId, error: err instanceof Error ? err.message : String(err) }),
+    );
   }
-  await updateCreditAccount(accountId, update as any);
 }
 
 async function getUsableAutoTopupPaymentMethodId(accountId: string): Promise<string | null> {
