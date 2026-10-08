@@ -1,7 +1,8 @@
 name: Tests
 
-# The local suite: six lanes (core, browser-1..4, packages) on Blacksmith
-# runners. Each lane is the unchanged root command `pnpm test -- <args>`.
+# The local suite: six lanes (core, browser-1..4, packages) on GitHub-hosted
+# runners (free on this public repo). Each lane is the unchanged root command
+# `pnpm test -- <args>`.
 #
 # It runs when ANY of these holds:
 #   1. a daily `schedule` on `dev`        — safety-net trunk signal
@@ -52,12 +53,12 @@ jobs:
       github.event_name != 'pull_request'
       || (github.base_ref == 'staging' && github.event.action != 'labeled')
       || (github.event.action == 'labeled' && github.event.label.name == 'test')
-    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
     # 20, not 60. Over 57 measured runs the slowest lane (`packages`) had
     # p50 370s and max 570s, so 20 min is ~2x the worst run seen. The cap is a
     # hang detector: on 2026-09-21 `@kortix/cli` hung and the lane burned the
     # full 60 min before `trunk-report` could say `dev` was red.
-    timeout-minutes: 20
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -239,7 +240,7 @@ jobs:
     # run is cancelled: a manual cancel, or a queued run that a newer
     # one replaced before it started.
     if: github.event_name == 'schedule' && !cancelled() && needs.lane.result != 'success'
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 10
     permissions:
       contents: write # commit comment

@@ -17,13 +17,13 @@ const laneStep = (name: string): string => {
 };
 
 describe('native test-lane workflow', () => {
-  test('runs six root lanes natively on Blacksmith at the pull request head SHA', () => {
+  test('runs six root lanes natively on GitHub-hosted runners at the pull request head SHA', () => {
     // Since 2026-08-26 the lanes run on the runner itself. The old
     // sandbox-worker path failed on ~every third lane the day before.
     expect(testWorkflow).toContain(
       'TEST_SHA: ${{ github.event.pull_request.head.sha || github.sha }}',
     );
-    expect(testWorkflow).toContain("runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}");
+    expect(testWorkflow).toContain("runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}");
     expect(testWorkflow).toContain('- lane: core');
     expect(testWorkflow).toContain('- lane: browser-1');
     expect(testWorkflow).toContain('- lane: browser-2');
@@ -48,7 +48,7 @@ describe('native test-lane workflow', () => {
     expect(testWorkflow).toContain('bun-version: 1.3.14');
     // A hang detector, sized from 57 runs (packages p50 370s, max 570s). A hung
     // lane used to burn 60 min before the trunk verdict could fire.
-    expect(testWorkflow).toMatch(/^ {4}timeout-minutes: 20$/m);
+    expect(testWorkflow).toMatch(/^ {4}timeout-minutes: 40$/m);
     expect(testWorkflow).not.toMatch(/^ {4}timeout-minutes: 60$/m);
   });
 

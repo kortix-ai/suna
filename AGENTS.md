@@ -551,11 +551,16 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 - Run the suite in your box before merging into `dev`: the narrowest relevant
   command first, then `pnpm test`. A pull request into `dev` runs no CI job
   unless a person adds `test` or `preview`. Your machine is the pre-merge gate.
-- Every Linux CI job runs on Blacksmith through `runs-on: ${{ vars.CI_RUNNER_<tier>
-  || '<label>' }}`. Setting a `CI_RUNNER_<tier>` repository variable to a
-  GitHub-hosted label is the kill switch back to GitHub-hosted runners.
+- Every Linux CI job runs on a free GitHub-hosted runner (`ubuntu-24.04`,
+  `ubuntu-24.04-arm`, `ubuntu-22.04`; 4 vCPU / 16 GB on this public repo) through
+  `runs-on: ${{ vars.CI_RUNNER_<tier> || '<label>' }}`. Setting a
+  `CI_RUNNER_<tier>` repository variable moves that tier to another pool
+  without a PR. Never default a job to a paid runner (Blacksmith, a GitHub
+  larger runner): Blacksmith billed ~$2.7k in September 2026 for minutes
+  GitHub gives this repo for free. `tests/unit/image-build-speed-workflow.test.ts`
+  enforces the free default.
 - GitHub Actions runs six lanes — `core`, `browser-1` … `browser-4`, `packages`
-  — natively, one Blacksmith runner each (`CI_RUNNER_L`), through
+  — natively, one GitHub-hosted runner each (`CI_RUNNER_L`), through
   `.github/workflows/tests.yml`. The four browser lanes are quarters of one
   sharded run (`--browser-shard=N/4`, Playwright's native `--shard`). The suite
   measures 8m17s wall clock; `packages` (~8 min) is the slowest lane, so a fifth
