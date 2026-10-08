@@ -331,7 +331,6 @@ revokes an OAuth client with `kortix tokens apps rm <client-id>` or in
 Settings → Personal access keys → Connected apps. A connected app cannot mint
 personal access tokens, gateway keys, SCIM tokens, OAuth clients or service
 accounts. Client-by-client steps: `https://kortix.com/docs/connect/mcp`.
-`https://kortix.com/mcp` is a different server: public documentation only.
 
 The server also exposes a project's connectors, the `kortix connectors` CLI as
 MCP tools: `list_connectors` → `search_connector_actions` →
