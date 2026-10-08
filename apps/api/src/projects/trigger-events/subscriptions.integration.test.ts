@@ -187,6 +187,12 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
     expect(calls).toEqual(['subscribe:EXAMPLE_NEW_MESSAGE']);
   });
 
+  test('a connector named after its slug is named by its app in the status text', async () => {
+    await testDb().update(connectors).set({ name: 'inbox' }).where(eq(connectors.connectorId, CONNECTOR_ID));
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
+    expect((await store.get(PROJECT_ID, 'a'))?.lastError).toBe('Connect a shared example account to activate this trigger.');
+  });
+
   test('a private member account never activates a trigger', async () => {
     await connect({ ownerType: 'member', ownerId: '00000000-0000-4000-a000-000000009899' });
     await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
