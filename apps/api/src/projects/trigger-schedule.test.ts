@@ -228,3 +228,19 @@ describe('a stored cron that fires more than once a minute', () => {
     ).toBe('2026-07-27T10:30:00.000Z');
   });
 });
+
+describe('type = "event" revision', () => {
+  const event = (overrides: NonNullable<GitTriggerSpec['event']>): GitTriggerSpec =>
+    schedule({ type: 'event', cron: null, timezone: 'UTC', event: overrides });
+  const base = { connector: 'github-work', account: 'acme-bot', type: 'GITHUB_PULL_REQUEST_CREATED', config: { repo: 'acme/api' } };
+
+  // `source` joins the hash only when set, so every event trigger cataloged before `source`
+  // existed keeps its revision (a changed revision re-upserts the catalog row).
+  test('is unchanged when source is unset and changes when it is set', () => {
+    expect(triggerScheduleRevision(event(base))).toBe('b49d4f780a9dcd704633f5a4a9764469846d3b5b19d49796c98ad9e951257bac');
+    expect(triggerScheduleRevision(event({ ...base, source: null }))).toBe(triggerScheduleRevision(event(base)));
+    expect(triggerScheduleRevision(event({ connector: base.connector, account: base.account, source: 'composio', type: base.type, config: base.config }))).not.toBe(
+      triggerScheduleRevision(event(base)),
+    );
+  });
+});

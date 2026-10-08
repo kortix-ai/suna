@@ -537,6 +537,7 @@ describe('TriggerSchema', () => {
       connected_as: 'bot@example.test',
       type: 'GITHUB_PULL_REQUEST_EVENT',
       config: { owner: 'acme' },
+      source: 'composio',
       provider: 'composio',
       app: 'github',
       status: 'needs_connection',

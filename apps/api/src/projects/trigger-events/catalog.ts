@@ -8,7 +8,7 @@ import { db } from '../../shared/db';
 import { RESERVED_CONNECTOR_SLUGS } from '../connectors';
 import { eventConfigProblem } from './config-validation';
 import { connectorInfo } from './deliver';
-import { allEventSources, eventSourceFor } from './registry';
+import { allEventSources, eventSourceFor, unknownSourceMessage } from './registry';
 import { connectionIdentity, resolveSource } from './subscriptions';
 import type { EventApp, EventTypeInfo } from './types';
 
@@ -24,9 +24,11 @@ export type EventTypeCatalog =
   | { kind: 'unavailable' }
   | { kind: 'provider_error'; message: string };
 
-export async function listConnectorEventTypes(projectId: string, connectorSlug: string): Promise<EventTypeCatalog> {
+export async function listConnectorEventTypes(projectId: string, connectorSlug: string, source?: string | null): Promise<EventTypeCatalog> {
   const connector = await connectorInfo(projectId, connectorSlug);
   if (!connector.found) return { kind: 'connector_not_found' };
+  // A source that is not the connector's provider has no catalog here: the reconciler reports the mismatch.
+  if (source && source !== connector.provider) return { kind: 'unavailable' };
   const provider = eventSourceFor(connector.provider);
   if (!provider || !provider.configured() || !connector.app) return { kind: 'unavailable' };
   const key = `${provider.id}:${connector.app}`;
@@ -45,9 +47,13 @@ export async function listConnectorEventTypes(projectId: string, connectorSlug: 
 /** A trigger's event and config problem, or null. Skips when the catalog cannot answer: the reconciler still reports. */
 export async function validateEventTrigger(
   projectId: string,
-  event: { connector: string; type: string; config: Record<string, unknown> },
+  event: { connector: string; source?: string | null; type: string; config: Record<string, unknown> },
 ): Promise<string | null> {
-  const catalog = await listConnectorEventTypes(projectId, event.connector);
+  if (event.source) {
+    const unknown = unknownSourceMessage(event.source);
+    if (unknown) return unknown;
+  }
+  const catalog = await listConnectorEventTypes(projectId, event.connector, event.source);
   if (catalog.kind !== 'ok') return null;
   return eventConfigProblem(catalog.items, event.connector, event.type, event.config);
 }

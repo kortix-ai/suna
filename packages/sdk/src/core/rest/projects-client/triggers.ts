@@ -54,7 +54,9 @@ export interface ProjectTriggerEvent {
   /** Provider event type id, e.g. `GITHUB_PULL_REQUEST_EVENT`. */
   type: string;
   config: Record<string, unknown>;
-  /** Event source provider derived from the connector (e.g. `composio`). Null when unresolved. */
+  /** Event source adapter: the declared `source`, else the connector's provider (e.g. `composio`). Null when unresolved. */
+  source?: string | null;
+  /** @deprecated Same value as `source`. */
   provider: string | null;
   /** Provider app slug (e.g. `github`). Null when unresolved. */
   app: string | null;
@@ -205,7 +207,9 @@ export interface CreateProjectTriggerInput {
   connector?: string;
   /** For type='event'. Label of one shared account of the connector; omit or null for the connector default. */
   event_account?: string | null;
-  /** Required for type='event'. Provider event type id from {@link listProjectTriggerEventTypes}. */
+  /** For type='event'. Event source adapter id such as `composio`; omit for the connector's provider. */
+  event_source?: string | null;
+  /** Required for type='event'. The adapter's event type id from {@link listProjectTriggerEventTypes}. */
   event?: string;
   /** For type='event'. Provider event config, shaped by the event type's `config_schema`. */
   event_config?: Record<string, unknown>;
@@ -256,7 +260,9 @@ export interface UpdateProjectTriggerInput {
   connector?: string;
   /** For type='event'. Label of one shared account of the connector; null clears it to the connector default. */
   event_account?: string | null;
-  /** For type='event'. Provider event type id. */
+  /** For type='event'. Event source adapter id; null clears it to the connector's provider. Changing `connector` clears it unless sent. */
+  event_source?: string | null;
+  /** For type='event'. The adapter's event type id. */
   event?: string;
   /** For type='event'. Replaces the provider event config. */
   event_config?: Record<string, unknown>;
@@ -359,6 +365,9 @@ export interface ProjectTriggerEventType {
 }
 
 export interface ProjectTriggerEventTypes {
+  /** Event source adapter id, such as `composio`. */
+  source?: string;
+  /** @deprecated Same value as `source`. */
   provider: string;
   app: string;
   event_types: ProjectTriggerEventType[];
@@ -400,6 +409,9 @@ export interface ProjectTriggerEventConnector {
 
 /** An app that can trigger events, with the project's state for it. */
 export interface ProjectTriggerEventApp {
+  /** Event source adapter id, such as `composio`. The trigger's `event_source`. */
+  source?: string;
+  /** @deprecated Same value as `source`. */
   provider: string;
   /** Provider app slug. */
   app: string;
