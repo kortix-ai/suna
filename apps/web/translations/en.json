@@ -19369,7 +19369,10 @@
       "text26639e783252": "Change account",
       "textea56119b98e2": "App event triggers",
       "text1ee2cf623464": "New app event",
-      "text974e43358191": "No trigger starts an agent from {name} events yet."
+      "text974e43358191": "No trigger starts an agent from {name} events yet.",
+      "text4b4847a6fb87": "App events",
+      "text07fb9f8661dc": "Apps with events",
+      "text51035b5b67dc": "Filter by type"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

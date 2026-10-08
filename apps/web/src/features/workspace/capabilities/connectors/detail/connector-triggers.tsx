@@ -21,11 +21,26 @@ import { triggerName } from '@/components/projects/schedule/schedule-copy';
 import { useTriggerControls } from '@/components/projects/schedule/trigger-controls';
 import { useTranslations } from '@/i18n/use-translations';
 
+/** Whether the connector's app has events, and the project's event triggers on it. Shared by the tab and its count. */
+export function useConnectorEventTriggers(projectId: string, connector: AdminConnector) {
+  const apps = useProjectTriggerEventApps(projectId);
+  const triggers = useProjectTriggers(projectId);
+  const hasEvents = (apps.data?.apps ?? []).some((app) =>
+    appConnectors(app).some((c) => c.slug === connector.slug),
+  );
+  return {
+    hasEvents,
+    rows: eventTriggersOn(triggers.data?.triggers ?? [], connector.slug),
+    isLoading: triggers.isLoading,
+    isError: triggers.isError,
+  };
+}
+
 /**
  * App event triggers on this connector: the project's `type: event` triggers
  * whose connector is this one, each with its status and account, plus
- * "New app event" with this connector already picked. Renders nothing for a
- * connector whose app has no events.
+ * "New app event" with this connector already picked. It is the body of the
+ * connector modal's Triggers tab, which shows only for an app with events.
  */
 export function ConnectorTriggers({
   projectId,
@@ -37,17 +52,11 @@ export function ConnectorTriggers({
   displayName: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const apps = useProjectTriggerEventApps(projectId);
-  const triggers = useProjectTriggers(projectId);
+  const { rows, isLoading, isError } = useConnectorEventTriggers(projectId, connector);
   const controls = useTriggerControls(projectId);
   const [creating, setCreating] = useState(false);
+  if (isError) return null;
 
-  const hasEvents = (apps.data?.apps ?? []).some((app) =>
-    appConnectors(app).some((c) => c.slug === connector.slug),
-  );
-  if (!hasEvents || triggers.isError) return null;
-
-  const rows = eventTriggersOn(triggers.data?.triggers ?? [], connector.slug);
   return (
     <section className="space-y-2">
       <div className="flex items-center justify-between gap-3">
@@ -64,7 +73,7 @@ export function ConnectorTriggers({
           </Button>
         ) : null}
       </div>
-      {triggers.isLoading ? (
+      {isLoading ? (
         <Skeleton className="h-14 rounded-md" />
       ) : rows.length === 0 ? (
         <p className="text-muted-foreground text-xs text-pretty">

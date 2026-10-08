@@ -19358,7 +19358,10 @@
       "text26639e783252": "Changer de compte",
       "textea56119b98e2": "Déclencheurs d'événements d'app",
       "text1ee2cf623464": "Nouvel événement d'app",
-      "text974e43358191": "Aucun déclencheur ne démarre encore un agent à partir des événements {name}."
+      "text974e43358191": "Aucun déclencheur ne démarre encore un agent à partir des événements {name}.",
+      "text4b4847a6fb87": "Événements d’apps",
+      "text07fb9f8661dc": "Apps avec événements",
+      "text51035b5b67dc": "Filtrer par type"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

@@ -19358,7 +19358,10 @@
       "text26639e783252": "Cambiar cuenta",
       "textea56119b98e2": "Disparadores de eventos de app",
       "text1ee2cf623464": "Nuevo evento de app",
-      "text974e43358191": "Ningún disparador inicia un agente con eventos de {name} todavía."
+      "text974e43358191": "Ningún disparador inicia un agente con eventos de {name} todavía.",
+      "text4b4847a6fb87": "Eventos de apps",
+      "text07fb9f8661dc": "Apps con eventos",
+      "text51035b5b67dc": "Filtrar por tipo"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

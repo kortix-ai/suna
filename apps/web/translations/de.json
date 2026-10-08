@@ -19358,7 +19358,10 @@
       "text26639e783252": "Konto ändern",
       "textea56119b98e2": "App-Ereignis-Trigger",
       "text1ee2cf623464": "Neues App-Ereignis",
-      "text974e43358191": "Noch kein Trigger startet einen Agenten bei {name}-Ereignissen."
+      "text974e43358191": "Noch kein Trigger startet einen Agenten bei {name}-Ereignissen.",
+      "text4b4847a6fb87": "App-Ereignisse",
+      "text07fb9f8661dc": "Apps mit Ereignissen",
+      "text51035b5b67dc": "Nach Typ filtern"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

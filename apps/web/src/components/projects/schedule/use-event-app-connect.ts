@@ -37,6 +37,8 @@ export interface EventAppTarget {
   app: string;
   name: string;
   connector: string | null;
+  /** The API's slug for a new connector (never reserved or taken); the local guess is a fallback. */
+  newConnectorSlug?: string;
 }
 
 export function useEventAppConnect(projectId: string) {
@@ -72,7 +74,7 @@ export function useEventAppConnect(projectId: string) {
   const add = useCallback(
     async (target: EventAppTarget): Promise<string> => {
       if (target.connector) return target.connector;
-      const slug = newConnectorSlug(target.app, takenSlugs());
+      const slug = (target.newConnectorSlug ?? newConnectorSlug(target.app, takenSlugs()));
       const draft = buildEasyConnectConnectorDraft(
         { slug: target.app, name: target.name, provider: 'composio' },
         { name: target.name, slug },
@@ -91,7 +93,7 @@ export function useEventAppConnect(projectId: string) {
   const connect = useCallback(
     (target: EventAppTarget, onConnected?: (connector: string) => void) => {
       if (connecting) return;
-      const slug = target.connector ?? newConnectorSlug(target.app, takenSlugs());
+      const slug = target.connector ?? (target.newConnectorSlug ?? newConnectorSlug(target.app, takenSlugs()));
       setConnecting(target.app);
       connectApp(
         {

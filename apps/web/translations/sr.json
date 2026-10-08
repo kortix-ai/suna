@@ -19358,7 +19358,10 @@
       "text26639e783252": "Promeni nalog",
       "textea56119b98e2": "Okidači događaja aplikacije",
       "text1ee2cf623464": "Novi događaj aplikacije",
-      "text974e43358191": "Nijedan okidač još ne pokreće agenta iz {name} događaja."
+      "text974e43358191": "Nijedan okidač još ne pokreće agenta iz {name} događaja.",
+      "text4b4847a6fb87": "Догађаји апликација",
+      "text07fb9f8661dc": "Апликације са догађајима",
+      "text51035b5b67dc": "Филтрирај по типу"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

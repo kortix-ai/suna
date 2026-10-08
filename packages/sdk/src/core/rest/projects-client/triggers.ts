@@ -412,6 +412,8 @@ export interface ProjectTriggerEventApp {
   connected: boolean;
   /** Every connector (profile) of this app with its shared accounts. */
   connectors?: ProjectTriggerEventConnector[];
+  /** Slug to give a new connector for this app (never a reserved or taken one). */
+  new_connector_slug?: string;
 }
 
 export interface ProjectTriggerEventApps {

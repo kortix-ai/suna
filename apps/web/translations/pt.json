@@ -19358,7 +19358,10 @@
       "text26639e783252": "Alterar conta",
       "textea56119b98e2": "Gatilhos de eventos do app",
       "text1ee2cf623464": "Novo evento do app",
-      "text974e43358191": "Nenhum gatilho inicia um agente com eventos de {name} ainda."
+      "text974e43358191": "Nenhum gatilho inicia um agente com eventos de {name} ainda.",
+      "text4b4847a6fb87": "Eventos de apps",
+      "text07fb9f8661dc": "Apps com eventos",
+      "text51035b5b67dc": "Filtrar por tipo"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

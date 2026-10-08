@@ -19358,7 +19358,10 @@
       "text26639e783252": "Cambia account",
       "textea56119b98e2": "Trigger di eventi dell'app",
       "text1ee2cf623464": "Nuovo evento dell'app",
-      "text974e43358191": "Nessun trigger avvia ancora un agente dagli eventi di {name}."
+      "text974e43358191": "Nessun trigger avvia ancora un agente dagli eventi di {name}.",
+      "text4b4847a6fb87": "Eventi delle app",
+      "text07fb9f8661dc": "App con eventi",
+      "text51035b5b67dc": "Filtra per tipo"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
