@@ -20,6 +20,11 @@ export function setOwnerAlertSenderForTest(sender: typeof sendEmail | null): voi
   send = sender ?? sendEmail;
 }
 
+/** Hand one billing alert email to the transport (the seam above captures it in tests). */
+export function sendAlertEmail(message: EmailMessage) {
+  return send(message);
+}
+
 /** The account's Billing pane: the hub opened over the project list. */
 export function billingPaneUrl(accountId: string): string {
   const base = (config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
