@@ -1,5 +1,5 @@
 {
-  "source_hash": "7f96169304e28889a2884bd2e1b62300957c9f54afba6c362320e80be9e4b4c3",
+  "source_hash": "40bf420d02e0bd956c0e31a3e0ba069888a78f6f40c88bd4455e656681581bde",
   "diff_files": [
     "apps/api/src/config-releases/ROLLOUT.md",
     "apps/api/src/config-releases/__tests__/desired-agent.test.ts",
@@ -48,13 +48,13 @@
     "tests/src/flows/config-releases.flow.ts",
     "tests/unit/local-profile.test.ts"
   ],
-  "diff_hash": "b2bee91f87c834bd18db0124a8448ceb05350f16e4419c17cd1e93e4eae25d7d",
-  "head": "ad1d37da34d60e9fc878b03a0c6afe30e5b01c57",
+  "diff_hash": "cde087d95f88f1c2fbfa9139acb6d45487a77e56f1ce8fcba458ebe31bc15cb3",
+  "head": "4784a8d0348c8c849b9b5e537ec3e3ff7ff180fb",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-08T19:00:07.038Z"
+  "at": "2026-10-08T19:12:58.976Z"
 }
