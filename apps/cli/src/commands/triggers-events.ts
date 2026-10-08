@@ -200,7 +200,7 @@ export async function triggersEvents(
     const resp = await ctx.client.get<TriggerEventTypesResponse>(
       eventTypesPath(ctx.projectId, args.connector as string),
     );
-    return args.event ? printEvent(resp, args.event, json) : printEvents(resp, json);
+    return args.event ? printEvent(resp, args.event, json, args.connector as string) : printEvents(resp, json);
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -258,7 +258,7 @@ function printEvents(resp: TriggerEventTypesResponse, json: boolean): number {
   return 0;
 }
 
-function printEvent(resp: TriggerEventTypesResponse, type: string, json: boolean): number {
+function printEvent(resp: TriggerEventTypesResponse, type: string, json: boolean, connector: string): number {
   const e = resp.event_types.find((x) => x.type === type);
   if (!e) {
     process.stderr.write(
@@ -295,7 +295,7 @@ function printEvent(resp: TriggerEventTypesResponse, type: string, json: boolean
   }
   if (payload.length === 0) out.write('    {{ event.data.<field> }} — the provider payload\n');
   out.write(
-    `\n  ${C.dim}Add it: kortix triggers add <slug> --type event --connector <slug> --event ${e.type} --prompt "…" --apply${C.reset}\n\n`,
+    `\n  ${C.dim}Add it: kortix triggers add <slug> --type event --connector ${connector} --event ${e.type} --prompt "…" --apply${C.reset}\n\n`,
   );
   return 0;
 }

@@ -213,7 +213,10 @@ Run these in order. Each step prints what the next step needs.
 3. **Not connected?** `kortix connectors connect <slug> --owner project`.
    Give the link to the person and ask them to open it. Use the shared
    (`project`) account. Never use a member's private account: event
-   triggers cannot use it. You cannot finish this step yourself.
+   triggers cannot use it. You cannot finish this step yourself. When the
+   person finishes, Kortix picks the account up by itself. If the trigger
+   still says `needs connection` a minute later, run
+   `kortix connectors connect-finalize <slug> --owner project`.
 4. **Pick the event.** `kortix triggers events --connector <slug>` lists the
    events. Then `kortix triggers events --connector <slug> --event <TYPE>`
    shows the config fields and the `{{ event.data.* }}` variables.

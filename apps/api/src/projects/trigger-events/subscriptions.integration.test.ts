@@ -26,6 +26,22 @@ mock.module('../lib/triggers', () => ({
   },
 }));
 
+// The connect route's finalize, stubbed: it lands the provider account id like the real one does.
+const finalizeCalls: unknown[][] = [];
+mock.module('../../connectors/db-deps', () => ({
+  dbConnectorRouterDeps: {
+    connectorFinalize: async (...args: unknown[]) => {
+      finalizeCalls.push(args);
+      const selector = args[3] as { connectionId: string };
+      await testDb()
+        .update(connectorConnections)
+        .set({ metadata: { connected_account_id: 'ca_activated' } })
+        .where(eq(connectorConnections.connectionId, selector.connectionId));
+      return { provider: 'composio', connected: true };
+    },
+  },
+}));
+
 const { reconcileEventSubscriptions, reconcileEventSubscriptionsFromCatalog } = await import('./subscriptions');
 const { applyNotices, deliverEvents } = await import('./deliver');
 const { setEventSourceForTest } = await import('./registry');
@@ -261,6 +277,24 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
     ]);
     expect(tally).toEqual({ fired: 0, skipped: 1, ignored: 0, failed: 0 });
     expect(fires).toHaveLength(0);
+  });
+
+  test('an activation notice finalizes the shared account and the trigger goes live by itself', async () => {
+    finalizeCalls.length = 0;
+    await connect({ metadata: {} });
+    await catalog(spec('a'));
+    subscribeError = new (await import('./types')).EventConnectionNotReadyError('not ready');
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
+    expect(await status('a')).toBe('needs_connection');
+    subscribeError = null;
+
+    await applyNotices('composio', [{ kind: 'connection_activated', connectionId: CONNECTION_ID }]);
+    expect(finalizeCalls).toEqual([[PROJECT_ID, 'inbox', '', { connectionId: CONNECTION_ID }, 'project']]);
+    expect(await status('a')).toBe('active');
+
+    // Another environment's connection is not ours: nothing happens.
+    await applyNotices('composio', [{ kind: 'connection_activated', connectionId: '00000000-0000-4000-a000-0000000099ff' }]);
+    expect(finalizeCalls).toHaveLength(1);
   });
 
   test('a connection the provider cannot use yet reads needs_connection, not error', async () => {
