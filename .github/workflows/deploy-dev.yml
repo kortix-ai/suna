@@ -519,7 +519,6 @@ jobs:
       - name: Read credentials from AWS Secrets Manager
         uses: ./.aws-env/.github/actions/aws-env
         with:
-          aws-region: us-east-2
           keys: |
             DATABASE_URL=kortix-dev-env:DATABASE_URL
       - name: Apply pending migrations (node-pg-migrate; halts on failure)
@@ -1166,8 +1165,7 @@ jobs:
       EXPECTED_COMMIT: ${{ github.sha }}
       EXPECTED_VERSION: ${{ needs.detect-changes.outputs.version }}
     steps:
-      # The protection password is identical in the dev, staging, and preview
-      # web blobs; the staging web blob is the single source for CI.
+      # Dev's own web blob: the one the kortix-dev-use2-web service reads.
       - name: Check out the aws-env action
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1179,7 +1177,7 @@ jobs:
         uses: ./.aws-env/.github/actions/aws-env
         with:
           keys: |
-            WEB_PROTECTION_PASSWORD=kortix-staging-web-env:WEB_PROTECTION_PASSWORD
+            WEB_PROTECTION_PASSWORD=kortix-dev-use2-web-env:WEB_PROTECTION_PASSWORD
       - name: Verify ECS health, protection, runtime configuration, and edge headers
         run: |
           set -euo pipefail
