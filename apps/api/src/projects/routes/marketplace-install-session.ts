@@ -79,7 +79,7 @@ function buildItemInstallPrompt(
   ];
   if (needs.length) {
     lines.push(
-      `3. It needs these connected: ${needs.join(', ')}. Mint a setup link with the \`request_secret\` / \`connect\` tools (or \`kortix secrets request\` / \`kortix connectors link\`) — never ask me to paste a raw key.`,
+      `3. It needs these connected: ${needs.join(', ')}. Mint a setup link with \`kortix secrets request\` / \`kortix connectors connect\` — never ask me to paste a raw key.`,
       '4. Tell me in one line what it can now do and how to use it.',
     );
   } else {

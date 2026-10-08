@@ -339,8 +339,8 @@ context, and the result is `exit_code`, `stdout` (`json` for `--json` output), `
 sessions, sandbox files and connectors. The tool refuses `--host`, `hosts`,
 `login`, `logout`, `init`, `ship`, `update`, `uninstall`, `self-host`, `tui`,
 `connect`, `chat` without `--prompt`, `token`, `env pull|push`, `apps deploy`
-(a local directory: use `run_command` in a session sandbox) and
-`connectors mcp`, with the reason and the alternative. `read_skill` with
+(a local directory: use `run_command` in a session sandbox), with the reason
+and the alternative. `read_skill` with
 `project_id` lists the project's own skills.
 </mcp-client>
 
@@ -801,11 +801,10 @@ to see the full enum.
 <reference path="references/kortix/credentials-and-setup-links.md">
   How to get a credential — an API key, or an app connected. A value you
   already have (the human gave it in chat) is stored directly with
-  `set_secret` / `kortix secrets set`; a value you lack is requested with a
+  `kortix secrets set`; a value you lack is requested with a
   short-lived **setup link** instead of punting the human to the dashboard. Covers
   the two link kinds (secret intake / Composio connect), how to mint each
-  (the `request_secret` + `connect` MCP tools, or the `kortix secrets request` /
-  `kortix connectors connect` CLI), what the human sees
+  (`kortix secrets request` / `kortix connectors connect`), what the human sees
   (web modal vs Slack link), how to verify it
   landed, and the security model. Load this whenever you hit "I need an API key /
   I need this app connected" — it is the canonical, autonomous flow.

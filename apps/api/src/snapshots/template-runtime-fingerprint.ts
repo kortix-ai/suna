@@ -44,7 +44,7 @@ const SLACK_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
 //
 // Scope: only the files whose change can alter what the CLI does INSIDE a
 // sandbox. The single compiled `kortix` binary bakes ALL of apps/cli/src, but a
-// session only ever invokes `kortix connectors` / `kortix connectors mcp` — the rest
+// session only ever invokes `kortix connectors` — the rest
 // (`ship`, `cr`, `tunnel`, `self-host`, `accounts`, the whole `init`/scaffold
 // surface, …) is developer-facing and runs on a laptop, never in the sandbox.
 // Hashing the WHOLE tree meant every dev-only CLI edit re-minted every project's
