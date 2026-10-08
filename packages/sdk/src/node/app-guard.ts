@@ -34,8 +34,16 @@ import type { KortixAuth } from './auth';
 export interface KortixGuardedViewer {
   userId: string;
   email: string | null;
+  /** Display name, when the source carries one. */
+  name?: string | null;
+  /** Profile picture URL, when the source carries one. */
+  picture?: string | null;
   /** Always populated: from the signed header, or fetched on the sign-in path. */
   groupIds: string[];
+  /** Names of the same groups, when the source carries them. */
+  groups?: string[];
+  /** The viewer's account role, when the source carries it. */
+  role?: string | null;
   accountId: string;
   /** Which route proved this identity. For diagnostics — never for authorization. */
   source: 'app-gate' | 'kortix-sign-in';
@@ -54,6 +62,14 @@ export interface KortixAppGuardOptions {
   backendUrl?: string;
   /** The App's own sign-in, from `createKortixAuth`. Omit for a gate-only App. */
   auth?: Pick<KortixAuth, 'viewer' | 'signInUrl'> | null;
+  /**
+   * The account that owns the App. Defaults to `KORTIX_APP_ACCOUNT_ID`, which
+   * Kortix sets on every App it hosts. On the sign-in path, groups are read in
+   * this account only, and a viewer outside it has none. Without it, group
+   * names are not trusted on that path (any account can create a group with
+   * the same name); group ids still match.
+   */
+  accountId?: string;
   /** How long a fetched group list stays fresh. Default 60s. */
   groupCacheTtlMs?: number;
   fetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -73,12 +89,13 @@ export interface KortixAppGuard {
 
 interface CacheEntry {
   groupIds: string[];
+  groups: string[];
   at: number;
 }
 
-function envSecret(): string | undefined {
+function env(name: string): string | undefined {
   try {
-    return typeof process !== 'undefined' ? process.env?.KORTIX_APP_VIEWER_SECRET : undefined;
+    return typeof process !== 'undefined' ? process.env?.[name] || undefined : undefined;
   } catch {
     return undefined;
   }
@@ -95,7 +112,7 @@ export function createKortixAppGuard(options: KortixAppGuardOptions = {}): Korti
    * the difference between "this deployment shares no identity" and "this
    * deployment trusts a signature it should no longer accept".
    */
-  const resolveSecret = () => options.secret ?? envSecret();
+  const resolveSecret = () => options.secret ?? env('KORTIX_APP_VIEWER_SECRET');
   const ttl = options.groupCacheTtlMs ?? 60_000;
   const now = options.now ?? (() => Date.now());
   const fetchImpl =
@@ -110,11 +127,16 @@ export function createKortixAppGuard(options: KortixAppGuardOptions = {}): Korti
    * unreadable membership list as "no restriction" is how a transient 500
    * becomes an open door.
    */
-  async function fetchGroups(accountId: string, userId: string, token: string): Promise<string[]> {
+  async function fetchGroups(
+    accountId: string,
+    userId: string,
+    token: string,
+  ): Promise<{ groupIds: string[]; groups: string[] }> {
+    const none = { groupIds: [], groups: [] };
     const key = `${accountId}:${userId}`;
     const hit = cache.get(key);
-    if (hit && now() - hit.at < ttl) return hit.groupIds;
-    if (!options.backendUrl) return [];
+    if (hit && now() - hit.at < ttl) return hit;
+    if (!options.backendUrl) return none;
 
     try {
       const base = stripTrailingSlashes(options.backendUrl);
@@ -122,15 +144,19 @@ export function createKortixAppGuard(options: KortixAppGuardOptions = {}): Korti
         `${base}/accounts/${encodeURIComponent(accountId)}/iam/members/${encodeURIComponent(userId)}/groups`,
         { headers: { accept: 'application/json', authorization: `Bearer ${token}` } },
       );
-      if (!res.ok) return [];
-      const body = (await res.json()) as { groups?: Array<{ group_id?: string; groupId?: string }> };
-      const ids = (body.groups ?? [])
-        .map((g) => g.group_id ?? g.groupId)
-        .filter((id): id is string => typeof id === 'string');
-      cache.set(key, { groupIds: ids, at: now() });
-      return ids;
+      if (!res.ok) return none;
+      const body = (await res.json()) as {
+        groups?: Array<{ group_id?: string; groupId?: string; name?: string }>;
+      };
+      const rows = body.groups ?? [];
+      const found = {
+        groupIds: rows.map((g) => g.group_id ?? g.groupId).filter((id): id is string => typeof id === 'string'),
+        groups: rows.map((g) => g.name).filter((name): name is string => typeof name === 'string'),
+      };
+      cache.set(key, { ...found, at: now() });
+      return found;
     } catch {
-      return [];
+      return none;
     }
   }
 
@@ -143,7 +169,11 @@ export function createKortixAppGuard(options: KortixAppGuardOptions = {}): Korti
       return {
         userId: gated.userId,
         email: gated.email,
+        name: gated.name ?? null,
+        picture: gated.picture ?? null,
         groupIds: gated.groupIds ?? [],
+        groups: gated.groups ?? [],
+        role: gated.role ?? null,
         accountId: gated.accountId,
         source: 'app-gate',
         token: gated.token,
@@ -154,11 +184,23 @@ export function createKortixAppGuard(options: KortixAppGuardOptions = {}): Korti
     const signedIn = await options.auth.viewer(request).catch(() => null);
     if (!signedIn) return null;
 
-    const accountId = signedIn.accounts?.[0]?.account_id ?? '';
+    // Sign-in proves who, not which account: `accounts` lists every account
+    // of the viewer, including ones they created themselves. Group names are
+    // unique only within an account, so names count only when read in the
+    // App's own account.
+    const appAccountId = options.accountId ?? env('KORTIX_APP_ACCOUNT_ID');
+    const accounts = signedIn.accounts ?? [];
+    const inAppAccount = Boolean(appAccountId) && accounts.some((a) => a.account_id === appAccountId);
+    const accountId = inAppAccount ? appAccountId! : (accounts[0]?.account_id ?? '');
+    // Outside the App's account, there are no groups to read.
+    const membership = accountId && (inAppAccount || !appAccountId)
+      ? await fetchGroups(accountId, signedIn.userId, signedIn.token)
+      : { groupIds: [], groups: [] };
     return {
       userId: signedIn.userId,
       email: signedIn.email ?? null,
-      groupIds: accountId ? await fetchGroups(accountId, signedIn.userId, signedIn.token) : [],
+      groupIds: membership.groupIds,
+      groups: inAppAccount ? membership.groups : [],
       accountId,
       source: 'kortix-sign-in',
       token: signedIn.token,
@@ -203,7 +245,9 @@ export function createKortixAppGuard(options: KortixAppGuardOptions = {}): Korti
       // caller. It means the opposite here, so a config bug that produces `[]`
       // closes the resource instead of opening it to everyone.
       if (groupIds.length === 0) return { response: refuse() };
-      const allowed = groupIds.some((id) => found.groupIds.includes(id));
+      // A group id or a group name. Names are unique only within one account,
+      // so the sign-in path fills `groups` only from the App's own account.
+      const allowed = groupIds.some((group) => found.groupIds.includes(group) || (found.groups ?? []).includes(group));
       return allowed ? { viewer: found } : { response: refuse() };
     },
   };

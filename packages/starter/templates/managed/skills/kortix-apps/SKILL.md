@@ -21,8 +21,8 @@ another host for an App. Omit `--provider` unless an operator asks for one.
 1. Run `pwd` and inspect the intended source directory before deploying.
 2. Run `kortix projects info --json` to confirm the selected project. Read its
    identifier from `project_id`.
-3. If Apps is disabled, ask a project manager to enable the Experimental Apps
-   feature. API and CLI execution are project-gated.
+3. If Apps is disabled, stop and tell the user to contact Kortix: Kortix
+   enables Apps per project, and Settings does not list it.
 4. Do not create an empty App identity first. `kortix apps deploy` creates the
    identity when `--app` is omitted.
 5. Never run `kortix apps deploy` from an uninspected workspace root. It can
@@ -175,6 +175,31 @@ five minutes. Treat it as a password until it expires. Do not publish it, commit
 it, or put it in logs. The first request exchanges it for an eight-hour
 App-host cookie and redirects to the same path without the token. Create a fresh
 link for each independent browser profile or cookie jar.
+
+## With a Kortix Backend (data, logic, sign-in)
+
+When the App needs a database, server logic or live updates, give it a Kortix
+Backend (load `kortix-backends`; for a whole internal app load
+`kortix-internal-apps`).
+
+- **Backend URL:** public. A static or SPA App reads it at **build time**:
+  commit `VITE_CONVEX_URL=<url>` (Vite) or `NEXT_PUBLIC_CONVEX_URL=<url>`
+  (Next.js) in the App's `.env.production`, build, deploy the built directory
+  (`--type static --spa`). `kortix apps deploy` has no flag for build-time
+  variables. A server-rendered App reads `CONVEX_URL` from `env` in
+  `kortix.yaml` at runtime.
+- **Sign-in:** `convex.setAuth(kortixAppBackendToken("<name>"))` from
+  `@kortix/sdk`. It fetches `GET /_kortix/backend-token?backend=<name>` on the
+  App's own origin: a 15-minute token naming the viewer, with their Kortix
+  groups and role, refreshed before it expires. **The App must list the
+  backend:** `kortix apps set <app> --backends <name>` (or `backends: [<name>]`
+  in its `kortix.yaml` block); otherwise `403 backend_not_listed`. Needs a signed-in viewer:
+  access `private`, `project` or `restricted`, and `--viewer` not `off`. A
+  `public` or `password` App gets `401`.
+- **Who is looking, without a backend:** `fetchKortixAppViewer()` returns the
+  viewer's id, name, picture, groups and role from `/_kortix/viewer`;
+  `readKortixMember(viewer)` gives the same member shape a backend sees.
+- **Never** put the backend admin key in an App, a bundle or App `env`.
 
 ## Verify
 

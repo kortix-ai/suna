@@ -1,0 +1,144 @@
+import { readFileSync } from '@/i18n/test-source';
+import { expect, test } from 'bun:test';
+import { resolve } from 'node:path';
+import { BACKEND_NAME_PATTERN } from './backends-view';
+import { backendEnvText } from './backend-connect-dialog';
+import {
+  formatBackupSize,
+  manualSnapshotCount,
+  sizeChanges,
+  sizeDraft,
+  sizeFieldValid,
+  sizeMin,
+  timeUntil,
+} from './backend-dialogs';
+
+const root = resolve(import.meta.dir, '../..');
+const read = (path: string) => readFileSync(resolve(root, path), 'utf8');
+
+test('backend names follow the API rule', () => {
+  for (const ok of ['a', 'web-demo', 'a1-b2', `a${'b'.repeat(62)}`]) expect(BACKEND_NAME_PATTERN.test(ok)).toBe(true);
+  for (const bad of ['', '1abc', '-a', 'A', 'a_b', 'a b', `a${'b'.repeat(63)}`])
+    expect(BACKEND_NAME_PATTERN.test(bad)).toBe(false);
+});
+
+test('the revealed admin credentials render as .env.local lines', () => {
+  expect(
+    backendEnvText({ CONVEX_SELF_HOSTED_URL: 'https://x', CONVEX_SELF_HOSTED_ADMIN_KEY: 'k' }),
+  ).toBe('CONVEX_SELF_HOSTED_URL=https://x\nCONVEX_SELF_HOSTED_ADMIN_KEY=k');
+});
+
+test('Backends is a flag-gated Customize tab, never a sidebar row, and the page gates on it', () => {
+  const tabs = read('features/workspace/capabilities/shared/capability-tabs.tsx');
+  const routes = read('features/workspace/capabilities/shared/capability-tab-routes.ts');
+  const view = read('features/backends/backends-view.tsx');
+  const menu = read('lib/menu-registry.ts');
+  const sidebar = read('features/workspace/project-sidebar/project-sidebar.tsx');
+  expect(tabs).toContain("useFeatureFlag(projectId, 'backends')");
+  expect(routes).toContain("{ key: 'backends', label: 'Backends', flag: 'backends' }");
+  expect(menu).toContain("requiresFlag: 'backends'");
+  expect(menu).toContain("href: '/projects/{projectId}/customize/backends'");
+  expect(sidebar).not.toContain('ProjectBackendsNavItem');
+  expect(view).toContain("useFeatureFlag(projectId, 'backends')");
+  expect(view).toContain('<FeatureGateScreen');
+  expect(view).toContain('<CapabilityPageShell');
+});
+
+test('one click anywhere on a row opens the backend; its own controls do not', () => {
+  const view = read('features/backends/backends-view.tsx');
+  expect(view).toContain('onClick={openRow}');
+  expect(view).toContain('const href = backendHref(projectId, backend.backend_id);');
+  // The copy button and the menu (whose items render in a portal, and React
+  // events bubble through portals) stop the click before the row sees it.
+  expect(view).toContain('<TableCell onClick={own}>');
+  expect(view).toContain('<span className="shrink-0" onClick={own}>');
+  // The URL is the widest cell: guarding all of it made a click in the middle
+  // of the row do nothing. Only the copy button keeps its own click.
+  expect(view).not.toContain('<span className="flex items-center gap-1" onClick={own}>');
+});
+
+test('write actions are gated and the admin key is never rendered', () => {
+  const view = read('features/backends/backends-view.tsx');
+  expect(view).toContain('PROJECT_ACTIONS.PROJECT_BACKEND_WRITE');
+  expect(view).not.toContain('admin_key');
+  expect(view).toContain('<ConfirmDialog');
+});
+
+const current = { cpu: 2, memory_gb: 4, disk_gb: 20 };
+
+test('size validation follows the API limits and the disk minimum is the current disk', () => {
+  expect(sizeMin('disk_gb', current)).toBe(20);
+  expect(sizeMin('disk_gb', { ...current, disk_gb: 5 })).toBe(10);
+  expect(sizeFieldValid('cpu', '16', current)).toBe(true);
+  expect(sizeFieldValid('cpu', '17', current)).toBe(false);
+  expect(sizeFieldValid('cpu', '0', current)).toBe(false);
+  expect(sizeFieldValid('memory_gb', '1.5', current)).toBe(false);
+  expect(sizeFieldValid('memory_gb', '', current)).toBe(false);
+  expect(sizeFieldValid('disk_gb', '19', current)).toBe(false);
+  expect(sizeFieldValid('disk_gb', '100', current)).toBe(true);
+  expect(sizeFieldValid('disk_gb', '101', current)).toBe(false);
+});
+
+test('a resize sends only the changed fields', () => {
+  expect(sizeChanges(sizeDraft(current), current)).toEqual({});
+  expect(sizeChanges({ cpu: '3', memory_gb: '4', disk_gb: '30' }, current)).toEqual({ cpu: 3, disk_gb: 30 });
+});
+
+test('backup sizes are human readable', () => {
+  expect(formatBackupSize(null)).toBe('—');
+  expect(formatBackupSize(512)).toBe('512 B');
+  expect(formatBackupSize(1048576)).toBe('1.0 MB');
+});
+
+test('Resize and Backups are row actions; resize and restore are write-gated; the size and operation show in the row', () => {
+  const view = read('features/backends/backends-view.tsx');
+  const dialogs = read('features/backends/backend-dialogs.tsx');
+  expect(view).toContain('<ResizeBackendDialog');
+  expect(view).toContain('<BackendBackupsDialog');
+  expect(view).toContain('backendSizeLabel(backend, t)');
+  expect(view).toContain('backend.last_operation_error');
+  expect(view).toMatch(/canWrite \? \(\s*<DropdownMenuItem\s+disabled=\{backend\.status !== 'running' \|\| backend\.operation !== null\}\s+onClick=\{onResize\}/);
+  expect(dialogs).toContain('{canWrite ? (');
+  expect(dialogs).toContain('<ConfirmDialog');
+  expect(dialogs).not.toContain('admin_key');
+});
+
+test('one Connect dialog replaces the copy actions; its snippets come from the shared source the CLI prints', () => {
+  const view = read('features/backends/backends-view.tsx');
+  const detail = read('features/backends/backend-detail-view.tsx');
+  const dialog = read('features/backends/backend-connect-dialog.tsx');
+  for (const source of [view, detail]) {
+    expect(source).toContain('<BackendConnectDialog');
+    expect(source).not.toContain('backendDeployCommand');
+    expect(source).not.toContain('backendEnvText');
+  }
+  expect(view).not.toContain('getBackendCredentials');
+  expect(dialog).toContain("from '@kortix/shared/backend-connect'");
+  expect(dialog).toContain('backendConnectSnippets(backend)');
+  // The admin key appears only after an explicit, write-gated Reveal that reads the audited route.
+  expect(dialog).toMatch(/const reveal = async \(\) => \{[\s\S]*getBackendCredentials\(projectId, backend\.backend_id\)/);
+  expect(dialog).toContain('onClick={() => void reveal()}');
+  expect(dialog).toContain('{canWrite ? (');
+});
+
+test('the backend page shows the last automatic backup, its schedule and the snapshot count', () => {
+  const detail = read('features/backends/backend-detail-view.tsx');
+  expect(detail).toContain('useProjectBackendBackups(');
+  expect(detail).toContain('automatic.last_backup_at');
+  expect(detail).toContain('automatic.interval_minutes');
+  expect(detail).toContain('snapshot_limit: limit');
+  expect(detail).toContain('data-testid="backend-backup-summary"');
+});
+
+test('snapshot expiry reads as a future time; a passed expiry is null', () => {
+  const now = Date.parse('2026-10-07T00:00:00.000Z');
+  const at = (ms: number) => new Date(now + ms).toISOString();
+  expect(timeUntil(at(-1), now)).toBeNull();
+  expect(timeUntil(at(30 * 60_000), now)).toMatch(/30/);
+  expect(timeUntil(at(24 * 3_600_000), now)).toMatch(/24/);
+  expect(timeUntil(at(7 * 86_400_000), now)).toMatch(/7/);
+});
+
+test('only manual snapshots (and snapshots from servers without kinds) count against the limit', () => {
+  expect(manualSnapshotCount([{ kind: 'manual' }, { kind: 'automatic' }, { kind: 'resize' }, {}])).toBe(2);
+});
