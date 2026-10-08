@@ -155,6 +155,18 @@ describe('pi config releases: boot', () => {
     expect(api.storageRequests).toEqual([])
   })
 
+  test('a box with no base pin builds a release with no archive from its checkout', async () => {
+    const one = release('deploy', 'from the checkout, no pin')
+    api.respond({ status: 200, json: { ...one.descriptor, format: 'config-release-v3', archive: null, snapshot: null } })
+    const { releases } = create(undefined, {}, { projectTarget: repo })
+
+    await releases.boot(undefined, Promise.resolve(null))
+
+    expect(releases.report()).toMatchObject({ release_id: one.descriptor.release_id, source: 'release', proven: true, fallback_reason: null })
+    expect(api.archiveRequests).toEqual([])
+    expect(api.storageRequests).toEqual([])
+  })
+
   test('a release over the archive cap (v3, no archive) boots from the project snapshot', async () => {
     const one = release('deploy', 'from the snapshot')
     api.respond({

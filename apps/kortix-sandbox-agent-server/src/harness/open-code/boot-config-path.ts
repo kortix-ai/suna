@@ -21,7 +21,7 @@ import {
 } from '@/services/config-release/api-client'
 import type { ConfigReleaseDescriptor } from '@/services/config-release/descriptor'
 import { clearConfigReleaseNotice } from '@/services/config-release/notice'
-import { obtainRelease } from '@/services/config-release/obtain'
+import { checkoutMayHold, obtainRelease } from '@/services/config-release/obtain'
 import { logger } from '@/lib/log/logger'
 import { repairOpencodeConfigDir } from './apple-double'
 import { serveConfigDir } from './boot-link'
@@ -209,9 +209,12 @@ async function bootCandidates(
     } else {
       try {
         // The checkout is the release when the box checked out its commit:
-        // wait for it only then. Any other boot builds the release meanwhile.
+        // wait for it only then. A box with no base pin (KORTIX_BASE_SHA unset)
+        // waits only for a release with no archive, which nothing else may
+        // hold yet; HEAD decides (obtain.ts). Any other boot builds the
+        // release meanwhile.
         const checkout =
-          cfg.baseSha === manifest.source_commit && (await input.workspace) === null ? cfg.projectTarget : null
+          checkoutMayHold(cfg.baseSha, answer.descriptor) && (await input.workspace) === null ? cfg.projectTarget : null
         const obtained = await obtainRelease({
           root,
           manifest,

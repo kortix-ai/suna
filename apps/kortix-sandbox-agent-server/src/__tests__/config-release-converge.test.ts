@@ -371,6 +371,7 @@ describe('convergeConfigRelease — where the release comes from', () => {
     expect(response.outcome).toBe('failed')
     expect(response.reason).toContain('the API has no project snapshot of this commit yet')
     expect(response.reason).toContain('there is no archive')
+    expect(response.reason).toContain(`not the release commit ${release.descriptor.source_commit!.slice(0, 12)}`)
     expect(oc.state.reloads).toBe(0)
     expect(await readQuarantine(store)).toEqual({})
   })
