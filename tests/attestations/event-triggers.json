@@ -1,17 +1,16 @@
 {
-  "source_hash": "7b2bccd9bd78764f7e247cf009435ca0c2356c627955c20d80c8c407746a7a4e",
+  "source_hash": "0974015903d2287a6a98efcc2e13ce72b70ec85e838a5b03293aa8b5c3245e01",
   "diff_files": [
-    "apps/cli/src/__tests__/triggers.test.ts",
-    "apps/cli/src/commands/triggers-events.ts",
-    "tests/src/flows/triggers.flow.ts"
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-08T193636Z-before-merging-a-pr-into-dev-run-pnpm-test-verify-on-its-hea.md"
   ],
-  "diff_hash": "0ec415bce07ed7ec9f6b2027b7b1759085fbfa5831a539c18c0ad1601b407f6d",
-  "head": "85bfbb61c24bb4ee507cc58c4e46720a58da3806",
+  "diff_hash": "e8fbbd169a0d8d9229cccff019cc1ea920fd35e69b823423f42995ffb9793b6a",
+  "head": "3ccaed867345d1b34928c3932690e1ad9da2ae91",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-08T19:32:21.680Z"
+  "at": "2026-10-08T19:47:21.650Z"
 }
