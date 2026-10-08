@@ -1,5 +1,5 @@
 {
-  "source_hash": "a62acb43ad614f3b39ebfe16cf92b41a6ad5eb4841c18b0fc0f2966154a1a79b",
+  "source_hash": "8f54472ee3ab7e6f6c19efdd4fbb4a3b9161158f6ee5ab9359add4b8886ef173",
   "diff_files": [
     ".agents/skills/kortix-brand/references/decisions.md",
     ".agents/skills/kortix-brand/references/verbal/voice-and-tone.md",
@@ -215,13 +215,13 @@
     "tests/src/flows/backends.flow.ts",
     "tests/src/flows/connectors.flow.ts"
   ],
-  "diff_hash": "4b9be52ad26e8abe77126982dbfc1132015b190e33d2b0c0b7ba14d3d6171d4c",
-  "head": "627c10405f56f4708bee8e873aa91dfef46fc348",
+  "diff_hash": "af4fe3877cb5368489777ee2970619a68670ca8b36465f150f695349ee6070f3",
+  "head": "dc4af14ec60a80b18fb57e1b41fccd515f863b2a",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-08T14:17:45.313Z"
+  "at": "2026-10-08T14:33:07.631Z"
 }
