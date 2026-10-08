@@ -74,8 +74,9 @@ Subcommands:
                            firing. Manual \`fire\` still works.
   resume                   Re-activate this project's triggers server-side.
   info <slug> [--json]     Show one trigger in full.
-  events --apps [--json]   List apps that can trigger events, with their
-                           connector and whether a shared account is connected.
+  events --apps [--json]   List apps that can trigger events: each app's
+                           connectors (profiles) and their shared accounts
+                           (label, connected as, default).
   events --connector <slug> [--json]
                            List the events a connector can trigger on.
   events --connector <slug> --event <TYPE> [--json]
@@ -100,8 +101,14 @@ Event options (--type event). Run the agent when an app event happens on a
 connected app (e.g. a new pull request). The prompt reads the event as
 {{ event.data.<field> }}, plus event.id, event.type, event.app,
 event.connector, and event.occurred_at.
-  --connector <slug>       The project's connector the event happens on
-                           (required).
+  --connector <slug>       The project's connector (profile) the event happens
+                           on (required). Several connectors can share one app.
+  --account <label>        Optional. Label of one SHARED account of that
+                           connector. Omit it to use the connector's default
+                           shared account. Needed only when the connector has
+                           several shared accounts. Private accounts never
+                           feed a trigger. On \`set\`, --default-account clears
+                           it. Changing --connector also clears it.
   --event <TYPE>           Provider event type, e.g. GITHUB_PULL_REQUEST_CREATED
                            (required; list with \`triggers events\`).
   --config <key=value>     Event config field. Repeat for more. Values are
@@ -195,6 +202,8 @@ export async function runTriggers(argv: string[]): Promise<number> {
     configJson = takeFlagValue(rest, ['--config-json']);
     apps = takeFlagBool(rest, ['--apps']);
     tf.connector = takeFlagValue(rest, ['--connector']);
+    tf.account = takeFlagValue(rest, ['--account']);
+    if (takeFlagBool(rest, ['--default-account'])) tf.defaultAccount = '1';
     tf.event = takeFlagValue(rest, ['--event']);
     tf.type = takeFlagValue(rest, ['--type']);
     tf.prompt = takeFlagValue(rest, ['--prompt']);
@@ -301,7 +310,7 @@ async function triggersLs(opts: CtxOpts, json = false): Promise<number> {
     const nameW = Math.max(...resp.triggers.map((t) => t.name.length), 4);
     process.stdout.write('\n');
     process.stdout.write(
-      `  ${C.dim}${pad('SLUG', slugW)}   ${pad('NAME', nameW)}   TYPE     STATE     SCHEDULE / SECRET / MODE      LAST FIRED${C.reset}\n`,
+      `  ${C.dim}${pad('SLUG', slugW)}   ${pad('NAME', nameW)}   TYPE     STATE     SCHEDULE / SECRET / MODE / SOURCE              LAST FIRED${C.reset}\n`,
     );
     for (const t of resp.triggers) {
       const state = t.enabled ? `${C.green}enabled ${C.reset}` : `${C.faded}disabled${C.reset}`;
@@ -313,7 +322,7 @@ async function triggersLs(opts: CtxOpts, json = false): Promise<number> {
       const lastFired = t.last_fired_at ? formatRelative(t.last_fired_at) : '—';
       const failed = t.last_status === 'failed' ? `  ${C.red}last run failed${C.reset}` : '';
       process.stdout.write(
-        `  ${pad(t.slug, slugW)}   ${pad(t.name, nameW)}   ${pad(t.type, 7)}  ${state}   ${pad(trimMid(detail, 30), 30)}  ${C.faded}${lastFired}${C.reset}${failed}${eventNote}\n`,
+        `  ${pad(t.slug, slugW)}   ${pad(t.name, nameW)}   ${pad(t.type, 7)}  ${state}   ${pad(trimMid(detail, 44), 44)}  ${C.faded}${lastFired}${C.reset}${failed}${eventNote}\n`,
       );
     }
     process.stdout.write(
@@ -580,6 +589,8 @@ async function triggersInfo(
   } else if (t.type === 'event') {
     const e = t.event;
     rows.push(['connector', e ? `${e.connector}${e.app ? ` (${e.app})` : ''}` : '—']);
+    rows.push(['account', e ? (e.account ?? 'default') : '—']);
+    rows.push(['connected as', e?.connected_as ?? '—']);
     rows.push(['event', e?.type ?? '—']);
     if (e && Object.keys(e.config).length > 0) rows.push(['config', JSON.stringify(e.config)]);
     rows.push([
@@ -632,7 +643,7 @@ function triggerDetail(t: ProjectTrigger): string {
       : mode;
   }
   if (t.type === 'event') {
-    return t.event?.type ?? '?';
+    return t.event ? `${t.event.connector}/${t.event.account ?? 'default'} ${t.event.type}` : '?';
   }
   return `secret_env=${t.secret_env ?? '?'}`;
 }
