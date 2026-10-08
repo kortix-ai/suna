@@ -2550,9 +2550,15 @@ flow(
 );
 
 // ── CFG-16 — a box runs a release over the cap, from its checkout then the snapshot ──
-const OVER_CAP_AGENT = (key: string, marker: string): string =>
-  `---\ndescription: main agent\nmode: primary\n---\nYou are the main agent.\n${key}: ${marker}\n`;
-const OVER_CAP_PROMPT = (key: string): string => `Answer with the ${key} value from your instructions and nothing else.`;
+//
+// The proof that a runtime loaded a release is deterministic, not a model's
+// wording: each release's agent carries its own marker as its `description`,
+// which the compiled agent config copies from the `.md` frontmatter and both
+// harnesses list at `GET /kortix/runtime/agents`. A default-lineup model
+// answering a marker question is not reliable (measured 2026-10-08: it
+// answered with the directive's NAME on a box that ran the release).
+const OVER_CAP_AGENT = (marker: string): string =>
+  `---\ndescription: ${marker}\nmode: primary\n---\nYou are the main agent.\n`;
 
 harnessFlow(
   'CFG-16',
@@ -2576,11 +2582,8 @@ harnessFlow(
     const fixture = await setup(ctx);
     try {
       const large = await overCapFile();
-      // A directive NAME per release, never asked before (the CFG-12 technique).
-      const keyA = `CFG16_MARKER_A_${Date.now()}`;
-      const keyB = `${keyA}_NEXT`;
-      const markerA = `over-cap-${crypto.randomUUID()}`;
-      const markerB = `over-cap-${crypto.randomUUID()}`;
+      const markerA = `over-cap-a-${crypto.randomUUID()}`;
+      const markerB = `over-cap-b-${crypto.randomUUID()}`;
 
       await ctx.step('the account is entitled to the managed lineup', async () => {
         await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), fixture.team.id);
@@ -2591,7 +2594,7 @@ harnessFlow(
       await optIntoHarness(ctx, fixture, harness);
       await ctx.step('the base branch holds 33 MiB that gzip cannot shrink, beside the agent config', async () => {
         await fixture.commit(
-          { 'data/large.bin': large, '.kortix/opencode/agents/kortix.md': OVER_CAP_AGENT(keyA, markerA) },
+          { 'data/large.bin': large, '.kortix/opencode/agents/kortix.md': OVER_CAP_AGENT(markerA) },
           'over the archive cap',
         );
       });
@@ -2614,6 +2617,12 @@ harnessFlow(
             .pop() ?? null
         );
       };
+      const agentDescription = async (): Promise<string | null> => {
+        const r = await ctx.client.as(ctx.P.OWNER).get(runtimePath(booted.sandboxId, '/kortix/runtime/agents'));
+        r.status(200);
+        const agents = r.json<{ agents: Array<{ name: string; description: string | null }> }>().agents;
+        return agents.find((agent) => agent.name === 'kortix')?.description ?? null;
+      };
 
       let first = '';
       await ctx.step('the box runs the release over the cap, built from its own checkout with no download', async () => {
@@ -2629,13 +2638,13 @@ harnessFlow(
         if (transport !== 'workspace') throw new Error(`release ${first.slice(0, 12)} was materialized from ${transport}, not the checkout`);
       });
 
-      await ctx.step('the agent answers from that release', async () => {
-        await sendPrompt(ctx, fixture.projectId, booted.sessionId, OVER_CAP_PROMPT(keyA));
-        await waitForAssistantText(ctx, fixture.projectId, booted.sessionId, markerA);
+      await ctx.step('the runtime serves the agent of that release', async () => {
+        const description = await agentDescription();
+        if (description !== markerA) throw new Error(`the kortix agent's description is ${JSON.stringify(description)}, not the release's`);
       });
 
       await ctx.step('a push moves the base: the box converges to the new release from the project snapshot', async () => {
-        await fixture.commit({ '.kortix/opencode/agents/kortix.md': OVER_CAP_AGENT(keyB, markerB) }, 'next release over the cap');
+        await fixture.commit({ '.kortix/opencode/agents/kortix.md': OVER_CAP_AGENT(markerB) }, 'next release over the cap');
         // The snapshot is built in the background; the box retries once a minute until it is ready.
         const release = await waitFor(releaseOf, {
           until: (rel) => Boolean(rel) && rel.running_release_id !== first && rel.running_release_id === rel.desired_release_id && rel.proven === true,
@@ -2648,9 +2657,16 @@ harnessFlow(
         if (transport !== 'snapshot') throw new Error(`the new release was materialized from ${transport}, not the project snapshot`);
       });
 
-      await ctx.step('the agent answers from the new release', async () => {
-        await sendPrompt(ctx, fixture.projectId, booted.sessionId, OVER_CAP_PROMPT(keyB));
-        await waitForAssistantText(ctx, fixture.projectId, booted.sessionId, markerB);
+      await ctx.step('the runtime serves the agent of the new release, and a turn runs on it', async () => {
+        const description = await waitFor(agentDescription, {
+          until: (value) => value === markerB,
+          timeoutMs: 60_000,
+          intervalMs: 3_000,
+          description: 'the new agent description',
+        });
+        if (description !== markerB) throw new Error(`description ${description}`);
+        await sendPrompt(ctx, fixture.projectId, booted.sessionId, 'Reply with the single word OK.');
+        await waitForAssistantText(ctx, fixture.projectId, booted.sessionId, 'OK');
       });
 
       await ctx.step('GET /config reports the session current: not stale, no fallback', async () => {
