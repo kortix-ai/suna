@@ -58,6 +58,10 @@ mock.module('../sandbox-deadline', () => ({
   extendSandboxDeadline: async (target: unknown, grantMs: number) => {
     extensions.push({ target, grantMs });
   },
+  // KRTX-1729: presence extends through the capped statement, by the idle grace.
+  extendSandboxDeadlineForPresence: async (target: unknown) => {
+    extensions.push({ target, grantMs: realDeadline.idleGraceMs() });
+  },
 }));
 
 const { projectsApp } = await import('../lib/app');

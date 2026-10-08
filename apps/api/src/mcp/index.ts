@@ -728,7 +728,7 @@ async function projectSkills(ctx: ToolContext, projectId: string): Promise<{ slu
   });
 }
 
-async function runTool(ctx: ToolContext, name: string, input: Record<string, unknown>): Promise<ToolResult> {
+export async function runTool(ctx: ToolContext, name: string, input: Record<string, unknown>): Promise<ToolResult> {
   switch (name) {
     case 'list_projects':
       return listProjectsTool(ctx, input);
@@ -819,7 +819,7 @@ async function listProjectsTool(ctx: ToolContext, input: Record<string, unknown>
     }),
   );
   const projects = perAccount.flat();
-  return text(projects.length ? JSON.stringify(projects, null, 2) : 'No projects. Create one in the web app or with `kortix init`.');
+  return text(JSON.stringify(projects, null, 2));
 }
 
 async function sendMessageTool(ctx: ToolContext, input: Record<string, unknown>): Promise<ToolResult> {

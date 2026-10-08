@@ -2036,7 +2036,9 @@
       "whenBelow": "hinzu, wenn das Guthaben unter diesen Betrag fällt:",
       "thresholdLabel": "Schwellenwert für die Aufladung in Dollar",
       "save": "Speichern",
-      "paymentNeeded": "Füge eine Zahlungsmethode hinzu, damit die automatische Aufladung ausgeführt werden kann."
+      "paymentNeeded": "Füge eine Zahlungsmethode hinzu, damit die automatische Aufladung ausgeführt werden kann.",
+      "turnedOffAfterFailure": "Die automatische Aufladung wurde am {date} ausgeschaltet: Die letzte Abbuchung ist fehlgeschlagen ({reason}). Aktualisiere die Zahlungsmethode und schalte die automatische Aufladung dann wieder ein.",
+      "lastChargeFailed": "Die letzte automatische Aufladung ist am {date} fehlgeschlagen ({reason}). Kortix versucht es erneut; nach 3 fehlgeschlagenen Abbuchungen in Folge wird die automatische Aufladung ausgeschaltet."
     },
     "title": "Abrechnung & Abonnement",
     "subscription": "Abonnement",
@@ -4574,7 +4576,13 @@
       "invitationKicker": "Einladung",
       "joinAccountDescription": "Du trittst diesem Konto als {roleLabel} bei und siehst Projekte, für die dir der Besitzer Zugriff gibt.",
       "decline": "Ablehnen",
-      "accept": "Annehmen"
+      "accept": "Annehmen",
+      "projectLabel": "Projekt",
+      "invitedYouToAProject": "hat dich zu einem Projekt eingeladen",
+      "youHaveBeenInvitedToAProject": "Du wurdest zu einem Projekt eingeladen.",
+      "joinProjectDescription": "Du trittst {projectName} als {roleLabel} bei.",
+      "roleManager": "Manager",
+      "signOutAndContinue": "Abmelden und fortfahren"
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – Das Open-Source-AI Operating System",
@@ -7156,7 +7164,11 @@
       "line58JsxAttrTitleYouRanOutOfCredits": "Dein Guthaben ist aufgebraucht",
       "line74JsxTextEnableAutoTopUp": "Automatische Aufladung aktivieren",
       "line82JsxTextBuyCredits": "Guthaben kaufen",
-      "askOwnerToAddCredits": "Nur ein Kontoinhaber kann Guthaben hinzufügen. Bitte einen Inhaber, aufzuladen."
+      "askOwnerToAddCredits": "Nur ein Kontoinhaber kann Guthaben hinzufügen. Bitte einen Inhaber, aufzuladen.",
+      "askOwnerForCredits": "Inhaber fragen",
+      "ownersNotified": "Inhaber benachrichtigt",
+      "alreadyAskedToday": "Heute schon gefragt",
+      "askOwnerFailed": "Inhaber nicht erreicht. Erneut versuchen"
     },
     "componentsSessionSessionFilesPanel": {
       "line80JsxTextThisSessionIsItsOwnVersion": "Diese Session ist ihre eigene Version",

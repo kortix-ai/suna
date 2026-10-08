@@ -41,6 +41,8 @@ the tab is visible and you clicked, typed, scrolled or touched it in the last
 10 minutes, and only when you may start sessions in the project. A tab left
 open with no input stops counting after 10 minutes, so the session stops about
 15 to 20 minutes later. A read-only viewer's open tab never keeps it awake.
+Using the page alone keeps a session awake for at most 2 hours after its last
+agent turn; a new message starts a turn and resets that limit.
 
 Self-host operators can set `KORTIX_SANDBOX_AUTOSTOP_MINUTES` to change the
 normal idle grace. This setting does not change active-turn protection.

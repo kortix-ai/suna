@@ -132,10 +132,12 @@ describe('the one sign-out leaves on a document load', () => {
   test('performSignOut hands `leave` a window.location.assign', () => {
     const body = slice(
       code('lib/auth/perform-sign-out.ts'),
-      'export async function performSignOut()',
+      'export async function performSignOut(',
       '\n}\n',
     );
-    expect(body).toContain('window.location.assign(destination)');
+    expect(body).toContain('window.location.assign(target === SIGN_OUT_DESTINATION ? destination : target)');
+    // The one destination: `/auth`, or `/auth?returnUrl=<same-origin path>`.
+    expect(body).toContain('const destination = signOutDestination(options?.returnUrl);');
   });
 
   test('neither the wiring nor the sequence holds a router at all', () => {
@@ -324,12 +326,12 @@ describe('the signed-out route guards do not race the exit', () => {
     // now stands down for them.
     const body = slice(
       code('lib/auth/perform-sign-out.ts'),
-      'export async function performSignOut()',
+      'export async function performSignOut(',
       '\n}\n',
     );
     expect(body).toContain('} finally {');
     expect(body).toContain('if (!left) {');
-    expect(body).toContain('window.location.assign(SIGN_OUT_DESTINATION);');
+    expect(body).toContain('window.location.assign(destination);');
   });
 });
 
@@ -375,7 +377,7 @@ describe('a sign-out that the server refuses still signs the user out', () => {
     // session is the exact bounce-back-in symptom the step exists to prevent.
     const fallback = slice(wiring, '  } finally {', '\n}\n');
     const expire = fallback.indexOf('expireSupabaseAuthCookie();');
-    const leave = fallback.indexOf('window.location.assign(SIGN_OUT_DESTINATION);');
+    const leave = fallback.indexOf('window.location.assign(destination);');
 
     expect(expire).toBeGreaterThan(-1);
     expect(leave).toBeGreaterThan(expire);
