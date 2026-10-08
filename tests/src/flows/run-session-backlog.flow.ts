@@ -1,7 +1,7 @@
 /**
  * Agent-run + session happy-path backlog.
  *
- * Maps 1:1 to spec IDs: RUN-1..8, RUN-10, RUN-11, RUN-12, SESS-2, SESS-3, SESS-9, SESS-12,
+ * Maps 1:1 to spec IDs: RUN-1..8, RUN-10..15, SESS-2, SESS-3, SESS-9, SESS-12,
  * FILE-8, FILE-9, GOLD-1, CHN-6, SESS-10, CONN-26.
  *
  * REALITY: every flow here needs a REAL booted sandbox and/or a funded
@@ -22,6 +22,7 @@
  * That proxy is a Hono wildcard mount, not a manifest route, so it never
  * appears in `meta.routes`; its auth boundary is RUN-8, PRX-1 and PRX-2.
  */
+import { createHash } from 'node:crypto';
 import { flow, harnessFlow } from '../core/flow';
 import { isKe2eRetryableError } from '../core/client';
 import { waitFor } from '../core/poll';
@@ -1534,6 +1535,58 @@ harnessFlow(
           .post(runtimePath(sandboxId, `/session/${root}/command`), { command: 'ke2e-no-such-command', arguments: '' });
         r.status(harness === 'pi' ? 400 : 500);
       });
+    } finally {
+      await world.close();
+    }
+  },
+);
+
+// ─── RUN-15: the project's root AGENTS.md reaches the agent ──────────────────
+harnessFlow(
+  'RUN-15',
+  {
+    domain: 'agent-run',
+    requires: ['funded', 'daytona'],
+    timeoutMs: 900_000,
+    routes: [
+      'PATCH /v1/projects/:projectId/features',
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+    ],
+  },
+  async (ctx, harness) => {
+    const project = await ctx.fixtures.project({ seed: true });
+    const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
+    // A NAME the conversation never held: only the system prompt can supply its value (the CFG-12 technique).
+    const name = `RUN15_PROJECT_RULE_${Date.now()}`;
+    const value = `run15-${crypto.randomUUID()}`;
+    const agentsMd = `# Project rules\n\n${name}: ${value}\n`;
+    try {
+      await ctx.step(`the project runs ${harness} and commits a root AGENTS.md`, async () => {
+        if (harness === 'pi') await world.setFeature('pi_harness', true);
+        await world.commitToMain({ 'AGENTS.md': agentsMd }, 'ke2e RUN-15: a root AGENTS.md');
+      });
+      const { projectId, sessionId, sandboxId } = await bootSession(ctx, harness, { project });
+
+      await ctx.step('asked for the directive, the agent answers with its value from AGENTS.md', async () => {
+        await sendPrompt(ctx, projectId, sessionId, `Answer with the ${name} value from your project instructions and nothing else.`);
+        await waitForAssistantText(ctx, projectId, sessionId, value);
+      });
+
+      if (harness === 'pi') {
+        await ctx.step('the daemon health names the AGENTS.md pi loaded: the working tree, at the committed sha', async () => {
+          const r = await ctx.client.as(ctx.P.OWNER).get(runtimePath(sandboxId, '/kortix/health'));
+          r.status(200);
+          const loaded = r.json<any>().harness?.details?.agentsMd;
+          const sha = createHash('sha256').update(agentsMd).digest('hex').slice(0, 12);
+          if (loaded?.source !== 'workspace' || loaded?.sha !== sha) {
+            throw new Error(`pi reports ${JSON.stringify(loaded)}; expected source "workspace" and sha ${sha}`);
+          }
+        });
+      }
     } finally {
       await world.close();
     }
