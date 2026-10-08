@@ -14,7 +14,7 @@ import { join } from 'node:path'
 import { agentEnvDirIsTmpfs, writeAgentEnvFile } from '../shared/agent-env-file'
 import { relayBootTimelineToApi } from '../shared/boot-timeline-relay'
 import { createRuntimeAuditRelay, type AuditRelay } from '../shared/audit-relay'
-import { scheduleRuntimeProjectionPush } from '../shared/projection-relay'
+import { createSessionTreeWatch, scheduleRuntimeProjectionPush } from '../shared/projection-relay'
 import {
   claimInitialTurn,
   relayPermission,
@@ -96,6 +96,7 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
 
   // ── Serve BEFORE doing any slow work ────────────────────────────────────
   const relayedTurnEnds = new Set<string>()
+  const sessionTreeChanged = createSessionTreeWatch()
   const hooks: PiRuntimeHooks = {
     onTurnBegin: ({ rootId, messageId }) => {
       void relayTurnBegin(rootId, messageId)
@@ -120,6 +121,8 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
       void relayPermission(request)
     },
     onFrame: (frame) => {
+      // A child session or a new title: apps/api lists the tree from the pushed projection.
+      if (sessionTreeChanged(frame)) scheduleRuntimeProjectionPush(frame.type)
       if (!auditRelay) return
       try {
         auditRelay.enqueue(frame)

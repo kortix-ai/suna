@@ -16,6 +16,7 @@ import Loading from '@/components/ui/loading';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useAuth } from '@/features/providers/auth-provider';
+import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { useAppHome } from '@/lib/onboarding/use-app-home';
 import { inviteLandingPath } from '@/features/workspace/project-selector/project-selector-model';
@@ -161,6 +162,16 @@ export default function InvitePage() {
           <p className="text-foreground/30 mt-4 text-xs">
             {tHardcodedUi.raw('appInvitesInviteidPage.line129JsxTextSignOutAndSignBackInWithThe')}
           </p>
+          {/* Sign-in comes back to this invite (KRTX-1731): a manual sign-out
+              used to drop the return path. */}
+          <Button
+            type="button"
+            size="lg"
+            className="mt-6 w-full text-sm"
+            onClick={() => void performSignOut({ returnUrl: `/invites/${inviteId}` })}
+          >
+            {tHardcodedUi.raw('appInvitesInviteidPage.signOutAndContinue')}
+          </Button>
           <GhostAction href={homeHref}>
             {tHardcodedUi.raw('appInvitesInviteidPage.line132JsxTextBackToProjects')}
           </GhostAction>
@@ -198,12 +209,21 @@ export default function InvitePage() {
     (acceptMutation.error instanceof Error && acceptMutation.error.message) ||
     (declineMutation.error instanceof Error && declineMutation.error.message) ||
     null;
-  const targetName = item.invite.account_name || 'Account';
+  // A project invite names its project and project role (KRTX-1731); the page
+  // used to say "join a team" for it.
+  const invitedProject = invite.projects?.[0] ?? null;
+  const targetName = invitedProject?.name || item.invite.account_name || 'Account';
   const inviterEmail = invite.inviter_email;
-  const targetLabel = tHardcodedUi.raw('appInvitesInviteidPage.teamAccountLabel');
+  const targetLabel = invitedProject
+    ? tHardcodedUi.raw('appInvitesInviteidPage.projectLabel')
+    : tHardcodedUi.raw('appInvitesInviteidPage.teamAccountLabel');
   const roleLabel =
     item.invite.initial_role === 'admin'
       ? tHardcodedUi.raw('appInvitesInviteidPage.roleAdmin')
+      : tHardcodedUi.raw('appInvitesInviteidPage.roleMember');
+  const projectRoleLabel =
+    invitedProject?.role === 'manager'
+      ? tHardcodedUi.raw('appInvitesInviteidPage.roleManager')
       : tHardcodedUi.raw('appInvitesInviteidPage.roleMember');
 
   return (
@@ -215,13 +235,17 @@ export default function InvitePage() {
             <div className="min-w-0">
               <div className="text-foreground/85 truncate text-sm font-medium">{inviterEmail}</div>
               <div className="text-foreground/40 mt-0.5 text-xs">
-                {tHardcodedUi.raw('appInvitesInviteidPage.line180JsxTextInvitedYouToJoinATeam')}
+                {invitedProject
+                  ? tHardcodedUi.raw('appInvitesInviteidPage.invitedYouToAProject')
+                  : tHardcodedUi.raw('appInvitesInviteidPage.line180JsxTextInvitedYouToJoinATeam')}
               </div>
             </div>
           </div>
         ) : (
           <div className="text-foreground/50 text-sm leading-relaxed">
-            {tHardcodedUi.raw('appInvitesInviteidPage.line186JsxTextYouHaveBeenInvitedToJoinATeam')}
+            {invitedProject
+              ? tHardcodedUi.raw('appInvitesInviteidPage.youHaveBeenInvitedToAProject')
+              : tHardcodedUi.raw('appInvitesInviteidPage.line186JsxTextYouHaveBeenInvitedToJoinATeam')}
           </div>
         )}
 
@@ -241,7 +265,12 @@ export default function InvitePage() {
         </div>
 
         <p className="text-foreground/35 mt-4 text-xs leading-relaxed">
-          {tHardcodedUi('appInvitesInviteidPage.joinAccountDescription', { roleLabel })}
+          {invitedProject
+            ? tHardcodedUi('appInvitesInviteidPage.joinProjectDescription', {
+                projectName: invitedProject.name,
+                roleLabel: projectRoleLabel,
+              })
+            : tHardcodedUi('appInvitesInviteidPage.joinAccountDescription', { roleLabel })}
         </p>
 
         {errorMessage ? (

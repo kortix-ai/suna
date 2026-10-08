@@ -66,6 +66,7 @@ const KEEP_REAL = new Set([
   '@/lib/session/composer-config',
   '@/lib/session/model-picker',
   '@/lib/session/composer-uploads',
+  '@/components/session/use-pasted-tiles',
 ]);
 
 // Type-only imports are erased; mocking them would hide the real module from the kept-real ones.
@@ -147,4 +148,42 @@ test('Send sends the typed text once per tap burst; the draft stays', async () =
 test('a handed-back draft seeds the composer', async () => {
   await mount(() => ({ text: 'restored prompt', files: [] }));
   expect(composer.value).toBe('restored prompt');
+});
+
+test('a long paste becomes a tile, not text; Send carries it inline before the typed text', async () => {
+  await mount();
+  const paste = Array.from({ length: 12 }, (_, i) => `row ${i}`).join('\n');
+  await act(async () => composer.onChangeText('see'));
+  await act(async () => composer.onChangeText(`see${paste}`));
+  expect(composer.value).toBe('see');
+  expect(composer.pastes).toHaveLength(1);
+  expect(composer.pastes[0].text).toBe(paste);
+  const { id } = composer.pastes[0];
+
+  await act(async () => composer.onSubmit());
+  expect(submitted).toHaveLength(1);
+  expect(submitted[0].text).toBe(`<pasted_content id="${id}" chars="${paste.length}">\n${paste}\n</pasted_content>\n\nsee`);
+});
+
+test('pastes alone send; a removed paste does not', async () => {
+  await mount();
+  const paste = 'p'.repeat(1000);
+  await act(async () => composer.onChangeText(paste));
+  expect(composer.value).toBe('');
+  await act(async () => composer.onSubmit());
+  expect(submitted).toHaveLength(1);
+  expect(submitted[0].text).toContain(paste);
+
+  await act(async () => composer.onRemovePaste(composer.pastes[0].id));
+  expect(composer.pastes).toEqual([]);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await act(async () => composer.onSubmit());
+  expect(submitted).toHaveLength(1);
+});
+
+test('a handed-back prompt with a paste seeds the text and the tile', async () => {
+  const paste = 'q'.repeat(1000);
+  await mount(() => ({ text: `<pasted_content id="abcd1234" chars="1000">\n${paste}\n</pasted_content>\n\nhello`, files: [] }));
+  expect(composer.value).toBe('hello');
+  expect(composer.pastes).toEqual([{ id: 'abcd1234', text: paste }]);
 });

@@ -40,7 +40,7 @@
  */
 
 import { IMPORT_PATH_PATTERN } from './imports';
-import { AGENT_FILE_PATTERN } from './layout';
+import { AGENT_FILE_PATTERN, TOOL_FILE_PATTERN } from './layout';
 import {
   AGENT_MODES_V2,
   AGENT_THEME_COLORS_V2,
@@ -62,6 +62,7 @@ import {
   PERMISSION_ACTIONS_V2,
   DURATION_RE,
   MONITOR_MODES,
+  EVENT_FORBIDDEN_KEYS,
   MONITOR_RUN_MAX_LENGTH,
   RESERVED_SANDBOX_SLUG,
   RESERVED_SLUG_PROVIDERS,
@@ -69,6 +70,7 @@ import {
   SANDBOX_DISK_BOUNDS,
   SANDBOX_MEMORY_BOUNDS,
   SLUG_RE,
+  TOOL_NAME_RE,
   TRIGGER_TYPES,
   V2_RUNTIME_VALUES,
   WORKSPACE_MODES_V2,
@@ -354,7 +356,7 @@ function sandboxSchema(): JsonSchemaFragment {
   };
 }
 
-/** One `[[triggers]]` entry — cron, webhook, or monitor (`validateTriggers`). */
+/** One `[[triggers]]` entry — cron, webhook, monitor, or event (`validateTriggers`). */
 function triggerSchema(): JsonSchemaFragment {
   const durationSchema: JsonSchemaFragment = { type: 'string', pattern: DURATION_RE.source };
   return {
@@ -394,6 +396,13 @@ function triggerSchema(): JsonSchemaFragment {
       mode: { type: 'string', enum: [...MONITOR_MODES] },
       interval: durationSchema,
       expect_event_within: durationSchema,
+      // `type: event` only — the connector slug, the provider event type id
+      // and the provider event config (opaque here; the provider validates it).
+      connector: { type: 'string', minLength: 1 },
+      // Optional: the label of one shared account of that connector.
+      account: { type: 'string', minLength: 1 },
+      event: { type: 'string', minLength: 1 },
+      config: { type: 'object' },
     },
     additionalProperties: true,
     allOf: [
@@ -431,6 +440,20 @@ function triggerSchema(): JsonSchemaFragment {
             secretEnv: false,
           },
         },
+      },
+      {
+        // An event names its connector + event type and carries none of the
+        // cron/webhook/monitor wiring.
+        if: { properties: { type: { const: 'event' } } },
+        then: {
+          required: ['connector', 'event'],
+          properties: Object.fromEntries(EVENT_FORBIDDEN_KEYS.map((k) => [k, false])),
+        },
+      },
+      {
+        // The event fields exist only on an event trigger.
+        if: { properties: { type: { enum: ['cron', 'webhook', 'monitor'] } }, required: ['type'] },
+        then: { properties: { connector: false, account: false, event: false, config: false } },
       },
       {
         // `interval` is the poll period: required on poll, forbidden on stream.
@@ -598,6 +621,34 @@ function agentEntryV1Schema(): JsonSchemaFragment {
   };
 }
 
+/** `agents.<name>.tools` — which tools the agent may use (`AgentToolsV2`). */
+function agentToolsSchema(): JsonSchemaFragment {
+  const names = { type: 'array', items: NON_EMPTY_STRING };
+  return {
+    description:
+      'Which tools this agent may use: harness tools (bash, read, edit, …), Kortix tools (web_search, memory, show, …) and project tools (top-level `tools`). ' +
+      '`all` (default) or `none`; a list allows only those; `{ exclude: [...] }` allows every tool but those. A map of tool name → boolean is the earlier form.',
+    oneOf: [
+      { type: 'string', enum: ['all', 'none'] },
+      names,
+      { type: 'object', required: ['exclude'], properties: { exclude: names }, additionalProperties: false },
+      { type: 'object', not: { required: ['exclude'] }, additionalProperties: { type: 'boolean' } },
+    ],
+  };
+}
+
+/** Top-level `tools` — project tools, by name. */
+function projectToolsSchema(): JsonSchemaFragment {
+  return {
+    type: 'object',
+    description:
+      'Project tools: tool name → repo-relative path of the module that implements it. Each module default-exports ' +
+      '{ description, parameters (JSON Schema), execute(args, context) }. Every harness loads them.',
+    propertyNames: { pattern: TOOL_NAME_RE.source },
+    additionalProperties: { type: 'string', pattern: TOOL_FILE_PATTERN },
+  };
+}
+
 /** `agents.<name>` (v2) — GOVERNANCE ONLY (spec §2.2). Every OpenCode
  *  behavioral field is a hard validation error here — modeled by simply
  *  never listing them in `properties` + `additionalProperties: false`, so
@@ -612,7 +663,7 @@ function agentBlockV2Schema(): JsonSchemaFragment {
         description: "Repo-relative path of this agent's .md (frontmatter + prompt). Defaults to agents/<name>.md.",
       },
       enabled: { type: 'boolean' },
-      tools: { type: 'object', additionalProperties: { type: 'boolean' } },
+      tools: agentToolsSchema(),
       sandbox: SLUG_SCHEMA,
       // Declaration only; no provider network boundary enforces this yet.
       network_egress: {
@@ -730,7 +781,9 @@ function appBlockV2Schema(): JsonSchemaFragment {
       spa: { type: 'boolean' },
       readiness_path: { type: 'string', pattern: '^/' },
       idle_timeout_seconds: { type: 'integer', minimum: 120, maximum: 86400 },
+      always_on: { type: 'boolean' },
       monthly_budget_usd: { type: 'number', minimum: 0 },
+      backends: { type: 'array', items: { type: 'string', pattern: '^[a-z][a-z0-9-]{0,62}$' } },
       resources: {
         type: 'object',
         properties: {
@@ -828,7 +881,7 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
     properties: {
       kortix_version: { const: 2 },
       // Other YAML files (or directories of them) whose `triggers`,
-      // `connectors`, `agents`, and `apps` merge into this manifest.
+      // `connectors`, `agents`, `apps` and `tools` merge into this manifest.
       imports: {
         type: 'array',
         items: { type: 'string', pattern: IMPORT_PATH_PATTERN },
@@ -840,6 +893,7 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
       // Per-harness native settings. `pi.packages`: pi packages
       // (https://pi.dev/packages) in pi's own settings format, for every agent.
       harnesses: harnessesSchema('project'),
+      tools: projectToolsSchema(),
       agents: {
         type: 'object',
         minProperties: 1,

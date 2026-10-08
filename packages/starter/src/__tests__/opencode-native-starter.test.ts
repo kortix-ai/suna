@@ -135,23 +135,12 @@ describe('the starter is OpenCode-native', () => {
       'harnesses/opencode/package-lock.json',
     );
 
-    for (const file of [
-      'image_search.ts',
-      'memory.ts',
-      'scrape_webpage.ts',
-      'show.ts',
-      'web_search.ts',
-    ]) {
-      expect(readFileSync(join(OPENCODE_ROOT, 'tools', file), 'utf8')).toContain(
-        'from "./lib/tool"',
-      );
-    }
     expect(readFileSync(join(OPENCODE_ROOT, 'plugins', 'pty.ts'), 'utf8')).toContain(
-      "from '../tools/lib/tool'",
+      "from './lib/tool'",
     );
   });
 
-  test('keeps optional tools independent of provider SDKs', () => {
+  test('ships no tool copies: the runtime hosts the Kortix tools on every harness', () => {
     const packageJson = JSON.parse(readFileSync(join(OPENCODE_ROOT, 'package.json'), 'utf8')) as {
       dependencies?: Record<string, string>;
     };
@@ -161,13 +150,7 @@ describe('the starter is OpenCode-native', () => {
     for (const dependency of ['@mendable/firecrawl-js', '@tavily/core', 'replicate']) {
       expect(lock).not.toContain(`\"${dependency}\"`);
     }
-
-    for (const file of ['image_search.ts', 'scrape_webpage.ts', 'web_search.ts']) {
-      const source = readFileSync(join(OPENCODE_ROOT, 'tools', file), 'utf8');
-      expect(source).not.toMatch(
-        /import\(["'](?:@mendable\/firecrawl-js|@tavily\/core|replicate)["']\)/,
-      );
-    }
+    expect(filesFor().map((file) => file.path).filter((path) => path.startsWith('harnesses/opencode/tools/'))).toEqual([]);
   });
 });
 

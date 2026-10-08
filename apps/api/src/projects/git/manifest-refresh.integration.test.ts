@@ -4,9 +4,13 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { loadProjectAgents, requiredConnectorsForAgent } from '../agents';
+import { loadProjectAgents } from '../agents';
 import { invalidateProjectMirror, provenMirrorTip, refreshMirror, repoCachePath } from './mirror';
 import type { GitBackedProject } from './types';
+
+/** The connectors an enabled agent declares as required, read off the loaded manifest. */
+const requiredConnectorsForAgent = (name: string, loaded: Awaited<ReturnType<typeof loadProjectAgents>>) =>
+  loaded.specs.find((spec) => spec.name === name && spec.enabled)?.connectorsRequired ?? [];
 
 const exec = promisify(execFile);
 

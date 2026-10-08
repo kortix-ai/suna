@@ -14,7 +14,6 @@
  * (the repo's `--isolate` runner guarantees that).
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { Hono } from 'hono';
 import * as realAccess from '../lib/access';
 
@@ -182,6 +181,22 @@ mock.module('../lib/session-transcript-capture', () => ({
 }));
 
 mock.module('../sandbox-deadline', () => ({ childIdleGraceMs: () => 1_000 }));
+
+// R7.4: the turn end refreshes the projection the session list follows.
+let projectionRefreshes: Array<{ target: Record<string, unknown>; options: unknown }> = [];
+let projectionOutcome: Record<string, unknown> = { refreshed: false, reason: 'not_modified' };
+let releaseProjection: (() => void) | null = null;
+mock.module('../lib/session-runtime-projection-refresh', () => ({
+  refreshRuntimeProjection: async (target: Record<string, unknown>, options: unknown) => {
+    projectionRefreshes.push({ target, options });
+    if (releaseProjection === null) return projectionOutcome;
+    await new Promise<void>((resolve) => {
+      releaseProjection = resolve;
+    });
+    order.push('projection');
+    return projectionOutcome;
+  },
+}));
 
 mock.module('../session-title-generate', () => ({
   generateSessionTitleFromFirstPrompt: async () => {
@@ -795,5 +810,37 @@ describe('POST /v1/projects/:projectId/turn-stream — steering (R10)', () => {
     expect(await response.json()).toMatchObject({ ok: false, turn_completion: { outcome: 'identity_mismatch' } });
     expect(completedMessageIds).toEqual(['msg_other']);
     expect(steerLookups).toEqual(['msg_other']);
+  });
+});
+
+describe('POST /v1/projects/:projectId/turn-stream — the session list at turn end (R7.4)', () => {
+  beforeEach(() => {
+    projectionRefreshes = [];
+    projectionOutcome = { refreshed: false, reason: 'not_modified' };
+    releaseProjection = null;
+  });
+
+  test('the turn end forces a projection refresh as the session creator, and is answered only after it', async () => {
+    let answered = false;
+    releaseProjection = () => {};
+    const pending = Promise.resolve(post({ session_id: SESSION_ID, kind: 'end' })).then((response) => {
+      answered = true;
+      return response;
+    });
+    for (let i = 0; i < 50 && projectionRefreshes.length === 0; i++) await Bun.sleep(2);
+    expect(projectionRefreshes).toEqual([
+      { target: { sessionId: SESSION_ID, projectId: PROJECT_ID, accountId: ACCOUNT_ID, userId: USER_ID }, options: { force: true } },
+    ]);
+    await Bun.sleep(20);
+    // The daemon re-sends an unanswered turn end: no answer while the refresh runs.
+    expect(answered).toBe(false);
+    releaseProjection!();
+    expect((await pending).status).toBe(200);
+  });
+
+  test('a session with no creator to sign the read refreshes nothing, and the turn end is still answered', async () => {
+    sessionRow = session({}, null);
+    expect((await post({ session_id: SESSION_ID, kind: 'end' })).status).toBe(200);
+    expect(projectionRefreshes).toEqual([]);
   });
 });

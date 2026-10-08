@@ -5,6 +5,7 @@
  * deletes every token it registers.
  */
 import { flow } from '../core/flow';
+import { PASSWORD } from '../fixtures/principals';
 
 flow(
   'PUSH-1',
@@ -93,6 +94,65 @@ flow(
       // Cleanup: whichever principal still owns the token removes it.
       await del(ctx.P.OWNER).catch(() => undefined);
       await del(ctx.P.NONMEMBER).catch(() => undefined);
+    }
+  },
+);
+
+// KRTX-1722: a phone signed out from Settings > Security kept its push token,
+// so its lock screen kept showing session titles and agent questions. A
+// device sign-out now drops the token that sign-in registered, and only it.
+flow(
+  'PUSH-2',
+  {
+    domain: 'notifications',
+    routes: [
+      'POST /v1/notifications/device-token',
+      'DELETE /v1/notifications/device-token/:token',
+      'GET /v1/accounts/me/devices',
+      'DELETE /v1/accounts/me/devices/:sessionId',
+    ],
+  },
+  async (ctx) => {
+    const here = await ctx.fixtures.user({ label: 'PUSHSIGNOUT' });
+    const bearer = (token: string) => ({ headers: { Authorization: `Bearer ${token}` } });
+    const phoneToken = `ExponentPushToken[${ctx.fixtures.name('push-phone')}]`;
+    const ownToken = `ExponentPushToken[${ctx.fixtures.name('push-own')}]`;
+    const del = (token: string) =>
+      ctx.client.as(here).del('/v1/notifications/device-token/:token', { params: { token } });
+    const phone = { access: '', id: '' };
+
+    try {
+      await ctx.step('a second sign-in (the phone) registers its push token; the caller registers its own', async () => {
+        const signIn = await ctx.client.as(ctx.P.ANON).post('/v1/auth/sign-in/password', {
+          email: here.email,
+          password: PASSWORD,
+        });
+        signIn.status(200);
+        phone.access = signIn.json<any>().session.access_token;
+        const devices = await ctx.client.as(here).get('/v1/accounts/me/devices');
+        devices.status(200);
+        phone.id = (devices.json<any>().devices as Array<{ session_id: string; current: boolean }>).find(
+          (d) => !d.current,
+        )!.session_id;
+        const register = (device_token: string) => ({ device_token, device_type: 'ios', provider: 'expo' });
+        (await ctx.client.as(ctx.P.ANON).post('/v1/notifications/device-token', register(phoneToken), bearer(phone.access)))
+          .status(200)
+          .body()
+          .has('$.success', true);
+        (await ctx.client.as(here).post('/v1/notifications/device-token', register(ownToken))).status(200);
+      });
+
+      await ctx.step("signing the phone out drops the phone's token: a delete finds nothing (deleted=false)", async () => {
+        (await ctx.client.as(here).del(`/v1/accounts/me/devices/${phone.id}`)).status(200).body().has('$.ok', true);
+        (await del(phoneToken)).status(200).body().has('$.deleted', false);
+      });
+
+      await ctx.step("the caller's own token survives the phone's sign-out (deleted=true)", async () => {
+        (await del(ownToken)).status(200).body().has('$.deleted', true);
+      });
+    } finally {
+      await del(phoneToken).catch(() => undefined);
+      await del(ownToken).catch(() => undefined);
     }
   },
 );

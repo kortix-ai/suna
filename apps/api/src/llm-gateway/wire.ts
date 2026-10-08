@@ -20,8 +20,7 @@ import { createInternalGatewayRoutes } from './internal-routes';
 // the SHARED `{error:true,message:"Validation failed",...}` envelope instead of
 // the gateway's own OpenAI/Anthropic-shaped error body — changing the wire
 // contract for a compatibility surface whose whole point is to match those
-// SDKs' expectations (see `/v1/router/chat/completions` in router/routes/llm.ts,
-// which avoids attaching a body schema for the same reason). `registerPath()`
+// SDKs' expectations. `registerPath()`
 // adds the operation (incl. the documented request body below) to the SAME
 // OpenAPI registry `.openapi()` would have, WITHOUT touching request handling
 // at all — the actual runtime route is still a plain `llm.post()/get()` with

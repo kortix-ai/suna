@@ -202,6 +202,8 @@ const RNButton = (props: any) => {
   return props.children ?? null;
 };
 const RNText = (props: any) => props.children ?? null;
+/** Tiles SessionConnecting's waking view drew (its first prompt's files and pastes). */
+const wakingTiles: string[] = [];
 const Capture = (register: (props: any) => void) =>
   React.forwardRef(function Captured(props: any, ref: any) {
     register(props);
@@ -460,9 +462,15 @@ const moduleMocks: Record<string, Record<string, any>> = {
       return null;
     },
   },
-  '@/components/session/attachment-tile': { AttachmentTile: Empty },
+  '@/components/session/attachment-tile': {
+    AttachmentTile: (props: any) => {
+      wakingTiles.push(props.filename);
+      return null;
+    },
+  },
   '@/components/session/turn/user-message': {
     UserMessageBubble: (props: any) => props.children ?? null,
+    MessageBody: (props: any) => props.text ?? null,
   },
   '@/components/kortix/kortix-loader': { KortixLoader: Empty },
 };
@@ -532,6 +540,9 @@ const mergedOverrides: Record<string, Record<string, any>> = {
 const KEEP_REAL = new Set([
   'react',
   '@kortix/sdk',
+  // SessionConnecting splits the first prompt's pastes; a stub would also cut lib/session/user-message's imports.
+  '@kortix/shared',
+  '@/stores/pasted-text-store',
   '@/lib/session/participants',
   '@/lib/session/types',
   '@/lib/session/session-store',
@@ -1756,6 +1767,26 @@ describe('SessionConnecting saved thread', () => {
       restartButton.onPress();
     });
     expect(seen('restart')).toHaveLength(1);
+  });
+
+  test('a first prompt with a paste: a "Pasted text" tile, and the bubble shows only the typed words', async () => {
+    const { serializePromptWithPastes } = await import('@kortix/shared');
+    wakingTiles.length = 0;
+    await act(async () => {
+      tree = create(
+        React.createElement(SessionConnecting, {
+          messages: [],
+          firstMessage: serializePromptWithPastes('typed words', [{ id: '0a1b2c3d', text: 'synthetic' }]),
+          statusLabel: 'Waking the computer',
+          sessionId: SID,
+          onCancel: () => {},
+        } as any),
+      );
+    });
+    const rendered = JSON.stringify(tree!.toJSON());
+    expect(wakingTiles).toEqual(['Pasted text']);
+    expect(rendered).toContain('typed words');
+    expect(rendered).not.toContain('pasted_content');
   });
 });
 

@@ -19,6 +19,7 @@
  *
  * Denials follow spec §4: `403 { code, action }`.
  */
+import { setFeatureAsOperator } from '../fixtures/feature-flags';
 import { flow } from '../core/flow';
 import type { FlowContext, Principal, TeamFixture } from '../core/types';
 import { CliSandbox } from '../fixtures/cli';
@@ -242,6 +243,7 @@ flow(
       'GET /v1/connectors/projects/:projectId/catalog',
       'GET /v1/projects/:projectId/files',
       'GET /v1/projects/:projectId/secrets',
+      'GET /v1/projects/:projectId/sessions',
     ],
   },
   async (ctx) => {
@@ -277,6 +279,11 @@ flow(
       await ctx.step('the owner launches the same agent: an action outside the list → 403 agent_scope_insufficient', async () => {
         const ownerRun = await world.mintAgentSession({ agent: 'reader', launcher: ctx.P.OWNER });
         assertDenial(await secretsOf(ownerRun, project.id), 'agent_scope_insufficient', 'project.secret.read');
+        assertDenial(
+          await ownerRun.client.get('/v1/projects/:projectId/sessions', { params: { projectId: project.id } }),
+          'agent_scope_insufficient',
+          'project.session.read',
+        );
         (await filesOf(ownerRun, project.id)).status(200);
       });
 
@@ -753,7 +760,7 @@ flow(
     let appUrl = '';
     try {
       await ctx.step('enable Apps; create an App restricted to the owner', async () => {
-        await world.setFeature('apps', true);
+        await setFeatureAsOperator(ctx, project.id, 'apps', true);
         const created = await world.owner.post('/v1/projects/:projectId/apps', { slug: appSlug, name: 'Example Org dashboards' },
           { params: { projectId: project.id } });
         created.status(201);
@@ -868,7 +875,7 @@ flow(
     let appUrl = '';
     try {
       await ctx.step('enable Apps; create an App restricted to the owner', async () => {
-        await world.setFeature('apps', true);
+        await setFeatureAsOperator(ctx, project.id, 'apps', true);
         const created = await world.owner.post('/v1/projects/:projectId/apps', { slug: appSlug, name: 'Example Org dashboards' },
           { params: { projectId: project.id } });
         created.status(201);

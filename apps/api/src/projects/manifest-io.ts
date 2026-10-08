@@ -2,7 +2,6 @@ import {
   MANIFEST_FILENAME_YAML,
   type ManifestFormat,
   ManifestImportError,
-  type ResolvedManifest,
   manifestCandidatePaths,
   manifestFormatForPath,
   parseManifestText,

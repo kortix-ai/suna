@@ -11,12 +11,13 @@
  * after 10 min without input (`human-presence.ts`). A renewal extends the
  * box by the idle grace, not the 30-min preview grant, and only for a caller
  * who may start the session; a read-only viewer keeps only the lease, which
- * routes push notifications.
+ * routes push notifications. Presence alone keeps a box at most 2 h past its
+ * latest turn (`PRESENCE_ONLY_CAP_MS`), whatever the client reports.
  */
 import { sessionPresenceLeases } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
-import { extendSandboxDeadline, idleGraceMs } from '../sandbox-deadline';
+import { extendSandboxDeadlineForPresence } from '../sandbox-deadline';
 
 /** How long one lease lives without a renewal. Same as `PUT .../presence`. */
 export const PRESENCE_LEASE_MS = 90_000;
@@ -46,6 +47,6 @@ export async function renewSessionPresence(
     )
     .returning({ tabId: sessionPresenceLeases.tabId });
   if (renewed.length === 0) return false;
-  if (opts.extendDeadline) await extendSandboxDeadline({ sessionId }, idleGraceMs());
+  if (opts.extendDeadline) await extendSandboxDeadlineForPresence({ sessionId });
   return true;
 }

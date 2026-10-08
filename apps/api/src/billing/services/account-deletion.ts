@@ -5,6 +5,7 @@ import {
   accounts,
   appDeploymentEvents,
   appDeployments,
+  appSiteBlobs,
   apps,
   changeRequests,
   connectorCalls,
@@ -20,6 +21,7 @@ import {
   projectTriggerRuntime,
   projects,
   providerEvents,
+  pushDeviceTokens,
   reviewItems,
   sandboxes,
   sandboxComputeSessions,
@@ -34,6 +36,7 @@ import {
   usageEvents,
 } from '@kortix/db';
 import { getSupabase } from '../../shared/supabase';
+import { deleteAccountSiteObjects } from '../../apps/static-site';
 import { forgetUserJwtLiveness } from '../../shared/jwt-liveness';
 import { getStripe } from '../../shared/stripe';
 import { config } from '../../config';
@@ -44,6 +47,7 @@ import { BillingError } from '../../errors';
 import { isUniqueViolation } from '../../shared/postgres-errors';
 import { tryGetProvider } from '../../platform/providers';
 import { KORTIX_REMOVAL_INTENT_KEY } from '../../projects/runtime-identity';
+import { deleteAccountBackends } from '../../backends/lifecycle';
 import {
   isAlreadyNotRunning,
   reconcileSandboxRemovedByExternalId,
@@ -61,6 +65,7 @@ import {
   claimDeletionRequest,
   releaseDeletionRequest,
 } from '../repositories/account-deletion';
+import { releaseProjectEventSubscriptions } from '../../projects/surface';
 
 const GRACE_PERIOD_DAYS = 14;
 const ACTIVE_DELETION_REQUEST_EXISTS = 'An active deletion request already exists for this account';
@@ -132,7 +137,8 @@ export async function cancelAccountDeletion(accountId: string) {
  * The one deletion routine. The immediate path and the scheduled worker both
  * run it, in this order, so neither can leave a login or data behind:
  *
- *   1. `performDeletion`: sandboxes, Stripe cancel, wallet forfeit.
+ *   1. `performDeletion`: sandboxes, Kortix Backends (machines and
+ *      snapshots), Stripe cancel, wallet forfeit.
  *   2. `deleteAccountData`: the account's rows. Data goes before the auth
  *      identity: a failure here must not sign a user out of an account whose
  *      data survived (the browser signs out only when the route answered
@@ -157,6 +163,8 @@ async function runAccountDeletion(accountId: string, userId?: string, requestId?
   await deleteAccountData(accountId, requestId);
   if (requester) {
     await clearLegacyAuthUserReferences(requester);
+    // A device token is the person's data; it has no foreign key to cascade.
+    await db.delete(pushDeviceTokens).where(eq(pushDeviceTokens.userId, requester));
     const { error } = await getSupabase().auth.admin.deleteUser(requester);
     // A user the auth schema no longer has (an admin-side delete, or a retry
     // after step 3 already ran) is the state this step produces.
@@ -556,6 +564,9 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
 
 async function performDeletion(accountId: string, userId?: string) {
   await reclaimAccountSandboxes(await reclaimableAccountIds(accountId, userId));
+  // Machines and snapshots go before the rows that name them cascade away.
+  // Throws on a failure, so the deletion retries instead of orphaning one.
+  await deleteAccountBackends(accountId);
 
   const account = await getCreditAccount(accountId);
 
@@ -639,6 +650,11 @@ async function deleteInChunks(table: PgTable, where: SQL): Promise<void> {
  * the account. `prompt_attachments` and `connector_attachments` stay with
  * their existing TTL sweeps, which own both their rows and their Storage
  * objects — deleting the rows here would orphan their objects forever.
+ *
+ * Static App files are deleted here, objects first: every object under the
+ * account's `app-sites/<account_id>/` prefix, then the `app_site_blobs` rows
+ * in pass 2 (`app_site_files` cascades from `app_deployments`). A failed
+ * object delete throws before any row goes, so the retry still finds them.
  */
 async function deleteAccountData(accountId: string, keepRequestId?: string): Promise<void> {
   // Pass 0 — bounded chunks. Children before parents, as in pass 1.
@@ -651,6 +667,16 @@ async function deleteAccountData(accountId: string, keepRequestId?: string): Pro
   await deleteInChunks(sessionLifecycleCommands, eq(sessionLifecycleCommands.accountId, accountId));
   await deleteInChunks(sessionTurns, inAccountSessions(sessionTurns.sessionId));
   await deleteInChunks(sessionPendingQuestions, inAccountSessions(sessionPendingQuestions.sessionId));
+  await deleteAccountSiteObjects(accountId);
+
+  // Provider-side app-event instances live outside our database: release them
+  // before the cascade drops the rows that name them.
+  for (const { projectId } of await db
+    .select({ projectId: projects.projectId })
+    .from(projects)
+    .where(eq(projects.accountId, accountId))) {
+    await releaseProjectEventSubscriptions(projectId);
+  }
 
   await db.transaction(async (tx) => {
     // Scopes for the child rows that carry no account_id of their own.
@@ -685,6 +711,7 @@ async function deleteAccountData(accountId: string, keepRequestId?: string): Pro
     await tx.delete(tunnelAuditLogs).where(eq(tunnelAuditLogs.accountId, accountId));
     await tx.delete(tunnelConnections).where(eq(tunnelConnections.accountId, accountId));
     await tx.delete(sandboxes).where(eq(sandboxes.accountId, accountId));
+    await tx.delete(appSiteBlobs).where(eq(appSiteBlobs.accountId, accountId));
     // kortix.guard_session_sandbox_identity() refuses to delete a session box
     // that has an external_id unless its session is soft-deleted. The account is
     // going away, so soft-delete its sessions first. Without this the delete

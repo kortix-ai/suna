@@ -139,9 +139,10 @@ describe('marketplace catalog', () => {
     // Support types / internal-only names never surface, by name or by browse.
     expect(await findCatalogEntryByName('pty')).toBeNull();
     expect(await findCatalogEntryByName('kortix-simple-memory')).toBeNull();
-    expect((await findCatalogEntryByName('web_search'))?.item.type).toBe('registry:tool');
-    expect((await findCatalogEntryByName('scrape_webpage'))?.item.type).toBe('registry:tool');
-    expect((await findCatalogEntryByName('image_search'))?.item.type).toBe('registry:tool');
+    // The Kortix tools are hosted by the runtime on every harness: no starter file, no catalog item.
+    expect(await findCatalogEntryByName('web_search')).toBeNull();
+    expect(await findCatalogEntryByName('scrape_webpage')).toBeNull();
+    expect(await findCatalogEntryByName('image_search')).toBeNull();
     expect(all.find((i) => i.name === 'pty')).toBeUndefined();
     expect(all.find((i) => i.name === 'kortix-simple-memory')).toBeUndefined();
     expect(all.find((i) => i.name === 'web_search')).toBeUndefined();
@@ -189,8 +190,10 @@ describe('marketplace catalog', () => {
     // off the browse list.
     const managedCandidates = [
       'kortix-cli',
+      'kortix-backends',
       'kortix-computer',
       'kortix-connectors',
+      'kortix-internal-apps',
       'kortix-marketplace',
       'kortix-memory',
       'kortix-onboarding',

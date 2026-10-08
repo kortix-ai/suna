@@ -264,6 +264,20 @@ export type RuntimeCapability = (typeof RUNTIME_CAPABILITIES)[number];
 export const RUNTIME_TURNS_CAPABILITY = 'runtime.turns.v1' as const;
 
 /**
+ * The daemon serves `POST /kortix/runtime/messages/:id/:messageId/retract`:
+ * take back a user message that no model call has read, on every harness.
+ * `200 { retracted: true }` when it is gone, `404` when there is no such
+ * message, `409 { code: MESSAGE_READ_CODE }` when a model call read it.
+ */
+export const RUNTIME_RETRACT_CAPABILITY = 'runtime.retract.v1' as const;
+
+/**
+ * `code` on the daemon's `409` to a retract: a model call read the message
+ * (its turn runs or ran), so it stays where it is.
+ */
+export const MESSAGE_READ_CODE = 'message_read' as const;
+
+/**
  * `code` on the daemon's `409` to `POST /kortix/runtime/sessions/:id/steer`:
  * no turn is running, so nothing can read the message. The caller sends it as
  * a prompt instead.
@@ -310,7 +324,11 @@ export interface CompiledAgent {
   color?: string;
   /** Maximum model steps per turn. */
   steps?: number;
-  /** Built-in tool toggles: `false` removes the tool; an omitted tool keeps the harness default. */
+  /**
+   * Tool access, by tool name: `false` hides the tool, `true` shows it, and
+   * `*` holds the answer for every tool not named. Omitted: every tool. Read
+   * it with `toolAllowed`.
+   */
   tools?: Record<string, boolean>;
   /** Tool policy: capability → action, or capability → pattern → action. */
   permission?: unknown;
@@ -324,6 +342,18 @@ export interface CompiledAgentSet {
   /** The agent a session with no agent chosen runs. */
   default_agent?: string;
   agent: Record<string, CompiledAgent>;
+  /**
+   * The project's tools (kortix.yaml `tools`): tool name → repo-relative path
+   * of its module. Every harness loads them through the daemon's tool host.
+   */
+  project_tools?: Record<string, string>;
+}
+
+/** May an agent with this compiled `tools` map use `tool`? Its own entry, else `*`, else yes. */
+export function toolAllowed(tools: Record<string, boolean> | undefined, tool: string): boolean {
+  if (!tools) return true;
+  if (Object.hasOwn(tools, tool)) return tools[tool] !== false;
+  return !Object.hasOwn(tools, '*') || tools['*'] !== false;
 }
 
 /** The agent settings a harness applies. A setting a harness does not list is ignored there. */

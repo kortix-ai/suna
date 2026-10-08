@@ -2,12 +2,18 @@
  * Project triggers — manage-gated CRUD. Maps to spec §17 (TRG-1..5).
  * Trigger create commits the project manifest (a real git commit).
  */
+import { createHmac } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { TriggerListSchema } from '@kortix/api-contract';
 import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
 import { CliSandbox, throwIfCliInfraFailure } from '../fixtures/cli';
 import { createDatabaseSession } from '../fixtures/database-project';
 import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
+import { withDb } from '../fixtures/chat';
 
 type TriggerRow = { slug: string; model: string | null };
 
@@ -96,7 +102,14 @@ flow(
 
 flow(
   'TRG-2',
-  { domain: 'triggers', routes: ['POST /v1/projects/:projectId/triggers'] },
+  {
+    domain: 'triggers',
+    routes: [
+      'POST /v1/projects/:projectId/triggers',
+      'GET /v1/projects/:projectId/files/content',
+      'GET /v1/projects/:projectId/files/history',
+    ],
+  },
   async (ctx) => {
     const p = await ctx.fixtures.project({ managedGit: true });
     await ctx.step('create a cron trigger with a pinned model → 201', async () => {
@@ -114,6 +127,33 @@ flow(
       );
       r.status(201);
       expectTriggerModel(r.json<{ triggers: TriggerRow[] }>(), 'nightly', 'anthropic/claude-sonnet-4-6');
+    });
+    await ctx.step('the create is a kortix.yaml commit "chore: add trigger nightly" that carries the entry', async () => {
+      const owner = ctx.client.as(ctx.P.OWNER);
+      await waitFor(
+        async () => {
+          const r = await owner.get('/v1/projects/:projectId/files/history', { params: { projectId: p.id }, query: { path: 'kortix.yaml' } });
+          r.status(200);
+          return r.json<{ commits: Array<{ subject: string }> }>().commits;
+        },
+        {
+          until: (commits) => commits.some((c) => c.subject === 'chore: add trigger nightly'),
+          timeoutMs: 60_000,
+          intervalMs: 2_000,
+          description: 'trigger create commit in kortix.yaml history',
+        },
+      );
+      const text = await waitFor(
+        async () => {
+          const r = await owner.get('/v1/projects/:projectId/files/content', { params: { projectId: p.id }, query: { path: 'kortix.yaml' } });
+          r.status(200);
+          return r.json<{ content: string }>().content;
+        },
+        { until: (t) => t.includes('slug: nightly'), timeoutMs: 60_000, intervalMs: 2_000, description: 'kortix.yaml carries the trigger' },
+      );
+      for (const needle of ['type: cron', 'model: anthropic/claude-sonnet-4-6', 'do nightly work']) {
+        if (!text.includes(needle)) throw new Error(`kortix.yaml lacks "${needle}":\n${text}`);
+      }
     });
     await ctx.step('duplicate slug → 409', async () => {
       const r = await ctx.client
@@ -152,7 +192,7 @@ flow(
         },
         { params: { projectId: p.id } },
       );
-    await ctx.step('disable trigger → 200', async () => {
+    await ctx.step('disable trigger → 200; the rest of the spec is kept', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
@@ -161,6 +201,12 @@ flow(
           { params: { projectId: p.id, slug: 'toggle-me' } },
         );
       r.status(200);
+      const row = r
+        .json<{ triggers: Array<{ slug: string; name: string; enabled: boolean; cron: string | null; prompt_template: string }> }>()
+        .triggers.find((t) => t.slug === 'toggle-me');
+      if (!row || row.enabled !== false || row.name !== 'Toggle Me' || row.cron !== '0 0 3 * * *' || row.prompt_template !== 'x') {
+        throw new Error(`PATCH {enabled:false} did not keep the rest of the spec: ${JSON.stringify(row)}`);
+      }
     });
     // Regression: a PATCH body with ONLY `model` must still persist — it was
     // previously dropped silently (manifest-key allowlist omitted "model").
@@ -180,22 +226,18 @@ flow(
 
 flow(
   'TRG-4',
-  { domain: 'triggers', routes: ['DELETE /v1/projects/:projectId/triggers/:slug'] },
+  { domain: 'triggers', routes: ['DELETE /v1/projects/:projectId/triggers/:slug', 'GET /v1/projects/:projectId/triggers'] },
   async (ctx) => {
     const p = await ctx.fixtures.project({ managedGit: true });
-    await ctx.client
-      .as(ctx.P.OWNER)
-      .post(
-        '/v1/projects/:projectId/triggers',
-        {
-          name: 'Delete Me',
-          type: 'cron',
-          cron: '0 0 3 * * *',
-          timezone: 'UTC',
-          prompt_template: 'x',
-        },
-        { params: { projectId: p.id } },
-      );
+    for (const name of ['Delete Me', 'Keep Me']) {
+      (await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/projects/:projectId/triggers',
+          { name, type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'x' },
+          { params: { projectId: p.id } },
+        )).status(201);
+    }
     await ctx.step('delete trigger → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -203,6 +245,12 @@ flow(
           params: { projectId: p.id, slug: 'delete-me' },
         });
       r.status(200);
+    });
+    await ctx.step('the delete removes only that entry: GET lists keep-me, not delete-me', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/triggers', { params: { projectId: p.id } });
+      r.status(200);
+      const slugs = r.json<{ triggers: TriggerRow[] }>().triggers.map((t) => t.slug);
+      if (slugs.includes('delete-me') || !slugs.includes('keep-me')) throw new Error(`unexpected triggers after delete: ${JSON.stringify(slugs)}`);
     });
   },
 );
@@ -489,10 +537,10 @@ flow(
       );
       r.status(400);
     });
-    await ctx.step('bad type (not cron/webhook) → 400', async () => {
+    await ctx.step('bad type (not cron/webhook/monitor/event) → 400', async () => {
       const r = await owner.post(
         '/v1/projects/:projectId/triggers',
-        { name: 'x', type: 'event', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'x' },
+        { name: 'x', type: 'bogus', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'x' },
         { params },
       );
       r.status(400);
@@ -1348,6 +1396,519 @@ flow(
       if (!after.last_error || !error.startsWith(after.last_error.slice(0, 40))) {
         throw new Error(`last_error "${String(after?.last_error)}" is not the fire's error "${error}"`);
       }
+    });
+  },
+);
+
+// ── TRG-18: backpressure queues a fire durably (contract TRG-5 / TRG-7) ──
+// A deployed lifecycle worker would boot the queued create into a real
+// session. The local profile runs none (KORTIX_WORKERS_ENABLED=false,
+// core/local-stack.ts), so the queued command stays queued and is inspectable.
+flow(
+  'TRG-18',
+  {
+    domain: 'triggers',
+    requires: ['database'],
+    routes: [
+      'POST /v1/projects/:projectId/secrets',
+      'POST /v1/projects/:projectId/triggers',
+      'GET /v1/projects/:projectId/triggers',
+      'POST /v1/projects/:projectId/triggers/:slug/fire',
+      'POST /v1/webhooks/projects/:projectId/:slug',
+    ],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== 'local') return;
+    const p = await ctx.fixtures.project({ managedGit: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: p.id };
+    const secret = `ke2e-hook-${crypto.randomUUID()}`;
+    (await owner.post(
+      '/v1/projects/:projectId/triggers',
+      {
+        name: 'Backpressure cron',
+        slug: 'bp-cron',
+        type: 'cron',
+        cron: '0 0 3 * * *',
+        timezone: 'UTC',
+        prompt_template: 'Run at {{ fired_at }}',
+        model: 'anthropic/claude-sonnet-4-6',
+      },
+      { params },
+    )).status(201);
+    (await owner.post('/v1/projects/:projectId/secrets', { name: 'BP_HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params })).status(200);
+    (await owner.post(
+      '/v1/projects/:projectId/triggers',
+      { name: 'Backpressure hook', slug: 'bp-hook', type: 'webhook', secret_env: 'BP_HOOK_SECRET', prompt_template: 'New {{ body.action }}' },
+      { params },
+    )).status(201);
+    // `queued` (the column default) is a provisioning status; the per-project
+    // limit is KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT, default 3.
+    for (let i = 0; i < 3; i += 1) {
+      await createDatabaseSession(ctx.env, { projectId: p.id, accountId: p.accountId!, userId: ctx.P.OWNER.userId! });
+    }
+    try {
+      await ctx.step(
+        'manual fire under backpressure → 202 queued; one queued create_session with the rendered prompt, the pinned model and private visibility; last_fired_at stamped',
+        async () => {
+          const r = await owner.post('/v1/projects/:projectId/triggers/:slug/fire', {}, { params: { ...params, slug: 'bp-cron' } });
+          r.status(202).body().has('$.status', 'queued').has('$.reason', 'project provisioning backpressure').has('$.deduped', false);
+          const commandId = r.json<{ command_id: string | null }>().command_id;
+          if (!commandId) throw new Error(`queued fire returned no command_id: ${r.text()}`);
+          const row = await withDb(ctx, async (db) =>
+            (await db.query('SELECT status, command_type, source, payload FROM kortix.session_lifecycle_commands WHERE command_id = $1', [commandId])).rows[0],
+          );
+          const body = row?.payload?.body ?? {};
+          if (
+            row?.status !== 'queued' ||
+            row.command_type !== 'create_session' ||
+            row.source !== 'trigger:manual' ||
+            row.payload?.visibility !== 'private' ||
+            body.opencode_model !== 'anthropic/claude-sonnet-4-6' ||
+            body.metadata?.trigger_slug !== 'bp-cron' ||
+            typeof body.initial_prompt !== 'string' ||
+            !body.initial_prompt.startsWith('Run at 20') ||
+            body.initial_prompt.includes('{{')
+          ) {
+            throw new Error(`queued create command is wrong: ${JSON.stringify(row)}`);
+          }
+          const listed = await owner.get('/v1/projects/:projectId/triggers', { params });
+          listed.status(200);
+          const fired = listed.json<{ triggers: Array<{ slug: string; last_fired_at: string | null }> }>().triggers.find((t) => t.slug === 'bp-cron');
+          if (!fired?.last_fired_at) throw new Error(`last_fired_at not stamped: ${JSON.stringify(fired)}`);
+        },
+      );
+
+      await ctx.step(
+        'signed webhook under backpressure → 202 queued; the same X-Kortix-Delivery-Id again → status deduped, the same command; one command row',
+        async () => {
+          const rawBody = JSON.stringify({ action: 'opened' });
+          const deliveryId = `ke2e-${crypto.randomUUID()}`;
+          const deliver = () =>
+            ctx.client.as(ctx.P.ANON).post('/v1/webhooks/projects/:projectId/:slug', rawBody, {
+              params: { projectId: p.id, slug: 'bp-hook' },
+              raw: true,
+              headers: {
+                'content-type': 'application/json',
+                'x-kortix-signature': `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`,
+                'x-kortix-delivery-id': deliveryId,
+              },
+            });
+          const first = await deliver();
+          first.status(202).body().has('$.status', 'queued').has('$.reason', 'project provisioning backpressure').has('$.deduped', false);
+          const commandId = first.json<{ command_id: string | null }>().command_id;
+          if (!commandId) throw new Error(`queued webhook returned no command_id: ${first.text()}`);
+          (await deliver()).status(202).body().has('$.status', 'deduped').has('$.command_id', commandId).has('$.deduped', true);
+          const n = await withDb(ctx, async (db) =>
+            (await db.query<{ n: number }>(
+              'SELECT count(*)::int AS n FROM kortix.session_lifecycle_commands WHERE idempotency_key = $1',
+              [`trigger:webhook:${p.id}:bp-hook:${deliveryId}`],
+            )).rows[0]?.n,
+          );
+          if (n !== 1) throw new Error(`expected one command for the delivery, found ${n}`);
+        },
+      );
+    } finally {
+      await withDb(ctx, (db) => db.query('DELETE FROM kortix.session_lifecycle_commands WHERE project_id = $1', [p.id])).catch(() => {});
+    }
+  },
+);
+
+// ── TRG-19: GET /triggers reports manifest parse errors (contract TRG-1) ──
+flow(
+  'TRG-19',
+  {
+    domain: 'triggers',
+    requires: ['database'],
+    timeoutMs: 300_000,
+    routes: ['POST /v1/projects/:projectId/triggers', 'GET /v1/projects/:projectId/triggers'],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== 'local') return; // pushes straight to the local bare repository, as PROJ-39
+    const p = await ctx.fixtures.project({ managedGit: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: p.id };
+    type Listing = { triggers: Array<{ slug: string }>; errors: Array<{ slug: string }> };
+    const list = async (): Promise<Listing> => {
+      const r = await owner.get('/v1/projects/:projectId/triggers', { params });
+      r.status(200);
+      return r.json<Listing>();
+    };
+    const runtimeRows = () =>
+      withDb(ctx, async (db) =>
+        (await db.query("SELECT slug FROM kortix.project_trigger_runtime WHERE project_id = $1 AND slug = 'keep-me'", [p.id])).rows,
+      );
+    const repoUrl = await withDb(ctx, async (db) =>
+      String((await db.query('SELECT repo_url FROM kortix.projects WHERE project_id = $1', [p.id])).rows[0]?.repo_url ?? ''),
+    );
+    const work = mkdtempSync(join(tmpdir(), 'ke2e-trg19-'));
+    const push = (manifest: string, message: string) => {
+      writeFileSync(join(work, 'kortix.yaml'), manifest);
+      execFileSync('git', ['add', 'kortix.yaml'], { cwd: work, stdio: 'pipe' });
+      execFileSync('git', ['-c', 'user.name=KE2E', '-c', 'user.email=ke2e@kortix.invalid', 'commit', '-qm', message], { cwd: work, stdio: 'pipe' });
+      execFileSync('git', ['push', '-q', 'origin', 'HEAD:refs/heads/main'], { cwd: work, stdio: 'pipe' });
+    };
+    try {
+      await ctx.step('POST a cron trigger → 201 and one runtime row for it', async () => {
+        (await owner.post(
+          '/v1/projects/:projectId/triggers',
+          { name: 'Keep me', slug: 'keep-me', type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'keep' },
+          { params },
+        )).status(201);
+        if ((await runtimeRows()).length !== 1) throw new Error('trigger create wrote no runtime row');
+      });
+      execFileSync('git', ['clone', '-q', '--branch', 'main', repoUrl, '.'], { cwd: work, stdio: 'pipe' });
+
+      await ctx.step('push a manifest with one good and one broken trigger → GET lists the good one and names the broken one in errors', async () => {
+        push(
+          'kortix_version: 2\nproject:\n  name: trg19\ndefault_agent: kortix\nagents:\n  kortix: {}\ntriggers:\n' +
+            '  - slug: keep-me\n    name: Keep me\n    type: cron\n    cron: "0 0 3 * * *"\n    timezone: UTC\n    prompt: keep\n' +
+            '  - slug: broken\n    type: cron\n    prompt: no cron field here\n',
+          'ke2e: one broken trigger',
+        );
+        const listed = await waitFor(list, {
+          until: (v) => v.errors.some((e) => e.slug === 'broken'),
+          timeoutMs: 90_000,
+          intervalMs: 2_000,
+          description: 'the broken trigger reaches the API mirror',
+        });
+        const slugs = listed.triggers.map((t) => t.slug);
+        if (!slugs.includes('keep-me') || slugs.includes('broken')) throw new Error(`parse error dropped or kept the wrong triggers: ${JSON.stringify(listed)}`);
+      });
+
+      await ctx.step('push an unparseable manifest → GET 200 {triggers:[], errors:[(manifest)]}; the runtime row survives', async () => {
+        push('kortix_version: [invalid\n', 'ke2e: unparseable manifest');
+        const listed = await waitFor(list, {
+          until: (v) => v.errors.some((e) => e.slug === '(manifest)'),
+          timeoutMs: 90_000,
+          intervalMs: 2_000,
+          description: 'the unparseable manifest reaches the API mirror',
+        });
+        if (listed.triggers.length !== 0) throw new Error(`unparseable manifest still lists triggers: ${JSON.stringify(listed)}`);
+        if ((await runtimeRows()).length !== 1) throw new Error('an unparseable manifest pruned the trigger runtime row');
+      });
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  },
+);
+
+// ── TRG-20: webhook ingress against a REAL webhook trigger (contract TRG-7) ──
+// TRG-7 and SEC-F probe only a bogus project. Here the trigger, its secret and
+// the signature are real. Triggers are paused first: the pause check runs AFTER
+// authentication (routes/trigger-webhooks.ts), so an authenticated delivery
+// answers 200 `skipped` and never creates a session or a sandbox.
+flow(
+  'TRG-20',
+  {
+    domain: 'triggers',
+    routes: [
+      'POST /v1/projects/:projectId/secrets',
+      'DELETE /v1/projects/:projectId/secrets/:name',
+      'POST /v1/projects/:projectId/triggers',
+      'GET /v1/projects/:projectId/triggers',
+      'PATCH /v1/projects/:projectId/triggers/:slug',
+      'PATCH /v1/projects/:projectId/triggers/activation',
+      'POST /v1/webhooks/projects/:projectId/:slug',
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project({ managedGit: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: p.id };
+    const secret = `ke2e-hook-${crypto.randomUUID()}`;
+    const rawBody = JSON.stringify({ action: 'opened' });
+    const sign = (payload: string, key = secret) => `sha256=${createHmac('sha256', key).update(payload).digest('hex')}`;
+    const deliver = (headers: Record<string, string>, slug = 'hook', projectId = p.id) =>
+      ctx.client.as(ctx.P.ANON).post('/v1/webhooks/projects/:projectId/:slug', rawBody, {
+        params: { projectId, slug },
+        raw: true,
+        headers: { 'content-type': 'application/json', ...headers },
+      });
+    const rejected = async (headers: Record<string, string>, slug?: string) => {
+      (await deliver(headers, slug)).status(401).body().has('$.error', 'Invalid webhook signature');
+    };
+    const accepted = async (headers: Record<string, string>) => {
+      (await deliver(headers)).status(200).body().has('$.status', 'skipped');
+    };
+    const webhookTrigger = (slug: string, secretEnv: string) => ({
+      name: slug,
+      slug,
+      type: 'webhook',
+      secret_env: secretEnv,
+      prompt_template: 'New {{ body.action }}',
+    });
+    type Listed = { triggers: Array<{ slug: string; name: string; type: string; secret_env: string | null; webhook_url: string | null }> };
+    const listed = async (): Promise<Listed['triggers']> => {
+      const r = await owner.get('/v1/projects/:projectId/triggers', { params });
+      r.status(200);
+      return r.json<Listed>().triggers;
+    };
+
+    await ctx.step('webhook trigger naming a missing secret → 409 webhook_secret_missing; nothing listed', async () => {
+      const r = await owner.post('/v1/projects/:projectId/triggers', webhookTrigger('missing-hook', 'NO_SUCH_HOOK_SECRET'), { params });
+      r.status(409).body().has('$.code', 'webhook_secret_missing');
+      if ((await listed()).some((t) => t.slug === 'missing-hook')) throw new Error('a refused webhook trigger was committed');
+    });
+
+    await ctx.step('webhook trigger naming a sandbox-delivered secret → 409 webhook_secret_delivery_mismatch', async () => {
+      (await owner.post('/v1/projects/:projectId/secrets', { name: 'SANDBOX_HOOK_SECRET', value: 'sandbox-only' }, { params })).status([200, 201]);
+      const r = await owner.post('/v1/projects/:projectId/triggers', webhookTrigger('sandbox-hook', 'SANDBOX_HOOK_SECRET'), { params });
+      r.status(409).body().has('$.code', 'webhook_secret_delivery_mismatch');
+    });
+
+    await ctx.step('connector-delivered secret → 201; the listing carries secret_env and the public webhook_url', async () => {
+      (await owner.post('/v1/projects/:projectId/secrets', { name: 'HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params }))
+        .status(200).body().has('$.strategy', 'broker').has('$.consumer', 'connector');
+      (await owner.post('/v1/projects/:projectId/triggers', webhookTrigger('hook', 'HOOK_SECRET'), { params })).status(201);
+      const row = (await listed()).find((t) => t.slug === 'hook');
+      if (!row || row.type !== 'webhook' || row.secret_env !== 'HOOK_SECRET' || !row.webhook_url?.endsWith(`/v1/webhooks/projects/${p.id}/hook`)) {
+        throw new Error(`webhook trigger listing is wrong: ${JSON.stringify(row)}`);
+      }
+    });
+
+    await ctx.step('pause triggers server-side → 200, triggers_paused true', async () => {
+      (await owner.patch('/v1/projects/:projectId/triggers/activation', { paused: true }, { params })).status(200).body().has('$.triggers_paused', true);
+    });
+
+    await ctx.step('malformed project id or slug → 400 before any lookup', async () => {
+      (await deliver({}, 'hook', 'not-a-uuid')).status(400).body().has('$.error', 'Invalid project id');
+      (await deliver({}, 'Bad_Slug')).status(400).body().has('$.error', 'Invalid trigger slug');
+    });
+
+    await ctx.step('no credential header, an unknown slug, a wrong signature → the same 401', async () => {
+      await rejected({});
+      await rejected({ 'x-kortix-signature': sign(rawBody) }, 'no-such-hook');
+      await rejected({ 'x-kortix-signature': sign(rawBody, 'wrong-secret') });
+    });
+
+    await ctx.step('a valid X-Kortix-Signature or X-Hub-Signature-256 authenticates → 200 skipped (paused)', async () => {
+      await accepted({ 'x-kortix-signature': sign(rawBody) });
+      await accepted({ 'x-hub-signature-256': sign(rawBody) });
+    });
+
+    await ctx.step('X-Kortix-Timestamp signs <timestamp>.<body>: 1 h stale or 1 h ahead → 401, current → 200', async () => {
+      const now = Math.floor(Date.now() / 1000);
+      const stamped = (ts: number) => ({ 'x-kortix-timestamp': String(ts), 'x-kortix-signature': sign(`${ts}.${rawBody}`) });
+      await rejected(stamped(now - 3600));
+      await rejected(stamped(now + 3600));
+      await accepted(stamped(now));
+    });
+
+    await ctx.step('static token: a wrong X-Kortix-Token → 401; the secret as X-Kortix-Token or Bearer → 200', async () => {
+      await rejected({ 'x-kortix-token': 'nope' });
+      await accepted({ 'x-kortix-token': secret });
+      await accepted({ authorization: `Bearer ${secret}` });
+    });
+
+    await ctx.step('the secret loses connector delivery → a signed delivery is 401; PATCH → 409 webhook_secret_delivery_mismatch', async () => {
+      (await owner.del('/v1/projects/:projectId/secrets/:name', { params: { ...params, name: 'HOOK_SECRET' } })).status(200);
+      (await owner.post('/v1/projects/:projectId/secrets', { name: 'HOOK_SECRET', value: secret }, { params })).status([200, 201]);
+      await rejected({ 'x-kortix-signature': sign(rawBody) });
+      const r = await owner.patch('/v1/projects/:projectId/triggers/:slug', { name: 'Renamed hook' }, { params: { ...params, slug: 'hook' } });
+      r.status(409).body().has('$.code', 'webhook_secret_delivery_mismatch');
+      if ((await listed()).find((t) => t.slug === 'hook')?.name !== 'hook') throw new Error('a refused PATCH changed the trigger');
+    });
+  },
+);
+
+type EventTriggerRow = TriggerRow & {
+  type: string;
+  event: { connector: string; type: string; config: Record<string, unknown>; status: string; error: string | null } | null;
+};
+
+flow(
+  'TRG-21',
+  {
+    domain: 'triggers',
+    routes: [
+      'POST /v1/projects/:projectId/triggers',
+      'GET /v1/projects/:projectId/triggers',
+      'PATCH /v1/projects/:projectId/triggers/:slug',
+      'DELETE /v1/projects/:projectId/triggers/:slug',
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project({ managedGit: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: p.id };
+    const eventOf = (body: { triggers: EventTriggerRow[] }) => {
+      const row = body.triggers.find((t) => t.slug === 'new-mail');
+      if (!row) throw new Error(`trigger "new-mail" missing; got ${JSON.stringify(body.triggers.map((t) => t.slug))}`);
+      return row;
+    };
+    await ctx.step('create an event trigger → 201, listed as type event with its connector, event and config', async () => {
+      const r = await owner.post(
+        '/v1/projects/:projectId/triggers',
+        {
+          name: 'New mail',
+          type: 'event',
+          connector: 'inbox',
+          event: 'EXAMPLE_NEW_MESSAGE',
+          event_config: { label: 'INBOX' },
+          prompt_template: 'Triage {{ event.data.subject }}',
+        },
+        { params },
+      );
+      r.status(201);
+      const row = eventOf(r.json<{ triggers: EventTriggerRow[] }>());
+      if (row.type !== 'event') throw new Error(`type === "event" — got ${JSON.stringify(row.type)}`);
+      if (row.event?.connector !== 'inbox' || row.event.type !== 'EXAMPLE_NEW_MESSAGE') {
+        throw new Error(`event echo wrong: ${JSON.stringify(row.event)}`);
+      }
+      if (row.event.config.label !== 'INBOX') throw new Error(`config lost: ${JSON.stringify(row.event.config)}`);
+      // The connector is not declared in kortix.yaml, so no subscription can exist.
+      if (row.event.status !== 'error' || !/inbox/.test(row.event.error ?? '')) {
+        throw new Error(`expected status error naming "inbox" — got ${JSON.stringify(row.event)}`);
+      }
+    });
+    await ctx.step('PATCH event_config → 200 and the new config reads back', async () => {
+      const r = await owner.patch(
+        '/v1/projects/:projectId/triggers/:slug',
+        { event_config: { label: 'STARRED' } },
+        { params: { ...params, slug: 'new-mail' } },
+      );
+      r.status(200);
+      const config = eventOf(r.json<{ triggers: EventTriggerRow[] }>()).event?.config;
+      if (config?.label !== 'STARRED') throw new Error(`config not updated: ${JSON.stringify(config)}`);
+    });
+    await ctx.step('DELETE → 200 and the trigger leaves the list', async () => {
+      (await owner.del('/v1/projects/:projectId/triggers/:slug', { params: { ...params, slug: 'new-mail' } })).status(200);
+      const listed = (await owner.get('/v1/projects/:projectId/triggers', { params })).json<{ triggers: EventTriggerRow[] }>();
+      if (listed.triggers.some((t) => t.slug === 'new-mail')) throw new Error('trigger still listed after DELETE');
+    });
+  },
+);
+
+flow(
+  'TRG-22',
+  { domain: 'triggers', routes: ['POST /v1/projects/:projectId/triggers'] },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    const owner = ctx.client.as(ctx.P.OWNER).withTransientGatewayRetries();
+    const params = { projectId: p.id };
+    const base = { name: 'x', prompt_template: 'x' };
+    const cases: Array<[string, Record<string, unknown>]> = [
+      ['event without connector', { ...base, type: 'event', event: 'EXAMPLE_EVENT' }],
+      ['event without event', { ...base, type: 'event', connector: 'inbox' }],
+      ['event with cron', { ...base, type: 'event', connector: 'inbox', event: 'EXAMPLE_EVENT', cron: '0 0 3 * * *' }],
+      ['event with non-object event_config', { ...base, type: 'event', connector: 'inbox', event: 'EXAMPLE_EVENT', event_config: 'nope' }],
+      ['cron with connector', { ...base, type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', connector: 'inbox' }],
+    ];
+    for (const [name, body] of cases) {
+      await ctx.step(`${name} → 400`, async () => {
+        (await owner.post('/v1/projects/:projectId/triggers', body, { params })).status(400);
+      });
+    }
+  },
+);
+
+flow(
+  'TRG-23',
+  { domain: 'triggers', routes: ['POST /v1/webhooks/events/:provider'] },
+  async (ctx) => {
+    const anon = ctx.client.as(ctx.P.ANON);
+    await ctx.step('unknown provider → 404', async () => {
+      (await anon.post('/v1/webhooks/events/:provider', { hello: 'world' }, { params: { provider: 'nope' } })).status(404);
+    });
+    await ctx.step('composio without a valid signature → 401 (secret set) or 503 (no secret)', async () => {
+      const r = await anon.post('/v1/webhooks/events/:provider', { hello: 'world' }, { params: { provider: 'composio' } });
+      r.status([401, 503]);
+    });
+  },
+);
+
+flow(
+  'TRG-24',
+  { domain: 'triggers', routes: ['GET /v1/projects/:projectId/triggers/event-types'] },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    const params = { projectId: p.id };
+    await ctx.step('ANON → 401', async () => {
+      (await ctx.client.as(ctx.P.ANON).get('/v1/projects/:projectId/triggers/event-types', { params, query: { connector: 'inbox' } })).status(401);
+    });
+    await ctx.step('missing connector → 400', async () => {
+      (await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/triggers/event-types', { params })).status(400);
+    });
+    await ctx.step('unknown connector → 404', async () => {
+      (await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/triggers/event-types', { params, query: { connector: 'inbox' } })).status(404);
+    });
+  },
+);
+
+flow(
+  'TRG-25',
+  { domain: 'triggers', routes: ['GET /v1/projects/:projectId/triggers/event-apps'] },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    const params = { projectId: p.id };
+    await ctx.step('ANON → 401', async () => {
+      (await ctx.client.as(ctx.P.ANON).get('/v1/projects/:projectId/triggers/event-apps', { params })).status(401);
+    });
+    await ctx.step('owner → 200 with an apps array (empty when no event provider is configured)', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/triggers/event-apps', { params });
+      r.status(200);
+      if (!Array.isArray(r.json<{ apps: unknown[] }>().apps)) throw new Error('apps must be an array');
+    });
+  },
+);
+
+flow(
+  'TRG-26',
+  {
+    domain: 'triggers',
+    routes: [
+      'POST /v1/projects/:projectId/triggers',
+      'GET /v1/projects/:projectId/triggers',
+      'PATCH /v1/projects/:projectId/triggers/:slug',
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project({ managedGit: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: p.id };
+    type AccountRow = { slug: string; event: { connector: string; account: string | null; connected_as: string | null } | null };
+    const eventOf = (body: { triggers: AccountRow[] }) => {
+      const row = body.triggers.find((t) => t.slug === 'acct-mail');
+      if (!row?.event) throw new Error(`trigger "acct-mail" missing; got ${JSON.stringify(body.triggers.map((t) => t.slug))}`);
+      return row.event;
+    };
+    const create = (extra: Record<string, unknown>) =>
+      owner.post(
+        '/v1/projects/:projectId/triggers',
+        { name: 'Acct mail', type: 'event', connector: 'inbox', event: 'EXAMPLE_NEW_MESSAGE', prompt_template: 'x', ...extra },
+        { params },
+      );
+    await ctx.step('create with event_account → 201 and the listing echoes account, with no account feeding it', async () => {
+      const r = await create({ event_account: 'acme-bot' });
+      r.status(201);
+      const event = eventOf(r.json<{ triggers: AccountRow[] }>());
+      if (event.account !== 'acme-bot' || event.connected_as !== null) {
+        throw new Error(`expected account "acme-bot" and connected_as null — got ${JSON.stringify(event)}`);
+      }
+    });
+    await ctx.step('PATCH event_account: null → 200 and the account clears to the connector default', async () => {
+      const r = await owner.patch('/v1/projects/:projectId/triggers/:slug', { event_account: null }, { params: { ...params, slug: 'acct-mail' } });
+      r.status(200);
+      const event = eventOf(r.json<{ triggers: AccountRow[] }>());
+      if (event.account !== null) throw new Error(`account not cleared: ${JSON.stringify(event)}`);
+    });
+    await ctx.step('PATCH event_account → 200 and it reads back; PATCH of another field keeps it', async () => {
+      const slug = 'acct-mail';
+      (await owner.patch('/v1/projects/:projectId/triggers/:slug', { event_account: 'ops-bot' }, { params: { ...params, slug } })).status(200);
+      const r = await owner.patch('/v1/projects/:projectId/triggers/:slug', { name: 'Acct mail 2' }, { params: { ...params, slug } });
+      r.status(200);
+      const event = eventOf(r.json<{ triggers: AccountRow[] }>());
+      if (event.account !== 'ops-bot') throw new Error(`account lost on unrelated PATCH: ${JSON.stringify(event)}`);
+    });
+    await ctx.step('empty event_account → 400; event_account on a cron trigger → 400', async () => {
+      (await create({ name: 'Bad', event_account: ' ' })).status(400);
+      const r = await owner.post(
+        '/v1/projects/:projectId/triggers',
+        { name: 'Cron', type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'x', event_account: 'acme-bot' },
+        { params },
+      );
+      r.status(400);
     });
   },
 );

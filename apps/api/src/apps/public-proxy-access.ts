@@ -7,7 +7,7 @@ import { annotateAuditEvent, bindAuditPrincipal } from '../shared/audit-scope';
 import { appAccessibleToAgentSession, appAccessibleToUser, appAccessCookie, appAccessCookieName, appAccessSecret, cookieValue, createAppAccessToken, isAppAgentAssertion, verifyAppAccessToken, verifyAppAgentAssertion, type AppAccessMode, type AppAgentSessionPrincipal } from './access';
 import { escapeHtml } from '../shared/html';
 import { appBrowserNavigation, appFrameAncestors, PROXY_PAGE_SYMBOL, PROXY_PAGE_TOKENS } from './public-proxy-status';
-import { APP_VIEWER_HEADER, APP_VIEWER_TOKEN_HEADER, appViewerSecret, encodeAppViewerContext, mintAppViewerToken, normalizeViewerTokenScope, resolveAppViewerIdentity } from './viewer';
+import { appViewerSecret, encodeAppViewerContext, mintAppViewerToken, normalizeViewerTokenScope, resolveAppViewerIdentity } from './viewer';
 
 function accessTokenMatchesMode(
   token: ReturnType<typeof verifyAppAccessToken>,
@@ -325,7 +325,7 @@ export async function appViewerContextHeader(
   const userId = resolveAppViewerUserId(request, url, app);
   if (!userId) return null;
   const [identity, minted] = await Promise.all([
-    resolveAppViewerIdentity(userId),
+    resolveAppViewerIdentity(userId, app.accountId),
     scope === 'api'
       ? mintAppViewerToken(
           {
@@ -350,7 +350,12 @@ export async function appViewerContextHeader(
         appId: app.appId,
         userId,
         email: identity.email,
+        name: identity.name ?? null,
+        picture: identity.picture ?? null,
         groupIds: identity.groupIds,
+        groups: identity.groups ?? [],
+        role: identity.role ?? null,
+        projectId: app.projectId,
         accountId: app.accountId,
         accessMode: app.accessMode,
       },
@@ -360,20 +365,17 @@ export async function appViewerContextHeader(
   };
 }
 
-/** `GET /_kortix/viewer` — the App asks the gate who is looking, and for a token to act with. */
-export async function appViewerEndpointResponse(
+/**
+ * Who is calling a `/_kortix/*` endpoint: the browser's Kortix cookie, or a
+ * server-side Kortix credential that passes the App's access policy. An agent
+ * session is admitted as the AGENT (`agentViewer`). A 401 Response when nobody.
+ */
+async function resolveEndpointViewer(
   request: Request,
   url: URL,
-  app: AppAccessRow & { accountId: string; name: string; viewerTokenScope?: string | null },
-): Promise<Response> {
+  app: AppAccessRow,
+): Promise<{ userId: string; agentViewer: boolean } | Response> {
   const noStore = { 'cache-control': 'no-store' };
-  const scope = normalizeViewerTokenScope(app.viewerTokenScope);
-  if (scope === 'off') {
-    return Response.json(
-      { error: 'viewer_disabled', error_description: 'This App does not receive viewer identity.' },
-      { status: 404, headers: noStore },
-    );
-  }
   let userId = resolveAppViewerUserId(request, url, app);
   let agentViewer = false;
   if (!userId && app.accessMode !== 'password') {
@@ -404,8 +406,102 @@ export async function appViewerEndpointResponse(
       { status: 401, headers: noStore },
     );
   }
+  return { userId, agentViewer };
+}
+
+/**
+ * `GET /_kortix/backend-token?backend=<name>` — a Kortix sign-in token for one
+ * of the project's backends, naming this viewer. The App's Convex client sends
+ * it (`client.setAuth`), and the backend's functions read the member with
+ * `ctx.auth.getUserIdentity()`. Same viewer rules as `/_kortix/viewer`.
+ */
+export async function appBackendTokenResponse(
+  request: Request,
+  url: URL,
+  app: AppAccessRow & { viewerTokenScope?: string | null; backends?: string[] | null },
+  verifyUserAccess: AppUserAccessVerifier = appAccessibleToUser,
+): Promise<Response> {
+  const noStore = { 'cache-control': 'no-store' };
+  if (normalizeViewerTokenScope(app.viewerTokenScope) === 'off') {
+    return Response.json(
+      { error: 'viewer_disabled', error_description: 'This App does not receive viewer identity.' },
+      { status: 404, headers: noStore },
+    );
+  }
+  const name = url.searchParams.get('backend') ?? 'main';
+  // An App acts as its viewer only on the backends it lists (`apps.backends`).
+  // Code in an App that has nothing to do with a backend gets no token for it.
+  if (!(app.backends ?? []).includes(name)) {
+    return Response.json(
+      {
+        error: 'backend_not_listed',
+        error_description: `This App does not list the backend "${name}". Add it to the App's backends: kortix apps set <app> --backends ${name}.`,
+      },
+      { status: 403, headers: noStore },
+    );
+  }
+  const viewer = await resolveEndpointViewer(request, url, app);
+  if (viewer instanceof Response) return viewer;
+  if (viewer.agentViewer) {
+    // As on /_kortix/viewer: an agent session must not act as the human who launched it.
+    return Response.json(
+      { error: 'agent_viewer', error_description: 'An agent session mints a token naming the agent: POST /v1/projects/{projectId}/backends/{backendId}/token.' },
+      { status: 403, headers: noStore },
+    );
+  }
+  // A public App lets every request through, so nothing re-checked the gate
+  // cookie: a member removed after redeeming a link kept minting backend
+  // tokens for the cookie's 8 h. A token is a credential, so re-check access.
+  if (app.accessMode === 'public' && !(await verifyUserAccess(app, viewer.userId))) {
+    return Response.json(
+      { error: 'no_viewer_identity', error_description: 'The signed-in viewer no longer has access to this App.', access_mode: app.accessMode },
+      { status: 401, headers: noStore },
+    );
+  }
+  // Loaded on use: the backends service pulls the project graph, which the App
+  // gate's hot path (and every hand-written module mock of it) does not need.
+  const { backendMemberToken, backendsEnabled, getRunningBackendByName } = await import('../backends/provision');
+  if (!(await backendsEnabled(app.projectId))) {
+    const { featureDisabledBody } = await import('../feature-flags/gate');
+    return Response.json(featureDisabledBody('backends'), { status: 403, headers: noStore });
+  }
+  const backend = await getRunningBackendByName(app.projectId, name);
+  if (!backend) {
+    return Response.json(
+      { error: 'backend_not_found', error_description: `No running backend named "${name}" in this project.` },
+      { status: 404, headers: noStore },
+    );
+  }
+  const identity = await resolveAppViewerIdentity(viewer.userId, app.accountId);
+  const minted = backendMemberToken(backend, { userId: viewer.userId, ...identity });
+  if (!minted) {
+    return Response.json(
+      { error: 'backend_auth_unavailable', error_description: 'This backend predates Kortix sign-in.' },
+      { status: 409, headers: noStore },
+    );
+  }
+  return Response.json({ token: minted.token, expires_at: minted.expiresAt.toISOString() }, { headers: noStore });
+}
+
+/** `GET /_kortix/viewer` — the App asks the gate who is looking, and for a token to act with. */
+export async function appViewerEndpointResponse(
+  request: Request,
+  url: URL,
+  app: AppAccessRow & { accountId: string; name: string; viewerTokenScope?: string | null },
+): Promise<Response> {
+  const noStore = { 'cache-control': 'no-store' };
+  const scope = normalizeViewerTokenScope(app.viewerTokenScope);
+  if (scope === 'off') {
+    return Response.json(
+      { error: 'viewer_disabled', error_description: 'This App does not receive viewer identity.' },
+      { status: 404, headers: noStore },
+    );
+  }
+  const viewer = await resolveEndpointViewer(request, url, app);
+  if (viewer instanceof Response) return viewer;
+  const { userId, agentViewer } = viewer;
   const [identity, minted] = await Promise.all([
-    resolveAppViewerIdentity(userId),
+    resolveAppViewerIdentity(userId, app.accountId),
     agentViewer
       ? Promise.resolve(null)
       : mintAppViewerToken(
@@ -418,9 +514,14 @@ export async function appViewerEndpointResponse(
       app_id: app.appId,
       access_mode: app.accessMode,
       account_id: app.accountId,
+      project_id: app.projectId,
       user_id: userId,
       email: identity.email,
+      name: identity.name ?? null,
+      picture: identity.picture ?? null,
       group_ids: identity.groupIds,
+      groups: identity.groups ?? [],
+      role: identity.role ?? null,
       scopes: minted?.scopes ?? [],
       access_token: minted?.accessToken ?? null,
       expires_at: minted?.expiresAt.toISOString() ?? null,

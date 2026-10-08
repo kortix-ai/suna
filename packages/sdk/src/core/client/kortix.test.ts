@@ -51,6 +51,28 @@ test('project(id) handle binds the id and hits the right endpoint', async () => 
   expect(last().method).toBe('GET');
 });
 
+test('project(id).backends binds the project id on every call', async () => {
+  const backends = kortix.project('PID123').backends;
+  for (const fn of ['list', 'create', 'get', 'credentials', 'remove', 'resize', 'waitForOperation', 'backups', 'snapshot', 'restore'] as const) {
+    expect(typeof backends[fn]).toBe('function');
+  }
+  await backends.list().catch(() => undefined);
+  expect(last().url).toContain('/projects/PID123/backends');
+  await backends.credentials('B1').catch(() => undefined);
+  expect(last().url).toContain('/projects/PID123/backends/B1/credentials');
+  await backends.backups('B1').catch(() => undefined);
+  expect(last().url).toContain('/projects/PID123/backends/B1/backups');
+  await backends.restore('B1', 'S1').catch(() => undefined);
+  expect(last().url).toContain('/projects/PID123/backends/B1/restore');
+  await backends.rotateAdminKey('B1').catch(() => undefined);
+  expect(last().url).toContain('/projects/PID123/backends/B1/rotate-admin-key');
+  await backends.logs('B1', { lines: 50 }).catch(() => undefined);
+  expect(last().url).toContain('/projects/PID123/backends/B1/logs?lines=50');
+  await backends.deleteSnapshot('B1', 'S1').catch(() => undefined);
+  expect(last().url).toContain('/projects/PID123/backends/B1/snapshots/S1');
+  expect(last().method).toBe('DELETE');
+});
+
 test('project(id).apps exposes the complete App lifecycle with the project id bound', async () => {
   const apps = kortix.project('PID123').apps;
 
@@ -747,18 +769,21 @@ test('project(id).gateway.playground posts prompt + models', async () => {
   expect(last().method).toBe('POST');
 });
 
-test('kortix.billing.checkout covers create + confirm session', async () => {
-  await kortix.billing.checkout.createSession({
-    tierKey: 'pro',
-    successUrl: 'https://app.example.com/success',
-    cancelUrl: 'https://app.example.com/cancel',
-  });
-  expect(last().url).toContain('/billing/create-checkout-session');
-  expect(last().method).toBe('POST');
+test('kortix.billing.checkout rejects with ENDPOINT_RETIRED and sends no request', async () => {
+  const create = await kortix.billing.checkout
+    .createSession({
+      tierKey: 'pro',
+      successUrl: 'https://app.example.com/success',
+      cancelUrl: 'https://app.example.com/cancel',
+    })
+    .catch((e: unknown) => e);
+  expect(create).toBeInstanceOf(ApiError);
+  expect((create as ApiError).code).toBe('ENDPOINT_RETIRED');
 
-  await kortix.billing.checkout.confirmSession('cs_123');
-  expect(last().url).toContain('/billing/confirm-checkout-session');
-  expect(last().method).toBe('POST');
+  const confirm = await kortix.billing.checkout.confirmSession('cs_123').catch((e: unknown) => e);
+  expect(confirm).toBeInstanceOf(ApiError);
+  expect((confirm as ApiError).code).toBe('ENDPOINT_RETIRED');
+  expect(calls).toEqual([]);
 });
 
 test('kortix.billing.subscription covers portal/cancel/reactivate/downgrade/proration', async () => {
@@ -772,8 +797,8 @@ test('kortix.billing.subscription covers portal/cancel/reactivate/downgrade/pror
   await kortix.billing.subscription.reactivate();
   expect(last().url).toContain('/billing/reactivate-subscription');
 
-  await kortix.billing.subscription.scheduleDowngrade('starter');
-  expect(last().url).toContain('/billing/schedule-downgrade');
+  const downgrade = await kortix.billing.subscription.scheduleDowngrade('starter').catch((e: unknown) => e);
+  expect((downgrade as ApiError).code).toBe('ENDPOINT_RETIRED');
 
   await kortix.billing.subscription.cancelScheduledChange();
   expect(last().url).toContain('/billing/cancel-scheduled-change');

@@ -146,11 +146,6 @@ export interface GetFileHistoryOptions {
   skip?: number;
 }
 
-export interface GetFileAtRefResult {
-  content: string;
-  found: boolean;
-}
-
 export interface BranchDiffSummary {
   files: GitCommitFile[];
   files_changed: number;
