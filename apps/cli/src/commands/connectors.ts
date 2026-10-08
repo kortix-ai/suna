@@ -817,7 +817,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
         if (f.label !== undefined) {
           const label = f.label.trim();
           if (!label) return missing('--label <account name>');
-          const link = await ctx.client.post<{ url: string; app?: string | null; expires_at?: string }>(
+          const link = await ctx.client.post<{ url: string; app?: string | null; expires_at?: string; label?: string | null }>(
             `/projects/${ctx.projectId}/connect-requests`,
             {
               slug,
@@ -826,13 +826,13 @@ export async function runConnectors(argv: string[]): Promise<number> {
               ...(expires ? { expires_in_minutes: expires } : {}),
             },
           );
-          const output = { slug, owner: owner ?? 'me', label, app: link.app ?? null, url: link.url, expires_at: link.expires_at ?? null };
+          const output = { slug, owner: owner ?? 'me', label: link.label ?? label, app: link.app ?? null, url: link.url, expires_at: link.expires_at ?? null };
           if (json) {
             emitJson(output);
             return 0;
           }
           process.stdout.write(
-            `\n  ${C.bold}Connect ${slug} as "${label}"${C.reset}\n  ${C.cyan}${output.url}${C.reset}\n\n` +
+            `\n  ${C.bold}Connect ${slug} as "${output.label}"${C.reset}\n  ${C.cyan}${output.url}${C.reset}\n\n` +
               `  ${C.dim}Hand the URL to the human. They confirm the name and who can use the account.${C.reset}\n\n`,
           );
           return 0;
