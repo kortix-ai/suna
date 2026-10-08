@@ -565,6 +565,45 @@ flow(
   },
 );
 
+// INV-10 — the invite page names the project an email invite grants
+// (KRTX-1731). The describe route returned no projects, so the page said
+// "join a team" for a project invite.
+flow(
+  'INV-10',
+  {
+    domain: 'projects',
+    routes: ['POST /v1/projects/:projectId/access/invite', 'GET /v1/account-invites/:inviteId'],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    const inviteEmail = `${ctx.fixtures.name('inv10')}@ke2e.kortix.test`.toLowerCase();
+    let inviteId = '';
+    await ctx.step('a project invite to an address with no Kortix user yet → 201 invited', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post('/v1/projects/:projectId/access/invite', { email: inviteEmail, role: 'member' }, { params: { projectId: project.id } });
+      r.status(201).body().has('$.status', 'invited').exists('$.invite_id');
+      inviteId = r.json<{ invite_id: string }>().invite_id;
+    });
+    await ctx.step('the invitee reads the project name and role in the describe', async () => {
+      const invitee = await ctx.fixtures.userWithEmail(inviteEmail);
+      const r = await ctx.client.as(invitee).get('/v1/account-invites/:inviteId', { params: { inviteId } });
+      r.status(200)
+        .body()
+        .has('$.email_matches_caller', true)
+        .has('$.projects[0].project_id', project.id)
+        .has('$.projects[0].role', 'member')
+        .exists('$.projects[0].name');
+    });
+    await ctx.step('anyone else gets no projects (redacted)', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/account-invites/:inviteId', { params: { inviteId } });
+      r.status(200).body().has('$.email_matches_caller', false);
+      if ((r.json<{ projects?: unknown[] }>().projects ?? []).length !== 0) throw new Error('a non-addressee read the invited projects');
+    });
+  },
+);
+
 flow(
   'INV-4',
   {
