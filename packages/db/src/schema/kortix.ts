@@ -6729,6 +6729,10 @@ export const pushDeviceTokens = kortixSchema.table('push_device_tokens', {
   onQuestion: boolean('on_question').default(true).notNull(),
   onPermission: boolean('on_permission').default(true).notNull(),
   playSound: boolean('play_sound').default(true).notNull(),
+  /** The sign-in (`auth.sessions.id`) that registered the token. A push goes
+   *  only while that sign-in exists. NULL: registered with a personal token,
+   *  or before this column existed. */
+  authSessionId: uuid('auth_session_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
