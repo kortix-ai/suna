@@ -11,7 +11,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { accountMembers, creditAccounts } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
-import { setAutoTopupAlertSenderForTest } from '../billing/services/auto-topup-alert';
+import { setOwnerAlertSenderForTest } from '../billing/services/owner-alerts';
 import { getAutoTopupSettings, handleFailedCharge } from '../billing/services/auto-topup';
 import type { EmailMessage } from '../lib/email/types';
 import { db } from '../shared/db';
@@ -44,7 +44,7 @@ beforeAll(async () => {
     await insertIntoView(db, accountMembers, { userId: ADMIN, accountId: account.account_id, accountRole: 'admin' });
     await db.insert(creditAccounts).values({ accountId: account.account_id, tier: 'pro', autoTopupEnabled: true });
   }
-  setAutoTopupAlertSenderForTest(async (message) => {
+  setOwnerAlertSenderForTest(async (message) => {
     sent.push(message);
     return { ok: true, provider: 'mailpit', status: 200 };
   });
@@ -55,7 +55,7 @@ beforeEach(() => {
 });
 
 afterAll(async () => {
-  setAutoTopupAlertSenderForTest(null);
+  setOwnerAlertSenderForTest(null);
   if (!declined) return;
   for (const account of [declined, flaky]) {
     await db.delete(creditAccounts).where(eq(creditAccounts.accountId, account.account_id));

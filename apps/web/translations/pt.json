@@ -7164,7 +7164,11 @@
       "line58JsxAttrTitleYouRanOutOfCredits": "Você ficou sem créditos",
       "line74JsxTextEnableAutoTopUp": "Ativar recarga automática",
       "line82JsxTextBuyCredits": "Comprar créditos",
-      "askOwnerToAddCredits": "Só um proprietário da conta pode adicionar créditos. Peça a um que recarregue."
+      "askOwnerToAddCredits": "Só um proprietário da conta pode adicionar créditos. Peça a um que recarregue.",
+      "askOwnerForCredits": "Pedir a um proprietário",
+      "ownersNotified": "Proprietários avisados",
+      "alreadyAskedToday": "Já pediu hoje",
+      "askOwnerFailed": "Não foi possível avisar os proprietários. Tente novamente"
     },
     "componentsSessionSessionFilesPanel": {
       "line80JsxTextThisSessionIsItsOwnVersion": "Esta sessão é sua própria versão",
