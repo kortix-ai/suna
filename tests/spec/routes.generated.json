@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 744,
+  "count": 754,
   "routes": [
     {
       "method": "GET",
@@ -597,6 +597,10 @@
     {
       "method": "PUT",
       "path": "/v1/accounts/:accountId/secret-resources/:secretId/value"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/top-up-requests"
     },
     {
       "method": "GET",
@@ -2805,6 +2809,42 @@
     {
       "method": "POST",
       "path": "/v1/setup-links/secret/:token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/setup/bootstrap-owner"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/health"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/install-status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/sandbox-providers"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/setup/setup-complete"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/setup-status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/setup-wizard-step"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/setup/setup-wizard-step"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/status"
     },
     {
       "method": "GET",

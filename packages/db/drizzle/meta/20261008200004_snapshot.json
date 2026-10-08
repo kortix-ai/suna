@@ -1,6 +1,6 @@
 {
-  "id": "ebe43b7f-286e-4b73-9aec-a0088406baeb",
-  "prevId": "5139e542-b651-4da4-b0f9-631637ed2d6c",
+  "id": "80603cc5-a7bb-4941-9d3d-fd3fa88247a6",
+  "prevId": "707e1c32-1dc3-4199-b7ed-5220413acf22",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3845,6 +3845,13 @@
           "notNull": true,
           "default": 300
         },
+        "always_on": {
+          "name": "always_on",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "viewer_token_scope": {
           "name": "viewer_token_scope",
           "type": "varchar(16)",
@@ -3859,12 +3866,12 @@
           "notNull": true,
           "default": "'5.00'"
         },
-        "backends": {
-          "name": "backends",
-          "type": "text[]",
+        "monthly_budget_explicit": {
+          "name": "monthly_budget_explicit",
+          "type": "boolean",
           "primaryKey": false,
           "notNull": true,
-          "default": "'{}'::text[]"
+          "default": true
         },
         "last_request_at": {
           "name": "last_request_at",
@@ -3897,20 +3904,6 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        },
-        "always_on": {
-          "name": "always_on",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "monthly_budget_explicit": {
-          "name": "monthly_budget_explicit",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
         }
       },
       "indexes": {
@@ -10272,6 +10265,27 @@
           ],
           "isUnique": false,
           "where": "\"kortix\".\"gateway_request_logs\".\"session_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_gateway_logs_account_time_covering": {
+          "name": "idx_gateway_logs_account_time_covering",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -17114,6 +17128,12 @@
           "notNull": true,
           "default": true
         },
+        "auth_session_id": {
+          "name": "auth_session_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -17938,7 +17958,7 @@
       "checkConstraints": {
         "sandbox_compute_sessions_workload_type_check": {
           "name": "sandbox_compute_sessions_workload_type_check",
-          "value": "\"kortix\".\"sandbox_compute_sessions\".\"workload_type\" IN ('session', 'app', 'monitor', 'backend')"
+          "value": "\"kortix\".\"sandbox_compute_sessions\".\"workload_type\" IN ('session', 'app', 'monitor')"
         }
       },
       "isRLSEnabled": false

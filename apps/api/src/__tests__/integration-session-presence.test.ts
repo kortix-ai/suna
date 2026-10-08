@@ -99,3 +99,62 @@ describe('renewSessionPresence', () => {
     expect(await secondsLeft()).toBeLessThanOrEqual(60);
   });
 });
+
+/** A provider run that started `hours` ago. The anchor trigger pins `active_since`; bypass it here. */
+async function runStartedHoursAgo(hours: number) {
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`SET LOCAL session_replication_role = replica`);
+    await tx.execute(sql`
+      UPDATE kortix.session_sandboxes SET active_since = now() - make_interval(hours => ${hours})
+       WHERE sandbox_id = ${SANDBOX_ID}::uuid`);
+  });
+}
+
+/** The session's latest turn ended `minutes` ago (or none, with null). */
+async function lastTurnEndedMinutesAgo(minutes: number | null) {
+  await db.execute(sql`DELETE FROM kortix.session_turns WHERE session_id = ${SESSION_ID}`);
+  if (minutes === null) return;
+  await db.execute(sql`
+    INSERT INTO kortix.session_turns (turn_token, session_id, sandbox_id, project_id, account_id, started_at, ended_at)
+    VALUES (${`presence-turn-${SANDBOX_ID}`}, ${SESSION_ID}, ${SANDBOX_ID}::uuid, ${PROJECT_ID}::uuid, ${ACCOUNT_ID}::uuid,
+            now() - make_interval(mins => ${minutes + 5}), now() - make_interval(mins => ${minutes}))`);
+}
+
+// KRTX-1729: a client that reports "present" for every visible tab (clients
+// before the input check do) must not keep a box up all night. Presence alone
+// keeps it at most 2 h past the run's latest turn.
+describe('presence alone keeps a box at most 2 h past its latest turn', () => {
+  beforeAll(async () => {
+    await runStartedHoursAgo(5);
+  });
+  afterAll(async () => {
+    await lastTurnEndedMinutesAgo(null);
+  });
+
+  test('a turn that ended 30 min ago: the idle grace, as before', async () => {
+    await lastTurnEndedMinutesAgo(30);
+    await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: true });
+    expect(Math.abs((await secondsLeft()) - idleGraceMs() / 1000)).toBeLessThanOrEqual(5);
+  });
+
+  test('a turn that ended 1 h 50 min ago: only up to the cap, 10 min from now', async () => {
+    await lastTurnEndedMinutesAgo(110);
+    await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: true });
+    const secs = await secondsLeft();
+    expect(Math.abs(secs - 600)).toBeLessThanOrEqual(5);
+    expect(secs).toBeLessThan(idleGraceMs() / 1000);
+  });
+
+  test('a turn that ended 3 h ago: presence extends nothing, and the lease still renews', async () => {
+    await lastTurnEndedMinutesAgo(180);
+    expect(await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: true })).toBe(true);
+    expect(await secondsLeft()).toBeLessThanOrEqual(60);
+    expect(await leaseSecondsLeft()).toBeGreaterThan(60);
+  });
+
+  test('no turn at all in a run that started 5 h ago: presence extends nothing', async () => {
+    await lastTurnEndedMinutesAgo(null);
+    await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: true });
+    expect(await secondsLeft()).toBeLessThanOrEqual(60);
+  });
+});

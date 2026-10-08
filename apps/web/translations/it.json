@@ -2040,7 +2040,9 @@
       "whenBelow": "quando il saldo scende sotto",
       "thresholdLabel": "Soglia della ricarica in dollari",
       "save": "Salva",
-      "paymentNeeded": "Aggiungi un metodo di pagamento per eseguire la ricarica automatica."
+      "paymentNeeded": "Aggiungi un metodo di pagamento per eseguire la ricarica automatica.",
+      "turnedOffAfterFailure": "La ricarica automatica è stata disattivata il {date}: l'ultimo addebito non è riuscito ({reason}). Aggiorna il metodo di pagamento, poi riattiva la ricarica automatica.",
+      "lastChargeFailed": "L'ultimo addebito della ricarica automatica non è riuscito il {date} ({reason}). Kortix riprova; dopo 3 addebiti non riusciti di fila, la ricarica automatica si disattiva."
     },
     "title": "Fatturazione & Abbonamento",
     "subscription": "Abbonamento",
@@ -4578,7 +4580,13 @@
       "invitationKicker": "Invito",
       "joinAccountDescription": "Entrerai in questo account come {roleLabel} e vedrai i progetti a cui il proprietario ti dà accesso.",
       "decline": "Rifiuta",
-      "accept": "Accetta"
+      "accept": "Accetta",
+      "projectLabel": "Progetto",
+      "invitedYouToAProject": "ti ha invitato a un progetto",
+      "youHaveBeenInvitedToAProject": "Sei stato invitato a un progetto.",
+      "joinProjectDescription": "Entrerai in {projectName} come {roleLabel}.",
+      "roleManager": "responsabile",
+      "signOutAndContinue": "Esci e continua"
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – L'AI Operating System open source",
@@ -7160,7 +7168,11 @@
       "line58JsxAttrTitleYouRanOutOfCredits": "Hai esaurito i crediti",
       "line74JsxTextEnableAutoTopUp": "Attiva la ricarica automatica",
       "line82JsxTextBuyCredits": "Acquista crediti",
-      "askOwnerToAddCredits": "Solo un proprietario dell’account può aggiungere crediti. Chiedi a uno di ricaricare."
+      "askOwnerToAddCredits": "Solo un proprietario dell’account può aggiungere crediti. Chiedi a uno di ricaricare.",
+      "askOwnerForCredits": "Chiedi a un proprietario",
+      "ownersNotified": "Proprietari avvisati",
+      "alreadyAskedToday": "Già chiesto oggi",
+      "askOwnerFailed": "Impossibile avvisare i proprietari. Riprova"
     },
     "componentsSessionSessionFilesPanel": {
       "line80JsxTextThisSessionIsItsOwnVersion": "Questa sessione è una versione separata",

@@ -1,6 +1,6 @@
 {
-  "id": "80603cc5-a7bb-4941-9d3d-fd3fa88247a6",
-  "prevId": "707e1c32-1dc3-4199-b7ed-5220413acf22",
+  "id": "707e1c32-1dc3-4199-b7ed-5220413acf22",
+  "prevId": "4c5f6f18-000b-41a8-a97b-a184af543df6",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -10268,6 +10268,27 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "idx_gateway_logs_account_time_covering": {
+          "name": "idx_gateway_logs_account_time_covering",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -12354,12 +12375,6 @@
         },
         "auth_key_enc": {
           "name": "auth_key_enc",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "auth_issuer": {
-          "name": "auth_issuer",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -17106,6 +17121,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": true
+        },
+        "auth_session_id": {
+          "name": "auth_session_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",

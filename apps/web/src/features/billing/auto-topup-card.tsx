@@ -26,6 +26,7 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, m } from 'motion/react';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
+import { autoTopupFailureNotice } from './auto-topup-failure-notice';
 
 /**
  * Parse + clamp the raw string field values to the same integers the server
@@ -205,6 +206,8 @@ export function AutoTopupCard({
   ]);
 
   const showMissingCardWarning = enabled && setupStatus && !setupStatus.has_payment_method;
+  // KRTX-1718: why the last charge failed, and whether that turned auto top-up off.
+  const failureNotice = autoTopupFailureNotice(fetchedConfig, locale);
 
   if (fetchSettings && isLoading) {
     return (
@@ -227,6 +230,10 @@ export function AutoTopupCard({
         >
           {t('settingsLoadFailed')}
         </InfoBanner>
+      )}
+
+      {failureNotice && (
+        <InfoBanner tone="warning">{t(failureNotice.key, failureNotice.values)}</InfoBanner>
       )}
 
       <div className="flex items-center justify-between gap-4">

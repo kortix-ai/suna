@@ -2040,7 +2040,9 @@
       "whenBelow": "残高が次の金額を下回ったとき",
       "thresholdLabel": "チャージしきい値（ドル）",
       "save": "保存",
-      "paymentNeeded": "自動チャージを実行するには支払い方法を追加してください。"
+      "paymentNeeded": "自動チャージを実行するには支払い方法を追加してください。",
+      "turnedOffAfterFailure": "{date} に自動チャージがオフになりました。直近の請求が失敗しました（{reason}）。支払い方法を更新してから、自動チャージを再度オンにしてください。",
+      "lastChargeFailed": "{date} の自動チャージの請求が失敗しました（{reason}）。Kortix は再試行します。請求が 3 回連続で失敗すると、自動チャージはオフになります。"
     },
     "title": "請求とサブスクリプション",
     "subscription": "サブスクリプション",
@@ -4578,7 +4580,13 @@
       "invitationKicker": "招待",
       "joinAccountDescription": "このアカウントに{roleLabel}として参加し、所有者がアクセスを許可したプロジェクトを表示できます。",
       "decline": "辞退",
-      "accept": "承諾"
+      "accept": "承諾",
+      "projectLabel": "プロジェクト",
+      "invitedYouToAProject": "があなたをプロジェクトに招待しました",
+      "youHaveBeenInvitedToAProject": "プロジェクトに招待されています。",
+      "joinProjectDescription": "{projectName} に{roleLabel}として参加します。",
+      "roleManager": "マネージャー",
+      "signOutAndContinue": "サインアウトして続ける"
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – オープンソースのAI Operating System",
@@ -7160,7 +7168,11 @@
       "line58JsxAttrTitleYouRanOutOfCredits": "クレジットを使い切りました",
       "line74JsxTextEnableAutoTopUp": "自動チャージを有効にする",
       "line82JsxTextBuyCredits": "クレジットを購入",
-      "askOwnerToAddCredits": "クレジットを追加できるのはアカウントオーナーだけです。オーナーにチャージを依頼してください。"
+      "askOwnerToAddCredits": "クレジットを追加できるのはアカウントオーナーだけです。オーナーにチャージを依頼してください。",
+      "askOwnerForCredits": "オーナーに依頼",
+      "ownersNotified": "オーナーに通知しました",
+      "alreadyAskedToday": "今日はすでに依頼済みです",
+      "askOwnerFailed": "オーナーに通知できませんでした。もう一度お試しください"
     },
     "componentsSessionSessionFilesPanel": {
       "line80JsxTextThisSessionIsItsOwnVersion": "このセッションは独立したバージョンです",

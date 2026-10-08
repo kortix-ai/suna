@@ -3766,6 +3766,19 @@ export const gatewayRequestLogs = kortixSchema.table(
     index('idx_gateway_logs_project_session_time')
       .on(table.projectId, table.sessionId, table.createdAt)
       .where(sql`${table.sessionId} is not null`),
+    // Covering index for the account+window cost aggregates (cost-summary,
+    // cost-by-project, session-costs llmAggregateSubquery): index-only scan by
+    // (account_id, created_at) that never touches the wide request/response
+    // jsonb heap rows. Built CONCURRENTLY with INCLUDE (session_id,
+    // project_id, provider, resolved_model, billing_mode, ok,
+    // final_cost_precise, upstream_cost_precise, input_tokens,
+    // output_tokens, cached_tokens, cache_write_tokens) — not expressible in
+    // drizzle-orm 0.45's index builder; the schema contract checks relation
+    // + uniqueness only, so the declaration here (without INCLUDE) is enough
+    // to keep it in sync, the same pattern as
+    // idx_gateway_logs_project_failed_time — by
+    // 20261008012757000_gateway_logs_account_time_covering.concurrent.ts.
+    index('idx_gateway_logs_account_time_covering').on(table.accountId, table.createdAt),
   ],
 );
 
@@ -6790,6 +6803,10 @@ export const pushDeviceTokens = kortixSchema.table('push_device_tokens', {
   onQuestion: boolean('on_question').default(true).notNull(),
   onPermission: boolean('on_permission').default(true).notNull(),
   playSound: boolean('play_sound').default(true).notNull(),
+  /** The sign-in (`auth.sessions.id`) that registered the token. A push goes
+   *  only while that sign-in exists. NULL: registered with a personal token,
+   *  or before this column existed. */
+  authSessionId: uuid('auth_session_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [

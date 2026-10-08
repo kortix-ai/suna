@@ -2040,7 +2040,9 @@
       "whenBelow": "lorsque le solde passe sous",
       "thresholdLabel": "Seuil de rechargement en dollars",
       "save": "Enregistrer",
-      "paymentNeeded": "Ajoutez un moyen de paiement pour exécuter le rechargement automatique."
+      "paymentNeeded": "Ajoutez un moyen de paiement pour exécuter le rechargement automatique.",
+      "turnedOffAfterFailure": "Le rechargement automatique a été désactivé le {date} : le dernier prélèvement a échoué ({reason}). Mettez à jour le moyen de paiement, puis réactivez le rechargement automatique.",
+      "lastChargeFailed": "Le dernier prélèvement du rechargement automatique a échoué le {date} ({reason}). Kortix réessaie ; après 3 prélèvements échoués d’affilée, le rechargement automatique se désactive."
     },
     "title": "Facturation & Abonnement",
     "subscription": "Abonnement",
@@ -4578,7 +4580,13 @@
       "invitationKicker": "Invitation",
       "joinAccountDescription": "Vous rejoindrez ce compte en tant que {roleLabel} et verrez les projets auxquels le propriétaire vous donne accès.",
       "decline": "Refuser",
-      "accept": "Accepter"
+      "accept": "Accepter",
+      "projectLabel": "Projet",
+      "invitedYouToAProject": "vous a invité à un projet",
+      "youHaveBeenInvitedToAProject": "Vous avez été invité à un projet.",
+      "joinProjectDescription": "Vous rejoindrez {projectName} en tant que {roleLabel}.",
+      "roleManager": "responsable",
+      "signOutAndContinue": "Se déconnecter et continuer"
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – L'AI Operating System open source",
@@ -7160,7 +7168,11 @@
       "line58JsxAttrTitleYouRanOutOfCredits": "Vous n’avez plus de crédits",
       "line74JsxTextEnableAutoTopUp": "Activer la recharge automatique",
       "line82JsxTextBuyCredits": "Acheter des crédits",
-      "askOwnerToAddCredits": "Seul un propriétaire du compte peut ajouter des crédits. Demandez-lui de recharger."
+      "askOwnerToAddCredits": "Seul un propriétaire du compte peut ajouter des crédits. Demandez-lui de recharger.",
+      "askOwnerForCredits": "Demander à un propriétaire",
+      "ownersNotified": "Propriétaires prévenus",
+      "alreadyAskedToday": "Déjà demandé aujourd’hui",
+      "askOwnerFailed": "Impossible de prévenir les propriétaires. Réessayez"
     },
     "componentsSessionSessionFilesPanel": {
       "line80JsxTextThisSessionIsItsOwnVersion": "Cette session est sa propre version",

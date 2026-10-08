@@ -1,0 +1,22 @@
+{
+  "source_hash": "9fa22bad17c0c207fb5e66c8411a3ea365ad72893a864a9e206ce57d6accc8d3",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-session-presence.test.ts",
+    "apps/api/src/projects/lib/session-presence.ts",
+    "apps/api/src/projects/routes/session-presence.test.ts",
+    "apps/api/src/projects/routes/session-presence.ts",
+    "apps/api/src/projects/sandbox-deadline-policy.ts",
+    "apps/api/src/projects/sandbox-deadline.ts",
+    "apps/web/content/docs/work/sessions.mdx",
+    "apps/web/src/lib/seo/content-timestamps.json"
+  ],
+  "diff_hash": "633f9ff465a5e2beb6a6a29bcecea943b72d23e445d84f38132a72eda39be2f3",
+  "head": "e258c4d43eb2774d4089f1900fda463fe10e1114",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-08T10:48:38.450Z"
+}

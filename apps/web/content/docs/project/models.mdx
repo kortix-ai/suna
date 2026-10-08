@@ -340,6 +340,15 @@ If a save fails, the panel stays open and shows the error. Correct the selection
 or retry. Providers already saved remain saved; unfinished changes stay in the
 panel.
 
+## Budgets
+
+A gateway budget caps what a project, or one member in it, spends on models
+per day, week, or month. **Block** refuses new requests at the limit; **Warn
+only** lets them run. Set budgets on the project's Models page.
+
+At 80% and at 100% of a budget's limit, Kortix emails the account owners and
+admins and the project managers, once per threshold per period.
+
 ## Use the gateway from Claude Code
 
 The gateway serves the Anthropic Messages API at `POST /v1/messages`. Claude

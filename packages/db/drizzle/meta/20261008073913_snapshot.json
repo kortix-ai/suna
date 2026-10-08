@@ -1,6 +1,6 @@
 {
-  "id": "707e1c32-1dc3-4199-b7ed-5220413acf22",
-  "prevId": "dbc4e127-81ec-44e3-8345-c1f049058b8e",
+  "id": "4c5f6f18-000b-41a8-a97b-a184af543df6",
+  "prevId": "345afbfd-d0ff-45e2-9063-70b72ac6c6c0",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -10268,6 +10268,27 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "idx_gateway_logs_account_time_covering": {
+          "name": "idx_gateway_logs_account_time_covering",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -12284,187 +12305,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "kortix.project_backends": {
-      "name": "project_backends",
-      "schema": "kortix",
-      "columns": {
-        "backend_id": {
-          "name": "backend_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "varchar(63)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'provisioning'"
-        },
-        "provider": {
-          "name": "provider",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "external_id": {
-          "name": "external_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "url": {
-          "name": "url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "site_url": {
-          "name": "site_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "admin_key_enc": {
-          "name": "admin_key_enc",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "auth_key_enc": {
-          "name": "auth_key_enc",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "template": {
-          "name": "template",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cpu": {
-          "name": "cpu",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "memory_gb": {
-          "name": "memory_gb",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "disk_gb": {
-          "name": "disk_gb",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "deleted_at": {
-          "name": "deleted_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "metadata": {
-          "name": "metadata",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        }
-      },
-      "indexes": {
-        "project_backends_live_name_uniq": {
-          "name": "project_backends_live_name_uniq",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"kortix\".\"project_backends\".\"deleted_at\" IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "project_backends_project_id_projects_project_id_fk": {
-          "name": "project_backends_project_id_projects_project_id_fk",
-          "tableFrom": "project_backends",
-          "tableTo": "projects",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "project_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "project_backends_status_check": {
-          "name": "project_backends_status_check",
-          "value": "\"kortix\".\"project_backends\".\"status\" IN ('provisioning', 'running', 'error', 'deleted')"
-        }
-      },
       "isRLSEnabled": false
     },
     "kortix.project_git_connections": {
@@ -17100,6 +16940,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": true
+        },
+        "auth_session_id": {
+          "name": "auth_session_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
