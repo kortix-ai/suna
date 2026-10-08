@@ -39,7 +39,9 @@ beforeEach(() => {
     requests.push({ url: String(input), method: init?.method ?? 'GET', body });
     return new Response(
       JSON.stringify(
-        String(input).endsWith('/connect/finalize')
+        String(input).endsWith('/connect-requests')
+          ? { url: 'https://kortix.test/connect/req_1', app: 'github', expires_at: '2026-10-08T12:00:00Z' }
+          : String(input).endsWith('/connect/finalize')
           ? {
               provider: 'composio',
               connected: true,
@@ -93,6 +95,34 @@ describe('kortix connectors connect', () => {
       connection_id: '11111111-1111-4111-8111-111111111111',
       request_id: 'auth_1',
     });
+  });
+
+  test('--label mints the setup link where the human names the new account', async () => {
+    const code = await runConnectors(['connect', 'github', '--label', ' Work GitHub ', '--owner', 'project', '--json']);
+
+    expect(code).toBe(0);
+    expect(requests).toEqual([
+      {
+        url: 'https://api.test/v1/projects/project-1/connect-requests',
+        method: 'POST',
+        body: { slug: 'github', label: 'Work GitHub', owner: 'project' },
+      },
+    ]);
+    expect(JSON.parse(stdout)).toEqual({
+      slug: 'github',
+      owner: 'project',
+      label: 'Work GitHub',
+      app: 'github',
+      url: 'https://kortix.test/connect/req_1',
+      expires_at: '2026-10-08T12:00:00Z',
+    });
+  });
+
+  test('an empty --label is a usage error and sends nothing', async () => {
+    const code = await runConnectors(['connect', 'github', '--label', '  ']);
+
+    expect(code).not.toBe(0);
+    expect(requests).toEqual([]);
   });
 
   test('--expires remains accepted but cannot change the provider authorization request', async () => {
