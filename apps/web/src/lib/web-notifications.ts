@@ -6,8 +6,12 @@ import { createElement } from 'react';
  * Provides a thin wrapper around the browser Notification API that respects
  * the user's preferences stored in the web-notification-store.
  *
- * All notification dispatching flows through `sendWebNotification()` which
- * checks:
+ * All notification dispatching flows through `sendWebNotification()`. The
+ * in-app channels — toast, sound, favicon badge — fire whenever the user is
+ * NOT watching the session (another browser tab, another app, or another
+ * in-app session), with no permission or preference prerequisite: a default
+ * profile must still see that a turn finished. The native OS notification
+ * additionally checks:
  *  1. Browser support for the Notification API
  *  2. Permission is granted
  *  3. Master enable toggle is on
@@ -20,9 +24,11 @@ import { dismissToast, errorToast, successToast, warningToast } from '@/componen
 import { logger } from '@/lib/logger';
 import { softNavigate } from '@/lib/navigation/router-bridge';
 import { projectSessionHref } from '@/lib/navigation/session-href';
+import { broadcastTurnComplete } from '@/lib/turn-broadcast';
 import { playSound } from '@/lib/sounds';
 import type { SoundEvent } from '@/stores/sound-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
+import { useTurnAttentionStore } from '@/stores/turn-attention-store';
 import { useWebNotificationStore } from '@/stores/web-notification-store';
 import { normalizeAppPathname } from '@kortix/sdk';
 
@@ -144,11 +150,24 @@ export function isTabHidden(): boolean {
  * Check if the user is currently viewing a specific session.
  * Checks the tab store (dashboard session tabs) and the current URL
  * (covers the /onboarding page which doesn't use the tab system).
+ *
+ * Shared with TurnAttentionBadge, which clears the favicon badge for
+ * whatever session the user is looking at.
  */
-function isViewingSession(sessionId: string): boolean {
-  // Dashboard: the active tab ID is the session ID for session tabs
-  const activeTabId = useTabStore.getState().activeTabId;
-  if (activeTabId === sessionId) return true;
+export function isViewingSession(sessionId: string): boolean {
+  // Dashboard: the active tab ID is the session ID for session tabs. The
+  // persisted tab ID can outlive navigation (the store never clears it when
+  // the user clicks elsewhere), so only trust it while the URL still agrees
+  // with that tab's href — otherwise a tab parked on a project page would
+  // silently suppress every toast for a session it is not showing.
+  const { activeTabId, tabs } = useTabStore.getState();
+  if (activeTabId === sessionId) {
+    const tab = tabs[activeTabId];
+    if (typeof window === 'undefined' || !tab?.href) return true;
+    if (normalizeAppPathname(window.location.pathname) === normalizeAppPathname(tab.href)) {
+      return true;
+    }
+  }
   // Onboarding page: the user is always viewing the onboarding session.
   // Since the session ID isn't in the URL, we treat any notification as
   // "current session" when the user is on /onboarding.
@@ -177,49 +196,67 @@ export function sendWebNotification(
   /** Skip all preference/permission gates (used for test notifications) */
   force = false,
 ): Notification | null {
-  // 1. Browser support check
-  if (!isNotificationSupported()) return null;
-
   const { preferences } = useWebNotificationStore.getState();
 
-  // Sound plays independently of browser notification preferences — the sound
-  // store has its own pack/event/volume settings to control it.
-  // Skip ALL non-blocking sounds when the user is actively on the page —
-  // they can see everything happening; sounds are just noise.
-  // Only play sounds when the tab is hidden (user tabbed away / switched apps).
-  const isBlockingType = payload.type === 'question' || payload.type === 'permission';
-  const skipSound = !isBlockingType && !isTabHidden();
+  // The user watching the session live already sees the turn finish in the
+  // chat — repeating it as a toast, a sound, a badge or an OS notification
+  // would only be noise. `force` (the settings test button) never counts as
+  // watching: it exists to prove the channels work.
+  const watching =
+    !force && !isTabHidden() && (!payload.sessionId || isViewingSession(payload.sessionId));
 
+  // The in-app channels come first and answer to nobody: the toast is the one
+  // channel that works on a default profile — permission untouched, browser
+  // notifications disabled — which is exactly where the completion signal
+  // used to die (the old permission gates returned before the toast ran).
+  if (!watching) {
+    showInAppToast(payload);
+    if (payload.type === 'completion' && payload.sessionId) {
+      // The toast fades after 8 s; the favicon badge is what a returning
+      // user still sees, so a finished turn registers for it here.
+      useTurnAttentionStore.getState().markTurnComplete(payload.sessionId);
+    }
+  }
+
+  // Sound plays independently of browser notification preferences — the sound
+  // store has its own pack/event/volume settings to control it. A question or
+  // permission request is worth interrupting even while the user watches the
+  // session (the agent is blocked); everything else only plays when the
+  // session is not being watched.
+  const isBlockingType = payload.type === 'question' || payload.type === 'permission';
+  const skipSound = !isBlockingType && watching;
   if (!skipSound && (force || preferences.playSound !== false)) {
     playSound(TYPE_TO_SOUND[payload.type]);
   }
 
+  // The OS notification keeps every gate it had: a browser without the
+  // Notification API, without granted permission or with notifications
+  // disabled still got the toast and the sound above.
+  if (!isNotificationSupported()) return null;
+
   if (!force) {
-    // 2. Permission check
+    // Permission check
     if (Notification.permission !== 'granted') return null;
 
-    // 3. Preferences check
+    // Preferences check
     if (!preferences.enabled) return null;
 
-    // 4. Category check
+    // Category check
     const prefKey = TYPE_TO_PREF[payload.type];
     if (!preferences[prefKey]) return null;
 
-    // 5. Active session check — skip notifications for the session the user
-    //    is currently looking at (they can already see the question/permission
-    //    inline in the chat).
+    // Active session check — skip notifications for the session the user
+    // is currently looking at (they can already see the question/permission
+    // inline in the chat).
     if (payload.sessionId && !isTabHidden() && isViewingSession(payload.sessionId)) {
       return null;
     }
 
-    // 6. Visibility check — questions and permissions always show since the
-    //    agent is blocked waiting for user input
+    // Visibility check — questions and permissions always show since the
+    // agent is blocked waiting for user input
     const isBlocking = payload.type === 'question' || payload.type === 'permission';
     if (!isBlocking && preferences.onlyWhenHidden && !isTabHidden()) return null;
   }
-
-  // 6. Fire in-app toast (always works, regardless of OS notification settings)
-  showInAppToast(payload);
 
   // 7. Fire native OS notification (may be blocked by OS settings)
   let notification: Notification | null = null;
@@ -310,12 +347,36 @@ function showInAppToast(payload: WebNotificationPayload) {
 // ============================================================================
 
 /**
- * Notify that a session task has completed.
+ * Notify that a session task has completed — local tabs only.
+ *
+ * `notifyTaskComplete` is the entry for the live session-event stream, which
+ * only session pages mount, so it also publishes the completion to every other
+ * Kortix tab (project page, dashboard, a different session) through the
+ * cross-tab bridge — they run this same path on receipt. The publishing tab
+ * never receives its own broadcast, so nothing doubles locally.
  */
 export function notifyTaskComplete(
   sessionId: string,
   sessionTitle: string | undefined,
   tI18nComplete: UiTranslator,
+) {
+  // Captured now, while the raising event proves which project is open — a
+  // receiving tab may be on a page whose path holds no project id.
+  const projectId = currentProjectId();
+  broadcastTurnComplete({ sessionId, sessionTitle, projectId });
+  notifyTaskCompleteFor(sessionId, sessionTitle, tI18nComplete, projectId);
+}
+
+/**
+ * The local completion notification — no cross-tab propagation. This is the
+ * shape the broadcast receiver runs so a relayed completion cannot re-broadcast
+ * and loop.
+ */
+export function notifyTaskCompleteFor(
+  sessionId: string,
+  sessionTitle: string | undefined,
+  tI18nComplete: UiTranslator,
+  projectId?: string | null,
 ) {
   const label = sessionTitle
     ? `"${sessionTitle.slice(0, 60)}"`
@@ -328,8 +389,10 @@ export function notifyTaskComplete(
     tag: `completion:${sessionId}`,
     sessionId,
     actionLabel: tI18nComplete.raw('texted077f3d8125'),
-    // Captured now, while the raising event proves which project is open.
-    projectId: currentProjectId(),
+    // Verbatim: a relayed null means the publishing tab was not on a project
+    // page — reinterpreting it as THIS tab's project would build a wrong
+    // deep link (the same rule the click-time path documents above).
+    projectId,
   });
 }
 
