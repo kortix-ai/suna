@@ -919,7 +919,7 @@ describe('kortix triggers — events', () => {
 
   test('help documents the event type and its flags', async () => {
     const result = await runCli(['triggers', '--help']);
-    for (const fragment of ['monitors, and app events', '--connector <slug>', '--account <label>', '--default-account', '--event <TYPE>', '--config <key=value>', '--config-json <json>', 'events --connector <slug>', 'event.data.<field>']) {
+    for (const fragment of ['monitors, and app events', '--connector <slug>', '--account <label>', '--source <adapter>', '--default-account', '--event <TYPE>', '--config <key=value>', '--config-json <json>', 'events --connector <slug>', 'event.data.<field>']) {
       expect(result.stdout).toContain(fragment);
     }
   });
@@ -947,6 +947,20 @@ describe('kortix triggers — events', () => {
     expect(manifestText()).toContain('account: acme-bot');
     const stray = await runCli(['triggers', 'add', 'c', '--cron', '0 0 9 * * *', '--account', 'x', '--prompt', 'x']);
     expect(stray.stderr).toContain('--account is only valid on an event trigger');
+  });
+
+  test('add --source writes source under connector; omitted writes none; non-event rejects it', async () => {
+    const result = await add('--connector', 'github', '--source', 'composio', '--event', 'GITHUB_PULL_REQUEST_EVENT');
+    expect(result.code).toBe(0);
+    expect(manifestText()).toContain('source: composio');
+    const stray = await runCli(['triggers', 'add', 'c', '--cron', '0 0 9 * * *', '--source', 'composio', '--prompt', 'x']);
+    expect(stray.stderr).toContain('--source is only valid on an event trigger');
+  });
+
+  test('add without --source writes no source', async () => {
+    const result = await add('--connector', 'github', '--event', 'GITHUB_PULL_REQUEST_EVENT');
+    expect(result.code).toBe(0);
+    expect(manifestText()).not.toContain('source:');
   });
 
   test('add without --config omits the config key', async () => {
@@ -1026,6 +1040,7 @@ describe('kortix triggers — events', () => {
     const cfg = writeConfig(startServer([]));
     const r = await runCli(['triggers', 'events', '--apps', '--project', PROJECT], cfg);
     expect(r.code).toBe(0);
+    expect(r.stdout).toContain('source: composio');
     expect(r.stdout).toMatch(/github\s+12 events\s+connected/);
     expect(r.stdout).toMatch(/acme-bot\s+as acme-bot-user\s+default/);
     expect(r.stdout).toMatch(/acme-ci\s+/);
@@ -1082,6 +1097,19 @@ describe('kortix triggers — events', () => {
     const info = await runCli(['triggers', 'info', 'new-pr', '--project', PROJECT], cfg);
     expect(info.stdout).toMatch(/account\s+acme-bot/);
     expect(info.stdout).toMatch(/connected as\s+acme-bot-user/);
+  });
+
+  test('info shows the source; ls adds it only when it is not the connector provider', async () => {
+    const same = { ...EVENT_TRIGGER, event: { ...EVENT_TRIGGER.event, source: 'composio' } };
+    const cfg = writeConfig(startServer([same]));
+    const info = await runCli(['triggers', 'info', 'new-pr', '--project', PROJECT], cfg);
+    expect(info.stdout).toMatch(/source\s+composio/);
+    const ls = await runCli(['triggers', 'ls', '--project', PROJECT], cfg);
+    expect(ls.stdout).toContain('github/default GITHUB_PULL_REQUEST_EVENT');
+    expect(ls.stdout).not.toContain('composio:github');
+    const differs = { ...EVENT_TRIGGER, event: { ...EVENT_TRIGGER.event, source: 'composio', provider: 'pipedream' } };
+    const ls2 = await runCli(['triggers', 'ls', '--project', PROJECT], writeConfig(startServer([differs])));
+    expect(ls2.stdout).toContain('composio:github/');
   });
 
   test('needs_connection with an account names the label', async () => {

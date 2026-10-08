@@ -242,8 +242,16 @@ async function printApps(
   }
   const out = process.stdout;
   out.write('\n');
-  const withConnector = resp.apps.filter((a) => (a.connectors?.length ?? 0) > 0);
+  const withConnector = resp.apps
+    .filter((a) => (a.connectors?.length ?? 0) > 0)
+    .sort((a, b) => (a.source ?? a.provider).localeCompare(b.source ?? b.provider));
+  let lastSource = '';
   for (const a of withConnector) {
+    const source = a.source ?? a.provider;
+    if (source !== lastSource) {
+      out.write(`${lastSource ? '\n' : ''}  ${C.dim}source: ${source}${C.reset}\n`);
+      lastSource = source;
+    }
     const state = a.connected
       ? `${C.green}connected${C.reset}`
       : `${C.yellow}needs account${C.reset}`;
@@ -296,7 +304,7 @@ function printEvents(resp: TriggerEventTypesResponse, json: boolean): number {
     );
   }
   process.stdout.write(
-    `\n  ${C.dim}${resp.event_types.length} event type${resp.event_types.length === 1 ? '' : 's'} on ${resp.app} (${resp.provider}). Details: kortix triggers events --connector <slug> --event <TYPE>${C.reset}\n\n`,
+    `\n  ${C.dim}${resp.event_types.length} event type${resp.event_types.length === 1 ? '' : 's'} on ${resp.app} (${resp.source ?? resp.provider}). Details: kortix triggers events --connector <slug> --event <TYPE>${C.reset}\n\n`,
   );
   return 0;
 }

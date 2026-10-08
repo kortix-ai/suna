@@ -114,7 +114,11 @@ event.connector, and event.occurred_at.
                            several shared accounts. Private accounts never
                            feed a trigger. On \`set\`, --default-account clears
                            it. Changing --connector also clears it.
-  --event <TYPE>           Provider event type, e.g. GITHUB_PULL_REQUEST_CREATED
+  --source <adapter>       Optional. The event source adapter, e.g. composio.
+                           Omit it to use the connector's provider. The
+                           adapter owns the event ids. On \`set\`, changing
+                           --connector clears it.
+  --event <TYPE>           The adapter's event type, e.g. GITHUB_PULL_REQUEST_CREATED
                            (required; list with \`triggers events\`).
   --config <key=value>     Event config field. Repeat for more. Values are
                            converted to the field's type (number, boolean,
@@ -208,6 +212,7 @@ export async function runTriggers(argv: string[]): Promise<number> {
     apps = takeFlagBool(rest, ['--apps']);
     tf.connector = takeFlagValue(rest, ['--connector']);
     tf.account = takeFlagValue(rest, ['--account']);
+    tf.source = takeFlagValue(rest, ['--source']);
     if (takeFlagBool(rest, ['--default-account'])) tf.defaultAccount = '1';
     tf.event = takeFlagValue(rest, ['--event']);
     tf.type = takeFlagValue(rest, ['--type']);
@@ -641,6 +646,7 @@ async function triggersInfo(
   } else if (t.type === 'event') {
     const e = t.event;
     rows.push(['connector', e ? `${e.connector}${e.app ? ` (${e.app})` : ''}` : '—']);
+    rows.push(['source', e?.source ?? e?.provider ?? '—']);
     rows.push(['account', e ? (e.account ?? 'default') : '—']);
     rows.push(['connected as', e?.connected_as ?? '—']);
     rows.push(['event', e?.type ?? '—']);
@@ -695,7 +701,10 @@ function triggerDetail(t: ProjectTrigger): string {
       : mode;
   }
   if (t.type === 'event') {
-    return t.event ? `${t.event.connector}/${t.event.account ?? 'default'} ${t.event.type}` : '?';
+    if (!t.event) return '?';
+    // The source shows only when it is not the connector's own provider (a mismatch).
+    const via = t.event.source && t.event.provider && t.event.source !== t.event.provider ? `${t.event.source}:` : '';
+    return `${via}${t.event.connector}/${t.event.account ?? 'default'} ${t.event.type}`;
   }
   return `secret_env=${t.secret_env ?? '?'}`;
 }

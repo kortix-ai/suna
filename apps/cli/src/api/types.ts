@@ -197,6 +197,9 @@ export interface ProjectTriggerEvent {
   connected_as?: string | null;
   type: string;
   config: Record<string, unknown>;
+  /** Event source adapter: the declared `source`, else the connector's provider. */
+  source?: string | null;
+  /** The connector's own provider; differs from `source` only when a declared source mismatches. */
   provider: string | null;
   app: string | null;
   status: 'active' | 'needs_connection' | 'error' | 'pending';
@@ -217,6 +220,9 @@ export interface TriggerEventType {
 }
 
 export interface TriggerEventTypesResponse {
+  /** Event source adapter id, such as `composio`. */
+  source?: string;
+  /** @deprecated Same value as `source`. */
   provider: string;
   app: string;
   event_types: TriggerEventType[];
@@ -239,6 +245,9 @@ export interface TriggerEventConnector {
 
 /** One app from `GET /projects/:id/triggers/event-apps`. */
 export interface TriggerEventApp {
+  /** Event source adapter id, such as `composio`. */
+  source?: string;
+  /** @deprecated Same value as `source`. */
   provider: string;
   app: string;
   name: string;
