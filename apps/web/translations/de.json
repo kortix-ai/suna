@@ -4574,7 +4574,13 @@
       "invitationKicker": "Einladung",
       "joinAccountDescription": "Du trittst diesem Konto als {roleLabel} bei und siehst Projekte, für die dir der Besitzer Zugriff gibt.",
       "decline": "Ablehnen",
-      "accept": "Annehmen"
+      "accept": "Annehmen",
+      "projectLabel": "Projekt",
+      "invitedYouToAProject": "hat dich zu einem Projekt eingeladen",
+      "youHaveBeenInvitedToAProject": "Du wurdest zu einem Projekt eingeladen.",
+      "joinProjectDescription": "Du trittst {projectName} als {roleLabel} bei.",
+      "roleManager": "Manager",
+      "signOutAndContinue": "Abmelden und fortfahren"
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – Das Open-Source-AI Operating System",

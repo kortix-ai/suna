@@ -36,6 +36,18 @@ function expireSupabaseAuthCookie(): void {
 }
 
 /**
+ * Where a sign-out lands: `/auth`, or `/auth?returnUrl=<path>` so the next
+ * sign-in comes back to `returnUrl`. Same-origin paths only: anything else is
+ * dropped, so a caller can never turn sign-out into an open redirect.
+ */
+export function signOutDestination(returnUrl?: string): string {
+  if (!returnUrl || !returnUrl.startsWith('/') || returnUrl.startsWith('//') || returnUrl.includes('\\')) {
+    return SIGN_OUT_DESTINATION;
+  }
+  return `${SIGN_OUT_DESTINATION}?returnUrl=${encodeURIComponent(returnUrl)}`;
+}
+
+/**
  * The ONE sign-out in the product. Every logout control calls this.
  *
  * The navigation is a DOCUMENT LOAD, deliberately, and not `router.push` /
@@ -61,7 +73,8 @@ function expireSupabaseAuthCookie(): void {
  * The sequence itself, and what each failure is allowed to prevent, lives in
  * `sign-out-sequence.ts`.
  */
-export async function performSignOut(): Promise<void> {
+export async function performSignOut(options?: { returnUrl?: string }): Promise<void> {
+  const destination = signOutDestination(options?.returnUrl);
   let left = false;
   try {
     const supabase = createClient();
@@ -73,13 +86,13 @@ export async function performSignOut(): Promise<void> {
       // The toast cannot live in THIS document (`leave` replaces it), so the
       // notice is stashed for the `/auth` document that follows.
       notifySignOutIncomplete: stashSignOutNotice,
-      leave: (destination) => {
+      leave: (target) => {
         left = true;
         // `@next/next/no-location-assign-relative-destination` inspects string
         // LITERALS, so it does not fire on this identifier — that is a property
         // of the rule, not an exemption taken here. The document load is the
         // fix, and it is what the rule would be waved through for.
-        window.location.assign(destination);
+        window.location.assign(target === SIGN_OUT_DESTINATION ? destination : target);
       },
     });
   } finally {
@@ -95,7 +108,7 @@ export async function performSignOut(): Promise<void> {
     // `dropAuthCookie` step exists to prevent.
     if (!left) {
       expireSupabaseAuthCookie();
-      window.location.assign(SIGN_OUT_DESTINATION);
+      window.location.assign(destination);
     }
   }
 }
