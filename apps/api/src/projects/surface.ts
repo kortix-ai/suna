@@ -56,6 +56,7 @@ export { currentInstanceId } from './instance-scope';
 // Kortix-managed repo.
 export { sessionAttachmentStore } from './lib/session-attachments';
 export { deleteManagedProjectRepo } from './lib/project-deletion';
+export { isAlreadyNotRunning } from './reaping/policy';
 
 // Nested `projects.metadata` writes (consumed by ../feature-flags/write).
 export { metadataClearSubtreeKey, metadataMergeSubtree } from './lib/metadata-merge';
