@@ -22,6 +22,7 @@ const {
   platinumJson,
   platinumOriginForSandbox,
   platinumOriginForRegion,
+  platinumRegionControlPlane,
   PlatinumSandboxNotRunningError,
   PLATINUM_ORIGIN_CACHE_MAX,
   __resetPlatinumSandboxOriginsForTests,
@@ -354,4 +355,15 @@ test('a regional create reset mid-request is never sent twice', async () => {
     platinumJson('/v1/sandboxes', { method: 'POST', body: JSON.stringify({ template: 't', region: 'us-east' }) }),
   ).rejects.toThrow();
   expect(calls.slice(1).map((c) => c.url)).toEqual([`${US}/v1/sandboxes`]);
+});
+
+test("a region's control plane is its regional name under the configured host, and a listing goes only there", async () => {
+  expect(platinumRegionControlPlane('us-east')).toBe(US);
+  expect(platinumRegionControlPlane('../evil')).toBeNull();
+  await platinumJson('/v1/sandboxes?paginated=true&regions=local&limit=200&offset=0', {}, US);
+  expect(calls.map((c) => c.url)).toEqual([`${US}/v1/sandboxes?paginated=true&regions=local&limit=200&offset=0`]);
+  expect(calls[0]!.auth).toBe('Bearer pt_test_key');
+  // A host with no subdomain form (a local control plane) gets no regional origin.
+  mockPlatinumApiUrl = 'http://127.0.0.1:9000';
+  expect(platinumRegionControlPlane('us-east')).toBeNull();
 });

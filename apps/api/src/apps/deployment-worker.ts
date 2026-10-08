@@ -19,7 +19,7 @@ import { auditDeploymentOutcome, type DeploymentAuditRef } from './deployment-au
 import { listResolvedProjectSecrets } from '../projects/secrets';
 import { downloadAppArtifact, extractAppArchive } from './artifacts';
 import { resolveAppRuntimeEnvironment } from './environment';
-import { APP_VIEWER_SECRET_ENV, appViewerSecret } from './viewer';
+import { appRuntimeIdentityEnv } from './viewer';
 import { createBuildLog } from './build-log';
 import { AppHostingProvider } from './hosting';
 import { normalizeAppBuild, type AppSourceSpec } from './spec';
@@ -919,13 +919,13 @@ async function provisionDeploymentRuntime(input: {
     snapshotName,
     machine: requestedMachine,
     alwaysOn: context.app.alwaysOn,
-    // The App verifies `x-kortix-app-viewer` with this. Derived per App, so
-    // it is not the platform secret and rotating the platform secret rotates
-    // every App's. `KORTIX_*` is reserved from user-supplied env, so this
-    // cannot be shadowed by a manifest value.
+    // The App verifies `x-kortix-app-viewer` with the viewer secret. Derived
+    // per App, so it is not the platform secret and rotating the platform
+    // secret rotates every App's. `KORTIX_*` is reserved from user-supplied
+    // env, so neither variable can be shadowed by a manifest value.
     envVars: {
       ...runtimeEnvironment.env,
-      [APP_VIEWER_SECRET_ENV]: appViewerSecret(context.app.appId),
+      ...appRuntimeIdentityEnv(context.app),
     },
   });
   state.runtimeExternalId = handle.externalId;

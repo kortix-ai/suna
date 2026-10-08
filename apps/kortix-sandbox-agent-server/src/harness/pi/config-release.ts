@@ -137,7 +137,8 @@ export interface PiConfigReleases {
    */
   piConfigDir(): string | null | undefined
   /**
-   * The checkout the running config decides, where project tools load from:
+   * The checkout the running config decides, where project tools and the root
+   * `AGENTS.md` load from:
    * the release root, or null when it has no tree (the image default).
    * Undefined while releases are not in play: pi then reads the working tree.
    */
@@ -158,11 +159,11 @@ export interface PiConfigReleases {
 
 /**
  * The repo paths a release is built from, for the session notice. pi reads the
- * agents (through the compiled governance) and the skills; the legacy layout
- * keeps both under `.kortix/opencode`.
+ * agents (through the compiled governance), the skills and the root
+ * `AGENTS.md`; the legacy layout keeps agents and skills under `.kortix/opencode`.
  */
 export function piReleaseSourcePaths(configDir: string | null): string[] {
-  return configDir === '.kortix/opencode' ? [configDir] : ['agents', 'skills']
+  return configDir === '.kortix/opencode' ? [configDir] : ['agents', 'skills', 'AGENTS.md']
 }
 
 /** pi's own config dir inside a release root, resolved exactly as in the working tree. */

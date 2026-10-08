@@ -743,6 +743,37 @@ apps:
     expect(v2.issues.filter((issue) => issue.severity === 'error')).toEqual([]);
   });
 
+  test('a v2 App lists the backends it may mint viewer tokens for, by backend name', () => {
+    const ok = validateManifest(
+      `kortix_version: 2
+default_agent: w
+agents:
+  w: {}
+apps:
+  crm:
+    path: apps/crm
+    backends: [main, billing]`,
+      'yaml',
+    );
+    expect(ok.issues.filter((issue) => issue.severity === 'error')).toEqual([]);
+    const bad = validateManifest(
+      `kortix_version: 2
+default_agent: w
+agents:
+  w: {}
+apps:
+  crm:
+    backends: [Main, ""]`,
+      'yaml',
+    );
+    expect(bad.issues.filter((issue) => issue.severity === 'error').map((issue) => issue.path)).toEqual([
+      'apps.crm.backends[0]',
+      'apps.crm.backends[1]',
+    ]);
+    const notList = validateManifest('kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n  crm:\n    backends: main', 'yaml');
+    expect(notList.issues.filter((issue) => issue.severity === 'error').map((issue) => issue.path)).toEqual(['apps.crm.backends']);
+  });
+
   test('rejects invalid v2 App ports, commands, resources, and secret mappings', () => {
     const result = validateManifest(
       `kortix_version: 2

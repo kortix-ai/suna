@@ -2281,9 +2281,6 @@
     }
   },
   "src/projects/routes/project-settings.ts": {
-    "no-console": {
-      "count": 1
-    },
     "no-restricted-imports": {
       "count": 2
     },
