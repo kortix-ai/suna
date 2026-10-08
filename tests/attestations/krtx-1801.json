@@ -1,18 +1,18 @@
 {
-  "source_hash": "1ba5803da4b0be3e7a711ae3c5d3dc857f1a5a341d05425159eb3a6f3bdffd4a",
+  "source_hash": "0d82f93eb41d82701a81de237e64793023ccd529d1654d6ec55774b87f7deb99",
   "diff_files": [
     "apps/web/src/features/workspace/customize/sections/channels-view.email.test.tsx",
     "apps/web/src/features/workspace/customize/sections/channels-view.test.ts",
     "apps/web/src/features/workspace/customize/sections/view/channels-view.tsx",
     "apps/web/src/lib/seo/content-timestamps.json"
   ],
-  "diff_hash": "6efb043c2dec658a28c605a62704d5da1e8d18d6bbc305c5b78503fc2032fd6e",
-  "head": "7f5954d7b0444f1bf90e16e63122bb902c6ab9e6",
+  "diff_hash": "f3ab925a68bf7754c2a913b250f0fccc88d1b772ad0487f9382746e76d4dc45e",
+  "head": "6412e4107df633ca33a854d42259bf11c006bf28",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-08T14:26:34.229Z"
+  "at": "2026-10-08T15:33:41.210Z"
 }
