@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 import { Window } from 'happy-dom';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { FilePreviewModal } from './file-preview-modal';
@@ -21,9 +21,14 @@ const source: FileSource = {
  * FilePreviewModal portals to <body> in its full-screen mode, which the server
  * renderer cannot do, so the case renders the embedded (session side panel)
  * mode: the same component, the same shared toolbar, no portal. The happy-dom
- * document satisfies the component's DOM guard.
+ * document satisfies the component's DOM guard. Bun shares globals across the
+ * files of one run, so the previous value is restored when this file ends.
  */
+const realDocument = (globalThis as { document?: unknown }).document;
 (globalThis as { document?: unknown }).document = new Window().document;
+afterAll(() => {
+  (globalThis as { document?: unknown }).document = realDocument;
+});
 
 describe('file preview modal source toggle', () => {
   test('markdown opens previewed, and the toggle is pressed while the preview shows', () => {
