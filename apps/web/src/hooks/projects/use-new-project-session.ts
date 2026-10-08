@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef } from 'react';
 
 import { errorToast, loadingToast } from '@/components/ui/toast';
 import { createScopedSession } from '@/features/session/scope/create-scoped-session';
+import { markSessionOpening } from '@/features/session/session-open-transition';
 import type { SessionScopeCommit } from '@/features/session/scope/session-scope-model';
 import {
   confirmCommitted,
@@ -99,6 +100,22 @@ import { prefetchSessionStart, qk, upsertCachedProjectSession } from '@kortix/sd
 export type NewProjectSessionOpts = {
   onNavigate?: (sessionId: string) => void;
   onError?: () => void;
+  /**
+   * The send came from a composer that draws its own pending state (the
+   * project-home composer's send spinner) and plants the first prompt for the
+   * session to draw from its first frame. Two things follow:
+   *
+   *  - no "Starting session… / Session started" toast. The spinner is the one
+   *    pending signal; the toast repeated it, then sat over the new session's
+   *    send button for ~3 s (2.9-3.1 s on a production build) after the page
+   *    had already shown the session started.
+   *  - the page dissolves into the session (`markSessionOpening`) instead of
+   *    cutting to it, through the project's pending screen, in single frames.
+   *
+   * Entry points with no pending UI of their own (an agent's or a connector's
+   * "start session" button) keep the toast and the plain navigation.
+   */
+  fromComposer?: boolean;
   scope?: SessionScopeCommit;
   create?: {
     sandbox_slug?: string;
@@ -300,16 +317,18 @@ export function useNewProjectSession(projectId: string | undefined) {
       });
 
       const createSession = () =>
-        // `threads.*`, not `hardcodedUi.i18nComplete.*`. The two
-        // i18nComplete slots these used to read hold the literal strings
-        // "startingSession" and "sessionStarted" in en, fr, de, pt, sr and
-        // zh — the key id was written into the value slot — so the toast
-        // rendered its own key name. `threads.startingSession` /
-        // `threads.sessionStarted` are the canonical entries and are
-        // correctly translated in all nine catalogs.
-        loadingToast(t('startingSession'), takeOrCreateSession(), {
-          success: t('sessionStarted'),
-        });
+        opts?.fromComposer
+          ? takeOrCreateSession()
+          : // `threads.*`, not `hardcodedUi.i18nComplete.*`. The two
+            // i18nComplete slots these used to read hold the literal strings
+            // "startingSession" and "sessionStarted" in en, fr, de, pt, sr and
+            // zh — the key id was written into the value slot — so the toast
+            // rendered its own key name. `threads.startingSession` /
+            // `threads.sessionStarted` are the canonical entries and are
+            // correctly translated in all nine catalogs.
+            loadingToast(t('startingSession'), takeOrCreateSession(), {
+              success: t('sessionStarted'),
+            });
 
       createScopedSession({
         create: createSession,
@@ -364,6 +383,7 @@ export function useNewProjectSession(projectId: string | undefined) {
           // nav-contract: prefetch-only — the session id is minted or returned
           // by the create POST, so no anchor can name it. `takeOrCreateSession`
           // prefetches the route the moment the id exists.
+          if (opts?.fromComposer) markSessionOpening(sessionId);
           router.push(`/projects/${projectId}/sessions/${sessionId}`);
         },
       }).catch((err) => {

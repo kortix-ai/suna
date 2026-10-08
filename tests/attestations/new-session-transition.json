@@ -1,0 +1,29 @@
+{
+  "source_hash": "93b4ea1dacb6f332d1ec33c81f1889b24779f36197bf168b710682cffc5b5910",
+  "diff_files": [
+    "apps/web/src/app/[locale]/(app)/projects/[id]/page.tsx",
+    "apps/web/src/app/globals.css",
+    "apps/web/src/features/session/composer/ComposerCard.tsx",
+    "apps/web/src/features/session/composer/animated-placeholder.test.ts",
+    "apps/web/src/features/session/composer/animated-placeholder.tsx",
+    "apps/web/src/features/session/composer/editor/composer-editor.tsx",
+    "apps/web/src/features/session/instant-session-shell.tsx",
+    "apps/web/src/features/session/session-chat.tsx",
+    "apps/web/src/features/session/session-open-transition.test.tsx",
+    "apps/web/src/features/session/session-open-transition.ts",
+    "apps/web/src/features/workspace/project-layout/project-home.tsx",
+    "apps/web/src/hooks/projects/use-new-project-session.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "tests/e2e/specs/47-home-send-dissolves-into-session.spec.ts",
+    "tests/src/fixtures/database-project.ts"
+  ],
+  "diff_hash": "09024e3622e537ec37c552c4f1195c1e6053442d4c5f744810623bcfd1c71e98",
+  "head": "e91af43907d100daf6213af4e6ea84ba33f97d5d",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-08T02:42:31.691Z"
+}

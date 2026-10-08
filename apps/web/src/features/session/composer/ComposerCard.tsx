@@ -311,6 +311,7 @@ export function ComposerCard({
                 ref={setEditorRef}
                 placeholder={animatePlaceholder ? '' : editorPlaceholder}
                 disabled={editorDisabled}
+                sending={isSending}
                 onSubmit={handleSubmit}
                 onArrowUpAtStart={onArrowUpAtStart ? handleArrowUpAtStart : undefined}
                 onEmptyChange={setIsEmpty}

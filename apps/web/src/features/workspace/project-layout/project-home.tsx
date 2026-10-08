@@ -3,11 +3,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { hubTarget } from '@/stores/account-panel-store';
 import { useTranslations } from '@/i18n/use-translations';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
 import type { AttachedFile } from '@/features/session/session-chat-input';
+import { useSessionOpenSource } from '@/features/session/session-open-transition';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useIsMobile } from '@/hooks/utils';
@@ -162,6 +163,10 @@ export function ProjectHome({
   );
 
   const isMobile = useIsMobile();
+  // A send from this composer opens its session by dissolving this page into
+  // it, not by cutting (`session-open-transition.ts`).
+  const paneRef = useRef<HTMLDivElement>(null);
+  useSessionOpenSource(paneRef);
   const pendingPrefill = useComposerPrefillStore((s) => s.prefillByProject[projectId]);
   const consumePrefill = useComposerPrefillStore((s) => s.consume);
 
@@ -260,7 +265,10 @@ export function ProjectHome({
   );
 
   return (
-    <div className="bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden lg:px-4.5">
+    <div
+      ref={paneRef}
+      className="bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden lg:px-4.5"
+    >
       <ProjectHomeWallpaper />
       <SidebarToggle placement="floating" />
       <AccessRequestsBell count={pendingAccessCount} to={accessRequestsTo} />

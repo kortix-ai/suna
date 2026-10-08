@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { buildPlaceholderVariants } from './animated-placeholder';
+import { buildPlaceholderVariants, createSharedRotation } from './animated-placeholder';
 
 describe('buildPlaceholderVariants', () => {
   test('the base placeholder is always index 0 — the SSR-rendered frame', () => {
@@ -31,5 +31,55 @@ describe('buildPlaceholderVariants', () => {
     const all = buildPlaceholderVariants('Ask anything...', true).join('\n');
     expect(all).not.toContain('Up arrow');
     expect(all).not.toContain('modes');
+  });
+});
+
+describe('createSharedRotation', () => {
+  function manualClock() {
+    const ticks: Array<() => void> = [];
+    let cancelled = 0;
+    return {
+      schedule: (tick: () => void) => {
+        ticks.push(tick);
+        return ticks.length;
+      },
+      cancel: () => {
+        cancelled += 1;
+      },
+      fire: () => ticks.at(-1)?.(),
+      started: () => ticks.length,
+      cancelled: () => cancelled,
+    };
+  }
+
+  test('two composers read the same hint after every tick', () => {
+    // The instant shell and the session chat are both on screen for the
+    // crossfade. Each used to count from its own mount and drew a different
+    // hint over the other.
+    const clock = manualClock();
+    const rotation = createSharedRotation(6000, clock.schedule, clock.cancel);
+    let shellSaw = -1;
+    let chatSaw = -1;
+    rotation.subscribe(() => (shellSaw = rotation.read()));
+    clock.fire();
+    clock.fire();
+    rotation.subscribe(() => (chatSaw = rotation.read()));
+    clock.fire();
+    expect(shellSaw).toBe(3);
+    expect(chatSaw).toBe(3);
+    expect(clock.started()).toBe(1);
+  });
+
+  test('stops with its last subscriber and resumes where it was', () => {
+    const clock = manualClock();
+    const rotation = createSharedRotation(6000, clock.schedule, clock.cancel);
+    const stop = rotation.subscribe(() => {});
+    clock.fire();
+    stop();
+    expect(clock.cancelled()).toBe(1);
+    rotation.subscribe(() => {});
+    expect(rotation.read()).toBe(1);
+    clock.fire();
+    expect(rotation.read()).toBe(2);
   });
 });

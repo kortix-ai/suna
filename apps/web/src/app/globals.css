@@ -1011,6 +1011,30 @@ html:not(.consent-enabled) #cookieyes {
  * `filter` again — a full-viewport blur is the most expensive way to spend the
  * exact moment the user is waiting to read. */
 
+/* Project-home composer → new session: the departing page's copy dissolves
+ * over the session instead of the route cutting to it
+ * (`features/session/session-open-transition.ts` places it at the page's
+ * rectangle). Opacity only, so it is its own reduced-motion variant. Only ONE
+ * layer animates: the session is opaque underneath and the copy fades off it,
+ * so coverage is 1 in every frame — two opacity ramps against each other dip
+ * to 75% at the midpoint (see the dual-layer note in the session route's
+ * page). Above the page's own stacking (the session layout's panel handle is
+ * `z-[35]`), below dialogs and toasts. 200ms: a user starts sessions several
+ * times a session ("often" on the frequency ladder). */
+[data-session-open-ghost] {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  pointer-events: none;
+  transition: opacity var(--duration-moderate) var(--ease-out);
+}
+
+[data-session-open-ghost][data-leaving] {
+  opacity: 0;
+}
+
 @keyframes kortix-spin {
   to {
     transform: rotate(360deg);

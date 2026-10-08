@@ -284,6 +284,9 @@ export function InstantSessionShell({
         'relative flex h-full flex-col',
         submitted ? 'bg-background' : 'bg-transparent',
       )}
+      // The departing home page's copy dissolves once this is in the DOM
+      // (`session-open-transition.ts`).
+      data-session-surface={sessionId}
     >
       {/* Welcome wallpaper — portaled into SessionLayout's full-bleed layer so it
           spans the whole width and never re-crops when the side panel opens

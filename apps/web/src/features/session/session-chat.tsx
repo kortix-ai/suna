@@ -2085,13 +2085,24 @@ export function SessionChat({
   const hasAnyMessages = turns.length > 0;
   // A pending inbox row counts as content: the session HAS the user's message
   // (durably), so the welcome overlay must not paint over the queue strip.
+  //
+  // The first prompt counts through `firstPromptSource` — this component's
+  // kept copy — not the store's. The store's copy is cleared the frame the
+  // transcript carries the prompt, and the transcript can then drop back to
+  // zero turns while the runtime's echo replaces the optimistic message. The
+  // inbox row is already delivered by then, so all three read empty: the dot
+  // wallpaper flashed in behind the bubble the kept copy was still drawing,
+  // then faded out (recorded after a cold boot's crossfade). The kept copy
+  // lives until the prompt is settled, which needs a turn, so it spans that gap.
   const hasChatContent =
-    hasAnyMessages || promptInbox.prompts.length > 0 || firstPromptPreview !== null;
+    hasAnyMessages || promptInbox.prompts.length > 0 || firstPromptSource !== null;
   // Full-bleed wallpaper layer mounted by SessionLayout (null on mobile /
   // standalone). When present, the welcome wallpaper is portaled into it so it
   // spans the entire session width instead of shrinking with the chat panel.
   const wallpaperLayer = useSessionWallpaperLayer();
-  const WELCOME_FADE_MS = 900;
+  // `duration-slow`, the product ceiling (`motion.md`). It was 900ms: the dots
+  // were still dissolving behind the first reply for most of a second.
+  const WELCOME_FADE_MS = 300;
   const [welcomeFadeActive, setWelcomeFadeActive] = useState(false);
   const welcomeFadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevHasChatContentRef = useRef(hasChatContent);
@@ -3719,7 +3730,7 @@ export function SessionChat({
     // The early return below then replaced the instant shell's thread with the
     // compact "starting" loader for a frame or two before the real chat
     // appeared: the flicker, mid-crossfade.
-    hasOptimisticPrompt: promptInbox.prompts.length > 0 || firstPromptPreview !== null,
+    hasOptimisticPrompt: promptInbox.prompts.length > 0 || firstPromptSource !== null,
     // The session OBJECT arriving is not the transcript arriving — they are two
     // different requests, and the message read is the one that loses to a
     // waking box. Without this the shell rendered over an unread session and
@@ -3876,6 +3887,9 @@ export function SessionChat({
           shouldShowWelcomeOverlay ? 'bg-transparent' : 'bg-background',
         )}
         data-testid="session-chat"
+        // The departing home page's copy dissolves once a surface of this
+        // session is in the DOM (`session-open-transition.ts`).
+        data-session-surface={projectSessionId}
       >
         {/* Cmd+P drains the whole history before the print dialog opens. On a
             long session that is a visible pause, and a keystroke that appears
@@ -3905,7 +3919,16 @@ export function SessionChat({
         {!hideHeader && (
           <SessionSiteHeader
             sessionId={sessionId}
-            sessionTitle={session?.title || 'Untitled'}
+            // The header reads the project session row once it is cached; this
+            // is the frame before. The instant shell names that frame "New
+            // session", as does the sidebar row, so the chat taking over from
+            // the shell must not flip the header to "Untitled" and back.
+            sessionTitle={
+              session?.title ||
+              tHardcodedUi.raw(
+                'autoFeaturesSessionInstantSessionShellJsxAttrSessionTitleNewSession6b8dfd00',
+              )
+            }
             leadingAction={headerLeadingAction}
             parent={parentCrumb}
           />

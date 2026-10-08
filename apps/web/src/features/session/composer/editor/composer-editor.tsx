@@ -117,6 +117,13 @@ export interface ComposerEditorHandle {
 export interface ComposerEditorProps {
   placeholder: string;
   disabled?: boolean;
+  /**
+   * The text in the editor is being sent. The editor is read-only (`disabled`)
+   * but keeps the words at full contrast: they are the user's message, not a
+   * control that stopped working. Dimmed, the project-home send read as a
+   * composer that broke on Enter for the length of the create.
+   */
+  sending?: boolean;
   autoFocus?: boolean;
   onSubmit: (placement: 'transcript' | 'composer') => void;
   /** Up with the caret on the first visual row — see `createSubmitOnEnterHandler`. */
@@ -365,6 +372,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     {
       placeholder,
       disabled,
+      sending = false,
       autoFocus = false,
       onSubmit,
       onArrowUpAtStart,
@@ -695,7 +703,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
           // field on the screen. `sm:text-sm` above 640px, which is the size
           // `globals.css`'s slash-trigger rule already documents.
           'kortix-composer-editor w-full text-sm',
-          disabled && 'opacity-50',
+          disabled && !sending && 'opacity-50',
         )}
       />
     );
