@@ -314,6 +314,45 @@ test('listProjectTriggerEventApps GETs event-apps and returns connector and conn
   expect(apps[1]!.connector).toBeNull();
 });
 
+test('listProjectTriggerEventApps returns each connector profile with its shared accounts', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      apps: [
+        {
+          provider: 'composio', app: 'github', name: 'GitHub', logo: null, event_count: 4, connector: 'github-work', connected: true,
+          connectors: [
+            { slug: 'github-work', name: 'GitHub work', accounts: [
+              { label: 'ops-bot', connected_as: 'ops@example.test', is_default: true, connected: true },
+              { label: 'acme-bot', connected_as: null, is_default: false, connected: true },
+            ] },
+            { slug: 'github-oss', name: 'GitHub OSS', accounts: [] },
+          ],
+        },
+      ],
+    },
+  };
+
+  const { apps } = await listProjectTriggerEventApps('P1');
+
+  const [work, oss] = apps[0]!.connectors!;
+  expect(work!.accounts.map((a) => [a.label, a.is_default])).toEqual([['ops-bot', true], ['acme-bot', false]]);
+  expect(oss!.accounts).toEqual([]);
+});
+
+test('createProjectTrigger sends event_account and updateProjectTrigger clears it with null', async () => {
+  nextResponse = { status: 200, body: { triggers: [], errors: [] } };
+  await createProjectTrigger('P1', {
+    name: 'PR opened', type: 'event', prompt_template: 'x', connector: 'github-work',
+    event_account: 'acme-bot', event: 'GITHUB_PULL_REQUEST_EVENT',
+  });
+  expect(last().body).toMatchObject({ connector: 'github-work', event_account: 'acme-bot' });
+
+  nextResponse = { status: 200, body: { triggers: [], errors: [] } };
+  await updateProjectTrigger('P1', 'pr-review', { event_account: null });
+  expect(last().body).toEqual({ event_account: null });
+});
+
 test('createProjectTrigger sends an event trigger body and the listing reads event state back', async () => {
   const input: CreateProjectTriggerInput = {
     name: 'PR opened',

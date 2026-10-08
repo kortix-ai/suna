@@ -78,9 +78,6 @@ mock.module('../../projects/lib/turn-start-convergence', () => ({
   scheduleAssetConvergence: () => {},
   convergeModelCatalogForTurnStart: async () => ({ decision: 'skipped' }),
 }));
-mock.module('../../projects/opencode-session-snapshot', () => ({
-  scheduleOpencodeSnapshotSync: () => {},
-}));
 const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
 mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   ...realTurnLifecycle,

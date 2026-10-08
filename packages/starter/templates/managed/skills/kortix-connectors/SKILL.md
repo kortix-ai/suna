@@ -1,6 +1,6 @@
 ---
 name: kortix-connectors
-description: Use Kortix connectors to reach external systems from a session, an App, a Convex backend, or an external program. Use the `kortix connectors` CLI for agent work, `@kortix/sdk` for durable TypeScript workflows and for App, backend, and script code, and `kortix connectors mcp` when a stdio MCP server is required. Load this skill to inspect, add, connect, or call external tools without exposing third-party credentials to the sandbox, an App, or a backend.
+description: Use Kortix connectors to reach external systems from a session, an App, a Convex backend, or an external program. Use the `kortix connectors` CLI for agent work, `@kortix/sdk` for durable TypeScript workflows and for App, backend, and script code, and the hosted Kortix MCP server (`<api>/v1/mcp`) for an MCP client outside Kortix. Load this skill to inspect, add, connect, or call external tools without exposing third-party credentials to the sandbox, an App, or a backend.
 ---
 
 <skill name="kortix-connectors">
@@ -39,10 +39,7 @@ Use the **`kortix connectors` CLI** for normal agent work:
   `<file>` and prints only `saved_to`, `bytes`, and `shape` (keys, array
   lengths, `pageInfo`). Use it for list and search calls; tool output above
   ~50 KB is truncated. Then query the file with `jq` or `bun`, never `cat`.
-  The `kortix-connectors_call` MCP tool does this by itself above 16 KB: it
-  returns `{ saved_to, bytes, shape, preview }`.
 - `kortix connectors add`, `rm`, and `connect` manage connectors and connections.
-- `kortix connectors mcp` runs the optional `kortix-connectors` stdio MCP server.
 
 Durable TypeScript workflows use **`@kortix/sdk`** and `createKortix`. Every
 call runs through the connector gateway. The
@@ -116,11 +113,10 @@ account resolves first and report "one account connected". If the human says
 work@example.com — …".
 
 **Adding another account.** When the human wants a new one ("connect my other
-Gmail"), mint a link with the MCP `connect` tool and a `label` that tells it
-apart (`connect({ slug, label: "Personal Gmail" })`). The link opens a dialog
-where the human names the account and chooses who can use it; you are then told
-its name. Call it with `--account "<name>"` from then on. `kortix connectors
-connect` from a shell cannot name a new account.
+Gmail"), mint a link with a `--label` that tells it apart:
+`kortix connectors connect <slug> --label "Personal Gmail"`. The link opens a
+dialog where the human names the account and chooses who can use it; you are
+then told its name. Call it with `--account "<name>"` from then on.
 </choosing-the-account>
 
 <cli-first-loop>
@@ -295,7 +291,6 @@ kortix channels connect
 - Report which account ran when it could matter — read the result's
   `account` field, never assume.
 - Confirm irreversible work before a destructive connector call.
-- The `kortix-connectors` MCP server is optional. Use the CLI if it is absent.
 </rules>
 
 </skill>

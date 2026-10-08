@@ -15,12 +15,13 @@ import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggl
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectPageCans } from '@/lib/use-project-can';
 import { getProjectDetail } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 
 import { receivedDenial } from './capability-access-gate';
 import {
   CAPABILITY_TABS,
+  FLAGGED_CAPABILITY_TABS,
   PRIMARY_TABS,
   activeCapabilityTab,
   capabilityTabHref,
@@ -126,6 +127,10 @@ function MembersLaunchLink({ projectId }: { projectId: string }) {
  * the tabs flew in when `/effective` answered. Access is now decided in the
  * content area (`CapabilityAccessGate`): a tab the caller may not read still
  * shows, and opening it shows a no-access state instead of the page.
+ *
+ * One exception, by flag rather than by permission: Backends
+ * (`useShippedTabs`) paints once its project flag is on. It trails every
+ * static tab, so its arrival moves nothing that was already painted.
  */
 /**
  * The hairline between Agents and everything an agent draws on (Skills
@@ -147,6 +152,23 @@ function GroupSeam() {
   return <span aria-hidden className="bg-border mx-1 h-4 w-px shrink-0 self-center" />;
 }
 
+/**
+ * Backends: what the project ships. It paints only while its flag
+ * is on, after a seam of its own and after every static tab, so a flag that
+ * lands late never moves a tab already on screen (see
+ * `FLAGGED_CAPABILITY_TABS`). Loading counts as off.
+ */
+function useShippedTabs(projectId: string): CapabilityTab[] {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const backends = useFeatureFlag(projectId, 'backends').enabled;
+  const enabled = { backends };
+  const label = { backends: tI18nComplete.raw('text26cbb889e198') };
+  return FLAGGED_CAPABILITY_TABS.filter((tab) => enabled[tab.flag]).map((tab) => ({
+    key: tab.key,
+    label: label[tab.key],
+  }));
+}
+
 export function CapabilityTabs({ projectId }: { projectId: string }) {
   const pathname = usePathname();
   const activeKey = activeCapabilityTab(pathname);
@@ -161,6 +183,7 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
   const primary = leading.filter((tab) => PRIMARY_TABS.includes(tab.key));
   const library = leading.filter((tab) => !PRIMARY_TABS.includes(tab.key));
   const trailing = tabs.filter((tab) => TRAILING_TABS.includes(tab.key));
+  const shipped = useShippedTabs(projectId);
   const renderTab = (tab: CapabilityTab) => (
     <TabsTrigger key={tab.key} value={tab.key} asChild className="w-fit flex-none px-1 py-3">
       <Link href={capabilityTabHref(projectId, tab.key)} prefetch={true}>
@@ -190,6 +213,8 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
             {primary.map(renderTab)}
             <GroupSeam />
             {library.map(renderTab)}
+            {shipped.length ? <GroupSeam /> : null}
+            {shipped.map(renderTab)}
             <MembersLaunchLink projectId={projectId} />
             {trailing.map(renderTab)}
           </TabsList>

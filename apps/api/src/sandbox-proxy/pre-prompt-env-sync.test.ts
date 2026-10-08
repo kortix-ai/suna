@@ -67,9 +67,6 @@ function recordingDeps(
       if (opts.bindThrows) throw opts.bindThrows;
       return true;
     }) as PrePromptEnvSyncDeps['bindTurnIdentity'],
-    scheduleSnapshot: (() => {
-      log.push('scheduleSnapshot:called');
-    }) as PrePromptEnvSyncDeps['scheduleSnapshot'],
     generateTitle: (async () => {
       log.push('generateTitle:called');
     }) as PrePromptEnvSyncDeps['generateTitle'],
@@ -121,28 +118,12 @@ describe('runPrePromptEnvSync — title generation and snapshot scheduling are n
     expect(log).toContain('generateTitle:called');
   });
 
-  test('the call returns even though scheduleSnapshot never resolves', async () => {
+  // R7.4: the prompt no longer schedules a session-list snapshot. The list
+  // follows every stored projection and the turn end, never a prompt timer.
+  test('a prompt schedules no deferred session-list snapshot', async () => {
     const log: string[] = [];
-    const deps: PrePromptEnvSyncDeps = {
-      ...recordingDeps(log),
-      // `scheduleSnapshot` is typed synchronous (`void`), so a real caller
-      // cannot literally return an unresolved promise from it — the point
-      // this pins is that the route never AWAITS its result at all. Blocking
-      // work inside it (simulated here as a long synchronous-looking call
-      // via a deferred push) must not delay the return.
-      scheduleSnapshot: ((input) => {
-        log.push(`scheduleSnapshot:called:${input.sessionId}`);
-      }) as PrePromptEnvSyncDeps['scheduleSnapshot'],
-    };
-    const startedAt = performance.now();
-    const result = await runPrePromptEnvSync(baseInput(), deps);
-    const elapsedMs = performance.now() - startedAt;
-    expect(result).toBeNull();
-    expect(log).toContain('scheduleSnapshot:called:sess-1');
-    // No `await` on this lane at all — the whole call, including the
-    // sequential syncEnv/remintGrant pair, resolves in well under a
-    // deliberately-blocking generateTitle's would-be delay.
-    expect(elapsedMs).toBeLessThan(50);
+    expect(await runPrePromptEnvSync(baseInput(), recordingDeps(log))).toBeNull();
+    expect(log.some((entry) => entry.toLowerCase().includes('snapshot'))).toBe(false);
   });
 });
 

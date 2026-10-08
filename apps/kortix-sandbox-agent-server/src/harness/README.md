@@ -41,7 +41,7 @@ session (a restart or resume re-reads the selection).
 | `open-code/background.ts`, `open-code/resource-diagnostics.ts`, `open-code/quick-queue-interrupt.ts` | Native offload, turn guard, tool-boundary queue interrupt and diagnostic projection |
 | Other `open-code/` modules | Native database, projections, pins, attachments, audit and recovery |
 | `pi/service.ts` | Composition; loads pi lazily so an OpenCode boot never pays for it |
-| `pi/runtime.ts` | The in-process pi `Agent`: model, tools, skills, turns, transcript, durability |
+| `pi/runtime.ts` | The in-process pi `Agent`: model, tools, skills, the root `AGENTS.md`, turns, transcript, durability |
 | `pi/boot.ts` | Session boot: the same host steps as OpenCode, then `pi-ready` |
 | `pi/surface.ts` | The raw OpenCode-compatible routes, answered in-process |
 | `pi/turn-events.ts`, `pi/transcript.ts` | pi events → Kortix session events (`@kortix/api-contract/transcript`); the transcript store |
@@ -107,11 +107,10 @@ when no turn runs (nothing is stored, the caller sends a prompt);
   replies after it name it as `parentID`. OpenCode: the first assistant
   `message.updated` whose `parentID` is the steered id. Both relay `steer_read`
   once per id (`shared/turn-relay.ts`).
-- **Withdraw.** `DELETE /kortix/runtime/messages/:sid/:mid` on an unread
-  steered message removes it (pi: 200, from kortixd's queue in front of
-  `agent.steer()`; pi can only clear its queue, so the rest are steered again in
-  order). A read one answers `409 { error: 'message is already running' }`.
-  OpenCode keeps its own DELETE semantics.
+- **Withdraw.** The retract (below) on an unread steered message removes it
+  (pi: from kortixd's queue in front of `agent.steer()`; pi can only clear its
+  queue, so the rest are steered again in order). A read one answers
+  `409 { code: 'message_read' }`.
 - **Leftovers (pi).** A turn that ends on its own with unread steered messages
   starts the next turn with them, in the same queue slot: the first is its
   prompt, the rest are read before its first model call. A stopped turn (Stop,
@@ -121,6 +120,27 @@ when no turn runs (nothing is stored, the caller sends a prompt);
   it does not run extension `input` handlers, `/skill:` or prompt-template
   expansion (a prompt does). Unread steered messages live in memory: a daemon
   restart loses them.
+
+## Retract
+
+`POST /kortix/runtime/messages/:sid/:mid/retract` takes back a user message no
+model call has read (`runtime.retract.v1` in `/kortix/health` `capabilities`),
+behind the same auth, readiness gate and `X-Kortix-Turn-Verb` header. apps/api
+uses it to cancel a forwarded prompt, to hold forwarded prompts after a Stop,
+and to re-place a stranded prompt. Answers: `200 { retracted: true }`; `404`
+when the session holds no such message; `409 { code: 'message_read' }` when a
+model call read it (its turn runs or ran), and it stays.
+
+- **pi** decides from its own state: an unread steered message, a prompt
+  admitted behind the running work that has not started, and a `no_reply`
+  message no turn has read (pi omits its session entry from the model context)
+  are retracted. A retracted id may be sent again. The `DELETE` verb and the
+  compatibility `DELETE /session/:id/message/:mid` answer the same way, so an
+  older API gets the fix too.
+- **OpenCode** cannot tell a read message from an unread one, so apps/api
+  proves "unread" from the transcript first (`reachedPlacement`). The adapter
+  deletes the message whole when idle; when the loop runs and refuses that, it
+  deletes every part, and OpenCode's loop skips a user message with no parts.
 
 ## The pi harness
 
@@ -155,6 +175,14 @@ Config it reads (all set by apps/api for every session, harness-neutral values):
 + `KORTIX_TOKEN`, the image-baked catalog at `/opt/kortix/llm-catalog.json`.
 pi-only: `KORTIX_PI_STATE_DIR`.
 
+`KORTIX_AGENT_NAME` (else the config's `default_agent`) is the session's
+agent. A prompt that picks a primary agent of the compiled config runs its
+turn on that agent: its prompt, permission policy, tool switches, sampling and
+variant, and its `model` when the prompt names none. A prompt that picks none
+runs on the session's agent, as on OpenCode. A pick of a subagent, a disabled
+agent or an unknown name is logged and runs on the session's agent. pi
+packages and extensions stay the ones the session booted with.
+
 ### Config releases
 
 With the project's `config_releases` flag on, pi runs the base branch's
@@ -164,9 +192,10 @@ branch under `/opt/kortix/config/<release_id>`, with the repository's own
 layout, verified against its Git blob IDs and sealed read-only. pi reads from
 it what it reads from `/workspace`: the compiled governance
 (`KORTIX_COMPILED_AGENT_CONFIG`, the agents), `skills/` (and the legacy
-`.kortix/opencode/skills`), and its own config dir (`pi.config_dir`, else
-`harnesses/pi`, else `.kortix/pi`: skills, extensions, prompts,
-`settings.json`), resolved inside the release by `resolvePiProjectConfigDir`.
+`.kortix/opencode/skills`), the root `AGENTS.md` (else `CLAUDE.md`), and its
+own config dir (`pi.config_dir`, else `harnesses/pi`, else `.kortix/pi`:
+skills, extensions, prompts, `settings.json`), resolved inside the release by
+`resolvePiProjectConfigDir`.
 OpenCode's files (`harnesses/opencode`) are not pi's, so a commit that breaks
 only those files is a working config on pi.
 
@@ -176,8 +205,9 @@ only those files is a working config on pi.
   the provisioned governance). `/workspace` is read only while the flag is off.
 - **Convergence** (`POST /kortix/config/converge`, the 60 s runtime-truth tick,
   one pass after ready). pi applies a release in place: the governance goes
-  into the runtime's env, the skill directories move into the release, and
-  `PiRuntime.reconfigure()` re-reads both. A release that changes anything
+  into the runtime's env, the skill directories and the `AGENTS.md` root
+  (`PiConfigReleases.projectRoot()`) move into the release, and
+  `PiRuntime.reconfigure()` re-reads them. A release that changes anything
   in pi's config dir other than its skills (extensions, prompts, settings, which only
   a start reads) restarts the runtime in place instead: the same root, the
   transcript restored. Nothing else restarts, and the answer carries

@@ -1,0 +1,260 @@
+---
+title: Backends
+description: Create and manage self-hosted Convex backends from the SDK and from React.
+---
+
+A Backend is a self-hosted Convex deployment that runs in its own machine. A
+project owns up to 3. This page covers the SDK surface: the `backends` facade
+on a project handle, the exported types, and the React hook.
+
+```ts
+const backends = kortix.project(projectId).backends;
+```
+
+:::info[Backends is a feature flag]
+Every Backends route answers `403` with `{ error, code: "feature_disabled", feature: "backends" }`
+until the project turns Backends on. Use `isFeatureDisabledError(error)` to
+branch on it. See [Feature flags](/docs/feature-flags).
+:::
+
+## The backends facade
+
+| Method | Wraps | What it does |
+|---|---|---|
+| `backends.list()` | `GET /projects/:pid/backends` | Lists the project's backends |
+| `backends.create({ name, cpu?, memory_gb?, disk_gb? })` | `POST …/backends` | Claims the name and starts the backend. Returns at once with status `provisioning`. Size defaults to 1 vCPU, 1 GB, 10 GB |
+| `backends.waitUntilRunning(backendId)` | polls `GET …/backends/:id` | Resolves with the running backend; rejects with its error, or after 15 minutes (the API's provisioning deadline; `timeoutMs` overrides it) |
+| `backends.get(backendId)` | `GET …/backends/:id` | Reads one backend |
+| `backends.credentials(backendId)` | `GET …/backends/:id/credentials` | Reads `url`, `site_url`, `admin_key`, and `env` |
+| `backends.token(backendId)` | `POST …/backends/:id/token` | A 15-minute Kortix sign-in token naming the caller, for `client.setAuth` |
+| `backends.resize(backendId, { cpu?, memory_gb?, disk_gb? })` | `PATCH …/backends/:id` | Starts a resize. Returns at once with `operation: 'resizing'` |
+| `backends.waitForOperation(backendId)` | polls `GET …/backends/:id` | Resolves when `operation` is `null`; rejects with `last_operation_error` when the operation failed, or after 10 minutes |
+| `backends.backups(backendId)` | `GET …/backends/:id/backups` | Reads the automatic backup state, the snapshot schedule and the snapshots, newest first, each with its `kind` and `expires_at` |
+| `backends.snapshot(backendId)` | `POST …/backends/:id/snapshots` | Takes a manual snapshot now. It stays until deleted; a backend holds 10 |
+| `backends.deleteSnapshot(backendId, snapshotId)` | `DELETE …/backends/:id/snapshots/:snapshotId` | Deletes one snapshot of any kind |
+| `backends.restore(backendId, snapshotId)` | `POST …/backends/:id/restore` | Rolls the backend back to a snapshot. Resolves once the machine runs the snapshot and Convex answers |
+| `backends.rotateAdminKey(backendId)` | `POST …/backends/:id/rotate-admin-key` | Replaces the admin key; every key read before stops working. Convex restarts (about 1 s). Resolves with the backend |
+| `backends.logs(backendId, { lines? })` | `GET …/backends/:id/logs` | The last `lines` (1 to 1000, default 200) of the Convex process log, as one string |
+| `backends.remove(backendId)` | `DELETE …/backends/:id` | Deletes the backend, its machine and its snapshots |
+
+`create` answers at once with `status: 'provisioning'`. Boot takes about 3 to 5
+seconds, and up to a few minutes on a region's first image build. Call
+`waitUntilRunning` before you read credentials.
+
+A `name` is lowercase letters, digits, and dashes, starts with a letter, and
+is at most 63 characters.
+
+## Resize, back up, restore
+
+Limits: `cpu` 1 to 16, `memory_gb` 1 to 32, `disk_gb` 10 to 100. A disk grows
+but never shrinks. `resize`, `snapshot`, `deleteSnapshot` and `restore` need
+the `project.backend.write` permission. `backups` needs `project.backend.read`.
+
+A snapshot has one of three kinds:
+
+| `kind` | Who takes it | Kept |
+|---|---|---|
+| `manual` | A member or agent, with `snapshot` | Until deleted. A backend holds 10; the 11th answers `409 snapshot_limit` |
+| `automatic` | Kortix, once a day | 7 days. The newest one stays past its expiry until a newer one exists |
+| `resize` | Kortix, before a resize | 24 hours, or until the next resize replaces it (at most one) |
+
+`expires_at` says when Kortix deletes an `automatic` or `resize` snapshot. It is
+`null` for a `manual` one. Kortix deletes a snapshot only after that date, or a
+`resize` snapshot when the next resize replaces it.
+
+```ts
+const backends = kortix.project(projectId).backends;
+
+await backends.resize(backendId, { cpu: 2, memory_gb: 4 });
+const resized = await backends.waitForOperation(backendId); // restarts on the new size
+
+const { snapshot_id } = await backends.snapshot(backendId);
+const { automatic, snapshots, snapshot_schedule } = await backends.backups(backendId);
+
+// Every change after the snapshot is lost.
+await backends.restore(backendId, snapshot_id);
+
+// Free a manual slot.
+await backends.deleteSnapshot(backendId, snapshots.at(-1)!.snapshot_id);
+```
+
+While a resize runs, the backend has `operation: 'resizing'`. When it fails,
+`operation` clears and `last_operation_error` holds the reason.
+
+`resize` answers `400` with `invalid_size`, `disk_shrink_unsupported`, or
+`size_unchanged`, and `409` with `backend_busy` or `backend_not_running`.
+`snapshot`, `deleteSnapshot` and `restore` answer `409` with `backend_busy`
+while another operation runs: one operation at a time per backend, and
+`operation` reads `snapshotting` or `restoring` while theirs runs. `snapshot`
+answers `409` with `snapshot_limit`. `deleteSnapshot` answers `404` with
+`snapshot_not_found`. `restore` answers `400` with `snapshot_not_found`, `409`
+with `snapshot_predates_resize`, and `502` with `restore_unhealthy`.
+
+A snapshot holds the CPU, memory and disk image of the moment it was taken. A
+snapshot taken before an applied resize therefore cannot be restored
+(`snapshot_predates_resize`): take a snapshot at the new size, or resize again.
+The `resize` snapshot undoes a resize that failed before the size changed.
+
+## Rotate the admin key, read the log, check health
+
+```ts
+const backends = kortix.project(projectId).backends;
+
+await backends.rotateAdminKey(backendId);               // old keys now get 401
+const { admin_key } = await backends.credentials(backendId);
+
+const log = await backends.logs(backendId, { lines: 500 });
+
+const { health } = await backends.get(backendId);
+if (health && !health.ok) console.warn(health.machine_state, health.error);
+```
+
+Rotation keeps documents, files, functions and environment variables. It
+invalidates upload URLs not yet used and open pagination cursors. After a restore
+(snapshot or automatic backup) of a backend whose key was ever rotated, Kortix
+rotates it again: read the key again.
+`rotateAdminKey` and `logs` need `project.backend.write`. `rotateAdminKey`
+answers `409` with `backend_busy` while another operation runs.
+
+`health` is the last probe (Kortix probes every 5 minutes). Kortix starts a
+stopped machine and restores a lost one from its last automatic backup by
+itself; `operation` reads `recovering` while it does.
+
+## Deploy Convex functions to a backend
+
+`credentials().env` holds the two variables the Convex CLI reads for a
+self-hosted deployment.
+
+```ts
+const backends = kortix.project(projectId).backends;
+
+const backend = await backends.create({ name: 'main' });
+const { env } = await backends.credentials(backend.backend_id);
+// env.CONVEX_SELF_HOSTED_URL, env.CONVEX_SELF_HOSTED_ADMIN_KEY
+```
+
+From a terminal, `kortix backends deploy main` does this and runs
+`convex deploy`: the project's own `node_modules/.bin/convex`, else
+`npx convex@<backend.convex_version>`. Pin the same version when you run the
+Convex CLI yourself: a newer CLI can need backend APIs this backend lacks. See
+the [CLI](/docs/cli).
+
+`credentials` answers `409` with `backend_not_running` until the backend runs.
+The admin key grants full access to the backend. Do not log it or ship it to a
+browser.
+
+## Types
+
+Every type below is exported from `@kortix/sdk`.
+
+| Type | What it holds |
+|---|---|
+| `ProjectBackend` | `backend_id`, `project_id`, `name`, `status`, `url`, `site_url`, `dashboard_url`, `cpu`, `memory_gb`, `disk_gb`, `error`, `operation`, `last_operation_error`, `health` (the last `ProjectBackendHealth`; `null` before the first probe), `auth_env` (the public `KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE` and `KORTIX_AUTH_JWKS` values; `null` for a backend created before Kortix sign-in), `convex_version` (the matching `convex` npm CLI version), `created_at`, `updated_at` |
+| `ProjectBackendStatus` | `'provisioning' \| 'running' \| 'error' \| 'deleted'` |
+| `ProjectBackendOperation` | `'resizing' \| 'rotating_key' \| 'recovering' \| 'snapshotting' \| 'restoring'` |
+| `ProjectBackendHealth` | `ok`, `checked_at`, `machine_state` (`running`, `stopped`, …, `missing`), `failures` (failed probes in a row), `error`, `disk_used_pct`, `repair` (`'started' \| 'restored_from_backup' \| null`) |
+| `GetBackendLogsOptions` | `lines` (1 to 1000, default 200) |
+| `ProjectBackendSize` | `cpu`, `memory_gb`, `disk_gb`, all optional |
+| `CreateProjectBackendInput` | `name`, plus the optional size fields |
+| `ProjectBackendBackups` | `automatic` (`state`, `last_backup_at`, `size_bytes`, `interval_minutes`), `snapshots`, `snapshot_limit` (how many manual snapshots the backend holds) and `snapshot_schedule` |
+| `ProjectBackendSnapshot` | `snapshot_id`, `created_at`, `size_bytes`, `kind`, `expires_at` (`null` for a manual snapshot) |
+| `ProjectBackendSnapshotKind` | `'manual' \| 'automatic' \| 'resize'` |
+| `ProjectBackendSnapshotSchedule` | `automatic_interval_hours`, `automatic_retention_days`, `resize_retention_hours`, `last_automatic_at` |
+| `ProjectBackendCredentials` | `url`, `site_url`, `admin_key`, `env` |
+
+`url` and `site_url` are `null` until the backend runs. Both are Kortix hosts
+that stay the same for the backend's life (see
+[Backends](/docs/feature-flags/backends)).
+
+`auth_env` holds no secret. Set its three values in the environment of any
+server of your own that receives a member token, then verify the token there:
+
+```ts
+import { verifyKortixMemberToken } from '@kortix/sdk';
+
+// Reads KORTIX_AUTH_ISSUER, KORTIX_AUTH_AUDIENCE and KORTIX_AUTH_JWKS.
+const member = await verifyKortixMemberToken(bearer); // throws KortixMemberError
+```
+
+`KORTIX_AUTH_ISSUER` is a public URL, `https://<api host>/v1/backends/<backend_id>`.
+`<issuer>/.well-known/openid-configuration` names `<issuer>/jwks.json`, the
+backend's public key set; both routes need no credential. To fetch the key set
+instead of holding it inline, pass its URL:
+
+```ts
+const member = await verifyKortixMemberToken(bearer, {
+  jwks: `${process.env.KORTIX_AUTH_ISSUER}/jwks.json`, // fetched once per process
+});
+```
+
+`kortix backends connect <name>` prints this and every other way to reach the
+backend. **Connect** on the backend in Kortix web shows the same snippets.
+
+`dashboard_url` is Convex's dashboard for the backend, on a Kortix host. Frame
+it in an `<iframe>`. The dashboard posts `{ type: 'dashboard-credentials-request' }`
+to its parent. Check `event.origin` against the dashboard URL's origin, then
+answer with `{ type: 'dashboard-credentials', adminKey, deploymentUrl,
+deploymentName }`, read with `backends.credentials(backendId)`. Post only to
+that origin. It is `null` until the backend runs, and for a backend created
+before the dashboard shipped.
+
+## React hooks
+
+### useProjectBackends(projectId)
+
+The backend inventory plus create and delete mutations.
+
+```tsx
+import { useProjectBackends } from '@kortix/sdk/react';
+
+function BackendList({ projectId }: { projectId: string }) {
+  const backends = useProjectBackends(projectId);
+  if (!backends.data) return null;
+
+  return (
+    <ul>
+      {backends.data.map((backend) => (
+        <li key={backend.backend_id}>
+          {backend.name} · {backend.status}
+          <button onClick={() => backends.remove.mutate(backend.backend_id)}>Delete</button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+```
+
+It returns the query fields plus `create`, `remove`, `resize` (`{ backendId, cpu?, memory_gb?, disk_gb? }`),
+`restore` (`{ backendId, snapshotId }`) and `rotateAdminKey` (`backendId`). Every mutation invalidates the
+list. The list refetches every 2 seconds while a backend provisions or runs an
+operation. `projectBackendsKey(projectId)` is the query key.
+
+### useProjectBackendBackups(projectId, backendId, enabled?)
+
+The automatic backup state and snapshots of one backend, plus a `snapshot`
+mutation that takes a snapshot and a `deleteSnapshot` mutation (`snapshotId`)
+that deletes one. Both refresh the query.
+
+## Errors
+
+```ts
+import { isFeatureDisabledError } from '@kortix/sdk';
+
+try {
+  await kortix.project(projectId).backends.create({ name: 'main' });
+} catch (error) {
+  if (isFeatureDisabledError(error)) console.log('Backends is off for this project');
+}
+```
+
+Other answers you should handle:
+
+- `409` `backend_limit`: 3 backends per project, 10 per account.
+- `409` `backend_name_taken`.
+- Resize, backups, snapshot and restore: `409` `backend_not_running` or
+  `backend_machine_missing`; `503` `backend_provider_busy` (no capacity, retry
+  in minutes), `backend_provider_timeout` or `backend_provider_unavailable`
+  (Kortix is alerted); `502` `backend_provider_error`. The `error` text is a
+  short reason. It never carries provider internals.
+
+`credentials()` and `token()` answer with `Cache-Control: no-store`.

@@ -4,8 +4,8 @@ Kortix Apps deploy static sites and HTTP applications from a project. Each App
 has one stable URL. Each deployment is immutable. The active deployment pointer
 changes only after the new deployment is ready.
 
-Apps is experimental and off by default. Enable **Apps** for the selected
-project under Project Settings → Experimental. The API returns `404`, the
+Apps is off by default and enabled per project by Kortix (it is not listed in
+Project Settings → Feature flags; the user contacts Kortix). The API returns `403`, the
 public URL does not resolve, and App operations remain unavailable while the
 feature is disabled. The CLI and web inventory stay visible and label Apps as
 experimental.
