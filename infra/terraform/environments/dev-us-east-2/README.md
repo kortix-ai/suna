@@ -122,5 +122,9 @@ us-west-2 `kortix-dev-env` and `kortix-dev-web-env`, and add this root and
 `../dev-web-us-east-2` to the drift-plan matrix in
 `.github/workflows/terraform-ci.yml`.
 
+No workflow reads the us-west-2 blobs. `aws-env` reads each blob from its row
+in `blob_region` (`.github/actions/aws-env/fetch.sh`). The same applies to
+staging's us-west-2 `kortix-staging-env` and `kortix-staging-web-env`.
+
 > ⚠️ `terraform apply` here creates billable AWS resources (VPC, NAT, 2 ALBs,
 > Fargate). It does not touch anything in `../dev`.
