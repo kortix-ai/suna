@@ -298,7 +298,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
   // ── Boot ─────────────────────────────────────────────────────────────────
 
   async function chooseBootConfig(mark?: (label: string) => void, workspace?: Promise<string | null>): Promise<void> {
-    // 1. The descriptor request IS this boot's flag evaluation.
+    // 1. The descriptor request decides whether this boot runs a release.
     let descriptor: ConfigReleaseDescriptor | null = null
     let disabled: string | null = api
       ? null
@@ -315,7 +315,8 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
       }
     }
 
-    // 2. Flag off, or no API: the pre-release behaviour — the working tree.
+    // 2. `403 feature_disabled` (an API from before config releases
+    // graduated), or no API: the pre-release behaviour — the working tree.
     if (disabled) {
       clearNotice()
       setCurrent({ ...WORKSPACE, proven: true })

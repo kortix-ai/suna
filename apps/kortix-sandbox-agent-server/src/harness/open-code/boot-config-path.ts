@@ -42,12 +42,13 @@ import { pluginFilesFrom, provenCheck, toolNamesFromFiles, type ProvenCheckInput
  *      the directory gate CLOSED. OpenCode's process boot (~3–7 s) does not
  *      read the config dir; only its per-directory Instance does, and the first
  *      thing that builds one is the proof in step 5.
- *   1. Ask the API for the desired release. THIS request is the `config_releases`
- *      flag evaluation for this boot, and its answer is assigned HERE — never
+ *   1. Ask the API for the desired release. THIS request decides whether this
+ *      boot runs a release, and its answer is assigned HERE — never
  *      inside a `.then()` that a wait can outrun (the 2026-09-24 defect: losing
  *      a 3,000 ms race by 282 ms booted `/workspace` and reported
  *      `proven:true, fallback_reason:null`).
- *   2. Flag off, or no API at all: one marked early return to the pre-release
+ *   2. `403 feature_disabled` (an API from before config releases graduated),
+ *      or no API at all: one marked early return to the pre-release
  *      behaviour. That branch is the ONLY place `/workspace` is read to decide
  *      config (C4, C8).
  *   3+4. The candidate list, best first: the desired release (materialized here,
@@ -69,7 +70,7 @@ import { pluginFilesFrom, provenCheck, toolNamesFromFiles, type ProvenCheckInput
 
 /** What the API answered on THIS boot. Assigned once, on the straight line. */
 interface DescriptorAnswer {
-  /** The `config_releases` flag, as the API answered it on this boot. */
+  /** Whether the API serves releases to this box, as it answered on this boot. */
   releasesEnabled: boolean
   descriptor: ConfigReleaseDescriptor | null
   /** Why there is no descriptor. Null when one arrived, or when none was owed. */
@@ -122,7 +123,7 @@ export interface BootConfigPathResult {
   proven: boolean
   fallbackReason: string | null
   failedReleaseId: string | null
-  /** The `config_releases` flag as the API answered it on this boot. */
+  /** Whether the API serves releases to this box, as it answered on this boot. */
   releasesEnabled: boolean
 }
 
@@ -362,8 +363,8 @@ export async function bootOpenCodeConfig(input: BootConfigPathInput): Promise<Bo
   if (answer.descriptor) input.mark?.('config-release-fetched')
 
   // ── Step 2 ─────────────────────────────────────────────────────────────────
-  // LEGACY BRANCH — `config_releases` is off for this project, or this box has
-  // no API to ask. Exactly the pre-release behaviour: OpenCode reads the
+  // LEGACY BRANCH — an API from before config releases graduated has them off
+  // for this project, or this box has no API to ask. Exactly the pre-release behaviour: OpenCode reads the
   // session's own checkout, and this is the only line in the boot path that
   // reads `/workspace` to decide anything (C8).
   if (!answer.releasesEnabled) {
