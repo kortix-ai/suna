@@ -30,6 +30,7 @@ mock.module('child_process', () => ({
 }));
 
 const { setupApp } = await import('../setup');
+const { config } = await import('../config');
 
 const ORIGINAL_CWD = process.cwd();
 const TEST_DIR = mkdtempSync(join(tmpdir(), 'kortix-setup-test-'));
@@ -70,6 +71,43 @@ afterAll(() => {
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 describe('/v1/setup', () => {
+
+  // KRTX-1715. While no user exists, bootstrap-owner creates a CONFIRMED account
+  // for any email, so only the host (which holds INTERNAL_SERVICE_KEY) may call it.
+  describe('POST /v1/setup/bootstrap-owner', () => {
+    const post = (headers: Record<string, string>) =>
+      createSetupTestApp().request('/v1/setup/bootstrap-owner', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...headers },
+        body: JSON.stringify({ email: 'not-an-email', password: 'long-enough' }),
+      });
+
+    it('refuses a caller without the host key, naming the header', async () => {
+      const res = await post({});
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual({
+        success: false,
+        error: 'Send the instance INTERNAL_SERVICE_KEY as X-Kortix-Internal-Key',
+      });
+    });
+
+    it('refuses a wrong key', async () => {
+      expect((await post({ 'X-Kortix-Internal-Key': 'not-the-key' })).status).toBe(401);
+      expect((await post({ Authorization: 'Bearer not-the-key' })).status).toBe(401);
+    });
+
+    it('lets the host through, as a header or a Bearer, to the request checks', async () => {
+      for (const headers of [
+        { 'X-Kortix-Internal-Key': config.INTERNAL_SERVICE_KEY },
+        { Authorization: `Bearer ${config.INTERNAL_SERVICE_KEY}` },
+      ]) {
+        const res = await post(headers);
+        // Past the gate, the malformed email answers.
+        expect(res.status).toBe(400);
+        expect(await res.json()).toEqual({ success: false, error: 'Valid email is required' });
+      }
+    });
+  });
 
   describe('GET /v1/setup/status', () => {
     it('returns 200', async () => {
