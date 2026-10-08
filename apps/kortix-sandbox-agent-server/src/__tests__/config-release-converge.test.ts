@@ -51,6 +51,7 @@ import {
   initRepo,
   FEATURE_DISABLED,
   serveRelease,
+  serveSnapshot,
   startFakeApi,
   write,
   type BuiltRelease,
@@ -226,6 +227,11 @@ function converge(
   })
 }
 
+/** The session committed work of its own: its checkout is no longer the release's commit. */
+function sessionCommitted(): void {
+  git(work, 'commit', '--allow-empty', '-qm', 'session work')
+}
+
 function baseRelease(governance: string | null = GOV_V1): BuiltRelease {
   return buildRelease(origin, git(origin, 'rev-parse', 'HEAD'), DIR, { governance })
 }
@@ -288,6 +294,88 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true })
 }, 30_000)
 
+describe('convergeConfigRelease — where the release comes from', () => {
+  test('the checkout at the release commit is the release: no download at all', async () => {
+    const release = baseRelease()
+    serveRelease(api, release)
+    const id = release.descriptor.release_id!
+
+    expect((await converge(fakeOpencode())).outcome).toBe('applied')
+    expect(api.archiveRequests).toEqual([])
+    expect(api.storageRequests).toEqual([])
+    expect(readFileSync(join(releaseDir(store, id), DIR, 'agents/kortix.md'), 'utf8')).toBe('PROMPT v1\n')
+    // Copied, never moved or linked: the session's checkout is untouched.
+    expect(git(work, 'status', '--porcelain')).toBe('')
+  })
+
+  test('a release over the archive cap (v3, no archive) is built from the project snapshot', async () => {
+    write(origin, 'assets/big.bin', 'export-ignored, never in the release\n')
+    const tip = commitAll(origin, 'big')
+    const built = buildRelease(origin, tip, DIR, { governance: GOV_V1 })
+    // The session is behind: its checkout cannot be the release.
+    sessionCommitted()
+    const descriptor = {
+      ...built.descriptor,
+      format: 'config-release-v3' as const,
+      archive: null,
+      files: built.descriptor.files!.filter(([path]) => !path.startsWith('assets/')),
+      snapshot: serveSnapshot(api, origin, tip),
+    }
+    api.respond({ status: 200, json: descriptor })
+    const oc = fakeOpencode()
+
+    const response = await converge(oc)
+
+    expect(response.outcome).toBe('applied')
+    expect(response.config).toMatchObject({ release_id: descriptor.release_id, source: 'release', proven: true })
+    expect(api.archiveRequests).toEqual([])
+    // One presigned GET, and the sandbox token never reaches storage.
+    expect(api.storageRequests).toEqual([{ authorization: null, path: `/snapshots/snapshot-${tip}` }])
+    const dir = releaseDir(store, descriptor.release_id!)
+    expect(await servingDir()).toBe(join(dir, DIR))
+    expect(readFileSync(join(dir, DIR, 'agents/kortix.md'), 'utf8')).toBe('PROMPT v1\n')
+    // Only listed files ship: no `.git`, nothing the release leaves out.
+    expect(existsSync(join(dir, '.git'))).toBe(false)
+    expect(existsSync(join(dir, 'assets'))).toBe(false)
+    expect(readdirSync(store).filter((name) => name.endsWith('.snapshot'))).toEqual([])
+  })
+
+  test('a snapshot whose digest does not match is refused, and nothing is quarantined', async () => {
+    const release = baseRelease()
+    sessionCommitted()
+    const snapshot = serveSnapshot(api, origin, release.descriptor.source_commit!)
+    api.respond({
+      status: 200,
+      json: { ...release.descriptor, format: 'config-release-v3', archive: null, snapshot: { ...snapshot, sha256: 'f'.repeat(64) } },
+    })
+    const oc = fakeOpencode()
+
+    const response = await converge(oc)
+
+    expect(response.outcome).toBe('failed')
+    expect(response.reason).toContain('the project snapshot did not deliver it')
+    expect(oc.state.reloads).toBe(0)
+    expect(await servingDir()).toBe(join(work, DIR))
+    expect(await readQuarantine(store)).toEqual({})
+    expect(readdirSync(store).filter((name) => name.endsWith('.snapshot') || name.endsWith('.tmp'))).toEqual([])
+  })
+
+  test('no archive, no snapshot yet, checkout behind: the running config stays and the box says why', async () => {
+    const release = baseRelease()
+    sessionCommitted()
+    api.respond({ status: 200, json: { ...release.descriptor, format: 'config-release-v3', archive: null, snapshot: null } })
+    const oc = fakeOpencode()
+
+    const response = await converge(oc)
+
+    expect(response.outcome).toBe('failed')
+    expect(response.reason).toContain('the API has no project snapshot of this commit yet')
+    expect(response.reason).toContain('there is no archive')
+    expect(oc.state.reloads).toBe(0)
+    expect(await readQuarantine(store)).toEqual({})
+  })
+})
+
 describe('convergeConfigRelease — follow-base', () => {
   test('applies the release: new dir, governance at spawn, proven pointer, clean workspace', async () => {
     const release = baseRelease()
@@ -326,8 +414,8 @@ describe('convergeConfigRelease — follow-base', () => {
     expect(runningSourceCommit()).toBe(release.descriptor.source_commit!)
     expect(prepared).toEqual([expect.stringMatching(new RegExp(`${id}\\.[0-9a-f-]+\\.tmp/\\.kortix/opencode$`))])
     expect(git(work, 'status', '--porcelain')).toBe('')
-    // The descriptor request has no inputs at all.
-    expect(api.descriptorRequests.at(-1)!.body).toEqual({})
+    // The descriptor request has no inputs that pick the release; it asks for v3.
+    expect(api.descriptorRequests.at(-1)!.body).toEqual({ accept: ['config-release-v3'] })
   })
 
   test('the pointer is written only after the proof', async () => {
@@ -651,6 +739,7 @@ describe('convergeConfigRelease — failures keep the running config', () => {
   })
 
   test('an archive that does not match the descriptor is refused and not quarantined', async () => {
+    sessionCommitted()
     const release = baseRelease()
     serveRelease(api, release)
     write(origin, `${DIR}/agents/kortix.md`, 'SWAPPED IN STORAGE\n')
@@ -738,8 +827,8 @@ describe('convergeConfigRelease — other sources', () => {
     expect(response.outcome).toBe('unchanged')
     expect(response.config).toMatchObject({ source: 'release', mode: 'follow-base', proven: true })
     expect(await servingDir()).toBe(join(dir, DIR))
-    // The descriptor request carries no inputs at all.
-    expect(api.descriptorRequests.at(-1)!.body).toEqual({})
+    // The descriptor request carries no inputs that pick the release; it asks for v3.
+    expect(api.descriptorRequests.at(-1)!.body).toEqual({ accept: ['config-release-v3'] })
 
     // The edit reaches the box by being pushed to the base branch.
     write(origin, `${DIR}/agents/kortix.md`, 'SESSION EDIT\n')
@@ -1009,6 +1098,7 @@ describe('config_releases off: the box reverts to its workspace config dir', () 
   })
 
   test('the same 403 from the archive route reverts too', async () => {
+    sessionCommitted()
     serveRelease(api, baseRelease())
     api.archiveOverride = FEATURE_DISABLED
     const oc = fakeOpencode()

@@ -471,6 +471,48 @@ channels:
       'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./m.ts\n    mode: stream\n    account: acme-bot\n    prompt: go\n',
   },
   {
+    name: 'event: source adapter is valid',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: event\n    connector: github\n    event: GITHUB_PULL_REQUEST_EVENT\n    source: composio\n    prompt: go\n',
+  },
+  {
+    name: 'event: empty source is rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: event\n    connector: github\n    event: GITHUB_PULL_REQUEST_EVENT\n    source: ""\n    prompt: go\n',
+  },
+  {
+    name: 'event: non-string source is rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: event\n    connector: github\n    event: GITHUB_PULL_REQUEST_EVENT\n    source: 7\n    prompt: go\n',
+  },
+  {
+    name: 'cron: source is rejected (event only)',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: "0 9 * * *"\n    source: composio\n    prompt: go\n',
+  },
+  {
+    name: 'webhook: source is rejected (event only)',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: webhook\n    secret_env: S\n    source: composio\n    prompt: go\n',
+  },
+  {
+    name: 'monitor: source is rejected (event only)',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./m.ts\n    mode: stream\n    source: composio\n    prompt: go\n',
+  },
+  {
     name: 'cron: event keys on cron are rejected',
     format: 'yaml',
     valid: false,

@@ -39,7 +39,8 @@ const RUNTIME = ['node:*', 'node:*/**', ...pkg('bun', 'zod', 'tar')]
 export const SERVICES = {
   'config-provider': [],
   // managedSkillsDir(): a release is sealed against the managed skill names.
-  'config-release': ['skills'],
+  // downloadAndExtractProjectSnapshot(): a release is built from the project snapshot.
+  'config-release': ['skills', 'config-provider'],
   'egress-shim': [],
   'event-bus': [],
   'llm-proxy': [],

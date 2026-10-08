@@ -1,11 +1,9 @@
 import { pluginFilesInDir, toolNamesInDir } from './config-directory-inventory'
-import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   activateBootConfig,
   bootConfigRoot,
   configDirFiles,
-  materializeRelease,
   pruneBootConfigs,
   quarantineRelease,
   readBootConfigPointer,
@@ -13,18 +11,17 @@ import {
   readReleaseManifest,
   releaseDir,
   verifyRelease,
-  writeReleaseManifest,
   type ReleaseManifest,
 } from '@/services/config-release/boot-config'
 import {
   configReleaseApiFrom,
-  downloadConfigArchive,
   fetchConfigReleaseDescriptor,
   isFeatureDisabledError,
   type ConfigReleaseApi,
 } from '@/services/config-release/api-client'
 import type { ConfigReleaseDescriptor } from '@/services/config-release/descriptor'
 import { clearConfigReleaseNotice } from '@/services/config-release/notice'
+import { obtainRelease } from '@/services/config-release/obtain'
 import { logger } from '@/lib/log/logger'
 import { repairOpencodeConfigDir } from './apple-double'
 import { serveConfigDir } from './boot-link'
@@ -203,34 +200,31 @@ async function bootCandidates(
   const candidates: Candidate[] = []
   const desiredId = answer.descriptor ? effectiveReleaseId(answer.descriptor) : null
 
-  if (answer.descriptor && desiredId !== null && answer.descriptor.archive !== null && api) {
+  if (answer.descriptor && desiredId !== null && answer.descriptor.files !== null) {
     const manifest = manifestFromDescriptor(answer.descriptor, desiredId)
     const dir = releaseDir(root, desiredId)
-    const verifyInput = { dir, files: manifest.files, configDir: manifest.config_dir, managedSkillsDir: input.managedSkillsDir }
     const quarantined = (await readQuarantine(root))[desiredId]
     if (quarantined) {
       reasons.push(`release ${desiredId.slice(0, 12)} is quarantined on this box: ${quarantined.reason}`)
     } else {
       try {
-        const intact = existsSync(dir) && (await verifyRelease(verifyInput))
-        if (intact) {
-          await writeReleaseManifest(root, manifest)
-        } else {
-          const archive = await downloadConfigArchive(api, manifest.archive_url, {
-            expectedBytes: manifest.archive_bytes,
-          })
-          await materializeRelease({
-            root,
-            manifest,
-            archive,
-            managedSkillsDir: input.managedSkillsDir,
-            prepare: (staged) =>
-              input.prepare
-                ? input.prepare(manifest.config_dir ? join(staged, manifest.config_dir) : staged, true)
-                : prepareRelease(staged, manifest.config_dir, input.managedSkillsDir),
-          })
-        }
-        input.mark?.('config-release-extracted')
+        // The checkout is the release when the box checked out its commit:
+        // wait for it only then. Any other boot builds the release meanwhile.
+        const checkout =
+          cfg.baseSha === manifest.source_commit && (await input.workspace) === null ? cfg.projectTarget : null
+        const obtained = await obtainRelease({
+          root,
+          manifest,
+          snapshot: answer.descriptor.snapshot,
+          api,
+          workspace: checkout,
+          managedSkillsDir: input.managedSkillsDir,
+          prepare: (staged) =>
+            input.prepare
+              ? input.prepare(manifest.config_dir ? join(staged, manifest.config_dir) : staged, true)
+              : prepareRelease(staged, manifest.config_dir, input.managedSkillsDir),
+        })
+        input.mark?.(`config-release-${obtained.transport}`)
         candidates.push({
           dir: releaseConfigDir(dir, manifest.config_dir) ?? cfg.defaultOpencodeConfigDir,
           root: dir,
@@ -241,15 +235,15 @@ async function bootCandidates(
           manifest,
         })
       } catch (err) {
-        // Valve B again, one level down: the descriptor arrived but the archive
-        // did not. Nothing is wrong with the release itself, so it is NOT
-        // quarantined; the next trigger retries it.
+        // Valve B again, one level down: the descriptor arrived but no source
+        // delivered the files. Nothing is wrong with the release itself, so it
+        // is NOT quarantined; the next trigger retries it.
         reasons.push(
           `release ${desiredId.slice(0, 12)} could not be built: ${err instanceof Error ? err.message : String(err)}`,
         )
       }
     }
-  } else if (answer.descriptor && desiredId !== null && answer.descriptor.archive === null) {
+  } else if (answer.descriptor && desiredId !== null && answer.descriptor.files === null) {
     // Governance only: no repository access, or no config dir on the base
     // branch. The image default runs with the release's compiled governance.
     candidates.push({

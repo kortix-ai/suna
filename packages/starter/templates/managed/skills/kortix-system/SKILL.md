@@ -234,6 +234,7 @@ Kortix cloud state — not just files in the repo. Examples:
 | "call Gmail / a CRM / any connector from an App, a Convex backend or a script" | `@kortix/sdk` through the connector gateway, never a raw provider key · `kortix system-skills get kortix-connectors` (**From apps and backends**) |
 | "edit files in another session's sandbox" | `kortix sessions files <id> ls|write|mv|rm|find` |
 | "what needs review? approve / reject / request changes" | `kortix review ls` · `kortix review act <id> approve` · `kortix cr request-changes <cr> --message` |
+| "show me every app event trigger" / "what listens to <app>?" | `kortix triggers ls --type event` (grouped by app) · `kortix triggers ls --connector <slug>` · web: Triggers → **App events** |
 | "when X happens in <app>, do Y" (new email, PR, issue, calendar event, Slack message) | `kortix triggers events --apps` → `triggers events --connector <slug> --event <TYPE>` → `triggers add … --type event … --apply` · playbook: `references/scheduling.md` → App event triggers |
 | "edit a trigger live (schedule, conditions, agent, model)" | `kortix triggers set <slug> --cron … --filter k=v` · `triggers add … --apply` |
 | "which tools does this project have? remove / change a Kortix tool" | `kortix tools ls` · delete the `<name>: kortix:<name>` line in `kortix.yaml` · `kortix tools eject <name>` *(`references/kortix/tools.md` has the checklists)* |
@@ -537,7 +538,9 @@ Decide the mechanism first:
 - **Reacts to an event in a connected app** ("when a PR opens", "when an
   email arrives", "when an issue changes") → `type: event` + `connector` +
   `event`. `connector` is the profile; add `account: <label>` only to pick
-  one of several shared accounts on it. Kortix subscribes for you: no
+  one of several shared accounts on it. `source` names the event source
+  adapter and defaults to the connector's provider; Composio is one adapter.
+  The event id belongs to the adapter. Kortix subscribes for you: no
   webhook, no secret, no signature.
   Use `type: webhook` + `secret_env` only for a system that has no app
   connector.
@@ -1067,15 +1070,16 @@ Things that surprise people:
   push, never asking the user to copy files out. See the
   `<change-requests>` section above.
 - **Keep big static assets out of Git.** Every session builds its agent
-  config from the whole repository at the base commit (`git archive`, so
-  history and `.git` do not count). Above 32 MiB compressed or 128 MiB
-  uncompressed that build fails, and every session runs the platform
-  default config without the project's agents. Put videos, images,
-  datasets, model weights and generated media in object storage (S3, R2,
-  GCS) or a CDN, and download them at runtime. Add build output (`dist/`,
-  `out/`, `node_modules/`) to `.gitignore`. `kortix validate` warns about
-  any file of 10 MiB or more and a repository over 32 MiB; run it before
-  you commit. A path that must stay in Git but that no agent reads can be
+  config from the whole repository at the base commit (history and `.git`
+  do not count), and downloads every file. A new session takes the files
+  from its own checkout, whatever the size. A running session picks up a
+  base-branch change through the project snapshot, built up to 512 MiB
+  compressed; above that it keeps the config it runs until a new session
+  starts. Put videos, images, datasets, model weights and generated media
+  in object storage (S3, R2, GCS) or a CDN, and download them at runtime.
+  Add build output (`dist/`, `out/`, `node_modules/`) to `.gitignore`.
+  `kortix validate` warns about any file of 10 MiB or more and a
+  repository over 512 MiB; run it before you commit. A path that must stay in Git but that no agent reads can be
   left out of the agent config with `<path> export-ignore` in
   `.gitattributes`.
 - **Triggers live in `kortix.yaml`, not as files.** Old Kortix shipped

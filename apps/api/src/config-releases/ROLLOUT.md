@@ -114,7 +114,8 @@ load there. A failure a meta session reported never counts toward the project
 quarantine (`notFromMetaSession` in `quarantine.ts`).
 
 **Daemon side — where a box reads config from, per boot/converge:**
-1. The API's desired release, downloaded and verified against its manifest.
+1. The API's desired release, from the copy on disk, the checkout, the
+   project snapshot or the archive, verified against its manifest.
 2. The last release **this box** proved, if the desired release cannot be
    verified or applied (a new OpenCode fails its proven check, or pi refuses
    the config — the running config is kept, nothing is torn down).
@@ -127,12 +128,33 @@ request. The store is a cache; the Git mirror is always the source of truth.
 
 ## Limits
 
-- The release archive is the repository at the commit, capped at 32 MiB gzip
-  and 128 MiB uncompressed (`MAX_CONFIG_ARCHIVE_BYTES` / `MAX_CONFIG_TAR_BYTES`
-  in `release-tree.ts`, matched by the daemon's `descriptor.ts` /
-  `boot-config.ts`). The company project measured 248 files, 2.6 MB
-  (2026-10-05). A repository over the cap gets no release; its sessions keep
-  the last proven one and `fallback_reason` names the cap.
+- A box takes a release from the first source that holds it
+  (`apps/kortix-sandbox-agent-server/src/services/config-release/obtain.ts`):
+  the intact copy on disk, the session's checkout when its HEAD is the
+  release commit, the project snapshot of the commit (descriptor `snapshot`,
+  v3), then the API archive. Every source is verified file by file against
+  the blob IDs. The daemon log line `[boot-config] release materialized`
+  names the source in `transport`.
+- The API archive is capped at 32 MiB gzip and 128 MiB uncompressed
+  (`MAX_CONFIG_ARCHIVE_BYTES` / `MAX_CONFIG_TAR_BYTES` in `release-tree.ts`,
+  matched by the daemon's `descriptor.ts` / `boot-config.ts`). The company
+  project measured 248 files, 2.6 MB (2026-10-05). A tree over the cap keeps
+  its release ID and file list; only the archive is withheld. A v3 daemon
+  (`{"accept":["config-release-v3"]}`) gets the release with `archive: null`
+  and builds it from its checkout or the snapshot. A v2 daemon gets "no
+  release" and the reason, as before v3: it reads `archive: null` as
+  governance only.
+- The project snapshot is capped at `KORTIX_PROJECT_SNAPSHOT_MAX_ARCHIVE_BYTES`
+  (512 MiB gzip by default). Prod measured a largest repository of 220 MiB
+  (2026-10-08). Over that cap, or on a deployment without
+  `KORTIX_PROJECT_SNAPSHOT_S3_*` (local, self-host), a running box over the
+  archive cap cannot converge: it keeps its release, `GET /config` says
+  `stale: true`, and the converge reason names both missing sources. A new
+  session still builds the release from its own checkout.
+- `GET /config`, the turn gate and admission compare against the v3 release
+  ID (`resolveDesiredRelease`'s default format). For a tree under the archive
+  cap the v2 and v3 IDs are equal. A v2 box on a tree over the cap therefore
+  reads `stale: true` until it gets the current daemon.
 - A path the repository's `.gitattributes` marks `export-ignore` (the file or
   one of its directories) is left out of the release tree, as `git archive`
   would leave it out (`exportIgnoredPaths` in `release-tree.ts`, KRTX-1728).
@@ -141,8 +163,8 @@ request. The store is a cache; the Git mirror is always the source of truth.
   the box matches. A pruned tree is composed, so its archive URL carries the
   commit. `kortix validate` and
   `kortix ship` warn (never fail) when one file is 10 MiB or more or the files
-  Git stores total more than 32 MiB (`apps/cli/src/project-lint.ts`, which
-  repeats the cap). The too-large `reason` names both remedies.
+  Git stores total more than 512 MiB (`apps/cli/src/project-lint.ts`, which
+  repeats the snapshot cap). The too-large `reason` names both remedies.
 - Every commit to the base branch is a new release, because the tree changed.
   Running sessions converge to it in the background; a prompt on a box that is
   behind converges first.

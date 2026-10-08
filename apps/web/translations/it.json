@@ -19502,7 +19502,12 @@
       "text581e89ae1f08": "Eliminare uno snapshot del backend",
       "text1af77a9ae95c": "Aggiungi questo backend all'App. Un'App ottiene token del visitatore solo per i backend che elenca.",
       "text2eb91a6f88aa": "1 file resta allegato. Rimuovilo per eseguire il comando, oppure rimuovi il comando per inviare il file come messaggio.",
-      "text807f9beb34b1": "{count, plural, other {# file restano allegati. Rimuovili per eseguire il comando, oppure rimuovi il comando per inviarli come messaggio.}}"
+      "text807f9beb34b1": "{count, plural, other {# file restano allegati. Rimuovili per eseguire il comando, oppure rimuovi il comando per inviarli come messaggio.}}",
+      "text4b4847a6fb87": "Eventi delle app",
+      "text07fb9f8661dc": "App con eventi",
+      "text51035b5b67dc": "Filtra per tipo",
+      "text12a4656bfd2a": "tramite {source}",
+      "textfd26b2373251": "Eventi tramite {source}"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

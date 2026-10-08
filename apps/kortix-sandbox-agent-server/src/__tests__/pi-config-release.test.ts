@@ -24,6 +24,7 @@ import {
   commitAll,
   initRepo,
   serveRelease,
+  serveSnapshot,
   startFakeApi,
   write,
   type BuiltRelease,
@@ -69,10 +70,14 @@ function release(skill: string, prompt: string): BuiltRelease {
   return buildRelease(repo, commit, DIR, { projectId: 'proj-1', governance: governance(prompt) })
 }
 
-function create(env: NodeJS.ProcessEnv = { KORTIX_COMPILED_AGENT_CONFIG: PROVISIONED }, opts: { api?: null } = {}) {
+function create(
+  env: NodeJS.ProcessEnv = { KORTIX_COMPILED_AGENT_CONFIG: PROVISIONED },
+  opts: { api?: null } = {},
+  checkout: Partial<Config> = {},
+) {
   const sessionEnv: NodeJS.ProcessEnv = { KORTIX_SESSION_ID: 'sess-1', ...env }
   const releases = createPiConfigReleases({
-    cfg: { apiUrl: api.url, projectId: 'proj-1', sandboxToken: TOKEN } as Config,
+    cfg: { apiUrl: api.url, projectId: 'proj-1', sandboxToken: TOKEN, ...checkout } as Config,
     env: sessionEnv,
     root,
     noticePath,
@@ -134,6 +139,38 @@ describe('pi config releases: boot', () => {
     const requests = api.descriptorRequests.length
     await releases.boot()
     expect(api.descriptorRequests.length).toBe(requests)
+  })
+
+  test('a box that checked out the release commit builds the release from its checkout: no download', async () => {
+    const one = release('deploy', 'from the checkout')
+    serveRelease(api, one)
+    const { releases } = create(undefined, {}, { projectTarget: repo, baseSha: one.descriptor.source_commit! })
+
+    await releases.boot(undefined, Promise.resolve(null))
+
+    const id = one.descriptor.release_id!
+    expect(releases.report()).toMatchObject({ release_id: id, source: 'release', proven: true, fallback_reason: null })
+    expect(existsSync(join(releaseDir(root, id), DIR, 'skills', 'deploy', 'SKILL.md'))).toBe(true)
+    expect(api.archiveRequests).toEqual([])
+    expect(api.storageRequests).toEqual([])
+  })
+
+  test('a release over the archive cap (v3, no archive) boots from the project snapshot', async () => {
+    const one = release('deploy', 'from the snapshot')
+    api.respond({
+      status: 200,
+      json: { ...one.descriptor, format: 'config-release-v3', archive: null, snapshot: serveSnapshot(api, repo, one.descriptor.source_commit!) },
+    })
+    const { releases } = create()
+
+    await releases.boot()
+
+    const id = one.descriptor.release_id!
+    expect(releases.report()).toMatchObject({ release_id: id, source: 'release', proven: true, fallback_reason: null })
+    expect(existsSync(join(releaseDir(root, id), DIR, 'skills', 'deploy', 'SKILL.md'))).toBe(true)
+    expect(existsSync(join(releaseDir(root, id), '.git'))).toBe(false)
+    expect(api.archiveRequests).toEqual([])
+    expect(api.storageRequests).toHaveLength(1)
   })
 
   test('config releases off: pi reads the working tree, and a stale notice is removed', async () => {
