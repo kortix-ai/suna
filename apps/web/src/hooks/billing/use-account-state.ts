@@ -59,7 +59,7 @@ export const accountStateKeys = {
   // account" (resolved server-side from the auth user) — used by global
   // surfaces like the user menu. /accounts/[id] pages pass the explicit id so
   // multi-account users don't see the same wallet/limits across all pages.
-  state: (accountId?: string) =>
+  state: (accountId?: string | null) =>
     [...accountStateKeys.all, 'state', { accountId: accountId ?? null }] as const,
   transactions: (limit?: number, offset?: number) =>
     [...accountStateKeys.all, 'transactions', { limit, offset }] as const,
@@ -148,8 +148,9 @@ interface UseAccountStateOptions {
   refetchOnMount?: boolean;
   refetchOnWindowFocus?: boolean;
   skipCache?: boolean; // Skip backend cache (useful after checkout/subscription changes)
-  /** Fetch a specific account's state. Defaults to the user's primary account. */
-  accountId?: string;
+  /** Fetch a specific account's state. Defaults to the user's primary account.
+   *  `null` (no account selected yet) reads the same slot as `undefined`. */
+  accountId?: string | null;
 }
 
 /**
