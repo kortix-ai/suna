@@ -253,76 +253,77 @@ bun -e "import { z } from 'zod'; console.log(JSON.stringify(z.toJSONSchema(z.obj
 
 ### Example: call an HTTP API with a project secret
 
-1. Store the key as a project secret:
+Store the key as a project secret. The command reads the value from stdin:
 
-   ```bash
-   kortix secrets set WEATHER_API_KEY=-   # reads the value from stdin
-   ```
+```bash
+kortix secrets set WEATHER_API_KEY=-
+```
 
-2. Grant it to the agents that call the tool. The starter's `kortix` agent has
-   `secrets: all`. A scoped agent lists it: `secrets: [WEATHER_API_KEY]`.
+Grant the secret to the agents that call the tool. The starter's `kortix`
+agent has `secrets: all`. A scoped agent lists it: `secrets: [WEATHER_API_KEY]`.
 
-3. Write the module:
+Write the module:
 
-   ```ts
-   // tools/weather_now.ts
-   export default {
-     description: 'Current weather for a city: temperature in °C and conditions.',
-     parameters: {
-       type: 'object',
-       properties: { city: { type: 'string', description: 'City name, e.g. "Berlin"' } },
-       required: ['city'],
-     },
-     async execute(args, context) {
-       const key = context.env.WEATHER_API_KEY
-       if (!key) throw new Error('WEATHER_API_KEY is not set: run `kortix secrets set WEATHER_API_KEY=-` and grant it to this agent.')
-       const url = `https://api.weather.example.com/v1/current?city=${encodeURIComponent(args.city)}`
-       const response = await fetch(url, { headers: { authorization: `Bearer ${key}` }, signal: context.signal })
-       if (!response.ok) throw new Error(`weather API answered ${response.status}: ${await response.text()}`)
-       const data = await response.json()
-       return { city: args.city, temperature_c: data.temp_c, conditions: data.conditions }
-     },
-   }
-   ```
+```ts
+// tools/weather_now.ts
+export default {
+  description: 'Current weather for a city: temperature in °C and conditions.',
+  parameters: {
+    type: 'object',
+    properties: { city: { type: 'string', description: 'City name, e.g. "Berlin"' } },
+    required: ['city'],
+  },
+  async execute(args, context) {
+    const key = context.env.WEATHER_API_KEY
+    if (!key) throw new Error('WEATHER_API_KEY is not set: run `kortix secrets set WEATHER_API_KEY=-` and grant it to this agent.')
+    const url = `https://api.weather.example.com/v1/current?city=${encodeURIComponent(args.city)}`
+    const response = await fetch(url, { headers: { authorization: `Bearer ${key}` }, signal: context.signal })
+    if (!response.ok) throw new Error(`weather API answered ${response.status}: ${await response.text()}`)
+    const data = await response.json()
+    return { city: args.city, temperature_c: data.temp_c, conditions: data.conditions }
+  },
+}
+```
 
-4. Declare it:
+Declare it:
 
-   ```yaml
-   tools:
-     # … the Kortix tools you keep
-     weather_now: tools/weather_now.ts
-   ```
+```yaml
+tools:
+  # … the Kortix tools you keep
+  weather_now: tools/weather_now.ts
+```
 
 ### Example: override `web_search`
 
-1. `kortix tools eject web_search` writes `tools/web_search.ts` and sets
-   `web_search: tools/web_search.ts`.
-2. Change the copy. For example, keep results from one site only: in
-   `execute`, add the site to each query before the request.
+`kortix tools eject web_search` writes `tools/web_search.ts` and sets
+`web_search: tools/web_search.ts`. Then change the copy. For example, to keep
+results from one site only, add the site to each query in `execute`, before
+the request:
 
-   ```ts
-   // tools/web_search.ts, inside execute()
-   const queries = String(args.query ?? '').split('|||').map((query) => query.trim()).filter(Boolean)
-     .map((query) => `site:docs.example.com ${query}`)
-   ```
+```ts
+// tools/web_search.ts, inside execute()
+const queries = String(args.query ?? '').split('|||').map((query) => query.trim()).filter(Boolean)
+  .map((query) => `site:docs.example.com ${query}`)
+```
 
-3. Keep the name, the arguments, and the output JSON, so skills that name
-   `web_search` and the web UI view still work.
+Keep the name, the arguments, and the output JSON, so skills that name
+`web_search` and the web UI view still work.
 
 ### Test a tool
 
-1. `kortix validate` checks the name, the path, a missing file, and the
-   `kortix:` values. `kortix tools ls` shows what a session gets.
-2. Commit, push, and open a change request. After it merges, start a session
-   and ask for one call with real arguments:
+`kortix validate` checks the name, the path, a missing file, and the
+`kortix:` values. `kortix tools ls` shows what a session gets.
 
-   ```bash
-   kortix sessions new --wait --prompt "Call the weather_now tool once with city Berlin and print its output."
-   ```
+Then commit, push, and open a change request. After it merges, start a
+session and ask for one call with real arguments:
 
-   A tool that does not load is not offered to the model. A tool that throws
-   answers with its error message. `kortix sessions log <id>` prints the
-   session's messages, with each tool call and its status.
+```bash
+kortix sessions new --wait --prompt "Call the weather_now tool once with city Berlin and print its output."
+```
+
+A tool that does not load is not offered to the model. A tool that throws
+answers with its error message. `kortix sessions log <id>` prints the
+session's messages, with each tool call and its status.
 
 ## Declare tools
 
