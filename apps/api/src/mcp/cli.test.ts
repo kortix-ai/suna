@@ -49,7 +49,6 @@ describe('denial', () => {
     [['env', 'pull']],
     [['env', 'push']],
     [['apps', 'deploy', './x']],
-    [['connectors', 'mcp']],
     [['sessions', 'shell', 'abc']],
   ])('%j is refused with a reason and an alternative', (args) => {
     const d = denial(args);

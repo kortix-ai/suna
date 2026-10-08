@@ -1,8 +1,8 @@
 import { describe, expect, mock, test } from 'bun:test';
 
 // The connector data plane must stay pinned to the injected session identity
-// (KRTX-1705): a session only ever invokes `kortix connectors` / `kortix
-// connectors mcp` (template runtime fingerprint), so a human's in-sandbox
+// (KRTX-1705): a session only ever invokes `kortix connectors` (template
+// runtime fingerprint), so a human's in-sandbox
 // `hosts use` selection must not redirect it at the selected host. These
 // tests guard the pin itself — the env auth outranks the stored auth for
 // both gateway entry points, whatever the config file says.
