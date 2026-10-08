@@ -13,13 +13,27 @@ import {
   writeReleaseManifest,
   type ReleaseManifest,
 } from './boot-config'
-import type { ConfigReleaseSnapshot } from './descriptor'
+import type { ConfigReleaseDescriptor, ConfigReleaseSnapshot } from './descriptor'
 
 /** Where a release on this box came from. */
 export type ReleaseTransport = 'disk' | 'workspace' | 'snapshot' | 'archive'
 
 /** Download, verify and extract budget for one snapshot. Stalls fail sooner (the transfer's inactivity watchdog). */
 const SNAPSHOT_TIMEOUT_MS = 5 * 60_000
+
+/**
+ * May a fresh box's checkout hold the release, so the boot waits for it?
+ * With a base pin, only when the pin is the release commit. Without one
+ * (`KORTIX_BASE_SHA` unset), only when the release has no archive: then
+ * nothing else may hold it yet, and HEAD decides in `obtainRelease`. A
+ * release with an archive downloads while the checkout lands instead.
+ */
+export function checkoutMayHold(
+  baseSha: string | undefined,
+  descriptor: Pick<ConfigReleaseDescriptor, 'source_commit' | 'archive'>,
+): boolean {
+  return baseSha ? baseSha === descriptor.source_commit : descriptor.archive === null
+}
 
 export interface ObtainReleaseInput {
   root: string
@@ -64,13 +78,16 @@ export async function obtainRelease(input: ObtainReleaseInput): Promise<{ dir: s
 
   if (input.workspace) {
     const head = await runGit(['rev-parse', '--verify', 'HEAD'], { cwd: input.workspace }).catch(() => null)
-    if (head?.code === 0 && head.stdout.trim() === manifest.source_commit) {
+    const at = head?.code === 0 ? head.stdout.trim() : null
+    if (at === manifest.source_commit) {
       try {
         await materializeReleaseFromTree({ ...shared, source: input.workspace, take: 'copy' })
         return done('workspace')
       } catch (err) {
         reasons.push(`the checkout does not hold it: ${(err as Error).message}`)
       }
+    } else {
+      reasons.push(`the checkout is at ${at ? at.slice(0, 12) : 'no commit'}, not the release commit ${manifest.source_commit.slice(0, 12)}`)
     }
   }
 

@@ -54,7 +54,7 @@ import {
   clearConfigReleaseNotice,
   writeConfigReleaseNotice,
 } from '@/services/config-release/notice'
-import { obtainRelease } from '@/services/config-release/obtain'
+import { checkoutMayHold, obtainRelease } from '@/services/config-release/obtain'
 import {
   ConvergeBusyError,
   deliverGovernance,
@@ -359,9 +359,9 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
           await quarantineRelease(root, desiredId, problem)
         } else {
           try {
-            // The checkout is the release when the box checked out its commit.
+            // The checkout is the release when the box checked out its commit (obtain.ts).
             const checkout =
-              cfg.baseSha === manifest.source_commit && workspace && (await workspace) === null ? cfg.projectTarget : null
+              checkoutMayHold(cfg.baseSha, descriptor) && workspace && (await workspace) === null ? cfg.projectTarget : null
             const dir = await materialize(manifest, descriptor, checkout)
             mark?.('config-release-extracted')
             await useRelease(desiredId, desiredId, manifest, dir, reasons, null)
