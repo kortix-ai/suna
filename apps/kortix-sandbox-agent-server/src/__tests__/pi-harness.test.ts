@@ -1284,6 +1284,68 @@ describe('pi project config', () => {
   })
 })
 
+describe('project tools on pi', () => {
+  // A harness-neutral tool module (services/tools/tool.ts): no import, a plain default export.
+  const LOOKUP = `export default {
+  description: 'Look up an order by id.',
+  parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+  async execute(args, context) {
+    return { order: args.id, status: 'shipped', agent: context.agent, directory: context.directory, session: context.sessionId }
+  },
+}
+`
+  const compiled = (projectTools: Record<string, string>, tools?: Record<string, boolean>) =>
+    JSON.stringify({ agent: { build: tools ? { tools } : {} }, project_tools: projectTools })
+  const write = (workspace: string, path: string, source: string) => {
+    mkdirSync(dirname(join(workspace, path)), { recursive: true })
+    writeFileSync(join(workspace, path), source)
+  }
+  const ids = async (r: Rig) => (await r.user('/tool/ids').then((res) => res.json())) as string[]
+  const page = async (r: Rig) => (await r.bearer(`/kortix/runtime/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+
+  test('a tool declared in kortix.yaml runs with the call context, beside the Kortix tools', async () => {
+    const r = await boot({
+      script: [{ tool: 'lookup_order', args: { id: '42' } }, { text: 'done' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ lookup_order: 'integrations/orders/lookup.ts' }) },
+      prepare: (workspace) => write(workspace, 'integrations/orders/lookup.ts', LOOKUP),
+    })
+    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'lookup_order', 'question', 'task'])
+    await promptAndSettle(r, 'look up order 42')
+    const part = toolParts(await page(r), 'lookup_order')[0]!
+    expect(part.state.status).toBe('completed')
+    expect(JSON.parse(part.state.output)).toEqual({ order: '42', status: 'shipped', agent: 'build', directory: r.workspace, session: 'sess-pi-test' })
+  })
+
+  test('a project tool replaces the Kortix tool of its name; a module that does not load is left out', async () => {
+    const r = await boot({
+      script: [{ tool: 'memory', args: { command: 'view', path: 'memory' } }, { text: 'done' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ memory: 'tools/memory.ts', broken: 'tools/broken.ts', missing: 'tools/missing.ts' }) },
+      prepare: (workspace) => {
+        write(workspace, 'tools/memory.ts', `export default { description: 'Team memory.', parameters: { type: 'object', properties: {} }, execute: () => 'the project memory' }\n`)
+        write(workspace, 'tools/broken.ts', `export default { description: 'No execute.' }\n`)
+      },
+    })
+    const listed = await ids(r)
+    expect(listed).toContain('memory')
+    expect(listed).not.toContain('broken')
+    expect(listed).not.toContain('missing')
+    await promptAndSettle(r, 'view memory')
+    expect(toolParts(await page(r), 'memory')[0]!.state.output).toBe('the project memory')
+  })
+
+  test("an agent's tool list allows only the tools it names; any other call is denied", async () => {
+    const r = await boot({
+      script: [{ tool: 'bash', args: { command: 'touch ran.txt' } }, { text: 'done' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ lookup_order: 'tools/lookup.ts' }, { '*': false, read: true, lookup_order: true }) },
+      prepare: (workspace) => write(workspace, 'tools/lookup.ts', LOOKUP),
+    })
+    expect(await ids(r)).toEqual(['read', 'lookup_order'])
+    await promptAndSettle(r, 'run a command')
+    expect(toolParts(await page(r), 'bash')[0]!.state.status).toBe('error')
+    expect(existsSync(join(r.workspace, 'ran.txt'))).toBe(false)
+  })
+})
+
 describe('pi extensions', () => {
   test('a tool_call handler blocks a tool and a tool_result handler patches another', async () => {
     const r = await boot({

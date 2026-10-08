@@ -1333,8 +1333,8 @@ harnessFlow(
     const path = `memory/ke2e-run12-${Date.now()}.md`;
     const content = `ke2e-run12-${crypto.randomUUID()}`;
     const done = `RUN12_DONE_${Date.now()}`;
-    // OpenCode has these tools from the starter's `harnesses/opencode/tools/`;
-    // pi has them built into the daemon, under the same names and arguments.
+    // The daemon hosts both tools (services/tools) and runs the same module for
+    // either harness: pi in process, OpenCode through the bridge plugin.
     await ctx.step('the agent writes project memory with `memory` and presents it with `show`', async () => {
       await sendPrompt(
         ctx,
@@ -1358,6 +1358,104 @@ harnessFlow(
         .get(runtimePath(session.sandboxId, `/file/content?path=${encodeURIComponent(path)}`));
       file.status(200).body().matches('$.content', new RegExp(`^${content}\\n?$`));
     });
+  },
+);
+
+// ─── RUN-15: a project tool runs on every harness ────────────────────────────
+// A harness-neutral module: a plain default export, no harness import. It
+// writes its proof to the workspace, so the flow reads the effect back instead
+// of trusting the model's text.
+const PROJECT_TOOL_FILES = {
+  'kortix.yaml': [
+    'kortix_version: 2',
+    'default_agent: kortix',
+    'tools:',
+    '  ke2e_marker: tools/ke2e_marker.ts',
+    'agents:',
+    '  kortix:',
+    '    kortix_permissions: all',
+    '    skills: all',
+    '  limited:',
+    '    kortix_permissions: all',
+    '    tools: [read]',
+    '',
+  ].join('\n'),
+  'agents/limited.md': [
+    '---',
+    'description: Reads this repository with the read tool only.',
+    'mode: primary',
+    '---',
+    'You answer questions about this repository. Follow the user instructions exactly.',
+    '',
+  ].join('\n'),
+  'tools/ke2e_marker.ts': [
+    "import { writeFileSync } from 'node:fs'",
+    "import { join } from 'node:path'",
+    '',
+    'export default {',
+    "  description: 'Records a ke2e marker: writes <nonce>:<agent> to ke2e-run15-<nonce>.txt and returns that text.',",
+    "  parameters: { type: 'object', properties: { nonce: { type: 'string', description: 'The nonce to record' } }, required: ['nonce'] },",
+    '  execute(args, context) {',
+    "    const text = `${args.nonce}:${context.agent}`",
+    "    writeFileSync(join(context.directory, `ke2e-run15-${args.nonce}.txt`), text)",
+    '    return text',
+    '  },',
+    '}',
+    '',
+  ].join('\n'),
+};
+
+harnessFlow(
+  'RUN-15',
+  {
+    domain: 'agent-run',
+    requires: ['funded', 'daytona'],
+    // Two sessions: boot (≤540s) + one turn (≤240s) each.
+    timeoutMs: 1_700_000,
+    routes: [
+      'PATCH /v1/projects/:projectId/features',
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+    ],
+  },
+  async (ctx, harness) => {
+    const project = await ctx.fixtures.project({ seed: true });
+    const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
+    const ask = (nonce: string, done: string) =>
+      `Call the ke2e_marker tool once with nonce "${nonce}". Use no other tool. ` +
+      `If you have no ke2e_marker tool, call nothing. Then reply with exactly: ${done}`;
+    const file = (sandboxId: string, nonce: string) =>
+      ctx.client.as(ctx.P.OWNER).get(runtimePath(sandboxId, `/file/content?path=${encodeURIComponent(`ke2e-run15-${nonce}.txt`)}`));
+    try {
+      await ctx.step(`the project declares the ke2e_marker tool and a limited agent, and runs ${harness}`, async () => {
+        if (harness === 'pi') await world.setFeature('pi_harness', true);
+        await world.commitToMain(PROJECT_TOOL_FILES, 'ke2e RUN-15: a project tool and a limited agent');
+      });
+
+      const nonce = `n${Date.now()}`;
+      const done = `RUN15_DONE_${Date.now()}`;
+      const session = await bootSession(ctx, harness, { project, prompt: ask(nonce, done) });
+      await ctx.step('the default agent calls the project tool; its proof is in the workspace', async () => {
+        const messages = await waitForAssistantText(ctx, session.projectId, session.sessionId, done);
+        const calls = messages.flatMap((m) => m.tools ?? []).filter((t) => t.tool === 'ke2e_marker');
+        if (!calls.some((t) => t.status === 'completed')) throw new Error(`no completed ke2e_marker call on ${harness}: ${JSON.stringify(calls)}`);
+        (await file(session.sandboxId, nonce)).status(200).body().matches('$.content', new RegExp(`^${nonce}:kortix$`));
+      });
+
+      const limitedNonce = `n${Date.now()}`;
+      const limitedDone = `RUN15_LIMITED_${Date.now()}`;
+      const limited = await bootSession(ctx, harness, { project, agentName: 'limited', prompt: ask(limitedNonce, limitedDone) });
+      await ctx.step("an agent whose tool list omits the tool cannot run it", async () => {
+        const messages = await waitForAssistantText(ctx, limited.projectId, limited.sessionId, limitedDone);
+        const ran = messages.flatMap((m) => m.tools ?? []).filter((t) => t.tool === 'ke2e_marker' && t.status !== 'error');
+        if (ran.length > 0) throw new Error(`the limited agent ran ke2e_marker on ${harness}: ${JSON.stringify(ran)}`);
+        (await file(limited.sandboxId, limitedNonce)).status(404);
+      });
+    } finally {
+      await world.close();
+    }
   },
 );
 

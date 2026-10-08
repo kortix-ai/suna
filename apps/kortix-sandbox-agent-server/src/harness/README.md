@@ -154,14 +154,8 @@ pi (`@earendil-works/pi-agent-core` and `pi-coding-agent`, 1.0.3) is bundled
 into the daemon binary and runs INSIDE the daemon process. There is no child
 process, no port, no RPC and no second sandbox: pi-coding-agent's built-in
 `bash`/`read`/`write`/`edit` run on `/workspace` in this process, Kortix adds
-`glob`/`grep` (ripgrep) and `question`, and the five Kortix tools a project template gives an OpenCode
-session, compiled into the daemon under the same names, arguments and output
-JSON: `web_search` (Tavily), `image_search` (Serper), `scrape_webpage`
-(Firecrawl), `memory` and `show` (`pi/kortix-web-tools.ts`,
-`pi/kortix-memory-tool.ts`, `pi/kortix-show-tool.ts`). The three web tools call
-the API's billed router proxy (`/v1/router/{tavily,serper,firecrawl}`) with the
-sandbox token; a box with no control plane calls the upstream with the
-project's own key. A project needs no `harnesses/pi/` file for any of them.
+`glob`/`grep` (ripgrep) and `question`, and the hosted tools (see "Hosted
+tools" below). A project needs no `harnesses/pi/` file for any of them.
 Every model request goes to the Kortix LLM gateway through the
 daemon's localhost LLM proxy, under the same `kortix` provider id OpenCode uses.
 
@@ -238,7 +232,7 @@ one harness's tool. Each adapter maps its tools onto them: pi's `write` is
 `web_search`/`image_search` and `scrape_webpage` follow `websearch` and
 `webfetch` (`pi/interactions.ts` `toolCapability`); pi asks for them like any
 other tool. A rule under the tool's own name wins over its capability. OpenCode's `pty_*` tools follow `bash`, and the
-template's `web_search`/`image_search` and `scrape_webpage` follow `websearch`
+hosted `web_search`/`image_search` and `scrape_webpage` follow `websearch`
 and `webfetch` (`open-code/lifecycle.ts` `capabilityToolRules`). The OpenCode
 tools cannot ask, so they run only when the capability is `allow`. A rule is an
 action, or a glob-pattern -> action map matched against the `bash` command
@@ -332,6 +326,42 @@ Not supported by pi today (answered honestly, never silently): session rewind
 tools, warm-seed capture, `ctx.ui` prompts from extensions. `/kortix/health` reports `harness: 'pi'`
 and keeps `opencode: <state>` as the compatibility field the control plane
 already reads for readiness.
+
+## Hosted tools
+
+A tool that is not a harness's own (`bash`, `read`, …) is written once, as a
+harness-neutral module, and the daemon runs it for whichever harness the box
+runs (`../services/tools/`):
+
+| Module | What |
+| --- | --- |
+| `services/tools/tool.ts` | The contract: a default export `{ description, parameters (JSON Schema), execute(args, context) }`, with `context` = `{ sessionId, agent, directory, env, signal }`. |
+| `services/tools/{web,memory,show}.ts` | The Kortix tools: `web_search` (Tavily), `image_search` (Serper), `scrape_webpage` (Firecrawl), `memory`, `show`. The web tools call the API's billed router proxy (`/v1/router/{tavily,serper,firecrawl}`) with the sandbox token; a box with no control plane calls the upstream with the project's own key. |
+| `services/tools/host.ts` | `loadTools(root, declared)`: the Kortix tools, then the project's (`CompiledAgentSet.project_tools`, from kortix.yaml `tools`), imported from `root` (the working tree or the config release). A project tool replaces a Kortix tool of its name; a module that does not load is logged and skipped. `runTool` bounds the output (over 50 KB or 2000 lines: the whole text to a temp file, the head to the model). `sessionEnv` is `context.env`: the process env with the live agent env file over it. |
+| `routes/kortix/tools.ts` | `POST /kortix/tools/:name` for an out-of-process harness: the box's tool-bridge key (`toolBridgeKey`, kept in the runtime state dir) or the control credential; `403` when the agent's tool access refuses the tool. |
+
+- **pi** loads them at `start()` and registers each as an `AgentTool`
+  (`pi/tools.ts` `createWorkspaceTools`); subagents get them too. A release
+  that changes a project tool's declaration or a file in its module's folder
+  restarts the runtime in place (`pi/config-release.ts` `startOnlyFiles`).
+- **OpenCode** gets a plugin the daemon writes on every config compose
+  (`open-code/tool-bridge.ts`, `~/.config/kortix-tools.js` and its tool list
+  `kortix-tools.json`). Each tool is a stub that posts to the route above. Its
+  `args` are the JSON Schema properties (OpenCode's non-Zod plugin path) and
+  its `tool.definition` hook restores the exact schema, so optional arguments
+  stay optional. A name the served config dir defines in its own `tools/`
+  (the copies the template wrote before) keeps the project file.
+
+**Tool access.** `CompiledAgent.tools` (kortix.yaml `agents.<name>.tools`) maps
+a tool name to visible, with `*` for every tool not named; `toolAllowed`
+(`@kortix/api-contract/runtime-relay`) reads it. pi filters the active tools
+and denies a call to a hidden one, for the root and for a subagent (both
+agents' maps must allow it). OpenCode reads the map as permission rules
+(`open-code/tool-access.ts`): a removed tool is a `deny` after every other
+rule, an allowlist is `*: deny` first, then the rules of the allowed tools at
+the action they had; the compiled `tools` key is dropped, because OpenCode's
+own reading turns `true` into `allow` and lets the agent's `permission`
+re-open a removed tool.
 
 ## Config provider is a host service, not harness logic
 

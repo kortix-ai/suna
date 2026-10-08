@@ -43,7 +43,11 @@ import {
   safeAgentFile,
   manifestCandidatePaths,
   manifestFormatForPath,
+  HARNESS_TOOL_NAMES,
   parseManifestText,
+  resolveAgentTools,
+  safeToolFile,
+  TOOL_NAME_RE,
   validateAgentMdFrontmatter,
   validateManifest,
   type AgentBlockV2,
@@ -259,11 +263,28 @@ export function compileAgentConfig(
   const defaultModel = defaultAgent?.model;
   const runnableDefault = defaultAgent && !defaultAgent.disable && defaultAgent.mode !== 'subagent';
 
+  const projectTools = compileProjectTools(v2.tools);
   return {
     ...(defaultModel ? { model: defaultModel } : {}),
     ...(runnableDefault ? { default_agent: defaultAgentName } : {}),
     agent,
+    ...(projectTools ? { project_tools: projectTools } : {}),
   };
+}
+
+/**
+ * Top-level `tools`: the valid name → module entries; `validateManifest`
+ * reports the rest. A harness tool's name never compiles: two tools with one
+ * name break the model request.
+ */
+function compileProjectTools(tools: unknown): Record<string, string> | undefined {
+  if (!tools || typeof tools !== 'object' || Array.isArray(tools)) return undefined;
+  const entries = Object.entries(tools).flatMap(([name, file]) => {
+    const path = safeToolFile(file);
+    const reserved = (HARNESS_TOOL_NAMES as readonly string[]).includes(name) || name.startsWith('pty_');
+    return TOOL_NAME_RE.test(name) && !reserved && path ? [[name, path] as const] : [];
+  });
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
 /** Compile one selected v2 agent for a restricted session environment. */
@@ -302,9 +323,11 @@ export function compileSelectedAgentConfig(
     const md = suppliedAgentMarkdown(manifest, agentName, agentMdFiles);
     compiledAgent = compileAgentBlock(agentName, block, md.path, md.content);
   }
+  const projectTools = compileProjectTools(v2.tools);
   return {
     ...(compiledAgent.model ? { model: compiledAgent.model } : {}),
     agent: { [agentName]: compiledAgent },
+    ...(projectTools ? { project_tools: projectTools } : {}),
   };
 }
 
@@ -324,7 +347,8 @@ function compileYamlAgentBlock(
 ): CompiledAgentEntry {
   const raw = block as Record<string, unknown>;
   const issues: ManifestIssue[] = [];
-  validateAgentMdFrontmatter(raw, `agents.${name}`, issues);
+  // `tools` is governance here (tool access), not the retired frontmatter field.
+  validateAgentMdFrontmatter({ ...raw, tools: undefined }, `agents.${name}`, issues);
   if (raw.prompt !== undefined && typeof raw.prompt !== 'string') {
     issues.push({ path: `agents.${name}.prompt`, message: 'must be a string.', severity: 'error' });
   }
@@ -345,6 +369,8 @@ function compileYamlAgentBlock(
   const prompt = typeof raw.prompt_file === 'string' ? files[raw.prompt_file] : raw.prompt;
   if (typeof prompt === 'string') compiled.prompt = prompt;
   if (block.enabled === false) compiled.disable = true;
+  const tools = resolveAgentTools(block.tools);
+  if (tools) compiled.tools = tools;
   if (block.skills !== undefined) compiled.permission = applySkillsGovernance(compiled.permission, block.skills);
   if (compiled.permission !== undefined) compiled.permission = denyToolsBehindDeniedPermission(compiled.permission);
   return compiled;
@@ -385,7 +411,8 @@ function compileAgentBlock(
   // `enabled` is omitted (the default, true), whatever the `.md` itself set
   // for `disable` (if anything) passes through untouched above.
   if (block.enabled === false) out.disable = true;
-  if (block.tools !== undefined) out.tools = block.tools;
+  const tools = resolveAgentTools(block.tools);
+  if (tools) out.tools = tools;
 
   if (block.skills !== undefined) {
     out.permission = applySkillsGovernance(out.permission, block.skills);
