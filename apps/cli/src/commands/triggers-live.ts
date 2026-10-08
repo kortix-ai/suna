@@ -134,6 +134,7 @@ export async function triggersAddLive(
     event = parsed;
     body.connector = parsed.connector;
     if (parsed.account) body.event_account = parsed.account;
+    if (parsed.source) body.event_source = parsed.source;
     body.event = parsed.event;
   } else {
     // A monitor rejects cron/webhook wiring outright, so send only its own
@@ -235,6 +236,7 @@ export async function triggersSetLive(
       : tf.defaultAccount
         ? { event_account: null }
         : {}),
+    ...(tf.source ? { event_source: tf.source.trim() } : {}),
     ...(tf.event ? { event: tf.event } : {}),
     ...(enabled === undefined ? {} : { enabled }),
     ...sessionFields(tf),
@@ -254,7 +256,7 @@ export async function triggersSetLive(
     body.timezone = tf.timezone;
   }
   const touchesEvent =
-    tf.connector || tf.account || tf.defaultAccount || tf.event || tf.eventConfig;
+    tf.connector || tf.account || tf.defaultAccount || tf.source || tf.event || tf.eventConfig;
   if (Object.keys(body).length === 0 && !touchesEvent) {
     return fail('Pass at least one field to change (see `kortix triggers --help`).');
   }
@@ -322,7 +324,7 @@ async function currentEvent(
     if (!t) return { problem: `No trigger "${slug}".` };
     if (t.type !== 'event' || !t.event) {
       return {
-        problem: `${slug} is a ${t.type} trigger — --connector, --account, --event, and --config only apply to event triggers.`,
+        problem: `${slug} is a ${t.type} trigger — --connector, --account, --source, --event, and --config only apply to event triggers.`,
       };
     }
     return { event: t.event };

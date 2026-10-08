@@ -389,7 +389,7 @@ export function EventAppPicker({
 }
 
 function target(app: EventApp): EventAppTarget {
-  return { app: app.app, name: app.name, connector: app.connector };
+  return { app: app.app, name: app.name, connector: app.connector, newConnectorSlug: app.new_connector_slug };
 }
 
 /* ─── Event ─────────────────────────────────────────────────────────────── */
