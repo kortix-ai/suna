@@ -889,10 +889,13 @@ harnessFlow(
         await sendPrompt(ctx, projectId, sessionId, `Remember the code word ${alpha}. Do not answer this message on its own.`),
         await sendPrompt(ctx, projectId, sessionId, `Reply with the word ${batch}, then the code word from my previous message.`),
       ];
+      // `queued` or `waiting`: in the inbox, not handed to the runtime.
       const rows = await waiting();
       for (const id of ids) {
         const row = rows.find((p) => p.prompt_id === id);
-        if (row?.state !== 'waiting') throw new Error(`a queued prompt did not wait behind the running turn: ${JSON.stringify(row)}`);
+        if (row?.state !== 'queued' && row?.state !== 'waiting') {
+          throw new Error(`a queued prompt did not wait behind the running turn: ${JSON.stringify(row)}`);
+        }
       }
     });
 

@@ -1534,7 +1534,7 @@ harnessFlow(
   },
 );
 
-/** A second primary agent whose prompt makes every reply carry `token` (RUN-15). */
+/** A second primary agent whose prompt names it `token` (RUN-15). */
 function agentPickFiles(token: string): Record<string, string> {
   return {
     'kortix.yaml': [
@@ -1550,13 +1550,36 @@ function agentPickFiles(token: string): Record<string, string> {
     ].join('\n'),
     '.kortix/opencode/agents/marker.md': [
       '---',
-      'description: Starts every reply with a fixed token.',
+      'description: Knows its own name.',
       'mode: primary',
       '---',
-      `Start every reply with the exact token ${token}, then answer the user.`,
+      `Your name is ${token}. When anyone asks for your name, answer with exactly ${token} and nothing else.`,
       '',
     ].join('\n'),
   };
+}
+
+/**
+ * Send `text` (with the run-unique `tag`), wait for its turn to end, and
+ * return the agents the runtime recorded on the replies to it: each assistant
+ * message's `info.agent` (OpenCode also writes it as `mode`).
+ */
+async function agentsThatAnswered(
+  ctx: FlowContext,
+  session: { projectId: string; sessionId: string; sandboxId: string },
+  text: string,
+  tag: string,
+  agent?: string,
+): Promise<string[]> {
+  const before = (await readTurn(ctx, session.projectId, session.sessionId)).last_ended?.turn_token;
+  await sendPrompt(ctx, session.projectId, session.sessionId, `${text} (${tag})`, agent ? { agent } : undefined);
+  await waitForTurn(ctx, session.projectId, session.sessionId, endedAfter(before), `the turn for ${tag} to end`);
+  const messages = await runtimeMessages(ctx, session.sandboxId, await pinnedRoot(ctx, session.projectId, session.sessionId));
+  const asked = messages.find((m) => m.info.role === 'user' && messageText(m).includes(tag));
+  if (!asked) throw new Error(`the prompt ${tag} is not in the runtime transcript`);
+  const replies = messages.filter((m) => m.info.role === 'assistant' && m.info.parentID === asked.info.id);
+  if (replies.length === 0) throw new Error(`no assistant message answers ${tag}`);
+  return replies.map((m) => String(m.info.agent ?? m.info.mode ?? ''));
 }
 
 // R7.2: pi fixed its agent at boot and ignored a prompt's pick.
@@ -1579,27 +1602,39 @@ harnessFlow(
   async (ctx, harness) => {
     const project = await ctx.fixtures.project({ seed: true });
     const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
-    const token = `AGENTPICK${Date.now()}`;
+    const token = `Agentpick${Date.now()}`;
     try {
       await ctx.step(`the project declares a second primary agent and runs ${harness}`, async () => {
         if (harness === 'pi') await world.setFeature('pi_harness', true);
         await world.commitToMain(agentPickFiles(token), 'ke2e RUN-15: a marker agent');
       });
       const session = await bootSession(ctx, harness, { project, prompt: 'Reply with the word ready.' });
-      const plain = `RUN15PLAIN${Date.now()}`;
-      await ctx.step('a prompt that picks no agent runs on the session agent: its reply has no marker', async () => {
-        await sendPrompt(ctx, session.projectId, session.sessionId, `Reply with the word ${plain}.`);
-        const messages = await waitForAssistantText(ctx, session.projectId, session.sessionId, plain);
-        const leaked = messages.filter((m) => m.role === 'assistant' && m.text.includes(token));
-        if (leaked.length > 0) throw new Error(`the session agent answered with the marker agent's token: ${JSON.stringify(leaked.map((m) => m.text))}`);
+      await ctx.step('the session runtime lists the marker agent', async () => {
+        // The commit and the boot race: a box that booted on the previous
+        // config converges to the new one, and only then has the agent.
+        await waitFor(
+          async () => {
+            const r = await ctx.client.as(ctx.P.OWNER).get(runtimePath(session.sandboxId, '/kortix/runtime/agents'));
+            r.status(200);
+            return (r.json<{ agents?: Array<{ name?: string }> }>().agents ?? []).map((a) => a.name);
+          },
+          {
+            until: (names) => names.includes('marker'),
+            timeoutMs: 180_000,
+            intervalMs: 3_000,
+            description: `the marker agent in the runtime of ${session.sessionId}`,
+            retryOnError: isKe2eRetryableError,
+          },
+        );
       });
-      const picked = `RUN15PICKED${Date.now()}`;
-      await ctx.step('a prompt that picks the marker agent runs its turn on it: its reply carries the marker', async () => {
-        await sendPrompt(ctx, session.projectId, session.sessionId, `Reply with the word ${picked}.`, { agent: 'marker' });
-        const messages = await waitForAssistantText(ctx, session.projectId, session.sessionId, picked);
-        const reply = messages.filter((m) => m.role === 'assistant' && m.text.includes(picked)).at(-1);
-        if (!reply?.text.includes(token)) {
-          throw new Error(`the picked agent did not run the turn on ${harness}: the reply has no ${token}: ${JSON.stringify(reply?.text)}`);
+      await ctx.step('a prompt that picks no agent runs on the session agent', async () => {
+        const agents = await agentsThatAnswered(ctx, session, 'Reply with one word.', `RUN15PLAIN${Date.now()}`);
+        if (agents.some((name) => name !== 'kortix')) throw new Error(`a reply ran on ${JSON.stringify(agents)}, not the session agent kortix`);
+      });
+      await ctx.step('a prompt that picks the marker agent runs its whole turn on it', async () => {
+        const agents = await agentsThatAnswered(ctx, session, 'Reply with one word.', `RUN15PICKED${Date.now()}`, 'marker');
+        if (agents.some((name) => name !== 'marker')) {
+          throw new Error(`the picked agent did not run the turn on ${harness}: the replies ran on ${JSON.stringify(agents)}`);
         }
       });
     } finally {
