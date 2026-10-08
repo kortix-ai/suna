@@ -7,6 +7,7 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { pushDeviceTokens, type Database } from '@kortix/db';
 import { db as defaultDb } from '../shared/db';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 
 export type PushPlatform = 'ios' | 'android';
 
@@ -93,16 +94,16 @@ export function createPushDeviceTokenStore(database: Database = defaultDb): Push
     },
 
     async listByUser(userId) {
+      const signIn = qualifiedColumn(pushDeviceTokens.authSessionId);
       return database
         .select()
         .from(pushDeviceTokens)
         .where(
           and(
             eq(pushDeviceTokens.userId, userId),
-            sql`(${pushDeviceTokens.authSessionId} IS NULL OR EXISTS (
+            sql`(${signIn} IS NULL OR EXISTS (
               SELECT 1 FROM auth.sessions s
-              WHERE s.id = ${pushDeviceTokens.authSessionId}
-                AND (s.not_after IS NULL OR s.not_after > now())))`,
+              WHERE s.id = ${signIn} AND (s.not_after IS NULL OR s.not_after > now())))`,
           ),
         );
     },
