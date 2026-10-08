@@ -116,11 +116,10 @@ account resolves first and report "one account connected". If the human says
 work@example.com — …".
 
 **Adding another account.** When the human wants a new one ("connect my other
-Gmail"), mint a link with the MCP `connect` tool and a `label` that tells it
-apart (`connect({ slug, label: "Personal Gmail" })`). The link opens a dialog
-where the human names the account and chooses who can use it; you are then told
-its name. Call it with `--account "<name>"` from then on. `kortix connectors
-connect` from a shell cannot name a new account.
+Gmail"), mint a link with a `--label` that tells it apart:
+`kortix connectors connect <slug> --label "Personal Gmail"`. The link opens a
+dialog where the human names the account and chooses who can use it; you are
+then told its name. Call it with `--account "<name>"` from then on.
 </choosing-the-account>
 
 <cli-first-loop>
@@ -295,7 +294,7 @@ kortix channels connect
 - Report which account ran when it could matter — read the result's
   `account` field, never assume.
 - Confirm irreversible work before a destructive connector call.
-- The `kortix-connectors` MCP server is optional. Use the CLI if it is absent.
+- The `kortix-connectors` MCP server is optional and off by default. Use the CLI.
 </rules>
 
 </skill>

@@ -240,6 +240,9 @@ Subcommands:
                                     alone, the default) or \`project\` (shared
                                     with every member; needs
                                     project.connector.write).
+       [--label <name>]             Name a NEW account (a second Gmail). Mints a
+                                    link where the human confirms the name and
+                                    who can use the account.
   connect-finalize <slug>           Confirm authorization completed. Accepts
        [--owner me|project]         the IDs returned by \`connect\`. Pass the
        [--connection-id <uuid>]     same --owner the link was started with.
@@ -434,6 +437,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
     f.default = takeFlagValue(rest, ['--default']);
     f.expires = takeFlagValue(rest, ['--expires']);
     f.owner = takeFlagValue(rest, ['--owner']);
+    f.label = takeFlagValue(rest, ['--label']);
     f.ownerId = takeFlagValue(rest, ['--owner-id']);
     f.connectionId = takeFlagValue(rest, ['--connection-id']);
     f.requestId = takeFlagValue(rest, ['--request-id']);
@@ -807,6 +811,31 @@ export async function runConnectors(argv: string[]): Promise<number> {
           f.owner === 'me' || f.owner === 'project' ? f.owner : undefined;
         if (f.owner !== undefined && owner === undefined) {
           return fail('--owner must be me or project');
+        }
+        // `--label` mints the same setup link as the MCP `connect` tool: a
+        // dialog where the human names the new account and picks who can use it.
+        if (f.label !== undefined) {
+          const label = f.label.trim();
+          if (!label) return missing('--label <account name>');
+          const link = await ctx.client.post<{ url: string; app?: string | null; expires_at?: string }>(
+            `/projects/${ctx.projectId}/connect-requests`,
+            {
+              slug,
+              label,
+              ...(owner ? { owner } : {}),
+              ...(expires ? { expires_in_minutes: expires } : {}),
+            },
+          );
+          const output = { slug, owner: owner ?? 'me', label, app: link.app ?? null, url: link.url, expires_at: link.expires_at ?? null };
+          if (json) {
+            emitJson(output);
+            return 0;
+          }
+          process.stdout.write(
+            `\n  ${C.bold}Connect ${slug} as "${label}"${C.reset}\n  ${C.cyan}${output.url}${C.reset}\n\n` +
+              `  ${C.dim}Hand the URL to the human. They confirm the name and who can use the account.${C.reset}\n\n`,
+          );
+          return 0;
         }
         const resp = await ctx.client.post<{
           provider: string;

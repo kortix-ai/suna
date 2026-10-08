@@ -11,8 +11,8 @@ This is the canonical answer to "I need an API key / I need this app connected."
 
 1. **You already HAVE the value → set it yourself, now.** The human pasted it
    in the conversation, attached it in a file, or said "use this key". Store it
-   with the `set_secret` tool (or `kortix secrets set NAME=-`, value on stdin)
-   in the same turn. Do not mint a link. Do not ask them to enter it a second
+   with `kortix secrets set NAME=-` (value on stdin; or the `set_secret` MCP
+   tool when it is loaded) in the same turn. Do not mint a link. Do not ask them to enter it a second
    time. Do not lecture them about pasting it. Never echo the value back.
 2. **You do NOT have the value → mint a setup link** and surface the URL in your
    reply, in the same turn. Never tell the human to "open the dashboard →
@@ -49,17 +49,17 @@ key ever touches chat or the repo.
 
 ## Setting a value you already have
 
-```
-set_secret({ values: { APOLLO_API_KEY: "<the value from the conversation>" } })
-set_secret({ values: { BILLING_API_TOKEN: "<value>" }, scope: "connector" })
-→ { ok: true, saved: ["APOLLO_API_KEY"], scope: "runtime" }
-```
-
-**Or from a shell** (equivalent — stdin keeps the value out of shell history):
-
 ```sh
+# stdin keeps the value out of shell history
 printf '%s' "$VALUE" | kortix secrets set APOLLO_API_KEY=-
 printf '%s' "$VALUE" | kortix secrets set BILLING_API_TOKEN=- --scope connector
+```
+
+**Or the `set_secret` MCP tool**, when the `kortix-connectors` MCP is loaded:
+
+```
+set_secret({ values: { APOLLO_API_KEY: "<the value from the conversation>" } })
+→ { ok: true, saved: ["APOLLO_API_KEY"], scope: "runtime" }
 ```
 
 - **`scope: runtime`** (default) — loaded into the sandbox env of this session
@@ -80,19 +80,17 @@ the value** — once they submit it, a `runtime`
 secret simply appears in your session env — when your agent is granted it (see
 "Set, but I can't see it" below).
 
-**Preferred — the `request_secret` tool on the `kortix-connectors` MCP:**
+```sh
+kortix secrets request APOLLO_API_KEY SMARTLEAD_API_KEY     # several keys, one link
+kortix secrets request APOLLO_API_KEY --scope connector     # server-side only
+```
+
+**Or the `request_secret` MCP tool**, when the `kortix-connectors` MCP is loaded:
 
 ```
 request_secret({ names: ["APOLLO_API_KEY", "SMARTLEAD_API_KEY"],
                  descriptions: { APOLLO_API_KEY: "Settings → API in Apollo" } })
 → { url: "https://<app>/secret-intake/ksl_…", names: [...], expires_at }
-```
-
-**Or from a shell** (equivalent):
-
-```sh
-kortix secrets request APOLLO_API_KEY SMARTLEAD_API_KEY     # several keys, one link
-kortix secrets request APOLLO_API_KEY --scope connector     # server-side only
 ```
 
 Then **surface the `url`** to the human: *"Add your Apollo key here (link valid
@@ -328,7 +326,7 @@ This beats the alternatives you might be tempted by:
 - ❌ "Go to the dashboard → Customize → Connectors → Connect" — the friction that
   makes the human give up. You have a one-click link; use it.
 - ❌ Minting a link for a value already in the conversation — the human gave
-  it to you. Store it with `set_secret`.
+  it to you. Store it with `kortix secrets set`.
 
 ---
 
@@ -338,13 +336,13 @@ This beats the alternatives you might be tempted by:
 | --- | --- | --- |
 | Store a secret value you already have | `set_secret` | `kortix secrets set <NAME>=- [--scope connector]` |
 | Ask the human for a secret value you lack | `request_secret` | `kortix secrets request <NAME…>` |
-| Get an app connected (Composio) | `connect` | `kortix connectors connect <slug> [--owner me\|project]` |
+| Get an app connected (Composio) | `connect` | `kortix connectors connect <slug> [--owner me\|project] [--label <name>]` |
 | Verify a secret arrived | — | `kortix secrets ls` (`not granted` = ask the human to enable it for your agent) |
 | See who can use a value | — | `kortix secrets ls` (WHO CAN USE column; a person changes it with `kortix secrets share`) |
 | Verify a connector connected | `connectors` | `kortix connectors ls` |
 | Which/how many accounts are connected | `accounts` | `kortix connectors accounts <slug>` |
 | Pin the default account for unnamed calls | — | `kortix connectors accounts <slug> --default <label>` |
 
-Both surfaces hit the same endpoints and return the same kind of link — use
-whichever fits your flow. The MCP tools are always loaded. The
-`kortix connectors` CLI exposes the same connector gateway for shell use.
+Both surfaces hit the same endpoints and return the same kind of link. The
+`kortix` CLI is always on `$PATH`. The `kortix-connectors` MCP server is off by
+default; its tools are loaded only when the deployment or channel turns it on.
