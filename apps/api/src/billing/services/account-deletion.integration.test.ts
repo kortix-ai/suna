@@ -192,6 +192,9 @@ async function seed(): Promise<void> {
       VALUES (${ACCOUNT_ID}, 'account.deleted.test', 'account', ${USER_ID})`,
     sql`INSERT INTO kortix.credit_accounts (account_id, tier, payment_status, balance) VALUES (${ACCOUNT_ID}, 'free', 'active', 5)`,
     sql`INSERT INTO kortix.billing_customers (account_id, id, provider) VALUES (${ACCOUNT_ID}, 'cus_deletion_test', 'stripe')`,
+    // The person's phone, and a neighbor's that must survive (KRTX-1722).
+    sql`INSERT INTO kortix.push_device_tokens (token, user_id, platform)
+      VALUES ('ExponentPushToken[deletion-test]', ${USER_ID}, 'ios'), ('ExponentPushToken[deletion-other]', ${OTHER_USER_ID}, 'ios')`,
   ];
   for (const statement of statements) await db.execute(statement);
 }
@@ -263,6 +266,9 @@ withDb('account deletion on PostgreSQL', () => {
 
     // The neighboring account is untouched.
     expect(await countWhere('accounts', sql`account_id = ${OTHER_ACCOUNT_ID}`)).toBe(1);
+    // The person's push tokens go with the login; the neighbor's stays.
+    expect(await countWhere('push_device_tokens', sql`user_id = ${USER_ID}`)).toBe(0);
+    expect(await countWhere('push_device_tokens', sql`user_id = ${OTHER_USER_ID}`)).toBe(1);
 
     // The retained records survive, with the deletion marker the service wrote.
     const [credit] = await rows<{ tier: string; payment_status: string }>(

@@ -2036,7 +2036,9 @@
       "whenBelow": "cuando el saldo caiga por debajo de",
       "thresholdLabel": "Umbral de recarga en dólares",
       "save": "Guardar",
-      "paymentNeeded": "Añade un método de pago para ejecutar la recarga automática."
+      "paymentNeeded": "Añade un método de pago para ejecutar la recarga automática.",
+      "turnedOffAfterFailure": "La recarga automática se desactivó el {date}: el último cargo falló ({reason}). Actualiza el método de pago y vuelve a activar la recarga automática.",
+      "lastChargeFailed": "El último cargo de recarga automática falló el {date} ({reason}). Kortix lo intenta de nuevo; tras 3 cargos fallidos seguidos, la recarga automática se desactiva."
     },
     "title": "Facturación & Suscripción",
     "subscription": "Suscripción",

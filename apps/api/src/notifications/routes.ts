@@ -5,6 +5,7 @@ import type { Context, MiddlewareHandler } from 'hono';
 import type { AppEnv } from '../types';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { supabaseAuth } from '../middleware/auth';
+import { isUuid } from '../shared/validate';
 import { pushDeviceTokenStore, type PushDeviceTokenStore } from './device-tokens';
 
 // Expo tokens look like `ExponentPushToken[...]` (~41 chars). 512 bounds the row.
@@ -64,6 +65,12 @@ function deviceOwner(c: NotificationsContext): string | Response {
   return userId;
 }
 
+/** The sign-in this device holds (a JWT's `session_id`): a push goes only while it exists. */
+function signInOf(c: NotificationsContext): string | null {
+  const sessionId = c.get('sessionId');
+  return c.get('authType') === 'supabase' && isUuid(sessionId) ? sessionId : null;
+}
+
 export interface NotificationsAppDeps {
   store?: PushDeviceTokenStore;
   authMiddleware?: MiddlewareHandler;
@@ -102,6 +109,7 @@ export function createNotificationsApp(deps: NotificationsAppDeps = {}) {
         userId: owner,
         platform: body.device_type,
         provider: body.provider,
+        authSessionId: signInOf(c),
         preferences: p && {
           enabled: p.enabled,
           onCompletion: p.on_completion,

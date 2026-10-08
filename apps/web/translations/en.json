@@ -2036,7 +2036,9 @@
       "whenBelow": "when the balance drops below",
       "thresholdLabel": "Top-up threshold in dollars",
       "save": "Save",
-      "paymentNeeded": "Add a payment method for auto top-up to run."
+      "paymentNeeded": "Add a payment method for auto top-up to run.",
+      "turnedOffAfterFailure": "Auto top-up turned off on {date}: the last charge failed ({reason}). Update the payment method, then turn auto top-up back on.",
+      "lastChargeFailed": "The last auto top-up charge failed on {date} ({reason}). Kortix tries again; after 3 failed charges in a row, auto top-up turns off."
     },
     "title": "Billing & Subscription",
     "subscription": "Subscription",
